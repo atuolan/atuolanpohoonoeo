@@ -6,7 +6,17 @@ import { db, DB_STORES } from '@/db/database'
 const AUTH_RECORD_ID = 'current_auth'
 const SESSION_DURATION = 14 * 24 * 60 * 60 * 1000 // 14天
 const SESSION_RENEW_THRESHOLD = 2 * 24 * 60 * 60 * 1000 // 剩餘 2 天內自動續期
-const API_ENDPOINT = '/api' // 通過 nginx 代理到 Discord bot API
+// 驗證 API 端點：同源時走相對路徑，GitHub Pages 等外部部署時走絕對路徑
+const API_ENDPOINT = (() => {
+  if (typeof window === 'undefined') return '/api'
+  const host = window.location.hostname
+  // 本地開發或部署在自有服務器上時，走相對路徑
+  if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.aguacloud.uk')) {
+    return '/api'
+  }
+  // 外部部署（如 GitHub Pages）時，走服務器絕對路徑
+  return 'https://203aguaphone.aguacloud.uk/api'
+})()
 const LEGACY_AUTH_KEY = 'aguaphone_auth' // 舊版 localStorage key（遷移用）
 const BACKUP_AUTH_KEY = 'aguaphone_auth_backup_v2' // 新版 localStorage 備援
 const AUTH_ENCRYPTION_KEY = 'aguaphone_secret_key_2026'

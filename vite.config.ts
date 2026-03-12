@@ -133,6 +133,7 @@ function aiProxyPlugin(): Plugin {
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  base: process.env.GITHUB_ACTIONS ? '/atuolanpohoonoeo/' : '/',
   plugins: [
     vue(),
     aiProxyPlugin(),
