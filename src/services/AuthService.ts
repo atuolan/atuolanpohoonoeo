@@ -6,16 +6,17 @@ import { db, DB_STORES } from '@/db/database'
 const AUTH_RECORD_ID = 'current_auth'
 const SESSION_DURATION = 14 * 24 * 60 * 60 * 1000 // 14天
 const SESSION_RENEW_THRESHOLD = 2 * 24 * 60 * 60 * 1000 // 剩餘 2 天內自動續期
-// 驗證 API 端點：同源時走相對路徑，GitHub Pages 等外部部署時走絕對路徑
+// 驗證 API 端點：本地開發走相對路徑，生產環境一律走 VPS 絕對路徑
+// （GitHub Pages 是純靜態，無法代理 /api/ 到 Discord bot）
 const API_ENDPOINT = (() => {
   if (typeof window === 'undefined') return '/api'
   const host = window.location.hostname
-  // 本地開發或部署在自有服務器上時，走相對路徑
-  if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.aguacloud.uk')) {
+  // 本地開發時走相對路徑（Vite dev server 可以代理）
+  if (host === 'localhost' || host === '127.0.0.1') {
     return '/api'
   }
-  // 外部部署（如 GitHub Pages）時，走服務器絕對路徑
-  return 'https://203aguaphone.aguacloud.uk/api'
+  // 生產環境一律走 VPS 絕對路徑（不管是 GitHub Pages 還是自有服務器）
+  return 'https://api-203.aguacloud.uk/api'
 })()
 const LEGACY_AUTH_KEY = 'aguaphone_auth' // 舊版 localStorage key（遷移用）
 const BACKUP_AUTH_KEY = 'aguaphone_auth_backup_v2' // 新版 localStorage 備援
