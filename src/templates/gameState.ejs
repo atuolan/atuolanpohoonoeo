@@ -1,0 +1,14 @@
+[遊戲狀態]
+- 玩家目前持有 <%= wallet %> 金幣
+<% if (recentGifts.length > 0) { %>
+- 最近送過的禮物：<%= recentGifts.map(g => g.itemName).join('、') %>
+<% } %>
+<% if (totalFishCaught > 0) { %>
+- 釣魚成就：已釣過 <%= totalFishCaught %> 條魚
+<% if (rarestFish) { %>
+- 最稀有的魚：<%= rarestFish.name %>（<%= rarestFish.weight.toFixed(1) %> 公斤）
+<% } %>
+<% } %>
+<% if (recentGamblingResult) { %>
+- 最近賭博：<%= recentGamblingResult.won ? '贏了' : '輸了' %> <%= recentGamblingResult.amount %> 金幣
+<% } %>

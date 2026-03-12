@@ -1,0 +1,497 @@
+/* ============================================================
+   🏰 玩具城堡主題 - Toy Castle Theme
+   可愛積木城堡風格，圓潤、鮮豔、充滿童趣
+   ============================================================ */
+
+/* ---------- 色彩變數覆蓋 ---------- */
+:root {
+  --castle-pink:    #ff8fab;
+  --castle-yellow:  #ffd166;
+  --castle-mint:    #06d6a0;
+  --castle-sky:     #74c0fc;
+  --castle-lavender:#c77dff;
+  --castle-peach:   #ffb347;
+  --castle-cream:   #fff8f0;
+  --castle-brick:   #e8c4a0;
+  --castle-shadow:  rgba(180, 120, 100, 0.18);
+  --castle-border:  rgba(255, 160, 130, 0.45);
+}
+
+/* ---------- 全局基底 ---------- */
+body, #app, .app-container {
+  background: linear-gradient(160deg, #fff0f5 0%, #ffecd2 50%, #fff0f5 100%) !important;
+  font-family: 'Noto Sans TC', 'Comic Sans MS', 'Chalkboard SE', sans-serif !important;
+}
+
+/* ---------- 捲軸 ---------- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #fff0f5; border-radius: 99px; }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--castle-pink), var(--castle-peach));
+  border-radius: 99px;
+}
+
+/* ============================================================
+   卡片 / 面板 / 容器
+   ============================================================ */
+.card,
+.setting-item,
+.entry-card,
+.character-card,
+.lorebook-card,
+.stat-card,
+.fish-card,
+.game-card,
+.summary-card,
+.diary-card,
+.post-card,
+.plurk-card,
+.module-card,
+.font-preview-card,
+.font-switch-card,
+.font-active-card,
+.preset-item,
+.widget-card {
+  background: #fffaf5 !important;
+  border: 2px solid var(--castle-border) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 4px 0 var(--castle-shadow), 0 6px 16px rgba(255, 160, 100, 0.1) !important;
+  transition: transform 0.15s, box-shadow 0.15s !important;
+}
+.card:hover,
+.setting-item:hover,
+.entry-card:hover,
+.character-card:hover,
+.widget-card:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 0 var(--castle-shadow), 0 10px 24px rgba(255, 160, 100, 0.15) !important;
+}
+
+/* ============================================================
+   Modal / Overlay
+   ============================================================ */
+.modal-content,
+.modal-container,
+.settings-modal,
+.import-modal,
+.theme-settings-modal,
+.global-theme-modal,
+.phone-call-container,
+.purchase-modal,
+.guide-modal,
+.share-modal,
+.repost-modal,
+.game-modal,
+.diary-modal,
+.merit-hub-modal,
+.beads-modal,
+.woodfish-modal,
+.fishing-scene,
+.expand-container {
+  background: #fffaf5 !important;
+  border: 2.5px solid var(--castle-border) !important;
+  border-radius: 28px !important;
+  box-shadow: 0 8px 0 var(--castle-shadow), 0 16px 48px rgba(200, 120, 80, 0.15) !important;
+}
+
+.modal-header,
+.panel-header,
+.picker-header,
+.css-header,
+.guide-header,
+.form-header,
+.expand-header,
+.settings-header,
+.chat-info-modal .modal-header {
+  background: linear-gradient(90deg, #ffccd5 0%, #ffd6a5 100%) !important;
+  border-radius: 24px 24px 0 0 !important;
+  border-bottom: 2px solid var(--castle-border) !important;
+}
+
+.modal-footer,
+.panel-footer,
+.expand-footer,
+.settings-footer {
+  background: #fff5ee !important;
+  border-top: 2px dashed var(--castle-border) !important;
+  border-radius: 0 0 24px 24px !important;
+}
+
+/* ============================================================
+   按鈕
+   ============================================================ */
+.btn-primary,
+.send-btn,
+.save-btn,
+.confirm-btn,
+.start-btn,
+.buy-btn,
+.post-btn,
+.generate-btn,
+.submit-btn,
+.done-btn,
+.continue-btn {
+  background: linear-gradient(135deg, var(--castle-pink) 0%, var(--castle-peach) 100%) !important;
+  border: none !important;
+  border-radius: 99px !important;
+  box-shadow: 0 4px 0 #e07060, 0 6px 16px rgba(255, 100, 80, 0.25) !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.03em !important;
+  transition: transform 0.1s, box-shadow 0.1s !important;
+}
+.btn-primary:active,
+.send-btn:active,
+.save-btn:active,
+.confirm-btn:active {
+  transform: translateY(3px) !important;
+  box-shadow: 0 1px 0 #e07060 !important;
+}
+
+.btn-secondary,
+.cancel-btn,
+.back-btn,
+.reset-btn,
+.export-btn,
+.import-btn {
+  background: #fff0f5 !important;
+  border: 2px solid var(--castle-pink) !important;
+  border-radius: 99px !important;
+  box-shadow: 0 3px 0 #f0a0b0 !important;
+  color: var(--castle-pink) !important;
+  font-weight: 600 !important;
+  transition: transform 0.1s, box-shadow 0.1s !important;
+}
+.btn-secondary:active,
+.cancel-btn:active {
+  transform: translateY(2px) !important;
+  box-shadow: 0 1px 0 #f0a0b0 !important;
+}
+
+.btn-danger,
+.delete-btn {
+  background: #fff0f0 !important;
+  border: 2px solid #ff6b6b !important;
+  border-radius: 99px !important;
+  box-shadow: 0 3px 0 #e05050 !important;
+  color: #ff4444 !important;
+  font-weight: 600 !important;
+}
+
+/* icon 按鈕 */
+.icon-btn,
+.action-btn,
+.header-btn,
+.nav-btn,
+.close-btn,
+.edit-btn,
+.add-btn,
+.refresh-btn,
+.more-btn {
+  border-radius: 50% !important;
+  transition: transform 0.15s, background 0.15s !important;
+}
+.icon-btn:hover,
+.action-btn:hover,
+.header-btn:hover {
+  background: #ffe4ec !important;
+  transform: scale(1.12) rotate(-5deg) !important;
+}
+
+/* ============================================================
+   輸入框 / Textarea
+   ============================================================ */
+input,
+textarea,
+.input,
+.input-field,
+.search-input,
+.search-bar-input,
+.tag-input,
+.edit-textarea,
+.css-editor,
+.textarea,
+select,
+.select-field {
+  background: #fff8f2 !important;
+  border: 2px solid var(--castle-border) !important;
+  border-radius: 14px !important;
+  box-shadow: inset 0 2px 6px rgba(255, 160, 100, 0.08) !important;
+  color: #5a3e36 !important;
+  transition: border-color 0.2s, box-shadow 0.2s !important;
+}
+input:focus,
+textarea:focus,
+.input:focus,
+.input-field:focus,
+select:focus {
+  border-color: var(--castle-pink) !important;
+  box-shadow: inset 0 2px 6px rgba(255, 100, 120, 0.1), 0 0 0 3px rgba(255, 143, 171, 0.2) !important;
+  outline: none !important;
+}
+
+/* ============================================================
+   Header / Screen Header
+   ============================================================ */
+.screen-header,
+.header,
+.reader-header,
+.music-app-screen > .header,
+.settings-screen > .settings-header,
+.chat-list-screen > .header {
+  background: linear-gradient(90deg, #ffccd5 0%, #ffd6a5 100%) !important;
+  border-bottom: 2.5px solid var(--castle-border) !important;
+  box-shadow: 0 3px 0 var(--castle-shadow) !important;
+}
+
+.header-title,
+.title,
+.modal-title,
+.panel-title {
+  font-weight: 800 !important;
+  color: #c05070 !important;
+  letter-spacing: 0.04em !important;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.8) !important;
+}
+
+/* ============================================================
+   Tab 列
+   ============================================================ */
+.tabs,
+.tab-bar,
+.soft-tabs,
+.tabs-container,
+.font-source-tabs,
+.upload-tabs {
+  background: #ffe8d6 !important;
+  border-radius: 99px !important;
+  padding: 4px !important;
+  border: 2px solid var(--castle-border) !important;
+}
+
+.tab,
+.tab-item,
+.tab-btn {
+  border-radius: 99px !important;
+  font-weight: 600 !important;
+  transition: background 0.2s, color 0.2s !important;
+}
+.tab.active,
+.tab-item.active,
+.tab-btn.active {
+  background: linear-gradient(135deg, var(--castle-pink), var(--castle-peach)) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(255, 100, 80, 0.3) !important;
+}
+
+/* ============================================================
+   聊天氣泡
+   ============================================================ */
+.bubble-user,
+.bubble.user {
+  background: linear-gradient(135deg, #ffccd5 0%, #ffd6a5 100%) !important;
+  border-radius: 18px 4px 18px 18px !important;
+  border: 1.5px solid rgba(255, 160, 130, 0.4) !important;
+  box-shadow: 0 3px 8px rgba(255, 120, 100, 0.15) !important;
+}
+
+.bubble-char,
+.bubble.char {
+  background: #fffaf5 !important;
+  border-radius: 4px 18px 18px 18px !important;
+  border: 1.5px solid var(--castle-border) !important;
+  box-shadow: 0 3px 8px rgba(200, 150, 100, 0.12) !important;
+}
+
+/* ============================================================
+   Badge / Tag / 標籤
+   ============================================================ */
+.badge,
+.tag,
+.soft-tag,
+.meta-tag,
+.prompt-tag,
+.rarity-badge,
+.nsfw-badge,
+.status-badge,
+.format-badge,
+.pinned-badge,
+.order-badge,
+.value-badge,
+.mini-badge,
+.tab-badge {
+  border-radius: 99px !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+  padding: 2px 10px !important;
+  border: 1.5px solid rgba(255,160,130,0.4) !important;
+}
+
+/* ============================================================
+   進度條
+   ============================================================ */
+.progress-bar,
+.progress-bg {
+  background: #ffe8d6 !important;
+  border-radius: 99px !important;
+  border: 1.5px solid var(--castle-border) !important;
+  overflow: hidden !important;
+}
+.progress-fill {
+  background: linear-gradient(90deg, var(--castle-pink), var(--castle-peach)) !important;
+  border-radius: 99px !important;
+}
+
+/* ============================================================
+   Toggle / Switch
+   ============================================================ */
+.toggle-switch,
+.toggle-switch-mini {
+  background: #ffd6d6 !important;
+  border-radius: 99px !important;
+  border: 2px solid var(--castle-border) !important;
+  transition: background 0.2s !important;
+}
+.toggle-switch.active,
+.toggle-switch-mini.active {
+  background: linear-gradient(90deg, var(--castle-pink), var(--castle-peach)) !important;
+}
+.toggle-knob,
+.toggle-thumb,
+.toggle-slider {
+  background: #fff !important;
+  border-radius: 50% !important;
+  box-shadow: 0 2px 4px rgba(200,100,80,0.2) !important;
+}
+
+/* ============================================================
+   Section Header / Divider
+   ============================================================ */
+.section-header,
+.section-title,
+.settings-section > .section-header {
+  color: #c05070 !important;
+  font-weight: 800 !important;
+  font-size: 13px !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  border-bottom: 2px dashed var(--castle-border) !important;
+  padding-bottom: 6px !important;
+}
+
+.section-divider,
+.setting-divider,
+.divider-text,
+.separator-line {
+  border-color: var(--castle-border) !important;
+  border-style: dashed !important;
+}
+
+/* ============================================================
+   Empty State
+   ============================================================ */
+.empty-state,
+.empty {
+  color: #d4a0a0 !important;
+}
+.empty-icon {
+  opacity: 0.5 !important;
+  filter: sepia(0.3) hue-rotate(-10deg) !important;
+}
+
+/* ============================================================
+   Toast / 通知
+   ============================================================ */
+.notification-toast,
+.toast-content {
+  background: #fffaf5 !important;
+  border: 2px solid var(--castle-border) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 4px 0 var(--castle-shadow), 0 8px 24px rgba(200,120,80,0.15) !important;
+}
+
+/* ============================================================
+   Widget Wrapper
+   ============================================================ */
+.widget-wrapper {
+  border-radius: 22px !important;
+  box-shadow: 0 5px 0 var(--castle-shadow), 0 8px 20px rgba(200,120,80,0.12) !important;
+  border: 2px solid var(--castle-border) !important;
+  overflow: hidden !important;
+}
+
+/* ============================================================
+   Dock
+   ============================================================ */
+.neon-wheel-dock .core-btn {
+  background: linear-gradient(135deg, var(--castle-pink), var(--castle-peach)) !important;
+  border-radius: 50% !important;
+  box-shadow: 0 4px 0 #e07060, 0 6px 20px rgba(255,100,80,0.3) !important;
+  border: 3px solid #fff !important;
+}
+
+/* ============================================================
+   特殊裝飾：城堡磚塊頂部邊框
+   ============================================================ */
+.screen-header::before,
+.modal-header::before,
+.panel-header::before {
+  content: '';
+  display: block;
+  position: absolute;
+  top: -8px;
+  left: 12px;
+  right: 12px;
+  height: 8px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--castle-pink) 0px,
+    var(--castle-pink) 14px,
+    transparent 14px,
+    transparent 20px
+  );
+  border-radius: 4px 4px 0 0;
+  pointer-events: none;
+}
+.screen-header,
+.modal-header,
+.panel-header {
+  position: relative !important;
+  overflow: visible !important;
+}
+
+/* ============================================================
+   選中 / Hover 高亮
+   ============================================================ */
+.active,
+.selected,
+[class*="-item"].active,
+[class*="-option"].active {
+  background: linear-gradient(135deg, rgba(255,143,171,0.15), rgba(255,179,71,0.15)) !important;
+  border-color: var(--castle-pink) !important;
+}
+
+/* ============================================================
+   Soft 主題元件覆蓋
+   ============================================================ */
+.soft-card {
+  background: #fffaf5 !important;
+  border: 2px solid var(--castle-border) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 4px 0 var(--castle-shadow) !important;
+}
+.soft-btn {
+  border-radius: 99px !important;
+  border: 2px solid var(--castle-border) !important;
+  background: #fff5ee !important;
+  font-weight: 700 !important;
+}
+.soft-header {
+  background: linear-gradient(90deg, #ffccd5, #ffd6a5) !important;
+  border-bottom: 2px solid var(--castle-border) !important;
+}
+.soft-input {
+  background: #fff8f2 !important;
+  border: 2px solid var(--castle-border) !important;
+  border-radius: 14px !important;
+}

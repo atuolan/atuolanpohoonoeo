@@ -1,0 +1,693 @@
+// ============================================================
+// 柔和糖果風主題 (Soft Candy Theme)
+// 圓角、漸層、可愛風格
+// ============================================================
+
+// ===== 基礎頁面容器 =====
+.screen-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-background);
+  color: var(--color-text);
+  position: relative;
+  // padding-top 已由 .app-container 統一處理（瀏海/動態島）
+}
+
+// ===== 標題欄 =====
+.soft-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  padding-left: calc(16px + var(--safe-left));
+  padding-right: calc(16px + var(--safe-right));
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  gap: 12px;
+  flex-shrink: 0;
+
+  // 漸層背景變體
+  &.gradient {
+    background: linear-gradient(
+      135deg,
+      var(--color-surface) 0%,
+      var(--color-background) 100%
+    );
+    border-bottom: none;
+  }
+
+  .header-back {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-lg);
+    background: var(--color-background);
+    color: var(--color-text);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+
+    &:hover {
+      background: var(--color-surface-hover);
+      transform: scale(1.05);
+    }
+
+    &:active {
+      transform: scale(0.95);
+    }
+
+    svg,
+    .icon {
+      width: 24px;
+      height: 24px;
+    }
+  }
+
+  .header-title {
+    flex: 1;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .header-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .header-btn {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-lg);
+    background: var(--color-background);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    border: none;
+
+    &:hover {
+      background: var(--color-primary-light);
+      color: var(--color-primary);
+      transform: scale(1.05);
+    }
+
+    &:active {
+      transform: scale(0.95);
+    }
+
+    svg,
+    .icon {
+      width: 22px;
+      height: 22px;
+    }
+  }
+}
+
+// ===== 內容區域 =====
+.soft-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px;
+  padding-left: calc(16px + var(--safe-left));
+  padding-right: calc(16px + var(--safe-right));
+
+  // 隱藏滾動條
+  &::-webkit-scrollbar {
+    width: 0;
+    display: none;
+  }
+
+  // 帶網格的內容區
+  &.grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    align-content: start;
+
+    // 平板適配
+    @media (min-width: 600px) {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    // 桌面適配
+    @media (min-width: 900px) {
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+    }
+  }
+}
+
+// ===== 底部區域 =====
+.soft-footer {
+  padding: 12px 16px;
+  padding-bottom: calc(12px + var(--safe-bottom));
+  padding-left: calc(16px + var(--safe-left));
+  padding-right: calc(16px + var(--safe-right));
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+// ===== 卡片元件 =====
+.soft-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  transition: all var(--transition-normal);
+  cursor: pointer;
+  border: 1px solid transparent;
+
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--color-border);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  .card-image {
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    object-fit: cover;
+    background: var(--color-background);
+  }
+
+  .card-content {
+    padding: 12px;
+  }
+
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-text);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .card-subtitle {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    margin-bottom: 8px;
+  }
+
+  .card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .card-actions {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    padding-top: 0;
+  }
+}
+
+// ===== 標籤 =====
+.soft-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+
+  &.secondary {
+    background: rgba(179, 136, 255, 0.15);
+    color: #b388ff;
+  }
+
+  &.success {
+    background: rgba(125, 211, 168, 0.15);
+    color: var(--color-success);
+  }
+
+  &.warning {
+    background: rgba(255, 183, 77, 0.15);
+    color: var(--color-warning);
+  }
+
+  &.error {
+    background: rgba(255, 123, 123, 0.15);
+    color: var(--color-error);
+  }
+}
+
+// ===== 按鈕 =====
+.soft-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: var(--radius-lg);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all var(--transition-fast);
+
+  &.primary {
+    background: linear-gradient(
+      135deg,
+      var(--color-primary),
+      var(--color-primary-light)
+    );
+    color: white;
+    box-shadow: 0 4px 16px var(--color-shadow);
+
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 24px var(--color-shadow);
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+
+  &.secondary {
+    background: var(--color-background);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+
+    &:hover {
+      background: var(--color-surface-hover);
+      border-color: var(--color-primary-light);
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+
+  &.ghost {
+    background: transparent;
+    color: var(--color-text-secondary);
+
+    &:hover {
+      background: var(--color-background);
+      color: var(--color-primary);
+    }
+  }
+
+  &.icon-only {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: var(--radius-lg);
+  }
+
+  &.small {
+    padding: 8px 16px;
+    font-size: 13px;
+  }
+
+  &.large {
+    padding: 16px 32px;
+    font-size: 17px;
+    border-radius: var(--radius-xl);
+  }
+
+  &.block {
+    width: 100%;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+}
+
+// ===== 輸入框 =====
+.soft-input {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: var(--radius-lg);
+  border: 2px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 15px;
+  transition: all var(--transition-fast);
+  outline: none;
+
+  &::placeholder {
+    color: var(--color-text-muted);
+  }
+
+  &:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 4px var(--color-shadow);
+  }
+
+  &.error {
+    border-color: var(--color-error);
+  }
+}
+
+textarea.soft-input,
+.soft-input.textarea {
+  max-height: 40vh;
+  overflow-y: auto;
+  resize: vertical;
+}
+
+// ===== 搜尋框 =====
+.soft-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: var(--radius-full);
+  background: var(--color-background);
+  border: 2px solid transparent;
+  transition: all var(--transition-fast);
+
+  .search-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+  }
+
+  input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--color-text);
+    font-size: 15px;
+    outline: none;
+
+    &::placeholder {
+      color: var(--color-text-muted);
+    }
+  }
+
+  &:focus-within {
+    border-color: var(--color-primary-light);
+    background: var(--color-surface);
+  }
+}
+
+// ===== 空狀態 =====
+.soft-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  grid-column: 1 / -1;
+
+  .empty-icon {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 20px;
+    color: var(--color-text-muted);
+    opacity: 0.5;
+  }
+
+  .empty-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    margin-bottom: 8px;
+  }
+
+  .empty-text {
+    font-size: 14px;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+    max-width: 280px;
+  }
+
+  .empty-action {
+    margin-top: 24px;
+  }
+}
+
+// ===== 浮動按鈕 =====
+.soft-fab {
+  position: fixed;
+  right: calc(20px + var(--safe-right));
+  bottom: calc(20px + var(--safe-bottom));
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(
+    135deg,
+    var(--color-primary),
+    var(--color-secondary)
+  );
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 24px var(--color-shadow);
+  cursor: pointer;
+  border: none;
+  transition: all var(--transition-fast);
+  z-index: 100;
+
+  svg,
+  .icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  &:hover {
+    transform: scale(1.1);
+    box-shadow: 0 8px 32px var(--color-shadow);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+}
+
+// ===== 彈窗 =====
+.soft-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+.soft-modal {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  width: 100%;
+  max-width: 480px;
+  max-height: calc(100dvh - 80px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px;
+    border-bottom: 1px solid var(--color-border);
+
+    .modal-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--color-text);
+    }
+
+    .modal-close {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-md);
+      background: transparent;
+      color: var(--color-text-secondary);
+      cursor: pointer;
+      border: none;
+      transition: all var(--transition-fast);
+
+      &:hover {
+        background: var(--color-background);
+        color: var(--color-text);
+      }
+    }
+  }
+
+  .modal-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .modal-footer {
+    display: flex;
+    gap: 12px;
+    padding: 20px;
+    border-top: 1px solid var(--color-border);
+
+    .soft-btn {
+      flex: 1;
+    }
+  }
+}
+
+// ===== 分頁標籤 =====
+.soft-tabs {
+  display: flex;
+  background: var(--color-background);
+  border-radius: var(--radius-lg);
+  padding: 4px;
+  gap: 4px;
+
+  .tab-item {
+    flex: 1;
+    padding: 10px 16px;
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    text-align: center;
+
+    &:hover {
+      color: var(--color-text);
+    }
+
+    &.active {
+      background: var(--color-surface);
+      color: var(--color-primary);
+      box-shadow: var(--shadow-sm);
+    }
+  }
+}
+
+// ===== 頭像 =====
+.soft-avatar {
+  width: var(--avatar-size);
+  height: var(--avatar-size);
+  border-radius: var(--avatar-border-radius);
+  border: var(--avatar-border-width) solid var(--avatar-border-color);
+  box-shadow: var(--avatar-shadow);
+  object-fit: cover;
+  background: var(--color-background);
+}
+
+// ===== 聊天氣泡 =====
+.soft-bubble {
+  max-width: var(--bubble-max-width);
+  padding: 12px 16px;
+  border-radius: var(--bubble-radius);
+  font-size: 15px;
+  line-height: 1.5;
+  word-break: break-word;
+
+  &.user {
+    background: var(--bubble-user-bg);
+    color: var(--bubble-user-text);
+    margin-left: auto;
+    border-bottom-right-radius: 6px;
+  }
+
+  &.ai {
+    background: var(--bubble-ai-bg);
+    color: var(--bubble-ai-text);
+    border-bottom-left-radius: 6px;
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+// ===== 動畫 =====
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+// ===== 工具類 =====
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.slide-up-enter-from,
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(20px);
+}

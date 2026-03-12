@@ -1,0 +1,10 @@
+[釣魚成果]
+玩家剛剛釣到了一條「<%= fish.name %>」！
+- 重量：<%= fish.weight.toFixed(1) %> 公斤
+- 稀有度：<%= fish.rarity %>
+<% if (fish.rarity === 'legendary') { %>
+這是一條傳說級的魚！非常稀有！
+<% } else if (fish.rarity === 'rare' || fish.rarity === 'epic') { %>
+這是一條稀有的魚！
+<% } %>
+請根據角色性格做出適當的反應。

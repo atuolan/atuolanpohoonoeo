@@ -1,0 +1,98 @@
+// ============================================================
+// 可愛風主題 (Cute Theme)
+// 粉色系、圓角大、溫馨可愛
+// ============================================================
+
+[data-theme="cute"] {
+  // 顏色增強
+  --theme-accent: #ff8fab;
+  --theme-highlight: #ffd6e7;
+  
+  // 特殊圓角（更大更圓）
+  --radius-bubble: 20px;
+  --radius-card: 24px;
+  --radius-button: 16px;
+  
+  // 可愛陰影（柔和）
+  --shadow-cute: 0 4px 16px rgba(255, 107, 157, 0.15);
+  --shadow-hover: 0 6px 20px rgba(255, 107, 157, 0.25);
+  
+  // 小組件樣式
+  .widget {
+    border-radius: var(--radius-card);
+    background: var(--theme-surface);
+    box-shadow: var(--shadow-cute);
+    border: 2px solid rgba(255, 107, 157, 0.2);
+    
+    &:hover {
+      box-shadow: var(--shadow-hover);
+      transform: translateY(-2px);
+    }
+  }
+  
+  // 按鈕樣式
+  .btn {
+    border-radius: var(--radius-button);
+    background: linear-gradient(135deg, var(--theme-primary) 0%, var(--theme-accent) 100%);
+    box-shadow: 0 2px 8px rgba(255, 107, 157, 0.3);
+    
+    &:active {
+      transform: scale(0.95);
+    }
+  }
+  
+  // 卡片樣式
+  .card {
+    border-radius: var(--radius-card);
+    background: var(--theme-surface);
+    box-shadow: var(--shadow-cute);
+    
+    &::before {
+      content: '';
+      position: absolute;
+      top: -2px;
+      left: -2px;
+      right: -2px;
+      bottom: -2px;
+      border-radius: inherit;
+      background: linear-gradient(135deg, var(--theme-primary), var(--theme-secondary));
+      z-index: -1;
+      opacity: 0;
+      transition: opacity var(--transition-normal);
+    }
+    
+    &:hover::before {
+      opacity: 0.1;
+    }
+  }
+  
+  // 聊天氣泡
+  .bubble-user {
+    border-radius: 20px 20px 4px 20px;
+    background: var(--bubble-user-bg);
+  }
+  
+  .bubble-char {
+    border-radius: 20px 20px 20px 4px;
+    background: var(--bubble-char-bg);
+  }
+  
+  // 可愛動畫
+  @keyframes cute-bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+  }
+  
+  @keyframes cute-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+  }
+  
+  .animate-bounce {
+    animation: cute-bounce 1s ease-in-out infinite;
+  }
+  
+  .animate-pulse {
+    animation: cute-pulse 2s ease-in-out infinite;
+  }
+}

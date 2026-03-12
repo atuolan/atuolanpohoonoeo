@@ -1,0 +1,618 @@
+// 設定頁面共用樣式
+// 由 SettingsScreen 和 AuxiliaryApiPanel 共同使用
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setting-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text, #333);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.setting-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.setting-hint {
+  font-size: 12px;
+  color: var(--color-text-muted, #999);
+  margin: 0;
+
+  &.success {
+    color: #5fbc8a;
+  }
+
+  &.error {
+    color: #e53e3e;
+  }
+}
+
+.value-badge {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary, #7dd3a8);
+  background: var(--color-primary-light, #c7fcbb);
+  padding: 2px 10px;
+  border-radius: 20px;
+}
+
+// ===== 輸入控件 =====
+
+.soft-select {
+  width: 100%;
+  padding: 12px 16px;
+  padding-right: 40px;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 12px;
+  font-size: 14px;
+  color: var(--color-text, #333);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='%23666'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  transition: all 0.2s;
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-primary, #7dd3a8);
+    box-shadow: 0 0 0 3px rgba(125, 211, 168, 0.2);
+  }
+
+  &:hover {
+    border-color: var(--color-primary, #7dd3a8);
+  }
+}
+
+.soft-slider {
+  width: 100%;
+  height: 8px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--color-border, #e2e8f0);
+  border-radius: 4px;
+  outline: none;
+
+  &::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    background: linear-gradient(135deg, #a8e6cf, #7dd3a8);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(125, 211, 168, 0.4);
+  }
+
+  &::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    background: linear-gradient(135deg, #a8e6cf, #7dd3a8);
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+  }
+}
+
+.api-key-field.masked {
+  -webkit-text-security: disc;
+}
+
+.api-key-input {
+  display: flex;
+  gap: 8px;
+
+  .soft-input {
+    flex: 1;
+  }
+
+  .toggle-visibility {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-surface, #fff);
+    border: 1px solid var(--color-border, #e2e8f0);
+    border-radius: 12px;
+    cursor: pointer;
+
+    svg {
+      width: 22px;
+      height: 22px;
+      color: var(--color-text-secondary, #666);
+    }
+
+    &:hover {
+      background: var(--color-primary-light, #c7fcbb);
+      border-color: var(--color-primary, #7dd3a8);
+
+      svg {
+        color: var(--color-primary, #7dd3a8);
+      }
+    }
+  }
+}
+
+// ===== 開關 =====
+
+.toggle-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 12px;
+  cursor: pointer;
+
+  &.highlight {
+    background: linear-gradient(135deg, rgba(168, 230, 207, 0.2), rgba(125, 211, 168, 0.1));
+    border: 1px solid var(--color-primary, #7dd3a8);
+  }
+}
+
+.toggle-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toggle-label {
+  font-size: 15px;
+  color: var(--color-text, #333);
+}
+
+.toggle-desc {
+  font-size: 12px;
+  color: var(--color-text-muted, #999);
+}
+
+.toggle-input {
+  display: none;
+
+  &:checked + .toggle-switch {
+    background: linear-gradient(135deg, #a8e6cf, #7dd3a8);
+
+    &::after {
+      transform: translateX(20px);
+    }
+  }
+}
+
+// 僅作為 .toggle-input 的兄弟元素時生效（避免與 PromptManagerScreen 的 label.toggle-switch 衝突）
+.toggle-input + .toggle-switch {
+  width: 48px;
+  height: 28px;
+  background: var(--color-text-muted, #ccc);
+  border-radius: 14px;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+
+  &::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    transition: transform 0.2s;
+  }
+}
+
+// ===== 按鈕 =====
+
+.fetch-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #666);
+  cursor: pointer;
+  transition: all 0.2s;
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  &:hover:not(:disabled) {
+    border-color: var(--color-primary, #7dd3a8);
+    color: var(--color-primary, #7dd3a8);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  &.small {
+    padding: 4px 8px;
+    font-size: 11px;
+
+    svg { width: 12px; height: 12px; }
+    .spinner.small { width: 10px; height: 10px; border-width: 1.5px; }
+  }
+}
+
+.test-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, #a8e6cf, #7dd3a8);
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 500;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  svg { width: 20px; height: 20px; }
+
+  &:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(125, 211, 168, 0.4);
+  }
+
+  &:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+
+  .spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+}
+
+.reset-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 12px;
+  font-size: 14px;
+  color: var(--color-text-secondary, #666);
+  cursor: pointer;
+  transition: all 0.2s;
+
+  svg { width: 18px; height: 18px; }
+
+  &:hover {
+    border-color: var(--color-primary, #7dd3a8);
+    color: var(--color-primary, #7dd3a8);
+  }
+}
+
+.connection-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 14px;
+
+  svg { width: 20px; height: 20px; flex-shrink: 0; }
+
+  &.success {
+    background: rgba(125, 211, 168, 0.15);
+    color: #5fbc8a;
+  }
+
+  &.error {
+    background: rgba(252, 129, 129, 0.15);
+    color: #e53e3e;
+  }
+}
+
+// ===== 配置文件 =====
+
+.profiles-section {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.profiles-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.profiles-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text, #333);
+}
+
+.add-profile-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #a8e6cf, #7dd3a8);
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  svg { width: 16px; height: 16px; }
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(125, 211, 168, 0.4);
+  }
+}
+
+.profiles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--color-background, #f5f5f5);
+  border: 2px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  position: relative;
+
+  &:hover {
+    background: linear-gradient(135deg, rgba(168, 230, 207, 0.15), rgba(125, 211, 168, 0.08));
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(125, 211, 168, 0.15);
+  }
+
+  &.active {
+    border-color: var(--color-primary, #7dd3a8);
+    background: linear-gradient(135deg, rgba(168, 230, 207, 0.25), rgba(125, 211, 168, 0.12));
+    box-shadow: 0 2px 10px rgba(125, 211, 168, 0.2);
+  }
+}
+
+.profile-active-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #a8e6cf, #7dd3a8);
+  flex-shrink: 0;
+  box-shadow: 0 0 6px rgba(125, 211, 168, 0.5);
+}
+
+.profile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text, #333);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.profile-model-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  color: var(--color-primary, #5fbc8a);
+  background: rgba(125, 211, 168, 0.15);
+  padding: 2px 8px;
+  border-radius: 6px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-model {
+  font-size: 12px;
+  color: var(--color-text-muted, #999);
+}
+
+.profile-action-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface, rgba(255, 255, 255, 0.6));
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  svg { width: 15px; height: 15px; color: var(--color-text-muted, #aaa); }
+
+  &:hover {
+    background: var(--color-surface, #fff);
+    border-color: var(--color-primary, #7dd3a8);
+    svg { color: var(--color-primary, #7dd3a8); }
+  }
+
+  &.delete:hover {
+    border-color: #f44336;
+    svg { color: #e53e3e; }
+  }
+}
+
+.profiles-empty {
+  text-align: center;
+  padding: 20px;
+  color: var(--color-text-muted, #999);
+  font-size: 13px;
+}
+
+.section-divider {
+  height: 1px;
+  background: var(--color-border, #e2e8f0);
+  margin: 16px 0;
+}
+
+// ===== 備用 API 提示 =====
+
+.auxiliary-disabled-hint {
+  text-align: center;
+  padding: 30px 20px;
+  color: var(--color-text-muted, #999);
+
+  svg { width: 40px; height: 40px; margin-bottom: 12px; color: var(--color-primary, #7dd3a8); }
+  p { font-size: 13px; margin: 6px 0; }
+}
+
+// ===== 彈窗 =====
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100dvh;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 20px;
+}
+
+.profile-modal {
+  background: white;
+  border-radius: 20px;
+  padding: 24px;
+  width: 100%;
+  max-width: 340px;
+
+  h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--color-text, #333);
+    margin: 0 0 16px;
+    text-align: center;
+  }
+
+  .soft-input { margin-bottom: 16px; }
+
+  &.confirm-modal {
+    text-align: center;
+
+    .confirm-icon {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #a8e6cf, #7dd3a8);
+      border-radius: 50%;
+      svg { width: 28px; height: 28px; color: white; }
+    }
+
+    .confirm-desc {
+      font-size: 14px;
+      color: var(--color-text-secondary, #666);
+      margin: 0 0 16px;
+      line-height: 1.6;
+    }
+
+    .modal-btn.confirm {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      svg { width: 16px; height: 16px; }
+    }
+  }
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.modal-btn {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &.cancel {
+    background: var(--color-background, #f5f5f5);
+    color: var(--color-text-secondary, #666);
+    &:hover { background: #e2e8f0; }
+  }
+
+  &.confirm {
+    background: linear-gradient(135deg, #a8e6cf, #7dd3a8);
+    color: white;
+    &:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(125, 211, 168, 0.4);
+    }
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

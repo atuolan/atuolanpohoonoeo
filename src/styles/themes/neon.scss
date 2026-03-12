@@ -1,0 +1,177 @@
+// ============================================================
+// 霓虹風主題 (Neon Theme)
+// 暗色背景、發光效果、科技感
+// ============================================================
+
+[data-theme="neon"] {
+  // 發光顏色
+  --neon-cyan: #00f5ff;
+  --neon-magenta: #ff00ff;
+  --neon-yellow: #ffff00;
+  --neon-green: #00ff88;
+
+  // 發光強度
+  --glow-intensity: 0.8;
+
+  // 邊框發光
+  --border-glow:
+    0 0 5px var(--theme-primary), 0 0 10px var(--theme-primary),
+    0 0 15px var(--theme-primary);
+
+  // 文字發光
+  --text-glow: 0 0 10px currentColor;
+
+  // 小組件樣式
+  .widget {
+    background: rgba(20, 20, 40, 0.8);
+    border: 1px solid var(--theme-primary);
+    box-shadow: var(--border-glow);
+    backdrop-filter: blur(10px);
+
+    &:hover {
+      border-color: var(--theme-secondary);
+      box-shadow:
+        0 0 10px var(--theme-secondary),
+        0 0 20px var(--theme-secondary),
+        0 0 30px var(--theme-secondary);
+    }
+  }
+
+  // 按鈕樣式
+  .btn {
+    background: transparent;
+    border: 2px solid var(--theme-primary);
+    color: var(--theme-primary);
+    text-shadow: var(--text-glow);
+    box-shadow:
+      var(--border-glow),
+      inset 0 0 20px rgba(0, 245, 255, 0.1);
+
+    &:hover {
+      background: rgba(0, 245, 255, 0.1);
+      box-shadow:
+        0 0 20px var(--theme-primary),
+        0 0 40px var(--theme-primary),
+        inset 0 0 30px rgba(0, 245, 255, 0.2);
+    }
+
+    &:active {
+      background: rgba(0, 245, 255, 0.2);
+    }
+  }
+
+  // 卡片樣式
+  .card {
+    background: rgba(20, 20, 40, 0.9);
+    border: 1px solid rgba(0, 245, 255, 0.3);
+    box-shadow: 0 0 20px rgba(0, 245, 255, 0.1);
+
+    &::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(
+        135deg,
+        rgba(0, 245, 255, 0.05) 0%,
+        transparent 50%,
+        rgba(255, 0, 255, 0.05) 100%
+      );
+      pointer-events: none;
+    }
+  }
+
+  // 聊天氣泡
+  .bubble-user {
+    background: rgba(0, 245, 255, 0.15);
+    border: 1px solid rgba(0, 245, 255, 0.3);
+    box-shadow: 0 0 10px rgba(0, 245, 255, 0.2);
+  }
+
+  .bubble-char {
+    background: rgba(255, 0, 255, 0.15);
+    border: 1px solid rgba(255, 0, 255, 0.3);
+    box-shadow: 0 0 10px rgba(255, 0, 255, 0.2);
+  }
+
+  // 文字發光
+  .text-glow {
+    text-shadow: var(--text-glow);
+  }
+
+  .text-glow-strong {
+    text-shadow:
+      0 0 10px currentColor,
+      0 0 20px currentColor,
+      0 0 30px currentColor;
+  }
+
+  // 霓虹動畫
+  @keyframes neon-flicker {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.8;
+    }
+    52% {
+      opacity: 1;
+    }
+    54% {
+      opacity: 0.9;
+    }
+  }
+
+  @keyframes neon-pulse {
+    0%,
+    100% {
+      box-shadow: var(--border-glow);
+    }
+    50% {
+      box-shadow:
+        0 0 10px var(--theme-primary),
+        0 0 20px var(--theme-primary),
+        0 0 40px var(--theme-primary),
+        0 0 60px var(--theme-primary);
+    }
+  }
+
+  @keyframes scan-line {
+    0% {
+      transform: translateY(-100%);
+    }
+    100% {
+      transform: translateY(100vh);
+    }
+  }
+
+  .animate-flicker {
+    animation: neon-flicker 3s ease-in-out infinite;
+  }
+
+  .animate-neon-pulse {
+    animation: neon-pulse 2s ease-in-out infinite;
+  }
+
+  // 掃描線效果
+  .scan-lines::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.1) 2px,
+      rgba(0, 0, 0, 0.1) 4px
+    );
+    pointer-events: none;
+    z-index: 100;
+  }
+}

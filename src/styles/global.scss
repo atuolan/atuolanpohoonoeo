@@ -1,0 +1,190 @@
+// ===== CSS Reset =====
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+// ===== iOS Safari 全屏佈局 =====
+// iOS PWA standalone 下 viewport 只有 797px（不含狀態欄），但螢幕是 844px
+// position: fixed 元素會被 iOS 裁切到 viewport 高度，無法突破
+// 解法：用 document flow，html/body/#app 都用 JS 設定的 screen.height
+html,
+body {
+  width: 100%;
+  height: var(--app-height, 100%);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: auto;
+}
+
+body {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  background: var(--color-background, #fff8f5);
+  color: var(--color-text, #4a4a6a);
+}
+
+// #app 容器：高度由 JS 設定為 screen.height（PWA）或 innerHeight（瀏覽器）
+// position: fixed 確保不受 body scroll 影響（iOS PWA 防彈跳）
+// transform: translateZ(0) 讓子元素的 position: fixed 相對於 #app 定位
+#app {
+  width: 100%;
+  height: var(--app-height, 100vh);
+  position: fixed;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  transform: translateZ(0);
+}
+
+// 支援 iOS 安全區域
+html {
+  --safe-top: 0px;
+  --safe-bottom: 0px;
+  --safe-left: 0px;
+  --safe-right: 0px;
+}
+
+@supports (padding: env(safe-area-inset-top)) {
+  html {
+    --safe-top: env(safe-area-inset-top, 0px);
+    // 底部不留安全區域空白 — home indicator 直接疊在內容上
+    --safe-bottom: 0px;
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+  }
+}
+
+button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+// ===== CSS 變數 =====
+:root {
+  --grid-size: 16px;
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s ease;
+  --transition-slow: 0.4s ease;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.15);
+
+  --neon-cyan: #00f2ff;
+  --neon-magenta: #ff00ff;
+  --neon-violet: #7000ff;
+
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: 0px;
+}
+
+// ===== 滾動條隱藏 =====
+::-webkit-scrollbar {
+  display: none;
+}
+
+// ===== 全屏頁面容器（自動適配安全區域）=====
+.fullscreen-page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-background, #fff);
+  // 頂部安全區域已由 .app-container 統一處理
+  padding-bottom: var(--safe-bottom, 0px);
+  padding-left: var(--safe-left, 0px);
+  padding-right: var(--safe-right, 0px);
+  overflow: hidden;
+}
+
+// ===== 動畫 =====
+@keyframes shake {
+  0%,
+  100% {
+    transform: rotate(-1deg);
+  }
+  50% {
+    transform: rotate(1deg);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+// ===== Modal Overlay 全局修復 =====
+.modal-overlay,
+.soft-modal-overlay,
+.edit-modal-overlay,
+.description-modal-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: var(--app-height, 100vh) !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+
+  > .modal-content,
+  > .modal-container,
+  > .modal,
+  > [class*="-modal"],
+  > [class*="-selector"] {
+    max-height: calc(var(--app-height, 100vh) - 40px) !important;
+    overflow-y: auto;
+  }
+}
+
+// ===== 導入主題 =====
+@import "./themes/soft.scss";
+@import "./themes/glass.scss";
+@import "./themes/neon.scss";

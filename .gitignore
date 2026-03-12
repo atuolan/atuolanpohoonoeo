@@ -1,0 +1,79 @@
+# 依賴
+node_modules/
+
+# 構建產物
+dist/
+dist.tar.gz
+
+# 環境與編輯器
+.vscode/
+.golutra/
+*.code-workspace
+
+# 系統文件
+.DS_Store
+Thumbs.db
+
+# 備份與臨時文件
+備份/
+
+# 日誌與除錯
+*.log
+ts_error.txt
+
+# 敏感配置（nginx、服務器相關）
+nginx-203aguaphone.conf
+api-203aguaphone.conf
+cloudreve.conf
+203aguaphone.aguacloud.uk
+server.aguaphone.js
+deploy.sh
+deploy.ps1
+deploy-windows.bat
+啟動驗證系統.bat
+
+# 設計文檔與筆記（不需要上傳的雜項）
+*.md
+!README.md
+ai所輸出的.txt
+面對面模式提示詞.txt
+ejs.txt
+temp_chat_defs.txt
+
+# 獨立 HTML 工具頁面
+AI手机模拟器.html
+auth-test.html
+avatar-frame-editor.html
+avatar-template-download.html
+bee-frame-preview.html
+debug-peek-phone.html
+EPhone（兔k机版）.html
+minimax语音接口.html
+qwqwe.html
+see-sea-preview.html
+settings_concepts.html
+svg-editor-preview.html
+test-font-size.html
+清除驗證.html
+返回.html
+轉帳ui.html
+酒館index.html
+章鱼喷墨机.html
+
+# 雜項數據文件
+*.jsonl
+personas_*.json
+姊姊大人*.json
+精虫饲养.json
+簡約銀框.json
+regex-*.json
+*.svg
+icon-source.png
+3
+
+# 獨立腳本
+fix-duplicate-characters.js
+generate-icons.js
+novelai.js
+update-online-prompts.cjs
+Untitled-1.xml

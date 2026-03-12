@@ -1,0 +1,188 @@
+// ============================================================
+// 玻璃態主題 (Glass/Glassmorphism Theme)
+// 毛玻璃效果、透明感、現代簡約
+// ============================================================
+
+[data-theme="glass"] {
+  // 玻璃效果變數
+  --glass-bg: rgba(255, 255, 255, 0.25);
+  --glass-bg-dark: rgba(255, 255, 255, 0.15);
+  --glass-blur: blur(20px);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.3);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  
+  // 彩色玻璃
+  --glass-primary: rgba(99, 102, 241, 0.2);
+  --glass-secondary: rgba(168, 85, 247, 0.2);
+  
+  // 小組件樣式
+  .widget {
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    
+    &:hover {
+      background: rgba(255, 255, 255, 0.35);
+      border-color: rgba(255, 255, 255, 0.4);
+    }
+  }
+  
+  // 按鈕樣式
+  .btn {
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: var(--glass-border);
+    
+    &:hover {
+      background: var(--glass-primary);
+      border-color: var(--theme-primary);
+    }
+    
+    &:active {
+      background: rgba(99, 102, 241, 0.3);
+    }
+    
+    &.btn-primary {
+      background: var(--glass-primary);
+      border-color: var(--theme-primary);
+      
+      &:hover {
+        background: rgba(99, 102, 241, 0.35);
+      }
+    }
+  }
+  
+  // 卡片樣式
+  .card {
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    
+    // 頂部光澤
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.5),
+        transparent
+      );
+    }
+  }
+  
+  // 聊天氣泡
+  .bubble-user {
+    background: var(--glass-primary);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+  }
+  
+  .bubble-char {
+    background: var(--glass-bg);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: var(--glass-border);
+  }
+  
+  // 輸入框
+  .input {
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    
+    &:focus {
+      border-color: var(--theme-primary);
+      background: rgba(255, 255, 255, 0.3);
+    }
+  }
+  
+  // 導航欄
+  .navbar {
+    background: var(--glass-bg-dark);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border-bottom: var(--glass-border);
+  }
+  
+  // 浮動元素
+  .floating {
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: var(--glass-border);
+    box-shadow: var(--glass-shadow);
+  }
+  
+  // 玻璃動畫
+  @keyframes glass-shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+  
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.2) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: glass-shimmer 2s ease-in-out infinite;
+  }
+  
+  // 背景模糊層
+  .glass-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--wallpaper-value);
+    background-size: var(--wallpaper-fit, cover);
+    background-position: center;
+    background-repeat: var(--wallpaper-repeat, no-repeat);
+    filter: blur(var(--wallpaper-blur));
+    opacity: var(--wallpaper-opacity);
+    z-index: -1;
+  }
+}
+
+// ============================================================
+// 響應式支援（不支援 backdrop-filter 的瀏覽器）
+// ============================================================
+
+@supports not (backdrop-filter: blur(20px)) {
+  [data-theme="glass"] {
+    .widget,
+    .card,
+    .btn,
+    .navbar,
+    .floating {
+      background: rgba(255, 255, 255, 0.85);
+    }
+    
+    .bubble-user {
+      background: rgba(99, 102, 241, 0.85);
+    }
+    
+    .bubble-char {
+      background: rgba(255, 255, 255, 0.9);
+    }
+  }
+}
