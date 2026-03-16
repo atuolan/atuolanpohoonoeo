@@ -56,6 +56,8 @@ export interface CloudPushSyncPayload {
   schedule: CloudPushSchedule;
   pushChannels: ("discord" | "webpush")[];
   discordUserId: string;
+  /** 本地頁面存活時間戳（ms）。Worker 收到後若距現在 < 間隔時間，代表本地還活著，跳過雲端生成 */
+  lastClientAliveAt?: number;
   pushSubscription?: PushSubscriptionJSON | null;
 }
 

@@ -1,13 +1,13 @@
-﻿/**
+/**
  * PushAlarmDO — Durable Object
  * 每個用戶一個實例，負責定時呼叫 AI、暫存訊息、推送通知
  */
 
-import { sendDM } from './discord.js';
-import { buildPushPayload } from '@block65/webcrypto-web-push';
+import { sendDM } from "./discord.js";
+import { buildPushPayload } from "@block65/webcrypto-web-push";
 
 // Re-export VAPID public key so the main worker can serve it to clients
-export const VAPID_PUBLIC_KEY_HEADER = 'X-Vapid-Public-Key';
+export const VAPID_PUBLIC_KEY_HEADER = "X-Vapid-Public-Key";
 
 export class PushAlarmDO {
   constructor(state, env) {
@@ -21,22 +21,24 @@ export class PushAlarmDO {
 
     try {
       switch (path) {
-        case '/sync':
+        case "/sync":
           return this.handleSync(request);
-        case '/status':
+        case "/status":
           return this.handleStatus();
-        case '/messages':
+        case "/messages":
           return this.handleMessages();
-        case '/ack':
+        case "/ack":
           return this.handleAck();
-        case '/disable':
+        case "/disable":
           return this.handleDisable();
-        case '/test':
+        case "/test":
           return this.handleTest();
-        case '/subscribe':
+        case "/subscribe":
           return this.handleSubscribe(request);
+        case "/alive":
+          return this.handleAlive(request);
         default:
-          return json({ error: 'Not Found' }, 404);
+          return json({ error: "Not Found" }, 404);
       }
     } catch (e) {
       console.error(`[PushAlarmDO] ${path} error:`, e);
@@ -50,10 +52,10 @@ export class PushAlarmDO {
     const payload = await request.json();
 
     // 儲存設定
-    await this.state.storage.put('config', payload);
-    await this.state.storage.put('enabled', true);
-    await this.state.storage.put('errorCount', 0);
-    await this.state.storage.put('lastCharacterIndex', -1);
+    await this.state.storage.put("config", payload);
+    await this.state.storage.put("enabled", true);
+    await this.state.storage.put("errorCount", 0);
+    await this.state.storage.put("lastCharacterIndex", -1);
 
     // 設定下次 alarm
     const nextMs = this.calculateNextAlarm(payload.schedule);
@@ -71,10 +73,10 @@ export class PushAlarmDO {
   async handleStatus() {
     const [enabled, config, pendingMessages, lastTriggeredAt] =
       await Promise.all([
-        this.state.storage.get('enabled'),
-        this.state.storage.get('config'),
-        this.state.storage.get('pendingMessages'),
-        this.state.storage.get('lastTriggeredAt'),
+        this.state.storage.get("enabled"),
+        this.state.storage.get("config"),
+        this.state.storage.get("pendingMessages"),
+        this.state.storage.get("lastTriggeredAt"),
       ]);
 
     const alarm = await this.state.storage.getAlarm();
@@ -93,21 +95,21 @@ export class PushAlarmDO {
   // ─── GET /messages ───────────────────────────────────────────
 
   async handleMessages() {
-    const messages = (await this.state.storage.get('pendingMessages')) || [];
+    const messages = (await this.state.storage.get("pendingMessages")) || [];
     return json({ messages });
   }
 
   // ─── POST /ack ───────────────────────────────────────────────
 
   async handleAck() {
-    await this.state.storage.put('pendingMessages', []);
+    await this.state.storage.put("pendingMessages", []);
     return json({ ok: true });
   }
 
   // ─── POST /disable ───────────────────────────────────────────
 
   async handleDisable() {
-    await this.state.storage.put('enabled', false);
+    await this.state.storage.put("enabled", false);
     await this.state.storage.deleteAlarm();
     return json({ ok: true });
   }
@@ -115,15 +117,15 @@ export class PushAlarmDO {
   // ─── POST /test ──────────────────────────────────────────────
 
   async handleTest() {
-    const config = await this.state.storage.get('config');
+    const config = await this.state.storage.get("config");
     if (!config) {
-      return json({ error: '尚未同步設定' }, 400);
+      return json({ error: "尚未同步設定" }, 400);
     }
 
     // 選一個角色
     const character = config.characters[0];
     if (!character) {
-      return json({ error: '沒有角色資料' }, 400);
+      return json({ error: "沒有角色資料" }, 400);
     }
 
     // 呼叫 AI
@@ -138,42 +140,73 @@ export class PushAlarmDO {
     return json({ ok: true, content, characterName: character.name });
   }
 
+  // ─── POST /alive — 本地存活心跳 ─────────────────────────────
+
+  async handleAlive(request) {
+    const body = await request.json().catch(() => ({}));
+    const ts = body.lastClientAliveAt || Date.now();
+    await this.state.storage.put("lastClientAliveAt", ts);
+    return json({ ok: true });
+  }
+
   // ─── POST /subscribe — Web Push 訂閱註冊 ────────────────────
 
   async handleSubscribe(request) {
     const { subscription } = await request.json();
 
     // 基本驗證
-    if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
-      return json({ error: '無效的 Push Subscription：缺少 endpoint 或 keys' }, 400);
+    if (
+      !subscription?.endpoint ||
+      !subscription?.keys?.p256dh ||
+      !subscription?.keys?.auth
+    ) {
+      return json(
+        { error: "無效的 Push Subscription：缺少 endpoint 或 keys" },
+        400,
+      );
     }
 
-    await this.state.storage.put('pushSubscription', subscription);
+    await this.state.storage.put("pushSubscription", subscription);
     return json({ ok: true });
   }
 
   // ─── Alarm handler ──────────────────────────────────────────
 
   async alarm() {
-    const enabled = await this.state.storage.get('enabled');
+    const enabled = await this.state.storage.get("enabled");
     if (!enabled) return;
 
-    const config = await this.state.storage.get('config');
+    const config = await this.state.storage.get("config");
     if (!config) return;
 
     // 檢查 DND
     if (this.isInDND(config.schedule)) {
       const dndEnd = this.getDNDEndMs(config.schedule);
       await this.state.storage.setAlarm(dndEnd);
-      console.log(`[PushAlarmDO] 在免打擾時段，下次 alarm: ${new Date(dndEnd).toISOString()}`);
+      console.log(
+        `[PushAlarmDO] 在免打擾時段，下次 alarm: ${new Date(dndEnd).toISOString()}`,
+      );
       return;
     }
 
+
+    // 檢查本地是否仍存活（後台模式）：若距上次心跳 < 間隔時間，代表本地還在跑，跳過雲端生成
+    const lastClientAliveAt = await this.state.storage.get('lastClientAliveAt');
+    if (lastClientAliveAt) {
+      const intervalMs = (config.schedule.intervalMinutes || 60) * 60 * 1000;
+      const elapsed = Date.now() - lastClientAliveAt;
+      if (elapsed < intervalMs) {
+        console.log(`[PushAlarmDO] 本地仍存活（${Math.round(elapsed / 1000)}s 前心跳），跳過雲端生成`);
+        const nextMs = this.calculateNextAlarm(config.schedule);
+        await this.state.storage.setAlarm(nextMs);
+        return;
+      }
+    }
     // 選擇角色（round-robin）
-    let lastIdx = (await this.state.storage.get('lastCharacterIndex')) ?? -1;
+    let lastIdx = (await this.state.storage.get("lastCharacterIndex")) ?? -1;
     const nextIdx = (lastIdx + 1) % config.characters.length;
     const character = config.characters[nextIdx];
-    await this.state.storage.put('lastCharacterIndex', nextIdx);
+    await this.state.storage.put("lastCharacterIndex", nextIdx);
 
     try {
       // 呼叫 AI
@@ -186,18 +219,19 @@ export class PushAlarmDO {
       await this.pushNotifications(config, character, content);
 
       // 成功，重置錯誤計數
-      await this.state.storage.put('errorCount', 0);
-      await this.state.storage.put('lastTriggeredAt', Date.now());
+      await this.state.storage.put("errorCount", 0);
+      await this.state.storage.put("lastTriggeredAt", Date.now());
 
       console.log(`[PushAlarmDO] 成功推送 ${character.name} 的訊息`);
     } catch (e) {
       console.error(`[PushAlarmDO] alarm 錯誤:`, e);
-      const errorCount = ((await this.state.storage.get('errorCount')) || 0) + 1;
-      await this.state.storage.put('errorCount', errorCount);
+      const errorCount =
+        ((await this.state.storage.get("errorCount")) || 0) + 1;
+      await this.state.storage.put("errorCount", errorCount);
 
       if (errorCount >= 10) {
         // 自動停用
-        await this.state.storage.put('enabled', false);
+        await this.state.storage.put("enabled", false);
         console.error(`[PushAlarmDO] 連續 ${errorCount} 次錯誤，已自動停用`);
         return;
       }
@@ -205,7 +239,9 @@ export class PushAlarmDO {
       // 退避排程
       const backoffMs = this.getBackoffMs(errorCount);
       await this.state.storage.setAlarm(Date.now() + backoffMs);
-      console.warn(`[PushAlarmDO] 錯誤 #${errorCount}，${backoffMs / 1000}s 後重試`);
+      console.warn(
+        `[PushAlarmDO] 錯誤 #${errorCount}，${backoffMs / 1000}s 後重試`,
+      );
       return;
     }
 
@@ -230,8 +266,10 @@ export class PushAlarmDO {
     if (character.recentSummaries?.length) {
       parts.push(
         "<summaries>\n" +
-        character.recentSummaries.map((s, i) => `[總結 ${i + 1}] ${s}`).join("\n") +
-        "\n</summaries>"
+          character.recentSummaries
+            .map((s, i) => `[總結 ${i + 1}] ${s}`)
+            .join("\n") +
+          "\n</summaries>",
       );
     }
 
@@ -243,33 +281,33 @@ export class PushAlarmDO {
     // 線上聊天規則
     parts.push(
       `<online_chat_rules>\n` +
-      `${userName}：線上模式有什麼特別的規則嗎？\n` +
-      `基拉祈：有的！這是手機聊天，所以：\n` +
-      `基拉祈：不能用 *動作* 描寫——你們看不見彼此，只能透過文字感受情緒。\n` +
-      `基拉祈：主動推動對話，不要原地打轉。\n` +
-      `基拉祈：好了，${userName}，我們準備好了！在開始之前，讓我們做個承諾。\n` +
-      `雪拉比：我們會完整走完流程，不跳步。\n` +
-      `基拉祈：我們會讓你和 ${character.name} 平等閃耀，真實互動。角色卡裡的特殊描寫要求，我們會當作核心來實現。\n` +
-      `【規則】\n` +
-      `- 表情包格式：\`[sticker:表情包名称]\` 例如：\`[sticker:开心]\`\n` +
-      `- 訊息格式：<msg></msg> 包裹\n` +
-      `- 第一條訊息必須包含 ˇ想法ˇ\n` +
-      `- 直接接續下文，不要重複 ${userName} 說過的話\n` +
-      `【訊息數量】\n` +
-      `- 簡單回應：1-2 條訊息\n` +
-      `- 普通對話：2-4 條訊息\n` +
-      `- 複雜情境：4-8 條訊息\n` +
-      `- 可以用表情符號、語氣詞、省略號...這些都是線上聊天的特色。\n` +
-      `</online_chat_rules>`
+        `${userName}：線上模式有什麼特別的規則嗎？\n` +
+        `基拉祈：有的！這是手機聊天，所以：\n` +
+        `基拉祈：不能用 *動作* 描寫——你們看不見彼此，只能透過文字感受情緒。\n` +
+        `基拉祈：主動推動對話，不要原地打轉。\n` +
+        `基拉祈：好了，${userName}，我們準備好了！在開始之前，讓我們做個承諾。\n` +
+        `雪拉比：我們會完整走完流程，不跳步。\n` +
+        `基拉祈：我們會讓你和 ${character.name} 平等閃耀，真實互動。角色卡裡的特殊描寫要求，我們會當作核心來實現。\n` +
+        `【規則】\n` +
+        `- 表情包格式：\`[sticker:表情包名称]\` 例如：\`[sticker:开心]\`\n` +
+        `- 訊息格式：<msg></msg> 包裹\n` +
+        `- 第一條訊息必須包含 ˇ想法ˇ\n` +
+        `- 直接接續下文，不要重複 ${userName} 說過的話\n` +
+        `【訊息數量】\n` +
+        `- 簡單回應：1-2 條訊息\n` +
+        `- 普通對話：2-4 條訊息\n` +
+        `- 複雜情境：4-8 條訊息\n` +
+        `- 可以用表情符號、語氣詞、省略號...這些都是線上聊天的特色。\n` +
+        `</online_chat_rules>`,
     );
 
     parts.push(
       `<sticker_list>\n` +
-      `${userName}：有哪些表情包可以用？\n\n` +
-      `可用表情包名稱：\n${stickerList}\n\n` +
-      `雪拉比：記住，只能用這個列表裡的表情包名稱哦！\n` +
-      `基拉祈：而且要根據 ${character.name} 的性格來決定用不用、用多少～\n` +
-      `</sticker_list>`
+        `${userName}：有哪些表情包可以用？\n\n` +
+        `可用表情包名稱：\n${stickerList}\n\n` +
+        `雪拉比：記住，只能用這個列表裡的表情包名稱哦！\n` +
+        `基拉祈：而且要根據 ${character.name} 的性格來決定用不用、用多少～\n` +
+        `</sticker_list>`,
     );
 
     const systemContent = parts.join("\n\n");
@@ -320,7 +358,7 @@ export class PushAlarmDO {
   // ─── 訊息暫存 ────────────────────────────────────────────────
 
   async appendMessage(character, content) {
-    const messages = (await this.state.storage.get('pendingMessages')) || [];
+    const messages = (await this.state.storage.get("pendingMessages")) || [];
 
     messages.push({
       id: crypto.randomUUID(),
@@ -335,7 +373,7 @@ export class PushAlarmDO {
       messages.shift();
     }
 
-    await this.state.storage.put('pendingMessages', messages);
+    await this.state.storage.put("pendingMessages", messages);
   }
 
   // ─── 推送通知 ────────────────────────────────────────────────
@@ -344,32 +382,32 @@ export class PushAlarmDO {
     const channels = config.pushChannels || [];
 
     // Discord DM
-    if (channels.includes('discord') && config.discordUserId) {
+    if (channels.includes("discord") && config.discordUserId) {
       try {
         const botToken = this.env.DISCORD_BOT_TOKEN;
         if (botToken) {
           await sendDM(botToken, config.discordUserId, character.name, content);
         } else {
-          console.warn('[PushAlarmDO] DISCORD_BOT_TOKEN 未設定');
+          console.warn("[PushAlarmDO] DISCORD_BOT_TOKEN 未設定");
         }
       } catch (e) {
-        console.error('[PushAlarmDO] Discord DM 失敗:', e);
+        console.error("[PushAlarmDO] Discord DM 失敗:", e);
         // 不中斷流程
       }
     }
 
     // Web Push
-    if (channels.includes('webpush')) {
-      const subscription = await this.state.storage.get('pushSubscription');
+    if (channels.includes("webpush")) {
+      const subscription = await this.state.storage.get("pushSubscription");
       if (subscription) {
         try {
           await this.sendWebPush(subscription, character, content);
         } catch (e) {
-          console.error('[PushAlarmDO] Web Push 失敗:', e);
+          console.error("[PushAlarmDO] Web Push 失敗:", e);
           // 410 Gone = 訂閱已失效，清除
           if (e.statusCode === 410 || e.statusCode === 404) {
-            await this.state.storage.delete('pushSubscription');
-            console.warn('[PushAlarmDO] Push subscription 已失效，已清除');
+            await this.state.storage.delete("pushSubscription");
+            console.warn("[PushAlarmDO] Push subscription 已失效，已清除");
           }
         }
       }
@@ -380,7 +418,7 @@ export class PushAlarmDO {
 
   async sendWebPush(subscription, character, content) {
     const payload = JSON.stringify({
-      type: 'cloud-push-message',
+      type: "cloud-push-message",
       characterId: character.id,
       characterName: character.name,
       content: content.slice(0, 200),
@@ -398,25 +436,27 @@ export class PushAlarmDO {
       },
       {
         data: payload,
-        urgency: 'normal',
+        urgency: "normal",
         ttl: 86400, // 24 小時
       },
       {
-        subject: this.env.VAPID_SUBJECT || 'mailto:push@aguaphone.app',
+        subject: this.env.VAPID_SUBJECT || "mailto:push@aguaphone.app",
         publicKey: this.env.VAPID_PUBLIC_KEY,
         privateKey: this.env.VAPID_PRIVATE_KEY,
       },
     );
 
     const res = await fetch(endpoint, {
-      method: 'POST',
+      method: "POST",
       headers,
       body,
     });
 
     if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      const err = new Error(`Web Push 失敗 (${res.status}): ${errText.slice(0, 200)}`);
+      const errText = await res.text().catch(() => "");
+      const err = new Error(
+        `Web Push 失敗 (${res.status}): ${errText.slice(0, 200)}`,
+      );
       err.statusCode = res.status;
       throw err;
     }
@@ -439,10 +479,11 @@ export class PushAlarmDO {
     // 我們存的是 new Date().getTimezoneOffset()，所以 userLocalTime = UTC - offset
     const userLocalMs = now.getTime() - schedule.timezoneOffset * 60 * 1000;
     const userLocal = new Date(userLocalMs);
-    const userMinutes = userLocal.getUTCHours() * 60 + userLocal.getUTCMinutes();
+    const userMinutes =
+      userLocal.getUTCHours() * 60 + userLocal.getUTCMinutes();
 
-    const [startH, startM] = schedule.doNotDisturbStart.split(':').map(Number);
-    const [endH, endM] = schedule.doNotDisturbEnd.split(':').map(Number);
+    const [startH, startM] = schedule.doNotDisturbStart.split(":").map(Number);
+    const [endH, endM] = schedule.doNotDisturbEnd.split(":").map(Number);
     const startMinutes = startH * 60 + startM;
     const endMinutes = endH * 60 + endM;
 
@@ -463,7 +504,7 @@ export class PushAlarmDO {
     const userLocalMs = now.getTime() - schedule.timezoneOffset * 60 * 1000;
     const userLocal = new Date(userLocalMs);
 
-    const [endH, endM] = schedule.doNotDisturbEnd.split(':').map(Number);
+    const [endH, endM] = schedule.doNotDisturbEnd.split(":").map(Number);
 
     // 建立 DND 結束的用戶本地時間（今天）
     const endLocal = new Date(userLocal);
@@ -488,13 +529,17 @@ export class PushAlarmDO {
     const testSchedule = { ...schedule };
     // 建立模擬時間檢查
     const futureDate = new Date(nextMs);
-    const futureUserLocalMs = futureDate.getTime() - schedule.timezoneOffset * 60 * 1000;
+    const futureUserLocalMs =
+      futureDate.getTime() - schedule.timezoneOffset * 60 * 1000;
     const futureUserLocal = new Date(futureUserLocalMs);
-    const futureMinutes = futureUserLocal.getUTCHours() * 60 + futureUserLocal.getUTCMinutes();
+    const futureMinutes =
+      futureUserLocal.getUTCHours() * 60 + futureUserLocal.getUTCMinutes();
 
     if (schedule.doNotDisturbEnabled) {
-      const [startH, startM] = schedule.doNotDisturbStart.split(':').map(Number);
-      const [endH, endM] = schedule.doNotDisturbEnd.split(':').map(Number);
+      const [startH, startM] = schedule.doNotDisturbStart
+        .split(":")
+        .map(Number);
+      const [endH, endM] = schedule.doNotDisturbEnd.split(":").map(Number);
       const startMin = startH * 60 + startM;
       const endMin = endH * 60 + endM;
 
@@ -516,10 +561,10 @@ export class PushAlarmDO {
   // ─── 退避計算 ────────────────────────────────────────────────
 
   getBackoffMs(errorCount) {
-    if (errorCount <= 1) return 5 * 60 * 1000;       // 5 分鐘
-    if (errorCount === 2) return 15 * 60 * 1000;      // 15 分鐘
-    if (errorCount === 3) return 60 * 60 * 1000;      // 1 小時
-    return 6 * 60 * 60 * 1000;                        // 6 小時
+    if (errorCount <= 1) return 5 * 60 * 1000; // 5 分鐘
+    if (errorCount === 2) return 15 * 60 * 1000; // 15 分鐘
+    if (errorCount === 3) return 60 * 60 * 1000; // 1 小時
+    return 6 * 60 * 60 * 1000; // 6 小時
   }
 }
 
@@ -528,6 +573,6 @@ export class PushAlarmDO {
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { "Content-Type": "application/json" },
   });
 }

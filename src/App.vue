@@ -661,6 +661,44 @@ async function loadAppData() {
   }
 }
 
+
+// 雲端推送心跳 interval（後台模式啟用時定期通知 Worker 本地仍存活）
+let cloudPushHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+function startCloudPushHeartbeat() {
+  if (cloudPushHeartbeatTimer) return;
+  // 立即發一次心跳
+  void (async () => {
+    const { useCloudPushStore } = await import('@/stores/cloudPush');
+    await useCloudPushStore().sendAliveHeartbeat();
+  })();
+  // 每 5 分鐘發一次
+  cloudPushHeartbeatTimer = setInterval(async () => {
+    const { useCloudPushStore } = await import('@/stores/cloudPush');
+    await useCloudPushStore().sendAliveHeartbeat();
+  }, 5 * 60 * 1000);
+  console.log('[App] 雲端推送心跳已啟動');
+}
+
+function stopCloudPushHeartbeat() {
+  if (cloudPushHeartbeatTimer) {
+    clearInterval(cloudPushHeartbeatTimer);
+    cloudPushHeartbeatTimer = null;
+    console.log('[App] 雲端推送心跳已停止');
+  }
+}
+
+// 監聽後台模式開關，同步啟停心跳
+watch(
+  () => settingsStore.backgroundAudioEnabled,
+  (enabled) => {
+    if (enabled) {
+      startCloudPushHeartbeat();
+    } else {
+      stopCloudPushHeartbeat();
+    }
+  },
+);
 // 監聽驗證狀態：若驗證成功（例如在 AuthScreen 輸入碼後不 reload 的情況），自動載入資料
 watch(
   () => authStore.isAuthenticated,
@@ -696,6 +734,8 @@ onUnmounted(() => {
   document.removeEventListener("visibilitychange", handleVisibilityChange);
   // 移除 SW 更新監聽
   window.removeEventListener("sw:update-available", handleSwUpdate);
+  // 停止雲端推送心跳
+  stopCloudPushHeartbeat();
 });
 
 // 動態 CSS 變數

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 雲端推送鬧鐘 — Pinia Store
  * 管理雲端推送設定、同步、離線訊息拉取
  */
@@ -201,6 +201,8 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
         schedule,
         pushChannels: enabledChannels.value,
         discordUserId: discordUserId.value,
+        // 本地頁面存活時間戳：Worker 收到後若距現在 < 間隔時間，代表本地還活著，跳過雲端生成
+        lastClientAliveAt: Date.now(),
       };
 
       const res = await CloudPushService.syncConfig(payload);
@@ -354,6 +356,19 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
     await CloudPushService.testPush();
   }
 
+
+  /**
+   * 發送本地存活心跳到 Worker
+   * 後台模式啟用時定期呼叫，讓 Worker 知道本地還活著，避免重複生成
+   */
+  async function sendAliveHeartbeat(): Promise<void> {
+    if (!enabled.value) return;
+    try {
+      await CloudPushService.syncAlive();
+    } catch {
+      // 非關鍵路徑，靜默失敗
+    }
+  }
   return {
     // 狀態
     enabled,
@@ -376,5 +391,6 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
     refreshStatus,
     disableCloudPush,
     testPushNotification,
+    sendAliveHeartbeat,
   };
 });
