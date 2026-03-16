@@ -311,10 +311,10 @@ $blue-accent: #3b82f6;
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
+  padding-top: max(16px, var(--safe-top, 0px));
   position: relative;
   z-index: 2;
   flex-shrink: 0;
-  margin-top: 10px;
 }
 
 .icon-btn {

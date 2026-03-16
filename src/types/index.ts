@@ -33,6 +33,8 @@ export * from "./game";
 export * from "./waimaiDelivery";
 // 塔羅占卜類型
 export * from "./fate";
+// 雲端推送鬧鐘類型
+export * from "./cloudPush";
 // ===== 小組件類型 =====
 export type WidgetType =
   | "clock"

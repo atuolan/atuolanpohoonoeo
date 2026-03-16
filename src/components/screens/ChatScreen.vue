@@ -973,10 +973,17 @@ const {
   convertToStorableMessage,
   switchChatFile,
   onAffinityRollback: (chatId: string, deletedMessageIds: string[]) => {
-    const rolled = affinityStore.rollbackToBeforeMessages(chatId, deletedMessageIds);
+    const rolled = affinityStore.rollbackToBeforeMessages(
+      chatId,
+      deletedMessageIds,
+    );
     if (rolled) {
       _affinityState.value = affinityStore.getState(chatId) ?? null;
-      console.log("[ChatScreen] 好感度已回滾，刪除的訊息:", deletedMessageIds.length, "條");
+      console.log(
+        "[ChatScreen] 好感度已回滾，刪除的訊息:",
+        deletedMessageIds.length,
+        "條",
+      );
     }
   },
 });
@@ -1307,7 +1314,9 @@ function _handleAffinityUpdates(
 
     if (!metricConfig) {
       // 反向匹配：metric.name 是否為 u.metric 的尾段
-      metricConfig = config.metrics.find((m) => u.metric.endsWith(`.${m.name}`));
+      metricConfig = config.metrics.find((m) =>
+        u.metric.endsWith(`.${m.name}`),
+      );
     }
 
     if (!metricConfig) {
@@ -1844,11 +1853,16 @@ function applyChatAppearance(appearance?: ChatAppearance) {
 
   // 套用聊天專屬桌布樣式
   if (appearance.wallpaper) {
-    const wallpaperValue =
-      appearance.wallpaper.type === "image"
-        ? `url("${appearance.wallpaper.value}")`
-        : appearance.wallpaper.value;
-    console.log("[ChatScreen] Applying wallpaper:", {
+    let wallpaperValue: string;
+    if (appearance.wallpaper.type === "image") {
+      wallpaperValue = `url("${appearance.wallpaper.value}")`;
+    } else if (appearance.wallpaper.type === "time-theme") {
+      // 跟隨時間：使用全局 time-theme 變數（由 theme store 動態更新）
+      wallpaperValue = "var(--time-theme-bg, var(--color-background))";
+    } else {
+      wallpaperValue = appearance.wallpaper.value || "var(--color-background)";
+    }
+    console.log("[ChatScreen] 套用桌布:", {
       type: appearance.wallpaper.type,
       value: wallpaperValue,
       blur: appearance.wallpaper.blur,
@@ -4086,7 +4100,9 @@ async function triggerAIResponse(options?: {
             }
 
             // 處理好感度更新（移至訊息建立後，以便綁定快照到第一條新 AI 訊息）
-            let _pendingAffinityUpdates = parsed.hasAffinityUpdate ? parsed.affinityUpdates : null;
+            let _pendingAffinityUpdates = parsed.hasAffinityUpdate
+              ? parsed.affinityUpdates
+              : null;
 
             // 移除原始的佔位訊息
             if (msgIndex !== -1) {
@@ -4248,9 +4264,11 @@ async function triggerAIResponse(options?: {
 
             // 將原始 <update> 區塊附加到最後一條 AI 訊息，供重新掃描使用
             if (parsed.rawUpdateBlock) {
-              const lastAiMsg = [...messages.value].reverse().find(
-                (m) => m.role === "ai" && m.turnId === currentTurnId.value,
-              );
+              const lastAiMsg = [...messages.value]
+                .reverse()
+                .find(
+                  (m) => m.role === "ai" && m.turnId === currentTurnId.value,
+                );
               if (lastAiMsg) {
                 lastAiMsg._rawAffinityBlock = parsed.rawUpdateBlock;
               }
@@ -4794,7 +4812,9 @@ async function triggerAIResponse(options?: {
               }
 
               // 處理好感度更新（移至訊息建立後，以便綁定快照到第一條新 AI 訊息）
-              let _pendingAffinityUpdates2 = parsed.hasAffinityUpdate ? parsed.affinityUpdates : null;
+              let _pendingAffinityUpdates2 = parsed.hasAffinityUpdate
+                ? parsed.affinityUpdates
+                : null;
 
               if (msgIndex !== -1) {
                 messages.value.splice(msgIndex, 1);
@@ -4939,15 +4959,23 @@ async function triggerAIResponse(options?: {
               }
 
               // 處理好感度更新（在訊息建立後呼叫，綁定快照到第一條新 AI 訊息）
-              if (_pendingAffinityUpdates2 && _pendingAffinityUpdates2.length > 0) {
-                _handleAffinityUpdates(_pendingAffinityUpdates2, _firstNewAiMsgId2);
+              if (
+                _pendingAffinityUpdates2 &&
+                _pendingAffinityUpdates2.length > 0
+              ) {
+                _handleAffinityUpdates(
+                  _pendingAffinityUpdates2,
+                  _firstNewAiMsgId2,
+                );
               }
 
               // 將原始 <update> 區塊附加到最後一條 AI 訊息，供重新掃描使用
               if (parsed.rawUpdateBlock) {
-                const lastAiMsg = [...messages.value].reverse().find(
-                  (m) => m.role === "ai" && m.turnId === currentTurnId.value,
-                );
+                const lastAiMsg = [...messages.value]
+                  .reverse()
+                  .find(
+                    (m) => m.role === "ai" && m.turnId === currentTurnId.value,
+                  );
                 if (lastAiMsg) {
                   lastAiMsg._rawAffinityBlock = parsed.rawUpdateBlock;
                 }
@@ -5589,9 +5617,9 @@ async function handleStreamingClose() {
 
           // 將原始 <update> 區塊附加到最後一條 AI 訊息，供重新掃描使用
           if (parsed.rawUpdateBlock) {
-            const lastAiMsg = [...messages.value].reverse().find(
-              (m) => m.role === "ai" && m.turnId === currentTurnId.value,
-            );
+            const lastAiMsg = [...messages.value]
+              .reverse()
+              .find((m) => m.role === "ai" && m.turnId === currentTurnId.value);
             if (lastAiMsg) {
               lastAiMsg._rawAffinityBlock = parsed.rawUpdateBlock;
             }
@@ -6640,7 +6668,9 @@ async function loadOrCreateChat(overrideChatId?: string) {
       const greetingAffinityUpdates = parseAffinityUpdateTags(firstMessage);
       if (greetingAffinityUpdates.length > 0) {
         // 找到最後一條 AI 訊息的 ID 作為快照 key
-        const lastAiMsg = [...messages.value].reverse().find(m => m.role === "ai");
+        const lastAiMsg = [...messages.value]
+          .reverse()
+          .find((m) => m.role === "ai");
         _handleAffinityUpdates(greetingAffinityUpdates, lastAiMsg?.id);
       }
     }
@@ -8729,7 +8759,10 @@ onUnmounted(() => {
           v-if="chatFaceToFaceMode && isInputFocused"
           class="quick-input-bar"
         >
-          <div class="quick-input-scroll" @wheel.prevent="handleQuickInputWheel">
+          <div
+            class="quick-input-scroll"
+            @wheel.prevent="handleQuickInputWheel"
+          >
             <button
               v-for="action in quickActions"
               :key="action.text"
@@ -9188,7 +9221,10 @@ onUnmounted(() => {
         ></textarea>
         <!-- 展開模式快速輸入助手 -->
         <div v-if="chatFaceToFaceMode" class="expanded-quick-input-bar">
-          <div class="quick-input-scroll" @wheel.prevent="handleQuickInputWheel">
+          <div
+            class="quick-input-scroll"
+            @wheel.prevent="handleQuickInputWheel"
+          >
             <button
               v-for="action in quickActions"
               :key="action.text"
@@ -11253,7 +11289,8 @@ onUnmounted(() => {
 
 <style lang="scss" scoped>
 .chat-screen {
-  background: transparent;
+  // 強制覆蓋 .screen-container 的全局背景色，讓 ::before 偽元素的桌布可見
+  background: transparent !important;
   position: relative;
   overflow: hidden;
 

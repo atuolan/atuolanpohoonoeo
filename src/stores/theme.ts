@@ -926,24 +926,61 @@ export const useThemeStore = defineStore("theme", () => {
     applyTheme();
   }
 
+  // 背景圖 Base64 分離儲存的 key 前綴
+  const WALLPAPER_IMAGE_CACHE_KEY = "wallpaper-image-v1";
+  // Base64 超過此大小時，改存入 imageCache table（避免 IndexedDB 單條記錄超限）
+  const WALLPAPER_BASE64_INLINE_LIMIT = 512 * 1024; // 512 KB
+
   // 保存到 IndexedDB
   async function saveToStorage() {
-    // 將響應式對象轉換為純 JavaScript 對象（IndexedDB 無法克隆 Vue Proxy）
-    const data = JSON.parse(
-      JSON.stringify({
-        currentStyle: currentStyle.value,
-        currentPreset: currentPreset.value,
-        customColors: customColors.value,
-        avatarStyle: avatarStyle.value,
-        bubbleStyle: bubbleStyle.value,
-        wallpaperStyle: wallpaperStyle.value,
-        customCSS: customCSS.value,
-        globalFont: globalFont.value,
-      }),
-    );
     try {
       const { db } = await import("@/db/database");
       await db.init();
+
+      // 處理背景圖：大 Base64 分離存入 imageCache，settings 只存引用 ID
+      const wallpaperSnapshot = JSON.parse(
+        JSON.stringify(wallpaperStyle.value),
+      ) as WallpaperStyle;
+      if (
+        wallpaperSnapshot.type === "image" &&
+        wallpaperSnapshot.value.startsWith("data:") &&
+        wallpaperSnapshot.value.length > WALLPAPER_BASE64_INLINE_LIMIT
+      ) {
+        // 將 Base64 轉為 Blob 存入 imageCache
+        try {
+          const res = await fetch(wallpaperSnapshot.value);
+          const blob = await res.blob();
+          await db.put(
+            "imageCache",
+            {
+              id: WALLPAPER_IMAGE_CACHE_KEY,
+              blob,
+              mimeType: blob.type || "image/webp",
+              createdAt: Date.now(),
+            },
+            WALLPAPER_IMAGE_CACHE_KEY,
+          );
+          // settings 中只存引用 ID，不存完整 Base64
+          wallpaperSnapshot.value = `imageCache:${WALLPAPER_IMAGE_CACHE_KEY}`;
+        } catch (cacheErr) {
+          console.warn("[Theme] 背景圖分離儲存失敗，改用內嵌方式:", cacheErr);
+          // 回退：仍嘗試直接儲存完整 Base64
+        }
+      }
+
+      // 將響應式對象轉換為純 JavaScript 對象（IndexedDB 無法克隆 Vue Proxy）
+      const data = JSON.parse(
+        JSON.stringify({
+          currentStyle: currentStyle.value,
+          currentPreset: currentPreset.value,
+          customColors: customColors.value,
+          avatarStyle: avatarStyle.value,
+          bubbleStyle: bubbleStyle.value,
+          wallpaperStyle: wallpaperSnapshot,
+          customCSS: customCSS.value,
+          globalFont: globalFont.value,
+        }),
+      );
       // settings store 沒有 keyPath，需要提供 key
       await db.put("settings", data, "user-theme");
     } catch (e) {
@@ -963,10 +1000,41 @@ export const useThemeStore = defineStore("theme", () => {
         customColors.value = data.customColors || {};
         avatarStyle.value = { ...defaultAvatarStyle, ...data.avatarStyle };
         bubbleStyle.value = { ...defaultBubbleStyle, ...data.bubbleStyle };
-        wallpaperStyle.value = {
+
+        // 處理背景圖引用 ID：從 imageCache 還原 Base64
+        const storedWallpaper = {
           ...defaultWallpaperStyle,
           ...data.wallpaperStyle,
-        };
+        } as WallpaperStyle;
+        if (
+          storedWallpaper.type === "image" &&
+          typeof storedWallpaper.value === "string" &&
+          storedWallpaper.value.startsWith("imageCache:")
+        ) {
+          const cacheKey = storedWallpaper.value.replace("imageCache:", "");
+          try {
+            const record = await db.get<{ id: string; blob: Blob }>(
+              "imageCache",
+              cacheKey,
+            );
+            if (record?.blob) {
+              // 將 Blob 轉為 Object URL（比 Base64 更省記憶體）
+              const objectUrl = URL.createObjectURL(record.blob);
+              storedWallpaper.value = objectUrl;
+            } else {
+              // 快取遺失，回退到 time-theme
+              console.warn("[Theme] 背景圖快取遺失，重置為時間主題");
+              storedWallpaper.type = "time-theme";
+              storedWallpaper.value = "";
+            }
+          } catch (cacheErr) {
+            console.warn("[Theme] 讀取背景圖快取失敗:", cacheErr);
+            storedWallpaper.type = "time-theme";
+            storedWallpaper.value = "";
+          }
+        }
+        wallpaperStyle.value = storedWallpaper;
+
         customCSS.value = data.customCSS || "";
         globalFont.value = { ...defaultGlobalFont, ...data.globalFont };
       }

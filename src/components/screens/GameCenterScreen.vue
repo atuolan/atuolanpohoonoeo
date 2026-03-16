@@ -214,6 +214,7 @@ function handleShareToChat(characterId: string, message: string) {
   display: flex;
   align-items: center;
   padding: 16px;
+  padding-top: max(16px, var(--safe-top, 0px));
   background: var(--color-surface, white);
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 

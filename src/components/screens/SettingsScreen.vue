@@ -4,40 +4,41 @@ import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
 import AuxiliaryApiPanel from "@/components/screens/AuxiliaryApiPanel.vue";
 import { clearAllData, db } from "@/db/database";
 import {
-    extractImagesFromMessages,
-    restoreImagesToMessages,
+  extractImagesFromMessages,
+  restoreImagesToMessages,
 } from "@/db/operations";
 import {
-    checkPermission as checkBackupPermission,
-    clearBackupDirectory,
-    DEFAULT_BACKUP_SETTINGS,
-    getSelectedFolderName,
-    initAutoBackup,
-    isFileSystemAccessSupported,
-    loadBackupSettings,
-    performBackup,
-    pickBackupDirectory,
-    requestPermission as requestBackupPermission,
-    saveBackupSettings,
-    startAutoBackup,
-    stopAutoBackup,
-    type AutoBackupSettings,
-    type BackupProgressCallback,
+  checkPermission as checkBackupPermission,
+  clearBackupDirectory,
+  DEFAULT_BACKUP_SETTINGS,
+  getSelectedFolderName,
+  initAutoBackup,
+  isFileSystemAccessSupported,
+  loadBackupSettings,
+  performBackup,
+  pickBackupDirectory,
+  requestPermission as requestBackupPermission,
+  saveBackupSettings,
+  startAutoBackup,
+  stopAutoBackup,
+  type AutoBackupSettings,
+  type BackupProgressCallback,
 } from "@/services/AutoBackupService";
 import { getLegacyBackupService } from "@/services/LegacyBackupService";
 import {
-    useCharactersStore,
-    useLorebooksStore,
-    useNotificationStore,
-    useSettingsStore,
-    useUserStore,
+  useCharactersStore,
+  useLorebooksStore,
+  useNotificationStore,
+  useSettingsStore,
+  useUserStore,
 } from "@/stores";
+import { useCloudPushStore } from "@/stores/cloudPush";
 import { useThemeStore } from "@/stores/theme";
 import type { APIProvider } from "@/types/settings";
 import {
-    destroyDebugOverlay,
-    initDebugOverlay,
-    isDebugOverlayActive,
+  destroyDebugOverlay,
+  initDebugOverlay,
+  isDebugOverlayActive,
 } from "@/utils/debugOverlay";
 import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 
@@ -61,6 +62,7 @@ const lorebooksStore = useLorebooksStore();
 const userStore = useUserStore();
 const themeStore = useThemeStore();
 const notificationStore = useNotificationStore();
+const cloudPushStore = useCloudPushStore();
 
 // Debug Overlay 狀態
 const debugOverlayActive = ref(isDebugOverlayActive());
@@ -148,6 +150,77 @@ function handleShowPermissionGuide() {
   if ("Notification" in window && Notification.permission !== "denied") {
     handleRequestPushPermission();
   }
+}
+
+// ===== 雲端推送鬧鐘 =====
+const cloudPushEnabled = ref(cloudPushStore.enabled);
+const cloudPushChannels = ref<("discord" | "webpush")[]>([
+  ...cloudPushStore.enabledChannels,
+]);
+const cloudPushDiscordUserId = ref(cloudPushStore.discordUserId);
+const cloudPushInterval = ref(cloudPushStore.intervalMinutes);
+const cloudPushDND = ref(cloudPushStore.doNotDisturbEnabled);
+const cloudPushDNDStart = ref(cloudPushStore.doNotDisturbStart);
+const cloudPushDNDEnd = ref(cloudPushStore.doNotDisturbEnd);
+const cloudPushSyncStatus = ref(cloudPushStore.syncStatus);
+const cloudPushSyncError = ref(cloudPushStore.syncError);
+const cloudPushNextAlarm = ref(cloudPushStore.nextAlarm);
+const cloudPushPendingCount = ref(cloudPushStore.pendingMessageCount);
+
+function handleCloudPushToggle() {
+  if (!cloudPushEnabled.value) {
+    cloudPushStore.disableCloudPush();
+  }
+}
+
+function toggleCloudPushChannel(channel: "discord" | "webpush", event: Event) {
+  const checked = (event.target as HTMLInputElement).checked;
+  if (checked) {
+    if (!cloudPushChannels.value.includes(channel)) {
+      cloudPushChannels.value.push(channel);
+    }
+  } else {
+    cloudPushChannels.value = cloudPushChannels.value.filter(
+      (c) => c !== channel,
+    );
+  }
+  handleCloudPushSettingsChange();
+}
+
+function handleCloudPushSettingsChange() {
+  cloudPushStore.enabledChannels = [...cloudPushChannels.value];
+  cloudPushStore.discordUserId = cloudPushDiscordUserId.value;
+  cloudPushStore.intervalMinutes = cloudPushInterval.value;
+  cloudPushStore.doNotDisturbEnabled = cloudPushDND.value;
+  cloudPushStore.doNotDisturbStart = cloudPushDNDStart.value;
+  cloudPushStore.doNotDisturbEnd = cloudPushDNDEnd.value;
+  cloudPushStore.saveSettings();
+}
+
+async function handleCloudPushSync() {
+  cloudPushSyncStatus.value = "syncing";
+  cloudPushSyncError.value = null;
+  handleCloudPushSettingsChange();
+  await cloudPushStore.syncToCloud();
+  cloudPushSyncStatus.value = cloudPushStore.syncStatus;
+  cloudPushSyncError.value = cloudPushStore.syncError;
+  cloudPushNextAlarm.value = cloudPushStore.nextAlarm;
+  cloudPushEnabled.value = cloudPushStore.enabled;
+}
+
+async function handleCloudPushTest() {
+  try {
+    await cloudPushStore.testPushNotification();
+    alert("測試推送已發送！請檢查 Discord DM。");
+  } catch (e: any) {
+    alert(`測試推送失敗：${e.message}`);
+  }
+}
+
+function formatNextAlarm(ts: number | null): string {
+  if (!ts) return "";
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 function playRingtonePatternChunk(
@@ -1224,10 +1297,18 @@ async function exportData() {
       themes: await db.getAll("themes"),
       layouts: await db.getAll("layouts"),
       characterAffections: await (async () => {
-        try { return await db.getAll("characterAffections"); } catch { return []; }
+        try {
+          return await db.getAll("characterAffections");
+        } catch {
+          return [];
+        }
       })(),
       chatAffinityStates: await (async () => {
-        try { return await db.getAll("chatAffinityStates"); } catch { return []; }
+        try {
+          return await db.getAll("chatAffinityStates");
+        } catch {
+          return [];
+        }
       })(),
       oldSettings: await (async () => {
         // settings store 沒有 keyPath，需要手動取得 key-value 對
@@ -1510,6 +1591,14 @@ async function handleFileImport(event: Event) {
   const file = target.files?.[0];
   if (!file) return;
 
+  // 前置檔案類型校驗（accept="*/*" 時用戶可能選到非備份檔案）
+  const fileName = file.name.toLowerCase();
+  if (!fileName.endsWith(".zip") && !fileName.endsWith(".json")) {
+    alert("請選擇 .zip 或 .json 格式的備份檔案");
+    target.value = "";
+    return;
+  }
+
   isImporting.value = true;
   try {
     await db.init();
@@ -1603,13 +1692,30 @@ async function handleFileImport(event: Event) {
     }
 
     // 當備份檔為 aguaphone-backup 開頭，主動清除本機舊資料
+    // 清除前先備份 auth 狀態，還原後回寫，避免重新驗證
     if (
       file.name.startsWith("aguaphone-backup-") &&
       file.name.endsWith(".zip")
     ) {
       console.log("偵測到 aguaphone-backup，主動清除本機舊資料...");
+      // 備份 auth 狀態
+      const { AuthService } = await import("@/services/AuthService");
+      const savedAuth = await AuthService.getAuthState().catch(() => null);
       await clearAllData();
       await db.init();
+      // 還原 auth 狀態，避免清除後要求重新驗證
+      if (
+        savedAuth &&
+        savedAuth.isAuthenticated &&
+        savedAuth.discordUserId &&
+        savedAuth.discordUsername
+      ) {
+        await AuthService.saveAuthState(
+          savedAuth.discordUserId,
+          savedAuth.discordUsername,
+          savedAuth.discordDisplayName || savedAuth.discordUsername,
+        ).catch(() => {});
+      }
     }
 
     // 還原角色頭像
@@ -1789,10 +1895,7 @@ async function handleFileImport(event: Event) {
     }
 
     // 導入聊天好感度狀態
-    if (
-      data.chatAffinityStates &&
-      Array.isArray(data.chatAffinityStates)
-    ) {
+    if (data.chatAffinityStates && Array.isArray(data.chatAffinityStates)) {
       for (const state of data.chatAffinityStates) {
         await db.put("chatAffinityStates", state);
       }
@@ -3652,6 +3755,176 @@ function useClonedVoice(voiceId: string) {
           </div>
         </div>
 
+        <!-- 雲端推送鬧鐘 -->
+        <div class="push-notification-card cloud-push-card">
+          <div class="toggle-item highlight">
+            <div class="toggle-content">
+              <span class="toggle-label">雲端推送鬧鐘</span>
+              <span class="toggle-desc">
+                關閉瀏覽器後，雲端伺服器仍會定時生成角色訊息並推送
+              </span>
+            </div>
+            <label class="toggle-item" style="padding: 0; border: none">
+              <input
+                type="checkbox"
+                v-model="cloudPushEnabled"
+                class="toggle-input"
+                @change="handleCloudPushToggle"
+              />
+              <span class="toggle-switch"></span>
+            </label>
+          </div>
+
+          <div v-if="cloudPushEnabled" class="cloud-push-options">
+            <!-- 推送管道 -->
+            <div class="setting-group">
+              <label class="setting-label">推送管道</label>
+              <label class="toggle-item" style="border: none; padding: 6px 0">
+                <span class="toggle-label" style="font-size: 13px"
+                  >Discord Bot DM</span
+                >
+                <input
+                  type="checkbox"
+                  :checked="cloudPushChannels.includes('discord')"
+                  class="toggle-input"
+                  @change="toggleCloudPushChannel('discord', $event)"
+                />
+                <span class="toggle-switch"></span>
+              </label>
+              <div
+                v-if="cloudPushChannels.includes('discord')"
+                style="padding-left: 4px"
+              >
+                <label class="setting-label" style="font-size: 12px"
+                  >Discord User ID</label
+                >
+                <input
+                  type="text"
+                  v-model="cloudPushDiscordUserId"
+                  class="soft-input"
+                  placeholder="123456789012345678"
+                  @input="cloudPushStore.discordUserId = cloudPushDiscordUserId"
+                  @blur="handleCloudPushSettingsChange"
+                />
+              </div>
+              <label class="toggle-item" style="border: none; padding: 6px 0">
+                <span class="toggle-label" style="font-size: 13px"
+                  >瀏覽器推送（Phase 2）</span
+                >
+                <input
+                  type="checkbox"
+                  class="toggle-input"
+                  :checked="cloudPushChannels.includes('webpush')"
+                  @change="toggleCloudPushChannel('webpush', $event)"
+                />
+                <span class="toggle-switch"></span>
+              </label>
+            </div>
+
+            <!-- 推送間隔 -->
+            <div class="setting-group">
+              <label class="setting-label">推送間隔（分鐘）</label>
+              <input
+                type="number"
+                v-model.number="cloudPushInterval"
+                class="soft-input"
+                min="1"
+                max="1440"
+                @change="handleCloudPushSettingsChange"
+              />
+            </div>
+
+            <!-- 免打擾 -->
+            <div class="setting-group">
+              <label class="toggle-item" style="border: none; padding: 6px 0">
+                <span class="toggle-label" style="font-size: 13px"
+                  >免打擾時段</span
+                >
+                <input
+                  type="checkbox"
+                  v-model="cloudPushDND"
+                  class="toggle-input"
+                  @change="handleCloudPushSettingsChange"
+                />
+                <span class="toggle-switch"></span>
+              </label>
+              <div v-if="cloudPushDND" class="cloud-push-dnd-times">
+                <input
+                  type="time"
+                  v-model="cloudPushDNDStart"
+                  class="soft-input"
+                  @change="handleCloudPushSettingsChange"
+                />
+                <span
+                  style="
+                    padding: 0 8px;
+                    color: var(--color-text-secondary, #999);
+                  "
+                  >~</span
+                >
+                <input
+                  type="time"
+                  v-model="cloudPushDNDEnd"
+                  class="soft-input"
+                  @change="handleCloudPushSettingsChange"
+                />
+              </div>
+            </div>
+
+            <!-- 操作按鈕 -->
+            <div class="cloud-push-actions">
+              <button
+                class="push-permission-btn"
+                :disabled="cloudPushSyncStatus === 'syncing'"
+                @click="handleCloudPushSync"
+              >
+                {{
+                  cloudPushSyncStatus === "syncing"
+                    ? "同步中…"
+                    : "同步 API 設定到雲端"
+                }}
+              </button>
+              <button
+                class="push-permission-btn test"
+                @click="handleCloudPushTest"
+              >
+                測試推送
+              </button>
+            </div>
+
+            <!-- 狀態顯示 -->
+            <div class="cloud-push-status">
+              <span v-if="cloudPushSyncStatus === 'success'">
+                已同步
+                <template v-if="cloudPushNextAlarm">
+                  · 下次推送 {{ formatNextAlarm(cloudPushNextAlarm) }}
+                </template>
+              </span>
+              <span
+                v-else-if="cloudPushSyncStatus === 'error'"
+                style="color: #ff6b6b"
+              >
+                同步失敗：{{ cloudPushSyncError }}
+              </span>
+              <span v-else>尚未同步</span>
+              <span v-if="cloudPushPendingCount > 0" style="margin-left: 8px">
+                · 離線訊息：{{ cloudPushPendingCount }} 條待拉取
+              </span>
+            </div>
+
+            <!-- 中國大陸提示 -->
+            <div
+              class="cloud-push-status"
+              style="font-size: 11px; margin-top: 4px"
+            >
+              <div>
+                ⚠ Chrome 瀏覽器推送依賴 Google FCM，中國大陸需開啟全局代理
+              </div>
+              <div>✓ Safari / Firefox 瀏覽器推送在中國可正常使用</div>
+            </div>
+          </div>
+        </div>
+
         <div class="incoming-ringtone-card">
           <div class="incoming-ringtone-header">
             <div class="incoming-ringtone-icon">🔔</div>
@@ -3872,7 +4145,7 @@ function useClonedVoice(voiceId: string) {
             <input
               ref="fileInput"
               type="file"
-              accept=".zip,.json"
+              accept="*/*"
               style="display: none"
               @change="handleFileImport"
             />
@@ -5694,6 +5967,43 @@ function useClonedVoice(voiceId: string) {
       margin-bottom: 4px;
     }
   }
+}
+
+// ── 雲端推送鬧鐘 ──────────────────────────────
+
+.cloud-push-card {
+  margin-bottom: 12px;
+}
+
+.cloud-push-options {
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--color-border, rgba(255, 255, 255, 0.06));
+
+  .setting-group {
+    margin-bottom: 12px;
+  }
+}
+
+.cloud-push-dnd-times {
+  display: flex;
+  align-items: center;
+  margin-top: 6px;
+
+  .soft-input {
+    flex: 1;
+  }
+}
+
+.cloud-push-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cloud-push-status {
+  font-size: 12px;
+  color: var(--color-text-secondary, #999);
+  line-height: 1.6;
 }
 
 .incoming-ringtone-card {

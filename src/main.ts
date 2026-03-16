@@ -2,7 +2,6 @@ import { createPinia } from "pinia";
 import { createApp } from "vue";
 import App from "./App.vue";
 import { initAutoBackup } from "./services/AutoBackupService";
-import { proactiveMessageService } from "./services/ProactiveMessageService";
 import "./styles/global.scss";
 import { CodeProtection } from "./utils/codeProtection";
 import { autoFixStickerUrls } from "./utils/fixStickerUrls";
@@ -180,7 +179,11 @@ document.addEventListener(
   "touchmove",
   (e: TouchEvent) => {
     let target = e.target as HTMLElement | null;
-    while (target && target !== document.body && target !== document.documentElement) {
+    while (
+      target &&
+      target !== document.body &&
+      target !== document.documentElement
+    ) {
       const style = window.getComputedStyle(target);
       const overflowY = style.overflowY;
       const overflowX = style.overflowX;
@@ -220,10 +223,7 @@ initStorageProtection();
 // 初始化自動備份
 initAutoBackup();
 
-// 延遲啟動主動發訊息服務，確保 store 已初始化
-setTimeout(() => {
-  proactiveMessageService.start();
-}, 3000);
+// 主動發訊息服務由 App.vue 在 characters 載入後啟動，此處不再無條件啟動
 
 // 自動修復表情包 URL（僅執行一次）
 autoFixStickerUrls().catch((err) => {

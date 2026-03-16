@@ -14,6 +14,11 @@
   color: var(--color-text);
   position: relative;
   // padding-top 已由 .app-container 統一處理（瀏海/動態島）
+
+  // 聊天畫面使用 ::before 偽元素作為桌布層，需要透明背景
+  &.chat-screen {
+    background: transparent;
+  }
 }
 
 // ===== 標題欄 =====

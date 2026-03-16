@@ -1,0 +1,39 @@
+{
+  "name": "aguaphone-cloud-push",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-02-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "routes": [
+    {
+      "pattern": "push.aguacloud.uk",
+      "zone_name": "aguacloud.uk",
+      "custom_domain": true
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PUSH_ALARM",
+        "class_name": "PushAlarmDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["PushAlarmDO"]
+    }
+  ],
+  "vars": {
+    "VAPID_SUBJECT": "mailto:admin@aguacloud.uk",
+    // VAPID public key (safe to expose — clients need it for PushManager.subscribe)
+    "VAPID_PUBLIC_KEY": "BC9kFWuWWwv2HrZFPWShaqI8u5k61EwgdUowt2wavMO5JD_HXbGVGk7RQiXDGueT9pltMsThHo7-15zZ6dXPqvM"
+    // VAPID_PRIVATE_KEY must be set via: wrangler secret put VAPID_PRIVATE_KEY
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true
+    }
+  }
+}

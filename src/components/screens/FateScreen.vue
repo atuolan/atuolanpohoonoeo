@@ -618,6 +618,7 @@ $radius-pill: 100px;
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
+  padding-top: max(12px, var(--safe-top, 0px));
   border-bottom: 1px solid $border-light;
   flex-shrink: 0;
   background: rgba(255, 255, 255, 0.6);

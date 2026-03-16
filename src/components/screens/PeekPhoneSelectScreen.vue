@@ -244,10 +244,10 @@ $blob-bg: #d4f2cc;
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
+  padding-top: max(16px, var(--safe-top, 0px));
   position: relative;
   z-index: 2;
   flex-shrink: 0;
-  margin-top: 10px; // Add a bit of space from the very top on desktop/modern phones
 }
 
 .icon-btn {

@@ -18,12 +18,17 @@ export class CharacterService {
    */
   async getAll(): Promise<StoredCharacter[]> {
     try {
+      // 確保 IndexedDB 已初始化（如果連接斷開會自動重連）
+      if (!db.isOpen()) {
+        await db.init();
+      }
       // 優先使用 IndexedDB
       if (db.isOpen()) {
         return await db.getAll<StoredCharacter>(DB_STORES.CHARACTERS);
       }
 
-      // 備用 localStorage
+      // 備用 localStorage（僅在 IDB 完全無法使用時）
+      console.warn("[CharacterService] IndexedDB 不可用，降級使用 localStorage");
       const data = localStorage.getItem(STORAGE_KEY);
       return data ? JSON.parse(data) : [];
     } catch (e) {

@@ -1,8 +1,11 @@
-name: Deploy to GitHub Pages
+name: Deploy to GitHub Pages (DISABLED - using Cloudflare Pages now)
 
+# 已改用 Cloudflare Pages 部署，此 workflow 不再需要
+# on:
+#   push:
+#     branches: [master]
 on:
-  push:
-    branches: [master]
+  workflow_dispatch: # 僅手動觸發（等同停用自動部署）
 
 permissions:
   contents: read

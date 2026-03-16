@@ -47,7 +47,7 @@ export interface ChatAppearance {
   };
   /** 桌布設定 */
   wallpaper?: {
-    type: "color" | "gradient" | "image" | "pattern";
+    type: "color" | "gradient" | "image" | "pattern" | "time-theme";
     value: string;
     blur: number;
     opacity: number;
@@ -117,7 +117,11 @@ export interface WaimaiOrderSnapshot {
   createdAt: number;
   paidAt?: number;
   deliveredAt?: number;
-  failureReason?: "insufficient_funds" | "item_not_found" | "duplicate_payment" | "invalid_request";
+  failureReason?:
+    | "insufficient_funds"
+    | "item_not_found"
+    | "duplicate_payment"
+    | "invalid_request";
   /** 收貨地快照（下單當下，避免後續地址簿改動影響歷史） */
   destination?: WaimaiDestinationSnapshot;
   /** ETA 快照（下單當下） */
@@ -555,7 +559,7 @@ export interface Chat {
   enableRealTimeAwareness?: boolean;
 
   /** 假時間模式：real=真實時間, loop=輪迴時間, offset=偏移時間 */
-  fakeTimeMode?: 'real' | 'loop' | 'offset';
+  fakeTimeMode?: "real" | "loop" | "offset";
   /** 輪迴時間設定（fakeTimeMode = 'loop' 時使用） */
   fakeTimeLoop?: {
     /** 輪迴起始日期時間 ISO string, e.g. "2024-01-01T00:00:00" */

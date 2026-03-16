@@ -1,16 +1,16 @@
 import type {
-    CachedImage,
-    CallHistoryEntry,
-    CharacterAffection,
-    LayoutConfig,
-    PendingCall,
-    QZonePost,
-    ThemeConfig,
-} from "@/types";
-import type {
-    CharacterAffinityConfig,
-    ChatAffinityState,
+  CharacterAffinityConfig,
+  ChatAffinityState,
 } from "@/schemas/affinity";
+import type {
+  CachedImage,
+  CallHistoryEntry,
+  CharacterAffection,
+  LayoutConfig,
+  PendingCall,
+  QZonePost,
+  ThemeConfig,
+} from "@/types";
 import type { AuthState } from "@/types/auth";
 import type { BookReadingProgress, StoredBook } from "@/types/book";
 import type { CalendarEvent } from "@/types/calendar";
@@ -540,12 +540,22 @@ export async function getDatabase(): Promise<IDBPDatabase<AguaphoneDB>> {
       }
     },
     blocked() {
-      console.warn("[DB] 資料庫被阻擋，請關閉其他分頁");
+      console.warn("[DB] 資料庫被阻擋，嘗試關閉舊連線以解除阻擋...");
+      // 主動關閉舊連線，讓 upgrade 可以繼續
+      if (dbInstance) {
+        try {
+          dbInstance.close();
+        } catch {
+          /* 忽略 */
+        }
+        dbInstance = null;
+      }
+      db._instance = null;
+      db._initialized = false;
     },
     blocking() {
       console.warn("[DB] 資料庫阻擋中，將在需要時重新連接");
-      // 不立即關閉連接，讓當前操作完成
-      // 只標記需要重新連接
+      // 關閉當前連接並重置所有狀態，確保下次操作會重新連接
       if (dbInstance) {
         try {
           dbInstance.close();
@@ -554,10 +564,16 @@ export async function getDatabase(): Promise<IDBPDatabase<AguaphoneDB>> {
         }
         dbInstance = null;
       }
+      // 同步重置 db 封裝層的狀態，避免 isOpen() 回傳不一致
+      db._instance = null;
+      db._initialized = false;
     },
     terminated() {
       console.error("[DB] 資料庫連接意外終止，將在下次操作時重新連接");
       dbInstance = null;
+      // 同步重置 db 封裝層的狀態
+      db._instance = null;
+      db._initialized = false;
     },
   });
 
@@ -705,6 +721,16 @@ export const db = {
       this._initialized = true;
     } catch (e) {
       console.error("[db] Failed to initialize:", e);
+      // 等待 500ms 後重試一次（處理 SW 更新時的短暫 blocking）
+      await new Promise((r) => setTimeout(r, 500));
+      try {
+        dbInstance = null; // 重置全域 instance 讓 getDatabase 重新嘗試
+        this._instance = await getDatabase();
+        this._initialized = true;
+        console.log("[db] 重試初始化成功");
+      } catch (e2) {
+        console.error("[db] 重試初始化仍失敗:", e2);
+      }
     }
   },
 
@@ -732,23 +758,35 @@ export const db = {
     if (!this._instance) await this.init();
     if (!this._instance) throw new Error("Database not available");
     try {
-      return await (this._instance.get(storeName as any, key) as Promise<T | undefined>);
+      return await (this._instance.get(storeName as any, key) as Promise<
+        T | undefined
+      >);
     } catch (e) {
       // 連接可能已斷開，嘗試重新連接一次
       console.warn(`[db] get(${storeName}, ${key}) 失敗，嘗試重新連接:`, e);
       await this.reconnect();
       if (!this._instance) throw new Error("Database reconnect failed");
-      return this._instance.get(storeName as any, key) as Promise<T | undefined>;
+      return this._instance.get(storeName as any, key) as Promise<
+        T | undefined
+      >;
     }
   },
 
   /**
-   * 獲取所有記錄
+   * 獲取所有記錄（帶重試）
    */
   async getAll<T>(storeName: string): Promise<T[]> {
     if (!this._instance) await this.init();
     if (!this._instance) return [];
-    return this._instance.getAll(storeName as any) as Promise<T[]>;
+    try {
+      return await (this._instance.getAll(storeName as any) as Promise<T[]>);
+    } catch (e) {
+      // 連接可能已斷開，嘗試重新連接一次
+      console.warn(`[db] getAll(${storeName}) 失敗，嘗試重新連接:`, e);
+      await this.reconnect();
+      if (!this._instance) return [];
+      return this._instance.getAll(storeName as any) as Promise<T[]>;
+    }
   },
 
   /**
@@ -760,40 +798,102 @@ export const db = {
   async put<T>(storeName: string, value: T, key?: string): Promise<string> {
     if (!this._instance) await this.init();
     if (!this._instance) throw new Error("Database not initialized");
-    return this._instance.put(
-      storeName as any,
-      value as any,
-      key,
-    ) as Promise<string>;
+    // 防禦性深拷貝：去除 Vue 響應式 Proxy，避免 DataCloneError
+    // 對於包含 Blob 等不可 JSON 序列化的物件，先嘗試直接寫入，失敗才用深拷貝
+    try {
+      return await (this._instance.put(
+        storeName as any,
+        value as any,
+        key,
+      ) as Promise<string>);
+    } catch (e) {
+      // DataCloneError: Vue Proxy 無法被結構化克隆，用 JSON 深拷貝去除
+      if (e instanceof DOMException && e.name === "DataCloneError") {
+        console.warn(
+          `[db] put(${storeName}) 遭遇 DataCloneError，嘗試 JSON 深拷貝後重試`,
+        );
+        try {
+          const plainValue = JSON.parse(JSON.stringify(value));
+          return await (this._instance!.put(
+            storeName as any,
+            plainValue as any,
+            key,
+          ) as Promise<string>);
+        } catch (e2) {
+          // 深拷貝後仍失敗，可能是連接斷開，嘗試重連
+          console.warn(
+            `[db] put(${storeName}) 深拷貝後仍失敗，嘗試重新連接:`,
+            e2,
+          );
+          await this.reconnect();
+          if (!this._instance) throw new Error("Database reconnect failed");
+          const plainValue = JSON.parse(JSON.stringify(value));
+          return this._instance.put(
+            storeName as any,
+            plainValue as any,
+            key,
+          ) as Promise<string>;
+        }
+      }
+      // 其他錯誤（如連接斷開），嘗試重連
+      console.warn(`[db] put(${storeName}) 失敗，嘗試重新連接:`, e);
+      await this.reconnect();
+      if (!this._instance) throw new Error("Database reconnect failed");
+      return this._instance.put(
+        storeName as any,
+        value as any,
+        key,
+      ) as Promise<string>;
+    }
   },
 
   /**
-   * 刪除記錄
+   * 刪除記錄（帶重試）
    */
   async delete(storeName: string, key: string): Promise<void> {
     if (!this._instance) await this.init();
     if (!this._instance) throw new Error("Database not initialized");
-    return this._instance.delete(storeName as any, key);
+    try {
+      return await this._instance.delete(storeName as any, key);
+    } catch (e) {
+      console.warn(`[db] delete(${storeName}, ${key}) 失敗，嘗試重新連接:`, e);
+      await this.reconnect();
+      if (!this._instance) throw new Error("Database reconnect failed");
+      return this._instance.delete(storeName as any, key);
+    }
   },
 
   /**
-   * 清空表
+   * 清空表（帶重試）
    */
   async clear(storeName: string): Promise<void> {
     if (!this._instance) await this.init();
     if (!this._instance) throw new Error("Database not initialized");
-    return this._instance.clear(storeName as any);
+    try {
+      return await this._instance.clear(storeName as any);
+    } catch (e) {
+      console.warn(`[db] clear(${storeName}) 失敗，嘗試重新連接:`, e);
+      await this.reconnect();
+      if (!this._instance) throw new Error("Database reconnect failed");
+      return this._instance.clear(storeName as any);
+    }
   },
 
   /**
-   * 計數
+   * 計數（帶重試）
    */
   async count(storeName: string): Promise<number> {
     if (!this._instance) await this.init();
     if (!this._instance) return 0;
-    return this._instance.count(storeName as any);
+    try {
+      return await this._instance.count(storeName as any);
+    } catch (e) {
+      console.warn(`[db] count(${storeName}) 失敗，嘗試重新連接:`, e);
+      await this.reconnect();
+      if (!this._instance) return 0;
+      return this._instance.count(storeName as any);
+    }
   },
 };
 
 export type { AguaphoneDB };
-

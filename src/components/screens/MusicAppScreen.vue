@@ -430,6 +430,7 @@ $pink-accent: #ec4899;
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
+  padding-top: max(20px, var(--safe-top, 0px));
   background: $card-bg;
   border-bottom: 3px solid $frame-border;
 

@@ -487,6 +487,7 @@ function sendToCharacter(characterId: string, characterName: string) {
   align-items: center;
   gap: 12px;
   padding: 16px;
+  padding-top: max(16px, var(--safe-top, 0px));
   background: var(--color-surface, #fff);
   border-bottom: 1px solid var(--color-border, #e8e8e8);
 

@@ -808,6 +808,8 @@ export const useSettingsStore = defineStore("settings", () => {
    * 檢查任務是否應該使用備用 API
    */
   function shouldUseAuxiliary(taskType: string): boolean {
+    // 備用 API 總開關關閉時，一律不使用備用
+    if (!auxiliary.enabled) return false;
     if (!isRoutableTaskType(taskType)) return false;
     const profileId = auxiliary.taskBindings[taskType];
     if (!profileId) return false;
@@ -817,6 +819,7 @@ export const useSettingsStore = defineStore("settings", () => {
 
   /**
    * 獲取任務對應的 API 配置
+   * 當備用 API 總開關關閉時，所有任務一律使用主 API
    */
   function getAPIForTask(taskType: string): {
     api: APISettings;
@@ -826,17 +829,20 @@ export const useSettingsStore = defineStore("settings", () => {
     let taskApi: APISettings;
     let taskGen: GenerationParams;
 
-    if (isRoutableTaskType(taskType)) {
+    if (isRoutableTaskType(taskType) && auxiliary.enabled) {
       const profileId = auxiliary.taskBindings[taskType];
-      if (profileId) {
-        const profile = auxiliary.profiles.find((p) => p.id === profileId);
-        if (isUsableAuxiliaryProfile(profile)) {
-          taskApi = { ...profile.api };
-          taskGen = profile.generation;
-        } else {
-          taskApi = { ...api };
-          taskGen = generation;
-        }
+      const profile = profileId
+        ? auxiliary.profiles.find((p) => p.id === profileId)
+        : undefined;
+      const useAux = profileId && isUsableAuxiliaryProfile(profile);
+
+      console.log(
+        `[getAPIForTask] 任務=${taskType}, 備用開關=${auxiliary.enabled}, 綁定profileId=${profileId ?? "無"}, 使用備用=${!!useAux}, 模型=${useAux ? profile!.api.model : api.model}`,
+      );
+
+      if (useAux) {
+        taskApi = { ...profile!.api };
+        taskGen = profile!.generation;
       } else {
         taskApi = { ...api };
         taskGen = generation;
@@ -849,6 +855,12 @@ export const useSettingsStore = defineStore("settings", () => {
       }
 
       return { api: taskApi, generation: taskGen };
+    }
+
+    if (isRoutableTaskType(taskType) && !auxiliary.enabled) {
+      console.log(
+        `[getAPIForTask] 任務=${taskType}, 備用 API 總開關已關閉，使用主 API, 模型=${api.model}`,
+      );
     }
 
     return { api, generation };

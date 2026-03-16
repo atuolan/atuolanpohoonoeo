@@ -133,7 +133,7 @@ function aiProxyPlugin(): Plugin {
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
-  base: '/',
+  base: "/",
   plugins: [
     vue(),
     aiProxyPlugin(),
@@ -150,11 +150,9 @@ export default defineConfig(({ mode }) => ({
     strictPort: false,
     hmr: {
       overlay: false, // 禁用錯誤覆蓋層
-      // 明確設定 HMR WebSocket 端口，避免 undefined
-      protocol: 'ws',
-      host: 'localhost',
-      port: 5173,
-      clientPort: 5173,
+      // 不硬編碼 port，讓 Vite 自動使用當前 server 的 port
+      protocol: "ws",
+      host: "localhost",
     },
     proxy: {
       // 音樂 API 代理

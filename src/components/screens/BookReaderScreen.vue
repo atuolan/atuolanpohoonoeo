@@ -732,6 +732,7 @@ function applyPreset(preset: (typeof BG_PRESETS)[0]) {
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
+  padding-top: max(10px, var(--safe-top, 0px));
   background: inherit;
   border-bottom: 1px solid rgba(128, 128, 128, 0.15);
   flex-shrink: 0;

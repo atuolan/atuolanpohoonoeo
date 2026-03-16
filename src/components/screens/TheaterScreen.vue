@@ -841,6 +841,7 @@ function handleScroll() {
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
+  padding-top: max(12px, var(--safe-top, 0px));
   background: var(--color-surface, #fff);
   border-bottom: 1px solid var(--color-border, #e0e0e0);
   flex-shrink: 0;
@@ -1087,6 +1088,7 @@ function handleScroll() {
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
+  padding-top: max(12px, var(--safe-top, 0px));
   background: var(--color-surface, #fff);
   border-bottom: 1px solid var(--color-border, #e0e0e0);
   flex-shrink: 0;

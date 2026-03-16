@@ -28,11 +28,57 @@ export async function registerServiceWorker(): Promise<boolean> {
   try {
     const registration = await navigator.serviceWorker.register("/sw.js");
     console.log("[SW] Service Worker 註冊成功:", registration.scope);
+
+    // 偵測新 SW 進入 waiting 狀態（有更新可用）
+    const onUpdateFound = () => {
+      const newWorker = registration.installing;
+      if (!newWorker) return;
+
+      newWorker.addEventListener("statechange", () => {
+        // 新 SW 安裝完成且有舊 SW 在運行 → 通知頁面有更新
+        if (
+          newWorker.state === "installed" &&
+          navigator.serviceWorker.controller
+        ) {
+          console.log("[SW] 新版本已就緒，通知頁面");
+          window.dispatchEvent(new CustomEvent("sw:update-available"));
+        }
+      });
+    };
+
+    registration.addEventListener("updatefound", onUpdateFound);
+
+    // 頁面重新整理後，若新 SW 已在 waiting，也要通知
+    if (registration.waiting && navigator.serviceWorker.controller) {
+      window.dispatchEvent(new CustomEvent("sw:update-available"));
+    }
+
     return true;
   } catch (error) {
     console.error("[SW] Service Worker 註冊失敗:", error);
     return false;
   }
+}
+
+/**
+ * 觸發 SW 更新：通知 waiting 中的新 SW 可以 skipWaiting
+ * 呼叫後頁面會自動 reload
+ */
+export async function applyServiceWorkerUpdate(): Promise<void> {
+  const registration = await navigator.serviceWorker.getRegistration();
+  if (!registration?.waiting) return;
+
+  // 監聽 controllerchange：新 SW 接管後 reload
+  navigator.serviceWorker.addEventListener(
+    "controllerchange",
+    () => {
+      window.location.reload();
+    },
+    { once: true },
+  );
+
+  // 通知 waiting 中的新 SW 執行 skipWaiting
+  registration.waiting.postMessage({ type: "SKIP_WAITING" });
 }
 
 /**

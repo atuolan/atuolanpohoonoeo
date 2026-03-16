@@ -13,23 +13,24 @@ import AuthScreen from "@/components/screens/AuthScreen.vue";
 import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import { useSwipeBack } from "@/composables/useSwipeBack";
 import { useTimeTheme } from "@/composables/useTimeTheme";
+import { proactiveMessageService } from "@/services/ProactiveMessageService";
 import {
-    useCanvasStore,
-    useCharactersStore,
-    useChatStore,
-    useLorebooksStore,
-    useNotificationStore,
-    useSettingsStore,
-    useStickerStore,
-    useThemeStore,
+  useCanvasStore,
+  useCharactersStore,
+  useChatStore,
+  useLorebooksStore,
+  useNotificationStore,
+  useSettingsStore,
+  useStickerStore,
+  useThemeStore,
 } from "@/stores";
 import { useAuthStore } from "@/stores/auth";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 // 頁面組件
 import {
-    AICharacterModal,
-    ImportModal,
-    ThemeSettingsModal,
+  AICharacterModal,
+  ImportModal,
+  ThemeSettingsModal,
 } from "@/components/modals";
 import GlobalThemeModal from "@/components/modals/GlobalThemeModal.vue";
 import MediaLogManager from "@/components/modals/MediaLogManager.vue";
@@ -65,6 +66,7 @@ import { useUserStore } from "@/stores";
 import { usePhoneCallStore } from "@/stores/phoneCall";
 import type { CharacterImportResult } from "@/types/character";
 import type { Chat, MultiCharMember, WaimaiOrderSnapshot } from "@/types/chat";
+import { applyServiceWorkerUpdate } from "@/utils/storagePersistence";
 import { getIncomingCallScheduler } from "./services/IncomingCallScheduler";
 import { PendingCall } from "./types";
 
@@ -109,6 +111,22 @@ const phoneCallStore = usePhoneCallStore();
 const showResumeCallDialog = ref(false);
 const resumeCallSnapshot =
   ref<ReturnType<typeof phoneCallStore.loadCallSnapshot>>(null);
+
+// ===== SW 更新提示 =====
+const showSwUpdateToast = ref(false);
+
+function handleSwUpdate() {
+  showSwUpdateToast.value = true;
+}
+
+async function applySwUpdate() {
+  showSwUpdateToast.value = false;
+  await applyServiceWorkerUpdate();
+}
+
+function dismissSwUpdate() {
+  showSwUpdateToast.value = false;
+}
 
 // ===== 全局流式輸出窗口 =====
 const streamingWindow = useStreamingWindow();
@@ -546,15 +564,12 @@ watch(
   },
 );
 
-// 應用啟動時載入數據
-onMounted(async () => {
-  // 初始化驗證狀態
-  await authStore.initialize();
-
-  // 如果未驗證，不載入其他數據
-  if (!authStore.isAuthenticated) {
-    return;
-  }
+// 已驗證後載入所有應用資料（可被 onMounted 和 watch 共用）
+let appDataLoaded = false;
+async function loadAppData() {
+  // 防止重複載入
+  if (appDataLoaded) return;
+  appDataLoaded = true;
 
   // 執行數據遷移（在載入數據之前）
   try {
@@ -564,7 +579,6 @@ onMounted(async () => {
     await migrationService.runMigrations();
   } catch (error) {
     console.error("[App] 數據遷移失敗:", error);
-    // 不阻止應用啟動
   }
 
   themeStore.loadFromStorage();
@@ -577,6 +591,9 @@ onMounted(async () => {
     stickerStore.init(),
     notificationStore.init(),
   ]);
+
+  // characters 已載入，立即啟動主動發訊息服務
+  proactiveMessageService.start();
 
   // 載入全局遊戲經濟狀態（錢包、裝飾品等）
   const gameEconomyStore = useGameEconomyStore();
@@ -624,6 +641,42 @@ onMounted(async () => {
     resumeCallSnapshot.value = snapshot;
     showResumeCallDialog.value = true;
   }
+
+  // 初始化雲端推送鬧鐘（拉取離線訊息）
+  try {
+    const { useCloudPushStore } = await import("@/stores/cloudPush");
+    const cloudPushStore = useCloudPushStore();
+    await cloudPushStore.loadSettings();
+    if (cloudPushStore.enabled) {
+      await cloudPushStore.pullOfflineMessages();
+    }
+  } catch (e) {
+    console.error("[App] 雲端推送初始化失敗:", e);
+  }
+}
+
+// 監聽驗證狀態：若驗證成功（例如在 AuthScreen 輸入碼後不 reload 的情況），自動載入資料
+watch(
+  () => authStore.isAuthenticated,
+  (authenticated) => {
+    if (authenticated) {
+      void loadAppData();
+    }
+  },
+);
+
+// 應用啟動時載入數據
+onMounted(async () => {
+  // 初始化驗證狀態
+  await authStore.initialize();
+
+  // 已驗證則立即載入資料；未驗證則等 watch 觸發
+  if (authStore.isAuthenticated) {
+    await loadAppData();
+  }
+
+  // 監聽 SW 更新事件
+  window.addEventListener("sw:update-available", handleSwUpdate);
 });
 
 onUnmounted(() => {
@@ -635,6 +688,8 @@ onUnmounted(() => {
   window.removeEventListener("holiday:detected", handleHolidayDetected);
   // 移除頁面可見性監聽
   document.removeEventListener("visibilitychange", handleVisibilityChange);
+  // 移除 SW 更新監聽
+  window.removeEventListener("sw:update-available", handleSwUpdate);
 });
 
 // 動態 CSS 變數
@@ -1943,6 +1998,19 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
 
     <!-- 系統通知 Toast -->
     <NotificationToast @navigate="handleNotificationNavigate" />
+
+    <!-- SW 更新提示 Toast -->
+    <Teleport to="body">
+      <div v-if="showSwUpdateToast" class="sw-update-toast">
+        <span>有新版本可用</span>
+        <button class="sw-update-btn apply" @click="applySwUpdate">
+          立即更新
+        </button>
+        <button class="sw-update-btn dismiss" @click="dismissSwUpdate">
+          稍後
+        </button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -2300,5 +2368,43 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+.sw-update-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(30, 30, 40, 0.92);
+  color: #fff;
+  border-radius: 24px;
+  font-size: 13px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  white-space: nowrap;
+
+  .sw-update-btn {
+    border: none;
+    border-radius: 12px;
+    padding: 4px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    font-weight: 500;
+
+    &.apply {
+      background: #4f8ef7;
+      color: #fff;
+    }
+
+    &.dismiss {
+      background: rgba(255, 255, 255, 0.15);
+      color: #ccc;
+    }
+  }
 }
 </style>
