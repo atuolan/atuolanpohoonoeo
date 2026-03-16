@@ -1,4 +1,4 @@
-/**
+﻿/**
  * PushAlarmDO — Durable Object
  * 每個用戶一個實例，負責定時呼叫 AI、暫存訊息、推送通知
  */
@@ -218,32 +218,88 @@ export class PushAlarmDO {
 
   async callAI(config, character) {
     const { apiSettings, userName } = config;
-    const endpoint = apiSettings.endpoint.replace(/\/+$/, '');
+    const endpoint = apiSettings.endpoint.replace(/\/+$/, "");
     const url = `${endpoint}/chat/completions`;
 
-    const systemContent = [character.personality, character.systemPrompt]
-      .filter(Boolean)
-      .join('\n\n');
+    // ── System prompt ──────────────────────────────────────────
+    const parts = [];
+    if (character.personality) parts.push(character.personality);
+    if (character.systemPrompt) parts.push(character.systemPrompt);
 
-    const userPrompt = `[系統指令] 請以 ${character.name} 的身份，主動向 ${userName} 發起一段自然的對話。像是你自己想到要說的話，不要提及這是系統要求的。如果是深夜時段，可以假設用戶已經入睡。保持簡短，1-3 句話即可。`;
+    // 總結記憶
+    if (character.recentSummaries?.length) {
+      parts.push(
+        "<summaries>\n" +
+        character.recentSummaries.map((s, i) => `[總結 ${i + 1}] ${s}`).join("\n") +
+        "\n</summaries>"
+      );
+    }
+
+    // 表情包列表
+    const stickerList = character.stickerNames?.length
+      ? character.stickerNames.join("\n")
+      : "（無可用表情包）";
+
+    // 線上聊天規則
+    parts.push(
+      `<online_chat_rules>\n` +
+      `${userName}：線上模式有什麼特別的規則嗎？\n` +
+      `基拉祈：有的！這是手機聊天，所以：\n` +
+      `基拉祈：不能用 *動作* 描寫——你們看不見彼此，只能透過文字感受情緒。\n` +
+      `基拉祈：主動推動對話，不要原地打轉。\n` +
+      `基拉祈：好了，${userName}，我們準備好了！在開始之前，讓我們做個承諾。\n` +
+      `雪拉比：我們會完整走完流程，不跳步。\n` +
+      `基拉祈：我們會讓你和 ${character.name} 平等閃耀，真實互動。角色卡裡的特殊描寫要求，我們會當作核心來實現。\n` +
+      `【規則】\n` +
+      `- 表情包格式：\`[sticker:表情包名称]\` 例如：\`[sticker:开心]\`\n` +
+      `- 訊息格式：<msg></msg> 包裹\n` +
+      `- 第一條訊息必須包含 ˇ想法ˇ\n` +
+      `- 直接接續下文，不要重複 ${userName} 說過的話\n` +
+      `【訊息數量】\n` +
+      `- 簡單回應：1-2 條訊息\n` +
+      `- 普通對話：2-4 條訊息\n` +
+      `- 複雜情境：4-8 條訊息\n` +
+      `- 可以用表情符號、語氣詞、省略號...這些都是線上聊天的特色。\n` +
+      `</online_chat_rules>`
+    );
+
+    parts.push(
+      `<sticker_list>\n` +
+      `${userName}：有哪些表情包可以用？\n\n` +
+      `可用表情包名稱：\n${stickerList}\n\n` +
+      `雪拉比：記住，只能用這個列表裡的表情包名稱哦！\n` +
+      `基拉祈：而且要根據 ${character.name} 的性格來決定用不用、用多少～\n` +
+      `</sticker_list>`
+    );
+
+    const systemContent = parts.join("\n\n");
+
+    // ── 聊天紀錄 + 觸發指令 ───────────────────────────────────
+    const historyMessages = (character.recentMessages || []).map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    const triggerPrompt = `[系統指令] 請以 ${character.name} 的身份，根據以上對話歷史，主動向 ${userName} 發起一段自然的對話。像是你自己想到要說的話，不要提及這是系統要求的。如果是深夜時段，可以假設用戶已經入睡，但你想分享事情。`;
 
     const body = {
       model: apiSettings.model,
       temperature: apiSettings.temperature ?? 0.7,
       max_tokens: apiSettings.maxTokens ?? 500,
       messages: [
-        { role: 'system', content: systemContent },
-        { role: 'user', content: userPrompt },
+        { role: "system", content: systemContent },
+        ...historyMessages,
+        { role: "user", content: triggerPrompt },
       ],
     };
 
     const headers = {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       Authorization: `Bearer ${apiSettings.apiKey}`,
     };
 
     const res = await fetch(url, {
-      method: 'POST',
+      method: "POST",
       headers,
       body: JSON.stringify(body),
     });
@@ -256,7 +312,7 @@ export class PushAlarmDO {
     const data = await res.json();
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
-      throw new Error('AI 回應為空');
+      throw new Error("AI 回應為空");
     }
     return content.trim();
   }

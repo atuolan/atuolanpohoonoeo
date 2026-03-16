@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 雲端推送鬧鐘 — Pinia Store
  * 管理雲端推送設定、同步、離線訊息拉取
  */
@@ -106,30 +106,73 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
       const settingsStore = useSettingsStore();
       const userStore = useUserStore();
 
+      // 撈取表情包名稱列表（供 Worker 構建 prompt 用）
+      const { useStickerStore } = await import("@/stores/sticker");
+      const stickerStore = useStickerStore();
+      if (!stickerStore.initialized) await stickerStore.init();
+      const stickerNames = stickerStore.allCategories
+        .flatMap((cat) => cat.stickers.map((s) => s.name))
+        .filter(Boolean);
+
+      // 撈取每個角色的聊天紀錄和總結
+      const { db, DB_STORES } = await import("@/db/database");
+      const allChats = await db.getAll<any>(DB_STORES.CHATS);
+      const allSummaries = await db.getAll<any>(DB_STORES.SUMMARIES);
+
       // 只傳有啟用主動發訊息的角色，並帶上各自的時間設定
-      const characters: CloudPushCharacter[] = charactersStore.characters
-        .filter((c) => c.proactiveMessageSettings?.enabled === true)
-        .map((c) => {
-          const ps = c.proactiveMessageSettings!;
-          return {
-            id: c.id,
-            name: c.nickname || c.data.name,
-            personality:
-              (c.data.description || "") +
-              (c.data.description && c.data.personality ? "\n\n" : "") +
-              (c.data.personality || ""),
-            systemPrompt: c.data.system_prompt || "",
-            avatar: null, // 不傳 base64 頭像到雲端
-            proactiveSettings: {
-              intervalMinutes: ps.intervalMinutes,
-              doNotDisturbEnabled: ps.doNotDisturbEnabled,
-              doNotDisturbStart: ps.doNotDisturbStart,
-              doNotDisturbEnd: ps.doNotDisturbEnd,
-              lastSentTime: ps.lastSentTime,
-              nextScheduledTime: ps.nextScheduledTime,
-            },
-          };
-        });
+      const characters: CloudPushCharacter[] = await Promise.all(
+        charactersStore.characters
+          .filter((c) => c.proactiveMessageSettings?.enabled === true)
+          .map(async (c) => {
+            const ps = c.proactiveMessageSettings!;
+
+            // 找最近的聊天，取最後 15 輪（user + assistant 各算一條）
+            const charChat = allChats
+              .filter((ch: any) => ch.characterId === c.id && !ch.isGroupChat)
+              .sort((a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+
+            let recentMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
+            if (charChat?.messages?.length) {
+              // 取最後 30 條（15 輪 × 2），過濾掉 system 訊息
+              const msgs = (charChat.messages as any[])
+                .filter((m) => m.sender === "user" || m.sender === "assistant")
+                .slice(-30);
+              recentMessages = msgs.map((m) => ({
+                role: m.sender === "user" ? "user" : "assistant",
+                content: (m.content || "").slice(0, 500), // 截斷過長訊息
+              }));
+            }
+
+            // 取最近 5 條總結
+            const charSummaries = allSummaries
+              .filter((s: any) => s.characterId === c.id)
+              .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))
+              .slice(0, 5)
+              .map((s: any) => s.content as string);
+
+            return {
+              id: c.id,
+              name: c.nickname || c.data.name,
+              personality:
+                (c.data.description || "") +
+                (c.data.description && c.data.personality ? "\n\n" : "") +
+                (c.data.personality || ""),
+              systemPrompt: c.data.system_prompt || "",
+              avatar: null, // 不傳 base64 頭像到雲端
+              recentMessages,
+              recentSummaries: charSummaries,
+              stickerNames,
+              proactiveSettings: {
+                intervalMinutes: ps.intervalMinutes,
+                doNotDisturbEnabled: ps.doNotDisturbEnabled,
+                doNotDisturbStart: ps.doNotDisturbStart,
+                doNotDisturbEnd: ps.doNotDisturbEnd,
+                lastSentTime: ps.lastSentTime,
+                nextScheduledTime: ps.nextScheduledTime,
+              },
+            };
+          }),
+      );
 
       // 組裝 API 設定
       const taskConfig = settingsStore.getAPIForTask("chat");

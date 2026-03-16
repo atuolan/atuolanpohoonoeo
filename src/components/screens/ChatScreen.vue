@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import {
   AVAILABLE_SAMPLERS as novelAISamplers,
   PRESET_SIZES as novelAISizePresets,
@@ -7418,6 +7418,11 @@ function flushDeferredPendingMessage() {
 
 // 檢查待處理來電
 onMounted(async () => {
+  // 通知主動發訊服務：用戶進入此角色的聊天頁面
+  if (props.characterId) {
+    proactiveMessageService.enterChat(props.characterId);
+  }
+
   // 初始化全域 regex 腳本
   regexScriptsStore.init();
 
@@ -7591,6 +7596,11 @@ watch(
 );
 
 onUnmounted(() => {
+  // 通知主動發訊服務：用戶離開此角色的聊天頁面，從現在起開始計算間隔
+  if (props.characterId) {
+    proactiveMessageService.leaveChat(props.characterId);
+  }
+
   // 取消流式窗口事件監聽
   _unregisterStreamingClose?.();
   _unregisterStreamingStop?.();

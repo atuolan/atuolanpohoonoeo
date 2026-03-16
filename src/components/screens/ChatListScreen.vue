@@ -1322,19 +1322,24 @@ async function togglePinChat() {
 .contacts-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 1fr; // 所有行等高，自適應內容
   gap: 12px;
   padding: 0 16px;
+  align-items: stretch;
 }
 
 .contact-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 16px 8px;
+  justify-content: flex-start;
+  padding: 16px 8px 12px;
   background: var(--color-surface, #fff);
   border-radius: 16px;
   cursor: pointer;
   transition: all 0.2s;
+  height: 100%; // 撐滿 grid row 高度，確保同行等高
+  box-sizing: border-box;
 
   &:hover {
     transform: translateY(-2px);
@@ -1345,9 +1350,12 @@ async function togglePinChat() {
 .contact-avatar {
   width: 60px;
   height: 60px;
+  min-width: 60px;
+  min-height: 60px;
   border-radius: 50%;
   overflow: hidden;
   margin-bottom: 8px;
+  flex-shrink: 0; // 防止頭像被壓縮
 
   img {
     width: 100%;
@@ -1361,16 +1369,22 @@ async function togglePinChat() {
   font-weight: 600;
   color: var(--color-text, #333);
   text-align: center;
+  width: 100%;
+  // 允許換行但最多兩行，避免撐高卡片
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
+  word-break: break-all;
+  line-height: 1.3;
 }
 
 .contact-hint {
   font-size: 11px;
   color: var(--color-text-muted, #999);
   margin-top: 4px;
+  text-align: center;
+  white-space: nowrap;
 }
 
 // ===== 群聊相關樣式 =====

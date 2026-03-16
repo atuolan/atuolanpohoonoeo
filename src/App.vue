@@ -24,6 +24,7 @@ import {
   useStickerStore,
   useThemeStore,
 } from "@/stores";
+import { useAIGenerationStore } from "@/stores/aiGeneration";
 import { useAuthStore } from "@/stores/auth";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 // 頁面組件
@@ -141,6 +142,11 @@ function handleGlobalStreamingClose() {
 }
 
 function handleGlobalStreamingStop() {
+  // 中止所有正在進行的 AI 生成任務
+  const aiGenerationStore = useAIGenerationStore();
+  for (const task of aiGenerationStore.activeTasks) {
+    aiGenerationStore.abortGeneration(task.chatId, task.taskType);
+  }
   streamingWindow.emit("stop");
 }
 

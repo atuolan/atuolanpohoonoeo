@@ -11,6 +11,12 @@ export interface CloudPushCharacter {
   /** system_prompt */
   systemPrompt: string;
   avatar: string | null;
+  /** 最近聊天紀錄（最多 15 輪，每輪含 user + assistant） */
+  recentMessages?: Array<{ role: "user" | "assistant"; content: string }>;
+  /** 最近總結（最多 5 條） */
+  recentSummaries?: string[];
+  /** 可用表情包名稱列表 */
+  stickerNames?: string[];
   /** 主動發訊息設定（只傳啟用的角色才有此欄位） */
   proactiveSettings: {
     intervalMinutes: number;
