@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import {
   AVAILABLE_SAMPLERS as novelAISamplers,
   PRESET_SIZES as novelAISizePresets,
@@ -1688,6 +1688,10 @@ const chatAppearance = ref<ChatAppearance | undefined>(undefined);
 
 // 保存外觀設定
 function saveAppearance(appearance: ChatAppearance) {
+  console.log(
+    "[ChatScreen] saveAppearance 收到:",
+    JSON.stringify(appearance.wallpaper, null, 2),
+  );
   chatStore.updateAppearance(appearance);
   chatAppearance.value = appearance;
   // 套用外觀到當前聊天（使用 nextTick 確保 DOM 已更新）
@@ -1826,7 +1830,7 @@ function applyChatAppearance(appearance?: ChatAppearance) {
     );
   }
 
-  // 套用聊天專屬氣泡樣式
+  // 套用聊天專屬氣泡樣式（無論有無設定都要處理，確保舊值不殘留）
   if (appearance.bubble) {
     container.style.setProperty(
       "--bubble-user-bg",
@@ -1849,18 +1853,51 @@ function applyChatAppearance(appearance?: ChatAppearance) {
       "--bubble-max-width",
       `${appearance.bubble.maxWidth}%`,
     );
+  } else {
+    // 沒有自訂氣泡：清除容器層級的覆蓋，讓全局主題值生效
+    container.style.removeProperty("--bubble-user-bg");
+    container.style.removeProperty("--bubble-user-text");
+    container.style.removeProperty("--bubble-ai-bg");
+    container.style.removeProperty("--bubble-ai-text");
+    container.style.removeProperty("--bubble-radius");
+    container.style.removeProperty("--bubble-max-width");
   }
 
-  // 套用聊天專屬桌布樣式
+  // 套用聊天專屬桌布樣式（無論有無桌布都要處理，確保舊值不殘留）
   if (appearance.wallpaper) {
     let wallpaperValue: string;
     if (appearance.wallpaper.type === "image") {
-      wallpaperValue = `url("${appearance.wallpaper.value}")`;
+      // 圖片類型：檢查 URL 是否有效
+      const imageUrl = appearance.wallpaper.value;
+      if (
+        imageUrl &&
+        (imageUrl.startsWith("data:") ||
+          imageUrl.startsWith("blob:") ||
+          imageUrl.startsWith("http"))
+      ) {
+        wallpaperValue = `url("${imageUrl}")`;
+      } else {
+        // 無效的圖片 URL，fallback 到全局桌布
+        console.warn("[ChatScreen] 無效的桌布圖片 URL，使用全局桌布");
+        wallpaperValue = "var(--wallpaper-value, var(--color-background))";
+      }
     } else if (appearance.wallpaper.type === "time-theme") {
       // 跟隨時間：使用全局 time-theme 變數（由 theme store 動態更新）
-      wallpaperValue = "var(--time-theme-bg, var(--color-background))";
+      wallpaperValue =
+        "var(--time-theme-bg, var(--wallpaper-value, var(--color-background)))";
+    } else if (
+      appearance.wallpaper.type === "gradient" ||
+      appearance.wallpaper.type === "color"
+    ) {
+      // 漸層或純色：直接使用 value
+      wallpaperValue =
+        appearance.wallpaper.value ||
+        "var(--wallpaper-value, var(--color-background))";
     } else {
-      wallpaperValue = appearance.wallpaper.value || "var(--color-background)";
+      // 其他類型（pattern 等）
+      wallpaperValue =
+        appearance.wallpaper.value ||
+        "var(--wallpaper-value, var(--color-background))";
     }
     console.log("[ChatScreen] 套用桌布:", {
       type: appearance.wallpaper.type,
@@ -1886,6 +1923,13 @@ function applyChatAppearance(appearance?: ChatAppearance) {
       "--chat-wallpaper-repeat",
       fit === "repeat" ? "repeat" : "no-repeat",
     );
+  } else {
+    // 沒有自訂桌布：清除所有聊天專屬桌布變數，讓全局桌布生效
+    container.style.removeProperty("--chat-wallpaper");
+    container.style.removeProperty("--chat-wallpaper-blur");
+    container.style.removeProperty("--chat-wallpaper-opacity");
+    container.style.removeProperty("--chat-wallpaper-fit");
+    container.style.removeProperty("--chat-wallpaper-repeat");
   }
 
   // 套用聊天專屬字體樣式
@@ -5810,7 +5854,11 @@ watch(
         container.style.removeProperty("--color-primary");
         container.style.removeProperty("--color-primary-light");
       } else {
-        // 關閉夜晚模式：清除夜晚強制覆蓋，重新套用聊天專屬外觀
+        // 關閉夜晚模式：清除所有夜晚強制覆蓋（包含 --bubble-* 和 --chat-bubble-*），重新套用聊天專屬外觀
+        container.style.removeProperty("--bubble-user-bg");
+        container.style.removeProperty("--bubble-user-text");
+        container.style.removeProperty("--bubble-ai-bg");
+        container.style.removeProperty("--bubble-ai-text");
         container.style.removeProperty("--chat-bubble-user-bg");
         container.style.removeProperty("--chat-bubble-user-text");
         container.style.removeProperty("--chat-bubble-ai-bg");
@@ -7589,10 +7637,8 @@ watch(
       deferredPendingMessage = msg;
       return;
     }
-
-    nextTick(() => injectPendingMessage(msg));
+    injectPendingMessage(msg);
   },
-  { immediate: true },
 );
 
 onUnmounted(() => {
@@ -11304,21 +11350,24 @@ onUnmounted(() => {
   position: relative;
   overflow: hidden;
 
-  // 聊天專屬桌布（或默認背景）
+  // 聊天專屬桌布（或全局桌布，或默認背景色）
   &::before {
     content: "";
     position: absolute;
     inset: 0;
-    // 如果有自定義桌布則使用，否則使用默認背景色
-    background: var(--chat-wallpaper, var(--color-background));
+    // 優先使用聊天專屬桌布，其次全局桌布，最後才 fallback 到背景色
+    background: var(
+      --chat-wallpaper,
+      var(--wallpaper-value, var(--color-background))
+    );
     background-size: var(--chat-wallpaper-fit, var(--wallpaper-fit, cover));
     background-position: center;
     background-repeat: var(
       --chat-wallpaper-repeat,
       var(--wallpaper-repeat, no-repeat)
     );
-    filter: blur(var(--chat-wallpaper-blur, 0px));
-    opacity: var(--chat-wallpaper-opacity, 1);
+    filter: blur(var(--chat-wallpaper-blur, var(--wallpaper-blur, 0px)));
+    opacity: var(--chat-wallpaper-opacity, var(--wallpaper-opacity, 1));
     z-index: 0;
     pointer-events: none;
   }

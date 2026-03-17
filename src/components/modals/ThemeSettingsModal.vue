@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ImageCropper } from "@/components/common";
 import {
-    getAvatarFrameLayers,
-    getAvatarFrameSvg,
-    getLayerSrc,
-    isAvatarFrameImage,
-    isAvatarFrameSvg,
+  getAvatarFrameLayers,
+  getAvatarFrameSvg,
+  getLayerSrc,
+  isAvatarFrameImage,
+  isAvatarFrameSvg,
 } from "@/data/avatarFrames";
 import { getShopItemById } from "@/data/shopItems";
 import type { AvatarStyle, BubbleStyle, WallpaperStyle } from "@/stores";
@@ -412,8 +412,13 @@ function setBubbleMaxWidth(width: number) {
 
 // 處理桌布選擇
 function selectWallpaper(preset: (typeof wallpaperPresets)[0]) {
+  console.log("[ThemeSettingsModal] selectWallpaper:", preset);
   tempWallpaperStyle.value.type = preset.type as WallpaperStyle["type"];
   tempWallpaperStyle.value.value = preset.value;
+  console.log(
+    "[ThemeSettingsModal] tempWallpaperStyle after:",
+    JSON.stringify(tempWallpaperStyle.value, null, 2),
+  );
   if (isChatMode.value) {
     useCustomAppearance.value = true;
   } else {
@@ -603,12 +608,12 @@ function handleClose() {
       wallpaper: useCustomAppearance.value
         ? { ...tempWallpaperStyle.value }
         : undefined,
-      font: useCustomAppearance.value 
-        ? { 
+      font: useCustomAppearance.value
+        ? {
             ...tempFontStyle.value,
             // 保存實際的 px 值而不是名稱
-            size: `${tempFontSizeValue.value}px` as any
-          } 
+            size: `${tempFontSizeValue.value}px` as any,
+          }
         : undefined,
     };
     emit("saveChatAppearance", appearance);
@@ -674,16 +679,17 @@ watch(
               },
             }
           : defaultFont;
-        
+
         // 初始化字體大小滑块值（支持新舊格式）
         if (props.chatAppearance.font?.size) {
           const sizeValue = props.chatAppearance.font.size;
-          if (typeof sizeValue === 'string' && sizeValue.endsWith('px')) {
+          if (typeof sizeValue === "string" && sizeValue.endsWith("px")) {
             // 新格式：直接解析 px 值
             tempFontSizeValue.value = parseInt(sizeValue);
           } else {
             // 舊格式：從名稱轉換
-            tempFontSizeValue.value = fontNameToSize[sizeValue as string] || fontSizeDefault;
+            tempFontSizeValue.value =
+              fontNameToSize[sizeValue as string] || fontSizeDefault;
           }
         } else {
           tempFontSizeValue.value = fontSizeDefault;
@@ -703,7 +709,6 @@ watch(
         userFrameId: props.chatAppearance?.avatarFrames?.userFrameId ?? null,
         charFrameId: props.chatAppearance?.avatarFrames?.charFrameId ?? null,
       };
-
 
       // 載入遊戲經濟狀態（用於裝飾品）
       await gameEconomyStore.loadState(GLOBAL_WALLET_ID);
@@ -1078,7 +1083,12 @@ watch(
                     }"
                   >
                     這是 AI 的訊息氣泡
-                    <div class="preview-time" :style="{ color: tempBubbleStyle.aiTextColor }">12:00</div>
+                    <div
+                      class="preview-time"
+                      :style="{ color: tempBubbleStyle.aiTextColor }"
+                    >
+                      12:00
+                    </div>
                   </div>
                   <div
                     class="preview-bubble user"
@@ -1091,7 +1101,12 @@ watch(
                     }"
                   >
                     這是用戶的訊息氣泡
-                    <div class="preview-time" :style="{ color: tempBubbleStyle.userTextColor }">12:01</div>
+                    <div
+                      class="preview-time"
+                      :style="{ color: tempBubbleStyle.userTextColor }"
+                    >
+                      12:01
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1226,16 +1241,12 @@ watch(
             </div>
 
             <!-- 字體設定 -->
-            <div
-              v-if="activeTab === 'font'"
-              class="settings-section"
-            >
-              <h3 class="section-title">字體大小 ({{ tempFontSizeValue }}px)</h3>
+            <div v-if="activeTab === 'font'" class="settings-section">
+              <h3 class="section-title">
+                字體大小 ({{ tempFontSizeValue }}px)
+              </h3>
               <div class="slider-control">
-                <button
-                  class="size-preset-btn"
-                  @click="setFontSizeValue(14)"
-                >
+                <button class="size-preset-btn" @click="setFontSizeValue(14)">
                   小
                 </button>
                 <input
@@ -1244,18 +1255,16 @@ watch(
                   :max="fontSizeMax"
                   step="1"
                   :value="tempFontSizeValue"
-                  @input="setFontSizeValue(Number(($event.target as HTMLInputElement).value))"
+                  @input="
+                    setFontSizeValue(
+                      Number(($event.target as HTMLInputElement).value),
+                    )
+                  "
                 />
-                <button
-                  class="size-preset-btn"
-                  @click="setFontSizeValue(15)"
-                >
+                <button class="size-preset-btn" @click="setFontSizeValue(15)">
                   中
                 </button>
-                <button
-                  class="size-preset-btn"
-                  @click="setFontSizeValue(17)"
-                >
+                <button class="size-preset-btn" @click="setFontSizeValue(17)">
                   大
                 </button>
                 <span class="slider-value">{{ tempFontSizeValue }}px</span>
@@ -1303,7 +1312,9 @@ watch(
                     if (isChatMode) {
                       useCustomAppearance = true;
                     } else {
-                      themeStore.updateGlobalFont({ lineHeight: tempFontStyle.lineHeight });
+                      themeStore.updateGlobalFont({
+                        lineHeight: tempFontStyle.lineHeight,
+                      });
                     }
                   "
                 />
@@ -1327,7 +1338,9 @@ watch(
                     if (isChatMode) {
                       useCustomAppearance = true;
                     } else {
-                      themeStore.updateGlobalFont({ letterSpacing: tempFontStyle.letterSpacing });
+                      themeStore.updateGlobalFont({
+                        letterSpacing: tempFontStyle.letterSpacing,
+                      });
                     }
                   "
                 />

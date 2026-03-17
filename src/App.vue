@@ -661,7 +661,6 @@ async function loadAppData() {
   }
 }
 
-
 // 雲端推送心跳 interval（後台模式啟用時定期通知 Worker 本地仍存活）
 let cloudPushHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -669,22 +668,25 @@ function startCloudPushHeartbeat() {
   if (cloudPushHeartbeatTimer) return;
   // 立即發一次心跳
   void (async () => {
-    const { useCloudPushStore } = await import('@/stores/cloudPush');
+    const { useCloudPushStore } = await import("@/stores/cloudPush");
     await useCloudPushStore().sendAliveHeartbeat();
   })();
   // 每 5 分鐘發一次
-  cloudPushHeartbeatTimer = setInterval(async () => {
-    const { useCloudPushStore } = await import('@/stores/cloudPush');
-    await useCloudPushStore().sendAliveHeartbeat();
-  }, 5 * 60 * 1000);
-  console.log('[App] 雲端推送心跳已啟動');
+  cloudPushHeartbeatTimer = setInterval(
+    async () => {
+      const { useCloudPushStore } = await import("@/stores/cloudPush");
+      await useCloudPushStore().sendAliveHeartbeat();
+    },
+    5 * 60 * 1000,
+  );
+  console.log("[App] 雲端推送心跳已啟動");
 }
 
 function stopCloudPushHeartbeat() {
   if (cloudPushHeartbeatTimer) {
     clearInterval(cloudPushHeartbeatTimer);
     cloudPushHeartbeatTimer = null;
-    console.log('[App] 雲端推送心跳已停止');
+    console.log("[App] 雲端推送心跳已停止");
   }
 }
 
