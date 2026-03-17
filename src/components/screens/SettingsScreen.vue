@@ -1350,6 +1350,20 @@ async function exportData() {
       rendererRules: await db.getAll("rendererRules"),
       books: await db.getAll("books"),
       bookProgress: await db.getAll("bookProgress"),
+      promptLibrary: await (async () => {
+        // promptLibrary 沒有 keyPath，需要手動取得 key-value 對
+        try {
+          if (!db._instance) await db.init();
+          if (!db._instance) return [];
+          const tx = db._instance.transaction("promptLibrary", "readonly");
+          const store = tx.objectStore("promptLibrary");
+          const keys = await store.getAllKeys();
+          const values = await store.getAll();
+          return keys.map((key, i) => ({ key: String(key), value: values[i] }));
+        } catch {
+          return [];
+        }
+      })(),
       // audio-blobs 不備份（語音 Blob 體積過大，base64 後會膨脹 33%）
       // canvas layout（widget 佈局、app 圖標、日曆顏色等）存在獨立的 Aguaphone_V2 IDB
       canvasLayout: await (async () => {
