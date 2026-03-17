@@ -1670,13 +1670,14 @@ async function handleFileImport(event: Event) {
               message += `\n...還有 ${result.warnings.length - 5} 個警告`;
             }
           }
-          alert(message);
+          alert(message + "\n\n即將重新整理頁面以套用變更...");
 
-          // 刷新狀態
+          // 刷新狀態後重新載入頁面
           await refreshStorageStatus();
           await charactersStore.loadCharacters();
           await lorebooksStore.loadLorebooks();
           await settingsStore.loadSettings();
+          location.reload();
         } else {
           throw new Error(result.error || "舊版備份恢復失敗");
         }
@@ -2114,15 +2115,16 @@ async function handleFileImport(event: Event) {
       `媒體: ${Object.keys(mediaFiles).length}`,
     ].join("\n");
 
-    alert(`導入成功！\n${stats}`);
+    alert(`導入成功！\n${stats}\n\n即將重新整理頁面以套用變更...`);
 
-    // 刷新存儲狀態
+    // 刷新存儲狀態後重新載入頁面
     await refreshStorageStatus();
     await charactersStore.loadCharacters();
     await lorebooksStore.loadLorebooks();
     await settingsStore.loadSettings();
     await userStore.loadUserData();
     await themeStore.loadFromStorage();
+    location.reload();
   } catch (e) {
     console.error("導入失敗:", e);
     alert("導入失敗: " + (e instanceof Error ? e.message : String(e)));
