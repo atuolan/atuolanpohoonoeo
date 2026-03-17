@@ -263,7 +263,10 @@ onUnmounted(() => {
           showHistory ? "返回" : fateStore.phase === "home" ? "返回" : "上一步"
         }}
       </button>
-      <h1 class="fate-header__title">🔮 Fate</h1>
+      <h1 class="fate-header__title">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: text-bottom; margin-right: 4px; color: #c084fc;"><circle cx="12" cy="11" r="8"/><path d="M7 21h10"/><path d="M4 17h16"/><path d="m11 17-2 4"/><path d="m13 17 2 4"/></svg>
+        Fate
+      </h1>
       <button class="fate-header__history" @click="showHistory = !showHistory">
         {{ showHistory ? "占卜" : "歷史" }}
       </button>
@@ -282,7 +285,9 @@ onUnmounted(() => {
         </button>
       </div>
       <div v-if="fateStore.readings.length === 0" class="fate-history__empty">
-        <div class="fate-history__empty-icon">🌌</div>
+        <div class="fate-history__empty-icon">
+          <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/><circle cx="5" cy="8" r="1"/><circle cx="4" cy="15" r="1"/></svg>
+        </div>
         <p>尚無占卜記錄</p>
       </div>
       <div v-else class="fate-history__list">
@@ -329,29 +334,102 @@ onUnmounted(() => {
         v-if="fateStore.phase === 'home'"
         class="fate-phase fate-phase--home"
       >
+        <!-- 魔幻相框裝飾 -->
+        <div class="fate-home-frame">
+          <div class="fate-home-frame__arch"></div>
+          <div class="fate-home-frame__moon"></div>
+          
+          <div class="fate-home-frame__star fate-home-frame__star--tl">
+            <svg class="svg-star" viewBox="0 0 24 24"><path d="M12 0L14.5 9.5L24 12L14.5 14.5L12 24L9.5 14.5L0 12L9.5 9.5Z"/></svg>
+          </div>
+          <div class="fate-home-frame__star fate-home-frame__star--tr">
+            <svg class="svg-star" viewBox="0 0 24 24"><path d="M12 0L14.5 9.5L24 12L14.5 14.5L12 24L9.5 14.5L0 12L9.5 9.5Z"/></svg>
+          </div>
+          
+          <div class="fate-home-frame__ring fate-home-frame__ring--l"></div>
+          <div class="fate-home-frame__ring fate-home-frame__ring--r"></div>
+          <div class="fate-home-frame__bottom-deco fate-home-frame__bottom-deco--l"></div>
+          <div class="fate-home-frame__bottom-deco fate-home-frame__bottom-deco--r"></div>
+        </div>
+
         <div class="fate-home__hero">
-          <div class="fate-home__orb">🔮</div>
+          <div class="fate-home__orb">
+            <svg class="fate-home__orb-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" width="80" height="80" style="display: block; margin: 0 auto;">
+              <defs>
+                <radialGradient id="orb-grad" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="#ffdfa3" />
+                  <stop offset="40%" stop-color="#f28b82" />
+                  <stop offset="80%" stop-color="#c084fc" />
+                  <stop offset="100%" stop-color="rgba(192, 132, 252, 0)" />
+                </radialGradient>
+                <radialGradient id="orb-core" cx="40%" cy="30%" r="40%">
+                  <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9" />
+                  <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+                </radialGradient>
+              </defs>
+              <circle cx="50" cy="46" r="36" fill="url(#orb-grad)" />
+              <circle cx="50" cy="46" r="36" fill="url(#orb-core)" />
+              <path d="M24 86 C 36 78, 64 78, 76 86 L 82 94 C 70 98, 30 98, 18 94 Z" fill="#282c4a" stroke="#c084fc" stroke-width="2"/>
+              <path d="M30 82 C 40 78, 60 78, 70 82 L 76 86 C 60 88, 40 88, 24 86 Z" fill="#1e2236"/>
+              <path d="M40 25 L42 32 L49 34 L42 36 L40 43 L38 36 L31 34 L38 32 Z" fill="#ffdfa3"/>
+              <path d="M60 50 L61 54 L65 55 L61 56 L60 60 L59 56 L55 55 L59 54 Z" fill="#ffffff"/>
+              <path d="M50 20 L51 22 L53 23 L51 24 L50 26 L49 24 L47 23 L49 22 Z" fill="#ffffff"/>
+            </svg>
+          </div>
           <h2 class="fate-home__title">命運之門</h2>
           <p class="fate-home__subtitle">選擇你的占卜方式</p>
         </div>
-        <div class="fate-home__cards">
+        <div class="fate-orbit-menu">
+          <!-- 背景星軌連線 -->
+          <svg class="fate-orbit-menu__path" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <path d="M -10 90 Q 50 -20 110 90" fill="none" stroke="rgba(192, 132, 252, 0.4)" stroke-width="1.5" stroke-dasharray="4 6" />
+          </svg>
+          
+          <!-- 節點 1: 塔羅 -->
           <button
-            class="fate-type-card fate-type-card--active"
+            class="fate-orbit-node fate-orbit-node--active"
+            style="left: 20%; top: 52%;"
             @click="fateStore.goToPhase('setup')"
           >
-            <div class="fate-type-card__icon">🃏</div>
-            <div class="fate-type-card__name">塔羅牌占卜</div>
-            <div class="fate-type-card__desc">78 張塔羅牌，AI 深度解讀</div>
+            <div class="fate-orbit-node__core">
+              <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="2" width="16" height="20" rx="2" ry="2"/>
+                <circle cx="12" cy="12" r="4"/>
+                <path d="M12 8v8"/><path d="M8 12h8"/><path d="m9.17 9.17 5.66 5.66"/><path d="m14.83 9.17-5.66 5.66"/>
+              </svg>
+            </div>
+            <div class="fate-orbit-node__label">塔羅占卜</div>
           </button>
-          <div class="fate-type-card fate-type-card--locked">
-            <div class="fate-type-card__lock">🔒</div>
-            <div class="fate-type-card__name">星盤占卜</div>
-            <div class="fate-type-card__desc">敬請期待</div>
+
+          <!-- 節點 2: 星盤 (Locked) -->
+          <div class="fate-orbit-node fate-orbit-node--locked" style="left: 50%; top: 20%;">
+            <div class="fate-orbit-node__core">
+              <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/>
+                <path d="M12 2v2"/><path d="M12 20v2"/><path d="M2 12h2"/><path d="M20 12h2"/>
+              </svg>
+              <div class="fate-orbit-node__lock">
+                <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="5" y="11" width="14" height="10" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+              </div>
+            </div>
+            <div class="fate-orbit-node__label">星盤占卜</div>
           </div>
-          <div class="fate-type-card fate-type-card--locked">
-            <div class="fate-type-card__lock">🔒</div>
-            <div class="fate-type-card__name">靈擺占卜</div>
-            <div class="fate-type-card__desc">敬請期待</div>
+
+          <!-- 節點 3: 靈擺 (Locked) -->
+          <div class="fate-orbit-node fate-orbit-node--locked" style="left: 80%; top: 52%;">
+            <div class="fate-orbit-node__core">
+              <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 3l18 0"/><path d="M12 3v11"/><path d="M8 18l4 4 4-4-4-4-4 4z"/>
+              </svg>
+              <div class="fate-orbit-node__lock">
+                <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="5" y="11" width="14" height="10" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+              </div>
+            </div>
+            <div class="fate-orbit-node__label">靈擺占卜</div>
           </div>
         </div>
       </div>
@@ -553,10 +631,10 @@ onUnmounted(() => {
                 <div class="fate-fan__card-border" />
                 <span class="fate-fan__card-symbol">✦</span>
                 <div class="fate-fan__card-corner fate-fan__card-corner--tl">
-                  ✨
+                  <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><path d="M12 2L14 10L22 12L14 14L12 22L10 14L2 12L10 10Z"/></svg>
                 </div>
                 <div class="fate-fan__card-corner fate-fan__card-corner--br">
-                  ✨
+                  <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><path d="M12 2L14 10L22 12L14 14L12 22L10 14L2 12L10 10Z"/></svg>
                 </div>
               </div>
             </div>
@@ -654,7 +732,12 @@ onUnmounted(() => {
             v-else-if="fateStore.isInterpreting"
             class="fate-interpretation__loading"
           >
-            <div class="fate-interpretation__loading-icon">👁</div>
+            <div class="fate-interpretation__loading-icon">
+              <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #c084fc;">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </div>
             <p>正在通靈...</p>
           </div>
         </div>
@@ -675,39 +758,40 @@ onUnmounted(() => {
 </template>
 
 <style scoped lang="scss">
-$bg-s: #f8f6f2;
-$bg-e: #f0ede6;
-$surface: rgba(255, 255, 255, 0.75);
-$surface-h: rgba(255, 255, 255, 0.9);
-$surface-a: rgba(255, 255, 255, 0.95);
-$border-l: rgba(0, 0, 0, 0.06);
-$border-m: rgba(0, 0, 0, 0.1);
-$text-1: #1a1a2e;
-$text-2: #5a5a72;
-$text-3: #8e8e9f;
-$text-m: #b0b0be;
-$accent: #c77b3c;
-$accent-l: #e8a86d;
-$accent-s: rgba(199, 123, 60, 0.08);
-$accent-b: rgba(199, 123, 60, 0.2);
-$card-bg: #2c2438;
-$card-bg2: #362d46;
-$card-border: rgba(199, 123, 60, 0.45);
-$card-sym: rgba(232, 168, 109, 0.7);
-$danger: #e85d5d;
-$danger-s: rgba(232, 93, 93, 0.08);
-$danger-b: rgba(232, 93, 93, 0.2);
+$bg-s: #0f111a;
+$bg-e: #06070a;
+$surface: rgba(22, 24, 38, 0.6);
+$surface-h: rgba(30, 34, 54, 0.8);
+$surface-a: rgba(40, 44, 74, 0.9);
+$border-l: rgba(255, 255, 255, 0.08);
+$border-m: rgba(255, 255, 255, 0.15);
+$text-1: #e2e4f0;
+$text-2: #b0b5cc;
+$text-3: #7b82a3;
+$text-m: #4e5573;
+$accent: #f28b82;
+$accent-l: #ffdfa3;
+$accent-s: rgba(242, 139, 130, 0.12);
+$accent-b: rgba(242, 139, 130, 0.25);
+$card-bg: rgba(22, 24, 38, 0.8);
+$card-bg2: rgba(32, 35, 54, 0.9);
+$card-border: rgba(192, 132, 252, 0.4);
+$card-sym: rgba(255, 223, 163, 0.85);
+
+$danger: #f26666;
+$danger-s: rgba(242, 102, 102, 0.1);
+$danger-b: rgba(242, 102, 102, 0.25);
 $blur: blur(16px);
 $sh-sm:
-  0 1px 3px rgba(0, 0, 0, 0.04),
-  0 1px 2px rgba(0, 0, 0, 0.03);
+  0 2px 4px rgba(0, 0, 0, 0.2),
+  0 1px 2px rgba(0, 0, 0, 0.1);
 $sh-md:
-  0 4px 12px rgba(0, 0, 0, 0.05),
-  0 2px 4px rgba(0, 0, 0, 0.03);
+  0 6px 16px rgba(0, 0, 0, 0.3),
+  0 2px 6px rgba(0, 0, 0, 0.15);
 $sh-lg:
-  0 8px 24px rgba(0, 0, 0, 0.06),
-  0 4px 8px rgba(0, 0, 0, 0.04);
-$sh-glow: 0 0 20px rgba(199, 123, 60, 0.12);
+  0 12px 32px rgba(0, 0, 0, 0.4),
+  0 6px 12px rgba(0, 0, 0, 0.2);
+$sh-glow: 0 0 24px rgba(242, 139, 130, 0.15);
 $r-sm: 8px;
 $r-md: 12px;
 $r-lg: 16px;
@@ -718,7 +802,17 @@ $r-pill: 100px;
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: linear-gradient(170deg, $bg-s 0%, $bg-e 100%);
+  background-color: $bg-e;
+  background-image: 
+    radial-gradient(circle at 50% -20%, rgba(40, 32, 60, 0.6) 0%, rgba(6, 7, 10, 0) 70%),
+    radial-gradient(1px 1px at 15% 25%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 75% 15%, #fff, transparent),
+    radial-gradient(1px 1px at 60% 80%, rgba(255, 255, 255, 0.8), transparent),
+    radial-gradient(2px 2px at 25% 65%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1.5px 1.5px at 85% 55%, #fff, transparent),
+    radial-gradient(1px 1px at 45% 45%, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1px 1px at 30% 85%, #fff, transparent);
+  background-size: 100% 100%, 200px 200px, 250px 250px, 150px 150px, 300px 300px, 180px 180px, 220px 220px, 120px 120px;
   color: $text-1;
   overflow: hidden;
   font-family:
@@ -733,7 +827,7 @@ $r-pill: 100px;
   padding-top: max(12px, var(--safe-top, 0px));
   border-bottom: 1px solid $border-l;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.6);
+  background: rgba(12, 14, 22, 0.6);
   backdrop-filter: $blur;
   &__back,
   &__history {
@@ -773,6 +867,7 @@ $r-pill: 100px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  position: relative;
   animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   &__title {
     font-size: 22px;
@@ -800,15 +895,132 @@ $r-pill: 100px;
 // ══ 入口 ══
 .fate-phase--home {
   gap: 32px;
+  padding-bottom: 24px;
 }
+
+/* ━━ 魔幻相框裝飾 ━━ */
+.fate-home-frame {
+  position: absolute;
+  top: 10px;
+  bottom: 0;
+  left: 20px;
+  right: 20px;
+  pointer-events: none;
+  z-index: 0;
+
+  &__arch {
+    position: absolute;
+    inset: 0;
+    border: 1.5px solid rgba(255, 255, 255, 0.85);
+    border-bottom: none;
+    border-radius: 600px 600px 0 0;
+    
+    &::before {
+      content: '';
+      position: absolute;
+      inset: -8px;
+      border: 1px dashed rgba(255, 255, 255, 0.25);
+      border-bottom: none;
+      border-radius: 600px 600px 0 0;
+    }
+  }
+
+  &__moon {
+    position: absolute;
+    top: -26px;
+    left: 50%;
+    transform: translateX(-50%) rotate(-30deg);
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    box-shadow: inset -9px -10px 0 0 #fff;
+  }
+  
+  &__star {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    &::before, &::after {
+      content: '';
+      position: absolute;
+      background: #fff;
+    }
+    &::before {
+      width: 1px;
+      height: 40px;
+    }
+    &::after {
+      width: 40px;
+      height: 1px;
+    }
+    .svg-star {
+      position: relative;
+      z-index: 1;
+      width: 16px;
+      height: 16px;
+      path {
+        fill: #fff;
+      }
+    }
+    
+    &--tl {
+      top: 60px;
+      left: -20px;
+    }
+    &--tr {
+      top: 110px;
+      right: -15px;
+      &::before { height: 28px; }
+      &::after { width: 28px; }
+      .svg-star { width: 10px; height: 10px; }
+    }
+  }
+
+  &__ring {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border: 1px solid #fff;
+    border-radius: 50%;
+    top: 55%;
+    transform: translateY(-50%);
+    &--l {
+      left: -6.5px;
+    }
+    &--r {
+      right: -6.5px;
+    }
+  }
+
+  &__bottom-deco {
+    position: absolute;
+    bottom: 0;
+    width: 6px;
+    height: 14px;
+    background: #fff;
+    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+    &--l {
+      left: -3.5px;
+    }
+    &--r {
+      right: -3.5px;
+    }
+  }
+}
+
 .fate-home__hero {
   text-align: center;
+  position: relative;
+  z-index: 1;
+  padding-top: 56px;
 }
 .fate-home__orb {
   font-size: 64px;
   margin-bottom: 12px;
-  filter: drop-shadow(0 4px 16px rgba(199, 123, 60, 0.3));
-  animation: float 4s ease-in-out infinite;
+  filter: drop-shadow(0 4px 16px rgba(192, 132, 252, 0.4));
+  position: relative;
+  z-index: 1;
 }
 .fate-home__title {
   font-size: 28px;
@@ -821,53 +1033,134 @@ $r-pill: 100px;
   font-size: 15px;
   color: $text-3;
 }
-.fate-home__cards {
-  display: flex;
-  gap: 12px;
+.fate-orbit-menu {
+  position: relative;
   width: 100%;
+  height: 180px;
+  margin-top: 12px;
+  z-index: 2;
+  
+  &__path {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    path {
+      animation: dashScroll 30s linear infinite;
+    }
+  }
 }
 
-.fate-type-card {
-  flex: 1;
-  padding: 20px 12px;
-  border-radius: $r-lg;
-  text-align: center;
+@keyframes dashScroll {
+  to {
+    stroke-dashoffset: -200;
+  }
+}
+
+.fate-orbit-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  border: 1.5px solid $border-l;
-  background: $surface;
-  box-shadow: $sh-sm;
-  transition: all 0.25s;
-  &--active {
-    cursor: pointer;
-    border-color: $accent-b;
-    &:hover {
-      transform: translateY(-3px);
-      box-shadow: $sh-md, $sh-glow;
-      border-color: $accent;
+  gap: 10px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  
+  &__core {
+    width: 56px;
+    height: 56px;
+    border-radius: 18px; /* squircle feel */
+    background: rgba(22, 24, 38, 0.85);
+    border: 1.5px solid rgba(192, 132, 252, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    color: #ffdfa3;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    position: relative;
+    
+    &::before {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border-radius: 22px;
+      border: 1px dashed rgba(255, 223, 163, 0);
+      transition: all 0.4s ease;
     }
   }
-  &--locked {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  &__icon {
-    font-size: 32px;
-  }
-  &__lock {
-    font-size: 24px;
-  }
-  &__name {
-    font-size: 14px;
+
+  &__label {
+    font-size: 13px;
+    color: $text-2;
     font-weight: 600;
-    color: $text-1;
+    letter-spacing: 0.12em;
+    transition: color 0.3s, transform 0.3s;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
   }
-  &__desc {
-    font-size: 11px;
-    color: $text-3;
-    line-height: 1.4;
+  
+  &__lock {
+    position: absolute;
+    bottom: -6px;
+    right: -6px;
+    width: 22px;
+    height: 22px;
+    background: #161826;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #7b82a3;
+    border: 1.5px solid rgba(192, 132, 252, 0.4);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+
+  &--active {
+    .fate-orbit-node__core {
+      border-color: rgba(255, 223, 163, 0.5);
+      box-shadow: 0 0 24px rgba(242, 139, 130, 0.25), inset 0 0 12px rgba(242, 139, 130, 0.15);
+      background: linear-gradient(135deg, rgba(40, 32, 60, 0.9), rgba(22, 24, 38, 0.85));
+      color: #fff;
+    }
+    .fate-orbit-node__label {
+      color: #e2e4f0;
+    }
+    
+    &:hover {
+      .fate-orbit-node__core {
+        transform: scale(1.15) translateY(-4px);
+        border-color: $accent-l;
+        box-shadow: 0 0 36px rgba(242, 139, 130, 0.4), inset 0 0 16px rgba(242, 139, 130, 0.2);
+        color: #fff;
+        
+        &::before {
+          border-color: rgba(255, 223, 163, 0.5);
+          transform: scale(1.05) rotate(15deg);
+        }
+      }
+      .fate-orbit-node__label {
+        color: #ffdfa3;
+        transform: translateY(2px);
+      }
+    }
+  }
+
+  &--locked {
+    cursor: not-allowed;
+    opacity: 0.7;
+    .fate-orbit-node__core {
+      color: #4e5573;
+      border-color: rgba(255, 255, 255, 0.08);
+      background: rgba(12, 14, 22, 0.6);
+      box-shadow: none;
+    }
   }
 }
 
@@ -911,7 +1204,7 @@ $r-pill: 100px;
     border-color: $accent;
     box-shadow:
       $sh-md,
-      0 0 0 3px rgba(199, 123, 60, 0.08);
+      0 0 0 3px $accent-s;
   }
 }
 
@@ -938,9 +1231,9 @@ $r-pill: 100px;
     }
     &--active {
       background: $accent;
-      color: #fff;
+      color: #000;
       border-color: $accent;
-      box-shadow: 0 2px 8px rgba(199, 123, 60, 0.25);
+      box-shadow: 0 2px 8px rgba(242, 139, 130, 0.25);
     }
   }
 }
@@ -1171,7 +1464,7 @@ $r-pill: 100px;
     transition: opacity 0.15s;
     &:hover .fate-fan__card-inner {
       border-color: $accent-l;
-      box-shadow: 0 0 16px rgba(199, 123, 60, 0.35);
+      box-shadow: 0 0 16px rgba(192, 132, 252, 0.35);
       transform: scale(1.06);
     }
   }
@@ -1195,18 +1488,18 @@ $r-pill: 100px;
   &__card-border {
     position: absolute;
     inset: 4px;
-    border: 1px solid rgba(199, 123, 60, 0.18);
+    border: 1px solid rgba(192, 132, 252, 0.25);
     border-radius: 3px;
   }
   &__card-symbol {
     font-size: 18px;
     color: $card-sym;
-    filter: drop-shadow(0 0 6px rgba(199, 123, 60, 0.3));
+    filter: drop-shadow(0 0 6px rgba(255, 223, 163, 0.4));
     z-index: 1;
   }
   &__card-corner {
     position: absolute;
-    color: rgba(199, 123, 60, 0.18);
+    color: rgba(192, 132, 252, 0.4);
     font-size: 8px;
     &--tl {
       top: 5px;
@@ -1347,11 +1640,14 @@ $r-pill: 100px;
   letter-spacing: 0.03em;
   font-family: inherit;
   &--primary {
-    background: linear-gradient(135deg, $accent, $accent-l);
-    color: #fff;
-    box-shadow: 0 2px 8px rgba(199, 123, 60, 0.25);
+    background: linear-gradient(135deg, rgba(242, 139, 130, 0.25), rgba(192, 132, 252, 0.25));
+    border: 1px solid rgba(242, 139, 130, 0.5);
+    color: $accent-l;
+    box-shadow: 0 0 15px rgba(242, 139, 130, 0.15);
     &:hover:not(:disabled) {
-      box-shadow: 0 4px 16px rgba(199, 123, 60, 0.35);
+      box-shadow: 0 0 25px rgba(242, 139, 130, 0.3);
+      border-color: $accent;
+      background: linear-gradient(135deg, rgba(242, 139, 130, 0.35), rgba(192, 132, 252, 0.35));
       transform: translateY(-1px);
     }
     &:disabled {

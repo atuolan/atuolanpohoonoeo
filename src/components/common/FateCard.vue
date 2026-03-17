@@ -23,16 +23,7 @@ const emit = defineEmits<{
 
 const imageError = ref(false)
 
-// 花色符號
-const suitSymbol = computed(() => {
-  switch (props.card.suit) {
-    case 'wands': return '🪄'
-    case 'cups': return '🏆'
-    case 'swords': return '⚔️'
-    case 'pentacles': return '⭐'
-    default: return '✦'
-  }
-})
+
 
 // 尺寸 class
 const sizeClass = computed(() => {
@@ -54,8 +45,12 @@ const sizeClass = computed(() => {
       <div class="fate-card__back">
         <div class="fate-card__back-border" />
         <div class="fate-card__back-symbol">✦</div>
-        <div class="fate-card__back-corner fate-card__back-corner--tl">✨</div>
-        <div class="fate-card__back-corner fate-card__back-corner--br">✨</div>
+        <div class="fate-card__back-corner fate-card__back-corner--tl">
+          <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor"><path d="M12 2L14 10L22 12L14 14L12 22L10 14L2 12L10 10Z"/></svg>
+        </div>
+        <div class="fate-card__back-corner fate-card__back-corner--br">
+          <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor"><path d="M12 2L14 10L22 12L14 14L12 22L10 14L2 12L10 10Z"/></svg>
+        </div>
       </div>
 
       <!-- 牌面 -->
@@ -76,7 +71,14 @@ const sizeClass = computed(() => {
         <!-- 無圖片時的 fallback -->
         <div v-else class="fate-card__face-content">
           <div class="fate-card__face-symbol">
-            {{ card.type === 'major' ? '★' : suitSymbol }}
+            <template v-if="card.type === 'major'">★</template>
+            <template v-else>
+              <svg v-if="card.suit === 'wands'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em"><path d="M14.5 4.5l5 5M6.5 21.5l11-11M2 12l.5-.5M6 2l.5-.5M22 16l-.5.5M18 22l-.5.5"/></svg>
+              <svg v-else-if="card.suit === 'cups'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em"><path d="M12 15V22M9 22H15M4 3H20M5 3L7 15C7 16.5 9 18 12 18C15 18 17 16.5 17 15L19 3"/></svg>
+              <svg v-else-if="card.suit === 'swords'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em"><path d="M14.5 17.5L3 6l2-2 11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2"/></svg>
+              <svg v-else-if="card.suit === 'pentacles'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em"><circle cx="12" cy="12" r="10"/><path d="M12 4l2.5 7.5L20 12l-5.5 4L16.5 22 12 18l-4.5 4L9.5 16 4 12l5.5-.5L12 4z"/></svg>
+              <span v-else>✦</span>
+            </template>
           </div>
           <div class="fate-card__face-name-cn">{{ card.nameCn }}</div>
           <div class="fate-card__face-name-en">{{ card.name }}</div>
@@ -97,15 +99,15 @@ const sizeClass = computed(() => {
 </template>
 
 <style scoped lang="scss">
-$card-bg: #2C2438;
-$card-bg-alt: #362D46;
-$card-face-bg: #F8F6F2;
-$card-face-bg-alt: #F0EDE6;
-$accent: #C77B3C;
-$accent-light: #E8A86D;
-$accent-symbol: rgba(232, 168, 109, 0.7);
-$text-dark: #1A1A2E;
-$text-secondary: #5A5A72;
+$card-bg: rgba(22, 24, 38, 0.8);
+$card-bg-alt: rgba(32, 35, 54, 0.9);
+$card-face-bg: rgba(28, 30, 48, 0.9);
+$card-face-bg-alt: rgba(18, 20, 36, 0.9);
+$accent: #f28b82;
+$accent-light: #ffdfa3;
+$accent-symbol: rgba(255, 223, 163, 0.85);
+$text-dark: #e2e4f0;
+$text-secondary: #b0b5cc;
 
 .fate-card {
   position: relative;
@@ -144,7 +146,7 @@ $text-secondary: #5A5A72;
     backface-visibility: hidden;
     border-radius: 10px;
     overflow: hidden;
-    border: 2px solid rgba(199, 123, 60, 0.4);
+    border: 2px solid rgba(192, 132, 252, 0.4);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   }
 
@@ -158,17 +160,17 @@ $text-secondary: #5A5A72;
   &__back-border {
     position: absolute;
     inset: 6px;
-    border: 1px solid rgba(199, 123, 60, 0.25);
+    border: 1px solid rgba(192, 132, 252, 0.25);
     border-radius: 6px;
   }
   &__back-symbol {
     font-size: 2em;
     color: $accent-symbol;
-    filter: drop-shadow(0 0 8px rgba(199, 123, 60, 0.35));
+    filter: drop-shadow(0 0 8px rgba(255, 223, 163, 0.4));
   }
   &__back-corner {
     position: absolute;
-    color: rgba(199, 123, 60, 0.2);
+    color: rgba(192, 132, 252, 0.4);
     font-size: 0.8em;
     &--tl { top: 8px; left: 8px; }
     &--br { bottom: 8px; right: 8px; }
@@ -181,7 +183,7 @@ $text-secondary: #5A5A72;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 2px solid rgba(199, 123, 60, 0.3);
+    border: 2px solid rgba(192, 132, 252, 0.3);
 
     &--reversed {
       .fate-card__face-content,
@@ -230,7 +232,7 @@ $text-secondary: #5A5A72;
   &__face-symbol {
     font-size: 1.8em;
     color: $accent;
-    filter: drop-shadow(0 0 6px rgba(199, 123, 60, 0.35));
+    filter: drop-shadow(0 0 6px rgba(242, 139, 130, 0.35));
   }
   &__face-name-cn {
     font-size: 0.85em;
@@ -255,18 +257,18 @@ $text-secondary: #5A5A72;
     font-size: 0.7em;
     padding: 2px 10px;
     border-radius: 100px;
-    background: rgba(255, 255, 255, 0.9);
+    background: rgba(32, 35, 54, 0.85);
     backdrop-filter: blur(8px);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
     font-weight: 500;
 
     &--reversed {
-      color: #E85D5D;
-      border: 1px solid rgba(232, 93, 93, 0.2);
+      color: #f26666;
+      border: 1px solid rgba(242, 102, 102, 0.3);
     }
     &--upright {
-      color: #34B87C;
-      border: 1px solid rgba(52, 184, 124, 0.2);
+      color: #4cd995;
+      border: 1px solid rgba(76, 217, 149, 0.3);
     }
   }
 
