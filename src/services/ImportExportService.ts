@@ -5,36 +5,36 @@
  */
 
 import { strFromU8, strToU8, unzip, zip } from "fflate";
+import jsYaml from "js-yaml";
 import type { ConversationSummary, DiaryEntry } from "../db/database";
 import { db, DB_STORES } from "../db/database";
 import {
-    collectImageRefs,
-    deleteChatImagesByRefs,
-    extractImagesFromMessages,
-    restoreImagesToMessages,
+  collectImageRefs,
+  deleteChatImagesByRefs,
+  extractImagesFromMessages,
+  restoreImagesToMessages,
 } from "../db/operations";
 import type {
-    CharacterBook,
-    CharacterBookEntry,
-    CharacterCardV2,
-    CharacterCardV2Data,
-    CharacterImportResult,
-    StoredCharacter,
+  AffinityMetricConfig,
+  CharacterAffinityConfig,
+} from "../schemas/affinity";
+import type {
+  CharacterBook,
+  CharacterBookEntry,
+  CharacterCardV2,
+  CharacterCardV2Data,
+  CharacterImportResult,
+  StoredCharacter,
 } from "../types/character";
 import { createDefaultStoredCharacter } from "../types/character";
 import type { Chat, ChatMessage, MessageSender } from "../types/chat";
 import type { ImportantEventsLog } from "../types/importantEvents";
 import type { Lorebook, WorldInfoEntry } from "../types/worldinfo";
 import {
-    createDefaultWorldInfoEntry,
-    WorldInfoLogic,
-    WorldInfoPosition,
+  createDefaultWorldInfoEntry,
+  WorldInfoLogic,
+  WorldInfoPosition,
 } from "../types/worldinfo";
-import jsYaml from "js-yaml";
-import type {
-  AffinityMetricConfig,
-  CharacterAffinityConfig,
-} from "../schemas/affinity";
 import { getCharacterService } from "./CharacterService";
 import { getLorebookService } from "./LorebookService";
 import { migrateRegexScript } from "./RegexEngine";
@@ -375,10 +375,7 @@ export function detectAndConvertMvuConfig(
 
   const metrics: AffinityMetricConfig[] = [];
 
-  const extractMetrics = (
-    namespace: string,
-    obj: Record<string, unknown>,
-  ) => {
+  const extractMetrics = (namespace: string, obj: Record<string, unknown>) => {
     for (const [key, value] of Object.entries(obj)) {
       if (typeof value === "number") {
         metrics.push({
@@ -665,7 +662,7 @@ export class ImportExportService {
     if (character.lorebookIds.length > 0) {
       const lorebookService = getLorebookService();
       const allEntries: CharacterBookEntry[] = [];
-      let firstName = '';
+      let firstName = "";
       let firstDesc: string | undefined;
 
       for (const lbId of character.lorebookIds) {
@@ -774,6 +771,16 @@ export class ImportExportService {
         const filename = `media/img_${mediaIndex++}.${ext}`;
         media.set(msg.id, filename);
       }
+    }
+
+    // 提取聊天外觀桌布圖片
+    if (
+      chat.appearance?.wallpaper?.type === "image" &&
+      chat.appearance.wallpaper.value?.startsWith("data:")
+    ) {
+      const ext = this.getExtensionFromDataUrl(chat.appearance.wallpaper.value);
+      const filename = `media/wallpaper.${ext}`;
+      media.set("__appearance_wallpaper__", filename);
     }
 
     return media;
@@ -911,6 +918,21 @@ export class ImportExportService {
         }
       }
 
+      // 處理聊天外觀桌布圖片
+      if (
+        mediaMap.has("__appearance_wallpaper__") &&
+        chatForExport.appearance?.wallpaper?.value?.startsWith("data:")
+      ) {
+        const originalUrl = chat.appearance!.wallpaper!.value;
+        const filename = mediaMap.get("__appearance_wallpaper__")!;
+        zipFiles[filename] = this.dataUrlToUint8Array(originalUrl);
+        // 替換為相對路徑
+        chatForExport.appearance!.wallpaper!.value = filename;
+        console.log(
+          `[ImportExportService] 匯出聊天桌布圖片: ${filename} (${originalUrl.length} bytes)`,
+        );
+      }
+
       // 建立匯出資料
       const exportData = this.createChatExportData(chatForExport, {
         summaries,
@@ -1014,6 +1036,33 @@ export class ImportExportService {
         }
       }
 
+      // 還原聊天外觀桌布圖片
+      if (
+        chat.appearance?.wallpaper?.type === "image" &&
+        chat.appearance.wallpaper.value &&
+        !chat.appearance.wallpaper.value.startsWith("data:") &&
+        !chat.appearance.wallpaper.value.startsWith("http")
+      ) {
+        const wallpaperFile = files[chat.appearance.wallpaper.value];
+        if (wallpaperFile) {
+          const mimeType = this.getMimeTypeFromFilename(
+            chat.appearance.wallpaper.value,
+          );
+          chat.appearance.wallpaper.value = this.uint8ArrayToDataUrl(
+            wallpaperFile,
+            mimeType,
+          );
+          mediaCount++;
+          console.log(
+            `[ImportExportService] 還原聊天桌布圖片: ${chat.appearance.wallpaper.value.length} bytes`,
+          );
+        } else {
+          console.warn(
+            `[ImportExportService] 找不到聊天桌布圖片: ${chat.appearance.wallpaper.value}`,
+          );
+        }
+      }
+
       // 生成新的 ID 避免衝突
       const oldChatId = chat.id;
       chat.id = crypto.randomUUID();
@@ -1113,6 +1162,17 @@ export class ImportExportService {
               msg.imageUrl = filename;
             }
           }
+        }
+
+        // 處理聊天外觀桌布圖片
+        if (
+          mediaMap.has("__appearance_wallpaper__") &&
+          chatForExport.appearance?.wallpaper?.value?.startsWith("data:")
+        ) {
+          const originalUrl = chat.appearance!.wallpaper!.value;
+          const filename = `chats/${i}/media/wallpaper.${this.getExtensionFromDataUrl(originalUrl)}`;
+          zipFiles[filename] = this.dataUrlToUint8Array(originalUrl);
+          chatForExport.appearance!.wallpaper!.value = filename;
         }
 
         // 保存聊天 JSON
@@ -1344,8 +1404,7 @@ export class ImportExportService {
           chat.characterId,
         );
         if (character) {
-          characterName =
-            character.nickname || character.data?.name || "角色";
+          characterName = character.nickname || character.data?.name || "角色";
         }
       }
 
@@ -1395,10 +1454,7 @@ export class ImportExportService {
       const content = lines.join("\n");
       return new Blob([content], { type: "application/x-jsonlines" });
     } catch (e) {
-      console.error(
-        "[ImportExportService] Failed to export chat as JSONL:",
-        e,
-      );
+      console.error("[ImportExportService] Failed to export chat as JSONL:", e);
       return null;
     }
   }
@@ -1705,7 +1761,9 @@ export function getImportExportService(): ImportExportService {
 /**
  * 將 Lorebook 轉換為 CharacterBook（可供外部使用）
  */
-export function convertLorebookToCharacterBook(lorebook: Lorebook): CharacterBook {
+export function convertLorebookToCharacterBook(
+  lorebook: Lorebook,
+): CharacterBook {
   const entries: CharacterBookEntry[] = lorebook.entries.map((entry) => ({
     id: entry.uid,
     keys: entry.key,

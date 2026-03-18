@@ -33,6 +33,10 @@ export * from "./game";
 export * from "./waimaiDelivery";
 // 塔羅占卜類型
 export * from "./fate";
+// 占星骰子類型
+export * from "./astroDice";
+// 雷諾曼牌類型
+export * from "./lenormand";
 // 雲端推送鬧鐘類型
 export * from "./cloudPush";
 // ===== 小組件類型 =====
@@ -221,11 +225,11 @@ export interface LayoutConfig {
 // 類型已遷移至 src/schemas/affinity.ts，使用 Zod 定義
 // 此處保留 re-export 以維持向後相容
 export type {
-  CharacterAffinityConfig,
-  ChatAffinityState,
+  AffinityChangeRecord,
   AffinityMetricConfig,
   AffinityStage,
-  AffinityChangeRecord,
+  CharacterAffinityConfig,
+  ChatAffinityState,
 } from "@/schemas/affinity";
 
 /**

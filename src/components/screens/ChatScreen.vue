@@ -6570,6 +6570,16 @@ async function loadOrCreateChat(overrideChatId?: string) {
         );
 
         // 載入並套用外觀設定
+        console.log(
+          "[ChatScreen] 從 IDB 載入外觀:",
+          chat.appearance
+            ? {
+                useCustom: chat.appearance.useCustom,
+                wallpaperType: chat.appearance.wallpaper?.type,
+                wallpaperValueLength: chat.appearance.wallpaper?.value?.length,
+              }
+            : "undefined",
+        );
         chatAppearance.value = chat.appearance;
         // 同步到 chatStore 緩存（讓 App.vue 可以讀取）
         chatStore.setAppearanceCache(chat.appearance);
@@ -7071,6 +7081,19 @@ async function _saveChatImplInner() {
       await extractAudioFromMessages(afterImageExtract);
 
     const chat = buildChatMetadata(messagesForStorage, charName);
+
+    // Debug: 檢查外觀是否正確包含在 chat 中
+    console.log(
+      "[ChatScreen] 保存聊天，外觀:",
+      chat.appearance
+        ? {
+            useCustom: chat.appearance.useCustom,
+            wallpaperType: chat.appearance.wallpaper?.type,
+            wallpaperValueLength: chat.appearance.wallpaper?.value?.length,
+          }
+        : "undefined",
+    );
+
     const currentCount = messagesForStorage.length;
     const currentLastId =
       messagesForStorage.length > 0

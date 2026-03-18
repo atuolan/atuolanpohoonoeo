@@ -1,17 +1,26 @@
 <script setup lang="ts">
 /**
- * 塔羅占卜主畫面
- * 流程：入口選擇 → 提問+選牌陣（合併） → 洗牌（可多次/雙擊重置） → 選牌（扇形） → 翻牌 → AI 解讀
+ * 命運占卜主畫面
+ * 支援：塔羅牌、占星骰子、雷諾曼牌（待實作）
  */
 import FateCard from "@/components/common/FateCard.vue";
+import AstroDicePanel from "@/components/fate/AstroDicePanel.vue";
+import LenormandPanel from "@/components/fate/LenormandPanel.vue";
 import { fateSpreads } from "@/data/fateSpreads";
+import { useAstroDiceStore } from "@/stores/astroDice";
 import { useFateStore } from "@/stores/fate";
-import type { FateSpread } from "@/types/fate";
+import type { AstroDiceReading } from "@/types/astroDice";
+import type { FateReading, FateSpread } from "@/types/fate";
 import { marked } from "marked";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 
 const emit = defineEmits<{ back: [] }>();
 const fateStore = useFateStore();
+const astroDiceStore = useAstroDiceStore();
+
+// ===== 占卜類型選擇 =====
+type DivinationType = "home" | "tarot" | "astroDice" | "lenormand";
+const currentDivination = ref<DivinationType>("home");
 
 // ===== 牌陣篩選 =====
 const spreadFilterCount = ref(-1);
@@ -38,6 +47,48 @@ function selectSpread(s: FateSpread) {
 
 // ===== 歷史記錄 =====
 const showHistory = ref(false);
+
+// 展開查看完整解讀
+type ExpandedReading =
+  | { type: "tarot"; reading: FateReading }
+  | { type: "astro"; reading: AstroDiceReading }
+  | null;
+const expandedReading = ref<ExpandedReading>(null);
+
+const expandedInterpretationHtml = computed(() => {
+  if (!expandedReading.value?.reading.interpretation) return "";
+  return marked.parse(expandedReading.value.reading.interpretation, {
+    async: false,
+  }) as string;
+});
+
+function openReading(type: "tarot", reading: FateReading): void;
+function openReading(type: "astro", reading: AstroDiceReading): void;
+function openReading(
+  type: "tarot" | "astro",
+  reading: FateReading | AstroDiceReading,
+) {
+  expandedReading.value = { type, reading } as ExpandedReading;
+}
+
+function closeExpandedReading() {
+  expandedReading.value = null;
+}
+
+// 合併兩種歷史，按時間排序
+const allReadings = computed(() => {
+  const tarot = fateStore.readings.map((r) => ({
+    type: "tarot" as const,
+    reading: r,
+    createdAt: r.createdAt,
+  }));
+  const astro = astroDiceStore.readings.map((r) => ({
+    type: "astro" as const,
+    reading: r,
+    createdAt: r.createdAt,
+  }));
+  return [...tarot, ...astro].sort((a, b) => b.createdAt - a.createdAt);
+});
 
 // ===== 洗牌邏輯 =====
 const isShuffling = ref(false);
@@ -201,43 +252,88 @@ function formatTime(ts: number): string {
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function handleDeleteReading(id: string) {
-  if (confirm("確定要刪除這條記錄嗎？")) fateStore.deleteReading(id);
+function handleDeleteReading(type: "tarot" | "astro", id: string) {
+  if (confirm("確定要刪除這條記錄嗎？")) {
+    if (type === "tarot") fateStore.deleteReading(id);
+    else astroDiceStore.deleteReading(id);
+  }
 }
 
 function handleClearHistory() {
-  if (confirm("確定要清空所有歷史記錄嗎？此操作不可撤銷。"))
+  if (confirm("確定要清空所有歷史記錄嗎？此操作不可撤銷。")) {
     fateStore.clearHistory();
+    astroDiceStore.clearHistory();
+  }
 }
 
 // ===== 返回邏輯 =====
 function handleBack() {
+  if (expandedReading.value) {
+    expandedReading.value = null;
+    return;
+  }
   if (showHistory.value) {
     showHistory.value = false;
     return;
   }
-  if (fateStore.phase === "home") {
-    emit("back");
+  // 如果在子占卜類型中，返回首頁
+  if (currentDivination.value !== "home") {
+    // 塔羅牌的返回邏輯
+    if (currentDivination.value === "tarot") {
+      if (fateStore.phase === "setup") {
+        currentDivination.value = "home";
+        fateStore.goToPhase("home");
+        return;
+      }
+      if (fateStore.phase === "shuffle") {
+        fateStore.goToPhase("setup");
+        shuffleCount.value = 0;
+        return;
+      }
+      if (fateStore.phase === "pick") {
+        fateStore.goToPhase("shuffle");
+        return;
+      }
+      if (
+        fateStore.phase === "draw" ||
+        fateStore.phase === "reveal" ||
+        fateStore.phase === "interpret"
+      ) {
+        fateStore.reset();
+        currentDivination.value = "home";
+        return;
+      }
+    }
+    // 占星骰子和雷諾曼：返回首頁
+    if (currentDivination.value === "astroDice") astroDiceStore.reset();
+    currentDivination.value = "home";
     return;
   }
-  if (fateStore.phase === "setup") {
-    fateStore.goToPhase("home");
-    return;
-  }
-  if (fateStore.phase === "shuffle") {
+  // 在首頁，返回上一層
+  emit("back");
+}
+
+// ===== 選擇占卜類型 =====
+function selectDivination(type: DivinationType) {
+  currentDivination.value = type;
+  if (type === "tarot") {
     fateStore.goToPhase("setup");
-    shuffleCount.value = 0;
-    return;
   }
-  if (fateStore.phase === "pick") {
-    fateStore.goToPhase("shuffle");
-    return;
-  }
-  fateStore.reset();
+}
+
+// ===== 從占星骰子返回 =====
+function handleAstroDiceBack() {
+  currentDivination.value = "home";
+}
+
+// ===== 從雷諾曼牌返回 =====
+function handleLenormandBack() {
+  currentDivination.value = "home";
 }
 
 onMounted(() => {
   if (!fateStore.isHistoryLoaded) fateStore.loadHistory();
+  if (!astroDiceStore.isHistoryLoaded) astroDiceStore.loadHistory();
   window.addEventListener("mousemove", onFanPointerMove);
   window.addEventListener("mouseup", onFanPointerUp);
   window.addEventListener("touchmove", onFanPointerMove, { passive: true });
@@ -260,11 +356,33 @@ onUnmounted(() => {
       <button class="fate-header__back" @click="handleBack">
         ←
         {{
-          showHistory ? "返回" : fateStore.phase === "home" ? "返回" : "上一步"
+          expandedReading
+            ? "返回"
+            : showHistory
+              ? "返回"
+              : currentDivination === "home"
+                ? "返回"
+                : "上一步"
         }}
       </button>
       <h1 class="fate-header__title">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: text-bottom; margin-right: 4px; color: #c084fc;"><circle cx="12" cy="11" r="8"/><path d="M7 21h10"/><path d="M4 17h16"/><path d="m11 17-2 4"/><path d="m13 17 2 4"/></svg>
+        <svg
+          viewBox="0 0 24 24"
+          width="18"
+          height="18"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          style="vertical-align: text-bottom; margin-right: 4px; color: #c084fc"
+        >
+          <circle cx="12" cy="11" r="8" />
+          <path d="M7 21h10" />
+          <path d="M4 17h16" />
+          <path d="m11 17-2 4" />
+          <path d="m13 17 2 4" />
+        </svg>
         Fate
       </h1>
       <button class="fate-header__history" @click="showHistory = !showHistory">
@@ -274,87 +392,225 @@ onUnmounted(() => {
 
     <!-- 歷史記錄面板 -->
     <div v-if="showHistory" class="fate-history">
-      <div class="fate-history__header">
-        <h2>占卜歷史</h2>
-        <button
-          v-if="fateStore.readings.length > 0"
-          class="fate-history__clear"
-          @click="handleClearHistory"
-        >
-          清空全部
-        </button>
-      </div>
-      <div v-if="fateStore.readings.length === 0" class="fate-history__empty">
-        <div class="fate-history__empty-icon">
-          <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/><circle cx="5" cy="8" r="1"/><circle cx="4" cy="15" r="1"/></svg>
+      <!-- 展開查看完整解讀 -->
+      <div v-if="expandedReading" class="fate-history__detail">
+        <div class="fate-history__detail-header">
+          <button
+            class="fate-history__detail-back"
+            @click="closeExpandedReading"
+          >
+            ← 返回
+          </button>
+          <span class="fate-history__detail-type">
+            {{
+              expandedReading.type === "tarot" ? "🃏 塔羅占卜" : "🎲 占星骰子"
+            }}
+          </span>
         </div>
-        <p>尚無占卜記錄</p>
-      </div>
-      <div v-else class="fate-history__list">
-        <div
-          v-for="reading in fateStore.readings"
-          :key="reading.id"
-          class="fate-history__item"
-        >
-          <div class="fate-history__item-time">
-            {{ formatTime(reading.createdAt) }}
+        <div class="fate-history__detail-question">
+          {{ expandedReading.reading.question || "未記錄問題" }}
+        </div>
+
+        <!-- 塔羅牌詳情 -->
+        <template v-if="expandedReading.type === 'tarot'">
+          <div class="fate-history__detail-meta">
+            {{ (expandedReading.reading as any).spread.nameCn }} ·
+            {{ (expandedReading.reading as any).drawnCards.length }} 張牌
           </div>
-          <div class="fate-history__item-question">
-            {{ reading.question || "未記錄問題" }}
-          </div>
-          <div class="fate-history__item-meta">
-            {{ reading.spread.nameCn }} · {{ reading.drawnCards.length }} 張牌
-          </div>
-          <div class="fate-history__item-cards">
+          <div class="fate-history__detail-cards">
             <span
-              v-for="drawn in reading.drawnCards"
+              v-for="drawn in (expandedReading.reading as any).drawnCards"
               :key="drawn.position.id"
               class="fate-history__item-card-tag"
             >
               {{ drawn.card.nameCn }}{{ drawn.isReversed ? "(逆)" : "" }}
             </span>
           </div>
-          <div v-if="reading.interpretation" class="fate-history__item-preview">
-            {{ reading.interpretation.substring(0, 100) }}...
+        </template>
+
+        <!-- 占星骰子詳情 -->
+        <template v-else>
+          <div class="fate-history__detail-dice">
+            <span class="fate-history__detail-die">
+              {{ (expandedReading.reading as any).result.planet.symbol }}
+              {{ (expandedReading.reading as any).result.planet.nameCn }}
+            </span>
+            <span class="fate-history__detail-plus">+</span>
+            <span class="fate-history__detail-die">
+              {{ (expandedReading.reading as any).result.sign.symbol }}
+              {{ (expandedReading.reading as any).result.sign.nameCn }}
+            </span>
+            <span class="fate-history__detail-plus">+</span>
+            <span class="fate-history__detail-die">
+              {{ (expandedReading.reading as any).result.house.romanNumeral }}
+              {{ (expandedReading.reading as any).result.house.nameCn }}
+            </span>
           </div>
-          <button
-            class="fate-history__item-delete"
-            @click="handleDeleteReading(reading.id)"
-          >
-            刪除
-          </button>
+        </template>
+
+        <div class="fate-history__detail-interpretation">
+          <div
+            v-if="expandedInterpretationHtml"
+            class="fate-interpretation__content"
+            v-html="expandedInterpretationHtml"
+          />
+          <p v-else class="fate-history__detail-empty">無解讀記錄</p>
         </div>
       </div>
+
+      <!-- 歷史列表 -->
+      <template v-else>
+        <div class="fate-history__header">
+          <h2>占卜歷史</h2>
+          <button
+            v-if="allReadings.length > 0"
+            class="fate-history__clear"
+            @click="handleClearHistory"
+          >
+            清空全部
+          </button>
+        </div>
+        <div v-if="allReadings.length === 0" class="fate-history__empty">
+          <div class="fate-history__empty-icon">
+            <svg
+              viewBox="0 0 24 24"
+              width="1em"
+              height="1em"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+              <circle cx="5" cy="8" r="1" />
+              <circle cx="4" cy="15" r="1" />
+            </svg>
+          </div>
+          <p>尚無占卜記錄</p>
+        </div>
+        <div v-else class="fate-history__list">
+          <div
+            v-for="item in allReadings"
+            :key="item.reading.id"
+            class="fate-history__item fate-history__item--clickable"
+            @click="openReading(item.type, item.reading as any)"
+          >
+            <div class="fate-history__item-time">
+              <span class="fate-history__item-badge">
+                {{ item.type === "tarot" ? "🃏" : "🎲" }}
+              </span>
+              {{ formatTime(item.reading.createdAt) }}
+            </div>
+            <div class="fate-history__item-question">
+              {{ item.reading.question || "未記錄問題" }}
+            </div>
+
+            <!-- 塔羅牌摘要 -->
+            <template v-if="item.type === 'tarot'">
+              <div class="fate-history__item-meta">
+                {{ (item.reading as any).spread.nameCn }} ·
+                {{ (item.reading as any).drawnCards.length }} 張牌
+              </div>
+              <div class="fate-history__item-cards">
+                <span
+                  v-for="drawn in (item.reading as any).drawnCards"
+                  :key="drawn.position.id"
+                  class="fate-history__item-card-tag"
+                >
+                  {{ drawn.card.nameCn }}{{ drawn.isReversed ? "(逆)" : "" }}
+                </span>
+              </div>
+            </template>
+
+            <!-- 占星骰子摘要 -->
+            <template v-else>
+              <div class="fate-history__item-meta fate-history__item-dice">
+                <span
+                  >{{ (item.reading as any).result.planet.symbol }}
+                  {{ (item.reading as any).result.planet.nameCn }}</span
+                >
+                <span class="fate-history__item-dice-sep">+</span>
+                <span
+                  >{{ (item.reading as any).result.sign.symbol }}
+                  {{ (item.reading as any).result.sign.nameCn }}</span
+                >
+                <span class="fate-history__item-dice-sep">+</span>
+                <span
+                  >{{ (item.reading as any).result.house.romanNumeral }}
+                  {{ (item.reading as any).result.house.nameCn }}</span
+                >
+              </div>
+            </template>
+
+            <div
+              v-if="item.reading.interpretation"
+              class="fate-history__item-preview"
+            >
+              {{ item.reading.interpretation.substring(0, 80) }}...
+            </div>
+            <div class="fate-history__item-footer">
+              <span class="fate-history__item-hint">點擊查看完整解讀 →</span>
+              <button
+                class="fate-history__item-delete"
+                @click.stop="handleDeleteReading(item.type, item.reading.id)"
+              >
+                刪除
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
     </div>
 
     <!-- 占卜流程 -->
     <div v-else class="fate-content">
       <!-- ══ 入口：選擇占卜類型 ══ -->
       <div
-        v-if="fateStore.phase === 'home'"
+        v-if="currentDivination === 'home'"
         class="fate-phase fate-phase--home"
       >
         <!-- 魔幻相框裝飾 -->
         <div class="fate-home-frame">
           <div class="fate-home-frame__arch"></div>
           <div class="fate-home-frame__moon"></div>
-          
+
           <div class="fate-home-frame__star fate-home-frame__star--tl">
-            <svg class="svg-star" viewBox="0 0 24 24"><path d="M12 0L14.5 9.5L24 12L14.5 14.5L12 24L9.5 14.5L0 12L9.5 9.5Z"/></svg>
+            <svg class="svg-star" viewBox="0 0 24 24">
+              <path
+                d="M12 0L14.5 9.5L24 12L14.5 14.5L12 24L9.5 14.5L0 12L9.5 9.5Z"
+              />
+            </svg>
           </div>
           <div class="fate-home-frame__star fate-home-frame__star--tr">
-            <svg class="svg-star" viewBox="0 0 24 24"><path d="M12 0L14.5 9.5L24 12L14.5 14.5L12 24L9.5 14.5L0 12L9.5 9.5Z"/></svg>
+            <svg class="svg-star" viewBox="0 0 24 24">
+              <path
+                d="M12 0L14.5 9.5L24 12L14.5 14.5L12 24L9.5 14.5L0 12L9.5 9.5Z"
+              />
+            </svg>
           </div>
-          
+
           <div class="fate-home-frame__ring fate-home-frame__ring--l"></div>
           <div class="fate-home-frame__ring fate-home-frame__ring--r"></div>
-          <div class="fate-home-frame__bottom-deco fate-home-frame__bottom-deco--l"></div>
-          <div class="fate-home-frame__bottom-deco fate-home-frame__bottom-deco--r"></div>
+          <div
+            class="fate-home-frame__bottom-deco fate-home-frame__bottom-deco--l"
+          ></div>
+          <div
+            class="fate-home-frame__bottom-deco fate-home-frame__bottom-deco--r"
+          ></div>
         </div>
 
         <div class="fate-home__hero">
           <div class="fate-home__orb">
-            <svg class="fate-home__orb-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" width="80" height="80" style="display: block; margin: 0 auto;">
+            <svg
+              class="fate-home__orb-svg"
+              viewBox="0 0 100 100"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              width="80"
+              height="80"
+              style="display: block; margin: 0 auto"
+            >
               <defs>
                 <radialGradient id="orb-grad" cx="50%" cy="50%" r="50%">
                   <stop offset="0%" stop-color="#ffdfa3" />
@@ -369,11 +625,28 @@ onUnmounted(() => {
               </defs>
               <circle cx="50" cy="46" r="36" fill="url(#orb-grad)" />
               <circle cx="50" cy="46" r="36" fill="url(#orb-core)" />
-              <path d="M24 86 C 36 78, 64 78, 76 86 L 82 94 C 70 98, 30 98, 18 94 Z" fill="#282c4a" stroke="#c084fc" stroke-width="2"/>
-              <path d="M30 82 C 40 78, 60 78, 70 82 L 76 86 C 60 88, 40 88, 24 86 Z" fill="#1e2236"/>
-              <path d="M40 25 L42 32 L49 34 L42 36 L40 43 L38 36 L31 34 L38 32 Z" fill="#ffdfa3"/>
-              <path d="M60 50 L61 54 L65 55 L61 56 L60 60 L59 56 L55 55 L59 54 Z" fill="#ffffff"/>
-              <path d="M50 20 L51 22 L53 23 L51 24 L50 26 L49 24 L47 23 L49 22 Z" fill="#ffffff"/>
+              <path
+                d="M24 86 C 36 78, 64 78, 76 86 L 82 94 C 70 98, 30 98, 18 94 Z"
+                fill="#282c4a"
+                stroke="#c084fc"
+                stroke-width="2"
+              />
+              <path
+                d="M30 82 C 40 78, 60 78, 70 82 L 76 86 C 60 88, 40 88, 24 86 Z"
+                fill="#1e2236"
+              />
+              <path
+                d="M40 25 L42 32 L49 34 L42 36 L40 43 L38 36 L31 34 L38 32 Z"
+                fill="#ffdfa3"
+              />
+              <path
+                d="M60 50 L61 54 L65 55 L61 56 L60 60 L59 56 L55 55 L59 54 Z"
+                fill="#ffffff"
+              />
+              <path
+                d="M50 20 L51 22 L53 23 L51 24 L50 26 L49 24 L47 23 L49 22 Z"
+                fill="#ffffff"
+              />
             </svg>
           </div>
           <h2 class="fate-home__title">命運之門</h2>
@@ -381,62 +654,89 @@ onUnmounted(() => {
         </div>
         <div class="fate-orbit-menu">
           <!-- 背景星軌連線 -->
-          <svg class="fate-orbit-menu__path" viewBox="0 0 100 100" preserveAspectRatio="none">
-            <path d="M -10 90 Q 50 -20 110 90" fill="none" stroke="rgba(192, 132, 252, 0.4)" stroke-width="1.5" stroke-dasharray="4 6" />
+          <svg
+            class="fate-orbit-menu__path"
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+          >
+            <path
+              d="M -10 90 Q 50 -20 110 90"
+              fill="none"
+              stroke="rgba(192, 132, 252, 0.4)"
+              stroke-width="1.5"
+              stroke-dasharray="4 6"
+            />
           </svg>
-          
+
           <!-- 節點 1: 塔羅 -->
           <button
             class="fate-orbit-node fate-orbit-node--active"
-            style="left: 20%; top: 52%;"
-            @click="fateStore.goToPhase('setup')"
+            style="left: 20%; top: 52%"
+            @click="selectDivination('tarot')"
           >
             <div class="fate-orbit-node__core">
-              <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="4" y="2" width="16" height="20" rx="2" ry="2"/>
-                <circle cx="12" cy="12" r="4"/>
-                <path d="M12 8v8"/><path d="M8 12h8"/><path d="m9.17 9.17 5.66 5.66"/><path d="m14.83 9.17-5.66 5.66"/>
+              <svg
+                viewBox="0 0 24 24"
+                width="1em"
+                height="1em"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="4" y="2" width="16" height="20" rx="2" ry="2" />
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 8v8" />
+                <path d="M8 12h8" />
+                <path d="m9.17 9.17 5.66 5.66" />
+                <path d="m14.83 9.17-5.66 5.66" />
               </svg>
             </div>
             <div class="fate-orbit-node__label">塔羅占卜</div>
           </button>
 
-          <!-- 節點 2: 星盤 (Locked) -->
-          <div class="fate-orbit-node fate-orbit-node--locked" style="left: 50%; top: 20%;">
+          <!-- 節點 2: 占星骰子 -->
+          <button
+            class="fate-orbit-node fate-orbit-node--active"
+            style="left: 50%; top: 20%"
+            @click="selectDivination('astroDice')"
+          >
             <div class="fate-orbit-node__core">
-              <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/>
-                <path d="M12 2v2"/><path d="M12 20v2"/><path d="M2 12h2"/><path d="M20 12h2"/>
-              </svg>
-              <div class="fate-orbit-node__lock">
-                <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="5" y="11" width="14" height="10" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                </svg>
-              </div>
+              <span style="font-size: 24px">🎲</span>
             </div>
-            <div class="fate-orbit-node__label">星盤占卜</div>
-          </div>
+            <div class="fate-orbit-node__label">占星骰子</div>
+          </button>
 
-          <!-- 節點 3: 靈擺 (Locked) -->
-          <div class="fate-orbit-node fate-orbit-node--locked" style="left: 80%; top: 52%;">
+          <!-- 節點 3: 雷諾曼牌 -->
+          <button
+            class="fate-orbit-node fate-orbit-node--active"
+            style="left: 80%; top: 52%"
+            @click="selectDivination('lenormand')"
+          >
             <div class="fate-orbit-node__core">
-              <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 3l18 0"/><path d="M12 3v11"/><path d="M8 18l4 4 4-4-4-4-4 4z"/>
-              </svg>
-              <div class="fate-orbit-node__lock">
-                <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="5" y="11" width="14" height="10" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                </svg>
-              </div>
+              <span style="font-size: 24px">🃏</span>
             </div>
-            <div class="fate-orbit-node__label">靈擺占卜</div>
-          </div>
+            <div class="fate-orbit-node__label">雷諾曼牌</div>
+          </button>
         </div>
       </div>
 
+      <!-- ══ 占星骰子面板 ══ -->
+      <AstroDicePanel
+        v-if="currentDivination === 'astroDice'"
+        @back="handleAstroDiceBack"
+      />
+
+      <!-- ══ 雷諾曼牌面板 ══ -->
+      <LenormandPanel
+        v-if="currentDivination === 'lenormand'"
+        @back="handleLenormandBack"
+      />
+
       <!-- ══ 提問 + 選牌陣（合併） ══ -->
       <div
-        v-if="fateStore.phase === 'setup'"
+        v-if="currentDivination === 'tarot' && fateStore.phase === 'setup'"
         class="fate-phase fate-phase--setup"
       >
         <section class="fate-setup__section">
@@ -538,7 +838,7 @@ onUnmounted(() => {
 
       <!-- ══ 洗牌 ══ -->
       <div
-        v-if="fateStore.phase === 'shuffle'"
+        v-if="currentDivination === 'tarot' && fateStore.phase === 'shuffle'"
         class="fate-phase fate-phase--shuffle"
       >
         <h2 class="fate-phase__title">匯聚你的能量</h2>
@@ -585,7 +885,7 @@ onUnmounted(() => {
 
       <!-- ══ 選牌（扇形） ══ -->
       <div
-        v-if="fateStore.phase === 'pick'"
+        v-if="currentDivination === 'tarot' && fateStore.phase === 'pick'"
         class="fate-phase fate-phase--pick"
       >
         <div class="fate-pick-slots">
@@ -631,10 +931,24 @@ onUnmounted(() => {
                 <div class="fate-fan__card-border" />
                 <span class="fate-fan__card-symbol">✦</span>
                 <div class="fate-fan__card-corner fate-fan__card-corner--tl">
-                  <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><path d="M12 2L14 10L22 12L14 14L12 22L10 14L2 12L10 10Z"/></svg>
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="10"
+                    height="10"
+                    fill="currentColor"
+                  >
+                    <path d="M12 2L14 10L22 12L14 14L12 22L10 14L2 12L10 10Z" />
+                  </svg>
                 </div>
                 <div class="fate-fan__card-corner fate-fan__card-corner--br">
-                  <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><path d="M12 2L14 10L22 12L14 14L12 22L10 14L2 12L10 10Z"/></svg>
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="10"
+                    height="10"
+                    fill="currentColor"
+                  >
+                    <path d="M12 2L14 10L22 12L14 14L12 22L10 14L2 12L10 10Z" />
+                  </svg>
                 </div>
               </div>
             </div>
@@ -644,7 +958,10 @@ onUnmounted(() => {
 
       <!-- ══ 翻牌 / 全部揭示 ══ -->
       <div
-        v-if="fateStore.phase === 'draw' || fateStore.phase === 'reveal'"
+        v-if="
+          currentDivination === 'tarot' &&
+          (fateStore.phase === 'draw' || fateStore.phase === 'reveal')
+        "
         class="fate-phase fate-phase--draw"
       >
         <h2 class="fate-phase__title">
@@ -699,7 +1016,7 @@ onUnmounted(() => {
 
       <!-- ══ AI 解讀 ══ -->
       <div
-        v-if="fateStore.phase === 'interpret'"
+        v-if="currentDivination === 'tarot' && fateStore.phase === 'interpret'"
         class="fate-phase fate-phase--interpret"
       >
         <div class="fate-mini-cards">
@@ -733,9 +1050,19 @@ onUnmounted(() => {
             class="fate-interpretation__loading"
           >
             <div class="fate-interpretation__loading-icon">
-              <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #c084fc;">
-                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-                <circle cx="12" cy="12" r="3"/>
+              <svg
+                viewBox="0 0 24 24"
+                width="1em"
+                height="1em"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                style="color: #c084fc"
+              >
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                <circle cx="12" cy="12" r="3" />
               </svg>
             </div>
             <p>正在通靈...</p>
@@ -803,8 +1130,12 @@ $r-pill: 100px;
   flex-direction: column;
   height: 100%;
   background-color: $bg-e;
-  background-image: 
-    radial-gradient(circle at 50% -20%, rgba(40, 32, 60, 0.6) 0%, rgba(6, 7, 10, 0) 70%),
+  background-image:
+    radial-gradient(
+      circle at 50% -20%,
+      rgba(40, 32, 60, 0.6) 0%,
+      rgba(6, 7, 10, 0) 70%
+    ),
     radial-gradient(1px 1px at 15% 25%, #fff, transparent),
     radial-gradient(1.5px 1.5px at 75% 15%, #fff, transparent),
     radial-gradient(1px 1px at 60% 80%, rgba(255, 255, 255, 0.8), transparent),
@@ -812,7 +1143,15 @@ $r-pill: 100px;
     radial-gradient(1.5px 1.5px at 85% 55%, #fff, transparent),
     radial-gradient(1px 1px at 45% 45%, rgba(255, 255, 255, 0.7), transparent),
     radial-gradient(1px 1px at 30% 85%, #fff, transparent);
-  background-size: 100% 100%, 200px 200px, 250px 250px, 150px 150px, 300px 300px, 180px 180px, 220px 220px, 120px 120px;
+  background-size:
+    100% 100%,
+    200px 200px,
+    250px 250px,
+    150px 150px,
+    300px 300px,
+    180px 180px,
+    220px 220px,
+    120px 120px;
   color: $text-1;
   overflow: hidden;
   font-family:
@@ -914,9 +1253,9 @@ $r-pill: 100px;
     border: 1.5px solid rgba(255, 255, 255, 0.85);
     border-bottom: none;
     border-radius: 600px 600px 0 0;
-    
+
     &::before {
-      content: '';
+      content: "";
       position: absolute;
       inset: -8px;
       border: 1px dashed rgba(255, 255, 255, 0.25);
@@ -935,14 +1274,15 @@ $r-pill: 100px;
     border-radius: 50%;
     box-shadow: inset -9px -10px 0 0 #fff;
   }
-  
+
   &__star {
     position: absolute;
     display: flex;
     align-items: center;
     justify-content: center;
-    &::before, &::after {
-      content: '';
+    &::before,
+    &::after {
+      content: "";
       position: absolute;
       background: #fff;
     }
@@ -963,7 +1303,7 @@ $r-pill: 100px;
         fill: #fff;
       }
     }
-    
+
     &--tl {
       top: 60px;
       left: -20px;
@@ -971,9 +1311,16 @@ $r-pill: 100px;
     &--tr {
       top: 110px;
       right: -15px;
-      &::before { height: 28px; }
-      &::after { width: 28px; }
-      .svg-star { width: 10px; height: 10px; }
+      &::before {
+        height: 28px;
+      }
+      &::after {
+        width: 28px;
+      }
+      .svg-star {
+        width: 10px;
+        height: 10px;
+      }
     }
   }
 
@@ -1039,7 +1386,7 @@ $r-pill: 100px;
   height: 180px;
   margin-top: 12px;
   z-index: 2;
-  
+
   &__path {
     position: absolute;
     top: 0;
@@ -1070,7 +1417,7 @@ $r-pill: 100px;
   background: none;
   border: none;
   padding: 0;
-  
+
   &__core {
     width: 56px;
     height: 56px;
@@ -1086,9 +1433,9 @@ $r-pill: 100px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
     position: relative;
-    
+
     &::before {
-      content: '';
+      content: "";
       position: absolute;
       inset: -4px;
       border-radius: 22px;
@@ -1102,10 +1449,12 @@ $r-pill: 100px;
     color: $text-2;
     font-weight: 600;
     letter-spacing: 0.12em;
-    transition: color 0.3s, transform 0.3s;
+    transition:
+      color 0.3s,
+      transform 0.3s;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
   }
-  
+
   &__lock {
     position: absolute;
     bottom: -6px;
@@ -1125,21 +1474,29 @@ $r-pill: 100px;
   &--active {
     .fate-orbit-node__core {
       border-color: rgba(255, 223, 163, 0.5);
-      box-shadow: 0 0 24px rgba(242, 139, 130, 0.25), inset 0 0 12px rgba(242, 139, 130, 0.15);
-      background: linear-gradient(135deg, rgba(40, 32, 60, 0.9), rgba(22, 24, 38, 0.85));
+      box-shadow:
+        0 0 24px rgba(242, 139, 130, 0.25),
+        inset 0 0 12px rgba(242, 139, 130, 0.15);
+      background: linear-gradient(
+        135deg,
+        rgba(40, 32, 60, 0.9),
+        rgba(22, 24, 38, 0.85)
+      );
       color: #fff;
     }
     .fate-orbit-node__label {
       color: #e2e4f0;
     }
-    
+
     &:hover {
       .fate-orbit-node__core {
         transform: scale(1.15) translateY(-4px);
         border-color: $accent-l;
-        box-shadow: 0 0 36px rgba(242, 139, 130, 0.4), inset 0 0 16px rgba(242, 139, 130, 0.2);
+        box-shadow:
+          0 0 36px rgba(242, 139, 130, 0.4),
+          inset 0 0 16px rgba(242, 139, 130, 0.2);
         color: #fff;
-        
+
         &::before {
           border-color: rgba(255, 223, 163, 0.5);
           transform: scale(1.05) rotate(15deg);
@@ -1640,14 +1997,22 @@ $r-pill: 100px;
   letter-spacing: 0.03em;
   font-family: inherit;
   &--primary {
-    background: linear-gradient(135deg, rgba(242, 139, 130, 0.25), rgba(192, 132, 252, 0.25));
+    background: linear-gradient(
+      135deg,
+      rgba(242, 139, 130, 0.25),
+      rgba(192, 132, 252, 0.25)
+    );
     border: 1px solid rgba(242, 139, 130, 0.5);
     color: $accent-l;
     box-shadow: 0 0 15px rgba(242, 139, 130, 0.15);
     &:hover:not(:disabled) {
       box-shadow: 0 0 25px rgba(242, 139, 130, 0.3);
       border-color: $accent;
-      background: linear-gradient(135deg, rgba(242, 139, 130, 0.35), rgba(192, 132, 252, 0.35));
+      background: linear-gradient(
+        135deg,
+        rgba(242, 139, 130, 0.35),
+        rgba(192, 132, 252, 0.35)
+      );
       transform: translateY(-1px);
     }
     &:disabled {
@@ -1762,6 +2127,122 @@ $r-pill: 100px;
     &:hover {
       background: $danger-s;
     }
+  }
+  &__item--clickable {
+    cursor: pointer;
+    transition:
+      border-color 0.2s,
+      background 0.2s;
+    &:hover {
+      border-color: $border-m;
+      background: $surface-h;
+    }
+  }
+  &__item-badge {
+    margin-right: 4px;
+  }
+  &__item-dice {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  &__item-dice-sep {
+    color: $text-m;
+  }
+  &__item-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+  }
+  &__item-hint {
+    font-size: 11px;
+    color: $text-m;
+  }
+
+  // ══ 展開詳情 ══
+  &__detail {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    animation: fadeIn 0.25s ease;
+  }
+  &__detail-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  &__detail-back {
+    background: none;
+    border: 1px solid $border-m;
+    color: $text-2;
+    padding: 6px 14px;
+    border-radius: $r-pill;
+    font-size: 13px;
+    cursor: pointer;
+    &:hover {
+      background: $surface-h;
+      color: $text-1;
+    }
+  }
+  &__detail-type {
+    font-size: 13px;
+    color: $text-3;
+  }
+  &__detail-question {
+    font-size: 17px;
+    font-weight: 700;
+    color: $text-1;
+    line-height: 1.5;
+  }
+  &__detail-meta {
+    font-size: 12px;
+    color: $text-3;
+  }
+  &__detail-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  &__detail-dice {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    background: $surface;
+    border-radius: $r-md;
+  }
+  &__detail-die {
+    font-size: 15px;
+    color: $accent-l;
+    font-weight: 600;
+  }
+  &__detail-plus {
+    color: $text-m;
+    font-size: 18px;
+  }
+  &__detail-interpretation {
+    background: $surface;
+    border-radius: $r-lg;
+    padding: 20px;
+    .fate-interpretation__content {
+      color: $text-1;
+      font-size: 15px;
+      line-height: 1.8;
+      :deep(p) {
+        margin-bottom: 12px;
+      }
+      :deep(strong) {
+        color: $accent-l;
+      }
+    }
+  }
+  &__detail-empty {
+    color: $text-3;
+    text-align: center;
+    padding: 24px 0;
   }
 }
 
