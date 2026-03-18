@@ -9,6 +9,7 @@ export interface LenormandCard {
   name: string;
   nameCn: string;
   symbol: string;
+  image: string; // 牌面圖片路徑（相對於 public/）
   keywords: string[];
   meaning: {
     general: string;

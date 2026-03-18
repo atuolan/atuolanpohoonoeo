@@ -208,8 +208,9 @@ onMounted(() => {
           "
           @click="store.pickCard(index)"
         >
-          <span v-if="!store.pickedIndices.has(index)">🃏</span>
-          <span v-else>✓</span>
+          <!-- 背面：未選中顯示牌背 -->
+          <div v-if="!store.pickedIndices.has(index)" class="leno-grid__back" />
+          <span v-else class="leno-grid__check">✓</span>
         </button>
       </div>
     </div>
@@ -230,7 +231,7 @@ onMounted(() => {
           class="leno-result-card"
         >
           <span class="leno-result-card__pos">{{ drawn.position.nameCn }}</span>
-          <span class="leno-result-card__symbol">{{ drawn.card.symbol }}</span>
+          <img :src="drawn.card.image" :alt="drawn.card.nameCn" class="leno-result-card__img" />
           <span class="leno-result-card__name">{{ drawn.card.nameCn }}</span>
           <span class="leno-result-card__num">{{ drawn.card.number }}</span>
         </div>
@@ -244,7 +245,7 @@ onMounted(() => {
           class="leno-result-card"
         >
           <span class="leno-result-card__pos">{{ drawn.position.nameCn }}</span>
-          <span class="leno-result-card__symbol">{{ drawn.card.symbol }}</span>
+          <img :src="drawn.card.image" :alt="drawn.card.nameCn" class="leno-result-card__img" />
           <span class="leno-result-card__name">{{ drawn.card.nameCn }}</span>
           <span class="leno-result-card__num">{{ drawn.card.number }}</span>
           <span
@@ -293,7 +294,7 @@ onMounted(() => {
           :key="drawn.position.id"
           class="leno-mini-card"
         >
-          {{ drawn.card.symbol }}
+          <img :src="drawn.card.image" :alt="drawn.card.nameCn" class="leno-mini-card__img" />
           <span v-if="idx < store.drawnCards.length - 1" class="leno-mini-plus"
             >+</span
           >
@@ -656,6 +657,8 @@ $r-lg: 16px;
     font-size: 16px;
     cursor: pointer;
     transition: all 0.2s;
+    overflow: hidden;
+    padding: 0;
     &:hover:not(:disabled):not(.leno-grid__card--picked) {
       border-color: rgba(167, 139, 250, 0.7);
       transform: translateY(-2px);
@@ -670,6 +673,23 @@ $r-lg: 16px;
       opacity: 0.4;
       cursor: not-allowed;
     }
+  }
+  &__back {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #2a1f4a, #1a1828);
+    border-radius: 5px;
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(167, 139, 250, 0.05) 0px,
+      rgba(167, 139, 250, 0.05) 1px,
+      transparent 1px,
+      transparent 8px
+    );
+  }
+  &__check {
+    font-size: 14px;
+    color: #a78bfa;
   }
 }
 
@@ -693,7 +713,7 @@ $r-lg: 16px;
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: 12px;
+  padding: 8px;
   background: $surface-h;
   border: 1px solid $border-m;
   border-radius: $r-md;
@@ -701,8 +721,12 @@ $r-lg: 16px;
     font-size: 11px;
     color: $text-3;
   }
-  &__symbol {
-    font-size: 28px;
+  &__img {
+    width: 60px;
+    height: 90px;
+    object-fit: cover;
+    border-radius: 4px;
+    display: block;
   }
   &__name {
     font-size: 13px;
@@ -749,12 +773,23 @@ $r-lg: 16px;
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
   padding: 12px;
   background: $surface;
   border-radius: $r-md;
   margin-bottom: 20px;
-  font-size: 20px;
+}
+.leno-mini-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  &__img {
+    width: 36px;
+    height: 54px;
+    object-fit: cover;
+    border-radius: 3px;
+    display: block;
+  }
 }
 .leno-mini-plus {
   font-size: 14px;

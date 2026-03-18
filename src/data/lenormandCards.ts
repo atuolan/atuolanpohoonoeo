@@ -12,6 +12,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Rider",
     nameCn: "騎士",
     symbol: "🐴",
+    image: "/lenormand/1.jpg",
     keywords: [
       "消息",
       "速度",
@@ -55,6 +56,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Clover",
     nameCn: "四葉草",
     symbol: "🍀",
+    image: "/lenormand/2.jpg",
     keywords: [
       "機會",
       "幸運",
@@ -97,6 +99,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Ship",
     nameCn: "船",
     symbol: "⛵",
+    image: "/lenormand/3.jpg",
     keywords: [
       "旅行",
       "遠方",
@@ -141,6 +144,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The House",
     nameCn: "房子",
     symbol: "🏠",
+    image: "/lenormand/4.jpg",
     keywords: [
       "家",
       "穩定",
@@ -182,6 +186,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Tree",
     nameCn: "樹",
     symbol: "�",
+    image: "/lenormand/5.jpg",
     keywords: [
       "健康",
       "成長",
@@ -225,6 +230,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Clouds",
     nameCn: "雲",
     symbol: "☁️",
+    image: "/lenormand/6.jpg",
     keywords: [
       "混亂",
       "不確定",
@@ -266,6 +272,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Snake",
     nameCn: "蛇",
     symbol: "🐍",
+    image: "/lenormand/7.jpg",
     keywords: [
       "欺騙",
       "競爭",
@@ -310,6 +317,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Coffin",
     nameCn: "棺材",
     symbol: "⬛",
+    image: "/lenormand/8.jpg",
     keywords: [
       "結束",
       "轉變",
@@ -353,6 +361,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Bouquet",
     nameCn: "花束",
     symbol: "💐",
+    image: "/lenormand/9.jpg",
     keywords: [
       "禮物",
       "驚喜",
@@ -397,6 +406,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Scythe",
     nameCn: "鐮刀",
     symbol: "⚔️",
+    image: "/lenormand/10.jpg",
     keywords: [
       "切斷",
       "危險",
@@ -439,6 +449,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Whip",
     nameCn: "鞭子",
     symbol: "🔄",
+    image: "/lenormand/11.jpg",
     keywords: [
       "衝突",
       "重複",
@@ -483,6 +494,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Birds",
     nameCn: "鳥",
     symbol: "🐦",
+    image: "/lenormand/12.jpg",
     keywords: [
       "溝通",
       "談話",
@@ -524,6 +536,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Child",
     nameCn: "小孩",
     symbol: "👶",
+    image: "/lenormand/13.jpg",
     keywords: [
       "新開始",
       "純真",
@@ -567,6 +580,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Fox",
     nameCn: "狐狸",
     symbol: "🦊",
+    image: "/lenormand/14.jpg",
     keywords: [
       "狡猾",
       "工作",
@@ -608,6 +622,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Bear",
     nameCn: "熊",
     symbol: "🐻",
+    image: "/lenormand/15.jpg",
     keywords: [
       "力量",
       "保護",
@@ -651,6 +666,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Stars",
     nameCn: "星星",
     symbol: "⭐",
+    image: "/lenormand/16.jpg",
     keywords: [
       "希望",
       "指引",
@@ -695,6 +711,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Stork",
     nameCn: "鸛鳥",
     symbol: "🦢",
+    image: "/lenormand/17.jpg",
     keywords: [
       "改變",
       "移動",
@@ -737,6 +754,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Dog",
     nameCn: "小狗",
     symbol: "🐕",
+    image: "/lenormand/18.jpg",
     keywords: [
       "忠誠",
       "友誼",
@@ -779,6 +797,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Tower",
     nameCn: "塔",
     symbol: "🏛️",
+    image: "/lenormand/19.jpg",
     keywords: [
       "孤獨",
       "機構",
@@ -821,6 +840,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Garden",
     nameCn: "公園",
     symbol: "🌺",
+    image: "/lenormand/20.jpg",
     keywords: [
       "社交",
       "公眾",
@@ -863,6 +883,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Mountain",
     nameCn: "山",
     symbol: "⛰️",
+    image: "/lenormand/21.jpg",
     keywords: [
       "障礙",
       "挑戰",
@@ -906,6 +927,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Crossroads",
     nameCn: "十字路口",
     symbol: "🔀",
+    image: "/lenormand/22.jpg",
     keywords: [
       "選擇",
       "決定",
@@ -941,6 +963,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Mice",
     nameCn: "老鼠",
     symbol: "🐭",
+    image: "/lenormand/23.jpg",
     keywords: [
       "損失",
       "焦慮",
@@ -984,6 +1007,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Heart",
     nameCn: "心",
     symbol: "❤️",
+    image: "/lenormand/24.jpg",
     keywords: [
       "愛",
       "感情",
@@ -1025,6 +1049,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Ring",
     nameCn: "戒指",
     symbol: "💍",
+    image: "/lenormand/25.jpg",
     keywords: [
       "承諾",
       "合約",
@@ -1067,6 +1092,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Book",
     nameCn: "書",
     symbol: "📚",
+    image: "/lenormand/26.jpg",
     keywords: [
       "秘密",
       "知識",
@@ -1110,6 +1136,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Letter",
     nameCn: "信件",
     symbol: "✉️",
+    image: "/lenormand/27.jpg",
     keywords: [
       "文件",
       "消息",
@@ -1154,6 +1181,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Man",
     nameCn: "男人",
     symbol: "👨",
+    image: "/lenormand/28.jpg",
     keywords: [
       "男性",
       "伴侶",
@@ -1195,6 +1223,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Woman",
     nameCn: "女人",
     symbol: "👩",
+    image: "/lenormand/29.jpg",
     keywords: [
       "女性",
       "伴侶",
@@ -1236,6 +1265,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Lily",
     nameCn: "百合花",
     symbol: "🌸",
+    image: "/lenormand/30.jpg",
     keywords: [
       "純潔",
       "成熟",
@@ -1280,6 +1310,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Sun",
     nameCn: "太陽",
     symbol: "☀️",
+    image: "/lenormand/31.jpg",
     keywords: [
       "成功",
       "能量",
@@ -1323,6 +1354,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Moon",
     nameCn: "月亮",
     symbol: "🌙",
+    image: "/lenormand/32.jpg",
     keywords: [
       "情感",
       "直覺",
@@ -1366,6 +1398,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Key",
     nameCn: "鑰匙",
     symbol: "🔑",
+    image: "/lenormand/33.jpg",
     keywords: [
       "解決",
       "成功",
@@ -1409,6 +1442,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Fish",
     nameCn: "魚",
     symbol: "🐟",
+    image: "/lenormand/34.jpg",
     keywords: [
       "財富",
       "流動",
@@ -1452,6 +1486,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Anchor",
     nameCn: "船錨",
     symbol: "⚓",
+    image: "/lenormand/35.jpg",
     keywords: [
       "穩定",
       "堅持",
@@ -1495,6 +1530,7 @@ export const allLenormandCards: LenormandCard[] = [
     name: "The Cross",
     nameCn: "十字架",
     symbol: "✝️",
+    image: "/lenormand/36.jpg",
     keywords: [
       "命運",
       "負擔",
