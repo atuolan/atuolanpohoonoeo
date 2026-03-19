@@ -217,6 +217,13 @@ async function handleCloudPushTest() {
   }
 }
 
+async function handleUnlinkDiscord() {
+  if (confirm("確定要解除 Discord 連結嗎？")) {
+    await cloudPushStore.unlinkDiscord();
+    cloudPushDiscordUserId.value = "";
+  }
+}
+
 function formatNextAlarm(ts: number | null): string {
   if (!ts) return "";
   const d = new Date(ts);
@@ -3811,17 +3818,45 @@ function useClonedVoice(voiceId: string) {
                 v-if="cloudPushChannels.includes('discord')"
                 style="padding-left: 4px"
               >
-                <label class="setting-label" style="font-size: 12px"
-                  >Discord User ID</label
-                >
-                <input
-                  type="text"
-                  v-model="cloudPushDiscordUserId"
-                  class="soft-input"
-                  placeholder="123456789012345678"
-                  @input="cloudPushStore.discordUserId = cloudPushDiscordUserId"
-                  @blur="handleCloudPushSettingsChange"
-                />
+                <!-- 已連結：顯示帳號資訊 -->
+                <div v-if="cloudPushStore.isDiscordLinked" class="discord-linked-info">
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px">
+                    <span style="font-size: 13px; color: var(--text-secondary)">
+                      ✅ 已連結：{{ cloudPushStore.discordDisplayName || cloudPushStore.discordUsername || cloudPushStore.discordUserId }}
+                    </span>
+                  </div>
+                  <div style="display: flex; gap: 8px">
+                    <button
+                      class="soft-btn"
+                      style="font-size: 12px; padding: 4px 10px"
+                      @click="cloudPushStore.openDiscordOAuth()"
+                    >
+                      重新連結
+                    </button>
+                    <button
+                      class="soft-btn"
+                      style="font-size: 12px; padding: 4px 10px; opacity: 0.7"
+                      @click="handleUnlinkDiscord"
+                    >
+                      解除連結
+                    </button>
+                  </div>
+                </div>
+                <!-- 未連結：顯示授權按鈕 -->
+                <div v-else>
+                  <button
+                    class="soft-btn discord-link-btn"
+                    @click="cloudPushStore.openDiscordOAuth()"
+                  >
+                    <svg width="20" height="15" viewBox="0 0 71 55" fill="currentColor" style="flex-shrink: 0">
+                      <path d="M60.1 4.9A58.5 58.5 0 0045.4.2a.2.2 0 00-.2.1 40.8 40.8 0 00-1.8 3.7 54 54 0 00-16.2 0A37.4 37.4 0 0025.4.3a.2.2 0 00-.2-.1A58.4 58.4 0 0010.5 5a.2.2 0 00-.1 0A60 60 0 00.4 45.1a.3.3 0 000 .2 58.7 58.7 0 0017.7 9 .2.2 0 00.3-.1 42 42 0 003.6-5.9.2.2 0 00-.1-.3 38.7 38.7 0 01-5.5-2.6.2.2 0 01 0-.4l1.1-.9a.2.2 0 01.2 0 41.9 41.9 0 0035.6 0 .2.2 0 01.2 0l1.1.9a.2.2 0 010 .3 36.3 36.3 0 01-5.5 2.7.2.2 0 00-.1.3 47.2 47.2 0 003.6 5.9.2.2 0 00.3 0A58.5 58.5 0 0070.3 45.3a.2.2 0 000-.2A59.7 59.7 0 0060.2 5a.2.2 0 00-.1 0zM23.7 37a6.8 6.8 0 01-6.3-7 6.8 6.8 0 016.3-7 6.7 6.7 0 016.3 7 6.8 6.8 0 01-6.3 7zm23.2 0a6.8 6.8 0 01-6.3-7 6.8 6.8 0 016.3-7 6.7 6.7 0 016.3 7 6.8 6.8 0 01-6.3 7z"/>
+                    </svg>
+                    連結 Discord 帳號
+                  </button>
+                  <p style="font-size: 11px; color: var(--text-tertiary); margin-top: 4px">
+                    點擊後會跳轉到 Discord 授權，自動綁定帳號並加入伺服器
+                  </p>
+                </div>
               </div>
               <label class="toggle-item" style="border: none; padding: 6px 0">
                 <span class="toggle-label" style="font-size: 13px"
@@ -5997,6 +6032,29 @@ function useClonedVoice(voiceId: string) {
 
   .setting-group {
     margin-bottom: 12px;
+  }
+
+  .discord-link-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 14px;
+    font-size: 13px;
+    background: #5865f2;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+
+    &:hover {
+      background: #4752c4;
+    }
+
+    &:active {
+      background: #3c45a5;
+    }
   }
 }
 

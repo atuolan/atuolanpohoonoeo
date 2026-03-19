@@ -12,7 +12,7 @@ import type {
   CloudPushSyncPayload,
 } from "@/types/cloudPush";
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 
 const SETTINGS_KEY = "cloud-push-settings";
 
@@ -20,6 +20,8 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
   // ===== 用戶可設定的狀態 =====
   const enabled = ref(false);
   const discordUserId = ref("");
+  const discordUsername = ref("");
+  const discordDisplayName = ref("");
   const enabledChannels = ref<("discord" | "webpush")[]>(["discord"]);
   const intervalMinutes = ref(60);
   const doNotDisturbEnabled = ref(true);
@@ -45,6 +47,8 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
       if (saved) {
         enabled.value = (saved.enabled as boolean) ?? false;
         discordUserId.value = (saved.discordUserId as string) ?? "";
+        discordUsername.value = (saved.discordUsername as string) ?? "";
+        discordDisplayName.value = (saved.discordDisplayName as string) ?? "";
         enabledChannels.value = (saved.enabledChannels as (
           | "discord"
           | "webpush"
@@ -73,6 +77,8 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
           id: SETTINGS_KEY,
           enabled: enabled.value,
           discordUserId: discordUserId.value,
+          discordUsername: discordUsername.value,
+          discordDisplayName: discordDisplayName.value,
           enabledChannels: enabledChannels.value,
           intervalMinutes: intervalMinutes.value,
           doNotDisturbEnabled: doNotDisturbEnabled.value,
@@ -369,10 +375,80 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
       // 非關鍵路徑，靜默失敗
     }
   }
+
+  // ===== Discord OAuth2 連結 =====
+
+  /** Discord OAuth2 相關常數 */
+  const DISCORD_CLIENT_ID = "1454468726899609761";
+  const DISCORD_GUILD_ID = "1413953986519760908";
+  const DISCORD_OAUTH_CALLBACK = "https://push.aguacloud.uk/discord/callback";
+
+  /** 是否已連結 Discord */
+  const isDiscordLinked = computed(() => !!discordUserId.value);
+
+  /** 開啟 Discord OAuth2 授權頁面 */
+  function openDiscordOAuth(): void {
+    const currentOrigin = window.location.origin;
+    const params = new URLSearchParams({
+      client_id: DISCORD_CLIENT_ID,
+      redirect_uri: DISCORD_OAUTH_CALLBACK,
+      response_type: "code",
+      scope: "identify guilds.join",
+      state: currentOrigin,
+    });
+    window.location.href = `https://discord.com/oauth2/authorize?${params.toString()}`;
+  }
+
+  /** 檢查 URL 是否帶有 Discord OAuth 回傳參數，並處理 */
+  async function handleDiscordOAuthCallback(): Promise<boolean> {
+    const params = new URLSearchParams(window.location.search);
+    const userId = params.get("discord_user_id");
+    const username = params.get("discord_username");
+    const displayName = params.get("discord_display_name");
+    const error = params.get("discord_error");
+
+    // 清除 URL 參數（不留痕跡）
+    if (userId || error) {
+      const cleanUrl = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, "", cleanUrl);
+    }
+
+    if (error) {
+      console.error("[CloudPush] Discord OAuth 錯誤:", error);
+      return false;
+    }
+
+    if (userId) {
+      discordUserId.value = userId;
+      discordUsername.value = username || "";
+      discordDisplayName.value = displayName || username || "";
+      // 確保 discord 管道已啟用
+      if (!enabledChannels.value.includes("discord")) {
+        enabledChannels.value.push("discord");
+      }
+      await saveSettings();
+      console.log(`[CloudPush] Discord 已連結: ${displayName} (${userId})`);
+      return true;
+    }
+
+    return false;
+  }
+
+  /** 解除 Discord 連結 */
+  async function unlinkDiscord(): Promise<void> {
+    discordUserId.value = "";
+    discordUsername.value = "";
+    discordDisplayName.value = "";
+    await saveSettings();
+  }
+
   return {
     // 狀態
     enabled,
     discordUserId,
+    discordUsername,
+    discordDisplayName,
+    isDiscordLinked,
     enabledChannels,
     intervalMinutes,
     doNotDisturbEnabled,
@@ -392,5 +468,9 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
     disableCloudPush,
     testPushNotification,
     sendAliveHeartbeat,
+    // Discord OAuth
+    openDiscordOAuth,
+    handleDiscordOAuthCallback,
+    unlinkDiscord,
   };
 });

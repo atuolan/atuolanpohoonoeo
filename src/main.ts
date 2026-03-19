@@ -214,6 +214,18 @@ const pinia = createPinia();
 app.use(pinia);
 app.mount("#app");
 
+// Discord OAuth2 回傳參數處理（使用者從 Discord 授權頁面 redirect 回來時）
+(async () => {
+  try {
+    const { useCloudPushStore } = await import("./stores/cloudPush");
+    const cloudPushStore = useCloudPushStore();
+    await cloudPushStore.loadSettings();
+    await cloudPushStore.handleDiscordOAuthCallback();
+  } catch {
+    // 非關鍵路徑
+  }
+})();
+
 // Vue 掛載後再次更新高度（確保 #app DOM 已存在）
 updateAppHeight();
 

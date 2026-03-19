@@ -6,6 +6,7 @@
  */
 
 import { PushAlarmDO } from './push-alarm.js';
+import { handleDiscordCallback } from './discord-oauth.js';
 
 // ── 設定 ──────────────────────────────────────────────────────
 
@@ -70,6 +71,11 @@ async function handleRequest(request, env) {
       }),
       origin,
     );
+  }
+
+  // Discord OAuth2 callback（不需要 X-User-Id）
+  if (path === '/discord/callback') {
+    return handleDiscordCallback(request, env);
   }
 
   // 所有 /push/* 路由需要 X-User-Id
