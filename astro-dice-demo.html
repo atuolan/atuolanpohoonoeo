@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Moira 星象館</title>
+  <style>
+    :root {
+      --glass-bg: rgba(255, 255, 255, 0.3);
+      --glass-border: rgba(255, 255, 255, 0.5);
+      --text-dark: #2c1a2e;
+      --text-gray: #4a3e4d;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html,
+    body {
+      position: fixed;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text-dark);
+    }
+
+    .app-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+      z-index: 0;
+    }
+
+    .app-container::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: url('./img/new_bg.jpg') center center / cover no-repeat;
+      opacity: 0.5;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .app-container::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      /* Provide default mix matching the dark magical aesthetic */
+      background: var(--bg-grad, linear-gradient(135deg, rgba(30, 20, 50, 0.4), rgba(50, 30, 10, 0.4)));
+      mix-blend-mode: color;
+      z-index: 2;
+      pointer-events: none;
+      transition: background 1.5s ease-in-out;
+    }
+
+    /* ===== Top Navigation ===== */
+    .top-nav {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      padding: 50px 24px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      z-index: 50;
+      pointer-events: none;
+    }
+
+    .nav-left,
+    .nav-right {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      pointer-events: auto;
+    }
+
+    .nav-right {
+      align-items: flex-end;
+    }
+
+    .nav-icon-btn {
+      width: 32px;
+      height: 32px;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.8;
+      transition: opacity 0.2s;
+    }
+
+    .nav-icon-btn:hover {
+      opacity: 1;
+    }
+
+    .nav-icon-btn img,
+    .nav-icon-btn svg {
+      width: 28px;
+      height: 28px;
+      fill: #fff;
+      stroke: #fff;
+    }
+
+    .nav-text {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 13px;
+      letter-spacing: 0.05em;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .nav-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+
+    /* ===== Main Stage ===== */
+    .stage {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+
+
+
+    /* Start Button (wireframe sphere) */
+    .start-btn {
+      position: absolute;
+      width: 30%;
+      max-width: 150px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10;
+      cursor: pointer;
+      transition: transform 0.2s;
+      animation: floatBreath 3s ease-in-out infinite;
+    }
+
+    @keyframes floatBreath {
+
+      0%,
+      100% {
+        transform: translate(-50%, -50%) scale(1);
+      }
+
+      50% {
+        transform: translate(-50%, calc(-50% - 8px)) scale(1.02);
+      }
+    }
+
+    .start-btn:active {
+      transform: translate(-50%, -50%) scale(0.95);
+    }
+
+    /* Glowing wireframe Dice */
+    .die {
+      position: absolute;
+      width: 90px;
+      z-index: 15;
+      display: none;
+      /* Initial state centered */
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%) scale(0.1);
+      opacity: 0;
+      animation-fill-mode: forwards;
+      filter: drop-shadow(0 4px 12px rgba(255, 255, 255, 0.4));
+    }
+
+    .die img {
+      width: 100%;
+      height: auto;
+      pointer-events: none;
+    }
+
+    /* ===== Glassmorphism Notes Panel ===== */
+    .notes-panel {
+      position: absolute;
+      top: 15%;
+      /* Above center slightly */
+      left: 10%;
+      right: 10%;
+      max-width: 400px;
+      margin: 0 auto;
+      background: var(--glass-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--glass-border);
+      border-radius: 4px;
+      padding: 24px 20px;
+      z-index: 20;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+      opacity: 0;
+      transform: translateY(20px);
+      pointer-events: none;
+      transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .notes-panel.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+
+
+    .notes-content {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #1a1a1a;
+      max-height: 40vh;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .notes-content::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .notes-content::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.15);
+      border-radius: 4px;
+    }
+
+    .note-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .note-body {
+      opacity: 0.85;
+      text-align: justify;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app-container">
+    <!-- Top Navigation -->
+    <div class="top-nav">
+      <div class="nav-left">
+        <button class="nav-icon-btn" onclick="location.reload()">
+          <img src="./img/back.svg" alt="Back" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));">
+        </button>
+        <span class="nav-text">Help</span>
+      </div>
+      <div class="nav-right">
+        <button class="nav-icon-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <div class="nav-group">
+          <button class="nav-icon-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round" style="width:22px;height:22px; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+              <polyline points="17 21 17 13 7 13 7 21"></polyline>
+              <polyline points="7 3 7 8 15 8"></polyline>
+            </svg>
+          </button>
+          <span class="nav-text" style="font-size: 10px;">Save</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage -->
+    <div class="stage">
+
+      <!-- Notes Panel -->
+      <div class="notes-panel" id="notesPanel">
+
+        <div class="notes-content" id="notesContent">
+          <!-- Content injected dynamically -->
+        </div>
+        <div
+          style="text-align: center; margin-top: 20px; font-size: 13px; font-weight: bold; color: #444; cursor: pointer;"
+          onclick="startRoll()">
+          ↺ 點擊重新隨機搖骰
+        </div>
+      </div>
+
+      <!-- The 3 Dice -->
+      <div class="die" id="diePlanet" onclick="showNotes()"><img id="imgPlanet" src=""></div>
+      <div class="die" id="dieHouse" onclick="showNotes()"><img id="imgHouse" src=""></div>
+      <div class="die" id="dieSign" onclick="showNotes()"><img id="imgSign" src=""></div>
+
+      <!-- Start Button -->
+      <img src="./img/th.png" class="start-btn" id="startBtn" onclick="startRoll()">
+    </div>
+
+
+
+    <audio id="startAudio" src="./startvoice.mp3" preload="auto"></audio>
+  </div>
+
+  <script>
+    // ===== 豐富的數據庫 (14天星, 12星座, 12宮位) =====
+    const PLANETS = [
+      { id: 1, name: '太阳', desc: '权力，人生目标，创造力，焦点，舞台，高贵，自信。负面时傲慢、张扬。' },
+      { id: 2, name: '月亮', desc: '情感，直觉，记忆，家庭事物，安全感，照顾。负面时无常、情绪化、伤心。' },
+      { id: 3, name: '水星', desc: '思考，知识，学习，沟通交通，理智，机智灵活。负面时善变、不可靠。' },
+      { id: 4, name: '金星', desc: '爱情，金钱，艺术，珠宝，气质，高贵典雅，享受。负面时贪婪、奢侈绯闻。' },
+      { id: 5, name: '火星', desc: '执行，武力，竞争，积极行动力，斗志爆发。负面时野心、破坏、冲突危险。' },
+      { id: 6, name: '木星', desc: '信仰，法律，远方，幸运，乐观，慷慨扩张。负面时投机夸张、盲目浪费。' },
+      { id: 7, name: '土星', desc: '组织框架，责任耐性，稳定磨砺，缓慢工程。负面时拖延保守、忧郁困难。' },
+      { id: 8, name: '天王星', desc: '大变动，高科技，独立突发，创新好奇，改革新思潮。负面时叛逆怪异。' },
+      { id: 9, name: '海王星', desc: '神秘梦境，艺术药物，理想慈善，直觉灵感。负面时幻想自欺、迷糊混乱。' },
+      { id: 10, name: '冥王星', desc: '危机感，不信任，占有欲，控制欲，潜能权力，性创造，死而后生，反复反抗洞察怀疑。' },
+      { id: 11, name: '南交点', desc: '目标目的，威势豪气，雄厚霸气，目标导向。负面时易怒好杀。' },
+      { id: 12, name: '北交点', desc: '复杂的业障负担，努力方向，精打细算。负面时计较小气低俗。' },
+      { id: 13, name: '莉莉丝', desc: '神秘暗箱，隐藏之物，巧智计谋谋略。负面时阴险奸狡偷情。' },
+      { id: 14, name: '紫炁', desc: '学识学术，高技术，大智慧逢凶化吉，帝王贵气。负面时高傲孤独。' }
+    ];
+
+    const SIGNS = [
+      { id: 1, name: '白羊', desc: '冒險先鋒，爆發力，主動激情，勇氣鬥志。' },
+      { id: 2, name: '金牛', desc: '本性温顺，缓慢，稳重固执，有耐心，能坚持，爱物质爱享受，脚踏实地，表达感情忠心耿耿不厌其烦，需要有物质的保障。' },
+      { id: 3, name: '双子', desc: '變化溝通，聰明靈活，活躍好奇，健談。' },
+      { id: 4, name: '巨蟹', desc: '保護滋養，母性顧家，念舊溫順直覺強。' },
+      { id: 5, name: '狮子', desc: '領袖氣質，意志雄心，熱情華麗大度。' },
+      { id: 6, name: '处女', desc: '謹慎理智，系統秩序，勤勞冷靜仔細。' },
+      { id: 7, name: '天秤', desc: '美學社交，和平公正，浪漫文雅善交際。' },
+      { id: 8, name: '天蝎', desc: '深沉洞察，頑強意志重生，神祕強勢。' },
+      { id: 9, name: '射手', desc: '樂觀開明，坦率熱情，旅行哲學自由。' },
+      { id: 10, name: '魔羯', desc: '傳統信用，專心嚴謹責任，刻苦耐勞。' },
+      { id: 11, name: '水瓶', desc: '創意革新，獨立聰明前衛，科技突破。' },
+      { id: 12, name: '双鱼', desc: '感性夢境，同情浪漫善解人意，犧牲奉獻。' }
+    ];
+
+    const HOUSES = [
+      { id: 1, name: '1宫', desc: '人格自我，自身角度本質，生命力自我意識。' },
+      { id: 2, name: '2宫', desc: '拥有的资源，正财，价值观，追求钱财的安全感。' },
+      { id: 3, name: '3宫', desc: '兄弟同學，短途旅行，語言溝通工具。' },
+      { id: 4, name: '4宫', desc: '家居房地產，個人根基底部，背後的支撐。' },
+      { id: 5, name: '5宫', desc: '創造娛樂戀愛，賭博投資表演。' },
+      { id: 6, name: '6宫', desc: '個人責任健康，勞動付出社會服務。' },
+      { id: 7, name: '7宫', desc: '婚姻合夥，對手與雙方關係，伴侶。' },
+      { id: 8, name: '8宫', desc: '情慾生死，契約遺產，偏財股票重生。' },
+      { id: 9, name: '9宫', desc: '高等教育哲學，宗教旅行，心靈智慧。' },
+      { id: 10, name: '10宫', desc: '名譽地位，事業成就形象，上司政府。' },
+      { id: 11, name: '11宫', desc: '社交團體，友誼人際，未來願景理想。' },
+      { id: 12, name: '12宫', desc: '內心世界神秘，潛意識隱私心靈修行。' }
+    ];
+
+    // 落點座標：模擬原版散落在畫面星芒的三角陣型
+    // (基於 50%, 50% 居中點的偏移量，讓動畫看起來是從底部/中間彈出)
+    const POSITIONS = [
+      { left: '42%', top: '48%' }, // 左側中間
+      { left: '56%', top: '60%' }, // 右下
+      { left: '60%', top: '45%' }  // 右上
+    ];
+
+    let rolling = false;
+
+    function rand(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+    function showNotes() {
+      // 確保還沒搖完或沒有內容時不會誤觸
+      if (!rolling && document.getElementById('notesContent').innerHTML.trim() !== '') {
+        document.getElementById('notesPanel').classList.add('is-visible');
+      }
+    }
+
+    function startRoll() {
+      if (rolling) return;
+      rolling = true;
+
+      // 動態更新背景顏色渲染，配合黑金背景產生深邃神秘的漸層
+      const hue1 = Math.floor(Math.random() * 360);
+      const hue2 = (hue1 + 40 + Math.floor(Math.random() * 60)) % 360;
+      const newBg = `linear-gradient(135deg, hsla(${hue1}, 80%, 20%, 0.6), hsla(${hue2}, 80%, 15%, 0.6))`;
+      document.querySelector('.app-container').style.setProperty('--bg-grad', newBg);
+
+      // 音效
+      const audio = document.getElementById('startAudio');
+      if (audio) {
+        audio.currentTime = 0;
+        audio.play().catch(() => { });
+      }
+
+      // 重置 / 隱藏 UI
+      document.getElementById('startBtn').style.opacity = '0';
+      document.getElementById('startBtn').style.pointerEvents = 'none';
+      document.getElementById('notesPanel').classList.remove('is-visible');
+
+      const dieP = document.getElementById('diePlanet');
+      const dieH = document.getElementById('dieHouse');
+      const dieS = document.getElementById('dieSign');
+
+      [dieP, dieH, dieS].forEach(el => {
+        el.style.display = 'none';
+        el.style.animation = 'none';
+      });
+
+      // 隨機抽取結果
+      const planet = rand(PLANETS);
+      const sign = rand(SIGNS);
+      const house = rand(HOUSES);
+
+      // 設定圖片 src 對應到 原版的 img/{類型}{id}.png
+      document.getElementById('imgPlanet').src = `./img/xingxing${planet.id}.png`;
+      document.getElementById('imgSign').src = `./img/xingzuo${sign.id}.png`;
+      document.getElementById('imgHouse').src = `./img/gong${house.id}.png`;
+
+      // 打亂三個球的落點對應
+      const spots = [...POSITIONS].sort(() => Math.random() - 0.5);
+
+      // 設定動態過場動畫 (模仿從上方掉落並散開)
+      const injectKeyframes = (name, targetLeft, targetTop) => {
+        return `
+          @keyframes ${name} {
+            0% { left: 50%; top: -15%; transform: translate(-50%, -50%) scale(0.6) rotate(0deg); opacity: 0; }
+            40% { left: 50%; top: 40%; transform: translate(-50%, -50%) scale(1.1) rotate(180deg); opacity: 1; }
+            100% { left: ${targetLeft}; top: ${targetTop}; transform: translate(-50%, -50%) scale(1) rotate(360deg); opacity: 1; }
+          }
+        `;
+      };
+
+      // 移除舊的動態 style
+      const oldStyle = document.getElementById('dynamicAnims');
+      if (oldStyle) oldStyle.remove();
+
+      const style = document.createElement('style');
+      style.id = 'dynamicAnims';
+      style.innerHTML = injectKeyframes('popP', spots[0].left, spots[0].top) +
+        injectKeyframes('popH', spots[1].left, spots[1].top) +
+        injectKeyframes('popS', spots[2].left, spots[2].top);
+      document.head.appendChild(style);
+
+      // 顯示並給予動畫，增加階層延遲感
+      setTimeout(() => { dieP.style.display = 'block'; dieP.style.animation = 'popP 1.2s cubic-bezier(0.25, 1, 0.5, 1) forwards'; }, 0);
+      setTimeout(() => { dieH.style.display = 'block'; dieH.style.animation = 'popH 1.2s cubic-bezier(0.25, 1, 0.5, 1) forwards'; }, 100);
+      setTimeout(() => { dieS.style.display = 'block'; dieS.style.animation = 'popS 1.2s cubic-bezier(0.25, 1, 0.5, 1) forwards'; }, 200);
+
+      // 準備文字內容
+      const contentHtml = `
+        <div class="note-item">
+          <b>${planet.name}:</b>
+          <span class="note-body">${planet.desc}</span>
+        </div>
+        <div class="note-item">
+          <b>${sign.name}:</b>
+          <span class="note-body">${sign.desc}</span>
+        </div>
+        <div class="note-item">
+          <b>${house.name}:</b>
+          <span class="note-body">${house.desc}</span>
+        </div>
+      `;
+
+      // 動畫結束後只產出文字，等待使用者手動點擊骰子才顯示面板
+      setTimeout(() => {
+        document.getElementById('notesContent').innerHTML = contentHtml;
+        rolling = false;
+      }, 1400);
+    }
+  </script>
+</body>
+
+</html>

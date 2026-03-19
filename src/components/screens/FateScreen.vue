@@ -703,7 +703,23 @@ onUnmounted(() => {
             @click="selectDivination('astroDice')"
           >
             <div class="fate-orbit-node__core">
-              <span style="font-size: 24px">🎲</span>
+              <svg
+                viewBox="0 0 24 24"
+                width="1em"
+                height="1em"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none" />
+                <circle cx="15.5" cy="8.5" r="1.5" fill="currentColor" stroke="none" />
+                <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                <circle cx="8.5" cy="15.5" r="1.5" fill="currentColor" stroke="none" />
+                <circle cx="15.5" cy="15.5" r="1.5" fill="currentColor" stroke="none" />
+              </svg>
             </div>
             <div class="fate-orbit-node__label">占星骰子</div>
           </button>
@@ -715,7 +731,24 @@ onUnmounted(() => {
             @click="selectDivination('lenormand')"
           >
             <div class="fate-orbit-node__core">
-              <span style="font-size: 24px">🃏</span>
+              <svg
+                viewBox="0 0 24 24"
+                width="1em"
+                height="1em"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="4" y="2" width="16" height="20" rx="2" ry="2" />
+                <!-- 幸運草 (雷諾曼象徵) -->
+                <circle cx="12" cy="9" r="2" />
+                <circle cx="9.5" cy="12" r="2" />
+                <circle cx="14.5" cy="12" r="2" />
+                <circle cx="12" cy="15" r="2" />
+                <path d="M12 12v6" />
+              </svg>
             </div>
             <div class="fate-orbit-node__label">雷諾曼牌</div>
           </button>
@@ -1193,20 +1226,27 @@ $r-pill: 100px;
 
 .fate-content {
   flex: 1;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 24px 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  // 占星骰子全屏舞台時移除 padding
+  &:has(.astro-stage) {
+    padding: 0;
+  }
 }
 
 .fate-phase {
   width: 100%;
   max-width: 600px;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   position: relative;
+  overflow-y: auto;
   animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   &__title {
     font-size: 22px;
