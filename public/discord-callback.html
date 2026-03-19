@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html><head><title>Discord 連結中…</title></head>
+<body><p>正在連結 Discord 帳號，請稍候…</p>
+<script>
+// 這個頁面只是一個中繼站，讓 opener（原頁面）讀取 URL 參數
+// 如果沒有 opener（直接跳轉模式），則 redirect 回首頁讓 SPA 處理
+if (!window.opener) {
+  // fallback：直接跳轉模式，把參數帶回首頁
+  window.location.href = '/' + window.location.search;
+}
+// 有 opener 的話，什麼都不做，等 opener 的 setInterval 讀完參數後關閉此視窗
+</script>
+</body></html>

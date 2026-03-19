@@ -417,9 +417,9 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
             clearInterval(pollTimer);
             return;
           }
-          // popup redirect 回 origin 後才能讀 URL（同源政策）
+          // popup redirect 回 discord-callback.html 後才能讀 URL（同源政策）
           const popupUrl = popup.location.href;
-          if (popupUrl.startsWith(currentOrigin)) {
+          if (popupUrl.startsWith(currentOrigin) && popupUrl.includes("discord-callback.html")) {
             clearInterval(pollTimer);
             const popupParams = new URL(popupUrl).searchParams;
             const userId = popupParams.get("discord_user_id");

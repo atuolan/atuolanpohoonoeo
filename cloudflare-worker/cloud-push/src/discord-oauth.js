@@ -27,7 +27,7 @@ export async function handleDiscordCallback(request, env) {
   // 使用者拒絕授權
   if (error) {
     const redirectBase = state || 'https://203aguaphone.aguacloud.uk';
-    return Response.redirect(`${redirectBase}?discord_error=${encodeURIComponent(error)}`, 302);
+    return Response.redirect(`${redirectBase}/discord-callback.html?discord_error=${encodeURIComponent(error)}`, 302);
   }
 
   if (!code) {
@@ -120,11 +120,11 @@ export async function handleDiscordCallback(request, env) {
       discord_display_name: user.global_name || user.username,
     });
 
-    return Response.redirect(`${redirectBase}?${params.toString()}`, 302);
+    return Response.redirect(`${redirectBase}/discord-callback.html?${params.toString()}`, 302);
   } catch (e) {
     console.error('[Discord OAuth] 未預期錯誤:', e);
     return Response.redirect(
-      `${redirectBase}?discord_error=${encodeURIComponent('伺服器錯誤，請稍後重試')}`,
+      `${redirectBase}/discord-callback.html?discord_error=${encodeURIComponent('伺服器錯誤，請稍後重試')}`,
       302,
     );
   }

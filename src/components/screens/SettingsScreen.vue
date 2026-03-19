@@ -3805,7 +3805,7 @@ function useClonedVoice(voiceId: string) {
               <label class="setting-label">推送管道</label>
               <label class="toggle-item" style="border: none; padding: 6px 0">
                 <span class="toggle-label" style="font-size: 13px"
-                  >Discord Bot DM</span
+                  >Discord Bot DM(會使用DCbot來提醒你)</span
                 >
                 <input
                   type="checkbox"
@@ -3861,7 +3861,7 @@ function useClonedVoice(voiceId: string) {
               </div>
               <label class="toggle-item" style="border: none; padding: 6px 0">
                 <span class="toggle-label" style="font-size: 13px"
-                  >瀏覽器推送（Phase 2）</span
+                  >瀏覽器推送（直接瀏覽器發送通知）</span
                 >
                 <input
                   type="checkbox"
