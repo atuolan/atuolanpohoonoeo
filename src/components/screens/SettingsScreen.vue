@@ -157,7 +157,6 @@ const cloudPushEnabled = ref(cloudPushStore.enabled);
 const cloudPushChannels = ref<("discord" | "webpush")[]>([
   ...cloudPushStore.enabledChannels,
 ]);
-const cloudPushDiscordUserId = ref(cloudPushStore.discordUserId);
 const cloudPushInterval = ref(cloudPushStore.intervalMinutes);
 const cloudPushDND = ref(cloudPushStore.doNotDisturbEnabled);
 const cloudPushDNDStart = ref(cloudPushStore.doNotDisturbStart);
@@ -189,7 +188,6 @@ function toggleCloudPushChannel(channel: "discord" | "webpush", event: Event) {
 
 function handleCloudPushSettingsChange() {
   cloudPushStore.enabledChannels = [...cloudPushChannels.value];
-  cloudPushStore.discordUserId = cloudPushDiscordUserId.value;
   cloudPushStore.intervalMinutes = cloudPushInterval.value;
   cloudPushStore.doNotDisturbEnabled = cloudPushDND.value;
   cloudPushStore.doNotDisturbStart = cloudPushDNDStart.value;
@@ -220,7 +218,6 @@ async function handleCloudPushTest() {
 async function handleUnlinkDiscord() {
   if (confirm("確定要解除 Discord 連結嗎？")) {
     await cloudPushStore.unlinkDiscord();
-    cloudPushDiscordUserId.value = "";
   }
 }
 
