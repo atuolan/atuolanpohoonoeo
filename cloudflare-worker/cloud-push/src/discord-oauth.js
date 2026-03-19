@@ -54,8 +54,16 @@ export async function handleDiscordCallback(request, env) {
     if (!tokenRes.ok) {
       const text = await tokenRes.text();
       console.error('[Discord OAuth] Token 交換失敗:', tokenRes.status, text);
+      // 把 Discord 的實際錯誤訊息帶回前端，方便除錯
+      let errorDetail = '授權失敗，請重試';
+      try {
+        const errJson = JSON.parse(text);
+        errorDetail = `Token交換失敗(${tokenRes.status}): ${errJson.error_description || errJson.error || text}`;
+      } catch {
+        errorDetail = `Token交換失敗(${tokenRes.status}): ${text.slice(0, 200)}`;
+      }
       return Response.redirect(
-        `${redirectBase}?discord_error=${encodeURIComponent('授權失敗，請重試')}`,
+        `${redirectBase}?discord_error=${encodeURIComponent(errorDetail)}`,
         302,
       );
     }
