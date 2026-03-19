@@ -323,7 +323,7 @@ export class PushAlarmDO {
     const body = {
       model: apiSettings.model,
       temperature: apiSettings.temperature ?? 0.7,
-      max_tokens: apiSettings.maxTokens ?? 500,
+      max_tokens: apiSettings.maxTokens ?? 1500,
       messages: [
         { role: "system", content: systemContent },
         ...historyMessages,
