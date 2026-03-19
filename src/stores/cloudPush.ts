@@ -386,7 +386,7 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
   /** 是否已連結 Discord */
   const isDiscordLinked = computed(() => !!discordUserId.value);
 
-  /** 開啟 Discord OAuth2 授權頁面 */
+  /** 開啟 Discord OAuth2 授權頁面（使用 popup 視窗，避免原頁面遺失） */
   function openDiscordOAuth(): void {
     const currentOrigin = window.location.origin;
     const params = new URLSearchParams({
@@ -396,10 +396,66 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
       scope: "identify guilds.join",
       state: currentOrigin,
     });
-    window.location.href = `https://discord.com/oauth2/authorize?${params.toString()}`;
+    const authUrl = `https://discord.com/oauth2/authorize?${params.toString()}`;
+
+    // 用 popup 視窗開啟，避免原頁面被跳走
+    const w = 500;
+    const h = 700;
+    const left = window.screenX + (window.outerWidth - w) / 2;
+    const top = window.screenY + (window.outerHeight - h) / 2;
+    const popup = window.open(
+      authUrl,
+      "discord-oauth",
+      `width=${w},height=${h},left=${left},top=${top},popup=yes`,
+    );
+
+    // 輪詢 popup 的 URL，等待 redirect 回來帶參數
+    if (popup) {
+      const pollTimer = setInterval(async () => {
+        try {
+          if (popup.closed) {
+            clearInterval(pollTimer);
+            return;
+          }
+          // popup redirect 回 origin 後才能讀 URL（同源政策）
+          const popupUrl = popup.location.href;
+          if (popupUrl.startsWith(currentOrigin)) {
+            clearInterval(pollTimer);
+            const popupParams = new URL(popupUrl).searchParams;
+            const userId = popupParams.get("discord_user_id");
+            const username = popupParams.get("discord_username");
+            const displayName = popupParams.get("discord_display_name");
+            const error = popupParams.get("discord_error");
+            popup.close();
+
+            if (error) {
+              console.error("[CloudPush] Discord OAuth 錯誤:", error);
+              return;
+            }
+            if (userId) {
+              discordUserId.value = userId;
+              discordUsername.value = username || "";
+              discordDisplayName.value = displayName || username || "";
+              if (!enabledChannels.value.includes("discord")) {
+                enabledChannels.value.push("discord");
+              }
+              await saveSettings();
+              console.log(
+                `[CloudPush] Discord 已連結: ${displayName} (${userId})`,
+              );
+            }
+          }
+        } catch {
+          // 跨域時讀 popup.location 會拋錯，忽略即可
+        }
+      }, 500);
+    } else {
+      // popup 被瀏覽器擋住，fallback 到直接跳轉
+      window.location.href = authUrl;
+    }
   }
 
-  /** 檢查 URL 是否帶有 Discord OAuth 回傳參數，並處理 */
+  /** 檢查 URL 是否帶有 Discord OAuth 回傳參數，並處理（fallback：popup 被擋時的直接跳轉模式） */
   async function handleDiscordOAuthCallback(): Promise<boolean> {
     const params = new URLSearchParams(window.location.search);
     const userId = params.get("discord_user_id");
