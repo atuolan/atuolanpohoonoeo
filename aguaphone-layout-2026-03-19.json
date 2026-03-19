@@ -1,0 +1,316 @@
+{
+  "type": "aguaphone-layout",
+  "version": 1,
+  "exportedAt": "2026-03-19T12:47:47.347Z",
+  "widgets": [
+    {
+      "type": "focus-timer",
+      "x": 8,
+      "y": 3,
+      "width": 12,
+      "height": 18,
+      "data": {},
+      "id": "widget-1770916812059-a5q364f",
+      "zIndex": 1
+    },
+    {
+      "type": "todo",
+      "x": 10,
+      "y": 23,
+      "width": 9,
+      "height": 11,
+      "data": {
+        "customStyle": {
+          "foregroundColor": "#3b82f6",
+          "borderColor": "#fef08a"
+        }
+      },
+      "id": "widget-1770916812060-4xcw4w2",
+      "zIndex": 2
+    },
+    {
+      "type": "mood-diary",
+      "x": 21,
+      "y": 3,
+      "width": 12,
+      "height": 11,
+      "data": {
+        "customStyle": {
+          "backgroundGradient": "linear-gradient(135deg, #ffecd2 0%, #fcb69f 50%, #ffecd2 100%)",
+          "foregroundColor": "#374151",
+          "borderColor": "transparent"
+        }
+      },
+      "id": "widget-1770916812061-xq7ve5w",
+      "zIndex": 3
+    },
+    {
+      "type": "fluid-button",
+      "x": 27,
+      "y": 16,
+      "width": 5,
+      "height": 5,
+      "data": {
+        "label": "閱讀"
+      },
+      "id": "widget-1770916812061-4ty2hj4",
+      "zIndex": 5
+    },
+    {
+      "type": "quote",
+      "x": 21,
+      "y": 23,
+      "width": 12,
+      "height": 10,
+      "data": {
+        "customStyle": {
+          "backgroundColor": "#bae6fd"
+        }
+      },
+      "id": "widget-1770916812061-i391u8o",
+      "zIndex": 6
+    },
+    {
+      "type": "clock",
+      "x": 35,
+      "y": 2,
+      "width": 21,
+      "height": 7,
+      "data": {},
+      "id": "widget-1770916812061-8qqosfp",
+      "zIndex": 7
+    },
+    {
+      "type": "polaroid",
+      "x": 35,
+      "y": 11,
+      "width": 10,
+      "height": 11,
+      "data": {},
+      "id": "widget-1770916812061-b0yjtot",
+      "zIndex": 8
+    },
+    {
+      "type": "music",
+      "x": 35,
+      "y": 23,
+      "width": 10,
+      "height": 10,
+      "data": {
+        "customStyle": {
+          "borderColor": "rgba(255, 255, 255, 0.1)",
+          "borderWidth": 1,
+          "layout": "vinyl"
+        }
+      },
+      "id": "widget-1770916812062-xohops2",
+      "zIndex": 27
+    },
+    {
+      "type": "fluid-button",
+      "x": 46,
+      "y": 12,
+      "width": 5,
+      "height": 5,
+      "data": {
+        "label": "訊息"
+      },
+      "id": "widget-1770916812062-hkebrp4",
+      "zIndex": 28
+    },
+    {
+      "type": "fluid-button",
+      "x": 51,
+      "y": 12,
+      "width": 5,
+      "height": 5,
+      "data": {
+        "label": "角色"
+      },
+      "id": "widget-1770916812062-nzs90w8",
+      "zIndex": 11
+    },
+    {
+      "type": "fluid-button",
+      "x": 46,
+      "y": 17,
+      "width": 5,
+      "height": 5,
+      "data": {
+        "label": "設置"
+      },
+      "id": "widget-1770916812062-b2mzou1",
+      "zIndex": 12
+    },
+    {
+      "type": "fluid-button",
+      "x": 51,
+      "y": 17,
+      "width": 5,
+      "height": 5,
+      "data": {
+        "label": "使用者"
+      },
+      "id": "widget-1770916812062-okad1dw",
+      "zIndex": 36
+    },
+    {
+      "type": "fluid-button",
+      "x": 51,
+      "y": 23,
+      "width": 5,
+      "height": 5,
+      "data": {
+        "label": "遊戲"
+      },
+      "id": "widget-1770916812063-enuw0fl",
+      "zIndex": 15
+    },
+    {
+      "type": "fluid-button",
+      "x": 46,
+      "y": 28,
+      "width": 5,
+      "height": 5,
+      "data": {
+        "label": "音樂"
+      },
+      "id": "widget-1770916812063-c1tysay",
+      "zIndex": 16
+    },
+    {
+      "type": "fluid-button",
+      "x": 51,
+      "y": 28,
+      "width": 5,
+      "height": 5,
+      "data": {
+        "label": "空間"
+      },
+      "id": "widget-1770916812063-t50ti2y",
+      "zIndex": 17
+    },
+    {
+      "type": "calendar",
+      "x": 58,
+      "y": 2,
+      "width": 14,
+      "height": 16,
+      "data": {
+        "customStyle": {
+          "backgroundColor": "#ffffff",
+          "foregroundColor": "#374151",
+          "borderColor": "rgba(0, 0, 0, 0.1)"
+        }
+      },
+      "id": "widget-1770916812063-r8iy3ls",
+      "zIndex": 18
+    },
+    {
+      "type": "fluid-button",
+      "x": 57,
+      "y": 19,
+      "width": 5,
+      "height": 5,
+      "data": {
+        "label": "購物"
+      },
+      "id": "widget-1770916812063-v4wawqo",
+      "zIndex": 19
+    },
+    {
+      "type": "fluid-button",
+      "x": 63,
+      "y": 19,
+      "width": 5,
+      "height": 5,
+      "data": {
+        "label": "偷窺TA"
+      },
+      "id": "widget-1770916812063-amokqwf",
+      "zIndex": 20
+    },
+    {
+      "type": "fluid-button",
+      "x": 69,
+      "y": 19,
+      "width": 5,
+      "height": 5,
+      "data": {
+        "label": "錢包"
+      },
+      "id": "widget-1770916812064-m2xd1um",
+      "zIndex": 21
+    },
+    {
+      "type": "fluid-button",
+      "x": 57,
+      "y": 24,
+      "width": 5,
+      "height": 5,
+      "data": {
+        "label": "外賣"
+      },
+      "id": "widget-1770916812064-95qapje",
+      "zIndex": 22
+    },
+    {
+      "type": "weather",
+      "x": 73,
+      "y": 2,
+      "width": 10,
+      "height": 8,
+      "data": {},
+      "id": "widget-1770916812064-8ak4n1i",
+      "zIndex": 23
+    },
+    {
+      "type": "fluid-button",
+      "x": 57,
+      "y": 30,
+      "width": 5,
+      "height": 5,
+      "data": {
+        "label": "健身"
+      },
+      "id": "widget-1770916812064-4t9gpl3",
+      "zIndex": 24
+    },
+    {
+      "type": "world-book",
+      "x": 63,
+      "y": 25,
+      "width": 14,
+      "height": 8,
+      "data": {},
+      "id": "widget-1770916812064-rydxi0j",
+      "zIndex": 25
+    },
+    {
+      "type": "fluid-button",
+      "x": 46,
+      "y": 23,
+      "width": 5,
+      "height": 5,
+      "data": {
+        "type": "1",
+        "label": "占卜"
+      },
+      "id": "widget-1772776025226-2twd7lf",
+      "zIndex": 46
+    },
+    {
+      "type": "fluid-button",
+      "x": 21,
+      "y": 16,
+      "width": 5,
+      "height": 5,
+      "data": {
+        "type": "5",
+        "label": "書架"
+      },
+      "id": "widget-1773924427132-0ekhxlq",
+      "zIndex": 40
+    }
+  ]
+}

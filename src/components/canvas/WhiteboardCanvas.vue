@@ -435,11 +435,11 @@ onMounted(async () => {
 
     canvasStore.addWidget({
       type: "fluid-button",
-      x: 22,
+      x: 21,
       y: 16,
       width: 5,
       height: 5,
-      data: { label: "收藏" },
+      data: { type: "5", label: "書架" },
     });
 
     canvasStore.addWidget({
@@ -536,7 +536,7 @@ onMounted(async () => {
       y: 23,
       width: 5,
       height: 5,
-      data: { label: "相冊" },
+      data: { type: "1", label: "占卜" },
     });
 
     canvasStore.addWidget({
@@ -638,20 +638,11 @@ onMounted(async () => {
 
     canvasStore.addWidget({
       type: "world-book",
-      x: 64,
+      x: 63,
       y: 25,
       width: 14,
       height: 8,
       data: {},
-    });
-
-    canvasStore.addWidget({
-      type: "fluid-button",
-      x: 75,
-      y: 19,
-      width: 5,
-      height: 5,
-      data: { type: "4", label: "書架" },
     });
   }
 });
