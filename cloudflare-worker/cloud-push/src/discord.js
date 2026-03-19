@@ -29,20 +29,8 @@ export async function sendDM(botToken, userId, characterName, content) {
 
   const channel = await channelRes.json();
 
-  // 2. 清理 AI 輸出的格式標籤（<msg>、[sticker:xxx]、ˇ想法ˇ 等）
-  const cleaned = content
-    .replace(/<\/?msg>/g, '')
-    .replace(/\[sticker:[^\]]*\]/g, '')
-    .replace(/ˇ[^ˇ]*ˇ/g, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-
-  const formattedContent = `**${characterName}**\n${cleaned}`;
-
-  // Discord 訊息上限 2000 字元
-  const truncated = formattedContent.length > 2000
-    ? formattedContent.slice(0, 1997) + '...'
-    : formattedContent;
+  // 2. 發送訊息
+  const formattedContent = `**${characterName}**\n${content}`;
 
   const msgRes = await fetch(`${DISCORD_API}/channels/${channel.id}/messages`, {
     method: 'POST',
@@ -50,7 +38,7 @@ export async function sendDM(botToken, userId, characterName, content) {
       Authorization: `Bot ${botToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ content: truncated }),
+    body: JSON.stringify({ content: formattedContent }),
   });
 
   if (!msgRes.ok) {

@@ -188,7 +188,7 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
         apiKey: taskConfig.api.apiKey,
         model: taskConfig.api.model,
         temperature: taskConfig.generation.temperature ?? 0.7,
-        maxTokens: 1500,
+        maxTokens: 8192,
       };
 
       // 組裝排程
