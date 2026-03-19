@@ -153,60 +153,47 @@ function handleShowPermissionGuide() {
 }
 
 // ===== 雲端推送鬧鐘 =====
-const cloudPushEnabled = ref(cloudPushStore.enabled);
-const cloudPushChannels = ref<("discord" | "webpush")[]>([
-  ...cloudPushStore.enabledChannels,
-]);
-const cloudPushInterval = ref(cloudPushStore.intervalMinutes);
-const cloudPushDND = ref(cloudPushStore.doNotDisturbEnabled);
-const cloudPushDNDStart = ref(cloudPushStore.doNotDisturbStart);
-const cloudPushDNDEnd = ref(cloudPushStore.doNotDisturbEnd);
+// 直接使用 store 的 reactive 狀態，不再用本地 ref 複製（避免同步問題）
 const cloudPushSyncStatus = ref(cloudPushStore.syncStatus);
 const cloudPushSyncError = ref(cloudPushStore.syncError);
 const cloudPushNextAlarm = ref(cloudPushStore.nextAlarm);
-const cloudPushPendingCount = ref(cloudPushStore.pendingMessageCount);
 
 function handleCloudPushToggle() {
-  if (!cloudPushEnabled.value) {
+  if (!cloudPushStore.enabled) {
     cloudPushStore.disableCloudPush();
+  } else {
+    cloudPushStore.saveSettings();
   }
 }
 
 function toggleCloudPushChannel(channel: "discord" | "webpush", event: Event) {
   const checked = (event.target as HTMLInputElement).checked;
   if (checked) {
-    if (!cloudPushChannels.value.includes(channel)) {
-      cloudPushChannels.value.push(channel);
+    if (!cloudPushStore.enabledChannels.includes(channel)) {
+      cloudPushStore.enabledChannels.push(channel);
     }
   } else {
-    cloudPushChannels.value = cloudPushChannels.value.filter(
+    cloudPushStore.enabledChannels = cloudPushStore.enabledChannels.filter(
       (c) => c !== channel,
     );
   }
-  handleCloudPushSettingsChange();
-}
-
-function handleCloudPushSettingsChange() {
-  cloudPushStore.enabledChannels = [...cloudPushChannels.value];
-  cloudPushStore.intervalMinutes = cloudPushInterval.value;
-  cloudPushStore.doNotDisturbEnabled = cloudPushDND.value;
-  cloudPushStore.doNotDisturbStart = cloudPushDNDStart.value;
-  cloudPushStore.doNotDisturbEnd = cloudPushDNDEnd.value;
   cloudPushStore.saveSettings();
 }
 
 async function handleCloudPushSync() {
   cloudPushSyncStatus.value = "syncing";
   cloudPushSyncError.value = null;
-  handleCloudPushSettingsChange();
   await cloudPushStore.syncToCloud();
   cloudPushSyncStatus.value = cloudPushStore.syncStatus;
   cloudPushSyncError.value = cloudPushStore.syncError;
   cloudPushNextAlarm.value = cloudPushStore.nextAlarm;
-  cloudPushEnabled.value = cloudPushStore.enabled;
 }
 
 async function handleCloudPushTest() {
+  // 如果還沒同步過，先自動同步一次
+  if (cloudPushStore.syncStatus !== "success" && !cloudPushStore.lastSyncAt) {
+    await handleCloudPushSync();
+  }
   try {
     await cloudPushStore.testPushNotification();
     alert("測試推送已發送！請檢查 Discord DM。");
@@ -3788,7 +3775,7 @@ function useClonedVoice(voiceId: string) {
             <label class="toggle-item" style="padding: 0; border: none">
               <input
                 type="checkbox"
-                v-model="cloudPushEnabled"
+                v-model="cloudPushStore.enabled"
                 class="toggle-input"
                 @change="handleCloudPushToggle"
               />
@@ -3796,7 +3783,7 @@ function useClonedVoice(voiceId: string) {
             </label>
           </div>
 
-          <div v-if="cloudPushEnabled" class="cloud-push-options">
+          <div v-if="cloudPushStore.enabled" class="cloud-push-options">
             <!-- 推送管道 -->
             <div class="setting-group">
               <label class="setting-label">推送管道</label>
@@ -3806,14 +3793,14 @@ function useClonedVoice(voiceId: string) {
                 >
                 <input
                   type="checkbox"
-                  :checked="cloudPushChannels.includes('discord')"
+                  :checked="cloudPushStore.enabledChannels.includes('discord')"
                   class="toggle-input"
                   @change="toggleCloudPushChannel('discord', $event)"
                 />
                 <span class="toggle-switch"></span>
               </label>
               <div
-                v-if="cloudPushChannels.includes('discord')"
+                v-if="cloudPushStore.enabledChannels.includes('discord')"
                 style="padding-left: 4px"
               >
                 <!-- 已連結：顯示帳號資訊 -->
@@ -3863,7 +3850,7 @@ function useClonedVoice(voiceId: string) {
                 <input
                   type="checkbox"
                   class="toggle-input"
-                  :checked="cloudPushChannels.includes('webpush')"
+                  :checked="cloudPushStore.enabledChannels.includes('webpush')"
                   @change="toggleCloudPushChannel('webpush', $event)"
                 />
                 <span class="toggle-switch"></span>
@@ -3906,8 +3893,8 @@ function useClonedVoice(voiceId: string) {
                 同步失敗：{{ cloudPushSyncError }}
               </span>
               <span v-else>尚未同步</span>
-              <span v-if="cloudPushPendingCount > 0" style="margin-left: 8px">
-                · 離線訊息：{{ cloudPushPendingCount }} 條待拉取
+              <span v-if="cloudPushStore.pendingMessageCount > 0" style="margin-left: 8px">
+                · 離線訊息：{{ cloudPushStore.pendingMessageCount }} 條待拉取
               </span>
             </div>
 
