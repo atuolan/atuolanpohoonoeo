@@ -678,6 +678,7 @@ function formatBackupTime(ts: number | null): string {
 // 載入設定
 onMounted(async () => {
   await settingsStore.loadSettings();
+  await cloudPushStore.loadSettings();
   await refreshStorageStatus();
 
   // 初始化系統通知權限狀態

@@ -316,15 +316,19 @@ $r-lg: 16px;
 .astro-dice {
   width: 100%;
   max-width: 600px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
   padding: 0 16px;
+  overflow-y: auto;
   &:has(.astro-stage) {
     padding: 0;
     max-width: none;
-    height: 100%;
+    overflow: hidden;
   }
 }
 
-.astro-phase { animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.astro-phase { animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1); flex: 1; display: flex; flex-direction: column; min-height: 0; }
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
@@ -375,7 +379,8 @@ $r-lg: 16px;
 .astro-stage {
   position: relative;
   width: 100%;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   background: #000;
   z-index: 0;
@@ -459,7 +464,7 @@ $r-lg: 16px;
 }
 .astro-mini-sep { color: $text-m; }
 .astro-interpretation {
-  background: $surface; border-radius: $r-lg; padding: 20px; min-height: 200px;
+  background: $surface; border-radius: $r-lg; padding: 20px; flex: 1; min-height: 0; overflow-y: auto;
   &__title { text-align: center; font-size: 16px; font-weight: 600; color: $accent-l; margin-bottom: 16px; }
   &__content { color: $text-1; font-size: 15px; line-height: 1.8; :deep(p) { margin-bottom: 12px; } :deep(strong) { color: $accent-l; } }
   &__loading { text-align: center; padding: 40px 0; color: $text-3; &-icon { font-size: 32px; margin-bottom: 12px; animation: pulse 1.5s infinite; } }
