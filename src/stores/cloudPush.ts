@@ -254,40 +254,48 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
         [key: string]: unknown;
       }>(DB_STORES.CHATS);
 
+      // 按角色分組，避免同角色多條訊息互相覆蓋
+      const grouped = new Map<string, typeof messages>();
       for (const msg of messages) {
+        const arr = grouped.get(msg.characterId) || [];
+        arr.push(msg);
+        grouped.set(msg.characterId, arr);
+      }
+
+      for (const [characterId, charMsgs] of grouped) {
         // 找該角色最近的聊天
         const characterChats = allChats
-          .filter((c) => c.characterId === msg.characterId && !c.isGroupChat)
+          .filter((c) => c.characterId === characterId && !c.isGroupChat)
           .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
         let chat = characterChats[0];
         if (!chat) {
-          // 建立新聊天
           chat = {
             id: `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            name: `與 ${msg.characterName} 的對話`,
-            characterId: msg.characterId,
+            name: `與 ${charMsgs[0].characterName} 的對話`,
+            characterId,
             messages: [],
             metadata: {},
             createdAt: Date.now(),
             updatedAt: Date.now(),
           };
         } else {
-          // 深拷貝避免直接修改 IDB 讀出的物件
           chat = JSON.parse(JSON.stringify(chat));
         }
 
-        // 建立 ChatMessage（sender 必須是 "assistant" 才會顯示為角色對話氣泡）
-        const chatMessage = createDefaultMessage(
-          "assistant",
-          msg.characterName,
-          msg.content,
-        );
-        chatMessage.createdAt = msg.createdAt;
-        chatMessage.updatedAt = msg.createdAt;
+        // 一次性加入該角色的所有離線訊息
+        for (const msg of charMsgs) {
+          const chatMessage = createDefaultMessage(
+            "assistant",
+            msg.characterName,
+            msg.content,
+          );
+          chatMessage.createdAt = msg.createdAt;
+          chatMessage.updatedAt = msg.createdAt;
+          chat.messages.push(chatMessage);
+        }
 
-        chat.messages.push(chatMessage);
-        chat.unreadCount = (chat.unreadCount || 0) + 1;
+        chat.unreadCount = (chat.unreadCount || 0) + charMsgs.length;
         chat.updatedAt = Date.now();
 
         await db.put(DB_STORES.CHATS, chat);
