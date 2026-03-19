@@ -360,13 +360,22 @@ export class PushAlarmDO {
   async appendMessage(character, content) {
     const messages = (await this.state.storage.get("pendingMessages")) || [];
 
-    messages.push({
-      id: crypto.randomUUID(),
-      characterId: character.id,
-      characterName: character.name,
-      content,
-      createdAt: Date.now(),
-    });
+    // 將 <msg> 標籤拆成多條獨立訊息（前端每條 = 一個氣泡）
+    const msgParts = content.match(/<msg>([\s\S]*?)<\/msg>/g);
+    const parts = msgParts
+      ? msgParts.map((m) => m.replace(/<\/?msg>/g, "").trim()).filter(Boolean)
+      : [content.replace(/<\/?msg>/g, "").trim()]; // 沒有 <msg> 標籤就整段當一條
+
+    const now = Date.now();
+    for (let i = 0; i < parts.length; i++) {
+      messages.push({
+        id: crypto.randomUUID(),
+        characterId: character.id,
+        characterName: character.name,
+        content: parts[i],
+        createdAt: now + i, // 微小時間差確保排序正確
+      });
+    }
 
     // 最多保留 50 條（FIFO）
     while (messages.length > 50) {
