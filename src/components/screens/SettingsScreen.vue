@@ -3873,56 +3873,6 @@ function useClonedVoice(voiceId: string) {
               </label>
             </div>
 
-            <!-- 推送間隔 -->
-            <div class="setting-group">
-              <label class="setting-label">推送間隔（分鐘）</label>
-              <input
-                type="number"
-                v-model.number="cloudPushInterval"
-                class="soft-input"
-                min="1"
-                max="1440"
-                @change="handleCloudPushSettingsChange"
-              />
-            </div>
-
-            <!-- 免打擾 -->
-            <div class="setting-group">
-              <label class="toggle-item" style="border: none; padding: 6px 0">
-                <span class="toggle-label" style="font-size: 13px"
-                  >免打擾時段</span
-                >
-                <input
-                  type="checkbox"
-                  v-model="cloudPushDND"
-                  class="toggle-input"
-                  @change="handleCloudPushSettingsChange"
-                />
-                <span class="toggle-switch"></span>
-              </label>
-              <div v-if="cloudPushDND" class="cloud-push-dnd-times">
-                <input
-                  type="time"
-                  v-model="cloudPushDNDStart"
-                  class="soft-input"
-                  @change="handleCloudPushSettingsChange"
-                />
-                <span
-                  style="
-                    padding: 0 8px;
-                    color: var(--color-text-secondary, #999);
-                  "
-                  >~</span
-                >
-                <input
-                  type="time"
-                  v-model="cloudPushDNDEnd"
-                  class="soft-input"
-                  @change="handleCloudPushSettingsChange"
-                />
-              </div>
-            </div>
-
             <!-- 操作按鈕 -->
             <div class="cloud-push-actions">
               <button
