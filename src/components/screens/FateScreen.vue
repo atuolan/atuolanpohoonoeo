@@ -1565,6 +1565,16 @@ $r-pill: 100px;
 .fate-phase--setup {
   gap: 0;
   align-items: stretch;
+
+  // 讓「開始占卜」按鈕浮在底部，不用滑到最下面才能點
+  .fate-phase__actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    margin-top: auto;
+    padding: 16px 0;
+    background: linear-gradient(to top, $bg-e 60%, transparent);
+  }
 }
 .fate-setup__section {
   margin-bottom: 24px;
