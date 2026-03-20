@@ -355,6 +355,10 @@ $r-lg: 16px;
   width: 100%;
   max-width: 600px;
   padding: 0 16px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 24px;
 }
 
 .leno-phase {
