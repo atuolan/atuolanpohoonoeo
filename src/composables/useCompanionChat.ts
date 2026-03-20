@@ -175,6 +175,8 @@ export function buildSyncData(
  * @param readingContent 累積的閱讀內容
  * @param chatHistory 聊天歷史
  * @param userMessage 使用者手動輸入的訊息（undefined 表示自動觸發）
+ * @param worldInfoText 世界書注入文字（角色綁定 + 全域世界書）
+ * @param userName 使用者名稱（persona 名稱）
  */
 export function buildCompanionPrompt(
   character: StoredCharacter,
@@ -182,12 +184,15 @@ export function buildCompanionPrompt(
   readingContent: string,
   chatHistory: CompanionMessage[],
   userMessage?: string,
+  worldInfoText?: string,
+  userName?: string,
 ): APIMessage[] {
-  const systemPrompt = `你是 ${character.data.name}，正在和用戶一起閱讀《${bookTitle}》。
+  const displayUserName = userName || "用戶";
+  const systemPrompt = `你是 ${character.data.name}，正在和${displayUserName}一起閱讀《${bookTitle}》。
 ${character.data.description || ""}
 ${character.data.personality || ""}
 
-你的任務是作為伴讀夥伴，對用戶正在閱讀的內容發表評論、提出見解或與用戶討論。
+你的任務是作為伴讀夥伴，對${displayUserName}正在閱讀的內容發表評論、提出見解或與${displayUserName}討論。
 請保持角色性格，用自然的語氣交流。
 
 【回覆格式要求】
@@ -199,10 +204,18 @@ ${character.data.personality || ""}
 
   const messages: APIMessage[] = [{ role: "system", content: systemPrompt }];
 
+  // 注入世界書設定
+  if (worldInfoText) {
+    messages.push({
+      role: "system",
+      content: `【世界觀設定】\n${worldInfoText}`,
+    });
+  }
+
   if (readingContent) {
     messages.push({
       role: "system",
-      content: `【用戶正在閱讀的內容】\n${readingContent}`,
+      content: `【${displayUserName}正在閱讀的內容】\n${readingContent}`,
     });
   }
 
@@ -219,7 +232,7 @@ ${character.data.personality || ""}
   if (userMessage === undefined) {
     messages.push({
       role: "user",
-      content: "（用戶翻了幾頁，請對上面的閱讀內容發表你的看法或評論）",
+      content: `（${displayUserName}翻了幾頁，請對上面的閱讀內容發表你的看法或評論）`,
     });
   } else {
     messages.push({ role: "user", content: userMessage });
@@ -277,6 +290,46 @@ export function deserializeCompanionState(
       senderName: m.senderName,
     })),
   };
+}
+
+// ===== 世界書收集輔助函式 =====
+
+/**
+ * 收集角色綁定的世界書 + 全域世界書的啟用條目文字
+ * 跟隨 phoneCall store 的相同模式
+ */
+function collectWorldInfo(
+  character: StoredCharacter,
+  lorebooksStore: ReturnType<typeof import("@/stores/lorebooks").useLorebooksStore>,
+): string {
+  const linkedLorebooks = [];
+
+  // 角色綁定的世界書
+  if (character.lorebookIds?.length) {
+    for (const id of character.lorebookIds) {
+      const lb = lorebooksStore.lorebooks.find((l) => l.id === id);
+      if (lb) linkedLorebooks.push(lb);
+    }
+  }
+
+  // 全域世界書
+  linkedLorebooks.push(
+    ...lorebooksStore.lorebooks.filter((lb) => lb.isGlobal),
+  );
+
+  if (linkedLorebooks.length === 0) return "";
+
+  const lines: string[] = [];
+  for (const lb of linkedLorebooks) {
+    const enabledEntries = lb.entries.filter((e) => !e.disable && e.content);
+    if (enabledEntries.length === 0) continue;
+    lines.push(`[${lb.name}]`);
+    for (const entry of enabledEntries) {
+      lines.push(entry.content);
+    }
+  }
+
+  return lines.join("\n");
 }
 
 // ===== Vue Composable =====
@@ -392,16 +445,23 @@ export function useCompanionChat(
     // 取得角色和設定
     const { useCharactersStore } = await import("@/stores/characters");
     const { useSettingsStore } = await import("@/stores/settings");
+    const { useLorebooksStore } = await import("@/stores/lorebooks");
     const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
+    const { useUserStore } = await import("@/stores/user");
 
     const charsStore = useCharactersStore();
     const settingsStore = useSettingsStore();
+    const lorebooksStore = useLorebooksStore();
+    const userStore = useUserStore();
     const character = charsStore.characters.find(
       (c: StoredCharacter) => c.id === selectedCharacterId.value,
     );
     if (!character) return;
 
-    const userName = "我";
+    const userName = userStore.currentName || "我";
+
+    // 收集世界書內容
+    const worldInfoText = collectWorldInfo(character, lorebooksStore);
 
     // 加入使用者訊息
     const userMsg: CompanionMessage = {
@@ -424,6 +484,8 @@ export function useCompanionChat(
         readingContent,
         core.messages,
         content,
+        worldInfoText,
+        userName,
       );
       const chatTaskConfig = settingsStore.getAPIForTask("chat");
 
@@ -490,14 +552,23 @@ export function useCompanionChat(
 
     const { useCharactersStore } = await import("@/stores/characters");
     const { useSettingsStore } = await import("@/stores/settings");
+    const { useLorebooksStore } = await import("@/stores/lorebooks");
     const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
+    const { useUserStore } = await import("@/stores/user");
 
     const charsStore = useCharactersStore();
     const settingsStore = useSettingsStore();
+    const lorebooksStore = useLorebooksStore();
+    const userStore = useUserStore();
     const character = charsStore.characters.find(
       (c: StoredCharacter) => c.id === selectedCharacterId.value,
     );
     if (!character) return;
+
+    const userName = userStore.currentName || "我";
+
+    // 收集世界書內容
+    const worldInfoText = collectWorldInfo(character, lorebooksStore);
 
     isGenerating.value = true;
     try {
@@ -508,6 +579,9 @@ export function useCompanionChat(
         readingContent,
         core.messages,
         // no userMessage → auto-trigger
+        undefined,
+        worldInfoText,
+        userName,
       );
       const chatTaskConfig = settingsStore.getAPIForTask("chat");
 

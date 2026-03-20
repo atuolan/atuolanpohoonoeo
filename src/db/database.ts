@@ -51,6 +51,23 @@ export interface DiaryEntry {
 }
 
 // ============================================================
+// 向量嵌入記錄類型
+// ============================================================
+
+export interface VectorEmbeddingRecord {
+  id: string; // 格式: "vec_{sourceId}"
+  sourceId: string;
+  sourceType: "summary" | "diary";
+  chatId: string;
+  characterId: string;
+  vector: Float32Array | null; // null 表示 stale
+  contentHash: string;
+  dimensions: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ============================================================
 // 音頻 Blob 記錄類型
 // ============================================================
 
@@ -254,6 +271,16 @@ interface AguaphoneDB extends DBSchema {
     key: string;
     value: AudioBlobRecord;
   };
+  // === v22 新增：向量嵌入儲存 ===
+  vectorEmbeddings: {
+    key: string;
+    value: VectorEmbeddingRecord;
+    indexes: {
+      "by-sourceId": string;
+      "by-chatId": string;
+      "by-sourceType": string;
+    };
+  };
 }
 
 // ============================================================
@@ -261,7 +288,7 @@ interface AguaphoneDB extends DBSchema {
 // ============================================================
 
 const DB_NAME = "aguaphone-db";
-const DB_VERSION = 21;
+const DB_VERSION = 22;
 
 // Store 名稱常量
 export const DB_STORES = {
@@ -291,6 +318,7 @@ export const DB_STORES = {
   BOOK_PROGRESS: "bookProgress",
   AUDIO_BLOBS: "audio-blobs",
   CHAT_AFFINITY_STATES: "chatAffinityStates",
+  VECTOR_EMBEDDINGS: "vectorEmbeddings",
 } as const;
 
 // ============================================================
@@ -300,12 +328,118 @@ export const DB_STORES = {
 let dbInstance: IDBPDatabase<AguaphoneDB> | null = null;
 
 /**
+ * DB 升級前的預防性 OPFS 備份
+ * 在 openDB 之前檢查版本，若即將升級則先把關鍵資料備份到 OPFS
+ * 防止升級過程中出錯導致資料遺失
+ */
+async function preUpgradeBackup(): Promise<void> {
+  try {
+    // 檢查 OPFS 支援
+    if (!navigator.storage?.getDirectory) return;
+
+    // 用原生 IDB 檢查當前版本（不觸發 upgrade）
+    const currentVersion = await new Promise<number>((resolve) => {
+      const req = indexedDB.open(DB_NAME);
+      req.onsuccess = (e) => {
+        const idb = (e.target as IDBOpenDBRequest).result;
+        const ver = idb.version;
+        idb.close();
+        resolve(ver);
+      };
+      req.onerror = () => resolve(0);
+    });
+
+    // 版本相同，不需要預備份
+    if (currentVersion >= DB_VERSION || currentVersion === 0) return;
+
+    console.log(`[DB] 偵測到版本升級 v${currentVersion} → v${DB_VERSION}，執行預防性 OPFS 備份...`);
+
+    // 用原生 IDB 讀取關鍵 store 的資料
+    const backupStores = ['characters', 'lorebooks', 'chats', 'summaries', 'diaries', 'importantEvents', 'stickers'];
+    const backup: Record<string, unknown[]> = {};
+    const counts: Record<string, number> = {};
+
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.open(DB_NAME, currentVersion);
+      req.onsuccess = (e) => {
+        const idb = (e.target as IDBOpenDBRequest).result;
+        const availableStores = Array.from(idb.objectStoreNames);
+        const storesToBackup = backupStores.filter(s => availableStores.includes(s));
+
+        if (storesToBackup.length === 0) {
+          idb.close();
+          resolve();
+          return;
+        }
+
+        const tx = idb.transaction(storesToBackup, 'readonly');
+        let pending = storesToBackup.length;
+
+        for (const storeName of storesToBackup) {
+          const store = tx.objectStore(storeName);
+          const getReq = store.getAll();
+          getReq.onsuccess = () => {
+            const records = getReq.result || [];
+            if (storeName === 'chats') {
+              // 聊天保留完整訊息（預防性備份不截斷）
+              backup[storeName] = records;
+            } else {
+              backup[storeName] = records;
+            }
+            counts[storeName] = records.length;
+            pending--;
+            if (pending === 0) {
+              idb.close();
+              resolve();
+            }
+          };
+          getReq.onerror = () => {
+            pending--;
+            if (pending === 0) {
+              idb.close();
+              resolve();
+            }
+          };
+        }
+      };
+      req.onerror = () => resolve();
+    });
+
+    // 檢查是否有值得備份的資料
+    if (!counts['characters'] || counts['characters'] === 0) return;
+
+    // 寫入 OPFS
+    const root = await navigator.storage.getDirectory();
+    const backupStr = JSON.stringify(backup);
+    const sizeMB = backupStr.length / (1024 * 1024);
+
+    const dataHandle = await root.getFileHandle('aguaphone_pre_upgrade_backup.json', { create: true });
+    const dataWritable = await (dataHandle as any).createWritable();
+    await dataWritable.write(backupStr);
+    await dataWritable.close();
+
+    const meta = { timestamp: Date.now(), counts, fromVersion: currentVersion, toVersion: DB_VERSION };
+    const metaHandle = await root.getFileHandle('aguaphone_pre_upgrade_backup_meta.json', { create: true });
+    const metaWritable = await (metaHandle as any).createWritable();
+    await metaWritable.write(JSON.stringify(meta));
+    await metaWritable.close();
+
+    console.log(`[DB] 預防性 OPFS 備份完成 (${sizeMB.toFixed(2)}MB):`, counts);
+  } catch (error) {
+    console.warn('[DB] 預防性備份失敗（非致命）:', error);
+  }
+}
+
+/**
  * 獲取資料庫實例
  */
 export async function getDatabase(): Promise<IDBPDatabase<AguaphoneDB>> {
   if (dbInstance) {
     return dbInstance;
   }
+
+  // 升級前先備份到 OPFS，防止升級過程中資料遺失
+  await preUpgradeBackup();
 
   dbInstance = await openDB<AguaphoneDB>(DB_NAME, DB_VERSION, {
     upgrade(db, oldVersion, newVersion) {
@@ -538,6 +672,18 @@ export async function getDatabase(): Promise<IDBPDatabase<AguaphoneDB>> {
         });
         chatAffinityStore.createIndex("by-character", "characterId");
       }
+
+      // === v22 新增表 ===
+
+      // 建立 vectorEmbeddings 表（向量嵌入儲存）
+      if (!db.objectStoreNames.contains("vectorEmbeddings")) {
+        const vectorStore = db.createObjectStore("vectorEmbeddings", {
+          keyPath: "id",
+        });
+        vectorStore.createIndex("by-sourceId", "sourceId");
+        vectorStore.createIndex("by-chatId", "chatId");
+        vectorStore.createIndex("by-sourceType", "sourceType");
+      }
     },
     blocked() {
       console.warn("[DB] 資料庫被阻擋，嘗試關閉舊連線以解除阻擋...");
@@ -622,6 +768,7 @@ export async function clearAllData(): Promise<void> {
     "bookProgress",
     "audio-blobs",
     "chatAffinityStates",
+    "vectorEmbeddings",
   ] as const;
   const tx = database.transaction(stores, "readwrite");
   await Promise.all([

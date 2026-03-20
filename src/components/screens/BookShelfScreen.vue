@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { useBooksStore } from "@/stores/books";
+import { useUserStore } from "@/stores/user";
 import type { StoredBook } from "@/types/book";
-import { ArrowLeft, BookOpen, Trash2, Upload } from "lucide-vue-next";
+import { ArrowLeft, BookOpen, ChevronDown, Trash2, Upload, User } from "lucide-vue-next";
 import { onMounted, ref } from "vue";
 
 const emit = defineEmits<{
@@ -10,11 +11,16 @@ const emit = defineEmits<{
 }>();
 
 const booksStore = useBooksStore();
+const userStore = useUserStore();
 const fileInput = ref<HTMLInputElement | null>(null);
 const isDragging = ref(false);
+const showPersonaPicker = ref(false);
 
-onMounted(() => {
+onMounted(async () => {
   booksStore.loadBooks();
+  if (!userStore.isLoaded) {
+    await userStore.loadUserData();
+  }
 });
 
 function triggerImport() {
@@ -49,6 +55,11 @@ function formatSize(chars: number): string {
   if (chars >= 10000) return `${(chars / 10000).toFixed(1)} 萬字`;
   return `${chars} 字`;
 }
+
+function handleSelectPersona(personaId: string) {
+  userStore.switchPersona(personaId);
+  showPersonaPicker.value = false;
+}
 </script>
 
 <template>
@@ -59,11 +70,56 @@ function formatSize(chars: number): string {
         <ArrowLeft :size="20" />
       </button>
       <h1 class="header-title">書架</h1>
+
+      <!-- 使用者選擇 -->
+      <div class="persona-selector-wrapper">
+        <button class="persona-btn" @click="showPersonaPicker = !showPersonaPicker">
+          <img
+            v-if="userStore.currentAvatar"
+            :src="userStore.currentAvatar"
+            class="persona-avatar-small"
+            alt=""
+          />
+          <User v-else :size="14" />
+          <span class="persona-name-text">{{ userStore.currentName }}</span>
+          <ChevronDown :size="12" />
+        </button>
+        <Transition name="fade">
+          <div v-if="showPersonaPicker" class="persona-dropdown">
+            <button
+              v-for="p in userStore.personas"
+              :key="p.id"
+              class="persona-dropdown-item"
+              :class="{ active: userStore.currentPersonaId === p.id }"
+              @click="handleSelectPersona(p.id)"
+            >
+              <img
+                v-if="p.avatar"
+                :src="p.avatar"
+                class="persona-avatar-small"
+                alt=""
+              />
+              <span v-else class="persona-avatar-small persona-avatar-placeholder">
+                <User :size="12" />
+              </span>
+              <span>{{ p.name }}</span>
+            </button>
+          </div>
+        </Transition>
+      </div>
+
       <button class="import-btn" @click="triggerImport">
         <Upload :size="18" />
         <span>導入</span>
       </button>
     </div>
+
+    <!-- 點擊外部關閉 persona picker -->
+    <div
+      v-if="showPersonaPicker"
+      class="persona-backdrop"
+      @click="showPersonaPicker = false"
+    />
 
     <!-- 隱藏的文件輸入 -->
     <input
@@ -209,6 +265,108 @@ function formatSize(chars: number): string {
   &:hover {
     filter: brightness(0.95);
   }
+}
+
+// ===== 使用者選擇器 =====
+.persona-selector-wrapper {
+  position: relative;
+}
+
+.persona-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text, #333);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+
+  &:hover {
+    background: var(--color-hover, rgba(0, 0, 0, 0.06));
+  }
+}
+
+.persona-name-text {
+  max-width: 80px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.persona-avatar-small {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.persona-avatar-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-hover, rgba(0, 0, 0, 0.08));
+  color: var(--color-text-secondary, #888);
+}
+
+.persona-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  min-width: 160px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  z-index: 30;
+  padding: 4px 0;
+}
+
+.persona-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--color-text, #333);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+
+  &:hover {
+    background: var(--color-hover, rgba(0, 0, 0, 0.05));
+  }
+
+  &.active {
+    color: var(--color-primary, #7dd3a8);
+    font-weight: 600;
+    background: rgba(125, 211, 168, 0.1);
+  }
+}
+
+.persona-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.15s;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 .loading-state {

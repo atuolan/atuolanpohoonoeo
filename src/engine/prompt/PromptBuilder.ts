@@ -254,6 +254,14 @@ export interface PromptBuilderOptions {
   affinityConfig?: CharacterAffinityConfig;
   /** 好感度狀態（per-chat） */
   affinityState?: ChatAffinityState;
+  /** 向量檢索到的記憶（啟用向量記憶時由外部傳入） */
+  vectorMemories?: Array<{
+    sourceId: string;
+    sourceType: 'summary' | 'diary';
+    content: string;
+    score: number;
+    createdAt: number;
+  }>;
 }
 
 /**
@@ -1666,17 +1674,40 @@ export class PromptBuilder {
 
       case "summaries":
       case "f2fSummaries":
-      case "gcSummaries":
-        // 對話歷史總結
+      case "gcSummaries": {
+        // 組裝總結 + 向量記憶（兩者共存，不互斥）
+        const parts: string[] = [];
+
+        // 1. 向量記憶檢索結果（較遠的歷史補充，先注入提供背景脈絡）
+        if (this.options.vectorMemories && this.options.vectorMemories.length > 0) {
+          // 過濾掉已在時間排序總結中的條目（以 sourceId 去重）
+          const summaryIds = new Set(this.options.summaries?.map((s) => s.id) ?? []);
+          const uniqueMemories = this.options.vectorMemories.filter(
+            (m) => !summaryIds.has(m.sourceId),
+          );
+          if (uniqueMemories.length > 0) {
+            const memories = uniqueMemories
+              .map((m, i) => {
+                const sourceLabel = m.sourceType === 'summary' ? '總結' : '日記';
+                return `【記憶 ${i + 1}】(相似度: ${m.score.toFixed(2)}, 來源: ${sourceLabel})\n${m.content}`;
+              })
+              .join("\n\n");
+            parts.push(`[語義記憶檢索]\n以下是與當前對話語義相關的歷史記憶片段：\n\n${memories}`);
+          }
+        }
+
+        // 2. 時間排序的總結（最近的基礎記憶，放在下面更接近當前對話）
         if (this.options.summaries && this.options.summaries.length > 0) {
           const summaries = this.options.summaries
-            .sort((a, b) => a.createdAt - b.createdAt) // 按時間排序
+            .sort((a, b) => a.createdAt - b.createdAt)
             .map((s, i) => `【總結 ${i + 1}】\n${s.content}`)
             .join("\n\n");
-          const content = `[對話歷史總結]\n以下是之前對話的總結，請參考這些內容保持對話的連貫性：\n\n${summaries}`;
-          return { role: getRole(), content, identifier };
+          parts.push(`[對話歷史總結]\n以下是之前對話的總結，請參考這些內容保持對話的連貫性：\n\n${summaries}`);
         }
-        return null;
+
+        if (parts.length === 0) return null;
+        return { role: getRole(), content: parts.join("\n\n"), identifier };
+      }
 
       case "socialPosts":
         // 社交媒體動態（marker，由外部填充）

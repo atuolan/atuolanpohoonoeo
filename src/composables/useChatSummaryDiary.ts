@@ -8,6 +8,8 @@ import {
   useSettingsStore,
 } from "@/stores";
 import { useNotificationStore } from "@/stores/notification";
+import { MemoryRetrieverService } from "@/services/memoryRetriever";
+import { deleteVectorEmbedding, markVectorStale } from "@/db/vectorStore";
 
 interface Message {
   id: string;
@@ -72,6 +74,18 @@ export function useChatSummaryDiary(deps: {
   const settingsStore = useSettingsStore();
   const promptManagerStore = usePromptManagerStore();
   const notificationStore = useNotificationStore();
+
+  // 向量記憶 helpers（使用全域設定）
+  function isVectorMemoryEnabled(): boolean {
+    return settingsStore.vectorMemoryEnabled === true
+  }
+
+  function getChatContext() {
+    return {
+      chatId: deps.currentChatId.value || deps.chatId || '',
+      characterId: deps.characterId || deps.currentCharacter.value?.id || '',
+    }
+  }
 
   // 生成鎖定
   const summaryGeneratingLock = ref(false);
@@ -419,6 +433,8 @@ ${recentMessagesText}
       deps.chatDiaries.value.push(newDiary);
       await saveDiary(newDiary);
 
+      // 日記不參與向量化（日記是角色私人視角，不在 char 感知範圍內）
+
       deps.lastDiaryTime.value = Date.now();
       console.log("📔 自動日記生成完成:", newDiary.id);
 
@@ -613,6 +629,15 @@ ${recentMessagesText}
       await saveSummary(newSummary);
       console.log("[SummaryDiary] 手動總結生成完成:", newSummary);
 
+      // 向量記憶：自動嵌入
+      if (isVectorMemoryEnabled()) {
+        const ctx = getChatContext()
+        const retriever = new MemoryRetrieverService()
+        retriever.generateAndStoreEmbedding(
+          newSummary.id, 'summary', newSummary.content, ctx.chatId, ctx.characterId
+        ).catch(err => console.error('[向量記憶] 總結嵌入失敗:', err))
+      }
+
       aiGenerationStore.completeGeneration(chatId, "summary", summaryContent);
     } catch (e) {
       console.error("生成總結失敗:", e);
@@ -647,6 +672,8 @@ ${recentMessagesText}
   async function handleDeleteSummary(id: string) {
     deps.chatSummaries.value = deps.chatSummaries.value.filter((s) => s.id !== id);
     await deleteSummaryFromDB(id);
+    // 向量記憶：刪除對應向量
+    deleteVectorEmbedding(`vec_${id}`).catch(err => console.error('[向量記憶] 刪除向量失敗:', err))
   }
 
   // 批量刪除選取的總結
@@ -655,6 +682,8 @@ ${recentMessagesText}
       (s) => !ids.includes(s.id),
     );
     await Promise.all(ids.map((id) => deleteSummaryFromDB(id)));
+    // 向量記憶：批量刪除對應向量
+    Promise.all(ids.map(id => deleteVectorEmbedding(`vec_${id}`))).catch(err => console.error('[向量記憶] 批量刪除向量失敗:', err))
   }
 
   // 編輯總結
@@ -662,6 +691,8 @@ ${recentMessagesText}
     const summary = deps.chatSummaries.value.find((s) => s.id === id);
     if (summary) {
       summary.content = newContent;
+      // 向量記憶：標記向量為 stale
+      markVectorStale(id).catch(err => console.error('[向量記憶] 標記 stale 失敗:', err))
     }
   }
 
@@ -791,6 +822,15 @@ ${recentMessagesText}
       await saveSummary(metaSummary);
       console.log("[SummaryDiary] 元總結生成完成:", metaSummary);
 
+      // 向量記憶：自動嵌入
+      if (isVectorMemoryEnabled()) {
+        const ctx = getChatContext()
+        const retriever = new MemoryRetrieverService()
+        retriever.generateAndStoreEmbedding(
+          metaSummary.id, 'summary', metaSummary.content, ctx.chatId, ctx.characterId
+        ).catch(err => console.error('[向量記憶] 元總結嵌入失敗:', err))
+      }
+
       aiGenerationStore.completeGeneration(chatId, "meta-summary", metaContent);
     } catch (e) {
       console.error("生成元總結失敗:", e);
@@ -822,6 +862,19 @@ ${recentMessagesText}
       await saveSummary(summary);
     }
     console.log("[SummaryDiary] 導入總結:", imported.length, "條");
+
+    // 向量記憶：批量嵌入導入的總結
+    if (isVectorMemoryEnabled() && imported.length > 0) {
+      const ctx = getChatContext()
+      const retriever = new MemoryRetrieverService()
+      const items = imported.map(s => ({
+        sourceId: s.id,
+        sourceType: 'summary' as const,
+        content: s.content,
+      }))
+      retriever.generateBatchEmbeddings(items, ctx.chatId, ctx.characterId)
+        .catch(err => console.error('[向量記憶] 導入總結批量嵌入失敗:', err))
+    }
   }
 
   // 切換日記收藏

@@ -199,8 +199,8 @@ const isEmpty = computed(() => props.messages.length === 0);
   position: fixed;
   left: 12px;
   top: 60px;
-  bottom: 60px;
   width: min(320px, 85vw);
+  height: 420px;
   z-index: 9999;
   display: flex;
   flex-direction: column;
@@ -330,6 +330,7 @@ const isEmpty = computed(() => props.messages.length === 0);
 // ===== 訊息列表 =====
 .message-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
   display: flex;

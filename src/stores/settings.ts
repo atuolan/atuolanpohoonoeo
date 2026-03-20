@@ -166,6 +166,18 @@ export const AUXILIARY_TASKS: readonly AuxiliaryTaskOption[] = [
   },
 ] as const;
 
+/** Embedding API 設定（向量記憶用） */
+export interface EmbeddingAPIConfig {
+  /** API 端點 URL */
+  endpoint: string;
+  /** API 金鑰 */
+  apiKey: string;
+  /** 模型名稱 */
+  model: string;
+  /** 是否直連（跳過代理） */
+  directConnect?: boolean;
+}
+
 // 完整設定結構（存儲到 IDB）
 export interface IncomingCallRingtoneSettings {
   selectedRingtoneId: string;
@@ -202,6 +214,12 @@ export interface SettingsData {
   audio: AudioSettings;
   // 來電鈴聲設定
   incomingCallRingtone: IncomingCallRingtoneSettings;
+  // Embedding API 設定（向量記憶用）
+  embeddingAPI?: EmbeddingAPIConfig;
+  // 嵌入模式：local（本地 Web Worker 推理）或 api（遠端 API）
+  embeddingMode?: 'local' | 'api';
+  // 向量記憶全域開關
+  vectorMemoryEnabled?: boolean;
   updatedAt: number;
 }
 
@@ -351,6 +369,20 @@ export const useSettingsStore = defineStore("settings", () => {
     createDefaultIncomingCallRingtoneSettings(),
   );
 
+  // Embedding API 設定（向量記憶用）
+  const embeddingAPI = reactive<EmbeddingAPIConfig>({
+    endpoint: '',
+    apiKey: '',
+    model: '',
+    directConnect: false,
+  });
+
+  // 嵌入模式：local（本地 Web Worker 推理）或 api（遠端 API），預設 local
+  const embeddingMode = ref<'local' | 'api'>('local');
+
+  // 向量記憶全域開關（啟用後，所有聊天的總結會自動嵌入並用語義檢索）
+  const vectorMemoryEnabled = ref(false);
+
   // ===== 計算屬性 =====
 
   // 當前配置文件
@@ -363,6 +395,14 @@ export const useSettingsStore = defineStore("settings", () => {
   const hasValidConfig = computed(() => {
     return !!(api.endpoint && api.apiKey && api.model);
   });
+
+  /** 取得有效的 Embedding API 設定（未設定時 fallback 到主 API） */
+  const effectiveEmbeddingAPI = computed(() => ({
+    endpoint: embeddingAPI.endpoint || api.endpoint,
+    apiKey: embeddingAPI.apiKey || api.apiKey,
+    model: embeddingAPI.model,
+    directConnect: embeddingAPI.directConnect ?? false,
+  }));
 
   // ===== 方法 =====
 
@@ -515,6 +555,20 @@ export const useSettingsStore = defineStore("settings", () => {
           if (saved.incomingCallRingtone) {
             Object.assign(incomingCallRingtone, saved.incomingCallRingtone);
           }
+
+          // 載入 Embedding API 設定
+          if (saved.embeddingAPI) {
+            Object.assign(embeddingAPI, saved.embeddingAPI);
+          }
+          // 載入嵌入模式
+          if (saved.embeddingMode) {
+            embeddingMode.value = saved.embeddingMode;
+          }
+          // 載入向量記憶全域開關
+          if (saved.vectorMemoryEnabled !== undefined) {
+            vectorMemoryEnabled.value = saved.vectorMemoryEnabled;
+          }
+
           // 舊資料相容與防呆
           if (!incomingCallRingtone.selectedRingtoneId) {
             incomingCallRingtone.selectedRingtoneId = "classic";
@@ -639,6 +693,9 @@ export const useSettingsStore = defineStore("settings", () => {
         backgroundAudioEnabled: backgroundAudioEnabled.value,
         audio: { ...toRaw(audio) },
         incomingCallRingtone: { ...toRaw(incomingCallRingtone) },
+        embeddingAPI: { ...toRaw(embeddingAPI) },
+        embeddingMode: embeddingMode.value,
+        vectorMemoryEnabled: vectorMemoryEnabled.value,
         updatedAt: Date.now(),
       };
 
@@ -1005,6 +1062,10 @@ export const useSettingsStore = defineStore("settings", () => {
     backgroundAudioEnabled,
     audio,
     incomingCallRingtone,
+    embeddingAPI,
+    embeddingMode,
+    vectorMemoryEnabled,
+    effectiveEmbeddingAPI,
 
     // 常數與輔助
     ROUTABLE_TASKS,

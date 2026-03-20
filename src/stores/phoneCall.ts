@@ -489,6 +489,34 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       const now = new Date();
       const lastChatTime = info.lastMessageTime ? formatTimeSince(info.lastMessageTime) : "未知";
 
+      // 向量記憶檢索（使用全域開關）
+      let vectorMemories: import('@/services/memoryRetriever').RetrievedMemory[] | undefined;
+      if (info.chatId) {
+        try {
+          const chat = await db.get<any>(DB_STORES.CHATS, info.chatId);
+          const summarySettings = chat?.summarySettings;
+          if (settingsStore.vectorMemoryEnabled && summarySettings?.summaryReadMode !== 'all') {
+            const lastUserMsg = [...filteredCallMessages].reverse().find((m) => m.role === 'user');
+            if (lastUserMsg?.content) {
+              const { MemoryRetrieverService } = await import('@/services/memoryRetriever');
+              const retriever = new MemoryRetrieverService();
+              vectorMemories = await retriever.retrieve(
+                lastUserMsg.content,
+                info.chatId,
+                summarySettings?.vectorTopK ?? 5,
+                summarySettings?.vectorThreshold ?? 0.3,
+                undefined, // 電話模式暫不傳入近期訊息
+                [char.data.name].filter(Boolean),
+                summarySettings?.summaryReadCount ?? 5,
+              );
+              console.log(`[向量記憶] 電話模式檢索到 ${vectorMemories.length} 條相關記憶`);
+            }
+          }
+        } catch (err) {
+          console.error('[向量記憶] 電話模式檢索失敗:', err);
+        }
+      }
+
       const builder = new PromptBuilder({
         character: char,
         lorebooks: linkedLorebooks,
@@ -508,6 +536,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
         incomingCallMode: info.isIncoming && isIncomingFirstMessage,
         callReason: info.callReason,
         summaries: summaries.value,
+        vectorMemories,
         importantEvents: importantEvents.value,
         phoneContext: {
           currentTime: now.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }),

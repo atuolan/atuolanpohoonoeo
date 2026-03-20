@@ -588,6 +588,18 @@ async function loadAppData() {
   }
 
   themeStore.loadFromStorage();
+
+  // 自動備份：檢查 IDB 是否有資料遺失，若有則從 localStorage 恢復
+  try {
+    const { checkAndRestore } = await import('@/services/autoBackup')
+    const restored = await checkAndRestore()
+    if (restored) {
+      console.log('[App] 已從自動備份恢復 IDB 資料')
+    }
+  } catch (error) {
+    console.error('[App] 自動備份恢復檢查失敗:', error)
+  }
+
   // 載入角色、世界書、API 設定、使用者資料和表情包
   await Promise.all([
     charactersStore.loadCharacters(),
@@ -597,6 +609,12 @@ async function loadAppData() {
     stickerStore.init(),
     notificationStore.init(),
   ]);
+
+  // 自動備份：載入成功後備份關鍵資料到 localStorage
+  import('@/services/autoBackup').then(({ performBackup }) => {
+    // 延遲 5 秒執行，避免影響啟動速度
+    setTimeout(() => performBackup().catch(() => {}), 5000)
+  }).catch(() => {})
 
   // characters 已載入，立即啟動主動發訊息服務
   proactiveMessageService.start();

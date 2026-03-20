@@ -51,6 +51,15 @@ export class PushAlarmDO {
   async handleSync(request) {
     const payload = await request.json();
 
+    // 如果角色列表為空，直接停用而不是設 alarm
+    if (!payload.characters || payload.characters.length === 0) {
+      await this.state.storage.put('config', payload);
+      await this.state.storage.put('enabled', false);
+      await this.state.storage.deleteAlarm();
+      console.log('[PushAlarmDO] sync 收到空角色列表，已自動停用');
+      return json({ ok: true, nextAlarm: null, nextAlarmReadable: null, disabled: true });
+    }
+
     // 儲存設定
     await this.state.storage.put("config", payload);
     await this.state.storage.put("enabled", true);
@@ -202,6 +211,14 @@ export class PushAlarmDO {
         return;
       }
     }
+    // 角色列表為空時自動停用（角色可能已被刪除但前端未及時 sync）
+    if (!config.characters || config.characters.length === 0) {
+      console.warn('[PushAlarmDO] 角色列表為空，自動停用雲端推送');
+      await this.state.storage.put('enabled', false);
+      await this.state.storage.deleteAlarm();
+      return;
+    }
+
     // 選擇角色（round-robin）
     let lastIdx = (await this.state.storage.get("lastCharacterIndex")) ?? -1;
     const nextIdx = (lastIdx + 1) % config.characters.length;

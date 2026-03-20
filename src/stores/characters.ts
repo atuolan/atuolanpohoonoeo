@@ -118,12 +118,43 @@ export const useCharactersStore = defineStore('characters', () => {
   async function deleteCharacter(id: string): Promise<boolean> {
     try {
       const service = getCharacterService()
+
+      // 刪除前檢查該角色是否有啟用主動發訊息（用於後續雲端推送清理）
+      const deletedChar = characters.value.find(c => c.id === id)
+      const hadProactiveEnabled = deletedChar?.proactiveMessageSettings?.enabled === true
+
       const success = await service.delete(id)
       if (success) {
         characters.value = characters.value.filter(c => c.id !== id)
         if (currentCharacterId.value === id) {
           currentCharacterId.value = null
         }
+
+        // 如果被刪除的角色有啟用主動發訊息，重新同步雲端推送設定
+        if (hadProactiveEnabled) {
+          try {
+            const { useCloudPushStore } = await import('@/stores/cloudPush')
+            const cloudPushStore = useCloudPushStore()
+            if (cloudPushStore.enabled) {
+              // 檢查是否還有其他角色啟用了主動發訊息
+              const remainingProactive = characters.value.some(
+                c => c.proactiveMessageSettings?.enabled === true
+              )
+              if (remainingProactive) {
+                // 還有其他角色，重新同步（會自動排除已刪除的角色）
+                await cloudPushStore.syncToCloud()
+                console.log('[CharactersStore] 已重新同步雲端推送（排除已刪除角色）')
+              } else {
+                // 沒有角色了，直接停用雲端推送
+                await cloudPushStore.disableCloudPush()
+                console.log('[CharactersStore] 已停用雲端推送（無啟用角色）')
+              }
+            }
+          } catch (e) {
+            console.warn('[CharactersStore] 雲端推送清理失敗（非致命）:', e)
+          }
+        }
+
         return true
       }
       return false

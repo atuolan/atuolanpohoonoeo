@@ -437,6 +437,46 @@
             </div>
           </Transition>
 
+          <!-- 向量記憶設定 -->
+          <div class="section-divider">
+            <span class="divider-text">向量記憶（語義檢索）</span>
+          </div>
+
+          <div class="setting-section">
+            <p class="count-hint" style="margin-bottom: 4px;">
+              {{ settingsStore.vectorMemoryEnabled ? '✅ 已啟用' : '⚪ 未啟用' }}（全域開關在「設定 → 向量記憶 Embedding」）
+            </p>
+          </div>
+
+          <!-- 重建嵌入 + 統計（不需要開關，跟隨全域設定） -->
+          <div class="setting-section">
+            <div class="info-grid" style="margin-bottom: 10px;">
+              <div class="info-item">
+                <span class="info-label">嵌入數量</span>
+                <span class="info-value">{{ vectorStats.count }} 條</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">預估大小</span>
+                <span class="info-value">{{ vectorStats.sizeText }}</span>
+              </div>
+            </div>
+            <button
+              class="rebuild-btn"
+              :disabled="isRebuilding"
+              @click="rebuildVectors"
+            >
+              <svg v-if="!isRebuilding" viewBox="0 0 24 24" fill="currentColor" style="width: 14px; height: 14px;">
+                <path d="M19 8l-4 4h3c0 3.31-2.69 6-6 6-1.01 0-1.97-.25-2.8-.7l-1.46 1.46C8.97 19.54 10.43 20 12 20c4.42 0 8-3.58 8-8h3l-4-4zM6 12c0-3.31 2.69-6 6-6 1.01 0 1.97.25 2.8.7l1.46-1.46C15.03 4.46 13.57 4 12 4c-4.42 0-8 3.58-8 8H1l4 4 4-4H6z"/>
+              </svg>
+              <span v-if="isRebuilding">重建中... {{ rebuildProgress.processed }}/{{ rebuildProgress.total }}</span>
+              <span v-else>重建所有嵌入</span>
+            </button>
+            <div class="count-hint" style="margin-top: 6px; line-height: 1.5;">
+              將此聊天的所有總結重新轉為向量嵌入。<br/>
+              適用於：首次啟用向量記憶時補建舊總結、或嵌入資料異常需要修復。
+            </div>
+          </div>
+
           <div class="info-section">
             <div class="info-header">當前對話狀態</div>
             <div class="info-grid">
@@ -905,6 +945,7 @@ import {
     createDefaultSummarySettings,
     type SummarySettings,
 } from "@/types/chat";
+import { useSettingsStore } from "@/stores/settings";
 import type { DiaryData } from "@/types/diary";
 import type {
     ImportantEventCategory,
@@ -962,6 +1003,7 @@ const emit = defineEmits<{
 }>();
 
 const activeTab = ref<"history" | "settings" | "events" | "diary">("history");
+const settingsStore = useSettingsStore();
 
 // ===== 總結編輯相關 =====
 const editingSummaryId = ref<string | null>(null);
@@ -1137,6 +1179,55 @@ const estimatedTokens = computed(() => {
       : Math.min(localSettings.value.summaryReadCount, summaries.value.length);
   return count * 150;
 });
+
+// ===== 向量記憶設定 =====
+const vectorTopK = computed({
+  get: () => localSettings.value.vectorTopK ?? 5,
+  set: (val: number) => { localSettings.value.vectorTopK = val; },
+});
+const vectorThreshold = computed({
+  get: () => localSettings.value.vectorThreshold ?? 0.3,
+  set: (val: number) => { localSettings.value.vectorThreshold = val; },
+});
+const vectorStats = ref({ count: 0, sizeText: '計算中...' });
+const isRebuilding = ref(false);
+const rebuildProgress = ref({ processed: 0, total: 0 });
+
+// ===== 嵌入模式（全域設定，在 SettingsScreen 的 embedding-card 中切換） =====
+
+async function loadVectorStats() {
+  try {
+    const { getVectorStats } = await import('@/db/vectorStore');
+    const stats = await getVectorStats(props.chatId);
+    vectorStats.value = {
+      count: stats.count,
+      sizeText: stats.count === 0 ? '0 KB' : `≈ ${Math.ceil(stats.count * 6 / 1024)} KB`,
+    };
+  } catch {
+    vectorStats.value = { count: 0, sizeText: '無法計算' };
+  }
+}
+
+async function rebuildVectors() {
+  if (isRebuilding.value) return;
+  if (!confirm('確定要重建所有向量嵌入嗎？這會刪除現有嵌入並重新生成。')) return;
+  isRebuilding.value = true;
+  rebuildProgress.value = { processed: 0, total: 0 };
+  try {
+    const { MemoryRetrieverService } = await import('@/services/memoryRetriever');
+    const retriever = new MemoryRetrieverService();
+    await retriever.rebuildChat(props.chatId, props.characterId, (processed, total) => {
+      rebuildProgress.value = { processed, total };
+    });
+    await loadVectorStats();
+    alert('重建完成！');
+  } catch (err) {
+    console.error('[向量記憶] 重建失敗:', err);
+    alert('重建失敗，請檢查 Embedding API 設定');
+  } finally {
+    isRebuilding.value = false;
+  }
+}
 
 // ===== 重要事件 =====
 const eventsLog = ref<ImportantEventsLog | null>(null);
@@ -1320,6 +1411,7 @@ function saveAll() {
 
 onMounted(() => {
   loadEventsLog();
+  loadVectorStats();
   // 從 props 載入現有設定
   if (props.initialSettings) {
     localSettings.value = { ...props.initialSettings };
@@ -2709,5 +2801,80 @@ onMounted(() => {
 .fade-leave-to {
   opacity: 0;
   transform: translateY(-8px);
+}
+
+// 向量記憶 toggle 開關
+.toggle-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+
+  .toggle-checkbox {
+    display: none;
+  }
+
+  .toggle-slider {
+    width: 40px;
+    height: 22px;
+    background: var(--color-border, #d1d5db);
+    border-radius: 11px;
+    position: relative;
+    transition: background 0.2s;
+    flex-shrink: 0;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+  }
+
+  .toggle-checkbox:checked + .toggle-slider {
+    background: var(--color-primary, #7dd3a8);
+
+    &::after {
+      transform: translateX(18px);
+    }
+  }
+
+  .toggle-text {
+    font-size: 13px;
+    color: var(--color-text-secondary, #6b7280);
+  }
+}
+
+.rebuild-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px;
+  background: var(--color-background, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--color-text, #1f2937);
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover:not(:disabled) {
+    background: var(--color-primary, #7dd3a8);
+    color: white;
+    border-color: var(--color-primary, #7dd3a8);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 }
 </style>

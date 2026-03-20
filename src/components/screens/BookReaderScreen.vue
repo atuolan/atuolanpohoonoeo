@@ -4,6 +4,8 @@ import FloatingBubble from "@/components/common/FloatingBubble.vue";
 import { useCompanionChat } from "@/composables/useCompanionChat";
 import { useBooksStore } from "@/stores/books";
 import { useCharactersStore } from "@/stores/characters";
+import { useLorebooksStore } from "@/stores/lorebooks";
+import { useUserStore } from "@/stores/user";
 import type { StoredBook } from "@/types/book";
 import {
     ArrowLeft,
@@ -35,6 +37,8 @@ const emit = defineEmits<{
 
 const booksStore = useBooksStore();
 const charsStore = useCharactersStore();
+const lorebooksStore = useLorebooksStore();
+const userStore = useUserStore();
 
 // 閱讀狀態
 const currentChapterIndex = ref(0);
@@ -396,6 +400,16 @@ onMounted(async () => {
   // 載入角色列表
   if (charsStore.characters.length === 0) {
     await charsStore.loadCharacters();
+  }
+
+  // 載入世界書
+  if (lorebooksStore.lorebooks.length === 0) {
+    await lorebooksStore.loadLorebooks();
+  }
+
+  // 載入使用者資料
+  if (!userStore.isLoaded) {
+    await userStore.loadUserData();
   }
 
   // 恢復上次進度

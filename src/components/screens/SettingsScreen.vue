@@ -525,6 +525,49 @@ const modelFetchError = ref("");
 const customModelName = ref("");
 const lastFetchedEndpoint = ref(""); // 追蹤上次拉取的端點
 
+// Embedding API 摺疊狀態
+const showEmbeddingSection = ref(false);
+
+// 本地嵌入模型測試狀態
+const localModelStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('idle');
+const localModelProgress = ref(0);
+const localModelFile = ref('');
+const localModelError = ref('');
+
+async function testLocalModel() {
+  localModelStatus.value = 'loading';
+  localModelProgress.value = 0;
+  localModelFile.value = '';
+  localModelError.value = '';
+  try {
+    const { embeddingEngine } = await import('@/services/embeddingEngine');
+    embeddingEngine.setProgressCallback((info) => {
+      // Transformers.js 的 progress 物件：status 為 initiate/download/progress/done/warmup
+      if (info.progress != null) localModelProgress.value = info.progress / 100;
+      if (info.file) localModelFile.value = info.file;
+      // warmup 階段：WASM 首次編譯
+      if (info.status === 'warmup') {
+        localModelFile.value = 'WASM 首次編譯中（可能需要 10~30 秒）...';
+        localModelProgress.value = 1; // 滿格，表示下載完成
+      }
+    });
+
+    // 設定 2 分鐘超時
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('模型載入超時（2 分鐘），請檢查瀏覽器是否支援 WebAssembly')), 120_000)
+    );
+
+    // 觸發模型載入 + 實際推理測試
+    await Promise.race([embeddingEngine.embed('測試嵌入'), timeout]);
+    embeddingEngine.setProgressCallback(null);
+    localModelStatus.value = 'ready';
+  } catch (e: unknown) {
+    console.error('[本地嵌入模型] 測試失敗:', e);
+    localModelError.value = e instanceof Error ? e.message : '未知錯誤';
+    localModelStatus.value = 'error';
+  }
+}
+
 // 將外部 URL 轉為代理路徑（解決 CORS 和 mixed content 問題）
 function toProxyUrl(url: string): string {
   // 直連模式：不走代理，直接請求外部 API
@@ -2730,6 +2773,221 @@ function useClonedVoice(voiceId: string) {
           </div>
         </div>
 
+        <!-- 向量記憶 Embedding API -->
+        <div class="embedding-card" style="margin-top: 16px;">
+          <button
+            class="embedding-card-header"
+            @click="showEmbeddingSection = !showEmbeddingSection"
+            style="width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--color-surface-elevated, rgba(255,255,255,0.06)); border: 1px solid var(--color-border, rgba(255,255,255,0.08)); border-radius: 12px; cursor: pointer; color: var(--color-text, #e5e7eb); font-size: 14px; text-align: left;"
+          >
+            <span style="font-size: 18px;">🧠</span>
+            <span style="flex: 1; font-weight: 500;">向量記憶 Embedding</span>
+            <span
+              v-if="settingsStore.embeddingMode === 'local'"
+              style="color: var(--color-primary, #7dd3a8); font-size: 11px;"
+            >本地推理</span>
+            <span
+              v-else-if="!settingsStore.embeddingAPI.endpoint && !settingsStore.embeddingAPI.apiKey"
+              style="color: var(--color-primary, #7dd3a8); font-size: 11px;"
+            >遠端 · 主 API</span>
+            <span
+              v-else
+              style="color: var(--color-warning, #f59e0b); font-size: 11px;"
+            >遠端 · 已自訂</span>
+            <svg
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              style="width: 16px; height: 16px; transition: transform 0.2s;"
+              :style="{ transform: showEmbeddingSection ? 'rotate(180deg)' : 'rotate(0)' }"
+            >
+              <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/>
+            </svg>
+          </button>
+
+          <Transition name="fade">
+            <div v-if="showEmbeddingSection" style="padding: 12px 14px 4px; border: 1px solid var(--color-border, rgba(255,255,255,0.08)); border-top: none; border-radius: 0 0 12px 12px; background: var(--color-surface-elevated, rgba(255,255,255,0.03));">
+              <p class="setting-hint" style="margin-bottom: 12px; line-height: 1.6;">
+                向量記憶讓 AI 根據語義相關性回憶過去的對話，而非只按時間順序。<br/>
+                <span style="color: var(--color-text-secondary, #9ca3af);">
+                  原理：總結產生時，透過 Embedding 預先轉為向量並儲存。每次你發訊息時，會把你的訊息即時轉為向量，與已儲存的總結比對相似度，挑出最相關的幾條注入提示詞。<br/>
+                  總結讀取模式為「全部」時，向量檢索不適用（因為所有總結已經全部注入）。
+                </span>
+              </p>
+
+              <!-- 向量記憶全域開關 -->
+              <div class="setting-group" style="margin-bottom: 12px;">
+                <label
+                  style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 10px 12px; border-radius: 8px; background: var(--color-surface-elevated, rgba(255,255,255,0.04)); border: 1px solid var(--color-border, rgba(255,255,255,0.08));"
+                  @click="settingsStore.vectorMemoryEnabled = !settingsStore.vectorMemoryEnabled; settingsStore.saveSettings()"
+                >
+                  <span style="font-size: 13px; font-weight: 500;">啟用向量記憶</span>
+                  <span
+                    :style="{
+                      display: 'inline-block',
+                      width: '36px',
+                      height: '20px',
+                      borderRadius: '10px',
+                      background: settingsStore.vectorMemoryEnabled ? 'var(--color-primary, #7dd3a8)' : 'var(--color-border, rgba(255,255,255,0.15))',
+                      position: 'relative',
+                      transition: 'background 0.2s',
+                    }"
+                  >
+                    <span
+                      :style="{
+                        position: 'absolute',
+                        top: '2px',
+                        left: settingsStore.vectorMemoryEnabled ? '18px' : '2px',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        background: '#fff',
+                        transition: 'left 0.2s',
+                      }"
+                    ></span>
+                  </span>
+                </label>
+              </div>
+
+              <!-- 嵌入模式切換 -->
+              <div class="setting-group">
+                <label class="setting-label">嵌入引擎</label>
+                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                  <button
+                    :style="{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid ' + (settingsStore.embeddingMode === 'local' ? 'var(--color-primary, #7dd3a8)' : 'var(--color-border, rgba(255,255,255,0.08))'),
+                      background: settingsStore.embeddingMode === 'local' ? 'var(--color-primary-alpha, rgba(125,211,168,0.15))' : 'transparent',
+                      color: settingsStore.embeddingMode === 'local' ? 'var(--color-primary, #7dd3a8)' : 'var(--color-text-secondary, #9ca3af)',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: settingsStore.embeddingMode === 'local' ? '600' : '400',
+                      transition: 'all 0.2s',
+                    }"
+                    @click="settingsStore.embeddingMode = 'local'; settingsStore.saveSettings()"
+                  >
+                    🖥️ 本地推理
+                  </button>
+                  <button
+                    :style="{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid ' + (settingsStore.embeddingMode === 'api' ? 'var(--color-primary, #7dd3a8)' : 'var(--color-border, rgba(255,255,255,0.08))'),
+                      background: settingsStore.embeddingMode === 'api' ? 'var(--color-primary-alpha, rgba(125,211,168,0.15))' : 'transparent',
+                      color: settingsStore.embeddingMode === 'api' ? 'var(--color-primary, #7dd3a8)' : 'var(--color-text-secondary, #9ca3af)',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: settingsStore.embeddingMode === 'api' ? '600' : '400',
+                      transition: 'all 0.2s',
+                    }"
+                    @click="settingsStore.embeddingMode = 'api'; settingsStore.saveSettings()"
+                  >
+                    ☁️ 遠端 API
+                  </button>
+                </div>
+                <p v-if="settingsStore.embeddingMode === 'local'" class="setting-hint" style="margin-bottom: 8px;">
+                  使用 bge-small-zh-v1.5 模型在瀏覽器內推理，零成本、完全離線。首次使用需下載約 30MB 模型檔案。
+                </p>
+                <!-- 本地模型測試與進度 -->
+                <div v-if="settingsStore.embeddingMode === 'local'" style="margin-bottom: 8px;">
+                  <!-- 進度條 -->
+                  <div v-if="localModelStatus === 'loading'" style="margin-bottom: 8px;">
+                    <div style="height: 4px; background: var(--color-border, rgba(255,255,255,0.08)); border-radius: 2px; overflow: hidden; margin-bottom: 4px;">
+                      <div
+                        :style="{
+                          height: '100%',
+                          background: 'var(--color-primary, #7dd3a8)',
+                          borderRadius: '2px',
+                          transition: 'width 0.3s ease',
+                          width: (localModelProgress * 100) + '%',
+                        }"
+                      ></div>
+                    </div>
+                    <span style="font-size: 11px; color: var(--color-text-secondary, #9ca3af);">
+                      {{ localModelFile || '載入模型中...' }} {{ localModelProgress < 1 ? Math.round(localModelProgress * 100) + '%' : '' }}
+                    </span>
+                  </div>
+                  <!-- 成功狀態 -->
+                  <div v-else-if="localModelStatus === 'ready'" style="display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: rgba(125,211,168,0.1); border-radius: 8px; margin-bottom: 8px;">
+                    <span style="color: var(--color-primary, #7dd3a8); font-size: 14px;">✓</span>
+                    <span style="font-size: 12px; color: var(--color-primary, #7dd3a8);">模型已就緒，可正常使用</span>
+                  </div>
+                  <!-- 失敗狀態 -->
+                  <div v-else-if="localModelStatus === 'error'" style="display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: rgba(239,68,68,0.1); border-radius: 8px; margin-bottom: 8px;">
+                    <span style="color: #ef4444; font-size: 14px;">✗</span>
+                    <span style="font-size: 12px; color: #ef4444;">{{ localModelError || '模型載入失敗' }}</span>
+                  </div>
+                  <!-- 測試按鈕 -->
+                  <button
+                    :disabled="localModelStatus === 'loading'"
+                    :style="{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--color-border, rgba(255,255,255,0.08))',
+                      background: 'var(--color-surface-elevated, rgba(255,255,255,0.04))',
+                      color: localModelStatus === 'loading' ? 'var(--color-text-secondary, #9ca3af)' : 'var(--color-text, #e5e7eb)',
+                      cursor: localModelStatus === 'loading' ? 'not-allowed' : 'pointer',
+                      fontSize: '13px',
+                      transition: 'all 0.2s',
+                      opacity: localModelStatus === 'loading' ? '0.6' : '1',
+                    }"
+                    @click="testLocalModel"
+                  >
+                    {{ localModelStatus === 'loading' ? '載入中...' : localModelStatus === 'ready' ? '🔄 重新測試' : '🧪 測試本地模型' }}
+                  </button>
+                </div>
+                <p v-else class="setting-hint" style="margin-bottom: 8px;">
+                  使用遠端 OpenAI 相容 Embedding API。留空則自動使用上方的主 API 設定。
+                </p>
+              </div>
+
+              <!-- 遠端 API 設定（僅在 api 模式下顯示） -->
+              <template v-if="settingsStore.embeddingMode === 'api'">
+                <div class="setting-group">
+                  <label class="setting-label">Embedding 端點</label>
+                  <input
+                    v-model="settingsStore.embeddingAPI.endpoint"
+                    type="url"
+                    class="soft-input"
+                    placeholder="留空使用主 API 端點"
+                  />
+                </div>
+                <div class="setting-group">
+                  <label class="setting-label">Embedding API Key</label>
+                  <input
+                    v-model="settingsStore.embeddingAPI.apiKey"
+                    type="password"
+                    class="soft-input"
+                    placeholder="留空使用主 API Key"
+                    autocomplete="off"
+                  />
+                </div>
+                <div class="setting-group">
+                  <label class="setting-label">Embedding 模型</label>
+                  <input
+                    v-model="settingsStore.embeddingAPI.model"
+                    type="text"
+                    class="soft-input"
+                    placeholder="例如 text-embedding-3-small"
+                  />
+                </div>
+                <label class="toggle-item">
+                  <span class="toggle-label">直連（不使用代理）</span>
+                  <input
+                    type="checkbox"
+                    v-model="settingsStore.embeddingAPI.directConnect"
+                    class="toggle-input"
+                  />
+                  <span class="toggle-switch"></span>
+                </label>
+              </template>
+            </div>
+          </Transition>
+        </div>
+
         <!-- 分隔線 -->
         <div class="section-divider"></div>
 
@@ -2824,6 +3082,7 @@ function useClonedVoice(voiceId: string) {
         >
           開啟後在獨立浮動窗口顯示 AI 回覆，關閉後直接在訊息氣泡中顯示
         </p>
+
       </div>
 
       <!-- 備用 API 設定 -->

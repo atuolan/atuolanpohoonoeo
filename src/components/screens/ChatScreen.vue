@@ -3371,6 +3371,35 @@ async function triggerAIResponse(options?: {
             }))
         : [];
 
+    // 向量記憶檢索（使用全域開關，排除數量跟隨總結讀取設定）
+    let vectorMemories: import('@/services/memoryRetriever').RetrievedMemory[] | undefined;
+    if (settingsStore.vectorMemoryEnabled && chatSummarySettings.value.summaryReadMode !== 'all') {
+      try {
+        // 取得最後一條用戶訊息作為查詢文本
+        const lastUserMsg = [...messagesToUse].reverse().find((m) => m.role === 'user');
+        if (lastUserMsg?.content) {
+          const retriever = new (await import('@/services/memoryRetriever')).MemoryRetrieverService();
+          // 傳入近期對話訊息和角色名稱，啟用雙路搜尋 + 關鍵詞擴展
+          const recentMsgs = messages.value.slice(-15);
+          const charNames = [char.data.name, ...(char.data.alternate_greetings ? [] : [])].filter(Boolean);
+          vectorMemories = await retriever.retrieve(
+            lastUserMsg.content,
+            props.chatId,
+            chatSummarySettings.value.vectorTopK ?? 5,
+            chatSummarySettings.value.vectorThreshold ?? 0.3,
+            recentMsgs,
+            charNames,
+            chatSummarySettings.value.summaryReadCount,
+          );
+          console.log(`[向量記憶] 檢索到 ${vectorMemories.length} 條相關記憶`);
+        }
+      } catch (err) {
+        console.error('[向量記憶] 檢索失敗，使用時間排序總結:', err);
+      }
+    } else if (settingsStore.vectorMemoryEnabled && chatSummarySettings.value.summaryReadMode === 'all') {
+      console.log('[向量記憶] ℹ️ 總結讀取模式為「全部」，向量檢索不適用，跳過');
+    }
+
     // 準備重要事件數據
     const eventsToSend = await loadImportantEventsForPrompt();
 
@@ -3424,6 +3453,8 @@ async function triggerAIResponse(options?: {
       // 傳入總結和重要事件
       summaries: summariesToSend,
       importantEvents: eventsToSend,
+      // 向量記憶檢索結果（啟用時優先使用語義檢索）
+      vectorMemories,
       // 傳入天氣數據
       weatherInfo: weatherInfoToSend,
       // 傳入節日資訊

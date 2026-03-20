@@ -500,6 +500,12 @@ export interface SummarySettings {
   summaryReadMode: "all" | "recent";
   /** 讀取最近 N 條總結 */
   summaryReadCount: number;
+  /** 是否啟用向量記憶 */
+  vectorMemoryEnabled?: boolean;
+  /** 語義檢索返回數量上限 (default: 5, range: 1-20) */
+  vectorTopK?: number;
+  /** 語義檢索最低相似度門檻 (default: 0.3, range: 0.0-1.0) */
+  vectorThreshold?: number;
 }
 
 // ===== 創建默認總結設定 =====

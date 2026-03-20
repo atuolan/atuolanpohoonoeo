@@ -25,6 +25,17 @@ export async function registerServiceWorker(): Promise<boolean> {
     return false;
   }
 
+  // dev 模式下不註冊 SW，避免快取 Vite HMR 模組導致更新失效
+  if (import.meta.env.DEV) {
+    // 如果之前有註冊過，順便清掉
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for (const reg of regs) {
+      await reg.unregister();
+      console.log("[SW] dev 模式：已移除舊 Service Worker");
+    }
+    return false;
+  }
+
   try {
     const registration = await navigator.serviceWorker.register("/sw.js");
     console.log("[SW] Service Worker 註冊成功:", registration.scope);

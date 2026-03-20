@@ -1,6 +1,7 @@
 import { ref, computed, type Ref, type ComputedRef } from "vue";
 import { db, DB_STORES } from "@/db/database";
 import type { Chat, ChatMessage } from "@/types/chat";
+import { deleteVectorsByChatId } from "@/db/vectorStore";
 
 /**
  * 聊天檔案管理功能
@@ -196,6 +197,8 @@ export function useChatFiles(deps: {
         db.delete(DB_STORES.CHATS, chatId),
         deleteChatImagesByRefs(imageRefs),
       ]);
+      // 向量記憶：刪除該聊天的所有向量記錄
+      deleteVectorsByChatId(chatId).catch(err => console.error('[向量記憶] 刪除聊天向量失敗:', err))
       if (chatId === deps.currentChatId.value) {
         const remaining = chatFilesList.value.filter((c) => c.id !== chatId);
         if (remaining.length > 0) {
