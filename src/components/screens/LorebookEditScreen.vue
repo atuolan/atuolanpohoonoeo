@@ -1215,6 +1215,8 @@ function removeCondition(
   flex-direction: column;
   gap: 16px;
   overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 0;
   box-sizing: border-box;
 }
 
