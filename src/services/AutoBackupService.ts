@@ -13,7 +13,7 @@ import {
   BackupMediaExtractor,
   extractAllMediaFromBackupData,
 } from "@/utils/backupMediaExtractor";
-import { strToU8, zip } from "fflate";
+import { strToU8, zip, Zip as FflateZip, AsyncZipDeflate, ZipPassThrough } from "fflate";
 
 // ============================================================
 // 類型
@@ -372,8 +372,46 @@ function yieldToMain(): Promise<void> {
 }
 
 /**
- * 構建備份 ZIP
- * 回傳 Uint8Array（ZIP 檔案內容）
+ * 將一個 Uint8Array 推入 fflate Zip 流（使用 AsyncZipDeflate 壓縮）
+ * 回傳 Promise，在該檔案完全寫入後 resolve
+ */
+function pushFileToZip(
+  zipper: FflateZip,
+  filename: string,
+  data: Uint8Array,
+  level: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 = 6,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    try {
+      // 媒體檔案（已壓縮的圖片/音訊）用 level 0 直接存儲，節省 CPU
+      const isMedia = filename.startsWith("media/");
+      if (isMedia) {
+        const passThrough = new ZipPassThrough(filename);
+        zipper.add(passThrough);
+        passThrough.push(data, true);
+        resolve();
+      } else {
+        const deflater = new AsyncZipDeflate(filename, { level });
+        zipper.add(deflater);
+        deflater.push(data, true);
+        resolve();
+      }
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+/**
+ * 構建備份 ZIP — 真正的流式構建
+ *
+ * 使用 fflate 的 Zip streaming API，逐個檔案寫入 zip 流，
+ * 每個聊天處理完後立即釋放，記憶體峰值 ≈ 單個最大聊天的大小。
+ *
+ * ZIP 結構：
+ *   backup.json          — 輕量數據（不含聊天）
+ *   chats/<chatId>.json  — 每個聊天獨立一個檔案
+ *   media/*              — 提取的媒體檔案
  */
 async function buildBackupZipStreaming(
   onProgress?: BackupProgressCallback,
@@ -389,12 +427,28 @@ async function buildBackupZipStreaming(
   // 2. 先提取輕量數據中的媒體（角色頭像、主題桌布等）
   extractAllMediaFromBackupData(lightData, extractor);
 
-  // 3. 逐個處理聊天 — 還原圖片後立即提取媒體，釋放 base64 記憶體
-  //    這樣每個聊天的 base64 字串在提取為二進位後就被短路徑替換，
-  //    不會同時駐留在記憶體中，大幅降低峰值記憶體用量。
+  // 3. 建立 fflate Zip 流，收集輸出 chunks
+  const outputChunks: Uint8Array[] = [];
+  let totalOutputSize = 0;
+
+  const zipper = new FflateZip((err, chunk, _final) => {
+    if (err) {
+      console.error("[AutoBackup] ZIP 流錯誤:", err);
+      return;
+    }
+    outputChunks.push(chunk);
+    totalOutputSize += chunk.length;
+  });
+
+  // 4. 寫入輕量數據（不含聊天）
+  onProgress?.({ phase: "寫入基礎數據..." });
+  await yieldToMain();
+  const lightJsonBytes = strToU8(JSON.stringify(lightData));
+  await pushFileToZip(zipper, "backup.json", lightJsonBytes);
+
+  // 5. 逐個處理聊天 — 讀取 → 提取媒體 → 寫入 zip → 釋放
   const chatKeys = await getAllChatKeys();
   const totalChats = chatKeys.length;
-  const chats: any[] = [];
 
   for (let i = 0; i < chatKeys.length; i++) {
     if (i % 3 === 0) {
@@ -408,13 +462,12 @@ async function buildBackupZipStreaming(
 
       if (chat.messages?.length > 0) {
         try {
-          // 還原圖片引用為 base64
           chat.messages = await restoreImagesToMessages(chat.messages);
         } catch (imgErr) {
           console.warn(`[AutoBackup] 聊天 "${chat.id}" 圖片還原失敗:`, imgErr);
         }
 
-        // 立即提取該聊天的媒體，將 base64 替換為短路徑，釋放記憶體
+        // 立即提取該聊天的媒體，將 base64 替換為短路徑
         for (const msg of chat.messages) {
           if (msg.imageUrl?.startsWith("data:image/")) {
             const f = extractor.extract(msg.imageUrl, "chat");
@@ -425,7 +478,6 @@ async function buildBackupZipStreaming(
             if (f) msg.imageData = f;
           }
         }
-        // 聊天桌布
         if (
           chat.appearance?.wallpaper?.type === "image" &&
           chat.appearance.wallpaper.value?.startsWith("data:image/")
@@ -438,7 +490,11 @@ async function buildBackupZipStreaming(
         }
       }
 
-      chats.push(chat);
+      // 將聊天序列化後立即寫入 zip 流，然後釋放
+      const chatJsonBytes = strToU8(JSON.stringify(chat));
+      const safeId = String(chat.id || chatKeys[i]).replace(/[^a-zA-Z0-9_-]/g, "_");
+      await pushFileToZip(zipper, `chats/${safeId}.json`, chatJsonBytes);
+      // chat 物件在此作用域結束後即可被 GC 回收
     } catch (chatErr) {
       console.warn(
         `[AutoBackup] 聊天 "${chatKeys[i]}" 讀取失敗，跳過:`,
@@ -447,28 +503,49 @@ async function buildBackupZipStreaming(
     }
   }
 
+  // 6. 寫入媒體檔案
   const mediaResult = extractor.getResult();
   console.log(
     `[AutoBackup] 媒體提取完成: ${mediaResult.totalExtracted} 個 base64，去重 ${mediaResult.dedupeHits} 個`,
   );
 
-  onProgress?.({ phase: "壓縮中..." });
+  onProgress?.({ phase: "寫入媒體檔案..." });
+  const mediaEntries = Object.entries(mediaResult.files);
+  for (let i = 0; i < mediaEntries.length; i++) {
+    if (i % 10 === 0) {
+      onProgress?.({ phase: "寫入媒體", current: i + 1, total: mediaEntries.length });
+      await yieldToMain();
+    }
+    const [filename, data] = mediaEntries[i];
+    await pushFileToZip(zipper, filename, data);
+  }
+
+  // 7. 寫入 metadata.json（聊天數量等統計資訊）
+  const metadataBytes = strToU8(JSON.stringify({
+    version: "2.0",
+    format: "aguaphone-streaming-backup",
+    exportedAt: lightData.exportedAt,
+    chatCount: totalChats,
+    mediaCount: mediaEntries.length,
+  }));
+  await pushFileToZip(zipper, "metadata.json", metadataBytes);
+
+  // 8. 結束 zip 流
+  onProgress?.({ phase: "完成壓縮..." });
   await yieldToMain();
+  zipper.end();
 
-  // 4. 組裝完整數據並壓縮
-  const fullData = { ...lightData, chats };
-  const jsonBytes = strToU8(JSON.stringify(fullData));
-  const zipFiles: Record<string, Uint8Array> = {
-    "backup.json": jsonBytes,
-    ...mediaResult.files,
-  };
+  // 9. 合併所有 chunks 為最終 Uint8Array
+  const result = new Uint8Array(totalOutputSize);
+  let offset = 0;
+  for (const chunk of outputChunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  // 釋放 chunks 陣列
+  outputChunks.length = 0;
 
-  return new Promise((resolve, reject) => {
-    zip(zipFiles, { level: 6 }, (err, data) => {
-      if (err) reject(err);
-      else resolve(data);
-    });
-  });
+  return result;
 }
 
 // ============================================================

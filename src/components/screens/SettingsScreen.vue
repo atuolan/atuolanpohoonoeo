@@ -5,7 +5,6 @@ import AuxiliaryApiPanel from "@/components/screens/AuxiliaryApiPanel.vue";
 import { clearAllData, db } from "@/db/database";
 import {
   extractImagesFromMessages,
-  restoreImagesToMessages,
 } from "@/db/operations";
 import {
   checkPermission as checkBackupPermission,
@@ -1434,285 +1433,27 @@ async function hardRefresh() {
   }
 }
 
-// 導出數據
+// 導出數據 — 使用流式備份，避免記憶體爆掉
 async function exportData() {
   isExporting.value = true;
   try {
-    await db.init();
-
-    // 動態導入 fflate
-    const { zip, strToU8 } = await import("fflate");
-
-    const data = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      characters: await db.getAll("characters"),
-      lorebooks: await db.getAll("lorebooks"),
-      chats: await (async () => {
-        // 訊息已在 chat.messages 中，還原圖片引用即可
-        const allChats = await db.getAll("chats");
-        for (const chat of allChats as any[]) {
-          if (chat.messages && chat.messages.length > 0) {
-            chat.messages = await restoreImagesToMessages(chat.messages);
-          }
-        }
-        return allChats;
-      })(),
-      settings: await db.get("appSettings", "main-settings"),
-      userData: await db.get("appSettings", "user-data"),
-      themes: await db.getAll("themes"),
-      layouts: await db.getAll("layouts"),
-      characterAffections: await (async () => {
-        try {
-          return await db.getAll("characterAffections");
-        } catch {
-          return [];
-        }
-      })(),
-      chatAffinityStates: await (async () => {
-        try {
-          return await db.getAll("chatAffinityStates");
-        } catch {
-          return [];
-        }
-      })(),
-      oldSettings: await (async () => {
-        // settings store 沒有 keyPath，需要手動取得 key-value 對
-        try {
-          if (!db._instance) await db.init();
-          if (!db._instance) return [];
-          const tx = db._instance.transaction("settings", "readonly");
-          const store = tx.objectStore("settings");
-          const keys = await store.getAllKeys();
-          const values = await store.getAll();
-          return keys.map((key, i) => ({ key: String(key), value: values[i] }));
-        } catch {
-          return [];
-        }
-      })(),
-      pendingCalls: await db.getAll("pendingCalls"),
-      summaries: await db.getAll("summaries"),
-      diaries: await db.getAll("diaries"),
-      importantEvents: await db.getAll("importantEvents"),
-      qzonePosts: await db.getAll("qzonePosts"),
-      stickers: await db.getAll("stickers"),
-      callHistory: await db.getAll("callHistory"),
-      holidayRecords: await db.getAll("holidayRecords"),
-      calendarEvents: await db.getAll("calendarEvents"),
-      gameStates: await (async () => {
-        // gameStates 沒有 keyPath，需要手動取得 key-value 對
-        try {
-          if (!db._instance) await db.init();
-          if (!db._instance) return [];
-          const tx = db._instance.transaction("gameStates", "readonly");
-          const store = tx.objectStore("gameStates");
-          const keys = await store.getAllKeys();
-          const values = await store.getAll();
-          return keys.map((key, i) => ({ key: String(key), value: values[i] }));
-        } catch {
-          return [];
-        }
-      })(),
-      rendererRules: await db.getAll("rendererRules"),
-      books: await db.getAll("books"),
-      bookProgress: await db.getAll("bookProgress"),
-      promptLibrary: await (async () => {
-        // promptLibrary 沒有 keyPath，需要手動取得 key-value 對
-        try {
-          if (!db._instance) await db.init();
-          if (!db._instance) return [];
-          const tx = db._instance.transaction("promptLibrary", "readonly");
-          const store = tx.objectStore("promptLibrary");
-          const keys = await store.getAllKeys();
-          const values = await store.getAll();
-          return keys.map((key, i) => ({ key: String(key), value: values[i] }));
-        } catch {
-          return [];
-        }
-      })(),
-      // 向量嵌入（Float32Array → 普通陣列，以便 JSON 序列化）
-      vectorEmbeddings: await (async () => {
-        try {
-          const all = await db.getAll("vectorEmbeddings");
-          return all.map((rec: any) => ({
-            ...rec,
-            vector: rec.vector ? Array.from(rec.vector as Float32Array) : null,
-          }));
-        } catch {
-          return [];
-        }
-      })(),
-      // audio-blobs 不備份（語音 Blob 體積過大，base64 後會膨脹 33%）
-      // canvas layout（widget 佈局、app 圖標、日曆顏色等）存在獨立的 Aguaphone_V2 IDB
-      canvasLayout: await (async () => {
-        try {
-          return await new Promise<any>((resolve) => {
-            // 不指定版本號，讓瀏覽器用現有版本開啟
-            const req = indexedDB.open("Aguaphone_V2");
-            req.onsuccess = (e) => {
-              const idb = (e.target as IDBOpenDBRequest).result;
-              if (!idb.objectStoreNames.contains("canvas_layout")) {
-                idb.close();
-                resolve(null);
-                return;
-              }
-              const tx = idb.transaction(["canvas_layout"], "readonly");
-              const store = tx.objectStore("canvas_layout");
-              const getReq = store.get("main_layout");
-              getReq.onsuccess = () => {
-                idb.close();
-                resolve(getReq.result || null);
-              };
-              getReq.onerror = () => {
-                idb.close();
-                resolve(null);
-              };
-            };
-            req.onerror = () => resolve(null);
-          });
-        } catch {
-          return null;
-        }
-      })(),
-    };
-
-    // 提取所有 base64 媒體檔案並去重（含 oldSettings、canvasLayout 等）
-    const { extractAllMediaFromBackupData } =
-      await import("@/utils/backupMediaExtractor");
-    const mediaResult = extractAllMediaFromBackupData(data);
-    const mediaFiles = mediaResult.files;
-
-    // 準備 ZIP 內容（用 setTimeout 讓 UI 先更新，避免卡死主線程）
-    const dataJsonStr = await new Promise<string>((resolve) =>
-      setTimeout(() => resolve(JSON.stringify(data, null, 2)), 0),
-    );
-    const dataJsonBytes = strToU8(dataJsonStr);
-
-    // 診斷：計算各部分大小
-    const formatSize = (bytes: number) => {
-      if (bytes < 1024) return `${bytes} B`;
-      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-      return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-    };
-
-    let totalMediaSize = 0;
-    for (const [filename, content] of Object.entries(mediaFiles)) {
-      totalMediaSize += content.length;
-    }
-
-    console.log("📦 匯出資料大小分析:");
-    console.log(`  - data.json: ${formatSize(dataJsonBytes.length)}`);
-    console.log(`  - 媒體檔案數: ${Object.keys(mediaFiles).length}`);
-    console.log(`  - 媒體總大小: ${formatSize(totalMediaSize)}`);
-    console.log(
-      `  - 提取 base64 數: ${mediaResult.totalExtracted}（去重命中: ${mediaResult.dedupeHits}）`,
-    );
-    console.log(`  - 角色數: ${data.characters?.length || 0}`);
-    console.log(`  - 聊天數: ${data.chats?.length || 0}`);
-    console.log(
-      `  - 總訊息數: ${data.chats?.reduce((sum: number, c: any) => sum + (c.messages?.length || 0), 0) || 0}`,
-    );
-    console.log(`  - 貼圖分類數: ${data.stickers?.length || 0}`);
-
-    const zipFiles: Record<string, Uint8Array> = {
-      "data.json": dataJsonBytes,
-      "metadata.json": strToU8(
-        JSON.stringify(
-          {
-            version: "1.0",
-            format: "aguaphone-backup",
-            exportedAt: data.exportedAt,
-            counts: {
-              characters: data.characters?.length || 0,
-              lorebooks: data.lorebooks?.length || 0,
-              chats: data.chats?.length || 0,
-              summaries: data.summaries?.length || 0,
-              diaries: data.diaries?.length || 0,
-              callHistory: data.callHistory?.length || 0,
-              holidayRecords: data.holidayRecords?.length || 0,
-              calendarEvents: data.calendarEvents?.length || 0,
-              gameStates: data.gameStates?.length || 0,
-              themes: data.themes?.length || 0,
-              layouts: data.layouts?.length || 0,
-              characterAffections: data.characterAffections?.length || 0,
-              chatAffinityStates: data.chatAffinityStates?.length || 0,
-              pendingCalls: data.pendingCalls?.length || 0,
-              rendererRules: data.rendererRules?.length || 0,
-              books: data.books?.length || 0,
-              bookProgress: data.bookProgress?.length || 0,
-              canvasLayout: data.canvasLayout ? 1 : 0,
-              userData: data.userData ? 1 : 0,
-              media: Object.keys(mediaFiles).length,
-            },
-            sizes: {
-              dataJson: formatSize(dataJsonBytes.length),
-              media: formatSize(totalMediaSize),
-            },
-          },
-          null,
-          2,
-        ),
-      ),
-      ...mediaFiles,
-    };
-
-    // 壓縮為 ZIP
-    const zipBlob = await new Promise<Blob>((resolve, reject) => {
-      zip(zipFiles, { level: 6 }, (err, data) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve(new Blob([data], { type: "application/zip" }));
-      });
-    });
-
-    const backupFilename = `aguaphone-backup-${new Date().toISOString().split("T")[0]}.zip`;
-
-    // iOS Safari: 使用 Web Share API（<a download> 在 iOS 上不可靠）
-    if (navigator.share && /iPad|iPhone|iPod/.test(navigator.userAgent)) {
-      try {
-        const file = new File([zipBlob], backupFilename, {
-          type: "application/zip",
-        });
-        await navigator.share({ files: [file] });
-      } catch (shareErr: any) {
-        // 使用者取消分享不算錯誤
-        if (shareErr?.name !== "AbortError") {
-          console.warn("Web Share 失敗，嘗試 <a> 下載:", shareErr);
-          // fallback 到 <a> 下載
-          const url = URL.createObjectURL(zipBlob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = backupFilename;
-          a.style.display = "none";
-          document.body.appendChild(a);
-          a.click();
-          setTimeout(() => {
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-          }, 3000);
-        }
+    const result = await performBackup(true, (info) => {
+      // 可選：顯示進度（複用 backupProgress 或忽略）
+      if (info.current && info.total) {
+        backupProgress.value = `${info.phase} (${info.current}/${info.total})`;
+      } else {
+        backupProgress.value = info.phase;
       }
-    } else {
-      // 非 iOS：標準 <a> 下載
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = backupFilename;
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 3000);
+    });
+    if (!result.success) {
+      alert("導出失敗: " + result.message);
     }
   } catch (e) {
     console.error("導出失敗:", e);
     alert("導出失敗: " + (e instanceof Error ? e.message : String(e)));
   } finally {
     isExporting.value = false;
+    backupProgress.value = "";
   }
 }
 
@@ -1831,6 +1572,23 @@ async function handleFileImport(event: Event) {
       for (const [filename, content] of Object.entries(files)) {
         if (filename.startsWith("media/")) {
           mediaFiles[filename] = content;
+        }
+      }
+
+      // 相容新版流式備份格式：聊天存在 chats/*.json 中
+      if (!data.chats || !Array.isArray(data.chats) || data.chats.length === 0) {
+        const chatFiles = Object.entries(files).filter(([name]) => name.startsWith("chats/") && name.endsWith(".json"));
+        if (chatFiles.length > 0) {
+          data.chats = [];
+          for (const [, content] of chatFiles) {
+            try {
+              const chat = JSON.parse(strFromU8(content));
+              data.chats.push(chat);
+            } catch (parseErr) {
+              console.warn("[Import] 聊天檔案解析失敗，跳過:", parseErr);
+            }
+          }
+          console.log(`[Import] 從 chats/ 目錄載入 ${data.chats.length} 個聊天`);
         }
       }
     } else {
