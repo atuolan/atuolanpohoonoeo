@@ -9,7 +9,7 @@ import {
     isAvatarFrameImage,
     isAvatarFrameSvg,
 } from "@/data/avatarFrames";
-import { getAudioBlob, isAudioBlobRef } from "@/db/operations";
+import { getAudioBlob, getChatImage, isAudioBlobRef, isChatImageRef } from "@/db/operations";
 import { formatTime } from "@/services/AudioRecorder";
 import { getRegexedString, regex_placement } from "@/services/RegexEngine";
 import { useStickerStore } from "@/stores";
@@ -1503,6 +1503,44 @@ const formattedAudioDuration = computed(() =>
 const lazyAudioBlob = ref<Blob | null>(null);
 const isLoadingAudio = ref(false);
 
+// ===== 圖片懶載入：偵測 chatimg_ 引用 ID，按需從 IndexedDB 讀取 =====
+const lazyImageUrl = ref<string | null>(null);
+const isLoadingImage = ref(false);
+
+/** 解析後的圖片 URL（優先使用懶載入結果，否則直接用 prop） */
+const resolvedImageUrl = computed(() => {
+  // 如果已經懶載入完成，使用載入的 base64
+  if (lazyImageUrl.value) return lazyImageUrl.value;
+  // 如果是引用 ID 且正在載入中，返回空（顯示 loading 狀態）
+  if (props.imageUrl && isChatImageRef(props.imageUrl)) return '';
+  // 普通 URL 或 base64，直接使用
+  return props.imageUrl || '';
+});
+
+// 監聽 imageUrl prop 變化，觸發懶載入
+watch(
+  () => props.imageUrl,
+  async (newUrl) => {
+    if (!newUrl || !isChatImageRef(newUrl)) {
+      lazyImageUrl.value = null;
+      return;
+    }
+    // 是 chatimg_ 引用，從 IndexedDB 按需讀取
+    isLoadingImage.value = true;
+    try {
+      const base64 = await getChatImage(newUrl);
+      if (base64) {
+        lazyImageUrl.value = base64;
+      }
+    } catch (e) {
+      console.warn('[MessageBubble] 載入圖片失敗:', e);
+    } finally {
+      isLoadingImage.value = false;
+    }
+  },
+  { immediate: true },
+);
+
 /** 取得可用的音頻 Blob（優先使用 prop，否則按需從 IndexedDB 載入） */
 async function getAvailableAudioBlob(): Promise<Blob | null> {
   if (props.audioBlob) return props.audioBlob;
@@ -2374,15 +2412,19 @@ const showTextVoiceTranscript = ref(true);
           <div
             v-else-if="
               (messageType === 'image' || messageType === 'image-url') &&
-              imageUrl
+              (resolvedImageUrl || isLoadingImage)
             "
             class="polaroid-photo-container"
             @click="showPhotoPreview = true"
           >
             <div class="polaroid-photo-overlay"></div>
             <div class="polaroid-photo-image">
+              <div v-if="isLoadingImage && !resolvedImageUrl" class="image-loading-placeholder">
+                <span>載入中…</span>
+              </div>
               <img
-                :src="imageUrl"
+                v-else
+                :src="resolvedImageUrl"
                 alt="上傳的圖片"
                 referrerpolicy="no-referrer"
                 loading="lazy"
@@ -2938,9 +2980,9 @@ const showTextVoiceTranscript = ref(true);
 
   <!-- 照片預覽 Modal -->
   <PhotoPreviewModal
-    v-if="imageUrl"
+    v-if="resolvedImageUrl"
     :visible="showPhotoPreview"
-    :image-url="imageUrl"
+    :image-url="resolvedImageUrl"
     :caption="imageCaption"
     :date="formattedPhotoDate"
     @update:visible="showPhotoPreview = $event"
@@ -4551,6 +4593,16 @@ const showTextVoiceTranscript = ref(true);
     justify-content: center;
     overflow: hidden;
     position: relative;
+
+    .image-loading-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      color: #999;
+      font-size: 13px;
+    }
 
     img {
       width: 100%;

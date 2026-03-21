@@ -52,10 +52,6 @@ import { db, DB_STORES } from "@/db/database";
 import {
   extractAudioFromMessages,
   extractImagesFromMessages,
-  getAudioBlob,
-  isChatImageRef,
-  restoreAudioToMessages,
-  restoreImagesToMessages,
 } from "@/db/operations";
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import { formatTime as formatAudioTime } from "@/services/AudioRecorder";
@@ -6368,27 +6364,13 @@ async function loadOrCreateChat(overrideChatId?: string) {
           loadAI.map((m) => `[${m.id}] ${(m.content || "").substring(0, 30)}`),
         );
 
-        // 圖片還原：將引用 ID 還原為 base64 數據
-        // 先記錄原始引用 ID，避免儲存時重新提取（P0 修復：消除圖片循環還原-提取）
-        const imageRefMap = new Map<
-          string,
-          { urlRef?: string; dataRef?: string }
-        >();
-        for (const m of rawMessages) {
-          if (isChatImageRef(m.imageUrl) || isChatImageRef(m.imageData)) {
-            imageRefMap.set(m.id, {
-              urlRef: isChatImageRef(m.imageUrl) ? m.imageUrl : undefined,
-              dataRef: isChatImageRef(m.imageData) ? m.imageData : undefined,
-            });
-          }
-        }
-        rawMessages = await restoreImagesToMessages(rawMessages);
+        // 圖片：不再一次性還原所有 base64 到記憶體，改為 MessageBubble 按需從 IndexedDB 讀取
+        // 保持引用 ID（chatimg_xxx）在訊息中，大幅降低記憶體佔用（P1 修復）
 
         // 音頻：不再一次性載入所有 Blob，改為按需載入（P1 修復：減少記憶體佔用）
         // audioBlobId 保留在訊息中，播放時再從 IndexedDB 讀取
 
         messages.value = rawMessages.map((m) => {
-          const refs = imageRefMap.get(m.id);
           // 兼容處理：檢查舊訊息是否包含 <送禮物> 標籤但沒有 isGift 屬性
           let isGift = m.isGift;
           let giftName = m.giftName;
@@ -6471,9 +6453,8 @@ async function loadOrCreateChat(overrideChatId?: string) {
             imageData: m.imageData,
             imageMimeType: m.imageMimeType,
             imageCaption: m.imageCaption,
-            // 保留原始圖片引用 ID（避免儲存時重新提取到 IndexedDB）
-            _imageRefId: refs?.urlRef,
-            _imageDataRefId: refs?.dataRef,
+            // imageUrl/imageData 保持引用 ID（chatimg_xxx），MessageBubble 按需載入
+            // 新發送的圖片仍為 base64，儲存時由 extractImagesFromMessages 自動提取
             // 載入禮物相關數據（包含兼容處理）
             isGift,
             giftName,
@@ -6973,9 +6954,8 @@ async function loadImportantEventsForPrompt(): Promise<
 
 // 將內部訊息格式轉換為 ChatMessage 格式（供儲存用）
 function convertToStorableMessage(m: any, charName: string): ChatMessage {
-  // P0 修復：優先使用原始圖片引用 ID，避免 base64 重新提取到 IndexedDB
-  const imageUrl = m._imageRefId || m.imageUrl;
-  const imageData = m._imageDataRefId || m.imageData;
+  // imageUrl/imageData 已經是引用 ID（chatimg_xxx）或新圖片的 base64
+  // extractImagesFromMessages 會在儲存時處理 base64 → 引用 ID 的轉換
   return {
     id: m.id,
     sender:
@@ -7006,8 +6986,8 @@ function convertToStorableMessage(m: any, charName: string): ChatMessage {
     replyToContent: m.replyToContent,
     replyTo: m.replyTo,
     messageType: m.messageType,
-    imageUrl: imageUrl,
-    imageData: imageData,
+    imageUrl: m.imageUrl,
+    imageData: m.imageData,
     imageMimeType: m.imageMimeType,
     imageCaption: m.imageCaption,
     isGift: m.isGift,
@@ -7182,7 +7162,14 @@ async function _saveChatImplInner() {
         : "";
 
     // 轉換為純物件避免 Vue reactive proxy 導致的 DataCloneError
-    const plainChat = JSON.parse(JSON.stringify(toRaw(chat)));
+    // structuredClone 比 JSON.parse(JSON.stringify()) 更省記憶體（不產生中間 JSON 字串）
+    let plainChat: any;
+    try {
+      plainChat = structuredClone(toRaw(chat));
+    } catch {
+      // fallback：如果仍有嵌套 proxy 導致 DataCloneError，退回 JSON 方式
+      plainChat = JSON.parse(JSON.stringify(toRaw(chat)));
+    }
 
     // 驗證：確認 plainChat.messages 包含所有訊息
     const aiMsgs = plainChat.messages.filter(
