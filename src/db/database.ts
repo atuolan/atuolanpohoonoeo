@@ -334,7 +334,17 @@ let dbInstance: IDBPDatabase<AguaphoneDB> | null = null;
  */
 async function preUpgradeBackup(): Promise<void> {
   try {
-    // 檢查 OPFS 支援
+    // 崩潰循環保護：如果最近 30 秒內已經嘗試過備份，跳過
+    // 這可以防止 OOM 崩潰後重新載入又觸發同樣的備份導致無限循環
+    const CRASH_GUARD_KEY = 'aguaphone_pre_upgrade_ts';
+    const lastAttempt = parseInt(sessionStorage.getItem(CRASH_GUARD_KEY) || '0', 10);
+    if (Date.now() - lastAttempt < 30000) {
+      console.log('[DB] 跳過預防性備份（30 秒內已嘗試過，防止崩潰循環）');
+      return;
+    }
+    sessionStorage.setItem(CRASH_GUARD_KEY, String(Date.now()));
+
+    // 檢查 OPFS 支援（createWritable 在 iOS Safari 不支援，需額外檢查）
     if (!navigator.storage?.getDirectory) return;
 
     // 用原生 IDB 檢查當前版本（不觸發 upgrade）
@@ -352,14 +362,38 @@ async function preUpgradeBackup(): Promise<void> {
     // 版本相同，不需要預備份
     if (currentVersion >= DB_VERSION || currentVersion === 0) return;
 
+    // 先檢查 OPFS createWritable 是否可用（iOS Safari 不支援）
+    // 若不支援就跳過整個備份流程，避免白白讀取大量資料後才失敗
+    let opfsWritable = false;
+    try {
+      const root = await navigator.storage.getDirectory();
+      const testHandle = await root.getFileHandle('_opfs_test', { create: true });
+      if (typeof (testHandle as any).createWritable === 'function') {
+        const w = await (testHandle as any).createWritable();
+        await w.write('ok');
+        await w.close();
+        opfsWritable = true;
+      }
+      // 清理測試檔案
+      await root.removeEntry('_opfs_test').catch(() => {});
+    } catch {
+      // createWritable 不可用
+    }
+    if (!opfsWritable) {
+      console.log('[DB] OPFS createWritable 不可用（可能是 iOS Safari），跳過預防性備份');
+      return;
+    }
+
     console.log(`[DB] 偵測到版本升級 v${currentVersion} → v${DB_VERSION}，執行預防性 OPFS 備份...`);
 
     // 用原生 IDB 讀取關鍵 store 的資料
-    const backupStores = ['characters', 'lorebooks', 'chats', 'summaries', 'diaries', 'importantEvents', 'stickers'];
+    // 注意：只備份小型 store，chats 可能非常大（數百 MB），在行動裝置上會 OOM
+    const backupStores = ['characters', 'lorebooks', 'summaries', 'diaries', 'importantEvents', 'stickers'];
     const backup: Record<string, unknown[]> = {};
     const counts: Record<string, number> = {};
 
-    await new Promise<void>((resolve) => {
+    // 設定超時保護：行動裝置上 IDB 讀取可能很慢，超過 5 秒就放棄
+    const readPromise = new Promise<void>((resolve) => {
       const req = indexedDB.open(DB_NAME, currentVersion);
       req.onsuccess = (e) => {
         const idb = (e.target as IDBOpenDBRequest).result;
@@ -380,12 +414,7 @@ async function preUpgradeBackup(): Promise<void> {
           const getReq = store.getAll();
           getReq.onsuccess = () => {
             const records = getReq.result || [];
-            if (storeName === 'chats') {
-              // 聊天保留完整訊息（預防性備份不截斷）
-              backup[storeName] = records;
-            } else {
-              backup[storeName] = records;
-            }
+            backup[storeName] = records;
             counts[storeName] = records.length;
             pending--;
             if (pending === 0) {
@@ -405,8 +434,50 @@ async function preUpgradeBackup(): Promise<void> {
       req.onerror = () => resolve();
     });
 
+    const timeoutPromise = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        console.warn('[DB] 預防性備份讀取超時（5s），跳過備份');
+        resolve();
+      }, 5000);
+    });
+
+    await Promise.race([readPromise, timeoutPromise]);
+
     // 檢查是否有值得備份的資料
     if (!counts['characters'] || counts['characters'] === 0) return;
+
+    // 另外嘗試備份 chats（只保留最近 50 條訊息以控制記憶體用量）
+    try {
+      const chatBackup = await new Promise<unknown[]>((resolve) => {
+        const req = indexedDB.open(DB_NAME, currentVersion);
+        req.onsuccess = (e) => {
+          const idb = (e.target as IDBOpenDBRequest).result;
+          if (!idb.objectStoreNames.contains('chats')) {
+            idb.close();
+            resolve([]);
+            return;
+          }
+          const tx = idb.transaction(['chats'], 'readonly');
+          const getReq = tx.objectStore('chats').getAll();
+          getReq.onsuccess = () => {
+            const chats = (getReq.result || []).map((chat: any) => ({
+              ...chat,
+              messages: (chat.messages || []).slice(-50),
+            }));
+            idb.close();
+            resolve(chats);
+          };
+          getReq.onerror = () => { idb.close(); resolve([]); };
+        };
+        req.onerror = () => resolve([]);
+      });
+      if (chatBackup.length > 0) {
+        backup['chats'] = chatBackup;
+        counts['chats'] = chatBackup.length;
+      }
+    } catch {
+      console.warn('[DB] 備份 chats 失敗，跳過');
+    }
 
     // 寫入 OPFS
     const root = await navigator.storage.getDirectory();

@@ -32,7 +32,12 @@ interface BackupMeta {
 async function writeOPFS(filename: string, data: string): Promise<void> {
   const root = await navigator.storage.getDirectory()
   const fileHandle = await root.getFileHandle(filename, { create: true })
-  const writable = await fileHandle.createWritable()
+  // createWritable 在 iOS Safari 不支援，需要 fallback 到 createSyncAccessHandle（僅 Worker 可用）
+  // 在主線程只能用 createWritable，不支援就直接拋出讓外層 catch
+  if (typeof (fileHandle as any).createWritable !== 'function') {
+    throw new Error('OPFS createWritable 不可用（可能是 iOS Safari）')
+  }
+  const writable = await (fileHandle as any).createWritable()
   await writable.write(data)
   await writable.close()
 }
