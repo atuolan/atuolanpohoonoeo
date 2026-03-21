@@ -8,7 +8,7 @@
 export interface SimilarityResult {
   id: string
   sourceId: string
-  sourceType: 'summary' | 'diary'
+  sourceType: 'summary' | 'diary' | 'event'
   score: number
   content?: string
 }
@@ -47,7 +47,7 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 interface CandidateItem {
   id: string
   sourceId: string
-  sourceType: 'summary' | 'diary'
+  sourceType: 'summary' | 'diary' | 'event'
   vector: Float32Array
 }
 

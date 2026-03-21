@@ -2549,6 +2549,20 @@ async function recordGiftToImportantEvents(giftName: string) {
     await db.put(DB_STORES.IMPORTANT_EVENTS, plainData);
 
     console.log(`[ChatScreen] 禮物事件已記錄到重要事件紀錄本:`, event.content);
+
+    // 為禮物事件生成向量嵌入（背景執行）
+    if (settingsStore.vectorMemoryEnabled && currentChatId.value) {
+      import('@/services/memoryRetriever').then(({ MemoryRetrieverService }) => {
+        const retriever = new MemoryRetrieverService();
+        retriever.generateAndStoreEmbedding(
+          event.id,
+          'event',
+          event.content,
+          currentChatId.value!,
+          characterId,
+        ).catch((e) => console.warn('[重要事件] 禮物事件嵌入失敗:', e));
+      });
+    }
   } catch (e) {
     console.error("[ChatScreen] 記錄禮物事件失敗:", e);
   }
@@ -3401,8 +3415,41 @@ async function triggerAIResponse(options?: {
       console.log('[向量記憶] ℹ️ 總結讀取模式為「全部」，向量檢索不適用，跳過');
     }
 
-    // 準備重要事件數據
-    const eventsToSend = await loadImportantEventsForPrompt();
+    // 準備重要事件數據（向量記憶啟用時，從檢索結果中分離事件類型）
+    let eventsToSend: Array<{
+      id: string;
+      content: string;
+      category?: string;
+      priority?: number;
+    }> = [];
+
+    if (settingsStore.vectorMemoryEnabled && vectorMemories && vectorMemories.length > 0) {
+      // 從向量檢索結果中提取 event 類型的記憶
+      const vectorEvents = vectorMemories.filter((m) => m.sourceType === 'event');
+      // 非 event 類型的保留在 vectorMemories 中（總結/日記）
+      vectorMemories = vectorMemories.filter((m) => m.sourceType !== 'event');
+
+      if (vectorEvents.length > 0) {
+        eventsToSend = vectorEvents.map((m) => ({
+          id: m.sourceId,
+          content: m.content,
+        }));
+        console.log(`[向量記憶] 📋 從檢索結果分離出 ${vectorEvents.length} 條重要事件`);
+      }
+
+      // 補充：始終注入高優先級事件（priority=1），即使向量未命中
+      const allEvents = await loadImportantEventsForPrompt();
+      const highPriorityEvents = allEvents.filter(
+        (e) => e.priority === 1 && !eventsToSend.some((ve) => ve.id === e.id),
+      );
+      if (highPriorityEvents.length > 0) {
+        eventsToSend.push(...highPriorityEvents);
+        console.log(`[向量記憶] ⭐ 補充 ${highPriorityEvents.length} 條高優先級事件`);
+      }
+    } else {
+      // 向量記憶未啟用，使用全量載入（原有行為）
+      eventsToSend = await loadImportantEventsForPrompt();
+    }
 
     // 準備天氣數據
     const weatherInfoToSend =

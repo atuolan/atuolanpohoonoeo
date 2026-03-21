@@ -195,6 +195,16 @@
               <span class="event-time">{{ formatTime(event.timestamp) }}</span>
               <button
                 v-if="!multiSelectMode"
+                class="icon-btn"
+                title="關鍵詞"
+                @click.stop="openKeywordsPopup(event)"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                  <path d="M17.63 5.84C17.27 5.33 16.67 5 16 5L5 5.01C3.9 5.01 3 5.9 3 7v10c0 1.1.9 1.99 2 1.99L16 19c.67 0 1.27-.33 1.63-.84L22 12l-4.37-6.16z" />
+                </svg>
+              </button>
+              <button
+                v-if="!multiSelectMode"
                 class="btn-delete"
                 @click.stop="deleteEvent(event.id)"
               >
@@ -249,6 +259,16 @@
                 tag
               }}</span>
             </div>
+
+            <!-- 向量關鍵詞預覽 -->
+            <div v-if="event.vectorKeywords && event.vectorKeywords.length > 0" class="keywords-preview">
+              <span
+                v-for="kw in event.vectorKeywords.slice(0, 6)"
+                :key="kw"
+                class="keyword-tag-mini"
+              >{{ kw }}</span>
+              <span v-if="event.vectorKeywords.length > 6" class="keyword-more">+{{ event.vectorKeywords.length - 6 }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -289,6 +309,48 @@
       </div>
     </Transition>
   </Teleport>
+
+  <!-- 關鍵詞編輯彈窗 -->
+  <Teleport to="body">
+    <div v-if="keywordsEventId" class="keywords-overlay" @click="closeKeywordsPopup">
+      <div class="keywords-popup" @click.stop>
+        <div class="keywords-popup-header">
+          <h4>檢索關鍵詞</h4>
+          <button class="close-btn" @click="closeKeywordsPopup">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+            </svg>
+          </button>
+        </div>
+        <p class="keywords-hint">這些關鍵詞用於向量記憶檢索匹配。你可以刪除不需要的或新增自訂關鍵詞。保存後會自動重新生成向量嵌入。</p>
+        <button class="keywords-reextract-btn" @click="reExtractKeywords">🔄 重新提取</button>
+        <div class="keywords-tags">
+          <span
+            v-for="(kw, idx) in keywordsEditing"
+            :key="idx"
+            class="keyword-tag"
+          >
+            {{ kw }}
+            <button class="keyword-remove" @click="removeKeyword(idx)">×</button>
+          </span>
+          <span v-if="keywordsEditing.length === 0" class="keywords-empty">尚無關鍵詞</span>
+        </div>
+        <div class="keywords-add-row">
+          <input
+            v-model="newKeywordInput"
+            class="keywords-input"
+            placeholder="輸入新關鍵詞..."
+            @keydown.enter.prevent="addKeyword"
+          />
+          <button class="keywords-add-btn" @click="addKeyword">新增</button>
+        </div>
+        <div class="keywords-popup-footer">
+          <button class="btn-cancel" @click="closeKeywordsPopup">取消</button>
+          <button class="btn-save" @click="saveKeywords">保存</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -304,12 +366,15 @@ import {
     createImportantEvent,
 } from "@/types/importantEvents";
 import { computed, onMounted, ref } from "vue";
+import { useSettingsStore } from "@/stores/settings";
 
 const props = defineProps<{
   characterId: string;
   characterName: string;
   chatId?: string;
 }>();
+
+const settingsStore = useSettingsStore();
 
 const emit = defineEmits<{
   close: [];
@@ -338,6 +403,11 @@ const editingEventId = ref<string | null>(null);
 const editContent = ref("");
 const expandEditMode = ref(false);
 
+// 關鍵詞編輯
+const keywordsEventId = ref<string | null>(null);
+const keywordsEditing = ref<string[]>([]);
+const newKeywordInput = ref('');
+
 function startEdit(event: ImportantEvent) {
   if (multiSelectMode.value) return;
   editingEventId.value = event.id;
@@ -365,6 +435,73 @@ function saveEditFromExpand() {
     saveEdit(editingEventId.value);
   }
   expandEditMode.value = false;
+}
+
+// ===== 關鍵詞查看/編輯 =====
+function openKeywordsPopup(event: ImportantEvent) {
+  keywordsEventId.value = event.id;
+  // 每次打開都重新提取，避免顯示舊版提取器產生的垃圾關鍵詞
+  reExtractKeywords();
+  newKeywordInput.value = '';
+}
+
+/** 重新從事件內容提取關鍵詞（覆蓋現有） */
+function reExtractKeywords() {
+  const id = keywordsEventId.value;
+  if (!id || !eventsLog.value) return;
+  const event = eventsLog.value.events.find((e) => e.id === id);
+  if (!event) return;
+  import('@/utils/summaryKeywordExtractor').then(({ extractSummaryKeywords }) => {
+    keywordsEditing.value = extractSummaryKeywords(event.content);
+  });
+}
+
+function closeKeywordsPopup() {
+  keywordsEventId.value = null;
+  keywordsEditing.value = [];
+  newKeywordInput.value = '';
+}
+
+function removeKeyword(index: number) {
+  keywordsEditing.value.splice(index, 1);
+}
+
+function addKeyword() {
+  const kw = newKeywordInput.value.trim();
+  if (kw && !keywordsEditing.value.includes(kw)) {
+    keywordsEditing.value.push(kw);
+  }
+  newKeywordInput.value = '';
+}
+
+async function saveKeywords() {
+  const id = keywordsEventId.value;
+  if (!id || !eventsLog.value) return;
+
+  const event = eventsLog.value.events.find((e) => e.id === id);
+  if (event) {
+    event.vectorKeywords = [...keywordsEditing.value];
+    saveEventsLog();
+
+    // 重新生成向量嵌入（帶上新關鍵詞）
+    if (settingsStore.vectorMemoryEnabled && props.chatId) {
+      import('@/services/memoryRetriever').then(({ MemoryRetrieverService }) => {
+        const retriever = new MemoryRetrieverService();
+        retriever.generateAndStoreEmbedding(
+          event.id,
+          'event',
+          event.content,
+          props.chatId!,
+          props.characterId,
+          event.vectorKeywords,
+        ).then(() => {
+          console.log(`[重要事件] 關鍵詞已保存並重新嵌入: ${id}，共 ${keywordsEditing.value.length} 個`);
+        }).catch((e) => console.warn('[重要事件] 重新嵌入失敗:', e));
+      });
+    }
+  }
+
+  closeKeywordsPopup();
 }
 
 // 計算屬性
@@ -434,6 +571,20 @@ function addEvent() {
   newEventContent.value = "";
   newEventTags.value = "";
   newEventPriority.value = 2;
+
+  // 為新事件生成向量嵌入（背景執行）
+  if (settingsStore.vectorMemoryEnabled && props.chatId) {
+    import('@/services/memoryRetriever').then(({ MemoryRetrieverService }) => {
+      const retriever = new MemoryRetrieverService();
+      retriever.generateAndStoreEmbedding(
+        event.id,
+        'event',
+        event.content,
+        props.chatId!,
+        props.characterId,
+      ).catch((e) => console.warn('[重要事件] 手動事件嵌入失敗:', e));
+    });
+  }
 }
 
 // 刪除事件
@@ -445,6 +596,11 @@ function deleteEvent(eventId: string) {
     (e) => e.id !== eventId,
   );
   saveEventsLog();
+
+  // 刪除對應的向量嵌入（背景執行）
+  import('@/db/vectorStore').then(({ deleteVectorEmbedding }) => {
+    deleteVectorEmbedding(`vec_${eventId}`).catch(() => {});
+  });
 }
 
 // 保存設置
@@ -1005,6 +1161,27 @@ onMounted(() => {
         margin-left: auto;
       }
 
+      .icon-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--color-text-muted, #9ca3af);
+        opacity: 0.6;
+        transition: all 0.2s;
+        padding: 4px;
+        display: flex;
+
+        svg {
+          width: 16px;
+          height: 16px;
+        }
+
+        &:hover {
+          opacity: 1;
+          color: var(--color-primary, #7dd3a8);
+        }
+      }
+
       .btn-delete {
         background: none;
         border: none;
@@ -1025,6 +1202,31 @@ onMounted(() => {
           color: #ef4444;
         }
       }
+    }
+
+    // 向量關鍵詞預覽
+    .keywords-preview {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+
+    .keyword-tag-mini {
+      display: inline-block;
+      padding: 1px 6px;
+      font-size: 10px;
+      border-radius: 8px;
+      background: var(--color-primary, #7dd3a8);
+      color: #fff;
+      opacity: 0.7;
+      line-height: 1.6;
+    }
+
+    .keyword-more {
+      font-size: 10px;
+      color: var(--color-text-secondary, #6b7280);
+      line-height: 1.8;
     }
 
     .event-content {
@@ -1156,6 +1358,174 @@ onMounted(() => {
     }
     &:hover {
       opacity: 1;
+    }
+  }
+}
+
+// ===== 關鍵詞編輯彈窗 =====
+.keywords-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+}
+
+.keywords-popup {
+  width: 90%;
+  max-width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+  background: var(--color-surface, white);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+
+  .keywords-popup-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+
+    h4 {
+      margin: 0;
+      font-size: 16px;
+      color: var(--color-text, #1f2937);
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      color: var(--color-text-secondary, #6b7280);
+      cursor: pointer;
+      padding: 4px;
+      svg {
+        width: 18px;
+        height: 18px;
+      }
+    }
+  }
+
+  .keywords-hint {
+    font-size: 12px;
+    color: var(--color-text-secondary, #6b7280);
+    margin: 0 0 8px;
+    line-height: 1.5;
+  }
+
+  .keywords-reextract-btn {
+    display: inline-block;
+    padding: 4px 10px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border, #e5e7eb);
+    background: var(--color-background, #f3f4f6);
+    color: var(--color-text-secondary, #6b7280);
+    cursor: pointer;
+    &:hover {
+      background: var(--color-surface-hover, #e5e7eb);
+    }
+  }
+
+  .keywords-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 36px;
+    margin-bottom: 12px;
+  }
+
+  .keyword-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    font-size: 13px;
+    border-radius: 12px;
+    background: var(--color-primary, #7dd3a8);
+    color: #fff;
+    line-height: 1.4;
+
+    .keyword-remove {
+      background: none;
+      border: none;
+      color: rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      font-size: 15px;
+      padding: 0 2px;
+      line-height: 1;
+      &:hover {
+        color: #fff;
+      }
+    }
+  }
+
+  .keywords-empty {
+    font-size: 13px;
+    color: var(--color-text-secondary, #6b7280);
+    padding: 8px 0;
+  }
+
+  .keywords-add-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .keywords-input {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border, #e5e7eb);
+    background: var(--color-surface, white);
+    color: var(--color-text, #1f2937);
+    font-size: 13px;
+    outline: none;
+    &:focus {
+      border-color: var(--color-primary, #7dd3a8);
+    }
+  }
+
+  .keywords-add-btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: none;
+    background: var(--color-primary, #7dd3a8);
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    &:hover {
+      opacity: 0.9;
+    }
+  }
+
+  .keywords-popup-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+
+    .btn-cancel, .btn-save {
+      padding: 8px 20px;
+      border-radius: 8px;
+      border: none;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .btn-cancel {
+      background: var(--color-background, #f3f4f6);
+      color: var(--color-text-secondary, #6b7280);
+      border: 1px solid var(--color-border, #e5e7eb);
+    }
+
+    .btn-save {
+      background: var(--color-primary, #7dd3a8);
+      color: #fff;
     }
   }
 }

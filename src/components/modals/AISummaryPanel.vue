@@ -248,282 +248,300 @@
 
         <!-- 總結設置 Tab -->
         <div v-show="activeTab === 'settings'" class="tab-content">
-          <p class="description">
-            控制總結觸發時機、AI 讀取的歷史總結數量和實際對話消息數量
-          </p>
-
-          <div class="setting-section">
-            <label class="section-label">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"
-                />
-              </svg>
-              計算模式
-            </label>
-            <div class="radio-group horizontal">
-              <label
-                class="radio-option compact"
-                :class="{ active: localSettings.intervalMode === 'message' }"
-              >
-                <input
-                  v-model="localSettings.intervalMode"
-                  type="radio"
-                  value="message"
-                  class="radio-input"
-                />
-                <div class="option-content">
-                  <div class="option-title">消息數</div>
-                </div>
-              </label>
-              <label
-                class="radio-option compact"
-                :class="{ active: localSettings.intervalMode === 'turn' }"
-              >
-                <input
-                  v-model="localSettings.intervalMode"
-                  type="radio"
-                  value="turn"
-                  class="radio-input"
-                />
-                <div class="option-content">
-                  <div class="option-title">輪次</div>
-                </div>
-              </label>
-            </div>
+          <!-- 設置子分頁 -->
+          <div class="settings-sub-tabs">
+            <button
+              class="sub-tab-item"
+              :class="{ active: settingsSubTab === 'trigger' }"
+              @click="settingsSubTab = 'trigger'"
+            >觸發設定</button>
+            <button
+              class="sub-tab-item"
+              :class="{ active: settingsSubTab === 'read' }"
+              @click="settingsSubTab = 'read'"
+            >總結讀取</button>
+            <button
+              class="sub-tab-item"
+              :class="{ active: settingsSubTab === 'vector' }"
+              @click="settingsSubTab = 'vector'"
+            >向量記憶</button>
           </div>
 
-          <div class="setting-section">
-            <label class="section-label">總結間隔</label>
-            <div class="count-input-wrapper">
-              <input
-                v-model.number="currentSummaryInterval"
-                type="range"
-                :min="localSettings.intervalMode === 'turn' ? 5 : 10"
-                :max="localSettings.intervalMode === 'turn' ? 50 : 100"
-                :step="localSettings.intervalMode === 'turn' ? 1 : 5"
-                class="range-input"
-              />
-              <div class="count-display">
-                <span class="count-number">{{ currentSummaryInterval }}</span>
-                <span class="count-label">{{
-                  localSettings.intervalMode === "turn" ? "輪" : "條"
-                }}</span>
+          <!-- 觸發設定 -->
+          <div v-show="settingsSubTab === 'trigger'">
+            <p class="description">
+              控制總結觸發時機、AI 讀取的歷史總結數量和實際對話消息數量
+            </p>
+
+            <div class="setting-section">
+              <label class="section-label">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"
+                  />
+                </svg>
+                計算模式
+              </label>
+              <div class="radio-group horizontal">
+                <label
+                  class="radio-option compact"
+                  :class="{ active: localSettings.intervalMode === 'message' }"
+                >
+                  <input
+                    v-model="localSettings.intervalMode"
+                    type="radio"
+                    value="message"
+                    class="radio-input"
+                  />
+                  <div class="option-content">
+                    <div class="option-title">消息數</div>
+                  </div>
+                </label>
+                <label
+                  class="radio-option compact"
+                  :class="{ active: localSettings.intervalMode === 'turn' }"
+                >
+                  <input
+                    v-model="localSettings.intervalMode"
+                    type="radio"
+                    value="turn"
+                    class="radio-input"
+                  />
+                  <div class="option-content">
+                    <div class="option-title">輪次</div>
+                  </div>
+                </label>
               </div>
             </div>
-          </div>
 
-          <div class="setting-section">
-            <label class="section-label">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"
-                />
-              </svg>
-              日記生成間隔
-            </label>
-            <div class="count-input-wrapper">
-              <input
-                v-model.number="currentDiaryInterval"
-                type="range"
-                :min="localSettings.intervalMode === 'turn' ? 5 : 10"
-                :max="localSettings.intervalMode === 'turn' ? 50 : 100"
-                :step="localSettings.intervalMode === 'turn' ? 1 : 5"
-                class="range-input"
-              />
-              <div class="count-display">
-                <span class="count-number">{{ currentDiaryInterval }}</span>
-                <span class="count-label">{{
-                  localSettings.intervalMode === "turn" ? "輪" : "條"
-                }}</span>
-              </div>
-            </div>
-            <div class="count-hint">角色自動寫日記的觸發間隔</div>
-          </div>
-
-          <div class="setting-section">
-            <label class="section-label">實際讀取消息</label>
-            <div class="radio-group horizontal" style="margin-bottom: 10px">
-              <label
-                class="radio-option compact"
-                :class="{
-                  active: localSettings.actualMessageMode === 'message',
-                }"
-              >
-                <input
-                  v-model="localSettings.actualMessageMode"
-                  type="radio"
-                  value="message"
-                  class="radio-input"
-                />
-                <div class="option-content">
-                  <div class="option-title">按消息數</div>
-                </div>
-              </label>
-              <label
-                class="radio-option compact"
-                :class="{ active: localSettings.actualMessageMode === 'turn' }"
-              >
-                <input
-                  v-model="localSettings.actualMessageMode"
-                  type="radio"
-                  value="turn"
-                  class="radio-input"
-                />
-                <div class="option-content">
-                  <div class="option-title">按輪次</div>
-                </div>
-              </label>
-            </div>
-            <div class="count-input-wrapper">
-              <input
-                v-model.number="localSettings.actualMessageCount"
-                type="range"
-                :min="localSettings.actualMessageMode === 'turn' ? 5 : 10"
-                :max="localSettings.actualMessageMode === 'turn' ? 50 : 100"
-                :step="localSettings.actualMessageMode === 'turn' ? 1 : 5"
-                class="range-input"
-              />
-              <div class="count-display">
-                <span class="count-number">{{
-                  localSettings.actualMessageCount
-                }}</span>
-                <span class="count-label">{{
-                  localSettings.actualMessageMode === "turn" ? "輪" : "條"
-                }}</span>
-              </div>
-            </div>
-            <div class="count-hint">AI 每次回覆時實際讀取的對話歷史</div>
-          </div>
-
-          <div class="section-divider">
-            <span class="divider-text">總結讀取設定</span>
-          </div>
-
-          <div class="setting-section">
-            <label class="section-label">讀取模式</label>
-            <div class="radio-group">
-              <label
-                class="radio-option"
-                :class="{ active: localSettings.summaryReadMode === 'recent' }"
-              >
-                <input
-                  v-model="localSettings.summaryReadMode"
-                  type="radio"
-                  value="recent"
-                  class="radio-input"
-                />
-                <div class="option-content">
-                  <div class="option-title">讀取最近 N 條總結</div>
-                  <div class="option-desc">節省 tokens，適合長期對話</div>
-                </div>
-              </label>
-              <label
-                class="radio-option"
-                :class="{ active: localSettings.summaryReadMode === 'all' }"
-              >
-                <input
-                  v-model="localSettings.summaryReadMode"
-                  type="radio"
-                  value="all"
-                  class="radio-input"
-                />
-                <div class="option-content">
-                  <div class="option-title">讀取所有總結</div>
-                  <div class="option-desc">記憶更完整，但會消耗更多 tokens</div>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          <Transition name="fade">
-            <div
-              v-if="localSettings.summaryReadMode === 'recent'"
-              class="setting-section"
-            >
-              <label class="section-label">讀取數量</label>
+            <div class="setting-section">
+              <label class="section-label">總結間隔</label>
               <div class="count-input-wrapper">
                 <input
-                  v-model.number="localSettings.summaryReadCount"
+                  v-model.number="currentSummaryInterval"
                   type="range"
-                  min="1"
-                  max="20"
+                  :min="localSettings.intervalMode === 'turn' ? 5 : 10"
+                  :max="localSettings.intervalMode === 'turn' ? 50 : 100"
+                  :step="localSettings.intervalMode === 'turn' ? 1 : 5"
+                  class="range-input"
+                />
+                <div class="count-display">
+                  <span class="count-number">{{ currentSummaryInterval }}</span>
+                  <span class="count-label">{{
+                    localSettings.intervalMode === "turn" ? "輪" : "條"
+                  }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="setting-section">
+              <label class="section-label">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"
+                  />
+                </svg>
+                日記生成間隔
+              </label>
+              <div class="count-input-wrapper">
+                <input
+                  v-model.number="currentDiaryInterval"
+                  type="range"
+                  :min="localSettings.intervalMode === 'turn' ? 5 : 10"
+                  :max="localSettings.intervalMode === 'turn' ? 50 : 100"
+                  :step="localSettings.intervalMode === 'turn' ? 1 : 5"
+                  class="range-input"
+                />
+                <div class="count-display">
+                  <span class="count-number">{{ currentDiaryInterval }}</span>
+                  <span class="count-label">{{
+                    localSettings.intervalMode === "turn" ? "輪" : "條"
+                  }}</span>
+                </div>
+              </div>
+              <div class="count-hint">角色自動寫日記的觸發間隔</div>
+            </div>
+
+            <div class="setting-section">
+              <label class="section-label">實際讀取消息</label>
+              <div class="radio-group horizontal" style="margin-bottom: 10px">
+                <label
+                  class="radio-option compact"
+                  :class="{
+                    active: localSettings.actualMessageMode === 'message',
+                  }"
+                >
+                  <input
+                    v-model="localSettings.actualMessageMode"
+                    type="radio"
+                    value="message"
+                    class="radio-input"
+                  />
+                  <div class="option-content">
+                    <div class="option-title">按消息數</div>
+                  </div>
+                </label>
+                <label
+                  class="radio-option compact"
+                  :class="{ active: localSettings.actualMessageMode === 'turn' }"
+                >
+                  <input
+                    v-model="localSettings.actualMessageMode"
+                    type="radio"
+                    value="turn"
+                    class="radio-input"
+                  />
+                  <div class="option-content">
+                    <div class="option-title">按輪次</div>
+                  </div>
+                </label>
+              </div>
+              <div class="count-input-wrapper">
+                <input
+                  v-model.number="localSettings.actualMessageCount"
+                  type="range"
+                  :min="localSettings.actualMessageMode === 'turn' ? 5 : 10"
+                  :max="localSettings.actualMessageMode === 'turn' ? 50 : 100"
+                  :step="localSettings.actualMessageMode === 'turn' ? 1 : 5"
                   class="range-input"
                 />
                 <div class="count-display">
                   <span class="count-number">{{
-                    localSettings.summaryReadCount
+                    localSettings.actualMessageCount
                   }}</span>
-                  <span class="count-label">條總結</span>
+                  <span class="count-label">{{
+                    localSettings.actualMessageMode === "turn" ? "輪" : "條"
+                  }}</span>
+                </div>
+              </div>
+              <div class="count-hint">AI 每次回覆時實際讀取的對話歷史</div>
+            </div>
+          </div>
+
+          <!-- 總結讀取 -->
+          <div v-show="settingsSubTab === 'read'">
+            <div class="setting-section">
+              <label class="section-label">讀取模式</label>
+              <div class="radio-group">
+                <label
+                  class="radio-option"
+                  :class="{ active: localSettings.summaryReadMode === 'recent' }"
+                >
+                  <input
+                    v-model="localSettings.summaryReadMode"
+                    type="radio"
+                    value="recent"
+                    class="radio-input"
+                  />
+                  <div class="option-content">
+                    <div class="option-title">讀取最近 N 條總結</div>
+                    <div class="option-desc">節省 tokens，適合長期對話</div>
+                  </div>
+                </label>
+                <label
+                  class="radio-option"
+                  :class="{ active: localSettings.summaryReadMode === 'all' }"
+                >
+                  <input
+                    v-model="localSettings.summaryReadMode"
+                    type="radio"
+                    value="all"
+                    class="radio-input"
+                  />
+                  <div class="option-content">
+                    <div class="option-title">讀取所有總結</div>
+                    <div class="option-desc">記憶更完整，但會消耗更多 tokens</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <Transition name="fade">
+              <div
+                v-if="localSettings.summaryReadMode === 'recent'"
+                class="setting-section"
+              >
+                <label class="section-label">讀取數量</label>
+                <div class="count-input-wrapper">
+                  <input
+                    v-model.number="localSettings.summaryReadCount"
+                    type="range"
+                    min="1"
+                    max="20"
+                    class="range-input"
+                  />
+                  <div class="count-display">
+                    <span class="count-number">{{
+                      localSettings.summaryReadCount
+                    }}</span>
+                    <span class="count-label">條總結</span>
+                  </div>
+                </div>
+              </div>
+            </Transition>
+
+            <div class="info-section">
+              <div class="info-header">當前對話狀態</div>
+              <div class="info-grid">
+                <div class="info-item">
+                  <span class="info-label">總結數量</span>
+                  <span class="info-value">{{ summaries.length }} 條</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">將讀取</span>
+                  <span class="info-value highlight"
+                    >{{
+                      localSettings.summaryReadMode === "all"
+                        ? summaries.length
+                        : Math.min(
+                            localSettings.summaryReadCount,
+                            summaries.length,
+                          )
+                    }}
+                    條</span
+                  >
+                </div>
+                <div class="info-item">
+                  <span class="info-label">預估 tokens</span>
+                  <span class="info-value">{{ estimatedTokens }} tokens</span>
                 </div>
               </div>
             </div>
-          </Transition>
-
-          <!-- 向量記憶設定 -->
-          <div class="section-divider">
-            <span class="divider-text">向量記憶（語義檢索）</span>
           </div>
 
-          <div class="setting-section">
-            <p class="count-hint" style="margin-bottom: 4px;">
-              {{ settingsStore.vectorMemoryEnabled ? '✅ 已啟用' : '⚪ 未啟用' }}（全域開關在「設定 → 向量記憶 Embedding」）
-            </p>
-          </div>
-
-          <!-- 重建嵌入 + 統計（不需要開關，跟隨全域設定） -->
-          <div class="setting-section">
-            <div class="info-grid" style="margin-bottom: 10px;">
-              <div class="info-item">
-                <span class="info-label">嵌入數量</span>
-                <span class="info-value">{{ vectorStats.count }} 條</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">預估大小</span>
-                <span class="info-value">{{ vectorStats.sizeText }}</span>
-              </div>
+          <!-- 向量記憶 -->
+          <div v-show="settingsSubTab === 'vector'">
+            <div class="setting-section">
+              <p class="count-hint" style="margin-bottom: 4px;">
+                {{ settingsStore.vectorMemoryEnabled ? '✅ 已啟用' : '⚪ 未啟用' }}（全域開關在「設定 → 向量記憶 Embedding」）
+              </p>
             </div>
-            <button
-              class="rebuild-btn"
-              :disabled="isRebuilding"
-              @click="rebuildVectors"
-            >
-              <svg v-if="!isRebuilding" viewBox="0 0 24 24" fill="currentColor" style="width: 14px; height: 14px;">
-                <path d="M19 8l-4 4h3c0 3.31-2.69 6-6 6-1.01 0-1.97-.25-2.8-.7l-1.46 1.46C8.97 19.54 10.43 20 12 20c4.42 0 8-3.58 8-8h3l-4-4zM6 12c0-3.31 2.69-6 6-6 1.01 0 1.97.25 2.8.7l1.46-1.46C15.03 4.46 13.57 4 12 4c-4.42 0-8 3.58-8 8H1l4 4 4-4H6z"/>
-              </svg>
-              <span v-if="isRebuilding">重建中... {{ rebuildProgress.processed }}/{{ rebuildProgress.total }}</span>
-              <span v-else>重建所有嵌入</span>
-            </button>
-            <div class="count-hint" style="margin-top: 6px; line-height: 1.5;">
-              將此聊天的所有總結重新轉為向量嵌入。<br/>
-              適用於：首次啟用向量記憶時補建舊總結、或嵌入資料異常需要修復。
-            </div>
-          </div>
 
-          <div class="info-section">
-            <div class="info-header">當前對話狀態</div>
-            <div class="info-grid">
-              <div class="info-item">
-                <span class="info-label">總結數量</span>
-                <span class="info-value">{{ summaries.length }} 條</span>
+            <div class="setting-section">
+              <div class="info-grid" style="margin-bottom: 10px;">
+                <div class="info-item">
+                  <span class="info-label">嵌入數量</span>
+                  <span class="info-value">{{ vectorStats.count }} 條</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">預估大小</span>
+                  <span class="info-value">{{ vectorStats.sizeText }}</span>
+                </div>
               </div>
-              <div class="info-item">
-                <span class="info-label">將讀取</span>
-                <span class="info-value highlight"
-                  >{{
-                    localSettings.summaryReadMode === "all"
-                      ? summaries.length
-                      : Math.min(
-                          localSettings.summaryReadCount,
-                          summaries.length,
-                        )
-                  }}
-                  條</span
-                >
-              </div>
-              <div class="info-item">
-                <span class="info-label">預估 tokens</span>
-                <span class="info-value">{{ estimatedTokens }} tokens</span>
+              <button
+                class="rebuild-btn"
+                :disabled="isRebuilding"
+                @click="rebuildVectors"
+              >
+                <svg v-if="!isRebuilding" viewBox="0 0 24 24" fill="currentColor" style="width: 14px; height: 14px;">
+                  <path d="M19 8l-4 4h3c0 3.31-2.69 6-6 6-1.01 0-1.97-.25-2.8-.7l-1.46 1.46C8.97 19.54 10.43 20 12 20c4.42 0 8-3.58 8-8h3l-4-4zM6 12c0-3.31 2.69-6 6-6 1.01 0 1.97.25 2.8.7l1.46-1.46C15.03 4.46 13.57 4 12 4c-4.42 0-8 3.58-8 8H1l4 4 4-4H6z"/>
+                </svg>
+                <span v-if="isRebuilding">重建中... {{ rebuildProgress.processed }}/{{ rebuildProgress.total }}</span>
+                <span v-else>重建所有嵌入</span>
+              </button>
+              <div class="count-hint" style="margin-top: 6px; line-height: 1.5;">
+                將此聊天的所有總結重新轉為向量嵌入。<br/>
+                適用於：首次啟用向量記憶時補建舊總結、或嵌入資料異常需要修復。
               </div>
             </div>
           </div>
@@ -1068,6 +1086,7 @@ const emit = defineEmits<{
 }>();
 
 const activeTab = ref<"history" | "settings" | "events" | "diary">("history");
+const settingsSubTab = ref<'trigger' | 'read' | 'vector'>('trigger');
 const settingsStore = useSettingsStore();
 
 // ===== 總結編輯相關 =====
@@ -1417,6 +1436,20 @@ function addEvent() {
   saveEventsLog();
   newEventContent.value = "";
   newEventPriority.value = 2;
+
+  // 為新事件生成向量嵌入（背景執行）
+  if (settingsStore.vectorMemoryEnabled && props.chatId) {
+    import('@/services/memoryRetriever').then(({ MemoryRetrieverService }) => {
+      const retriever = new MemoryRetrieverService();
+      retriever.generateAndStoreEmbedding(
+        event.id,
+        'event',
+        event.content,
+        props.chatId,
+        props.characterId,
+      ).catch((e) => console.warn('[重要事件] 手動事件嵌入失敗:', e));
+    });
+  }
 }
 
 function deleteEvent(eventId: string) {
@@ -1425,6 +1458,11 @@ function deleteEvent(eventId: string) {
     (e) => e.id !== eventId,
   );
   saveEventsLog();
+
+  // 刪除對應的向量嵌入（背景執行）
+  import('@/db/vectorStore').then(({ deleteVectorEmbedding }) => {
+    deleteVectorEmbedding(`vec_${eventId}`).catch(() => {});
+  });
 }
 
 function startEditEvent(event: {
@@ -2092,6 +2130,35 @@ onMounted(() => {
   background: var(--color-surface, white);
   padding: 14px;
   border-radius: 12px;
+}
+
+.settings-sub-tabs {
+  display: flex;
+  gap: 0px;
+  margin: 0px 0px 16px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.sub-tab-item {
+  flex: 1;
+  padding: 7px 0;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #6b7280);
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &.active {
+    background: var(--color-surface, white);
+    color: var(--color-text, #1f2937);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
 }
 
 .section-label {

@@ -32,6 +32,8 @@ export interface ImportantEvent {
   source?: ImportantEventSource;
   /** 標籤 */
   tags?: string[];
+  /** 向量檢索關鍵詞（用於向量記憶匹配，可手動編輯） */
+  vectorKeywords?: string[];
   /** 關聯的消息 ID */
   relatedMessageId?: string;
 }

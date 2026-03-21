@@ -257,7 +257,7 @@ export interface PromptBuilderOptions {
   /** 向量檢索到的記憶（啟用向量記憶時由外部傳入） */
   vectorMemories?: Array<{
     sourceId: string;
-    sourceType: 'summary' | 'diary';
+    sourceType: 'summary' | 'diary' | 'event';
     content: string;
     score: number;
     createdAt: number;

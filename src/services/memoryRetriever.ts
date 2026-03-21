@@ -31,7 +31,7 @@ type MessageLike = Pick<ChatMessage, 'content'>
 /** 檢索到的記憶片段 */
 export interface RetrievedMemory {
   sourceId: string
-  sourceType: 'summary' | 'diary'
+  sourceType: 'summary' | 'diary' | 'event'
   content: string
   score: number
   createdAt: number
@@ -41,7 +41,7 @@ export interface RetrievedMemory {
 interface CandidateItem {
   id: string
   sourceId: string
-  sourceType: 'summary' | 'diary'
+  sourceType: 'summary' | 'diary' | 'event'
   vector: Float32Array
 }
 
@@ -136,16 +136,17 @@ export class MemoryRetrieverService {
       const final = this.finalDedup(expanded)
 
       // 輸出最終結果摘要
-      if (final.length > 0) {
-        console.log(`[向量記憶] ✅ 最終檢索結果: ${final.length} 條記憶注入提示詞`)
-        for (const m of final.slice(0, topK)) {
+      const result = final.slice(0, topK)
+      if (result.length > 0) {
+        console.log(`[向量記憶] ✅ 最終檢索結果: ${result.length} 條記憶注入提示詞（擴展後 ${final.length} 條，topK=${topK} 截斷）`)
+        for (const m of result) {
           console.log(`  📌 [${m.sourceType}] ${m.sourceId} | 分數: ${m.score.toFixed(3)} | 內容: "${m.content.slice(0, 80)}..."`)
         }
       } else {
         console.log('[向量記憶] ℹ️ 未檢索到符合門檻的記憶')
       }
 
-      return final.slice(0, topK)
+      return result
     } catch (error) {
       console.error('[向量記憶] ❌ 檢索失敗，返回空陣列:', error)
       return []
@@ -160,7 +161,7 @@ export class MemoryRetrieverService {
    */
   async generateAndStoreEmbedding(
     sourceId: string,
-    sourceType: 'summary' | 'diary',
+    sourceType: 'summary' | 'diary' | 'event',
     content: string,
     chatId: string,
     characterId: string,
@@ -197,7 +198,7 @@ export class MemoryRetrieverService {
    * 使用 buildVectorDocument 將每條原文轉換為精煉的向量文件
    */
   async generateBatchEmbeddings(
-    items: Array<{ sourceId: string; sourceType: 'summary' | 'diary'; content: string; keywords?: string[] }>,
+    items: Array<{ sourceId: string; sourceType: 'summary' | 'diary' | 'event'; content: string; keywords?: string[] }>,
     chatId: string,
     characterId: string,
     onProgress?: (processed: number, total: number) => void,
@@ -266,12 +267,29 @@ export class MemoryRetrieverService {
       }
     }
 
-    const items: Array<{ sourceId: string; sourceType: 'summary'; content: string; keywords?: string[] }> = summaries.map((s) => ({
+    const items: Array<{ sourceId: string; sourceType: 'summary' | 'event'; content: string; keywords?: string[] }> = summaries.map((s) => ({
       sourceId: s.id,
       sourceType: 'summary' as const,
       content: s.content,
       keywords: s.keywords,
     }))
+
+    // 載入重要事件並加入重建列表
+    const allLogs = await db.getAll(DB_STORES.IMPORTANT_EVENTS as 'importantEvents')
+    const chatLog = allLogs.find((log: any) => log.chatId === chatId || log.id === chatId)
+    if (chatLog && chatLog.events && chatLog.events.length > 0) {
+      console.log(`[向量記憶] 📋 找到 ${chatLog.events.length} 條重要事件`)
+      for (const event of chatLog.events) {
+        if (event.content) {
+          items.push({
+            sourceId: event.id,
+            sourceType: 'event',
+            content: event.content,
+            keywords: event.vectorKeywords,
+          })
+        }
+      }
+    }
 
     console.log(`[向量記憶] 🚀 開始批量嵌入 ${items.length} 條（characterNames: ${characterNames?.join(', ') ?? '無'}）`)
     await this.generateBatchEmbeddings(items, chatId, characterId, onProgress, characterNames)
@@ -293,7 +311,7 @@ export class MemoryRetrieverService {
       }))
   }
 
-  /** 關鍵詞擴展搜尋：對所有總結文本執行關鍵詞匹配（日記不參與向量化） */
+  /** 關鍵詞擴展搜尋：對總結和重要事件執行關鍵詞匹配 */
   private async keywordSearch(
     queryText: string,
     chatId: string,
@@ -302,11 +320,11 @@ export class MemoryRetrieverService {
     const expansion = expandKeywords(queryText)
     if (expansion.expandedTerms.length === 0) return []
 
-    // 載入所有總結的文本
     const db = await getDatabase()
-    const summaries = await db.getAllFromIndex(DB_STORES.SUMMARIES as 'summaries', 'by-chat', chatId)
-
     const results: SimilarityResult[] = []
+
+    // 載入所有總結的文本
+    const summaries = await db.getAllFromIndex(DB_STORES.SUMMARIES as 'summaries', 'by-chat', chatId)
 
     for (const s of summaries) {
       // 優先使用用戶編輯的關鍵詞進行匹配
@@ -339,6 +357,44 @@ export class MemoryRetrieverService {
           sourceType: 'summary',
           score,
         })
+      }
+    }
+
+    // 載入重要事件並進行關鍵詞匹配
+    const allLogs = await db.getAll(DB_STORES.IMPORTANT_EVENTS as 'importantEvents')
+    const chatLog = allLogs.find((log: any) => log.chatId === chatId || log.id === chatId)
+    if (chatLog?.events) {
+      for (const event of chatLog.events) {
+        if (!event.content) continue
+        let matched = false
+        let score = 0
+
+        // 優先使用向量關鍵詞匹配
+        if (event.vectorKeywords && event.vectorKeywords.length > 0) {
+          const hits = event.vectorKeywords.filter((kw: string) =>
+            expansion.expandedTerms.some(et => et.includes(kw) || kw.includes(et))
+          )
+          if (hits.length >= 1) {
+            matched = true
+            score = Math.min(0.8, Math.max(0.3, hits.length / event.vectorKeywords.length))
+          }
+        }
+
+        // 同時對內容文本做匹配
+        const contentMatch = keywordMatch(event.content, expansion.expandedTerms, characterNames)
+        if (contentMatch.matched && contentMatch.score > score) {
+          matched = true
+          score = contentMatch.score
+        }
+
+        if (matched) {
+          results.push({
+            id: `vec_${event.id}`,
+            sourceId: event.id,
+            sourceType: 'event',
+            score,
+          })
+        }
       }
     }
 
@@ -404,15 +460,25 @@ export class MemoryRetrieverService {
   private async resolveSourceContent(
     db: Awaited<ReturnType<typeof getDatabase>>,
     sourceId: string,
-    sourceType: 'summary' | 'diary',
+    sourceType: 'summary' | 'diary' | 'event',
   ): Promise<string | null> {
     try {
       if (sourceType === 'summary') {
         const summary = await db.get(DB_STORES.SUMMARIES as 'summaries', sourceId)
         return summary?.content ?? null
-      } else {
+      } else if (sourceType === 'diary') {
         const diary = await db.get(DB_STORES.DIARIES as 'diaries', sourceId)
         return diary?.content ?? null
+      } else {
+        // event: 從 importantEvents store 中查找
+        // 重要事件的 sourceId 格式: "evt_{eventId}_{logId}"
+        // 需要遍歷所有 log 找到對應事件
+        const allLogs = await db.getAll(DB_STORES.IMPORTANT_EVENTS as 'importantEvents')
+        for (const log of allLogs) {
+          const event = log.events?.find((e: { id: string }) => e.id === sourceId)
+          if (event) return event.content ?? null
+        }
+        return null
       }
     } catch (error) {
       console.error(`[向量記憶] 無法載入來源內容 (${sourceType}: ${sourceId}):`, error)
@@ -424,15 +490,23 @@ export class MemoryRetrieverService {
   private async resolveSourceCreatedAt(
     db: Awaited<ReturnType<typeof getDatabase>>,
     sourceId: string,
-    sourceType: 'summary' | 'diary',
+    sourceType: 'summary' | 'diary' | 'event',
   ): Promise<number> {
     try {
       if (sourceType === 'summary') {
         const summary = await db.get(DB_STORES.SUMMARIES as 'summaries', sourceId)
         return summary?.createdAt ?? 0
-      } else {
+      } else if (sourceType === 'diary') {
         const diary = await db.get(DB_STORES.DIARIES as 'diaries', sourceId)
         return diary?.createdAt ?? 0
+      } else {
+        // event: 從 importantEvents store 中查找 timestamp
+        const allLogs = await db.getAll(DB_STORES.IMPORTANT_EVENTS as 'importantEvents')
+        for (const log of allLogs) {
+          const event = log.events?.find((e: { id: string }) => e.id === sourceId)
+          if (event) return event.timestamp ?? 0
+        }
+        return 0
       }
     } catch {
       return 0

@@ -59,7 +59,7 @@ export interface DiaryEntry {
 export interface VectorEmbeddingRecord {
   id: string; // 格式: "vec_{sourceId}"
   sourceId: string;
-  sourceType: "summary" | "diary";
+  sourceType: "summary" | "diary" | "event";
   chatId: string;
   characterId: string;
   vector: Float32Array | null; // null 表示 stale

@@ -189,6 +189,8 @@ export function useChatEventsExtraction(deps: {
     parsedEvents: any[],
     eventsLog: ImportantEventsLog,
   ) {
+    const newEventIds: string[] = [];
+
     for (const pe of parsedEvents) {
       const content = pe.title
         ? `${pe.title}${pe.description ? ` - ${pe.description}` : ""}`
@@ -204,6 +206,7 @@ export function useChatEventsExtraction(deps: {
       });
 
       eventsLog.events.unshift(event);
+      newEventIds.push(event.id);
     }
 
     if (eventsLog.events.length > eventsLog.settings.maxEvents) {
@@ -213,6 +216,44 @@ export function useChatEventsExtraction(deps: {
     eventsLog.updatedAt = Date.now();
     const plainData = JSON.parse(JSON.stringify(eventsLog));
     await db.put(DB_STORES.IMPORTANT_EVENTS, plainData);
+
+    // 為新事件生成向量嵌入（背景執行，不阻塞主流程）
+    const chatId = eventsLog.chatId || eventsLog.id;
+    const characterId = eventsLog.characterId;
+    if (chatId && settingsStore.vectorMemoryEnabled) {
+      _generateEventEmbeddings(eventsLog, newEventIds, chatId, characterId).catch(
+        (e) => console.warn('[重要事件] 向量嵌入生成失敗:', e),
+      );
+    }
+  }
+
+  /** 為新增的重要事件生成向量嵌入 */
+  async function _generateEventEmbeddings(
+    eventsLog: ImportantEventsLog,
+    eventIds: string[],
+    chatId: string,
+    characterId: string,
+  ) {
+    const { MemoryRetrieverService } = await import('@/services/memoryRetriever');
+    const retriever = new MemoryRetrieverService();
+
+    for (const eventId of eventIds) {
+      const event = eventsLog.events.find((e) => e.id === eventId);
+      if (!event?.content) continue;
+
+      try {
+        await retriever.generateAndStoreEmbedding(
+          event.id,
+          'event',
+          event.content,
+          chatId,
+          characterId,
+        );
+        console.log(`[重要事件] ✅ 事件嵌入成功: ${event.content.slice(0, 40)}...`);
+      } catch (e) {
+        console.warn(`[重要事件] ⚠️ 事件嵌入失敗 (${event.id}):`, e);
+      }
+    }
   }
 
   /** 自動提取重要事件 */
