@@ -86,7 +86,7 @@ export const SUMMARY_PROMPT_DEFINITIONS: PromptDefinition[] = [
     description: "需要總結的對話內容",
     category: "context",
     role: "system",
-    content: `需要總結的對話內容：
+    content: `需要總結的對話內容（日期標記 [YYYY/MM/DD] 表示該段對話發生的日期）：
 {{messagesForSummary}}`,
     system_prompt: true,
     marker: true,
@@ -114,6 +114,7 @@ export const SUMMARY_PROMPT_DEFINITIONS: PromptDefinition[] = [
 5. 重点记录关键事件和重要信息
 6. 根据{{user}}的性别信息使用正确的代词（他/她/Ta等）
 7. 💡 翻譯提示：如果使用非中文，請在後面用括號附上中文翻譯。例如：「feeling good (感覺不錯)」
+8. 📅 日期標記：對話中的 [YYYY/MM/DD] 標記代表真實日期，請在總結中使用具體日期（如「3月21日」）而非「今天」「昨天」等相對時間詞
 
 禁用词汇：一絲、不容置喙、不易察覺、心湖、石子、投入、激起漣漪、教學、權力、掌控、審視、壓迫、佔有、支配、臣服
 

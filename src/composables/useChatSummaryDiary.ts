@@ -12,6 +12,35 @@ import { MemoryRetrieverService } from "@/services/memoryRetriever";
 import { deleteVectorEmbedding, markVectorStale } from "@/db/vectorStore";
 import { extractSummaryKeywords } from "@/utils/summaryKeywordExtractor";
 
+/**
+ * 將消息列表格式化為帶日期標記的文本
+ * 當日期變化時插入 [YYYY/MM/DD] 標記，讓 AI 知道時間脈絡
+ */
+function formatMessagesWithDates(
+  messages: Message[],
+  getUserName: () => string,
+  getCharName: () => string,
+): string {
+  let lastDateStr = ''
+  const lines: string[] = []
+
+  for (const m of messages) {
+    const d = new Date(m.timestamp)
+    const dateStr = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
+
+    // 日期變化時插入日期標記
+    if (dateStr !== lastDateStr) {
+      lines.push(`[${dateStr}]`)
+      lastDateStr = dateStr
+    }
+
+    const speaker = m.role === 'user' ? getUserName() : getCharName()
+    lines.push(`${speaker}: ${m.content}`)
+  }
+
+  return lines.join('\n\n')
+}
+
 interface Message {
   id: string;
   role: "user" | "ai" | "system";
@@ -303,12 +332,11 @@ export function useChatSummaryDiary(deps: {
       const weekDays = ["日", "一", "二", "三", "四", "五", "六"];
       const currentDateTimeFull = `${currentDateTime} 星期${weekDays[now.getDay()]}`;
 
-      const recentMessagesText = messagesToUse
-        .map(
-          (m) =>
-            `${m.role === "user" ? deps.effectivePersona.value?.name || "User" : char.data.name}: ${m.content}`,
-        )
-        .join("\n\n");
+      const recentMessagesText = formatMessagesWithDates(
+        messagesToUse,
+        () => deps.effectivePersona.value?.name || "User",
+        () => char.data.name,
+      );
 
       const diaryPromptDefs = promptManagerStore.diaryPrompts;
       const diaryPromptOrder = promptManagerStore.diaryPromptOrder;
@@ -530,11 +558,11 @@ ${recentMessagesText}
       }
 
       const userName = deps.effectivePersona.value?.name || "User";
-      const recentMessages = messagesToRead
-        .map(
-          (m) => `${m.role === "user" ? userName : char.data.name}: ${m.content}`,
-        )
-        .join("\n\n");
+      const recentMessages = formatMessagesWithDates(
+        messagesToRead,
+        () => userName,
+        () => char.data.name,
+      );
 
       const summaryPrompts: Array<{
         role: "system" | "user" | "assistant";
