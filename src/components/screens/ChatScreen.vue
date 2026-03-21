@@ -885,6 +885,7 @@ const chatSummaries = ref<
     isImportant?: boolean;
     isManual?: boolean;
     isMeta?: boolean;
+    keywords?: string[];
   }>
 >([]);
 const chatDiaries = ref<
@@ -6813,6 +6814,7 @@ async function loadSummariesAndDiaries() {
       isImportant?: boolean;
       isManual?: boolean;
       isMeta?: boolean;
+      keywords?: string[];
     }>(DB_STORES.SUMMARIES);
 
     chatSummaries.value = allSummaries
@@ -6825,6 +6827,7 @@ async function loadSummariesAndDiaries() {
         isImportant: s.isImportant,
         isManual: s.isManual,
         isMeta: s.isMeta,
+        keywords: s.keywords,
       }));
 
     // 載入日記

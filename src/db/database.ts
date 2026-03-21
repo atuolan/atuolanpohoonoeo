@@ -37,6 +37,8 @@ export interface ConversationSummary {
   isImportant?: boolean;
   isManual?: boolean;
   isMeta?: boolean;
+  /** 用戶可編輯的關鍵詞列表，用於向量記憶檢索匹配 */
+  keywords?: string[];
 }
 
 export interface DiaryEntry {

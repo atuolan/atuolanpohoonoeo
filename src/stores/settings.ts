@@ -381,7 +381,8 @@ export const useSettingsStore = defineStore("settings", () => {
   const embeddingMode = ref<'local' | 'api'>('local');
 
   // 向量記憶全域開關（啟用後，所有聊天的總結會自動嵌入並用語義檢索）
-  const vectorMemoryEnabled = ref(false);
+  // 預設開啟；首次啟動時若本地模型未下載，App.vue 會提示使用者下載或前往設定關閉
+  const vectorMemoryEnabled = ref(true);
 
   // ===== 計算屬性 =====
 

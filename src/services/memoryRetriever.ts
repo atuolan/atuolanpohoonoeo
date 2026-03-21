@@ -18,6 +18,9 @@ import { embeddingEngine } from '@/services/embeddingEngine'
 import { expandKeywords, keywordMatch } from '@/utils/keywordExpander'
 import { expandContextWindow } from '@/utils/contextWindow'
 import { buildStateQuery } from '@/utils/stateQueryBuilder'
+import { buildIntentQuery } from '@/utils/intentQueryBuilder'
+import { buildVectorDocument } from '@/utils/vectorDocumentBuilder'
+import { extractSummaryKeywords } from '@/utils/summaryKeywordExtractor'
 import type { ChatMessage } from '@/types/chat'
 
 // ─── 介面定義 ───────────────────────────────────────────────
@@ -78,11 +81,12 @@ export class MemoryRetrieverService {
       }
       console.log(`[向量記憶] 📦 載入 ${candidates.length} 條候選向量`)
 
-      // 2. Intent Path：用戶訊息向量搜尋（降低門檻擴大召回）
+      // 2. Intent Path：提煉用戶意圖後向量搜尋（降低門檻擴大召回）
       const intentThreshold = Math.max(threshold - 0.25, 0.4)
-      const intentVector = await embeddingEngine.embed(queryText)
+      const intentQuery = buildIntentQuery(queryText, characterNames ?? [])
+      const intentVector = await embeddingEngine.embed(intentQuery)
       const intentResults = searchSimilar(intentVector, candidates, topK * 2, intentThreshold)
-      console.log(`[向量記憶] 🎯 Intent Path: ${intentResults.length} 條命中（門檻 ${intentThreshold.toFixed(2)}）`)
+      console.log(`[向量記憶] 🎯 Intent Path: ${intentResults.length} 條命中（門檻 ${intentThreshold.toFixed(2)}）| 查詢: "${intentQuery.slice(0, 80)}..."`)
 
       // 3. State Path：狀態查詢向量搜尋（原始門檻）
       let stateResults: SimilarityResult[] = []
@@ -150,6 +154,9 @@ export class MemoryRetrieverService {
 
   /**
    * 為總結/日記生成嵌入並儲存
+   * 使用 buildVectorDocument 將原文轉換為精煉的向量文件再 embedding
+   * @param storedKeywords - 用戶編輯的關鍵詞（可選，優先用於向量文件建構）
+   * @param characterNames - 角色名稱列表（可選，用於保留出現的角色名）
    */
   async generateAndStoreEmbedding(
     sourceId: string,
@@ -157,9 +164,15 @@ export class MemoryRetrieverService {
     content: string,
     chatId: string,
     characterId: string,
+    storedKeywords?: string[],
+    characterNames?: string[],
   ): Promise<void> {
+    // 建構精煉的向量文件（去除敘事噪音，聚焦語義核心）
+    const vectorDoc = buildVectorDocument(content, storedKeywords, characterNames)
+    const textToEmbed = vectorDoc || content
     const hash = await contentHash(content)
-    const embedding = await embeddingEngine.embed(content)
+    const embedding = await embeddingEngine.embed(textToEmbed)
+    console.log(`[向量記憶] 📄 向量文件: "${textToEmbed.slice(0, 100)}..."（原文 ${content.length} 字 → 精煉 ${textToEmbed.length} 字）`)
 
     const now = Date.now()
     const record: VectorEmbeddingRecord = {
@@ -181,17 +194,25 @@ export class MemoryRetrieverService {
 
   /**
    * 批量生成嵌入（用於導入和重建）
+   * 使用 buildVectorDocument 將每條原文轉換為精煉的向量文件
    */
   async generateBatchEmbeddings(
-    items: Array<{ sourceId: string; sourceType: 'summary' | 'diary'; content: string }>,
+    items: Array<{ sourceId: string; sourceType: 'summary' | 'diary'; content: string; keywords?: string[] }>,
     chatId: string,
     characterId: string,
     onProgress?: (processed: number, total: number) => void,
+    characterNames?: string[],
   ): Promise<void> {
     if (items.length === 0) return
 
-    const texts = items.map((item) => item.content)
+    // 建構精煉的向量文件
+    const texts = items.map((item) => {
+      const vectorDoc = buildVectorDocument(item.content, item.keywords, characterNames)
+      return vectorDoc || item.content
+    })
+    console.log(`[向量記憶] 📄 向量文件建構完成，${texts.length} 條，首條: "${texts[0]?.slice(0, 80)}..."`)
     const embeddings = await embeddingEngine.embedBatch(texts)
+    console.log(`[向量記憶] 🧮 嵌入完成，${embeddings.length} 條向量`)
 
     const now = Date.now()
     for (let i = 0; i < items.length; i++) {
@@ -223,7 +244,9 @@ export class MemoryRetrieverService {
     chatId: string,
     characterId: string,
     onProgress?: (processed: number, total: number) => void,
+    characterNames?: string[],
   ): Promise<void> {
+    console.log(`[向量記憶] 🔄 開始重建 chatId: ${chatId}`)
     await deleteVectorsByChatId(chatId)
 
     const db = await getDatabase()
@@ -232,14 +255,27 @@ export class MemoryRetrieverService {
       'by-chat',
       chatId,
     )
+    console.log(`[向量記憶] 📋 找到 ${summaries.length} 條總結`)
 
-    const items: Array<{ sourceId: string; sourceType: 'summary'; content: string }> = summaries.map((s) => ({
+    // 重建時同步重新生成關鍵詞（使用改進後的提取器）
+    for (const s of summaries) {
+      const newKeywords = extractSummaryKeywords(s.content)
+      if (JSON.stringify(newKeywords) !== JSON.stringify(s.keywords ?? [])) {
+        s.keywords = newKeywords
+        await db.put(DB_STORES.SUMMARIES as 'summaries', s)
+      }
+    }
+
+    const items: Array<{ sourceId: string; sourceType: 'summary'; content: string; keywords?: string[] }> = summaries.map((s) => ({
       sourceId: s.id,
       sourceType: 'summary' as const,
       content: s.content,
+      keywords: s.keywords,
     }))
 
-    await this.generateBatchEmbeddings(items, chatId, characterId, onProgress)
+    console.log(`[向量記憶] 🚀 開始批量嵌入 ${items.length} 條（characterNames: ${characterNames?.join(', ') ?? '無'}）`)
+    await this.generateBatchEmbeddings(items, chatId, characterId, onProgress, characterNames)
+    console.log(`[向量記憶] ✅ 重建完成 ${items.length} 條`)
   }
 
   // ─── 私有方法 ─────────────────────────────────────────────
@@ -273,13 +309,35 @@ export class MemoryRetrieverService {
     const results: SimilarityResult[] = []
 
     for (const s of summaries) {
-      const match = keywordMatch(s.content, expansion.expandedTerms, characterNames)
-      if (match.matched) {
+      // 優先使用用戶編輯的關鍵詞進行匹配
+      const storedKeywords: string[] | undefined = (s as any).keywords
+      let matched = false
+      let score = 0
+
+      if (storedKeywords && storedKeywords.length > 0) {
+        // 用儲存的關鍵詞與查詢的擴展詞交叉匹配
+        const hits = storedKeywords.filter(kw =>
+          expansion.expandedTerms.some(et => et.includes(kw) || kw.includes(et))
+        )
+        if (hits.length >= 1) {
+          matched = true
+          score = Math.min(0.8, Math.max(0.3, hits.length / storedKeywords.length))
+        }
+      }
+
+      // 同時也對內容文本做匹配（兩者取較高分）
+      const contentMatch = keywordMatch(s.content, expansion.expandedTerms, characterNames)
+      if (contentMatch.matched && contentMatch.score > score) {
+        matched = true
+        score = contentMatch.score
+      }
+
+      if (matched) {
         results.push({
           id: `vec_${s.id}`,
           sourceId: s.id,
           sourceType: 'summary',
-          score: match.score,
+          score,
         })
       }
     }

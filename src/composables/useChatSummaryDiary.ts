@@ -10,6 +10,7 @@ import {
 import { useNotificationStore } from "@/stores/notification";
 import { MemoryRetrieverService } from "@/services/memoryRetriever";
 import { deleteVectorEmbedding, markVectorStale } from "@/db/vectorStore";
+import { extractSummaryKeywords } from "@/utils/summaryKeywordExtractor";
 
 interface Message {
   id: string;
@@ -27,6 +28,7 @@ type SummaryItem = {
   isImportant?: boolean;
   isManual?: boolean;
   isMeta?: boolean;
+  keywords?: string[];
 };
 
 type DiaryItem = {
@@ -623,6 +625,7 @@ ${recentMessagesText}
         isImportant: false,
         isManual: true,
         isMeta: false,
+        keywords: extractSummaryKeywords(stripOutputTags(summaryContent)),
       };
 
       deps.chatSummaries.value.push(newSummary);
@@ -634,7 +637,8 @@ ${recentMessagesText}
         const ctx = getChatContext()
         const retriever = new MemoryRetrieverService()
         retriever.generateAndStoreEmbedding(
-          newSummary.id, 'summary', newSummary.content, ctx.chatId, ctx.characterId
+          newSummary.id, 'summary', newSummary.content, ctx.chatId, ctx.characterId,
+          newSummary.keywords, [deps.characterName],
         ).catch(err => console.error('[向量記憶] 總結嵌入失敗:', err))
       }
 
@@ -816,6 +820,7 @@ ${recentMessagesText}
         isImportant: true,
         isManual: false,
         isMeta: true,
+        keywords: extractSummaryKeywords(stripOutputTags(metaContent)),
       };
 
       deps.chatSummaries.value.push(metaSummary);
@@ -827,7 +832,8 @@ ${recentMessagesText}
         const ctx = getChatContext()
         const retriever = new MemoryRetrieverService()
         retriever.generateAndStoreEmbedding(
-          metaSummary.id, 'summary', metaSummary.content, ctx.chatId, ctx.characterId
+          metaSummary.id, 'summary', metaSummary.content, ctx.chatId, ctx.characterId,
+          metaSummary.keywords, [deps.characterName],
         ).catch(err => console.error('[向量記憶] 元總結嵌入失敗:', err))
       }
 
@@ -856,6 +862,7 @@ ${recentMessagesText}
       isImportant: s.isImportant || false,
       isManual: s.isManual || false,
       isMeta: s.isMeta || false,
+      keywords: s.keywords || extractSummaryKeywords(s.content),
     }));
     deps.chatSummaries.value.push(...imported);
     for (const summary of imported) {
@@ -871,8 +878,9 @@ ${recentMessagesText}
         sourceId: s.id,
         sourceType: 'summary' as const,
         content: s.content,
+        keywords: s.keywords,
       }))
-      retriever.generateBatchEmbeddings(items, ctx.chatId, ctx.characterId)
+      retriever.generateBatchEmbeddings(items, ctx.chatId, ctx.characterId, undefined, [deps.characterName])
         .catch(err => console.error('[向量記憶] 導入總結批量嵌入失敗:', err))
     }
   }

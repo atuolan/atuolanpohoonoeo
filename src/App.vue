@@ -116,6 +116,12 @@ const resumeCallSnapshot =
 // ===== SW 更新提示 =====
 const showSwUpdateToast = ref(false);
 
+// ===== 向量記憶模型下載提示 =====
+const showEmbeddingModelPrompt = ref(false);
+const embeddingModelDownloading = ref(false);
+const embeddingModelProgress = ref(0);
+const embeddingModelFile = ref('');
+
 function handleSwUpdate() {
   showSwUpdateToast.value = true;
 }
@@ -619,6 +625,16 @@ async function loadAppData() {
   // characters 已載入，立即啟動主動發訊息服務
   proactiveMessageService.start();
 
+  // 向量記憶：檢查本地模型是否已下載（settings 載入後執行）
+  if (settingsStore.vectorMemoryEnabled && settingsStore.embeddingMode === 'local') {
+    import('@/utils/embeddingModelCheck').then(async ({ isEmbeddingModelCached }) => {
+      const cached = await isEmbeddingModelCached()
+      if (!cached) {
+        showEmbeddingModelPrompt.value = true
+      }
+    }).catch(() => {})
+  }
+
   // 載入全局遊戲經濟狀態（錢包、裝飾品等）
   const gameEconomyStore = useGameEconomyStore();
   await gameEconomyStore.loadState("global");
@@ -1111,6 +1127,39 @@ async function handleDiscardCall() {
   showResumeCallDialog.value = false;
   await phoneCallStore.discardSnapshot();
   resumeCallSnapshot.value = null;
+}
+
+// ===== 向量記憶模型下載處理 =====
+async function handleDownloadEmbeddingModel() {
+  embeddingModelDownloading.value = true;
+  embeddingModelProgress.value = 0;
+  embeddingModelFile.value = '';
+  try {
+    const { embeddingEngine } = await import('@/services/embeddingEngine');
+    embeddingEngine.setProgressCallback((info) => {
+      if (info.progress != null) embeddingModelProgress.value = info.progress / 100;
+      if (info.file) embeddingModelFile.value = info.file;
+      if (info.status === 'warmup') {
+        embeddingModelFile.value = 'WASM 編譯中...';
+        embeddingModelProgress.value = 1;
+      }
+    });
+    await embeddingEngine.embed('初始化測試');
+    embeddingEngine.setProgressCallback(null);
+    showEmbeddingModelPrompt.value = false;
+  } catch (e) {
+    console.error('[App] 嵌入模型下載失敗:', e);
+    embeddingModelFile.value = '下載失敗，請稍後在設定中重試';
+  } finally {
+    embeddingModelDownloading.value = false;
+  }
+}
+
+function handleDisableVectorMemory() {
+  showEmbeddingModelPrompt.value = false;
+  settingsStore.vectorMemoryEnabled = false;
+  settingsStore.saveSettings();
+  currentPage.value = 'settings';
 }
 
 // 打開現有聊天
@@ -2065,6 +2114,49 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <!-- 系統通知 Toast -->
     <NotificationToast @navigate="handleNotificationNavigate" />
 
+    <!-- 向量記憶模型下載提示 -->
+    <Teleport to="body">
+      <div v-if="showEmbeddingModelPrompt" class="embedding-prompt-overlay">
+        <div class="embedding-prompt-dialog">
+          <div class="embedding-prompt-icon">🧠</div>
+          <div class="embedding-prompt-title">向量記憶已啟用</div>
+          <div class="embedding-prompt-desc">
+            聊天總結向量化需要下載本地嵌入模型（約 30MB），下載後可完全離線使用。
+          </div>
+
+          <!-- 下載進度 -->
+          <div v-if="embeddingModelDownloading" class="embedding-prompt-progress">
+            <div class="embedding-progress-bar">
+              <div class="embedding-progress-fill" :style="{ width: (embeddingModelProgress * 100) + '%' }" />
+            </div>
+            <div class="embedding-progress-text">
+              {{ embeddingModelFile || '準備中...' }}
+              <span v-if="embeddingModelProgress > 0 && embeddingModelProgress < 1">
+                {{ Math.round(embeddingModelProgress * 100) }}%
+              </span>
+            </div>
+          </div>
+
+          <div class="embedding-prompt-actions">
+            <button
+              class="embedding-btn download"
+              :disabled="embeddingModelDownloading"
+              @click="handleDownloadEmbeddingModel"
+            >
+              {{ embeddingModelDownloading ? '下載中...' : '立即下載' }}
+            </button>
+            <button
+              class="embedding-btn disable"
+              :disabled="embeddingModelDownloading"
+              @click="handleDisableVectorMemory"
+            >
+              前往設定關閉
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- SW 更新提示 Toast -->
     <Teleport to="body">
       <div v-if="showSwUpdateToast" class="sw-update-toast">
@@ -2471,6 +2563,108 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       background: rgba(255, 255, 255, 0.15);
       color: #ccc;
     }
+  }
+}
+
+// ===== 向量記憶模型下載提示 =====
+.embedding-prompt-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  backdrop-filter: blur(4px);
+}
+
+.embedding-prompt-dialog {
+  background: #1a1a2e;
+  border-radius: 20px;
+  padding: 28px 24px;
+  width: min(340px, 90vw);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.embedding-prompt-icon {
+  font-size: 36px;
+  margin-bottom: 4px;
+}
+
+.embedding-prompt-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.embedding-prompt-desc {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+  line-height: 1.6;
+}
+
+.embedding-prompt-progress {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.embedding-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.embedding-progress-fill {
+  height: 100%;
+  background: #7dd3a8;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.embedding-progress-text {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 6px;
+  text-align: center;
+  word-break: break-all;
+}
+
+.embedding-prompt-actions {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.embedding-btn {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+
+  &:active { opacity: 0.8; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  &.download {
+    background: #7dd3a8;
+    color: #1a1a2e;
+  }
+
+  &.disable {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 }
 </style>
