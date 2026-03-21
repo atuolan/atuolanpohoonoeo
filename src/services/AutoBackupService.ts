@@ -415,7 +415,9 @@ function pushFileToZip(
  */
 async function buildBackupZipStreaming(
   onProgress?: BackupProgressCallback,
+  options?: { excludeChatImages?: boolean },
 ): Promise<Uint8Array> {
+  const excludeChatImages = options?.excludeChatImages ?? false;
   // 1. 收集輕量數據
   onProgress?.({ phase: "收集基礎數據..." });
   await yieldToMain();
@@ -471,21 +473,29 @@ async function buildBackupZipStreaming(
       if (!chat) continue;
 
       if (chat.messages?.length > 0) {
-        try {
-          chat.messages = await restoreImagesToMessages(chat.messages);
-        } catch (imgErr) {
-          console.warn(`[AutoBackup] 聊天 "${chat.id}" 圖片還原失敗:`, imgErr);
+        if (!excludeChatImages) {
+          try {
+            chat.messages = await restoreImagesToMessages(chat.messages);
+          } catch (imgErr) {
+            console.warn(`[AutoBackup] 聊天 "${chat.id}" 圖片還原失敗:`, imgErr);
+          }
         }
 
         // 立即提取該聊天的媒體，將 base64 替換為短路徑
         for (const msg of chat.messages) {
-          if (msg.imageUrl?.startsWith("data:image/")) {
-            const f = extractor.extract(msg.imageUrl, "chat");
-            if (f) msg.imageUrl = f;
-          }
-          if (msg.imageData?.startsWith("data:image/")) {
-            const f = extractor.extract(msg.imageData, "chat_data");
-            if (f) msg.imageData = f;
+          if (excludeChatImages) {
+            // 排除聊天圖片模式：清除訊息中的圖片數據，僅保留文字
+            if (msg.imageUrl) msg.imageUrl = "";
+            if (msg.imageData) msg.imageData = "";
+          } else {
+            if (msg.imageUrl?.startsWith("data:image/")) {
+              const f = extractor.extract(msg.imageUrl, "chat");
+              if (f) msg.imageUrl = f;
+            }
+            if (msg.imageData?.startsWith("data:image/")) {
+              const f = extractor.extract(msg.imageData, "chat_data");
+              if (f) msg.imageData = f;
+            }
           }
         }
         if (
@@ -690,6 +700,7 @@ export type BackupResult = {
 export async function performBackup(
   forceDownload = false,
   onProgress?: BackupProgressCallback,
+  options?: { excludeChatImages?: boolean },
 ): Promise<BackupResult> {
   try {
     console.log("[AutoBackup] 開始備份...");
@@ -697,7 +708,7 @@ export async function performBackup(
     const filename = generateBackupFilename();
 
     // 使用流式備份，降低記憶體峰值
-    const zipData = await buildBackupZipStreaming(onProgress);
+    const zipData = await buildBackupZipStreaming(onProgress, options);
 
     onProgress?.({ phase: "寫入檔案..." });
 

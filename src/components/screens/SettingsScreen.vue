@@ -515,6 +515,7 @@ const storageStatus = reactive({
 // 導入/導出狀態
 const isExporting = ref(false);
 const isImporting = ref(false);
+const excludeChatImages = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
 
 // 模型拉取狀態
@@ -1444,7 +1445,7 @@ async function exportData() {
       } else {
         backupProgress.value = info.phase;
       }
-    });
+    }, { excludeChatImages: excludeChatImages.value });
     if (!result.success) {
       alert("導出失敗: " + result.message);
     }
@@ -4359,6 +4360,10 @@ function useClonedVoice(voiceId: string) {
           </div>
 
           <div class="backup-buttons">
+            <label class="backup-option" style="display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 13px; color: var(--color-text-secondary, #9ca3af); cursor: pointer; user-select: none;">
+              <input type="checkbox" v-model="excludeChatImages" style="accent-color: var(--color-primary, #7dd3a8);" />
+              不含聊天圖片（輕量備份）
+            </label>
             <button
               class="backup-btn export"
               @click="exportData"

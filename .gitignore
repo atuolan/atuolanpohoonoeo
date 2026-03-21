@@ -16,6 +16,7 @@ Thumbs.db
 
 # 備份與臨時文件
 備份/
+aguaphone-backup-*.zip
 
 # 日誌與除錯
 *.log
