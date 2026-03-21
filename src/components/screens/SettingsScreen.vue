@@ -1541,23 +1541,36 @@ async function handleFileImport(event: Event) {
 
     // 檢查檔案類型
     if (file.name.endsWith(".zip")) {
-      // ZIP 格式
-      const { unzip, strFromU8 } = await import("fflate");
+      // ZIP 格式 — 先嘗試 fflate，失敗則 fallback 到 jszip（相容性更廣）
       const arrayBuffer = await file.arrayBuffer();
-      const zipData = new Uint8Array(arrayBuffer);
+      let files: Record<string, Uint8Array>;
 
-      // 解壓縮
-      const files = await new Promise<Record<string, Uint8Array>>(
-        (resolve, reject) => {
-          unzip(zipData, (err, data) => {
-            if (err) {
-              reject(err);
-              return;
-            }
-            resolve(data);
-          });
-        },
-      );
+      try {
+        const { unzip } = await import("fflate");
+        const zipData = new Uint8Array(arrayBuffer);
+        files = await new Promise<Record<string, Uint8Array>>(
+          (resolve, reject) => {
+            unzip(zipData, (err, data) => {
+              if (err) reject(err);
+              else resolve(data);
+            });
+          },
+        );
+      } catch (fflateErr) {
+        // fflate 無法解析，使用 jszip 作為 fallback
+        console.warn("[Import] fflate 解壓失敗，嘗試 jszip:", fflateErr);
+        const JSZip = (await import("jszip")).default;
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        files = {};
+        const entries = Object.entries(zip.files);
+        for (const [name, entry] of entries) {
+          if (!entry.dir) {
+            files[name] = await entry.async("uint8array");
+          }
+        }
+      }
+
+      const { strFromU8 } = await import("fflate");
 
       // 檢查必要檔案（相容 backup.json 和 data.json 兩種命名）
       const jsonFile = files["backup.json"] || files["data.json"];

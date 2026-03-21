@@ -992,18 +992,28 @@ export class ImportExportService {
       const arrayBuffer = await file.arrayBuffer();
       const zipData = new Uint8Array(arrayBuffer);
 
-      // 解壓縮
-      const files = await new Promise<Record<string, Uint8Array>>(
-        (resolve, reject) => {
-          unzip(zipData, (err, data) => {
-            if (err) {
-              reject(err);
-              return;
-            }
-            resolve(data);
-          });
-        },
-      );
+      // 解壓縮 — 先嘗試 fflate，失敗則 fallback 到 jszip
+      let files: Record<string, Uint8Array>;
+      try {
+        files = await new Promise<Record<string, Uint8Array>>(
+          (resolve, reject) => {
+            unzip(zipData, (err, data) => {
+              if (err) reject(err);
+              else resolve(data);
+            });
+          },
+        );
+      } catch (fflateErr) {
+        console.warn("[ImportExportService] fflate 解壓失敗，嘗試 jszip:", fflateErr);
+        const JSZip = (await import("jszip")).default;
+        const zipObj = await JSZip.loadAsync(arrayBuffer);
+        files = {};
+        for (const [name, entry] of Object.entries(zipObj.files)) {
+          if (!entry.dir) {
+            files[name] = await entry.async("uint8array");
+          }
+        }
+      }
 
       // 檢查必要檔案
       if (!files["chat.json"]) {

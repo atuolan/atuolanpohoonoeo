@@ -2632,6 +2632,8 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
   border-radius: 20px;
   padding: 28px 24px;
   width: min(340px, 90vw);
+  max-height: min(90vh, 90dvh);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
