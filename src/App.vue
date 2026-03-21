@@ -625,19 +625,31 @@ async function loadAppData() {
   // characters 已載入，立即啟動主動發訊息服務
   proactiveMessageService.start();
 
-  // 向量記憶：檢查本地模型是否已下載（settings 載入後執行）
-  if (settingsStore.vectorMemoryEnabled && settingsStore.embeddingMode === 'local') {
-    import('@/utils/embeddingModelCheck').then(async ({ isEmbeddingModelCached }) => {
-      const cached = await isEmbeddingModelCached()
-      if (!cached) {
-        showEmbeddingModelPrompt.value = true
-      } else {
-        // 模型已快取，背景預熱 Worker + WASM 編譯，避免首次使用時長時間等待
-        import('@/services/embeddingEngine').then(({ embeddingEngine }) => {
-          embeddingEngine.embed('預熱').catch(() => {})
-        }).catch(() => {})
+  // 向量記憶：首次啟用時引導用戶設定嵌入引擎
+  if (settingsStore.vectorMemoryEnabled) {
+    const mode = settingsStore.embeddingMode ?? 'api';
+    if (mode === 'api') {
+      // 遠端模式：檢查是否已設定 API（endpoint 或 apiKey 至少有一個，或主 API 有設定）
+      const hasEmbeddingConfig = settingsStore.embeddingAPI.endpoint || settingsStore.embeddingAPI.apiKey;
+      const hasMainApiConfig = settingsStore.api.endpoint && settingsStore.api.apiKey;
+      if (!hasEmbeddingConfig && !hasMainApiConfig) {
+        // 沒有任何 API 設定，提示用戶
+        showEmbeddingModelPrompt.value = true;
       }
-    }).catch(() => {})
+    } else if (mode === 'local') {
+      // 本地模式：檢查模型是否已快取
+      import('@/utils/embeddingModelCheck').then(async ({ isEmbeddingModelCached }) => {
+        const cached = await isEmbeddingModelCached();
+        if (!cached) {
+          showEmbeddingModelPrompt.value = true;
+        } else {
+          // 模型已快取，背景預熱
+          import('@/services/embeddingEngine').then(({ embeddingEngine }) => {
+            embeddingEngine.embed('預熱').catch(() => {});
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+    }
   }
 
   // 載入全局遊戲經濟狀態（錢包、裝飾品等）
@@ -1134,12 +1146,16 @@ async function handleDiscardCall() {
   resumeCallSnapshot.value = null;
 }
 
-// ===== 向量記憶模型下載處理 =====
+// ===== 向量記憶引導處理 =====
 async function handleDownloadEmbeddingModel() {
   embeddingModelDownloading.value = true;
   embeddingModelProgress.value = 0;
   embeddingModelFile.value = '';
   try {
+    // 切換到本地模式
+    settingsStore.embeddingMode = 'local';
+    await settingsStore.saveSettings();
+
     const { embeddingEngine } = await import('@/services/embeddingEngine');
     embeddingEngine.setProgressCallback((info) => {
       if (info.progress != null) embeddingModelProgress.value = info.progress / 100;
@@ -1160,11 +1176,17 @@ async function handleDownloadEmbeddingModel() {
   }
 }
 
+/** 前往設定頁面配置遠端 API */
+function handleGoToEmbeddingSettings() {
+  showEmbeddingModelPrompt.value = false;
+  currentPage.value = 'settings';
+}
+
+/** 關閉向量記憶 */
 function handleDisableVectorMemory() {
   showEmbeddingModelPrompt.value = false;
   settingsStore.vectorMemoryEnabled = false;
   settingsStore.saveSettings();
-  currentPage.value = 'settings';
 }
 
 // 打開現有聊天
@@ -2120,16 +2142,25 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <NotificationToast @navigate="handleNotificationNavigate" />
 
     <!-- 向量記憶模型下載提示 -->
+    <!-- 向量記憶設定引導彈窗 -->
     <Teleport to="body">
       <div v-if="showEmbeddingModelPrompt" class="embedding-prompt-overlay">
         <div class="embedding-prompt-dialog">
           <div class="embedding-prompt-icon">🧠</div>
           <div class="embedding-prompt-title">向量記憶已啟用</div>
           <div class="embedding-prompt-desc">
-            聊天總結向量化需要下載本地嵌入模型（約 30MB），下載後可完全離線使用。
+            向量記憶讓 AI 根據語義相關性回憶過去的對話，而非只按時間順序。<br/>
+            需要設定嵌入引擎才能使用。
           </div>
 
-          <!-- 下載進度 -->
+          <div style="background: rgba(125,211,168,0.08); border: 1px solid rgba(125,211,168,0.2); border-radius: 10px; padding: 10px 12px; margin: 10px 0; font-size: 12px; line-height: 1.7; color: var(--color-text-secondary, #9ca3af);">
+            <div style="font-weight: 600; color: var(--color-primary, #7dd3a8); margin-bottom: 4px;">☁️ 推薦：使用硅基流動免費 API</div>
+            前往 <span style="color: var(--color-primary, #7dd3a8);">cloud.siliconflow.cn</span> 註冊帳號，取得免費 API Key。<br/>
+            端點填入 <code style="background: rgba(255,255,255,0.06); padding: 1px 4px; border-radius: 3px;">https://api.siliconflow.cn/v1</code><br/>
+            模型選擇 <code style="background: rgba(255,255,255,0.06); padding: 1px 4px; border-radius: 3px;">BAAI/bge-large-zh-v1.5</code>（免費、中文品質好）
+          </div>
+
+          <!-- 下載進度（僅在下載本地模型時顯示） -->
           <div v-if="embeddingModelDownloading" class="embedding-prompt-progress">
             <div class="embedding-progress-bar">
               <div class="embedding-progress-fill" :style="{ width: (embeddingModelProgress * 100) + '%' }" />
@@ -2142,20 +2173,33 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
             </div>
           </div>
 
-          <div class="embedding-prompt-actions">
+          <div class="embedding-prompt-actions" style="flex-direction: column; gap: 8px;">
             <button
               class="embedding-btn download"
               :disabled="embeddingModelDownloading"
-              @click="handleDownloadEmbeddingModel"
+              @click="handleGoToEmbeddingSettings"
+              style="width: 100%;"
             >
-              {{ embeddingModelDownloading ? '下載中...' : '立即下載' }}
+              ☁️ 前往設定遠端 API
             </button>
+            <button
+              class="embedding-btn"
+              :disabled="embeddingModelDownloading"
+              @click="handleDownloadEmbeddingModel"
+              style="width: 100%; background: rgba(255,255,255,0.04); border: 1px solid var(--color-border, rgba(255,255,255,0.08)); color: var(--color-text-secondary, #9ca3af);"
+            >
+              {{ embeddingModelDownloading ? '下載中...' : '🖥️ 下載本地模型（約 30MB）' }}
+            </button>
+            <div style="font-size: 11px; color: var(--color-text-muted, #6b7280); text-align: center; line-height: 1.5;">
+              ⚠️ 本地模型在手機瀏覽器上可能因記憶體不足導致閃退，建議使用遠端 API
+            </div>
             <button
               class="embedding-btn disable"
               :disabled="embeddingModelDownloading"
               @click="handleDisableVectorMemory"
+              style="width: 100%;"
             >
-              前往設定關閉
+              暫不使用，關閉向量記憶
             </button>
           </div>
         </div>

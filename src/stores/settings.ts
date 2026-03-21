@@ -377,8 +377,8 @@ export const useSettingsStore = defineStore("settings", () => {
     directConnect: false,
   });
 
-  // 嵌入模式：local（本地 Web Worker 推理）或 api（遠端 API），預設 local
-  const embeddingMode = ref<'local' | 'api'>('local');
+  // 嵌入模式：local（本地 Web Worker 推理）或 api（遠端 API），預設 api
+  const embeddingMode = ref<'local' | 'api'>('api');
 
   // 向量記憶全域開關（啟用後，所有聊天的總結會自動嵌入並用語義檢索）
   // 預設開啟；首次啟動時若本地模型未下載，App.vue 會提示使用者下載或前往設定關閉

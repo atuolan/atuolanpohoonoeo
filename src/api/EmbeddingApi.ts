@@ -85,38 +85,49 @@ export class EmbeddingApiClient {
 
   /**
    * 批量嵌入，保持輸入順序
+   * 自動分批處理，避免超過 API 的 batch size 上限
    * @param texts - 要嵌入的文本陣列
    * @param signal - 可選的 AbortSignal
+   * @param batchSize - 每批最大數量（預設 16，保守值以相容各家 API）
    * @returns 嵌入向量陣列，順序與輸入一致
    */
-  async embedBatch(texts: string[], signal?: AbortSignal): Promise<number[][]> {
+  async embedBatch(texts: string[], signal?: AbortSignal, batchSize = 16): Promise<number[][]> {
     this.validateConfig()
 
     if (texts.length === 0) return []
 
-    const url = this.getEndpoint()
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify({
-        model: this.settings.model,
-        input: texts,
-      }),
-      signal,
-    })
+    // 分批處理
+    const allResults: number[][] = new Array(texts.length)
+    for (let i = 0; i < texts.length; i += batchSize) {
+      const batch = texts.slice(i, i + batchSize)
+      const url = this.getEndpoint()
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({
+          model: this.settings.model,
+          input: batch,
+        }),
+        signal,
+      })
 
-    if (!response.ok) {
-      const errorBody = await response.text().catch(() => '')
-      throw new Error(
-        `Embedding API 錯誤 (HTTP ${response.status}): ${errorBody || response.statusText}`,
-      )
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => '')
+        throw new Error(
+          `Embedding API 錯誤 (HTTP ${response.status}): ${errorBody || response.statusText}`,
+        )
+      }
+
+      const result: EmbeddingResponse = await response.json()
+      const sorted = [...result.data].sort((a, b) => a.index - b.index)
+      sorted.forEach((item, j) => {
+        allResults[i + j] = item.embedding
+      })
+
+      console.log(`[Embedding API] 批次 ${Math.floor(i / batchSize) + 1}/${Math.ceil(texts.length / batchSize)} 完成（${batch.length} 條）`)
     }
 
-    const result: EmbeddingResponse = await response.json()
-
-    // 依照 response 的 index 欄位排序，確保與輸入順序一致
-    const sorted = [...result.data].sort((a, b) => a.index - b.index)
-    return sorted.map((item) => item.embedding)
+    return allResults
   }
 
   /**

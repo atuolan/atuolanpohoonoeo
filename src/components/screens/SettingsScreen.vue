@@ -528,6 +528,13 @@ const lastFetchedEndpoint = ref(""); // 追蹤上次拉取的端點
 // Embedding API 摺疊狀態
 const showEmbeddingSection = ref(false);
 
+// Embedding 模型拉取狀態
+const isFetchingEmbeddingModels = ref(false);
+const fetchedEmbeddingModels = ref<string[]>([]);
+const embeddingModelFetchError = ref("");
+const customEmbeddingModelName = ref("");
+const lastFetchedEmbeddingEndpoint = ref("");
+
 // 本地嵌入模型測試狀態
 const localModelStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('idle');
 const localModelProgress = ref(0);
@@ -566,6 +573,130 @@ async function testLocalModel() {
     localModelError.value = e instanceof Error ? e.message : '未知錯誤';
     localModelStatus.value = 'error';
   }
+}
+
+// ─── Embedding 模型拉取 ─────────────────────────────────────
+
+/** 將 URL 轉為代理路徑（Embedding 專用，尊重 embeddingAPI.directConnect） */
+function toEmbeddingProxyUrl(url: string): string {
+  if (settingsStore.embeddingAPI.directConnect) return url;
+  if (typeof window === 'undefined') return url;
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.origin === window.location.origin) return url;
+    const prefix = parsed.protocol === 'http:' ? '/ai-proxy-http/' : '/ai-proxy/';
+    return `https://api-203.aguacloud.uk${prefix}${parsed.host}${parsed.pathname}`;
+  } catch {
+    return url;
+  }
+}
+
+/** 取得有效的 Embedding 端點（留空時 fallback 到主 API） */
+function getEffectiveEmbeddingEndpoint(): string {
+  return settingsStore.embeddingAPI.endpoint || settingsStore.api.endpoint;
+}
+
+/** 取得有效的 Embedding API Key（留空時 fallback 到主 API） */
+function getEffectiveEmbeddingApiKey(): string {
+  return settingsStore.embeddingAPI.apiKey || settingsStore.api.apiKey;
+}
+
+/** 拉取 Embedding 模型列表 */
+async function fetchEmbeddingModels() {
+  const endpoint = getEffectiveEmbeddingEndpoint();
+  const apiKey = getEffectiveEmbeddingApiKey();
+
+  if (!endpoint || !apiKey) {
+    embeddingModelFetchError.value = '請先填寫 Embedding 端點和密鑰（或主 API 設定）';
+    return;
+  }
+
+  // 端點改變時清空舊列表
+  if (lastFetchedEmbeddingEndpoint.value && lastFetchedEmbeddingEndpoint.value !== endpoint) {
+    fetchedEmbeddingModels.value = [];
+  }
+
+  isFetchingEmbeddingModels.value = true;
+  embeddingModelFetchError.value = '';
+
+  try {
+    const modelsUrl = toEmbeddingProxyUrl(`${endpoint}/models`);
+    const response = await fetch(modelsUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    // 解析模型列表（OpenAI 格式）
+    let allModels: string[] = [];
+    if (data.data && Array.isArray(data.data)) {
+      allModels = data.data
+        .map((m: { id?: string }) => m.id || '')
+        .filter((id: string) => id);
+    } else if (Array.isArray(data)) {
+      allModels = data
+        .map((m: string | { id?: string }) => typeof m === 'string' ? m : m.id || '')
+        .filter((id: string) => id);
+    }
+
+    // 過濾出 embedding 相關模型（關鍵詞匹配）
+    const embeddingKeywords = ['embed', 'bge', 'e5', 'text2vec', 'gte', 'jina', 'voyage', 'nomic'];
+    const embeddingModels = allModels.filter((id: string) => {
+      const lower = id.toLowerCase();
+      return embeddingKeywords.some(kw => lower.includes(kw));
+    });
+
+    // 如果過濾後有結果就用過濾的，否則顯示全部（讓用戶自己選）
+    fetchedEmbeddingModels.value = (embeddingModels.length > 0 ? embeddingModels : allModels)
+      .sort((a: string, b: string) => a.localeCompare(b));
+
+    if (fetchedEmbeddingModels.value.length > 0) {
+      embeddingModelFetchError.value = '';
+      lastFetchedEmbeddingEndpoint.value = endpoint;
+      // 如果當前模型不在列表中，自動選第一個
+      if (!fetchedEmbeddingModels.value.includes(settingsStore.embeddingAPI.model)) {
+        settingsStore.embeddingAPI.model = fetchedEmbeddingModels.value[0];
+        settingsStore.saveSettings();
+      }
+    } else {
+      embeddingModelFetchError.value = '未找到可用模型';
+    }
+  } catch (e) {
+    console.error('[Embedding] 拉取模型失敗:', e);
+    embeddingModelFetchError.value = `拉取失敗: ${e instanceof Error ? e.message : String(e)}`;
+    if (e instanceof TypeError && e.message.includes('fetch')) {
+      embeddingModelFetchError.value = 'CORS 限制，請手動輸入模型名稱';
+    }
+    fetchedEmbeddingModels.value = [];
+    lastFetchedEmbeddingEndpoint.value = '';
+  } finally {
+    isFetchingEmbeddingModels.value = false;
+  }
+}
+
+/** 確認自訂 Embedding 模型名稱 */
+function applyCustomEmbeddingModel() {
+  if (customEmbeddingModelName.value.trim()) {
+    settingsStore.embeddingAPI.model = customEmbeddingModelName.value.trim();
+    customEmbeddingModelName.value = '';
+    settingsStore.saveSettings();
+  }
+}
+
+/** Embedding 模型下拉選單變更時保存 */
+function onEmbeddingModelChange() {
+  // 選擇「手動輸入」時不保存，等用戶輸入完再保存
+  if (settingsStore.embeddingAPI.model === '__custom__') return;
+  console.log('[Embedding] 模型已切換:', settingsStore.embeddingAPI.model);
+  settingsStore.saveSettings();
 }
 
 // 將外部 URL 轉為代理路徑（解決 CORS 和 mixed content 問題）
@@ -2990,13 +3121,67 @@ function useClonedVoice(voiceId: string) {
                   />
                 </div>
                 <div class="setting-group">
-                  <label class="setting-label">Embedding 模型</label>
-                  <input
-                    v-model="settingsStore.embeddingAPI.model"
-                    type="text"
-                    class="soft-input"
-                    placeholder="例如 text-embedding-3-small"
-                  />
+                  <div class="setting-label-row">
+                    <label class="setting-label">Embedding 模型</label>
+                    <button
+                      class="fetch-btn"
+                      :disabled="isFetchingEmbeddingModels"
+                      @click="fetchEmbeddingModels"
+                    >
+                      <span v-if="isFetchingEmbeddingModels" class="spinner-sm"></span>
+                      <svg v-else viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                      </svg>
+                      {{ isFetchingEmbeddingModels ? '拉取中...' : '拉取模型' }}
+                    </button>
+                  </div>
+
+                  <!-- 下拉選單 -->
+                  <div class="model-select-group">
+                    <select
+                      v-model="settingsStore.embeddingAPI.model"
+                      class="soft-select"
+                      :class="{ loading: isFetchingEmbeddingModels }"
+                      @change="onEmbeddingModelChange"
+                    >
+                      <option value="" disabled>
+                        {{ isFetchingEmbeddingModels ? '拉取模型中...' : '選擇模型...' }}
+                      </option>
+                      <option
+                        v-for="model in fetchedEmbeddingModels"
+                        :key="model"
+                        :value="model"
+                      >
+                        {{ model }}
+                      </option>
+                      <option value="__custom__">✏️ 手動輸入...</option>
+                    </select>
+                    <span v-if="isFetchingEmbeddingModels" class="select-spinner"></span>
+                  </div>
+
+                  <!-- 手動輸入框 -->
+                  <div v-if="settingsStore.embeddingAPI.model === '__custom__'" class="custom-model-input">
+                    <input
+                      v-model="customEmbeddingModelName"
+                      type="text"
+                      class="soft-input"
+                      placeholder="輸入模型名稱，例如: BAAI/bge-large-zh-v1.5"
+                      @blur="applyCustomEmbeddingModel"
+                      @keyup.enter="applyCustomEmbeddingModel"
+                    />
+                    <p class="setting-hint">輸入完成後按 Enter 或點擊其他地方確認</p>
+                  </div>
+
+                  <!-- 狀態提示 -->
+                  <div v-if="embeddingModelFetchError" class="error-hint">
+                    {{ embeddingModelFetchError }}
+                  </div>
+                  <div v-else-if="fetchedEmbeddingModels.length > 0" class="success-hint">
+                    ✓ 已拉取 {{ fetchedEmbeddingModels.length }} 個 Embedding 模型
+                  </div>
+                  <div v-else-if="settingsStore.embeddingAPI.model && settingsStore.embeddingAPI.model !== '__custom__'" class="info-hint-inline">
+                    當前模型: {{ settingsStore.embeddingAPI.model }}
+                  </div>
                 </div>
                 <label class="toggle-item">
                   <span class="toggle-label">直連（不使用代理）</span>
