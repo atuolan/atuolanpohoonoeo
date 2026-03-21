@@ -1399,6 +1399,18 @@ async function exportData() {
           return [];
         }
       })(),
+      // 向量嵌入（Float32Array → 普通陣列，以便 JSON 序列化）
+      vectorEmbeddings: await (async () => {
+        try {
+          const all = await db.getAll("vectorEmbeddings");
+          return all.map((rec: any) => ({
+            ...rec,
+            vector: rec.vector ? Array.from(rec.vector as Float32Array) : null,
+          }));
+        } catch {
+          return [];
+        }
+      })(),
       // audio-blobs 不備份（語音 Blob 體積過大，base64 後會膨脹 33%）
       // canvas layout（widget 佈局、app 圖標、日曆顏色等）存在獨立的 Aguaphone_V2 IDB
       canvasLayout: await (async () => {
@@ -2120,6 +2132,17 @@ async function handleFileImport(event: Event) {
       }
     }
 
+    // 導入向量嵌入（普通陣列 → Float32Array）
+    if (data.vectorEmbeddings && Array.isArray(data.vectorEmbeddings)) {
+      for (const rec of data.vectorEmbeddings) {
+        const restored = {
+          ...rec,
+          vector: rec.vector ? new Float32Array(rec.vector) : null,
+        };
+        await db.put("vectorEmbeddings", restored);
+      }
+    }
+
     // 導入 canvas layout（widget 佈局、app 圖標、日曆顏色等）到 Aguaphone_V2 IDB
     if (data.canvasLayout) {
       // 還原媒體路徑為 base64
@@ -2161,6 +2184,7 @@ async function handleFileImport(event: Event) {
       `書籍: ${data.books?.length || 0}`,
       `閱讀進度: ${data.bookProgress?.length || 0}`,
       `自訂提示詞: ${data.promptLibrary?.length || 0}`,
+      `向量嵌入: ${data.vectorEmbeddings?.length || 0}`,
       `媒體: ${Object.keys(mediaFiles).length}`,
     ].join("\n");
 

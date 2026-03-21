@@ -218,6 +218,19 @@ async function collectLightData(): Promise<Record<string, unknown>> {
   const bookProgress = await db.getAll(DB_STORES.BOOK_PROGRESS);
   const chatAffinityStates = await db.getAll(DB_STORES.CHAT_AFFINITY_STATES);
 
+  // 向量嵌入（Float32Array → 普通陣列，以便 JSON 序列化）
+  const vectorEmbeddings = await (async () => {
+    try {
+      const all = await db.getAll(DB_STORES.VECTOR_EMBEDDINGS);
+      return all.map((rec: any) => ({
+        ...rec,
+        vector: rec.vector ? Array.from(rec.vector as Float32Array) : null,
+      }));
+    } catch {
+      return [];
+    }
+  })();
+
   // promptLibrary（使用者自訂提示詞庫，不受 reset-all 影響）
   const promptLibrary = await (async () => {
     try {
@@ -310,6 +323,7 @@ async function collectLightData(): Promise<Record<string, unknown>> {
     rendererRules,
     bookProgress,
     chatAffinityStates,
+    vectorEmbeddings,
     promptLibrary,
     oldSettings,
     canvasLayout,

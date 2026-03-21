@@ -631,6 +631,11 @@ async function loadAppData() {
       const cached = await isEmbeddingModelCached()
       if (!cached) {
         showEmbeddingModelPrompt.value = true
+      } else {
+        // 模型已快取，背景預熱 Worker + WASM 編譯，避免首次使用時長時間等待
+        import('@/services/embeddingEngine').then(({ embeddingEngine }) => {
+          embeddingEngine.embed('預熱').catch(() => {})
+        }).catch(() => {})
       }
     }).catch(() => {})
   }
