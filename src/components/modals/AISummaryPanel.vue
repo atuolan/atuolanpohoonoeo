@@ -704,6 +704,15 @@
                 </div>
                 <!-- 顯示模式 -->
                 <div v-else class="event-content">{{ event.content }}</div>
+                <!-- 向量關鍵詞預覽 -->
+                <div v-if="event.vectorKeywords && event.vectorKeywords.length > 0" class="keywords-preview">
+                  <span
+                    v-for="kw in event.vectorKeywords.slice(0, 6)"
+                    :key="kw"
+                    class="keyword-tag-mini"
+                  >{{ kw }}</span>
+                  <span v-if="event.vectorKeywords.length > 6" class="keyword-more">+{{ event.vectorKeywords.length - 6 }}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1569,8 +1578,38 @@ function saveAll() {
   emit("close");
 }
 
-onMounted(() => {
-  loadEventsLog();
+// 回填缺少 vectorKeywords 的事件
+async function backfillKeywords() {
+  if (!eventsLog.value?.events?.length) return;
+  const needBackfill = eventsLog.value.events.filter(
+    (e) => !e.vectorKeywords || e.vectorKeywords.length === 0,
+  );
+  if (needBackfill.length === 0) return;
+
+  try {
+    const { extractSummaryKeywords } = await import('@/utils/summaryKeywordExtractor');
+    let changed = false;
+    for (const event of needBackfill) {
+      const kws = extractSummaryKeywords(event.content, 8);
+      if (kws.length > 0) {
+        event.vectorKeywords = kws;
+        changed = true;
+      }
+    }
+    if (changed) {
+      // 觸發 Vue 響應式更新
+      eventsLog.value = { ...eventsLog.value, events: [...eventsLog.value.events] };
+      // 保存到 IndexedDB
+      await saveEventsLog();
+    }
+  } catch (e) {
+    console.warn('[AISummaryPanel] 回填關鍵詞失敗:', e);
+  }
+}
+
+onMounted(async () => {
+  await loadEventsLog();
+  backfillKeywords(); // 背景回填，不阻塞
   loadVectorStats();
   // 從 props 載入現有設定
   if (props.initialSettings) {
@@ -2534,6 +2573,28 @@ onMounted(() => {
       font-size: 12px;
       line-height: 1.4;
       color: var(--color-text, #1f2937);
+    }
+
+    .keywords-preview {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px;
+      margin-top: 5px;
+
+      .keyword-tag-mini {
+        font-size: 10px;
+        padding: 1px 5px;
+        border-radius: 6px;
+        background: rgba(var(--color-primary-rgb, 125, 211, 168), 0.15);
+        color: var(--color-primary, #7dd3a8);
+        line-height: 1.4;
+      }
+
+      .keyword-more {
+        font-size: 10px;
+        color: var(--color-text-muted, #9ca3af);
+        padding: 1px 3px;
+      }
     }
 
     .btn-edit {

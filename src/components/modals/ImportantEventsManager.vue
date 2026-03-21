@@ -742,8 +742,35 @@ function formatTime(timestamp: number) {
   });
 }
 
-onMounted(() => {
-  loadEventsLog();
+/** 為缺少 vectorKeywords 的事件自動補提取 */
+async function backfillKeywords() {
+  if (!eventsLog.value) return;
+  const { extractSummaryKeywords } = await import('@/utils/summaryKeywordExtractor');
+  const updatedEvents = eventsLog.value.events.map(event => {
+    if (!event.vectorKeywords || event.vectorKeywords.length === 0) {
+      const kws = extractSummaryKeywords(event.content);
+      console.log(`[關鍵詞補填] ${event.content.slice(0, 20)}... → ${kws.join(', ')}`);
+      return { ...event, vectorKeywords: kws };
+    }
+    return event;
+  });
+  const hasChanges = updatedEvents.some((e, i) => e !== eventsLog.value!.events[i]);
+  if (hasChanges) {
+    eventsLog.value = { ...eventsLog.value, events: updatedEvents };
+    saveEventsLog();
+  }
+}
+
+onMounted(async () => {
+  console.log('[重要事件] onMounted 開始');
+  try {
+    await loadEventsLog();
+    console.log('[重要事件] loadEventsLog 完成, events:', eventsLog.value?.events?.length ?? 'null');
+    await backfillKeywords();
+    console.log('[重要事件] backfillKeywords 完成');
+  } catch (e) {
+    console.error('[重要事件] onMounted 錯誤:', e);
+  }
 });
 </script>
 
