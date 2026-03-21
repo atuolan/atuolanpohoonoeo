@@ -430,14 +430,24 @@ async function buildBackupZipStreaming(
   // 3. 建立 fflate Zip 流，收集輸出 chunks
   const outputChunks: Uint8Array[] = [];
   let totalOutputSize = 0;
+  let zipResolve: () => void;
+  let zipReject: (err: Error) => void;
+  const zipDone = new Promise<void>((resolve, reject) => {
+    zipResolve = resolve;
+    zipReject = reject;
+  });
 
-  const zipper = new FflateZip((err, chunk, _final) => {
+  const zipper = new FflateZip((err, chunk, final) => {
     if (err) {
       console.error("[AutoBackup] ZIP 流錯誤:", err);
+      zipReject(err instanceof Error ? err : new Error(String(err)));
       return;
     }
     outputChunks.push(chunk);
     totalOutputSize += chunk.length;
+    if (final) {
+      zipResolve();
+    }
   });
 
   // 4. 寫入輕量數據（不含聊天）
@@ -530,10 +540,11 @@ async function buildBackupZipStreaming(
   }));
   await pushFileToZip(zipper, "metadata.json", metadataBytes);
 
-  // 8. 結束 zip 流
+  // 8. 結束 zip 流，等待中央目錄寫入完成
   onProgress?.({ phase: "完成壓縮..." });
   await yieldToMain();
   zipper.end();
+  await zipDone;
 
   // 9. 合併所有 chunks 為最終 Uint8Array
   const result = new Uint8Array(totalOutputSize);
@@ -548,6 +559,51 @@ async function buildBackupZipStreaming(
   return result;
 }
 
+/**
+ * 構建備份 JSON — 將所有數據（含聊天）收集到一個 JSON 物件
+ * 圖片保留 base64 DataURL，不做媒體提取
+ */
+async function buildBackupJson(
+  onProgress?: BackupProgressCallback,
+): Promise<string> {
+  // 1. 收集輕量數據
+  onProgress?.({ phase: "收集基礎數據..." });
+  await yieldToMain();
+  const data = await collectLightData();
+
+  // 2. 逐個載入聊天
+  const chatKeys = await getAllChatKeys();
+  const totalChats = chatKeys.length;
+  const chats: any[] = [];
+
+  for (let i = 0; i < chatKeys.length; i++) {
+    if (i % 3 === 0) {
+      onProgress?.({ phase: "處理聊天", current: i + 1, total: totalChats });
+      await yieldToMain();
+    }
+    try {
+      const chat = await db.get<any>(DB_STORES.CHATS, chatKeys[i]);
+      if (!chat) continue;
+      if (chat.messages?.length > 0) {
+        try {
+          chat.messages = await restoreImagesToMessages(chat.messages);
+        } catch (imgErr) {
+          console.warn(`[AutoBackup] 聊天 "${chat.id}" 圖片還原失敗:`, imgErr);
+        }
+      }
+      chats.push(chat);
+    } catch (chatErr) {
+      console.warn(`[AutoBackup] 聊天 "${chatKeys[i]}" 讀取失敗，跳過:`, chatErr);
+    }
+  }
+
+  data.chats = chats;
+
+  onProgress?.({ phase: "序列化 JSON..." });
+  await yieldToMain();
+  return JSON.stringify(data);
+}
+
 // ============================================================
 // 寫入備份檔案
 // ============================================================
@@ -557,14 +613,14 @@ function generateBackupFilename(): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   const time = `${pad(now.getHours())}h${pad(now.getMinutes())}m${pad(now.getSeconds())}s`;
-  return `aguaphone-backup-${date}_${time}.zip`;
+  return `aguaphone-backup-${date}_${time}.json`;
 }
 
 /**
  * 使用 File System Access API 寫入備份
  */
 async function writeBackupToFS(
-  zipData: Uint8Array,
+  data: Blob,
   filename: string,
   settings: AutoBackupSettings,
 ): Promise<void> {
@@ -578,7 +634,7 @@ async function writeBackupToFS(
 
   const fileHandle = await _dirHandle.getFileHandle(filename, { create: true });
   const writable = await (fileHandle as any).createWritable();
-  await writable.write(zipData);
+  await writable.write(data);
   await writable.close();
 
   // 清理舊備份
@@ -599,7 +655,7 @@ async function cleanOldBackups(maxBackups: number): Promise<void> {
     if (
       handle.kind === "file" &&
       name.startsWith("aguaphone-backup-") &&
-      name.endsWith(".zip")
+      (name.endsWith(".zip") || name.endsWith(".json"))
     ) {
       backupFiles.push({ name, handle });
     }
@@ -626,10 +682,10 @@ async function cleanOldBackups(maxBackups: number): Promise<void> {
  * Fallback：觸發瀏覽器下載
  */
 async function downloadBackup(
-  zipData: Uint8Array,
+  blob: Blob,
   filename: string,
 ): Promise<void> {
-  const blob = new Blob([zipData as BlobPart], { type: "application/zip" });
+  const mimeType = filename.endsWith(".json") ? "application/json" : "application/zip";
 
   // iOS Safari: 使用 Web Share API（<a download> 在 iOS 上不可靠）
   if (
@@ -637,7 +693,7 @@ async function downloadBackup(
     /iPad|iPhone|iPod/.test(navigator.userAgent)
   ) {
     try {
-      const file = new File([blob], filename, { type: "application/zip" });
+      const file = new File([blob], filename, { type: mimeType });
       await navigator.share({ files: [file] });
       return;
     } catch (shareErr: any) {
@@ -685,14 +741,15 @@ export async function performBackup(
     const settings = await loadBackupSettings();
     const filename = generateBackupFilename();
 
-    // 使用流式備份，降低記憶體峰值
-    const zipData = await buildBackupZipStreaming(onProgress);
+    // 使用 JSON 格式備份
+    const jsonStr = await buildBackupJson(onProgress);
+    const blob = new Blob([jsonStr], { type: "application/json" });
 
     onProgress?.({ phase: "寫入檔案..." });
 
     if (!forceDownload && isFileSystemAccessSupported() && _dirHandle) {
       try {
-        await writeBackupToFS(zipData, filename, settings);
+        await writeBackupToFS(blob, filename, settings);
         const msg = `備份成功: ${filename}`;
         console.log(`[AutoBackup] ${msg}`);
 
@@ -714,7 +771,7 @@ export async function performBackup(
     }
 
     // Fallback: 下載
-    await downloadBackup(zipData, filename);
+    await downloadBackup(blob, filename);
     const msg = `已下載備份: ${filename}`;
     settings.lastBackupAt = Date.now();
     settings.lastBackupMessage = msg;
