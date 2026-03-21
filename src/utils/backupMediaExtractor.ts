@@ -148,8 +148,8 @@ export class BackupMediaExtractor {
  * 掃描備份資料物件，將所有 base64 圖片提取到 media 資料夾並去重。
  * 會直接修改傳入的 data 物件（將 base64 替換為檔案路徑）。
  */
-export function extractAllMediaFromBackupData(data: any): ExtractedMedia {
-  const extractor = new BackupMediaExtractor()
+export function extractAllMediaFromBackupData(data: any, sharedExtractor?: BackupMediaExtractor): ExtractedMedia {
+  const extractor = sharedExtractor ?? new BackupMediaExtractor()
 
   // 1. 角色頭像
   if (Array.isArray(data.characters)) {

@@ -153,6 +153,9 @@ export async function initStorageProtection(): Promise<void> {
 
   // 請求系統通知權限（使用者首次會看到瀏覽器授權提示）
   await requestNotificationPermission();
+
+  // 啟動存儲健康監控：偵測瀏覽器驅逐 IndexedDB 資料的情況
+  startStorageHealthMonitor();
 }
 
 /**
@@ -237,4 +240,149 @@ function fmt(bytes: number): string {
   const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+}
+
+// ============================================================
+// 存儲健康監控
+// ============================================================
+
+const HEALTH_KEY = "aguaphone_storage_health";
+
+interface StorageHealthSnapshot {
+  characterCount: number;
+  chatCount: number;
+  timestamp: number;
+}
+
+/**
+ * 存儲健康監控：偵測瀏覽器驅逐 IndexedDB 資料的情況
+ *
+ * 原理：在 localStorage 記錄上次已知的角色/聊天數量，
+ * 每次頁面載入時比較。如果數量大幅下降（且不是使用者主動刪除），
+ * 說明瀏覽器可能已驅逐了 IndexedDB 資料。
+ */
+function startStorageHealthMonitor(): void {
+  // 延遲執行，等 DB 初始化完成
+  setTimeout(async () => {
+    try {
+      await checkStorageHealth();
+    } catch (e) {
+      console.warn("[StorageHealth] 健康檢查失敗:", e);
+    }
+  }, 5000);
+
+  // 頁面回到前景時也檢查一次（手機切回來時）
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      setTimeout(async () => {
+        try {
+          await checkStorageHealth();
+        } catch {
+          // 靜默失敗
+        }
+      }, 2000);
+    }
+  });
+}
+
+async function checkStorageHealth(): Promise<void> {
+  const DB_NAME = "aguaphone-db";
+
+  // 用原生 IDB 快速計數，不依賴 db wrapper
+  const counts = await new Promise<{ characters: number; chats: number }>(
+    (resolve) => {
+      const req = indexedDB.open(DB_NAME);
+      req.onsuccess = (e) => {
+        const idb = (e.target as IDBOpenDBRequest).result;
+        const storeNames = Array.from(idb.objectStoreNames);
+
+        if (
+          !storeNames.includes("characters") ||
+          !storeNames.includes("chats")
+        ) {
+          idb.close();
+          resolve({ characters: 0, chats: 0 });
+          return;
+        }
+
+        const tx = idb.transaction(["characters", "chats"], "readonly");
+        let characters = 0;
+        let chats = 0;
+        let pending = 2;
+
+        const done = () => {
+          pending--;
+          if (pending === 0) {
+            idb.close();
+            resolve({ characters, chats });
+          }
+        };
+
+        const charReq = tx.objectStore("characters").count();
+        charReq.onsuccess = () => {
+          characters = charReq.result;
+          done();
+        };
+        charReq.onerror = done;
+
+        const chatReq = tx.objectStore("chats").count();
+        chatReq.onsuccess = () => {
+          chats = chatReq.result;
+          done();
+        };
+        chatReq.onerror = done;
+      };
+      req.onerror = () => resolve({ characters: 0, chats: 0 });
+    },
+  );
+
+  // 讀取上次快照
+  const prevRaw = localStorage.getItem(HEALTH_KEY);
+  const prev: StorageHealthSnapshot | null = prevRaw
+    ? JSON.parse(prevRaw)
+    : null;
+
+  // 更新快照（只在數量增加或首次時更新，避免驅逐後覆蓋正確值）
+  if (
+    !prev ||
+    counts.characters >= prev.characterCount ||
+    counts.chats >= prev.chatCount
+  ) {
+    const snapshot: StorageHealthSnapshot = {
+      characterCount: Math.max(counts.characters, prev?.characterCount ?? 0),
+      chatCount: Math.max(counts.chats, prev?.chatCount ?? 0),
+      timestamp: Date.now(),
+    };
+    localStorage.setItem(HEALTH_KEY, JSON.stringify(snapshot));
+  }
+
+  // 比較：如果角色或聊天數量大幅下降，發出警告
+  if (prev && prev.characterCount > 0) {
+    const charLoss = prev.characterCount - counts.characters;
+    const chatLoss = prev.chatCount - counts.chats;
+
+    // 角色消失超過一半，或聊天消失超過一半 → 可能被瀏覽器驅逐
+    if (
+      (charLoss > 0 && charLoss >= prev.characterCount * 0.5) ||
+      (chatLoss > 0 && chatLoss >= prev.chatCount * 0.5)
+    ) {
+      console.error(
+        `[StorageHealth] ⚠️ 偵測到資料可能被瀏覽器驅逐！` +
+          `角色: ${prev.characterCount} → ${counts.characters}, ` +
+          `聊天: ${prev.chatCount} → ${counts.chats}`,
+      );
+
+      // 派發自訂事件，讓 UI 層可以顯示警告
+      window.dispatchEvent(
+        new CustomEvent("storage:data-loss-detected", {
+          detail: {
+            previousCharacters: prev.characterCount,
+            currentCharacters: counts.characters,
+            previousChats: prev.chatCount,
+            currentChats: counts.chats,
+          },
+        }),
+      );
+    }
+  }
 }

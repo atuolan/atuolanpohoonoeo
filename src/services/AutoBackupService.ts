@@ -9,7 +9,10 @@
 
 import { db, DB_STORES } from "@/db/database";
 import { restoreImagesToMessages } from "@/db/operations";
-import { extractAllMediaFromBackupData } from "@/utils/backupMediaExtractor";
+import {
+  BackupMediaExtractor,
+  extractAllMediaFromBackupData,
+} from "@/utils/backupMediaExtractor";
 import { strToU8, zip } from "fflate";
 
 // ============================================================
@@ -337,7 +340,7 @@ async function getAllChatKeys(): Promise<string[]> {
   await db.init();
   // 使用原生 IDB 取 keys，避免載入所有聊天到記憶體
   return new Promise((resolve, reject) => {
-    const rawReq = indexedDB.open("aguaphone_db");
+    const rawReq = indexedDB.open("aguaphone-db");
     rawReq.onsuccess = (e) => {
       const idb = (e.target as IDBOpenDBRequest).result;
       if (!idb.objectStoreNames.contains("chats")) {
@@ -380,14 +383,24 @@ async function buildBackupZipStreaming(
   await yieldToMain();
   const lightData = await collectLightData();
 
-  // 2. 取得所有聊天
+  // 建立共用的媒體提取器（跨聊天去重）
+  const extractor = new BackupMediaExtractor();
+
+  // 2. 先提取輕量數據中的媒體（角色頭像、主題桌布等）
+  extractAllMediaFromBackupData(lightData, extractor);
+
+  // 3. 逐個處理聊天 — 還原圖片後立即提取媒體，釋放 base64 記憶體
+  //    這樣每個聊天的 base64 字串在提取為二進位後就被短路徑替換，
+  //    不會同時駐留在記憶體中，大幅降低峰值記憶體用量。
   const chatKeys = await getAllChatKeys();
   const totalChats = chatKeys.length;
   const chats: any[] = [];
 
   for (let i = 0; i < chatKeys.length; i++) {
-    onProgress?.({ phase: "處理聊天", current: i + 1, total: totalChats });
-    await yieldToMain();
+    if (i % 3 === 0) {
+      onProgress?.({ phase: "處理聊天", current: i + 1, total: totalChats });
+      await yieldToMain();
+    }
 
     try {
       const chat = await db.get<any>(DB_STORES.CHATS, chatKeys[i]);
@@ -395,25 +408,46 @@ async function buildBackupZipStreaming(
 
       if (chat.messages?.length > 0) {
         try {
+          // 還原圖片引用為 base64
           chat.messages = await restoreImagesToMessages(chat.messages);
         } catch (imgErr) {
           console.warn(`[AutoBackup] 聊天 "${chat.id}" 圖片還原失敗:`, imgErr);
         }
+
+        // 立即提取該聊天的媒體，將 base64 替換為短路徑，釋放記憶體
+        for (const msg of chat.messages) {
+          if (msg.imageUrl?.startsWith("data:image/")) {
+            const f = extractor.extract(msg.imageUrl, "chat");
+            if (f) msg.imageUrl = f;
+          }
+          if (msg.imageData?.startsWith("data:image/")) {
+            const f = extractor.extract(msg.imageData, "chat_data");
+            if (f) msg.imageData = f;
+          }
+        }
+        // 聊天桌布
+        if (
+          chat.appearance?.wallpaper?.type === "image" &&
+          chat.appearance.wallpaper.value?.startsWith("data:image/")
+        ) {
+          const f = extractor.extract(
+            chat.appearance.wallpaper.value,
+            "chat_wallpaper",
+          );
+          if (f) chat.appearance.wallpaper.value = f;
+        }
       }
+
       chats.push(chat);
     } catch (chatErr) {
-      console.warn(`[AutoBackup] 聊天 "${chatKeys[i]}" 讀取失敗，跳過:`, chatErr);
+      console.warn(
+        `[AutoBackup] 聊天 "${chatKeys[i]}" 讀取失敗，跳過:`,
+        chatErr,
+      );
     }
   }
 
-  onProgress?.({ phase: "提取媒體並去重..." });
-  await yieldToMain();
-
-  // 3. 組裝完整數據
-  const fullData = { ...lightData, chats };
-
-  // 4. 提取所有 base64 媒體並去重
-  const mediaResult = extractAllMediaFromBackupData(fullData);
+  const mediaResult = extractor.getResult();
   console.log(
     `[AutoBackup] 媒體提取完成: ${mediaResult.totalExtracted} 個 base64，去重 ${mediaResult.dedupeHits} 個`,
   );
@@ -421,7 +455,8 @@ async function buildBackupZipStreaming(
   onProgress?.({ phase: "壓縮中..." });
   await yieldToMain();
 
-  // 5. 壓縮為 ZIP（含 media 檔案）
+  // 4. 組裝完整數據並壓縮
+  const fullData = { ...lightData, chats };
   const jsonBytes = strToU8(JSON.stringify(fullData));
   const zipFiles: Record<string, Uint8Array> = {
     "backup.json": jsonBytes,
