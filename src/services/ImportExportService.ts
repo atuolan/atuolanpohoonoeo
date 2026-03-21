@@ -992,6 +992,11 @@ export class ImportExportService {
       const arrayBuffer = await file.arrayBuffer();
       const zipData = new Uint8Array(arrayBuffer);
 
+      // 檢查 ZIP magic bytes (PK: 0x50 0x4B)
+      if (zipData.length < 4 || zipData[0] !== 0x50 || zipData[1] !== 0x4B) {
+        return { success: false, error: "檔案不是有效的 ZIP 格式，可能已損壞或副檔名錯誤" };
+      }
+
       // 解壓縮 — 先嘗試 fflate，失敗則 fallback 到 jszip
       let files: Record<string, Uint8Array>;
       try {

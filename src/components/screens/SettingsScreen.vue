@@ -1541,67 +1541,81 @@ async function handleFileImport(event: Event) {
 
     // 檢查檔案類型
     if (file.name.endsWith(".zip")) {
-      // ZIP 格式 — 先嘗試 fflate，失敗則 fallback 到 jszip（相容性更廣）
+      // 讀取檔案內容
       const arrayBuffer = await file.arrayBuffer();
-      let files: Record<string, Uint8Array>;
+      const bytes = new Uint8Array(arrayBuffer);
 
-      try {
-        const { unzip } = await import("fflate");
-        const zipData = new Uint8Array(arrayBuffer);
-        files = await new Promise<Record<string, Uint8Array>>(
-          (resolve, reject) => {
-            unzip(zipData, (err, data) => {
-              if (err) reject(err);
-              else resolve(data);
-            });
-          },
-        );
-      } catch (fflateErr) {
-        // fflate 無法解析，使用 jszip 作為 fallback
-        console.warn("[Import] fflate 解壓失敗，嘗試 jszip:", fflateErr);
-        const JSZip = (await import("jszip")).default;
-        const zip = await JSZip.loadAsync(arrayBuffer);
-        files = {};
-        const entries = Object.entries(zip.files);
-        for (const [name, entry] of entries) {
-          if (!entry.dir) {
-            files[name] = await entry.async("uint8array");
-          }
+      // 檢查 ZIP magic bytes (PK: 0x50 0x4B)
+      const isRealZip = bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4B;
+
+      if (!isRealZip) {
+        // 檔案副檔名是 .zip 但實際不是 ZIP — 嘗試當 JSON 解析
+        console.warn("[Import] 檔案非有效 ZIP（magic bytes 不符），嘗試當 JSON 解析");
+        try {
+          const text = new TextDecoder().decode(bytes);
+          data = JSON.parse(text);
+        } catch {
+          throw new Error("檔案既不是有效的 ZIP 也不是有效的 JSON，可能已損壞");
         }
-      }
+      } else {
+        // 真正的 ZIP — 先嘗試 fflate，失敗則 fallback 到 jszip
+        let files: Record<string, Uint8Array>;
 
-      const { strFromU8 } = await import("fflate");
-
-      // 檢查必要檔案（相容 backup.json 和 data.json 兩種命名）
-      const jsonFile = files["backup.json"] || files["data.json"];
-      if (!jsonFile) {
-        throw new Error("ZIP 中找不到 backup.json 或 data.json");
-      }
-
-      // 解析資料
-      data = JSON.parse(strFromU8(jsonFile));
-
-      // 收集媒體檔案
-      for (const [filename, content] of Object.entries(files)) {
-        if (filename.startsWith("media/")) {
-          mediaFiles[filename] = content;
-        }
-      }
-
-      // 相容新版流式備份格式：聊天存在 chats/*.json 中
-      if (!data.chats || !Array.isArray(data.chats) || data.chats.length === 0) {
-        const chatFiles = Object.entries(files).filter(([name]) => name.startsWith("chats/") && name.endsWith(".json"));
-        if (chatFiles.length > 0) {
-          data.chats = [];
-          for (const [, content] of chatFiles) {
-            try {
-              const chat = JSON.parse(strFromU8(content));
-              data.chats.push(chat);
-            } catch (parseErr) {
-              console.warn("[Import] 聊天檔案解析失敗，跳過:", parseErr);
+        try {
+          const { unzip } = await import("fflate");
+          files = await new Promise<Record<string, Uint8Array>>(
+            (resolve, reject) => {
+              unzip(bytes, (err, d) => {
+                if (err) reject(err);
+                else resolve(d);
+              });
+            },
+          );
+        } catch (fflateErr) {
+          console.warn("[Import] fflate 解壓失敗，嘗試 jszip:", fflateErr);
+          const JSZip = (await import("jszip")).default;
+          const zip = await JSZip.loadAsync(arrayBuffer);
+          files = {};
+          for (const [name, entry] of Object.entries(zip.files)) {
+            if (!entry.dir) {
+              files[name] = await entry.async("uint8array");
             }
           }
-          console.log(`[Import] 從 chats/ 目錄載入 ${data.chats.length} 個聊天`);
+        }
+
+        const { strFromU8 } = await import("fflate");
+
+        // 檢查必要檔案（相容 backup.json 和 data.json 兩種命名）
+        const jsonFile = files["backup.json"] || files["data.json"];
+        if (!jsonFile) {
+          throw new Error("ZIP 中找不到 backup.json 或 data.json");
+        }
+
+        // 解析資料
+        data = JSON.parse(strFromU8(jsonFile));
+
+        // 收集媒體檔案
+        for (const [filename, content] of Object.entries(files)) {
+          if (filename.startsWith("media/")) {
+            mediaFiles[filename] = content;
+          }
+        }
+
+        // 相容新版流式備份格式：聊天存在 chats/*.json 中
+        if (!data.chats || !Array.isArray(data.chats) || data.chats.length === 0) {
+          const chatFiles = Object.entries(files).filter(([name]) => name.startsWith("chats/") && name.endsWith(".json"));
+          if (chatFiles.length > 0) {
+            data.chats = [];
+            for (const [, content] of chatFiles) {
+              try {
+                const chat = JSON.parse(strFromU8(content));
+                data.chats.push(chat);
+              } catch (parseErr) {
+                console.warn("[Import] 聊天檔案解析失敗，跳過:", parseErr);
+              }
+            }
+            console.log(`[Import] 從 chats/ 目錄載入 ${data.chats.length} 個聊天`);
+          }
         }
       }
     } else {
