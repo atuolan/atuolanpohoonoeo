@@ -318,6 +318,13 @@ export function useChatSummaryDiary(deps: {
         (m) => m.role === "user" || m.role === "ai",
       );
 
+      if (validMessages.length === 0) {
+        console.warn("📔 無法生成日記：沒有可用的對話訊息");
+        aiGenerationStore.completeGeneration(chatId, "diary", "");
+        diaryGeneratingLock.value = false;
+        return;
+      }
+
       const settings = deps.chatSummarySettings.value;
       let messagesToUse: typeof validMessages;
 

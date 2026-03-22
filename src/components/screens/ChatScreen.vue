@@ -6830,8 +6830,14 @@ async function loadSummariesAndDiaries() {
 
   if (!chatId && !charId) return;
 
+  // 切換角色時先清空舊數據和時間戳，避免殘留上一個角色的資料
+  chatSummaries.value = [];
+  chatDiaries.value = [];
+  lastSummaryTime.value = 0;
+  lastDiaryTime.value = 0;
+
   try {
-    // 載入總結
+    // 載入總結 — 同時按 chatId 和 characterId 過濾
     const allSummaries = await db.getAll<{
       id: string;
       chatId: string;
@@ -6846,7 +6852,7 @@ async function loadSummariesAndDiaries() {
     }>(DB_STORES.SUMMARIES);
 
     chatSummaries.value = allSummaries
-      .filter((s) => s.chatId === chatId)
+      .filter((s) => s.chatId === chatId && (!charId || s.characterId === charId))
       .map((s) => ({
         id: s.id,
         content: s.content,
@@ -6858,7 +6864,7 @@ async function loadSummariesAndDiaries() {
         keywords: s.keywords,
       }));
 
-    // 載入日記
+    // 載入日記 — 同時按 chatId 和 characterId 過濾
     const allDiaries = await db.getAll<{
       id: string;
       chatId: string;
@@ -6872,7 +6878,7 @@ async function loadSummariesAndDiaries() {
     }>(DB_STORES.DIARIES);
 
     chatDiaries.value = allDiaries
-      .filter((d) => d.chatId === chatId)
+      .filter((d) => d.chatId === chatId && (!charId || d.characterId === charId))
       .map((d) => ({
         id: d.id,
         content: d.content,
@@ -6899,7 +6905,7 @@ async function loadSummariesAndDiaries() {
     }
 
     console.log(
-      `[ChatScreen] 載入 ${chatSummaries.value.length} 條總結, ${chatDiaries.value.length} 篇日記`,
+      `[ChatScreen] 載入 ${chatSummaries.value.length} 條總結, ${chatDiaries.value.length} 篇日記 (chatId=${chatId}, charId=${charId})`,
       `lastSummaryTime=${lastSummaryTime.value ? new Date(lastSummaryTime.value).toLocaleString() : "無"}`,
       `lastDiaryTime=${lastDiaryTime.value ? new Date(lastDiaryTime.value).toLocaleString() : "無"}`,
     );
