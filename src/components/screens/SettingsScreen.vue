@@ -4360,10 +4360,6 @@ function useClonedVoice(voiceId: string) {
           </div>
 
           <div class="backup-buttons">
-            <label class="backup-option" style="display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 13px; color: var(--color-text-secondary, #9ca3af); cursor: pointer; user-select: none;">
-              <input type="checkbox" v-model="excludeChatImages" style="accent-color: var(--color-primary, #7dd3a8);" />
-              不含聊天圖片（輕量備份）
-            </label>
             <button
               class="backup-btn export"
               @click="exportData"
@@ -4394,6 +4390,11 @@ function useClonedVoice(voiceId: string) {
               @change="handleFileImport"
             />
           </div>
+
+          <label class="backup-option" style="display: flex; align-items: center; gap: 8px; padding: 4px 0 0; font-size: 13px; color: var(--color-text-secondary, #9ca3af); cursor: pointer; user-select: none;">
+            <input type="checkbox" v-model="excludeChatImages" style="accent-color: var(--color-primary, #7dd3a8);" />
+            不含聊天圖片（輕量備份）
+          </label>
 
           <p class="backup-hint">
             導出的 ZIP 文件包含所有角色、世界書、聊天記錄和媒體檔案
