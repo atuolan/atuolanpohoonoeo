@@ -10,27 +10,22 @@
  * 設計原則：
  * - 只產出「詞表中已知的完整詞彙」，絕不做中文正則切分
  * - 中文沒有空格分詞，任何基於正則的切分都會產生截斷垃圾詞
- * - 寧可少提取幾個詞，也不要產出「作堅強」「具扔」「試圖」這種垃圾
+ * - 寧可少提取幾個詞，也不要產出截斷的垃圾
  */
 
 import { TERM_CATEGORIES } from '@/data/termCategories'
 import { synonymFamilies } from '@/data/synonymFamilies'
 import { VERB_OBJECT_PHRASES } from '@/data/verbObjectPhrases'
 
-/** 每個類別最多保留的關鍵詞數量 */
 const MAX_TERMS_PER_CATEGORY = 2
-
-/** 最終關鍵詞數量上限 */
 const MAX_TOTAL_KEYWORDS = 10
 
-/** 類別優先順序 */
 const CATEGORY_PRIORITY: string[] = [
   'gift', 'social', 'ceremony', 'medical', 'combat',
   'body_contact', 'emotion_negative', 'emotion_positive',
   'food', 'movement', 'clothing', 'location',
 ]
 
-/** 預建同義詞族索引：詞彙 → 族群代表詞 */
 const termToFamilyHead = new Map<string, string>()
 for (const family of synonymFamilies) {
   const head = family[0]
@@ -41,38 +36,25 @@ for (const family of synonymFamilies) {
   }
 }
 
-// ─── 停用詞（僅用於同義詞族過濾） ──────────────────────────
-
 const STOP_WORDS = new Set([
   '之後', '以後', '後來', '以前', '日後', '將來', '未來',
-  '之后', '以后', '后来', '以前', '日后', '将来', '未来',
+  '之后', '以后', '后来', '日后', '将来',
 ])
-
-// ─── 清理函式 ──────────────────────────────────────────────
 
 function cleanText(text: string): string {
   return text
     .replace(/<[^>]+>/g, '')
     .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
-    .replace(/["「」『』\u201C\u201D]/g, '')
+    .replace(/["\u300C\u300D\u300E\u300F\u201C\u201D]/g, '')
     .trim()
 }
 
-// ─── 主函式 ────────────────────────────────────────────────
-
-/**
- * 從總結文本中提取關鍵詞
- * @param content - 總結文本
- * @returns 去重後的關鍵詞列表
- */
 export function extractSummaryKeywords(content: string): string[] {
   if (!content || content.trim().length === 0) return []
 
   const cleaned = cleanText(content)
-  /** 候選詞 → 分數（越高越好） */
   const candidates = new Map<string, number>()
 
-  /** 安全地加入候選詞（避免子串重複，偏好高分或長詞） */
   function addCandidate(word: string, score: number) {
     if (word.length < 2) return
     for (const [existing] of candidates) {
@@ -88,7 +70,7 @@ export function extractSummaryKeywords(content: string): string[] {
     candidates.set(word, Math.max(candidates.get(word) ?? 0, score))
   }
 
-  // ── 第一層：詞表匹配（高分 = 10） ──
+  // 第一層：詞表匹配（高分 = 10）
   for (const category of CATEGORY_PRIORITY) {
     const terms = TERM_CATEGORIES[category]
     if (!terms) continue
@@ -102,21 +84,20 @@ export function extractSummaryKeywords(content: string): string[] {
     }
   }
 
-  // ── 第二層：同義詞族匹配（高分 = 8） ──
+  // 第二層：同義詞族匹配（高分 = 8）
   for (const [term] of termToFamilyHead) {
     if (term.length >= 2 && !STOP_WORDS.has(term) && cleaned.includes(term)) {
       addCandidate(term, 8)
     }
   }
 
-  // ── 第三層：動賓短語詞表匹配（中分 = 6） ──
+  // 第三層：動賓短語詞表匹配（中分 = 6）
   for (const phrase of VERB_OBJECT_PHRASES) {
     if (cleaned.includes(phrase)) {
       addCandidate(phrase, 6)
     }
   }
 
-  // 按分數排序，取前 N 個
   const sorted = [...candidates.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([word]) => word)
