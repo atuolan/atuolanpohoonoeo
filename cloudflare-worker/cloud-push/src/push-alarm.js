@@ -39,6 +39,8 @@ export class PushAlarmDO {
           return this.handleNotify(request);
         case "/alive":
           return this.handleAlive(request);
+        case "/debug":
+          return this.handleDebug();
         default:
           return json({ error: "Not Found" }, 404);
       }
@@ -128,6 +130,7 @@ export class PushAlarmDO {
   // ─── POST /test ──────────────────────────────────────────────
 
   async handleTest() {
+    console.log("[PushAlarmDO] /test 開始");
     const config = await this.state.storage.get("config");
     if (!config) {
       return json({ error: "尚未同步設定" }, 400);
@@ -139,8 +142,27 @@ export class PushAlarmDO {
       return json({ error: "沒有角色資料" }, 400);
     }
 
+    console.log("[PushAlarmDO] /test 角色:", character.name);
+    console.log("[PushAlarmDO] /test pushChannels:", config.pushChannels);
+
+    // 檢查 Web Push 訂閱狀態
+    const subscription = await this.state.storage.get("pushSubscription");
+    console.log("[PushAlarmDO] /test pushSubscription:", {
+      exists: !!subscription,
+      endpoint: subscription?.endpoint?.slice(0, 100),
+    });
+
+    // 檢查 VAPID 金鑰
+    console.log("[PushAlarmDO] /test VAPID:", {
+      hasPublicKey: !!this.env.VAPID_PUBLIC_KEY,
+      hasPrivateKey: !!this.env.VAPID_PRIVATE_KEY,
+      privateKeyType: typeof this.env.VAPID_PRIVATE_KEY,
+      hasSubject: !!this.env.VAPID_SUBJECT,
+    });
+
     // 呼叫 AI
     const content = await this.callAI(config, character);
+    console.log("[PushAlarmDO] /test AI 回應長度:", content.length);
 
     // 存入離線訊息
     await this.appendMessage(character, content);
@@ -149,6 +171,40 @@ export class PushAlarmDO {
     await this.pushNotifications(config, character, content);
 
     return json({ ok: true, content, characterName: character.name });
+  }
+
+  // ─── GET /debug — 診斷端點 ──────────────────────────────────
+
+  async handleDebug() {
+    const subscription = await this.state.storage.get("pushSubscription");
+    const config = await this.state.storage.get("config");
+    const enabled = await this.state.storage.get("enabled");
+
+    return json({
+      enabled: enabled ?? false,
+      hasConfig: !!config,
+      pushChannels: config?.pushChannels || [],
+      characterCount: config?.characters?.length || 0,
+      vapid: {
+        hasPublicKey: !!this.env.VAPID_PUBLIC_KEY,
+        publicKeyLength: this.env.VAPID_PUBLIC_KEY?.length || 0,
+        hasPrivateKey: !!this.env.VAPID_PRIVATE_KEY,
+        privateKeyLength: this.env.VAPID_PRIVATE_KEY?.length || 0,
+        privateKeyPreview: this.env.VAPID_PRIVATE_KEY
+          ? this.env.VAPID_PRIVATE_KEY.slice(0, 10) + "..."
+          : null,
+        subject: this.env.VAPID_SUBJECT || null,
+      },
+      subscription: subscription
+        ? {
+            endpoint: subscription.endpoint,
+            hasP256dh: !!subscription.keys?.p256dh,
+            p256dhLength: subscription.keys?.p256dh?.length || 0,
+            hasAuth: !!subscription.keys?.auth,
+            authLength: subscription.keys?.auth?.length || 0,
+          }
+        : null,
+    });
   }
 
   // ─── POST /alive — 本地存活心跳 ─────────────────────────────
@@ -184,16 +240,35 @@ export class PushAlarmDO {
   // ─── POST /notify — 本地觸發 Web Push 通知（不生成 AI） ─────
 
   async handleNotify(request) {
-    const { characterName, characterId, content } = await request.json();
+    console.log("[PushAlarmDO] /notify 收到請求");
+    const body = await request.json();
+    const { characterName, characterId, content } = body;
+    console.log("[PushAlarmDO] /notify 參數:", { characterName, characterId, contentLength: content?.length });
 
     if (!characterName || !content) {
+      console.warn("[PushAlarmDO] /notify 缺少必要參數");
       return json({ error: "缺少 characterName 或 content" }, 400);
     }
 
     const subscription = await this.state.storage.get("pushSubscription");
+    console.log("[PushAlarmDO] /notify pushSubscription:", {
+      exists: !!subscription,
+      endpoint: subscription?.endpoint?.slice(0, 80),
+      hasKeys: !!subscription?.keys,
+    });
+
     if (!subscription) {
       return json({ error: "尚未訂閱 Web Push" }, 400);
     }
+
+    // 檢查 VAPID 金鑰
+    console.log("[PushAlarmDO] /notify VAPID 檢查:", {
+      hasPublicKey: !!this.env.VAPID_PUBLIC_KEY,
+      publicKeyLength: this.env.VAPID_PUBLIC_KEY?.length,
+      hasPrivateKey: !!this.env.VAPID_PRIVATE_KEY,
+      privateKeyLength: this.env.VAPID_PRIVATE_KEY?.length,
+      hasSubject: !!this.env.VAPID_SUBJECT,
+    });
 
     try {
       await this.sendWebPush(
@@ -201,8 +276,10 @@ export class PushAlarmDO {
         { id: characterId || "unknown", name: characterName },
         content,
       );
+      console.log("[PushAlarmDO] /notify Web Push 發送成功");
       return json({ ok: true });
     } catch (e) {
+      console.error("[PushAlarmDO] /notify Web Push 發送失敗:", e.message, e.stack);
       // 訂閱失效時清除
       if (e.statusCode === 410 || e.statusCode === 404) {
         await this.state.storage.delete("pushSubscription");
@@ -439,6 +516,12 @@ export class PushAlarmDO {
 
   async pushNotifications(config, character, content) {
     const channels = config.pushChannels || [];
+    console.log("[PushAlarmDO] pushNotifications 開始:", {
+      channels,
+      characterName: character.name,
+      contentLength: content.length,
+      hasDiscordUserId: !!config.discordUserId,
+    });
 
     // Discord DM
     if (channels.includes("discord") && config.discordUserId) {
@@ -476,6 +559,23 @@ export class PushAlarmDO {
   // ─── Web Push 發送 ───────────────────────────────────────────
 
   async sendWebPush(subscription, character, content) {
+    console.log("[PushAlarmDO] sendWebPush 開始:", {
+      characterName: character.name,
+      endpoint: subscription.endpoint?.slice(0, 80),
+      hasP256dh: !!subscription.keys?.p256dh,
+      hasAuth: !!subscription.keys?.auth,
+      hasVapidPublicKey: !!this.env.VAPID_PUBLIC_KEY,
+      hasVapidPrivateKey: !!this.env.VAPID_PRIVATE_KEY,
+      vapidPrivateKeyType: typeof this.env.VAPID_PRIVATE_KEY,
+      vapidPrivateKeyLength: this.env.VAPID_PRIVATE_KEY?.length || 0,
+      hasVapidSubject: !!this.env.VAPID_SUBJECT,
+    });
+
+    // 檢查 VAPID 私鑰是否存在
+    if (!this.env.VAPID_PRIVATE_KEY) {
+      throw new Error("VAPID_PRIVATE_KEY 未設定！請執行: wrangler secret put VAPID_PRIVATE_KEY");
+    }
+
     const payload = JSON.stringify({
       type: "cloud-push-message",
       characterId: character.id,
@@ -484,26 +584,46 @@ export class PushAlarmDO {
       timestamp: Date.now(),
     });
 
-    // 用 @block65/webcrypto-web-push 建構加密 payload
-    const { headers, body, endpoint } = await buildPushPayload(
-      {
-        endpoint: subscription.endpoint,
-        keys: {
-          p256dh: subscription.keys.p256dh,
-          auth: subscription.keys.auth,
+    console.log("[PushAlarmDO] buildPushPayload 參數:", {
+      endpoint: subscription.endpoint,
+      payloadLength: payload.length,
+      vapidSubject: this.env.VAPID_SUBJECT,
+    });
+
+    let pushResult;
+    try {
+      // 用 @block65/webcrypto-web-push 建構加密 payload
+      pushResult = await buildPushPayload(
+        {
+          endpoint: subscription.endpoint,
+          keys: {
+            p256dh: subscription.keys.p256dh,
+            auth: subscription.keys.auth,
+          },
         },
-      },
-      {
-        data: payload,
-        urgency: "normal",
-        ttl: 86400, // 24 小時
-      },
-      {
-        subject: this.env.VAPID_SUBJECT || "mailto:push@aguaphone.app",
-        publicKey: this.env.VAPID_PUBLIC_KEY,
-        privateKey: this.env.VAPID_PRIVATE_KEY,
-      },
-    );
+        {
+          data: payload,
+          urgency: "normal",
+          ttl: 86400, // 24 小時
+        },
+        {
+          subject: this.env.VAPID_SUBJECT || "mailto:push@aguaphone.app",
+          publicKey: this.env.VAPID_PUBLIC_KEY,
+          privateKey: this.env.VAPID_PRIVATE_KEY,
+        },
+      );
+      console.log("[PushAlarmDO] buildPushPayload 成功");
+    } catch (buildErr) {
+      console.error("[PushAlarmDO] buildPushPayload 失敗:", buildErr.message, buildErr.stack);
+      throw buildErr;
+    }
+
+    const { headers, body, endpoint } = pushResult;
+
+    console.log("[PushAlarmDO] 準備 fetch 推送服務:", {
+      endpoint,
+      headerKeys: headers ? Object.keys(Object.fromEntries(headers?.entries?.() || [])) : "N/A",
+    });
 
     const res = await fetch(endpoint, {
       method: "POST",
@@ -511,8 +631,14 @@ export class PushAlarmDO {
       body,
     });
 
+    console.log("[PushAlarmDO] 推送服務回應:", {
+      status: res.status,
+      statusText: res.statusText,
+    });
+
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
+      console.error("[PushAlarmDO] Web Push 失敗回應內容:", errText.slice(0, 500));
       const err = new Error(
         `Web Push 失敗 (${res.status}): ${errText.slice(0, 200)}`,
       );
