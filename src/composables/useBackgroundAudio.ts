@@ -1,27 +1,33 @@
-import { useSettingsStore } from "@/stores";
+import { useSettingsStore } from "@/stores/settings";
 import { watch } from "vue";
 
 // ===== 多層保活策略 =====
 // 1. Web Lock：讓瀏覽器認為頁面「正在做重要事情」，不輕易回收
 // 2. 靜音 OscillatorNode：1Hz + gain 0.001，不出聲也不觸發系統媒體控制欄
 // 3. 靜音 <audio> 循環播放 + Media Session：移動端保活關鍵
-// 4. Web Worker 心跳：每 15 秒 ping 主線程，檢查 AudioContext 是否被掛起
-// 5. BroadcastChannel 自我心跳：Worker 被殺時的備用喚醒機制
-// 6. Page Lifecycle（freeze/resume）：頁面凍結恢復後重建所有保活
-// 7. visibilitychange 恢復：切回前台時重新確認所有保活層都在運作
-// 8. 麥克風/鏡頭串流模式：透過 getUserMedia 保活，不佔媒體控制欄
+// 4. 備用 <audio> 元素：主音頻被暫停時立即接手，避免 iOS 30 秒超時殺進程
+// 5. Web Worker 心跳：每 15 秒 ping 主線程，檢查 AudioContext 是否被掛起
+// 6. 主線程輪詢：每 10 秒檢查音頻狀態（Worker 也可能被殺）
+// 7. BroadcastChannel 自我心跳：Worker 被殺時的備用喚醒機制
+// 8. Screen Wake Lock：前台時防止螢幕休眠（減少進入後台的機會）
+// 9. Page Lifecycle（freeze/resume）：頁面凍結恢復後重建所有保活層
+// 10. visibilitychange 恢復：切回前台時重新確認所有保活層都在運作
+// 11. 麥克風/鏡頭串流模式：透過 getUserMedia 保活，track 被殺時自動回退音頻模式
 // 所有音頻操作延遲到用戶第一次觸摸/點擊後才啟動，避免瀏覽器自動播放策略攔截
 
 let audioCtx: AudioContext | null = null;
 let oscillator: OscillatorNode | null = null;
 let gainNode: GainNode | null = null;
 let silentAudioEl: HTMLAudioElement | null = null;
+let backupAudioEl: HTMLAudioElement | null = null;
 let heartbeatWorker: Worker | null = null;
 let workerBlobUrl: string | null = null;
 let webLockAbortController: AbortController | null = null;
 let broadcastChannel: BroadcastChannel | null = null;
 let broadcastTimer: ReturnType<typeof setInterval> | null = null;
+let mainThreadPollTimer: ReturnType<typeof setInterval> | null = null;
 let mediaStream: MediaStream | null = null;
+let wakeLockSentinel: WakeLockSentinel | null = null;
 let isActive = false;
 let userInteracted = false;
 let interactionListenersBound = false;
@@ -30,24 +36,40 @@ let currentMode: "audio" | "mic" | "camera" = "audio";
 
 const SILENT_AUDIO_URL = "/silent.mp3";
 
+// ---------- Screen Wake Lock ----------
+async function acquireWakeLock() {
+  if (wakeLockSentinel) return;
+  if (!("wakeLock" in navigator)) return;
+  try {
+    wakeLockSentinel = await navigator.wakeLock.request("screen");
+    wakeLockSentinel.addEventListener("release", () => {
+      wakeLockSentinel = null;
+    });
+    console.log("[KeepAlive] Screen Wake Lock 已取得");
+  } catch {
+    // 可能在後台或權限被拒
+  }
+}
+
+function releaseWakeLock() {
+  wakeLockSentinel?.release().catch(() => {});
+  wakeLockSentinel = null;
+}
+
 // ---------- Web Lock ----------
 function acquireWebLock() {
-  // 先釋放舊的，避免重複
   releaseWebLock();
-
   if (!("locks" in navigator)) {
     console.warn("[KeepAlive] Web Lock API 不支援");
     return;
   }
   webLockAbortController = new AbortController();
   const { signal } = webLockAbortController;
-
   navigator.locks
     .request(
       "aguaphone-keep-alive",
       { signal },
       () =>
-        // 回傳一個永遠不 resolve 的 Promise，鎖就會一直持有
         new Promise<void>(() => {
           console.log("[KeepAlive] Web Lock 已取得");
         }),
@@ -69,18 +91,15 @@ function releaseWebLock() {
 // ---------- 靜音振盪器 ----------
 function startSilentOscillator() {
   if (audioCtx) return;
-
   try {
     audioCtx = new AudioContext();
     gainNode = audioCtx.createGain();
-    gainNode.gain.value = 0.001; // 幾乎無聲
-
+    gainNode.gain.value = 0.001;
     oscillator = audioCtx.createOscillator();
-    oscillator.frequency.value = 1; // 1Hz，人耳聽不到
+    oscillator.frequency.value = 1;
     oscillator.connect(gainNode);
     gainNode.connect(audioCtx.destination);
     oscillator.start();
-
     console.log("[KeepAlive] 靜音振盪器已啟動");
   } catch (e) {
     console.warn("[KeepAlive] 靜音振盪器啟動失敗:", e);
@@ -89,60 +108,109 @@ function startSilentOscillator() {
 
 function stopSilentOscillator() {
   if (oscillator) {
-    try {
-      oscillator.stop();
-    } catch {
-      /* 已停止 */
-    }
+    try { oscillator.stop(); } catch { /* 已停止 */ }
     oscillator.disconnect();
     oscillator = null;
   }
-  if (gainNode) {
-    gainNode.disconnect();
-    gainNode = null;
-  }
-  if (audioCtx) {
-    audioCtx.close().catch(() => {});
-    audioCtx = null;
-  }
+  if (gainNode) { gainNode.disconnect(); gainNode = null; }
+  if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
 }
 
-// ---------- 靜音 <audio> 循環播放 + Media Session ----------
-// 這是移動端保活的關鍵：系統看到有媒體在播放就不會輕易殺進程
-// 會觸發系統媒體控制欄，但這正是我們要的——讓 OS 認為 app 在播放媒體
+// ---------- Media Session ----------
+function setupMediaSession() {
+  if (!("mediaSession" in navigator)) return;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: "保活中",
+    artist: "Aguaphone",
+  });
+  // 攔截系統的 play/pause 控制，強制繼續播放
+  navigator.mediaSession.setActionHandler("play", () => {
+    silentAudioEl?.play().catch(() => {});
+  });
+  navigator.mediaSession.setActionHandler("pause", () => {
+    // iOS 按暫停時，我們仍然嘗試恢復播放
+    silentAudioEl?.play().catch(() => {});
+  });
+}
+
+function clearMediaSession() {
+  if (!("mediaSession" in navigator)) return;
+  navigator.mediaSession.metadata = null;
+  navigator.mediaSession.setActionHandler("play", null);
+  navigator.mediaSession.setActionHandler("pause", null);
+}
+
+// ---------- 靜音 <audio> 雙元素策略 ----------
+// 主音頻 + 備用音頻：當 iOS 暫停主音頻時，備用音頻立即接手
+function createAudioElement(label: string): HTMLAudioElement {
+  const el = new Audio(SILENT_AUDIO_URL);
+  el.loop = true;
+  el.volume = 0.001;
+  // loop 保險：ended 時手動重播
+  el.addEventListener("ended", () => {
+    if (isActive) el.play().catch(() => {});
+  });
+  // 被系統暫停時嘗試恢復，同時啟動備用音頻
+  el.addEventListener("pause", () => {
+    if (!isActive) return;
+    console.warn(`[KeepAlive] ${label} 被暫停，嘗試恢復`);
+    setTimeout(() => {
+      if (isActive && el.paused) {
+        el.play().catch(() => {});
+      }
+    }, 300);
+    // 如果是主音頻被暫停，啟動備用音頻
+    if (el === silentAudioEl && backupAudioEl?.paused) {
+      console.log("[KeepAlive] 主音頻被暫停，啟動備用音頻");
+      backupAudioEl.play().catch(() => {});
+    }
+  });
+  // stalled/waiting/error 事件：音頻卡住時嘗試恢復
+  el.addEventListener("stalled", () => {
+    if (isActive) {
+      console.warn(`[KeepAlive] ${label} stalled，嘗試恢復`);
+      el.play().catch(() => {});
+    }
+  });
+  el.addEventListener("waiting", () => {
+    if (isActive) {
+      console.warn(`[KeepAlive] ${label} waiting，嘗試恢復`);
+      el.play().catch(() => {});
+    }
+  });
+  el.addEventListener("error", () => {
+    if (isActive) {
+      console.warn(`[KeepAlive] ${label} error，嘗試重建`);
+      // 嘗試重新載入
+      el.load();
+      setTimeout(() => {
+        if (isActive) el.play().catch(() => {});
+      }, 1000);
+    }
+  });
+  return el;
+}
+
 function startSilentAudio() {
   if (silentAudioEl) return;
-
   try {
-    silentAudioEl = new Audio(SILENT_AUDIO_URL);
-    silentAudioEl.loop = true;
-    silentAudioEl.volume = 0.001; // 幾乎無聲但不是 0（0 可能被瀏覽器優化掉）
-
-    // 播放結束時自動重播（loop 的保險）
-    silentAudioEl.addEventListener("ended", () => {
-      if (isActive) silentAudioEl?.play().catch(() => {});
-    });
-
-    // 被暫停時自動恢復（系統或瀏覽器可能暫停）
-    silentAudioEl.addEventListener("pause", () => {
-      if (isActive) {
-        setTimeout(() => {
-          silentAudioEl?.play().catch(() => {});
-        }, 500);
-      }
-    });
-
+    silentAudioEl = createAudioElement("主音頻");
+    backupAudioEl = createAudioElement("備用音頻");
     silentAudioEl
       .play()
       .then(() => {
         setupMediaSession();
-        console.log("[KeepAlive] 靜音 <audio> 播放成功");
+        console.log("[KeepAlive] 靜音音頻已啟動");
       })
-      .catch((e) => {
-        console.warn("[KeepAlive] 靜音 <audio> 播放失敗:", e);
-      });
+      .catch((e) => console.warn("[KeepAlive] 靜音音頻播放失敗:", e));
+    // 備用音頻延遲啟動（避免同時播放被系統視為重複）
+    setTimeout(() => {
+      if (isActive && backupAudioEl) {
+        backupAudioEl.play().catch(() => {});
+      }
+    }, 2000);
   } catch (e) {
-    console.warn("[KeepAlive] 靜音 <audio> 建立失敗:", e);
+    console.warn("[KeepAlive] 靜音音頻建立失敗:", e);
   }
 }
 
@@ -150,52 +218,52 @@ function stopSilentAudio() {
   if (silentAudioEl) {
     silentAudioEl.pause();
     silentAudioEl.src = "";
-    silentAudioEl.load(); // 釋放資源
+    silentAudioEl.load();
     silentAudioEl = null;
   }
-  // 清除 Media Session
-  if ("mediaSession" in navigator) {
-    navigator.mediaSession.metadata = null;
-    navigator.mediaSession.playbackState = "none";
+  if (backupAudioEl) {
+    backupAudioEl.pause();
+    backupAudioEl.src = "";
+    backupAudioEl.load();
+    backupAudioEl = null;
   }
+  clearMediaSession();
 }
 
-function setupMediaSession() {
-  if (!("mediaSession" in navigator)) return;
-  navigator.mediaSession.metadata = new MediaMetadata({
-    title: "背景運行中",
-    artist: "Aguaphone",
-    album: "",
-  });
-  // 攔截暫停操作，保持播放
-  navigator.mediaSession.setActionHandler("play", () => {
-    silentAudioEl?.play().catch(() => {});
-  });
-  navigator.mediaSession.setActionHandler("pause", () => {
-    // 不允許暫停，保持後台活躍
-    silentAudioEl?.play().catch(() => {});
-  });
-}
-
-// ---------- 麥克風 / 鏡頭串流保活 ----------
-// 透過 getUserMedia 取得串流，讓系統認為 app 正在使用麥克風/鏡頭
-// 麥克風模式：iOS 顯示橘色指示燈，但會停掉背景音樂
-// 鏡頭模式：iOS 顯示綠色指示燈，不影響音樂播放
+// ---------- 麥克風/鏡頭串流 ----------
 async function startMediaStream() {
   if (mediaStream) return;
   const isMic = currentMode === "mic";
-  const constraints: MediaStreamConstraints = isMic
+  const constraints = isMic
     ? { audio: true, video: false }
     : { audio: false, video: true };
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
     console.log(`[KeepAlive] ${isMic ? "麥克風" : "鏡頭"}串流已啟動`);
+    // 監聽 track 被系統殺掉（iOS 後台會停止 track）
+    for (const track of mediaStream.getTracks()) {
+      track.onended = () => {
+        console.warn(`[KeepAlive] ${isMic ? "麥克風" : "鏡頭"} track 被系統終止，自動回退音頻模式`);
+        stopMediaStream();
+        // 自動回退到音頻模式保活
+        if (isActive && userInteracted) {
+          currentMode = "audio";
+          startSilentOscillator();
+          startSilentAudio();
+        }
+      };
+    }
   } catch (e: unknown) {
-    const err = e as Error & { name?: string };
+    const err = e as { name?: string };
+    console.warn(`[KeepAlive] ${isMic ? "麥克風" : "鏡頭"}串流啟動失敗:`, e);
     if (err?.name === "NotAllowedError") {
-      console.warn(`[KeepAlive] ${isMic ? "麥克風" : "鏡頭"}權限被拒絕`);
-    } else {
-      console.warn(`[KeepAlive] ${isMic ? "麥克風" : "鏡頭"}串流啟動失敗:`, e);
+      console.warn("[KeepAlive] 權限被拒，回退音頻模式");
+    }
+    // 啟動失敗時回退音頻模式
+    if (isActive && userInteracted) {
+      currentMode = "audio";
+      startSilentOscillator();
+      startSilentAudio();
     }
   }
 }
@@ -207,92 +275,93 @@ function stopMediaStream() {
   console.log("[KeepAlive] 串流已停止");
 }
 
-/** 恢復靜音 <audio>（被系統暫停後） */
+// ---------- 音頻恢復輔助 ----------
 function resumeSilentAudioIfPaused() {
-  if (silentAudioEl && silentAudioEl.paused && isActive) {
+  if (!isActive) return;
+  if (silentAudioEl?.paused) {
     silentAudioEl.play().catch(() => {});
   }
+  if (backupAudioEl?.paused) {
+    backupAudioEl.play().catch(() => {});
+  }
+  // 如果兩個都不存在了，重建
+  if (!silentAudioEl && userInteracted) {
+    startSilentAudio();
+  }
 }
 
-/** 檢查並恢復被系統掛起的 AudioContext */
 function resumeAudioContextIfSuspended() {
-  if (!audioCtx) {
-    // AudioContext 被回收了，重建
-    if (userInteracted && isActive) {
-      startSilentOscillator();
-    }
-    return;
+  if (!isActive) return;
+  if (audioCtx?.state === "suspended") {
+    audioCtx.resume().catch(() => {});
+  } else if (!audioCtx && userInteracted) {
+    startSilentOscillator();
   }
-  if (audioCtx.state === "suspended") {
-    audioCtx
-      .resume()
-      .then(() => {
-        console.log("[KeepAlive] AudioContext 已從 suspended 恢復");
-      })
-      .catch(() => {});
-  }
-  // 同時檢查 <audio> 是否被暫停
-  resumeSilentAudioIfPaused();
 }
 
-/** 根據當前模式恢復保活（音頻模式恢復音頻，串流模式恢復串流） */
+/** 根據當前模式恢復所有保活層 */
 function resumeKeepAliveForCurrentMode() {
+  if (!isActive) return;
   if (currentMode === "audio") {
     resumeAudioContextIfSuspended();
+    resumeSilentAudioIfPaused();
   } else {
-    // 麥克風/鏡頭模式：如果串流斷了就重新啟動
-    if (!mediaStream) startMediaStream();
+    // mic/camera 模式：檢查串流是否還活著
+    if (!mediaStream) {
+      // 串流已死，嘗試重新啟動
+      startMediaStream();
+    } else {
+      // 檢查 track 是否還活著
+      const aliveTracks = mediaStream.getTracks().filter((t) => t.readyState === "live");
+      if (aliveTracks.length === 0) {
+        console.warn("[KeepAlive] 所有 track 已死，回退音頻模式");
+        stopMediaStream();
+        currentMode = "audio";
+        if (userInteracted) {
+          startSilentOscillator();
+          startSilentAudio();
+        }
+      }
+    }
   }
 }
 
 // ---------- Web Worker 心跳 ----------
 function startHeartbeatWorker() {
   if (heartbeatWorker) return;
-
-  // Worker 內部：每 15 秒 ping 主線程 + 發一個 HEAD 請求保持網路活動
-  const workerCode = `
-    let timer = null;
-    self.onmessage = function(e) {
+  const code = `
+    let t = null;
+    self.onmessage = (e) => {
       if (e.data === 'start') {
-        timer = setInterval(() => {
+        t = setInterval(() => {
           self.postMessage('ping');
-          // 發一個輕量 HEAD 請求，讓瀏覽器認為有網路活動
           try { fetch(self.location.origin || '/', { method: 'HEAD', mode: 'no-cors' }).catch(() => {}); } catch {}
         }, 15000);
       } else if (e.data === 'stop') {
-        if (timer) { clearInterval(timer); timer = null; }
+        clearInterval(t);
+        t = null;
       }
     };
   `;
-
-  const blob = new Blob([workerCode], { type: "application/javascript" });
+  const blob = new Blob([code], { type: "application/javascript" });
   workerBlobUrl = URL.createObjectURL(blob);
   heartbeatWorker = new Worker(workerBlobUrl);
-
   heartbeatWorker.onmessage = () => {
-    // 每 15 秒收到 ping，檢查所有保活層
     resumeKeepAliveForCurrentMode();
   };
-
   heartbeatWorker.onerror = () => {
-    // Worker 意外死亡，嘗試重啟
-    console.warn("[KeepAlive] 心跳 Worker 意外終止，嘗試重啟");
+    console.warn("[KeepAlive] 心跳 Worker 終止，重啟中");
     cleanupHeartbeatWorker();
-    if (isActive) {
-      setTimeout(() => startHeartbeatWorker(), 1000);
-    }
+    if (isActive) setTimeout(startHeartbeatWorker, 1000);
   };
-
   heartbeatWorker.postMessage("start");
-  console.log("[KeepAlive] 心跳 Worker 已啟動（每 15 秒）");
+  console.log("[KeepAlive] 心跳 Worker 已啟動");
 }
 
 function cleanupHeartbeatWorker() {
-  if (heartbeatWorker) {
-    heartbeatWorker.postMessage("stop");
-    heartbeatWorker.terminate();
-    heartbeatWorker = null;
-  }
+  heartbeatWorker?.postMessage("stop");
+  heartbeatWorker?.terminate();
+  heartbeatWorker = null;
   if (workerBlobUrl) {
     URL.revokeObjectURL(workerBlobUrl);
     workerBlobUrl = null;
@@ -303,24 +372,43 @@ function stopHeartbeatWorker() {
   cleanupHeartbeatWorker();
 }
 
-// ---------- BroadcastChannel 自我心跳 ----------
-// 當 Worker 被系統殺掉時，BroadcastChannel 的 message 事件仍可能觸發
-// 作為備用喚醒機制
+// ---------- 主線程輪詢（Worker 備用） ----------
+// 每 10 秒獨立檢查音頻狀態，不依賴 Worker（iOS 可能殺 Worker）
+function startMainThreadPoll() {
+  if (mainThreadPollTimer) return;
+  mainThreadPollTimer = setInterval(() => {
+    if (!isActive) return;
+    resumeKeepAliveForCurrentMode();
+    // 確保 Worker 還活著
+    if (!heartbeatWorker) {
+      console.warn("[KeepAlive] 主線程輪詢發現 Worker 已死，重啟");
+      startHeartbeatWorker();
+    }
+    // 確保 Web Lock 還在
+    if (!webLockAbortController) {
+      acquireWebLock();
+    }
+  }, 10000);
+  console.log("[KeepAlive] 主線程輪詢已啟動（10s）");
+}
+
+function stopMainThreadPoll() {
+  if (mainThreadPollTimer) {
+    clearInterval(mainThreadPollTimer);
+    mainThreadPollTimer = null;
+  }
+}
+
+// ---------- BroadcastChannel 備用心跳 ----------
 function startBroadcastHeartbeat() {
   if (broadcastChannel) return;
-
   try {
     broadcastChannel = new BroadcastChannel("aguaphone-keepalive");
     broadcastChannel.onmessage = () => {
-      // 收到自己的心跳，順便檢查保活狀態
       resumeKeepAliveForCurrentMode();
-      // 如果 Worker 死了，重啟
-      if (!heartbeatWorker && isActive) {
-        startHeartbeatWorker();
-      }
+      // Worker 被殺時嘗試重啟
+      if (!heartbeatWorker && isActive) startHeartbeatWorker();
     };
-
-    // 每 30 秒發一次（比 Worker 頻率低，作為備用）
     broadcastTimer = setInterval(() => {
       try {
         broadcastChannel?.postMessage("heartbeat");
@@ -328,10 +416,8 @@ function startBroadcastHeartbeat() {
         /* channel 可能已關閉 */
       }
     }, 30000);
-
     console.log("[KeepAlive] BroadcastChannel 心跳已啟動");
   } catch {
-    // BroadcastChannel 不支援（極少數瀏覽器）
     console.warn("[KeepAlive] BroadcastChannel 不支援");
   }
 }
@@ -341,10 +427,8 @@ function stopBroadcastHeartbeat() {
     clearInterval(broadcastTimer);
     broadcastTimer = null;
   }
-  if (broadcastChannel) {
-    broadcastChannel.close();
-    broadcastChannel = null;
-  }
+  broadcastChannel?.close();
+  broadcastChannel = null;
 }
 
 // ---------- 用戶互動偵測 ----------
@@ -352,9 +436,8 @@ function onUserInteraction() {
   if (userInteracted) return;
   userInteracted = true;
   removeInteractionListeners();
-
-  // 用戶已互動，如果保活已啟用就啟動音頻（兩層都啟動）
-  if (isActive) {
+  // 用戶已互動，如果保活已啟動但音頻還沒開始，現在啟動
+  if (isActive && currentMode === "audio") {
     startSilentOscillator();
     startSilentAudio();
   }
@@ -362,179 +445,143 @@ function onUserInteraction() {
 
 function addInteractionListeners() {
   if (interactionListenersBound) return;
-  document.addEventListener("click", onUserInteraction, {
-    once: true,
-    capture: true,
-  });
-  document.addEventListener("touchstart", onUserInteraction, {
-    once: true,
-    capture: true,
-  });
-  document.addEventListener("keydown", onUserInteraction, {
-    once: true,
-    capture: true,
-  });
   interactionListenersBound = true;
+  document.addEventListener("click", onUserInteraction, { once: true, capture: true });
+  document.addEventListener("touchstart", onUserInteraction, { once: true, capture: true });
+  document.addEventListener("keydown", onUserInteraction, { once: true, capture: true });
 }
 
 function removeInteractionListeners() {
-  document.removeEventListener("click", onUserInteraction, { capture: true });
-  document.removeEventListener("touchstart", onUserInteraction, {
-    capture: true,
-  });
-  document.removeEventListener("keydown", onUserInteraction, {
-    capture: true,
-  });
+  if (!interactionListenersBound) return;
   interactionListenersBound = false;
+  document.removeEventListener("click", onUserInteraction, { capture: true });
+  document.removeEventListener("touchstart", onUserInteraction, { capture: true });
+  document.removeEventListener("keydown", onUserInteraction, { capture: true });
 }
 
 // ---------- 頁面生命週期事件 ----------
-
-/** visibilitychange：切回前台時全面檢查並恢復 */
 function handleVisibilityForKeepAlive() {
   if (document.visibilityState === "visible" && isActive) {
-    // 根據模式恢復對應的保活層
+    console.log("[KeepAlive] 頁面回到前台，檢查保活狀態");
+    // 回到前台時重新取得 Wake Lock
+    acquireWakeLock();
+    // 恢復當前模式的保活
     resumeKeepAliveForCurrentMode();
-    // 音頻模式：如果 <audio> 被回收了，重建
-    if (currentMode === "audio" && !silentAudioEl && userInteracted) {
-      startSilentAudio();
-    }
-    // 重新確認 Web Lock（某些瀏覽器後台久了會釋放）
-    if (!webLockAbortController) {
-      acquireWebLock();
-    }
-    // 確認 Worker 還活著
-    if (!heartbeatWorker) {
-      startHeartbeatWorker();
-    }
+    // 確保輔助層都在
+    if (!webLockAbortController) acquireWebLock();
+    if (!heartbeatWorker) startHeartbeatWorker();
+    if (!broadcastChannel) startBroadcastHeartbeat();
+    if (!mainThreadPollTimer) startMainThreadPoll();
   }
 }
 
-/** Page Lifecycle API：freeze 事件（頁面被凍結前） */
 function handleFreeze() {
-  console.log("[KeepAlive] 頁面被凍結 (freeze)");
-  // 凍結前無法做太多事，但記錄狀態
+  // 頁面被凍結（Page Lifecycle freeze 事件）
+  // 無法做太多事，但記錄狀態
+  console.log("[KeepAlive] 頁面被凍結");
 }
 
-/** Page Lifecycle API：resume 事件（頁面從凍結恢復） */
 function handleResume() {
-  console.log("[KeepAlive] 頁面從凍結恢復 (resume)");
+  // 頁面從凍結恢復（Page Lifecycle resume 事件）
   if (!isActive) return;
-
-  // 凍結恢復後，所有保活層可能都已失效，全部重建
+  console.log("[KeepAlive] 頁面從凍結恢復，重建保活層");
+  // 重建所有可能被殺的保活層
   resumeKeepAliveForCurrentMode();
-
-  if (currentMode === "audio" && !silentAudioEl && userInteracted) {
-    startSilentAudio();
-  }
-  if (!webLockAbortController) {
-    acquireWebLock();
-  }
-  if (!heartbeatWorker) {
-    startHeartbeatWorker();
-  }
-  if (!broadcastChannel) {
-    startBroadcastHeartbeat();
-  }
+  if (!webLockAbortController) acquireWebLock();
+  if (!heartbeatWorker) startHeartbeatWorker();
+  if (!broadcastChannel) startBroadcastHeartbeat();
+  if (!mainThreadPollTimer) startMainThreadPoll();
+  acquireWakeLock();
 }
 
-// ---------- 對外 API ----------
+// ---------- 主控：啟動/停止 ----------
 function startKeepAlive() {
   if (isActive) return;
   isActive = true;
 
-  // 1. Web Lock（不需要用戶互動）
+  // 基礎層：Web Lock + Worker + BroadcastChannel + 主線程輪詢
   acquireWebLock();
-
-  // 2. 心跳 Worker（不需要用戶互動）
   startHeartbeatWorker();
-
-  // 3. BroadcastChannel 備用心跳（不需要用戶互動）
   startBroadcastHeartbeat();
+  startMainThreadPoll();
+  acquireWakeLock();
 
-  // 4. 根據模式啟動對應的保活層
+  // 模式特定層
   if (currentMode !== "audio") {
-    // 麥克風/鏡頭模式：直接啟動串流（會觸發權限彈窗）
+    // mic/camera 模式：只啟動串流，不同時啟動靜音音頻
+    // track 被 iOS 殺掉時會透過 onended 自動回退音頻模式
     startMediaStream();
   } else if (userInteracted) {
-    // 音頻模式：需要用戶互動後才能啟動
     startSilentOscillator();
     startSilentAudio();
   } else {
+    // 等待用戶互動
     addInteractionListeners();
   }
 
-  // 5. 監聽頁面生命週期事件
+  // 註冊生命週期事件
   document.addEventListener("visibilitychange", handleVisibilityForKeepAlive);
   document.addEventListener("freeze", handleFreeze);
   document.addEventListener("resume", handleResume);
 
-  console.log(`[KeepAlive] 保活已啟用（${currentMode} 模式）`);
+  console.log(`[KeepAlive] 已啟動（${currentMode} 模式）`);
 }
 
 function stopKeepAlive() {
   if (!isActive) return;
   isActive = false;
 
+  // 停止所有層
   releaseWebLock();
   stopMediaStream();
   stopSilentOscillator();
   stopSilentAudio();
   stopHeartbeatWorker();
   stopBroadcastHeartbeat();
+  stopMainThreadPoll();
+  releaseWakeLock();
   removeInteractionListeners();
+
+  // 移除生命週期事件
   document.removeEventListener("visibilitychange", handleVisibilityForKeepAlive);
   document.removeEventListener("freeze", handleFreeze);
   document.removeEventListener("resume", handleResume);
 
-  console.log("[KeepAlive] 保活已停用");
+  console.log("[KeepAlive] 已停止");
 }
 
-/**
- * 背景保活 composable（多層策略）
- *
- * - Web Lock：Chrome/Edge/Safari 17+ 支援，讓瀏覽器不輕易回收頁面
- * - 靜音 <audio> 循環播放 + Media Session：移動端保活關鍵，系統看到媒體播放就不殺進程
- * - 靜音 OscillatorNode（1Hz + gain 0.001）：不觸發系統媒體控制欄的輔助保活
- * - Web Worker 心跳：每 15 秒 ping 主線程 + HEAD 請求保持網路活動
- * - BroadcastChannel 自我心跳：Worker 被殺時的備用喚醒機制
- * - Page Lifecycle（freeze/resume）：頁面凍結恢復後重建所有保活層
- * - visibilitychange：切回前台時全面檢查並恢復所有保活層
- *
- * 注意：用戶手動從最近任務裡劃掉頁面，什麼方案都救不了——這是系統級行為。
- */
+// ---------- 導出 composable ----------
 export function useBackgroundAudio() {
-  const settingsStore = useSettingsStore();
+  const settings = useSettingsStore();
 
+  // 監聽開關和模式變化
   watch(
-    () => settingsStore.backgroundAudioEnabled,
+    () => settings.backgroundAudioEnabled,
     (enabled) => {
       if (enabled) {
-        currentMode = settingsStore.keepAliveMode;
+        currentMode = settings.keepAliveMode;
         startKeepAlive();
       } else {
         stopKeepAlive();
       }
     },
-    { immediate: true },
   );
 
-  // 模式切換時：停止再重啟（如果保活正在運行）
   watch(
-    () => settingsStore.keepAliveMode,
-    (newMode) => {
-      if (!settingsStore.backgroundAudioEnabled) {
-        currentMode = newMode;
-        return;
-      }
-      stopKeepAlive();
-      currentMode = newMode;
-      startKeepAlive();
+    () => settings.keepAliveMode,
+    (mode) => {
+      if (!settings.backgroundAudioEnabled) return;
+      // 模式切換：先停止再重啟
+      const wasActive = isActive;
+      if (wasActive) stopKeepAlive();
+      currentMode = mode;
+      if (wasActive) startKeepAlive();
     },
   );
 
-  return {
-    startAudio: startKeepAlive,
-    stopAudio: stopKeepAlive,
-  };
+  // 如果已經啟用，立即啟動
+  if (settings.backgroundAudioEnabled) {
+    currentMode = settings.keepAliveMode;
+    startKeepAlive();
+  }
 }
