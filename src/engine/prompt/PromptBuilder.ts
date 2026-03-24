@@ -2548,13 +2548,23 @@ speed：0.5~2.0，正常時省略
       let formattedContent = content;
       // 群聊模式或多人卡非面對面模式：加上 [角色名] 前綴
       // 面對面 + 多人卡：輸出是小說式一整段，不需要前綴
-      const shouldAddPrefix =
+      const shouldAddCharPrefix =
         (this.options.groupChatMode ||
           (this.options.isMultiCharCard && !this.options.faceToFaceMode)) &&
         !msg.is_user &&
         msg.name;
-      if (shouldAddPrefix) {
+      if (shouldAddCharPrefix) {
         formattedContent = `[${msg.name}] ${content}`;
+      }
+
+      // 群聊模式下為用戶訊息加上 [用戶名] 前綴，防止 AI 杜撰用戶發言
+      const shouldAddUserPrefix =
+        this.options.groupChatMode &&
+        msg.is_user &&
+        msg.sender !== "system" &&
+        msg.sender !== "narrator";
+      if (shouldAddUserPrefix) {
+        formattedContent = `[${this.options.userName}] ${content}`;
       }
 
       // 小劇場/系統消息：用 system role 並格式化為場景指令

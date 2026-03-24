@@ -3926,6 +3926,23 @@ function useClonedVoice(voiceId: string) {
           <span class="toggle-switch"></span>
         </label>
 
+        <!-- 地理位置保活開關 -->
+        <label class="toggle-item highlight">
+          <div class="toggle-content">
+            <span class="toggle-label">地理位置保活</span>
+            <span class="toggle-desc"
+              >利用定位服務防止後台暫停（需授權位置權限，不會收集位置資料）</span
+            >
+          </div>
+          <input
+            type="checkbox"
+            v-model="settingsStore.geolocationKeepAliveEnabled"
+            class="toggle-input"
+            @change="saveSettings"
+          />
+          <span class="toggle-switch"></span>
+        </label>
+
         <!-- Debug Overlay 開關 -->
         <label class="toggle-item highlight">
           <div class="toggle-content">

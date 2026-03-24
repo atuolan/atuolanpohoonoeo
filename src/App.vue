@@ -62,6 +62,7 @@ import TheaterScreen from "@/components/screens/TheaterScreen.vue";
 import UserProfileScreen from "@/components/screens/UserProfileScreen.vue";
 import WeatherScreen from "@/components/screens/WeatherScreen.vue";
 import { useBackgroundAudio } from "@/composables/useBackgroundAudio";
+import { useGeolocationKeepAlive } from "@/composables/useGeolocationKeepAlive";
 import { db, DB_STORES } from "@/db/database";
 import { useUserStore } from "@/stores";
 import { usePhoneCallStore } from "@/stores/phoneCall";
@@ -76,6 +77,9 @@ const { backgroundColor, textColor, isDark } = useTimeTheme();
 
 // 背景無聲音樂（防止後台暫停）
 useBackgroundAudio();
+
+// 地理位置保活（利用 Geolocation API 防止後台暫停）
+useGeolocationKeepAlive();
 
 // 畫布 store（用於獲取動態 gridSize）
 const canvasStore = useCanvasStore();
