@@ -107,6 +107,18 @@ export async function subscribePush(
   await request<void>("POST", "/push/subscribe", { subscription });
 }
 
+/**
+ * 請求雲端 Worker 發送 Web Push 通知（本地生成訊息後呼叫）
+ * 用於 iOS PWA 等不支援主線程直接發通知的環境
+ */
+export async function sendNotifyPush(params: {
+  characterName: string;
+  characterId?: string;
+  content: string;
+}): Promise<void> {
+  await request<void>("POST", "/push/notify", params);
+}
+
 // ─── Web Push 瀏覽器端訂閱 ───────────────────────────────────
 
 /** VAPID application server key（與 Worker wrangler.jsonc 中的 VAPID_PUBLIC_KEY 一致） */

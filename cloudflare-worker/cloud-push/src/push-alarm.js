@@ -35,6 +35,8 @@ export class PushAlarmDO {
           return this.handleTest();
         case "/subscribe":
           return this.handleSubscribe(request);
+        case "/notify":
+          return this.handleNotify(request);
         case "/alive":
           return this.handleAlive(request);
         default:
@@ -177,6 +179,37 @@ export class PushAlarmDO {
 
     await this.state.storage.put("pushSubscription", subscription);
     return json({ ok: true });
+  }
+
+  // ─── POST /notify — 本地觸發 Web Push 通知（不生成 AI） ─────
+
+  async handleNotify(request) {
+    const { characterName, characterId, content } = await request.json();
+
+    if (!characterName || !content) {
+      return json({ error: "缺少 characterName 或 content" }, 400);
+    }
+
+    const subscription = await this.state.storage.get("pushSubscription");
+    if (!subscription) {
+      return json({ error: "尚未訂閱 Web Push" }, 400);
+    }
+
+    try {
+      await this.sendWebPush(
+        subscription,
+        { id: characterId || "unknown", name: characterName },
+        content,
+      );
+      return json({ ok: true });
+    } catch (e) {
+      // 訂閱失效時清除
+      if (e.statusCode === 410 || e.statusCode === 404) {
+        await this.state.storage.delete("pushSubscription");
+        return json({ error: "Push subscription 已失效，已清除", expired: true }, 410);
+      }
+      return json({ error: e.message }, 500);
+    }
   }
 
   // ─── Alarm handler ──────────────────────────────────────────

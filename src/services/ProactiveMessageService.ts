@@ -839,6 +839,26 @@ export class ProactiveMessageService {
                 characterId,
                 character.avatar,
               );
+
+              // iOS PWA 不支援主線程直接發系統通知，透過雲端 Worker 發 Web Push
+              // 僅在頁面不可見時（後台）才呼叫，避免前台重複通知
+              if (document.visibilityState === "hidden") {
+                try {
+                  const { useCloudPushStore } = await import("@/stores/cloudPush");
+                  const cloudPushStore = useCloudPushStore();
+                  if (cloudPushStore.enabled && cloudPushStore.enabledChannels.includes("webpush")) {
+                    const { sendNotifyPush } = await import("@/services/CloudPushService");
+                    await sendNotifyPush({
+                      characterName: charName,
+                      characterId: characterId,
+                      content: (preview || "").slice(0, 200),
+                    });
+                    console.log("[ProactiveMessage] 已透過雲端 Worker 發送 Web Push 通知");
+                  }
+                } catch (pushErr) {
+                  console.warn("[ProactiveMessage] 雲端 Web Push 通知失敗（非致命）:", pushErr);
+                }
+              }
             } catch (notifErr) {
               console.warn(
                 "[ProactiveMessage] Failed to send in-app notification:",
