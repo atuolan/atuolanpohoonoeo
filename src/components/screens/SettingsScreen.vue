@@ -161,7 +161,9 @@ function handleCloudPushToggle() {
   if (!cloudPushStore.enabled) {
     cloudPushStore.disableCloudPush();
   } else {
+    // 開啟時自動同步到雲端
     cloudPushStore.saveSettings();
+    debouncedCloudSync();
   }
 }
 
@@ -177,6 +179,23 @@ function toggleCloudPushChannel(channel: "discord" | "webpush", event: Event) {
     );
   }
   cloudPushStore.saveSettings();
+  // 渠道變更後自動同步
+  debouncedCloudSync();
+}
+
+/** 防抖自動同步（避免連續操作觸發多次） */
+let _cloudSyncTimer: ReturnType<typeof setTimeout> | null = null;
+function debouncedCloudSync() {
+  if (_cloudSyncTimer) clearTimeout(_cloudSyncTimer);
+  _cloudSyncTimer = setTimeout(async () => {
+    _cloudSyncTimer = null;
+    cloudPushSyncStatus.value = "syncing";
+    cloudPushSyncError.value = null;
+    await cloudPushStore.syncToCloud();
+    cloudPushSyncStatus.value = cloudPushStore.syncStatus;
+    cloudPushSyncError.value = cloudPushStore.syncError;
+    cloudPushNextAlarm.value = cloudPushStore.nextAlarm;
+  }, 1500);
 }
 
 async function handleCloudPushSync() {
@@ -3946,6 +3965,12 @@ function useClonedVoice(voiceId: string) {
             <span class="toggle-desc"
               >利用定位服務防止後台暫停（需授權位置權限，不會收集位置資料）</span
             >
+            <span
+              v-if="settingsStore.geolocationKeepAliveEnabled && !cloudPushStore.enabled"
+              class="toggle-desc"
+              style="color: #ffaa33; margin-top: 2px"
+              >⚠ 建議同時開啟下方「雲端推送鬧鐘」的瀏覽器推送，後台才能收到系統通知</span
+            >
           </div>
           <input
             type="checkbox"
@@ -4151,16 +4176,18 @@ function useClonedVoice(voiceId: string) {
                 {{
                   cloudPushSyncStatus === "syncing"
                     ? "同步中…"
-                    : "同步 API 設定到雲端"
+                    : "手動同步"
                 }}
               </button>
               <button
+                v-if="cloudPushStore.enabledChannels.includes('discord')"
                 class="push-permission-btn test"
                 @click="handleCloudPushTest"
               >
                 測試推送（含AI）
               </button>
               <button
+                v-if="cloudPushStore.enabledChannels.includes('webpush')"
                 class="push-permission-btn test"
                 @click="handleWebPushTest"
               >
@@ -4170,8 +4197,11 @@ function useClonedVoice(voiceId: string) {
 
             <!-- 狀態顯示 -->
             <div class="cloud-push-status">
-              <span v-if="cloudPushSyncStatus === 'success'">
-                已同步
+              <span v-if="cloudPushSyncStatus === 'syncing'" style="color: var(--text-tertiary)">
+                自動同步中…
+              </span>
+              <span v-else-if="cloudPushSyncStatus === 'success'">
+                ✓ 已同步
                 <template v-if="cloudPushNextAlarm">
                   · 下次推送 {{ formatNextAlarm(cloudPushNextAlarm) }}
                 </template>
