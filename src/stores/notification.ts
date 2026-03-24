@@ -163,7 +163,10 @@ export const useNotificationStore = defineStore("notification", () => {
 
     // 發送系統推播通知（頁面在背景時）
     if (settings.value.pushEnabled) {
+      console.log("[Notification] pushEnabled=true，呼叫 pushNotificationService.send()");
       pushNotificationService.send(notification);
+    } else {
+      console.log("[Notification] pushEnabled=false，跳過系統推播");
     }
 
     console.log("[Notification] 新通知:", notification.title);

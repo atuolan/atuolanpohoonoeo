@@ -7,7 +7,7 @@
  * 注意：
  * - 需要用戶授權位置權限
  * - 實際上不會使用任何位置資料，回調裡什麼都不做
- * - 使用 enableHighAccuracy: false 以降低功耗
+ * - 使用 enableHighAccuracy: true 以確保系統持續追蹤定位（保活關鍵）
  */
 
 import { useSettingsStore } from "@/stores/settings";
@@ -18,8 +18,9 @@ let isActive = false;
 
 /**
  * 啟動地理位置保活
+ * 先檢查/請求權限，再啟動 watchPosition
  */
-function startGeolocationKeepAlive() {
+async function startGeolocationKeepAlive() {
   if (isActive || watchId !== null) return;
 
   if (!navigator.geolocation) {
@@ -27,17 +28,36 @@ function startGeolocationKeepAlive() {
     return;
   }
 
+  // 先檢查權限狀態（如果 Permissions API 可用）
+  if (navigator.permissions) {
+    try {
+      const status = await navigator.permissions.query({ name: "geolocation" });
+      console.log("[GeoKeepAlive] 當前權限狀態:", status.state);
+
+      if (status.state === "denied") {
+        console.warn("[GeoKeepAlive] 位置權限已被拒絕，無法啟用保活");
+        return;
+      }
+    } catch {
+      // Permissions API 不支援 geolocation 查詢，繼續嘗試
+    }
+  }
+
   try {
     watchId = navigator.geolocation.watchPosition(
-      // 成功回調：不做任何事，純粹保活
-      () => {},
-      // 錯誤回調：忽略錯誤，保活不需要真的取得位置
-      () => {},
+      // 成功回調：記錄一次確認保活正常運作
+      () => {
+        console.log("[GeoKeepAlive] 定位回調觸發，保活運作中");
+      },
+      // 錯誤回調：記錄錯誤但不停止（即使定位失敗，watchPosition 本身仍能保活）
+      (error) => {
+        console.warn("[GeoKeepAlive] 定位錯誤（不影響保活）:", error.code, error.message);
+      },
       {
-        enableHighAccuracy: false,
-        // 較長的超時和最大快取時間，減少實際定位請求
-        timeout: 60000,
-        maximumAge: Infinity,
+        // 使用高精度以確保系統持續追蹤 GPS，這是保活的關鍵
+        enableHighAccuracy: true,
+        timeout: Infinity,
+        maximumAge: 0,
       },
     );
     isActive = true;

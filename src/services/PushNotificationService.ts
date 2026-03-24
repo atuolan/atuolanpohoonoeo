@@ -95,11 +95,17 @@ class PushNotificationService {
    * 只在頁面不可見（背景）或 document 沒有 focus 時才發送
    */
   send(item: NotificationItem): void {
-    if (!this.isSupported) return;
+    if (!this.isSupported) {
+      console.warn("[PushNotification] 瀏覽器不支援 Notification API，跳過");
+      return;
+    }
 
     // 每次發送前都同步一次，避免權限在別處被更新後仍使用舊快取
     this.syncPermission();
-    if (!this.isGranted) return;
+    if (!this.isGranted) {
+      console.warn("[PushNotification] 通知權限未授權，當前狀態:", this._permission);
+      return;
+    }
 
     // 來電通知即使在前景也允許發送（使用者常需要鈴聲/系統提示）
     const shouldForceForeground = item.type === "incoming_call";
@@ -110,6 +116,7 @@ class PushNotificationService {
       document.visibilityState === "visible" &&
       document.hasFocus()
     ) {
+      console.log("[PushNotification] 頁面在前台且有焦點，跳過系統通知");
       return;
     }
 
@@ -117,8 +124,18 @@ class PushNotificationService {
     const title = `${badge} ${item.title}`;
     const body = item.message;
 
+    console.log("[PushNotification] 準備發送通知:", {
+      title,
+      body,
+      visibility: document.visibilityState,
+      hasFocus: document.hasFocus(),
+      hasSW: !!this._swReg,
+      swActive: !!this._swReg?.active,
+    });
+
     // 優先透過 SW 發送（後台時更可靠）；失敗時 fallback 到 Notification API
-    this.sendViaSW(title, body, item).catch(() => {
+    this.sendViaSW(title, body, item).catch((err) => {
+      console.warn("[PushNotification] SW 發送失敗，fallback 到 Notification API:", err);
       this.sendViaAPI(title, body, item);
     });
   }
