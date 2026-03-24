@@ -210,6 +210,8 @@ export interface SettingsData {
   customQuickActions: QuickActionItem[];
   // 背景無聲音樂（防止瀏覽器後台暫停）
   backgroundAudioEnabled: boolean;
+  // 保活模式：audio（靜音音頻）/ mic（麥克風串流）/ camera（鏡頭串流）
+  keepAliveMode: 'audio' | 'mic' | 'camera';
   // 語音訊息設定
   audio: AudioSettings;
   // 來電鈴聲設定
@@ -360,6 +362,9 @@ export const useSettingsStore = defineStore("settings", () => {
 
   // 背景無聲音樂（防止瀏覽器後台暫停）
   const backgroundAudioEnabled = ref(false);
+
+  // 保活模式：audio（靜音音頻）/ mic（麥克風串流）/ camera（鏡頭串流）
+  const keepAliveMode = ref<'audio' | 'mic' | 'camera'>('audio');
 
   // 語音訊息設定
   const audio = reactive<AudioSettings>(createDefaultAudioSettings());
@@ -548,6 +553,11 @@ export const useSettingsStore = defineStore("settings", () => {
             backgroundAudioEnabled.value = saved.backgroundAudioEnabled;
           }
 
+          // 載入保活模式
+          if (saved.keepAliveMode !== undefined) {
+            keepAliveMode.value = saved.keepAliveMode;
+          }
+
           // 載入語音訊息設定
           if (saved.audio) {
             Object.assign(audio, saved.audio);
@@ -692,6 +702,7 @@ export const useSettingsStore = defineStore("settings", () => {
           ...toRaw(a),
         })),
         backgroundAudioEnabled: backgroundAudioEnabled.value,
+        keepAliveMode: keepAliveMode.value,
         audio: { ...toRaw(audio) },
         incomingCallRingtone: { ...toRaw(incomingCallRingtone) },
         embeddingAPI: { ...toRaw(embeddingAPI) },
@@ -1061,6 +1072,7 @@ export const useSettingsStore = defineStore("settings", () => {
     language,
     customQuickActions,
     backgroundAudioEnabled,
+    keepAliveMode,
     audio,
     incomingCallRingtone,
     embeddingAPI,

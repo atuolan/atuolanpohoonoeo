@@ -3946,7 +3946,7 @@ function useClonedVoice(voiceId: string) {
           <div class="toggle-content">
             <span class="toggle-label">背景運行模式</span>
             <span class="toggle-desc"
-              >播放無聲音頻防止瀏覽器在後台暫停網頁</span
+              >防止瀏覽器在後台暫停網頁</span
             >
           </div>
           <input
@@ -3957,6 +3957,32 @@ function useClonedVoice(voiceId: string) {
           />
           <span class="toggle-switch"></span>
         </label>
+
+        <!-- 保活模式選擇（僅在背景運行開啟時顯示） -->
+        <div v-if="settingsStore.backgroundAudioEnabled" class="settings-sub-section" style="padding: 8px 12px; margin-bottom: 8px;">
+          <div style="font-size: 13px; margin-bottom: 6px; opacity: 0.8;">保活模式：</div>
+          <label class="toggle-item" style="padding: 4px 0;">
+            <div class="toggle-content">
+              <span class="toggle-label" style="font-size: 13px;">🎵 音頻模式</span>
+              <span class="toggle-desc">播放無聲音頻，佔鎖屏媒體控制欄</span>
+            </div>
+            <input type="radio" value="audio" v-model="settingsStore.keepAliveMode" @change="saveSettings" />
+          </label>
+          <label class="toggle-item" style="padding: 4px 0;">
+            <div class="toggle-content">
+              <span class="toggle-label" style="font-size: 13px;">🎙️ 麥克風模式</span>
+              <span class="toggle-desc">不佔媒體控制欄，但會停掉背景音樂（橘色指示燈）</span>
+            </div>
+            <input type="radio" value="mic" v-model="settingsStore.keepAliveMode" @change="saveSettings" />
+          </label>
+          <label class="toggle-item" style="padding: 4px 0;">
+            <div class="toggle-content">
+              <span class="toggle-label" style="font-size: 13px;">📷 鏡頭模式</span>
+              <span class="toggle-desc">不佔媒體控制欄，可同時聽音樂（綠色指示燈）</span>
+            </div>
+            <input type="radio" value="camera" v-model="settingsStore.keepAliveMode" @change="saveSettings" />
+          </label>
+        </div>
 
         <!-- Debug Overlay 開關 -->
         <label class="toggle-item highlight">

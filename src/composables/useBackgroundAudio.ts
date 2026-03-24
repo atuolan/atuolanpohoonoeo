@@ -4,10 +4,12 @@ import { watch } from "vue";
 // ===== 多層保活策略 =====
 // 1. Web Lock：讓瀏覽器認為頁面「正在做重要事情」，不輕易回收
 // 2. 靜音 OscillatorNode：1Hz + gain 0.001，不出聲也不觸發系統媒體控制欄
-// 3. Web Worker 心跳：每 15 秒 ping 主線程，檢查 AudioContext 是否被掛起
-// 4. BroadcastChannel 自我心跳：Worker 被殺時的備用喚醒機制
-// 5. Page Lifecycle（freeze/resume）：頁面凍結恢復後重建所有保活
-// 6. visibilitychange 恢復：切回前台時重新確認所有保活層都在運作
+// 3. 靜音 <audio> 循環播放 + Media Session：移動端保活關鍵
+// 4. Web Worker 心跳：每 15 秒 ping 主線程，檢查 AudioContext 是否被掛起
+// 5. BroadcastChannel 自我心跳：Worker 被殺時的備用喚醒機制
+// 6. Page Lifecycle（freeze/resume）：頁面凍結恢復後重建所有保活
+// 7. visibilitychange 恢復：切回前台時重新確認所有保活層都在運作
+// 8. 麥克風/鏡頭串流模式：透過 getUserMedia 保活，不佔媒體控制欄
 // 所有音頻操作延遲到用戶第一次觸摸/點擊後才啟動，避免瀏覽器自動播放策略攔截
 
 let audioCtx: AudioContext | null = null;
@@ -19,9 +21,12 @@ let workerBlobUrl: string | null = null;
 let webLockAbortController: AbortController | null = null;
 let broadcastChannel: BroadcastChannel | null = null;
 let broadcastTimer: ReturnType<typeof setInterval> | null = null;
+let mediaStream: MediaStream | null = null;
 let isActive = false;
 let userInteracted = false;
 let interactionListenersBound = false;
+/** 當前保活模式（由 settings store 驅動） */
+let currentMode: "audio" | "mic" | "camera" = "audio";
 
 const SILENT_AUDIO_URL = "/silent.mp3";
 
@@ -172,6 +177,36 @@ function setupMediaSession() {
   });
 }
 
+// ---------- 麥克風 / 鏡頭串流保活 ----------
+// 透過 getUserMedia 取得串流，讓系統認為 app 正在使用麥克風/鏡頭
+// 麥克風模式：iOS 顯示橘色指示燈，但會停掉背景音樂
+// 鏡頭模式：iOS 顯示綠色指示燈，不影響音樂播放
+async function startMediaStream() {
+  if (mediaStream) return;
+  const isMic = currentMode === "mic";
+  const constraints: MediaStreamConstraints = isMic
+    ? { audio: true, video: false }
+    : { audio: false, video: true };
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+    console.log(`[KeepAlive] ${isMic ? "麥克風" : "鏡頭"}串流已啟動`);
+  } catch (e: unknown) {
+    const err = e as Error & { name?: string };
+    if (err?.name === "NotAllowedError") {
+      console.warn(`[KeepAlive] ${isMic ? "麥克風" : "鏡頭"}權限被拒絕`);
+    } else {
+      console.warn(`[KeepAlive] ${isMic ? "麥克風" : "鏡頭"}串流啟動失敗:`, e);
+    }
+  }
+}
+
+function stopMediaStream() {
+  if (!mediaStream) return;
+  mediaStream.getTracks().forEach((t) => t.stop());
+  mediaStream = null;
+  console.log("[KeepAlive] 串流已停止");
+}
+
 /** 恢復靜音 <audio>（被系統暫停後） */
 function resumeSilentAudioIfPaused() {
   if (silentAudioEl && silentAudioEl.paused && isActive) {
@@ -200,6 +235,16 @@ function resumeAudioContextIfSuspended() {
   resumeSilentAudioIfPaused();
 }
 
+/** 根據當前模式恢復保活（音頻模式恢復音頻，串流模式恢復串流） */
+function resumeKeepAliveForCurrentMode() {
+  if (currentMode === "audio") {
+    resumeAudioContextIfSuspended();
+  } else {
+    // 麥克風/鏡頭模式：如果串流斷了就重新啟動
+    if (!mediaStream) startMediaStream();
+  }
+}
+
 // ---------- Web Worker 心跳 ----------
 function startHeartbeatWorker() {
   if (heartbeatWorker) return;
@@ -226,7 +271,7 @@ function startHeartbeatWorker() {
 
   heartbeatWorker.onmessage = () => {
     // 每 15 秒收到 ping，檢查所有保活層
-    resumeAudioContextIfSuspended();
+    resumeKeepAliveForCurrentMode();
   };
 
   heartbeatWorker.onerror = () => {
@@ -268,7 +313,7 @@ function startBroadcastHeartbeat() {
     broadcastChannel = new BroadcastChannel("aguaphone-keepalive");
     broadcastChannel.onmessage = () => {
       // 收到自己的心跳，順便檢查保活狀態
-      resumeAudioContextIfSuspended();
+      resumeKeepAliveForCurrentMode();
       // 如果 Worker 死了，重啟
       if (!heartbeatWorker && isActive) {
         startHeartbeatWorker();
@@ -348,10 +393,10 @@ function removeInteractionListeners() {
 /** visibilitychange：切回前台時全面檢查並恢復 */
 function handleVisibilityForKeepAlive() {
   if (document.visibilityState === "visible" && isActive) {
-    // 恢復 AudioContext + <audio>
-    resumeAudioContextIfSuspended();
-    // 如果 <audio> 被回收了，重建
-    if (!silentAudioEl && userInteracted) {
+    // 根據模式恢復對應的保活層
+    resumeKeepAliveForCurrentMode();
+    // 音頻模式：如果 <audio> 被回收了，重建
+    if (currentMode === "audio" && !silentAudioEl && userInteracted) {
       startSilentAudio();
     }
     // 重新確認 Web Lock（某些瀏覽器後台久了會釋放）
@@ -377,9 +422,9 @@ function handleResume() {
   if (!isActive) return;
 
   // 凍結恢復後，所有保活層可能都已失效，全部重建
-  resumeAudioContextIfSuspended();
+  resumeKeepAliveForCurrentMode();
 
-  if (!silentAudioEl && userInteracted) {
+  if (currentMode === "audio" && !silentAudioEl && userInteracted) {
     startSilentAudio();
   }
   if (!webLockAbortController) {
@@ -407,8 +452,12 @@ function startKeepAlive() {
   // 3. BroadcastChannel 備用心跳（不需要用戶互動）
   startBroadcastHeartbeat();
 
-  // 4. 靜音振盪器 + <audio> 循環播放（需要用戶互動後才能啟動）
-  if (userInteracted) {
+  // 4. 根據模式啟動對應的保活層
+  if (currentMode !== "audio") {
+    // 麥克風/鏡頭模式：直接啟動串流（會觸發權限彈窗）
+    startMediaStream();
+  } else if (userInteracted) {
+    // 音頻模式：需要用戶互動後才能啟動
     startSilentOscillator();
     startSilentAudio();
   } else {
@@ -420,7 +469,7 @@ function startKeepAlive() {
   document.addEventListener("freeze", handleFreeze);
   document.addEventListener("resume", handleResume);
 
-  console.log("[KeepAlive] 保活已啟用（多層策略）");
+  console.log(`[KeepAlive] 保活已啟用（${currentMode} 模式）`);
 }
 
 function stopKeepAlive() {
@@ -428,6 +477,7 @@ function stopKeepAlive() {
   isActive = false;
 
   releaseWebLock();
+  stopMediaStream();
   stopSilentOscillator();
   stopSilentAudio();
   stopHeartbeatWorker();
@@ -454,16 +504,33 @@ function stopKeepAlive() {
  * 注意：用戶手動從最近任務裡劃掉頁面，什麼方案都救不了——這是系統級行為。
  */
 export function useBackgroundAudio() {
+  const settingsStore = useSettingsStore();
+
   watch(
-    () => useSettingsStore().backgroundAudioEnabled,
+    () => settingsStore.backgroundAudioEnabled,
     (enabled) => {
       if (enabled) {
+        currentMode = settingsStore.keepAliveMode;
         startKeepAlive();
       } else {
         stopKeepAlive();
       }
     },
     { immediate: true },
+  );
+
+  // 模式切換時：停止再重啟（如果保活正在運行）
+  watch(
+    () => settingsStore.keepAliveMode,
+    (newMode) => {
+      if (!settingsStore.backgroundAudioEnabled) {
+        currentMode = newMode;
+        return;
+      }
+      stopKeepAlive();
+      currentMode = newMode;
+      startKeepAlive();
+    },
   );
 
   return {
