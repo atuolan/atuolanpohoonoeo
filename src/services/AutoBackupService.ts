@@ -216,7 +216,23 @@ async function collectLightData(): Promise<Record<string, unknown>> {
   const importantEvents = await db.getAll(DB_STORES.IMPORTANT_EVENTS);
   const books = await db.getAll(DB_STORES.BOOKS);
   const stickers = await db.getAll(DB_STORES.STICKERS);
-  const gameStates = await db.getAll(DB_STORES.GAME_STATES);
+  // gameStates 沒有 keyPath，需要手動取 key-value 對（類似 promptLibrary）
+  const gameStates = await (async () => {
+    try {
+      if (!db._instance) await db.init();
+      if (!db._instance) return [];
+      const tx = db._instance.transaction("gameStates", "readonly");
+      const store = tx.objectStore("gameStates");
+      const keys = await store.getAllKeys();
+      const values = await store.getAll();
+      return keys.map((key: IDBValidKey, i: number) => ({
+        key: String(key),
+        value: values[i],
+      }));
+    } catch {
+      return [];
+    }
+  })();
   const rendererRules = await db.getAll(DB_STORES.RENDERER_RULES);
   const bookProgress = await db.getAll(DB_STORES.BOOK_PROGRESS);
   const chatAffinityStates = await db.getAll(DB_STORES.CHAT_AFFINITY_STATES);

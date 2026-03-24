@@ -1,5 +1,6 @@
 import { ref, type Ref, type ComputedRef } from "vue";
 import { useCharactersStore } from "@/stores";
+import { getChatImage, isChatImageRef } from "@/db/operations";
 
 /**
  * 換頭像處理功能
@@ -90,14 +91,26 @@ export function useChatAvatarChange(deps: {
       case "accept": {
         const img = findLastUserImage();
         if (img && deps.currentCharacter.value) {
+          // 解析實際的 base64 圖片數據：優先使用 imageData，若為 chatimg 引用則從 IDB 讀取
+          let avatarBase64 = img.url;
+          if (img.imageData && img.imageData.startsWith("data:")) {
+            avatarBase64 = img.imageData;
+          } else if (isChatImageRef(img.url)) {
+            const resolved = await getChatImage(img.url);
+            if (resolved) avatarBase64 = resolved;
+          }
+          if (isChatImageRef(img.imageData)) {
+            const resolved = await getChatImage(img.imageData);
+            if (resolved) avatarBase64 = resolved;
+          }
           await charactersStore.updateCharacter(deps.currentCharacter.value.id, {
-            avatar: img.url,
+            avatar: avatarBase64,
           });
           const description = desc || img.caption || "";
           const suffix = description ? `（${description}）` : "";
           insertAvatarChangeNotice(
             `${timeStr} ${charName} 換了新頭像${suffix}`,
-            { url: img.url, data: img.imageData, mimeType: img.imageMimeType },
+            { url: avatarBase64, data: img.imageData, mimeType: img.imageMimeType },
           );
         }
         break;
@@ -138,13 +151,25 @@ export function useChatAvatarChange(deps: {
     const timeStr = formatTimeStr();
 
     if (img && deps.currentCharacter.value) {
+      // 解析實際的 base64 圖片數據：優先使用 imageData，若為 chatimg 引用則從 IDB 讀取
+      let avatarBase64 = img.url;
+      if (img.imageData && img.imageData.startsWith("data:")) {
+        avatarBase64 = img.imageData;
+      } else if (isChatImageRef(img.url)) {
+        const resolved = await getChatImage(img.url);
+        if (resolved) avatarBase64 = resolved;
+      }
+      if (isChatImageRef(img.imageData)) {
+        const resolved = await getChatImage(img.imageData);
+        if (resolved) avatarBase64 = resolved;
+      }
       await charactersStore.updateCharacter(deps.currentCharacter.value.id, {
-        avatar: img.url,
+        avatar: avatarBase64,
       });
       const desc = img.caption ? `（${img.caption}）` : "";
       insertAvatarChangeNotice(
         `${timeStr} 你幫 ${charName} 換了新頭像${desc}`,
-        { url: img.url, data: img.imageData, mimeType: img.imageMimeType },
+        { url: avatarBase64, data: img.imageData, mimeType: img.imageMimeType },
       );
       await deps.saveChatImmediate();
     }

@@ -1495,6 +1495,46 @@ function triggerImport() {
   fileInput.value?.click();
 }
 
+// 還原單個聊天的媒體路徑為 base64（桌布 + 訊息圖片）
+function restoreChatMedia(chat: any, mediaFiles: Record<string, Uint8Array>): void {
+  // 還原聊天桌布
+  if (
+    chat.appearance?.wallpaper?.type === "image" &&
+    chat.appearance.wallpaper.value &&
+    !chat.appearance.wallpaper.value.startsWith("data:") &&
+    mediaFiles[chat.appearance.wallpaper.value]
+  ) {
+    const mimeType = getMimeTypeFromFilename(chat.appearance.wallpaper.value);
+    chat.appearance.wallpaper.value = uint8ArrayToDataUrl(
+      mediaFiles[chat.appearance.wallpaper.value],
+      mimeType,
+    );
+  }
+  // 還原訊息圖片
+  if (chat.messages && Array.isArray(chat.messages)) {
+    for (const msg of chat.messages) {
+      if (
+        msg.imageUrl &&
+        !msg.imageUrl.startsWith("data:") &&
+        !msg.imageUrl.startsWith("http") &&
+        mediaFiles[msg.imageUrl]
+      ) {
+        const mimeType = getMimeTypeFromFilename(msg.imageUrl);
+        msg.imageUrl = uint8ArrayToDataUrl(mediaFiles[msg.imageUrl], mimeType);
+      }
+      if (
+        msg.imageData &&
+        !msg.imageData.startsWith("data:") &&
+        !msg.imageData.startsWith("http") &&
+        mediaFiles[msg.imageData]
+      ) {
+        const mimeType = getMimeTypeFromFilename(msg.imageData);
+        msg.imageData = uint8ArrayToDataUrl(mediaFiles[msg.imageData], mimeType);
+      }
+    }
+  }
+}
+
 // 從檔名推斷 MIME 類型
 function getMimeTypeFromFilename(filename: string): string {
   const ext = filename.split(".").pop()?.toLowerCase();
@@ -1635,19 +1675,22 @@ async function handleFileImport(event: Event) {
         }
 
         // 相容新版流式備份格式：聊天存在 chats/*.json 中
+        // 不再一次性解析所有聊天到 data.chats，改為保留原始 Uint8Array 引用
+        // 在導入階段逐個解析、還原、寫入 IDB，降低記憶體峰值
         if (!data.chats || !Array.isArray(data.chats) || data.chats.length === 0) {
-          const chatFiles = Object.entries(files).filter(([name]) => name.startsWith("chats/") && name.endsWith(".json"));
-          if (chatFiles.length > 0) {
-            data.chats = [];
-            for (const [, content] of chatFiles) {
-              try {
-                const chat = JSON.parse(strFromU8(content));
-                data.chats.push(chat);
-              } catch (parseErr) {
-                console.warn("[Import] 聊天檔案解析失敗，跳過:", parseErr);
-              }
-            }
-            console.log(`[Import] 從 chats/ 目錄載入 ${data.chats.length} 個聊天`);
+          const chatFileEntries = Object.entries(files).filter(([name]) => name.startsWith("chats/") && name.endsWith(".json"));
+          if (chatFileEntries.length > 0) {
+            // 保留原始 bytes 引用，不立即解析
+            (data as any)._pendingChatFiles = chatFileEntries;
+            data.chats = []; // 佔位，後續逐個處理
+            console.log(`[Import] 偵測到 ${chatFileEntries.length} 個流式聊天檔案，將逐個處理`);
+          }
+        }
+
+        // 釋放不再需要的 ZIP 條目（非 media/、非 chats/、非 backup.json）
+        for (const key of Object.keys(files)) {
+          if (!key.startsWith("media/") && !key.startsWith("chats/") && key !== "backup.json" && key !== "data.json" && key !== "metadata.json") {
+            delete files[key];
           }
         }
       }
@@ -1746,50 +1789,7 @@ async function handleFileImport(event: Event) {
     // 還原聊天中的圖片
     if (data.chats && Array.isArray(data.chats)) {
       for (const chat of data.chats) {
-        // 還原聊天桌布
-        if (
-          chat.appearance?.wallpaper?.type === "image" &&
-          chat.appearance.wallpaper.value &&
-          !chat.appearance.wallpaper.value.startsWith("data:") &&
-          mediaFiles[chat.appearance.wallpaper.value]
-        ) {
-          const mimeType = getMimeTypeFromFilename(
-            chat.appearance.wallpaper.value,
-          );
-          chat.appearance.wallpaper.value = uint8ArrayToDataUrl(
-            mediaFiles[chat.appearance.wallpaper.value],
-            mimeType,
-          );
-        }
-        // 還原訊息圖片
-        if (chat.messages && Array.isArray(chat.messages)) {
-          for (const msg of chat.messages) {
-            if (
-              msg.imageUrl &&
-              !msg.imageUrl.startsWith("data:") &&
-              !msg.imageUrl.startsWith("http") &&
-              mediaFiles[msg.imageUrl]
-            ) {
-              const mimeType = getMimeTypeFromFilename(msg.imageUrl);
-              msg.imageUrl = uint8ArrayToDataUrl(
-                mediaFiles[msg.imageUrl],
-                mimeType,
-              );
-            }
-            if (
-              msg.imageData &&
-              !msg.imageData.startsWith("data:") &&
-              !msg.imageData.startsWith("http") &&
-              mediaFiles[msg.imageData]
-            ) {
-              const mimeType = getMimeTypeFromFilename(msg.imageData);
-              msg.imageData = uint8ArrayToDataUrl(
-                mediaFiles[msg.imageData],
-                mimeType,
-              );
-            }
-          }
-        }
+        restoreChatMedia(chat, mediaFiles);
       }
     }
 
@@ -1808,6 +1808,34 @@ async function handleFileImport(event: Event) {
     }
 
     // 導入聊天（圖片分離儲存）
+    // 逐個處理流式備份的聊天檔案，避免一次性載入所有聊天到記憶體
+    let importedChatCount = 0;
+    const pendingChatFiles: Array<[string, Uint8Array]> | undefined = (data as any)._pendingChatFiles;
+    if (pendingChatFiles && pendingChatFiles.length > 0) {
+      const { strFromU8 } = await import("fflate");
+      for (let ci = 0; ci < pendingChatFiles.length; ci++) {
+        try {
+          const [, content] = pendingChatFiles[ci];
+          const chat = JSON.parse(strFromU8(content));
+          // 釋放原始 bytes
+          pendingChatFiles[ci] = null as any;
+          // 還原媒體
+          restoreChatMedia(chat, mediaFiles);
+          // 圖片分離儲存
+          const messagesToSave = chat.messages || [];
+          chat.lastMessagePreview = messagesToSave[messagesToSave.length - 1]?.content?.slice(0, 100) || "";
+          chat.messageCount = messagesToSave.length;
+          if (messagesToSave.length > 0) {
+            chat.messages = await extractImagesFromMessages(messagesToSave);
+          }
+          await db.put("chats", chat);
+          importedChatCount++;
+        } catch (parseErr) {
+          console.warn("[Import] 聊天檔案解析失敗，跳過:", parseErr);
+        }
+      }
+      delete (data as any)._pendingChatFiles;
+    }
     if (data.chats && Array.isArray(data.chats)) {
       for (const chat of data.chats) {
         const messagesToSave = chat.messages || [];
@@ -1820,6 +1848,7 @@ async function handleFileImport(event: Event) {
           chat.messages = await extractImagesFromMessages(messagesToSave);
         }
         await db.put("chats", chat);
+        importedChatCount++;
       }
     }
 
@@ -2054,8 +2083,12 @@ async function handleFileImport(event: Event) {
     if (data.gameStates && Array.isArray(data.gameStates)) {
       for (const item of data.gameStates) {
         if (item.key && item.value) {
+          // 新格式：{ key, value } 對
           restoreMediaPathsInValue(item, "value", mediaFiles);
           await db.put("gameStates", item.value, item.key);
+        } else if (item.chatId) {
+          // 舊格式相容：直接是 gameState 物件，用 chatId 當 key
+          await db.put("gameStates", item, item.chatId);
         }
       }
     }
@@ -2119,7 +2152,7 @@ async function handleFileImport(event: Event) {
     const stats = [
       `角色: ${data.characters?.length || 0}`,
       `世界書: ${data.lorebooks?.length || 0}`,
-      `聊天: ${data.chats?.length || 0}`,
+      `聊天: ${importedChatCount}`,
       `總結: ${data.summaries?.length || 0}`,
       `日記: ${data.diaries?.length || 0}`,
       `通話記錄: ${data.callHistory?.length || 0}`,

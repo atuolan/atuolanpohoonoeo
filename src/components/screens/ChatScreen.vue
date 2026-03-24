@@ -7736,6 +7736,7 @@ watch(
     }
     injectPendingMessage(msg);
   },
+  { immediate: true },
 );
 
 onUnmounted(() => {
