@@ -41,6 +41,27 @@ export function useProactiveMessage(characterId: string) {
   const updateSettings = (newSettings: Partial<ProactiveMessageSettings>) => {
     proactiveMessageService.updateSettings(characterId, newSettings)
     settings.value = proactiveMessageService.getSettings(characterId)
+    // 角色主動發訊設定變更後，自動同步到雲端（防抖）
+    scheduleCloudSync()
+  }
+
+  // 防抖雲端同步：角色設定變更後自動同步，避免連續操作觸發多次
+  let _syncTimer: ReturnType<typeof setTimeout> | null = null
+  const scheduleCloudSync = () => {
+    if (_syncTimer) clearTimeout(_syncTimer)
+    _syncTimer = setTimeout(async () => {
+      _syncTimer = null
+      try {
+        const { useCloudPushStore } = await import('@/stores/cloudPush')
+        const cloudPushStore = useCloudPushStore()
+        if (cloudPushStore.enabled) {
+          await cloudPushStore.syncToCloud()
+          console.log('[ProactiveMessage] 角色設定變更，已自動同步到雲端')
+        }
+      } catch {
+        // 非關鍵路徑，靜默失敗
+      }
+    }, 2000)
   }
 
   // 切換啟用狀態
