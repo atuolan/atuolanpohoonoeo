@@ -168,12 +168,12 @@ class PushNotificationService {
         ? `incoming-call-${item.chatId}`
         : item.id;
 
-    // 方式 1：直接用 showNotification（大部分情況可用）
-    await reg.showNotification(title, {
+    const notificationOptions = {
       body,
       tag,
-      icon: item.characterAvatar || undefined,
+      icon: item.characterAvatar || "/icons/icon-192x192.png",
       silent: false,
+      renotify: true,
       requireInteraction: item.type === "incoming_call",
       data: {
         type: item.type,
@@ -181,7 +181,20 @@ class PushNotificationService {
         navigateTo: item.navigateTo,
         reason: item.data?.reason,
       },
-    });
+    };
+
+    // 後台時優先透過 postMessage 讓 SW 自己發送（更可靠）
+    if (document.visibilityState === "hidden" && reg.active) {
+      reg.active.postMessage({
+        type: "SHOW_NOTIFICATION",
+        title,
+        options: notificationOptions,
+      });
+      return;
+    }
+
+    // 前台或 SW 不活躍時直接用 showNotification
+    await reg.showNotification(title, notificationOptions);
   }
 }
 

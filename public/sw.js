@@ -41,6 +41,14 @@ self.addEventListener("message", (event) => {
     // 頁面確認可以更新時才 skipWaiting
     self.skipWaiting();
   }
+
+  // 主線程請求 SW 發送通知（後台時更可靠）
+  if (event.data?.type === "SHOW_NOTIFICATION") {
+    const { title, options } = event.data;
+    event.waitUntil(
+      self.registration.showNotification(title || "新訊息", options || {}),
+    );
+  }
 });
 
 // 雲端推送通知接收（Web Push）
