@@ -764,7 +764,6 @@ export class PushAlarmDO {
     const nextMs = Date.now() + intervalMs;
 
     // 如果下次觸發在 DND 內，跳到 DND 結束
-    const testSchedule = { ...schedule };
     // 建立模擬時間檢查
     const futureDate = new Date(nextMs);
     const futureUserLocalMs =
