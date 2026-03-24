@@ -37,6 +37,8 @@ export class PushAlarmDO {
           return this.handleSubscribe(request);
         case "/notify":
           return this.handleNotify(request);
+        case "/test-webpush":
+          return this.handleTestWebPush();
         case "/alive":
           return this.handleAlive(request);
         case "/debug":
@@ -205,6 +207,45 @@ export class PushAlarmDO {
           }
         : null,
     });
+  }
+
+  // ─── POST /test-webpush — 純 Web Push 測試（不需角色/AI） ───
+
+  async handleTestWebPush() {
+    console.log("[PushAlarmDO] /test-webpush 開始");
+
+    const subscription = await this.state.storage.get("pushSubscription");
+    if (!subscription) {
+      return json({ error: "尚未訂閱 Web Push，請先在設定頁啟用瀏覽器推送並同步" }, 400);
+    }
+
+    console.log("[PushAlarmDO] /test-webpush subscription:", {
+      endpoint: subscription.endpoint?.slice(0, 100),
+      hasKeys: !!subscription.keys,
+    });
+    console.log("[PushAlarmDO] /test-webpush VAPID:", {
+      hasPublicKey: !!this.env.VAPID_PUBLIC_KEY,
+      publicKeyLength: this.env.VAPID_PUBLIC_KEY?.length,
+      hasPrivateKey: !!this.env.VAPID_PRIVATE_KEY,
+      privateKeyLength: this.env.VAPID_PRIVATE_KEY?.length,
+      subject: this.env.VAPID_SUBJECT,
+    });
+
+    try {
+      await this.sendWebPush(
+        subscription,
+        { id: "test", name: "系統測試" },
+        "這是一條 Web Push 測試通知 🎉",
+      );
+      return json({ ok: true, message: "Web Push 測試通知已發送" });
+    } catch (e) {
+      console.error("[PushAlarmDO] /test-webpush 失敗:", e.message, e.stack);
+      if (e.statusCode === 410 || e.statusCode === 404) {
+        await this.state.storage.delete("pushSubscription");
+        return json({ error: "Push subscription 已失效，已清除，請重新同步", expired: true }, 410);
+      }
+      return json({ error: e.message }, 500);
+    }
   }
 
   // ─── POST /alive — 本地存活心跳 ─────────────────────────────

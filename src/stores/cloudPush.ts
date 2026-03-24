@@ -370,6 +370,11 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
     await CloudPushService.testPush();
   }
 
+  /** 純 Web Push 測試（不需角色） */
+  async function testWebPushNotification(): Promise<{ ok?: boolean; error?: string }> {
+    return CloudPushService.testWebPush();
+  }
+
 
   /**
    * 發送本地存活心跳到 Worker
@@ -531,6 +536,7 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
     refreshStatus,
     disableCloudPush,
     testPushNotification,
+    testWebPushNotification,
     sendAliveHeartbeat,
     // Discord OAuth
     openDiscordOAuth,

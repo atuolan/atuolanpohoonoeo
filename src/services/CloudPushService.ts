@@ -92,6 +92,11 @@ export async function testPush(): Promise<void> {
   await request<void>("POST", "/push/test");
 }
 
+/** 純 Web Push 測試（不需角色/AI，直接發一條測試通知） */
+export async function testWebPush(): Promise<{ ok?: boolean; error?: string }> {
+  return request<{ ok?: boolean; error?: string }>("POST", "/push/test-webpush");
+}
+
 /**
  * 發送本地存活心跳
  * 告知 Worker 本地頁面仍在運行，避免雲端重複生成訊息

@@ -201,6 +201,19 @@ async function handleCloudPushTest() {
   }
 }
 
+async function handleWebPushTest() {
+  try {
+    const res = await cloudPushStore.testWebPushNotification();
+    if (res?.ok) {
+      alert("Web Push 測試通知已發送！請檢查系統通知。");
+    } else {
+      alert(`Web Push 測試失敗：${res?.error || "未知錯誤"}`);
+    }
+  } catch (e: any) {
+    alert(`Web Push 測試失敗：${e.message}`);
+  }
+}
+
 async function handleUnlinkDiscord() {
   if (confirm("確定要解除 Discord 連結嗎？")) {
     await cloudPushStore.unlinkDiscord();
@@ -4145,7 +4158,13 @@ function useClonedVoice(voiceId: string) {
                 class="push-permission-btn test"
                 @click="handleCloudPushTest"
               >
-                測試推送
+                測試推送（含AI）
+              </button>
+              <button
+                class="push-permission-btn test"
+                @click="handleWebPushTest"
+              >
+                測試 Web Push
               </button>
             </div>
 
