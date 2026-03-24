@@ -210,8 +210,6 @@ export interface SettingsData {
   customQuickActions: QuickActionItem[];
   // 背景無聲音樂（防止瀏覽器後台暫停）
   backgroundAudioEnabled: boolean;
-  // 地理位置保活（利用 Geolocation API 防止瀏覽器後台暫停）
-  geolocationKeepAliveEnabled: boolean;
   // 語音訊息設定
   audio: AudioSettings;
   // 來電鈴聲設定
@@ -362,9 +360,6 @@ export const useSettingsStore = defineStore("settings", () => {
 
   // 背景無聲音樂（防止瀏覽器後台暫停）
   const backgroundAudioEnabled = ref(false);
-
-  // 地理位置保活（利用 Geolocation API 防止瀏覽器後台暫停）
-  const geolocationKeepAliveEnabled = ref(false);
 
   // 語音訊息設定
   const audio = reactive<AudioSettings>(createDefaultAudioSettings());
@@ -553,11 +548,6 @@ export const useSettingsStore = defineStore("settings", () => {
             backgroundAudioEnabled.value = saved.backgroundAudioEnabled;
           }
 
-          // 載入地理位置保活設定
-          if (saved.geolocationKeepAliveEnabled !== undefined) {
-            geolocationKeepAliveEnabled.value = saved.geolocationKeepAliveEnabled;
-          }
-
           // 載入語音訊息設定
           if (saved.audio) {
             Object.assign(audio, saved.audio);
@@ -702,7 +692,6 @@ export const useSettingsStore = defineStore("settings", () => {
           ...toRaw(a),
         })),
         backgroundAudioEnabled: backgroundAudioEnabled.value,
-        geolocationKeepAliveEnabled: geolocationKeepAliveEnabled.value,
         audio: { ...toRaw(audio) },
         incomingCallRingtone: { ...toRaw(incomingCallRingtone) },
         embeddingAPI: { ...toRaw(embeddingAPI) },
@@ -1053,13 +1042,6 @@ export const useSettingsStore = defineStore("settings", () => {
     backgroundAudioEnabled.value = !backgroundAudioEnabled.value;
   }
 
-  /**
-   * 切換地理位置保活
-   */
-  function toggleGeolocationKeepAlive(): void {
-    geolocationKeepAliveEnabled.value = !geolocationKeepAliveEnabled.value;
-  }
-
   return {
     // 狀態
     isLoaded,
@@ -1079,7 +1061,6 @@ export const useSettingsStore = defineStore("settings", () => {
     language,
     customQuickActions,
     backgroundAudioEnabled,
-    geolocationKeepAliveEnabled,
     audio,
     incomingCallRingtone,
     embeddingAPI,
@@ -1120,6 +1101,5 @@ export const useSettingsStore = defineStore("settings", () => {
     removeCustomQuickAction,
     setCustomQuickActions,
     toggleBackgroundAudio,
-    toggleGeolocationKeepAlive,
   };
 });

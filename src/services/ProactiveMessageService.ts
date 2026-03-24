@@ -849,7 +849,7 @@ export class ProactiveMessageService {
                 const cloudPushStore = useCloudPushStore();
                 const settingsForPush = useSettingsStore();
                 const isBackground = document.visibilityState === "hidden" || !document.hasFocus();
-                const isKeepAliveActive = settingsForPush.geolocationKeepAliveEnabled;
+                const isKeepAliveActive = settingsForPush.backgroundAudioEnabled;
                 if (
                   cloudPushStore.enabled &&
                   cloudPushStore.enabledChannels.includes("webpush") &&
