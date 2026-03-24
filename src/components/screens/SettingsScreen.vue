@@ -195,7 +195,7 @@ async function handleCloudPushTest() {
   }
   try {
     await cloudPushStore.testPushNotification();
-    alert("測試推送已發送！請檢查 Discord DM。");
+    alert("測試推送已發送！請檢查通知。");
   } catch (e: any) {
     alert(`測試推送失敗：${e.message}`);
   }

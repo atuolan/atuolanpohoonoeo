@@ -566,7 +566,6 @@ export class PushAlarmDO {
       hasAuth: !!subscription.keys?.auth,
       hasVapidPublicKey: !!this.env.VAPID_PUBLIC_KEY,
       hasVapidPrivateKey: !!this.env.VAPID_PRIVATE_KEY,
-      vapidPrivateKeyType: typeof this.env.VAPID_PRIVATE_KEY,
       vapidPrivateKeyLength: this.env.VAPID_PRIVATE_KEY?.length || 0,
       hasVapidSubject: !!this.env.VAPID_SUBJECT,
     });
@@ -576,36 +575,49 @@ export class PushAlarmDO {
       throw new Error("VAPID_PRIVATE_KEY 未設定！請執行: wrangler secret put VAPID_PRIVATE_KEY");
     }
 
-    const payload = JSON.stringify({
+    const payloadData = {
       type: "cloud-push-message",
       characterId: character.id,
       characterName: character.name,
       content: content.slice(0, 200),
       timestamp: Date.now(),
-    });
+    };
+
+    // @block65/webcrypto-web-push 的 buildPushPayload 簽名：
+    // buildPushPayload(message, subscription, vapid)
+    //   message = { data: Jsonifiable, options?: { ttl, urgency, topic } }
+    //   subscription = { endpoint, keys: { auth, p256dh } }
+    //   vapid = { subject, publicKey, privateKey }
+    //     privateKey = JWK 的 d 值（Base64URL 字串），不是完整 JWK JSON
+    //
+    // 回傳 { headers, method, body }（不含 endpoint！需自行用 subscription.endpoint）
 
     console.log("[PushAlarmDO] buildPushPayload 參數:", {
       endpoint: subscription.endpoint,
-      payloadLength: payload.length,
       vapidSubject: this.env.VAPID_SUBJECT,
     });
 
     let pushResult;
     try {
-      // 用 @block65/webcrypto-web-push 建構加密 payload
       pushResult = await buildPushPayload(
+        // 第一個參數：message
+        {
+          data: payloadData,
+          options: {
+            urgency: "normal",
+            ttl: 86400,
+          },
+        },
+        // 第二個參數：subscription
         {
           endpoint: subscription.endpoint,
+          expirationTime: null,
           keys: {
             p256dh: subscription.keys.p256dh,
             auth: subscription.keys.auth,
           },
         },
-        {
-          data: payload,
-          urgency: "normal",
-          ttl: 86400, // 24 小時
-        },
+        // 第三個參數：vapid
         {
           subject: this.env.VAPID_SUBJECT || "mailto:push@aguaphone.app",
           publicKey: this.env.VAPID_PUBLIC_KEY,
@@ -618,14 +630,14 @@ export class PushAlarmDO {
       throw buildErr;
     }
 
-    const { headers, body, endpoint } = pushResult;
+    const { headers, body } = pushResult;
 
     console.log("[PushAlarmDO] 準備 fetch 推送服務:", {
-      endpoint,
-      headerKeys: headers ? Object.keys(Object.fromEntries(headers?.entries?.() || [])) : "N/A",
+      endpoint: subscription.endpoint,
+      headerKeys: Object.keys(headers || {}),
     });
 
-    const res = await fetch(endpoint, {
+    const res = await fetch(subscription.endpoint, {
       method: "POST",
       headers,
       body,
