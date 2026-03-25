@@ -125,38 +125,112 @@ async function extractPngMetadata(file: File): Promise<string | null> {
             }
           } else if (type === "iTXt") {
             // 讀取 iTXt chunk（國際化文本）
+            // iTXt 格式: keyword \0 compressionFlag(1) compressionMethod(1) languageTag \0 translatedKeyword \0 text
             const dataStart = offset + 8;
             const dataEnd = dataStart + length;
             const textData = new Uint8Array(buffer.slice(dataStart, dataEnd));
 
-            // iTXt 格式更複雜，簡化處理
-            let nullCount = 0;
-            let textStart = 0;
+            // 找到 keyword 結尾的 null
+            let keywordEnd = -1;
             for (let i = 0; i < textData.length; i++) {
               if (textData[i] === 0) {
-                nullCount++;
-                if (nullCount === 1) {
-                  const keyword = new TextDecoder().decode(
-                    textData.slice(0, i),
-                  );
-                  if (keyword !== PNG_KEYWORD) break;
-                }
-                if (nullCount === 4) {
-                  textStart = i + 1;
-                  break;
-                }
+                keywordEnd = i;
+                break;
               }
             }
 
-            if (nullCount >= 4 && textStart > 0) {
-              const value = new TextDecoder().decode(textData.slice(textStart));
-              // 嘗試解碼 base64
-              try {
-                resolve(decodeBase64(value));
-                return;
-              } catch {
-                resolve(value);
-                return;
+            if (keywordEnd > 0) {
+              const keyword = new TextDecoder().decode(
+                textData.slice(0, keywordEnd),
+              );
+              if (keyword === PNG_KEYWORD) {
+                // keyword \0 之後是 compressionFlag(1 byte) + compressionMethod(1 byte)
+                const compressionFlag = textData[keywordEnd + 1] || 0;
+                // const compressionMethod = textData[keywordEnd + 2] || 0;
+
+                // 接下來是 languageTag \0 translatedKeyword \0 text
+                let pos = keywordEnd + 3; // 跳過 \0 + 2 bytes
+
+                // 跳過 languageTag（找下一個 \0）
+                while (pos < textData.length && textData[pos] !== 0) pos++;
+                pos++; // 跳過 \0
+
+                // 跳過 translatedKeyword（找下一個 \0）
+                while (pos < textData.length && textData[pos] !== 0) pos++;
+                pos++; // 跳過 \0
+
+                if (pos < textData.length) {
+                  const rawText = textData.slice(pos);
+
+                  if (compressionFlag === 1) {
+                    // zlib 壓縮的文本，使用 fflate 解壓
+                    try {
+                      const { inflateSync } = await import("fflate");
+                      const decompressed = inflateSync(rawText);
+                      const value = new TextDecoder().decode(decompressed);
+                      try {
+                        resolve(decodeBase64(value));
+                      } catch {
+                        resolve(value);
+                      }
+                      return;
+                    } catch (deflateErr) {
+                      console.error(
+                        "[extractPngMetadata] iTXt zlib 解壓失敗:",
+                        deflateErr,
+                      );
+                    }
+                  } else {
+                    // 未壓縮的文本
+                    const value = new TextDecoder().decode(rawText);
+                    try {
+                      resolve(decodeBase64(value));
+                    } catch {
+                      resolve(value);
+                    }
+                    return;
+                  }
+                }
+              }
+            }
+          } else if (type === "zTXt") {
+            // 讀取 zTXt chunk（zlib 壓縮文本）
+            // zTXt 格式: keyword \0 compressionMethod(1) compressedData
+            const dataStart = offset + 8;
+            const textData = new Uint8Array(buffer.slice(dataStart, dataStart + length));
+
+            // 找到 keyword 結尾的 null
+            let keywordEnd = -1;
+            for (let i = 0; i < textData.length; i++) {
+              if (textData[i] === 0) {
+                keywordEnd = i;
+                break;
+              }
+            }
+
+            if (keywordEnd > 0) {
+              const keyword = new TextDecoder().decode(
+                textData.slice(0, keywordEnd),
+              );
+              if (keyword === PNG_KEYWORD) {
+                // keyword \0 之後是 compressionMethod(1 byte)，然後是壓縮數據
+                const compressedData = textData.slice(keywordEnd + 2);
+                try {
+                  const { inflateSync } = await import("fflate");
+                  const decompressed = inflateSync(compressedData);
+                  const value = new TextDecoder().decode(decompressed);
+                  try {
+                    resolve(decodeBase64(value));
+                  } catch {
+                    resolve(value);
+                  }
+                  return;
+                } catch (zlibErr) {
+                  console.error(
+                    "[extractPngMetadata] zTXt zlib 解壓失敗:",
+                    zlibErr,
+                  );
+                }
               }
             }
           } else if (type === "IEND") {
