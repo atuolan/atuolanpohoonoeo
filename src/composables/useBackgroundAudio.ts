@@ -36,6 +36,42 @@ let currentMode: "audio" | "mic" | "camera" = "audio";
 
 const SILENT_AUDIO_URL = "/silent.mp3";
 
+// ---------- 音頻重試限制 ----------
+/** 每個音頻元素的連續 error 計數，避免無限重建循環 */
+const audioErrorCounts = new Map<HTMLAudioElement, number>();
+const MAX_AUDIO_RETRIES = 3;
+/** 重試冷卻期（毫秒），超過此時間沒有 error 則重置計數 */
+const ERROR_COOLDOWN_MS = 30_000;
+const audioErrorTimers = new Map<HTMLAudioElement, ReturnType<typeof setTimeout>>();
+
+function trackAudioError(el: HTMLAudioElement): boolean {
+  // 清除舊的冷卻計時器
+  const oldTimer = audioErrorTimers.get(el);
+  if (oldTimer) clearTimeout(oldTimer);
+
+  const count = (audioErrorCounts.get(el) ?? 0) + 1;
+  audioErrorCounts.set(el, count);
+
+  // 設定冷卻計時器：一段時間沒有新 error 就重置計數
+  audioErrorTimers.set(el, setTimeout(() => {
+    audioErrorCounts.delete(el);
+    audioErrorTimers.delete(el);
+  }, ERROR_COOLDOWN_MS));
+
+  if (count > MAX_AUDIO_RETRIES) {
+    console.warn(`[KeepAlive] 音頻連續 error ${count} 次，停止重試`);
+    return false; // 不再重試
+  }
+  return true; // 可以重試
+}
+
+function clearAudioErrorTracking(el: HTMLAudioElement) {
+  audioErrorCounts.delete(el);
+  const timer = audioErrorTimers.get(el);
+  if (timer) clearTimeout(timer);
+  audioErrorTimers.delete(el);
+}
+
 // ---------- Screen Wake Lock ----------
 async function acquireWakeLock() {
   if (wakeLockSentinel) return;
@@ -165,28 +201,30 @@ function createAudioElement(label: string): HTMLAudioElement {
       backupAudioEl.play().catch(() => {});
     }
   });
-  // stalled/waiting/error 事件：音頻卡住時嘗試恢復
+  // stalled/waiting：僅嘗試恢復一次，不做 load 重建
   el.addEventListener("stalled", () => {
     if (isActive) {
-      console.warn(`[KeepAlive] ${label} stalled，嘗試恢復`);
+      console.warn(`[KeepAlive] ${label} stalled，嘗試 play`);
       el.play().catch(() => {});
     }
   });
   el.addEventListener("waiting", () => {
     if (isActive) {
-      console.warn(`[KeepAlive] ${label} waiting，嘗試恢復`);
+      console.warn(`[KeepAlive] ${label} waiting，嘗試 play`);
       el.play().catch(() => {});
     }
   });
   el.addEventListener("error", () => {
-    if (isActive) {
-      console.warn(`[KeepAlive] ${label} error，嘗試重建`);
-      // 嘗試重新載入
-      el.load();
-      setTimeout(() => {
-        if (isActive) el.play().catch(() => {});
-      }, 1000);
-    }
+    if (!isActive) return;
+    // 限制連續重試次數，避免無限循環導致手機崩潰
+    if (!trackAudioError(el)) return;
+    const count = audioErrorCounts.get(el) ?? 1;
+    const delay = Math.min(1000 * Math.pow(2, count - 1), 16000); // 指數退避：1s, 2s, 4s...
+    console.warn(`[KeepAlive] ${label} error（第 ${count} 次），${delay}ms 後重試`);
+    el.load();
+    setTimeout(() => {
+      if (isActive) el.play().catch(() => {});
+    }, delay);
   });
   return el;
 }
@@ -216,12 +254,14 @@ function startSilentAudio() {
 
 function stopSilentAudio() {
   if (silentAudioEl) {
+    clearAudioErrorTracking(silentAudioEl);
     silentAudioEl.pause();
     silentAudioEl.src = "";
     silentAudioEl.load();
     silentAudioEl = null;
   }
   if (backupAudioEl) {
+    clearAudioErrorTracking(backupAudioEl);
     backupAudioEl.pause();
     backupAudioEl.src = "";
     backupAudioEl.load();
