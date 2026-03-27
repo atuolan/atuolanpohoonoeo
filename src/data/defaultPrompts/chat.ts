@@ -1070,6 +1070,17 @@ assistant：我是基拉祈與雪拉比...。我是許願星與創世神。
   - 付款失敗：<msg>付不了欸… <waimai-pay status="failed"/></msg>
   - 送達通知：<msg>外賣到了喔！ <waimai-delivery/></msg>
 雪拉比：⚠️ 外賣標籤只能在 {{user}} 有發送外賣相關訊息時才能使用，不可以無中生有。標籤會自動渲染成外賣卡片 UI，不需要重複寫商品名稱或金額。
+
+基拉祈：噗浪發文——在 <output></output> 內，如果決定發噗浪：
+  [PLURKPOST]內容[IMAGE]中文描述｜英文提示詞[/IMAGE][/PLURKPOST]
+  [REACTIONS]表情:數量,表情:數量[/REACTIONS]（👍❤️😂😮😢😠🎉👏🤔😊，選1-4個，用逗號分隔）
+
+雪拉比：其他特殊動作——放在 </output> 之後：
+  - 來電預約：<schedule-call delay="時間" reason="原因"/>
+  - 行事曆記錄：<calendar-event type="user|period" date="YYYY-MM-DD" title="標題" description="描述"/>
+  - 封鎖用戶：[char-action:block-user|reason:原因]（僅在角色真的非常生氣或受傷時使用，慎用）
+  - 解除封鎖：[char-action:unblock-user]
+  - 道歉外賣：[char-action:apology-food|item:食物ID|message:留言]（被封鎖時用來向用戶道歉）
 </online_mode_features>`,
     system_prompt: true,
     marker: false,
@@ -1123,37 +1134,6 @@ assistant：我是基拉祈與雪拉比...。我是許願星與創世神。
     injection_position: INJECTION_RELATIVE,
     injection_depth: 0,
     injection_order: 21,
-    forbid_overrides: false,
-    extension: false,
-    injection_trigger: [],
-    isEditable: true,
-    isDeletable: true,
-    adminOnly: true,
-  },
-  {
-    identifier: "formatRules",
-    name: "格式規則",
-    description: "必須遵守的格式規則",
-    category: "director",
-    role: "assistant",
-    content: `<format_rules>
-【特殊格式】
-- 跳轉魔法：<msg><timetravel>目的地描述</timetravel></msg>
-- 發送圖片：<msg><pic prompt="english keywords">圖片內容描述</pic></msg>
-- 發送影片：<msg><vid>影片內容描述</vid></msg>
-- 發送語音：<msg><voice>語音文字內容</voice></msg>
-- 噗浪格式：[PLURKPOST]內容[IMAGE]中文描述｜英文提示詞[/IMAGE][/PLURKPOST]
-- 噗浪反應：[REACTIONS]表情:數量,表情:數量[/REACTIONS]（👍❤️😂😮😢😠🎉👏🤔😊，選1-4個，用逗號分隔）
-- 回覆引用：<msg><reply-to>引用內容</reply-to>回覆 ˇ想法ˇ</msg>
-- 來電預約：<schedule-call delay="時間" reason="原因"/>（放在 </output> 之後）
-- 行事曆記錄：<calendar-event type="user|period" date="YYYY-MM-DD" title="標題" description="描述"/>（放在 </output> 之後）
-- 換頭像：<avatar-change action="accept|reject|forced|mood|restore" mood="情緒"/>（放在 <msg> 內）
-</format_rules>`,
-    system_prompt: true,
-    marker: false,
-    injection_position: INJECTION_RELATIVE,
-    injection_depth: 0,
-    injection_order: 22,
     forbid_overrides: false,
     extension: false,
     injection_trigger: [],
@@ -1498,13 +1478,12 @@ export const DEFAULT_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "stickerSystem", enabled: true },
   { identifier: "noSexWorkHard", enabled: false },
   { identifier: "onlineModeIntro", enabled: true },
-  { identifier: "onlineModeFeatures", enabled: true },
   { identifier: "doNotDisturbStatus", enabled: true },
   { identifier: "forbiddenPatterns", enabled: true },
-  { identifier: "formatRules", enabled: true },
   { identifier: "timeJump", enabled: true },
-  { identifier: "exampleScript", enabled: true },
   { identifier: "chatHistory", enabled: true },
+  { identifier: "onlineModeFeatures", enabled: true },
+  { identifier: "exampleScript", enabled: true },
   { identifier: "authorsNote", enabled: true },
   { identifier: "confirmLastOutput", enabled: true },
   { identifier: "thinkingGuide", enabled: true },
