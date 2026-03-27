@@ -13,6 +13,12 @@ export type NotificationType =
   | "fishing_daily" // 釣魚 24h 上限
   | "gift_received" // 收到禮物
   | "incoming_call" // 來電通知
+  | "friend_request" // 角色發送好友申請
+  | "friend_accepted" // 好友申請被接受
+  | "friend_rejected" // 好友申請被拒絕
+  | "apology_food" // 道歉外賣送達
+  | "char_blocked" // 角色封鎖了用戶
+  | "char_unblocked" // 角色解除封鎖
   | "system"; // 系統通知
 
 /** 通知優先級 */
@@ -76,6 +82,12 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
     fishing_daily: true,
     gift_received: true,
     incoming_call: true,
+    friend_request: true,
+    friend_accepted: true,
+    friend_rejected: true,
+    apology_food: true,
+    char_blocked: true,
+    char_unblocked: true,
     system: true,
   },
 };

@@ -57,6 +57,21 @@ export function useChatIncomingCalls(deps: {
 
   /** 檢查待處理來電 */
   async function checkPendingCalls() {
+    // 檢查封鎖狀態：被封鎖的角色不處理來電
+    try {
+      const { shouldBlockIncomingCall } = await import("@/services/BlockService");
+      const { db: blockDb, DB_STORES: blockStores } = await import("@/db/database");
+      const chatId = deps.chatId || deps.currentChatId.value;
+      if (chatId) {
+        const chat = await blockDb.get<any>(blockStores.CHATS, chatId);
+        if (chat && shouldBlockIncomingCall(chat)) {
+          return; // 封鎖中，跳過來電處理
+        }
+      }
+    } catch {
+      // 封鎖檢查失敗不影響正常流程
+    }
+
     // 如果當前正在通話中，自動拒絕新來電
     if (phoneCallStore.isActive) {
       const chatDoNotDisturbMap = new Map<string, boolean>();

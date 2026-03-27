@@ -4,6 +4,7 @@
  */
 
 import type { AuthorsNoteMetadata } from "./prompt";
+import type { BlockState } from "@/types/block";
 import type {
   WaimaiDestinationSnapshot,
   WaimaiEtaSnapshot,
@@ -368,6 +369,24 @@ export interface ChatMessage {
     description?: string;
   };
 
+  // --- 封鎖系統相關 ---
+  /** 是否為封鎖期間發送的訊息（用戶封鎖角色後仍可發送） */
+  sentWhileBlocked?: boolean
+  /** 是否為好友申請訊息 */
+  isFriendRequest?: boolean
+  /** 好友申請結果 */
+  friendRequestResult?: 'accepted' | 'rejected'
+  /** 是否為道歉外賣送達卡片 */
+  isApologyFood?: boolean
+  /** 道歉外賣資料 */
+  apologyFoodData?: {
+    itemName: string
+    itemImageUrl: string
+    characterMessage: string
+    characterName: string
+    characterAvatar?: string
+  }
+
   // --- 擴展 ---
   /** 附加數據 */
   extra?: Record<string, unknown>;
@@ -609,6 +628,9 @@ export interface Chat {
 
   /** 未讀訊息數量（用於聊天列表顯示紅點/數字） */
   unreadCount?: number;
+
+  /** 封鎖狀態 */
+  blockState?: BlockState;
 }
 
 // ===== 聊天設定 =====

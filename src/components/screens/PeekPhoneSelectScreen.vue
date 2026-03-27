@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { db, DB_STORES } from "@/db/database";
+import { shouldHideFromPeekPhone } from "@/services/BlockService";
 import { useCharactersStore } from "@/stores";
 import type { Chat } from "@/types/chat";
 import { ArrowLeft, Eye, Loader2, MessageCircle, Smile } from "lucide-vue-next";
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 const emit = defineEmits<{
   back: [];
@@ -12,7 +13,33 @@ const emit = defineEmits<{
 
 const charactersStore = useCharactersStore();
 
-const characters = computed(() => charactersStore.characters);
+// 封鎖角色 ID 集合（用於過濾 Peek Phone 角色列表）
+const blockedCharacterIds = ref<Set<string>>(new Set());
+
+/** 從 IndexedDB 載入被用戶封鎖的角色 ID */
+async function loadBlockedCharacterIds() {
+  try {
+    await db.init();
+    const allChats = await db.getAll<Chat>(DB_STORES.CHATS);
+    const ids = new Set<string>();
+    for (const chat of allChats) {
+      if (shouldHideFromPeekPhone(chat)) {
+        ids.add(chat.characterId);
+      }
+    }
+    blockedCharacterIds.value = ids;
+  } catch (err) {
+    console.warn('[PeekPhone] 載入封鎖角色失敗:', err);
+  }
+}
+
+onMounted(() => {
+  loadBlockedCharacterIds();
+});
+
+const characters = computed(() =>
+  charactersStore.characters.filter((c) => !blockedCharacterIds.value.has(c.id))
+);
 
 // 聊天選擇狀態
 const selectedCharacterId = ref<string | null>(null);

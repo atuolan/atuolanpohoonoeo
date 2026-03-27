@@ -249,6 +249,9 @@ interface MessageBubbleProps {
   // 顯示層宏替換所需名稱
   userName?: string;
   characterName?: string;
+  // 角色封鎖用戶的系統通知
+  isCharBlockedNotification?: boolean;
+  charBlockedReason?: string;
 }
 
 const props = withDefaults(defineProps<MessageBubbleProps>(), {
@@ -360,6 +363,9 @@ const showGroupChatHistoryModal = ref(false);
 
 // 群通話記錄 Modal 狀態
 const showGroupCallHistoryModal = ref(false);
+
+// 封鎖原因展開狀態
+const showBlockedReason = ref(false);
 
 // 照片預覽 Modal 狀態
 const showPhotoPreview = ref(false);
@@ -2017,6 +2023,26 @@ const showTextVoiceTranscript = ref(true);
           {{ phoneCallSummaryTranscript }}
         </div>
       </div>
+      <!-- 角色封鎖用戶通知 -->
+      <div v-else-if="isCharBlockedNotification" class="char-blocked-notification">
+        <div class="char-blocked-notification-line"></div>
+        <div class="char-blocked-notification-body">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14" style="flex-shrink:0;opacity:0.6">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9L16.9 18.31C15.55 19.37 13.85 20 12 20zm6.31-3.1L7.1 5.69C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z" />
+          </svg>
+          <span>對方已將你封鎖</span>
+          <button
+            v-if="charBlockedReason && charBlockedReason !== '原因' && charBlockedReason.trim()"
+            class="char-blocked-why-btn"
+            @click.stop="showBlockedReason = !showBlockedReason"
+          >為什麼！</button>
+        </div>
+        <!-- 原因小面板（點擊展開，不蓋住頁面） -->
+        <div v-if="showBlockedReason && charBlockedReason" class="char-blocked-reason-panel">
+          <span>{{ charBlockedReason }}</span>
+        </div>
+        <div class="char-blocked-notification-line"></div>
+      </div>
       <!-- 普通系統消息 -->
       <div v-else class="system-message">
         <span>{{ content }}</span>
@@ -3068,6 +3094,53 @@ const showTextVoiceTranscript = ref(true);
   font-size: 12px;
   color: var(--color-text-muted);
   text-align: center;
+}
+
+// 角色封鎖用戶通知
+.char-blocked-notification {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 16px;
+  width: 100%;
+}
+
+.char-blocked-notification-line {
+  width: 40%;
+  height: 1px;
+  background: rgba(255, 80, 80, 0.3);
+}
+
+.char-blocked-notification-body {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(200, 60, 60, 0.85);
+}
+
+.char-blocked-why-btn {
+  font-size: 11px;
+  color: var(--color-primary, #6c8ebf);
+  background: none;
+  border: none;
+  padding: 0 2px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  &:hover { opacity: 0.75; }
+}
+
+.char-blocked-reason-panel {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-raised, rgba(0,0,0,0.04));
+  border-radius: 8px;
+  padding: 6px 12px;
+  max-width: 240px;
+  text-align: center;
+  line-height: 1.5;
 }
 
 // 群聊記錄卡片（系統訊息樣式）

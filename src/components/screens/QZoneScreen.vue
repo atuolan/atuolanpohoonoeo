@@ -2139,6 +2139,7 @@ import type {
 } from "@/types/qzone";
 import { DEFAULT_AUTO_INTERACTION_CONFIG } from "@/types/qzone";
 import { compressImage, compressionPresets } from "@/utils/imageCompression";
+import { shouldHideFromQZone } from "@/services/BlockService";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 
 // ============================================================
@@ -2162,6 +2163,26 @@ const chatStore = useChatStore();
 const promptManagerStore = usePromptManagerStore();
 const userStore = useUserStore();
 const aiGenerationStore = useAIGenerationStore();
+
+// 封鎖角色 ID 集合（用於過濾 QZone 動態）
+const blockedCharacterIds = ref<Set<string>>(new Set());
+
+/** 從 IndexedDB 載入被用戶封鎖的角色 ID */
+async function loadBlockedCharacterIds() {
+  try {
+    const database = await getDatabase();
+    const allChats = await database.getAll('chats');
+    const ids = new Set<string>();
+    for (const chat of allChats) {
+      if (shouldHideFromQZone(chat as any)) {
+        ids.add((chat as any).characterId);
+      }
+    }
+    blockedCharacterIds.value = ids;
+  } catch (err) {
+    console.warn('[QZone] 載入封鎖角色失敗:', err);
+  }
+}
 
 // 批量評論 Composable
 const {
@@ -2382,6 +2403,11 @@ const userName = computed(() => {
 // 過濾後的動態
 const filteredPosts = computed(() => {
   let result = qzoneStore.sortedPosts;
+
+  // 過濾被用戶封鎖的角色動態
+  if (blockedCharacterIds.value.size > 0) {
+    result = result.filter((post) => !blockedCharacterIds.value.has(post.authorId));
+  }
 
   if (searchQuery.value.trim()) {
     const query = searchQuery.value.toLowerCase().trim();
@@ -4019,6 +4045,7 @@ onMounted(async () => {
   await charactersStore.loadCharacters(); // 載入角色列表
   await promptManagerStore.loadConfig(); // 載入提示詞配置
   await userStore.loadUserData(); // 載入用戶資料
+  await loadBlockedCharacterIds(); // 載入封鎖角色列表
 
   // 根據當前用戶的默認設定初始化可見性
   if (userStore.currentPersona?.qzoneSettings?.defaultVisibility) {

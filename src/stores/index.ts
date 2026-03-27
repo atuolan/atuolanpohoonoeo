@@ -66,3 +66,6 @@ export { useFitnessStore } from "./fitness";
 // 驗證 store
 export { useAuthStore } from "./auth";
 
+// 番茄鐘 store
+export { usePomodoroStore } from "./pomodoro";
+

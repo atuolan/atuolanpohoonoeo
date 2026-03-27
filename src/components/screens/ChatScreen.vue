@@ -56,6 +56,7 @@ import {
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import { formatTime as formatAudioTime } from "@/services/AudioRecorder";
 import { proactiveMessageService } from "@/services/ProactiveMessageService";
+import BlockService from "@/services/BlockService";
 import { getRegexedString, regex_placement } from "@/services/RegexEngine";
 import {
   needsParsing,
@@ -266,6 +267,12 @@ interface Message {
     clean: string;
     audioUrl?: string;
   }>;
+  // 封鎖系統相關
+  sentWhileBlocked?: boolean;
+  isSystemNotification?: boolean;
+  // 角色封鎖用戶的系統通知訊息
+  isCharBlockedNotification?: boolean;
+  charBlockedReason?: string;
 }
 
 interface PendingInjectedMessage {
@@ -787,6 +794,8 @@ const messagesContainer = ref<HTMLElement | null>(null);
 
 // ChatScreen 根元素（用於聊天專屬外觀）
 const chatScreenRef = ref<HTMLElement | null>(null);
+// 標題欄元素（用於計算封鎖遮罩的起始位置）
+const chatHeaderRef = ref<HTMLElement | null>(null);
 
 // 顯示更多選單
 const showMoreMenu = ref(false);
@@ -799,6 +808,258 @@ const showNicknameEdit = ref(false);
 const nicknameEditValue = ref("");
 const nicknameInputRef = ref<HTMLInputElement | null>(null);
 
+// 封鎖狀態
+const isCharBlocked = ref(false);
+const isBlockedByChar = ref(false);
+const showFriendRequestInput = ref(false);
+const friendRequestMessage = ref("");
+
+// 載入封鎖狀態
+async function loadBlockState() {
+  if (!currentChatId.value) return;
+  try {
+    const chat = await db.get<Chat>(DB_STORES.CHATS, currentChatId.value);
+    if (chat?.blockState) {
+      isCharBlocked.value = chat.blockState.status === "user-blocked-char";
+      isBlockedByChar.value = chat.blockState.status === "char-blocked-user";
+    } else {
+      isCharBlocked.value = false;
+      isBlockedByChar.value = false;
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * 判斷訊息是否應顯示驚嘆號（封鎖期間「發送失敗」指示器）
+ * - 用戶封鎖角色：只有封鎖之後的 AI 回覆顯示驚嘆號
+ * - 角色封鎖用戶：只有封鎖之後的用戶訊息顯示驚嘆號
+ * - sentWhileBlocked 標記的訊息：始終顯示驚嘆號
+ */
+function shouldShowBlockedIndicator(message: Message): boolean {
+  if (message.isSystemNotification) return false;
+  // 歷史訊息：被角色封鎖期間用戶發的訊息（已持久化標記）
+  if (message.sentWhileBlocked) return true;
+
+  // 取得封鎖時間，只對封鎖之後的訊息顯示驚嘆號
+  const blockState = currentChatData.value?.blockState;
+  const blockedAt = blockState?.blockedAt ?? 0;
+
+  // 即時狀態：用戶封鎖角色時，封鎖之後的 AI 回覆顯示驚嘆號
+  if (isCharBlocked.value && message.role === "ai" && message.timestamp >= blockedAt) return true;
+  // 即時狀態：角色封鎖用戶時，封鎖之後的用戶訊息顯示驚嘆號
+  if (isBlockedByChar.value && message.role === "user" && message.timestamp >= blockedAt) return true;
+  return false;
+}
+
+// 封鎖/解封角色
+async function toggleBlockCharacter() {
+  if (!currentChatId.value) return;
+  const blockService = BlockService.getInstance();
+
+  if (isCharBlocked.value) {
+    await blockService.unblockCharacter(currentChatId.value);
+    isCharBlocked.value = false;
+    // 同步更新 currentChatData 的 blockState（防止 saveChatImmediate 覆蓋）
+    const updatedChat = await db.get<Chat>(DB_STORES.CHATS, currentChatId.value);
+    if (updatedChat && currentChatData.value) {
+      currentChatData.value.blockState = updatedChat.blockState;
+    }
+    // 插入系統提示訊息：已解除封鎖
+    const unblockMsg: Message = {
+      id: `msg_notify_${Date.now()}`,
+      role: "system",
+      content: `已解除對 ${displayCharacterName.value} 的封鎖`,
+      timestamp: Date.now(),
+      isSystemNotification: true,
+    };
+    messages.value.push(unblockMsg);
+    scrollToBottom();
+    await saveChatImmediate();
+  } else {
+    if (!confirm("確定要封鎖這個角色嗎？封鎖後將停止接收主動訊息和來電。"))
+      return;
+    await blockService.blockCharacter(currentChatId.value);
+    isCharBlocked.value = true;
+    // 同步更新 currentChatData 的 blockState（防止 saveChatImmediate 覆蓋）
+    const updatedChat2 = await db.get<Chat>(DB_STORES.CHATS, currentChatId.value);
+    if (updatedChat2 && currentChatData.value) {
+      currentChatData.value.blockState = updatedChat2.blockState;
+    }
+    // 插入系統提示訊息：已封鎖
+    const blockMsg: Message = {
+      id: `msg_notify_${Date.now()}`,
+      role: "system",
+      content: `你已將 ${displayCharacterName.value} 封鎖`,
+      timestamp: Date.now(),
+      isSystemNotification: true,
+    };
+    messages.value.push(blockMsg);
+    scrollToBottom();
+    await saveChatImmediate();
+  }
+  showMoreMenu.value = false;
+  showRail.value = false;
+}
+
+// 提交好友申請
+async function submitFriendRequest() {
+  if (!currentChatId.value || !friendRequestMessage.value.trim()) return;
+  try {
+    const requestMsg = friendRequestMessage.value.trim();
+    showFriendRequestInput.value = false;
+    friendRequestMessage.value = "";
+
+    // 仿照 OVO 的做法：用獨立的輕量 API 呼叫讓角色決定接受/拒絕
+    // 不走主聊天流程，避免觸發重複 AI 生成
+    const chatTaskConfig = settingsStore.getAPIForTask("chat");
+    if (!chatTaskConfig.api.endpoint || !chatTaskConfig.api.apiKey || !chatTaskConfig.api.model) {
+      alert('請先在設定中配置 API');
+      return;
+    }
+
+    const charName = currentCharacter.value?.data?.name || props.characterName || '角色';
+    const charPersona = currentCharacter.value?.data?.description || currentCharacter.value?.data?.personality || '';
+    const chat = await db.get<Chat>(DB_STORES.CHATS, currentChatId.value);
+    const blockState = chat?.blockState;
+    const prevRejects = blockState?.friendRequests?.filter(r => r.result === 'rejected') ?? [];
+
+    // 取最近 15 條對話歷史作為 API messages（讓 AI 有完整上下文）
+    const historyMessages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = []
+    const recentMsgs = messages.value
+      .filter(m => m.content?.trim() && !m.isSystemNotification)
+      .slice(-15)
+    for (const m of recentMsgs) {
+      if (m.role === 'user') {
+        let content = (m.content || '').slice(0, 300)
+        if (m.sentWhileBlocked) content += '\n（此訊息發送於被封鎖期間）'
+        historyMessages.push({ role: 'user', content })
+      } else if (m.role === 'ai') {
+        historyMessages.push({ role: 'assistant', content: (m.content || '').slice(0, 300) })
+      } else if (m.role === 'system' && m.isCharBlockedNotification) {
+        historyMessages.push({ role: 'system', content: '（你在此時拉黑了用戶）' })
+      }
+    }
+
+    let prompt = `你是「${charName}」。你的人設：\n${charPersona}\n\n`;
+    prompt += `你之前拉黑了用戶。用戶現在發來好友申請，申請理由：「${requestMsg.slice(0, 200)}」。\n`;
+    prompt += `這是用戶第 ${prevRejects.length + 1} 次申請。`;
+    if (prevRejects.length > 0) {
+      prompt += ` 之前你拒絕過 ${prevRejects.length} 次。`;
+    }
+    prompt += `\n\n請根據你的性格和對話記錄，決定是否接受好友申請。`;
+    prompt += `\n只輸出以下 JSON，不要任何其他文字：`;
+    prompt += `\n接受：{"accept":true,"reply":"你想對用戶說的話（符合你的性格）"}`;
+    prompt += `\n拒絕：{"accept":false,"rejectReason":"拒絕理由(30字內)","hint":"給用戶的小提示(可選)"}`;
+
+    const client = new OpenAICompatibleClient(chatTaskConfig.api);
+    const result = await client.generate({
+      messages: [
+        { role: 'system', content: `你是「${charName}」，一個角色扮演助手。根據對話歷史和你的性格決定是否接受好友申請。只輸出一行 JSON，不要 markdown，不要解釋。` },
+        ...historyMessages,
+        { role: 'user', content: prompt },
+      ],
+      settings: {
+        maxContextLength: 4096,
+        maxResponseLength: 8192,
+        temperature: 0.9,
+        topP: 1,
+        topK: 0,
+        frequencyPenalty: 0,
+        presencePenalty: 0,
+        repetitionPenalty: 1,
+        stopSequences: [],
+        streaming: false,
+        useStreamingWindow: false,
+      },
+      apiSettings: chatTaskConfig.api,
+    });
+
+    let accept = false;
+    let rejectReason = '';
+    let hint = '';
+    let reply = '';
+    try {
+      // 移除 markdown 代碼塊包裝（Gemini 常見）
+      let raw = result.content.trim()
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/, '')
+        .trim();
+      // 提取第一個 JSON 物件
+      const jsonStr = raw.replace(/^[\s\S]*?(\{[\s\S]*?\})[\s\S]*$/, '$1');
+      const obj = JSON.parse(jsonStr);
+      accept = !!obj.accept;
+      rejectReason = (obj.rejectReason || '').trim().slice(0, 100);
+      hint = (obj.hint || '').trim().slice(0, 100);
+      reply = (obj.reply || '').trim();
+    } catch {
+      // 嘗試從文字中判斷接受/拒絕
+      const raw = result.content.toLowerCase();
+      if (raw.includes('"accept":true') || raw.includes('"accept": true')) {
+        accept = true;
+        reply = '';
+      } else {
+        accept = false;
+        rejectReason = '對方暫時無法回應，請稍後再試。';
+      }
+    }
+
+    const blockService = BlockService.getInstance();
+
+    if (accept) {
+      // 直接解封
+      await blockService.handleCharacterUnblock(currentChatId.value);
+      isBlockedByChar.value = false;
+      const updatedChat = await db.get<Chat>(DB_STORES.CHATS, currentChatId.value);
+      if (updatedChat && currentChatData.value) {
+        currentChatData.value.blockState = updatedChat.blockState;
+      }
+      // 插入解封系統訊息
+      messages.value.push({
+        id: `msg_unblocked_${Date.now()}`,
+        role: 'system',
+        content: `${charName} 已同意你的好友申請，可以繼續聊天`,
+        timestamp: Date.now(),
+        isSystemNotification: true,
+      });
+      // 如果 AI 有回覆，直接插入角色訊息（不需要再呼叫 API）
+      if (reply) {
+        messages.value.push({
+          id: `msg_${Date.now()}_reply`,
+          role: 'ai',
+          content: reply,
+          timestamp: Date.now(),
+        });
+      }
+      await saveChatImmediate();
+    } else {
+      // 拒絕：插入系統訊息到聊天記錄，不用系統彈窗
+      const rejectText = rejectReason || '對方拒絕了你的好友申請';
+      messages.value.push({
+        id: `msg_reject_${Date.now()}`,
+        role: 'system',
+        content: rejectText + (hint ? `\n💡 ${hint}` : ''),
+        timestamp: Date.now(),
+        isSystemNotification: true,
+      });
+      await saveChatImmediate();
+    }
+  } catch (err: any) {
+    console.error('[submitFriendRequest] 錯誤:', err);
+    // 錯誤插入系統訊息，不用系統彈窗
+    messages.value.push({
+      id: `msg_req_err_${Date.now()}`,
+      role: 'system',
+      content: `好友申請發送失敗：${err.message || '未知錯誤'}`,
+      timestamp: Date.now(),
+      isSystemNotification: true,
+    });
+  }
+}
+
+    // 仿照 OVO 的做法：用獨立的輕量 API 呼叫讓角色決定接受/拒絕
+    // 不走主聊天流程，避免觸發重複 AI 生成
 function startNicknameEdit() {
   const char = currentCharacter.value;
   if (!char) return;
@@ -2151,6 +2412,8 @@ function addUserMessage() {
     content: applyUserInputRegex(text),
     timestamp: Date.now(),
     replyTo: replyingTo.value?.id, // 添加回覆引用
+    // 被角色封鎖時，用戶發的訊息標記為「發送失敗」（角色暫時看不到，解封後可見）
+    ...(isBlockedByChar.value ? { sentWhileBlocked: true } : {}),
   };
   messages.value.push(userMessage);
   inputText.value = "";
@@ -2183,6 +2446,8 @@ async function sendAndTriggerAI() {
       content: applyUserInputRegex(text),
       timestamp: Date.now(),
       replyTo: replyingTo.value?.id,
+      // 被角色封鎖時，用戶發的訊息標記為「發送失敗」（角色暫時看不到，解封後可見）
+      ...(isBlockedByChar.value ? { sentWhileBlocked: true } : {}),
     };
     messages.value.push(userMessage);
     inputText.value = "";
@@ -2199,8 +2464,11 @@ async function sendAndTriggerAI() {
     }
   }
 
+  // 被角色封鎖期間，不觸發 AI 回覆（訊息已標記 sentWhileBlocked，角色看不到）
+  if (isBlockedByChar.value) return
+
   // 觸發 AI 回覆
-  await triggerAIResponse();
+  await triggerAIResponse()
 }
 
 // 處理按鍵（線上模式：Enter 發送訊息；面對面模式：Enter 換行，不發送）
@@ -3117,9 +3385,12 @@ async function triggerAIResponse(options?: {
   postCallPrompt?: string;
   audioApiMessage?: { role: string; content: any };
   theaterNudge?: boolean;
+  bypassBlockCheck?: boolean; // 好友申請等特殊場景需要繞過封鎖檢查
 }) {
   if (!currentChatId.value) return;
   if (isGenerating.value) return;
+  // 被角色封鎖期間，除非明確繞過（如好友申請），否則不觸發 AI 生成
+  if (isBlockedByChar.value && !options?.bypassBlockCheck) return;
 
   // 使用全局狀態管理開始生成
   const startResult = aiGenerationStore.startGeneration(
@@ -4218,6 +4489,42 @@ async function triggerAIResponse(options?: {
               await handlePlurkPost(parsed.plurkContent);
             }
 
+            // 處理角色動作標籤（封鎖、解封、道歉外賣等）
+            if (parsed.charActions && parsed.charActions.length > 0 && currentChatId.value) {
+              const blockSvc = BlockService.getInstance()
+              for (const action of parsed.charActions) {
+                if (action.action === 'block-user') {
+                  await blockSvc.handleCharacterBlock(currentChatId.value, action.reason || '')
+                  // 即時更新 UI 封鎖狀態
+                  isBlockedByChar.value = true
+                  const updatedChat = await db.get<Chat>(DB_STORES.CHATS, currentChatId.value)
+                  if (updatedChat && currentChatData.value) {
+                    currentChatData.value.blockState = updatedChat.blockState
+                  }
+                  // 插入封鎖系統通知訊息（冪等：避免重複插入）
+                  const alreadyHasBlockNotif = messages.value.some(m => m.isCharBlockedNotification)
+                  if (!alreadyHasBlockNotif) {
+                    messages.value.push({
+                      id: `msg_blocked_${Date.now()}`,
+                      role: 'system',
+                      content: '對方已將你封鎖',
+                      timestamp: Date.now(),
+                      isCharBlockedNotification: true,
+                      charBlockedReason: action.reason || '',
+                    })
+                  }
+                } else if (action.action === 'unblock-user') {
+                  await blockSvc.handleCharacterUnblock(currentChatId.value)
+                  // 即時更新 UI 封鎖狀態
+                  isBlockedByChar.value = false
+                  const updatedChat = await db.get<Chat>(DB_STORES.CHATS, currentChatId.value)
+                  if (updatedChat && currentChatData.value) {
+                    currentChatData.value.blockState = updatedChat.blockState
+                  }
+                }
+              }
+            }
+
             // 處理好感度更新（移至訊息建立後，以便綁定快照到第一條新 AI 訊息）
             let _pendingAffinityUpdates = parsed.hasAffinityUpdate
               ? parsed.affinityUpdates
@@ -4928,6 +5235,42 @@ async function triggerAIResponse(options?: {
 
               if (parsed.hasPlurkPost && parsed.plurkContent) {
                 await handlePlurkPost(parsed.plurkContent);
+              }
+
+              // 處理角色動作標籤（封鎖、解封、道歉外賣等）
+              if (parsed.charActions && parsed.charActions.length > 0 && currentChatId.value) {
+                const blockSvc = BlockService.getInstance()
+                for (const action of parsed.charActions) {
+                  if (action.action === 'block-user') {
+                    await blockSvc.handleCharacterBlock(currentChatId.value, action.reason || '')
+                    // 即時更新 UI 封鎖狀態
+                    isBlockedByChar.value = true
+                    const updatedChat = await db.get<Chat>(DB_STORES.CHATS, currentChatId.value)
+                    if (updatedChat && currentChatData.value) {
+                      currentChatData.value.blockState = updatedChat.blockState
+                    }
+                    // 插入封鎖系統通知訊息（冪等：避免重複插入）
+                    const alreadyHasBlockNotif2 = messages.value.some(m => m.isCharBlockedNotification)
+                    if (!alreadyHasBlockNotif2) {
+                      messages.value.push({
+                        id: `msg_blocked_${Date.now()}`,
+                        role: 'system',
+                        content: '對方已將你封鎖',
+                        timestamp: Date.now(),
+                        isCharBlockedNotification: true,
+                        charBlockedReason: action.reason || '',
+                      })
+                    }
+                  } else if (action.action === 'unblock-user') {
+                    await blockSvc.handleCharacterUnblock(currentChatId.value)
+                    // 即時更新 UI 封鎖狀態
+                    isBlockedByChar.value = false
+                    const updatedChat = await db.get<Chat>(DB_STORES.CHATS, currentChatId.value)
+                    if (updatedChat && currentChatData.value) {
+                      currentChatData.value.blockState = updatedChat.blockState
+                    }
+                  }
+                }
               }
 
               // 處理好感度更新（移至訊息建立後，以便綁定快照到第一條新 AI 訊息）
@@ -6317,6 +6660,9 @@ async function loadOrCreateChat(overrideChatId?: string) {
         currentChatId.value = chat.id;
         currentChatData.value = chat;
 
+        // 載入封鎖狀態
+        await loadBlockState();
+
         // 初始化聊天變量（{{getvar}} / {{setvar}} 宏系統）
         chatVariablesStore.initForChat(chat.id);
         getMacroEngine().registerVarMacros(chatVariablesStore);
@@ -6546,6 +6892,9 @@ async function loadOrCreateChat(overrideChatId?: string) {
             ttsRawContent: (m as any).ttsRawContent,
             ttsAudioUrl: (m as any).ttsAudioUrl,
             ttsSegments: (m as any).ttsSegments,
+            // 封鎖系統相關
+            sentWhileBlocked: (m as any).sentWhileBlocked,
+            isSystemNotification: (m as any).isSystemNotification,
           };
         });
 
@@ -7121,6 +7470,8 @@ function buildChatMetadata(
     messageCount: storableMessages.length,
     isBranch: currentChatData.value?.isBranch,
     pinnedToList: currentChatData.value?.pinnedToList,
+    // 封鎖狀態（從 DB 中的現有資料保留，不由 ChatScreen 管理）
+    blockState: currentChatData.value?.blockState,
   };
 }
 
@@ -7181,6 +7532,16 @@ async function _saveChatImplInner() {
     const aiMsgs = plainChat.messages.filter(
       (m: any) => m.sender === "assistant",
     );
+
+    // 封鎖狀態保護：從 DB 讀取最新的 blockState，避免被覆蓋
+    // （BlockService 直接寫入 DB，ChatScreen 的 currentChatData 可能還沒同步）
+    try {
+      const latestFromDb = await db.get<any>(DB_STORES.CHATS, plainChat.id);
+      if (latestFromDb?.blockState) {
+        plainChat.blockState = latestFromDb.blockState;
+      }
+    } catch { /* 讀取失敗時保留 buildChatMetadata 的值 */ }
+
     await db.put(DB_STORES.CHATS, plainChat);
     // 保存後立即回讀驗證（僅開發環境，避免生產環境額外記憶體開銷）
     if (import.meta.env.DEV) {
@@ -7816,7 +8177,7 @@ onUnmounted(() => {
     @click="closeMenus"
   >
     <!-- 標題欄 -->
-    <header class="chat-header">
+    <header class="chat-header" ref="chatHeaderRef">
       <button class="header-back" @click="handleBack">
         <svg viewBox="0 0 24 24" fill="currentColor">
           <path
@@ -8545,6 +8906,25 @@ onUnmounted(() => {
                 </svg>
                 <span>開啟新對話</span>
               </button>
+              <!-- 封鎖/解封角色 -->
+              <button
+                v-if="!isGroupChat"
+                class="dropdown-item"
+                :class="{ danger: !isCharBlocked }"
+                @click.stop="toggleBlockCharacter"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    v-if="isCharBlocked"
+                    d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9L16.9 18.31C15.55 19.37 13.85 20 12 20zm6.31-3.1L7.1 5.69C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z"
+                  />
+                  <path
+                    v-else
+                    d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
+                  />
+                </svg>
+                <span>{{ isCharBlocked ? '解除封鎖' : '封鎖角色' }}</span>
+              </button>
               <div class="dropdown-divider"></div>
               <button
                 class="dropdown-item danger"
@@ -8624,6 +9004,25 @@ onUnmounted(() => {
       </div>
     </Transition>
 
+    <!-- 好友申請輸入框 -->
+    <Teleport to="body">
+      <div v-if="showFriendRequestInput" class="block-modal-overlay" @click.self="showFriendRequestInput = false">
+        <div class="friend-request-dialog">
+          <h3 style="margin: 0 0 12px; font-size: 16px;">發送好友申請</h3>
+          <textarea
+            v-model="friendRequestMessage"
+            placeholder="寫點什麼讓對方知道你的心意..."
+            rows="3"
+            style="width: 100%; border: 1px solid var(--border-color); border-radius: 8px; padding: 8px; font-size: 14px; resize: none; box-sizing: border-box;"
+          />
+          <div style="display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end;">
+            <button class="block-cancel-btn" @click="showFriendRequestInput = false">取消</button>
+            <button class="block-submit-btn" @click="submitFriendRequest" :disabled="!friendRequestMessage.trim()">提交</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- 訊息列表 -->
     <main
       ref="messagesContainer"
@@ -8659,6 +9058,9 @@ onUnmounted(() => {
               screenshotSelectedIds.includes(message.id),
             searchResults.includes(message.id),
             searchResults[currentSearchIndex] === message.id,
+            isCharBlocked.value,
+            isBlockedByChar.value,
+            message.sentWhileBlocked,
           ]"
           class="message-memo-wrapper"
         >
@@ -8671,7 +9073,13 @@ onUnmounted(() => {
             <div class="separator-line"></div>
           </div>
 
+          <!-- 系統通知（封鎖/解封等） -->
+          <div v-if="message.isSystemNotification" class="system-notification">
+            <span class="system-notification-text">{{ message.content }}</span>
+          </div>
+
           <MessageBubble
+            v-else
             :id="message.id"
             :role="message.role"
             :content="message.content"
@@ -8779,6 +9187,8 @@ onUnmounted(() => {
             :audio-duration="message.audioDuration"
             :audio-waveform="message.audioWaveform"
             :audio-transcript="message.audioTranscript"
+            :is-char-blocked-notification="message.isCharBlockedNotification"
+            :char-blocked-reason="message.charBlockedReason"
             :is-selected="
               (isSelectingForDelete &&
                 selectedMessageIds.includes(message.id)) ||
@@ -8814,6 +9224,11 @@ onUnmounted(() => {
             @avatar-click="handleAvatarClick"
             @split-regex-html="handleSplitRegexHtml"
           />
+          <!-- 封鎖期間訊息的驚嘆號指示器（獨立行，在訊息下方顯示） -->
+          <div v-if="shouldShowBlockedIndicator(message)" class="blocked-msg-badge">
+            <span class="blocked-badge-icon">⚠</span>
+            <span class="blocked-badge-text">{{ message.role === 'ai' ? '訊息未送達' : '對方已讀不到此訊息' }}</span>
+          </div>
         </div>
 
         <!-- 正在生成提示（僅在非流式時顯示） -->
@@ -8878,6 +9293,15 @@ onUnmounted(() => {
 
     <!-- 輸入區 -->
     <footer class="input-area">
+      <!-- 被角色封鎖提示列 -->
+      <div v-if="isBlockedByChar" class="blocked-by-char-bar">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14" style="flex-shrink:0;opacity:0.7">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9L16.9 18.31C15.55 19.37 13.85 20 12 20zm6.31-3.1L7.1 5.69C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z" />
+        </svg>
+        <span>你已被對方封鎖，訊息可能無法送達</span>
+        <button class="blocked-friend-request-btn" @click="showFriendRequestInput = true">發送好友申請</button>
+      </div>
+
       <!-- 回覆預覽欄 -->
       <Transition name="slide-up">
         <div v-if="replyingTo" class="reply-preview-bar">
@@ -12628,6 +13052,31 @@ onUnmounted(() => {
 .input-area {
   padding: 10px 12px;
   padding-bottom: calc(10px + var(--safe-bottom, 0px));
+
+// 被角色封鎖提示列
+.blocked-by-char-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: rgba(180, 50, 50, 0.85);
+  background: rgba(255, 80, 80, 0.06);
+  border-bottom: 1px solid rgba(255, 80, 80, 0.12);
+}
+
+.blocked-friend-request-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--color-primary, #6c8ebf);
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 12px;
+  padding: 2px 10px;
+  cursor: pointer;
+  &:hover { opacity: 0.75; }
+}
   padding-left: calc(12px + var(--safe-left, 0px));
   padding-right: calc(12px + var(--safe-right, 0px));
   background: var(--color-surface, #fff);
@@ -13321,6 +13770,43 @@ onUnmounted(() => {
   padding: 4px 12px;
   background: var(--color-surface, #fff);
   border-radius: 12px;
+}
+
+.system-notification {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+  margin: 4px 0;
+}
+
+.system-notification-text {
+  font-size: 12px;
+  color: var(--color-text-muted, #999);
+  padding: 4px 16px;
+  background: rgba(128, 128, 128, 0.1);
+  border-radius: 12px;
+}
+
+.blocked-msg-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.blocked-badge-icon {
+  color: #ff4d4f;
+  font-size: 12px;
+}
+
+.blocked-badge-text {
+  font-size: 11px;
+  color: #ff4d4f;
+  opacity: 0.8;
+}
+
+.message-memo-wrapper {
 }
 
 // 編輯模態框
@@ -15906,6 +16392,61 @@ onUnmounted(() => {
     padding: 14px 24px;
     padding-left: calc(24px + var(--safe-left));
     padding-right: calc(24px + var(--safe-right));
+  }
+}
+
+// ===== 封鎖系統樣式 =====
+
+.friend-request-btn {
+  padding: 10px 24px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  &:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+}
+
+.friend-request-dialog {
+  background: var(--bg-primary, #fff);
+  border-radius: 16px;
+  padding: 20px;
+  width: 320px;
+  max-width: 90vw;
+}
+
+.block-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.block-cancel-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  cursor: pointer;
+}
+
+.block-submit-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  background: var(--primary-color, #4a90e2);
+  color: white;
+  cursor: pointer;
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 }
 </style>

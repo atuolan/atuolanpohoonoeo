@@ -39,6 +39,10 @@ export * from "./astroDice";
 export * from "./lenormand";
 // 雲端推送鬧鐘類型
 export * from "./cloudPush";
+// 番茄鐘類型
+export * from "./pomodoro";
+// 封鎖系統類型
+export * from "./block";
 // ===== 小組件類型 =====
 export type WidgetType =
   | "clock"

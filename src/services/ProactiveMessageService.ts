@@ -149,6 +149,20 @@ export class ProactiveMessageService {
           continue;
         }
         if (this.shouldSendMessage(settings, now)) {
+          // 檢查封鎖狀態：被封鎖的角色不發送主動訊息
+          try {
+            const { shouldBlockProactiveMessage } = await import("@/services/BlockService");
+            const { db: blockDb, DB_STORES: blockStores } = await import("@/db/database");
+            const charChats = (await blockDb.getAll<any>(blockStores.CHATS))
+              .filter((c: any) => c.characterId === character.id && !c.isGroupChat);
+            const blocked = charChats.some((c: any) => shouldBlockProactiveMessage(c));
+            if (blocked) {
+              console.log(`[ProactiveMessage] 角色 ${character.id} 處於封鎖狀態，跳過主動發訊`);
+              continue;
+            }
+          } catch (err) {
+            console.warn('[ProactiveMessage] 封鎖狀態檢查失敗，繼續發送:', err);
+          }
           await this.sendProactiveMessage(character.id, settings);
         }
       }

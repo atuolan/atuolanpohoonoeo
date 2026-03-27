@@ -46,3 +46,10 @@ export {
   DEFAULT_GROUP_CHAT_PROMPT_ORDER,
   GROUP_CHAT_PROMPT_DEFINITIONS,
 } from './defaultPrompts';
+
+// 封鎖系統
+export {
+  buildBlockMemoryContent,
+  GROUP_CHAT_BLOCK_HINT,
+  FRIEND_REQUEST_CONTEXT_TEMPLATE,
+} from './block';

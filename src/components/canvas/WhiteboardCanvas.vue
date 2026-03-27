@@ -359,6 +359,8 @@ function handleWidgetClick(widget: { type: string; data?: any }) {
     emit("navigate", "worldbook");
   } else if (widget.type === "weather") {
     emit("navigate", "weather");
+  } else if (widget.type === "focus-timer") {
+    emit("navigate", "pomodoro");
   }
 }
 

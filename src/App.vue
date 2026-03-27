@@ -37,6 +37,7 @@ import GlobalThemeModal from "@/components/modals/GlobalThemeModal.vue";
 import MediaLogManager from "@/components/modals/MediaLogManager.vue";
 import MultiCharSetupModal from "@/components/modals/MultiCharSetupModal.vue";
 import PhoneContactPickerModal from "@/components/modals/PhoneContactPickerModal.vue";
+import PomodoroCertModal from "@/components/modals/PomodoroCertModal.vue";
 import BookReaderScreen from "@/components/screens/BookReaderScreen.vue";
 import BookShelfScreen from "@/components/screens/BookShelfScreen.vue";
 import CalendarScreen from "@/components/screens/CalendarScreen.vue";
@@ -46,6 +47,8 @@ import ChatListScreen from "@/components/screens/ChatListScreen.vue";
 import ChatScreen from "@/components/screens/ChatScreen.vue";
 import DeliveryMallScreen from "@/components/screens/DeliveryMallScreen.vue";
 import FateScreen from "@/components/screens/FateScreen.vue";
+import PomodoroScreen from "@/components/screens/PomodoroScreen.vue";
+import PomodoroFocusScreen from "@/components/screens/PomodoroFocusScreen.vue";
 import FitnessScreen from "@/components/screens/FitnessScreen.vue";
 import GameCenterScreen from "@/components/screens/GameCenterScreen.vue";
 import LorebookEditScreen from "@/components/screens/LorebookEditScreen.vue";
@@ -199,7 +202,9 @@ type PageType =
   | "bookshelf"
   | "peek-phone-select"
   | "peek-phone"
-  | "fate";
+  | "fate"
+  | "pomodoro"
+  | "pomodoro-focus";
 const currentPage = ref<PageType>("home");
 
 // 導航歷史堆疊（用於快捷導航返回）
@@ -625,6 +630,18 @@ async function loadAppData() {
   // characters 已載入，立即啟動主動發訊息服務
   proactiveMessageService.start();
 
+  // 啟動封鎖系統輪詢與道歉外賣計時器恢復
+  import('@/services/BlockService').then(({ default: BlockService }) => {
+    BlockService.getInstance().startBlockPolling();
+  }).catch(err => {
+    console.error('[App] 封鎖系統輪詢啟動失敗:', err);
+  });
+  import('@/services/ApologyFoodService').then(({ default: ApologyFoodService }) => {
+    ApologyFoodService.getInstance().restoreTimers();
+  }).catch(err => {
+    console.error('[App] 道歉外賣計時器恢復失敗:', err);
+  });
+
   // 向量記憶：首次啟用時引導用戶設定嵌入引擎
   if (settingsStore.vectorMemoryEnabled) {
     const mode = settingsStore.embeddingMode ?? 'api';
@@ -862,6 +879,9 @@ function handleNavigate(page: string) {
   } else if (page === "fate" || page === "占卜" || page === "tarot") {
     // 塔羅占卜
     currentPage.value = "fate";
+  } else if (page === "pomodoro" || page === "專注" || page === "番茄鐘") {
+    // 番茄鐘
+    currentPage.value = "pomodoro";
   }
 }
 
@@ -871,6 +891,32 @@ function goHome() {
   selectedCharacterId.value = null;
   selectedLorebookId.value = null;
   isCreatingNew.value = false;
+}
+
+// ===== 番茄鐘 =====
+const showPomodoroCert = ref(false);
+
+function handlePomodoroStartFocus(taskId: string) {
+  import("@/stores/pomodoro").then(({ usePomodoroStore }) => {
+    const pomodoroStore = usePomodoroStore();
+    const task = pomodoroStore.tasks.find((t) => t.id === taskId);
+    if (task) {
+      pomodoroStore.startSession(task);
+      currentPage.value = "pomodoro-focus";
+    }
+  });
+}
+
+function handlePomodoroCertClose() {
+  showPomodoroCert.value = false;
+  currentPage.value = "pomodoro";
+}
+
+function handlePomodoroCertForward(summary: string) {
+  showPomodoroCert.value = false;
+  // TODO: 轉發到聊天（需要選擇角色）
+  console.log("[Pomodoro] 轉發到聊天:", summary);
+  currentPage.value = "pomodoro";
 }
 
 // 返回角色列表
@@ -1832,6 +1878,20 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <!-- 塔羅占卜 -->
     <FateScreen v-else-if="currentPage === 'fate'" @back="goHome" />
 
+    <!-- 番茄鐘 - 任務列表 -->
+    <PomodoroScreen
+      v-else-if="currentPage === 'pomodoro'"
+      @back="goHome"
+      @start-focus="handlePomodoroStartFocus"
+    />
+
+    <!-- 番茄鐘 - 專注頁面 -->
+    <PomodoroFocusScreen
+      v-else-if="currentPage === 'pomodoro-focus'"
+      @back="currentPage = 'pomodoro'"
+      @complete="showPomodoroCert = true"
+    />
+
     <!-- 頭盔TA手機 - 角色選擇 -->
     <PeekPhoneSelectScreen
       v-else-if="currentPage === 'peek-phone-select'"
@@ -1920,6 +1980,13 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       v-if="showPhoneContactPicker"
       @close="showPhoneContactPicker = false"
       @call="startPhoneCall"
+    />
+
+    <!-- 番茄鐘完成證書 -->
+    <PomodoroCertModal
+      v-if="showPomodoroCert"
+      @close="handlePomodoroCertClose"
+      @forward-to-chat="handlePomodoroCertForward"
     />
 
     <!-- 多人卡模式設定彈窗 -->

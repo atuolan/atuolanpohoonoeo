@@ -24,6 +24,8 @@ import { affinityTemplateService } from "@/services/AffinityTemplateService";
 import { promptTemplateService } from "@/services/PromptTemplateService";
 import type { StoredCharacter } from "@/types/character";
 import type { ChatMessage, ChatSettings } from "@/types/chat";
+import type { BlockState } from "@/types/block";
+import { buildBlockMemoryContent, GROUP_CHAT_BLOCK_HINT } from "@/data/defaultPrompts/block";
 import type { AuthorsNoteMetadata, PromptBuildResult } from "@/types/prompt";
 import { DEFAULT_PROMPTS } from "@/types/prompt";
 import type {
@@ -262,6 +264,8 @@ export interface PromptBuilderOptions {
     score: number;
     createdAt: number;
   }>;
+  /** 封鎖狀態（用於注入封鎖記憶提示詞） */
+  blockState?: BlockState;
 }
 
 /**
@@ -1787,6 +1791,12 @@ export class PromptBuilder {
       case "gcFitnessInfo":
         return this.buildFitnessInfoPrompt(identifier, getRole());
 
+      // ===== 封鎖記憶模塊 =====
+      case "blockMemory":
+      case "f2fBlockMemory":
+      case "gcBlockMemory":
+        return this.buildBlockMemoryPrompt(identifier, getRole());
+
       // ===== 角色相關模塊（有內容的提示詞） =====
       case "userInfo": // 用戶信息
       case "characterSettings": // 角色設定框架
@@ -2599,6 +2609,11 @@ speed：0.5~2.0，正常時省略
         msgContent = `${this.formatMsgTimeTag(msg.createdAt)} ${msgContent}`;
       }
 
+      // 被角色封鎖期間用戶發送的訊息：加上提示讓 AI 知道不該看見
+      if (msg.sentWhileBlocked && msg.is_user) {
+        msgContent = `${msgContent}\n（正在被封鎖中，${character.data.name}不該看見此內容）`;
+      }
+
       // 如果這條訊息有引用回覆，在內容前加上引用標記讓 AI 知道
       if (msg.replyTo && !isSystemMsg) {
         const repliedMsg = messages.find((m) => m.id === msg.replyTo);
@@ -2905,6 +2920,39 @@ speed：0.5~2.0，正常時省略
     return {
       role,
       content: parts.join("\n"),
+      identifier,
+    };
+  }
+
+  /**
+   * 建構封鎖記憶提示詞
+   * 當 Chat 存在封鎖狀態或封鎖歷史時，注入 AI 上下文
+   */
+  private buildBlockMemoryPrompt(
+    identifier: string,
+    role: "system" | "user" | "assistant",
+  ): BuiltMessage | null {
+    const blockState = this.options.blockState;
+    if (!blockState || (blockState.status === 'none' && blockState.history.length === 0)) {
+      return null;
+    }
+
+    // 收集封鎖期間用戶的獨白訊息
+    const monologueMessages = this.options.messages
+      .filter(m => m.sentWhileBlocked && m.is_user)
+      .map(m => ({ content: m.content, createdAt: m.createdAt }));
+
+    const content = buildBlockMemoryContent(blockState, monologueMessages);
+    if (!content) return null;
+
+    // 群聊場景注入額外封鎖提示
+    const finalContent = this.options.groupChatMode
+      ? content + '\n' + GROUP_CHAT_BLOCK_HINT
+      : content;
+
+    return {
+      role,
+      content: finalContent,
       identifier,
     };
   }
