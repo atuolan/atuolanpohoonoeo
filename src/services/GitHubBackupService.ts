@@ -24,8 +24,8 @@ import { db, DB_STORES } from "@/db/database";
 // 常數
 // ============================================================
 
-/** 每片大小上限（50MB），Git Blobs API 理論上限約 100MB */
-const CHUNK_SIZE = 50 * 1024 * 1024;
+/** 每片大小上限（25MB），base64 編碼後約 33MB，在 GitHub Blobs API 限制內 */
+const CHUNK_SIZE = 25 * 1024 * 1024;
 
 /** GitHub API 基礎 URL */
 const GITHUB_API = "https://api.github.com";
