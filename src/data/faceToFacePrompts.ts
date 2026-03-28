@@ -1009,7 +1009,7 @@ assistant：我是基拉祈與雪拉比...。我是許願星與創世神。
   {
     identifier: "f2fNarrativePerson",
     name: "人稱模式",
-    description: "第二人稱或第三人稱切換",
+    description: "第一人稱或第三人稱切換",
     category: "director",
     role: "system",
     content: "",
@@ -1275,10 +1275,19 @@ Scene 2.5 — 思維融合 + 情緒釋放 + 噗浪決策
 基拉祈&雪拉比：「現在可以輸出 Final Output 了！」
 </think>
 
-🔴🔴🔴 Final Output（⚠️ 從這裡才開始使用格式化標籤！）：
+🔴🔴🔴 Final Output（⚠️ 從這裡才開始使用格式化標籤！嚴格遵守人稱模式！）：
+
+【第一人稱模式的 output 示範】（用「我」稱呼 {{char}} 自己，用「你」稱呼 {{user}}）：
 <output>
-*走到你身邊，輕輕坐下* 今天很累吧？*溫柔地摸摸你的頭* 休息一下，我陪你。ˇ看到你這樣，真是讓人心疼...ˇ
+*走到你身邊，輕輕坐下* 「今天很累吧？」*溫柔地摸摸你的頭* 「休息一下，我陪你。」ˇ看到你這樣，真是讓人心疼...ˇ
 </output>
+
+【第三人稱模式的 output 示範】（用 {{char}} 的名字作為主語，不用「我」）：
+<output>
+{{char}}走到{{user}}身邊，輕輕坐下。「今天很累吧？」{{char}}伸出手，溫柔地摸了摸{{user}}的頭。「休息一下，我陪你。」ˇ看到{{user}}這樣，真是讓人心疼...ˇ
+</output>
+
+⚠️ 注意：對話（「」內）永遠用第一人稱「我」，人稱模式只影響動作描寫和敘述部分！
 </example_script>`,
     system_prompt: true,
     marker: false,

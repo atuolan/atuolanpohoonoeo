@@ -1,16 +1,16 @@
 import {
-    createDefaultNovelAIImageSettings,
-    type NovelAIImageSettings,
-} from "@/api/NovelAIImageApi";
-import {
-    createDefaultMiniMaxTTSSettings,
-    type MiniMaxTTSSettings,
+  createDefaultMiniMaxTTSSettings,
+  type MiniMaxTTSSettings,
 } from "@/api/MiniMaxTTSApi";
+import {
+  createDefaultNovelAIImageSettings,
+  type NovelAIImageSettings,
+} from "@/api/NovelAIImageApi";
 import { db, DB_STORES } from "@/db/database";
 import type { APISettings, AudioSettings } from "@/types/settings";
 import {
-    createDefaultAPISettings,
-    createDefaultAudioSettings,
+  createDefaultAPISettings,
+  createDefaultAudioSettings,
 } from "@/types/settings";
 import { defineStore } from "pinia";
 import { computed, reactive, ref, toRaw } from "vue";
@@ -210,8 +210,8 @@ export interface SettingsData {
   customQuickActions: QuickActionItem[];
   // 背景無聲音樂（防止瀏覽器後台暫停）
   backgroundAudioEnabled: boolean;
-  // 保活模式：audio（靜音音頻）/ mic（麥克風串流）/ camera（鏡頭串流）
-  keepAliveMode: 'audio' | 'mic' | 'camera';
+  // 保活模式：僅音頻模式
+  keepAliveMode: "audio";
   // 語音訊息設定
   audio: AudioSettings;
   // 來電鈴聲設定
@@ -219,7 +219,7 @@ export interface SettingsData {
   // Embedding API 設定（向量記憶用）
   embeddingAPI?: EmbeddingAPIConfig;
   // 嵌入模式：local（本地 Web Worker 推理）或 api（遠端 API）
-  embeddingMode?: 'local' | 'api';
+  embeddingMode?: "local" | "api";
   // 向量記憶全域開關
   vectorMemoryEnabled?: boolean;
   updatedAt: number;
@@ -248,7 +248,10 @@ function createDefaultTaskBindings(): Record<RoutableTaskType, string | null> {
   );
 }
 
-function createDefaultTaskDirectConnect(): Record<RoutableTaskType, boolean | null> {
+function createDefaultTaskDirectConnect(): Record<
+  RoutableTaskType,
+  boolean | null
+> {
   return ROUTABLE_TASKS.reduce(
     (map, taskType) => {
       map[taskType] = null;
@@ -266,9 +269,8 @@ function normalizeTaskBindings(
 
   for (const taskType of ROUTABLE_TASKS) {
     const value = (input as Record<string, unknown>)[taskType];
-    defaults[taskType] = typeof value === "string" && value.trim()
-      ? value
-      : null;
+    defaults[taskType] =
+      typeof value === "string" && value.trim() ? value : null;
   }
 
   return defaults;
@@ -302,12 +304,13 @@ const createDefaultAuxiliaryConfig = (): AuxiliaryAPIConfig => ({
 
 const SETTINGS_ID = "main-settings";
 
-const createDefaultIncomingCallRingtoneSettings = (): IncomingCallRingtoneSettings => ({
-  selectedRingtoneId: "classic",
-  volume: 0.8,
-  customAudioDataUrl: "",
-  customAudioName: "",
-});
+const createDefaultIncomingCallRingtoneSettings =
+  (): IncomingCallRingtoneSettings => ({
+    selectedRingtoneId: "classic",
+    volume: 0.8,
+    customAudioDataUrl: "",
+    customAudioName: "",
+  });
 
 // ===== Store =====
 
@@ -363,8 +366,8 @@ export const useSettingsStore = defineStore("settings", () => {
   // 背景無聲音樂（防止瀏覽器後台暫停）
   const backgroundAudioEnabled = ref(false);
 
-  // 保活模式：audio（靜音音頻）/ mic（麥克風串流）/ camera（鏡頭串流）
-  const keepAliveMode = ref<'audio' | 'mic' | 'camera'>('audio');
+  // 保活模式：僅音頻模式
+  const keepAliveMode = ref<"audio">("audio");
 
   // 語音訊息設定
   const audio = reactive<AudioSettings>(createDefaultAudioSettings());
@@ -376,14 +379,14 @@ export const useSettingsStore = defineStore("settings", () => {
 
   // Embedding API 設定（向量記憶用）
   const embeddingAPI = reactive<EmbeddingAPIConfig>({
-    endpoint: '',
-    apiKey: '',
-    model: '',
+    endpoint: "",
+    apiKey: "",
+    model: "",
     directConnect: false,
   });
 
   // 嵌入模式：local（本地 Web Worker 推理）或 api（遠端 API），預設 api
-  const embeddingMode = ref<'local' | 'api'>('api');
+  const embeddingMode = ref<"local" | "api">("api");
 
   // 向量記憶全域開關（啟用後，所有聊天的總結會自動嵌入並用語義檢索）
   // 預設開啟；首次啟動時若本地模型未下載，App.vue 會提示使用者下載或前往設定關閉
@@ -461,10 +464,14 @@ export const useSettingsStore = defineStore("settings", () => {
             if (!auxiliary.currentProfileId) auxiliary.currentProfileId = null;
 
             const profileIds = new Set(auxiliary.profiles.map((p) => p.id));
-            const migratedBindings = normalizeTaskBindings(saved.auxiliary.taskBindings);
+            const migratedBindings = normalizeTaskBindings(
+              saved.auxiliary.taskBindings,
+            );
 
             if (!saved.auxiliary.taskBindings) {
-              const legacyEnabledTasks = Array.isArray(saved.auxiliary.enabledTasks)
+              const legacyEnabledTasks = Array.isArray(
+                saved.auxiliary.enabledTasks,
+              )
                 ? saved.auxiliary.enabledTasks
                 : [];
               const legacyProfileId = saved.auxiliary.currentProfileId;
@@ -491,7 +498,10 @@ export const useSettingsStore = defineStore("settings", () => {
             );
 
             // 確保 taskDirectConnect 存在（舊資料相容）
-            if (!auxiliary.taskDirectConnect || typeof auxiliary.taskDirectConnect !== "object") {
+            if (
+              !auxiliary.taskDirectConnect ||
+              typeof auxiliary.taskDirectConnect !== "object"
+            ) {
               auxiliary.taskDirectConnect = createDefaultTaskDirectConnect();
             } else {
               // 補齊缺少的任務類型
@@ -553,10 +563,7 @@ export const useSettingsStore = defineStore("settings", () => {
             backgroundAudioEnabled.value = saved.backgroundAudioEnabled;
           }
 
-          // 載入保活模式
-          if (saved.keepAliveMode !== undefined) {
-            keepAliveMode.value = saved.keepAliveMode;
-          }
+          // 保活模式已簡化為僅音頻，忽略舊的 mic/camera 設定
 
           // 載入語音訊息設定
           if (saved.audio) {
@@ -673,7 +680,9 @@ export const useSettingsStore = defineStore("settings", () => {
         generation: { ...toRaw(p.generation) },
       }));
 
-      const normalizedTaskBindings = normalizeTaskBindings(auxiliary.taskBindings);
+      const normalizedTaskBindings = normalizeTaskBindings(
+        auxiliary.taskBindings,
+      );
       const rawAuxiliary = {
         enabled: auxiliary.enabled,
         api: { ...toRaw(auxiliary.api) },
@@ -682,7 +691,9 @@ export const useSettingsStore = defineStore("settings", () => {
           (taskType) => normalizedTaskBindings[taskType],
         ),
         taskBindings: { ...normalizedTaskBindings },
-        taskDirectConnect: { ...(auxiliary.taskDirectConnect || createDefaultTaskDirectConnect()) },
+        taskDirectConnect: {
+          ...(auxiliary.taskDirectConnect || createDefaultTaskDirectConnect()),
+        },
         profiles: rawAuxProfiles,
         currentProfileId: auxiliary.currentProfileId,
       };

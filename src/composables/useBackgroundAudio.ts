@@ -12,7 +12,7 @@ import { watch } from "vue";
 // 8. Screen Wake Lock：前台時防止螢幕休眠（減少進入後台的機會）
 // 9. Page Lifecycle（freeze/resume）：頁面凍結恢復後重建所有保活層
 // 10. visibilitychange 恢復：切回前台時重新確認所有保活層都在運作
-// 11. 麥克風/鏡頭串流模式：透過 getUserMedia 保活，track 被殺時自動回退音頻模式
+// 11. （已移除麥克風/鏡頭串流模式）
 // 所有音頻操作延遲到用戶第一次觸摸/點擊後才啟動，避免瀏覽器自動播放策略攔截
 
 let audioCtx: AudioContext | null = null;
@@ -26,13 +26,10 @@ let webLockAbortController: AbortController | null = null;
 let broadcastChannel: BroadcastChannel | null = null;
 let broadcastTimer: ReturnType<typeof setInterval> | null = null;
 let mainThreadPollTimer: ReturnType<typeof setInterval> | null = null;
-let mediaStream: MediaStream | null = null;
 let wakeLockSentinel: WakeLockSentinel | null = null;
 let isActive = false;
 let userInteracted = false;
 let interactionListenersBound = false;
-/** 當前保活模式（由 settings store 驅動） */
-let currentMode: "audio" | "mic" | "camera" = "audio";
 
 const SILENT_AUDIO_URL = "/silent.mp3";
 
@@ -42,7 +39,10 @@ const audioErrorCounts = new Map<HTMLAudioElement, number>();
 const MAX_AUDIO_RETRIES = 3;
 /** 重試冷卻期（毫秒），超過此時間沒有 error 則重置計數 */
 const ERROR_COOLDOWN_MS = 30_000;
-const audioErrorTimers = new Map<HTMLAudioElement, ReturnType<typeof setTimeout>>();
+const audioErrorTimers = new Map<
+  HTMLAudioElement,
+  ReturnType<typeof setTimeout>
+>();
 
 function trackAudioError(el: HTMLAudioElement): boolean {
   // 清除舊的冷卻計時器
@@ -53,10 +53,13 @@ function trackAudioError(el: HTMLAudioElement): boolean {
   audioErrorCounts.set(el, count);
 
   // 設定冷卻計時器：一段時間沒有新 error 就重置計數
-  audioErrorTimers.set(el, setTimeout(() => {
-    audioErrorCounts.delete(el);
-    audioErrorTimers.delete(el);
-  }, ERROR_COOLDOWN_MS));
+  audioErrorTimers.set(
+    el,
+    setTimeout(() => {
+      audioErrorCounts.delete(el);
+      audioErrorTimers.delete(el);
+    }, ERROR_COOLDOWN_MS),
+  );
 
   if (count > MAX_AUDIO_RETRIES) {
     console.warn(`[KeepAlive] 音頻連續 error ${count} 次，停止重試`);
@@ -144,12 +147,22 @@ function startSilentOscillator() {
 
 function stopSilentOscillator() {
   if (oscillator) {
-    try { oscillator.stop(); } catch { /* 已停止 */ }
+    try {
+      oscillator.stop();
+    } catch {
+      /* 已停止 */
+    }
     oscillator.disconnect();
     oscillator = null;
   }
-  if (gainNode) { gainNode.disconnect(); gainNode = null; }
-  if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
+  if (gainNode) {
+    gainNode.disconnect();
+    gainNode = null;
+  }
+  if (audioCtx) {
+    audioCtx.close().catch(() => {});
+    audioCtx = null;
+  }
 }
 
 // ---------- Media Session ----------
@@ -220,7 +233,9 @@ function createAudioElement(label: string): HTMLAudioElement {
     if (!trackAudioError(el)) return;
     const count = audioErrorCounts.get(el) ?? 1;
     const delay = Math.min(1000 * Math.pow(2, count - 1), 16000); // 指數退避：1s, 2s, 4s...
-    console.warn(`[KeepAlive] ${label} error（第 ${count} 次），${delay}ms 後重試`);
+    console.warn(
+      `[KeepAlive] ${label} error（第 ${count} 次），${delay}ms 後重試`,
+    );
     el.load();
     setTimeout(() => {
       if (isActive) el.play().catch(() => {});
@@ -270,51 +285,6 @@ function stopSilentAudio() {
   clearMediaSession();
 }
 
-// ---------- 麥克風/鏡頭串流 ----------
-async function startMediaStream() {
-  if (mediaStream) return;
-  const isMic = currentMode === "mic";
-  const constraints = isMic
-    ? { audio: true, video: false }
-    : { audio: false, video: true };
-  try {
-    mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-    console.log(`[KeepAlive] ${isMic ? "麥克風" : "鏡頭"}串流已啟動`);
-    // 監聽 track 被系統殺掉（iOS 後台會停止 track）
-    for (const track of mediaStream.getTracks()) {
-      track.onended = () => {
-        console.warn(`[KeepAlive] ${isMic ? "麥克風" : "鏡頭"} track 被系統終止，自動回退音頻模式`);
-        stopMediaStream();
-        // 自動回退到音頻模式保活
-        if (isActive && userInteracted) {
-          currentMode = "audio";
-          startSilentOscillator();
-          startSilentAudio();
-        }
-      };
-    }
-  } catch (e: unknown) {
-    const err = e as { name?: string };
-    console.warn(`[KeepAlive] ${isMic ? "麥克風" : "鏡頭"}串流啟動失敗:`, e);
-    if (err?.name === "NotAllowedError") {
-      console.warn("[KeepAlive] 權限被拒，回退音頻模式");
-    }
-    // 啟動失敗時回退音頻模式
-    if (isActive && userInteracted) {
-      currentMode = "audio";
-      startSilentOscillator();
-      startSilentAudio();
-    }
-  }
-}
-
-function stopMediaStream() {
-  if (!mediaStream) return;
-  mediaStream.getTracks().forEach((t) => t.stop());
-  mediaStream = null;
-  console.log("[KeepAlive] 串流已停止");
-}
-
 // ---------- 音頻恢復輔助 ----------
 function resumeSilentAudioIfPaused() {
   if (!isActive) return;
@@ -339,31 +309,11 @@ function resumeAudioContextIfSuspended() {
   }
 }
 
-/** 根據當前模式恢復所有保活層 */
+/** 恢復所有保活層 */
 function resumeKeepAliveForCurrentMode() {
   if (!isActive) return;
-  if (currentMode === "audio") {
-    resumeAudioContextIfSuspended();
-    resumeSilentAudioIfPaused();
-  } else {
-    // mic/camera 模式：檢查串流是否還活著
-    if (!mediaStream) {
-      // 串流已死，嘗試重新啟動
-      startMediaStream();
-    } else {
-      // 檢查 track 是否還活著
-      const aliveTracks = mediaStream.getTracks().filter((t) => t.readyState === "live");
-      if (aliveTracks.length === 0) {
-        console.warn("[KeepAlive] 所有 track 已死，回退音頻模式");
-        stopMediaStream();
-        currentMode = "audio";
-        if (userInteracted) {
-          startSilentOscillator();
-          startSilentAudio();
-        }
-      }
-    }
-  }
+  resumeAudioContextIfSuspended();
+  resumeSilentAudioIfPaused();
 }
 
 // ---------- Web Worker 心跳 ----------
@@ -486,16 +436,27 @@ function onUserInteraction() {
 function addInteractionListeners() {
   if (interactionListenersBound) return;
   interactionListenersBound = true;
-  document.addEventListener("click", onUserInteraction, { once: true, capture: true });
-  document.addEventListener("touchstart", onUserInteraction, { once: true, capture: true });
-  document.addEventListener("keydown", onUserInteraction, { once: true, capture: true });
+  document.addEventListener("click", onUserInteraction, {
+    once: true,
+    capture: true,
+  });
+  document.addEventListener("touchstart", onUserInteraction, {
+    once: true,
+    capture: true,
+  });
+  document.addEventListener("keydown", onUserInteraction, {
+    once: true,
+    capture: true,
+  });
 }
 
 function removeInteractionListeners() {
   if (!interactionListenersBound) return;
   interactionListenersBound = false;
   document.removeEventListener("click", onUserInteraction, { capture: true });
-  document.removeEventListener("touchstart", onUserInteraction, { capture: true });
+  document.removeEventListener("touchstart", onUserInteraction, {
+    capture: true,
+  });
   document.removeEventListener("keydown", onUserInteraction, { capture: true });
 }
 
@@ -546,12 +507,8 @@ function startKeepAlive() {
   startMainThreadPoll();
   acquireWakeLock();
 
-  // 模式特定層
-  if (currentMode !== "audio") {
-    // mic/camera 模式：只啟動串流，不同時啟動靜音音頻
-    // track 被 iOS 殺掉時會透過 onended 自動回退音頻模式
-    startMediaStream();
-  } else if (userInteracted) {
+  // 音頻保活層
+  if (userInteracted) {
     startSilentOscillator();
     startSilentAudio();
   } else {
@@ -564,7 +521,7 @@ function startKeepAlive() {
   document.addEventListener("freeze", handleFreeze);
   document.addEventListener("resume", handleResume);
 
-  console.log(`[KeepAlive] 已啟動（${currentMode} 模式）`);
+  console.log("[KeepAlive] 已啟動（音頻模式）");
 }
 
 function stopKeepAlive() {
@@ -573,7 +530,6 @@ function stopKeepAlive() {
 
   // 停止所有層
   releaseWebLock();
-  stopMediaStream();
   stopSilentOscillator();
   stopSilentAudio();
   stopHeartbeatWorker();
@@ -583,7 +539,10 @@ function stopKeepAlive() {
   removeInteractionListeners();
 
   // 移除生命週期事件
-  document.removeEventListener("visibilitychange", handleVisibilityForKeepAlive);
+  document.removeEventListener(
+    "visibilitychange",
+    handleVisibilityForKeepAlive,
+  );
   document.removeEventListener("freeze", handleFreeze);
   document.removeEventListener("resume", handleResume);
 
@@ -594,12 +553,11 @@ function stopKeepAlive() {
 export function useBackgroundAudio() {
   const settings = useSettingsStore();
 
-  // 監聽開關和模式變化
+  // 監聽開關變化
   watch(
     () => settings.backgroundAudioEnabled,
     (enabled) => {
       if (enabled) {
-        currentMode = settings.keepAliveMode;
         startKeepAlive();
       } else {
         stopKeepAlive();
@@ -607,21 +565,8 @@ export function useBackgroundAudio() {
     },
   );
 
-  watch(
-    () => settings.keepAliveMode,
-    (mode) => {
-      if (!settings.backgroundAudioEnabled) return;
-      // 模式切換：先停止再重啟
-      const wasActive = isActive;
-      if (wasActive) stopKeepAlive();
-      currentMode = mode;
-      if (wasActive) startKeepAlive();
-    },
-  );
-
   // 如果已經啟用，立即啟動
   if (settings.backgroundAudioEnabled) {
-    currentMode = settings.keepAliveMode;
     startKeepAlive();
   }
 }

@@ -4403,52 +4403,6 @@ function useClonedVoice(voiceId: string) {
           <span class="toggle-switch"></span>
         </label>
 
-        <!-- 保活模式選擇（僅在背景運行開啟時顯示） -->
-        <div
-          v-if="settingsStore.backgroundAudioEnabled"
-          class="keepalive-mode-picker"
-        >
-          <div class="keepalive-mode-title">保活模式</div>
-          <label
-            v-for="opt in [
-              {
-                value: 'audio',
-                icon: '🎵',
-                label: '音頻模式',
-                desc: '佔鎖屏媒體控制欄',
-              },
-              {
-                value: 'mic',
-                icon: '🎙️',
-                label: '麥克風模式',
-                desc: '不佔媒體控制欄，會停背景音樂（橘色指示燈）',
-              },
-              {
-                value: 'camera',
-                icon: '📷',
-                label: '鏡頭模式',
-                desc: '不佔媒體控制欄，可同時聽音樂（綠色指示燈）',
-              },
-            ]"
-            :key="opt.value"
-            class="keepalive-mode-option"
-            :class="{ active: settingsStore.keepAliveMode === opt.value }"
-          >
-            <input
-              type="radio"
-              :value="opt.value"
-              v-model="settingsStore.keepAliveMode"
-              @change="saveSettings"
-              class="keepalive-mode-radio"
-            />
-            <span class="keepalive-mode-icon">{{ opt.icon }}</span>
-            <div class="keepalive-mode-text">
-              <span class="keepalive-mode-label">{{ opt.label }}</span>
-              <span class="keepalive-mode-desc">{{ opt.desc }}</span>
-            </div>
-          </label>
-        </div>
-
         <!-- Debug Overlay 開關 -->
         <label class="toggle-item highlight">
           <div class="toggle-content">
@@ -6731,82 +6685,6 @@ function useClonedVoice(voiceId: string) {
     rgba(125, 211, 168, 0.1)
   );
   border: 1px solid var(--color-primary, #7dd3a8);
-}
-
-// ===== 保活模式選擇器 =====
-.keepalive-mode-picker {
-  margin: -4px 0 8px;
-  padding: 12px;
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border, #e2e8f0);
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.keepalive-mode-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-muted, #999);
-  margin-bottom: 2px;
-}
-
-.keepalive-mode-option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  cursor: pointer;
-  transition:
-    background 0.2s,
-    border-color 0.2s;
-  border: 1px solid transparent;
-  background: rgba(128, 128, 128, 0.05);
-
-  &.active {
-    background: linear-gradient(
-      135deg,
-      rgba(168, 230, 207, 0.25),
-      rgba(125, 211, 168, 0.12)
-    );
-    border-color: var(--color-primary, #7dd3a8);
-  }
-
-  &:not(.active):active {
-    background: rgba(128, 128, 128, 0.1);
-  }
-}
-
-.keepalive-mode-radio {
-  display: none;
-}
-
-.keepalive-mode-icon {
-  font-size: 20px;
-  flex-shrink: 0;
-  width: 28px;
-  text-align: center;
-}
-
-.keepalive-mode-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.keepalive-mode-label {
-  font-size: 14px;
-  color: var(--color-text, #333);
-  font-weight: 500;
-}
-
-.keepalive-mode-desc {
-  font-size: 11px;
-  color: var(--color-text-muted, #999);
-  line-height: 1.3;
 }
 
 .toggle-content {

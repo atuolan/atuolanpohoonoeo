@@ -13,6 +13,10 @@
  * - OUTLET: 擴展輸出口
  */
 
+import {
+  buildBlockMemoryContent,
+  GROUP_CHAT_BLOCK_HINT,
+} from "@/data/defaultPrompts/block";
 import type {
   CharacterAffinityConfig,
   ChatAffinityState,
@@ -22,10 +26,9 @@ import { computePercentage, computeStage } from "@/schemas/affinity";
 import { ChatGameState } from "@/schemas/gameEconomy";
 import { affinityTemplateService } from "@/services/AffinityTemplateService";
 import { promptTemplateService } from "@/services/PromptTemplateService";
+import type { BlockState } from "@/types/block";
 import type { StoredCharacter } from "@/types/character";
 import type { ChatMessage, ChatSettings } from "@/types/chat";
-import type { BlockState } from "@/types/block";
-import { buildBlockMemoryContent, GROUP_CHAT_BLOCK_HINT } from "@/data/defaultPrompts/block";
 import type { AuthorsNoteMetadata, PromptBuildResult } from "@/types/prompt";
 import { DEFAULT_PROMPTS } from "@/types/prompt";
 import type {
@@ -259,7 +262,7 @@ export interface PromptBuilderOptions {
   /** 向量檢索到的記憶（啟用向量記憶時由外部傳入） */
   vectorMemories?: Array<{
     sourceId: string;
-    sourceType: 'summary' | 'diary' | 'event';
+    sourceType: "summary" | "diary" | "event";
     content: string;
     score: number;
     createdAt: number;
@@ -1683,20 +1686,28 @@ export class PromptBuilder {
         const parts: string[] = [];
 
         // 1. 向量記憶檢索結果（較遠的歷史補充，先注入提供背景脈絡）
-        if (this.options.vectorMemories && this.options.vectorMemories.length > 0) {
+        if (
+          this.options.vectorMemories &&
+          this.options.vectorMemories.length > 0
+        ) {
           // 過濾掉已在時間排序總結中的條目（以 sourceId 去重）
-          const summaryIds = new Set(this.options.summaries?.map((s) => s.id) ?? []);
+          const summaryIds = new Set(
+            this.options.summaries?.map((s) => s.id) ?? [],
+          );
           const uniqueMemories = this.options.vectorMemories.filter(
             (m) => !summaryIds.has(m.sourceId),
           );
           if (uniqueMemories.length > 0) {
             const memories = uniqueMemories
               .map((m, i) => {
-                const sourceLabel = m.sourceType === 'summary' ? '總結' : '日記';
+                const sourceLabel =
+                  m.sourceType === "summary" ? "總結" : "日記";
                 return `【記憶 ${i + 1}】(相似度: ${m.score.toFixed(2)}, 來源: ${sourceLabel})\n${m.content}`;
               })
               .join("\n\n");
-            parts.push(`[語義記憶檢索]\n以下是與當前對話語義相關的歷史記憶片段：\n\n${memories}`);
+            parts.push(
+              `[語義記憶檢索]\n以下是與當前對話語義相關的歷史記憶片段：\n\n${memories}`,
+            );
           }
         }
 
@@ -1706,7 +1717,9 @@ export class PromptBuilder {
             .sort((a, b) => a.createdAt - b.createdAt)
             .map((s, i) => `【總結 ${i + 1}】\n${s.content}`)
             .join("\n\n");
-          parts.push(`[對話歷史總結]\n以下是之前對話的總結，請參考這些內容保持對話的連貫性：\n\n${summaries}`);
+          parts.push(
+            `[對話歷史總結]\n以下是之前對話的總結，請參考這些內容保持對話的連貫性：\n\n${summaries}`,
+          );
         }
 
         if (parts.length === 0) return null;
@@ -1775,12 +1788,36 @@ export class PromptBuilder {
       case "f2fNarrativePerson":
         if (this.options.thirdPersonMode) {
           const content = await this.macroEngine.substitute(
-            `{{char}}將使用第三人稱描述故事，例如:{{char}}今天做了湯給{{user}}`,
+            `<narrative_person_mode>
+⚠️ 人稱模式：第三人稱敘事
+
+所有動作描寫和敘述必須使用第三人稱，以 {{char}} 的名字作為主語。
+對話（「」內的內容）仍然用第一人稱「我」。
+
+✅ 正確示範：
+{{char}}走到{{user}}身邊，輕輕坐下。「今天很累吧？」{{char}}伸出手，溫柔地摸了摸{{user}}的頭。ˇ看到{{user}}這樣，真是讓人心疼...ˇ
+
+❌ 錯誤示範（不要這樣寫）：
+*走到你身邊，輕輕坐下*「今天很累吧？」*溫柔地摸摸你的頭*
+（這是第一人稱，不是第三人稱）
+</narrative_person_mode>`,
           );
           return content ? { role: getRole(), content, identifier } : null;
         } else {
           const content = await this.macroEngine.substitute(
-            `{{char}}必須使用第二人稱，使用「我」稱呼自己，使用「你」稱呼 {{user}}`,
+            `<narrative_person_mode>
+⚠️ 人稱模式：第一人稱敘事
+
+{{char}}必須以自己的視角敘述，使用「我」稱呼自己，使用「你」稱呼 {{user}}。
+動作描寫和對話都從 {{char}} 的第一人稱出發。
+
+✅ 正確示範：
+*走到你身邊，輕輕坐下* 「今天很累吧？」*溫柔地摸摸你的頭* ˇ看到你這樣，真是讓人心疼...ˇ
+
+❌ 錯誤示範（不要這樣寫）：
+{{char}}走到{{user}}身邊，輕輕坐下。{{char}}伸出手摸了摸{{user}}的頭。
+（這是第三人稱，不是第一人稱）
+</narrative_person_mode>`,
           );
           return content ? { role: getRole(), content, identifier } : null;
         }
@@ -2061,17 +2098,21 @@ export class PromptBuilder {
         } catch (e) {
           failedBlocks++;
           if (failedBlocks <= 5) {
-            const blockPreview = block.length > 150 ? block.substring(0, 150) + "..." : block;
+            const blockPreview =
+              block.length > 150 ? block.substring(0, 150) + "..." : block;
             console.warn(
               `[PromptBuilder] 世界書 EJS 語法錯誤 ${label} 區塊 #${failedBlocks}:`,
               (e as Error).message,
-              "\n區塊內容:", blockPreview,
+              "\n區塊內容:",
+              blockPreview,
             );
           }
         }
       }
       if (failedBlocks > 5) {
-        console.warn(`[PromptBuilder] ${label} 共有 ${failedBlocks} 個 EJS 區塊有語法問題`);
+        console.warn(
+          `[PromptBuilder] ${label} 共有 ${failedBlocks} 個 EJS 區塊有語法問題`,
+        );
       }
       if (failedBlocks === 0) {
         // 單個區塊都能編譯，但組合起來失敗 → 可能是控制流不匹配（如缺少 } 或 else）
@@ -2087,9 +2128,12 @@ export class PromptBuilder {
     // 因為所有酒館 stub（getwi 等）都是同步的，await 不影響結果
     const stripAwaitInEjs = (content: string): string => {
       if (!content.includes("await")) return content;
-      return content.replace(/(<%[-_=]?)(\s*[\s\S]*?)([-_]?%>)/g, (_match, open, body, close) => {
-        return open + body.replace(/\bawait\s+/g, "") + close;
-      });
+      return content.replace(
+        /(<%[-_=]?)(\s*[\s\S]*?)([-_]?%>)/g,
+        (_match, open, body, close) => {
+          return open + body.replace(/\bawait\s+/g, "") + close;
+        },
+      );
     };
 
     const render = (content: string, label?: string): string => {
@@ -2264,7 +2308,8 @@ export class PromptBuilder {
           pool = messages.filter((m) => m.is_user);
         } else if (role === "assistant") {
           pool = messages.filter(
-            (m) => !m.is_user && m.sender !== "system" && m.sender !== "narrator",
+            (m) =>
+              !m.is_user && m.sender !== "system" && m.sender !== "narrator",
           );
         } else if (role === "system") {
           pool = messages.filter((m) => m.sender === "system");
@@ -2283,12 +2328,16 @@ export class PromptBuilder {
     /**
      * lastMessage / lastUserMessage / lastCharMessage — 常用快捷變量
      */
-    const lastMsg = messages.length > 0 ? messages[messages.length - 1].content : "";
-    const lastUserMsg = [...messages].reverse().find((m) => m.is_user)?.content ?? "";
+    const lastMsg =
+      messages.length > 0 ? messages[messages.length - 1].content : "";
+    const lastUserMsg =
+      [...messages].reverse().find((m) => m.is_user)?.content ?? "";
     const lastCharMsg =
-      [...messages].reverse().find(
-        (m) => !m.is_user && m.sender !== "system" && m.sender !== "narrator",
-      )?.content ?? "";
+      [...messages]
+        .reverse()
+        .find(
+          (m) => !m.is_user && m.sender !== "system" && m.sender !== "narrator",
+        )?.content ?? "";
 
     // --- 兼容酒館的變量寫入函數（no-op stub） ---
     // setvar 在酒館中用於寫入聊天變量，Aguaphone 不支援此功能，
@@ -2933,21 +2982,24 @@ speed：0.5~2.0，正常時省略
     role: "system" | "user" | "assistant",
   ): BuiltMessage | null {
     const blockState = this.options.blockState;
-    if (!blockState || (blockState.status === 'none' && blockState.history.length === 0)) {
+    if (
+      !blockState ||
+      (blockState.status === "none" && blockState.history.length === 0)
+    ) {
       return null;
     }
 
     // 收集封鎖期間用戶的獨白訊息
     const monologueMessages = this.options.messages
-      .filter(m => m.sentWhileBlocked && m.is_user)
-      .map(m => ({ content: m.content, createdAt: m.createdAt }));
+      .filter((m) => m.sentWhileBlocked && m.is_user)
+      .map((m) => ({ content: m.content, createdAt: m.createdAt }));
 
     const content = buildBlockMemoryContent(blockState, monologueMessages);
     if (!content) return null;
 
     // 群聊場景注入額外封鎖提示
     const finalContent = this.options.groupChatMode
-      ? content + '\n' + GROUP_CHAT_BLOCK_HINT
+      ? content + "\n" + GROUP_CHAT_BLOCK_HINT
       : content;
 
     return {
