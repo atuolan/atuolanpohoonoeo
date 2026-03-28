@@ -183,6 +183,13 @@ async function getLatestCommitSha(
   return json.object.sha as string;
 }
 
+/** 取得 repo 的預設分支名稱（main 或 master） */
+async function getDefaultBranch(repo: string, token: string): Promise<string> {
+  const res = await ghFetch(`/repos/${repo}`, token);
+  const json = await res.json();
+  return (json.default_branch as string) || "main";
+}
+
 /** 取得 commit 對應的 tree SHA */
 async function getCommitTreeSha(
   repo: string,
@@ -310,9 +317,12 @@ export async function uploadToGitHub(
     return { success: false, message: "請先設定 GitHub Token 和倉庫名稱" };
   }
 
-  const { token, repo, branch } = settings;
+  const { token, repo } = settings;
 
   try {
+    // 0. 自動偵測預設分支
+    const branch = await getDefaultBranch(repo, token);
+
     // 1. 計算校驗碼
     onProgress?.({ phase: "計算校驗碼..." });
     const checksum = await sha256Hex(zipData);
@@ -433,7 +443,8 @@ export async function createStreamingUploader(
     throw new Error("請先設定 GitHub Token 和倉庫名稱");
   }
 
-  const { token, repo, branch } = settings;
+  const { token, repo } = settings;
+  const branch = await getDefaultBranch(repo, token);
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const backupDir = `backups/${timestamp}`;
 
@@ -588,9 +599,10 @@ export async function listRemoteBackups(): Promise<
   const settings = await loadGitHubSettings();
   if (!settings.token || !settings.repo) return [];
 
-  const { token, repo, branch } = settings;
+  const { token, repo } = settings;
 
   try {
+    const branch = await getDefaultBranch(repo, token);
     // 取得 backups/ 目錄下的子目錄
     const res = await ghFetch(
       `/repos/${repo}/contents/backups?ref=${branch}`,
@@ -636,7 +648,8 @@ export async function downloadFromGitHub(
     throw new Error("請先設定 GitHub Token 和倉庫名稱");
   }
 
-  const { token, repo, branch } = settings;
+  const { token, repo } = settings;
+  const branch = await getDefaultBranch(repo, token);
 
   // 1. 讀取 manifest.json
   onProgress?.({ phase: "讀取備份清單..." });
@@ -720,9 +733,10 @@ export async function deleteRemoteBackup(
     return { success: false, message: "請先設定 GitHub Token 和倉庫名稱" };
   }
 
-  const { token, repo, branch } = settings;
+  const { token, repo } = settings;
 
   try {
+    const branch = await getDefaultBranch(repo, token);
     // 列出目錄下所有檔案
     const res = await ghFetch(
       `/repos/${repo}/contents/${backupPath}?ref=${branch}`,
