@@ -953,6 +953,10 @@ async function handleGhDisconnect() {
   await saveGitHubSettings({ ...ghSettings });
 }
 
+async function handleGhSaveSettings() {
+  await saveGitHubSettings({ ...ghSettings });
+}
+
 const onGhProgress = (p: GitHubBackupProgress) => {
   if (p.current && p.total && p.total > 0) {
     ghProgress.value = `${p.phase} (${p.current}/${p.total})`;
@@ -5244,6 +5248,22 @@ function useClonedVoice(voiceId: string) {
               上次雲端備份：{{ formatBackupTime(ghSettings.lastBackupAt) }}
             </div>
 
+            <div class="gh-keep-row">
+              <span>保留份數：</span>
+              <select
+                v-model.number="ghSettings.maxRemoteBackups"
+                class="soft-input"
+                style="width: auto; min-width: 80px"
+                @change="handleGhSaveSettings"
+              >
+                <option :value="1">1 份（自動覆蓋）</option>
+                <option :value="2">2 份</option>
+                <option :value="3">3 份</option>
+                <option :value="5">5 份</option>
+                <option :value="0">不限</option>
+              </select>
+            </div>
+
             <div class="backup-buttons">
               <button
                 class="backup-btn export"
@@ -6496,6 +6516,15 @@ function useClonedVoice(voiceId: string) {
 }
 
 // ===== 配置文件樣式 =====
+
+.gh-keep-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary, #64748b);
+  padding: 6px 0;
+}
 
 .profiles-section {
   background: var(--color-surface, #fff);
