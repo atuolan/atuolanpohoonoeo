@@ -26,6 +26,7 @@ import {
 } from "@/stores";
 import { useAIGenerationStore } from "@/stores/aiGeneration";
 import { useAuthStore } from "@/stores/auth";
+import { useGitHubBackupStore } from "@/stores/githubBackup";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 // 頁面組件
 import {
@@ -47,8 +48,6 @@ import ChatListScreen from "@/components/screens/ChatListScreen.vue";
 import ChatScreen from "@/components/screens/ChatScreen.vue";
 import DeliveryMallScreen from "@/components/screens/DeliveryMallScreen.vue";
 import FateScreen from "@/components/screens/FateScreen.vue";
-import PomodoroScreen from "@/components/screens/PomodoroScreen.vue";
-import PomodoroFocusScreen from "@/components/screens/PomodoroFocusScreen.vue";
 import FitnessScreen from "@/components/screens/FitnessScreen.vue";
 import GameCenterScreen from "@/components/screens/GameCenterScreen.vue";
 import LorebookEditScreen from "@/components/screens/LorebookEditScreen.vue";
@@ -56,6 +55,8 @@ import LorebookListScreen from "@/components/screens/LorebookListScreen.vue";
 import MusicAppScreen from "@/components/screens/MusicAppScreen.vue";
 import PeekPhoneScreen from "@/components/screens/PeekPhoneScreen.vue";
 import PeekPhoneSelectScreen from "@/components/screens/PeekPhoneSelectScreen.vue";
+import PomodoroFocusScreen from "@/components/screens/PomodoroFocusScreen.vue";
+import PomodoroScreen from "@/components/screens/PomodoroScreen.vue";
 import PromptManagerScreen from "@/components/screens/PromptManagerScreen.vue";
 import QZoneScreen from "@/components/screens/QZoneScreen.vue";
 import RegexScriptsScreen from "@/components/screens/RegexScriptsScreen.vue";
@@ -108,6 +109,12 @@ const notificationStore = useNotificationStore();
 // 驗證 store
 const authStore = useAuthStore();
 
+// GitHub 雲端備份全局狀態
+const _ghBackupStore = useGitHubBackupStore();
+const ghBackupBusy = computed(() => _ghBackupStore.busy);
+const ghBackupPercent = computed(() => _ghBackupStore.percent);
+const ghBackupDisplayText = computed(() => _ghBackupStore.displayText);
+
 // ===== 全局電話通話 =====
 const phoneCallStore = usePhoneCallStore();
 
@@ -123,7 +130,7 @@ const showSwUpdateToast = ref(false);
 const showEmbeddingModelPrompt = ref(false);
 const embeddingModelDownloading = ref(false);
 const embeddingModelProgress = ref(0);
-const embeddingModelFile = ref('');
+const embeddingModelFile = ref("");
 
 function handleSwUpdate() {
   showSwUpdateToast.value = true;
@@ -602,13 +609,13 @@ async function loadAppData() {
 
   // 自動備份：檢查 IDB 是否有資料遺失，若有則從 localStorage 恢復
   try {
-    const { checkAndRestore } = await import('@/services/autoBackup')
-    const restored = await checkAndRestore()
+    const { checkAndRestore } = await import("@/services/autoBackup");
+    const restored = await checkAndRestore();
     if (restored) {
-      console.log('[App] 已從自動備份恢復 IDB 資料')
+      console.log("[App] 已從自動備份恢復 IDB 資料");
     }
   } catch (error) {
-    console.error('[App] 自動備份恢復檢查失敗:', error)
+    console.error("[App] 自動備份恢復檢查失敗:", error);
   }
 
   // 載入角色、世界書、API 設定、使用者資料和表情包
@@ -622,50 +629,63 @@ async function loadAppData() {
   ]);
 
   // 自動備份：載入成功後備份關鍵資料到 localStorage
-  import('@/services/autoBackup').then(({ performBackup }) => {
-    // 延遲 5 秒執行，避免影響啟動速度
-    setTimeout(() => performBackup().catch(() => {}), 5000)
-  }).catch(() => {})
+  import("@/services/autoBackup")
+    .then(({ performBackup }) => {
+      // 延遲 5 秒執行，避免影響啟動速度
+      setTimeout(() => performBackup().catch(() => {}), 5000);
+    })
+    .catch(() => {});
 
   // characters 已載入，立即啟動主動發訊息服務
   proactiveMessageService.start();
 
   // 啟動封鎖系統輪詢與道歉外賣計時器恢復
-  import('@/services/BlockService').then(({ default: BlockService }) => {
-    BlockService.getInstance().startBlockPolling();
-  }).catch(err => {
-    console.error('[App] 封鎖系統輪詢啟動失敗:', err);
-  });
-  import('@/services/ApologyFoodService').then(({ default: ApologyFoodService }) => {
-    ApologyFoodService.getInstance().restoreTimers();
-  }).catch(err => {
-    console.error('[App] 道歉外賣計時器恢復失敗:', err);
-  });
+  import("@/services/BlockService")
+    .then(({ default: BlockService }) => {
+      BlockService.getInstance().startBlockPolling();
+    })
+    .catch((err) => {
+      console.error("[App] 封鎖系統輪詢啟動失敗:", err);
+    });
+  import("@/services/ApologyFoodService")
+    .then(({ default: ApologyFoodService }) => {
+      ApologyFoodService.getInstance().restoreTimers();
+    })
+    .catch((err) => {
+      console.error("[App] 道歉外賣計時器恢復失敗:", err);
+    });
 
   // 向量記憶：首次啟用時引導用戶設定嵌入引擎
   if (settingsStore.vectorMemoryEnabled) {
-    const mode = settingsStore.embeddingMode ?? 'api';
-    if (mode === 'api') {
+    const mode = settingsStore.embeddingMode ?? "api";
+    if (mode === "api") {
       // 遠端模式：檢查是否已設定 API（endpoint 或 apiKey 至少有一個，或主 API 有設定）
-      const hasEmbeddingConfig = settingsStore.embeddingAPI.endpoint || settingsStore.embeddingAPI.apiKey;
-      const hasMainApiConfig = settingsStore.api.endpoint && settingsStore.api.apiKey;
+      const hasEmbeddingConfig =
+        settingsStore.embeddingAPI.endpoint ||
+        settingsStore.embeddingAPI.apiKey;
+      const hasMainApiConfig =
+        settingsStore.api.endpoint && settingsStore.api.apiKey;
       if (!hasEmbeddingConfig && !hasMainApiConfig) {
         // 沒有任何 API 設定，提示用戶
         showEmbeddingModelPrompt.value = true;
       }
-    } else if (mode === 'local') {
+    } else if (mode === "local") {
       // 本地模式：檢查模型是否已快取
-      import('@/utils/embeddingModelCheck').then(async ({ isEmbeddingModelCached }) => {
-        const cached = await isEmbeddingModelCached();
-        if (!cached) {
-          showEmbeddingModelPrompt.value = true;
-        } else {
-          // 模型已快取，背景預熱
-          import('@/services/embeddingEngine').then(({ embeddingEngine }) => {
-            embeddingEngine.embed('預熱').catch(() => {});
-          }).catch(() => {});
-        }
-      }).catch(() => {});
+      import("@/utils/embeddingModelCheck")
+        .then(async ({ isEmbeddingModelCached }) => {
+          const cached = await isEmbeddingModelCached();
+          if (!cached) {
+            showEmbeddingModelPrompt.value = true;
+          } else {
+            // 模型已快取，背景預熱
+            import("@/services/embeddingEngine")
+              .then(({ embeddingEngine }) => {
+                embeddingEngine.embed("預熱").catch(() => {});
+              })
+              .catch(() => {});
+          }
+        })
+        .catch(() => {});
     }
   }
 
@@ -1196,27 +1216,28 @@ async function handleDiscardCall() {
 async function handleDownloadEmbeddingModel() {
   embeddingModelDownloading.value = true;
   embeddingModelProgress.value = 0;
-  embeddingModelFile.value = '';
+  embeddingModelFile.value = "";
   try {
     // 切換到本地模式
-    settingsStore.embeddingMode = 'local';
+    settingsStore.embeddingMode = "local";
     await settingsStore.saveSettings();
 
-    const { embeddingEngine } = await import('@/services/embeddingEngine');
+    const { embeddingEngine } = await import("@/services/embeddingEngine");
     embeddingEngine.setProgressCallback((info) => {
-      if (info.progress != null) embeddingModelProgress.value = info.progress / 100;
+      if (info.progress != null)
+        embeddingModelProgress.value = info.progress / 100;
       if (info.file) embeddingModelFile.value = info.file;
-      if (info.status === 'warmup') {
-        embeddingModelFile.value = 'WASM 編譯中...';
+      if (info.status === "warmup") {
+        embeddingModelFile.value = "WASM 編譯中...";
         embeddingModelProgress.value = 1;
       }
     });
-    await embeddingEngine.embed('初始化測試');
+    await embeddingEngine.embed("初始化測試");
     embeddingEngine.setProgressCallback(null);
     showEmbeddingModelPrompt.value = false;
   } catch (e) {
-    console.error('[App] 嵌入模型下載失敗:', e);
-    embeddingModelFile.value = '下載失敗，請稍後在設定中重試';
+    console.error("[App] 嵌入模型下載失敗:", e);
+    embeddingModelFile.value = "下載失敗，請稍後在設定中重試";
   } finally {
     embeddingModelDownloading.value = false;
   }
@@ -1225,7 +1246,7 @@ async function handleDownloadEmbeddingModel() {
 /** 前往設定頁面配置遠端 API */
 function handleGoToEmbeddingSettings() {
   showEmbeddingModelPrompt.value = false;
-  currentPage.value = 'settings';
+  currentPage.value = "settings";
 }
 
 /** 關閉向量記憶 */
@@ -2216,36 +2237,86 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
           <div class="embedding-prompt-icon">🧠</div>
           <div class="embedding-prompt-title">向量記憶已啟用</div>
           <div class="embedding-prompt-desc">
-            向量記憶讓 AI 根據語義相關性回憶過去的對話，而非只按時間順序。<br/>
+            向量記憶讓 AI 根據語義相關性回憶過去的對話，而非只按時間順序。<br />
             需要設定嵌入引擎才能使用。
           </div>
 
-          <div style="background: rgba(125,211,168,0.08); border: 1px solid rgba(125,211,168,0.2); border-radius: 10px; padding: 10px 12px; margin: 10px 0; font-size: 12px; line-height: 1.7; color: var(--color-text-secondary, #9ca3af);">
-            <div style="font-weight: 600; color: var(--color-primary, #7dd3a8); margin-bottom: 4px;">☁️ 推薦：使用硅基流動免費 API</div>
-            前往 <span style="color: var(--color-primary, #7dd3a8);">cloud.siliconflow.cn</span> 註冊帳號，取得免費 API Key。<br/>
-            端點填入 <code style="background: rgba(255,255,255,0.06); padding: 1px 4px; border-radius: 3px;">https://api.siliconflow.cn/v1</code><br/>
-            模型選擇 <code style="background: rgba(255,255,255,0.06); padding: 1px 4px; border-radius: 3px;">BAAI/bge-large-zh-v1.5</code>（免費、中文品質好）
+          <div
+            style="
+              background: rgba(125, 211, 168, 0.08);
+              border: 1px solid rgba(125, 211, 168, 0.2);
+              border-radius: 10px;
+              padding: 10px 12px;
+              margin: 10px 0;
+              font-size: 12px;
+              line-height: 1.7;
+              color: var(--color-text-secondary, #9ca3af);
+            "
+          >
+            <div
+              style="
+                font-weight: 600;
+                color: var(--color-primary, #7dd3a8);
+                margin-bottom: 4px;
+              "
+            >
+              ☁️ 推薦：使用硅基流動免費 API
+            </div>
+            前往
+            <span style="color: var(--color-primary, #7dd3a8)"
+              >cloud.siliconflow.cn</span
+            >
+            註冊帳號，取得免費 API Key。<br />
+            端點填入
+            <code
+              style="
+                background: rgba(255, 255, 255, 0.06);
+                padding: 1px 4px;
+                border-radius: 3px;
+              "
+              >https://api.siliconflow.cn/v1</code
+            ><br />
+            模型選擇
+            <code
+              style="
+                background: rgba(255, 255, 255, 0.06);
+                padding: 1px 4px;
+                border-radius: 3px;
+              "
+              >BAAI/bge-large-zh-v1.5</code
+            >（免費、中文品質好）
           </div>
 
           <!-- 下載進度（僅在下載本地模型時顯示） -->
-          <div v-if="embeddingModelDownloading" class="embedding-prompt-progress">
+          <div
+            v-if="embeddingModelDownloading"
+            class="embedding-prompt-progress"
+          >
             <div class="embedding-progress-bar">
-              <div class="embedding-progress-fill" :style="{ width: (embeddingModelProgress * 100) + '%' }" />
+              <div
+                class="embedding-progress-fill"
+                :style="{ width: embeddingModelProgress * 100 + '%' }"
+              />
             </div>
             <div class="embedding-progress-text">
-              {{ embeddingModelFile || '準備中...' }}
-              <span v-if="embeddingModelProgress > 0 && embeddingModelProgress < 1">
+              {{ embeddingModelFile || "準備中..." }}
+              <span
+                v-if="embeddingModelProgress > 0 && embeddingModelProgress < 1"
+              >
                 {{ Math.round(embeddingModelProgress * 100) }}%
               </span>
             </div>
           </div>
 
-          <div class="embedding-prompt-actions" style="flex-direction: column; gap: 8px;">
+          <div
+            class="embedding-prompt-actions"
+            style="flex-direction: column; gap: 8px"
+          >
             <button
               class="embedding-btn download"
               :disabled="embeddingModelDownloading"
               @click="handleGoToEmbeddingSettings"
-              style="width: 100%;"
+              style="width: 100%"
             >
               ☁️ 前往設定遠端 API
             </button>
@@ -2253,18 +2324,35 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
               class="embedding-btn"
               :disabled="embeddingModelDownloading"
               @click="handleDownloadEmbeddingModel"
-              style="width: 100%; background: rgba(255,255,255,0.04); border: 1px solid var(--color-border, rgba(255,255,255,0.08)); color: var(--color-text-secondary, #9ca3af);"
+              style="
+                width: 100%;
+                background: rgba(255, 255, 255, 0.04);
+                border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+                color: var(--color-text-secondary, #9ca3af);
+              "
             >
-              {{ embeddingModelDownloading ? '下載中...' : '🖥️ 下載本地模型（約 30MB）' }}
+              {{
+                embeddingModelDownloading
+                  ? "下載中..."
+                  : "🖥️ 下載本地模型（約 30MB）"
+              }}
             </button>
-            <div style="font-size: 11px; color: var(--color-text-muted, #6b7280); text-align: center; line-height: 1.5;">
-              ⚠️ 本地模型在手機瀏覽器上可能因記憶體不足導致閃退，建議使用遠端 API
+            <div
+              style="
+                font-size: 11px;
+                color: var(--color-text-muted, #6b7280);
+                text-align: center;
+                line-height: 1.5;
+              "
+            >
+              ⚠️ 本地模型在手機瀏覽器上可能因記憶體不足導致閃退，建議使用遠端
+              API
             </div>
             <button
               class="embedding-btn disable"
               :disabled="embeddingModelDownloading"
               @click="handleDisableVectorMemory"
-              style="width: 100%;"
+              style="width: 100%"
             >
               暫不使用，關閉向量記憶
             </button>
@@ -2283,6 +2371,19 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
         <button class="sw-update-btn dismiss" @click="dismissSwUpdate">
           稍後
         </button>
+      </div>
+    </Teleport>
+
+    <!-- GitHub 雲端備份全局進度條 -->
+    <Teleport to="body">
+      <div v-if="ghBackupBusy" class="gh-global-progress">
+        <div class="gh-global-progress-bar">
+          <div
+            class="gh-global-progress-fill"
+            :style="{ width: ghBackupPercent + '%' }"
+          />
+        </div>
+        <span class="gh-global-progress-text">{{ ghBackupDisplayText }}</span>
       </div>
     </Teleport>
   </div>
@@ -2771,8 +2872,13 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
   cursor: pointer;
   transition: opacity 0.2s;
 
-  &:active { opacity: 0.8; }
-  &:disabled { opacity: 0.5; cursor: not-allowed; }
+  &:active {
+    opacity: 0.8;
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 
   &.download {
     background: #7dd3a8;
@@ -2784,5 +2890,41 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     color: rgba(255, 255, 255, 0.7);
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
+}
+
+// GitHub 雲端備份全局進度條
+.gh-global-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+.gh-global-progress-bar {
+  width: 100%;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.gh-global-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #4ade80);
+  transition: width 0.3s ease;
+  border-radius: 0 2px 2px 0;
+}
+
+.gh-global-progress-text {
+  margin-top: 4px;
+  padding: 4px 12px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 11px;
+  border-radius: 10px;
+  pointer-events: auto;
 }
 </style>

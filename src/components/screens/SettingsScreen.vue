@@ -918,6 +918,11 @@ const ghBackupList = ref<
 const ghShowToken = ref(false);
 const ghShowRestoreList = ref(false);
 
+// 全局備份 store 的 busy 狀態
+import { useGitHubBackupStore } from "@/stores/githubBackup";
+const ghBackupStore = useGitHubBackupStore();
+const ghBackupStoreBusy = computed(() => ghBackupStore.busy);
+
 async function loadGhState() {
   const saved = await loadGitHubSettings();
   Object.assign(ghSettings, saved);
@@ -959,32 +964,8 @@ const onGhProgress = (p: GitHubBackupProgress) => {
 };
 
 async function handleGhBackup() {
-  ghBusy.value = true;
-  ghProgress.value = "準備備份資料...";
-  try {
-    const zipData = await (
-      await import("@/services/AutoBackupService")
-    ).buildBackupZipStreaming((info) => {
-      if (info.current && info.total) {
-        ghProgress.value = `打包: ${info.phase} (${info.current}/${info.total})`;
-      } else {
-        ghProgress.value = `打包: ${info.phase}`;
-      }
-    });
-    const result = await uploadToGitHub(zipData, onGhProgress);
-    if (result.success) {
-      ghSettings.lastBackupAt = Date.now();
-      ghSettings.lastBackupMessage = result.message;
-      alert(`✓ ${result.message}`);
-    } else {
-      alert(`✗ ${result.message}`);
-    }
-  } catch (e: any) {
-    alert(`✗ 備份失敗: ${e.message}`);
-  } finally {
-    ghBusy.value = false;
-    ghProgress.value = "";
-  }
+  if (ghBackupStore.busy) return;
+  ghBackupStore.startBackup();
 }
 
 async function handleGhListBackups() {
@@ -5267,12 +5248,12 @@ function useClonedVoice(voiceId: string) {
               <button
                 class="backup-btn export"
                 @click="handleGhBackup"
-                :disabled="ghBusy"
+                :disabled="ghBusy || ghBackupStoreBusy"
               >
                 <svg viewBox="0 0 24 24" fill="currentColor">
                   <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" />
                 </svg>
-                {{ ghBusy ? "處理中..." : "上傳備份到 GitHub" }}
+                {{ ghBackupStoreBusy ? "備份中..." : "上傳備份到 GitHub" }}
               </button>
               <button
                 class="backup-btn import"
