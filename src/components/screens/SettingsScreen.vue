@@ -3,9 +3,7 @@ import { getVoiceDisplayName, MINIMAX_LANGUAGES } from "@/api/MiniMaxTTSApi";
 import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
 import AuxiliaryApiPanel from "@/components/screens/AuxiliaryApiPanel.vue";
 import { clearAllData, db } from "@/db/database";
-import {
-  extractImagesFromMessages,
-} from "@/db/operations";
+import { extractImagesFromMessages } from "@/db/operations";
 import {
   checkPermission as checkBackupPermission,
   clearBackupDirectory,
@@ -568,42 +566,50 @@ const customEmbeddingModelName = ref("");
 const lastFetchedEmbeddingEndpoint = ref("");
 
 // 本地嵌入模型測試狀態
-const localModelStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('idle');
+const localModelStatus = ref<"idle" | "loading" | "ready" | "error">("idle");
 const localModelProgress = ref(0);
-const localModelFile = ref('');
-const localModelError = ref('');
+const localModelFile = ref("");
+const localModelError = ref("");
 
 async function testLocalModel() {
-  localModelStatus.value = 'loading';
+  localModelStatus.value = "loading";
   localModelProgress.value = 0;
-  localModelFile.value = '';
-  localModelError.value = '';
+  localModelFile.value = "";
+  localModelError.value = "";
   try {
-    const { embeddingEngine } = await import('@/services/embeddingEngine');
+    const { embeddingEngine } = await import("@/services/embeddingEngine");
     embeddingEngine.setProgressCallback((info) => {
       // Transformers.js 的 progress 物件：status 為 initiate/download/progress/done/warmup
       if (info.progress != null) localModelProgress.value = info.progress / 100;
       if (info.file) localModelFile.value = info.file;
       // warmup 階段：WASM 首次編譯
-      if (info.status === 'warmup') {
-        localModelFile.value = 'WASM 首次編譯中（可能需要 10~30 秒）...';
+      if (info.status === "warmup") {
+        localModelFile.value = "WASM 首次編譯中（可能需要 10~30 秒）...";
         localModelProgress.value = 1; // 滿格，表示下載完成
       }
     });
 
     // 設定 2 分鐘超時
     const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('模型載入超時（2 分鐘），請檢查瀏覽器是否支援 WebAssembly')), 120_000)
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              "模型載入超時（2 分鐘），請檢查瀏覽器是否支援 WebAssembly",
+            ),
+          ),
+        120_000,
+      ),
     );
 
     // 觸發模型載入 + 實際推理測試
-    await Promise.race([embeddingEngine.embed('測試嵌入'), timeout]);
+    await Promise.race([embeddingEngine.embed("測試嵌入"), timeout]);
     embeddingEngine.setProgressCallback(null);
-    localModelStatus.value = 'ready';
+    localModelStatus.value = "ready";
   } catch (e: unknown) {
-    console.error('[本地嵌入模型] 測試失敗:', e);
-    localModelError.value = e instanceof Error ? e.message : '未知錯誤';
-    localModelStatus.value = 'error';
+    console.error("[本地嵌入模型] 測試失敗:", e);
+    localModelError.value = e instanceof Error ? e.message : "未知錯誤";
+    localModelStatus.value = "error";
   }
 }
 
@@ -612,11 +618,12 @@ async function testLocalModel() {
 /** 將 URL 轉為代理路徑（Embedding 專用，尊重 embeddingAPI.directConnect） */
 function toEmbeddingProxyUrl(url: string): string {
   if (settingsStore.embeddingAPI.directConnect) return url;
-  if (typeof window === 'undefined') return url;
+  if (typeof window === "undefined") return url;
   try {
     const parsed = new URL(url, window.location.origin);
     if (parsed.origin === window.location.origin) return url;
-    const prefix = parsed.protocol === 'http:' ? '/ai-proxy-http/' : '/ai-proxy/';
+    const prefix =
+      parsed.protocol === "http:" ? "/ai-proxy-http/" : "/ai-proxy/";
     return `https://api-203.aguacloud.uk${prefix}${parsed.host}${parsed.pathname}`;
   } catch {
     return url;
@@ -639,25 +646,29 @@ async function fetchEmbeddingModels() {
   const apiKey = getEffectiveEmbeddingApiKey();
 
   if (!endpoint || !apiKey) {
-    embeddingModelFetchError.value = '請先填寫 Embedding 端點和密鑰（或主 API 設定）';
+    embeddingModelFetchError.value =
+      "請先填寫 Embedding 端點和密鑰（或主 API 設定）";
     return;
   }
 
   // 端點改變時清空舊列表
-  if (lastFetchedEmbeddingEndpoint.value && lastFetchedEmbeddingEndpoint.value !== endpoint) {
+  if (
+    lastFetchedEmbeddingEndpoint.value &&
+    lastFetchedEmbeddingEndpoint.value !== endpoint
+  ) {
     fetchedEmbeddingModels.value = [];
   }
 
   isFetchingEmbeddingModels.value = true;
-  embeddingModelFetchError.value = '';
+  embeddingModelFetchError.value = "";
 
   try {
     const modelsUrl = toEmbeddingProxyUrl(`${endpoint}/models`);
     const response = await fetch(modelsUrl, {
-      method: 'GET',
+      method: "GET",
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
       },
     });
 
@@ -671,44 +682,58 @@ async function fetchEmbeddingModels() {
     let allModels: string[] = [];
     if (data.data && Array.isArray(data.data)) {
       allModels = data.data
-        .map((m: { id?: string }) => m.id || '')
+        .map((m: { id?: string }) => m.id || "")
         .filter((id: string) => id);
     } else if (Array.isArray(data)) {
       allModels = data
-        .map((m: string | { id?: string }) => typeof m === 'string' ? m : m.id || '')
+        .map((m: string | { id?: string }) =>
+          typeof m === "string" ? m : m.id || "",
+        )
         .filter((id: string) => id);
     }
 
     // 過濾出 embedding 相關模型（關鍵詞匹配）
-    const embeddingKeywords = ['embed', 'bge', 'e5', 'text2vec', 'gte', 'jina', 'voyage', 'nomic'];
+    const embeddingKeywords = [
+      "embed",
+      "bge",
+      "e5",
+      "text2vec",
+      "gte",
+      "jina",
+      "voyage",
+      "nomic",
+    ];
     const embeddingModels = allModels.filter((id: string) => {
       const lower = id.toLowerCase();
-      return embeddingKeywords.some(kw => lower.includes(kw));
+      return embeddingKeywords.some((kw) => lower.includes(kw));
     });
 
     // 如果過濾後有結果就用過濾的，否則顯示全部（讓用戶自己選）
-    fetchedEmbeddingModels.value = (embeddingModels.length > 0 ? embeddingModels : allModels)
-      .sort((a: string, b: string) => a.localeCompare(b));
+    fetchedEmbeddingModels.value = (
+      embeddingModels.length > 0 ? embeddingModels : allModels
+    ).sort((a: string, b: string) => a.localeCompare(b));
 
     if (fetchedEmbeddingModels.value.length > 0) {
-      embeddingModelFetchError.value = '';
+      embeddingModelFetchError.value = "";
       lastFetchedEmbeddingEndpoint.value = endpoint;
       // 如果當前模型不在列表中，自動選第一個
-      if (!fetchedEmbeddingModels.value.includes(settingsStore.embeddingAPI.model)) {
+      if (
+        !fetchedEmbeddingModels.value.includes(settingsStore.embeddingAPI.model)
+      ) {
         settingsStore.embeddingAPI.model = fetchedEmbeddingModels.value[0];
         settingsStore.saveSettings();
       }
     } else {
-      embeddingModelFetchError.value = '未找到可用模型';
+      embeddingModelFetchError.value = "未找到可用模型";
     }
   } catch (e) {
-    console.error('[Embedding] 拉取模型失敗:', e);
+    console.error("[Embedding] 拉取模型失敗:", e);
     embeddingModelFetchError.value = `拉取失敗: ${e instanceof Error ? e.message : String(e)}`;
-    if (e instanceof TypeError && e.message.includes('fetch')) {
-      embeddingModelFetchError.value = 'CORS 限制，請手動輸入模型名稱';
+    if (e instanceof TypeError && e.message.includes("fetch")) {
+      embeddingModelFetchError.value = "CORS 限制，請手動輸入模型名稱";
     }
     fetchedEmbeddingModels.value = [];
-    lastFetchedEmbeddingEndpoint.value = '';
+    lastFetchedEmbeddingEndpoint.value = "";
   } finally {
     isFetchingEmbeddingModels.value = false;
   }
@@ -718,7 +743,7 @@ async function fetchEmbeddingModels() {
 function applyCustomEmbeddingModel() {
   if (customEmbeddingModelName.value.trim()) {
     settingsStore.embeddingAPI.model = customEmbeddingModelName.value.trim();
-    customEmbeddingModelName.value = '';
+    customEmbeddingModelName.value = "";
     settingsStore.saveSettings();
   }
 }
@@ -726,8 +751,8 @@ function applyCustomEmbeddingModel() {
 /** Embedding 模型下拉選單變更時保存 */
 function onEmbeddingModelChange() {
   // 選擇「手動輸入」時不保存，等用戶輸入完再保存
-  if (settingsStore.embeddingAPI.model === '__custom__') return;
-  console.log('[Embedding] 模型已切換:', settingsStore.embeddingAPI.model);
+  if (settingsStore.embeddingAPI.model === "__custom__") return;
+  console.log("[Embedding] 模型已切換:", settingsStore.embeddingAPI.model);
   settingsStore.saveSettings();
 }
 
@@ -887,7 +912,9 @@ const ghConnected = ref(false);
 const ghUsername = ref("");
 const ghBusy = ref(false);
 const ghProgress = ref("");
-const ghBackupList = ref<Array<{ name: string; path: string; createdAt: string }>>([]);
+const ghBackupList = ref<
+  Array<{ name: string; path: string; createdAt: string }>
+>([]);
 const ghShowToken = ref(false);
 const ghShowRestoreList = ref(false);
 
@@ -935,15 +962,15 @@ async function handleGhBackup() {
   ghBusy.value = true;
   ghProgress.value = "準備備份資料...";
   try {
-    const zipData = await (await import("@/services/AutoBackupService")).buildBackupZipStreaming(
-      (info) => {
-        if (info.current && info.total) {
-          ghProgress.value = `打包: ${info.phase} (${info.current}/${info.total})`;
-        } else {
-          ghProgress.value = `打包: ${info.phase}`;
-        }
-      },
-    );
+    const zipData = await (
+      await import("@/services/AutoBackupService")
+    ).buildBackupZipStreaming((info) => {
+      if (info.current && info.total) {
+        ghProgress.value = `打包: ${info.phase} (${info.current}/${info.total})`;
+      } else {
+        ghProgress.value = `打包: ${info.phase}`;
+      }
+    });
     const result = await uploadToGitHub(zipData, onGhProgress);
     if (result.success) {
       ghSettings.lastBackupAt = Date.now();
@@ -984,8 +1011,12 @@ async function handleGhRestore(backupPath: string) {
     const zipData = await downloadFromGitHub(backupPath, onGhProgress);
     ghProgress.value = "還原中...";
     // 將 Uint8Array 包裝成 File，複用現有的匯入邏輯
-    const blob = new Blob([zipData.buffer as ArrayBuffer], { type: "application/zip" });
-    const file = new File([blob], "aguaphone-backup-github.zip", { type: "application/zip" });
+    const blob = new Blob([zipData.buffer as ArrayBuffer], {
+      type: "application/zip",
+    });
+    const file = new File([blob], "aguaphone-backup-github.zip", {
+      type: "application/zip",
+    });
     // 觸發現有的匯入 handler（模擬檔案選擇）
     const fakeInput = document.createElement("input");
     fakeInput.type = "file";
@@ -1008,7 +1039,9 @@ async function handleGhDelete(backupPath: string, backupName: string) {
   try {
     const result = await deleteRemoteBackup(backupPath);
     if (result.success) {
-      ghBackupList.value = ghBackupList.value.filter((b) => b.path !== backupPath);
+      ghBackupList.value = ghBackupList.value.filter(
+        (b) => b.path !== backupPath,
+      );
     } else {
       alert(`✗ ${result.message}`);
     }
@@ -1625,14 +1658,18 @@ async function hardRefresh() {
 async function exportData() {
   isExporting.value = true;
   try {
-    const result = await performBackup(true, (info) => {
-      // 可選：顯示進度（複用 backupProgress 或忽略）
-      if (info.current && info.total) {
-        backupProgress.value = `${info.phase} (${info.current}/${info.total})`;
-      } else {
-        backupProgress.value = info.phase;
-      }
-    }, { excludeChatImages: excludeChatImages.value });
+    const result = await performBackup(
+      true,
+      (info) => {
+        // 可選：顯示進度（複用 backupProgress 或忽略）
+        if (info.current && info.total) {
+          backupProgress.value = `${info.phase} (${info.current}/${info.total})`;
+        } else {
+          backupProgress.value = info.phase;
+        }
+      },
+      { excludeChatImages: excludeChatImages.value },
+    );
     if (!result.success) {
       alert("導出失敗: " + result.message);
     }
@@ -1651,7 +1688,10 @@ function triggerImport() {
 }
 
 // 還原單個聊天的媒體路徑為 base64（桌布 + 訊息圖片）
-function restoreChatMedia(chat: any, mediaFiles: Record<string, Uint8Array>): void {
+function restoreChatMedia(
+  chat: any,
+  mediaFiles: Record<string, Uint8Array>,
+): void {
   // 還原聊天桌布
   if (
     chat.appearance?.wallpaper?.type === "image" &&
@@ -1684,7 +1724,10 @@ function restoreChatMedia(chat: any, mediaFiles: Record<string, Uint8Array>): vo
         mediaFiles[msg.imageData]
       ) {
         const mimeType = getMimeTypeFromFilename(msg.imageData);
-        msg.imageData = uint8ArrayToDataUrl(mediaFiles[msg.imageData], mimeType);
+        msg.imageData = uint8ArrayToDataUrl(
+          mediaFiles[msg.imageData],
+          mimeType,
+        );
       }
     }
   }
@@ -1774,11 +1817,14 @@ async function handleFileImport(event: Event) {
       const bytes = new Uint8Array(arrayBuffer);
 
       // 檢查 ZIP magic bytes (PK: 0x50 0x4B)
-      const isRealZip = bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4B;
+      const isRealZip =
+        bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b;
 
       if (!isRealZip) {
         // 檔案副檔名是 .zip 但實際不是 ZIP — 嘗試當 JSON 解析
-        console.warn("[Import] 檔案非有效 ZIP（magic bytes 不符），嘗試當 JSON 解析");
+        console.warn(
+          "[Import] 檔案非有效 ZIP（magic bytes 不符），嘗試當 JSON 解析",
+        );
         try {
           const text = new TextDecoder().decode(bytes);
           data = JSON.parse(text);
@@ -1832,19 +1878,33 @@ async function handleFileImport(event: Event) {
         // 相容新版流式備份格式：聊天存在 chats/*.json 中
         // 不再一次性解析所有聊天到 data.chats，改為保留原始 Uint8Array 引用
         // 在導入階段逐個解析、還原、寫入 IDB，降低記憶體峰值
-        if (!data.chats || !Array.isArray(data.chats) || data.chats.length === 0) {
-          const chatFileEntries = Object.entries(files).filter(([name]) => name.startsWith("chats/") && name.endsWith(".json"));
+        if (
+          !data.chats ||
+          !Array.isArray(data.chats) ||
+          data.chats.length === 0
+        ) {
+          const chatFileEntries = Object.entries(files).filter(
+            ([name]) => name.startsWith("chats/") && name.endsWith(".json"),
+          );
           if (chatFileEntries.length > 0) {
             // 保留原始 bytes 引用，不立即解析
             (data as any)._pendingChatFiles = chatFileEntries;
             data.chats = []; // 佔位，後續逐個處理
-            console.log(`[Import] 偵測到 ${chatFileEntries.length} 個流式聊天檔案，將逐個處理`);
+            console.log(
+              `[Import] 偵測到 ${chatFileEntries.length} 個流式聊天檔案，將逐個處理`,
+            );
           }
         }
 
         // 釋放不再需要的 ZIP 條目（非 media/、非 chats/、非 backup.json）
         for (const key of Object.keys(files)) {
-          if (!key.startsWith("media/") && !key.startsWith("chats/") && key !== "backup.json" && key !== "data.json" && key !== "metadata.json") {
+          if (
+            !key.startsWith("media/") &&
+            !key.startsWith("chats/") &&
+            key !== "backup.json" &&
+            key !== "data.json" &&
+            key !== "metadata.json"
+          ) {
             delete files[key];
           }
         }
@@ -1965,7 +2025,9 @@ async function handleFileImport(event: Event) {
     // 導入聊天（圖片分離儲存）
     // 逐個處理流式備份的聊天檔案，避免一次性載入所有聊天到記憶體
     let importedChatCount = 0;
-    const pendingChatFiles: Array<[string, Uint8Array]> | undefined = (data as any)._pendingChatFiles;
+    const pendingChatFiles: Array<[string, Uint8Array]> | undefined = (
+      data as any
+    )._pendingChatFiles;
     if (pendingChatFiles && pendingChatFiles.length > 0) {
       const { strFromU8 } = await import("fflate");
       for (let ci = 0; ci < pendingChatFiles.length; ci++) {
@@ -1978,7 +2040,9 @@ async function handleFileImport(event: Event) {
           restoreChatMedia(chat, mediaFiles);
           // 圖片分離儲存
           const messagesToSave = chat.messages || [];
-          chat.lastMessagePreview = messagesToSave[messagesToSave.length - 1]?.content?.slice(0, 100) || "";
+          chat.lastMessagePreview =
+            messagesToSave[messagesToSave.length - 1]?.content?.slice(0, 100) ||
+            "";
           chat.messageCount = messagesToSave.length;
           if (messagesToSave.length > 0) {
             chat.messages = await extractImagesFromMessages(messagesToSave);
@@ -2935,60 +2999,124 @@ function useClonedVoice(voiceId: string) {
         </div>
 
         <!-- 向量記憶 Embedding API -->
-        <div class="embedding-card" style="margin-top: 16px;">
+        <div class="embedding-card" style="margin-top: 16px">
           <button
             class="embedding-card-header"
             @click="showEmbeddingSection = !showEmbeddingSection"
-            style="width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--color-surface-elevated, rgba(255,255,255,0.06)); border: 1px solid var(--color-border, rgba(255,255,255,0.08)); border-radius: 12px; cursor: pointer; color: var(--color-text, #e5e7eb); font-size: 14px; text-align: left;"
+            style="
+              width: 100%;
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              padding: 12px 14px;
+              background: var(
+                --color-surface-elevated,
+                rgba(255, 255, 255, 0.06)
+              );
+              border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+              border-radius: 12px;
+              cursor: pointer;
+              color: var(--color-text, #e5e7eb);
+              font-size: 14px;
+              text-align: left;
+            "
           >
-            <span style="font-size: 18px;">🧠</span>
-            <span style="flex: 1; font-weight: 500;">向量記憶 Embedding</span>
+            <span style="font-size: 18px">🧠</span>
+            <span style="flex: 1; font-weight: 500">向量記憶 Embedding</span>
             <span
               v-if="settingsStore.embeddingMode === 'local'"
-              style="color: var(--color-primary, #7dd3a8); font-size: 11px;"
-            >本地推理</span>
+              style="color: var(--color-primary, #7dd3a8); font-size: 11px"
+              >本地推理</span
+            >
             <span
-              v-else-if="!settingsStore.embeddingAPI.endpoint && !settingsStore.embeddingAPI.apiKey"
-              style="color: var(--color-primary, #7dd3a8); font-size: 11px;"
-            >遠端 · 主 API</span>
+              v-else-if="
+                !settingsStore.embeddingAPI.endpoint &&
+                !settingsStore.embeddingAPI.apiKey
+              "
+              style="color: var(--color-primary, #7dd3a8); font-size: 11px"
+              >遠端 · 主 API</span
+            >
             <span
               v-else
-              style="color: var(--color-warning, #f59e0b); font-size: 11px;"
-            >遠端 · 已自訂</span>
+              style="color: var(--color-warning, #f59e0b); font-size: 11px"
+              >遠端 · 已自訂</span
+            >
             <svg
               viewBox="0 0 24 24"
               fill="currentColor"
-              style="width: 16px; height: 16px; transition: transform 0.2s;"
-              :style="{ transform: showEmbeddingSection ? 'rotate(180deg)' : 'rotate(0)' }"
+              style="width: 16px; height: 16px; transition: transform 0.2s"
+              :style="{
+                transform: showEmbeddingSection
+                  ? 'rotate(180deg)'
+                  : 'rotate(0)',
+              }"
             >
-              <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/>
+              <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
             </svg>
           </button>
 
           <Transition name="fade">
-            <div v-if="showEmbeddingSection" style="padding: 12px 14px 4px; border: 1px solid var(--color-border, rgba(255,255,255,0.08)); border-top: none; border-radius: 0 0 12px 12px; background: var(--color-surface-elevated, rgba(255,255,255,0.03));">
-              <p class="setting-hint" style="margin-bottom: 12px; line-height: 1.6;">
-                向量記憶讓 AI 根據語義相關性回憶過去的對話，而非只按時間順序。<br/>
-                <span style="color: var(--color-text-secondary, #9ca3af);">
-                  原理：總結產生時，透過 Embedding 預先轉為向量並儲存。每次你發訊息時，會把你的訊息即時轉為向量，與已儲存的總結比對相似度，挑出最相關的幾條注入提示詞。<br/>
+            <div
+              v-if="showEmbeddingSection"
+              style="
+                padding: 12px 14px 4px;
+                border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+                border-top: none;
+                border-radius: 0 0 12px 12px;
+                background: var(
+                  --color-surface-elevated,
+                  rgba(255, 255, 255, 0.03)
+                );
+              "
+            >
+              <p
+                class="setting-hint"
+                style="margin-bottom: 12px; line-height: 1.6"
+              >
+                向量記憶讓 AI
+                根據語義相關性回憶過去的對話，而非只按時間順序。<br />
+                <span style="color: var(--color-text-secondary, #9ca3af)">
+                  原理：總結產生時，透過 Embedding
+                  預先轉為向量並儲存。每次你發訊息時，會把你的訊息即時轉為向量，與已儲存的總結比對相似度，挑出最相關的幾條注入提示詞。<br />
                   總結讀取模式為「全部」時，向量檢索不適用（因為所有總結已經全部注入）。
                 </span>
               </p>
 
               <!-- 向量記憶全域開關 -->
-              <div class="setting-group" style="margin-bottom: 12px;">
+              <div class="setting-group" style="margin-bottom: 12px">
                 <label
-                  style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 10px 12px; border-radius: 8px; background: var(--color-surface-elevated, rgba(255,255,255,0.04)); border: 1px solid var(--color-border, rgba(255,255,255,0.08));"
-                  @click="settingsStore.vectorMemoryEnabled = !settingsStore.vectorMemoryEnabled; settingsStore.saveSettings()"
+                  style="
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    cursor: pointer;
+                    padding: 10px 12px;
+                    border-radius: 8px;
+                    background: var(
+                      --color-surface-elevated,
+                      rgba(255, 255, 255, 0.04)
+                    );
+                    border: 1px solid
+                      var(--color-border, rgba(255, 255, 255, 0.08));
+                  "
+                  @click="
+                    settingsStore.vectorMemoryEnabled =
+                      !settingsStore.vectorMemoryEnabled;
+                    settingsStore.saveSettings();
+                  "
                 >
-                  <span style="font-size: 13px; font-weight: 500;">啟用向量記憶</span>
+                  <span style="font-size: 13px; font-weight: 500"
+                    >啟用向量記憶</span
+                  >
                   <span
                     :style="{
                       display: 'inline-block',
                       width: '36px',
                       height: '20px',
                       borderRadius: '10px',
-                      background: settingsStore.vectorMemoryEnabled ? 'var(--color-primary, #7dd3a8)' : 'var(--color-border, rgba(255,255,255,0.15))',
+                      background: settingsStore.vectorMemoryEnabled
+                        ? 'var(--color-primary, #7dd3a8)'
+                        : 'var(--color-border, rgba(255,255,255,0.15))',
                       position: 'relative',
                       transition: 'background 0.2s',
                     }"
@@ -2997,7 +3125,9 @@ function useClonedVoice(voiceId: string) {
                       :style="{
                         position: 'absolute',
                         top: '2px',
-                        left: settingsStore.vectorMemoryEnabled ? '18px' : '2px',
+                        left: settingsStore.vectorMemoryEnabled
+                          ? '18px'
+                          : '2px',
                         width: '16px',
                         height: '16px',
                         borderRadius: '50%',
@@ -3012,21 +3142,35 @@ function useClonedVoice(voiceId: string) {
               <!-- 嵌入模式切換 -->
               <div class="setting-group">
                 <label class="setting-label">嵌入引擎</label>
-                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                <div style="display: flex; gap: 8px; margin-bottom: 8px">
                   <button
                     :style="{
                       flex: 1,
                       padding: '8px 12px',
                       borderRadius: '8px',
-                      border: '1px solid ' + (settingsStore.embeddingMode === 'local' ? 'var(--color-primary, #7dd3a8)' : 'var(--color-border, rgba(255,255,255,0.08))'),
-                      background: settingsStore.embeddingMode === 'local' ? 'var(--color-primary-alpha, rgba(125,211,168,0.15))' : 'transparent',
-                      color: settingsStore.embeddingMode === 'local' ? 'var(--color-primary, #7dd3a8)' : 'var(--color-text-secondary, #9ca3af)',
+                      border:
+                        '1px solid ' +
+                        (settingsStore.embeddingMode === 'local'
+                          ? 'var(--color-primary, #7dd3a8)'
+                          : 'var(--color-border, rgba(255,255,255,0.08))'),
+                      background:
+                        settingsStore.embeddingMode === 'local'
+                          ? 'var(--color-primary-alpha, rgba(125,211,168,0.15))'
+                          : 'transparent',
+                      color:
+                        settingsStore.embeddingMode === 'local'
+                          ? 'var(--color-primary, #7dd3a8)'
+                          : 'var(--color-text-secondary, #9ca3af)',
                       cursor: 'pointer',
                       fontSize: '13px',
-                      fontWeight: settingsStore.embeddingMode === 'local' ? '600' : '400',
+                      fontWeight:
+                        settingsStore.embeddingMode === 'local' ? '600' : '400',
                       transition: 'all 0.2s',
                     }"
-                    @click="settingsStore.embeddingMode = 'local'; settingsStore.saveSettings()"
+                    @click="
+                      settingsStore.embeddingMode = 'local';
+                      settingsStore.saveSettings();
+                    "
                   >
                     🖥️ 本地推理
                   </button>
@@ -3035,50 +3179,133 @@ function useClonedVoice(voiceId: string) {
                       flex: 1,
                       padding: '8px 12px',
                       borderRadius: '8px',
-                      border: '1px solid ' + (settingsStore.embeddingMode === 'api' ? 'var(--color-primary, #7dd3a8)' : 'var(--color-border, rgba(255,255,255,0.08))'),
-                      background: settingsStore.embeddingMode === 'api' ? 'var(--color-primary-alpha, rgba(125,211,168,0.15))' : 'transparent',
-                      color: settingsStore.embeddingMode === 'api' ? 'var(--color-primary, #7dd3a8)' : 'var(--color-text-secondary, #9ca3af)',
+                      border:
+                        '1px solid ' +
+                        (settingsStore.embeddingMode === 'api'
+                          ? 'var(--color-primary, #7dd3a8)'
+                          : 'var(--color-border, rgba(255,255,255,0.08))'),
+                      background:
+                        settingsStore.embeddingMode === 'api'
+                          ? 'var(--color-primary-alpha, rgba(125,211,168,0.15))'
+                          : 'transparent',
+                      color:
+                        settingsStore.embeddingMode === 'api'
+                          ? 'var(--color-primary, #7dd3a8)'
+                          : 'var(--color-text-secondary, #9ca3af)',
                       cursor: 'pointer',
                       fontSize: '13px',
-                      fontWeight: settingsStore.embeddingMode === 'api' ? '600' : '400',
+                      fontWeight:
+                        settingsStore.embeddingMode === 'api' ? '600' : '400',
                       transition: 'all 0.2s',
                     }"
-                    @click="settingsStore.embeddingMode = 'api'; settingsStore.saveSettings()"
+                    @click="
+                      settingsStore.embeddingMode = 'api';
+                      settingsStore.saveSettings();
+                    "
                   >
                     ☁️ 遠端 API
                   </button>
                 </div>
-                <p v-if="settingsStore.embeddingMode === 'local'" class="setting-hint" style="margin-bottom: 8px;">
-                  使用 bge-small-zh-v1.5 模型在瀏覽器內推理，零成本、完全離線。首次使用需下載約 30MB 模型檔案。
+                <p
+                  v-if="settingsStore.embeddingMode === 'local'"
+                  class="setting-hint"
+                  style="margin-bottom: 8px"
+                >
+                  使用 bge-small-zh-v1.5
+                  模型在瀏覽器內推理，零成本、完全離線。首次使用需下載約 30MB
+                  模型檔案。
                 </p>
                 <!-- 本地模型測試與進度 -->
-                <div v-if="settingsStore.embeddingMode === 'local'" style="margin-bottom: 8px;">
+                <div
+                  v-if="settingsStore.embeddingMode === 'local'"
+                  style="margin-bottom: 8px"
+                >
                   <!-- 進度條 -->
-                  <div v-if="localModelStatus === 'loading'" style="margin-bottom: 8px;">
-                    <div style="height: 4px; background: var(--color-border, rgba(255,255,255,0.08)); border-radius: 2px; overflow: hidden; margin-bottom: 4px;">
+                  <div
+                    v-if="localModelStatus === 'loading'"
+                    style="margin-bottom: 8px"
+                  >
+                    <div
+                      style="
+                        height: 4px;
+                        background: var(
+                          --color-border,
+                          rgba(255, 255, 255, 0.08)
+                        );
+                        border-radius: 2px;
+                        overflow: hidden;
+                        margin-bottom: 4px;
+                      "
+                    >
                       <div
                         :style="{
                           height: '100%',
                           background: 'var(--color-primary, #7dd3a8)',
                           borderRadius: '2px',
                           transition: 'width 0.3s ease',
-                          width: (localModelProgress * 100) + '%',
+                          width: localModelProgress * 100 + '%',
                         }"
                       ></div>
                     </div>
-                    <span style="font-size: 11px; color: var(--color-text-secondary, #9ca3af);">
-                      {{ localModelFile || '載入模型中...' }} {{ localModelProgress < 1 ? Math.round(localModelProgress * 100) + '%' : '' }}
+                    <span
+                      style="
+                        font-size: 11px;
+                        color: var(--color-text-secondary, #9ca3af);
+                      "
+                    >
+                      {{ localModelFile || "載入模型中..." }}
+                      {{
+                        localModelProgress < 1
+                          ? Math.round(localModelProgress * 100) + "%"
+                          : ""
+                      }}
                     </span>
                   </div>
                   <!-- 成功狀態 -->
-                  <div v-else-if="localModelStatus === 'ready'" style="display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: rgba(125,211,168,0.1); border-radius: 8px; margin-bottom: 8px;">
-                    <span style="color: var(--color-primary, #7dd3a8); font-size: 14px;">✓</span>
-                    <span style="font-size: 12px; color: var(--color-primary, #7dd3a8);">模型已就緒，可正常使用</span>
+                  <div
+                    v-else-if="localModelStatus === 'ready'"
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 6px;
+                      padding: 8px 12px;
+                      background: rgba(125, 211, 168, 0.1);
+                      border-radius: 8px;
+                      margin-bottom: 8px;
+                    "
+                  >
+                    <span
+                      style="
+                        color: var(--color-primary, #7dd3a8);
+                        font-size: 14px;
+                      "
+                      >✓</span
+                    >
+                    <span
+                      style="
+                        font-size: 12px;
+                        color: var(--color-primary, #7dd3a8);
+                      "
+                      >模型已就緒，可正常使用</span
+                    >
                   </div>
                   <!-- 失敗狀態 -->
-                  <div v-else-if="localModelStatus === 'error'" style="display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: rgba(239,68,68,0.1); border-radius: 8px; margin-bottom: 8px;">
-                    <span style="color: #ef4444; font-size: 14px;">✗</span>
-                    <span style="font-size: 12px; color: #ef4444;">{{ localModelError || '模型載入失敗' }}</span>
+                  <div
+                    v-else-if="localModelStatus === 'error'"
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 6px;
+                      padding: 8px 12px;
+                      background: rgba(239, 68, 68, 0.1);
+                      border-radius: 8px;
+                      margin-bottom: 8px;
+                    "
+                  >
+                    <span style="color: #ef4444; font-size: 14px">✗</span>
+                    <span style="font-size: 12px; color: #ef4444">{{
+                      localModelError || "模型載入失敗"
+                    }}</span>
                   </div>
                   <!-- 測試按鈕 -->
                   <button
@@ -3087,21 +3314,36 @@ function useClonedVoice(voiceId: string) {
                       width: '100%',
                       padding: '8px 12px',
                       borderRadius: '8px',
-                      border: '1px solid var(--color-border, rgba(255,255,255,0.08))',
-                      background: 'var(--color-surface-elevated, rgba(255,255,255,0.04))',
-                      color: localModelStatus === 'loading' ? 'var(--color-text-secondary, #9ca3af)' : 'var(--color-text, #e5e7eb)',
-                      cursor: localModelStatus === 'loading' ? 'not-allowed' : 'pointer',
+                      border:
+                        '1px solid var(--color-border, rgba(255,255,255,0.08))',
+                      background:
+                        'var(--color-surface-elevated, rgba(255,255,255,0.04))',
+                      color:
+                        localModelStatus === 'loading'
+                          ? 'var(--color-text-secondary, #9ca3af)'
+                          : 'var(--color-text, #e5e7eb)',
+                      cursor:
+                        localModelStatus === 'loading'
+                          ? 'not-allowed'
+                          : 'pointer',
                       fontSize: '13px',
                       transition: 'all 0.2s',
                       opacity: localModelStatus === 'loading' ? '0.6' : '1',
                     }"
                     @click="testLocalModel"
                   >
-                    {{ localModelStatus === 'loading' ? '載入中...' : localModelStatus === 'ready' ? '🔄 重新測試' : '🧪 測試本地模型' }}
+                    {{
+                      localModelStatus === "loading"
+                        ? "載入中..."
+                        : localModelStatus === "ready"
+                          ? "🔄 重新測試"
+                          : "🧪 測試本地模型"
+                    }}
                   </button>
                 </div>
-                <p v-else class="setting-hint" style="margin-bottom: 8px;">
-                  使用遠端 OpenAI 相容 Embedding API。留空則自動使用上方的主 API 設定。
+                <p v-else class="setting-hint" style="margin-bottom: 8px">
+                  使用遠端 OpenAI 相容 Embedding API。留空則自動使用上方的主 API
+                  設定。
                 </p>
               </div>
 
@@ -3134,11 +3376,16 @@ function useClonedVoice(voiceId: string) {
                       :disabled="isFetchingEmbeddingModels"
                       @click="fetchEmbeddingModels"
                     >
-                      <span v-if="isFetchingEmbeddingModels" class="spinner-sm"></span>
+                      <span
+                        v-if="isFetchingEmbeddingModels"
+                        class="spinner-sm"
+                      ></span>
                       <svg v-else viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                        <path
+                          d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
+                        />
                       </svg>
-                      {{ isFetchingEmbeddingModels ? '拉取中...' : '拉取模型' }}
+                      {{ isFetchingEmbeddingModels ? "拉取中..." : "拉取模型" }}
                     </button>
                   </div>
 
@@ -3151,7 +3398,11 @@ function useClonedVoice(voiceId: string) {
                       @change="onEmbeddingModelChange"
                     >
                       <option value="" disabled>
-                        {{ isFetchingEmbeddingModels ? '拉取模型中...' : '選擇模型...' }}
+                        {{
+                          isFetchingEmbeddingModels
+                            ? "拉取模型中..."
+                            : "選擇模型..."
+                        }}
                       </option>
                       <option
                         v-for="model in fetchedEmbeddingModels"
@@ -3162,11 +3413,17 @@ function useClonedVoice(voiceId: string) {
                       </option>
                       <option value="__custom__">✏️ 手動輸入...</option>
                     </select>
-                    <span v-if="isFetchingEmbeddingModels" class="select-spinner"></span>
+                    <span
+                      v-if="isFetchingEmbeddingModels"
+                      class="select-spinner"
+                    ></span>
                   </div>
 
                   <!-- 手動輸入框 -->
-                  <div v-if="settingsStore.embeddingAPI.model === '__custom__'" class="custom-model-input">
+                  <div
+                    v-if="settingsStore.embeddingAPI.model === '__custom__'"
+                    class="custom-model-input"
+                  >
                     <input
                       v-model="customEmbeddingModelName"
                       type="text"
@@ -3175,17 +3432,29 @@ function useClonedVoice(voiceId: string) {
                       @blur="applyCustomEmbeddingModel"
                       @keyup.enter="applyCustomEmbeddingModel"
                     />
-                    <p class="setting-hint">輸入完成後按 Enter 或點擊其他地方確認</p>
+                    <p class="setting-hint">
+                      輸入完成後按 Enter 或點擊其他地方確認
+                    </p>
                   </div>
 
                   <!-- 狀態提示 -->
                   <div v-if="embeddingModelFetchError" class="error-hint">
                     {{ embeddingModelFetchError }}
                   </div>
-                  <div v-else-if="fetchedEmbeddingModels.length > 0" class="success-hint">
-                    ✓ 已拉取 {{ fetchedEmbeddingModels.length }} 個 Embedding 模型
+                  <div
+                    v-else-if="fetchedEmbeddingModels.length > 0"
+                    class="success-hint"
+                  >
+                    ✓ 已拉取 {{ fetchedEmbeddingModels.length }} 個 Embedding
+                    模型
                   </div>
-                  <div v-else-if="settingsStore.embeddingAPI.model && settingsStore.embeddingAPI.model !== '__custom__'" class="info-hint-inline">
+                  <div
+                    v-else-if="
+                      settingsStore.embeddingAPI.model &&
+                      settingsStore.embeddingAPI.model !== '__custom__'
+                    "
+                    class="info-hint-inline"
+                  >
                     當前模型: {{ settingsStore.embeddingAPI.model }}
                   </div>
                 </div>
@@ -3297,7 +3566,6 @@ function useClonedVoice(voiceId: string) {
         >
           開啟後在獨立浮動窗口顯示 AI 回覆，關閉後直接在訊息氣泡中顯示
         </p>
-
       </div>
 
       <!-- 備用 API 設定 -->
@@ -4133,9 +4401,7 @@ function useClonedVoice(voiceId: string) {
         <label class="toggle-item highlight">
           <div class="toggle-content">
             <span class="toggle-label">背景運行模式</span>
-            <span class="toggle-desc"
-              >防止瀏覽器在後台暫停網頁</span
-            >
+            <span class="toggle-desc">防止瀏覽器在後台暫停網頁</span>
           </div>
           <input
             type="checkbox"
@@ -4147,13 +4413,31 @@ function useClonedVoice(voiceId: string) {
         </label>
 
         <!-- 保活模式選擇（僅在背景運行開啟時顯示） -->
-        <div v-if="settingsStore.backgroundAudioEnabled" class="keepalive-mode-picker">
+        <div
+          v-if="settingsStore.backgroundAudioEnabled"
+          class="keepalive-mode-picker"
+        >
           <div class="keepalive-mode-title">保活模式</div>
           <label
             v-for="opt in [
-              { value: 'audio', icon: '🎵', label: '音頻模式', desc: '佔鎖屏媒體控制欄' },
-              { value: 'mic', icon: '🎙️', label: '麥克風模式', desc: '不佔媒體控制欄，會停背景音樂（橘色指示燈）' },
-              { value: 'camera', icon: '📷', label: '鏡頭模式', desc: '不佔媒體控制欄，可同時聽音樂（綠色指示燈）' },
+              {
+                value: 'audio',
+                icon: '🎵',
+                label: '音頻模式',
+                desc: '佔鎖屏媒體控制欄',
+              },
+              {
+                value: 'mic',
+                icon: '🎙️',
+                label: '麥克風模式',
+                desc: '不佔媒體控制欄，會停背景音樂（橘色指示燈）',
+              },
+              {
+                value: 'camera',
+                icon: '📷',
+                label: '鏡頭模式',
+                desc: '不佔媒體控制欄，可同時聽音樂（綠色指示燈）',
+              },
             ]"
             :key="opt.value"
             class="keepalive-mode-option"
@@ -4306,10 +4590,24 @@ function useClonedVoice(voiceId: string) {
                 style="padding-left: 4px"
               >
                 <!-- 已連結：顯示帳號資訊 -->
-                <div v-if="cloudPushStore.isDiscordLinked" class="discord-linked-info">
-                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px">
+                <div
+                  v-if="cloudPushStore.isDiscordLinked"
+                  class="discord-linked-info"
+                >
+                  <div
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 8px;
+                      margin-bottom: 6px;
+                    "
+                  >
                     <span style="font-size: 13px; color: var(--text-secondary)">
-                      ✅ 已連結：{{ cloudPushStore.discordDisplayName || cloudPushStore.discordUsername || cloudPushStore.discordUserId }}
+                      ✅ 已連結：{{
+                        cloudPushStore.discordDisplayName ||
+                        cloudPushStore.discordUsername ||
+                        cloudPushStore.discordUserId
+                      }}
                     </span>
                   </div>
                   <div style="display: flex; gap: 8px">
@@ -4335,12 +4633,26 @@ function useClonedVoice(voiceId: string) {
                     class="soft-btn discord-link-btn"
                     @click="cloudPushStore.openDiscordOAuth()"
                   >
-                    <svg width="20" height="15" viewBox="0 0 71 55" fill="currentColor" style="flex-shrink: 0">
-                      <path d="M60.1 4.9A58.5 58.5 0 0045.4.2a.2.2 0 00-.2.1 40.8 40.8 0 00-1.8 3.7 54 54 0 00-16.2 0A37.4 37.4 0 0025.4.3a.2.2 0 00-.2-.1A58.4 58.4 0 0010.5 5a.2.2 0 00-.1 0A60 60 0 00.4 45.1a.3.3 0 000 .2 58.7 58.7 0 0017.7 9 .2.2 0 00.3-.1 42 42 0 003.6-5.9.2.2 0 00-.1-.3 38.7 38.7 0 01-5.5-2.6.2.2 0 01 0-.4l1.1-.9a.2.2 0 01.2 0 41.9 41.9 0 0035.6 0 .2.2 0 01.2 0l1.1.9a.2.2 0 010 .3 36.3 36.3 0 01-5.5 2.7.2.2 0 00-.1.3 47.2 47.2 0 003.6 5.9.2.2 0 00.3 0A58.5 58.5 0 0070.3 45.3a.2.2 0 000-.2A59.7 59.7 0 0060.2 5a.2.2 0 00-.1 0zM23.7 37a6.8 6.8 0 01-6.3-7 6.8 6.8 0 016.3-7 6.7 6.7 0 016.3 7 6.8 6.8 0 01-6.3 7zm23.2 0a6.8 6.8 0 01-6.3-7 6.8 6.8 0 016.3-7 6.7 6.7 0 016.3 7 6.8 6.8 0 01-6.3 7z"/>
+                    <svg
+                      width="20"
+                      height="15"
+                      viewBox="0 0 71 55"
+                      fill="currentColor"
+                      style="flex-shrink: 0"
+                    >
+                      <path
+                        d="M60.1 4.9A58.5 58.5 0 0045.4.2a.2.2 0 00-.2.1 40.8 40.8 0 00-1.8 3.7 54 54 0 00-16.2 0A37.4 37.4 0 0025.4.3a.2.2 0 00-.2-.1A58.4 58.4 0 0010.5 5a.2.2 0 00-.1 0A60 60 0 00.4 45.1a.3.3 0 000 .2 58.7 58.7 0 0017.7 9 .2.2 0 00.3-.1 42 42 0 003.6-5.9.2.2 0 00-.1-.3 38.7 38.7 0 01-5.5-2.6.2.2 0 01 0-.4l1.1-.9a.2.2 0 01.2 0 41.9 41.9 0 0035.6 0 .2.2 0 01.2 0l1.1.9a.2.2 0 010 .3 36.3 36.3 0 01-5.5 2.7.2.2 0 00-.1.3 47.2 47.2 0 003.6 5.9.2.2 0 00.3 0A58.5 58.5 0 0070.3 45.3a.2.2 0 000-.2A59.7 59.7 0 0060.2 5a.2.2 0 00-.1 0zM23.7 37a6.8 6.8 0 01-6.3-7 6.8 6.8 0 016.3-7 6.7 6.7 0 016.3 7 6.8 6.8 0 01-6.3 7zm23.2 0a6.8 6.8 0 01-6.3-7 6.8 6.8 0 016.3-7 6.7 6.7 0 016.3 7 6.8 6.8 0 01-6.3 7z"
+                      />
                     </svg>
                     連結 Discord 帳號
                   </button>
-                  <p style="font-size: 11px; color: var(--text-tertiary); margin-top: 4px">
+                  <p
+                    style="
+                      font-size: 11px;
+                      color: var(--text-tertiary);
+                      margin-top: 4px;
+                    "
+                  >
                     點擊後會跳轉到 Discord 授權，自動綁定帳號並加入伺服器
                   </p>
                 </div>
@@ -4366,11 +4678,7 @@ function useClonedVoice(voiceId: string) {
                 :disabled="cloudPushSyncStatus === 'syncing'"
                 @click="handleCloudPushSync"
               >
-                {{
-                  cloudPushSyncStatus === "syncing"
-                    ? "同步中…"
-                    : "手動同步"
-                }}
+                {{ cloudPushSyncStatus === "syncing" ? "同步中…" : "手動同步" }}
               </button>
               <button
                 v-if="cloudPushStore.enabledChannels.includes('discord')"
@@ -4390,7 +4698,10 @@ function useClonedVoice(voiceId: string) {
 
             <!-- 狀態顯示 -->
             <div class="cloud-push-status">
-              <span v-if="cloudPushSyncStatus === 'syncing'" style="color: var(--text-tertiary)">
+              <span
+                v-if="cloudPushSyncStatus === 'syncing'"
+                style="color: var(--text-tertiary)"
+              >
                 自動同步中…
               </span>
               <span v-else-if="cloudPushSyncStatus === 'success'">
@@ -4406,7 +4717,10 @@ function useClonedVoice(voiceId: string) {
                 同步失敗：{{ cloudPushSyncError }}
               </span>
               <span v-else>尚未同步</span>
-              <span v-if="cloudPushStore.pendingMessageCount > 0" style="margin-left: 8px">
+              <span
+                v-if="cloudPushStore.pendingMessageCount > 0"
+                style="margin-left: 8px"
+              >
                 · 離線訊息：{{ cloudPushStore.pendingMessageCount }} 條待拉取
               </span>
             </div>
@@ -4650,8 +4964,24 @@ function useClonedVoice(voiceId: string) {
             />
           </div>
 
-          <label class="backup-option" style="display: flex; align-items: center; gap: 8px; padding: 4px 0 0; font-size: 13px; color: var(--color-text-secondary, #9ca3af); cursor: pointer; user-select: none;">
-            <input type="checkbox" v-model="excludeChatImages" style="accent-color: var(--color-primary, #7dd3a8);" />
+          <label
+            class="backup-option"
+            style="
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              padding: 4px 0 0;
+              font-size: 13px;
+              color: var(--color-text-secondary, #9ca3af);
+              cursor: pointer;
+              user-select: none;
+            "
+          >
+            <input
+              type="checkbox"
+              v-model="excludeChatImages"
+              style="accent-color: var(--color-primary, #7dd3a8)"
+            />
             不含聊天圖片（輕量備份）
           </label>
 
@@ -4836,8 +5166,14 @@ function useClonedVoice(voiceId: string) {
         <!-- GitHub 雲端備份 -->
         <div class="backup-card" style="margin-top: 16px">
           <div class="backup-header">
-            <svg viewBox="0 0 24 24" fill="currentColor" style="width: 20px; height: 20px">
-              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+            <svg
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              style="width: 20px; height: 20px"
+            >
+              <path
+                d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"
+              />
             </svg>
             <span>GitHub 雲端備份</span>
           </div>
@@ -4851,7 +5187,8 @@ function useClonedVoice(voiceId: string) {
                 target="_blank"
                 rel="noopener"
                 style="color: var(--color-primary, #6366f1)"
-              >先 Fork 此倉庫</a>，然後填入 Token。
+                >先 Fork 此倉庫</a
+              >，然後填入 Token。
             </p>
 
             <div class="gh-form-row">
@@ -4859,7 +5196,7 @@ function useClonedVoice(voiceId: string) {
               <input
                 v-model="ghSettings.repo"
                 class="soft-input"
-                placeholder="你的用戶名/aguaphone-cloud-backup"
+                placeholder="atuolan/aguaphone-cloud-backup"
               />
             </div>
 
@@ -4877,14 +5214,28 @@ function useClonedVoice(voiceId: string) {
                   class="gh-eye-btn"
                   @click="ghShowToken = !ghShowToken"
                   type="button"
-                >{{ ghShowToken ? '🙈' : '👁' }}</button>
+                >
+                  {{ ghShowToken ? "🙈" : "👁" }}
+                </button>
               </div>
               <p class="gh-token-hint">
-                需要 fine-grained token，僅授權該倉庫的 Contents 讀寫權限。
+                需要 fine-grained token，授權該倉庫的 Contents 權限為「Read and
+                write」。
+                <a
+                  href="https://github.com/settings/tokens?type=beta"
+                  target="_blank"
+                  rel="noopener"
+                  style="color: var(--color-primary, #6366f1)"
+                  >前往建立 Token</a
+                >
               </p>
             </div>
 
-            <button class="backup-btn export" @click="handleGhSave" style="margin-top: 8px">
+            <button
+              class="backup-btn export"
+              @click="handleGhSave"
+              style="margin-top: 8px"
+            >
               連接
             </button>
           </div>
@@ -4893,8 +5244,13 @@ function useClonedVoice(voiceId: string) {
           <div v-else class="gh-connected">
             <div class="gh-status-row">
               <span class="gh-status-dot" />
-              <span>已連接：{{ ghUsername }} / {{ ghSettings.repo.split('/')[1] || ghSettings.repo }}</span>
-              <button class="gh-disconnect-btn" @click="handleGhDisconnect">斷開</button>
+              <span
+                >已連接：{{ ghUsername }} /
+                {{ ghSettings.repo.split("/")[1] || ghSettings.repo }}</span
+              >
+              <button class="gh-disconnect-btn" @click="handleGhDisconnect">
+                斷開
+              </button>
             </div>
 
             <div v-if="ghSettings.lastBackupAt" class="backup-last-info">
@@ -4908,9 +5264,9 @@ function useClonedVoice(voiceId: string) {
                 :disabled="ghBusy"
               >
                 <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
+                  <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" />
                 </svg>
-                {{ ghBusy ? '處理中...' : '上傳備份到 GitHub' }}
+                {{ ghBusy ? "處理中..." : "上傳備份到 GitHub" }}
               </button>
               <button
                 class="backup-btn import"
@@ -4918,14 +5274,17 @@ function useClonedVoice(voiceId: string) {
                 :disabled="ghBusy"
               >
                 <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                  <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
                 </svg>
-                {{ ghShowRestoreList ? '收起列表' : '從 GitHub 還原' }}
+                {{ ghShowRestoreList ? "收起列表" : "從 GitHub 還原" }}
               </button>
             </div>
 
             <!-- 備份列表 -->
-            <div v-if="ghShowRestoreList && ghBackupList.length > 0" class="gh-backup-list">
+            <div
+              v-if="ghShowRestoreList && ghBackupList.length > 0"
+              class="gh-backup-list"
+            >
               <div
                 v-for="item in ghBackupList"
                 :key="item.path"
@@ -4933,12 +5292,27 @@ function useClonedVoice(voiceId: string) {
               >
                 <span class="gh-backup-name">{{ item.name }}</span>
                 <div class="gh-backup-actions">
-                  <button class="gh-action-btn restore" @click="handleGhRestore(item.path)" :disabled="ghBusy">還原</button>
-                  <button class="gh-action-btn delete" @click="handleGhDelete(item.path, item.name)" :disabled="ghBusy">刪除</button>
+                  <button
+                    class="gh-action-btn restore"
+                    @click="handleGhRestore(item.path)"
+                    :disabled="ghBusy"
+                  >
+                    還原
+                  </button>
+                  <button
+                    class="gh-action-btn delete"
+                    @click="handleGhDelete(item.path, item.name)"
+                    :disabled="ghBusy"
+                  >
+                    刪除
+                  </button>
                 </div>
               </div>
             </div>
-            <div v-if="ghShowRestoreList && ghBackupList.length === 0 && !ghBusy" class="backup-hint">
+            <div
+              v-if="ghShowRestoreList && ghBackupList.length === 0 && !ghBusy"
+              class="backup-hint"
+            >
               沒有找到雲端備份。
             </div>
 
@@ -6115,13 +6489,17 @@ function useClonedVoice(voiceId: string) {
   &.restore {
     background: linear-gradient(135deg, #a8e6cf, #7dd3a8);
     color: white;
-    &:hover { box-shadow: 0 2px 6px rgba(125, 211, 168, 0.4); }
+    &:hover {
+      box-shadow: 0 2px 6px rgba(125, 211, 168, 0.4);
+    }
   }
 
   &.delete {
     background: rgba(220, 38, 38, 0.08);
     color: #dc2626;
-    &:hover { background: rgba(220, 38, 38, 0.15); }
+    &:hover {
+      background: rgba(220, 38, 38, 0.15);
+    }
   }
 
   &:disabled {
@@ -6365,7 +6743,9 @@ function useClonedVoice(voiceId: string) {
   padding: 10px 12px;
   border-radius: 10px;
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
   border: 1px solid transparent;
   background: rgba(128, 128, 128, 0.05);
 
