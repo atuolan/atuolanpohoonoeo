@@ -27,8 +27,18 @@ import { db, DB_STORES } from "@/db/database";
 /** 每片大小上限（25MB），base64 編碼後約 33MB，在 GitHub Blobs API 限制內 */
 const CHUNK_SIZE = 25 * 1024 * 1024;
 
-/** GitHub API 基礎 URL */
-const GITHUB_API = "https://api.github.com";
+/** GitHub API 基礎 URL — 手機端走 nginx 反向代理繞過網路限制 */
+const GITHUB_API = (() => {
+  // 判斷是否在瀏覽器環境且為手機端（或直接用代理路徑）
+  if (typeof window !== "undefined" && window.location) {
+    const origin = window.location.origin;
+    // 如果是部署在自己的伺服器上（非 localhost），使用 ai-proxy 代理 GitHub API
+    if (!origin.includes("localhost") && !origin.includes("127.0.0.1")) {
+      return `${origin}/ai-proxy/api.github.com`;
+    }
+  }
+  return "https://api.github.com";
+})();
 
 /** 預設的上游倉庫名（你提供給使用者 fork 的） */
 export const DEFAULT_UPSTREAM_REPO = "Mikaluotuo/aguaphone-cloud-backup";
