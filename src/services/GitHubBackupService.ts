@@ -31,7 +31,7 @@ const CHUNK_SIZE = 50 * 1024 * 1024;
 const GITHUB_API = "https://api.github.com";
 
 /** 預設的上游倉庫名（你提供給使用者 fork 的） */
-export const DEFAULT_UPSTREAM_REPO = "atuolan/aguaphone-cloud-backup";
+export const DEFAULT_UPSTREAM_REPO = "Mikaluotuo/aguaphone-cloud-backup";
 
 /** IndexedDB 中儲存設定的 key */
 const IDB_SETTINGS_KEY = "github-backup-settings";
