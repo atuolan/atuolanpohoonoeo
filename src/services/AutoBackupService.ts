@@ -429,7 +429,7 @@ function pushFileToZip(
  *   chats/<chatId>.json  — 每個聊天獨立一個檔案
  *   media/*              — 提取的媒體檔案
  */
-async function buildBackupZipStreaming(
+export async function buildBackupZipStreaming(
   onProgress?: BackupProgressCallback,
   options?: { excludeChatImages?: boolean },
 ): Promise<Uint8Array> {

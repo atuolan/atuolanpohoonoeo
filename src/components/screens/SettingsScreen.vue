@@ -865,6 +865,158 @@ function formatBackupTime(ts: number | null): string {
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// ===== GitHub 雲端備份 =====
+import {
+  DEFAULT_GITHUB_SETTINGS,
+  DEFAULT_UPSTREAM_REPO,
+  deleteRemoteBackup,
+  downloadFromGitHub,
+  listRemoteBackups,
+  loadGitHubSettings,
+  saveGitHubSettings,
+  uploadToGitHub,
+  validateConnection,
+  type GitHubBackupProgress,
+  type GitHubBackupSettings,
+} from "@/services/GitHubBackupService";
+
+const ghSettings = reactive<GitHubBackupSettings>({
+  ...DEFAULT_GITHUB_SETTINGS,
+});
+const ghConnected = ref(false);
+const ghUsername = ref("");
+const ghBusy = ref(false);
+const ghProgress = ref("");
+const ghBackupList = ref<Array<{ name: string; path: string; createdAt: string }>>([]);
+const ghShowToken = ref(false);
+const ghShowRestoreList = ref(false);
+
+async function loadGhState() {
+  const saved = await loadGitHubSettings();
+  Object.assign(ghSettings, saved);
+  if (saved.token && saved.repo) {
+    const result = await validateConnection();
+    ghConnected.value = result.valid;
+    ghUsername.value = result.username || "";
+  }
+}
+
+async function handleGhSave() {
+  await saveGitHubSettings({ ...ghSettings });
+  const result = await validateConnection();
+  ghConnected.value = result.valid;
+  ghUsername.value = result.username || "";
+  if (result.valid) {
+    alert(`✓ 已連接：${result.username}`);
+  } else {
+    alert(`✗ ${result.message}`);
+  }
+}
+
+async function handleGhDisconnect() {
+  ghSettings.token = "";
+  ghSettings.repo = "";
+  ghConnected.value = false;
+  ghUsername.value = "";
+  await saveGitHubSettings({ ...ghSettings });
+}
+
+const onGhProgress = (p: GitHubBackupProgress) => {
+  if (p.current && p.total && p.total > 0) {
+    ghProgress.value = `${p.phase} (${p.current}/${p.total})`;
+  } else if (p.current) {
+    ghProgress.value = `${p.phase} #${p.current}`;
+  } else {
+    ghProgress.value = p.phase;
+  }
+};
+
+async function handleGhBackup() {
+  ghBusy.value = true;
+  ghProgress.value = "準備備份資料...";
+  try {
+    const zipData = await (await import("@/services/AutoBackupService")).buildBackupZipStreaming(
+      (info) => {
+        if (info.current && info.total) {
+          ghProgress.value = `打包: ${info.phase} (${info.current}/${info.total})`;
+        } else {
+          ghProgress.value = `打包: ${info.phase}`;
+        }
+      },
+    );
+    const result = await uploadToGitHub(zipData, onGhProgress);
+    if (result.success) {
+      ghSettings.lastBackupAt = Date.now();
+      ghSettings.lastBackupMessage = result.message;
+      alert(`✓ ${result.message}`);
+    } else {
+      alert(`✗ ${result.message}`);
+    }
+  } catch (e: any) {
+    alert(`✗ 備份失敗: ${e.message}`);
+  } finally {
+    ghBusy.value = false;
+    ghProgress.value = "";
+  }
+}
+
+async function handleGhListBackups() {
+  ghShowRestoreList.value = !ghShowRestoreList.value;
+  if (ghShowRestoreList.value) {
+    ghBusy.value = true;
+    ghProgress.value = "讀取備份列表...";
+    try {
+      ghBackupList.value = await listRemoteBackups();
+    } catch (e: any) {
+      alert(`✗ 讀取失敗: ${e.message}`);
+    } finally {
+      ghBusy.value = false;
+      ghProgress.value = "";
+    }
+  }
+}
+
+async function handleGhRestore(backupPath: string) {
+  if (!confirm("確定要從雲端還原嗎？這會覆蓋本機所有數據。")) return;
+  ghBusy.value = true;
+  ghProgress.value = "下載備份...";
+  try {
+    const zipData = await downloadFromGitHub(backupPath, onGhProgress);
+    ghProgress.value = "還原中...";
+    // 將 Uint8Array 包裝成 File，複用現有的匯入邏輯
+    const blob = new Blob([zipData.buffer as ArrayBuffer], { type: "application/zip" });
+    const file = new File([blob], "aguaphone-backup-github.zip", { type: "application/zip" });
+    // 觸發現有的匯入 handler（模擬檔案選擇）
+    const fakeInput = document.createElement("input");
+    fakeInput.type = "file";
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    fakeInput.files = dt.files;
+    // 直接呼叫匯入邏輯
+    await handleFileImport({ target: fakeInput } as any);
+  } catch (e: any) {
+    alert(`✗ 還原失敗: ${e.message}`);
+  } finally {
+    ghBusy.value = false;
+    ghProgress.value = "";
+  }
+}
+
+async function handleGhDelete(backupPath: string, backupName: string) {
+  if (!confirm(`確定要刪除雲端備份「${backupName}」嗎？`)) return;
+  ghBusy.value = true;
+  try {
+    const result = await deleteRemoteBackup(backupPath);
+    if (result.success) {
+      ghBackupList.value = ghBackupList.value.filter((b) => b.path !== backupPath);
+    } else {
+      alert(`✗ ${result.message}`);
+    }
+  } finally {
+    ghBusy.value = false;
+  }
+}
+
 // 載入設定
 onMounted(async () => {
   await settingsStore.loadSettings();
@@ -878,6 +1030,9 @@ onMounted(async () => {
 
   // 載入自動備份狀態
   await refreshAutoBackupState();
+
+  // 載入 GitHub 雲端備份狀態
+  await loadGhState();
 
   // 如果有 API 設定，自動拉取模型列表
   if (settingsStore.api.endpoint && settingsStore.api.apiKey) {
@@ -4678,6 +4833,123 @@ function useClonedVoice(voiceId: string) {
           </div>
         </div>
 
+        <!-- GitHub 雲端備份 -->
+        <div class="backup-card" style="margin-top: 16px">
+          <div class="backup-header">
+            <svg viewBox="0 0 24 24" fill="currentColor" style="width: 20px; height: 20px">
+              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+            </svg>
+            <span>GitHub 雲端備份</span>
+          </div>
+
+          <!-- 未連接：設定表單 -->
+          <div v-if="!ghConnected" class="gh-setup">
+            <p class="backup-hint">
+              將備份上傳到你的 GitHub 私人倉庫。
+              <a
+                :href="`https://github.com/${DEFAULT_UPSTREAM_REPO}/fork`"
+                target="_blank"
+                rel="noopener"
+                style="color: var(--color-primary, #6366f1)"
+              >先 Fork 此倉庫</a>，然後填入 Token。
+            </p>
+
+            <div class="gh-form-row">
+              <label class="gh-label">倉庫名稱</label>
+              <input
+                v-model="ghSettings.repo"
+                class="soft-input"
+                placeholder="你的用戶名/aguaphone-cloud-backup"
+              />
+            </div>
+
+            <div class="gh-form-row">
+              <label class="gh-label">Personal Access Token</label>
+              <div style="position: relative">
+                <input
+                  v-model="ghSettings.token"
+                  :type="ghShowToken ? 'text' : 'password'"
+                  class="soft-input"
+                  placeholder="ghp_xxxxxxxxxxxx"
+                  style="padding-right: 40px"
+                />
+                <button
+                  class="gh-eye-btn"
+                  @click="ghShowToken = !ghShowToken"
+                  type="button"
+                >{{ ghShowToken ? '🙈' : '👁' }}</button>
+              </div>
+              <p class="gh-token-hint">
+                需要 fine-grained token，僅授權該倉庫的 Contents 讀寫權限。
+              </p>
+            </div>
+
+            <button class="backup-btn export" @click="handleGhSave" style="margin-top: 8px">
+              連接
+            </button>
+          </div>
+
+          <!-- 已連接：操作面板 -->
+          <div v-else class="gh-connected">
+            <div class="gh-status-row">
+              <span class="gh-status-dot" />
+              <span>已連接：{{ ghUsername }} / {{ ghSettings.repo.split('/')[1] || ghSettings.repo }}</span>
+              <button class="gh-disconnect-btn" @click="handleGhDisconnect">斷開</button>
+            </div>
+
+            <div v-if="ghSettings.lastBackupAt" class="backup-last-info">
+              上次雲端備份：{{ formatBackupTime(ghSettings.lastBackupAt) }}
+            </div>
+
+            <div class="backup-buttons">
+              <button
+                class="backup-btn export"
+                @click="handleGhBackup"
+                :disabled="ghBusy"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
+                </svg>
+                {{ ghBusy ? '處理中...' : '上傳備份到 GitHub' }}
+              </button>
+              <button
+                class="backup-btn import"
+                @click="handleGhListBackups"
+                :disabled="ghBusy"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                </svg>
+                {{ ghShowRestoreList ? '收起列表' : '從 GitHub 還原' }}
+              </button>
+            </div>
+
+            <!-- 備份列表 -->
+            <div v-if="ghShowRestoreList && ghBackupList.length > 0" class="gh-backup-list">
+              <div
+                v-for="item in ghBackupList"
+                :key="item.path"
+                class="gh-backup-item"
+              >
+                <span class="gh-backup-name">{{ item.name }}</span>
+                <div class="gh-backup-actions">
+                  <button class="gh-action-btn restore" @click="handleGhRestore(item.path)" :disabled="ghBusy">還原</button>
+                  <button class="gh-action-btn delete" @click="handleGhDelete(item.path, item.name)" :disabled="ghBusy">刪除</button>
+                </div>
+              </div>
+            </div>
+            <div v-if="ghShowRestoreList && ghBackupList.length === 0 && !ghBusy" class="backup-hint">
+              沒有找到雲端備份。
+            </div>
+
+            <!-- 進度 -->
+            <div v-if="ghBusy && ghProgress" class="backup-progress-info">
+              <span class="backup-progress-spinner" />
+              <span>{{ ghProgress }}</span>
+            </div>
+          </div>
+        </div>
+
         <!-- 危險操作 -->
         <div class="danger-zone">
           <div class="danger-header">
@@ -5719,6 +5991,143 @@ function useClonedVoice(voiceId: string) {
   font-size: 12px;
   color: var(--color-text-secondary, #94a3b8);
   padding: 4px 0;
+}
+
+// ===== GitHub 雲端備份樣式 =====
+
+.gh-setup {
+  padding: 4px 0;
+}
+
+.gh-form-row {
+  margin-bottom: 10px;
+}
+
+.gh-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #64748b);
+  margin-bottom: 4px;
+}
+
+.gh-eye-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px;
+  line-height: 1;
+}
+
+.gh-token-hint {
+  font-size: 11px;
+  color: var(--color-text-secondary, #94a3b8);
+  margin: 4px 0 0;
+}
+
+.gh-connected {
+  padding: 4px 0;
+}
+
+.gh-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text, #1e293b);
+  padding: 4px 0 8px;
+}
+
+.gh-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  flex-shrink: 0;
+}
+
+.gh-disconnect-btn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #94a3b8);
+  cursor: pointer;
+  &:hover {
+    color: #dc2626;
+    border-color: #dc2626;
+  }
+}
+
+.gh-backup-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.gh-backup-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: var(--color-background, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.gh-backup-name {
+  color: var(--color-text, #1e293b);
+  font-family: monospace;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.gh-backup-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.gh-action-btn {
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: none;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &.restore {
+    background: linear-gradient(135deg, #a8e6cf, #7dd3a8);
+    color: white;
+    &:hover { box-shadow: 0 2px 6px rgba(125, 211, 168, 0.4); }
+  }
+
+  &.delete {
+    background: rgba(220, 38, 38, 0.08);
+    color: #dc2626;
+    &:hover { background: rgba(220, 38, 38, 0.15); }
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
 // ===== 配置文件樣式 =====
