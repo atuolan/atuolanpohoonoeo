@@ -51,6 +51,8 @@ export interface GitHubBackupSettings {
   lastBackupAt: number | null;
   /** 上次備份狀態訊息 */
   lastBackupMessage: string;
+  /** 最多保留幾份遠端備份（0 = 不限，預設 1 = 只保留最新） */
+  maxRemoteBackups: number;
 }
 
 export const DEFAULT_GITHUB_SETTINGS: GitHubBackupSettings = {
@@ -59,6 +61,7 @@ export const DEFAULT_GITHUB_SETTINGS: GitHubBackupSettings = {
   branch: "main",
   lastBackupAt: null,
   lastBackupMessage: "",
+  maxRemoteBackups: 1,
 };
 
 export interface BackupManifest {
@@ -366,7 +369,20 @@ export async function uploadToGitHub(
     );
     await updateRef(repo, branch, token, newCommitSha);
 
-    // 7. 更新本地設定
+    // 7. 自動清理舊備份
+    if (settings.maxRemoteBackups > 0) {
+      onProgress?.({ phase: "清理舊備份..." });
+      try {
+        await cleanOldRemoteBackups(settings.maxRemoteBackups, onProgress);
+      } catch (cleanErr) {
+        console.warn(
+          "[GitHubBackup] 清理舊備份失敗（不影響本次備份）:",
+          cleanErr,
+        );
+      }
+    }
+
+    // 8. 更新本地設定
     const msg = `備份成功: ${timestamp} (${sizeInMB}MB)`;
     settings.lastBackupAt = Date.now();
     settings.lastBackupMessage = msg;
@@ -720,6 +736,33 @@ export async function deleteRemoteBackup(
     return { success: true, message: "備份已刪除" };
   } catch (e: any) {
     return { success: false, message: `刪除失敗: ${e.message || e}` };
+  }
+}
+
+// ============================================================
+// 自動清理舊備份
+// ============================================================
+
+/**
+ * 保留最新的 maxKeep 份備份，刪除其餘的。
+ * 在 uploadToGitHub 成功後自動呼叫。
+ */
+async function cleanOldRemoteBackups(
+  maxKeep: number,
+  onProgress?: (p: GitHubBackupProgress) => void,
+): Promise<void> {
+  const backups = await listRemoteBackups();
+  if (backups.length <= maxKeep) return;
+
+  // backups 已按時間倒序（最新在前），刪除 maxKeep 之後的
+  const toDelete = backups.slice(maxKeep);
+  for (let i = 0; i < toDelete.length; i++) {
+    onProgress?.({ phase: `清理舊備份 ${i + 1}/${toDelete.length}` });
+    try {
+      await deleteRemoteBackup(toDelete[i].path);
+    } catch (e) {
+      console.warn(`[GitHubBackup] 刪除舊備份 ${toDelete[i].name} 失敗:`, e);
+    }
   }
 }
 
