@@ -1970,6 +1970,8 @@ async function handleFileImport(event: Event) {
       // 備份 auth 狀態
       const { AuthService } = await import("@/services/AuthService");
       const savedAuth = await AuthService.getAuthState().catch(() => null);
+      // 備份 GitHub 雲端備份設定，避免還原後丟失 token/repo
+      const savedGhSettings = await loadGitHubSettings().catch(() => null);
       await clearAllData();
       await db.init();
       // 還原 auth 狀態，避免清除後要求重新驗證
@@ -1984,6 +1986,10 @@ async function handleFileImport(event: Event) {
           savedAuth.discordUsername,
           savedAuth.discordDisplayName || savedAuth.discordUsername,
         ).catch(() => {});
+      }
+      // 還原 GitHub 雲端備份設定
+      if (savedGhSettings && savedGhSettings.token) {
+        await saveGitHubSettings(savedGhSettings).catch(() => {});
       }
     }
 

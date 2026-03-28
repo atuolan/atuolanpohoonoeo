@@ -107,7 +107,7 @@ export async function saveGitHubSettings(
   settings: GitHubBackupSettings,
 ): Promise<void> {
   await db.init();
-  await db.put(DB_STORES.APP_SETTINGS, settings, IDB_SETTINGS_KEY);
+  await db.put(DB_STORES.APP_SETTINGS, { ...settings, id: IDB_SETTINGS_KEY });
 }
 
 // ============================================================
