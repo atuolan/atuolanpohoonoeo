@@ -135,6 +135,17 @@ async function ghFetch(
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
+    // 提供更友善的錯誤訊息
+    if (res.status === 404) {
+      throw new Error(
+        `找不到資源 (404)：${path.split("?")[0]} — 請確認倉庫名稱和分支是否正確`,
+      );
+    }
+    if (res.status === 403) {
+      throw new Error(
+        `權限不足 (403)：${body.slice(0, 200)} — 請確認 Token 有 Contents Read and write 權限`,
+      );
+    }
     throw new Error(`GitHub API ${res.status}: ${body.slice(0, 300)}`);
   }
   return res;
