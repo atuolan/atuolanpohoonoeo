@@ -407,6 +407,8 @@ interface PromptRule {
 
 const entryEditMode = reactive<Record<string, "raw" | "visual">>({});
 const entryRules = reactive<Record<string, PromptRule[]>>({});
+/** 切換到積木模式前的原始文本備份，解析失敗時用於恢復 */
+const entryRawBackup = reactive<Record<string, string>>({});
 
 function getEditMode(entryId: string): "raw" | "visual" {
   return entryEditMode[entryId] ?? "raw";
@@ -429,51 +431,72 @@ const selectedLinkedConfig = computed(() => {
 watch(
   linkedCharacters,
   async (chars) => {
-    if (chars.length === 0) { selectedLinkedCharId.value = ""; return; }
+    if (chars.length === 0) {
+      selectedLinkedCharId.value = "";
+      return;
+    }
     if (!chars.some((c) => c.id === selectedLinkedCharId.value)) {
       selectedLinkedCharId.value = chars[0].id;
     }
     for (const c of chars) {
-      if (!affinityStore.configCache.has(c.id)) await affinityStore.loadConfig(c.id);
+      if (!affinityStore.configCache.has(c.id))
+        await affinityStore.loadConfig(c.id);
     }
   },
   { immediate: true },
 );
 
 watch(selectedLinkedCharId, async (id) => {
-  if (id && !affinityStore.configCache.has(id)) await affinityStore.loadConfig(id);
+  if (id && !affinityStore.configCache.has(id))
+    await affinityStore.loadConfig(id);
 });
 
 const condEditorCharName = computed(() => {
   const config = selectedLinkedConfig.value;
   if (config?.statKey?.trim()) return config.statKey.trim();
-  return linkedCharacters.value.find((c) => c.id === selectedLinkedCharId.value)?.name ?? "";
+  return (
+    linkedCharacters.value.find((c) => c.id === selectedLinkedCharId.value)
+      ?.name ?? ""
+  );
 });
 
 const availableMetrics = computed(() => {
   const config = selectedLinkedConfig.value;
   if (!config?.enabled) return [];
-  return config.metrics.map((m) => ({ name: m.name, type: m.type, options: m.options }));
+  return config.metrics.map((m) => ({
+    name: m.name,
+    type: m.type,
+    options: m.options,
+  }));
 });
 
 function getOperatorsForMetric(metricName: string): string[] {
   const m = availableMetrics.value.find((x) => x.name === metricName);
-  return m?.type === "string" ? ["==", "!="] : [">", ">=", "<", "<=", "==", "!="];
+  return m?.type === "string"
+    ? ["==", "!="]
+    : [">", ">=", "<", "<=", "==", "!="];
 }
 
 function isStringMetric(metricName: string): boolean {
-  return availableMetrics.value.find((x) => x.name === metricName)?.type === "string";
+  return (
+    availableMetrics.value.find((x) => x.name === metricName)?.type === "string"
+  );
 }
 
 function getMetricOptions(metricName: string): string[] {
-  return availableMetrics.value.find((x) => x.name === metricName)?.options ?? [];
+  return (
+    availableMetrics.value.find((x) => x.name === metricName)?.options ?? []
+  );
 }
 
 // 解析單一條件字串片段，失敗則返回空佔位（不報錯）
-function _parseOneCond(part: string, metrics: { name: string }[]): RuleCondition {
-  const cm = part.trim().match(
-    /getvar\(['"]([^'"]+)['"]\)\s*(>=|<=|===|!==|==|!=|>|<)\s*(.+)/,
-  );
+function _parseOneCond(
+  part: string,
+  metrics: { name: string }[],
+): RuleCondition {
+  const cm = part
+    .trim()
+    .match(/getvar\(['"]([^'"]+)['"]\)\s*(>=|<=|===|!==|==|!=|>|<)\s*(.+)/);
   if (!cm) return { metricName: "", operator: ">=", value: 0 };
   const path = cm[1];
   let metricName = path;
@@ -531,7 +554,10 @@ function parseEjsToRules(
     const groupStrings = _splitByOr(condStr);
     const groups: RuleCondition[][] = groupStrings
       .map((gs) => {
-        const stripped = gs.trim().replace(/^\((.+)\)$/, "$1").trim();
+        const stripped = gs
+          .trim()
+          .replace(/^\((.+)\)$/, "$1")
+          .trim();
         return stripped.split(/\s*&&\s*/).map((p) => _parseOneCond(p, metrics));
       })
       .filter((g) => g.length > 0);
@@ -582,10 +608,19 @@ function syncRulesToEntry(entryId: string) {
   const rules = entryRules[entryId];
   if (!rules) return;
   const entry = formData.value.entries.find((e) => e.id === entryId);
-  if (entry) entry.content = rulesToEjs(rules, condEditorCharName.value);
+  if (!entry) return;
+  const ejs = rulesToEjs(rules, condEditorCharName.value);
+  // 規則為空時恢復備份內容，避免清空原始文本
+  if (!ejs && entryRawBackup[entryId]) {
+    entry.content = entryRawBackup[entryId];
+  } else {
+    entry.content = ejs;
+  }
 }
 
 function switchToVisual(entryId: string, content: string) {
+  // 備份原始文本，解析失敗時可恢復
+  entryRawBackup[entryId] = content;
   const parsed = parseEjsToRules(content, availableMetrics.value);
   if (parsed && parsed.length > 0) {
     entryRules[entryId] = parsed;
@@ -927,13 +962,29 @@ function removeCondition(
                     <!-- 角色關聯狀態 bar -->
                     <div class="rule-char-bar">
                       <template v-if="linkedCharacters.length === 0">
-                        <span class="char-bar-hint warn">⚠ 此世界書尚未連結任何角色，請在角色編輯頁面綁定世界書後再使用條件編輯器。</span>
+                        <span class="char-bar-hint warn"
+                          >⚠
+                          此世界書尚未連結任何角色，請在角色編輯頁面綁定世界書後再使用條件編輯器。</span
+                        >
                       </template>
                       <template v-else-if="!selectedLinkedConfig?.enabled">
-                        <span class="char-bar-hint warn">⚠ 角色「{{ condEditorCharName }}」尚未啟用好感度系統，請在角色編輯頁面開啟「好感度數值」開關。</span>
+                        <span class="char-bar-hint warn"
+                          >⚠ 角色「{{
+                            condEditorCharName
+                          }}」尚未啟用好感度系統，請在角色編輯頁面開啟「好感度數值」開關。</span
+                        >
                       </template>
-                      <template v-else-if="(selectedLinkedConfig?.metrics ?? []).length === 0">
-                        <span class="char-bar-hint warn">⚠ 好感度已啟用，但角色「{{ condEditorCharName }}」還沒有任何數值指標，請在角色編輯頁面點「+ 新增指標」來新增。</span>
+                      <template
+                        v-else-if="
+                          (selectedLinkedConfig?.metrics ?? []).length === 0
+                        "
+                      >
+                        <span class="char-bar-hint warn"
+                          >⚠ 好感度已啟用，但角色「{{
+                            condEditorCharName
+                          }}」還沒有任何數值指標，請在角色編輯頁面點「+
+                          新增指標」來新增。</span
+                        >
                       </template>
                       <template v-else>
                         <span class="char-bar-label">角色：</span>
@@ -942,10 +993,20 @@ function removeCondition(
                           v-model="selectedLinkedCharId"
                           class="soft-input small char-bar-select"
                         >
-                          <option v-for="c in linkedCharacters" :key="c.id" :value="c.id">{{ c.name }}</option>
+                          <option
+                            v-for="c in linkedCharacters"
+                            :key="c.id"
+                            :value="c.id"
+                          >
+                            {{ c.name }}
+                          </option>
                         </select>
-                        <span v-else class="char-bar-name">{{ condEditorCharName }}</span>
-                        <span class="char-bar-metric-count">{{ availableMetrics.length }} 個指標</span>
+                        <span v-else class="char-bar-name">{{
+                          condEditorCharName
+                        }}</span>
+                        <span class="char-bar-metric-count"
+                          >{{ availableMetrics.length }} 個指標</span
+                        >
                       </template>
                     </div>
 
@@ -959,8 +1020,21 @@ function removeCondition(
                       <div class="rule-header">
                         <span class="rule-label">規則 {{ ri + 1 }}</span>
                         <div class="rule-header-actions">
-                          <button v-if="ri > 0" class="icon-btn-sm" title="上移" @click="moveRuleUp(entry.id, ri)">↑</button>
-                          <button class="icon-btn-sm danger" title="刪除規則" @click="removeRule(entry.id, ri)">✕</button>
+                          <button
+                            v-if="ri > 0"
+                            class="icon-btn-sm"
+                            title="上移"
+                            @click="moveRuleUp(entry.id, ri)"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            class="icon-btn-sm danger"
+                            title="刪除規則"
+                            @click="removeRule(entry.id, ri)"
+                          >
+                            ✕
+                          </button>
                         </div>
                       </div>
 
@@ -975,13 +1049,17 @@ function removeCondition(
                           <!-- 條件組容器 -->
                           <div class="condition-group">
                             <div class="group-header">
-                              <span class="group-label">條件組 {{ String.fromCharCode(65 + gi) }}</span>
+                              <span class="group-label"
+                                >條件組 {{ String.fromCharCode(65 + gi) }}</span
+                              >
                               <button
                                 v-if="rule.groups.length > 1"
                                 class="icon-btn-xs danger"
                                 title="刪除此條件組"
                                 @click="removeGroup(entry.id, ri, gi)"
-                              >✕</button>
+                              >
+                                ✕
+                              </button>
                             </div>
 
                             <!-- 條件積木（AND conditions） -->
@@ -995,7 +1073,11 @@ function removeCondition(
                                 <!-- 積木本體 -->
                                 <div
                                   class="condition-block"
-                                  :class="isStringMetric(cond.metricName) ? 'block-string' : 'block-number'"
+                                  :class="
+                                    isStringMetric(cond.metricName)
+                                      ? 'block-string'
+                                      : 'block-number'
+                                  "
                                 >
                                   <!-- 指標選擇 -->
                                   <select
@@ -1004,7 +1086,13 @@ function removeCondition(
                                     @change="syncRulesToEntry(entry.id)"
                                   >
                                     <option value="">選擇指標…</option>
-                                    <option v-for="m in availableMetrics" :key="m.name" :value="m.name">{{ m.name }}</option>
+                                    <option
+                                      v-for="m in availableMetrics"
+                                      :key="m.name"
+                                      :value="m.name"
+                                    >
+                                      {{ m.name }}
+                                    </option>
                                   </select>
 
                                   <!-- 運算符 -->
@@ -1013,31 +1101,68 @@ function removeCondition(
                                     class="block-select op-select"
                                     @change="syncRulesToEntry(entry.id)"
                                   >
-                                    <option v-for="op in getOperatorsForMetric(cond.metricName)" :key="op" :value="op">{{ op }}</option>
+                                    <option
+                                      v-for="op in getOperatorsForMetric(
+                                        cond.metricName,
+                                      )"
+                                      :key="op"
+                                      :value="op"
+                                    >
+                                      {{ op }}
+                                    </option>
                                   </select>
 
                                   <!-- 值（字串有 options 時用下拉） -->
                                   <select
-                                    v-if="isStringMetric(cond.metricName) && getMetricOptions(cond.metricName).length > 0"
+                                    v-if="
+                                      isStringMetric(cond.metricName) &&
+                                      getMetricOptions(cond.metricName).length >
+                                        0
+                                    "
                                     :value="String(cond.value)"
                                     class="block-select val-select"
-                                    @change="cond.value = ($event.target as HTMLSelectElement).value; syncRulesToEntry(entry.id)"
+                                    @change="
+                                      cond.value = (
+                                        $event.target as HTMLSelectElement
+                                      ).value;
+                                      syncRulesToEntry(entry.id);
+                                    "
                                   >
-                                    <option v-for="opt in getMetricOptions(cond.metricName)" :key="opt" :value="opt">{{ opt }}</option>
+                                    <option
+                                      v-for="opt in getMetricOptions(
+                                        cond.metricName,
+                                      )"
+                                      :key="opt"
+                                      :value="opt"
+                                    >
+                                      {{ opt }}
+                                    </option>
                                   </select>
                                   <input
                                     v-else-if="isStringMetric(cond.metricName)"
                                     :value="String(cond.value)"
                                     class="block-input"
                                     placeholder="值"
-                                    @input="cond.value = ($event.target as HTMLInputElement).value; syncRulesToEntry(entry.id)"
+                                    @input="
+                                      cond.value = (
+                                        $event.target as HTMLInputElement
+                                      ).value;
+                                      syncRulesToEntry(entry.id);
+                                    "
                                   />
                                   <input
                                     v-else
                                     :value="cond.value"
                                     type="number"
                                     class="block-input number-input"
-                                    @input="cond.value = Number(($event.target as HTMLInputElement).value) || 0; syncRulesToEntry(entry.id)"
+                                    @input="
+                                      cond.value =
+                                        Number(
+                                          ($event.target as HTMLInputElement)
+                                            .value,
+                                        ) || 0;
+                                      syncRulesToEntry(entry.id);
+                                    "
                                   />
 
                                   <!-- 刪除條件（同組內 > 1 才顯示） -->
@@ -1045,21 +1170,31 @@ function removeCondition(
                                     v-if="group.length > 1"
                                     class="icon-btn-xs danger block-del"
                                     title="刪除此條件"
-                                    @click="removeCondition(entry.id, ri, gi, ci)"
-                                  >✕</button>
+                                    @click="
+                                      removeCondition(entry.id, ri, gi, ci)
+                                    "
+                                  >
+                                    ✕
+                                  </button>
                                 </div>
                               </template>
                             </div>
 
                             <!-- 新增 AND 條件按鈕 -->
-                            <button class="add-cond-btn" @click="addCondition(entry.id, ri, gi)">
+                            <button
+                              class="add-cond-btn"
+                              @click="addCondition(entry.id, ri, gi)"
+                            >
                               + 新增條件（且）
                             </button>
                           </div>
                         </template>
 
                         <!-- 新增 OR 條件組按鈕 -->
-                        <button class="add-group-btn" @click="addGroup(entry.id, ri)">
+                        <button
+                          class="add-group-btn"
+                          @click="addGroup(entry.id, ri)"
+                        >
                           + 新增「或者」條件組
                         </button>
                       </div>
@@ -1864,12 +1999,25 @@ function removeCondition(
     font-size: 12px;
     line-height: 1.5;
 
-    &.warn { color: #e6a23c; }
+    &.warn {
+      color: #e6a23c;
+    }
   }
 
-  .char-bar-label { color: var(--color-text-secondary, #999); white-space: nowrap; }
-  .char-bar-name { font-weight: 600; color: var(--color-primary, #7dd3a8); }
-  .char-bar-select { max-width: 160px; padding: 2px 6px; height: 28px; font-size: 13px; }
+  .char-bar-label {
+    color: var(--color-text-secondary, #999);
+    white-space: nowrap;
+  }
+  .char-bar-name {
+    font-weight: 600;
+    color: var(--color-primary, #7dd3a8);
+  }
+  .char-bar-select {
+    max-width: 160px;
+    padding: 2px 6px;
+    height: 28px;
+    font-size: 13px;
+  }
   .char-bar-metric-count {
     margin-left: auto;
     font-size: 11px;
@@ -1921,9 +2069,15 @@ function removeCondition(
   justify-content: center;
   transition: background 0.15s;
 
-  &:hover { background: var(--color-bg-hover, #ddd); }
-  &.danger { color: var(--color-error, #e74c3c); }
-  &.danger:hover { background: rgba(231, 76, 60, 0.1); }
+  &:hover {
+    background: var(--color-bg-hover, #ddd);
+  }
+  &.danger {
+    color: var(--color-error, #e74c3c);
+  }
+  &.danger:hover {
+    background: rgba(231, 76, 60, 0.1);
+  }
 }
 
 .icon-btn-xs {
@@ -1941,9 +2095,15 @@ function removeCondition(
   flex-shrink: 0;
   transition: all 0.15s;
 
-  &:hover { background: var(--color-bg-tertiary, #eee); }
-  &.danger { color: var(--color-error, #e74c3c); }
-  &.danger:hover { background: rgba(231, 76, 60, 0.1); }
+  &:hover {
+    background: var(--color-bg-tertiary, #eee);
+  }
+  &.danger {
+    color: var(--color-error, #e74c3c);
+  }
+  &.danger:hover {
+    background: rgba(231, 76, 60, 0.1);
+  }
 }
 
 /* 規則邏輯區（包含所有條件組） */
@@ -2071,11 +2231,22 @@ function removeCondition(
   cursor: pointer;
   outline: none;
 
-  &:focus { border-color: rgba(0, 0, 0, 0.3); }
+  &:focus {
+    border-color: rgba(0, 0, 0, 0.3);
+  }
 
-  &.metric-select { flex: 2; min-width: 90px; }
-  &.op-select { flex: 0 0 52px; text-align: center; }
-  &.val-select { flex: 1; min-width: 70px; }
+  &.metric-select {
+    flex: 2;
+    min-width: 90px;
+  }
+  &.op-select {
+    flex: 0 0 52px;
+    text-align: center;
+  }
+  &.val-select {
+    flex: 1;
+    min-width: 70px;
+  }
 }
 
 /* 積木內的輸入框 */
@@ -2090,8 +2261,12 @@ function removeCondition(
   min-width: 60px;
   outline: none;
 
-  &:focus { border-color: rgba(0, 0, 0, 0.3); }
-  &.number-input { max-width: 80px; }
+  &:focus {
+    border-color: rgba(0, 0, 0, 0.3);
+  }
+  &.number-input {
+    max-width: 80px;
+  }
 }
 
 .block-del {
@@ -2180,13 +2355,19 @@ function removeCondition(
   font-size: 13px;
   border: none;
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--color-primary, #7dd3a8), var(--color-secondary, #a8d3e8));
+  background: linear-gradient(
+    135deg,
+    var(--color-primary, #7dd3a8),
+    var(--color-secondary, #a8d3e8)
+  );
   color: #fff;
   cursor: pointer;
   font-weight: 500;
   white-space: nowrap;
   transition: opacity 0.15s;
 
-  &:hover { opacity: 0.9; }
+  &:hover {
+    opacity: 0.9;
+  }
 }
 </style>
