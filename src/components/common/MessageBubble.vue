@@ -1,23 +1,28 @@
 <script setup lang="ts">
 import { useAudioPlayer } from "@/composables/useAudioPlayer";
 import {
-    getAvatarFrameInlineStyle,
-    getAvatarFrameLayers,
-    getAvatarFrameSvg,
-    getLayerSrc,
-    getLayerTransform,
-    isAvatarFrameImage,
-    isAvatarFrameSvg,
+  getAvatarFrameInlineStyle,
+  getAvatarFrameLayers,
+  getAvatarFrameSvg,
+  getLayerSrc,
+  getLayerTransform,
+  isAvatarFrameImage,
+  isAvatarFrameSvg,
 } from "@/data/avatarFrames";
-import { getAudioBlob, getChatImage, isAudioBlobRef, isChatImageRef } from "@/db/operations";
+import {
+  getAudioBlob,
+  getChatImage,
+  isAudioBlobRef,
+  isChatImageRef,
+} from "@/db/operations";
 import { formatTime } from "@/services/AudioRecorder";
 import { getRegexedString, regex_placement } from "@/services/RegexEngine";
 import { useStickerStore } from "@/stores";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
+import type { WaimaiOrderSnapshot } from "@/types/chat";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { marked } from "marked";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import type { WaimaiOrderSnapshot } from "@/types/chat";
 import GroupCallHistoryModal from "../modals/GroupCallHistoryModal.vue";
 import GroupChatHistoryModal from "../modals/GroupChatHistoryModal.vue";
 import PhotoPreviewModal from "../modals/PhotoPreviewModal.vue";
@@ -440,7 +445,10 @@ function replaceDisplayMacros(text: string): string {
   if (!text) return text;
 
   const charName = (
-    props.senderCharacterName || props.senderName || props.characterName || ""
+    props.senderCharacterName ||
+    props.senderName ||
+    props.characterName ||
+    ""
   ).trim();
   const userName = (props.userName || "").trim();
 
@@ -472,25 +480,23 @@ const renderedContent = computed(() => {
     // 使用 CSS 隱藏而不是刪除，這樣數據仍然存在於 DOM 中
     html = html.replace(
       /\[time:[^\]]+\]/g,
-      (match) => `<span class="hidden-time-tag" style="display:none;">${match}</span>`
+      (match) =>
+        `<span class="hidden-time-tag" style="display:none;">${match}</span>`,
     );
 
     if (props.ttsSegments && props.ttsSegments.length > 0) {
       // 統一單次替換：所有 [emotion=...] 按出現順序對應 ttsSegments
       // 不論是引號內還是句末裸露，都一視同仁
       let segIdx = 0;
-      html = html.replace(
-        /\[emotion=[^\]]*\]/g,
-        () => {
-          const seg = props.ttsSegments?.[segIdx];
-          // 只要有分段就顯示按鈕（有無 audioUrl 都先渲染，點擊時再判斷）
-          const btnHtml = seg
-            ? `<span class="tts-inline-btn" data-tts-idx="${segIdx}" title="${seg.emotion || ''}"${seg.audioUrl ? '' : ' style="opacity:0.3;cursor:default"'}>🔊</span>`
-            : '';
-          segIdx++;
-          return btnHtml;
-        },
-      );
+      html = html.replace(/\[emotion=[^\]]*\]/g, () => {
+        const seg = props.ttsSegments?.[segIdx];
+        // 只要有分段就顯示按鈕（有無 audioUrl 都先渲染，點擊時再判斷）
+        const btnHtml = seg
+          ? `<span class="tts-inline-btn" data-tts-idx="${segIdx}" title="${seg.emotion || ""}"${seg.audioUrl ? "" : ' style="opacity:0.3;cursor:default"'}>🔊</span>`
+          : "";
+        segIdx++;
+        return btnHtml;
+      });
       // 清理其他殘留的 TTS 標記
       html = cleanTTSTags(html);
     } else {
@@ -508,18 +514,29 @@ const renderedContent = computed(() => {
         const rest = html.substring(afterOpen);
         const htmlEndIdx = rest.search(/<\/html>\s*\n*\s*```/i);
         if (htmlEndIdx >= 0) {
-          const closeMatch = rest.substring(htmlEndIdx).match(/<\/html>\s*\n*\s*(```)/i);
+          const closeMatch = rest
+            .substring(htmlEndIdx)
+            .match(/<\/html>\s*\n*\s*(```)/i);
           if (closeMatch) {
-            const contentEnd = htmlEndIdx + closeMatch.index! + closeMatch[0].length - 3;
-            const fenceContent = rest.substring(0, contentEnd).replace(/\n\s*$/, '');
-            htmlFenceMatch = [fenceContent, fenceContent] as unknown as RegExpMatchArray;
+            const contentEnd =
+              htmlEndIdx + closeMatch.index! + closeMatch[0].length - 3;
+            const fenceContent = rest
+              .substring(0, contentEnd)
+              .replace(/\n\s*$/, "");
+            htmlFenceMatch = [
+              fenceContent,
+              fenceContent,
+            ] as unknown as RegExpMatchArray;
           }
         }
         if (!htmlFenceMatch) {
-          const lastFenceIdx = rest.lastIndexOf('\n```');
+          const lastFenceIdx = rest.lastIndexOf("\n```");
           if (lastFenceIdx >= 0) {
             const fenceContent = rest.substring(0, lastFenceIdx);
-            htmlFenceMatch = [fenceContent, fenceContent] as unknown as RegExpMatchArray;
+            htmlFenceMatch = [
+              fenceContent,
+              fenceContent,
+            ] as unknown as RegExpMatchArray;
           }
         }
       }
@@ -543,6 +560,31 @@ new MutationObserver(function(){setTimeout(_reportHeight,50);}).observe(document
           regexHtmlDoc.value = injected;
           return "";
         }
+      }
+    }
+
+    // ★ 偵測裸露的 HTML 片段（含 <style> 標籤但沒有 fence 包裹的大型 HTML 區塊）
+    if (!props.isHtmlBlock && !regexHtmlDoc.value) {
+      if (
+        html.length > 200 &&
+        /<style[\s>]/i.test(html) &&
+        /<div[\s>]/i.test(html)
+      ) {
+        const fragment = html.trim();
+        const fullHtml =
+          /^\s*<!DOCTYPE\s/i.test(fragment) || /^\s*<html[\s>]/i.test(fragment)
+            ? fragment
+            : `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:0;background:transparent;}</style></head><body>${fragment}</body></html>`;
+        const heightScript = `<script>
+function _reportHeight(){var h=document.documentElement.scrollHeight||document.body.scrollHeight;window.parent.postMessage({type:'regex-iframe-height',height:h},'*');}
+window.addEventListener('load',function(){_reportHeight();setTimeout(_reportHeight,300);setTimeout(_reportHeight,1000);});
+new MutationObserver(function(){setTimeout(_reportHeight,50);}).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});
+<\/script>`;
+        const injected = fullHtml.includes("</body>")
+          ? fullHtml.replace("</body>", heightScript + "</body>")
+          : fullHtml + heightScript;
+        regexHtmlDoc.value = injected;
+        return "";
       }
     }
 
@@ -723,15 +765,22 @@ new MutationObserver(function(){setTimeout(_reportHeight,50);}).observe(document
         let fenceContentEnd = -1;
         const htmlCloseSearch = rest.search(/<\/html>\s*\n*\s*```/i);
         if (htmlCloseSearch >= 0) {
-          const closeMatch = rest.substring(htmlCloseSearch).match(/<\/html>(\s*\n*\s*)(```)/i);
+          const closeMatch = rest
+            .substring(htmlCloseSearch)
+            .match(/<\/html>(\s*\n*\s*)(```)/i);
           if (closeMatch) {
-            fenceContentEnd = htmlCloseSearch + closeMatch.index! + closeMatch[0].length - closeMatch[2].length;
-            fenceEndInRest = htmlCloseSearch + closeMatch.index! + closeMatch[0].length;
+            fenceContentEnd =
+              htmlCloseSearch +
+              closeMatch.index! +
+              closeMatch[0].length -
+              closeMatch[2].length;
+            fenceEndInRest =
+              htmlCloseSearch + closeMatch.index! + closeMatch[0].length;
           }
         }
-        // 退路：找不到 </html>，用最後一個獨立行 ``` 
+        // 退路：找不到 </html>，用最後一個獨立行 ```
         if (fenceEndInRest < 0) {
-          const lastFence = rest.lastIndexOf('\n```');
+          const lastFence = rest.lastIndexOf("\n```");
           if (lastFence >= 0) {
             fenceContentEnd = lastFence;
             fenceEndInRest = lastFence + 4; // \n```
@@ -741,11 +790,17 @@ new MutationObserver(function(){setTimeout(_reportHeight,50);}).observe(document
 
         const fenceContent = rest.substring(0, fenceContentEnd).trim();
         // 確認是 HTML 內容
-        if (/^\s*<!DOCTYPE\s/i.test(fenceContent) || /^\s*<html[\s>]/i.test(fenceContent) || /^\s*<[a-zA-Z]/.test(fenceContent)) {
+        if (
+          /^\s*<!DOCTYPE\s/i.test(fenceContent) ||
+          /^\s*<html[\s>]/i.test(fenceContent) ||
+          /^\s*<[a-zA-Z]/.test(fenceContent)
+        ) {
           htmlBlocks.push(fenceContent);
           // 從 textOnly 中移除這個 fence
           const fullFenceEnd = afterOpen + fenceEndInRest;
-          textOnly = textOnly.substring(0, openMatch.index!) + textOnly.substring(fullFenceEnd);
+          textOnly =
+            textOnly.substring(0, openMatch.index!) +
+            textOnly.substring(fullFenceEnd);
         } else {
           break; // fence 內容不是 HTML，停止
         }
@@ -755,7 +810,7 @@ new MutationObserver(function(){setTimeout(_reportHeight,50);}).observe(document
         const remainingText = textOnly.trim();
 
         // 為每個 HTML 區塊注入高度回報 script 並包成完整文件
-        const processedBlocks = htmlBlocks.map(block => {
+        const processedBlocks = htmlBlocks.map((block) => {
           let html = block;
           // 如果是 HTML 片段，包成完整文件
           if (!/^\s*<!DOCTYPE\s/i.test(html) && !/^\s*<html[\s>]/i.test(html)) {
@@ -942,11 +997,11 @@ const parsedTextParts = computed(() => {
 // 將需要代理的圖片 URL 轉換為代理 URL
 function getProxiedImageUrl(url: string): string {
   if (!url) return url;
-  
+
   // 暫時禁用代理，直接返回原始 URL 進行測試
-  console.log('表情包 URL:', url);
+  console.log("表情包 URL:", url);
   return url;
-  
+
   /* 代理邏輯暫時註釋
   // 如果是來自 aguacloudreve 的圖片，直接使用代理
   if (url.includes('aguacloudreve.aguacloud.uk')) {
@@ -976,7 +1031,7 @@ function onImageError(event: Event) {
     img.dataset.proxyAttempted = "true";
     // 使用自己的 Cloudflare Worker 代理
     const proxyUrl = `https://nai-proxy.aguacloud.uk/image-proxy?url=${encodeURIComponent(originalUrl)}`;
-    console.log('圖片載入失敗，嘗試使用代理:', originalUrl, '→', proxyUrl);
+    console.log("圖片載入失敗，嘗試使用代理:", originalUrl, "→", proxyUrl);
     img.src = proxyUrl;
 
     img.onerror = () => {
@@ -1156,7 +1211,8 @@ const waimaiSummaryText = computed(() => {
 
   if (props.isWaimaiPaymentResult) {
     if (props.waimaiOrder?.status === "paid") return "支付成功，商家正在備餐。";
-    if (props.waimaiOrder?.status === "rejected") return "對方已拒絕此次代付請求。";
+    if (props.waimaiOrder?.status === "rejected")
+      return "對方已拒絕此次代付請求。";
     if (props.waimaiOrder?.status === "failed") return "支付失敗，請稍後重試。";
   }
 
@@ -1181,8 +1237,8 @@ function formatWaimaiRouteType(order?: WaimaiOrderSnapshot): string {
     const toFlag = (code: string) => {
       const upper = code.trim().toUpperCase();
       if (upper.length !== 2) return "";
-      const a = upper.codePointAt(0)! - 65 + 0x1F1E6;
-      const b = upper.codePointAt(1)! - 65 + 0x1F1E6;
+      const a = upper.codePointAt(0)! - 65 + 0x1f1e6;
+      const b = upper.codePointAt(1)! - 65 + 0x1f1e6;
       return String.fromCodePoint(a) + String.fromCodePoint(b);
     };
     return `跨境空運 ${toFlag(eta.originCountry)}→${toFlag(eta.destinationCountry)}`;
@@ -1196,15 +1252,24 @@ function formatWaimaiEtaRange(order?: WaimaiOrderSnapshot): string {
   }
 
   const now = order.eta.computedAt;
-  const minMinutes = Math.max(1, Math.round((order.eta.etaWindowStartAt - now) / 60000));
-  const maxMinutes = Math.max(minMinutes, Math.round((order.eta.etaWindowEndAt - now) / 60000));
+  const minMinutes = Math.max(
+    1,
+    Math.round((order.eta.etaWindowStartAt - now) / 60000),
+  );
+  const maxMinutes = Math.max(
+    minMinutes,
+    Math.round((order.eta.etaWindowEndAt - now) / 60000),
+  );
 
   if (maxMinutes < 180) {
     return `預估送達：${minMinutes}-${maxMinutes} 分鐘`;
   }
 
   const minDays = Math.max(0.5, Math.round((minMinutes / 60 / 24) * 10) / 10);
-  const maxDays = Math.max(minDays, Math.round((maxMinutes / 60 / 24) * 10) / 10);
+  const maxDays = Math.max(
+    minDays,
+    Math.round((maxMinutes / 60 / 24) * 10) / 10,
+  );
   return `預估送達：${minDays}-${maxDays} 天`;
 }
 
@@ -1216,7 +1281,9 @@ const waimaiDestinationText = computed(() => {
 
 const waimaiEtaText = computed(() => formatWaimaiEtaRange(props.waimaiOrder));
 
-const waimaiRouteBadge = computed(() => formatWaimaiRouteType(props.waimaiOrder));
+const waimaiRouteBadge = computed(() =>
+  formatWaimaiRouteType(props.waimaiOrder),
+);
 
 /** 延遲原因文案（暴雨延遲 / 清關中 / 尖峰時段） */
 const waimaiDelayReason = computed(() => {
@@ -1226,7 +1293,8 @@ const waimaiDelayReason = computed(() => {
   if (eta.weatherLevel === "storm") reasons.push("⛈️ 暴雨延遲");
   else if (eta.weatherLevel === "rain") reasons.push("🌧️ 雨天延遲");
   if (props.waimaiOrder?.status === "customs") reasons.push("🛃 清關中");
-  if (eta.isPeakHour && eta.routeType === "local_instant") reasons.push("🕐 尖峰時段");
+  if (eta.isPeakHour && eta.routeType === "local_instant")
+    reasons.push("🕐 尖峰時段");
   return reasons.join("　");
 });
 
@@ -1237,10 +1305,11 @@ const isUser = computed(() => props.role === "user");
 const isSystem = computed(() => props.role === "system");
 
 // 是否是電話通話總結系統訊息
-const isPhoneCallSummary = computed(() =>
-  isSystem.value &&
-  typeof props.content === "string" &&
-  props.content.startsWith("📞 通話結束"),
+const isPhoneCallSummary = computed(
+  () =>
+    isSystem.value &&
+    typeof props.content === "string" &&
+    props.content.startsWith("📞 通話結束"),
 );
 
 const phoneCallSummaryMeta = computed(() => {
@@ -1473,10 +1542,10 @@ function onContextMenu(e: MouseEvent) {
 
 // 委派處理 bubble-text 內部的 TTS 行內按鈕點擊
 function onBubbleTextClick(e: MouseEvent) {
-  const target = (e.target as HTMLElement).closest('.tts-inline-btn');
+  const target = (e.target as HTMLElement).closest(".tts-inline-btn");
   if (!target) return;
   e.stopPropagation();
-  const idx = parseInt((target as HTMLElement).dataset.ttsIdx ?? '-1', 10);
+  const idx = parseInt((target as HTMLElement).dataset.ttsIdx ?? "-1", 10);
   if (idx >= 0) {
     playTTSSegment(e, idx);
   }
@@ -1518,9 +1587,9 @@ const resolvedImageUrl = computed(() => {
   // 如果已經懶載入完成，使用載入的 base64
   if (lazyImageUrl.value) return lazyImageUrl.value;
   // 如果是引用 ID 且正在載入中，返回空（顯示 loading 狀態）
-  if (props.imageUrl && isChatImageRef(props.imageUrl)) return '';
+  if (props.imageUrl && isChatImageRef(props.imageUrl)) return "";
   // 普通 URL 或 base64，直接使用
-  return props.imageUrl || '';
+  return props.imageUrl || "";
 });
 
 // 監聽 imageUrl prop 變化，觸發懶載入
@@ -1539,7 +1608,7 @@ watch(
         lazyImageUrl.value = base64;
       }
     } catch (e) {
-      console.warn('[MessageBubble] 載入圖片失敗:', e);
+      console.warn("[MessageBubble] 載入圖片失敗:", e);
     } finally {
       isLoadingImage.value = false;
     }
@@ -1631,21 +1700,20 @@ const ttsPlayingIndex = ref(-1);
 
 /** 文字語音訊息的渲染內容（清除 TTS 標記 + 注入行內播放按鈕） */
 const renderedVoiceTranscript = computed(() => {
-  const raw = replaceDisplayMacros(props.audioTranscript || props.content || '');
-  if (!raw) return '';
+  const raw = replaceDisplayMacros(
+    props.audioTranscript || props.content || "",
+  );
+  if (!raw) return "";
   if (props.ttsSegments && props.ttsSegments.length > 0) {
     let segIdx = 0;
-    let html = raw.replace(
-      /\[emotion=[^\]]*\]/g,
-      () => {
-        const seg = props.ttsSegments?.[segIdx];
-        const btnHtml = seg
-          ? `<span class="tts-inline-btn" data-tts-idx="${segIdx}" title="${seg.emotion || ''}"${seg.audioUrl ? '' : ' style="opacity:0.3;cursor:default"'}>🔊</span>`
-          : '';
-        segIdx++;
-        return btnHtml;
-      },
-    );
+    let html = raw.replace(/\[emotion=[^\]]*\]/g, () => {
+      const seg = props.ttsSegments?.[segIdx];
+      const btnHtml = seg
+        ? `<span class="tts-inline-btn" data-tts-idx="${segIdx}" title="${seg.emotion || ""}"${seg.audioUrl ? "" : ' style="opacity:0.3;cursor:default"'}>🔊</span>`
+        : "";
+      segIdx++;
+      return btnHtml;
+    });
     html = cleanTTSTags(html);
     return html;
   }
@@ -2024,21 +2092,41 @@ const showTextVoiceTranscript = ref(true);
         </div>
       </div>
       <!-- 角色封鎖用戶通知 -->
-      <div v-else-if="isCharBlockedNotification" class="char-blocked-notification">
+      <div
+        v-else-if="isCharBlockedNotification"
+        class="char-blocked-notification"
+      >
         <div class="char-blocked-notification-line"></div>
         <div class="char-blocked-notification-body">
-          <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14" style="flex-shrink:0;opacity:0.6">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9L16.9 18.31C15.55 19.37 13.85 20 12 20zm6.31-3.1L7.1 5.69C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z" />
+          <svg
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            width="14"
+            height="14"
+            style="flex-shrink: 0; opacity: 0.6"
+          >
+            <path
+              d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9L16.9 18.31C15.55 19.37 13.85 20 12 20zm6.31-3.1L7.1 5.69C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z"
+            />
           </svg>
           <span>對方已將你封鎖</span>
           <button
-            v-if="charBlockedReason && charBlockedReason !== '原因' && charBlockedReason.trim()"
+            v-if="
+              charBlockedReason &&
+              charBlockedReason !== '原因' &&
+              charBlockedReason.trim()
+            "
             class="char-blocked-why-btn"
             @click.stop="showBlockedReason = !showBlockedReason"
-          >為什麼！</button>
+          >
+            為什麼！
+          </button>
         </div>
         <!-- 原因小面板（點擊展開，不蓋住頁面） -->
-        <div v-if="showBlockedReason && charBlockedReason" class="char-blocked-reason-panel">
+        <div
+          v-if="showBlockedReason && charBlockedReason"
+          class="char-blocked-reason-panel"
+        >
           <span>{{ charBlockedReason }}</span>
         </div>
         <div class="char-blocked-notification-line"></div>
@@ -2085,7 +2173,11 @@ const showTextVoiceTranscript = ref(true);
     <!-- 一般訊息 -->
     <template v-else>
       <!-- AI 頭像（左側）- 群聊模式使用發送者頭像 -->
-      <div v-if="!isUser && showAvatar" class="avatar-container" @click="emit('avatarClick', id)">
+      <div
+        v-if="!isUser && showAvatar"
+        class="avatar-container"
+        @click="emit('avatarClick', id)"
+      >
         <!-- 群聊模式：使用發送者角色頭像（簡化，不套用頭像框） -->
         <template v-if="isGroupChat && senderCharacterAvatar">
           <img
@@ -2269,7 +2361,8 @@ const showTextVoiceTranscript = ref(true);
             streaming: isStreaming,
             'has-thought': !!effectiveThought,
             'thought-expanded': showThought,
-            'transparent-bubble': (isHtmlBlock && htmlBlockSrcdoc) || regexHtmlDoc
+            'transparent-bubble':
+              (isHtmlBlock && htmlBlockSrcdoc) || regexHtmlDoc,
           }"
           @click.stop="onBubbleClick"
         >
@@ -2363,7 +2456,12 @@ const showTextVoiceTranscript = ref(true);
                 </template>
               </div>
               <!-- 純文字訊息 -->
-              <div v-else class="bubble-text" v-html="renderedContent" @click="onBubbleTextClick"></div>
+              <div
+                v-else
+                class="bubble-text"
+                v-html="renderedContent"
+                @click="onBubbleTextClick"
+              ></div>
             </template>
             <div class="pixel-transfer-wrapper">
               <PixelTransferCard
@@ -2406,9 +2504,15 @@ const showTextVoiceTranscript = ref(true);
                   class="waimai-item-image"
                 />
                 <div class="waimai-item-meta">
-                  <div class="waimai-item-name">{{ waimaiOrder.item.name }}</div>
-                  <div class="waimai-item-store">{{ waimaiOrder.item.storeName }}</div>
-                  <div class="waimai-item-qty">x{{ waimaiOrder.item.quantity }}</div>
+                  <div class="waimai-item-name">
+                    {{ waimaiOrder.item.name }}
+                  </div>
+                  <div class="waimai-item-store">
+                    {{ waimaiOrder.item.storeName }}
+                  </div>
+                  <div class="waimai-item-qty">
+                    x{{ waimaiOrder.item.quantity }}
+                  </div>
                 </div>
               </div>
 
@@ -2418,19 +2522,29 @@ const showTextVoiceTranscript = ref(true);
                 <span>運費</span>
                 <span>{{ formatWaimaiPrice(waimaiOrder.shippingFee) }}</span>
                 <span class="total-label">總計</span>
-                <span class="total-value">{{ formatWaimaiPrice(waimaiOrder.totalPrice) }}</span>
+                <span class="total-value">{{
+                  formatWaimaiPrice(waimaiOrder.totalPrice)
+                }}</span>
               </div>
 
-              <div class="waimai-recipient">送達給：{{ waimaiOrder.recipientName }}</div>
+              <div class="waimai-recipient">
+                送達給：{{ waimaiOrder.recipientName }}
+              </div>
               <div v-if="waimaiDestinationText" class="waimai-destination">
                 收貨地：{{ waimaiDestinationText }}
               </div>
               <div v-if="waimaiOrder.eta" class="waimai-eta-row">
                 <span class="waimai-eta-text">{{ waimaiEtaText }}</span>
-                <span v-if="waimaiRouteBadge" class="waimai-route-badge">{{ waimaiRouteBadge }}</span>
+                <span v-if="waimaiRouteBadge" class="waimai-route-badge">{{
+                  waimaiRouteBadge
+                }}</span>
               </div>
-              <div v-if="waimaiDelayReason" class="waimai-delay-reason">{{ waimaiDelayReason }}</div>
-              <div v-if="waimaiSummaryText" class="waimai-card-foot">{{ waimaiSummaryText }}</div>
+              <div v-if="waimaiDelayReason" class="waimai-delay-reason">
+                {{ waimaiDelayReason }}
+              </div>
+              <div v-if="waimaiSummaryText" class="waimai-card-foot">
+                {{ waimaiSummaryText }}
+              </div>
             </div>
           </div>
 
@@ -2445,7 +2559,10 @@ const showTextVoiceTranscript = ref(true);
           >
             <div class="polaroid-photo-overlay"></div>
             <div class="polaroid-photo-image">
-              <div v-if="isLoadingImage && !resolvedImageUrl" class="image-loading-placeholder">
+              <div
+                v-if="isLoadingImage && !resolvedImageUrl"
+                class="image-loading-placeholder"
+              >
                 <span>載入中…</span>
               </div>
               <img
@@ -2682,7 +2799,12 @@ const showTextVoiceTranscript = ref(true);
                 frameborder="0"
                 scrolling="no"
               ></iframe>
-              <div v-else class="bubble-text" v-html="renderedContent" @click="onBubbleTextClick"></div>
+              <div
+                v-else
+                class="bubble-text"
+                v-html="renderedContent"
+                @click="onBubbleTextClick"
+              ></div>
             </template>
           </template>
 
@@ -2712,7 +2834,9 @@ const showTextVoiceTranscript = ref(true);
               fill="currentColor"
               class="tts-icon"
             >
-              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+              <path
+                d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"
+              />
             </svg>
             <svg
               v-else
@@ -2953,7 +3077,9 @@ const showTextVoiceTranscript = ref(true);
             </button>
             <button class="menu-item" @click="handleBatchScreenshot">
               <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+                <path
+                  d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
+                />
               </svg>
               <span>截圖</span>
             </button>
@@ -3129,13 +3255,15 @@ const showTextVoiceTranscript = ref(true);
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
-  &:hover { opacity: 0.75; }
+  &:hover {
+    opacity: 0.75;
+  }
 }
 
 .char-blocked-reason-panel {
   font-size: 12px;
   color: var(--color-text-secondary);
-  background: var(--color-surface-raised, rgba(0,0,0,0.04));
+  background: var(--color-surface-raised, rgba(0, 0, 0, 0.04));
   border-radius: 8px;
   padding: 6px 12px;
   max-width: 240px;
@@ -3495,7 +3623,9 @@ const showTextVoiceTranscript = ref(true);
 
   // 如果是純轉帳訊息（沒有文字內容），移除氣泡背景和內邊距
   // 注意：如果同時有文字內容（.bubble-text），保留氣泡背景
-  &:has(.transfer-message-wrapper):not(:has(.transfer-message-wrapper .bubble-text)) {
+  &:has(.transfer-message-wrapper):not(
+      :has(.transfer-message-wrapper .bubble-text)
+    ) {
     background: transparent !important;
     padding: 0;
     box-shadow: none;
@@ -4849,8 +4979,13 @@ const showTextVoiceTranscript = ref(true);
 }
 
 @keyframes tts-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 // TTS 逐句段落播放
@@ -4881,7 +5016,8 @@ const showTextVoiceTranscript = ref(true);
   padding: 0;
   transition: background 0.2s;
 
-  &:active, &.playing {
+  &:active,
+  &.playing {
     background: rgba(var(--primary-rgb, 100, 100, 255), 0.25);
   }
 }
@@ -5502,7 +5638,9 @@ const showTextVoiceTranscript = ref(true);
   vertical-align: middle;
   border-radius: 50%;
   padding: 1px 2px;
-  transition: opacity 0.15s, background 0.15s;
+  transition:
+    opacity 0.15s,
+    background 0.15s;
   user-select: none;
 
   &:hover {

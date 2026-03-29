@@ -88,21 +88,24 @@ export interface ParsedResponse {
  * 用於面對面模式等長文本場景，將特殊標籤從文字中拆分成獨立訊息
  */
 function hasInlineSpecialTags(content: string): boolean {
-  return /<(?:timetravel|voice|pay|refund|location|redpacket\s|waimai-pay\s|waimai-delivery)[\s\S]*?>/i.test(content);
+  return /<(?:timetravel|voice|pay|refund|location|redpacket\s|waimai-pay\s|waimai-delivery)[\s\S]*?>/i.test(
+    content,
+  );
 }
 
 /**
  * 通用拆分函數：將長文本中的所有特殊標籤拆分成獨立訊息
  * 支援：<timetravel>、<voice>、<pay>、<refund>、<location>、<redpacket>
- * 
+ *
  * 例如：「文字A <voice>語音內容</voice> 文字B <timetravel>跳轉</timetravel> 文字C」
  * 會拆分成：
- *   [{content: "文字A"}, {isVoice: true, voiceContent: "語音內容"}, 
+ *   [{content: "文字A"}, {isVoice: true, voiceContent: "語音內容"},
  *    {content: "文字B"}, {isTimetravel: true, timetravelContent: "跳轉"}, {content: "文字C"}]
  */
 function splitBySpecialTags(content: string): ParsedMessage[] {
   // 匹配所有需要拆分的特殊標籤（按出現順序）
-  const tagRegex = /<timetravel>([\s\S]*?)<\/timetravel>|<voice>([\s\S]*?)<\/voice>|<pay>([\d.]+)(?::([^<]*?))?<\/pay>|<refund>([\d.]+)<\/refund>|<location>([\s\S]*?)<\/location>|<redpacket\s+([^>]+)\/?>|<waimai-pay\s+([^>]*?)\s*\/?>|<waimai-delivery\s*\/?>/gi;
+  const tagRegex =
+    /<timetravel>([\s\S]*?)<\/timetravel>|<voice>([\s\S]*?)<\/voice>|<pay>([\d.]+)(?::([^<]*?))?<\/pay>|<refund>([\d.]+)<\/refund>|<location>([\s\S]*?)<\/location>|<redpacket\s+([^>]+)\/?>|<waimai-pay\s+([^>]*?)\s*\/?>|<waimai-delivery\s*\/?>/gi;
 
   interface TagMatch {
     index: number;
@@ -118,7 +121,11 @@ function splitBySpecialTags(content: string): ParsedMessage[] {
 
     if (match[1] !== undefined) {
       // <timetravel>
-      msg = { content: "", isTimetravel: true, timetravelContent: match[1].trim() };
+      msg = {
+        content: "",
+        isTimetravel: true,
+        timetravelContent: match[1].trim(),
+      };
     } else if (match[2] !== undefined) {
       // <voice>
       msg = { content: "", isVoice: true, voiceContent: match[2].trim() };
@@ -158,11 +165,18 @@ function splitBySpecialTags(content: string): ParsedMessage[] {
     } else if (match[8] !== undefined) {
       // <waimai-pay status="..."/>
       const attrs = match[8];
-      const status = extractAttr(attrs, "status") as "paid" | "rejected" | "failed" | undefined;
+      const status = extractAttr(attrs, "status") as
+        | "paid"
+        | "rejected"
+        | "failed"
+        | undefined;
       msg = {
         content: "",
         isWaimaiPaymentResult: true,
-        waimaiPaymentStatus: status && ["paid", "rejected", "failed"].includes(status) ? status : "paid",
+        waimaiPaymentStatus:
+          status && ["paid", "rejected", "failed"].includes(status)
+            ? status
+            : "paid",
       };
     } else if (match[0] && /<waimai-delivery/i.test(match[0])) {
       // <waimai-delivery/>
@@ -294,7 +308,12 @@ function parseTextOnlyContent(content: string): ParsedMessage {
   if (avatarChangeMatch) {
     const attrs = avatarChangeMatch[1];
     const action = extractAttr(attrs, "action") as
-      | "accept" | "reject" | "forced" | "mood" | "restore" | undefined;
+      | "accept"
+      | "reject"
+      | "forced"
+      | "mood"
+      | "restore"
+      | undefined;
     if (action) {
       result.isAvatarChange = true;
       result.avatarChangeAction = action;
@@ -523,12 +542,14 @@ function parseMessageContentWithoutTimetravel(content: string): ParsedMessage {
   }
 
   // 檢查外賣付款結果 <waimai-pay status="paid|rejected|failed"/>
-  const waimaiPayMatch = result.content.match(
-    /<waimai-pay\s+([^>]*?)\s*\/?>/i,
-  );
+  const waimaiPayMatch = result.content.match(/<waimai-pay\s+([^>]*?)\s*\/?>/i);
   if (waimaiPayMatch) {
     const attrs = waimaiPayMatch[1];
-    const status = extractAttr(attrs, "status") as "paid" | "rejected" | "failed" | undefined;
+    const status = extractAttr(attrs, "status") as
+      | "paid"
+      | "rejected"
+      | "failed"
+      | undefined;
     if (status && ["paid", "rejected", "failed"].includes(status)) {
       result.isWaimaiPaymentResult = true;
       result.waimaiPaymentStatus = status;
@@ -539,9 +560,7 @@ function parseMessageContentWithoutTimetravel(content: string): ParsedMessage {
   }
 
   // 檢查外賣送達 <waimai-delivery/>
-  const waimaiDeliveryMatch = result.content.match(
-    /<waimai-delivery\s*\/?>/i,
-  );
+  const waimaiDeliveryMatch = result.content.match(/<waimai-delivery\s*\/?>/i);
   if (waimaiDeliveryMatch) {
     result.isWaimaiDelivery = true;
     result.content = result.content
@@ -598,6 +617,28 @@ function splitHtmlBlocks(content: string): ParsedMessage[] | null {
         end: m.index + m[0].length,
         html: m[1].trim(),
       });
+    }
+  }
+
+  // 如果仍然沒有匹配，嘗試偵測裸露的 HTML 片段（含 <style> 標籤的大型 HTML 區塊）
+  // 這處理 AI 直接輸出 <style>...<div>... 而沒有 fence 或 <html> 包裹的情況
+  if (matches.length === 0) {
+    const bareFragmentRegex =
+      /(<style[\s\S]*?<\/style>\s*[\s\S]*?(?:<\/div>\s*)*$)/gi;
+    while ((m = bareFragmentRegex.exec(content)) !== null) {
+      const fragment = m[1].trim();
+      // 至少要有 <style> 和一些 HTML 結構，且長度足夠（避免誤判簡短內容）
+      if (
+        fragment.length > 200 &&
+        /<style[\s>]/i.test(fragment) &&
+        /<div[\s>]/i.test(fragment)
+      ) {
+        matches.push({
+          start: m.index,
+          end: m.index + m[0].length,
+          html: fragment,
+        });
+      }
     }
   }
 
@@ -856,29 +897,29 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
   }
 
   // 10. 解析 char-action 標籤（封鎖、道歉外賣等）
-  const allCharActions: ParsedCharAction[] = []
+  const allCharActions: ParsedCharAction[] = [];
 
   // 10a. 解析 friend-response YAML 區塊（需先處理，因為它包含多行）
-  const friendResult = parseFriendResponseBlock(rawResponse)
+  const friendResult = parseFriendResponseBlock(rawResponse);
   if (friendResult.response) {
-    allCharActions.push(friendResult.response)
+    allCharActions.push(friendResult.response);
   }
 
   // 10b. 解析行內 char-action 標籤
-  const tagResult = parseCharActionTags(rawResponse)
+  const tagResult = parseCharActionTags(rawResponse);
   if (tagResult.actions.length > 0) {
-    allCharActions.push(...tagResult.actions)
+    allCharActions.push(...tagResult.actions);
   }
 
   if (allCharActions.length > 0) {
-    result.charActions = allCharActions
+    result.charActions = allCharActions;
 
     // 從所有訊息的 content 中移除 char-action 標籤
     for (const msg of result.messages) {
       if (msg.content) {
-        const cleaned1 = parseFriendResponseBlock(msg.content)
-        const cleaned2 = parseCharActionTags(cleaned1.cleanContent)
-        msg.content = cleaned2.cleanContent
+        const cleaned1 = parseFriendResponseBlock(msg.content);
+        const cleaned2 = parseCharActionTags(cleaned1.cleanContent);
+        msg.content = cleaned2.cleanContent;
       }
     }
   }
@@ -905,12 +946,12 @@ function isNonEmptyMessage(msg: ParsedMessage): boolean {
     msg.isWaimaiPaymentResult ||
     msg.isWaimaiDelivery
   );
-  
+
   // 調試日誌：記錄空消息過濾
   if (!hasContent) {
-    console.log('[ResponseParser] Filtering out empty message:', msg);
+    console.log("[ResponseParser] Filtering out empty message:", msg);
   }
-  
+
   return hasContent;
 }
 
@@ -1136,7 +1177,11 @@ function parseMessageContent(content: string): ParsedMessage {
   );
   if (waimaiPayMatch2) {
     const attrs = waimaiPayMatch2[1];
-    const status = extractAttr(attrs, "status") as "paid" | "rejected" | "failed" | undefined;
+    const status = extractAttr(attrs, "status") as
+      | "paid"
+      | "rejected"
+      | "failed"
+      | undefined;
     if (status && ["paid", "rejected", "failed"].includes(status)) {
       result.isWaimaiPaymentResult = true;
       result.waimaiPaymentStatus = status;
@@ -1147,9 +1192,7 @@ function parseMessageContent(content: string): ParsedMessage {
   }
 
   // 檢查外賣送達 <waimai-delivery/>
-  const waimaiDeliveryMatch2 = result.content.match(
-    /<waimai-delivery\s*\/?>/i,
-  );
+  const waimaiDeliveryMatch2 = result.content.match(/<waimai-delivery\s*\/?>/i);
   if (waimaiDeliveryMatch2) {
     result.isWaimaiDelivery = true;
     result.content = result.content
@@ -1320,11 +1363,23 @@ function _pushSetResult(
 ): void {
   const strMatch = rawVal.match(/^['"](.*)['"]$/);
   if (strMatch) {
-    results.push({ metric: path, change: 0, reason: "MVU _.set", stringValue: strMatch[1], isAbsolute: true });
+    results.push({
+      metric: path,
+      change: 0,
+      reason: "MVU _.set",
+      stringValue: strMatch[1],
+      isAbsolute: true,
+    });
   } else {
     const numVal = parseFloat(rawVal);
     if (!isNaN(numVal)) {
-      results.push({ metric: path, change: 0, reason: "MVU _.set", isAbsolute: true, absoluteValue: numVal });
+      results.push({
+        metric: path,
+        change: 0,
+        reason: "MVU _.set",
+        isAbsolute: true,
+        absoluteValue: numVal,
+      });
     }
   }
 }
@@ -1384,7 +1439,7 @@ export function parseAffinityUpdateTags(
     while ((setMatch = setRegex3.exec(block)) !== null) {
       parsedPaths.add(setMatch.index);
       const path = setMatch[1].trim();
-      const rawVal = setMatch[2].trim();   // 第三個參數 = 新值
+      const rawVal = setMatch[2].trim(); // 第三個參數 = 新值
       _pushSetResult(results, path, rawVal);
     }
 
@@ -1392,7 +1447,7 @@ export function parseAffinityUpdateTags(
     while ((setMatch = setRegex2.exec(block)) !== null) {
       if (parsedPaths.has(setMatch.index)) continue;
       const path = setMatch[1].trim();
-      const rawVal = setMatch[2].trim();   // 第二個參數 = 新值
+      const rawVal = setMatch[2].trim(); // 第二個參數 = 新值
       _pushSetResult(results, path, rawVal);
     }
   }
@@ -1498,22 +1553,26 @@ export function cleanResponse(rawResponse: string): string {
 // ===== CharAction 標籤解析 =====
 
 export interface ParsedCharAction {
-  action: 'block-user' | 'unblock-user' | 'apology-food' | 'friend-response'
-  reason?: string
-  message?: string
-  item?: string
+  action: "block-user" | "unblock-user" | "apology-food" | "friend-response";
+  reason?: string;
+  message?: string;
+  item?: string;
   /** 好友申請回應：是否接受 */
-  accept?: boolean
+  accept?: boolean;
   /** 好友申請回應：回覆文字 */
-  reply?: string
+  reply?: string;
   /** 拒絕原因（角色拒絕時 AI 生成） */
-  rejectReason?: string
+  rejectReason?: string;
   /** 隱藏小心聲（提示用戶怎麼做角色會高興一點） */
-  hint?: string
+  hint?: string;
 }
 
 /** 支援的 char-action 動作類型 */
-const VALID_CHAR_ACTIONS = new Set(['block-user', 'unblock-user', 'apology-food'])
+const VALID_CHAR_ACTIONS = new Set([
+  "block-user",
+  "unblock-user",
+  "apology-food",
+]);
 
 /**
  * 從 AI 回應中解析 char-action 標籤
@@ -1524,63 +1583,66 @@ const VALID_CHAR_ACTIONS = new Set(['block-user', 'unblock-user', 'apology-food'
  *
  * 無效標籤靜默忽略並記錄 console.warn
  */
-export function parseCharActionTags(content: string): { actions: ParsedCharAction[], cleanContent: string } {
-  const actions: ParsedCharAction[] = []
+export function parseCharActionTags(content: string): {
+  actions: ParsedCharAction[];
+  cleanContent: string;
+} {
+  const actions: ParsedCharAction[] = [];
   // 匹配 [char-action:ACTION] 或 [char-action:ACTION|param:value|...]
-  const tagRegex = /\[char-action:([^\]|]+?)(?:\|([^\]]*))?\]/g
-  let cleanContent = content
+  const tagRegex = /\[char-action:([^\]|]+?)(?:\|([^\]]*))?\]/g;
+  let cleanContent = content;
 
-  let match: RegExpExecArray | null
+  let match: RegExpExecArray | null;
   while ((match = tagRegex.exec(content)) !== null) {
-    const actionType = match[1].trim()
-    const paramsStr = match[2] || ''
+    const actionType = match[1].trim();
+    const paramsStr = match[2] || "";
 
     // 驗證動作類型
     if (!VALID_CHAR_ACTIONS.has(actionType)) {
-      console.warn(`[ResponseParser] 無效的 char-action 類型: ${actionType}`)
-      continue
+      console.warn(`[ResponseParser] 無效的 char-action 類型: ${actionType}`);
+      continue;
     }
 
     const action: ParsedCharAction = {
-      action: actionType as ParsedCharAction['action'],
-    }
+      action: actionType as ParsedCharAction["action"],
+    };
 
     // 解析鍵值參數
     if (paramsStr) {
-      const params = paramsStr.split('|')
+      const params = paramsStr.split("|");
       for (const param of params) {
-        const colonIdx = param.indexOf(':')
-        if (colonIdx === -1) continue
-        const key = param.substring(0, colonIdx).trim()
-        const value = param.substring(colonIdx + 1).trim()
-        if (!key || !value) continue
+        const colonIdx = param.indexOf(":");
+        if (colonIdx === -1) continue;
+        const key = param.substring(0, colonIdx).trim();
+        const value = param.substring(colonIdx + 1).trim();
+        if (!key || !value) continue;
 
         switch (key) {
-          case 'reason':
-            action.reason = value
-            break
-          case 'message':
-            action.message = value
-            break
-          case 'item':
-            action.item = value
-            break
+          case "reason":
+            action.reason = value;
+            break;
+          case "message":
+            action.message = value;
+            break;
+          case "item":
+            action.item = value;
+            break;
           default:
             // 未知參數靜默忽略
-            break
+            break;
         }
       }
     }
 
-    actions.push(action)
+    actions.push(action);
     // 從顯示內容中移除已解析的標籤
-    cleanContent = cleanContent.replace(match[0], '')
+    cleanContent = cleanContent.replace(match[0], "");
   }
 
   // 清理移除標籤後可能產生的多餘空白行
-  cleanContent = cleanContent.replace(/\n{3,}/g, '\n\n').trim()
+  cleanContent = cleanContent.replace(/\n{3,}/g, "\n\n").trim();
 
-  return { actions, cleanContent }
+  return { actions, cleanContent };
 }
 
 /**
@@ -1595,63 +1657,69 @@ export function parseCharActionTags(content: string): { actions: ParsedCharActio
  *
  * 無效區塊回傳 null 並記錄 console.warn
  */
-export function parseFriendResponseBlock(content: string): { response: ParsedCharAction | null, cleanContent: string } {
-  const blockRegex = /\[char-action:friend-response\]\s*\n([\s\S]*?)\[\/char-action:friend-response\]/g
-  let cleanContent = content
-  let response: ParsedCharAction | null = null
+export function parseFriendResponseBlock(content: string): {
+  response: ParsedCharAction | null;
+  cleanContent: string;
+} {
+  const blockRegex =
+    /\[char-action:friend-response\]\s*\n([\s\S]*?)\[\/char-action:friend-response\]/g;
+  let cleanContent = content;
+  let response: ParsedCharAction | null = null;
 
-  const match = blockRegex.exec(content)
+  const match = blockRegex.exec(content);
   if (!match) {
-    return { response: null, cleanContent }
+    return { response: null, cleanContent };
   }
 
-  const yamlContent = match[1]
+  const yamlContent = match[1];
 
   try {
     // 逐行解析簡單 key: value 格式
-    const fields: Record<string, string> = {}
-    const lines = yamlContent.split('\n')
+    const fields: Record<string, string> = {};
+    const lines = yamlContent.split("\n");
     for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      const colonIdx = trimmed.indexOf(':')
-      if (colonIdx === -1) continue
-      const key = trimmed.substring(0, colonIdx).trim()
-      const value = trimmed.substring(colonIdx + 1).trim()
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const colonIdx = trimmed.indexOf(":");
+      if (colonIdx === -1) continue;
+      const key = trimmed.substring(0, colonIdx).trim();
+      const value = trimmed.substring(colonIdx + 1).trim();
       if (key && value) {
-        fields[key] = value
+        fields[key] = value;
       }
     }
 
     // accept 為必要欄位
     if (!fields.accept) {
-      console.warn('[ResponseParser] friend-response 區塊缺少 accept 欄位')
-      return { response: null, cleanContent }
+      console.warn("[ResponseParser] friend-response 區塊缺少 accept 欄位");
+      return { response: null, cleanContent };
     }
 
-    const acceptValue = fields.accept.toLowerCase()
-    if (acceptValue !== 'y' && acceptValue !== 'n') {
-      console.warn(`[ResponseParser] friend-response accept 值無效: ${fields.accept}`)
-      return { response: null, cleanContent }
+    const acceptValue = fields.accept.toLowerCase();
+    if (acceptValue !== "y" && acceptValue !== "n") {
+      console.warn(
+        `[ResponseParser] friend-response accept 值無效: ${fields.accept}`,
+      );
+      return { response: null, cleanContent };
     }
 
     response = {
-      action: 'friend-response',
-      accept: acceptValue === 'y',
+      action: "friend-response",
+      accept: acceptValue === "y",
       reply: fields.reply,
       rejectReason: fields.reason,
       hint: fields.hint,
-    }
+    };
   } catch (e) {
-    console.warn('[ResponseParser] 解析 friend-response 區塊失敗:', e)
-    return { response: null, cleanContent }
+    console.warn("[ResponseParser] 解析 friend-response 區塊失敗:", e);
+    return { response: null, cleanContent };
   }
 
   // 從顯示內容中移除整個區塊
-  cleanContent = cleanContent.replace(match[0], '')
-  cleanContent = cleanContent.replace(/\n{3,}/g, '\n\n').trim()
+  cleanContent = cleanContent.replace(match[0], "");
+  cleanContent = cleanContent.replace(/\n{3,}/g, "\n\n").trim();
 
-  return { response, cleanContent }
+  return { response, cleanContent };
 }
 
 // ===== 群聊解析 =====
