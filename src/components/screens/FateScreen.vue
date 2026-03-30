@@ -714,11 +714,41 @@ onUnmounted(() => {
                 stroke-linejoin="round"
               >
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none" />
-                <circle cx="15.5" cy="8.5" r="1.5" fill="currentColor" stroke="none" />
-                <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
-                <circle cx="8.5" cy="15.5" r="1.5" fill="currentColor" stroke="none" />
-                <circle cx="15.5" cy="15.5" r="1.5" fill="currentColor" stroke="none" />
+                <circle
+                  cx="8.5"
+                  cy="8.5"
+                  r="1.5"
+                  fill="currentColor"
+                  stroke="none"
+                />
+                <circle
+                  cx="15.5"
+                  cy="8.5"
+                  r="1.5"
+                  fill="currentColor"
+                  stroke="none"
+                />
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="1.5"
+                  fill="currentColor"
+                  stroke="none"
+                />
+                <circle
+                  cx="8.5"
+                  cy="15.5"
+                  r="1.5"
+                  fill="currentColor"
+                  stroke="none"
+                />
+                <circle
+                  cx="15.5"
+                  cy="15.5"
+                  r="1.5"
+                  fill="currentColor"
+                  stroke="none"
+                />
               </svg>
             </div>
             <div class="fate-orbit-node__label">占星骰子</div>
@@ -949,6 +979,7 @@ onUnmounted(() => {
         <p class="fate-pick-hint">← 滑動瀏覽牌堆，點擊抽牌 →</p>
         <div
           class="fate-fan"
+          data-no-swipe-back
           @mousedown="onFanPointerDown"
           @touchstart.passive="onFanPointerDown"
         >

@@ -6,26 +6,26 @@
 
 import MediaLogManager from "@/components/modals/MediaLogManager.vue";
 import {
-    DEFAULT_PROMPT_DEFINITIONS,
-    DIARY_PROMPT_DEFINITIONS,
-    FACE_TO_FACE_PROMPT_DEFINITIONS,
-    GROUP_CHAT_PROMPT_DEFINITIONS,
-    IMPORTANT_EVENTS_PROMPT_DEFINITIONS,
-    PLURK_COMMENT_PROMPT_DEFINITIONS,
-    PLURK_POST_PROMPT_DEFINITIONS,
-    SUMMARY_PROMPT_DEFINITIONS,
+  DEFAULT_PROMPT_DEFINITIONS,
+  DIARY_PROMPT_DEFINITIONS,
+  FACE_TO_FACE_PROMPT_DEFINITIONS,
+  GROUP_CHAT_PROMPT_DEFINITIONS,
+  IMPORTANT_EVENTS_PROMPT_DEFINITIONS,
+  PLURK_COMMENT_PROMPT_DEFINITIONS,
+  PLURK_POST_PROMPT_DEFINITIONS,
+  SUMMARY_PROMPT_DEFINITIONS,
 } from "@/data/defaultPrompts";
 import {
-    useAdminStore,
-    useCharactersStore,
-    usePromptLibraryStore,
-    usePromptManagerStore,
+  useAdminStore,
+  useCharactersStore,
+  usePromptLibraryStore,
+  usePromptManagerStore,
 } from "@/stores";
 import type { PromptDefinition, PromptOrderEntry } from "@/types/promptManager";
 import {
-    isPromptDeletable,
-    isPromptEditable,
-    isPromptToggleable,
+  isPromptDeletable,
+  isPromptEditable,
+  isPromptToggleable,
 } from "@/types/promptManager";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
@@ -1585,7 +1585,7 @@ watch(selectedCharacterId, (charId) => {
     </div>
 
     <!-- 提示詞列表 -->
-    <main class="pm-content">
+    <main class="pm-content" data-no-swipe-back>
       <div ref="promptListRef" class="prompt-list">
         <div
           v-for="(entry, filteredIndex) in filteredCurrentOrder"

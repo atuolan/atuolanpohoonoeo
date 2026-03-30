@@ -1400,6 +1400,9 @@ const {
   triggerAIResponse,
 });
 
+// ===== 假時間 composable =====
+const fakeTime = useChatFakeTime();
+
 // ===== 遊戲成績 + 話題引導 + 位置分享 + 天氣分享 composable =====
 const {
   showGameScorePicker,
@@ -1432,6 +1435,7 @@ const {
   weatherEditTarget,
   startWeatherEdit,
   cancelWeatherEdit,
+  getVirtualLocalTime,
 } = useChatMiniFeatures({
   messages,
   scrollToBottom,
@@ -1439,6 +1443,9 @@ const {
   saveChatImmediate,
   triggerAIResponse,
   currentCharacter,
+  getFakeTime: () => fakeTime.getChatNow(),
+  getRealTimeAwareness: () =>
+    currentChatData.value?.settings?.enableRealTimeAwareness ?? true,
 });
 
 // ===== 換頭像 composable =====
@@ -1750,9 +1757,6 @@ async function _loadAffinityForChat(chatId: string, characterId: string) {
     console.error("[ChatScreen] 載入好感度失敗:", e);
   }
 }
-
-// ===== 假時間 composable =====
-const fakeTime = useChatFakeTime();
 
 const chatMinimaxTTSOverride = ref<{
   voiceId?: string;
@@ -2434,6 +2438,10 @@ const lastAIMessage = computed(() => {
   }
   return null;
 });
+
+// 逐條顯示訊息的延遲輔助（模擬真實聊天節奏）
+const _delay = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 // 滾動到底部
 function scrollToBottom() {
@@ -4774,8 +4782,24 @@ async function triggerAIResponse(options?: {
               messages.value.splice(msgIndex, 1);
             }
 
-            // 為每個解析後的訊息創建獨立的聊天訊息
+            // 為每個解析後的訊息創建獨立的聊天訊息（逐條顯示：首條延遲 500ms，後續每條間隔 300ms）
             let _firstNewAiMsgId: string | undefined;
+            const _totalMsgs1 = parsed.messages.filter(
+              (pm) =>
+                pm.content ||
+                pm.isTimetravel ||
+                pm.isRedpacket ||
+                pm.isLocation ||
+                pm.isTransfer ||
+                pm.isGift ||
+                pm.isAvatarChange ||
+                pm.isAiImage ||
+                pm.isHtmlBlock ||
+                pm.isVoice ||
+                pm.isWaimaiPaymentResult ||
+                pm.isWaimaiDelivery,
+            ).length;
+            let _shownMsgs1 = 0;
             for (let i = 0; i < parsed.messages.length; i++) {
               const parsedMsg = parsed.messages[i];
 
@@ -4886,7 +4910,13 @@ async function triggerAIResponse(options?: {
                 }
               }
 
+              // 逐條顯示延遲：多條訊息時，首條等 500ms，後續每條間隔 300ms
+              if (_totalMsgs1 > 1) {
+                await _delay(2000);
+              }
+              _shownMsgs1++;
               messages.value.push(newMessage);
+              scrollToBottom();
 
               // 記錄第一條新 AI 訊息的 ID，用於好感度快照綁定
               if (!_firstNewAiMsgId && newMessage.role === "ai") {
@@ -5545,6 +5575,22 @@ async function triggerAIResponse(options?: {
               }
 
               let _firstNewAiMsgId2: string | undefined;
+              const _totalMsgs2 = parsed.messages.filter(
+                (pm) =>
+                  pm.content ||
+                  pm.isTimetravel ||
+                  pm.isRedpacket ||
+                  pm.isLocation ||
+                  pm.isTransfer ||
+                  pm.isGift ||
+                  pm.isAvatarChange ||
+                  pm.isAiImage ||
+                  pm.isHtmlBlock ||
+                  pm.isVoice ||
+                  pm.isWaimaiPaymentResult ||
+                  pm.isWaimaiDelivery,
+              ).length;
+              let _shownMsgs2 = 0;
               for (let i = 0; i < parsed.messages.length; i++) {
                 const parsedMsg = parsed.messages[i];
 
@@ -5649,7 +5695,13 @@ async function triggerAIResponse(options?: {
                   }
                 }
 
+                // 逐條顯示延遲：多條訊息時，首條等 500ms，後續每條間隔 300ms
+                if (_totalMsgs2 > 1) {
+                  await _delay(2000);
+                }
+                _shownMsgs2++;
                 messages.value.push(newMessage);
+                scrollToBottom();
 
                 // 記錄第一條新 AI 訊息的 ID，用於好感度快照綁定
                 if (!_firstNewAiMsgId2 && newMessage.role === "ai") {
@@ -6231,8 +6283,10 @@ async function handleStreamingClose() {
           // 移除原始的佔位訊息
           messages.value.pop();
 
-          // 為每個解析後的訊息創建獨立的聊天訊息
+          // 為每個解析後的訊息創建獨立的聊天訊息（逐條顯示：首條延遲 500ms，後續每條間隔 300ms）
           let _firstNewAiMsgId3: string | undefined;
+          const _totalMsgs3 = parsed.messages.length;
+          let _shownMsgs3 = 0;
           for (let i = 0; i < parsed.messages.length; i++) {
             const parsedMsg = parsed.messages[i];
             const newMessage: Message = {
@@ -6317,7 +6371,13 @@ async function handleStreamingClose() {
               }
             }
 
+            // 逐條顯示延遲：多條訊息時，首條等 500ms，後續每條間隔 300ms
+            if (_totalMsgs3 > 1) {
+              await _delay(2000);
+            }
+            _shownMsgs3++;
             messages.value.push(newMessage);
+            scrollToBottom();
 
             // 記錄第一條新 AI 訊息的 ID，用於好感度快照綁定
             if (!_firstNewAiMsgId3 && newMessage.role === "ai") {
@@ -11503,6 +11563,15 @@ onUnmounted(() => {
                       ✕
                     </button>
                   </div>
+                  <div
+                    v-if="getVirtualLocalTime(customWeatherData)"
+                    class="wm-card__time"
+                  >
+                    {{
+                      getVirtualLocalTime(customWeatherData).split(" ")[1] ||
+                      getVirtualLocalTime(customWeatherData)
+                    }}
+                  </div>
                   <div class="wm-card__temp">
                     {{ Math.round(customWeatherData.current.temp_c) }}°
                   </div>
@@ -11518,6 +11587,16 @@ onUnmounted(() => {
                 <template v-else-if="weatherStore.hasWeatherData">
                   <div class="wm-card__location">
                     {{ weatherStore.locationName }}
+                  </div>
+                  <div
+                    v-if="getVirtualLocalTime(weatherStore.weatherData)"
+                    class="wm-card__time"
+                  >
+                    {{
+                      getVirtualLocalTime(weatherStore.weatherData)?.split(
+                        " ",
+                      )[1] || getVirtualLocalTime(weatherStore.weatherData)
+                    }}
                   </div>
                   <div class="wm-card__temp">
                     {{ Math.round(weatherStore.currentTemp || 0) }}°
@@ -11571,6 +11650,15 @@ onUnmounted(() => {
                 <template v-else-if="charWeatherData">
                   <div class="wm-card__location">
                     {{ charWeatherData.location.name }}
+                  </div>
+                  <div
+                    v-if="getVirtualLocalTime(charWeatherData)"
+                    class="wm-card__time"
+                  >
+                    {{
+                      getVirtualLocalTime(charWeatherData).split(" ")[1] ||
+                      getVirtualLocalTime(charWeatherData)
+                    }}
                   </div>
                   <div class="wm-card__temp">
                     {{ Math.round(charWeatherData.current.temp_c) }}°
@@ -15588,180 +15676,234 @@ onUnmounted(() => {
 
 // ===== 天氣與位置面板樣式 =====
 .wm-panel {
-  background: var(--color-surface, #fff);
-  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 32px;
   padding: 0;
-  width: 92%;
+  width: 90%;
   max-width: 380px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.25);
+  box-shadow:
+    0 32px 64px rgba(0, 0, 0, 0.15),
+    0 0 0 1px rgba(255, 255, 255, 0.3) inset;
   overflow: hidden;
+  animation: wm-pop 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes wm-pop {
+  0% {
+    transform: scale(0.95) translateY(10px);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
 }
 
 .wm-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px 12px;
+  padding: 20px 24px 12px;
   .wm-title {
-    font-size: 16px;
-    font-weight: 700;
+    font-size: 18px;
+    font-weight: 800;
     color: var(--color-text, #1a1a1a);
+    letter-spacing: -0.02em;
   }
   .wm-close {
-    background: none;
+    background: rgba(0, 0, 0, 0.05);
     border: none;
-    font-size: 18px;
-    color: var(--color-text-secondary, #999);
+    font-size: 14px;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-secondary, #666);
     cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 8px;
+    border-radius: 50%;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     &:hover {
-      background: var(--color-hover, rgba(0, 0, 0, 0.05));
+      background: rgba(0, 0, 0, 0.1);
+      transform: rotate(90deg);
     }
   }
 }
 
 .wm-cards {
   display: flex;
+  flex-direction: row;
   gap: 12px;
-  padding: 0 16px 16px;
+  padding: 12px 24px 20px;
 }
 
 .wm-card {
   flex: 1;
   min-width: 0;
-  border-radius: 18px;
-  padding: 14px 12px 12px;
-  text-align: center;
+  border-radius: 24px;
+  padding: 18px 20px;
+  text-align: left;
   position: relative;
-  transition:
-    box-shadow 0.25s,
-    transform 0.2s;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.4);
 
   &--user {
-    background: linear-gradient(145deg, #dbeafe, #bfdbfe);
-    color: #1e3a5f;
+    background: linear-gradient(
+      135deg,
+      rgba(219, 234, 254, 0.8),
+      rgba(191, 219, 254, 0.8)
+    );
+    color: #1e3a8a;
   }
   &--char {
-    background: linear-gradient(145deg, #fce7f3, #fbcfe8);
+    background: linear-gradient(
+      135deg,
+      rgba(252, 231, 243, 0.8),
+      rgba(251, 207, 232, 0.8)
+    );
     color: #831843;
   }
   &--editing {
-    box-shadow: 0 0 0 2.5px var(--color-primary, #7dd3a8);
+    box-shadow:
+      0 0 0 3px rgba(125, 211, 168, 0.5),
+      0 16px 32px rgba(125, 211, 168, 0.2);
     transform: scale(1.02);
+    background: rgba(255, 255, 255, 0.95);
   }
 }
 
 .wm-card__header {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .wm-card__icon {
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .wm-card__avatar {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   object-fit: cover;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .wm-card__who {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 80px;
+  max-width: 120px;
 }
 
 .wm-card__edit-btn {
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.6);
   border: none;
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
-  padding: 2px 7px;
-  border-radius: 8px;
+  padding: 4px 10px;
+  border-radius: 12px;
   margin-left: auto;
-  transition: background 0.15s;
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s;
   &:hover {
-    background: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.95);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
   }
 }
 
 .wm-card__location {
-  font-size: 12px;
-  opacity: 0.75;
-  margin-bottom: 4px;
+  font-size: 13px;
+  opacity: 0.8;
+  margin-bottom: 2px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
+  gap: 6px;
+}
+
+.wm-card__time {
+  font-size: 11px;
+  opacity: 0.8;
+  font-weight: 600;
+  margin-bottom: 4px;
 }
 
 .wm-card__clear {
-  background: none;
+  background: rgba(0, 0, 0, 0.1);
   border: none;
-  font-size: 11px;
-  opacity: 0.5;
+  font-size: 10px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  padding: 0 3px;
   &:hover {
-    opacity: 1;
+    background: rgba(0, 0, 0, 0.2);
   }
 }
 
 .wm-card__temp {
-  font-size: 36px;
-  font-weight: 300;
-  line-height: 1.1;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1;
   letter-spacing: -1px;
+  margin: 6px 0 8px;
 }
 
 .wm-card__cond {
-  font-size: 13px;
-  margin: 4px 0 2px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
 }
 
 .wm-card__meta {
-  font-size: 11px;
-  opacity: 0.6;
+  font-size: 12px;
+  opacity: 0.75;
+  font-weight: 500;
 }
 
 .wm-card__loading {
-  font-size: 12px;
-  opacity: 0.5;
+  font-size: 13px;
+  opacity: 0.6;
   padding: 24px 0;
+  text-align: center;
 }
 
 .wm-card__empty {
-  font-size: 13px;
-  opacity: 0.5;
-  padding: 18px 0 4px;
+  font-size: 14px;
+  opacity: 0.6;
+  padding: 16px 0 4px;
+  font-weight: 500;
 }
 
 .wm-card__hint {
-  font-size: 11px;
-  opacity: 0.4;
-  padding-bottom: 6px;
+  font-size: 12px;
+  opacity: 0.5;
+  padding-bottom: 8px;
 }
 
 // 搜尋區
 .wm-search {
-  padding: 0 16px 12px;
+  padding: 0 24px 16px;
 }
 
 .wm-search__label {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
   color: var(--color-text-secondary, #666);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .wm-search__row {
@@ -15771,16 +15913,19 @@ onUnmounted(() => {
 
 .wm-search__input {
   flex: 1;
-  padding: 10px 14px;
-  border: 1.5px solid var(--color-border, #ddd);
-  border-radius: 12px;
+  padding: 12px 16px;
+  border: 2px solid transparent;
+  border-radius: 16px;
   font-size: 14px;
+  font-weight: 500;
   outline: none;
-  background: var(--color-background, #f8f8f8);
+  background: rgba(0, 0, 0, 0.04);
   color: var(--color-text, #333);
-  transition: border-color 0.15s;
+  transition: all 0.2s;
   &:focus {
+    background: rgba(255, 255, 255, 0.8);
     border-color: var(--color-primary, #7dd3a8);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   }
   &::placeholder {
     opacity: 0.45;
@@ -15788,32 +15933,37 @@ onUnmounted(() => {
 }
 
 .wm-search__btn {
-  padding: 10px 16px;
-  border-radius: 12px;
+  padding: 12px 20px;
+  border-radius: 16px;
   border: none;
   background: var(--color-primary, #7dd3a8);
   color: white;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
-  transition: opacity 0.15s;
+  transition: all 0.2s;
+  box-shadow: 0 4px 12px rgba(125, 211, 168, 0.3);
   &:disabled {
     opacity: 0.4;
     cursor: default;
+    box-shadow: none;
   }
   &:not(:disabled):hover {
-    opacity: 0.85;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(125, 211, 168, 0.4);
   }
 }
 
 .wm-search__results {
-  max-height: 160px;
+  max-height: 180px;
   overflow-y: auto;
-  margin-top: 8px;
-  border-radius: 12px;
-  border: 1px solid var(--color-border, #eee);
-  background: var(--color-surface, #fff);
+  margin-top: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
 }
 
 .wm-search__result {
@@ -15821,46 +15971,48 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 10px 14px;
+  padding: 12px 16px;
   border: none;
   background: transparent;
   cursor: pointer;
   text-align: left;
-  transition: background 0.1s;
+  transition: background 0.15s;
   &:hover {
-    background: var(--color-hover, rgba(0, 0, 0, 0.04));
+    background: rgba(0, 0, 0, 0.04);
   }
   & + & {
-    border-top: 1px solid var(--color-border, #eee);
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
   }
 }
 
 .wm-search__result-name {
   font-size: 14px;
-  font-weight: 500;
-  color: var(--color-text, #333);
+  font-weight: 600;
+  color: var(--color-text, #222);
 }
 
 .wm-search__result-sub {
   font-size: 12px;
-  opacity: 0.55;
-  color: var(--color-text, #333);
+  opacity: 0.6;
+  color: var(--color-text, #444);
   margin-left: auto;
   white-space: nowrap;
 }
 
 .wm-search__cancel {
   display: block;
-  margin: 8px auto 0;
+  margin: 12px auto 0;
   background: none;
   border: none;
   font-size: 13px;
+  font-weight: 600;
   color: var(--color-text-secondary, #888);
   cursor: pointer;
-  padding: 4px 12px;
-  border-radius: 8px;
+  padding: 6px 16px;
+  border-radius: 12px;
+  transition: all 0.2s;
   &:hover {
-    background: var(--color-hover, rgba(0, 0, 0, 0.04));
+    background: rgba(0, 0, 0, 0.05);
   }
 }
 
@@ -15868,37 +16020,43 @@ onUnmounted(() => {
 .wm-footer {
   display: flex;
   gap: 12px;
-  padding: 0 16px 16px;
+  padding: 0 24px 24px;
 }
 
 .wm-btn {
   flex: 1;
-  padding: 12px;
-  border-radius: 14px;
+  padding: 14px;
+  border-radius: 18px;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   border: none;
-  transition:
-    opacity 0.15s,
-    transform 0.1s;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+
   &:active {
-    transform: scale(0.97);
+    transform: scale(0.96);
   }
 
   &--cancel {
-    background: var(--color-hover, #f0f0f0);
-    color: var(--color-text, #333);
+    background: rgba(0, 0, 0, 0.04);
+    color: var(--color-text, #444);
+    &:hover {
+      background: rgba(0, 0, 0, 0.08);
+    }
   }
   &--send {
     background: var(--color-primary, #7dd3a8);
     color: white;
+    box-shadow: 0 6px 16px rgba(125, 211, 168, 0.3);
     &:disabled {
-      opacity: 0.4;
+      opacity: 0.5;
       cursor: default;
+      box-shadow: none;
     }
     &:not(:disabled):hover {
-      opacity: 0.9;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(125, 211, 168, 0.4);
     }
   }
 }

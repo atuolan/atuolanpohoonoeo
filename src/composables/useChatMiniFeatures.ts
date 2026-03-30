@@ -20,6 +20,8 @@ export function useChatMiniFeatures(deps: {
   saveChatImmediate: () => Promise<void>;
   triggerAIResponse: (opts?: any) => Promise<void>;
   currentCharacter?: Ref<StoredCharacter | null | undefined>;
+  getFakeTime?: () => Date;
+  getRealTimeAwareness?: () => boolean;
 }) {
   const weatherStore = useWeatherStore();
 
@@ -353,11 +355,48 @@ export function useChatMiniFeatures(deps: {
       return;
     }
 
+    const isRealTimeAware = deps.getRealTimeAwareness ? deps.getRealTimeAwareness() : true;
+    const currentVirtualTime = deps.getFakeTime ? deps.getFakeTime() : new Date();
+
+    // 計算時差
+    const charWeather = charWeatherData.value;
+    let diffText = "";
+    let timeDiffHours = 0;
+    if (charWeather && weather.location.localtime && charWeather.location.localtime) {
+      const uTime = new Date(weather.location.localtime.replace(" ", "T")).getTime();
+      const cTime = new Date(charWeather.location.localtime.replace(" ", "T")).getTime();
+      timeDiffHours = Math.round((cTime - uTime) / (1000 * 60 * 60));
+      if (Math.abs(timeDiffHours) > 0) {
+        diffText = `\n\n[時區差異] 客觀上的時區差異計算，對方所在時區比你${timeDiffHours > 0 ? "快" : "慢"} ${Math.abs(timeDiffHours)} 小時。`;
+      } else {
+        diffText = `\n\n[時區差異] 雙方在同一個時區。`;
+      }
+    }
+
+    const formatDt = (d: Date) => {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    };
+
+    let userTimeLine = `\n當地時間：${formatDt(currentVirtualTime)}`;
+    let charTimeLine = charWeather ? `\n當地時間：${formatDt(new Date(currentVirtualTime.getTime() + timeDiffHours * 60 * 60 * 1000))}` : "";
+
+    if (!isRealTimeAware) {
+      userTimeLine = "";
+      charTimeLine = "";
+    }
+
     const weatherContent = `<天氣分享>
-地點：${locationName}
+【我的天氣】
+地點：${locationName}${userTimeLine}
 天氣：${weather.current.condition.text}
 溫度：${Math.round(weather.current.temp_c)}°C（體感 ${Math.round(weather.current.feelslike_c)}°C）
-濕度：${weather.current.humidity}%
+濕度：${weather.current.humidity}%${charWeather ? `\n\n【你的天氣】
+地點：${charWeather.location.name}${charTimeLine}
+天氣：${charWeather.current.condition.text}
+溫度：${Math.round(charWeather.current.temp_c)}°C（體感 ${Math.round(charWeather.current.feelslike_c)}°C）
+濕度：${charWeather.current.humidity}%` : ""}${diffText}
+
+*對方與你分享了天氣和時區，請針對以上天氣與時差情報做出符合情境的回應，不要複述冷冰冰的資訊，可以根據溫度差異、${isRealTimeAware ? '晚睡早起、' : ''}時差或目前時間來關心情境。*
 </天氣分享>`;
 
     const weatherMessage = {
@@ -420,5 +459,29 @@ export function useChatMiniFeatures(deps: {
     weatherEditTarget,
     startWeatherEdit,
     cancelWeatherEdit,
+    getVirtualLocalTime: (targetWeather: WeatherData | null) => {
+      const isRealTimeAware = deps.getRealTimeAwareness ? deps.getRealTimeAwareness() : true;
+      if (!isRealTimeAware) return "";
+      const virtualNow = deps.getFakeTime ? deps.getFakeTime() : new Date();
+      const formatDt = (d: Date) => {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+      };
+
+      if (!targetWeather || !targetWeather.location.localtime) {
+        return formatDt(virtualNow);
+      }
+      
+      const baseWeather = customWeatherData.value ?? weatherStore.weatherData;
+      if (!baseWeather || !baseWeather.location.localtime) {
+        return formatDt(virtualNow);
+      }
+      
+      const uTime = new Date(baseWeather.location.localtime.replace(" ", "T")).getTime();
+      const tTime = new Date(targetWeather.location.localtime.replace(" ", "T")).getTime();
+      const diffHours = Math.round((tTime - uTime) / (1000 * 60 * 60));
+      
+      const targetVirtualTime = new Date(virtualNow.getTime() + diffHours * 60 * 60 * 1000);
+      return formatDt(targetVirtualTime);
+    }
   };
 }

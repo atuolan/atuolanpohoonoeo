@@ -22,7 +22,7 @@ import { useRegexScriptsStore } from "@/stores/regexScripts";
 import type { WaimaiOrderSnapshot } from "@/types/chat";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { marked } from "marked";
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import GroupCallHistoryModal from "../modals/GroupCallHistoryModal.vue";
 import GroupChatHistoryModal from "../modals/GroupChatHistoryModal.vue";
 import PhotoPreviewModal from "../modals/PhotoPreviewModal.vue";
@@ -1083,6 +1083,22 @@ function handleRoundSwipeNext() {
 
 // 顯示選單
 const showMenu = ref(false);
+// 訊息 wrapper 的 ref，用於菜單開啟時滾動到可見區域
+const wrapperRef = ref<HTMLElement | null>(null);
+
+// 菜單開啟時，確保訊息在可見區域（菜單出現在上方，需要留出空間）
+function scrollIntoViewForMenu() {
+  nextTick(() => {
+    if (!wrapperRef.value) return;
+    const el = wrapperRef.value;
+    const rect = el.getBoundingClientRect();
+    // 菜單高度約 120px（兩行），加上間距
+    const menuHeight = 130;
+    if (rect.top < menuHeight) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  });
+}
 
 // 想法展開狀態
 const showThought = ref(false);
@@ -1380,6 +1396,7 @@ function onTouchStart(e: TouchEvent) {
     menuFromLongPress = true;
     menuOpenedAt = Date.now();
     showMenu.value = true;
+    scrollIntoViewForMenu();
     longPressTimer = null;
   }, 500);
 }
@@ -1538,6 +1555,7 @@ function onContextMenu(e: MouseEvent) {
   e.preventDefault();
   menuOpenedAt = Date.now();
   showMenu.value = true;
+  scrollIntoViewForMenu();
 }
 
 // 委派處理 bubble-text 內部的 TTS 行內按鈕點擊
@@ -1953,6 +1971,7 @@ const showTextVoiceTranscript = ref(true);
 
 <template>
   <div
+    ref="wrapperRef"
     class="message-wrapper"
     :class="{
       user: isUser,
@@ -2363,6 +2382,7 @@ const showTextVoiceTranscript = ref(true);
             'thought-expanded': showThought,
             'transparent-bubble':
               (isHtmlBlock && htmlBlockSrcdoc) || regexHtmlDoc,
+            'menu-active': showMenu,
           }"
           @click.stop="onBubbleClick"
         >
@@ -2743,8 +2763,12 @@ const showTextVoiceTranscript = ref(true);
 
           <!-- 一般文字訊息 -->
           <template v-else>
+            <!-- streaming 時只顯示 typing dots，不顯示累積文字 -->
+            <div v-if="isStreaming" class="typing-dots">
+              <span></span><span></span><span></span>
+            </div>
             <!-- 包含圖片/表情包的消息 -->
-            <div v-if="hasMedia" class="message-mixed">
+            <div v-if="!isStreaming && hasMedia" class="message-mixed">
               <template v-for="(part, idx) in messageParts" :key="idx">
                 <!-- 表情包 -->
                 <div
@@ -2787,7 +2811,7 @@ const showTextVoiceTranscript = ref(true);
               </template>
             </div>
             <!-- 純文字訊息 -->
-            <template v-else>
+            <template v-else-if="!isStreaming">
               <!-- regex 產生的完整 HTML：用 iframe 渲染（script 才能執行） -->
               <iframe
                 v-if="regexHtmlDoc"
@@ -2817,9 +2841,6 @@ const showTextVoiceTranscript = ref(true);
             </svg>
             <span>私信</span>
           </div>
-
-          <!-- 流式輸出游標 -->
-          <span v-if="isStreaming" class="streaming-cursor">▊</span>
 
           <!-- MiniMax TTS 語音播放 -->
           <!-- 舊版：單段播放（向下相容，新版已改為行內按鈕） -->
@@ -3017,7 +3038,7 @@ const showTextVoiceTranscript = ref(true);
     </template>
 
     <!-- 操作選單 -->
-    <Transition name="fade">
+    <Transition name="menu-pop">
       <div v-if="showMenu" class="message-menu" @click.stop>
         <div class="menu-backdrop" @click="closeMenu"></div>
         <div class="menu-content">
@@ -3031,6 +3052,7 @@ const showTextVoiceTranscript = ref(true);
               </svg>
               <span>複製</span>
             </button>
+            <div class="menu-divider"></div>
             <button class="menu-item" @click="handleEdit">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path
@@ -3051,22 +3073,6 @@ const showTextVoiceTranscript = ref(true);
           </template>
           <!-- 一般消息選單 -->
           <template v-else>
-            <button class="menu-item" @click="handleCopy">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
-                />
-              </svg>
-              <span>複製</span>
-            </button>
-            <button class="menu-item" @click="handleEdit">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-                />
-              </svg>
-              <span>編輯</span>
-            </button>
             <button class="menu-item" @click="handleReply">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path
@@ -3075,6 +3081,25 @@ const showTextVoiceTranscript = ref(true);
               </svg>
               <span>回覆</span>
             </button>
+            <div class="menu-divider"></div>
+            <button class="menu-item" @click="handleCopy">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path
+                  d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                />
+              </svg>
+              <span>複製</span>
+            </button>
+            <div class="menu-divider"></div>
+            <button class="menu-item" @click="handleEdit">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path
+                  d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+                />
+              </svg>
+              <span>編輯</span>
+            </button>
+            <div class="menu-divider"></div>
             <button class="menu-item" @click="handleBatchScreenshot">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path
@@ -3083,23 +3108,27 @@ const showTextVoiceTranscript = ref(true);
               </svg>
               <span>截圖</span>
             </button>
-            <button v-if="!isUser" class="menu-item" @click="handleRegenerate">
+            <template v-if="!isUser">
+              <div class="menu-divider"></div>
+              <button class="menu-item" @click="handleRegenerate">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
+                  />
+                </svg>
+                <span>重新生成</span>
+              </button>
+            </template>
+            <div class="menu-divider"></div>
+            <button class="menu-item" @click="handleBranch">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path
-                  d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
+                  d="M17 12c-1.11 0-2 .89-2 2s.89 2 2 2 2-.89 2-2-.89-2-2-2zM7 8c-1.11 0-2 .89-2 2s.89 2 2 2 2-.89 2-2-.89-2-2-2zm0 8c-1.11 0-2 .89-2 2s.89 2 2 2 2-.89 2-2-.89-2-2-2zm10-12c-1.11 0-2 .89-2 2s.89 2 2 2 2-.89 2-2-.89-2-2-2zM7 4C5.34 4 4 5.34 4 7s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3zm0 8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3zm10-4c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3zm-5-4H9v2h3v3h2V6h3V4h-3V1h-2v3z"
                 />
               </svg>
-              <span>重新生成</span>
+              <span>分支</span>
             </button>
             <div class="menu-divider"></div>
-            <button class="menu-item danger" @click="handleDelete">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
-                />
-              </svg>
-              <span>刪除此訊息</span>
-            </button>
             <button class="menu-item" @click="handleMultiDelete">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path
@@ -3108,13 +3137,14 @@ const showTextVoiceTranscript = ref(true);
               </svg>
               <span>批量刪除</span>
             </button>
-            <button class="menu-item" @click="handleBranch">
+            <div class="menu-divider"></div>
+            <button class="menu-item danger" @click="handleDelete">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path
-                  d="M17 12c-1.11 0-2 .89-2 2s.89 2 2 2 2-.89 2-2-.89-2-2-2zM7 8c-1.11 0-2 .89-2 2s.89 2 2 2 2-.89 2-2-.89-2-2-2zm0 8c-1.11 0-2 .89-2 2s.89 2 2 2 2-.89 2-2-.89-2-2-2zm10-12c-1.11 0-2 .89-2 2s.89 2 2 2 2-.89 2-2-.89-2-2-2zM7 4C5.34 4 4 5.34 4 7s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3zm0 8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3zm10-4c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3zm-5-4H9v2h3v3h2V6h3V4h-3V1h-2v3z"
+                  d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
                 />
               </svg>
-              <span>從此分支</span>
+              <span>刪除</span>
             </button>
           </template>
         </div>
@@ -3597,6 +3627,11 @@ const showTextVoiceTranscript = ref(true);
   max-width: 100%;
   transition: all 0.3s ease;
 
+  // 菜單開啟時氣泡高亮
+  &.menu-active {
+    filter: brightness(0.88);
+  }
+
   // 如果包含媒體描述，移除氣泡背景和內邊距
   &:has(.media-description) {
     background: transparent !important;
@@ -4046,22 +4081,43 @@ const showTextVoiceTranscript = ref(true);
   }
 }
 
-// 流式輸出游標
-.streaming-cursor {
-  display: inline-block;
-  animation: blink 1s infinite;
-  color: var(--color-primary);
-  font-weight: bold;
+// 正在輸入中的三個點動畫
+.typing-dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+
+  span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.4;
+    animation: typing-bounce 1.2s infinite ease-in-out;
+
+    &:nth-child(1) {
+      animation-delay: 0s;
+    }
+    &:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+    &:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+  }
 }
 
-@keyframes blink {
+@keyframes typing-bounce {
   0%,
-  50% {
-    opacity: 1;
-  }
-  51%,
+  60%,
   100% {
-    opacity: 0;
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-5px);
+    opacity: 1;
   }
 }
 
@@ -5283,62 +5339,121 @@ const showTextVoiceTranscript = ref(true);
 
 // 操作選單
 .message-menu {
+  // 不佔空間，不影響佈局
   position: absolute;
-  inset: 0;
+  top: 0;
+  height: 0;
+  overflow: visible;
   z-index: 100;
-}
 
-.menu-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.menu-content {
-  position: fixed;
-  top: 50%;
-  transform: translateY(-50%);
-  background: var(--color-surface);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
-  min-width: 160px;
-  z-index: 101;
-
-  // AI 訊息：菜單靠左
+  // AI 訊息：從左側對齊（頭像寬度約 44px + gap 10px）
   .message-wrapper.ai & {
-    left: 30%;
+    left: 54px;
   }
 
-  // 用戶訊息：菜單靠右
+  // 用戶訊息：從右側對齊
   .message-wrapper.user & {
-    right: 30%;
+    right: 0;
   }
 
   // 系統訊息：置中
   .message-wrapper.system & {
     left: 50%;
-    transform: translate(-50%, -50%);
+  }
+}
+
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.15);
+  z-index: 100;
+}
+
+.menu-content {
+  position: absolute;
+  bottom: 8px;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: stretch;
+  background: var(--color-surface);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  z-index: 101;
+  // 固定寬度讓 flex-wrap 生效，4 個按鈕一排（每個 ~60px）
+  width: min(260px, calc(100vw - 80px));
+
+  // AI 訊息：菜單靠左展開
+  .message-wrapper.ai & {
+    left: 0;
+  }
+
+  // 用戶訊息：菜單靠右展開
+  .message-wrapper.user & {
+    right: 0;
+  }
+
+  // 系統訊息：置中
+  .message-wrapper.system & {
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  // 小箭頭（朝下，指向泡泡）
+  &::after {
+    content: "";
+    position: absolute;
+    bottom: -5px;
+    width: 10px;
+    height: 10px;
+    background: var(--color-surface);
+    transform: rotate(45deg);
+    border-radius: 2px;
+    box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.08);
+
+    .message-wrapper.ai & {
+      left: 20px;
+    }
+
+    .message-wrapper.user & {
+      right: 20px;
+    }
+
+    .message-wrapper.system & {
+      left: 50%;
+      transform: translateX(-50%) rotate(45deg);
+    }
   }
 }
 
 .menu-item {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 14px 18px;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 0;
   background: transparent;
   border: none;
-  font-size: 15px;
-  color: var(--color-text);
+  font-size: 11px;
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition: background var(--transition-fast);
+  // 每排 4 個，各佔 25%
+  flex: 0 0 25%;
+  width: 25%;
 
   svg {
     width: 20px;
     height: 20px;
-    color: var(--color-text-secondary);
+    color: var(--color-text);
+    flex-shrink: 0;
+  }
+
+  span {
+    line-height: 1;
+    white-space: nowrap;
   }
 
   &:hover {
@@ -5362,10 +5477,9 @@ const showTextVoiceTranscript = ref(true);
   }
 }
 
+// 分隔線改成行分隔（每排之間的水平線）
 .menu-divider {
-  height: 1px;
-  background: var(--color-border);
-  margin: 4px 0;
+  display: none;
 }
 
 // 動畫
@@ -5377,6 +5491,23 @@ const showTextVoiceTranscript = ref(true);
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+// 菜單彈出動畫（從下往上）
+.menu-pop-enter-active {
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+.menu-pop-leave-active {
+  transition:
+    opacity 0.1s ease,
+    transform 0.1s ease;
+}
+.menu-pop-enter-from,
+.menu-pop-leave-to {
+  opacity: 0;
+  transform: translateY(6px) scale(0.95);
 }
 
 // 高亮動畫（滾動到消息時）

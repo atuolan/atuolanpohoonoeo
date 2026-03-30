@@ -358,6 +358,21 @@ export const useThemeStore = defineStore("theme", () => {
   // 自訂 CSS
   const customCSS = ref<string>("");
 
+  // 響應式當前小時，每整點更新一次，讓 time-theme 的 computed 能自動重算
+  const currentHour = ref(new Date().getHours());
+  function _scheduleHourUpdate() {
+    const now = new Date();
+    const msUntilNextHour =
+      (60 - now.getMinutes()) * 60 * 1000 -
+      now.getSeconds() * 1000 -
+      now.getMilliseconds();
+    setTimeout(() => {
+      currentHour.value = new Date().getHours();
+      _scheduleHourUpdate();
+    }, msUntilNextHour);
+  }
+  _scheduleHourUpdate();
+
   // 全局字體覆蓋
   const globalFont = ref<GlobalFontOverride>({ ...defaultGlobalFont });
 
@@ -405,9 +420,8 @@ export const useThemeStore = defineStore("theme", () => {
     if (w.type === "time-theme") {
       // 夜間模式開啟時一定是深色
       if (nightMode.value) return true;
-      // 否則根據當前小時判斷
-      const hour = new Date().getHours();
-      return hour >= 20 || hour < 5;
+      // 否則根據當前小時判斷（currentHour 每分鐘更新，確保響應式）
+      return currentHour.value >= 20 || currentHour.value < 5;
     }
 
     // 純色桌布
