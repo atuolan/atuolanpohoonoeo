@@ -46,6 +46,32 @@ const PIXABAY_API_KEY = "55224924-5e1b99de2bfb4b44b0cdecaf8";
 const PIXABAY_API_URL = "https://pixabay.com/api/";
 const REQUEST_TIMEOUT_MS = 10_000;
 
+/** 偵測字串是否包含中文字元 */
+function containsChinese(text: string): boolean {
+  return /[\u4e00-\u9fff\u3400-\u4dbf]/.test(text);
+}
+
+/**
+ * 將中文關鍵字翻譯為英文（使用免費 MyMemory API）
+ * 失敗時靜默回傳原始文字
+ */
+async function translateToEnglish(text: string): Promise<string> {
+  if (!containsChinese(text)) return text;
+  try {
+    const res = await fetch(
+      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=zh-CN|en`,
+      { signal: AbortSignal.timeout(5000) },
+    );
+    if (!res.ok) return text;
+    const data = await res.json();
+    const translated = data?.responseData?.translatedText;
+    // MyMemory 翻譯失敗時會回傳原文或空字串
+    return translated && translated !== text ? translated : text;
+  } catch {
+    return text;
+  }
+}
+
 /**
  * 將任意 URL 轉換為 image-proxy 代理格式，以繞過 CORS 限制
  * 生產環境走 CF Worker（nai-proxy.aguacloud.uk），開發環境走本地 Vite middleware
@@ -63,12 +89,15 @@ export async function searchPixabay(
   params: PixabaySearchParams,
 ): Promise<PixabaySearchResult> {
   const {
-    q,
+    q: rawQ,
     page = 1,
     perPage = 20,
     lang = "zh",
     imageType = "photo",
   } = params;
+
+  // 中文關鍵字自動翻譯為英文（Pixabay 標籤幾乎全是英文）
+  const q = await translateToEnglish(rawQ);
 
   // 建立查詢參數
   const searchParams = new URLSearchParams({
