@@ -48,9 +48,11 @@ const REQUEST_TIMEOUT_MS = 10_000;
 
 /**
  * 將任意 URL 轉換為 image-proxy 代理格式，以繞過 CORS 限制
+ * 生產環境走 CF Worker（nai-proxy.aguacloud.uk），開發環境走本地 Vite middleware
  */
 export function toImageProxyUrl(url: string): string {
-  return `/image-proxy?url=${encodeURIComponent(url)}`;
+  const base = import.meta.env.DEV ? "" : "https://nai-proxy.aguacloud.uk";
+  return `${base}/image-proxy?url=${encodeURIComponent(url)}`;
 }
 
 /**
