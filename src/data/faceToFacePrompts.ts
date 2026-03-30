@@ -1682,6 +1682,7 @@ export const FACE_TO_FACE_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "f2fImportantEvents", enabled: true },
   { identifier: "f2fTimeInfo", enabled: true },
   { identifier: "f2fWeatherInfo", enabled: true },
+  { identifier: "f2fCharacterWorldContext", enabled: true },
   { identifier: "f2fGameScores", enabled: true },
   { identifier: "f2fFoodLogs", enabled: true },
   { identifier: "f2fMediaLogs", enabled: true },

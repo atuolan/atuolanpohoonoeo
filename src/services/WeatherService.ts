@@ -63,6 +63,160 @@ export interface UserLocation {
   lon?: number;
 }
 
+// ===== Nominatim 地名搜尋 =====
+
+/** Nominatim API 原始回應格式 */
+export interface NominatimResult {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+  address?: {
+    city?: string;
+    town?: string;
+    village?: string;
+    county?: string;
+    state?: string;
+    country?: string;
+    country_code?: string;
+  };
+}
+
+/**
+ * 從 Nominatim address 欄位解析最精確地名
+ * 優先順序：city > town > village > county > display_name 第一段
+ */
+export function parseNominatimDisplayName(
+  address: NominatimResult["address"],
+  displayName?: string,
+): string {
+  if (address) {
+    if (address.city) return address.city;
+    if (address.town) return address.town;
+    if (address.village) return address.village;
+    if (address.county) return address.county;
+  }
+  // 回退：取 display_name 第一個逗號前的部分
+  if (displayName) return displayName.split(",")[0].trim();
+  return "";
+}
+
+// ===== Overpass API 附近地點 =====
+
+/** 附近地點（POI） */
+export interface NearbyPlace {
+  /** 地點名稱 */
+  name: string;
+  /** 中文類型標籤 */
+  type: string;
+  /** 與用戶座標的直線距離（公尺，整數） */
+  distance: number;
+}
+
+/** Overpass API 節點原始格式 */
+interface OverpassNode {
+  type: string;
+  id: number;
+  lat: number;
+  lon: number;
+  tags?: Record<string, string>;
+}
+
+/** Overpass API 回應格式 */
+interface OverpassResponse {
+  elements: OverpassNode[];
+}
+
+/** POI 類型對應中文標籤 */
+const POI_TYPE_LABELS: Record<string, string> = {
+  restaurant: "餐廳",
+  cafe: "咖啡廳",
+  attraction: "景點",
+  park: "公園",
+  convenience: "便利商店",
+};
+
+/**
+ * Haversine 公式計算兩點直線距離（公尺）
+ */
+function haversineDistance(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number {
+  const R = 6371000; // 地球半徑（公尺）
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return Math.round(R * 2 * Math.asin(Math.sqrt(a)));
+}
+
+/**
+ * 從 Overpass 節點取得 POI 中文類型
+ */
+function getPoiType(tags: Record<string, string>): string {
+  if (tags.amenity === "restaurant") return POI_TYPE_LABELS.restaurant;
+  if (tags.amenity === "cafe") return POI_TYPE_LABELS.cafe;
+  if (tags.tourism === "attraction") return POI_TYPE_LABELS.attraction;
+  if (tags.leisure === "park") return POI_TYPE_LABELS.park;
+  if (tags.shop === "convenience") return POI_TYPE_LABELS.convenience;
+  return "地點";
+}
+
+/**
+ * 查詢附近 POI（餐廳、咖啡廳、景點、公園、便利商店）
+ * 失敗時靜默回傳空陣列
+ */
+export async function getNearbyPlaces(
+  lat: number,
+  lon: number,
+  radiusMeters: number,
+  limit: number,
+): Promise<NearbyPlace[]> {
+  try {
+    // 建構 Overpass QL 查詢
+    const query = `
+[out:json][timeout:10];
+(
+  node["amenity"="restaurant"](around:${radiusMeters},${lat},${lon});
+  node["amenity"="cafe"](around:${radiusMeters},${lat},${lon});
+  node["tourism"="attraction"](around:${radiusMeters},${lat},${lon});
+  node["leisure"="park"](around:${radiusMeters},${lat},${lon});
+  node["shop"="convenience"](around:${radiusMeters},${lat},${lon});
+);
+out body;`.trim();
+
+    const overpassUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+    const proxyUrl = `/image-proxy?url=${encodeURIComponent(overpassUrl)}`;
+
+    const res = await fetch(proxyUrl);
+    if (!res.ok) return [];
+
+    const data: OverpassResponse = await res.json();
+    const elements = data.elements ?? [];
+
+    // 計算距離、過濾無名稱節點、排序、截斷
+    const places: NearbyPlace[] = elements
+      .filter((el) => el.tags?.name)
+      .map((el) => ({
+        name: el.tags!["name:zh"] ?? el.tags!.name!,
+        type: getPoiType(el.tags!),
+        distance: haversineDistance(lat, lon, el.lat, el.lon),
+      }))
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, limit);
+
+    return places;
+  } catch (e) {
+    console.warn("[WeatherService] Overpass API 查詢失敗，回傳空陣列", e);
+    return [];
+  }
+}
+
 /**
  * 從 WeatherAPI 獲取天氣數據
  */
@@ -170,7 +324,9 @@ async function getCoordsByIP(): Promise<{
 
   // 服務2: ipapi.co（免費，HTTPS）
   try {
-    const res = await fetch(isDev ? "/api/ipapi/json/" : "https://ipapi.co/json/");
+    const res = await fetch(
+      isDev ? "/api/ipapi/json/" : "https://ipapi.co/json/",
+    );
     if (res.ok) {
       const data = await res.json();
       if (!data.error && data.latitude && data.longitude) {
@@ -490,19 +646,34 @@ export async function searchCities(query: string): Promise<
     lon: number;
   }>
 > {
-  // 先嘗試 WeatherAPI
+  // 優先：Nominatim API（支援台灣鄉鎮市區等細粒度地名）
+  // 直接 fetch，帶 User-Agent（Nominatim 要求）；不走 image-proxy 避免 403
   try {
-    const params = new URLSearchParams({
-      key: WEATHER_API_KEY,
-      q: query,
+    const nominatimUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&accept-language=zh-TW`;
+    const res = await fetch(nominatimUrl, {
+      headers: {
+        "User-Agent": "Aguaphone/1.0 (https://aguaphone.aguacloud.uk)",
+        "Accept-Language": "zh-TW,zh;q=0.9",
+      },
     });
-    const url = `${WEATHER_API_BASE}/search.json?${params}`;
-    const response = await fetch(url);
-    if (response.ok) {
-      return await response.json();
+    if (res.ok) {
+      const results: NominatimResult[] = await res.json();
+      if (results.length > 0) {
+        return results.map((r, idx) => ({
+          id: r.place_id ?? idx,
+          name: parseNominatimDisplayName(r.address, r.display_name),
+          region: r.address?.state ?? r.address?.county ?? "",
+          country: r.address?.country ?? "",
+          lat: parseFloat(r.lat),
+          lon: parseFloat(r.lon),
+        }));
+      }
     }
   } catch (e) {
-    console.warn("[WeatherService] WeatherAPI 城市搜尋失敗", e);
+    console.warn(
+      "[WeatherService] Nominatim 城市搜尋失敗，回退至 Open-Meteo",
+      e,
+    );
   }
 
   // 回退：Open-Meteo Geocoding

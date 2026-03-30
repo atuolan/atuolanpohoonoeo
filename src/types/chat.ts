@@ -3,13 +3,25 @@
  * 用於管理對話歷史和消息
  */
 
-import type { AuthorsNoteMetadata } from "./prompt";
 import type { BlockState } from "@/types/block";
+import type { AuthorsNoteMetadata } from "./prompt";
 import type {
   WaimaiDestinationSnapshot,
   WaimaiEtaSnapshot,
 } from "./waimaiDelivery";
 import type { WITimedEffect } from "./worldinfo";
+
+// ===== 聊天專屬位置覆蓋 =====
+export interface ChatLocationOverride {
+  /** 模式：manual = 手動指定城市，browser = 瀏覽器 GPS */
+  mode: "manual" | "browser";
+  /** 城市名稱（manual 模式） */
+  city?: string;
+  /** 緯度 */
+  lat?: number;
+  /** 經度 */
+  lon?: number;
+}
 
 // ===== 聊天外觀設定 =====
 export interface ChatAppearance {
@@ -371,21 +383,21 @@ export interface ChatMessage {
 
   // --- 封鎖系統相關 ---
   /** 是否為封鎖期間發送的訊息（用戶封鎖角色後仍可發送） */
-  sentWhileBlocked?: boolean
+  sentWhileBlocked?: boolean;
   /** 是否為好友申請訊息 */
-  isFriendRequest?: boolean
+  isFriendRequest?: boolean;
   /** 好友申請結果 */
-  friendRequestResult?: 'accepted' | 'rejected'
+  friendRequestResult?: "accepted" | "rejected";
   /** 是否為道歉外賣送達卡片 */
-  isApologyFood?: boolean
+  isApologyFood?: boolean;
   /** 道歉外賣資料 */
   apologyFoodData?: {
-    itemName: string
-    itemImageUrl: string
-    characterMessage: string
-    characterName: string
-    characterAvatar?: string
-  }
+    itemName: string;
+    itemImageUrl: string;
+    characterMessage: string;
+    characterName: string;
+    characterAvatar?: string;
+  };
 
   // --- 擴展 ---
   /** 附加數據 */
@@ -631,6 +643,9 @@ export interface Chat {
 
   /** 封鎖狀態 */
   blockState?: BlockState;
+
+  /** 聊天專屬位置覆蓋（undefined 表示使用全域設定） */
+  locationOverride?: ChatLocationOverride;
 }
 
 // ===== 聊天設定 =====

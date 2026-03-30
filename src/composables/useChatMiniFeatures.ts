@@ -1,5 +1,13 @@
-import { ref, type Ref } from "vue";
+import {
+  getWeatherByCity,
+  getWeatherByCoords,
+  searchCities,
+  type WeatherData,
+} from "@/services/WeatherService";
+import { useCharactersStore } from "@/stores/characters";
 import { useWeatherStore } from "@/stores/weather";
+import type { StoredCharacter } from "@/types/character";
+import { ref, type Ref } from "vue";
 
 /**
  * 聊天小功能合集：遊戲成績、話題引導、位置分享、天氣分享
@@ -11,6 +19,7 @@ export function useChatMiniFeatures(deps: {
   saveChat: () => void;
   saveChatImmediate: () => Promise<void>;
   triggerAIResponse: (opts?: any) => Promise<void>;
+  currentCharacter?: Ref<StoredCharacter | null | undefined>;
 }) {
   const weatherStore = useWeatherStore();
 
@@ -37,7 +46,8 @@ export function useChatMiniFeatures(deps: {
           const times = JSON.parse(t);
           const parts: string[] = [];
           if (times.easy > 0) parts.push(`簡單${formatSudokuTime(times.easy)}`);
-          if (times.medium > 0) parts.push(`中等${formatSudokuTime(times.medium)}`);
+          if (times.medium > 0)
+            parts.push(`中等${formatSudokuTime(times.medium)}`);
           if (times.hard > 0) parts.push(`困難${formatSudokuTime(times.hard)}`);
           scoreValue = parts.join(" ");
         } catch {
@@ -128,11 +138,26 @@ export function useChatMiniFeatures(deps: {
   async function useRandomTopic() {
     showTopicPromptChoiceModal.value = false;
     const topics = [
-      "今天的天氣", "最近看的電影或劇", "週末的計劃", "喜歡的音樂類型",
-      "最近的心情", "想去的旅行地點", "喜歡的食物", "童年的回憶",
-      "夢想或目標", "有趣的經歷", "喜歡的季節", "最近的困擾",
-      "感興趣的話題", "喜歡的顏色", "放鬆的方式", "最近學到的東西",
-      "想嘗試的新事物", "珍貴的回憶", "理想的一天", "最近的發現",
+      "今天的天氣",
+      "最近看的電影或劇",
+      "週末的計劃",
+      "喜歡的音樂類型",
+      "最近的心情",
+      "想去的旅行地點",
+      "喜歡的食物",
+      "童年的回憶",
+      "夢想或目標",
+      "有趣的經歷",
+      "喜歡的季節",
+      "最近的困擾",
+      "感興趣的話題",
+      "喜歡的顏色",
+      "放鬆的方式",
+      "最近學到的東西",
+      "想嘗試的新事物",
+      "珍貴的回憶",
+      "理想的一天",
+      "最近的發現",
     ];
     const randomTopic = topics[Math.floor(Math.random() * topics.length)];
     await executeTopicPrompt(randomTopic);
@@ -173,23 +198,163 @@ export function useChatMiniFeatures(deps: {
     locationInput.value = "";
   }
 
-  // ===== 天氣分享 =====
+  // ===== 天氣分享（可編輯用戶/角色所在地） =====
   const showWeatherModal = ref(false);
+  // 搜尋
+  const weatherSearchQuery = ref("");
+  const weatherSearchResults = ref<
+    Array<{
+      id: number;
+      name: string;
+      region: string;
+      country: string;
+      lat: number;
+      lon: number;
+    }>
+  >([]);
+  const weatherSearchLoading = ref(false);
+  // 用戶自訂天氣
+  const customWeatherData = ref<WeatherData | null>(null);
+  const customWeatherCity = ref("");
+  // 角色天氣
+  const charWeatherData = ref<WeatherData | null>(null);
+  const charWeatherLoading = ref(false);
+  // 編輯目標：'user' | 'char' | null
+  const weatherEditTarget = ref<"user" | "char" | null>(null);
+
+  /** 開啟天氣 modal 時自動載入角色天氣 */
+  async function openWeatherModal() {
+    showWeatherModal.value = true;
+    weatherEditTarget.value = null;
+    // 自動查詢角色天氣
+    const char = deps.currentCharacter?.value;
+    const charLocation = char?.worldSettings?.location;
+    if (charLocation && !charWeatherData.value) {
+      charWeatherLoading.value = true;
+      try {
+        charWeatherData.value = await getWeatherByCity(charLocation);
+      } catch {
+        console.warn("[天氣分享] 角色天氣查詢失敗");
+      } finally {
+        charWeatherLoading.value = false;
+      }
+    }
+  }
+
+  /** 開始編輯某一方的所在地 */
+  function startWeatherEdit(target: "user" | "char") {
+    weatherEditTarget.value = target;
+    weatherSearchQuery.value = "";
+    weatherSearchResults.value = [];
+  }
+
+  /** 取消編輯模式 */
+  function cancelWeatherEdit() {
+    weatherEditTarget.value = null;
+    weatherSearchQuery.value = "";
+    weatherSearchResults.value = [];
+  }
+
+  async function searchWeatherCities() {
+    const q = weatherSearchQuery.value.trim();
+    if (!q) return;
+    weatherSearchLoading.value = true;
+    try {
+      weatherSearchResults.value = await searchCities(q);
+    } catch {
+      weatherSearchResults.value = [];
+    } finally {
+      weatherSearchLoading.value = false;
+    }
+  }
+
+  /** 選擇城市後，根據 editTarget 套用到用戶或角色 */
+  async function selectWeatherCity(city: {
+    id: number;
+    name: string;
+    region: string;
+    country: string;
+    lat: number;
+    lon: number;
+  }) {
+    weatherSearchLoading.value = true;
+    try {
+      let data: WeatherData;
+      try {
+        data = await getWeatherByCoords(city.lat, city.lon);
+      } catch {
+        data = await getWeatherByCity(city.name);
+      }
+
+      const target = weatherEditTarget.value;
+      if (target === "char") {
+        // 更新角色所在地
+        charWeatherData.value = data;
+        const char = deps.currentCharacter?.value;
+        if (char) {
+          const charactersStore = useCharactersStore();
+          const cityLabel = city.region
+            ? `${city.name}, ${city.region}`
+            : city.name;
+          await charactersStore.updateCharacter(char.id, {
+            worldSettings: {
+              ...char.worldSettings,
+              location: cityLabel,
+            },
+          });
+          // 同步本地 ref
+          if (char.worldSettings) {
+            char.worldSettings.location = cityLabel;
+          } else {
+            char.worldSettings = { location: cityLabel };
+          }
+        }
+      } else {
+        // 更新用戶天氣
+        customWeatherData.value = data;
+        customWeatherCity.value = city.name;
+        // 同時更新全域天氣 store 的手動城市
+        const cityLabel = city.region
+          ? `${city.name}, ${city.region}`
+          : city.name;
+        weatherStore.setManualCity(cityLabel);
+        await weatherStore.refreshWeather(true);
+      }
+    } catch {
+      console.warn("[天氣分享] 無法取得城市天氣");
+    } finally {
+      weatherSearchLoading.value = false;
+      weatherSearchQuery.value = "";
+      weatherSearchResults.value = [];
+      weatherEditTarget.value = null;
+    }
+  }
+
+  function clearCustomWeather() {
+    customWeatherData.value = null;
+    customWeatherCity.value = "";
+  }
 
   async function sendWeatherMessage() {
-    if (!weatherStore.hasWeatherData) {
+    // 優先使用自訂城市天氣，否則用全域天氣
+    let weather = customWeatherData.value ?? weatherStore.weatherData;
+    let locationName = customWeatherData.value
+      ? customWeatherData.value.location.name
+      : weatherStore.locationName;
+
+    if (!weather) {
       await weatherStore.refreshWeather();
+      weather = weatherStore.weatherData;
+      locationName = weatherStore.locationName;
     }
-    if (!weatherStore.hasWeatherData) {
+    if (!weather) {
       console.warn("無法獲取天氣數據");
       showWeatherModal.value = false;
       return;
     }
-    const weather = weatherStore.weatherData;
-    if (!weather) return;
 
     const weatherContent = `<天氣分享>
-地點：${weatherStore.locationName}
+地點：${locationName}
 天氣：${weather.current.condition.text}
 溫度：${Math.round(weather.current.temp_c)}°C（體感 ${Math.round(weather.current.feelslike_c)}°C）
 濕度：${weather.current.humidity}%
@@ -206,10 +371,18 @@ export function useChatMiniFeatures(deps: {
     deps.scrollToBottom();
     deps.saveChat();
     showWeatherModal.value = false;
+    customWeatherData.value = null;
+    customWeatherCity.value = "";
   }
 
   function cancelWeather() {
     showWeatherModal.value = false;
+    customWeatherData.value = null;
+    customWeatherCity.value = "";
+    charWeatherData.value = null;
+    weatherSearchQuery.value = "";
+    weatherSearchResults.value = [];
+    weatherEditTarget.value = null;
   }
 
   return {
@@ -231,7 +404,21 @@ export function useChatMiniFeatures(deps: {
     cancelLocation,
     // 天氣分享
     showWeatherModal,
+    openWeatherModal,
     sendWeatherMessage,
     cancelWeather,
+    weatherSearchQuery,
+    weatherSearchResults,
+    weatherSearchLoading,
+    customWeatherData,
+    customWeatherCity,
+    charWeatherData,
+    charWeatherLoading,
+    searchWeatherCities,
+    selectWeatherCity,
+    clearCustomWeather,
+    weatherEditTarget,
+    startWeatherEdit,
+    cancelWeatherEdit,
   };
 }

@@ -1,7 +1,7 @@
-import { ref, type Ref } from "vue";
 import { useSettingsStore } from "@/stores";
 import { useUserStore } from "@/stores/user";
 import type { StoredCharacter } from "@/types/character";
+import { ref, type Ref } from "vue";
 
 type MediaType =
   | "descriptive-image"
@@ -117,98 +117,210 @@ export function useChatMedia(deps: {
     deps.saveChat();
   }
 
-  async function tryGenerateImageForMessage(
-    messageId: string,
-    imagePrompt?: string,
-  ) {
-    if (!imagePrompt) return;
-    if (
-      !settingsStore.novelAIImage.enabled ||
-      !settingsStore.novelAIImage.apiKey
-    )
+  /**
+   * 將訊息降級為純文字描述圖片
+   */
+  function fallbackToDescriptiveImage(messageId: string) {
+    const idx = deps.messages.value.findIndex((m) => m.id === messageId);
+    if (idx === -1) return;
+    const caption = deps.messages.value[idx].imageCaption || "";
+    deps.messages.value[idx] = {
+      ...deps.messages.value[idx],
+      content: caption,
+      messageType: "descriptive-image",
+      isStreaming: false,
+    };
+  }
+
+  /**
+   * 將 AI 生成的長 prompt 精簡為 Pixabay 可接受的搜尋關鍵字
+   * Pixabay 免費 API 限制：
+   *   - q 最多 100 字元
+   *   - 逗號視為標籤分隔符（最多 3 個標籤）
+   * 策略：取第一個逗號前的片段，再取前 4 個單詞，截斷至 100 字元
+   */
+  function sanitizePixabayQuery(prompt: string): string {
+    // 取第一個逗號前的部分（最核心的描述詞）
+    const firstSegment = prompt.split(",")[0].trim();
+    // 取前 4 個單詞，避免過長的描述句造成 400
+    const words = firstSegment.split(/\s+/).slice(0, 4).join(" ");
+    return words.slice(0, 100);
+  }
+
+  /**
+   * Pixabay 遞補：NovelAI 未啟用時搜尋 Pixabay 圖片
+   */
+  async function tryPixabayFallback(messageId: string, imagePrompt: string) {
+    const idx = deps.messages.value.findIndex((m) => m.id === messageId);
+    if (idx === -1) return;
+
+    // 精簡查詢關鍵字，避免 Pixabay API 400 錯誤
+    const sanitizedQuery = sanitizePixabayQuery(imagePrompt);
+    if (!sanitizedQuery) {
+      fallbackToDescriptiveImage(messageId);
+      deps.saveChat();
       return;
-
-    const msgIndex = deps.messages.value.findIndex(
-      (m) => m.id === messageId,
-    );
-    if (msgIndex === -1) return;
-
-    deps.messages.value[msgIndex].content =
-      `[生成圖片中...] ${deps.messages.value[msgIndex].imageCaption || ""}`;
-    deps.messages.value[msgIndex].isStreaming = true;
-    isGeneratingImage.value = true;
+    }
 
     try {
-      const { generateImage } = await import("@/api/NovelAIImageApi");
-      
-      // iOS Safari 特殊处理：更短的超时时间
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      const timeoutMs = isIOS ? 45000 : 60000; // iOS: 45秒, 其他: 60秒
-      
-      // 添加超時控制
-      const timeoutPromise = new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error(`請求超時（${timeoutMs / 1000}秒），請檢查網絡連接或稍後重試`)), timeoutMs)
+      const { searchPixabay } = await import("@/api/PixabayApi");
+      const result = await searchPixabay({
+        q: sanitizedQuery,
+        perPage: 3, // Pixabay 免費方案最小值為 3
+        lang: "en",
+      });
+
+      const currentIdx = deps.messages.value.findIndex(
+        (m) => m.id === messageId,
       );
-      
-      const result = await Promise.race([
-        generateImage(imagePrompt, settingsStore.novelAIImage, {
-          characterPrompt: getCharacterPrompt(),
-          userPrompt: getUserPrompt(),
-        }),
-        timeoutPromise
-      ]);
+      if (currentIdx === -1) return;
 
-      const idx = deps.messages.value.findIndex((m) => m.id === messageId);
-      if (idx === -1) return;
-
-      if (result.success && result.imageBase64) {
-        deps.messages.value[idx] = {
-          ...deps.messages.value[idx],
-          content: deps.messages.value[idx].imageCaption || imagePrompt,
-          messageType: "image",
-          imageUrl: `data:image/png;base64,${result.imageBase64}`,
-          imageData: result.imageBase64,
-          imageMimeType: "image/png",
+      if (result.hits.length > 0) {
+        const hit = result.hits[0];
+        // 有結果：更新為 image-url 訊息
+        // imageCaption 保留原本的中文描述（顯示在拍立得底部），不用 Pixabay 作者名
+        const originalCaption =
+          deps.messages.value[currentIdx].imageCaption || imagePrompt;
+        deps.messages.value[currentIdx] = {
+          ...deps.messages.value[currentIdx],
+          content: originalCaption,
+          messageType: "image-url",
+          imageUrl: hit.proxyWebformatURL,
+          imageCaption: originalCaption,
           isStreaming: false,
         };
       } else {
-        const caption = deps.messages.value[idx].imageCaption || "";
-        deps.messages.value[idx].content = `<pic>${caption}</pic>`;
-        deps.messages.value[idx].messageType = "descriptive-image";
-        deps.messages.value[idx].isStreaming = false;
-        console.warn("[AI Image] 生成失敗:", result.error);
-        
-        // 更友好的錯誤提示
-        const errorMsg = result.error || "未知錯誤";
-        if (errorMsg.includes('503')) {
-          alert(`NovelAI 圖片生成失敗 (503)\n\n${errorMsg}\n\n提示詞: ${imagePrompt}`);
-        } else {
-          alert(`NovelAI 圖片生成失敗\n\n${errorMsg}\n\n提示詞: ${imagePrompt}`);
-        }
+        // 無結果：降級為純文字描述
+        fallbackToDescriptiveImage(messageId);
       }
-    } catch (error) {
-      console.error("[AI Image] 錯誤:", error);
-      const idx = deps.messages.value.findIndex((m) => m.id === messageId);
-      if (idx !== -1) {
-        const caption = deps.messages.value[idx].imageCaption || "";
-        deps.messages.value[idx].content = `<pic>${caption}</pic>`;
-        deps.messages.value[idx].messageType = "descriptive-image";
-        deps.messages.value[idx].isStreaming = false;
-      }
-      
-      // 更友好的異常錯誤提示
-      const errorMsg = error instanceof Error ? error.message : "網絡錯誤或請求超時";
-      if (errorMsg.includes('503')) {
-        alert(`NovelAI 圖片生成異常 (503)\n\n服務暫時不可用，可能原因：\n1. NovelAI 服務器負載過高\n2. 網絡連接不穩定\n3. API Key 使用頻率過高\n\n建議：\n- 稍後重試（系統已自動重試 3 次）\n- 切換到 WiFi 網絡環境\n- 檢查 API Key 是否有效\n\n提示詞: ${imagePrompt}`);
-      } else if (errorMsg.includes('超時')) {
-        alert(`NovelAI 圖片生成超時\n\n${errorMsg}\n\n建議：\n- 檢查網絡連接\n- 切換到更穩定的網絡環境\n- 稍後重試\n\n提示詞: ${imagePrompt}`);
-      } else {
-        alert(`NovelAI 圖片生成異常\n\n${errorMsg}\n\n提示詞: ${imagePrompt}`);
-      }
+    } catch {
+      // 錯誤：降級為純文字描述
+      fallbackToDescriptiveImage(messageId);
     } finally {
-      isGeneratingImage.value = false;
       deps.saveChat();
     }
+  }
+
+  async function tryGenerateImageForMessage(
+    messageId: string,
+    imagePrompt?: string,
+    imageDescription?: string,
+  ) {
+    // 若 imagePrompt 為空，使用 imageDescription 作為搜尋關鍵字
+    const effectivePrompt = imagePrompt?.trim() || imageDescription?.trim();
+    if (!effectivePrompt) return;
+
+    const msgIndex = deps.messages.value.findIndex((m) => m.id === messageId);
+    if (msgIndex === -1) return;
+
+    // 遞補鏈：NovelAI 啟用時使用 NovelAI，否則使用 Pixabay
+    if (
+      settingsStore.novelAIImage.enabled &&
+      settingsStore.novelAIImage.apiKey
+    ) {
+      // NovelAI 需要英文 prompt — 若 imagePrompt 為空則跳過
+      if (!imagePrompt?.trim()) return;
+
+      deps.messages.value[msgIndex].content =
+        `[生成圖片中...] ${deps.messages.value[msgIndex].imageCaption || ""}`;
+      deps.messages.value[msgIndex].isStreaming = true;
+      isGeneratingImage.value = true;
+
+      try {
+        const { generateImage } = await import("@/api/NovelAIImageApi");
+
+        // iOS Safari 特殊處理：更短的超時時間
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        const timeoutMs = isIOS ? 45000 : 60000; // iOS: 45秒, 其他: 60秒
+
+        // 添加超時控制
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `請求超時（${timeoutMs / 1000}秒），請檢查網絡連接或稍後重試`,
+                ),
+              ),
+            timeoutMs,
+          ),
+        );
+
+        const result = await Promise.race([
+          generateImage(imagePrompt, settingsStore.novelAIImage, {
+            characterPrompt: getCharacterPrompt(),
+            userPrompt: getUserPrompt(),
+          }),
+          timeoutPromise,
+        ]);
+
+        const idx = deps.messages.value.findIndex((m) => m.id === messageId);
+        if (idx === -1) return;
+
+        if (result.success && result.imageBase64) {
+          deps.messages.value[idx] = {
+            ...deps.messages.value[idx],
+            content: deps.messages.value[idx].imageCaption || imagePrompt,
+            messageType: "image",
+            imageUrl: `data:image/png;base64,${result.imageBase64}`,
+            imageData: result.imageBase64,
+            imageMimeType: "image/png",
+            isStreaming: false,
+          };
+        } else {
+          const caption = deps.messages.value[idx].imageCaption || "";
+          deps.messages.value[idx].content = `<pic>${caption}</pic>`;
+          deps.messages.value[idx].messageType = "descriptive-image";
+          deps.messages.value[idx].isStreaming = false;
+          console.warn("[AI Image] 生成失敗:", result.error);
+
+          // 更友好的錯誤提示
+          const errorMsg = result.error || "未知錯誤";
+          if (errorMsg.includes("503")) {
+            alert(
+              `NovelAI 圖片生成失敗 (503)\n\n${errorMsg}\n\n提示詞: ${imagePrompt}`,
+            );
+          } else {
+            alert(
+              `NovelAI 圖片生成失敗\n\n${errorMsg}\n\n提示詞: ${imagePrompt}`,
+            );
+          }
+        }
+      } catch (error) {
+        console.error("[AI Image] 錯誤:", error);
+        const idx = deps.messages.value.findIndex((m) => m.id === messageId);
+        if (idx !== -1) {
+          const caption = deps.messages.value[idx].imageCaption || "";
+          deps.messages.value[idx].content = `<pic>${caption}</pic>`;
+          deps.messages.value[idx].messageType = "descriptive-image";
+          deps.messages.value[idx].isStreaming = false;
+        }
+
+        // 更友好的異常錯誤提示
+        const errorMsg =
+          error instanceof Error ? error.message : "網絡錯誤或請求超時";
+        if (errorMsg.includes("503")) {
+          alert(
+            `NovelAI 圖片生成異常 (503)\n\n服務暫時不可用，可能原因：\n1. NovelAI 服務器負載過高\n2. 網絡連接不穩定\n3. API Key 使用頻率過高\n\n建議：\n- 稍後重試（系統已自動重試 3 次）\n- 切換到 WiFi 網絡環境\n- 檢查 API Key 是否有效\n\n提示詞: ${imagePrompt}`,
+          );
+        } else if (errorMsg.includes("超時")) {
+          alert(
+            `NovelAI 圖片生成超時\n\n${errorMsg}\n\n建議：\n- 檢查網絡連接\n- 切換到更穩定的網絡環境\n- 稍後重試\n\n提示詞: ${imagePrompt}`,
+          );
+        } else {
+          alert(
+            `NovelAI 圖片生成異常\n\n${errorMsg}\n\n提示詞: ${imagePrompt}`,
+          );
+        }
+      } finally {
+        isGeneratingImage.value = false;
+        deps.saveChat();
+      }
+      return;
+    }
+
+    // Pixabay 遞補：NovelAI 未啟用時搜尋 Pixabay
+    await tryPixabayFallback(messageId, effectivePrompt);
   }
 
   async function handleAIGenerateImage(prompt: string) {
@@ -234,14 +346,10 @@ export function useChatMedia(deps: {
 
     try {
       const { generateImage } = await import("@/api/NovelAIImageApi");
-      const result = await generateImage(
-        prompt,
-        settingsStore.novelAIImage,
-        {
-          characterPrompt: getCharacterPrompt(),
-          userPrompt: getUserPrompt(),
-        },
-      );
+      const result = await generateImage(prompt, settingsStore.novelAIImage, {
+        characterPrompt: getCharacterPrompt(),
+        userPrompt: getUserPrompt(),
+      });
 
       if (result.success && result.imageBase64) {
         const msgIndex = deps.messages.value.findIndex(

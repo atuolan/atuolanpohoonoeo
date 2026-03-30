@@ -1395,6 +1395,8 @@ async function handleCharacterSave(character: any) {
     source: character.source || "manual",
     createdAt: character.createdAt || Date.now(),
     updatedAt: Date.now(),
+    // 世界設定（保留有值的欄位）
+    worldSettings: character.worldSettings ?? existingChar?.worldSettings,
   };
 
   try {

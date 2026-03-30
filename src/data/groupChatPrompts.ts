@@ -1513,6 +1513,7 @@ export const DEFAULT_GROUP_CHAT_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "gcImportantEvents", enabled: true },
   { identifier: "gcTimeInfo", enabled: true },
   { identifier: "gcWeatherInfo", enabled: true },
+  { identifier: "gcCharacterWorldContext", enabled: true },
   { identifier: "gcGameScores", enabled: true },
   { identifier: "gcFoodLogs", enabled: true },
   { identifier: "gcMediaLogs", enabled: true },

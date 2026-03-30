@@ -1,6 +1,6 @@
 /**
  * 主要聊天系統提示詞定義
- * 
+ *
  * 包含線上聊天模式的所有核心提示詞：
  * - 防護序列和身份建立
  * - 核心規則和認知
@@ -11,7 +11,7 @@
  */
 
 import type { PromptDefinition, PromptOrderEntry } from "./types";
-import { INJECTION_RELATIVE, INJECTION_ABSOLUTE } from "./types";
+import { INJECTION_ABSOLUTE, INJECTION_RELATIVE } from "./types";
 
 // ===== 主要聊天提示詞定義 =====
 export const DEFAULT_PROMPT_DEFINITIONS: PromptDefinition[] = [
@@ -995,7 +995,8 @@ assistant：我是基拉祈與雪拉比...。我是許願星與創世神。
     description: "避免過多性行為，推動劇情發展",
     category: "rules",
     role: "user",
-    content: "{{user}}：不要再一直發生性行為和藉機上床做愛了！我需要劇情啊！再做愛這個故事都走不下去了！",
+    content:
+      "{{user}}：不要再一直發生性行為和藉機上床做愛了！我需要劇情啊！再做愛這個故事都走不下去了！",
     system_prompt: false,
     marker: false,
     injection_position: INJECTION_RELATIVE,
@@ -1452,6 +1453,7 @@ export const DEFAULT_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "importantEvents", enabled: true },
   { identifier: "timeInfo", enabled: true },
   { identifier: "weatherInfo", enabled: true },
+  { identifier: "characterWorldContext", enabled: true },
   { identifier: "gameScores", enabled: true },
   { identifier: "gameEconomyState", enabled: true },
   { identifier: "foodLogs", enabled: true },
@@ -1493,5 +1495,7 @@ export const DEFAULT_PROMPT_ORDER: PromptOrderEntry[] = [
 ];
 
 // ===== 向後兼容別名 =====
-export { DEFAULT_PROMPT_DEFINITIONS as CHAT_PROMPT_DEFINITIONS };
-export { DEFAULT_PROMPT_ORDER as DEFAULT_CHAT_PROMPT_ORDER };
+export {
+  DEFAULT_PROMPT_DEFINITIONS as CHAT_PROMPT_DEFINITIONS,
+  DEFAULT_PROMPT_ORDER as DEFAULT_CHAT_PROMPT_ORDER,
+};

@@ -27,6 +27,7 @@ import PhoneCallModal from "@/components/modals/PhoneCallModal.vue";
 import ProactiveMessageSettingsModal from "@/components/modals/ProactiveMessageSettingsModal.vue";
 import ScreenshotPreviewModal from "@/components/modals/ScreenshotPreviewModal.vue";
 import VideoCallModal from "@/components/modals/VideoCallModal.vue";
+import ImageSearchPanel from "@/components/panels/ImageSearchPanel.vue";
 import { useChatAudioRecording } from "@/composables/useChatAudioRecording";
 import { useChatAvatarChange } from "@/composables/useChatAvatarChange";
 import { useChatEventsExtraction } from "@/composables/useChatEventsExtraction";
@@ -67,6 +68,12 @@ import {
   parseGroupChatResponse,
 } from "@/services/ResponseParser";
 import {
+  getNearbyPlaces,
+  getWeatherByCity,
+  getWeatherByCoords,
+  searchCities,
+} from "@/services/WeatherService";
+import {
   useAIGenerationStore,
   useCharactersStore,
   useChatStore,
@@ -82,6 +89,7 @@ import { useUserStore } from "@/stores/user";
 import type {
   Chat,
   ChatAppearance,
+  ChatLocationOverride,
   ChatMessage,
   WaimaiOrderSnapshot,
 } from "@/types/chat";
@@ -1211,6 +1219,7 @@ const selectedMessageIds = ref<string[]>([]);
 
 // ===== 加號選單功能 =====
 const showMoreFeatures = ref(false);
+const showImageSearchPanel = ref(false);
 
 // ===== 聊天檔案管理 composable =====
 const {
@@ -1407,14 +1416,29 @@ const {
   confirmLocation,
   cancelLocation,
   showWeatherModal,
+  openWeatherModal,
   sendWeatherMessage,
   cancelWeather,
+  weatherSearchQuery,
+  weatherSearchResults,
+  weatherSearchLoading,
+  customWeatherData,
+  customWeatherCity,
+  charWeatherData,
+  charWeatherLoading,
+  searchWeatherCities,
+  selectWeatherCity,
+  clearCustomWeather,
+  weatherEditTarget,
+  startWeatherEdit,
+  cancelWeatherEdit,
 } = useChatMiniFeatures({
   messages,
   scrollToBottom,
   saveChat,
   saveChatImmediate,
   triggerAIResponse,
+  currentCharacter,
 });
 
 // ===== 換頭像 composable =====
@@ -1512,6 +1536,22 @@ const chatFaceToFaceMode = ref(false); // 聊天專屬面對面模式
 const chatThirdPersonMode = ref(false); // 聊天專屬第三人稱模式
 const chatEnableRealTimeAwareness = ref(true); // 感知現實時間（默認開啟）
 const chatMinimaxTTSEnabled = ref(false); // 聊天專屬 MiniMax TTS（默認關閉）
+
+// 聊天專屬位置覆蓋（null 表示使用全域設定）
+const chatLocationOverride = ref<ChatLocationOverride | null>(null);
+// 位置搜尋相關狀態
+const locationSearchQuery = ref("");
+const locationSearchResults = ref<
+  Array<{
+    id: number;
+    name: string;
+    region: string;
+    country: string;
+    lat: number;
+    lon: number;
+  }>
+>([]);
+const locationSearchLoading = ref(false);
 
 // ===== 好感度 =====
 import type {
@@ -1834,9 +1874,11 @@ const {
   locationInput,
   showLocationModal,
   showWeatherModal,
+  openWeatherModal,
   topicPromptInput,
   showTopicPromptModal,
   showGameScorePicker,
+  showImageSearchPanel,
   scrollToBottom,
   saveChat,
   openTheater,
@@ -2756,6 +2798,23 @@ function handleSendGift(_giftItemId: string, giftName: string) {
   scrollToBottom();
   saveChat();
   // 不自動觸發 AI 回覆，讓用戶可以繼續發送其他訊息
+}
+
+// 處理 Pixabay 圖片搜尋選擇：建立 image-url 訊息並加入聊天
+function handleImageSearchSelect(imageUrl: string, caption: string) {
+  const message: Message = {
+    id: `msg_${Date.now()}`,
+    role: "user",
+    content: caption || "[圖片]",
+    timestamp: Date.now(),
+    messageType: "image-url",
+    imageUrl,
+    imageCaption: caption,
+  };
+  messages.value.push(message);
+  scrollToBottom();
+  saveChat();
+  showImageSearchPanel.value = false;
 }
 
 // 處理禮物接收（AI 回覆後自動觸發）
@@ -3788,20 +3847,104 @@ async function triggerAIResponse(options?: {
       eventsToSend = await loadImportantEventsForPrompt();
     }
 
-    // 準備天氣數據
-    const weatherInfoToSend =
-      weatherStore.hasWeatherData && weatherStore.weatherData
-        ? {
-            location: weatherStore.locationName,
-            condition: weatherStore.weatherCondition,
-            temperature: Math.round(weatherStore.currentTemp || 0),
-            feelsLike: Math.round(weatherStore.weatherData.current.feelslike_c),
-            humidity: weatherStore.weatherData.current.humidity,
-            windSpeed: weatherStore.weatherData.current.wind_kph,
-            windDir: weatherStore.weatherData.current.wind_dir,
-            uv: weatherStore.weatherData.current.uv,
-          }
-        : undefined;
+    // 準備天氣數據（優先使用聊天專屬位置覆蓋，回退至全域天氣）
+    let weatherInfoToSend: typeof weatherStore.weatherData extends null
+      ? undefined
+      :
+          | {
+              location: string;
+              condition: string;
+              temperature: number;
+              feelsLike: number;
+              humidity: number;
+              windSpeed?: number;
+              windDir?: string;
+              uv?: number;
+            }
+          | undefined = undefined;
+
+    const locOverride = chatLocationOverride.value;
+    if (locOverride) {
+      // 嘗試取得覆蓋位置的天氣
+      try {
+        let overrideWeather = null;
+        if (locOverride.lat !== undefined && locOverride.lon !== undefined) {
+          overrideWeather = await getWeatherByCoords(
+            locOverride.lat,
+            locOverride.lon,
+          );
+        } else if (locOverride.city) {
+          overrideWeather = await getWeatherByCity(locOverride.city);
+        }
+        if (overrideWeather) {
+          weatherInfoToSend = {
+            location: overrideWeather.location.name,
+            condition: overrideWeather.current.condition.text,
+            temperature: Math.round(overrideWeather.current.temp_c),
+            feelsLike: Math.round(overrideWeather.current.feelslike_c),
+            humidity: overrideWeather.current.humidity,
+            windSpeed: overrideWeather.current.wind_kph,
+            windDir: overrideWeather.current.wind_dir,
+            uv: overrideWeather.current.uv,
+          };
+        }
+      } catch {
+        console.warn("[ChatScreen] 聊天位置覆蓋天氣取得失敗，回退至全域天氣");
+      }
+    }
+
+    // 若覆蓋失敗或無覆蓋，使用全域天氣
+    if (
+      !weatherInfoToSend &&
+      weatherStore.hasWeatherData &&
+      weatherStore.weatherData
+    ) {
+      weatherInfoToSend = {
+        location: weatherStore.locationName,
+        condition: weatherStore.weatherCondition,
+        temperature: Math.round(weatherStore.currentTemp || 0),
+        feelsLike: Math.round(weatherStore.weatherData.current.feelslike_c),
+        humidity: weatherStore.weatherData.current.humidity,
+        windSpeed: weatherStore.weatherData.current.wind_kph,
+        windDir: weatherStore.weatherData.current.wind_dir,
+        uv: weatherStore.weatherData.current.uv,
+      };
+    }
+
+    // 準備附近地點（僅 browser GPS 模式且有座標時查詢）
+    let nearbyPlacesToSend:
+      | import("@/services/WeatherService").NearbyPlace[]
+      | undefined;
+    const userLoc = weatherStore.userLocation;
+    if (
+      userLoc.mode === "browser" &&
+      userLoc.lat !== undefined &&
+      userLoc.lon !== undefined
+    ) {
+      nearbyPlacesToSend = await getNearbyPlaces(
+        userLoc.lat,
+        userLoc.lon,
+        settingsStore.nearbyPlacesRadius,
+        settingsStore.nearbyPlacesLimit,
+      );
+    }
+
+    // 準備角色世界設定（若有位置且無手動天氣，自動查詢即時天氣）
+    let charWorldSettings = char.worldSettings
+      ? { ...char.worldSettings }
+      : undefined;
+    if (charWorldSettings?.location && !charWorldSettings.weatherOverride) {
+      try {
+        const charWeather = await getWeatherByCity(charWorldSettings.location);
+        charWorldSettings = {
+          ...charWorldSettings,
+          weatherOverride: `${charWeather.current.condition.text}，${Math.round(charWeather.current.temp_c)}°C（體感 ${Math.round(charWeather.current.feelslike_c)}°C，濕度 ${charWeather.current.humidity}%）`,
+        };
+      } catch {
+        // 查詢失敗時保留原設定，不影響其他功能
+        console.warn("[ChatScreen] 角色世界設定天氣查詢失敗");
+      }
+    }
 
     // 準備表情包列表（只取自定義表情的名稱）
     const stickerNames = stickerStore.customCategories
@@ -3842,6 +3985,10 @@ async function triggerAIResponse(options?: {
       vectorMemories,
       // 傳入天氣數據
       weatherInfo: weatherInfoToSend,
+      // 傳入附近地點（GPS 可用時）
+      nearbyPlaces: nearbyPlacesToSend,
+      // 傳入角色世界設定
+      characterWorldSettings: charWorldSettings,
       // 傳入節日資訊
       holidayInfo: (() => {
         const todayHoliday = detectTodayHoliday();
@@ -4487,9 +4634,16 @@ async function triggerAIResponse(options?: {
 
             messages.value.push(newMessage);
 
-            // 如果文生圖已開啟且有英文 prompt，觸發生圖
-            if (parsedMsg.isAiImage && parsedMsg.imagePrompt) {
-              tryGenerateImageForMessage(newMessage.id, parsedMsg.imagePrompt);
+            // 如果文生圖已開啟且有英文 prompt 或中文描述，觸發生圖
+            if (
+              parsedMsg.isAiImage &&
+              (parsedMsg.imagePrompt || parsedMsg.imageDescription)
+            ) {
+              tryGenerateImageForMessage(
+                newMessage.id,
+                parsedMsg.imagePrompt,
+                parsedMsg.imageDescription,
+              );
             }
             // MiniMax TTS 語音合成
             processMessageTTS(newMessage.id, newMessage.content);
@@ -4757,11 +4911,15 @@ async function triggerAIResponse(options?: {
                 await processAIRefund(parsedMsg.transferAmount);
               }
 
-              // 如果文生圖已開啟且有英文 prompt，觸發生圖
-              if (parsedMsg.isAiImage && parsedMsg.imagePrompt) {
+              // 如果文生圖已開啟且有英文 prompt 或中文描述，觸發生圖
+              if (
+                parsedMsg.isAiImage &&
+                (parsedMsg.imagePrompt || parsedMsg.imageDescription)
+              ) {
                 tryGenerateImageForMessage(
                   newMessage.id,
                   parsedMsg.imagePrompt,
+                  parsedMsg.imageDescription,
                 );
               }
               // MiniMax TTS 語音合成
@@ -5247,10 +5405,14 @@ async function triggerAIResponse(options?: {
 
               messages.value.push(newMessage);
 
-              if (parsedMsg.isAiImage && parsedMsg.imagePrompt) {
+              if (
+                parsedMsg.isAiImage &&
+                (parsedMsg.imagePrompt || parsedMsg.imageDescription)
+              ) {
                 tryGenerateImageForMessage(
                   newMessage.id,
                   parsedMsg.imagePrompt,
+                  parsedMsg.imageDescription,
                 );
               }
               // MiniMax TTS 語音合成
@@ -5510,10 +5672,14 @@ async function triggerAIResponse(options?: {
                   await processAIRefund(parsedMsg.transferAmount);
                 }
 
-                if (parsedMsg.isAiImage && parsedMsg.imagePrompt) {
+                if (
+                  parsedMsg.isAiImage &&
+                  (parsedMsg.imagePrompt || parsedMsg.imageDescription)
+                ) {
                   tryGenerateImageForMessage(
                     newMessage.id,
                     parsedMsg.imagePrompt,
+                    parsedMsg.imageDescription,
                   );
                 }
                 // MiniMax TTS 語音合成
@@ -6012,9 +6178,16 @@ async function handleStreamingClose() {
 
           messages.value.push(windowGcMsg);
 
-          // 如果文生圖已開啟且有英文 prompt，觸發生圖
-          if (parsedMsg.isAiImage && parsedMsg.imagePrompt) {
-            tryGenerateImageForMessage(windowGcMsg.id, parsedMsg.imagePrompt);
+          // 如果文生圖已開啟且有英文 prompt 或中文描述，觸發生圖
+          if (
+            parsedMsg.isAiImage &&
+            (parsedMsg.imagePrompt || parsedMsg.imageDescription)
+          ) {
+            tryGenerateImageForMessage(
+              windowGcMsg.id,
+              parsedMsg.imagePrompt,
+              parsedMsg.imageDescription,
+            );
           }
           // MiniMax TTS 語音合成
           processMessageTTS(windowGcMsg.id, windowGcMsg.content);
@@ -6169,9 +6342,16 @@ async function handleStreamingClose() {
               processAIRefund(parsedMsg.transferAmount);
             }
 
-            // 如果文生圖已開啟且有英文 prompt，觸發生圖
-            if (parsedMsg.isAiImage && parsedMsg.imagePrompt) {
-              tryGenerateImageForMessage(newMessage.id, parsedMsg.imagePrompt);
+            // 如果文生圖已開啟且有英文 prompt 或中文描述，觸發生圖
+            if (
+              parsedMsg.isAiImage &&
+              (parsedMsg.imagePrompt || parsedMsg.imageDescription)
+            ) {
+              tryGenerateImageForMessage(
+                newMessage.id,
+                parsedMsg.imagePrompt,
+                parsedMsg.imageDescription,
+              );
             }
             // MiniMax TTS 語音合成
             processMessageTTS(newMessage.id, newMessage.content);
@@ -6393,6 +6573,43 @@ async function toggleChatDoNotDisturb() {
   await saveChatImmediate();
 }
 
+// ===== 聊天專屬位置覆蓋 =====
+async function searchLocationCities() {
+  const q = locationSearchQuery.value.trim();
+  if (!q) return;
+  locationSearchLoading.value = true;
+  try {
+    locationSearchResults.value = await searchCities(q);
+  } catch {
+    locationSearchResults.value = [];
+  } finally {
+    locationSearchLoading.value = false;
+  }
+}
+
+async function selectLocationCity(city: {
+  id: number;
+  name: string;
+  region: string;
+  country: string;
+  lat: number;
+  lon: number;
+}) {
+  chatLocationOverride.value = {
+    mode: "manual",
+    city: city.name,
+    lat: city.lat,
+    lon: city.lon,
+  };
+  locationSearchQuery.value = "";
+  locationSearchResults.value = [];
+  await saveChatImmediate();
+}
+
+async function clearLocationOverride() {
+  chatLocationOverride.value = null;
+  await saveChatImmediate();
+}
 // 切換感知現實時間
 async function toggleRealTimeAwareness() {
   chatEnableRealTimeAwareness.value = !chatEnableRealTimeAwareness.value;
@@ -7118,6 +7335,9 @@ async function loadOrCreateChat(overrideChatId?: string) {
           ? { ...chat.minimaxTTSOverride }
           : {};
 
+        // 載入聊天專屬位置覆蓋
+        chatLocationOverride.value = chat.locationOverride ?? null;
+
         // 載入總結設定
         if (chat.summarySettings) {
           chatSummarySettings.value = { ...chat.summarySettings };
@@ -7630,6 +7850,8 @@ function buildChatMetadata(
     pinnedToList: currentChatData.value?.pinnedToList,
     // 封鎖狀態（從 DB 中的現有資料保留，不由 ChatScreen 管理）
     blockState: currentChatData.value?.blockState,
+    // 聊天專屬位置覆蓋
+    locationOverride: chatLocationOverride.value ?? undefined,
   };
 }
 
@@ -8974,6 +9196,73 @@ onUnmounted(() => {
                 </svg>
                 <span>語音設定</span>
               </button>
+              <!-- 位置覆蓋 -->
+              <div class="dropdown-divider"></div>
+              <div class="dropdown-section-title">位置覆蓋</div>
+              <!-- 目前覆蓋位置 -->
+              <div v-if="chatLocationOverride" class="dropdown-toggle-item">
+                <div class="toggle-item-info">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path
+                      d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
+                    />
+                  </svg>
+                  <span
+                    style="
+                      font-size: 12px;
+                      max-width: 120px;
+                      overflow: hidden;
+                      text-overflow: ellipsis;
+                      white-space: nowrap;
+                    "
+                  >
+                    {{
+                      chatLocationOverride.city ||
+                      `${chatLocationOverride.lat?.toFixed(2)},${chatLocationOverride.lon?.toFixed(2)}`
+                    }}
+                  </span>
+                </div>
+                <button
+                  class="dropdown-clear-btn"
+                  @click="clearLocationOverride"
+                >
+                  清除
+                </button>
+              </div>
+              <!-- 城市搜尋 -->
+              <div class="location-search-box">
+                <input
+                  v-model="locationSearchQuery"
+                  class="location-search-input"
+                  placeholder="搜尋城市..."
+                  @keydown.enter="searchLocationCities"
+                />
+                <button
+                  class="location-search-btn"
+                  :disabled="locationSearchLoading"
+                  @click="searchLocationCities"
+                >
+                  {{ locationSearchLoading ? "…" : "搜尋" }}
+                </button>
+              </div>
+              <div
+                v-if="locationSearchResults.length > 0"
+                class="location-results"
+              >
+                <button
+                  v-for="city in locationSearchResults"
+                  :key="city.id"
+                  class="location-result-item"
+                  @click="selectLocationCity(city)"
+                >
+                  <span class="location-result-name">{{ city.name }}</span>
+                  <span class="location-result-sub"
+                    >{{ city.region
+                    }}{{ city.region && city.country ? "，" : ""
+                    }}{{ city.country }}</span
+                  >
+                </button>
+              </div>
             </div>
           </Transition>
         </div>
@@ -9968,6 +10257,19 @@ onUnmounted(() => {
                 </svg>
               </div>
               <span class="feature-label">書影</span>
+            </button>
+            <button
+              class="feature-item"
+              @click="handleFeatureClick('image-search')"
+            >
+              <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
+                  />
+                </svg>
+              </div>
+              <span class="feature-label">搜圖分享</span>
             </button>
           </div>
         </div>
@@ -11153,78 +11455,208 @@ onUnmounted(() => {
         </div>
       </Transition>
 
-      <!-- 天氣分享模態框 -->
+      <!-- 天氣分享模態框（重新設計：可編輯用戶/角色所在地） -->
       <Transition name="fade">
         <div
           v-if="showWeatherModal"
           class="feature-modal-overlay"
           @click="cancelWeather"
         >
-          <div class="weather-modal-content" @click.stop>
-            <div class="weather-card-preview">
-              <template v-if="weatherStore.isLoading">
-                <div class="weather-loading">
-                  <div class="loading-spinner"></div>
-                  <span>載入天氣中...</span>
-                </div>
-              </template>
-              <template v-else-if="weatherStore.hasWeatherData">
-                <div class="weather-info">
-                  <div class="weather-location">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      width="16"
-                      height="16"
-                    >
-                      <path
-                        d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
-                      />
-                    </svg>
-                    <span>{{ weatherStore.locationName }}</span>
-                  </div>
-                  <div class="weather-main">
-                    <div class="weather-temp">
-                      {{ Math.round(weatherStore.currentTemp || 0) }}°C
-                    </div>
-                    <div class="weather-condition">
-                      {{ weatherStore.weatherCondition }}
-                    </div>
-                  </div>
-                  <div class="weather-details">
-                    <span
-                      >體感
-                      {{
-                        Math.round(
-                          weatherStore.weatherData?.current.feelslike_c || 0,
-                        )
-                      }}°C</span
-                    >
-                    <span
-                      >濕度
-                      {{ weatherStore.weatherData?.current.humidity }}%</span
-                    >
-                  </div>
-                </div>
-              </template>
-              <template v-else>
-                <div class="weather-error">
-                  <span>{{ weatherStore.error || "無法獲取天氣" }}</span>
-                  <button @click="weatherStore.refreshWeather(true)">
-                    重試
+          <div class="wm-panel" @click.stop>
+            <!-- 標題列 -->
+            <div class="wm-header">
+              <span class="wm-title">🌤 天氣與位置</span>
+              <button class="wm-close" @click="cancelWeather">✕</button>
+            </div>
+
+            <!-- 雙卡片區 -->
+            <div class="wm-cards">
+              <!-- 用戶卡片 -->
+              <div
+                class="wm-card wm-card--user"
+                :class="{ 'wm-card--editing': weatherEditTarget === 'user' }"
+              >
+                <div class="wm-card__header">
+                  <span class="wm-card__icon">👤</span>
+                  <span class="wm-card__who">我</span>
+                  <button
+                    class="wm-card__edit-btn"
+                    @click="startWeatherEdit('user')"
+                    title="變更所在地"
+                  >
+                    ✎
                   </button>
                 </div>
-              </template>
+                <template
+                  v-if="
+                    weatherStore.isLoading &&
+                    !weatherStore.hasWeatherData &&
+                    !customWeatherData
+                  "
+                >
+                  <div class="wm-card__loading">載入中…</div>
+                </template>
+                <template v-else-if="customWeatherData">
+                  <div class="wm-card__location">
+                    {{ customWeatherData.location.name }}
+                    <button class="wm-card__clear" @click="clearCustomWeather">
+                      ✕
+                    </button>
+                  </div>
+                  <div class="wm-card__temp">
+                    {{ Math.round(customWeatherData.current.temp_c) }}°
+                  </div>
+                  <div class="wm-card__cond">
+                    {{ customWeatherData.current.condition.text }}
+                  </div>
+                  <div class="wm-card__meta">
+                    體感
+                    {{ Math.round(customWeatherData.current.feelslike_c) }}° ·
+                    濕度 {{ customWeatherData.current.humidity }}%
+                  </div>
+                </template>
+                <template v-else-if="weatherStore.hasWeatherData">
+                  <div class="wm-card__location">
+                    {{ weatherStore.locationName }}
+                  </div>
+                  <div class="wm-card__temp">
+                    {{ Math.round(weatherStore.currentTemp || 0) }}°
+                  </div>
+                  <div class="wm-card__cond">
+                    {{ weatherStore.weatherCondition }}
+                  </div>
+                  <div class="wm-card__meta">
+                    體感
+                    {{
+                      Math.round(
+                        weatherStore.weatherData?.current.feelslike_c || 0,
+                      )
+                    }}° · 濕度 {{ weatherStore.weatherData?.current.humidity }}%
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="wm-card__empty">點擊 ✎ 設定位置</div>
+                </template>
+              </div>
+
+              <!-- 角色卡片 -->
+              <div
+                class="wm-card wm-card--char"
+                :class="{ 'wm-card--editing': weatherEditTarget === 'char' }"
+              >
+                <div class="wm-card__header">
+                  <span class="wm-card__icon">{{
+                    currentCharacter?.avatar ? "" : "🤖"
+                  }}</span>
+                  <img
+                    v-if="currentCharacter?.avatar"
+                    :src="currentCharacter.avatar"
+                    class="wm-card__avatar"
+                    alt=""
+                  />
+                  <span class="wm-card__who">{{
+                    currentCharacter?.data?.name || "角色"
+                  }}</span>
+                  <button
+                    class="wm-card__edit-btn"
+                    @click="startWeatherEdit('char')"
+                    title="變更角色所在地"
+                  >
+                    ✎
+                  </button>
+                </div>
+                <template v-if="charWeatherLoading">
+                  <div class="wm-card__loading">載入中…</div>
+                </template>
+                <template v-else-if="charWeatherData">
+                  <div class="wm-card__location">
+                    {{ charWeatherData.location.name }}
+                  </div>
+                  <div class="wm-card__temp">
+                    {{ Math.round(charWeatherData.current.temp_c) }}°
+                  </div>
+                  <div class="wm-card__cond">
+                    {{ charWeatherData.current.condition.text }}
+                  </div>
+                  <div class="wm-card__meta">
+                    體感 {{ Math.round(charWeatherData.current.feelslike_c) }}°
+                    · 濕度 {{ charWeatherData.current.humidity }}%
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="wm-card__empty">點擊 ✎ 設定位置</div>
+                  <div class="wm-card__hint">將自動儲存到角色世界設定</div>
+                </template>
+              </div>
             </div>
-            <div class="weather-actions">
-              <button class="modal-btn cancel" @click="cancelWeather">
+
+            <!-- 搜尋區（僅在編輯模式顯示） -->
+            <Transition name="fade">
+              <div v-if="weatherEditTarget" class="wm-search">
+                <div class="wm-search__label">
+                  🔍 搜尋城市（套用到{{
+                    weatherEditTarget === "user"
+                      ? "我"
+                      : currentCharacter?.data?.name || "角色"
+                  }}）
+                </div>
+                <div class="wm-search__row">
+                  <input
+                    v-model="weatherSearchQuery"
+                    class="wm-search__input"
+                    :placeholder="
+                      weatherEditTarget === 'user'
+                        ? '輸入你的城市…'
+                        : '輸入角色所在城市…'
+                    "
+                    @keydown.enter="searchWeatherCities"
+                  />
+                  <button
+                    class="wm-search__btn"
+                    :disabled="
+                      weatherSearchLoading || !weatherSearchQuery.trim()
+                    "
+                    @click="searchWeatherCities"
+                  >
+                    {{ weatherSearchLoading ? "…" : "搜尋" }}
+                  </button>
+                </div>
+                <!-- 搜尋結果 -->
+                <div
+                  v-if="weatherSearchResults.length > 0"
+                  class="wm-search__results"
+                >
+                  <button
+                    v-for="city in weatherSearchResults"
+                    :key="city.id"
+                    class="wm-search__result"
+                    @click="selectWeatherCity(city)"
+                  >
+                    <span class="wm-search__result-name"
+                      >📍 {{ city.name }}</span
+                    >
+                    <span class="wm-search__result-sub">{{
+                      [city.region, city.country].filter(Boolean).join("，")
+                    }}</span>
+                  </button>
+                </div>
+                <button class="wm-search__cancel" @click="cancelWeatherEdit">
+                  取消搜尋
+                </button>
+              </div>
+            </Transition>
+
+            <!-- 底部操作 -->
+            <div class="wm-footer">
+              <button class="wm-btn wm-btn--cancel" @click="cancelWeather">
                 取消
               </button>
               <button
-                class="modal-btn confirm"
+                class="wm-btn wm-btn--send"
                 @click="sendWeatherMessage"
                 :disabled="
-                  !weatherStore.hasWeatherData || weatherStore.isLoading
+                  !customWeatherData &&
+                  (!weatherStore.hasWeatherData || weatherStore.isLoading)
                 "
               >
                 發送天氣
@@ -12073,6 +12505,13 @@ onUnmounted(() => {
       :character-id="currentCharacter.id"
       @close="showProactiveMessageSettings = false"
     />
+
+    <!-- Pixabay 圖片搜尋面板 -->
+    <ImageSearchPanel
+      :visible="showImageSearchPanel"
+      @close="showImageSearchPanel = false"
+      @select="handleImageSearchSelect"
+    />
   </div>
 </template>
 
@@ -12818,6 +13257,91 @@ onUnmounted(() => {
 
 .chat-settings-menu {
   min-width: 220px;
+}
+
+.dropdown-clear-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
+  background: transparent;
+  color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
+  cursor: pointer;
+  white-space: nowrap;
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.location-search-box {
+  display: flex;
+  gap: 4px;
+  padding: 4px 12px;
+}
+
+.location-search-input {
+  flex: 1;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  outline: none;
+  &::placeholder {
+    opacity: 0.5;
+  }
+}
+
+.location-search-btn {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
+  background: rgba(255, 255, 255, 0.1);
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.18);
+  }
+}
+
+.location-results {
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 0 4px 4px;
+}
+
+.location-result-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 5px 10px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+  text-align: left;
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.location-result-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.location-result-sub {
+  font-size: 11px;
+  opacity: 0.6;
 }
 
 // 帶開關的下拉選項
@@ -15062,116 +15586,321 @@ onUnmounted(() => {
   margin-top: 16px;
 }
 
-// ===== 天氣分享模態框樣式 =====
-.weather-modal-content {
+// ===== 天氣與位置面板樣式 =====
+.wm-panel {
   background: var(--color-surface, #fff);
-  border-radius: 20px;
-  padding: 20px;
-  width: 90%;
-  max-width: 320px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  border-radius: 24px;
+  padding: 0;
+  width: 92%;
+  max-width: 380px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
 }
 
-.weather-card-preview {
-  background: linear-gradient(135deg, #89cff0 0%, #a8d8ea 100%);
-  border-radius: 16px;
-  padding: 24px;
-  color: #1f2937;
-  min-height: 160px;
+.wm-header {
   display: flex;
   align-items: center;
-  justify-content: center;
-}
-
-.weather-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-
-  .loading-spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid rgba(255, 255, 255, 0.3);
-    border-top-color: #fff;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  span {
-    font-size: 14px;
-    opacity: 0.8;
-  }
-}
-
-.weather-info {
-  width: 100%;
-  text-align: center;
-}
-
-.weather-location {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font-size: 14px;
-  opacity: 0.8;
-  margin-bottom: 12px;
-
-  svg {
-    width: 16px;
-    height: 16px;
-  }
-}
-
-.weather-main {
-  margin-bottom: 12px;
-
-  .weather-temp {
-    font-size: 48px;
-    font-weight: 300;
-    line-height: 1;
-    margin-bottom: 4px;
-  }
-
-  .weather-condition {
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  .wm-title {
     font-size: 16px;
+    font-weight: 700;
+    color: var(--color-text, #1a1a1a);
   }
-}
-
-.weather-details {
-  display: flex;
-  justify-content: center;
-  gap: 16px;
-  font-size: 13px;
-  opacity: 0.8;
-}
-
-.weather-error {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  color: #1f2937;
-
-  button {
-    padding: 8px 16px;
-    background: rgba(255, 255, 255, 0.3);
+  .wm-close {
+    background: none;
     border: none;
-    border-radius: 8px;
+    font-size: 18px;
+    color: var(--color-text-secondary, #999);
     cursor: pointer;
-    font-size: 14px;
-
+    padding: 4px 8px;
+    border-radius: 8px;
     &:hover {
-      background: rgba(255, 255, 255, 0.4);
+      background: var(--color-hover, rgba(0, 0, 0, 0.05));
     }
   }
 }
 
-.weather-actions {
+.wm-cards {
   display: flex;
   gap: 12px;
-  margin-top: 16px;
+  padding: 0 16px 16px;
+}
+
+.wm-card {
+  flex: 1;
+  min-width: 0;
+  border-radius: 18px;
+  padding: 14px 12px 12px;
+  text-align: center;
+  position: relative;
+  transition:
+    box-shadow 0.25s,
+    transform 0.2s;
+
+  &--user {
+    background: linear-gradient(145deg, #dbeafe, #bfdbfe);
+    color: #1e3a5f;
+  }
+  &--char {
+    background: linear-gradient(145deg, #fce7f3, #fbcfe8);
+    color: #831843;
+  }
+  &--editing {
+    box-shadow: 0 0 0 2.5px var(--color-primary, #7dd3a8);
+    transform: scale(1.02);
+  }
+}
+
+.wm-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.wm-card__icon {
+  font-size: 14px;
+}
+
+.wm-card__avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.wm-card__who {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+}
+
+.wm-card__edit-btn {
+  background: rgba(255, 255, 255, 0.5);
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 7px;
+  border-radius: 8px;
+  margin-left: auto;
+  transition: background 0.15s;
+  &:hover {
+    background: rgba(255, 255, 255, 0.8);
+  }
+}
+
+.wm-card__location {
+  font-size: 12px;
+  opacity: 0.75;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.wm-card__clear {
+  background: none;
+  border: none;
+  font-size: 11px;
+  opacity: 0.5;
+  cursor: pointer;
+  padding: 0 3px;
+  &:hover {
+    opacity: 1;
+  }
+}
+
+.wm-card__temp {
+  font-size: 36px;
+  font-weight: 300;
+  line-height: 1.1;
+  letter-spacing: -1px;
+}
+
+.wm-card__cond {
+  font-size: 13px;
+  margin: 4px 0 2px;
+  font-weight: 500;
+}
+
+.wm-card__meta {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.wm-card__loading {
+  font-size: 12px;
+  opacity: 0.5;
+  padding: 24px 0;
+}
+
+.wm-card__empty {
+  font-size: 13px;
+  opacity: 0.5;
+  padding: 18px 0 4px;
+}
+
+.wm-card__hint {
+  font-size: 11px;
+  opacity: 0.4;
+  padding-bottom: 6px;
+}
+
+// 搜尋區
+.wm-search {
+  padding: 0 16px 12px;
+}
+
+.wm-search__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #666);
+  margin-bottom: 8px;
+}
+
+.wm-search__row {
+  display: flex;
+  gap: 8px;
+}
+
+.wm-search__input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1.5px solid var(--color-border, #ddd);
+  border-radius: 12px;
+  font-size: 14px;
+  outline: none;
+  background: var(--color-background, #f8f8f8);
+  color: var(--color-text, #333);
+  transition: border-color 0.15s;
+  &:focus {
+    border-color: var(--color-primary, #7dd3a8);
+  }
+  &::placeholder {
+    opacity: 0.45;
+  }
+}
+
+.wm-search__btn {
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: none;
+  background: var(--color-primary, #7dd3a8);
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  &:not(:disabled):hover {
+    opacity: 0.85;
+  }
+}
+
+.wm-search__results {
+  max-height: 160px;
+  overflow-y: auto;
+  margin-top: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border, #eee);
+  background: var(--color-surface, #fff);
+}
+
+.wm-search__result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+  &:hover {
+    background: var(--color-hover, rgba(0, 0, 0, 0.04));
+  }
+  & + & {
+    border-top: 1px solid var(--color-border, #eee);
+  }
+}
+
+.wm-search__result-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text, #333);
+}
+
+.wm-search__result-sub {
+  font-size: 12px;
+  opacity: 0.55;
+  color: var(--color-text, #333);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.wm-search__cancel {
+  display: block;
+  margin: 8px auto 0;
+  background: none;
+  border: none;
+  font-size: 13px;
+  color: var(--color-text-secondary, #888);
+  cursor: pointer;
+  padding: 4px 12px;
+  border-radius: 8px;
+  &:hover {
+    background: var(--color-hover, rgba(0, 0, 0, 0.04));
+  }
+}
+
+// 底部按鈕
+.wm-footer {
+  display: flex;
+  gap: 12px;
+  padding: 0 16px 16px;
+}
+
+.wm-btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition:
+    opacity 0.15s,
+    transform 0.1s;
+  &:active {
+    transform: scale(0.97);
+  }
+
+  &--cancel {
+    background: var(--color-hover, #f0f0f0);
+    color: var(--color-text, #333);
+  }
+  &--send {
+    background: var(--color-primary, #7dd3a8);
+    color: white;
+    &:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+    &:not(:disabled):hover {
+      opacity: 0.9;
+    }
+  }
 }
 
 @keyframes spin {

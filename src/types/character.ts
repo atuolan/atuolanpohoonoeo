@@ -259,6 +259,16 @@ export interface CharacterCardV1 {
 // ===== 統一角色卡類型 =====
 export type CharacterCard = CharacterCardV1 | CharacterCardV2;
 
+// ===== 角色世界設定 =====
+export interface CharacterWorldSettings {
+  /** 角色所在地名稱（自由文字，如「東京，日本」） */
+  location?: string;
+  /** 角色本地時區（IANA 格式，如 "Asia/Tokyo"） */
+  timezone?: string;
+  /** 手動天氣描述（如「晴天，25°C」） */
+  weatherOverride?: string;
+}
+
 // ===== 應用內部使用的角色類型 =====
 export interface StoredCharacter {
   /** 唯一識別碼 */
@@ -288,6 +298,8 @@ export interface StoredCharacter {
     doNotDisturbEnd: string;
     showNotification: boolean;
   };
+  /** 角色世界設定（undefined 表示無世界設定） */
+  worldSettings?: CharacterWorldSettings;
 }
 
 // ===== 角色卡導入結果 =====

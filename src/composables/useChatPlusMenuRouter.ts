@@ -1,5 +1,5 @@
-import { ref, type Ref, type ComputedRef } from "vue";
 import { usePhoneCallStore } from "@/stores/phoneCall";
+import { ref, type ComputedRef, type Ref } from "vue";
 
 /**
  * 加號選單路由 + 跳轉魔法 + 表情包面板
@@ -22,9 +22,11 @@ export function useChatPlusMenuRouter(deps: {
   locationInput: Ref<string>;
   showLocationModal: Ref<boolean>;
   showWeatherModal: Ref<boolean>;
+  openWeatherModal: () => void;
   topicPromptInput: Ref<string>;
   showTopicPromptModal: Ref<boolean>;
   showGameScorePicker: Ref<boolean>;
+  showImageSearchPanel: Ref<boolean>;
   // other deps
   scrollToBottom: () => void;
   saveChat: () => void;
@@ -89,7 +91,7 @@ export function useChatPlusMenuRouter(deps: {
         deps.showLocationModal.value = true;
         break;
       case "weather":
-        deps.showWeatherModal.value = true;
+        deps.openWeatherModal();
         break;
       case "file":
         break;
@@ -112,6 +114,9 @@ export function useChatPlusMenuRouter(deps: {
         break;
       case "media-log":
         deps.emit("navigate", "media-log");
+        break;
+      case "image-search":
+        deps.showImageSearchPanel.value = true;
         break;
       default:
         console.log("未實現的功能:", feature);

@@ -1,0 +1,3776 @@
+
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90mC:/Users/a2397/new aguaphone[39m
+
+[90mstdout[2m | src/stores/__tests__/settings.property.test.ts[2m > [22m[2mProperty 7: nearbyPlacesLimit 值域限制[2m > [22m[2m任意整數輸入後讀取值應在 [5, 30] 範圍內
+[22m[39m[DB] 升級資料庫 v0 -> v22
+
+[90mstdout[2m | src/stores/__tests__/settings.property.test.ts[2m > [22m[2mProperty 7: nearbyPlacesLimit 值域限制[2m > [22m[2m任意整數輸入後讀取值應在 [5, 30] 範圍內
+[22m[39m[SettingsStore] 使用默認設定
+
+[90mstdout[2m | src/stores/__tests__/settings.property.test.ts[2m > [22m[2mProperty 7: nearbyPlacesLimit 值域限制[2m > [22m[2m任意整數輸入後讀取值應在 [5, 30] 範圍內
+[22m[39m[SettingsStore] 使用默認設定
+
+[90mstdout[2m | src/stores/__tests__/settings.property.test.ts[2m > [22m[2mProperty 7: nearbyPlacesLimit 值域限制[2m > [22m[2mloadSettings 時自動 clamp 超出範圍的儲存值
+[22m[39m[SettingsStore] 使用默認設定
+
+[90mstdout[2m | src/stores/__tests__/settings.property.test.ts[2m > [22m[2mProperty 7: nearbyPlacesLimit 值域限制[2m > [22m[2mloadSettings 時自動 clamp 超出範圍的儲存值
+[22m[39m[SettingsStore] 使用默認設定
+
+[90mstdout[2m | src/stores/__tests__/settings.property.test.ts[2m > [22m[2mProperty 8: nearbyPlacesRadius 值域限制[2m > [22m[2m任意整數輸入後讀取值應在 [10, 100] 範圍內
+[22m[39m[SettingsStore] 使用默認設定
+
+[90mstdout[2m | src/stores/__tests__/settings.property.test.ts[2m > [22m[2mProperty 8: nearbyPlacesRadius 值域限制[2m > [22m[2m任意整數輸入後讀取值應在 [10, 100] 範圍內
+[22m[39m[SettingsStore] 使用默認設定
+
+[90mstdout[2m | src/stores/__tests__/settings.property.test.ts[2m > [22m[2mProperty 8: nearbyPlacesRadius 值域限制[2m > [22m[2mloadSettings 時自動 clamp 超出範圍的儲存值
+[22m[39m[SettingsStore] 使用默認設定
+
+[90mstdout[2m | src/stores/__tests__/settings.property.test.ts[2m > [22m[2mProperty 8: nearbyPlacesRadius 值域限制[2m > [22m[2mloadSettings 時自動 clamp 超出範圍的儲存值
+[22m[39m[SettingsStore] 使用默認設定
+
+ [31m❯[39m src/stores/__tests__/settings.property.test.ts [2m([22m[2m4 tests[22m[2m | [22m[31m4 failed[39m[2m)[22m[32m 34[2mms[22m[39m
+[31m     [31m×[31m 任意整數輸入後讀取值應在 [5, 30] 範圍內[39m[32m 20[2mms[22m[39m
+[31m     [31m×[31m loadSettings 時自動 clamp 超出範圍的儲存值[39m[32m 4[2mms[22m[39m
+[31m     [31m×[31m 任意整數輸入後讀取值應在 [10, 100] 範圍內[39m[32m 6[2mms[22m[39m
+[31m     [31m×[31m loadSettings 時自動 clamp 超出範圍的儲存值[39m[32m 2[2mms[22m[39m
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 4.6: 角色世界設定區塊標題為「角色所在地情境」[2m > [22m[2m注入角色世界設定時，區塊標題應為 [角色所在地情境]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 4.6: 角色世界設定區塊標題為「角色所在地情境」[2m > [22m[2m角色世界設定區塊應包含所在地資訊
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 4.6: 角色世界設定區塊標題為「角色所在地情境」[2m > [22m[2m角色世界設定為空時不注入任何內容
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 4.6: 角色世界設定區塊標題為「角色所在地情境」[2m > [22m[2m未設定 characterWorldSettings 時不注入
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 2.6, 2.11: 附近地點注入格式與 limit/radius 參數[2m > [22m[2m有附近地點時應注入管道分隔格式
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 2.6, 2.11: 附近地點注入格式與 limit/radius 參數[2m > [22m[2m無附近地點時不注入 [附近地點] 行
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 2.6, 2.11: 附近地點注入格式與 limit/radius 參數[2m > [22m[2m未傳入 nearbyPlaces 時不注入 [附近地點] 行
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 2.6, 2.11: 附近地點注入格式與 limit/radius 參數[2m > [22m[2m附近地點行應在天氣資訊區塊內（同一 message）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+ [32m✓[39m src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 6: 無 GPS 座標時完全省略附近地點[2m > [22m[2mnearbyPlaces 為空陣列或未傳入時，提示詞不含 [附近地點]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 9: 傳入的 weatherInfo 地點名稱正確反映在提示詞中[2m > [22m[2mweatherInfo.location 應出現在提示詞中
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 11: 角色世界設定僅注入有值欄位[2m > [22m[2m空欄位不出現在提示詞中，整個區塊不超過 3 行（不含標題）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts[2m > [22m[2mProperty 14: 無天氣資訊時不注入天氣區塊[2m > [22m[2mweatherInfo 為 undefined 時，提示詞不含 [當前天氣]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+ [32m✓[39m src/engine/prompt/__tests__/PromptBuilder.locationContext.property.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 143[2mms[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m2 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[31m4 failed[39m[22m[2m | [22m[1m[32m15 passed[39m[22m[90m (19)[39m
+[2m   Start at [22m 00:46:11
+[2m   Duration [22m 1.32s[2m (transform 750ms, setup 0ms, import 2.37s, tests 204ms, environment 1ms)[22m
+
+[90mstderr[2m | src/stores/__tests__/settings.property.test.ts[2m > [22m[2mProperty 7: nearbyPlacesLimit 值域限制[2m > [22m[2m任意整數輸入後讀取值應在 [5, 30] 範圍內
+[22m[39m[DB] 預防性備份失敗（非致命）: ReferenceError: sessionStorage is not defined
+    at preUpgradeBackup (C:/Users/a2397/new aguaphone/src/db/database.ts:342:34)
+    at getDatabase (C:/Users/a2397/new aguaphone/src/db/database.ts:515:9)
+    at Object.init (C:/Users/a2397/new aguaphone/src/db/database.ts:940:30)
+    at doLoad (C:/Users/a2397/new aguaphone/src/stores/settings.ts:445:18)
+    at Proxy.loadSettings (C:/Users/a2397/new aguaphone/src/stores/settings.ts:648:23)
+    at Proxy.wrappedAction [90m(file:///C:/Users/a2397/new%20aguaphone/[39mnode_modules/[4mpinia[24m/dist/pinia.mjs:1399:26[90m)[39m
+    at C:/Users/a2397/new aguaphone/src/stores/__tests__/settings.property.test.ts:29:21
+    at AsyncProperty.predicate [90m(file:///C:/Users/a2397/new%20aguaphone/[39mnode_modules/[4mfast-check[24m/lib/check/property/AsyncProperty.js:14:59[90m)[39m
+    at AsyncProperty.run [90m(file:///C:/Users/a2397/new%20aguaphone/[39mnode_modules/[4mfast-check[24m/lib/check/property/AsyncProperty.generic.js:43:39[90m)[39m
+    at asyncRunIt [90m(file:///C:/Users/a2397/new%20aguaphone/[39mnode_modules/[4mfast-check[24m/lib/check/runner/Runner.js:24:36[90m)[39m
+
+[90mstderr[2m | src/stores/__tests__/settings.property.test.ts[2m > [22m[2mProperty 7: nearbyPlacesLimit 值域限制[2m > [22m[2mloadSettings 時自動 clamp 超出範圍的儲存值
+[22m[39m[db] get(appSettings, main-settings) 失敗，嘗試重新連接: InvalidStateError [DOMException]: An operation was called on an object on which it is not allowed or at a time when it is not allowed. Also occurs if a request is made on a source object that has been deleted or removed. Use TransactionInactiveError or ReadOnlyError when possible, as they are more specific variations of InvalidStateError.
+[90m    at new DOMException (node:internal/per_context/domexception:76:18)[39m
+    at new InvalidStateError [90m(file:///C:/Users/a2397/new%20aguaphone/[39mnode_modules/[4mfake-indexeddb[24m/build/esm/lib/errors.js:53:5[90m)[39m
+    at FDBDatabase.transaction [90m(file:///C:/Users/a2397/new%20aguaphone/[39mnode_modules/[4mfake-indexeddb[24m/build/esm/FDBDatabase.js:136:13[90m)[39m
+    at Proxy.<anonymous> [90m(file:///C:/Users/a2397/new%20aguaphone/[39mnode_modules/[4midb[24m/build/index.js:125:26[90m)[39m
+    at Proxy.method [90m(file:///C:/Users/a2397/new%20aguaphone/[39mnode_modules/[4midb[24m/build/index.js:228:25[90m)[39m
+    at Object.get (C:/Users/a2397/new aguaphone/src/db/database.ts:981:36)
+    at doLoad (C:/Users/a2397/new aguaphone/src/stores/settings.ts:446:32)
+[90m    at runNextTicks (node:internal/process/task_queues:65:5)[39m
+[90m    at processImmediate (node:internal/timers:472:9)[39m
+    at Proxy.loadSettings (C:/Users/a2397/new aguaphone/src/stores/settings.ts:649:5) {
+  code: [33m11[39m
+}
+[DB] 預防性備份失敗（非致命）: ReferenceError: sessionStorage is not defined
+    at preUpgradeBackup (C:/Users/a2397/new aguaphone/src/db/database.ts:342:34)
+    at getDatabase (C:/Users/a2397/new aguaphone/src/db/database.ts:515:9)
+    at Object.init (C:/Users/a2397/new aguaphone/src/db/database.ts:940:30)
+    at Object.reconnect (C:/Users/a2397/new aguaphone/src/db/database.ts:971:16)
+    at Object.get (C:/Users/a2397/new aguaphone/src/db/database.ts:987:18)
+[90m    at runNextTicks (node:internal/process/task_queues:65:5)[39m
+[90m    at processImmediate (node:internal/timers:472:9)[39m
+    at doLoad (C:/Users/a2397/new aguaphone/src/stores/settings.ts:446:23)
+    at Proxy.loadSettings (C:/Users/a2397/new aguaphone/src/stores/settings.ts:649:5)
+    at C:/Users/a2397/new aguaphone/src/stores/__tests__/settings.property.test.ts:58:11
+
+[90mstderr[2m | src/stores/__tests__/settings.property.test.ts[2m > [22m[2mProperty 8: nearbyPlacesRadius 值域限制[2m > [22m[2m任意整數輸入後讀取值應在 [10, 100] 範圍內
+[22m[39m[db] get(appSettings, main-settings) 失敗，嘗試重新連接: InvalidStateError [DOMException]: An operation was called on an object on which it is not allowed or at a time when it is not allowed. Also occurs if a request is made on a source object that has been deleted or removed. Use TransactionInactiveError or ReadOnlyError when possible, as they are more specific variations of InvalidStateError.
+[90m    at new DOMException (node:internal/per_context/domexception:76:18)[39m
+    at new InvalidStateError [90m(file:///C:/Users/a2397/new%20aguaphone/[39mnode_modules/[4mfake-indexeddb[24m/build/esm/lib/errors.js:53:5[90m)[39m
+    at FDBDatabase.transaction [90m(file:///C:/Users/a2397/new%20aguaphone/[39mnode_modules/[4mfake-indexeddb[24m/build/esm/FDBDatabase.js:136:13[90m)[39m
+    at Proxy.<anonymous> [90m(file:///C:/Users/a2397/new%20aguaphone/[39mnode_modules/[4midb[24m/build/index.js:125:26[90m)[39m
+    at Proxy.method [90m(file:///C:/Users/a2397/new%20aguaphone/[39mnode_modules/[4midb[24m/build/index.js:228:25[90m)[39m
+    at Object.get (C:/Users/a2397/new aguaphone/src/db/database.ts:981:36)
+    at doLoad (C:/Users/a2397/new aguaphone/src/stores/settings.ts:446:32)
+[90m    at runNextTicks (node:internal/process/task_queues:65:5)[39m
+[90m    at processImmediate (node:internal/timers:472:9)[39m
+    at Proxy.loadSettings (C:/Users/a2397/new aguaphone/src/stores/settings.ts:649:5) {
+  code: [33m11[39m
+}
+[DB] 預防性備份失敗（非致命）: ReferenceError: sessionStorage is not defined
+    at preUpgradeBackup (C:/Users/a2397/new aguaphone/src/db/database.ts:342:34)
+    at getDatabase (C:/Users/a2397/new aguaphone/src/db/database.ts:515:9)
+    at Object.init (C:/Users/a2397/new aguaphone/src/db/database.ts:940:30)
+    at Object.reconnect (C:/Users/a2397/new aguaphone/src/db/database.ts:971:16)
+    at Object.get (C:/Users/a2397/new aguaphone/src/db/database.ts:987:18)
+[90m    at runNextTicks (node:internal/process/task_queues:65:5)[39m
+[90m    at processImmediate (node:internal/timers:472:9)[39m
+    at doLoad (C:/Users/a2397/new aguaphone/src/stores/settings.ts:446:23)
+    at Proxy.loadSettings (C:/Users/a2397/new aguaphone/src/stores/settings.ts:649:5)
+    at C:/Users/a2397/new aguaphone/src/stores/__tests__/settings.property.test.ts:85:9
+
+[90mstderr[2m | src/stores/__tests__/settings.property.test.ts[2m > [22m[2mProperty 8: nearbyPlacesRadius 值域限制[2m > [22m[2mloadSettings 時自動 clamp 超出範圍的儲存值
+[22m[39m[db] get(appSettings, main-settings) 失敗，嘗試重新連接: InvalidStateError [DOMException]: An operation was called on an object on which it is not allowed or at a time when it is not allowed. Also occurs if a request is made on a source object that has been deleted or removed. Use TransactionInactiveError or ReadOnlyError when possible, as they are more specific variations of InvalidStateError.
+[90m    at new DOMException (node:internal/per_context/domexception:76:18)[39m
+    at new InvalidStateError [90m(file:///C:/Users/a2397/new%20aguaphone/[39mnode_modules/[4mfake-indexeddb[24m/build/esm/lib/errors.js:53:5[90m)[39m
+    at FDBDatabase.transaction [90m(file:///C:/Users/a2397/new%20aguaphone/[39mnode_modules/[4mfake-indexeddb[24m/build/esm/FDBDatabase.js:136:13[90m)[39m
+    at Proxy.<anonymous> [90m(file:///C:/Users/a2397/new%20aguaphone/[39mnode_modules/[4midb[24m/build/index.js:125:26[90m)[39m
+    at Proxy.method [90m(file:///C:/Users/a2397/new%20aguaphone/[39mnode_modules/[4midb[24m/build/index.js:228:25[90m)[39m
+    at Object.get (C:/Users/a2397/new aguaphone/src/db/database.ts:981:36)
+    at doLoad (C:/Users/a2397/new aguaphone/src/stores/settings.ts:446:32)
+[90m    at runNextTicks (node:internal/process/task_queues:65:5)[39m
+[90m    at processImmediate (node:internal/timers:472:9)[39m
+    at Proxy.loadSettings (C:/Users/a2397/new aguaphone/src/stores/settings.ts:649:5) {
+  code: [33m11[39m
+}
+[DB] 預防性備份失敗（非致命）: ReferenceError: sessionStorage is not defined
+    at preUpgradeBackup (C:/Users/a2397/new aguaphone/src/db/database.ts:342:34)
+    at getDatabase (C:/Users/a2397/new aguaphone/src/db/database.ts:515:9)
+    at Object.init (C:/Users/a2397/new aguaphone/src/db/database.ts:940:30)
+    at Object.reconnect (C:/Users/a2397/new aguaphone/src/db/database.ts:971:16)
+    at Object.get (C:/Users/a2397/new aguaphone/src/db/database.ts:987:18)
+[90m    at runNextTicks (node:internal/process/task_queues:65:5)[39m
+[90m    at processImmediate (node:internal/timers:472:9)[39m
+    at doLoad (C:/Users/a2397/new aguaphone/src/stores/settings.ts:446:23)
+    at Proxy.loadSettings (C:/Users/a2397/new aguaphone/src/stores/settings.ts:649:5)
+    at C:/Users/a2397/new aguaphone/src/stores/__tests__/settings.property.test.ts:111:11
+
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 4 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/stores/__tests__/settings.property.test.ts[2m > [22mProperty 7: nearbyPlacesLimit 值域限制[2m > [22m任意整數輸入後讀取值應在 [5, 30] 範圍內
+[31m[1mError[22m: Property failed after 1 tests
+{ seed: -1174689614, path: "0:0", endOnFailure: true }
+Counterexample: [0]
+Shrunk 1 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run[39m
+[90m [2m❯[22m buildError ../new%20aguaphone/node_modules/fast-check/lib/check/runner/utils/RunDetailsFormatter.js:[2m156:19[22m[39m
+[90m [2m❯[22m asyncThrowIfFailed ../new%20aguaphone/node_modules/fast-check/lib/check/runner/utils/RunDetailsFormatter.js:[2m170:11[22m[39m
+
+[31m[1mCaused by: TypeError[22m: Cannot create property 'value' on number '5'[39m
+[36m [2m❯[22m src/stores/__tests__/settings.property.test.ts:[2m32:33[22m[39m
+[90m [2m❯[22m AsyncProperty.run ../new%20aguaphone/node_modules/fast-check/lib/check/property/AsyncProperty.generic.js:[2m43:28[22m[39m
+[90m [2m❯[22m asyncRunIt ../new%20aguaphone/node_modules/fast-check/lib/check/runner/Runner.js:[2m24:21[22m[39m
+[90m [2m❯[22m src/stores/__tests__/settings.property.test.ts:[2m26:5[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/stores/__tests__/settings.property.test.ts[2m > [22mProperty 7: nearbyPlacesLimit 值域限制[2m > [22mloadSettings 時自動 clamp 超出範圍的儲存值
+[31m[1mError[22m: Property failed after 1 tests
+{ seed: 1439876299, path: "0:0", endOnFailure: true }
+Counterexample: [0]
+Shrunk 1 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run[39m
+[90m [2m❯[22m buildError ../new%20aguaphone/node_modules/fast-check/lib/check/runner/utils/RunDetailsFormatter.js:[2m156:19[22m[39m
+[90m [2m❯[22m asyncThrowIfFailed ../new%20aguaphone/node_modules/fast-check/lib/check/runner/utils/RunDetailsFormatter.js:[2m170:11[22m[39m
+
+[31m[1mCaused by: TypeError[22m: Cannot create property 'value' on number '5'[39m
+[36m [2m❯[22m src/stores/__tests__/settings.property.test.ts:[2m60:58[22m[39m
+[90m [2m❯[22m AsyncProperty.run ../new%20aguaphone/node_modules/fast-check/lib/check/property/AsyncProperty.generic.js:[2m43:28[22m[39m
+[90m [2m❯[22m asyncRunIt ../new%20aguaphone/node_modules/fast-check/lib/check/runner/Runner.js:[2m24:21[22m[39m
+[90m [2m❯[22m src/stores/__tests__/settings.property.test.ts:[2m49:5[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/stores/__tests__/settings.property.test.ts[2m > [22mProperty 8: nearbyPlacesRadius 值域限制[2m > [22m任意整數輸入後讀取值應在 [10, 100] 範圍內
+[31m[1mError[22m: Property failed after 1 tests
+{ seed: 660579386, path: "0:0", endOnFailure: true }
+Counterexample: [0]
+Shrunk 1 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run[39m
+[90m [2m❯[22m buildError ../new%20aguaphone/node_modules/fast-check/lib/check/runner/utils/RunDetailsFormatter.js:[2m156:19[22m[39m
+[90m [2m❯[22m asyncThrowIfFailed ../new%20aguaphone/node_modules/fast-check/lib/check/runner/utils/RunDetailsFormatter.js:[2m170:11[22m[39m
+
+[31m[1mCaused by: TypeError[22m: Cannot create property 'value' on number '10'[39m
+[36m [2m❯[22m src/stores/__tests__/settings.property.test.ts:[2m87:34[22m[39m
+[90m [2m❯[22m AsyncProperty.run ../new%20aguaphone/node_modules/fast-check/lib/check/property/AsyncProperty.generic.js:[2m43:28[22m[39m
+[90m [2m❯[22m asyncRunIt ../new%20aguaphone/node_modules/fast-check/lib/check/runner/Runner.js:[2m24:21[22m[39m
+[90m [2m❯[22m src/stores/__tests__/settings.property.test.ts:[2m82:5[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/stores/__tests__/settings.property.test.ts[2m > [22mProperty 8: nearbyPlacesRadius 值域限制[2m > [22mloadSettings 時自動 clamp 超出範圍的儲存值
+[31m[1mError[22m: Property failed after 1 tests
+{ seed: 753302806, path: "0:0", endOnFailure: true }
+Counterexample: [0]
+Shrunk 1 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run[39m
+[90m [2m❯[22m buildError ../new%20aguaphone/node_modules/fast-check/lib/check/runner/utils/RunDetailsFormatter.js:[2m156:19[22m[39m
+[90m [2m❯[22m asyncThrowIfFailed ../new%20aguaphone/node_modules/fast-check/lib/check/runner/utils/RunDetailsFormatter.js:[2m170:11[22m[39m
+
+[31m[1mCaused by: TypeError[22m: Cannot create property 'value' on number '10'[39m
+[36m [2m❯[22m src/stores/__tests__/settings.property.test.ts:[2m112:59[22m[39m
+[90m [2m❯[22m AsyncProperty.run ../new%20aguaphone/node_modules/fast-check/lib/check/property/AsyncProperty.generic.js:[2m43:28[22m[39m
+[90m [2m❯[22m asyncRunIt ../new%20aguaphone/node_modules/fast-check/lib/check/runner/Runner.js:[2m24:21[22m[39m
+[90m [2m❯[22m src/stores/__tests__/settings.property.test.ts:[2m103:5[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯[22m[39m
+

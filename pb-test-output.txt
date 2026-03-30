@@ -1,0 +1,80 @@
+
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90mC:/Users/a2397/new aguaphone[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 4.6: 角色世界設定區塊標題為「角色所在地情境」[2m > [22m[2m注入角色世界設定時，區塊標題應為 [角色所在地情境]
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 4.6: 角色世界設定區塊標題為「角色所在地情境」[2m > [22m[2m角色世界設定區塊應包含所在地資訊
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 4.6: 角色世界設定區塊標題為「角色所在地情境」[2m > [22m[2m角色世界設定為空時不注入任何內容
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 4.6: 角色世界設定區塊標題為「角色所在地情境」[2m > [22m[2m未設定 characterWorldSettings 時不注入
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m0[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m0[39m
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 2.6, 2.11: 附近地點注入格式與 limit/radius 參數[2m > [22m[2m有附近地點時應注入管道分隔格式
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 2.6, 2.11: 附近地點注入格式與 limit/radius 參數[2m > [22m[2m無附近地點時不注入 [附近地點] 行
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 2.6, 2.11: 附近地點注入格式與 limit/radius 參數[2m > [22m[2m未傳入 nearbyPlaces 時不注入 [附近地點] 行
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 2.6, 2.11: 附近地點注入格式與 limit/radius 參數[2m > [22m[2m附近地點行應在天氣資訊區塊內（同一 message）
+[22m[39m📦 [PromptBuilder] 最終組裝調試
+  preHistoryMessages: [33m1[39m
+  chatMessages.messages: [33m0[39m
+  postHistoryMessages: [33m0[39m
+  pendingDepthPrompts: [33m0[39m
+  builtMessages 總數: [33m1[39m
+[PromptBuilder] Merged 1 messages into 1 messages
+
+ [32m✓[39m src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m8 passed[39m[22m[90m (8)[39m
+[2m   Start at [22m 00:44:53
+[2m   Duration [22m 1.14s[2m (transform 356ms, setup 0ms, import 932ms, tests 22ms, environment 1ms)[22m
+

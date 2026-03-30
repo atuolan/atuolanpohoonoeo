@@ -5,35 +5,35 @@
 
 import { db, DB_STORES } from "@/db/database";
 import type {
-    CharacterPromptConfig,
-    PromptCategory,
-    PromptDefinition,
-    PromptManagerConfig,
-    PromptOrderEntry,
+  CharacterPromptConfig,
+  PromptCategory,
+  PromptDefinition,
+  PromptManagerConfig,
+  PromptOrderEntry,
 } from "@/types/promptManager";
 import {
-    CATEGORY_INFO,
-    createCharacterPromptConfig,
-    createDefaultPromptManagerConfig,
-    DEFAULT_DIARY_PROMPT_ORDER,
-    DEFAULT_FACE_TO_FACE_PROMPT_ORDER,
-    DEFAULT_GROUP_CHAT_PROMPT_ORDER,
-    DEFAULT_IMPORTANT_EVENTS_PROMPT_ORDER,
-    DEFAULT_PLURK_COMMENT_PROMPT_ORDER,
-    DEFAULT_PLURK_POST_PROMPT_ORDER,
-    DEFAULT_PROMPT_ORDER,
-    DEFAULT_SUMMARY_PROMPT_ORDER,
-    DIARY_PROMPT_DEFINITIONS,
-    FACE_TO_FACE_PROMPT_DEFINITIONS,
-    getEffectivePromptOrder,
-    getPromptDefinition,
-    GROUP_CHAT_PROMPT_DEFINITIONS,
-    IMPORTANT_EVENTS_PROMPT_DEFINITIONS,
-    isPromptDeletable,
-    isPromptToggleable,
-    PLURK_COMMENT_PROMPT_DEFINITIONS,
-    PLURK_POST_PROMPT_DEFINITIONS,
-    SUMMARY_PROMPT_DEFINITIONS,
+  CATEGORY_INFO,
+  createCharacterPromptConfig,
+  createDefaultPromptManagerConfig,
+  DEFAULT_DIARY_PROMPT_ORDER,
+  DEFAULT_FACE_TO_FACE_PROMPT_ORDER,
+  DEFAULT_GROUP_CHAT_PROMPT_ORDER,
+  DEFAULT_IMPORTANT_EVENTS_PROMPT_ORDER,
+  DEFAULT_PLURK_COMMENT_PROMPT_ORDER,
+  DEFAULT_PLURK_POST_PROMPT_ORDER,
+  DEFAULT_PROMPT_ORDER,
+  DEFAULT_SUMMARY_PROMPT_ORDER,
+  DIARY_PROMPT_DEFINITIONS,
+  FACE_TO_FACE_PROMPT_DEFINITIONS,
+  getEffectivePromptOrder,
+  getPromptDefinition,
+  GROUP_CHAT_PROMPT_DEFINITIONS,
+  IMPORTANT_EVENTS_PROMPT_DEFINITIONS,
+  isPromptDeletable,
+  isPromptToggleable,
+  PLURK_COMMENT_PROMPT_DEFINITIONS,
+  PLURK_POST_PROMPT_DEFINITIONS,
+  SUMMARY_PROMPT_DEFINITIONS,
 } from "@/types/promptManager";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
@@ -226,13 +226,17 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
 
     // 確保刪除追蹤字段存在（向後兼容舊存儲）
     if (!stored.deletedDefaultPromptIds) stored.deletedDefaultPromptIds = [];
-    if (!stored.deletedFaceToFacePromptIds) stored.deletedFaceToFacePromptIds = [];
-    if (!stored.deletedGroupChatPromptIds) stored.deletedGroupChatPromptIds = [];
+    if (!stored.deletedFaceToFacePromptIds)
+      stored.deletedFaceToFacePromptIds = [];
+    if (!stored.deletedGroupChatPromptIds)
+      stored.deletedGroupChatPromptIds = [];
     if (!stored.deletedDiaryPromptIds) stored.deletedDiaryPromptIds = [];
     if (!stored.deletedSummaryPromptIds) stored.deletedSummaryPromptIds = [];
     if (!stored.deletedEventsPromptIds) stored.deletedEventsPromptIds = [];
-    if (!stored.deletedPlurkPostPromptIds) stored.deletedPlurkPostPromptIds = [];
-    if (!stored.deletedPlurkCommentPromptIds) stored.deletedPlurkCommentPromptIds = [];
+    if (!stored.deletedPlurkPostPromptIds)
+      stored.deletedPlurkPostPromptIds = [];
+    if (!stored.deletedPlurkCommentPromptIds)
+      stored.deletedPlurkCommentPromptIds = [];
 
     // 確保所有默認提示詞都存在（跳過用戶主動刪除的）
     for (const defaultPrompt of defaults.prompts) {
@@ -319,10 +323,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
               `[^\\n]*${feature.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^\\n]*`,
             );
             const match = defaultFormatRules.content.match(regex);
-            if (
-              match &&
-              !storedFormatRules.content.includes(match[0].trim())
-            ) {
+            if (match && !storedFormatRules.content.includes(match[0].trim())) {
               stored.prompts[formatRulesIndex].content +=
                 "\n" + match[0].trim();
             }
@@ -356,8 +357,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
             );
             const match = defaultOnlineMode.content.match(regex);
             if (match && !storedOnlineMode.content.includes(match[0].trim())) {
-              stored.prompts[onlineModeIndex].content +=
-                "\n" + match[0].trim();
+              stored.prompts[onlineModeIndex].content += "\n" + match[0].trim();
             }
           }
         }
@@ -374,6 +374,16 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
           (o) => o.identifier === defaultOrder.identifier,
         )
       ) {
+        // 嘗試插入到 weatherInfo 之後（保持語意相鄰）
+        if (defaultOrder.identifier === "characterWorldContext") {
+          const weatherIdx = stored.globalPromptOrder.findIndex(
+            (o) => o.identifier === "weatherInfo",
+          );
+          if (weatherIdx !== -1) {
+            stored.globalPromptOrder.splice(weatherIdx + 1, 0, defaultOrder);
+            continue;
+          }
+        }
         stored.globalPromptOrder.push(defaultOrder);
       }
     }
@@ -384,7 +394,10 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     } else {
       // 合併新增的日記提示詞（跳過用戶主動刪除的）
       for (const defaultDiaryPrompt of defaults.diaryPrompts || []) {
-        if (stored.deletedDiaryPromptIds!.includes(defaultDiaryPrompt.identifier)) continue;
+        if (
+          stored.deletedDiaryPromptIds!.includes(defaultDiaryPrompt.identifier)
+        )
+          continue;
         if (
           !stored.diaryPrompts.find(
             (p) => p.identifier === defaultDiaryPrompt.identifier,
@@ -401,7 +414,8 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     } else {
       // 合併新增的日記順序（跳過用戶主動刪除的）
       for (const defaultOrder of defaults.diaryPromptOrder || []) {
-        if (stored.deletedDiaryPromptIds!.includes(defaultOrder.identifier)) continue;
+        if (stored.deletedDiaryPromptIds!.includes(defaultOrder.identifier))
+          continue;
         if (
           !stored.diaryPromptOrder.find(
             (o) => o.identifier === defaultOrder.identifier,
@@ -418,7 +432,12 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     } else {
       // 合併新增的總結提示詞（跳過用戶主動刪除的）
       for (const defaultSummaryPrompt of defaults.summaryPrompts || []) {
-        if (stored.deletedSummaryPromptIds!.includes(defaultSummaryPrompt.identifier)) continue;
+        if (
+          stored.deletedSummaryPromptIds!.includes(
+            defaultSummaryPrompt.identifier,
+          )
+        )
+          continue;
         if (
           !stored.summaryPrompts.find(
             (p) => p.identifier === defaultSummaryPrompt.identifier,
@@ -435,7 +454,8 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     } else {
       // 合併新增的總結順序（跳過用戶主動刪除的）
       for (const defaultOrder of defaults.summaryPromptOrder || []) {
-        if (stored.deletedSummaryPromptIds!.includes(defaultOrder.identifier)) continue;
+        if (stored.deletedSummaryPromptIds!.includes(defaultOrder.identifier))
+          continue;
         if (
           !stored.summaryPromptOrder.find(
             (o) => o.identifier === defaultOrder.identifier,
@@ -452,7 +472,12 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     } else {
       // 合併新增的重要事件提示詞（跳過用戶主動刪除的）
       for (const defaultEventsPrompt of defaults.eventsPrompts || []) {
-        if (stored.deletedEventsPromptIds!.includes(defaultEventsPrompt.identifier)) continue;
+        if (
+          stored.deletedEventsPromptIds!.includes(
+            defaultEventsPrompt.identifier,
+          )
+        )
+          continue;
         if (
           !stored.eventsPrompts.find(
             (p) => p.identifier === defaultEventsPrompt.identifier,
@@ -469,7 +494,8 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     } else {
       // 合併新增的重要事件順序（跳過用戶主動刪除的）
       for (const defaultOrder of defaults.eventsPromptOrder || []) {
-        if (stored.deletedEventsPromptIds!.includes(defaultOrder.identifier)) continue;
+        if (stored.deletedEventsPromptIds!.includes(defaultOrder.identifier))
+          continue;
         if (
           !stored.eventsPromptOrder.find(
             (o) => o.identifier === defaultOrder.identifier,
@@ -486,7 +512,12 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     } else {
       // 合併新增的噗浪發文提示詞（跳過用戶主動刪除的）
       for (const defaultPlurkPostPrompt of defaults.plurkPostPrompts || []) {
-        if (stored.deletedPlurkPostPromptIds!.includes(defaultPlurkPostPrompt.identifier)) continue;
+        if (
+          stored.deletedPlurkPostPromptIds!.includes(
+            defaultPlurkPostPrompt.identifier,
+          )
+        )
+          continue;
         if (
           !stored.plurkPostPrompts.find(
             (p) => p.identifier === defaultPlurkPostPrompt.identifier,
@@ -503,7 +534,8 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     } else {
       // 合併新增的噗浪發文順序（跳過用戶主動刪除的）
       for (const defaultOrder of defaults.plurkPostPromptOrder || []) {
-        if (stored.deletedPlurkPostPromptIds!.includes(defaultOrder.identifier)) continue;
+        if (stored.deletedPlurkPostPromptIds!.includes(defaultOrder.identifier))
+          continue;
         if (
           !stored.plurkPostPromptOrder.find(
             (o) => o.identifier === defaultOrder.identifier,
@@ -521,7 +553,12 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
       // 合併新增的噗浪評論提示詞（跳過用戶主動刪除的）
       for (const defaultPlurkCommentPrompt of defaults.plurkCommentPrompts ||
         []) {
-        if (stored.deletedPlurkCommentPromptIds!.includes(defaultPlurkCommentPrompt.identifier)) continue;
+        if (
+          stored.deletedPlurkCommentPromptIds!.includes(
+            defaultPlurkCommentPrompt.identifier,
+          )
+        )
+          continue;
         if (
           !stored.plurkCommentPrompts.find(
             (p) => p.identifier === defaultPlurkCommentPrompt.identifier,
@@ -538,7 +575,10 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     } else {
       // 合併新增的噗浪評論順序（跳過用戶主動刪除的）
       for (const defaultOrder of defaults.plurkCommentPromptOrder || []) {
-        if (stored.deletedPlurkCommentPromptIds!.includes(defaultOrder.identifier)) continue;
+        if (
+          stored.deletedPlurkCommentPromptIds!.includes(defaultOrder.identifier)
+        )
+          continue;
         if (
           !stored.plurkCommentPromptOrder.find(
             (o) => o.identifier === defaultOrder.identifier,
@@ -555,7 +595,12 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     } else {
       // 合併新增的面對面模式提示詞（跳過用戶主動刪除的）
       for (const defaultF2FPrompt of defaults.faceToFacePrompts || []) {
-        if (stored.deletedFaceToFacePromptIds!.includes(defaultF2FPrompt.identifier)) continue;
+        if (
+          stored.deletedFaceToFacePromptIds!.includes(
+            defaultF2FPrompt.identifier,
+          )
+        )
+          continue;
         if (
           !stored.faceToFacePrompts.find(
             (p) => p.identifier === defaultF2FPrompt.identifier,
@@ -582,12 +627,28 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     } else {
       // 合併新增的面對面模式順序（跳過用戶主動刪除的）
       for (const defaultOrder of defaults.faceToFacePromptOrder || []) {
-        if (stored.deletedFaceToFacePromptIds!.includes(defaultOrder.identifier)) continue;
+        if (
+          stored.deletedFaceToFacePromptIds!.includes(defaultOrder.identifier)
+        )
+          continue;
         if (
           !stored.faceToFacePromptOrder.find(
             (o) => o.identifier === defaultOrder.identifier,
           )
         ) {
+          if (defaultOrder.identifier === "f2fCharacterWorldContext") {
+            const weatherIdx = stored.faceToFacePromptOrder.findIndex(
+              (o) => o.identifier === "f2fWeatherInfo",
+            );
+            if (weatherIdx !== -1) {
+              stored.faceToFacePromptOrder.splice(
+                weatherIdx + 1,
+                0,
+                defaultOrder,
+              );
+              continue;
+            }
+          }
           stored.faceToFacePromptOrder.push(defaultOrder);
         }
       }
@@ -599,7 +660,10 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     } else {
       // 合併新增的群聊模式提示詞（跳過用戶主動刪除的）
       for (const defaultGCPrompt of defaults.groupChatPrompts || []) {
-        if (stored.deletedGroupChatPromptIds!.includes(defaultGCPrompt.identifier)) continue;
+        if (
+          stored.deletedGroupChatPromptIds!.includes(defaultGCPrompt.identifier)
+        )
+          continue;
         if (
           !stored.groupChatPrompts.find(
             (p) => p.identifier === defaultGCPrompt.identifier,
@@ -626,12 +690,26 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     } else {
       // 合併新增的群聊模式順序（跳過用戶主動刪除的）
       for (const defaultOrder of defaults.groupChatPromptOrder || []) {
-        if (stored.deletedGroupChatPromptIds!.includes(defaultOrder.identifier)) continue;
+        if (stored.deletedGroupChatPromptIds!.includes(defaultOrder.identifier))
+          continue;
         if (
           !stored.groupChatPromptOrder.find(
             (o) => o.identifier === defaultOrder.identifier,
           )
         ) {
+          if (defaultOrder.identifier === "gcCharacterWorldContext") {
+            const weatherIdx = stored.groupChatPromptOrder.findIndex(
+              (o) => o.identifier === "gcWeatherInfo",
+            );
+            if (weatherIdx !== -1) {
+              stored.groupChatPromptOrder.splice(
+                weatherIdx + 1,
+                0,
+                defaultOrder,
+              );
+              continue;
+            }
+          }
           stored.groupChatPromptOrder.push(defaultOrder);
         }
       }
@@ -791,9 +869,12 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
 
     // 若刪除的是默認提示詞（存在於默認定義中），記錄其 ID 防止被 mergeWithDefaults 恢復
     const defaultsForCheck = createDefaultPromptManagerConfig();
-    const isDefault = defaultsForCheck.prompts.some(p => p.identifier === identifier);
+    const isDefault = defaultsForCheck.prompts.some(
+      (p) => p.identifier === identifier,
+    );
     if (isDefault) {
-      if (!config.value.deletedDefaultPromptIds) config.value.deletedDefaultPromptIds = [];
+      if (!config.value.deletedDefaultPromptIds)
+        config.value.deletedDefaultPromptIds = [];
       if (!config.value.deletedDefaultPromptIds.includes(identifier)) {
         config.value.deletedDefaultPromptIds.push(identifier);
       }
@@ -1637,9 +1718,12 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
 
     // 若刪除的是默認提示詞，記錄其 ID
     const gcDefaults = createDefaultPromptManagerConfig();
-    const isGcDefault = (gcDefaults.groupChatPrompts ?? []).some(p => p.identifier === identifier);
+    const isGcDefault = (gcDefaults.groupChatPrompts ?? []).some(
+      (p) => p.identifier === identifier,
+    );
     if (isGcDefault) {
-      if (!config.value.deletedGroupChatPromptIds) config.value.deletedGroupChatPromptIds = [];
+      if (!config.value.deletedGroupChatPromptIds)
+        config.value.deletedGroupChatPromptIds = [];
       if (!config.value.deletedGroupChatPromptIds.includes(identifier)) {
         config.value.deletedGroupChatPromptIds.push(identifier);
       }
@@ -2088,7 +2172,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     defaultPrompts: PromptDefinition[],
     deletedKey: keyof PromptManagerConfig,
   ): void {
-    const isDefault = defaultPrompts.some(p => p.identifier === identifier);
+    const isDefault = defaultPrompts.some((p) => p.identifier === identifier);
     if (isDefault) {
       if (!config.value[deletedKey]) (config.value as any)[deletedKey] = [];
       const list = config.value[deletedKey] as string[];
@@ -2105,7 +2189,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
   ): Promise<boolean> {
     switch (mode) {
       case "faceToFace":
-        trackDeletedForMode(identifier, FACE_TO_FACE_PROMPT_DEFINITIONS, "deletedFaceToFacePromptIds");
+        trackDeletedForMode(
+          identifier,
+          FACE_TO_FACE_PROMPT_DEFINITIONS,
+          "deletedFaceToFacePromptIds",
+        );
         if (config.value.faceToFacePrompts) {
           config.value.faceToFacePrompts =
             config.value.faceToFacePrompts.filter(
@@ -2120,7 +2208,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
         }
         break;
       case "diary":
-        trackDeletedForMode(identifier, DIARY_PROMPT_DEFINITIONS, "deletedDiaryPromptIds");
+        trackDeletedForMode(
+          identifier,
+          DIARY_PROMPT_DEFINITIONS,
+          "deletedDiaryPromptIds",
+        );
         if (config.value.diaryPrompts) {
           config.value.diaryPrompts = config.value.diaryPrompts.filter(
             (p) => p.identifier !== identifier,
@@ -2133,7 +2225,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
         }
         break;
       case "summary":
-        trackDeletedForMode(identifier, SUMMARY_PROMPT_DEFINITIONS, "deletedSummaryPromptIds");
+        trackDeletedForMode(
+          identifier,
+          SUMMARY_PROMPT_DEFINITIONS,
+          "deletedSummaryPromptIds",
+        );
         if (config.value.summaryPrompts) {
           config.value.summaryPrompts = config.value.summaryPrompts.filter(
             (p) => p.identifier !== identifier,
@@ -2147,7 +2243,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
         }
         break;
       case "events":
-        trackDeletedForMode(identifier, IMPORTANT_EVENTS_PROMPT_DEFINITIONS, "deletedEventsPromptIds");
+        trackDeletedForMode(
+          identifier,
+          IMPORTANT_EVENTS_PROMPT_DEFINITIONS,
+          "deletedEventsPromptIds",
+        );
         if (config.value.eventsPrompts) {
           config.value.eventsPrompts = config.value.eventsPrompts.filter(
             (p) => p.identifier !== identifier,
@@ -2161,7 +2261,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
         }
         break;
       case "plurkPost":
-        trackDeletedForMode(identifier, PLURK_POST_PROMPT_DEFINITIONS, "deletedPlurkPostPromptIds");
+        trackDeletedForMode(
+          identifier,
+          PLURK_POST_PROMPT_DEFINITIONS,
+          "deletedPlurkPostPromptIds",
+        );
         if (config.value.plurkPostPrompts) {
           config.value.plurkPostPrompts = config.value.plurkPostPrompts.filter(
             (p) => p.identifier !== identifier,
@@ -2175,7 +2279,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
         }
         break;
       case "plurkComment":
-        trackDeletedForMode(identifier, PLURK_COMMENT_PROMPT_DEFINITIONS, "deletedPlurkCommentPromptIds");
+        trackDeletedForMode(
+          identifier,
+          PLURK_COMMENT_PROMPT_DEFINITIONS,
+          "deletedPlurkCommentPromptIds",
+        );
         if (config.value.plurkCommentPrompts) {
           config.value.plurkCommentPrompts =
             config.value.plurkCommentPrompts.filter(

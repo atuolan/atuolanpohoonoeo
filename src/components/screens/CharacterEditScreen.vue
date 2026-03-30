@@ -1,13 +1,20 @@
 <script setup lang="ts">
 import ExpandableTextarea from "@/components/common/ExpandableTextarea.vue";
-import { useCharactersStore, useLorebooksStore } from "@/stores";
-import { useFitnessStore } from "@/stores/fitness";
-import { useAffinityStore } from "@/stores/affinity";
-import type { RegexScript } from "@/types/character";
-import type { CharacterFitnessConfig } from "@/types/fitness";
-import type { CharacterAffinityConfig, AffinityMetricConfig } from "@/schemas/affinity";
+import type {
+  AffinityMetricConfig,
+  CharacterAffinityConfig,
+} from "@/schemas/affinity";
 import { createDefaultConfig } from "@/schemas/affinity";
-import { affinityTemplateService, DEFAULT_PROMPT_TEMPLATE } from "@/services/AffinityTemplateService";
+import {
+  affinityTemplateService,
+  DEFAULT_PROMPT_TEMPLATE,
+} from "@/services/AffinityTemplateService";
+import { searchCities } from "@/services/WeatherService";
+import { useCharactersStore, useLorebooksStore } from "@/stores";
+import { useAffinityStore } from "@/stores/affinity";
+import { useFitnessStore } from "@/stores/fitness";
+import type { CharacterWorldSettings, RegexScript } from "@/types/character";
+import type { CharacterFitnessConfig } from "@/types/fitness";
 import { computed, onMounted, ref } from "vue";
 
 // 類型定義
@@ -36,6 +43,7 @@ interface Character {
   source?: "png" | "json" | "manual";
   createdAt?: number;
   updatedAt?: number;
+  worldSettings?: CharacterWorldSettings;
 }
 
 // Lorebook 類型已從 availableLorebooks computed 中推斷
@@ -115,6 +123,69 @@ const fitnessConfig = ref<CharacterFitnessConfig>({
   style: "gentle",
 });
 
+// 世界設定
+const worldSettings = ref<CharacterWorldSettings>({
+  location: "",
+  timezone: "",
+  weatherOverride: "",
+});
+// 世界設定城市搜尋
+const worldLocationQuery = ref("");
+const worldLocationResults = ref<
+  Array<{
+    id: number;
+    name: string;
+    region: string;
+    country: string;
+    lat: number;
+    lon: number;
+  }>
+>([]);
+const worldLocationSearching = ref(false);
+
+async function searchWorldLocation() {
+  const q = worldLocationQuery.value.trim();
+  if (!q) return;
+  worldLocationSearching.value = true;
+  try {
+    worldLocationResults.value = await searchCities(q);
+  } catch {
+    worldLocationResults.value = [];
+  } finally {
+    worldLocationSearching.value = false;
+  }
+}
+
+// 城市 → IANA 時區的常見對應（Open-Meteo 回傳的 timezone 欄位）
+async function selectWorldLocation(city: {
+  id: number;
+  name: string;
+  region: string;
+  country: string;
+  lat: number;
+  lon: number;
+}) {
+  const displayName = [city.name, city.region, city.country]
+    .filter(Boolean)
+    .join("，");
+  worldSettings.value.location = displayName;
+  // 嘗試從 Open-Meteo geocoding 取得時區
+  try {
+    const res = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city.name)}&count=1&language=zh`,
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const tz = data.results?.[0]?.timezone;
+      if (tz) worldSettings.value.timezone = tz;
+    }
+  } catch {
+    // 查不到時區就留空，不影響功能
+  }
+  worldLocationQuery.value = "";
+  worldLocationResults.value = [];
+}
+
 // 好感度設定（使用 placeholder ID，onMounted 時會替換為真實 characterId）
 const affinityConfig = ref<CharacterAffinityConfig>({
   characterId: "_placeholder",
@@ -133,7 +204,9 @@ const generatedUpdateInstruction = ref("");
 
 function generateUpdateInstruction() {
   generatedUpdateInstruction.value =
-    affinityTemplateService.generateUpdateInstructionEntry(affinityConfig.value);
+    affinityTemplateService.generateUpdateInstructionEntry(
+      affinityConfig.value,
+    );
   showUpdateInstructionModal.value = true;
 }
 
@@ -262,6 +335,11 @@ onMounted(async () => {
         fitnessConfig.value = { ...storedFitnessConfig };
       }
 
+      // 載入世界設定
+      if (character.worldSettings) {
+        worldSettings.value = { ...character.worldSettings };
+      }
+
       // 載入好感度設定
       await affinityStore.initialize();
       const storedAffinityConfig = await affinityStore.loadConfig(character.id);
@@ -295,6 +373,17 @@ async function handleSave() {
     return;
   }
   formData.value.updatedAt = Date.now();
+
+  // 儲存世界設定（只保留有值的欄位）
+  const ws = worldSettings.value;
+  formData.value.worldSettings =
+    ws.location?.trim() || ws.timezone?.trim() || ws.weatherOverride?.trim()
+      ? {
+          location: ws.location?.trim() || undefined,
+          timezone: ws.timezone?.trim() || undefined,
+          weatherOverride: ws.weatherOverride?.trim() || undefined,
+        }
+      : undefined;
 
   // 儲存健身設定
   if (fitnessConfig.value.enabled) {
@@ -409,9 +498,8 @@ async function exportJSON() {
   // 嵌入綁定的世界書到 character_book
   const lorebookIds = fullCharacter?.lorebookIds ?? [];
   if (lorebookIds.length > 0) {
-    const { convertLorebookToCharacterBook } = await import(
-      "@/services/ImportExportService"
-    );
+    const { convertLorebookToCharacterBook } =
+      await import("@/services/ImportExportService");
     const allEntries: any[] = [];
     let firstName = "";
     let firstDesc: string | undefined;
@@ -990,9 +1078,7 @@ async function onRegexFileImport(e: Event) {
                 placeholder="例如：1girl, long hair, blue eyes"
                 label="NAI 角色串"
               />
-              <p class="form-hint">
-                生圖時會自動加在提示詞最前方，留空則跳過
-              </p>
+              <p class="form-hint">生圖時會自動加在提示詞最前方，留空則跳過</p>
             </div>
           </div>
         </Transition>
@@ -1116,10 +1202,11 @@ async function onRegexFileImport(e: Event) {
                 <span
                   class="lorebook-name lorebook-link"
                   @click="emit('open-lorebook', lbId)"
-                >{{
-                  availableLorebooks.find((lb) => lb.id === lbId)?.name ||
-                  "未知世界書"
-                }}</span>
+                  >{{
+                    availableLorebooks.find((lb) => lb.id === lbId)?.name ||
+                    "未知世界書"
+                  }}</span
+                >
                 <button class="lorebook-remove" @click="toggleLorebook(lbId)">
                   🗑️
                 </button>
@@ -1378,6 +1465,105 @@ async function onRegexFileImport(e: Event) {
         </div>
       </div>
 
+      <!-- ===== 世界設定 ===== -->
+      <section class="edit-section">
+        <div
+          class="section-header"
+          @click="toggleSection('worldSettings' as any)"
+        >
+          <h3 class="section-title">世界設定</h3>
+          <svg class="section-chevron" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+          </svg>
+        </div>
+        <div class="section-content">
+          <p
+            class="section-hint"
+            style="font-size: 12px; opacity: 0.6; margin-bottom: 12px"
+          >
+            設定角色所在的世界位置，天氣與時區會自動查詢填入。
+          </p>
+          <!-- 城市搜尋 -->
+          <div class="form-group">
+            <label class="form-label">搜尋城市</label>
+            <div class="world-search-row">
+              <input
+                v-model="worldLocationQuery"
+                type="text"
+                class="soft-input"
+                placeholder="輸入城市名稱..."
+                @keydown.enter="searchWorldLocation"
+              />
+              <button
+                class="world-search-btn"
+                :disabled="worldLocationSearching"
+                @click="searchWorldLocation"
+              >
+                {{ worldLocationSearching ? "…" : "搜尋" }}
+              </button>
+            </div>
+            <!-- 搜尋結果 -->
+            <div
+              v-if="worldLocationResults.length > 0"
+              class="world-search-results"
+            >
+              <button
+                v-for="city in worldLocationResults"
+                :key="city.id"
+                class="world-result-item"
+                @click="selectWorldLocation(city)"
+              >
+                <span class="world-result-name">{{ city.name }}</span>
+                <span class="world-result-sub">
+                  {{ [city.region, city.country].filter(Boolean).join("，") }}
+                </span>
+              </button>
+            </div>
+          </div>
+          <!-- 已選城市顯示 -->
+          <div v-if="worldSettings.location" class="world-selected">
+            <div class="world-selected-info">
+              <svg
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                width="14"
+                height="14"
+              >
+                <path
+                  d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
+                />
+              </svg>
+              <span>{{ worldSettings.location }}</span>
+              <span v-if="worldSettings.timezone" class="world-tz-badge">{{
+                worldSettings.timezone
+              }}</span>
+            </div>
+            <button
+              class="world-clear-btn"
+              @click="
+                worldSettings.location = '';
+                worldSettings.timezone = '';
+                worldSettings.weatherOverride = '';
+              "
+            >
+              清除
+            </button>
+          </div>
+          <!-- 天氣描述（可選手動覆蓋） -->
+          <div class="form-group" style="margin-top: 12px">
+            <label class="form-label" style="font-size: 12px; opacity: 0.7">
+              天氣描述（選填，留空則自動查詢即時天氣）
+            </label>
+            <input
+              v-model="worldSettings.weatherOverride"
+              type="text"
+              class="soft-input"
+              placeholder="例如：晴天，25°C，微風"
+            />
+          </div>
+        </div>
+      </section>
+
       <!-- ===== 功能模組 ===== -->
       <section class="edit-section">
         <div class="section-header" @click="toggleSection('modules')">
@@ -1487,7 +1673,9 @@ async function onRegexFileImport(e: Event) {
                   <div class="setting-group">
                     <label class="setting-label">
                       EJS 路徑名稱
-                      <span class="setting-hint">（留空使用角色名「{{ formData.data.name }}」）</span>
+                      <span class="setting-hint"
+                        >（留空使用角色名「{{ formData.data.name }}」）</span
+                      >
                     </label>
                     <input
                       v-model="affinityConfig.statKey"
@@ -1495,7 +1683,8 @@ async function onRegexFileImport(e: Event) {
                       :placeholder="formData.data.name"
                     />
                     <p class="setting-desc">
-                      世界書 EJS 中引用數值的路徑前綴，例如填「黎靖青」後可在 EJS 寫
+                      世界書 EJS 中引用數值的路徑前綴，例如填「黎靖青」後可在
+                      EJS 寫
                       <code>getvar('stat_data.黎靖青.亲密值')</code>，
                       即使卡片名字不同也能正確解析。
                     </p>
@@ -1536,7 +1725,10 @@ async function onRegexFileImport(e: Event) {
                         </select>
                       </div>
 
-                      <div v-if="metric.type !== 'string'" class="affinity-metric-ranges">
+                      <div
+                        v-if="metric.type !== 'string'"
+                        class="affinity-metric-ranges"
+                      >
                         <div class="range-field">
                           <label>最小</label>
                           <input
@@ -1578,7 +1770,14 @@ async function onRegexFileImport(e: Event) {
                           <label>可選值（逗號分隔）</label>
                           <input
                             :value="(metric.options ?? []).join(', ')"
-                            @input="metric.options = ($event.target as HTMLInputElement).value.split(',').map((s: string) => s.trim()).filter(Boolean)"
+                            @input="
+                              metric.options = (
+                                $event.target as HTMLInputElement
+                              ).value
+                                .split(',')
+                                .map((s: string) => s.trim())
+                                .filter(Boolean)
+                            "
                             class="soft-input"
                             placeholder="例如：未識破, 已識破"
                           />
@@ -1626,10 +1825,19 @@ async function onRegexFileImport(e: Event) {
                   </div>
 
                   <!-- 生成 AI 更新指令按鈕 -->
-                  <div v-if="affinityConfig.metrics.length > 0" class="setting-group generate-instruction-group">
+                  <div
+                    v-if="affinityConfig.metrics.length > 0"
+                    class="setting-group generate-instruction-group"
+                  >
                     <label class="setting-label">AI 更新指令生成器</label>
-                    <p class="setting-hint-text">根據你配置的指標，自動生成「告訴 AI 如何更新數值」的世界書條目文字。</p>
-                    <button class="btn-generate-instruction" @click="generateUpdateInstruction">
+                    <p class="setting-hint-text">
+                      根據你配置的指標，自動生成「告訴 AI
+                      如何更新數值」的世界書條目文字。
+                    </p>
+                    <button
+                      class="btn-generate-instruction"
+                      @click="generateUpdateInstruction"
+                    >
                       生成 AI 更新指令
                     </button>
                   </div>
@@ -1649,7 +1857,9 @@ async function onRegexFileImport(e: Event) {
                       class="template-preview"
                     >
                       <label class="setting-label-sm">預覽</label>
-                      <pre class="preview-text">{{ affinityTemplatePreview }}</pre>
+                      <pre class="preview-text">{{
+                        affinityTemplatePreview
+                      }}</pre>
                     </div>
                   </div>
 
@@ -1729,13 +1939,24 @@ async function onRegexFileImport(e: Event) {
     <!-- ===== 生成 AI 更新指令 Modal ===== -->
     <Teleport to="body">
       <Transition name="fade">
-        <div v-if="showUpdateInstructionModal" class="modal-overlay" @click.self="showUpdateInstructionModal = false">
+        <div
+          v-if="showUpdateInstructionModal"
+          class="modal-overlay"
+          @click.self="showUpdateInstructionModal = false"
+        >
           <div class="modal-panel generate-modal">
             <div class="modal-header">
               <h3 class="modal-title">AI 更新指令</h3>
-              <button class="modal-close" @click="showUpdateInstructionModal = false">✕</button>
+              <button
+                class="modal-close"
+                @click="showUpdateInstructionModal = false"
+              >
+                ✕
+              </button>
             </div>
-            <p class="modal-desc">將此文字加入世界書條目，AI 就會知道如何更新數值。</p>
+            <p class="modal-desc">
+              將此文字加入世界書條目，AI 就會知道如何更新數值。
+            </p>
             <textarea
               v-model="generatedUpdateInstruction"
               class="soft-input code-textarea modal-text-area"
@@ -1743,11 +1964,20 @@ async function onRegexFileImport(e: Event) {
               readonly
             ></textarea>
             <div class="modal-actions">
-              <button class="modal-btn secondary" @click="copyUpdateInstruction">複製文字</button>
+              <button
+                class="modal-btn secondary"
+                @click="copyUpdateInstruction"
+              >
+                複製文字
+              </button>
               <button
                 class="modal-btn primary"
                 :disabled="(formData.lorebookIds ?? []).length === 0"
-                :title="(formData.lorebookIds ?? []).length === 0 ? '請先連結世界書' : '加入第一個連結的世界書'"
+                :title="
+                  (formData.lorebookIds ?? []).length === 0
+                    ? '請先連結世界書'
+                    : '加入第一個連結的世界書'
+                "
                 @click="addInstructionToLinkedLorebook"
               >
                 加入世界書
@@ -2754,7 +2984,9 @@ async function onRegexFileImport(e: Event) {
   transition: opacity 0.15s;
   width: 100%;
 
-  &:hover { opacity: 0.88; }
+  &:hover {
+    opacity: 0.88;
+  }
 }
 
 .modal-overlay {
@@ -2840,7 +3072,11 @@ async function onRegexFileImport(e: Event) {
     }
 
     &.primary {
-      background: linear-gradient(135deg, var(--color-primary, #7dd3a8), var(--color-secondary, #a8d3e8));
+      background: linear-gradient(
+        135deg,
+        var(--color-primary, #7dd3a8),
+        var(--color-secondary, #a8d3e8)
+      );
       color: #fff;
 
       &:disabled {
@@ -2849,7 +3085,9 @@ async function onRegexFileImport(e: Event) {
       }
     }
 
-    &:not(:disabled):hover { opacity: 0.88; }
+    &:not(:disabled):hover {
+      opacity: 0.88;
+    }
   }
 }
 
@@ -2864,6 +3102,115 @@ async function onRegexFileImport(e: Event) {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-  .modal-panel { transform: translateY(40px); }
+  .modal-panel {
+    transform: translateY(40px);
+  }
+}
+</style>
+
+<style lang="scss" scoped>
+// 世界設定搜尋
+.world-search-row {
+  display: flex;
+  gap: 6px;
+}
+
+.world-search-btn {
+  padding: 10px 14px;
+  border: none;
+  border-radius: 10px;
+  background: var(--color-primary, #7dd3a8);
+  color: white;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.world-search-results {
+  margin-top: 6px;
+  border: 1px solid var(--color-border, #eee);
+  border-radius: 10px;
+  overflow: hidden;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.world-result-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  & + & {
+    border-top: 1px solid var(--color-border, #eee);
+  }
+  &:hover {
+    background: var(--color-hover, rgba(0, 0, 0, 0.04));
+  }
+}
+
+.world-result-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text, #333);
+}
+
+.world-result-sub {
+  font-size: 12px;
+  opacity: 0.6;
+  color: var(--color-text, #333);
+}
+
+.world-selected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--color-primary-light, rgba(125, 211, 168, 0.12));
+  border-radius: 10px;
+  margin-top: 8px;
+}
+
+.world-selected-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text, #333);
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.world-tz-badge {
+  font-size: 11px;
+  background: var(--color-primary, #7dd3a8);
+  color: white;
+  padding: 2px 7px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.world-clear-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-text-secondary, #888);
+  flex-shrink: 0;
+  &:hover {
+    background: rgba(0, 0, 0, 0.05);
+  }
 }
 </style>

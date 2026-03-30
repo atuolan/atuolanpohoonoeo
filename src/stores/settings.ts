@@ -222,6 +222,10 @@ export interface SettingsData {
   embeddingMode?: "local" | "api";
   // 向量記憶全域開關
   vectorMemoryEnabled?: boolean;
+  // 附近地點注入筆數（5–30，預設 5）
+  nearbyPlacesLimit: number;
+  // 附近地點搜尋半徑（公尺，10–100，預設 10）
+  nearbyPlacesRadius: number;
   updatedAt: number;
 }
 
@@ -391,6 +395,12 @@ export const useSettingsStore = defineStore("settings", () => {
   // 向量記憶全域開關（啟用後，所有聊天的總結會自動嵌入並用語義檢索）
   // 預設開啟；首次啟動時若本地模型未下載，App.vue 會提示使用者下載或前往設定關閉
   const vectorMemoryEnabled = ref(true);
+
+  // 附近地點注入筆數（5–30，預設 5）
+  const nearbyPlacesLimit = ref(5);
+
+  // 附近地點搜尋半徑（公尺，10–100，預設 10）
+  const nearbyPlacesRadius = ref(10);
 
   // ===== 計算屬性 =====
 
@@ -587,6 +597,20 @@ export const useSettingsStore = defineStore("settings", () => {
             vectorMemoryEnabled.value = saved.vectorMemoryEnabled;
           }
 
+          // 載入附近地點設定（值域限制）
+          if (saved.nearbyPlacesLimit !== undefined) {
+            nearbyPlacesLimit.value = Math.min(
+              30,
+              Math.max(5, Number(saved.nearbyPlacesLimit) || 5),
+            );
+          }
+          if (saved.nearbyPlacesRadius !== undefined) {
+            nearbyPlacesRadius.value = Math.min(
+              100,
+              Math.max(10, Number(saved.nearbyPlacesRadius) || 10),
+            );
+          }
+
           // 舊資料相容與防呆
           if (!incomingCallRingtone.selectedRingtoneId) {
             incomingCallRingtone.selectedRingtoneId = "classic";
@@ -719,6 +743,8 @@ export const useSettingsStore = defineStore("settings", () => {
         embeddingAPI: { ...toRaw(embeddingAPI) },
         embeddingMode: embeddingMode.value,
         vectorMemoryEnabled: vectorMemoryEnabled.value,
+        nearbyPlacesLimit: nearbyPlacesLimit.value,
+        nearbyPlacesRadius: nearbyPlacesRadius.value,
         updatedAt: Date.now(),
       };
 
@@ -1089,6 +1115,8 @@ export const useSettingsStore = defineStore("settings", () => {
     embeddingAPI,
     embeddingMode,
     vectorMemoryEnabled,
+    nearbyPlacesLimit,
+    nearbyPlacesRadius,
     effectiveEmbeddingAPI,
 
     // 常數與輔助

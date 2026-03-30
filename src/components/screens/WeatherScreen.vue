@@ -1,19 +1,20 @@
 <script setup lang="ts">
 import { searchCities, type LocationMode } from "@/services/WeatherService";
+import { useSettingsStore } from "@/stores/settings";
 import { useWeatherStore } from "@/stores/weather";
 import {
-    ArrowLeft,
-    Check,
-    Cloud,
-    Loader2,
-    MapPin,
-    Navigation,
-    Plus,
-    RefreshCw,
-    Search,
-    Trash2,
-    Wifi,
-    X,
+  ArrowLeft,
+  Check,
+  Cloud,
+  Loader2,
+  MapPin,
+  Navigation,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+  Wifi,
+  X,
 } from "lucide-vue-next";
 import { computed, onMounted, ref, watch } from "vue";
 
@@ -22,6 +23,26 @@ const emit = defineEmits<{
 }>();
 
 const weatherStore = useWeatherStore();
+const settingsStore = useSettingsStore();
+
+// 附近地點設定（clamp 後存入 store）
+function updateNearbyPlacesLimit(e: Event) {
+  const v = Math.min(
+    30,
+    Math.max(5, Number((e.target as HTMLInputElement).value) || 5),
+  );
+  settingsStore.nearbyPlacesLimit = v;
+  void settingsStore.saveSettings();
+}
+
+function updateNearbyPlacesRadius(e: Event) {
+  const v = Math.min(
+    100,
+    Math.max(10, Number((e.target as HTMLInputElement).value) || 10),
+  );
+  settingsStore.nearbyPlacesRadius = v;
+  void settingsStore.saveSettings();
+}
 
 // 搜尋相關
 const searchQuery = ref("");
@@ -343,6 +364,44 @@ const isCurrentCityCustom = computed(() => {
 
         <div class="empty-cities" v-else>
           <span>尚未添加城市，點擊右上角 + 添加</span>
+        </div>
+      </section>
+
+      <!-- 附近地點設定 -->
+      <section class="nearby-places-section">
+        <h2>附近地點設定</h2>
+        <p class="section-hint">
+          GPS 定位可用時，AI 角色可參考附近的餐廳、景點等地點。
+        </p>
+        <div class="setting-row">
+          <label class="setting-label">
+            注入筆數
+            <span class="setting-range">（5–30）</span>
+          </label>
+          <input
+            type="number"
+            class="setting-input"
+            :value="settingsStore.nearbyPlacesLimit"
+            min="5"
+            max="30"
+            step="1"
+            @change="updateNearbyPlacesLimit"
+          />
+        </div>
+        <div class="setting-row">
+          <label class="setting-label">
+            搜尋半徑
+            <span class="setting-range">（10–100 公尺）</span>
+          </label>
+          <input
+            type="number"
+            class="setting-input"
+            :value="settingsStore.nearbyPlacesRadius"
+            min="10"
+            max="100"
+            step="10"
+            @change="updateNearbyPlacesRadius"
+          />
         </div>
       </section>
 
@@ -787,6 +846,61 @@ const isCurrentCityCustom = computed(() => {
   }
   to {
     transform: rotate(360deg);
+  }
+}
+
+.nearby-places-section {
+  margin-bottom: 24px;
+
+  h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+
+  .section-hint {
+    font-size: 12px;
+    color: var(--color-text-secondary, #888);
+    margin: 0 0 12px;
+  }
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.setting-label {
+  font-size: 14px;
+  color: var(--color-text, #333);
+
+  .setting-range {
+    font-size: 11px;
+    opacity: 0.6;
+    margin-left: 4px;
+  }
+}
+
+.setting-input {
+  width: 72px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: 8px;
+  font-size: 14px;
+  text-align: center;
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #333);
+  outline: none;
+
+  &:focus {
+    border-color: var(--color-primary, #7dd3a8);
   }
 }
 </style>

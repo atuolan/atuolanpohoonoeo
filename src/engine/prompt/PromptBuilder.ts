@@ -26,8 +26,12 @@ import { computePercentage, computeStage } from "@/schemas/affinity";
 import { ChatGameState } from "@/schemas/gameEconomy";
 import { affinityTemplateService } from "@/services/AffinityTemplateService";
 import { promptTemplateService } from "@/services/PromptTemplateService";
+import type { NearbyPlace } from "@/services/WeatherService";
 import type { BlockState } from "@/types/block";
-import type { StoredCharacter } from "@/types/character";
+import type {
+  CharacterWorldSettings,
+  StoredCharacter,
+} from "@/types/character";
 import type { ChatMessage, ChatSettings } from "@/types/chat";
 import type { AuthorsNoteMetadata, PromptBuildResult } from "@/types/prompt";
 import { DEFAULT_PROMPTS } from "@/types/prompt";
@@ -269,6 +273,47 @@ export interface PromptBuilderOptions {
   }>;
   /** 封鎖狀態（用於注入封鎖記憶提示詞） */
   blockState?: BlockState;
+  /** 附近地點列表（由外部傳入，GPS 可用時才有值） */
+  nearbyPlaces?: NearbyPlace[];
+  /** 角色世界設定 */
+  characterWorldSettings?: CharacterWorldSettings;
+}
+
+/**
+ * 將 Date 轉換為指定時區的本地時間字串（YYYY/MM/DD HH:MM）
+ * 無效時區時回退至 UTC
+ */
+export function formatLocalTime(date: Date, timezone: string): string {
+  try {
+    const fmt = new Intl.DateTimeFormat("zh-TW", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(date);
+    const get = (type: string) =>
+      parts.find((p) => p.type === type)?.value ?? "00";
+    return `${get("year")}/${get("month")}/${get("day")} ${get("hour")}:${get("minute")}`;
+  } catch {
+    // 無效時區回退至 UTC
+    const fmt = new Intl.DateTimeFormat("zh-TW", {
+      timeZone: "UTC",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(date);
+    const get = (type: string) =>
+      parts.find((p) => p.type === type)?.value ?? "00";
+    return `${get("year")}/${get("month")}/${get("day")} ${get("hour")}:${get("minute")}`;
+  }
 }
 
 /**
@@ -1535,6 +1580,12 @@ export class PromptBuilder {
           if (w.uv !== undefined) {
             content += `\n紫外線指數：${w.uv}`;
           }
+          // 附近地點（GPS 可用時附加，無資料時完全省略）
+          const nearby = this.options.nearbyPlaces;
+          if (nearby && nearby.length > 0) {
+            const nearbyLine = `[附近地點]${nearby.map((p) => `${p.type},${p.distance}m,${p.name}`).join("|")}`;
+            content += `\n${nearbyLine}`;
+          }
           return { role: getRole(), content, identifier };
         }
         return null;
@@ -1543,6 +1594,33 @@ export class PromptBuilder {
       case "f2fHolidayInfo":
       case "gcHolidayInfo":
         return this.buildHolidayInfoPrompt(identifier, getRole());
+
+      case "characterWorldContext":
+      case "f2fCharacterWorldContext":
+      case "gcCharacterWorldContext": {
+        // 角色世界設定（僅注入有值欄位，整個區塊不超過 3 行）
+        const ws = this.options.characterWorldSettings;
+        if (!ws) return null;
+        const charName =
+          this.options.character.data.name ||
+          this.options.character.nickname ||
+          "{{char}}";
+        const lines: string[] = [];
+        if (ws.location?.trim()) {
+          lines.push(`所在地：${ws.location.trim()}`);
+        }
+        if (ws.timezone?.trim()) {
+          const now = this.options.fakeTimeOverride ?? new Date();
+          const localTime = formatLocalTime(now, ws.timezone.trim());
+          lines.push(`本地時間：${localTime}（${ws.timezone.trim()}）`);
+        }
+        if (ws.weatherOverride?.trim()) {
+          lines.push(`天氣：${ws.weatherOverride.trim()}`);
+        }
+        if (lines.length === 0) return null;
+        const content = `[${charName}所在地情境]\n${lines.join("\n")}`;
+        return { role: getRole(), content, identifier };
+      }
 
       case "gameScores":
       case "f2fGameScores":
