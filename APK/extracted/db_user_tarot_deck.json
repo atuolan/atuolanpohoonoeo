@@ -1,0 +1,38 @@
+[
+  {
+    "id": "1",
+    "chinese_name": "基本套牌",
+    "card_back_uri": "",
+    "allow_ask_question": 1,
+    "is_need_add_card_shadow": 0,
+    "is_card_shadow_already_added": 1,
+    "has_decision_coin": 0,
+    "has_copper_cash": 0,
+    "has_raster": 0,
+    "card_raster_type": "RASTER_OF_AUTO"
+  },
+  {
+    "id": "5",
+    "chinese_name": "雷诺曼基本套牌",
+    "card_back_uri": "",
+    "allow_ask_question": 1,
+    "is_need_add_card_shadow": 0,
+    "is_card_shadow_already_added": 1,
+    "has_decision_coin": 0,
+    "has_copper_cash": 0,
+    "has_raster": 0,
+    "card_raster_type": "RASTER_OF_AUTO"
+  },
+  {
+    "id": "10",
+    "chinese_name": "崭新的一天",
+    "card_back_uri": "file:///android_asset/tarot/cardback/oracle/default.png",
+    "allow_ask_question": 0,
+    "is_need_add_card_shadow": 0,
+    "is_card_shadow_already_added": 1,
+    "has_decision_coin": 0,
+    "has_copper_cash": 0,
+    "has_raster": 0,
+    "card_raster_type": "RASTER_OF_AUTO"
+  }
+]

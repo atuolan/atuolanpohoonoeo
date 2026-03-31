@@ -1,0 +1,1346 @@
+[
+  {
+    "id": "1",
+    "deck_id": "1",
+    "name": "Ace of Pentacles",
+    "suit": "PENTACLES",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/ace_of_pentacles.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "2",
+    "deck_id": "1",
+    "name": "Two of Pentacles",
+    "suit": "PENTACLES",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/two_of_pentacles.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "3",
+    "deck_id": "1",
+    "name": "Three of Pentacles",
+    "suit": "PENTACLES",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/three_of_pentacles.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "4",
+    "deck_id": "1",
+    "name": "Four of Pentacles",
+    "suit": "PENTACLES",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/four_of_pentacles.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "5",
+    "deck_id": "1",
+    "name": "Five of Pentacles",
+    "suit": "PENTACLES",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/five_of_pentacles.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "6",
+    "deck_id": "1",
+    "name": "Six of Pentacles",
+    "suit": "PENTACLES",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/six_of_pentacles.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "7",
+    "deck_id": "1",
+    "name": "Seven of Pentacles",
+    "suit": "PENTACLES",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/seven_of_pentacles.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "8",
+    "deck_id": "1",
+    "name": "Eight of Pentacles",
+    "suit": "PENTACLES",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/eight_of_pentacles.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "9",
+    "deck_id": "1",
+    "name": "Nine of Pentacles",
+    "suit": "PENTACLES",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/nine_of_pentacles.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "10",
+    "deck_id": "1",
+    "name": "Ten of Pentacles",
+    "suit": "PENTACLES",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/ten_of_pentacles.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "11",
+    "deck_id": "1",
+    "name": "Page of Pentacles",
+    "suit": "PENTACLES",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/page_of_pentacles.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "12",
+    "deck_id": "1",
+    "name": "Knight of Pentacles",
+    "suit": "PENTACLES",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/knight_of_pentacles.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "13",
+    "deck_id": "1",
+    "name": "Queen of Pentacles",
+    "suit": "PENTACLES",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/queen_of_pentacles.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "14",
+    "deck_id": "1",
+    "name": "King of Pentacles",
+    "suit": "PENTACLES",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/king_of_pentacles.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "15",
+    "deck_id": "1",
+    "name": "Ace of Cups",
+    "suit": "CUPS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/ace_of_cups.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "16",
+    "deck_id": "1",
+    "name": "Two of Cups",
+    "suit": "CUPS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/two_of_cups.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "17",
+    "deck_id": "1",
+    "name": "Three of Cups",
+    "suit": "CUPS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/three_of_cups.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "18",
+    "deck_id": "1",
+    "name": "Four of Cups",
+    "suit": "CUPS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/four_of_cups.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "19",
+    "deck_id": "1",
+    "name": "Five of Cups",
+    "suit": "CUPS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/five_of_cups.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "20",
+    "deck_id": "1",
+    "name": "Six of Cups",
+    "suit": "CUPS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/six_of_cups.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "21",
+    "deck_id": "1",
+    "name": "Seven of Cups",
+    "suit": "CUPS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/seven_of_cups.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "22",
+    "deck_id": "1",
+    "name": "Eight of Cups",
+    "suit": "CUPS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/eight_of_cups.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "23",
+    "deck_id": "1",
+    "name": "Nine of Cups",
+    "suit": "CUPS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/nine_of_cups.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "24",
+    "deck_id": "1",
+    "name": "Ten of Cups",
+    "suit": "CUPS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/ten_of_cups.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "25",
+    "deck_id": "1",
+    "name": "Page of Cups",
+    "suit": "CUPS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/page_of_cups.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "26",
+    "deck_id": "1",
+    "name": "Knight of Cups",
+    "suit": "CUPS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/knight_of_cups.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "27",
+    "deck_id": "1",
+    "name": "Queen of Cups",
+    "suit": "CUPS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/queen_of_cups.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "28",
+    "deck_id": "1",
+    "name": "King of Cups",
+    "suit": "CUPS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/king_of_cups.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "29",
+    "deck_id": "1",
+    "name": "Ace of Swords",
+    "suit": "SWORDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/ace_of_swords.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "30",
+    "deck_id": "1",
+    "name": "Two of Swords",
+    "suit": "SWORDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/two_of_swords.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "31",
+    "deck_id": "1",
+    "name": "Three of Swords",
+    "suit": "SWORDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/three_of_swords.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "32",
+    "deck_id": "1",
+    "name": "Four of Swords",
+    "suit": "SWORDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/four_of_swords.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "33",
+    "deck_id": "1",
+    "name": "Five of Swords",
+    "suit": "SWORDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/five_of_swords.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "34",
+    "deck_id": "1",
+    "name": "Six of Swords",
+    "suit": "SWORDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/six_of_swords.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "35",
+    "deck_id": "1",
+    "name": "Seven of Swords",
+    "suit": "SWORDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/seven_of_swords.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "36",
+    "deck_id": "1",
+    "name": "Eight of Swords",
+    "suit": "SWORDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/eight_of_swords.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "37",
+    "deck_id": "1",
+    "name": "Nine of Swords",
+    "suit": "SWORDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/nine_of_swords.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "38",
+    "deck_id": "1",
+    "name": "Ten of Swords",
+    "suit": "SWORDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/ten_of_swords.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "39",
+    "deck_id": "1",
+    "name": "Page of Swords",
+    "suit": "SWORDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/page_of_swords.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "40",
+    "deck_id": "1",
+    "name": "Knight of Swords",
+    "suit": "SWORDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/knight_of_swords.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "41",
+    "deck_id": "1",
+    "name": "Queen of Swords",
+    "suit": "SWORDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/queen_of_swords.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "42",
+    "deck_id": "1",
+    "name": "King of Swords",
+    "suit": "SWORDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/king_of_swords.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "43",
+    "deck_id": "1",
+    "name": "Ace of Wands",
+    "suit": "WANDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/ace_of_wands.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "44",
+    "deck_id": "1",
+    "name": "Two of Wands",
+    "suit": "WANDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/two_of_wands.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "45",
+    "deck_id": "1",
+    "name": "Three of Wands",
+    "suit": "WANDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/three_of_wands.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "46",
+    "deck_id": "1",
+    "name": "Four of Wands",
+    "suit": "WANDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/four_of_wands.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "47",
+    "deck_id": "1",
+    "name": "Five of Wands",
+    "suit": "WANDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/five_of_wands.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "48",
+    "deck_id": "1",
+    "name": "Six of Wands",
+    "suit": "WANDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/six_of_wands.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "49",
+    "deck_id": "1",
+    "name": "Seven of Wands",
+    "suit": "WANDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/seven_of_wands.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "50",
+    "deck_id": "1",
+    "name": "Eight of Wands",
+    "suit": "WANDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/eight_of_wands.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "51",
+    "deck_id": "1",
+    "name": "Nine of Wands",
+    "suit": "WANDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/nine_of_wands.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "52",
+    "deck_id": "1",
+    "name": "Ten of Wands",
+    "suit": "WANDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/ten_of_wands.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "53",
+    "deck_id": "1",
+    "name": "Page of Wands",
+    "suit": "WANDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/page_of_wands.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "54",
+    "deck_id": "1",
+    "name": "Knight of Wands",
+    "suit": "WANDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/knight_of_wands.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "55",
+    "deck_id": "1",
+    "name": "Queen of Wands",
+    "suit": "WANDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/queen_of_wands.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "56",
+    "deck_id": "1",
+    "name": "King of Wands",
+    "suit": "WANDS",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/king_of_wands.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "57",
+    "deck_id": "1",
+    "name": "The Fool",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/the_fool.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "58",
+    "deck_id": "1",
+    "name": "The Magician",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/the_magician.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "59",
+    "deck_id": "1",
+    "name": "The High Priestess",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/the_high_priestess.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "60",
+    "deck_id": "1",
+    "name": "The Empress",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/the_empress.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "61",
+    "deck_id": "1",
+    "name": "The Emperor",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/the_emperor.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "62",
+    "deck_id": "1",
+    "name": "The Hierophant",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/the_hierophant.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "63",
+    "deck_id": "1",
+    "name": "The Lovers",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/the_lovers.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "64",
+    "deck_id": "1",
+    "name": "The Chariot",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/the_chariot.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "65",
+    "deck_id": "1",
+    "name": "Strength",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/strength.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "66",
+    "deck_id": "1",
+    "name": "The Hermit",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/the_hermit.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "67",
+    "deck_id": "1",
+    "name": "Wheel of Fortune",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/wheel_of_fortune.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "68",
+    "deck_id": "1",
+    "name": "Justice",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/justice.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "69",
+    "deck_id": "1",
+    "name": "The Hanged Man",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/the_hanged_man.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "70",
+    "deck_id": "1",
+    "name": "Death",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/death.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "71",
+    "deck_id": "1",
+    "name": "Temperance",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/temperance.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "72",
+    "deck_id": "1",
+    "name": "The Devil",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/the_devil.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "73",
+    "deck_id": "1",
+    "name": "The Tower",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/the_tower.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "74",
+    "deck_id": "1",
+    "name": "The Star",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/the_star.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "75",
+    "deck_id": "1",
+    "name": "The Moon",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/the_moon.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "76",
+    "deck_id": "1",
+    "name": "The Sun",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/the_sun.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "77",
+    "deck_id": "1",
+    "name": "Judgement",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/judgement.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "78",
+    "deck_id": "1",
+    "name": "The World",
+    "suit": "MAJOR_ARCANA",
+    "face_uri": "file:///android_asset/tarot/deck/tarot/popular/the_world.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "195",
+    "deck_id": "5",
+    "name": "Rider",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/rider.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "196",
+    "deck_id": "5",
+    "name": "Clover",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/clover.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "197",
+    "deck_id": "5",
+    "name": "Ship",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/ship.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "198",
+    "deck_id": "5",
+    "name": "House",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/house.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "199",
+    "deck_id": "5",
+    "name": "Tree",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/tree.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "200",
+    "deck_id": "5",
+    "name": "Clouds",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/clouds.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "201",
+    "deck_id": "5",
+    "name": "Snake",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/snake.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "202",
+    "deck_id": "5",
+    "name": "Coffin",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/coffin.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "203",
+    "deck_id": "5",
+    "name": "Bouquet",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/bouquet.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "204",
+    "deck_id": "5",
+    "name": "Scythe",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/scythe.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "205",
+    "deck_id": "5",
+    "name": "Whips",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/whips.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "206",
+    "deck_id": "5",
+    "name": "Birds",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/birds.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "207",
+    "deck_id": "5",
+    "name": "Child",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/child.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "208",
+    "deck_id": "5",
+    "name": "Fox",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/fox.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "209",
+    "deck_id": "5",
+    "name": "Bear",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/bear.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "210",
+    "deck_id": "5",
+    "name": "Stars",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/stars.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "211",
+    "deck_id": "5",
+    "name": "Stork",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/stork.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "212",
+    "deck_id": "5",
+    "name": "Dog",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/dog.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "213",
+    "deck_id": "5",
+    "name": "Tower",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/tower.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "214",
+    "deck_id": "5",
+    "name": "Garden",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/garden.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "215",
+    "deck_id": "5",
+    "name": "Mountain",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/mountain.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "216",
+    "deck_id": "5",
+    "name": "Crossroads",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/crossroads.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "217",
+    "deck_id": "5",
+    "name": "Mice",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/mice.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "218",
+    "deck_id": "5",
+    "name": "Heart",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/heart.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "219",
+    "deck_id": "5",
+    "name": "Ring",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/ring.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "220",
+    "deck_id": "5",
+    "name": "Book",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/book.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "221",
+    "deck_id": "5",
+    "name": "Letter",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/letter.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "222",
+    "deck_id": "5",
+    "name": "Man_A",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/man_a.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "223",
+    "deck_id": "5",
+    "name": "Man_B",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/man_b.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "224",
+    "deck_id": "5",
+    "name": "Lady_A",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/lady_a.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "225",
+    "deck_id": "5",
+    "name": "Lady_B",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/lady_b.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "226",
+    "deck_id": "5",
+    "name": "Lilies",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/lilies.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "227",
+    "deck_id": "5",
+    "name": "Sun",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/sun.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "228",
+    "deck_id": "5",
+    "name": "Moon",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/moon.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "229",
+    "deck_id": "5",
+    "name": "Key",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/key.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "230",
+    "deck_id": "5",
+    "name": "Fish",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/fish.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "231",
+    "deck_id": "5",
+    "name": "Anchor",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/anchor.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "232",
+    "deck_id": "5",
+    "name": "Cross",
+    "suit": "LENORMAND",
+    "face_uri": "file:///android_asset/tarot/deck/lenormand/popular/cross.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "467",
+    "deck_id": "10",
+    "name": "崭新的一天",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/崭新的一天.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "468",
+    "deck_id": "10",
+    "name": "接受赞美",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/接受赞美.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "469",
+    "deck_id": "10",
+    "name": "接受自己",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/接受自己.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "470",
+    "deck_id": "10",
+    "name": "冒险等待着你！",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/冒险等待着你！.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "471",
+    "deck_id": "10",
+    "name": "寻求帮助",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/寻求帮助.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "472",
+    "deck_id": "10",
+    "name": "保持一种自然美",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/保持一种自然美.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "473",
+    "deck_id": "10",
+    "name": "温柔地对待自己",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/温柔地对待自己.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "474",
+    "deck_id": "10",
+    "name": "亲爱的，留心你的金钱",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/亲爱的，留心你的金钱.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "475",
+    "deck_id": "10",
+    "name": "活在当下",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/活在当下.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "476",
+    "deck_id": "10",
+    "name": "信任",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/信任.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "477",
+    "deck_id": "10",
+    "name": "深呼吸",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/深呼吸.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "478",
+    "deck_id": "10",
+    "name": "为你的爱而庆祝!",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/为你的爱而庆祝!.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "479",
+    "deck_id": "10",
+    "name": "选择爱",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/选择爱.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "480",
+    "deck_id": "10",
+    "name": "同情（慈悲）",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/同情（慈悲）.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "481",
+    "deck_id": "10",
+    "name": "自信",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/自信.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "482",
+    "deck_id": "10",
+    "name": "跳舞",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/跳舞.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "483",
+    "deck_id": "10",
+    "name": "决定",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/决定.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "484",
+    "deck_id": "10",
+    "name": "提升你的能量",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/提升你的能量.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "485",
+    "deck_id": "10",
+    "name": "拥抱你的敏感",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/拥抱你的敏感.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "486",
+    "deck_id": "10",
+    "name": "找到你的归属！",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/找到你的归属！.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "487",
+    "deck_id": "10",
+    "name": "宽恕（能）治愈",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/宽恕（能）治愈.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "488",
+    "deck_id": "10",
+    "name": "给彼此空间",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/给彼此空间.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "489",
+    "deck_id": "10",
+    "name": "八卦削弱你的光辉",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/八卦削弱你的光辉.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "490",
+    "deck_id": "10",
+    "name": "邀请你的恐惧“喝茶”",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/邀请你的恐惧“喝茶”.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "491",
+    "deck_id": "10",
+    "name": "是时候崛起了！",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/是时候崛起了！.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "492",
+    "deck_id": "10",
+    "name": "是时候停止拖延了",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/是时候停止拖延了.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "493",
+    "deck_id": "10",
+    "name": "倾听",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/倾听.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "494",
+    "deck_id": "10",
+    "name": "倾听来自你身体的声音",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/倾听来自你身体的声音.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "495",
+    "deck_id": "10",
+    "name": "呼风唤雨/推波助澜",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/呼风唤雨_推波助澜.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "496",
+    "deck_id": "10",
+    "name": "收到祝福！",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/收到祝福！.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "497",
+    "deck_id": "10",
+    "name": "滋养自己",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/滋养自己.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "498",
+    "deck_id": "10",
+    "name": "给予你的爱",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/给予你的爱.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "499",
+    "deck_id": "10",
+    "name": "暂停",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/暂停.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "500",
+    "deck_id": "10",
+    "name": "玩耍吧！",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/玩耍吧！.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "501",
+    "deck_id": "10",
+    "name": "重新考虑你的承诺",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/重新考虑你的承诺.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "502",
+    "deck_id": "10",
+    "name": "冒险",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/冒险.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "503",
+    "deck_id": "10",
+    "name": "说“对不起”",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/说“对不起”.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "504",
+    "deck_id": "10",
+    "name": "分享你的礼物",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/分享你的礼物.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "505",
+    "deck_id": "10",
+    "name": "慢下来",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/慢下来.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "506",
+    "deck_id": "10",
+    "name": "更好的正在来的路上",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/更好的正在来的路上.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "507",
+    "deck_id": "10",
+    "name": "整理你的房间",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/整理你的房间.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "508",
+    "deck_id": "10",
+    "name": "停止比较",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/停止比较.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "509",
+    "deck_id": "10",
+    "name": "说实话",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/说实话.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "510",
+    "deck_id": "10",
+    "name": "相信你的直觉",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/相信你的直觉.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "511",
+    "deck_id": "10",
+    "name": "去掉障碍",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/去掉障碍.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "512",
+    "deck_id": "10",
+    "name": "实现愿望",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/实现愿望.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "513",
+    "deck_id": "10",
+    "name": "你很棒",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/你很棒.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "514",
+    "deck_id": "10",
+    "name": "你不可能取悦每一个人",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/你不可能取悦每一个人.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "515",
+    "deck_id": "10",
+    "name": "你做到了！",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/你做到了！.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "516",
+    "deck_id": "10",
+    "name": "你在被治愈",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/你在被治愈.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "517",
+    "deck_id": "10",
+    "name": "你被爱着",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/你被爱着.png",
+    "raster_face_uri": null
+  },
+  {
+    "id": "518",
+    "deck_id": "10",
+    "name": "你的目的/目标是快乐",
+    "suit": "ORACLE",
+    "face_uri": "file:///android_asset/tarot/deck/oracle/popular/你的目的_目标是快乐.png",
+    "raster_face_uri": null
+  }
+]

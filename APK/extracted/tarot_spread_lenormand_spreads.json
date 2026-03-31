@@ -1,0 +1,200 @@
+[
+  {
+    "id": "36",
+    "name": "每日牌阵",
+    "card_num": 1,
+    "content": "这是一个很方便的牌阵，让你对今天的命运有一个简单的大致的了解。当然也可以\n 对一些简单的事情作一个大概的预测。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/1.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/1.png",
+    "new": "0"
+  },
+  {
+    "id": "37",
+    "name": "3卡牌阵",
+    "card_num": 3,
+    "content": "它可能会进一步揭示一些当前紧迫的问题。也可以作为预测每周运势来使用。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/2.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/2.png",
+    "new": "0"
+  },
+  {
+    "id": "38",
+    "name": "爱的扩散",
+    "card_num": 4,
+    "content": "如果你与喜欢的人产生了一些小矛盾，那么这个简单的牌阵可以给你带来清晰和有 价值的指引。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/3.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/3.png",
+    "new": "0"
+  },
+  {
+    "id": "39",
+    "name": "4卡未来牌阵",
+    "card_num": 4,
+    "content": "这个牌阵能显示了你在短期内的生活状况。也能预测你一到两周内的问题发展，并\n给与指引。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/4.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/4.png",
+    "new": "0"
+  },
+  {
+    "id": "40",
+    "name": "快速分析",
+    "card_num": 4,
+    "content": "这是一个简单的四卡牌阵，用来回答一个关于短时间内的问题。能分析出问题的可\n 能性走向让你提前做好准备。这个牌阵无法用于重大事情的预测。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/5.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/5.png",
+    "new": "0"
+  },
+  {
+    "id": "41",
+    "name": "新事业",
+    "card_num": 5,
+    "content": "如果你要开创一个事业或开始一段冒险，那么这个牌阵能简单概括地向你展示将面\n 临的情况，同时也可以用于工作或学业中的预测。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/6.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/6.png",
+    "new": "0"
+  },
+  {
+    "id": "42",
+    "name": "金钱牌阵",
+    "card_num": 5,
+    "content": "这个牌阵能快速了解你的财运状况。 是否很快会有现金流入、 获得资源的机会是\n什么、发展趋势如何。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/7.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/7.png",
+    "new": "0"
+  },
+  {
+    "id": "43",
+    "name": "五卡牌阵",
+    "card_num": 5,
+    "content": "你可以用这个快捷简单的方法来决定采取什么行动。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/8.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/8.png",
+    "new": "0"
+  },
+  {
+    "id": "44",
+    "name": "寻爱",
+    "card_num": 5,
+    "content": "如果你有一个目标对象但还未成为恋人时，这个牌阵能帮助你如何推进你们的情感\n或客服你们之间的问题。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/9.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/9.png",
+    "new": "0"
+  },
+  {
+    "id": "45",
+    "name": "三级牌阵",
+    "card_num": 6,
+    "content": "这个牌阵可通过从身心灵和过去的事情来剖析你的问题并预测接下来的趋势从而给\n 你启示。有什么个人问题想不开的话可以尝试一下这个牌阵。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/10.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/10.png",
+    "new": "0"
+  },
+  {
+    "id": "46",
+    "name": "期望的目标",
+    "card_num": 6,
+    "content": "这个牌阵能指引你，可以通过什么方式得到你想要的目标，并能分析出你与你的对\n手的情况。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/11.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/11.png",
+    "new": "0"
+  },
+  {
+    "id": "47",
+    "name": "心形牌阵",
+    "card_num": 7,
+    "content": "当你有一个明确的问题时，这个牌阵将会很好地给你启示和预测接下来的走向。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/12.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/12.png",
+    "new": "0"
+  },
+  {
+    "id": "48",
+    "name": "月运",
+    "card_num": 8,
+    "content": "这个牌阵能为你预测接下来一个月的运势。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/13.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/13.png",
+    "new": "0"
+  },
+  {
+    "id": "51",
+    "name": "灵魂伴侣",
+    "card_num": 8,
+    "content": "这张8张牌的传播的目的是做一个更严肃的分析，你已经或将\n 要与一个新的地平线上的人的关系。你寄予厚望的人。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/16.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/16.png",
+    "new": "0"
+  },
+  {
+    "id": "52",
+    "name": "9张無牌阵",
+    "card_num": 9,
+    "content": "这是一个万能型的牌阵，占卜师能通过你的整体牌面及牌与牌之间的关连为你解答\n 问题，这是一个非常通用及好用的雷诺曼牌阵。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/17.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/17.png",
+    "new": "0"
+  },
+  {
+    "id": "54",
+    "name": "梦想",
+    "card_num": 9,
+    "content": "这个牌阵能启示你是否继续坚持你的目标/梦想，或是要把它放一边。因为它已经埋 在了厚厚的灰尘里。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/19.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/19.png",
+    "new": "0"
+  },
+  {
+    "id": "57",
+    "name": "凯尔特十字架",
+    "card_num": 10,
+    "content": "这是很受欢迎和详细的塔罗牌阵之一。当你有一个特定的情况，一个问题，一个你\n 需要阐明并找到解决方案的问题时，使用它是很合适的。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/22.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/22.png",
+    "new": "0"
+  },
+  {
+    "id": "55",
+    "name": "关系牌阵",
+    "card_num": 13,
+    "content": "这个复杂的牌阵能为你详细剖析你和你伴侣的关系，外部对你们关系的影响，过去\n 的足迹，最重要的是未来你们会如何发展。",
+    "type": "万能、预测、指引",
+    "details": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/rayDetails/20.jpg",
+    "form": "all",
+    "thumb_img": "https://starcatzx.oss-cn-shenzhen.aliyuncs.com/spreads/thumb/raynorman/20.png",
+    "new": "0"
+  }
+]

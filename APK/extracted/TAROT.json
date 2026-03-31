@@ -1,0 +1,626 @@
+[
+  {
+    "id": "1",
+    "tarot_id": "1",
+    "name": "The Fool",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/the_fool.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/the_fool.png"
+  },
+  {
+    "id": "2",
+    "tarot_id": "1",
+    "name": "The Magician",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/the_magician.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/the_magician.png"
+  },
+  {
+    "id": "3",
+    "tarot_id": "1",
+    "name": "The High Priestess",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/the_high_priestess.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/the_high_priestess.png"
+  },
+  {
+    "id": "4",
+    "tarot_id": "1",
+    "name": "The Empress",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/the_empress.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/the_empress.png"
+  },
+  {
+    "id": "5",
+    "tarot_id": "1",
+    "name": "The Emperor",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/the_emperor.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/the_emperor.png"
+  },
+  {
+    "id": "6",
+    "tarot_id": "1",
+    "name": "The Hierophant",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/the_hierophant.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/the_hierophant.png"
+  },
+  {
+    "id": "7",
+    "tarot_id": "1",
+    "name": "The Lovers",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/the_lovers.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/the_lovers.png"
+  },
+  {
+    "id": "8",
+    "tarot_id": "1",
+    "name": "The Chariot",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/the_chariot.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/the_chariot.png"
+  },
+  {
+    "id": "9",
+    "tarot_id": "1",
+    "name": "Strength",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/strength.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/strength.png"
+  },
+  {
+    "id": "10",
+    "tarot_id": "1",
+    "name": "The Hermit",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/the_hermit.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/the_hermit.png"
+  },
+  {
+    "id": "11",
+    "tarot_id": "1",
+    "name": "Wheel of Fortune",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/wheel_of_fortune.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/wheel_of_fortune.png"
+  },
+  {
+    "id": "12",
+    "tarot_id": "1",
+    "name": "Justice",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/justice.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/justice.png"
+  },
+  {
+    "id": "13",
+    "tarot_id": "1",
+    "name": "The Hanged Man",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/the_hanged_man.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/the_hanged_man.png"
+  },
+  {
+    "id": "14",
+    "tarot_id": "1",
+    "name": "Death",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/death.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/death.png"
+  },
+  {
+    "id": "15",
+    "tarot_id": "1",
+    "name": "Temperance",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/temperance.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/temperance.png"
+  },
+  {
+    "id": "16",
+    "tarot_id": "1",
+    "name": "The Devil",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/the_devil.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/the_devil.png"
+  },
+  {
+    "id": "17",
+    "tarot_id": "1",
+    "name": "The Tower",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/the_tower.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/the_tower.png"
+  },
+  {
+    "id": "18",
+    "tarot_id": "1",
+    "name": "The Star",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/the_star.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/the_star.png"
+  },
+  {
+    "id": "19",
+    "tarot_id": "1",
+    "name": "The Moon",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/the_moon.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/the_moon.png"
+  },
+  {
+    "id": "20",
+    "tarot_id": "1",
+    "name": "The Sun",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/the_sun.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/the_sun.png"
+  },
+  {
+    "id": "21",
+    "tarot_id": "1",
+    "name": "Judgement",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/judgement.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/judgement.png"
+  },
+  {
+    "id": "22",
+    "tarot_id": "1",
+    "name": "The World",
+    "sup_name": "MajorArcana",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/the_world.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/the_world.png"
+  },
+  {
+    "id": "23",
+    "tarot_id": "1",
+    "name": "Ace of Wands",
+    "sup_name": "Wands",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/ace_of_wands.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/ace_of_wands.png"
+  },
+  {
+    "id": "24",
+    "tarot_id": "1",
+    "name": "Two of Wands",
+    "sup_name": "Wands",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/two_of_wands.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/two_of_wands.png"
+  },
+  {
+    "id": "25",
+    "tarot_id": "1",
+    "name": "Three of Wands",
+    "sup_name": "Wands",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/three_of_wands.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/three_of_wands.png"
+  },
+  {
+    "id": "26",
+    "tarot_id": "1",
+    "name": "Four of Wands",
+    "sup_name": "Wands",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/four_of_wands.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/four_of_wands.png"
+  },
+  {
+    "id": "27",
+    "tarot_id": "1",
+    "name": "Five of Wands",
+    "sup_name": "Wands",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/five_of_wands.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/five_of_wands.png"
+  },
+  {
+    "id": "28",
+    "tarot_id": "1",
+    "name": "Six of Wands",
+    "sup_name": "Wands",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/six_of_wands.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/six_of_wands.png"
+  },
+  {
+    "id": "29",
+    "tarot_id": "1",
+    "name": "Seven of Wands",
+    "sup_name": "Wands",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/seven_of_wands.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/seven_of_wands.png"
+  },
+  {
+    "id": "30",
+    "tarot_id": "1",
+    "name": "Eight of Wands",
+    "sup_name": "Wands",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/eight_of_wands.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/eight_of_wands.png"
+  },
+  {
+    "id": "31",
+    "tarot_id": "1",
+    "name": "Nine of Wands",
+    "sup_name": "Wands",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/nine_of_wands.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/nine_of_wands.png"
+  },
+  {
+    "id": "32",
+    "tarot_id": "1",
+    "name": "Ten of Wands",
+    "sup_name": "Wands",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/ten_of_wands.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/ten_of_wands.png"
+  },
+  {
+    "id": "33",
+    "tarot_id": "1",
+    "name": "Page of Wands",
+    "sup_name": "Wands",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/page_of_wands.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/page_of_wands.png"
+  },
+  {
+    "id": "34",
+    "tarot_id": "1",
+    "name": "Knight of Wands",
+    "sup_name": "Wands",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/knight_of_wands.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/knight_of_wands.png"
+  },
+  {
+    "id": "35",
+    "tarot_id": "1",
+    "name": "Queen of Wands",
+    "sup_name": "Wands",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/queen_of_wands.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/queen_of_wands.png"
+  },
+  {
+    "id": "36",
+    "tarot_id": "1",
+    "name": "King of Wands",
+    "sup_name": "Wands",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/king_of_wands.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/king_of_wands.png"
+  },
+  {
+    "id": "37",
+    "tarot_id": "1",
+    "name": "Ace of Cups",
+    "sup_name": "Cups",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/ace_of_cups.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/ace_of_cups.png"
+  },
+  {
+    "id": "38",
+    "tarot_id": "1",
+    "name": "Two of Cups",
+    "sup_name": "Cups",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/two_of_cups.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/two_of_cups.png"
+  },
+  {
+    "id": "39",
+    "tarot_id": "1",
+    "name": "Three of Cups",
+    "sup_name": "Cups",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/three_of_cups.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/three_of_cups.png"
+  },
+  {
+    "id": "40",
+    "tarot_id": "1",
+    "name": "Four of Cups",
+    "sup_name": "Cups",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/four_of_cups.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/four_of_cups.png"
+  },
+  {
+    "id": "41",
+    "tarot_id": "1",
+    "name": "Five of Cups",
+    "sup_name": "Cups",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/five_of_cups.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/five_of_cups.png"
+  },
+  {
+    "id": "42",
+    "tarot_id": "1",
+    "name": "Six of Cups",
+    "sup_name": "Cups",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/six_of_cups.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/six_of_cups.png"
+  },
+  {
+    "id": "43",
+    "tarot_id": "1",
+    "name": "Seven of Cups",
+    "sup_name": "Cups",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/seven_of_cups.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/seven_of_cups.png"
+  },
+  {
+    "id": "44",
+    "tarot_id": "1",
+    "name": "Eight of Cups",
+    "sup_name": "Cups",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/eight_of_cups.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/eight_of_cups.png"
+  },
+  {
+    "id": "45",
+    "tarot_id": "1",
+    "name": "Nine of Cups",
+    "sup_name": "Cups",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/nine_of_cups.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/nine_of_cups.png"
+  },
+  {
+    "id": "46",
+    "tarot_id": "1",
+    "name": "Ten of Cups",
+    "sup_name": "Cups",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/ten_of_cups.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/ten_of_cups.png"
+  },
+  {
+    "id": "47",
+    "tarot_id": "1",
+    "name": "Page of Cups",
+    "sup_name": "Cups",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/page_of_cups.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/page_of_cups.png"
+  },
+  {
+    "id": "48",
+    "tarot_id": "1",
+    "name": "Knight of Cups",
+    "sup_name": "Cups",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/knight_of_cups.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/knight_of_cups.png"
+  },
+  {
+    "id": "49",
+    "tarot_id": "1",
+    "name": "Queen of Cups",
+    "sup_name": "Cups",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/queen_of_cups.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/queen_of_cups.png"
+  },
+  {
+    "id": "50",
+    "tarot_id": "1",
+    "name": "King of Cups",
+    "sup_name": "Cups",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/king_of_cups.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/king_of_cups.png"
+  },
+  {
+    "id": "51",
+    "tarot_id": "1",
+    "name": "Ace of Swords",
+    "sup_name": "Swords",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/ace_of_swords.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/ace_of_swords.png"
+  },
+  {
+    "id": "52",
+    "tarot_id": "1",
+    "name": "Two of Swords",
+    "sup_name": "Swords",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/two_of_swords.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/two_of_swords.png"
+  },
+  {
+    "id": "53",
+    "tarot_id": "1",
+    "name": "Three of Swords",
+    "sup_name": "Swords",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/three_of_swords.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/three_of_swords.png"
+  },
+  {
+    "id": "54",
+    "tarot_id": "1",
+    "name": "Four of Swords",
+    "sup_name": "Swords",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/four_of_swords.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/four_of_swords.png"
+  },
+  {
+    "id": "55",
+    "tarot_id": "1",
+    "name": "Five of Swords",
+    "sup_name": "Swords",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/five_of_swords.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/five_of_swords.png"
+  },
+  {
+    "id": "56",
+    "tarot_id": "1",
+    "name": "Six of Swords",
+    "sup_name": "Swords",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/six_of_swords.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/six_of_swords.png"
+  },
+  {
+    "id": "57",
+    "tarot_id": "1",
+    "name": "Seven of Swords",
+    "sup_name": "Swords",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/seven_of_swords.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/seven_of_swords.png"
+  },
+  {
+    "id": "58",
+    "tarot_id": "1",
+    "name": "Eight of Swords",
+    "sup_name": "Swords",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/eight_of_swords.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/eight_of_swords.png"
+  },
+  {
+    "id": "59",
+    "tarot_id": "1",
+    "name": "Nine of Swords",
+    "sup_name": "Swords",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/nine_of_swords.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/nine_of_swords.png"
+  },
+  {
+    "id": "60",
+    "tarot_id": "1",
+    "name": "Ten of Swords",
+    "sup_name": "Swords",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/ten_of_swords.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/ten_of_swords.png"
+  },
+  {
+    "id": "61",
+    "tarot_id": "1",
+    "name": "Page of Swords",
+    "sup_name": "Swords",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/page_of_swords.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/page_of_swords.png"
+  },
+  {
+    "id": "62",
+    "tarot_id": "1",
+    "name": "Knight of Swords",
+    "sup_name": "Swords",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/knight_of_swords.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/knight_of_swords.png"
+  },
+  {
+    "id": "63",
+    "tarot_id": "1",
+    "name": "Queen of Swords",
+    "sup_name": "Swords",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/queen_of_swords.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/queen_of_swords.png"
+  },
+  {
+    "id": "64",
+    "tarot_id": "1",
+    "name": "King of Swords",
+    "sup_name": "Swords",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/king_of_swords.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/king_of_swords.png"
+  },
+  {
+    "id": "65",
+    "tarot_id": "1",
+    "name": "Ace of Pentacles",
+    "sup_name": "Coins",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/ace_of_pentacles.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/ace_of_pentacles.png"
+  },
+  {
+    "id": "66",
+    "tarot_id": "1",
+    "name": "Two of Pentacles",
+    "sup_name": "Coins",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/two_of_pentacles.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/two_of_pentacles.png"
+  },
+  {
+    "id": "67",
+    "tarot_id": "1",
+    "name": "Three of Pentacles",
+    "sup_name": "Coins",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/three_of_pentacles.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/three_of_pentacles.png"
+  },
+  {
+    "id": "68",
+    "tarot_id": "1",
+    "name": "Four of Pentacles",
+    "sup_name": "Coins",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/four_of_pentacles.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/four_of_pentacles.png"
+  },
+  {
+    "id": "69",
+    "tarot_id": "1",
+    "name": "Five of Pentacles",
+    "sup_name": "Coins",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/five_of_pentacles.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/five_of_pentacles.png"
+  },
+  {
+    "id": "70",
+    "tarot_id": "1",
+    "name": "Six of Pentacles",
+    "sup_name": "Coins",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/six_of_pentacles.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/six_of_pentacles.png"
+  },
+  {
+    "id": "71",
+    "tarot_id": "1",
+    "name": "Seven of Pentacles",
+    "sup_name": "Coins",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/seven_of_pentacles.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/seven_of_pentacles.png"
+  },
+  {
+    "id": "72",
+    "tarot_id": "1",
+    "name": "Eight of Pentacles",
+    "sup_name": "Coins",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/eight_of_pentacles.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/eight_of_pentacles.png"
+  },
+  {
+    "id": "73",
+    "tarot_id": "1",
+    "name": "Nine of Pentacles",
+    "sup_name": "Coins",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/nine_of_pentacles.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/nine_of_pentacles.png"
+  },
+  {
+    "id": "74",
+    "tarot_id": "1",
+    "name": "Ten of Pentacles",
+    "sup_name": "Coins",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/ten_of_pentacles.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/ten_of_pentacles.png"
+  },
+  {
+    "id": "75",
+    "tarot_id": "1",
+    "name": "Page of Pentacles",
+    "sup_name": "Coins",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/page_of_pentacles.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/page_of_pentacles.png"
+  },
+  {
+    "id": "76",
+    "tarot_id": "1",
+    "name": "Knight of Pentacles",
+    "sup_name": "Coins",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/knight_of_pentacles.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/knight_of_pentacles.png"
+  },
+  {
+    "id": "77",
+    "tarot_id": "1",
+    "name": "Queen of Pentacles",
+    "sup_name": "Coins",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/queen_of_pentacles.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/queen_of_pentacles.png"
+  },
+  {
+    "id": "78",
+    "tarot_id": "1",
+    "name": "King of Pentacles",
+    "sup_name": "Coins",
+    "img": "file:///android_asset/tarot/deck/tarot/popular/king_of_pentacles.png",
+    "big_img": "file:///android_asset/tarot/deck/tarot/popular/king_of_pentacles.png"
+  }
+]

@@ -3741,6 +3741,13 @@ async function triggerAIResponse(options?: {
       // 時間跳轉 / 小劇場相關
       isTimetravel: m.isTimetravel,
       timetravelContent: m.timetravelContent,
+      // 回覆引用
+      replyTo: m.replyTo,
+      replyToContent: m.replyToContent,
+      // 封鎖狀態
+      sentWhileBlocked: m.sentWhileBlocked,
+      // 發送者角色 ID（群聊）
+      senderCharacterId: m.senderCharacterId,
     }));
 
     // 使用 PromptBuilder 構建提示詞
@@ -6975,6 +6982,14 @@ function getReplyToContent(messageId: string): string {
   return msg ? getPreviewText(msg.content) : "";
 }
 
+// 獲取被回覆消息的發送者名稱
+function getReplyToName(messageId: string): string {
+  const msg = messages.value.find((m) => m.id === messageId);
+  if (!msg) return "";
+  if (msg.role === "user") return effectivePersona.value?.name || "我";
+  return msg.senderCharacterName || currentCharacter.value?.data?.name || "";
+}
+
 // 從遺留的 messageChunks 表恢復訊息（v13 遷移補救）
 async function recoverFromMessageChunks(
   chatId: string,
@@ -9667,6 +9682,9 @@ onUnmounted(() => {
                 : message.replyToContent
             "
             :reply-to="message.replyTo"
+            :reply-to-name="
+              message.replyTo ? getReplyToName(message.replyTo) : ''
+            "
             :message-type="message.messageType"
             :image-url="message.imageUrl"
             :image-caption="message.imageCaption"

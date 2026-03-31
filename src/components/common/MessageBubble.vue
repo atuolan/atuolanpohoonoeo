@@ -146,6 +146,8 @@ interface MessageBubbleProps {
   replyToContent?: string;
   // 回覆引用的原消息 ID
   replyTo?: string;
+  // 回覆引用的發送者名稱
+  replyToName?: string;
   // 圖片相關
   messageType?:
     | "text"
@@ -286,6 +288,7 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   locationContent: "",
   replyToContent: "",
   replyTo: "",
+  replyToName: "",
   messageType: "text",
   imageUrl: "",
   imageCaption: "",
@@ -2313,17 +2316,11 @@ const showTextVoiceTranscript = ref(true);
           class="reply-quote-floating"
           @click.stop="handleReplyClick"
         >
-          <div class="reply-icon-container">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"
-              />
-            </svg>
+          <div class="reply-bar"></div>
+          <div class="reply-body">
+            <span v-if="replyToName" class="reply-name">{{ replyToName }}</span>
+            <span class="reply-text">{{ replyToContent }}</span>
           </div>
-          <span class="reply-text">{{ replyToContent }}</span>
-
-          <!-- 連接線 -->
-          <div class="reply-connector"></div>
         </div>
 
         <!-- 位置分享（獨立卡片，不在氣泡內） -->
@@ -4237,107 +4234,82 @@ const showTextVoiceTranscript = ref(true);
 .reply-quote-floating {
   position: relative;
   display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
+  align-items: stretch;
+  gap: 0;
+  margin-bottom: 4px;
   z-index: 2;
-  padding: 8px 14px;
   max-width: 100%;
+  overflow: hidden;
 
-  /* Glassmorphism */
-  background: rgba(255, 255, 255, 0.45);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
 
-  border-radius: 16px;
-  border-bottom-left-radius: 4px; /* 預設 AI 左下角直角 */
-
-  font-size: 13px;
-  color: var(--color-text-secondary);
   cursor: pointer;
-
-  transform-origin: bottom left;
-  animation: reply-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-
-  /* 用戶發送的樣式調整 */
-  .user & {
-    align-self: flex-end;
-    border-bottom-left-radius: 16px;
-    border-bottom-right-radius: 4px;
-    border-left: 1px solid rgba(255, 255, 255, 0.6);
-    flex-direction: row-reverse; /* 讓圖示在右邊 */
-    transform-origin: bottom right;
-    background: rgba(255, 255, 255, 0.55);
-  }
+  animation: reply-pop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease;
 
   &:hover {
-    transform: translateY(-2px);
-    background: rgba(255, 255, 255, 0.65);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
-
-    .reply-icon-container {
-      transform: rotate(-15deg) scale(1.1);
-      background: var(--color-primary);
-      color: white;
-    }
+    background: rgba(255, 255, 255, 0.28);
+    transform: translateY(-1px);
   }
 
-  .reply-icon-container {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    background: rgba(0, 0, 0, 0.06);
-    color: var(--color-text-muted);
-    border-radius: 50%;
+  /* 左側色條 */
+  .reply-bar {
+    width: 3px;
     flex-shrink: 0;
-    transition: all 0.3s ease;
+    background: var(--color-primary, #6c8ebf);
+    border-radius: 10px 0 0 10px;
+    opacity: 0.85;
+  }
 
-    svg {
-      width: 12px;
-      height: 12px;
-    }
+  /* 文字區域 */
+  .reply-body {
+    display: flex;
+    flex-direction: column;
+    padding: 5px 10px;
+    min-width: 0;
+    gap: 1px;
+  }
+
+  .reply-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-primary, #6c8ebf);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.9;
   }
 
   .reply-text {
-    flex: 1;
+    font-size: 12px;
+    color: var(--color-text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    opacity: 0.85;
-    font-weight: 500;
+    opacity: 0.75;
   }
 
-  /* 連接線效果 (選用，增加關聯感) */
-  .reply-connector {
-    position: absolute;
-    bottom: -4px;
-    left: 0;
-    width: 10px;
-    height: 10px;
-    background: radial-gradient(
-      circle at top right,
-      transparent 70%,
-      rgba(255, 255, 255, 0.6) 71%
-    );
-    opacity: 0.8;
-  }
+  /* 用戶側：色條在右邊 */
+  .user & {
+    align-self: flex-end;
+    flex-direction: row-reverse;
 
-  .user & .reply-connector {
-    left: auto;
-    right: 0;
-    transform: scaleX(-1);
+    .reply-bar {
+      border-radius: 0 10px 10px 0;
+    }
   }
 }
 
 @keyframes reply-pop {
   from {
     opacity: 0;
-    transform: scale(0.9) translateY(4px);
+    transform: scale(0.95) translateY(3px);
   }
   to {
     opacity: 1;

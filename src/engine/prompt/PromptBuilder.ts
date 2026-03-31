@@ -406,10 +406,26 @@ export class PromptBuilder {
     const lastUserMsg =
       lastUserTurnMsgs
         .map((m) => {
-          if (options.enableRealTimeAwareness !== false && m.createdAt) {
-            return `${this.formatMsgTimeTag(m.createdAt)} ${m.content}`;
+          // 若有引用回覆，在內容前加上引用標記
+          let content = m.content;
+          if (m.replyTo) {
+            const repliedMsg = options.messages.find((r) => r.id === m.replyTo);
+            if (repliedMsg) {
+              const preview = repliedMsg.content
+                .replace(/\[img:.*?\]/g, "[圖片]")
+                .replace(/\[sticker:.*?\]/g, "[表情包]");
+              const truncated =
+                preview.length > 60 ? preview.substring(0, 60) + "…" : preview;
+              const senderName = repliedMsg.is_user
+                ? options.userName
+                : repliedMsg.name || options.character.data.name;
+              content = `[回覆 ${senderName}：「${truncated}」]\n${content}`;
+            }
           }
-          return m.content;
+          if (options.enableRealTimeAwareness !== false && m.createdAt) {
+            return `${this.formatMsgTimeTag(m.createdAt)} ${content}`;
+          }
+          return content;
         })
         .join("\n") || "";
     const lastCharMsg =
@@ -530,10 +546,26 @@ export class PromptBuilder {
     const lastUserMsg =
       lastUserTurnMsgs
         .map((m) => {
-          if (options.enableRealTimeAwareness !== false && m.createdAt) {
-            return `${this.formatMsgTimeTag(m.createdAt)} ${m.content}`;
+          // 若有引用回覆，在內容前加上引用標記
+          let content = m.content;
+          if (m.replyTo) {
+            const repliedMsg = options.messages.find((r) => r.id === m.replyTo);
+            if (repliedMsg) {
+              const preview = repliedMsg.content
+                .replace(/\[img:.*?\]/g, "[圖片]")
+                .replace(/\[sticker:.*?\]/g, "[表情包]");
+              const truncated =
+                preview.length > 60 ? preview.substring(0, 60) + "…" : preview;
+              const senderName = repliedMsg.is_user
+                ? options.userName
+                : repliedMsg.name || options.character.data.name;
+              content = `[回覆 ${senderName}：「${truncated}」]\n${content}`;
+            }
           }
-          return m.content;
+          if (options.enableRealTimeAwareness !== false && m.createdAt) {
+            return `${this.formatMsgTimeTag(m.createdAt)} ${content}`;
+          }
+          return content;
         })
         .join("\n") || "";
     const lastCharMsg =
@@ -2408,8 +2440,23 @@ export class PromptBuilder {
      */
     const lastMsg =
       messages.length > 0 ? messages[messages.length - 1].content : "";
-    const lastUserMsg =
-      [...messages].reverse().find((m) => m.is_user)?.content ?? "";
+    const lastUserMsgObj = [...messages].reverse().find((m) => m.is_user);
+    let lastUserMsg = lastUserMsgObj?.content ?? "";
+    // 若有引用回覆，在內容前加上引用標記
+    if (lastUserMsgObj?.replyTo) {
+      const repliedMsg = messages.find((r) => r.id === lastUserMsgObj.replyTo);
+      if (repliedMsg) {
+        const preview = repliedMsg.content
+          .replace(/\[img:.*?\]/g, "[圖片]")
+          .replace(/\[sticker:.*?\]/g, "[表情包]");
+        const truncated =
+          preview.length > 60 ? preview.substring(0, 60) + "…" : preview;
+        const senderName = repliedMsg.is_user
+          ? this.options.userName
+          : repliedMsg.name || this.options.character.data.name;
+        lastUserMsg = `[回覆 ${senderName}：「${truncated}」]\n${lastUserMsg}`;
+      }
+    }
     const lastCharMsg =
       [...messages]
         .reverse()

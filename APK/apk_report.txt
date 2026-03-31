@@ -1,0 +1,42 @@
+Traceback (most recent call last):
+  File "c:\Users\a2397\new aguaphone\APK\analyze_apk.py", line 41, in <module>
+    print(f'  \U0001f4c1 {d}/  ({count} 個檔案)')
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'cp950' codec can't encode character '\U0001f4c1' in position 2: illegal multibyte sequence
+APK 檔案大小: 42.38 MB
+
+總檔案數: 1890
+
+=== 檔案類型統計 ===
+  .xml: 971 個
+  .png: 761 個
+  .version: 75 個
+  .jpg: 15 個
+  .so: 10 個
+  .mp3: 9 個
+  .kotlin_builtins: 8 個
+  .webp: 6 個
+  (無副檔名): 5 個
+  .txt: 5 個
+  .dex: 3 個
+  .json: 3 個
+  .properties: 2 個
+  .mf: 2 個
+  .textproto: 1 個
+  .prof: 1 個
+  .profm: 1 個
+  .db: 1 個
+  .bin: 1 個
+  .md: 1 個
+  .j: 1 個
+  .r: 1 個
+  .gz: 1 個
+  .wav: 1 個
+  .otf: 1 個
+  .ttf: 1 個
+  .arsc: 1 個
+  .sf: 1 個
+  .rsa: 1 個
+
+=== 頂層目錄結構 ===
+錯誤: 'cp950' codec can't encode character '\U0001f4c1' in position 2: illegal multibyte sequence
