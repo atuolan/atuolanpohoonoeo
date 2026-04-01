@@ -59,16 +59,13 @@ export const useOracleStore = defineStore('oracle', () => {
     phase.value = p
   }
 
-  /** 設定意圖並進入牌陣選擇 */
-  function setIntention(q: string, intent: string) {
-    question.value = q
-    intention.value = intent
-    phase.value = 'spread'
-  }
-
-  /** 選擇牌陣並進入洗牌 */
+  /** 選擇牌陣 */
   function selectSpread(s: OracleSpread) {
     spread.value = s
+  }
+
+  /** 從 setup 進入洗牌：確認問題和牌陣 */
+  function confirmSetup() {
     phase.value = 'shuffle'
     shuffleDeck()
   }
@@ -81,9 +78,9 @@ export const useOracleStore = defineStore('oracle', () => {
     revealedCount.value = 0
   }
 
-  /** 確認洗牌完畢，進入抽牌階段 */
+  /** 確認洗牌完畢，進入選牌階段 */
   function confirmShuffle() {
-    phase.value = 'draw'
+    phase.value = 'pick'
   }
 
   /** 抽牌：點選一張牌 */
@@ -279,8 +276,8 @@ export const useOracleStore = defineStore('oracle', () => {
     currentDrawnCard,
     // 方法
     goToPhase,
-    setIntention,
     selectSpread,
+    confirmSetup,
     shuffleDeck,
     confirmShuffle,
     pickCard,

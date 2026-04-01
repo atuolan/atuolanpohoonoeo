@@ -4,7 +4,7 @@
  */
 import { allFateCards } from "@/data/fateCards";
 import { buildFateInterpretationPrompt } from "@/data/fatePrompts";
-import { getDefaultFateSpread } from "@/data/fateSpreads";
+import { fateSpreads } from "@/data/fateSpreads";
 import { db } from "@/db/database";
 import type {
   FateCard,
@@ -24,7 +24,7 @@ export const useFateStore = defineStore("fate", () => {
   // ===== 占卜流程狀態 =====
   const phase = ref<FatePhase>("home");
   const question = ref("");
-  const spread = ref<FateSpread>(getDefaultFateSpread());
+  const spread = ref<FateSpread>(fateSpreads[0]);
   const drawnCards = ref<FateDrawnCard[]>([]);
   const revealedCount = ref(0);
   const interpretation = ref("");
@@ -200,7 +200,7 @@ export const useFateStore = defineStore("fate", () => {
   function reset() {
     phase.value = "home";
     question.value = "";
-    spread.value = getDefaultFateSpread();
+    spread.value = fateSpreads[0];
     drawnCards.value = [];
     revealedCount.value = 0;
     interpretation.value = "";

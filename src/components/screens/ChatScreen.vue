@@ -4775,6 +4775,21 @@ async function triggerAIResponse(options?: {
                   if (updatedChat && currentChatData.value) {
                     currentChatData.value.blockState = updatedChat.blockState;
                   }
+                } else if (action.action === "apology-food") {
+                  // 道歉外賣：角色被封鎖時點外賣給用戶道歉
+                  try {
+                    const { default: ApologyFoodService } = await import("@/services/ApologyFoodService");
+                    const charId = props.characterId || currentCharacter.value?.id || "";
+                    await ApologyFoodService.getInstance().handleApologyFood(
+                      currentChatId.value,
+                      charId,
+                      action.item || "",
+                      action.message || "",
+                    );
+                    console.log("[ChatScreen] 道歉外賣已觸發:", { item: action.item, message: action.message });
+                  } catch (err) {
+                    console.error("[ChatScreen] 道歉外賣處理失敗:", err);
+                  }
                 }
               }
             }
@@ -5567,6 +5582,21 @@ async function triggerAIResponse(options?: {
                     );
                     if (updatedChat && currentChatData.value) {
                       currentChatData.value.blockState = updatedChat.blockState;
+                    }
+                  } else if (action.action === "apology-food") {
+                    // 道歉外賣：角色被封鎖時點外賣給用戶道歉
+                    try {
+                      const { default: ApologyFoodService } = await import("@/services/ApologyFoodService");
+                      const charId = props.characterId || currentCharacter.value?.id || "";
+                      await ApologyFoodService.getInstance().handleApologyFood(
+                        currentChatId.value,
+                        charId,
+                        action.item || "",
+                        action.message || "",
+                      );
+                      console.log("[ChatScreen] 道歉外賣已觸發:", { item: action.item, message: action.message });
+                    } catch (err) {
+                      console.error("[ChatScreen] 道歉外賣處理失敗:", err);
                     }
                   }
                 }
@@ -6437,6 +6467,68 @@ async function handleStreamingClose() {
           // 處理好感度更新（窗口關閉時解析）
           if (parsed.hasAffinityUpdate && parsed.affinityUpdates) {
             _handleAffinityUpdates(parsed.affinityUpdates, _firstNewAiMsgId3);
+          }
+
+          // 處理角色動作標籤（封鎖、解封、道歉外賣等）— 窗口關閉時解析
+          if (
+            parsed.charActions &&
+            parsed.charActions.length > 0 &&
+            currentChatId.value
+          ) {
+            const blockSvc = BlockService.getInstance();
+            for (const action of parsed.charActions) {
+              if (action.action === "block-user") {
+                await blockSvc.handleCharacterBlock(
+                  currentChatId.value,
+                  action.reason || "",
+                );
+                isBlockedByChar.value = true;
+                const updatedChat = await db.get<Chat>(
+                  DB_STORES.CHATS,
+                  currentChatId.value,
+                );
+                if (updatedChat && currentChatData.value) {
+                  currentChatData.value.blockState = updatedChat.blockState;
+                }
+                const alreadyHasBlockNotif3 = messages.value.some(
+                  (m) => m.isCharBlockedNotification,
+                );
+                if (!alreadyHasBlockNotif3) {
+                  messages.value.push({
+                    id: `msg_blocked_${Date.now()}`,
+                    role: "system",
+                    content: "對方已將你封鎖",
+                    timestamp: Date.now(),
+                    isCharBlockedNotification: true,
+                    charBlockedReason: action.reason || "",
+                  });
+                }
+              } else if (action.action === "unblock-user") {
+                await blockSvc.handleCharacterUnblock(currentChatId.value);
+                isBlockedByChar.value = false;
+                const updatedChat = await db.get<Chat>(
+                  DB_STORES.CHATS,
+                  currentChatId.value,
+                );
+                if (updatedChat && currentChatData.value) {
+                  currentChatData.value.blockState = updatedChat.blockState;
+                }
+              } else if (action.action === "apology-food") {
+                try {
+                  const { default: ApologyFoodService } = await import("@/services/ApologyFoodService");
+                  const charId = props.characterId || currentCharacter.value?.id || "";
+                  await ApologyFoodService.getInstance().handleApologyFood(
+                    currentChatId.value,
+                    charId,
+                    action.item || "",
+                    action.message || "",
+                  );
+                  console.log("[ChatScreen] 窗口關閉時道歉外賣已觸發:", { item: action.item, message: action.message });
+                } catch (err) {
+                  console.error("[ChatScreen] 窗口關閉時道歉外賣處理失敗:", err);
+                }
+              }
+            }
           }
 
           // 如果沒有解析出任何訊息，保留原始內容

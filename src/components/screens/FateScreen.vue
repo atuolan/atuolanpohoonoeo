@@ -122,7 +122,7 @@ function triggerShuffle() {
     fateStore.shuffleOnly();
     shuffleCount.value++;
     isShuffling.value = false;
-  }, 700);
+  }, 1400);
 }
 
 function confirmShuffle() {
@@ -962,7 +962,7 @@ onUnmounted(() => {
           @click="handleDeckTap"
         >
           <div
-            v-for="i in 7"
+            v-for="i in 10"
             :key="i"
             class="fate-deck__card"
             :style="{ '--i': i - 1 }"
@@ -996,23 +996,31 @@ onUnmounted(() => {
         v-if="currentDivination === 'tarot' && fateStore.phase === 'pick'"
         class="fate-phase fate-phase--pick"
       >
-        <div class="fate-pick-slots">
+        <div class="fate-spread-layout">
           <div
             v-for="(pos, idx) in fateStore.spread.positions"
             :key="pos.id"
-            :class="[
-              'fate-pick-slots__slot',
-              { 'fate-pick-slots__slot--filled': idx < fateStore.pickedCount },
-            ]"
+            class="fate-spread-layout__position"
+            :style="{
+              left: `${pos.coords?.x ?? 50}%`,
+              top: `${pos.coords?.y ?? 50}%`,
+            }"
           >
-            <div class="fate-pick-slots__label">{{ pos.nameCn }}</div>
             <div
-              v-if="idx < fateStore.pickedCount"
-              class="fate-pick-slots__filled"
+              :class="[
+                'fate-pick-slots__slot',
+                { 'fate-pick-slots__slot--filled': idx < fateStore.pickedCount },
+              ]"
             >
-              ✦
+              <div class="fate-pick-slots__label">{{ pos.nameCn }}</div>
+              <div
+                v-if="idx < fateStore.pickedCount"
+                class="fate-pick-slots__filled"
+              >
+                ✦
+              </div>
+              <div v-else class="fate-pick-slots__empty">?</div>
             </div>
-            <div v-else class="fate-pick-slots__empty">?</div>
           </div>
         </div>
         <p class="fate-phase__subtitle" style="margin-bottom: 4px">
@@ -1079,22 +1087,28 @@ onUnmounted(() => {
         <p class="fate-phase__subtitle">
           {{ fateStore.spread.nameCn }} · {{ fateStore.question }}
         </p>
-        <div class="fate-cards-area">
+        <div class="fate-spread-layout">
           <div
             v-for="(drawn, index) in fateStore.drawnCards"
             :key="drawn.position.id"
-            class="fate-cards-area__slot"
+            class="fate-spread-layout__position"
+            :style="{
+              left: `${drawn.position.coords?.x ?? 50}%`,
+              top: `${drawn.position.coords?.y ?? 50}%`,
+            }"
           >
-            <div class="fate-cards-area__position">
-              {{ drawn.position.nameCn }}
+            <div class="fate-cards-area__slot">
+              <div class="fate-cards-area__position">
+                {{ drawn.position.nameCn }}
+              </div>
+              <FateCard
+                :card="drawn.card"
+                :is-reversed="drawn.isReversed"
+                :is-revealed="index < fateStore.revealedCount"
+                size="md"
+                @click="handleCardClick(index)"
+              />
             </div>
-            <FateCard
-              :card="drawn.card"
-              :is-reversed="drawn.isReversed"
-              :is-revealed="index < fateStore.revealedCount"
-              size="md"
-              @click="handleCardClick(index)"
-            />
           </div>
         </div>
         <div class="fate-phase__actions">
@@ -1852,6 +1866,8 @@ $r-pill: 100px;
   margin: 24px auto;
   cursor: pointer;
   user-select: none;
+  perspective: 800px;
+
   &__card {
     position: absolute;
     width: 90px;
@@ -1863,47 +1879,97 @@ $r-pill: 100px;
     align-items: center;
     justify-content: center;
     box-shadow: $sh-md;
-    top: calc(var(--i) * 2px);
-    left: calc(var(--i) * 2px);
-    z-index: calc(7 - var(--i));
-    transition: transform 0.3s ease;
+    // 靜態堆疊：微微錯開
+    top: calc(var(--i) * 1.5px);
+    left: calc(var(--i) * 1px);
+    z-index: calc(10 - var(--i));
+    transition: all 0.3s ease;
+    backface-visibility: hidden;
   }
   &__card-symbol {
     font-size: 24px;
     color: $card-sym;
   }
 
-  // 散開動畫
+  // ── 洗牌動畫：交錯穿插（riffle shuffle） ──
   &--shuffling .fate-deck__card {
-    animation: deckSpread 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-    animation-delay: calc(var(--i) * 0.06s);
+    // 奇數牌往左，偶數牌往右，然後交錯合併
+    animation: riffleShuffle 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+    // 奇偶牌不同方向
+    --side: 1;
+    &:nth-child(odd) {
+      --side: -1;
+    }
+    // 交錯延遲讓合併更自然
+    animation-delay: calc(var(--i) * 0.02s);
   }
 }
 
-@keyframes deckSpread {
+@keyframes riffleShuffle {
+  // 階段 1：分成左右兩疊
   0% {
     transform: translate(0, 0) rotate(0deg);
+    z-index: calc(10 - var(--i));
   }
-  40% {
-    transform: translate(calc((var(--i) - 3) * 18px), calc(var(--i) * -8px))
-      rotate(calc((var(--i) - 3) * 8deg));
+  20% {
+    transform: translate(calc(var(--side) * 52px), calc(var(--i) * -2px))
+      rotate(calc(var(--side) * 3deg));
   }
+  // 階段 2：兩疊牌交錯抬起穿插
+  45% {
+    transform: translate(calc(var(--side) * 28px), calc(-20px - var(--i) * 4px))
+      rotate(calc(var(--side) * -2deg));
+    z-index: calc(var(--i) + 5);
+  }
+  // 階段 3：穿插合併，牌交錯落下
   70% {
-    transform: translate(calc((var(--i) - 3) * 12px), calc(var(--i) * -4px))
-      rotate(calc((var(--i) - 3) * 4deg));
+    transform: translate(calc(var(--side) * 4px), calc(-6px + var(--i) * 1px))
+      rotate(calc(var(--side) * -0.5deg));
+    z-index: calc(10 - var(--i));
   }
+  // 階段 4：收回成一疊
   100% {
     transform: translate(0, 0) rotate(0deg);
+    z-index: calc(10 - var(--i));
+  }
+}
+
+// ══ 牌陣佈局 ══
+.fate-spread-layout {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  aspect-ratio: 1 / 1;
+  margin: 0 auto 24px;
+  
+  &__position {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+    transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+  }
+}
+
+.fate-phase--pick .fate-spread-layout {
+  width: 100%;
+  max-width: 320px;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  margin: 0 auto 12px;
+  flex-shrink: 1;
+
+  // 電腦寬螢幕適配：牌陣區域可以更大
+  @media (min-width: 768px) {
+    max-width: 400px;
   }
 }
 
 // ══ 選牌 ══
 .fate-pick-slots {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-bottom: 12px;
   &__slot {
     display: flex;
     flex-direction: column;
@@ -1922,6 +1988,13 @@ $r-pill: 100px;
       box-shadow: $sh-sm;
     }
   }
+  
+  .fate-phase--pick &__slot {
+    width: 48px;
+    height: 56px;
+    border-width: 1.5px;
+  }
+
   &__label {
     font-size: 8px;
     color: $text-m;
@@ -1930,14 +2003,30 @@ $r-pill: 100px;
     text-overflow: ellipsis;
     max-width: 44px;
     text-align: center;
+    margin-top: 2px;
   }
+  
+  .fate-phase--pick &__label {
+    transform: scale(0.9);
+    max-width: 48px;
+  }
+
   &__filled {
     font-size: 16px;
     color: $accent;
   }
+  
+  .fate-phase--pick &__filled {
+    font-size: 14px;
+  }
+
   &__empty {
     font-size: 14px;
     color: $text-m;
+  }
+  
+  .fate-phase--pick &__empty {
+    font-size: 12px;
   }
 }
 
@@ -1946,38 +2035,58 @@ $r-pill: 100px;
   color: $text-m;
   margin-bottom: 12px;
   animation: fadeInOut 4s ease-in-out infinite;
+  flex-shrink: 0;
 }
 
 .fate-fan {
   position: relative;
   width: 100%;
-  height: 320px;
+  height: 220px;
   overflow: hidden;
   touch-action: pan-y;
   cursor: grab;
-  margin-top: 12px;
+  margin-top: auto;
+  flex-shrink: 0;
+
+  // 電腦寬螢幕適配：增加牌堆可見高度
+  @media (min-width: 768px) {
+    height: 300px;
+  }
+
   &:active {
     cursor: grabbing;
   }
   &__arc {
     position: absolute;
-    bottom: -320px;
+    bottom: -380px;
     left: 50%;
     transform: translateX(-50%);
     width: 600px;
     height: 600px;
+
+    // 電腦寬螢幕適配：放大扇形弧度
+    @media (min-width: 768px) {
+      width: 800px;
+      height: 800px;
+      bottom: -500px;
+    }
   }
   &__card {
     position: absolute;
     top: 0;
     left: 50%;
     margin-left: -28px;
-    margin-top: -20px;
-    transform-origin: 28px 320px;
+    margin-top: 0;
+    transform-origin: 28px 380px;
     width: 56px;
     height: 84px;
     cursor: pointer;
     transition: opacity 0.15s;
+
+    // 電腦寬螢幕適配：牌的旋轉中心跟隨弧度放大
+    @media (min-width: 768px) {
+      transform-origin: 28px 500px;
+    }
     &:hover .fate-fan__card-inner {
       border-color: $accent-l;
       box-shadow: 0 0 16px rgba(192, 132, 252, 0.35);
@@ -2030,12 +2139,6 @@ $r-pill: 100px;
 
 // ══ 翻牌 ══
 .fate-cards-area {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 20px;
-  padding: 16px 0;
-  width: 100%;
   &__slot {
     display: flex;
     flex-direction: column;
@@ -2048,6 +2151,10 @@ $r-pill: 100px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-weight: 500;
+    background: rgba(12, 14, 22, 0.6);
+    padding: 2px 6px;
+    border-radius: 4px;
+    backdrop-filter: blur(4px);
   }
 }
 

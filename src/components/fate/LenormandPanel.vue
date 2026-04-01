@@ -146,7 +146,7 @@ onMounted(() => {
         @click="store.shuffleDeck()"
       >
         <div
-          v-for="i in 6"
+          v-for="i in 10"
           :key="i"
           class="leno-deck__card"
           :style="{ '--i': i - 1 }"
@@ -552,6 +552,8 @@ $r-lg: 16px;
   height: 110px;
   margin: 40px auto;
   cursor: pointer;
+  perspective: 800px;
+
   &__card {
     position: absolute;
     width: 80px;
@@ -567,27 +569,50 @@ $r-lg: 16px;
     align-items: center;
     justify-content: center;
     font-size: 28px;
-    transform: translateX(calc(var(--i) * -2px))
-      translateY(calc(var(--i) * -2px));
-    transition: transform 0.3s;
+    // 靜態堆疊
+    top: calc(var(--i) * 1.2px);
+    left: calc(var(--i) * 0.8px);
+    z-index: calc(10 - var(--i));
+    transition: all 0.3s;
+    backface-visibility: hidden;
     &-symbol {
       pointer-events: none;
     }
   }
+
+  // 交錯穿插洗牌動畫
   &--shuffling .leno-deck__card {
-    animation: cardShuffle 0.6s ease-in-out;
+    animation: lenoRiffle 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+    --side: 1;
+    &:nth-child(odd) {
+      --side: -1;
+    }
+    animation-delay: calc(var(--i) * 0.02s);
   }
 }
 
-@keyframes cardShuffle {
-  0%,
-  100% {
-    transform: translateX(calc(var(--i) * -2px))
-      translateY(calc(var(--i) * -2px));
+@keyframes lenoRiffle {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    z-index: calc(10 - var(--i));
   }
-  50% {
-    transform: translateX(calc(var(--i) * -2px + 20px))
-      translateY(calc(var(--i) * -2px - 10px)) rotate(5deg);
+  20% {
+    transform: translate(calc(var(--side) * 44px), calc(var(--i) * -1.5px))
+      rotate(calc(var(--side) * 3deg));
+  }
+  45% {
+    transform: translate(calc(var(--side) * 22px), calc(-16px - var(--i) * 3px))
+      rotate(calc(var(--side) * -2deg));
+    z-index: calc(var(--i) + 5);
+  }
+  70% {
+    transform: translate(calc(var(--side) * 3px), calc(-4px + var(--i) * 0.8px))
+      rotate(calc(var(--side) * -0.5deg));
+    z-index: calc(10 - var(--i));
+  }
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+    z-index: calc(10 - var(--i));
   }
 }
 

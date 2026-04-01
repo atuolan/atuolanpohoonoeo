@@ -46,7 +46,8 @@ export type FateLayoutType =
   | "star"
   | "horseshoe"
   | "celtic-cross"
-  | "custom";
+  | "custom"
+  | "free";
 
 /** 牌陣位置 */
 export interface FateSpreadPosition {

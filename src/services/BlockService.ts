@@ -142,6 +142,27 @@ class BlockService {
       await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)))
 
       console.log(`[BlockService] 已為角色 ${chat.characterId} 建立好友申請記錄`)
+
+      // 發送好友申請通知，讓用戶知道角色來敲門了
+      try {
+        const { useNotificationStore } = await import('@/stores/notification')
+        const notificationStore = useNotificationStore()
+        const character = await db.get<{ id: string; avatar?: string; nickname?: string; data?: { name?: string } }>(
+          DB_STORES.CHARACTERS, chat.characterId
+        )
+        const charName = character?.nickname || character?.data?.name || '角色'
+        notificationStore.addNotification({
+          type: 'friend_request',
+          title: '好友申請',
+          message: `${charName} 想和你重新成為好友`,
+          characterId: chat.characterId,
+          characterAvatar: character?.avatar,
+          chatId: chat.id,
+          priority: 'high',
+        })
+      } catch (notifErr) {
+        console.warn('[BlockService] 好友申請通知發送失敗:', notifErr)
+      }
     }
   }
 

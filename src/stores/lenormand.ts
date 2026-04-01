@@ -67,7 +67,7 @@ export const useLenormandStore = defineStore("lenormand", () => {
       drawnCards.value = [];
       shuffleCount.value++;
       isShuffling.value = false;
-    }, 600);
+    }, 1200);
   }
 
   /** 確認洗牌，進入選牌 */

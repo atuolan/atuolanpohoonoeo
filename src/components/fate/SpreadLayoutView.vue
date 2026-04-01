@@ -61,10 +61,7 @@ function getDrawnCard(index: number): OracleDrawnCard | undefined {
     :style="{ aspectRatio: props.aspectRatio }"
   >
     <!-- 牌陣背景裝飾 -->
-    <div
-      class="spread-layout__bg"
-      :style="spread.bgGradient ? { background: spread.bgGradient } : {}"
-    />
+    <div class="spread-layout__bg" />
 
     <!-- 牌陣位置 -->
     <template v-for="(position, index) in spread.positions" :key="position.id">
@@ -85,13 +82,23 @@ function getDrawnCard(index: number): OracleDrawnCard | undefined {
         <!-- 翻開的牌 -->
         <template v-if="isRevealed(index) && getDrawnCard(index)">
           <div class="oracle-card oracle-card--face">
-            <div
-              class="oracle-card__symbol"
-              :style="{ color: getDrawnCard(index)!.card.color }"
-            >
-              {{ getDrawnCard(index)!.card.symbol }}
-            </div>
-            <div class="oracle-card__name">{{ getDrawnCard(index)!.card.name }}</div>
+            <!-- 有圖片時顯示圖片 -->
+            <img
+              v-if="getDrawnCard(index)!.card.image && !getDrawnCard(index)!.card.image.endsWith('.svg')"
+              :src="getDrawnCard(index)!.card.image"
+              :alt="getDrawnCard(index)!.card.name"
+              class="oracle-card__img"
+            />
+            <!-- 無圖片時顯示 symbol + name -->
+            <template v-else>
+              <div
+                class="oracle-card__symbol"
+                :style="{ color: getDrawnCard(index)!.card.color }"
+              >
+                {{ getDrawnCard(index)!.card.symbol }}
+              </div>
+              <div class="oracle-card__name">{{ getDrawnCard(index)!.card.name }}</div>
+            </template>
           </div>
         </template>
 
@@ -152,13 +159,12 @@ function getDrawnCard(index: number): OracleDrawnCard | undefined {
 .spread-layout {
   position: relative;
   width: 100%;
-  border-radius: 16px;
-  overflow: hidden;
+  overflow: visible;
 
   &__bg {
     position: absolute;
     inset: 0;
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    background: transparent;
     z-index: 0;
   }
 
@@ -228,7 +234,8 @@ function getDrawnCard(index: number): OracleDrawnCard | undefined {
     border: 1px solid rgba(255, 255, 255, 0.2);
     backdrop-filter: blur(8px);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    padding: 4px 2px;
+    padding: 0;
+    overflow: hidden;
   }
 
   // 背面未翻牌
@@ -260,6 +267,14 @@ function getDrawnCard(index: number): OracleDrawnCard | undefined {
     padding: 0 2px;
     word-break: break-all;
     hyphens: auto;
+  }
+
+  &__img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 7px;
+    display: block;
   }
 
   &__back-pattern {

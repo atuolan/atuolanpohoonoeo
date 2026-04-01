@@ -13,7 +13,7 @@ import type { FateCard, FateSuit } from '@/types/fate'
 const majorArcana: FateCard[] = [
   {
     id: 'major-00', name: 'The Fool', nameCn: '愚人', type: 'major',
-    number: 0, image: '/cards/major/00.jpg',
+    number: 0, image: '/tarot-cards/the_fool.png',
     keywords: { upright: ['開始', '自由', '天真', '流浪', '大膽勇敢勇敢勇敢勇敢', '旅行'], reversed: ['情緒低落', '遭受失敗', '漫無目的的四處流浪', '行為散漫', '愚昧的行動'] },
     meaning: {
       upright: `愚人是一張代表自發性行為的牌，一段跳脫某種狀態的日子，或盡情享受眼前日子的一段時光。好冒險，有夢想，不拘泥于傳統的觀念，自由奔放，居無定所，一切從基礎出發。當你周遭的人都對某事提防戒慎，你卻打算去冒這個險時，愚人牌可能就會出現。愚人暗示通往成功之路是經由自發的行動，而長期的計劃則是將來的事。`,
@@ -22,7 +22,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-01', name: 'The Magician', nameCn: '魔法師', type: 'major',
-    number: 1, image: '/cards/major/01.jpg',
+    number: 1, image: '/tarot-cards/the_magician.png',
     keywords: { upright: ['觀察', '開始', '創造'], reversed: ['猶豫未定', '因學藝不精而敗北', '看待事物過于消極', '易受騙上當', '遇事言而不行'] },
     meaning: {
       upright: `工作方面，頭腦靈活，充滿創意，處理事務得當，工作效率較高，并且非常注重細節，能夠充分發揮自己所學，在工作中的創意可能得到旁人認同，適合從事藝術方面的工作。同時因為喜歡充滿創新的工作，所以也適合從事技術創新、播音員、大眾傳媒等相關工作。學業方面，對學習非常有興趣，也很努力，而且能以一種新的方式讀書，并獲得好的成績。`,
@@ -31,7 +31,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-02', name: 'The High Priestess', nameCn: '女祭司', type: 'major',
-    number: 2, image: '/cards/major/02.jpg',
+    number: 2, image: '/tarot-cards/the_high_priestess.png',
     keywords: { upright: ['等待', '智慧', '理性', '消極', '靜止'], reversed: ['缺乏理性思維能力', '粗心大意', '易緊張', '神經質', '意氣用事'] },
     meaning: {
       upright: `工作方面，你對待工作很有責任感，擁有明確的目標明確，會苦心鉆研各種工作技能，能夠擁有展現自身潛力的機會，具備評論才能，適合從事與教育相關的職業。學業方面，你的求知欲非常旺盛，對于各種知識都想要去了解和學習，具有很好考運，通常能在考試中取得好成績。`,
@@ -40,7 +40,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-03', name: 'The Empress', nameCn: '女皇', type: 'major',
-    number: 3, image: '/cards/major/03.jpg',
+    number: 3, image: '/tarot-cards/the_empress.png',
     keywords: { upright: ['高貴', '熱情', '豐收'], reversed: ['困惑', '缺乏上進心', '輕浮', '損失', '愛慕虛榮'] },
     meaning: {
       upright: `工作方面，你有著體面的工作，工作和家有關，或利用家作為工作的基地，適合服裝衣飾等相關行業，目前你正在實現自己的計劃，或朝向計劃的下一個自然步驟邁進，亦即你又向目標靠近了一步。學業方面，成績進步，考試成績優秀，在藝術領域頗有收獲。`,
@@ -49,7 +49,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-04', name: 'The Emperor', nameCn: '皇帝', type: 'major',
-    number: 4, image: '/cards/major/04.jpg',
+    number: 4, image: '/tarot-cards/the_emperor.png',
     keywords: { upright: ['權力', '威嚴', '支配'], reversed: ['幼稚', '缺乏治理能力', '不負責任', '率性妄為', '蠻橫霸道', '寡欲'] },
     meaning: {
       upright: `你是一個頂不錯的物質供應者，卻不善于表達內心的感情。浪漫和夢想的事對你的吸引力并不大，因為你比較喜歡看得到、摸得著的東西。如果你無法看見或觸碰到它，你是不太可能相信它的。假如你是男性，你會在感情中扮演父親形象的角色，以確保你能夠駕馭這段關系，特別是在物質層面上。如果伴侶所在意的是情感上的需求，那就會對你造成困擾。因為對你而言，付出就是給予某些具體的東西。`,
@@ -58,7 +58,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-05', name: 'The Hierophant', nameCn: '教皇', type: 'major',
-    number: 5, image: '/cards/major/05.jpg',
+    number: 5, image: '/tarot-cards/the_hierophant.png',
     keywords: { upright: ['宗教', '傳統', '援助', '儀式星'], reversed: ['失去信賴', '多管閑事', '過于依靠他人', '心胸狹隘', '被強迫傾銷', '孤立無援'] },
     meaning: {
       upright: `工作方面，你可能在一個大機構任職，而你想要升職就要逐級上升，跳級是很少見的，并且上級對下級有相當的控制權。你在一個巨大的體制下尋求自己的生存，必須要按部就班，踏實肯干，必要的時候要與體制和傳統妥協。如果上面有人，就乖乖跟著人家干，不要總想著出頭，上面沒人就趕快站隊。如果在這樣的組織里站對了隊，受到長輩的賞識和提攜，也很容易得到他們的指點，只要踏踏實實干，晉升的機會還是少不了的。`,
@@ -67,7 +67,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-06', name: 'The Lovers', nameCn: '情侶', type: 'major',
-    number: 6, image: '/cards/major/06.jpg',
+    number: 6, image: '/tarot-cards/the_lovers.png',
     keywords: { upright: ['選擇', '他們腳下是肥饒的土地', '生機央然', '在天天使身著紫袍'], reversed: ['錯誤的決定', '沒有計劃', '不能持之以恒', '缺乏留意力', '言而不行', '無心用功', '學習效率低下', '成績不佳不穩定', '無法持續'] },
     meaning: {
       upright: `戀人是一張代表決定的牌，而且除非顧客問的是某個特定的問題，否則它通常是指有關兩性關系的決定。它可能是在描述沉浸在愛戀之中的過程，因為它可以意指一段兩性關系中的最初，或者是羅曼蒂克的階級。戀人牌也可以形容在決定到底要保留舊有的關系，或轉進新關系當中。它暗示你已經由過去經驗而得到成長了，因此你可以安全的邁向一個新的階段。`,
@@ -76,7 +76,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-07', name: 'The Chariot', nameCn: '戰車', type: 'major',
-    number: 7, image: '/cards/major/07.jpg',
+    number: 7, image: '/tarot-cards/the_chariot.png',
     keywords: { upright: ['意志', '自律'], reversed: ['失控', '發生意外', '胡作非為', '失敗', '止步不前', '固執己見', '留意力散漫', '遇突發事件而不知所措'] },
     meaning: {
       upright: `不論正道多么艱險難行，你都得繼續走下去。同時，他也暗示這個人(通常是男人)，掌控著他自己和周遭的事物。&quot;不要放棄&quot;是這張牌的關鍵主題。你必須控制住生命中互相對抗的力量。正立的戰車也可能指一樁重要的生意，或具有重大意義的成功。在愛情上，它暗示控制你的情緒，對兩性關系是有幫助的，傳達著&quot;不要放棄&quot;的訊息。只要你能協調好關系中的沖突，用理智去超越恐懼和欲望，就能看出問題的解決之道。你應該拋開過去的束縛，并從中吸取教訓。`,
@@ -85,7 +85,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-08', name: 'Strength', nameCn: '力量', type: 'major',
-    number: 8, image: '/cards/major/08.jpg',
+    number: 8, image: '/tarot-cards/strength.png',
     keywords: { upright: ['力量', '勇氣', '信心', '耐心'], reversed: ['精力不足', '急躁不安', '喪失資訊', '忍耐力不足', '自私自大'] },
     meaning: {
       upright: `你活力充沛，集體自我修復能力強，面對疾病有頑強的斗志。但要隨時注意自己的健康與能量，才能客觀忠誠地善待自己與周遭所愛，否則很容易虛脫而造成自我崩盤，走向靈魂孤獨的黑暗角落。同時這張牌預示你可能有心臟或脊椎方面的毛病，不過這些毛病也可以透過內在能量來克服，而且這張牌也暗示你本身擁有這種能量。`,
@@ -94,7 +94,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-09', name: 'The Hermit', nameCn: '隱士', type: 'major',
-    number: 9, image: '/cards/major/09.jpg',
+    number: 9, image: '/tarot-cards/the_hermit.png',
     keywords: { upright: ['謹慎', '內斂', '自省', '他穿著一件斗篷', '低首沉思'], reversed: ['口無遮攔', '俗氣', '神經質', '為人刻薄', '行事不夠理智', '多疑'] },
     meaning: {
       upright: `你是一個習于獨處的人，能夠安排好自己的生活，讓自己一個人也能過得自在而快樂；人喜歡和自己為伴，與自己的心靈對話，向內心探求自己真正的需要。由于你的自得其樂，使你和伴侶之間的關系顯得有些冷淡，但你也會幫助伴侶探索內心的需求，享受獨處的自在，因而一旦兩人達到某種默契之后，便能夠了解對方，何時需要獨處，何時需要陪伴。`,
@@ -103,7 +103,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-10', name: 'Wheel of Fortune', nameCn: '命運之輪', type: 'major',
-    number: 10, image: '/cards/major/10.jpg',
+    number: 10, image: '/tarot-cards/wheel_of_fortune.png',
     keywords: { upright: ['契機', '轉變', '進展', '運氣'], reversed: ['判定錯誤', '情緒低落', '運氣不佳', '左右為難', '少安毋躁', '一時的幸福', '爽約'] },
     meaning: {
       upright: `現有的感情生活已不能滿足你心靈的需求，你可能會嘗試與伴侶溝通，希望彼此能夠互相幫助對方，在愛情的領域中成長。若是無法達成共識，你也許會毅然決然地離開對方，去尋找新的愛情。也許你會采用以前不敢的做法：和陌生人吃飯，和網友見面，在旅行中和某人邂逅等較大膽的舉動，來開展自己的戀情。深知壓抑情緒和抗拒改變會導致身心的不平衡，不如放開了心胸，釋放情感并接受任何的改變。`,
@@ -112,7 +112,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-11', name: 'Justice', nameCn: '正義', type: 'major',
-    number: 11, image: '/cards/major/11.jpg',
+    number: 11, image: '/tarot-cards/justice.png',
     keywords: { upright: ['公正', '均衡', '責任星'], reversed: ['不公平', '有始無終', '以自己的意見去斷定', '事事不能兩全', '不均衡'] },
     meaning: {
       upright: `你希望在工作和生活之間、個人和群體之間，感性和理性之間，都能取得一個完美的平衡點，不要為任何一邊犧牲掉另一邊。最近，你需要重整自己的工作和生活，因為你有時太投入于工作而忽略了個人的時間，因而造成家人和朋友的抱怨；又有時，因為太專注于個人生活的享受，又延誤了自己的工作。你喜歡身兼數職，過著忙碌而充實的生活；而你也確實能將這幾份工作兼顧好。`,
@@ -121,7 +121,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-12', name: 'The Hanged Man', nameCn: '倒吊者', type: 'major',
-    number: 12, image: '/cards/major/12.jpg',
+    number: 12, image: '/tarot-cards/the_hanged_man.png',
     keywords: { upright: ['犧牲', '雙腿交織成十字'], reversed: ['希望幻滅', '因私欲而受罰', '做無用功', '沒有必要的付出', '自我毀滅', '缺乏實施能力', '事如泡影'] },
     meaning: {
       upright: `當你在這段期間內，透過對生命的順從，并讓它引領你到你需要去的地方，那么你便可以獲益良多。你應該順著感覺走，或是接受自己，即使別人都認為你的方式很奇怪也不打緊。它也可能象征，經歷了生命中一段艱難的時光后的心靈平靜。現在不是掙扎的時候，靜下來好好思考你過去的行為，以及未來的計劃。這只是一個暫時的狀態，只要你妥善的運用這段時間，對你應該是有好處的。讓生命中的事物自然而然的發生，或許你會對結果感到驚喜。`,
@@ -130,7 +130,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-13', name: 'Death', nameCn: '死神', type: 'major',
-    number: 13, image: '/cards/major/13.jpg',
+    number: 13, image: '/tarot-cards/death.png',
     keywords: { upright: ['結束', '轉變', '新生星', '分別是國王'], reversed: ['改變計劃', '變更形象', '東山再起', '走出低谷', '脫胎換骨', '勇于開拓', '精神抖擻'] },
     meaning: {
       upright: `死亡為舊事物畫上休止符，并讓路給新事物。死亡牌代表改變的一段其間。我們可以這樣說，生命中的某個章節就要結束了，而你對這份改變的接納，將是變化自然而然地發生。抱持著「生命將會帶來某些比它從你身上拿走的更美好的東西」的信念。在潛意識中，你或許也在渴望改變的發生，死亡牌即意味著改變正要出現。不要抗拒這份改變，試著去接納它吧。`,
@@ -139,7 +139,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-14', name: 'Temperance', nameCn: '節制', type: 'major',
-    number: 14, image: '/cards/major/14.jpg',
+    number: 14, image: '/tarot-cards/temperance.png',
     keywords: { upright: ['協調', '配合', '節制有人說', '而左手中的代表無意識', '也有人然而無論怎么'], reversed: ['缺乏自我調節的能力', '開銷過大', '遺忘初衷', '精力消耗殆盡', '毫無節制', '煩悶的說教'] },
     meaning: {
       upright: `憑借調和對立的思想、相反結果的能力，你的內心安祥而平靜；學會了調節正義和憐憫、成功與失敗、歡樂與悲傷，緩和生命中的各種需求。你包容和自己意見不同的聲音，但不會完全迎合它們；調和自己內心相互沖突的思想，因而得到真正的寬容。`,
@@ -148,7 +148,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-15', name: 'The Devil', nameCn: '惡魔', type: 'major',
-    number: 15, image: '/cards/major/15.jpg',
+    number: 15, image: '/tarot-cards/the_devil.png',
     keywords: { upright: ['欲望', '束縛', '沉溺', '物質'], reversed: ['擺脫不良誘惑', '與酒肉朋友斷交', '拋棄欲望', '有走出困境的機會', '擺脫束縛', '重獲自由', '解除負擔', '能夠表達自己的意志'] },
     meaning: {
       upright: `你失去了尋找工作中的滿足感和更深刻的意義，成為一個唯物論的功利主義者，唯有金錢才能推動你的野心；同時面對在職場上的一些游戲規則，你都視若無睹，而會去做一些詐欺及不正當的工作。`,
@@ -157,7 +157,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-16', name: 'The Tower', nameCn: '高塔', type: 'major',
-    number: 16, image: '/cards/major/16.jpg',
+    number: 16, image: '/tarot-cards/the_tower.png',
     keywords: { upright: ['驟變', '災難', '破壞', '意外'], reversed: ['懸崖勒馬', '遭遇口舌之災', '發生內部糾紛', '風暴前的寂靜'] },
     meaning: {
       upright: `當高塔牌出現時，便是到了改變的時刻。現在再來為改變做準備，或選擇如何改變都已太遲，現在你需要做的就是丟掉舊東西。你的信念遭到質疑；你的生活遭到干擾；你的習慣遭到破壞；你必須舍棄以往的一切，來適應新的模式。`,
@@ -166,7 +166,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-17', name: 'The Star', nameCn: '星星', type: 'major',
-    number: 17, image: '/cards/major/17.jpg',
+    number: 17, image: '/tarot-cards/the_star.png',
     keywords: { upright: ['希望', '祝福星', '相：在閃爍的星空下', '右腳則踏入水中'], reversed: ['缺乏想象力', '幻想幻滅', '好高騖遠', '錯失良機', '固執己見'] },
     meaning: {
       upright: `星星可能暗示一段假期或一段你能感覺不慌不忙、心平氣和的時光。伴隨這張牌而來的是一種「有時間去思想及行動」的感覺。在這段期間內，你了解你就是潛意識和有形世界之間的聯系。你選擇什么東西來表現潛意識，完全由你決定，于是你最好的作品或最精彩的表現，是來自和潛意識最清楚的溝通。`,
@@ -175,7 +175,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-18', name: 'The Moon', nameCn: '月亮', type: 'major',
-    number: 18, image: '/cards/major/18.jpg',
+    number: 18, image: '/tarot-cards/the_moon.png',
     keywords: { upright: ['不安', '多變', '憂郁'], reversed: ['體力逐漸恢復', '病體幾盡痊愈', '心情開朗'] },
     meaning: {
       upright: `月亮通常是指某種具藝術性或創造性的事業，或夜晚工作比白天還多的情形，這方面的典型事業可包括寫作、攝影室內設計或任何需要運用到想象力的工作。你擁有強烈的直覺并相信它，所以常會對事物有過于主觀的見解，以致在工作上會選擇非自己目標的工作，或是待人不慎而被無形中傷。`,
@@ -184,7 +184,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-19', name: 'The Sun', nameCn: '太陽', type: 'major',
-    number: 19, image: '/cards/major/19.jpg',
+    number: 19, image: '/tarot-cards/the_sun.png',
     keywords: { upright: ['成功', '自由', '喜悅'], reversed: ['意志消沉', '約會取消', '情緒低落', '事事沒有辦法持久', '性格不開朗', '感到無助', '生活不穩定'] },
     meaning: {
       upright: `你的心胸寬大，懂得寬恕他人，在人際關系上獲得眾人的敬重與愛戴。你得到一份新的工作，并在這份工作上得到成就感、實質的報酬、與充實投入的感動。你喜愛自己的工作，在工作中發揮你的創造力。你因為工作的關系而被派往氣候溫暖的國家出差，例如東南亞，中南美，或是埃及附近。`,
@@ -193,7 +193,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-20', name: 'Judgement', nameCn: '審判', type: 'major',
-    number: 20, image: '/cards/major/20.jpg',
+    number: 20, image: '/tarot-cards/judgement.png',
     keywords: { upright: ['復活', '覺醒', '回憶'], reversed: ['一蹶不振', '尚未開始便已結束', '猶豫未定', '行為不妥', '生活散漫', '良心發現內心頗感罪惡'] },
     meaning: {
       upright: `你正處于人生旅途的重要階段：反省過去，重新規畫未來。你內心的聲音正在呼喚自己，要你與自己的內在對話，檢視自己過去的行為和追求是否正確？目前你所擁有的是否能帶給自己真正的快樂和滿足？你必須正視這些問題，因為這是你獲得長久成功和快樂的二次機會。此時你理解了你由生命所展示的試煉及挑戰中學習到了什么。`,
@@ -202,7 +202,7 @@ const majorArcana: FateCard[] = [
   },
   {
     id: 'major-21', name: 'The World', nameCn: '世界', type: 'major',
-    number: 21, image: '/cards/major/21.jpg',
+    number: 21, image: '/tarot-cards/the_world.png',
     keywords: { upright: ['復活', '覺醒', '回憶星', '她一手拿著一個魔杖', '又似乎是一把鑰匙'], reversed: ['沒有辦法全身心地投入', '杞人憂天', '事事不順', '不安現狀', '情緒低迷', '思維頗顯幼稚'] },
     meaning: {
       upright: `由于工作性質的關系，你可能會常常去國外出差，進而外派至他國工作，因此你有很多機會接觸不同國家的人，并能獲得他們的肯定。長久以來， 你專注于自己的事業，現在你即將獲得自己努力的成果，而那將遠遠地超出你所預期的。對你而言，是職位的晉升，是財富的增加，是能力的提升；對你所處的環境而言，更有深遠而正面的影響。`,
@@ -219,7 +219,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'wands-01', name: 'Ace of Wands', nameCn: '權杖一', type: 'minor',
     suit: 'wands',
-    number: 1, image: '/cards/minor/wands/01.jpg',
+    number: 1, image: '/tarot-cards/ace_of_wands.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `火元素在權杖首牌的表現是蓄勢待發的爆發火，只要捉住了那個似火閃爍的機會，便可無止境的蔓延達成所要想的一切。在占卜上，權杖首牌代表只要有其信念，上天會給予其應許之機會。點燃內心的創生之火，化內在沖動為行動，也許是一個冒險，但那又如何，應看待為今生唯一之最佳時機。`,
@@ -229,7 +229,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'wands-02', name: '2 of Wands', nameCn: '權杖二', type: 'minor',
     suit: 'wands',
-    number: 2, image: '/cards/minor/wands/02.jpg',
+    number: 2, image: '/tarot-cards/two_of_wands.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `權杖二代表著選擇，現在正是面對重要選擇的時刻，簡單的兩條路，一條是繼續的停留在目前的情況里面，一個自己熟悉的情況，另外一條是改變自己，藉由旅行或學習而做自我的成長，并且開闊自己的視野與疆土，而在另一方面來說，權杖二也可以代表著因為自我的成長，而感覺到目前的空間不是很足夠，若已開始規劃并決定自己接下來該怎么做，是下決定意味濃厚的一張牌，而這張決定牌多半是指物質表象的決定，例如換工作，搬家，換車子，一些比較屬于生活中的具體轉變，當問到自己的生涯規劃時，這張牌的出現多半代表著目前正在決定是否要換工作或換行業跑道，雖然不是很想提出，但是在感情上面，正式代表了自己目前有兩個選擇，或是正在決定一次的移情別戀。`,
@@ -239,7 +239,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'wands-03', name: '3 of Wands', nameCn: '權杖三', type: 'minor',
     suit: 'wands',
-    number: 3, image: '/cards/minor/wands/03.jpg',
+    number: 3, image: '/tarot-cards/three_of_wands.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `權杖三代表了在一件事情的發展過程中繼續的做高度的自我成長，并且仔細的再次思考自己在這通往成功的旅程之中是否有一些什么需要調整。權杖三也代表著現在是需要好好靜下來沉思一下自己的功與過的時刻，這張也是杖組牌里的耐心牌，而這張牌也代表著因為執行了在權杖二時的決定，而得到的一些成就，是因為已經實現了預期的目標，而得到成長與茁壯。而在日常生活中的暗示上面，權杖三可以暗示著一個計劃開始實行，一次的旅行開始行動或出發，也可以是一件事件正邁向下一個比較高一層次，或是更進一步的發展與境界，而在感情的暗示之中。`,
@@ -249,7 +249,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'wands-04', name: '4 of Wands', nameCn: '權杖四', type: 'minor',
     suit: 'wands',
-    number: 4, image: '/cards/minor/wands/04.jpg',
+    number: 4, image: '/tarot-cards/four_of_wands.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `在權杖四的牌里面，明顯的暗示著一種穩定，平靜的家庭生活或是工作的環境，權杖四也暗示著，權杖的外在熱情與活潑正慢慢的轉入比較安定安穩的狀態，在權杖三之中所追求的計劃，在權杖四之中得到穩定或確認，這張牌經常可以代表著一次的新居搬遷或是一次的工作更動，另外也可表示著自己正在目前的環境中安定下來且穩定發展。`,
@@ -259,7 +259,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'wands-05', name: '5 of Wands', nameCn: '權杖五', type: 'minor',
     suit: 'wands',
-    number: 5, image: '/cards/minor/wands/05.jpg',
+    number: 5, image: '/tarot-cards/five_of_wands.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `許多人在一個高地上方，在一個基礎之上，正在互相推擠，看起來正在打架，許多人一同在爭執當中，為的是要如何蓋起一個建筑物，要如何去取得共識。在這個狀況每個人都有他自己的意見，誰也不讓誰，且大家的權力是公平的，沒有一個人可以扳倒對方。其場景可能是在開會之時的熱烈狀況，激烈的言語，感覺起來整個亂糟糟的狀況，大家都想要獲得最佳的利益，再持續糟糕的話，或許火元素與棍棒的作用下就要打起來了。`,
@@ -269,7 +269,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'wands-06', name: '6 of Wands', nameCn: '權杖六', type: 'minor',
     suit: 'wands',
-    number: 6, image: '/cards/minor/wands/06.jpg',
+    number: 6, image: '/tarot-cards/six_of_wands.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `杖六這張牌代表著自己因為自信，與相當的努力而得到了成功。而這張牌也代表著目標已經確立，計劃正在進行之中，強烈的自信心和希望成功的強烈欲望，是一張現在進行式暗示很強烈的牌。不過在大多數的解釋里面，權杖六多半是代表已經成功，正在享受成功的喜悅，或因為成功而開始有了一些追隨者。尤其是這一張牌在未來的位置上出現時，更是確定了自己目前正在進行的事情擁有成功的決定性，當然這樣的成功也不是偶然或運氣好，而是自身的努力與希望成功的強烈欲望所建立起來的。`,
@@ -279,7 +279,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'wands-07', name: '7 of Wands', nameCn: '權杖七', type: 'minor',
     suit: 'wands',
-    number: 7, image: '/cards/minor/wands/07.jpg',
+    number: 7, image: '/tarot-cards/seven_of_wands.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `男子舉著一根權杖在山坡上防守著。飄浮在眼前的六根權杖迎向他，想必它們是掌握在敵人手中吧!即使他寡不敵眾，但仍是處于優勢地位，而且看起來也不太擔憂。以勇氣面對逆境，堅持立場并克服困難，問題將被解決并能克服障礙，英勇會得到獎勵。`,
@@ -289,7 +289,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'wands-08', name: '8 of Wands', nameCn: '權杖八', type: 'minor',
     suit: 'wands',
-    number: 8, image: '/cards/minor/wands/08.jpg',
+    number: 8, image: '/tarot-cards/eight_of_wands.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `火元素在權杖八中展現奔放流動的能量，數位八是充滿力量的數位，火元素在這徹底發揮了最直接的能量釋放。所以權杖八象征火元素的最無限和瘋狂的行動面。權杖八的八根權杖朝著同一方向飛去，就像一群流星一般，快速且令人吃驚。而無人抓住他們，這是自由和沒有被制約的象征。尤其他們不是立于土中的權杖，行動力是他們最具代表的典型。八根權杖越過水面，有旅行的暗示。飛于空中是光明正大的向世人宣告他們的行動，而訊息的傳播也是以火速來進行。這樣的飛行畫面代表事情都能有很快的實現速度，也許那會是個驚喜。八根權杖也意味著也許你想學習他們，有志同道合的伙伴一起瘋狂的完成一些事情，雖然有可能會來得快去得快。`,
@@ -299,7 +299,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'wands-09', name: '9 of Wands', nameCn: '權杖九', type: 'minor',
     suit: 'wands',
-    number: 9, image: '/cards/minor/wands/09.jpg',
+    number: 9, image: '/tarot-cards/nine_of_wands.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `在權杖八里面飛翔在天空的權杖，在權杖九里面全停留豎立在地面上了。一個人手中拿著另外一只權杖，似乎是在指揮并且管理著這八只權杖。權杖九代表著一連串外在的變化都已經慢慢的平靜下來了，但是目前自己的內心卻為了想要保持著那一份變化的感覺，所以另外拿著一只權杖在手中來感覺權杖的活力與熱情。因為已經習慣之前外在的強烈變化的感覺，并且覺得那才是生活，所以在當下的安逸環境反而讓自己有難以適應的情況產生。只是一個過度時期，但是卻還是要自己去努力的習慣目前的情況。權杖九也代表著，自己雖然已經慢慢的快要解決問題，并且找到成功的道路，但是卻認為事情太過順利，而有暫時停止，或想再重新找一條挑戰性比較大的道路去走。在某程度上來說，是有一點不甘寂寞與害怕自己失去企圖心的想法出現。`,
@@ -309,7 +309,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'wands-10', name: '10 of Wands', nameCn: '權杖十', type: 'minor',
     suit: 'wands',
-    number: 10, image: '/cards/minor/wands/10.jpg',
+    number: 10, image: '/tarot-cards/ten_of_wands.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `權杖十是事務集中的現象，不但要付出辛勤和勞力，并且要承受責任和壓力，表示過多的職責和超額的負擔。這個圖案是「埋頭苦干」的寫照，當事人正在賣力工作，并且被所抱持的物品壓得彎下身子，顯得勞累而疲憊不堪。這張牌表示過重的壓力，或許是付出很大的代價而獲得權位工作，卻又被職責所壓迫。或者是因為迫于現實環境，需要辛勤持家，只好不顧一切打拼，如同畫面般希望將所得盡快運回家。雖然眼前狀態還是可以撐下去，但下一步說不定就被壓垮了。這是一張勞力苦命之牌，代表勞碌命以及勞工勞動等工作之牌。`,
@@ -319,7 +319,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'wands-11', name: 'Page of Wands', nameCn: '權杖侍從', type: 'minor',
     suit: 'wands',
-    number: 11, image: '/cards/minor/wands/11.jpg',
+    number: 11, image: '/tarot-cards/page_of_wands.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `權杖侍從在權力地位中屬于初階者，通常代表的是階級較為基層的人，比如象是公司剛進來的新人，工讀生，傳遞訊息的事務員，輔佐的助理。在正位的時候，做好其服務的角色，對于權力較高的人物抱持專注認真，虛心請教，并且從中學習工作的事物。而就一個新手來講，猶如剛冒芽的生命，未來充滿無限可能的成長性，對于前途懷有憧憬與向往，有種活潑率真的個性。而權杖侍從角色本身是訊息傳達者，權杖又為生命的象征，所以可能代表著是新的契機，符合人生規畫的好機會的訊息到來。`,
@@ -329,7 +329,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'wands-12', name: 'Knight of Wands', nameCn: '權杖騎士', type: 'minor',
     suit: 'wands',
-    number: 12, image: '/cards/minor/wands/12.jpg',
+    number: 12, image: '/tarot-cards/knight_of_wands.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `權杖騎士牌~~通常指的是一個向前走、改變意念,一個未完成的行動，一個未完成的計劃。在實質上會是一個遠來訊息，或者一個遠行的計劃，在工作或事業上也意味著搬家、換新工作。若是有權杖首牌、權杖三及權杖八在一起表示一趟旅行，若又加上世界牌必定是出國旅行。在感情問題的結果上是熱情但非承諾式的愛情，有時也代表一段旅行中的感情，或是靠電話、網路的遠距離愛情。`,
@@ -339,7 +339,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'wands-13', name: 'Queen of Wands', nameCn: '權杖王后', type: 'minor',
     suit: 'wands',
-    number: 13, image: '/cards/minor/wands/13.jpg',
+    number: 13, image: '/tarot-cards/queen_of_wands.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `權杖皇后(Queen of Wands)是有吸引力的 / 引人注目的(attractive)，真摯的 / 全心全意(wholehearted)，精力旺盛的 / 充滿活力的(energetic)，興高采烈的 / 情緒好的 / 使人感到愉快的(cheerful)，以及有自信的(self-Assured)。以上這些也是權杖牌的特質。權杖皇后是樂觀而快活的，并且精力充沛，展現出活潑輕快的特質，但是她不會將她的個性當作侵略外界的力量。皇后們從內在去表達其所屬牌組的特征，并不明目張膽地利用它，而自處于權杖特征的氣氛當中。`,
@@ -349,7 +349,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'wands-14', name: 'King of Wands', nameCn: '權杖國王', type: 'minor',
     suit: 'wands',
-    number: 14, image: '/cards/minor/wands/14.jpg',
+    number: 14, image: '/tarot-cards/king_of_wands.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `權杖國王(King of Wands)是具有創造力的(creative)、激勵人心的 / 啟發靈感的(inspiring)、強有力的 / 堅強的(forceful)，有領袖魅力的/有吸引力的(charismatic)以及英勇無畏 / 大膽的(bold)特質。這些都是權杖牌組典型的正面特質。它們是生氣勃勃的火元素最原始的樣本，也反應了國王的性格。國王是活躍積極與直率外向的，他們想要經由其人格特質的力量來影響這個世界。`,
@@ -359,7 +359,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'cups-01', name: 'Ace of Cups', nameCn: '圣杯ACE', type: 'minor',
     suit: 'cups',
-    number: 1, image: '/cards/minor/cups/01.jpg',
+    number: 1, image: '/tarot-cards/ace_of_cups.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `五道水柱的流出，代表許多不同層面的引動，各種情緒的感動，各種感覺的啟動，各種人際關系的互動。由于圣杯的水流與地面的水連結，代表深層和高度的滿足感，全面性的感動，并且有著實質的依靠。圣杯首牌的水面，象征人們內心最深處的角落，可以代表家庭的愛，可以是具體的住所，也可以代表一個真正的內心之家，不但有著情感的交流，也會有實質的哺育。因此就物質和金錢層面而言，也是非常富足的，是處于豐饒多產的狀態，甚至有著更美好的遠景。`,
@@ -369,7 +369,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'cups-02', name: '2 of Cups', nameCn: '圣杯二', type: 'minor',
     suit: 'cups',
-    number: 2, image: '/cards/minor/cups/02.jpg',
+    number: 2, image: '/tarot-cards/two_of_cups.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `這是一張表現雙方關系和諧愉悅的牌，很多人將它看成戀人的小牌版本，因為圣杯二常常代表戀情愉快甚至是一見鐘情。在合作關系中出現圣杯二，則代表雙方合作非常順利，求問者的合作物件與求問者站在同一角度同一平面思考問題。占卜中出現圣杯二，可以說求問者在計劃中與對方會是非常好的合作關系，雙方有共同的目標，所以實施計劃也是相當的有共同點。如果當事人正在現有關系中遭受著一些問題的折磨，或者經歷著分離，圣杯二也意味著關系的和解與和諧。在感情中出現圣杯二，兩個人會有良好的情感溝通，兩個人的感情交流會非常和諧且愉悅。`,
@@ -379,7 +379,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'cups-03', name: '3 of Cups', nameCn: '圣杯三', type: 'minor',
     suit: 'cups',
-    number: 3, image: '/cards/minor/cups/03.jpg',
+    number: 3, image: '/tarot-cards/three_of_cups.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `圣杯三是享樂牌，團體聚會、多人聚會的場景，派對，開趴，各種享樂為主的聚會范疇皆屬之，屬于水元素的高漲，情感的高漲，歡愉享受，是故圖面穿插各種物質果實的場景。而豐收的場景表示此牌也與慶功宴有關，在一段大家的努力后獲得豐收的喜慶，比如達成共識簽約后的慶祝，來杯酒大家開心開心。`,
@@ -389,7 +389,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'cups-04', name: '4 of Cups', nameCn: '圣杯四', type: 'minor',
     suit: 'cups',
-    number: 4, image: '/cards/minor/cups/04.jpg',
+    number: 4, image: '/tarot-cards/four_of_cups.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `在數位學中，四代表穩定與秩序，就像所有的桌子椅子，都要由四支腳構成才會穩固，所有的建筑物都是四方體，即使是金字塔，底座也必須是四方形。然而，穩固經常導致無趣，當一段關系或一樁事業穩固已久，反而經常讓人覺得無聊，好像沒什么新鮮刺激的了。反映在圣杯四，在情感上感到無趣，就形成一段無聊、疲憊、退縮、消極、不滿足、獨處的時光。當事人覺得百無聊賴，對外界事物漠不關心，缺乏動力，不想參加社交，覺得沒人了解他，甚至覺得家花沒有野花香...所以，圣杯四在實占上，有時也代表外遇，因為他對于目前所擁有的，已經不感興趣了。抽到圣杯四時，建議當事人三思而后行。在一段深思之后，重新投入原來的生活，不要完全切斷自己與外界的聯系。最重要的是，要好好珍惜你所擁有的，并把握眼前的機會，以免稍縱即逝。`,
@@ -399,7 +399,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'cups-05', name: '5 of Cups', nameCn: '圣杯五', type: 'minor',
     suit: 'cups',
-    number: 5, image: '/cards/minor/cups/05.jpg',
+    number: 5, image: '/tarot-cards/five_of_cups.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `圣杯五出現暗示當事人該勇于放棄，而從新展開追求，由于轉變的時刻已經來到，再回首過去的傷痛似乎并沒有用，那么必須尋求心靈上的寄托。與寶劍三比較，兩者皆有難過之意，而寶劍三是一種向內的情緒，有一種帶有自我傷害的想法(如：都是我不好，都是我不對......)，而圣杯五比較偏向對于外在的評價，例如是把原因推給命運，推向他人，認為事情的發展是命運與對方的捉弄，認為自己是無從選擇的，事情不是他造成的。前者寶劍三，是因為自己承擔的責任太多，后者圣杯五則是把責任原因推究外在，讓自己沉浸在無能為力的失望感當中。`,
@@ -409,7 +409,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'cups-06', name: '6 of Cups', nameCn: '圣杯六', type: 'minor',
     suit: 'cups',
-    number: 6, image: '/cards/minor/cups/06.jpg',
+    number: 6, image: '/tarot-cards/six_of_cups.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `圣杯六有時代表思鄉情懷，家鄉就像圣杯六中的莊園，在里頭有歡笑，有回憶，有家人的悉心照顧，讓你無憂無慮。看看男孩將花獻給女孩的慈愛模樣，圣杯六也可以表示照顧以及饋贈，或者是得到遺產。你可能獲得某人的特別關照，好像他把你放到這個安全的莊園中；也可能代表送禮或收禮。更廣義來說，提供經驗與教育，也是饋贈的一種形式。圣杯六的快樂很簡單，就像兒時一般天真，有時只是好友幫你泡的一杯咖啡，就能感到無上的喜悅。在經過圣杯五的悲傷之后，有時我們需要遁入回憶來重新發覺自己，才能繼續向前走。藉由省思過去的經驗，可以獲得靈感和再生的力量。有時圣杯六也提醒我們，要像男孩一樣慷慨大方，樂于付出。如果你有仇恨，請你放下與原諒，才能得到真正的和諧。`,
@@ -419,7 +419,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'cups-07', name: '7 of Cups', nameCn: '圣杯七', type: 'minor',
     suit: 'cups',
-    number: 7, image: '/cards/minor/cups/07.jpg',
+    number: 7, image: '/tarot-cards/seven_of_cups.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `圣杯七的場景相當的特殊，似乎很難在現實的生活當中或有類似的場景，因為圣杯七是一張夢境的牌，描述的是夢中的場景，對于各種情欲的想象，象是金錢珠寶、名利、榮耀、性、房產等等，各種內心的渴望無法在現實世界中滿足被壓抑，而在夜晚的夢境中泄漏出來。面對各種的渴望，圖中的當事人面對這些光彩耀目的欲望，顯得感覺沉醉，也被眼前這些吸引的無法逃脫。雖然名為夢境的一張牌，但是此牌的狀態也常出現在真實的世界當中，個案看起來象是沉醉在幻覺，把一切的事情想得美好，與現實脫鉤，不是真的。`,
@@ -429,7 +429,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'cups-08', name: '8 of Cups', nameCn: '圣杯八', type: 'minor',
     suit: 'cups',
-    number: 8, image: '/cards/minor/cups/08.jpg',
+    number: 8, image: '/tarot-cards/eight_of_cups.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `圣杯八代表一個人拒絕一些事情的結果，無論這件事的結果是令人高興的還是悲傷的，關系中出現圣杯八，對于情感有不滿的地方，雖然穩定，但總覺需要一點情感上的刺激，尋求一些歡樂。工作中出現圣杯八，對于工作上沒有太大的心思，心在他處，圖中缺了一角的圣杯，或許也代表了工作上的半途而廢。`,
@@ -439,7 +439,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'cups-09', name: '9 of Cups', nameCn: '圣杯九', type: 'minor',
     suit: 'cups',
-    number: 9, image: '/cards/minor/cups/09.jpg',
+    number: 9, image: '/tarot-cards/nine_of_cups.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `圣杯九又叫做美夢成真，代表當事人的愿望極有可能實現，無論是精神或是物質方面。所謂的「情場得意，賭場失意」定律，并不適用圣杯九，圣杯九可是要「人財兩得」的。財主非常滿意于他的現狀，他洋洋得意的抱胸姿態，顯示出某種程度的自負。這張牌也可以與錢幣六做個比較，在錢幣六中，我們看到手心向下的財主，與手心向上的乞丐;圣杯九的財主則抱胸端坐，展現一種單純的滿足，無形中與外界隔絕，甚至隱約流露出某種炫示意味。`,
@@ -449,7 +449,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'cups-10', name: '10 of Cups', nameCn: '圣杯十', type: 'minor',
     suit: 'cups',
-    number: 10, image: '/cards/minor/cups/10.jpg',
+    number: 10, image: '/tarot-cards/ten_of_cups.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `圣杯十主要表現情感聯系的團體，例如家庭、社團、感情很好的班級、幾個知交好友、良好的親子關系、合作關系、結盟關系。在這其中我們可以得到充份的情感交流與支援，就象是在背后支撐我們的力量，我們知道自己并不孤獨。`,
@@ -459,7 +459,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'cups-11', name: 'Page of Cups', nameCn: '圣杯侍從', type: 'minor',
     suit: 'cups',
-    number: 11, image: '/cards/minor/cups/11.jpg',
+    number: 11, image: '/tarot-cards/page_of_cups.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `圣杯侍衛這一張排在圣杯牌組里頭，比較偏向于心靈思考的層面，當然的，圣杯牌組的情感象征依然是侍衛牌的基礎，也就是說，這一張牌的出現暗示著自己在面對目前的事情時，都能去思考自己在這一件事情中的一些問題點，并且也藉由比較深度的思考來讓自己能更加的深入事情的中心點。而這一張牌也多半在暗示著一位雙魚座的人或是與雙魚座有關的人，事物，這樣子的暗示在史派若這一套牌之中被強化了，在史派若里的圣杯侍衛，明顯的可以看見牌中的圖案有兩只海豚在跳躍，至一張牌也代表著一次新的機會，新的轉變或新的訊息，這是因為自己透過了思考而更了解一些事情或問題點，也有因思考而成長的自我暗示存在。`,
@@ -469,7 +469,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'cups-12', name: 'Knight of Cups', nameCn: '圣杯騎士', type: 'minor',
     suit: 'cups',
-    number: 12, image: '/cards/minor/cups/12.jpg',
+    number: 12, image: '/tarot-cards/knight_of_cups.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `圣杯騎士是感情的行動者，本身的速度與腳步是和緩的，更象是在騎馬漫步，蜿蜒的河水流動更顯情感上的流動緩緩向前。圣杯騎士所代表的形象是白馬王子，懂得浪漫與調情，華麗的盔甲與精良的裝備，顯得注重外貌與外表。這張牌對于女性而言是心中情愛的理想形象，具有令人陶醉于其中的特質；故在實際的面向上，可能是心儀的物件出現，一個來自對方的告白，真心地邀請與碰觸，專情一致的物件出現，而且對方是具有情感上的創意能力，能夠給予許多的歡樂與樂趣，心臟撲通撲通地跳，感受到愛情的溫熱。而在男性方面，出現圣杯騎士也表示的是愛情上的成功機會增大，有機會獲得對方情感上的回應反饋。`,
@@ -479,7 +479,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'cups-13', name: 'Queen of Cups', nameCn: '圣杯王后', type: 'minor',
     suit: 'cups',
-    number: 13, image: '/cards/minor/cups/13.jpg',
+    number: 13, image: '/tarot-cards/queen_of_cups.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `圣杯王后是女教皇的小牌版本。她想象力強，重視直覺而浪漫過人。當你想要算塔羅牌，或是想要情感上的安慰時，你會找圣杯王后。她是那種會讓年輕小伙子愛上的成熟女人，不是因為美貌，而是因為她的同理心。她是夢想家，象是愛麗絲夢游仙境中的愛麗絲那般夢幻。`,
@@ -489,7 +489,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'cups-14', name: 'King of Cups', nameCn: '圣杯國王', type: 'minor',
     suit: 'cups',
-    number: 14, image: '/cards/minor/cups/14.jpg',
+    number: 14, image: '/tarot-cards/king_of_cups.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `圣杯國王懂得管理情緒，情緒管理得很好。圣杯國王往往帶有容易親近的特點，有一種溫暖，溫情的感受，成熟的情感態度，具有責任心，懂得人情事故與待人處事，讓人感到放心，暖男角色。另外一方面來講，圣杯國*能感情經歷豐富，城府深厚，圣杯國王的角色常出現得象是長輩的角色，對于后輩有一種照顧與關心，溫厚的關懷，慈祥而親切，高EQ與親和力。值得注意的是桃花運出現，此張牌有可能是具有家室的男人。圣杯國王的場景是在波光淋淋的海面上航行，游歷各地，相當有經驗，而從海中跳出的魚也象征的是情感的生命力，具有情感的多元與創造性。`,
@@ -499,7 +499,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'swords-01', name: 'Ace of Swords', nameCn: '寶劍首牌', type: 'minor',
     suit: 'swords',
-    number: 1, image: '/cards/minor/swords/01.jpg',
+    number: 1, image: '/tarot-cards/ace_of_swords.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `寶劍代表風元素，寶劍的使用動作為揮動，當揮動劍之時，掀起的一股劍風，帶有肅殺之氣，故遇見寶劍元素之時，請想象著劍的鋒利、冰冷，與風的流動之無形。在人際關系當中，寶劍首牌正位，大家相互以理智作為相處之連線，常見的場景如辯論會場，工作會議場合，是一種意見的交換，且寶劍具有切割的特性，故在相處中人-我邊界鮮明，雙方保有自己的想法與空間，彼此之間也鮮少過問私事。另外臺面上相處的事情是公開透明，凡事有理有據，條理分明，灰色空間模糊地帶是不允許存在的。`,
@@ -509,7 +509,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'swords-02', name: '2 of Swords', nameCn: '寶劍二', type: 'minor',
     suit: 'swords',
-    number: 2, image: '/cards/minor/swords/02.jpg',
+    number: 2, image: '/tarot-cards/two_of_swords.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `在關系當中的寶劍二，雙方之間有意見上的不合，然該部分系被隱藏于臺面之下，如同大海與礁巖所形成的暗流洶涌，表面上可能冷處理，然雙方心中皆有所盤算著，是一種沖突的冷處理狀況，假裝沒看見。`,
@@ -519,7 +519,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'swords-03', name: '3 of Swords', nameCn: '寶劍三', type: 'minor',
     suit: 'swords',
-    number: 3, image: '/cards/minor/swords/03.jpg',
+    number: 3, image: '/tarot-cards/three_of_swords.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `寶劍三是傷心牌，陰雨的天氣，一種低迷的沉浸，各種思緒，各種想法穿過心中，心被糾纏糾結，無法走出，感受到各種傷害的痛，思緒萬千，想的都是各種悲傷，當事人處于自憐自哀當中。本張牌面滿好解釋的，畢竟看主題就知道是傷心；而直觀的看見本張牌也想到如果有疾病的話，可能有心臟疾病。另一方面來講，因為是寶劍，可能帶有自我批判，自我傷害的想法。在感情面來講，有如把關系的失敗當作是自己的責任，將其原因歸咎于自己，各種各樣我不對、我不好的想法縈繞心中，然當事者承擔了太多關系的責任因素，給予自己太大的情感壓力。`,
@@ -529,7 +529,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'swords-04', name: '4 of Swords', nameCn: '寶劍四', type: 'minor',
     suit: 'swords',
-    number: 4, image: '/cards/minor/swords/04.jpg',
+    number: 4, image: '/tarot-cards/four_of_swords.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `寶劍四，由左上方的玻璃水晶窗可以看到，所在的場景是在教堂當中，在教堂里面，有一個精致雕琢的人形棺材，開口微開，或許有人躲在其中休息，而墻上掛著寶劍與棺木旁的寶劍，象征著作戰。這人或許正在教堂中尋求庇蔭，遭受庇護，躲起來一下，暫停，免于外界的紛紛擾擾，處于暫時休戰的狀態。躲避戰爭，休息困頓的身軀，也代表著當事人已疲累，被各種想法煩到疲累，需要調養，是一種停止的狀況，為的是面對接下來的挑戰。代表有相當棘手的情況可能發生，需要謹慎的思慮以面對。`,
@@ -539,7 +539,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'swords-05', name: '5 of Swords', nameCn: '寶劍五', type: 'minor',
     suit: 'swords',
-    number: 5, image: '/cards/minor/swords/05.jpg',
+    number: 5, image: '/tarot-cards/five_of_swords.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `寶劍五是一張小人牌，圖中有三個人，最前方的人物露出詭異的笑容，后方的兩人顯然是失落離去，遭受到暗箭重傷的狀況出現，整個場景是相當的凌亂，天空中的流云與地上散落的寶劍顯現出思緒的快速流動與矛盾沖突的狀況產生，在這里描述的場景是爭辯之后的慘烈勝利，贏得了賽局卻失去了關系，詭辯或許是常用的伎倆，來陰的，得到了勝利卻失去了更多，有笑容卻懷有遺憾，是一種意氣之爭。感情上與工作上皆會出現重大的問題，其在于爭強的態度雖然讓對方無法招架，但是確失去了信任，得到的僅是自我沾沾自滿，目空一切的虛空。`,
@@ -549,7 +549,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'swords-06', name: '6 of Swords', nameCn: '寶劍六', type: 'minor',
     suit: 'swords',
-    number: 6, image: '/cards/minor/swords/06.jpg',
+    number: 6, image: '/tarot-cards/six_of_swords.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `寶劍六與排除問題有關，渡船的方式象征克服眼前的困難，也象征溝通方面很順利，思緒無礙，能解決難題。順流而去與交通旅游有關，尤其代表水運交通、水路旅行～航海，出海，航線。也可表示一切跟水有關的活動。所有的旅途和行程，也都能包括在內。交通順暢而旅途愉快，只是仍需要用心和專注。這張牌代表小小的順利，也代表溝通上的順暢，遇到事情可迎刃而解。度過難關或避難的方式，可能是以逃避或遠來解決問題，也是跑路成功之意，是一種權宜的行為。這個避難之舉并不會太過倉促，卻也簡單低調講求效率。`,
@@ -559,7 +559,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'swords-07', name: '7 of Swords', nameCn: '寶劍七', type: 'minor',
     suit: 'swords',
-    number: 7, image: '/cards/minor/swords/07.jpg',
+    number: 7, image: '/tarot-cards/seven_of_swords.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `寶劍七是一張謀略牌，寶劍即是已經代表想象了，再加上想象作用的七這個數位，所以是想法的極致發揮。寶劍七中的人物，躡手躡腳的，潛入敵方的陣營當中偷取對方的武器。偷偷來，以削弱對方戰斗的實力，對于圖中的人物而言，他是挺而走險的，弄得不好便被敵方抓住，造成傷害。然而正位之時，技巧高明的他順利的取走利劍而沒有被察覺，也代表謀略成功，是高明的點子，精心的設計，絕妙的心機，絕到好處的時機，具有刺激的快感。`,
@@ -569,7 +569,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'swords-08', name: '8 of Swords', nameCn: '寶劍八', type: 'minor',
     suit: 'swords',
-    number: 8, image: '/cards/minor/swords/08.jpg',
+    number: 8, image: '/tarot-cards/eight_of_swords.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `寶劍八是受困牌，圖中的人物困于利劍與泥淖中，遠方的城堡安全之地離得很遠，蒙上的雙眼，身上布條的包裹，表明她受困于想法當中，想法強大的作用性，讓她的行動能力受到限制。她正小心翼翼的，透過地上的水痕，感受自己心中的感受，想辦法脫困。旁邊的這些利劍，可能是來自他人的一些建議，或是自己心中的想法、評價，然而這些想法、意見、建議，確確讓她更加的受困于其中，陷入一種僵持的局面當中，處于困擾的情緒，不知道什么是正確的方向，只能稍稍的加以摸索，卻害怕受到傷害，表現的相當無力感，害怕與退縮。`,
@@ -579,7 +579,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'swords-09', name: '9 of Swords', nameCn: '寶劍九', type: 'minor',
     suit: 'swords',
-    number: 9, image: '/cards/minor/swords/09.jpg',
+    number: 9, image: '/tarot-cards/nine_of_swords.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `寶劍九是惡夢牌，因為過去的傷害潛抑而于夢中再次出現，過去的傷害就如背后的芒刺一樣，貫穿圖中人物的身與心，因夢境真實的展現了傷害，所以直接遭受到各種創痛的作用，一時之間并無法做出應對，所以圖中的人物角色用雙手遮掩他的臉，不想承受面對這些，這些可能是過去的秘密、過去經驗的傷害或者是他人的背叛，最為不想遭遇到的傷痛經驗，極度的身心上的創傷壓力，驚恐與恐慌。感情上出現寶劍九，雙方的過去經驗造成當前關系上的挫折，太過巨大的傷兩人不愿面對也難以有撫平的機會。工作上出現寶劍九，許多煩事不斷出現，事情的失敗與錯誤也在心中烙下難以抹去的痛。`,
@@ -589,7 +589,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'swords-10', name: '10 of Swords', nameCn: '寶劍十', type: 'minor',
     suit: 'swords',
-    number: 10, image: '/cards/minor/swords/10.jpg',
+    number: 10, image: '/tarot-cards/ten_of_swords.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `寶劍十，已死亡，圖面當中是一個人倒下，死亡表示再也沒有任何的機會了，不再有任何的可能性，但是另外一方面，也代表不再受到死亡的威脅侵擾，不再有痛苦了，解脫了。表示事件雖然可能以不滿意的狀況結束，但終究是個結束，過程雖然痛苦，但也是一種解脫。圖片手中的手勢，與教皇牌的手勢相當，或許留下了一個伏筆，可能藉著宗教的力量希望尋求救贖，來世可以好過一點；又或者是可能死前有經歷過垂死掙扎，但等不到救援，感受到最深的無望，毫無轉機，最終的命運仍就是終結。寶劍十可能是流言蜚語無法辯解，百口莫辯，無法翻身，也有可能是做錯事情，遭受批判沒有給予悔改挽回的機會。`,
@@ -599,7 +599,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'swords-11', name: 'Page of Swords', nameCn: '寶劍侍從', type: 'minor',
     suit: 'swords',
-    number: 11, image: '/cards/minor/swords/11.jpg',
+    number: 11, image: '/tarot-cards/page_of_swords.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `寶劍侍從是資訊與訊息的收集者，搜集資料資訊，打聽訊息。另一方面也可以說象是學校新生，學習新的才藝的人物。在正位時，謹慎的判斷與觀察事物，獲得正確的資訊，了解整體狀況，心思銳利且敏捷，掌握先機，機警的態度，表達清楚。而寶劍通常也與溝通有關，正位的寶劍侍從代表一些溝通的機會管道，一些訊息的出現。`,
@@ -609,7 +609,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'swords-12', name: 'Knight of Swords', nameCn: '寶劍騎士', type: 'minor',
     suit: 'swords',
-    number: 12, image: '/cards/minor/swords/12.jpg',
+    number: 12, image: '/tarot-cards/knight_of_swords.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `寶劍騎士是宮廷騎士牌中速度最快的一張，從構圖與馬兒的姿勢來看，是飛奔而馳的，來無影去無蹤，難以捉模他的蹤跡。是漂亮的男子漢，有自己的目標與方向，從不為他人駐足停留，賓士是他的本性。懷有浪子之心，瀟灑的態度，因其獨特的魅力，總是以酷酷的方式吸引女性或他人的注意。在正位的時候，頭腦是清晰且思考快速的，行事匆匆，快速地完成，但是考量上來講沒有顧及太多，可能忽略小小的細節，精致程度不高。是以速度換來的成果，快速的發展演變，表示事情馬上就有答案了。`,
@@ -619,7 +619,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'swords-13', name: 'Queen of Swords', nameCn: '寶劍王后', type: 'minor',
     suit: 'swords',
-    number: 13, image: '/cards/minor/swords/13.jpg',
+    number: 13, image: '/tarot-cards/queen_of_swords.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `寶劍王后是沉浸于理智的代表，具有各種知識與評斷的能力，本身是孤高的，特別是寶劍王后的上方僅有一只鳥，或許是一只孤鷹也說不定。對于事物采取理智的態度，任和時候都是理智的，是一種主觀，告訴她任何的資訊她都會經過處理后擬出最佳化、效益極大化的作法。然而這樣的作法僅在于理論上可行，碰到人性層面或許不適用，是故寶劍王后比較適合純學術層面的人物。且寶劍王后手中的劍是相當筆直的，是公正不阿且判斷果決快速的象征。這樣的個性在人際場合比較讓人難以接近，與圣杯王后是兩種不同的性格。寶劍王后較不易產生親密感，甚至是有距離感，容易把感情往外推，易成情愛殺手。人際方面也是有所規范，要與她建立關系需要高度的挑戰，相當的難以贏取寶劍王后的愛。然而遇到挫折，寶劍王后是具備較多的韌性的，能以理智應付各種突發狀況。`,
@@ -629,7 +629,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'swords-14', name: 'King of Swords', nameCn: '寶劍國王', type: 'minor',
     suit: 'swords',
-    number: 14, image: '/cards/minor/swords/14.jpg',
+    number: 14, image: '/tarot-cards/king_of_swords.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `寶劍國王是想法的管理者與將理念推動的人物，是一位軍師級的人物，其本身具有相當的專業性。與其討論事情寶劍國*以給與專業上的協助，講出的是專業的智慧指導，提出自己的見解，告訴他人背后的理念與原理是什么，并且能夠從多個角度上去分析。采取客觀的態度，極高度的分析能力，提出最佳的建議，與精辟的見解。天上有兩只飛鳥，也是代表寶劍的風元素與綜覽全局的能力，常見的人物比如象是學者、教授等。而寶劍國王與寶劍皇后相比較，寶劍國王有待人的經驗，所以提出的問題還是比較考慮到人的一面的。`,
@@ -639,7 +639,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'pentacles-01', name: 'Ace of Pentacles', nameCn: '星幣一', type: 'minor',
     suit: 'pentacles',
-    number: 1, image: '/cards/minor/pentacles/01.jpg',
+    number: 1, image: '/tarot-cards/ace_of_pentacles.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `正位星幣首牌預示除了得到錢財之外，亦代表著掌握金錢的流向脈絡，投資方面掌握了大局，握有關鍵的賺錢要素；而豐沃的土地代表著投資環境的良好，得到環境的支援，坐擁有先天的優勢。而關系層面上來說，正位之時代表經濟實力佳，有金錢作為后盾，雙方的關系在此基礎上穩定的發展，掌握滿足了生活的基本需求，人際的經營以穩定的方式向前，穩健的步伐是關系的寫照。從另外一方面來說，星幣代表一種投資與反饋，感情當中出現太多的星幣牌組有可能雙方的感情關系是以利益做為結盟的，在情愛中所展現的是雙方的實際面向之種種，且這樣的愛情往往是求有回報。工作方面來說，星幣元素象征著物質的得到，環境資源的豐沛也保障了工作穩健的進行與獲利的延續，工作的結果也是有所得的，投資上擁有回報。`,
@@ -649,7 +649,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'pentacles-02', name: '2 of Pentacles', nameCn: '星幣二', type: 'minor',
     suit: 'pentacles',
-    number: 2, image: '/cards/minor/pentacles/02.jpg',
+    number: 2, image: '/tarot-cards/two_of_pentacles.png',
     keywords: { upright: ['平衡', '多工', '靈活', '調配', '財務決策'], reversed: ['失衡', '猶豫不決', '資源分散', '財務混亂'] },
     meaning: {
       upright: `星幣二代表在日常生活中靈活應對變化的能力，尤其是在財務和物質層面。這張牌強調需要靈活地管理時間和資源，以適應不斷變化的情況。正位時鼓勵在做決策時保持靈活性，並開放於新的學習機會。在感情上，可能表示在兩個關係或情感狀態之間尋求平衡，雙方在物質或情感上都尋求均等的給予與接受。在事業上，可能面臨重要的職業決定或生涯規劃的抉擇，需要權衡每一個選項的利弊，保持耐心和謹慎的態度。在財務上，暗示需要在不同的機會或投資方案之間權衡利弊，通過慎重考慮和計劃，能夠在財務上取得平衡和成功。`,
@@ -659,7 +659,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'pentacles-03', name: '3 of Pentacles', nameCn: '星幣三', type: 'minor',
     suit: 'pentacles',
-    number: 3, image: '/cards/minor/pentacles/03.jpg',
+    number: 3, image: '/tarot-cards/three_of_pentacles.png',
     keywords: { upright: ['團隊合作', '學習', '技能', '執行', '完成'], reversed: ['不協調', '單獨行動', '缺乏合作', '基礎不穩'] },
     meaning: {
       upright: `星幣三代表團隊合作、學習與技能的發揮。正位時象徵著協同效應，各方角色分工明確、合作穩健，如同建造教堂的設計師、教堂方人員與工匠三方共同討論確認，步調以穩健為主，合作角色之間權力較為對等。在感情上，雙方有共同目標，互相承擔各自的角色，關係有一定基礎，未來將共同建造得更加美好。在事業上，工作需要專業技能並與團隊合作，有好的表現會得到應有的報酬和榮譽，長期來看會學到很多東西。在財務上，基礎十分穩固，可以照顧到各種不同的需要，應以長遠的眼光來配置資產。`,
@@ -669,7 +669,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'pentacles-04', name: '4 of Pentacles', nameCn: '星幣四', type: 'minor',
     suit: 'pentacles',
-    number: 4, image: '/cards/minor/pentacles/04.jpg',
+    number: 4, image: '/tarot-cards/four_of_pentacles.png',
     keywords: { upright: ['守財', '穩定', '占有欲', '節省', '物質安全'], reversed: ['入不敷出', '奢侈', '坐吃山空', '財務失控'] },
     meaning: {
       upright: `星幣四象徵物質生活上的充足與穩定，以及精神層面上的空虛。圖中人物手環抱著星幣，代表金錢不斷產生、收入不斷增加，是一種只進不出的封閉姿勢，財富不斷累積。儲蓄是其理財觀點，對他人而言是節省，也是一種小氣。在感情上，態度保守小心翼翼，兩人相處拘謹，以安全為最佳默契，金錢觀上傾向不花錢的行程。在事業上，穩定進行，沒有開創性的格局，但基礎業務已足以讓工作穩定進行。在財務上，描述一個有錢心裡才會覺得踏實的人，會想盡辦法開源節流，以求財務狀況穩固帶來的安全感，但可能因太過看重金錢而限制了自己的發展。`,
@@ -679,7 +679,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'pentacles-05', name: '5 of Pentacles', nameCn: '星幣五', type: 'minor',
     suit: 'pentacles',
-    number: 5, image: '/cards/minor/pentacles/05.jpg',
+    number: 5, image: '/tarot-cards/five_of_pentacles.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `正位的星幣五代表窮困、損失、失敗、錯誤、情婦、愛人、內在的空虛、錢財上的困難、失業、重考、貸款、和伴侶分離。這張牌首先預示了在物質方面的問題，無論在圖例上闡明的是貧困或者不是。 在一些紙牌占卜術中，它是一張愛情以及戀人之牌&mdash;&mdash;妻子、丈夫、朋友、情婦，而且相處和諧、關系密切。 這兩種說法不太能夠被調和。`,
@@ -689,7 +689,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'pentacles-06', name: '6 of Pentacles', nameCn: '星幣六', type: 'minor',
     suit: 'pentacles',
-    number: 6, image: '/cards/minor/pentacles/06.jpg',
+    number: 6, image: '/tarot-cards/six_of_pentacles.png',
     keywords: { upright: ['給予', '慷慨', '分享財富', '慈善', '施捨'], reversed: ['偽善', '欠債', '付出無回報', '自私'] },
     meaning: {
       upright: `星幣六描述一位商人正在與行乞的人分享金錢，但另一隻手仍拿著秤計算著付出，象徵在學習分享的同時仍警惕自己不可陷入財物困境。正位代表給予、付出、捐贈、分享財富、慷慨大方、慈善仁愛。在感情上，兩人對關係都感到滿足，但可能不太平等，或有以金錢控制對方的傾向。在事業上，工作狀況很好，有不錯的收入，但要分享才能造就更大的利益，成功之餘也不要忽略幫助別人。在人際上，因常常幫助別人而人際關係很好，能接受別人的建議，努力維持人際和諧。在財務上，處於不平衡的財務狀況中，可能需要照顧援助別人，或在財務上依賴對方，當中也存在控制關係。`,
@@ -699,7 +699,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'pentacles-07', name: '7 of Pentacles', nameCn: '星幣七', type: 'minor',
     suit: 'pentacles',
-    number: 7, image: '/cards/minor/pentacles/07.jpg',
+    number: 7, image: '/tarot-cards/seven_of_pentacles.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `正位的星幣七代表極度對立的，主要來說，它是一張金錢、事業、生意的牌。然而，有個解釋說是爭論、爭吵，而另外的說法是無邪、靈敏、凈化、心靈手巧、成長、努力工作、進步、成功的交易、金錢、寶物、努力而得到報酬、利益低的交易、付出不意被認同、正在計劃未來。`,
@@ -709,7 +709,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'pentacles-08', name: '8 of Pentacles', nameCn: '星幣八', type: 'minor',
     suit: 'pentacles',
-    number: 8, image: '/cards/minor/pentacles/08.jpg',
+    number: 8, image: '/tarot-cards/eight_of_pentacles.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `直接制作金幣的造錢舉動，或許會讓人感到有一些取巧，但也是一種專精的技能，所以對于工作也可以論斷為是一種技術、藝能和專業的技巧。這張牌除了代表工作或接到生意訂單，被任命職務或上任工作，是開始工作的象征。但也可以代表實習的過程，或是在試用期中間，是處于預備或轉折的階段。也代表對技能的學習，并且很有效率，學習成績非常亮眼。無論工作或是學習，都抱持著兢兢業業，虛心學習，謙遜敬業的精神。也具有落實的行動以及踏實的精神。`,
@@ -719,7 +719,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'pentacles-09', name: '9 of Pentacles', nameCn: '星幣九', type: 'minor',
     suit: 'pentacles',
-    number: 9, image: '/cards/minor/pentacles/09.jpg',
+    number: 9, image: '/tarot-cards/nine_of_pentacles.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `星幣九是貴婦牌，不用工作每天娛樂的那種，感覺起來令人向往，財富自由，享受一個人的時光與時間，沒有什么要完成的事情，每天就在花園逛逛，有自己的時間消遣玩樂。金錢物質上的無虞是星幣九的內容，然而不一定人人都是適合這樣的享受生活，畢竟沒有目標的日子有人是待不下去的。貴婦手中的鳥或許是她的心情寫照，鳥兒本應在天上飛，承著風的飛翔，如今卻被眷養于手掌中，雖然被照顧得很好，但是失去了自由，不在天上飛的鳥兒還算是鳥嗎？他與他的同類是要如何聯系連結呢？人的心真的難以定下來，就算是一切盡有，然而心中仍是感到有所失落的部分。`,
@@ -729,7 +729,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'pentacles-10', name: '10 of Pentacles', nameCn: '星幣十', type: 'minor',
     suit: 'pentacles',
-    number: 10, image: '/cards/minor/pentacles/10.jpg',
+    number: 10, image: '/tarot-cards/ten_of_pentacles.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `星幣十是一張代表著擁有舒適環境且有成功象征的牌，而這樣的舒適環境是經過了很多的辛苦與磨難而得到的，這樣的成功不是偶然得來的。而通常這樣的舒適環境與成就都是相當讓人羨慕且是大多數人的希望，也許在外在的感覺是讓人覺得很好，似乎這樣子的成就是讓人快樂的，但是身在其中的你卻不是這么想，似乎因為之前的努力而把自己匯入了那重物質而輕精神的情況里頭，也因為凡事都太過的物質導向而造成了精神層面漸漸的被架空，使得自己有很大的失落感，而可能有利用花錢或更加不停追求物質來填補自己的精神空虛的情況產生。`,
@@ -739,7 +739,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'pentacles-11', name: 'Page of Pentacles', nameCn: '星幣侍從', type: 'minor',
     suit: 'pentacles',
-    number: 11, image: '/cards/minor/pentacles/11.jpg',
+    number: 11, image: '/tarot-cards/page_of_pentacles.png',
     keywords: { upright: ['學習', '求知', '腳踏實地', '技能', '規劃'], reversed: ['揮霍', '知識貧乏', '視野狹窄', '缺乏承諾'] },
     meaning: {
       upright: `星幣侍從手舉一枚金幣，眼睛專注凝視，代表專注學習一種技能，並希望這個技能可以真實落實到生活中。其綠色衣衫象徵自然科學及旺盛的生命力，頭戴厚重紅色帽子代表他是一個學者而非勝利者或領導者，有智慧、有熱情、有創意且成熟穩健。這是有目的的學習，為了取得物質上的成就，與自己將來的成就息息相關，所以勢必很認真用功。在愛情上，暗示將有另一新階段的邁進，可能是新戀情或與原有伴侶關係改變，通常是好的改變。在財富上，只要肯付出心力，擁有財富輕而易舉，但可能須先做一些金錢投資才會回收更大利益。在事業上，工作富有挑戰性且辛苦，但可從中學習到許多東西，增加社會經驗，只要肯付出一定會成功。`,
@@ -749,7 +749,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'pentacles-12', name: 'Knight of Pentacles', nameCn: '星幣騎士', type: 'minor',
     suit: 'pentacles',
-    number: 12, image: '/cards/minor/pentacles/12.jpg',
+    number: 12, image: '/tarot-cards/knight_of_pentacles.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `星幣騎士是務實的行動者，背后開闊墾荒的田野，表示正在進行大規模的耕作行為，馬匹在四張宮廷騎士牌當中是走的最慢的一張，務實穩定，一步一步走的穩健，努力賺錢提升自己。正位時努力的工作，未來是可以期待的，預估的收獲是正向的。馬匹四肢腳皆走于陸地上也代表腳踏實地。對于愛情的層面上來講，比較看重未來的投資與規劃，一些家庭務實層面，比較少的談情說愛，或許感到不浪漫，然而卻是能夠給予安全感與未來的承諾。附帶一提的是，在感情中出現星幣宮廷人物牌，通常帶給對方的是一種安全穩定的感覺(星幣侍者除外，錢太少了，星幣侍者最多給予對方有錢途就是)，或許在感情方面圣杯騎士是很好的戀愛物件，能夠結婚成家有歸屬感。`,
@@ -759,7 +759,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'pentacles-13', name: 'Queen of Pentacles', nameCn: '星幣王后', type: 'minor',
     suit: 'pentacles',
-    number: 13, image: '/cards/minor/pentacles/13.jpg',
+    number: 13, image: '/tarot-cards/queen_of_pentacles.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `星幣王后所代表的女人不一定有錢，確有許多安定的特質，她們對于生活的質量相當重視，活的安穩自在。如果所指的不是一個女性，星幣王后出現時暗示著感受金錢或物質生活舒適的時刻，絕大多數出現在一項讓當事人心情愉快的買賣中，他感受到對物品的擁有，通常也包括了生產或懷孕的狀態。`,
@@ -769,7 +769,7 @@ const minorArcana: FateCard[] = [
   {
     id: 'pentacles-14', name: 'King of Pentacles', nameCn: '星幣國王', type: 'minor',
     suit: 'pentacles',
-    number: 14, image: '/cards/minor/pentacles/14.jpg',
+    number: 14, image: '/tarot-cards/king_of_pentacles.png',
     keywords: { upright: [''], reversed: [''] },
     meaning: {
       upright: `金幣國王通常代表著一個生活穩定的男人，他在事業以及資產上都有一定的基礎，如果當事人不符合這樣的角色，那么這個人與他的金錢和工作有關，老板、父親、客戶、銀行經理等等，對于金錢與商業交易有著相當強烈的興趣，不過他們也常常誤以為藉由物質的控制，就可以控制一切。`,

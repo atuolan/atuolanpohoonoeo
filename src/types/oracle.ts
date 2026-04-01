@@ -98,11 +98,9 @@ export interface OracleReading {
 
 /** 神諭牌占卜流程階段 */
 export type OraclePhase =
-  | "home"        // 首頁選擇
-  | "intention"   // 設定意圖
-  | "spread"      // 選擇牌陣
-  | "shuffle"     // 洗牌冥想
-  | "draw"        // 抽牌
+  | "home"        // 首頁（從 Fate 入口進入時的初始狀態）
+  | "setup"       // 提問 + 選牌陣（合併）
+  | "shuffle"     // 洗牌
+  | "pick"        // 選牌
   | "reveal"      // 翻牌揭示
   | "interpret"   // AI 解讀
-  | "complete"    // 完成
