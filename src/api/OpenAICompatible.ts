@@ -302,6 +302,83 @@ export class OpenAICompatibleClient {
   }
 
   /**
+   * 檢測當前模型是否為 DeepSeek Reasoner 系列
+   * DS reasoner 要求訊息嚴格 user/assistant 交替，不允許連續相同 role
+   */
+  private isDeepSeekReasonerModel(): boolean {
+    const model = this.apiSettings.model.toLowerCase();
+    return model.includes("deepseek-reasoner") || model.includes("deepseek-r1");
+  }
+
+  /**
+   * 強制訊息嚴格交替（user/assistant）
+   * 用於 DeepSeek Reasoner 等要求嚴格交替的模型
+   *
+   * 處理策略：
+   * 1. 保留第一條 system 訊息不動
+   * 2. 後續的 system 訊息合併到相鄰的 user 訊息中
+   * 3. 連續相同 role 的訊息合併為一條
+   * 4. 確保最終結果嚴格 user/assistant 交替
+   */
+  private enforceStrictAlternation(messages: APIMessage[]): APIMessage[] {
+    if (messages.length === 0) return [];
+
+    const result: APIMessage[] = [];
+    let startIdx = 0;
+
+    // 保留第一條 system 訊息（DS reasoner 允許開頭有一條 system）
+    if (messages[0].role === "system") {
+      // 合併開頭連續的 system 訊息為一條
+      let systemContent = this.getMessageText(messages[0]);
+      startIdx = 1;
+      while (startIdx < messages.length && messages[startIdx].role === "system") {
+        systemContent += "\n\n" + this.getMessageText(messages[startIdx]);
+        startIdx++;
+      }
+      result.push({ role: "system", content: systemContent });
+    }
+
+    // 處理剩餘訊息：system → user，然後合併連續相同 role
+    const remaining: APIMessage[] = [];
+    for (let i = startIdx; i < messages.length; i++) {
+      const msg = messages[i];
+      // system 訊息轉為 user（DS reasoner 不允許中間出現 system）
+      const role: "user" | "assistant" = msg.role === "assistant" ? "assistant" : "user";
+      const content = this.getMessageText(msg);
+      remaining.push({ role, content });
+    }
+
+    // 合併連續相同 role 的訊息
+    for (const msg of remaining) {
+      const last = result[result.length - 1];
+      if (last && last.role === msg.role) {
+        // 合併到上一條
+        last.content = this.getMessageText(last) + "\n\n" + this.getMessageText(msg);
+      } else {
+        result.push({ ...msg });
+      }
+    }
+
+    console.debug(
+      `[API] enforceStrictAlternation: ${messages.length} → ${result.length} 條訊息`,
+    );
+    return result;
+  }
+
+  /**
+   * 從 APIMessage 中提取純文字內容
+   */
+  private getMessageText(msg: APIMessage): string {
+    if (typeof msg.content === "string") return msg.content;
+    // 混合內容（圖片+文字）：提取所有文字部分
+    return msg.content
+      .filter((c): c is TextContent => c.type === "text")
+      .map((c) => c.text)
+      .join("\n");
+  }
+
+
+  /**
    * 建構請求體
    */
   private buildRequestBody(
@@ -342,6 +419,12 @@ export class OpenAICompatibleClient {
       }
     }
 
+    // DeepSeek Reasoner 特殊處理：強制訊息嚴格 user/assistant 交替
+    // DS reasoner 不允許連續相同 role 或中間出現 system 訊息
+    if (this.isDeepSeekReasonerModel()) {
+      processedMessages = this.enforceStrictAlternation(processedMessages);
+    }
+
     const body: Record<string, unknown> = {
       model: this.apiSettings.model,
       messages: processedMessages,
@@ -352,7 +435,8 @@ export class OpenAICompatibleClient {
 
     // 可選參數
     if (settings.topP !== 1) {
-      body.top_p = settings.topP;
+      // DeepSeek API 要求 top_p > 0
+      body.top_p = settings.topP || Number.EPSILON;
     }
     if (settings.frequencyPenalty !== 0) {
       body.frequency_penalty = settings.frequencyPenalty;
