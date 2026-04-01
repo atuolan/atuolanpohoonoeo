@@ -1,14 +1,16 @@
 <script setup lang="ts">
 /**
  * 命運占卜主畫面
- * 支援：塔羅牌、占星骰子、雷諾曼牌（待實作）
+ * 支援：塔羅牌、占星骰子、雷諾曼牌、神諭卡
  */
 import FateCard from "@/components/common/FateCard.vue";
 import AstroDicePanel from "@/components/fate/AstroDicePanel.vue";
 import LenormandPanel from "@/components/fate/LenormandPanel.vue";
+import OraclePanel from "@/components/fate/OraclePanel.vue";
 import { fateSpreads } from "@/data/fateSpreads";
 import { useAstroDiceStore } from "@/stores/astroDice";
 import { useFateStore } from "@/stores/fate";
+import { useOracleStore } from "@/stores/oracle";
 import type { AstroDiceReading } from "@/types/astroDice";
 import type { FateReading, FateSpread } from "@/types/fate";
 import { marked } from "marked";
@@ -17,9 +19,10 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 const emit = defineEmits<{ back: [] }>();
 const fateStore = useFateStore();
 const astroDiceStore = useAstroDiceStore();
+const oracleStore = useOracleStore();
 
 // ===== 占卜類型選擇 =====
-type DivinationType = "home" | "tarot" | "astroDice" | "lenormand";
+type DivinationType = "home" | "tarot" | "astroDice" | "lenormand" | "oracle";
 const currentDivination = ref<DivinationType>("home");
 
 // ===== 牌陣篩選 =====
@@ -306,6 +309,13 @@ function handleBack() {
     }
     // 占星骰子和雷諾曼：返回首頁
     if (currentDivination.value === "astroDice") astroDiceStore.reset();
+    // 神諭卡：根據當前階段決定返回邏輯
+    if (currentDivination.value === "oracle") {
+      if (oracleStore.phase !== "home") {
+        oracleStore.reset();
+        return;
+      }
+    }
     currentDivination.value = "home";
     return;
   }
@@ -318,6 +328,9 @@ function selectDivination(type: DivinationType) {
   currentDivination.value = type;
   if (type === "tarot") {
     fateStore.goToPhase("setup");
+  }
+  if (type === "oracle") {
+    oracleStore.goToPhase("home");
   }
 }
 
@@ -334,6 +347,7 @@ function handleLenormandBack() {
 onMounted(() => {
   if (!fateStore.isHistoryLoaded) fateStore.loadHistory();
   if (!astroDiceStore.isHistoryLoaded) astroDiceStore.loadHistory();
+  if (!oracleStore.isHistoryLoaded) oracleStore.loadHistory();
   window.addEventListener("mousemove", onFanPointerMove);
   window.addEventListener("mouseup", onFanPointerUp);
   window.addEventListener("touchmove", onFanPointerMove, { passive: true });
@@ -494,7 +508,7 @@ onUnmounted(() => {
             v-for="item in allReadings"
             :key="item.reading.id"
             class="fate-history__item fate-history__item--clickable"
-            @click="openReading(item.type, item.reading as any)"
+            @click="item.type === 'tarot' ? openReading('tarot', item.reading as any) : openReading('astro', item.reading as any)"
           >
             <div class="fate-history__item-time">
               <span class="fate-history__item-badge">
@@ -782,6 +796,32 @@ onUnmounted(() => {
             </div>
             <div class="fate-orbit-node__label">雷諾曼牌</div>
           </button>
+
+          <!-- 節點 4: 神諭卡 -->
+          <button
+            class="fate-orbit-node fate-orbit-node--active fate-orbit-node--oracle"
+            style="left: 50%; top: 78%"
+            @click="selectDivination('oracle')"
+          >
+            <div class="fate-orbit-node__core">
+              <svg
+                viewBox="0 0 24 24"
+                width="1em"
+                height="1em"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <!-- 月亮 + 星星 (神諭卡象徵) -->
+                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+                <path d="M19 3v4" />
+                <path d="M21 5h-4" />
+              </svg>
+            </div>
+            <div class="fate-orbit-node__label">神諭卡</div>
+          </button>
         </div>
       </div>
 
@@ -795,6 +835,11 @@ onUnmounted(() => {
       <LenormandPanel
         v-if="currentDivination === 'lenormand'"
         @back="handleLenormandBack"
+      />
+
+      <!-- ══ 神諭卡面板 ══ -->
+      <OraclePanel
+        v-if="currentDivination === 'oracle'"
       />
 
       <!-- ══ 提問 + 選牌陣（合併） ══ -->
@@ -1588,6 +1633,39 @@ $r-pill: 100px;
       border-color: rgba(255, 255, 255, 0.08);
       background: rgba(12, 14, 22, 0.6);
       box-shadow: none;
+    }
+  }
+
+  // 神諭卡節點 — 月紫色調
+  &--oracle {
+    &.fate-orbit-node--active {
+      .fate-orbit-node__core {
+        border-color: rgba(199, 125, 255, 0.5);
+        box-shadow:
+          0 0 24px rgba(199, 125, 255, 0.3),
+          inset 0 0 12px rgba(199, 125, 255, 0.15);
+        background: linear-gradient(
+          135deg,
+          rgba(40, 20, 70, 0.9),
+          rgba(22, 14, 48, 0.85)
+        );
+        color: #c77dff;
+      }
+      .fate-orbit-node__label {
+        color: #c77dff;
+      }
+      &:hover {
+        .fate-orbit-node__core {
+          border-color: #c77dff;
+          box-shadow:
+            0 0 36px rgba(199, 125, 255, 0.5),
+            inset 0 0 16px rgba(199, 125, 255, 0.25);
+          color: #e0aaff;
+        }
+        .fate-orbit-node__label {
+          color: #e0aaff;
+        }
+      }
     }
   }
 }

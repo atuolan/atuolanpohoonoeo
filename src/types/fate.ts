@@ -28,12 +28,34 @@ export interface FateCard {
   };
 }
 
+/** 牌陣位置座標（百分比，0-100）*/
+export interface FatePositionCoords {
+  x: number;
+  y: number;
+  rotate?: number;
+  scale?: number;
+}
+
+/** 牌陣佈局類型 */
+export type FateLayoutType =
+  | "single"
+  | "linear"
+  | "triangle"
+  | "cross"
+  | "circle"
+  | "star"
+  | "horseshoe"
+  | "celtic-cross"
+  | "custom";
+
 /** 牌陣位置 */
 export interface FateSpreadPosition {
   id: string;
   name: string;
   nameCn: string;
   description: string;
+  /** 百分比座標（可選，用於視覺化佈局） */
+  coords?: FatePositionCoords;
 }
 
 /** 牌陣 */
@@ -43,6 +65,10 @@ export interface FateSpread {
   nameCn: string;
   description: string;
   positions: FateSpreadPosition[];
+  /** 佈局類型（可選，用於視覺化） */
+  layoutType?: FateLayoutType;
+  /** 背景漸層（可選） */
+  bgGradient?: string;
 }
 
 /** 抽到的牌 */
@@ -60,6 +86,7 @@ export interface FateReading {
   drawnCards: FateDrawnCard[];
   interpretation?: string;
   createdAt: number;
+  type?: "tarot";
 }
 
 /** 占卜流程階段 */
