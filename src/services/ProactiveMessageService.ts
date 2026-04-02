@@ -234,6 +234,23 @@ export class ProactiveMessageService {
   }
 
   /**
+   * 封鎖系統專用：觸發角色主動發一條訊息
+   * 不依賴 proactiveMessageSettings，即使角色沒開主動訊息也能發
+   */
+  async sendBlockedProactiveMessage(characterId: string) {
+    // 使用臨時 settings，不影響正常排程
+    const tempSettings: ProactiveMessageSettings = {
+      enabled: true,
+      intervalMinutes: 15,
+      doNotDisturbEnabled: false,
+      doNotDisturbStart: '00:00',
+      doNotDisturbEnd: '06:00',
+      showNotification: true,
+    }
+    await this.sendProactiveMessage(characterId, tempSettings)
+  }
+
+  /**
    * 發送主動訊息
    */
   private async sendProactiveMessage(

@@ -67,11 +67,11 @@ export function calculateCooldownMs(consecutiveRejections: number): number {
   return COOLDOWN_TIERS_MS[tier]
 }
 
-/** 檢查是否應攔截主動訊息 */
+/** 檢查是否應攔截主動訊息（僅角色封鎖用戶時攔截，用戶封鎖角色時角色仍可主動發訊） */
 export function shouldBlockProactiveMessage(chat: Chat): boolean {
   const blockState = chat.blockState
   if (!blockState) return false
-  return blockState.status !== 'none'
+  return blockState.status === 'char-blocked-user'
 }
 
 /** 檢查是否應攔截來電 */
@@ -184,6 +184,16 @@ class BlockService {
       await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)))
 
       console.log(`[BlockService] 已為角色 ${chat.characterId} 建立好友申請記錄`)
+
+      // 觸發角色主動發一條訊息（封鎖後的「敲門」訊息，獨立於 ProactiveMessageService）
+      try {
+        const { ProactiveMessageService } = await import('@/services/ProactiveMessageService')
+        const proactiveService = ProactiveMessageService.getInstance()
+        await proactiveService.sendBlockedProactiveMessage(chat.characterId)
+        console.log(`[BlockService] 已觸發角色 ${chat.characterId} 封鎖後主動發訊`)
+      } catch (proactiveErr) {
+        console.warn('[BlockService] 封鎖後主動發訊失敗:', proactiveErr)
+      }
 
       // 發送好友申請通知，讓用戶知道角色來敲門了
       try {
