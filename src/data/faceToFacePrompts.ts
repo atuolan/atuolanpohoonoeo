@@ -1737,6 +1737,7 @@ export const FACE_TO_FACE_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "f2fTimeJump", enabled: true },
   { identifier: "f2fExampleScript", enabled: true },
   { identifier: "f2fChatHistory", enabled: true },
+  { identifier: "f2fBlockMemory", enabled: true },
   { identifier: "f2fAuthorsNote", enabled: true },
   { identifier: "f2fSacredCreation", enabled: true },
   { identifier: "f2f_custom_1770779797676", enabled: true },

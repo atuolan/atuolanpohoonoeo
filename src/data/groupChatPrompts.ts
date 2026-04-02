@@ -1571,6 +1571,7 @@ export const DEFAULT_GROUP_CHAT_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "gcGroupCharacterNames", enabled: true },
   { identifier: "gcExampleScript", enabled: true },
   { identifier: "gcChatHistory", enabled: true },
+  { identifier: "gcBlockMemory", enabled: true },
   { identifier: "gcAuthorsNote", enabled: true },
   { identifier: "gcFinalInstructions", enabled: true },
   { identifier: "gcConfirmLastOutput", enabled: true },

@@ -1503,6 +1503,7 @@ export const DEFAULT_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "forbiddenPatterns", enabled: true },
   { identifier: "timeJump", enabled: true },
   { identifier: "chatHistory", enabled: true },
+  { identifier: "blockMemory", enabled: true },
   { identifier: "onlineModeFeatures", enabled: true },
   { identifier: "exampleScript", enabled: true },
   { identifier: "authorsNote", enabled: true },

@@ -787,6 +787,7 @@ export class PromptBuilder {
         exampleScript: "f2fExampleScript",
         // 系統
         chatHistory: "f2fChatHistory",
+        blockMemory: "f2fBlockMemory",
         authorsNote: "f2fAuthorsNote",
         finalInstructions: "f2fFinalInstructions",
         confirmLastOutput: "f2fConfirmLastOutput",
@@ -3102,37 +3103,40 @@ speed：0.5~2.0，正常時省略
    * 建構封鎖記憶提示詞
    * 當 Chat 存在封鎖狀態或封鎖歷史時，注入 AI 上下文
    */
-  private buildBlockMemoryPrompt(
-    identifier: string,
-    role: "system" | "user" | "assistant",
-  ): BuiltMessage | null {
-    const blockState = this.options.blockState;
-    if (
-      !blockState ||
-      (blockState.status === "none" && blockState.history.length === 0)
-    ) {
-      return null;
+  private async buildBlockMemoryPrompt(
+      identifier: string,
+      role: "system" | "user" | "assistant",
+    ): Promise<BuiltMessage | null> {
+      const blockState = this.options.blockState;
+      if (
+        !blockState ||
+        (blockState.status === "none" && blockState.history.length === 0)
+      ) {
+        return null;
+      }
+
+      // 收集封鎖期間用戶的獨白訊息
+      const monologueMessages = this.options.messages
+        .filter((m) => m.sentWhileBlocked && m.is_user)
+        .map((m) => ({ content: m.content, createdAt: m.createdAt }));
+
+      const content = buildBlockMemoryContent(blockState, monologueMessages);
+      if (!content) return null;
+
+      // 群聊場景注入額外封鎖提示
+      let finalContent = this.options.groupChatMode
+        ? content + "\n" + GROUP_CHAT_BLOCK_HINT
+        : content;
+
+      // 替換宏（{{user}}、{{char}} 等）
+      finalContent = await this.macroEngine.substitute(finalContent);
+
+      return {
+        role,
+        content: finalContent,
+        identifier,
+      };
     }
-
-    // 收集封鎖期間用戶的獨白訊息
-    const monologueMessages = this.options.messages
-      .filter((m) => m.sentWhileBlocked && m.is_user)
-      .map((m) => ({ content: m.content, createdAt: m.createdAt }));
-
-    const content = buildBlockMemoryContent(blockState, monologueMessages);
-    if (!content) return null;
-
-    // 群聊場景注入額外封鎖提示
-    const finalContent = this.options.groupChatMode
-      ? content + "\n" + GROUP_CHAT_BLOCK_HINT
-      : content;
-
-    return {
-      role,
-      content: finalContent,
-      identifier,
-    };
-  }
 }
 
 /**

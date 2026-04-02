@@ -819,6 +819,8 @@ const nicknameInputRef = ref<HTMLInputElement | null>(null);
 // 封鎖狀態
 const isCharBlocked = ref(false);
 const isBlockedByChar = ref(false);
+/** 當前封鎖的時間戳記（毫秒），用於判斷哪些訊息在封鎖之後 */
+const currentBlockedAt = ref<number>(0);
 const showFriendRequestInput = ref(false);
 const friendRequestMessage = ref("");
 
@@ -830,9 +832,11 @@ async function loadBlockState() {
     if (chat?.blockState) {
       isCharBlocked.value = chat.blockState.status === "user-blocked-char";
       isBlockedByChar.value = chat.blockState.status === "char-blocked-user";
+      currentBlockedAt.value = chat.blockState.blockedAt ?? 0;
     } else {
       isCharBlocked.value = false;
       isBlockedByChar.value = false;
+      currentBlockedAt.value = 0;
     }
   } catch {
     /* ignore */
@@ -850,22 +854,24 @@ function shouldShowBlockedIndicator(message: Message): boolean {
   // 歷史訊息：被角色封鎖期間用戶發的訊息（已持久化標記）
   if (message.sentWhileBlocked) return true;
 
-  // 取得封鎖時間，只對封鎖之後的訊息顯示驚嘆號
-  const blockState = currentChatData.value?.blockState;
-  const blockedAt = blockState?.blockedAt ?? 0;
+  // 使用獨立的 ref 取得封鎖時間（避免從 currentChatData 深層讀取導致 v-memo 無法追蹤）
+  const blockedAt = currentBlockedAt.value;
 
-  // 即時狀態：用戶封鎖角色時，封鎖之後的 AI 回覆顯示驚嘆號
+  // 沒有封鎖時間戳記時，不顯示驚嘆號
+  if (!blockedAt) return false;
+
+  // 即時狀態：用戶封鎖角色時，只有封鎖之後的 AI 回覆顯示驚嘆號
   if (
     isCharBlocked.value &&
     message.role === "ai" &&
-    message.timestamp >= blockedAt
+    message.timestamp > blockedAt
   )
     return true;
-  // 即時狀態：角色封鎖用戶時，封鎖之後的用戶訊息顯示驚嘆號
+  // 即時狀態：角色封鎖用戶時，只有封鎖之後的用戶訊息顯示驚嘆號
   if (
     isBlockedByChar.value &&
     message.role === "user" &&
-    message.timestamp >= blockedAt
+    message.timestamp > blockedAt
   )
     return true;
   return false;
@@ -878,6 +884,7 @@ async function toggleBlockCharacter() {
 
   if (isCharBlocked.value) {
     await blockService.unblockCharacter(currentChatId.value);
+    currentBlockedAt.value = 0;
     isCharBlocked.value = false;
     // 同步更新 currentChatData 的 blockState（防止 saveChatImmediate 覆蓋）
     const updatedChat = await db.get<Chat>(
@@ -890,7 +897,7 @@ async function toggleBlockCharacter() {
     // 插入系統提示訊息：已解除封鎖
     const unblockMsg: Message = {
       id: `msg_notify_${Date.now()}`,
-      role: "system",
+      role: "user",
       content: `已解除對 ${displayCharacterName.value} 的封鎖`,
       timestamp: Date.now(),
       isSystemNotification: true,
@@ -902,19 +909,21 @@ async function toggleBlockCharacter() {
     if (!confirm("確定要封鎖這個角色嗎？封鎖後將停止接收主動訊息和來電。"))
       return;
     await blockService.blockCharacter(currentChatId.value);
-    isCharBlocked.value = true;
-    // 同步更新 currentChatData 的 blockState（防止 saveChatImmediate 覆蓋）
+    // 先從 DB 讀取封鎖時間戳記，再設定 isCharBlocked（避免 v-memo 重渲染時 blockedAt 還是舊值）
     const updatedChat2 = await db.get<Chat>(
       DB_STORES.CHATS,
       currentChatId.value,
     );
+    currentBlockedAt.value = updatedChat2?.blockState?.blockedAt ?? Date.now();
+    isCharBlocked.value = true;
+    // 同步更新 currentChatData 的 blockState（防止 saveChatImmediate 覆蓋）
     if (updatedChat2 && currentChatData.value) {
       currentChatData.value.blockState = updatedChat2.blockState;
     }
     // 插入系統提示訊息：已封鎖
     const blockMsg: Message = {
       id: `msg_notify_${Date.now()}`,
-      role: "system",
+      role: "user",
       content: `你已將 ${displayCharacterName.value} 封鎖`,
       timestamp: Date.now(),
       isSystemNotification: true,
@@ -1056,6 +1065,7 @@ async function submitFriendRequest() {
     if (accept) {
       // 直接解封
       await blockService.handleCharacterUnblock(currentChatId.value);
+      currentBlockedAt.value = 0;
       isBlockedByChar.value = false;
       const updatedChat = await db.get<Chat>(
         DB_STORES.CHATS,
@@ -4087,6 +4097,8 @@ async function triggerAIResponse(options?: {
       // 傳入好感度配置和狀態
       affinityConfig: _affinityConfig.value ?? undefined,
       affinityState: _affinityState.value ?? undefined,
+      // 傳入封鎖狀態（讓 AI 知道自己被封鎖）
+      blockState: currentChatData.value?.blockState ?? undefined,
     });
 
     const promptResult = await builder.build();
@@ -4741,12 +4753,13 @@ async function triggerAIResponse(options?: {
                     currentChatId.value,
                     action.reason || "",
                   );
-                  // 即時更新 UI 封鎖狀態
-                  isBlockedByChar.value = true;
+                  // 先從 DB 讀取封鎖時間，再更新 UI 狀態（避免 v-memo 重渲染時 blockedAt 還是舊值）
                   const updatedChat = await db.get<Chat>(
                     DB_STORES.CHATS,
                     currentChatId.value,
                   );
+                  currentBlockedAt.value = updatedChat?.blockState?.blockedAt ?? Date.now();
+                  isBlockedByChar.value = true;
                   if (updatedChat && currentChatData.value) {
                     currentChatData.value.blockState = updatedChat.blockState;
                   }
@@ -4767,6 +4780,7 @@ async function triggerAIResponse(options?: {
                 } else if (action.action === "unblock-user") {
                   await blockSvc.handleCharacterUnblock(currentChatId.value);
                   // 即時更新 UI 封鎖狀態
+                  currentBlockedAt.value = 0;
                   isBlockedByChar.value = false;
                   const updatedChat = await db.get<Chat>(
                     DB_STORES.CHATS,
@@ -5549,12 +5563,13 @@ async function triggerAIResponse(options?: {
                       currentChatId.value,
                       action.reason || "",
                     );
-                    // 即時更新 UI 封鎖狀態
-                    isBlockedByChar.value = true;
+                    // 先從 DB 讀取封鎖時間，再更新 UI 狀態
                     const updatedChat = await db.get<Chat>(
                       DB_STORES.CHATS,
                       currentChatId.value,
                     );
+                    currentBlockedAt.value = updatedChat?.blockState?.blockedAt ?? Date.now();
+                    isBlockedByChar.value = true;
                     if (updatedChat && currentChatData.value) {
                       currentChatData.value.blockState = updatedChat.blockState;
                     }
@@ -5575,6 +5590,7 @@ async function triggerAIResponse(options?: {
                   } else if (action.action === "unblock-user") {
                     await blockSvc.handleCharacterUnblock(currentChatId.value);
                     // 即時更新 UI 封鎖狀態
+                    currentBlockedAt.value = 0;
                     isBlockedByChar.value = false;
                     const updatedChat = await db.get<Chat>(
                       DB_STORES.CHATS,
@@ -6482,11 +6498,12 @@ async function handleStreamingClose() {
                   currentChatId.value,
                   action.reason || "",
                 );
-                isBlockedByChar.value = true;
                 const updatedChat = await db.get<Chat>(
                   DB_STORES.CHATS,
                   currentChatId.value,
                 );
+                currentBlockedAt.value = updatedChat?.blockState?.blockedAt ?? Date.now();
+                isBlockedByChar.value = true;
                 if (updatedChat && currentChatData.value) {
                   currentChatData.value.blockState = updatedChat.blockState;
                 }
@@ -6505,6 +6522,7 @@ async function handleStreamingClose() {
                 }
               } else if (action.action === "unblock-user") {
                 await blockSvc.handleCharacterUnblock(currentChatId.value);
+                currentBlockedAt.value = 0;
                 isBlockedByChar.value = false;
                 const updatedChat = await db.get<Chat>(
                   DB_STORES.CHATS,
@@ -9709,6 +9727,7 @@ onUnmounted(() => {
             searchResults[currentSearchIndex] === message.id,
             isCharBlocked,
             isBlockedByChar,
+            currentBlockedAt,
             message.sentWhileBlocked,
           ]"
           class="message-memo-wrapper"
