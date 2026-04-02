@@ -149,22 +149,15 @@ export class ProactiveMessageService {
           continue;
         }
         if (this.shouldSendMessage(settings, now)) {
-          // 檢查封鎖狀態
+          // 檢查封鎖狀態：被封鎖的角色不發送主動訊息
           try {
             const { shouldBlockProactiveMessage } = await import("@/services/BlockService");
             const { db: blockDb, DB_STORES: blockStores } = await import("@/db/database");
             const charChats = (await blockDb.getAll<any>(blockStores.CHATS))
               .filter((c: any) => c.characterId === character.id && !c.isGroupChat);
-            // 角色封鎖用戶：完全攔截主動訊息
             const blocked = charChats.some((c: any) => shouldBlockProactiveMessage(c));
             if (blocked) {
-              console.log(`[ProactiveMessage] 角色 ${character.id} 處於封鎖狀態（char-blocked-user），跳過主動發訊`);
-              continue;
-            }
-            // 用戶封鎖角色：由 BlockService.checkBlockedCharacters 負責發訊，這裡跳過避免重複
-            const userBlocked = charChats.some((c: any) => c.blockState?.status === 'user-blocked-char');
-            if (userBlocked) {
-              console.log(`[ProactiveMessage] 角色 ${character.id} 被用戶封鎖，由 BlockService 負責發訊，跳過`);
+              console.log(`[ProactiveMessage] 角色 ${character.id} 處於封鎖狀態，跳過主動發訊`);
               continue;
             }
           } catch (err) {

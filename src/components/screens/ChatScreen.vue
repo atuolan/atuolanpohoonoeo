@@ -278,6 +278,8 @@ interface Message {
   // 封鎖系統相關
   sentWhileBlocked?: boolean;
   isSystemNotification?: boolean;
+  // 繼續生成的隱藏提示（不顯示在聊天畫面上）
+  isContinuePrompt?: boolean;
   // 角色封鎖用戶的系統通知訊息
   isCharBlockedNotification?: boolean;
   charBlockedReason?: string;
@@ -706,11 +708,14 @@ const visibleCount = ref(MESSAGE_PAGE_SIZE); // 當前顯示的訊息數量
 const isLoadingMore = ref(false); // 是否正在載入更多
 const loadMoreSentinelRef = ref<HTMLElement | null>(null); // 頂部哨兵元素
 
-// 可見訊息列表（只渲染最後 N 條）
+// 可見訊息列表（只渲染最後 N 條，並過濾掉隱藏的繼續提示）
 const visibleMessages = computed(() => {
   const total = messages.value.length;
-  if (total <= visibleCount.value) return messages.value;
-  return messages.value.slice(total - visibleCount.value);
+  const sliced =
+    total <= visibleCount.value
+      ? messages.value
+      : messages.value.slice(total - visibleCount.value);
+  return sliced.filter((m) => !m.isContinuePrompt);
 });
 
 // 是否還有更早的訊息可以載入
@@ -2568,6 +2573,16 @@ async function sendAndTriggerAI() {
   // 被角色封鎖期間，不觸發 AI 回覆（訊息已標記 sentWhileBlocked，角色看不到）
   if (isBlockedByChar.value) return;
 
+  // 空輸入 + 最後一條是 AI 訊息 → 視為「繼續」（讓 AI 接著說）
+  if (!text && lastAIMessage.value) {
+    const lastMsg = messages.value[messages.value.length - 1];
+    // 確認最後一條確實是 AI 訊息（排除中間有系統通知的情況）
+    if (lastMsg && lastMsg.role === "ai" && !lastMsg.isStreaming) {
+      await continueGeneration();
+      return;
+    }
+  }
+
   // 觸發 AI 回覆
   await triggerAIResponse();
 }
@@ -3470,12 +3485,13 @@ async function continueGeneration() {
   // 清理最後一條 AI 訊息的滑動選項（只保留當前選中的內容）
   clearSwipesOnLastAIMessage();
 
-  // 添加一個提示讓 AI 繼續
+  // 添加一個隱藏提示讓 AI 繼續（不顯示在聊天畫面上）
   const continuePrompt: Message = {
     id: `msg_continue_${Date.now()}`,
     role: "user",
     content: "[繼續]",
     timestamp: Date.now(),
+    isContinuePrompt: true,
   };
   messages.value.push(continuePrompt);
 
@@ -7451,6 +7467,12 @@ async function loadOrCreateChat(overrideChatId?: string) {
             // 封鎖系統相關
             sentWhileBlocked: (m as any).sentWhileBlocked,
             isSystemNotification: (m as any).isSystemNotification,
+            // 繼續生成的隱藏提示
+            isContinuePrompt: (m as any).isContinuePrompt,
+            // 通話通知相關
+            isCallNotification: (m as any).isCallNotification,
+            callNotificationType: (m as any).callNotificationType,
+            callReason: (m as any).callReason,
           };
         });
 
@@ -7965,6 +7987,15 @@ function convertToStorableMessage(m: any, charName: string): ChatMessage {
     // HTML 區塊
     isHtmlBlock: m.isHtmlBlock,
     htmlContent: m.htmlContent,
+    // 封鎖系統相關
+    sentWhileBlocked: m.sentWhileBlocked,
+    isSystemNotification: m.isSystemNotification,
+    // 繼續生成的隱藏提示
+    isContinuePrompt: m.isContinuePrompt,
+    // 通話通知相關
+    isCallNotification: m.isCallNotification,
+    callNotificationType: m.callNotificationType,
+    callReason: m.callReason,
   } as ChatMessage;
 }
 
@@ -9742,7 +9773,25 @@ onUnmounted(() => {
           </div>
 
           <!-- 系統通知（封鎖/解封等） -->
-          <div v-if="message.isSystemNotification" class="system-notification">
+          <div
+            v-if="message.isSystemNotification"
+            class="system-notification"
+            :class="{
+              'is-selected':
+                (isSelectingForDelete &&
+                  selectedMessageIds.includes(message.id)) ||
+                (isSelectingForScreenshot &&
+                  screenshotSelectedIds.includes(message.id)),
+            }"
+            @click="
+              isSelectingForScreenshot
+                ? toggleScreenshotSelection(message.id)
+                : isSelectingForDelete
+                  ? toggleMessageSelection(message.id)
+                  : undefined
+            "
+            @contextmenu.prevent="handleMessageDelete(message.id)"
+          >
             <span class="system-notification-text">{{ message.content }}</span>
           </div>
 
@@ -14731,6 +14780,12 @@ onUnmounted(() => {
   justify-content: center;
   padding: 8px 0;
   margin: 4px 0;
+  cursor: default;
+
+  &.is-selected {
+    background: rgba(var(--color-primary-rgb, 76, 175, 80), 0.15);
+    border-radius: 8px;
+  }
 }
 
 .system-notification-text {

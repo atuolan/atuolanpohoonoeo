@@ -384,6 +384,10 @@ export interface ChatMessage {
   // --- 封鎖系統相關 ---
   /** 是否為封鎖期間發送的訊息（用戶封鎖角色後仍可發送） */
   sentWhileBlocked?: boolean;
+  /** 是否為系統通知訊息（封鎖/解封提示等，不作為普通聊天訊息顯示） */
+  isSystemNotification?: boolean;
+  /** 是否為繼續生成的隱藏提示（不顯示在聊天畫面上） */
+  isContinuePrompt?: boolean;
   /** 是否為好友申請訊息 */
   isFriendRequest?: boolean;
   /** 好友申請結果 */
