@@ -13,6 +13,35 @@ import type { FriendRequest as FriendRequestType } from '@/types/block'
 export const BLOCK_POLL_INTERVAL_MS = 15 * 60 * 1000
 
 /**
+ * 清理 friendRequests 陣列中重複的 pending 記錄
+ * 同方向的 pending 只保留最新一筆（createdAt 最大），已結算的全部保留
+ */
+function sanitizeFriendRequests(requests: FriendRequestType[]): FriendRequestType[] {
+  const result: FriendRequestType[] = []
+  const latestPendingByDir = new Map<string, FriendRequestType>()
+
+  for (const req of requests) {
+    if (req.result === 'pending') {
+      const existing = latestPendingByDir.get(req.direction)
+      if (!existing || req.createdAt > existing.createdAt) {
+        latestPendingByDir.set(req.direction, req)
+      }
+    } else {
+      result.push(req)
+    }
+  }
+
+  // 把去重後的 pending 記錄按原始順序插回
+  for (const req of requests) {
+    if (req.result === 'pending' && latestPendingByDir.get(req.direction) === req) {
+      result.push(req)
+    }
+  }
+
+  return result
+}
+
+/**
  * 冷卻時間遞增策略
  * 第 0 次拒絕後：10 分鐘
  * 第 1 次拒絕後：30 分鐘
@@ -70,6 +99,8 @@ export function shouldHideFromPeekPhone(chat: Chat): boolean {
 class BlockService {
   private static instance: BlockService
   private pollTimer: ReturnType<typeof setInterval> | null = null
+  /** 防止 submitFriendRequest 並發導致重複 pending 記錄 */
+  private submitLocks = new Set<string>()
 
   static getInstance(): BlockService {
     if (!BlockService.instance) {
@@ -119,6 +150,17 @@ class BlockService {
 
     for (const chat of blockedChats) {
       const blockState = chat.blockState!
+
+      // 清理重複的 pending 記錄
+      const before = blockState.friendRequests.length
+      blockState.friendRequests = sanitizeFriendRequests(blockState.friendRequests)
+      if (blockState.friendRequests.length < before) {
+        // 有清理到垃圾記錄，順便寫回 DB
+        chat.blockState = blockState
+        chat.updatedAt = now
+        await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)))
+        console.log(`[BlockService] 已清理 ${chat.characterId} 的 ${before - blockState.friendRequests.length} 筆重複好友申請記錄`)
+      }
 
       // 跳過已有 pending 申請的
       if (blockState.friendRequests.some(r => r.result === 'pending')) continue
@@ -378,6 +420,18 @@ class BlockService {
 
   /** 提交好友申請（用戶向角色） */
   async submitFriendRequest(chatId: string, message: string): Promise<void> {
+    // 防止並發重複提交
+    if (this.submitLocks.has(chatId)) return
+    this.submitLocks.add(chatId)
+    try {
+      await this._submitFriendRequestInner(chatId, message)
+    } finally {
+      this.submitLocks.delete(chatId)
+    }
+  }
+
+  /** 好友申請提交內部實作 */
+  private async _submitFriendRequestInner(chatId: string, message: string): Promise<void> {
     const chat = await db.get<Chat>(DB_STORES.CHATS, chatId)
     if (!chat) throw new Error('Chat not found')
 
@@ -391,6 +445,9 @@ class BlockService {
     if (blockState.nextFriendRequestAt && now < blockState.nextFriendRequestAt) {
       throw new Error('Friend request on cooldown')
     }
+
+    // 清理重複的 pending 記錄（同方向只保留最新一筆）
+    blockState.friendRequests = sanitizeFriendRequests(blockState.friendRequests)
 
     // 若已有 pending 申請，直接更新訊息內容（允許用戶重新措辭）
     const existingPending = blockState.friendRequests.find(r => r.result === 'pending')

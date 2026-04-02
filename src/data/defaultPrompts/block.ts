@@ -56,8 +56,9 @@ export function buildBlockMemoryContent(
     }
   }
 
-  // 好友申請記錄（最近 5 筆，含拒絕原因和小心聲）
-  const recentRequests = blockState.friendRequests.slice(-5)
+  // 好友申請記錄（去重後最近 5 筆，同方向的 pending 只保留最新一筆）
+  const deduped = deduplicateFriendRequests(blockState.friendRequests)
+  const recentRequests = deduped.slice(-5)
   if (recentRequests.length > 0) {
     parts.push('[好友申請記錄]')
     for (const req of recentRequests) {
@@ -75,6 +76,27 @@ export function buildBlockMemoryContent(
   }
 
   return parts.join('\n')
+}
+
+/**
+ * 好友申請去重：同方向的 pending 只保留最新一筆，已結算的全部保留
+ * 避免因 race condition 累積大量重複 pending 記錄灌入 prompt
+ */
+function deduplicateFriendRequests(requests: FriendRequest[]): FriendRequest[] {
+  const result: FriendRequest[] = []
+  const seenPendingDir = new Set<string>()
+
+  // 從最新往回掃，同方向的 pending 只取第一筆（最新的）
+  for (let i = requests.length - 1; i >= 0; i--) {
+    const req = requests[i]
+    if (req.result === 'pending') {
+      const key = req.direction
+      if (seenPendingDir.has(key)) continue
+      seenPendingDir.add(key)
+    }
+    result.unshift(req)
+  }
+  return result
 }
 
 /** 格式化封鎖歷史條目 */
