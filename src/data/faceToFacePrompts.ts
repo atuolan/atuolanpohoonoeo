@@ -357,6 +357,26 @@ assistant：我是基拉祈與雪拉比...。我是許願星與創世神。
     isDeletable: true,
     adminOnly: true,
   },
+  // ===== 角色世界設定情境 =====
+  {
+    identifier: "f2fCharacterWorldContext",
+    name: "角色世界設定情境",
+    description: "角色所在地、時區、天氣等世界設定",
+    category: "context",
+    role: "system",
+    content: "",
+    system_prompt: true,
+    marker: true,
+    injection_position: INJECTION_RELATIVE,
+    injection_depth: 0,
+    injection_order: 9.5,
+    forbid_overrides: false,
+    extension: false,
+    injection_trigger: [],
+    isEditable: false,
+    isDeletable: true,
+    adminOnly: true,
+  },
   // ===== 節日資訊 =====
   {
     identifier: "f2fHolidayInfo",
@@ -1520,7 +1540,7 @@ Scene 2.5 — 思維融合 + 情緒釋放 + 噗浪決策
   // ===== 延續不早洩{{user}}說（自定義） =====
   {
     identifier: "f2f_custom_1770745893818",
-    name: "延續不早洩{{user}}說",
+    name: "延續不早洩{{user}}說(可自訂)",
     description: "",
     category: "custom",
     role: "user",
@@ -1536,12 +1556,12 @@ Scene 2.5 — 思維融合 + 情緒釋放 + 噗浪決策
     injection_trigger: [],
     isEditable: true,
     isDeletable: true,
-    adminOnly: true,
+    adminOnly: false,
   },
   // ===== 延續不早洩！收到！（自定義） =====
   {
     identifier: "f2f_custom_1770745923664",
-    name: "延續不早洩！收到！",
+    name: "延續不早洩！收到！(感覺節奏太慢關閉)",
     description: "",
     category: "custom",
     role: "assistant",
@@ -1560,7 +1580,7 @@ Scene 2.5 — 思維融合 + 情緒釋放 + 噗浪決策
     injection_trigger: [],
     isEditable: true,
     isDeletable: true,
-    adminOnly: true,
+    adminOnly: false,
   },
   // ===== 性愛細節（自定義） =====
   {

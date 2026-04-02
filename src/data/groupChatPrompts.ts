@@ -320,6 +320,26 @@ assistant：我是基拉祈與雪拉比...。我是許願星與創世神。
     isDeletable: true,
     adminOnly: true,
   },
+  // ===== 角色世界設定情境 =====
+  {
+    identifier: "gcCharacterWorldContext",
+    name: "角色世界設定情境",
+    description: "角色所在地、時區、天氣等世界設定",
+    category: "context",
+    role: "system",
+    content: "",
+    system_prompt: true,
+    marker: true,
+    injection_position: INJECTION_RELATIVE,
+    injection_depth: 0,
+    injection_order: 9.5,
+    forbid_overrides: false,
+    extension: false,
+    injection_trigger: [],
+    isEditable: false,
+    isDeletable: true,
+    adminOnly: true,
+  },
   // ===== 節日資訊 =====
   {
     identifier: "gcHolidayInfo",
