@@ -135,8 +135,13 @@ export const useQzoneStore = defineStore("qzone", () => {
     };
 
     posts.value.unshift(newPost);
-    await saveQzonePost(newPost);
-    console.log("[QZone] 新增動態:", newPost.id);
+    try {
+      await saveQzonePost(newPost);
+    } catch (e) {
+      console.error("[QZone] 儲存動態到 IndexedDB 失敗:", e, "動態 ID:", newPost.id);
+      // 即使儲存失敗，動態仍在記憶體中，不移除
+    }
+    console.log("[QZone] 新增動態:", newPost.id, "內容:", newPost.content?.substring(0, 50));
 
     // 如果是 AI 角色發文，發送通知
     if (post.authorType === "ai") {

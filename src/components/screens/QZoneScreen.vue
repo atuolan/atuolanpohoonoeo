@@ -31,10 +31,10 @@
             <span class="detail-qualifier">{{
               selectedPost.qualifier || "說"
             }}</span>
-            <span
+            <div
               class="detail-text"
               v-html="renderContentWithMentions(selectedPost.content || '')"
-            ></span>
+            ></div>
           </div>
           <!-- 媒體 -->
           <div v-if="selectedPost.images?.length" class="detail-media">
@@ -1001,10 +1001,10 @@
               <span class="plurk-qualifier-inline">{{
                 post.qualifier || selectedQualifier
               }}</span>
-              <span
+              <div
                 class="plurk-text-content"
                 v-html="renderContentWithMentions(post.content || '')"
-              ></span>
+              ></div>
 
               <!-- 轉噗原文 -->
               <div
@@ -2620,28 +2620,38 @@ function renderContentWithMentions(content: string): string {
     },
   );
 
+  function renderPolaroidImage(chineseDesc: string): string {
+    const safeDesc = chineseDesc.trim() || "圖片";
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const formattedDate = `${year}.${month}.${day}`;
+
+    return `<div class="qzone-polaroid-container">
+      <div class="qzone-polaroid-overlay"></div>
+      <div class="qzone-polaroid-frame"></div>
+      <div class="qzone-polaroid-content">${safeDesc}</div>
+      <div class="qzone-polaroid-date">${formattedDate}</div>
+    </div>`;
+  }
+
   // 處理 [IMAGE]...[/IMAGE] 標籤 - 轉換為拍立得樣式
   // 格式：[IMAGE]中文描述｜英文提示詞[/IMAGE]
   rendered = rendered.replace(
     /\[IMAGE\]([\s\S]*?)\[\/IMAGE\]/gi,
     (_, imageContent) => {
-      // 分離中文描述和英文提示詞（用 | 或 ｜ 分隔）
       const parts = imageContent.trim().split(/[|｜]/);
       const chineseDesc = parts[0]?.trim() || "圖片";
+      return renderPolaroidImage(chineseDesc);
+    },
+  );
 
-      // 生成當前日期
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, "0");
-      const day = String(now.getDate()).padStart(2, "0");
-      const formattedDate = `${year}.${month}.${day}`;
-
-      return `<div class="qzone-polaroid-container">
-      <div class="qzone-polaroid-overlay"></div>
-      <div class="qzone-polaroid-frame"></div>
-      <div class="qzone-polaroid-content">${chineseDesc}</div>
-      <div class="qzone-polaroid-date">${formattedDate}</div>
-    </div>`;
+  // 處理 <pic prompt="..."></pic> 標籤 - 與 [IMAGE] 使用相同拍立得樣式
+  rendered = rendered.replace(
+    /<pic(?:\s+prompt=["'][^"']*["'])?\s*>([\s\S]*?)<\/pic>/gi,
+    (_, imageDescription) => {
+      return renderPolaroidImage(imageDescription);
     },
   );
 
@@ -3428,6 +3438,8 @@ async function executeAIPost(characterId: string) {
 
   try {
     const rawContent = await generateAIContent(character, "post");
+    console.log("[QZone AI Post] rawContent:", rawContent, "length:", rawContent?.length);
+
     if (rawContent) {
       // 解析 AI 輸出
       const parsed = parseAIPostOutput(rawContent);
@@ -3435,6 +3447,10 @@ async function executeAIPost(characterId: string) {
       console.log("[QZone AI Post] 原始輸出:", rawContent);
       console.log("[QZone AI Post] 解析結果:", parsed);
       console.log("[QZone AI Post] 表情:", parsed.reactions);
+
+      // 如果解析後內容為空，使用原始輸出作為內容
+      const finalContent = parsed.content || rawContent.replace(/\[.*?\].*?\[\/.*?\]/gi, '').trim() || rawContent;
+      console.log("[QZone AI Post] 最終內容:", finalContent);
 
       // 獲取綁定了此角色的所有用戶 Persona ID
       const boundPersonaIds =
@@ -3444,12 +3460,12 @@ async function executeAIPost(characterId: string) {
       // 如果沒有任何用戶綁定此角色，則設為公開
       const isGroupPost = boundPersonaIds.length > 0;
 
-      await qzoneStore.addPost({
+      const newPost = await qzoneStore.addPost({
         authorId: character.id,
         username: character.nickname || character.data?.name,
         avatar: character.avatar || getDefaultAvatar(character.id),
         type: "shuoshuo",
-        content: parsed.content,
+        content: finalContent,
         qualifier:
           parsed.qualifier ||
           qualifiers[Math.floor(Math.random() * qualifiers.length)],
@@ -3466,6 +3482,9 @@ async function executeAIPost(characterId: string) {
           ? getRelatedCharacterIds(boundPersonaIds)
           : undefined,
       });
+      console.log("[QZone AI Post] 發文成功:", newPost.id, "目前動態數:", qzoneStore.posts.length);
+    } else {
+      console.warn("[QZone AI Post] generateAIContent 返回空內容，未發文");
     }
   } catch (error) {
     console.error("AI 發布動態失敗:", error);
