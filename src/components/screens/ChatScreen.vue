@@ -12919,6 +12919,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   padding: 12px 16px;
+  padding-top: calc(12px + var(--safe-top));
   padding-left: calc(16px + var(--safe-left));
   padding-right: calc(16px + var(--safe-right));
   background: var(--color-surface);

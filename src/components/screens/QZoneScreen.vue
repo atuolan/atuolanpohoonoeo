@@ -4670,6 +4670,7 @@ watch(
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
+  padding-top: max(12px, var(--safe-top, 0px));
   background: #fff;
   border-bottom: 1px solid #e0e0e0;
   flex-shrink: 0;

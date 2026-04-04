@@ -297,6 +297,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
+  padding-top: max(12px, var(--safe-top, 0px));
 
   .header-btn {
     background: var(--color-surface, rgba(255,255,255,0.6));

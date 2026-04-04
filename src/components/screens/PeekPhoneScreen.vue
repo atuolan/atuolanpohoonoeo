@@ -1250,6 +1250,7 @@ $blob-bg: #d4f2cc;
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
+  padding-top: max(12px, var(--safe-top, 0px));
   flex-shrink: 0;
   position: relative;
   z-index: 2;

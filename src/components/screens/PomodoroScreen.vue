@@ -219,6 +219,7 @@ function getCharName(charId: string | null): string {
   display: flex;
   align-items: center;
   padding: 12px 16px;
+  padding-top: max(12px, var(--safe-top, 0px));
   gap: 12px;
   border-bottom: 1px solid var(--color-border, #f0f0f0);
 

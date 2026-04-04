@@ -2377,6 +2377,7 @@ watch(selectedCharacterId, (charId) => {
   display: flex;
   align-items: center;
   padding: 12px 16px;
+  padding-top: calc(12px + var(--safe-top));
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   gap: 12px;
