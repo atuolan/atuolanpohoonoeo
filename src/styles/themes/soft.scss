@@ -12,7 +12,11 @@
   overflow: hidden;
   background: var(--color-background);
   color: var(--color-text);
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  animation: var(--modal-enter-anim, modal-pop-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1));
   // padding-top 已由 .app-container 統一處理（瀏海/動態島）
 
   // 聊天畫面使用 ::before 偽元素作為桌布層，需要透明背景
@@ -511,7 +515,7 @@ textarea.soft-input,
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  animation: slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: var(--modal-enter-anim, modal-pop-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1));
 
   .modal-header {
     display: flex;
@@ -646,11 +650,64 @@ textarea.soft-input,
 @keyframes slideUp {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(40px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(100px);
+  }
+}
+
+@keyframes scaleOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes modal-pop-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(200%) rotate(-90deg);
   }
 }
 
@@ -662,6 +719,79 @@ textarea.soft-input,
   to {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+@keyframes slideFromLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-60px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes flipIn {
+  from {
+    opacity: 0;
+    transform: perspective(600px) rotateX(-30deg) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(600px) rotateX(0deg) scale(1);
+  }
+}
+
+@keyframes bounceDrop {
+  0% {
+    opacity: 0;
+    transform: translateY(-60px) scale(0.9);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(10px) scale(1.02);
+  }
+  80% {
+    transform: translateY(-5px) scale(0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes flyOutLeft {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-100%) rotate(-5deg);
+  }
+}
+
+@keyframes flipOut {
+  from {
+    opacity: 1;
+    transform: perspective(600px) rotateX(0deg) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: perspective(600px) rotateX(30deg) scale(0.95);
+  }
+}
+
+@keyframes shrinkOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.5);
   }
 }
 
@@ -677,8 +807,27 @@ textarea.soft-input,
 
 // ===== 工具類 =====
 .fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
+.fade-leave-active,
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 0.5s ease;
+}
+
+.fade-enter-active,
+.page-enter-active {
+  z-index: 2;
+}
+
+.fade-leave-active,
+.page-leave-active {
+  z-index: 1;
+  pointer-events: none;
+}
+
+.fade-leave-active .soft-modal,
+.fade-leave-active .screen-container,
+.page-leave-active .screen-container {
+  animation: var(--modal-leave-anim, modal-pop-out 500ms ease-in forwards);
 }
 
 .fade-enter-from,

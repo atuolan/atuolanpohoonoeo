@@ -14,6 +14,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@primevue/themes": "^4.5.4",
     "@types/jszip": "^3.4.0",
     "dayjs": "^1.11.19",
     "ejs": "^5.0.1",
@@ -28,6 +29,7 @@
     "opencc-js": "^1.0.5",
     "pdfjs-dist": "^5.4.624",
     "pinia": "^2.1.7",
+    "primevue": "^4.5.4",
     "vue": "^3.4.21",
     "vue-router": "^4.3.0",
     "zod": "^4.3.6"

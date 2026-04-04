@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useLanguage } from "@/composables/useLanguage";
 import { useSettingsStore } from "@/stores/settings";
-import type { WallpaperStyle } from "@/stores/theme";
+import type { GlobalFontOverride, WallpaperStyle } from "@/stores/theme";
 import { useThemeStore } from "@/stores/theme";
 import { compressImage, compressionPresets } from "@/utils/imageCompression";
 import { computed, ref, watch } from "vue";
@@ -24,7 +24,7 @@ const settingsStore = useSettingsStore();
 const { currentLanguage, isSimplifiedChinese, t } = useLanguage();
 
 // 當前分頁
-const activeTab = ref<"colors" | "wallpaper" | "font" | "customFont" | "css">(
+const activeTab = ref<"colors" | "wallpaper" | "font" | "customFont" | "animation" | "css">(
   "colors",
 );
 
@@ -86,6 +86,27 @@ const tempCustomCSS = ref<string>(themeStore.customCSS);
 
 // 臨時全局字體設定
 const tempGlobalFont = ref<GlobalFontOverride>({ ...themeStore.globalFont });
+
+// 彈窗動畫選項
+const enterAnimations = [
+  { id: "modal-pop-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1)", name: "彈跳放大 (Pop In)" },
+  { id: "slideUp 300ms cubic-bezier(0.2, 0.8, 0.2, 1)", name: "平滑向上 (Slide Up)" },
+  { id: "scaleIn 300ms cubic-bezier(0.2, 0.8, 0.2, 1)", name: "縮放進入 (Scale In)" },
+  { id: "fadeIn 300ms ease-out", name: "淡入 (Fade In)" },
+  { id: "slideFromLeft 300ms cubic-bezier(0.2, 0.8, 0.2, 1)", name: "從左滑入 (Slide From Left)" },
+  { id: "flipIn 350ms cubic-bezier(0.2, 0.8, 0.2, 1)", name: "翻轉進入 (Flip In)" },
+  { id: "bounceDrop 500ms cubic-bezier(0.2, 0.8, 0.2, 1)", name: "彈跳落下 (Bounce Drop)" },
+];
+
+const leaveAnimations = [
+  { id: "modal-pop-out 500ms ease-in forwards", name: "掉落旋轉 (Drop & Rotate)" },
+  { id: "slideDown 300ms ease-in forwards", name: "平滑向下 (Slide Down)" },
+  { id: "scaleOut 300ms ease-in forwards", name: "縮放退出 (Scale Out)" },
+  { id: "fadeOut 300ms ease-in forwards", name: "淡出 (Fade Out)" },
+  { id: "flyOutLeft 300ms ease-in forwards", name: "向左飛出 (Fly Out Left)" },
+  { id: "flipOut 350ms ease-in forwards", name: "翻轉退出 (Flip Out)" },
+  { id: "shrinkOut 300ms cubic-bezier(0.4, 0, 1, 1) forwards", name: "縮小消失 (Shrink Out)" },
+];
 
 // 字體來源選項
 const fontSourceOptions = [
@@ -189,6 +210,51 @@ function setWallpaperOpacity(opacity: number) {
 function setWallpaperFit(fit: "cover" | "contain" | "fill" | "repeat") {
   tempWallpaperStyle.value.fit = fit;
   themeStore.updateWallpaperStyle({ fit });
+}
+
+const modalRef = ref<HTMLElement | null>(null);
+
+// 處理動畫變更
+function setEnterAnimation(anim: string) {
+  themeStore.updateModalAnimation({ enter: anim });
+  // 預覽進場動畫
+  if (modalRef.value) {
+    modalRef.value.style.animation = "none";
+    void modalRef.value.offsetHeight; // 觸發重繪
+    modalRef.value.style.animation = anim;
+    
+    // 動畫結束後清除 inline style，恢復使用 CSS class 的設定
+    setTimeout(() => {
+      if (modalRef.value) {
+        modalRef.value.style.animation = "";
+      }
+    }, 500);
+  }
+}
+
+function setLeaveAnimation(anim: string) {
+  themeStore.updateModalAnimation({ leave: anim });
+  // 預覽退場動畫
+  if (modalRef.value) {
+    modalRef.value.style.animation = "none";
+    void modalRef.value.offsetHeight; // 觸發重繪
+    modalRef.value.style.animation = anim;
+    
+    // 退場動畫結束後，自動播放進場動畫恢復原狀
+    setTimeout(() => {
+      if (modalRef.value) {
+        modalRef.value.style.animation = "none";
+        void modalRef.value.offsetHeight;
+        modalRef.value.style.animation = themeStore.modalAnimation.enter || "modal-pop-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1)";
+        
+        setTimeout(() => {
+          if (modalRef.value) {
+            modalRef.value.style.animation = "";
+          }
+        }, 500);
+      }
+    }, 500);
+  }
 }
 
 // 處理自訂 CSS 變更
@@ -334,7 +400,7 @@ watch(
   <Teleport to="body">
     <Transition name="fade">
       <div v-if="visible" class="soft-modal-overlay" @click.self="handleClose">
-        <div class="soft-modal global-theme-modal">
+        <div ref="modalRef" class="soft-modal global-theme-modal">
           <!-- 標題 -->
           <div class="modal-header">
             <h2 class="modal-title">全局美化配置</h2>
@@ -401,6 +467,16 @@ watch(
                   />
                 </svg>
                 自訂字體
+              </button>
+              <button
+                class="tab-item"
+                :class="{ active: activeTab === 'animation' }"
+                @click="activeTab = 'animation'"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
+                </svg>
+                動畫
               </button>
               <button
                 class="tab-item"
@@ -851,6 +927,50 @@ watch(
                   }}</span>
                 </div>
                 <div class="font-active-badge">啟用中</div>
+              </div>
+            </div>
+
+            <!-- 動畫設定 -->
+            <div v-if="activeTab === 'animation'" class="settings-section">
+              <h3 class="section-title">視窗進場動畫</h3>
+              <div class="fit-options">
+                <button
+                  v-for="anim in enterAnimations"
+                  :key="anim.id"
+                  :class="[
+                    'fit-btn',
+                    {
+                      active: themeStore.modalAnimation.enter === anim.id,
+                    },
+                  ]"
+                  @click="setEnterAnimation(anim.id)"
+                >
+                  {{ anim.name }}
+                </button>
+              </div>
+
+              <h3 class="section-title">視窗退場動畫</h3>
+              <div class="fit-options">
+                <button
+                  v-for="anim in leaveAnimations"
+                  :key="anim.id"
+                  :class="[
+                    'fit-btn',
+                    {
+                      active: themeStore.modalAnimation.leave === anim.id,
+                    },
+                  ]"
+                  @click="setLeaveAnimation(anim.id)"
+                >
+                  {{ anim.name }}
+                </button>
+              </div>
+              
+              <div class="css-hint" style="margin-top: 16px;">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                </svg>
+                <span>點擊選項後，關閉並重新打開此視窗即可預覽效果。</span>
               </div>
             </div>
 
@@ -1676,14 +1796,4 @@ body {
   flex-direction: column;
 }
 
-// 動畫
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
 </style>

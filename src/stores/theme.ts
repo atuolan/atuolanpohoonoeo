@@ -146,6 +146,11 @@ export interface WallpaperStyle {
   fit?: "cover" | "contain" | "fill" | "repeat"; // 圖片顯示模式
 }
 
+export interface ModalAnimation {
+  enter: string;
+  leave: string;
+}
+
 // ===== 預設主題配色 =====
 // 粉紅馬卡龍配色
 const softPinkTheme: ThemeColors = {
@@ -314,6 +319,12 @@ const defaultWallpaperStyle: WallpaperStyle = {
   overlay: "transparent",
 };
 
+// ===== 預設彈窗動畫 =====
+const defaultModalAnimation: ModalAnimation = {
+  enter: "modal-pop-in 500ms ease-out",
+  leave: "modal-pop-out 500ms ease-in forwards",
+};
+
 // 夜晚模式配色
 const nightModeColors: ThemeColors = {
   primary: "#7DD3A8",
@@ -354,6 +365,9 @@ export const useThemeStore = defineStore("theme", () => {
 
   // 桌布樣式
   const wallpaperStyle = ref<WallpaperStyle>({ ...defaultWallpaperStyle });
+
+  // 彈窗動畫
+  const modalAnimation = ref<ModalAnimation>({ ...defaultModalAnimation });
 
   // 自訂 CSS
   const customCSS = ref<string>("");
@@ -545,6 +559,10 @@ export const useThemeStore = defineStore("theme", () => {
             ? "100% 100%"
             : w.fit || "cover",
       "--wallpaper-repeat": w.fit === "repeat" ? "repeat" : "no-repeat",
+
+      // 彈窗動畫
+      "--modal-enter-anim": modalAnimation.value.enter,
+      "--modal-leave-anim": modalAnimation.value.leave,
 
       // 安全區域
       "--safe-top": "env(safe-area-inset-top, 0px)",
@@ -921,6 +939,13 @@ export const useThemeStore = defineStore("theme", () => {
     saveToStorage();
   }
 
+  // 更新彈窗動畫
+  function updateModalAnimation(updates: Partial<ModalAnimation>) {
+    modalAnimation.value = { ...modalAnimation.value, ...updates };
+    applyTheme();
+    saveToStorage();
+  }
+
   // 重置為預設
   function resetToDefault() {
     currentPreset.value = "soft-pink";
@@ -928,6 +953,7 @@ export const useThemeStore = defineStore("theme", () => {
     avatarStyle.value = { ...defaultAvatarStyle };
     bubbleStyle.value = { ...defaultBubbleStyle };
     wallpaperStyle.value = { ...defaultWallpaperStyle };
+    modalAnimation.value = { ...defaultModalAnimation };
     customCSS.value = "";
     globalFont.value = { ...defaultGlobalFont };
     applyTheme();
@@ -991,6 +1017,7 @@ export const useThemeStore = defineStore("theme", () => {
           avatarStyle: avatarStyle.value,
           bubbleStyle: bubbleStyle.value,
           wallpaperStyle: wallpaperSnapshot,
+          modalAnimation: modalAnimation.value,
           customCSS: customCSS.value,
           globalFont: globalFont.value,
         }),
@@ -1049,6 +1076,7 @@ export const useThemeStore = defineStore("theme", () => {
         }
         wallpaperStyle.value = storedWallpaper;
 
+        modalAnimation.value = { ...defaultModalAnimation, ...data.modalAnimation };
         customCSS.value = data.customCSS || "";
         globalFont.value = { ...defaultGlobalFont, ...data.globalFont };
       }
@@ -1067,6 +1095,7 @@ export const useThemeStore = defineStore("theme", () => {
     avatarStyle,
     bubbleStyle,
     wallpaperStyle,
+    modalAnimation,
     customCSS,
     globalFont,
     colors,
@@ -1082,6 +1111,7 @@ export const useThemeStore = defineStore("theme", () => {
     updateAvatarStyle,
     updateBubbleStyle,
     updateWallpaperStyle,
+    updateModalAnimation,
     updateCustomCSS,
     updateGlobalFont,
     applyGlobalFont,

@@ -1735,19 +1735,20 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
 
 <template>
   <div class="app-container" :class="{ 'is-dark': isDark }" :style="themeStyle">
-    <!-- 驗證頁面 -->
-    <AuthScreen v-if="!authStore.isAuthenticated" />
+    <Transition name="page">
+      <!-- 驗證頁面 -->
+      <AuthScreen v-if="!authStore.isAuthenticated" />
 
-    <!-- 主頁：橫向白板畫布 -->
-    <template v-else-if="currentPage === 'home'">
-      <WhiteboardCanvas @navigate="handleNavigate" />
-      <NeonWheelDock
-        @navigate="handleNavigate"
-        @open-global-theme="showGlobalTheme = true"
-      />
-    </template>
+      <!-- 主頁：橫向白板畫布 -->
+      <div v-else-if="currentPage === 'home'" class="home-screen-wrapper screen-container">
+        <WhiteboardCanvas @navigate="handleNavigate" />
+        <NeonWheelDock
+          @navigate="handleNavigate"
+          @open-global-theme="showGlobalTheme = true"
+        />
+      </div>
 
-    <!-- 角色列表頁 -->
+      <!-- 角色列表頁 -->
     <CharacterListScreen
       v-else-if="currentPage === 'character'"
       @back="goBackFromQuickNav"
@@ -1949,6 +1950,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       @back="goBackFromTheater"
       @post-opened="pendingTheaterPostId = undefined"
     />
+    </Transition>
 
     <!-- 主題設定彈窗 -->
     <ThemeSettingsModal
@@ -2407,6 +2409,15 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
 
   // 統一頂部安全區域（瀏海/動態島）— 所有子頁面不需再各自處理
   padding-top: var(--safe-top, 0px);
+}
+
+.home-screen-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 .resume-call-overlay {
