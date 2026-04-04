@@ -818,15 +818,22 @@ textarea.soft-input,
   z-index: 2;
 }
 
-.fade-leave-active,
-.page-leave-active {
+.fade-leave-active {
   z-index: 1;
   pointer-events: none;
 }
 
+.page-leave-active {
+  z-index: 1;
+  pointer-events: none;
+  /* 退場由子元素的 animation 控制，關掉 wrapper 的 opacity transition */
+  transition: none !important;
+  opacity: 1 !important;
+}
+
 .fade-leave-active .soft-modal,
 .fade-leave-active .screen-container,
-.page-leave-active .screen-container {
+.page-leave-active > * {
   animation: var(--modal-leave-anim, modal-pop-out 500ms ease-in forwards);
 }
 
