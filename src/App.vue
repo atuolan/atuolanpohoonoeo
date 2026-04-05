@@ -2407,8 +2407,8 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     background-color 1s ease,
     color 0.5s ease;
 
-  // 統一頂部安全區域（瀏海/動態島）— 所有子頁面不需再各自處理
-  padding-top: var(--safe-top, 0px);
+  // 移除統一頂部安全區域，改由各子頁面的 header 自行處理，避免背景色無法延伸至頂部
+  // padding-top: var(--safe-top, 0px);
 }
 
 .home-screen-wrapper {
