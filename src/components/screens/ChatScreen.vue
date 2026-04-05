@@ -335,6 +335,8 @@ const emit = defineEmits<{
     e: "navigate",
     page: "character" | "worldbook" | "settings" | "shop" | "media-log",
   ): void;
+  (e: "editCharacter", id: string): void;
+  (e: "editLorebook", id: string): void;
   (e: "appearanceApplied"): void;
   (e: "pendingMessageConsumed"): void;
   (e: "phoneCallStarted"): void;
@@ -377,10 +379,50 @@ function applyUserInputRegex(content: string): string {
 }
 
 // 快捷導航
+const showCharacterNavModal = ref(false);
+const showWorldbookNavModal = ref(false);
+
 function navigateTo(page: "character" | "worldbook" | "settings") {
   showMoreMenu.value = false;
   showRail.value = false;
+  
+  if (page === "character") {
+    if (!isGroupChat.value && currentCharacter.value) {
+      showCharacterNavModal.value = true;
+    } else {
+      emit("navigate", "character");
+    }
+    return;
+  }
+  
+  if (page === "worldbook") {
+    if (!isGroupChat.value && currentCharacter.value && currentCharacter.value.lorebookIds && currentCharacter.value.lorebookIds.length > 0) {
+      showWorldbookNavModal.value = true;
+    } else {
+      emit("navigate", "worldbook");
+    }
+    return;
+  }
+
   emit("navigate", page);
+}
+
+function handleCharacterNavChoice(choice: 'edit' | 'list') {
+  showCharacterNavModal.value = false;
+  if (choice === 'edit' && currentCharacter.value) {
+    emit("editCharacter", currentCharacter.value.id);
+  } else {
+    emit("navigate", "character");
+  }
+}
+
+function handleWorldbookNavChoice(choice: 'edit' | 'list') {
+  showWorldbookNavModal.value = false;
+  if (choice === 'edit' && currentCharacter.value && currentCharacter.value.lorebookIds && currentCharacter.value.lorebookIds.length > 0) {
+    emit("editLorebook", currentCharacter.value.lorebookIds[0]);
+  } else {
+    emit("navigate", "worldbook");
+  }
 }
 
 // Stores
@@ -4160,23 +4202,8 @@ async function triggerAIResponse(options?: {
 
     const client = new OpenAICompatibleClient(chatTaskConfig.api);
 
-    // 🎉 如果是節日觸發，附加節日提示詞到 API 訊息末尾（不存入聊天記錄）
-    if (options?.holidayTriggerPrompt) {
-      apiMessages.push({
-        role: "user",
-        content: options.holidayTriggerPrompt,
-      });
-    }
-
-    // 📞 如果是來電後反應，附加 postCallPrompt 到 API 訊息末尾（不存入聊天記錄）
-    if (options?.postCallPrompt) {
-      apiMessages.push({
-        role: "user",
-        content: options.postCallPrompt,
-      });
-    }
-
-    // 🎤 如果是語音訊息，替換最後一條用戶訊息為帶音頻的 API 訊息
+    // 1. 🎤 如果是語音訊息，替換最後一條用戶訊息為帶音頻的 API 訊息
+    // 必須在附加其他 user 提示詞之前執行，以免替換錯訊息
     if (options?.audioApiMessage) {
       // 找到最後一條 user 訊息並替換為帶音頻的版本
       for (let i = apiMessages.length - 1; i >= 0; i--) {
@@ -4187,12 +4214,37 @@ async function triggerAIResponse(options?: {
       }
     }
 
-    // 🎭 確保 API 最後一條消息是 user role（部分 API 要求）
-    // 當小劇場指令是最後一條時，補一條隱藏催促消息
+    // 2. 收集所有需要附加的 user 提示詞
+    const appendedUserPrompts: string[] = [];
+    
+    // 🎉 如果是節日觸發，附加節日提示詞（不存入聊天記錄）
+    if (options?.holidayTriggerPrompt) {
+      appendedUserPrompts.push(options.holidayTriggerPrompt);
+    }
+
+    // 📞 如果是來電後反應，附加 postCallPrompt（不存入聊天記錄）
+    if (options?.postCallPrompt) {
+      appendedUserPrompts.push(options.postCallPrompt);
+    }
+
+    // 🎭 當小劇場指令是最後一條時，補一條隱藏催促消息
     if (options?.theaterNudge) {
-      apiMessages.push({
+      appendedUserPrompts.push("[請根據上述場景指令，以角色身份繼續扮演]");
+    }
+
+    if (appendedUserPrompts.length > 0) {
+      const combinedPrompt = appendedUserPrompts.join("\n\n");
+      
+      // 尋找結尾的 assistant prefill 訊息（例如 <think>）
+      // 我們希望附加的 user 訊息放在最後一個 user 訊息之後，且在 prefill 之前
+      let insertIndex = apiMessages.length;
+      while (insertIndex > 0 && apiMessages[insertIndex - 1].role === "assistant") {
+        insertIndex--;
+      }
+      
+      apiMessages.splice(insertIndex, 0, {
         role: "user",
-        content: "[請根據上述場景指令，以角色身份繼續扮演]",
+        content: combinedPrompt,
       });
     }
 
@@ -11228,6 +11280,48 @@ onUnmounted(() => {
         @close="showGameScorePicker = false"
         @select="handleGameScoreSelect"
       />
+
+      <!-- 快捷導航：角色卡選擇彈窗 -->
+      <Transition name="fade">
+        <div
+          v-if="showCharacterNavModal"
+          class="feature-modal-overlay"
+          @click="showCharacterNavModal = false"
+        >
+          <div class="feature-modal" @click.stop>
+            <h3 class="feature-modal-title">選擇前往頁面</h3>
+            <div class="feature-modal-actions" style="display: flex; flex-direction: column; gap: 12px; margin-top: 16px;">
+              <button class="modal-btn confirm" style="width: 100%;" @click="handleCharacterNavChoice('edit')">
+                編輯當前角色卡
+              </button>
+              <button class="modal-btn cancel" style="width: 100%;" @click="handleCharacterNavChoice('list')">
+                前往角色卡列表
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- 快捷導航：世界書選擇彈窗 -->
+      <Transition name="fade">
+        <div
+          v-if="showWorldbookNavModal"
+          class="feature-modal-overlay"
+          @click="showWorldbookNavModal = false"
+        >
+          <div class="feature-modal" @click.stop>
+            <h3 class="feature-modal-title">選擇前往頁面</h3>
+            <div class="feature-modal-actions" style="display: flex; flex-direction: column; gap: 12px; margin-top: 16px;">
+              <button class="modal-btn confirm" style="width: 100%;" @click="handleWorldbookNavChoice('edit')">
+                編輯綁定的世界書
+              </button>
+              <button class="modal-btn cancel" style="width: 100%;" @click="handleWorldbookNavChoice('list')">
+                前往世界書列表
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
 
       <!-- 跳轉魔法模態框 -->
       <Transition name="fade">

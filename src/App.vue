@@ -907,6 +907,7 @@ function handleNavigate(page: string) {
 
 // 返回主頁
 function goHome() {
+  navigationHistory.value = [];
   currentPage.value = "home";
   selectedCharacterId.value = null;
   selectedLorebookId.value = null;
@@ -941,6 +942,7 @@ function handlePomodoroCertForward(summary: string) {
 
 // 返回角色列表
 function goToCharacterList() {
+  navigationHistory.value = [];
   currentPage.value = "character";
   selectedCharacterId.value = null;
   isCreatingNew.value = false;
@@ -948,6 +950,7 @@ function goToCharacterList() {
 
 // 返回世界書列表
 function goToLorebookList() {
+  navigationHistory.value = [];
   currentPage.value = "worldbook";
   selectedLorebookId.value = null;
   isCreatingNew.value = false;
@@ -955,6 +958,7 @@ function goToLorebookList() {
 
 // 打開角色編輯頁
 function openCharacterEdit(id: string) {
+  navigationHistory.value.push(currentPage.value);
   selectedCharacterId.value = id;
   isCreatingNew.value = false;
   currentPage.value = "character-edit";
@@ -962,13 +966,24 @@ function openCharacterEdit(id: string) {
 
 // 創建新角色
 function createNewCharacter() {
+  navigationHistory.value.push(currentPage.value);
   selectedCharacterId.value = null;
   isCreatingNew.value = true;
   currentPage.value = "character-edit";
 }
 
+// 從角色編輯頁返回
+function goBackFromCharacterEdit() {
+  if (navigationHistory.value.length > 0) {
+    currentPage.value = navigationHistory.value.pop()!;
+  } else {
+    goToCharacterList();
+  }
+}
+
 // 打開世界書編輯頁
 function openLorebookEdit(id: string) {
+  navigationHistory.value.push(currentPage.value);
   selectedLorebookId.value = id;
   isCreatingNew.value = false;
   currentPage.value = "worldbook-edit";
@@ -976,13 +991,24 @@ function openLorebookEdit(id: string) {
 
 // 創建新世界書
 function createNewLorebook() {
+  navigationHistory.value.push(currentPage.value);
   selectedLorebookId.value = null;
   isCreatingNew.value = true;
   currentPage.value = "worldbook-edit";
 }
 
+// 從世界書編輯頁返回
+function goBackFromLorebookEdit() {
+  if (navigationHistory.value.length > 0) {
+    currentPage.value = navigationHistory.value.pop()!;
+  } else {
+    goToLorebookList();
+  }
+}
+
 // 返回聊天列表
 function goToChatList() {
+  navigationHistory.value = [];
   currentPage.value = "chat-list";
   currentChatId.value = null;
   currentChatCharacterId.value = null;
@@ -1765,7 +1791,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       v-else-if="currentPage === 'character-edit'"
       :character-id="selectedCharacterId || undefined"
       :is-new="isCreatingNew"
-      @back="goToCharacterList"
+      @back="goBackFromCharacterEdit"
       @save="handleCharacterSave"
       @delete="handleCharacterDelete"
       @open-lorebook="openLorebookEdit"
@@ -1786,7 +1812,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       v-else-if="currentPage === 'worldbook-edit'"
       :lorebook-id="selectedLorebookId || undefined"
       :is-new="isCreatingNew"
-      @back="goToLorebookList"
+      @back="goBackFromLorebookEdit"
       @save="handleLorebookSave"
       @delete="handleLorebookDelete"
     />
@@ -1806,6 +1832,8 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       @back="goToChatList"
       @settings="openThemeSettings"
       @navigate="handleChatNavigate"
+      @edit-character="openCharacterEdit"
+      @edit-lorebook="openLorebookEdit"
       :character-id="currentChatCharacterId || undefined"
       :character-name="chatCharacterName"
       :character-avatar="chatCharacterAvatar"
