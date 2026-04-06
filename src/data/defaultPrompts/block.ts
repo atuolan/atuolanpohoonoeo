@@ -24,7 +24,7 @@ export function buildBlockMemoryContent(
   blockState: BlockState | undefined,
   monologueMessages: Array<{ content: string; createdAt: number }>,
 ): string | null {
-  if (!blockState || (blockState.status === 'none' && blockState.history.length === 0)) {
+  if (!blockState || blockState.status === 'none') {
     return null
   }
 

@@ -3108,10 +3108,7 @@ speed：0.5~2.0，正常時省略
       role: "system" | "user" | "assistant",
     ): Promise<BuiltMessage | null> {
       const blockState = this.options.blockState;
-      if (
-        !blockState ||
-        (blockState.status === "none" && blockState.history.length === 0)
-      ) {
+      if (!blockState || blockState.status === "none") {
         return null;
       }
 

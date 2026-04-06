@@ -2153,15 +2153,8 @@ const showTextVoiceTranscript = ref(true);
         </div>
         <div class="char-blocked-notification-line"></div>
       </div>
-      <!-- 普通系統消息 -->
-      <div v-else class="system-message">
-        <span>{{ content }}</span>
-      </div>
-    </template>
-
-    <!-- 群聊撤回通知（系統訊息樣式） -->
-    <template v-else-if="isRecall">
-      <div class="system-message recall-message">
+      <!-- 群聊撤回通知（系統訊息樣式） -->
+      <div v-else-if="isRecall" class="system-message recall-message">
         <svg viewBox="0 0 24 24" fill="currentColor" class="recall-icon">
           <path
             d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"
@@ -2171,11 +2164,9 @@ const showTextVoiceTranscript = ref(true);
           >{{ senderCharacterName || groupActionActor }} 撤回了一條訊息</span
         >
       </div>
-    </template>
 
-    <!-- 群聊管理動作（居中系統訊息） -->
-    <template v-else-if="isGroupAction">
-      <div class="system-message group-action-message">
+      <!-- 群聊管理動作（居中系統訊息） -->
+      <div v-else-if="isGroupAction" class="system-message group-action-message">
         <span v-if="groupActionType === 'rename'"
           >{{ groupActionActor }} 修改了群名為「{{ groupActionValue }}」</span
         >
@@ -2189,6 +2180,11 @@ const showTextVoiceTranscript = ref(true);
           >{{ groupActionActor }} 解除了 {{ groupActionTarget }} 的禁言</span
         >
         <span v-else>{{ content }}</span>
+      </div>
+
+      <!-- 普通系統消息 -->
+      <div v-else class="system-message">
+        <span>{{ content }}</span>
       </div>
     </template>
 

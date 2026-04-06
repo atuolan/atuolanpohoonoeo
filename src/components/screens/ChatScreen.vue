@@ -553,6 +553,14 @@ const groupMemberCount = computed(() => {
   return groupMetadata.value.members?.length || 0;
 });
 
+// 群聊成員頭像版本鍵（用於 v-memo，當頭像變更時觸發重新渲染）
+const groupMemberAvatarVersion = computed(() => {
+  if (!groupMetadata.value?.multiCharMembers) return '';
+  return groupMetadata.value.multiCharMembers
+    .map((m: any) => `${m.id}:${(m.avatar || '').slice(-16)}`)
+    .join(',');
+});
+
 // 群聊成員資訊（用於 ChatInfoModal）
 const groupMembersForInfo = computed(() => {
   if (!isGroupChat.value || !groupMetadata.value) return [];
@@ -578,7 +586,7 @@ const groupMembersForInfo = computed(() => {
     );
     return {
       characterId: member.characterId,
-      name: char?.nickname || char?.data?.name || "未知角色",
+      name: char?.data?.name || "未知角色",
       nickname: member.nickname,
       avatar: char?.avatar || "",
       isAdmin: member.isAdmin,
@@ -738,7 +746,7 @@ function getCharacterAvatar(characterId: string): string {
 // 根據 characterId 獲取角色名稱
 function getCharacterNameById(characterId: string): string {
   const char = charactersStore.characters.find((c) => c.id === characterId);
-  return char?.nickname || char?.data?.name || "未知";
+  return char?.data?.name || "未知";
 }
 
 // 訊息列表（從 store 或新建）
@@ -1980,7 +1988,13 @@ function getProxiedUrl(url: string): string {
 }
 
 function triggerMultiCharAvatarUpload() {
-  multiCharAvatarInput.value?.click();
+  const input = multiCharAvatarInput.value as any;
+  if (Array.isArray(input)) {
+    const el = input.find((el: any) => el != null);
+    el?.click();
+  } else {
+    input?.click();
+  }
 }
 
 function handleMultiCharAvatarChange(event: Event) {
@@ -7460,11 +7474,15 @@ async function loadOrCreateChat(overrideChatId?: string) {
                     );
                     if (mc) return mc.name;
                   }
-                  // 普通群聊：從 charactersStore 查找
+                  // 普通群聊：優先使用群成員暱稱，再用角色本名
+                  const groupMember = chat.groupMetadata?.members?.find(
+                    (mem) => mem.characterId === m.senderCharacterId,
+                  );
+                  if (groupMember?.nickname) return groupMember.nickname;
                   const c = charactersStore.characters.find(
                     (ch) => ch.id === m.senderCharacterId,
                   );
-                  return c?.nickname || c?.data?.name || "";
+                  return c?.data?.name || "";
                 })()
               : "",
             senderCharacterAvatar: m.senderCharacterId
@@ -9812,6 +9830,7 @@ onUnmounted(() => {
             isBlockedByChar,
             currentBlockedAt,
             message.sentWhileBlocked,
+            groupMemberAvatarVersion,
           ]"
           class="message-memo-wrapper"
         >
@@ -9858,7 +9877,9 @@ onUnmounted(() => {
                   ? groupMetadata?.isMultiCharCard &&
                     message.senderCharacterName
                     ? getGroupMemberAvatar(message.senderCharacterName)
-                    : message.senderCharacterAvatar || ''
+                    : message.senderCharacterId
+                      ? getCharacterAvatar(message.senderCharacterId)
+                      : message.senderCharacterAvatar || ''
                   : displayAvatar
                 : ''
             "
@@ -9925,7 +9946,9 @@ onUnmounted(() => {
               groupMetadata?.isMultiCharCard &&
               message.senderCharacterName
                 ? getGroupMemberAvatar(message.senderCharacterName)
-                : message.senderCharacterAvatar || ''
+                : isGroupChat && message.senderCharacterId
+                  ? getCharacterAvatar(message.senderCharacterId)
+                  : message.senderCharacterAvatar || ''
             "
             :sender-character-name="message.senderCharacterName || ''"
             :is-recall="message.isRecall"

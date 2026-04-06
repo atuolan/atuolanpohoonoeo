@@ -593,6 +593,7 @@ export class ProactiveMessageService {
             messages: promptData.messages,
             settings: chatSettings,
             apiSettings: taskConfig.api,
+            adjustLastMessageRole: true,
           });
 
           for await (const event of streamGenerator) {
@@ -643,6 +644,7 @@ export class ProactiveMessageService {
             messages: promptData.messages,
             settings: chatSettings,
             apiSettings: taskConfig.api,
+            adjustLastMessageRole: true,
           });
 
           if (result && result.content) {

@@ -1,5 +1,7 @@
 import { nextTick, ref, type Ref, type ComputedRef } from "vue";
 import { db, DB_STORES } from "@/db/database";
+import type { Chat } from "@/types/chat";
+import { createDefaultBlockState } from "@/types/block";
 
 /**
  * 聊天匯入/匯出/新對話/清空功能
@@ -181,6 +183,18 @@ export function useChatExport(deps: {
         }
       }
 
+      // 4.5. 重置封鎖狀態（清除封鎖歷史，避免舊記錄持續注入 prompt）
+      try {
+        const chatObj = await db.get<Chat>(DB_STORES.CHATS, chatId);
+        if (chatObj?.blockState) {
+          chatObj.blockState = createDefaultBlockState();
+          chatObj.updatedAt = Date.now();
+          await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chatObj)));
+        }
+      } catch {
+        // 忽略
+      }
+
       // 5. 重新加載角色初始消息
       const character = deps.currentCharacter.value;
       const firstMessage = character?.data?.first_mes;
@@ -252,7 +266,19 @@ export function useChatExport(deps: {
       deps.chatDiaries.value = [];
       deps.lastDiaryTime.value = 0;
 
-      // 4. 保存聊天
+      // 4. 重置封鎖狀態（清除封鎖歷史，避免舊記錄持續注入 prompt）
+      try {
+        const chatObj = await db.get<Chat>(DB_STORES.CHATS, chatId);
+        if (chatObj?.blockState) {
+          chatObj.blockState = createDefaultBlockState();
+          chatObj.updatedAt = Date.now();
+          await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chatObj)));
+        }
+      } catch {
+        // 忽略
+      }
+
+      // 5. 保存聊天
       await deps.saveChatImmediate();
 
       alert("聊天記錄已清空");
