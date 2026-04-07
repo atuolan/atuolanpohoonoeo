@@ -44,6 +44,27 @@ const audioErrorTimers = new Map<
   ReturnType<typeof setTimeout>
 >();
 
+/** per-element debounce：確保同一元素的重試 timer 不堆積 */
+const audioRetryTimers = new Map<HTMLAudioElement, ReturnType<typeof setTimeout>>();
+
+function schedulePlay(el: HTMLAudioElement, delay: number) {
+  const existing = audioRetryTimers.get(el);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    audioRetryTimers.delete(el);
+    if (isActive && el.paused) {
+      el.play().catch(() => {});
+    }
+  }, delay);
+  audioRetryTimers.set(el, timer);
+}
+
+function cancelScheduledPlay(el: HTMLAudioElement) {
+  const timer = audioRetryTimers.get(el);
+  if (timer) clearTimeout(timer);
+  audioRetryTimers.delete(el);
+}
+
 function trackAudioError(el: HTMLAudioElement): boolean {
   // 清除舊的冷卻計時器
   const oldTimer = audioErrorTimers.get(el);
@@ -199,32 +220,27 @@ function createAudioElement(label: string): HTMLAudioElement {
   el.addEventListener("ended", () => {
     if (isActive) el.play().catch(() => {});
   });
-  // 被系統暫停時嘗試恢復，同時啟動備用音頻
+  // 被系統暫停時嘗試恢復（debounce，避免快速 pause/play 堆積 timer）
   el.addEventListener("pause", () => {
     if (!isActive) return;
-    console.warn(`[KeepAlive] ${label} 被暫停，嘗試恢復`);
-    setTimeout(() => {
-      if (isActive && el.paused) {
-        el.play().catch(() => {});
-      }
-    }, 300);
-    // 如果是主音頻被暫停，啟動備用音頻
+    console.warn(`[KeepAlive] ${label} 被暫停，排程恢復`);
+    schedulePlay(el, 500);
+    // 如果是主音頻被暫停，啟動備用音頻（純被動）
     if (el === silentAudioEl && backupAudioEl?.paused) {
       console.log("[KeepAlive] 主音頻被暫停，啟動備用音頻");
-      backupAudioEl.play().catch(() => {});
+      schedulePlay(backupAudioEl, 200);
     }
   });
-  // stalled/waiting：僅嘗試恢復一次，不做 load 重建
+  // stalled/waiting：不立即 play（會引發高頻循環），改為 debounce 延遲
   el.addEventListener("stalled", () => {
     if (isActive) {
-      console.warn(`[KeepAlive] ${label} stalled，嘗試 play`);
-      el.play().catch(() => {});
+      console.warn(`[KeepAlive] ${label} stalled`);
+      schedulePlay(el, 2000);
     }
   });
   el.addEventListener("waiting", () => {
     if (isActive) {
-      console.warn(`[KeepAlive] ${label} waiting，嘗試 play`);
-      el.play().catch(() => {});
+      schedulePlay(el, 2000);
     }
   });
   el.addEventListener("error", () => {
@@ -256,12 +272,7 @@ function startSilentAudio() {
         console.log("[KeepAlive] 靜音音頻已啟動");
       })
       .catch((e) => console.warn("[KeepAlive] 靜音音頻播放失敗:", e));
-    // 備用音頻延遲啟動（避免同時播放被系統視為重複）
-    setTimeout(() => {
-      if (isActive && backupAudioEl) {
-        backupAudioEl.play().catch(() => {});
-      }
-    }, 2000);
+    // 備用音頻不主動啟動，僅在主音頻被暫停時由 pause 事件觸發（純被動）
   } catch (e) {
     console.warn("[KeepAlive] 靜音音頻建立失敗:", e);
   }
@@ -269,6 +280,7 @@ function startSilentAudio() {
 
 function stopSilentAudio() {
   if (silentAudioEl) {
+    cancelScheduledPlay(silentAudioEl);
     clearAudioErrorTracking(silentAudioEl);
     silentAudioEl.pause();
     silentAudioEl.src = "";
@@ -276,6 +288,7 @@ function stopSilentAudio() {
     silentAudioEl = null;
   }
   if (backupAudioEl) {
+    cancelScheduledPlay(backupAudioEl);
     clearAudioErrorTracking(backupAudioEl);
     backupAudioEl.pause();
     backupAudioEl.src = "";
@@ -427,7 +440,7 @@ function onUserInteraction() {
   userInteracted = true;
   removeInteractionListeners();
   // 用戶已互動，如果保活已啟動但音頻還沒開始，現在啟動
-  if (isActive && currentMode === "audio") {
+  if (isActive) {
     startSilentOscillator();
     startSilentAudio();
   }
