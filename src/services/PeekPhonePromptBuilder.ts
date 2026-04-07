@@ -279,6 +279,119 @@ transactions:
 }
 
 /**
+ * 建構合併 prompt（全部模塊合一）
+ * 一次生成所有手機內容，確保各模塊之間內容一致、互相呼應
+ */
+export function buildCombinedPrompt(
+  charName: string,
+  charDesc: string,
+  personality: string,
+  scenario: string,
+  chatContext: string,
+  userName: string = "使用者",
+  userDescription: string = "",
+  worldInfo: string = "",
+  summariesAndEvents: string = "",
+): string {
+  const charBlock = buildCharacterBlock(
+    charName,
+    charDesc,
+    personality,
+    scenario,
+    chatContext,
+    userName,
+    userDescription,
+    worldInfo,
+    summariesAndEvents,
+  );
+
+  return `你是一個角色扮演內容生成器。請根據以下角色資訊，一次性生成該角色手機中的全部內容。
+
+${charBlock}
+
+請在同一個回應中生成以下所有部分，所有內容必須互相呼應、保持一致的時間軸和故事背景（例如日記可提到行程中的事，聊天記錄可呼應備忘錄或日記的內容，交易記錄可對應行程中的消費）：
+
+1. chats（聊天記錄）：2 到 5 個聊天對話串，每串包含角色與不同聯絡人的往來訊息
+2. schedule（行程）：3 到 8 個今日行程，包含時間、標題、地點、完成狀態
+3. meals（飲食記錄）：1 到 5 筆今日飲食，包含餐別、食物、時間、備註
+4. memos（備忘錄）：2 到 6 條待辦/備忘，包含內容和完成狀態
+5. notes（記事本）：1 到 3 篇筆記，包含標題和內容
+6. diary（日記）：1 到 3 篇日記，包含日期、心情、內容、天氣
+7. balance（帳戶餘額）：一個符合角色經濟設定的數字
+8. transactions（交易記錄）：3 到 8 筆，包含描述、金額、時間
+9. gallery（相冊）：4 到 8 張照片記錄，包含描述、來源、保存原因、日期
+
+${buildTranslationRule()}
+
+【聊天記錄翻譯規則 —— 必須嚴格遵守】
+所有聊天對話串中的「每一條」訊息的 text 都必須包含「原文＋換行＋中文翻譯」。
+如果角色本身就是中文使用者，則直接用中文即可。
+
+只輸出 YAML，不要加任何其他文字。
+
+請嚴格使用以下 YAML 格式輸出：
+
+chats:
+  - contact: 聯絡人名稱
+    messages:
+      - from: 發送者名稱
+        text: |
+          Hey, are you free tonight?
+          嘿，你今晚有空嗎？
+        self: false
+        time: 時間戳數字
+      - from: ${charName}
+        text: |
+          Yeah, what's up?
+          嗯，怎麼了？
+        self: true
+        time: 時間戳數字
+
+schedule:
+  - time: "08:00"
+    title: 行程標題
+    location: 地點（可省略）
+    done: false
+
+meals:
+  - type: breakfast
+    food: 食物描述
+    time: "07:30"
+    note: 備註（可省略）
+
+memos:
+  - text: 備忘內容
+    done: false
+
+notes:
+  - title: 筆記標題
+    content: |
+      筆記內容...
+
+diary:
+  - date: "2026-04-07"
+    mood: happy
+    content: |
+      日記內容...
+    weather: 晴（可省略）
+
+balance: 42850
+
+transactions:
+  - description: 交易描述
+    amount: -85
+    time: "09:15"
+
+gallery:
+  - description: |
+      照片描述
+    source: selfie
+    reason: |
+      保存原因
+    date: "2026-04-07"`;
+}
+
+/**
  * 建構 Group D (相冊) 的 prompt
  * 指示 AI 生成 4~8 張照片描述，包含角色自拍、拍攝的風景/物品、從聊天保存的圖片
  */

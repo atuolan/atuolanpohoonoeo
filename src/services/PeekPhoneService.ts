@@ -19,12 +19,14 @@ import type {
   PeekTransaction,
 } from "@/types/peekPhone";
 import {
+  buildCombinedPrompt,
   buildGroupAPrompt,
   buildGroupBPrompt,
   buildGroupCPrompt,
   buildGroupDPrompt,
 } from "./PeekPhonePromptBuilder";
 import {
+  parseFullData,
   parseGroupA,
   parseGroupB,
   parseGroupC,
@@ -334,4 +336,108 @@ export async function generateGroup(
     case "D":
       return { gallery: parseGroupD(yamlContent) };
   }
+}
+
+/**
+ * 一次生成所有模塊內容（合併模式）
+ * 建構單一 prompt → 呼叫 API → 解析完整 YAML 回應
+ * 所有模塊在同一次 AI 生成中完成，確保內容互相呼應一致
+ */
+export async function generateCombined(
+  character: StoredCharacter,
+  chatContext: string,
+  userName: string,
+  userDescription: string,
+  worldInfo: string,
+  summariesAndEvents: string,
+  _chatId: string,
+  signal?: AbortSignal,
+  onToken?: (token: string) => void,
+): Promise<PeekPhoneData> {
+  const settingsStore = useSettingsStore();
+  const charName = character.data.name || character.nickname;
+  const charDesc = character.data.description || "";
+  const personality = character.data.personality || "";
+  const scenario = character.data.scenario || "";
+
+  const prompt = buildCombinedPrompt(
+    charName,
+    charDesc,
+    personality,
+    scenario,
+    chatContext,
+    userName,
+    userDescription,
+    worldInfo,
+    summariesAndEvents,
+  );
+
+  const taskConfig = settingsStore.getAPIForTask("peekPhone");
+  const client = getAPIClient(taskConfig.api);
+  const messages: APIMessage[] = [{ role: "user", content: prompt }];
+  const isStreamingEnabled = taskConfig.generation.streamingEnabled;
+
+  let yamlContent: string;
+
+  if (isStreamingEnabled) {
+    let fullContent = "";
+    const stream = client.generateStream({
+      messages,
+      settings: {
+        maxContextLength: 200000,
+        maxResponseLength: 32000,
+        temperature: 0.9,
+        topP: 0.95,
+        topK: 0,
+        frequencyPenalty: 0.3,
+        presencePenalty: 0.3,
+        repetitionPenalty: 1,
+        stopSequences: [],
+        streaming: true,
+        useStreamingWindow: false,
+      },
+      apiSettings: taskConfig.api,
+      signal,
+    });
+
+    for await (const chunk of stream) {
+      if (chunk.type === "token" && chunk.token) {
+        fullContent += chunk.token;
+        onToken?.(chunk.token);
+      } else if (chunk.type === "done") {
+        if (!fullContent && chunk.content) {
+          fullContent = chunk.content;
+        }
+      } else if (chunk.type === "error") {
+        throw new Error(chunk.error || "合併生成失敗");
+      }
+    }
+
+    yamlContent = fullContent;
+  } else {
+    const result = await client.generate({
+      messages,
+      settings: {
+        maxContextLength: 200000,
+        maxResponseLength: 32000,
+        temperature: 0.9,
+        topP: 0.95,
+        topK: 0,
+        frequencyPenalty: 0.3,
+        presencePenalty: 0.3,
+        repetitionPenalty: 1,
+        stopSequences: [],
+        streaming: false,
+        useStreamingWindow: false,
+      },
+      apiSettings: taskConfig.api,
+      signal,
+    });
+
+    yamlContent = result.content;
+  }
+
+  const parsed = parseFullData(yamlContent);
+  parsed.characterId = character.id;
+  return parsed;
 }

@@ -280,11 +280,13 @@ onMounted(async () => {
 
         <!-- 進度條 -->
         <div class="progress-section">
-          <span class="time">{{ formatTime(currentTime) }}</span>
           <div class="progress-bar" @click="handleProgressClick">
             <div class="progress-fill" :style="{ width: `${progress}%` }"></div>
           </div>
-          <span class="time">{{ formatTime(duration) }}</span>
+          <div class="time-row">
+            <span class="time">{{ formatTime(currentTime) }}</span>
+            <span class="time">{{ formatTime(duration) }}</span>
+          </div>
         </div>
 
         <!-- 控制按鈕 -->
@@ -521,79 +523,66 @@ onMounted(async () => {
 </template>
 
 <style lang="scss" scoped>
-@import url("https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap");
+$bg: #191919;
+$surface: #232323;
+$surface-2: #2c2c2c;
+$text: #f0f0f0;
+$text-muted: rgba(240, 240, 240, 0.4);
+$border: rgba(255, 255, 255, 0.1);
+$active: rgba(255, 255, 255, 0.06);
 
-$bg-color: #f1f3f5;
-$frame-border: #1a1a1a;
-$phone-bg: #fffbf5;
-$card-bg: #ffffff;
-$text-main: #1a1a1a;
-$text-sec: #6b7280;
-
-$blue-accent: #3b82f6;
-$red-accent: #ef4444;
-$yellow-accent: #facc15;
-$purple-accent: #a855f7;
-$pink-accent: #ec4899;
-
+// ── Base ─────────────────────────────────────────────────
 .music-app-screen {
   width: 100%;
   height: 100%;
-  background-color: $bg-color;
-  color: $text-main;
+  background: $bg;
+  color: $text;
   display: flex;
   flex-direction: column;
   position: relative;
   overflow: hidden;
-  font-family: "Nunito", sans-serif;
-  border-top-left-radius: 40px;
-  border-top-right-radius: 40px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
 }
 
+// ── Header ───────────────────────────────────────────────
 .app-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
   padding-top: max(20px, var(--safe-top, 0px));
-  background: $card-bg;
-  border-bottom: 3px solid $frame-border;
 
   .back-btn,
   .playlist-btn {
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: $card-bg;
-    color: $text-main;
-    border: 3px solid $frame-border;
-    box-shadow: 3px 3px 0 $frame-border;
-    transition:
-      transform 0.1s,
-      box-shadow 0.1s;
+    background: transparent;
+    color: $text;
+    border: 1px solid $border;
+    transition: background 0.15s;
     position: relative;
+    cursor: pointer;
 
     &:active {
-      transform: translate(3px, 3px);
-      box-shadow: 0 0 0 $frame-border;
+      background: $active;
     }
 
     .badge {
       position: absolute;
-      top: -6px;
-      right: -6px;
-      background: $red-accent;
-      color: white;
-      font-size: 11px;
-      font-weight: 800;
-      min-width: 20px;
-      height: 20px;
-      padding: 0 4px;
-      border-radius: 10px;
-      border: 2px solid $frame-border;
+      top: -3px;
+      right: -3px;
+      background: $text;
+      color: $bg;
+      font-size: 10px;
+      font-weight: 700;
+      min-width: 17px;
+      height: 17px;
+      padding: 0 3px;
+      border-radius: 9px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -601,31 +590,31 @@ $pink-accent: #ec4899;
   }
 
   .title {
-    font-size: 20px;
-    font-weight: 900;
-    color: $text-main;
+    font-size: 13px;
+    font-weight: 500;
+    color: $text-muted;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
   }
 }
 
+// ── Search ───────────────────────────────────────────────
 .search-section {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 16px 20px;
-  background: $bg-color;
+  gap: 10px;
+  padding: 4px 20px 16px;
 
   .search-bar {
-    flex: 1 1 200px;
+    flex: 1;
     display: flex;
     align-items: center;
-    background: $card-bg;
-    border-radius: 16px;
-    border: 3px solid $frame-border;
-    box-shadow: 4px 4px 0 $frame-border;
-    padding: 0 16px;
+    background: $surface;
+    border-radius: 10px;
+    border: 1px solid $border;
+    padding: 0 14px;
 
     .search-icon {
-      color: $text-sec;
+      color: $text-muted;
       flex-shrink: 0;
     }
 
@@ -633,15 +622,13 @@ $pink-accent: #ec4899;
       flex: 1;
       background: none;
       border: none;
-      color: $text-main;
-      padding: 14px 12px;
-      font-size: 16px;
-      font-weight: 700;
+      color: $text;
+      padding: 11px 10px;
+      font-size: 14px;
       font-family: inherit;
 
       &::placeholder {
-        color: $text-sec;
-        font-weight: 600;
+        color: $text-muted;
       }
 
       &:focus {
@@ -650,72 +637,70 @@ $pink-accent: #ec4899;
     }
 
     .clear-btn {
-      color: $text-main;
+      color: $text-muted;
       padding: 4px;
       background: transparent;
       border: none;
+      cursor: pointer;
+      transition: color 0.15s;
 
       &:hover {
-        color: $red-accent;
-        transform: scale(1.1);
+        color: $text;
       }
     }
   }
 
   .search-btn {
-    flex: 1 1 auto;
-    padding: 12px 20px;
-    background: $purple-accent;
-    border: 3px solid $frame-border;
-    box-shadow: 4px 4px 0 $frame-border;
-    border-radius: 16px;
-    color: white;
-    font-weight: 900;
-    font-size: 16px;
-    transition:
-      transform 0.1s,
-      box-shadow 0.1s;
-
-    &:active:not(:disabled) {
-      transform: translate(4px, 4px);
-      box-shadow: 0 0 0 $frame-border;
-    }
+    padding: 0 18px;
+    background: $text;
+    border: none;
+    border-radius: 10px;
+    color: $bg;
+    font-weight: 600;
+    font-size: 14px;
+    font-family: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: opacity 0.15s;
 
     &:disabled {
-      opacity: 0.6;
+      opacity: 0.35;
       cursor: not-allowed;
-      box-shadow: none;
-      transform: none;
+    }
+
+    &:active:not(:disabled) {
+      opacity: 0.75;
     }
   }
 }
 
+// ── Main Content ─────────────────────────────────────────
 .main-content {
   flex: 1;
   overflow-y: auto;
-  padding: 0 20px 20px;
+  padding: 0 20px 24px;
+
+  &::-webkit-scrollbar { width: 2px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 1px; }
 }
 
+// ── Now Playing ──────────────────────────────────────────
 .now-playing {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24px 20px;
-  margin-bottom: 24px;
-  background: $card-bg;
-  border-radius: 32px;
-  border: 3px solid $frame-border;
-  box-shadow: 6px 6px 0 $frame-border;
+  padding: 12px 8px 16px;
+  margin-bottom: 16px;
 
   .album-cover {
-    width: 220px;
-    height: 220px;
-    border-radius: 50%;
+    width: 120px;
+    height: 120px;
+    border-radius: 6px;
     overflow: hidden;
-    border: 4px solid $frame-border;
-    box-shadow: 8px 8px 0 rgba(0, 0, 0, 0.1);
-    margin-bottom: 24px;
-    background: $phone-bg;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    margin-bottom: 14px;
+    background: $surface;
 
     img {
       width: 100%;
@@ -726,72 +711,86 @@ $pink-accent: #ec4899;
     .cover-placeholder {
       width: 100%;
       height: 100%;
-      background: $blue-accent;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: white;
-      border-radius: 50%;
+      color: $text-muted;
     }
 
     &.spinning {
-      animation: spin 10s linear infinite;
+      animation: breathe 3s ease-in-out infinite;
     }
   }
 
   .track-info {
     text-align: center;
-    margin-bottom: 24px;
+    margin-bottom: 12px;
     width: 100%;
+    padding: 0 8px;
 
     .track-name {
-      font-size: 24px;
-      font-weight: 900;
-      margin-bottom: 8px;
-      color: $text-main;
+      font-size: 15px;
+      font-weight: 500;
+      margin-bottom: 4px;
+      color: $text;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
     .track-artist {
-      font-size: 16px;
-      font-weight: 700;
-      color: $text-sec;
+      font-size: 12px;
+      font-weight: 400;
+      color: $text-muted;
     }
   }
 
   .progress-section {
     width: 100%;
     display: flex;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 28px;
-
-    .time {
-      font-size: 14px;
-      font-weight: 800;
-      color: $text-main;
-      min-width: 44px;
-      text-align: center;
-    }
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
 
     .progress-bar {
-      flex: 1;
-      height: 12px;
-      background: #e5e7eb;
-      border: 2px solid $frame-border;
-      border-radius: 6px;
+      width: 100%;
+      height: 2px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 1px;
       cursor: pointer;
       position: relative;
-      overflow: hidden;
 
       .progress-fill {
         height: 100%;
-        background: $yellow-accent;
-        border-right: 2px solid $frame-border;
+        background: $text;
+        border-radius: 1px;
+        position: relative;
         transition: width 0.1s linear;
+
+        &::after {
+          content: "";
+          position: absolute;
+          right: -5px;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          background: $text;
+        }
       }
+    }
+
+    .time-row {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .time {
+      font-size: 11px;
+      font-weight: 400;
+      color: $text-muted;
+      letter-spacing: 0.03em;
     }
   }
 
@@ -799,57 +798,51 @@ $pink-accent: #ec4899;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 20px;
+    gap: 16px;
     width: 100%;
 
     .control-btn {
-      width: 48px;
-      height: 48px;
-      border-radius: 14px;
-      background: $bg-color;
-      border: 3px solid $frame-border;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: transparent;
+      border: none;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: $text-main;
-      box-shadow: 3px 3px 0 $frame-border;
-      transition:
-        transform 0.1s,
-        box-shadow 0.1s;
+      color: $text-muted;
+      transition: color 0.15s, transform 0.1s;
+      cursor: pointer;
 
       &:active {
-        transform: translate(3px, 3px);
-        box-shadow: 0 0 0 $frame-border;
+        transform: scale(0.88);
+        color: $text;
       }
 
-      &.mode {
-        background: #fee2e2;
-        color: $red-accent;
-      }
+      &.mode,
       &.volume {
-        background: #dbeafe;
-        color: $blue-accent;
+        &:hover {
+          color: $text;
+        }
       }
     }
 
     .play-btn {
-      width: 72px;
-      height: 72px;
-      border-radius: 20px;
-      background: $pink-accent;
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      background: transparent;
+      border: 1.5px solid rgba(255, 255, 255, 0.65);
       display: flex;
       align-items: center;
       justify-content: center;
-      color: white;
-      border: 3px solid $frame-border;
-      box-shadow: 4px 4px 0 $frame-border;
-      transition:
-        transform 0.1s,
-        box-shadow 0.1s;
+      color: $text;
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.1s, background 0.15s;
 
       &:active {
-        transform: translate(4px, 4px);
-        box-shadow: 0 0 0 $frame-border;
+        transform: scale(0.92);
+        background: $active;
       }
     }
   }
@@ -858,99 +851,98 @@ $pink-accent: #ec4899;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    margin-top: 16px;
-    padding: 10px 24px;
-    background: $purple-accent;
-    color: white;
-    border: 3px solid $frame-border;
-    border-radius: 14px;
-    box-shadow: 3px 3px 0 $frame-border;
-    font-size: 14px;
-    font-weight: 800;
+    gap: 6px;
+    margin-top: 20px;
+    padding: 8px 18px;
+    background: transparent;
+    color: $text-muted;
+    border: 1px solid $border;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 400;
     font-family: inherit;
     cursor: pointer;
-    transition:
-      transform 0.1s,
-      box-shadow 0.1s;
+    transition: color 0.15s, border-color 0.15s;
 
-    &:active {
-      transform: translate(3px, 3px);
-      box-shadow: 0 0 0 $frame-border;
+    &:hover {
+      color: $text;
+      border-color: rgba(255, 255, 255, 0.25);
     }
   }
 
   .volume-slider {
-    width: 80%;
-    margin-top: 24px;
+    width: 72%;
+    margin-top: 20px;
     display: flex;
     align-items: center;
 
     input[type="range"] {
       width: 100%;
-      height: 12px;
+      height: 2px;
       appearance: none;
       -webkit-appearance: none;
-      background: #e5e7eb;
-      border: 2px solid $frame-border;
-      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.12);
+      border: none;
+      border-radius: 1px;
+      cursor: pointer;
 
       &::-webkit-slider-thumb {
         -webkit-appearance: none;
-        width: 24px;
-        height: 24px;
+        width: 12px;
+        height: 12px;
         border-radius: 50%;
-        background: $blue-accent;
-        border: 3px solid $frame-border;
+        background: $text;
+        border: none;
         cursor: pointer;
-        box-shadow: 2px 2px 0 $frame-border;
       }
     }
   }
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+  50% { box-shadow: 0 0 24px 4px rgba(255, 255, 255, 0.05); }
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+// ── Search Results ───────────────────────────────────────
 .search-results {
   .results-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
-    padding: 0 8px;
+    margin-bottom: 12px;
+    padding: 0 2px;
 
     h3 {
-      font-size: 20px;
-      font-weight: 900;
-      color: $text-main;
+      font-size: 11px;
+      font-weight: 500;
+      color: $text-muted;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
     }
 
     .play-all-btn {
       display: flex;
       align-items: center;
-      gap: 6px;
-      padding: 10px 16px;
-      background: $blue-accent;
-      border: 3px solid $frame-border;
-      border-radius: 12px;
-      color: white;
-      font-size: 15px;
-      font-weight: 900;
-      box-shadow: 3px 3px 0 $frame-border;
-      transition:
-        transform 0.1s,
-        box-shadow 0.1s;
+      gap: 5px;
+      padding: 7px 14px;
+      background: $surface;
+      border: 1px solid $border;
+      border-radius: 20px;
+      color: $text;
+      font-size: 13px;
+      font-weight: 400;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s;
 
       &:active {
-        transform: translate(3px, 3px);
-        box-shadow: 0 0 0 $frame-border;
+        background: $surface-2;
       }
     }
   }
@@ -958,55 +950,52 @@ $pink-accent: #ec4899;
   .track-list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
   }
 
   .track-item {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 16px;
-    background: $card-bg;
-    border: 3px solid $frame-border;
-    border-radius: 20px;
+    gap: 14px;
+    padding: 11px 8px;
+    border-bottom: 1px solid $border;
     cursor: pointer;
-    box-shadow: 4px 4px 0 $frame-border;
-    transition:
-      transform 0.1s,
-      box-shadow 0.1s;
+    transition: background 0.15s;
+    border-radius: 6px;
+
+    &:last-child {
+      border-bottom: none;
+    }
 
     &:active {
-      transform: translate(2px, 2px);
-      box-shadow: 0 0 0 $frame-border;
+      background: $active;
     }
 
     &.active {
-      background: #f0fdf4;
-      border-color: #16a34a;
-      box-shadow: 4px 4px 0 #16a34a;
+      .track-index { color: $text; }
+      .track-details .name { color: $text; }
     }
 
     .track-index {
-      width: 24px;
+      width: 20px;
       text-align: center;
-      font-size: 16px;
-      font-weight: 900;
-      color: $text-sec;
+      font-size: 12px;
+      color: $text-muted;
     }
 
     .track-cover {
-      width: 56px;
-      height: 56px;
-      border-radius: 12px;
+      width: 42px;
+      height: 42px;
+      border-radius: 5px;
       object-fit: cover;
-      border: 2px solid $frame-border;
+      border: 1px solid $border;
+      flex-shrink: 0;
 
       &.placeholder {
-        background: #f1f5f9;
+        background: $surface;
         display: flex;
         align-items: center;
         justify-content: center;
-        color: $text-sec;
+        color: $text-muted;
       }
     }
 
@@ -1017,56 +1006,50 @@ $pink-accent: #ec4899;
       .name {
         display: flex;
         align-items: center;
-        gap: 8px;
-        font-size: 16px;
-        font-weight: 900;
+        gap: 7px;
+        font-size: 14px;
+        font-weight: 400;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        color: $text-main;
+        color: $text;
 
         .online-badge {
           flex-shrink: 0;
-          font-size: 12px;
-          padding: 2px 8px;
-          background: #dbeafe;
-          color: $blue-accent;
-          border: 2px solid $blue-accent;
-          border-radius: 8px;
-          font-weight: 800;
+          font-size: 10px;
+          padding: 1px 7px;
+          background: rgba(255, 255, 255, 0.07);
+          color: $text-muted;
+          border: 1px solid $border;
+          border-radius: 10px;
         }
       }
 
       .artist {
         display: block;
-        font-size: 14px;
-        font-weight: 700;
-        color: $text-sec;
-        margin-top: 4px;
+        font-size: 12px;
+        color: $text-muted;
+        margin-top: 3px;
       }
     }
 
     .add-btn {
-      color: $text-sec;
-      padding: 10px;
-      background: $bg-color;
-      border-radius: 12px;
-      border: 2px solid $frame-border;
-      transition: all 0.1s;
+      color: $text-muted;
+      padding: 8px;
+      background: transparent;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      transition: color 0.15s;
+      flex-shrink: 0;
 
-      &:hover {
-        background: #fee2e2;
-        color: $red-accent;
-      }
-
-      &.in-playlist {
-        color: $red-accent;
-        background: #fee2e2;
-      }
+      &:hover { color: $text; }
+      &.in-playlist { color: $text; }
     }
   }
 }
 
+// ── States ───────────────────────────────────────────────
 .empty-state,
 .loading-state {
   display: flex;
@@ -1074,73 +1057,69 @@ $pink-accent: #ec4899;
   align-items: center;
   justify-content: center;
   padding: 60px 20px;
-  color: $text-sec;
-  background: $card-bg;
-  border: 3px dashed $text-sec;
-  border-radius: 32px;
+  color: $text-muted;
   margin-top: 20px;
 
   p {
-    margin-top: 16px;
-    font-size: 18px;
-    font-weight: 900;
+    margin-top: 14px;
+    font-size: 13px;
+    font-weight: 400;
   }
 }
 
 .loading-state {
   .spinner {
-    width: 48px;
-    height: 48px;
-    border: 4px solid #e2e8f0;
-    border-top-color: $blue-accent;
+    width: 32px;
+    height: 32px;
+    border: 1.5px solid rgba(255, 255, 255, 0.08);
+    border-top-color: $text-muted;
     border-radius: 50%;
     animation: spin 1s linear infinite;
   }
 }
 
+// ── Playlist Panel ───────────────────────────────────────
 .playlist-panel {
   position: absolute;
   top: 0;
   right: 0;
-  width: 320px;
+  width: 290px;
   max-width: 85%;
   height: 100%;
-  background: $phone-bg;
-  border-left: 4px solid $frame-border;
+  background: $surface;
+  border-left: 1px solid $border;
   display: flex;
   flex-direction: column;
   z-index: 100;
-  box-shadow: -8px 0 0 $frame-border;
 
   .panel-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 24px;
-    background: $card-bg;
-    border-bottom: 4px solid $frame-border;
+    padding: 20px;
+    border-bottom: 1px solid $border;
 
     h3 {
-      font-size: 20px;
-      font-weight: 900;
-      color: $text-main;
+      font-size: 11px;
+      font-weight: 500;
+      color: $text-muted;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
     }
 
     .close-btn {
-      color: $text-main;
-      background: $bg-color;
-      border-radius: 10px;
-      border: 2px solid $frame-border;
+      color: $text-muted;
+      background: transparent;
+      border-radius: 50%;
+      border: none;
       padding: 6px;
-      box-shadow: 2px 2px 0 $frame-border;
-      transition:
-        transform 0.1s,
-        box-shadow 0.1s;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.15s;
 
-      &:active {
-        transform: translate(2px, 2px);
-        box-shadow: 0 0 0 $frame-border;
-      }
+      &:hover { color: $text; }
     }
   }
 
@@ -1150,62 +1129,55 @@ $pink-accent: #ec4899;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    color: $text-sec;
+    color: $text-muted;
 
     p {
-      margin-top: 16px;
-      font-size: 16px;
-      font-weight: 800;
+      margin-top: 12px;
+      font-size: 13px;
     }
   }
 
   .playlist-tracks {
     flex: 1;
     overflow-y: auto;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+    padding: 4px 0;
+
+    &::-webkit-scrollbar { width: 2px; }
+    &::-webkit-scrollbar-track { background: transparent; }
+    &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); }
   }
 
   .playlist-item {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px;
-    border-radius: 16px;
-    background: $card-bg;
-    border: 3px solid $frame-border;
-    box-shadow: 4px 4px 0 $frame-border;
+    padding: 10px 16px;
     cursor: pointer;
-    transition:
-      transform 0.1s,
-      box-shadow 0.1s;
+    transition: background 0.15s;
 
-    &:active {
-      transform: translate(2px, 2px);
-      box-shadow: 0 0 0 $frame-border;
-    }
+    &:hover { background: $active; }
 
     &.active {
-      background: #f0fdf4;
-      border-color: #16a34a;
-      box-shadow: 4px 4px 0 #16a34a;
+      .item-info .name {
+        color: $text;
+        font-weight: 500;
+      }
     }
 
     .item-cover {
-      width: 48px;
-      height: 48px;
-      border-radius: 10px;
+      width: 38px;
+      height: 38px;
+      border-radius: 4px;
       object-fit: cover;
-      border: 2px solid $frame-border;
+      border: 1px solid $border;
+      flex-shrink: 0;
 
       &.placeholder {
-        background: #f1f5f9;
+        background: $surface-2;
         display: flex;
         align-items: center;
         justify-content: center;
-        color: $text-sec;
+        color: $text-muted;
       }
     }
 
@@ -1215,9 +1187,9 @@ $pink-accent: #ec4899;
 
       .name {
         display: block;
-        font-size: 15px;
-        font-weight: 900;
-        color: $text-main;
+        font-size: 13px;
+        font-weight: 400;
+        color: $text;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -1225,50 +1197,52 @@ $pink-accent: #ec4899;
 
       .artist {
         display: block;
-        font-size: 13px;
-        font-weight: 700;
-        color: $text-sec;
-        margin-top: 4px;
+        font-size: 11px;
+        color: $text-muted;
+        margin-top: 2px;
       }
     }
 
     .remove-btn {
-      color: $red-accent;
-      padding: 8px;
-      background: #fef2f2;
-      border: 2px solid $frame-border;
-      border-radius: 8px;
+      color: $text-muted;
+      padding: 6px;
+      background: transparent;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: color 0.15s;
 
-      &:hover {
-        background: #fecaca;
-      }
+      &:hover { color: $text; }
     }
   }
 
   .clear-all-btn {
-    margin: 20px;
-    padding: 16px;
-    background: #fef2f2;
-    border: 3px solid $frame-border;
-    border-radius: 16px;
-    font-size: 16px;
-    font-weight: 900;
-    color: $red-accent;
-    box-shadow: 4px 4px 0 $frame-border;
-    transition:
-      transform 0.1s,
-      box-shadow 0.1s;
+    margin: 14px 16px;
+    padding: 11px;
+    background: transparent;
+    border: 1px solid $border;
+    border-radius: 8px;
+    font-size: 12px;
+    color: $text-muted;
+    font-family: inherit;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
 
-    &:active {
-      transform: translate(3px, 3px);
-      box-shadow: 0 0 0 $frame-border;
+    &:hover {
+      color: $text;
+      border-color: rgba(255, 255, 255, 0.25);
     }
   }
 }
 
+// ── Transitions ──────────────────────────────────────────
 .slide-enter-active,
 .slide-leave-active {
-  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1);
+  transition: transform 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .slide-enter-from,
@@ -1276,10 +1250,10 @@ $pink-accent: #ec4899;
   transform: translateX(100%);
 }
 
-// 播放錯誤 Toast
+// ── Toast ────────────────────────────────────────────────
 .play-error-toast {
   position: absolute;
-  top: 90px;
+  top: 80px;
   left: 20px;
   right: 20px;
   z-index: 200;
@@ -1288,25 +1262,23 @@ $pink-accent: #ec4899;
   .toast-content {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 16px 20px;
-    background: #fef2f2;
-    border: 3px solid $frame-border;
-    border-radius: 20px;
-    box-shadow: 6px 6px 0 $frame-border;
+    gap: 12px;
+    padding: 12px 16px;
+    background: $surface-2;
+    border: 1px solid $border;
+    border-radius: 12px;
   }
 
   .toast-icon {
     flex-shrink: 0;
-    width: 32px;
-    height: 32px;
-    border-radius: 12px;
-    background: $red-accent;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(239, 68, 68, 0.18);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: white;
-    border: 2px solid $frame-border;
+    color: #ef4444;
   }
 
   .toast-text {
@@ -1315,9 +1287,9 @@ $pink-accent: #ec4899;
 
     .toast-title {
       display: block;
-      font-size: 16px;
-      font-weight: 900;
-      color: $text-main;
+      font-size: 13px;
+      font-weight: 500;
+      color: $text;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1325,30 +1297,29 @@ $pink-accent: #ec4899;
 
     .toast-msg {
       display: block;
-      font-size: 14px;
-      font-weight: 700;
-      color: $red-accent;
-      margin-top: 4px;
+      font-size: 12px;
+      color: rgba(239, 68, 68, 0.8);
+      margin-top: 2px;
     }
   }
 }
 
 .toast-enter-active,
 .toast-leave-active {
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: all 0.25s ease;
 }
 
 .toast-enter-from,
 .toast-leave-to {
   opacity: 0;
-  transform: translateY(-20px);
+  transform: translateY(-12px);
 }
 
-// 角色選擇器
+// ── Share Picker ─────────────────────────────────────────
 .share-picker-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1358,12 +1329,11 @@ $pink-accent: #ec4899;
 
 .share-picker-modal {
   width: 100%;
-  max-width: 360px;
+  max-width: 340px;
   max-height: 70vh;
-  background: $card-bg;
-  border: 3px solid $frame-border;
-  border-radius: 24px;
-  box-shadow: 6px 6px 0 $frame-border;
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1372,105 +1342,97 @@ $pink-accent: #ec4899;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 20px;
-    border-bottom: 3px solid $frame-border;
+    padding: 16px 18px;
+    border-bottom: 1px solid $border;
 
     h3 {
-      font-size: 18px;
-      font-weight: 900;
-      color: $text-main;
+      font-size: 14px;
+      font-weight: 500;
+      color: $text;
     }
 
     .close-btn {
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: $card-bg;
-      color: $text-main;
-      border: 2px solid $frame-border;
-      box-shadow: 2px 2px 0 $frame-border;
+      background: transparent;
+      color: $text-muted;
+      border: none;
+      cursor: pointer;
+      transition: color 0.15s;
 
-      &:active {
-        transform: translate(2px, 2px);
-        box-shadow: 0 0 0 $frame-border;
-      }
+      &:hover { color: $text; }
     }
   }
 
   .picker-track-info {
-    padding: 12px 20px;
-    background: $bg-color;
-    border-bottom: 2px solid lighten($frame-border, 60%);
+    padding: 10px 18px;
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid $border;
     display: flex;
     flex-direction: column;
     gap: 2px;
 
     .picker-track-name {
-      font-size: 15px;
-      font-weight: 800;
-      color: $text-main;
+      font-size: 13px;
+      font-weight: 500;
+      color: $text;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
     .picker-track-artist {
-      font-size: 13px;
-      font-weight: 600;
-      color: $text-sec;
+      font-size: 11px;
+      color: $text-muted;
     }
   }
 
   .picker-empty {
     padding: 40px 20px;
     text-align: center;
-    color: $text-sec;
-    font-weight: 700;
+    color: $text-muted;
+    font-size: 13px;
   }
 
   .picker-list {
     overflow-y: auto;
-    padding: 8px 0;
+    padding: 4px 0;
 
     .picker-item {
       display: flex;
       align-items: center;
       gap: 12px;
       width: 100%;
-      padding: 12px 20px;
+      padding: 10px 18px;
       background: transparent;
       border: none;
       cursor: pointer;
       font-family: inherit;
       transition: background 0.15s;
 
-      &:hover {
-        background: $bg-color;
-      }
-
-      &:active {
-        background: darken($bg-color, 5%);
-      }
+      &:hover { background: $active; }
+      &:active { background: rgba(255, 255, 255, 0.07); }
 
       .picker-avatar {
-        width: 44px;
-        height: 44px;
-        border-radius: 14px;
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
         object-fit: cover;
-        border: 2px solid $frame-border;
+        border: 1px solid $border;
         flex-shrink: 0;
 
         &.placeholder {
           display: flex;
           align-items: center;
           justify-content: center;
-          background: $purple-accent;
-          color: white;
-          font-size: 18px;
-          font-weight: 900;
+          background: $surface-2;
+          color: $text-muted;
+          font-size: 15px;
+          font-weight: 500;
         }
       }
 
@@ -1482,18 +1444,17 @@ $pink-accent: #ec4899;
         text-align: left;
 
         .picker-name {
-          font-size: 15px;
-          font-weight: 800;
-          color: $text-main;
+          font-size: 13px;
+          font-weight: 500;
+          color: $text;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
         }
 
         .picker-chat-preview {
-          font-size: 12px;
-          font-weight: 600;
-          color: $text-sec;
+          font-size: 11px;
+          color: $text-muted;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -1503,9 +1464,8 @@ $pink-accent: #ec4899;
 
       .picker-time {
         flex-shrink: 0;
-        font-size: 11px;
-        font-weight: 600;
-        color: $text-sec;
+        font-size: 10px;
+        color: $text-muted;
         align-self: flex-start;
         margin-top: 2px;
       }

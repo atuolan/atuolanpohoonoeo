@@ -271,18 +271,6 @@ async function refreshAll() {
   );
 }
 
-async function refreshGroup(group: "A" | "B" | "C" | "D") {
-  showRefreshMenu.value = false;
-  if (!character.value) return;
-  // 確保聊天資料已載入
-  if (!chatRecord.value) {
-    await loadChatData();
-  }
-  if (!chatRecord.value) return;
-  // 確保 store 基本狀態已初始化（不觸發 API），只生成指定的組
-  peekPhoneStore.ensureInitialized(props.characterId, props.chatId);
-  await peekPhoneStore.retryGroup(group, character.value, chatRecord.value);
-}
 
 onMounted(() => {
   loadChatData();
@@ -375,24 +363,7 @@ function getAppTitle(key: PeekPhoneTab) {
             <div v-if="showRefreshMenu" class="refresh-menu">
               <div class="refresh-menu-item" @click="refreshAll">
                 <RefreshCw :size="14" />
-                <span>全部重新生成</span>
-              </div>
-              <div class="refresh-menu-divider" />
-              <div class="refresh-menu-item" @click="refreshGroup('A')">
-                <MessageCircle :size="14" />
-                <span>聊天</span>
-              </div>
-              <div class="refresh-menu-item" @click="refreshGroup('B')">
-                <Calendar :size="14" />
-                <span>行程 / 飲食 / 備忘錄</span>
-              </div>
-              <div class="refresh-menu-item" @click="refreshGroup('C')">
-                <BookOpen :size="14" />
-                <span>記事本 / 日記 / 錢包</span>
-              </div>
-              <div class="refresh-menu-item" @click="refreshGroup('D')">
-                <Image :size="14" />
-                <span>相冊</span>
+                <span>重新生成全部內容</span>
               </div>
             </div>
           </Transition>

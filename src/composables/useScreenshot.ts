@@ -31,6 +31,7 @@ export function useScreenshot() {
 
   /**
    * 將外部圖片轉為 base64（解決跨域問題）
+   * 對外部 HTTP(S) URL 使用本地 /ai-proxy/ 代理繞過 CORS 限制
    */
   async function convertImagesToBase64(container: HTMLElement): Promise<void> {
     const images = container.querySelectorAll('img')
@@ -38,19 +39,101 @@ export function useScreenshot() {
       Array.from(images).map(async (img) => {
         if (!img.src || img.src.startsWith('data:')) return
         try {
-          const res = await fetch(img.src)
+          let fetchUrl = img.src
+          // 外部 HTTP(S) URL 使用代理，避免 CORS 失敗（表情包、頭像等）
+          if (img.src.startsWith('http://') || img.src.startsWith('https://')) {
+            try {
+              const parsed = new URL(img.src)
+              const hostAndPath = parsed.host + parsed.pathname + parsed.search
+              fetchUrl = parsed.protocol === 'https:'
+                ? `/ai-proxy/${hostAndPath}`
+                : `/ai-proxy-http/${hostAndPath}`
+            } catch {
+              fetchUrl = `/image-proxy?url=${encodeURIComponent(img.src)}`
+            }
+          }
+          const res = await fetch(fetchUrl)
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
           const blob = await res.blob()
           const base64 = await new Promise<string>((resolve) => {
             const reader = new FileReader()
             reader.onloadend = () => resolve(reader.result as string)
             reader.readAsDataURL(blob)
           })
-          img.src = base64
+          // 等待新 src 載入完成後再繼續（避免 naturalWidth/naturalHeight 未更新）
+          await new Promise<void>((resolve) => {
+            const prev = img.src
+            img.src = base64
+            if (img.complete && img.src === base64) { resolve(); return }
+            const onDone = () => { img.removeEventListener('load', onDone); img.removeEventListener('error', onDone); resolve() }
+            img.addEventListener('load', onDone)
+            img.addEventListener('error', onDone)
+            // 防止因瀏覽器快取直接 complete 導致事件不觸發
+            if (img.complete) { resolve() }
+            void prev
+          })
         } catch {
           // 圖片轉換失敗就跳過
         }
       }),
     )
+  }
+
+  /**
+   * 修復 html2canvas 不支援 object-fit: cover / contain 的問題
+   * 預先將這些圖片手動繪製到 canvas，以正確的裁切方式替換 img.src
+   * 回傳還原函式陣列，截圖完成後呼叫以恢復原始狀態
+   */
+  async function fixObjectFitImages(container: HTMLElement): Promise<Array<() => void>> {
+    const restores: Array<() => void> = []
+    const images = Array.from(container.querySelectorAll<HTMLImageElement>('img'))
+
+    await Promise.all(images.map(async (img) => {
+      if (!img.complete || !img.naturalWidth || !img.naturalHeight) return
+      const fit = window.getComputedStyle(img).objectFit
+      if (fit !== 'cover' && fit !== 'contain') return
+
+      const dw = img.offsetWidth || img.clientWidth
+      const dh = img.offsetHeight || img.clientHeight
+      if (!dw || !dh) return
+
+      const nw = img.naturalWidth
+      const nh = img.naturalHeight
+
+      const canvas = document.createElement('canvas')
+      canvas.width = dw
+      canvas.height = dh
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+
+      if (fit === 'cover') {
+        const scale = Math.max(dw / nw, dh / nh)
+        const scaledW = nw * scale
+        const scaledH = nh * scale
+        const dx = (dw - scaledW) / 2
+        const dy = (dh - scaledH) / 2
+        ctx.drawImage(img, dx, dy, scaledW, scaledH)
+      } else {
+        const scale = Math.min(dw / nw, dh / nh)
+        const scaledW = nw * scale
+        const scaledH = nh * scale
+        const dx = (dw - scaledW) / 2
+        const dy = (dh - scaledH) / 2
+        ctx.drawImage(img, dx, dy, scaledW, scaledH)
+      }
+
+      const dataUrl = canvas.toDataURL('image/png')
+      const originalSrc = img.src
+      const originalStyle = img.style.cssText
+      img.src = dataUrl
+      img.style.objectFit = 'fill'
+      restores.push(() => {
+        img.src = originalSrc
+        img.style.cssText = originalStyle
+      })
+    }))
+
+    return restores
   }
 
   /**
@@ -65,9 +148,11 @@ export function useScreenshot() {
     error.value = null
 
     try {
-      // 先處理跨域圖片
+      // 先處理跨域圖片（轉為 base64）
       await convertImagesToBase64(el)
-      await new Promise((r) => setTimeout(r, 200))
+      // 修復 html2canvas 不支援 object-fit: cover/contain（頭像、圖片壓縮問題）
+      const restores = await fixObjectFitImages(el)
+      await new Promise((r) => setTimeout(r, 100))
 
       // 動態載入 html2canvas
       const html2canvas = (await import('html2canvas')).default
@@ -81,6 +166,9 @@ export function useScreenshot() {
         foreignObjectRendering: false,
         imageTimeout: 0,
       })
+
+      // 恢復 object-fit 圖片原始狀態
+      restores.forEach((fn) => fn())
 
       let dataUrl: string
       if (options.format === 'jpeg') {
