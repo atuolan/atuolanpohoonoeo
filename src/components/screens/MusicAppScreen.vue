@@ -1493,7 +1493,7 @@ $pink-accent: #ec4899;
         .picker-chat-preview {
           font-size: 12px;
           font-weight: 600;
-          color: $text-sub;
+          color: $text-sec;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -1505,7 +1505,7 @@ $pink-accent: #ec4899;
         flex-shrink: 0;
         font-size: 11px;
         font-weight: 600;
-        color: $text-sub;
+        color: $text-sec;
         align-self: flex-start;
         margin-top: 2px;
       }
