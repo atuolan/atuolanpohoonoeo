@@ -1365,14 +1365,17 @@ async function handleGameShareToChat(characterId: string, message: string) {
   }
 }
 
-// 音樂 App 分享歌曲到聊天（用戶已選擇角色）
-async function handleMusicShareToChat(characterId: string) {
+// 音樂 App 分享歌曲到聊天（用戶已選擇聊天）
+async function handleMusicShareToChat(payload: {
+  chatId: string;
+  characterId: string;
+}) {
   const musicStore = useMusicStore();
   const track = musicStore.currentTrack;
   if (!track) return;
 
   const character = charactersStore.characters.find(
-    (c) => c.id === characterId,
+    (c) => c.id === payload.characterId,
   );
   if (!character) return;
 
@@ -1381,8 +1384,8 @@ async function handleMusicShareToChat(characterId: string) {
   chatCharacterName.value =
     character.nickname || character.data?.name || "角色";
   chatCharacterAvatar.value = character.avatar || "";
-  currentChatCharacterId.value = characterId;
-  currentChatId.value = await resolvePreferredChatId(characterId);
+  currentChatCharacterId.value = payload.characterId;
+  currentChatId.value = payload.chatId;
   pendingChatMessage.value = {
     content: `<分享歌曲>${track.name} - ${track.artist}</分享歌曲>${lyrics ? `\n[歌詞]\n${lyrics}` : ""}`,
     isMusicShare: true,

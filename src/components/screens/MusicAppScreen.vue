@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { db, DB_STORES } from "@/db/database";
 import { useCharactersStore, useMusicStore } from "@/stores";
+import type { Chat } from "@/types/chat";
 import {
     ArrowLeft,
     Heart,
@@ -22,7 +24,7 @@ import { computed, onMounted, ref } from "vue";
 
 const emit = defineEmits<{
   back: [];
-  shareToChat: [characterId: string];
+  shareToChat: [payload: { chatId: string; characterId: string }];
 }>();
 
 const musicStore = useMusicStore();
@@ -32,26 +34,66 @@ const charactersStore = useCharactersStore();
 const searchInput = ref("");
 const showPlaylist = ref(false);
 const showSharePicker = ref(false);
+const shareChatList = ref<Chat[]>([]);
+const isLoadingChats = ref(false);
 
-// 角色列表（過濾出有名字的角色）
-const availableCharacters = computed(() =>
-  charactersStore.characters
-    .filter((c) => c.data?.name)
-    .map((c) => ({
-      id: c.id,
-      name: c.nickname || c.data?.name || "",
-      avatar: c.avatar || "",
-    }))
-);
-
-function openSharePicker() {
-  if (!currentTrack.value) return;
-  showSharePicker.value = true;
+// 取得角色顯示資訊
+function getChatCharacterName(chat: Chat): string {
+  if (chat.isGroupChat && chat.groupMetadata) {
+    return chat.groupMetadata.groupName;
+  }
+  const char = charactersStore.characters.find((c) => c.id === chat.characterId);
+  return char?.nickname || char?.data?.name || (chat as any).characterName || "未知角色";
 }
 
-function selectShareTarget(characterId: string) {
+function getChatCharacterAvatar(chat: Chat): string {
+  const char = charactersStore.characters.find((c) => c.id === chat.characterId);
+  return char?.avatar || "";
+}
+
+function getChatPreview(chat: Chat): string {
+  if (chat.lastMessagePreview) return chat.lastMessagePreview;
+  if (chat.messages?.length) {
+    const last = chat.messages[chat.messages.length - 1];
+    return last?.content?.slice(0, 40) || "";
+  }
+  return "";
+}
+
+function formatChatTime(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (diff < minute) return "剛剛";
+  if (diff < hour) return `${Math.floor(diff / minute)} 分鐘前`;
+  if (diff < day) return `${Math.floor(diff / hour)} 小時前`;
+  if (diff < 7 * day) return `${Math.floor(diff / day)} 天前`;
+  const d = new Date(timestamp);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+async function openSharePicker() {
+  if (!currentTrack.value) return;
+  showSharePicker.value = true;
+  isLoadingChats.value = true;
+  try {
+    await db.init();
+    const allChats = await db.getAll<Chat>(DB_STORES.CHATS);
+    shareChatList.value = allChats
+      .filter((c) => c.messages?.length > 0 || c.lastMessagePreview)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  } catch (e) {
+    console.error("[MusicApp] 載入聊天列表失敗:", e);
+    shareChatList.value = [];
+  } finally {
+    isLoadingChats.value = false;
+  }
+}
+
+function selectShareTarget(chatId: string, characterId: string) {
   showSharePicker.value = false;
-  emit("shareToChat", characterId);
+  emit("shareToChat", { chatId, characterId });
 }
 
 // 計算屬性
@@ -428,12 +470,12 @@ onMounted(async () => {
       </div>
     </Transition>
 
-    <!-- 角色選擇器 -->
+    <!-- 聊天列表選擇器 -->
     <Transition name="fade">
       <div v-if="showSharePicker" class="share-picker-overlay" @click.self="showSharePicker = false">
         <div class="share-picker-modal">
           <div class="picker-header">
-            <h3>分享給誰？</h3>
+            <h3>分享到哪個聊天？</h3>
             <button class="close-btn" @click="showSharePicker = false">
               <X :size="22" stroke-width="2.5" />
             </button>
@@ -442,28 +484,34 @@ onMounted(async () => {
             <span class="picker-track-name">{{ currentTrack.name }}</span>
             <span class="picker-track-artist">{{ currentTrack.artist }}</span>
           </div>
-          <div v-if="availableCharacters.length === 0" class="picker-empty">
-            <p>沒有可用的角色</p>
+          <div v-if="isLoadingChats" class="picker-empty">
+            <p>載入中...</p>
+          </div>
+          <div v-else-if="shareChatList.length === 0" class="picker-empty">
+            <p>沒有可用的聊天</p>
           </div>
           <div v-else class="picker-list">
             <button
-              v-for="char in availableCharacters"
-              :key="char.id"
+              v-for="chat in shareChatList"
+              :key="chat.id"
               class="picker-item"
-              @click="selectShareTarget(char.id)"
+              @click="selectShareTarget(chat.id, chat.characterId)"
             >
               <img
-                v-if="char.avatar"
-                :src="char.avatar"
+                v-if="getChatCharacterAvatar(chat)"
+                :src="getChatCharacterAvatar(chat)"
                 class="picker-avatar"
                 alt=""
                 @error="(e: Event) => ((e.target as HTMLImageElement).style.display = 'none')"
               />
               <div v-else class="picker-avatar placeholder">
-                {{ char.name.charAt(0) }}
+                {{ getChatCharacterName(chat).charAt(0) }}
               </div>
-              <span class="picker-name">{{ char.name }}</span>
-              <Share2 :size="18" stroke-width="2.5" class="picker-share-icon" />
+              <div class="picker-chat-info">
+                <span class="picker-name">{{ getChatCharacterName(chat) }}</span>
+                <span class="picker-chat-preview">{{ getChatPreview(chat) }}</span>
+              </div>
+              <span class="picker-time">{{ formatChatTime(chat.updatedAt) }}</span>
             </button>
           </div>
         </div>
@@ -1426,20 +1474,40 @@ $pink-accent: #ec4899;
         }
       }
 
-      .picker-name {
+      .picker-chat-info {
         flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
         text-align: left;
-        font-size: 16px;
-        font-weight: 800;
-        color: $text-main;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+
+        .picker-name {
+          font-size: 15px;
+          font-weight: 800;
+          color: $text-main;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .picker-chat-preview {
+          font-size: 12px;
+          font-weight: 600;
+          color: $text-sub;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          margin-top: 2px;
+        }
       }
 
-      .picker-share-icon {
+      .picker-time {
         flex-shrink: 0;
-        color: $purple-accent;
+        font-size: 11px;
+        font-weight: 600;
+        color: $text-sub;
+        align-self: flex-start;
+        margin-top: 2px;
       }
     }
   }
