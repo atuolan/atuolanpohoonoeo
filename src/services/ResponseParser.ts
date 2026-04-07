@@ -50,6 +50,11 @@ export interface ParsedMessage {
   isWaimaiPaymentResult?: boolean;
   waimaiPaymentStatus?: "paid" | "rejected" | "failed";
   isWaimaiDelivery?: boolean;
+  // 角色撤回（線上模式）
+  isCharRecall?: boolean;
+  charRecallType?: 'seen' | 'hidden';
+  charRecallContent?: string;
+  charRecallHints?: string[];
 }
 
 export interface ParsedResponse {
@@ -351,6 +356,34 @@ function parseTextOnlyContent(content: string): ParsedMessage {
       .trim();
   }
 
+  // 檢查角色撤回（線上模式）
+  const textRecallSeenMatch = result.content.match(
+    /<recall>([\s\S]*?)<\/recall>/i,
+  );
+  if (textRecallSeenMatch) {
+    result.isCharRecall = true;
+    result.charRecallType = "seen";
+    result.charRecallContent = textRecallSeenMatch[1].trim();
+    result.content = result.content
+      .replace(/<recall>[\s\S]*?<\/recall>/gi, "")
+      .trim();
+  } else {
+    const textRecallHiddenMatch = result.content.match(
+      /<recall-secret\s+([^>]*?)\s*\/?>/i,
+    );
+    if (textRecallHiddenMatch) {
+      const attrs = textRecallHiddenMatch[1];
+      const hint1 = extractAttr(attrs, "hint1");
+      const hint2 = extractAttr(attrs, "hint2");
+      result.isCharRecall = true;
+      result.charRecallType = "hidden";
+      result.charRecallHints = [hint1, hint2].filter(Boolean) as string[];
+      result.content = result.content
+        .replace(/<recall-secret\s+[^>]*?\s*\/?>/gi, "")
+        .trim();
+    }
+  }
+
   return result;
 }
 
@@ -566,6 +599,36 @@ function parseMessageContentWithoutTimetravel(content: string): ParsedMessage {
     result.content = result.content
       .replace(/<waimai-delivery\s*\/?>/gi, "")
       .trim();
+  }
+
+  // 檢查角色撤回（線上模式）
+  // Type 1: <recall>被撤回的內容</recall>
+  const charRecallSeenMatch = result.content.match(
+    /<recall>([\s\S]*?)<\/recall>/i,
+  );
+  if (charRecallSeenMatch) {
+    result.isCharRecall = true;
+    result.charRecallType = "seen";
+    result.charRecallContent = charRecallSeenMatch[1].trim();
+    result.content = result.content
+      .replace(/<recall>[\s\S]*?<\/recall>/gi, "")
+      .trim();
+  } else {
+    // Type 2: <recall-secret hint1="詞1" hint2="詞2"/>
+    const charRecallHiddenMatch = result.content.match(
+      /<recall-secret\s+([^>]*?)\s*\/?>/i,
+    );
+    if (charRecallHiddenMatch) {
+      const attrs = charRecallHiddenMatch[1];
+      const hint1 = extractAttr(attrs, "hint1");
+      const hint2 = extractAttr(attrs, "hint2");
+      result.isCharRecall = true;
+      result.charRecallType = "hidden";
+      result.charRecallHints = [hint1, hint2].filter(Boolean) as string[];
+      result.content = result.content
+        .replace(/<recall-secret\s+[^>]*?\s*\/?>/gi, "")
+        .trim();
+    }
   }
 
   return result;
@@ -788,7 +851,8 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
             parsed.isTransfer ||
             parsed.isGift ||
             parsed.isVoice ||
-            parsed.isAiImage
+            parsed.isAiImage ||
+            parsed.isCharRecall
           ) {
             result.messages.push(parsed);
           }
@@ -944,7 +1008,8 @@ function isNonEmptyMessage(msg: ParsedMessage): boolean {
     msg.isVoice ||
     msg.isAiImage ||
     msg.isWaimaiPaymentResult ||
-    msg.isWaimaiDelivery
+    msg.isWaimaiDelivery ||
+    msg.isCharRecall
   );
 
   // 調試日誌：記錄空消息過濾
@@ -1198,6 +1263,36 @@ function parseMessageContent(content: string): ParsedMessage {
     result.content = result.content
       .replace(/<waimai-delivery\s*\/?>/gi, "")
       .trim();
+  }
+
+  // 檢查角色撤回（線上模式）
+  // Type 1: <recall>被撤回的內容</recall>
+  const charRecallSeenMatch2 = result.content.match(
+    /<recall>([\s\S]*?)<\/recall>/i,
+  );
+  if (charRecallSeenMatch2) {
+    result.isCharRecall = true;
+    result.charRecallType = "seen";
+    result.charRecallContent = charRecallSeenMatch2[1].trim();
+    result.content = result.content
+      .replace(/<recall>[\s\S]*?<\/recall>/gi, "")
+      .trim();
+  } else {
+    // Type 2: <recall-secret hint1="詞1" hint2="詞2"/>
+    const charRecallHiddenMatch2 = result.content.match(
+      /<recall-secret\s+([^>]*?)\s*\/?>/i,
+    );
+    if (charRecallHiddenMatch2) {
+      const attrs2 = charRecallHiddenMatch2[1];
+      const hint1 = extractAttr(attrs2, "hint1");
+      const hint2 = extractAttr(attrs2, "hint2");
+      result.isCharRecall = true;
+      result.charRecallType = "hidden";
+      result.charRecallHints = [hint1, hint2].filter(Boolean) as string[];
+      result.content = result.content
+        .replace(/<recall-secret\s+[^>]*?\s*\/?>/gi, "")
+        .trim();
+    }
   }
 
   return result;

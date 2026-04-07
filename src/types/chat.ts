@@ -404,6 +404,18 @@ export interface ChatMessage {
   /** 用戶撤回類型：seen=被角色看見, unseen=沒被看見 */
   userRecalledType?: 'seen' | 'unseen';
 
+  // --- 角色撤回相關（線上模式） ---
+  /** 是否為角色撤回訊息（線上模式專用） */
+  isCharRecall?: boolean;
+  /** 角色撤回類型：seen=被用戶看見了, hidden=沒看見但有提示 */
+  charRecallType?: 'seen' | 'hidden';
+  /** 角色撤回的原始內容（seen 類型） */
+  charRecallContent?: string;
+  /** 隱藏撤回的心情提示詞（hidden 類型，最多 2 個） */
+  charRecallHints?: string[];
+  /** 是否已點擊展開查看撤回內容（seen 類型） */
+  charRecallRevealed?: boolean;
+
   // --- 封鎖系統相關 ---
   /** 是否為封鎖期間發送的訊息（用戶封鎖角色後仍可發送） */
   sentWhileBlocked?: boolean;

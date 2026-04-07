@@ -272,6 +272,12 @@ interface MessageBubbleProps {
   // 用戶撤回相關
   isUserRecalled?: boolean;
   userRecalledType?: 'seen' | 'unseen';
+  // 角色撤回相關（線上模式）
+  isCharRecall?: boolean;
+  charRecallType?: 'seen' | 'hidden';
+  charRecallContent?: string;
+  charRecallHints?: string[];
+  charRecallRevealed?: boolean;
 }
 
 const props = withDefaults(defineProps<MessageBubbleProps>(), {
@@ -359,6 +365,11 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   characterName: "",
   isUserRecalled: false,
   userRecalledType: undefined,
+  isCharRecall: false,
+  charRecallType: undefined,
+  charRecallContent: '',
+  charRecallHints: () => [],
+  charRecallRevealed: false,
 });
 
 // Emits
@@ -382,6 +393,7 @@ const emit = defineEmits<{
   (e: "batchScreenshot", id: string): void;
   (e: "splitRegexHtml", id: string, htmlContent: string): void;
   (e: "recall", id: string, type: "seen" | "unseen"): void;
+  (e: "charRecallReveal", id: string): void;
 }>();
 
 // 群聊記錄 Modal 狀態
@@ -395,6 +407,9 @@ const showBlockedReason = ref(false);
 
 // 撤回子選項展開狀態
 const showRecallOptions = ref(false);
+
+// 角色撤回展開狀態（seen 類型，若之前已查看則預設展開）
+const charRecallExpanded = ref(props.charRecallRevealed ?? false);
 
 // 照片預覽 Modal 狀態
 const showPhotoPreview = ref(false);
@@ -2238,7 +2253,49 @@ const showTextVoiceTranscript = ref(true);
 
     <!-- 一般訊息 -->
     <template v-else>
+      <!-- 角色撤回通知（線上模式） -->
+      <template v-if="isCharRecall">
+        <div class="char-recall-notification">
+          <div class="char-recall-row">
+            <svg viewBox="0 0 24 24" fill="currentColor" class="char-recall-icon">
+              <path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" />
+            </svg>
+            <span class="char-recall-text">{{ senderName || characterName }} 撤回了一條訊息</span>
+            <!-- Type 1: 被看見了，可點擊展開 -->
+            <button
+              v-if="charRecallType === 'seen'"
+              class="char-recall-seen-btn"
+              @click.stop="
+                charRecallExpanded = !charRecallExpanded;
+                if (!charRecallRevealed) emit('charRecallReveal', id);
+              "
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" class="char-recall-eye-icon">
+                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+              </svg>
+              被你看見了
+            </button>
+          </div>
+          <!-- Type 1 展開後顯示撤回內容 -->
+          <Transition name="char-recall-expand">
+            <div
+              v-if="charRecallType === 'seen' && charRecallExpanded"
+              class="char-recall-content-preview"
+            >{{ charRecallContent }}</div>
+          </Transition>
+          <!-- Type 2: hint chips -->
+          <div v-if="charRecallType === 'hidden' && charRecallHints && charRecallHints.length" class="char-recall-hints">
+            <span
+              v-for="hint in charRecallHints"
+              :key="hint"
+              class="char-recall-hint-chip"
+            >{{ hint }}</span>
+          </div>
+        </div>
+      </template>
+
       <!-- AI 頭像（左側）- 群聊模式使用發送者頭像 -->
+      <template v-else>
       <div
         v-if="!isUser && showAvatar"
         class="avatar-container"
@@ -3091,6 +3148,7 @@ const showTextVoiceTranscript = ref(true);
           </div>
         </template>
       </div>
+      </template>
     </template>
 
     <!-- 操作選單 -->
@@ -5750,6 +5808,100 @@ const showTextVoiceTranscript = ref(true);
     height: 14px;
     opacity: 0.6;
   }
+}
+
+// 角色撤回通知（線上模式）
+.char-recall-notification {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 0;
+
+  .char-recall-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--color-text-muted);
+    font-size: 12px;
+  }
+
+  .char-recall-icon {
+    width: 13px;
+    height: 13px;
+    opacity: 0.55;
+    flex-shrink: 0;
+  }
+
+  .char-recall-text {
+    opacity: 0.8;
+  }
+
+  .char-recall-seen-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 8px 1px 5px;
+    border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+    border-radius: var(--radius-full);
+    background: transparent;
+    font-size: 11px;
+    color: var(--color-primary, #6c8ebf);
+    cursor: pointer;
+    transition: background 0.15s;
+
+    &:hover {
+      background: var(--color-primary-subtle, rgba(108, 142, 191, 0.1));
+    }
+
+    .char-recall-eye-icon {
+      width: 12px;
+      height: 12px;
+    }
+  }
+
+  .char-recall-content-preview {
+    padding: 7px 14px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.06);
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    max-width: 75%;
+    text-align: center;
+    word-break: break-word;
+    opacity: 0.75;
+  }
+
+  .char-recall-hints {
+    display: inline-flex;
+    gap: 6px;
+
+    .char-recall-hint-chip {
+      padding: 2px 10px;
+      border-radius: var(--radius-full);
+      background: rgba(0, 0, 0, 0.06);
+      font-size: 12px;
+      color: var(--color-text-muted);
+    }
+  }
+}
+
+// 角色撤回展開動畫
+.char-recall-expand-enter-active,
+.char-recall-expand-leave-active {
+  transition: all 0.22s ease;
+  overflow: hidden;
+}
+.char-recall-expand-enter-from,
+.char-recall-expand-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+.char-recall-expand-enter-to,
+.char-recall-expand-leave-from {
+  opacity: 1;
+  max-height: 120px;
 }
 
 // 群管理動作

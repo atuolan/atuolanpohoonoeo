@@ -288,6 +288,12 @@ interface Message {
   // 用戶撤回相關
   isUserRecalled?: boolean;
   userRecalledType?: 'seen' | 'unseen';
+  // 角色撤回相關（線上模式）
+  isCharRecall?: boolean;
+  charRecallType?: 'seen' | 'hidden';
+  charRecallContent?: string;
+  charRecallHints?: string[];
+  charRecallRevealed?: boolean;
   // 封鎖系統相關
   sentWhileBlocked?: boolean;
   isSystemNotification?: boolean;
@@ -2818,6 +2824,14 @@ async function handleUndoRecall(id: string) {
   await saveChatImmediate();
 }
 
+// 角色撤回展開（seen 類型點擊後標記已查看）
+async function handleCharRecallReveal(id: string) {
+  const msg = messages.value.find((m) => m.id === id);
+  if (!msg || !msg.isCharRecall || msg.charRecallType !== 'seen') return;
+  msg.charRecallRevealed = true;
+  await saveChatImmediate();
+}
+
 // 日期分隔符：判斷是否顯示
 function shouldShowDateSeparator(index: number): boolean {
   if (index === 0) return true;
@@ -5026,7 +5040,8 @@ async function triggerAIResponse(options?: {
                 pm.isHtmlBlock ||
                 pm.isVoice ||
                 pm.isWaimaiPaymentResult ||
-                pm.isWaimaiDelivery,
+                pm.isWaimaiDelivery ||
+                pm.isCharRecall,
             ).length;
             let _shownMsgs1 = 0;
             for (let i = 0; i < parsed.messages.length; i++) {
@@ -5045,7 +5060,8 @@ async function triggerAIResponse(options?: {
                 !parsedMsg.isHtmlBlock &&
                 !parsedMsg.isVoice &&
                 !parsedMsg.isWaimaiPaymentResult &&
-                !parsedMsg.isWaimaiDelivery
+                !parsedMsg.isWaimaiDelivery &&
+                !parsedMsg.isCharRecall
               ) {
                 continue;
               }
@@ -5053,17 +5069,24 @@ async function triggerAIResponse(options?: {
               // 時空跳轉訊息使用 system role，這樣會渲染成特殊的系統訊息樣式
               const messageRole: "user" | "ai" | "system" =
                 parsedMsg.isTimetravel ? "system" : "ai";
+              const charRecallContext = parsedMsg.isCharRecall
+                ? parsedMsg.charRecallType === "seen"
+                  ? `(你撤回了訊息「${parsedMsg.charRecallContent || ""}」，但用戶已看見)`
+                  : `(你撤回了一條訊息，用戶沒看見，心情提示是${(parsedMsg.charRecallHints || []).join("、")})`
+                : undefined;
               const newMessage: Message = {
                 id: `msg_${Date.now()}_${i}`,
                 role: messageRole,
                 content:
-                  parsedMsg.isAiImage && parsedMsg.imageDescription
-                    ? `<pic>${parsedMsg.imageDescription}</pic>`
-                    : parsedMsg.isHtmlBlock
-                      ? ""
-                      : parsedMsg.isVoice
-                        ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
-                        : parsedMsg.content,
+                  parsedMsg.isCharRecall
+                    ? charRecallContext || ""
+                    : parsedMsg.isAiImage && parsedMsg.imageDescription
+                      ? `<pic>${parsedMsg.imageDescription}</pic>`
+                      : parsedMsg.isHtmlBlock
+                        ? ""
+                        : parsedMsg.isVoice
+                          ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
+                          : parsedMsg.content,
                 timestamp: Date.now() + i, // 確保時間戳遞增
                 turnId: currentTurnId.value || undefined,
                 thought: parsedMsg.thought,
@@ -5111,6 +5134,11 @@ async function triggerAIResponse(options?: {
                 audioTranscript: parsedMsg.isVoice
                   ? parsedMsg.voiceContent
                   : undefined,
+                // 角色撤回相關（線上模式）
+                isCharRecall: parsedMsg.isCharRecall,
+                charRecallType: parsedMsg.charRecallType,
+                charRecallContent: parsedMsg.charRecallContent,
+                charRecallHints: parsedMsg.charRecallHints,
               };
 
               // 外賣付款結果/送達：從最近訊息中找到訂單快照並附加
@@ -5834,7 +5862,8 @@ async function triggerAIResponse(options?: {
                   pm.isHtmlBlock ||
                   pm.isVoice ||
                   pm.isWaimaiPaymentResult ||
-                  pm.isWaimaiDelivery,
+                  pm.isWaimaiDelivery ||
+                  pm.isCharRecall,
               ).length;
               let _shownMsgs2 = 0;
               for (let i = 0; i < parsed.messages.length; i++) {
@@ -5852,24 +5881,32 @@ async function triggerAIResponse(options?: {
                   !parsedMsg.isHtmlBlock &&
                   !parsedMsg.isVoice &&
                   !parsedMsg.isWaimaiPaymentResult &&
-                  !parsedMsg.isWaimaiDelivery
+                  !parsedMsg.isWaimaiDelivery &&
+                  !parsedMsg.isCharRecall
                 ) {
                   continue;
                 }
 
                 const messageRole: "user" | "ai" | "system" =
                   parsedMsg.isTimetravel ? "system" : "ai";
+                const charRecallContext2 = parsedMsg.isCharRecall
+                  ? parsedMsg.charRecallType === "seen"
+                    ? `(你撤回了訊息「${parsedMsg.charRecallContent || ""}」，但用戶已看見)`
+                    : `(你撤回了一條訊息，用戶沒看見，心情提示是${(parsedMsg.charRecallHints || []).join("、")})`
+                  : undefined;
                 const newMessage: Message = {
                   id: `msg_${Date.now()}_${i}`,
                   role: messageRole,
                   content:
-                    parsedMsg.isAiImage && parsedMsg.imageDescription
-                      ? `<pic>${parsedMsg.imageDescription}</pic>`
-                      : parsedMsg.isHtmlBlock
-                        ? ""
-                        : parsedMsg.isVoice
-                          ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
-                          : parsedMsg.content,
+                    parsedMsg.isCharRecall
+                      ? charRecallContext2 || ""
+                      : parsedMsg.isAiImage && parsedMsg.imageDescription
+                        ? `<pic>${parsedMsg.imageDescription}</pic>`
+                        : parsedMsg.isHtmlBlock
+                          ? ""
+                          : parsedMsg.isVoice
+                            ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
+                            : parsedMsg.content,
                   timestamp: Date.now() + i,
                   turnId: currentTurnId.value || undefined,
                   thought: parsedMsg.thought,
@@ -5913,6 +5950,11 @@ async function triggerAIResponse(options?: {
                   audioTranscript: parsedMsg.isVoice
                     ? parsedMsg.voiceContent
                     : undefined,
+                  // 角色撤回相關（線上模式）
+                  isCharRecall: parsedMsg.isCharRecall,
+                  charRecallType: parsedMsg.charRecallType,
+                  charRecallContent: parsedMsg.charRecallContent,
+                  charRecallHints: parsedMsg.charRecallHints,
                 };
 
                 // 外賣付款結果/送達
@@ -6592,6 +6634,11 @@ async function handleStreamingClose() {
               audioTranscript: parsedMsg.isVoice
                 ? parsedMsg.voiceContent
                 : undefined,
+              // 角色撤回相關（線上模式）
+              isCharRecall: parsedMsg.isCharRecall,
+              charRecallType: parsedMsg.charRecallType,
+              charRecallContent: parsedMsg.charRecallContent,
+              charRecallHints: parsedMsg.charRecallHints,
             };
 
             // 外賣付款結果/送達（窗口關閉時解析）
@@ -7666,6 +7713,12 @@ async function loadOrCreateChat(overrideChatId?: string) {
             // 用戶撤回相關
             isUserRecalled: (m as any).isUserRecalled,
             userRecalledType: (m as any).userRecalledType,
+            // 角色撤回相關（線上模式）
+            isCharRecall: (m as any).isCharRecall,
+            charRecallType: (m as any).charRecallType,
+            charRecallContent: (m as any).charRecallContent,
+            charRecallHints: (m as any).charRecallHints,
+            charRecallRevealed: (m as any).charRecallRevealed,
             // 封鎖系統相關
             sentWhileBlocked: (m as any).sentWhileBlocked,
             isSystemNotification: (m as any).isSystemNotification,
@@ -8196,6 +8249,12 @@ function convertToStorableMessage(m: any, charName: string): ChatMessage {
     // 用戶撤回相關
     isUserRecalled: m.isUserRecalled,
     userRecalledType: m.userRecalledType,
+    // 角色撤回相關（線上模式）
+    isCharRecall: m.isCharRecall,
+    charRecallType: m.charRecallType,
+    charRecallContent: m.charRecallContent,
+    charRecallHints: m.charRecallHints ? [...m.charRecallHints] : undefined,
+    charRecallRevealed: m.charRecallRevealed,
     // 封鎖系統相關
     sentWhileBlocked: m.sentWhileBlocked,
     isSystemNotification: m.isSystemNotification,
@@ -10155,6 +10214,11 @@ onUnmounted(() => {
             :audio-transcript="message.audioTranscript"
             :is-char-blocked-notification="message.isCharBlockedNotification"
             :char-blocked-reason="message.charBlockedReason"
+            :is-char-recall="message.isCharRecall"
+            :char-recall-type="message.charRecallType"
+            :char-recall-content="message.charRecallContent"
+            :char-recall-hints="message.charRecallHints"
+            :char-recall-revealed="message.charRecallRevealed"
             :is-selected="
               (isSelectingForDelete &&
                 selectedMessageIds.includes(message.id)) ||
@@ -10190,6 +10254,7 @@ onUnmounted(() => {
             @avatar-click="handleAvatarClick"
             @split-regex-html="handleSplitRegexHtml"
             @recall="handleMessageRecall"
+            @char-recall-reveal="handleCharRecallReveal"
           />
           <!-- 封鎖期間訊息的驚嘆號指示器（獨立行，在訊息下方顯示） -->
           <div

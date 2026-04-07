@@ -349,6 +349,10 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
           missingFeatures.push("<vid>");
         if (!storedOnlineMode.content.includes("<avatar-change"))
           missingFeatures.push("<avatar-change");
+        if (!storedOnlineMode.content.includes("<recall>"))
+          missingFeatures.push("<recall>");
+        if (!storedOnlineMode.content.includes("<recall-secret"))
+          missingFeatures.push("<recall-secret");
 
         if (missingFeatures.length > 0) {
           for (const feature of missingFeatures) {
