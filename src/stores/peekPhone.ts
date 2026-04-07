@@ -104,6 +104,8 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       notes: [],
       diary: [],
       gallery: [],
+      browserHistory: [],
+      hiddenPhotos: [],
     };
   }
 

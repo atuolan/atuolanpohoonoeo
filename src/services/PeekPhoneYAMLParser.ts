@@ -5,10 +5,12 @@
  * 解析失敗時返回 fallback 空結構，不拋出異常
  */
 import type {
+    PeekBrowserEntry,
     PeekChatMessage,
     PeekChatThread,
     PeekDiaryEntry,
     PeekGalleryItem,
+    PeekHiddenPhoto,
     PeekMealRecord,
     PeekMemo,
     PeekNote,
@@ -381,13 +383,20 @@ export function parseGroupC(yaml: string): {
   }
 }
 
-/** 解析 Group D YAML → PeekGalleryItem[] */
-export function parseGroupD(yaml: string): PeekGalleryItem[] {
+/** 解析 Group D YAML → { gallery, browserHistory, hiddenPhotos } */
+export function parseGroupD(yaml: string): {
+  gallery: PeekGalleryItem[];
+  browserHistory: PeekBrowserEntry[];
+  hiddenPhotos: PeekHiddenPhoto[];
+} {
+  const fallback = { gallery: [] as PeekGalleryItem[], browserHistory: [] as PeekBrowserEntry[], hiddenPhotos: [] as PeekHiddenPhoto[] };
   try {
     const tokens = tokenize(yaml);
-    const items = parseListItems(findSection(tokens, "gallery"));
+
+    // Parse gallery
+    const galleryItems = parseListItems(findSection(tokens, "gallery"));
     const validSources = ["selfie", "scene", "saved"] as const;
-    return items.map((item) => {
+    const gallery: PeekGalleryItem[] = galleryItems.map((item) => {
       const rawSource = item.source ?? "scene";
       const source = validSources.includes(rawSource as any)
         ? (rawSource as PeekGalleryItem["source"])
@@ -400,9 +409,45 @@ export function parseGroupD(yaml: string): PeekGalleryItem[] {
         date: item.date ?? "",
       };
     });
+
+    // Parse browser_history
+    const browserItems = parseListItems(findSection(tokens, "browser_history"));
+    const validCategories = ["search", "adult", "general"] as const;
+    const browserHistory: PeekBrowserEntry[] = browserItems.map((item) => {
+      const rawCat = item.category ?? "general";
+      const category = validCategories.includes(rawCat as any)
+        ? (rawCat as PeekBrowserEntry["category"])
+        : "general";
+      return {
+        id: genId(),
+        title: item.title ?? "",
+        url: item.url ?? "",
+        time: item.time ?? "",
+        category,
+      };
+    });
+
+    // Parse hidden_photos
+    const hiddenItems = parseListItems(findSection(tokens, "hidden_photos"));
+    const validTypes = ["selfie", "saved", "screenshot"] as const;
+    const hiddenPhotos: PeekHiddenPhoto[] = hiddenItems.map((item) => {
+      const rawType = item.type ?? "saved";
+      const type = validTypes.includes(rawType as any)
+        ? (rawType as PeekHiddenPhoto["type"])
+        : "saved";
+      return {
+        id: genId(),
+        description: item.description ?? "",
+        type,
+        reason: item.reason ?? "",
+        date: item.date ?? "",
+      };
+    });
+
+    return { gallery, browserHistory, hiddenPhotos };
   } catch {
     console.warn("[PeekPhoneYAMLParser] parseGroupD failed");
-    return [];
+    return fallback;
   }
 }
 
@@ -412,7 +457,7 @@ export function parseFullData(yaml: string): PeekPhoneData {
     const chats = parseGroupA(yaml);
     const { schedule, meals, memos } = parseGroupB(yaml);
     const { notes, diary, balance, transactions } = parseGroupC(yaml);
-    const gallery = parseGroupD(yaml);
+    const { gallery, browserHistory, hiddenPhotos } = parseGroupD(yaml);
 
     return {
       characterId: "",
@@ -425,6 +470,8 @@ export function parseFullData(yaml: string): PeekPhoneData {
       notes,
       diary,
       gallery,
+      browserHistory,
+      hiddenPhotos,
     };
   } catch {
     console.warn("[PeekPhoneYAMLParser] parseFullData failed");
@@ -439,6 +486,8 @@ export function parseFullData(yaml: string): PeekPhoneData {
       notes: [],
       diary: [],
       gallery: [],
+      browserHistory: [],
+      hiddenPhotos: [],
     };
   }
 }

@@ -15,12 +15,16 @@ import {
     ChevronLeft,
     Clock,
     CreditCard,
+    EyeOff,
     FileText,
+    Globe,
     Image,
     ListChecks,
+    Lock,
     Loader2,
     MessageCircle,
     RefreshCw,
+    Search,
     Signal,
     Smile,
     UtensilsCrossed,
@@ -125,6 +129,20 @@ const phoneApps = [
     color: "#ffffff",
     group: "D" as const,
   },
+  {
+    key: "browser" as PeekPhoneTab,
+    label: "瀏覽器",
+    icon: Globe,
+    color: "#ffffff",
+    group: "D" as const,
+  },
+  {
+    key: "hidden" as PeekPhoneTab,
+    label: "私密相冊",
+    icon: Lock,
+    color: "#ffffff",
+    group: "D" as const,
+  },
 ];
 
 // 從 store 讀取資料
@@ -142,6 +160,8 @@ const memos = computed(() => storeData.value?.memos ?? []);
 const notes = computed(() => storeData.value?.notes ?? []);
 const diary = computed(() => storeData.value?.diary ?? []);
 const gallery = computed(() => storeData.value?.gallery ?? []);
+const browserHistory = computed(() => storeData.value?.browserHistory ?? []);
+const hiddenPhotos = computed(() => storeData.value?.hiddenPhotos ?? []);
 
 // 聊天詳情
 const selectedChatId = ref<string | null>(null);
@@ -160,6 +180,9 @@ const selectedDiaryId = ref<string | null>(null);
 const selectedDiary = computed(() =>
   diary.value.find((d) => d.id === selectedDiaryId.value),
 );
+
+// 瀏覽器歷史篩選
+const selectedBrowserCategory = ref<"all" | "search" | "adult" | "general">("all");
 
 // 刷新選單
 const showRefreshMenu = ref(false);
@@ -187,6 +210,10 @@ function getBadge(tab: PeekPhoneTab): number {
       return memos.value.filter((m) => !m.done).length;
     case "gallery":
       return gallery.value.length;
+    case "browser":
+      return browserHistory.value.filter((e) => e.category === "adult").length;
+    case "hidden":
+      return hiddenPhotos.value.length;
     default:
       return 0;
   }
@@ -201,6 +228,7 @@ function goBackToHome() {
   selectedChatId.value = null;
   selectedNoteId.value = null;
   selectedDiaryId.value = null;
+  selectedBrowserCategory.value = "all";
 }
 
 // 載入聊天資料並觸發生成
@@ -773,6 +801,88 @@ function getAppTitle(key: PeekPhoneTab) {
                             : "聊天保存"
                       }}</span>
                       <span class="gallery-date">{{ item.date }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- ===== 瀏覽器歷史 ===== -->
+            <template v-else-if="currentView === 'browser'">
+              <div class="section-label">
+                <Globe :size="16" /><span>瀏覽器歷史</span>
+              </div>
+              <!-- 篩選標籤 -->
+              <div class="browser-filter-tabs">
+                <button
+                  v-for="cat in ([
+                    { key: 'all', label: '全部' },
+                    { key: 'search', label: '搜尋' },
+                    { key: 'general', label: '一般' },
+                    { key: 'adult', label: '🔞 成人' },
+                  ] as const)"
+                  :key="cat.key"
+                  class="browser-filter-btn"
+                  :class="{ active: selectedBrowserCategory === cat.key }"
+                  @click="selectedBrowserCategory = cat.key"
+                >{{ cat.label }}</button>
+              </div>
+              <div v-if="browserHistory.length === 0" class="empty-hint">沒有瀏覽記錄</div>
+              <div v-else class="browser-list">
+                <div
+                  v-for="entry in browserHistory.filter(e => selectedBrowserCategory === 'all' || e.category === selectedBrowserCategory)"
+                  :key="entry.id"
+                  class="browser-entry"
+                  :class="entry.category"
+                >
+                  <div class="browser-entry-icon">
+                    <Search v-if="entry.category === 'search'" :size="18" />
+                    <EyeOff v-else-if="entry.category === 'adult'" :size="18" />
+                    <Globe v-else :size="18" />
+                  </div>
+                  <div class="browser-entry-info">
+                    <div class="browser-entry-title">{{ entry.title }}</div>
+                    <div class="browser-entry-url">{{ entry.url }}</div>
+                  </div>
+                  <div class="browser-entry-right">
+                    <span class="browser-cat-badge" :class="entry.category">
+                      {{ entry.category === 'search' ? '搜尋' : entry.category === 'adult' ? '🔞' : '一般' }}
+                    </span>
+                    <span class="browser-entry-time">{{ entry.time }}</span>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- ===== 私密相冊 ===== -->
+            <template v-else-if="currentView === 'hidden'">
+              <div class="section-label hidden-label">
+                <Lock :size="16" /><span>私密相冊</span>
+              </div>
+              <div class="hidden-warning">
+                <EyeOff :size="16" />
+                <span>這些照片被藏在手機深處，不對外公開</span>
+              </div>
+              <div v-if="hiddenPhotos.length === 0" class="empty-hint">沒有隱藏照片</div>
+              <div v-else class="hidden-list">
+                <div
+                  v-for="item in hiddenPhotos"
+                  :key="item.id"
+                  class="hidden-card"
+                >
+                  <div class="hidden-card-icon">
+                    <Lock :size="24" />
+                  </div>
+                  <div class="hidden-card-info">
+                    <div class="hidden-card-desc">{{ item.description }}</div>
+                    <div class="hidden-card-reason">
+                      <span class="hidden-reason-label">藏起來的原因：</span>{{ item.reason }}
+                    </div>
+                    <div class="hidden-card-meta">
+                      <span class="hidden-type-badge" :class="item.type">
+                        {{ item.type === 'selfie' ? '本人自拍' : item.type === 'saved' ? '從網路保存' : '截圖' }}
+                      </span>
+                      <span class="hidden-card-date">{{ item.date }}</span>
                     </div>
                   </div>
                 </div>
@@ -1880,6 +1990,7 @@ $blob-bg: #d4f2cc;
   line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 4;
+  line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -1974,6 +2085,7 @@ $blob-bg: #d4f2cc;
   line-height: 1.6;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -2087,5 +2199,251 @@ $blob-bg: #d4f2cc;
   font-size: 12px;
   font-weight: 700;
   color: $text-sec;
+}
+
+// ===== Browser History =====
+.browser-filter-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.browser-filter-btn {
+  padding: 6px 14px;
+  border-radius: 16px;
+  border: 2px solid $frame-border;
+  background: $card-bg;
+  font-size: 13px;
+  font-weight: 800;
+  color: $text-main;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 $frame-border;
+  transition: transform 0.1s, box-shadow 0.1s;
+
+  &:active {
+    transform: translate(2px, 2px);
+    box-shadow: 0 0 0 $frame-border;
+  }
+
+  &.active {
+    background: $accent-color;
+  }
+}
+
+.browser-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.browser-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: $card-bg;
+  border: 2px solid $frame-border;
+  border-bottom: none;
+
+  &:first-child { border-radius: 16px 16px 0 0; }
+  &:last-child {
+    border-bottom: 2px solid $frame-border;
+    border-radius: 0 0 16px 16px;
+    box-shadow: 3px 3px 0 $frame-border;
+  }
+  &:first-child:last-child { border-radius: 16px; }
+
+  &.adult {
+    background: #fff0f3;
+  }
+}
+
+.browser-entry-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 2px solid $frame-border;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: $text-main;
+  background: #f8fafc;
+
+  .adult & {
+    background: #ffe4e8;
+    color: #e11d48;
+  }
+
+  .search & {
+    background: #eff6ff;
+    color: #2563eb;
+  }
+}
+
+.browser-entry-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.browser-entry-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: $text-main;
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
+.browser-entry-url {
+  font-size: 11px;
+  font-weight: 700;
+  color: $text-sec;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.browser-entry-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.browser-cat-badge {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 8px;
+  border: 2px solid $frame-border;
+  background: #f1f5f9;
+  color: $text-main;
+
+  &.adult {
+    background: #ffe4e8;
+    color: #e11d48;
+    border-color: #e11d48;
+  }
+
+  &.search {
+    background: #eff6ff;
+    color: #2563eb;
+    border-color: #2563eb;
+  }
+}
+
+.browser-entry-time {
+  font-size: 11px;
+  font-weight: 800;
+  color: $text-sec;
+}
+
+// ===== Hidden Photos =====
+.hidden-label {
+  background: #1a1a1a !important;
+  color: #fff !important;
+}
+
+.hidden-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #fff0f3;
+  border: 2px solid #e11d48;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #e11d48;
+  margin-bottom: 16px;
+}
+
+.hidden-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hidden-card {
+  display: flex;
+  gap: 14px;
+  padding: 16px;
+  background: #1a1a1a;
+  border: 3px solid $frame-border;
+  border-radius: 20px;
+  box-shadow: 4px 4px 0 $frame-border;
+}
+
+.hidden-card-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: #2d1a2e;
+  border: 2px solid #6b21a8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #c084fc;
+}
+
+.hidden-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.hidden-card-desc {
+  font-size: 15px;
+  font-weight: 800;
+  color: #f0e6ff;
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.hidden-card-reason {
+  font-size: 13px;
+  font-weight: 700;
+  color: #c4b5d4;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.hidden-reason-label {
+  color: #c084fc;
+  font-weight: 800;
+}
+
+.hidden-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hidden-type-badge {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 8px;
+  border: 2px solid #6b21a8;
+  background: #2d1a2e;
+  color: #c084fc;
+
+  &.selfie { background: #2d1a1a; border-color: #e11d48; color: #f9a8d4; }
+  &.saved { background: #1a2d1a; border-color: #16a34a; color: #86efac; }
+  &.screenshot { background: #1a1a2d; border-color: #2563eb; color: #93c5fd; }
+}
+
+.hidden-card-date {
+  font-size: 12px;
+  font-weight: 700;
+  color: #9ca3af;
 }
 </style>

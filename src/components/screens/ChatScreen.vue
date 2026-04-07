@@ -360,7 +360,7 @@ const emit = defineEmits<{
   (e: "menu"): void;
   (
     e: "navigate",
-    page: "character" | "worldbook" | "settings" | "shop" | "media-log",
+    page: "character" | "worldbook" | "settings" | "shop" | "media-log" | "peek-phone",
   ): void;
   (e: "editCharacter", id: string): void;
   (e: "editLorebook", id: string): void;

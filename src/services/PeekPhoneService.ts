@@ -8,9 +8,11 @@ import { useSettingsStore } from "@/stores/settings";
 import type { StoredCharacter } from "@/types/character";
 import type { Chat, ChatMessage } from "@/types/chat";
 import type {
+  PeekBrowserEntry,
   PeekChatThread,
   PeekDiaryEntry,
   PeekGalleryItem,
+  PeekHiddenPhoto,
   PeekMealRecord,
   PeekMemo,
   PeekNote,
@@ -49,7 +51,11 @@ export type GroupCResult = {
   balance: number;
   transactions: PeekTransaction[];
 };
-export type GroupDResult = { gallery: PeekGalleryItem[] };
+export type GroupDResult = {
+  gallery: PeekGalleryItem[];
+  browserHistory: PeekBrowserEntry[];
+  hiddenPhotos: PeekHiddenPhoto[];
+};
 
 export type GroupResult =
   | GroupAResult
@@ -334,7 +340,7 @@ export async function generateGroup(
     case "C":
       return parseGroupC(yamlContent);
     case "D":
-      return { gallery: parseGroupD(yamlContent) };
+      return parseGroupD(yamlContent);
   }
 }
 

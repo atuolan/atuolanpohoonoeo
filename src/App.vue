@@ -1685,11 +1685,17 @@ function closeImportModal() {
 
 // 處理聊天頁面的快捷導航
 function handleChatNavigate(
-  page: "character" | "worldbook" | "settings" | "shop" | "media-log",
+  page: "character" | "worldbook" | "settings" | "shop" | "media-log" | "peek-phone",
 ) {
   // 書影記錄使用彈窗，不需要頁面導航
   if (page === "media-log") {
     showMediaLogManager.value = true;
+    return;
+  }
+  // 頭盔TA手機導航到角色選擇頁
+  if (page === "peek-phone") {
+    navigationHistory.value.push(currentPage.value);
+    currentPage.value = "peek-phone-select";
     return;
   }
   // 記錄當前頁面到歷史堆疊

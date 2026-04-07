@@ -116,6 +116,32 @@ export interface PeekGalleryItem {
   date: string;
 }
 
+/** 瀏覽器歷史記錄 */
+export interface PeekBrowserEntry {
+  id: string;
+  /** 頁面標題或搜尋關鍵詞 */
+  title: string;
+  /** 網址或搜尋詞 */
+  url: string;
+  /** 時間 (HH:mm) */
+  time: string;
+  /** 類型：search=搜尋紀錄, adult=成人內容, general=一般瀏覽 */
+  category: "search" | "adult" | "general";
+}
+
+/** 隱藏的私密照片 */
+export interface PeekHiddenPhoto {
+  id: string;
+  /** 照片描述 */
+  description: string;
+  /** 類型：selfie=本人自拍, saved=從網路保存, screenshot=截圖 */
+  type: "selfie" | "saved" | "screenshot";
+  /** 為什麼藏起來（角色的內心獨白） */
+  reason: string;
+  /** 日期 (YYYY-MM-DD) */
+  date: string;
+}
+
 /** 角色手機完整資料 */
 export interface PeekPhoneData {
   characterId: string;
@@ -137,6 +163,10 @@ export interface PeekPhoneData {
   diary: PeekDiaryEntry[];
   /** 相冊 */
   gallery: PeekGalleryItem[];
+  /** 瀏覽器歷史 */
+  browserHistory: PeekBrowserEntry[];
+  /** 隱藏私密照片 */
+  hiddenPhotos: PeekHiddenPhoto[];
 }
 
 /** 偷窺手機的 Tab 類型 */
@@ -148,4 +178,6 @@ export type PeekPhoneTab =
   | "memo"
   | "notes"
   | "diary"
-  | "gallery";
+  | "gallery"
+  | "browser"
+  | "hidden";

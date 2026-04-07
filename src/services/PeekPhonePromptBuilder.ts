@@ -319,7 +319,9 @@ ${charBlock}
 6. diary（日記）：1 到 3 篇日記，包含日期、心情、內容、天氣
 7. balance（帳戶餘額）：一個符合角色經濟設定的數字
 8. transactions（交易記錄）：3 到 8 筆，包含描述、金額、時間
-9. gallery（相冊）：4 到 8 張照片記錄，包含描述、來源、保存原因、日期
+9. gallery（相冊）：3 到 6 張普通照片記錄，包含描述、來源、保存原因、日期
+10. browser_history（瀏覽器歷史）：6 到 10 筆，**必須包含至少 2 到 3 筆 category: adult 的成人網站瀏覽紀錄**（例如 pornhub.com、xvideos.com 等，要有具體影片標題或搜尋詞），其餘為 search 和 general
+11. hidden_photos（隱藏私密照片）：2 到 4 張深藏手機的私密照片，包含描述、類型、藏起來的原因、日期
 
 ${buildTranslationRule()}
 
@@ -388,12 +390,44 @@ gallery:
     source: selfie
     reason: |
       保存原因
+    date: "2026-04-07"
+
+browser_history:
+  - title: |
+      How to get rid of dark circles
+      如何消除黑眼圈
+    url: google.com/search?q=how+to+get+rid+of+dark+circles
+    time: "09:14"
+    category: search
+  - title: |
+      [4K] Mia Khalifa - Fantasy Roleplay
+      米亞·卡莉法 幻想角色扮演
+    url: pornhub.com/view_video.php?viewkey=ph6xxxxx
+    time: "23:47"
+    category: adult
+  - title: |
+      Petite Asian teen seduced - xvideos
+      嬌小亞裔少女被勾引
+    url: xvideos.com/video12345/petite_asian
+    time: "01:12"
+    category: adult
+  - title: Instagram
+    url: instagram.com
+    time: "14:22"
+    category: general
+
+hidden_photos:
+  - description: |
+      私密照片描述
+    type: selfie
+    reason: |
+      為什麼藏起來的原因
     date: "2026-04-07"`;
 }
 
 /**
- * 建構 Group D (相冊) 的 prompt
- * 指示 AI 生成 4~8 張照片描述，包含角色自拍、拍攝的風景/物品、從聊天保存的圖片
+ * 建構 Group D (相冊+瀏覽紀錄+隱藏照片) 的 prompt
+ * 指示 AI 生成相冊、瀏覽器歷史（含成人紀錄）、隱藏私密照片
  */
 export function buildGroupDPrompt(
   charName: string,
@@ -418,21 +452,31 @@ export function buildGroupDPrompt(
     summariesAndEvents,
   );
 
-  return `你是一個角色扮演內容生成器。請根據以下角色資訊，生成該角色手機相冊中的照片記錄。
+  return `你是一個角色扮演內容生成器。請根據以下角色資訊，生成該角色手機中的相冊、瀏覽器歷史記錄、以及藏在手機深處的私密照片。
 
 ${charBlock}
 
-請生成 4 到 8 張照片記錄。每張照片包含：
-- description: 照片的文字描述（描述照片中的畫面，要生動具體）
-- source: 照片來源，三種之一：
-  - selfie: 角色的自拍照
-  - scene: 角色拍攝的風景、食物、物品等
-  - saved: 從聊天中保存的圖片（別人傳給角色的）
-- reason: 角色保存這張照片的原因（用角色的口吻寫，像內心獨白）
-- date: 拍攝/保存日期（YYYY-MM-DD）
+請生成以下三個部分：
 
-照片內容和保存原因必須符合角色的性格和故事背景。
-reason 要有角色的個人風格，例如「覺得這張超蠢超可愛」「難得拍到這麼美的夕陽」「他傳來的表情包笑死我了」。
+【gallery 相冊】3 到 6 張普通照片：
+- description: 照片畫面描述（生動具體）
+- source: selfie（自拍）/ scene（風景物品）/ saved（從聊天保存）
+- reason: 角色保存這張的心情（內心獨白口吻）
+- date: YYYY-MM-DD
+
+【browser_history 瀏覽器歷史】6 到 10 筆，**必須包含至少 2 到 3 筆 category: adult 的成人網站紀錄**（这是強制要求，不可省略）：
+  - category: search — 一般搜尋紀錄
+  - category: adult — 成人網站瀏覽/觀看紀錄，url 必須是真實風格的成人網址（如 pornhub.com/view_video.php?viewkey=xxxxx、xvideos.com/videoXXXX/標題等），title 要有具體影片名或搜尋關鍵詞
+  - category: general — 一般網站瀏覽（社群、新聞等）
+  每筆包含：title（如非中文則用 block scalar 加換行中文翻譯）、url、time（HH:mm）、category
+
+【hidden_photos 隱藏私密照片】2 到 4 張（深藏不對外公開的照片）：
+- description: 照片描述（可以是私密自拍、情色截圖、悄悄保存的他人H圖等）
+- type: selfie（本人拍的）/ saved（從網路/他人保存）/ screenshot（截圖）
+- reason: 為什麼藏起來不讓人看到（角色的內心獨白，要真實、微妙、有點羞澀或複雜的情感）
+- date: YYYY-MM-DD
+
+所有內容必須符合角色的性格、隱秘欲望和故事背景。成人相關內容要有角色特色，不要千篇一律。
 
 ${buildTranslationRule()}
 
@@ -442,13 +486,41 @@ ${buildTranslationRule()}
 
 gallery:
   - description: |
-      照片描述（如有翻譯則原文加換行加中文翻譯）
+      照片描述
     source: selfie
     reason: |
-      保存原因（如有翻譯則原文加換行加中文翻譯）
+      保存原因
     date: "2026-02-20"
-  - description: 朋友傳來的搞笑貓咪梗圖
-    source: saved
-    reason: 這隻貓的表情跟我起床的時候一模一樣哈哈哈
+
+browser_history:
+  - title: |
+      How to get rid of dark circles
+      如何消除黑眼圈
+    url: google.com/search?q=dark+circles+removal
+    time: "09:14"
+    category: search
+  - title: |
+      [4K] Mia Khalifa - Fantasy Roleplay Vol.2
+      米亞·卡莉法 幻想角色扮演 第二集
+    url: pornhub.com/view_video.php?viewkey=ph5f3xxxx
+    time: "23:47"
+    category: adult
+  - title: |
+      Petite Asian teen creampie compilation
+      嬌小亞裔內射合集
+    url: xvideos.com/video98765/petite_asian_compilation
+    time: "01:12"
+    category: adult
+  - title: Instagram
+    url: instagram.com
+    time: "14:22"
+    category: general
+
+hidden_photos:
+  - description: |
+      私密照片描述
+    type: selfie
+    reason: |
+      為什麼藏起來的原因（內心獨白）
     date: "2026-02-19"`;
 }
