@@ -33,6 +33,7 @@ export function useChatPlusMenuRouter(deps: {
   openTheater: () => void;
   openChatFilesPanel: () => void;
   startGroupCall: () => void;
+  onShareMusic?: () => void;
   emit: (e: string, ...args: any[]) => void;
 }) {
   const phoneCallStore = usePhoneCallStore();
@@ -117,6 +118,9 @@ export function useChatPlusMenuRouter(deps: {
         break;
       case "image-search":
         deps.showImageSearchPanel.value = true;
+        break;
+      case "music":
+        if (typeof deps.onShareMusic === "function") deps.onShareMusic();
         break;
       default:
         console.log("未實現的功能:", feature);

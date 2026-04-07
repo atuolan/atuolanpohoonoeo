@@ -351,6 +351,16 @@ export const useMusicStore = defineStore("music", () => {
     pause();
   }
 
+  // 確保歌詞已載入（分享時使用）
+  async function ensureLyrics(): Promise<string> {
+    if (currentLyrics.value) return currentLyrics.value;
+    const track = currentTrack.value;
+    if (!track) return "";
+    const lyrics = await getLyrics(track);
+    currentLyrics.value = lyrics;
+    return lyrics;
+  }
+
   // 播放全部搜索結果
   function playAll(tracks: MusicTrack[]) {
     playlist.value = [...tracks];
@@ -392,6 +402,7 @@ export const useMusicStore = defineStore("music", () => {
     removeFromPlaylist,
     clearPlaylist,
     playAll,
+    ensureLyrics,
     dismissPlayError,
   };
 });

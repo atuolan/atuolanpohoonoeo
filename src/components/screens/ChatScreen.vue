@@ -78,6 +78,7 @@ import {
   useCharactersStore,
   useChatStore,
   useLorebooksStore,
+  useMusicStore,
   usePromptManagerStore,
   useSettingsStore,
   useStickerStore,
@@ -195,6 +196,15 @@ interface Message {
   isWaimaiProgress?: boolean;
   isWaimaiDelivery?: boolean;
   waimaiOrder?: WaimaiOrderSnapshot;
+  // 音樂分享相關
+  isMusicShare?: boolean;
+  musicShareData?: {
+    name: string;
+    artist: string;
+    album?: string;
+    cover?: string;
+    lyrics?: string;
+  };
   // 換頭像相關
   isAvatarChange?: boolean;
   avatarChangeAction?: "accept" | "reject" | "forced" | "mood" | "restore";
@@ -275,6 +285,9 @@ interface Message {
     clean: string;
     audioUrl?: string;
   }>;
+  // 用戶撤回相關
+  isUserRecalled?: boolean;
+  userRecalledType?: 'seen' | 'unseen';
   // 封鎖系統相關
   sentWhileBlocked?: boolean;
   isSystemNotification?: boolean;
@@ -301,6 +314,14 @@ interface PendingInjectedMessage {
     waimaiOrder?: WaimaiOrderSnapshot;
     timestamp?: number;
   }>;
+  isMusicShare?: boolean;
+  musicShareData?: {
+    name: string;
+    artist: string;
+    album?: string;
+    cover?: string;
+    lyrics?: string;
+  };
 }
 
 interface ChatProps {
@@ -1917,6 +1938,40 @@ const {
   resetMultiCharForm,
 });
 
+// ===== 分享歌曲到聊天 =====
+async function handleShareMusicToChat() {
+  const musicStore = useMusicStore();
+  const track = musicStore.currentTrack;
+
+  if (!track) {
+    if (typeof showToast === "function") {
+      showToast("目前沒有正在播放的歌曲");
+    }
+    return;
+  }
+
+  const lyrics = await musicStore.ensureLyrics();
+
+  const message: Message = {
+    id: `msg_${Date.now()}`,
+    role: "user",
+    content: `<分享歌曲>${track.name} - ${track.artist}</分享歌曲>${lyrics ? `\n[歌詞]\n${lyrics}` : ""}`,
+    timestamp: Date.now(),
+    isMusicShare: true,
+    musicShareData: {
+      name: track.name,
+      artist: track.artist,
+      album: track.album || "",
+      cover: track.cover || "",
+      lyrics: lyrics,
+    },
+  };
+  messages.value.push(message);
+  scrollToBottom();
+  saveChat();
+  showMoreFeatures.value = false;
+}
+
 // ===== 加號選單路由 + 跳轉魔法 composable =====
 const {
   showTimeTravelModal,
@@ -1953,6 +2008,7 @@ const {
   openTheater,
   openChatFilesPanel,
   startGroupCall,
+  onShareMusic: handleShareMusicToChat,
   emit: emit as (e: string, ...args: any[]) => void,
 });
 
@@ -2639,6 +2695,12 @@ async function sendAndTriggerAI() {
     }
   }
 
+  // 空輸入觸發 AI 回覆時（如跳轉魔法後），生成新的輪次 ID
+  // 避免與上一輪共用 turnId，否則重新生成時會誤刪上一輪訊息
+  if (!text) {
+    currentTurnId.value = crypto.randomUUID();
+  }
+
   // 觸發 AI 回覆
   await triggerAIResponse();
 }
@@ -2719,6 +2781,41 @@ async function handleMessageDelete(id: string) {
     messages.value = messages.value.filter((m) => m.id !== id);
     await saveChatImmediate();
   }
+}
+
+// 處理用戶撤回訊息
+async function handleMessageRecall(id: string, type: "seen" | "unseen") {
+  const msg = messages.value.find((m) => m.id === id);
+  if (!msg || msg.role !== "user") return;
+
+  // 保存原始內容到 recallContent
+  msg.recallContent = msg.content;
+  msg.isUserRecalled = true;
+  msg.userRecalledType = type;
+
+  // 修改 content 為發送給 AI 的內容
+  const charName = displayCharacterName.value || "對方";
+  const userName = userStore.currentName || "用戶";
+  if (type === "seen") {
+    msg.content = `(撤回的訊息被${charName}看見了，內容是「${msg.recallContent}」)`;
+  } else {
+    msg.content = `(${userName}撤回了此訊息)`;
+  }
+
+  await saveChatImmediate();
+}
+
+// 取消撤回，恢復原始訊息
+async function handleUndoRecall(id: string) {
+  const msg = messages.value.find((m) => m.id === id);
+  if (!msg || !msg.isUserRecalled || !msg.recallContent) return;
+
+  msg.content = msg.recallContent;
+  msg.isUserRecalled = false;
+  msg.userRecalledType = undefined;
+  msg.recallContent = undefined;
+
+  await saveChatImmediate();
 }
 
 // 日期分隔符：判斷是否顯示
@@ -4171,6 +4268,20 @@ async function triggerAIResponse(options?: {
       affinityState: _affinityState.value ?? undefined,
       // 傳入封鎖狀態（讓 AI 知道自己被封鎖）
       blockState: currentChatData.value?.blockState ?? undefined,
+      // 傳入最近的音樂分享事件（讓 AI 知道歌曲和歌詞）
+      // 搜尋最近 10 條訊息中的音樂分享（用戶可能在分享後又發了其他訊息）
+      recentMusicShareEvent: (() => {
+        const recent = [...messagesToUse].reverse().slice(0, 10);
+        const musicMsg = recent.find((m) => m.isMusicShare && m.musicShareData);
+        if (musicMsg?.musicShareData) {
+          return {
+            name: musicMsg.musicShareData.name,
+            artist: musicMsg.musicShareData.artist,
+            lyrics: musicMsg.musicShareData.lyrics,
+          };
+        }
+        return undefined;
+      })(),
     });
 
     const promptResult = await builder.build();
@@ -7405,6 +7516,21 @@ async function loadOrCreateChat(overrideChatId?: string) {
             }
           }
 
+          // 兼容處理：檢查舊訊息是否包含 <分享歌曲> 標籤但沒有 isMusicShare 屬性
+          let isMusicShare = (m as any).isMusicShare;
+          let musicShareData = (m as any).musicShareData;
+          if (!isMusicShare && m.content) {
+            const musicMatch = m.content.match(/<分享歌曲>([\s\S]*?)<\/分享歌曲>/i);
+            if (musicMatch) {
+              isMusicShare = true;
+              const parts = musicMatch[1].trim().split(" - ");
+              musicShareData = {
+                name: parts[0] || "",
+                artist: parts[1] || "",
+              };
+            }
+          }
+
           return {
             id: m.id,
             role:
@@ -7458,6 +7584,9 @@ async function loadOrCreateChat(overrideChatId?: string) {
             isWaimaiProgress: (m as any).isWaimaiProgress,
             isWaimaiDelivery: (m as any).isWaimaiDelivery,
             waimaiOrder: (m as any).waimaiOrder,
+            // 載入音樂分享相關數據（包含兼容處理）
+            isMusicShare,
+            musicShareData,
             // 載入換頭像相關數據
             isAvatarChange: (m as any).isAvatarChange,
             avatarChangeAction: (m as any).avatarChangeAction,
@@ -7534,6 +7663,9 @@ async function loadOrCreateChat(overrideChatId?: string) {
             ttsRawContent: (m as any).ttsRawContent,
             ttsAudioUrl: (m as any).ttsAudioUrl,
             ttsSegments: (m as any).ttsSegments,
+            // 用戶撤回相關
+            isUserRecalled: (m as any).isUserRecalled,
+            userRecalledType: (m as any).userRecalledType,
             // 封鎖系統相關
             sentWhileBlocked: (m as any).sentWhileBlocked,
             isSystemNotification: (m as any).isSystemNotification,
@@ -8018,6 +8150,10 @@ function convertToStorableMessage(m: any, charName: string): ChatMessage {
     waimaiOrder: m.waimaiOrder
       ? JSON.parse(JSON.stringify(m.waimaiOrder))
       : undefined,
+    isMusicShare: m.isMusicShare,
+    musicShareData: m.musicShareData
+      ? JSON.parse(JSON.stringify(m.musicShareData))
+      : undefined,
     isAvatarChange: m.isAvatarChange,
     avatarChangeAction: m.avatarChangeAction,
     avatarChangeMood: m.avatarChangeMood,
@@ -8057,6 +8193,9 @@ function convertToStorableMessage(m: any, charName: string): ChatMessage {
     // HTML 區塊
     isHtmlBlock: m.isHtmlBlock,
     htmlContent: m.htmlContent,
+    // 用戶撤回相關
+    isUserRecalled: m.isUserRecalled,
+    userRecalledType: m.userRecalledType,
     // 封鎖系統相關
     sentWhileBlocked: m.sentWhileBlocked,
     isSystemNotification: m.isSystemNotification,
@@ -8562,6 +8701,8 @@ function injectPendingMessage(msg: string | PendingInjectedMessage) {
     baseMessage.isWaimaiProgress = msg.isWaimaiProgress;
     baseMessage.isWaimaiDelivery = msg.isWaimaiDelivery;
     baseMessage.waimaiOrder = msg.waimaiOrder;
+    baseMessage.isMusicShare = msg.isMusicShare;
+    baseMessage.musicShareData = msg.musicShareData;
   }
 
   messages.value.push(baseMessage);
@@ -9830,6 +9971,7 @@ onUnmounted(() => {
             isBlockedByChar,
             currentBlockedAt,
             message.sentWhileBlocked,
+            message.isUserRecalled,
             groupMemberAvatarVersion,
           ]"
           class="message-memo-wrapper"
@@ -9864,6 +10006,33 @@ onUnmounted(() => {
             @contextmenu.prevent="handleMessageDelete(message.id)"
           >
             <span class="system-notification-text">{{ message.content }}</span>
+          </div>
+
+          <!-- 用戶撤回的訊息（顯示為系統訊息樣式） -->
+          <div
+            v-else-if="message.isUserRecalled"
+            class="system-notification user-recalled-notification"
+            :class="{
+              'is-selected':
+                (isSelectingForDelete &&
+                  selectedMessageIds.includes(message.id)) ||
+                (isSelectingForScreenshot &&
+                  screenshotSelectedIds.includes(message.id)),
+            }"
+            @click="
+              isSelectingForScreenshot
+                ? toggleScreenshotSelection(message.id)
+                : isSelectingForDelete
+                  ? toggleMessageSelection(message.id)
+                  : undefined
+            "
+            @contextmenu.prevent="handleMessageDelete(message.id)"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" class="recall-notification-icon">
+              <path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" />
+            </svg>
+            <span class="system-notification-text">你撤回了一條訊息</span>
+            <button class="recall-undo-btn" @click.stop="handleUndoRecall(message.id)">取消</button>
           </div>
 
           <MessageBubble
@@ -9937,6 +10106,8 @@ onUnmounted(() => {
             :is-waimai-progress="message.isWaimaiProgress"
             :is-waimai-delivery="message.isWaimaiDelivery"
             :waimai-order="message.waimaiOrder"
+            :is-music-share="message.isMusicShare"
+            :music-share-data="message.musicShareData"
             :is-avatar-change="message.isAvatarChange"
             :avatar-change-action="message.avatarChangeAction"
             :avatar-change-mood="message.avatarChangeMood"
@@ -10018,6 +10189,7 @@ onUnmounted(() => {
             @batch-screenshot="startScreenshotSelectMode"
             @avatar-click="handleAvatarClick"
             @split-regex-html="handleSplitRegexHtml"
+            @recall="handleMessageRecall"
           />
           <!-- 封鎖期間訊息的驚嘆號指示器（獨立行，在訊息下方顯示） -->
           <div
@@ -10583,6 +10755,19 @@ onUnmounted(() => {
                 </svg>
               </div>
               <span class="feature-label">搜圖分享</span>
+            </button>
+            <button
+              class="feature-item"
+              @click="handleFeatureClick('music')"
+            >
+              <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
+                  />
+                </svg>
+              </div>
+              <span class="feature-label">分享歌曲</span>
             </button>
           </div>
         </div>
@@ -14912,6 +15097,35 @@ onUnmounted(() => {
   padding: 4px 16px;
   background: rgba(128, 128, 128, 0.1);
   border-radius: 12px;
+}
+
+.user-recalled-notification {
+  align-items: center;
+  gap: 4px;
+}
+
+.recall-undo-btn {
+  background: none;
+  border: none;
+  font-size: 11px;
+  color: var(--color-primary, #7dd3a8);
+  cursor: pointer;
+  padding: 2px 6px;
+  margin-left: 2px;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+
+  &:hover {
+    opacity: 1;
+    text-decoration: underline;
+  }
+}
+
+.recall-notification-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--color-text-muted, #999);
+  flex-shrink: 0;
 }
 
 .blocked-msg-badge {

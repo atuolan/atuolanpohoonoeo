@@ -200,6 +200,12 @@ export interface PromptBuilderOptions {
     won: boolean;
     amount: number;
   };
+  /** 最近的音樂分享事件（用於注入歌詞 Prompt） */
+  recentMusicShareEvent?: {
+    name: string;
+    artist: string;
+    lyrics?: string;
+  };
   /** 書影記錄（用於 {{mediaLogs}} 宏） */
   mediaLogs?: string;
   /** 群聊模式 */
@@ -1689,6 +1695,18 @@ export class PromptBuilder {
             );
             if (transferPrompt) {
               content += "\n\n" + transferPrompt;
+            }
+          }
+
+          // 如果有最近的音樂分享事件，附加音樂分享 Prompt
+          if (this.options.recentMusicShareEvent) {
+            const musicPrompt = promptTemplateService.renderMusicShareEvent(
+              this.options.recentMusicShareEvent.name,
+              this.options.recentMusicShareEvent.artist,
+              this.options.recentMusicShareEvent.lyrics,
+            );
+            if (musicPrompt) {
+              content += "\n\n" + musicPrompt;
             }
           }
 

@@ -749,18 +749,96 @@ function extractQQMid(trackId: string): string | null {
 }
 
 /**
+ * 從網易雲 API 單獨獲取歌詞（不需要播放 URL）
+ */
+async function fetchLyricsFromNetease(
+  name: string,
+  artist?: string,
+): Promise<string> {
+  try {
+    const searchQuery = artist ? `${name}-${artist}` : name;
+    const searchUrl = `https://music-api.gdstudio.xyz/api.php?types=search&name=${encodeURIComponent(searchQuery)}&count=3&pages=1`;
+
+    const searchResponse = await fetch(searchUrl);
+    if (!searchResponse.ok) return "";
+
+    const searchResults = await searchResponse.json();
+    if (
+      !searchResults ||
+      !Array.isArray(searchResults) ||
+      searchResults.length === 0
+    ) {
+      return "";
+    }
+
+    // 歌手匹配：優先選歌手匹配的結果
+    const normalizeForCompare = (s: string) =>
+      s.toLowerCase().replace(/\s+/g, "");
+    const targetArtists = artist
+      ? artist
+          .split(/[\/,、&]/)
+          .map((a) => normalizeForCompare(a.trim()))
+          .filter(Boolean)
+      : [];
+
+    const sortedResults = [...searchResults].sort((a, b) => {
+      if (targetArtists.length === 0) return 0;
+      const aArtists = (a.artist || [])
+        .map((ar: string) => normalizeForCompare(ar))
+        .join(",");
+      const bArtists = (b.artist || [])
+        .map((ar: string) => normalizeForCompare(ar))
+        .join(",");
+      const aMatch = targetArtists.some((ta) => aArtists.includes(ta)) ? 0 : 1;
+      const bMatch = targetArtists.some((ta) => bArtists.includes(ta)) ? 0 : 1;
+      return aMatch - bMatch;
+    });
+
+    for (const song of sortedResults) {
+      const songId = song.id;
+      if (!songId) continue;
+
+      const lrcResponse = await fetch(
+        `https://music-api.gdstudio.xyz/api.php?types=lyric&id=${songId}`,
+      ).catch(() => null);
+
+      if (!lrcResponse) continue;
+
+      const lrcData = await lrcResponse.json().catch(() => null);
+      if (lrcData?.lyric) {
+        return lrcData.lyric;
+      }
+    }
+
+    return "";
+  } catch (error) {
+    console.error("[MusicApi] 網易雲歌詞獲取失敗:", error);
+    return "";
+  }
+}
+
+/**
  * 獲取歌詞
+ * 優先級：已緩存 → Music.js API → 網易雲 API
  */
 export async function getLyrics(track: MusicTrack): Promise<string> {
   if (track.lrc) return track.lrc;
 
-  // 嘗試通過 API 獲取
+  // 1. 嘗試通過 Music.js API 獲取
   const searchQuery = `${track.name} ${track.artist}`;
   const apiResult = await searchWithApi(searchQuery);
 
   if (apiResult?.lrc) {
     track.lrc = apiResult.lrc;
     return apiResult.lrc;
+  }
+
+  // 2. Fallback: 網易雲 API（專門的歌詞 endpoint）
+  const cleanArtist = track.artist.split(/[\/,、]/)[0].trim();
+  const neteaseLrc = await fetchLyricsFromNetease(track.name, cleanArtist);
+  if (neteaseLrc) {
+    track.lrc = neteaseLrc;
+    return neteaseLrc;
   }
 
   return "";

@@ -231,6 +231,23 @@ export interface ChatMessage {
   /** 外賣訂單快照（MVP 單品） */
   waimaiOrder?: WaimaiOrderSnapshot;
 
+  // --- 音樂分享相關 ---
+  /** 是否為音樂分享 */
+  isMusicShare?: boolean;
+  /** 音樂分享數據 */
+  musicShareData?: {
+    /** 歌曲名稱 */
+    name: string;
+    /** 歌手 */
+    artist: string;
+    /** 專輯 */
+    album?: string;
+    /** 封面圖 URL */
+    cover?: string;
+    /** 歌詞文本 */
+    lyrics?: string;
+  };
+
   // --- 換頭像相關 ---
   /** 是否為換頭像動作 */
   isAvatarChange?: boolean;
@@ -380,6 +397,12 @@ export interface ChatMessage {
     date: string;
     description?: string;
   };
+
+  // --- 用戶撤回相關 ---
+  /** 是否為用戶撤回的訊息 */
+  isUserRecalled?: boolean;
+  /** 用戶撤回類型：seen=被角色看見, unseen=沒被看見 */
+  userRecalledType?: 'seen' | 'unseen';
 
   // --- 封鎖系統相關 ---
   /** 是否為封鎖期間發送的訊息（用戶封鎖角色後仍可發送） */

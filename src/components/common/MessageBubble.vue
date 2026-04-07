@@ -28,6 +28,7 @@ import GroupChatHistoryModal from "../modals/GroupChatHistoryModal.vue";
 import PhotoPreviewModal from "../modals/PhotoPreviewModal.vue";
 import GroupCallHistoryCard from "./GroupCallHistoryCard.vue";
 import GroupChatHistoryCard from "./GroupChatHistoryCard.vue";
+import MusicShareCard from "./MusicShareCard.vue";
 import PixelGiftChest from "./PixelGiftChest.vue";
 import PixelTransferCard from "./PixelTransferCard.vue";
 
@@ -186,6 +187,15 @@ interface MessageBubbleProps {
   isWaimaiProgress?: boolean;
   isWaimaiDelivery?: boolean;
   waimaiOrder?: WaimaiOrderSnapshot;
+  // 音樂分享相關
+  isMusicShare?: boolean;
+  musicShareData?: {
+    name: string;
+    artist: string;
+    album?: string;
+    cover?: string;
+    lyrics?: string;
+  };
   // 換頭像相關
   isAvatarChange?: boolean;
   avatarChangeAction?: "accept" | "reject" | "forced" | "mood" | "restore";
@@ -259,6 +269,9 @@ interface MessageBubbleProps {
   // 角色封鎖用戶的系統通知
   isCharBlockedNotification?: boolean;
   charBlockedReason?: string;
+  // 用戶撤回相關
+  isUserRecalled?: boolean;
+  userRecalledType?: 'seen' | 'unseen';
 }
 
 const props = withDefaults(defineProps<MessageBubbleProps>(), {
@@ -314,6 +327,8 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   isWaimaiProgress: false,
   isWaimaiDelivery: false,
   waimaiOrder: undefined,
+  isMusicShare: false,
+  musicShareData: undefined,
   isAvatarChange: false,
   avatarChangeAction: undefined,
   avatarChangeMood: "",
@@ -342,6 +357,8 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   characterRegexScripts: () => [],
   userName: "",
   characterName: "",
+  isUserRecalled: false,
+  userRecalledType: undefined,
 });
 
 // Emits
@@ -364,6 +381,7 @@ const emit = defineEmits<{
   (e: "screenshot", id: string): void;
   (e: "batchScreenshot", id: string): void;
   (e: "splitRegexHtml", id: string, htmlContent: string): void;
+  (e: "recall", id: string, type: "seen" | "unseen"): void;
 }>();
 
 // 群聊記錄 Modal 狀態
@@ -374,6 +392,9 @@ const showGroupCallHistoryModal = ref(false);
 
 // 封鎖原因展開狀態
 const showBlockedReason = ref(false);
+
+// 撤回子選項展開狀態
+const showRecallOptions = ref(false);
 
 // 照片預覽 Modal 狀態
 const showPhotoPreview = ref(false);
@@ -1095,10 +1116,18 @@ function scrollIntoViewForMenu() {
     if (!wrapperRef.value) return;
     const el = wrapperRef.value;
     const rect = el.getBoundingClientRect();
-    // 菜單高度約 120px（兩行），加上間距
-    const menuHeight = 130;
-    if (rect.top < menuHeight) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    // 菜單兩排按鈕 ~120px + bottom offset 8px + 間距
+    const menuHeight = 140;
+    const scrollContainer = el.closest('.messages-container') as HTMLElement | null;
+    // 取 messages-container 頂部位置（= header 下方），菜單必須在此之下才完全可見
+    const containerTop = scrollContainer ? scrollContainer.getBoundingClientRect().top : 0;
+    const requiredTop = containerTop + menuHeight;
+    if (rect.top < requiredTop) {
+      if (scrollContainer) {
+        scrollContainer.scrollBy({ top: rect.top - requiredTop, behavior: 'smooth' });
+      } else {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     }
   });
 }
@@ -1538,6 +1567,24 @@ function handleBatchScreenshot() {
   emit("batchScreenshot", props.id);
 }
 
+function handleRecallToggle() {
+  if (menuOpenedAt && Date.now() - menuOpenedAt < 800) return;
+  showMenu.value = false;
+  showRecallOptions.value = true;
+}
+
+function handleRecallUnseen() {
+  showMenu.value = false;
+  showRecallOptions.value = false;
+  emit("recall", props.id, "unseen");
+}
+
+function handleRecallSeen() {
+  showMenu.value = false;
+  showRecallOptions.value = false;
+  emit("recall", props.id, "seen");
+}
+
 function handleReplyClick() {
   // 點擊回覆引用時，滾動到原消息
   if (props.replyTo) {
@@ -1551,6 +1598,7 @@ function closeMenu() {
     return;
   }
   showMenu.value = false;
+  showRecallOptions.value = false;
 }
 
 // 右鍵選單（電腦端）
@@ -2561,6 +2609,21 @@ const showTextVoiceTranscript = ref(true);
             </div>
           </div>
 
+          <!-- 音樂分享卡片 -->
+          <div
+            v-else-if="isMusicShare && musicShareData"
+            class="music-share-wrapper"
+          >
+            <MusicShareCard
+              :name="musicShareData.name"
+              :artist="musicShareData.artist"
+              :album="musicShareData.album"
+              :cover="musicShareData.cover"
+              :lyrics="musicShareData.lyrics"
+              :is-receiver="role !== 'user'"
+            />
+          </div>
+
           <!-- 真實圖片訊息（拍立得樣式） -->
           <div
             v-else-if="
@@ -3101,6 +3164,17 @@ const showTextVoiceTranscript = ref(true);
               </svg>
               <span>截圖</span>
             </button>
+            <template v-if="isUser">
+              <div class="menu-divider"></div>
+              <button class="menu-item" @click="handleRecallToggle">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"
+                  />
+                </svg>
+                <span>撤回</span>
+              </button>
+            </template>
             <template v-if="!isUser">
               <div class="menu-divider"></div>
               <button class="menu-item" @click="handleRegenerate">
@@ -3162,6 +3236,33 @@ const showTextVoiceTranscript = ref(true);
     :date="formattedPhotoDate"
     @update:visible="showPhotoPreview = $event"
   />
+
+  <!-- 撤回選擇彈窗 -->
+  <Teleport to="body">
+    <Transition name="fade">
+      <div v-if="showRecallOptions" class="recall-dialog-overlay" @click="showRecallOptions = false">
+        <div class="recall-dialog" @click.stop>
+          <div class="recall-dialog-title">撤回訊息</div>
+          <div class="recall-dialog-desc">對方是否已看見這條訊息？</div>
+          <div class="recall-dialog-actions">
+            <button class="recall-dialog-btn unseen" @click="handleRecallUnseen">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z" />
+              </svg>
+              <span>沒看見</span>
+            </button>
+            <button class="recall-dialog-btn seen" @click="handleRecallSeen">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+              </svg>
+              <span>被看見了</span>
+            </button>
+          </div>
+          <button class="recall-dialog-cancel" @click="showRecallOptions = false">取消</button>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style lang="scss" scoped>
@@ -5443,6 +5544,7 @@ const showTextVoiceTranscript = ref(true);
       background: rgba(255, 123, 123, 0.1);
     }
   }
+
 }
 
 // 分隔線改成行分隔（每排之間的水平線）
@@ -5746,5 +5848,100 @@ const showTextVoiceTranscript = ref(true);
     opacity: 1;
     background: rgba(0, 0, 0, 0.08);
   }
+}
+
+// ===== 撤回選擇彈窗（Teleport 到 body，需要 :global） =====
+:global(.recall-dialog-overlay) {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+:global(.recall-dialog) {
+  background: var(--color-surface, #fff);
+  border-radius: 16px;
+  padding: 20px 24px;
+  min-width: 260px;
+  max-width: 320px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  text-align: center;
+}
+
+:global(.recall-dialog-title) {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text, #333);
+  margin-bottom: 6px;
+}
+
+:global(.recall-dialog-desc) {
+  font-size: 13px;
+  color: var(--color-text-muted, #999);
+  margin-bottom: 18px;
+}
+
+:global(.recall-dialog-actions) {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+:global(.recall-dialog-btn) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border, #e0e0e0);
+  background: var(--color-background, #f8f8f8);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex: 1;
+  font-size: 13px;
+  color: var(--color-text, #333);
+}
+
+:global(.recall-dialog-btn svg) {
+  width: 24px;
+  height: 24px;
+}
+
+:global(.recall-dialog-btn:hover) {
+  background: var(--color-surface-hover, #f0f0f0);
+  border-color: var(--color-primary, #7dd3a8);
+}
+
+:global(.recall-dialog-btn:active) {
+  transform: scale(0.97);
+}
+
+:global(.recall-dialog-btn.unseen svg) {
+  color: var(--color-text-muted, #999);
+}
+
+:global(.recall-dialog-btn.seen svg) {
+  color: var(--color-primary, #7dd3a8);
+}
+
+:global(.recall-dialog-cancel) {
+  background: none;
+  border: none;
+  font-size: 13px;
+  color: var(--color-text-muted, #999);
+  cursor: pointer;
+  padding: 4px 16px;
+}
+
+:global(.recall-dialog-cancel:hover) {
+  color: var(--color-text, #333);
 }
 </style>

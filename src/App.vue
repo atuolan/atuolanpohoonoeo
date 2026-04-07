@@ -19,6 +19,7 @@ import {
   useCharactersStore,
   useChatStore,
   useLorebooksStore,
+  useMusicStore,
   useNotificationStore,
   useSettingsStore,
   useStickerStore,
@@ -259,6 +260,14 @@ interface PendingInjectedMessage {
     waimaiOrder?: WaimaiOrderSnapshot;
     timestamp?: number;
   }>;
+  isMusicShare?: boolean;
+  musicShareData?: {
+    name: string;
+    artist: string;
+    album?: string;
+    cover?: string;
+    lyrics?: string;
+  };
 }
 
 // 待注入的聊天訊息（用於遊戲分享成績、外賣分享等場景）
@@ -1356,6 +1365,38 @@ async function handleGameShareToChat(characterId: string, message: string) {
   }
 }
 
+// 音樂 App 分享歌曲到聊天（用戶已選擇角色）
+async function handleMusicShareToChat(characterId: string) {
+  const musicStore = useMusicStore();
+  const track = musicStore.currentTrack;
+  if (!track) return;
+
+  const character = charactersStore.characters.find(
+    (c) => c.id === characterId,
+  );
+  if (!character) return;
+
+  const lyrics = await musicStore.ensureLyrics();
+
+  chatCharacterName.value =
+    character.nickname || character.data?.name || "角色";
+  chatCharacterAvatar.value = character.avatar || "";
+  currentChatCharacterId.value = characterId;
+  currentChatId.value = await resolvePreferredChatId(characterId);
+  pendingChatMessage.value = {
+    content: `<分享歌曲>${track.name} - ${track.artist}</分享歌曲>${lyrics ? `\n[歌詞]\n${lyrics}` : ""}`,
+    isMusicShare: true,
+    musicShareData: {
+      name: track.name,
+      artist: track.artist,
+      album: track.album || "",
+      cover: track.cover || "",
+      lyrics,
+    },
+  };
+  currentPage.value = "chat";
+}
+
 // 外賣商城分享/下單注入聊天
 async function handleDeliveryMallSendToChat(payload: {
   characterId: string;
@@ -1889,7 +1930,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     />
 
     <!-- 音樂 App -->
-    <MusicAppScreen v-else-if="currentPage === 'music'" @back="goHome" />
+    <MusicAppScreen v-else-if="currentPage === 'music'" @back="goHome" @share-to-chat="handleMusicShareToChat" />
 
     <!-- 噗浪空間 -->
     <QZoneScreen

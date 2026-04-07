@@ -41,6 +41,13 @@ export interface TransferEventTemplateData {
   amount: number;
 }
 
+/** 音樂分享事件模板資料 */
+export interface MusicShareEventTemplateData {
+  name: string;
+  artist: string;
+  lyrics?: string;
+}
+
 /** 釣魚成果模板資料 */
 export interface FishingResultTemplateData {
   fish: {
@@ -115,6 +122,28 @@ function renderTransferEventText(data: TransferEventTemplateData): string {
     `玩家剛剛轉了 ${data.amount} 金幣給你。`,
     `請根據角色性格做出適當的反應。`,
   ].join("\n");
+}
+
+/** 渲染音樂分享事件文字 */
+function renderMusicShareEventText(data: MusicShareEventTemplateData): string {
+  const lines: string[] = [
+    `[音樂分享事件]`,
+    `玩家剛剛分享了一首歌曲給你：「${data.name}」 - ${data.artist}`,
+  ];
+
+  if (data.lyrics && data.lyrics.trim()) {
+    // 清理歌詞中的時間標記 [00:00.00] 格式
+    const cleanLyrics = data.lyrics
+      .split("\n")
+      .map((l) => l.replace(/\[\d+:\d+[\.:.]\d+\]/g, "").trim())
+      .filter((l) => l.length > 0)
+      .join("\n");
+    lines.push(`以下是這首歌的歌詞：`);
+    lines.push(cleanLyrics);
+  }
+
+  lines.push("請根據角色性格對這首歌和歌詞做出適當的反應，可以談談對歌曲的感受或聯想。");
+  return lines.join("\n");
 }
 
 /** 渲染釣魚成果文字 */
@@ -260,11 +289,26 @@ export class PromptTemplateService {
   }
 
   /**
-   * 渲染釣魚成果 Prompt
-   * @param fish 釣到的魚
+   * 渲染音樂分享事件 Prompt
+   * @param name 歌曲名稱
+   * @param artist 歌手
+   * @param lyrics 歌詞（可選）
    * @returns 渲染後的 Prompt 字串，失敗時回傳空字串
-   * @requirements 8.3
    */
+  renderMusicShareEvent(
+    name: string,
+    artist: string,
+    lyrics?: string,
+  ): string {
+    try {
+      const data: MusicShareEventTemplateData = { name, artist, lyrics };
+      return renderMusicShareEventText(data);
+    } catch (error) {
+      console.error("[PromptTemplateService] 渲染音樂分享事件失敗:", error);
+      return "";
+    }
+  }
+
   renderFishingResult(fish: CaughtFish): string {
     try {
       const data: FishingResultTemplateData = {

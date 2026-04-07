@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useMusicStore } from "@/stores";
+import { useCharactersStore, useMusicStore } from "@/stores";
 import {
     ArrowLeft,
     Heart,
@@ -10,6 +10,7 @@ import {
     Repeat,
     Repeat1,
     Search,
+    Share2,
     Shuffle,
     SkipBack,
     SkipForward,
@@ -21,13 +22,37 @@ import { computed, onMounted, ref } from "vue";
 
 const emit = defineEmits<{
   back: [];
+  shareToChat: [characterId: string];
 }>();
 
 const musicStore = useMusicStore();
+const charactersStore = useCharactersStore();
 
 // 本地狀態
 const searchInput = ref("");
 const showPlaylist = ref(false);
+const showSharePicker = ref(false);
+
+// 角色列表（過濾出有名字的角色）
+const availableCharacters = computed(() =>
+  charactersStore.characters
+    .filter((c) => c.data?.name)
+    .map((c) => ({
+      id: c.id,
+      name: c.nickname || c.data?.name || "",
+      avatar: c.avatar || "",
+    }))
+);
+
+function openSharePicker() {
+  if (!currentTrack.value) return;
+  showSharePicker.value = true;
+}
+
+function selectShareTarget(characterId: string) {
+  showSharePicker.value = false;
+  emit("shareToChat", characterId);
+}
 
 // 計算屬性
 const currentTrack = computed(() => musicStore.currentTrack);
@@ -256,6 +281,16 @@ onMounted(async () => {
           </button>
         </div>
 
+        <!-- 分享按鈕 -->
+        <button
+          class="share-btn"
+          @click="openSharePicker"
+          title="分享給角色"
+        >
+          <Share2 :size="20" stroke-width="2.5" />
+          <span>分享給角色</span>
+        </button>
+
         <!-- 音量滑桿 -->
         <div class="volume-slider">
           <input
@@ -390,6 +425,48 @@ onMounted(async () => {
         >
           清空列表
         </button>
+      </div>
+    </Transition>
+
+    <!-- 角色選擇器 -->
+    <Transition name="fade">
+      <div v-if="showSharePicker" class="share-picker-overlay" @click.self="showSharePicker = false">
+        <div class="share-picker-modal">
+          <div class="picker-header">
+            <h3>分享給誰？</h3>
+            <button class="close-btn" @click="showSharePicker = false">
+              <X :size="22" stroke-width="2.5" />
+            </button>
+          </div>
+          <div class="picker-track-info" v-if="currentTrack">
+            <span class="picker-track-name">{{ currentTrack.name }}</span>
+            <span class="picker-track-artist">{{ currentTrack.artist }}</span>
+          </div>
+          <div v-if="availableCharacters.length === 0" class="picker-empty">
+            <p>沒有可用的角色</p>
+          </div>
+          <div v-else class="picker-list">
+            <button
+              v-for="char in availableCharacters"
+              :key="char.id"
+              class="picker-item"
+              @click="selectShareTarget(char.id)"
+            >
+              <img
+                v-if="char.avatar"
+                :src="char.avatar"
+                class="picker-avatar"
+                alt=""
+                @error="(e: Event) => ((e.target as HTMLImageElement).style.display = 'none')"
+              />
+              <div v-else class="picker-avatar placeholder">
+                {{ char.name.charAt(0) }}
+              </div>
+              <span class="picker-name">{{ char.name }}</span>
+              <Share2 :size="18" stroke-width="2.5" class="picker-share-icon" />
+            </button>
+          </div>
+        </div>
       </div>
     </Transition>
   </div>
@@ -726,6 +803,32 @@ $pink-accent: #ec4899;
         transform: translate(4px, 4px);
         box-shadow: 0 0 0 $frame-border;
       }
+    }
+  }
+
+  .share-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 16px;
+    padding: 10px 24px;
+    background: $purple-accent;
+    color: white;
+    border: 3px solid $frame-border;
+    border-radius: 14px;
+    box-shadow: 3px 3px 0 $frame-border;
+    font-size: 14px;
+    font-weight: 800;
+    font-family: inherit;
+    cursor: pointer;
+    transition:
+      transform 0.1s,
+      box-shadow 0.1s;
+
+    &:active {
+      transform: translate(3px, 3px);
+      box-shadow: 0 0 0 $frame-border;
     }
   }
 
@@ -1191,5 +1294,164 @@ $pink-accent: #ec4899;
 .toast-leave-to {
   opacity: 0;
   transform: translateY(-20px);
+}
+
+// 角色選擇器
+.share-picker-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 24px;
+}
+
+.share-picker-modal {
+  width: 100%;
+  max-width: 360px;
+  max-height: 70vh;
+  background: $card-bg;
+  border: 3px solid $frame-border;
+  border-radius: 24px;
+  box-shadow: 6px 6px 0 $frame-border;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  .picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 3px solid $frame-border;
+
+    h3 {
+      font-size: 18px;
+      font-weight: 900;
+      color: $text-main;
+    }
+
+    .close-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: $card-bg;
+      color: $text-main;
+      border: 2px solid $frame-border;
+      box-shadow: 2px 2px 0 $frame-border;
+
+      &:active {
+        transform: translate(2px, 2px);
+        box-shadow: 0 0 0 $frame-border;
+      }
+    }
+  }
+
+  .picker-track-info {
+    padding: 12px 20px;
+    background: $bg-color;
+    border-bottom: 2px solid lighten($frame-border, 60%);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+
+    .picker-track-name {
+      font-size: 15px;
+      font-weight: 800;
+      color: $text-main;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .picker-track-artist {
+      font-size: 13px;
+      font-weight: 600;
+      color: $text-sec;
+    }
+  }
+
+  .picker-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: $text-sec;
+    font-weight: 700;
+  }
+
+  .picker-list {
+    overflow-y: auto;
+    padding: 8px 0;
+
+    .picker-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      padding: 12px 20px;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s;
+
+      &:hover {
+        background: $bg-color;
+      }
+
+      &:active {
+        background: darken($bg-color, 5%);
+      }
+
+      .picker-avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        object-fit: cover;
+        border: 2px solid $frame-border;
+        flex-shrink: 0;
+
+        &.placeholder {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: $purple-accent;
+          color: white;
+          font-size: 18px;
+          font-weight: 900;
+        }
+      }
+
+      .picker-name {
+        flex: 1;
+        text-align: left;
+        font-size: 16px;
+        font-weight: 800;
+        color: $text-main;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .picker-share-icon {
+        flex-shrink: 0;
+        color: $purple-accent;
+      }
+    }
+  }
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>
