@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { usePhoneCallStore } from "@/stores/phoneCall";
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
 const phoneCallStore = usePhoneCallStore();
 
@@ -24,7 +24,92 @@ watch(
   },
 );
 
+// ===== 長按拖曳 =====
+const DRAG_DELAY = 500;
+const WIDGET_W = 80;
+const WIDGET_H = 130;
+const LS_KEY = "phone-call-widget-position";
+
+const isDragging = ref(false);
+const position = ref({ x: 0, y: 0 });
+const dragStart = ref({ x: 0, y: 0 });
+let dragDelayTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingDragEvent: { x: number; y: number } | null = null;
+let dragMoved = false;
+
+const widgetStyle = computed(() => ({
+  left: `${position.value.x}px`,
+  top: `${position.value.y}px`,
+  cursor: isDragging.value ? "grabbing" : "grab",
+}));
+
+function clamp(val: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, val));
+}
+
+function startDrag(e: MouseEvent | TouchEvent) {
+  const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+  const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+  pendingDragEvent = { x: clientX, y: clientY };
+  dragMoved = false;
+
+  dragDelayTimer = setTimeout(() => {
+    if (pendingDragEvent) {
+      isDragging.value = true;
+      dragStart.value = {
+        x: pendingDragEvent.x - position.value.x,
+        y: pendingDragEvent.y - position.value.y,
+      };
+    }
+  }, DRAG_DELAY);
+
+  document.addEventListener("mousemove", onDrag);
+  document.addEventListener("mouseup", endDrag);
+  document.addEventListener("touchmove", onDrag, { passive: false });
+  document.addEventListener("touchend", endDrag);
+}
+
+function onDrag(e: MouseEvent | TouchEvent) {
+  const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+  const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+
+  if (!isDragging.value && pendingDragEvent) {
+    const dx = Math.abs(clientX - pendingDragEvent.x);
+    const dy = Math.abs(clientY - pendingDragEvent.y);
+    if (dx > 5 || dy > 5) {
+      dragMoved = true;
+      if (dragDelayTimer) { clearTimeout(dragDelayTimer); dragDelayTimer = null; }
+    }
+    return;
+  }
+
+  if (!isDragging.value) return;
+  e.preventDefault();
+  dragMoved = true;
+
+  const padding = 8;
+  position.value = {
+    x: clamp(clientX - dragStart.value.x, padding, window.innerWidth - WIDGET_W - padding),
+    y: clamp(clientY - dragStart.value.y, padding, window.innerHeight - WIDGET_H - padding),
+  };
+}
+
+function endDrag() {
+  if (dragDelayTimer) { clearTimeout(dragDelayTimer); dragDelayTimer = null; }
+  pendingDragEvent = null;
+  document.removeEventListener("mousemove", onDrag);
+  document.removeEventListener("mouseup", endDrag);
+  document.removeEventListener("touchmove", onDrag);
+  document.removeEventListener("touchend", endDrag);
+
+  if (isDragging.value && dragMoved) {
+    localStorage.setItem(LS_KEY, JSON.stringify(position.value));
+  }
+  setTimeout(() => { isDragging.value = false; }, 50);
+}
+
 function handleExpand() {
+  if (isDragging.value || dragMoved) return;
   hasUnread.value = false;
   lastSeenCount.value = phoneCallStore.callMessages.length;
   phoneCallStore.expand();
@@ -33,12 +118,39 @@ function handleExpand() {
 function handleHangup() {
   phoneCallStore.endCall();
 }
+
+onMounted(() => {
+  const saved = localStorage.getItem(LS_KEY);
+  let loaded = false;
+  if (saved) {
+    try { position.value = JSON.parse(saved); loaded = true; } catch { /* ignore */ }
+  }
+  if (!loaded) {
+    position.value = {
+      x: window.innerWidth - WIDGET_W - 12,
+      y: 60,
+    };
+  }
+});
+
+onUnmounted(() => {
+  document.removeEventListener("mousemove", onDrag);
+  document.removeEventListener("mouseup", endDrag);
+  document.removeEventListener("touchmove", onDrag);
+  document.removeEventListener("touchend", endDrag);
+});
 </script>
 
 <template>
   <Teleport to="body">
     <Transition name="call-widget">
-      <div v-if="show" class="call-widget">
+      <div
+        v-if="show"
+        class="call-widget"
+        :style="widgetStyle"
+        @mousedown="startDrag"
+        @touchstart.passive="startDrag"
+      >
         <!-- 頭像（點擊展開） -->
         <div class="widget-avatar" @click="handleExpand" title="返回通話">
           <img
@@ -80,9 +192,8 @@ function handleHangup() {
 <style scoped lang="scss">
 .call-widget {
   position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 60px);
-  right: 12px;
   width: 72px;
+  touch-action: none;
   display: flex;
   flex-direction: column;
   align-items: center;
