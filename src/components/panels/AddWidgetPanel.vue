@@ -6,6 +6,7 @@ import {
     BookOpen,
     Calendar,
     CalendarClock,
+    Check,
     CheckSquare,
     Clock,
     Cloud,
@@ -34,7 +35,7 @@ import {
     Wallet,
     X,
 } from "lucide-vue-next";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 
 const emit = defineEmits<{
   close: [];
@@ -413,14 +414,33 @@ const widgetDefs: WidgetDef[] = [
 ];
 
 // 過濾組件
-const filteredWidgets = ref(
+const filteredWidgets = computed(() =>
   widgetDefs.filter((w) => w.category === activeCategory.value),
 );
 
 function selectCategory(id: string) {
   activeCategory.value = id;
-  filteredWidgets.value = widgetDefs.filter((w) => w.category === id);
 }
+
+// 判斷某個組件定義是否已在畫布上
+function isWidgetAdded(def: WidgetDef): boolean {
+  if (def.type === "fluid-button") {
+    return canvasStore.widgets.some(
+      (w) => w.type === "fluid-button" && w.data?.label === def.data?.label,
+    );
+  }
+  return canvasStore.widgets.some((w) => w.type === def.type);
+}
+
+// 已添加至桌面的組件
+const addedFilteredWidgets = computed(() =>
+  filteredWidgets.value.filter((w) => isWidgetAdded(w)),
+);
+
+// 未添加至桌面的組件
+const notAddedFilteredWidgets = computed(() =>
+  filteredWidgets.value.filter((w) => !isWidgetAdded(w)),
+);
 
 // 添加組件
 function addWidget(def: WidgetDef) {
@@ -471,19 +491,54 @@ function addWidget(def: WidgetDef) {
         </button>
       </div>
 
-      <!-- 組件網格 -->
-      <div class="widgets-grid">
-        <div
-          v-for="widget in filteredWidgets"
-          :key="widget.id"
-          class="widget-card"
-          @click="addWidget(widget)"
-        >
-          <div class="widget-icon" :style="{ background: widget.gradient }">
-            <component :is="widget.icon" :size="28" :stroke-width="1.5" />
+      <!-- 組件滾動區域 -->
+      <div class="widgets-scroll-area">
+        <!-- 桌面已有 -->
+        <template v-if="addedFilteredWidgets.length > 0">
+          <div class="section-header">
+            <span class="section-dot section-dot--added"></span>
+            桌面已有
           </div>
-          <span class="widget-name">{{ widget.name }}</span>
-        </div>
+          <div class="widgets-grid">
+            <div
+              v-for="widget in addedFilteredWidgets"
+              :key="widget.id"
+              class="widget-card is-added"
+              @click="addWidget(widget)"
+            >
+              <div class="widget-icon-wrap">
+                <div class="widget-icon" :style="{ background: widget.gradient }">
+                  <component :is="widget.icon" :size="28" :stroke-width="1.5" />
+                </div>
+                <div class="added-badge">
+                  <Check :size="9" :stroke-width="3" />
+                </div>
+              </div>
+              <span class="widget-name">{{ widget.name }}</span>
+            </div>
+          </div>
+        </template>
+
+        <!-- 可添加 -->
+        <template v-if="notAddedFilteredWidgets.length > 0">
+          <div class="section-header" :class="{ 'section-header--mt': addedFilteredWidgets.length > 0 }">
+            <span class="section-dot section-dot--new"></span>
+            可添加
+          </div>
+          <div class="widgets-grid">
+            <div
+              v-for="widget in notAddedFilteredWidgets"
+              :key="widget.id"
+              class="widget-card"
+              @click="addWidget(widget)"
+            >
+              <div class="widget-icon" :style="{ background: widget.gradient }">
+                <component :is="widget.icon" :size="28" :stroke-width="1.5" />
+              </div>
+              <span class="widget-name">{{ widget.name }}</span>
+            </div>
+          </div>
+        </template>
       </div>
     </div>
   </div>
@@ -598,16 +653,51 @@ function addWidget(def: WidgetDef) {
   }
 }
 
-.widgets-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+.widgets-scroll-area {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   padding-bottom: 20px;
   padding-right: 4px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #9ca3af;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+
+  &--mt {
+    margin-top: 20px;
+  }
+}
+
+.section-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+
+  &--added {
+    background: #22c55e;
+  }
+
+  &--new {
+    background: #a5b4fc;
+  }
+}
+
+.widgets-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 4px;
 }
 
 .widget-card {
@@ -629,6 +719,14 @@ function addWidget(def: WidgetDef) {
     transform: translateY(0);
   }
 
+  &.is-added {
+    opacity: 0.6;
+
+    &:hover {
+      opacity: 0.85;
+    }
+  }
+
   .widget-icon {
     width: 56px;
     height: 56px;
@@ -638,6 +736,33 @@ function addWidget(def: WidgetDef) {
     justify-content: center;
     color: white;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+
+  .widget-icon-wrap {
+    position: relative;
+    width: 56px;
+    height: 56px;
+
+    .widget-icon {
+      width: 100%;
+      height: 100%;
+    }
+
+    .added-badge {
+      position: absolute;
+      bottom: -3px;
+      right: -3px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #22c55e;
+      border: 2px solid white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+    }
   }
 
   .widget-name {
