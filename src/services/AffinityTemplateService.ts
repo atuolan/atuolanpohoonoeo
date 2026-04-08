@@ -12,6 +12,7 @@ import type {
   MetricValue,
 } from "@/schemas/affinity";
 import { computePercentage, computeStage } from "@/schemas/affinity";
+import { createStTemplateContext } from "@/services/StTemplateContextService";
 
 // ===== 模板上下文類型 =====
 
@@ -29,15 +30,25 @@ export interface AffinityMetricView {
 
 export interface AffinityTemplateContext {
   metrics: AffinityMetricView[];
+  charKey: string;
   values: Record<string, MetricValue>;
   stages: Record<string, string | null>;
+  stat_data: Record<string, unknown>;
+  display_data: Record<string, unknown>;
+  delta_data: Record<string, unknown>;
+  getvar: (path: string, options?: unknown) => unknown;
+  variables: Record<string, unknown>;
 }
 
 // ===== 預設模板 =====
 
 export const DEFAULT_PROMPT_TEMPLATE = `[角色數值狀態]
+<% const _display = display_data?.[charKey] ?? stat_data?.[charKey] ?? {} %>
+<% const _delta = delta_data?.[charKey] ?? {} %>
 <% for (const m of metrics) { -%>
-- <%= m.name %>：<%= m.value %>/<%= m.max %><% if (m.stage) { %>（<%= m.stage %>）<% } %>
+<% const _current = _display?.[m.name] ?? m.value %>
+<% const _deltaValue = _delta?.[m.name] %>
+- <%= m.name %>：<%= _current %><% if (m.type !== 'string') { %>/<%= m.max %><% } %><% if (m.stage) { %>（<%= m.stage %>）<% } %><% if (_deltaValue !== undefined && _deltaValue !== 0 && _deltaValue !== '0') { %>〔本輪：<%= _deltaValue %>〕<% } %>
 <% } -%>`.trim();
 
 export const DEFAULT_UPDATE_INSTRUCTION = `在每次回覆的最後，如果對話中發生了影響角色情感的事件，請用以下格式輸出數值變化：
@@ -48,7 +59,8 @@ export const DEFAULT_UPDATE_INSTRUCTION = `在每次回覆的最後，如果對�
 - 數字型變化量請使用 +/- 號開頭的整數
 - 每次變化幅度建議在 ±1~±10 之間
 - 只有在劇情中有明確事件時才更新，不要每次都更新
-- 可以同時更新多個指標`;
+- 可以同時更新多個指標
+- 世界書與模板 EJS 可讀取 stat_data（累積狀態）、display_data（顯示鏡像）與 delta_data（本輪變更）`; 
 
 // ===== 服務類 =====
 
@@ -75,14 +87,23 @@ class AffinityTemplateService {
       };
     });
 
-    const values: Record<string, MetricValue> = {};
-    const stages: Record<string, string | null> = {};
-    for (const m of metrics) {
-      values[m.name] = m.value;
-      stages[m.name] = m.stage;
-    }
+    const shared = createStTemplateContext({
+      affinityConfig: config,
+      affinityState: state,
+      charName: config.statKey || "角色",
+    });
 
-    return { metrics, values, stages };
+    return {
+      metrics,
+      charKey: config.statKey || "角色",
+      values: shared.values,
+      stages: shared.stages,
+      stat_data: shared.stat_data,
+      display_data: shared.display_data,
+      delta_data: shared.delta_data,
+      getvar: shared.getvar,
+      variables: shared.variables,
+    };
   }
 
   /**
@@ -94,7 +115,10 @@ class AffinityTemplateService {
   ): string {
     if (!config.enabled || config.metrics.length === 0) return "";
 
-    const template = config.promptTemplate || DEFAULT_PROMPT_TEMPLATE;
+    const template =
+      (config.mvuEnabled ? config.mvuPromptTemplate : "") ||
+      config.promptTemplate ||
+      DEFAULT_PROMPT_TEMPLATE;
     const context = this.buildContext(config, state);
 
     try {
@@ -115,6 +139,9 @@ class AffinityTemplateService {
   renderUpdateInstruction(config: CharacterAffinityConfig): string {
     if (!config.enabled || config.metrics.length === 0) return "";
 
+    if (config.mvuEnabled && config.mvuUpdateInstruction) {
+      return config.mvuUpdateInstruction;
+    }
     if (config.updateInstruction) return config.updateInstruction;
 
     const numMetrics = config.metrics.filter((m) => m.type !== "string");
@@ -160,10 +187,51 @@ class AffinityTemplateService {
       stages[m.name] = m.stage;
     }
 
+    const shared = createStTemplateContext({
+      affinityConfig: {
+        characterId: "preview",
+        enabled: true,
+        statKey: "角色",
+        mvuEnabled: false,
+        mvuInitialData: {},
+        mvuPromptTemplate: "",
+        mvuUpdateInstruction: "",
+        postMutationRules: [],
+        metrics,
+        promptTemplate: "",
+        updateInstruction: "",
+        lastUpdated: 0,
+      },
+      affinityState: {
+        chatId: "preview",
+        characterId: "preview-char",
+        values,
+        mvuState: { statData: {}, displayData: {}, deltaData: {} },
+        history: [],
+        snapshots: {},
+        lastUpdated: Date.now(),
+      },
+      charName: "角色",
+    });
+
     try {
-      return ejs.render(template, { metrics: mockMetrics, values, stages }, {
-        async: false,
-      });
+      return ejs.render(
+        template,
+        {
+          metrics: mockMetrics,
+          charKey: "角色",
+          values,
+          stages,
+          stat_data: shared.stat_data,
+          display_data: shared.display_data,
+          delta_data: shared.delta_data,
+          getvar: shared.getvar,
+          variables: shared.variables,
+        },
+        {
+          async: false,
+        },
+      );
     } catch (error) {
       return `[模板語法錯誤] ${error instanceof Error ? error.message : String(error)}`;
     }

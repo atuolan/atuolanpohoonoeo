@@ -15,6 +15,7 @@ import {
   restoreImagesToMessages,
 } from "../db/operations";
 import type {
+  AffinityPostMutationRule,
   AffinityMetricConfig,
   CharacterAffinityConfig,
 } from "../schemas/affinity";
@@ -43,6 +44,228 @@ import { migrateRegexScript } from "./RegexEngine";
  * PNG 元數據關鍵字
  */
 const PNG_KEYWORD = "chara";
+
+function _deepClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function _extractLeafMetrics(
+  value: unknown,
+  path: string[],
+  metrics: AffinityMetricConfig[],
+): void {
+  if (typeof value === "number" || typeof value === "string") {
+    const fullPath = path.join(".");
+    const metricName = path[path.length - 1] ?? fullPath;
+    const namespace = path.slice(0, -1).join("_");
+    metrics.push({
+      id: `mvu_${namespace ? `${namespace}_` : ""}${metricName}`,
+      name: metricName,
+      path: fullPath,
+      type: typeof value === "number" ? "number" : "string",
+      min: 0,
+      max: 100,
+      initial: value,
+      options: [],
+      stages: [],
+    });
+    return;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return;
+  }
+
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    _extractLeafMetrics(child, [...path, key], metrics);
+  }
+}
+
+function _extractMvuPromptTemplate(entries: CharacterBookEntry[]): string {
+  const match = entries.find(
+    (e) =>
+      typeof e.comment === "string" &&
+      (e.comment.includes("数值状态描述") || e.comment.includes("數值狀態描述")),
+  );
+  return match?.content?.trim() ?? "";
+}
+
+function _extractMvuUpdateInstruction(entries: CharacterBookEntry[]): string {
+  const relevant = entries.filter(
+    (e) =>
+      typeof e.comment === "string" &&
+      e.comment.toLowerCase().includes("[mvu_update]"),
+  );
+  return relevant
+    .map((e) => e.content?.trim())
+    .filter((content): content is string => Boolean(content))
+    .join("\n\n");
+}
+
+function _normalizeRulePath(path: string): string {
+  return path.replace(/^\/+/, "").replace(/\//g, ".").trim();
+}
+
+function _extractRuleLines(instruction: string): string[] {
+  return instruction
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("- "))
+    .map((line) => line.slice(2).trim());
+}
+
+function _buildRulePathMap(instruction: string): Map<string, string> {
+  const mapping = new Map<string, string>();
+
+  for (const line of _extractRuleLines(instruction)) {
+    const variableRegex = /\$\{([^}]+)\}\s*\(路径:\s*([^\)]+)\)/g;
+    let match: RegExpExecArray | null;
+    while ((match = variableRegex.exec(line)) !== null) {
+      const variableName = match[1]?.trim();
+      const variablePath = match[2]?.trim();
+      if (!variableName || !variablePath) continue;
+      mapping.set(variableName, _normalizeRulePath(variablePath));
+    }
+  }
+
+  return mapping;
+}
+
+function _resolveConditionPath(
+  metricName: string,
+  pathMap: Map<string, string>,
+  fallbackNamespace?: string,
+): string | null {
+  const direct = pathMap.get(metricName);
+  if (direct) return direct;
+
+  for (const [knownName, knownPath] of pathMap.entries()) {
+    if (knownName.startsWith(metricName) || metricName.startsWith(knownName)) {
+      return knownPath;
+    }
+  }
+
+  if (!fallbackNamespace) return null;
+  return `${fallbackNamespace}.${metricName}`;
+}
+
+function _parseConditionsFromText(
+  text: string,
+  pathMap: Map<string, string>,
+  fallbackNamespace?: string,
+): AffinityPostMutationRule["conditions"] {
+  const conditions: AffinityPostMutationRule["conditions"] = [];
+  const regex = /([\u4e00-\u9fa5A-Za-z0-9_$]+)\s*(>=|<=|>|<|=|!=|≥|≤)\s*(true|false|-?\d+(?:\.\d+)?|[^\s，。；！,.]+)/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    const metricName = match[1]
+      ?.trim()
+      .replace(/^(当|若|如果|并且|且)+/, "");
+    const rawOperator = match[2]?.trim();
+    const rawValue = match[3]?.trim();
+    if (!metricName || !rawOperator || !rawValue) continue;
+
+    const path = _resolveConditionPath(metricName, pathMap, fallbackNamespace);
+    if (!path) continue;
+
+    const operatorMap: Record<string, "gte" | "lte" | "gt" | "lt" | "eq" | "neq"> = {
+      ">=": "gte",
+      "≤": "lte",
+      "<=": "lte",
+      ">": "gt",
+      "<": "lt",
+      "=": "eq",
+      "!=": "neq",
+      "≥": "gte",
+    };
+    const operator = operatorMap[rawOperator];
+    if (!operator) continue;
+
+    let value: string | number | boolean = rawValue;
+    if (rawValue === "true") value = true;
+    else if (rawValue === "false") value = false;
+    else {
+      const numeric = Number(rawValue);
+      if (!Number.isNaN(numeric)) value = numeric;
+    }
+
+    conditions.push({ path, operator, value });
+  }
+
+  return conditions;
+}
+
+function _extractClampMaxRule(
+  line: string,
+  pathMap: Map<string, string>,
+): AffinityPostMutationRule | null {
+  const targetPathMatch = line.match(/\$\{[^}]+\}\s*\(路径:\s*([^\)]+)\)/);
+  const upperBoundMatch = line.match(/上限(?:被限制在)?\s*(\d+(?:\.\d+)?)/);
+  if (!targetPathMatch?.[1] || !upperBoundMatch?.[1]) return null;
+
+  const targetPath = _normalizeRulePath(targetPathMatch[1]);
+  const fallbackNamespace = targetPath.split(".").slice(0, -1).join(".");
+  const conditions = _parseConditionsFromText(line, pathMap, fallbackNamespace);
+  if (conditions.length === 0) return null;
+
+  return {
+    type: "clamp_max_when",
+    targetPath,
+    max: Number(upperBoundMatch[1]),
+    mode: line.includes(" 或 ") ? "any" : "all",
+    conditions,
+  };
+}
+
+function _extractDeriveBooleanRule(
+  line: string,
+  pathMap: Map<string, string>,
+): AffinityPostMutationRule | null {
+  const targetMatch = line.match(/\$\{([^}]+)\}\s*\(路径:\s*([^\)]+)\)/);
+  if (!targetMatch?.[1] || !targetMatch?.[2]) return null;
+
+  if (!/设为\s*true|只能\s*false→true|永不可逆|禁止\s*true→false/i.test(line)) {
+    return null;
+  }
+
+  const targetPath = _normalizeRulePath(targetMatch[2]);
+  const fallbackNamespace = targetPath.split(".").slice(0, -1).join(".");
+  const conditions = _parseConditionsFromText(line, pathMap, fallbackNamespace);
+  if (conditions.length === 0) return null;
+
+  return {
+    type: "derive_boolean",
+    targetPath,
+    mode: line.includes(" 或 ") ? "any" : "all",
+    conditions,
+    trueValue: "true",
+    falseValue: "false",
+    lockOnTrue: /永不可逆|禁止\s*true→false|只能\s*false→true/i.test(line),
+  };
+}
+
+function _extractPostMutationRules(
+  instruction: string,
+): AffinityPostMutationRule[] {
+  const rules: AffinityPostMutationRule[] = [];
+
+  const pathMap = _buildRulePathMap(instruction);
+  for (const line of _extractRuleLines(instruction)) {
+    const deriveRule = _extractDeriveBooleanRule(line, pathMap);
+    if (deriveRule) {
+      rules.push(deriveRule);
+      continue;
+    }
+
+    const clampRule = _extractClampMaxRule(line, pathMap);
+    if (clampRule) {
+      rules.push(clampRule);
+    }
+  }
+
+  return rules;
+}
 
 /**
  * 從 Base64 解碼
@@ -449,51 +672,28 @@ export function detectAndConvertMvuConfig(
 
   const metrics: AffinityMetricConfig[] = [];
 
-  const extractMetrics = (namespace: string, obj: Record<string, unknown>) => {
-    for (const [key, value] of Object.entries(obj)) {
-      if (typeof value === "number") {
-        metrics.push({
-          id: `mvu_${namespace}_${key}`,
-          name: `${namespace}.${key}`,
-          type: "number",
-          min: 0,
-          max: 100,
-          initial: value,
-          options: [],
-          stages: [],
-        });
-      } else if (typeof value === "string") {
-        metrics.push({
-          id: `mvu_${namespace}_${key}`,
-          name: `${namespace}.${key}`,
-          type: "string",
-          min: 0,
-          max: 100,
-          initial: value,
-          options: [],
-          stages: [],
-        });
-      }
-      // 跳過嵌套物件（如 着装）和陣列（太複雜）
-    }
-  };
-
-  // 從每個頂層 namespace（角色名、主角等）提取葉節點變量
   for (const [ns, nsValue] of Object.entries(root)) {
-    if (nsValue && typeof nsValue === "object" && !Array.isArray(nsValue)) {
-      extractMetrics(ns, nsValue as Record<string, unknown>);
-    }
+    _extractLeafMetrics(nsValue, [ns], metrics);
   }
 
   if (metrics.length === 0) return null;
+
+  const mvuPromptTemplate = _extractMvuPromptTemplate(entries);
+  const mvuUpdateInstruction = _extractMvuUpdateInstruction(entries);
+  const postMutationRules = _extractPostMutationRules(mvuUpdateInstruction);
 
   return {
     characterId,
     enabled: true,
     statKey: "",
+    mvuEnabled: true,
+    mvuInitialData: _deepClone(root),
+    mvuPromptTemplate,
+    mvuUpdateInstruction,
+    postMutationRules,
     metrics,
-    promptTemplate: "",
-    updateInstruction: "",
+    promptTemplate: mvuPromptTemplate,
+    updateInstruction: mvuUpdateInstruction,
     lastUpdated: Date.now(),
   };
 }
@@ -744,7 +944,7 @@ export class ImportExportService {
         if (!lorebook) continue;
         const book = this.convertLorebookToCharacterBook(lorebook);
         if (!firstName) {
-          firstName = book.name;
+          firstName = book.name ?? "";
           firstDesc = book.description;
         }
         allEntries.push(...book.entries);
@@ -897,6 +1097,12 @@ export class ImportExportService {
     return `data:${mimeType};base64,${btoa(binary)}`;
   }
 
+  private uint8ArrayToArrayBuffer(data: Uint8Array): ArrayBuffer {
+    const copied = new Uint8Array(data.byteLength);
+    copied.set(data);
+    return copied.buffer;
+  }
+
   /**
    * 從檔名推斷 MIME 類型
    */
@@ -1038,7 +1244,7 @@ export class ImportExportService {
             reject(err);
             return;
           }
-          resolve(new Blob([data], { type: "application/zip" }));
+          resolve(new Blob([this.uint8ArrayToArrayBuffer(data)], { type: "application/zip" }));
         });
       });
     } catch (e) {
@@ -1294,7 +1500,7 @@ export class ImportExportService {
             reject(err);
             return;
           }
-          resolve(new Blob([data], { type: "application/zip" }));
+          resolve(new Blob([this.uint8ArrayToArrayBuffer(data)], { type: "application/zip" }));
         });
       });
     } catch (e) {

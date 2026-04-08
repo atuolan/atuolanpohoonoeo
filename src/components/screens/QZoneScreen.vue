@@ -1,7 +1,7 @@
 <template>
   <div class="qzone-screen" :class="{ 'dark-mode': isDarkMode }">
     <!-- 評論詳情頁面 -->
-    <div v-if="selectedPost" class="plurk-detail-view">
+    <div v-if="selectedPost" class="plurk-detail-view" :style="detailViewHeight ? { height: detailViewHeight } : undefined">
       <!-- 詳情頁導航欄 -->
       <div class="detail-navigation">
         <button class="detail-back-btn" @click="closeDetailView">
@@ -2140,7 +2140,7 @@ import type {
 import { DEFAULT_AUTO_INTERACTION_CONFIG } from "@/types/qzone";
 import { compressImage, compressionPresets } from "@/utils/imageCompression";
 import { shouldHideFromQZone } from "@/services/BlockService";
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 // ============================================================
 // Emits
@@ -2225,6 +2225,15 @@ const riverTimeline = ref<HTMLElement | null>(null);
 const selectedPost = ref<QZonePost | null>(null);
 const detailCommentInput = ref("");
 const replyingToComment = ref<QZoneComment | null>(null);
+
+// 手機鍵盤彈出時動態調整詳情頁高度
+const detailViewHeight = ref<string | undefined>(undefined);
+
+function handleDetailViewportResize() {
+  if (window.visualViewport) {
+    detailViewHeight.value = `${window.visualViewport.height}px`;
+  }
+}
 
 // 將評論按回覆關係排序：回覆評論緊接在被回覆的評論後面
 const sortedDetailComments = computed(() => {
@@ -4115,6 +4124,13 @@ onMounted(async () => {
 
   console.log("[QZone] 已載入角色:", charactersStore.characters.length, "個");
   console.log("[QZone] 當前用戶:", userStore.currentName);
+
+  // 監聽手機鍵盤彈出（調整詳情頁高度）
+  window.visualViewport?.addEventListener('resize', handleDetailViewportResize);
+});
+
+onUnmounted(() => {
+  window.visualViewport?.removeEventListener('resize', handleDetailViewportResize);
 });
 
 // 監聽設定變化

@@ -1006,8 +1006,15 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
 
     // 保留原始 <update> 區塊，供訊息存儲後重新掃描使用
     const updateBlockMatch = rawResponse.match(/<update>[\s\S]*?<\/update>/gi);
-    if (updateBlockMatch) {
-      result.rawUpdateBlock = updateBlockMatch.join("\n");
+    const updateVariableMatch = rawResponse.match(
+      /<UpdateVariable>[\s\S]*?<\/UpdateVariable>/gi,
+    );
+    const rawAffinityBlocks = [
+      ...(updateBlockMatch ?? []),
+      ...(updateVariableMatch ?? []),
+    ];
+    if (rawAffinityBlocks.length > 0) {
+      result.rawUpdateBlock = rawAffinityBlocks.join("\n");
     }
   }
 
@@ -1110,6 +1117,12 @@ function parseMessageContent(content: string): ParsedMessage {
   // 移除 <affinity-update> 標籤（已在上層 parseAIResponse 處理）
   result.content = result.content
     .replace(/<affinity-update\s+[^>]*?\s*\/?>/gi, "")
+    .trim();
+
+  // 移除 MVU <update> / <UpdateVariable> 區塊（已在上層 parseAIResponse 處理）
+  result.content = result.content
+    .replace(/<update>[\s\S]*?<\/update>/gi, "")
+    .replace(/<UpdateVariable>[\s\S]*?<\/UpdateVariable>/gi, "")
     .trim();
 
   // 移除 [REACTIONS]...[/REACTIONS] 標籤（噗浪表情反應，不應顯示在聊天氣泡中）
@@ -1485,36 +1498,46 @@ export interface AffinityUpdateEntry {
   /** delta 增量（isAbsolute=false 時使用） */
   change: number;
   reason: string;
+  /** object-tree 操作類型；未指定時沿用既有 leaf metric 更新語義 */
+  operation?: "remove" | "insert";
   /** 字串型指標的新值 */
   stringValue?: string;
   /** true 時表示絕對賦值（_.set），false/undefined 表示增量（_.add / <affinity-update>） */
   isAbsolute?: boolean;
   /** 絕對賦值的數字新值（isAbsolute=true 且為數字時使用） */
   absoluteValue?: number;
+  /** move 等操作的來源路徑，供後續套用時從現有 state 取值 */
+  sourceMetric?: string;
+  /** insert 操作的索引或鍵 */
+  insertIndex?: string | number;
 }
 
 /**
- * 解析好感度更新標籤，支援兩種格式：
+ * 解析好感度更新標籤，支援多種格式：
  * （此函數已 export，可供開場白等場景直接使用）
  * 1. <affinity-update> XML 標籤（±增量）
  *    <affinity-update 好感度="+5" 信任度="-2" 识破身份="已识破" reason="原因"/>
- * 2. MVU <update> 區塊中的 _.set() 語法（絕對賦值）
+ * 2. MVU <update> 區塊中的 _.set() / _.assign() / _.add() 語法
  *    兩參數：<update>_.set('黎靖青.冷淡值', 50);</update>
  *    三參數：<update>_.set('黎靖青.冷淡值', 50, 55);</update>（原生 MVU 格式：舊值, 新值）
+ *    _.assign() 視為絕對賦值；_.add() 視為 delta 增量
+ * 3. <UpdateVariable><JSONPatch>[...]</JSONPatch></UpdateVariable>
+ *    支援 replace/add/insert/delta/move；remove 先保守忽略
  */
 
-/** 輔助：將解析到的 _.set 參數推入結果陣列 */
-function _pushSetResult(
+/** 輔助：將解析到的絕對賦值參數推入結果陣列 */
+function _pushAbsoluteResult(
   results: AffinityUpdateEntry[],
   path: string,
   rawVal: string,
+  reason: string,
 ): void {
   const strMatch = rawVal.match(/^['"](.*)['"]$/);
   if (strMatch) {
     results.push({
       metric: path,
       change: 0,
-      reason: "MVU _.set",
+      reason,
       stringValue: strMatch[1],
       isAbsolute: true,
     });
@@ -1524,9 +1547,110 @@ function _pushSetResult(
       results.push({
         metric: path,
         change: 0,
-        reason: "MVU _.set",
+        reason,
         isAbsolute: true,
         absoluteValue: numVal,
+      });
+    }
+  }
+}
+
+function _pushDeltaResult(
+  results: AffinityUpdateEntry[],
+  path: string,
+  rawVal: string,
+  reason: string,
+): void {
+  const numVal = parseFloat(rawVal);
+  if (!Number.isNaN(numVal)) {
+    results.push({
+      metric: path,
+      change: numVal,
+      reason,
+    });
+  }
+}
+
+function _pushJsonPatchResult(
+  results: AffinityUpdateEntry[],
+  path: string,
+  op: string,
+  value: unknown,
+  fromPath?: string,
+): void {
+  const pathSegments = path.replace(/^\/+/, "").split("/").filter(Boolean);
+  const normalizedPath = pathSegments.join(".");
+  if (!normalizedPath) return;
+
+  if (op === "delta" && typeof value === "number" && !Number.isNaN(value)) {
+    results.push({
+      metric: normalizedPath,
+      change: value,
+      reason: "MVU JSONPatch",
+    });
+    return;
+  }
+
+  if (op === "move" && fromPath) {
+    const normalizedFromPath = fromPath.replace(/^\/+/, "").replace(/\//g, ".");
+    if (!normalizedFromPath) return;
+    results.push({
+      metric: normalizedPath,
+      change: 0,
+      reason: "MVU JSONPatch",
+      isAbsolute: true,
+      sourceMetric: normalizedFromPath,
+    });
+    return;
+  }
+
+  if (op === "remove") {
+    results.push({
+      metric: normalizedPath,
+      change: 0,
+      reason: "MVU JSONPatch",
+      operation: "remove",
+    });
+    return;
+  }
+
+  if (op === "insert") {
+    const parentPath = pathSegments.slice(0, -1).join(".");
+    const rawIndex = pathSegments[pathSegments.length - 1] ?? "";
+    const parsedIndex = /^\d+$/.test(rawIndex) ? Number(rawIndex) : rawIndex;
+    if (!parentPath) return;
+
+    results.push({
+      metric: parentPath,
+      change: 0,
+      reason: "MVU JSONPatch",
+      operation: "insert",
+      stringValue: typeof value === "string" ? value : undefined,
+      absoluteValue: typeof value === "number" && !Number.isNaN(value) ? value : undefined,
+      insertIndex: parsedIndex,
+    });
+    return;
+  }
+
+  if (["replace", "add"].includes(op)) {
+    if (typeof value === "number" && !Number.isNaN(value)) {
+      results.push({
+        metric: normalizedPath,
+        change: 0,
+        reason: "MVU JSONPatch",
+        isAbsolute: true,
+        absoluteValue: value,
+      });
+      return;
+    }
+
+    if (typeof value === "string") {
+      results.push({
+        metric: normalizedPath,
+        change: 0,
+        reason: "MVU JSONPatch",
+        stringValue: value,
+        isAbsolute: true,
       });
     }
   }
@@ -1573,30 +1697,68 @@ export function parseAffinityUpdateTags(
 
   while ((blockMatch = updateBlockRegex.exec(rawResponse)) !== null) {
     const block = blockMatch[1];
-    // 先嘗試三參數格式：_.set('path', oldVal, newVal)
-    // 再嘗試兩參數格式：_.set('path', newVal)
-    // 使用非貪婪 + 明確分隔避免跨參數誤匹配
-    const setRegex3 = /_.set\(['"]([^'"]+)['"]\s*,\s*[^,)]+,\s*([^)]+)\)/g;
-    const setRegex2 = /_.set\(['"]([^'"]+)['"]\s*,\s*([^,)]+)\)/g;
-    let setMatch: RegExpExecArray | null;
+    const absoluteRegex3 = /_\.(set|assign)\(['"]([^'"]+)['"]\s*,\s*[^,)]+,\s*([^)]+)\)/g;
+    const absoluteRegex2 = /_\.(set|assign)\(['"]([^'"]+)['"]\s*,\s*([^,)]+)\)/g;
+    const addRegex = /_.add\(['"]([^'"]+)['"]\s*,\s*([^)]+)\)/g;
+    const removeRegex = /_\.(unset|delete)\(['"]([^'"]+)['"]\s*\)/g;
+    let commandMatch: RegExpExecArray | null;
 
     // 已解析的路徑集合，避免同一行被兩個 regex 重複匹配
     const parsedPaths = new Set<number>();
 
-    // 第一輪：三參數格式（優先）
-    while ((setMatch = setRegex3.exec(block)) !== null) {
-      parsedPaths.add(setMatch.index);
-      const path = setMatch[1].trim();
-      const rawVal = setMatch[2].trim(); // 第三個參數 = 新值
-      _pushSetResult(results, path, rawVal);
+    // 第一輪：三參數絕對賦值格式（優先）
+    while ((commandMatch = absoluteRegex3.exec(block)) !== null) {
+      parsedPaths.add(commandMatch.index);
+      const command = commandMatch[1].trim();
+      const path = commandMatch[2].trim();
+      const rawVal = commandMatch[3].trim();
+      _pushAbsoluteResult(results, path, rawVal, `MVU _.${command}`);
     }
 
-    // 第二輪：兩參數格式（補漏，跳過已被三參數匹配的位置）
-    while ((setMatch = setRegex2.exec(block)) !== null) {
-      if (parsedPaths.has(setMatch.index)) continue;
-      const path = setMatch[1].trim();
-      const rawVal = setMatch[2].trim(); // 第二個參數 = 新值
-      _pushSetResult(results, path, rawVal);
+    // 第二輪：兩參數絕對賦值格式（補漏，跳過已被三參數匹配的位置）
+    while ((commandMatch = absoluteRegex2.exec(block)) !== null) {
+      if (parsedPaths.has(commandMatch.index)) continue;
+      const command = commandMatch[1].trim();
+      const path = commandMatch[2].trim();
+      const rawVal = commandMatch[3].trim();
+      _pushAbsoluteResult(results, path, rawVal, `MVU _.${command}`);
+    }
+
+    while ((commandMatch = addRegex.exec(block)) !== null) {
+      const path = commandMatch[1].trim();
+      const rawVal = commandMatch[2].trim();
+      _pushDeltaResult(results, path, rawVal, "MVU _.add");
+    }
+
+    while ((commandMatch = removeRegex.exec(block)) !== null) {
+      const path = commandMatch[2].trim();
+      results.push({
+        metric: path,
+        change: 0,
+        reason: `MVU _.${commandMatch[1].trim()}`,
+        operation: "remove",
+      });
+    }
+  }
+
+  // ── 格式三：<UpdateVariable><JSONPatch>[...]</JSONPatch></UpdateVariable> ──────
+  const updateVariableRegex = /<UpdateVariable>[\s\S]*?<JSONPatch>\s*([\s\S]*?)\s*<\/JSONPatch>[\s\S]*?<\/UpdateVariable>/gi;
+  let updateVariableMatch: RegExpExecArray | null;
+
+  while ((updateVariableMatch = updateVariableRegex.exec(rawResponse)) !== null) {
+    const jsonText = updateVariableMatch[1].trim();
+    try {
+      const patch = JSON.parse(jsonText) as Array<Record<string, unknown>>;
+      if (!Array.isArray(patch)) continue;
+      for (const op of patch) {
+        const rawPath = typeof op.path === "string" ? op.path : "";
+        const rawOp = typeof op.op === "string" ? op.op.toLowerCase() : "";
+        if (!rawPath || !rawOp) continue;
+        const rawFrom = typeof op.from === "string" ? op.from : "";
+        _pushJsonPatchResult(results, rawPath, rawOp, op.value, rawFrom);
+      }
+    } catch {
+      // 忽略非法 JSONPatch 區塊
     }
   }
 
@@ -1608,7 +1770,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|<content>|<msg>|<update>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<time-jump|<送禮物>|<pay>|<refund>|<avatar-change|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<time-jump|<送禮物>|<pay>|<refund>|<avatar-change|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }

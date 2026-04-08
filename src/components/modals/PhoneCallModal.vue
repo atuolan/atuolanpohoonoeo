@@ -1,5 +1,5 @@
 <template>
-  <div class="phone-call-overlay" @click.self="handleMinimize">
+  <div class="phone-call-overlay" :style="overlayHeight ? { height: overlayHeight } : undefined" @click.self="handleMinimize">
     <div class="phone-call-container" :class="callState">
       <!-- 縮小按鈕 -->
       <button class="minimize-btn" @click="handleMinimize" title="縮小">
@@ -196,7 +196,7 @@
 
 <script setup lang="ts">
 import { usePhoneCallStore } from "@/stores/phoneCall";
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 const phoneCallStore = usePhoneCallStore();
 
@@ -204,6 +204,29 @@ const phoneCallStore = usePhoneCallStore();
 const inputText = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
 const toneText = ref("");
+
+// 手機鍵盤彈出時動態調整 overlay 高度
+const overlayHeight = ref<string | undefined>(undefined);
+
+function handleViewportResize() {
+  if (window.visualViewport) {
+    overlayHeight.value = `${window.visualViewport.height}px`;
+    // 鍵盤彈出後自動滾到底部
+    nextTick(() => {
+      if (messagesContainer.value) {
+        messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+      }
+    });
+  }
+}
+
+onMounted(() => {
+  window.visualViewport?.addEventListener('resize', handleViewportResize);
+});
+
+onUnmounted(() => {
+  window.visualViewport?.removeEventListener('resize', handleViewportResize);
+});
 
 // 從 store 讀取狀態
 const callState = computed(() => phoneCallStore.callState);

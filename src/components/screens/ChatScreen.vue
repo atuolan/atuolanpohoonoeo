@@ -8,9 +8,10 @@ import {
   OpenAICompatibleClient,
 } from "@/api/OpenAICompatible";
 import { MessageBubble } from "@/components/common";
+import ChatScreenHeader from "@/components/screens/ChatScreenHeader.vue";
+import ChatScreenInputArea from "@/components/screens/ChatScreenInputArea.vue";
 import GiftDrawer from "@/components/common/GiftDrawer.vue";
 import MediaSendDrawer from "@/components/common/MediaSendDrawer.vue";
-import StickerPanel from "@/components/common/StickerPanel.vue";
 import AISummaryPanel from "@/components/modals/AISummaryPanel.vue";
 import AffinityPanel from "@/components/modals/AffinityPanel.vue";
 import ChatInfoModal from "@/components/modals/ChatInfoModal.vue";
@@ -55,7 +56,6 @@ import {
   extractImagesFromMessages,
 } from "@/db/operations";
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
-import { formatTime as formatAudioTime } from "@/services/AudioRecorder";
 import BlockService from "@/services/BlockService";
 import { proactiveMessageService } from "@/services/ProactiveMessageService";
 import { getRegexedString, regex_placement } from "@/services/RegexEngine";
@@ -67,6 +67,7 @@ import {
   parseGreeting,
   parseGroupChatResponse,
 } from "@/services/ResponseParser";
+import { createStTemplateContext } from "@/services/StTemplateContextService";
 import {
   getNearbyPlaces,
   getWeatherByCity,
@@ -99,6 +100,7 @@ import { formatMediaLogsForPrompt } from "@/types/mediaLog";
 import type { AuthorsNoteMetadata } from "@/types/prompt";
 import type { Lorebook } from "@/types/worldinfo";
 import { PromptRole } from "@/types/worldinfo";
+import ejs from "ejs";
 import {
   buildPostCallPrompt,
   createCallNotificationCard,
@@ -116,6 +118,7 @@ import {
   ref,
   toRaw,
   watch,
+  watchEffect,
 } from "vue";
 
 // 媒體發送類型定義
@@ -399,6 +402,30 @@ function applyAIOutputRegex(content: string): string {
     characterName: charName,
     userName,
   });
+}
+
+function processAiOutputTemplate(content: string): string {
+  if (!content.includes("<%")) return content;
+
+  const processed = content.replace(
+    /(<%[-_=]?)(\s*[\s\S]*?)([-_]?%>)/g,
+    (_match, open, body, close) => open + body.replace(/\bawait\s+/g, "") + close,
+  );
+
+  try {
+    const ctx = createStTemplateContext({
+      affinityConfig: _affinityConfig.value,
+      affinityState: _affinityState.value,
+      charName: currentCharacter.value?.data?.name || props.characterName || "角色",
+      userName: effectivePersona.value?.name || userStore.currentPersona?.name || "User",
+      chatId: currentChatId.value || props.chatId,
+      messages: messages.value as unknown as ChatMessage[],
+    });
+    return ejs.render(processed, ctx, { async: false });
+  } catch (error) {
+    console.warn("[ChatScreen] AI 回覆模板預處理失敗，保留原文:", error);
+    return content;
+  }
 }
 
 // 套用 USER_INPUT regex（在用戶訊息 content 建立前呼叫）
@@ -891,8 +918,9 @@ const messagesContainer = ref<HTMLElement | null>(null);
 
 // ChatScreen 根元素（用於聊天專屬外觀）
 const chatScreenRef = ref<HTMLElement | null>(null);
-// 標題欄元素（用於計算封鎖遮罩的起始位置）
-const chatHeaderRef = ref<HTMLElement | null>(null);
+
+// 輸入區子元件 ref（用於同步 textarea DOM ref 回 composable）
+const inputAreaRef = ref<InstanceType<typeof ChatScreenInputArea> | null>(null);
 
 // 顯示更多選單
 const showMoreMenu = ref(false);
@@ -903,7 +931,6 @@ const showRail = ref(false);
 // 暱稱編輯
 const showNicknameEdit = ref(false);
 const nicknameEditValue = ref("");
-const nicknameInputRef = ref<HTMLInputElement | null>(null);
 
 // 封鎖狀態
 const isCharBlocked = ref(false);
@@ -1213,10 +1240,6 @@ function startNicknameEdit() {
   if (!char) return;
   nicknameEditValue.value = char.nickname || char.data.name || "";
   showNicknameEdit.value = true;
-  nextTick(() => {
-    nicknameInputRef.value?.focus();
-    nicknameInputRef.value?.select();
-  });
 }
 
 async function saveNickname() {
@@ -1225,6 +1248,30 @@ async function saveNickname() {
   const newNickname = nicknameEditValue.value.trim();
   await charactersStore.updateCharacter(char.id, { nickname: newNickname });
   showNicknameEdit.value = false;
+}
+
+function closeNicknameEdit() {
+  showNicknameEdit.value = false;
+}
+
+async function setFakeTimeMode(mode: "real" | "loop" | "offset") {
+  fakeTime.setMode(mode);
+  await saveChat();
+}
+
+async function updateFakeTimeLoopStart(value: string) {
+  fakeTime.setLoopRange(value, fakeTime.fakeTimeLoop.value.endDateTime);
+  await saveChat();
+}
+
+async function updateFakeTimeLoopEnd(value: string) {
+  fakeTime.setLoopRange(fakeTime.fakeTimeLoop.value.startDateTime, value);
+  await saveChat();
+}
+
+async function updateOffsetStartDateTime(value: string) {
+  fakeTime.setOffsetFromDateTime(value);
+  await saveChat();
 }
 
 function toggleRail() {
@@ -1722,9 +1769,12 @@ function _handleAffinityUpdates(
     metric: string;
     change: number;
     reason: string;
+    operation?: "remove" | "insert";
     stringValue?: string;
     isAbsolute?: boolean;
     absoluteValue?: number;
+    sourceMetric?: string;
+    insertIndex?: string | number;
   }[],
   messageId?: string,
 ) {
@@ -1736,62 +1786,17 @@ function _handleAffinityUpdates(
     affinityStore.snapshotBeforeMessage(chatId, messageId);
   }
 
-  const config = _affinityConfig.value;
-  const resolvedUpdates = updates.map((u) => {
-    // 嘗試多種匹配策略：
-    // 1. 完全匹配 name 或 id（如 "黎靖青.亲密值" === "黎靖青.亲密值"）
-    // 2. 去掉命名空間前綴後匹配 name（如 "亲密值" === "亲密值"）
-    // 3. metric 的 name 包含在路徑末段（如 metric.name="亲密值" 匹配 "黎靖青.亲密值"）
-    let metricConfig = config.metrics.find(
-      (m) => m.name === u.metric || m.id === u.metric,
-    );
-
-    if (!metricConfig) {
-      // 取路徑最後一段作為指標名（"黎靖青.亲密值" → "亲密值"）
-      const lastDotIdx = u.metric.lastIndexOf(".");
-      if (lastDotIdx !== -1) {
-        const suffix = u.metric.substring(lastDotIdx + 1);
-        metricConfig = config.metrics.find(
-          (m) => m.name === suffix || m.id === suffix,
-        );
-      }
-    }
-
-    if (!metricConfig) {
-      // 反向匹配：metric.name 是否為 u.metric 的尾段
-      metricConfig = config.metrics.find((m) =>
-        u.metric.endsWith(`.${m.name}`),
-      );
-    }
-
-    if (!metricConfig) {
-      console.warn(
-        `[ChatScreen] 好感度指標未匹配: "${u.metric}"，可用指標:`,
-        config.metrics.map((m) => `${m.id}(${m.name})`),
-      );
-    }
-
-    return {
-      metricId: metricConfig?.id || u.metric,
-      change: u.change,
-      reason: u.reason,
-      stringValue: u.stringValue,
-      isAbsolute: u.isAbsolute,
-      absoluteValue: u.absoluteValue,
-    };
-  });
-
-  affinityStore.batchUpdate(chatId, resolvedUpdates);
+  affinityStore.resetMvuDeltaData(chatId);
+  affinityStore.batchUpdateByPath(chatId, updates);
   _affinityState.value = affinityStore.getState(chatId) ?? null;
   console.log(
     "[ChatScreen] 好感度更新:",
-    resolvedUpdates
+    updates
       .map((u) => {
-        if (u.stringValue !== undefined)
-          return `${u.metricId} → "${u.stringValue}"`;
+        if (u.stringValue !== undefined) return `${u.metric} → "${u.stringValue}"`;
         if (u.isAbsolute && u.absoluteValue !== undefined)
-          return `${u.metricId} = ${u.absoluteValue}`;
-        return `${u.metricId} ${u.change > 0 ? "+" : ""}${u.change}`;
+          return `${u.metric} = ${u.absoluteValue}`;
+        return `${u.metric} ${u.change > 0 ? "+" : ""}${u.change}`;
       })
       .join(", "),
   );
@@ -2157,6 +2162,14 @@ const {
 } = useChatInputHelper({
   inputText,
   sendAndTriggerAI,
+});
+
+// 同步子元件 textarea DOM ref 回 composable（autoResize、focus、insertQuickAction 需要直接操作 DOM）
+watchEffect(() => {
+  if (inputAreaRef.value) {
+    messageInputRef.value = inputAreaRef.value.messageTextareaRef ?? null;
+    expandedInputRef.value = inputAreaRef.value.expandedTextareaRef ?? null;
+  }
 });
 
 // 快速輸入助手橫向捲動
@@ -4501,7 +4514,7 @@ async function triggerAIResponse(options?: {
       }
 
       // 直接處理完整回覆（套用角色 regex_scripts AI_OUTPUT）
-      const finalContent = applyAIOutputRegex(fullContent);
+      const finalContent = processAiOutputTemplate(applyAIOutputRegex(fullContent));
       const msgIndex = messages.value.findIndex((m) => m.id === aiMessage.id);
 
       // 空回應檢測：若是使用者主動停止，直接移除佔位氣泡
@@ -5361,7 +5374,9 @@ async function triggerAIResponse(options?: {
             scrollToBottom();
           }
         } else if (event.type === "done") {
-          const finalContent = applyAIOutputRegex(event.content || fullContent);
+          const finalContent = processAiOutputTemplate(
+            applyAIOutputRegex(event.content || fullContent),
+          );
           const msgIndex = messages.value.findIndex(
             (m) => m.id === aiMessage.id,
           );
@@ -6233,7 +6248,9 @@ async function triggerAIResponse(options?: {
     ) {
       const lastAI = [...messages.value].reverse().find((m) => m.role === "ai");
       if (lastAI && lastAI.isStreaming && !lastAI.content) {
-        const windowContent = applyAIOutputRegex(streamingWindow.content.value);
+        const windowContent = processAiOutputTemplate(
+          applyAIOutputRegex(streamingWindow.content.value),
+        );
         if (windowContent) {
           console.warn(
             "[ChatScreen] 安全網：流式窗口有內容但訊息為空，同步內容",
@@ -6335,7 +6352,9 @@ async function handleStreamingClose() {
 
   // 取得目前仍在流式中的 AI 訊息，避免被隱藏的 [繼續] 提示干擾
   const lastMsg = getActiveStreamingAIMessage();
-  const windowContent = applyAIOutputRegex(streamingWindow.content.value);
+  const windowContent = processAiOutputTemplate(
+    applyAIOutputRegex(streamingWindow.content.value),
+  );
 
   // 只有當最後一條訊息還在流式狀態時，才需要處理
   if (
@@ -9144,855 +9163,96 @@ onUnmounted(() => {
     @click="closeMenus"
   >
     <!-- 標題欄 -->
-    <header class="chat-header" ref="chatHeaderRef">
-      <button class="header-back" @click="handleBack">
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path
-            d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"
-          />
-        </svg>
-      </button>
-
-      <!-- 角色頭像 - 點擊打開 AI 總結設置 -->
-      <div class="char-avatar-wrap">
-        <div
-          class="char-avatar"
-          @click.stop="showAISummaryPanel = true"
-          title="AI 記憶管理"
-        >
-          <img v-if="displayAvatar" :src="displayAvatar" :alt="characterName" />
-          <div v-else-if="isGroupChat" class="avatar-placeholder group-avatar">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"
-              />
-            </svg>
-          </div>
-          <div v-else class="avatar-placeholder">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"
-              />
-            </svg>
-          </div>
-        </div>
-        <svg
-          v-if="chatSummaries.length > 0 || chatDiaries.length > 0"
-          class="char-avatar-heart"
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-        </svg>
-      </div>
-
-      <div class="chat-info">
-        <div class="chat-name-row">
-          <h1 class="chat-name">
-            {{ isGroupChat ? groupDisplayName : displayCharacterName }}
-          </h1>
-          <button
-            v-if="!isGroupChat && currentCharacter"
-            class="nickname-edit-btn"
-            title="編輯暱稱"
-            @click.stop="startNicknameEdit"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-              <path
-                d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-              />
-            </svg>
-          </button>
-        </div>
-        <!-- 暱稱編輯彈出框 -->
-        <div v-if="showNicknameEdit" class="nickname-edit-popup" @click.stop>
-          <input
-            ref="nicknameInputRef"
-            v-model="nicknameEditValue"
-            class="nickname-edit-input"
-            placeholder="輸入暱稱..."
-            maxlength="30"
-            @keydown.enter="saveNickname"
-            @keydown.escape="showNicknameEdit = false"
-          />
-          <button class="nickname-save-btn" @click="saveNickname">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-            </svg>
-          </button>
-        </div>
-        <p v-if="isGroupChat && !isGenerating" class="chat-status">
-          {{ groupMemberCount }} 位成員
-        </p>
-        <p v-else-if="isGenerating" class="chat-status">正在輸入...</p>
-      </div>
-
-      <!-- Rail 展開按鈕（僅手機端顯示） -->
-      <button
-        class="rail-toggle-btn"
-        :class="{ active: showRail }"
-        @click.stop="toggleRail"
-      >
-        <svg v-if="!showRail" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
-        </svg>
-        <svg v-else viewBox="0 0 24 24" fill="currentColor">
-          <path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z" />
-        </svg>
-      </button>
-
-      <div class="header-actions" :class="{ 'rail-open': showRail }">
-        <!-- 使用者切換按鈕 -->
-        <div class="persona-dropdown" @click.stop>
-          <button
-            class="header-btn persona-btn"
-            title="切換使用者"
-            @click.stop="togglePersonaSelector"
-          >
-            <div v-if="userStore.currentAvatar" class="persona-avatar-mini">
-              <img
-                :src="userStore.currentAvatar"
-                :alt="userStore.currentName"
-              />
-            </div>
-            <svg v-else viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-              />
-            </svg>
-          </button>
-
-          <!-- Persona 選擇器下拉選單 -->
-          <Transition name="dropdown">
-            <div v-if="showPersonaSelector" class="persona-selector">
-              <div class="persona-selector-header">
-                <span>選擇使用者</span>
-              </div>
-              <div class="persona-list">
-                <button
-                  v-for="persona in userStore.personas"
-                  :key="persona.id"
-                  class="persona-item"
-                  :class="{ active: persona.id === userStore.currentPersonaId }"
-                  @click="selectPersona(persona.id)"
-                >
-                  <div class="persona-item-avatar">
-                    <img
-                      v-if="persona.avatar"
-                      :src="persona.avatar"
-                      :alt="persona.name"
-                    />
-                    <svg v-else viewBox="0 0 24 24" fill="currentColor">
-                      <path
-                        d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-                      />
-                    </svg>
-                  </div>
-                  <div class="persona-item-info">
-                    <span class="persona-item-name">{{ persona.name }}</span>
-                    <span v-if="persona.description" class="persona-item-desc">
-                      {{ persona.description.substring(0, 30)
-                      }}{{ persona.description.length > 30 ? "..." : "" }}
-                    </span>
-                  </div>
-                  <svg
-                    v-if="persona.id === userStore.currentPersonaId"
-                    class="check-icon"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <path
-                      d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-                    />
-                  </svg>
-                </button>
-              </div>
-              <!-- 編輯按鈕 -->
-              <div class="persona-selector-footer">
-                <button class="edit-persona-btn" @click="openPersonaEditPanel">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-                    />
-                  </svg>
-                  <span>編輯設定</span>
-                </button>
-              </div>
-            </div>
-          </Transition>
-        </div>
-
-        <!-- 小遊戲按鈕 -->
-        <div class="game-dropdown" @click.stop>
-          <button
-            class="header-btn"
-            :class="{ active: showGameMenu }"
-            title="小遊戲"
-            @click.stop="toggleGameMenu"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5S18.67 9 19.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"
-              />
-            </svg>
-          </button>
-
-          <!-- 小遊戲選單 -->
-          <Transition name="dropdown">
-            <div v-if="showGameMenu" class="dropdown-menu game-menu">
-              <div class="dropdown-section-title">小遊戲</div>
-              <button class="dropdown-item" @click="openGame('dishwashing')">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <ellipse cx="12" cy="5" rx="9" ry="3" />
-                  <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5" />
-                  <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3" />
-                </svg>
-                <span>刷盤子</span>
-              </button>
-              <button class="dropdown-item" @click="openGame('fishing')">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    d="M18 4a3 3 0 0 0-3 3v4a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3z"
-                  />
-                  <path d="M18 11v9" />
-                  <path d="M18 20l-3-3" />
-                  <path d="M18 20l3-3" />
-                  <circle cx="6" cy="12" r="4" />
-                  <path d="M10 12h4" />
-                </svg>
-                <span>釣魚</span>
-              </button>
-              <button class="dropdown-item" @click="openGame('gambling')">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <rect x="2" y="2" width="20" height="20" rx="2" />
-                  <circle cx="8" cy="8" r="1.5" fill="currentColor" />
-                  <circle cx="16" cy="8" r="1.5" fill="currentColor" />
-                  <circle cx="8" cy="16" r="1.5" fill="currentColor" />
-                  <circle cx="16" cy="16" r="1.5" fill="currentColor" />
-                  <circle cx="12" cy="12" r="1.5" fill="currentColor" />
-                </svg>
-                <span>猜大小</span>
-              </button>
-              <button class="dropdown-item" @click="openGame('merit')">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <ellipse cx="12" cy="14" rx="9" ry="7" />
-                  <ellipse cx="12" cy="8" rx="3" ry="2" />
-                  <circle cx="12" cy="6" r="1.5" />
-                </svg>
-                <span>修行</span>
-              </button>
-            </div>
-          </Transition>
-        </div>
-
-        <!-- 設定按鈕 -->
-        <button
-          class="header-btn"
-          title="外觀設定"
-          @click.stop="handleSettings"
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path
-              d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"
-            />
-          </svg>
-        </button>
-
-        <!-- 主動發訊息設置按鈕（僅單人聊天顯示） -->
-        <button
-          v-if="!isGroupChat && currentCharacter"
-          class="header-btn"
-          title="主動發訊息設置"
-          @click.stop="showProactiveMessageSettings = true"
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path
-              d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"
-            />
-          </svg>
-        </button>
-
-        <!-- 聊天設定按鈕 -->
-        <div class="chat-settings-dropdown" @click.stop>
-          <button
-            class="header-btn"
-            :class="{ active: showChatSettingsMenu }"
-            title="聊天設定"
-            @click.stop="toggleChatSettingsMenu"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"
-              />
-            </svg>
-          </button>
-
-          <!-- 聊天設定選單 -->
-          <Transition name="dropdown">
-            <div
-              v-if="showChatSettingsMenu"
-              class="dropdown-menu chat-settings-menu"
-            >
-              <div class="dropdown-section-title">顯示模式</div>
-              <!-- 面對面模式 -->
-              <div class="dropdown-toggle-item">
-                <div class="toggle-item-info">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"
-                    />
-                  </svg>
-                  <span>面對面模式</span>
-                </div>
-                <label class="toggle-switch-mini">
-                  <input
-                    type="checkbox"
-                    :checked="chatFaceToFaceMode"
-                    @change="toggleFaceToFaceMode"
-                  />
-                  <span class="toggle-slider-mini"></span>
-                </label>
-              </div>
-              <!-- 第三人稱模式（僅面對面模式下顯示） -->
-              <div v-if="chatFaceToFaceMode" class="dropdown-toggle-item">
-                <div class="toggle-item-info">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-                    />
-                  </svg>
-                  <span>第三人稱</span>
-                </div>
-                <label class="toggle-switch-mini">
-                  <input
-                    type="checkbox"
-                    :checked="chatThirdPersonMode"
-                    @change="toggleThirdPersonMode"
-                  />
-                  <span class="toggle-slider-mini"></span>
-                </label>
-              </div>
-              <!-- 夜晚模式 -->
-              <div class="dropdown-toggle-item">
-                <div class="toggle-item-info">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M9 2c-1.05 0-2.05.16-3 .46 4.06 1.27 7 5.06 7 9.54 0 4.48-2.94 8.27-7 9.54.95.3 1.95.46 3 .46 5.52 0 10-4.48 10-10S14.52 2 9 2z"
-                    />
-                  </svg>
-                  <span>夜晚模式</span>
-                </div>
-                <label class="toggle-switch-mini">
-                  <input
-                    type="checkbox"
-                    :checked="settingsStore.nightMode"
-                    @change="toggleNightMode"
-                  />
-                  <span class="toggle-slider-mini"></span>
-                </label>
-              </div>
-              <!-- 感知現實時間 -->
-              <div class="dropdown-toggle-item">
-                <div class="toggle-item-info">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"
-                    />
-                  </svg>
-                  <span>感知現實時間</span>
-                </div>
-                <label class="toggle-switch-mini">
-                  <input
-                    type="checkbox"
-                    :checked="chatEnableRealTimeAwareness"
-                    @change="toggleRealTimeAwareness"
-                  />
-                  <span class="toggle-slider-mini"></span>
-                </label>
-              </div>
-              <!-- 假時間設定 -->
-              <div
-                v-if="chatEnableRealTimeAwareness"
-                class="dropdown-toggle-item"
-                style="cursor: pointer"
-                @click="showFakeTimePanel = !showFakeTimePanel"
-              >
-                <div class="toggle-item-info">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM9 10H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z"
-                    />
-                  </svg>
-                  <span>時間模式</span>
-                </div>
-                <span style="font-size: 11px; opacity: 0.7">
-                  {{
-                    fakeTime.fakeTimeMode.value === "real"
-                      ? "真實"
-                      : fakeTime.fakeTimeMode.value === "loop"
-                        ? "輪迴"
-                        : "偏移"
-                  }}
-                </span>
-              </div>
-              <div
-                v-if="showFakeTimePanel && chatEnableRealTimeAwareness"
-                class="fake-time-panel"
-              >
-                <div class="fake-time-mode-selector">
-                  <button
-                    v-for="m in ['real', 'loop', 'offset'] as const"
-                    :key="m"
-                    :class="[
-                      'fake-time-mode-btn',
-                      { active: fakeTime.fakeTimeMode.value === m },
-                    ]"
-                    @click="
-                      fakeTime.setMode(m);
-                      saveChat();
-                    "
-                  >
-                    {{
-                      m === "real"
-                        ? "真實時間"
-                        : m === "loop"
-                          ? "輪迴時間"
-                          : "偏移時間"
-                    }}
-                  </button>
-                </div>
-                <!-- 輪迴設定 -->
-                <div
-                  v-if="fakeTime.fakeTimeMode.value === 'loop'"
-                  class="fake-time-config"
-                >
-                  <label class="fake-time-label">
-                    起始
-                    <input
-                      type="datetime-local"
-                      :value="fakeTime.fakeTimeLoop.value.startDateTime"
-                      class="fake-time-input"
-                      @change="
-                        (e: Event) => {
-                          fakeTime.setLoopRange(
-                            (e.target as HTMLInputElement).value,
-                            fakeTime.fakeTimeLoop.value.endDateTime,
-                          );
-                          saveChat();
-                        }
-                      "
-                    />
-                  </label>
-                  <label class="fake-time-label">
-                    結束
-                    <input
-                      type="datetime-local"
-                      :value="fakeTime.fakeTimeLoop.value.endDateTime"
-                      class="fake-time-input"
-                      @change="
-                        (e: Event) => {
-                          fakeTime.setLoopRange(
-                            fakeTime.fakeTimeLoop.value.startDateTime,
-                            (e.target as HTMLInputElement).value,
-                          );
-                          saveChat();
-                        }
-                      "
-                    />
-                  </label>
-                </div>
-                <!-- 偏移設定 -->
-                <div
-                  v-if="fakeTime.fakeTimeMode.value === 'offset'"
-                  class="fake-time-config"
-                >
-                  <label class="fake-time-label">
-                    設定現在時間
-                    <input
-                      type="datetime-local"
-                      :value="fakeTime.offsetStartDateTime.value"
-                      class="fake-time-input"
-                      @change="
-                        (e: Event) => {
-                          fakeTime.setOffsetFromDateTime(
-                            (e.target as HTMLInputElement).value,
-                          );
-                          saveChat();
-                        }
-                      "
-                    />
-                  </label>
-                </div>
-                <!-- 當前假時間預覽 -->
-                <div
-                  v-if="fakeTime.fakeTimeMode.value !== 'real'"
-                  class="fake-time-preview"
-                >
-                  AI 感知時間：{{ fakeTime.formattedFakeTime.value }}
-                </div>
-                <!-- 跳轉時間（偏移和輪迴模式可用） -->
-                <div
-                  v-if="fakeTime.fakeTimeMode.value !== 'real'"
-                  class="fake-time-jump"
-                >
-                  <span
-                    style="
-                      font-size: 12px;
-                      color: var(--color-text-secondary);
-                      flex-shrink: 0;
-                    "
-                    >跳轉到</span
-                  >
-                  <input
-                    v-model="timeJumpInput"
-                    type="datetime-local"
-                    class="fake-time-input"
-                    style="max-width: none; flex: 1"
-                  />
-                  <button class="fake-time-jump-btn" @click="handleTimeJump">
-                    跳轉
-                  </button>
-                </div>
-              </div>
-              <div class="dropdown-divider"></div>
-              <div class="dropdown-section-title">電話設定</div>
-              <!-- 勿擾模式 -->
-              <div class="dropdown-toggle-item">
-                <div class="toggle-item-info">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9L16.9 18.31C15.55 19.37 13.85 20 12 20zm6.31-3.1L7.1 5.69C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z"
-                    />
-                  </svg>
-                  <span>勿擾模式</span>
-                </div>
-                <label class="toggle-switch-mini">
-                  <input
-                    type="checkbox"
-                    :checked="chatDoNotDisturb"
-                    @change="toggleChatDoNotDisturb"
-                  />
-                  <span class="toggle-slider-mini"></span>
-                </label>
-              </div>
-              <!-- 角色決定接電話 -->
-              <div class="dropdown-toggle-item">
-                <div class="toggle-item-info">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"
-                    />
-                  </svg>
-                  <span>角色決定接電話</span>
-                </div>
-                <label class="toggle-switch-mini">
-                  <input
-                    type="checkbox"
-                    :checked="enablePhoneDecision"
-                    @change="togglePhoneDecisionFromMenu"
-                  />
-                  <span class="toggle-slider-mini"></span>
-                </label>
-              </div>
-              <div class="dropdown-divider"></div>
-              <div class="dropdown-section-title">AI 繪圖</div>
-              <!-- 文生圖開關 -->
-              <div class="dropdown-toggle-item">
-                <div class="toggle-item-info">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
-                    />
-                  </svg>
-                  <span>啟用文生圖</span>
-                </div>
-                <label class="toggle-switch-mini">
-                  <input
-                    type="checkbox"
-                    :checked="settingsStore.novelAIImage.enabled"
-                    @change="toggleNovelAIImage"
-                  />
-                  <span class="toggle-slider-mini"></span>
-                </label>
-              </div>
-              <!-- User Tag 開關 -->
-              <div class="dropdown-toggle-item">
-                <div class="toggle-item-info">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-                    />
-                  </svg>
-                  <span>使用 User Tag</span>
-                </div>
-                <label class="toggle-switch-mini">
-                  <input
-                    type="checkbox"
-                    :checked="settingsStore.novelAIImage.useUserTag"
-                    @change="toggleNovelAIUseUserTag"
-                  />
-                  <span class="toggle-slider-mini"></span>
-                </label>
-              </div>
-              <!-- 文生圖設定按鈕 -->
-              <button class="dropdown-item" @click="openNovelAISettings">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"
-                  />
-                </svg>
-                <span>文生圖設定</span>
-              </button>
-              <!-- MiniMax TTS 語音合成開關 -->
-              <div class="dropdown-divider"></div>
-              <div class="dropdown-section-title">AI 語音</div>
-              <div class="dropdown-toggle-item">
-                <div class="toggle-item-info">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"
-                    />
-                  </svg>
-                  <span>MiniMax 語音合成</span>
-                </div>
-                <label class="toggle-switch-mini">
-                  <input
-                    type="checkbox"
-                    :checked="chatMinimaxTTSEnabled"
-                    @change="toggleMinimaxTTS"
-                  />
-                  <span class="toggle-slider-mini"></span>
-                </label>
-              </div>
-              <!-- MiniMax TTS 設定按鈕 -->
-              <button class="dropdown-item" @click="openMinimaxTTSSettings">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"
-                  />
-                </svg>
-                <span>語音設定</span>
-              </button>
-              <!-- 位置覆蓋 -->
-              <div class="dropdown-divider"></div>
-              <div class="dropdown-section-title">位置覆蓋</div>
-              <!-- 目前覆蓋位置 -->
-              <div v-if="chatLocationOverride" class="dropdown-toggle-item">
-                <div class="toggle-item-info">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
-                    />
-                  </svg>
-                  <span
-                    style="
-                      font-size: 12px;
-                      max-width: 120px;
-                      overflow: hidden;
-                      text-overflow: ellipsis;
-                      white-space: nowrap;
-                    "
-                  >
-                    {{
-                      chatLocationOverride.city ||
-                      `${chatLocationOverride.lat?.toFixed(2)},${chatLocationOverride.lon?.toFixed(2)}`
-                    }}
-                  </span>
-                </div>
-                <button
-                  class="dropdown-clear-btn"
-                  @click="clearLocationOverride"
-                >
-                  清除
-                </button>
-              </div>
-              <!-- 城市搜尋 -->
-              <div class="location-search-box">
-                <input
-                  v-model="locationSearchQuery"
-                  class="location-search-input"
-                  placeholder="搜尋城市..."
-                  @keydown.enter="searchLocationCities"
-                />
-                <button
-                  class="location-search-btn"
-                  :disabled="locationSearchLoading"
-                  @click="searchLocationCities"
-                >
-                  {{ locationSearchLoading ? "…" : "搜尋" }}
-                </button>
-              </div>
-              <div
-                v-if="locationSearchResults.length > 0"
-                class="location-results"
-              >
-                <button
-                  v-for="city in locationSearchResults"
-                  :key="city.id"
-                  class="location-result-item"
-                  @click="selectLocationCity(city)"
-                >
-                  <span class="location-result-name">{{ city.name }}</span>
-                  <span class="location-result-sub"
-                    >{{ city.region
-                    }}{{ city.region && city.country ? "，" : ""
-                    }}{{ city.country }}</span
-                  >
-                </button>
-              </div>
-            </div>
-          </Transition>
-        </div>
-
-        <!-- 更多按鈕 -->
-        <div class="more-dropdown" @click.stop>
-          <button
-            class="header-btn"
-            title="更多選項"
-            @click.stop="toggleMoreMenu"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"
-              />
-            </svg>
-          </button>
-
-          <!-- 更多選單 -->
-          <Transition name="dropdown">
-            <div v-if="showMoreMenu" class="dropdown-menu">
-              <!-- 快捷導航區 -->
-              <div class="dropdown-section-title">快捷導航</div>
-              <button class="dropdown-item" @click="navigateTo('character')">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-                  />
-                </svg>
-                <span>角色卡</span>
-              </button>
-              <button class="dropdown-item" @click="navigateTo('worldbook')">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"
-                  />
-                </svg>
-                <span>世界書</span>
-              </button>
-              <button class="dropdown-item" @click="navigateTo('peek-phone')">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
-                </svg>
-                <span>頭盔TA</span>
-              </button>
-              <button class="dropdown-item" @click="navigateTo('settings')">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"
-                  />
-                </svg>
-                <span>設置</span>
-              </button>
-              <div class="dropdown-divider"></div>
-              <!-- 聊天操作區 -->
-              <button class="dropdown-item" @click.stop="openSearchBar">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
-                  />
-                </svg>
-                <span>搜索訊息</span>
-              </button>
-              <button class="dropdown-item" @click.stop="openChatInfo">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM9 11H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z"
-                  />
-                </svg>
-                <span>聊天資訊</span>
-              </button>
-              <button class="dropdown-item" @click.stop="openChatFilesPanel">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
-                  />
-                </svg>
-                <span>聊天檔案</span>
-              </button>
-              <button class="dropdown-item" @click.stop="exportCurrentChat">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
-                </svg>
-                <span>導出聊天</span>
-              </button>
-              <button class="dropdown-item" @click.stop="triggerJsonlImport">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zM6 20V4h5v7h7v9H6z"
-                  />
-                </svg>
-                <span>匯入 JSONL 對話</span>
-              </button>
-              <button class="dropdown-item" @click.stop="startNewConversation">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
-                  />
-                </svg>
-                <span>開啟新對話</span>
-              </button>
-              <!-- 封鎖/解封角色 -->
-              <button
-                v-if="!isGroupChat"
-                class="dropdown-item"
-                :class="{ danger: !isCharBlocked }"
-                @click.stop="toggleBlockCharacter"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    v-if="isCharBlocked"
-                    d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9L16.9 18.31C15.55 19.37 13.85 20 12 20zm6.31-3.1L7.1 5.69C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z"
-                  />
-                  <path
-                    v-else
-                    d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
-                  />
-                </svg>
-                <span>{{ isCharBlocked ? "解除封鎖" : "封鎖角色" }}</span>
-              </button>
-              <div class="dropdown-divider"></div>
-              <button
-                class="dropdown-item danger"
-                @click.stop="clearChatHistory"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
-                  />
-                </svg>
-                <span>清空聊天記錄</span>
-              </button>
-            </div>
-          </Transition>
-        </div>
-      </div>
-    </header>
+    <ChatScreenHeader
+      :display-avatar="displayAvatar"
+      :character-name="props.characterName"
+      :is-group-chat="isGroupChat"
+      :group-display-name="groupDisplayName"
+      :display-character-name="displayCharacterName"
+      :current-character="currentCharacter"
+      :show-nickname-edit="showNicknameEdit"
+      :nickname-edit-value="nicknameEditValue"
+      :is-generating="isGenerating"
+      :group-member-count="groupMemberCount"
+      :show-rail="showRail"
+      :current-user-avatar="userStore.currentAvatar"
+      :current-user-name="userStore.currentName"
+      :personas="userStore.personas"
+      :current-persona-id="userStore.currentPersonaId"
+      :show-persona-selector="showPersonaSelector"
+      :show-game-menu="showGameMenu"
+      :show-chat-settings-menu="showChatSettingsMenu"
+      :chat-face-to-face-mode="chatFaceToFaceMode"
+      :chat-third-person-mode="chatThirdPersonMode"
+      :night-mode="settingsStore.nightMode"
+      :chat-enable-real-time-awareness="chatEnableRealTimeAwareness"
+      :show-fake-time-panel="showFakeTimePanel"
+      :fake-time-mode="fakeTime.fakeTimeMode.value"
+      :fake-time-loop-start="fakeTime.fakeTimeLoop.value.startDateTime"
+      :fake-time-loop-end="fakeTime.fakeTimeLoop.value.endDateTime"
+      :offset-start-date-time="fakeTime.offsetStartDateTime.value"
+      :formatted-fake-time="fakeTime.formattedFakeTime.value"
+      :time-jump-input="timeJumpInput"
+      :chat-do-not-disturb="chatDoNotDisturb"
+      :enable-phone-decision="enablePhoneDecision"
+      :novel-a-i-enabled="settingsStore.novelAIImage.enabled"
+      :novel-a-i-use-user-tag="settingsStore.novelAIImage.useUserTag"
+      :chat-minimax-t-t-s-enabled="chatMinimaxTTSEnabled"
+      :chat-location-override="chatLocationOverride"
+      :location-search-query="locationSearchQuery"
+      :location-search-results="locationSearchResults"
+      :location-search-loading="locationSearchLoading"
+      :show-more-menu="showMoreMenu"
+      :is-char-blocked="isCharBlocked"
+      :has-memory-badge="chatSummaries.length > 0 || chatDiaries.length > 0"
+      @back="handleBack"
+      @open-ai-summary="showAISummaryPanel = true"
+      @start-nickname-edit="startNicknameEdit"
+      @update:nicknameEditValue="nicknameEditValue = $event"
+      @save-nickname="saveNickname"
+      @close-nickname-edit="closeNicknameEdit"
+      @toggle-rail="toggleRail"
+      @toggle-persona-selector="togglePersonaSelector"
+      @select-persona="selectPersona"
+      @open-persona-edit="openPersonaEditPanel"
+      @toggle-game-menu="toggleGameMenu"
+      @open-game="openGame"
+      @open-settings="handleSettings"
+      @open-proactive-message-settings="showProactiveMessageSettings = true"
+      @toggle-chat-settings-menu="toggleChatSettingsMenu"
+      @toggle-face-to-face-mode="toggleFaceToFaceMode"
+      @toggle-third-person-mode="toggleThirdPersonMode"
+      @toggle-night-mode="toggleNightMode"
+      @toggle-real-time-awareness="toggleRealTimeAwareness"
+      @toggle-fake-time-panel="showFakeTimePanel = !showFakeTimePanel"
+      @set-fake-time-mode="setFakeTimeMode"
+      @update-fake-time-loop-start="updateFakeTimeLoopStart"
+      @update-fake-time-loop-end="updateFakeTimeLoopEnd"
+      @update-offset-start-datetime="updateOffsetStartDateTime"
+      @update-time-jump-input="timeJumpInput = $event"
+      @handle-time-jump="handleTimeJump"
+      @toggle-chat-do-not-disturb="toggleChatDoNotDisturb"
+      @toggle-phone-decision="togglePhoneDecisionFromMenu"
+      @toggle-novel-ai-image="toggleNovelAIImage"
+      @toggle-novel-ai-use-user-tag="toggleNovelAIUseUserTag"
+      @open-novel-ai-settings="openNovelAISettings"
+      @toggle-minimax-tts="toggleMinimaxTTS"
+      @open-minimax-tts-settings="openMinimaxTTSSettings"
+      @clear-location-override="clearLocationOverride"
+      @update-location-search-query="locationSearchQuery = $event"
+      @search-location-cities="searchLocationCities"
+      @select-location-city="selectLocationCity"
+      @toggle-more-menu="toggleMoreMenu"
+      @navigate="navigateTo"
+      @open-search-bar="openSearchBar"
+      @open-chat-info="openChatInfo"
+      @open-chat-files-panel="openChatFilesPanel"
+      @export-current-chat="exportCurrentChat"
+      @trigger-jsonl-import="triggerJsonlImport"
+      @start-new-conversation="startNewConversation"
+      @toggle-block-character="toggleBlockCharacter"
+      @clear-chat-history="clearChatHistory"
+    />
 
     <!-- 隱藏的 JSONL 檔案輸入 -->
     <input
@@ -10453,570 +9713,58 @@ onUnmounted(() => {
       </div>
     </Transition>
 
-    <!-- 輸入區 -->
-    <footer class="input-area">
-      <!-- 被角色封鎖提示列 -->
-      <div v-if="isBlockedByChar" class="blocked-by-char-bar">
-        <svg
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          width="14"
-          height="14"
-          style="flex-shrink: 0; opacity: 0.7"
-        >
-          <path
-            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9L16.9 18.31C15.55 19.37 13.85 20 12 20zm6.31-3.1L7.1 5.69C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z"
-          />
-        </svg>
-        <span>你已被對方封鎖，訊息可能無法送達</span>
-        <button
-          class="blocked-friend-request-btn"
-          @click="showFriendRequestInput = true"
-        >
-          發送好友申請
-        </button>
-      </div>
-
-      <!-- 回覆預覽欄 -->
-      <Transition name="slide-up">
-        <div v-if="replyingTo" class="reply-preview-bar">
-          <div class="reply-preview-content">
-            <div class="reply-preview-header">
-              <svg class="reply-icon" viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"
-                />
-              </svg>
-              <span class="reply-to-name"
-                >回覆
-                {{ replyingTo.role === "user" ? "自己" : characterName }}</span
-              >
-            </div>
-            <div class="reply-preview-text">
-              {{ getPreviewText(replyingTo.content) }}
-            </div>
-          </div>
-          <button class="cancel-reply-btn" @click="cancelReply">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-              />
-            </svg>
-          </button>
-        </div>
-      </Transition>
-
-      <!-- 快速輸入助手（僅面對面模式且輸入框獲得焦點時顯示） -->
-      <Transition name="slide-up">
-        <div
-          v-if="chatFaceToFaceMode && isInputFocused"
-          class="quick-input-bar"
-        >
-          <div
-            class="quick-input-scroll"
-            @wheel.prevent="handleQuickInputWheel"
-          >
-            <button
-              v-for="action in quickActions"
-              :key="action.text"
-              class="quick-input-btn"
-              :title="action.hint"
-              @mousedown.prevent="insertQuickAction(action.text)"
-            >
-              {{ action.label }}
-            </button>
-          </div>
-          <!-- 自定義按鈕 -->
-          <button
-            class="quick-input-edit-btn"
-            title="自定義快捷"
-            @mousedown.prevent="openQuickActionEditor"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-            </svg>
-          </button>
-        </div>
-      </Transition>
-
-      <div class="input-container">
-        <!-- 左側按鈕組 -->
-        <div class="left-buttons" @click.stop>
-          <!-- 更多功能按鈕 -->
-          <button
-            class="input-btn plus-btn"
-            :class="{ active: showMoreFeatures }"
-            @click="toggleMoreFeatures"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-            </svg>
-          </button>
-
-          <!-- 圖片按鈕（未聚焦時顯示） -->
-          <button
-            v-if="!isInputFocused"
-            class="input-btn image-btn"
-            @click="showMediaDrawer = true"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
-              />
-            </svg>
-          </button>
-        </div>
-
-        <!-- 輸入框容器（包含表情按鈕） -->
-        <div class="input-wrapper" @click.stop>
-          <textarea
-            ref="messageInputRef"
-            v-model="inputText"
-            class="message-input"
-            placeholder="輸入消息..."
-            rows="1"
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="off"
-            spellcheck="false"
-            @keydown="handleKeydown"
-            @input="autoResizeInput"
-            @focus="handleInputFocusWithScroll"
-            @blur="onInputBlur"
-          ></textarea>
-
-          <!-- 表情按鈕（在輸入框內右側） -->
-          <button
-            class="emoji-btn-inner"
-            :class="{ active: showStickerPanel }"
-            @click.stop="toggleStickerPanel"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"
-              />
-            </svg>
-          </button>
-
-          <!-- 展開輸入框按鈕 -->
-          <button
-            v-if="inputText.length > 50"
-            class="expand-btn-inner"
-            title="展開編輯"
-            @click.stop="toggleInputExpand"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z" />
-            </svg>
-          </button>
-        </div>
-
-        <!-- 右側按鈕組 -->
-        <div class="right-buttons" @click.stop>
-          <!-- 繼續生成按鈕（有 AI 訊息且未生成中） -->
-          <button
-            v-if="
-              hasAIMessages &&
-              !isGenerating &&
-              !inputText.trim() &&
-              !isInputFocused
-            "
-            class="input-btn continue-btn"
-            title="繼續生成"
-            @click="continueGeneration"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          </button>
-
-          <!-- 重新生成按鈕（有 AI 訊息且未生成中） -->
-          <button
-            v-if="
-              hasAIMessages &&
-              !isGenerating &&
-              !inputText.trim() &&
-              !isInputFocused
-            "
-            class="input-btn regenerate-btn"
-            title="重新生成最後一條回覆（滑動）"
-            @click="regenerateLastAIResponse"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
-              />
-            </svg>
-          </button>
-
-          <!-- 停止生成按鈕 -->
-          <button
-            v-if="isGenerating"
-            class="input-btn stop-btn"
-            title="停止生成"
-            @click="stopAIGeneration"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4 14H8V8h8v8z"
-              />
-            </svg>
-          </button>
-
-          <!-- 錄音按鈕（聚焦時顯示，在發送按鈕左邊） -->
-          <Transition name="fade-slide">
-            <button
-              v-if="!isGenerating && isInputFocused && canRecord"
-              class="input-btn mic-inline-btn"
-              title="按住錄音 / 點擊輸入文字語音"
-              @mousedown.prevent="onMicDown"
-              @touchstart.prevent="onMicDown"
-              @mouseup="onMicUp"
-              @touchend="onMicUp"
-            >
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5z"
-                />
-                <path
-                  d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"
-                />
-              </svg>
-            </button>
-          </Transition>
-
-          <!-- 發送按鈕（有文字時顯示） -->
-          <button
-            v-if="!isGenerating && inputText.trim()"
-            class="send-btn active"
-            @click="sendAndTriggerAI"
-            title="發送訊息並觸發 AI 回覆"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-            </svg>
-          </button>
-
-          <!-- 發送按鈕（無文字且未聚焦時顯示小飛機） -->
-          <button
-            v-if="
-              !isGenerating && !inputText.trim() && canRecord && !isInputFocused
-            "
-            class="send-btn"
-            @click="sendAndTriggerAI"
-            title="發送訊息並觸發 AI 回覆"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-            </svg>
-          </button>
-
-          <!-- 發送按鈕（無文字且聚焦時，或不支援錄音時顯示） -->
-          <button
-            v-if="
-              !isGenerating &&
-              !inputText.trim() &&
-              (!canRecord || isInputFocused)
-            "
-            class="send-btn"
-            @click="sendAndTriggerAI"
-            title="發送訊息並觸發 AI 回覆"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <!-- 文字輸入語音 Modal -->
-      <Transition name="fade">
-        <div
-          v-if="showTextVoiceModal"
-          class="text-voice-overlay"
-          @click.self="showTextVoiceModal = false"
-        >
-          <div class="text-voice-modal">
-            <div class="text-voice-title">輸入語音內容</div>
-            <textarea
-              v-model="textVoiceInput"
-              class="text-voice-input"
-              placeholder="輸入你想說的話..."
-              rows="3"
-              autofocus
-              @keydown.enter.ctrl="sendTextAsVoice"
-            ></textarea>
-            <div class="text-voice-hint">Ctrl+Enter 發送</div>
-            <div class="text-voice-actions">
-              <button
-                class="text-voice-cancel"
-                @click="showTextVoiceModal = false"
-              >
-                取消
-              </button>
-              <button class="text-voice-send" @click="sendTextAsVoice">
-                發送語音
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-
-      <!-- 錄音覆蓋層 -->
-      <Transition name="fade">
-        <div v-if="isRecording" class="recording-overlay" @click.stop>
-          <div class="recording-content">
-            <div class="recording-indicator">
-              <span class="recording-dot"></span>
-              <span class="recording-time">{{
-                formatAudioTime(recordingDuration)
-              }}</span>
-            </div>
-            <div class="recording-volume-bars">
-              <span
-                v-for="i in 6"
-                :key="i"
-                class="volume-bar"
-                :style="{
-                  height: `${Math.max(4, recordingVolumeLevel * 28 * (0.5 + Math.random() * 0.5))}px`,
-                }"
-              ></span>
-            </div>
-            <div class="recording-hint" :class="{ cancel: isCancelMode }">
-              {{ isCancelMode ? "鬆開取消" : "鬆開發送，上滑取消" }}
-            </div>
-          </div>
-        </div>
-      </Transition>
-
-      <!-- 表情包面板 -->
-      <Transition name="slide-up">
-        <StickerPanel
-          v-if="showStickerPanel"
-          @select="handleStickerSelect"
-          @close="showStickerPanel = false"
-        />
-      </Transition>
-
-      <!-- 更多功能面板 -->
-      <Transition name="slide-up">
-        <div v-if="showMoreFeatures" class="more-features-panel" @click.stop>
-          <div class="features-grid">
-            <button
-              class="feature-item"
-              @click="
-                showGiftDrawer = true;
-                showMoreFeatures = false;
-              "
-            >
-              <div class="feature-icon gift-feature-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M20 6h-2.18c.11-.31.18-.65.18-1 0-1.66-1.34-3-3-3-1.05 0-1.96.54-2.5 1.35l-.5.67-.5-.68C10.96 2.54 10.05 2 9 2 7.34 2 6 3.34 6 5c0 .35.07.69.18 1H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-5-2c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM9 4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm11 15H4v-2h16v2zm0-5H4V8h5.08L7 10.83 8.62 12 11 8.76l1-1.36 1 1.36L15.38 12 17 10.83 14.92 8H20v6z"
-                  />
-                </svg>
-              </div>
-              <span class="feature-label">禮物</span>
-            </button>
-            <button class="feature-item" @click="handleFeatureClick('phone')">
-              <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"
-                  />
-                </svg>
-              </div>
-              <span class="feature-label">電話</span>
-            </button>
-            <button class="feature-item" @click="handleFeatureClick('video')">
-              <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"
-                  />
-                </svg>
-              </div>
-              <span class="feature-label">視訊</span>
-            </button>
-            <button
-              class="feature-item"
-              @click="handleFeatureClick('location')"
-            >
-              <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
-                  />
-                </svg>
-              </div>
-              <span class="feature-label">位置</span>
-            </button>
-            <button class="feature-item" @click="handleFeatureClick('weather')">
-              <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M12.74 5.47C15.1 6.5 16.35 9.03 15.92 11.46c-.17.99-.6 1.94-1.25 2.75-.52.64-1.16 1.19-1.89 1.61-.73.42-1.54.71-2.38.85-.84.14-1.7.13-2.53-.04-.83-.17-1.62-.49-2.33-.94-.71-.45-1.33-1.02-1.82-1.69-.49-.67-.85-1.43-1.05-2.24-.2-.81-.24-1.65-.12-2.48.12-.83.4-1.63.82-2.36.42-.73.97-1.38 1.62-1.91.65-.53 1.39-.94 2.18-1.2.79-.26 1.62-.38 2.45-.34.83.04 1.64.24 2.39.58zM19 13h2v2h-2v-2zm-4-8h2v2h-2V5zm4 4h2v2h-2V9zm-4 8h2v2h-2v-2zm4 0h2v2h-2v-2z"
-                  />
-                </svg>
-              </div>
-              <span class="feature-label">天氣</span>
-            </button>
-            <button class="feature-item" @click="handleFeatureClick('file')">
-              <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"
-                  />
-                </svg>
-              </div>
-              <span class="feature-label">文件</span>
-            </button>
-            <button class="feature-item" @click="handleFeatureClick('magic')">
-              <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M7.5 5.6L10 7 8.6 4.5 10 2 7.5 3.4 5 2l1.4 2.5L5 7zm12 9.8L17 14l1.4 2.5L17 19l2.5-1.4L22 19l-1.4-2.5L22 14zM22 2l-2.5 1.4L17 2l1.4 2.5L17 7l2.5-1.4L22 7l-1.4-2.5zm-7.63 5.29c-.39-.39-1.02-.39-1.41 0L1.29 18.96c-.39.39-.39 1.02 0 1.41l2.34 2.34c.39.39 1.02.39 1.41 0L16.7 11.05c.39-.39.39-1.02 0-1.41l-2.33-2.35zm-1.03 5.49l-2.12-2.12 2.44-2.44 2.12 2.12-2.44 2.44z"
-                  />
-                </svg>
-              </div>
-              <span class="feature-label">跳轉魔法</span>
-            </button>
-            <button
-              class="feature-item"
-              @click="handleFeatureClick('small-theater')"
-            >
-              <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM8.5 8c.83 0 1.5.67 1.5 1.5S9.33 11 8.5 11 7 10.33 7 9.5 7.67 8 8.5 8zm3.5 9c-2.33 0-4.31-1.46-5.11-3.5h10.22c-.8 2.04-2.78 3.5-5.11 3.5zm3.5-6c-.83 0-1.5-.67-1.5-1.5S14.67 8 15.5 8s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"
-                  />
-                </svg>
-              </div>
-              <span class="feature-label">小劇場</span>
-            </button>
-            <button
-              class="feature-item"
-              @click="handleFeatureClick('topic-prompt')"
-            >
-              <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7zm2.85 11.1l-.85.6V16h-4v-2.3l-.85-.6C7.8 12.16 7 10.63 7 9c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.63-.8 3.16-2.15 4.1z"
-                  />
-                </svg>
-              </div>
-              <span class="feature-label">話題引導</span>
-            </button>
-            <button
-              class="feature-item"
-              @click="handleFeatureClick('game-score')"
-            >
-              <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5S18.67 9 19.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"
-                  />
-                </svg>
-              </div>
-              <span class="feature-label">遊戲成績</span>
-            </button>
-            <button
-              class="feature-item"
-              @click="handleFeatureClick('media-log')"
-            >
-              <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"
-                  />
-                </svg>
-              </div>
-              <span class="feature-label">書影</span>
-            </button>
-            <button
-              class="feature-item"
-              @click="handleFeatureClick('image-search')"
-            >
-              <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
-                  />
-                </svg>
-              </div>
-              <span class="feature-label">搜圖分享</span>
-            </button>
-            <button
-              class="feature-item"
-              @click="handleFeatureClick('music')"
-            >
-              <div class="feature-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                  />
-                </svg>
-              </div>
-              <span class="feature-label">分享歌曲</span>
-            </button>
-          </div>
-        </div>
-      </Transition>
-    </footer>
-
-    <!-- 展開輸入框覆蓋層 -->
-    <Transition name="expand-input">
-      <div v-if="isInputExpanded" class="expanded-input-overlay" @click.stop>
-        <div class="expanded-input-header">
-          <button
-            class="expanded-close-btn"
-            @click="closeExpandedInput"
-            title="收合"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
-            </svg>
-          </button>
-          <span class="expanded-char-count">{{ inputText.length }}</span>
-          <button
-            class="expanded-send-btn"
-            :class="{ active: inputText.trim() }"
-            @click="sendFromExpanded"
-            :disabled="!inputText.trim() || isGenerating"
-          >
-            發送
-          </button>
-        </div>
-        <textarea
-          ref="expandedInputRef"
-          v-model="inputText"
-          class="expanded-textarea"
-          placeholder="輸入消息..."
-          autocomplete="off"
-          autocorrect="off"
-          autocapitalize="off"
-          spellcheck="false"
-          @keydown.ctrl.enter.prevent="sendFromExpanded"
-        ></textarea>
-        <!-- 展開模式快速輸入助手 -->
-        <div v-if="chatFaceToFaceMode" class="expanded-quick-input-bar">
-          <div
-            class="quick-input-scroll"
-            @wheel.prevent="handleQuickInputWheel"
-          >
-            <button
-              v-for="action in quickActions"
-              :key="action.text"
-              class="quick-input-btn"
-              :title="action.hint"
-              @mousedown.prevent="insertQuickAction(action.text)"
-            >
-              {{ action.label }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
+    <ChatScreenInputArea
+      ref="inputAreaRef"
+      :is-blocked-by-char="isBlockedByChar"
+      :replying-to="replyingTo"
+      :character-name="characterName"
+      :chat-face-to-face-mode="chatFaceToFaceMode"
+      :is-input-focused="isInputFocused"
+      :quick-actions="quickActions"
+      :input-text="inputText"
+      :show-more-features="showMoreFeatures"
+      :show-sticker-panel="showStickerPanel"
+      :is-generating="isGenerating"
+      :has-a-i-messages="hasAIMessages"
+      :can-record="canRecord"
+      :is-recording="isRecording"
+      :recording-duration="recordingDuration"
+      :recording-volume-level="recordingVolumeLevel"
+      :is-cancel-mode="isCancelMode"
+      :show-text-voice-modal="showTextVoiceModal"
+      :text-voice-input="textVoiceInput"
+      :is-input-expanded="isInputExpanded"
+      @show-friend-request-input="showFriendRequestInput = true"
+      @cancel-reply="cancelReply"
+      @handle-quick-input-wheel="handleQuickInputWheel"
+      @insert-quick-action="insertQuickAction"
+      @open-quick-action-editor="openQuickActionEditor"
+      @toggle-more-features="toggleMoreFeatures"
+      @open-media-drawer="showMediaDrawer = true"
+      @update:input-text="inputText = $event"
+      @handle-keydown="handleKeydown"
+      @auto-resize-input="autoResizeInput"
+      @handle-input-focus-with-scroll="handleInputFocusWithScroll"
+      @on-input-blur="onInputBlur"
+      @toggle-sticker-panel="toggleStickerPanel"
+      @toggle-input-expand="toggleInputExpand"
+      @continue-generation="continueGeneration"
+      @regenerate-last-a-i-response="regenerateLastAIResponse"
+      @stop-a-i-generation="stopAIGeneration"
+      @on-mic-down="onMicDown"
+      @on-mic-up="onMicUp"
+      @send-and-trigger-a-i="sendAndTriggerAI"
+      @update:show-text-voice-modal="showTextVoiceModal = $event"
+      @update:text-voice-input="textVoiceInput = $event"
+      @send-text-as-voice="sendTextAsVoice"
+      @handle-sticker-select="handleStickerSelect"
+      @close-sticker-panel="showStickerPanel = false"
+      @open-gift-drawer="showGiftDrawer = true"
+      @handle-feature-click="handleFeatureClick"
+      @close-expanded-input="closeExpandedInput"
+      @send-from-expanded="sendFromExpanded"
+      @update:show-more-features="showMoreFeatures = $event"
+    />
 
     <!-- 編輯訊息模態框 -->
     <Teleport to="body">
@@ -14559,122 +13307,6 @@ onUnmounted(() => {
   }
 }
 
-// 輸入區
-.input-area {
-  padding: 10px 12px;
-  padding-bottom: calc(10px + var(--safe-bottom, 0px));
-
-  // 被角色封鎖提示列
-  .blocked-by-char-bar {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    font-size: 12px;
-    color: rgba(180, 50, 50, 0.85);
-    background: rgba(255, 80, 80, 0.06);
-    border-bottom: 1px solid rgba(255, 80, 80, 0.12);
-  }
-
-  .blocked-friend-request-btn {
-    margin-left: auto;
-    flex-shrink: 0;
-    font-size: 12px;
-    color: var(--color-primary, #6c8ebf);
-    background: none;
-    border: 1px solid currentColor;
-    border-radius: 12px;
-    padding: 2px 10px;
-    cursor: pointer;
-    &:hover {
-      opacity: 0.75;
-    }
-  }
-  padding-left: calc(12px + var(--safe-left, 0px));
-  padding-right: calc(12px + var(--safe-right, 0px));
-  background: var(--color-surface, #fff);
-  border-top: 1px solid var(--color-border, #e2e8f0);
-  flex-shrink: 0;
-}
-
-// 快速輸入助手欄（面對面模式）
-.quick-input-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  padding: 0 4px;
-  max-width: 800px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.quick-input-scroll {
-  flex: 1;
-  display: flex;
-  justify-content: center;
-  gap: 6px;
-  overflow-x: auto;
-  padding: 4px 0;
-  -webkit-overflow-scrolling: touch;
-
-  // 隱藏滾動條
-  &::-webkit-scrollbar {
-    display: none;
-  }
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-.quick-input-btn {
-  flex-shrink: 0;
-  padding: 6px 12px;
-  background: var(--color-background, #f5f5f5);
-  border: 1px solid var(--color-border, #e2e8f0);
-  border-radius: 16px;
-  font-size: 13px;
-  color: var(--color-text-secondary, #666);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  white-space: nowrap;
-
-  &:hover {
-    background: var(--color-primary-light, rgba(125, 211, 168, 0.15));
-    border-color: var(--color-primary, #7dd3a8);
-    color: var(--color-primary, #7dd3a8);
-  }
-
-  &:active {
-    transform: scale(0.95);
-  }
-}
-
-.quick-input-edit-btn {
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-background, #f5f5f5);
-  border: 1px solid var(--color-border, #e2e8f0);
-  border-radius: 50%;
-  color: var(--color-text-muted, #999);
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  svg {
-    width: 16px;
-    height: 16px;
-  }
-
-  &:hover {
-    background: var(--color-primary-light, rgba(125, 211, 168, 0.15));
-    border-color: var(--color-primary, #7dd3a8);
-    color: var(--color-primary, #7dd3a8);
-  }
-}
-
 // 快捷輸入編輯模態框
 .quick-action-editor-overlay {
   position: fixed;
@@ -14895,370 +13527,6 @@ onUnmounted(() => {
     &:hover {
       filter: brightness(1.1);
     }
-  }
-}
-
-.input-container {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  max-width: 800px;
-  margin: 0 auto;
-  box-sizing: border-box;
-}
-
-.left-buttons,
-.right-buttons {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.input-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  flex-shrink: 0;
-
-  svg {
-    width: 22px;
-    height: 22px;
-  }
-
-  &:hover {
-    transform: scale(1.1);
-  }
-}
-
-// 左側按鈕顏色
-.plus-btn {
-  color: #666;
-
-  &:hover {
-    color: #333;
-  }
-}
-
-.image-btn {
-  color: var(--color-primary, #7dd3a8);
-
-  &:hover {
-    color: #5cb88a;
-  }
-}
-
-.gift-feature-icon {
-  svg {
-    color: #e53935 !important;
-  }
-}
-
-.gift-btn {
-  color: #e53935;
-
-  &:hover {
-    color: #c62828;
-  }
-}
-
-.input-wrapper {
-  flex: 1;
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.message-input {
-  width: 100%;
-  min-height: 40px;
-  max-height: 84px;
-  padding: 10px 64px 10px 16px;
-  border: 2px solid var(--color-primary, #7dd3a8);
-  border-radius: 20px;
-  background: var(--color-background, #fff);
-  color: var(--color-text);
-  font-size: 15px;
-  line-height: 1.4;
-  resize: none;
-  outline: none;
-  transition: all var(--transition-fast);
-
-  &::placeholder {
-    color: var(--color-text-muted);
-  }
-
-  &:focus {
-    border-color: var(--color-primary, #7dd3a8);
-    box-shadow: 0 0 0 3px rgba(125, 211, 168, 0.15);
-  }
-}
-
-.emoji-btn-inner {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: 50%;
-  color: #888;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-
-  svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  &:hover {
-    color: #666;
-    transform: translateY(-50%) scale(1.1);
-  }
-
-  &.active {
-    color: var(--color-primary, #7dd3a8);
-    background: var(--color-primary-light, rgba(125, 211, 168, 0.15));
-  }
-}
-
-// 展開輸入框按鈕（在輸入框右側）
-.expand-btn-inner {
-  position: absolute;
-  right: 36px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: 50%;
-  color: #888;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-
-  svg {
-    width: 18px;
-    height: 18px;
-  }
-
-  &:hover {
-    color: var(--color-primary, #7dd3a8);
-    background: var(--color-primary-light, rgba(125, 211, 168, 0.15));
-  }
-}
-
-// 展開輸入框覆蓋層
-.expanded-input-overlay {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  top: auto;
-  height: 60%;
-  min-height: 250px;
-  max-height: 80%;
-  background: var(--color-surface, #fff);
-  display: flex;
-  flex-direction: column;
-  z-index: 50;
-  padding: 0 12px;
-  padding-bottom: calc(10px + var(--safe-bottom));
-  padding-left: calc(12px + var(--safe-left));
-  padding-right: calc(12px + var(--safe-right));
-  will-change: transform;
-  backface-visibility: hidden;
-  border-top: 1px solid var(--color-border, #e2e8f0);
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
-  border-radius: 16px 16px 0 0;
-}
-
-.expanded-input-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 0;
-  flex-shrink: 0;
-}
-
-.expanded-close-btn {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: 50%;
-  color: var(--color-text-secondary, #666);
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  svg {
-    width: 24px;
-    height: 24px;
-  }
-
-  &:hover {
-    background: var(--color-background, #f5f5f5);
-    color: var(--color-text, #333);
-  }
-}
-
-.expanded-char-count {
-  font-size: 13px;
-  color: var(--color-text-muted, #999);
-}
-
-.expanded-send-btn {
-  padding: 6px 20px;
-  background: var(--color-primary, #7dd3a8);
-  border: none;
-  border-radius: 16px;
-  color: white;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  opacity: 0.5;
-  transition: all 0.15s ease;
-
-  &.active {
-    opacity: 1;
-  }
-
-  &:hover:not(:disabled) {
-    filter: brightness(1.1);
-  }
-
-  &:disabled {
-    cursor: not-allowed;
-  }
-}
-
-.expanded-textarea {
-  flex: 1;
-  width: 100%;
-  padding: 12px 16px;
-  border: 2px solid var(--color-primary, #7dd3a8);
-  border-radius: 16px;
-  background: var(--color-background, #fff);
-  color: var(--color-text);
-  font-size: 15px;
-  line-height: 1.6;
-  resize: none;
-  outline: none;
-  overflow-y: auto;
-
-  &::placeholder {
-    color: var(--color-text-muted);
-  }
-
-  &:focus {
-    border-color: var(--color-primary, #7dd3a8);
-    box-shadow: 0 0 0 3px rgba(125, 211, 168, 0.15);
-  }
-}
-
-// 展開模式快速輸入助手
-.expanded-quick-input-bar {
-  flex-shrink: 0;
-  padding: 8px 0 4px;
-
-  .quick-input-scroll {
-    display: flex;
-    justify-content: center;
-    gap: 6px;
-    overflow-x: auto;
-    padding: 4px 0;
-    -webkit-overflow-scrolling: touch;
-
-    &::-webkit-scrollbar {
-      display: none;
-    }
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-}
-
-// 展開動畫
-.expand-input-enter-active,
-.expand-input-leave-active {
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.expand-input-enter-from {
-  transform: translateY(100%);
-}
-
-.expand-input-leave-to {
-  transform: translateY(100%);
-}
-
-.send-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: 50%;
-  color: var(--color-primary, #7dd3a8);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  flex-shrink: 0;
-
-  svg {
-    width: 22px;
-    height: 22px;
-  }
-
-  &:hover {
-    transform: scale(1.1);
-  }
-
-  &:active {
-    transform: scale(0.95);
-  }
-
-  &.active {
-    // 有輸入文字時更亮
-    color: var(--color-primary, #7dd3a8);
-    filter: brightness(1.1);
-  }
-}
-
-// 重新生成按鈕
-.regenerate-btn {
-  color: var(--color-primary);
-
-  &:hover {
-    background: var(--color-primary-light);
-  }
-}
-
-// 停止按鈕
-.stop-btn {
-  color: var(--color-error, #e53e3e);
-
-  &:hover {
-    background: rgba(229, 62, 62, 0.1);
   }
 }
 
@@ -15606,142 +13874,6 @@ onUnmounted(() => {
       }
     }
   }
-}
-
-// 回覆預覽欄
-.reply-preview-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  background: var(--color-background);
-  border-bottom: 1px solid var(--color-border);
-  margin-bottom: 8px;
-  border-radius: 12px 12px 0 0;
-
-  .reply-preview-content {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .reply-preview-header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 4px;
-
-    .reply-icon {
-      width: 16px;
-      height: 16px;
-      color: var(--color-primary);
-    }
-
-    .reply-to-name {
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--color-primary);
-    }
-  }
-
-  .reply-preview-text {
-    font-size: 13px;
-    color: var(--color-text-secondary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .cancel-reply-btn {
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--color-surface);
-    border: none;
-    border-radius: 50%;
-    color: var(--color-text-muted);
-    cursor: pointer;
-    transition: all 0.2s;
-    flex-shrink: 0;
-
-    svg {
-      width: 16px;
-      height: 16px;
-    }
-
-    &:hover {
-      background: var(--color-surface-hover);
-      color: var(--color-text);
-    }
-  }
-}
-
-// 更多功能面板
-.more-features-panel {
-  padding: 16px;
-  background: var(--color-surface);
-  border-top: 1px solid var(--color-border);
-  border-radius: 16px 16px 0 0;
-  margin-top: 8px;
-  max-height: 280px;
-  overflow-y: auto;
-}
-
-.features-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-}
-
-.feature-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 8px;
-  background: transparent;
-  border: none;
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-
-  &:hover {
-    background: var(--color-background);
-    transform: scale(1.05);
-  }
-
-  &:active {
-    transform: scale(0.95);
-  }
-}
-
-.feature-icon {
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  background: var(--color-background);
-
-  svg {
-    width: 24px;
-    height: 24px;
-    color: var(--color-text-secondary);
-  }
-}
-
-.feature-label {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  text-align: center;
-}
-
-// 加號按鈕激活狀態
-.plus-btn.active {
-  color: var(--color-primary);
-  transform: rotate(45deg);
 }
 
 // ===== 功能模態框樣式 =====
@@ -17290,198 +15422,6 @@ onUnmounted(() => {
         color: var(--color-text-secondary, #999);
       }
     }
-  }
-}
-
-// ===== 錄音覆蓋層 =====
-.recording-overlay {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  top: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.recording-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
-
-.recording-indicator {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.recording-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #e53e3e;
-  animation: pulse-dot 1s ease-in-out infinite;
-}
-
-@keyframes pulse-dot {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.5;
-    transform: scale(1.3);
-  }
-}
-
-.recording-time {
-  font-size: 24px;
-  color: white;
-  font-variant-numeric: tabular-nums;
-}
-
-.recording-volume-bars {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 32px;
-}
-
-.volume-bar {
-  width: 4px;
-  min-height: 4px;
-  background: var(--color-primary, #7dd3a8);
-  border-radius: 2px;
-  transition: height 0.1s ease;
-}
-
-.recording-hint {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
-  transition: color 0.2s;
-
-  &.cancel {
-    color: #e53e3e;
-  }
-}
-
-// 麥克風按鈕樣式
-.mic-btn {
-  &:active {
-    color: #e53e3e;
-  }
-}
-
-// 聚焦時出現的行內錄音按鈕
-.mic-inline-btn {
-  color: var(--color-text-muted, #999);
-
-  &:hover {
-    color: var(--color-primary, #7dd3a8);
-  }
-
-  &:active {
-    color: #e53e3e;
-  }
-}
-
-// 淡入滑動動畫
-.fade-slide-enter-active,
-.fade-slide-leave-active {
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
-}
-
-.fade-slide-enter-from,
-.fade-slide-leave-to {
-  opacity: 0;
-  transform: translateX(8px);
-}
-
-// 文字輸入語音 Modal
-.text-voice-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  z-index: 200;
-  padding-bottom: 80px;
-}
-
-.text-voice-modal {
-  background: var(--color-surface, #fff);
-  border-radius: 16px;
-  padding: 16px;
-  width: calc(100% - 32px);
-  max-width: 400px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.text-voice-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text, #333);
-}
-
-.text-voice-input {
-  width: 100%;
-  border: 1px solid var(--color-border, #e0e0e0);
-  border-radius: 10px;
-  padding: 10px 12px;
-  font-size: 14px;
-  resize: none;
-  background: var(--color-bg, #f5f5f5);
-  color: var(--color-text, #333);
-  outline: none;
-  box-sizing: border-box;
-  &:focus {
-    border-color: var(--color-primary, #7dd3a8);
-  }
-}
-
-.text-voice-hint {
-  font-size: 11px;
-  color: var(--color-text-secondary, #999);
-  text-align: right;
-}
-
-.text-voice-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.text-voice-cancel {
-  padding: 7px 16px;
-  border-radius: 8px;
-  border: 1px solid var(--color-border, #e0e0e0);
-  background: transparent;
-  color: var(--color-text, #333);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.text-voice-send {
-  padding: 7px 16px;
-  border-radius: 8px;
-  border: none;
-  background: var(--color-primary, #7dd3a8);
-  color: #fff;
-  font-size: 13px;
-  cursor: pointer;
-  &:active {
-    opacity: 0.85;
   }
 }
 

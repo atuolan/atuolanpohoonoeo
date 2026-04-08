@@ -953,7 +953,7 @@ function removeCondition(
                     v-if="getEditMode(entry.id) === 'raw'"
                     v-model="entry.content"
                     class="soft-input textarea"
-                    placeholder="輸入世界書內容，支援 EJS 語法（如 <%_ if (getvar('stat_data.角色名.變量名') > 50) { _%>）"
+                    placeholder="輸入世界書內容，支援 EJS 語法（如 <%_ if (getvar('stat_data.角色名.變量名') > 50) { _%>，也可用 display_data / delta_data 前綴）"
                     rows="5"
                   ></textarea>
 

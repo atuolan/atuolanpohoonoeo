@@ -19,11 +19,40 @@ export type AffinityStage = z.infer<typeof AffinityStageSchema>;
 
 export type MetricValue = number | string;
 
+export const AffinityRuleConditionSchema = z.object({
+  path: z.string().min(1),
+  operator: z.enum(["gte", "lte", "gt", "lt", "eq", "neq"]),
+  value: z.union([z.number(), z.string(), z.boolean()]),
+});
+
+export const AffinityPostMutationRuleSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("derive_boolean"),
+    targetPath: z.string().min(1),
+    mode: z.enum(["all", "any"]).default("all"),
+    conditions: z.array(AffinityRuleConditionSchema).min(1),
+    trueValue: z.string().default("true"),
+    falseValue: z.string().default("false"),
+    lockOnTrue: z.boolean().default(false),
+  }),
+  z.object({
+    type: z.literal("clamp_max_when"),
+    targetPath: z.string().min(1),
+    max: z.number(),
+    conditions: z.array(AffinityRuleConditionSchema).min(1),
+    mode: z.enum(["all", "any"]).default("all"),
+  }),
+]);
+
+export type AffinityRuleCondition = z.infer<typeof AffinityRuleConditionSchema>;
+export type AffinityPostMutationRule = z.infer<typeof AffinityPostMutationRuleSchema>;
+
 // ===== 單一指標配置 =====
 
 export const AffinityMetricConfigSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
+  path: z.string().default(""),
   type: z.enum(["number", "string"]).default("number"),
   min: z.number().default(0),
   max: z.number().default(100),
@@ -41,6 +70,15 @@ export const CharacterAffinityConfigSchema = z.object({
   enabled: z.boolean().default(false),
   /** EJS 路徑名稱：stat_data 下的鍵名，留空時使用角色的 data.name */
   statKey: z.string().default(""),
+  /** 由酒館 MVU 角色卡導入時啟用相容模式 */
+  mvuEnabled: z.boolean().default(false),
+  /** 導入時保留原始 stat_data 初始結構，用於 EJS getvar()/stat_data 相容 */
+  mvuInitialData: z.record(z.string(), z.any()).default({}),
+  /** 從酒館世界書提取的 MVU 狀態描述模板 */
+  mvuPromptTemplate: z.string().default(""),
+  /** 從酒館世界書提取的 MVU 變量更新規則 */
+  mvuUpdateInstruction: z.string().default(""),
+  postMutationRules: z.array(AffinityPostMutationRuleSchema).default([]),
   metrics: z.array(AffinityMetricConfigSchema).default([]),
   promptTemplate: z.string().default(""),
   updateInstruction: z.string().default(""),
@@ -69,6 +107,11 @@ export const ChatAffinityStateSchema = z.object({
   chatId: z.string().min(1),
   characterId: z.string().min(1),
   values: z.record(z.string(), z.union([z.number(), z.string()])).default({}),
+  mvuState: z.object({
+    statData: z.record(z.string(), z.any()).default({}),
+    displayData: z.record(z.string(), z.any()).default({}),
+    deltaData: z.record(z.string(), z.any()).default({}),
+  }).default({ statData: {}, displayData: {}, deltaData: {} }),
   history: z.array(AffinityChangeRecordSchema).default([]),
   // 每條 AI 訊息處理前的數值快照，key 為 messageId
   snapshots: z.record(
@@ -102,6 +145,11 @@ export function createDefaultState(
     chatId,
     characterId: config.characterId,
     values,
+    mvuState: {
+      statData: JSON.parse(JSON.stringify(config.mvuInitialData ?? {})) as Record<string, unknown>,
+      displayData: JSON.parse(JSON.stringify(config.mvuInitialData ?? {})) as Record<string, unknown>,
+      deltaData: {},
+    },
   });
 }
 
@@ -168,6 +216,11 @@ export function safeParseAffinityState(
     chatId,
     characterId: "",
     values: {},
+    mvuState: {
+      statData: config?.mvuInitialData ?? {},
+      displayData: config?.mvuInitialData ?? {},
+      deltaData: {},
+    },
     history: [],
     snapshots: {},
     lastUpdated: 0,
@@ -178,6 +231,8 @@ export function safeParseAffinityState(
       fallback.characterId = obj.characterId;
     if (typeof obj.values === "object" && obj.values !== null)
       fallback.values = obj.values;
+    if (obj.mvuState && typeof obj.mvuState === "object")
+      fallback.mvuState = obj.mvuState;
     if (typeof obj.lastUpdated === "number")
       fallback.lastUpdated = obj.lastUpdated;
   }
@@ -195,6 +250,11 @@ export function safeParseAffinityConfig(
   const fallback: Record<string, unknown> = {
     characterId,
     enabled: false,
+    mvuEnabled: false,
+    mvuInitialData: {},
+    mvuPromptTemplate: "",
+    mvuUpdateInstruction: "",
+    postMutationRules: [],
     metrics: [],
     promptTemplate: "",
     updateInstruction: "",
@@ -204,6 +264,15 @@ export function safeParseAffinityConfig(
     const obj = raw as Record<string, unknown>;
     if (typeof obj.enabled === "boolean") fallback.enabled = obj.enabled;
     if (Array.isArray(obj.metrics)) fallback.metrics = obj.metrics;
+    if (typeof obj.mvuEnabled === "boolean") fallback.mvuEnabled = obj.mvuEnabled;
+    if (obj.mvuInitialData && typeof obj.mvuInitialData === "object")
+      fallback.mvuInitialData = obj.mvuInitialData;
+    if (typeof obj.mvuPromptTemplate === "string")
+      fallback.mvuPromptTemplate = obj.mvuPromptTemplate;
+    if (typeof obj.mvuUpdateInstruction === "string")
+      fallback.mvuUpdateInstruction = obj.mvuUpdateInstruction;
+    if (Array.isArray(obj.postMutationRules))
+      fallback.postMutationRules = obj.postMutationRules;
     if (typeof obj.promptTemplate === "string")
       fallback.promptTemplate = obj.promptTemplate;
     if (typeof obj.updateInstruction === "string")

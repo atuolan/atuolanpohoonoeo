@@ -9,6 +9,8 @@
  */
 import { db, DB_STORES } from "@/db/database";
 import {
+  type AffinityPostMutationRule,
+  type AffinityRuleCondition,
   type CharacterAffinityConfig,
   type ChatAffinityState,
   type MetricValue,
@@ -22,10 +24,47 @@ import {
 } from "@/schemas/affinity";
 import { defineStore } from "pinia";
 import { ref, toRaw } from "vue";
+import _ from "lodash";
 
 const AFFINITY_STATES_STORE = DB_STORES.CHAT_AFFINITY_STATES;
 const AFFINITY_CONFIG_STORE = DB_STORES.CHARACTER_AFFECTIONS;
 const AUTO_SAVE_DELAY_MS = 300;
+
+function normalizeMetricPath(path: string): string {
+  return path.replace(/^\/+/, "").replace(/\//g, ".");
+}
+
+function deepClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function evaluateCondition(
+  value: MetricValue | undefined,
+  condition: AffinityRuleCondition,
+): boolean {
+  switch (condition.operator) {
+    case "gte":
+      return typeof value === "number" && typeof condition.value === "number"
+        ? value >= condition.value
+        : false;
+    case "lte":
+      return typeof value === "number" && typeof condition.value === "number"
+        ? value <= condition.value
+        : false;
+    case "gt":
+      return typeof value === "number" && typeof condition.value === "number"
+        ? value > condition.value
+        : false;
+    case "lt":
+      return typeof value === "number" && typeof condition.value === "number"
+        ? value < condition.value
+        : false;
+    case "eq":
+      return value === condition.value;
+    case "neq":
+      return value !== condition.value;
+  }
+}
 
 /**
  * 檢查 chatAffinityStates 表是否存在（DB 升級可能未完成）。
@@ -64,6 +103,109 @@ export const useAffinityStore = defineStore("affinity", () => {
     const state = affinityStates.value.get(chatId);
     if (state) {
       affinityStates.value = new Map(affinityStates.value);
+    }
+  }
+
+  function _reconcileStateAfterRules(chatId: string): void {
+    _applyPostMutationRules(chatId);
+    const state = affinityStates.value.get(chatId);
+    if (!state) return;
+    state.lastUpdated = Date.now();
+    _triggerReactivity(chatId);
+    _scheduleAutoSave(chatId);
+  }
+
+  function _ensureMvuState(chatId: string): {
+    statData: Record<string, unknown>;
+    displayData: Record<string, unknown>;
+    deltaData: Record<string, unknown>;
+  } | null {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return null;
+    if (!state.mvuState) {
+      state.mvuState = { statData: {}, displayData: {}, deltaData: {} };
+    }
+    if (!state.mvuState.displayData) {
+      state.mvuState.displayData = {};
+    }
+    if (!state.mvuState.deltaData) {
+      state.mvuState.deltaData = {};
+    }
+    return state.mvuState;
+  }
+
+  function _syncMetricToMvuViews(
+    chatId: string,
+    metricId: string,
+    value: MetricValue,
+    delta?: unknown,
+  ): void {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return;
+    const config = configCache.value.get(state.characterId);
+    const metricConfig = config?.metrics.find((m) => m.id === metricId);
+    const path = metricConfig?.path || metricConfig?.name;
+    if (!path) return;
+
+    const mvuState = _ensureMvuState(chatId);
+    if (!mvuState) return;
+    _.set(mvuState.statData, path, deepClone(value));
+    _.set(mvuState.displayData, path, deepClone(value));
+    _.set(mvuState.deltaData, path, deepClone(delta ?? value));
+  }
+
+  function _ruleConditionsMatch(
+    chatId: string,
+    rule: AffinityPostMutationRule,
+  ): boolean {
+    const checks = rule.conditions.map((condition) => {
+      const resolved = getMetricByPath(chatId, condition.path);
+      return evaluateCondition(resolved?.value, condition);
+    });
+    return rule.mode === "any" ? checks.some(Boolean) : checks.every(Boolean);
+  }
+
+  function _applyPostMutationRules(chatId: string): void {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return;
+
+    const config = configCache.value.get(state.characterId);
+    if (!config || config.postMutationRules.length === 0) return;
+
+    let changed = false;
+
+    for (const rule of config.postMutationRules) {
+      if (rule.type === "derive_boolean") {
+        const target = getMetricByPath(chatId, rule.targetPath);
+        if (!target) continue;
+
+        const currentValue = target.value;
+        if (rule.lockOnTrue && currentValue === rule.trueValue) {
+          continue;
+        }
+
+        const nextValue = _ruleConditionsMatch(chatId, rule)
+          ? rule.trueValue
+          : rule.falseValue;
+        if (currentValue !== nextValue) {
+          changed = setMetricByPath(chatId, rule.targetPath, String(nextValue), "Post mutation rule") || changed;
+        }
+        continue;
+      }
+
+      if (rule.type === "clamp_max_when") {
+        if (!_ruleConditionsMatch(chatId, rule)) continue;
+        const target = getMetricByPath(chatId, rule.targetPath);
+        if (!target || typeof target.value !== "number") continue;
+        if (target.value > rule.max) {
+          changed = setMetricByPath(chatId, rule.targetPath, rule.max, "Post mutation clamp") || changed;
+        }
+      }
+    }
+
+    if (changed) {
+      _scheduleAutoSave(chatId);
+      _triggerReactivity(chatId);
     }
   }
 
@@ -191,8 +333,9 @@ export const useAffinityStore = defineStore("affinity", () => {
       if (raw) {
         const state = safeParseAffinityState(raw, chatId);
         affinityStates.value.set(chatId, state);
+        _reconcileStateAfterRules(chatId);
         _dbLoadedIds.add(chatId);
-        return state;
+        return affinityStates.value.get(chatId) ?? state;
       }
 
       return null;
@@ -262,8 +405,10 @@ export const useAffinityStore = defineStore("affinity", () => {
     const existing = await loadState(chatId);
     if (existing) return existing;
 
+    configCache.value.set(config.characterId, config);
     const state = createDefaultState(chatId, config);
     affinityStates.value.set(chatId, state);
+    _reconcileStateAfterRules(chatId);
     _dbLoadedIds.add(chatId);
     await saveState(chatId);
     return state;
@@ -346,6 +491,7 @@ export const useAffinityStore = defineStore("affinity", () => {
     if (newValue === numOld) return false;
 
     state.values[metricId] = newValue;
+    _syncMetricToMvuViews(chatId, metricId, newValue, newValue - numOld);
     state.history.push({
       metricId,
       oldValue: numOld,
@@ -359,6 +505,7 @@ export const useAffinityStore = defineStore("affinity", () => {
     }
 
     _scheduleAutoSave(chatId);
+    _applyPostMutationRules(chatId);
     // 觸發 Vue 響應式更新（重新設置 Map 條目）
     _triggerReactivity(chatId);
     return true;
@@ -390,6 +537,14 @@ export const useAffinityStore = defineStore("affinity", () => {
     if (finalValue === oldValue) return false;
 
     state.values[metricId] = finalValue;
+    _syncMetricToMvuViews(
+      chatId,
+      metricId,
+      finalValue,
+      typeof finalValue === "number" && typeof oldValue === "number"
+        ? finalValue - oldValue
+        : finalValue,
+    );
     state.history.push({
       metricId,
       oldValue,
@@ -403,9 +558,232 @@ export const useAffinityStore = defineStore("affinity", () => {
     }
 
     _scheduleAutoSave(chatId);
+    _applyPostMutationRules(chatId);
     // 觸發 Vue 響應式更新（重新設置 Map 條目）
     _triggerReactivity(chatId);
     return true;
+  }
+
+  function getMetricByPath(
+    chatId: string,
+    path: string,
+  ): { metricId: string; value: MetricValue } | null {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return null;
+
+    const config = configCache.value.get(state.characterId);
+    if (!config) return null;
+
+    const normalizedPath = normalizeMetricPath(path);
+    const metric = config.metrics.find(
+      (m) =>
+        m.path === normalizedPath ||
+        m.name === normalizedPath ||
+        m.id === normalizedPath ||
+        normalizedPath.endsWith(`.${m.name}`) ||
+        (m.path ? normalizedPath.endsWith(`.${m.path.split(".").slice(-1)[0]}`) : false),
+    );
+    if (!metric) return null;
+
+    return {
+      metricId: metric.id,
+      value: state.values[metric.id] ?? metric.initial,
+    };
+  }
+
+  function getMvuStatData(chatId: string): Record<string, unknown> | null {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return null;
+    return state.mvuState?.statData ?? null;
+  }
+
+  function getMvuDisplayData(chatId: string): Record<string, unknown> | null {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return null;
+    return state.mvuState?.displayData ?? null;
+  }
+
+  function getMvuDeltaData(chatId: string): Record<string, unknown> | null {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return null;
+    return state.mvuState?.deltaData ?? null;
+  }
+
+  function resetMvuDeltaData(chatId: string): boolean {
+    const state = affinityStates.value.get(chatId);
+    const mvuState = _ensureMvuState(chatId);
+    if (!state || !mvuState) return false;
+
+    mvuState.deltaData = {};
+    state.lastUpdated = Date.now();
+    _triggerReactivity(chatId);
+    _scheduleAutoSave(chatId);
+    return true;
+  }
+
+  function setMvuValueByPath(
+    chatId: string,
+    path: string,
+    value: unknown,
+    reason = "",
+  ): boolean {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return false;
+
+    const normalizedPath = normalizeMetricPath(path);
+    if (!normalizedPath) return false;
+
+    const mvuState = _ensureMvuState(chatId);
+    if (!mvuState) return false;
+
+    _.set(mvuState.statData, normalizedPath, deepClone(value));
+    _.set(mvuState.displayData, normalizedPath, deepClone(value));
+    _.set(mvuState.deltaData, normalizedPath, deepClone(value));
+
+    const metric = getMetricByPath(chatId, normalizedPath);
+    if (metric && (typeof value === "string" || typeof value === "number")) {
+      setMetric(chatId, metric.metricId, value, reason || "MVU stat_data set");
+      return true;
+    }
+
+    state.lastUpdated = Date.now();
+    _triggerReactivity(chatId);
+    _scheduleAutoSave(chatId);
+    return true;
+  }
+
+  function removeMvuValueByPath(chatId: string, path: string): boolean {
+    const state = affinityStates.value.get(chatId);
+    const mvuState = _ensureMvuState(chatId);
+    if (!state || !mvuState) return false;
+
+    const normalizedPath = normalizeMetricPath(path);
+    if (!normalizedPath) return false;
+
+    _.unset(mvuState.statData, normalizedPath);
+    _.unset(mvuState.displayData, normalizedPath);
+    _.unset(mvuState.deltaData, normalizedPath);
+    state.lastUpdated = Date.now();
+    _triggerReactivity(chatId);
+    _scheduleAutoSave(chatId);
+    return true;
+  }
+
+  function insertMvuValueByPath(
+    chatId: string,
+    path: string,
+    value: unknown,
+    index?: string | number,
+  ): unknown {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return undefined;
+
+    const normalizedPath = normalizeMetricPath(path);
+    if (!normalizedPath) return undefined;
+
+    const mvuState = _ensureMvuState(chatId);
+    if (!mvuState) return undefined;
+
+    const current = _.get(mvuState.statData, normalizedPath);
+    if (Array.isArray(current)) {
+      const copy = [...current];
+      const targetIndex = typeof index === "number" ? index : copy.length;
+      copy.splice(targetIndex, 0, deepClone(value));
+      _.set(mvuState.statData, normalizedPath, copy);
+      _.set(mvuState.displayData, normalizedPath, deepClone(copy));
+      _.set(mvuState.deltaData, normalizedPath, deepClone(value));
+      state.lastUpdated = Date.now();
+      _triggerReactivity(chatId);
+      _scheduleAutoSave(chatId);
+      return copy;
+    }
+
+    if (current && typeof current === "object") {
+      const key = index === undefined ? String(Object.keys(current).length) : String(index);
+      const copy = { ...(current as Record<string, unknown>), [key]: deepClone(value) };
+      _.set(mvuState.statData, normalizedPath, copy);
+      _.set(mvuState.displayData, normalizedPath, deepClone(copy));
+      _.set(mvuState.deltaData, normalizedPath, deepClone(value));
+      state.lastUpdated = Date.now();
+      _triggerReactivity(chatId);
+      _scheduleAutoSave(chatId);
+      return copy;
+    }
+
+    return undefined;
+  }
+
+  function setMetricByPath(
+    chatId: string,
+    path: string,
+    value: MetricValue,
+    reason = "",
+  ): boolean {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return false;
+
+    const config = configCache.value.get(state.characterId);
+    if (!config) return false;
+
+    const resolved = getMetricByPath(chatId, path);
+    if (!resolved) return false;
+
+    return setMetric(chatId, resolved.metricId, value, reason);
+  }
+
+  function batchUpdateByPath(
+    chatId: string,
+    updates: {
+      metric: string;
+      change: number;
+      reason: string;
+      operation?: "remove" | "insert";
+      stringValue?: string;
+      isAbsolute?: boolean;
+      absoluteValue?: number;
+      sourceMetric?: string;
+      insertIndex?: string | number;
+    }[],
+  ): void {
+    const resolved = updates.flatMap((u) => {
+      if (u.operation === "remove") {
+        removeMvuValueByPath(chatId, u.metric);
+        return [];
+      }
+
+      if (u.operation === "insert") {
+        const insertValue = u.stringValue ?? u.absoluteValue;
+        if (insertValue !== undefined) {
+          insertMvuValueByPath(chatId, u.metric, insertValue, u.insertIndex);
+        }
+        return [];
+      }
+
+      const metric = getMetricByPath(chatId, u.metric);
+      const sourceTree = u.sourceMetric ? getMvuStatData(chatId) : null;
+      const sourceTreeValue =
+        u.sourceMetric && sourceTree
+          ? _.get(sourceTree, normalizeMetricPath(u.sourceMetric))
+          : undefined;
+      const sourceMetric = u.sourceMetric ? getMetricByPath(chatId, u.sourceMetric) : null;
+
+      return [{
+        metricId: metric?.metricId || normalizeMetricPath(u.metric),
+        change: u.change,
+        reason: u.reason,
+        stringValue:
+          u.stringValue ??
+          (typeof sourceTreeValue === "string" ? sourceTreeValue : undefined) ??
+          (typeof sourceMetric?.value === "string" ? sourceMetric.value : undefined),
+        isAbsolute: u.isAbsolute,
+        absoluteValue:
+          u.absoluteValue ??
+          (typeof sourceTreeValue === "number" ? sourceTreeValue : undefined) ??
+          (typeof sourceMetric?.value === "number" ? sourceMetric.value : undefined),
+      }];
+    });
+
+    batchUpdate(chatId, resolved);
   }
 
   /**
@@ -571,6 +949,16 @@ export const useAffinityStore = defineStore("affinity", () => {
 
     updateMetric,
     setMetric,
+    getMetricByPath,
+    setMetricByPath,
+    getMvuStatData,
+    getMvuDisplayData,
+    getMvuDeltaData,
+    resetMvuDeltaData,
+    setMvuValueByPath,
+    removeMvuValueByPath,
+    insertMvuValueByPath,
+    batchUpdateByPath,
     batchUpdate,
     snapshotBeforeMessage,
     rollbackToBeforeMessages,

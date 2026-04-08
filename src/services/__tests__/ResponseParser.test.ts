@@ -8,6 +8,7 @@ import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   isValidDelayFormat,
+  parseAffinityUpdateTags,
   parseAIResponse,
   parseScheduleCallTag,
 } from "../ResponseParser";
@@ -69,6 +70,98 @@ describe("ResponseParser - Schedule Call Tag Parsing", () => {
         { numRuns: 100 },
       );
     });
+
+describe("ResponseParser - MVU affinity command parsing", () => {
+  it("parses _.assign as absolute assignment", () => {
+    const updates = parseAffinityUpdateTags(
+      `<update>_.assign('黎靖青.目前模式', '恋人');</update>`,
+    );
+
+    expect(updates).toEqual([
+      {
+        metric: "黎靖青.目前模式",
+        change: 0,
+        reason: "MVU _.assign",
+        stringValue: "恋人",
+        isAbsolute: true,
+      },
+    ]);
+  });
+
+  it("parses _.add as delta update", () => {
+    const updates = parseAffinityUpdateTags(
+      `<update>_.add('黎靖青.亲密值', 2);</update>`,
+    );
+
+    expect(updates).toEqual([
+      {
+        metric: "黎靖青.亲密值",
+        change: 2,
+        reason: "MVU _.add",
+      },
+    ]);
+  });
+
+  it("parses JSONPatch move with sourceMetric metadata", () => {
+    const updates = parseAffinityUpdateTags(
+      `<UpdateVariable><JSONPatch>[{"op":"move","from":"/黎靖青/目前模式","path":"/黎靖青/待办事项"}]</JSONPatch></UpdateVariable>`,
+    );
+
+    expect(updates).toEqual([
+      {
+        metric: "黎靖青.待办事项",
+        change: 0,
+        reason: "MVU JSONPatch",
+        isAbsolute: true,
+        sourceMetric: "黎靖青.目前模式",
+      },
+    ]);
+  });
+
+  it("parses _.unset and _.delete as remove operations", () => {
+    const updates = parseAffinityUpdateTags(
+      `<update>_.unset('黎靖青.隐藏线索');_.delete('黎靖青.废弃字段');</update>`,
+    );
+
+    expect(updates).toEqual([
+      {
+        metric: "黎靖青.隐藏线索",
+        change: 0,
+        reason: "MVU _.unset",
+        operation: "remove",
+      },
+      {
+        metric: "黎靖青.废弃字段",
+        change: 0,
+        reason: "MVU _.delete",
+        operation: "remove",
+      },
+    ]);
+  });
+
+  it("parses JSONPatch remove and insert as object-tree operations", () => {
+    const updates = parseAffinityUpdateTags(
+      `<UpdateVariable><JSONPatch>[{"op":"remove","path":"/黎靖青/隐藏线索"},{"op":"insert","path":"/黎靖青/标签/1","value":"新标签"}]</JSONPatch></UpdateVariable>`,
+    );
+
+    expect(updates).toEqual([
+      {
+        metric: "黎靖青.隐藏线索",
+        change: 0,
+        reason: "MVU JSONPatch",
+        operation: "remove",
+      },
+      {
+        metric: "黎靖青.标签",
+        change: 0,
+        reason: "MVU JSONPatch",
+        operation: "insert",
+        stringValue: "新标签",
+        insertIndex: 1,
+      },
+    ]);
+  });
+});
 
     it("should correctly parse schedule-call tags with optional opening attribute", () => {
       fc.assert(

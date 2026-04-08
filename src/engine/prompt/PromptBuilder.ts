@@ -58,6 +58,7 @@ import type {
 import { WIAnchorPosition as AnchorPos } from "@/types/worldinfo";
 import ejs from "ejs";
 import _ from "lodash";
+import { createStTemplateContext } from "@/services/StTemplateContextService";
 import { getMacroEngine } from "../macros/MacroEngine";
 import { WorldInfoScanner } from "../worldinfo/WorldInfoScanner";
 
@@ -2173,7 +2174,8 @@ export class PromptBuilder {
 
   /**
    * 對已激活的世界書條目 content 做 EJS 渲染。
-   * 支持 getvar('stat_data.角色名.變量名') 語法引用好感度變量，
+   * 支持 getvar('stat_data.角色名.變量名') / getvar('display_data.角色名.變量名') /
+   * getvar('delta_data.角色名.變量名') 語法引用 MVU 視圖變量，
    * 兼容酒館模板的 EJS 條件語法。
    */
   private processWorldInfoEjs(wiResult: WIActivatedResult): WIActivatedResult {
@@ -2312,230 +2314,24 @@ export class PromptBuilder {
 
   /**
    * 構建世界書 EJS 渲染上下文，提供 getvar() 等函數。
-   * 兼容酒馆 stat_data.角色名.變量名 路徑格式。
+   * 兼容酒馆 stat_data / display_data / delta_data.角色名.變量名 路徑格式。
    */
   private buildWiEjsContext(): Record<string, unknown> {
-    const { affinityConfig, affinityState, character } = this.options;
-    const charName = character.data.name;
-    // statKey 優先：用戶自訂的 EJS 路徑名稱，空字串時 fallback 到卡片名
-    const statKey = affinityConfig?.statKey?.trim() || charName;
-
-    // statData 使用巢狀結構：指標名稱中的 "." 會被拆解為多層物件
-    // 例如指標名 "黎靖青.亲密值" → statData["黎靖青"]["亲密值"]
-    //      指標名 "user.识破身份" → statData["user"]["识破身份"]
-    const statData: Record<string, any> = {};
-    const valuesMap: Record<string, MetricValue> = {};
-    const stagesMap: Record<string, string | null> = {};
-
-    if (affinityConfig?.enabled && affinityState) {
-      for (const m of affinityConfig.metrics) {
-        const v = affinityState.values[m.id] ?? m.initial;
-        valuesMap[m.name] = v;
-        stagesMap[m.name] = computeStage(v, m.stages);
-
-        // 將指標名按 "." 拆解為巢狀路徑寫入 statData
-        // "黎靖青.亲密值" → statData["黎靖青"]["亲密值"] = v
-        // "user.识破身份" → statData["user"]["识破身份"] = v
-        const nameParts = m.name.split(".");
-        if (nameParts.length >= 2) {
-          const ns = nameParts[0]; // 命名空間（如 "黎靖青"、"user"、"世界"）
-          const key = nameParts.slice(1).join("."); // 剩餘路徑
-          if (!statData[ns]) statData[ns] = {};
-          statData[ns][key] = v;
-        } else {
-          // 沒有命名空間前綴的指標，放在 statKey 下
-          if (!statData[statKey]) statData[statKey] = {};
-          statData[statKey][m.name] = v;
-        }
-      }
-
-      // 確保 statKey 和 charName 都能存取到角色的數值
-      // 兼容角色卡名（如「姊姊大人」）與世界書中使用的角色本名（如「黎靖青」）
-      if (statKey !== charName) {
-        // 如果 statKey 下有資料但 charName 下沒有，複製過去（反之亦然）
-        if (statData[statKey] && !statData[charName]) {
-          statData[charName] = statData[statKey];
-        } else if (statData[charName] && !statData[statKey]) {
-          statData[statKey] = statData[charName];
-        }
-      }
-    }
-
-    // 使用 Proxy 包裝 statData，當請求的角色名不存在時自動 fallback 到唯一的角色資料
-    // 兼容角色卡名（如「姊姊大人」）與世界書中使用的角色本名（如「黎靖青」）不一致的情況
-    const statDataProxy = new Proxy(statData, {
-      get(target, prop, receiver) {
-        if (typeof prop === "string" && !(prop in target)) {
-          const keys = Object.keys(target);
-          if (keys.length > 0) {
-            return target[keys[0]];
-          }
-        }
-        return Reflect.get(target, prop, receiver);
-      },
+    const { affinityConfig, affinityState, character, userName } = this.options;
+    const shared = createStTemplateContext({
+      affinityConfig,
+      affinityState,
+      charName: character.data.name,
+      userName,
+      messages: this.options.messages,
     });
 
-    const getvar = (path: string): any => {
-      if (!path) return undefined;
-      const parts = path.split(".");
-
-      // 支援 getvar('stat_data') 返回整個物件
-      if (path === "stat_data") return statDataProxy;
-      if (path === "values") return valuesMap;
-      if (path === "stages") return stagesMap;
-
-      if (parts[0] === "stat_data" && parts.length >= 2) {
-        // 直接用 Proxy 存取，確保 fallback 機制生效
-        let obj: any = statDataProxy[parts[1]];
-        if (parts.length === 2) return obj;
-        // 逐層深入剩餘路徑
-        for (let i = 2; i < parts.length; i++) {
-          if (obj && typeof obj === "object") {
-            obj = obj[parts[i]];
-          } else {
-            return undefined;
-          }
-        }
-        return obj;
-      }
-      let current: unknown = {
-        stat_data: statDataProxy,
-        values: valuesMap,
-        stages: stagesMap,
-      };
-      for (const p of parts) {
-        if (current && typeof current === "object") {
-          current = (current as Record<string, unknown>)[p];
-        } else {
-          return undefined;
-        }
-      }
-      return current;
-    };
-
-    const getVariables = (options: { type?: string } = {}) => {
-      // 模擬酒館的 getVariables，目前主要返回 stat_data 相關
-      if (options.type === "chat") {
-        return { stat_data: statDataProxy, ...valuesMap };
-      }
-      return { stat_data: statDataProxy };
-    };
-
-    // --- 兼容酒館的聊天訊息存取函數 ---
-    const messages = this.options.messages;
-
-    /**
-     * getChatMessage(index, role?)
-     * 兼容酒館 EJS 的 getChatMessage。
-     * index: 正數從頭算，負數從尾算（-1 = 最後一條）
-     * role: 可選篩選 'user' | 'assistant' | 'system'，篩選後再按 index 取
-     */
-    const getChatMessage = (index: number, role?: string): string => {
-      let pool = messages;
-      if (role) {
-        if (role === "user") {
-          pool = messages.filter((m) => m.is_user);
-        } else if (role === "assistant") {
-          pool = messages.filter(
-            (m) =>
-              !m.is_user && m.sender !== "system" && m.sender !== "narrator",
-          );
-        } else if (role === "system") {
-          pool = messages.filter((m) => m.sender === "system");
-        }
-      }
-      if (pool.length === 0) return "";
-      const i = index < 0 ? pool.length + index : index;
-      return pool[i]?.content ?? "";
-    };
-
-    /**
-     * getMessages() — 返回所有聊天訊息的 content 陣列
-     */
-    const getMessages = (): string[] => messages.map((m) => m.content);
-
-    /**
-     * lastMessage / lastUserMessage / lastCharMessage — 常用快捷變量
-     */
-    const lastMsg =
-      messages.length > 0 ? messages[messages.length - 1].content : "";
-    const lastUserMsgObj = [...messages].reverse().find((m) => m.is_user);
-    let lastUserMsg = lastUserMsgObj?.content ?? "";
-    // 若有引用回覆，在內容前加上引用標記
-    if (lastUserMsgObj?.replyTo) {
-      const repliedMsg = messages.find((r) => r.id === lastUserMsgObj.replyTo);
-      if (repliedMsg) {
-        const preview = repliedMsg.content
-          .replace(/\[img:.*?\]/g, "[圖片]")
-          .replace(/\[sticker:.*?\]/g, "[表情包]");
-        const truncated =
-          preview.length > 60 ? preview.substring(0, 60) + "…" : preview;
-        const senderName = repliedMsg.is_user
-          ? this.options.userName
-          : repliedMsg.name || this.options.character.data.name;
-        lastUserMsg = `[回覆 ${senderName}：「${truncated}」]\n${lastUserMsg}`;
-      }
-    }
-    const lastCharMsg =
-      [...messages]
-        .reverse()
-        .find(
-          (m) => !m.is_user && m.sender !== "system" && m.sender !== "narrator",
-        )?.content ?? "";
-
-    // --- 兼容酒館的變量寫入函數（no-op stub） ---
-    // setvar 在酒館中用於寫入聊天變量，Aguaphone 不支援此功能，
-    // 但需要提供 stub 避免 EJS 渲染時 ReferenceError
-    const setvar = (_path: string, _value: unknown): void => {
-      // no-op：Aguaphone 不支援 setvar，靜默忽略
-    };
-
-    // getwi 在酒館中用於引用其他世界書條目內容，
-    // Aguaphone 不支援跨條目引用，返回空字串
-    const getwi = (_name: string): string => "";
-
-    // 酒館 EJS 常用函數的 stub，避免 ReferenceError
-    const noopReturn = () => undefined;
-    const incvar = (_key: string, _val?: number) => undefined;
-    const decvar = (_key: string, _val?: number) => undefined;
-    const getchr = () => "";
-
     return {
-      getvar,
-      setvar,
-      incvar,
-      decvar,
-      getwi,
-      getchr,
-      getVariables,
-      getChatMessage,
-      getMessages,
-      _,
-      stat_data: statDataProxy,
-      values: valuesMap,
-      stages: stagesMap,
-      // 常用快捷變量，兼容酒館 EJS 模板
-      lastMessage: lastMsg,
-      lastUserMessage: lastUserMsg,
-      lastCharMessage: lastCharMsg,
-      chatMessages: messages,
-      charName,
-      userName: this.options.userName,
-      messageCount: messages.length,
-      // 酒館 Prompt Template 擴展可能用到的函數 stub
-      setLocalVar: noopReturn,
-      setGlobalVar: noopReturn,
-      setMessageVar: noopReturn,
-      getLocalVar: noopReturn,
-      getGlobalVar: noopReturn,
-      getMessageVar: noopReturn,
-      incLocalVar: noopReturn,
-      incGlobalVar: noopReturn,
-      removeVariable: noopReturn,
-      insertVariable: noopReturn,
-      getWorldInfo: getwi,
+      ...shared,
+      getchr: () => "",
       getEnabledWorldInfoEntries: () => [],
       getWorldInfoActivatedEntries: () => [],
+      _,
     };
   }
 

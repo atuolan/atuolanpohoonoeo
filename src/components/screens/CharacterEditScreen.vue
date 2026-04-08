@@ -1686,6 +1686,10 @@ async function onRegexFileImport(e: Event) {
                       世界書 EJS 中引用數值的路徑前綴，例如填「黎靖青」後可在
                       EJS 寫
                       <code>getvar('stat_data.黎靖青.亲密值')</code>，
+                      也支援
+                      <code>getvar('display_data.黎靖青.亲密值')</code>
+                      與
+                      <code>getvar('delta_data.黎靖青.亲密值')</code>，
                       即使卡片名字不同也能正確解析。
                     </p>
                   </div>
