@@ -297,7 +297,8 @@ async function handleRequest(request) {
 		}
 		targetHost = rest.slice(0, slashIdx);
 		const targetPath = rest.slice(slashIdx);
-		upstream = `https://${targetHost}${targetPath}`;
+		// 必須包含 search params (query string) 否則上游收不到參數
+		upstream = `https://${targetHost}${targetPath}${url.search}`;
 	} else {
 		return new Response('Not Found', { status: 404 });
 	}

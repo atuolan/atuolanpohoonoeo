@@ -13,6 +13,26 @@ declare global {
   }
 }
 
+const VKEYS_WORKER_PROXY_BASE = "https://nai-proxy.aguacloud.uk/proxy/api.vkeys.cn";
+
+async function fetchFirstValidJson<T>(
+  urls: string[],
+  apiName: string,
+): Promise<T | null> {
+  for (let i = 0; i < urls.length; i++) {
+    const label = `${apiName}#${i + 1}`;
+    try {
+      const response = await fetch(urls[i]);
+      const data = await parseJsonResponse<T>(response, label);
+      if (data) return data;
+    } catch (error) {
+      console.warn(`[MusicApi] ${label} 網路錯誤:`, error);
+    }
+  }
+
+  return null;
+}
+
 // API 返回的結果類型
 interface MusicSearchResult {
   Url: string;
@@ -44,6 +64,36 @@ interface QQMusicSongSearchResponse {
       perPage: number;
     };
   };
+}
+
+async function parseJsonResponse<T>(
+  response: Response,
+  apiName: string,
+): Promise<T | null> {
+  const contentType = response.headers.get("content-type") || "";
+  const text = await response.text();
+
+  if (!response.ok) {
+    console.warn(`[MusicApi] ${apiName} 請求失敗:`, response.status);
+    return null;
+  }
+
+  const trimmed = text.trim();
+  if (
+    contentType.includes("text/html") ||
+    trimmed.startsWith("<!DOCTYPE") ||
+    trimmed.startsWith("<html")
+  ) {
+    console.warn(`[MusicApi] ${apiName} 返回 HTML，可能是代理未生效`);
+    return null;
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    console.warn(`[MusicApi] ${apiName} 返回非 JSON 內容`);
+    return null;
+  }
 }
 
 // QQ 音樂播放鏈接 API 返回類型 (song/link)
@@ -429,23 +479,15 @@ async function searchWithNetease(
  */
 async function searchWithQQMusic(keyword: string): Promise<MusicTrack[]> {
   try {
-    const response = await fetch(
-      `/api/music/vkeys/music/tencent/search/song?keyword=${encodeURIComponent(keyword)}&limit=20`,
+    const proxyUrl =
+      `/api/music/vkeys/music/tencent/search/song?keyword=${encodeURIComponent(keyword)}&limit=20`;
+    const workerUrl = `${VKEYS_WORKER_PROXY_BASE}/music/tencent/search/song?keyword=${encodeURIComponent(keyword)}&limit=20`;
+    const directUrl = `https://api.vkeys.cn/music/tencent/search/song?keyword=${encodeURIComponent(keyword)}&limit=20`;
+    const data = await fetchFirstValidJson<QQMusicSongSearchResponse>(
+      [proxyUrl, workerUrl, directUrl],
+      "QQ 音樂搜索 API",
     );
-
-    if (!response.ok) {
-      console.warn("[MusicApi] QQ 音樂 API 請求失敗:", response.status);
-      return [];
-    }
-
-    // 檢查 Content-Type 是否為 JSON，避免解析 HTML 錯誤頁面
-    const contentType = response.headers.get("content-type") || "";
-    if (!contentType.includes("application/json")) {
-      console.warn("[MusicApi] QQ 音樂 API 返回非 JSON 響應:", contentType);
-      return [];
-    }
-
-    const data: QQMusicSongSearchResponse = await response.json();
+    if (!data) return [];
 
     // API 返回 code: 0 表示成功
     if (data.code !== 0 || !data.data?.list) {
@@ -481,19 +523,16 @@ async function getQQMusicLink(mid: string): Promise<{
   singer: string;
 } | null> {
   try {
-    const response = await fetch(
-      `/api/music/vkeys/music/tencent/song/link?mid=${encodeURIComponent(mid)}&quality=8`,
+    const proxyUrl =
+      `/api/music/vkeys/music/tencent/song/link?mid=${encodeURIComponent(mid)}&quality=8`;
+    const workerUrl = `${VKEYS_WORKER_PROXY_BASE}/music/tencent/song/link?mid=${encodeURIComponent(mid)}&quality=8`;
+    const directUrl = `https://api.vkeys.cn/music/tencent/song/link?mid=${encodeURIComponent(mid)}&quality=8`;
+    const data = await fetchFirstValidJson<QQMusicLinkResponse>(
+      [proxyUrl, workerUrl, directUrl],
+      "QQ 音樂 link API",
     );
-    if (!response.ok) return null;
+    if (!data) return null;
 
-    // 檢查 Content-Type 是否為 JSON
-    const contentType = response.headers.get("content-type") || "";
-    if (!contentType.includes("application/json")) {
-      console.warn("[MusicApi] QQ link API 返回非 JSON 響應");
-      return null;
-    }
-
-    const data: QQMusicLinkResponse = await response.json();
     if ((data.code !== 200 && data.code !== 0) || !data.data?.url) {
       return null;
     }
