@@ -47,7 +47,7 @@ describe("DM Tag Parsing", () => {
   it("parses a single dm tag with correct fields", () => {
     fc.assert(
       fc.property(nameArb, safeTextArb, (name, content) => {
-        const xml = `<output><dm name="${name}">${content}</dm></output>`;
+        const xml = `<content><dm name="${name}">${content}</dm></content>`;
         const parsed = parseGroupChatResponse(xml);
 
         expect(parsed.messages.length).toBe(1);
@@ -71,7 +71,7 @@ describe("DM Tag Parsing", () => {
           const xmlTags = dms.map(
             (d) => `<dm name="${d.name}">${d.content}</dm>`,
           );
-          const xml = `<output>${xmlTags.join("")}</output>`;
+          const xml = `<content>${xmlTags.join("")}</content>`;
           const parsed = parseGroupChatResponse(xml);
 
           expect(parsed.messages.length).toBe(dms.length);
@@ -95,7 +95,7 @@ describe("DM Tag Parsing", () => {
         nameArb,
         safeTextArb,
         (dmName, dmContent, msgName, msgContent) => {
-          const xml = `<output><msg name="${msgName}">${msgContent}</msg><dm name="${dmName}">${dmContent}</dm></output>`;
+          const xml = `<content><msg name="${msgName}">${msgContent}</msg><dm name="${dmName}">${dmContent}</dm></content>`;
           const parsed = parseGroupChatResponse(xml);
 
           expect(parsed.messages.length).toBe(2);

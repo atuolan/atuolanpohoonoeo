@@ -2636,14 +2636,25 @@ function renderContentWithMentions(content: string): string {
     </div>`;
   }
 
+  function extractImageDisplayText(imageContent: string): string {
+    const parts = imageContent.trim().split(/[|｜]/);
+    return parts[0]?.trim() || "圖片";
+  }
+
   // 處理 [IMAGE]...[/IMAGE] 標籤 - 轉換為拍立得樣式
   // 格式：[IMAGE]中文描述｜英文提示詞[/IMAGE]
   rendered = rendered.replace(
     /\[IMAGE\]([\s\S]*?)\[\/IMAGE\]/gi,
     (_, imageContent) => {
-      const parts = imageContent.trim().split(/[|｜]/);
-      const chineseDesc = parts[0]?.trim() || "圖片";
-      return renderPolaroidImage(chineseDesc);
+      return renderPolaroidImage(extractImageDisplayText(imageContent));
+    },
+  );
+
+  // 處理未閉合的 [IMAGE]... 片段（常見於模型漏輸出 [/IMAGE]）
+  rendered = rendered.replace(
+    /\[IMAGE\]\s*([\s\S]*?)$/gi,
+    (_, imageContent) => {
+      return renderPolaroidImage(extractImageDisplayText(imageContent));
     },
   );
 
@@ -3360,6 +3371,15 @@ function parseAIPostOutput(rawOutput: string): {
     }
     postContent = postContent.replace(/\[IMAGE\].*?\[\/IMAGE\]/gi, "").trim();
 
+    // 相容未閉合的 [IMAGE]... 片段（直到 PLURKPOST 結尾）
+    if (/\[IMAGE\]/i.test(postContent)) {
+      const looseImageMatch = postContent.match(/\[IMAGE\]\s*([\s\S]*)$/i);
+      if (looseImageMatch) {
+        result.images.push(looseImageMatch[1].trim());
+        postContent = postContent.replace(/\[IMAGE\]\s*[\s\S]*$/i, "").trim();
+      }
+    }
+
     // 移除可能混入的 [REACTIONS] 標籤
     postContent = postContent
       .replace(/\[REACTIONS\].*?\[\/REACTIONS\]/gi, "")
@@ -3372,7 +3392,7 @@ function parseAIPostOutput(rawOutput: string): {
       .replace(/\[QUALIFIER\].*?\[\/QUALIFIER\]/gi, "")
       .replace(/\[REACTIONS\].*?\[\/REACTIONS\]/gi, "")
       .replace(/`/g, "")
-      .replace(/<output>|<\/output>/gi, "")
+      .replace(/<content>|<\/content>/gi, "")
       .trim();
     result.content = cleanContent;
   }

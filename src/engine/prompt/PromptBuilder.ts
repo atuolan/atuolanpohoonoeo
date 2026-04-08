@@ -1602,7 +1602,7 @@ export class PromptBuilder {
           const h = now.getHours().toString().padStart(2, "0");
           const m = now.getMinutes().toString().padStart(2, "0");
           const currentDatetime = `${y}-${mon}-${day}T${h}:${m}`;
-          const content = `[時間跳轉]\n當故事需要時間跳轉時（如「兩個月後」「三天後」），在 </output> 之後輸出：\n<time-jump datetime="YYYY-MM-DDTHH:mm" reason="跳轉原因"/>\n例如：<time-jump datetime="${currentDatetime}" reason="當前時間點"/>\n此標籤會自動更新故事時間軸，之後的時間感知都會以新時間為基準。`;
+          const content = `[時間跳轉]\n當故事需要時間跳轉時（如「兩個月後」「三天後」），在 </content> 之後輸出：\n<time-jump datetime="YYYY-MM-DDTHH:mm" reason="跳轉原因"/>\n例如：<time-jump datetime="${currentDatetime}" reason="當前時間點"/>\n此標籤會自動更新故事時間軸，之後的時間感知都會以新時間為基準。`;
           return { role: getRole(), content, identifier };
         }
 

@@ -97,9 +97,9 @@ describe("XmlFuzzyRepair", () => {
       expect(result.logs.some((l) => l.rule === "unclosed-msg-tag")).toBe(true);
     });
 
-    it("inserts </msg> before </output>", () => {
-      const result = repairXmlTags('<output><msg name="A">hello</output>');
-      expect(result.content).toBe('<output><msg name="A">hello</msg></output>');
+    it("inserts </msg> before </content>", () => {
+      const result = repairXmlTags('<content><msg name="A">hello</content>');
+      expect(result.content).toBe('<content><msg name="A">hello</msg></content>');
     });
   });
 

@@ -42,7 +42,7 @@ describe("Msg Tag Name and Sticker Extraction", () => {
   it('extracts correct sender name from <msg name="..."> tags', () => {
     fc.assert(
       fc.property(nameArb, safeTextArb, (name, content) => {
-        const xml = `<output><msg name="${name}">${content}</msg></output>`;
+        const xml = `<content><msg name="${name}">${content}</msg></content>`;
         const parsed = parseGroupChatResponse(xml);
 
         expect(parsed.messages.length).toBe(1);
@@ -55,7 +55,7 @@ describe("Msg Tag Name and Sticker Extraction", () => {
   it("extracts correct sender name and meaning from sticker <msg> tags", () => {
     fc.assert(
       fc.property(nameArb, safeTextArb, (name, meaning) => {
-        const xml = `<output><msg name="${name}" type="sticker" meaning="${meaning}"/></output>`;
+        const xml = `<content><msg name="${name}" type="sticker" meaning="${meaning}"/></content>`;
         const parsed = parseGroupChatResponse(xml);
 
         expect(parsed.messages.length).toBe(1);
@@ -79,7 +79,7 @@ describe("Msg Tag Name and Sticker Extraction", () => {
           const xmlTags = msgs.map(
             (m) => `<msg name="${m.name}">${m.content}</msg>`,
           );
-          const xml = `<output>${xmlTags.join("")}</output>`;
+          const xml = `<content>${xmlTags.join("")}</content>`;
           const parsed = parseGroupChatResponse(xml);
 
           expect(parsed.messages.length).toBe(msgs.length);
@@ -104,7 +104,7 @@ describe("Msg Tag Name and Sticker Extraction", () => {
             (m) =>
               `<msg name="${m.name}" type="sticker" meaning="${m.meaning}"/>`,
           );
-          const xml = `<output>${xmlTags.join("")}</output>`;
+          const xml = `<content>${xmlTags.join("")}</content>`;
           const parsed = parseGroupChatResponse(xml);
 
           expect(parsed.messages.length).toBe(msgs.length);

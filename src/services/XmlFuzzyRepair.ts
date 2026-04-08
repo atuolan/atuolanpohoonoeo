@@ -54,7 +54,7 @@ export function repairXmlTags(content: string): RepairResult {
   // Rule 1: 標籤名前後多餘空格
   // 匹配 < msg>, < /msg>, < recall>, < dm>, < group-action> 等
   result = result.replace(
-    /<\s+(\/?\s*(?:msg|recall|dm|group-action|output|think))/gi,
+    /<\s+(\/?\s*(?:msg|recall|dm|group-action|content|think))/gi,
     (match, tagBody) => {
       const cleaned = tagBody.replace(/\s+/g, "");
       const repaired = `<${cleaned}`;
@@ -68,7 +68,7 @@ export function repairXmlTags(content: string): RepairResult {
   // Also fix spaces before closing >: <msg name="x" > → <msg name="x">
   // and closing tags with spaces: < / msg> → </msg>
   result = result.replace(
-    /<\s*\/\s+(msg|recall|dm|group-action|output|think)\s*>/gi,
+    /<\s*\/\s+(msg|recall|dm|group-action|content|think)\s*>/gi,
     (match, tagName) => {
       const repaired = `</${tagName.toLowerCase()}>`;
       if (match !== repaired) {
@@ -189,7 +189,7 @@ export function repairXmlTags(content: string): RepairResult {
 
 /**
  * 修復未閉合的 <msg> 標籤
- * 以下一個 <msg>、<recall>、<dm>、<group-action> 或 </output> 作為邊界自動補上 </msg>
+ * 以下一個 <msg>、<recall>、<dm>、<group-action> 或 </content> 作為邊界自動補上 </msg>
  */
 function repairUnclosedMsgTags(content: string, logs: RepairLog[]): string {
   // Match all <msg ...> opening tags (non-self-closing)
@@ -220,9 +220,9 @@ function repairUnclosedMsgTags(content: string, logs: RepairLog[]): string {
   if (openTags.length === 0) return content;
 
   // For each opening tag, check if there's a </msg> before the next boundary
-  // Boundaries: next <msg, <recall, <dm, <group-action, </output>, end of string
+  // Boundaries: next <msg, <recall, <dm, <group-action, </content>, end of string
   const boundaryRegex =
-    /<msg[\s>]|<recall[\s>]|<dm[\s>]|<group-action[\s>\/]|<\/output>/gi;
+    /<msg[\s>]|<recall[\s>]|<dm[\s>]|<group-action[\s>\/]|<\/content>/gi;
   const boundaries: number[] = [];
   let bMatch;
   while ((bMatch = boundaryRegex.exec(content)) !== null) {

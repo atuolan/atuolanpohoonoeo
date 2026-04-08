@@ -47,7 +47,7 @@ describe("Recall Tag Parsing", () => {
   it("parses a single recall tag with correct fields", () => {
     fc.assert(
       fc.property(nameArb, safeTextArb, (name, content) => {
-        const xml = `<output><recall name="${name}">${content}</recall></output>`;
+        const xml = `<content><recall name="${name}">${content}</recall></content>`;
         const parsed = parseGroupChatResponse(xml);
 
         expect(parsed.messages.length).toBe(1);
@@ -71,7 +71,7 @@ describe("Recall Tag Parsing", () => {
           const xmlTags = recalls.map(
             (r) => `<recall name="${r.name}">${r.content}</recall>`,
           );
-          const xml = `<output>${xmlTags.join("")}</output>`;
+          const xml = `<content>${xmlTags.join("")}</content>`;
           const parsed = parseGroupChatResponse(xml);
 
           expect(parsed.messages.length).toBe(recalls.length);
@@ -95,7 +95,7 @@ describe("Recall Tag Parsing", () => {
         nameArb,
         safeTextArb,
         (recallName, recallContent, msgName, msgContent) => {
-          const xml = `<output><msg name="${msgName}">${msgContent}</msg><recall name="${recallName}">${recallContent}</recall></output>`;
+          const xml = `<content><msg name="${msgName}">${msgContent}</msg><recall name="${recallName}">${recallContent}</recall></content>`;
           const parsed = parseGroupChatResponse(xml);
 
           expect(parsed.messages.length).toBe(2);

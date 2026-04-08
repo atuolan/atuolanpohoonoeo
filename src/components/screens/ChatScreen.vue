@@ -294,6 +294,14 @@ interface Message {
   charRecallContent?: string;
   charRecallHints?: string[];
   charRecallRevealed?: boolean;
+  // 面對面請求相關
+  isFaceToFaceRequest?: boolean;
+  faceToFaceRequestReason?: string;
+  faceToFaceRequestStatus?: "pending" | "accepted" | "rejected";
+  // 線上模式請求相關
+  isOnlineModeRequest?: boolean;
+  onlineModeRequestReason?: string;
+  onlineModeRequestStatus?: "pending" | "accepted" | "rejected";
   // 封鎖系統相關
   sentWhileBlocked?: boolean;
   isSystemNotification?: boolean;
@@ -787,12 +795,11 @@ const loadMoreSentinelRef = ref<HTMLElement | null>(null); // 頂部哨兵元素
 
 // 可見訊息列表（只渲染最後 N 條，並過濾掉隱藏的繼續提示）
 const visibleMessages = computed(() => {
-  const total = messages.value.length;
-  const sliced =
-    total <= visibleCount.value
-      ? messages.value
-      : messages.value.slice(total - visibleCount.value);
-  return sliced.filter((m) => !m.isContinuePrompt);
+  const filteredMessages = messages.value.filter((m) => !m.isContinuePrompt);
+  const total = filteredMessages.length;
+  return total <= visibleCount.value
+    ? filteredMessages
+    : filteredMessages.slice(total - visibleCount.value);
 });
 
 // 是否還有更早的訊息可以載入
@@ -1800,7 +1807,7 @@ function rescanAffinityFromMessages() {
     const msg = messages.value[i];
     if (msg.role !== "ai" || !msg.content) continue;
 
-    // 優先使用保存的原始 <update> 區塊（因為 msg.content 只包含 <output> 內的內容）
+    // 優先使用保存的原始 <update> 區塊（因為 msg.content 只包含 <content> 內的內容）
     const searchContent = msg._rawAffinityBlock || msg.content;
     const updates = parseAffinityUpdateTags(searchContent);
     if (updates.length > 0) {
@@ -2829,6 +2836,44 @@ async function handleCharRecallReveal(id: string) {
   const msg = messages.value.find((m) => m.id === id);
   if (!msg || !msg.isCharRecall || msg.charRecallType !== 'seen') return;
   msg.charRecallRevealed = true;
+  await saveChatImmediate();
+}
+
+async function handleAcceptFaceToFaceRequest(id: string) {
+  const msg = messages.value.find((m) => m.id === id);
+  if (!msg || !msg.isFaceToFaceRequest || msg.faceToFaceRequestStatus !== "pending") {
+    return;
+  }
+  msg.faceToFaceRequestStatus = "accepted";
+  chatFaceToFaceMode.value = true;
+  await saveChatImmediate();
+}
+
+async function handleRejectFaceToFaceRequest(id: string) {
+  const msg = messages.value.find((m) => m.id === id);
+  if (!msg || !msg.isFaceToFaceRequest || msg.faceToFaceRequestStatus !== "pending") {
+    return;
+  }
+  msg.faceToFaceRequestStatus = "rejected";
+  await saveChatImmediate();
+}
+
+async function handleAcceptOnlineModeRequest(id: string) {
+  const msg = messages.value.find((m) => m.id === id);
+  if (!msg || !msg.isOnlineModeRequest || msg.onlineModeRequestStatus !== "pending") {
+    return;
+  }
+  msg.onlineModeRequestStatus = "accepted";
+  chatFaceToFaceMode.value = false;
+  await saveChatImmediate();
+}
+
+async function handleRejectOnlineModeRequest(id: string) {
+  const msg = messages.value.find((m) => m.id === id);
+  if (!msg || !msg.isOnlineModeRequest || msg.onlineModeRequestStatus !== "pending") {
+    return;
+  }
+  msg.onlineModeRequestStatus = "rejected";
   await saveChatImmediate();
 }
 
@@ -5061,7 +5106,9 @@ async function triggerAIResponse(options?: {
                 !parsedMsg.isVoice &&
                 !parsedMsg.isWaimaiPaymentResult &&
                 !parsedMsg.isWaimaiDelivery &&
-                !parsedMsg.isCharRecall
+                !parsedMsg.isCharRecall &&
+                !parsedMsg.isFaceToFaceRequest &&
+                !parsedMsg.isOnlineModeRequest
               ) {
                 continue;
               }
@@ -5139,6 +5186,16 @@ async function triggerAIResponse(options?: {
                 charRecallType: parsedMsg.charRecallType,
                 charRecallContent: parsedMsg.charRecallContent,
                 charRecallHints: parsedMsg.charRecallHints,
+                isFaceToFaceRequest: parsedMsg.isFaceToFaceRequest,
+                faceToFaceRequestReason: parsedMsg.faceToFaceRequestReason,
+                faceToFaceRequestStatus: parsedMsg.isFaceToFaceRequest
+                  ? "pending"
+                  : undefined,
+                isOnlineModeRequest: parsedMsg.isOnlineModeRequest,
+                onlineModeRequestReason: parsedMsg.onlineModeRequestReason,
+                onlineModeRequestStatus: parsedMsg.isOnlineModeRequest
+                  ? "pending"
+                  : undefined,
               };
 
               // 外賣付款結果/送達：從最近訊息中找到訂單快照並附加
@@ -5882,7 +5939,9 @@ async function triggerAIResponse(options?: {
                   !parsedMsg.isVoice &&
                   !parsedMsg.isWaimaiPaymentResult &&
                   !parsedMsg.isWaimaiDelivery &&
-                  !parsedMsg.isCharRecall
+                  !parsedMsg.isCharRecall &&
+                  !parsedMsg.isFaceToFaceRequest &&
+                  !parsedMsg.isOnlineModeRequest
                 ) {
                   continue;
                 }
@@ -5955,6 +6014,16 @@ async function triggerAIResponse(options?: {
                   charRecallType: parsedMsg.charRecallType,
                   charRecallContent: parsedMsg.charRecallContent,
                   charRecallHints: parsedMsg.charRecallHints,
+                  isFaceToFaceRequest: parsedMsg.isFaceToFaceRequest,
+                  faceToFaceRequestReason: parsedMsg.faceToFaceRequestReason,
+                  faceToFaceRequestStatus: parsedMsg.isFaceToFaceRequest
+                    ? "pending"
+                    : undefined,
+                  isOnlineModeRequest: parsedMsg.isOnlineModeRequest,
+                  onlineModeRequestReason: parsedMsg.onlineModeRequestReason,
+                  onlineModeRequestStatus: parsedMsg.isOnlineModeRequest
+                    ? "pending"
+                    : undefined,
                 };
 
                 // 外賣付款結果/送達
@@ -6103,7 +6172,7 @@ async function triggerAIResponse(options?: {
   } catch (error) {
     if ((error as Error).name === "AbortError") {
       // 用戶取消生成：保留已有內容，沒有內容就直接移除佔位氣泡
-      const lastMsg = messages.value[messages.value.length - 1];
+      const lastMsg = getActiveStreamingAIMessage();
       if (lastMsg && lastMsg.isStreaming) {
         lastMsg.isStreaming = false;
         if (useStreamingWindowEnabled.value && streamingWindow.content.value) {
@@ -6111,7 +6180,10 @@ async function triggerAIResponse(options?: {
         }
 
         if (!lastMsg.content || !lastMsg.content.trim()) {
-          messages.value.pop();
+          const msgIndex = messages.value.findIndex((m) => m.id === lastMsg.id);
+          if (msgIndex !== -1) {
+            messages.value.splice(msgIndex, 1);
+          }
           await saveChatImmediate();
         }
       }
@@ -6123,7 +6195,7 @@ async function triggerAIResponse(options?: {
     }
     const errorMsg = error instanceof Error ? error.message : String(error);
     // 檢查是否已有 AI 訊息佔位符
-    const lastMsg = messages.value[messages.value.length - 1];
+    const lastMsg = getActiveStreamingAIMessage();
     if (lastMsg && lastMsg.role === "ai" && lastMsg.isStreaming) {
       lastMsg.content = `[錯誤] ${errorMsg}`;
       lastMsg.isStreaming = false;
@@ -6239,6 +6311,16 @@ function stopAIGeneration() {
   }
 }
 
+function getActiveStreamingAIMessage() {
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const message = messages.value[i];
+    if (message.role === "ai" && message.isStreaming) {
+      return message;
+    }
+  }
+  return null;
+}
+
 // ===== 流式輸出窗口事件處理 =====
 
 // 處理流式窗口停止
@@ -6251,8 +6333,8 @@ async function handleStreamingClose() {
   // 注意：如果流式已經完成（done 事件已處理），訊息已經被解析並添加了
   // 此時只需要隱藏窗口，不需要再次處理訊息
 
-  // 檢查最後一條訊息是否還是流式狀態（未完成）
-  const lastMsg = messages.value[messages.value.length - 1];
+  // 取得目前仍在流式中的 AI 訊息，避免被隱藏的 [繼續] 提示干擾
+  const lastMsg = getActiveStreamingAIMessage();
   const windowContent = applyAIOutputRegex(streamingWindow.content.value);
 
   // 只有當最後一條訊息還在流式狀態時，才需要處理
@@ -6262,6 +6344,8 @@ async function handleStreamingClose() {
     lastMsg.isStreaming &&
     windowContent
   ) {
+    const lastMsgIndex = messages.value.findIndex((m) => m.id === lastMsg.id);
+
     // 關閉窗口時如果還在生成中，先停止生成以避免 done 事件重複處理
     stopAIGeneration();
 
@@ -6270,7 +6354,9 @@ async function handleStreamingClose() {
       // 群聊/多人卡模式使用群聊解析器
       if (useGroupChatParser.value) {
         const parsed = parseGroupChatResponse(windowContent);
-        messages.value.pop();
+        if (lastMsgIndex !== -1) {
+          messages.value.splice(lastMsgIndex, 1);
+        }
 
         for (let i = 0; i < parsed.messages.length; i++) {
           const parsedMsg = parsed.messages[i];
@@ -6551,7 +6637,9 @@ async function handleStreamingClose() {
             "[ChatScreen] 關閉窗口時 AI 回覆解析失敗，使用原始內容:",
             parseError,
           );
-          messages.value.pop();
+          if (lastMsgIndex !== -1) {
+            messages.value.splice(lastMsgIndex, 1);
+          }
           messages.value.push({
             id: `msg_${Date.now()}`,
             role: "ai",
@@ -6569,7 +6657,9 @@ async function handleStreamingClose() {
           });
 
           // 移除原始的佔位訊息
-          messages.value.pop();
+          if (lastMsgIndex !== -1) {
+            messages.value.splice(lastMsgIndex, 1);
+          }
 
           // 為每個解析後的訊息創建獨立的聊天訊息（逐條顯示：首條延遲 500ms，後續每條間隔 300ms）
           let _firstNewAiMsgId3: string | undefined;
@@ -7719,6 +7809,12 @@ async function loadOrCreateChat(overrideChatId?: string) {
             charRecallContent: (m as any).charRecallContent,
             charRecallHints: (m as any).charRecallHints,
             charRecallRevealed: (m as any).charRecallRevealed,
+            isFaceToFaceRequest: (m as any).isFaceToFaceRequest,
+            faceToFaceRequestReason: (m as any).faceToFaceRequestReason,
+            faceToFaceRequestStatus: (m as any).faceToFaceRequestStatus,
+            isOnlineModeRequest: (m as any).isOnlineModeRequest,
+            onlineModeRequestReason: (m as any).onlineModeRequestReason,
+            onlineModeRequestStatus: (m as any).onlineModeRequestStatus,
             // 封鎖系統相關
             sentWhileBlocked: (m as any).sentWhileBlocked,
             isSystemNotification: (m as any).isSystemNotification,
@@ -10038,6 +10134,8 @@ onUnmounted(() => {
             message.isStreaming,
             message.giftReceived,
             message.transferStatus,
+            message.faceToFaceRequestStatus,
+            message.onlineModeRequestStatus,
             isSelectingForDelete && selectedMessageIds.includes(message.id),
             isSelectingForScreenshot &&
               screenshotSelectedIds.includes(message.id),
@@ -10236,6 +10334,12 @@ onUnmounted(() => {
             :char-recall-content="message.charRecallContent"
             :char-recall-hints="message.charRecallHints"
             :char-recall-revealed="message.charRecallRevealed"
+            :is-face-to-face-request="message.isFaceToFaceRequest"
+            :face-to-face-request-reason="message.faceToFaceRequestReason"
+            :face-to-face-request-status="message.faceToFaceRequestStatus"
+            :is-online-mode-request="message.isOnlineModeRequest"
+            :online-mode-request-reason="message.onlineModeRequestReason"
+            :online-mode-request-status="message.onlineModeRequestStatus"
             :is-selected="
               (isSelectingForDelete &&
                 selectedMessageIds.includes(message.id)) ||
@@ -10272,6 +10376,10 @@ onUnmounted(() => {
             @split-regex-html="handleSplitRegexHtml"
             @recall="handleMessageRecall"
             @char-recall-reveal="handleCharRecallReveal"
+            @accept-face-to-face-request="handleAcceptFaceToFaceRequest"
+            @reject-face-to-face-request="handleRejectFaceToFaceRequest"
+            @accept-online-mode-request="handleAcceptOnlineModeRequest"
+            @reject-online-mode-request="handleRejectOnlineModeRequest"
           />
           <!-- 封鎖期間訊息的驚嘆號指示器（獨立行，在訊息下方顯示） -->
           <div

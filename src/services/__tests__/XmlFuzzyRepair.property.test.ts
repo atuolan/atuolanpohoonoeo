@@ -16,7 +16,7 @@ const REPAIRABLE_TAGS = [
   "recall",
   "dm",
   "group-action",
-  "output",
+  "content",
   "think",
 ] as const;
 

@@ -122,12 +122,12 @@ export function useChatSummaryDiary(deps: {
   const summaryGeneratingLock = ref(false);
   const diaryGeneratingLock = ref(false);
 
-  // 清理 AI 生成內容中的 <output>/<think> 標籤
+  // 清理 AI 生成內容中的 <content>/<think> 標籤
   function stripOutputTags(text: string): string {
-    let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
-    const match = cleaned.match(/<output>([\s\S]*?)<\/output>/i);
+    let cleaned = text.replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "");
+    const match = cleaned.match(/<content>([\s\S]*?)<\/content>/i);
     if (match) return match[1].trim();
-    return cleaned.replace(/<\/?output>/gi, "").trim();
+    return cleaned.replace(/<\/?content>/gi, "").trim();
   }
 
   // IDB 持久化 helpers

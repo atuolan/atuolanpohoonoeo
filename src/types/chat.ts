@@ -427,6 +427,18 @@ export interface ChatMessage {
   isFriendRequest?: boolean;
   /** 好友申請結果 */
   friendRequestResult?: "accepted" | "rejected";
+  /** 是否為面對面模式切換請求 */
+  isFaceToFaceRequest?: boolean;
+  /** 面對面模式切換請求原因 */
+  faceToFaceRequestReason?: string;
+  /** 面對面模式切換請求狀態 */
+  faceToFaceRequestStatus?: "pending" | "accepted" | "rejected";
+  /** 是否為線上模式切換請求 */
+  isOnlineModeRequest?: boolean;
+  /** 線上模式切換請求原因 */
+  onlineModeRequestReason?: string;
+  /** 線上模式切換請求狀態 */
+  onlineModeRequestStatus?: "pending" | "accepted" | "rejected";
   /** 是否為道歉外賣送達卡片 */
   isApologyFood?: boolean;
   /** 道歉外賣資料 */

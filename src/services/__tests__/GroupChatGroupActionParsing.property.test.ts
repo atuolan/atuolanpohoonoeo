@@ -50,7 +50,7 @@ describe("Group-Action Tag Parsing", () => {
   it("parses rename action with actor and value", () => {
     fc.assert(
       fc.property(nameArb, safeValueArb, (actor, value) => {
-        const xml = `<output><group-action type="rename" actor="${actor}" value="${value}"/></output>`;
+        const xml = `<content><group-action type="rename" actor="${actor}" value="${value}"/></content>`;
         const parsed = parseGroupChatResponse(xml);
 
         expect(parsed.messages.length).toBe(1);
@@ -73,7 +73,7 @@ describe("Group-Action Tag Parsing", () => {
         nameArb,
         nameArb,
         (type, actor, target) => {
-          const xml = `<output><group-action type="${type}" actor="${actor}" target="${target}"/></output>`;
+          const xml = `<content><group-action type="${type}" actor="${actor}" target="${target}"/></content>`;
           const parsed = parseGroupChatResponse(xml);
 
           expect(parsed.messages.length).toBe(1);
@@ -97,7 +97,7 @@ describe("Group-Action Tag Parsing", () => {
         nameArb,
         safeValueArb,
         (type, actor, target, value) => {
-          const xml = `<output><group-action type="${type}" actor="${actor}" target="${target}" value="${value}"/></output>`;
+          const xml = `<content><group-action type="${type}" actor="${actor}" target="${target}" value="${value}"/></content>`;
           const parsed = parseGroupChatResponse(xml);
 
           expect(parsed.messages.length).toBe(1);
@@ -131,7 +131,7 @@ describe("Group-Action Tag Parsing", () => {
             (a) =>
               `<group-action type="${a.type}" actor="${a.actor}" target="${a.target}" value="${a.value}"/>`,
           );
-          const xml = `<output>${xmlTags.join("")}</output>`;
+          const xml = `<content>${xmlTags.join("")}</content>`;
           const parsed = parseGroupChatResponse(xml);
 
           expect(parsed.messages.length).toBe(actions.length);
@@ -159,7 +159,7 @@ describe("Group-Action Tag Parsing", () => {
         nameArb,
         safeValueArb,
         (actionType, actor, target, value, msgName, msgContent) => {
-          const xml = `<output><msg name="${msgName}">${msgContent}</msg><group-action type="${actionType}" actor="${actor}" target="${target}" value="${value}"/></output>`;
+          const xml = `<content><msg name="${msgName}">${msgContent}</msg><group-action type="${actionType}" actor="${actor}" target="${target}" value="${value}"/></content>`;
           const parsed = parseGroupChatResponse(xml);
 
           expect(parsed.messages.length).toBe(2);

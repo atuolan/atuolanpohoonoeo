@@ -162,12 +162,12 @@ describe("ResponseParser - Schedule Call Tag Parsing", () => {
           reasonArb,
           fc.string(),
           (delay, reason, otherContent) => {
-            // Build a realistic AI response with think, output, and schedule-call
+            // Build a realistic AI response with think, content, and schedule-call
             const response = `
 <think>Some thinking content ${otherContent}</think>
-<output>
+<content>
 <msg>Hello!</msg>
-</output>
+</content>
 <schedule-call delay="${delay}" reason="${reason}"/>
 `;
             const result = parseAIResponse(response);

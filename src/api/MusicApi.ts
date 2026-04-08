@@ -20,15 +20,20 @@ async function fetchFirstValidJson<T>(
   apiName: string,
 ): Promise<T | null> {
   for (let i = 0; i < urls.length; i++) {
+    const isLastAttempt = i === urls.length - 1;
     const label = `${apiName}#${i + 1}`;
     try {
       const response = await fetch(urls[i]);
-      const data = await parseJsonResponse<T>(response, label);
+      const data = await parseJsonResponse<T>(response, label, !isLastAttempt);
       if (data) return data;
     } catch (error) {
-      console.warn(`[MusicApi] ${label} 網路錯誤:`, error);
+      if (isLastAttempt) {
+        console.warn(`[MusicApi] ${label} 網路錯誤:`, error);
+      }
     }
   }
+
+  console.warn(`[MusicApi] ${apiName} 所有來源都失敗`);
 
   return null;
 }
@@ -69,12 +74,15 @@ interface QQMusicSongSearchResponse {
 async function parseJsonResponse<T>(
   response: Response,
   apiName: string,
+  suppressWarning = false,
 ): Promise<T | null> {
   const contentType = response.headers.get("content-type") || "";
   const text = await response.text();
 
   if (!response.ok) {
-    console.warn(`[MusicApi] ${apiName} 請求失敗:`, response.status);
+    if (!suppressWarning) {
+      console.warn(`[MusicApi] ${apiName} 請求失敗:`, response.status);
+    }
     return null;
   }
 
@@ -84,14 +92,18 @@ async function parseJsonResponse<T>(
     trimmed.startsWith("<!DOCTYPE") ||
     trimmed.startsWith("<html")
   ) {
-    console.warn(`[MusicApi] ${apiName} 返回 HTML，可能是代理未生效`);
+    if (!suppressWarning) {
+      console.warn(`[MusicApi] ${apiName} 返回 HTML，可能是代理未生效`);
+    }
     return null;
   }
 
   try {
     return JSON.parse(text) as T;
   } catch {
-    console.warn(`[MusicApi] ${apiName} 返回非 JSON 內容`);
+    if (!suppressWarning) {
+      console.warn(`[MusicApi] ${apiName} 返回非 JSON 內容`);
+    }
     return null;
   }
 }

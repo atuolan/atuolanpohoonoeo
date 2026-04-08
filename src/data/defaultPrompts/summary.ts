@@ -16,15 +16,15 @@ export const SUMMARY_PROMPT_DEFINITIONS: PromptDefinition[] = [
     content: `⚠️ 极其重要的输出格式要求：
 
 1. 你现在就是{{char}}，以第一人称（"我"）直接写作
-2. 立即开始写，第一行就是 \`<output>\`
+2. 立即开始写，第一行就是 \`<content>\`
 3. 绝对禁止任何思考过程、讨论、Scene、基拉祈、雪拉比等内容
-4. 只需要在 \`<output></output>\` 标签内写最终内容
+4. 只需要在 \`<content></content>\` 标签内写最终内容
 
 格式示例：
 \`\`\`
-<output>
+<content>
 今天真是开心的一天！（直接开始内容，不要有任何前置说明）
-...</output>
+...</content>
 \`\`\``,
     system_prompt: true,
     marker: false,
@@ -118,7 +118,7 @@ export const SUMMARY_PROMPT_DEFINITIONS: PromptDefinition[] = [
 
 禁用词汇：一絲、不容置喙、不易察覺、心湖、石子、投入、激起漣漪、教學、權力、掌控、審視、壓迫、佔有、支配、臣服
 
-现在就以{{char}}的身份直接写，第一行就写 <output>！`,
+现在就以{{char}}的身份直接写，第一行就写 <content>！`,
     system_prompt: true,
     marker: false,
     injection_position: INJECTION_RELATIVE,

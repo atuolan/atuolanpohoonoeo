@@ -664,7 +664,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   // ===== 解析 JSON 輸出 =====
   function parsePhoneJsonOutput(content: string): { text: string; tone?: string }[] {
     if (!content?.trim()) return [{ text: "..." }];
-    let cleaned = content.replace(/<think>[\s\S]*?<\/think>/gi, "")
+    let cleaned = content.replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "")
       .replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
     // 來電 assistant prefill 會導致 AI 回覆缺少開頭的 [，自動補齊
     if (cleaned.startsWith("{") && !cleaned.startsWith("[")) {
@@ -681,7 +681,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     }
     const voiceMatch = cleaned.match(/<voice>([\s\S]*?)<\/voice>/i);
     if (voiceMatch) return [{ text: voiceMatch[1].trim() || "..." }];
-    cleaned = cleaned.replace(/<\/?(?:voice|output|msg)>/gi, "").trim();
+    cleaned = cleaned.replace(/<\/?(?:voice|content|msg)>/gi, "").trim();
     return cleaned ? [{ text: cleaned }] : [{ text: "..." }];
   }
 

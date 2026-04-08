@@ -150,7 +150,7 @@ describe("Group Chat XML Round-Trip Parsing", () => {
         (thinking, tags) => {
           // Build canonical XML
           const thinkPart = thinking ? `<think>${thinking}</think>` : "";
-          const outputPart = `<output>${tags.map(msgDefToXml).join("")}</output>`;
+          const outputPart = `<content>${tags.map(msgDefToXml).join("")}</content>`;
           const xml = `${thinkPart}${outputPart}`;
 
           // Parse

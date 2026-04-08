@@ -1,6 +1,6 @@
 /**
  * AI 回覆解析服務
- * 處理導演系統的 <think>、<output>、<msg> 標籤
+ * 處理導演系統的 <think>、<content>、<msg> 標籤
  */
 
 import type { CalendarEventData } from "@/types/calendar";
@@ -55,6 +55,12 @@ export interface ParsedMessage {
   charRecallType?: 'seen' | 'hidden';
   charRecallContent?: string;
   charRecallHints?: string[];
+  // 面對面模式切換請求
+  isFaceToFaceRequest?: boolean;
+  faceToFaceRequestReason?: string;
+  // 線上模式切換請求
+  isOnlineModeRequest?: boolean;
+  onlineModeRequestReason?: string;
 }
 
 export interface ParsedResponse {
@@ -93,7 +99,7 @@ export interface ParsedResponse {
  * 用於面對面模式等長文本場景，將特殊標籤從文字中拆分成獨立訊息
  */
 function hasInlineSpecialTags(content: string): boolean {
-  return /<(?:timetravel|voice|pay|refund|location|redpacket\s|waimai-pay\s|waimai-delivery)[\s\S]*?>/i.test(
+  return /<(?:timetravel|voice|pay|refund|location|redpacket\s|waimai-pay\s|waimai-delivery|face-to-face-request\s|online-mode-request\s)[\s\S]*?>/i.test(
     content,
   );
 }
@@ -110,7 +116,7 @@ function hasInlineSpecialTags(content: string): boolean {
 function splitBySpecialTags(content: string): ParsedMessage[] {
   // 匹配所有需要拆分的特殊標籤（按出現順序）
   const tagRegex =
-    /<timetravel>([\s\S]*?)<\/timetravel>|<voice>([\s\S]*?)<\/voice>|<pay>([\d.]+)(?::([^<]*?))?<\/pay>|<refund>([\d.]+)<\/refund>|<location>([\s\S]*?)<\/location>|<redpacket\s+([^>]+)\/?>|<waimai-pay\s+([^>]*?)\s*\/?>|<waimai-delivery\s*\/?>/gi;
+    /<timetravel>([\s\S]*?)<\/timetravel>|<voice>([\s\S]*?)<\/voice>|<pay>([\d.]+)(?::([^<]*?))?<\/pay>|<refund>([\d.]+)<\/refund>|<location>([\s\S]*?)<\/location>|<redpacket\s+([^>]+)\/?>|<waimai-pay\s+([^>]*?)\s*\/?>|<waimai-delivery\s*\/?>|<face-to-face-request\s+([^>]*?)\s*\/?>|<online-mode-request\s+([^>]*?)\s*\/?>/gi;
 
   interface TagMatch {
     index: number;
@@ -188,6 +194,22 @@ function splitBySpecialTags(content: string): ParsedMessage[] {
       msg = {
         content: "",
         isWaimaiDelivery: true,
+      };
+    } else if (match[9] !== undefined) {
+      // <face-to-face-request reason="..."/>
+      const attrs = match[9];
+      msg = {
+        content: "",
+        isFaceToFaceRequest: true,
+        faceToFaceRequestReason: extractAttr(attrs, "reason") || undefined,
+      };
+    } else if (match[10] !== undefined) {
+      // <online-mode-request reason="..."/>
+      const attrs = match[10];
+      msg = {
+        content: "",
+        isOnlineModeRequest: true,
+        onlineModeRequestReason: extractAttr(attrs, "reason") || undefined,
       };
     } else {
       continue;
@@ -382,6 +404,30 @@ function parseTextOnlyContent(content: string): ParsedMessage {
         .replace(/<recall-secret\s+[^>]*?\s*\/?>/gi, "")
         .trim();
     }
+  }
+
+  const faceToFaceRequestMatch = result.content.match(
+    /<face-to-face-request\s+([^>]*?)\s*\/?>/i,
+  );
+  if (faceToFaceRequestMatch) {
+    const attrs = faceToFaceRequestMatch[1];
+    result.isFaceToFaceRequest = true;
+    result.faceToFaceRequestReason = extractAttr(attrs, "reason") || undefined;
+    result.content = result.content
+      .replace(/<face-to-face-request\s+[^>]*?\s*\/?>/gi, "")
+      .trim();
+  }
+
+  const onlineModeRequestMatch = result.content.match(
+    /<online-mode-request\s+([^>]*?)\s*\/?>/i,
+  );
+  if (onlineModeRequestMatch) {
+    const attrs = onlineModeRequestMatch[1];
+    result.isOnlineModeRequest = true;
+    result.onlineModeRequestReason = extractAttr(attrs, "reason") || undefined;
+    result.content = result.content
+      .replace(/<online-mode-request\s+[^>]*?\s*\/?>/gi, "")
+      .trim();
   }
 
   return result;
@@ -746,21 +792,21 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
   };
 
   // 1. 提取 <think> 內容
-  const thinkMatch = rawResponse.match(/<think>([\s\S]*?)<\/think>/i);
+  const thinkMatch = rawResponse.match(/<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/i);
   if (thinkMatch) {
     result.thinking = thinkMatch[1].trim();
   }
 
-  // 2. 提取 <output> 內容
+  // 2. 提取 <content> 內容
   let outputContent = "";
-  const outputMatch = rawResponse.match(/<output>([\s\S]*?)<\/output>/i);
+  const outputMatch = rawResponse.match(/<content>([\s\S]*?)<\/content>/i);
   if (outputMatch) {
     outputContent = outputMatch[1].trim();
   } else {
-    // 如果沒有 <output> 標籤，嘗試移除 <think> 後使用剩餘內容
+    // 如果沒有 <content> 標籤，嘗試移除 <think> 後使用剩餘內容
     // 同時移除可能的 Scene、基拉祈、雪拉比 等思考過程標記
     outputContent = rawResponse
-      .replace(/<think>[\s\S]*?<\/think>/gi, "")
+      .replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "")
       .replace(/Scene\s*\d+[^<]*/gi, "") // 移除 Scene 標記
       .replace(/基拉祈[：:][^<\n]*/gi, "") // 移除基拉祈的思考
       .replace(/雪拉比[：:][^<\n]*/gi, "") // 移除雪拉比的思考
@@ -811,8 +857,8 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
           .trim();
         if (beforeContent && !isThinkingContent(beforeContent)) {
           const cleanBefore = beforeContent
-            .replace(/<\/?output>/gi, "")
-            .replace(/<\/?think>/gi, "")
+            .replace(/<\/?content>/gi, "")
+            .replace(/<\/?think(?:ing)?>/gi, "")
             .trim();
           if (cleanBefore) {
             const parsedBefore = parseMessageContent(cleanBefore);
@@ -850,9 +896,14 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
             parsed.isLocation ||
             parsed.isTransfer ||
             parsed.isGift ||
+            parsed.isAvatarChange ||
             parsed.isVoice ||
             parsed.isAiImage ||
-            parsed.isCharRecall
+            parsed.isWaimaiPaymentResult ||
+            parsed.isWaimaiDelivery ||
+            parsed.isCharRecall ||
+            parsed.isFaceToFaceRequest ||
+            parsed.isOnlineModeRequest
           ) {
             result.messages.push(parsed);
           }
@@ -867,8 +918,8 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     const remainingContent = outputContent.substring(lastEndIndex).trim();
     if (remainingContent && !isThinkingContent(remainingContent)) {
       const cleanAfter = remainingContent
-        .replace(/<\/?output>/gi, "")
-        .replace(/<\/?think>/gi, "")
+        .replace(/<\/?content>/gi, "")
+        .replace(/<\/?think(?:ing)?>/gi, "")
         .replace(/<\/?msg>/gi, "")
         .trim();
       if (cleanAfter) {
@@ -882,8 +933,8 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     // 4. 如果沒有 <msg> 標籤，將整個輸出作為單條訊息
     // 移除可能的標籤殘留和思考過程
     const cleanContent = outputContent
-      .replace(/<\/?output>/gi, "")
-      .replace(/<\/?think>/gi, "")
+      .replace(/<\/?content>/gi, "")
+      .replace(/<\/?think(?:ing)?>/gi, "")
       .replace(/<\/?msg>/gi, "")
       // 移除可能洩漏的思考過程格式
       .replace(/Scene\s*[\d.]+\s*[—\-–]\s*[^\n]*/gi, "")
@@ -1009,7 +1060,9 @@ function isNonEmptyMessage(msg: ParsedMessage): boolean {
     msg.isAiImage ||
     msg.isWaimaiPaymentResult ||
     msg.isWaimaiDelivery ||
-    msg.isCharRecall
+    msg.isCharRecall ||
+    msg.isFaceToFaceRequest ||
+    msg.isOnlineModeRequest
   );
 
   // 調試日誌：記錄空消息過濾
@@ -1555,7 +1608,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|<output>|<msg>|<update>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<time-jump|<送禮物>|<pay>|<refund>|<avatar-change|<voice>|<waimai-pay|<waimai-delivery|<affinity-update|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|<content>|<msg>|<update>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<time-jump|<送禮物>|<pay>|<refund>|<avatar-change|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }
@@ -1865,7 +1918,7 @@ export interface ParsedGroupResponse {
 
 /**
  * 解析群聊 AI 回覆
- * 格式：<think>...</think><output><msg name="角色名">內容</msg>...</output>
+ * 格式：<think>...</think><content><msg name="角色名">內容</msg>...</content>
  */
 export function parseGroupChatResponse(
   rawResponse: string,
@@ -1877,20 +1930,20 @@ export function parseGroupChatResponse(
   };
 
   // 1. 提取 <think> 內容
-  const thinkMatch = rawResponse.match(/<think>([\s\S]*?)<\/think>/i);
+  const thinkMatch = rawResponse.match(/<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/i);
   if (thinkMatch) {
     result.thinking = thinkMatch[1].trim();
   }
 
-  // 2. 提取 <output> 內容
+  // 2. 提取 <content> 內容
   let outputContent = "";
-  const outputMatch = rawResponse.match(/<output>([\s\S]*?)<\/output>/i);
+  const outputMatch = rawResponse.match(/<content>([\s\S]*?)<\/content>/i);
   if (outputMatch) {
     outputContent = outputMatch[1].trim();
   } else {
-    // 沒有 <output> 標籤，移除 <think> 後使用剩餘內容
+    // 沒有 <content> 標籤，移除 <think> 後使用剩餘內容
     outputContent = rawResponse
-      .replace(/<think>[\s\S]*?<\/think>/gi, "")
+      .replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "")
       .trim();
   }
 
@@ -2122,7 +2175,7 @@ export function prettyPrintGroupResponse(parsed: ParsedGroupResponse): string {
   }
 
   if (msgParts.length > 0) {
-    parts.push(`<output>${msgParts.join("")}</output>`);
+    parts.push(`<content>${msgParts.join("")}</content>`);
   }
 
   return parts.join("");

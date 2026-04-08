@@ -278,6 +278,14 @@ interface MessageBubbleProps {
   charRecallContent?: string;
   charRecallHints?: string[];
   charRecallRevealed?: boolean;
+  // 面對面請求相關
+  isFaceToFaceRequest?: boolean;
+  faceToFaceRequestReason?: string;
+  faceToFaceRequestStatus?: "pending" | "accepted" | "rejected";
+  // 線上模式請求相關
+  isOnlineModeRequest?: boolean;
+  onlineModeRequestReason?: string;
+  onlineModeRequestStatus?: "pending" | "accepted" | "rejected";
 }
 
 const props = withDefaults(defineProps<MessageBubbleProps>(), {
@@ -370,6 +378,12 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   charRecallContent: '',
   charRecallHints: () => [],
   charRecallRevealed: false,
+  isFaceToFaceRequest: false,
+  faceToFaceRequestReason: "",
+  faceToFaceRequestStatus: "pending",
+  isOnlineModeRequest: false,
+  onlineModeRequestReason: "",
+  onlineModeRequestStatus: "pending",
 });
 
 // Emits
@@ -394,6 +408,10 @@ const emit = defineEmits<{
   (e: "splitRegexHtml", id: string, htmlContent: string): void;
   (e: "recall", id: string, type: "seen" | "unseen"): void;
   (e: "charRecallReveal", id: string): void;
+  (e: "acceptFaceToFaceRequest", id: string): void;
+  (e: "rejectFaceToFaceRequest", id: string): void;
+  (e: "acceptOnlineModeRequest", id: string): void;
+  (e: "rejectOnlineModeRequest", id: string): void;
 }>();
 
 // 群聊記錄 Modal 狀態
@@ -410,6 +428,29 @@ const showRecallOptions = ref(false);
 
 // 角色撤回展開狀態（seen 類型，若之前已查看則預設展開）
 const charRecallExpanded = ref(props.charRecallRevealed ?? false);
+
+// 面對面請求狀態文本
+const faceToFaceRequestStatusText = computed(() => {
+  const name = props.senderName || props.characterName || "對方";
+  if (props.faceToFaceRequestStatus === "accepted") {
+    return `你同意了 ${name} 的邀請`;
+  }
+  if (props.faceToFaceRequestStatus === "rejected") {
+    return `你拒絕了 ${name} 的邀請`;
+  }
+  return "對方希望你們切換成面對面模式";
+});
+
+const onlineModeRequestStatusText = computed(() => {
+  const name = props.senderName || props.characterName || "對方";
+  if (props.onlineModeRequestStatus === "accepted") {
+    return `你同意了 ${name} 切換回線上模式`;
+  }
+  if (props.onlineModeRequestStatus === "rejected") {
+    return `你拒絕了 ${name} 的線上模式邀請`;
+  }
+  return "對方希望你們切換回線上模式";
+});
 
 // 照片預覽 Modal 狀態
 const showPhotoPreview = ref(false);
@@ -2590,6 +2631,76 @@ const showTextVoiceTranscript = ref(true);
                 @accept="emit('acceptTransfer', id)"
                 @refund="emit('refundTransfer', id)"
               />
+            </div>
+          </div>
+
+          <div
+            v-else-if="isFaceToFaceRequest"
+            class="face-to-face-request-wrapper"
+          >
+            <div class="face-to-face-request-card">
+              <div class="face-to-face-request-title">🤝 面對面請求</div>
+              <div class="face-to-face-request-text">
+                {{ faceToFaceRequestStatusText }}
+              </div>
+              <div
+                v-if="faceToFaceRequestStatus === 'pending' && faceToFaceRequestReason && faceToFaceRequestReason.trim()"
+                class="face-to-face-request-reason"
+              >
+                {{ faceToFaceRequestReason }}
+              </div>
+              <div
+                v-if="faceToFaceRequestStatus === 'pending'"
+                class="face-to-face-request-actions"
+              >
+                <button
+                  class="face-to-face-request-btn accept"
+                  @click.stop="emit('acceptFaceToFaceRequest', id)"
+                >
+                  同意
+                </button>
+                <button
+                  class="face-to-face-request-btn reject"
+                  @click.stop="emit('rejectFaceToFaceRequest', id)"
+                >
+                  先不要
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div
+            v-else-if="isOnlineModeRequest"
+            class="online-mode-request-wrapper"
+          >
+            <div class="online-mode-request-card">
+              <div class="online-mode-request-title">📱 線上模式請求</div>
+              <div class="online-mode-request-text">
+                {{ onlineModeRequestStatusText }}
+              </div>
+              <div
+                v-if="onlineModeRequestReason && onlineModeRequestReason.trim()"
+                class="online-mode-request-reason"
+              >
+                {{ onlineModeRequestReason }}
+              </div>
+              <div
+                v-if="onlineModeRequestStatus === 'pending'"
+                class="online-mode-request-actions"
+              >
+                <button
+                  class="online-mode-request-btn accept"
+                  @click.stop="emit('acceptOnlineModeRequest', id)"
+                >
+                  同意
+                </button>
+                <button
+                  class="online-mode-request-btn reject"
+                  @click.stop="emit('rejectOnlineModeRequest', id)"
+                >
+                  先不要
+                </button>
+              </div>
             </div>
           </div>
 
@@ -6091,6 +6202,112 @@ const showTextVoiceTranscript = ref(true);
 
 :global(.recall-dialog-btn.seen svg) {
   color: var(--color-primary, #7dd3a8);
+}
+
+.face-to-face-request-wrapper {
+  width: 100%;
+}
+
+.face-to-face-request-card {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(8px);
+}
+
+.face-to-face-request-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.face-to-face-request-text {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.face-to-face-request-reason {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.face-to-face-request-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.face-to-face-request-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.face-to-face-request-btn.accept {
+  background: #7c5cff;
+  color: #fff;
+}
+
+.face-to-face-request-btn.reject {
+  background: rgba(255, 255, 255, 0.1);
+  color: inherit;
+}
+
+.online-mode-request-wrapper {
+  width: 100%;
+}
+
+.online-mode-request-card {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(8px);
+}
+
+.online-mode-request-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.online-mode-request-text {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.online-mode-request-reason {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.online-mode-request-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.online-mode-request-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.online-mode-request-btn.accept {
+  background: #4f7cff;
+  color: #fff;
+}
+
+.online-mode-request-btn.reject {
+  background: rgba(255, 255, 255, 0.1);
+  color: inherit;
 }
 
 :global(.recall-dialog-cancel) {
