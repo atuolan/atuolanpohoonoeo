@@ -25,7 +25,7 @@ watch(
 );
 
 // ===== 長按拖曳 =====
-const DRAG_DELAY = 500;
+const DRAG_DELAY = 250;
 const WIDGET_W = 80;
 const WIDGET_H = 130;
 const LS_KEY = "phone-call-widget-position";

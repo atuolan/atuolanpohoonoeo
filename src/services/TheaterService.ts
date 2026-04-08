@@ -241,11 +241,9 @@ export async function generateTheater(params: {
     if (useStreaming && streamingWindow) {
       // 流式生成 + 流式視窗
       streamingWindow.show(taskConfig.api.model || "AI");
-
-      // 監聽停止事件，中止生成
-      const unsubStop = streamingWindow.on("stop", () => {
-        startResult.controller?.abort();
-      });
+      const unbindAbort = startResult.controller
+        ? streamingWindow.bindAbortController(startResult.controller)
+        : null;
 
       const stream = client.generateStream({
         messages,
@@ -280,7 +278,8 @@ export async function generateTheater(params: {
         }
       }
 
-      unsubStop();
+      unbindAbort?.();
+      streamingWindow.clearAbortBinding();
       streamingWindow.setComplete();
     } else {
       // 非流式生成
@@ -418,10 +417,9 @@ export async function continueTheater(
   try {
     if (useStreaming && streamingWindow) {
       streamingWindow.show(taskConfig.api.model || "AI");
-
-      const unsubStop = streamingWindow.on("stop", () => {
-        startResult.controller?.abort();
-      });
+      const unbindAbort = startResult.controller
+        ? streamingWindow.bindAbortController(startResult.controller)
+        : null;
 
       const stream = client.generateStream({
         messages,
@@ -456,7 +454,8 @@ export async function continueTheater(
         }
       }
 
-      unsubStop();
+      unbindAbort?.();
+      streamingWindow.clearAbortBinding();
       streamingWindow.setComplete();
     } else {
       const result = await client.generate({

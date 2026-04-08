@@ -7,7 +7,7 @@ import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import {
   extractChatContext,
   extractSummariesAndEvents,
-  generateCombined,
+  generateSequential,
 } from "@/services/PeekPhoneService";
 import { useLorebooksStore } from "@/stores/lorebooks";
 import { useNotificationStore } from "@/stores/notification";
@@ -187,7 +187,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     characterId.value = charId;
     chatId.value = cId;
     data.value = createEmptyData(charId);
-    groupStatus.value = { A: "loading", B: "loading", C: "loading", D: "loading" };
+    groupStatus.value = { A: "loading", B: "idle", C: "idle", D: "idle" };
     groupErrors.value = { A: null, B: null, C: null, D: null };
 
     const chatContext = extractChatContext(chat, 15);
@@ -207,13 +207,12 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
 
     const controller = new AbortController();
     abortController.value = controller;
+    const unbindAbort = streamingWindow
+      ? streamingWindow.bindAbortController(controller)
+      : null;
 
     try {
-      const onToken = streamingWindow
-        ? (token: string) => streamingWindow.appendToken(token)
-        : undefined;
-
-      const result = await generateCombined(
+      const result = await generateSequential(
         character,
         chatContext,
         userName,
@@ -222,7 +221,21 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
         summariesAndEvents,
         cId,
         controller.signal,
-        onToken,
+        (phase, partial) => {
+          data.value = { ...data.value!, ...partial };
+          if (phase === "A") {
+            groupStatus.value.A = "done";
+            groupStatus.value.B = "loading";
+            groupStatus.value.C = "loading";
+          } else if (phase === "BC") {
+            groupStatus.value.B = "done";
+            groupStatus.value.C = "done";
+            groupStatus.value.D = "loading";
+          }
+        },
+        streamingWindow
+          ? (_phase, token) => streamingWindow.appendToken(token)
+          : undefined,
       );
 
       data.value = result;
@@ -246,6 +259,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       storeCache(charId, cId, data.value);
     } catch (err: any) {
       if (err?.name === "AbortError") {
+        streamingWindow?.clearAbortBinding();
         if (streamingWindow) streamingWindow.setComplete();
         return;
       }
@@ -266,6 +280,8 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
         priority: "normal",
       });
     } finally {
+      unbindAbort?.();
+      streamingWindow?.clearAbortBinding();
       abortController.value = null;
     }
   }

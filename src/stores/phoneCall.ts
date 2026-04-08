@@ -56,6 +56,13 @@ export interface ActiveCallInfo {
   callReason?: string;
 }
 
+interface PhoneAnswerDecision {
+  shouldAnswer: boolean;
+  reason?: string;
+  opening?: string;
+  openingMessages?: { text: string; tone?: string }[];
+}
+
 interface VideoCallConfig {
   enabled: boolean;
   remoteVideoUrl: string;
@@ -243,7 +250,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       const decision = await checkIfShouldAnswer(info);
       if (decision.shouldAnswer) {
         updateMissedCallCount(info.characterId, 0);
-        await handleAnswer();
+        await handleAnswer(decision.openingMessages);
       } else {
         const newCount = getMissedCallCount(info.characterId) + 1;
         updateMissedCallCount(info.characterId, newCount);
@@ -255,7 +262,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   }
 
   // ===== 接聽 =====
-  async function handleAnswer() {
+  async function handleAnswer(openingMessages?: { text: string; tone?: string }[]) {
     callState.value = "connected";
     durationTimer = setInterval(() => { callDuration.value++; }, 1000);
 
@@ -273,6 +280,25 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       });
       await generateAIResponse(true);
     } else {
+      if (openingMessages?.length) {
+        for (const message of openingMessages) {
+          const text = message.text?.trim();
+          if (!text) continue;
+          callMessages.value.push({
+            id: `call_msg_ai_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            role: "ai",
+            content: text,
+            timestamp: Date.now(),
+            isStreaming: false,
+            tone: message.tone?.trim() || undefined,
+          });
+        }
+      }
+
+      if (openingMessages?.some((message) => message.text?.trim())) {
+        return;
+      }
+
       callMessages.value.push({
         id: `call_trigger_${Date.now()}`,
         role: "system",
@@ -660,11 +686,16 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   }
 
   // ===== AI 決定是否接聽 =====
-  async function checkIfShouldAnswer(info: ActiveCallInfo): Promise<{ shouldAnswer: boolean; reason?: string }> {
+  async function checkIfShouldAnswer(info: ActiveCallInfo): Promise<PhoneAnswerDecision> {
     try {
       const { useCharactersStore, useSettingsStore } = await import("@/stores");
+      const { useUserStore } = await import("@/stores/user");
+
       const char = useCharactersStore().characters.find((c) => c.id === info.characterId);
       if (!char) return { shouldAnswer: true };
+
+      const userStore = useUserStore();
+      const userName = userStore.currentPersona?.name || "User";
 
       const currentMissedCount = getMissedCallCount(info.characterId);
       if (currentMissedCount >= 2) return { shouldAnswer: true };
@@ -673,7 +704,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       const lastChatTime = info.lastMessageTime ? formatTimeSince(info.lastMessageTime) : "未知";
       const callAttemptInfo = currentMissedCount > 0 ? `\n⚠️ 這是第 ${currentMissedCount + 1} 次來電` : "";
 
-      const decisionPrompt = `你是 ${char.data.name}，${info.characterName} 正在打電話給你。
+      const decisionPrompt = `你是 ${char.data.name}，${userName} 正在打電話給你。
 角色性格：${char.data.personality || "無特別設定"}
 當前時間：${now.toLocaleTimeString("zh-TW")}（${now.toLocaleDateString("zh-TW")}）
 上次聊天：${lastChatTime}${callAttemptInfo}
@@ -681,8 +712,16 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
 ${recentChatHistory.value.slice(-5).map((m) => `${m.name}: ${m.content}`).join("\n") || "（無）"}
 重要事件：
 ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "（無）"}
-請決定是否接聽。回覆 JSON：{"answer": true/false, "reason": "簡短原因"}
-規則：大多數情況接聽（80%以上），只有角色性格或情境非常不適合時才拒接。`;
+請決定是否接聽。
+若拒接，回覆 JSON：{"answer": false, "reason": "簡短原因"}
+若接聽，回覆 JSON：{"answer": true, "reason": "簡短原因", "openingMessages": [{"text": "第一句", "tone": "語氣"}, {"text": "第二句", "tone": "語氣"}]}
+規則：
+1. 大多數情況接聽（80%以上），只有角色性格或情境非常不適合時才拒接。
+2. 若 answer=true，openingMessages 必填，數量為 1 到 3 條。
+3. 每條都要是角色接起 ${userName} 的電話後立刻說出口的自然台詞，可依節奏拆成短句，並為每條提供 tone。
+4. 不要寫旁白、動作描述、說明、引號或 JSON 以外內容。
+5. 只輸出一個 JSON 物件，不要加任何額外文字。
+6. 為了相容舊格式，你也可以額外附帶 opening 字串，但以 openingMessages 為主。`;
 
       const settingsStore = useSettingsStore();
       const phoneCallDecisionConfig = settingsStore.getAPIForTask("phoneCall");
@@ -696,7 +735,38 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
       const jsonMatch = response.content.trim().match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        return { shouldAnswer: parsed.answer !== false, reason: parsed.reason || "" };
+        const openingMessages = Array.isArray(parsed.openingMessages)
+          ? parsed.openingMessages
+            .map((item: any) => ({
+              text: String(item?.text || item?.content || "").trim(),
+              tone: typeof item?.tone === "string"
+                ? item.tone.trim()
+                : typeof item?.emotion === "string"
+                  ? item.emotion.trim()
+                  : undefined,
+            }))
+            .filter((item: { text: string; tone?: string }) => item.text)
+            .slice(0, 3)
+          : [];
+        const legacyOpening = typeof parsed.opening === "string"
+          ? parsed.opening
+          : typeof parsed.text === "string"
+            ? parsed.text
+            : typeof parsed.content === "string"
+              ? parsed.content
+              : typeof parsed.message === "string"
+                ? parsed.message
+                : "";
+        return {
+          shouldAnswer: parsed.answer !== false,
+          reason: parsed.reason || "",
+          opening: legacyOpening,
+          openingMessages: openingMessages.length > 0
+            ? openingMessages
+            : legacyOpening.trim()
+              ? [{ text: legacyOpening.trim() }]
+              : [],
+        };
       }
     } catch { /* 默認接聽 */ }
     return { shouldAnswer: true };

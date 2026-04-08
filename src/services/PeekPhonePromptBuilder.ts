@@ -279,6 +279,41 @@ transactions:
 }
 
 /**
+ * 建構 Group B+C 合併 prompt（行程+飲食+備忘+記事+日記+錢包）
+ * 包含 A 組已生成的聊天紀錄作為上下文，確保日記/行程/備忘與聊天內容互相呼應
+ */
+export function buildGroupBCPrompt(
+  charName: string,
+  charDesc: string,
+  personality: string,
+  scenario: string,
+  chatContext: string,
+  userName: string = "使用者",
+  userDescription: string = "",
+  worldInfo: string = "",
+  summariesAndEvents: string = "",
+  previousContext: string = "",
+): string {
+  const charBlock = buildCharacterBlock(
+    charName,
+    charDesc,
+    personality,
+    scenario,
+    chatContext,
+    userName,
+    userDescription,
+    worldInfo,
+    summariesAndEvents,
+  );
+
+  const prevBlock = previousContext
+    ? `\n【已生成的手機資料 —— 請根據以下內容保持一致、互相呼應】\n${previousContext}\n`
+    : "";
+
+  return `你是一個角色扮演內容生成器。請根據以下角色資訊，生成該角色手機中的行程、飲食、備忘錄、記事本、日記、帳戶資訊。\n\n${charBlock}${prevBlock}\n請生成以下部分（所有內容必須與已有資料保持一致、互相呼應）：\n- 3 到 8 個行程項目，包含時間（HH:MM）、標題、可選地點、完成狀態\n- 1 到 5 個飲食記錄，包含餐別（breakfast/lunch/dinner/snack）、食物描述、時間、可選備註\n- 2 到 6 個備忘錄項目，包含內容和完成狀態\n- 1 到 3 篇記事本，包含標題和內容\n- 1 到 3 篇日記，包含日期（YYYY-MM-DD）、心情（happy/neutral/sad/angry/excited）、內容、可選天氣\n  （日記應自然提及聊天記錄或行程中發生的事情）\n- 1 個錢包餘額數字，符合角色的經濟設定\n- 3 到 8 筆交易記錄，包含描述、金額（正數=入帳，負數=出帳）、時間\n\n所有內容必須符合角色的性格和當前故事背景。\n\n${buildTranslationRule()}\n\n只輸出 YAML，不要加任何其他文字。\n\n請嚴格使用以下 YAML 格式輸出：\n\nschedule:\n  - time: "08:00"\n    title: |\n      項目標題（如有翻譯則原文加換行加中文翻譯）\n    location: 地點（可省略）\n    done: true或false\n\nmeals:\n  - type: breakfast\n    food: |\n      食物描述（如有翻譯則原文加換行加中文翻譯）\n    time: "07:30"\n    note: 備註（可省略）\n\nmemos:\n  - text: |\n      備忘內容（如有翻譯則原文加換行加中文翻譯）\n    done: true或false\n\nnotes:\n  - title: |\n      標題（如有翻譯則原文加換行加中文翻譯）\n    content: |\n      內容文字（如有翻譯則原文加換行加中文翻譯）...\n\ndiary:\n  - date: "2026-04-07"\n    mood: happy\n    content: |\n      日記內容（如有翻譯則原文加換行加中文翻譯）...\n    weather: 晴（可省略）\n\nbalance: 42850\n\ntransactions:\n  - description: |\n      交易描述（如有翻譯則原文加換行加中文翻譯）\n    amount: -85\n    time: "09:15"`;
+}
+
+/**
  * 建構合併 prompt（全部模塊合一）
  * 一次生成所有手機內容，確保各模塊之間內容一致、互相呼應
  */
@@ -439,6 +474,7 @@ export function buildGroupDPrompt(
   userDescription: string = "",
   worldInfo: string = "",
   summariesAndEvents: string = "",
+  previousDataContext: string = "",
 ): string {
   const charBlock = buildCharacterBlock(
     charName,
@@ -452,9 +488,13 @@ export function buildGroupDPrompt(
     summariesAndEvents,
   );
 
+  const prevBlock = previousDataContext
+    ? `\n【已生成的手機資料 —— 請根據以下內容讓照片、瀏覽紀錄、隱藏照片與其互相呼應】\n${previousDataContext}\n`
+    : "";
+
   return `你是一個角色扮演內容生成器。請根據以下角色資訊，生成該角色手機中的相冊、瀏覽器歷史記錄、以及藏在手機深處的私密照片。
 
-${charBlock}
+${charBlock}${prevBlock}
 
 請生成以下三個部分：
 

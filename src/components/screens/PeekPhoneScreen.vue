@@ -392,6 +392,7 @@ function getAppTitle(key: PeekPhoneTab) {
               <div class="refresh-menu-item" @click="refreshAll">
                 <RefreshCw :size="14" />
                 <span>重新生成全部內容</span>
+                <span class="api-count-badge">×3</span>
               </div>
             </div>
           </Transition>
@@ -1099,6 +1100,14 @@ $blob-bg: #d4f2cc;
   &:active {
     background: rgba(0, 0, 0, 0.08);
   }
+}
+
+.api-count-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 400;
+  color: $text-sec;
+  opacity: 0.5;
 }
 
 .refresh-menu-divider {
@@ -2239,7 +2248,7 @@ $blob-bg: #d4f2cc;
 
 .browser-entry {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding: 14px 16px;
   background: $card-bg;
@@ -2292,11 +2301,7 @@ $blob-bg: #d4f2cc;
   font-weight: 800;
   color: $text-main;
   white-space: pre-line;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  word-break: break-word;
   line-height: 1.4;
 }
 

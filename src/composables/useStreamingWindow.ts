@@ -47,6 +47,7 @@ const completionTokens = ref(0);
 const promptContent = ref<Array<{ role: string; content: string }>>([]);
 /** 是否顯示提示詞（生成完成後可收合） */
 const showPrompt = ref(false);
+let stopAbortCleanup: (() => void) | null = null;
 
 // 事件回調註冊表（單例）
 const eventListeners = new Map<StreamingWindowEventType, Set<EventCallback>>();
@@ -174,6 +175,8 @@ export function useStreamingWindow() {
    * 重置所有狀態
    */
   function reset() {
+    stopAbortCleanup?.();
+    stopAbortCleanup = null;
     windowState.value = "hidden";
     content.value = "";
     tokenCount.value = 0;
@@ -252,6 +255,35 @@ export function useStreamingWindow() {
     }
   }
 
+  /**
+   * 將當前 streaming-window 的 stop 動作綁定到指定 AbortController
+   * 綁定新 controller 時會自動清除上一個綁定
+   * @returns 解除綁定函數
+   */
+  function bindAbortController(controller: AbortController): () => void {
+    stopAbortCleanup?.();
+    const unsubscribe = on("stop", () => {
+      controller.abort();
+    });
+    stopAbortCleanup = () => {
+      unsubscribe();
+      if (stopAbortCleanup) {
+        stopAbortCleanup = null;
+      }
+    };
+    return () => {
+      stopAbortCleanup?.();
+    };
+  }
+
+  /**
+   * 清除目前 stop 綁定的 AbortController
+   */
+  function clearAbortBinding() {
+    stopAbortCleanup?.();
+    stopAbortCleanup = null;
+  }
+
   return {
     // 狀態
     windowState,
@@ -290,6 +322,8 @@ export function useStreamingWindow() {
     setAutoScroll,
     toggleRawMode,
     toggleDebugPanel,
+    bindAbortController,
+    clearAbortBinding,
 
     // 事件系統
     on,

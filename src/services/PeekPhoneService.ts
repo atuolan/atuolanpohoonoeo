@@ -23,6 +23,7 @@ import type {
 import {
   buildCombinedPrompt,
   buildGroupAPrompt,
+  buildGroupBCPrompt,
   buildGroupBPrompt,
   buildGroupCPrompt,
   buildGroupDPrompt,
@@ -342,6 +343,202 @@ export async function generateGroup(
     case "D":
       return parseGroupD(yamlContent);
   }
+}
+
+/**
+ * 將已生成的部分 PeekPhoneData 序列化為人可讀的文字摘要，供後續 prompt 參考
+ */
+function serializeForContext(partial: Partial<PeekPhoneData>): string {
+  const lines: string[] = [];
+
+  if (partial.chats?.length) {
+    lines.push("【聊天紀錄】");
+    for (const thread of partial.chats) {
+      lines.push(`- 與 ${thread.contactName} 的對話（${thread.messages.length} 條訊息）`);
+      const lastMsg = thread.messages[thread.messages.length - 1];
+      if (lastMsg) {
+        const preview = lastMsg.content.slice(0, 60).replace(/\n/g, " ");
+        lines.push(`  最後訊息：${preview}`);
+      }
+    }
+  }
+
+  if (partial.schedule?.length) {
+    lines.push("【行程】");
+    for (const s of partial.schedule) {
+      const title = s.title.split("\n")[0].slice(0, 30);
+      lines.push(`- ${s.time} ${title}${s.done ? " [已完成]" : ""}`);
+    }
+  }
+
+  if (partial.memos?.length) {
+    lines.push("【備忘錄】");
+    for (const m of partial.memos) {
+      const text = m.content.split("\n")[0].slice(0, 30);
+      lines.push(`- ${text}${m.done ? " ✓" : ""}`);
+    }
+  }
+
+  if (partial.diary?.length) {
+    lines.push("【日記】");
+    for (const d of partial.diary) {
+      const preview = d.content.split("\n")[0].slice(0, 60);
+      lines.push(`- ${d.date} (${d.mood}): ${preview}`);
+    }
+  }
+
+  if (partial.notes?.length) {
+    lines.push("【記事本】");
+    for (const n of partial.notes) {
+      const title = n.title.split("\n")[0].slice(0, 30);
+      lines.push(`- ${title}`);
+    }
+  }
+
+  if (partial.transactions?.length) {
+    lines.push(`【帳戶餘額】${partial.balance ?? 0}`);
+    lines.push("【最近交易】");
+    for (const t of partial.transactions.slice(-4)) {
+      const desc = t.description.split("\n")[0].slice(0, 30);
+      const sign = t.amount > 0 ? "+" : "";
+      lines.push(`- ${t.time} ${desc} ${sign}${t.amount}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * 內部共用：呈句呼叫 API，支持串流和非串流模式
+ */
+async function callAPIForPhase(
+  prompt: string,
+  maxResponseLength: number,
+  signal: AbortSignal | undefined,
+  onToken?: (token: string) => void,
+): Promise<string> {
+  const settingsStore = useSettingsStore();
+  const taskConfig = settingsStore.getAPIForTask("peekPhone");
+  const client = getAPIClient(taskConfig.api);
+  const messages: APIMessage[] = [{ role: "user", content: prompt }];
+  const isStreaming = taskConfig.generation.streamingEnabled;
+
+  const baseSettings = {
+    maxContextLength: 200000,
+    maxResponseLength,
+    temperature: 0.9,
+    topP: 0.95,
+    topK: 0,
+    frequencyPenalty: 0.3,
+    presencePenalty: 0.3,
+    repetitionPenalty: 1,
+    stopSequences: [] as string[],
+    useStreamingWindow: false,
+  };
+
+  if (isStreaming) {
+    let full = "";
+    const stream = client.generateStream({
+      messages,
+      settings: { ...baseSettings, streaming: true },
+      apiSettings: taskConfig.api,
+      signal,
+    });
+    for await (const chunk of stream) {
+      if (chunk.type === "token" && chunk.token) {
+        full += chunk.token;
+        onToken?.(chunk.token);
+      } else if (chunk.type === "done") {
+        if (!full && chunk.content) full = chunk.content;
+      } else if (chunk.type === "error") {
+        throw new Error(chunk.error || "生成失敗");
+      }
+    }
+    return full;
+  } else {
+    const result = await client.generate({
+      messages,
+      settings: { ...baseSettings, streaming: false },
+      apiSettings: taskConfig.api,
+      signal,
+    });
+    return result.content;
+  }
+}
+
+/**
+ * 順序生成模式：A → BC → D
+ * 每階段將已生成結果序列化為上下文傳入下一階段
+ * onPhaseComplete 在每階段完成後被呼叫，供 store 游淨杈案更新 groupStatus
+ */
+export async function generateSequential(
+  character: StoredCharacter,
+  chatContext: string,
+  userName: string,
+  userDescription: string,
+  worldInfo: string,
+  summariesAndEvents: string,
+  _chatId: string,
+  signal?: AbortSignal,
+  onPhaseComplete?: (
+    phase: "A" | "BC" | "D",
+    partial: Partial<PeekPhoneData>,
+  ) => void,
+  onToken?: (phase: "A" | "BC" | "D", token: string) => void,
+): Promise<PeekPhoneData> {
+  const charName = character.data.name || character.nickname;
+  const charDesc = character.data.description || "";
+  const personality = character.data.personality || "";
+  const scenario = character.data.scenario || "";
+
+  // === Phase A: 聊天紀錄 ===
+  const promptA = buildGroupAPrompt(
+    charName, charDesc, personality, scenario, chatContext,
+    userName, userDescription, worldInfo, summariesAndEvents,
+  );
+  const yamlA = await callAPIForPhase(promptA, 16000, signal,
+    onToken ? (t) => onToken("A", t) : undefined);
+  const chats = parseGroupA(yamlA);
+  const partialA: Partial<PeekPhoneData> = { chats };
+  onPhaseComplete?.("A", partialA);
+
+  // === Phase BC: 行程+飲食+備忘+記事+日記+錢包 ===
+  const aContext = serializeForContext(partialA);
+  const promptBC = buildGroupBCPrompt(
+    charName, charDesc, personality, scenario, chatContext,
+    userName, userDescription, worldInfo, summariesAndEvents, aContext,
+  );
+  const yamlBC = await callAPIForPhase(promptBC, 16000, signal,
+    onToken ? (t) => onToken("BC", t) : undefined);
+  const { schedule, meals, memos } = parseGroupB(yamlBC);
+  const { notes, diary, balance, transactions } = parseGroupC(yamlBC);
+  const partialBC: Partial<PeekPhoneData> = { schedule, meals, memos, notes, diary, balance, transactions };
+  onPhaseComplete?.("BC", partialBC);
+
+  // === Phase D: 相冊+瀏覽紀錄+私密照片 ===
+  const abcContext = serializeForContext({ ...partialA, ...partialBC });
+  const promptD = buildGroupDPrompt(
+    charName, charDesc, personality, scenario, chatContext,
+    userName, userDescription, worldInfo, summariesAndEvents, abcContext,
+  );
+  const yamlD = await callAPIForPhase(promptD, 12000, signal,
+    onToken ? (t) => onToken("D", t) : undefined);
+  const { gallery, browserHistory, hiddenPhotos } = parseGroupD(yamlD);
+
+  return {
+    characterId: character.id,
+    chats,
+    schedule,
+    meals,
+    memos,
+    notes,
+    diary,
+    balance,
+    transactions,
+    gallery,
+    browserHistory,
+    hiddenPhotos,
+  };
 }
 
 /**

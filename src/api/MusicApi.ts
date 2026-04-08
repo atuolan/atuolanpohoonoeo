@@ -438,6 +438,13 @@ async function searchWithQQMusic(keyword: string): Promise<MusicTrack[]> {
       return [];
     }
 
+    // 檢查 Content-Type 是否為 JSON，避免解析 HTML 錯誤頁面
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      console.warn("[MusicApi] QQ 音樂 API 返回非 JSON 響應:", contentType);
+      return [];
+    }
+
     const data: QQMusicSongSearchResponse = await response.json();
 
     // API 返回 code: 0 表示成功
@@ -478,6 +485,13 @@ async function getQQMusicLink(mid: string): Promise<{
       `/api/music/vkeys/music/tencent/song/link?mid=${encodeURIComponent(mid)}&quality=8`,
     );
     if (!response.ok) return null;
+
+    // 檢查 Content-Type 是否為 JSON
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      console.warn("[MusicApi] QQ link API 返回非 JSON 響應");
+      return null;
+    }
 
     const data: QQMusicLinkResponse = await response.json();
     if ((data.code !== 200 && data.code !== 0) || !data.data?.url) {
