@@ -11,6 +11,24 @@ import type {
 } from "./waimaiDelivery";
 import type { WITimedEffect } from "./worldinfo";
 
+// ===== 情頭系統 =====
+export interface CoupleAvatarEntry {
+  id: string;
+  name: string;
+  description: string;
+  /** 用戶頭像（base64 dataURL） */
+  userAvatar: string;
+  /** 角色頭像（base64 dataURL） */
+  charAvatar: string;
+  /** 來源類型 */
+  sourceType: "dual_direct" | "single_crop";
+  /** 原始圖片（base64），用於回顧 */
+  sourceImages?: string[];
+  createdAt: number;
+  addedBy: "character" | "user";
+  usedCount: number;
+}
+
 // ===== 聊天專屬位置覆蓋 =====
 export interface ChatLocationOverride {
   /** 模式：manual = 手動指定城市，browser = 瀏覽器 GPS */
@@ -697,6 +715,18 @@ export interface Chat {
 
   /** 聊天專屬位置覆蓋（undefined 表示使用全域設定） */
   locationOverride?: ChatLocationOverride;
+
+  // --- 聊天專屬頭像覆蓋 ---
+  /** 角色頭像覆蓋（僅此聊天生效，不影響角色卡原始頭像） */
+  charAvatarOverride?: string;
+  /** 用戶頭像覆蓋（僅此聊天生效，不影響 Persona 原始頭像） */
+  userAvatarOverride?: string;
+
+  // --- 情頭系統 ---
+  /** 情頭庫（每個聊天獨立） */
+  coupleAvatarLibrary?: CoupleAvatarEntry[];
+  /** 當前啟用的情頭 ID（null = 未啟用） */
+  activeCoupleAvatarId?: string | null;
 }
 
 // ===== 聊天設定 =====

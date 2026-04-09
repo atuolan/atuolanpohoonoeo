@@ -21,7 +21,7 @@
           <div class="remote-label">{{ characterName || "對方" }}</div>
         </div>
 
-        <div class="local-video">
+        <div class="local-video" :class="{ 'screen-sharing-active': screenShareEnabled }">
           <video
             v-if="cameraEnabled"
             ref="localVideoEl"
@@ -41,6 +41,45 @@
           </div>
           <div class="local-label">你</div>
         </div>
+
+        <!-- 螢幕分享畫面：分享時顯示在主區域 -->
+        <div v-if="screenShareEnabled" class="screen-share-view">
+          <video
+            ref="screenShareVideoEl"
+            class="video-image screen-share-fit"
+            autoplay
+            playsinline
+            muted
+          />
+          <div class="screen-share-label">
+            螢幕分享中
+            <span v-if="autoCaptureCountdown > 0" class="auto-capture-countdown">
+              · {{ formatCountdown(autoCaptureCountdown) }} 後自動截圖
+            </span>
+          </div>
+        </div>
+
+        <!-- iOS fallback：上傳的圖片預覽 -->
+        <div v-if="uploadedImagePreview" class="screen-share-view">
+          <img
+            :src="uploadedImagePreview"
+            alt="上傳的圖片"
+            class="video-image screen-share-fit"
+          />
+          <div class="screen-share-label uploaded-label">
+            已附加圖片
+            <button class="clear-upload-btn" @click="clearUploadedImage" title="移除圖片">✕</button>
+          </div>
+        </div>
+
+        <!-- 隱藏的檔案選擇器（iOS fallback） -->
+        <input
+          ref="fileInputEl"
+          type="file"
+          accept="image/*"
+          style="display: none"
+          @change="handleImageUpload"
+        />
       </div>
 
       <div class="status-bar">
@@ -112,6 +151,36 @@
         <button class="control-btn hangup" @click="handleHangup">掛斷</button>
 
         <button
+          v-if="callState === 'connected' && supportsScreenShare"
+          class="control-btn screen-share"
+          :class="{ active: screenShareEnabled }"
+          @click="toggleScreenShare"
+          :title="screenShareEnabled ? '停止螢幕分享' : '分享螢幕'"
+        >
+          {{ screenShareEnabled ? '停止分享' : '螢幕' }}
+        </button>
+
+        <button
+          v-if="callState === 'connected' && !supportsScreenShare"
+          class="control-btn screen-share"
+          :class="{ active: !!uploadedImagePreview }"
+          @click="uploadedImagePreview ? clearUploadedImage() : triggerImageUpload()"
+          :title="uploadedImagePreview ? '移除圖片' : '上傳圖片給 AI 看'"
+        >
+          {{ uploadedImagePreview ? '移除圖片' : '圖片' }}
+        </button>
+
+        <button
+          v-if="callState === 'connected' && supportsPiP"
+          class="control-btn pip"
+          :class="{ active: pipActive }"
+          @click="togglePiP"
+          :title="pipActive ? '關閉子母畫面' : '子母畫面'"
+        >
+          {{ pipActive ? '關閉PiP' : 'PiP' }}
+        </button>
+
+        <button
           v-if="callState === 'connected'"
           class="control-btn speaker"
           :class="{ active: isSpeaker }"
@@ -136,6 +205,26 @@ const messagesContainer = ref<HTMLElement | null>(null);
 const localVideoEl = ref<HTMLVideoElement | null>(null);
 const localStream = ref<MediaStream | null>(null);
 const cameraEnabled = ref(false);
+
+// 螢幕分享
+const screenShareVideoEl = ref<HTMLVideoElement | null>(null);
+const screenShareStream = ref<MediaStream | null>(null);
+const screenShareEnabled = ref(false);
+const pipActive = ref(false);
+
+// 定時自動截圖
+const AUTO_CAPTURE_INTERVAL = 3 * 60; // 3 分鐘（秒）
+let autoCaptureTimer: ReturnType<typeof setInterval> | null = null;
+const autoCaptureCountdown = ref(0);
+
+// iOS fallback：圖片上傳
+const fileInputEl = ref<HTMLInputElement | null>(null);
+const uploadedImageData = ref<string | null>(null);
+const uploadedImagePreview = ref<string | null>(null);
+
+const supportsScreenShare = computed(() => {
+  return typeof navigator !== "undefined" && !!navigator.mediaDevices?.getDisplayMedia;
+});
 
 const callState = computed(() => phoneCallStore.callState);
 const callMessages = computed(() => phoneCallStore.callMessages);
@@ -244,9 +333,37 @@ function stopLocalCamera() {
 function captureLocalFrame():
   | { imageData: string; imageMimeType: string; imageCaption: string }
   | null {
-  if (!cameraEnabled.value || !localVideoEl.value) return null;
+  // 優先擷取螢幕分享畫面
+  if (screenShareEnabled.value && screenShareVideoEl.value) {
+    const captured = captureVideoElement(
+      screenShareVideoEl.value,
+      "用戶正在分享的螢幕畫面",
+    );
+    if (captured) return captured;
+  }
 
-  const video = localVideoEl.value;
+  // 其次：iOS fallback 上傳的圖片
+  if (uploadedImageData.value) {
+    return {
+      imageData: uploadedImageData.value,
+      imageMimeType: "image/jpeg",
+      imageCaption: "用戶上傳的圖片（截圖或照片）",
+    };
+  }
+
+  // 最後：本地相機畫面
+  if (!cameraEnabled.value || !localVideoEl.value) return null;
+  return captureVideoElement(
+    localVideoEl.value,
+    "用戶在視訊通話中即時拍攝的自拍畫面",
+  );
+}
+
+/** 從 <video> 元素擷取一幀 */
+function captureVideoElement(
+  video: HTMLVideoElement,
+  caption: string,
+): { imageData: string; imageMimeType: string; imageCaption: string } | null {
   const w = video.videoWidth;
   const h = video.videoHeight;
   if (!w || !h) return null;
@@ -265,8 +382,175 @@ function captureLocalFrame():
   return {
     imageData: base64,
     imageMimeType: "image/jpeg",
-    imageCaption: "用戶在視訊通話中即時拍攝的自拍畫面",
+    imageCaption: caption,
   };
+}
+
+// ===== 螢幕分享 =====
+async function startScreenShare() {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getDisplayMedia) {
+    console.warn("[螢幕分享] 此瀏覽器不支援 getDisplayMedia");
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { cursor: "always" } as any,
+      audio: false,
+    });
+
+    screenShareStream.value = stream;
+    screenShareEnabled.value = true;
+
+    await nextTick();
+    if (screenShareVideoEl.value) {
+      screenShareVideoEl.value.srcObject = stream;
+    }
+
+    // 啟動定時自動截圖
+    startAutoCapture();
+
+    // 當使用者從瀏覽器原生 UI 停止分享時自動清理
+    stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+      stopScreenShare();
+    });
+  } catch (err) {
+    console.warn("[螢幕分享] 使用者取消或失敗:", err);
+    screenShareEnabled.value = false;
+  }
+}
+
+function stopScreenShare() {
+  stopAutoCapture();
+  if (screenShareStream.value) {
+    screenShareStream.value.getTracks().forEach((t) => t.stop());
+    screenShareStream.value = null;
+  }
+  screenShareEnabled.value = false;
+  if (screenShareVideoEl.value) {
+    screenShareVideoEl.value.srcObject = null;
+  }
+}
+
+// ===== 定時自動截圖 =====
+function startAutoCapture() {
+  stopAutoCapture();
+  autoCaptureCountdown.value = AUTO_CAPTURE_INTERVAL;
+
+  autoCaptureTimer = setInterval(() => {
+    autoCaptureCountdown.value--;
+
+    if (autoCaptureCountdown.value <= 0) {
+      performAutoCapture();
+      autoCaptureCountdown.value = AUTO_CAPTURE_INTERVAL;
+    }
+  }, 1000);
+}
+
+function stopAutoCapture() {
+  if (autoCaptureTimer) {
+    clearInterval(autoCaptureTimer);
+    autoCaptureTimer = null;
+  }
+  autoCaptureCountdown.value = 0;
+}
+
+async function performAutoCapture() {
+  if (!screenShareEnabled.value || !screenShareVideoEl.value) return;
+  if (isGenerating.value) return; // AI 正在生成中，跳過這次
+
+  const snapshot = captureVideoElement(
+    screenShareVideoEl.value,
+    "系統定時自動擷取的螢幕分享畫面",
+  );
+  if (!snapshot) return;
+
+  console.log("[自動截圖] 擷取螢幕畫面並傳送給 AI");
+
+  phoneCallStore.addUserMessage("我目前的螢幕畫面", {
+    ...snapshot,
+  });
+  await phoneCallStore.triggerAIResponse();
+}
+
+function formatCountdown(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+async function toggleScreenShare() {
+  if (screenShareEnabled.value) {
+    stopScreenShare();
+  } else {
+    await startScreenShare();
+  }
+}
+
+// ===== iOS fallback：圖片上傳 =====
+function triggerImageUpload() {
+  fileInputEl.value?.click();
+}
+
+function handleImageUpload(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = reader.result as string;
+    uploadedImagePreview.value = dataUrl;
+
+    // 提取 base64 部分
+    const base64 = dataUrl.split(",")[1];
+    uploadedImageData.value = base64 || null;
+  };
+  reader.readAsDataURL(file);
+
+  // 重設 input 以便再次選擇同一檔案
+  input.value = "";
+}
+
+function clearUploadedImage() {
+  uploadedImageData.value = null;
+  uploadedImagePreview.value = null;
+}
+
+// ===== PiP 子母畫面 =====
+const supportsPiP = computed(() => {
+  return typeof document !== "undefined" && "pictureInPictureEnabled" in document;
+});
+
+async function togglePiP() {
+  try {
+    // 已在 PiP 模式，關閉
+    if (document.pictureInPictureElement) {
+      await document.exitPictureInPicture();
+      return;
+    }
+
+    // 優先使用螢幕分享的 video
+    const targetVideo = screenShareEnabled.value
+      ? screenShareVideoEl.value
+      : localVideoEl.value;
+
+    if (!targetVideo) {
+      console.warn("[PiP] 沒有可用的視訊來源");
+      return;
+    }
+
+    await targetVideo.requestPictureInPicture();
+  } catch (err) {
+    console.warn("[PiP] 失敗:", err);
+  }
+}
+
+function exitPiP() {
+  if (document.pictureInPictureElement) {
+    document.exitPictureInPicture().catch(() => {});
+  }
+  pipActive.value = false;
 }
 
 function handleMinimize() {
@@ -274,6 +558,8 @@ function handleMinimize() {
 }
 
 function handleHangup() {
+  exitPiP();
+  stopScreenShare();
   stopLocalCamera();
   phoneCallStore.endCall();
 }
@@ -294,18 +580,29 @@ watch(
   callState,
   (state) => {
     if (state === "ended" || state === "rejected") {
+      exitPiP();
+      stopScreenShare();
       stopLocalCamera();
     }
   },
   { immediate: false },
 );
 
+function onEnterPiP() { pipActive.value = true; }
+function onLeavePiP() { pipActive.value = false; }
+
 onMounted(() => {
   startLocalCamera();
+  document.addEventListener("enterpictureinpicture", onEnterPiP);
+  document.addEventListener("leavepictureinpicture", onLeavePiP);
 });
 
 onUnmounted(() => {
+  exitPiP();
+  stopScreenShare();
   stopLocalCamera();
+  document.removeEventListener("enterpictureinpicture", onEnterPiP);
+  document.removeEventListener("leavepictureinpicture", onLeavePiP);
 });
 </script>
 
@@ -412,6 +709,79 @@ onUnmounted(() => {
 
 .local-label {
   bottom: 10px;
+}
+
+// ===== 螢幕分享 =====
+.screen-sharing-active {
+  // 分享時本地攝影機縮小到左下角
+  right: auto;
+  left: 16px;
+  bottom: 90px;
+  top: auto;
+  width: 120px;
+  height: 90px;
+  z-index: 3;
+
+  @media (max-width: 768px) {
+    width: 100px;
+    height: 75px;
+    bottom: 90px;
+  }
+}
+
+.screen-share-view {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: #0d0e11;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.screen-share-fit {
+  object-fit: contain !important;
+  background: #000;
+}
+
+.screen-share-label {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  color: #fff;
+  background: rgba(229, 57, 53, 0.75);
+  padding: 3px 12px;
+  border-radius: 999px;
+  z-index: 3;
+
+  .auto-capture-countdown {
+    opacity: 0.85;
+    font-size: 11px;
+  }
+
+  &.uploaded-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(76, 175, 80, 0.8);
+  }
+}
+
+.clear-upload-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  opacity: 0.85;
+
+  &:hover {
+    opacity: 1;
+  }
 }
 
 .status-bar {
@@ -580,6 +950,14 @@ onUnmounted(() => {
 
   &.active {
     background: #4caf50;
+  }
+
+  &.screen-share.active {
+    background: #7c4dff;
+  }
+
+  &.pip.active {
+    background: #ff9800;
   }
 
   &.hangup {

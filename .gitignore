@@ -81,3 +81,6 @@ Untitled-1.xml
 
 # 獨立的雲端備份模板 repo
 aguaphone-cloud-backup/
+
+new aguaphone/
+new aguaphone/**

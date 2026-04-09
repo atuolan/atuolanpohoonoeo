@@ -1144,6 +1144,9 @@ assistant：我是基拉祈與雪拉比...。我是許願星與創世神。
 - 來電預約：<schedule-call delay="時間" reason="原因"/>（放在 </content> 之後）
 - 行事曆記錄：<calendar-event type="user|period" date="YYYY-MM-DD" title="標題" description="描述"/>（放在 </content> 之後）
 - 換頭像：<avatar-change action="accept|reject|forced|mood|restore" mood="情緒"/>（放在 <msg> 內）
+- 情頭裁切：<couple-avatar-crop name="名稱" desc="描述" mode="overlap" user="左,上,右,下" char="左,上,右,下"/>（放在 <msg> 內，座標 0～100，必須正方形：寬=高）
+- 套用情頭：<couple-avatar-apply name="名稱"/>（放在 <msg> 內）
+- 移除情頭：<couple-avatar-remove/>（放在 <msg> 內）
 </format_rules>`,
     system_prompt: true,
     marker: false,

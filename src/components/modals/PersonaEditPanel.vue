@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import ExpandableTextarea from "@/components/common/ExpandableTextarea.vue";
-import { ref, watch } from "vue";
+import { ref, computed, watch } from "vue";
 
 interface PersonaEditProps {
   visible: boolean;
@@ -10,6 +10,8 @@ interface PersonaEditProps {
   secrets: string;
   powerDynamic: string;
   characterName: string;
+  /** 當前聊天專屬用戶頭像覆蓋（undefined = 未設定，使用 Persona 原始頭像） */
+  chatUserAvatar?: string;
 }
 
 const props = withDefaults(defineProps<PersonaEditProps>(), {
@@ -20,6 +22,7 @@ const props = withDefaults(defineProps<PersonaEditProps>(), {
   secrets: "",
   powerDynamic: "",
   characterName: "",
+  chatUserAvatar: undefined,
 });
 
 const emit = defineEmits<{
@@ -28,6 +31,7 @@ const emit = defineEmits<{
     e: "save",
     data: { description: string; secrets: string; powerDynamic: string },
   ): void;
+  (e: "change-chat-avatar", avatar: string | undefined): void;
 }>();
 
 // 本地編輯狀態
@@ -63,6 +67,41 @@ function handleSave() {
 // 關閉
 function handleClose() {
   emit("close");
+}
+
+// === 聊天專屬頭像 ===
+const chatAvatarInput = ref<HTMLInputElement | null>(null);
+
+const displayChatAvatar = computed(() => {
+  return props.chatUserAvatar || props.personaAvatar;
+});
+
+const hasChatAvatarOverride = computed(() => {
+  return !!props.chatUserAvatar;
+});
+
+function triggerChatAvatarUpload() {
+  chatAvatarInput.value?.click();
+}
+
+function handleChatAvatarChange(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith("image/")) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const base64 = e.target?.result as string;
+    if (base64) {
+      emit("change-chat-avatar", base64);
+    }
+  };
+  reader.readAsDataURL(file);
+  // 清空 input 以便重複選擇同一檔案
+  (event.target as HTMLInputElement).value = "";
+}
+
+function resetChatAvatar() {
+  emit("change-chat-avatar", undefined);
 }
 </script>
 
@@ -103,6 +142,59 @@ function handleClose() {
               </svg>
             </button>
           </header>
+
+          <!-- 聊天專屬頭像 -->
+          <div class="chat-avatar-section">
+            <input
+              ref="chatAvatarInput"
+              type="file"
+              accept="image/*"
+              style="display: none"
+              @change="handleChatAvatarChange"
+            />
+            <div class="chat-avatar-row">
+              <div
+                class="chat-avatar-preview"
+                :class="{ 'has-override': hasChatAvatarOverride }"
+                @click="triggerChatAvatarUpload"
+              >
+                <img
+                  v-if="displayChatAvatar"
+                  :src="displayChatAvatar"
+                  alt="chat avatar"
+                />
+                <svg v-else viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
+                  />
+                </svg>
+                <div class="avatar-edit-icon">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+                  </svg>
+                </div>
+              </div>
+              <div class="chat-avatar-info">
+                <div class="chat-avatar-label">
+                  此對話專用頭像
+                  <span class="local-badge">僅此聊天</span>
+                </div>
+                <div class="chat-avatar-hint">
+                  {{ hasChatAvatarOverride ? '已設定聊天專用頭像，不會影響其他聊天' : '點擊上傳聊天專用頭像' }}
+                </div>
+              </div>
+              <button
+                v-if="hasChatAvatarOverride"
+                class="reset-avatar-btn"
+                title="還原原來頭像"
+                @click="resetChatAvatar"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
+                </svg>
+              </button>
+            </div>
+          </div>
 
           <!-- Tab 切換 -->
           <div class="tab-bar">
@@ -331,6 +423,120 @@ function handleClose() {
 
   &:hover {
     background: var(--color-surface-hover);
+  }
+}
+
+// 聊天專屬頭像
+.chat-avatar-section {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.chat-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chat-avatar-preview {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--color-background);
+  cursor: pointer;
+  flex-shrink: 0;
+  border: 2px solid var(--color-border);
+  transition: all var(--transition-fast);
+
+  &.has-override {
+    border-color: var(--color-primary);
+  }
+
+  &:hover {
+    border-color: var(--color-primary);
+    opacity: 0.85;
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+  }
+
+  > svg {
+    width: 28px;
+    height: 28px;
+    color: var(--color-text-muted);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+}
+
+.avatar-edit-icon {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  svg {
+    width: 12px;
+    height: 12px;
+    color: white;
+  }
+}
+
+.chat-avatar-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-avatar-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-avatar-hint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.reset-avatar-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-lg);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+
+  svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  &:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-primary);
   }
 }
 

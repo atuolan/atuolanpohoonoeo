@@ -1594,6 +1594,19 @@ const {
     currentChatData.value?.settings?.enableRealTimeAwareness ?? true,
 });
 
+// ===== 聊天專屬頭像覆蓋 =====
+const charAvatarOverride = ref<string | undefined>(undefined);
+const userAvatarOverride = ref<string | undefined>(undefined);
+
+// ===== 情頭系統 =====
+const coupleAvatarLibrary = ref<import('@/types/chat').CoupleAvatarEntry[]>([]);
+const activeCoupleAvatarId = ref<string | null>(null);
+
+async function handleChangeChatUserAvatar(avatar: string | undefined) {
+  userAvatarOverride.value = avatar;
+  await saveChatImmediate();
+}
+
 // ===== 換頭像 composable =====
 const {
   moodAvatarUrl,
@@ -1601,11 +1614,16 @@ const {
   handleAvatarChange,
   confirmForceAvatar,
   findLastUserImage,
+  handleCoupleAvatarAction,
 } = useChatAvatarChange({
   messages,
   currentCharacter,
   characterName: props.characterName,
   saveChatImmediate,
+  charAvatarOverride,
+  userAvatarOverride,
+  coupleAvatarLibrary,
+  activeCoupleAvatarId,
 });
 
 /** 當前顯示的角色頭像（群聊模式優先使用自訂群頭像） */
@@ -1622,10 +1640,18 @@ const displayAvatar = computed(() => {
     return currentChatData.value.groupMetadata?.groupAvatar || "";
   }
   if (moodAvatarUrl.value) return moodAvatarUrl.value;
-  // 從 character store 取最新頭像（accept/forced 後即時更新）
+  // 聊天專屬頭像覆蓋（優先於角色卡原始頭像）
+  if (charAvatarOverride.value) return charAvatarOverride.value;
+  // 從 character store 取最新頭像
   const char = currentCharacter.value;
   if (char?.avatar) return char.avatar;
   return props.characterAvatar;
+});
+
+/** 當前顯示的用戶頭像（聊天專屬覆蓋優先於 Persona 頭像） */
+const displayUserAvatar = computed(() => {
+  if (userAvatarOverride.value) return userAvatarOverride.value;
+  return userStore.currentAvatar;
 });
 
 // ===== 電話 / 視訊通話 =====
@@ -5105,6 +5131,11 @@ async function triggerAIResponse(options?: {
             for (let i = 0; i < parsed.messages.length; i++) {
               const parsedMsg = parsed.messages[i];
 
+              // 處理情頭動作（在跳過空內容之前執行，避免產生空白氣泡）
+              if (parsedMsg.isCoupleAvatar && parsedMsg.coupleAvatarAction) {
+                await handleCoupleAvatarAction(parsedMsg.coupleAvatarAction);
+              }
+
               // 跳過空內容的訊息（例如只有 PLURKPOST 標籤被移除後的空訊息）
               if (
                 !parsedMsg.content &&
@@ -5941,6 +5972,11 @@ async function triggerAIResponse(options?: {
               for (let i = 0; i < parsed.messages.length; i++) {
                 const parsedMsg = parsed.messages[i];
 
+                // 處理情頭動作（在跳過空內容之前執行，避免產生空白氣泡）
+                if (parsedMsg.isCoupleAvatar && parsedMsg.coupleAvatarAction) {
+                  await handleCoupleAvatarAction(parsedMsg.coupleAvatarAction);
+                }
+
                 if (
                   !parsedMsg.content &&
                   !parsedMsg.isTimetravel &&
@@ -6686,6 +6722,13 @@ async function handleStreamingClose() {
           let _shownMsgs3 = 0;
           for (let i = 0; i < parsed.messages.length; i++) {
             const parsedMsg = parsed.messages[i];
+
+            // 處理情頭動作（在建立訊息之前執行，避免產生空白氣泡）
+            if (parsedMsg.isCoupleAvatar && parsedMsg.coupleAvatarAction) {
+              await handleCoupleAvatarAction(parsedMsg.coupleAvatarAction);
+              if (!parsedMsg.content) continue;
+            }
+
             const newMessage: Message = {
               id: `msg_${Date.now()}_${i}`,
               role: "ai",
@@ -7915,6 +7958,14 @@ async function loadOrCreateChat(overrideChatId?: string) {
         // 載入聊天專屬位置覆蓋
         chatLocationOverride.value = chat.locationOverride ?? null;
 
+        // 載入聊天專屬頭像覆蓋
+        charAvatarOverride.value = chat.charAvatarOverride ?? undefined;
+        userAvatarOverride.value = chat.userAvatarOverride ?? undefined;
+
+        // 載入情頭系統
+        coupleAvatarLibrary.value = chat.coupleAvatarLibrary ?? [];
+        activeCoupleAvatarId.value = chat.activeCoupleAvatarId ?? null;
+
         // 載入總結設定
         if (chat.summarySettings) {
           chatSummarySettings.value = { ...chat.summarySettings };
@@ -8458,6 +8509,12 @@ function buildChatMetadata(
     blockState: currentChatData.value?.blockState,
     // 聊天專屬位置覆蓋
     locationOverride: chatLocationOverride.value ?? undefined,
+    // 聊天專屬頭像覆蓋
+    charAvatarOverride: charAvatarOverride.value,
+    userAvatarOverride: userAvatarOverride.value,
+    // 情頭系統
+    coupleAvatarLibrary: coupleAvatarLibrary.value.length > 0 ? coupleAvatarLibrary.value : undefined,
+    activeCoupleAvatarId: activeCoupleAvatarId.value,
   };
 }
 
@@ -9494,7 +9551,7 @@ onUnmounted(() => {
                 : ''
             "
             :user-avatar="
-              message.role === 'user' ? userStore.currentAvatar : ''
+              message.role === 'user' ? displayUserAvatar : ''
             "
             :sender-name="
               message.role === 'ai'
@@ -9950,7 +10007,7 @@ onUnmounted(() => {
       <ChatInfoModal
         :visible="showChatInfoModal"
         :character-name="characterName"
-        :character-avatar="characterAvatar"
+        :character-avatar="displayAvatar"
         :is-group-chat="isGroupChat"
         :group-name="groupMetadata?.groupName"
         :group-avatar="groupMetadata?.groupAvatar"
@@ -10423,8 +10480,10 @@ onUnmounted(() => {
             : (userStore.currentPersona?.powerDynamic ?? '')
         "
         :character-name="characterName"
+        :chat-user-avatar="userAvatarOverride"
         @close="showPersonaEditPanel = false"
         @save="savePersonaEdit"
+        @change-chat-avatar="handleChangeChatUserAvatar"
       />
 
       <!-- 遊戲成績選擇器 -->

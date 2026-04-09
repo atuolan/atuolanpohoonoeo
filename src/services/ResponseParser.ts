@@ -61,7 +61,16 @@ export interface ParsedMessage {
   // 線上模式切換請求
   isOnlineModeRequest?: boolean;
   onlineModeRequestReason?: string;
+  // 情頭系統
+  isCoupleAvatar?: boolean;
+  coupleAvatarAction?: CoupleAvatarAction;
 }
+
+export type CoupleAvatarAction =
+  | { type: "crop"; name: string; description: string; mode: string; userRect: number[]; charRect: number[] }
+  | { type: "collect"; name: string; description: string; userIndex: number; charIndex: number }
+  | { type: "apply"; name: string }
+  | { type: "remove" }
 
 export interface ParsedResponse {
   /** 思考過程（<think> 標籤內容） */
@@ -354,6 +363,9 @@ function parseTextOnlyContent(content: string): ParsedMessage {
       .trim();
   }
 
+  // 檢查情頭標籤
+  parseCoupleAvatarTag(result);
+
   // 檢查 AI 圖片
   const picWithPromptMatch = result.content.match(
     /<pic\s+prompt=["']([^"']+)["']\s*>([\s\S]*?)<\/pic>/i,
@@ -585,6 +597,9 @@ function parseMessageContentWithoutTimetravel(content: string): ParsedMessage {
       .replace(/<avatar-change\s+[^>]*?\s*\/?>/gi, "")
       .trim();
   }
+
+  // 檢查情侶頭像
+  parseCoupleAvatarTag(result);
 
   // 檢查 AI 圖片 <pic prompt="english keywords">中文描述</pic> 或 <pic>中文描述</pic>
   const picWithPromptMatch = result.content.match(
@@ -1069,7 +1084,8 @@ function isNonEmptyMessage(msg: ParsedMessage): boolean {
     msg.isWaimaiDelivery ||
     msg.isCharRecall ||
     msg.isFaceToFaceRequest ||
-    msg.isOnlineModeRequest
+    msg.isOnlineModeRequest ||
+    msg.isCoupleAvatar
   );
 
   // 調試日誌：記錄空消息過濾
@@ -1268,6 +1284,9 @@ function parseMessageContent(content: string): ParsedMessage {
       .trim();
   }
 
+  // 檢查情頭標籤
+  parseCoupleAvatarTag(result);
+
   // 檢查 AI 圖片 <pic prompt="english keywords">中文描述</pic> 或 <pic>中文描述</pic>
   const picWithPromptMatch = result.content.match(
     /<pic\s+prompt=["']([^"']+)["']\s*>([\s\S]*?)<\/pic>/i,
@@ -1372,10 +1391,55 @@ function extractAttr(attrs: string, name: string): string | undefined {
   return match ? match[1] : undefined;
 }
 
+// ===== 情頭標籤解析 =====
+const COUPLE_AVATAR_RE = /<couple-avatar-(crop|collect|apply|remove)\s*([^>]*?)\s*\/?>/gi;
+
+function parseCoupleAvatarTag(result: ParsedMessage): void {
+  COUPLE_AVATAR_RE.lastIndex = 0;
+  const m = COUPLE_AVATAR_RE.exec(result.content);
+  if (!m) return;
+
+  const subType = m[1].toLowerCase();
+  const attrs = m[2] || "";
+
+  if (subType === "crop") {
+    const name = extractAttr(attrs, "name") || "";
+    const desc = extractAttr(attrs, "desc") || "";
+    const mode = extractAttr(attrs, "mode") || "overlap";
+    const userStr = extractAttr(attrs, "user") || "";
+    const charStr = extractAttr(attrs, "char") || "";
+    const userRect = userStr.split(",").map(Number);
+    const charRect = charStr.split(",").map(Number);
+    if (userRect.length >= 4 && charRect.length >= 4 && userRect.every(n => !isNaN(n)) && charRect.every(n => !isNaN(n))) {
+      result.isCoupleAvatar = true;
+      result.coupleAvatarAction = { type: "crop", name, description: desc, mode, userRect, charRect };
+    }
+  } else if (subType === "collect") {
+    const name = extractAttr(attrs, "name") || "";
+    const desc = extractAttr(attrs, "desc") || "";
+    const userIndex = parseInt(extractAttr(attrs, "user") || "1", 10);
+    const charIndex = parseInt(extractAttr(attrs, "char") || "2", 10);
+    result.isCoupleAvatar = true;
+    result.coupleAvatarAction = { type: "collect", name, description: desc, userIndex, charIndex };
+  } else if (subType === "apply") {
+    const name = extractAttr(attrs, "name") || "";
+    result.isCoupleAvatar = true;
+    result.coupleAvatarAction = { type: "apply", name };
+  } else if (subType === "remove") {
+    result.isCoupleAvatar = true;
+    result.coupleAvatarAction = { type: "remove" };
+  }
+
+  // 移除所有情頭標籤
+  result.content = result.content
+    .replace(/<couple-avatar-(?:crop|collect|apply|remove)\s*[^>]*?\s*\/?>/gi, "")
+    .trim();
+}
+
 /**
  * 解析 schedule-call 標籤
  * 支援格式：<schedule-call delay="5m" reason="想確認她有沒有去看醫生"/>
- * 或：<schedule-call delay="5m" reason="想確認她有沒有去看醫生" opening="喂～你在幹嘛？"/>
+ * 或：<schedule-call delay="5m" reason="想確認她有沒有去看醫生" opening="喂～你在幹嗎？"/>
  *
  * @param rawResponse - 原始 AI 回覆
  * @returns 解析後的 ScheduleCallData，如果沒有有效標籤則返回 null
@@ -1770,7 +1834,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<time-jump|<送禮物>|<pay>|<refund>|<avatar-change|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<time-jump|<送禮物>|<pay>|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }
