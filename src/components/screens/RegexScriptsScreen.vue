@@ -265,19 +265,32 @@ function placementLabel(script: RegexScript): string {
       >
     </div>
 
-    <!-- 空狀態 -->
-    <div v-if="!store.scripts.length" class="empty-state">
-      <svg viewBox="0 0 24 24" fill="currentColor" class="empty-icon">
-        <path
-          d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"
-        />
-      </svg>
-      <p>尚無腳本</p>
-      <p class="empty-sub">點擊「新增」或導入酒館 regex JSON</p>
+    <!-- 內置腳本區塊 -->
+    <div v-if="store.builtinScripts.length" class="scripts-list">
+      <div class="section-label">內置腳本</div>
+      <div
+        v-for="script in store.builtinScripts"
+        :key="script.id"
+        class="script-item builtin"
+      >
+        <div class="script-main">
+          <div class="script-name">
+            <span class="builtin-badge">內置</span>
+            {{ script.scriptName.replace(/^\[內置\]\s*/, '') }}
+          </div>
+          <div class="script-meta">
+            <span class="meta-tag">{{ placementLabel(script) }}</span>
+            <span v-if="script.markdownOnly" class="meta-tag">僅顯示</span>
+            <span v-if="script.promptOnly" class="meta-tag">僅提示詞</span>
+          </div>
+          <div class="script-regex">{{ script.findRegex }}</div>
+        </div>
+      </div>
     </div>
 
-    <!-- 腳本列表 -->
-    <div v-else class="scripts-list">
+    <!-- 使用者腳本 -->
+    <div v-if="store.scripts.length" class="scripts-list">
+      <div class="section-label">自定義腳本</div>
       <div
         v-for="script in store.scripts"
         :key="script.id"
@@ -335,6 +348,17 @@ function placementLabel(script: RegexScript): string {
           </button>
         </div>
       </div>
+    </div>
+
+    <!-- 空狀態（無自定義腳本時） -->
+    <div v-if="!store.scripts.length" class="empty-state">
+      <svg viewBox="0 0 24 24" fill="currentColor" class="empty-icon">
+        <path
+          d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"
+        />
+      </svg>
+      <p>尚無自定義腳本</p>
+      <p class="empty-sub">點擊「新增」或導入酒館 regex JSON</p>
     </div>
 
     <!-- 編輯彈窗 -->
@@ -669,12 +693,19 @@ function placementLabel(script: RegexScript): string {
 }
 
 .scripts-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px 16px;
+  padding: 12px 16px 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #999);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0 4px;
 }
 
 .script-item {
@@ -686,8 +717,26 @@ function placementLabel(script: RegexScript): string {
   padding: 12px;
   transition: opacity 0.2s;
 }
+.script-item.builtin {
+  opacity: 0.75;
+  border: 1px dashed var(--color-border, #ddd);
+}
+.script-item.builtin .script-main {
+  cursor: default;
+}
 .script-item.disabled {
   opacity: 0.5;
+}
+
+.builtin-badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  background: var(--color-text-secondary, #999);
+  color: #fff;
+  border-radius: 8px;
+  margin-right: 4px;
+  vertical-align: middle;
 }
 
 .script-main {

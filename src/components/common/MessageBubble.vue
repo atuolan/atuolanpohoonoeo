@@ -810,7 +810,7 @@ new MutationObserver(function(){setTimeout(_reportHeight,50);}).observe(document
     // ★ 套用 markdownOnly regex 腳本（顯示層轉換，不污染原始訊息）
     const beforeRegex = processedContent;
     const mergedScripts = [
-      ...regexScriptsStore.scripts,
+      ...regexScriptsStore.allScripts,
       ...(props.characterRegexScripts ?? []),
     ];
 

@@ -386,7 +386,7 @@ const emit = defineEmits<{
 // ===== Regex 腳本套用 helpers =====
 // 取得合併腳本：全域腳本（先）+ 角色卡內嵌腳本（後），對應 ST 的 getRegexScripts()
 function getActiveRegexScripts() {
-  const global = regexScriptsStore.scripts ?? [];
+  const global = regexScriptsStore.allScripts ?? [];
   const charScripts =
     currentCharacter.value?.data?.extensions?.regex_scripts ?? [];
   return [...global, ...charScripts];

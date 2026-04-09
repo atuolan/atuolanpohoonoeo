@@ -8,13 +8,56 @@ import { db } from "@/db/database";
 import { migrateRegexScript } from "@/services/RegexEngine";
 import type { RegexScript } from "@/types/character";
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { computed, ref } from "vue";
+
+// ===== 內置正則腳本（不可被使用者刪除，始終生效） =====
+const BUILTIN_SCRIPTS: RegexScript[] = [
+  {
+    id: "__builtin_delete_jiqi",
+    scriptName: "[內置] 删除极其",
+    findRegex: "/極其|极其|奇蹟般地|奇迹般地|奇迹地|近乎/g",
+    replaceString: "",
+    trimStrings: [],
+    placement: [1, 2],
+    disabled: false,
+    markdownOnly: true,
+    promptOnly: true,
+    runOnEdit: true,
+    substituteRegex: 1,
+    minDepth: -1,
+    maxDepth: -1,
+  },
+  {
+    id: "__builtin_delete_yisi",
+    scriptName: "[內置] 删除一丝难以察觉",
+    findRegex: "/(一[丝絲]([难難]以察[觉覺]的?)?|[难難]以察[觉覺]的?)/g",
+    replaceString: "",
+    trimStrings: [],
+    placement: [1, 2],
+    disabled: false,
+    markdownOnly: true,
+    promptOnly: true,
+    runOnEdit: true,
+    substituteRegex: 1,
+    minDepth: -1,
+    maxDepth: -1,
+  },
+];
 
 const STORAGE_KEY = "global-regex-scripts";
 
 export const useRegexScriptsStore = defineStore("regexScripts", () => {
   const scripts = ref<RegexScript[]>([]);
   const initialized = ref(false);
+
+  /** 內置腳本（唯讀） */
+  const builtinScripts = BUILTIN_SCRIPTS;
+
+  /** 合併內置 + 使用者腳本（消費者應使用此列表） */
+  const allScripts = computed<RegexScript[]>(() => [
+    ...BUILTIN_SCRIPTS.filter((b) => !b.disabled),
+    ...scripts.value,
+  ]);
 
   async function init(): Promise<void> {
     if (initialized.value) return;
@@ -100,6 +143,8 @@ export const useRegexScriptsStore = defineStore("regexScripts", () => {
 
   return {
     scripts,
+    builtinScripts,
+    allScripts,
     initialized,
     init,
     addScript,
