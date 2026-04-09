@@ -918,7 +918,8 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
             parsed.isWaimaiDelivery ||
             parsed.isCharRecall ||
             parsed.isFaceToFaceRequest ||
-            parsed.isOnlineModeRequest
+            parsed.isOnlineModeRequest ||
+            parsed.isCoupleAvatar
           ) {
             result.messages.push(parsed);
           }

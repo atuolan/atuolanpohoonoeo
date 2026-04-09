@@ -107,8 +107,9 @@ function formatTime(timestamp: number): string {
   return `${date.getMonth() + 1}/${date.getDate()}`;
 }
 
-// 獲取角色頭像
-function getCharacterAvatar(characterId: string): string {
+// 獲取角色頭像（優先使用聊天專屬覆蓋頭像）
+function getCharacterAvatar(characterId: string, chat?: Chat): string {
+  if (chat?.charAvatarOverride) return chat.charAvatarOverride;
   const char = charactersStore.characters.find((c) => c.id === characterId);
   return char?.avatar || "";
 }
@@ -536,17 +537,17 @@ async function togglePinChat() {
           >
             <div class="chat-avatar">
               <img
-                v-if="!chat.isGroupChat && getCharacterAvatar(chat.characterId)"
-                :src="getCharacterAvatar(chat.characterId)"
+                v-if="!chat.isGroupChat && getCharacterAvatar(chat.characterId, chat)"
+                :src="getCharacterAvatar(chat.characterId, chat)"
                 :alt="getCharacterName(chat)"
               />
               <img
                 v-else-if="
                   chat.isGroupChat &&
                   chat.groupMetadata?.isMultiCharCard &&
-                  getCharacterAvatar(chat.characterId)
+                  getCharacterAvatar(chat.characterId, chat)
                 "
-                :src="getCharacterAvatar(chat.characterId)"
+                :src="getCharacterAvatar(chat.characterId, chat)"
                 :alt="getCharacterName(chat)"
               />
               <img
