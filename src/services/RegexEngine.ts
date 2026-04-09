@@ -176,9 +176,16 @@ export function getRegexedString(
     // 篩選邏輯（對應 ST engine.js）
     const { isMarkdown = false, isPrompt = false, isEdit = false } = params;
 
-    if (script.markdownOnly && !isMarkdown) continue;
-    if (script.promptOnly && !isPrompt) continue;
-    if (!script.markdownOnly && !script.promptOnly && (isMarkdown || isPrompt)) continue;
+    if (script.markdownOnly || script.promptOnly) {
+      // 有上下文限制 → 只在符合的上下文中執行（OR 語義）
+      const matchesContext =
+        (script.markdownOnly && isMarkdown) ||
+        (script.promptOnly && isPrompt);
+      if (!matchesContext) continue;
+    } else {
+      // 無特殊標記 → 僅在一般模式執行（非 markdown / 非 prompt）
+      if (isMarkdown || isPrompt) continue;
+    }
 
     if (isEdit && !script.runOnEdit) continue;
 

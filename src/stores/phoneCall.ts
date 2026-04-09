@@ -7,6 +7,7 @@ import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
 import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import { db, DB_STORES } from "@/db/database";
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
+import { parseAffinityUpdateTags } from "@/services/ResponseParser";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
@@ -649,6 +650,9 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
               isStreaming: false, tone: p.tone,
             });
           }
+
+          // 提取並套用 MVU 變量更新（卡內帶 MVU 時 AI 會輸出 <UpdateVariable>/<update> 標籤）
+          await applyMvuUpdatesFromResponse(finalContent);
         }
       }
     } catch (error) {
@@ -665,7 +669,18 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   function parsePhoneJsonOutput(content: string): { text: string; tone?: string }[] {
     if (!content?.trim()) return [{ text: "..." }];
     let cleaned = content.replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "")
-      .replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+      .replace(/```json\s*/gi, "").replace(/```\s*/g, "")
+      // 剝離 MVU 變量更新標籤（卡內帶 MVU 時 AI 會輸出這些）
+      .replace(/<UpdateVariable>[\s\S]*?<\/UpdateVariable>/gi, "")
+      .replace(/<update>[\s\S]*?<\/update>/gi, "")
+      .replace(/<Analysis>[\s\S]*?<\/Analysis>/gi, "")
+      // 剝離 affinity-update 標籤
+      .replace(/<affinity-update\s+[^>]*?\s*\/?>/gi, "")
+      // 剝離噗浪發文標籤
+      .replace(/\[PLURKPOST\][\s\S]*?\[\/PLURKPOST\]/gi, "")
+      // 剝離表情反應標籤
+      .replace(/\[REACTIONS\][\s\S]*?\[\/REACTIONS\]/gi, "")
+      .trim();
     // 來電 assistant prefill 會導致 AI 回覆缺少開頭的 [，自動補齊
     if (cleaned.startsWith("{") && !cleaned.startsWith("[")) {
       cleaned = "[" + cleaned;
@@ -683,6 +698,47 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     if (voiceMatch) return [{ text: voiceMatch[1].trim() || "..." }];
     cleaned = cleaned.replace(/<\/?(?:voice|content|msg)>/gi, "").trim();
     return cleaned ? [{ text: cleaned }] : [{ text: "..." }];
+  }
+
+  // ===== 從 AI 回覆中提取並套用 MVU 變量更新 =====
+  async function applyMvuUpdatesFromResponse(rawContent: string) {
+    try {
+      const updates = parseAffinityUpdateTags(rawContent);
+      if (!updates.length) return;
+
+      const info = activeCall.value;
+      const chatId = info?.chatId;
+      if (!chatId) {
+        console.log("[phoneCall] 無 chatId，跳過 MVU 更新");
+        return;
+      }
+
+      const { useAffinityStore } = await import("@/stores/affinity");
+      const affinityStore = useAffinityStore();
+
+      // 確認好感度功能已啟用
+      const chat = await db.get<any>(DB_STORES.CHATS, chatId);
+      const affinityConfig = chat?.affinityConfig;
+      if (!affinityConfig?.enabled) {
+        console.log("[phoneCall] 好感度未啟用，跳過 MVU 更新");
+        return;
+      }
+
+      affinityStore.resetMvuDeltaData(chatId);
+      affinityStore.batchUpdateByPath(chatId, updates);
+      console.log(
+        "[phoneCall] MVU 變量更新:",
+        updates
+          .map((u) => {
+            if (u.stringValue !== undefined) return `${u.metric} → "${u.stringValue}"`;
+            if (u.isAbsolute && u.absoluteValue !== undefined) return `${u.metric} = ${u.absoluteValue}`;
+            return `${u.metric} ${u.change > 0 ? "+" : ""}${u.change}`;
+          })
+          .join(", "),
+      );
+    } catch (err) {
+      console.error("[phoneCall] MVU 更新失敗:", err);
+    }
   }
 
   // ===== AI 決定是否接聽 =====
