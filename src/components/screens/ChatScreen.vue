@@ -8370,6 +8370,13 @@ function convertToStorableMessage(m: any, charName: string): ChatMessage {
     charRecallContent: m.charRecallContent,
     charRecallHints: m.charRecallHints ? [...m.charRecallHints] : undefined,
     charRecallRevealed: m.charRecallRevealed,
+    // 面對面/線上模式請求相關
+    isFaceToFaceRequest: m.isFaceToFaceRequest,
+    faceToFaceRequestReason: m.faceToFaceRequestReason,
+    faceToFaceRequestStatus: m.faceToFaceRequestStatus,
+    isOnlineModeRequest: m.isOnlineModeRequest,
+    onlineModeRequestReason: m.onlineModeRequestReason,
+    onlineModeRequestStatus: m.onlineModeRequestStatus,
     // 封鎖系統相關
     sentWhileBlocked: m.sentWhileBlocked,
     isSystemNotification: m.isSystemNotification,
