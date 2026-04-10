@@ -5331,16 +5331,27 @@ async function triggerAIResponse(options?: {
               }
             }
 
-            // 如果沒有解析出任何訊息，保留原始內容
-            if (parsed.messages.length === 0) {
-              const fallbackMessage: Message = {
-                id: aiMessage.id,
-                role: "ai",
-                content: parsed.rawOutput || finalContent,
-                timestamp: Date.now(),
-                turnId: currentTurnId.value || undefined,
-              };
-              messages.value.push(fallbackMessage);
+            // 如果沒有解析出任何訊息 **或** 解析出的訊息全被過濾（例如僅含情頭動作），保留原始內容
+            if (parsed.messages.length === 0 || _shownMsgs1 === 0) {
+              if (_shownMsgs1 === 0 && parsed.messages.length > 0) {
+                console.warn(
+                  "[ChatScreen] 所有解析訊息被過濾，觸發 fallback",
+                  { parsedCount: parsed.messages.length },
+                );
+              }
+              const fallbackContent = parsed.rawOutput || finalContent;
+              // 只有當 fallback 有實質文字內容時才推送（避免空氣泡）
+              const strippedFallback = fallbackContent.replace(/<[^>]*>/g, "").trim();
+              if (strippedFallback) {
+                const fallbackMessage: Message = {
+                  id: aiMessage.id,
+                  role: "ai",
+                  content: fallbackContent,
+                  timestamp: Date.now(),
+                  turnId: currentTurnId.value || undefined,
+                };
+                messages.value.push(fallbackMessage);
+              }
             }
           }
         } else {
@@ -6169,15 +6180,25 @@ async function triggerAIResponse(options?: {
                 }
               }
 
-              if (parsed.messages.length === 0) {
-                const fallbackMessage: Message = {
-                  id: aiMessage.id,
-                  role: "ai",
-                  content: parsed.rawOutput || finalContent,
-                  timestamp: Date.now(),
-                  turnId: currentTurnId.value || undefined,
-                };
-                messages.value.push(fallbackMessage);
+              if (parsed.messages.length === 0 || _shownMsgs2 === 0) {
+                if (_shownMsgs2 === 0 && parsed.messages.length > 0) {
+                  console.warn(
+                    "[ChatScreen] 流式：所有解析訊息被過濾，觸發 fallback",
+                    { parsedCount: parsed.messages.length },
+                  );
+                }
+                const fallbackContent = parsed.rawOutput || finalContent;
+                const strippedFallback = fallbackContent.replace(/<[^>]*>/g, "").trim();
+                if (strippedFallback) {
+                  const fallbackMessage: Message = {
+                    id: aiMessage.id,
+                    role: "ai",
+                    content: fallbackContent,
+                    timestamp: Date.now(),
+                    turnId: currentTurnId.value || undefined,
+                  };
+                  messages.value.push(fallbackMessage);
+                }
               }
             }
           } else {
@@ -6941,16 +6962,26 @@ async function handleStreamingClose() {
             }
           }
 
-          // 如果沒有解析出任何訊息，保留原始內容
-          if (parsed.messages.length === 0) {
-            const fallbackMessage: Message = {
-              id: `msg_${Date.now()}`,
-              role: "ai",
-              content: parsed.rawOutput || windowContent,
-              timestamp: Date.now(),
-              turnId: currentTurnId.value || undefined,
-            };
-            messages.value.push(fallbackMessage);
+          // 如果沒有解析出任何訊息 **或** 解析出的訊息全被過濾，保留原始內容
+          if (parsed.messages.length === 0 || _shownMsgs3 === 0) {
+            if (_shownMsgs3 === 0 && parsed.messages.length > 0) {
+              console.warn(
+                "[ChatScreen] 窗口關閉：所有解析訊息被過濾，觸發 fallback",
+                { parsedCount: parsed.messages.length },
+              );
+            }
+            const fallbackContent = parsed.rawOutput || windowContent;
+            const strippedFallback = fallbackContent.replace(/<[^>]*>/g, "").trim();
+            if (strippedFallback) {
+              const fallbackMessage: Message = {
+                id: `msg_${Date.now()}`,
+                role: "ai",
+                content: fallbackContent,
+                timestamp: Date.now(),
+                turnId: currentTurnId.value || undefined,
+              };
+              messages.value.push(fallbackMessage);
+            }
           }
         }
       } // end else (non-group-chat)
