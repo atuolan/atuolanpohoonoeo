@@ -4,10 +4,12 @@
  */
 
 import { useStreamingWindow } from "@/composables/useStreamingWindow";
+import { db, DB_STORES } from "@/db/database";
 import {
   extractChatContext,
   extractSummariesAndEvents,
   generateSequential,
+  generateSinglePhase,
 } from "@/services/PeekPhoneService";
 import { useLorebooksStore } from "@/stores/lorebooks";
 import { useNotificationStore } from "@/stores/notification";
@@ -75,6 +77,86 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     phoneData: PeekPhoneData,
   ): void {
     cache.set(cacheKey(charId, cId), phoneData);
+  }
+
+  // ===== IDB Persistence =====
+
+  /** 從 IDB 載入偷窺手機資料 */
+  async function loadFromIDB(charId: string, cId: string): Promise<PeekPhoneData | null> {
+    try {
+      await db.init();
+      const key = cacheKey(charId, cId);
+      const record = await db.get<{ id: string; characterId: string; chatId: string; data: PeekPhoneData; updatedAt: number }>(DB_STORES.PEEK_PHONE_DATA, key);
+      if (record?.data) {
+        // 同步寫入記憶體快取
+        cache.set(key, record.data);
+        return record.data;
+      }
+    } catch (err) {
+      console.warn("[PeekPhone] 從 IDB 載入失敗:", err);
+    }
+    return null;
+  }
+
+  /** 將偷窺手機資料寫入 IDB */
+  async function saveToIDB(charId: string, cId: string, phoneData: PeekPhoneData): Promise<void> {
+    try {
+      await db.init();
+      const key = cacheKey(charId, cId);
+      await db.put(DB_STORES.PEEK_PHONE_DATA, {
+        id: key,
+        characterId: charId,
+        chatId: cId,
+        data: phoneData,
+        updatedAt: Date.now(),
+      });
+    } catch (err) {
+      console.warn("[PeekPhone] 寫入 IDB 失敗:", err);
+    }
+  }
+
+  /** 從 IDB 刪除偷窺手機資料 */
+  async function deleteFromIDB(charId: string, cId: string): Promise<void> {
+    try {
+      await db.init();
+      await db.delete(DB_STORES.PEEK_PHONE_DATA, cacheKey(charId, cId));
+    } catch (err) {
+      console.warn("[PeekPhone] 從 IDB 刪除失敗:", err);
+    }
+  }
+
+  /**
+   * 載入指定聊天的偷窺手機資料，或重置為空
+   * 優先順序：記憶體快取 → IDB → 重置為 null
+   * 確保切換聊天時不會看到上一個聊天的內容
+   */
+  async function loadOrReset(charId: string, cId: string): Promise<boolean> {
+    characterId.value = charId;
+    chatId.value = cId;
+
+    // 1. 檢查記憶體快取
+    const cached = getCached(charId, cId);
+    if (cached) {
+      data.value = cached;
+      groupStatus.value = { A: "done", B: "done", C: "done", D: "done" };
+      groupErrors.value = { A: null, B: null, C: null, D: null };
+      return true;
+    }
+
+    // 2. 嘗試從 IDB 載入
+    const fromIDB = await loadFromIDB(charId, cId);
+    if (fromIDB) {
+      data.value = fromIDB;
+      groupStatus.value = { A: "done", B: "done", C: "done", D: "done" };
+      groupErrors.value = { A: null, B: null, C: null, D: null };
+      return true;
+    }
+
+    // 3. 無資料，重置為 null（確保不顯示其他聊天的內容）
+    data.value = null;
+    groupStatus.value = { A: "idle", B: "idle", C: "idle", D: "idle" };
+    groupErrors.value = { A: null, B: null, C: null, D: null };
+    return false;
   }
 
   // ===== Generation Actions =====
@@ -172,10 +254,21 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     character: StoredCharacter,
     chat: Chat,
   ): Promise<void> {
-    // 檢查快取
+    // 檢查記憶體快取
     const cached = getCached(charId, cId);
     if (cached) {
       data.value = cached;
+      characterId.value = charId;
+      chatId.value = cId;
+      groupStatus.value = { A: "done", B: "done", C: "done", D: "done" };
+      groupErrors.value = { A: null, B: null, C: null, D: null };
+      return;
+    }
+
+    // 檢查 IDB 持久化資料
+    const fromIDB = await loadFromIDB(charId, cId);
+    if (fromIDB) {
+      data.value = fromIDB;
       characterId.value = charId;
       chatId.value = cId;
       groupStatus.value = { A: "done", B: "done", C: "done", D: "done" };
@@ -257,6 +350,8 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       });
 
       storeCache(charId, cId, data.value);
+      // 持久化到 IDB
+      saveToIDB(charId, cId, data.value);
     } catch (err: any) {
       if (err?.name === "AbortError") {
         streamingWindow?.clearAbortBinding();
@@ -297,7 +392,143 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     if (!characterId.value || !chatId.value) return;
     abortController.value?.abort();
     clearCache(characterId.value, chatId.value);
+    deleteFromIDB(characterId.value, chatId.value);
     await generateAll(characterId.value, chatId.value, character, chat);
+  }
+
+  /**
+   * 單獨重新生成某一階段（A / BC / D）
+   * - 清除該階段對應的欄位
+   * - 保留其他已生成的欄位作為上下文
+   * - 生成完成後合併回 data 並儲存到快取 + IDB
+   */
+  async function regeneratePhase(
+    phase: "A" | "BC" | "D",
+    character: StoredCharacter,
+    chat: Chat,
+  ): Promise<void> {
+    if (!characterId.value || !chatId.value) return;
+    const charId = characterId.value;
+    const cId = chatId.value;
+
+    abortController.value?.abort();
+
+    // 確保 data 存在
+    if (!data.value) {
+      data.value = createEmptyData(charId);
+    }
+
+    // 清除該階段對應的欄位
+    if (phase === "A") {
+      data.value = { ...data.value, chats: [] };
+      groupStatus.value.A = "loading";
+      groupErrors.value.A = null;
+    } else if (phase === "BC") {
+      data.value = { ...data.value, schedule: [], meals: [], memos: [], notes: [], diary: [], balance: 0, transactions: [] };
+      groupStatus.value.B = "loading";
+      groupStatus.value.C = "loading";
+      groupErrors.value.B = null;
+      groupErrors.value.C = null;
+    } else if (phase === "D") {
+      data.value = { ...data.value, gallery: [], browserHistory: [], hiddenPhotos: [] };
+      groupStatus.value.D = "loading";
+      groupErrors.value.D = null;
+    }
+
+    const chatContext = extractChatContext(chat, 15);
+    const summariesAndEvents = await extractSummariesAndEvents(cId, charId);
+    const { userName, userDescription } = resolveUserInfo(chat, charId);
+    const worldInfo = extractWorldInfo(character);
+
+    const settingsStore = useSettingsStore();
+    const taskConfig = settingsStore.getAPIForTask("peekPhone");
+    const isStreamingEnabled = taskConfig.generation.streamingEnabled;
+    const useWindow = isStreamingEnabled && taskConfig.generation.useStreamingWindow;
+
+    const streamingWindow = useWindow ? useStreamingWindow() : null;
+    if (streamingWindow) {
+      streamingWindow.show(taskConfig.api.model || "AI");
+    }
+
+    const controller = new AbortController();
+    abortController.value = controller;
+    const unbindAbort = streamingWindow
+      ? streamingWindow.bindAbortController(controller)
+      : null;
+
+    try {
+      const partial = await generateSinglePhase(
+        phase,
+        character,
+        chatContext,
+        userName,
+        userDescription,
+        worldInfo,
+        summariesAndEvents,
+        data.value,
+        cId,
+        controller.signal,
+        streamingWindow
+          ? (token) => streamingWindow.appendToken(token)
+          : undefined,
+      );
+
+      // 合併回 data
+      data.value = { ...data.value!, ...partial };
+
+      // 更新狀態
+      if (phase === "A") {
+        groupStatus.value.A = "done";
+      } else if (phase === "BC") {
+        groupStatus.value.B = "done";
+        groupStatus.value.C = "done";
+      } else if (phase === "D") {
+        groupStatus.value.D = "done";
+      }
+
+      if (streamingWindow) streamingWindow.setComplete();
+
+      // 儲存到快取 + IDB
+      storeCache(charId, cId, data.value);
+      saveToIDB(charId, cId, data.value);
+
+      const notificationStore = useNotificationStore();
+      const charName = character.data.name || character.nickname || "角色";
+      const phaseLabel = phase === "A" ? "聊天紀錄" : phase === "BC" ? "行程/日記/錢包" : "相冊/瀏覽紀錄";
+      notificationStore.addNotification({
+        type: "system",
+        title: "📱 偷窺手機局部刷新完成",
+        message: `${charName} 的${phaseLabel}已重新生成`,
+        characterId: charId,
+        characterName: charName,
+        characterAvatar: character.avatar,
+        priority: "normal",
+      });
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        streamingWindow?.clearAbortBinding();
+        if (streamingWindow) streamingWindow.setComplete();
+        return;
+      }
+      const msg = err?.message ?? "生成失敗";
+      if (phase === "A") {
+        groupStatus.value.A = "error";
+        groupErrors.value.A = msg;
+      } else if (phase === "BC") {
+        groupStatus.value.B = "error";
+        groupStatus.value.C = "error";
+        groupErrors.value.B = msg;
+        groupErrors.value.C = msg;
+      } else if (phase === "D") {
+        groupStatus.value.D = "error";
+        groupErrors.value.D = msg;
+      }
+      if (streamingWindow) streamingWindow.setError(msg);
+    } finally {
+      unbindAbort?.();
+      streamingWindow?.clearAbortBinding();
+      abortController.value = null;
+    }
   }
 
   return {
@@ -311,9 +542,15 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     getCached,
     clearCache,
     storeCache,
+    // IDB persistence
+    loadFromIDB,
+    saveToIDB,
+    deleteFromIDB,
+    loadOrReset,
     // Generation actions
     ensureInitialized,
     generateAll,
+    regeneratePhase,
     retryGroup,
     abortAll,
     // Exposed for testing

@@ -20,6 +20,7 @@ import type { HolidayTriggerRecord } from "@/types/holiday";
 import type { ImportantEventsLog } from "@/types/importantEvents";
 import type { AppSettings } from "@/types/settings";
 import type { StickerCategory } from "@/types/sticker";
+import type { PeekPhoneData } from "@/types/peekPhone";
 import type { Lorebook } from "@/types/worldinfo";
 import { DBSchema, IDBPDatabase, openDB } from "idb";
 
@@ -283,6 +284,16 @@ interface AguaphoneDB extends DBSchema {
       "by-sourceType": string;
     };
   };
+  // === v23 新增：偷窺手機資料持久化 ===
+  peekPhoneData: {
+    key: string; // 格式: "${characterId}:${chatId}"
+    value: { id: string; characterId: string; chatId: string; data: PeekPhoneData; updatedAt: number };
+    indexes: {
+      "by-character": string;
+      "by-chat": string;
+      "by-updated": number;
+    };
+  };
 }
 
 // ============================================================
@@ -290,7 +301,7 @@ interface AguaphoneDB extends DBSchema {
 // ============================================================
 
 const DB_NAME = "aguaphone-db";
-const DB_VERSION = 22;
+const DB_VERSION = 23;
 
 // Store 名稱常量
 export const DB_STORES = {
@@ -321,6 +332,7 @@ export const DB_STORES = {
   AUDIO_BLOBS: "audio-blobs",
   CHAT_AFFINITY_STATES: "chatAffinityStates",
   VECTOR_EMBEDDINGS: "vectorEmbeddings",
+  PEEK_PHONE_DATA: "peekPhoneData",
 } as const;
 
 // ============================================================
@@ -757,6 +769,18 @@ export async function getDatabase(): Promise<IDBPDatabase<AguaphoneDB>> {
         vectorStore.createIndex("by-chatId", "chatId");
         vectorStore.createIndex("by-sourceType", "sourceType");
       }
+
+      // === v23 新增表 ===
+
+      // 建立 peekPhoneData 表（偷窺手機資料持久化，每個聊天紀錄獨立儲存）
+      if (!db.objectStoreNames.contains("peekPhoneData")) {
+        const peekPhoneStore = db.createObjectStore("peekPhoneData", {
+          keyPath: "id",
+        });
+        peekPhoneStore.createIndex("by-character", "characterId");
+        peekPhoneStore.createIndex("by-chat", "chatId");
+        peekPhoneStore.createIndex("by-updated", "updatedAt");
+      }
     },
     blocked() {
       console.warn("[DB] 資料庫被阻擋，嘗試關閉舊連線以解除阻擋...");
@@ -842,6 +866,7 @@ export async function clearAllData(): Promise<void> {
     "audio-blobs",
     "chatAffinityStates",
     "vectorEmbeddings",
+    "peekPhoneData",
   ] as const;
   const tx = database.transaction(stores, "readwrite");
   await Promise.all([

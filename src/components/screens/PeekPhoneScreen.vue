@@ -234,7 +234,7 @@ function goBackToHome() {
 // 載入聊天資料並觸發生成
 const chatRecord = ref<Chat | null>(null);
 
-/** 僅載入聊天資料和快取，不呼叫 API */
+/** 僅載入聊天資料和快取（從記憶體或 IDB），不呼叫 API */
 async function loadChatData() {
   if (!character.value) return;
   try {
@@ -242,16 +242,8 @@ async function loadChatData() {
     const chat = await db.get<Chat>(DB_STORES.CHATS, props.chatId);
     if (!chat) return;
     chatRecord.value = chat;
-    // 只載入快取，不自動生成
-    const cached = peekPhoneStore.getCached(props.characterId, props.chatId);
-    if (cached) {
-      await peekPhoneStore.generateAll(
-        props.characterId,
-        props.chatId,
-        character.value,
-        chat,
-      );
-    }
+    // 從記憶體快取 → IDB → 重置為 null，確保不會顯示其他聊天的內容
+    await peekPhoneStore.loadOrReset(props.characterId, props.chatId);
   } catch (err) {
     console.error("[PeekPhoneScreen] Failed to load chat data:", err);
   }
@@ -291,9 +283,24 @@ async function refreshAll() {
   }
   if (!chatRecord.value) return;
   peekPhoneStore.clearCache(props.characterId, props.chatId);
+  peekPhoneStore.deleteFromIDB(props.characterId, props.chatId);
   await peekPhoneStore.generateAll(
     props.characterId,
     props.chatId,
+    character.value,
+    chatRecord.value,
+  );
+}
+
+async function refreshPhase(phase: "A" | "BC" | "D") {
+  showRefreshMenu.value = false;
+  if (!character.value) return;
+  if (!chatRecord.value) {
+    await loadChatData();
+  }
+  if (!chatRecord.value) return;
+  await peekPhoneStore.regeneratePhase(
+    phase,
     character.value,
     chatRecord.value,
   );
@@ -389,7 +396,23 @@ function getAppTitle(key: PeekPhoneTab) {
           </button>
           <Transition name="menu-fade">
             <div v-if="showRefreshMenu" class="refresh-menu">
-              <div class="refresh-menu-item" @click="refreshAll">
+              <div class="refresh-menu-item" @click="refreshPhase('A')">
+                <MessageCircle :size="14" />
+                <span>重新生成聊天紀錄</span>
+                <span class="api-count-badge">×1</span>
+              </div>
+              <div class="refresh-menu-item" @click="refreshPhase('BC')">
+                <Calendar :size="14" />
+                <span>重新生成行程/日記/錢包</span>
+                <span class="api-count-badge">×1</span>
+              </div>
+              <div class="refresh-menu-item" @click="refreshPhase('D')">
+                <Camera :size="14" />
+                <span>重新生成相冊/瀏覽紀錄</span>
+                <span class="api-count-badge">×1</span>
+              </div>
+              <div class="refresh-menu-divider" />
+              <div class="refresh-menu-item refresh-menu-item--danger" @click="refreshAll">
                 <RefreshCw :size="14" />
                 <span>重新生成全部內容</span>
                 <span class="api-count-badge">×3</span>
@@ -1100,6 +1123,10 @@ $blob-bg: #d4f2cc;
   &:active {
     background: rgba(0, 0, 0, 0.08);
   }
+}
+
+.refresh-menu-item--danger {
+  color: #d35b5b;
 }
 
 .api-count-badge {

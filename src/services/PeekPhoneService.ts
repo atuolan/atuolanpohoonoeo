@@ -348,7 +348,7 @@ export async function generateGroup(
 /**
  * 將已生成的部分 PeekPhoneData 序列化為人可讀的文字摘要，供後續 prompt 參考
  */
-function serializeForContext(partial: Partial<PeekPhoneData>): string {
+export function serializeForContext(partial: Partial<PeekPhoneData>): string {
   const lines: string[] = [];
 
   if (partial.chats?.length) {
@@ -643,4 +643,73 @@ export async function generateCombined(
   const parsed = parseFullData(yamlContent);
   parsed.characterId = character.id;
   return parsed;
+}
+
+/**
+ * 單獨重新生成某一個階段（A / BC / D），使用現有資料作為上下文
+ * - A: 只重新生成聊天紀錄
+ * - BC: 只重新生成行程+飲食+備忘+記事+日記+錢包
+ * - D: 只重新生成相冊+瀏覽紀錄+隱藏照片
+ */
+export async function generateSinglePhase(
+  phase: "A" | "BC" | "D",
+  character: StoredCharacter,
+  chatContext: string,
+  userName: string,
+  userDescription: string,
+  worldInfo: string,
+  summariesAndEvents: string,
+  existingData: Partial<PeekPhoneData>,
+  _chatId: string,
+  signal?: AbortSignal,
+  onToken?: (token: string) => void,
+): Promise<Partial<PeekPhoneData>> {
+  const charName = character.data.name || character.nickname;
+  const charDesc = character.data.description || "";
+  const personality = character.data.personality || "";
+  const scenario = character.data.scenario || "";
+
+  switch (phase) {
+    case "A": {
+      const prompt = buildGroupAPrompt(
+        charName, charDesc, personality, scenario, chatContext,
+        userName, userDescription, worldInfo, summariesAndEvents,
+      );
+      const yaml = await callAPIForPhase(prompt, 16000, signal, onToken);
+      const chats = parseGroupA(yaml);
+      return { chats };
+    }
+    case "BC": {
+      // 使用現有 A 組資料作為上下文
+      const aContext = serializeForContext({ chats: existingData.chats });
+      const prompt = buildGroupBCPrompt(
+        charName, charDesc, personality, scenario, chatContext,
+        userName, userDescription, worldInfo, summariesAndEvents, aContext,
+      );
+      const yaml = await callAPIForPhase(prompt, 16000, signal, onToken);
+      const { schedule, meals, memos } = parseGroupB(yaml);
+      const { notes, diary, balance, transactions } = parseGroupC(yaml);
+      return { schedule, meals, memos, notes, diary, balance, transactions };
+    }
+    case "D": {
+      // 使用現有 A+BC 組資料作為上下文
+      const abcContext = serializeForContext({
+        chats: existingData.chats,
+        schedule: existingData.schedule,
+        meals: existingData.meals,
+        memos: existingData.memos,
+        notes: existingData.notes,
+        diary: existingData.diary,
+        balance: existingData.balance,
+        transactions: existingData.transactions,
+      });
+      const prompt = buildGroupDPrompt(
+        charName, charDesc, personality, scenario, chatContext,
+        userName, userDescription, worldInfo, summariesAndEvents, abcContext,
+      );
+      const yaml = await callAPIForPhase(prompt, 12000, signal, onToken);
+      const { gallery, browserHistory, hiddenPhotos } = parseGroupD(yaml);
+      return { gallery, browserHistory, hiddenPhotos };
+    }
+  }
 }
