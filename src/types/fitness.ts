@@ -79,6 +79,8 @@ export interface FoodItem {
   portion?: string
   /** 熱量（大卡） */
   calories?: number
+  /** 用餐時間 HH:mm（個別食物層級，優先於 Meal.time） */
+  time?: string
 }
 
 // ===== 單餐記錄 =====
@@ -189,6 +191,55 @@ export interface FitnessStats {
   monthlyDuration: number
   /** 最近體重變化 */
   weightChange?: number
+}
+
+// ===== Prompt 格式化 =====
+
+function defaultMealTime(type: MealType): string {
+  switch (type) {
+    case 'breakfast': return '08:00'
+    case 'lunch':     return '12:00'
+    case 'dinner':    return '18:00'
+    case 'snack':     return '15:00'
+  }
+}
+
+/**
+ * 將飲食記錄格式化為 Prompt 字串
+ * 格式：MM/DD:HH:mm,名稱,份量,XXXkcal|HH:mm,名稱,...
+ * 多天以換行分隔，最新日期在最後
+ */
+export function formatFoodLogsForPrompt(logs: MealLog[], maxDays = 3): string {
+  const recent = [...logs]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-maxDays)
+
+  return recent
+    .map(log => {
+      const allFoods: Array<{ time: string; name: string; portion?: string; calories?: number }> = []
+      for (const meal of log.meals) {
+        for (const food of meal.foods) {
+          allFoods.push({
+            time: food.time || meal.time || defaultMealTime(meal.type),
+            name: food.name,
+            portion: food.portion,
+            calories: food.calories,
+          })
+        }
+      }
+      if (allFoods.length === 0) return null
+      allFoods.sort((a, b) => a.time.localeCompare(b.time))
+
+      const [, month, day] = log.date.split('-')
+      const dateStr = `${month}/${day}`
+      const items = allFoods.map(f => {
+        const cal = f.calories != null ? `${f.calories}kcal` : ''
+        return `${f.time},${f.name},${f.portion ?? ''},${cal}`
+      }).join('|')
+      return `${dateStr}:${items}`
+    })
+    .filter(Boolean)
+    .join('\n')
 }
 
 // ===== 角色健身互動訊息類型 =====

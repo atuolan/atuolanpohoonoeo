@@ -36,6 +36,7 @@ import {
   ThemeSettingsModal,
 } from "@/components/modals";
 import GlobalThemeModal from "@/components/modals/GlobalThemeModal.vue";
+import FoodLogManager from "@/components/modals/FoodLogManager.vue";
 import MediaLogManager from "@/components/modals/MediaLogManager.vue";
 import MultiCharSetupModal from "@/components/modals/MultiCharSetupModal.vue";
 import PhoneContactPickerModal from "@/components/modals/PhoneContactPickerModal.vue";
@@ -282,6 +283,9 @@ const showAICharacterModal = ref(false);
 
 // 書影記錄管理彈窗
 const showMediaLogManager = ref(false);
+
+// 食記管理彈窗
+const showFoodLogManager = ref(false);
 
 // 電話聯絡人選擇彈窗
 const showPhoneContactPicker = ref(false);
@@ -882,6 +886,9 @@ function handleNavigate(page: string) {
   } else if (page === "media-log") {
     // 書影記錄
     showMediaLogManager.value = true;
+  } else if (page === "food-log") {
+    // 食記
+    showFoodLogManager.value = true;
   } else if (page === "reading") {
     // 閱讀（書影記錄）
     showMediaLogManager.value = true;
@@ -1685,11 +1692,16 @@ function closeImportModal() {
 
 // 處理聊天頁面的快捷導航
 function handleChatNavigate(
-  page: "character" | "worldbook" | "settings" | "shop" | "media-log" | "peek-phone",
+  page: "character" | "worldbook" | "settings" | "shop" | "media-log" | "food-log" | "peek-phone",
 ) {
   // 書影記錄使用彈窗，不需要頁面導航
   if (page === "media-log") {
     showMediaLogManager.value = true;
+    return;
+  }
+  // 食記
+  if (page === "food-log") {
+    showFoodLogManager.value = true;
     return;
   }
   // 頭盔TA手機導航到角色選擇頁
@@ -2066,6 +2078,14 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       <MediaLogManager
         v-if="showMediaLogManager"
         @close="showMediaLogManager = false"
+      />
+    </Teleport>
+
+    <!-- 食記管理彈窗 -->
+    <Teleport to="body">
+      <FoodLogManager
+        v-if="showFoodLogManager"
+        @close="showFoodLogManager = false"
       />
     </Teleport>
 

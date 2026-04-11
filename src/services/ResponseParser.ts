@@ -90,6 +90,10 @@ export interface ParsedResponse {
   hasCalendarEvent?: boolean;
   /** 行事曆事件資料列表 */
   calendarEvents?: CalendarEventData[];
+  /** 是否有飲食記錄 */
+  hasFoodRecord?: boolean;
+  /** 飲食記錄列表 */
+  foodRecords?: FoodRecordData[];
   /** 是否有時間跳轉 */
   hasTimeJump?: boolean;
   /** 時間跳轉目標（ISO datetime string） */
@@ -1011,6 +1015,13 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     result.calendarEvents = calendarEvents;
   }
 
+  // 7.5. 檢查飲食記錄標籤
+  const foodRecords = parseFoodRecordTags(rawResponse);
+  if (foodRecords.length > 0) {
+    result.hasFoodRecord = true;
+    result.foodRecords = foodRecords;
+  }
+
   // 8. 檢查時間跳轉標籤（偏移時間模式專用）
   const timeJumpResult = parseTimeJumpTag(rawResponse);
   if (timeJumpResult) {
@@ -1606,6 +1617,55 @@ export function parseCalendarEventTags(
   return results;
 }
 
+/** AI 回覆中 <food-record> 標籤的資料 */
+export interface FoodRecordData {
+  /** 食物名稱（必填） */
+  name: string;
+  /** 餐別：breakfast / lunch / dinner / snack */
+  meal?: "breakfast" | "lunch" | "dinner" | "snack";
+  /** 用餐時間 HH:mm（選填，預設用當下時間） */
+  time?: string;
+  /** 份量描述 */
+  portion?: string;
+  /** 熱量（大卡） */
+  calories?: number;
+}
+
+/**
+ * 解析 food-record 標籤（支援多個）
+ * 格式：<food-record meal="dinner" time="19:30" name="滷肉飯" portion="一碗" calories="450"/>
+ */
+export function parseFoodRecordTags(rawResponse: string): FoodRecordData[] {
+  const results: FoodRecordData[] = [];
+  const tagRegex = /<food-record\s+([^>]*?)\s*\/?>(?:<\/food-record>)?/gi;
+  let match;
+
+  while ((match = tagRegex.exec(rawResponse)) !== null) {
+    const attrs = match[1];
+    const name = extractAttr(attrs, "name");
+    if (!name) {
+      console.warn("[ResponseParser] food-record 標籤缺少必要屬性 (name)");
+      continue;
+    }
+
+    const meal = extractAttr(attrs, "meal");
+    const validMeals = ["breakfast", "lunch", "dinner", "snack"];
+    const mealType =
+      meal && validMeals.includes(meal)
+        ? (meal as FoodRecordData["meal"])
+        : undefined;
+
+    const time = extractAttr(attrs, "time") || undefined;
+    const portion = extractAttr(attrs, "portion") || undefined;
+    const calStr = extractAttr(attrs, "calories");
+    const calories = calStr ? parseInt(calStr, 10) : undefined;
+
+    results.push({ name, meal: mealType, time, portion, calories });
+  }
+
+  return results;
+}
+
 /**
  * 好感度更新解析結果：
  * - 數字型指標：change 有值，stringValue 為 undefined
@@ -1888,7 +1948,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<time-jump|<送禮物>|<pay>|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<送禮物>|<pay>|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }

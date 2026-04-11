@@ -1380,14 +1380,15 @@ Scene 2.5 — 思維融合 + 情緒釋放 + 噗浪決策
     category: "context",
     role: "system",
     content: `<media_logs>
-📚 書影記錄
+📚 書影 & 共讀記錄
 
 {{mediaLogs}}
 
-角色可以討論用戶的閱讀和觀影記錄：
-- 討論作品內容和感想
-- 推薦類似作品
-- 分享觀點和見解
+{{companionReadingLogs}}
+
+角色可以自然地談及以上內容：
+- 討論作品內容、感想、推薦類似作品
+- 延續共讀時的對話（回憶之前一起看書的話題）
 </media_logs>`,
     system_prompt: true,
     marker: true,

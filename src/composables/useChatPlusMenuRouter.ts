@@ -116,6 +116,9 @@ export function useChatPlusMenuRouter(deps: {
       case "media-log":
         deps.emit("navigate", "media-log");
         break;
+      case "food-log":
+        deps.emit("navigate", "food-log");
+        break;
       case "image-search":
         deps.showImageSearchPanel.value = true;
         break;

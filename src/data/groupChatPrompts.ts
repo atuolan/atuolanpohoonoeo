@@ -1105,9 +1105,11 @@ Scene 2.5 — 思維融合
     category: "context",
     role: "system",
     content: `<media_logs>
-📚 書影記錄
+📚 書影 & 共讀記錄
 
 {{mediaLogs}}
+
+{{companionReadingLogs}}
 </media_logs>`,
     system_prompt: true,
     marker: true,

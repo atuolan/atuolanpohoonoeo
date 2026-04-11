@@ -218,8 +218,12 @@ export interface PromptBuilderOptions {
     artist: string;
     lyrics?: string;
   };
+  /** 飲食記錄（用於 {{foodLogs}} 宏） */
+  foodLogs?: string;
   /** 書影記錄（用於 {{mediaLogs}} 宏） */
   mediaLogs?: string;
+  /** 伴讀共讀記錄（書架 App 的共讀對話摘要） */
+  companionReadingLogs?: string;
   /** 群聊模式 */
   groupChatMode?: boolean;
   /** 群聊成員列表（群聊模式時必填） */
@@ -475,6 +479,9 @@ export class PromptBuilder {
         lastMessage: lastMsg,
         lastUserMessage: lastUserMsg,
         lastCharMessage: lastCharMsg,
+        foodLogs: options.foodLogs || "",
+        mediaLogs: options.mediaLogs || "",
+        companionReadingLogs: options.companionReadingLogs || "",
         ...phoneContextVars,
       },
     });
@@ -614,6 +621,9 @@ export class PromptBuilder {
         lastMessage: lastMsg,
         lastUserMessage: lastUserMsg,
         lastCharMessage: lastCharMsg,
+        foodLogs: options.foodLogs || "",
+        mediaLogs: options.mediaLogs || "",
+        companionReadingLogs: options.companionReadingLogs || "",
         ...phoneContextVars,
       },
     });
@@ -1779,17 +1789,21 @@ export class PromptBuilder {
       case "foodLogs":
       case "f2fFoodLogs":
       case "gcFoodLogs":
-        // 飲食記錄（marker，由外部填充）
-        // TODO: 從 context 獲取飲食記錄
+        if (!this.options.foodLogs) return null;
+        if (promptDef && promptDef.content) {
+          const content = await this.macroEngine.substitute(promptDef.content);
+          return content ? { role: getRole(), content, identifier } : null;
+        }
         return null;
 
       case "mediaLogs":
       case "f2fMediaLogs":
       case "gcMediaLogs":
-        // 書影記錄
-        if (this.options.mediaLogs) {
-          const content = `[書影記錄]\n${this.options.mediaLogs}`;
-          return { role: getRole(), content, identifier };
+        // 書影記錄 + 伴讀共讀記錄（透過 {{mediaLogs}} / {{companionReadingLogs}} 宏替換）
+        if (!this.options.mediaLogs && !this.options.companionReadingLogs) return null;
+        if (promptDef && promptDef.content) {
+          const content = await this.macroEngine.substitute(promptDef.content);
+          return content ? { role: getRole(), content, identifier } : null;
         }
         return null;
 

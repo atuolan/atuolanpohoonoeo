@@ -64,6 +64,7 @@ import {
   parseAffinityUpdateTags,
   parseAIResponse,
   parseCalendarEventTags,
+  parseFoodRecordTags,
   parseGreeting,
   parseGroupChatResponse,
 } from "@/services/ResponseParser";
@@ -87,6 +88,7 @@ import {
 import { usePhoneCallStore } from "@/stores/phoneCall";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
 import { useUserStore } from "@/stores/user";
+import { useFitnessStore } from "@/stores/fitness";
 import type {
   Chat,
   ChatAppearance,
@@ -96,6 +98,7 @@ import type {
 } from "@/types/chat";
 import { createDefaultChat } from "@/types/chat";
 import { formatMediaLogsForPrompt } from "@/types/mediaLog";
+import { formatFoodLogsForPrompt } from "@/types/fitness";
 import type { AuthorsNoteMetadata } from "@/types/prompt";
 import type { Lorebook } from "@/types/worldinfo";
 import { PromptRole } from "@/types/worldinfo";
@@ -307,6 +310,8 @@ interface Message {
   // 封鎖系統相關
   sentWhileBlocked?: boolean;
   isSystemNotification?: boolean;
+  // 飲食記錄系統通知
+  isFoodRecord?: boolean;
   // 繼續生成的隱藏提示（不顯示在聊天畫面上）
   isContinuePrompt?: boolean;
   // 角色封鎖用戶的系統通知訊息
@@ -495,6 +500,7 @@ const lorebooksStore = useLorebooksStore();
 const aiGenerationStore = useAIGenerationStore();
 const stickerStore = useStickerStore();
 const userStore = useUserStore();
+const fitnessStore = useFitnessStore();
 const gameEconomyStore = useGameEconomyStore();
 const affinityStore = useAffinityStore();
 const chatVariablesStore = useChatVariablesStore();
@@ -518,7 +524,7 @@ import {
   getIncomingCallScheduler,
   type CharacterInfo,
 } from "@/services/IncomingCallScheduler";
-import type { ScheduleCallData } from "@/services/ResponseParser";
+import type { FoodRecordData, ScheduleCallData } from "@/services/ResponseParser";
 import { useWeatherStore } from "@/stores/weather";
 import type { CalendarEvent, CalendarEventData } from "@/types/calendar";
 import type { Holiday } from "@/types/holiday";
@@ -4360,6 +4366,10 @@ async function triggerAIResponse(options?: {
             })
           : undefined,
       groupName: isGroupChat.value ? groupMetadata.value?.groupName : undefined,
+      // 傳入飲食記錄
+      foodLogs: fitnessStore.mealLogs.length > 0
+        ? formatFoodLogsForPrompt(fitnessStore.mealLogs, 3)
+        : undefined,
       // 傳入書影記錄
       mediaLogs: userStore.mediaLogSettings.showInPrompt
         ? formatMediaLogsForPrompt(
@@ -4367,6 +4377,28 @@ async function triggerAIResponse(options?: {
             userStore.mediaLogSettings.maxLogsInPrompt,
           )
         : undefined,
+      // 傳入伴讀共讀記錄（從聊天訊息中提取最近的共讀記錄卡片）
+      companionReadingLogs: (() => {
+        const companionMsgs = messagesToUse.filter(
+          (m) =>
+            m.isGroupChatHistory &&
+            m.groupChatHistoryData?.groupName?.startsWith("📖 共讀："),
+        );
+        if (companionMsgs.length === 0) return undefined;
+        // 取最近 5 條共讀記錄，格式化為極簡格式
+        const recent = companionMsgs.slice(-5);
+        return recent
+          .map((m) => {
+            const data = m.groupChatHistoryData!;
+            const bookName = data.groupName.replace("📖 共讀：", "");
+            const dialog = data.messages
+              .slice(-6) // 每輪取最後 6 條對話
+              .map((msg) => `${msg.senderName}：${msg.content.slice(0, 80)}`)
+              .join("\n");
+            return `《${bookName}》\n${dialog}`;
+          })
+          .join("\n---\n");
+      })(),
       // 傳入好感度配置和狀態
       affinityConfig: _affinityConfig.value ?? undefined,
       affinityState: _affinityState.value ?? undefined,
@@ -4991,6 +5023,10 @@ async function triggerAIResponse(options?: {
               await handleCalendarEvent(calEvent);
             }
           }
+
+          // 群聊也支援飲食記錄標籤
+          const gcFoodRecords = parseFoodRecordTags(finalContent);
+          for (const r of gcFoodRecords) await handleFoodRecord(r);
         }
         // 非群聊模式：檢查是否需要解析（包含導演系統標籤）
         else if (needsParsing(finalContent)) {
@@ -5025,6 +5061,11 @@ async function triggerAIResponse(options?: {
               for (const calEvent of parsed.calendarEvents) {
                 await handleCalendarEvent(calEvent);
               }
+            }
+
+            // 處理飲食記錄標籤
+            if (parsed.hasFoodRecord && parsed.foodRecords) {
+              for (const r of parsed.foodRecords) await handleFoodRecord(r);
             }
 
             // 處理時間跳轉標籤（偏移時間模式）
@@ -5847,6 +5888,10 @@ async function triggerAIResponse(options?: {
                 await handleCalendarEvent(calEvent);
               }
             }
+
+            // 飲食記錄標籤
+            const gcFoodRecords2 = parseFoodRecordTags(finalContent);
+            for (const r of gcFoodRecords2) await handleFoodRecord(r);
           } else if (needsParsing(finalContent)) {
             let parsed;
             try {
@@ -5885,6 +5930,10 @@ async function triggerAIResponse(options?: {
                 for (const calEvent of parsed.calendarEvents) {
                   await handleCalendarEvent(calEvent);
                 }
+              }
+
+              if (parsed.hasFoodRecord && parsed.foodRecords) {
+                for (const r of parsed.foodRecords) await handleFoodRecord(r);
               }
 
               // 處理時間跳轉標籤（偏移時間模式）
@@ -8835,6 +8884,47 @@ async function handleCalendarEvent(data: CalendarEventData): Promise<void> {
     console.log("[ChatScreen] 行事曆事件已建立:", data);
   } catch (e) {
     console.error("[ChatScreen] 行事曆事件建立失敗:", e);
+  }
+}
+
+// ===== 飲食記錄處理 =====
+
+async function handleFoodRecord(data: FoodRecordData): Promise<void> {
+  try {
+    const now = new Date();
+    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const time = data.time || `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
+
+    // 根據時間推斷餐別（若 AI 未提供）
+    const hour = parseInt(time.split(':')[0])
+    const guessedMeal =
+      data.meal ??
+      (hour < 10 ? 'breakfast' : hour < 14 ? 'lunch' : hour < 17 ? 'snack' : 'dinner') as FoodRecordData['meal']
+
+    await fitnessStore.addFoodToMeal(date, guessedMeal!, {
+      name: data.name,
+      portion: data.portion,
+      calories: data.calories,
+      time,
+    })
+
+    // 格式化 M/D（去掉前導零）
+    const [, mm, dd] = date.split('-')
+    const mdStr = `${parseInt(mm)}/${parseInt(dd)}`
+    const recordContent = `已記錄:${mdStr},${data.name}`
+
+    messages.value.push({
+      id: `msg_food_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      role: 'ai',
+      content: recordContent,
+      timestamp: Date.now(),
+      isSystemNotification: true,
+      isFoodRecord: true,
+    })
+
+    console.log('[ChatScreen] 飲食記錄已建立:', data)
+  } catch (e) {
+    console.error('[ChatScreen] 飲食記錄建立失敗:', e)
   }
 }
 
