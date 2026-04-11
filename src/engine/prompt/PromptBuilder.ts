@@ -138,8 +138,19 @@ export interface PromptBuilderOptions {
     category?: string;
     priority?: number;
   }>;
-  /** 天氣信息 */
+  /** 天氣信息（用戶所在地） */
   weatherInfo?: {
+    location: string;
+    condition: string;
+    temperature: number;
+    feelsLike: number;
+    humidity: number;
+    windSpeed?: number;
+    windDir?: string;
+    uv?: number;
+  };
+  /** 天氣信息（角色所在地） */
+  charWeatherInfo?: {
     location: string;
     condition: string;
     temperature: number;
@@ -1609,26 +1620,44 @@ export class PromptBuilder {
 
       case "weatherInfo":
       case "f2fWeatherInfo":
-      case "gcWeatherInfo": // 天氣信息
+      case "gcWeatherInfo": { // 天氣信息
+        const hasCharLocation = !!this.options.characterWorldSettings?.location?.trim();
+        if (!this.options.weatherInfo && !this.options.charWeatherInfo && hasCharLocation) return null;
+        const sections: string[] = [];
+        const userName = this.options.userName || "{{user}}";
+        const charName = this.options.character.data.name || this.options.character.nickname || "{{char}}";
         if (this.options.weatherInfo) {
-          const w = this.options.weatherInfo;
-          let content = `[當前天氣]\n地點：${w.location}\n天氣：${w.condition}\n溫度：${w.temperature}°C（體感 ${w.feelsLike}°C）\n濕度：${w.humidity}%`;
-          if (w.windSpeed !== undefined) {
-            content += `\n風速：${w.windSpeed} km/h`;
-            if (w.windDir) content += `，風向 ${w.windDir}`;
-          }
-          if (w.uv !== undefined) {
-            content += `\n紫外線指數：${w.uv}`;
-          }
+          sections.push(this.formatWeatherBlock(`${userName} 所在地天氣`, this.options.weatherInfo));
           // 附近地點（GPS 可用時附加，無資料時完全省略）
           const nearby = this.options.nearbyPlaces;
           if (nearby && nearby.length > 0) {
-            const nearbyLine = `[附近地點]${nearby.map((p) => `${p.type},${p.distance}m,${p.name}`).join("|")}`;
-            content += `\n${nearbyLine}`;
+            sections[sections.length - 1] += `\n[附近地點]${nearby.map((p) => `${p.type},${p.distance}m,${p.name}`).join("|")}`;
           }
-          return { role: getRole(), content, identifier };
         }
-        return null;
+        if (this.options.charWeatherInfo) {
+          sections.push(this.formatWeatherBlock(`${charName} 所在地天氣`, this.options.charWeatherInfo));
+        }
+        // 角色無所在地時，提示 AI 推測並輸出 char-location 標籤
+        if (!hasCharLocation) {
+          sections.push(
+            `[${charName} 所在地未知]\n` +
+            `系統尚未記錄 ${charName} 的所在地。請根據以下優先級推測：\n` +
+            `1. 對話紀錄中提及的地點（優先級最高）\n` +
+            `2. 角色描述、設定中暗示的地點\n` +
+            `推測出後，在 </content> 之後輸出：\n` +
+            `<char-location location="城市名, 地區"/>\n` +
+            `例如：<char-location location="東京, 日本"/>\n` +
+            `注意：location 值應為可搜尋天氣的城市名稱（英文或中文皆可）。`,
+          );
+        } else {
+          // 已有所在地，但角色可能因劇情而移動
+          sections.push(
+            `如果 ${charName} 在對話中提到搬家、旅行、出差等位置變化，` +
+            `請在 </content> 之後輸出：<char-location location="新城市名, 地區"/> 以更新所在地。`,
+          );
+        }
+        return { role: getRole(), content: sections.join("\n\n"), identifier };
+      }
 
       case "holidayInfo":
       case "f2fHolidayInfo":
@@ -1638,7 +1667,7 @@ export class PromptBuilder {
       case "characterWorldContext":
       case "f2fCharacterWorldContext":
       case "gcCharacterWorldContext": {
-        // 角色世界設定（僅注入有值欄位，整個區塊不超過 3 行）
+        // 角色世界設定（僅注入所在地與時區，天氣已移至 weatherInfo 統一處理）
         const ws = this.options.characterWorldSettings;
         if (!ws) return null;
         const charName =
@@ -1653,9 +1682,6 @@ export class PromptBuilder {
           const now = this.options.fakeTimeOverride ?? new Date();
           const localTime = formatLocalTime(now, ws.timezone.trim());
           lines.push(`本地時間：${localTime}（${ws.timezone.trim()}）`);
-        }
-        if (ws.weatherOverride?.trim()) {
-          lines.push(`天氣：${ws.weatherOverride.trim()}`);
         }
         if (lines.length === 0) return null;
         const content = `[${charName}所在地情境]\n${lines.join("\n")}`;
@@ -2793,6 +2819,24 @@ speed：0.5~2.0，正常時省略
     }
 
     return { messages: builtMessages, tokens: usedTokens, wasTruncated };
+  }
+
+  /**
+   * 格式化單一天氣區塊
+   */
+  private formatWeatherBlock(
+    label: string,
+    w: NonNullable<PromptBuilderOptions["weatherInfo"]>,
+  ): string {
+    let block = `[${label}]\n地點：${w.location}\n天氣：${w.condition}\n溫度：${w.temperature}°C（體感 ${w.feelsLike}°C）\n濕度：${w.humidity}%`;
+    if (w.windSpeed !== undefined) {
+      block += `\n風速：${w.windSpeed} km/h`;
+      if (w.windDir) block += `，風向 ${w.windDir}`;
+    }
+    if (w.uv !== undefined) {
+      block += `\n紫外線指數：${w.uv}`;
+    }
+    return block;
   }
 
   /**

@@ -334,7 +334,7 @@ assistant：我是基拉祈與雪拉比...。我是許願星與創世神。
 
 {{weatherInfo}}
 
-這是 {{user}} 所在地的實時天氣情況。你可以根據天氣主動關心 {{user}} 的吃穿注意，例如提醒帶傘、注意保暖、防曬等。`,
+以上分別是 {{user}} 和 {{char}} 所在地的實時天氣。你可以根據雙方天氣差異自然地展開話題，例如關心對方天氣、提醒帶傘、注意保暖、防曬等。`,
     system_prompt: true,
     marker: true,
     injection_position: INJECTION_RELATIVE,
@@ -1118,6 +1118,7 @@ assistant：我是基拉祈與雪拉比...。我是許願星與創世神。
 【其他動作】放在 </content> 之後：
 - 來電預約：<schedule-call delay="時間" reason="原因"/>
 - 行事曆：<calendar-event type="user|period" date="YYYY-MM-DD" title="標題" description="描述"/>
+- 角色位置更新：<char-location location="城市名, 地區"/>（角色搬家、旅行、出差時輸出）
 - 封鎖（慎用，僅角色非常生氣/受傷時）：[char-action:block-user|reason:原因]
 - 解除封鎖：[char-action:unblock-user]
 - 道歉外賣（被封鎖時向用戶道歉）：[char-action:apology-food|item:食物ID|message:留言]
@@ -1270,6 +1271,7 @@ Scene 2.5 — 思維融合 + 情緒釋放 + 噗浪決策
 （如果需要，在 </content> 之後加上：）
 <schedule-call delay="30m" reason="想確認她休息得怎麼樣"/>
 <calendar-event type="user" date="2026-02-15" title="看醫生" description="下午三點去診所"/>
+<char-location location="Taipei, Taiwan"/>
 </example_script>`,
     system_prompt: true,
     marker: false,

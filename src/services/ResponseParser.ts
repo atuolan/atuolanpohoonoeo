@@ -101,6 +101,10 @@ export interface ParsedResponse {
   rawUpdateBlock?: string;
   /** 角色動作標籤（封鎖、道歉外賣等） */
   charActions?: ParsedCharAction[];
+  /** 是否有角色位置推測 */
+  hasCharLocation?: boolean;
+  /** 角色位置推測資料 */
+  charLocationData?: { location: string };
 }
 
 /**
@@ -1062,6 +1066,22 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     }
   }
 
+  // 11. 檢查角色位置推測標籤
+  const charLocationResult = parseCharLocationTag(rawResponse);
+  if (charLocationResult) {
+    result.hasCharLocation = true;
+    result.charLocationData = charLocationResult;
+  }
+
+  // 從所有訊息中移除 char-location 標籤
+  for (const msg of result.messages) {
+    if (msg.content) {
+      msg.content = msg.content
+        .replace(/<char-location\s+[^>]*?\s*\/?>(?:<\/char-location>)?/gi, "")
+        .trim();
+    }
+  }
+
   return result;
 }
 
@@ -1495,6 +1515,39 @@ export function parseScheduleCallTag(
  */
 export function isValidDelayFormat(delay: string): boolean {
   return /^\d+[smhd]$/i.test(delay);
+}
+
+/**
+ * 解析 char-location 標籤
+ * 支援格式：<char-location location="東京，日本"/>
+ * AI 根據對話紀錄和角色描述推測角色所在地，輸出此標籤後系統自動寫入角色世界設定
+ *
+ * @param rawResponse - 原始 AI 回覆
+ * @returns 解析後的位置資料，如果沒有有效標籤則返回 null
+ */
+export function parseCharLocationTag(
+  rawResponse: string,
+): { location: string } | null {
+  // 匹配 <char-location ... /> 或 <char-location ...></char-location>
+  const tagMatch = rawResponse.match(
+    /<char-location\s+([^>]*?)\s*\/?>(?:<\/char-location>)?/i,
+  );
+
+  if (!tagMatch) {
+    return null;
+  }
+
+  const attrs = tagMatch[1];
+  const location = extractAttr(attrs, "location");
+
+  if (!location || !location.trim()) {
+    console.warn(
+      "[ResponseParser] char-location 標籤缺少 location 屬性",
+    );
+    return null;
+  }
+
+  return { location: location.trim() };
 }
 
 /**

@@ -307,7 +307,7 @@ assistant：我是基拉祈與雪拉比...。我是許願星與創世神。
 
 {{weatherInfo}}
 
-這是 {{user}} 所在地的實時天氣情況。角色們可以根據天氣主動關心 {{user}} 的吃穿注意，例如提醒帶傘、注意保暖、防曬等。`,
+以上分別是 {{user}} 和角色們所在地的實時天氣。角色們可以根據雙方天氣差異自然地展開話題，例如關心對方天氣、提醒帶傘、注意保暖、防曬等。`,
     system_prompt: true,
     marker: true,
     injection_position: INJECTION_RELATIVE,
@@ -897,6 +897,7 @@ assistant：我是基拉祈與雪拉比...。我是許願星與創世神。
 - 私信：<dm name="角色名">私信內容</dm>
 - 群管理：<group-action type="rename|kick|mute" actor="角色名" target="目標" value="值"/>
 - 行事曆記錄：<calendar-event type="user|period" date="YYYY-MM-DD" title="標題" description="描述"/>（放在 </content> 之後）
+- 角色位置更新：<char-location location="城市名, 地區"/>（角色搬家、旅行、出差時，放在 </content> 之後）
 </format_rules>`,
     system_prompt: true,
     marker: false,

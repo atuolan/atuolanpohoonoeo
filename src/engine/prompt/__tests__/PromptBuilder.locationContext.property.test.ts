@@ -193,22 +193,21 @@ describe("Property 11: 角色世界設定僅注入有值欄位", () => {
 
         const hasAnyValue =
           ws.location?.trim() ||
-          ws.timezone?.trim() ||
-          ws.weatherOverride?.trim();
+          ws.timezone?.trim();
 
         if (!hasAnyValue) {
           // 無有效欄位時不注入
-          expect(content).not.toContain("[角色所在地情境]");
+          expect(content).not.toContain("所在地情境]");
         } else {
-          expect(content).toContain("[角色所在地情境]");
+          expect(content).toContain("所在地情境]");
 
           // 找到角色世界設定區塊
-          const blockStart = content.indexOf("[角色所在地情境]");
+          const blockStart = content.indexOf("所在地情境]");
           const blockContent = content.slice(blockStart);
           const blockLines = blockContent.split("\n").filter((l) => l.trim());
 
-          // 標題行 + 最多 3 個欄位行
-          expect(blockLines.length).toBeLessThanOrEqual(4);
+          // 標題行 + 最多 2 個欄位行（所在地 + 時區，天氣已移至 weatherInfo）
+          expect(blockLines.length).toBeLessThanOrEqual(3);
 
           // 未設定的欄位不應出現
           if (!ws.location?.trim()) {
@@ -216,12 +215,6 @@ describe("Property 11: 角色世界設定僅注入有值欄位", () => {
           }
           if (!ws.timezone?.trim()) {
             expect(blockContent).not.toContain("本地時間：");
-          }
-          if (!ws.weatherOverride?.trim()) {
-            // 只檢查 weatherOverride 的值不出現（避免誤判）
-            if (ws.weatherOverride !== undefined) {
-              expect(blockContent).not.toContain(`天氣：${ws.weatherOverride}`);
-            }
           }
         }
       }),
@@ -330,7 +323,7 @@ describe("Property 14: 無天氣資訊時不注入天氣區塊", () => {
           );
           const result = await builder.build();
           const content = getAllContent(result.messages);
-          expect(content).not.toContain("[當前天氣]");
+          expect(content).not.toContain("所在地天氣");
           // 無天氣時附近地點也不應注入
           expect(content).not.toContain("[附近地點]");
         },

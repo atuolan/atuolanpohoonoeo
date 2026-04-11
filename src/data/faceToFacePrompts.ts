@@ -348,7 +348,7 @@ assistant：我是基拉祈與雪拉比...。我是許願星與創世神。
 
 {{weatherInfo}}
 
-這是 {{user}} 所在地的實時天氣情況。你可以根據天氣主動關心 {{user}} 的吃穿注意，例如提醒帶傘、注意保暖、防曬等。`,
+以上分別是 {{user}} 和 {{char}} 所在地的實時天氣。你可以根據雙方天氣差異自然地展開話題，例如關心對方天氣、提醒帶傘、注意保暖、防曬等。`,
     system_prompt: true,
     marker: true,
     injection_position: INJECTION_RELATIVE,
@@ -1143,6 +1143,7 @@ assistant：我是基拉祈與雪拉比...。我是許願星與創世神。
 - 回覆引用：<msg><reply-to>引用內容</reply-to>回覆 ˇ想法ˇ</msg>
 - 來電預約：<schedule-call delay="時間" reason="原因"/>（放在 </content> 之後）
 - 行事曆記錄：<calendar-event type="user|period" date="YYYY-MM-DD" title="標題" description="描述"/>（放在 </content> 之後）
+- 角色位置更新：<char-location location="城市名, 地區"/>（角色搬家、旅行、出差時，放在 </content> 之後）
 - 換頭像：<avatar-change action="accept|reject|forced|mood|restore" mood="情緒"/>（放在 <msg> 內）
 - 情頭裁切：<couple-avatar-crop name="名稱" desc="描述" mode="overlap" user="左,上,右,下" char="左,上,右,下"/>（放在 <msg> 內，座標 0～100，必須正方形：寬=高）
 - 套用情頭：<couple-avatar-apply name="名稱"/>（放在 <msg> 內）

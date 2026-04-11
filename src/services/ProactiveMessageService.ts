@@ -837,6 +837,40 @@ export class ProactiveMessageService {
             }
           }
 
+          // 處理角色位置推測標籤
+          if (
+            parsedResponse.hasCharLocation &&
+            parsedResponse.charLocationData
+          ) {
+            try {
+              const { useCharactersStore } = await import("@/stores");
+              const charactersStore = useCharactersStore();
+              const newLocation = parsedResponse.charLocationData.location;
+              const oldLocation = character.worldSettings?.location;
+              if (!oldLocation || oldLocation.trim() !== newLocation.trim()) {
+                await charactersStore.updateCharacter(character.id, {
+                  worldSettings: {
+                    ...character.worldSettings,
+                    location: newLocation,
+                  },
+                });
+                if (character.worldSettings) {
+                  character.worldSettings.location = newLocation;
+                } else {
+                  character.worldSettings = { location: newLocation };
+                }
+                console.log(
+                  "[ProactiveMessage] 角色位置已更新:",
+                  oldLocation || "(無)",
+                  "→",
+                  newLocation,
+                );
+              }
+            } catch (error) {
+              console.error("[ProactiveMessage] 角色位置更新失敗:", error);
+            }
+          }
+
           chat.updatedAt = Date.now();
           // 累加未讀訊息數
           chat.unreadCount =

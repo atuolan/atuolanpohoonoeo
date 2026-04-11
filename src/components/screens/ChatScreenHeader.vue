@@ -1,20 +1,9 @@
 <script setup lang="ts">
-import type { ChatLocationOverride } from "@/types/chat";
-
 interface PersonaOption {
   id: string;
   name: string;
   avatar?: string;
   description?: string;
-}
-
-interface LocationSearchResult {
-  id: number;
-  name: string;
-  region: string;
-  country: string;
-  lat: number;
-  lon: number;
 }
 
 const props = defineProps<{
@@ -52,10 +41,6 @@ const props = defineProps<{
   novelAIEnabled: boolean;
   novelAIUseUserTag: boolean;
   chatMinimaxTTSEnabled: boolean;
-  chatLocationOverride: ChatLocationOverride | null;
-  locationSearchQuery: string;
-  locationSearchResults: LocationSearchResult[];
-  locationSearchLoading: boolean;
   showMoreMenu: boolean;
   isCharBlocked: boolean;
   hasMemoryBadge: boolean;
@@ -95,10 +80,6 @@ const emit = defineEmits<{
   (e: "open-novel-ai-settings"): void;
   (e: "toggle-minimax-tts"): void;
   (e: "open-minimax-tts-settings"): void;
-  (e: "clear-location-override"): void;
-  (e: "update-location-search-query", value: string): void;
-  (e: "search-location-cities"): void;
-  (e: "select-location-city", city: LocationSearchResult): void;
   (e: "toggle-more-menu"): void;
   (e: "navigate", page: "character" | "worldbook" | "settings" | "peek-phone"): void;
   (e: "open-search-bar"): void;
@@ -131,9 +112,6 @@ function onTimeJumpInput(event: Event) {
   emit("update-time-jump-input", (event.target as HTMLInputElement).value);
 }
 
-function onLocationSearchInput(event: Event) {
-  emit("update-location-search-query", (event.target as HTMLInputElement).value);
-}
 </script>
 
 <template>
@@ -494,29 +472,6 @@ function onLocationSearchInput(event: Event) {
               </svg>
               <span>語音設定</span>
             </button>
-            <div class="dropdown-divider"></div>
-            <div class="dropdown-section-title">位置覆蓋</div>
-            <div v-if="chatLocationOverride" class="dropdown-toggle-item">
-              <div class="toggle-item-info">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
-                </svg>
-                <span style="font-size: 12px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">
-                  {{ chatLocationOverride.city || `${chatLocationOverride.lat?.toFixed(2)},${chatLocationOverride.lon?.toFixed(2)}` }}
-                </span>
-              </div>
-              <button class="dropdown-clear-btn" @click="emit('clear-location-override')">清除</button>
-            </div>
-            <div class="location-search-box">
-              <input :value="locationSearchQuery" class="location-search-input" placeholder="搜尋城市..." @input="onLocationSearchInput" @keydown.enter="emit('search-location-cities')" />
-              <button class="location-search-btn" :disabled="locationSearchLoading" @click="emit('search-location-cities')">{{ locationSearchLoading ? '…' : '搜尋' }}</button>
-            </div>
-            <div v-if="locationSearchResults.length > 0" class="location-results">
-              <button v-for="city in locationSearchResults" :key="city.id" class="location-result-item" @click="emit('select-location-city', city)">
-                <span class="location-result-name">{{ city.name }}</span>
-                <span class="location-result-sub">{{ city.region }}{{ city.region && city.country ? '，' : '' }}{{ city.country }}</span>
-              </button>
-            </div>
           </div>
         </Transition>
       </div>
@@ -1147,80 +1102,6 @@ function onLocationSearchInput(event: Event) {
   }
 }
 
-.location-search-box {
-  display: flex;
-  gap: 4px;
-  padding: 4px 12px;
-}
-
-.location-search-input {
-  flex: 1;
-  font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
-  background: rgba(255, 255, 255, 0.08);
-  color: inherit;
-  outline: none;
-
-  &::placeholder {
-    opacity: 0.5;
-  }
-}
-
-.location-search-btn {
-  font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
-  background: rgba(255, 255, 255, 0.1);
-  color: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  &:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.18);
-  }
-}
-
-.location-results {
-  max-height: 160px;
-  overflow-y: auto;
-  padding: 0 4px 4px;
-}
-
-.location-result-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  width: 100%;
-  padding: 5px 10px;
-  border: none;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  border-radius: 6px;
-  text-align: left;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.1);
-  }
-}
-
-.location-result-name {
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.location-result-sub {
-  font-size: 11px;
-  opacity: 0.6;
-}
 
 .dropdown-toggle-item {
   display: flex;
