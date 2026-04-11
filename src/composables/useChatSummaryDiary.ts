@@ -920,6 +920,134 @@ ${recentMessagesText}
     }
   }
 
+  // =============================
+  // 單批總結（供外部逐批呼叫）
+  // =============================
+
+  /**
+   * 對一批訊息執行 AI 總結，儲存結果並回傳成功/失敗
+   * 由 AISummaryPanel 逐批呼叫，面板自行管理批次列表與狀態
+   */
+  async function summarizeSingleBatch(
+    batchMessages: Message[],
+    charName: string,
+    userName: string,
+    signal?: AbortSignal,
+  ): Promise<{ success: boolean; error?: string }> {
+    const chatId = deps.currentChatId.value || deps.chatId || '';
+    if (!chatId) return { success: false, error: '無聊天 ID' };
+
+    const char = deps.currentCharacter.value;
+
+    try {
+      const taskConfig = settingsStore.getAPIForTask('summary');
+      if (!taskConfig.api.endpoint || !taskConfig.api.apiKey || !taskConfig.api.model) {
+        throw new Error('請先在設定中配置 API');
+      }
+
+      await promptManagerStore.loadConfig();
+
+      const batchText = formatMessagesWithDates(batchMessages, () => userName, () => charName);
+
+      const summaryPromptDefs = promptManagerStore.summaryPrompts;
+      const summaryPromptOrder = promptManagerStore.summaryPromptOrder;
+
+      const summaryPrompts: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
+
+      for (const orderEntry of summaryPromptOrder) {
+        if (!orderEntry.enabled) continue;
+        const promptDef = summaryPromptDefs.find(p => p.identifier === orderEntry.identifier);
+        if (!promptDef) continue;
+
+        const content = promptDef.content
+          .replace(/\{\{char\}\}/g, charName)
+          .replace(/\{\{user\}\}/g, userName)
+          .replace(/\{\{messagesForSummary\}\}/g, batchText)
+          .replace(/\{\{userPersona\}\}/g, deps.effectivePersona.value?.description || '')
+          .replace(/\{\{charDescription\}\}/g, char?.data?.description || '');
+
+        summaryPrompts.push({ role: promptDef.role as 'system' | 'user' | 'assistant', content });
+      }
+
+      if (summaryPrompts.length === 0) {
+        const turnCount = batchMessages.filter(m => m.role === 'user').length;
+        summaryPrompts.push(
+          { role: 'system', content: `你是一個對話總結助手。請為以下對話片段生成簡潔的中文總結，保留關鍵情節、情感變化和重要信息。直接輸出總結內容，不要有前言。` },
+          { role: 'user', content: `以下是對話片段（共 ${turnCount} 輪）：\n\n${batchText}\n\n請生成總結。` },
+        );
+      }
+
+      const client = new OpenAICompatibleClient(taskConfig.api);
+      let summaryContent = '';
+
+      const streamGenerator = client.generateStream({
+        messages: summaryPrompts,
+        settings: {
+          maxContextLength: taskConfig.generation.maxContextLength || 200000,
+          maxResponseLength: taskConfig.generation.maxTokens || 8192,
+          temperature: 0.7,
+          topP: 0.9,
+          topK: 0,
+          frequencyPenalty: 0,
+          presencePenalty: 0,
+          repetitionPenalty: 1,
+          stopSequences: [],
+          streaming: true,
+          useStreamingWindow: false,
+        },
+        apiSettings: taskConfig.api,
+        signal,
+      });
+
+      for await (const event of streamGenerator) {
+        if (event.type === 'token' && event.token) {
+          summaryContent += event.token;
+        } else if (event.type === 'done') {
+          if (event.content && event.content.length > summaryContent.length) {
+            summaryContent = event.content;
+          }
+        } else if (event.type === 'error') {
+          console.error('[BatchSummary] 單批錯誤:', event.error);
+          throw new Error(String(event.error));
+        }
+      }
+
+      if (!summaryContent.trim()) {
+        throw new Error('AI 回傳空內容');
+      }
+
+      const newSummary: SummaryItem = {
+        id: `summary_batch_${Date.now()}`,
+        content: stripOutputTags(summaryContent),
+        createdAt: Date.now(),
+        messageCount: batchMessages.length,
+        isImportant: false,
+        isManual: true,
+        isMeta: false,
+        keywords: extractSummaryKeywords(stripOutputTags(summaryContent)),
+      };
+
+      deps.chatSummaries.value.push(newSummary);
+      await saveSummary(newSummary);
+      console.log('[BatchSummary] 單批總結完成:', newSummary.id);
+
+      if (isVectorMemoryEnabled()) {
+        const ctx = getChatContext();
+        const retriever = new MemoryRetrieverService();
+        retriever.generateAndStoreEmbedding(
+          newSummary.id, 'summary', newSummary.content, ctx.chatId, ctx.characterId,
+          newSummary.keywords, [deps.characterName],
+        ).catch(err => console.error('[向量記憶] 批量總結嵌入失敗:', err));
+      }
+
+      return { success: true };
+    } catch (e: any) {
+      const errMsg = e?.message || String(e);
+      console.error('[BatchSummary] 單批總結失敗:', errMsg);
+      return { success: false, error: errMsg };
+    }
+  }
+
   // 切換日記收藏
   async function handleToggleDiaryFavorite(id: string) {
     const diary = deps.chatDiaries.value.find((d) => d.id === id);
@@ -962,5 +1090,6 @@ ${recentMessagesText}
     handleToggleDiaryFavorite,
     handleDeleteDiary,
     handleTriggerManualDiary,
+    summarizeSingleBatch,
   };
 }

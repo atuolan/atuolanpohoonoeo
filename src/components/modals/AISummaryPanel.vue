@@ -79,6 +79,18 @@
             diaries.length
           }}</span>
         </button>
+        <button
+          class="tab-item"
+          :class="{ active: activeTab === 'batch' }"
+          @click="activeTab = 'batch'"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 6h16M4 10h16M4 14h10M4 18h6" />
+          </svg>
+          批量
+          <span v-if="batchRunningIndex >= 0" class="badge running">{{ batchDoneCount }}/{{ batchItems.length }}</span>
+          <span v-else-if="batchItems.length > 0 && batchDoneCount > 0" class="badge">{{ batchDoneCount }}/{{ batchItems.length }}</span>
+        </button>
       </div>
 
       <!-- 內容區 -->
@@ -845,6 +857,125 @@
             </div>
           </div>
         </div>
+
+        <!-- 批量總結 Tab -->
+        <div v-show="activeTab === 'batch'" class="tab-content batch-tab">
+          <input
+            ref="batchFileInput"
+            type="file"
+            accept=".jsonl"
+            style="display: none"
+            @change="handleBatchFileChange"
+          />
+
+          <!-- 未載入檔案 -->
+          <div v-if="!batchParsed" class="batch-upload-area" @click="batchFileInput?.click()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:40px;height:40px;opacity:0.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+            </svg>
+            <p class="batch-upload-title">點擊上傳 SillyTavern JSONL</p>
+            <p class="batch-upload-hint">支援從酒館匯出的 .jsonl 聊天紀錄</p>
+          </div>
+
+          <!-- 已載入 -->
+          <template v-else>
+            <!-- 頂部摘要 -->
+            <div class="batch-header">
+              <div class="batch-header-title">
+                <span class="batch-char-name">{{ batchCharName }}</span>
+                <span class="batch-header-sep">↔</span>
+                <span class="batch-user-name">{{ batchUserName }}</span>
+              </div>
+              <div class="batch-header-stats">
+                <span class="batch-stat"><strong>{{ batchTotalMessages }}</strong> 條</span>
+                <span class="batch-stat-sep">·</span>
+                <span class="batch-stat"><strong>{{ batchTotalTurns }}</strong> 輪</span>
+                <span class="batch-stat-sep">·</span>
+                <span class="batch-stat"><strong>{{ batchItems.length }}</strong> 批</span>
+              </div>
+            </div>
+
+            <!-- 控制列 -->
+            <div class="batch-controls">
+              <div class="batch-slider-group">
+                <label class="batch-slider-label">每批輪次</label>
+                <input
+                  v-model.number="batchTurnCount"
+                  type="range"
+                  min="5"
+                  max="50"
+                  step="5"
+                  class="range-input"
+                  :disabled="batchRunningIndex >= 0"
+                />
+                <span class="batch-slider-value">{{ batchTurnCount }}</span>
+              </div>
+              <button class="batch-reselect-btn" @click="resetBatch" :disabled="batchRunningIndex >= 0">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px">
+                  <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5"/>
+                </svg>
+                換檔
+              </button>
+            </div>
+
+            <!-- 進度總覽 -->
+            <div v-if="batchDoneCount > 0 || batchRunningIndex >= 0" class="batch-progress-section">
+              <div class="batch-progress-bar-track">
+                <div class="batch-progress-bar-fill" :style="{ width: (batchDoneCount / batchItems.length * 100) + '%' }"></div>
+              </div>
+              <div class="batch-progress-text">
+                <span>已完成 <strong>{{ batchDoneCount }}</strong> / {{ batchItems.length }}</span>
+                <span v-if="batchItems.filter(b => b.status === 'failed').length > 0" class="batch-failed-count">
+                  失敗 {{ batchItems.filter(b => b.status === 'failed').length }}
+                </span>
+              </div>
+            </div>
+
+            <!-- 批次列表 -->
+            <div class="batch-list">
+              <div
+                v-for="item in batchItems"
+                :key="item.index"
+                class="batch-item"
+                :class="'status-' + item.status"
+              >
+                <div class="batch-item-left">
+                  <span class="batch-item-num">{{ item.index + 1 }}</span>
+                  <div class="batch-item-meta">
+                    <span class="batch-item-range">
+                      第 {{ item.startTurn }}–{{ item.endTurn }} 輪
+                    </span>
+                    <span class="batch-item-size" :class="{ oversize: item.estimatedChars > 30000 }">
+                      {{ item.messageCount }}條 · ~{{ (item.estimatedChars / 1000).toFixed(1) }}k字
+                    </span>
+                  </div>
+                </div>
+                <div class="batch-item-right">
+                  <template v-if="item.status === 'done'">
+                    <span class="batch-status-badge done">完成</span>
+                  </template>
+                  <template v-else-if="item.status === 'running'">
+                    <span class="batch-status-badge running">
+                      <span class="dot-pulse"></span>總結中
+                    </span>
+                  </template>
+                  <template v-else-if="item.status === 'failed'">
+                    <button class="batch-status-btn retry" :disabled="batchRunningIndex >= 0" @click="runSingleBatch(item.index)">重試</button>
+                  </template>
+                  <template v-else>
+                    <button class="batch-status-btn start" :disabled="batchRunningIndex >= 0" @click="runSingleBatch(item.index)">總結</button>
+                  </template>
+                </div>
+                <div v-if="item.error" class="batch-item-error">
+                  <svg viewBox="0 0 24 24" fill="currentColor" style="width:12px;height:12px;flex-shrink:0;margin-top:1px">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                  </svg>
+                  <span>{{ item.error }}</span>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
       </div>
 
       <!-- 底部按鈕 - 總結內容 Tab -->
@@ -980,6 +1111,28 @@
         </button>
       </div>
 
+      <!-- 底部按鈕 - 批量總結 Tab -->
+      <div v-if="activeTab === 'batch'" class="modal-footer">
+        <button class="btn-cancel" @click="$emit('close')">關閉</button>
+        <button
+          v-if="batchRunningIndex >= 0"
+          class="btn-abort"
+          @click="abortBatch"
+        >
+          中止
+        </button>
+        <button
+          v-else-if="batchParsed && batchPendingCount > 0"
+          class="btn-save"
+          @click="runAllBatches"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:6px">
+            <path d="M5 3l14 9-14 9V3z"/>
+          </svg>
+          全部執行 ({{ batchPendingCount }} 批)
+        </button>
+      </div>
+
       <!-- 底部按鈕 - 只在設置相關 Tab 顯示 -->
       <div v-if="activeTab === 'settings'" class="modal-footer">
         <button class="btn-cancel" @click="$emit('close')">關閉</button>
@@ -1047,7 +1200,7 @@ import {
     createDefaultImportantEventsLog,
     createImportantEvent,
 } from "@/types/importantEvents";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 
 interface ConversationSummary {
   id: string;
@@ -1060,6 +1213,13 @@ interface ConversationSummary {
   keywords?: string[];
 }
 
+interface BatchMessage {
+  id: string;
+  role: 'user' | 'ai';
+  content: string;
+  timestamp: number;
+}
+
 const props = defineProps<{
   chatId: string;
   characterId: string;
@@ -1070,6 +1230,8 @@ const props = defineProps<{
   isExtractingEvents?: boolean;
   /** 從聊天載入的現有設定 */
   initialSettings?: SummarySettings;
+  /** 單批總結函數（由 composable 提供） */
+  summarizeBatchFn?: (messages: BatchMessage[], charName: string, userName: string, signal?: AbortSignal) => Promise<{ success: boolean; error?: string }>;
 }>();
 
 const emit = defineEmits<{
@@ -1094,7 +1256,7 @@ const emit = defineEmits<{
   "delete-selected": [ids: string[]];
 }>();
 
-const activeTab = ref<"history" | "settings" | "events" | "diary">("history");
+const activeTab = ref<"history" | "settings" | "events" | "diary" | "batch">("history");
 const settingsSubTab = ref<'trigger' | 'read' | 'vector'>('trigger');
 const settingsStore = useSettingsStore();
 
@@ -1578,6 +1740,271 @@ function saveAll() {
   emit("close");
 }
 
+// ===== 批量總結 =====
+const batchFileInput = ref<HTMLInputElement | null>(null);
+const batchParsed = ref(false);
+const batchCharName = ref('');
+const batchUserName = ref('');
+const batchMessages = ref<BatchMessage[]>([]);
+const batchTurnCount = ref(15);
+
+const batchTotalMessages = computed(() => batchMessages.value.length);
+const batchTotalTurns = computed(() => batchMessages.value.filter(m => m.role === 'user').length);
+
+interface BatchItem {
+  index: number;
+  messages: BatchMessage[];
+  turnCount: number;
+  messageCount: number;
+  estimatedChars: number;
+  startTurn: number;
+  endTurn: number;
+  status: 'pending' | 'running' | 'done' | 'failed';
+  error?: string;
+}
+
+const batchItemStatuses = ref<Map<number, 'pending' | 'running' | 'done' | 'failed'>>(new Map());
+const batchItemErrors = ref<Map<number, string>>(new Map());
+let batchAbortController: AbortController | null = null;
+
+function splitMessagesByTurns(messages: BatchMessage[], turnsPerBatch: number): BatchMessage[][] {
+  const batches: BatchMessage[][] = [];
+  let currentBatch: BatchMessage[] = [];
+  let turnUserCount = 0;
+  for (const msg of messages) {
+    if (msg.role === 'user') {
+      if (turnUserCount > 0 && turnUserCount % turnsPerBatch === 0) {
+        batches.push(currentBatch);
+        currentBatch = [];
+      }
+      turnUserCount++;
+    }
+    currentBatch.push(msg);
+  }
+  if (currentBatch.length > 0) batches.push(currentBatch);
+  return batches;
+}
+
+const batchItems = computed<BatchItem[]>(() => {
+  if (!batchParsed.value || batchMessages.value.length === 0) return [];
+  const raw = splitMessagesByTurns(batchMessages.value, batchTurnCount.value);
+  let globalTurnIdx = 0;
+  let msgPtr = 0;
+  return raw.map((msgs, i) => {
+    // 計算此批在全局的起止輪次
+    const startTurn = globalTurnIdx + 1;
+    for (const m of msgs) {
+      if (m.role === 'user') globalTurnIdx++;
+    }
+    const endTurn = globalTurnIdx;
+    return {
+      index: i,
+      messages: msgs,
+      turnCount: msgs.filter(m => m.role === 'user').length,
+      messageCount: msgs.length,
+      estimatedChars: msgs.reduce((sum, m) => sum + m.content.length, 0),
+      startTurn,
+      endTurn,
+      status: batchItemStatuses.value.get(i) || 'pending',
+      error: batchItemErrors.value.get(i),
+    };
+  });
+});
+
+const batchRunningIndex = computed(() => batchItems.value.findIndex(b => b.status === 'running'));
+const batchDoneCount = computed(() => batchItems.value.filter(b => b.status === 'done').length);
+const batchPendingCount = computed(() => batchItems.value.filter(b => b.status === 'pending' || b.status === 'failed').length);
+
+watch(batchTurnCount, () => {
+  // 調整輪次數時重置所有批次狀態
+  batchItemStatuses.value = new Map();
+  batchItemErrors.value = new Map();
+});
+
+function parseJsonlToMessages(text: string): { messages: BatchMessage[]; charName: string; userName: string } | null {
+  const lines = text.split('\n').filter(l => l.trim());
+  if (lines.length < 2) return null;
+
+  let metadata: any;
+  try { metadata = JSON.parse(lines[0]); } catch { return null; }
+
+  const charName = metadata.character_name || metadata.name || '角色';
+  const userName = metadata.user_name || 'User';
+
+  const messages: BatchMessage[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    let msgData: any;
+    try { msgData = JSON.parse(lines[i]); } catch { continue; }
+
+    // 跳過沒有實際訊息內容的行（例如純狀態/metadata 行）
+    if (!msgData.mes || typeof msgData.is_user !== 'boolean') continue;
+
+    const isUser = !!msgData.is_user;
+    let content = msgData.mes || '';
+    if (msgData.swipes && Array.isArray(msgData.swipes) && msgData.swipe_id !== undefined) {
+      content = msgData.swipes[msgData.swipe_id] || content;
+    }
+    content = content
+      .replace(/\{\{user\}\}/gi, userName)
+      .replace(/<user>/gi, userName);
+
+    let timestamp = 0;
+    if (msgData.send_date) {
+      // 嘗試直接解析
+      let parsed = Date.parse(msgData.send_date);
+      if (isNaN(parsed)) {
+        // 處理 "March 22, 2026 2:03pm" → 標準格式
+        const enMatch = msgData.send_date.match(/(\w+ \d+, \d+) (\d+):(\d+)(am|pm)/i);
+        if (enMatch) {
+          let h = parseInt(enMatch[2]);
+          const m = enMatch[3];
+          const ampm = enMatch[4].toLowerCase();
+          if (ampm === 'pm' && h < 12) h += 12;
+          if (ampm === 'am' && h === 12) h = 0;
+          parsed = Date.parse(`${enMatch[1]} ${String(h).padStart(2,'0')}:${m}:00`);
+        }
+      }
+      if (isNaN(parsed)) {
+        // 處理中文格式 "2026年3月21日 上午 11:44:46" / "下午"
+        const zhMatch = msgData.send_date.match(/(\d+)年(\d+)月(\d+)日\s*(上午|下午)\s*(\d+):(\d+):(\d+)/);
+        if (zhMatch) {
+          let h = parseInt(zhMatch[5]);
+          if (zhMatch[4] === '下午' && h < 12) h += 12;
+          if (zhMatch[4] === '上午' && h === 12) h = 0;
+          parsed = new Date(parseInt(zhMatch[1]), parseInt(zhMatch[2]) - 1, parseInt(zhMatch[3]), h, parseInt(zhMatch[6]), parseInt(zhMatch[7])).getTime();
+        }
+      }
+      if (!isNaN(parsed)) timestamp = parsed;
+    }
+    // fallback：使用遞增時間戳確保順序
+    if (!timestamp) timestamp = Date.now() + i * 1000;
+
+    messages.push({
+      id: `batch_msg_${i}`,
+      role: isUser ? 'user' : 'ai',
+      content,
+      timestamp,
+    });
+  }
+
+  return messages.length > 0 ? { messages, charName, userName } : null;
+}
+
+function handleBatchFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const text = e.target?.result as string;
+    const result = parseJsonlToMessages(text);
+    if (!result) {
+      alert('無法解析 JSONL 檔案，請確認格式正確');
+      return;
+    }
+    batchMessages.value = result.messages;
+    batchCharName.value = result.charName;
+    batchUserName.value = result.userName;
+    batchParsed.value = true;
+  };
+  reader.readAsText(file);
+  input.value = '';
+}
+
+function resetBatch() {
+  batchParsed.value = false;
+  batchMessages.value = [];
+  batchCharName.value = '';
+  batchUserName.value = '';
+  batchItemStatuses.value = new Map();
+  batchItemErrors.value = new Map();
+  batchAbortController = null;
+}
+
+async function runSingleBatch(index: number) {
+  if (!props.summarizeBatchFn) return;
+  const item = batchItems.value.find(b => b.index === index);
+  if (!item || item.status === 'running') return;
+
+  batchAbortController = new AbortController();
+  const statusMap = new Map(batchItemStatuses.value);
+  statusMap.set(index, 'running');
+  batchItemStatuses.value = statusMap;
+
+  // 清除舊錯誤
+  const errMap = new Map(batchItemErrors.value);
+  errMap.delete(index);
+  batchItemErrors.value = errMap;
+
+  const result = await props.summarizeBatchFn(
+    item.messages,
+    batchCharName.value,
+    batchUserName.value,
+    batchAbortController.signal,
+  );
+
+  const newStatusMap = new Map(batchItemStatuses.value);
+  newStatusMap.set(index, result.success ? 'done' : 'failed');
+  batchItemStatuses.value = newStatusMap;
+
+  if (!result.success && result.error) {
+    const newErrMap = new Map(batchItemErrors.value);
+    newErrMap.set(index, result.error);
+    batchItemErrors.value = newErrMap;
+  }
+
+  batchAbortController = null;
+}
+
+async function runAllBatches() {
+  if (!props.summarizeBatchFn) return;
+
+  batchAbortController = new AbortController();
+
+  for (const item of batchItems.value) {
+    if (batchAbortController.signal.aborted) break;
+    if (item.status === 'done') continue;
+
+    const statusMap = new Map(batchItemStatuses.value);
+    statusMap.set(item.index, 'running');
+    batchItemStatuses.value = statusMap;
+
+    const result = await props.summarizeBatchFn(
+      item.messages,
+      batchCharName.value,
+      batchUserName.value,
+      batchAbortController.signal,
+    );
+
+    const newStatusMap = new Map(batchItemStatuses.value);
+    newStatusMap.set(item.index, result.success ? 'done' : 'failed');
+    batchItemStatuses.value = newStatusMap;
+
+    if (!result.success) {
+      if (result.error) {
+        const newErrMap = new Map(batchItemErrors.value);
+        newErrMap.set(item.index, result.error);
+        batchItemErrors.value = newErrMap;
+      }
+      if (!batchAbortController.signal.aborted) {
+        // 失敗時停下，使用者可以決定重試或跳過
+        break;
+      }
+    }
+
+    // 批次間短暫延遲
+    if (!batchAbortController.signal.aborted) {
+      await new Promise(r => setTimeout(r, 300));
+    }
+  }
+
+  batchAbortController = null;
+}
+
+function abortBatch() {
+  batchAbortController?.abort();
+}
+
 // 回填缺少 vectorKeywords 的事件
 async function backfillKeywords() {
   if (!eventsLog.value?.events?.length) return;
@@ -1730,6 +2157,16 @@ onMounted(async () => {
     padding: 1px 5px;
     border-radius: 8px;
     font-weight: 600;
+
+    &.running {
+      background: #f59e0b;
+      animation: pulse 1.5s infinite;
+    }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
   }
 
   &::after {
@@ -3306,5 +3743,362 @@ onMounted(async () => {
       color: #fff;
     }
   }
+}
+
+// ===== 批量總結 Tab =====
+.batch-tab {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 0;
+}
+
+.batch-upload-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 36px 20px;
+  border: 2px dashed var(--color-border, rgba(0, 0, 0, 0.15));
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--color-text-secondary, #6b7280);
+
+  &:hover {
+    border-color: var(--color-primary, #7dd3a8);
+    background: rgba(125, 211, 168, 0.05);
+  }
+}
+
+.batch-upload-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text, #1f2937);
+}
+
+.batch-upload-hint {
+  margin: 0;
+  font-size: 12px;
+}
+
+// ===== 頂部摘要 =====
+.batch-header {
+  background: var(--color-background, rgba(0, 0, 0, 0.04));
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 8px;
+}
+
+.batch-header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.batch-char-name {
+  color: var(--color-primary, #7dd3a8);
+}
+
+.batch-header-sep {
+  color: var(--color-text-secondary, #9ca3af);
+  font-size: 14px;
+}
+
+.batch-user-name {
+  color: var(--color-text, #1f2937);
+}
+
+.batch-header-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary, #6b7280);
+
+  strong {
+    color: var(--color-text, #1f2937);
+    font-weight: 600;
+  }
+}
+
+.batch-stat-sep {
+  color: var(--color-border, rgba(0, 0, 0, 0.15));
+}
+
+// ===== 控制列 =====
+.batch-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 12px 0;
+}
+
+.batch-slider-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+
+  .range-input { flex: 1; }
+}
+
+.batch-slider-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #6b7280);
+  white-space: nowrap;
+}
+
+.batch-slider-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-primary, #7dd3a8);
+  min-width: 24px;
+  text-align: center;
+}
+
+.batch-reselect-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border-radius: 8px;
+  font-size: 12px;
+  background: transparent;
+  color: var(--color-text-secondary, #6b7280);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: var(--color-background, rgba(0, 0, 0, 0.05));
+    color: var(--color-text, #1f2937);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+// ===== 進度總覽 =====
+.batch-progress-section {
+  margin: 12px 0 16px;
+  padding: 0 4px;
+}
+
+.batch-progress-bar-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.batch-progress-bar-fill {
+  height: 100%;
+  background: var(--color-primary, #7dd3a8);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.batch-progress-text {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #6b7280);
+
+  strong {
+    color: var(--color-text, #1f2937);
+  }
+}
+
+.batch-failed-count {
+  color: #f87171;
+  font-weight: 500;
+}
+
+// ===== 批次列表 =====
+.batch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding-right: 4px;
+  margin-top: 4px;
+}
+
+.batch-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--color-background, rgba(0, 0, 0, 0.025));
+  border: 1px solid transparent;
+  transition: all 0.2s;
+
+  &.status-done {
+    border-color: rgba(125, 211, 168, 0.2);
+    background: rgba(125, 211, 168, 0.04);
+  }
+  &.status-running {
+    border-color: rgba(251, 191, 36, 0.25);
+    background: rgba(251, 191, 36, 0.06);
+  }
+  &.status-failed {
+    border-color: rgba(248, 113, 113, 0.2);
+    background: rgba(248, 113, 113, 0.04);
+  }
+}
+
+.batch-item-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.batch-item-num {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-secondary, #9ca3af);
+  min-width: 22px;
+  text-align: right;
+
+  .status-done & { color: var(--color-primary, #7dd3a8); }
+  .status-running & { color: #fbbf24; }
+  .status-failed & { color: #f87171; }
+}
+
+.batch-item-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.batch-item-range {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text, #1f2937);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.batch-item-size {
+  font-size: 11px;
+  color: var(--color-text-secondary, #9ca3af);
+
+  &.oversize {
+    color: #f59e0b;
+    font-weight: 600;
+  }
+}
+
+.batch-item-right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+// 狀態 badge
+.batch-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+
+  &.done {
+    background: rgba(125, 211, 168, 0.12);
+    color: var(--color-primary, #7dd3a8);
+  }
+  &.running {
+    background: rgba(251, 191, 36, 0.12);
+    color: #d97706;
+  }
+}
+
+.dot-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fbbf24;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
+}
+
+// 操作按鈕
+.batch-status-btn {
+  padding: 5px 14px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &.start {
+    border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+    background: transparent;
+    color: var(--color-text, #1f2937);
+
+    &:hover:not(:disabled) {
+      background: var(--color-primary, #7dd3a8);
+      color: white;
+      border-color: var(--color-primary, #7dd3a8);
+    }
+  }
+
+  &.retry {
+    border: 1px solid rgba(248, 113, 113, 0.3);
+    background: transparent;
+    color: #f87171;
+
+    &:hover:not(:disabled) {
+      background: #f87171;
+      color: white;
+      border-color: #f87171;
+    }
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+// 錯誤訊息
+.batch-item-error {
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(248, 113, 113, 0.06);
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11px;
+  color: #ef4444;
+  line-height: 1.4;
+  word-break: break-word;
+
+  svg { color: #f87171; }
 }
 </style>

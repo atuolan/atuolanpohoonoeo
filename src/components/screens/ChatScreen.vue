@@ -2573,6 +2573,7 @@ const {
   handleToggleDiaryFavorite,
   handleDeleteDiary,
   handleTriggerManualDiary,
+  summarizeSingleBatch,
 } = useChatSummaryDiary({
   messages,
   currentChatId,
@@ -10042,6 +10043,7 @@ onUnmounted(() => {
         @trigger-manual-diary="handleTriggerManualDiary"
         @trigger-manual-events="handleTriggerManualEvents"
         @delete-selected="handleDeleteSelected"
+        :summarize-batch-fn="summarizeSingleBatch"
       />
 
       <!-- 日記查看模態框 -->
