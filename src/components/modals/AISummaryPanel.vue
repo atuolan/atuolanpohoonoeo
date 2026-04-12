@@ -1844,6 +1844,26 @@ function parseJsonlToMessages(text: string): { messages: BatchMessage[]; charNam
     if (msgData.swipes && Array.isArray(msgData.swipes) && msgData.swipe_id !== undefined) {
       content = msgData.swipes[msgData.swipe_id] || content;
     }
+    
+    // 如果包含 <content> 標籤，則只提取 <content> 標籤內的文字
+    const contentRegex = /<content>([\s\S]*?)<\/content>/gi;
+    let extractedContent = '';
+    let match;
+    while ((match = contentRegex.exec(content)) !== null) {
+      extractedContent += match[1].trim() + '\n\n';
+    }
+    if (extractedContent) {
+      content = extractedContent.trim();
+    } else {
+      // 如果沒有 <content> 標籤，清除常見的冗長系統標籤，避免 500 錯誤
+      content = content
+        .replace(/<think>[\s\S]*?<\/think>/gi, '')
+        .replace(/<UpdateVariable>[\s\S]*?<\/UpdateVariable>/gi, '')
+        .replace(/<Analysis>[\s\S]*?<\/Analysis>/gi, '')
+        .replace(/<StatusPlaceHolderImpl[\s\S]*?>/gi, '')
+        .trim();
+    }
+
     content = content
       .replace(/\{\{user\}\}/gi, userName)
       .replace(/<user>/gi, userName);
@@ -2009,7 +2029,7 @@ function abortBatch() {
 async function backfillKeywords() {
   if (!eventsLog.value?.events?.length) return;
   const needBackfill = eventsLog.value.events.filter(
-    (e) => !e.vectorKeywords || e.vectorKeywords.length === 0,
+    (e) => !e.vectorKeywords || e.vectorKeywords.length === 0
   );
   if (needBackfill.length === 0) return;
 
@@ -2017,8 +2037,8 @@ async function backfillKeywords() {
     const { extractSummaryKeywords } = await import('@/utils/summaryKeywordExtractor');
     let changed = false;
     for (const event of needBackfill) {
-      const kws = extractSummaryKeywords(event.content, 8);
-      if (kws.length > 0) {
+      const kws = extractSummaryKeywords(event.content);
+      if (kws && kws.length > 0) {
         event.vectorKeywords = kws;
         changed = true;
       }
