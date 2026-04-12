@@ -168,6 +168,44 @@ if (document.readyState === "loading") {
   detectAndFixSafeArea();
 }
 
+// ===== 全域鍵盤感知：輸入框自動滾入可見區域 =====
+{
+  let activeInput: HTMLElement | null = null;
+
+  document.addEventListener("focusin", (e) => {
+    const t = e.target as HTMLElement;
+    if (
+      t.tagName === "INPUT" ||
+      t.tagName === "TEXTAREA" ||
+      t.contentEditable === "true"
+    ) {
+      activeInput = t;
+    }
+  });
+  document.addEventListener("focusout", () => {
+    activeInput = null;
+  });
+
+  if (window.visualViewport) {
+    let prevVVH = window.visualViewport.height;
+    window.visualViewport.addEventListener("resize", () => {
+      const curVVH = window.visualViewport!.height;
+      const keyboardOpened = curVVH < prevVVH - 80;
+      prevVVH = curVVH;
+      if (keyboardOpened && activeInput && document.activeElement === activeInput) {
+        setTimeout(() => {
+          if (activeInput && document.activeElement === activeInput) {
+            const rect = activeInput.getBoundingClientRect();
+            if (rect.bottom > curVVH || rect.top < 0) {
+              activeInput.scrollIntoView({ block: "center", behavior: "smooth" });
+            }
+          }
+        }, 120);
+      }
+    });
+  }
+}
+
 // ===== iOS PWA 防止 body 彈跳滾動 =====
 function lockBodyScroll(): void {
   window.scrollTo(0, 0);

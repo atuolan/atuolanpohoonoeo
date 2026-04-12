@@ -1315,7 +1315,10 @@ function handleAudioCommandChange(e: Event) {
 // ===== 語音輸入 Card CSS =====
 .text-voice-overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--app-height, 100%);
   background: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;
@@ -1359,37 +1362,6 @@ function handleAudioCommandChange(e: Event) {
   background: #ffffff;
   backdrop-filter: blur(30px);
   -webkit-backdrop-filter: blur(30px);
-}
-.card::after {
-  content: "";
-  --cl-light: #fff;
-  --cr-light: #0000;
-  position: absolute;
-  z-index: 0;
-  filter: blur(60px);
-  width: calc(var(--h-card) * 1.25);
-  height: calc(var(--h-card) * 1.25);
-  animation: rotating 10s linear infinite;
-  background: conic-gradient(
-    from 45deg at 50% 50%,
-    var(--cl-light),
-    var(--cr-light),
-    var(--cl-light),
-    var(--cl-light),
-    var(--cl-light),
-    var(--cr-light),
-    var(--cl-light),
-    var(--cl-light),
-    var(--cl-light)
-  );
-}
-@keyframes rotating {
-  from {
-    transform: rotate(0);
-  }
-  to {
-    transform: rotate(1turn);
-  }
 }
 
 .inner-card {
@@ -1526,7 +1498,6 @@ function handleAudioCommandChange(e: Event) {
   overflow: hidden;
   border-radius: 999px;
   pointer-events: none;
-  animation: rotating 5s steps(45) infinite;
 }
 .spectrum b {
   width: 1px;

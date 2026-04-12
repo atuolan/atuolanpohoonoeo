@@ -58,11 +58,13 @@ const selectedCharacterId = ref<string | null>(null);
 
 // 編輯中的提示詞
 const editingPrompt = ref<PromptDefinition | null>(null);
+const editingName = ref("");
 const editingContent = ref("");
 const editingRole = ref<"system" | "user" | "assistant">("system");
 const editingInjectionPosition = ref<0 | 1>(0); // 0=RELATIVE, 1=ABSOLUTE
 const editingInjectionDepth = ref(0);
 const editingInjectionOrder = ref(0);
+const editingAdminOnly = ref(false);
 
 // 新建提示詞
 const showNewPromptModal = ref(false);
@@ -95,12 +97,15 @@ const exportOptions = ref({
   groupChat: false,
   characterConfigs: false,
 });
+const exportFormat = ref<"json" | "typescript">("json");
 const newPromptName = ref("");
 const newPromptContent = ref("");
 const newPromptRole = ref<"system" | "user" | "assistant">("system");
 const newPromptInjectionPosition = ref<0 | 1>(0);
 const newPromptInjectionDepth = ref(0);
 const newPromptInjectionOrder = ref(100);
+const newPromptInsertMode = ref<ImportInsertMode>("end");
+const newPromptAnchorIdentifier = ref("");
 
 // 拖拽狀態
 const draggedItem = ref<PromptOrderEntry | null>(null);
@@ -329,6 +334,18 @@ function getImportInsertIndex(count: number): number | undefined {
   if (anchorIndex === -1) return currentOrder.value.length;
   if (importInsertMode.value === "before") return anchorIndex;
   return anchorIndex + count;
+}
+
+function getNewPromptInsertIndex(): number | undefined {
+  if (newPromptInsertMode.value === "start") return 0;
+  if (newPromptInsertMode.value === "end") return currentOrder.value.length;
+
+  const anchorIndex = currentOrder.value.findIndex(
+    (entry) => entry.identifier === newPromptAnchorIdentifier.value,
+  );
+  if (anchorIndex === -1) return currentOrder.value.length;
+  if (newPromptInsertMode.value === "before") return anchorIndex;
+  return anchorIndex + 1;
 }
 
 async function insertSelectedImportedPrompts() {
@@ -1018,6 +1035,7 @@ function editPrompt(identifier: string) {
   const def = getPromptDef(identifier);
   if (def && (isGroupChatMode.value || isPromptEditable(def))) {
     editingPrompt.value = def;
+    editingName.value = def.name;
     // adminOnly 模塊：非管理員看不到內容
     if (def.adminOnly && !adminStore.isAdmin) {
       editingContent.value = "";
@@ -1028,6 +1046,7 @@ function editPrompt(identifier: string) {
     editingInjectionPosition.value = def.injection_position as 0 | 1;
     editingInjectionDepth.value = def.injection_depth;
     editingInjectionOrder.value = def.injection_order;
+    editingAdminOnly.value = !!def.adminOnly;
   }
 }
 
@@ -1052,89 +1071,106 @@ async function saveEdit() {
       await promptManagerStore.updateFaceToFacePrompt(
         editingPrompt.value.identifier,
         {
+          name: editingName.value,
           content: editingContent.value,
           role: editingRole.value,
           injection_position: editingInjectionPosition.value,
           injection_depth: editingInjectionDepth.value,
           injection_order: editingInjectionOrder.value,
+          adminOnly: editingAdminOnly.value,
         },
       );
     } else if (selectedMode.value === "groupChat") {
       await promptManagerStore.updateGroupChatPrompt(
         editingPrompt.value.identifier,
         {
+          name: editingName.value,
           content: editingContent.value,
           role: editingRole.value,
           injection_position: editingInjectionPosition.value,
           injection_depth: editingInjectionDepth.value,
           injection_order: editingInjectionOrder.value,
+          adminOnly: editingAdminOnly.value,
         },
       );
     } else if (selectedMode.value === "diary") {
       await promptManagerStore.updateDiaryPrompt(
         editingPrompt.value.identifier,
         {
+          name: editingName.value,
           content: editingContent.value,
           role: editingRole.value,
           injection_position: editingInjectionPosition.value,
           injection_depth: editingInjectionDepth.value,
           injection_order: editingInjectionOrder.value,
+          adminOnly: editingAdminOnly.value,
         },
       );
     } else if (selectedMode.value === "summary") {
       await promptManagerStore.updateSummaryPrompt(
         editingPrompt.value.identifier,
         {
+          name: editingName.value,
           content: editingContent.value,
           role: editingRole.value,
           injection_position: editingInjectionPosition.value,
           injection_depth: editingInjectionDepth.value,
           injection_order: editingInjectionOrder.value,
+          adminOnly: editingAdminOnly.value,
         },
       );
     } else if (selectedMode.value === "events") {
       await promptManagerStore.updateEventsPrompt(
         editingPrompt.value.identifier,
         {
+          name: editingName.value,
           content: editingContent.value,
           role: editingRole.value,
           injection_position: editingInjectionPosition.value,
           injection_depth: editingInjectionDepth.value,
           injection_order: editingInjectionOrder.value,
+          adminOnly: editingAdminOnly.value,
         },
       );
     } else if (selectedMode.value === "plurkPost") {
       await promptManagerStore.updatePlurkPostPrompt(
         editingPrompt.value.identifier,
         {
+          name: editingName.value,
           content: editingContent.value,
           role: editingRole.value,
           injection_position: editingInjectionPosition.value,
           injection_depth: editingInjectionDepth.value,
           injection_order: editingInjectionOrder.value,
+          adminOnly: editingAdminOnly.value,
         },
       );
     } else if (selectedMode.value === "plurkComment") {
       await promptManagerStore.updatePlurkCommentPrompt(
         editingPrompt.value.identifier,
         {
+          name: editingName.value,
           content: editingContent.value,
           role: editingRole.value,
           injection_position: editingInjectionPosition.value,
           injection_depth: editingInjectionDepth.value,
           injection_order: editingInjectionOrder.value,
+          adminOnly: editingAdminOnly.value,
         },
       );
     } else {
       await promptManagerStore.updatePrompt(editingPrompt.value.identifier, {
+        name: editingName.value,
         content: editingContent.value,
         role: editingRole.value,
         injection_position: editingInjectionPosition.value,
         injection_depth: editingInjectionDepth.value,
         injection_order: editingInjectionOrder.value,
+        adminOnly: editingAdminOnly.value,
       });
     }
     editingPrompt.value = null;
+    editingName.value = "";
     editingContent.value = "";
   }
 }
@@ -1197,14 +1233,18 @@ async function createNewPrompt() {
       injection_order: newPromptInjectionOrder.value,
     };
 
+    const insertIndex = getNewPromptInsertIndex();
+    const insertOptions = { insertIndex, enabled: true };
+
     if (isFaceToFaceMode.value) {
-      await promptManagerStore.addFaceToFaceCustomPrompt(promptData);
+      await promptManagerStore.addFaceToFaceCustomPrompt(promptData, insertOptions);
     } else if (isGroupChatMode.value) {
-      await promptManagerStore.addGroupChatCustomPrompt(promptData);
+      await promptManagerStore.addGroupChatCustomPrompt(promptData, insertOptions);
     } else {
       await promptManagerStore.addCustomPromptForMode(
         selectedMode.value,
         promptData,
+        insertOptions,
       );
     }
     showNewPromptModal.value = false;
@@ -1214,6 +1254,8 @@ async function createNewPrompt() {
     newPromptInjectionPosition.value = 0;
     newPromptInjectionDepth.value = 0;
     newPromptInjectionOrder.value = 100;
+    newPromptInsertMode.value = "end";
+    newPromptAnchorIdentifier.value = "";
   }
 }
 
@@ -1333,8 +1375,369 @@ function openExportModal() {
   showExportModal.value = true;
 }
 
+function serializePromptContent(content: string): string {
+  if (content === "") {
+    return '""';
+  }
+  if (!content.includes("\n")) {
+    return JSON.stringify(content);
+  }
+  return `\`${content
+    .replace(/\\/g, "\\\\")
+    .replace(/`/g, "\\`")
+    .replace(/\$\{/g, "\\${")}\``;
+}
+
+function buildPromptDefinitionsBlock(
+  prompts: PromptDefinition[],
+  exportName: string,
+): string[] {
+  const lines: string[] = [];
+  lines.push(`export const ${exportName}: PromptDefinition[] = [`);
+  for (const prompt of prompts) {
+    lines.push("  {");
+    lines.push(`    identifier: ${JSON.stringify(prompt.identifier)},`);
+    lines.push(`    name: ${JSON.stringify(prompt.name)},`);
+    lines.push(`    description: ${JSON.stringify(prompt.description || "")},`);
+    lines.push(`    category: ${JSON.stringify(prompt.category)},`);
+    lines.push(`    role: ${JSON.stringify(prompt.role)},`);
+    lines.push(`    content: ${serializePromptContent(prompt.content)},`);
+    lines.push(`    system_prompt: ${prompt.system_prompt},`);
+    lines.push(`    marker: ${prompt.marker},`);
+    const injPos =
+      prompt.injection_position === 1
+        ? "INJECTION_ABSOLUTE"
+        : "INJECTION_RELATIVE";
+    lines.push(`    injection_position: ${injPos},`);
+    lines.push(`    injection_depth: ${prompt.injection_depth},`);
+    lines.push(`    injection_order: ${prompt.injection_order},`);
+    lines.push(`    forbid_overrides: ${prompt.forbid_overrides},`);
+    lines.push(`    extension: ${prompt.extension},`);
+    lines.push(
+      `    injection_trigger: ${JSON.stringify(prompt.injection_trigger || [])},`,
+    );
+    lines.push(`    isEditable: ${prompt.isEditable},`);
+    lines.push(`    isDeletable: ${prompt.isDeletable},`);
+    if (typeof prompt.adminOnly === "boolean") {
+      lines.push(`    adminOnly: ${prompt.adminOnly},`);
+    }
+    lines.push("  },");
+  }
+  lines.push("];");
+  return lines;
+}
+
+function buildPromptOrderBlock(order: PromptOrderEntry[], exportName: string): string[] {
+  const lines: string[] = [];
+  lines.push(`export const ${exportName}: PromptOrderEntry[] = [`);
+  for (const entry of order) {
+    lines.push(
+      `  { identifier: ${JSON.stringify(entry.identifier)}, enabled: ${entry.enabled} },`,
+    );
+  }
+  lines.push("];");
+  return lines;
+}
+
+type TsExportFile = {
+  path: string;
+  fileName: string;
+  content: string;
+};
+
+function buildChatTsFile(): TsExportFile {
+  const config = promptManagerStore.config;
+  const orderedPrompts = config.globalPromptOrder
+    .map((entry) => config.prompts.find((p) => p.identifier === entry.identifier))
+    .filter((p): p is PromptDefinition => p !== undefined);
+  const orderedIds = new Set(config.globalPromptOrder.map((e) => e.identifier));
+  const extraPrompts = config.prompts.filter((p) => !orderedIds.has(p.identifier));
+  const allPrompts = [...orderedPrompts, ...extraPrompts];
+  const lines: string[] = [
+    "/**",
+    " * 線上模式（主要聊天）默認提示詞",
+    " * 包含：",
+    " * - 系統防護和身份設定",
+    " * - 核心規則（禁止讀心、平等互動等）",
+    " * - 上下文注入（時間、天氣、遊戲等）",
+    " * - 線上模式功能和格式",
+    " * - 思考框架和輸出規則",
+    " */",
+    "",
+    'import type { PromptDefinition, PromptOrderEntry } from "./types";',
+    'import { INJECTION_ABSOLUTE, INJECTION_RELATIVE } from "./types";',
+    "",
+    "// ===== 主要聊天提示詞定義 =====",
+    ...buildPromptDefinitionsBlock(allPrompts, "DEFAULT_PROMPT_DEFINITIONS"),
+    "",
+    "// ===== 主要聊天提示詞順序 =====",
+    ...buildPromptOrderBlock(config.globalPromptOrder, "DEFAULT_PROMPT_ORDER"),
+    "",
+    "// ===== 向後兼容別名 =====",
+    "export {",
+    "  DEFAULT_PROMPT_DEFINITIONS as CHAT_PROMPT_DEFINITIONS,",
+    "  DEFAULT_PROMPT_ORDER as DEFAULT_CHAT_PROMPT_ORDER,",
+    "};",
+    "",
+  ];
+
+  return {
+    path: "src/data/defaultPrompts/chat.ts",
+    fileName: "chat.ts",
+    content: lines.join("\n"),
+  };
+}
+
+function buildModuleTsFile(options: {
+  path: string;
+  fileName: string;
+  titleComment: string[];
+  importStyle?: "localTypes" | "aliasTypes";
+  definitionsTitle: string;
+  orderTitle: string;
+  definitionsExportName: string;
+  orderExportName: string;
+  prompts: PromptDefinition[];
+  order: PromptOrderEntry[];
+  aliases?: string[];
+}): TsExportFile {
+  const importStyle = options.importStyle ?? "localTypes";
+  const lines: string[] = [];
+
+  if (options.titleComment.length > 0) {
+    lines.push("/**");
+    for (const line of options.titleComment) {
+      lines.push(` * ${line}`);
+    }
+    lines.push(" */");
+    lines.push("");
+  }
+
+  if (importStyle === "aliasTypes") {
+    lines.push('import type { PromptDefinition, PromptOrderEntry } from "@/types/promptManager";');
+    lines.push("");
+    lines.push("// 注入位置常量");
+    lines.push("const INJECTION_RELATIVE = 0;");
+    if (options.prompts.some((prompt) => prompt.injection_position === 1)) {
+      lines.push("const INJECTION_ABSOLUTE = 1;");
+    }
+  } else {
+    lines.push('import type { PromptDefinition, PromptOrderEntry } from "./types";');
+    lines.push('import { INJECTION_ABSOLUTE, INJECTION_RELATIVE } from "./types";');
+  }
+
+  lines.push("");
+  lines.push(`// ===== ${options.definitionsTitle} =====`);
+  lines.push(...buildPromptDefinitionsBlock(options.prompts, options.definitionsExportName));
+  lines.push("");
+  lines.push(`// ===== ${options.orderTitle} =====`);
+  lines.push(...buildPromptOrderBlock(options.order, options.orderExportName));
+
+  if (options.aliases && options.aliases.length > 0) {
+    lines.push("");
+    lines.push("export {");
+    for (const alias of options.aliases) {
+      lines.push(`  ${alias},`);
+    }
+    lines.push("};");
+  }
+
+  lines.push("");
+
+  return {
+    path: options.path,
+    fileName: options.fileName,
+    content: lines.join("\n"),
+  };
+}
+
+function getSelectedTsExportFiles(): TsExportFile[] {
+  const config = promptManagerStore.config;
+  const files: TsExportFile[] = [];
+
+  if (exportOptions.value.globalPrompts || exportOptions.value.globalOrder) {
+    files.push(buildChatTsFile());
+  }
+
+  if (exportOptions.value.diary) {
+    files.push(
+      buildModuleTsFile({
+        path: "src/data/defaultPrompts/diary.ts",
+        fileName: "diary.ts",
+        titleComment: ["日記系統提示詞定義"],
+        definitionsTitle: "日記提示詞定義",
+        orderTitle: "日記提示詞順序",
+        definitionsExportName: "DIARY_PROMPT_DEFINITIONS",
+        orderExportName: "DEFAULT_DIARY_PROMPT_ORDER",
+        prompts: config.diaryPrompts || [],
+        order: config.diaryPromptOrder || [],
+      }),
+    );
+  }
+
+  if (exportOptions.value.summary) {
+    files.push(
+      buildModuleTsFile({
+        path: "src/data/defaultPrompts/summary.ts",
+        fileName: "summary.ts",
+        titleComment: ["總結系統提示詞定義"],
+        definitionsTitle: "總結提示詞定義",
+        orderTitle: "總結提示詞順序",
+        definitionsExportName: "SUMMARY_PROMPT_DEFINITIONS",
+        orderExportName: "DEFAULT_SUMMARY_PROMPT_ORDER",
+        prompts: config.summaryPrompts || [],
+        order: config.summaryPromptOrder || [],
+      }),
+    );
+  }
+
+  if (exportOptions.value.events) {
+    files.push(
+      buildModuleTsFile({
+        path: "src/data/defaultPrompts/events.ts",
+        fileName: "events.ts",
+        titleComment: ["重要事件提取提示詞定義"],
+        definitionsTitle: "重要事件提示詞定義",
+        orderTitle: "重要事件提示詞順序",
+        definitionsExportName: "IMPORTANT_EVENTS_PROMPT_DEFINITIONS",
+        orderExportName: "DEFAULT_IMPORTANT_EVENTS_PROMPT_ORDER",
+        prompts: config.eventsPrompts || [],
+        order: config.eventsPromptOrder || [],
+      }),
+    );
+  }
+
+  if (exportOptions.value.plurkPost || exportOptions.value.plurkComment) {
+    const lines: string[] = [
+      "/**",
+      " * 噗浪相關提示詞定義（發文 + 評論）",
+      " */",
+      "",
+      'import type { PromptDefinition, PromptOrderEntry } from "./types";',
+      'import { INJECTION_RELATIVE } from "./types";',
+      "",
+      "// ===== 噗浪發文提示詞定義 =====",
+      ...buildPromptDefinitionsBlock(
+        config.plurkPostPrompts || [],
+        "PLURK_POST_PROMPT_DEFINITIONS",
+      ),
+      "",
+      "// ===== 噗浪發文提示詞順序 =====",
+      ...buildPromptOrderBlock(
+        config.plurkPostPromptOrder || [],
+        "DEFAULT_PLURK_POST_PROMPT_ORDER",
+      ),
+      "",
+      "// ===== 噗浪評論提示詞定義 =====",
+      ...buildPromptDefinitionsBlock(
+        config.plurkCommentPrompts || [],
+        "PLURK_COMMENT_PROMPT_DEFINITIONS",
+      ),
+      "",
+      "// ===== 噗浪評論提示詞順序 =====",
+      ...buildPromptOrderBlock(
+        config.plurkCommentPromptOrder || [],
+        "DEFAULT_PLURK_COMMENT_PROMPT_ORDER",
+      ),
+      "",
+    ];
+
+    files.push({
+      path: "src/data/defaultPrompts/plurk.ts",
+      fileName: "plurk.ts",
+      content: lines.join("\n"),
+    });
+  }
+
+  if (exportOptions.value.faceToFace) {
+    files.push(
+      buildModuleTsFile({
+        path: "src/data/faceToFacePrompts.ts",
+        fileName: "faceToFacePrompts.ts",
+        titleComment: [
+          "面對面模式提示詞定義",
+          "從導出模組生成",
+        ],
+        importStyle: "aliasTypes",
+        definitionsTitle: "面對面模式提示詞定義",
+        orderTitle: "面對面模式提示詞順序",
+        definitionsExportName: "FACE_TO_FACE_PROMPT_DEFINITIONS",
+        orderExportName: "DEFAULT_FACE_TO_FACE_PROMPT_ORDER",
+        prompts: config.faceToFacePrompts || [],
+        order: config.faceToFacePromptOrder || [],
+      }),
+    );
+  }
+
+  if (exportOptions.value.groupChat) {
+    files.push(
+      buildModuleTsFile({
+        path: "src/data/groupChatPrompts.ts",
+        fileName: "groupChatPrompts.ts",
+        titleComment: [
+          "群聊模式提示詞定義",
+          "群聊專屬提示詞：導演系統、成員列表、XML 格式規範、互動規則",
+        ],
+        importStyle: "aliasTypes",
+        definitionsTitle: "群聊模式提示詞定義",
+        orderTitle: "群聊模式提示詞順序",
+        definitionsExportName: "GROUP_CHAT_PROMPT_DEFINITIONS",
+        orderExportName: "DEFAULT_GROUP_CHAT_PROMPT_ORDER",
+        prompts: config.groupChatPrompts || [],
+        order: config.groupChatPromptOrder || [],
+      }),
+    );
+  }
+
+  return files;
+}
+
 // 執行導出
 function doExport() {
+  if (exportFormat.value === "typescript") {
+    const files = getSelectedTsExportFiles();
+    const code =
+      files.length === 1
+        ? files[0].content
+        : files
+            .map(
+              (file) =>
+                `// ===== FILE: ${file.path} =====\n\n${file.content}`,
+            )
+            .join("\n\n");
+    const downloadName = `prompt-export-${Date.now()}.txt`;
+    const successMessage =
+      files.length === 1
+        ? `可替換 ${files[0].path} 的文字內容已複製到剪貼簿！`
+        : "多個可替換檔案的文字內容已複製到剪貼簿！已依檔案分段標示。";
+
+    if (files.length === 0) {
+      alert("請先勾選至少一個要導出的模組。");
+      return;
+    }
+
+    navigator.clipboard
+      .writeText(code)
+      .then(() => {
+        alert(successMessage);
+        showExportModal.value = false;
+      })
+      .catch(() => {
+        const blob = new Blob([code], {
+          type: "text/plain",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = downloadName;
+        a.click();
+        URL.revokeObjectURL(url);
+        alert(`已下載 ${downloadName} 檔案！可直接打開複製替換內容。`);
+        showExportModal.value = false;
+      });
+    return;
+  }
+
   const config = promptManagerStore.config;
   const exportData: Record<string, unknown> = {
     exportedAt: new Date().toISOString(),
@@ -1498,6 +1901,12 @@ watch(importInsertMode, (mode) => {
     importAnchorIdentifier.value = currentOrderChoices.value[0]?.identifier || "";
   }
 });
+
+watch(newPromptInsertMode, (mode) => {
+  if ((mode === "before" || mode === "after") && !newPromptAnchorIdentifier.value) {
+    newPromptAnchorIdentifier.value = currentOrderChoices.value[0]?.identifier || "";
+  }
+});
 </script>
 
 <template>
@@ -1563,7 +1972,7 @@ watch(importInsertMode, (mode) => {
           <summary class="header-btn" title="更多操作" aria-label="更多操作">
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path
-                d="M12 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"
+                d="M12 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"
               />
             </svg>
           </summary>
@@ -1902,39 +2311,44 @@ watch(importInsertMode, (mode) => {
           <!-- 圖標 -->
           <span class="prompt-icon">{{ getPromptIcon(entry.identifier) }}</span>
 
-          <!-- 名稱 -->
-          <span class="prompt-name">{{ getPromptName(entry.identifier) }}</span>
+          <!-- 資訊區塊（名稱與標籤） -->
+          <div class="prompt-info">
+            <!-- 名稱 -->
+            <span class="prompt-name">{{ getPromptName(entry.identifier) }}</span>
 
-          <!-- 標籤 -->
-          <span
-            v-if="getPromptDef(entry.identifier)?.marker"
-            class="prompt-tag marker"
-            >Marker</span
-          >
-          <span
-            v-else-if="getPromptDef(entry.identifier)?.system_prompt"
-            class="prompt-tag system"
-            >系統</span
-          >
-          <span v-else class="prompt-tag custom">自訂</span>
+            <!-- 標籤列表 -->
+            <div class="prompt-tags">
+              <span
+                v-if="getPromptDef(entry.identifier)?.marker"
+                class="prompt-tag marker"
+                >Marker</span
+              >
+              <span
+                v-else-if="getPromptDef(entry.identifier)?.system_prompt"
+                class="prompt-tag system"
+                >系統</span
+              >
+              <span v-else class="prompt-tag custom">自訂</span>
 
-          <!-- 角色標籤 -->
-          <span
-            v-if="getRoleLabel(entry.identifier)"
-            class="prompt-tag"
-            :class="getRoleLabel(entry.identifier)!.class"
-          >
-            {{ getRoleLabel(entry.identifier)!.text }}
-          </span>
+              <!-- 角色標籤 -->
+              <span
+                v-if="getRoleLabel(entry.identifier)"
+                class="prompt-tag"
+                :class="getRoleLabel(entry.identifier)!.class"
+              >
+                {{ getRoleLabel(entry.identifier)!.text }}
+              </span>
 
-          <!-- 位置標籤 -->
-          <span
-            v-if="getPositionLabel(entry.identifier)"
-            class="prompt-tag"
-            :class="getPositionLabel(entry.identifier)!.class"
-          >
-            {{ getPositionLabel(entry.identifier)!.text }}
-          </span>
+              <!-- 位置標籤 -->
+              <span
+                v-if="getPositionLabel(entry.identifier)"
+                class="prompt-tag"
+                :class="getPositionLabel(entry.identifier)!.class"
+              >
+                {{ getPositionLabel(entry.identifier)!.text }}
+              </span>
+            </div>
+          </div>
 
           <!-- 操作按鈕 -->
           <div class="prompt-actions">
@@ -2013,7 +2427,7 @@ watch(importInsertMode, (mode) => {
         <div v-if="editingPrompt" class="modal-overlay" @click="cancelEdit">
           <div class="modal modal-lg" @click.stop>
             <div class="modal-header">
-              <h3>編輯「{{ editingPrompt.name }}」</h3>
+              <h3>編輯提示詞</h3>
               <button class="close-btn" @click="cancelEdit">
                 <svg viewBox="0 0 24 24" fill="currentColor">
                   <path
@@ -2023,6 +2437,16 @@ watch(importInsertMode, (mode) => {
               </button>
             </div>
             <div class="modal-body">
+              <!-- 名稱編輯 -->
+              <div class="form-group">
+                <label class="form-label">名稱</label>
+                <input
+                  v-model="editingName"
+                  type="text"
+                  class="input-field"
+                  placeholder="輸入提示詞名稱..."
+                />
+              </div>
               <!-- 內容編輯 -->
               <div class="form-group">
                 <label class="form-label">內容</label>
@@ -2150,6 +2574,19 @@ watch(importInsertMode, (mode) => {
             </div>
             <div class="modal-footer">
               <button class="btn secondary" @click="cancelEdit">取消</button>
+              <button
+                v-if="adminStore.isAdmin"
+                class="btn secondary"
+                :class="{ 'btn-locked': editingAdminOnly }"
+                @click="editingAdminOnly = !editingAdminOnly"
+                :title="editingAdminOnly ? '點擊解鎖（取消管理員專屬）' : '點擊鎖定（設為管理員專屬）'"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 4px;">
+                  <path v-if="editingAdminOnly" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" />
+                  <path v-else d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10z" />
+                </svg>
+                {{ editingAdminOnly ? '已鎖定' : '未鎖定' }}
+              </button>
               <button
                 v-if="!editingPrompt.adminOnly || adminStore.isAdmin"
                 class="btn secondary"
@@ -2461,6 +2898,39 @@ watch(importInsertMode, (mode) => {
                   </div>
                 </Transition>
               </div>
+
+              <!-- 插入位置 -->
+              <div class="advanced-settings">
+                <div class="settings-title">插入位置</div>
+                <div class="form-group">
+                  <select v-model="newPromptInsertMode" class="select-field">
+                    <option value="start">插到最前面</option>
+                    <option value="end">插到最後面</option>
+                    <option value="before" :disabled="currentOrderChoices.length === 0">
+                      插到某條目前面
+                    </option>
+                    <option value="after" :disabled="currentOrderChoices.length === 0">
+                      插到某條目後面
+                    </option>
+                  </select>
+                </div>
+                <div
+                  v-if="newPromptInsertMode === 'before' || newPromptInsertMode === 'after'"
+                  class="form-group"
+                >
+                  <label class="form-label">參考條目</label>
+                  <select v-model="newPromptAnchorIdentifier" class="select-field">
+                    <option disabled value="">請選擇條目</option>
+                    <option
+                      v-for="item in currentOrderChoices"
+                      :key="item.identifier"
+                      :value="item.identifier"
+                    >
+                      {{ item.name }}
+                    </option>
+                  </select>
+                </div>
+              </div>
             </div>
             <div class="modal-footer">
               <button class="btn secondary" @click="showNewPromptModal = false">
@@ -2468,7 +2938,7 @@ watch(importInsertMode, (mode) => {
               </button>
               <button
                 class="btn primary"
-                :disabled="!newPromptName.trim()"
+                :disabled="!newPromptName.trim() || ((newPromptInsertMode === 'before' || newPromptInsertMode === 'after') && !newPromptAnchorIdentifier)"
                 @click="createNewPrompt"
               >
                 創建
@@ -2678,6 +3148,33 @@ watch(importInsertMode, (mode) => {
                     <span class="option-content">
                       <span class="option-name">角色專屬配置</span>
                       <span class="option-desc">各角色的自訂順序和覆蓋</span>
+                    </span>
+                  </label>
+                </div>
+
+                <!-- 導出格式 -->
+                <div class="export-section">
+                  <div class="section-title">導出格式</div>
+                  <label class="export-option">
+                    <input
+                      type="radio"
+                      v-model="exportFormat"
+                      value="json"
+                    />
+                    <span class="option-content">
+                      <span class="option-name">JSON</span>
+                      <span class="option-desc">標準 JSON 格式（可匯入）</span>
+                    </span>
+                  </label>
+                  <label class="export-option">
+                    <input
+                      type="radio"
+                      v-model="exportFormat"
+                      value="typescript"
+                    />
+                    <span class="option-content">
+                      <span class="option-name">可複製替換文字</span>
+                      <span class="option-desc">輸出可直接複製並貼去覆蓋對應 .ts 檔案的文字內容</span>
                     </span>
                   </label>
                 </div>
@@ -3609,13 +4106,30 @@ watch(importInsertMode, (mode) => {
 
 .prompt-icon {
   font-size: 18px;
+  flex-shrink: 0;
+}
+
+.prompt-info {
+  flex: 1;
+  min-width: 0; /* 關鍵：防止內容撐破 flex 容器 */
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .prompt-name {
-  flex: 1;
   font-size: 14px;
   color: var(--color-text);
   font-weight: 500;
+  word-break: break-word; /* 允許長文字換行 */
+  line-height: 1.3;
+}
+
+.prompt-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
 }
 
 .prompt-tag {
@@ -3623,6 +4137,7 @@ watch(importInsertMode, (mode) => {
   border-radius: 10px;
   font-size: 11px;
   font-weight: 500;
+  white-space: nowrap;
 
   &.marker {
     background: #e3f2fd;
@@ -3660,6 +4175,7 @@ watch(importInsertMode, (mode) => {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .action-btn {
@@ -3826,6 +4342,12 @@ watch(importInsertMode, (mode) => {
   padding: 16px 20px;
   justify-content: flex-end;
   border-top: 1px solid var(--color-border);
+}
+
+.btn-locked {
+  background: var(--color-warning, #f59e0b) !important;
+  color: #fff !important;
+  border-color: var(--color-warning, #f59e0b) !important;
 }
 
 .input-field {
