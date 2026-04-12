@@ -321,7 +321,7 @@ onMounted(async () => {
         },
         lorebookIds: character.lorebookIds || [],
         source:
-          (character.source === "import" ? "manual" : character.source) ||
+          (character.source as any) ||
           "manual",
         createdAt: character.createdAt,
         updatedAt: character.updatedAt,
@@ -527,7 +527,7 @@ async function exportJSON() {
     }
   }
 
-  const exportData = {
+  const exportData: any = {
     spec: "chara_card_v2",
     spec_version: "2.0",
     data: baseData,

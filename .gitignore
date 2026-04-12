@@ -40,6 +40,7 @@ ai所輸出的.txt
 面對面模式提示詞.txt
 ejs.txt
 temp_chat_defs.txt
+ts_errors.txt
 
 # 獨立 HTML 工具頁面
 AI手机模拟器.html
@@ -56,10 +57,10 @@ settings_concepts.html
 svg-editor-preview.html
 test-font-size.html
 清除驗證.html
-返回.html
 轉帳ui.html
 酒館index.html
 章鱼喷墨机.html
+返回.html
 
 # 雜項數據文件
 *.jsonl

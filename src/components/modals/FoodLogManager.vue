@@ -447,7 +447,7 @@ onMounted(async () => {
   <div class="food-log-manager fullscreen-page">
     <!-- 漸變透明頂部導航 -->
     <header class="flm-header">
-      <button class="back-btn" @click="emit('close')">
+      <button class="back-btn" @click.prevent.stop="emit('close')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M15 18l-6-6 6-6" />
         </svg>
@@ -764,6 +764,7 @@ $radius: 14px;
   display: flex;
   align-items: center;
   padding: 12px 16px;
+  padding-top: max(12px, var(--safe-top, 0px));
   gap: 8px;
   position: absolute;
   top: 0;
@@ -812,7 +813,7 @@ $radius: 14px;
 .scroll-content {
   flex: 1;
   overflow-y: auto;
-  padding-top: 70px; // 避開 absolute header
+  padding-top: calc(70px + var(--safe-top, 0px)); // 避開 absolute header 與瀏海安全區
   padding-bottom: 80px;
 }
 

@@ -361,6 +361,7 @@ function formatDate(timestamp: number): string {
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
+  padding-top: max(12px, var(--safe-top, 0px));
   border-bottom: 1px solid var(--color-border, #eee);
 
   h1 {

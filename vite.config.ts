@@ -146,13 +146,14 @@ export default defineConfig(({ mode }) => ({
     },
   },
   server: {
+    host: "0.0.0.0",
     port: 5173,
     strictPort: false,
+    allowedHosts: [".ngrok-free.app"],
     hmr: {
       overlay: false, // 禁用錯誤覆蓋層
-      // 不硬編碼 port，讓 Vite 自動使用當前 server 的 port
-      protocol: "ws",
-      host: "localhost",
+      protocol: "wss",
+      clientPort: 443,
     },
     proxy: {
       // 音樂 API 代理
@@ -195,6 +196,12 @@ export default defineConfig(({ mode }) => ({
         secure: false,
       },
     },
+  },
+  preview: {
+    host: "0.0.0.0",
+    port: 4173,
+    strictPort: false,
+    allowedHosts: [".ngrok-free.app"],
   },
   css: {
     preprocessorOptions: {
