@@ -79,18 +79,6 @@
             diaries.length
           }}</span>
         </button>
-        <button
-          class="tab-item"
-          :class="{ active: activeTab === 'batch' }"
-          @click="activeTab = 'batch'"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M4 6h16M4 10h16M4 14h10M4 18h6" />
-          </svg>
-          批量
-          <span v-if="batchRunningIndex >= 0" class="badge running">{{ batchDoneCount }}/{{ batchItems.length }}</span>
-          <span v-else-if="batchItems.length > 0 && batchDoneCount > 0" class="badge">{{ batchDoneCount }}/{{ batchItems.length }}</span>
-        </button>
       </div>
 
       <!-- 內容區 -->
@@ -277,6 +265,15 @@
               :class="{ active: settingsSubTab === 'vector' }"
               @click="settingsSubTab = 'vector'"
             >向量記憶</button>
+            <button
+              class="sub-tab-item"
+              :class="{ active: settingsSubTab === 'batch' }"
+              @click="settingsSubTab = 'batch'"
+            >
+              批量總結
+              <span v-if="batchRunningIndex >= 0" class="badge running mini">{{ batchDoneCount }}/{{ batchItems.length }}</span>
+              <span v-else-if="batchItems.length > 0 && batchDoneCount > 0" class="badge mini">{{ batchDoneCount }}/{{ batchItems.length }}</span>
+            </button>
           </div>
 
           <!-- 觸發設定 -->
@@ -556,6 +553,139 @@
                 適用於：首次啟用向量記憶時補建舊總結、或嵌入資料異常需要修復。
               </div>
             </div>
+          </div>
+
+          <!-- 批量總結 -->
+          <div v-show="settingsSubTab === 'batch'" class="batch-tab">
+            <input
+              ref="batchFileInput"
+              type="file"
+              accept=".jsonl"
+              style="display: none"
+              @change="handleBatchFileChange"
+            />
+
+            <!-- 未載入檔案 -->
+            <div v-if="!batchParsed" class="setting-section" style="text-align: center; padding: 40px 20px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:48px;height:48px;color:var(--color-text-muted, #9ca3af);margin-bottom:12px;opacity:0.5;">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+              </svg>
+              <p style="margin: 0 0 8px; font-size: 15px; font-weight: 500; color: var(--color-text, #1f2937);">載入 SillyTavern 聊天紀錄</p>
+              <p style="margin: 0 0 20px; font-size: 13px; color: var(--color-text-secondary, #6b7280);">支援從酒館匯出的 .jsonl 格式檔案</p>
+              <button class="action-btn import" style="margin: 0 auto; padding: 8px 24px; display: inline-flex;" @click="batchFileInput?.click()">
+                選擇檔案
+              </button>
+            </div>
+
+            <!-- 已載入 -->
+            <template v-else>
+              <!-- 頂部摘要 -->
+              <div class="info-section" style="margin-bottom: 16px;">
+                <div class="info-header" style="display: flex; justify-content: space-between;">
+                  <span><span style="color: var(--color-primary);">{{ batchCharName }}</span> ↔ {{ batchUserName }}</span>
+                  <button class="icon-btn" title="重新選擇檔案" @click="resetBatch" :disabled="batchRunningIndex >= 0" style="margin: -4px;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5"/>
+                    </svg>
+                  </button>
+                </div>
+                <div class="info-grid">
+                  <div class="info-item">
+                    <span class="info-label">消息數</span>
+                    <span class="info-value">{{ batchTotalMessages }} 條</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="info-label">對話輪次</span>
+                    <span class="info-value">{{ batchTotalTurns }} 輪</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="info-label">分批數量</span>
+                    <span class="info-value highlight">{{ batchItems.length }} 批</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 控制列 -->
+              <div class="setting-section">
+                <label class="section-label">每批輪次</label>
+                <div class="count-input-wrapper">
+                  <input
+                    v-model.number="batchTurnCount"
+                    type="range"
+                    min="5"
+                    max="50"
+                    step="5"
+                    class="range-input"
+                    :disabled="batchRunningIndex >= 0"
+                  />
+                  <div class="count-display">
+                    <span class="count-number">{{ batchTurnCount }}</span>
+                    <span class="count-label">輪</span>
+                  </div>
+                </div>
+                <div class="count-hint">較少的輪次可以降低失敗率，但會增加 API 請求次數</div>
+              </div>
+
+              <!-- 批次列表 -->
+              <div class="setting-section" style="flex: 1; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 4px; margin-bottom: 0;">
+                <div class="section-label" style="justify-content: space-between;">
+                  <span>批次列表</span>
+                  <div v-if="batchDoneCount > 0 || batchRunningIndex >= 0" style="font-size: 12px; font-weight: normal; color: var(--color-text-secondary);">
+                    進度: <strong style="color: var(--color-primary);">{{ batchDoneCount }}</strong> / {{ batchItems.length }}
+                    <span v-if="batchItems.filter(b => b.status === 'failed').length > 0" style="color: #f87171; margin-left: 8px; font-weight: 500;">
+                      (失敗 {{ batchItems.filter(b => b.status === 'failed').length }})
+                    </span>
+                  </div>
+                </div>
+                
+                <div v-if="batchDoneCount > 0 || batchRunningIndex >= 0" class="batch-progress-bar-track" style="margin-bottom: 10px;">
+                  <div class="batch-progress-bar-fill" :style="{ width: (batchDoneCount / batchItems.length * 100) + '%' }"></div>
+                </div>
+
+                <div class="batch-list" style="margin-top: 0; max-height: 38vh;">
+                  <div
+                    v-for="item in batchItems"
+                    :key="item.index"
+                    class="batch-item"
+                    :class="'status-' + item.status"
+                  >
+                    <div class="batch-item-left">
+                      <span class="batch-item-num">{{ item.index + 1 }}</span>
+                      <div class="batch-item-meta">
+                        <span class="batch-item-range">
+                          第 {{ item.startTurn }}–{{ item.endTurn }} 輪
+                        </span>
+                        <span class="batch-item-size" :class="{ oversize: item.estimatedChars > 30000 }">
+                          {{ item.messageCount }}條 · ~{{ (item.estimatedChars / 1000).toFixed(1) }}k字
+                        </span>
+                      </div>
+                    </div>
+                    <div class="batch-item-right">
+                      <template v-if="item.status === 'done'">
+                        <span class="batch-status-badge done">完成</span>
+                      </template>
+                      <template v-else-if="item.status === 'running'">
+                        <span class="batch-status-badge running">
+                          <span class="dot-pulse"></span>總結中
+                        </span>
+                      </template>
+                      <template v-else-if="item.status === 'failed'">
+                        <button class="batch-status-btn retry" :disabled="batchRunningIndex >= 0" @click="runSingleBatch(item.index)">重試</button>
+                      </template>
+                      <template v-else>
+                        <button class="batch-status-btn start" :disabled="batchRunningIndex >= 0" @click="runSingleBatch(item.index)">總結</button>
+                      </template>
+                    </div>
+                    <div v-if="item.error" class="batch-item-error">
+                      <svg viewBox="0 0 24 24" fill="currentColor" style="width:12px;height:12px;flex-shrink:0;margin-top:1px">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                      </svg>
+                      <span>{{ item.error }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
           </div>
         </div>
 
@@ -1111,32 +1241,31 @@
         </button>
       </div>
 
-      <!-- 底部按鈕 - 批量總結 Tab -->
-      <div v-if="activeTab === 'batch'" class="modal-footer">
-        <button class="btn-cancel" @click="$emit('close')">關閉</button>
-        <button
-          v-if="batchRunningIndex >= 0"
-          class="btn-abort"
-          @click="abortBatch"
-        >
-          中止
-        </button>
-        <button
-          v-else-if="batchParsed && batchPendingCount > 0"
-          class="btn-save"
-          @click="runAllBatches"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:6px">
-            <path d="M5 3l14 9-14 9V3z"/>
-          </svg>
-          全部執行 ({{ batchPendingCount }} 批)
-        </button>
-      </div>
-
-      <!-- 底部按鈕 - 只在設置相關 Tab 顯示 -->
+      <!-- 底部按鈕 - 總結設置 Tab -->
       <div v-if="activeTab === 'settings'" class="modal-footer">
         <button class="btn-cancel" @click="$emit('close')">關閉</button>
-        <button class="btn-save" @click="saveAll">保存設置</button>
+        <template v-if="settingsSubTab === 'batch'">
+          <button
+            v-if="batchRunningIndex >= 0"
+            class="btn-abort"
+            @click="abortBatch"
+          >
+            中止
+          </button>
+          <button
+            v-else-if="batchParsed && batchPendingCount > 0"
+            class="btn-save"
+            @click="runAllBatches"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:6px">
+              <path d="M5 3l14 9-14 9V3z"/>
+            </svg>
+            全部執行 ({{ batchPendingCount }} 批)
+          </button>
+        </template>
+        <template v-else>
+          <button class="btn-save" @click="saveAll">保存設置</button>
+        </template>
       </div>
     </div>
 
@@ -1257,7 +1386,7 @@ const emit = defineEmits<{
 }>();
 
 const activeTab = ref<"history" | "settings" | "events" | "diary" | "batch">("history");
-const settingsSubTab = ref<'trigger' | 'read' | 'vector'>('trigger');
+const settingsSubTab = ref<'trigger' | 'read' | 'vector' | 'batch'>('trigger');
 const settingsStore = useSettingsStore();
 
 // ===== 總結編輯相關 =====
@@ -2173,14 +2302,23 @@ onMounted(async () => {
   .badge {
     background: var(--color-primary, #7dd3a8);
     color: white;
-    font-size: 10px;
-    padding: 1px 5px;
-    border-radius: 8px;
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+    min-width: 20px;
+    text-align: center;
+    box-shadow: 0 1px 2px rgba(59, 130, 246, 0.2);
 
     &.running {
-      background: #f59e0b;
-      animation: pulse 1.5s infinite;
+      background: #fbbf24;
+      box-shadow: 0 1px 2px rgba(251, 191, 36, 0.2);
+    }
+
+    &.mini {
+      font-size: 10px;
+      padding: 1px 6px;
+      margin-left: 6px;
     }
   }
 
@@ -2654,6 +2792,29 @@ onMounted(async () => {
     color: var(--color-text, #1f2937);
     font-weight: 600;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+
+  .badge {
+    background: var(--color-primary, #7dd3a8);
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+    min-width: 20px;
+    text-align: center;
+    box-shadow: 0 1px 2px rgba(59, 130, 246, 0.2);
+
+    &.running {
+      background: #fbbf24;
+      box-shadow: 0 1px 2px rgba(251, 191, 36, 0.2);
+    }
+
+    &.mini {
+      font-size: 10px;
+      padding: 1px 5px;
+      margin-left: 4px;
+    }
   }
 }
 
@@ -3803,116 +3964,7 @@ onMounted(async () => {
   font-size: 12px;
 }
 
-// ===== 頂部摘要 =====
-.batch-header {
-  background: var(--color-background, rgba(0, 0, 0, 0.04));
-  border-radius: 12px;
-  padding: 16px 20px;
-  margin-bottom: 8px;
-}
-
-.batch-header-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  margin-bottom: 6px;
-}
-
-.batch-char-name {
-  color: var(--color-primary, #7dd3a8);
-}
-
-.batch-header-sep {
-  color: var(--color-text-secondary, #9ca3af);
-  font-size: 14px;
-}
-
-.batch-user-name {
-  color: var(--color-text, #1f2937);
-}
-
-.batch-header-stats {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--color-text-secondary, #6b7280);
-
-  strong {
-    color: var(--color-text, #1f2937);
-    font-weight: 600;
-  }
-}
-
-.batch-stat-sep {
-  color: var(--color-border, rgba(0, 0, 0, 0.15));
-}
-
-// ===== 控制列 =====
-.batch-controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 16px 0 12px 0;
-}
-
-.batch-slider-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-
-  .range-input { flex: 1; }
-}
-
-.batch-slider-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-text-secondary, #6b7280);
-  white-space: nowrap;
-}
-
-.batch-slider-value {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--color-primary, #7dd3a8);
-  min-width: 24px;
-  text-align: center;
-}
-
-.batch-reselect-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
-  border-radius: 8px;
-  font-size: 12px;
-  background: transparent;
-  color: var(--color-text-secondary, #6b7280);
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
-
-  &:hover:not(:disabled) {
-    background: var(--color-background, rgba(0, 0, 0, 0.05));
-    color: var(--color-text, #1f2937);
-  }
-
-  &:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-}
-
-// ===== 進度總覽 =====
-.batch-progress-section {
-  margin: 12px 0 16px;
-  padding: 0 4px;
-}
-
+// ===== 批量總結 =====
 .batch-progress-bar-track {
   width: 100%;
   height: 6px;
