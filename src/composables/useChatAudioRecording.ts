@@ -293,7 +293,8 @@ export function useChatAudioRecording(deps: {
       apiAudioMessage = createAudioMessage("", safeAudio.dataUri);
     }
 
-    await deps.triggerAIResponse({ audioApiMessage: apiAudioMessage });
+    // 根據用戶要求，錄音結束後先將語音存入訊息對話中，不再自動觸發 AI 回覆
+    // await deps.triggerAIResponse({ audioApiMessage: apiAudioMessage });
   }
 
   function showToast(message: string) {

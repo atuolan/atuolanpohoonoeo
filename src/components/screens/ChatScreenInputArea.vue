@@ -1441,9 +1441,10 @@ function handleAudioCommandChange(e: Event) {
   --sz-trigger-wrap: calc(var(--w-card) * 0.65);
   --sz-trigger: calc(var(--sz-trigger-wrap) * 0.65);
   z-index: 4;
-  inset: 50%;
   position: absolute;
-  transform: translate(-50%, -75%);
+  top: 30px;
+  left: 50%;
+  transform: translateX(-50%);
   height: var(--sz-trigger-wrap);
   width: var(--sz-trigger-wrap);
   outline: 1.4px solid #ffffff70;
@@ -1563,7 +1564,8 @@ function handleAudioCommandChange(e: Event) {
     rgba(255, 255, 255, 0.95) 0 0 10px 4px;
 }
 .input:checked ~ .inner-card .trigger-wrap {
-  transform: translate(-50%, -65%);
+  transform: translateX(-50%) scale(1.05);
+  top: 25px;
   outline: 1px solid #fff;
   box-shadow:
     rgba(0, 0, 0, 0.25) 0 0 50px,
