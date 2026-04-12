@@ -23,6 +23,7 @@ const MAX_TOTAL_KEYWORDS = 10
 const CATEGORY_PRIORITY: string[] = [
   'gift', 'social', 'ceremony', 'medical', 'combat',
   'body_contact', 'emotion_negative', 'emotion_positive',
+  'communication', 'gambling',
   'food', 'movement', 'clothing', 'location',
 ]
 

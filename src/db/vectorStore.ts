@@ -12,6 +12,8 @@ import type { VectorEmbeddingRecord } from '@/db/database'
 // 重新匯出 VectorEmbeddingRecord 供外部使用
 export type { VectorEmbeddingRecord } from '@/db/database'
 
+export const CURRENT_VECTOR_SCHEMA_VERSION = 2
+
 const STORE = DB_STORES.VECTOR_EMBEDDINGS
 
 /**
@@ -80,15 +82,19 @@ export async function markVectorStale(sourceId: string): Promise<void> {
 /**
  * 取得指定聊天的向量統計資訊
  */
-export async function getVectorStats(chatId: string): Promise<{ count: number; sizeBytes: number }> {
+export async function getVectorStats(chatId: string): Promise<{ count: number; sizeBytes: number; outdatedCount: number }> {
   const records = await getVectorsByChatId(chatId)
   const count = records.length
   let sizeBytes = 0
+  let outdatedCount = 0
   for (const record of records) {
+    if ((record.schemaVersion ?? 1) < CURRENT_VECTOR_SCHEMA_VERSION || record.vector === null) {
+      outdatedCount++
+    }
     if (record.vector) {
       // Float32 = 4 bytes per element
       sizeBytes += record.dimensions * 4
     }
   }
-  return { count, sizeBytes }
+  return { count, sizeBytes, outdatedCount }
 }

@@ -242,6 +242,13 @@
                 >{{ kw }}</span>
                 <span v-if="summary.keywords.length > 6" class="keyword-more">+{{ summary.keywords.length - 6 }}</span>
               </div>
+              <!-- 向量文件預覽 -->
+              <button class="vector-doc-toggle" @click="toggleVectorDocPreview(summary.id, summary.content, summary.keywords)">
+                {{ vectorDocPreviews.has(summary.id) ? '▼ 收起向量文件' : '▶ 向量文件預覽' }}
+              </button>
+              <div v-if="vectorDocPreviews.has(summary.id)" class="vector-doc-preview">
+                {{ vectorDocPreviews.get(summary.id) }}
+              </div>
             </div>
           </div>
         </div>
@@ -536,7 +543,14 @@
                   <span class="info-label">預估大小</span>
                   <span class="info-value">{{ vectorStats.sizeText }}</span>
                 </div>
+                <div class="info-item">
+                  <span class="info-label">待重建</span>
+                  <span class="info-value">{{ vectorStats.outdatedCount }} 條</span>
+                </div>
               </div>
+              <p v-if="vectorStats.outdatedCount > 0" class="count-hint" style="margin-bottom: 10px; color: #c97a00;">
+                偵測到 {{ vectorStats.outdatedCount }} 條舊版或失效向量，建議立即重建。
+              </p>
               <button
                 class="rebuild-btn"
                 :disabled="isRebuilding"
@@ -854,6 +868,13 @@
                     class="keyword-tag-mini"
                   >{{ kw }}</span>
                   <span v-if="event.vectorKeywords.length > 6" class="keyword-more">+{{ event.vectorKeywords.length - 6 }}</span>
+                </div>
+                <!-- 向量文件預覽 -->
+                <button class="vector-doc-toggle" @click="toggleVectorDocPreview(event.id, event.content, event.vectorKeywords)">
+                  {{ vectorDocPreviews.has(event.id) ? '▼ 收起向量文件' : '▶ 向量文件預覽' }}
+                </button>
+                <div v-if="vectorDocPreviews.has(event.id)" class="vector-doc-preview">
+                  {{ vectorDocPreviews.get(event.id) }}
                 </div>
               </div>
             </div>
@@ -1383,11 +1404,30 @@ const emit = defineEmits<{
   "import-summaries": [summaries: ConversationSummary[]];
   "trigger-manual-events": [];
   "delete-selected": [ids: string[]];
+  "refresh-summaries": [];
 }>();
 
 const activeTab = ref<"history" | "settings" | "events" | "diary" | "batch">("history");
 const settingsSubTab = ref<'trigger' | 'read' | 'vector' | 'batch'>('trigger');
 const settingsStore = useSettingsStore();
+
+// ===== 向量文件預覽 =====
+const vectorDocPreviews = ref<Map<string, string>>(new Map());
+
+async function toggleVectorDocPreview(id: string, content?: string, keywords?: string[]) {
+  if (vectorDocPreviews.value.has(id)) {
+    const next = new Map(vectorDocPreviews.value);
+    next.delete(id);
+    vectorDocPreviews.value = next;
+    return;
+  }
+  if (!content) return;
+  const { buildVectorDocument } = await import('@/utils/vectorDocumentBuilder');
+  const doc = buildVectorDocument(content, keywords, [props.characterName]);
+  const next = new Map(vectorDocPreviews.value);
+  next.set(id, doc || '（空）');
+  vectorDocPreviews.value = next;
+}
 
 // ===== 總結編輯相關 =====
 const editingSummaryId = ref<string | null>(null);
@@ -1630,7 +1670,7 @@ const vectorThreshold = computed({
   get: () => localSettings.value.vectorThreshold ?? 0.3,
   set: (val: number) => { localSettings.value.vectorThreshold = val; },
 });
-const vectorStats = ref({ count: 0, sizeText: '計算中...' });
+const vectorStats = ref({ count: 0, sizeText: '計算中...', outdatedCount: 0 });
 const isRebuilding = ref(false);
 const rebuildProgress = ref({ processed: 0, total: 0 });
 
@@ -1643,9 +1683,10 @@ async function loadVectorStats() {
     vectorStats.value = {
       count: stats.count,
       sizeText: stats.count === 0 ? '0 KB' : `≈ ${Math.ceil(stats.count * 6 / 1024)} KB`,
+      outdatedCount: stats.outdatedCount,
     };
   } catch {
-    vectorStats.value = { count: 0, sizeText: '無法計算' };
+    vectorStats.value = { count: 0, sizeText: '無法計算', outdatedCount: 0 };
   }
 }
 
@@ -1660,6 +1701,9 @@ async function rebuildVectors() {
     await retriever.rebuildChat(props.chatId, props.characterId, (processed, total) => {
       rebuildProgress.value = { processed, total };
     }, [props.characterName]);
+    await loadEventsLog();
+    await backfillKeywords();
+    emit('refresh-summaries');
     await loadVectorStats();
     alert('重建完成！');
   } catch (err) {
@@ -3744,6 +3788,39 @@ onMounted(async () => {
     opacity: 0.6;
     cursor: not-allowed;
   }
+}
+
+// ===== 向量文件預覽 =====
+.vector-doc-toggle {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 0;
+  font-size: 10px;
+  color: var(--color-text-secondary, #6b7280);
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+
+  &:hover {
+    opacity: 1;
+    color: var(--color-primary, #6366f1);
+  }
+}
+
+.vector-doc-preview {
+  margin-top: 4px;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-text-secondary, #9ca3af);
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  word-break: break-all;
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
 }
 
 // ===== 關鍵詞預覽標籤 =====

@@ -9,6 +9,7 @@ import {
   putVectorEmbedding,
   getVectorsByChatId,
   deleteVectorsByChatId,
+  CURRENT_VECTOR_SCHEMA_VERSION,
 } from '@/db/vectorStore'
 import type { VectorEmbeddingRecord } from '@/db/vectorStore'
 import { searchSimilar } from '@/utils/similarity'
@@ -45,8 +46,24 @@ interface CandidateItem {
   vector: Float32Array
 }
 
+interface ScoredResult extends SimilarityResult {
+  path: 'raw' | 'intent' | 'state' | 'keyword'
+}
+
 /** 排除最近 N 筆記憶的預設值（會被外部傳入的 summaryReadCount 覆蓋） */
 const DEFAULT_EXCLUDE_RECENT = 3
+
+/** 原始查詢文本最大長度 */
+const MAX_RAW_QUERY_LENGTH = 220
+
+const PATH_SCORE_MULTIPLIERS = {
+  raw: 1.03,
+  intent: 1,
+  state: 0.96,
+  keyword: 0.92,
+} as const
+
+const RERANK_CANDIDATE_LIMIT = 12
 
 // ─── 服務實作 ───────────────────────────────────────────────
 
@@ -81,14 +98,23 @@ export class MemoryRetrieverService {
       }
       console.log(`[向量記憶] 📦 載入 ${candidates.length} 條候選向量`)
 
-      // 2. Intent Path：提煉用戶意圖後向量搜尋（降低門檻擴大召回）
+      const queryKeywords = extractSummaryKeywords(queryText)
+
+      // 2. Raw Query Path：保留使用者原始語義，避免意圖提煉過度壓縮
+      const rawThreshold = Math.max(threshold - 0.12, 0.45)
+      const rawQuery = this.buildRawVectorQuery(queryText)
+      const rawVector = await embeddingEngine.embed(rawQuery)
+      const rawResults = searchSimilar(rawVector, candidates, topK * 2, rawThreshold)
+      console.log(`[向量記憶] 🧾 Raw Path: ${rawResults.length} 條命中（門檻 ${rawThreshold.toFixed(2)}）| 查詢: "${rawQuery.slice(0, 80)}..."`)
+
+      // 3. Intent Path：提煉用戶意圖後向量搜尋（降低門檻擴大召回）
       const intentThreshold = Math.max(threshold - 0.25, 0.4)
       const intentQuery = buildIntentQuery(queryText, characterNames ?? [])
       const intentVector = await embeddingEngine.embed(intentQuery)
       const intentResults = searchSimilar(intentVector, candidates, topK * 2, intentThreshold)
       console.log(`[向量記憶] 🎯 Intent Path: ${intentResults.length} 條命中（門檻 ${intentThreshold.toFixed(2)}）| 查詢: "${intentQuery.slice(0, 80)}..."`)
 
-      // 3. State Path：狀態查詢向量搜尋（原始門檻）
+      // 4. State Path：狀態查詢向量搜尋（原始門檻）
       let stateResults: SimilarityResult[] = []
       if (recentMessages && recentMessages.length > 0) {
         const stateQuery = buildStateQuery(recentMessages, characterNames ?? [])
@@ -99,21 +125,21 @@ export class MemoryRetrieverService {
         }
       }
 
-      // 4. Keyword Path：關鍵詞擴展文本匹配
+      // 5. Keyword Path：關鍵詞擴展文本匹配
       const keywordResults = await this.keywordSearch(
         queryText, chatId, characterNames ?? [],
       )
       console.log(`[向量記憶] 🔤 Keyword Path: ${keywordResults.length} 條命中`)
 
-      // 5. 合併三路結果（sourceId 去重，保留較高分數）
-      const merged = this.mergeResults(intentResults, stateResults, keywordResults)
+      // 6. 合併四路結果（sourceId 去重，保留較高分數）
+      const merged = this.mergeResults(rawResults, intentResults, stateResults, keywordResults)
 
-      // 6. 排除最近 N 筆記憶（跟隨總結讀取數量，避免與時間排序總結重複）
+      // 7. 排除最近 N 筆記憶（跟隨總結讀取數量，避免與時間排序總結重複）
       const actualExclude = excludeRecentCount ?? DEFAULT_EXCLUDE_RECENT
       const filtered = await this.excludeRecent(merged, chatId, actualExclude)
       console.log(`[向量記憶] 🚫 排除最近 ${actualExclude} 筆（剩餘 ${filtered.length} 條）`)
 
-      // 7. 解析來源內容
+      // 8. 解析來源內容
       const db = await getDatabase()
       const resolved: RetrievedMemory[] = []
       for (const item of filtered.slice(0, topK)) {
@@ -129,10 +155,19 @@ export class MemoryRetrieverService {
         }
       }
 
-      // 8. 上下文窗口擴展（±1 相鄰條目）
-      const expanded = await expandContextWindow(resolved, chatId, 0.85)
+      const reranked = this.rerankResolvedMemories(
+        resolved,
+        queryText,
+        rawQuery,
+        intentQuery,
+        queryKeywords,
+        characterNames ?? [],
+      )
 
-      // 9. 最終去重 + Top-K
+      // 9. 上下文窗口擴展（±1 相鄰條目）
+      const expanded = await expandContextWindow(reranked, chatId, 0.85)
+
+      // 10. 最終去重 + Top-K
       const final = this.finalDedup(expanded)
 
       // 輸出最終結果摘要
@@ -184,6 +219,7 @@ export class MemoryRetrieverService {
       characterId,
       vector: embedding,
       contentHash: hash,
+      schemaVersion: CURRENT_VECTOR_SCHEMA_VERSION,
       dimensions: embedding.length,
       createdAt: now,
       updatedAt: now,
@@ -228,6 +264,7 @@ export class MemoryRetrieverService {
         characterId,
         vector: embeddings[i],
         contentHash: hash,
+        schemaVersion: CURRENT_VECTOR_SCHEMA_VERSION,
         dimensions: embeddings[i].length,
         createdAt: now,
         updatedAt: now,
@@ -298,11 +335,37 @@ export class MemoryRetrieverService {
 
   // ─── 私有方法 ─────────────────────────────────────────────
 
+  /** 建立較保真的原始查詢文本，避免過度提煉損失語義 */
+  private buildRawVectorQuery(queryText: string): string {
+    const cleaned = queryText
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+      .replace(/\[[^\]]*\]\([^)]*\)/g, ' ')
+      .replace(/\(OOC[:：]?[^)]*\)/gi, ' ')
+      .replace(/\{OOC[:：]?[^}]*\}/gi, ' ')
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/`[^`]*`/g, ' ')
+      .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
+      .replace(/_{1,2}([^_]+)_{1,2}/g, '$1')
+      .replace(/["「」『』\u201C\u201D]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    if (cleaned.length <= MAX_RAW_QUERY_LENGTH) {
+      return cleaned
+    }
+
+    return cleaned.slice(0, MAX_RAW_QUERY_LENGTH)
+  }
+
   /** 載入候選向量（過濾 stale 記錄） */
   private async loadCandidates(chatId: string): Promise<CandidateItem[]> {
     const records = await getVectorsByChatId(chatId)
     return records
-      .filter((r): r is VectorEmbeddingRecord & { vector: Float32Array } => r.vector !== null)
+      .filter((r): r is VectorEmbeddingRecord & { vector: Float32Array } => {
+        const schemaVersion = r.schemaVersion ?? 1
+        return r.vector !== null && schemaVersion >= CURRENT_VECTOR_SCHEMA_VERSION
+      })
       .map((r) => ({
         id: r.id,
         sourceId: r.sourceId,
@@ -401,26 +464,107 @@ export class MemoryRetrieverService {
     return results
   }
 
-  /** 合併三路結果，sourceId 去重，保留較高分數 */
+  /** 合併四路結果，sourceId 去重，保留較高分數 */
   private mergeResults(
+    rawResults: SimilarityResult[],
     intentResults: SimilarityResult[],
     stateResults: SimilarityResult[],
     keywordResults: SimilarityResult[],
   ): SimilarityResult[] {
-    const merged = new Map<string, SimilarityResult>()
+    const merged = new Map<string, ScoredResult>()
 
-    const addResult = (result: SimilarityResult) => {
+    const addResult = (result: SimilarityResult, path: ScoredResult['path']) => {
+      const boostedScore = Math.min(1.25, result.score * PATH_SCORE_MULTIPLIERS[path])
+      const weighted: ScoredResult = {
+        ...result,
+        score: boostedScore,
+        path,
+      }
       const existing = merged.get(result.sourceId)
-      if (!existing || result.score > existing.score) {
-        merged.set(result.sourceId, result)
+      if (!existing || weighted.score > existing.score) {
+        merged.set(result.sourceId, weighted)
       }
     }
 
-    for (const r of intentResults) addResult(r)
-    for (const r of stateResults) addResult(r)
-    for (const r of keywordResults) addResult(r)
+    for (const r of rawResults) addResult(r, 'raw')
+    for (const r of intentResults) addResult(r, 'intent')
+    for (const r of stateResults) addResult(r, 'state')
+    for (const r of keywordResults) addResult(r, 'keyword')
 
     return Array.from(merged.values()).sort((a, b) => b.score - a.score)
+  }
+
+  private rerankResolvedMemories(
+    memories: RetrievedMemory[],
+    queryText: string,
+    rawQuery: string,
+    intentQuery: string,
+    queryKeywords: string[],
+    characterNames: string[],
+  ): RetrievedMemory[] {
+    if (memories.length <= 1) return memories
+
+    const normalizedQuery = this.normalizeForMatch(queryText)
+    const normalizedRawQuery = this.normalizeForMatch(rawQuery)
+    const normalizedIntentTerms = intentQuery
+      .split(/\s+/)
+      .map(term => term.trim())
+      .filter(term => term.length >= 2)
+
+    return memories
+      .slice(0, RERANK_CANDIDATE_LIMIT)
+      .map(memory => {
+        const content = this.normalizeForMatch(memory.content)
+        let bonus = 0
+
+        if (normalizedQuery && content.includes(normalizedQuery)) {
+          bonus += 0.12
+        }
+
+        if (normalizedRawQuery && normalizedRawQuery !== normalizedQuery && content.includes(normalizedRawQuery)) {
+          bonus += 0.08
+        }
+
+        let keywordHits = 0
+        for (const kw of queryKeywords) {
+          if (kw.length >= 2 && content.includes(kw)) {
+            keywordHits++
+          }
+        }
+        bonus += Math.min(0.12, keywordHits * 0.025)
+
+        let intentHits = 0
+        for (const term of normalizedIntentTerms) {
+          if (content.includes(term)) {
+            intentHits++
+          }
+        }
+        bonus += Math.min(0.12, intentHits * 0.02)
+
+        const charHits = characterNames.filter(name => name && content.includes(name)).length
+        if (charHits > 0) {
+          bonus += Math.min(0.08, charHits * 0.04)
+        }
+
+        if (memory.sourceType === 'event') {
+          bonus += 0.03
+        }
+
+        return {
+          ...memory,
+          score: Math.min(1.5, memory.score + bonus),
+        }
+      })
+      .concat(memories.slice(RERANK_CANDIDATE_LIMIT))
+      .sort((a, b) => b.score - a.score)
+  }
+
+  private normalizeForMatch(text: string): string {
+    return text
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/["「」『』\u201C\u201D]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
   }
 
   /** 排除最近 N 筆總結條目（依 createdAt 排序，僅計算 summary） */

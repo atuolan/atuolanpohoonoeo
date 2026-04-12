@@ -65,6 +65,7 @@ export interface VectorEmbeddingRecord {
   characterId: string;
   vector: Float32Array | null; // null 表示 stale
   contentHash: string;
+  schemaVersion?: number;
   dimensions: number;
   createdAt: number;
   updatedAt: number;

@@ -10043,6 +10043,7 @@ onUnmounted(() => {
         @trigger-manual-diary="handleTriggerManualDiary"
         @trigger-manual-events="handleTriggerManualEvents"
         @delete-selected="handleDeleteSelected"
+        @refresh-summaries="loadSummariesAndDiaries"
         :summarize-batch-fn="summarizeSingleBatch"
       />
 

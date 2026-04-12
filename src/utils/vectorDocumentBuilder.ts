@@ -18,7 +18,10 @@ import { extractSummaryKeywords } from '@/utils/summaryKeywordExtractor'
 import { TERM_CATEGORIES } from '@/data/termCategories'
 
 /** 向量文件最大長度（字元） */
-const MAX_DOCUMENT_LENGTH = 300
+const MAX_DOCUMENT_LENGTH = 420
+
+/** 原文語義片段最大長度（字元） */
+const MAX_RAW_EXCERPT_LENGTH = 220
 
 /** 每個類別最多保留的標籤數 */
 const MAX_CATEGORY_TAGS = 2
@@ -38,13 +41,13 @@ export function buildVectorDocument(
   if (!content || content.trim().length === 0) return ''
 
   const cleaned = cleanForExtraction(content)
-  const parts: string[] = []
+  const semanticParts: string[] = []
 
   // 1. 角色名稱（在文本中出現的）
   if (characterNames && characterNames.length > 0) {
     for (const name of characterNames) {
       if (name && name.length >= 2 && cleaned.includes(name)) {
-        parts.push(name)
+        semanticParts.push(name)
       }
     }
   }
@@ -52,8 +55,8 @@ export function buildVectorDocument(
   // 2. 用戶編輯的關鍵詞（最高優先）
   if (storedKeywords && storedKeywords.length > 0) {
     for (const kw of storedKeywords) {
-      if (kw && !parts.includes(kw)) {
-        parts.push(kw)
+      if (kw && !semanticParts.includes(kw)) {
+        semanticParts.push(kw)
       }
     }
   }
@@ -61,28 +64,36 @@ export function buildVectorDocument(
   // 3. 自動提取的主題關鍵詞
   const extracted = extractSummaryKeywords(cleaned)
   for (const kw of extracted) {
-    if (!parts.some(p => p.includes(kw) || kw.includes(p))) {
-      parts.push(kw)
+    if (!semanticParts.some(p => p.includes(kw) || kw.includes(p))) {
+      semanticParts.push(kw)
     }
   }
 
   // 4. 類別標籤（偵測文本中出現的語義類別）
   const categoryTags = detectCategoryTags(cleaned)
   for (const tag of categoryTags) {
-    if (!parts.includes(tag)) {
-      parts.push(tag)
+    if (!semanticParts.includes(tag)) {
+      semanticParts.push(tag)
     }
   }
 
-  // 5. 若提取結果太少，fallback 到截斷原文
-  if (parts.length < 3) {
+  const rawExcerpt = buildRawExcerpt(cleaned)
+
+  // 5. 組合「語義標籤 + 原文片段」
+  //    即使提取結果少，也保留已有的 keyword（尤其是用戶手動設的）
+  const parts = [...semanticParts]
+  if (rawExcerpt) {
+    parts.push(rawExcerpt)
+  }
+
+  // 6. 若完全沒有任何 semantic parts，才 fallback 到純原文
+  if (semanticParts.length === 0) {
     const fallback = cleaned.length > MAX_DOCUMENT_LENGTH
       ? cleaned.slice(0, MAX_DOCUMENT_LENGTH)
       : cleaned
     return fallback
   }
 
-  // 6. 用 | 分隔拼接（與 Horae 一致的格式）
   let result = parts.join(' | ')
   if (result.length > MAX_DOCUMENT_LENGTH) {
     result = result.slice(0, MAX_DOCUMENT_LENGTH)
@@ -97,11 +108,28 @@ export function buildVectorDocument(
 function cleanForExtraction(text: string): string {
   return text
     .replace(/<[^>]+>/g, '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[[^\]]*\]\([^)]*\)/g, '')
     .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
     .replace(/_{1,2}([^_]+)_{1,2}/g, '$1')
     .replace(/["「」『』\u201C\u201D]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function buildRawExcerpt(text: string): string {
+  if (!text) return ''
+
+  const normalized = text
+    .replace(/[|｜]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (normalized.length <= MAX_RAW_EXCERPT_LENGTH) {
+    return normalized
+  }
+
+  return normalized.slice(0, MAX_RAW_EXCERPT_LENGTH)
 }
 
 /**
@@ -123,6 +151,8 @@ function detectCategoryTags(text: string): string[] {
     body_contact: '親密接觸',
     movement: '移動',
     location: '場所',
+    communication: '通訊',
+    gambling: '賭博',
   }
 
   const tags: string[] = []
