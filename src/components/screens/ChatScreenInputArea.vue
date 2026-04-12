@@ -61,8 +61,10 @@ const emit = defineEmits<{
   (e: "continueGeneration"): void;
   (e: "regenerateLastAIResponse"): void;
   (e: "stopAIGeneration"): void;
-  (e: "onMicDown"): void;
+  (e: "onMicDown", event: MouseEvent | TouchEvent): void;
   (e: "onMicUp"): void;
+  (e: "startRecording", event: MouseEvent | TouchEvent | Event): void;
+  (e: "finishRecording"): void;
   (e: "sendAndTriggerAI"): void;
   (e: "update:showTextVoiceModal", value: boolean): void;
   (e: "update:textVoiceInput", value: string): void;
@@ -89,6 +91,16 @@ function getPreviewText(content: string): string {
     .replace(/\[img:.*?\]/g, "[圖片]")
     .replace(/\[sticker:.*?\]/g, "[表情包]");
   return text.length > 50 ? text.slice(0, 50) + "..." : text;
+}
+
+function handleAudioCommandChange(e: Event) {
+  const target = e.target as HTMLInputElement;
+  if (target.checked) {
+    emit('startRecording', e);
+  } else {
+    emit('finishRecording');
+    emit('update:showTextVoiceModal', false);
+  }
 }
 </script>
 
@@ -308,11 +320,8 @@ function getPreviewText(content: string): string {
           <button
             v-if="!isGenerating && isInputFocused && canRecord"
             class="input-btn mic-inline-btn"
-            title="按住錄音 / 點擊輸入文字語音"
-            @mousedown.prevent="emit('onMicDown')"
-            @touchstart.prevent="emit('onMicDown')"
-            @mouseup="emit('onMicUp')"
-            @touchend="emit('onMicUp')"
+            title="點擊輸入文字或語音"
+            @click.prevent="emit('update:showTextVoiceModal', true)"
           >
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path
@@ -369,66 +378,87 @@ function getPreviewText(content: string): string {
       </div>
     </div>
 
-    <!-- 文字輸入語音 Modal -->
-    <Transition name="fade">
-      <div
-        v-if="showTextVoiceModal"
-        class="text-voice-overlay"
-        @click.self="emit('update:showTextVoiceModal', false)"
-      >
-        <div class="text-voice-modal">
-          <div class="text-voice-title">輸入語音內容</div>
-          <textarea
-            :value="textVoiceInput"
-            class="text-voice-input"
-            placeholder="輸入你想說的話..."
-            rows="3"
-            autofocus
-            @input="emit('update:textVoiceInput', ($event.target as HTMLTextAreaElement).value)"
-            @keydown.enter.ctrl="emit('sendTextAsVoice')"
-          ></textarea>
-          <div class="text-voice-hint">Ctrl+Enter 發送</div>
-          <div class="text-voice-actions">
-            <button
-              class="text-voice-cancel"
-              @click="emit('update:showTextVoiceModal', false)"
-            >
-              取消
-            </button>
-            <button class="text-voice-send" @click="emit('sendTextAsVoice')">
-              發送語音
-            </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
+    <!-- 語音輸入 Modal -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="showTextVoiceModal || isRecording"
+          class="text-voice-overlay"
+          @click.self="!isRecording && emit('update:showTextVoiceModal', false)"
+        >
+          <div class="card">
+            <input
+              class="input"
+              hidden
+              type="checkbox"
+              aria-label="audio-command"
+              name="audio-command"
+              id="audio-command"
+              :checked="isRecording"
+              @change="handleAudioCommandChange"
+            />
 
-    <!-- 錄音覆蓋層 -->
-    <Transition name="fade">
-      <div v-if="isRecording" class="recording-overlay" @click.stop>
-        <div class="recording-content">
-          <div class="recording-indicator">
-            <span class="recording-dot"></span>
-            <span class="recording-time">{{
-              formatAudioTime(recordingDuration)
-            }}</span>
-          </div>
-          <div class="recording-volume-bars">
-            <span
-              v-for="i in 6"
-              :key="i"
-              class="volume-bar"
-              :style="{
-                height: `${Math.max(4, recordingVolumeLevel * 28 * (0.5 + Math.random() * 0.5))}px`,
-              }"
-            ></span>
-          </div>
-          <div class="recording-hint" :class="{ cancel: isCancelMode }">
-            {{ isCancelMode ? "鬆開取消" : "鬆開發送，上滑取消" }}
+            <div class="inner-card">
+              <div class="trigger-wrap">
+                <label class="trigger" for="audio-command"> </label>
+
+                <svg
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="mic"
+                  stroke-linejoin="round"
+                  stroke-linecap="round"
+                  stroke-width="2.5"
+                  stroke="currentColor"
+                  fill="none"
+                >
+                  <path
+                    d="m19.5,10.89c0,4.44-3.36,8.04-7.5,8.04s-7.5-3.6-7.5-8.04"
+                  ></path>
+                  <line x1="12" y1="22.42" x2="12" y2="18.93"></line>
+                  <rect
+                    x="8.38"
+                    y="1.81"
+                    width="7.23"
+                    height="13.25"
+                    rx="3.62"
+                    ry="3.62"
+                  ></rect>
+                </svg>
+
+                <div class="spectrum" v-if="isRecording">
+                  <b v-for="n in 45" :key="n-1" :style="`--index: ${n-1};`"></b>
+                </div>
+              </div>
+
+              <div class="content">
+                <div class="voice-actions-container" :class="{ 'is-recording': isRecording }">
+                  <textarea
+                    :value="textVoiceInput"
+                    class="text-voice-input-new"
+                    placeholder="輸入文字轉換為語音..."
+                    rows="2"
+                    @input="emit('update:textVoiceInput', ($event.target as HTMLTextAreaElement).value)"
+                    @keydown.enter.ctrl="emit('sendTextAsVoice')"
+                  ></textarea>
+                  <button
+                    class="send-text-voice-btn"
+                    @click="emit('sendTextAsVoice')"
+                    :disabled="!textVoiceInput.trim()"
+                  >
+                    發送文字
+                  </button>
+                </div>
+                <div class="hint-text">
+                  <span v-if="!isRecording">或點擊上方麥克風開始錄音</span>
+                  <span v-else class="recording-time-text">{{ formatAudioTime(recordingDuration) }} - 點擊停止發送</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </Transition>
+      </Transition>
+    </Teleport>
 
     <!-- 表情包面板 -->
     <Transition name="slide-up">
@@ -1282,82 +1312,485 @@ function getPreviewText(content: string): string {
   transform: translateY(100%);
 }
 
-// ===== 錄音覆蓋層 =====
-.recording-overlay {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  top: 0;
-  background: rgba(0, 0, 0, 0.6);
+// ===== 語音輸入 Card CSS =====
+.text-voice-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;
+  z-index: 9999;
+  backdrop-filter: blur(2px);
 }
 
-.recording-content {
+.card {
+  --w-card: 320px;
+  --h-card: 460px;
+  --p-card: 2.4px;
+  --p-inner: 18px;
+  --round-card: 28px;
+  --w-inner: calc(var(--w-card) - calc(var(--p-card) * 2));
+  --h-inner: calc(var(--h-card) - calc(var(--p-card) * 2));
+  --round-inner: calc(var(--round-card) - var(--p-card));
+  border-radius: var(--round-card);
+  width: var(--w-card);
+  height: var(--h-card);
+  position: relative;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: linear-gradient(130deg, #7209d450, #fff 33%, #00a5b250);
+  box-shadow:
+    rgba(0, 0, 0, 0.1) 0 4px 30px,
+    rgba(60, 64, 67, 0.1) 0 1px 8px 0,
+    rgba(60, 64, 67, 0.1) 0 1px 1px 0,
+    rgba(187, 18, 199, 0.15) 1px 1px 200px 0px,
+    rgba(0, 98, 178, 0.15) -1px -1px 200px 0px;
+}
+.card::before {
+  content: "";
+  z-index: 1;
+  position: absolute;
+  width: var(--w-inner);
+  height: var(--h-inner);
+  border-radius: var(--round-inner);
+  background: #ffffff;
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+}
+.card::after {
+  content: "";
+  --cl-light: #fff;
+  --cr-light: #0000;
+  position: absolute;
+  z-index: 0;
+  filter: blur(60px);
+  width: calc(var(--h-card) * 1.25);
+  height: calc(var(--h-card) * 1.25);
+  animation: rotating 10s linear infinite;
+  background: conic-gradient(
+    from 45deg at 50% 50%,
+    var(--cl-light),
+    var(--cr-light),
+    var(--cl-light),
+    var(--cl-light),
+    var(--cl-light),
+    var(--cr-light),
+    var(--cl-light),
+    var(--cl-light),
+    var(--cl-light)
+  );
+}
+@keyframes rotating {
+  from {
+    transform: rotate(0);
+  }
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.inner-card {
+  position: relative;
+  z-index: 2;
+  width: var(--w-inner);
+  height: var(--h-inner);
+  border-radius: var(--round-inner);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-direction: column;
-  align-items: center;
-  gap: 16px;
+  overflow: hidden;
+  transition: all 0.35s ease;
+  background: rgba(255, 255, 255, 0.1);
+  outline: var(--p-card) solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 80px rgba(0, 0, 0, 0.25);
+}
+.inner-card::before,
+.inner-card::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  border-radius: var(--round-inner);
+  filter: blur(60px);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+}
+.inner-card::before {
+  background: linear-gradient(135deg, #fff, #7209d425 25%, #0000);
+}
+.inner-card::after {
+  background: linear-gradient(135deg, #0000, #00a6b225 66%, #fff);
 }
 
-.recording-indicator {
+.input {
+  display: none;
+  position: absolute;
+  height: 0;
+  width: 0;
+  overflow: hidden;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.trigger-wrap {
+  --sz-trigger-wrap: calc(var(--w-card) * 0.65);
+  --sz-trigger: calc(var(--sz-trigger-wrap) * 0.65);
+  z-index: 4;
+  inset: 50%;
+  position: absolute;
+  transform: translate(-50%, -75%);
+  height: var(--sz-trigger-wrap);
+  width: var(--sz-trigger-wrap);
+  outline: 1.4px solid #ffffff70;
+  border-radius: 9999px;
+  overflow: hidden;
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  transition: all 0.35s ease;
+  --shadow-wrap: rgba(255, 255, 255, 0.6) 0 0 20px 4px inset,
+    rgba(50, 50, 93, 0.2) 0 10px 80px 2px inset,
+    rgba(0, 0, 0, 0.1) 0px 18px 36px -18px inset;
+  box-shadow:
+    rgba(0, 0, 0, 0.25) 0 10px 50px,
+    var(--shadow-wrap);
 }
 
-.recording-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #e53e3e;
-  animation: pulse-dot 1s ease-in-out infinite;
+.trigger {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 6;
+  border-radius: 9999px;
+  width: var(--sz-trigger);
+  height: var(--sz-trigger);
+  overflow: hidden;
+  --shadows: rgb(255, 255, 255) 0 0 1px 1px, rgb(255, 255, 255) 0 0 10px 3px,
+    rgb(255, 255, 255) 0 0 11px 2px, rgb(255, 255, 255) 0 0 22px 6px,
+    rgba(255, 255, 255, 0.85) 0px 20px 50px,
+    rgba(187, 18, 199, 0.8) 4px 4px 30px 0px,
+    rgba(0, 98, 178, 0.8) -4px -4px 30px 0px;
+  box-shadow: var(
+    --shadows,
+    rgba(255, 255, 255, 0.75) 0 0 1px 1px,
+    rgba(255, 255, 255, 0.75) 0 0 15px 2px,
+    rgba(255, 255, 255, 0.75) 0px 10px 50px,
+    rgba(187, 18, 199, 0.8) 2px 2px 20px 0px,
+    rgba(0, 98, 178, 0.8) -2px -2px 20px 0px
+  );
+  transition: all 0.35s ease;
+}
+.trigger::after {
+  content: "";
+  position: relative;
+  z-index: 1;
+  width: var(--sz-trigger);
+  height: var(--sz-trigger);
+  transition: all 0.35s ease;
+  background: linear-gradient(130deg, #bb12c7, #7209d4 33%, #00a5b2);
+  filter: blur(35px);
+  backdrop-filter: blur(60px);
+  -webkit-backdrop-filter: blur(60px);
+  border-radius: 9999px;
+}
+.mic {
+  height: 60px;
+  width: 60px;
+  color: white;
+  opacity: 0.5;
+  transition: all 0.35s ease;
+  position: absolute;
+  z-index: 9;
+  pointer-events: none;
+  overflow: visible;
+}
+.mic * {
+  transition: all 0.35s ease;
+}
+.spectrum {
+  z-index: 2;
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 90%;
+  height: 90%;
+  overflow: hidden;
+  border-radius: 999px;
+  pointer-events: none;
+  animation: rotating 5s steps(45) infinite;
+}
+.spectrum b {
+  width: 1px;
+  pointer-events: none;
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(calc(8deg * var(--index)));
+}
+.spectrum b::before,
+.spectrum b::after {
+  --h-spectrums: 1px;
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset-inline: 0;
+  width: 1px;
+  opacity: 1;
+  background: white;
+  border-radius: 9999px;
+  transition: all 0.35s ease;
+  height: calc(var(--index) * calc(var(--h-spectrums) / 2.5));
+}
+.spectrum b::before {
+  top: 68px;
+}
+.spectrum b::after {
+  bottom: 68px;
 }
 
-@keyframes pulse-dot {
+.input:checked ~ .inner-card {
+  box-shadow:
+    rgba(255, 255, 255) 0 0 10px,
+    rgba(255, 255, 255, 0.95) 0 0 10px 4px;
+}
+.input:checked ~ .inner-card .trigger-wrap {
+  transform: translate(-50%, -65%);
+  outline: 1px solid #fff;
+  box-shadow:
+    rgba(0, 0, 0, 0.25) 0 0 50px,
+    var(--shadow-wrap);
+}
+.input:checked ~ .inner-card .trigger-wrap .spectrum b::before {
+  --h-spectrums: 1.5px;
+  top: 68px;
+  animation: spectrums 0.6s steps(3) infinite 0.6s;
+}
+.input:checked ~ .inner-card .trigger-wrap .spectrum b::after {
+  --h-spectrums: 2px;
+  bottom: 68px;
+  animation: spectrums 0.6s steps(3) infinite 0.6s;
+}
+@keyframes spectrums {
   0%,
   100% {
-    opacity: 1;
-    transform: scale(1);
+    opacity: 0.5;
+    height: calc(var(--index) * 0px);
+  }
+  25% {
+    opacity: 0.5;
+    height: calc(var(--index) * calc(var(--h-spectrums) / 2));
   }
   50% {
-    opacity: 0.5;
-    transform: scale(1.3);
+    opacity: 1;
+    height: calc(var(--index) * var(--h-spectrums));
+  }
+  75% {
+    opacity: 0.75;
+    height: calc(var(--index) * calc(var(--h-spectrums) / 3));
   }
 }
 
-.recording-time {
-  font-size: 24px;
-  color: white;
-  font-variant-numeric: tabular-nums;
+.trigger:hover ~ .mic,
+.trigger:hover ~ .mic .fill-head-mic {
+  opacity: 0.85;
+}
+.trigger:active {
+  transform: scale(0.95);
+}
+.trigger:active ~ .mic {
+  transform: scale(1.05);
+}
+.input:checked ~ .inner-card .trigger-wrap .trigger {
+  --shadows: rgb(255, 255, 255) 0 0 1px 6px, rgb(255, 255, 255) 0 0 10px 9px,
+    rgb(255, 255, 255) 0 0 11px 7px, rgb(255, 255, 255) 0 0 22px 11px,
+    rgba(255, 255, 255, 0.85) 0px 20px 50px,
+    rgba(187, 18, 199, 0.8) 4px 4px 30px 0px,
+    rgba(0, 98, 178, 0.8) -4px -4px 30px 0px;
+  animation: shadows 1.2s linear infinite 1s;
+}
+@keyframes shadows {
+  from,
+  to {
+    box-shadow: var(--shadows);
+  }
+  50% {
+    box-shadow:
+      rgb(255, 255, 255, 0.85) 0 0 1px 4px,
+      rgb(255, 255, 255, 0.85) 0 0 10px 6px,
+      rgb(255, 255, 255, 0.85) 0 0 11px 8px,
+      rgb(255, 255, 255, 0.85) 0 0 22px 4px,
+      rgba(255, 255, 255, 0.85) 0px 20px 50px,
+      rgba(187, 18, 199, 0.8) 4px 4px 30px 0px,
+      rgba(0, 98, 178, 0.8) -4px -4px 30px 0px;
+  }
 }
 
-.recording-volume-bars {
+.input:checked ~ .inner-card .trigger-wrap .trigger::after {
+  animation: gradients 2.4s linear infinite;
+}
+@keyframes gradients {
+  0%,
+  99.99% {
+    background: radial-gradient(
+      circle,
+      #bb12c7cc 0%,
+      #7c09d4cc 20%,
+      #0062b2cc 100%
+    );
+  }
+  33.33% {
+    background: radial-gradient(circle, #0062b2cc 0%, #7c09d4cc 100%);
+  }
+  66.66% {
+    background: radial-gradient(circle, #7c09d4cc 0%, #1260c7cc 100%);
+  }
+}
+.input:checked ~ .inner-card .trigger-wrap .mic {
+  opacity: 0.85;
+  animation: opacity 2.4s linear infinite 1s;
+}
+@keyframes opacity {
+  from,
+  to {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.input:checked ~ .inner-card .trigger-wrap .mic path {
+  --dasharray: 100;
+  d: path(
+    "m37.75,11.84h-13.75c-.72,0-5.2-6.05-6-6.04s-5.53,15.65-6,15.65C11.56,21.45,6.84,0,5.99,0,5.02,0,1.49,11.86,0,11.85h-13.75"
+  );
+  stroke-width: 1.6;
+  stroke-dasharray: var(--dasharray);
+  animation: rate 2.4s infinite linear forwards;
+}
+@keyframes rate {
+  from {
+    stroke-dashoffset: calc(var(--dasharray) * -1px);
+  }
+  to {
+    stroke-dashoffset: var(--dasharray);
+  }
+}
+
+.input:checked ~ .inner-card .trigger-wrap .mic line {
+  opacity: 0;
+}
+.input:checked ~ .inner-card .trigger-wrap .mic rect {
+  --sz-rect: 54px;
+  x: -15;
+  y: -15;
+  width: var(--sz-rect);
+  height: var(--sz-rect);
+  rx: var(--sz-rect);
+  ry: var(--sz-rect);
+  stroke: #0000;
+  stroke-width: 0.8;
+}
+.input:checked ~ .inner-card .content {
+  transform: translate(0%, 5%);
+  transition-delay: 0s;
+}
+
+.content {
+  position: absolute;
+  bottom: var(--p-inner);
+  z-index: 10;
+  margin-top: 44px;
+  font-family: sans-serif;
+  font-size: 12px;
+  line-height: 1.5;
+  width: calc(100% - calc(var(--p-inner) * 2));
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.6);
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  border-radius: 12px;
+  transition: all 0.35s ease;
+  transition-delay: 0.25s;
+  box-shadow:
+    rgba(0, 0, 0, 0.06) 0px 2px 4px 0px,
+    rgba(0, 0, 0, 0.1) 0px 10px 50px,
+    rgba(0, 0, 0, 0.1) 0px 0px 1px inset;
   display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 32px;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.volume-bar {
-  width: 4px;
-  min-height: 4px;
-  background: var(--color-primary, #7dd3a8);
-  border-radius: 2px;
-  transition: height 0.1s ease;
+.voice-actions-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.3s;
 }
 
-.recording-hint {
+.voice-actions-container.is-recording {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.text-voice-input-new {
+  width: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  padding: 8px;
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
-  transition: color 0.2s;
-
-  &.cancel {
-    color: #e53e3e;
+  resize: none;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--color-text, #333);
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+  
+  &:focus {
+    border-color: var(--color-primary, #7dd3a8);
+    background: #fff;
   }
+}
+
+.send-text-voice-btn {
+  width: 100%;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  background: var(--color-primary, #7dd3a8);
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+  
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  &:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+}
+
+.hint-text {
+  text-align: center;
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+}
+
+.recording-time-text {
+  color: #e53e3e;
+  font-weight: bold;
 }
 
 // 麥克風按鈕樣式
@@ -1383,95 +1816,17 @@ function getPreviewText(content: string): string {
 // 淡入滑動動畫
 .fade-slide-enter-active,
 .fade-slide-leave-active {
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
+  transition: all 0.3s ease;
 }
 
-.fade-slide-enter-from,
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateX(-8px);
+}
+
 .fade-slide-leave-to {
   opacity: 0;
   transform: translateX(8px);
-}
-
-// 文字輸入語音 Modal
-.text-voice-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  z-index: 200;
-  padding-bottom: 80px;
-}
-
-.text-voice-modal {
-  background: var(--color-surface, #fff);
-  border-radius: 16px;
-  padding: 16px;
-  width: calc(100% - 32px);
-  max-width: 400px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.text-voice-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text, #333);
-}
-
-.text-voice-input {
-  width: 100%;
-  border: 1px solid var(--color-border, #e0e0e0);
-  border-radius: 10px;
-  padding: 10px 12px;
-  font-size: 14px;
-  resize: none;
-  background: var(--color-bg, #f5f5f5);
-  color: var(--color-text, #333);
-  outline: none;
-  box-sizing: border-box;
-  &:focus {
-    border-color: var(--color-primary, #7dd3a8);
-  }
-}
-
-.text-voice-hint {
-  font-size: 11px;
-  color: var(--color-text-secondary, #999);
-  text-align: right;
-}
-
-.text-voice-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.text-voice-cancel {
-  padding: 7px 16px;
-  border-radius: 8px;
-  border: 1px solid var(--color-border, #e0e0e0);
-  background: transparent;
-  color: var(--color-text, #333);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.text-voice-send {
-  padding: 7px 16px;
-  border-radius: 8px;
-  border: none;
-  background: var(--color-primary, #7dd3a8);
-  color: #fff;
-  font-size: 13px;
-  cursor: pointer;
-  &:active {
-    opacity: 0.85;
-  }
 }
 
 // 表情包面板滑入動畫

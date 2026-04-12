@@ -1,80 +1,337 @@
 
-[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90mC:/Users/a2397/new aguaphone[39m
+> aguaphone-home@0.1.0 type-check
+> vue-tsc --noEmit
 
-[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 4.6: 角色世界設定區塊標題為「角色所在地情境」[2m > [22m[2m注入角色世界設定時，區塊標題應為 [角色所在地情境]
-[22m[39m📦 [PromptBuilder] 最終組裝調試
-  preHistoryMessages: [33m1[39m
-  chatMessages.messages: [33m0[39m
-  postHistoryMessages: [33m0[39m
-  pendingDepthPrompts: [33m0[39m
-  builtMessages 總數: [33m1[39m
-[PromptBuilder] Merged 1 messages into 1 messages
-
-[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 4.6: 角色世界設定區塊標題為「角色所在地情境」[2m > [22m[2m角色世界設定區塊應包含所在地資訊
-[22m[39m📦 [PromptBuilder] 最終組裝調試
-  preHistoryMessages: [33m1[39m
-  chatMessages.messages: [33m0[39m
-  postHistoryMessages: [33m0[39m
-  pendingDepthPrompts: [33m0[39m
-  builtMessages 總數: [33m1[39m
-[PromptBuilder] Merged 1 messages into 1 messages
-
-[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 4.6: 角色世界設定區塊標題為「角色所在地情境」[2m > [22m[2m角色世界設定為空時不注入任何內容
-[22m[39m📦 [PromptBuilder] 最終組裝調試
-  preHistoryMessages: [33m0[39m
-  chatMessages.messages: [33m0[39m
-  postHistoryMessages: [33m0[39m
-  pendingDepthPrompts: [33m0[39m
-  builtMessages 總數: [33m0[39m
-
-[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 4.6: 角色世界設定區塊標題為「角色所在地情境」[2m > [22m[2m未設定 characterWorldSettings 時不注入
-[22m[39m📦 [PromptBuilder] 最終組裝調試
-  preHistoryMessages: [33m0[39m
-  chatMessages.messages: [33m0[39m
-  postHistoryMessages: [33m0[39m
-  pendingDepthPrompts: [33m0[39m
-  builtMessages 總數: [33m0[39m
-
-[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 2.6, 2.11: 附近地點注入格式與 limit/radius 參數[2m > [22m[2m有附近地點時應注入管道分隔格式
-[22m[39m📦 [PromptBuilder] 最終組裝調試
-  preHistoryMessages: [33m1[39m
-  chatMessages.messages: [33m0[39m
-  postHistoryMessages: [33m0[39m
-  pendingDepthPrompts: [33m0[39m
-  builtMessages 總數: [33m1[39m
-[PromptBuilder] Merged 1 messages into 1 messages
-
-[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 2.6, 2.11: 附近地點注入格式與 limit/radius 參數[2m > [22m[2m無附近地點時不注入 [附近地點] 行
-[22m[39m📦 [PromptBuilder] 最終組裝調試
-  preHistoryMessages: [33m1[39m
-  chatMessages.messages: [33m0[39m
-  postHistoryMessages: [33m0[39m
-  pendingDepthPrompts: [33m0[39m
-  builtMessages 總數: [33m1[39m
-[PromptBuilder] Merged 1 messages into 1 messages
-
-[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 2.6, 2.11: 附近地點注入格式與 limit/radius 參數[2m > [22m[2m未傳入 nearbyPlaces 時不注入 [附近地點] 行
-[22m[39m📦 [PromptBuilder] 最終組裝調試
-  preHistoryMessages: [33m1[39m
-  chatMessages.messages: [33m0[39m
-  postHistoryMessages: [33m0[39m
-  pendingDepthPrompts: [33m0[39m
-  builtMessages 總數: [33m1[39m
-[PromptBuilder] Merged 1 messages into 1 messages
-
-[90mstdout[2m | src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts[2m > [22m[2mRequirements 2.6, 2.11: 附近地點注入格式與 limit/radius 參數[2m > [22m[2m附近地點行應在天氣資訊區塊內（同一 message）
-[22m[39m📦 [PromptBuilder] 最終組裝調試
-  preHistoryMessages: [33m1[39m
-  chatMessages.messages: [33m0[39m
-  postHistoryMessages: [33m0[39m
-  pendingDepthPrompts: [33m0[39m
-  builtMessages 總數: [33m1[39m
-[PromptBuilder] Merged 1 messages into 1 messages
-
- [32m✓[39m src/engine/prompt/__tests__/PromptBuilder.locationContext.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 21[2mms[22m[39m
-
-[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
-[2m      Tests [22m [1m[32m8 passed[39m[22m[90m (8)[39m
-[2m   Start at [22m 00:45:00
-[2m   Duration [22m 1.03s[2m (transform 310ms, setup 0ms, import 816ms, tests 21ms, environment 0ms)[22m
-
+src/App.vue(1896,8): error TS2322: Type '(page: "character" | "settings" | "shop" | "peek-phone" | "media-log" | "worldbook" | "food-log") => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'page' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[page: "character" | "settings" | "shop" | "peek-phone" | "media-log" | "worldbook" | "food-log"]'.
+      Type 'any[]' is not assignable to type '[page: "character" | "settings" | "shop" | "peek-phone" | "media-log" | "worldbook" | "food-log"]'.
+        Target requires 1 element(s) but source may have fewer.
+src/App.vue(1897,8): error TS2322: Type '(id: string) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'id' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[id: string]'.
+      Type 'any[]' is not assignable to type '[id: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/App.vue(1898,8): error TS2322: Type '(id: string) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'id' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[id: string]'.
+      Type 'any[]' is not assignable to type '[id: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/App.vue(1911,8): error TS2322: Type '(chatId: string, characterId: string) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'chatId' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[chatId: string, characterId: string]'.
+      Type 'any[]' is not assignable to type '[chatId: string, characterId: string]'.
+        Target requires 2 element(s) but source may have fewer.
+src/App.vue(1912,8): error TS2322: Type '(chatId: string) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'chatId' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[chatId: string]'.
+      Type 'any[]' is not assignable to type '[chatId: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/common/GiftDrawer.vue(197,36): error TS2459: Module '"@/stores/gameEconomy"' declares 'Transaction' locally, but it is not exported.
+src/components/common/NotificationToast.vue(16,7): error TS2740: Type '{ qzone_post: string; qzone_comment: string; chat_message: string; chat_summary: string; diary_entry: string; fishing_stamina: string; fishing_daily: string; gift_received: string; incoming_call: string; system: string; }' is missing the following properties from type 'Record<NotificationType, string>': friend_request, friend_accepted, friend_rejected, apology_food, and 2 more.
+src/components/common/NotificationToast.vue(40,7): error TS2740: Type '{ qzone_post: string; qzone_comment: string; chat_message: string; chat_summary: string; diary_entry: string; fishing_stamina: string; fishing_daily: string; gift_received: string; incoming_call: string; system: string; }' is missing the following properties from type 'Record<NotificationType, string>': friend_request, friend_accepted, friend_rejected, apology_food, and 2 more.
+src/components/dock/NeonWheelDock.vue(302,8): error TS2345: Argument of type '{ style: { transform: string; opacity: number; pointerEvents: string; }; class: string; key: string; onClick: (payload: PointerEvent) => void; }' is not assignable to parameter of type 'HTMLAttributes & ReservedProps & Record<string, unknown>'.
+  Type '{ style: { transform: string; opacity: number; pointerEvents: string; }; class: string; key: string; onClick: (payload: PointerEvent) => void; }' is not assignable to type 'HTMLAttributes'.
+    Types of property 'style' are incompatible.
+      Type '{ transform: string; opacity: number; pointerEvents: string; }' is not assignable to type 'StyleValue'.
+        Type '{ transform: string; opacity: number; pointerEvents: string; }' is not assignable to type 'CSSProperties'.
+          Types of property 'pointerEvents' are incompatible.
+            Type 'string' is not assignable to type 'PointerEvents | undefined'.
+src/components/games/tetris/TetrisGameTest.vue(112,16): error TS2345: Argument of type '{ class: string; onClick: (difficulty?: DifficultyConfig | undefined) => void; }' is not assignable to parameter of type 'ButtonHTMLAttributes & ReservedProps & Record<string, unknown>'.
+  Type '{ class: string; onClick: (difficulty?: DifficultyConfig | undefined) => void; }' is not assignable to type 'ButtonHTMLAttributes'.
+    Types of property 'onClick' are incompatible.
+      Type '(difficulty?: DifficultyConfig | undefined) => void' is not assignable to type '(payload: PointerEvent) => void'.
+        Types of parameters 'difficulty' and 'payload' are incompatible.
+          Type 'PointerEvent' is missing the following properties from type 'DifficultyConfig': name, label, startLevel, startSpeed, and 6 more.
+src/components/games/tetris/TetrisGameTest.vue(393,14): error TS2345: Argument of type '{ class: string; onClick: (difficulty?: DifficultyConfig | undefined) => void; }' is not assignable to parameter of type 'ButtonHTMLAttributes & ReservedProps & Record<string, unknown>'.
+  Type '{ class: string; onClick: (difficulty?: DifficultyConfig | undefined) => void; }' is not assignable to type 'ButtonHTMLAttributes'.
+    Types of property 'onClick' are incompatible.
+      Type '(difficulty?: DifficultyConfig | undefined) => void' is not assignable to type '(payload: PointerEvent) => void'.
+src/components/modals/ChatInfoModal.vue(80,36): error TS18048: '__VLS_ctx.groupMembers' is possibly 'undefined'.
+src/components/screens/CharacterEditScreen.vue(190,53): error TS2345: Argument of type '{ characterId: string; enabled: false; statKey: string; metrics: never[]; promptTemplate: string; updateInstruction: string; lastUpdated: number; }' is not assignable to parameter of type '{ characterId: string; enabled: boolean; statKey: string; mvuEnabled: boolean; mvuInitialData: Record<string, any>; mvuPromptTemplate: string; mvuUpdateInstruction: string; postMutationRules: ({ ...; } | { ...; })[]; metrics: { ...; }[]; promptTemplate: string; updateInstruction: string; lastUpdated: number; }'.
+  Type '{ characterId: string; enabled: false; statKey: string; metrics: never[]; promptTemplate: string; updateInstruction: string; lastUpdated: number; }' is missing the following properties from type '{ characterId: string; enabled: boolean; statKey: string; mvuEnabled: boolean; mvuInitialData: Record<string, any>; mvuPromptTemplate: string; mvuUpdateInstruction: string; postMutationRules: ({ ...; } | { ...; })[]; metrics: { ...; }[]; promptTemplate: string; updateInstruction: string; lastUpdated: number; }': mvuEnabled, mvuInitialData, mvuPromptTemplate, mvuUpdateInstruction, postMutationRules
+src/components/screens/CharacterEditScreen.vue(323,9): error TS2322: Type '"manual" | "api"' is not assignable to type '"manual" | "png" | "json" | undefined'.
+  Type '"api"' is not assignable to type '"manual" | "png" | "json" | undefined'.
+src/components/screens/CharacterEditScreen.vue(409,37): error TS2345: Argument of type '{ id: string; name: string; type: "number"; min: number; max: number; initial: number; options: never[]; stages: never[]; }' is not assignable to parameter of type '{ id: string; name: string; path: string; type: "string" | "number"; min: number; max: number; initial: string | number; options: string[]; stages: { name: string; minValue: number; }[]; }'.
+  Property 'path' is missing in type '{ id: string; name: string; type: "number"; min: number; max: number; initial: number; options: never[]; stages: never[]; }' but required in type '{ id: string; name: string; path: string; type: "string" | "number"; min: number; max: number; initial: string | number; options: string[]; stages: { name: string; minValue: number; }[]; }'.
+src/components/screens/CharacterEditScreen.vue(512,9): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/screens/CharacterEditScreen.vue(1036,17): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/screens/CharacterEditScreen.vue(1046,17): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/screens/CharacterEditScreen.vue(1056,17): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/screens/CharacterEditScreen.vue(1066,17): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/screens/CharacterEditScreen.vue(1076,17): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/screens/CharacterEditScreen.vue(1106,17): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/screens/CharacterEditScreen.vue(1116,17): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/screens/CharacterEditScreen.vue(1149,17): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/screens/CharacterEditScreen.vue(1159,17): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/screens/CharacterEditScreen.vue(1169,17): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/screens/ChatListScreen.vue(71,23): error TS2339: Property 'characterName' does not exist on type '{ id: string; name: string; characterId: string; messages: { id: string; sender: MessageSender; name: string; content: string; is_user: boolean; status: MessageStatus; ... 99 more ...; extra?: Record<...> | undefined; }[]; ... 29 more ...; activeCoupleAvatarId?: string | ... 1 more ... | undefined; }'.
+src/components/screens/ChatListScreen.vue(88,23): error TS2339: Property 'name' does not exist on type '{ id: string; nickname: string; avatar: string; data: { name: string; description: string; character_version: string; personality: string; scenario: string; first_mes: string; mes_example: string; ... 7 more ...; extensions: { ...; }; }; ... 5 more ...; worldSettings?: { ...; } | undefined; }'.
+src/components/screens/ChatListScreen.vue(125,53): error TS2339: Property 'characterName' does not exist on type 'Chat'.
+src/components/screens/ChatListScreen.vue(641,75): error TS2339: Property 'name' does not exist on type '{ id: string; nickname: string; avatar: string; data: { name: string; description: string; character_version: string; personality: string; scenario: string; first_mes: string; mes_example: string; ... 7 more ...; extensions: { ...; }; }; ... 5 more ...; worldSettings?: { ...; } | undefined; }'.
+src/components/screens/ChatListScreen.vue(649,31): error TS2339: Property 'name' does not exist on type '{ id: string; nickname: string; avatar: string; data: { name: string; description: string; character_version: string; personality: string; scenario: string; first_mes: string; mes_example: string; ... 7 more ...; extensions: { ...; }; }; ... 5 more ...; worldSettings?: { ...; } | undefined; }'.
+src/components/screens/ChatListScreen.vue(655,71): error TS2339: Property 'name' does not exist on type '{ id: string; nickname: string; avatar: string; data: { name: string; description: string; character_version: string; personality: string; scenario: string; first_mes: string; mes_example: string; ... 7 more ...; extensions: { ...; }; }; ... 5 more ...; worldSettings?: { ...; } | undefined; }'.
+src/components/screens/ChatScreen.vue(1599,28): error TS2339: Property 'settings' does not exist on type '{ id: string; name: string; characterId: string; messages: { id: string; sender: MessageSender; name: string; content: string; is_user: boolean; status: MessageStatus; ... 99 more ...; extra?: Record<...> | undefined; }[]; ... 29 more ...; activeCoupleAvatarId?: string | ... 1 more ... | undefined; }'.
+src/components/screens/ChatScreen.vue(7360,11): error TS2532: Object is possibly 'undefined'.
+src/components/screens/ChatScreen.vue(9407,8): error TS2322: Type 'boolean | undefined' is not assignable to type 'boolean'.
+  Type 'undefined' is not assignable to type 'boolean'.
+src/components/screens/ChatScreen.vue(9420,8): error TS2322: Type '(personaId: string) => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'personaId' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[personaId: string]'.
+      Type 'any[]' is not assignable to type '[personaId: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9423,8): error TS2322: Type '(game: "fishing" | "gambling" | "dishwashing" | "merit") => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'game' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[game: "fishing" | "gambling" | "dishwashing" | "merit"]'.
+      Type 'any[]' is not assignable to type '[game: "fishing" | "gambling" | "dishwashing" | "merit"]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9432,8): error TS2322: Type '(mode: "real" | "loop" | "offset") => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'mode' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[mode: "real" | "loop" | "offset"]'.
+      Type 'any[]' is not assignable to type '[mode: "real" | "loop" | "offset"]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9433,8): error TS2322: Type '(value: string) => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'value' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[value: string]'.
+      Type 'any[]' is not assignable to type '[value: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9434,8): error TS2322: Type '(value: string) => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'value' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[value: string]'.
+      Type 'any[]' is not assignable to type '[value: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9435,8): error TS2322: Type '(value: string) => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'value' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[value: string]'.
+      Type 'any[]' is not assignable to type '[value: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9446,8): error TS2322: Type '(page: "character" | "settings" | "peek-phone" | "worldbook") => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'page' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[page: "character" | "settings" | "peek-phone" | "worldbook"]'.
+      Type 'any[]' is not assignable to type '[page: "character" | "settings" | "peek-phone" | "worldbook"]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9820,14): error TS2322: Type '(id: string) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'id' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[id: string]'.
+      Type 'any[]' is not assignable to type '[id: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9821,14): error TS2322: Type '(id: string) => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'id' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[id: string]'.
+      Type 'any[]' is not assignable to type '[id: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9822,14): error TS2322: Type '(id: string) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'id' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[id: string]'.
+      Type 'any[]' is not assignable to type '[id: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9823,14): error TS2322: Type '(id: string) => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'id' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[id: string]'.
+      Type 'any[]' is not assignable to type '[id: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9824,14): error TS2322: Type '(id: string, direction: "next" | "prev") => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'id' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[id: string, direction: "next" | "prev"]'.
+      Type 'any[]' is not assignable to type '[id: string, direction: "next" | "prev"]'.
+        Target requires 2 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9825,14): error TS2322: Type '(lastAIMessageId: string, direction: "next" | "prev") => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'lastAIMessageId' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[lastAIMessageId: string, direction: "next" | "prev"]'.
+      Type 'any[]' is not assignable to type '[lastAIMessageId: string, direction: "next" | "prev"]'.
+        Target requires 2 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9826,14): error TS2322: Type '(messageId: string) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'messageId' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[messageId: string]'.
+      Type 'any[]' is not assignable to type '[messageId: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9827,14): error TS2322: Type '(messageId: string) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'messageId' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[messageId: string]'.
+      Type 'any[]' is not assignable to type '[messageId: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9828,14): error TS2322: Type '(messageId: string) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'messageId' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[messageId: string]'.
+      Type 'any[]' is not assignable to type '[messageId: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9829,14): error TS2322: Type '(messageId: string) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'messageId' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[messageId: string]'.
+      Type 'any[]' is not assignable to type '[messageId: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9830,14): error TS2322: Type '(messageId: string) => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'messageId' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[messageId: string]'.
+      Type 'any[]' is not assignable to type '[messageId: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9831,14): error TS2322: Type '(messageId: string) => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'messageId' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[messageId: string]'.
+      Type 'any[]' is not assignable to type '[messageId: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9832,14): error TS2322: Type '(messageId: string, transcript: string) => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'messageId' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[messageId: string, transcript: string]'.
+      Type 'any[]' is not assignable to type '[messageId: string, transcript: string]'.
+        Target requires 2 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9833,14): error TS2322: Type '(id: string) => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'id' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[id: string]'.
+      Type 'any[]' is not assignable to type '[id: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9834,14): error TS2322: Type '(messageId?: string | undefined) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'messageId' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[messageId?: string | undefined]'.
+      Type 'any[]' is not assignable to type '[messageId?: string | undefined]'.
+        Target allows only 1 element(s) but source may have more.
+src/components/screens/ChatScreen.vue(9835,14): error TS2322: Type '(_messageId: string) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters '_messageId' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[_messageId: string]'.
+      Type 'any[]' is not assignable to type '[_messageId: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9836,14): error TS2322: Type '(messageId: string, htmlContent: string) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'messageId' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[messageId: string, htmlContent: string]'.
+      Type 'any[]' is not assignable to type '[messageId: string, htmlContent: string]'.
+        Target requires 2 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9837,14): error TS2322: Type '(id: string, type: "seen" | "unseen") => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'id' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[id: string, type: "seen" | "unseen"]'.
+      Type 'any[]' is not assignable to type '[id: string, type: "seen" | "unseen"]'.
+        Target requires 2 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9838,14): error TS2322: Type '(id: string) => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'id' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[id: string]'.
+      Type 'any[]' is not assignable to type '[id: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9839,14): error TS2322: Type '(id: string) => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'id' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[id: string]'.
+      Type 'any[]' is not assignable to type '[id: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9840,14): error TS2322: Type '(id: string) => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'id' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[id: string]'.
+      Type 'any[]' is not assignable to type '[id: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9841,14): error TS2322: Type '(id: string) => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'id' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[id: string]'.
+      Type 'any[]' is not assignable to type '[id: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9842,14): error TS2322: Type '(id: string) => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'id' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[id: string]'.
+      Type 'any[]' is not assignable to type '[id: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9939,8): error TS2322: Type '(e: WheelEvent) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'e' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[e: WheelEvent]'.
+      Type 'any[]' is not assignable to type '[e: WheelEvent]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9940,8): error TS2322: Type '(text: string) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'text' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[text: string]'.
+      Type 'any[]' is not assignable to type '[text: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9945,8): error TS2322: Type '(e: KeyboardEvent) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'e' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[e: KeyboardEvent]'.
+      Type 'any[]' is not assignable to type '[e: KeyboardEvent]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9954,8): error TS2322: Type '(e: MouseEvent | TouchEvent) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'e' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[e: MouseEvent | TouchEvent]'.
+      Type 'any[]' is not assignable to type '[e: MouseEvent | TouchEvent]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9956,8): error TS2322: Type '(e: MouseEvent | TouchEvent) => Promise<void>' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'e' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[e: MouseEvent | TouchEvent]'.
+      Type 'any[]' is not assignable to type '[e: MouseEvent | TouchEvent]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9962,8): error TS2322: Type '(value: string) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'value' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[value: string]'.
+      Type 'any[]' is not assignable to type '[value: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/ChatScreen.vue(9965,8): error TS2322: Type '(feature: string) => void' is not assignable to type '(...args: any[] | unknown[]) => any'.
+  Types of parameters 'feature' and 'args' are incompatible.
+    Type 'any[] | unknown[]' is not assignable to type '[feature: string]'.
+      Type 'any[]' is not assignable to type '[feature: string]'.
+        Target requires 1 element(s) but source may have fewer.
+src/components/screens/LorebookEditScreen.vue(210,21): error TS2339: Property 'id' does not exist on type '{ uid: number; world?: string | undefined; displayIndex?: number | undefined; key: string[]; keysecondary: string[]; comment: string; content: string; constant: boolean; disable: boolean; selective: boolean; ... 34 more ...; characterFilterExclude?: boolean | undefined; }'.
+src/components/screens/LorebookEditScreen.vue(211,40): error TS2551: Property 'keys' does not exist on type '{ uid: number; world?: string | undefined; displayIndex?: number | undefined; key: string[]; keysecondary: string[]; comment: string; content: string; constant: boolean; disable: boolean; selective: boolean; ... 34 more ...; characterFilterExclude?: boolean | undefined; }'. Did you mean 'key'?
+src/components/screens/LorebookEditScreen.vue(219,28): error TS2339: Property 'useRegex' does not exist on type '{ uid: number; world?: string | undefined; displayIndex?: number | undefined; key: string[]; keysecondary: string[]; comment: string; content: string; constant: boolean; disable: boolean; selective: boolean; ... 34 more ...; characterFilterExclude?: boolean | undefined; }'.
+src/components/screens/LorebookEditScreen.vue(224,27): error TS2339: Property 'priority' does not exist on type '{ uid: number; world?: string | undefined; displayIndex?: number | undefined; key: string[]; keysecondary: string[]; comment: string; content: string; constant: boolean; disable: boolean; selective: boolean; ... 34 more ...; characterFilterExclude?: boolean | undefined; }'.
+src/components/screens/LorebookEditScreen.vue(225,24): error TS2339: Property 'color' does not exist on type '{ uid: number; world?: string | undefined; displayIndex?: number | undefined; key: string[]; keysecondary: string[]; comment: string; content: string; constant: boolean; disable: boolean; selective: boolean; ... 34 more ...; characterFilterExclude?: boolean | undefined; }'.
+src/components/screens/LorebookEditScreen.vue(229,39): error TS2339: Property 'maxRecursionSteps' does not exist on type '{ id: string; name: string; description?: string | undefined; entries: { uid: number; world?: string | undefined; displayIndex?: number | undefined; key: string[]; keysecondary: string[]; comment: string; ... 38 more ...; characterFilterExclude?: boolean | undefined; }[]; ... 7 more ...; updatedAt: number; }'.
+src/components/screens/TheaterScreen.vue(666,14): error TS6133: 'inner' is declared but its value is never read.
+src/components/screens/UserProfileScreen.vue(576,17): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/components/widgets/ClockWidget.vue(89,21): error TS2339: Property 'clockColor' does not exist on type '{ customStyle?: WidgetCustomStyle | undefined; clockStyle?: ClockStyle | undefined; showSeconds?: boolean | undefined; showDate?: boolean | undefined; }'.
+src/composables/__tests__/useChatMedia.test.ts(151,16): error TS2339: Property 'imageUrl' does not exist on type '{ id: string; role: "ai"; content: string; timestamp: number; messageType: string; imageCaption: string; imagePrompt: string; isStreaming: boolean; }'.
+src/composables/useChatFiles.ts(125,9): error TS2353: Object literal may only specify known properties, and 'skipGreeting' does not exist in type 'ChatMetadata'.
+src/engine/prompt/__tests__/PromptBuilder.adminPrompt.property.test.ts(19,3): error TS2739: Type '{ id: `${string}-${string}-${string}-${string}-${string}`; data: { name: string; description: string; personality: string; scenario: string; first_mes: string; mes_example: string; creator_notes: string; system_prompt: string; ... 6 more ...; character_book: undefined; }; createdAt: number; updatedAt: number; }' is missing the following properties from type 'StoredCharacter': nickname, avatar, lorebookIds, source
+src/engine/prompt/__tests__/PromptBuilder.chatHistorySenderPrefix.property.test.ts(20,3): error TS2739: Type '{ id: `${string}-${string}-${string}-${string}-${string}`; data: { name: string; description: string; personality: string; scenario: string; first_mes: string; mes_example: string; creator_notes: string; system_prompt: string; ... 6 more ...; character_book: undefined; }; createdAt: number; updatedAt: number; }' is missing the following properties from type 'StoredCharacter': nickname, avatar, lorebookIds, source
+src/engine/prompt/__tests__/PromptBuilder.groupMemberPrompt.property.test.ts(18,3): error TS2739: Type '{ id: `${string}-${string}-${string}-${string}-${string}`; data: { name: string; description: string; personality: string; scenario: string; first_mes: string; mes_example: string; creator_notes: string; system_prompt: string; ... 6 more ...; character_book: undefined; }; createdAt: number; updatedAt: number; }' is missing the following properties from type 'StoredCharacter': nickname, avatar, lorebookIds, source
+src/engine/prompt/__tests__/PromptBuilder.incomingCall.test.ts(21,3): error TS2739: Type '{ id: `${string}-${string}-${string}-${string}-${string}`; data: { name: string; description: string; personality: string; scenario: string; first_mes: string; mes_example: string; creator_notes: string; system_prompt: string; ... 6 more ...; character_book: undefined; }; createdAt: number; updatedAt: number; }' is missing the following properties from type 'StoredCharacter': nickname, avatar, lorebookIds, source
+src/engine/prompt/__tests__/PromptBuilder.mutedMemberPrompt.property.test.ts(19,3): error TS2739: Type '{ id: `${string}-${string}-${string}-${string}-${string}`; data: { name: string; description: string; personality: string; scenario: string; first_mes: string; mes_example: string; creator_notes: string; system_prompt: string; ... 6 more ...; character_book: undefined; }; createdAt: number; updatedAt: number; }' is missing the following properties from type 'StoredCharacter': nickname, avatar, lorebookIds, source
+src/schemas/gameEconomy.ts(162,38): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(def: { dishesWashedToday: number; lastWorkDate: string | null; totalDishesWashed: number; }): ZodDefault<ZodObject<{ dishesWashedToday: ZodDefault<ZodNumber>; lastWorkDate: ZodDefault<...>; totalDishesWashed: ZodDefault<...>; }, $strip>>', gave the following error.
+    Argument of type '{}' is not assignable to parameter of type '{ dishesWashedToday: number; lastWorkDate: string | null; totalDishesWashed: number; }'.
+      Type '{}' is missing the following properties from type '{ dishesWashedToday: number; lastWorkDate: string | null; totalDishesWashed: number; }': dishesWashedToday, lastWorkDate, totalDishesWashed
+  Overload 2 of 2, '(def: () => { dishesWashedToday: number; lastWorkDate: string | null; totalDishesWashed: number; }): ZodDefault<ZodObject<{ dishesWashedToday: ZodDefault<ZodNumber>; lastWorkDate: ZodDefault<...>; totalDishesWashed: ZodDefault<...>; }, $strip>>', gave the following error.
+    Argument of type '{}' is not assignable to parameter of type '() => { dishesWashedToday: number; lastWorkDate: string | null; totalDishesWashed: number; }'.
+      Type '{}' provides no match for the signature '(): { dishesWashedToday: number; lastWorkDate: string | null; totalDishesWashed: number; }'.
+src/schemas/gameEconomy.ts(171,46): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(def: { totalWins: number; totalLosses: number; todayGambles: number; lastGambleDate: string | null; }): ZodDefault<ZodObject<{ totalWins: ZodDefault<ZodNumber>; totalLosses: ZodDefault<...>; todayGambles: ZodDefault<...>; lastGambleDate: ZodDefault<...>; }, $strip>>', gave the following error.
+    Argument of type '{}' is not assignable to parameter of type '{ totalWins: number; totalLosses: number; todayGambles: number; lastGambleDate: string | null; }'.
+      Type '{}' is missing the following properties from type '{ totalWins: number; totalLosses: number; todayGambles: number; lastGambleDate: string | null; }': totalWins, totalLosses, todayGambles, lastGambleDate
+  Overload 2 of 2, '(def: () => { totalWins: number; totalLosses: number; todayGambles: number; lastGambleDate: string | null; }): ZodDefault<ZodObject<{ totalWins: ZodDefault<ZodNumber>; totalLosses: ZodDefault<...>; todayGambles: ZodDefault<...>; lastGambleDate: ZodDefault<...>; }, $strip>>', gave the following error.
+    Argument of type '{}' is not assignable to parameter of type '() => { totalWins: number; totalLosses: number; todayGambles: number; lastGambleDate: string | null; }'.
+      Type '{}' provides no match for the signature '(): { totalWins: number; totalLosses: number; todayGambles: number; lastGambleDate: string | null; }'.
+src/schemas/gameEconomy.ts(177,46): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(def: { ownedFrames: string[]; ownedBubbles: string[]; equippedFrameId: string | null; equippedBubbleId: string | null; }): ZodDefault<ZodObject<{ ownedFrames: ZodDefault<ZodArray<ZodString>>; ownedBubbles: ZodDefault<...>; equippedFrameId: ZodDefault<...>; equippedBubbleId: ZodDefault<...>; }, $strip>>', gave the following error.
+    Argument of type '{}' is not assignable to parameter of type '{ ownedFrames: string[]; ownedBubbles: string[]; equippedFrameId: string | null; equippedBubbleId: string | null; }'.
+      Type '{}' is missing the following properties from type '{ ownedFrames: string[]; ownedBubbles: string[]; equippedFrameId: string | null; equippedBubbleId: string | null; }': ownedFrames, ownedBubbles, equippedFrameId, equippedBubbleId
+  Overload 2 of 2, '(def: () => { ownedFrames: string[]; ownedBubbles: string[]; equippedFrameId: string | null; equippedBubbleId: string | null; }): ZodDefault<ZodObject<{ ownedFrames: ZodDefault<ZodArray<ZodString>>; ownedBubbles: ZodDefault<...>; equippedFrameId: ZodDefault<...>; equippedBubbleId: ZodDefault<...>; }, $strip>>', gave the following error.
+    Argument of type '{}' is not assignable to parameter of type '() => { ownedFrames: string[]; ownedBubbles: string[]; equippedFrameId: string | null; equippedBubbleId: string | null; }'.
+      Type '{}' provides no match for the signature '(): { ownedFrames: string[]; ownedBubbles: string[]; equippedFrameId: string | null; equippedBubbleId: string | null; }'.
+src/services/__tests__/PeekPhoneYAML.test.ts(127,7): error TS2322: Type 'Arbitrary<{ characterId: ""; chats: PeekChatThread[]; schedule: PeekScheduleItem[]; meals: PeekMealRecord[]; balance: number; transactions: PeekTransaction[]; memos: PeekMemo[]; notes: PeekNote[]; diary: PeekDiaryEntry[]; }>' is not assignable to type 'Arbitrary<PeekPhoneData>'.
+  Type '{ characterId: ""; chats: PeekChatThread[]; schedule: PeekScheduleItem[]; meals: PeekMealRecord[]; balance: number; transactions: PeekTransaction[]; memos: PeekMemo[]; notes: PeekNote[]; diary: PeekDiaryEntry[]; }' is missing the following properties from type 'PeekPhoneData': gallery, browserHistory, hiddenPhotos
+src/services/LegacyBackupService.ts(530,11): error TS2525: Initializer provides no value for this binding element and the binding element has no default value.
+src/services/LegacyBackupService.ts(683,10): error TS2352: Conversion of type 'Record<string, unknown>' to type 'CharacterExtensions' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Record<string, unknown>' is missing the following properties from type 'CharacterExtensions': talkativeness, fav, world, depth_prompt, regex_scripts
+src/stores/__tests__/gameEconomy.property.test.ts(1427,48): error TS2339: Property 'FISH_INTERVAL_MS' does not exist on type '{ MAX_DURATION_MS: number; FISH_PER_MINUTE_MIN: 4; FISH_PER_MINUTE_MAX: 8; }'.
+src/stores/__tests__/gameEconomy.property.test.ts(1785,43): error TS2339: Property 'FISH_INTERVAL_MS' does not exist on type '{ MAX_DURATION_MS: number; FISH_PER_MINUTE_MIN: 4; FISH_PER_MINUTE_MAX: 8; }'.
+src/stores/__tests__/peekPhone.property.test.ts(105,7): error TS2322: Type 'Arbitrary<{ characterId: string; chats: PeekChatThread[]; schedule: PeekScheduleItem[]; meals: PeekMealRecord[]; balance: number; transactions: PeekTransaction[]; memos: PeekMemo[]; notes: PeekNote[]; diary: PeekDiaryEntry[]; }>' is not assignable to type 'Arbitrary<PeekPhoneData>'.
+  Type '{ characterId: string; chats: PeekChatThread[]; schedule: PeekScheduleItem[]; meals: PeekMealRecord[]; balance: number; transactions: PeekTransaction[]; memos: PeekMemo[]; notes: PeekNote[]; diary: PeekDiaryEntry[]; }' is missing the following properties from type 'PeekPhoneData': gallery, browserHistory, hiddenPhotos
+src/stores/promptManager.ts(789,5): error TS6133: 'identifier' is declared but its value is never read.
+src/stores/promptManager.ts(1099,5): error TS6133: 'identifier' is declared but its value is never read.
+src/stores/promptManager.ts(1189,5): error TS6133: 'identifier' is declared but its value is never read.
+src/stores/promptManager.ts(1281,5): error TS6133: 'identifier' is declared but its value is never read.
+src/stores/promptManager.ts(1381,5): error TS6133: 'identifier' is declared but its value is never read.
+src/stores/promptManager.ts(1481,5): error TS6133: 'identifier' is declared but its value is never read.
+src/stores/promptManager.ts(1581,5): error TS6133: 'identifier' is declared but its value is never read.
+src/stores/promptManager.ts(1679,5): error TS6133: 'identifier' is declared but its value is never read.
+src/utils/deviceFingerprint.ts(155,25): error TS2339: Property 'getParameter' does not exist on type 'RenderingContext'.
+  Property 'getParameter' does not exist on type 'CanvasRenderingContext2D'.
+src/utils/deviceFingerprint.ts(156,27): error TS2339: Property 'getParameter' does not exist on type 'RenderingContext'.
+  Property 'getParameter' does not exist on type 'CanvasRenderingContext2D'.
+src/utils/fixStickerUrls.ts(22,12): error TS18046: 'category' is of type 'unknown'.
+src/utils/fixStickerUrls.ts(22,48): error TS18046: 'category' is of type 'unknown'.
+src/utils/fixStickerUrls.ts(28,29): error TS18046: 'category' is of type 'unknown'.
+src/utils/fixStickerUrls.ts(59,34): error TS18046: 'category' is of type 'unknown'.
+src/workers/embeddingWorker.ts(23,11): error TS2307: Cannot find module 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3' or its corresponding type declarations.

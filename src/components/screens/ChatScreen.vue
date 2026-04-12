@@ -9953,6 +9953,8 @@ onUnmounted(() => {
       @stop-a-i-generation="stopAIGeneration"
       @on-mic-down="onMicDown"
       @on-mic-up="onMicUp"
+      @start-recording="startRecording"
+      @finish-recording="finishRecording"
       @send-and-trigger-a-i="sendAndTriggerAI"
       @update:show-text-voice-modal="showTextVoiceModal = $event"
       @update:text-voice-input="textVoiceInput = $event"
