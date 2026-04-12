@@ -116,6 +116,79 @@ const promptListRef = ref<HTMLElement | null>(null);
 // 自訂模塊庫
 const showPromptLibraryModal = ref(false);
 
+// 導入條目
+const showImportModal = ref(false);
+const importFileInput = ref<HTMLInputElement | null>(null);
+const importedPromptItems = ref<ImportedPromptItem[]>([]);
+const selectedImportedPromptIds = ref<string[]>([]);
+const importInsertMode = ref<ImportInsertMode>("end");
+const importAnchorIdentifier = ref("");
+const importSourceFileName = ref("");
+const importStatusMessage = ref("");
+const importErrorMessage = ref("");
+const importedInCurrentSession = ref<string[]>([]);
+
+interface ImportedPromptItem {
+  sourceIdentifier: string;
+  name: string;
+  content: string;
+  role: "system" | "user" | "assistant";
+  enabled: boolean;
+  injection_position: 0 | 1;
+  injection_depth: number;
+  injection_order: number;
+  marker: boolean;
+  system_prompt: boolean;
+}
+
+type ImportInsertMode = "start" | "end" | "before" | "after";
+
+const RESERVED_SYSTEM_IDENTIFIERS = new Set([
+  "main",
+  "nsfw",
+  "jailbreak",
+  "enhanceDefinitions",
+  "charDescription",
+  "charPersonality",
+  "scenario",
+  "personaDescription",
+  "worldInfoBefore",
+  "worldInfoAfter",
+  "dialogueExamples",
+  "chatHistory",
+  "authorsNote",
+]);
+
+const currentOrderChoices = computed(() =>
+  filteredCurrentOrder.value
+    .map((entry) => {
+      const def = getPromptDef(entry.identifier);
+      return {
+        identifier: entry.identifier,
+        name: def?.name || entry.identifier,
+      };
+    })
+    .filter((item) => item.identifier.trim().length > 0),
+);
+
+const selectedImportedPromptCount = computed(
+  () => selectedImportedPromptIds.value.length,
+);
+
+const canSubmitImportedPrompts = computed(() => {
+  if (selectedImportedPromptIds.value.length === 0) return false;
+  if (importInsertMode.value === "before" || importInsertMode.value === "after") {
+    return importAnchorIdentifier.value.trim().length > 0;
+  }
+  return true;
+});
+
+const isAllImportedSelected = computed(
+  () =>
+    importedPromptItems.value.length > 0 &&
+    selectedImportedPromptIds.value.length === importedPromptItems.value.length,
+);
+
 async function addLibraryItemToCurrentMode(item: PromptDefinition) {
   try {
     await promptManagerStore.addCustomPromptForMode(selectedMode.value, {
@@ -130,6 +203,180 @@ async function addLibraryItemToCurrentMode(item: PromptDefinition) {
   } catch (e) {
     console.error(e);
     alert("加入失敗，請看 Console");
+  }
+}
+
+function getImportedPromptType(item: ImportedPromptItem): string {
+  if (item.marker) return "系統插槽";
+  if (RESERVED_SYSTEM_IDENTIFIERS.has(item.sourceIdentifier)) return "核心條目";
+  return "一般條目";
+}
+
+function isImportedPromptRecommended(item: ImportedPromptItem): boolean {
+  return !item.marker && item.content.trim().length > 0;
+}
+
+function clearImportState() {
+  importedPromptItems.value = [];
+  selectedImportedPromptIds.value = [];
+  importInsertMode.value = "end";
+  importAnchorIdentifier.value = "";
+  importSourceFileName.value = "";
+  importStatusMessage.value = "";
+  importErrorMessage.value = "";
+  importedInCurrentSession.value = [];
+  if (importFileInput.value) {
+    importFileInput.value.value = "";
+  }
+}
+
+function openImportPicker() {
+  importErrorMessage.value = "";
+  importStatusMessage.value = "";
+  importFileInput.value?.click();
+}
+
+function parseImportedPromptItems(raw: unknown): ImportedPromptItem[] {
+  if (!raw || typeof raw !== "object" || !Array.isArray((raw as any).prompts)) {
+    throw new Error("找不到 prompts 陣列，這不是可識別的酒館預設格式。");
+  }
+
+  return (raw as any).prompts
+    .filter((item: unknown) => item && typeof item === "object")
+    .map((item: any, index: number) => ({
+      sourceIdentifier: String(item.identifier || `imported_${index}`),
+      name: String(item.name || item.identifier || `導入條目 ${index + 1}`),
+      content: typeof item.content === "string" ? item.content : "",
+      role:
+        item.role === "user" || item.role === "assistant" ? item.role : "system",
+      enabled: item.enabled !== false,
+      injection_position: item.injection_position === 1 ? 1 : 0,
+      injection_depth:
+        typeof item.injection_depth === "number" ? item.injection_depth : 0,
+      injection_order:
+        typeof item.injection_order === "number" ? item.injection_order : 100,
+      marker: Boolean(item.marker),
+      system_prompt: Boolean(item.system_prompt),
+    }));
+}
+
+async function handleImportFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    const items = parseImportedPromptItems(parsed);
+
+    importedPromptItems.value = items;
+    selectedImportedPromptIds.value = items
+      .filter((item) => isImportedPromptRecommended(item))
+      .map((item) => item.sourceIdentifier);
+    importSourceFileName.value = file.name;
+    importStatusMessage.value = `已解析 ${items.length} 個條目，請選擇要插入的內容。`;
+    importErrorMessage.value = "";
+    importedInCurrentSession.value = [];
+    if (
+      (importInsertMode.value === "before" || importInsertMode.value === "after") &&
+      currentOrderChoices.value.length === 0
+    ) {
+      importInsertMode.value = "end";
+    }
+    showImportModal.value = true;
+  } catch (error) {
+    console.error(error);
+    importErrorMessage.value =
+      error instanceof Error ? error.message : "導入失敗，請確認 JSON 格式正確。";
+  } finally {
+    if (input) {
+      input.value = "";
+    }
+  }
+}
+
+function toggleSelectAllImported(selectAll: boolean) {
+  selectedImportedPromptIds.value = selectAll
+    ? importedPromptItems.value.map((item) => item.sourceIdentifier)
+    : [];
+}
+
+function updateImportAnchorOnModeChange() {
+  if (currentOrderChoices.value.length === 0) {
+    importAnchorIdentifier.value = "";
+    if (importInsertMode.value === "before" || importInsertMode.value === "after") {
+      importInsertMode.value = "end";
+    }
+    return;
+  }
+
+  const exists = currentOrderChoices.value.some(
+    (item) => item.identifier === importAnchorIdentifier.value,
+  );
+  if (!exists && (importInsertMode.value === "before" || importInsertMode.value === "after")) {
+    importAnchorIdentifier.value = currentOrderChoices.value[0]?.identifier || "";
+  }
+}
+
+function getImportInsertIndex(count: number): number | undefined {
+  if (importInsertMode.value === "start") return 0;
+  if (importInsertMode.value === "end") return currentOrder.value.length;
+
+  const anchorIndex = currentOrder.value.findIndex(
+    (entry) => entry.identifier === importAnchorIdentifier.value,
+  );
+  if (anchorIndex === -1) return currentOrder.value.length;
+  if (importInsertMode.value === "before") return anchorIndex;
+  return anchorIndex + count;
+}
+
+async function insertSelectedImportedPrompts() {
+  if (!canSubmitImportedPrompts.value) return;
+
+  const selectedItems = importedPromptItems.value.filter((item) =>
+    selectedImportedPromptIds.value.includes(item.sourceIdentifier),
+  );
+  if (selectedItems.length === 0) return;
+
+  importErrorMessage.value = "";
+  importStatusMessage.value = "";
+
+  try {
+    let insertIndex = getImportInsertIndex(0);
+    const insertedIds: string[] = [];
+
+    for (const item of selectedItems) {
+      await promptManagerStore.addCustomPromptForMode(
+        selectedMode.value,
+        {
+          name: item.name,
+          content: item.content,
+          role: item.role,
+          injection_position: item.injection_position,
+          injection_depth: item.injection_depth,
+          injection_order: item.injection_order,
+        },
+        {
+          enabled: item.enabled,
+          insertIndex,
+        },
+      );
+      insertedIds.push(item.sourceIdentifier);
+      if (typeof insertIndex === "number") {
+        insertIndex += 1;
+      }
+      importedInCurrentSession.value.push(item.sourceIdentifier);
+    }
+
+    selectedImportedPromptIds.value = selectedImportedPromptIds.value.filter(
+      (id) => !insertedIds.includes(id),
+    );
+    importStatusMessage.value = `已插入 ${selectedItems.length} 個條目到目前模式。`;
+    updateImportAnchorOnModeChange();
+  } catch (error) {
+    console.error(error);
+    importErrorMessage.value = "插入失敗，請查看 Console。";
   }
 }
 
@@ -613,57 +860,55 @@ async function onTouchDragEnd() {
     dragOverIndex.value = null;
     return;
   }
-
-  const fromIndex = touchDragFromIndex.value;
   const realToIndex = getRealIndex(targetEntry.identifier);
 
-  if (fromIndex !== realToIndex) {
+  if (touchDragFromIndex.value !== realToIndex) {
     if (selectedMode.value === "faceToFace") {
       await promptManagerStore.moveFaceToFacePrompt(
         draggedItem.value.identifier,
-        fromIndex,
+        touchDragFromIndex.value,
         realToIndex,
       );
     } else if (selectedMode.value === "groupChat") {
       await promptManagerStore.moveGroupChatPrompt(
         draggedItem.value.identifier,
-        fromIndex,
+        touchDragFromIndex.value,
         realToIndex,
       );
     } else if (selectedMode.value === "diary") {
       await promptManagerStore.moveDiaryPrompt(
         draggedItem.value.identifier,
-        fromIndex,
+        touchDragFromIndex.value,
         realToIndex,
       );
     } else if (selectedMode.value === "summary") {
       await promptManagerStore.moveSummaryPrompt(
         draggedItem.value.identifier,
-        fromIndex,
+        touchDragFromIndex.value,
         realToIndex,
       );
     } else if (selectedMode.value === "events") {
       await promptManagerStore.moveEventsPrompt(
         draggedItem.value.identifier,
-        fromIndex,
+        touchDragFromIndex.value,
         realToIndex,
       );
     } else if (selectedMode.value === "plurkPost") {
       await promptManagerStore.movePlurkPostPrompt(
         draggedItem.value.identifier,
-        fromIndex,
+        touchDragFromIndex.value,
         realToIndex,
       );
     } else if (selectedMode.value === "plurkComment") {
       await promptManagerStore.movePlurkCommentPrompt(
         draggedItem.value.identifier,
-        fromIndex,
+        touchDragFromIndex.value,
         realToIndex,
       );
     } else {
       await promptManagerStore.movePrompt(
         draggedItem.value.identifier,
-        fromIndex,
+        touchDragFromIndex.value,
         realToIndex,
       );
     }
@@ -799,6 +1044,7 @@ function handlePromptItemClick(identifier: string) {
   }
   // 其他 marker 項目暫不處理
 }
+
 // 保存編輯
 async function saveEdit() {
   if (editingPrompt.value) {
@@ -1004,6 +1250,8 @@ function selectMode(
     selectedCharacterId.value = mode;
     promptManagerStore.setCurrentCharacter(mode);
   }
+
+  updateImportAnchorOnModeChange();
 }
 
 // 創建角色配置
@@ -1240,6 +1488,16 @@ watch(selectedCharacterId, (charId) => {
     promptManagerStore.setCurrentCharacter(charId);
   }
 });
+
+watch(currentOrderChoices, () => {
+  updateImportAnchorOnModeChange();
+});
+
+watch(importInsertMode, (mode) => {
+  if ((mode === "before" || mode === "after") && !importAnchorIdentifier.value) {
+    importAnchorIdentifier.value = currentOrderChoices.value[0]?.identifier || "";
+  }
+});
 </script>
 
 <template>
@@ -1268,6 +1526,15 @@ watch(selectedCharacterId, (charId) => {
               <path
                 d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"
               />
+            </svg>
+          </button>
+          <button
+            class="header-btn"
+            title="導入條目"
+            @click="openImportPicker"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 13h-4v6H9v-6H5l7-7 7 7zm-14 6h14v2H5v-2z" />
             </svg>
           </button>
           <button
@@ -1343,6 +1610,14 @@ watch(selectedCharacterId, (charId) => {
         </details>
       </div>
     </header>
+
+    <input
+      ref="importFileInput"
+      type="file"
+      accept="application/json,.json"
+      class="hidden-file-input"
+      @change="handleImportFileChange"
+    />
 
     <!-- 角色選擇器 -->
     <div class="character-selector">
@@ -1888,6 +2163,166 @@ watch(selectedCharacterId, (charId) => {
                 @click="saveEdit"
               >
                 保存
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 導入條目 -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="showImportModal"
+          class="modal-overlay"
+          @click="showImportModal = false"
+        >
+          <div class="modal modal-lg import-modal" @click.stop>
+            <div class="modal-header">
+              <h3>導入條目</h3>
+              <button class="close-btn" @click="showImportModal = false">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div class="modal-body import-modal-body">
+              <div class="import-toolbar">
+                <div class="import-source">
+                  <div class="section-title">來源檔案</div>
+                  <div class="import-source-name">
+                    {{ importSourceFileName || "尚未選擇檔案" }}
+                  </div>
+                </div>
+                <div class="import-toolbar-actions">
+                  <button class="text-btn primary" @click="openImportPicker">
+                    重新選擇檔案
+                  </button>
+                  <button
+                    class="text-btn"
+                    @click="toggleSelectAllImported(true)"
+                  >
+                    全選
+                  </button>
+                  <button
+                    class="text-btn"
+                    @click="toggleSelectAllImported(false)"
+                  >
+                    取消全選
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="importErrorMessage" class="import-message error">
+                {{ importErrorMessage }}
+              </div>
+              <div v-else-if="importStatusMessage" class="import-message success">
+                {{ importStatusMessage }}
+              </div>
+
+              <div v-if="importedPromptItems.length === 0" class="empty-state">
+                請先選擇酒館預設 JSON，解析後即可從這裡多選並插入到目前模式。
+              </div>
+              <div v-else class="import-layout">
+                <div class="import-list">
+                  <label
+                    v-for="item in importedPromptItems"
+                    :key="item.sourceIdentifier"
+                    class="import-item"
+                    :class="{
+                      recommended: isImportedPromptRecommended(item),
+                      inserted: importedInCurrentSession.includes(item.sourceIdentifier),
+                    }"
+                  >
+                    <input
+                      v-model="selectedImportedPromptIds"
+                      type="checkbox"
+                      :value="item.sourceIdentifier"
+                    />
+                    <div class="import-item-main">
+                      <div class="import-item-header">
+                        <span class="import-item-name">{{ item.name }}</span>
+                        <span class="import-badge type">{{ getImportedPromptType(item) }}</span>
+                        <span class="import-badge role">{{ item.role }}</span>
+                        <span v-if="item.enabled" class="import-badge enabled">啟用</span>
+                        <span
+                          v-if="importedInCurrentSession.includes(item.sourceIdentifier)"
+                          class="import-badge inserted"
+                        >
+                          已插入
+                        </span>
+                      </div>
+                      <div class="import-item-meta">
+                        {{ item.sourceIdentifier }}
+                      </div>
+                      <div class="import-item-preview">
+                        {{ item.content || "此條目沒有固定內容。" }}
+                      </div>
+                    </div>
+                  </label>
+                </div>
+
+                <div class="import-side-panel">
+                  <div class="section-title">插入設定</div>
+                  <div class="form-group">
+                    <label class="form-label">目前模式</label>
+                    <div class="import-current-mode">{{ selectedMode === "global" ? "全局設定" : selectedMode }}</div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">已選條目</label>
+                    <div class="import-selection-count">{{ selectedImportedPromptCount }} 個</div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">插入位置</label>
+                    <select v-model="importInsertMode" class="select-field">
+                      <option value="start">插到最前面</option>
+                      <option value="end">插到最後面</option>
+                      <option value="before" :disabled="currentOrderChoices.length === 0">
+                        插到某條目前面
+                      </option>
+                      <option value="after" :disabled="currentOrderChoices.length === 0">
+                        插到某條目後面
+                      </option>
+                    </select>
+                  </div>
+                  <div
+                    v-if="importInsertMode === 'before' || importInsertMode === 'after'"
+                    class="form-group"
+                  >
+                    <label class="form-label">參考條目</label>
+                    <select v-model="importAnchorIdentifier" class="select-field">
+                      <option disabled value="">請選擇條目</option>
+                      <option
+                        v-for="item in currentOrderChoices"
+                        :key="item.identifier"
+                        :value="item.identifier"
+                      >
+                        {{ item.name }}
+                      </option>
+                    </select>
+                  </div>
+                  <div class="import-tip">
+                    插入後會留在這個彈窗，你可以繼續挑選其他條目再插入。
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn secondary" @click="showImportModal = false">
+                關閉
+              </button>
+              <button class="btn secondary" @click="clearImportState">
+                清空
+              </button>
+              <button
+                class="btn primary"
+                :disabled="!canSubmitImportedPrompts"
+                @click="insertSelectedImportedPrompts"
+              >
+                插入到目前模式
               </button>
             </div>
           </div>
@@ -2548,6 +2983,195 @@ watch(selectedCharacterId, (charId) => {
   text-align: center;
   padding: 16px;
   color: var(--color-text-muted);
+}
+
+.hidden-file-input {
+  display: none;
+}
+
+.import-modal {
+  width: min(960px, calc(100vw - 32px));
+}
+
+.import-modal-body {
+  gap: 16px;
+}
+
+.import-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.import-source {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.import-source-name,
+.import-current-mode,
+.import-selection-count {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.import-toolbar-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.import-message {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+
+.import-message.success {
+  background: rgba(34, 197, 94, 0.1);
+  color: #15803d;
+}
+
+.import-message.error {
+  background: rgba(239, 68, 68, 0.1);
+  color: #b91c1c;
+}
+
+.import-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 16px;
+  min-height: 400px;
+  height: calc(100vh - 280px);
+  max-height: 600px;
+}
+
+.import-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.import-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.import-item.recommended {
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+.import-item.inserted {
+  background: rgba(34, 197, 94, 0.06);
+}
+
+.import-item input[type="checkbox"] {
+  margin-top: 4px;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
+}
+
+.import-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.import-item-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.import-item-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.import-item-meta {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  word-break: break-all;
+}
+
+.import-item-preview {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+
+.import-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.import-badge.type {
+  background: rgba(139, 92, 246, 0.12);
+  color: #7c3aed;
+}
+
+.import-badge.role {
+  background: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
+}
+
+.import-badge.enabled {
+  background: rgba(34, 197, 94, 0.12);
+  color: #15803d;
+}
+
+.import-badge.inserted {
+  background: rgba(249, 115, 22, 0.12);
+  color: #c2410c;
+}
+
+.import-side-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-background);
+  height: fit-content;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.import-tip {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
 }
 
 // 角色選擇器
@@ -3666,6 +4290,25 @@ watch(selectedCharacterId, (charId) => {
 .preset-desc {
   font-size: 12px;
   color: var(--color-text-muted);
+}
+
+@media (max-width: 900px) {
+  .import-layout {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 200px);
+    max-height: none;
+  }
+  
+  .import-list {
+    flex: 1;
+    min-height: 200px;
+  }
+  
+  .import-side-panel {
+    flex-shrink: 0;
+    max-height: 220px;
+  }
 }
 </style>
 

@@ -804,21 +804,19 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     await saveConfig();
   }
 
-  /**
-   * 添加自定義提示詞
-   */
-  async function addCustomPrompt(
+  function createCustomPromptDefinition(
+    identifier: string,
     prompt: Partial<PromptDefinition>,
-  ): Promise<PromptDefinition> {
-    const identifier = `custom_${Date.now()}`;
-    const newPrompt: PromptDefinition = {
+    systemPrompt: boolean,
+  ): PromptDefinition {
+    return {
       identifier,
       name: prompt.name || "自定義提示詞",
       description: prompt.description || "",
       category: prompt.category || "custom",
       role: prompt.role || "system",
       content: prompt.content || "",
-      system_prompt: false,
+      system_prompt: systemPrompt,
       marker: false,
       injection_position: prompt.injection_position ?? 0,
       injection_depth: prompt.injection_depth ?? 0,
@@ -829,14 +827,43 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
       isEditable: true,
       isDeletable: true,
     };
+  }
+
+  function insertOrderEntryAt(
+    order: PromptOrderEntry[],
+    entry: PromptOrderEntry,
+    insertIndex?: number,
+  ): void {
+    if (typeof insertIndex !== "number" || Number.isNaN(insertIndex)) {
+      order.push(entry);
+      return;
+    }
+
+    const safeIndex = Math.max(0, Math.min(insertIndex, order.length));
+    order.splice(safeIndex, 0, entry);
+  }
+
+  /**
+   * 添加自定義提示詞
+   */
+  async function addCustomPrompt(
+    prompt: Partial<PromptDefinition>,
+    options?: { insertIndex?: number; enabled?: boolean },
+  ): Promise<PromptDefinition> {
+    const identifier = `custom_${Date.now()}`;
+    const newPrompt = createCustomPromptDefinition(identifier, prompt, false);
 
     config.value.prompts.push(newPrompt);
 
     // 添加到順序列表
-    config.value.globalPromptOrder.push({
-      identifier,
-      enabled: true,
-    });
+    insertOrderEntryAt(
+      config.value.globalPromptOrder,
+      {
+        identifier,
+        enabled: options?.enabled ?? true,
+      },
+      options?.insertIndex,
+    );
 
     await saveConfig();
     return newPrompt;
@@ -1753,6 +1780,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
    */
   async function addFaceToFaceCustomPrompt(
     prompt: Partial<PromptDefinition>,
+    options?: { insertIndex?: number; enabled?: boolean },
   ): Promise<PromptDefinition> {
     if (!config.value.faceToFacePrompts) {
       config.value.faceToFacePrompts = structuredClone(
@@ -1766,30 +1794,17 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     }
 
     const identifier = `f2f_custom_${Date.now()}`;
-    const newPrompt: PromptDefinition = {
-      identifier,
-      name: prompt.name || "自定義提示詞",
-      description: prompt.description || "",
-      category: prompt.category || "custom",
-      role: prompt.role || "system",
-      content: prompt.content || "",
-      system_prompt: true,
-      marker: false,
-      injection_position: prompt.injection_position ?? 0,
-      injection_depth: prompt.injection_depth ?? 0,
-      injection_order: prompt.injection_order ?? 100,
-      forbid_overrides: false,
-      extension: false,
-      injection_trigger: prompt.injection_trigger || [],
-      isEditable: true,
-      isDeletable: true,
-    };
+    const newPrompt = createCustomPromptDefinition(identifier, prompt, true);
 
     config.value.faceToFacePrompts.push(newPrompt);
-    config.value.faceToFacePromptOrder.push({
-      identifier,
-      enabled: true,
-    });
+    insertOrderEntryAt(
+      config.value.faceToFacePromptOrder,
+      {
+        identifier,
+        enabled: options?.enabled ?? true,
+      },
+      options?.insertIndex,
+    );
 
     await saveConfig();
     return newPrompt;
@@ -1800,6 +1815,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
    */
   async function addGroupChatCustomPrompt(
     prompt: Partial<PromptDefinition>,
+    options?: { insertIndex?: number; enabled?: boolean },
   ): Promise<PromptDefinition> {
     if (!config.value.groupChatPrompts) {
       config.value.groupChatPrompts = structuredClone(
@@ -1813,30 +1829,17 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     }
 
     const identifier = `gc_custom_${Date.now()}`;
-    const newPrompt: PromptDefinition = {
-      identifier,
-      name: prompt.name || "自定義提示詞",
-      description: prompt.description || "",
-      category: prompt.category || "custom",
-      role: prompt.role || "system",
-      content: prompt.content || "",
-      system_prompt: true,
-      marker: false,
-      injection_position: prompt.injection_position ?? 0,
-      injection_depth: prompt.injection_depth ?? 0,
-      injection_order: prompt.injection_order ?? 100,
-      forbid_overrides: false,
-      extension: false,
-      injection_trigger: prompt.injection_trigger || [],
-      isEditable: true,
-      isDeletable: true,
-    };
+    const newPrompt = createCustomPromptDefinition(identifier, prompt, true);
 
     config.value.groupChatPrompts.push(newPrompt);
-    config.value.groupChatPromptOrder.push({
-      identifier,
-      enabled: true,
-    });
+    insertOrderEntryAt(
+      config.value.groupChatPromptOrder,
+      {
+        identifier,
+        enabled: options?.enabled ?? true,
+      },
+      options?.insertIndex,
+    );
 
     await saveConfig();
     return newPrompt;
@@ -1848,6 +1851,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
   async function addCustomPromptForMode(
     mode: string,
     prompt: Partial<PromptDefinition>,
+    options?: { insertIndex?: number; enabled?: boolean },
   ): Promise<PromptDefinition> {
     // 模式前綴映射
     const prefixMap: Record<string, string> = {
@@ -1904,33 +1908,17 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     };
 
     // 已有專用函數的模式直接委派
-    if (mode === "global") return addCustomPrompt(prompt);
-    if (mode === "faceToFace") return addFaceToFaceCustomPrompt(prompt);
-    if (mode === "groupChat") return addGroupChatCustomPrompt(prompt);
+    if (mode === "global") return addCustomPrompt(prompt, options);
+    if (mode === "faceToFace")
+      return addFaceToFaceCustomPrompt(prompt, options);
+    if (mode === "groupChat") return addGroupChatCustomPrompt(prompt, options);
 
     const mapping = configMap[mode];
-    if (!mapping) return addCustomPrompt(prompt); // fallback
+    if (!mapping) return addCustomPrompt(prompt, options); // fallback
 
     const prefix = prefixMap[mode] || "custom";
     const identifier = `${prefix}_${Date.now()}`;
-    const newPrompt: PromptDefinition = {
-      identifier,
-      name: prompt.name || "自定義提示詞",
-      description: prompt.description || "",
-      category: prompt.category || "custom",
-      role: prompt.role || "system",
-      content: prompt.content || "",
-      system_prompt: true,
-      marker: false,
-      injection_position: prompt.injection_position ?? 0,
-      injection_depth: prompt.injection_depth ?? 0,
-      injection_order: prompt.injection_order ?? 100,
-      forbid_overrides: false,
-      extension: false,
-      injection_trigger: prompt.injection_trigger || [],
-      isEditable: true,
-      isDeletable: true,
-    };
+    const newPrompt = createCustomPromptDefinition(identifier, prompt, true);
 
     // 確保 prompts 陣列存在
     if (!(config.value as any)[mapping.prompts]) {
@@ -1946,10 +1934,14 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
         mapping.defaultOrder,
       );
     }
-    (config.value as any)[mapping.order].push({
-      identifier,
-      enabled: true,
-    });
+    insertOrderEntryAt(
+      (config.value as any)[mapping.order],
+      {
+        identifier,
+        enabled: options?.enabled ?? true,
+      },
+      options?.insertIndex,
+    );
 
     await saveConfig();
     return newPrompt;
