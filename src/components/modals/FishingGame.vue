@@ -462,7 +462,7 @@
                     <span>收竿！</span>
                   </button>
                   <button
-                    v-if="gamePhase === 'caught' || gamePhase === 'missed'"
+                    v-if="gamePhase === 'caught' || gamePhase === 'missed' || gamePhase === 'trash'"
                     class="continue-btn pixel-btn"
                     @click="resetGame"
                   >
@@ -498,6 +498,30 @@
                     <div class="fish-price">
                       <Coins :size="14" />
                       <span>{{ caughtFish.finalPrice }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </transition>
+
+            <!-- 釣到垃圾展示 -->
+            <transition name="catch-result">
+              <div
+                v-if="trashResult && gamePhase === 'trash'"
+                class="catch-result trash-result"
+              >
+                <div class="fish-card trash">
+                  <div class="fish-icon trash-icon">
+                    <Trash2 :size="32" />
+                  </div>
+                  <div class="fish-info">
+                    <div class="fish-name trash-name">釣到垃圾！</div>
+                    <div class="fish-details">
+                      <span class="trash-item-name">{{ trashResult.name }}</span>
+                    </div>
+                    <div class="fish-price trash-cost">
+                      <Coins :size="14" />
+                      <span>-{{ trashResult.cost }}</span>
                     </div>
                   </div>
                 </div>
@@ -628,6 +652,7 @@ import {
     Clock,
     Coins,
     Fish,
+    Trash2,
     Gift,
     Heart,
     HelpCircle,
@@ -645,6 +670,7 @@ type GamePhase =
   | "waiting"
   | "hooked"
   | "caught"
+  | "trash"
   | "missed";
 
 const props = defineProps<{
@@ -667,6 +693,7 @@ const GLOBAL_WALLET_ID = "global";
 // 遊戲狀態
 const gamePhase = ref<GamePhase>("idle");
 const caughtFish = ref<CaughtFish | null>(null);
+const trashResult = ref<{ name: string; cost: number } | null>(null);
 const showRodSelector = ref(false);
 const showGuide = ref(false);
 
@@ -849,8 +876,23 @@ async function reelIn() {
   // 執行釣魚邏輯
   const result = gameEconomyStore.catchFish(GLOBAL_WALLET_ID);
 
-  if (result.success && result.fish) {
+  if (result.success && result.isTrash) {
+    // 釣到垃圾
+    trashResult.value = {
+      name: result.trashName!,
+      cost: result.trashCost!,
+    };
+    caughtFish.value = null;
+    gamePhase.value = "trash";
+
+    await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
+
+    if (result.rodBroken) {
+      notificationStore.notifyFishingStamina();
+    }
+  } else if (result.success && result.fish) {
     caughtFish.value = result.fish;
+    trashResult.value = null;
     gamePhase.value = "caught";
 
     // 保存狀態
@@ -872,6 +914,7 @@ function resetGame() {
   clearTimers();
   gamePhase.value = "idle";
   caughtFish.value = null;
+  trashResult.value = null;
 }
 
 async function selectRod(rod: FishingRod) {
@@ -2046,6 +2089,33 @@ $pixel-font: "Press Start 2P", "Courier New", monospace;
   padding: 16px 20px;
   background: #fef3c7;
   border-bottom: $pixel-border;
+
+  &.trash-result {
+    background: #fde2e2;
+  }
+}
+
+.fish-card.trash {
+  border-color: #991b1b;
+  background: #fff5f5;
+
+  .trash-icon {
+    color: #991b1b;
+  }
+
+  .trash-name {
+    color: #991b1b !important;
+  }
+
+  .trash-item-name {
+    font-size: 11px;
+    color: #6b7280;
+  }
+
+  .trash-cost {
+    color: #dc2626 !important;
+    font-weight: bold;
+  }
 }
 
 .fish-card {

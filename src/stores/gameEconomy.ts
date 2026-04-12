@@ -10,6 +10,8 @@ import {
     calculateFishPrice,
     generateRandomWeight,
     getRandomFishType,
+    getRandomTrash,
+    getTrashCatchRate,
 } from "@/data/fishTypes";
 import {
     FRAME_ITEMS,
@@ -57,9 +59,9 @@ const IDLE_CONFIG = {
   /** 最大掛機時長（24 小時，毫秒） */
   MAX_DURATION_MS: 24 * 60 * 60 * 1000,
   /** 每分鐘最少釣魚數 */
-  FISH_PER_MINUTE_MIN: 4,
+  FISH_PER_MINUTE_MIN: 1,
   /** 每分鐘最多釣魚數 */
-  FISH_PER_MINUTE_MAX: 8,
+  FISH_PER_MINUTE_MAX: 3,
 } as const;
 
 /** 賭博系統相關常量 */
@@ -114,6 +116,12 @@ export interface FishingResult {
   error?: "no_rod_equipped" | "rod_broken" | "no_fish_available";
   /** 釣到的魚 */
   fish?: CaughtFish;
+  /** 是否釣到垃圾 */
+  isTrash?: boolean;
+  /** 垃圾名稱 */
+  trashName?: string;
+  /** 垃圾清理費用 */
+  trashCost?: number;
   /** 魚竿剩餘耐久度 */
   remainingDurability?: number;
   /** 魚竿是否損壞 */
@@ -1382,12 +1390,6 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
       return { success: false, error: "rod_broken" };
     }
 
-    // 生成魚
-    const fish = generateFish(rod);
-    if (!fish) {
-      return { success: false, error: "no_fish_available" };
-    }
-
     // 消耗魚竿耐久度
     rod.durability -= 1;
 
@@ -1401,6 +1403,37 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
       if (rodIndex !== -1) {
         state.fishingRods.splice(rodIndex, 1);
       }
+    }
+
+    // 判定是否釣到垃圾（20% 機率）
+    if (Math.random() < getTrashCatchRate()) {
+      const trash = getRandomTrash();
+      // 扣除清理費用（不會低於 0）
+      const actualCost = Math.min(trash.disposalCost, state.wallet);
+      if (actualCost > 0) {
+        spendMoney(
+          chatId,
+          actualCost,
+          "fishing",
+          `清理垃圾：${trash.name}`,
+          trash.id,
+        );
+      }
+      _scheduleAutoSave(chatId);
+      return {
+        success: true,
+        isTrash: true,
+        trashName: trash.name,
+        trashCost: trash.disposalCost,
+        remainingDurability: rod.durability,
+        rodBroken,
+      };
+    }
+
+    // 生成魚
+    const fish = generateFish(rod);
+    if (!fish) {
+      return { success: false, error: "no_fish_available" };
     }
 
     // 將魚加入魚簍
@@ -1667,9 +1700,28 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
     // 記錄實際釣到的魚數量
     const actualFishCount = rewards.fishCount;
 
-    // 生成魚
+    // 生成魚（含垃圾判定）
     const caughtFish: CaughtFish[] = [];
+    let trashCount = 0;
+    let totalTrashCost = 0;
     for (let i = 0; i < actualFishCount; i++) {
+      // 每次獨立判定垃圾機率（20%~40% 浮動）
+      if (Math.random() < getTrashCatchRate()) {
+        const trash = getRandomTrash();
+        const actualCost = Math.min(trash.disposalCost, state.wallet);
+        if (actualCost > 0) {
+          spendMoney(
+            chatId,
+            actualCost,
+            "fishing",
+            `掛機清理垃圾：${trash.name}`,
+            trash.id,
+          );
+        }
+        trashCount++;
+        totalTrashCost += trash.disposalCost;
+        continue;
+      }
       const fish = generateFish(rod);
       if (fish) {
         caughtFish.push(fish);
@@ -1678,8 +1730,8 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
       }
     }
 
-    // 消耗魚竿耐久度（只消耗實際釣到的魚數量）
-    rod.durability = Math.max(0, rod.durability - caughtFish.length);
+    // 消耗魚竿耐久度（魚 + 垃圾都消耗耐久）
+    rod.durability = Math.max(0, rod.durability - (caughtFish.length + trashCount));
 
     // 檢查魚竿是否損壞
     const rodBroken = rod.durability <= 0;
