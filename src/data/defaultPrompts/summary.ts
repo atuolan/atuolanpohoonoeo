@@ -107,7 +107,7 @@ export const SUMMARY_PROMPT_DEFINITIONS: PromptDefinition[] = [
     category: "director",
     role: "system",
     content: `【总结要求】
-1. 以第一人称（"我"）描述发生的事情
+1. 讓{{char}}以第一人称（"我"）描述发生的事情
 2. 要直白易懂，清楚说明发生了什么
 3. 根据对话的复杂程度，字数控制在 100-300 字
 4. 语气要自然，符合{{char}}的性格
