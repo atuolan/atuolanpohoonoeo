@@ -216,6 +216,18 @@ type PageType =
   | "pomodoro-focus";
 const currentPage = ref<PageType>("home");
 
+type AppHistoryState = {
+  __aguaphone: true;
+  page: PageType;
+  navigationHistory: PageType[];
+  selectedCharacterId: string | null;
+  selectedLorebookId: string | null;
+  isCreatingNew: boolean;
+  currentChatId: string | null;
+  currentChatCharacterId: string | null;
+  pendingTheaterPostId?: string;
+};
+
 // 導航歷史堆疊（用於快捷導航返回）
 const navigationHistory = ref<PageType[]>([]);
 
@@ -327,6 +339,97 @@ const currentBook = ref<StoredBook | null>(null);
 const peekPhoneCharacterId = ref<string | null>(null);
 const peekPhoneChatId = ref<string | null>(null);
 
+let isApplyingPopState = false;
+
+function buildHistoryState(page: PageType = currentPage.value): AppHistoryState {
+  return {
+    __aguaphone: true,
+    page,
+    navigationHistory: [...navigationHistory.value],
+    selectedCharacterId: selectedCharacterId.value,
+    selectedLorebookId: selectedLorebookId.value,
+    isCreatingNew: isCreatingNew.value,
+    currentChatId: currentChatId.value,
+    currentChatCharacterId: currentChatCharacterId.value,
+    pendingTheaterPostId: pendingTheaterPostId.value,
+  };
+}
+
+function applyHistoryState(state: AppHistoryState) {
+  navigationHistory.value = [...state.navigationHistory];
+  currentPage.value = state.page;
+  selectedCharacterId.value = state.selectedCharacterId;
+  selectedLorebookId.value = state.selectedLorebookId;
+  isCreatingNew.value = state.isCreatingNew;
+  currentChatId.value = state.currentChatId;
+  currentChatCharacterId.value = state.currentChatCharacterId;
+  pendingTheaterPostId.value = state.pendingTheaterPostId;
+
+  if (state.page !== "bookshelf") {
+    currentBook.value = null;
+  }
+}
+
+function syncBrowserHistory(mode: "push" | "replace" = "push", page: PageType = currentPage.value) {
+  if (isApplyingPopState || !authStore.isAuthenticated || typeof window === "undefined") {
+    return;
+  }
+
+  const state = buildHistoryState(page);
+  if (mode === "replace") {
+    window.history.replaceState(state, "");
+  } else {
+    window.history.pushState(state, "");
+  }
+}
+
+function navigateToPage(
+  page: PageType,
+  options: {
+    mode?: "push" | "replace";
+    historyStack?: PageType[];
+  } = {},
+) {
+  if (options.historyStack) {
+    navigationHistory.value = [...options.historyStack];
+  }
+  currentPage.value = page;
+  syncBrowserHistory(options.mode ?? "push", page);
+}
+
+function resetToPage(page: PageType) {
+  navigationHistory.value = [];
+  navigateToPage(page, { mode: "replace" });
+}
+
+function navigateBackWithFallback(fallback: () => void) {
+  if (typeof window !== "undefined" && window.history.state?.__aguaphone) {
+    window.history.back();
+    return;
+  }
+  fallback();
+}
+
+function handleBrowserPopState(event: PopStateEvent) {
+  const state = event.state as AppHistoryState | null;
+  if (!state?.__aguaphone) {
+    return;
+  }
+
+  isApplyingPopState = true;
+  applyHistoryState(state);
+  isApplyingPopState = false;
+}
+
+function initializeBrowserHistory() {
+  if (!authStore.isAuthenticated || typeof window === "undefined") {
+    return;
+  }
+
+  const initialState = buildHistoryState("home");
+  window.history.replaceState(initialState, "");
+}
+
 // ===== 來電功能 =====
 const showIncomingCallModal = ref(false);
 const currentPendingCall = ref<PendingCall | null>(null);
@@ -410,7 +513,7 @@ async function handleIncomingCallAccept() {
     currentChatCharacterId.value = pendingCall.characterId;
     currentChatId.value = pendingCall.chatId || null;
     pendingIncomingCallReason.value = pendingCall.reason;
-    currentPage.value = "chat";
+    navigateToPage("chat");
   }
 
   currentPendingCall.value = null;
@@ -808,6 +911,7 @@ watch(
   (authenticated) => {
     if (authenticated) {
       void loadAppData();
+      initializeBrowserHistory();
     }
   },
 );
@@ -820,10 +924,12 @@ onMounted(async () => {
   // 已驗證則立即載入資料；未驗證則等 watch 觸發
   if (authStore.isAuthenticated) {
     await loadAppData();
+    initializeBrowserHistory();
   }
 
   // 監聽 SW 更新事件
   window.addEventListener("sw:update-available", handleSwUpdate);
+  window.addEventListener("popstate", handleBrowserPopState);
 });
 
 onUnmounted(() => {
@@ -837,6 +943,7 @@ onUnmounted(() => {
   document.removeEventListener("visibilitychange", handleVisibilityChange);
   // 移除 SW 更新監聽
   window.removeEventListener("sw:update-available", handleSwUpdate);
+  window.removeEventListener("popstate", handleBrowserPopState);
   // 停止雲端推送心跳
   stopCloudPushHeartbeat();
 });
@@ -851,38 +958,38 @@ const themeStyle = computed(() => ({
 // 處理導航（支援 Dock 和 Widget 點擊）
 function handleNavigate(page: string) {
   if (page === "character" || page === "worldbook" || page === "settings") {
-    currentPage.value = page as PageType;
+    navigateToPage(page as PageType);
   } else if (page === "book") {
     // 世界書的 id 是 'book'
-    currentPage.value = "worldbook";
+    navigateToPage("worldbook");
   } else if (page === "message" || page === "chat") {
     // 訊息進入聊天列表
-    currentPage.value = "chat-list";
+    navigateToPage("chat-list");
   } else if (page === "music") {
     // 音樂 App
-    currentPage.value = "music";
+    navigateToPage("music");
   } else if (page === "qzone" || page === "plurk" || page === "space") {
     // 噗浪空間（space 是 Dock 中的 id）
-    currentPage.value = "qzone";
+    navigateToPage("qzone");
   } else if (page === "user" || page === "使用者") {
     // 使用者設定
-    currentPage.value = "user";
+    navigateToPage("user");
   } else if (page === "weather" || page === "天氣") {
     // 天氣設定
-    currentPage.value = "weather";
+    navigateToPage("weather");
   } else if (page === "shop" || page === "購物" || page === "商城") {
     // 商城
-    currentPage.value = "shop";
+    navigateToPage("shop");
   } else if (page === "game-center" || page === "遊戲" || page === "game") {
     // 遊戲中心
-    currentPage.value = "game-center";
+    navigateToPage("game-center");
   } else if (page === "delivery" || page === "外賣" || page === "外送") {
     // 外賣商城
-    currentPage.value = "delivery-mall";
+    navigateToPage("delivery-mall");
   } else if (page === "theater" || page === "小劇場") {
     // 小劇場（記錄來源頁面）
     navigationHistory.value.push(currentPage.value);
-    currentPage.value = "theater";
+    navigateToPage("theater");
   } else if (page === "media-log") {
     // 書影記錄
     showMediaLogManager.value = true;
@@ -894,13 +1001,13 @@ function handleNavigate(page: string) {
     showMediaLogManager.value = true;
   } else if (page === "閱讀" || page === "bookshelf") {
     // 書架
-    currentPage.value = "bookshelf";
+    navigateToPage("bookshelf");
   } else if (page === "calendar" || page === "行事曆") {
     // 行事曆
-    currentPage.value = "calendar";
+    navigateToPage("calendar");
   } else if (page === "fitness" || page === "健身" || page === "workout") {
     // 健身 App
-    currentPage.value = "fitness";
+    navigateToPage("fitness");
   } else if (page === "phone") {
     // 電話：打開聯絡人選擇
     showPhoneContactPicker.value = true;
@@ -911,20 +1018,19 @@ function handleNavigate(page: string) {
     page === "頭盔TA"
   ) {
     // 頭盔TA手機
-    currentPage.value = "peek-phone-select";
+    navigateToPage("peek-phone-select");
   } else if (page === "fate" || page === "占卜" || page === "tarot") {
     // 塔羅占卜
-    currentPage.value = "fate";
+    navigateToPage("fate");
   } else if (page === "pomodoro" || page === "專注" || page === "番茄鐘") {
     // 番茄鐘
-    currentPage.value = "pomodoro";
+    navigateToPage("pomodoro");
   }
 }
 
 // 返回主頁
 function goHome() {
-  navigationHistory.value = [];
-  currentPage.value = "home";
+  resetToPage("home");
   selectedCharacterId.value = null;
   selectedLorebookId.value = null;
   isCreatingNew.value = false;
@@ -939,35 +1045,33 @@ function handlePomodoroStartFocus(taskId: string) {
     const task = pomodoroStore.tasks.find((t) => t.id === taskId);
     if (task) {
       pomodoroStore.startSession(task);
-      currentPage.value = "pomodoro-focus";
+      navigateToPage("pomodoro-focus");
     }
   });
 }
 
 function handlePomodoroCertClose() {
   showPomodoroCert.value = false;
-  currentPage.value = "pomodoro";
+  navigateToPage("pomodoro", { mode: "replace" });
 }
 
 function handlePomodoroCertForward(summary: string) {
   showPomodoroCert.value = false;
   // TODO: 轉發到聊天（需要選擇角色）
   console.log("[Pomodoro] 轉發到聊天:", summary);
-  currentPage.value = "pomodoro";
+  navigateToPage("pomodoro", { mode: "replace" });
 }
 
 // 返回角色列表
 function goToCharacterList() {
-  navigationHistory.value = [];
-  currentPage.value = "character";
+  resetToPage("character");
   selectedCharacterId.value = null;
   isCreatingNew.value = false;
 }
 
 // 返回世界書列表
 function goToLorebookList() {
-  navigationHistory.value = [];
-  currentPage.value = "worldbook";
+  resetToPage("worldbook");
   selectedLorebookId.value = null;
   isCreatingNew.value = false;
 }
@@ -977,7 +1081,7 @@ function openCharacterEdit(id: string) {
   navigationHistory.value.push(currentPage.value);
   selectedCharacterId.value = id;
   isCreatingNew.value = false;
-  currentPage.value = "character-edit";
+  navigateToPage("character-edit");
 }
 
 // 創建新角色
@@ -985,13 +1089,13 @@ function createNewCharacter() {
   navigationHistory.value.push(currentPage.value);
   selectedCharacterId.value = null;
   isCreatingNew.value = true;
-  currentPage.value = "character-edit";
+  navigateToPage("character-edit");
 }
 
 // 從角色編輯頁返回
 function goBackFromCharacterEdit() {
   if (navigationHistory.value.length > 0) {
-    currentPage.value = navigationHistory.value.pop()!;
+    navigateBackWithFallback(goToCharacterList);
   } else {
     goToCharacterList();
   }
@@ -1002,7 +1106,7 @@ function openLorebookEdit(id: string) {
   navigationHistory.value.push(currentPage.value);
   selectedLorebookId.value = id;
   isCreatingNew.value = false;
-  currentPage.value = "worldbook-edit";
+  navigateToPage("worldbook-edit");
 }
 
 // 創建新世界書
@@ -1010,13 +1114,13 @@ function createNewLorebook() {
   navigationHistory.value.push(currentPage.value);
   selectedLorebookId.value = null;
   isCreatingNew.value = true;
-  currentPage.value = "worldbook-edit";
+  navigateToPage("worldbook-edit");
 }
 
 // 從世界書編輯頁返回
 function goBackFromLorebookEdit() {
   if (navigationHistory.value.length > 0) {
-    currentPage.value = navigationHistory.value.pop()!;
+    navigateBackWithFallback(goToLorebookList);
   } else {
     goToLorebookList();
   }
@@ -1024,8 +1128,7 @@ function goBackFromLorebookEdit() {
 
 // 返回聊天列表
 function goToChatList() {
-  navigationHistory.value = [];
-  currentPage.value = "chat-list";
+  resetToPage("chat-list");
   currentChatId.value = null;
   currentChatCharacterId.value = null;
 }
@@ -1057,7 +1160,7 @@ async function startChat(characterId: string) {
     chatCharacterAvatar.value = character.avatar || "";
     currentChatCharacterId.value = characterId;
     currentChatId.value = existingChats[0].id;
-    currentPage.value = "chat";
+    navigateToPage("chat");
     return;
   }
 
@@ -1068,7 +1171,7 @@ async function startChat(characterId: string) {
     chatCharacterAvatar.value = character.avatar || "";
     currentChatCharacterId.value = characterId;
     currentChatId.value = null;
-    currentPage.value = "chat";
+    navigateToPage("chat");
     return;
   }
 
@@ -1091,7 +1194,7 @@ function chatPickerOpenExisting(chatId: string) {
   chatCharacterAvatar.value = character.avatar || "";
   currentChatCharacterId.value = chatPickerCharacterId.value;
   currentChatId.value = chatId;
-  currentPage.value = "chat";
+  navigateToPage("chat");
 }
 
 /** 角色庫選擇彈窗：建立新聊天（帶開場白選擇） */
@@ -1139,7 +1242,7 @@ async function chatPickerCreateNew(withGreeting: boolean) {
   await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(newChat)));
 
   currentChatId.value = newChat.id;
-  currentPage.value = "chat";
+  navigateToPage("chat");
 }
 
 // 開始多人卡模式聊天（從角色列表長按或選單觸發）
@@ -1203,7 +1306,7 @@ async function handleMultiCharConfirm(
   chatCharacterAvatar.value = character.avatar || "";
   currentChatCharacterId.value = characterId;
   currentChatId.value = chat.id;
-  currentPage.value = "chat";
+  navigateToPage("chat");
 }
 
 // 從電話聯絡人選擇器撥打電話
@@ -1232,7 +1335,7 @@ async function startPhoneCall(characterId: string) {
     }
 
     startPhoneCallFlag.value = true;
-    currentPage.value = "chat";
+    navigateToPage("chat");
   }
 }
 
@@ -1288,7 +1391,7 @@ async function handleDownloadEmbeddingModel() {
 /** 前往設定頁面配置遠端 API */
 function handleGoToEmbeddingSettings() {
   showEmbeddingModelPrompt.value = false;
-  currentPage.value = "settings";
+  navigateToPage("settings");
 }
 
 /** 關閉向量記憶 */
@@ -1311,7 +1414,7 @@ function openExistingChat(chatId: string, characterId: string) {
   }
   currentChatId.value = chatId;
   currentChatCharacterId.value = characterId;
-  currentPage.value = "chat";
+  navigateToPage("chat");
 }
 
 // ChatScreen 內部切換聊天檔案時同步 chatId（不重建組件）
@@ -1368,7 +1471,7 @@ async function handleGameShareToChat(characterId: string, message: string) {
     currentChatCharacterId.value = characterId;
     currentChatId.value = await resolvePreferredChatId(characterId);
     pendingChatMessage.value = message;
-    currentPage.value = "chat";
+    navigateToPage("chat");
   }
 }
 
@@ -1404,7 +1507,7 @@ async function handleMusicShareToChat(payload: {
       lyrics,
     },
   };
-  currentPage.value = "chat";
+  navigateToPage("chat");
 }
 
 // 外賣商城分享/下單注入聊天
@@ -1422,7 +1525,7 @@ async function handleDeliveryMallSendToChat(payload: {
     currentChatCharacterId.value = payload.characterId;
     currentChatId.value = await resolvePreferredChatId(payload.characterId);
     pendingChatMessage.value = payload.message;
-    currentPage.value = "chat";
+    navigateToPage("chat");
   }
 }
 
@@ -1601,17 +1704,17 @@ function handleSaveChatAppearance(appearance: ChatAppearance) {
 
 // 打開提示詞管理
 function openPromptManager() {
-  currentPage.value = "prompt-manager";
+  navigateToPage("prompt-manager");
 }
 
 // 打開正則腳本管理
 function openRegexScripts() {
-  currentPage.value = "regex-scripts";
+  navigateToPage("regex-scripts");
 }
 
 // 返回設定頁
 function goToSettings() {
-  currentPage.value = "settings";
+  navigateToPage("settings", { mode: "replace" });
 }
 
 // 打開角色導入
@@ -1690,7 +1793,7 @@ function closeImportModal() {
   showImportModal.value = false;
 }
 
-// 處理聊天頁面的快捷導航
+  // 處理聊天頁面的快捷導航
 function handleChatNavigate(
   page: "character" | "worldbook" | "settings" | "shop" | "media-log" | "food-log" | "peek-phone",
 ) {
@@ -1707,18 +1810,18 @@ function handleChatNavigate(
   // 頭盔TA手機導航到角色選擇頁
   if (page === "peek-phone") {
     navigationHistory.value.push(currentPage.value);
-    currentPage.value = "peek-phone-select";
+    navigateToPage("peek-phone-select");
     return;
   }
   // 記錄當前頁面到歷史堆疊
   navigationHistory.value.push(currentPage.value);
-  currentPage.value = page;
+  navigateToPage(page);
 }
 
 // 從快捷導航返回（優先返回歷史頁面）
 function goBackFromQuickNav() {
   if (navigationHistory.value.length > 0) {
-    currentPage.value = navigationHistory.value.pop()!;
+    navigateBackWithFallback(goHome);
   } else {
     goHome();
   }
@@ -1727,9 +1830,9 @@ function goBackFromQuickNav() {
 // 從小劇場返回（優先返回噗浪）
 function goBackFromTheater() {
   if (navigationHistory.value.length > 0) {
-    currentPage.value = navigationHistory.value.pop()!;
+    navigateBackWithFallback(() => navigateToPage("qzone", { mode: "replace", historyStack: [] }));
   } else {
-    currentPage.value = "qzone";
+    navigateToPage("qzone", { mode: "replace", historyStack: [] });
   }
 }
 
@@ -1739,7 +1842,7 @@ const pendingTheaterPostId = ref<string | undefined>(undefined);
 function navigateToTheaterFromQzone(theaterPostId?: string) {
   navigationHistory.value.push("qzone");
   pendingTheaterPostId.value = theaterPostId;
-  currentPage.value = "theater";
+  navigateToPage("theater");
 }
 
 // 處理通知點擊導航
@@ -1755,11 +1858,11 @@ function handleNotificationNavigate(page: string, data?: Record<string, any>) {
       chatCharacterAvatar.value = character.avatar || "";
       currentChatCharacterId.value = data.characterId || null;
       currentChatId.value = data.chatId;
-      currentPage.value = "chat";
+      navigateToPage("chat");
     }
   } else if (page === "open_fishing") {
     // 打開釣魚遊戲（通過遊戲中心）
-    currentPage.value = "game-center";
+    navigateToPage("game-center");
     // 可以在這裡添加額外邏輯，例如自動打開釣魚遊戲彈窗
     console.log("[App] 導航到釣魚遊戲:", data);
   } else {
@@ -1772,7 +1875,16 @@ function handleNotificationNavigate(page: string, data?: Record<string, any>) {
 const swipeBackEnabled = computed(() => currentPage.value !== "home");
 
 function handleGlobalSwipeBack() {
-  // home 頁面不需要返回
+  if (showFoodLogManager.value) {
+    showFoodLogManager.value = false;
+    return;
+  }
+
+  if (showMediaLogManager.value) {
+    showMediaLogManager.value = false;
+    return;
+  }
+
   if (currentPage.value === "home") return;
   // 驗證頁面不處理
   if (!authStore.isAuthenticated) return;
@@ -1807,7 +1919,7 @@ function handleGlobalSwipeBack() {
     fate: goHome,
     "peek-phone-select": goHome,
     "peek-phone": () => {
-      currentPage.value = "peek-phone-select";
+      navigateToPage("peek-phone-select", { mode: "replace" });
       peekPhoneCharacterId.value = null;
       peekPhoneChatId.value = null;
     },
@@ -2081,7 +2193,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       />
     </Teleport>
 
-    <!-- 食記管理彈窗 -->
+      <!-- 食記管理彈窗 -->
     <Teleport to="body">
       <FoodLogManager
         v-if="showFoodLogManager"
