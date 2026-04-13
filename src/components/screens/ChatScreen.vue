@@ -398,6 +398,9 @@ function getActiveRegexScripts() {
 
 // 套用 AI_OUTPUT regex（在 finalContent 進入 parser 前呼叫）
 function applyAIOutputRegex(content: string): string {
+  // 內建清理：移除 AI 自行輸出的時間戳標記，如 [time:2026/04/14 1:10A.M]
+  content = content.replace(/\[time(?:stamp)?\s*[:：][^\]]*\]/gi, "").trimStart();
+
   const scripts = getActiveRegexScripts();
   if (!scripts.length) return content;
   const charName = currentCharacter.value?.data?.name || props.characterName;
