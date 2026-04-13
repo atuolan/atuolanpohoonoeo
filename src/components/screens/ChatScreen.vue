@@ -825,9 +825,20 @@ const visibleCount = ref(MESSAGE_PAGE_SIZE); // 當前顯示的訊息數量
 const isLoadingMore = ref(false); // 是否正在載入更多
 const loadMoreSentinelRef = ref<HTMLElement | null>(null); // 頂部哨兵元素
 
-// 可見訊息列表（只渲染最後 N 條，並過濾掉隱藏的繼續提示）
+// ===== 外賣物流進度時間閘門 =====
+// 用於逐日顯示排程的物流進度訊息（而非一次性全部顯示）
+const _waimaiProgressNow = ref(Date.now());
+let _waimaiProgressTimer: ReturnType<typeof setInterval> | undefined;
+
+// 可見訊息列表（只渲染最後 N 條，並過濾掉隱藏的繼續提示及未到時的物流進度）
 const visibleMessages = computed(() => {
-  const filteredMessages = messages.value.filter((m) => !m.isContinuePrompt);
+  const now = _waimaiProgressNow.value;
+  const filteredMessages = messages.value.filter((m) => {
+    if (m.isContinuePrompt) return false;
+    // 隱藏尚未到達排程時間的物流進度訊息，使其逐日顯現
+    if (m.isWaimaiProgress && m.timestamp > now) return false;
+    return true;
+  });
   const total = filteredMessages.length;
   return total <= visibleCount.value
     ? filteredMessages
@@ -3953,23 +3964,29 @@ async function triggerAIResponse(options?: {
     const actualCount = chatSummarySettings.value.actualMessageCount;
     const actualMode = chatSummarySettings.value.actualMessageMode;
 
+    // 先過濾掉尚未到達排程時間的物流進度訊息，避免角色「看到未來」
+    const now = Date.now();
+    const eligibleMessages = messages.value.filter(
+      (m) => !(m.isWaimaiProgress && m.timestamp > now),
+    );
+
     let messagesToUse: typeof messages.value;
     if (actualMode === "turn") {
       // 按輪次讀取：每輪 = 用戶發言 + AI 回覆
       let turnCount = 0;
-      let startIndex = messages.value.length;
-      for (let i = messages.value.length - 1; i >= 0; i--) {
-        if (messages.value[i].role === "ai") {
+      let startIndex = eligibleMessages.length;
+      for (let i = eligibleMessages.length - 1; i >= 0; i--) {
+        if (eligibleMessages[i].role === "ai") {
           turnCount++;
           if (turnCount >= actualCount) {
             // 往前找到這輪的 user 消息
             for (let j = i - 1; j >= 0; j--) {
-              if (messages.value[j].role === "user") {
+              if (eligibleMessages[j].role === "user") {
                 startIndex = j;
                 break;
               }
             }
-            if (startIndex === messages.value.length) {
+            if (startIndex === eligibleMessages.length) {
               startIndex = i;
             }
             break;
@@ -3977,10 +3994,10 @@ async function triggerAIResponse(options?: {
         }
         startIndex = i;
       }
-      messagesToUse = messages.value.slice(startIndex);
+      messagesToUse = eligibleMessages.slice(startIndex);
     } else {
       // 按消息數讀取
-      messagesToUse = messages.value.slice(-actualCount);
+      messagesToUse = eligibleMessages.slice(-actualCount);
     }
 
     const chatMessages: ChatMessage[] = messagesToUse.map((m) => ({
@@ -9118,6 +9135,11 @@ function flushDeferredPendingMessage() {
 
 // 檢查待處理來電
 onMounted(async () => {
+  // 啟動外賣物流進度時間閘門定時器（每 60 秒刷新一次，使排程訊息逐日顯現）
+  _waimaiProgressTimer = setInterval(() => {
+    _waimaiProgressNow.value = Date.now();
+  }, 60_000);
+
   // 通知主動發訊服務：用戶進入此角色的聊天頁面
   if (props.characterId) {
     proactiveMessageService.enterChat(props.characterId);
@@ -9357,6 +9379,11 @@ onUnmounted(() => {
   notificationStore.setActiveChatId(null);
   // 停止假時間顯示定時器
   fakeTime.stopDisplayTimer();
+  // 停止外賣物流進度時間閘門定時器
+  if (_waimaiProgressTimer) {
+    clearInterval(_waimaiProgressTimer);
+    _waimaiProgressTimer = undefined;
+  }
   // 注意：不在 onUnmounted 呼叫 _restoreGlobalPersona()
   // 因為它是 async fire-and-forget，會跟新聊天的 loadOrCreateChat 產生 race condition
   // 導致新聊天載入的 persona 被覆蓋回全局設定

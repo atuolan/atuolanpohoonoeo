@@ -10,6 +10,7 @@ import type {
 export const COUNTRY_ETA_FACTORS: Record<string, CountryEtaFactor> = {
   // 高成熟度
   TW: { linehaul: 0.9, customs: 0.8, lastMile: 0.9 },
+  CN: { linehaul: 0.9, customs: 0.9, lastMile: 1.0 },
   JP: { linehaul: 0.9, customs: 0.9, lastMile: 0.9 },
   KR: { linehaul: 0.9, customs: 0.9, lastMile: 0.9 },
   US: { linehaul: 1.0, customs: 1.0, lastMile: 1.0 },

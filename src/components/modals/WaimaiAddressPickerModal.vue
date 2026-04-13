@@ -55,6 +55,7 @@ const manualTemp = reactive<TemporaryAddress>({
 
 const COUNTRY_OPTIONS = [
   { code: "TW", name: "台灣" },
+  { code: "CN", name: "中國大陸" },
   { code: "JP", name: "日本" },
   { code: "KR", name: "韓國" },
   { code: "US", name: "美國" },
@@ -63,6 +64,8 @@ const COUNTRY_OPTIONS = [
   { code: "SG", name: "新加坡" },
   { code: "AU", name: "澳洲" },
   { code: "CA", name: "加拿大" },
+  { code: "HK", name: "香港" },
+  { code: "MO", name: "澳門" },
   { code: "TH", name: "泰國" },
   { code: "MY", name: "馬來西亞" },
   { code: "VN", name: "越南" },

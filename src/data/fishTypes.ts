@@ -366,37 +366,37 @@ export const TRASH_TYPES: TrashType[] = [
   {
     id: "trash_boot",
     name: "破靴子",
-    disposalCost: 5,
+    disposalCost: 500,
     description: "一隻發臭的舊靴子，需要花錢清理",
   },
   {
     id: "trash_plastic",
     name: "塑膠袋",
-    disposalCost: 3,
+    disposalCost: 300,
     description: "纏在魚鉤上的塑膠袋，真煩人",
   },
   {
     id: "trash_tire",
     name: "廢輪胎",
-    disposalCost: 15,
+    disposalCost: 1500,
     description: "沉重的廢棄輪胎，清理費很貴",
   },
   {
     id: "trash_can",
     name: "鏽鐵罐",
-    disposalCost: 8,
+    disposalCost: 800,
     description: "銹跡斑斑的空罐頭",
   },
   {
     id: "trash_bottle",
     name: "碎玻璃瓶",
-    disposalCost: 10,
+    disposalCost: 1000,
     description: "危險的碎玻璃瓶，必須妥善處理",
   },
   {
     id: "trash_seaweed",
     name: "一團水草",
-    disposalCost: 2,
+    disposalCost: 200,
     description: "亂七八糟的水草纏住了魚線",
   },
 ];
