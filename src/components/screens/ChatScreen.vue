@@ -2835,6 +2835,9 @@ function cancelEdit() {
 async function handleMessageDelete(id: string) {
   if (confirm("確定要刪除這條訊息嗎？")) {
     messages.value = messages.value.filter((m) => m.id !== id);
+    // 立即從 IDB 刪除，避免 snapshotTime 保護誤留
+    const { deleteChatMessage } = await import("@/db/chatMessageStore");
+    await deleteChatMessage(id);
     await saveChatImmediate();
   }
 }
@@ -3304,7 +3307,13 @@ async function regenerateLastAIResponse() {
           -1,
         );
         if (lastTurnLastIdx !== -1) {
+          const removedMsgs = messages.value.slice(lastTurnLastIdx + 1);
           messages.value = messages.value.slice(0, lastTurnLastIdx + 1);
+          // 從 IDB 刪除被截斷的訊息
+          if (removedMsgs.length > 0) {
+            const { deleteChatMessage: delTrunc } = await import("@/db/chatMessageStore");
+            await Promise.all(removedMsgs.map((m) => delTrunc(m.id)));
+          }
         }
         await doRegenerateByTurnId(lastTurnId);
       } else {
@@ -3327,7 +3336,13 @@ async function regenerateLastAIResponse() {
             -1,
           );
           if (lastAIIdx !== -1) {
+            const removedMsgsFb = messages.value.slice(lastAIIdx + 1);
             messages.value = messages.value.slice(0, lastAIIdx + 1);
+            // 從 IDB 刪除被截斷的訊息
+            if (removedMsgsFb.length > 0) {
+              const { deleteChatMessage: delTruncFb } = await import("@/db/chatMessageStore");
+              await Promise.all(removedMsgsFb.map((m) => delTruncFb(m.id)));
+            }
           }
           await doRegenerateFromMessage(firstAIOfLastRound);
         } else {
@@ -3511,8 +3526,11 @@ async function doRegenerateByTurnId(turnId: string) {
 
   pendingRoundSwipes.value = existingSwipes;
 
-  // 刪除這輪所有訊息
+  // 刪除這輪所有訊息（同時從 IDB 刪除，避免 snapshotTime 保護誤留）
+  const idsToRemove = currentRoundMessages.map((m) => m.id);
   messages.value = messages.value.filter((m) => m.turnId !== turnId);
+  const { deleteChatMessage: delMsg } = await import("@/db/chatMessageStore");
+  await Promise.all(idsToRemove.map((id) => delMsg(id)));
 
   // 生成新的 turnId 並重新生成
   currentTurnId.value = crypto.randomUUID();
@@ -3567,9 +3585,11 @@ async function doRegenerateFromMessage(targetAIMessage: Message) {
   // 暫存 roundSwipes 資料，等新訊息生成後附加上去
   pendingRoundSwipes.value = existingSwipes;
 
-  // 刪除當前輪次的訊息
+  // 刪除當前輪次的訊息（同時從 IDB 刪除，避免 snapshotTime 保護誤留）
   const idsToDelete = new Set(currentRoundMessages.map((m) => m.id));
   messages.value = messages.value.filter((m) => !idsToDelete.has(m.id));
+  const { deleteChatMessage: delMsgFb } = await import("@/db/chatMessageStore");
+  await Promise.all([...idsToDelete].map((id) => delMsgFb(id)));
 
   // 生成新的 turnId 並重新觸發 AI 生成
   currentTurnId.value = crypto.randomUUID();
