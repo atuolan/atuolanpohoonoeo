@@ -6443,6 +6443,10 @@ const {
   handleJsonlFileSelected,
   exportCurrentChat,
   startNewConversation,
+  confirmNewConversation,
+  showNewConversationConfirm,
+  newConvGreetingIndex,
+  newConvAvailableGreetings,
   clearChatHistory,
 } = useChatExport({
   currentChatId,
@@ -12198,6 +12202,69 @@ onUnmounted(() => {
                 不帶開場白
               </button>
               <button class="btn-confirm" @click="createNewChatFile(true)">
+                帶開場白
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 開啟新對話確認彈窗（清除全部重開 + 選擇開場白） -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="showNewConversationConfirm"
+          class="new-chat-confirm-overlay"
+          @click.self="showNewConversationConfirm = false"
+        >
+          <div class="new-chat-confirm-modal">
+            <h3>開啟新對話</h3>
+            <p style="color: var(--color-danger, #e53e3e); font-size: 13px;">
+              將清除所有聊天內容、總結記憶、日記和重要事件，不可恢復！
+            </p>
+
+            <!-- 開場白選擇列表 -->
+            <div
+              v-if="newConvAvailableGreetings.length > 1"
+              class="greeting-select-list"
+            >
+              <label class="greeting-select-label">選擇開場白：</label>
+              <div
+                v-for="(g, idx) in newConvAvailableGreetings"
+                :key="idx"
+                class="greeting-option"
+                :class="{ selected: newConvGreetingIndex === idx }"
+                @click="newConvGreetingIndex = idx"
+              >
+                <div class="greeting-radio">
+                  <div
+                    v-if="newConvGreetingIndex === idx"
+                    class="greeting-radio-dot"
+                  ></div>
+                </div>
+                <div class="greeting-option-content">
+                  <span class="greeting-option-label">{{ g.label }}</span>
+                  <span class="greeting-option-preview"
+                    >{{
+                      g.content
+                        .replace(/<[^>]*>/g, "")
+                        .replace(/```[\s\S]*?```/g, "")
+                        .substring(0, 80)
+                    }}{{ g.content.length > 80 ? "..." : "" }}</span
+                  >
+                </div>
+              </div>
+            </div>
+
+            <div class="new-chat-confirm-actions">
+              <button class="btn-cancel" @click="showNewConversationConfirm = false">
+                取消
+              </button>
+              <button class="btn-secondary" @click="confirmNewConversation(false)">
+                不帶開場白
+              </button>
+              <button class="btn-confirm" @click="confirmNewConversation(true)">
                 帶開場白
               </button>
             </div>

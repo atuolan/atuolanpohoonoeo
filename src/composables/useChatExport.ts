@@ -1,4 +1,4 @@
-import { nextTick, ref, type Ref, type ComputedRef } from "vue";
+import { computed, nextTick, ref, type Ref, type ComputedRef } from "vue";
 import { db, DB_STORES } from "@/db/database";
 import type { Chat } from "@/types/chat";
 import { createDefaultBlockState } from "@/types/block";
@@ -24,6 +24,24 @@ export function useChatExport(deps: {
   showMoreMenu: Ref<boolean>;
 }) {
   const jsonlFileInputRef = ref<HTMLInputElement | null>(null);
+  const showNewConversationConfirm = ref(false);
+  const newConvGreetingIndex = ref(0);
+
+  /** 取得當前角色所有開場白列表 */
+  const newConvAvailableGreetings = computed(() => {
+    const char = deps.currentCharacter.value;
+    if (!char?.data) return [];
+    const list: { label: string; content: string }[] = [];
+    if (char.data.first_mes) {
+      list.push({ label: "開場白 1（預設）", content: char.data.first_mes });
+    }
+    if (char.data.alternate_greetings?.length) {
+      char.data.alternate_greetings.forEach((g: string, i: number) => {
+        if (g) list.push({ label: `開場白 ${i + 2}`, content: g });
+      });
+    }
+    return list;
+  });
 
   function triggerJsonlImport() {
     deps.showMoreMenu.value = false;
@@ -121,16 +139,16 @@ export function useChatExport(deps: {
     }
   }
 
-  async function startNewConversation() {
+  function startNewConversation() {
     deps.showMoreMenu.value = false;
     if (!deps.currentChatId.value) return;
+    newConvGreetingIndex.value = 0;
+    showNewConversationConfirm.value = true;
+  }
 
-    if (
-      !confirm(
-        "確定要開啟新對話嗎？當前對話記錄、總結記憶、日記和重要事件記錄本都將被清空，並重新加載角色的初始消息。",
-      )
-    )
-      return;
+  async function confirmNewConversation(withGreeting: boolean) {
+    showNewConversationConfirm.value = false;
+    if (!deps.currentChatId.value) return;
 
     try {
       const chatId = deps.currentChatId.value;
@@ -195,16 +213,20 @@ export function useChatExport(deps: {
         // 忽略
       }
 
-      // 5. 重新加載角色初始消息
-      const character = deps.currentCharacter.value;
-      const firstMessage = character?.data?.first_mes;
-      if (firstMessage) {
-        deps.messages.value.push({
-          id: `msg_${Date.now()}`,
-          role: "ai",
-          content: firstMessage,
-          timestamp: Date.now(),
-        });
+      // 5. 重新加載角色開場白
+      if (withGreeting && newConvAvailableGreetings.value.length > 0) {
+        const greetingIdx = newConvGreetingIndex.value;
+        const greeting =
+          newConvAvailableGreetings.value[greetingIdx] ??
+          newConvAvailableGreetings.value[0];
+        if (greeting) {
+          deps.messages.value.push({
+            id: `msg_${Date.now()}`,
+            role: "ai",
+            content: greeting.content,
+            timestamp: Date.now(),
+          });
+        }
       }
 
       // 6. 保存聊天
@@ -224,64 +246,20 @@ export function useChatExport(deps: {
 
     if (
       !confirm(
-        "確定要清空所有聊天記錄嗎？此操作不可恢復！\n（日記、總結記憶也會一併清除，重要事件記錄本會保留）",
+        "確定要清空聊天內容嗎？此操作不可恢復！\n（總結記憶、重要事件、日記將會保留）",
       )
     )
       return;
 
     try {
-      const chatId = deps.currentChatId.value;
-      const charId =
-        deps.characterId || deps.currentCharacter.value?.id || "";
-
       // 1. 清空消息
       deps.messages.value = [];
       deps.resetVisibleCount();
 
-      // 2. 刪除此聊天的總結
-      const allSummaries = await db.getAll<{
-        id: string;
-        chatId: string;
-        characterId: string;
-      }>(DB_STORES.SUMMARIES);
-      for (const s of allSummaries) {
-        if (s.chatId === chatId || s.characterId === charId) {
-          await db.delete(DB_STORES.SUMMARIES, s.id);
-        }
-      }
-      deps.chatSummaries.value = [];
-      deps.lastSummaryTime.value = 0;
-
-      // 3. 刪除此聊天的日記
-      const allDiaries = await db.getAll<{
-        id: string;
-        chatId: string;
-        characterId: string;
-      }>(DB_STORES.DIARIES);
-      for (const d of allDiaries) {
-        if (d.chatId === chatId || d.characterId === charId) {
-          await db.delete(DB_STORES.DIARIES, d.id);
-        }
-      }
-      deps.chatDiaries.value = [];
-      deps.lastDiaryTime.value = 0;
-
-      // 4. 重置封鎖狀態（清除封鎖歷史，避免舊記錄持續注入 prompt）
-      try {
-        const chatObj = await db.get<Chat>(DB_STORES.CHATS, chatId);
-        if (chatObj?.blockState) {
-          chatObj.blockState = createDefaultBlockState();
-          chatObj.updatedAt = Date.now();
-          await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chatObj)));
-        }
-      } catch {
-        // 忽略
-      }
-
-      // 5. 保存聊天
+      // 2. 保存聊天
       await deps.saveChatImmediate();
 
-      alert("聊天記錄已清空");
+      alert("聊天內容已清空（總結、日記、重要事件已保留）");
     } catch (e) {
       console.error("清空聊天記錄失敗:", e);
       alert("清空聊天記錄失敗");
@@ -294,6 +272,10 @@ export function useChatExport(deps: {
     handleJsonlFileSelected,
     exportCurrentChat,
     startNewConversation,
+    confirmNewConversation,
+    showNewConversationConfirm,
+    newConvGreetingIndex,
+    newConvAvailableGreetings,
     clearChatHistory,
   };
 }
