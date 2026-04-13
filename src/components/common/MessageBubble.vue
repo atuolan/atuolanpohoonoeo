@@ -489,36 +489,100 @@ function getProxiedUrl(url: string): string {
   }
 }
 
-// HTML 區塊的 iframe srcdoc（注入自動回報高度的 script）
-const htmlBlockSrcdoc = computed(() => {
-  if (!props.isHtmlBlock || !props.htmlContent) return "";
+function ensureMobileFriendlyHtmlDocument(html: string): string {
+  const viewportMeta =
+    '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">';
+  const adaptiveStyle = `<style>
+html, body {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+img, video, canvas, svg, iframe, table {
+  max-width: 100% !important;
+}
+pre, code {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+</style>`;
+
+  let result = html;
+
+  if (!/^\s*<!DOCTYPE\s/i.test(result) && !/^\s*<html[\s>]/i.test(result)) {
+    return `<!DOCTYPE html><html><head><meta charset="utf-8">${viewportMeta}${adaptiveStyle}</head><body>${result}</body></html>`;
+  }
+
+  if (!/<meta[^>]+name=["']viewport["'][^>]*>/i.test(result)) {
+    if (/<head[\s>]/i.test(result)) {
+      result = result.replace(/<head([^>]*)>/i, `<head$1>${viewportMeta}`);
+    } else if (/<html[\s>]/i.test(result)) {
+      result = result.replace(/<html([^>]*)>/i, `<html$1><head>${viewportMeta}</head>`);
+    } else {
+      result = `${viewportMeta}${result}`;
+    }
+  }
+
+  if (/<head[\s>]/i.test(result)) {
+    result = result.replace(/<head([^>]*)>/i, `<head$1>${adaptiveStyle}`);
+  } else if (/<html[\s>]/i.test(result)) {
+    result = result.replace(/<html([^>]*)>/i, `<html$1><head>${adaptiveStyle}</head>`);
+  } else {
+    result = `${adaptiveStyle}${result}`;
+  }
+
+  return result;
+}
+
+function injectIframeHeightScript(html: string): string {
   const heightScript = `<script>
 (function() {
   var lastH = 0, stableCount = 0, tid;
   function _reportHeight(){
-    var h = Math.ceil(document.documentElement.scrollHeight || document.body.scrollHeight);
+    var root = document.documentElement;
+    var body = document.body;
+    var h = Math.ceil(Math.max(
+      root ? root.scrollHeight : 0,
+      body ? body.scrollHeight : 0,
+      root ? root.offsetHeight : 0,
+      body ? body.offsetHeight : 0
+    ));
     if (Math.abs(h - lastH) < 5) { stableCount++; if (stableCount > 3 && tid) { clearInterval(tid); tid = null; } return; }
     stableCount = 0;
     lastH = h;
     window.parent.postMessage({type:'regex-iframe-height',height:h},'*');
   }
   window.addEventListener('load', _reportHeight);
-  if (window.ResizeObserver) {
+  window.addEventListener('resize', _reportHeight);
+  if (window.ResizeObserver && document.body) {
     new ResizeObserver(_reportHeight).observe(document.body);
   }
-  new MutationObserver(_reportHeight).observe(document.body, {childList:true, subtree:true, attributes:true});
+  if (document.body) {
+    new MutationObserver(_reportHeight).observe(document.body, {childList:true, subtree:true, attributes:true});
+  }
   tid = setInterval(_reportHeight, 1000);
 })();
 <\/script>`;
+
+  const normalized = ensureMobileFriendlyHtmlDocument(html);
+  return normalized.includes("</body>")
+    ? normalized.replace("</body>", heightScript + "</body>")
+    : normalized + heightScript;
+}
+
+// HTML 區塊的 iframe srcdoc（注入自動回報高度的 script）
+const htmlBlockSrcdoc = computed(() => {
+  if (!props.isHtmlBlock || !props.htmlContent) return "";
   let html = props.htmlContent;
   // 如果是 HTML 片段（不是完整文件），包成完整文件
-  if (!/^\s*<!DOCTYPE\s/i.test(html) && !/^\s*<html[\s>]/i.test(html)) {
-    html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:0;background:transparent;}</style></head><body>${html}</body></html>`;
-  }
-  const injected = html.includes("</body>")
-    ? html.replace("</body>", heightScript + "</body>")
-    : html + heightScript;
-  return injected;
+  return injectIframeHeightScript(html);
 });
 
 function replaceDisplayMacros(text: string): string {
@@ -623,21 +687,7 @@ const renderedContent = computed(() => {
       if (htmlFenceMatch) {
         const fenceContent = htmlFenceMatch[1].trim();
         if (/^\s*<[a-zA-Z]/.test(fenceContent)) {
-          // 包成完整文件
-          const fullHtml =
-            /^\s*<!DOCTYPE\s/i.test(fenceContent) ||
-            /^\s*<html[\s>]/i.test(fenceContent)
-              ? fenceContent
-              : `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:0;background:transparent;}</style></head><body>${fenceContent}</body></html>`;
-          const heightScript = `<script>
-function _reportHeight(){var h=document.documentElement.scrollHeight||document.body.scrollHeight;window.parent.postMessage({type:'regex-iframe-height',height:h},'*');}
-window.addEventListener('load',function(){_reportHeight();setTimeout(_reportHeight,300);setTimeout(_reportHeight,1000);});
-new MutationObserver(function(){setTimeout(_reportHeight,50);}).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});
-<\/script>`;
-          const injected = fullHtml.includes("</body>")
-            ? fullHtml.replace("</body>", heightScript + "</body>")
-            : fullHtml + heightScript;
-          regexHtmlDoc.value = injected;
+          regexHtmlDoc.value = injectIframeHeightScript(fenceContent);
           return "";
         }
       }
@@ -651,19 +701,7 @@ new MutationObserver(function(){setTimeout(_reportHeight,50);}).observe(document
         /<div[\s>]/i.test(html)
       ) {
         const fragment = html.trim();
-        const fullHtml =
-          /^\s*<!DOCTYPE\s/i.test(fragment) || /^\s*<html[\s>]/i.test(fragment)
-            ? fragment
-            : `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:0;background:transparent;}</style></head><body>${fragment}</body></html>`;
-        const heightScript = `<script>
-function _reportHeight(){var h=document.documentElement.scrollHeight||document.body.scrollHeight;window.parent.postMessage({type:'regex-iframe-height',height:h},'*');}
-window.addEventListener('load',function(){_reportHeight();setTimeout(_reportHeight,300);setTimeout(_reportHeight,1000);});
-new MutationObserver(function(){setTimeout(_reportHeight,50);}).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});
-<\/script>`;
-        const injected = fullHtml.includes("</body>")
-          ? fullHtml.replace("</body>", heightScript + "</body>")
-          : fullHtml + heightScript;
-        regexHtmlDoc.value = injected;
+        regexHtmlDoc.value = injectIframeHeightScript(fragment);
         return "";
       }
     }
@@ -891,32 +929,7 @@ new MutationObserver(function(){setTimeout(_reportHeight,50);}).observe(document
 
         // 為每個 HTML 區塊注入高度回報 script 並包成完整文件
         const processedBlocks = htmlBlocks.map((block) => {
-          let html = block;
-          // 如果是 HTML 片段，包成完整文件
-          if (!/^\s*<!DOCTYPE\s/i.test(html) && !/^\s*<html[\s>]/i.test(html)) {
-            html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:0;background:transparent;}</style></head><body>${html}</body></html>`;
-          }
-          const heightScript = `<script>
-(function() {
-  var lastH = 0, stableCount = 0, tid;
-  function _reportHeight(){
-    var h = Math.ceil(document.documentElement.scrollHeight || document.body.scrollHeight);
-    if (Math.abs(h - lastH) < 5) { stableCount++; if (stableCount > 3 && tid) { clearInterval(tid); tid = null; } return; }
-    stableCount = 0;
-    lastH = h;
-    window.parent.postMessage({type:'regex-iframe-height',height:h},'*');
-  }
-  window.addEventListener('load', _reportHeight);
-  if (window.ResizeObserver) {
-    new ResizeObserver(_reportHeight).observe(document.body);
-  }
-  new MutationObserver(_reportHeight).observe(document.body, {childList:true, subtree:true, attributes:true});
-  tid = setInterval(_reportHeight, 1000);
-})();
-<\/script>`;
-          return html.includes("</body>")
-            ? html.replace("</body>", heightScript + "</body>")
-            : html + heightScript;
+          return injectIframeHeightScript(block);
         });
 
         if (remainingText) {
@@ -3446,6 +3459,9 @@ const showTextVoiceTranscript = ref(true);
 <style lang="scss" scoped>
 .regex-html-iframe {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  display: block;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -3454,12 +3470,17 @@ const showTextVoiceTranscript = ref(true);
 
 .html-block-wrapper {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   border-radius: 0;
 }
 
 .html-block-iframe {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  display: block;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -3868,6 +3889,7 @@ const showTextVoiceTranscript = ref(true);
   display: flex;
   flex-direction: column;
   max-width: var(--bubble-max-width, 75%);
+  min-width: 0;
 
   // 如果包含透明氣泡，放寬寬度限制以利於 HTML 渲染
   &:has(.transparent-bubble) {
@@ -3895,8 +3917,10 @@ const showTextVoiceTranscript = ref(true);
   font-family: var(--chat-font-family, inherit);
   line-height: 1.5;
   word-break: break-word;
+  overflow-wrap: anywhere;
   width: fit-content;
   max-width: 100%;
+  min-width: 0;
   transition: all 0.3s ease;
 
   // 菜單開啟時氣泡高亮
