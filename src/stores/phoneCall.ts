@@ -358,10 +358,15 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
         status: "sent",
       };
 
-      chat.messages = [...(chat.messages || []), callRecordMessage];
+      // v24：用 appendChatMessages 追加通話記錄
+      const { appendChatMessages } = await import("@/db/chatMessageStore");
+      await appendChatMessages(chat.id, [callRecordMessage as any]);
+      chat.messageCount = (chat.messageCount || 0) + 1;
+      chat.lastMessagePreview = callRecordMessage.content?.slice(0, 100) || "";
       chat.updatedAt = Date.now();
+      chat.messages = [];
       await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
-      console.log("[phoneCall] 通話記錄已直接寫入 IndexedDB");
+      console.log("[phoneCall] 通話記錄已寫入 chatMessages 表");
     } catch (e) {
       console.error("[phoneCall] 寫入通話記錄失敗", e);
     }
@@ -994,8 +999,12 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
         content: `📞 通話結束（頁面關閉）\n時長：${durationText}\n\n--- 通話內容 ---\n${msgs.map((m) => `${m.role === "user" ? "你" : snapshot.activeCall.characterName}: ${m.content}`).join("\n")}`,
         timestamp: Date.now(), createdAt: Date.now(), updatedAt: Date.now(), status: "sent",
       };
-      chat.messages = [...(chat.messages || []), callRecordMessage];
+      // v24：用 appendChatMessages 追加通話記錄
+      const { appendChatMessages: appendMsgsCall } = await import("@/db/chatMessageStore");
+      await appendMsgsCall(chat.id, [callRecordMessage as any]);
+      chat.messageCount = (chat.messageCount || 0) + 1;
       chat.updatedAt = Date.now();
+      chat.messages = [];
       await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
     } catch { /* 忽略 */ }
   }

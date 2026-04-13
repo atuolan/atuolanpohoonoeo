@@ -698,9 +698,13 @@ export function useCompanionChat(
         updatedAt: Date.now(),
       };
 
-      targetChat.messages = [...(targetChat.messages || []), syncMessage];
+      // v24：用 appendChatMessages 追加訊息（無競態風險）
+      const { appendChatMessages } = await import("@/db/chatMessageStore");
+      await appendChatMessages(targetChat.id, [syncMessage]);
+      targetChat.messageCount = (targetChat.messageCount || 0) + 1;
+      targetChat.lastMessagePreview = syncMessage.content?.slice(0, 100) || "";
       targetChat.updatedAt = Date.now();
-
+      targetChat.messages = [];
       await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(targetChat)));
     } catch (e) {
       console.warn("[CompanionChat] syncToMainChat 失敗:", e);

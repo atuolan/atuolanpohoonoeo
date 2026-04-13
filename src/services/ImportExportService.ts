@@ -1138,8 +1138,11 @@ export class ImportExportService {
         return null;
       }
 
+      // v24：從 chatMessages 表載入訊息
+      const { loadChatMessages: loadMsgsExp } = await import("@/db/chatMessageStore");
+      chat.messages = await loadMsgsExp(chatId);
       // 匯出時還原圖片引用為 base64，確保匯出檔案包含完整數據
-      if (chat.messages && chat.messages.length > 0) {
+      if (chat.messages.length > 0) {
         chat.messages = await restoreImagesToMessages(chat.messages);
       }
 
@@ -1369,15 +1372,19 @@ export class ImportExportService {
         msg.id = crypto.randomUUID();
       }
 
-      // 保存聊天（訊息分塊儲存，圖片分離）
+      // v24：訊息分離儲存
       const messagesToSave = [...chat.messages];
       chat.lastMessagePreview =
         messagesToSave[messagesToSave.length - 1]?.content?.slice(0, 100) || "";
       chat.messageCount = messagesToSave.length;
-      // 圖片分離後存回 chat.messages
+      // 圖片分離
       const messagesForStorage =
         await extractImagesFromMessages(messagesToSave);
-      chat.messages = messagesForStorage;
+      // 訊息寫入 chatMessages 表
+      const { saveChatMessages } = await import("@/db/chatMessageStore");
+      await saveChatMessages(chat.id, messagesForStorage);
+      // chat metadata 寫入 chats 表（不含訊息）
+      chat.messages = [];
       await db.put(DB_STORES.CHATS, chat);
 
       // 匯入總結
@@ -1436,8 +1443,11 @@ export class ImportExportService {
         const chat = await db.get<Chat>(DB_STORES.CHATS, chatId);
         if (!chat) continue;
 
+        // v24：從 chatMessages 表載入訊息
+        const { loadChatMessages: loadMsgsBulk } = await import("@/db/chatMessageStore");
+        chat.messages = await loadMsgsBulk(chatId);
         // 還原圖片引用為 base64
-        if (chat.messages && chat.messages.length > 0) {
+        if (chat.messages.length > 0) {
           chat.messages = await restoreImagesToMessages(chat.messages);
         }
 
@@ -1639,8 +1649,10 @@ export class ImportExportService {
         return { success: false, error: "找不到目標聊天" };
       }
 
-      // 合併現有訊息和新訊息
-      const existingMessages = chat.messages || [];
+      // v24：從 chatMessages 表載入現有訊息，合併後寫回
+      const { loadChatMessages: loadMsgsImp, saveChatMessages: saveMsgsImp } =
+        await import("@/db/chatMessageStore");
+      const existingMessages = await loadMsgsImp(targetChatId);
       existingMessages.push(...messages);
 
       // 匯入 metadata 中的 variables 到 chat.metadata.variables
@@ -1654,9 +1666,10 @@ export class ImportExportService {
         );
       }
 
-      // 保存（圖片分離後存回 chat.messages）
+      // 保存（圖片分離後寫入 chatMessages 表）
       const msgsForStorage = await extractImagesFromMessages(existingMessages);
-      chat.messages = msgsForStorage;
+      await saveMsgsImp(targetChatId, msgsForStorage);
+      chat.messages = [];
       chat.lastMessagePreview =
         existingMessages[existingMessages.length - 1]?.content?.slice(0, 100) ||
         "";
@@ -1685,8 +1698,10 @@ export class ImportExportService {
         return null;
       }
 
+      // v24：從 chatMessages 表載入訊息
+      const { loadChatMessages: loadMsgsJsonl } = await import("@/db/chatMessageStore");
+      let messages = await loadMsgsJsonl(chatId);
       // 還原圖片引用為 base64
-      let messages = chat.messages || [];
       if (messages.length > 0) {
         messages = await restoreImagesToMessages(messages);
       }
@@ -1867,15 +1882,15 @@ export class ImportExportService {
         return { success: false, error: "找不到目標聊天" };
       }
 
-      // 清空現有訊息並刪除舊圖片
-      if (chat.messages && chat.messages.length > 0) {
-        const oldMessages = await restoreImagesToMessages(chat.messages);
+      // v24：從 chatMessages 表載入舊訊息以清理圖片
+      const { loadChatMessages: loadOldMsgs, saveChatMessages: saveNewMsgs } =
+        await import("@/db/chatMessageStore");
+      const oldMsgList = await loadOldMsgs(targetChatId);
+      if (oldMsgList.length > 0) {
+        const oldMessages = await restoreImagesToMessages(oldMsgList);
         const imageRefs = collectImageRefs(oldMessages);
         await deleteChatImagesByRefs(imageRefs);
       }
-
-      // 替換為新訊息
-      chat.messages = messages;
 
       // 匯入 variables
       if (metadata.chat_metadata?.variables) {
@@ -1885,9 +1900,10 @@ export class ImportExportService {
         chat.metadata.variables = { ...metadata.chat_metadata.variables };
       }
 
-      // 保存（圖片分離）
-      const msgsForStorage = await extractImagesFromMessages(chat.messages);
-      chat.messages = msgsForStorage;
+      // 保存（圖片分離後寫入 chatMessages 表）
+      const msgsForStorage = await extractImagesFromMessages(messages);
+      await saveNewMsgs(targetChatId, msgsForStorage);
+      chat.messages = [];
       chat.lastMessagePreview =
         messages[messages.length - 1]?.content?.slice(0, 100) || "";
       chat.messageCount = messages.length;
@@ -2020,13 +2036,15 @@ export class ImportExportService {
         chat.metadata.variables = { ...metadata.chat_metadata.variables };
       }
 
-      // 保存（分塊儲存，圖片分離）
+      // v24：訊息分離儲存
       const messagesToSave = [...chat.messages];
       chat.lastMessagePreview =
         messagesToSave[messagesToSave.length - 1]?.content?.slice(0, 100) || "";
       chat.messageCount = messagesToSave.length;
       const msgsForStorage2 = await extractImagesFromMessages(messagesToSave);
-      chat.messages = msgsForStorage2;
+      const { saveChatMessages: saveMsgsCreate } = await import("@/db/chatMessageStore");
+      await saveMsgsCreate(chat.id, msgsForStorage2);
+      chat.messages = [];
       await db.put(DB_STORES.CHATS, chat);
 
       return { success: true, chat, messageCount: messagesToSave.length };

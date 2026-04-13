@@ -168,10 +168,13 @@ async function deleteChat(chatId: string) {
 
   try {
     // 先讀取訊息中的圖片引用，再刪除
-    const chat = await db.get<Chat>(DB_STORES.CHATS, chatId);
-    const imageRefs = collectImageRefs(chat?.messages || []);
+    // v24：從 chatMessages 表載入訊息以清理圖片，並級聯刪除
+    const { loadChatMessages, deleteChatMessagesForChat } = await import("@/db/chatMessageStore");
+    const chatMsgs = await loadChatMessages(chatId);
+    const imageRefs = collectImageRefs(chatMsgs);
     await Promise.all([
       db.delete(DB_STORES.CHATS, chatId),
+      deleteChatMessagesForChat(chatId),
       deleteChatImagesByRefs(imageRefs),
     ]);
     chatList.value = chatList.value.filter((c) => c.id !== chatId);
@@ -392,10 +395,13 @@ async function confirmDeleteChat() {
   closeLongPressMenu();
 
   try {
-    const chat = await db.get<Chat>(DB_STORES.CHATS, chatId);
-    const imageRefs = collectImageRefs(chat?.messages || []);
+    // v24：從 chatMessages 表載入訊息以清理圖片，並級聯刪除
+    const { loadChatMessages: loadMsgsDel, deleteChatMessagesForChat: delMsgsDel } = await import("@/db/chatMessageStore");
+    const chatMsgsDel = await loadMsgsDel(chatId);
+    const imageRefs = collectImageRefs(chatMsgsDel);
     await Promise.all([
       db.delete(DB_STORES.CHATS, chatId),
+      delMsgsDel(chatId),
       deleteChatImagesByRefs(imageRefs),
     ]);
     chatList.value = chatList.value.filter((c) => c.id !== chatId);

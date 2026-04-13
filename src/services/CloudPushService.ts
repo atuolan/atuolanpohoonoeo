@@ -119,6 +119,7 @@ export async function subscribePush(
 export async function sendNotifyPush(params: {
   characterName: string;
   characterId?: string;
+  chatId?: string;
   content: string;
 }): Promise<void> {
   await request<void>("POST", "/push/notify", params);

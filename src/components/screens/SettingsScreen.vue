@@ -2029,15 +2029,18 @@ async function handleFileImport(event: Event) {
           pendingChatFiles[ci] = null as any;
           // 還原媒體
           restoreChatMedia(chat, mediaFiles);
-          // 圖片分離儲存
+          // v24：訊息分離儲存
           const messagesToSave = chat.messages || [];
           chat.lastMessagePreview =
             messagesToSave[messagesToSave.length - 1]?.content?.slice(0, 100) ||
             "";
           chat.messageCount = messagesToSave.length;
           if (messagesToSave.length > 0) {
-            chat.messages = await extractImagesFromMessages(messagesToSave);
+            const msgsForStorage = await extractImagesFromMessages(messagesToSave);
+            const { saveChatMessages } = await import("@/db/chatMessageStore");
+            await saveChatMessages(chat.id, msgsForStorage);
           }
+          chat.messages = [];
           await db.put("chats", chat);
           importedChatCount++;
         } catch (parseErr) {
@@ -2053,10 +2056,13 @@ async function handleFileImport(event: Event) {
           messagesToSave[messagesToSave.length - 1]?.content?.slice(0, 100) ||
           "";
         chat.messageCount = messagesToSave.length;
-        // 圖片分離：將 base64 圖片提取到 imageCache
+        // v24：圖片分離 + 訊息分離儲存
         if (messagesToSave.length > 0) {
-          chat.messages = await extractImagesFromMessages(messagesToSave);
+          const msgsForStorage = await extractImagesFromMessages(messagesToSave);
+          const { saveChatMessages } = await import("@/db/chatMessageStore");
+          await saveChatMessages(chat.id, msgsForStorage);
         }
+        chat.messages = [];
         await db.put("chats", chat);
         importedChatCount++;
       }

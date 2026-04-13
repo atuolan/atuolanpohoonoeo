@@ -158,6 +158,12 @@ class PushNotificationService {
         icon: item.characterAvatar || undefined,
         silent: false,
         requireInteraction: item.type === "incoming_call",
+        data: {
+          chatId: item.chatId,
+          characterId: item.characterId,
+          navigateTo: item.navigateTo,
+          reason: item.data?.reason,
+        },
       });
 
       notification.onclick = () => {
@@ -195,6 +201,7 @@ class PushNotificationService {
       data: {
         type: item.type,
         chatId: item.chatId,
+        characterId: item.characterId,
         navigateTo: item.navigateTo,
         reason: item.data?.reason,
       },

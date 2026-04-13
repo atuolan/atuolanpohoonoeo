@@ -165,11 +165,17 @@ export async function performBackup(): Promise<void> {
       try {
         const records = await database.getAll(storeName as any)
         if (storeName === DB_STORES.CHATS) {
-          // chats 可能很大，只保留最近 100 條訊息
-          backup[storeName] = records.map((chat: any) => ({
-            ...chat,
-            messages: (chat.messages || []).slice(-100),
-          }))
+          // v24：從 chatMessages 表載入訊息，只保留最近 100 條
+          const { loadChatMessages } = await import("@/db/chatMessageStore")
+          const chatsWithMsgs = []
+          for (const chat of records as any[]) {
+            const msgs = await loadChatMessages(chat.id)
+            chatsWithMsgs.push({
+              ...chat,
+              messages: msgs.slice(-100),
+            })
+          }
+          backup[storeName] = chatsWithMsgs
         } else {
           backup[storeName] = records
         }

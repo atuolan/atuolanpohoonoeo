@@ -3100,10 +3100,13 @@ async function buildChatContextForComments(
       chats.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
       const latestChat = chats[0];
 
-      if (!latestChat.messages || latestChat.messages.length === 0) continue;
+      // v24：從 chatMessages 表載入訊息
+      const { loadChatMessages } = await import("@/db/chatMessageStore");
+      const chatMsgs = await loadChatMessages(latestChat.id);
+      if (chatMsgs.length === 0) continue;
 
       // 取最近 N 條消息
-      const recentMsgs = latestChat.messages.slice(-count);
+      const recentMsgs = chatMsgs.slice(-count);
       const charName =
         charactersStore.characters.find((c) => c.id === charId)?.data?.name ||
         latestChat.name ||

@@ -15,7 +15,7 @@ import type { AuthState } from "@/types/auth";
 import type { BookReadingProgress, StoredBook } from "@/types/book";
 import type { CalendarEvent } from "@/types/calendar";
 import type { StoredCharacter } from "@/types/character";
-import type { Chat } from "@/types/chat";
+import type { Chat, ChatMessage } from "@/types/chat";
 import type { HolidayTriggerRecord } from "@/types/holiday";
 import type { ImportantEventsLog } from "@/types/importantEvents";
 import type { AppSettings } from "@/types/settings";
@@ -69,6 +69,15 @@ export interface VectorEmbeddingRecord {
   dimensions: number;
   createdAt: number;
   updatedAt: number;
+}
+
+// ============================================================
+// 獨立訊息記錄類型（v24 訊息拆分儲存）
+// ============================================================
+
+export interface StoredChatMessage extends ChatMessage {
+  /** 所屬聊天 ID（用於索引，原本內嵌在 Chat.messages 中不需要此欄位） */
+  chatId: string;
 }
 
 // ============================================================
@@ -285,6 +294,14 @@ interface AguaphoneDB extends DBSchema {
       "by-sourceType": string;
     };
   };
+  // === v24 新增：訊息獨立儲存 ===
+  chatMessages: {
+    key: string;
+    value: StoredChatMessage;
+    indexes: {
+      "by-chatId": string;
+    };
+  };
   // === v23 新增：偷窺手機資料持久化 ===
   peekPhoneData: {
     key: string; // 格式: "${characterId}:${chatId}"
@@ -302,7 +319,7 @@ interface AguaphoneDB extends DBSchema {
 // ============================================================
 
 const DB_NAME = "aguaphone-db";
-const DB_VERSION = 23;
+const DB_VERSION = 24;
 
 // Store 名稱常量
 export const DB_STORES = {
@@ -334,6 +351,7 @@ export const DB_STORES = {
   CHAT_AFFINITY_STATES: "chatAffinityStates",
   VECTOR_EMBEDDINGS: "vectorEmbeddings",
   PEEK_PHONE_DATA: "peekPhoneData",
+  CHAT_MESSAGES: "chatMessages",
 } as const;
 
 // ============================================================
@@ -782,6 +800,16 @@ export async function getDatabase(): Promise<IDBPDatabase<AguaphoneDB>> {
         peekPhoneStore.createIndex("by-chat", "chatId");
         peekPhoneStore.createIndex("by-updated", "updatedAt");
       }
+
+      // === v24 新增表 ===
+
+      // 建立 chatMessages 表（訊息獨立儲存，從 chats.messages 拆分出來）
+      if (!db.objectStoreNames.contains("chatMessages")) {
+        const chatMessagesStore = db.createObjectStore("chatMessages", {
+          keyPath: "id",
+        });
+        chatMessagesStore.createIndex("by-chatId", "chatId");
+      }
     },
     blocked() {
       console.warn("[DB] 資料庫被阻擋，嘗試關閉舊連線以解除阻擋...");
@@ -821,7 +849,73 @@ export async function getDatabase(): Promise<IDBPDatabase<AguaphoneDB>> {
     },
   });
 
+  // v24 遷移：將 chats.messages 搬到獨立的 chatMessages 表
+  await _migrateChatMessagesIfNeeded(dbInstance);
+
   return dbInstance;
+}
+
+// ============================================================
+// v24 訊息遷移（post-open，避免 upgrade transaction 超時）
+// ============================================================
+
+const MIGRATION_KEY_CHAT_MESSAGES = "v24_chat_messages_migrated";
+
+async function _migrateChatMessagesIfNeeded(
+  database: IDBPDatabase<AguaphoneDB>,
+): Promise<void> {
+  try {
+    // 檢查是否已遷移
+    const migrated = await database.get("settings", MIGRATION_KEY_CHAT_MESSAGES);
+    if (migrated) return;
+
+    console.log("[DB] v24 訊息遷移：開始將 chats.messages 搬到 chatMessages...");
+    const startTime = Date.now();
+
+    const chatIds = await database.getAllKeys("chats");
+    let totalMigrated = 0;
+    let chatCount = 0;
+
+    for (const chatId of chatIds) {
+      const chat = await database.get("chats", chatId);
+      if (!chat) continue;
+
+      const messages = (chat as any).messages;
+      if (!messages || !Array.isArray(messages) || messages.length === 0) continue;
+
+      // 用一個 transaction 處理一個 chat（原子性）
+      const tx = database.transaction(["chats", "chatMessages"], "readwrite");
+      const chatMessagesStore = tx.objectStore("chatMessages");
+      const chatsStore = tx.objectStore("chats");
+
+      for (const msg of messages) {
+        if (!msg || !msg.id) continue;
+        await chatMessagesStore.put({ ...msg, chatId: String(chatId) } as any);
+      }
+
+      // 清除 chats 中的 messages，保留 metadata
+      const updatedChat = { ...chat } as any;
+      updatedChat.messageCount = messages.length;
+      updatedChat.lastMessagePreview =
+        messages[messages.length - 1]?.content?.slice(0, 100) || "";
+      updatedChat.messages = [];
+      await chatsStore.put(updatedChat);
+
+      await tx.done;
+      totalMigrated += messages.length;
+      chatCount++;
+    }
+
+    // 標記遷移完成
+    await database.put("settings", { done: true, timestamp: Date.now() } as any, MIGRATION_KEY_CHAT_MESSAGES);
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(
+      `[DB] v24 訊息遷移完成：${chatCount} 個聊天，${totalMigrated} 條訊息，耗時 ${elapsed}s`,
+    );
+  } catch (error) {
+    console.error("[DB] v24 訊息遷移失敗（非致命，下次啟動會重試）:", error);
+  }
 }
 
 /**
@@ -868,6 +962,7 @@ export async function clearAllData(): Promise<void> {
     "chatAffinityStates",
     "vectorEmbeddings",
     "peekPhoneData",
+    "chatMessages",
   ] as const;
   const tx = database.transaction(stores, "readwrite");
   await Promise.all([

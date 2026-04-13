@@ -283,8 +283,8 @@ export class PushAlarmDO {
   async handleNotify(request) {
     console.log("[PushAlarmDO] /notify 收到請求");
     const body = await request.json();
-    const { characterName, characterId, content } = body;
-    console.log("[PushAlarmDO] /notify 參數:", { characterName, characterId, contentLength: content?.length });
+    const { characterName, characterId, chatId, content } = body;
+    console.log("[PushAlarmDO] /notify 參數:", { characterName, characterId, chatId, contentLength: content?.length });
 
     if (!characterName || !content) {
       console.warn("[PushAlarmDO] /notify 缺少必要參數");
@@ -316,6 +316,7 @@ export class PushAlarmDO {
         subscription,
         { id: characterId || "unknown", name: characterName },
         content,
+        { chatId },
       );
       console.log("[PushAlarmDO] /notify Web Push 發送成功");
       return json({ ok: true });
@@ -599,7 +600,7 @@ export class PushAlarmDO {
 
   // ─── Web Push 發送 ───────────────────────────────────────────
 
-  async sendWebPush(subscription, character, content) {
+  async sendWebPush(subscription, character, content, extra = {}) {
     console.log("[PushAlarmDO] sendWebPush 開始:", {
       characterName: character.name,
       endpoint: subscription.endpoint?.slice(0, 80),
@@ -620,6 +621,7 @@ export class PushAlarmDO {
       type: "cloud-push-message",
       characterId: character.id,
       characterName: character.name,
+      chatId: extra.chatId || null,
       content: content.slice(0, 200),
       timestamp: Date.now(),
     };

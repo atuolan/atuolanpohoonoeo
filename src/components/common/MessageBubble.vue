@@ -995,20 +995,31 @@ const renderedContent = computed(() => {
     // ★ 從已經處理過 TTS 行內按鈕的 html 繼續，而不是重新讀 props.content
     let processedContent = html;
 
+    // === DEBUG: 追蹤每步處理後的內容長度 ===
+    const _dbgId = props.id?.slice(-6) ?? '?';
+    const _dbgOrig = processedContent;
+
     // 防線：清理 ResponseParser 可能遺漏的標記
     // 移除漏網的 <think>...</think> 和 <thinking>...</thinking> 區塊
     processedContent = processedContent
       .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "")
       .trim();
+    if (processedContent.length !== _dbgOrig.length) console.warn(`[Bubble ${_dbgId}] <think> 移除: ${_dbgOrig.length} → ${processedContent.length}`, '\n原文:', _dbgOrig, '\n結果:', processedContent);
+
     // 移除缺少開頭標籤的殘留 think 內容（如串流截斷）
+    const _dbgB4orphan = processedContent;
     processedContent = processedContent
       .replace(/^[\s\S]*?<\/think(?:ing)?>/gis, "")
       .trim();
+    if (processedContent.length !== _dbgB4orphan.length) console.warn(`[Bubble ${_dbgId}] orphan </think> 移除: ${_dbgB4orphan.length} → ${processedContent.length}`, '\n原文:', _dbgB4orphan, '\n結果:', processedContent);
+
     // 移除漏網的 ˇ想法ˇ 和舊格式 ~(想法)~
+    const _dbgB4thought = processedContent;
     processedContent = processedContent
       .replace(/\s*ˇ[^ˇ]+ˇ/g, "")
       .replace(/\s*~\([\s\S]+?\)~/g, "")
       .trim();
+    if (processedContent.length !== _dbgB4thought.length) console.warn(`[Bubble ${_dbgId}] ˇ/~() 想法移除: ${_dbgB4thought.length} → ${processedContent.length}`, '\n原文:', _dbgB4thought, '\n結果:', processedContent);
 
     // ★ 套用 markdownOnly regex 腳本（顯示層轉換，不污染原始訊息）
     const beforeRegex = processedContent;
@@ -1023,6 +1034,7 @@ const renderedContent = computed(() => {
       mergedScripts,
       { isMarkdown: true },
     );
+    if (processedContent.length !== beforeRegex.length) console.warn(`[Bubble ${_dbgId}] regex 腳本: ${beforeRegex.length} → ${processedContent.length}`, '\n原文:', beforeRegex, '\n結果:', processedContent);
 
     // ★ regex 替換後可能產生完整 HTML（被 ``` 包住或直接輸出）
     // 只在 regex 確實改變了內容時才偵測
@@ -1103,6 +1115,10 @@ const renderedContent = computed(() => {
     );
 
     const renderedMarkdown = marked.parse(processedContent) as string;
+    // DEBUG: 檢查 marked 是否吞掉了文字（比較純文字長度）
+    const _plainLen = renderedMarkdown.replace(/<[^>]*>/g, '').length;
+    const _srcLen = processedContent.replace(/<[^>]*>/g, '').length;
+    if (_plainLen < _srcLen * 0.8) console.warn(`[Bubble ${_dbgId}] marked.parse 可能吞字: 原文字數=${_srcLen}, 渲染後純文字=${_plainLen}`, '\n輸入:', processedContent, '\n輸出:', renderedMarkdown);
     return `${renderedMarkdown}${regexInlineHtml.value}`;
   } catch {
     return props.content;

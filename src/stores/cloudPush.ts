@@ -263,27 +263,15 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
       }
 
       for (const [characterId, charMsgs] of grouped) {
-        // 找該角色最近的聊天
+        // 找該角色最近的聊天（從快照中取 ID，寫入前再重新讀取）
         const characterChats = allChats
           .filter((c) => c.characterId === characterId && !c.isGroupChat)
           .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
-        let chat = characterChats[0];
-        if (!chat) {
-          chat = {
-            id: `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            name: `與 ${charMsgs[0].characterName} 的對話`,
-            characterId,
-            messages: [],
-            metadata: {},
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          };
-        } else {
-          chat = JSON.parse(JSON.stringify(chat));
-        }
+        const existingChatId = characterChats[0]?.id;
 
-        // 一次性加入該角色的所有離線訊息
+        // 構建新訊息
+        const newMessages: unknown[] = [];
         for (const msg of charMsgs) {
           const chatMessage = createDefaultMessage(
             "assistant",
@@ -292,13 +280,61 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
           );
           chatMessage.createdAt = msg.createdAt;
           chatMessage.updatedAt = msg.createdAt;
-          chat.messages.push(chatMessage);
+          newMessages.push(chatMessage);
         }
 
-        chat.unreadCount = (chat.unreadCount || 0) + charMsgs.length;
-        chat.updatedAt = Date.now();
+        // v24：用 appendChatMessages 追加訊息（無競態風險）
+        const { appendChatMessages } = await import("@/db/chatMessageStore");
 
-        await db.put(DB_STORES.CHATS, chat);
+        if (existingChatId) {
+          // 追加訊息到 chatMessages 表
+          await appendChatMessages(existingChatId, newMessages as any[]);
+
+          // 更新 chat metadata（不含訊息）
+          const freshChat = await db.get<any>(DB_STORES.CHATS, existingChatId);
+          if (freshChat) {
+            freshChat.unreadCount = (freshChat.unreadCount || 0) + charMsgs.length;
+            freshChat.messageCount = (freshChat.messageCount || 0) + newMessages.length;
+            freshChat.lastMessagePreview = (newMessages[newMessages.length - 1] as any)?.content?.slice(0, 100) || "";
+            freshChat.updatedAt = Date.now();
+            freshChat.messages = [];
+            await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(freshChat)));
+          } else {
+            // Chat 在讀取間被刪除，建立新聊天 metadata
+            const newChat = {
+              id: existingChatId,
+              name: `與 ${charMsgs[0].characterName} 的對話`,
+              characterId,
+              messages: [],
+              metadata: {},
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              unreadCount: charMsgs.length,
+              messageCount: newMessages.length,
+              lastMessagePreview: (newMessages[newMessages.length - 1] as any)?.content?.slice(0, 100) || "",
+            };
+            await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(newChat)));
+          }
+        } else {
+          // 沒有現有聊天，建立新聊天
+          const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          // 先寫入訊息
+          await appendChatMessages(newChatId, newMessages as any[]);
+          // 再建立 metadata
+          const newChat = {
+            id: newChatId,
+            name: `與 ${charMsgs[0].characterName} 的對話`,
+            characterId,
+            messages: [],
+            metadata: {},
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            unreadCount: charMsgs.length,
+            messageCount: newMessages.length,
+            lastMessagePreview: (newMessages[newMessages.length - 1] as any)?.content?.slice(0, 100) || "",
+          };
+          await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(newChat)));
+        }
       }
 
       // 如果當前有打開的聊天且是受影響的角色，重新載入

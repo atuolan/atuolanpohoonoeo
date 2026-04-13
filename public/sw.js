@@ -79,6 +79,7 @@ self.addEventListener("push", (event) => {
       data: {
         type: data.type || "generic",
         characterId: data.characterId || null,
+        chatId: data.chatId || null,
         navigateTo: data.characterId ? `/chat/${data.characterId}` : "/",
       },
     }),
@@ -100,6 +101,7 @@ self.addEventListener("notificationclick", (event) => {
               type: "notification-click",
               navigateTo: data.navigateTo,
               chatId: data.chatId,
+              characterId: data.characterId,
             });
             return;
           }

@@ -259,11 +259,14 @@ async function loadAndGenerate() {
       if (!chat) return;
       chatRecord.value = chat;
     }
+    // v24：從 chatMessages 表載入訊息以供 extractChatContext 使用
+    const { loadChatMessages } = await import("@/db/chatMessageStore");
+    const chatWithMsgs = { ...chatRecord.value, messages: await loadChatMessages(props.chatId) };
     await peekPhoneStore.generateAll(
       props.characterId,
       props.chatId,
       character.value,
-      chatRecord.value,
+      chatWithMsgs,
     );
   } catch (err) {
     console.error("[PeekPhoneScreen] Failed to generate:", err);
@@ -272,7 +275,9 @@ async function loadAndGenerate() {
 
 async function retryGroup(group: "A" | "B" | "C" | "D") {
   if (!character.value || !chatRecord.value) return;
-  await peekPhoneStore.retryGroup(group, character.value, chatRecord.value);
+  const { loadChatMessages: loadMsgsRetry } = await import("@/db/chatMessageStore");
+  const chatWithMsgs = { ...chatRecord.value, messages: await loadMsgsRetry(props.chatId) };
+  await peekPhoneStore.retryGroup(group, character.value, chatWithMsgs);
 }
 
 async function refreshAll() {
@@ -284,11 +289,13 @@ async function refreshAll() {
   if (!chatRecord.value) return;
   peekPhoneStore.clearCache(props.characterId, props.chatId);
   peekPhoneStore.deleteFromIDB(props.characterId, props.chatId);
+  const { loadChatMessages: loadMsgsRefresh } = await import("@/db/chatMessageStore");
+  const chatForRefresh = { ...chatRecord.value, messages: await loadMsgsRefresh(props.chatId) };
   await peekPhoneStore.generateAll(
     props.characterId,
     props.chatId,
     character.value,
-    chatRecord.value,
+    chatForRefresh,
   );
 }
 
@@ -299,10 +306,12 @@ async function refreshPhase(phase: "A" | "BC" | "D") {
     await loadChatData();
   }
   if (!chatRecord.value) return;
+  const { loadChatMessages: loadMsgsPhase } = await import("@/db/chatMessageStore");
+  const chatForPhase = { ...chatRecord.value, messages: await loadMsgsPhase(props.chatId) };
   await peekPhoneStore.regeneratePhase(
     phase,
     character.value,
-    chatRecord.value,
+    chatForPhase,
   );
 }
 

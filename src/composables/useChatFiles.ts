@@ -191,10 +191,13 @@ export function useChatFiles(deps: {
       const { collectImageRefs, deleteChatImagesByRefs } = await import(
         "@/db/operations"
       );
-      const chat = await db.get<Chat>(DB_STORES.CHATS, chatId);
-      const imageRefs = collectImageRefs(chat?.messages || []);
+      // v24：從 chatMessages 表載入訊息以清理圖片，並級聯刪除
+      const { loadChatMessages, deleteChatMessagesForChat } = await import("@/db/chatMessageStore");
+      const chatMsgs = await loadChatMessages(chatId);
+      const imageRefs = collectImageRefs(chatMsgs);
       await Promise.all([
         db.delete(DB_STORES.CHATS, chatId),
+        deleteChatMessagesForChat(chatId),
         deleteChatImagesByRefs(imageRefs),
       ]);
       // 向量記憶：刪除該聊天的所有向量記錄

@@ -80,6 +80,13 @@ import { PendingCall } from "./types";
 // 時間動態主題
 const { backgroundColor, textColor, isDark } = useTimeTheme();
 
+type ServiceWorkerMessageData = {
+  type?: string;
+  navigateTo?: string;
+  chatId?: string;
+  characterId?: string;
+};
+
 // 背景無聲音樂（防止後台暫停）
 useBackgroundAudio();
 
@@ -930,6 +937,21 @@ onMounted(async () => {
   // 監聽 SW 更新事件
   window.addEventListener("sw:update-available", handleSwUpdate);
   window.addEventListener("popstate", handleBrowserPopState);
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", (event: MessageEvent) => {
+      const data = event.data as ServiceWorkerMessageData | undefined;
+      if (data?.type !== "notification-click") return;
+
+      const navigateTo = data.navigateTo || "";
+      if (data.chatId || navigateTo.startsWith("/chat/")) {
+        void handleNotificationNavigate("chat", {
+          chatId: data.chatId,
+          characterId: data.characterId || undefined,
+        });
+      }
+    });
+  }
 });
 
 onUnmounted(() => {
@@ -1845,20 +1867,46 @@ function navigateToTheaterFromQzone(theaterPostId?: string) {
   navigateToPage("theater");
 }
 
+async function restoreChatContextFromNotification(data?: Record<string, any>) {
+  if (!data?.chatId) return false;
+
+  let resolvedChat: Chat | undefined;
+  try {
+    resolvedChat = await db.get<Chat>(DB_STORES.CHATS, data.chatId);
+  } catch (error) {
+    console.warn("[App] 通知點擊後讀取聊天失敗:", error);
+  }
+
+  const resolvedCharacterId =
+    resolvedChat?.characterId || data.characterId || null;
+  if (!resolvedCharacterId) {
+    console.warn("[App] 通知點擊缺少 characterId，且無法從 chatId 反查");
+    return false;
+  }
+
+  const character = charactersStore.characters.find(
+    (c) => c.id === resolvedCharacterId,
+  );
+  if (!character) {
+    console.warn("[App] 通知點擊對應角色不存在:", resolvedCharacterId);
+    return false;
+  }
+
+  chatCharacterName.value =
+    character.nickname || character.data?.name || "角色";
+  chatCharacterAvatar.value = character.avatar || "";
+  currentChatCharacterId.value = resolvedCharacterId;
+  currentChatId.value = resolvedChat?.id || data.chatId;
+  navigateToPage("chat");
+  return true;
+}
+
 // 處理通知點擊導航
-function handleNotificationNavigate(page: string, data?: Record<string, any>) {
+async function handleNotificationNavigate(page: string, data?: Record<string, any>) {
   if (page === "chat" && data?.chatId) {
-    // 導航到特定聊天
-    const character = charactersStore.characters.find(
-      (c) => c.id === data.characterId,
-    );
-    if (character) {
-      chatCharacterName.value =
-        character.nickname || character.data?.name || "角色";
-      chatCharacterAvatar.value = character.avatar || "";
-      currentChatCharacterId.value = data.characterId || null;
-      currentChatId.value = data.chatId;
-      navigateToPage("chat");
+    const restored = await restoreChatContextFromNotification(data);
+    if (!restored) {
+      console.warn("[App] 無法恢復通知對應聊天，已忽略此次跳轉", data);
     }
   } else if (page === "open_fishing") {
     // 打開釣魚遊戲（通過遊戲中心）
@@ -2002,7 +2050,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <!-- 聊天頁 -->
     <ChatScreen
       v-else-if="currentPage === 'chat'"
-      :key="currentChatCharacterId || ''"
+      :key="`${currentChatCharacterId || ''}:${currentChatId || ''}`"
       @back="goToChatList"
       @settings="openThemeSettings"
       @navigate="handleChatNavigate"

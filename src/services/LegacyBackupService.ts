@@ -1136,10 +1136,13 @@ export class LegacyBackupService {
                 100,
               ) || "";
             chat.messageCount = messagesToSave.length;
-            // 圖片分離後存回 chat.messages
+            // v24：訊息分離儲存
             if (messagesToSave.length > 0) {
-              chat.messages = await extractImagesFromMessages(messagesToSave);
+              const msgsForStorage = await extractImagesFromMessages(messagesToSave);
+              const { saveChatMessages } = await import("@/db/chatMessageStore");
+              await saveChatMessages(chat.id, msgsForStorage);
             }
+            chat.messages = [];
             await db.put(DB_STORES.CHATS, chat);
             stats.chats++;
 

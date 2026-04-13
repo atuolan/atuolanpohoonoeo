@@ -336,7 +336,13 @@ export class ProactiveMessageService {
         updatedAt: Date.now(),
       };
 
-      chat.messages.push(topicMessage);
+      // v24：從 chatMessages 表載入訊息（不再用 chat.messages）
+      const { loadChatMessages, appendChatMessages } = await import(
+        "@/db/chatMessageStore"
+      );
+      const existingMessages = await loadChatMessages(chat.id);
+      // 暫時把 topicMessage 加入記憶體列表以便構建 prompt（不寫入 IDB）
+      const messagesWithTopic = [...existingMessages, topicMessage];
 
       // 觸發 AI 生成回應
       const { useSettingsStore } = await import("@/stores/settings");
@@ -366,10 +372,7 @@ export class ProactiveMessageService {
           "[ProactiveMessage] Cannot start generation:",
           generationResult.error,
         );
-        // 移除話題引導訊息
-        chat.messages = chat.messages.filter(
-          (m: any) => m.id !== topicMessage.id,
-        );
+        // 話題引導訊息只在記憶體中，無需清理
         return;
       }
 
@@ -403,7 +406,7 @@ export class ProactiveMessageService {
         : createDefaultSummarySettings();
 
       // ===== 根據設定限制讀取的消息數量 =====
-      const allMessages = chat.messages || [];
+      const allMessages = messagesWithTopic;
       const actualCount = summarySettings.actualMessageCount;
       const actualMode = summarySettings.actualMessageMode;
       let messagesToUse: typeof allMessages;
@@ -653,14 +656,12 @@ export class ProactiveMessageService {
         }
 
         if (aiContent) {
-          // 移除話題引導訊息
-          chat.messages = chat.messages.filter(
-            (m: any) => m.id !== topicMessage.id,
-          );
+          // 話題引導訊息只在記憶體中，不需要從 IDB 移除
 
           // 使用 parseAIResponse 解析回應，正確分割 <msg> 標籤
           const parsedResponse = parseAIResponse(aiContent);
           const now = Date.now();
+          const newMessages: any[] = [];
 
           if (parsedResponse.messages.length > 0) {
             // 將每個解析後的訊息添加為獨立的聊天訊息
@@ -732,7 +733,7 @@ export class ProactiveMessageService {
                   imageCaption: parsed.imageDescription,
                 }),
               };
-              chat.messages.push(aiMessage);
+              newMessages.push(aiMessage);
             }
             console.log(
               `[ProactiveMessage] Parsed ${parsedResponse.messages.length} messages from AI response`,
@@ -749,7 +750,7 @@ export class ProactiveMessageService {
               createdAt: now,
               updatedAt: now,
             };
-            chat.messages.push(aiMessage);
+            newMessages.push(aiMessage);
             console.log(
               `[ProactiveMessage] No parsed messages, using raw content`,
             );
@@ -828,7 +829,7 @@ export class ProactiveMessageService {
                     description: calEvent.description,
                   },
                 };
-                chat.messages.push(calendarMessage);
+                newMessages.push(calendarMessage);
 
                 console.log("[ProactiveMessage] 行事曆事件已建立:", calEvent);
               }
@@ -871,22 +872,45 @@ export class ProactiveMessageService {
             }
           }
 
-          chat.updatedAt = Date.now();
-          // 累加未讀訊息數
-          chat.unreadCount =
-            (chat.unreadCount || 0) +
-            (parsedResponse.messages.length > 0
-              ? parsedResponse.messages.length
-              : 1);
           // 更新最後訊息預覽（用於列表顯示）
           const lastParsed =
             parsedResponse.messages.length > 0
               ? parsedResponse.messages[parsedResponse.messages.length - 1]
               : null;
-          chat.lastMessagePreview = lastParsed
+          const previewText = lastParsed
             ? lastParsed.content?.slice(0, 80)
             : aiContent.slice(0, 80);
-          await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
+
+          // v24：用 appendChatMessages 追加新訊息（無競態風險，不需讀取-修改-寫回）
+          await appendChatMessages(chat.id, newMessages);
+
+          // 更新 chat metadata（不含訊息）
+          const freshChat = await db.get<any>(DB_STORES.CHATS, chat.id);
+          if (freshChat) {
+            freshChat.updatedAt = Date.now();
+            freshChat.unreadCount =
+              (freshChat.unreadCount || 0) + newMessages.length;
+            freshChat.messageCount =
+              (freshChat.messageCount || 0) + newMessages.length;
+            freshChat.lastMessagePreview = previewText;
+            freshChat.messages = [];
+            await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(freshChat)));
+          } else {
+            // Chat 在生成期間被刪除，重建 metadata
+            chat.updatedAt = Date.now();
+            chat.unreadCount =
+              (chat.unreadCount || 0) + newMessages.length;
+            chat.messageCount = existingMessages.length + newMessages.length;
+            chat.lastMessagePreview = previewText;
+            chat.messages = [];
+            await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
+            console.warn(
+              "[ProactiveMessage] Chat 在生成期間從 IDB 消失，重建 metadata",
+            );
+          }
+          console.log(
+            `[ProactiveMessage] ★ v24 追加 ${newMessages.length} 條新訊息到 chatMessages 表`,
+          );
 
           // 完成生成任務
           aiGenerationStore.completeGeneration(chat.id, "chat", aiContent);
@@ -926,6 +950,7 @@ export class ProactiveMessageService {
                   await sendNotifyPush({
                     characterName: charName,
                     characterId: characterId,
+                    chatId: chat.id,
                     content: (preview || "").slice(0, 200),
                   });
                   console.log("[ProactiveMessage] 已透過雲端 Worker 發送 Web Push 通知", {
@@ -947,18 +972,12 @@ export class ProactiveMessageService {
 
           console.log(`[ProactiveMessage] AI response generated successfully`);
         } else {
-          // 沒有生成內容，移除話題引導訊息
-          chat.messages = chat.messages.filter(
-            (m: any) => m.id !== topicMessage.id,
-          );
+          // 沒有生成內容，話題引導訊息只在記憶體中，無需清理
           aiGenerationStore.setError(chat.id, "No content generated", "chat");
         }
       } catch (error) {
-        // 發生錯誤，移除話題引導訊息
-        chat.messages = chat.messages.filter(
-          (m: any) => m.id !== topicMessage.id,
-        );
-        await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
+        // 發生錯誤時不回寫 IDB：chat 是開頭讀取的快照，此時回寫會覆蓋 ChatScreen 的中間保存
+        // topic message 只存在於記憶體快照中，IDB 中從未出現過，無需清理
         aiGenerationStore.setError(chat.id, String(error), "chat");
         // 流式視窗錯誤處理
         if (chatSettings.useStreamingWindow) {

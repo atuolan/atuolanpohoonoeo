@@ -4778,13 +4778,18 @@ async function triggerAIResponse(options?: {
                   };
                   newDmMessages.push(dmMessage);
 
-                  // 直接把訊息加到 chat.messages
-                  if (!targetChat.messages) targetChat.messages = [];
-                  targetChat.messages.push(...newDmMessages);
+                  // v24：用 appendChatMessages 追加訊息（無競態風險）
+                  const { appendChatMessages: appendMsgs1 } = await import(
+                    "@/db/chatMessageStore"
+                  );
+                  await appendMsgs1(targetChat.id, newDmMessages);
+                  // 更新 metadata
                   targetChat.lastMessagePreview =
                     dmMessage.content?.slice(0, 100) || "";
-                  targetChat.messageCount = targetChat.messages.length;
+                  targetChat.messageCount =
+                    (targetChat.messageCount || 0) + newDmMessages.length;
                   targetChat.updatedAt = Date.now();
+                  targetChat.messages = [];
                   await db.put(
                     DB_STORES.CHATS,
                     JSON.parse(JSON.stringify(targetChat)),
@@ -5666,12 +5671,17 @@ async function triggerAIResponse(options?: {
                     };
                     newDmMessages.push(dmMessage);
 
-                    if (!targetChat.messages) targetChat.messages = [];
-                    targetChat.messages.push(...newDmMessages);
+                    // v24：用 appendChatMessages 追加訊息（無競態風險）
+                    const { appendChatMessages: appendMsgs2 } = await import(
+                      "@/db/chatMessageStore"
+                    );
+                    await appendMsgs2(targetChat.id, newDmMessages);
                     targetChat.lastMessagePreview =
                       dmMessage.content?.slice(0, 100) || "";
-                    targetChat.messageCount = targetChat.messages.length;
+                    targetChat.messageCount =
+                      (targetChat.messageCount || 0) + newDmMessages.length;
                     targetChat.updatedAt = Date.now();
+                    targetChat.messages = [];
                     await db.put(
                       DB_STORES.CHATS,
                       JSON.parse(JSON.stringify(targetChat)),
@@ -7642,20 +7652,25 @@ async function loadOrCreateChat(overrideChatId?: string) {
         chatVariablesStore.initForChat(chat.id);
         getMacroEngine().registerVarMacros(chatVariablesStore);
 
-        // 清除未讀計數
+        // 清除未讀計數（只更新 metadata，不寫入訊息）
         if (chat.unreadCount) {
           chat.unreadCount = 0;
-          await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
+          const chatCopy = JSON.parse(JSON.stringify(chat));
+          chatCopy.messages = [];
+          await db.put(DB_STORES.CHATS, chatCopy);
         }
 
-        // 直接從 chat.messages 讀取訊息
-        let rawMessages: ChatMessage[] =
-          chat.messages && chat.messages.length > 0 ? chat.messages : [];
+        // v24：從獨立的 chatMessages 表讀取訊息
+        const { loadChatMessages, saveChatMessages } = await import(
+          "@/db/chatMessageStore"
+        );
+        let rawMessages: ChatMessage[] = await loadChatMessages(chat.id);
+        _messagesLoadedAt = Date.now();
 
-        // 如果 chat.messages 為空但 messageCount > 0，嘗試從遺留的 messageChunks 表恢復
+        // 如果 chatMessages 為空但 messageCount > 0，嘗試從遺留的 messageChunks 表恢復
         if (rawMessages.length === 0 && (chat.messageCount ?? 0) > 0) {
           console.warn(
-            "[ChatScreen] chat.messages 為空但 messageCount =",
+            "[ChatScreen] chatMessages 為空但 messageCount =",
             chat.messageCount,
             "，嘗試從 messageChunks 恢復...",
           );
@@ -7666,11 +7681,10 @@ async function loadOrCreateChat(overrideChatId?: string) {
               console.log(
                 "[ChatScreen] 從 messageChunks 恢復了",
                 recovered.length,
-                "條訊息，將回寫到 chat.messages",
+                "條訊息，將寫入 chatMessages 表",
               );
-              // 回寫到 chat.messages 以完成遷移
-              chat.messages = JSON.parse(JSON.stringify(recovered));
-              await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
+              // 寫入獨立的 chatMessages 表
+              await saveChatMessages(chat.id, recovered);
             }
           } catch (recoverErr) {
             console.warn("[ChatScreen] messageChunks 恢復失敗:", recoverErr);
@@ -7732,10 +7746,9 @@ async function loadOrCreateChat(overrideChatId?: string) {
               "[ChatScreen] 修復後:",
               rawMessages.map((m) => m.sender[0]).join(""),
             );
-            // 回寫修復後的順序到 IDB
-            chat.messages = JSON.parse(JSON.stringify(rawMessages));
-            await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
-            console.log("[ChatScreen] ✅ 已將修復後的訊息順序回寫到 IndexedDB");
+            // 回寫修復後的順序到 chatMessages 表
+            await saveChatMessages(chat.id, rawMessages);
+            console.log("[ChatScreen] ✅ 已將修復後的訊息順序回寫到 chatMessages");
           }
         }
 
@@ -8092,7 +8105,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
     chatBoundPersonaId.value = userStore.currentPersonaId;
   }
 
-  // 如果沒有訊息，添加開場白（群聊模式不添加角色開場白）
+  // 如果沒有訊息，添加開場白（群聯模式不添加角色開場白）
   // 檢查 metadata.skipGreeting 標記，如果用戶明確選擇不帶開場白則跳過
   const skipGreeting =
     (currentChatData.value?.metadata as any)?.skipGreeting === true;
@@ -8101,6 +8114,18 @@ async function loadOrCreateChat(overrideChatId?: string) {
     !currentChatData.value?.isGroupChat &&
     !skipGreeting
   ) {
+    // ★ 診斷日誌：為什麼 messages 是空的？
+    const targetChatId2 = overrideChatId || props.chatId;
+    console.warn(
+      "[ChatScreen] ⚠️ loadOrCreateChat 結束時 messages 為空，即將添加開場白",
+      {
+        targetChatId: targetChatId2,
+        propsCharacterId: props.characterId,
+        currentChatId: currentChatId.value,
+        hasChatData: !!currentChatData.value,
+        chatDataMsgCount: currentChatData.value?.messages?.length,
+      },
+    );
     // 尋找角色的 first_mes
     const character = charactersStore.characters.find(
       (c) =>
@@ -8529,6 +8554,8 @@ let _lastSavedMessageCount = 0;
 let _lastSavedLastMessageId = "";
 /** 上次成功儲存時的所有訊息 ID 快照（用於 dirty chunk 比對） */
 let _lastSavedMessageIds: string[] = [];
+/** 上次從 IDB 載入訊息的時間戳（用於 saveChatMessages 保護背景服務新增的訊息） */
+let _messagesLoadedAt = 0;
 /** debounce 計時器 */
 let _saveChatTimer: ReturnType<typeof setTimeout> | null = null;
 /** 是否有待處理的儲存 */
@@ -8655,36 +8682,69 @@ async function _saveChatImplInner() {
       plainChat = JSON.parse(JSON.stringify(toRaw(chat)));
     }
 
-    // 驗證：確認 plainChat.messages 包含所有訊息
-    const aiMsgs = plainChat.messages.filter(
-      (m: any) => m.sender === "assistant",
-    );
+    // 提取訊息列表（用於寫入 chatMessages 表）
+    const plainMessages = plainChat.messages || [];
+    const localCount = plainMessages.length;
+
+    // 從 DB 讀取最新版本，用於安全檢查和狀態保護
+    let latestFromDb: any = null;
+    try {
+      latestFromDb = await db.get<any>(DB_STORES.CHATS, plainChat.id);
+    } catch {
+      /* 讀取失敗時繼續，後面的保護邏輯會跳過 */
+    }
+
+    // ★ 安全閘門：防止少量訊息（如初始開場白）覆蓋已有大量訊息的聊天記錄
+    // 場景：通知點擊導致 ChatScreen 以錯誤上下文重新初始化，只剩開場白
+    if (latestFromDb) {
+      const dbCount = latestFromDb.messageCount || 0;
+      // 如果 IDB 有 5+ 條訊息且本地訊息不超過 2 條（開場白級別），拒絕覆蓋
+      if (dbCount >= 5 && localCount <= 2) {
+        console.error(
+          `[ChatScreen] ⚠️ 安全閘門觸發！拒絕保存：IDB messageCount=${dbCount}，本地只有 ${localCount} 條。`,
+          "可能是 ChatScreen 以錯誤上下文重新初始化，跳過此次保存以保護資料。",
+          {
+            chatId: plainChat.id,
+            localIds: plainMessages.slice(0, 3).map((m: any) => m.id),
+          },
+        );
+        _saveChatPending = false;
+        return;
+      }
+    }
 
     // 封鎖狀態保護：從 DB 讀取最新的 blockState，避免被覆蓋
     // （BlockService 直接寫入 DB，ChatScreen 的 currentChatData 可能還沒同步）
-    try {
-      const latestFromDb = await db.get<any>(DB_STORES.CHATS, plainChat.id);
-      if (latestFromDb?.blockState) {
-        plainChat.blockState = latestFromDb.blockState;
-      }
-    } catch {
-      /* 讀取失敗時保留 buildChatMetadata 的值 */
+    if (latestFromDb?.blockState) {
+      plainChat.blockState = latestFromDb.blockState;
     }
 
+    // v24：分開保存 metadata 和訊息
+    const { saveChatMessages: saveMsgs } = await import(
+      "@/db/chatMessageStore"
+    );
+
+    // 1) 保存訊息到 chatMessages 表（傳入 snapshotTime 保護背景服務新增的訊息）
+    await saveMsgs(plainChat.id, plainMessages, _messagesLoadedAt || undefined);
+
+    // 2) 保存 chat metadata（不含訊息）到 chats 表
+    plainChat.messages = [];
     await db.put(DB_STORES.CHATS, plainChat);
-    // 保存後立即回讀驗證（僅開發環境，避免生產環境額外記憶體開銷）
+
+    // 保存後立即回讀驗證（僅開發環境）
     if (import.meta.env.DEV) {
       try {
-        const verify = await db.get<any>(DB_STORES.CHATS, currentChatId.value!);
-        if (verify) {
-          if (verify.messages?.length !== plainChat.messages.length) {
-            console.error(
-              "[ChatScreen] ⚠️ 保存後回讀數量不一致！寫入:",
-              plainChat.messages.length,
-              "讀回:",
-              verify.messages?.length,
-            );
-          }
+        const { getChatMessageCount } = await import(
+          "@/db/chatMessageStore"
+        );
+        const savedCount = await getChatMessageCount(currentChatId.value!);
+        if (savedCount !== localCount) {
+          console.error(
+            "[ChatScreen] ⚠️ 保存後回讀數量不一致！寫入:",
+            localCount,
+            "讀回:",
+            savedCount,
+          );
         }
       } catch (verifyErr) {
         console.warn("[ChatScreen] 回讀驗證失敗:", verifyErr);
@@ -9228,11 +9288,12 @@ watch(
       // 等一小段時間確保 saveChat 已寫入 IDB
       await new Promise((r) => setTimeout(r, 300));
       try {
-        // 從 IDB 讀取最新聊天記錄
-        const chat = await db.get<Chat>(DB_STORES.CHATS, currentChatId.value);
-        if (!chat) return;
-
-        const dbMessageCount = chat.messages?.length || 0;
+        // v24：從 chatMessages 表讀取最新訊息
+        const { loadChatMessages: loadMsgs } = await import(
+          "@/db/chatMessageStore"
+        );
+        const dbMessages = await loadMsgs(currentChatId.value);
+        const dbMessageCount = dbMessages.length;
         const localMessageCount = messages.value.length;
 
         // 檢查是否有正在流式的空佔位符（離開時被保留的）
@@ -9247,7 +9308,7 @@ watch(
           hasStreamingPlaceholder ||
           (dbMessageCount === localMessageCount &&
             dbMessageCount > 0 &&
-            chat.messages[chat.messages.length - 1]?.content !==
+            dbMessages[dbMessages.length - 1]?.content !==
               messages.value[messages.value.length - 1]?.content);
 
         if (shouldReload) {

@@ -488,6 +488,10 @@ export async function buildBackupZipStreaming(
       const chat = await db.get<any>(DB_STORES.CHATS, chatKeys[i]);
       if (!chat) continue;
 
+      // v24：從 chatMessages 表載入訊息
+      const { loadChatMessages: loadMsgsBak } = await import("@/db/chatMessageStore");
+      chat.messages = await loadMsgsBak(chat.id);
+
       if (chat.messages?.length > 0) {
         if (!excludeChatImages) {
           try {
