@@ -48,6 +48,7 @@ const audioPlayer = useAudioPlayer();
 const regexHtmlDoc = ref("");
 const regexIframeRef = ref<HTMLIFrameElement | null>(null);
 const regexIframeHeight = ref(0);
+const regexInlineHtml = ref("");
 
 // ★ 正則產生 HTML 時需要拆分到獨立氣泡（避免在 computed 內直接修改 ref）
 const _regexHtmlEmitted = new Set<string>();
@@ -572,9 +573,143 @@ function injectIframeHeightScript(html: string): string {
 <\/script>`;
 
   const normalized = ensureMobileFriendlyHtmlDocument(html);
-  return normalized.includes("</body>")
-    ? normalized.replace("</body>", heightScript + "</body>")
+  return /<\/body>/i.test(normalized)
+    ? normalized.replace(/<\/body>/i, `${heightScript}</body>`)
     : normalized + heightScript;
+}
+
+function isRenderableHtmlFragment(content: string): boolean {
+  const trimmed = content.trim();
+  return (
+    /^\s*<!DOCTYPE\s/i.test(trimmed) ||
+    /^\s*<html[\s>]/i.test(trimmed) ||
+    /^\s*<!--[\s\S]*?-->\s*<[a-zA-Z]/i.test(trimmed) ||
+    /^\s*<!--[\s\S]*?-->\s*<!DOCTYPE\s/i.test(trimmed) ||
+    /^\s*<!--[\s\S]*?-->\s*<html[\s>]/i.test(trimmed) ||
+    /^\s*<[a-zA-Z]/.test(trimmed)
+  );
+}
+
+function shouldRenderAsRawHtml(content: string): boolean {
+  const trimmed = content.trim();
+  return (
+    trimmed.length > 200 &&
+    isRenderableHtmlFragment(trimmed) &&
+    (/<style[\s>]/i.test(trimmed) ||
+      /<details[\s>]/i.test(trimmed) ||
+      /<div[\s>]/i.test(trimmed))
+  );
+}
+
+function getInlineHtmlScopeClass(messageId?: string): string {
+  const safeId = (messageId ?? "inline")
+    .replace(/[^a-zA-Z0-9_-]/g, "-")
+    .slice(0, 48);
+  return `message-inline-html-scope-${safeId}`;
+}
+
+function prefixCssSelectors(css: string, prefix: string): string {
+  return css.replace(/(^|})\s*([^@}{][^{}]*)\{/g, (_match: string, boundary: string, selectorGroup: string) => {
+    const scopedSelectors = selectorGroup
+      .split(",")
+      .map((selector: string) => selector.trim())
+      .filter(Boolean)
+      .map((selector: string) => {
+        if (selector.startsWith(prefix)) return selector;
+        if (selector === "html" || selector === "body") return prefix;
+        if (selector.startsWith("body ")) return `${prefix} ${selector.slice(5).trim()}`;
+        if (selector.startsWith("html ")) return `${prefix} ${selector.slice(5).trim()}`;
+        return `${prefix} ${selector}`;
+      })
+      .join(", ");
+
+    return `${boundary}${scopedSelectors}{`;
+  });
+ }
+
+ function scopeInlineHtmlStyles(html: string, scopeClass: string): string {
+  const scopeSelector = `.${scopeClass}`;
+  const styledHtml = html.replace(/<style>([\s\S]*?)<\/style>/gi, (_match: string, css: string) => {
+    return `<style>${prefixCssSelectors(css, scopeSelector)}</style>`;
+  });
+  return `<div class="${scopeClass}">${styledHtml}</div>`;
+ }
+
+function extractRawHtmlFragment(source: string): {
+  htmlContent: string;
+  remainingText: string;
+} | null {
+  const match = source.match(/<(style|details|div|html)\b|<!DOCTYPE\s+html/i);
+  if (!match || match.index === undefined) return null;
+
+  const before = source.substring(0, match.index).trim();
+  const candidate = source.substring(match.index).trim();
+
+  if (!shouldRenderAsRawHtml(candidate)) return null;
+
+  return {
+    htmlContent: candidate,
+    remainingText: before,
+  };
+}
+
+function extractHtmlFenceBlocks(source: string): {
+  htmlBlocks: string[];
+  remainingText: string;
+} {
+  const htmlBlocks: string[] = [];
+  let textOnly = source.trim();
+  let safetyCounter = 0;
+
+  while (safetyCounter++ < 10) {
+    const openMatch = textOnly.match(/```(?:html)?\s*\n?/i);
+    if (!openMatch) break;
+
+    const afterOpen = openMatch.index! + openMatch[0].length;
+    const rest = textOnly.substring(afterOpen);
+
+    let fenceEndInRest = -1;
+    let fenceContentEnd = -1;
+    const htmlCloseSearch = rest.search(/<\/html>\s*\n*\s*```/i);
+    if (htmlCloseSearch >= 0) {
+      const closeMatch = rest
+        .substring(htmlCloseSearch)
+        .match(/<\/html>(\s*\n*\s*)(```)/i);
+      if (closeMatch) {
+        fenceContentEnd =
+          htmlCloseSearch +
+          closeMatch.index! +
+          closeMatch[0].length -
+          closeMatch[2].length;
+        fenceEndInRest = htmlCloseSearch + closeMatch.index! + closeMatch[0].length;
+      }
+    }
+
+    if (fenceEndInRest < 0) {
+      const lastFence = rest.lastIndexOf("\n```");
+      if (lastFence >= 0) {
+        fenceContentEnd = lastFence;
+        fenceEndInRest = lastFence + 4;
+      }
+    }
+    if (fenceEndInRest < 0) break;
+
+    const fenceContent = rest.substring(0, fenceContentEnd).trim();
+    if (!isRenderableHtmlFragment(fenceContent)) {
+      break;
+    }
+
+    htmlBlocks.push(fenceContent);
+    const fullFenceEnd = afterOpen + fenceEndInRest;
+    textOnly =
+      textOnly.substring(0, openMatch.index!) +
+      textOnly.substring(fullFenceEnd);
+  }
+
+  return {
+    htmlBlocks,
+    remainingText: textOnly.trim(),
+  };
 }
 
 // HTML 區塊的 iframe srcdoc（注入自動回報高度的 script）
@@ -609,6 +744,8 @@ function replaceDisplayMacros(text: string): string {
 // 渲染 Markdown 內容（包含圖片描述和影片描述的特殊處理）
 const renderedContent = computed(() => {
   if (!props.content) return "";
+
+  regexInlineHtml.value = "";
 
   // 如果是真實圖片或圖片URL類型，不進行拍立得渲染
   if (props.messageType === "image" || props.messageType === "image-url") {
@@ -647,11 +784,37 @@ const renderedContent = computed(() => {
       html = cleanTTSTags(html);
     }
 
+    if (!props.isHtmlBlock) {
+      const { htmlBlocks, remainingText } = extractHtmlFenceBlocks(html);
+      if (htmlBlocks.length > 0) {
+        const processedBlocks = htmlBlocks.map((block) =>
+          injectIframeHeightScript(block),
+        );
+
+        if (remainingText) {
+          for (const block of processedBlocks) {
+            _emitSplitHtml(block);
+          }
+          regexHtmlDoc.value = "";
+          html = remainingText;
+        } else if (processedBlocks.length === 1) {
+          regexHtmlDoc.value = processedBlocks[0];
+          return "";
+        } else {
+          regexHtmlDoc.value = processedBlocks[0];
+          for (let i = 1; i < processedBlocks.length; i++) {
+            _emitSplitHtml(processedBlocks[i]);
+          }
+          return "";
+        }
+      }
+    }
+
     // ★ 偵測舊訊息中 ```html ``` 包裹的 HTML 片段（isHtmlBlock 未設定的情況）
     // 這處理從資料庫讀出的舊訊息，讓它們也能走 iframe 渲染路徑
     if (!props.isHtmlBlock) {
       // 使用兩步法匹配 HTML fence（同 regex 後偵測邏輯）
-      const fenceOpenMatch = html.match(/```(?:html)?\s*\n?/);
+      const fenceOpenMatch = html.match(/```(?:html)?\s*\n?/i);
       let htmlFenceMatch: RegExpMatchArray | null = null;
       if (fenceOpenMatch) {
         const afterOpen = fenceOpenMatch.index! + fenceOpenMatch[0].length;
@@ -686,7 +849,8 @@ const renderedContent = computed(() => {
       }
       if (htmlFenceMatch) {
         const fenceContent = htmlFenceMatch[1].trim();
-        if (/^\s*<[a-zA-Z]/.test(fenceContent)) {
+        if (isRenderableHtmlFragment(fenceContent)) {
+          regexInlineHtml.value = "";
           regexHtmlDoc.value = injectIframeHeightScript(fenceContent);
           return "";
         }
@@ -701,6 +865,7 @@ const renderedContent = computed(() => {
         /<div[\s>]/i.test(html)
       ) {
         const fragment = html.trim();
+        regexInlineHtml.value = "";
         regexHtmlDoc.value = injectIframeHeightScript(fragment);
         return "";
       }
@@ -864,69 +1029,9 @@ const renderedContent = computed(() => {
     if (processedContent !== beforeRegex) {
       const stripped = processedContent.trim();
 
-      // ★ 提取所有 HTML fence：可能有多個（如音樂播放器 + 狀態欄）
-      //   使用 </html> 作為錨點找到每個 fence 的精確邊界
-      const htmlBlocks: string[] = [];
-      let textOnly = stripped;
-
-      // 反覆尋找並移除 HTML fence，直到沒有更多
-      let safetyCounter = 0;
-      while (safetyCounter++ < 10) {
-        const openMatch = textOnly.match(/```(?:html)?\s*\n?/);
-        if (!openMatch) break;
-
-        const afterOpen = openMatch.index! + openMatch[0].length;
-        const rest = textOnly.substring(afterOpen);
-
-        // 找 </html> 後面最近的 ``` 作為結束標記
-        let fenceEndInRest = -1;
-        let fenceContentEnd = -1;
-        const htmlCloseSearch = rest.search(/<\/html>\s*\n*\s*```/i);
-        if (htmlCloseSearch >= 0) {
-          const closeMatch = rest
-            .substring(htmlCloseSearch)
-            .match(/<\/html>(\s*\n*\s*)(```)/i);
-          if (closeMatch) {
-            fenceContentEnd =
-              htmlCloseSearch +
-              closeMatch.index! +
-              closeMatch[0].length -
-              closeMatch[2].length;
-            fenceEndInRest =
-              htmlCloseSearch + closeMatch.index! + closeMatch[0].length;
-          }
-        }
-        // 退路：找不到 </html>，用最後一個獨立行 ```
-        if (fenceEndInRest < 0) {
-          const lastFence = rest.lastIndexOf("\n```");
-          if (lastFence >= 0) {
-            fenceContentEnd = lastFence;
-            fenceEndInRest = lastFence + 4; // \n```
-          }
-        }
-        if (fenceEndInRest < 0) break;
-
-        const fenceContent = rest.substring(0, fenceContentEnd).trim();
-        // 確認是 HTML 內容
-        if (
-          /^\s*<!DOCTYPE\s/i.test(fenceContent) ||
-          /^\s*<html[\s>]/i.test(fenceContent) ||
-          /^\s*<[a-zA-Z]/.test(fenceContent)
-        ) {
-          htmlBlocks.push(fenceContent);
-          // 從 textOnly 中移除這個 fence
-          const fullFenceEnd = afterOpen + fenceEndInRest;
-          textOnly =
-            textOnly.substring(0, openMatch.index!) +
-            textOnly.substring(fullFenceEnd);
-        } else {
-          break; // fence 內容不是 HTML，停止
-        }
-      }
+      const { htmlBlocks, remainingText } = extractHtmlFenceBlocks(stripped);
 
       if (htmlBlocks.length > 0) {
-        const remainingText = textOnly.trim();
-
         // 為每個 HTML 區塊注入高度回報 script 並包成完整文件
         const processedBlocks = htmlBlocks.map((block) => {
           return injectIframeHeightScript(block);
@@ -953,9 +1058,35 @@ const renderedContent = computed(() => {
           return "";
         }
       }
+
+      // ★ 先嘗試拆分「正文 + 裸 HTML」混合內容（如 regex 產出的狀態欄）
+      //   必須在 shouldRenderAsRawHtml 之前，否則整篇會被誤判為純 HTML 塞進 iframe
+      const rawHtmlFragment = extractRawHtmlFragment(processedContent);
+      if (rawHtmlFragment) {
+        const inlineScopedHtml = scopeInlineHtmlStyles(
+          rawHtmlFragment.htmlContent,
+          getInlineHtmlScopeClass(props.id),
+        );
+        if (rawHtmlFragment.remainingText) {
+          regexHtmlDoc.value = "";
+          regexInlineHtml.value = inlineScopedHtml;
+          processedContent = rawHtmlFragment.remainingText;
+        } else {
+          regexInlineHtml.value = inlineScopedHtml;
+          return inlineScopedHtml;
+        }
+      } else if (shouldRenderAsRawHtml(stripped)) {
+        // 整篇都是 HTML（沒有混合文字）→ iframe 渲染
+        regexInlineHtml.value = "";
+        regexHtmlDoc.value = injectIframeHeightScript(stripped);
+        return "";
+      }
     }
     // 不是完整 HTML，清除之前的快取
     regexHtmlDoc.value = "";
+    if (!regexInlineHtml.value) {
+      regexInlineHtml.value = "";
+    }
 
     // 將「內容」轉換為帶有 quote 樣式的 span
     processedContent = processedContent.replace(
@@ -971,7 +1102,8 @@ const renderedContent = computed(() => {
       "<em>$1</em>",
     );
 
-    return marked.parse(processedContent) as string;
+    const renderedMarkdown = marked.parse(processedContent) as string;
+    return `${renderedMarkdown}${regexInlineHtml.value}`;
   } catch {
     return props.content;
   }
