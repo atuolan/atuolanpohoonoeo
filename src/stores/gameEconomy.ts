@@ -59,9 +59,9 @@ const IDLE_CONFIG = {
   /** 最大掛機時長（24 小時，毫秒） */
   MAX_DURATION_MS: 24 * 60 * 60 * 1000,
   /** 每分鐘最少釣魚數 */
-  FISH_PER_MINUTE_MIN: 1,
+  FISH_PER_MINUTE_MIN: 0,
   /** 每分鐘最多釣魚數 */
-  FISH_PER_MINUTE_MAX: 3,
+  FISH_PER_MINUTE_MAX: 2,
 } as const;
 
 /** 賭博系統相關常量 */

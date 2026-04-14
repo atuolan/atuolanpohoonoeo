@@ -70,6 +70,10 @@ export interface FateSpread {
   layoutType?: FateLayoutType;
   /** 背景漸層（可選） */
   bgGradient?: string;
+  /** 牌陣主分類（如：愛情、事業、萬用） */
+  category?: string;
+  /** 牌陣標籤（如：指引、發展、啟發） */
+  tags?: string[];
 }
 
 /** 抽到的牌 */

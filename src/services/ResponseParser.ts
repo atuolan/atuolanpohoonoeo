@@ -699,7 +699,6 @@ function parseMessageContentWithoutTimetravel(content: string): ParsedMessage {
         .trim();
     }
   }
-
   return result;
 }
 
@@ -709,6 +708,30 @@ function parseMessageContentWithoutTimetravel(content: string): ParsedMessage {
 function isFullHtmlDocument(content: string): boolean {
   const trimmed = content.trim();
   return /^\s*<!DOCTYPE\s/i.test(trimmed) || /^\s*<html[\s>]/i.test(trimmed);
+}
+
+function extractMsgMatches(source: string): Array<{
+  fullMatch: string;
+  content: string;
+  index: number;
+}> {
+  const msgRegex = /<msg>([\s\S]*?)<\/msg>/gi;
+  const matches: Array<{
+    fullMatch: string;
+    content: string;
+    index: number;
+  }> = [];
+  let msgExec: RegExpExecArray | null;
+
+  while ((msgExec = msgRegex.exec(source)) !== null) {
+    matches.push({
+      fullMatch: msgExec[0],
+      content: msgExec[1].trim(),
+      index: msgExec.index,
+    });
+  }
+
+  return matches;
 }
 
 /**
@@ -849,19 +872,19 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     .trim();
 
   // 3. 解析 <msg> 標籤
-  const msgRegex = /<msg>([\s\S]*?)<\/msg>/gi;
-  const msgMatchArray: Array<{
-    fullMatch: string;
-    content: string;
-    index: number;
-  }> = [];
-  let msgExec: RegExpExecArray | null;
-  while ((msgExec = msgRegex.exec(outputContent)) !== null) {
-    msgMatchArray.push({
-      fullMatch: msgExec[0],
-      content: msgExec[1].trim(),
-      index: msgExec.index,
-    });
+  let msgMatchArray = extractMsgMatches(outputContent);
+  if (msgMatchArray.length === 0 && !outputMatch) {
+    const rawMsgMatches = extractMsgMatches(rawResponse);
+    if (rawMsgMatches.length > 0) {
+      outputContent = rawResponse
+        .replace(/<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/gi, "")
+        .replace(/\[char-action:[^\]]*\]/g, "")
+        .replace(/\[\/char-action:[^\]]*\]/g, "")
+        .replace(/\[char-action:[^\]]*\][\s\S]*?\[\/char-action:[^\]]*\]/g, "")
+        .trim();
+      result.rawOutput = outputContent;
+      msgMatchArray = rawMsgMatches;
+    }
   }
 
   if (msgMatchArray.length > 0) {

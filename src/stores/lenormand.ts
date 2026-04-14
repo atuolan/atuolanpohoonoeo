@@ -21,12 +21,22 @@ import { computed, ref } from "vue";
 const LENORMAND_HISTORY_KEY = "lenormand-readings";
 const MAX_READINGS = 50;
 
+function fisherYatesShuffle<T>(items: T[]): T[] {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
 export const useLenormandStore = defineStore("lenormand", () => {
   // ===== 占卜流程狀態 =====
   const phase = ref<LenormandPhase>("question");
   const question = ref("");
   const spread = ref<LenormandSpread>(getDefaultLenormandSpread());
   const drawnCards = ref<LenormandDrawnCard[]>([]);
+  const revealedCount = ref(0);
   const interpretation = ref("");
   const isInterpreting = ref(false);
   const interpretError = ref<string | null>(null);
@@ -44,6 +54,9 @@ export const useLenormandStore = defineStore("lenormand", () => {
   // ===== 計算屬性 =====
   const requiredPicks = computed(() => spread.value.positions.length);
   const pickedCount = computed(() => pickedIndices.value.size);
+  const allRevealed = computed(
+    () => revealedCount.value >= drawnCards.value.length && drawnCards.value.length > 0,
+  );
 
   // ===== 方法 =====
 
@@ -60,11 +73,10 @@ export const useLenormandStore = defineStore("lenormand", () => {
     if (isShuffling.value) return;
     isShuffling.value = true;
     setTimeout(() => {
-      shuffledDeck.value = [...allLenormandCards].sort(
-        () => Math.random() - 0.5,
-      );
+      shuffledDeck.value = fisherYatesShuffle(allLenormandCards);
       pickedIndices.value = new Set();
       drawnCards.value = [];
+      revealedCount.value = 0;
       shuffleCount.value++;
       isShuffling.value = false;
     }, 1200);
@@ -88,8 +100,23 @@ export const useLenormandStore = defineStore("lenormand", () => {
     drawnCards.value = [...drawnCards.value, { card, position }];
 
     if (pickedCount.value >= requiredPicks.value) {
-      phase.value = "result";
+      revealedCount.value = 0;
+      phase.value = "reveal";
     }
+  }
+
+  function revealNextCard() {
+    if (revealedCount.value < drawnCards.value.length) {
+      revealedCount.value++;
+      if (revealedCount.value >= drawnCards.value.length) {
+        phase.value = "result";
+      }
+    }
+  }
+
+  function revealAllCards() {
+    revealedCount.value = drawnCards.value.length;
+    phase.value = "result";
   }
 
   /** 開始 AI 解讀 */
@@ -171,6 +198,7 @@ export const useLenormandStore = defineStore("lenormand", () => {
     question.value = "";
     spread.value = getDefaultLenormandSpread();
     drawnCards.value = [];
+    revealedCount.value = 0;
     interpretation.value = "";
     isInterpreting.value = false;
     interpretError.value = null;
@@ -231,6 +259,7 @@ export const useLenormandStore = defineStore("lenormand", () => {
     question,
     spread,
     drawnCards,
+    revealedCount,
     interpretation,
     isInterpreting,
     interpretError,
@@ -242,11 +271,14 @@ export const useLenormandStore = defineStore("lenormand", () => {
     isHistoryLoaded,
     requiredPicks,
     pickedCount,
+    allRevealed,
     goToPhase,
     selectSpread,
     shuffleDeck,
     confirmShuffle,
     pickCard,
+    revealNextCard,
+    revealAllCards,
     startInterpretation,
     reset,
     loadHistory,

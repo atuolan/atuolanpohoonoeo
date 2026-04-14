@@ -11,6 +11,7 @@ function formatCardDetail(dc: LenormandDrawnCard): string {
   // 找出此牌與其他抽到的牌的組合意義（如果有）
   const lines: string[] = [
     `【${position.nameCn}】${card.symbol} ${card.nameCn}（第 ${card.number} 號）`,
+    `位置作用：${position.description}`,
     `關鍵詞：${card.keywords.join("、")}`,
     `核心含義：${card.meaning.general}`,
     `感情：${card.meaning.love}`,
@@ -76,6 +77,12 @@ export function buildLenormandInterpretationPrompt(
 ): string {
   const cardsDesc = drawnCards.map(formatCardDetail).join("\n\n");
   const combinationsText = buildCombinationsText(drawnCards);
+  const positionsText = spread.positions
+    .map(
+      (position, index) =>
+        `${index + 1}. ${position.nameCn}：${position.description}`,
+    )
+    .join("\n");
 
   return `你是一位精通雷諾曼牌的占卜師。雷諾曼牌是一套 36 張的符號牌，每張牌都有具體的象徵意義，解讀時要將牌與牌之間的關係和組合一起考慮。
 
@@ -84,6 +91,9 @@ ${question}
 
 ## 牌陣：${spread.nameCn}
 ${spread.description}
+
+## 此牌陣各位置的固定意義
+${positionsText}
 
 ## 抽到的牌（含完整牌義）
 ${cardsDesc}
@@ -95,13 +105,17 @@ ${combinationsText}
 - 中心牌（如果有）代表核心問題
 - 解讀要貼近日常生活，給出具體的方向
 - 沒有逆位，正負面解讀取決於周圍的牌
+- 每一張牌都必須先服從它所在位置的作用，再談牌本身的象徵
+- 不可忽略位置名稱與位置描述，不可把所有牌當成普通連排來解讀
 
 ## 解讀要求
-1. 整體解讀：將所有牌的意義結合問題進行整體解讀
-2. 牌與牌的關係：特別注意相鄰牌之間的組合意義
-3. 具體建議：給出實際可行的建議
-4. 語氣：溫和直接，像朋友聊天一樣自然
-5. 長度：2000 字以內
+1. 先寫「牌陣定位」：簡短說明這個牌陣會從哪些面向回答問題
+2. 接著「逐位置解讀」：按照位置順序，一張一張解讀，且每一段都必須明確結合該位置作用
+3. 再寫「牌與牌的關係」：特別注意相鄰牌、中心牌、前後呼應與已知組合意義
+4. 最後寫「整體結論與建議」：把所有位置統整成具體、可執行的方向
+5. 如果某張牌與它所在位置看起來有張力，請直接指出這個矛盾及其意義
+6. 語氣：溫和直接，像朋友聊天一樣自然
+7. 長度：2000 字以內
 
 請開始你的解讀：`;
 }

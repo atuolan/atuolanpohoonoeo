@@ -5,7 +5,7 @@
  */
 import { lenormandSpreads } from "@/data/lenormandSpreads";
 import { useLenormandStore } from "@/stores/lenormand";
-import type { LenormandSpread } from "@/types/lenormand";
+import type { LenormandSpread, LenormandSpreadPosition } from "@/types/lenormand";
 import { marked } from "marked";
 import { computed, onMounted } from "vue";
 
@@ -43,8 +43,12 @@ function handleBack() {
     store.goToPhase("shuffle");
     return;
   }
-  if (store.phase === "result") {
+  if (store.phase === "reveal") {
     store.goToPhase("pick");
+    return;
+  }
+  if (store.phase === "result") {
+    store.goToPhase("reveal");
     return;
   }
   store.reset();
@@ -58,6 +62,65 @@ function handleSelectSpread(s: LenormandSpread) {
 onMounted(() => {
   if (!store.isHistoryLoaded) store.loadHistory();
 });
+
+function getSpreadCoords(
+  spreadId: string,
+  position: LenormandSpreadPosition,
+  index: number,
+  total: number,
+) {
+  if (position.coords) return position.coords;
+
+  const linear = (positions: number[]) => ({ x: positions[index] ?? 50, y: 50 });
+
+  switch (spreadId) {
+    case "three-card":
+      return linear([20, 50, 80]);
+    case "new-career":
+    case "money":
+    case "five-action":
+    case "seeking-love":
+      return linear([10, 30, 50, 70, 90]);
+    default:
+      if (total === 1) return { x: 50, y: 50 };
+      if (total <= 5) return linear([10, 30, 50, 70, 90]);
+      if (total <= 9) {
+        const col = index % 3;
+        const row = Math.floor(index / 3);
+        return { x: 18 + col * 32, y: 20 + row * 30 };
+      }
+      return { x: 50, y: 50 };
+  }
+}
+
+const spreadStageStyle = computed(() => {
+  const count = store.spread.positions.length;
+  if (count >= 10) return { minHeight: "560px" };
+  if (count >= 7) return { minHeight: "480px" };
+  return { minHeight: "360px" };
+});
+
+const positionedDrawnCards = computed(() =>
+  store.drawnCards.map((drawn, index) => ({
+    ...drawn,
+    coords: getSpreadCoords(store.spread.id, drawn.position, index, store.drawnCards.length),
+  })),
+);
+
+const positionedSpreadSlots = computed(() =>
+  store.spread.positions.map((position, index) => ({
+    position,
+    coords: getSpreadCoords(store.spread.id, position, index, store.spread.positions.length),
+    drawn: store.drawnCards[index] ?? null,
+  })),
+);
+
+function getRevealCardState(index: number) {
+  return {
+    "leno-stage-card--revealed": index < store.revealedCount,
+    "leno-stage-card--next": index === store.revealedCount,
+  };
+}
 </script>
 
 <template>
@@ -184,9 +247,10 @@ onMounted(() => {
           :class="{ 'leno-pick-slot--filled': idx < store.pickedCount }"
         >
           <span class="leno-pick-slot__label">{{ pos.nameCn }}</span>
-          <span v-if="idx < store.pickedCount" class="leno-pick-slot__card">
-            {{ store.drawnCards[idx]?.card.symbol }}
-          </span>
+          <div v-if="idx < store.pickedCount" class="leno-pick-slot__card">
+            <div class="leno-pick-slot__card-back" />
+            <span class="leno-pick-slot__card-status">已選</span>
+          </div>
           <span v-else class="leno-pick-slot__empty">?</span>
         </div>
       </div>
@@ -215,44 +279,82 @@ onMounted(() => {
       </div>
     </div>
 
+    <!-- 翻牌階段 -->
+    <div v-if="store.phase === 'reveal'" class="leno-phase">
+      <h2 class="leno-phase__title">按牌位翻開訊息</h2>
+      <p class="leno-phase__subtitle">
+        {{ store.spread.nameCn }} · {{ store.question }}
+      </p>
+
+      <div class="leno-stage" :style="spreadStageStyle">
+        <div
+          v-for="(slot, index) in positionedSpreadSlots"
+          :key="slot.position.id"
+          class="leno-stage-card"
+          :class="getRevealCardState(index)"
+          :style="{ left: `${slot.coords.x}%`, top: `${slot.coords.y}%` }"
+          @click="index === store.revealedCount ? store.revealNextCard() : undefined"
+        >
+          <div class="leno-stage-card__inner">
+            <div class="leno-stage-card__side leno-stage-card__side--back">
+              <span class="leno-stage-card__pos">{{ slot.position.nameCn }}</span>
+              <span class="leno-stage-card__desc">{{ slot.position.description }}</span>
+              <div class="leno-stage-card__back" />
+              <span class="leno-stage-card__hint">
+                {{ index === store.revealedCount ? '點擊翻牌' : '待揭示' }}
+              </span>
+            </div>
+            <div class="leno-stage-card__side leno-stage-card__side--face">
+              <span class="leno-stage-card__pos">{{ slot.position.nameCn }}</span>
+              <span class="leno-stage-card__desc">{{ slot.position.description }}</span>
+              <template v-if="slot.drawn">
+                <img
+                  :src="slot.drawn.card.image"
+                  :alt="slot.drawn.card.nameCn"
+                  class="leno-stage-card__img"
+                />
+                <span class="leno-stage-card__name">{{ slot.drawn.card.nameCn }}</span>
+                <span class="leno-stage-card__num">{{ slot.drawn.card.number }}</span>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="leno-actions">
+        <button class="leno-btn leno-btn--ghost" @click="handleBack">返回</button>
+        <button class="leno-btn leno-btn--primary" @click="store.revealAllCards()">
+          全部翻開
+        </button>
+      </div>
+    </div>
+
     <!-- 結果階段 -->
     <div v-if="store.phase === 'result'" class="leno-phase">
       <h2 class="leno-phase__title">{{ store.spread.nameCn }}</h2>
       <p class="leno-phase__subtitle">{{ store.question }}</p>
 
-      <!-- 九宮格佈局 -->
-      <div
-        v-if="store.spread.id === 'nine-card'"
-        class="leno-result-grid leno-result-grid--3x3"
-      >
+      <div class="leno-stage leno-stage--result" :style="spreadStageStyle">
         <div
-          v-for="drawn in store.drawnCards"
+          v-for="drawn in positionedDrawnCards"
           :key="drawn.position.id"
-          class="leno-result-card"
+          class="leno-stage-card leno-stage-card--revealed leno-stage-card--result"
+          :style="{ left: `${drawn.coords.x}%`, top: `${drawn.coords.y}%` }"
         >
-          <span class="leno-result-card__pos">{{ drawn.position.nameCn }}</span>
-          <img :src="drawn.card.image" :alt="drawn.card.nameCn" class="leno-result-card__img" />
-          <span class="leno-result-card__name">{{ drawn.card.nameCn }}</span>
-          <span class="leno-result-card__num">{{ drawn.card.number }}</span>
-        </div>
-      </div>
-
-      <!-- 其他牌陣線性佈局 -->
-      <div v-else class="leno-result-row">
-        <div
-          v-for="(drawn, idx) in store.drawnCards"
-          :key="drawn.position.id"
-          class="leno-result-card"
-        >
-          <span class="leno-result-card__pos">{{ drawn.position.nameCn }}</span>
-          <img :src="drawn.card.image" :alt="drawn.card.nameCn" class="leno-result-card__img" />
-          <span class="leno-result-card__name">{{ drawn.card.nameCn }}</span>
-          <span class="leno-result-card__num">{{ drawn.card.number }}</span>
-          <span
-            v-if="idx < store.drawnCards.length - 1"
-            class="leno-result-plus"
-            >+</span
-          >
+          <div class="leno-stage-card__inner">
+            <div class="leno-stage-card__side leno-stage-card__side--back">
+              <span class="leno-stage-card__pos">{{ drawn.position.nameCn }}</span>
+              <span class="leno-stage-card__desc">{{ drawn.position.description }}</span>
+              <div class="leno-stage-card__back" />
+            </div>
+            <div class="leno-stage-card__side leno-stage-card__side--face">
+              <span class="leno-stage-card__pos">{{ drawn.position.nameCn }}</span>
+              <span class="leno-stage-card__desc">{{ drawn.position.description }}</span>
+              <img :src="drawn.card.image" :alt="drawn.card.nameCn" class="leno-stage-card__img" />
+              <span class="leno-stage-card__name">{{ drawn.card.nameCn }}</span>
+              <span class="leno-stage-card__num">{{ drawn.card.number }}</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -289,15 +391,9 @@ onMounted(() => {
     <!-- 解讀階段 -->
     <div v-if="store.phase === 'interpret'" class="leno-phase">
       <div class="leno-mini-result">
-        <span
-          v-for="(drawn, idx) in store.drawnCards"
-          :key="drawn.position.id"
-          class="leno-mini-card"
-        >
+        <span v-for="drawn in store.drawnCards" :key="drawn.position.id" class="leno-mini-card">
           <img :src="drawn.card.image" :alt="drawn.card.nameCn" class="leno-mini-card__img" />
-          <span v-if="idx < store.drawnCards.length - 1" class="leno-mini-plus"
-            >+</span
-          >
+          <span class="leno-mini-card__label">{{ drawn.position.nameCn }}</span>
         </span>
       </div>
 
@@ -665,6 +761,160 @@ $r-lg: 16px;
   margin-bottom: 16px;
 }
 
+.leno-pick-slot {
+  &__card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  &__card-back {
+    width: 30px;
+    height: 44px;
+    border-radius: 4px;
+    border: 1px solid rgba(167, 139, 250, 0.35);
+    background: linear-gradient(135deg, #2a1f4a, #1a1828);
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(167, 139, 250, 0.06) 0px,
+      rgba(167, 139, 250, 0.06) 1px,
+      transparent 1px,
+      transparent 8px
+    );
+  }
+
+  &__card-status {
+    font-size: 10px;
+    color: $text-m;
+  }
+}
+
+.leno-stage {
+  position: relative;
+  width: 100%;
+  margin: 20px auto;
+  max-width: 540px;
+
+  &--result {
+    margin-bottom: 28px;
+  }
+}
+
+.leno-stage-card {
+  position: absolute;
+  width: 96px;
+  min-height: 172px;
+  height: 172px;
+  transform: translate(-50%, -50%);
+  border-radius: $r-md;
+  perspective: 1000px;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+
+  &--next {
+    cursor: pointer;
+  }
+
+  &--result {
+    min-height: 188px;
+    height: 188px;
+  }
+
+  &__inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+    transform-style: preserve-3d;
+  }
+
+  &--revealed &__inner {
+    transform: rotateY(180deg);
+  }
+
+  &__side {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px;
+    background: $surface-h;
+    border: 1px solid $border-m;
+    border-radius: $r-md;
+    backface-visibility: hidden;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
+  }
+
+  &--next &__side--back {
+    border-color: rgba(167, 139, 250, 0.6);
+    box-shadow: 0 0 24px rgba(167, 139, 250, 0.22);
+  }
+
+  &--revealed &__side--face {
+    border-color: rgba(167, 139, 250, 0.45);
+  }
+
+  &__side--face {
+    transform: rotateY(180deg);
+  }
+
+  &__pos {
+    font-size: 11px;
+    color: $text-1;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  &__desc {
+    font-size: 10px;
+    color: $text-3;
+    line-height: 1.35;
+    text-align: center;
+    min-height: 28px;
+  }
+
+  &__img {
+    width: 62px;
+    height: 92px;
+    object-fit: cover;
+    border-radius: 4px;
+    display: block;
+  }
+
+  &__name {
+    font-size: 12px;
+    font-weight: 600;
+    color: $text-1;
+    text-align: center;
+  }
+
+  &__num {
+    font-size: 11px;
+    color: $text-m;
+  }
+
+  &__back {
+    width: 62px;
+    height: 92px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #2a1f4a, #1a1828);
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(167, 139, 250, 0.05) 0px,
+      rgba(167, 139, 250, 0.05) 1px,
+      transparent 1px,
+      transparent 8px
+    );
+  }
+
+  &__hint {
+    font-size: 11px;
+    color: $text-3;
+  }
+}
+
 // ===== 選牌網格 =====
 .leno-grid {
   display: grid;
@@ -722,57 +972,6 @@ $r-lg: 16px;
   }
 }
 
-// ===== 結果 =====
-.leno-result-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 20px 0;
-}
-.leno-result-grid--3x3 {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin: 20px 0;
-}
-.leno-result-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 8px;
-  background: $surface-h;
-  border: 1px solid $border-m;
-  border-radius: $r-md;
-  &__pos {
-    font-size: 11px;
-    color: $text-3;
-  }
-  &__img {
-    width: 60px;
-    height: 90px;
-    object-fit: cover;
-    border-radius: 4px;
-    display: block;
-  }
-  &__name {
-    font-size: 13px;
-    font-weight: 600;
-    color: $text-1;
-  }
-  &__num {
-    font-size: 11px;
-    color: $text-m;
-  }
-}
-.leno-result-plus {
-  font-size: 20px;
-  color: $text-3;
-  align-self: center;
-}
-
 // ===== 關鍵詞 =====
 .leno-keywords {
   background: $surface;
@@ -810,8 +1009,9 @@ $r-lg: 16px;
 }
 .leno-mini-card {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   &__img {
     width: 36px;
     height: 54px;
@@ -819,11 +1019,13 @@ $r-lg: 16px;
     border-radius: 3px;
     display: block;
   }
-}
-.leno-mini-plus {
-  font-size: 14px;
-  color: $text-3;
-  margin: 0 2px;
+  &__label {
+    font-size: 10px;
+    color: $text-3;
+    text-align: center;
+    max-width: 48px;
+    line-height: 1.2;
+  }
 }
 
 // ===== 解讀 =====

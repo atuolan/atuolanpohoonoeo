@@ -21,11 +21,18 @@ export interface LenormandCard {
 }
 
 /** 雷諾曼牌陣位置 */
+export interface LenormandSpreadPositionCoords {
+  x: number;
+  y: number;
+}
+
+/** 雷諾曼牌陣位置 */
 export interface LenormandSpreadPosition {
   id: string;
   name: string;
   nameCn: string;
   description: string;
+  coords?: LenormandSpreadPositionCoords;
 }
 
 /** 雷諾曼牌陣 */
@@ -59,5 +66,6 @@ export type LenormandPhase =
   | "spread"
   | "shuffle"
   | "pick"
+  | "reveal"
   | "result"
   | "interpret";

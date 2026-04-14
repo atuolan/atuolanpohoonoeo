@@ -21,12 +21,47 @@ const fateStore = useFateStore();
 const astroDiceStore = useAstroDiceStore();
 const oracleStore = useOracleStore();
 
+const spreadMetaById: Record<
+  string,
+  {
+    category: string;
+    tags: string[];
+    vibe?: string;
+  }
+> = {
+  "starcat-1": { category: "萬用", tags: ["啟發", "快速", "核心"], vibe: "適合快速直覺提問" },
+  "starcat-33": { category: "特殊", tags: ["萬用", "自由", "客製"], vibe: "自由增減張數的靈感牌陣" },
+  "starcat-3": { category: "萬用", tags: ["發展", "時間線", "趨勢"], vibe: "最適合看過去現在未來" },
+  "starcat-4": { category: "萬用", tags: ["指引", "決策", "行動"], vibe: "適合要不要、會不會這類問題" },
+  "starcat-5": { category: "運勢", tags: ["每日", "身心靈", "覺察"], vibe: "日常最萬用的狀態檢視" },
+  "starcat-26": { category: "愛情", tags: ["曖昧", "互動", "戀愛"], vibe: "聚焦戀愛推進與相處" },
+  "starcat-27": { category: "萬用", tags: ["自由", "專業向", "高彈性"], vibe: "框架最少，解讀自由度最高" },
+  "starcat-6": { category: "指引", tags: ["四元素", "解法", "平衡"], vibe: "適合整理問題與找方向" },
+  "starcat-9": { category: "萬用", tags: ["阻礙", "成因", "解法"], vibe: "適合梳理前因後果" },
+  "starcat-10": { category: "特殊", tags: ["祝福", "儀式感", "五芒星"], vibe: "偏儀式型的特殊規則牌陣" },
+  "starcat-11": { category: "運勢", tags: ["季度", "節氣", "規劃"], vibe: "適合做階段性運勢盤點" },
+  "starcat-12": { category: "指引", tags: ["抉擇", "比較", "選項"], vibe: "專治兩難問題" },
+  "starcat-8": { category: "愛情", tags: ["感情", "內心", "互動"], vibe: "看戀情現況很直觀" },
+  "starcat-32": { category: "愛情", tags: ["未來戀人", "桃花", "預測"], vibe: "適合單身向未來對象提問" },
+  "starcat-7": { category: "愛情", tags: ["桃花", "發展", "影響"], vibe: "看感情潛力與未來走向" },
+  "starcat-13": { category: "關係", tags: ["雙方", "態度", "發展"], vibe: "兩人關係問題很合適" },
+  "starcat-14": { category: "關係", tags: ["感受", "想法", "期待"], vibe: "適合分析雙方內心" },
+  "starcat-15": { category: "指引", tags: ["未來", "全局", "簡報式"], vibe: "快速掃描未來多面向" },
+  "starcat-30": { category: "事業", tags: ["工作", "發展", "效率"], vibe: "專注職場與工作進展" },
+  "starcat-31": { category: "指引", tags: ["三選一", "決策", "比較"], vibe: "當選項超過兩個就用它" },
+  "starcat-19": { category: "萬用", tags: ["六芒星", "因果", "解法"], vibe: "適合完整拆解問題結構" },
+  "starcat-21": { category: "運勢", tags: ["周運", "節奏", "催吉避凶"], vibe: "一週節奏與提醒" },
+  "starcat-18": { category: "萬用", tags: ["分析", "預測", "關鍵"], vibe: "分析與預測兼具" },
+  "starcat-17": { category: "啟發", tags: ["自我探索", "迷惘", "人生"], vibe: "適合想看內在狀態時使用" },
+};
+
 // ===== 占卜類型選擇 =====
 type DivinationType = "home" | "tarot" | "astroDice" | "lenormand" | "oracle";
 const currentDivination = ref<DivinationType>("home");
 
 // ===== 牌陣篩選 =====
 const spreadFilterCount = ref(-1);
+const spreadFilterCategory = ref("全部");
 const expandedSpreadId = ref<string | null>(null);
 
 const spreadCountOptions = computed(() => {
@@ -36,12 +71,31 @@ const spreadCountOptions = computed(() => {
   return counts;
 });
 
-const filteredSpreads = computed(() => {
-  if (spreadFilterCount.value === -1) return fateSpreads;
-  return fateSpreads.filter(
-    (s) => s.positions.length === spreadFilterCount.value,
+const spreadCategoryOptions = computed(() => {
+  const categories = new Set(
+    fateSpreads.map((spread) => spreadMetaById[spread.id]?.category).filter(Boolean),
   );
+  return ["全部", ...Array.from(categories)];
 });
+
+const filteredSpreads = computed(() => {
+  return fateSpreads.filter((s) => {
+    const meta = spreadMetaById[s.id];
+    const countMatch =
+      spreadFilterCount.value === -1 || s.positions.length === spreadFilterCount.value;
+    const categoryMatch =
+      spreadFilterCategory.value === "全部" || meta?.category === spreadFilterCategory.value;
+    return countMatch && categoryMatch;
+  });
+});
+
+const shuffleProgress = computed(() => Math.min(shuffleCount.value / 3, 1));
+
+const selectedSpreadMeta = computed(() => spreadMetaById[fateStore.spread.id]);
+
+function getSpreadMeta(spread: FateSpread) {
+  return spreadMetaById[spread.id] ?? { category: "萬用", tags: [] };
+}
 
 function selectSpread(s: FateSpread) {
   fateStore.spread = s;
@@ -129,6 +183,23 @@ function confirmShuffle() {
   fateStore.confirmShuffle();
 }
 
+function restartTarot() {
+  fateStore.reset();
+  fateStore.goToPhase("setup");
+  shuffleCount.value = 0;
+  fanOffset.value = 0;
+  fanTarget = 0;
+  fanVelocity = 0;
+  isFanDragging = false;
+  fanPointerDown = false;
+  fanDirDetermined = false;
+  fanIsHorizontal = false;
+  if (fanAnimId !== null) {
+    cancelAnimationFrame(fanAnimId);
+    fanAnimId = null;
+  }
+}
+
 // ===== 扇形選牌拖拽邏輯 =====
 const fanOffset = ref(0);
 let fanTarget = 0;
@@ -145,10 +216,14 @@ const FAN_DIR_THRESHOLD = 8;
 const CARD_ANGLE_STEP = 3.2;
 const FAN_VISIBLE_ANGLE = 50;
 
-function getFanCardStyle(index: number) {
+function getFanCardAngle(index: number) {
   const total = fateStore.shuffledDeck.length;
   const centerIdx = Math.floor(total / 2);
-  const baseAngle = (index - centerIdx) * CARD_ANGLE_STEP + fanOffset.value;
+  return (index - centerIdx) * CARD_ANGLE_STEP + fanOffset.value;
+}
+
+function getFanCardStyle(index: number) {
+  const baseAngle = getFanCardAngle(index);
   const isVisible = Math.abs(baseAngle) <= FAN_VISIBLE_ANGLE;
   const isPicked = fateStore.pickedIndices.has(index);
   return {
@@ -238,6 +313,10 @@ function startFanAnim() {
 
 function handleCardClick(index: number) {
   if (index === fateStore.revealedCount) fateStore.revealNextCard();
+}
+
+function handleFanCardPick(index: number) {
+  fateStore.pickCard(index);
 }
 
 // ===== 解讀 =====
@@ -859,6 +938,12 @@ onUnmounted(() => {
 
         <section class="fate-setup__section">
           <h3 class="fate-setup__label">選擇牌陣</h3>
+          <div class="fate-selected-spread" v-if="selectedSpreadMeta">
+            <div class="fate-selected-spread__eyebrow">推薦牌陣氣質</div>
+            <div class="fate-selected-spread__vibe">
+              {{ selectedSpreadMeta.vibe }}
+            </div>
+          </div>
           <!-- 篩選 tabs -->
           <div class="fate-spread-filter">
             <button
@@ -885,6 +970,21 @@ onUnmounted(() => {
               {{ count }}張
             </button>
           </div>
+          <div class="fate-spread-filter fate-spread-filter--secondary">
+            <button
+              v-for="category in spreadCategoryOptions"
+              :key="category"
+              :class="[
+                'fate-spread-filter__tab',
+                {
+                  'fate-spread-filter__tab--active': spreadFilterCategory === category,
+                },
+              ]"
+              @click="spreadFilterCategory = category"
+            >
+              {{ category }}
+            </button>
+          </div>
           <!-- 牌陣列表 -->
           <div class="fate-spread-list">
             <div
@@ -896,6 +996,7 @@ onUnmounted(() => {
               ]"
               @click="selectSpread(s)"
             >
+              <div class="fate-spread-item__badge">{{ getSpreadMeta(s).category }}</div>
               <div class="fate-spread-item__left">
                 <div class="fate-spread-item__stars">
                   <span
@@ -915,6 +1016,15 @@ onUnmounted(() => {
                 <div class="fate-spread-item__name">{{ s.nameCn }}</div>
                 <div class="fate-spread-item__count">
                   {{ s.positions.length }} 張牌
+                </div>
+                <div class="fate-spread-item__tags">
+                  <span
+                    v-for="tag in getSpreadMeta(s).tags"
+                    :key="tag"
+                    class="fate-spread-item__tag"
+                  >
+                    {{ tag }}
+                  </span>
                 </div>
                 <div
                   v-if="expandedSpreadId === s.id"
@@ -955,6 +1065,18 @@ onUnmounted(() => {
             >點擊洗牌 · 雙擊重置</span
           >
         </p>
+        <div class="fate-shuffle-energy">
+          <div class="fate-shuffle-energy__ring">
+            <div
+              class="fate-shuffle-energy__fill"
+              :style="{ transform: `scaleX(${0.35 + shuffleProgress * 0.65})` }"
+            />
+            <div class="fate-shuffle-energy__text">{{ Math.round(shuffleProgress * 100) }}%</div>
+          </div>
+          <div class="fate-shuffle-energy__hint">
+            {{ shuffleCount < 3 ? '建議至少洗 3 次，讓能量更穩定' : '能量已穩定，可以展開牌堆了' }}
+          </div>
+        </div>
 
         <!-- 牌堆動畫 -->
         <div
@@ -1023,6 +1145,16 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+        <div class="fate-pick-progress">
+          <div class="fate-pick-progress__bar">
+            <div
+              class="fate-pick-progress__fill"
+              :style="{
+                width: `${(fateStore.pickedCount / fateStore.requiredPicks) * 100}%`,
+              }"
+            />
+          </div>
+        </div>
         <p class="fate-phase__subtitle" style="margin-bottom: 4px">
           憑直覺選出 {{ fateStore.requiredPicks }} 張牌（{{
             fateStore.pickedCount
@@ -1036,40 +1168,34 @@ onUnmounted(() => {
           @mousedown="onFanPointerDown"
           @touchstart.passive="onFanPointerDown"
         >
-          <div class="fate-fan__arc">
-            <div
-              v-for="(_item, index) in fateStore.shuffledDeck"
-              :key="index"
-              class="fate-fan__card"
-              :style="getFanCardStyle(index)"
-              @click.stop="!isFanDragging && fateStore.pickCard(index)"
-            >
-              <div class="fate-fan__card-inner">
-                <div class="fate-fan__card-border" />
+          <div
+            v-for="(item, index) in fateStore.shuffledDeck"
+            :key="item.card.id + '-' + index"
+            class="fate-fan__card"
+            :style="getFanCardStyle(index)"
+            @click="handleFanCardPick(index)"
+          >
+            <div class="fate-fan__card-inner">
+              <div class="fate-fan__card-border" />
+              <div class="fate-fan__card-back">
                 <span class="fate-fan__card-symbol">✦</span>
-                <div class="fate-fan__card-corner fate-fan__card-corner--tl">
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="10"
-                    height="10"
-                    fill="currentColor"
-                  >
-                    <path d="M12 2L14 10L22 12L14 14L12 22L10 14L2 12L10 10Z" />
-                  </svg>
-                </div>
-                <div class="fate-fan__card-corner fate-fan__card-corner--br">
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="10"
-                    height="10"
-                    fill="currentColor"
-                  >
-                    <path d="M12 2L14 10L22 12L14 14L12 22L10 14L2 12L10 10Z" />
-                  </svg>
-                </div>
+                <span class="fate-fan__card-corner fate-fan__card-corner--tl">✦</span>
+                <span class="fate-fan__card-corner fate-fan__card-corner--br">✦</span>
               </div>
             </div>
           </div>
+        </div>
+        <div class="fate-phase__actions">
+          <button class="fate-btn fate-btn--ghost" @click="fateStore.goToPhase('shuffle')">
+            重新洗牌
+          </button>
+          <button
+            class="fate-btn fate-btn--primary"
+            :disabled="fateStore.pickedCount < fateStore.requiredPicks"
+            @click="fateStore.goToPhase('draw')"
+          >
+            確認，展開牌堆
+          </button>
         </div>
       </div>
 
@@ -1087,11 +1213,20 @@ onUnmounted(() => {
         <p class="fate-phase__subtitle">
           {{ fateStore.spread.nameCn }} · {{ fateStore.question }}
         </p>
+        <div class="fate-reveal-summary">
+          <span class="fate-reveal-summary__item">{{ fateStore.spread.positions.length }} 張牌</span>
+          <span class="fate-reveal-summary__item">{{ fateStore.drawnCards.filter((card) => card.isReversed).length }} 張逆位</span>
+          <span class="fate-reveal-summary__item">{{ fateStore.drawnCards.filter((card) => !card.isReversed).length }} 張正位</span>
+        </div>
         <div class="fate-spread-layout">
           <div
             v-for="(drawn, index) in fateStore.drawnCards"
             :key="drawn.position.id"
             class="fate-spread-layout__position"
+            :class="{
+              'fate-spread-layout__position--revealed': index < fateStore.revealedCount,
+              'fate-spread-layout__position--next': index === fateStore.revealedCount,
+            }"
             :style="{
               left: `${drawn.position.coords?.x ?? 50}%`,
               top: `${drawn.position.coords?.y ?? 50}%`,
@@ -1123,7 +1258,7 @@ onUnmounted(() => {
             全部翻開
           </button>
           <template v-if="fateStore.phase === 'reveal'">
-            <button class="fate-btn fate-btn--ghost" @click="fateStore.reset()">
+            <button class="fate-btn fate-btn--ghost" @click="restartTarot()">
               重新開始
             </button>
             <button
@@ -1167,7 +1302,7 @@ onUnmounted(() => {
             v-else-if="interpretationHtml"
             class="fate-interpretation__content"
             v-html="interpretationHtml"
-          />
+          ></div>
           <div
             v-else-if="fateStore.isInterpreting"
             class="fate-interpretation__loading"
@@ -1198,7 +1333,7 @@ onUnmounted(() => {
           >
             重新解讀
           </button>
-          <button class="fate-btn fate-btn--primary" @click="fateStore.reset()">
+          <button class="fate-btn fate-btn--primary" @click="restartTarot()">
             開始新的占卜
           </button>
         </div>
@@ -1365,6 +1500,24 @@ $r-pill: 100px;
 .fate-phase--home {
   gap: 32px;
   padding-bottom: 24px;
+}
+
+.fate-phase--interpret {
+  display: block;
+  flex: initial;
+  align-items: stretch;
+  max-width: 720px;
+  padding-bottom: 24px;
+
+  .fate-mini-cards {
+    margin-bottom: 20px;
+  }
+
+  .fate-phase__actions {
+    margin-top: 16px;
+    padding-bottom: 8px;
+    flex-shrink: 0;
+  }
 }
 
 /* ━━ 魔幻相框裝飾 ━━ */
@@ -1743,6 +1896,11 @@ $r-pill: 100px;
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 12px;
+
+  &--secondary {
+    margin-top: -4px;
+  }
+
   &__tab {
     padding: 4px 12px;
     border-radius: $r-pill;
@@ -1794,6 +1952,17 @@ $r-pill: 100px;
     background: $surface-a;
     box-shadow: $sh-md, $sh-glow;
   }
+  &__badge {
+    flex-shrink: 0;
+    padding: 4px 8px;
+    border-radius: $r-pill;
+    background: rgba(192, 132, 252, 0.12);
+    border: 1px solid rgba(192, 132, 252, 0.2);
+    color: #d9b8ff;
+    font-size: 11px;
+    line-height: 1;
+    margin-top: 1px;
+  }
   &__left {
     flex-shrink: 0;
     padding-top: 2px;
@@ -1829,6 +1998,20 @@ $r-pill: 100px;
     color: $text-3;
     margin-bottom: 4px;
   }
+  &__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  &__tag {
+    padding: 2px 8px;
+    border-radius: $r-pill;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: $text-2;
+    font-size: 11px;
+  }
   &__desc {
     font-size: 12px;
     color: $text-2;
@@ -1845,10 +2028,75 @@ $r-pill: 100px;
   }
 }
 
+.fate-selected-spread {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: $r-md;
+  background: linear-gradient(135deg, rgba(192, 132, 252, 0.12), rgba(242, 139, 130, 0.08));
+  border: 1px solid rgba(192, 132, 252, 0.2);
+  box-shadow: $sh-sm;
+
+  &__eyebrow {
+    font-size: 11px;
+    color: $text-3;
+    margin-bottom: 4px;
+    letter-spacing: 0.08em;
+  }
+
+  &__vibe {
+    font-size: 13px;
+    color: $accent-l;
+    line-height: 1.6;
+  }
+}
+
 // ══ 洗牌 ══
 .fate-shuffle__hint {
   font-size: 12px;
   color: $text-m;
+}
+.fate-shuffle-energy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+
+  &__ring {
+    position: relative;
+    width: min(240px, 80vw);
+    height: 16px;
+    border-radius: $r-pill;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  &__fill {
+    position: absolute;
+    inset: 0;
+    transform-origin: left center;
+    background: linear-gradient(90deg, rgba(242, 139, 130, 0.45), rgba(192, 132, 252, 0.55));
+    box-shadow: 0 0 18px rgba(192, 132, 252, 0.25);
+    transition: transform 0.35s ease;
+  }
+
+  &__text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: $text-1;
+    letter-spacing: 0.08em;
+  }
+
+  &__hint {
+    font-size: 12px;
+    color: $text-3;
+  }
 }
 .fate-shuffle__count {
   margin: 16px 0 4px;
@@ -2026,16 +2274,38 @@ $r-pill: 100px;
   }
   
   .fate-phase--pick &__empty {
-    font-size: 12px;
+    border-radius: 999px;
   }
 }
 
 .fate-pick-hint {
-  font-size: 11px;
-  color: $text-m;
+  font-size: 13px;
+  color: $text-3;
   margin-bottom: 12px;
   animation: fadeInOut 4s ease-in-out infinite;
   flex-shrink: 0;
+}
+
+.fate-pick-progress {
+  width: min(280px, 90%);
+  margin: 0 auto 10px;
+
+  &__bar {
+    width: 100%;
+    height: 8px;
+    border-radius: $r-pill;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  &__fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, rgba(255, 223, 163, 0.7), rgba(192, 132, 252, 0.8));
+    box-shadow: 0 0 16px rgba(192, 132, 252, 0.25);
+    transition: width 0.35s ease;
+  }
 }
 
 .fate-fan {
@@ -2110,6 +2380,13 @@ $r-pill: 100px;
     overflow: hidden;
     box-shadow: $sh-sm;
   }
+  &__card-back {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
   &__card-border {
     position: absolute;
     inset: 4px;
@@ -2158,6 +2435,38 @@ $r-pill: 100px;
   }
 }
 
+.fate-reveal-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 14px;
+
+  &__item {
+    padding: 6px 10px;
+    border-radius: $r-pill;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: $text-2;
+    font-size: 12px;
+  }
+}
+
+.fate-spread-layout__position {
+  &--next {
+    .fate-cards-area__slot {
+      filter: drop-shadow(0 0 18px rgba(255, 223, 163, 0.2));
+      animation: pulse 1.6s infinite ease-in-out;
+    }
+  }
+
+  &--revealed {
+    .fate-cards-area__slot {
+      filter: drop-shadow(0 0 12px rgba(192, 132, 252, 0.16));
+    }
+  }
+}
+
 .fate-mini-cards {
   display: flex;
   flex-wrap: wrap;
@@ -2173,7 +2482,11 @@ $r-pill: 100px;
   border: 1px solid $border-l;
   border-radius: $r-lg;
   padding: 28px 24px;
+  box-sizing: border-box;
   min-height: 200px;
+  height: auto;
+  flex: 0 0 auto;
+  overflow: visible;
   box-shadow: $sh-md;
   &__title {
     text-align: center;
@@ -2184,9 +2497,12 @@ $r-pill: 100px;
     margin-bottom: 24px;
   }
   &__content {
+    display: block;
+    width: 100%;
     color: $text-1;
     font-size: 15px;
     line-height: 1.9;
+    overflow: visible;
     :deep(h2) {
       font-size: 18px;
       color: $accent;

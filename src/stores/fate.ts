@@ -20,6 +20,15 @@ import { computed, ref } from "vue";
 const FATE_HISTORY_KEY = "fate-readings";
 const MAX_READINGS = 50;
 
+function fisherYatesShuffle<T>(items: T[]): T[] {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
 export const useFateStore = defineStore("fate", () => {
   // ===== 占卜流程狀態 =====
   const phase = ref<FatePhase>("home");
@@ -60,7 +69,7 @@ export const useFateStore = defineStore("fate", () => {
 
   /** 僅洗牌（停留在 shuffle 階段，可多次呼叫） */
   function shuffleOnly() {
-    const shuffled = [...allFateCards].sort(() => Math.random() - 0.5);
+    const shuffled = fisherYatesShuffle(allFateCards);
     shuffledDeck.value = shuffled.map((card) => ({
       card,
       isReversed: Math.random() > 0.5,
