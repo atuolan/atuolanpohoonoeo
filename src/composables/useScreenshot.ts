@@ -1,5 +1,10 @@
 import { ref } from 'vue'
 
+function toScreenshotProxyUrl(url: string): string {
+  if (!url || url.startsWith('data:') || url.startsWith('blob:')) return url
+  return `/image-proxy?url=${encodeURIComponent(url)}`
+}
+
 export interface ScreenshotOptions {
   /** 輸出格式 */
   format: 'png' | 'jpeg'
@@ -42,15 +47,7 @@ export function useScreenshot() {
           let fetchUrl = img.src
           // 外部 HTTP(S) URL 使用代理，避免 CORS 失敗（表情包、頭像等）
           if (img.src.startsWith('http://') || img.src.startsWith('https://')) {
-            try {
-              const parsed = new URL(img.src)
-              const hostAndPath = parsed.host + parsed.pathname + parsed.search
-              fetchUrl = parsed.protocol === 'https:'
-                ? `/ai-proxy/${hostAndPath}`
-                : `/ai-proxy-http/${hostAndPath}`
-            } catch {
-              fetchUrl = `/image-proxy?url=${encodeURIComponent(img.src)}`
-            }
+            fetchUrl = toScreenshotProxyUrl(img.src)
           }
           const res = await fetch(fetchUrl)
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -93,6 +90,27 @@ export function useScreenshot() {
       const fit = window.getComputedStyle(img).objectFit
       if (fit !== 'cover' && fit !== 'contain') return
 
+      if (!img.src.startsWith('data:')) {
+        try {
+          const currentUrl = img.currentSrc || img.src
+          if (currentUrl && !currentUrl.startsWith('blob:')) {
+            img.src = toScreenshotProxyUrl(currentUrl)
+            await new Promise<void>((resolve) => {
+              const onDone = () => {
+                img.removeEventListener('load', onDone)
+                img.removeEventListener('error', onDone)
+                resolve()
+              }
+              img.addEventListener('load', onDone)
+              img.addEventListener('error', onDone)
+              if (img.complete) resolve()
+            })
+          }
+        } catch {
+          return
+        }
+      }
+
       const dw = img.offsetWidth || img.clientWidth
       const dh = img.offsetHeight || img.clientHeight
       if (!dw || !dh) return
@@ -122,15 +140,19 @@ export function useScreenshot() {
         ctx.drawImage(img, dx, dy, scaledW, scaledH)
       }
 
-      const dataUrl = canvas.toDataURL('image/png')
-      const originalSrc = img.src
-      const originalStyle = img.style.cssText
-      img.src = dataUrl
-      img.style.objectFit = 'fill'
-      restores.push(() => {
-        img.src = originalSrc
-        img.style.cssText = originalStyle
-      })
+      try {
+        const dataUrl = canvas.toDataURL('image/png')
+        const originalSrc = img.src
+        const originalStyle = img.style.cssText
+        img.src = dataUrl
+        img.style.objectFit = 'fill'
+        restores.push(() => {
+          img.src = originalSrc
+          img.style.cssText = originalStyle
+        })
+      } catch {
+        // 如果圖片仍然 tainted，跳過 object-fit 修復，避免整個截圖流程失敗
+      }
     }))
 
     return restores
