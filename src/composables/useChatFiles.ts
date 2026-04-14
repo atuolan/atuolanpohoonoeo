@@ -1,5 +1,6 @@
 import { ref, computed, type Ref, type ComputedRef } from "vue";
 import { db, DB_STORES } from "@/db/database";
+import { appendChatMessages } from "@/db/chatMessageStore";
 import type { Chat, ChatMessage } from "@/types/chat";
 import { deleteVectorsByChatId } from "@/db/vectorStore";
 
@@ -129,6 +130,9 @@ export function useChatFiles(deps: {
       pinnedToList: pinToList || undefined,
     };
     await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(newChat)));
+    if (newMessages.length > 0) {
+      await appendChatMessages(newChatId, newMessages);
+    }
 
     deps.messages.value = [];
     showChatFilesPanel.value = false;
