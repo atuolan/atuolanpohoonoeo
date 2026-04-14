@@ -559,32 +559,43 @@ export async function getWeatherByIP(): Promise<WeatherData> {
 
 /**
  * 根據城市名獲取天氣
+ * 步驟1：Open-Meteo GeoNames geocoding（對亞洲/台灣城市更準確）
+ * 步驟2：WeatherAPI 城市名直接查詢（英文城市名備援）
  */
 export async function getWeatherByCity(city: string): Promise<WeatherData> {
+  // 步驟1：Open-Meteo GeoNames geocoding → 取得精確座標
+  // 若城市名包含逗號（如「斗六市, 雲林縣」），先嘗試完整字串，再嘗試逗號前的主名稱
+  const primaryName = city.split(",")[0].trim();
+  const queriesToTry = city !== primaryName ? [city, primaryName] : [city];
+  for (const q of queriesToTry) {
+    try {
+      const geoRes = await fetch(
+        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=zh`,
+      );
+      if (geoRes.ok) {
+        const geoData = await geoRes.json();
+        if (geoData.results?.length > 0) {
+          const r = geoData.results[0];
+          return fetchOpenMeteo(r.latitude, r.longitude, {
+            city: r.name,
+            region: r.admin1,
+            country: r.country,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn(`[WeatherService] Open-Meteo geocoding 失敗 (${q})`, e);
+    }
+  }
+
+  // 步驟2：WeatherAPI 城市名直接查詢（英文城市名通常準確）
   try {
     return await fetchWeather(city, true, true);
   } catch (e) {
-    console.warn(
-      "[WeatherService] WeatherAPI 城市查詢失敗，嘗試 Open-Meteo 回退",
-      e,
-    );
-    // 用 Open-Meteo geocoding 查城市座標
-    const geoRes = await fetch(
-      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh`,
-    );
-    if (geoRes.ok) {
-      const geoData = await geoRes.json();
-      if (geoData.results?.length > 0) {
-        const r = geoData.results[0];
-        return fetchOpenMeteo(r.latitude, r.longitude, {
-          city: r.name,
-          region: r.admin1,
-          country: r.country,
-        });
-      }
-    }
-    throw new Error("無法獲取該城市的天氣");
+    console.warn("[WeatherService] WeatherAPI 城市查詢也失敗", e);
   }
+
+  throw new Error("無法獲取該城市的天氣，請重新搜尋並選擇城市以儲存精確座標");
 }
 
 /**
@@ -622,6 +633,10 @@ export async function getWeatherByUserLocation(
     case "manual":
       if (!location.city) {
         throw new Error("請設置城市名稱");
+      }
+      // 優先使用座標（從搜尋結果取得，比城市名稱查詢更精確）
+      if (location.lat && location.lon) {
+        return getWeatherByCoords(location.lat, location.lon);
       }
       return getWeatherByCity(location.city);
 

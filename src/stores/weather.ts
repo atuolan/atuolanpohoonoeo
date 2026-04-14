@@ -144,9 +144,11 @@ export const useWeatherStore = defineStore("weather", () => {
   /**
    * 設置手動城市
    */
-  function setManualCity(city: string) {
+  function setManualCity(city: string, lat?: number, lon?: number) {
     userLocation.value.mode = "manual";
     userLocation.value.city = city;
+    if (lat !== undefined) userLocation.value.lat = lat;
+    if (lon !== undefined) userLocation.value.lon = lon;
   }
 
   /**

@@ -11328,6 +11328,14 @@ onUnmounted(() => {
                     {{ weatherStore.locationName }}
                   </div>
                   <div
+                    v-if="weatherStore.userLocation.mode === 'ip'"
+                    class="wm-card__ip-badge"
+                    @click="startWeatherEdit('user')"
+                    title="IP定位可能不準確，點此設定城市"
+                  >
+                    📡 IP定位，點此修改
+                  </div>
+                  <div
                     v-if="getVirtualLocalTime(weatherStore.weatherData)"
                     class="wm-card__time"
                   >
@@ -11433,8 +11441,8 @@ onUnmounted(() => {
                     class="wm-search__input"
                     :placeholder="
                       weatherEditTarget === 'user'
-                        ? '輸入你的城市…'
-                        : '輸入角色所在城市…'
+                        ? '輸入城市名稱，自動搜尋…'
+                        : '輸入角色所在城市，自動搜尋…'
                     "
                     @keydown.enter="searchWeatherCities"
                   />

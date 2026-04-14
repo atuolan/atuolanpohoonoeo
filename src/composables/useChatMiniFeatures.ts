@@ -7,7 +7,7 @@ import {
 import { useCharactersStore } from "@/stores/characters";
 import { useWeatherStore } from "@/stores/weather";
 import type { StoredCharacter } from "@/types/character";
-import { ref, type Ref } from "vue";
+import { ref, watch, type Ref } from "vue";
 
 /**
  * 聊天小功能合集：遊戲成績、話題引導、位置分享、天氣分享
@@ -215,6 +215,27 @@ export function useChatMiniFeatures(deps: {
     }>
   >([]);
   const weatherSearchLoading = ref(false);
+
+  // 自動搜尋（debounce）
+  let _weatherSearchDebounce: ReturnType<typeof setTimeout> | null = null;
+  watch(weatherSearchQuery, (val) => {
+    if (_weatherSearchDebounce) clearTimeout(_weatherSearchDebounce);
+    const q = val.trim();
+    if (!q || q.length < 2) {
+      weatherSearchResults.value = [];
+      return;
+    }
+    _weatherSearchDebounce = setTimeout(async () => {
+      weatherSearchLoading.value = true;
+      try {
+        weatherSearchResults.value = await searchCities(q);
+      } catch {
+        weatherSearchResults.value = [];
+      } finally {
+        weatherSearchLoading.value = false;
+      }
+    }, 350);
+  });
   // 用戶自訂天氣
   const customWeatherData = ref<WeatherData | null>(null);
   const customWeatherCity = ref("");
@@ -227,7 +248,12 @@ export function useChatMiniFeatures(deps: {
   /** 開啟天氣 modal 時自動載入角色天氣 */
   async function openWeatherModal() {
     showWeatherModal.value = true;
-    weatherEditTarget.value = null;
+    // IP 定位通常不準確，自動進入用戶地點編輯模式，讓用戶直接輸入城市
+    if (weatherStore.userLocation.mode === 'ip') {
+      weatherEditTarget.value = 'user';
+    } else {
+      weatherEditTarget.value = null;
+    }
     // 自動查詢角色天氣
     const char = deps.currentCharacter?.value;
     const charLocation = char?.worldSettings?.location;
@@ -315,11 +341,11 @@ export function useChatMiniFeatures(deps: {
         // 更新用戶天氣
         customWeatherData.value = data;
         customWeatherCity.value = city.name;
-        // 同時更新全域天氣 store 的手動城市
+        // 同時更新全域天氣 store 的手動城市（帶座標，避免城市名稱查詢誤判）
         const cityLabel = city.region
           ? `${city.name}, ${city.region}`
           : city.name;
-        weatherStore.setManualCity(cityLabel);
+        weatherStore.setManualCity(cityLabel, city.lat, city.lon);
         await weatherStore.refreshWeather(true);
       }
     } catch {

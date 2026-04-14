@@ -47,7 +47,7 @@ function updateNearbyPlacesRadius(e: Event) {
 // 搜尋相關
 const searchQuery = ref("");
 const searchResults = ref<
-  Array<{ id: number; name: string; region: string; country: string }>
+  Array<{ id: number; name: string; region: string; country: string; lat: number; lon: number }>
 >([]);
 const isSearching = ref(false);
 const showSearchResults = ref(false);
@@ -114,9 +114,11 @@ async function selectCity(city: {
   name: string;
   region: string;
   country: string;
+  lat: number;
+  lon: number;
 }) {
   const cityName = city.region ? `${city.name}, ${city.region}` : city.name;
-  weatherStore.setManualCity(cityName);
+  weatherStore.setManualCity(cityName, city.lat, city.lon);
   selectedMode.value = "manual";
   searchQuery.value = "";
   showSearchResults.value = false;
@@ -247,18 +249,25 @@ const isCurrentCityCustom = computed(() => {
       <!-- 定位模式選擇 -->
       <section class="mode-section">
         <h2>定位方式</h2>
+        <p class="section-hint">建議手動輸入城市，IP 定位經常不準確。</p>
         <div class="mode-options">
           <button
             class="mode-option"
-            :class="{ active: selectedMode === 'ip' }"
-            @click="setMode('ip')"
+            :class="{ active: selectedMode === 'manual' }"
+            @click="setMode('manual')"
           >
-            <Wifi :size="20" />
+            <MapPin :size="20" />
             <div class="mode-info">
-              <span class="mode-name">IP 自動定位</span>
-              <span class="mode-desc">根據網路 IP 自動判斷位置</span>
+              <span class="mode-name">手動設定城市 <span class="mode-badge">推薦</span></span>
+              <span class="mode-desc">{{
+                weatherStore.userLocation.city || "從下方搜尋並選擇城市"
+              }}</span>
             </div>
-            <Check v-if="selectedMode === 'ip'" :size="18" class="check-icon" />
+            <Check
+              v-if="selectedMode === 'manual'"
+              :size="18"
+              class="check-icon"
+            />
           </button>
 
           <button
@@ -280,21 +289,15 @@ const isCurrentCityCustom = computed(() => {
 
           <button
             class="mode-option"
-            :class="{ active: selectedMode === 'manual' }"
-            @click="setMode('manual')"
+            :class="{ active: selectedMode === 'ip' }"
+            @click="setMode('ip')"
           >
-            <MapPin :size="20" />
+            <Wifi :size="20" />
             <div class="mode-info">
-              <span class="mode-name">手動設定城市</span>
-              <span class="mode-desc">{{
-                weatherStore.userLocation.city || "從下方選擇或搜尋城市"
-              }}</span>
+              <span class="mode-name">IP 自動定位</span>
+              <span class="mode-desc">根據網路 IP 判斷位置（可能不準確）</span>
             </div>
-            <Check
-              v-if="selectedMode === 'manual'"
-              :size="18"
-              class="check-icon"
-            />
+            <Check v-if="selectedMode === 'ip'" :size="18" class="check-icon" />
           </button>
         </div>
       </section>
@@ -302,6 +305,12 @@ const isCurrentCityCustom = computed(() => {
       <!-- 城市搜尋 -->
       <section class="search-section">
         <h2>搜尋城市</h2>
+        <div
+          v-if="weatherStore.userLocation.mode === 'manual' && !weatherStore.userLocation.lat"
+          class="coords-missing-hint"
+        >
+          ⚠️ 目前城市缺少精確座標，天氣可能不準確。請重新搜尋並點選您的城市以修正。
+        </div>
         <div class="search-box">
           <Search :size="18" />
           <input
@@ -604,6 +613,18 @@ const isCurrentCityCustom = computed(() => {
     font-size: 15px;
     font-weight: 500;
     color: var(--color-text, #333);
+
+    .mode-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      color: #fff;
+      background: #4caf50;
+      border-radius: 4px;
+      padding: 1px 5px;
+      margin-left: 5px;
+      vertical-align: middle;
+    }
   }
 
   .mode-desc {
@@ -614,6 +635,17 @@ const isCurrentCityCustom = computed(() => {
   .check-icon {
     color: var(--color-primary, #7dd3a8);
   }
+}
+
+.coords-missing-hint {
+  font-size: 12px;
+  color: #7a5800;
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  line-height: 1.5;
 }
 
 .search-box {
