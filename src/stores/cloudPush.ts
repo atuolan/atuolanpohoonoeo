@@ -138,14 +138,17 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
               .sort((a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
 
             let recentMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
-            if (charChat?.messages?.length) {
+            if (charChat) {
+              // v24：從 chatMessages 表載入訊息（不再用 chat.messages）
+              const { loadChatMessages } = await import("@/db/chatMessageStore");
+              const allMsgs = await loadChatMessages(charChat.id);
               // 取最後 30 條（15 輪 × 2），過濾掉 system 訊息
-              const msgs = (charChat.messages as any[])
-                .filter((m) => m.sender === "user" || m.sender === "assistant")
+              const msgs = allMsgs
+                .filter((m: any) => m.sender === "user" || m.sender === "assistant")
                 .slice(-30);
-              recentMessages = msgs.map((m) => ({
-                role: m.sender === "user" ? "user" : "assistant",
-                content: (m.content || "").slice(0, 500), // 截斷過長訊息
+              recentMessages = msgs.map((m: any) => ({
+                role: m.sender === "user" ? ("user" as const) : ("assistant" as const),
+                content: ((m.content || "") as string).slice(0, 500), // 截斷過長訊息
               }));
             }
 
