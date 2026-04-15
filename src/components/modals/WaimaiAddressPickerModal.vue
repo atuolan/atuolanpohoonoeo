@@ -53,6 +53,8 @@ const manualTemp = reactive<TemporaryAddress>({
   lon: undefined,
 });
 
+const LABEL_PRESETS = ["家", "公司", "學校", "朋友家", "其他"];
+
 const COUNTRY_OPTIONS = [
   { code: "TW", name: "台灣" },
   { code: "CN", name: "中國大陸" },
@@ -250,8 +252,18 @@ watch(
 
             <div class="section-block form-block">
               <h4>新增 / 編輯地址</h4>
+              <div class="label-chips-row">
+                <button
+                  v-for="preset in LABEL_PRESETS"
+                  :key="preset"
+                  type="button"
+                  class="label-chip"
+                  :class="{ active: form.label === preset }"
+                  @click="form.label = preset"
+                >{{ preset }}</button>
+              </div>
               <div class="form-grid">
-                <input v-model="form.label" class="text-input" type="text" placeholder="標籤（家/公司）" />
+                <input v-model="form.label" class="text-input" type="text" placeholder="自訂標籤" />
                 <input v-model="form.recipientName" class="text-input" type="text" placeholder="收件人" />
                 <input v-model="form.phone" class="text-input" type="text" placeholder="電話（可選）" />
 
@@ -279,6 +291,16 @@ watch(
           <template v-else>
             <div class="section-block form-block">
               <p class="hint">此為一次性地址，不會寫入地址簿。</p>
+              <div class="label-chips-row">
+                <button
+                  v-for="preset in LABEL_PRESETS"
+                  :key="preset"
+                  type="button"
+                  class="label-chip"
+                  :class="{ active: manualTemp.displayName === preset }"
+                  @click="manualTemp.displayName = preset"
+                >{{ preset }}</button>
+              </div>
               <div class="form-grid">
                 <input v-model="manualTemp.displayName" class="text-input" type="text" placeholder="地點名稱（旅館/朋友家）" />
 
@@ -459,6 +481,30 @@ watch(
       border-color: #fecaca;
       color: #b91c1c;
     }
+  }
+}
+
+.label-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.label-chip {
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: #f9fafb;
+  padding: 5px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+
+  &.active {
+    border-color: #4f46e5;
+    background: #eef2ff;
+    color: #312e81;
   }
 }
 

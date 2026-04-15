@@ -166,7 +166,7 @@ export function useChatTheater(deps: {
           ...JSON.parse(JSON.stringify(chatData)),
           id: newChatId,
           name: `${chatData.name} [小劇場]`,
-          messages: branchMessages,
+          messages: [],
           lastMessagePreview: `小劇場：${content}`.slice(0, 50),
           messageCount: branchMessages.length,
           createdAt: now,
@@ -175,6 +175,8 @@ export function useChatTheater(deps: {
         };
         await db.init();
         await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(newChat)));
+        const { appendChatMessages } = await import("@/db/chatMessageStore");
+        await appendChatMessages(newChatId, branchMessages);
 
         if (theaterInheritSummary.value) {
           const srcChatId = deps.currentChatId.value || deps.chatId || "";
@@ -231,6 +233,7 @@ export function useChatTheater(deps: {
         return;
       }
 
+      smallTheaterInput.value = "";
       await deps.switchChatFile(targetChatId);
       await deps.triggerAIResponse({ theaterNudge: true });
     } else {

@@ -1256,12 +1256,19 @@ async function chatPickerCreateNew(withGreeting: boolean) {
     id: `chat_${Date.now()}`,
     name: `與 ${charName} 的對話`,
     characterId,
-    messages: newMessages,
+    messages: [],
     metadata: {},
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    messageCount: newMessages.length,
+    lastMessagePreview:
+      newMessages[newMessages.length - 1]?.content?.slice(0, 100) || "",
   };
   await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(newChat)));
+  if (newMessages.length > 0) {
+    const { appendChatMessages } = await import("@/db/chatMessageStore");
+    await appendChatMessages(newChat.id, newMessages);
+  }
 
   currentChatId.value = newChat.id;
   navigateToPage("chat");
@@ -1307,10 +1314,13 @@ async function handleMultiCharConfirm(
     id: crypto.randomUUID(),
     name: charName,
     characterId: character.id,
-    messages: chatMessages,
+    messages: [],
     metadata: {},
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    messageCount: chatMessages.length,
+    lastMessagePreview:
+      chatMessages[chatMessages.length - 1]?.content?.slice(0, 100) || "",
     isGroupChat: true,
     groupMetadata: {
       groupName: charName,
@@ -1322,6 +1332,10 @@ async function handleMultiCharConfirm(
 
   // 存入 IndexedDB
   await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
+  if (chatMessages.length > 0) {
+    const { appendChatMessages } = await import("@/db/chatMessageStore");
+    await appendChatMessages(chat.id, chatMessages);
+  }
 
   // 打開聊天
   chatCharacterName.value = charName;

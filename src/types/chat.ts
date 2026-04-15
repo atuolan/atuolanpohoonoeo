@@ -557,11 +557,11 @@ export interface GroupDiaryEntry {
   /** 生成時間 */
   generatedAt: number;
 }
-
-// ===== 聊天元數據 =====
 export interface ChatMetadata {
   /** 作者筆記 */
   authorsNote?: AuthorsNoteMetadata;
+  /** 是否跳過角色開場白 */
+  skipGreeting?: boolean;
   /** 時效世界資訊 */
   timedWorldInfo?: {
     sticky: Record<string, WITimedEffect>;

@@ -1011,15 +1011,11 @@ const renderedContent = computed(() => {
     processedContent = processedContent
       .replace(/^[\s\S]*?<\/think(?:ing)?>/gis, "")
       .trim();
-    if (processedContent.length !== _dbgB4orphan.length) console.warn(`[Bubble ${_dbgId}] orphan </think> 移除: ${_dbgB4orphan.length} → ${processedContent.length}`, '\n原文:', _dbgB4orphan, '\n結果:', processedContent);
 
     // 移除漏網的 ˇ想法ˇ 和舊格式 ~(想法)~
-    const _dbgB4thought = processedContent;
     processedContent = processedContent
-      .replace(/\s*ˇ[^ˇ]+ˇ/g, "")
-      .replace(/\s*~\([\s\S]+?\)~/g, "")
+      .replace(/\n?ˇ([^]*?)\/~\n?/g, "\n")
       .trim();
-    if (processedContent.length !== _dbgB4thought.length) console.warn(`[Bubble ${_dbgId}] ˇ/~() 想法移除: ${_dbgB4thought.length} → ${processedContent.length}`, '\n原文:', _dbgB4thought, '\n結果:', processedContent);
 
     // ★ 套用 markdownOnly regex 腳本（顯示層轉換，不污染原始訊息）
     const beforeRegex = processedContent;
@@ -1034,7 +1030,6 @@ const renderedContent = computed(() => {
       mergedScripts,
       { isMarkdown: true },
     );
-    if (processedContent.length !== beforeRegex.length) console.warn(`[Bubble ${_dbgId}] regex 腳本: ${beforeRegex.length} → ${processedContent.length}`, '\n原文:', beforeRegex, '\n結果:', processedContent);
 
     // ★ regex 替換後可能產生完整 HTML（被 ``` 包住或直接輸出）
     // 只在 regex 確實改變了內容時才偵測

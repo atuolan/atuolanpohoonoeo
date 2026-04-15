@@ -3771,17 +3771,32 @@ async function generateAIContent(
 
   // 獲取對話上下文
   let chatContextStr = "";
-  if (enableChatContext.value && chatStore.messages.length > 0) {
-    const recentMessages = chatStore.messages.slice(-chatContextCount.value);
-    chatContextStr = recentMessages
-      .map((msg) => {
-        const role = msg.sender === "user" ? userName.value : charName;
-        return `${role}: ${msg.content}`;
-      })
-      .join("\n");
+  const activeChatId = chatStore.currentChat?.id;
+  if (enableChatContext.value) {
+    let recentMessages = chatStore.messages.slice(-chatContextCount.value);
 
-    if (chatContextStr) {
-      chatContextStr = `\n\n以下是你與用戶最近的對話記錄，可以參考但不必完全依賴：\n${chatContextStr}`;
+    if (recentMessages.length === 0 && activeChatId) {
+      try {
+        const { loadChatMessages } = await import("@/db/chatMessageStore");
+        recentMessages = (await loadChatMessages(activeChatId)).slice(
+          -chatContextCount.value,
+        );
+      } catch (error) {
+        console.warn("[QZone] 載入 chatMessages 失敗:", error);
+      }
+    }
+
+    if (recentMessages.length > 0) {
+      chatContextStr = recentMessages
+        .map((msg) => {
+          const role = msg.sender === "user" ? userName.value : charName;
+          return `${role}: ${msg.content}`;
+        })
+        .join("\n");
+
+      if (chatContextStr) {
+        chatContextStr = `\n\n以下是你與用戶最近的對話記錄，可以參考但不必完全依賴：\n${chatContextStr}`;
+      }
     }
   }
 

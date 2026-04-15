@@ -1962,6 +1962,8 @@ export class ImportExportService {
         updatedAt: Date.now(),
       };
 
+      const importedMessages: ChatMessage[] = [];
+
       // 解析訊息
       for (let i = 1; i < lines.length; i++) {
         let msgData: any;
@@ -2024,10 +2026,10 @@ export class ImportExportService {
           message.tokenCount = msgData.extra.token_count;
         }
 
-        chat.messages.push(message);
+        importedMessages.push(message);
       }
 
-      if (chat.messages.length === 0) {
+      if (importedMessages.length === 0) {
         return { success: false, error: "JSONL 中沒有可匯入的訊息" };
       }
 
@@ -2037,7 +2039,7 @@ export class ImportExportService {
       }
 
       // v24：訊息分離儲存
-      const messagesToSave = [...chat.messages];
+      const messagesToSave = [...importedMessages];
       chat.lastMessagePreview =
         messagesToSave[messagesToSave.length - 1]?.content?.slice(0, 100) || "";
       chat.messageCount = messagesToSave.length;

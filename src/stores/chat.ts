@@ -50,13 +50,28 @@ export const useChatStore = defineStore("chat", () => {
     );
   });
 
+  function normalizeChat(chat: Chat): Chat {
+    return {
+      ...chat,
+      messages: Array.isArray(chat.messages) ? [...chat.messages] : [],
+    };
+  }
+
+  function getMutableMessages(): ChatMessage[] {
+    if (!currentChat.value) return [];
+    if (!Array.isArray(currentChat.value.messages)) {
+      currentChat.value.messages = [];
+    }
+    return currentChat.value.messages;
+  }
+
   // ===== Actions =====
 
   /**
    * 創建新聊天
    */
   function createChat(characterId: string, characterName: string): Chat {
-    const chat = createDefaultChat(characterId, characterName);
+    const chat = normalizeChat(createDefaultChat(characterId, characterName));
     currentChat.value = chat;
     return chat;
   }
@@ -65,7 +80,7 @@ export const useChatStore = defineStore("chat", () => {
    * 載入聊天
    */
   function loadChat(chat: Chat): void {
-    currentChat.value = chat;
+    currentChat.value = normalizeChat(chat);
   }
 
   /**
@@ -73,7 +88,7 @@ export const useChatStore = defineStore("chat", () => {
    */
   function addMessage(message: ChatMessage): void {
     if (!currentChat.value) return;
-    currentChat.value.messages.push(message);
+    getMutableMessages().push(message);
     currentChat.value.updatedAt = Date.now();
   }
 
@@ -124,12 +139,13 @@ export const useChatStore = defineStore("chat", () => {
     updates: Partial<ChatMessage>,
   ): void {
     if (!currentChat.value) return;
-    const index = currentChat.value.messages.findIndex(
+    const currentMessages = getMutableMessages();
+    const index = currentMessages.findIndex(
       (m) => m.id === messageId,
     );
     if (index !== -1) {
-      currentChat.value.messages[index] = {
-        ...currentChat.value.messages[index],
+      currentMessages[index] = {
+        ...currentMessages[index],
         ...updates,
         updatedAt: Date.now(),
       };
@@ -141,7 +157,7 @@ export const useChatStore = defineStore("chat", () => {
    */
   function deleteMessage(messageId: string): void {
     if (!currentChat.value) return;
-    currentChat.value.messages = currentChat.value.messages.filter(
+    currentChat.value.messages = getMutableMessages().filter(
       (m) => m.id !== messageId,
     );
     currentChat.value.updatedAt = Date.now();
@@ -194,7 +210,7 @@ export const useChatStore = defineStore("chat", () => {
    */
   function swipeMessage(messageId: string, direction: "next" | "prev"): void {
     if (!currentChat.value) return;
-    const message = currentChat.value.messages.find((m) => m.id === messageId);
+    const message = getMutableMessages().find((m) => m.id === messageId);
     if (!message || !message.swipes || message.swipes.length <= 1) return;
 
     const currentIndex = message.swipeId ?? 0;
@@ -217,7 +233,7 @@ export const useChatStore = defineStore("chat", () => {
    */
   function addSwipe(messageId: string, content: string): void {
     if (!currentChat.value) return;
-    const message = currentChat.value.messages.find((m) => m.id === messageId);
+    const message = getMutableMessages().find((m) => m.id === messageId);
     if (!message) return;
 
     if (!message.swipes) {
@@ -236,7 +252,7 @@ export const useChatStore = defineStore("chat", () => {
    */
   function prepareRegenerate(): ChatMessage | null {
     if (!currentChat.value) return null;
-    const lastAssistantMsg = [...currentChat.value.messages]
+    const lastAssistantMsg = [...getMutableMessages()]
       .reverse()
       .find((m) => m.sender === "assistant");
     return lastAssistantMsg ?? null;
@@ -268,7 +284,7 @@ export const useChatStore = defineStore("chat", () => {
   }> {
     if (!currentChat.value) return [];
 
-    return currentChat.value.messages.map((m) => ({
+    return getMutableMessages().map((m) => ({
       role:
         m.sender === "user"
           ? "user"
@@ -333,7 +349,7 @@ export const useChatStore = defineStore("chat", () => {
    * Requirements: 1.1, 7.1
    */
   function createGroupChat(groupName: string, characterIds: string[]): Chat {
-    const chat = createDefaultGroupChat(groupName, characterIds);
+    const chat = normalizeChat(createDefaultGroupChat(groupName, characterIds));
     currentChat.value = chat;
     return chat;
   }

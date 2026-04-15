@@ -68,11 +68,20 @@ export type GroupResult =
  * 從聊天紀錄提取上下文摘要
  * 取最近 maxTurns 輪對話（一輪 = 用戶訊息 + AI回覆）
  */
-export function extractChatContext(
+export async function extractChatContext(
   chat: Chat,
   maxTurns: number = 30,
-): string {
-  const messages = chat.messages ?? [];
+): Promise<string> {
+  let messages = chat.messages ?? [];
+
+  if (messages.length === 0 && chat.id) {
+    try {
+      const { loadChatMessages } = await import("@/db/chatMessageStore");
+      messages = await loadChatMessages(chat.id);
+    } catch (error) {
+      console.warn("[PeekPhone] 載入 chatMessages 失敗:", error);
+    }
+  }
 
   if (messages.length === 0) {
     return "（無聊天紀錄）";

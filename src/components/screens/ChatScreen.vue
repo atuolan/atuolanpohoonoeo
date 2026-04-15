@@ -7569,6 +7569,15 @@ function closeMenus() {
 function handleReply(message: Message) {
   console.log("回覆消息:", message);
   replyingTo.value = message;
+  nextTick(() => {
+    const textarea = isInputExpanded.value
+      ? expandedInputRef.value
+      : messageInputRef.value;
+    if (!textarea) return;
+    textarea.focus();
+    const cursorPosition = textarea.value.length;
+    textarea.setSelectionRange(cursorPosition, cursorPosition);
+  });
 }
 
 // 通過 ID 處理回覆（從 MessageBubble emit）

@@ -283,7 +283,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     groupStatus.value = { A: "loading", B: "idle", C: "idle", D: "idle" };
     groupErrors.value = { A: null, B: null, C: null, D: null };
 
-    const chatContext = extractChatContext(chat, 15);
+    const chatContext = await extractChatContext(chat, 15);
     const summariesAndEvents = await extractSummariesAndEvents(cId, charId);
     const { userName, userDescription } = resolveUserInfo(chat, charId);
     const worldInfo = extractWorldInfo(character);
@@ -435,7 +435,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       groupErrors.value.D = null;
     }
 
-    const chatContext = extractChatContext(chat, 15);
+    const chatContext = await extractChatContext(chat, 15);
     const summariesAndEvents = await extractSummariesAndEvents(cId, charId);
     const { userName, userDescription } = resolveUserInfo(chat, charId);
     const worldInfo = extractWorldInfo(character);

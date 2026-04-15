@@ -69,12 +69,17 @@ export function useChatFiles(deps: {
     }
   }
 
-  async function switchChatFile(chatId: string) {
+  async function switchChatFile(
+    chatId: string,
+    options?: { skipSaveCurrent?: boolean },
+  ) {
     if (chatId === deps.currentChatId.value) {
       showChatFilesPanel.value = false;
       return;
     }
-    await deps.saveChatImmediate();
+    if (!options?.skipSaveCurrent) {
+      await deps.saveChatImmediate();
+    }
     const charId = deps.characterId || deps.currentCharacter.value?.id || "";
     if (charId) {
       await db.put(DB_STORES.SETTINGS, chatId, `lastActiveChatId_${charId}`);
@@ -121,13 +126,16 @@ export function useChatFiles(deps: {
       id: newChatId,
       name: `與 ${charName} 的對話`,
       characterId: charId,
-      messages: newMessages,
+      messages: [],
       metadata: {
         skipGreeting: !withGreeting, // 標記是否跳過開場白
       },
       createdAt: Date.now(),
       updatedAt: Date.now(),
       pinnedToList: pinToList || undefined,
+      messageCount: newMessages.length,
+      lastMessagePreview:
+        newMessages[newMessages.length - 1]?.content?.slice(0, 100) || "",
     };
     await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(newChat)));
     if (newMessages.length > 0) {
@@ -209,7 +217,7 @@ export function useChatFiles(deps: {
       if (chatId === deps.currentChatId.value) {
         const remaining = chatFilesList.value.filter((c) => c.id !== chatId);
         if (remaining.length > 0) {
-          await switchChatFile(remaining[0].id);
+          await switchChatFile(remaining[0].id, { skipSaveCurrent: true });
           return;
         }
       }

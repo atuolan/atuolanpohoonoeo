@@ -848,9 +848,9 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
         .map((e: any) => ({ id: e.id, content: e.content, category: e.category, priority: e.priority }));
 
       if (info.chatId) {
-        const chat = await db.get<any>(DB_STORES.CHATS, info.chatId);
+        const { loadChatMessages } = await import("@/db/chatMessageStore");
         // 包含普通聊天消息和通話記錄（sender === "system" 且含通話內容）
-        const msgs = (chat?.messages || []).filter((m: any) => {
+        const msgs = (await loadChatMessages(info.chatId)).filter((m: any) => {
           if (m.sender === "user" || m.sender === "assistant") return true;
           if (m.sender === "system" && typeof m.content === "string" && m.content.includes("📞 通話結束")) return true;
           return false;
