@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { db, DB_STORES } from "@/db/database";
-import { collectImageRefs, deleteChatImagesByRefs } from "@/db/operations";
+import { deleteChatCascade } from "@/storage/chatStorage";
 import { useCharactersStore, useLorebooksStore } from "@/stores";
 import type { Chat } from "@/types/chat";
 import { createDefaultGroupChat } from "@/types/chat";
@@ -68,7 +68,7 @@ const filteredChats = computed(() => {
   if (!searchQuery.value.trim()) return chatList.value;
   const query = searchQuery.value.toLowerCase();
   return chatList.value.filter((chat) => {
-    const name = chat.characterName || "";
+    const name = getCharacterName(chat);
     const lastMessage =
       chat.lastMessagePreview ||
       chat.messages[chat.messages.length - 1]?.content ||
@@ -85,7 +85,7 @@ const filteredCharacters = computed(() => {
   if (!searchQuery.value.trim()) return charactersStore.characters;
   const query = searchQuery.value.toLowerCase();
   return charactersStore.characters.filter((char) => {
-    const name = char.name || char.data?.name || "";
+    const name = char.nickname || char.data?.name || "";
     return name.toLowerCase().includes(query);
   });
 });
@@ -122,7 +122,7 @@ function getCharacterName(chat: Chat): string {
   const char = charactersStore.characters.find(
     (c) => c.id === chat.characterId,
   );
-  return char?.nickname || char?.data?.name || chat.characterName || "未知角色";
+  return char?.nickname || char?.data?.name || chat.name || "未知角色";
 }
 
 // 開啟對話
@@ -167,16 +167,7 @@ async function deleteChat(chatId: string) {
   if (!confirm("確定要刪除這個對話嗎？")) return;
 
   try {
-    // 先讀取訊息中的圖片引用，再刪除
-    // v24：從 chatMessages 表載入訊息以清理圖片，並級聯刪除
-    const { loadChatMessages, deleteChatMessagesForChat } = await import("@/db/chatMessageStore");
-    const chatMsgs = await loadChatMessages(chatId);
-    const imageRefs = collectImageRefs(chatMsgs);
-    await Promise.all([
-      db.delete(DB_STORES.CHATS, chatId),
-      deleteChatMessagesForChat(chatId),
-      deleteChatImagesByRefs(imageRefs),
-    ]);
+    await deleteChatCascade(chatId);
     chatList.value = chatList.value.filter((c) => c.id !== chatId);
   } catch (e) {
     console.error("刪除對話失敗:", e);
@@ -395,15 +386,7 @@ async function confirmDeleteChat() {
   closeLongPressMenu();
 
   try {
-    // v24：從 chatMessages 表載入訊息以清理圖片，並級聯刪除
-    const { loadChatMessages: loadMsgsDel, deleteChatMessagesForChat: delMsgsDel } = await import("@/db/chatMessageStore");
-    const chatMsgsDel = await loadMsgsDel(chatId);
-    const imageRefs = collectImageRefs(chatMsgsDel);
-    await Promise.all([
-      db.delete(DB_STORES.CHATS, chatId),
-      delMsgsDel(chatId),
-      deleteChatImagesByRefs(imageRefs),
-    ]);
+    await deleteChatCascade(chatId);
     chatList.value = chatList.value.filter((c) => c.id !== chatId);
   } catch (e) {
     console.error("刪除對話失敗:", e);
@@ -644,7 +627,7 @@ async function togglePinChat() {
                 v-if="character.avatar"
                 :src="character.avatar"
                 :alt="
-                  character.nickname || character.data?.name || character.name
+                  character.nickname || character.data?.name
                 "
               />
               <div v-else class="avatar-placeholder large">
@@ -652,13 +635,13 @@ async function togglePinChat() {
                   (
                     character.nickname ||
                     character.data?.name ||
-                    character.name
+                    "?"
                   ).charAt(0)
                 }}
               </div>
             </div>
             <span class="contact-name">{{
-              character.nickname || character.data?.name || character.name
+              character.nickname || character.data?.name
             }}</span>
             <span class="contact-hint">點擊開始對話</span>
           </div>

@@ -55,6 +55,19 @@ import {
   extractAudioFromMessages,
   extractImagesFromMessages,
 } from "@/db/operations";
+import {
+  createChatRecord,
+  loadChatById,
+  loadChatsByCharacter,
+  saveChatMetadata,
+} from "@/storage/chatStorage";
+import {
+  appendMessages,
+  deleteMessage,
+  getMessageCount,
+  loadMessages,
+  saveMessages,
+} from "@/storage/chatMessageStorage";
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import BlockService from "@/services/BlockService";
 import { proactiveMessageService } from "@/services/ProactiveMessageService";
@@ -959,11 +972,20 @@ const currentBlockedAt = ref<number>(0);
 const showFriendRequestInput = ref(false);
 const friendRequestMessage = ref("");
 
+async function refreshBlockStateFromStorage(): Promise<Chat | undefined> {
+  if (!currentChatId.value) return undefined;
+  const updatedChat = await loadChatById(currentChatId.value);
+  if (updatedChat && currentChatData.value) {
+    currentChatData.value.blockState = updatedChat.blockState;
+  }
+  return updatedChat;
+}
+
 // 載入封鎖狀態
 async function loadBlockState() {
   if (!currentChatId.value) return;
   try {
-    const chat = await db.get<Chat>(DB_STORES.CHATS, currentChatId.value);
+    const chat = await loadChatById(currentChatId.value);
     if (chat?.blockState) {
       isCharBlocked.value = chat.blockState.status === "user-blocked-char";
       isBlockedByChar.value = chat.blockState.status === "char-blocked-user";
@@ -1022,13 +1044,7 @@ async function toggleBlockCharacter() {
     currentBlockedAt.value = 0;
     isCharBlocked.value = false;
     // 同步更新 currentChatData 的 blockState（防止 saveChatImmediate 覆蓋）
-    const updatedChat = await db.get<Chat>(
-      DB_STORES.CHATS,
-      currentChatId.value,
-    );
-    if (updatedChat && currentChatData.value) {
-      currentChatData.value.blockState = updatedChat.blockState;
-    }
+    await refreshBlockStateFromStorage();
     // 插入系統提示訊息：已解除封鎖
     const unblockMsg: Message = {
       id: `msg_notify_${Date.now()}`,
@@ -1045,16 +1061,9 @@ async function toggleBlockCharacter() {
       return;
     await blockService.blockCharacter(currentChatId.value);
     // 先從 DB 讀取封鎖時間戳記，再設定 isCharBlocked（避免 v-memo 重渲染時 blockedAt 還是舊值）
-    const updatedChat2 = await db.get<Chat>(
-      DB_STORES.CHATS,
-      currentChatId.value,
-    );
+    const updatedChat2 = await refreshBlockStateFromStorage();
     currentBlockedAt.value = updatedChat2?.blockState?.blockedAt ?? Date.now();
     isCharBlocked.value = true;
-    // 同步更新 currentChatData 的 blockState（防止 saveChatImmediate 覆蓋）
-    if (updatedChat2 && currentChatData.value) {
-      currentChatData.value.blockState = updatedChat2.blockState;
-    }
     // 插入系統提示訊息：已封鎖
     const blockMsg: Message = {
       id: `msg_notify_${Date.now()}`,
@@ -1097,7 +1106,7 @@ async function submitFriendRequest() {
       currentCharacter.value?.data?.description ||
       currentCharacter.value?.data?.personality ||
       "";
-    const chat = await db.get<Chat>(DB_STORES.CHATS, currentChatId.value);
+    const chat = await loadChatById(currentChatId.value);
     const blockState = chat?.blockState;
     const prevRejects =
       blockState?.friendRequests?.filter((r) => r.result === "rejected") ?? [];
@@ -1202,13 +1211,7 @@ async function submitFriendRequest() {
       await blockService.handleCharacterUnblock(currentChatId.value);
       currentBlockedAt.value = 0;
       isBlockedByChar.value = false;
-      const updatedChat = await db.get<Chat>(
-        DB_STORES.CHATS,
-        currentChatId.value,
-      );
-      if (updatedChat && currentChatData.value) {
-        currentChatData.value.blockState = updatedChat.blockState;
-      }
+      await refreshBlockStateFromStorage();
       // 插入解封系統訊息
       messages.value.push({
         id: `msg_unblocked_${Date.now()}`,
@@ -2839,8 +2842,7 @@ async function handleMessageDelete(id: string) {
   if (confirm("確定要刪除這條訊息嗎？")) {
     messages.value = messages.value.filter((m) => m.id !== id);
     // 立即從 IDB 刪除，避免 snapshotTime 保護誤留
-    const { deleteChatMessage } = await import("@/db/chatMessageStore");
-    await deleteChatMessage(id);
+    await deleteMessage(id);
     await saveChatImmediate();
   }
 }
@@ -3314,8 +3316,7 @@ async function regenerateLastAIResponse() {
           messages.value = messages.value.slice(0, lastTurnLastIdx + 1);
           // 從 IDB 刪除被截斷的訊息
           if (removedMsgs.length > 0) {
-            const { deleteChatMessage: delTrunc } = await import("@/db/chatMessageStore");
-            await Promise.all(removedMsgs.map((m) => delTrunc(m.id)));
+            await Promise.all(removedMsgs.map((m) => deleteMessage(m.id)));
           }
         }
         await doRegenerateByTurnId(lastTurnId);
@@ -3343,8 +3344,7 @@ async function regenerateLastAIResponse() {
             messages.value = messages.value.slice(0, lastAIIdx + 1);
             // 從 IDB 刪除被截斷的訊息
             if (removedMsgsFb.length > 0) {
-              const { deleteChatMessage: delTruncFb } = await import("@/db/chatMessageStore");
-              await Promise.all(removedMsgsFb.map((m) => delTruncFb(m.id)));
+              await Promise.all(removedMsgsFb.map((m) => deleteMessage(m.id)));
             }
           }
           await doRegenerateFromMessage(firstAIOfLastRound);
@@ -3532,8 +3532,7 @@ async function doRegenerateByTurnId(turnId: string) {
   // 刪除這輪所有訊息（同時從 IDB 刪除，避免 snapshotTime 保護誤留）
   const idsToRemove = currentRoundMessages.map((m) => m.id);
   messages.value = messages.value.filter((m) => m.turnId !== turnId);
-  const { deleteChatMessage: delMsg } = await import("@/db/chatMessageStore");
-  await Promise.all(idsToRemove.map((id) => delMsg(id)));
+  await Promise.all(idsToRemove.map((id) => deleteMessage(id)));
 
   // 生成新的 turnId 並重新生成
   currentTurnId.value = crypto.randomUUID();
@@ -3591,8 +3590,7 @@ async function doRegenerateFromMessage(targetAIMessage: Message) {
   // 刪除當前輪次的訊息（同時從 IDB 刪除，避免 snapshotTime 保護誤留）
   const idsToDelete = new Set(currentRoundMessages.map((m) => m.id));
   messages.value = messages.value.filter((m) => !idsToDelete.has(m.id));
-  const { deleteChatMessage: delMsgFb } = await import("@/db/chatMessageStore");
-  await Promise.all([...idsToDelete].map((id) => delMsgFb(id)));
+  await Promise.all([...idsToDelete].map((id) => deleteMessage(id)));
 
   // 生成新的 turnId 並重新觸發 AI 生成
   currentTurnId.value = crypto.randomUUID();
@@ -4752,16 +4750,14 @@ async function triggerAIResponse(options?: {
               // 嘗試找到對應角色的 1v1 聊天並插入訊息，找不到則自動建立
               if (senderCharId) {
                 try {
-                  const allChats = await db.getAll<Chat>(DB_STORES.CHATS);
-                  const existingChat = allChats.find(
-                    (c) => c.characterId === senderCharId && !c.isGroupChat,
-                  );
+                  const existingChats = await loadChatsByCharacter(senderCharId, {
+                    isGroupChat: false,
+                  });
+                  const existingChat = existingChats[0];
 
                   // 如果沒有 1v1 聊天，自動建立一個
                   const targetChat: Chat =
                     existingChat || createDefaultChat(senderCharId, senderName);
-                  if (!existingChat) {
-                  }
 
                   // 構建群聊記錄數據（最近 15 輪）
                   const groupChatHistoryData = buildGroupChatHistoryData(
@@ -4802,10 +4798,7 @@ async function triggerAIResponse(options?: {
                   newDmMessages.push(dmMessage);
 
                   // v24：用 appendChatMessages 追加訊息（無競態風險）
-                  const { appendChatMessages: appendMsgs1 } = await import(
-                    "@/db/chatMessageStore"
-                  );
-                  await appendMsgs1(targetChat.id, newDmMessages);
+                  await appendMessages(targetChat.id, newDmMessages);
                   // 更新 metadata
                   targetChat.lastMessagePreview =
                     dmMessage.content?.slice(0, 100) || "";
@@ -4813,10 +4806,11 @@ async function triggerAIResponse(options?: {
                     (targetChat.messageCount || 0) + newDmMessages.length;
                   targetChat.updatedAt = Date.now();
                   targetChat.messages = [];
-                  await db.put(
-                    DB_STORES.CHATS,
-                    JSON.parse(JSON.stringify(targetChat)),
-                  );
+                  if (existingChat) {
+                    await saveChatMetadata(targetChat);
+                  } else {
+                    await createChatRecord(targetChat);
+                  }
                 } catch (e) {
                   console.warn("[ChatScreen] 無法插入私信到 1v1 聊天:", e);
                 }
@@ -5143,15 +5137,9 @@ async function triggerAIResponse(options?: {
                     action.reason || "",
                   );
                   // 先從 DB 讀取封鎖時間，再更新 UI 狀態（避免 v-memo 重渲染時 blockedAt 還是舊值）
-                  const updatedChat = await db.get<Chat>(
-                    DB_STORES.CHATS,
-                    currentChatId.value,
-                  );
+                  const updatedChat = await refreshBlockStateFromStorage();
                   currentBlockedAt.value = updatedChat?.blockState?.blockedAt ?? Date.now();
                   isBlockedByChar.value = true;
-                  if (updatedChat && currentChatData.value) {
-                    currentChatData.value.blockState = updatedChat.blockState;
-                  }
                   // 插入封鎖系統通知訊息（冪等：避免重複插入）
                   const alreadyHasBlockNotif = messages.value.some(
                     (m) => m.isCharBlockedNotification,
@@ -5171,13 +5159,7 @@ async function triggerAIResponse(options?: {
                   // 即時更新 UI 封鎖狀態
                   currentBlockedAt.value = 0;
                   isBlockedByChar.value = false;
-                  const updatedChat = await db.get<Chat>(
-                    DB_STORES.CHATS,
-                    currentChatId.value,
-                  );
-                  if (updatedChat && currentChatData.value) {
-                    currentChatData.value.blockState = updatedChat.blockState;
-                  }
+                  await refreshBlockStateFromStorage();
                 } else if (action.action === "apology-food") {
                   // 道歉外賣：角色被封鎖時點外賣給用戶道歉
                   try {
@@ -5649,16 +5631,14 @@ async function triggerAIResponse(options?: {
 
                 if (senderCharId) {
                   try {
-                    const allChats = await db.getAll<Chat>(DB_STORES.CHATS);
-                    const existingChat = allChats.find(
-                      (c) => c.characterId === senderCharId && !c.isGroupChat,
-                    );
+                    const existingChats = await loadChatsByCharacter(senderCharId, {
+                      isGroupChat: false,
+                    });
+                    const existingChat = existingChats[0];
 
                     const targetChat: Chat =
                       existingChat ||
                       createDefaultChat(senderCharId, senderName);
-                    if (!existingChat) {
-                    }
 
                     const groupChatHistoryData = buildGroupChatHistoryData(
                       messages.value,
@@ -5695,20 +5675,18 @@ async function triggerAIResponse(options?: {
                     newDmMessages.push(dmMessage);
 
                     // v24：用 appendChatMessages 追加訊息（無競態風險）
-                    const { appendChatMessages: appendMsgs2 } = await import(
-                      "@/db/chatMessageStore"
-                    );
-                    await appendMsgs2(targetChat.id, newDmMessages);
+                    await appendMessages(targetChat.id, newDmMessages);
                     targetChat.lastMessagePreview =
                       dmMessage.content?.slice(0, 100) || "";
                     targetChat.messageCount =
                       (targetChat.messageCount || 0) + newDmMessages.length;
                     targetChat.updatedAt = Date.now();
                     targetChat.messages = [];
-                    await db.put(
-                      DB_STORES.CHATS,
-                      JSON.parse(JSON.stringify(targetChat)),
-                    );
+                    if (existingChat) {
+                      await saveChatMetadata(targetChat);
+                    } else {
+                      await createChatRecord(targetChat);
+                    }
                   } catch (e) {
                     console.warn("[ChatScreen] 無法插入私信到 1v1 聊天:", e);
                   }
@@ -6015,15 +5993,9 @@ async function triggerAIResponse(options?: {
                       action.reason || "",
                     );
                     // 先從 DB 讀取封鎖時間，再更新 UI 狀態
-                    const updatedChat = await db.get<Chat>(
-                      DB_STORES.CHATS,
-                      currentChatId.value,
-                    );
+                    const updatedChat = await refreshBlockStateFromStorage();
                     currentBlockedAt.value = updatedChat?.blockState?.blockedAt ?? Date.now();
                     isBlockedByChar.value = true;
-                    if (updatedChat && currentChatData.value) {
-                      currentChatData.value.blockState = updatedChat.blockState;
-                    }
                     // 插入封鎖系統通知訊息（冪等：避免重複插入）
                     const alreadyHasBlockNotif2 = messages.value.some(
                       (m) => m.isCharBlockedNotification,
@@ -6043,13 +6015,7 @@ async function triggerAIResponse(options?: {
                     // 即時更新 UI 封鎖狀態
                     currentBlockedAt.value = 0;
                     isBlockedByChar.value = false;
-                    const updatedChat = await db.get<Chat>(
-                      DB_STORES.CHATS,
-                      currentChatId.value,
-                    );
-                    if (updatedChat && currentChatData.value) {
-                      currentChatData.value.blockState = updatedChat.blockState;
-                    }
+                    await refreshBlockStateFromStorage();
                   } else if (action.action === "apology-food") {
                     // 道歉外賣：角色被封鎖時點外賣給用戶道歉
                     try {
@@ -7031,15 +6997,9 @@ async function handleStreamingClose() {
                   currentChatId.value,
                   action.reason || "",
                 );
-                const updatedChat = await db.get<Chat>(
-                  DB_STORES.CHATS,
-                  currentChatId.value,
-                );
+                const updatedChat = await refreshBlockStateFromStorage();
                 currentBlockedAt.value = updatedChat?.blockState?.blockedAt ?? Date.now();
                 isBlockedByChar.value = true;
-                if (updatedChat && currentChatData.value) {
-                  currentChatData.value.blockState = updatedChat.blockState;
-                }
                 const alreadyHasBlockNotif3 = messages.value.some(
                   (m) => m.isCharBlockedNotification,
                 );
@@ -7057,13 +7017,7 @@ async function handleStreamingClose() {
                 await blockSvc.handleCharacterUnblock(currentChatId.value);
                 currentBlockedAt.value = 0;
                 isBlockedByChar.value = false;
-                const updatedChat = await db.get<Chat>(
-                  DB_STORES.CHATS,
-                  currentChatId.value,
-                );
-                if (updatedChat && currentChatData.value) {
-                  currentChatData.value.blockState = updatedChat.blockState;
-                }
+                await refreshBlockStateFromStorage();
               } else if (action.action === "apology-food") {
                 try {
                   const { default: ApologyFoodService } = await import("@/services/ApologyFoodService");
@@ -7672,7 +7626,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
   if (targetChatId) {
     // 載入現有聊天
     try {
-      const chat = await db.get<Chat>(DB_STORES.CHATS, targetChatId);
+      const chat = await loadChatById(targetChatId);
       if (chat) {
         currentChatId.value = chat.id;
         currentChatData.value = chat;
@@ -7689,14 +7643,11 @@ async function loadOrCreateChat(overrideChatId?: string) {
           chat.unreadCount = 0;
           const chatCopy = JSON.parse(JSON.stringify(chat));
           chatCopy.messages = [];
-          await db.put(DB_STORES.CHATS, chatCopy);
+          await saveChatMetadata(chatCopy);
         }
 
         // v24：從獨立的 chatMessages 表讀取訊息
-        const { loadChatMessages, saveChatMessages } = await import(
-          "@/db/chatMessageStore"
-        );
-        let rawMessages: ChatMessage[] = await loadChatMessages(chat.id);
+        let rawMessages: ChatMessage[] = await loadMessages(chat.id);
         _messagesLoadedAt = Date.now();
 
         // 如果 chatMessages 為空但 messageCount > 0，嘗試從遺留的 messageChunks 表恢復
@@ -7716,7 +7667,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
                 "條訊息，將寫入 chatMessages 表",
               );
               // 寫入獨立的 chatMessages 表
-              await saveChatMessages(chat.id, recovered);
+              await saveMessages(chat.id, recovered);
             }
           } catch (recoverErr) {
             console.warn("[ChatScreen] messageChunks 恢復失敗:", recoverErr);
@@ -7779,7 +7730,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
               rawMessages.map((m) => m.sender[0]).join(""),
             );
             // 回寫修復後的順序到 chatMessages 表
-            await saveChatMessages(chat.id, rawMessages);
+            await saveMessages(chat.id, rawMessages);
             console.log("[ChatScreen] ✅ 已將修復後的訊息順序回寫到 chatMessages");
           }
         }
@@ -8721,7 +8672,7 @@ async function _saveChatImplInner() {
     // 從 DB 讀取最新版本，用於安全檢查和狀態保護
     let latestFromDb: any = null;
     try {
-      latestFromDb = await db.get<any>(DB_STORES.CHATS, plainChat.id);
+      latestFromDb = await loadChatById(plainChat.id);
     } catch {
       /* 讀取失敗時繼續，後面的保護邏輯會跳過 */
     }
@@ -8752,24 +8703,17 @@ async function _saveChatImplInner() {
     }
 
     // v24：分開保存 metadata 和訊息
-    const { saveChatMessages: saveMsgs } = await import(
-      "@/db/chatMessageStore"
-    );
-
     // 1) 保存訊息到 chatMessages 表（傳入 snapshotTime 保護背景服務新增的訊息）
-    await saveMsgs(plainChat.id, plainMessages, _messagesLoadedAt || undefined);
+    await saveMessages(plainChat.id, plainMessages, _messagesLoadedAt || undefined);
 
     // 2) 保存 chat metadata（不含訊息）到 chats 表
     plainChat.messages = [];
-    await db.put(DB_STORES.CHATS, plainChat);
+    await saveChatMetadata(plainChat);
 
     // 保存後立即回讀驗證（僅開發環境）
     if (import.meta.env.DEV) {
       try {
-        const { getChatMessageCount } = await import(
-          "@/db/chatMessageStore"
-        );
-        const savedCount = await getChatMessageCount(currentChatId.value!);
+        const savedCount = await getMessageCount(currentChatId.value!);
         if (savedCount !== localCount) {
           console.error(
             "[ChatScreen] ⚠️ 保存後回讀數量不一致！寫入:",
@@ -9321,10 +9265,7 @@ watch(
       await new Promise((r) => setTimeout(r, 300));
       try {
         // v24：從 chatMessages 表讀取最新訊息
-        const { loadChatMessages: loadMsgs } = await import(
-          "@/db/chatMessageStore"
-        );
-        const dbMessages = await loadMsgs(currentChatId.value);
+        const dbMessages = await loadMessages(currentChatId.value);
         const dbMessageCount = dbMessages.length;
         const localMessageCount = messages.value.length;
 

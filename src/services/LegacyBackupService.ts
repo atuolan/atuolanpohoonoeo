@@ -10,6 +10,8 @@ import {
     type DiaryEntry,
 } from "@/db/database";
 import { extractImagesFromMessages } from "@/db/operations";
+import { saveChatMetadata } from "@/storage/chatStorage";
+import { saveMessages } from "@/storage/chatMessageStorage";
 import type { CharacterCardV2Data, StoredCharacter } from "@/types/character";
 import { createDefaultCharacterData } from "@/types/character";
 import type { Chat, ChatMessage } from "@/types/chat";
@@ -1139,11 +1141,10 @@ export class LegacyBackupService {
             // v24：訊息分離儲存
             if (messagesToSave.length > 0) {
               const msgsForStorage = await extractImagesFromMessages(messagesToSave);
-              const { saveChatMessages } = await import("@/db/chatMessageStore");
-              await saveChatMessages(chat.id, msgsForStorage);
+              await saveMessages(chat.id, msgsForStorage);
             }
             chat.messages = [];
-            await db.put(DB_STORES.CHATS, chat);
+            await saveChatMetadata(chat);
             stats.chats++;
 
             // 提取並保存總結

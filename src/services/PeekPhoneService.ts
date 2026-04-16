@@ -4,6 +4,7 @@
  * 生成偷窺手機各模塊組的 AI 內容
  */
 import { getAPIClient, type APIMessage } from "@/api/OpenAICompatible";
+import { loadMessages } from "@/storage/chatMessageStorage";
 import { useSettingsStore } from "@/stores/settings";
 import type { StoredCharacter } from "@/types/character";
 import type { Chat, ChatMessage } from "@/types/chat";
@@ -76,8 +77,7 @@ export async function extractChatContext(
 
   if (messages.length === 0 && chat.id) {
     try {
-      const { loadChatMessages } = await import("@/db/chatMessageStore");
-      messages = await loadChatMessages(chat.id);
+      messages = await loadMessages(chat.id);
     } catch (error) {
       console.warn("[PeekPhone] 載入 chatMessages 失敗:", error);
     }

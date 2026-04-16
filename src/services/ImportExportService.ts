@@ -14,6 +14,8 @@ import {
   extractImagesFromMessages,
   restoreImagesToMessages,
 } from "../db/operations";
+import { saveChatMetadata } from "../storage/chatStorage";
+import { loadMessages, saveMessages } from "../storage/chatMessageStorage";
 import type {
   AffinityPostMutationRule,
   AffinityMetricConfig,
@@ -1139,8 +1141,7 @@ export class ImportExportService {
       }
 
       // v24：從 chatMessages 表載入訊息
-      const { loadChatMessages: loadMsgsExp } = await import("@/db/chatMessageStore");
-      chat.messages = await loadMsgsExp(chatId);
+      chat.messages = await loadMessages(chatId);
       // 匯出時還原圖片引用為 base64，確保匯出檔案包含完整數據
       if (chat.messages.length > 0) {
         chat.messages = await restoreImagesToMessages(chat.messages);
@@ -1381,11 +1382,10 @@ export class ImportExportService {
       const messagesForStorage =
         await extractImagesFromMessages(messagesToSave);
       // 訊息寫入 chatMessages 表
-      const { saveChatMessages } = await import("@/db/chatMessageStore");
-      await saveChatMessages(chat.id, messagesForStorage);
+      await saveMessages(chat.id, messagesForStorage);
       // chat metadata 寫入 chats 表（不含訊息）
       chat.messages = [];
-      await db.put(DB_STORES.CHATS, chat);
+      await saveChatMetadata(chat);
 
       // 匯入總結
       let summaryCount = 0;
@@ -1444,8 +1444,7 @@ export class ImportExportService {
         if (!chat) continue;
 
         // v24：從 chatMessages 表載入訊息
-        const { loadChatMessages: loadMsgsBulk } = await import("@/db/chatMessageStore");
-        chat.messages = await loadMsgsBulk(chatId);
+        chat.messages = await loadMessages(chatId);
         // 還原圖片引用為 base64
         if (chat.messages.length > 0) {
           chat.messages = await restoreImagesToMessages(chat.messages);
@@ -1650,9 +1649,7 @@ export class ImportExportService {
       }
 
       // v24：從 chatMessages 表載入現有訊息，合併後寫回
-      const { loadChatMessages: loadMsgsImp, saveChatMessages: saveMsgsImp } =
-        await import("@/db/chatMessageStore");
-      const existingMessages = await loadMsgsImp(targetChatId);
+      const existingMessages = await loadMessages(targetChatId);
       existingMessages.push(...messages);
 
       // 匯入 metadata 中的 variables 到 chat.metadata.variables
@@ -1668,14 +1665,14 @@ export class ImportExportService {
 
       // 保存（圖片分離後寫入 chatMessages 表）
       const msgsForStorage = await extractImagesFromMessages(existingMessages);
-      await saveMsgsImp(targetChatId, msgsForStorage);
+      await saveMessages(targetChatId, msgsForStorage);
       chat.messages = [];
       chat.lastMessagePreview =
         existingMessages[existingMessages.length - 1]?.content?.slice(0, 100) ||
         "";
       chat.messageCount = existingMessages.length;
       chat.updatedAt = Date.now();
-      await db.put(DB_STORES.CHATS, chat);
+      await saveChatMetadata(chat);
 
       return { success: true, messageCount: messages.length };
     } catch (e) {
@@ -1699,8 +1696,7 @@ export class ImportExportService {
       }
 
       // v24：從 chatMessages 表載入訊息
-      const { loadChatMessages: loadMsgsJsonl } = await import("@/db/chatMessageStore");
-      let messages = await loadMsgsJsonl(chatId);
+      let messages = await loadMessages(chatId);
       // 還原圖片引用為 base64
       if (messages.length > 0) {
         messages = await restoreImagesToMessages(messages);
@@ -1883,9 +1879,7 @@ export class ImportExportService {
       }
 
       // v24：從 chatMessages 表載入舊訊息以清理圖片
-      const { loadChatMessages: loadOldMsgs, saveChatMessages: saveNewMsgs } =
-        await import("@/db/chatMessageStore");
-      const oldMsgList = await loadOldMsgs(targetChatId);
+      const oldMsgList = await loadMessages(targetChatId);
       if (oldMsgList.length > 0) {
         const oldMessages = await restoreImagesToMessages(oldMsgList);
         const imageRefs = collectImageRefs(oldMessages);
@@ -1902,13 +1896,13 @@ export class ImportExportService {
 
       // 保存（圖片分離後寫入 chatMessages 表）
       const msgsForStorage = await extractImagesFromMessages(messages);
-      await saveNewMsgs(targetChatId, msgsForStorage);
+      await saveMessages(targetChatId, msgsForStorage);
       chat.messages = [];
       chat.lastMessagePreview =
         messages[messages.length - 1]?.content?.slice(0, 100) || "";
       chat.messageCount = messages.length;
       chat.updatedAt = Date.now();
-      await db.put(DB_STORES.CHATS, chat);
+      await saveChatMetadata(chat);
 
       return { success: true, messageCount: messages.length };
     } catch (e) {
@@ -2044,10 +2038,9 @@ export class ImportExportService {
         messagesToSave[messagesToSave.length - 1]?.content?.slice(0, 100) || "";
       chat.messageCount = messagesToSave.length;
       const msgsForStorage2 = await extractImagesFromMessages(messagesToSave);
-      const { saveChatMessages: saveMsgsCreate } = await import("@/db/chatMessageStore");
-      await saveMsgsCreate(chat.id, msgsForStorage2);
+      await saveMessages(chat.id, msgsForStorage2);
       chat.messages = [];
-      await db.put(DB_STORES.CHATS, chat);
+      await saveChatMetadata(chat);
 
       return { success: true, chat, messageCount: messagesToSave.length };
     } catch (e) {

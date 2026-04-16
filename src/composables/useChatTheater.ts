@@ -1,5 +1,7 @@
 import { ref, type Ref, type ComputedRef } from "vue";
 import { db, DB_STORES } from "@/db/database";
+import { createChatRecord } from "@/storage/chatStorage";
+import { appendMessages } from "@/storage/chatMessageStorage";
 import type { Chat, ChatMessage } from "@/types/chat";
 
 /**
@@ -173,10 +175,8 @@ export function useChatTheater(deps: {
           updatedAt: now,
           isBranch: true,
         };
-        await db.init();
-        await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(newChat)));
-        const { appendChatMessages } = await import("@/db/chatMessageStore");
-        await appendChatMessages(newChatId, branchMessages);
+        await createChatRecord(newChat);
+        await appendMessages(newChatId, branchMessages);
 
         if (theaterInheritSummary.value) {
           const srcChatId = deps.currentChatId.value || deps.chatId || "";

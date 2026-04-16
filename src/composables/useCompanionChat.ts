@@ -4,6 +4,13 @@
  */
 
 import type { APIMessage } from "@/api/OpenAICompatible";
+import { useCharactersStore } from "@/stores/characters";
+import {
+  createChatRecord,
+  loadChatsByCharacter,
+  saveChatMetadata,
+} from "@/storage/chatStorage";
+import { appendMessages } from "@/storage/chatMessageStorage";
 import type {
   BookChapter,
   CompanionChatState,
@@ -650,23 +657,16 @@ export function useCompanionChat(
     if (!selectedCharacterId.value || core.messages.length === 0) return;
 
     try {
-      const { db, DB_STORES } = await import("@/db/database");
-
-      const bookTitle = options.book.value.title;
       const characterId = selectedCharacterId.value;
-
-      // 構建 GroupChatHistoryCard 資料
+      const bookTitle = options.book.value.title;
       const historyData = buildSyncData(bookTitle, core.messages);
 
-      // 從 IDB 找到該角色的一對一聊天（排除群聊）
-      const allChats = await db.getAll<Chat>(DB_STORES.CHATS);
-      let targetChat: Chat | undefined = allChats.find(
-        (c) => c.characterId === characterId && !c.isGroupChat,
-      );
+      const matchingChats = await loadChatsByCharacter(characterId, {
+        isGroupChat: false,
+      });
+      let targetChat: Chat | undefined = matchingChats[0];
 
       if (!targetChat) {
-        // 沒有現有聊天，建立一個新的
-        const { useCharactersStore } = await import("@/stores/characters");
         const charsStore = useCharactersStore();
         const character = charsStore.characters.find(
           (c: StoredCharacter) => c.id === characterId,
@@ -682,9 +682,9 @@ export function useCompanionChat(
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
+        await createChatRecord(targetChat);
       }
 
-      // 建立 isGroupChatHistory 訊息
       const syncMessage: ChatMessage = {
         id: `msg_companion_${Date.now()}`,
         sender: "system",
@@ -698,14 +698,12 @@ export function useCompanionChat(
         updatedAt: Date.now(),
       };
 
-      // v24：用 appendChatMessages 追加訊息（無競態風險）
-      const { appendChatMessages } = await import("@/db/chatMessageStore");
-      await appendChatMessages(targetChat.id, [syncMessage]);
+      await appendMessages(targetChat.id, [syncMessage]);
       targetChat.messageCount = (targetChat.messageCount || 0) + 1;
       targetChat.lastMessagePreview = syncMessage.content?.slice(0, 100) || "";
       targetChat.updatedAt = Date.now();
       targetChat.messages = [];
-      await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(targetChat)));
+      await saveChatMetadata(targetChat);
     } catch (e) {
       console.warn("[CompanionChat] syncToMainChat 失敗:", e);
     }

@@ -1,8 +1,13 @@
 import { ref, computed, type Ref, type ComputedRef } from "vue";
-import { db, DB_STORES } from "@/db/database";
-import { appendChatMessages } from "@/db/chatMessageStore";
+import {
+  createChatRecord,
+  deleteChatCascade,
+  loadChatsByCharacter,
+  renameChat,
+  setLastActiveChatId,
+  toggleChatPinned,
+} from "@/storage/chatStorage";
 import type { Chat, ChatMessage } from "@/types/chat";
-import { deleteVectorsByChatId } from "@/db/vectorStore";
 
 /**
  * 聊天檔案管理功能
@@ -54,16 +59,12 @@ export function useChatFiles(deps: {
 
   async function refreshChatFilesList() {
     try {
-      await db.init();
-      const allChats = await db.getAll<Chat>(DB_STORES.CHATS);
       const charId = deps.characterId || deps.currentCharacter.value?.id || "";
-      chatFilesList.value = allChats
-        .filter((c) =>
-          deps.isGroupChat.value
-            ? c.isGroupChat && c.characterId === charId
-            : !c.isGroupChat && c.characterId === charId,
-        )
-        .sort((a, b) => b.updatedAt - a.updatedAt);
+      const allChats = await loadChatsByCharacter(
+        charId,
+        { isGroupChat: deps.isGroupChat.value },
+      );
+      chatFilesList.value = allChats;
     } catch (e) {
       console.error("[ChatFiles] 載入失敗:", e);
     }
@@ -82,7 +83,7 @@ export function useChatFiles(deps: {
     }
     const charId = deps.characterId || deps.currentCharacter.value?.id || "";
     if (charId) {
-      await db.put(DB_STORES.SETTINGS, chatId, `lastActiveChatId_${charId}`);
+      await setLastActiveChatId(charId, chatId);
     }
     deps.messages.value = [];
     showChatFilesPanel.value = false;
@@ -137,10 +138,7 @@ export function useChatFiles(deps: {
       lastMessagePreview:
         newMessages[newMessages.length - 1]?.content?.slice(0, 100) || "",
     };
-    await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(newChat)));
-    if (newMessages.length > 0) {
-      await appendChatMessages(newChatId, newMessages);
-    }
+    await createChatRecord(newChat, newMessages);
 
     deps.messages.value = [];
     showChatFilesPanel.value = false;
@@ -152,11 +150,8 @@ export function useChatFiles(deps: {
   async function togglePinChatToList(chatId: string, event: Event) {
     event.stopPropagation();
     try {
-      const chat = await db.get<Chat>(DB_STORES.CHATS, chatId);
+      const chat = await toggleChatPinned(chatId);
       if (!chat) return;
-      chat.pinnedToList = !chat.pinnedToList;
-      chat.updatedAt = Date.now();
-      await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
       if (chatId === deps.currentChatId.value && deps.currentChatData.value) {
         deps.currentChatData.value.pinnedToList = chat.pinnedToList;
       }
@@ -177,11 +172,8 @@ export function useChatFiles(deps: {
     renamingChatId.value = null;
     if (!newName) return;
     try {
-      const chat = await db.get<Chat>(DB_STORES.CHATS, chatId);
+      const chat = await renameChat(chatId, newName);
       if (chat) {
-        chat.name = newName;
-        chat.updatedAt = Date.now();
-        await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
         if (chatId === deps.currentChatId.value && deps.currentChatData.value) {
           deps.currentChatData.value.name = newName;
         }
@@ -200,20 +192,7 @@ export function useChatFiles(deps: {
     }
     if (!confirm("確定要刪除這個聊天記錄嗎？")) return;
     try {
-      const { collectImageRefs, deleteChatImagesByRefs } = await import(
-        "@/db/operations"
-      );
-      // v24：從 chatMessages 表載入訊息以清理圖片，並級聯刪除
-      const { loadChatMessages, deleteChatMessagesForChat } = await import("@/db/chatMessageStore");
-      const chatMsgs = await loadChatMessages(chatId);
-      const imageRefs = collectImageRefs(chatMsgs);
-      await Promise.all([
-        db.delete(DB_STORES.CHATS, chatId),
-        deleteChatMessagesForChat(chatId),
-        deleteChatImagesByRefs(imageRefs),
-      ]);
-      // 向量記憶：刪除該聊天的所有向量記錄
-      deleteVectorsByChatId(chatId).catch(err => console.error('[向量記憶] 刪除聊天向量失敗:', err))
+      await deleteChatCascade(chatId);
       if (chatId === deps.currentChatId.value) {
         const remaining = chatFilesList.value.filter((c) => c.id !== chatId);
         if (remaining.length > 0) {

@@ -345,7 +345,7 @@ export function useChatMiniFeatures(deps: {
         const cityLabel = city.region
           ? `${city.name}, ${city.region}`
           : city.name;
-        weatherStore.setManualCity(cityLabel, city.lat, city.lon);
+        await weatherStore.setManualCity(cityLabel, city.lat, city.lon);
         await weatherStore.refreshWeather(true);
       }
     } catch {

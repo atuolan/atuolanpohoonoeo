@@ -8,6 +8,8 @@ import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import { db, DB_STORES } from "@/db/database";
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import { parseAffinityUpdateTags } from "@/services/ResponseParser";
+import { loadChatById, saveChatMetadata } from "@/storage/chatStorage";
+import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
@@ -338,7 +340,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     if (msgs.length === 0) return;
 
     try {
-      const chat = await db.get<any>(DB_STORES.CHATS, info.chatId);
+      const chat = await loadChatById(info.chatId);
       if (!chat) return;
 
       const mins = Math.floor(callDuration.value / 60);
@@ -359,13 +361,12 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       };
 
       // v24：用 appendChatMessages 追加通話記錄
-      const { appendChatMessages } = await import("@/db/chatMessageStore");
-      await appendChatMessages(chat.id, [callRecordMessage as any]);
+      await appendMessages(chat.id, [callRecordMessage as any]);
       chat.messageCount = (chat.messageCount || 0) + 1;
       chat.lastMessagePreview = callRecordMessage.content?.slice(0, 100) || "";
       chat.updatedAt = Date.now();
       chat.messages = [];
-      await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
+      await saveChatMetadata(chat);
       console.log("[phoneCall] 通話記錄已寫入 chatMessages 表");
     } catch (e) {
       console.error("[phoneCall] 寫入通話記錄失敗", e);
@@ -848,9 +849,8 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
         .map((e: any) => ({ id: e.id, content: e.content, category: e.category, priority: e.priority }));
 
       if (info.chatId) {
-        const { loadChatMessages } = await import("@/db/chatMessageStore");
         // 包含普通聊天消息和通話記錄（sender === "system" 且含通話內容）
-        const msgs = (await loadChatMessages(info.chatId)).filter((m: any) => {
+        const msgs = (await loadMessages(info.chatId)).filter((m: any) => {
           if (m.sender === "user" || m.sender === "assistant") return true;
           if (m.sender === "system" && typeof m.content === "string" && m.content.includes("📞 通話結束")) return true;
           return false;
@@ -1000,12 +1000,11 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
         timestamp: Date.now(), createdAt: Date.now(), updatedAt: Date.now(), status: "sent",
       };
       // v24：用 appendChatMessages 追加通話記錄
-      const { appendChatMessages: appendMsgsCall } = await import("@/db/chatMessageStore");
-      await appendMsgsCall(chat.id, [callRecordMessage as any]);
+      await appendMessages(chat.id, [callRecordMessage as any]);
       chat.messageCount = (chat.messageCount || 0) + 1;
       chat.updatedAt = Date.now();
       chat.messages = [];
-      await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
+      await saveChatMetadata(chat);
     } catch { /* 忽略 */ }
   }
 

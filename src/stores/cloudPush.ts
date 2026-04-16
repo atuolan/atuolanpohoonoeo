@@ -5,6 +5,12 @@
 
 import { db, DB_STORES } from "@/db/database";
 import * as CloudPushService from "@/services/CloudPushService";
+import {
+  createChatRecord,
+  loadChatById,
+  saveChatMetadata,
+} from "@/storage/chatStorage";
+import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
 import type {
   CloudPushApiSettings,
   CloudPushCharacter,
@@ -140,8 +146,7 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
             let recentMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
             if (charChat) {
               // v24：從 chatMessages 表載入訊息（不再用 chat.messages）
-              const { loadChatMessages } = await import("@/db/chatMessageStore");
-              const allMsgs = await loadChatMessages(charChat.id);
+              const allMsgs = await loadMessages(charChat.id);
               // 取最後 30 條（15 輪 × 2），過濾掉 system 訊息
               const msgs = allMsgs
                 .filter((m: any) => m.sender === "user" || m.sender === "assistant")
@@ -287,21 +292,19 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
         }
 
         // v24：用 appendChatMessages 追加訊息（無競態風險）
-        const { appendChatMessages } = await import("@/db/chatMessageStore");
-
         if (existingChatId) {
           // 追加訊息到 chatMessages 表
-          await appendChatMessages(existingChatId, newMessages as any[]);
+          await appendMessages(existingChatId, newMessages as any[]);
 
           // 更新 chat metadata（不含訊息）
-          const freshChat = await db.get<any>(DB_STORES.CHATS, existingChatId);
+          const freshChat = await loadChatById(existingChatId);
           if (freshChat) {
             freshChat.unreadCount = (freshChat.unreadCount || 0) + charMsgs.length;
             freshChat.messageCount = (freshChat.messageCount || 0) + newMessages.length;
             freshChat.lastMessagePreview = (newMessages[newMessages.length - 1] as any)?.content?.slice(0, 100) || "";
             freshChat.updatedAt = Date.now();
             freshChat.messages = [];
-            await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(freshChat)));
+            await saveChatMetadata(freshChat);
           } else {
             // Chat 在讀取間被刪除，建立新聊天 metadata
             const newChat = {
@@ -316,14 +319,12 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
               messageCount: newMessages.length,
               lastMessagePreview: (newMessages[newMessages.length - 1] as any)?.content?.slice(0, 100) || "",
             };
-            await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(newChat)));
+            await createChatRecord(newChat as any);
+            await appendMessages(existingChatId, newMessages as any[]);
           }
         } else {
-          // 沒有現有聊天，建立新聊天
+          // 建立新聊天 + 寫入 chatMessages
           const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-          // 先寫入訊息
-          await appendChatMessages(newChatId, newMessages as any[]);
-          // 再建立 metadata
           const newChat = {
             id: newChatId,
             name: `與 ${charMsgs[0].characterName} 的對話`,
@@ -336,7 +337,8 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
             messageCount: newMessages.length,
             lastMessagePreview: (newMessages[newMessages.length - 1] as any)?.content?.slice(0, 100) || "",
           };
-          await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(newChat)));
+          await createChatRecord(newChat as any);
+          await appendMessages(newChatId, newMessages as any[]);
         }
       }
 

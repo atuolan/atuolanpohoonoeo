@@ -4,6 +4,8 @@ import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
 import AuxiliaryApiPanel from "@/components/screens/AuxiliaryApiPanel.vue";
 import { clearAllData, db } from "@/db/database";
 import { extractImagesFromMessages } from "@/db/operations";
+import { saveChatMetadata } from "@/storage/chatStorage";
+import { saveMessages } from "@/storage/chatMessageStorage";
 import {
   checkPermission as checkBackupPermission,
   clearBackupDirectory,
@@ -2037,11 +2039,10 @@ async function handleFileImport(event: Event) {
           chat.messageCount = messagesToSave.length;
           if (messagesToSave.length > 0) {
             const msgsForStorage = await extractImagesFromMessages(messagesToSave);
-            const { saveChatMessages } = await import("@/db/chatMessageStore");
-            await saveChatMessages(chat.id, msgsForStorage);
+            await saveMessages(chat.id, msgsForStorage);
           }
           chat.messages = [];
-          await db.put("chats", chat);
+          await saveChatMetadata(chat as any);
           importedChatCount++;
         } catch (parseErr) {
           console.warn("[Import] 聊天檔案解析失敗，跳過:", parseErr);
@@ -2059,11 +2060,10 @@ async function handleFileImport(event: Event) {
         // v24：圖片分離 + 訊息分離儲存
         if (messagesToSave.length > 0) {
           const msgsForStorage = await extractImagesFromMessages(messagesToSave);
-          const { saveChatMessages } = await import("@/db/chatMessageStore");
-          await saveChatMessages(chat.id, msgsForStorage);
+          await saveMessages(chat.id, msgsForStorage);
         }
         chat.messages = [];
-        await db.put("chats", chat);
+        await saveChatMetadata(chat as any);
         importedChatCount++;
       }
     }

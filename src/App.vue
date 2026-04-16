@@ -69,6 +69,12 @@ import UserProfileScreen from "@/components/screens/UserProfileScreen.vue";
 import WeatherScreen from "@/components/screens/WeatherScreen.vue";
 import { useBackgroundAudio } from "@/composables/useBackgroundAudio";
 import { db, DB_STORES } from "@/db/database";
+import {
+  createChatRecord,
+  loadAllChats,
+  loadChatById,
+  loadChatsByCharacter,
+} from "@/storage/chatStorage";
 import { useUserStore } from "@/stores";
 import { usePhoneCallStore } from "@/stores/phoneCall";
 import type { CharacterImportResult } from "@/types/character";
@@ -453,7 +459,7 @@ async function checkPendingCallsAtAppLevel() {
   // 獲取所有聊天的勿擾設定
   const chatDoNotDisturbMap = new Map<string, boolean>();
   try {
-    const allChats = await db.getAll<Chat>(DB_STORES.CHATS);
+    const allChats = await loadAllChats();
     for (const chat of allChats) {
       if (chat.doNotDisturb) {
         chatDoNotDisturbMap.set(chat.id, true);
@@ -1165,10 +1171,9 @@ async function startChat(characterId: string) {
   // 查找該角色的所有聊天記錄
   let existingChats: Chat[] = [];
   try {
-    const allChats = await db.getAll<Chat>(DB_STORES.CHATS);
-    existingChats = allChats
-      .filter((c) => c.characterId === characterId && !c.isGroupChat)
-      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    existingChats = await loadChatsByCharacter(characterId, {
+      isGroupChat: false,
+    });
   } catch (e) {
     console.warn("[App] 查找現有聊天失敗:", e);
   }
@@ -1264,11 +1269,7 @@ async function chatPickerCreateNew(withGreeting: boolean) {
     lastMessagePreview:
       newMessages[newMessages.length - 1]?.content?.slice(0, 100) || "",
   };
-  await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(newChat)));
-  if (newMessages.length > 0) {
-    const { appendChatMessages } = await import("@/db/chatMessageStore");
-    await appendChatMessages(newChat.id, newMessages);
-  }
+  await createChatRecord(newChat, newMessages);
 
   currentChatId.value = newChat.id;
   navigateToPage("chat");
@@ -1331,11 +1332,7 @@ async function handleMultiCharConfirm(
   };
 
   // 存入 IndexedDB
-  await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
-  if (chatMessages.length > 0) {
-    const { appendChatMessages } = await import("@/db/chatMessageStore");
-    await appendChatMessages(chat.id, chatMessages);
-  }
+  await createChatRecord(chat, chatMessages);
 
   // 打開聊天
   chatCharacterName.value = charName;
@@ -1359,10 +1356,9 @@ async function startPhoneCall(characterId: string) {
 
     // 查找該角色最近的聊天記錄
     try {
-      const allChats = await db.getAll<Chat>(DB_STORES.CHATS);
-      const characterChats = allChats
-        .filter((c) => c.characterId === characterId && !c.isGroupChat)
-        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      const characterChats = await loadChatsByCharacter(characterId, {
+        isGroupChat: false,
+      });
       currentChatId.value =
         characterChats.length > 0 ? characterChats[0].id : null;
     } catch (e) {
@@ -1468,10 +1464,9 @@ async function resolveLatestDirectChatId(
   characterId: string,
 ): Promise<string | null> {
   try {
-    const allChats = await db.getAll<Chat>(DB_STORES.CHATS);
-    const characterChats = allChats
-      .filter((c) => c.characterId === characterId && !c.isGroupChat)
-      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    const characterChats = await loadChatsByCharacter(characterId, {
+      isGroupChat: false,
+    });
     return characterChats.length > 0 ? characterChats[0].id : null;
   } catch (e) {
     console.warn("[App] 查找現有聊天失敗:", e);
@@ -1886,7 +1881,7 @@ async function restoreChatContextFromNotification(data?: Record<string, any>) {
 
   let resolvedChat: Chat | undefined;
   try {
-    resolvedChat = await db.get<Chat>(DB_STORES.CHATS, data.chatId);
+    resolvedChat = await loadChatById(data.chatId);
   } catch (error) {
     console.warn("[App] 通知點擊後讀取聊天失敗:", error);
   }

@@ -6,7 +6,11 @@ import {
   createDefaultNovelAIImageSettings,
   type NovelAIImageSettings,
 } from "@/api/NovelAIImageApi";
-import { db, DB_STORES } from "@/db/database";
+import {
+  SETTINGS_ID,
+  loadSettingsData,
+  saveSettingsData,
+} from "@/storage/settingsStorage";
 import type { APISettings, AudioSettings } from "@/types/settings";
 import {
   createDefaultAPISettings,
@@ -17,7 +21,6 @@ import { computed, reactive, ref, toRaw } from "vue";
 
 // ===== 類型定義 =====
 
-// 生成參數類型
 export interface GenerationParams {
   temperature: number;
   maxTokens: number;
@@ -26,11 +29,9 @@ export interface GenerationParams {
   frequencyPenalty: number;
   presencePenalty: number;
   streamingEnabled: boolean;
-  /** 是否使用流式輸出窗口（預設 true） */
   useStreamingWindow: boolean;
 }
 
-// API 配置文件
 export interface APIProfile {
   id: string;
   name: string;
@@ -40,7 +41,6 @@ export interface APIProfile {
   updatedAt: number;
 }
 
-// 備用 API 配置文件
 export interface AuxiliaryProfile {
   id: string;
   name: string;
@@ -50,7 +50,6 @@ export interface AuxiliaryProfile {
   updatedAt: number;
 }
 
-// 備用 API 任務白名單
 export const ROUTABLE_TASKS = [
   "summary",
   "diary",
@@ -75,110 +74,39 @@ export interface AuxiliaryTaskOption {
   description: string;
 }
 
-// 備用 API 配置
 export interface AuxiliaryAPIConfig {
   enabled: boolean;
   api: APISettings;
   generation: GenerationParams;
-  // 舊版相容欄位，不再作為正式路由依據
   enabledTasks: string[];
   taskBindings: Record<RoutableTaskType, string | null>;
-  // 各任務直連覆寫（true=直連, false=走代理, null=跟隨綁定配置）
   taskDirectConnect: Record<RoutableTaskType, boolean | null>;
-  // 備用 API 配置文件
   profiles: AuxiliaryProfile[];
   currentProfileId: string | null;
 }
 
-// 可用的輔助任務類型
 export const AUXILIARY_TASKS: readonly AuxiliaryTaskOption[] = [
-  {
-    id: "summary",
-    name: "對話總結",
-    icon: "📝",
-    description: "自動總結對話內容",
-  },
-  {
-    id: "diary",
-    name: "日記",
-    icon: "📔",
-    description: "角色日記生成",
-  },
-  {
-    id: "importantEvents",
-    name: "重要事件總結",
-    icon: "📋",
-    description: "從對話中提取重要事件",
-  },
-  {
-    id: "chat",
-    name: "一般聊天",
-    icon: "💭",
-    description: "聊天主流程 AI 回覆生成",
-  },
-  {
-    id: "phoneCall",
-    name: "電話通話",
-    icon: "📞",
-    description: "語音/視訊通話 AI 回覆生成",
-  },
-  {
-    id: "groupCall",
-    name: "群通話",
-    icon: "👥",
-    description: "群聊通話 AI 回覆生成",
-  },
-  {
-    id: "peekPhone",
-    name: "偷窺手機",
-    icon: "📱",
-    description: "偷窺角色手機內容生成",
-  },
-  {
-    id: "plurkPost",
-    name: "噗浪發文",
-    icon: "📮",
-    description: "噗浪空間 AI 自動發文",
-  },
-  {
-    id: "plurkComment",
-    name: "噗浪評論",
-    icon: "💬",
-    description: "噗浪空間 AI 批量評論",
-  },
-  {
-    id: "theater",
-    name: "小劇場",
-    icon: "🎭",
-    description: "小劇場博主自動生成",
-  },
-  {
-    id: "characterGen",
-    name: "生成角色卡",
-    icon: "👤",
-    description: "AI 角色卡生成",
-  },
-  {
-    id: "fate",
-    name: "占卜",
-    icon: "🔮",
-    description: "塔羅占卜 AI 解讀",
-  },
+  { id: "summary", name: "對話總結", icon: "📝", description: "自動總結對話內容" },
+  { id: "diary", name: "日記", icon: "📔", description: "角色日記生成" },
+  { id: "importantEvents", name: "重要事件總結", icon: "📋", description: "從對話中提取重要事件" },
+  { id: "chat", name: "一般聊天", icon: "💭", description: "聊天主流程 AI 回覆生成" },
+  { id: "phoneCall", name: "電話通話", icon: "📞", description: "語音/視訊通話 AI 回覆生成" },
+  { id: "groupCall", name: "群通話", icon: "👥", description: "群聊通話 AI 回覆生成" },
+  { id: "peekPhone", name: "偷窺手機", icon: "📱", description: "偷窺角色手機內容生成" },
+  { id: "plurkPost", name: "噗浪發文", icon: "📮", description: "噗浪空間 AI 自動發文" },
+  { id: "plurkComment", name: "噗浪評論", icon: "💬", description: "噗浪空間 AI 批量評論" },
+  { id: "theater", name: "小劇場", icon: "🎭", description: "小劇場博主自動生成" },
+  { id: "characterGen", name: "生成角色卡", icon: "👤", description: "AI 角色卡生成" },
+  { id: "fate", name: "占卜", icon: "🔮", description: "塔羅占卜 AI 解讀" },
 ] as const;
 
-/** Embedding API 設定（向量記憶用） */
 export interface EmbeddingAPIConfig {
-  /** API 端點 URL */
   endpoint: string;
-  /** API 金鑰 */
   apiKey: string;
-  /** 模型名稱 */
   model: string;
-  /** 是否直連（跳過代理） */
   directConnect?: boolean;
 }
 
-// 完整設定結構（存儲到 IDB）
 export interface IncomingCallRingtoneSettings {
   selectedRingtoneId: string;
   volume: number;
@@ -188,55 +116,33 @@ export interface IncomingCallRingtoneSettings {
 
 export interface SettingsData {
   id: string;
-  // 當前使用的配置文件 ID
   currentProfileId: string | null;
-  // 所有配置文件
   profiles: APIProfile[];
-  // 備用 API 配置
   auxiliary: AuxiliaryAPIConfig;
-  // NovelAI 圖像生成設定
   novelAIImage: NovelAIImageSettings;
-  // MiniMax TTS 語音合成設定
   minimaxTTS: MiniMaxTTSSettings;
-  // 語言設定（zh-TW 繁體 / zh-CN 簡體）
   language: "zh-TW" | "zh-CN";
-  // 勿擾模式設定
   doNotDisturb: boolean;
-  // 面對面模式（聊天時雙方頭像面對面顯示）
   faceToFaceMode: boolean;
-  // 夜晚模式（深色主題）
   nightMode: boolean;
-  // 自定義快速輸入按鈕
   customQuickActions: QuickActionItem[];
-  // 背景無聲音樂（防止瀏覽器後台暫停）
   backgroundAudioEnabled: boolean;
-  // 保活模式：僅音頻模式
   keepAliveMode: "audio";
-  // 語音訊息設定
   audio: AudioSettings;
-  // 來電鈴聲設定
   incomingCallRingtone: IncomingCallRingtoneSettings;
-  // Embedding API 設定（向量記憶用）
   embeddingAPI?: EmbeddingAPIConfig;
-  // 嵌入模式：local（本地 Web Worker 推理）或 api（遠端 API）
   embeddingMode?: "local" | "api";
-  // 向量記憶全域開關
   vectorMemoryEnabled?: boolean;
-  // 附近地點注入筆數（5–30，預設 5）
   nearbyPlacesLimit: number;
-  // 附近地點搜尋半徑（公尺，10–100，預設 10）
   nearbyPlacesRadius: number;
   updatedAt: number;
 }
 
-// 快速輸入按鈕類型
 export interface QuickActionItem {
   label: string;
   text: string;
   hint: string;
 }
-
-// ===== 默認值 =====
 
 function isRoutableTaskType(taskType: string): taskType is RoutableTaskType {
   return ROUTABLE_TASKS.includes(taskType as RoutableTaskType);
@@ -252,10 +158,7 @@ function createDefaultTaskBindings(): Record<RoutableTaskType, string | null> {
   );
 }
 
-function createDefaultTaskDirectConnect(): Record<
-  RoutableTaskType,
-  boolean | null
-> {
+function createDefaultTaskDirectConnect(): Record<RoutableTaskType, boolean | null> {
   return ROUTABLE_TASKS.reduce(
     (map, taskType) => {
       map[taskType] = null;
@@ -266,47 +169,37 @@ function createDefaultTaskDirectConnect(): Record<
 }
 
 function normalizeTaskBindings(
-  input: unknown,
+  bindings?: Partial<Record<RoutableTaskType, string | null>>,
 ): Record<RoutableTaskType, string | null> {
-  const defaults = createDefaultTaskBindings();
-  if (!input || typeof input !== "object") return defaults;
-
-  for (const taskType of ROUTABLE_TASKS) {
-    const value = (input as Record<string, unknown>)[taskType];
-    defaults[taskType] =
-      typeof value === "string" && value.trim() ? value : null;
-  }
-
-  return defaults;
+  return {
+    ...createDefaultTaskBindings(),
+    ...(bindings ?? {}),
+  };
 }
 
-const createDefaultGenerationParams = (): GenerationParams => ({
-  temperature: 1,
-  maxTokens: 32768, // 默認最大回覆長度
-  maxContextLength: 128000, // 默認最大上下文長度
-  topP: 1,
-  frequencyPenalty: 0,
-  presencePenalty: 0,
-  streamingEnabled: true,
-  useStreamingWindow: true,
-});
+function createDefaultGenerationParams(): GenerationParams {
+  return {
+    temperature: 0.7,
+    maxTokens: 2048,
+    maxContextLength: 12000,
+    topP: 1,
+    frequencyPenalty: 0,
+    presencePenalty: 0,
+    streamingEnabled: true,
+    useStreamingWindow: true,
+  };
+}
 
 const createDefaultAuxiliaryConfig = (): AuxiliaryAPIConfig => ({
   enabled: false,
   api: createDefaultAPISettings(),
-  generation: {
-    ...createDefaultGenerationParams(),
-    temperature: 0.5, // 備用 API 用較低溫度
-    streamingEnabled: false,
-  },
-  enabledTasks: ["summary"],
+  generation: createDefaultGenerationParams(),
+  enabledTasks: [],
   taskBindings: createDefaultTaskBindings(),
   taskDirectConnect: createDefaultTaskDirectConnect(),
   profiles: [],
   currentProfileId: null,
 });
-
-const SETTINGS_ID = "main-settings";
 
 const createDefaultIncomingCallRingtoneSettings =
   (): IncomingCallRingtoneSettings => ({
@@ -442,11 +335,7 @@ export const useSettingsStore = defineStore("settings", () => {
 
     const doLoad = async () => {
       try {
-        await db.init();
-        const saved = await db.get<SettingsData>(
-          DB_STORES.APP_SETTINGS,
-          SETTINGS_ID,
-        );
+        const saved = await loadSettingsData();
 
         if (saved) {
           // 載入配置文件列表
@@ -659,8 +548,6 @@ export const useSettingsStore = defineStore("settings", () => {
       return;
     }
     try {
-      await db.init();
-
       // 如果有當前配置文件，更新它
       if (currentProfileId.value) {
         const index = profiles.value.findIndex(
@@ -748,7 +635,7 @@ export const useSettingsStore = defineStore("settings", () => {
         updatedAt: Date.now(),
       };
 
-      await db.put(DB_STORES.APP_SETTINGS, data);
+      await saveSettingsData(data);
       console.log("[SettingsStore] 設定已保存");
     } catch (e) {
       console.error("[SettingsStore] 保存設定失敗:", e);

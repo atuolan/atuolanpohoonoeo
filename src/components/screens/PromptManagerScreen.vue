@@ -1488,6 +1488,101 @@ function buildChatTsFile(): TsExportFile {
   };
 }
 
+function getOrderedPrompts(
+  prompts: PromptDefinition[],
+  order: PromptOrderEntry[],
+): PromptDefinition[] {
+  const orderedPrompts = order
+    .map((entry) => prompts.find((p) => p.identifier === entry.identifier))
+    .filter((p): p is PromptDefinition => p !== undefined);
+  const orderedIds = new Set(order.map((entry) => entry.identifier));
+  const extraPrompts = prompts.filter((p) => !orderedIds.has(p.identifier));
+  return [...orderedPrompts, ...extraPrompts];
+}
+
+function getPromptExportPayload(
+  prompts: PromptDefinition[],
+  order: PromptOrderEntry[],
+): {
+  prompts: PromptDefinition[];
+  order: PromptOrderEntry[];
+} {
+  return {
+    prompts: getOrderedPrompts(prompts, order),
+    order: [...order],
+  };
+}
+
+function getDiaryExportPayload(): {
+  prompts: PromptDefinition[];
+  order: PromptOrderEntry[];
+} {
+  return getPromptExportPayload(
+    promptManagerStore.diaryPrompts,
+    promptManagerStore.diaryPromptOrder,
+  );
+}
+
+function getSummaryExportPayload(): {
+  prompts: PromptDefinition[];
+  order: PromptOrderEntry[];
+} {
+  return getPromptExportPayload(
+    promptManagerStore.summaryPrompts,
+    promptManagerStore.summaryPromptOrder,
+  );
+}
+
+function getEventsExportPayload(): {
+  prompts: PromptDefinition[];
+  order: PromptOrderEntry[];
+} {
+  return getPromptExportPayload(
+    promptManagerStore.eventsPrompts,
+    promptManagerStore.eventsPromptOrder,
+  );
+}
+
+function getPlurkPostExportPayload(): {
+  prompts: PromptDefinition[];
+  order: PromptOrderEntry[];
+} {
+  return getPromptExportPayload(
+    promptManagerStore.plurkPostPrompts,
+    promptManagerStore.plurkPostPromptOrder,
+  );
+}
+
+function getPlurkCommentExportPayload(): {
+  prompts: PromptDefinition[];
+  order: PromptOrderEntry[];
+} {
+  return getPromptExportPayload(
+    promptManagerStore.plurkCommentPrompts,
+    promptManagerStore.plurkCommentPromptOrder,
+  );
+}
+
+function getFaceToFaceExportPayload(): {
+  prompts: PromptDefinition[];
+  order: PromptOrderEntry[];
+} {
+  return getPromptExportPayload(
+    promptManagerStore.faceToFacePrompts,
+    promptManagerStore.faceToFacePromptOrder,
+  );
+}
+
+function getGroupChatExportPayload(): {
+  prompts: PromptDefinition[];
+  order: PromptOrderEntry[];
+} {
+  return getPromptExportPayload(
+    promptManagerStore.groupChatPrompts,
+    promptManagerStore.groupChatPromptOrder,
+  );
+}
+
 function buildModuleTsFile(options: {
   path: string;
   fileName: string;
@@ -1560,6 +1655,7 @@ function getSelectedTsExportFiles(): TsExportFile[] {
   }
 
   if (exportOptions.value.diary) {
+    const diaryExport = getDiaryExportPayload();
     files.push(
       buildModuleTsFile({
         path: "src/data/defaultPrompts/diary.ts",
@@ -1569,13 +1665,14 @@ function getSelectedTsExportFiles(): TsExportFile[] {
         orderTitle: "日記提示詞順序",
         definitionsExportName: "DIARY_PROMPT_DEFINITIONS",
         orderExportName: "DEFAULT_DIARY_PROMPT_ORDER",
-        prompts: config.diaryPrompts || [],
-        order: config.diaryPromptOrder || [],
+        prompts: diaryExport.prompts,
+        order: diaryExport.order,
       }),
     );
   }
 
   if (exportOptions.value.summary) {
+    const summaryExport = getSummaryExportPayload();
     files.push(
       buildModuleTsFile({
         path: "src/data/defaultPrompts/summary.ts",
@@ -1585,13 +1682,14 @@ function getSelectedTsExportFiles(): TsExportFile[] {
         orderTitle: "總結提示詞順序",
         definitionsExportName: "SUMMARY_PROMPT_DEFINITIONS",
         orderExportName: "DEFAULT_SUMMARY_PROMPT_ORDER",
-        prompts: config.summaryPrompts || [],
-        order: config.summaryPromptOrder || [],
+        prompts: summaryExport.prompts,
+        order: summaryExport.order,
       }),
     );
   }
 
   if (exportOptions.value.events) {
+    const eventsExport = getEventsExportPayload();
     files.push(
       buildModuleTsFile({
         path: "src/data/defaultPrompts/events.ts",
@@ -1601,42 +1699,44 @@ function getSelectedTsExportFiles(): TsExportFile[] {
         orderTitle: "重要事件提示詞順序",
         definitionsExportName: "IMPORTANT_EVENTS_PROMPT_DEFINITIONS",
         orderExportName: "DEFAULT_IMPORTANT_EVENTS_PROMPT_ORDER",
-        prompts: config.eventsPrompts || [],
-        order: config.eventsPromptOrder || [],
+        prompts: eventsExport.prompts,
+        order: eventsExport.order,
       }),
     );
   }
 
   if (exportOptions.value.plurkPost || exportOptions.value.plurkComment) {
+    const plurkPostExport = getPlurkPostExportPayload();
+    const plurkCommentExport = getPlurkCommentExportPayload();
     const lines: string[] = [
       "/**",
       " * 噗浪相關提示詞定義（發文 + 評論）",
       " */",
       "",
       'import type { PromptDefinition, PromptOrderEntry } from "./types";',
-      'import { INJECTION_RELATIVE } from "./types";',
+      "import { INJECTION_RELATIVE } from \"./types\";",
       "",
       "// ===== 噗浪發文提示詞定義 =====",
       ...buildPromptDefinitionsBlock(
-        config.plurkPostPrompts || [],
+        plurkPostExport.prompts,
         "PLURK_POST_PROMPT_DEFINITIONS",
       ),
       "",
       "// ===== 噗浪發文提示詞順序 =====",
       ...buildPromptOrderBlock(
-        config.plurkPostPromptOrder || [],
+        plurkPostExport.order,
         "DEFAULT_PLURK_POST_PROMPT_ORDER",
       ),
       "",
       "// ===== 噗浪評論提示詞定義 =====",
       ...buildPromptDefinitionsBlock(
-        config.plurkCommentPrompts || [],
+        plurkCommentExport.prompts,
         "PLURK_COMMENT_PROMPT_DEFINITIONS",
       ),
       "",
       "// ===== 噗浪評論提示詞順序 =====",
       ...buildPromptOrderBlock(
-        config.plurkCommentPromptOrder || [],
+        plurkCommentExport.order,
         "DEFAULT_PLURK_COMMENT_PROMPT_ORDER",
       ),
       "",
@@ -1650,6 +1750,7 @@ function getSelectedTsExportFiles(): TsExportFile[] {
   }
 
   if (exportOptions.value.faceToFace) {
+    const faceToFaceExport = getFaceToFaceExportPayload();
     files.push(
       buildModuleTsFile({
         path: "src/data/faceToFacePrompts.ts",
@@ -1663,13 +1764,14 @@ function getSelectedTsExportFiles(): TsExportFile[] {
         orderTitle: "面對面模式提示詞順序",
         definitionsExportName: "FACE_TO_FACE_PROMPT_DEFINITIONS",
         orderExportName: "DEFAULT_FACE_TO_FACE_PROMPT_ORDER",
-        prompts: config.faceToFacePrompts || [],
-        order: config.faceToFacePromptOrder || [],
+        prompts: faceToFaceExport.prompts,
+        order: faceToFaceExport.order,
       }),
     );
   }
 
   if (exportOptions.value.groupChat) {
+    const groupChatExport = getGroupChatExportPayload();
     files.push(
       buildModuleTsFile({
         path: "src/data/groupChatPrompts.ts",
@@ -1683,8 +1785,8 @@ function getSelectedTsExportFiles(): TsExportFile[] {
         orderTitle: "群聊模式提示詞順序",
         definitionsExportName: "GROUP_CHAT_PROMPT_DEFINITIONS",
         orderExportName: "DEFAULT_GROUP_CHAT_PROMPT_ORDER",
-        prompts: config.groupChatPrompts || [],
-        order: config.groupChatPromptOrder || [],
+        prompts: groupChatExport.prompts,
+        order: groupChatExport.order,
       }),
     );
   }
@@ -1764,32 +1866,39 @@ function doExport() {
     exportData.globalPromptOrder = config.globalPromptOrder;
   }
   if (exportOptions.value.faceToFace) {
-    exportData.faceToFacePrompts = config.faceToFacePrompts;
-    exportData.faceToFacePromptOrder = config.faceToFacePromptOrder;
+    const faceToFaceExport = getFaceToFaceExportPayload();
+    exportData.faceToFacePrompts = faceToFaceExport.prompts;
+    exportData.faceToFacePromptOrder = faceToFaceExport.order;
   }
   if (exportOptions.value.diary) {
-    exportData.diaryPrompts = config.diaryPrompts;
-    exportData.diaryPromptOrder = config.diaryPromptOrder;
+    const diaryExport = getDiaryExportPayload();
+    exportData.diaryPrompts = diaryExport.prompts;
+    exportData.diaryPromptOrder = diaryExport.order;
   }
   if (exportOptions.value.summary) {
-    exportData.summaryPrompts = config.summaryPrompts;
-    exportData.summaryPromptOrder = config.summaryPromptOrder;
+    const summaryExport = getSummaryExportPayload();
+    exportData.summaryPrompts = summaryExport.prompts;
+    exportData.summaryPromptOrder = summaryExport.order;
   }
   if (exportOptions.value.events) {
-    exportData.eventsPrompts = config.eventsPrompts;
-    exportData.eventsPromptOrder = config.eventsPromptOrder;
+    const eventsExport = getEventsExportPayload();
+    exportData.eventsPrompts = eventsExport.prompts;
+    exportData.eventsPromptOrder = eventsExport.order;
   }
   if (exportOptions.value.plurkPost) {
-    exportData.plurkPostPrompts = config.plurkPostPrompts;
-    exportData.plurkPostPromptOrder = config.plurkPostPromptOrder;
+    const plurkPostExport = getPlurkPostExportPayload();
+    exportData.plurkPostPrompts = plurkPostExport.prompts;
+    exportData.plurkPostPromptOrder = plurkPostExport.order;
   }
   if (exportOptions.value.plurkComment) {
-    exportData.plurkCommentPrompts = config.plurkCommentPrompts;
-    exportData.plurkCommentPromptOrder = config.plurkCommentPromptOrder;
+    const plurkCommentExport = getPlurkCommentExportPayload();
+    exportData.plurkCommentPrompts = plurkCommentExport.prompts;
+    exportData.plurkCommentPromptOrder = plurkCommentExport.order;
   }
   if (exportOptions.value.groupChat) {
-    exportData.groupChatPrompts = config.groupChatPrompts;
-    exportData.groupChatPromptOrder = config.groupChatPromptOrder;
+    const groupChatExport = getGroupChatExportPayload();
+    exportData.groupChatPrompts = groupChatExport.prompts;
+    exportData.groupChatPromptOrder = groupChatExport.order;
   }
   if (exportOptions.value.characterConfigs) {
     exportData.characterConfigs = config.characterConfigs;

@@ -2119,18 +2119,19 @@
 
 <script setup lang="ts">
 import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
-import StickerPanel from "@/components/common/StickerPanel.vue";
-import { useBatchComments } from "@/composables/useBatchComments";
 import { getDatabase } from "@/db/database";
-import { useUserStore } from "@/stores";
-import { useAIGenerationStore } from "@/stores/aiGeneration";
+import { useBatchComments } from "@/composables/useBatchComments";
+import { loadMessages } from "@/storage/chatMessageStorage";
 import { useCharactersStore } from "@/stores/characters";
 import { useChatStore } from "@/stores/chat";
 import { usePromptManagerStore } from "@/stores/promptManager";
 import { useQzoneStore } from "@/stores/qzone";
 import { useSettingsStore } from "@/stores/settings";
+import { useUserStore } from "@/stores";
+import { useAIGenerationStore } from "@/stores/aiGeneration";
 import { useStickerStore } from "@/stores/sticker";
 import type { StoredCharacter } from "@/types/character";
+import type { Chat } from "@/types/chat";
 import type {
     AutoInteractionConfig,
     MediaItem,
@@ -3093,16 +3094,15 @@ async function buildChatContextForComments(
 
     for (const charId of ids) {
       // 用 by-character 索引查該角色的所有聊天
-      const chats = await db.getAllFromIndex("chats", "by-character", charId);
+      const chats = await db.getAllFromIndex("chats", "by-character", charId) as Chat[];
       if (!chats || chats.length === 0) continue;
 
       // 按 updatedAt 降序排列，取最新的聊天
-      chats.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      chats.sort((a: Chat, b: Chat) => (b.updatedAt || 0) - (a.updatedAt || 0));
       const latestChat = chats[0];
 
       // v24：從 chatMessages 表載入訊息
-      const { loadChatMessages } = await import("@/db/chatMessageStore");
-      const chatMsgs = await loadChatMessages(latestChat.id);
+      const chatMsgs = await loadMessages(latestChat.id);
       if (chatMsgs.length === 0) continue;
 
       // 取最近 N 條消息
@@ -3777,8 +3777,7 @@ async function generateAIContent(
 
     if (recentMessages.length === 0 && activeChatId) {
       try {
-        const { loadChatMessages } = await import("@/db/chatMessageStore");
-        recentMessages = (await loadChatMessages(activeChatId)).slice(
+        recentMessages = (await loadMessages(activeChatId)).slice(
           -chatContextCount.value,
         );
       } catch (error) {

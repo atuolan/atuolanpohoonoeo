@@ -6,6 +6,7 @@
  */
 
 import { DB_STORES, getDatabase } from '@/db/database'
+import { loadMessages } from '@/storage/chatMessageStorage'
 
 const BACKUP_FILENAME = 'aguaphone_auto_backup.json'
 const BACKUP_META_FILENAME = 'aguaphone_auto_backup_meta.json'
@@ -166,10 +167,9 @@ export async function performBackup(): Promise<void> {
         const records = await database.getAll(storeName as any)
         if (storeName === DB_STORES.CHATS) {
           // v24：從 chatMessages 表載入訊息，只保留最近 100 條
-          const { loadChatMessages } = await import("@/db/chatMessageStore")
           const chatsWithMsgs = []
           for (const chat of records as any[]) {
-            const msgs = await loadChatMessages(chat.id)
+            const msgs = await loadMessages(chat.id)
             chatsWithMsgs.push({
               ...chat,
               messages: msgs.slice(-100),

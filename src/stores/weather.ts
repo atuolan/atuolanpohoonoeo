@@ -31,6 +31,7 @@ export const useWeatherStore = defineStore("weather", () => {
   const error = ref<string | null>(null);
   const lastUpdateTime = ref<number | null>(null);
   const locationLoaded = ref(false);
+  let locationLoadPromise: Promise<void> | null = null;
 
   // 用戶位置設置
   const userLocation = ref<UserLocation>({
@@ -41,19 +42,24 @@ export const useWeatherStore = defineStore("weather", () => {
 
   /** 從 IndexedDB 載入用戶位置設置 */
   async function loadLocationFromDB() {
-    try {
-      const stored = await db.get<UserLocation>(
-        DB_STORES.SETTINGS,
-        LOCATION_STORAGE_KEY,
-      );
-      if (stored) {
-        userLocation.value = stored;
-      }
-    } catch (e) {
-      console.error("[WeatherStore] 載入位置設定失敗:", e);
-    } finally {
-      locationLoaded.value = true;
+    if (!locationLoadPromise) {
+      locationLoadPromise = (async () => {
+        try {
+          const stored = await db.get<UserLocation>(
+            DB_STORES.SETTINGS,
+            LOCATION_STORAGE_KEY,
+          );
+          if (stored) {
+            userLocation.value = stored;
+          }
+        } catch (e) {
+          console.error("[WeatherStore] 載入位置設定失敗:", e);
+        } finally {
+          locationLoaded.value = true;
+        }
+      })();
     }
+    await locationLoadPromise;
   }
 
   /** 將用戶位置設置保存到 IndexedDB */
@@ -71,14 +77,14 @@ export const useWeatherStore = defineStore("weather", () => {
     userLocation,
     () => {
       if (locationLoaded.value) {
-        saveLocationToDB();
+        void saveLocationToDB();
       }
     },
     { deep: true },
   );
 
   // 初始化時載入
-  loadLocationFromDB();
+  void loadLocationFromDB();
 
   // ===== 計算屬性 =====
   const hasWeatherData = computed(() => weatherData.value !== null);
@@ -95,6 +101,10 @@ export const useWeatherStore = defineStore("weather", () => {
 
   const locationName = computed(() => {
     if (!weatherData.value) return "";
+    // 手動模式優先顯示用戶設置的城市名，而非 API 回傳的氣象站地名
+    if (userLocation.value.mode === "manual" && userLocation.value.city) {
+      return userLocation.value.city;
+    }
     const { name, region } = weatherData.value.location;
     return region ? `${name}, ${region}` : name;
   });
@@ -123,10 +133,18 @@ export const useWeatherStore = defineStore("weather", () => {
    * 設置定位模式
    */
   async function setLocationMode(mode: LocationMode, city?: string) {
+    await loadLocationFromDB();
     userLocation.value.mode = mode;
 
     if (mode === "manual" && city) {
       userLocation.value.city = city;
+      delete userLocation.value.lat;
+      delete userLocation.value.lon;
+    }
+
+    if (mode === "ip") {
+      delete userLocation.value.lat;
+      delete userLocation.value.lon;
     }
 
     if (mode === "browser") {
@@ -144,17 +162,25 @@ export const useWeatherStore = defineStore("weather", () => {
   /**
    * 設置手動城市
    */
-  function setManualCity(city: string, lat?: number, lon?: number) {
+  async function setManualCity(city: string, lat?: number, lon?: number) {
+    await loadLocationFromDB();
     userLocation.value.mode = "manual";
     userLocation.value.city = city;
-    if (lat !== undefined) userLocation.value.lat = lat;
-    if (lon !== undefined) userLocation.value.lon = lon;
+    if (lat !== undefined && lon !== undefined) {
+      userLocation.value.lat = lat;
+      userLocation.value.lon = lon;
+    } else {
+      delete userLocation.value.lat;
+      delete userLocation.value.lon;
+    }
   }
 
   /**
    * 刷新天氣數據
    */
   async function refreshWeather(forceRefresh = false) {
+    await loadLocationFromDB();
+
     if (!forceRefresh && isCacheValid.value && weatherData.value) {
       return;
     }
@@ -163,10 +189,19 @@ export const useWeatherStore = defineStore("weather", () => {
     error.value = null;
 
     try {
+      console.log("[WeatherStore] refreshWeather location", {
+        mode: userLocation.value.mode,
+        city: userLocation.value.city,
+        lat: userLocation.value.lat,
+        lon: userLocation.value.lon,
+        forceRefresh,
+      });
       const data = await getWeatherByUserLocation(userLocation.value);
       weatherData.value = data;
       lastUpdateTime.value = Date.now();
     } catch (err) {
+      weatherData.value = null;
+      lastUpdateTime.value = null;
       error.value = err instanceof Error ? err.message : "獲取天氣失敗";
       console.error("獲取天氣失敗", err);
       throw err;
@@ -201,11 +236,13 @@ export const useWeatherStore = defineStore("weather", () => {
     weatherDescriptionText,
     isCacheValid,
     forecast,
+    locationLoaded,
 
     // 方法
     setLocationMode,
     setManualCity,
     refreshWeather,
     clearCache,
+    loadLocationFromDB,
   };
 });

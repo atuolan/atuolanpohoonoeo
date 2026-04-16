@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { db, DB_STORES } from "@/db/database";
+import { loadMessages } from "@/storage/chatMessageStorage";
 import { useCharactersStore } from "@/stores";
 import { usePeekPhoneStore } from "@/stores/peekPhone";
 import type { StoredCharacter } from "@/types/character";
@@ -254,14 +255,13 @@ async function loadAndGenerate() {
   if (!character.value) return;
   try {
     if (!chatRecord.value) {
-      await db.init();
       const chat = await db.get<Chat>(DB_STORES.CHATS, props.chatId);
       if (!chat) return;
       chatRecord.value = chat;
     }
     // v24：從 chatMessages 表載入訊息以供 extractChatContext 使用
-    const { loadChatMessages } = await import("@/db/chatMessageStore");
-    const chatWithMsgs = { ...chatRecord.value, messages: await loadChatMessages(props.chatId) };
+    const chatMessages = await loadMessages(props.chatId);
+    const chatWithMsgs = { ...chatRecord.value, messages: chatMessages };
     await peekPhoneStore.generateAll(
       props.characterId,
       props.chatId,
@@ -275,8 +275,7 @@ async function loadAndGenerate() {
 
 async function retryGroup(group: "A" | "B" | "C" | "D") {
   if (!character.value || !chatRecord.value) return;
-  const { loadChatMessages: loadMsgsRetry } = await import("@/db/chatMessageStore");
-  const chatWithMsgs = { ...chatRecord.value, messages: await loadMsgsRetry(props.chatId) };
+  const chatWithMsgs = { ...chatRecord.value, messages: await loadMessages(props.chatId) };
   await peekPhoneStore.retryGroup(group, character.value, chatWithMsgs);
 }
 
@@ -289,8 +288,7 @@ async function refreshAll() {
   if (!chatRecord.value) return;
   peekPhoneStore.clearCache(props.characterId, props.chatId);
   peekPhoneStore.deleteFromIDB(props.characterId, props.chatId);
-  const { loadChatMessages: loadMsgsRefresh } = await import("@/db/chatMessageStore");
-  const chatForRefresh = { ...chatRecord.value, messages: await loadMsgsRefresh(props.chatId) };
+  const chatForRefresh = { ...chatRecord.value, messages: await loadMessages(props.chatId) };
   await peekPhoneStore.generateAll(
     props.characterId,
     props.chatId,
@@ -306,8 +304,7 @@ async function refreshPhase(phase: "A" | "BC" | "D") {
     await loadChatData();
   }
   if (!chatRecord.value) return;
-  const { loadChatMessages: loadMsgsPhase } = await import("@/db/chatMessageStore");
-  const chatForPhase = { ...chatRecord.value, messages: await loadMsgsPhase(props.chatId) };
+  const chatForPhase = { ...chatRecord.value, messages: await loadMessages(props.chatId) };
   await peekPhoneStore.regeneratePhase(
     phase,
     character.value,

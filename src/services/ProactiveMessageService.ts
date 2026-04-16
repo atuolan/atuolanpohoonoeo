@@ -3,6 +3,8 @@
  * 負責管理角色的主動發訊息功能，包括定時檢查、夜間免打擾等
  */
 
+import { loadChatById, saveChatMetadata } from "@/storage/chatStorage";
+import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
 import { useCharactersStore } from "@/stores/characters";
 import { useChatStore } from "@/stores/chat";
 import { pushNotificationService } from "./PushNotificationService";
@@ -337,10 +339,7 @@ export class ProactiveMessageService {
       };
 
       // v24：從 chatMessages 表載入訊息（不再用 chat.messages）
-      const { loadChatMessages, appendChatMessages } = await import(
-        "@/db/chatMessageStore"
-      );
-      const existingMessages = await loadChatMessages(chat.id);
+      const existingMessages = await loadMessages(chat.id);
       // 暫時把 topicMessage 加入記憶體列表以便構建 prompt（不寫入 IDB）
       const messagesWithTopic = [...existingMessages, topicMessage];
 
@@ -882,10 +881,10 @@ export class ProactiveMessageService {
             : aiContent.slice(0, 80);
 
           // v24：用 appendChatMessages 追加新訊息（無競態風險，不需讀取-修改-寫回）
-          await appendChatMessages(chat.id, newMessages);
+          await appendMessages(chat.id, newMessages);
 
           // 更新 chat metadata（不含訊息）
-          const freshChat = await db.get<any>(DB_STORES.CHATS, chat.id);
+          const freshChat = await loadChatById(chat.id);
           if (freshChat) {
             freshChat.updatedAt = Date.now();
             freshChat.unreadCount =
@@ -894,7 +893,7 @@ export class ProactiveMessageService {
               (freshChat.messageCount || 0) + newMessages.length;
             freshChat.lastMessagePreview = previewText;
             freshChat.messages = [];
-            await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(freshChat)));
+            await saveChatMetadata(freshChat);
           } else {
             // Chat 在生成期間被刪除，重建 metadata
             chat.updatedAt = Date.now();
@@ -903,7 +902,7 @@ export class ProactiveMessageService {
             chat.messageCount = existingMessages.length + newMessages.length;
             chat.lastMessagePreview = previewText;
             chat.messages = [];
-            await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
+            await saveChatMetadata(chat);
             console.warn(
               "[ProactiveMessage] Chat 在生成期間從 IDB 消失，重建 metadata",
             );

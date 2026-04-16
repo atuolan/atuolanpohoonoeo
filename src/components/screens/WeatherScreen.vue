@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import { WORLD_CITIES, type CityEntry } from "@/data/worldCities";
 import { searchCities, type LocationMode } from "@/services/WeatherService";
 import { useSettingsStore } from "@/stores/settings";
 import { useWeatherStore } from "@/stores/weather";
 import {
   ArrowLeft,
   Check,
+  ChevronDown,
   Cloud,
+  Globe,
   Loader2,
   MapPin,
   Navigation,
@@ -78,6 +81,14 @@ onMounted(() => {
   }
 });
 
+watch(
+  () => weatherStore.userLocation.mode,
+  (mode) => {
+    selectedMode.value = mode;
+  },
+  { immediate: true },
+);
+
 // 保存自訂城市
 function saveCustomCities() {
   localStorage.setItem(
@@ -118,7 +129,7 @@ async function selectCity(city: {
   lon: number;
 }) {
   const cityName = city.region ? `${city.name}, ${city.region}` : city.name;
-  weatherStore.setManualCity(cityName, city.lat, city.lon);
+  await weatherStore.setManualCity(cityName, city.lat, city.lon);
   selectedMode.value = "manual";
   searchQuery.value = "";
   showSearchResults.value = false;
@@ -144,7 +155,17 @@ function removeCustomCity(city: string) {
 
 // 選擇自訂城市
 async function selectCustomCity(city: string) {
-  weatherStore.setManualCity(city);
+  await weatherStore.setManualCity(city);
+  selectedMode.value = "manual";
+  await weatherStore.refreshWeather(true);
+}
+
+// 國家/城市瀏覽選擇器
+const openCountry = ref<string>("");
+
+async function selectCityFromBrowse(city: CityEntry, country: string) {
+  const label = `${city.name}, ${country}`;
+  await weatherStore.setManualCity(label, city.lat, city.lon);
   selectedMode.value = "manual";
   await weatherStore.refreshWeather(true);
 }
@@ -210,8 +231,15 @@ const isCurrentCityCustom = computed(() => {
     </header>
 
     <div class="screen-content">
+      <!-- 錯誤 -->
+      <section class="error-section" v-if="weatherStore.error">
+        <Cloud :size="32" />
+        <span>{{ weatherStore.error }}</span>
+        <button @click="refresh">重試</button>
+      </section>
+
       <!-- 當前天氣卡片 -->
-      <section class="current-weather" v-if="weatherStore.hasWeatherData">
+      <section class="current-weather" v-else-if="weatherStore.hasWeatherData">
         <div class="weather-card">
           <div class="weather-location">
             <MapPin :size="16" />
@@ -237,13 +265,6 @@ const isCurrentCityCustom = computed(() => {
       <section class="loading-section" v-else-if="weatherStore.isLoading">
         <Loader2 :size="32" class="spinning" />
         <span>載入天氣中...</span>
-      </section>
-
-      <!-- 錯誤 -->
-      <section class="error-section" v-else-if="weatherStore.error">
-        <Cloud :size="32" />
-        <span>{{ weatherStore.error }}</span>
-        <button @click="refresh">重試</button>
       </section>
 
       <!-- 定位模式選擇 -->
@@ -298,6 +319,47 @@ const isCurrentCityCustom = computed(() => {
               <span class="mode-desc">根據網路 IP 判斷位置（可能不準確）</span>
             </div>
             <Check v-if="selectedMode === 'ip'" :size="18" class="check-icon" />
+          </button>
+        </div>
+      </section>
+
+      <!-- 按國家/城市瀏覽 -->
+      <section class="browse-section">
+        <h2>選擇城市 <span class="browse-badge">精確座標</span></h2>
+        <div class="country-select-wrap">
+          <Globe :size="15" class="select-globe" />
+          <select v-model="openCountry" class="country-select">
+            <option value="">選擇國家/地區...</option>
+            <option
+              v-for="(_, country) in WORLD_CITIES"
+              :key="country"
+              :value="country"
+            >{{ country }}</option>
+          </select>
+          <ChevronDown :size="14" class="select-chevron" />
+        </div>
+        <div
+          class="city-picker"
+          v-if="openCountry && WORLD_CITIES[openCountry]"
+        >
+          <button
+            v-for="city in WORLD_CITIES[openCountry]"
+            :key="city.name"
+            class="city-pick-btn"
+            :class="{
+              active:
+                weatherStore.userLocation.city === `${city.name}, ${openCountry}` &&
+                selectedMode === 'manual',
+            }"
+            @click="selectCityFromBrowse(city, openCountry)"
+          >
+            <MapPin :size="13" />
+            <span>{{ city.name }}</span>
+            <Check
+              v-if="weatherStore.userLocation.city === `${city.name}, ${openCountry}` && selectedMode === 'manual'"
+              :size="13"
+              class="check-icon"
+            />
           </button>
         </div>
       </section>
@@ -563,6 +625,7 @@ const isCurrentCityCustom = computed(() => {
 }
 
 .mode-section,
+.browse-section,
 .search-section,
 .custom-cities-section {
   margin-bottom: 24px;
@@ -633,6 +696,107 @@ const isCurrentCityCustom = computed(() => {
   }
 
   .check-icon {
+    color: var(--color-primary, #7dd3a8);
+  }
+}
+
+.browse-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: #2196f3;
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+
+.country-select-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+
+  .select-globe {
+    flex-shrink: 0;
+    color: var(--color-text-secondary, #888);
+  }
+
+  .country-select {
+    flex: 1;
+    border: none;
+    background: none;
+    font-size: 14px;
+    color: var(--color-text, #333);
+    outline: none;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .select-chevron {
+    flex-shrink: 0;
+    color: var(--color-text-secondary, #aaa);
+    pointer-events: none;
+  }
+}
+
+.city-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 6px;
+  background: var(--color-background, #f8f9fa);
+  border: 1px solid var(--color-border, #eee);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.city-pick-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  background: var(--color-surface, #fff);
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text, #333);
+  text-align: left;
+  transition: all 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+
+  &:hover {
+    background: var(--color-hover, #f5f5f5);
+    border-color: var(--color-border, #ddd);
+  }
+
+  &.active {
+    border-color: var(--color-primary, #7dd3a8);
+    background: rgba(125, 211, 168, 0.12);
+    color: var(--color-primary-dark, #2e7d5e);
+  }
+
+  svg:first-child {
+    flex-shrink: 0;
+    color: var(--color-text-secondary, #aaa);
+  }
+
+  span {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .check-icon {
+    flex-shrink: 0;
     color: var(--color-primary, #7dd3a8);
   }
 }

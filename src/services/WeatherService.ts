@@ -228,6 +228,7 @@ async function fetchWeather(
   const params = new URLSearchParams({
     key: WEATHER_API_KEY,
     aqi: includeAirQuality ? "yes" : "no",
+    alerts: "no",
     lang: "zh_tw",
   });
 
@@ -245,7 +246,9 @@ async function fetchWeather(
     throw new Error(error.error?.message || "獲取天氣失敗");
   }
 
-  return await response.json();
+  const result = await response.json();
+  console.log("[WeatherAPI] station:", result.location?.name, result.location?.region, "| temp:", result.current?.temp_c, "°C | query:", query);
+  return result;
 }
 
 /**

@@ -9,6 +9,7 @@
 
 import { db, DB_STORES } from "@/db/database";
 import { restoreImagesToMessages } from "@/db/operations";
+import { loadMessages } from "@/storage/chatMessageStorage";
 import {
   BackupMediaExtractor,
   extractAllMediaFromBackupData,
@@ -489,8 +490,7 @@ export async function buildBackupZipStreaming(
       if (!chat) continue;
 
       // v24：從 chatMessages 表載入訊息
-      const { loadChatMessages: loadMsgsBak } = await import("@/db/chatMessageStore");
-      chat.messages = await loadMsgsBak(chat.id);
+      chat.messages = await loadMessages(chat.id);
 
       if (chat.messages?.length > 0) {
         if (!excludeChatImages) {
