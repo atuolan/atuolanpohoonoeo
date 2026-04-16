@@ -1,74 +1,67 @@
 <script setup lang="ts">
 import { WORLD_CITIES, type CityEntry } from "@/data/worldCities";
-import { searchCities, type LocationMode } from "@/services/WeatherService";
+import { type LocationMode } from "@/services/WeatherService";
 import { useSettingsStore } from "@/stores/settings";
 import { useWeatherStore } from "@/stores/weather";
 import {
   ArrowLeft,
   Check,
-  ChevronDown,
   Cloud,
-  Globe,
   Loader2,
   MapPin,
   Navigation,
   Plus,
   RefreshCw,
-  Search,
   Trash2,
   Wifi,
-  X,
 } from "lucide-vue-next";
+import Button from "primevue/button";
+import Card from "primevue/card";
+import InputNumber from "primevue/inputnumber";
+import Select from "primevue/select";
+import Tag from "primevue/tag";
 import { computed, onMounted, ref, watch } from "vue";
 
-const emit = defineEmits<{
-  back: [];
-}>();
+const emit = defineEmits<{ back: [] }>();
 
 const weatherStore = useWeatherStore();
 const settingsStore = useSettingsStore();
 
-// 附近地點設定（clamp 後存入 store）
-function updateNearbyPlacesLimit(e: Event) {
-  const v = Math.min(
-    30,
-    Math.max(5, Number((e.target as HTMLInputElement).value) || 5),
-  );
-  settingsStore.nearbyPlacesLimit = v;
-  void settingsStore.saveSettings();
-}
+// 附近地點設定 v-model（InputNumber 用）
+const nearbyLimitModel = computed({
+  get: () => settingsStore.nearbyPlacesLimit,
+  set: (v: number) => {
+    settingsStore.nearbyPlacesLimit = Math.min(30, Math.max(5, v || 5));
+    void settingsStore.saveSettings();
+  },
+});
+const nearbyRadiusModel = computed({
+  get: () => settingsStore.nearbyPlacesRadius,
+  set: (v: number) => {
+    settingsStore.nearbyPlacesRadius = Math.min(100, Math.max(10, v || 10));
+    void settingsStore.saveSettings();
+  },
+});
 
-function updateNearbyPlacesRadius(e: Event) {
-  const v = Math.min(
-    100,
-    Math.max(10, Number((e.target as HTMLInputElement).value) || 10),
-  );
-  settingsStore.nearbyPlacesRadius = v;
-  void settingsStore.saveSettings();
-}
+// 國家選項清單
+const countryOptions = computed(() => Object.keys(WORLD_CITIES));
 
-// 搜尋相關
-const searchQuery = ref("");
-const searchResults = ref<
-  Array<{ id: number; name: string; region: string; country: string; lat: number; lon: number }>
->([]);
-const isSearching = ref(false);
-const showSearchResults = ref(false);
-
-// 自訂城市列表
-const customCities = ref<string[]>([]);
-const showAddCity = ref(false);
-const newCityName = ref("");
+// 已儲存城市列表（含精確座標）
+interface SavedCity { name: string; lat?: number; lon?: number; }
+const customCities = ref<SavedCity[]>([]);
 
 // 當前選擇的定位模式
 const selectedMode = ref<LocationMode>(weatherStore.userLocation.mode);
 
-// 載入自訂城市
+// 載入已儲存城市（相容舊版 string[] 格式）
 onMounted(() => {
   const saved = localStorage.getItem("weather_custom_cities");
   if (saved) {
     try {
-      customCities.value = JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      customCities.value = parsed.map((c: string | SavedCity) =>
+        typeof c === "string" ? { name: c } : c,
+      );
     } catch {
       customCities.value = [];
     }
@@ -97,65 +90,25 @@ function saveCustomCities() {
   );
 }
 
-// 搜尋城市
-let searchTimeout: ReturnType<typeof setTimeout> | null = null;
-watch(searchQuery, (val) => {
-  if (searchTimeout) clearTimeout(searchTimeout);
-  if (!val || val.length < 2) {
-    searchResults.value = [];
-    showSearchResults.value = false;
-    return;
-  }
-  searchTimeout = setTimeout(async () => {
-    isSearching.value = true;
-    try {
-      const results = await searchCities(val);
-      searchResults.value = results.slice(0, 8);
-      showSearchResults.value = true;
-    } catch (e) {
-      console.error("搜尋城市失敗", e);
-    } finally {
-      isSearching.value = false;
-    }
-  }, 300);
-});
-
-// 選擇搜尋結果中的城市
-async function selectCity(city: {
-  name: string;
-  region: string;
-  country: string;
-  lat: number;
-  lon: number;
-}) {
-  const cityName = city.region ? `${city.name}, ${city.region}` : city.name;
-  await weatherStore.setManualCity(cityName, city.lat, city.lon);
-  selectedMode.value = "manual";
-  searchQuery.value = "";
-  showSearchResults.value = false;
-  await weatherStore.refreshWeather(true);
-}
-
-// 添加自訂城市
-function addCustomCity() {
-  if (!newCityName.value.trim()) return;
-  if (!customCities.value.includes(newCityName.value.trim())) {
-    customCities.value.push(newCityName.value.trim());
-    saveCustomCities();
-  }
-  newCityName.value = "";
-  showAddCity.value = false;
-}
-
-// 刪除自訂城市
-function removeCustomCity(city: string) {
-  customCities.value = customCities.value.filter((c) => c !== city);
+// 添加當前位置到已儲存城市
+function addCurrentCity() {
+  const loc = weatherStore.userLocation;
+  const name = weatherStore.locationName || loc.city || "";
+  if (!name) return;
+  if (customCities.value.some((c) => c.name === name)) return;
+  customCities.value.push({ name, lat: loc.lat, lon: loc.lon });
   saveCustomCities();
 }
 
-// 選擇自訂城市
-async function selectCustomCity(city: string) {
-  await weatherStore.setManualCity(city);
+// 刪除已儲存城市
+function removeCustomCity(city: SavedCity) {
+  customCities.value = customCities.value.filter((c) => c.name !== city.name);
+  saveCustomCities();
+}
+
+// 選擇已儲存城市
+async function selectCustomCity(city: SavedCity) {
+  await weatherStore.setManualCity(city.name, city.lat, city.lon);
   selectedMode.value = "manual";
   await weatherStore.refreshWeather(true);
 }
@@ -203,12 +156,18 @@ const lastUpdateText = computed(() => {
   return `${hours} 小時前更新`;
 });
 
+// 當前位置是否已在儲存列表中
+const isCurrentCityInList = computed(() => {
+  const name = weatherStore.locationName || weatherStore.userLocation.city || "";
+  return !!name && customCities.value.some((c) => c.name === name);
+});
+
 // 當前城市是否為自訂城市
 const isCurrentCityCustom = computed(() => {
   return (
     selectedMode.value === "manual" &&
     weatherStore.userLocation.city &&
-    customCities.value.includes(weatherStore.userLocation.city)
+    customCities.value.some((c) => c.name === weatherStore.userLocation.city)
   );
 });
 </script>
@@ -217,292 +176,186 @@ const isCurrentCityCustom = computed(() => {
   <div class="weather-screen">
     <!-- 頂部導航 -->
     <header class="screen-header">
-      <button class="back-btn" @click="emit('back')">
+      <Button text rounded severity="secondary" class="header-btn" @click="emit('back')">
         <ArrowLeft :size="20" />
-      </button>
+      </Button>
       <h1>天氣設定</h1>
-      <button
-        class="refresh-btn"
-        @click="refresh"
-        :disabled="weatherStore.isLoading"
-      >
+      <Button text rounded severity="secondary" class="header-btn" @click="refresh" :disabled="weatherStore.isLoading">
         <RefreshCw :size="20" :class="{ spinning: weatherStore.isLoading }" />
-      </button>
+      </Button>
     </header>
 
     <div class="screen-content">
+
       <!-- 錯誤 -->
-      <section class="error-section" v-if="weatherStore.error">
-        <Cloud :size="32" />
-        <span>{{ weatherStore.error }}</span>
-        <button @click="refresh">重試</button>
-      </section>
+      <Card class="status-card error-card" v-if="weatherStore.error">
+        <template #content>
+          <div class="status-inner">
+            <Cloud :size="32" />
+            <span>{{ weatherStore.error }}</span>
+            <Button label="重試" severity="danger" size="small" @click="refresh" />
+          </div>
+        </template>
+      </Card>
 
       <!-- 當前天氣卡片 -->
-      <section class="current-weather" v-else-if="weatherStore.hasWeatherData">
-        <div class="weather-card">
-          <div class="weather-location">
-            <MapPin :size="16" />
-            <span>{{ weatherStore.locationName }}</span>
-          </div>
-          <div class="weather-temp">
-            {{ Math.round(weatherStore.currentTemp || 0) }}°C
-          </div>
-          <div class="weather-condition">
-            {{ weatherStore.weatherCondition }}
-          </div>
-          <div class="weather-details">
-            <span>濕度 {{ weatherStore.weatherData?.current.humidity }}%</span>
-            <span
-              >體感 {{ weatherStore.weatherData?.current.feelslike_c }}°C</span
-            >
-          </div>
-          <div class="weather-update">{{ lastUpdateText }}</div>
+      <div class="weather-gradient-wrap" v-else-if="weatherStore.hasWeatherData">
+        <div class="weather-location">
+          <MapPin :size="15" />
+          <span>{{ weatherStore.locationName }}</span>
         </div>
-      </section>
+        <div class="weather-temp">{{ Math.round(weatherStore.currentTemp || 0) }}°C</div>
+        <div class="weather-condition">{{ weatherStore.weatherCondition }}</div>
+        <div class="weather-details">
+          <span>濕度 {{ weatherStore.weatherData?.current.humidity }}%</span>
+          <span>體感 {{ weatherStore.weatherData?.current.feelslike_c }}°C</span>
+        </div>
+        <div class="weather-update">{{ lastUpdateText }}</div>
+      </div>
 
       <!-- 載入中 -->
-      <section class="loading-section" v-else-if="weatherStore.isLoading">
-        <Loader2 :size="32" class="spinning" />
-        <span>載入天氣中...</span>
-      </section>
+      <Card class="status-card" v-else-if="weatherStore.isLoading">
+        <template #content>
+          <div class="status-inner">
+            <Loader2 :size="32" class="spinning" />
+            <span>載入天氣中...</span>
+          </div>
+        </template>
+      </Card>
 
-      <!-- 定位模式選擇 -->
-      <section class="mode-section">
-        <h2>定位方式</h2>
-        <p class="section-hint">建議手動輸入城市，IP 定位經常不準確。</p>
-        <div class="mode-options">
-          <button
-            class="mode-option"
-            :class="{ active: selectedMode === 'manual' }"
-            @click="setMode('manual')"
-          >
-            <MapPin :size="20" />
-            <div class="mode-info">
-              <span class="mode-name">手動設定城市 <span class="mode-badge">推薦</span></span>
-              <span class="mode-desc">{{
-                weatherStore.userLocation.city || "從下方搜尋並選擇城市"
-              }}</span>
-            </div>
-            <Check
-              v-if="selectedMode === 'manual'"
-              :size="18"
-              class="check-icon"
-            />
-          </button>
-
-          <button
-            class="mode-option"
-            :class="{ active: selectedMode === 'browser' }"
-            @click="setMode('browser')"
-          >
-            <Navigation :size="20" />
-            <div class="mode-info">
-              <span class="mode-name">GPS 定位</span>
-              <span class="mode-desc">使用瀏覽器精確定位（需授權）</span>
-            </div>
-            <Check
-              v-if="selectedMode === 'browser'"
-              :size="18"
-              class="check-icon"
-            />
-          </button>
-
-          <button
-            class="mode-option"
-            :class="{ active: selectedMode === 'ip' }"
-            @click="setMode('ip')"
-          >
-            <Wifi :size="20" />
-            <div class="mode-info">
-              <span class="mode-name">IP 自動定位</span>
-              <span class="mode-desc">根據網路 IP 判斷位置（可能不準確）</span>
-            </div>
-            <Check v-if="selectedMode === 'ip'" :size="18" class="check-icon" />
-          </button>
-        </div>
-      </section>
+      <!-- 定位模式 -->
+      <Card class="section-card">
+        <template #title>定位方式</template>
+        <template #subtitle>建議手動設定城市，IP 定位經常不準確。</template>
+        <template #content>
+          <div class="mode-options">
+            <button class="mode-option" :class="{ active: selectedMode === 'manual' }" @click="setMode('manual')">
+              <MapPin :size="20" class="mode-icon" />
+              <div class="mode-info">
+                <div class="mode-name-row">
+                  <span class="mode-name">手動設定城市</span>
+                  <Tag value="推薦" severity="success" class="mode-tag" />
+                </div>
+                <span class="mode-desc">{{ weatherStore.userLocation.city || "從下方選擇城市" }}</span>
+              </div>
+              <Check v-if="selectedMode === 'manual'" :size="16" class="check-icon" />
+            </button>
+            <button class="mode-option" :class="{ active: selectedMode === 'browser' }" @click="setMode('browser')">
+              <Navigation :size="20" class="mode-icon" />
+              <div class="mode-info">
+                <span class="mode-name">GPS 定位</span>
+                <span class="mode-desc">使用瀏覽器精確定位（需授權）</span>
+              </div>
+              <Check v-if="selectedMode === 'browser'" :size="16" class="check-icon" />
+            </button>
+            <button class="mode-option" :class="{ active: selectedMode === 'ip' }" @click="setMode('ip')">
+              <Wifi :size="20" class="mode-icon" />
+              <div class="mode-info">
+                <span class="mode-name">IP 自動定位</span>
+                <span class="mode-desc">根據網路 IP 判斷位置（可能不準確）</span>
+              </div>
+              <Check v-if="selectedMode === 'ip'" :size="16" class="check-icon" />
+            </button>
+          </div>
+        </template>
+      </Card>
 
       <!-- 按國家/城市瀏覽 -->
-      <section class="browse-section">
-        <h2>選擇城市 <span class="browse-badge">精確座標</span></h2>
-        <div class="country-select-wrap">
-          <Globe :size="15" class="select-globe" />
-          <select v-model="openCountry" class="country-select">
-            <option value="">選擇國家/地區...</option>
-            <option
-              v-for="(_, country) in WORLD_CITIES"
-              :key="country"
-              :value="country"
-            >{{ country }}</option>
-          </select>
-          <ChevronDown :size="14" class="select-chevron" />
-        </div>
-        <div
-          class="city-picker"
-          v-if="openCountry && WORLD_CITIES[openCountry]"
-        >
-          <button
-            v-for="city in WORLD_CITIES[openCountry]"
-            :key="city.name"
-            class="city-pick-btn"
-            :class="{
-              active:
-                weatherStore.userLocation.city === `${city.name}, ${openCountry}` &&
-                selectedMode === 'manual',
-            }"
-            @click="selectCityFromBrowse(city, openCountry)"
-          >
-            <MapPin :size="13" />
-            <span>{{ city.name }}</span>
-            <Check
-              v-if="weatherStore.userLocation.city === `${city.name}, ${openCountry}` && selectedMode === 'manual'"
-              :size="13"
-              class="check-icon"
-            />
-          </button>
-        </div>
-      </section>
-
-      <!-- 城市搜尋 -->
-      <section class="search-section">
-        <h2>搜尋城市</h2>
-        <div
-          v-if="weatherStore.userLocation.mode === 'manual' && !weatherStore.userLocation.lat"
-          class="coords-missing-hint"
-        >
-          ⚠️ 目前城市缺少精確座標，天氣可能不準確。請重新搜尋並點選您的城市以修正。
-        </div>
-        <div class="search-box">
-          <Search :size="18" />
-          <input
-            v-model="searchQuery"
-            type="text"
-            placeholder="輸入城市名稱..."
-            @focus="showSearchResults = searchResults.length > 0"
-          />
-          <Loader2 v-if="isSearching" :size="18" class="spinning" />
-        </div>
-
-        <!-- 搜尋結果 -->
-        <div
-          class="search-results"
-          v-if="showSearchResults && searchResults.length > 0"
-        >
-          <button
-            v-for="city in searchResults"
-            :key="city.id"
-            class="search-result-item"
-            @click="selectCity(city)"
-          >
-            <MapPin :size="16" />
-            <span>{{ city.name }}</span>
-            <span class="region" v-if="city.region"
-              >{{ city.region }}, {{ city.country }}</span
-            >
-          </button>
-        </div>
-      </section>
-
-      <!-- 自訂城市列表 -->
-      <section class="custom-cities-section">
-        <div class="section-header">
-          <h2>我的城市</h2>
-          <button class="add-btn" @click="showAddCity = true">
-            <Plus :size="18" />
-          </button>
-        </div>
-
-        <div class="custom-cities" v-if="customCities.length > 0">
-          <div
-            v-for="city in customCities"
-            :key="city"
-            class="city-item"
-            :class="{
-              active:
-                weatherStore.userLocation.city === city &&
-                selectedMode === 'manual',
-            }"
-            @click="selectCustomCity(city)"
-          >
-            <MapPin :size="16" />
-            <span class="city-name">{{ city }}</span>
-            <button class="delete-btn" @click.stop="removeCustomCity(city)">
-              <Trash2 :size="14" />
-            </button>
+      <Card class="section-card">
+        <template #title>
+          <div class="card-title-row">
+            <span>選擇城市</span>
+            <Tag value="精確座標" severity="info" />
           </div>
-        </div>
+        </template>
+        <template #content>
+          <Select
+            v-model="openCountry"
+            :options="countryOptions"
+            placeholder="選擇國家/地區..."
+            class="country-select-pv"
+            filter
+            show-clear
+          />
+          <div class="city-grid" v-if="openCountry && WORLD_CITIES[openCountry]">
+            <Button
+              v-for="city in WORLD_CITIES[openCountry]"
+              :key="city.name"
+              size="small"
+              :severity="weatherStore.userLocation.city === `${city.name}, ${openCountry}` && selectedMode === 'manual' ? 'success' : 'secondary'"
+              :outlined="weatherStore.userLocation.city === `${city.name}, ${openCountry}` && selectedMode === 'manual'"
+              :text="!(weatherStore.userLocation.city === `${city.name}, ${openCountry}` && selectedMode === 'manual')"
+              class="city-chip-btn"
+              @click="selectCityFromBrowse(city, openCountry)"
+            >
+              <MapPin :size="12" />
+              <span>{{ city.name }}</span>
+            </Button>
+          </div>
+        </template>
+      </Card>
 
-        <div class="empty-cities" v-else>
-          <span>尚未添加城市，點擊右上角 + 添加</span>
-        </div>
-      </section>
+      <!-- 我的城市 -->
+      <Card class="section-card">
+        <template #header>
+          <div class="my-cities-header">
+            <div class="my-cities-title">
+              <span>我的城市</span>
+              <span class="cities-hint" v-if="weatherStore.locationName">
+                點 + 儲存「{{ weatherStore.locationName }}」
+              </span>
+            </div>
+            <Button
+              rounded
+              size="small"
+              :disabled="isCurrentCityInList || !weatherStore.locationName"
+              :title="isCurrentCityInList ? '已在列表中' : '將目前位置加入列表'"
+              @click="addCurrentCity"
+            >
+              <Plus :size="16" />
+            </Button>
+          </div>
+        </template>
+        <template #content>
+          <div class="saved-city-list" v-if="customCities.length > 0">
+            <div
+              v-for="city in customCities"
+              :key="city.name"
+              class="saved-city-row"
+              :class="{ active: weatherStore.userLocation.city === city.name && selectedMode === 'manual' }"
+              @click="selectCustomCity(city)"
+            >
+              <MapPin :size="15" class="city-pin" />
+              <span class="city-label">{{ city.name }}</span>
+              <Tag v-if="city.lat" value="精確" severity="info" class="coords-tag" />
+              <Button text rounded severity="danger" size="small" @click.stop="removeCustomCity(city)">
+                <Trash2 :size="14" />
+              </Button>
+            </div>
+          </div>
+          <div class="empty-hint" v-else>
+            <MapPin :size="22" />
+            <span>尚未儲存城市，選好城市後點 + 快速儲存</span>
+          </div>
+        </template>
+      </Card>
 
       <!-- 附近地點設定 -->
-      <section class="nearby-places-section">
-        <h2>附近地點設定</h2>
-        <p class="section-hint">
-          GPS 定位可用時，AI 角色可參考附近的餐廳、景點等地點。
-        </p>
-        <div class="setting-row">
-          <label class="setting-label">
-            注入筆數
-            <span class="setting-range">（5–30）</span>
-          </label>
-          <input
-            type="number"
-            class="setting-input"
-            :value="settingsStore.nearbyPlacesLimit"
-            min="5"
-            max="30"
-            step="1"
-            @change="updateNearbyPlacesLimit"
-          />
-        </div>
-        <div class="setting-row">
-          <label class="setting-label">
-            搜尋半徑
-            <span class="setting-range">（10–100 公尺）</span>
-          </label>
-          <input
-            type="number"
-            class="setting-input"
-            :value="settingsStore.nearbyPlacesRadius"
-            min="10"
-            max="100"
-            step="10"
-            @change="updateNearbyPlacesRadius"
-          />
-        </div>
-      </section>
+      <Card class="section-card">
+        <template #title>附近地點設定</template>
+        <template #subtitle>GPS 定位可用時，AI 角色可參考附近的餐廳、景點等地點。</template>
+        <template #content>
+          <div class="setting-row">
+            <label class="setting-label">注入筆數 <span class="range-hint">（5–30）</span></label>
+            <InputNumber v-model="nearbyLimitModel" :min="5" :max="30" :step="1" show-buttons fluid />
+          </div>
+          <div class="setting-row">
+            <label class="setting-label">搜尋半徑 <span class="range-hint">（10–100 公尺）</span></label>
+            <InputNumber v-model="nearbyRadiusModel" :min="10" :max="100" :step="10" show-buttons fluid />
+          </div>
+        </template>
+      </Card>
 
-      <!-- 添加城市彈窗 -->
-      <div
-        class="add-city-modal"
-        v-if="showAddCity"
-        @click.self="showAddCity = false"
-      >
-        <div class="modal-content">
-          <div class="modal-header">
-            <h3>添加城市</h3>
-            <button @click="showAddCity = false">
-              <X :size="20" />
-            </button>
-          </div>
-          <input
-            v-model="newCityName"
-            type="text"
-            placeholder="輸入城市名稱（如：台北、Tokyo）"
-            @keyup.enter="addCustomCity"
-          />
-          <div class="modal-actions">
-            <button class="cancel-btn" @click="showAddCity = false">
-              取消
-            </button>
-            <button class="confirm-btn" @click="addCustomCity">添加</button>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </template>
@@ -515,31 +368,14 @@ const isCurrentCityCustom = computed(() => {
   background: var(--color-background, #f8f9fa);
 }
 
+// ── Header ──────────────────────────────────────────────
 .screen-header {
   display: flex;
   align-items: center;
-  padding: 16px;
-  padding-top: max(16px, var(--safe-top, 0px));
+  padding: 12px 8px;
+  padding-top: max(12px, var(--safe-top, 0px));
   background: var(--color-surface, #fff);
   border-bottom: 1px solid var(--color-border, #eee);
-
-  .back-btn,
-  .refresh-btn {
-    background: none;
-    border: none;
-    padding: 8px;
-    cursor: pointer;
-    color: var(--color-text, #333);
-    border-radius: 8px;
-
-    &:hover {
-      background: var(--color-hover, #f0f0f0);
-    }
-
-    &:disabled {
-      opacity: 0.5;
-    }
-  }
 
   h1 {
     flex: 1;
@@ -547,97 +383,107 @@ const isCurrentCityCustom = computed(() => {
     font-size: 18px;
     font-weight: 600;
     margin: 0;
+    color: var(--color-text, #333);
+  }
+
+  .header-btn {
+    width: 40px;
+    height: 40px;
   }
 }
 
+// ── Content ─────────────────────────────────────────────
 .screen-content {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-.current-weather {
-  margin-bottom: 24px;
-
-  .weather-card {
-    background: linear-gradient(135deg, #89cff0 0%, #a8d8ea 100%);
-    border-radius: 16px;
-    padding: 24px;
-    color: #1f2937;
-    text-align: center;
-  }
+// ── Weather gradient card ────────────────────────────────
+.weather-gradient-wrap {
+  background: linear-gradient(135deg, #89cff0 0%, #a8d8ea 100%);
+  border-radius: 18px;
+  padding: 24px 20px;
+  color: #1f2937;
+  text-align: center;
 
   .weather-location {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    font-size: 14px;
-    opacity: 0.8;
-    margin-bottom: 8px;
+    gap: 5px;
+    font-size: 13px;
+    opacity: 0.75;
+    margin-bottom: 6px;
   }
 
   .weather-temp {
-    font-size: 48px;
-    font-weight: 300;
-    margin: 8px 0;
+    font-size: 52px;
+    font-weight: 200;
+    line-height: 1;
+    margin: 6px 0;
   }
 
   .weather-condition {
-    font-size: 16px;
+    font-size: 15px;
     margin-bottom: 12px;
   }
 
   .weather-details {
     display: flex;
     justify-content: center;
-    gap: 16px;
+    gap: 18px;
     font-size: 13px;
-    opacity: 0.8;
+    opacity: 0.75;
   }
 
   .weather-update {
-    margin-top: 12px;
-    font-size: 12px;
-    opacity: 0.6;
+    margin-top: 10px;
+    font-size: 11px;
+    opacity: 0.55;
   }
 }
 
-.loading-section,
-.error-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 48px;
-  gap: 12px;
-  color: var(--color-text-secondary, #666);
+// ── Status cards (error / loading) ──────────────────────
+.status-card {
+  :deep(.p-card-body) { padding: 16px; }
 
-  button {
-    margin-top: 8px;
-    padding: 8px 16px;
-    background: var(--color-primary, #7dd3a8);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-  }
-}
-
-.mode-section,
-.browse-section,
-.search-section,
-.custom-cities-section {
-  margin-bottom: 24px;
-
-  h2 {
-    font-size: 14px;
-    font-weight: 600;
+  .status-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 0;
     color: var(--color-text-secondary, #666);
-    margin-bottom: 12px;
+  }
+
+  &.error-card .status-inner { color: #e53e3e; }
+}
+
+// ── Section cards (PrimeVue Card) ────────────────────────
+.section-card {
+  :deep(.p-card-title) {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  :deep(.p-card-subtitle) {
+    font-size: 12px;
+  }
+  :deep(.p-card-body) {
+    padding: 14px 16px;
   }
 }
 
+.card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+// ── Mode options ─────────────────────────────────────────
 .mode-options {
   display: flex;
   flex-direction: column;
@@ -648,455 +494,175 @@ const isCurrentCityCustom = computed(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
-  background: var(--color-surface, #fff);
-  border: 2px solid transparent;
+  padding: 12px 14px;
+  background: var(--color-background, #f8f9fa);
+  border: 1.5px solid transparent;
   border-radius: 12px;
   cursor: pointer;
   text-align: left;
-  transition: all 0.2s;
+  transition: all 0.18s;
 
-  &:hover {
-    background: var(--color-hover, #f5f5f5);
-  }
+  &:hover { background: var(--color-hover, #f0f0f0); }
 
   &.active {
     border-color: var(--color-primary, #7dd3a8);
     background: rgba(125, 211, 168, 0.1);
   }
+
+  .mode-icon { flex-shrink: 0; color: var(--color-text-secondary, #888); }
 
   .mode-info {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 3px;
+  }
+
+  .mode-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
 
   .mode-name {
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 500;
     color: var(--color-text, #333);
-
-    .mode-badge {
-      display: inline-block;
-      font-size: 10px;
-      font-weight: 600;
-      color: #fff;
-      background: #4caf50;
-      border-radius: 4px;
-      padding: 1px 5px;
-      margin-left: 5px;
-      vertical-align: middle;
-    }
   }
+
+  .mode-tag { font-size: 10px; }
 
   .mode-desc {
-    font-size: 12px;
-    color: var(--color-text-secondary, #888);
+    font-size: 11px;
+    color: var(--color-text-secondary, #999);
   }
 
-  .check-icon {
-    color: var(--color-primary, #7dd3a8);
-  }
+  .check-icon { flex-shrink: 0; color: var(--color-primary, #7dd3a8); }
 }
 
-.browse-badge {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 600;
-  color: #fff;
-  background: #2196f3;
-  border-radius: 4px;
-  padding: 1px 5px;
-  margin-left: 5px;
-  vertical-align: middle;
+// ── Country Select (PrimeVue) ────────────────────────────
+.country-select-pv {
+  width: 100%;
+  margin-bottom: 12px;
 }
 
-.country-select-wrap {
-  position: relative;
+// ── City chip grid ───────────────────────────────────────
+.city-grid {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border, #ddd);
-  border-radius: 12px;
-  padding: 10px 14px;
-  margin-bottom: 10px;
-
-  .select-globe {
-    flex-shrink: 0;
-    color: var(--color-text-secondary, #888);
-  }
-
-  .country-select {
-    flex: 1;
-    border: none;
-    background: none;
-    font-size: 14px;
-    color: var(--color-text, #333);
-    outline: none;
-    cursor: pointer;
-    appearance: none;
-    -webkit-appearance: none;
-  }
-
-  .select-chevron {
-    flex-shrink: 0;
-    color: var(--color-text-secondary, #aaa);
-    pointer-events: none;
-  }
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.city-picker {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-  gap: 6px;
-  background: var(--color-background, #f8f9fa);
-  border: 1px solid var(--color-border, #eee);
-  border-radius: 12px;
-  padding: 10px;
-}
-
-.city-pick-btn {
-  display: flex;
+.city-chip-btn {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 9px 12px;
-  background: var(--color-surface, #fff);
-  border: 1.5px solid transparent;
-  border-radius: 10px;
-  cursor: pointer;
+  gap: 4px;
   font-size: 13px;
-  color: var(--color-text, #333);
-  text-align: left;
-  transition: all 0.15s;
   white-space: nowrap;
-  overflow: hidden;
-
-  &:hover {
-    background: var(--color-hover, #f5f5f5);
-    border-color: var(--color-border, #ddd);
-  }
-
-  &.active {
-    border-color: var(--color-primary, #7dd3a8);
-    background: rgba(125, 211, 168, 0.12);
-    color: var(--color-primary-dark, #2e7d5e);
-  }
-
-  svg:first-child {
-    flex-shrink: 0;
-    color: var(--color-text-secondary, #aaa);
-  }
-
-  span {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .check-icon {
-    flex-shrink: 0;
-    color: var(--color-primary, #7dd3a8);
-  }
 }
 
-.coords-missing-hint {
-  font-size: 12px;
-  color: #7a5800;
-  background: #fff8e1;
-  border: 1px solid #ffe082;
-  border-radius: 8px;
-  padding: 8px 12px;
-  margin-bottom: 10px;
-  line-height: 1.5;
-}
-
-.search-box {
+// ── My Cities header ─────────────────────────────────────
+.my-cities-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background: var(--color-surface, #fff);
-  border-radius: 12px;
-  border: 1px solid var(--color-border, #eee);
+  justify-content: space-between;
+  padding: 14px 16px 0;
 
-  input {
-    flex: 1;
-    border: none;
-    background: none;
-    font-size: 15px;
-    outline: none;
-    color: var(--color-text, #333);
+  .my-cities-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
 
-    &::placeholder {
+    > span:first-child {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--color-text, #333);
+    }
+
+    .cities-hint {
+      font-size: 11px;
       color: var(--color-text-secondary, #999);
     }
   }
 }
 
-.search-results {
-  margin-top: 8px;
-  background: var(--color-surface, #fff);
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid var(--color-border, #eee);
-}
-
-.search-result-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 12px 16px;
-  background: none;
-  border: none;
-  border-bottom: 1px solid var(--color-border, #eee);
-  cursor: pointer;
-  text-align: left;
-  color: var(--color-text, #333);
-
-  &:last-child {
-    border-bottom: none;
-  }
-
-  &:hover {
-    background: var(--color-hover, #f5f5f5);
-  }
-
-  .region {
-    margin-left: auto;
-    font-size: 12px;
-    color: var(--color-text-secondary, #888);
-  }
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-
-  h2 {
-    margin: 0;
-  }
-
-  .add-btn {
-    background: var(--color-primary, #7dd3a8);
-    color: white;
-    border: none;
-    padding: 6px;
-    border-radius: 8px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    &:hover {
-      opacity: 0.9;
-    }
-  }
-}
-
-.custom-cities {
+// ── Saved city list ──────────────────────────────────────
+.saved-city-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
-.city-item {
+.saved-city-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 16px;
-  background: var(--color-surface, #fff);
-  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--color-background, #f8f9fa);
+  border-radius: 10px;
   cursor: pointer;
-  border: 2px solid transparent;
-  transition: all 0.2s;
+  border: 1.5px solid transparent;
+  transition: all 0.18s;
 
-  &:hover {
-    background: var(--color-hover, #f5f5f5);
-  }
+  &:hover { background: var(--color-hover, #f0f0f0); }
 
   &.active {
     border-color: var(--color-primary, #7dd3a8);
     background: rgba(125, 211, 168, 0.1);
   }
 
-  .city-name {
+  .city-pin { flex-shrink: 0; color: var(--color-text-secondary, #aaa); }
+
+  .city-label {
     flex: 1;
-    font-size: 15px;
+    font-size: 14px;
     color: var(--color-text, #333);
   }
 
-  .delete-btn {
-    background: none;
-    border: none;
-    padding: 6px;
-    cursor: pointer;
-    color: var(--color-text-secondary, #999);
-    border-radius: 6px;
-
-    &:hover {
-      background: rgba(229, 62, 62, 0.1);
-      color: #e53e3e;
-    }
-  }
+  .coords-tag { font-size: 10px; }
 }
 
-.empty-cities {
-  padding: 24px;
-  text-align: center;
-  color: var(--color-text-secondary, #888);
-  font-size: 14px;
-  background: var(--color-surface, #fff);
-  border-radius: 12px;
-}
-
-.add-city-modal {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+.empty-hint {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 16px;
-
-  .modal-content {
-    background: var(--color-surface, #fff);
-    border-radius: 16px;
-    padding: 20px;
-    width: 100%;
-    max-width: 320px;
-  }
-
-  .modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 16px;
-
-    h3 {
-      margin: 0;
-      font-size: 18px;
-    }
-
-    button {
-      background: none;
-      border: none;
-      padding: 4px;
-      cursor: pointer;
-      color: var(--color-text-secondary, #666);
-    }
-  }
-
-  input {
-    width: 100%;
-    padding: 12px 16px;
-    border: 1px solid var(--color-border, #ddd);
-    border-radius: 10px;
-    font-size: 15px;
-    outline: none;
-    margin-bottom: 16px;
-
-    &:focus {
-      border-color: var(--color-primary, #7dd3a8);
-    }
-  }
-
-  .modal-actions {
-    display: flex;
-    gap: 12px;
-
-    button {
-      flex: 1;
-      padding: 12px;
-      border-radius: 10px;
-      font-size: 15px;
-      cursor: pointer;
-    }
-
-    .cancel-btn {
-      background: var(--color-hover, #f0f0f0);
-      border: none;
-      color: var(--color-text, #333);
-    }
-
-    .confirm-btn {
-      background: var(--color-primary, #7dd3a8);
-      border: none;
-      color: white;
-    }
-  }
+  gap: 8px;
+  padding: 24px;
+  color: var(--color-text-secondary, #aaa);
+  font-size: 13px;
+  text-align: center;
 }
 
-.spinning {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.nearby-places-section {
-  margin-bottom: 24px;
-
-  h2 {
-    font-size: 16px;
-    font-weight: 600;
-    margin: 0 0 4px;
-  }
-
-  .section-hint {
-    font-size: 12px;
-    color: var(--color-text-secondary, #888);
-    margin: 0 0 12px;
-  }
-}
-
+// ── Nearby settings ──────────────────────────────────────
 .setting-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 10px 0;
-  border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-bottom: 1px solid var(--color-border, rgba(0,0,0,0.07));
+  gap: 12px;
 
-  &:last-child {
-    border-bottom: none;
-  }
+  &:last-child { border-bottom: none; }
 }
 
 .setting-label {
   font-size: 14px;
   color: var(--color-text, #333);
+  flex-shrink: 0;
 
-  .setting-range {
+  .range-hint {
     font-size: 11px;
-    opacity: 0.6;
+    opacity: 0.55;
     margin-left: 4px;
   }
 }
 
-.setting-input {
-  width: 72px;
-  padding: 6px 10px;
-  border: 1px solid var(--color-border, #ddd);
-  border-radius: 8px;
-  font-size: 14px;
-  text-align: center;
-  background: var(--color-surface, #fff);
-  color: var(--color-text, #333);
-  outline: none;
+// ── Spinner ──────────────────────────────────────────────
+.spinning { animation: spin 1s linear infinite; }
 
-  &:focus {
-    border-color: var(--color-primary, #7dd3a8);
-  }
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
+
 </style>

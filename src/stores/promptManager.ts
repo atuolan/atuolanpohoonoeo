@@ -843,15 +843,25 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     order.splice(safeIndex, 0, entry);
   }
 
+  type PromptInsertOptions = {
+    insertIndex?: number;
+    enabled?: boolean;
+    systemPrompt?: boolean;
+  };
+
   /**
    * 添加自定義提示詞
    */
   async function addCustomPrompt(
     prompt: Partial<PromptDefinition>,
-    options?: { insertIndex?: number; enabled?: boolean },
+    options?: PromptInsertOptions,
   ): Promise<PromptDefinition> {
     const identifier = `custom_${Date.now()}`;
-    const newPrompt = createCustomPromptDefinition(identifier, prompt, false);
+    const newPrompt = createCustomPromptDefinition(
+      identifier,
+      prompt,
+      options?.systemPrompt ?? false,
+    );
 
     config.value.prompts.push(newPrompt);
 
@@ -867,6 +877,37 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
 
     await saveConfig();
     return newPrompt;
+  }
+
+  async function convertAllCustomPromptsToSystem(): Promise<number> {
+    const promptLists: Array<PromptDefinition[] | undefined> = [
+      config.value.prompts,
+      config.value.faceToFacePrompts,
+      config.value.groupChatPrompts,
+      config.value.diaryPrompts,
+      config.value.summaryPrompts,
+      config.value.eventsPrompts,
+      config.value.plurkPostPrompts,
+      config.value.plurkCommentPrompts,
+    ];
+
+    let updated = 0;
+
+    for (const list of promptLists) {
+      if (!list) continue;
+      for (const prompt of list) {
+        if (!prompt.marker && !prompt.system_prompt) {
+          prompt.system_prompt = true;
+          updated += 1;
+        }
+      }
+    }
+
+    if (updated > 0) {
+      await saveConfig();
+    }
+
+    return updated;
   }
 
   /**
@@ -1780,7 +1821,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
    */
   async function addFaceToFaceCustomPrompt(
     prompt: Partial<PromptDefinition>,
-    options?: { insertIndex?: number; enabled?: boolean },
+    options?: PromptInsertOptions,
   ): Promise<PromptDefinition> {
     if (!config.value.faceToFacePrompts) {
       config.value.faceToFacePrompts = structuredClone(
@@ -1794,7 +1835,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     }
 
     const identifier = `f2f_custom_${Date.now()}`;
-    const newPrompt = createCustomPromptDefinition(identifier, prompt, true);
+    const newPrompt = createCustomPromptDefinition(
+      identifier,
+      prompt,
+      options?.systemPrompt ?? true,
+    );
 
     config.value.faceToFacePrompts.push(newPrompt);
     insertOrderEntryAt(
@@ -1815,7 +1860,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
    */
   async function addGroupChatCustomPrompt(
     prompt: Partial<PromptDefinition>,
-    options?: { insertIndex?: number; enabled?: boolean },
+    options?: PromptInsertOptions,
   ): Promise<PromptDefinition> {
     if (!config.value.groupChatPrompts) {
       config.value.groupChatPrompts = structuredClone(
@@ -1829,7 +1874,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     }
 
     const identifier = `gc_custom_${Date.now()}`;
-    const newPrompt = createCustomPromptDefinition(identifier, prompt, true);
+    const newPrompt = createCustomPromptDefinition(
+      identifier,
+      prompt,
+      options?.systemPrompt ?? true,
+    );
 
     config.value.groupChatPrompts.push(newPrompt);
     insertOrderEntryAt(
@@ -1851,7 +1900,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
   async function addCustomPromptForMode(
     mode: string,
     prompt: Partial<PromptDefinition>,
-    options?: { insertIndex?: number; enabled?: boolean },
+    options?: PromptInsertOptions,
   ): Promise<PromptDefinition> {
     // 模式前綴映射
     const prefixMap: Record<string, string> = {
@@ -1918,7 +1967,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
 
     const prefix = prefixMap[mode] || "custom";
     const identifier = `${prefix}_${Date.now()}`;
-    const newPrompt = createCustomPromptDefinition(identifier, prompt, true);
+    const newPrompt = createCustomPromptDefinition(
+      identifier,
+      prompt,
+      options?.systemPrompt ?? true,
+    );
 
     // 確保 prompts 陣列存在
     if (!(config.value as any)[mapping.prompts]) {
@@ -2329,6 +2382,106 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     await saveConfig();
   }
 
+  /**
+   * 批量刪除指定模式下的所有自訂模塊（system_prompt=false 且非 marker）
+   * 返回被刪除的條目數量
+   */
+  async function deleteAllCustomPromptsForMode(mode: string): Promise<number> {
+    const isCustom = (p: PromptDefinition) => !p.system_prompt && !p.marker;
+
+    const purge = (
+      promptsKey:
+        | "prompts"
+        | "faceToFacePrompts"
+        | "groupChatPrompts"
+        | "diaryPrompts"
+        | "summaryPrompts"
+        | "eventsPrompts"
+        | "plurkPostPrompts"
+        | "plurkCommentPrompts",
+      orderKey:
+        | "globalPromptOrder"
+        | "faceToFacePromptOrder"
+        | "groupChatPromptOrder"
+        | "diaryPromptOrder"
+        | "summaryPromptOrder"
+        | "eventsPromptOrder"
+        | "plurkPostPromptOrder"
+        | "plurkCommentPromptOrder",
+    ): number => {
+      const list = config.value[promptsKey] as
+        | PromptDefinition[]
+        | undefined;
+      if (!list) return 0;
+      const toRemove = new Set(
+        list.filter(isCustom).map((p) => p.identifier),
+      );
+      if (toRemove.size === 0) return 0;
+      (config.value as any)[promptsKey] = list.filter(
+        (p) => !toRemove.has(p.identifier),
+      );
+      const order = config.value[orderKey] as
+        | PromptOrderEntry[]
+        | undefined;
+      if (order) {
+        (config.value as any)[orderKey] = order.filter(
+          (o) => !toRemove.has(o.identifier),
+        );
+      }
+      return toRemove.size;
+    };
+
+    let removed = 0;
+    switch (mode) {
+      case "global":
+        removed = purge("prompts", "globalPromptOrder");
+        // 同步清理角色配置中指向已刪除自訂模塊的條目
+        if (removed > 0) {
+          const remainingIds = new Set(
+            config.value.prompts.map((p) => p.identifier),
+          );
+          for (const charId of Object.keys(config.value.characterConfigs)) {
+            const charCfg = config.value.characterConfigs[charId];
+            const before = charCfg.promptOrder.length;
+            charCfg.promptOrder = charCfg.promptOrder.filter((o) =>
+              remainingIds.has(o.identifier),
+            );
+            if (charCfg.promptOrder.length !== before) {
+              charCfg.updatedAt = Date.now();
+            }
+          }
+        }
+        break;
+      case "faceToFace":
+        removed = purge("faceToFacePrompts", "faceToFacePromptOrder");
+        break;
+      case "groupChat":
+        removed = purge("groupChatPrompts", "groupChatPromptOrder");
+        break;
+      case "diary":
+        removed = purge("diaryPrompts", "diaryPromptOrder");
+        break;
+      case "summary":
+        removed = purge("summaryPrompts", "summaryPromptOrder");
+        break;
+      case "events":
+        removed = purge("eventsPrompts", "eventsPromptOrder");
+        break;
+      case "plurkPost":
+        removed = purge("plurkPostPrompts", "plurkPostPromptOrder");
+        break;
+      case "plurkComment":
+        removed = purge("plurkCommentPrompts", "plurkCommentPromptOrder");
+        break;
+      default:
+        return 0;
+    }
+    if (removed > 0) {
+      await saveConfig();
+    }
+    return removed;
+  }
+
   return {
     // State
     config,
@@ -2368,6 +2521,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     addCustomPrompt,
     updatePrompt,
     deletePrompt,
+    convertAllCustomPromptsToSystem,
     createCharacterConfig,
     deleteCharacterConfig,
     resetToDefault,
@@ -2417,5 +2571,6 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     setPromptOverride,
     restorePresetModule,
     deletePromptForMode,
+    deleteAllCustomPromptsForMode,
   };
 });

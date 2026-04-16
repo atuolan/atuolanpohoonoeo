@@ -1666,7 +1666,14 @@ export class PromptBuilder {
             `請在 </content> 之後輸出：<char-location location="新城市名, 地區"/> 以更新所在地。`,
           );
         }
-        return { role: getRole(), content: sections.join("\n\n"), identifier };
+        const weatherContent = sections.join("\n\n");
+        if (promptDef?.content) {
+          const content = await this.macroEngine.substitute(
+            promptDef.content.replace("{{weatherInfo}}", weatherContent),
+          );
+          return content ? { role: getRole(), content, identifier } : null;
+        }
+        return { role: getRole(), content: weatherContent, identifier };
       }
 
       case "holidayInfo":

@@ -152,8 +152,6 @@ export default defineConfig(({ mode }) => ({
     allowedHosts: [".ngrok-free.app"],
     hmr: {
       overlay: false, // 禁用錯誤覆蓋層
-      protocol: "wss",
-      clientPort: 443,
     },
     proxy: {
       // 音樂 API 代理

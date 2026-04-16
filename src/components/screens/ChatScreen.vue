@@ -41,6 +41,11 @@ import { useChatIncomingCalls } from "@/composables/useChatIncomingCalls";
 import { useChatInputHelper } from "@/composables/useChatInputHelper";
 import { useChatMedia } from "@/composables/useChatMedia";
 import { useChatMiniFeatures } from "@/composables/useChatMiniFeatures";
+import { WORLD_CITIES, type CityEntry } from "@/data/worldCities";
+import PvButton from "primevue/button";
+import PvSelect from "primevue/select";
+import PvTag from "primevue/tag";
+import { CloudSun, User, Bot, Pencil, X, MapPin, Wifi } from "lucide-vue-next";
 import { useChatMultiDelete } from "@/composables/useChatMultiDelete";
 import { useChatPersona } from "@/composables/useChatPersona";
 import { useChatPlusMenuRouter } from "@/composables/useChatPlusMenuRouter";
@@ -1615,6 +1620,50 @@ const {
   getRealTimeAwareness: () =>
     currentChatData.value?.settings?.enableRealTimeAwareness ?? true,
 });
+
+// ===== 天氣 modal：整合 WeatherScreen 的國家/城市與我的城市 =====
+interface WmSavedCity { name: string; lat?: number; lon?: number; }
+const wmCountry = ref<string>("");
+const wmSavedCities = ref<WmSavedCity[]>([]);
+const wmCountryOptions = computed(() => Object.keys(WORLD_CITIES));
+
+function loadWmSavedCities() {
+  const saved = localStorage.getItem("weather_custom_cities");
+  if (!saved) { wmSavedCities.value = []; return; }
+  try {
+    const parsed = JSON.parse(saved);
+    wmSavedCities.value = parsed.map((c: string | WmSavedCity) =>
+      typeof c === "string" ? { name: c } : c,
+    );
+  } catch {
+    wmSavedCities.value = [];
+  }
+}
+
+watch(showWeatherModal, (v) => { if (v) loadWmSavedCities(); });
+
+function selectWmWorldCity(city: CityEntry, country: string) {
+  return selectWeatherCity({
+    id: 0,
+    name: city.name,
+    region: country,
+    country,
+    lat: city.lat,
+    lon: city.lon,
+  });
+}
+
+function selectWmSavedCity(c: WmSavedCity) {
+  if (c.lat === undefined || c.lon === undefined) return;
+  return selectWeatherCity({
+    id: 0,
+    name: c.name,
+    region: "",
+    country: "",
+    lat: c.lat,
+    lon: c.lon,
+  });
+}
 
 // ===== 聊天專屬頭像覆蓋 =====
 const charAvatarOverride = ref<string | undefined>(undefined);
@@ -11214,26 +11263,32 @@ onUnmounted(() => {
           <div class="wm-panel" @click.stop>
             <!-- 標題列 -->
             <div class="wm-header">
-              <span class="wm-title">🌤 天氣與位置</span>
-              <button class="wm-close" @click="cancelWeather">✕</button>
+              <span class="wm-title">
+                <CloudSun :size="22" class="wm-title__icon" />
+                天氣與位置
+              </span>
+              <button class="wm-close" @click="cancelWeather">
+                <X :size="18" />
+              </button>
             </div>
 
-            <!-- 雙卡片區 -->
-            <div class="wm-cards">
-              <!-- 用戶卡片 -->
-              <div
-                class="wm-card wm-card--user"
-                :class="{ 'wm-card--editing': weatherEditTarget === 'user' }"
-              >
+            <div class="wm-body">
+              <!-- 雙卡片區 -->
+              <div class="wm-cards">
+                <!-- 用戶卡片 -->
+                <div
+                  class="wm-card wm-card--user"
+                  :class="{ 'wm-card--editing': weatherEditTarget === 'user' }"
+                >
                 <div class="wm-card__header">
-                  <span class="wm-card__icon">👤</span>
+                  <span class="wm-card__icon"><User :size="16" /></span>
                   <span class="wm-card__who">我</span>
                   <button
                     class="wm-card__edit-btn"
                     @click="startWeatherEdit('user')"
                     title="變更所在地"
                   >
-                    ✎
+                    <Pencil :size="14" />
                   </button>
                 </div>
                 <template
@@ -11247,9 +11302,10 @@ onUnmounted(() => {
                 </template>
                 <template v-else-if="customWeatherData">
                   <div class="wm-card__location">
+                    <MapPin :size="14" />
                     {{ customWeatherData.location.name }}
                     <button class="wm-card__clear" @click="clearCustomWeather">
-                      ✕
+                      <X :size="12" />
                     </button>
                   </div>
                   <div
@@ -11275,6 +11331,7 @@ onUnmounted(() => {
                 </template>
                 <template v-else-if="weatherStore.hasWeatherData">
                   <div class="wm-card__location">
+                    <MapPin :size="14" />
                     {{ weatherStore.locationName }}
                   </div>
                   <div
@@ -11283,7 +11340,7 @@ onUnmounted(() => {
                     @click="startWeatherEdit('user')"
                     title="IP定位可能不準確，點此設定城市"
                   >
-                    📡 IP定位，點此修改
+                    <Wifi :size="12" /> IP定位，點此修改
                   </div>
                   <div
                     v-if="getVirtualLocalTime(weatherStore.weatherData)"
@@ -11311,7 +11368,7 @@ onUnmounted(() => {
                   </div>
                 </template>
                 <template v-else>
-                  <div class="wm-card__empty">點擊 ✎ 設定位置</div>
+                  <div class="wm-card__empty">點擊右上角設定位置</div>
                 </template>
               </div>
 
@@ -11321,9 +11378,9 @@ onUnmounted(() => {
                 :class="{ 'wm-card--editing': weatherEditTarget === 'char' }"
               >
                 <div class="wm-card__header">
-                  <span class="wm-card__icon">{{
-                    currentCharacter?.avatar ? "" : "🤖"
-                  }}</span>
+                  <span class="wm-card__icon" v-if="!currentCharacter?.avatar">
+                    <Bot :size="16" />
+                  </span>
                   <img
                     v-if="currentCharacter?.avatar"
                     :src="currentCharacter.avatar"
@@ -11338,7 +11395,7 @@ onUnmounted(() => {
                     @click="startWeatherEdit('char')"
                     title="變更角色所在地"
                   >
-                    ✎
+                    <Pencil :size="14" />
                   </button>
                 </div>
                 <template v-if="charWeatherLoading">
@@ -11346,6 +11403,7 @@ onUnmounted(() => {
                 </template>
                 <template v-else-if="charWeatherData">
                   <div class="wm-card__location">
+                    <MapPin :size="14" />
                     {{ charWeatherData.location.name }}
                   </div>
                   <div
@@ -11369,83 +11427,100 @@ onUnmounted(() => {
                   </div>
                 </template>
                 <template v-else>
-                  <div class="wm-card__empty">點擊 ✎ 設定位置</div>
+                  <div class="wm-card__empty">點擊右上角設定位置</div>
                   <div class="wm-card__hint">將自動儲存到角色世界設定</div>
                 </template>
               </div>
             </div>
 
-            <!-- 搜尋區（僅在編輯模式顯示） -->
+            <!-- 城市選擇區（僅在編輯模式顯示） -->
             <Transition name="fade">
-              <div v-if="weatherEditTarget" class="wm-search">
-                <div class="wm-search__label">
-                  🔍 搜尋城市（套用到{{
+              <div v-if="weatherEditTarget" class="wm-picker">
+                <div class="wm-picker__label">
+                  套用到：<b>{{
                     weatherEditTarget === "user"
                       ? "我"
                       : currentCharacter?.data?.name || "角色"
-                  }}）
+                  }}</b>
                 </div>
-                <div class="wm-search__row">
-                  <input
-                    v-model="weatherSearchQuery"
-                    class="wm-search__input"
-                    :placeholder="
-                      weatherEditTarget === 'user'
-                        ? '輸入城市名稱，自動搜尋…'
-                        : '輸入角色所在城市，自動搜尋…'
-                    "
-                    @keydown.enter="searchWeatherCities"
-                  />
-                  <button
-                    class="wm-search__btn"
-                    :disabled="
-                      weatherSearchLoading || !weatherSearchQuery.trim()
-                    "
-                    @click="searchWeatherCities"
-                  >
-                    {{ weatherSearchLoading ? "…" : "搜尋" }}
-                  </button>
-                </div>
-                <!-- 搜尋結果 -->
-                <div
-                  v-if="weatherSearchResults.length > 0"
-                  class="wm-search__results"
-                >
-                  <button
-                    v-for="city in weatherSearchResults"
-                    :key="city.id"
-                    class="wm-search__result"
-                    @click="selectWeatherCity(city)"
-                  >
-                    <span class="wm-search__result-name"
-                      >📍 {{ city.name }}</span
+
+                <!-- 我的城市快選 -->
+                <div v-if="wmSavedCities.length > 0" class="wm-picker__section">
+                  <div class="wm-picker__section-title">我的城市</div>
+                  <div class="wm-picker__chips">
+                    <PvButton
+                      v-for="c in wmSavedCities"
+                      :key="c.name"
+                      size="small"
+                      severity="secondary"
+                      :disabled="c.lat === undefined || c.lon === undefined"
+                      class="wm-picker__chip"
+                      @click="selectWmSavedCity(c)"
                     >
-                    <span class="wm-search__result-sub">{{
-                      [city.region, city.country].filter(Boolean).join("，")
-                    }}</span>
-                  </button>
+                      <MapPin :size="12" style="margin-right: 4px;" /> {{ c.name }}
+                    </PvButton>
+                  </div>
                 </div>
-                <button class="wm-search__cancel" @click="cancelWeatherEdit">
-                  取消搜尋
-                </button>
+
+                <!-- 國家 / 城市下拉 -->
+                <div class="wm-picker__section">
+                  <div class="wm-picker__section-title">
+                    依國家選擇
+                    <PvTag value="精確座標" severity="info" class="wm-picker__tag" />
+                  </div>
+                  <PvSelect
+                    v-model="wmCountry"
+                    :options="wmCountryOptions"
+                    placeholder="選擇國家/地區..."
+                    class="wm-picker__select"
+                    filter
+                    show-clear
+                  />
+                  <div v-if="wmCountry && WORLD_CITIES[wmCountry]" class="wm-picker__grid">
+                    <PvButton
+                      v-for="city in WORLD_CITIES[wmCountry]"
+                      :key="city.name"
+                      size="small"
+                      severity="secondary"
+                      text
+                      class="wm-picker__city"
+                      @click="selectWmWorldCity(city, wmCountry)"
+                    >
+                      {{ city.name }}
+                    </PvButton>
+                  </div>
+                </div>
+
+                <PvButton
+                  label="取消編輯"
+                  severity="secondary"
+                  text
+                  size="small"
+                  class="wm-picker__cancel"
+                  @click="cancelWeatherEdit"
+                />
               </div>
             </Transition>
+            </div>
 
             <!-- 底部操作 -->
             <div class="wm-footer">
-              <button class="wm-btn wm-btn--cancel" @click="cancelWeather">
-                取消
-              </button>
-              <button
-                class="wm-btn wm-btn--send"
-                @click="sendWeatherMessage"
+              <PvButton
+                label="取消"
+                severity="secondary"
+                outlined
+                class="wm-footer__btn"
+                @click="cancelWeather"
+              />
+              <PvButton
+                label="發送天氣"
+                class="wm-footer__btn"
                 :disabled="
                   !customWeatherData &&
                   (!weatherStore.hasWeatherData || weatherStore.isLoading)
                 "
-              >
-                發送天氣
-              </button>
+                @click="sendWeatherMessage"
+              />
             </div>
           </div>
         </div>
@@ -14802,6 +14877,9 @@ onUnmounted(() => {
 
 // ===== 天氣與位置面板樣式 =====
 .wm-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: 85vh; /* 避免超過畫面 */
   background: rgba(255, 255, 255, 0.75);
   backdrop-filter: blur(28px) saturate(180%);
   -webkit-backdrop-filter: blur(28px) saturate(180%);
@@ -14815,6 +14893,12 @@ onUnmounted(() => {
     0 0 0 1px rgba(255, 255, 255, 0.3) inset;
   overflow: hidden;
   animation: wm-pop 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.wm-body {
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1 1 auto;
 }
 
 @keyframes wm-pop {
@@ -14833,11 +14917,19 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px 12px;
-  .wm-title {
+  flex-shrink: 0;
+.wm-title {
     font-size: 18px;
     font-weight: 800;
     color: var(--color-text, #1a1a1a);
     letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .wm-title__icon {
+      color: var(--color-text-secondary, #666);
+    }
   }
   .wm-close {
     background: rgba(0, 0, 0, 0.05);
@@ -14869,36 +14961,35 @@ onUnmounted(() => {
 .wm-card {
   flex: 1;
   min-width: 0;
-  border-radius: 24px;
-  padding: 18px 20px;
+  border-radius: 20px;
+  padding: 16px 18px;
   text-align: left;
   position: relative;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  border: 2px solid transparent;
 
   &--user {
-    background: linear-gradient(
-      135deg,
-      rgba(219, 234, 254, 0.8),
-      rgba(191, 219, 254, 0.8)
-    );
+    background: linear-gradient(145deg, #f0f9ff 0%, #ffffff 100%);
+    border-color: rgba(186, 230, 253, 0.4);
     color: #1e3a8a;
+
+    .wm-card__icon { color: #3b82f6; }
   }
+
   &--char {
-    background: linear-gradient(
-      135deg,
-      rgba(252, 231, 243, 0.8),
-      rgba(251, 207, 232, 0.8)
-    );
+    background: linear-gradient(145deg, #fdf2f8 0%, #ffffff 100%);
+    border-color: rgba(251, 207, 232, 0.4);
     color: #831843;
+
+    .wm-card__icon { color: #ec4899; }
   }
+
   &--editing {
-    box-shadow:
-      0 0 0 3px rgba(125, 211, 168, 0.5),
-      0 16px 32px rgba(125, 211, 168, 0.2);
-    transform: scale(1.02);
-    background: rgba(255, 255, 255, 0.95);
+    border-color: var(--color-primary, #7dd3a8);
+    box-shadow: 0 12px 32px rgba(125, 211, 168, 0.2);
+    transform: translateY(-2px);
+    background: #ffffff;
   }
 }
 
@@ -14906,19 +14997,26 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .wm-card__icon {
-  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
 }
 
 .wm-card__avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   object-fit: cover;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .wm-card__who {
@@ -14927,77 +15025,85 @@ onUnmounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 120px;
+  flex: 1;
 }
 
 .wm-card__edit-btn {
-  background: rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.03);
   border: none;
-  font-size: 13px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
   cursor: pointer;
-  padding: 4px 10px;
-  border-radius: 12px;
-  margin-left: auto;
-  font-weight: 600;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  color: inherit;
+  opacity: 0.6;
   transition: all 0.2s;
+
   &:hover {
-    background: rgba(255, 255, 255, 0.95);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
+    background: rgba(0, 0, 0, 0.08);
+    opacity: 1;
+    transform: rotate(10deg);
   }
 }
 
 .wm-card__location {
   font-size: 13px;
-  opacity: 0.8;
-  margin-bottom: 2px;
+  font-weight: 600;
+  opacity: 0.9;
+  margin-bottom: 4px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .wm-card__time {
   font-size: 11px;
-  opacity: 0.8;
+  opacity: 0.7;
   font-weight: 600;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 
 .wm-card__clear {
-  background: rgba(0, 0, 0, 0.1);
+  background: rgba(0, 0, 0, 0.05);
   border: none;
   font-size: 10px;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  margin-left: 4px;
+  color: inherit;
+  transition: all 0.2s;
   &:hover {
-    background: rgba(0, 0, 0, 0.2);
+    background: rgba(0, 0, 0, 0.15);
   }
 }
 
 .wm-card__temp {
-  font-size: 34px;
+  font-size: 38px;
   font-weight: 800;
   line-height: 1;
-  letter-spacing: -1px;
-  margin: 6px 0 8px;
+  letter-spacing: -1.5px;
+  margin: 12px 0 10px;
 }
 
 .wm-card__cond {
   font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 4px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  opacity: 0.95;
 }
 
 .wm-card__meta {
-  font-size: 12px;
-  opacity: 0.75;
-  font-weight: 500;
+  font-size: 11px;
+  opacity: 0.7;
+  font-weight: 600;
 }
 
 .wm-card__loading {
@@ -15020,170 +15126,80 @@ onUnmounted(() => {
   padding-bottom: 8px;
 }
 
-// 搜尋區
-.wm-search {
+// ===== 城市選擇區（PrimeVue 整合） =====
+.wm-picker {
   padding: 0 24px 16px;
-}
-
-.wm-search__label {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--color-text-secondary, #666);
-  margin-bottom: 10px;
-}
-
-.wm-search__row {
   display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wm-picker__label {
+  font-size: 13px;
+  color: var(--color-text-secondary, #666);
+  b { color: var(--color-text, #222); font-weight: 700; }
+}
+
+.wm-picker__section {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
-.wm-search__input {
-  flex: 1;
-  padding: 12px 16px;
-  border: 2px solid transparent;
-  border-radius: 16px;
-  font-size: 14px;
-  font-weight: 500;
-  outline: none;
-  background: rgba(0, 0, 0, 0.04);
-  color: var(--color-text, #333);
-  transition: all 0.2s;
-  &:focus {
-    background: rgba(255, 255, 255, 0.8);
-    border-color: var(--color-primary, #7dd3a8);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  }
-  &::placeholder {
-    opacity: 0.45;
-  }
-}
-
-.wm-search__btn {
-  padding: 12px 20px;
-  border-radius: 16px;
-  border: none;
-  background: var(--color-primary, #7dd3a8);
-  color: white;
-  font-size: 14px;
+.wm-picker__section-title {
+  font-size: 12px;
   font-weight: 700;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s;
-  box-shadow: 0 4px 12px rgba(125, 211, 168, 0.3);
-  &:disabled {
-    opacity: 0.4;
-    cursor: default;
-    box-shadow: none;
-  }
-  &:not(:disabled):hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 16px rgba(125, 211, 168, 0.4);
-  }
-}
-
-.wm-search__results {
-  max-height: 180px;
-  overflow-y: auto;
-  margin-top: 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
-}
-
-.wm-search__result {
+  color: var(--color-text-secondary, #888);
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 12px 16px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.15s;
-  &:hover {
-    background: rgba(0, 0, 0, 0.04);
-  }
-  & + & {
-    border-top: 1px solid rgba(0, 0, 0, 0.05);
-  }
+  gap: 6px;
 }
 
-.wm-search__result-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text, #222);
+.wm-picker__tag {
+  font-size: 10px;
 }
 
-.wm-search__result-sub {
+.wm-picker__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wm-picker__chip {
   font-size: 12px;
-  opacity: 0.6;
-  color: var(--color-text, #444);
-  margin-left: auto;
-  white-space: nowrap;
 }
 
-.wm-search__cancel {
-  display: block;
-  margin: 12px auto 0;
-  background: none;
-  border: none;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-secondary, #888);
-  cursor: pointer;
-  padding: 6px 16px;
-  border-radius: 12px;
-  transition: all 0.2s;
-  &:hover {
-    background: rgba(0, 0, 0, 0.05);
-  }
+.wm-picker__select {
+  width: 100%;
 }
 
-// 底部按鈕
+.wm-picker__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.wm-picker__city {
+  font-size: 12px;
+}
+
+.wm-picker__cancel {
+  align-self: center;
+}
+
+// ===== 底部按鈕 =====
 .wm-footer {
   display: flex;
   gap: 12px;
-  padding: 0 24px 24px;
-}
+  padding: 16px 24px 20px;
+  flex-shrink: 0;
+  background: linear-gradient(to top, rgba(255,255,255,0.9) 80%, transparent);
 
-.wm-btn {
-  flex: 1;
-  padding: 14px;
-  border-radius: 18px;
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
-  border: none;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-
-  &:active {
-    transform: scale(0.96);
-  }
-
-  &--cancel {
-    background: rgba(0, 0, 0, 0.04);
-    color: var(--color-text, #444);
-    &:hover {
-      background: rgba(0, 0, 0, 0.08);
-    }
-  }
-  &--send {
-    background: var(--color-primary, #7dd3a8);
-    color: white;
-    box-shadow: 0 6px 16px rgba(125, 211, 168, 0.3);
-    &:disabled {
-      opacity: 0.5;
-      cursor: default;
-      box-shadow: none;
-    }
-    &:not(:disabled):hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(125, 211, 168, 0.4);
-    }
+  .wm-footer__btn {
+    flex: 1;
   }
 }
 

@@ -40,7 +40,7 @@ const promptLibraryStore = usePromptLibraryStore();
 const charactersStore = useCharactersStore();
 const adminStore = useAdminStore();
 
-// 當前選擇的模式：'global' = 全局, 'faceToFace' = 面對面, 'groupChat' = 群聊, 'diary' = 日記, 'summary' = 總結, 'events' = 重要事件, 'plurkPost' = 噗浪發文, 'plurkComment' = 噗浪評論, 其他 = 角色 ID
+// 當前選擇的模式：'global' = 線上模式, 'faceToFace' = 面對面, 'groupChat' = 群聊, 'diary' = 日記, 'summary' = 總結, 'events' = 重要事件, 'plurkPost' = 噗浪發文, 'plurkComment' = 噗浪評論, 其他 = 角色 ID
 const selectedMode = ref<
   | "global"
   | "faceToFace"
@@ -53,7 +53,7 @@ const selectedMode = ref<
   | string
 >("global");
 
-// 當前選擇的角色 ID（null = 全局）
+// 當前選擇的角色 ID（null = 線上模式）
 const selectedCharacterId = ref<string | null>(null);
 
 // 編輯中的提示詞
@@ -194,6 +194,8 @@ const isAllImportedSelected = computed(
     selectedImportedPromptIds.value.length === importedPromptItems.value.length,
 );
 
+const shouldCreateAsSystemPrompt = computed(() => adminStore.isAdmin);
+
 async function addLibraryItemToCurrentMode(item: PromptDefinition) {
   try {
     await promptManagerStore.addCustomPromptForMode(selectedMode.value, {
@@ -203,6 +205,8 @@ async function addLibraryItemToCurrentMode(item: PromptDefinition) {
       injection_position: item.injection_position,
       injection_depth: item.injection_depth,
       injection_order: item.injection_order,
+    }, {
+      systemPrompt: shouldCreateAsSystemPrompt.value,
     });
     alert("已加入到目前模式");
   } catch (e) {
@@ -377,6 +381,7 @@ async function insertSelectedImportedPrompts() {
         {
           enabled: item.enabled,
           insertIndex,
+          systemPrompt: shouldCreateAsSystemPrompt.value,
         },
       );
       insertedIds.push(item.sourceIdentifier);
@@ -1234,7 +1239,11 @@ async function createNewPrompt() {
     };
 
     const insertIndex = getNewPromptInsertIndex();
-    const insertOptions = { insertIndex, enabled: true };
+    const insertOptions = {
+      insertIndex,
+      enabled: true,
+      systemPrompt: shouldCreateAsSystemPrompt.value,
+    };
 
     if (isFaceToFaceMode.value) {
       await promptManagerStore.addFaceToFaceCustomPrompt(promptData, insertOptions);
@@ -1320,43 +1329,104 @@ async function deleteCharacterConfig() {
   }
 }
 
-// 重置當前模式為默認
+// 重置當前模式為默認（只影響當前分頁，不會動到其他模式）
 async function resetCurrentToDefault() {
   if (selectedMode.value === "faceToFace") {
-    if (confirm("確定要重置面對面模式提示詞為默認順序嗎？")) {
+    if (confirm("確定要重置「面對面模式」的提示詞為預設嗎？\n（不會影響其他模式）")) {
       await promptManagerStore.resetFaceToFaceToDefault();
     }
   } else if (selectedMode.value === "groupChat") {
-    if (confirm("確定要重置群聊模式提示詞為默認順序嗎？")) {
+    if (confirm("確定要重置「群聊模式」的提示詞為預設嗎？\n（不會影響其他模式）")) {
       await promptManagerStore.resetGroupChatToDefault();
     }
   } else if (selectedMode.value === "diary") {
-    if (confirm("確定要重置日記提示詞為默認順序嗎？")) {
+    if (confirm("確定要重置「角色日記」的提示詞為預設嗎？\n（不會影響其他模式）")) {
       await promptManagerStore.resetDiaryToDefault();
     }
   } else if (selectedMode.value === "summary") {
-    if (confirm("確定要重置總結提示詞為默認順序嗎？")) {
+    if (confirm("確定要重置「總結」的提示詞為預設嗎？\n（不會影響其他模式）")) {
       await promptManagerStore.resetSummaryToDefault();
     }
   } else if (selectedMode.value === "events") {
-    if (confirm("確定要重置重要事件提示詞為默認順序嗎？")) {
+    if (confirm("確定要重置「重要事件」的提示詞為預設嗎？\n（不會影響其他模式）")) {
       await promptManagerStore.resetEventsToDefault();
     }
   } else if (selectedMode.value === "plurkPost") {
-    if (confirm("確定要重置噗浪發文提示詞為默認順序嗎？")) {
+    if (confirm("確定要重置「噗浪發文」的提示詞為預設嗎？\n（不會影響其他模式）")) {
       await promptManagerStore.resetPlurkPostToDefault();
     }
   } else if (selectedMode.value === "plurkComment") {
-    if (confirm("確定要重置噗浪評論提示詞為默認順序嗎？")) {
+    if (confirm("確定要重置「噗浪評論」的提示詞為預設嗎？\n（不會影響其他模式）")) {
       await promptManagerStore.resetPlurkCommentToDefault();
     }
+  } else if (selectedCharacterId.value) {
+    if (
+      confirm(
+        "確定要重置此角色的獨立提示詞配置為預設順序嗎？\n（只影響此角色，不會動到線上模式或其他模式）",
+      )
+    ) {
+      await promptManagerStore.resetToDefault(selectedCharacterId.value);
+    }
   } else {
-    if (confirm("確定要重置為默認值嗎？這會重置所有提示詞內容和順序。")) {
-      await promptManagerStore.resetToDefault(
-        selectedCharacterId.value || undefined,
-      );
+    if (
+      confirm(
+        "確定要重置「線上模式」的提示詞為預設嗎？\n（只會重置線上模式的提示詞內容與順序，不會影響面對面、群聊、日記、總結、重要事件、噗浪等其他模式）",
+      )
+    ) {
+      await promptManagerStore.resetToDefault();
     }
   }
+}
+
+// 當前模式的顯示名稱
+function getCurrentModeLabel(): string {
+  switch (selectedMode.value) {
+    case "global":
+      return "線上模式";
+    case "faceToFace":
+      return "面對面模式";
+    case "groupChat":
+      return "群聊模式";
+    case "diary":
+      return "角色日記";
+    case "summary":
+      return "總結";
+    case "events":
+      return "重要事件";
+    case "plurkPost":
+      return "噗浪發文";
+    case "plurkComment":
+      return "噗浪評論";
+    default:
+      return "當前模式";
+  }
+}
+
+// 批量刪除當前模式的所有自訂模塊
+async function deleteAllCustomInCurrentMode() {
+  const modeKey =
+    selectedMode.value === "global" ||
+    selectedMode.value === "faceToFace" ||
+    selectedMode.value === "groupChat" ||
+    selectedMode.value === "diary" ||
+    selectedMode.value === "summary" ||
+    selectedMode.value === "events" ||
+    selectedMode.value === "plurkPost" ||
+    selectedMode.value === "plurkComment"
+      ? selectedMode.value
+      : "global";
+
+  const label = getCurrentModeLabel();
+  if (
+    !confirm(
+      `確定要刪除「${label}」下所有自訂模塊嗎？\n此操作不可撤銷（預設模塊不受影響，可由「恢復預設模塊」找回）。`,
+    )
+  ) {
+    return;
+  }
+  const removed =
+    await promptManagerStore.deleteAllCustomPromptsForMode(modeKey);
+  alert(removed > 0 ? `已刪除 ${removed} 個自訂模塊。` : "沒有可刪除的自訂模塊。");
 }
 
 // 重置所有模式為默認
@@ -1943,11 +2013,19 @@ function toggleAllExportOptions(selectAll: boolean) {
   };
 }
 
+async function convertAllCustomPromptsToSystem() {
+  const updated = await promptManagerStore.convertAllCustomPromptsToSystem();
+  if (updated > 0) {
+    alert(`已將 ${updated} 個自訂條目轉為系統。`);
+  }
+}
+
 // 管理員登入
 async function adminLogin() {
   adminLoginError.value = "";
   const success = await adminStore.login(adminPassword.value);
   if (success) {
+    await convertAllCustomPromptsToSystem();
     showAdminLoginModal.value = false;
     adminPassword.value = "";
   } else {
@@ -1988,6 +2066,9 @@ onMounted(async () => {
   await promptLibraryStore.load();
   await charactersStore.loadCharacters();
   await adminStore.loadAdminState();
+  if (adminStore.isAdmin) {
+    await promptManagerStore.convertAllCustomPromptsToSystem();
+  }
 });
 
 onUnmounted(() => {
@@ -2048,15 +2129,6 @@ watch(newPromptInsertMode, (mode) => {
           </button>
           <button
             class="header-btn"
-            title="導入條目"
-            @click="openImportPicker"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 13h-4v6H9v-6H5l7-7 7 7zm-14 6h14v2H5v-2z" />
-            </svg>
-          </button>
-          <button
-            class="header-btn"
             title="自訂模塊庫"
             @click="showPromptLibraryModal = true"
           >
@@ -2088,6 +2160,15 @@ watch(newPromptInsertMode, (mode) => {
 
           <div class="header-actions-menu" role="menu">
             <button
+              class="header-menu-item"
+              role="menuitem"
+              title="導入條目"
+              @click="openImportPicker"
+            >
+              導入條目
+            </button>
+
+            <button
               v-if="adminStore.isAdmin"
               class="header-menu-item"
               role="menuitem"
@@ -2107,23 +2188,64 @@ watch(newPromptInsertMode, (mode) => {
               恢復預設模塊
             </button>
 
-            <button
-              class="header-menu-item"
-              role="menuitem"
-              title="重置當前模式"
-              @click="resetCurrentToDefault"
-            >
-              重置當前模式
-            </button>
+            <div class="header-menu-divider" role="separator"></div>
 
-            <button
-              class="header-menu-item danger"
-              role="menuitem"
-              title="重置所有模式"
-              @click="resetAllToDefault"
-            >
-              重置所有模式
-            </button>
+            <div class="header-menu-group">
+              <div class="header-menu-group-title">
+                當前模式 ({{ getCurrentModeLabel() }})
+              </div>
+              <div class="header-menu-group-content">
+                <button
+                  class="header-menu-item"
+                  role="menuitem"
+                  :title="`重置當前模式（${getCurrentModeLabel()}）為預設`"
+                  @click="resetCurrentToDefault"
+                >
+                  重置為預設
+                </button>
+                <button
+                  class="header-menu-item danger"
+                  role="menuitem"
+                  :title="`刪除「${getCurrentModeLabel()}」所有自訂模塊`"
+                  @click="deleteAllCustomInCurrentMode"
+                >
+                  刪除所有自訂模塊
+                </button>
+              </div>
+            </div>
+
+            <template v-if="adminStore.isAdmin">
+              <div class="header-menu-divider" role="separator"></div>
+              <div class="header-menu-group">
+                <div class="header-menu-group-title">系統管理</div>
+                <div class="header-menu-group-content">
+                  <button
+                    class="header-menu-item"
+                    role="menuitem"
+                    title="將所有模式的自訂條目轉成系統"
+                    @click="convertAllCustomPromptsToSystem"
+                  >
+                    全部自訂轉系統
+                  </button>
+                </div>
+              </div>
+            </template>
+
+            <div class="header-menu-divider" role="separator"></div>
+
+            <div class="header-menu-group">
+              <div class="header-menu-group-title">全部模式</div>
+              <div class="header-menu-group-content">
+                <button
+                  class="header-menu-item danger"
+                  role="menuitem"
+                  title="重置所有模式的提示詞為預設"
+                  @click="resetAllToDefault"
+                >
+                  重置所有模式
+                </button>
+              </div>
+            </div>
           </div>
         </details>
       </div>
@@ -2144,7 +2266,7 @@ watch(newPromptInsertMode, (mode) => {
         :class="{ active: selectedMode === 'global' }"
         @click="selectMode('global')"
       >
-        全局設定
+        線上模式
       </button>
       <button
         class="char-tab face-to-face-tab"
@@ -2366,11 +2488,11 @@ watch(newPromptInsertMode, (mode) => {
       <template v-if="isUsingCharacterConfig">
         <span class="status-badge custom">使用自訂配置</span>
         <button class="text-btn danger" @click="deleteCharacterConfig">
-          恢復全局
+          恢復線上模式
         </button>
       </template>
       <template v-else>
-        <span class="status-badge global">使用全局配置</span>
+        <span class="status-badge global">使用線上模式配置</span>
         <button class="text-btn primary" @click="createCharacterConfig">
           創建自訂配置
         </button>
@@ -2815,7 +2937,7 @@ watch(newPromptInsertMode, (mode) => {
                   <div class="section-title">插入設定</div>
                   <div class="form-group">
                     <label class="form-label">目前模式</label>
-                    <div class="import-current-mode">{{ selectedMode === "global" ? "全局設定" : selectedMode }}</div>
+                    <div class="import-current-mode">{{ selectedMode === "global" ? "線上模式" : selectedMode }}</div>
                   </div>
                   <div class="form-group">
                     <label class="form-label">已選條目</label>
@@ -3164,9 +3286,9 @@ watch(newPromptInsertMode, (mode) => {
                   </button>
                 </div>
 
-                <!-- 全局配置 -->
+                <!-- 線上模式配置 -->
                 <div class="export-section">
-                  <div class="section-title">全局配置</div>
+                  <div class="section-title">線上模式配置</div>
                   <label class="export-option">
                     <input
                       type="checkbox"
@@ -3183,8 +3305,8 @@ watch(newPromptInsertMode, (mode) => {
                       v-model="exportOptions.globalOrder"
                     />
                     <span class="option-content">
-                      <span class="option-name">全局順序</span>
-                      <span class="option-desc">聊天時的提示詞排列順序</span>
+                      <span class="option-name">線上模式順序</span>
+                      <span class="option-desc">提示詞執行順序與啟用狀態</span>
                     </span>
                   </label>
                 </div>
@@ -3481,43 +3603,111 @@ watch(newPromptInsertMode, (mode) => {
 
 .header-actions-menu {
   position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  min-width: 180px;
-  padding: 8px;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: var(--color-surface);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.18);
+  top: calc(100% + 14px);
+  right: -6px;
+  min-width: 220px;
+  padding: 14px 12px;
+  border: none;
+  border-radius: 22px;
+  background: var(--color-primary, #6b4a3f);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
   z-index: 10;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  animation: bubble-pop 0.18s ease-out;
+}
+
+/* 尾巴：指向上方的三點按鈕 */
+.header-actions-menu::before {
+  content: "";
+  position: absolute;
+  top: -9px;
+  right: 20px;
+  width: 20px;
+  height: 12px;
+  background: inherit;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+@keyframes bubble-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .header-menu-item {
   width: 100%;
   text-align: left;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid transparent;
-  background: transparent;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: none;
+  background: #fff;
   font-size: 14px;
-  white-space: nowrap;
-  color: var(--color-text);
+  color: #2a2a2a;
   cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition:
+    background 0.2s,
+    transform 0.15s,
+    box-shadow 0.2s;
 
   &:hover {
-    background: var(--color-surface-hover);
+    background: #f5f5f5;
+    transform: translateX(3px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
   }
 
   &.danger {
     color: var(--color-error, #e53e3e);
 
     &:hover {
-      background: rgba(229, 62, 62, 0.1);
+      background: rgba(229, 62, 62, 0.08);
     }
   }
+}
+
+.header-menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.header-menu-group-title {
+  padding: 4px 12px 2px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: rgba(255, 255, 255, 0.78);
+  user-select: none;
+}
+
+.header-menu-group-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-left: 0;
+  padding-left: 0;
+  border-left: none;
+}
+
+.header-menu-group-content .header-menu-item {
+  font-size: 13px;
+}
+
+.header-menu-group-content .header-menu-item::before {
+  content: none;
+}
+
+.header-menu-divider {
+  height: 1px;
+  margin: 4px 8px;
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .header-btn {

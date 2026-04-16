@@ -255,6 +255,10 @@ const pinia = createPinia();
 app.use(PrimeVue, {
   theme: {
     preset: Aura,
+    options: {
+      // 僅在 <html class="app-dark"> 時啟用 PrimeVue 暗色，避免跟系統 prefers-color-scheme 綁定
+      darkModeSelector: ".app-dark",
+    },
   },
 });
 app.use(pinia);
