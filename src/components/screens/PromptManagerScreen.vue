@@ -1440,22 +1440,153 @@ async function resetAllToDefault() {
   }
 }
 
+const exportScope = ref<"current" | "all" | "custom">("current");
+
+watch(exportScope, (newScope) => {
+  if (newScope === "current") {
+    exportOptions.value = getDefaultExportOptionsForCurrentMode();
+  } else if (newScope === "all") {
+    exportOptions.value = {
+      globalPrompts: true,
+      globalOrder: true,
+      faceToFace: true,
+      diary: true,
+      summary: true,
+      events: true,
+      plurkPost: true,
+      plurkComment: true,
+      groupChat: true,
+      characterConfigs: true,
+    };
+  }
+});
+
 // 打開導出選擇模態框
 function openExportModal() {
+  exportScope.value = "current";
+  exportOptions.value = getDefaultExportOptionsForCurrentMode();
   showExportModal.value = true;
 }
 
+const EXPORT_MODE_META: Record<string, { label: string; icon: string }> = {
+  global: { label: "線上模式", icon: "💬" },
+  faceToFace: { label: "面對面模式", icon: "🤝" },
+  groupChat: { label: "群聊模式", icon: "👥" },
+  diary: { label: "角色日記", icon: "📔" },
+  summary: { label: "對話總結", icon: "📋" },
+  events: { label: "重要事件", icon: "⭐" },
+  plurkPost: { label: "噗浪發文", icon: "📝" },
+  plurkComment: { label: "噗浪評論", icon: "💭" },
+  characterConfigs: { label: "角色專屬配置", icon: "🎭" },
+};
+
+const currentExportModeKey = computed<string>(() => {
+  switch (selectedMode.value) {
+    case "global":
+    case "faceToFace":
+    case "groupChat":
+    case "diary":
+    case "summary":
+    case "events":
+    case "plurkPost":
+    case "plurkComment":
+      return selectedMode.value;
+    default:
+      return "characterConfigs";
+  }
+});
+
+const currentExportModeLabel = computed(() => {
+  const info = EXPORT_MODE_META[currentExportModeKey.value];
+  return info ? `${info.icon} ${info.label}` : "目前模式";
+});
+
+const selectedExportCount = computed(() => {
+  const opts = exportOptions.value;
+  let count = 0;
+  if (opts.globalPrompts || opts.globalOrder) count += 1;
+  if (opts.faceToFace) count += 1;
+  if (opts.groupChat) count += 1;
+  if (opts.diary) count += 1;
+  if (opts.summary) count += 1;
+  if (opts.events) count += 1;
+  if (opts.plurkPost) count += 1;
+  if (opts.plurkComment) count += 1;
+  if (opts.characterConfigs) count += 1;
+  return count;
+});
+
+function selectOnlyCurrentMode() {
+  exportOptions.value = getDefaultExportOptionsForCurrentMode();
+}
+
+function getDefaultExportOptionsForCurrentMode() {
+  const baseOptions = {
+    globalPrompts: false,
+    globalOrder: false,
+    faceToFace: false,
+    diary: false,
+    summary: false,
+    events: false,
+    plurkPost: false,
+    plurkComment: false,
+    groupChat: false,
+    characterConfigs: false,
+  };
+
+  switch (selectedMode.value) {
+    case "global":
+      return {
+        ...baseOptions,
+        globalPrompts: true,
+        globalOrder: true,
+      };
+    case "faceToFace":
+      return {
+        ...baseOptions,
+        faceToFace: true,
+      };
+    case "groupChat":
+      return {
+        ...baseOptions,
+        groupChat: true,
+      };
+    case "diary":
+      return {
+        ...baseOptions,
+        diary: true,
+      };
+    case "summary":
+      return {
+        ...baseOptions,
+        summary: true,
+      };
+    case "events":
+      return {
+        ...baseOptions,
+        events: true,
+      };
+    case "plurkPost":
+      return {
+        ...baseOptions,
+        plurkPost: true,
+      };
+    case "plurkComment":
+      return {
+        ...baseOptions,
+        plurkComment: true,
+      };
+    default:
+      return {
+        ...baseOptions,
+        characterConfigs: true,
+      };
+  }
+}
+
 function serializePromptContent(content: string): string {
-  if (content === "") {
-    return '""';
-  }
-  if (!content.includes("\n")) {
-    return JSON.stringify(content);
-  }
-  return `\`${content
-    .replace(/\\/g, "\\\\")
-    .replace(/`/g, "\\`")
-    .replace(/\$\{/g, "\\${")}\``;
+  const normalized = content.replace(/\r\n/g, "\n");
+  return JSON.stringify(normalized);
 }
 
 function buildPromptDefinitionsBlock(
@@ -3270,142 +3401,313 @@ watch(newPromptInsertMode, (mode) => {
             </div>
             <div class="modal-body">
               <div class="export-options">
-                <!-- 快捷操作 -->
-                <div class="export-quick-actions">
-                  <button
-                    class="text-btn primary"
-                    @click="toggleAllExportOptions(true)"
+                <!-- 高層次導出範圍選擇 -->
+                <div class="export-scope-cards">
+                  <label class="scope-card" :class="{ active: exportScope === 'current' }">
+                    <input type="radio" v-model="exportScope" value="current" />
+                    <span class="scope-icon">{{ EXPORT_MODE_META[currentExportModeKey]?.icon || '✨' }}</span>
+                    <span class="scope-content">
+                      <span class="scope-title">僅導出 {{ currentExportModeLabel }}</span>
+                      <span class="scope-desc">推薦，只會導出你目前正在編輯的模式設定，避免覆蓋其他模式</span>
+                    </span>
+                  </label>
+
+                  <label class="scope-card" :class="{ active: exportScope === 'all' }">
+                    <input type="radio" v-model="exportScope" value="all" />
+                    <span class="scope-icon">🌟</span>
+                    <span class="scope-content">
+                      <span class="scope-title">導出所有模式</span>
+                      <span class="scope-desc">包含線上、面對面、群聊等所有模組，適合完整備份與搬家</span>
+                    </span>
+                  </label>
+
+                  <label class="scope-card" :class="{ active: exportScope === 'custom' }">
+                    <input type="radio" v-model="exportScope" value="custom" />
+                    <span class="scope-icon">⚙️</span>
+                    <span class="scope-content">
+                      <span class="scope-title">自訂選擇</span>
+                      <span class="scope-desc">進階，自行勾選需要導出的特定模組組合</span>
+                    </span>
+                  </label>
+                </div>
+
+                <!-- 自訂選項區域 (僅在 custom 時顯示) -->
+                <div v-if="exportScope === 'custom'" class="custom-options-container">
+                  <!-- 快捷操作 + 計數 -->
+                  <div class="export-quick-actions">
+                    <button
+                      class="chip-btn"
+                      type="button"
+                      @click="toggleAllExportOptions(true)"
+                    >
+                      全選
+                    </button>
+                    <button
+                      class="chip-btn"
+                      type="button"
+                      @click="toggleAllExportOptions(false)"
+                    >
+                      取消全選
+                    </button>
+                  </div>
+
+                  <!-- 線上模式 -->
+                  <div
+                    class="export-section"
+                    :class="{ 'is-current-group': currentExportModeKey === 'global' }"
                   >
-                    全選
-                  </button>
-                  <button
-                    class="text-btn"
-                    @click="toggleAllExportOptions(false)"
-                  >
-                    取消全選
-                  </button>
-                </div>
+                    <div class="section-title">
+                      <span class="section-icon">💬</span>
+                      線上模式
+                      <span
+                        v-if="currentExportModeKey === 'global'"
+                        class="current-badge"
+                      >目前模式</span>
+                    </div>
+                    <label
+                      class="export-option"
+                      :class="{
+                        'is-current': currentExportModeKey === 'global',
+                        'is-checked': exportOptions.globalPrompts,
+                      }"
+                    >
+                      <input
+                        type="checkbox"
+                        v-model="exportOptions.globalPrompts"
+                      />
+                      <span class="option-icon">📦</span>
+                      <span class="option-content">
+                        <span class="option-name">提示詞定義</span>
+                        <span class="option-desc">所有提示詞的內容和設定</span>
+                      </span>
+                    </label>
+                    <label
+                      class="export-option"
+                      :class="{
+                        'is-current': currentExportModeKey === 'global',
+                        'is-checked': exportOptions.globalOrder,
+                      }"
+                    >
+                      <input
+                        type="checkbox"
+                        v-model="exportOptions.globalOrder"
+                      />
+                      <span class="option-icon">🔢</span>
+                      <span class="option-content">
+                        <span class="option-name">線上模式順序</span>
+                        <span class="option-desc">提示詞執行順序與啟用狀態</span>
+                      </span>
+                    </label>
+                  </div>
 
-                <!-- 線上模式配置 -->
-                <div class="export-section">
-                  <div class="section-title">線上模式配置</div>
-                  <label class="export-option">
-                    <input
-                      type="checkbox"
-                      v-model="exportOptions.globalPrompts"
-                    />
-                    <span class="option-content">
-                      <span class="option-name">提示詞定義</span>
-                      <span class="option-desc">所有提示詞的內容和設定</span>
-                    </span>
-                  </label>
-                  <label class="export-option">
-                    <input
-                      type="checkbox"
-                      v-model="exportOptions.globalOrder"
-                    />
-                    <span class="option-content">
-                      <span class="option-name">線上模式順序</span>
-                      <span class="option-desc">提示詞執行順序與啟用狀態</span>
-                    </span>
-                  </label>
-                </div>
+                  <!-- 特殊模式 -->
+                  <div class="export-section">
+                    <div class="section-title">
+                      <span class="section-icon">✨</span>
+                      特殊模式
+                    </div>
+                    <label
+                      class="export-option face-to-face"
+                      :class="{
+                        'is-current': currentExportModeKey === 'faceToFace',
+                        'is-checked': exportOptions.faceToFace,
+                      }"
+                    >
+                      <input type="checkbox" v-model="exportOptions.faceToFace" />
+                      <span class="option-icon">🤝</span>
+                      <span class="option-content">
+                        <span class="option-name">
+                          面對面模式
+                          <span
+                            v-if="currentExportModeKey === 'faceToFace'"
+                            class="current-badge"
+                          >目前</span>
+                        </span>
+                        <span class="option-desc">面對面聊天的提示詞和順序</span>
+                      </span>
+                    </label>
+                    <label
+                      class="export-option group-chat"
+                      :class="{
+                        'is-current': currentExportModeKey === 'groupChat',
+                        'is-checked': exportOptions.groupChat,
+                      }"
+                    >
+                      <input type="checkbox" v-model="exportOptions.groupChat" />
+                      <span class="option-icon">👥</span>
+                      <span class="option-content">
+                        <span class="option-name">
+                          群聊模式
+                          <span
+                            v-if="currentExportModeKey === 'groupChat'"
+                            class="current-badge"
+                          >目前</span>
+                        </span>
+                        <span class="option-desc">群聊模式的提示詞和順序</span>
+                      </span>
+                    </label>
+                    <label
+                      class="export-option diary"
+                      :class="{
+                        'is-current': currentExportModeKey === 'diary',
+                        'is-checked': exportOptions.diary,
+                      }"
+                    >
+                      <input type="checkbox" v-model="exportOptions.diary" />
+                      <span class="option-icon">📔</span>
+                      <span class="option-content">
+                        <span class="option-name">
+                          角色日記
+                          <span
+                            v-if="currentExportModeKey === 'diary'"
+                            class="current-badge"
+                          >目前</span>
+                        </span>
+                        <span class="option-desc">日記生成的提示詞和順序</span>
+                      </span>
+                    </label>
+                    <label
+                      class="export-option summary"
+                      :class="{
+                        'is-current': currentExportModeKey === 'summary',
+                        'is-checked': exportOptions.summary,
+                      }"
+                    >
+                      <input type="checkbox" v-model="exportOptions.summary" />
+                      <span class="option-icon">📋</span>
+                      <span class="option-content">
+                        <span class="option-name">
+                          對話總結
+                          <span
+                            v-if="currentExportModeKey === 'summary'"
+                            class="current-badge"
+                          >目前</span>
+                        </span>
+                        <span class="option-desc">總結功能的提示詞和順序</span>
+                      </span>
+                    </label>
+                    <label
+                      class="export-option events"
+                      :class="{
+                        'is-current': currentExportModeKey === 'events',
+                        'is-checked': exportOptions.events,
+                      }"
+                    >
+                      <input type="checkbox" v-model="exportOptions.events" />
+                      <span class="option-icon">⭐</span>
+                      <span class="option-content">
+                        <span class="option-name">
+                          重要事件
+                          <span
+                            v-if="currentExportModeKey === 'events'"
+                            class="current-badge"
+                          >目前</span>
+                        </span>
+                        <span class="option-desc">事件提取的提示詞和順序</span>
+                      </span>
+                    </label>
+                    <label
+                      class="export-option plurk-post"
+                      :class="{
+                        'is-current': currentExportModeKey === 'plurkPost',
+                        'is-checked': exportOptions.plurkPost,
+                      }"
+                    >
+                      <input type="checkbox" v-model="exportOptions.plurkPost" />
+                      <span class="option-icon">📝</span>
+                      <span class="option-content">
+                        <span class="option-name">
+                          噗浪發文
+                          <span
+                            v-if="currentExportModeKey === 'plurkPost'"
+                            class="current-badge"
+                          >目前</span>
+                        </span>
+                        <span class="option-desc">噗浪發文的提示詞和順序</span>
+                      </span>
+                    </label>
+                    <label
+                      class="export-option plurk-comment"
+                      :class="{
+                        'is-current': currentExportModeKey === 'plurkComment',
+                        'is-checked': exportOptions.plurkComment,
+                      }"
+                    >
+                      <input
+                        type="checkbox"
+                        v-model="exportOptions.plurkComment"
+                      />
+                      <span class="option-icon">💭</span>
+                      <span class="option-content">
+                        <span class="option-name">
+                          噗浪評論
+                          <span
+                            v-if="currentExportModeKey === 'plurkComment'"
+                            class="current-badge"
+                          >目前</span>
+                        </span>
+                        <span class="option-desc">噗浪評論的提示詞和順序</span>
+                      </span>
+                    </label>
+                  </div>
 
-                <!-- 特殊模式 -->
-                <div class="export-section">
-                  <div class="section-title">特殊模式</div>
-                  <label class="export-option face-to-face">
-                    <input type="checkbox" v-model="exportOptions.faceToFace" />
-                    <span class="option-content">
-                      <span class="option-name">面對面模式</span>
-                      <span class="option-desc">面對面聊天的提示詞和順序</span>
-                    </span>
-                  </label>
-                  <label class="export-option diary">
-                    <input type="checkbox" v-model="exportOptions.diary" />
-                    <span class="option-content">
-                      <span class="option-name">角色日記</span>
-                      <span class="option-desc">日記生成的提示詞和順序</span>
-                    </span>
-                  </label>
-                  <label class="export-option summary">
-                    <input type="checkbox" v-model="exportOptions.summary" />
-                    <span class="option-content">
-                      <span class="option-name">對話總結</span>
-                      <span class="option-desc">總結功能的提示詞和順序</span>
-                    </span>
-                  </label>
-                  <label class="export-option events">
-                    <input type="checkbox" v-model="exportOptions.events" />
-                    <span class="option-content">
-                      <span class="option-name">重要事件</span>
-                      <span class="option-desc">事件提取的提示詞和順序</span>
-                    </span>
-                  </label>
-                  <label class="export-option plurk-post">
-                    <input type="checkbox" v-model="exportOptions.plurkPost" />
-                    <span class="option-content">
-                      <span class="option-name">噗浪發文</span>
-                      <span class="option-desc">噗浪發文的提示詞和順序</span>
-                    </span>
-                  </label>
-                  <label class="export-option plurk-comment">
-                    <input
-                      type="checkbox"
-                      v-model="exportOptions.plurkComment"
-                    />
-                    <span class="option-content">
-                      <span class="option-name">噗浪評論</span>
-                      <span class="option-desc">噗浪評論的提示詞和順序</span>
-                    </span>
-                  </label>
-                  <label class="export-option group-chat">
-                    <input type="checkbox" v-model="exportOptions.groupChat" />
-                    <span class="option-content">
-                      <span class="option-name">群聊模式</span>
-                      <span class="option-desc">群聊模式的提示詞和順序</span>
-                    </span>
-                  </label>
-                </div>
-
-                <!-- 角色配置 -->
-                <div class="export-section">
-                  <div class="section-title">角色配置</div>
-                  <label class="export-option">
-                    <input
-                      type="checkbox"
-                      v-model="exportOptions.characterConfigs"
-                    />
-                    <span class="option-content">
-                      <span class="option-name">角色專屬配置</span>
-                      <span class="option-desc">各角色的自訂順序和覆蓋</span>
-                    </span>
-                  </label>
+                  <!-- 角色配置 -->
+                  <div class="export-section">
+                    <div class="section-title">
+                      <span class="section-icon">🎭</span>
+                      角色配置
+                    </div>
+                    <label
+                      class="export-option"
+                      :class="{ 'is-checked': exportOptions.characterConfigs }"
+                    >
+                      <input
+                        type="checkbox"
+                        v-model="exportOptions.characterConfigs"
+                      />
+                      <span class="option-icon">👤</span>
+                      <span class="option-content">
+                        <span class="option-name">角色專屬配置</span>
+                        <span class="option-desc">各角色的自訂順序和覆蓋</span>
+                      </span>
+                    </label>
+                  </div>
                 </div>
 
                 <!-- 導出格式 -->
                 <div class="export-section">
-                  <div class="section-title">導出格式</div>
-                  <label class="export-option">
+                  <div class="section-title">
+                    <span class="section-icon">📤</span>
+                    導出格式
+                  </div>
+                  <label
+                    class="export-option"
+                    :class="{ 'is-checked': exportFormat === 'json' }"
+                  >
                     <input
                       type="radio"
                       v-model="exportFormat"
                       value="json"
                     />
+                    <span class="option-icon">🧩</span>
                     <span class="option-content">
                       <span class="option-name">JSON</span>
-                      <span class="option-desc">標準 JSON 格式（可匯入）</span>
+                      <span class="option-desc">標準 JSON 格式（可直接匯入）</span>
                     </span>
                   </label>
-                  <label class="export-option">
+                  <label
+                    class="export-option"
+                    :class="{ 'is-checked': exportFormat === 'typescript' }"
+                  >
                     <input
                       type="radio"
                       v-model="exportFormat"
                       value="typescript"
                     />
+                    <span class="option-icon">📄</span>
                     <span class="option-content">
                       <span class="option-name">可複製替換文字</span>
-                      <span class="option-desc">輸出可直接複製並貼去覆蓋對應 .ts 檔案的文字內容</span>
+                      <span class="option-desc">輸出純文字，用來貼去覆蓋對應的 .ts 檔案</span>
                     </span>
                   </label>
                 </div>
@@ -3415,11 +3717,15 @@ watch(newPromptInsertMode, (mode) => {
               <button class="btn secondary" @click="showExportModal = false">
                 取消
               </button>
-              <button class="btn primary" @click="doExport">
+              <button
+                class="btn primary"
+                :disabled="selectedExportCount === 0"
+                @click="doExport"
+              >
                 <svg viewBox="0 0 24 24" fill="currentColor" class="btn-icon">
                   <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
                 </svg>
-                導出
+                導出 ({{ selectedExportCount }})
               </button>
             </div>
           </div>
@@ -5009,11 +5315,184 @@ watch(newPromptInsertMode, (mode) => {
   }
 }
 
+// 高層次導出範圍選擇卡片
+.export-scope-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.scope-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  border: 2px solid var(--color-border);
+  background: var(--color-bg);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  input[type="radio"] {
+    margin-top: 4px;
+    width: 20px;
+    height: 20px;
+    accent-color: var(--color-primary);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  &:hover {
+    border-color: var(--color-primary);
+    background: var(--color-bg-alt);
+  }
+
+  &.active {
+    border-color: var(--color-primary);
+    background: var(--color-primary-light);
+    box-shadow: 0 4px 12px rgba(var(--color-primary-rgb), 0.1);
+  }
+}
+
+.scope-icon {
+  font-size: 28px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.scope-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.scope-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.scope-desc {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.custom-options-container {
+  padding-top: 16px;
+  border-top: 1px dashed var(--color-border);
+  margin-top: -8px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.btn-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+
+  &:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+
+  &.primary {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+
+    &:hover {
+      opacity: 0.9;
+      color: #fff;
+    }
+  }
+}
+
+.chip-btn {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+}
+
+.selected-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--color-text-muted);
+
+  strong {
+    color: var(--color-primary);
+    font-weight: 600;
+  }
+}
+
+.section-icon {
+  margin-right: 6px;
+}
+
+.current-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+}
+
+.is-current-group .section-title {
+  color: var(--color-primary);
+}
+
+.option-icon {
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.export-option {
+  &.is-checked {
+    border-color: var(--color-primary);
+    background: var(--color-primary-light);
+  }
+
+  &.is-current {
+    box-shadow: 0 0 0 1px var(--color-primary) inset;
+  }
+}
+
 .option-content {
   display: flex;
   flex-direction: column;
   gap: 2px;
   flex: 1;
+  min-width: 0;
 }
 
 .option-name {
