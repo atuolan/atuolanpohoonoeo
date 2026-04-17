@@ -3609,8 +3609,6 @@ watch(newPromptInsertMode, (mode) => {
   padding: 14px 12px;
   border: none;
   border-radius: 22px;
-  background: var(--color-primary, #6b4a3f);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
   z-index: 10;
   display: flex;
   flex-direction: column;
@@ -3618,16 +3616,18 @@ watch(newPromptInsertMode, (mode) => {
   animation: bubble-pop 0.18s ease-out;
 }
 
-/* 尾巴：指向上方的三點按鈕 */
-.header-actions-menu::before {
+/* 產生邊緣羽化與背景的偽元素 */
+.header-actions-menu::after {
   content: "";
   position: absolute;
-  top: -9px;
-  right: 20px;
-  width: 20px;
-  height: 12px;
-  background: inherit;
-  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  inset: -2px; /* 稍微擴張讓邊界更柔和 */
+  border-radius: 24px;
+  background: color-mix(in srgb, color-mix(in hsl, var(--color-primary, #6b4a3f) 55%, white) 45%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  filter: blur(10px); /* 邊緣羽化核心 */
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.15); /* 陰影稍微調淡一點點 */
+  z-index: -1;
 }
 
 @keyframes bubble-pop {

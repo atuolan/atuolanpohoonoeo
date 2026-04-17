@@ -1,5 +1,6 @@
 import { ref, type Ref, type ComputedRef } from "vue";
 import { db, DB_STORES } from "@/db/database";
+import { deleteMessage } from "@/storage/chatMessageStorage";
 import type { Chat, ChatMessage } from "@/types/chat";
 
 /**
@@ -199,6 +200,8 @@ export function useChatMultiDelete(deps: {
       deps.messages.value = deps.messages.value.filter(
         (m: any) => !idsToDelete.has(m.id),
       );
+
+      await Promise.all(orderedIds.map((id) => deleteMessage(id)));
 
       // 嘗試回滾好感度到最早被刪訊息之前的快照
       const chatId = deps.currentChatId.value;
