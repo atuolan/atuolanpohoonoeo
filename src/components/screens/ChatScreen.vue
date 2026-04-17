@@ -1626,6 +1626,7 @@ interface WmSavedCity { name: string; lat?: number; lon?: number; }
 const wmCountry = ref<string>("");
 const wmSavedCities = ref<WmSavedCity[]>([]);
 const wmCountryOptions = computed(() => Object.keys(WORLD_CITIES));
+const wmUserScope = ref<"global" | "chat">("global");
 
 function loadWmSavedCities() {
   const saved = localStorage.getItem("weather_custom_cities");
@@ -1642,8 +1643,37 @@ function loadWmSavedCities() {
 
 watch(showWeatherModal, (v) => { if (v) loadWmSavedCities(); });
 
-function selectWmWorldCity(city: CityEntry, country: string) {
-  return selectWeatherCity({
+watch(showWeatherModal, (v) => {
+  if (v) {
+    wmUserScope.value = chatLocationOverride.value ? "chat" : "global";
+  }
+});
+
+async function setWeatherUserScope(scope: "global" | "chat") {
+  wmUserScope.value = scope;
+  if (scope === "global") {
+    await resetChatLocationOverride();
+  }
+}
+
+async function applyUserChatLocationOverride(city: {
+  name: string;
+  region?: string;
+  lat?: number;
+  lon?: number;
+}) {
+  const cityLabel = city.region ? `${city.name}, ${city.region}` : city.name;
+  chatLocationOverride.value = {
+    mode: city.lat !== undefined && city.lon !== undefined ? "browser" : "manual",
+    city: cityLabel,
+    lat: city.lat,
+    lon: city.lon,
+  };
+  await saveChatImmediate();
+}
+
+async function selectWmWorldCity(city: CityEntry, country: string) {
+  await selectWeatherCity({
     id: 0,
     name: city.name,
     region: country,
@@ -1651,11 +1681,19 @@ function selectWmWorldCity(city: CityEntry, country: string) {
     lat: city.lat,
     lon: city.lon,
   });
+  if (weatherEditTarget.value === "user" && wmUserScope.value === "chat") {
+    await applyUserChatLocationOverride({
+      name: city.name,
+      region: country,
+      lat: city.lat,
+      lon: city.lon,
+    });
+  }
 }
 
-function selectWmSavedCity(c: WmSavedCity) {
+async function selectWmSavedCity(c: WmSavedCity) {
   if (c.lat === undefined || c.lon === undefined) return;
-  return selectWeatherCity({
+  await selectWeatherCity({
     id: 0,
     name: c.name,
     region: "",
@@ -1663,6 +1701,13 @@ function selectWmSavedCity(c: WmSavedCity) {
     lat: c.lat,
     lon: c.lon,
   });
+  if (weatherEditTarget.value === "user" && wmUserScope.value === "chat") {
+    await applyUserChatLocationOverride({
+      name: c.name,
+      lat: c.lat,
+      lon: c.lon,
+    });
+  }
 }
 
 // ===== 聊天專屬頭像覆蓋 =====
@@ -1789,6 +1834,14 @@ const chatMinimaxTTSEnabled = ref(false); // 聊天專屬 MiniMax TTS（默認�
 
 // 聊天專屬位置覆蓋（null 表示使用全域設定）
 const chatLocationOverride = ref<ChatLocationOverride | null>(null);
+
+const hasChatLocationOverride = computed(() => chatLocationOverride.value !== null);
+
+async function resetChatLocationOverride() {
+  if (!chatLocationOverride.value) return;
+  chatLocationOverride.value = null;
+  await saveChatImmediate();
+}
 
 // ===== 好感度 =====
 import type {
@@ -11284,12 +11337,23 @@ onUnmounted(() => {
                   <span class="wm-card__icon"><User :size="16" /></span>
                   <span class="wm-card__who">我</span>
                   <button
+                    v-if="hasChatLocationOverride"
+                    class="wm-card__reset-btn"
+                    @click="resetChatLocationOverride"
+                    title="清除這個聊天的舊位置設定，改回讀取全域天氣"
+                  >
+                    重置為全域
+                  </button>
+                  <button
                     class="wm-card__edit-btn"
                     @click="startWeatherEdit('user')"
                     title="變更所在地"
                   >
                     <Pencil :size="14" />
                   </button>
+                </div>
+                <div class="wm-card__scope-text">
+                  {{ hasChatLocationOverride ? "目前使用此聊天單獨位置" : "目前跟隨全域天氣設定" }}
                 </div>
                 <template
                   v-if="
@@ -11442,6 +11506,36 @@ onUnmounted(() => {
                       ? "我"
                       : currentCharacter?.data?.name || "角色"
                   }}</b>
+                </div>
+
+                <div
+                  v-if="weatherEditTarget === 'user'"
+                  class="wm-scope-switch"
+                >
+                  <button
+                    class="wm-scope-switch__btn"
+                    :class="{ 'is-active': wmUserScope === 'global' }"
+                    @click="setWeatherUserScope('global')"
+                  >
+                    使用全域
+                  </button>
+                  <button
+                    class="wm-scope-switch__btn"
+                    :class="{ 'is-active': wmUserScope === 'chat' }"
+                    @click="setWeatherUserScope('chat')"
+                  >
+                    此聊天單獨
+                  </button>
+                </div>
+                <div
+                  v-if="weatherEditTarget === 'user'"
+                  class="wm-picker__hintline"
+                >
+                  {{
+                    wmUserScope === "chat"
+                      ? "接下來選的城市只會影響這個聊天。"
+                      : "接下來選的城市會更新全域天氣設定。"
+                  }}
                 </div>
 
                 <!-- 我的城市快選 -->
@@ -15000,6 +15094,43 @@ onUnmounted(() => {
   margin-bottom: 14px;
 }
 
+.wm-card__scope-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-primary, #5b8def);
+  background: color-mix(in srgb, var(--color-primary, #5b8def) 12%, transparent);
+  white-space: nowrap;
+}
+
+.wm-card__reset-btn {
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary, #666);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  min-width: 0;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+
+  &:hover {
+    color: var(--color-primary, #5b8def);
+  }
+}
+
+.wm-card__scope-text {
+  font-size: 12px;
+  opacity: 0.68;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
 .wm-card__icon {
   display: flex;
   align-items: center;
@@ -15012,6 +15143,11 @@ onUnmounted(() => {
 }
 
 .wm-card__avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
   width: 28px;
   height: 28px;
   border-radius: 8px;
@@ -15029,6 +15165,8 @@ onUnmounted(() => {
 }
 
 .wm-card__edit-btn {
+  margin-left: auto;
+  flex-shrink: 0;
   background: rgba(0, 0, 0, 0.03);
   border: none;
   width: 26px;
@@ -15132,6 +15270,36 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.wm-scope-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.wm-scope-switch__btn {
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--color-text-secondary, #666);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &.is-active {
+    color: var(--color-primary, #5b8def);
+    border-color: color-mix(in srgb, var(--color-primary, #5b8def) 50%, transparent);
+    background: color-mix(in srgb, var(--color-primary, #5b8def) 10%, white);
+  }
+}
+
+.wm-picker__hintline {
+  font-size: 12px;
+  color: var(--color-text-secondary, #777);
+  margin-top: -4px;
 }
 
 .wm-picker__label {
