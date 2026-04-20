@@ -63,6 +63,7 @@ import {
 import {
   createChatRecord,
   deleteChatCascade,
+  loadChatById,
   loadChatsByCharacter,
   resolvePreferredDirectChat,
   renameChat,
@@ -8713,12 +8714,6 @@ function buildChatMetadata(
  * 實際執行儲存的核心函數（內部實作，不應直接呼叫）
  */
 async function _saveChatImplInner() {
-  if (!currentChatId.value) {
-    currentChatId.value = `chat_${Date.now()}`;
-    chatVariablesStore.initForChat(currentChatId.value);
-    getMacroEngine().registerVarMacros(chatVariablesStore);
-  }
-
   const charName = currentCharacter.value?.data?.name || props.characterName;
   // 原子快照：先複製一份當前訊息陣列的引用，避免在 map 過程中
   // 被流式回覆的 splice/push 操作修改（競態條件防護）
@@ -8726,6 +8721,27 @@ async function _saveChatImplInner() {
   const storableMessages = messagesSnapshot.map((m) =>
     convertToStorableMessage(m, charName),
   );
+
+  if (!currentChatId.value) {
+    const directCharacterId = props.characterId || currentCharacter.value?.id || "";
+    if (directCharacterId) {
+      const preferredChat = await resolvePreferredDirectChat(directCharacterId);
+      if (preferredChat) {
+        currentChatId.value = preferredChat.id;
+        currentChatData.value = preferredChat;
+      }
+    }
+
+    if (!currentChatId.value) {
+      if (storableMessages.length === 0) {
+        _saveChatPending = false;
+        return;
+      }
+      currentChatId.value = `chat_${Date.now()}`;
+      chatVariablesStore.initForChat(currentChatId.value);
+      getMacroEngine().registerVarMacros(chatVariablesStore);
+    }
+  }
 
   try {
     // 圖片分離：將 base64 圖片提取到 imageCache 表，訊息中只存引用 ID

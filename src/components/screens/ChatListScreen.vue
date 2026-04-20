@@ -141,20 +141,7 @@ async function openChat(chat: Chat) {
     }
   }
 
-  // 釘選到列表的聊天：直接開啟該聊天，不被 lastActiveChatId 覆蓋
-  if (chat.pinnedToList) {
-    emit("openChat", chat.id, chat.characterId);
-    return;
-  }
-  // 讀取此角色上次使用的 chatId
-  await db.init();
-  const lastChatId = await db.get<string>(
-    DB_STORES.SETTINGS,
-    `lastActiveChatId_${chat.characterId}`,
-  );
-  // 有記錄且不是群聊就用上次的，否則用主列表的（最新）
-  const targetChatId = !chat.isGroupChat && lastChatId ? lastChatId : chat.id;
-  emit("openChat", targetChatId, chat.characterId);
+  emit("openChat", chat.id, chat.characterId);
 }
 
 // 開始新對話
