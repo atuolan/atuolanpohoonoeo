@@ -7,8 +7,8 @@ import type { APIMessage } from "@/api/OpenAICompatible";
 import { useCharactersStore } from "@/stores/characters";
 import {
   createChatRecord,
+  refreshChatDerivedMetadata,
   resolvePreferredDirectChat,
-  saveChatMetadata,
 } from "@/storage/chatStorage";
 import { appendMessages } from "@/storage/chatMessageStorage";
 import type {
@@ -696,11 +696,7 @@ export function useCompanionChat(
       };
 
       await appendMessages(targetChat.id, [syncMessage]);
-      targetChat.messageCount = (targetChat.messageCount || 0) + 1;
-      targetChat.lastMessagePreview = syncMessage.content?.slice(0, 100) || "";
-      targetChat.updatedAt = Date.now();
-      targetChat.messages = [];
-      await saveChatMetadata(targetChat);
+      await refreshChatDerivedMetadata(targetChat.id);
     } catch (e) {
       console.warn("[CompanionChat] syncToMainChat 失敗:", e);
     }

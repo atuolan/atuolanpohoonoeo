@@ -28,6 +28,7 @@ import {
   type SyncCharacterPayload,
   type SyncConversationSummaryPayload,
   type SyncChatMessagePayload,
+  type SyncableChatRecordSource,
   type SyncChatRecordPayload,
   type SyncDiaryEntryPayload,
   type SyncIdbStoreSnapshotPayload,
@@ -40,7 +41,7 @@ import {
   type SyncUserDataPayload,
 } from "@/types/selfHostedSync";
 
-export function toSyncChatRecordPayload(chat: Chat): SyncChatRecordPayload {
+export function toSyncChatRecordPayload(chat: SyncableChatRecordSource): SyncChatRecordPayload {
   return {
     id: chat.id,
     name: chat.name,
@@ -70,7 +71,7 @@ export function toSyncChatRecordPayload(chat: Chat): SyncChatRecordPayload {
 }
 
 export function toSyncChatRecordEnvelope(
-  chat: Chat,
+  chat: SyncableChatRecordSource,
   options?: { deletedAt?: number | null },
 ): SelfHostedSyncChatRecordEnvelope {
   return {

@@ -8,7 +8,7 @@ import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import { db, DB_STORES } from "@/db/database";
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import { parseAffinityUpdateTags } from "@/services/ResponseParser";
-import { loadChatById, saveChatMetadata } from "@/storage/chatStorage";
+import { loadChatById, refreshChatDerivedMetadata } from "@/storage/chatStorage";
 import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
@@ -362,11 +362,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
 
       // v24：用 appendChatMessages 追加通話記錄
       await appendMessages(chat.id, [callRecordMessage as any]);
-      chat.messageCount = (chat.messageCount || 0) + 1;
-      chat.lastMessagePreview = callRecordMessage.content?.slice(0, 100) || "";
-      chat.updatedAt = Date.now();
-      chat.messages = [];
-      await saveChatMetadata(chat);
+      await refreshChatDerivedMetadata(chat.id);
       console.log("[phoneCall] 通話記錄已寫入 chatMessages 表");
     } catch (e) {
       console.error("[phoneCall] 寫入通話記錄失敗", e);
@@ -1001,10 +997,7 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
       };
       // v24：用 appendChatMessages 追加通話記錄
       await appendMessages(chat.id, [callRecordMessage as any]);
-      chat.messageCount = (chat.messageCount || 0) + 1;
-      chat.updatedAt = Date.now();
-      chat.messages = [];
-      await saveChatMetadata(chat);
+      await refreshChatDerivedMetadata(chat.id);
     } catch { /* 忽略 */ }
   }
 

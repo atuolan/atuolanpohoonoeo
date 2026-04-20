@@ -4,7 +4,7 @@ import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
 import AuxiliaryApiPanel from "@/components/screens/AuxiliaryApiPanel.vue";
 import { clearAllData, db } from "@/db/database";
 import { extractImagesFromMessages } from "@/db/operations";
-import { saveChatMetadata } from "@/storage/chatStorage";
+import { refreshChatDerivedMetadata, saveChatMetadata } from "@/storage/chatStorage";
 import { saveMessages } from "@/storage/chatMessageStorage";
 import {
   checkPermission as checkBackupPermission,
@@ -2192,16 +2192,13 @@ async function handleFileImport(event: Event) {
           restoreChatMedia(chat, mediaFiles);
           // v24：訊息分離儲存
           const messagesToSave = chat.messages || [];
-          chat.lastMessagePreview =
-            messagesToSave[messagesToSave.length - 1]?.content?.slice(0, 100) ||
-            "";
-          chat.messageCount = messagesToSave.length;
           if (messagesToSave.length > 0) {
             const msgsForStorage = await extractImagesFromMessages(messagesToSave);
             await saveMessages(chat.id, msgsForStorage);
           }
           chat.messages = [];
           await saveChatMetadata(chat as any);
+          await refreshChatDerivedMetadata(chat.id);
           importedChatCount++;
         } catch (parseErr) {
           console.warn("[Import] 聊天檔案解析失敗，跳過:", parseErr);
@@ -2212,10 +2209,6 @@ async function handleFileImport(event: Event) {
     if (data.chats && Array.isArray(data.chats)) {
       for (const chat of data.chats) {
         const messagesToSave = chat.messages || [];
-        chat.lastMessagePreview =
-          messagesToSave[messagesToSave.length - 1]?.content?.slice(0, 100) ||
-          "";
-        chat.messageCount = messagesToSave.length;
         // v24：圖片分離 + 訊息分離儲存
         if (messagesToSave.length > 0) {
           const msgsForStorage = await extractImagesFromMessages(messagesToSave);
@@ -2223,6 +2216,7 @@ async function handleFileImport(event: Event) {
         }
         chat.messages = [];
         await saveChatMetadata(chat as any);
+        await refreshChatDerivedMetadata(chat.id);
         importedChatCount++;
       }
     }

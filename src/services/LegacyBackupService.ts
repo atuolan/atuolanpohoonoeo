@@ -10,7 +10,7 @@ import {
     type DiaryEntry,
 } from "@/db/database";
 import { extractImagesFromMessages } from "@/db/operations";
-import { saveChatMetadata } from "@/storage/chatStorage";
+import { refreshChatDerivedMetadata, saveChatMetadata } from "@/storage/chatStorage";
 import { saveMessages } from "@/storage/chatMessageStorage";
 import type { CharacterCardV2Data, StoredCharacter } from "@/types/character";
 import { createDefaultCharacterData } from "@/types/character";
@@ -1132,12 +1132,6 @@ export class LegacyBackupService {
             // 轉換聊天
             const chat = convertChat(legacy, extractedAvatars);
             const messagesToSave = chat.messages || [];
-            chat.lastMessagePreview =
-              messagesToSave[messagesToSave.length - 1]?.content?.slice(
-                0,
-                100,
-              ) || "";
-            chat.messageCount = messagesToSave.length;
             // v24：訊息分離儲存
             if (messagesToSave.length > 0) {
               const msgsForStorage = await extractImagesFromMessages(messagesToSave);
@@ -1145,6 +1139,7 @@ export class LegacyBackupService {
             }
             chat.messages = [];
             await saveChatMetadata(chat);
+            await refreshChatDerivedMetadata(chat.id);
             stats.chats++;
 
             // 提取並保存總結

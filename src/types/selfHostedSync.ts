@@ -121,8 +121,15 @@ export interface SelfHostedSyncHealthResponse {
   version?: string;
 }
 
-export type SyncChatRecordPayload = Pick<
+export type LocalOnlyChatFields = Pick<Chat, "unreadCount">;
+
+export type SyncableChatRecordSource = Omit<
   Chat,
+  keyof LocalOnlyChatFields | "messages" | "messageCount" | "lastMessagePreview"
+>;
+
+export type SyncChatRecordPayload = Pick<
+  SyncableChatRecordSource,
   | "id"
   | "name"
   | "characterId"

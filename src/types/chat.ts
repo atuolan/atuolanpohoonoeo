@@ -323,6 +323,10 @@ export interface ChatMessage {
   // --- 群聊相關 ---
   /** 發送者角色 ID（群聊時用於區分不同 AI 角色） */
   senderCharacterId?: string;
+  /** 發送者角色名稱快照（群聊匯入/離線顯示兜底） */
+  senderCharacterName?: string;
+  /** 發送者角色頭像快照（群聊匯入/離線顯示兜底） */
+  senderCharacterAvatar?: string;
   /** 是否為撤回訊息 */
   isRecall?: boolean;
   /** 撤回的原始內容 */
@@ -707,7 +711,7 @@ export interface Chat {
   /** 訊息總數（用於列表顯示） */
   messageCount?: number;
 
-  /** 未讀訊息數量（用於聊天列表顯示紅點/數字） */
+  /** 未讀訊息數量（本地 UI 狀態，不保證跨裝置同步） */
   unreadCount?: number;
 
   /** 封鎖狀態 */

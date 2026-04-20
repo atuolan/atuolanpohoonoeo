@@ -3,7 +3,13 @@
  * 負責管理角色的主動發訊息功能，包括定時檢查、夜間免打擾等
  */
 
-import { loadChatById, saveChatMetadata } from "@/storage/chatStorage";
+import {
+  incrementLocalChatUnreadCount,
+  createChatRecord,
+  loadChatById,
+  refreshChatDerivedMetadata,
+  saveChatMetadata,
+} from "@/storage/chatStorage";
 import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
 import { useCharactersStore } from "@/stores/characters";
 import { useChatStore } from "@/stores/chat";
@@ -886,23 +892,11 @@ export class ProactiveMessageService {
           // 更新 chat metadata（不含訊息）
           const freshChat = await loadChatById(chat.id);
           if (freshChat) {
-            freshChat.updatedAt = Date.now();
-            freshChat.unreadCount =
-              (freshChat.unreadCount || 0) + newMessages.length;
-            freshChat.messageCount =
-              (freshChat.messageCount || 0) + newMessages.length;
-            freshChat.lastMessagePreview = previewText;
-            freshChat.messages = [];
-            await saveChatMetadata(freshChat);
+            await refreshChatDerivedMetadata(chat.id);
+            await incrementLocalChatUnreadCount(chat.id, newMessages.length);
           } else {
-            // Chat 在生成期間被刪除，重建 metadata
-            chat.updatedAt = Date.now();
-            chat.unreadCount =
-              (chat.unreadCount || 0) + newMessages.length;
-            chat.messageCount = existingMessages.length + newMessages.length;
-            chat.lastMessagePreview = previewText;
-            chat.messages = [];
-            await saveChatMetadata(chat);
+            await refreshChatDerivedMetadata(chat.id);
+            await incrementLocalChatUnreadCount(chat.id, newMessages.length);
             console.warn(
               "[ProactiveMessage] Chat 在生成期間從 IDB 消失，重建 metadata",
             );

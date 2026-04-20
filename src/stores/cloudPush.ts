@@ -7,9 +7,10 @@ import { db, DB_STORES } from "@/db/database";
 import * as CloudPushService from "@/services/CloudPushService";
 import {
   createChatRecord,
+  incrementLocalChatUnreadCount,
   loadChatById,
+  refreshChatDerivedMetadata,
   resolvePreferredDirectChat,
-  saveChatMetadata,
 } from "@/storage/chatStorage";
 import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
 import type {
@@ -285,12 +286,8 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
           // 更新 chat metadata（不含訊息）
           const freshChat = await loadChatById(existingChatId);
           if (freshChat) {
-            freshChat.unreadCount = (freshChat.unreadCount || 0) + charMsgs.length;
-            freshChat.messageCount = (freshChat.messageCount || 0) + newMessages.length;
-            freshChat.lastMessagePreview = (newMessages[newMessages.length - 1] as any)?.content?.slice(0, 100) || "";
-            freshChat.updatedAt = Date.now();
-            freshChat.messages = [];
-            await saveChatMetadata(freshChat);
+            await refreshChatDerivedMetadata(existingChatId);
+            await incrementLocalChatUnreadCount(existingChatId, charMsgs.length);
           } else {
             // Chat 在讀取間被刪除，建立新聊天 metadata
             const newChat = {
@@ -301,12 +298,11 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
               metadata: {},
               createdAt: Date.now(),
               updatedAt: Date.now(),
-              unreadCount: charMsgs.length,
-              messageCount: newMessages.length,
-              lastMessagePreview: (newMessages[newMessages.length - 1] as any)?.content?.slice(0, 100) || "",
             };
             await createChatRecord(newChat as any);
             await appendMessages(existingChatId, newMessages as any[]);
+            await refreshChatDerivedMetadata(existingChatId);
+            await incrementLocalChatUnreadCount(existingChatId, charMsgs.length);
           }
         } else {
           // 建立新聊天 + 寫入 chatMessages
@@ -319,12 +315,11 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
             metadata: {},
             createdAt: Date.now(),
             updatedAt: Date.now(),
-            unreadCount: charMsgs.length,
-            messageCount: newMessages.length,
-            lastMessagePreview: (newMessages[newMessages.length - 1] as any)?.content?.slice(0, 100) || "",
           };
           await createChatRecord(newChat as any);
           await appendMessages(newChatId, newMessages as any[]);
+          await refreshChatDerivedMetadata(newChatId);
+          await incrementLocalChatUnreadCount(newChatId, charMsgs.length);
         }
       }
 

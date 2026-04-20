@@ -65,9 +65,11 @@ import {
   deleteChatCascade,
   loadChatById,
   loadChatsByCharacter,
+  refreshChatDerivedMetadata,
   resolvePreferredDirectChat,
   renameChat,
   saveChatMetadata,
+  setLocalChatUnreadCount,
   setLastActiveChatId,
   toggleChatPinned,
 } from "@/storage/chatStorage";
@@ -4903,17 +4905,12 @@ async function triggerAIResponse(options?: {
 
                   // v24：用 appendChatMessages 追加訊息（無競態風險）
                   await appendMessages(targetChat.id, newDmMessages);
-                  // 更新 metadata
-                  targetChat.lastMessagePreview =
-                    dmMessage.content?.slice(0, 100) || "";
-                  targetChat.messageCount =
-                    (targetChat.messageCount || 0) + newDmMessages.length;
-                  targetChat.updatedAt = Date.now();
-                  targetChat.messages = [];
                   if (existingChat) {
-                    await saveChatMetadata(targetChat);
+                    await refreshChatDerivedMetadata(targetChat.id);
                   } else {
+                    targetChat.messages = [];
                     await createChatRecord(targetChat);
+                    await refreshChatDerivedMetadata(targetChat.id);
                   }
                 } catch (e) {
                   console.warn("[ChatScreen] 無法插入私信到 1v1 聊天:", e);
@@ -5777,16 +5774,12 @@ async function triggerAIResponse(options?: {
 
                     // v24：用 appendChatMessages 追加訊息（無競態風險）
                     await appendMessages(targetChat.id, newDmMessages);
-                    targetChat.lastMessagePreview =
-                      dmMessage.content?.slice(0, 100) || "";
-                    targetChat.messageCount =
-                      (targetChat.messageCount || 0) + newDmMessages.length;
-                    targetChat.updatedAt = Date.now();
-                    targetChat.messages = [];
                     if (existingChat) {
-                      await saveChatMetadata(targetChat);
+                      await refreshChatDerivedMetadata(targetChat.id);
                     } else {
+                      targetChat.messages = [];
                       await createChatRecord(targetChat);
+                      await refreshChatDerivedMetadata(targetChat.id);
                     }
                   } catch (e) {
                     console.warn("[ChatScreen] 無法插入私信到 1v1 聊天:", e);
@@ -7742,9 +7735,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
         // 清除未讀計數（只更新 metadata，不寫入訊息）
         if (chat.unreadCount) {
           chat.unreadCount = 0;
-          const chatCopy = JSON.parse(JSON.stringify(chat));
-          chatCopy.messages = [];
-          await saveChatMetadata(chatCopy);
+          await setLocalChatUnreadCount(chat.id, 0);
         }
 
         // v24：從獨立的 chatMessages 表讀取訊息
@@ -7769,6 +7760,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
               );
               // 寫入獨立的 chatMessages 表
               await saveMessages(chat.id, recovered);
+              await refreshChatDerivedMetadata(chat.id);
             }
           } catch (recoverErr) {
             console.warn("[ChatScreen] messageChunks 恢復失敗:", recoverErr);
@@ -7832,6 +7824,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
             );
             // 回寫修復後的順序到 chatMessages 表
             await saveMessages(chat.id, rawMessages);
+            await refreshChatDerivedMetadata(chat.id);
             console.log("[ChatScreen] ✅ 已將修復後的訊息順序回寫到 chatMessages");
           }
         }
@@ -7988,9 +7981,9 @@ async function loadOrCreateChat(overrideChatId?: string) {
                   const c = charactersStore.characters.find(
                     (ch) => ch.id === m.senderCharacterId,
                   );
-                  return c?.data?.name || "";
+                  return c?.data?.name || m.senderCharacterName || "";
                 })()
-              : "",
+              : m.senderCharacterName || "",
             senderCharacterAvatar: m.senderCharacterId
               ? (() => {
                   // 多人卡模式：從 multiCharMembers 查找
@@ -8004,10 +7997,10 @@ async function loadOrCreateChat(overrideChatId?: string) {
                   return (
                     charactersStore.characters.find(
                       (ch) => ch.id === m.senderCharacterId,
-                    )?.avatar ?? ""
+                    )?.avatar ?? m.senderCharacterAvatar ?? ""
                   );
                 })()
-              : "",
+              : m.senderCharacterAvatar || "",
             isRecall: m.isRecall,
             recallContent: m.recallContent,
             isPrivateMessage: m.isPrivateMessage,
@@ -8568,6 +8561,8 @@ function convertToStorableMessage(m: any, charName: string): ChatMessage {
     avatarChangeMood: m.avatarChangeMood,
     avatarChangeDesc: m.avatarChangeDesc,
     senderCharacterId: m.senderCharacterId,
+    senderCharacterName: m.senderCharacterName,
+    senderCharacterAvatar: m.senderCharacterAvatar,
     isRecall: m.isRecall,
     recallContent: m.recallContent,
     isPrivateMessage: m.isPrivateMessage,
@@ -8825,6 +8820,7 @@ async function _saveChatImplInner() {
     // 2) 保存 chat metadata（不含訊息）到 chats 表
     plainChat.messages = [];
     await saveChatMetadata(plainChat);
+    await refreshChatDerivedMetadata(plainChat.id);
 
     // 保存後立即回讀驗證（僅開發環境）
     if (import.meta.env.DEV) {

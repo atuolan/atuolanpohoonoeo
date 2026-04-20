@@ -1,6 +1,14 @@
 import { db, DB_STORES } from "@/db/database";
 import { getAllQzonePosts, getSetting, saveQzonePost, saveSetting, deleteQzonePost } from "@/db/operations";
-import { deleteChatCascade, saveChatMetadata, loadAllChats, loadChatById } from "@/storage/chatStorage";
+import {
+  createChatRecord,
+  deleteChatCascade,
+  loadAllChats,
+  loadChatById,
+  loadChatsByCharacter,
+  refreshChatDerivedMetadata,
+  saveChatMetadata,
+} from "@/storage/chatStorage";
 import { deleteMessage, loadMessages, saveMessages } from "@/storage/chatMessageStorage";
 import { loadSettingsData, saveSettingsData } from "@/storage/settingsStorage";
 import {
@@ -818,6 +826,7 @@ export class SelfHostedSyncService {
     };
 
     await saveChatMetadata(nextChat);
+    await refreshChatDerivedMetadata(nextChat.id);
     return true;
   }
 
@@ -851,6 +860,7 @@ export class SelfHostedSyncService {
       (a, b) => (a.createdAt || 0) - (b.createdAt || 0),
     );
     await saveMessages(chatId, nextMessages);
+    await refreshChatDerivedMetadata(chatId);
     return changed;
   }
 

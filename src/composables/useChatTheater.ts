@@ -1,6 +1,6 @@
 import { ref, type Ref, type ComputedRef } from "vue";
 import { db, DB_STORES } from "@/db/database";
-import { createChatRecord } from "@/storage/chatStorage";
+import { createChatRecord, refreshChatDerivedMetadata } from "@/storage/chatStorage";
 import { appendMessages } from "@/storage/chatMessageStorage";
 import type { Chat, ChatMessage } from "@/types/chat";
 
@@ -169,14 +169,13 @@ export function useChatTheater(deps: {
           id: newChatId,
           name: `${chatData.name} [小劇場]`,
           messages: [],
-          lastMessagePreview: `小劇場：${content}`.slice(0, 50),
-          messageCount: branchMessages.length,
           createdAt: now,
           updatedAt: now,
           isBranch: true,
         };
         await createChatRecord(newChat);
         await appendMessages(newChatId, branchMessages);
+        await refreshChatDerivedMetadata(newChatId);
 
         if (theaterInheritSummary.value) {
           const srcChatId = deps.currentChatId.value || deps.chatId || "";

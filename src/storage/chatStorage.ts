@@ -52,6 +52,56 @@ export async function createChatRecord(
   }
 }
 
+export async function setLocalChatUnreadCount(
+  chatId: string,
+  unreadCount: number,
+): Promise<Chat | undefined> {
+  await db.init();
+  const chat = await db.get<Chat>(DB_STORES.CHATS, chatId);
+  if (!chat) return undefined;
+
+  chat.unreadCount = Math.max(0, unreadCount);
+  chat.messages = [];
+  await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
+  return chat;
+}
+
+export async function incrementLocalChatUnreadCount(
+  chatId: string,
+  delta: number,
+): Promise<Chat | undefined> {
+  await db.init();
+  const chat = await db.get<Chat>(DB_STORES.CHATS, chatId);
+  if (!chat) return undefined;
+
+  chat.unreadCount = Math.max(0, (chat.unreadCount || 0) + delta);
+  chat.messages = [];
+  await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
+  return chat;
+}
+
+export async function refreshChatDerivedMetadata(
+  chatId: string,
+): Promise<Chat | undefined> {
+  const chat = await loadChatById(chatId);
+  if (!chat) return undefined;
+
+  const messages = await loadMessages(chatId);
+  const lastMessage = messages[messages.length - 1];
+
+  chat.messageCount = messages.length;
+  chat.lastMessagePreview = lastMessage?.content?.slice(0, 100) || "";
+  chat.updatedAt = Math.max(
+    chat.updatedAt || 0,
+    lastMessage?.updatedAt || 0,
+    lastMessage?.createdAt || 0,
+  );
+  chat.messages = [];
+
+  await saveChatMetadata(chat);
+  return chat;
+}
+
 export async function renameChat(chatId: string, newName: string): Promise<Chat | undefined> {
   const chat = await loadChatById(chatId);
   if (!chat) return undefined;

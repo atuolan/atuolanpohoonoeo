@@ -14,7 +14,7 @@ import {
   extractImagesFromMessages,
   restoreImagesToMessages,
 } from "../db/operations";
-import { saveChatMetadata } from "../storage/chatStorage";
+import { refreshChatDerivedMetadata, saveChatMetadata } from "../storage/chatStorage";
 import { loadMessages, saveMessages } from "../storage/chatMessageStorage";
 import type {
   AffinityPostMutationRule,
@@ -1375,9 +1375,6 @@ export class ImportExportService {
 
       // v24：訊息分離儲存
       const messagesToSave = [...chat.messages];
-      chat.lastMessagePreview =
-        messagesToSave[messagesToSave.length - 1]?.content?.slice(0, 100) || "";
-      chat.messageCount = messagesToSave.length;
       // 圖片分離
       const messagesForStorage =
         await extractImagesFromMessages(messagesToSave);
@@ -1386,6 +1383,7 @@ export class ImportExportService {
       // chat metadata 寫入 chats 表（不含訊息）
       chat.messages = [];
       await saveChatMetadata(chat);
+      await refreshChatDerivedMetadata(chat.id);
 
       // 匯入總結
       let summaryCount = 0;
@@ -1669,12 +1667,9 @@ export class ImportExportService {
       const msgsForStorage = await extractImagesFromMessages(existingMessages);
       await saveMessages(targetChatId, msgsForStorage);
       chat.messages = [];
-      chat.lastMessagePreview =
-        existingMessages[existingMessages.length - 1]?.content?.slice(0, 100) ||
-        "";
-      chat.messageCount = existingMessages.length;
       chat.updatedAt = Date.now();
       await saveChatMetadata(chat);
+      await refreshChatDerivedMetadata(targetChatId);
 
       return { success: true, messageCount: messages.length };
     } catch (e) {
@@ -1900,11 +1895,9 @@ export class ImportExportService {
       const msgsForStorage = await extractImagesFromMessages(messages);
       await saveMessages(targetChatId, msgsForStorage);
       chat.messages = [];
-      chat.lastMessagePreview =
-        messages[messages.length - 1]?.content?.slice(0, 100) || "";
-      chat.messageCount = messages.length;
       chat.updatedAt = Date.now();
       await saveChatMetadata(chat);
+      await refreshChatDerivedMetadata(targetChatId);
 
       return { success: true, messageCount: messages.length };
     } catch (e) {
@@ -2036,13 +2029,11 @@ export class ImportExportService {
 
       // v24：訊息分離儲存
       const messagesToSave = [...importedMessages];
-      chat.lastMessagePreview =
-        messagesToSave[messagesToSave.length - 1]?.content?.slice(0, 100) || "";
-      chat.messageCount = messagesToSave.length;
       const msgsForStorage2 = await extractImagesFromMessages(messagesToSave);
       await saveMessages(chat.id, msgsForStorage2);
       chat.messages = [];
       await saveChatMetadata(chat);
+      await refreshChatDerivedMetadata(chat.id);
 
       return { success: true, chat, messageCount: messagesToSave.length };
     } catch (e) {

@@ -5,6 +5,7 @@ import { useCharactersStore, useLorebooksStore } from "@/stores";
 import type { Chat } from "@/types/chat";
 import { createDefaultGroupChat } from "@/types/chat";
 import { computed, onMounted, ref } from "vue";
+import { setLocalChatUnreadCount } from "@/storage/chatStorage";
 
 // Emits
 const emit = defineEmits<{
@@ -131,11 +132,7 @@ async function openChat(chat: Chat) {
   if (chat.unreadCount) {
     chat.unreadCount = 0;
     try {
-      const freshChat = await db.get<Chat>(DB_STORES.CHATS, chat.id);
-      if (freshChat) {
-        freshChat.unreadCount = 0;
-        await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(freshChat)));
-      }
+      await setLocalChatUnreadCount(chat.id, 0);
     } catch (e) {
       console.error("清除未讀失敗:", e);
     }
