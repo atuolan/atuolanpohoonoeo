@@ -28,6 +28,7 @@ import {
 import { useAIGenerationStore } from "@/stores/aiGeneration";
 import { useAuthStore } from "@/stores/auth";
 import { useGitHubBackupStore } from "@/stores/githubBackup";
+import { useSelfHostedSyncStore } from "@/stores/selfHostedSync";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 // 頁面組件
 import {
@@ -125,12 +126,47 @@ const notificationStore = useNotificationStore();
 
 // 驗證 store
 const authStore = useAuthStore();
+const selfHostedSyncStore = useSelfHostedSyncStore();
 
 // GitHub 雲端備份全局狀態
 const _ghBackupStore = useGitHubBackupStore();
 const ghBackupBusy = computed(() => _ghBackupStore.busy);
 const ghBackupPercent = computed(() => _ghBackupStore.percent);
 const ghBackupDisplayText = computed(() => _ghBackupStore.displayText);
+
+const SELF_HOSTED_FOREGROUND_PULL_COOLDOWN_MS = 15000;
+let lastSelfHostedForegroundPullAt = 0;
+
+async function tryForegroundPullSelfHostedSync() {
+  if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+    return;
+  }
+
+  const now = Date.now();
+  if (
+    now - lastSelfHostedForegroundPullAt < SELF_HOSTED_FOREGROUND_PULL_COOLDOWN_MS
+  ) {
+    return;
+  }
+
+  try {
+    await selfHostedSyncStore.loadSettings();
+    if (!selfHostedSyncStore.enabled || !selfHostedSyncStore.isAuthenticated) {
+      return;
+    }
+
+    lastSelfHostedForegroundPullAt = now;
+    await selfHostedSyncStore.pullNow(
+      selfHostedSyncStore.lastSyncAt ?? undefined,
+    );
+  } catch (error) {
+    console.warn("[App] 前景自架同步拉取失敗:", error);
+  }
+}
+
+function handleSelfHostedSyncForegroundResume() {
+  void tryForegroundPullSelfHostedSync();
+}
 
 // ===== 全局電話通話 =====
 const phoneCallStore = usePhoneCallStore();
@@ -936,10 +972,21 @@ onMounted(async () => {
   // 初始化驗證狀態
   await authStore.initialize();
 
+  if (typeof document !== "undefined") {
+    document.addEventListener(
+      "visibilitychange",
+      handleSelfHostedSyncForegroundResume,
+    );
+  }
+  if (typeof window !== "undefined") {
+    window.addEventListener("focus", handleSelfHostedSyncForegroundResume);
+  }
+
   // 已驗證則立即載入資料；未驗證則等 watch 觸發
   if (authStore.isAuthenticated) {
     await loadAppData();
     initializeBrowserHistory();
+    void tryForegroundPullSelfHostedSync();
   }
 
   // 監聽 SW 更新事件
@@ -963,6 +1010,15 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  if (typeof document !== "undefined") {
+    document.removeEventListener(
+      "visibilitychange",
+      handleSelfHostedSyncForegroundResume,
+    );
+  }
+  if (typeof window !== "undefined") {
+    window.removeEventListener("focus", handleSelfHostedSyncForegroundResume);
+  }
   globalLanguageDestroy?.();
   // 停止待處理來電檢查
   stopPendingCallChecker();
