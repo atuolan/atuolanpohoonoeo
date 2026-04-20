@@ -286,7 +286,7 @@ export function toSyncConversationSummaryEnvelope(
     entityId: summary.id,
     schemaVersion: SELF_HOSTED_SYNC_SCHEMA_VERSIONS.conversation_summary,
     createdAt: summary.createdAt,
-    updatedAt: summary.createdAt,
+    updatedAt: summary.updatedAt ?? summary.createdAt ?? Date.now(),
     deletedAt: options?.deletedAt ?? null,
     payload: toSyncConversationSummaryPayload(summary),
   };
@@ -326,7 +326,7 @@ export function toSyncDiaryEntryEnvelope(
     entityId: diary.id,
     schemaVersion: SELF_HOSTED_SYNC_SCHEMA_VERSIONS.diary_entry,
     createdAt: diary.createdAt,
-    updatedAt: diary.createdAt,
+    updatedAt: diary.updatedAt ?? diary.createdAt ?? Date.now(),
     deletedAt: options?.deletedAt ?? null,
     payload: toSyncDiaryEntryPayload(diary),
   };

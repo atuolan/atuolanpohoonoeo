@@ -85,6 +85,27 @@ export async function getLastActiveChatId(
   return db.get<string>(DB_STORES.SETTINGS, `lastActiveChatId_${characterId}`);
 }
 
+export async function resolvePreferredDirectChat(
+  characterId: string,
+): Promise<Chat | undefined> {
+  const chats = await loadChatsByCharacter(characterId, {
+    isGroupChat: false,
+  });
+  if (chats.length === 0) {
+    return undefined;
+  }
+
+  const lastActiveChatId = await getLastActiveChatId(characterId);
+  if (lastActiveChatId) {
+    const preferredChat = chats.find((chat) => chat.id === lastActiveChatId);
+    if (preferredChat) {
+      return preferredChat;
+    }
+  }
+
+  return chats[0];
+}
+
 export async function deleteChatCascade(
   chatId: string,
   options?: { suppressSyncDeletionRecord?: boolean },

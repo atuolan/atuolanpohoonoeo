@@ -7,7 +7,7 @@ import type { APIMessage } from "@/api/OpenAICompatible";
 import { useCharactersStore } from "@/stores/characters";
 import {
   createChatRecord,
-  loadChatsByCharacter,
+  resolvePreferredDirectChat,
   saveChatMetadata,
 } from "@/storage/chatStorage";
 import { appendMessages } from "@/storage/chatMessageStorage";
@@ -661,10 +661,7 @@ export function useCompanionChat(
       const bookTitle = options.book.value.title;
       const historyData = buildSyncData(bookTitle, core.messages);
 
-      const matchingChats = await loadChatsByCharacter(characterId, {
-        isGroupChat: false,
-      });
-      let targetChat: Chat | undefined = matchingChats[0];
+      let targetChat: Chat | undefined = await resolvePreferredDirectChat(characterId);
 
       if (!targetChat) {
         const charsStore = useCharactersStore();

@@ -192,6 +192,8 @@ export function useChatTheater(deps: {
                 ...s,
                 id: `${s.id}_theater_${now}`,
                 chatId: newChatId,
+                characterId: charIdForEvents,
+                updatedAt: now,
               }),
             ),
           );

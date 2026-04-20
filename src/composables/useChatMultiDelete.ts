@@ -105,6 +105,8 @@ export function useChatMultiDelete(deps: {
               ...s,
               id: `${s.id}_branch_${now}`,
               chatId: newChatId,
+              characterId: charId,
+              updatedAt: now,
             }),
           ),
         );
@@ -120,6 +122,8 @@ export function useChatMultiDelete(deps: {
               ...d,
               id: `${d.id}_branch_${now}`,
               chatId: newChatId,
+              characterId: charId,
+              updatedAt: now,
             }),
           ),
         );

@@ -138,7 +138,12 @@ export function useChatSummaryDiary(deps: {
   async function saveSummary(summary: SummaryItem) {
     const chatId = deps.currentChatId.value || deps.chatId || "";
     const charId = deps.characterId || deps.currentCharacter.value?.id || "";
-    const dbSummary = { ...summary, chatId, characterId: charId };
+    const dbSummary = {
+      ...summary,
+      chatId,
+      characterId: charId,
+      updatedAt: Date.now(),
+    };
     await db.put(DB_STORES.SUMMARIES, JSON.parse(JSON.stringify(dbSummary)));
     scheduleSelfHostedAutoSync();
     console.log("[SummaryDiary] 總結已保存:", summary.id);
@@ -165,7 +170,12 @@ export function useChatSummaryDiary(deps: {
   async function saveDiary(diary: DiaryItem) {
     const chatId = deps.currentChatId.value || deps.chatId || "";
     const charId = deps.characterId || deps.currentCharacter.value?.id || "";
-    const dbDiary = { ...diary, chatId, characterId: charId };
+    const dbDiary = {
+      ...diary,
+      chatId,
+      characterId: charId,
+      updatedAt: Date.now(),
+    };
     await db.put(DB_STORES.DIARIES, JSON.parse(JSON.stringify(dbDiary)));
     scheduleSelfHostedAutoSync();
     console.log("[SummaryDiary] 日記已保存:", diary.id);

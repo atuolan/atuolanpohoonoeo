@@ -8,6 +8,7 @@ import * as CloudPushService from "@/services/CloudPushService";
 import {
   createChatRecord,
   loadChatById,
+  resolvePreferredDirectChat,
   saveChatMetadata,
 } from "@/storage/chatStorage";
 import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
@@ -251,17 +252,6 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
 
       const { createDefaultMessage } = await import("@/types/chat");
 
-      // 寫入 IndexedDB
-      const allChats = await db.getAll<{
-        id: string;
-        characterId: string;
-        isGroupChat?: boolean;
-        messages: unknown[];
-        unreadCount?: number;
-        updatedAt: number;
-        [key: string]: unknown;
-      }>(DB_STORES.CHATS);
-
       // 按角色分組，避免同角色多條訊息互相覆蓋
       const grouped = new Map<string, typeof messages>();
       for (const msg of messages) {
@@ -271,12 +261,8 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
       }
 
       for (const [characterId, charMsgs] of grouped) {
-        // 找該角色最近的聊天（從快照中取 ID，寫入前再重新讀取）
-        const characterChats = allChats
-          .filter((c) => c.characterId === characterId && !c.isGroupChat)
-          .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-
-        const existingChatId = characterChats[0]?.id;
+        const preferredChat = await resolvePreferredDirectChat(characterId);
+        const existingChatId = preferredChat?.id;
 
         // 構建新訊息
         const newMessages: unknown[] = [];

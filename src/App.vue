@@ -74,6 +74,7 @@ import {
   loadAllChats,
   loadChatById,
   loadChatsByCharacter,
+  resolvePreferredDirectChat,
 } from "@/storage/chatStorage";
 import { useUserStore } from "@/stores";
 import { usePhoneCallStore } from "@/stores/phoneCall";
@@ -1182,11 +1183,12 @@ async function startChat(characterId: string) {
   const hasAlternateGreetings =
     (character.data?.alternate_greetings?.length ?? 0) > 0;
   if (existingChats.length === 1 && !hasAlternateGreetings) {
+    const preferredChat = await resolvePreferredDirectChat(characterId);
     chatCharacterName.value =
       character.nickname || character.data?.name || "角色";
     chatCharacterAvatar.value = character.avatar || "";
     currentChatCharacterId.value = characterId;
-    currentChatId.value = existingChats[0].id;
+    currentChatId.value = preferredChat?.id || existingChats[0].id;
     navigateToPage("chat");
     return;
   }
@@ -1356,11 +1358,8 @@ async function startPhoneCall(characterId: string) {
 
     // 查找該角色最近的聊天記錄
     try {
-      const characterChats = await loadChatsByCharacter(characterId, {
-        isGroupChat: false,
-      });
-      currentChatId.value =
-        characterChats.length > 0 ? characterChats[0].id : null;
+      const preferredChat = await resolvePreferredDirectChat(characterId);
+      currentChatId.value = preferredChat?.id || null;
     } catch (e) {
       console.warn("[App] 查找現有聊天失敗:", e);
       currentChatId.value = null;
@@ -1464,10 +1463,8 @@ async function resolveLatestDirectChatId(
   characterId: string,
 ): Promise<string | null> {
   try {
-    const characterChats = await loadChatsByCharacter(characterId, {
-      isGroupChat: false,
-    });
-    return characterChats.length > 0 ? characterChats[0].id : null;
+    const preferredChat = await resolvePreferredDirectChat(characterId);
+    return preferredChat?.id ?? null;
   } catch (e) {
     console.warn("[App] 查找現有聊天失敗:", e);
     return null;

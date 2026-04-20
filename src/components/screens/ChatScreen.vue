@@ -62,9 +62,13 @@ import {
 } from "@/db/operations";
 import {
   createChatRecord,
-  loadChatById,
+  deleteChatCascade,
   loadChatsByCharacter,
+  resolvePreferredDirectChat,
+  renameChat,
   saveChatMetadata,
+  setLastActiveChatId,
+  toggleChatPinned,
 } from "@/storage/chatStorage";
 import {
   appendMessages,
@@ -4852,10 +4856,7 @@ async function triggerAIResponse(options?: {
               // 嘗試找到對應角色的 1v1 聊天並插入訊息，找不到則自動建立
               if (senderCharId) {
                 try {
-                  const existingChats = await loadChatsByCharacter(senderCharId, {
-                    isGroupChat: false,
-                  });
-                  const existingChat = existingChats[0];
+                  const existingChat = await resolvePreferredDirectChat(senderCharId);
 
                   // 如果沒有 1v1 聊天，自動建立一個
                   const targetChat: Chat =
@@ -5733,10 +5734,7 @@ async function triggerAIResponse(options?: {
 
                 if (senderCharId) {
                   try {
-                    const existingChats = await loadChatsByCharacter(senderCharId, {
-                      isGroupChat: false,
-                    });
-                    const existingChat = existingChats[0];
+                    const existingChat = await resolvePreferredDirectChat(senderCharId);
 
                     const targetChat: Chat =
                       existingChat ||

@@ -1393,6 +1393,7 @@ export class ImportExportService {
         for (const summary of exportData.summaries as ConversationSummary[]) {
           summary.id = crypto.randomUUID();
           summary.chatId = chat.id;
+          summary.characterId = chat.characterId || "";
           await db.put(DB_STORES.SUMMARIES, summary);
           summaryCount++;
         }
@@ -1404,6 +1405,7 @@ export class ImportExportService {
         for (const diary of exportData.diaries as DiaryEntry[]) {
           diary.id = crypto.randomUUID();
           diary.chatId = chat.id;
+          diary.characterId = chat.characterId || "";
           await db.put(DB_STORES.DIARIES, diary);
           diaryCount++;
         }

@@ -34,6 +34,7 @@ export interface ConversationSummary {
   characterId: string;
   content: string;
   createdAt: number;
+  updatedAt?: number;
   messageCount: number;
   isImportant?: boolean;
   isManual?: boolean;
@@ -48,6 +49,7 @@ export interface DiaryEntry {
   characterId: string;
   content: string;
   createdAt: number;
+  updatedAt?: number;
   messageCount: number;
   isFavorite?: boolean;
   status: "writing" | "ready";
