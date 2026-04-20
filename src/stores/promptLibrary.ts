@@ -1,6 +1,10 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { db, DB_STORES } from "@/db/database";
+import {
+  recordDeletedEntity,
+  scheduleSelfHostedAutoSync,
+} from "@/services/selfHostedSyncState";
 import type { PromptDefinition } from "@/types/promptManager";
 
 /**
@@ -40,6 +44,7 @@ export const usePromptLibraryStore = defineStore("promptLibrary", () => {
       const plain = JSON.parse(JSON.stringify(def)) as PromptDefinition;
       await db.put(DB_STORES.PROMPT_LIBRARY, plain, plain.identifier);
       items.value[plain.identifier] = plain;
+      scheduleSelfHostedAutoSync();
     } catch (e) {
       console.error("[PromptLibraryStore] Failed to upsert:", e);
     }
@@ -48,10 +53,23 @@ export const usePromptLibraryStore = defineStore("promptLibrary", () => {
   async function remove(identifier: string): Promise<void> {
     try {
       await db.init();
+      const existing = items.value[identifier] ?? await db.get<PromptDefinition>(DB_STORES.PROMPT_LIBRARY, identifier);
+      if (!existing) {
+        return;
+      }
       await db.delete(DB_STORES.PROMPT_LIBRARY, identifier);
       const next = { ...items.value };
       delete next[identifier];
       items.value = next;
+      const deletedAt = Date.now();
+      await recordDeletedEntity({
+        entityType: "prompt_library_item",
+        entityId: identifier,
+        updatedAt: deletedAt,
+        deletedAt,
+        payload: null,
+      });
+      scheduleSelfHostedAutoSync();
     } catch (e) {
       console.error("[PromptLibraryStore] Failed to remove:", e);
     }
@@ -60,8 +78,20 @@ export const usePromptLibraryStore = defineStore("promptLibrary", () => {
   async function clear(): Promise<void> {
     try {
       await db.init();
+      const identifiers = Object.keys(items.value);
       await db.clear(DB_STORES.PROMPT_LIBRARY);
       items.value = {};
+      const deletedAt = Date.now();
+      for (const identifier of identifiers) {
+        await recordDeletedEntity({
+          entityType: "prompt_library_item",
+          entityId: identifier,
+          updatedAt: deletedAt,
+          deletedAt,
+          payload: null,
+        });
+      }
+      scheduleSelfHostedAutoSync();
     } catch (e) {
       console.error("[PromptLibraryStore] Failed to clear:", e);
     }

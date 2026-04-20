@@ -39,6 +39,8 @@ export * from "./astroDice";
 export * from "./lenormand";
 // 雲端推送鬧鐘類型
 export * from "./cloudPush";
+// 自架同步類型
+export * from "./selfHostedSync";
 // 番茄鐘類型
 export * from "./pomodoro";
 // 封鎖系統類型

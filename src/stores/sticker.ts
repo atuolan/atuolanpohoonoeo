@@ -6,6 +6,10 @@ import {
 } from "@/data/defaultStickers";
 import { emojiCategories } from "@/data/emojis";
 import { db, DB_STORES } from "@/db/database";
+import {
+  recordDeletedEntity,
+  scheduleSelfHostedAutoSync,
+} from "@/services/selfHostedSyncState";
 import type { StickerCategory, StickerItem } from "@/types/sticker";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
@@ -175,6 +179,7 @@ export const useStickerStore = defineStore("sticker", () => {
     try {
       const plainCategory = JSON.parse(JSON.stringify(category));
       await db.put(DB_STORES.STICKERS, plainCategory);
+      scheduleSelfHostedAutoSync();
     } catch (e) {
       console.error("[StickerStore] 保存分類失敗:", e);
     }
@@ -251,6 +256,15 @@ export const useStickerStore = defineStore("sticker", () => {
 
     customCategories.value.splice(index, 1);
     await db.delete(DB_STORES.STICKERS, categoryId);
+    const deletedAt = Date.now();
+    await recordDeletedEntity({
+      entityType: "sticker_category",
+      entityId: categoryId,
+      updatedAt: deletedAt,
+      deletedAt,
+      payload: null,
+    });
+    scheduleSelfHostedAutoSync();
   }
 
   // 重命名分類
@@ -299,13 +313,23 @@ export const useStickerStore = defineStore("sticker", () => {
   async function resetToDefault() {
     try {
       // 清除所有自定義分類
+      const deletedAt = Date.now();
       for (const category of customCategories.value) {
         await db.delete(DB_STORES.STICKERS, category.id);
+        await recordDeletedEntity({
+          entityType: "sticker_category",
+          entityId: category.id,
+          updatedAt: deletedAt,
+          deletedAt,
+          payload: null,
+        });
       }
       customCategories.value = [];
 
       // 重新創建默認分類
       await createDefaultCustomCategory();
+
+      scheduleSelfHostedAutoSync();
 
       console.log("[StickerStore] 已重置為默認表情包");
     } catch (e) {

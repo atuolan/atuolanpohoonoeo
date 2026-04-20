@@ -32,6 +32,7 @@ import {
   useUserStore,
 } from "@/stores";
 import { useCloudPushStore } from "@/stores/cloudPush";
+import { useSelfHostedSyncStore } from "@/stores/selfHostedSync";
 import { useThemeStore } from "@/stores/theme";
 import type { APIProvider } from "@/types/settings";
 import {
@@ -62,6 +63,7 @@ const userStore = useUserStore();
 const themeStore = useThemeStore();
 const notificationStore = useNotificationStore();
 const cloudPushStore = useCloudPushStore();
+const selfHostedSyncStore = useSelfHostedSyncStore();
 
 // Debug Overlay 狀態
 const debugOverlayActive = ref(isDebugOverlayActive());
@@ -156,6 +158,49 @@ function handleShowPermissionGuide() {
 const cloudPushSyncStatus = ref(cloudPushStore.syncStatus);
 const cloudPushSyncError = ref(cloudPushStore.syncError);
 const cloudPushNextAlarm = ref(cloudPushStore.nextAlarm);
+const selfHostedSyncPassword = ref("");
+const selfHostedSyncActionStatus = ref<"idle" | "running">("idle");
+
+const selfHostedSyncCanTestConnection = computed(
+  () => selfHostedSyncActionStatus.value === "idle" && !!selfHostedSyncStore.serverUrl,
+);
+const selfHostedSyncCanAuth = computed(
+  () =>
+    selfHostedSyncActionStatus.value === "idle" &&
+    !!selfHostedSyncStore.serverUrl &&
+    !!selfHostedSyncStore.username &&
+    !!selfHostedSyncPassword.value.trim(),
+);
+const selfHostedSyncCanOperate = computed(
+  () =>
+    selfHostedSyncActionStatus.value === "idle" &&
+    selfHostedSyncStore.isAuthenticated,
+);
+const selfHostedSyncServerStatusText = computed(() => {
+  if (selfHostedSyncStore.serverStatusOk === null) {
+    return "尚未取得";
+  }
+  return selfHostedSyncStore.serverStatusOk ? "正常" : "異常";
+});
+
+const selfHostedSyncStatusText = computed(() => {
+  if (selfHostedSyncStore.syncStatus === "syncing") {
+    return "同步中…";
+  }
+  if (selfHostedSyncStore.syncStatus === "connecting") {
+    return "連線中…";
+  }
+  if (selfHostedSyncStore.syncStatus === "success") {
+    if (selfHostedSyncStore.lastSyncAt) {
+      return `已同步 · ${formatDateTime(selfHostedSyncStore.lastSyncAt)}`;
+    }
+    return "操作成功";
+  }
+  if (selfHostedSyncStore.syncStatus === "error") {
+    return selfHostedSyncStore.syncError || "同步失敗";
+  }
+  return selfHostedSyncStore.isAuthenticated ? "已登入，尚未同步" : "尚未登入";
+});
 
 function handleCloudPushToggle() {
   if (!cloudPushStore.enabled) {
@@ -239,10 +284,123 @@ async function handleUnlinkDiscord() {
   }
 }
 
+async function handleSelfHostedTestConnection() {
+  selfHostedSyncActionStatus.value = "running";
+  try {
+    await selfHostedSyncStore.testConnection();
+  } catch (error) {
+    console.error("[SettingsScreen] Self-hosted sync 測試連線失敗:", error);
+  } finally {
+    selfHostedSyncActionStatus.value = "idle";
+  }
+}
+
+async function handleSelfHostedUseLocalServer() {
+  selfHostedSyncStore.setServerUrl("http://127.0.0.1:3004");
+  await selfHostedSyncStore.saveSettings();
+}
+
+async function handleSelfHostedRegister() {
+  if (!selfHostedSyncPassword.value.trim()) {
+    alert("請先輸入同步密碼");
+    return;
+  }
+
+  selfHostedSyncActionStatus.value = "running";
+  try {
+    await selfHostedSyncStore.register(selfHostedSyncPassword.value);
+    selfHostedSyncPassword.value = "";
+  } catch (error) {
+    console.error("[SettingsScreen] Self-hosted sync 註冊失敗:", error);
+  } finally {
+    selfHostedSyncActionStatus.value = "idle";
+  }
+}
+
+async function handleSelfHostedLogin() {
+  if (!selfHostedSyncPassword.value.trim()) {
+    alert("請先輸入同步密碼");
+    return;
+  }
+
+  selfHostedSyncActionStatus.value = "running";
+  try {
+    await selfHostedSyncStore.login(selfHostedSyncPassword.value);
+    selfHostedSyncPassword.value = "";
+  } catch (error) {
+    console.error("[SettingsScreen] Self-hosted sync 登入失敗:", error);
+  } finally {
+    selfHostedSyncActionStatus.value = "idle";
+  }
+}
+
+async function handleSelfHostedLogout() {
+  selfHostedSyncActionStatus.value = "running";
+  try {
+    await selfHostedSyncStore.logout();
+    selfHostedSyncPassword.value = "";
+  } catch (error) {
+    console.error("[SettingsScreen] Self-hosted sync 登出失敗:", error);
+  } finally {
+    selfHostedSyncActionStatus.value = "idle";
+  }
+}
+
+async function handleSelfHostedRefreshStatus() {
+  selfHostedSyncActionStatus.value = "running";
+  try {
+    await selfHostedSyncStore.refreshStatus();
+  } catch (error) {
+    console.error("[SettingsScreen] Self-hosted sync 狀態刷新失敗:", error);
+  } finally {
+    selfHostedSyncActionStatus.value = "idle";
+  }
+}
+
+async function handleSelfHostedPushNow() {
+  selfHostedSyncActionStatus.value = "running";
+  try {
+    await selfHostedSyncStore.pushNow();
+  } catch (error) {
+    console.error("[SettingsScreen] Self-hosted sync push 失敗:", error);
+  } finally {
+    selfHostedSyncActionStatus.value = "idle";
+  }
+}
+
+async function handleSelfHostedPullNow() {
+  selfHostedSyncActionStatus.value = "running";
+  try {
+    await selfHostedSyncStore.pullNow();
+  } catch (error) {
+    console.error("[SettingsScreen] Self-hosted sync pull 失敗:", error);
+  } finally {
+    selfHostedSyncActionStatus.value = "idle";
+  }
+}
+
+async function handleSelfHostedSyncNow() {
+  selfHostedSyncActionStatus.value = "running";
+  try {
+    await selfHostedSyncStore.syncNow();
+  } catch (error) {
+    console.error("[SettingsScreen] Self-hosted sync 手動同步失敗:", error);
+  } finally {
+    selfHostedSyncActionStatus.value = "idle";
+  }
+}
+
 function formatNextAlarm(ts: number | null): string {
   if (!ts) return "";
   const d = new Date(ts);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function formatDateTime(ts: number | null): string {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function playRingtonePatternChunk(
@@ -1041,6 +1199,7 @@ async function handleGhDelete(backupPath: string, backupName: string) {
 onMounted(async () => {
   await settingsStore.loadSettings();
   await cloudPushStore.loadSettings();
+  await selfHostedSyncStore.loadSettings();
   await refreshStorageStatus();
 
   // 初始化系統通知權限狀態
@@ -5287,6 +5446,167 @@ function useClonedVoice(voiceId: string) {
             <div v-if="ghBusy && ghProgress" class="backup-progress-info">
               <span class="backup-progress-spinner" />
               <span>{{ ghProgress }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 自架同步 -->
+        <div class="push-notification-card cloud-push-card" style="margin-top: 16px">
+          <div class="toggle-item highlight">
+            <div class="toggle-content">
+              <span class="toggle-label">自架同步</span>
+              <span class="toggle-desc">
+                使用你自己的同步伺服器，同步聊天與偏好設定
+              </span>
+            </div>
+            <label class="toggle-item" style="padding: 0; border: none">
+              <input
+                v-model="selfHostedSyncStore.enabled"
+                type="checkbox"
+                class="toggle-input"
+                @change="selfHostedSyncStore.saveSettings()"
+              />
+              <span class="toggle-switch"></span>
+            </label>
+          </div>
+
+          <div class="cloud-push-options">
+            <div class="setting-group">
+              <label class="setting-label">伺服器 URL</label>
+              <input
+                :value="selfHostedSyncStore.serverUrl"
+                type="url"
+                class="soft-input"
+                placeholder="https://your-sync-server.example.com"
+                @input="selfHostedSyncStore.setServerUrl(($event.target as HTMLInputElement).value)"
+                @change="selfHostedSyncStore.saveSettings()"
+              />
+              <div class="cloud-push-actions" style="margin-top: 8px">
+                <button
+                  class="push-permission-btn test"
+                  :disabled="selfHostedSyncActionStatus === 'running'"
+                  @click="handleSelfHostedUseLocalServer"
+                >
+                  使用本機伺服器（127.0.0.1:3004）
+                </button>
+              </div>
+            </div>
+
+            <div class="setting-group">
+              <label class="setting-label">同步帳號</label>
+              <input
+                :value="selfHostedSyncStore.username"
+                type="text"
+                class="soft-input"
+                placeholder="輸入你的同步帳號"
+                @input="selfHostedSyncStore.setUsername(($event.target as HTMLInputElement).value)"
+                @change="selfHostedSyncStore.saveSettings()"
+              />
+            </div>
+
+            <div class="setting-group">
+              <label class="setting-label">同步密碼</label>
+              <input
+                v-model="selfHostedSyncPassword"
+                type="password"
+                class="soft-input"
+                placeholder="只保留在目前頁面，不會寫入本地設定"
+              />
+            </div>
+
+            <div class="cloud-push-actions" style="flex-wrap: wrap">
+              <button
+                class="push-permission-btn"
+                :disabled="!selfHostedSyncCanTestConnection"
+                @click="handleSelfHostedTestConnection"
+              >
+                {{ selfHostedSyncActionStatus === "running" ? "處理中…" : "測試連線" }}
+              </button>
+              <button
+                v-if="selfHostedSyncStore.isAuthenticated"
+                class="push-permission-btn test"
+                :disabled="!selfHostedSyncCanOperate"
+                @click="handleSelfHostedRefreshStatus"
+              >
+                刷新狀態
+              </button>
+              <button
+                class="push-permission-btn test"
+                :disabled="!selfHostedSyncCanAuth"
+                @click="handleSelfHostedRegister"
+              >
+                註冊
+              </button>
+              <button
+                class="push-permission-btn test"
+                :disabled="!selfHostedSyncCanAuth"
+                @click="handleSelfHostedLogin"
+              >
+                登入
+              </button>
+              <button
+                v-if="selfHostedSyncStore.isAuthenticated"
+                class="push-permission-btn test"
+                :disabled="!selfHostedSyncCanOperate"
+                @click="handleSelfHostedLogout"
+              >
+                登出
+              </button>
+            </div>
+
+            <div
+              v-if="selfHostedSyncStore.isAuthenticated"
+              class="cloud-push-actions"
+              style="flex-wrap: wrap"
+            >
+              <button
+                class="push-permission-btn"
+                :disabled="!selfHostedSyncCanOperate"
+                @click="handleSelfHostedPushNow"
+              >
+                Push
+              </button>
+              <button
+                class="push-permission-btn test"
+                :disabled="!selfHostedSyncCanOperate"
+                @click="handleSelfHostedPullNow"
+              >
+                Pull
+              </button>
+              <button
+                class="push-permission-btn test"
+                :disabled="!selfHostedSyncCanOperate"
+                @click="handleSelfHostedSyncNow"
+              >
+                手動同步
+              </button>
+            </div>
+
+            <div class="cloud-push-status">
+              <span
+                v-if="selfHostedSyncStore.syncStatus === 'error'"
+                style="color: #ff6b6b"
+              >
+                {{ selfHostedSyncStatusText }}
+              </span>
+              <span v-else>
+                {{ selfHostedSyncStatusText }}
+              </span>
+            </div>
+
+            <div class="cloud-push-status" style="font-size: 11px; margin-top: 4px">
+              <div>伺服器狀態：{{ selfHostedSyncServerStatusText }}</div>
+              <div v-if="selfHostedSyncStore.serverApiVersion">
+                API 版本：{{ selfHostedSyncStore.serverApiVersion }}
+              </div>
+              <div v-if="selfHostedSyncStore.lastServerTime">
+                伺服器時間：{{ formatDateTime(selfHostedSyncStore.lastServerTime) }}
+              </div>
+              <div v-if="selfHostedSyncStore.lastConnectionCheckAt">
+                最近檢查：{{ formatDateTime(selfHostedSyncStore.lastConnectionCheckAt) }}
+              </div>
+              <div>Device ID：{{ selfHostedSyncStore.deviceId || "尚未建立" }}</div>
+              <div v-if="selfHostedSyncStore.userId">User ID：{{ selfHostedSyncStore.userId }}</div>
             </div>
           </div>
         </div>

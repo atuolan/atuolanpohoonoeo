@@ -354,6 +354,51 @@ export const DB_STORES = {
   CHAT_MESSAGES: "chatMessages",
 } as const;
 
+const SELF_HOSTED_SYNC_SNAPSHOT_STORES = new Set<string>([
+  DB_STORES.SETTINGS,
+  DB_STORES.APP_SETTINGS,
+]);
+
+const SELF_HOSTED_SYNC_EXCLUDED_APP_SETTINGS_KEYS = new Set<string>([
+  "self-hosted-sync-settings",
+  "self-hosted-sync-deleted-entities",
+  "main-settings",
+]);
+
+function shouldScheduleSelfHostedSyncForStore(storeName: string, key?: string): boolean {
+  if (!SELF_HOSTED_SYNC_SNAPSHOT_STORES.has(storeName)) {
+    return false;
+  }
+
+  if (
+    storeName === DB_STORES.APP_SETTINGS &&
+    key &&
+    SELF_HOSTED_SYNC_EXCLUDED_APP_SETTINGS_KEYS.has(key)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+async function scheduleSelfHostedSyncForStoreChange(
+  storeName: string,
+  key?: string,
+): Promise<void> {
+  if (!shouldScheduleSelfHostedSyncForStore(storeName, key)) {
+    return;
+  }
+
+  try {
+    const { scheduleSelfHostedAutoSync } = await import(
+      "@/services/selfHostedSyncState"
+    );
+    scheduleSelfHostedAutoSync();
+  } catch (error) {
+    console.warn("[db] 無法觸發 self-hosted auto sync:", error);
+  }
+}
+
 // ============================================================
 // 資料庫實例
 // ============================================================
@@ -1131,6 +1176,22 @@ export const db = {
   },
 
   /**
+   * 獲取所有 key（帶重試）
+   */
+  async getAllKeys(storeName: string): Promise<IDBValidKey[]> {
+    if (!this._instance) await this.init();
+    if (!this._instance) return [];
+    try {
+      return await this._instance.getAllKeys(storeName as any);
+    } catch (e) {
+      console.warn(`[db] getAllKeys(${storeName}) 失敗，嘗試重新連接:`, e);
+      await this.reconnect();
+      if (!this._instance) return [];
+      return this._instance.getAllKeys(storeName as any);
+    }
+  },
+
+  /**
    * 新增或更新記錄
    * @param storeName - store 名稱
    * @param value - 要存儲的值
@@ -1142,11 +1203,13 @@ export const db = {
     // 防禦性深拷貝：去除 Vue 響應式 Proxy，避免 DataCloneError
     // 對於包含 Blob 等不可 JSON 序列化的物件，先嘗試直接寫入，失敗才用深拷貝
     try {
-      return await (this._instance.put(
+      const result = await (this._instance.put(
         storeName as any,
         value as any,
         key,
       ) as Promise<string>);
+      await scheduleSelfHostedSyncForStoreChange(storeName, key);
+      return result;
     } catch (e) {
       // DataCloneError: Vue Proxy 無法被結構化克隆，用 JSON 深拷貝去除
       if (e instanceof DOMException && e.name === "DataCloneError") {
@@ -1155,11 +1218,13 @@ export const db = {
         );
         try {
           const plainValue = JSON.parse(JSON.stringify(value));
-          return await (this._instance!.put(
+          const result = await (this._instance!.put(
             storeName as any,
             plainValue as any,
             key,
           ) as Promise<string>);
+          await scheduleSelfHostedSyncForStoreChange(storeName, key);
+          return result;
         } catch (e2) {
           // 深拷貝後仍失敗，可能是連接斷開，嘗試重連
           console.warn(
@@ -1169,22 +1234,26 @@ export const db = {
           await this.reconnect();
           if (!this._instance) throw new Error("Database reconnect failed");
           const plainValue = JSON.parse(JSON.stringify(value));
-          return this._instance.put(
+          const result = await (this._instance.put(
             storeName as any,
             plainValue as any,
             key,
-          ) as Promise<string>;
+          ) as Promise<string>);
+          await scheduleSelfHostedSyncForStoreChange(storeName, key);
+          return result;
         }
       }
       // 其他錯誤（如連接斷開），嘗試重連
       console.warn(`[db] put(${storeName}) 失敗，嘗試重新連接:`, e);
       await this.reconnect();
       if (!this._instance) throw new Error("Database reconnect failed");
-      return this._instance.put(
+      const result = await (this._instance.put(
         storeName as any,
         value as any,
         key,
-      ) as Promise<string>;
+      ) as Promise<string>);
+      await scheduleSelfHostedSyncForStoreChange(storeName, key);
+      return result;
     }
   },
 
@@ -1195,12 +1264,14 @@ export const db = {
     if (!this._instance) await this.init();
     if (!this._instance) throw new Error("Database not initialized");
     try {
-      return await this._instance.delete(storeName as any, key);
+      await this._instance.delete(storeName as any, key);
+      await scheduleSelfHostedSyncForStoreChange(storeName, key);
     } catch (e) {
       console.warn(`[db] delete(${storeName}, ${key}) 失敗，嘗試重新連接:`, e);
       await this.reconnect();
       if (!this._instance) throw new Error("Database reconnect failed");
-      return this._instance.delete(storeName as any, key);
+      await this._instance.delete(storeName as any, key);
+      await scheduleSelfHostedSyncForStoreChange(storeName, key);
     }
   },
 
@@ -1211,12 +1282,14 @@ export const db = {
     if (!this._instance) await this.init();
     if (!this._instance) throw new Error("Database not initialized");
     try {
-      return await this._instance.clear(storeName as any);
+      await this._instance.clear(storeName as any);
+      await scheduleSelfHostedSyncForStoreChange(storeName);
     } catch (e) {
       console.warn(`[db] clear(${storeName}) 失敗，嘗試重新連接:`, e);
       await this.reconnect();
       if (!this._instance) throw new Error("Database reconnect failed");
-      return this._instance.clear(storeName as any);
+      await this._instance.clear(storeName as any);
+      await scheduleSelfHostedSyncForStoreChange(storeName);
     }
   },
 

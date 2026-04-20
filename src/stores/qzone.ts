@@ -12,6 +12,10 @@ import {
     saveQzonePosts,
     saveSetting,
 } from "@/db/operations";
+import {
+  recordDeletedEntity,
+  scheduleSelfHostedAutoSync,
+} from "@/services/selfHostedSyncState";
 import type {
     AutoInteractionConfig,
     QZoneComment,
@@ -137,6 +141,7 @@ export const useQzoneStore = defineStore("qzone", () => {
     posts.value.unshift(newPost);
     try {
       await saveQzonePost(newPost);
+      scheduleSelfHostedAutoSync();
     } catch (e) {
       console.error("[QZone] 儲存動態到 IndexedDB 失敗:", e, "動態 ID:", newPost.id);
       // 即使儲存失敗，動態仍在記憶體中，不移除
@@ -173,6 +178,7 @@ export const useQzoneStore = defineStore("qzone", () => {
 
     posts.value[index] = { ...posts.value[index], ...updates };
     await saveQzonePost(posts.value[index]);
+    scheduleSelfHostedAutoSync();
   }
 
   /**
@@ -182,8 +188,18 @@ export const useQzoneStore = defineStore("qzone", () => {
     const index = posts.value.findIndex((p) => p.id === postId);
     if (index === -1) return;
 
+    const removedPost = JSON.parse(JSON.stringify(posts.value[index]));
+    const deletedAt = Date.now();
+    await recordDeletedEntity({
+      entityType: "qzone_post",
+      entityId: postId,
+      updatedAt: deletedAt,
+      deletedAt,
+      payload: removedPost,
+    });
     posts.value.splice(index, 1);
     await dbDeleteQzonePost(postId);
+    scheduleSelfHostedAutoSync();
     console.log("[QZone] 刪除動態:", postId);
   }
 
@@ -209,6 +225,7 @@ export const useQzoneStore = defineStore("qzone", () => {
     }
 
     await saveQzonePost(post);
+    scheduleSelfHostedAutoSync();
   }
 
   /**
@@ -224,6 +241,7 @@ export const useQzoneStore = defineStore("qzone", () => {
     post.emoticons[emoji] = (post.emoticons[emoji] || 0) + 1;
 
     await saveQzonePost(post);
+    scheduleSelfHostedAutoSync();
   }
 
   /**
@@ -235,6 +253,7 @@ export const useQzoneStore = defineStore("qzone", () => {
 
     post.bookmarked = !post.bookmarked;
     await saveQzonePost(post);
+    scheduleSelfHostedAutoSync();
   }
 
   // ============================================================
@@ -261,6 +280,7 @@ export const useQzoneStore = defineStore("qzone", () => {
     post.commentCount = post.comments.length;
 
     await saveQzonePost(post);
+    scheduleSelfHostedAutoSync();
     console.log("[QZone] 新增評論:", newComment.id);
 
     // 如果是 AI 角色回覆，發送通知
@@ -297,6 +317,7 @@ export const useQzoneStore = defineStore("qzone", () => {
     post.commentCount = post.comments.length;
 
     await saveQzonePost(post);
+    scheduleSelfHostedAutoSync();
     console.log("[QZone] 刪除評論:", commentId);
   }
 
@@ -314,6 +335,7 @@ export const useQzoneStore = defineStore("qzone", () => {
     // 轉換為純物件以避免 DataCloneError
     const plainSettings = JSON.parse(JSON.stringify(settings.value));
     await saveSetting("qzone-settings", plainSettings);
+    scheduleSelfHostedAutoSync();
   }
 
   /**
@@ -329,6 +351,7 @@ export const useQzoneStore = defineStore("qzone", () => {
     // 轉換為純物件以避免 DataCloneError
     const plainConfig = JSON.parse(JSON.stringify(autoInteractionConfig.value));
     await saveSetting("qzone-auto-interaction", plainConfig);
+    scheduleSelfHostedAutoSync();
   }
 
   // ============================================================
@@ -340,6 +363,7 @@ export const useQzoneStore = defineStore("qzone", () => {
    */
   async function savePosts(): Promise<void> {
     await saveQzonePosts(posts.value);
+    scheduleSelfHostedAutoSync();
     console.log("[QZone] 已保存所有動態");
   }
 

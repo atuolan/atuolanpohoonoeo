@@ -1,0 +1,51 @@
+{
+  "meta": {
+    "schemaVersion": 1,
+    "createdAt": 1776656780759,
+    "updatedAt": 1776656794999,
+    "tokenSecret": "a274f717d4f503996efefd89cea1c8488ca298554c02ed992844fc774a205c22"
+  },
+  "users": [
+    {
+      "id": "usr_403d3441c267e0b844233f4c",
+      "username": "demo2",
+      "usernameKey": "demo2",
+      "passwordSalt": "0545020564b11225d8653f14795dcf91",
+      "passwordHash": "34e8779b6adc0274a06e4b7eee52f24b4dc04d6c5ce9ea367255b1257625c6418b73fbf9ab10b48325b3425585ef6a7981cb8fa6239c28f0050faf92852eef32",
+      "createdAt": 1776656794913,
+      "updatedAt": 1776656794992
+    }
+  ],
+  "refreshTokens": [
+    {
+      "token": "4618eb234a205ba3e0698511690705d6d7b48b8c752110ba56c273783f94413e",
+      "userId": "usr_403d3441c267e0b844233f4c",
+      "deviceId": "device-test-2",
+      "createdAt": 1776656794952,
+      "expiresAt": 1779248794952
+    },
+    {
+      "token": "ad17ac32c57b9370c6b5753ddf495a5fb9134c36c2dd9d7e1e8b97e86a421408",
+      "userId": "usr_403d3441c267e0b844233f4c",
+      "deviceId": "device-test-2",
+      "createdAt": 1776656794992,
+      "expiresAt": 1779248794992
+    }
+  ],
+  "entities": [
+    {
+      "userId": "usr_403d3441c267e0b844233f4c",
+      "entityType": "settings_preferences",
+      "entityId": "settings_preferences:global",
+      "schemaVersion": 1,
+      "updatedAt": 1776655000000,
+      "deletedAt": null,
+      "payload": {
+        "updatedAt": 1776655000000,
+        "language": "zh-TW"
+      },
+      "receivedAt": 1776656794999,
+      "deviceId": "device-test-2"
+    }
+  ]
+}

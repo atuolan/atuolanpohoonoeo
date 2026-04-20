@@ -6,6 +6,7 @@ import {
   loadChatMessages,
   saveChatMessages,
 } from "@/db/chatMessageStore";
+import { recordDeletedEntity, scheduleSelfHostedAutoSync } from "@/services/selfHostedSyncState";
 import type { ChatMessage } from "@/types/chat";
 
 export async function loadMessages(chatId: string): Promise<ChatMessage[]> {
@@ -18,6 +19,7 @@ export async function saveMessages(
   snapshotTime?: number,
 ): Promise<void> {
   await saveChatMessages(chatId, messages, snapshotTime);
+  scheduleSelfHostedAutoSync();
 }
 
 export async function appendMessages(
@@ -25,14 +27,41 @@ export async function appendMessages(
   newMessages: ChatMessage[],
 ): Promise<void> {
   await appendChatMessages(chatId, newMessages);
+  scheduleSelfHostedAutoSync();
 }
 
-export async function deleteMessage(messageId: string): Promise<void> {
+export async function deleteMessage(
+  messageId: string,
+  options?: {
+    chatId?: string;
+    deletedAt?: number;
+    suppressSyncDeletionRecord?: boolean;
+  },
+): Promise<void> {
   await deleteChatMessage(messageId);
+  if (options?.suppressSyncDeletionRecord) {
+    return;
+  }
+  await recordDeletedEntity({
+    entityType: "chat_message",
+    entityId: messageId,
+    updatedAt: options?.deletedAt ?? Date.now(),
+    deletedAt: options?.deletedAt ?? Date.now(),
+    payload: {
+      chatId: options?.chatId ?? null,
+    },
+  });
+  scheduleSelfHostedAutoSync();
 }
 
-export async function deleteMessagesForChat(chatId: string): Promise<void> {
+export async function deleteMessagesForChat(
+  chatId: string,
+  options?: { suppressAutoSync?: boolean },
+): Promise<void> {
   await deleteChatMessagesForChat(chatId);
+  if (!options?.suppressAutoSync) {
+    scheduleSelfHostedAutoSync();
+  }
 }
 
 export async function getMessageCount(chatId: string): Promise<number> {

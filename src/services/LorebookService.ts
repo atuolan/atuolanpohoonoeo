@@ -13,6 +13,10 @@ import {
   createDefaultWorldInfoSettings,
 } from '../types/worldinfo'
 import { db, DB_STORES } from '../db/database'
+import {
+  recordDeletedEntity,
+  scheduleSelfHostedAutoSync,
+} from '@/services/selfHostedSyncState'
 
 const STORAGE_KEY = 'aguaphone_lorebooks'
 const SETTINGS_KEY = 'aguaphone_worldinfo_settings'
@@ -121,6 +125,8 @@ export class LorebookService {
         all.push(plainLorebook)
         localStorage.setItem(STORAGE_KEY, JSON.stringify(all))
       }
+
+      scheduleSelfHostedAutoSync()
       
       return plainLorebook
     } catch (e) {
@@ -158,6 +164,8 @@ export class LorebookService {
         }
       }
 
+      scheduleSelfHostedAutoSync()
+
       return updated
     } catch (e) {
       console.error('[LorebookService] Failed to update lorebook:', e)
@@ -170,6 +178,9 @@ export class LorebookService {
    */
   async delete(id: string): Promise<boolean> {
     try {
+      const existing = await this.getById(id)
+      if (!existing) return false
+
       if (db.isOpen()) {
         await db.delete(DB_STORES.LOREBOOKS, id)
       } else {
@@ -177,6 +188,16 @@ export class LorebookService {
         const filtered = all.filter(l => l.id !== id)
         localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered))
       }
+
+      const deletedAt = Date.now()
+      await recordDeletedEntity({
+        entityType: 'lorebook',
+        entityId: id,
+        updatedAt: deletedAt,
+        deletedAt,
+        payload: null,
+      })
+      scheduleSelfHostedAutoSync()
       return true
     } catch (e) {
       console.error('[LorebookService] Failed to delete lorebook:', e)

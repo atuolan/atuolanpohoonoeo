@@ -1,3 +1,6 @@
+node_modules
+self-hosted-sync-server/data/
+self-hosted-sync-server/.env
 # 依賴
 node_modules/
 
@@ -83,6 +86,3 @@ Untitled-1.xml
 
 # 獨立的雲端備份模板 repo
 aguaphone-cloud-backup/
-
-new aguaphone/
-new aguaphone/**

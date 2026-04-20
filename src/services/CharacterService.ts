@@ -4,6 +4,10 @@
  */
 
 import { db, DB_STORES } from "../db/database";
+import {
+  recordDeletedEntity,
+  scheduleSelfHostedAutoSync,
+} from "@/services/selfHostedSyncState";
 import type { StoredCharacter } from "../types/character";
 import { createDefaultStoredCharacter } from "../types/character";
 
@@ -79,6 +83,8 @@ export class CharacterService {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
       }
 
+      scheduleSelfHostedAutoSync();
+
       return character;
     } catch (e) {
       console.error("[CharacterService] Failed to create character:", e);
@@ -117,6 +123,8 @@ export class CharacterService {
         }
       }
 
+      scheduleSelfHostedAutoSync();
+
       return updated;
     } catch (e) {
       console.error("[CharacterService] Failed to update character:", e);
@@ -129,6 +137,11 @@ export class CharacterService {
    */
   async delete(id: string): Promise<boolean> {
     try {
+      const existing = await this.getById(id);
+      if (!existing) {
+        return false;
+      }
+
       if (db.isOpen()) {
         await db.delete(DB_STORES.CHARACTERS, id);
       } else {
@@ -136,6 +149,16 @@ export class CharacterService {
         const filtered = all.filter((c) => c.id !== id);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
       }
+
+      const deletedAt = Date.now();
+      await recordDeletedEntity({
+        entityType: "character",
+        entityId: id,
+        updatedAt: deletedAt,
+        deletedAt,
+        payload: null,
+      });
+      scheduleSelfHostedAutoSync();
       return true;
     } catch (e) {
       console.error("[CharacterService] Failed to delete character:", e);

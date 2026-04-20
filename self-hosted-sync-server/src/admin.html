@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aguaphone Sync Server · Admin</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f1115;
+        --panel: #171a21;
+        --panel-2: #1f242d;
+        --border: #2a303b;
+        --text: #e6e8ec;
+        --muted: #9aa3b2;
+        --accent: #5b8dff;
+        --accent-hover: #7aa3ff;
+        --danger: #ff6b6b;
+        --ok: #4ade80;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      header {
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      header h1 {
+        font-size: 16px;
+        margin: 0;
+        font-weight: 600;
+      }
+      header .tag {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      main {
+        padding: 24px;
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 16px;
+      }
+      .card h2 {
+        font-size: 14px;
+        margin: 0 0 12px;
+        color: var(--muted);
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+      label {
+        display: block;
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      input[type="password"],
+      input[type="text"] {
+        width: 100%;
+        padding: 10px 12px;
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        font-size: 14px;
+      }
+      input:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      button {
+        padding: 9px 16px;
+        background: var(--accent);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+      }
+      button:hover {
+        background: var(--accent-hover);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      button.ghost {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--text);
+      }
+      button.ghost:hover {
+        background: var(--panel-2);
+      }
+      .error {
+        color: var(--danger);
+        font-size: 13px;
+        margin-top: 10px;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 12px;
+      }
+      .stat {
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px 16px;
+      }
+      .stat .k {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .stat .v {
+        font-size: 22px;
+        font-weight: 600;
+        margin-top: 4px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+      }
+      th {
+        color: var(--muted);
+        font-weight: 500;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+      .row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .hidden {
+        display: none !important;
+      }
+      .grid {
+        display: grid;
+        gap: 12px;
+      }
+      .grid.two {
+        grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+      }
+      select {
+        width: 100%;
+        padding: 10px 12px;
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        font-size: 14px;
+      }
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px;
+        font-size: 12px;
+        max-height: 520px;
+        overflow: auto;
+      }
+      code {
+        font-family: "JetBrains Mono", Consolas, monospace;
+        font-size: 12px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Aguaphone Sync Server · Admin</h1>
+      <span class="tag" id="serverTag">—</span>
+    </header>
+
+    <main>
+      <section id="loginView" class="card">
+        <h2>管理員登入</h2>
+        <label for="adminPassword">管理員密碼</label>
+        <input id="adminPassword" type="password" autocomplete="current-password" />
+        <div class="row" style="margin-top: 14px">
+          <button id="loginBtn">登入</button>
+          <span class="muted" style="font-size: 12px">
+            密碼由 <code>ADMIN_PASSWORD</code> 環境變數設定（預設 <code>admin</code>）
+          </span>
+        </div>
+        <div id="loginError" class="error hidden"></div>
+      </section>
+
+      <section id="dashboardView" class="hidden">
+        <div class="card">
+          <div class="row" style="justify-content: space-between">
+            <h2 style="margin: 0">概覽</h2>
+            <div class="row">
+              <button class="ghost" id="refreshBtn">刷新</button>
+              <button class="ghost" id="logoutBtn">登出</button>
+            </div>
+          </div>
+          <div class="stats" id="statsGrid" style="margin-top: 14px"></div>
+        </div>
+
+        <div class="card">
+          <h2>新建同步帳號</h2>
+          <div class="row" style="gap: 10px; flex-wrap: wrap">
+            <div style="flex: 1; min-width: 180px">
+              <label for="newUsername">帳號</label>
+              <input id="newUsername" type="text" autocomplete="off" />
+            </div>
+            <div style="flex: 1; min-width: 180px">
+              <label for="newPassword">密碼</label>
+              <input id="newPassword" type="text" autocomplete="new-password" />
+            </div>
+            <div style="align-self: flex-end">
+              <button id="createUserBtn">建立</button>
+            </div>
+          </div>
+          <div id="createUserMsg" class="error hidden"></div>
+        </div>
+
+        <div class="card">
+          <h2>使用者</h2>
+          <table id="usersTable">
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>ID</th>
+                <th>建立時間</th>
+                <th>最後更新</th>
+                <th>Refresh tokens</th>
+                <th>Entities</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>最近同步項目</h2>
+          <table id="entitiesTable">
+            <thead>
+              <tr>
+                <th>Entity type</th>
+                <th>Entity ID</th>
+                <th>User</th>
+                <th>Device</th>
+                <th>Updated</th>
+                <th>Deleted</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="row" style="justify-content: space-between; align-items: flex-end; flex-wrap: wrap">
+            <h2 style="margin: 0">同步實體檢查</h2>
+            <div class="row" style="flex-wrap: wrap">
+              <div style="min-width: 180px">
+                <label for="entityUserFilter">使用者</label>
+                <select id="entityUserFilter">
+                  <option value="">全部使用者</option>
+                </select>
+              </div>
+              <div style="min-width: 180px">
+                <label for="entityTypeFilter">實體類型</label>
+                <select id="entityTypeFilter">
+                  <option value="">全部類型</option>
+                </select>
+              </div>
+              <div style="align-self: flex-end">
+                <button class="ghost" id="loadEntityInspectorBtn">載入明細</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid two" style="margin-top: 16px">
+            <div>
+              <table id="entityInspectorTable">
+                <thead>
+                  <tr>
+                    <th>Entity type</th>
+                    <th>Entity ID</th>
+                    <th>User</th>
+                    <th>Updated</th>
+                    <th>Deleted</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+
+            <div class="grid">
+              <div>
+                <label>選取項目內容</label>
+                <pre id="entityPayloadViewer">請先載入明細並點選某筆實體。</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const STORAGE_KEY = "aguaphone-sync-admin-token";
+      const $ = (id) => document.getElementById(id);
+
+      async function api(path, { method = "GET", body, token } = {}) {
+        const headers = { "Content-Type": "application/json" };
+        if (token) headers.Authorization = "Bearer " + token;
+        const res = await fetch(path, {
+          method,
+          headers,
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || "HTTP " + res.status);
+        }
+        return data;
+      }
+
+      function fmtTime(ts) {
+        if (!ts) return "—";
+        try {
+          return new Date(ts).toLocaleString();
+        } catch {
+          return String(ts);
+        }
+      }
+
+      async function loadServerTag() {
+        try {
+          const info = await api("/");
+          $("serverTag").textContent =
+            (info.service || "sync-server") + " · v" + (info.version || "?");
+        } catch {
+          $("serverTag").textContent = "server offline";
+        }
+      }
+
+      function showLogin() {
+        $("loginView").classList.remove("hidden");
+        $("dashboardView").classList.add("hidden");
+      }
+
+      function showDashboard() {
+        $("loginView").classList.add("hidden");
+        $("dashboardView").classList.remove("hidden");
+      }
+
+      let inspectedEntities = [];
+
+      async function doLogin() {
+        const btn = $("loginBtn");
+        const errEl = $("loginError");
+        errEl.classList.add("hidden");
+        btn.disabled = true;
+        try {
+          const pwd = $("adminPassword").value;
+          if (!pwd) throw new Error("請輸入管理員密碼");
+          const r = await api("/admin/login", {
+            method: "POST",
+            body: { password: pwd },
+          });
+          localStorage.setItem(STORAGE_KEY, r.adminToken);
+          $("adminPassword").value = "";
+          showDashboard();
+          await refreshOverview();
+        } catch (err) {
+          errEl.textContent = err.message || String(err);
+          errEl.classList.remove("hidden");
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      function logout() {
+        localStorage.removeItem(STORAGE_KEY);
+        showLogin();
+      }
+
+      async function refreshOverview() {
+        const token = localStorage.getItem(STORAGE_KEY);
+        if (!token) return showLogin();
+        let data;
+        try {
+          data = await api("/admin/api/overview", { token });
+        } catch (err) {
+          if (/401|403|expired|invalid/i.test(err.message)) {
+            logout();
+            return;
+          }
+          alert("載入失敗: " + err.message);
+          return;
+        }
+
+        const stats = [
+          { k: "使用者", v: data.stats.userCount },
+          { k: "同步項目", v: data.stats.entityCount },
+          { k: "Refresh tokens", v: data.stats.refreshTokenCount },
+          { k: "Server 啟動於", v: fmtTime(data.stats.createdAt) },
+          { k: "最後寫入", v: fmtTime(data.stats.updatedAt) },
+        ];
+        $("statsGrid").innerHTML = stats
+          .map(
+            (s) =>
+              `<div class="stat"><div class="k">${s.k}</div><div class="v">${s.v}</div></div>`,
+          )
+          .join("");
+
+        const usersTbody = $("usersTable").querySelector("tbody");
+        usersTbody.innerHTML = data.users
+          .map(
+            (u) => `
+              <tr>
+                <td>${escapeHtml(u.username)}</td>
+                <td><code>${escapeHtml(u.id)}</code></td>
+                <td>${fmtTime(u.createdAt)}</td>
+                <td>${fmtTime(u.updatedAt)}</td>
+                <td>${u.refreshTokenCount}</td>
+                <td>${u.entityCount}</td>
+                <td>
+                  <button class="ghost" data-action="reset" data-id="${escapeHtml(u.id)}" data-username="${escapeHtml(u.username)}">重設密碼</button>
+                  <button class="ghost" data-action="delete" data-id="${escapeHtml(u.id)}" data-username="${escapeHtml(u.username)}">刪除</button>
+                </td>
+              </tr>
+            `,
+          )
+          .join("") || `<tr><td colspan="7" class="muted">尚無使用者</td></tr>`;
+
+        const userFilter = $("entityUserFilter");
+        userFilter.innerHTML =
+          `<option value="">全部使用者</option>` +
+          data.users
+            .map(
+              (u) => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.username)}</option>`,
+            )
+            .join("");
+
+        const entityTypes = [...new Set(data.recentEntities.map((e) => e.entityType))].sort();
+        const typeFilter = $("entityTypeFilter");
+        typeFilter.innerHTML =
+          `<option value="">全部類型</option>` +
+          entityTypes
+            .map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`)
+            .join("");
+
+        const entTbody = $("entitiesTable").querySelector("tbody");
+        entTbody.innerHTML = data.recentEntities
+          .map(
+            (e) => `
+              <tr>
+                <td>${escapeHtml(e.entityType)}</td>
+                <td><code>${escapeHtml(e.entityId)}</code></td>
+                <td>${escapeHtml(e.username || e.userId)}</td>
+                <td><code>${escapeHtml(e.deviceId || "—")}</code></td>
+                <td>${fmtTime(e.updatedAt)}</td>
+                <td>${e.deletedAt ? fmtTime(e.deletedAt) : "—"}</td>
+              </tr>
+            `,
+          )
+          .join("") || `<tr><td colspan="6" class="muted">尚無同步項目</td></tr>`;
+
+        await loadEntityInspector();
+      }
+
+      async function loadEntityInspector() {
+        const token = localStorage.getItem(STORAGE_KEY);
+        if (!token) return showLogin();
+
+        const userId = $("entityUserFilter").value;
+        const entityType = $("entityTypeFilter").value;
+        const params = new URLSearchParams({ limit: "100", offset: "0" });
+        if (userId) params.set("userId", userId);
+        if (entityType) params.set("entityType", entityType);
+
+        let data;
+        const candidates = [
+          "/admin/api/entities?" + params.toString(),
+          "/admin/entities?" + params.toString(),
+          "/api/admin/entities?" + params.toString(),
+        ];
+        let lastError = null;
+        for (const path of candidates) {
+          try {
+            data = await api(path, { token });
+            lastError = null;
+            break;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+        if (!data) {
+          alert("載入實體明細失敗: " + (lastError?.message || "unknown error"));
+          return;
+        }
+
+        inspectedEntities = Array.isArray(data.items) ? data.items : [];
+        const tbody = $("entityInspectorTable").querySelector("tbody");
+        tbody.innerHTML = inspectedEntities
+          .map(
+            (entity, index) => `
+              <tr data-entity-index="${index}" style="cursor:pointer">
+                <td>${escapeHtml(entity.entityType)}</td>
+                <td><code>${escapeHtml(entity.entityId)}</code></td>
+                <td>${escapeHtml(entity.username || entity.userId)}</td>
+                <td>${fmtTime(entity.updatedAt)}</td>
+                <td>${entity.deletedAt ? fmtTime(entity.deletedAt) : "—"}</td>
+              </tr>
+            `,
+          )
+          .join("") || `<tr><td colspan="5" class="muted">沒有符合條件的實體</td></tr>`;
+
+        $("entityPayloadViewer").textContent = inspectedEntities.length
+          ? JSON.stringify(inspectedEntities[0], null, 2)
+          : "沒有符合條件的實體";
+      }
+
+      function escapeHtml(s) {
+        return String(s ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      async function createUser() {
+        const btn = $("createUserBtn");
+        const msg = $("createUserMsg");
+        msg.classList.add("hidden");
+        const token = localStorage.getItem(STORAGE_KEY);
+        if (!token) return logout();
+        const username = $("newUsername").value.trim();
+        const password = $("newPassword").value;
+        if (!username || !password) {
+          msg.textContent = "帳號和密碼不可空白";
+          msg.classList.remove("hidden");
+          return;
+        }
+        btn.disabled = true;
+        try {
+          await api("/admin/api/users", {
+            method: "POST",
+            body: { username, password },
+            token,
+          });
+          $("newUsername").value = "";
+          $("newPassword").value = "";
+          await refreshOverview();
+        } catch (err) {
+          msg.textContent = err.message || String(err);
+          msg.classList.remove("hidden");
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      async function resetUserPassword(userId, username) {
+        const pwd = prompt(`輸入「${username}」的新密碼：`);
+        if (!pwd) return;
+        const token = localStorage.getItem(STORAGE_KEY);
+        if (!token) return logout();
+        try {
+          await api("/admin/api/users/" + encodeURIComponent(userId) + "/password", {
+            method: "POST",
+            body: { password: pwd },
+            token,
+          });
+          alert("密碼已重設。該帳號的所有登入 session 已失效。");
+          await refreshOverview();
+        } catch (err) {
+          alert("重設失敗: " + err.message);
+        }
+      }
+
+      async function deleteUser(userId, username) {
+        if (!confirm(`確定要刪除「${username}」？\n這會一併刪除該帳號的同步資料與所有 refresh token。`)) return;
+        const token = localStorage.getItem(STORAGE_KEY);
+        if (!token) return logout();
+        try {
+          await api("/admin/api/users/" + encodeURIComponent(userId), {
+            method: "DELETE",
+            token,
+          });
+          await refreshOverview();
+        } catch (err) {
+          alert("刪除失敗: " + err.message);
+        }
+      }
+
+      $("loginBtn").addEventListener("click", doLogin);
+      $("adminPassword").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") doLogin();
+      });
+      $("refreshBtn").addEventListener("click", refreshOverview);
+      $("logoutBtn").addEventListener("click", logout);
+      $("createUserBtn").addEventListener("click", createUser);
+      $("loadEntityInspectorBtn").addEventListener("click", loadEntityInspector);
+      $("newPassword").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") createUser();
+      });
+      $("usersTable").addEventListener("click", (e) => {
+        const btn = e.target.closest("button[data-action]");
+        if (!btn) return;
+        const id = btn.getAttribute("data-id");
+        const username = btn.getAttribute("data-username");
+        if (btn.dataset.action === "reset") resetUserPassword(id, username);
+        else if (btn.dataset.action === "delete") deleteUser(id, username);
+      });
+      $("entityInspectorTable").addEventListener("click", (e) => {
+        const row = e.target.closest("tr[data-entity-index]");
+        if (!row) return;
+        const index = Number(row.getAttribute("data-entity-index"));
+        const entity = inspectedEntities[index];
+        if (!entity) return;
+        $("entityPayloadViewer").textContent = JSON.stringify(entity, null, 2);
+      });
+
+      loadServerTag();
+      if (localStorage.getItem(STORAGE_KEY)) {
+        showDashboard();
+        refreshOverview();
+      } else {
+        showLogin();
+      }
+    </script>
+  </body>
+</html>
