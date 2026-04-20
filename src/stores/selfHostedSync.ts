@@ -337,7 +337,11 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
   async function pullNow(since?: number) {
     await loadSettings();
     const syncService = await getSyncService();
-    return runSyncActionWithRetry(() => syncService.pullAll(since));
+    return runSyncActionWithRetry(() =>
+      syncService.pullAll(since, {
+        forceOverwrite: typeof since !== "number",
+      }),
+    );
   }
 
   async function syncNow() {

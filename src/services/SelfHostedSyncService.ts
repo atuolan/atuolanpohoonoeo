@@ -50,6 +50,10 @@ export interface SelfHostedSyncRunResult {
   serverTime?: number;
 }
 
+interface SelfHostedPullOptions {
+  forceOverwrite?: boolean;
+}
+
 export class SelfHostedSyncService {
   private static readonly ENABLE_GENERIC_STORE_SNAPSHOTS = false;
 
@@ -116,7 +120,10 @@ export class SelfHostedSyncService {
     }
   }
 
-  async pullAll(since?: number): Promise<SelfHostedSyncRunResult> {
+  async pullAll(
+    since?: number,
+    options?: SelfHostedPullOptions,
+  ): Promise<SelfHostedSyncRunResult> {
     const syncStore = useSelfHostedSyncStore();
     await syncStore.loadSettings();
 
@@ -125,7 +132,7 @@ export class SelfHostedSyncService {
     try {
       const client = syncStore.createClient();
       const response = await client.pullItems(since);
-      const applied = await this.applyPullResponse(response);
+      const applied = await this.applyPullResponse(response, options);
       await syncStore.markSyncSucceeded(response.serverTime);
       return {
         pushed: 0,
@@ -260,8 +267,10 @@ export class SelfHostedSyncService {
 
   private async applyPullResponse(
     response: SelfHostedSyncPullResponse,
+    options?: SelfHostedPullOptions,
   ): Promise<number> {
     let applied = 0;
+    const forceOverwrite = options?.forceOverwrite === true;
 
     return withSuppressedSelfHostedAutoSync(async () => {
       const settingsItems = response.items.filter(
@@ -331,42 +340,42 @@ export class SelfHostedSyncService {
       );
 
       for (const item of settingsItems) {
-      const changed = await this.applySettingsPreferences(item.payload);
+      const changed = await this.applySettingsPreferences(item.payload, forceOverwrite);
       if (changed) applied += 1;
       }
 
       for (const item of settingsFullItems) {
-      const changed = await this.applySettingsFull(item.payload);
+      const changed = await this.applySettingsFull(item.payload, forceOverwrite);
       if (changed) applied += 1;
       }
 
       for (const item of qzoneSettingsItems) {
-      const changed = await this.applyQZoneSettings(item.payload);
+      const changed = await this.applyQZoneSettings(item.payload, forceOverwrite);
       if (changed) applied += 1;
       }
 
       for (const item of characterItems) {
-      const changed = await this.applyCharacter(item.payload);
+      const changed = await this.applyCharacter(item.payload, forceOverwrite);
       if (changed) applied += 1;
       }
 
       for (const item of lorebookItems) {
-      const changed = await this.applyLorebook(item.payload);
+      const changed = await this.applyLorebook(item.payload, forceOverwrite);
       if (changed) applied += 1;
       }
 
       for (const item of promptLibraryItems) {
-      const changed = await this.applyPromptLibraryItem(item.payload);
+      const changed = await this.applyPromptLibraryItem(item.payload, forceOverwrite);
       if (changed) applied += 1;
       }
 
       for (const item of stickerCategoryItems) {
-      const changed = await this.applyStickerCategory(item.payload);
+      const changed = await this.applyStickerCategory(item.payload, forceOverwrite);
       if (changed) applied += 1;
       }
 
       for (const item of userDataItems) {
-      const changed = await this.applyUserData(item.payload);
+      const changed = await this.applyUserData(item.payload, forceOverwrite);
       if (changed) applied += 1;
       }
 
@@ -376,7 +385,7 @@ export class SelfHostedSyncService {
       }
 
       for (const item of chatRecordItems) {
-      const changed = await this.applyChatRecord(item.payload);
+      const changed = await this.applyChatRecord(item.payload, forceOverwrite);
       if (changed) applied += 1;
       }
 
@@ -391,19 +400,19 @@ export class SelfHostedSyncService {
       }
 
       for (const [chatId, payloads] of messageGroups) {
-      const changed = await this.applyChatMessages(chatId, payloads);
+      const changed = await this.applyChatMessages(chatId, payloads, forceOverwrite);
       if (changed > 0) {
         applied += changed;
       }
       }
 
       for (const item of qzonePostItems) {
-      const changed = await this.applyQZonePost(item.payload);
+      const changed = await this.applyQZonePost(item.payload, forceOverwrite);
       if (changed) applied += 1;
       }
 
       for (const item of deletedItems) {
-      const changed = await this.applyDeletedEntity(item);
+      const changed = await this.applyDeletedEntity(item, forceOverwrite);
       if (changed) applied += 1;
       }
 
@@ -415,9 +424,10 @@ export class SelfHostedSyncService {
 
   private async applySettingsPreferences(
     payload: SyncSettingsPreferencesPayload,
+    forceOverwrite = false,
   ): Promise<boolean> {
     const local = await loadSettingsData();
-    if (local && (local.updatedAt ?? 0) >= payload.updatedAt) {
+    if (!forceOverwrite && local && (local.updatedAt ?? 0) >= payload.updatedAt) {
       return false;
     }
 
@@ -439,9 +449,16 @@ export class SelfHostedSyncService {
     return true;
   }
 
-  private async applyCharacter(payload: SyncCharacterPayload): Promise<boolean> {
+  private async applyCharacter(
+    payload: SyncCharacterPayload,
+    forceOverwrite = false,
+  ): Promise<boolean> {
     const existing = await db.get<StoredCharacter>(DB_STORES.CHARACTERS, payload.id);
-    if (existing && this.computeUpdatedAt(existing) >= this.computeUpdatedAt(payload)) {
+    if (
+      !forceOverwrite &&
+      existing &&
+      this.computeUpdatedAt(existing) >= this.computeUpdatedAt(payload)
+    ) {
       return false;
     }
 
@@ -458,9 +475,16 @@ export class SelfHostedSyncService {
     return true;
   }
 
-  private async applyLorebook(payload: SyncLorebookPayload): Promise<boolean> {
+  private async applyLorebook(
+    payload: SyncLorebookPayload,
+    forceOverwrite = false,
+  ): Promise<boolean> {
     const existing = await db.get<Lorebook>(DB_STORES.LOREBOOKS, payload.id);
-    if (existing && this.computeUpdatedAt(existing) >= this.computeUpdatedAt(payload)) {
+    if (
+      !forceOverwrite &&
+      existing &&
+      this.computeUpdatedAt(existing) >= this.computeUpdatedAt(payload)
+    ) {
       return false;
     }
 
@@ -479,12 +503,13 @@ export class SelfHostedSyncService {
 
   private async applyPromptLibraryItem(
     payload: SyncPromptLibraryItemPayload,
+    forceOverwrite = false,
   ): Promise<boolean> {
     const existing = await db.get<PromptDefinition>(
       DB_STORES.PROMPT_LIBRARY,
       payload.identifier,
     );
-    if (existing && JSON.stringify(existing) === JSON.stringify(payload)) {
+    if (!forceOverwrite && existing && JSON.stringify(existing) === JSON.stringify(payload)) {
       return false;
     }
 
@@ -507,9 +532,10 @@ export class SelfHostedSyncService {
 
   private async applyStickerCategory(
     payload: SyncStickerCategoryPayload,
+    forceOverwrite = false,
   ): Promise<boolean> {
     const existing = await db.get<StickerCategory>(DB_STORES.STICKERS, payload.id);
-    if (existing && JSON.stringify(existing) === JSON.stringify(payload)) {
+    if (!forceOverwrite && existing && JSON.stringify(existing) === JSON.stringify(payload)) {
       return false;
     }
 
@@ -527,9 +553,16 @@ export class SelfHostedSyncService {
     return true;
   }
 
-  private async applyUserData(payload: SyncUserDataPayload): Promise<boolean> {
+  private async applyUserData(
+    payload: SyncUserDataPayload,
+    forceOverwrite = false,
+  ): Promise<boolean> {
     const existing = await db.get<UserData>(DB_STORES.APP_SETTINGS, payload.id);
-    if (existing && this.computeUpdatedAt(existing) >= this.computeUpdatedAt(payload)) {
+    if (
+      !forceOverwrite &&
+      existing &&
+      this.computeUpdatedAt(existing) >= this.computeUpdatedAt(payload)
+    ) {
       return false;
     }
 
@@ -617,9 +650,12 @@ export class SelfHostedSyncService {
     await db.put(storeName, value);
   }
 
-  private async applySettingsFull(payload: SyncSettingsFullPayload): Promise<boolean> {
+  private async applySettingsFull(
+    payload: SyncSettingsFullPayload,
+    forceOverwrite = false,
+  ): Promise<boolean> {
     const local = await loadSettingsData();
-    if (local && (local.updatedAt ?? 0) >= payload.updatedAt) {
+    if (!forceOverwrite && local && (local.updatedAt ?? 0) >= payload.updatedAt) {
       return false;
     }
 
@@ -633,9 +669,10 @@ export class SelfHostedSyncService {
 
   private async applyChatRecord(
     payload: SyncChatRecordPayload,
+    forceOverwrite = false,
   ): Promise<boolean> {
     const existing = await loadChatById(payload.id);
-    if (existing && (existing.updatedAt ?? 0) >= payload.updatedAt) {
+    if (!forceOverwrite && existing && (existing.updatedAt ?? 0) >= payload.updatedAt) {
       return false;
     }
 
@@ -683,6 +720,7 @@ export class SelfHostedSyncService {
   private async applyChatMessages(
     chatId: string,
     incomingPayloads: SyncChatMessagePayload[],
+    forceOverwrite = false,
   ): Promise<number> {
     const localMessages = await loadMessages(chatId);
     const merged = new Map<string, ChatMessage>();
@@ -695,7 +733,7 @@ export class SelfHostedSyncService {
 
     for (const payload of incomingPayloads) {
       const existing = merged.get(payload.id);
-      if (!existing || (existing.updatedAt ?? 0) < payload.updatedAt) {
+      if (forceOverwrite || !existing || (existing.updatedAt ?? 0) < payload.updatedAt) {
         merged.set(payload.id, this.toLocalChatMessage(payload));
         changed += 1;
       }
@@ -714,6 +752,7 @@ export class SelfHostedSyncService {
 
   private async applyQZoneSettings(
     payload: SyncQZoneSettingsPayload,
+    forceOverwrite = false,
   ): Promise<boolean> {
     const localSettings = await getSetting<QZoneSettings>("qzone-settings");
     const localAutoInteraction = await getSetting<AutoInteractionConfig>(
@@ -723,7 +762,7 @@ export class SelfHostedSyncService {
       this.computeUpdatedAt(localSettings),
       this.computeUpdatedAt(localAutoInteraction),
     );
-    if (localUpdatedAt >= payload.updatedAt) {
+    if (!forceOverwrite && localUpdatedAt >= payload.updatedAt) {
       return false;
     }
 
@@ -747,10 +786,17 @@ export class SelfHostedSyncService {
     return true;
   }
 
-  private async applyQZonePost(payload: SyncQZonePostPayload): Promise<boolean> {
+  private async applyQZonePost(
+    payload: SyncQZonePostPayload,
+    forceOverwrite = false,
+  ): Promise<boolean> {
     const existingPosts = await getAllQzonePosts();
     const existing = existingPosts.find((post) => post.id === payload.id);
-    if (existing && this.computeUpdatedAt(existing) >= this.computeUpdatedAt(payload)) {
+    if (
+      !forceOverwrite &&
+      existing &&
+      this.computeUpdatedAt(existing) >= this.computeUpdatedAt(payload)
+    ) {
       return false;
     }
 
@@ -769,12 +815,15 @@ export class SelfHostedSyncService {
     return true;
   }
 
-  private async applyDeletedEntity(item: SelfHostedSyncEntityEnvelope): Promise<boolean> {
+  private async applyDeletedEntity(
+    item: SelfHostedSyncEntityEnvelope,
+    forceOverwrite = false,
+  ): Promise<boolean> {
     const deletedAt = item.deletedAt ?? 0;
     switch (item.entityType) {
       case "chat_record": {
         const existing = await loadChatById(item.entityId);
-        if (!existing || (existing.updatedAt ?? 0) > deletedAt) {
+        if (!existing || (!forceOverwrite && (existing.updatedAt ?? 0) > deletedAt)) {
           return false;
         }
         await deleteChatCascade(item.entityId, {
@@ -789,7 +838,7 @@ export class SelfHostedSyncService {
         }
         const messages = await loadMessages(payload.chatId);
         const existing = messages.find((message) => message.id === item.entityId);
-        if (!existing || (existing.updatedAt ?? 0) > deletedAt) {
+        if (!existing || (!forceOverwrite && (existing.updatedAt ?? 0) > deletedAt)) {
           return false;
         }
         await deleteMessage(item.entityId, {
@@ -802,7 +851,7 @@ export class SelfHostedSyncService {
       case "qzone_post": {
         const existingPosts = await getAllQzonePosts();
         const existing = existingPosts.find((post) => post.id === item.entityId);
-        if (!existing || this.computeUpdatedAt(existing) > deletedAt) {
+        if (!existing || (!forceOverwrite && this.computeUpdatedAt(existing) > deletedAt)) {
           return false;
         }
         await deleteQzonePost(item.entityId);
@@ -810,7 +859,7 @@ export class SelfHostedSyncService {
       }
       case "character": {
         const existing = await db.get<StoredCharacter>(DB_STORES.CHARACTERS, item.entityId);
-        if (!existing || this.computeUpdatedAt(existing) > deletedAt) {
+        if (!existing || (!forceOverwrite && this.computeUpdatedAt(existing) > deletedAt)) {
           return false;
         }
         await db.delete(DB_STORES.CHARACTERS, item.entityId);
@@ -825,7 +874,7 @@ export class SelfHostedSyncService {
       }
       case "lorebook": {
         const existing = await db.get<Lorebook>(DB_STORES.LOREBOOKS, item.entityId);
-        if (!existing || this.computeUpdatedAt(existing) > deletedAt) {
+        if (!existing || (!forceOverwrite && this.computeUpdatedAt(existing) > deletedAt)) {
           return false;
         }
         await db.delete(DB_STORES.LOREBOOKS, item.entityId);
@@ -871,7 +920,7 @@ export class SelfHostedSyncService {
       }
       case "user_data": {
         const existing = await db.get<UserData>(DB_STORES.APP_SETTINGS, item.entityId);
-        if (!existing || this.computeUpdatedAt(existing) > deletedAt) {
+        if (!existing || (!forceOverwrite && this.computeUpdatedAt(existing) > deletedAt)) {
           return false;
         }
         await db.delete(DB_STORES.APP_SETTINGS, item.entityId);
