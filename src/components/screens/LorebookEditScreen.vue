@@ -207,8 +207,8 @@ onMounted(async () => {
         name: lorebook.name || "",
         description: lorebook.description || "",
         entries: (lorebook.entries || []).map((entry, index) => ({
-          id: entry.id || `e_${index}`,
-          name: entry.comment || entry.keys?.[0] || `條目 ${index + 1}`,
+          id: String(entry.uid ?? `e_${index}`),
+          name: entry.comment || entry.key?.[0] || `條目 ${index + 1}`,
           comment: entry.comment || "",
           keys: entry.key || [],
           secondary_keys: entry.keysecondary || [],
@@ -216,17 +216,17 @@ onMounted(async () => {
           enabled: entry.disable === true ? false : true,
           constant: entry.constant || false,
           case_sensitive: entry.caseSensitive || false,
-          use_regex: entry.useRegex || false,
+          use_regex: (entry as any).useRegex || false,
           insertion_order: entry.order ?? index,
           position: entry.position ?? WorldInfoPosition.AFTER_CHAR,
           depth: entry.depth ?? 4,
           probability: entry.probability ?? 100,
-          priority: entry.priority ?? 100,
-          color: entry.color,
+          priority: (entry as any).priority ?? 100,
+          color: (entry as any).color,
           expanded: false,
         })),
         recursive_scanning: lorebook.recursiveScanning !== false,
-        max_recursion_steps: lorebook.maxRecursionSteps ?? 5,
+        max_recursion_steps: (lorebook as any).maxRecursionSteps ?? 5,
       };
     } else {
       console.error("找不到世界書:", props.lorebookId);

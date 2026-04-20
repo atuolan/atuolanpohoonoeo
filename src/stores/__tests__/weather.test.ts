@@ -86,12 +86,11 @@ describe("weather store regressions", () => {
     await Promise.resolve();
     expect(getWeatherByUserLocationMock).not.toHaveBeenCalled();
 
-    const releaseFn = releaseStoredLocationLoad;
-    if (!releaseFn) {
+    if (!releaseStoredLocationLoad) {
       throw new Error("expected persisted location loader to be pending");
     }
 
-    releaseFn();
+    (releaseStoredLocationLoad as () => void)();
 
     await refreshPromise;
 

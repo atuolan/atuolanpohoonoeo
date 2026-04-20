@@ -77,7 +77,7 @@
 
             <!-- 群聊：成員列表 -->
             <section
-              v-if="isGroupChat && groupMembers.length > 0"
+              v-if="isGroupChat && (groupMembers?.length ?? 0) > 0"
               class="info-section"
             >
               <div class="section-title">成員列表</div>

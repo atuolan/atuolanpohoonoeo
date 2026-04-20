@@ -532,7 +532,7 @@ function convertMessage(
   const { thought, cleanContent } =
     msg.role === "ai"
       ? extractThought(msg.content)
-      : { cleanContent: msg.content };
+      : { thought: undefined, cleanContent: msg.content };
   const finalThought = msg.thoughts || thought;
 
   return {
@@ -682,7 +682,7 @@ function convertCharacter(legacy: LegacyCharacter): StoredCharacter {
       tags: cardData.tags || [],
       alternate_greetings: cardData.alternate_greetings || [],
       extensions:
-        (cardData.extensions as CharacterCardV2Data["extensions"]) || {
+        (cardData.extensions as unknown as CharacterCardV2Data["extensions"]) || {
           talkativeness: 0.5,
           fav: false,
           world: "",

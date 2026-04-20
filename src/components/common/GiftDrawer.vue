@@ -194,7 +194,8 @@
 
 <script setup lang="ts">
 import { getShopItemById } from "@/data/shopItems";
-import { useGameEconomyStore, type Transaction } from "@/stores/gameEconomy";
+import type { Transaction } from "@/schemas/gameEconomy";
+import { useGameEconomyStore } from "@/stores/gameEconomy";
 import {
     ChevronRight,
     Coins,

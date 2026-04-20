@@ -109,7 +109,7 @@
 
             <!-- 系統按鈕 -->
             <div class="center-buttons">
-              <button v-if="!isPlaying" class="start-btn" @click="startGame">
+              <button v-if="!isPlaying" class="start-btn" @click="handleStartGameClick">
                 START
               </button>
               <button
@@ -390,7 +390,7 @@
 
           <!-- 系统按钮 -->
           <div class="center-buttons">
-            <button v-if="!isPlaying" class="start-btn" @click="startGame">
+            <button v-if="!isPlaying" class="start-btn" @click="handleStartGameClick">
               START
             </button>
             <button
@@ -714,6 +714,10 @@ const handleStartWithDifficulty = (difficulty: DifficultyLevel) => {
   const config = DIFFICULTY_CONFIGS[difficulty];
   startGame(config);
   showStartMenu.value = false;
+};
+
+const handleStartGameClick = () => {
+  startGame();
 };
 
 const handleContinue = () => {

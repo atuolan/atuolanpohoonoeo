@@ -191,6 +191,11 @@ const affinityConfig = ref<CharacterAffinityConfig>({
   characterId: "_placeholder",
   enabled: false,
   statKey: "",
+  mvuEnabled: false,
+  mvuInitialData: {},
+  mvuPromptTemplate: "",
+  mvuUpdateInstruction: "",
+  postMutationRules: [],
   metrics: [],
   promptTemplate: "",
   updateInstruction: "",
@@ -409,6 +414,7 @@ function addAffinityMetric() {
   affinityConfig.value.metrics.push({
     id,
     name: "",
+    path: "",
     type: "number",
     min: 0,
     max: 100,
@@ -509,8 +515,8 @@ async function exportJSON() {
       if (!lb) continue;
       const book = convertLorebookToCharacterBook(lb);
       if (!firstName) {
-        firstName = book.name;
-        firstDesc = book.description;
+        firstName = book.name || "";
+        firstDesc = book.description || "";
       }
       allEntries.push(...book.entries);
     }
@@ -518,7 +524,7 @@ async function exportJSON() {
     if (allEntries.length > 0) {
       baseData.character_book = {
         name: firstName,
-        description: firstDesc,
+        description: firstDesc || "",
         scan_depth: undefined,
         token_budget: undefined,
         recursive_scanning: false,
@@ -1033,7 +1039,7 @@ async function onRegexFileImport(e: Event) {
             <div class="form-group">
               <label class="form-label">角色描述</label>
               <ExpandableTextarea
-                v-model="formData.data.description"
+                v-model="formData.data.description!"
                 :rows="4"
                 placeholder="描述角色的外觀、背景等..."
                 label="角色描述"
@@ -1043,7 +1049,7 @@ async function onRegexFileImport(e: Event) {
             <div class="form-group">
               <label class="form-label">秘密</label>
               <ExpandableTextarea
-                v-model="formData.data.personality"
+                v-model="formData.data.personality!"
                 :rows="3"
                 placeholder="角色的秘密..."
                 label="秘密"
@@ -1053,7 +1059,7 @@ async function onRegexFileImport(e: Event) {
             <div class="form-group">
               <label class="form-label">說話方式</label>
               <ExpandableTextarea
-                v-model="formData.data.scenario"
+                v-model="formData.data.scenario!"
                 :rows="3"
                 placeholder="角色的說話方式、語氣特點..."
                 label="說話方式"
@@ -1063,7 +1069,7 @@ async function onRegexFileImport(e: Event) {
             <div class="form-group">
               <label class="form-label">角色氛圍</label>
               <ExpandableTextarea
-                v-model="formData.data.character_atmosphere"
+                v-model="formData.data.character_atmosphere!"
                 :rows="3"
                 placeholder="角色散發的氛圍、給人的感覺..."
                 label="角色氛圍"
@@ -1073,7 +1079,7 @@ async function onRegexFileImport(e: Event) {
             <div class="form-group">
               <label class="form-label">NAI 角色串</label>
               <ExpandableTextarea
-                v-model="formData.data.nai_character_prompt"
+                v-model="formData.data.nai_character_prompt!"
                 :rows="3"
                 placeholder="例如：1girl, long hair, blue eyes"
                 label="NAI 角色串"
@@ -1103,7 +1109,7 @@ async function onRegexFileImport(e: Event) {
             <div class="form-group">
               <label class="form-label">初始消息</label>
               <ExpandableTextarea
-                v-model="formData.data.first_mes"
+                v-model="formData.data.first_mes!"
                 :rows="3"
                 placeholder="角色的第一句話..."
                 label="初始消息"
@@ -1113,7 +1119,7 @@ async function onRegexFileImport(e: Event) {
             <div class="form-group">
               <label class="form-label">對話範例</label>
               <ExpandableTextarea
-                v-model="formData.data.mes_example"
+                v-model="formData.data.mes_example!"
                 :rows="5"
                 placeholder="{{user}}: 你好！&#10;{{char}}: 你好呀！很高興見到你。"
                 label="對話範例"
@@ -1146,7 +1152,7 @@ async function onRegexFileImport(e: Event) {
             <div class="form-group">
               <label class="form-label">系統提示</label>
               <ExpandableTextarea
-                v-model="formData.data.system_prompt"
+                v-model="formData.data.system_prompt!"
                 :rows="3"
                 placeholder="給 AI 的系統級指示..."
                 label="系統提示"
@@ -1156,7 +1162,7 @@ async function onRegexFileImport(e: Event) {
             <div class="form-group">
               <label class="form-label">歷史後指令</label>
               <ExpandableTextarea
-                v-model="formData.data.post_history_instructions"
+                v-model="formData.data.post_history_instructions!"
                 :rows="3"
                 placeholder="在對話歷史後添加的指令..."
                 label="歷史後指令"
@@ -1166,7 +1172,7 @@ async function onRegexFileImport(e: Event) {
             <div class="form-group">
               <label class="form-label">創建者備註</label>
               <ExpandableTextarea
-                v-model="formData.data.creator_notes"
+                v-model="formData.data.creator_notes!"
                 :rows="3"
                 placeholder="創建者的備註、使用說明..."
                 label="創建者備註"

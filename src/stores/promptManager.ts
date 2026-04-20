@@ -786,7 +786,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
    * 移動提示詞位置
    */
   async function movePrompt(
-    identifier: string,
+    _identifier: string,
     fromIndex: number,
     toIndex: number,
   ): Promise<void> {
@@ -1137,7 +1137,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
    * 移動日記提示詞位置
    */
   async function moveDiaryPrompt(
-    identifier: string,
+    _identifier: string,
     fromIndex: number,
     toIndex: number,
   ): Promise<void> {
@@ -1227,7 +1227,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
    * 移動總結提示詞位置
    */
   async function moveSummaryPrompt(
-    identifier: string,
+    _identifier: string,
     fromIndex: number,
     toIndex: number,
   ): Promise<void> {
@@ -1319,7 +1319,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
    * 移動重要事件提示詞位置
    */
   async function moveEventsPrompt(
-    identifier: string,
+    _identifier: string,
     fromIndex: number,
     toIndex: number,
   ): Promise<void> {
@@ -1419,7 +1419,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
    * 移動噗浪發文提示詞位置
    */
   async function movePlurkPostPrompt(
-    identifier: string,
+    _identifier: string,
     fromIndex: number,
     toIndex: number,
   ): Promise<void> {
@@ -1519,7 +1519,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
    * 移動噗浪評論提示詞位置
    */
   async function movePlurkCommentPrompt(
-    identifier: string,
+    _identifier: string,
     fromIndex: number,
     toIndex: number,
   ): Promise<void> {
@@ -1619,7 +1619,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
    * 移動面對面模式提示詞位置
    */
   async function moveFaceToFacePrompt(
-    identifier: string,
+    _identifier: string,
     fromIndex: number,
     toIndex: number,
   ): Promise<void> {
@@ -1717,7 +1717,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
    * 移動群聊模式提示詞位置
    */
   async function moveGroupChatPrompt(
-    identifier: string,
+    _identifier: string,
     fromIndex: number,
     toIndex: number,
   ): Promise<void> {

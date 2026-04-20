@@ -663,7 +663,7 @@ function renderContent(post: TheaterPost): string {
   let blockIdx = 0;
   html = html.replace(
     /\[SMS_START\]([\s\S]*?)\[SMS_END\]/g,
-    (_match, inner: string) => {
+    (_match, _inner: string) => {
       const block = post.smsBlocks[blockIdx++];
       if (!block) return "";
       return renderSmsBlock(block, post);

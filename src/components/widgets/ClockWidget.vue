@@ -19,6 +19,7 @@ const props = defineProps<{
   data?: {
     customStyle?: WidgetCustomStyle;
     clockStyle?: ClockStyle;
+    clockColor?: string;
     showSeconds?: boolean;
     showDate?: boolean;
   };

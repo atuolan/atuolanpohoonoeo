@@ -751,20 +751,20 @@ ${recentMessagesText}
 
   // 刪除總結
   async function handleDeleteSummary(id: string) {
-    deps.chatSummaries.value = deps.chatSummaries.value.filter((s) => s.id !== id);
     await deleteSummaryFromDB(id);
+    deps.chatSummaries.value = deps.chatSummaries.value.filter((s) => s.id !== id);
     // 向量記憶：刪除對應向量
     deleteVectorEmbedding(`vec_${id}`).catch(err => console.error('[向量記憶] 刪除向量失敗:', err))
   }
 
   // 批量刪除選取的總結
   async function handleDeleteSelected(ids: string[]) {
+    await Promise.all(ids.map((id) => deleteSummaryFromDB(id)));
     deps.chatSummaries.value = deps.chatSummaries.value.filter(
       (s) => !ids.includes(s.id),
     );
-    await Promise.all(ids.map((id) => deleteSummaryFromDB(id)));
-    // 向量記憶：批量刪除對應向量
-    Promise.all(ids.map(id => deleteVectorEmbedding(`vec_${id}`))).catch(err => console.error('[向量記憶] 批量刪除向量失敗:', err))
+    // 向量記憶：批量刪除向量
+    await Promise.all(ids.map(id => deleteVectorEmbedding(`vec_${id}`).catch(err => console.error('[向量記憶] 刪除向量失敗:', err))));
   }
 
   // 編輯總結

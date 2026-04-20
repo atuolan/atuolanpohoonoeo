@@ -460,6 +460,20 @@ function processAiOutputTemplate(content: string): string {
   }
 }
 
+const onHeaderSelectPersona = (...args: any[]) => selectPersona(args[0] as string);
+const onHeaderOpenGame = (...args: any[]) =>
+  openGame(args[0] as "dishwashing" | "fishing" | "gambling" | "merit");
+const onHeaderSetFakeTimeMode = (...args: any[]) =>
+  setFakeTimeMode(args[0] as "real" | "loop" | "offset");
+const onHeaderUpdateFakeTimeLoopStart = (...args: any[]) =>
+  updateFakeTimeLoopStart(args[0] as string);
+const onHeaderUpdateFakeTimeLoopEnd = (...args: any[]) =>
+  updateFakeTimeLoopEnd(args[0] as string);
+const onHeaderUpdateOffsetStartDateTime = (...args: any[]) =>
+  updateOffsetStartDateTime(args[0] as string);
+const onHeaderNavigate = (...args: any[]) =>
+  navigateTo(args[0] as "character" | "worldbook" | "settings" | "peek-phone");
+
 // 套用 USER_INPUT regex（在用戶訊息 content 建立前呼叫）
 function applyUserInputRegex(content: string): string {
   const scripts = getActiveRegexScripts();
@@ -1625,7 +1639,7 @@ const {
   currentCharacter,
   getFakeTime: () => fakeTime.getChatNow(),
   getRealTimeAwareness: () =>
-    currentChatData.value?.settings?.enableRealTimeAwareness ?? true,
+    currentChatData.value?.enableRealTimeAwareness ?? true,
 });
 
 // ===== 天氣 modal：整合 WeatherScreen 的國家/城市與我的城市 =====
@@ -1908,6 +1922,40 @@ function handleSplitRegexHtml(messageId: string, htmlContent: string) {
   saveChat();
 }
 
+const onMessageEdit = (...args: any[]) => handleMessageEdit(args[0] as string);
+const onMessageDelete = (...args: any[]) => handleMessageDelete(args[0] as string);
+const onMessageCopy = (...args: any[]) => handleMessageCopy(args[0] as string);
+const onMessageRegenerate = (...args: any[]) => handleRegenerate(args[0] as string);
+const onMessageSwipe = (...args: any[]) =>
+  handleMessageSwipe(args[0] as string, args[1] as "prev" | "next");
+const onMessageRoundSwipe = (...args: any[]) =>
+  handleRoundSwipe(args[0] as string, args[1] as "prev" | "next");
+const onMessageReply = (...args: any[]) => handleReplyById(args[0] as string);
+const onMessageScrollToReply = (...args: any[]) => scrollToMessage(args[0] as string);
+const onMessageMultiDelete = (...args: any[]) => handleMultiDeleteFromMessage(args[0] as string);
+const onMessageBranch = (...args: any[]) => handleBranchFromMessage(args[0] as string);
+const onMessageAcceptTransfer = (...args: any[]) => handleAcceptTransfer(args[0] as string);
+const onMessageRefundTransfer = (...args: any[]) => handleRefundTransfer(args[0] as string);
+const onMessageUpdateTranscript = (...args: any[]) =>
+  handleUpdateTranscript(args[0] as string, args[1] as string);
+const onMessageScreenshot = (...args: any[]) => handleMessageScreenshot(args[0] as string);
+const onMessageBatchScreenshot = (...args: any[]) =>
+  startScreenshotSelectMode(args[0] as string | undefined);
+const onMessageAvatarClick = (...args: any[]) => handleAvatarClick(args[0] as string);
+const onMessageSplitRegexHtml = (...args: any[]) =>
+  handleSplitRegexHtml(args[0] as string, args[1] as string);
+const onMessageRecall = (...args: any[]) =>
+  handleMessageRecall(args[0] as string, args[1] as "seen" | "unseen");
+const onMessageCharRecallReveal = (...args: any[]) => handleCharRecallReveal(args[0] as string);
+const onMessageAcceptFaceToFaceRequest = (...args: any[]) =>
+  handleAcceptFaceToFaceRequest(args[0] as string);
+const onMessageRejectFaceToFaceRequest = (...args: any[]) =>
+  handleRejectFaceToFaceRequest(args[0] as string);
+const onMessageAcceptOnlineModeRequest = (...args: any[]) =>
+  handleAcceptOnlineModeRequest(args[0] as string);
+const onMessageRejectOnlineModeRequest = (...args: any[]) =>
+  handleRejectOnlineModeRequest(args[0] as string);
+
 function _handleAffinityUpdates(
   updates: {
     metric: string;
@@ -2173,6 +2221,15 @@ const {
   onShareMusic: handleShareMusicToChat,
   emit: emit as (e: string, ...args: any[]) => void,
 });
+
+const onInputQuickWheel = (...args: any[]) => handleQuickInputWheel(args[0] as WheelEvent);
+const onInputInsertQuickAction = (...args: any[]) => insertQuickAction(args[0] as string);
+const onInputKeydown = (...args: any[]) => handleKeydown(args[0] as KeyboardEvent);
+const onInputMicDown = (...args: any[]) => onMicDown(args[0] as MouseEvent | TouchEvent);
+const onInputStartRecording = (...args: any[]) =>
+  startRecording(args[0] as MouseEvent | TouchEvent);
+const onInputStickerSelect = (...args: any[]) => handleStickerSelect(args[0]);
+const onInputFeatureClick = (...args: any[]) => handleFeatureClick(args[0] as string);
 
 // ===== 多人卡子角色管理 =====
 const showAddMultiCharMember = ref(false);
@@ -3596,6 +3653,39 @@ function collectCurrentRoundMessages(targetIndex: number): Message[] {
   return roundMessages;
 }
 
+function getDisplayedRoundBounds(anchorIndex: number): {
+  startIdx: number;
+  endIdx: number;
+  roundMessages: Message[];
+} | null {
+  if (anchorIndex < 0 || anchorIndex >= messages.value.length) return null;
+
+  let startIdx = anchorIndex;
+  for (let i = anchorIndex - 1; i >= 0; i--) {
+    if (messages.value[i].role === "user") {
+      startIdx = i + 1;
+      break;
+    }
+    startIdx = i;
+  }
+
+  let endIdx = messages.value.length;
+  for (let i = anchorIndex + 1; i < messages.value.length; i++) {
+    if (messages.value[i].role === "user") {
+      endIdx = i;
+      break;
+    }
+  }
+
+  const roundMessages = messages.value.slice(startIdx, endIdx).filter(
+    (msg) =>
+      msg.role === "ai" ||
+      (msg.role === "system" && (msg.isTimetravel || msg.isAvatarChange)),
+  );
+
+  return { startIdx, endIdx, roundMessages };
+}
+
 // 找到當前輪次中攜帶 roundSwipes 的訊息（通常是最後一條 AI 訊息）
 function findRoundSwipeCarrier(roundMessages: Message[]): Message | null {
   for (let i = roundMessages.length - 1; i >= 0; i--) {
@@ -3713,38 +3803,38 @@ const pendingRoundSwipes = ref<Message[][] | null>(null);
 const currentTurnId = ref<string>("");
 
 // 將 roundSwipes 附加到最後一條 AI 訊息上（在 triggerAIResponse 完成後調用）
-function attachPendingRoundSwipes() {
+function attachPendingRoundSwipes(targetTurnId?: string) {
   if (!pendingRoundSwipes.value) return;
 
-  // 找到當前輪次的最後一條 AI 訊息
-  let lastAI: Message | null = null;
-  for (let i = messages.value.length - 1; i >= 0; i--) {
-    if (messages.value[i].role === "ai") {
-      lastAI = messages.value[i];
-      break;
-    }
-  }
-
-  if (lastAI) {
-    // 用 currentTurnId 收集新生成的這一輪訊息（比舊的 findFirstAIMessageOfCurrentRound 更精確）
-    const newRound = (
-      currentTurnId.value
+  const roundMessages = (
+    targetTurnId
+      ? messages.value.filter((m) => m.turnId === targetTurnId)
+      : currentTurnId.value
         ? messages.value.filter((m) => m.turnId === currentTurnId.value)
         : (() => {
             const firstAI = findFirstAIMessageOfCurrentRound();
             if (!firstAI) return [];
             const idx = messages.value.findIndex((m) => m.id === firstAI.id);
-            return collectCurrentRoundMessages(idx);
+            return idx === -1 ? [] : collectCurrentRoundMessages(idx);
           })()
-    ).map((m) => {
-      const clone = { ...m };
-      delete clone.roundSwipes;
-      delete clone.roundSwipeId;
-      return clone;
-    });
+  ).map((m) => {
+    const clone = { ...m };
+    delete clone.roundSwipes;
+    delete clone.roundSwipeId;
+    return clone;
+  });
 
-    if (newRound.length > 0) {
-      pendingRoundSwipes.value.push(newRound);
+  const lastAI = [...messages.value]
+    .reverse()
+    .find(
+      (m) =>
+        m.role === "ai" &&
+        (!targetTurnId || m.turnId === targetTurnId),
+    ) || null;
+
+  if (lastAI) {
+    if (roundMessages.length > 0) {
+      pendingRoundSwipes.value.push(roundMessages);
     }
 
     lastAI.roundSwipes = pendingRoundSwipes.value;
@@ -3781,14 +3871,9 @@ function handleRoundSwipe(lastAIMessageId: string, direction: "prev" | "next") {
   if (!targetRound || targetRound.length === 0) return;
 
   // 先保存當前輪次到 roundSwipes（更新當前位置的快照）
-  const firstAI = findFirstAIMessageOfCurrentRound();
-  if (firstAI) {
-    const firstAIIndex = messages.value.findIndex((m) => m.id === firstAI.id);
-    const currentRound = (
-      currentTurnId.value
-        ? messages.value.filter((m) => m.turnId === currentTurnId.value)
-        : collectCurrentRoundMessages(firstAIIndex)
-    ).map((m) => {
+  const displayedRound = getDisplayedRoundBounds(carrierIndex);
+  if (displayedRound) {
+    const currentRound = displayedRound.roundMessages.map((m) => {
       const clone = { ...m };
       delete clone.roundSwipes;
       delete clone.roundSwipeId;
@@ -3798,39 +3883,9 @@ function handleRoundSwipe(lastAIMessageId: string, direction: "prev" | "next") {
   }
 
   // 找到當前輪次的範圍
-  let startIdx: number = -1;
-  let endIdx = messages.value.length;
-
-  if (currentTurnId.value) {
-    // 用 turnId 找範圍
-    startIdx = messages.value.findIndex(
-      (m) => m.turnId === currentTurnId.value,
-    );
-    if (startIdx !== -1) {
-      // endIdx 就是最後一個同 turnId 訊息的下一位
-      for (let i = messages.value.length - 1; i >= 0; i--) {
-        if (messages.value[i].turnId === currentTurnId.value) {
-          endIdx = i + 1;
-          break;
-        }
-      }
-    }
-  }
-
-  // fallback：turnId 找不到時用舊邏輯（相容舊資料或切換到無 turnId 的輪次後）
-  if (startIdx === -1) {
-    const firstAICurrent = findFirstAIMessageOfCurrentRound();
-    if (!firstAICurrent) return;
-    startIdx = messages.value.findIndex((m) => m.id === firstAICurrent.id);
-    if (startIdx === -1) return;
-    endIdx = messages.value.length;
-    for (let i = startIdx + 1; i < messages.value.length; i++) {
-      if (messages.value[i].role === "user") {
-        endIdx = i;
-        break;
-      }
-    }
-  }
+  const roundBounds = displayedRound;
+  if (!roundBounds) return;
+  const { startIdx, endIdx } = roundBounds;
 
   // 替換訊息：在目標輪次的最後一條 AI 訊息上附加 roundSwipes
   const newMessages = targetRound.map((m, i) => {
@@ -3914,6 +3969,7 @@ async function triggerAIResponse(options?: {
   if (isGenerating.value) return;
   // 被角色封鎖期間，除非明確繞過（如好友申請），否則不觸發 AI 生成
   if (isBlockedByChar.value && !options?.bypassBlockCheck) return;
+  const generationTurnId = currentTurnId.value || "";
 
   // 使用全局狀態管理開始生成
   const startResult = aiGenerationStore.startGeneration(
@@ -4664,7 +4720,7 @@ async function triggerAIResponse(options?: {
       content: "",
       timestamp: Date.now(),
       isStreaming: true,
-      turnId: currentTurnId.value || undefined,
+      turnId: generationTurnId || undefined,
     };
     messages.value.push(aiMessage);
     scrollToBottom();
@@ -4707,6 +4763,25 @@ async function triggerAIResponse(options?: {
 
     if (!isStreamingEnabled) {
       // ===== 非流式模式：一次性取得完整回覆 =====
+      const streamGenerator = client.generateStream({
+        messages: apiMessages,
+        settings: chatSettings,
+        apiSettings: chatTaskConfig.api,
+        signal: controller.signal,
+        adjustLastMessageRole: true,
+      });
+
+      for await (const event of streamGenerator) {
+        if (!event) continue;
+        if (event.type === "token" && event.token) {
+          fullContent += event.token;
+        } else if (event.type === "error") {
+          console.error("Error occurred during token generation:", event.error);
+          fullContent += `Error: ${String(event.error)}`;
+        } else {
+          console.log("Unknown event type:", event.type);
+        }
+      }
       const result = await client.generate({
         messages: apiMessages,
         settings: chatSettings,
@@ -4848,7 +4923,7 @@ async function triggerAIResponse(options?: {
                 role: "ai",
                 content: parsedMsg.content,
                 timestamp: Date.now() + i,
-                turnId: currentTurnId.value || undefined,
+                turnId: generationTurnId || undefined,
                 isPrivateMessage: true,
                 senderCharacterId: senderCharId,
                 senderCharacterName: senderName,
@@ -5070,7 +5145,7 @@ async function triggerAIResponse(options?: {
               role: "ai",
               content: msgContent,
               timestamp: Date.now() + i,
-              turnId: currentTurnId.value || undefined,
+              turnId: generationTurnId || undefined,
               thought: parsedMsg.thought,
               messageType: parsedMsg.isAiImage
                 ? "descriptive-image"
@@ -5153,7 +5228,7 @@ async function triggerAIResponse(options?: {
               role: "ai",
               content: parsed.rawOutput || finalContent,
               timestamp: Date.now(),
-              turnId: currentTurnId.value || undefined,
+              turnId: generationTurnId || undefined,
             });
           }
 
@@ -5359,8 +5434,8 @@ async function triggerAIResponse(options?: {
                         : parsedMsg.isVoice
                           ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
                           : parsedMsg.content,
-                timestamp: Date.now() + i, // 確保時間戳遞增
-                turnId: currentTurnId.value || undefined,
+                timestamp: Date.now() + i,
+                turnId: generationTurnId || undefined,
                 thought: parsedMsg.thought,
                 isTimetravel: parsedMsg.isTimetravel,
                 timetravelContent: parsedMsg.timetravelContent,
@@ -5371,23 +5446,19 @@ async function triggerAIResponse(options?: {
                 replyToContent: parsedMsg.replyToContent,
                 isGift: parsedMsg.isGift,
                 giftName: parsedMsg.giftName,
-                // 轉帳相關
                 isTransfer: parsedMsg.isTransfer,
                 transferType: parsedMsg.transferType,
                 transferAmount: parsedMsg.transferAmount,
                 transferNote: parsedMsg.transferNote,
-                // AI 發送的轉帳為 pending 狀態，AI 發送的退回直接處理
                 transferStatus: parsedMsg.isTransfer
                   ? parsedMsg.transferType === "refund"
                     ? "refunded"
                     : "pending"
                   : undefined,
-                // 換頭像相關
                 isAvatarChange: parsedMsg.isAvatarChange,
                 avatarChangeAction: parsedMsg.avatarChangeAction,
                 avatarChangeMood: parsedMsg.avatarChangeMood,
                 avatarChangeDesc: parsedMsg.avatarChangeDesc,
-                // AI 圖片相關
                 messageType: parsedMsg.isAiImage
                   ? "descriptive-image"
                   : parsedMsg.isVoice
@@ -5397,37 +5468,20 @@ async function triggerAIResponse(options?: {
                   ? parsedMsg.imageDescription
                   : undefined,
                 imagePrompt: parsedMsg.imagePrompt,
-                // HTML 區塊相關
                 isHtmlBlock: parsedMsg.isHtmlBlock,
                 htmlContent: parsedMsg.isHtmlBlock
                   ? parsedMsg.content
                   : undefined,
-                // 語音訊息相關
                 audioTranscript: parsedMsg.isVoice
                   ? parsedMsg.voiceContent
                   : undefined,
-                // 角色撤回相關（線上模式）
                 isCharRecall: parsedMsg.isCharRecall,
                 charRecallType: parsedMsg.charRecallType,
                 charRecallContent: parsedMsg.charRecallContent,
                 charRecallHints: parsedMsg.charRecallHints,
-                isFaceToFaceRequest: parsedMsg.isFaceToFaceRequest,
-                faceToFaceRequestReason: parsedMsg.faceToFaceRequestReason,
-                faceToFaceRequestStatus: parsedMsg.isFaceToFaceRequest
-                  ? "pending"
-                  : undefined,
-                isOnlineModeRequest: parsedMsg.isOnlineModeRequest,
-                onlineModeRequestReason: parsedMsg.onlineModeRequestReason,
-                onlineModeRequestStatus: parsedMsg.isOnlineModeRequest
-                  ? "pending"
-                  : undefined,
               };
 
-              // 外賣付款結果/送達：從最近訊息中找到訂單快照並附加
-              if (
-                parsedMsg.isWaimaiPaymentResult ||
-                parsedMsg.isWaimaiDelivery
-              ) {
+              if (parsedMsg.isWaimaiPaymentResult || parsedMsg.isWaimaiDelivery) {
                 const recentOrder = findLatestWaimaiOrder(messages.value);
                 if (recentOrder) {
                   const clonedOrder = JSON.parse(JSON.stringify(recentOrder));
@@ -5449,7 +5503,6 @@ async function triggerAIResponse(options?: {
                 }
               }
 
-              // 逐條顯示延遲：多條訊息時，首條等 500ms，後續每條間隔 300ms
               if (_totalMsgs1 > 1) {
                 await _delay(2000);
               }
@@ -5457,12 +5510,10 @@ async function triggerAIResponse(options?: {
               messages.value.push(newMessage);
               scrollToBottom();
 
-              // 記錄第一條新 AI 訊息的 ID，用於好感度快照綁定
               if (!_firstNewAiMsgId && newMessage.role === "ai") {
                 _firstNewAiMsgId = newMessage.id;
               }
 
-              // 處理換頭像動作
               if (parsedMsg.isAvatarChange && parsedMsg.avatarChangeAction) {
                 await handleAvatarChange(
                   parsedMsg.avatarChangeAction,
@@ -5471,515 +5522,13 @@ async function triggerAIResponse(options?: {
                 );
               }
 
-              // 處理 AI 的退回標籤（退回用戶之前的轉帳）
               if (
                 parsedMsg.isTransfer &&
                 parsedMsg.transferType === "refund" &&
                 parsedMsg.transferAmount
               ) {
-                await processAIRefund(parsedMsg.transferAmount);
+                processAIRefund(parsedMsg.transferAmount);
               }
-
-              // 如果文生圖已開啟且有英文 prompt 或中文描述，觸發生圖
-              if (
-                parsedMsg.isAiImage &&
-                (parsedMsg.imagePrompt || parsedMsg.imageDescription)
-              ) {
-                tryGenerateImageForMessage(
-                  newMessage.id,
-                  parsedMsg.imagePrompt,
-                  parsedMsg.imageDescription,
-                );
-              }
-              // MiniMax TTS 語音合成
-              processMessageTTS(newMessage.id, newMessage.content);
-            }
-
-            // 處理好感度更新（在訊息建立後呼叫，綁定快照到第一條新 AI 訊息）
-            if (_pendingAffinityUpdates && _pendingAffinityUpdates.length > 0) {
-              _handleAffinityUpdates(_pendingAffinityUpdates, _firstNewAiMsgId);
-            }
-
-            // 將原始 <update> 區塊附加到最後一條 AI 訊息，供重新掃描使用
-            if (parsed.rawUpdateBlock) {
-              const lastAiMsg = [...messages.value]
-                .reverse()
-                .find(
-                  (m) => m.role === "ai" && m.turnId === currentTurnId.value,
-                );
-              if (lastAiMsg) {
-                lastAiMsg._rawAffinityBlock = parsed.rawUpdateBlock;
-              }
-            }
-
-            // 如果沒有解析出任何訊息 **或** 解析出的訊息全被過濾（例如僅含情頭動作），保留原始內容
-            if (parsed.messages.length === 0 || _shownMsgs1 === 0) {
-              if (_shownMsgs1 === 0 && parsed.messages.length > 0) {
-                console.warn(
-                  "[ChatScreen] 所有解析訊息被過濾，觸發 fallback",
-                  { parsedCount: parsed.messages.length },
-                );
-              }
-              const fallbackContent = parsed.rawOutput || finalContent;
-              // 只有當 fallback 有實質文字內容時才推送（避免空氣泡）
-              const strippedFallback = fallbackContent.replace(/<[^>]*>/g, "").trim();
-              if (strippedFallback) {
-                const fallbackMessage: Message = {
-                  id: aiMessage.id,
-                  role: "ai",
-                  content: fallbackContent,
-                  timestamp: Date.now(),
-                  turnId: currentTurnId.value || undefined,
-                };
-                messages.value.push(fallbackMessage);
-              }
-            }
-          }
-        } else {
-          // 不需要解析，直接使用原始內容
-          // 但仍需抽取心聲標記（ˇ想法ˇ 或 ~(想法)~），否則心聲氣泡無法點擊 / 編輯
-          if (msgIndex !== -1) {
-            let cleanedFinal = finalContent;
-            let extractedThought: string | undefined;
-            const _tnNew = finalContent.match(/ˇ([^ˇ]+)ˇ/g);
-            if (_tnNew && _tnNew.length > 0) {
-              const _im = _tnNew[_tnNew.length - 1].match(/ˇ([^ˇ]+)ˇ/);
-              if (_im) extractedThought = _im[1];
-              cleanedFinal = finalContent.replace(/\s*ˇ[^ˇ]+ˇ/g, "").trim();
-            } else {
-              const _tnOld = finalContent.match(/~\(([^)]+)\)~/g);
-              if (_tnOld && _tnOld.length > 0) {
-                const _im = _tnOld[_tnOld.length - 1].match(/~\(([^)]+)\)~/);
-                if (_im) extractedThought = _im[1];
-                cleanedFinal = finalContent
-                  .replace(/\s*~\([^)]+\)~/g, "")
-                  .trim();
-              }
-            }
-            messages.value[msgIndex].content = cleanedFinal;
-            messages.value[msgIndex].thought = extractedThought;
-            messages.value[msgIndex].isStreaming = false;
-          }
-        }
-      } // 結束空回應 else 塊
-    } else {
-      // ===== 流式模式：逐 token 接收 =====
-      const streamGenerator = client.generateStream({
-        messages: apiMessages,
-        settings: chatSettings,
-        apiSettings: chatTaskConfig.api,
-        signal: controller.signal,
-        adjustLastMessageRole: true,
-      });
-
-      for await (const event of streamGenerator) {
-        if (event.type === "token" && event.token) {
-          fullContent += event.token;
-
-          // 同步流式內容到全局 store（離開頁面後可恢復）
-          if (currentChatId.value) {
-            aiGenerationStore.updateContent(
-              currentChatId.value,
-              fullContent,
-              "chat",
-            );
-          }
-
-          if (useWindow) {
-            streamingWindow.appendToken(event.token);
-          } else {
-            const msgIndex = messages.value.findIndex(
-              (m) => m.id === aiMessage.id,
-            );
-            if (msgIndex !== -1) {
-              messages.value[msgIndex].content = fullContent;
-            }
-            scrollToBottom();
-          }
-        } else if (event.type === "done") {
-          const finalContent = processAiOutputTemplate(
-            applyAIOutputRegex(event.content || fullContent),
-          );
-          const msgIndex = messages.value.findIndex(
-            (m) => m.id === aiMessage.id,
-          );
-
-          // 空回應檢測：若是使用者主動停止，直接移除佔位氣泡
-          if (!finalContent || !finalContent.trim()) {
-            if (controller.signal.aborted) {
-              if (msgIndex !== -1) {
-                messages.value.splice(msgIndex, 1);
-              }
-              if (useWindow) {
-                streamingWindow.setComplete();
-              }
-              await saveChatImmediate();
-              return;
-            }
-
-            if (msgIndex !== -1) {
-              messages.value[msgIndex].content =
-                "[空回應] API 返回了空內容，可能是網路不穩或連線中斷，請重試";
-              messages.value[msgIndex].isStreaming = false;
-            }
-            if (useWindow) {
-              streamingWindow.setError("API 返回空內容");
-            }
-            continue;
-          }
-
-          // 群聊/多人卡模式：使用群聊解析器
-          if (useGroupChatParser.value) {
-            const parsed = parseGroupChatResponse(finalContent);
-
-            if (msgIndex !== -1) {
-              messages.value.splice(msgIndex, 1);
-            }
-
-            for (let i = 0; i < parsed.messages.length; i++) {
-              const parsedMsg = parsed.messages[i];
-              const senderName = parsedMsg.senderName || "";
-              const senderCharId = getGroupMemberIdByName(senderName);
-              const senderAvatar = getGroupMemberAvatar(senderName);
-
-              if (parsedMsg.isGroupAction && parsedMsg.groupActionType) {
-                if (
-                  parsedMsg.groupActionType === "rename" &&
-                  parsedMsg.groupActionValue &&
-                  currentChatData.value?.groupMetadata
-                ) {
-                  currentChatData.value.groupMetadata.groupName =
-                    parsedMsg.groupActionValue;
-                }
-                if (
-                  parsedMsg.groupActionType === "kick" &&
-                  parsedMsg.groupActionTarget &&
-                  currentChatData.value?.groupMetadata
-                ) {
-                  const targetId = getGroupMemberIdByName(
-                    parsedMsg.groupActionTarget,
-                  );
-                  if (targetId) {
-                    currentChatData.value.groupMetadata.members =
-                      currentChatData.value.groupMetadata.members.filter(
-                        (m) => m.characterId !== targetId,
-                      );
-                  }
-                }
-                if (
-                  (parsedMsg.groupActionType === "mute" ||
-                    parsedMsg.groupActionType === "unmute") &&
-                  parsedMsg.groupActionTarget &&
-                  currentChatData.value?.groupMetadata
-                ) {
-                  const targetId = getGroupMemberIdByName(
-                    parsedMsg.groupActionTarget,
-                  );
-                  if (targetId) {
-                    const member =
-                      currentChatData.value.groupMetadata.members.find(
-                        (m) => m.characterId === targetId,
-                      );
-                    if (member) {
-                      member.isMuted = parsedMsg.groupActionType === "mute";
-                    }
-                  }
-                }
-
-                const actionMsg: Message = {
-                  id: `msg_${Date.now()}_${i}`,
-                  role: "system",
-                  content: "",
-                  timestamp: Date.now() + i,
-                  isGroupAction: true,
-                  groupActionType: parsedMsg.groupActionType,
-                  groupActionActor: parsedMsg.groupActionActor,
-                  groupActionTarget: parsedMsg.groupActionTarget ?? undefined,
-                  groupActionValue: parsedMsg.groupActionValue ?? undefined,
-                };
-                messages.value.push(actionMsg);
-                continue;
-              }
-
-              if (parsedMsg.isRecall) {
-                const recallMsg: Message = {
-                  id: `msg_${Date.now()}_${i}`,
-                  role: "system",
-                  content: "",
-                  timestamp: Date.now() + i,
-                  isRecall: true,
-                  recallContent: parsedMsg.recallContent,
-                  senderCharacterId: senderCharId,
-                  senderCharacterName: senderName,
-                };
-                messages.value.push(recallMsg);
-                continue;
-              }
-
-              if (parsedMsg.isPrivateMessage) {
-                const dmNotice: Message = {
-                  id: `msg_${Date.now()}_${i}`,
-                  role: "ai",
-                  content: parsedMsg.content,
-                  timestamp: Date.now() + i,
-                  turnId: currentTurnId.value || undefined,
-                  isPrivateMessage: true,
-                  senderCharacterId: senderCharId,
-                  senderCharacterName: senderName,
-                  senderCharacterAvatar: senderAvatar,
-                };
-                messages.value.push(dmNotice);
-
-                if (senderCharId) {
-                  try {
-                    const existingChat = await resolvePreferredDirectChat(senderCharId);
-
-                    const targetChat: Chat =
-                      existingChat ||
-                      createDefaultChat(senderCharId, senderName);
-
-                    const groupChatHistoryData = buildGroupChatHistoryData(
-                      messages.value,
-                      15,
-                    );
-
-                    const newDmMessages: ChatMessage[] = [];
-
-                    if (groupChatHistoryData) {
-                      newDmMessages.push({
-                        id: crypto.randomUUID(),
-                        sender: "system",
-                        name: "系統",
-                        content: "",
-                        is_user: false,
-                        status: "sent",
-                        createdAt: Date.now(),
-                        updatedAt: Date.now(),
-                        isGroupChatHistory: true,
-                        groupChatHistoryData,
-                      });
-                    }
-
-                    const dmMessage: ChatMessage = {
-                      id: crypto.randomUUID(),
-                      sender: "assistant",
-                      name: senderName,
-                      content: parsedMsg.content,
-                      is_user: false,
-                      status: "sent",
-                      createdAt: Date.now(),
-                      updatedAt: Date.now(),
-                    };
-                    newDmMessages.push(dmMessage);
-
-                    // v24：用 appendChatMessages 追加訊息（無競態風險）
-                    await appendMessages(targetChat.id, newDmMessages);
-                    if (existingChat) {
-                      await refreshChatDerivedMetadata(targetChat.id);
-                    } else {
-                      targetChat.messages = [];
-                      await createChatRecord(targetChat);
-                      await refreshChatDerivedMetadata(targetChat.id);
-                    }
-                  } catch (e) {
-                    console.warn("[ChatScreen] 無法插入私信到 1v1 聊天:", e);
-                  }
-                }
-                continue;
-              }
-
-              if (parsedMsg.isGroupCallRequest) {
-                if (!showGroupCallModal.value) {
-                  const callRequestMsg: Message = {
-                    id: `msg_${Date.now()}_${i}`,
-                    role: "system",
-                    content: `${senderName} 發起了群通話${parsedMsg.groupCallRequestReason ? `：${parsedMsg.groupCallRequestReason}` : ""}`,
-                    timestamp: Date.now() + i,
-                  };
-                  messages.value.push(callRequestMsg);
-
-                  groupCallStartedAt.value = Date.now();
-                  groupCallMessages.value = [];
-                  groupCallParticipants.value = [];
-
-                  const initiatorChar = charactersStore.characters.find(
-                    (c) => c.id === senderCharId,
-                  );
-                  if (senderCharId) {
-                    groupCallParticipants.value.push({
-                      characterId: senderCharId,
-                      name: senderName,
-                      avatar: initiatorChar?.avatar || "",
-                      isSpeaking: false,
-                    });
-                  }
-
-                  groupCallMessages.value.push({
-                    type: "system",
-                    content: `${senderName} 發起了群通話`,
-                    timestamp: Date.now(),
-                  });
-
-                  if (currentChatData.value?.groupMetadata) {
-                    currentChatData.value.groupMetadata.callState = {
-                      isActive: true,
-                      initiatorCharacterId: senderCharId || null,
-                      startedAt: groupCallStartedAt.value,
-                      participants: senderCharId
-                        ? [{ characterId: senderCharId, joinedAt: Date.now() }]
-                        : [],
-                    };
-                  }
-
-                  showGroupCallModal.value = true;
-                }
-                continue;
-              }
-
-              if (parsedMsg.isGroupCallResponse) {
-                if (parsedMsg.groupCallResponseAction === "join") {
-                  if (senderCharId) {
-                    handleGroupCallJoin(senderCharId, senderName);
-                  }
-                } else if (parsedMsg.groupCallResponseAction === "decline") {
-                  groupCallMessages.value.push({
-                    type: "system",
-                    content: `${senderName} 拒絕加入通話${parsedMsg.groupCallDeclineReason ? `：${parsedMsg.groupCallDeclineReason}` : ""}`,
-                    timestamp: Date.now(),
-                  });
-                }
-                continue;
-              }
-
-              if (parsedMsg.isJoinCall) {
-                if (senderCharId && showGroupCallModal.value) {
-                  handleGroupCallJoin(senderCharId, senderName);
-                }
-                if (parsedMsg.content && showGroupCallModal.value) {
-                  addGroupCallVoiceMessage(senderName, parsedMsg.content);
-                }
-                continue;
-              }
-
-              if (parsedMsg.isLeaveCall) {
-                if (senderCharId && showGroupCallModal.value) {
-                  handleGroupCallLeave(
-                    senderCharId,
-                    senderName,
-                    parsedMsg.leaveCallReason,
-                  );
-                }
-                if (parsedMsg.content && showGroupCallModal.value) {
-                  addGroupCallVoiceMessage(senderName, parsedMsg.content);
-                }
-                continue;
-              }
-
-              if (showGroupCallModal.value) {
-                if (parsedMsg.isVoice && parsedMsg.voiceContent) {
-                  addGroupCallVoiceMessage(senderName, parsedMsg.voiceContent);
-                  continue;
-                }
-                if (parsedMsg.content) {
-                  addGroupCallVoiceMessage(senderName, parsedMsg.content);
-                  continue;
-                }
-                if (parsedMsg.isStickerMsg && parsedMsg.stickerMeaning) {
-                  addGroupCallVoiceMessage(
-                    senderName,
-                    `[表情：${parsedMsg.stickerMeaning}]`,
-                  );
-                  continue;
-                }
-                continue;
-              }
-
-              if (
-                !parsedMsg.content &&
-                !parsedMsg.isStickerMsg &&
-                !parsedMsg.isVoice &&
-                !parsedMsg.isAiImage
-              )
-                continue;
-
-              let msgContent = parsedMsg.content;
-              if (parsedMsg.isStickerMsg && parsedMsg.stickerMeaning) {
-                msgContent = `[sticker:${parsedMsg.stickerMeaning}]`;
-              }
-              if (parsedMsg.isAiImage && parsedMsg.imageDescription) {
-                msgContent = `<pic>${parsedMsg.imageDescription}</pic>`;
-              }
-              if (parsedMsg.isVoice && parsedMsg.voiceContent) {
-                msgContent = `[語音訊息] ${parsedMsg.voiceContent}`;
-              }
-
-              const newMessage: Message = {
-                id: `msg_${Date.now()}_${i}`,
-                role: "ai",
-                content: msgContent,
-                timestamp: Date.now() + i,
-                turnId: currentTurnId.value || undefined,
-                thought: parsedMsg.thought,
-                messageType: parsedMsg.isAiImage
-                  ? "descriptive-image"
-                  : parsedMsg.isVoice
-                    ? "audio"
-                    : undefined,
-                imageCaption: parsedMsg.isAiImage
-                  ? parsedMsg.imageDescription
-                  : undefined,
-                audioTranscript: parsedMsg.isVoice
-                  ? parsedMsg.voiceContent
-                  : undefined,
-                senderCharacterId: senderCharId,
-                senderCharacterName: senderName,
-                senderCharacterAvatar: senderAvatar,
-                isRedpacket: parsedMsg.isRedpacket,
-                redpacketData: parsedMsg.redpacketData,
-                isLocation: parsedMsg.isLocation,
-                locationContent: parsedMsg.locationContent,
-                replyToContent: parsedMsg.replyToContent,
-                isGift: parsedMsg.isGift,
-                giftName: parsedMsg.giftName,
-                isTransfer: parsedMsg.isTransfer,
-                transferType: parsedMsg.transferType,
-                transferAmount: parsedMsg.transferAmount,
-                transferNote: parsedMsg.transferNote,
-                transferStatus: parsedMsg.isTransfer
-                  ? parsedMsg.transferType === "refund"
-                    ? "refunded"
-                    : "pending"
-                  : undefined,
-                imagePrompt: parsedMsg.imagePrompt,
-              };
-
-              // 外賣付款結果/送達（群聊 fallback）
-              if (
-                parsedMsg.isWaimaiPaymentResult ||
-                parsedMsg.isWaimaiDelivery
-              ) {
-                const recentOrder = findLatestWaimaiOrder(messages.value);
-                if (recentOrder) {
-                  const clonedOrder = JSON.parse(JSON.stringify(recentOrder));
-                  if (
-                    parsedMsg.isWaimaiPaymentResult &&
-                    parsedMsg.waimaiPaymentStatus
-                  ) {
-                    clonedOrder.status = parsedMsg.waimaiPaymentStatus;
-                    if (parsedMsg.waimaiPaymentStatus === "paid")
-                      clonedOrder.paidAt = Date.now();
-                    newMessage.isWaimaiPaymentResult = true;
-                  }
-                  if (parsedMsg.isWaimaiDelivery) {
-                    clonedOrder.status = "delivered";
-                    clonedOrder.deliveredAt = Date.now();
-                    newMessage.isWaimaiDelivery = true;
-                  }
-                  newMessage.waimaiOrder = clonedOrder;
-                }
-              }
-
-              messages.value.push(newMessage);
 
               if (
                 parsedMsg.isAiImage &&
@@ -5991,428 +5540,31 @@ async function triggerAIResponse(options?: {
                   parsedMsg.imageDescription,
                 );
               }
-              // MiniMax TTS 語音合成
               processMessageTTS(newMessage.id, newMessage.content);
-            }
-
-            if (parsed.messages.length === 0 && finalContent) {
-              messages.value.push({
-                id: `msg_${Date.now()}_fallback`,
-                role: "ai",
-                content: parsed.rawOutput || finalContent,
-                timestamp: Date.now(),
-                turnId: currentTurnId.value || undefined,
-              });
-            }
-
-            const gcCalendarEvents = parseCalendarEventTags(finalContent);
-            if (gcCalendarEvents.length > 0) {
-              for (const calEvent of gcCalendarEvents) {
-                await handleCalendarEvent(calEvent);
-              }
-            }
-
-            // 飲食記錄標籤
-            const gcFoodRecords2 = parseFoodRecordTags(finalContent);
-            for (const r of gcFoodRecords2) await handleFoodRecord(r);
-          } else if (needsParsing(finalContent)) {
-            let parsed;
-            try {
-              parsed = parseAIResponse(finalContent);
-            } catch (parseError) {
-              console.warn(
-                "[ChatScreen] AI 回覆解析失敗，使用原始內容:",
-                parseError,
-              );
-              if (msgIndex !== -1) {
-                messages.value[msgIndex].content = finalContent;
-                messages.value[msgIndex].isStreaming = false;
-              } else if (finalContent) {
-                messages.value.push({
-                  id: `msg_${Date.now()}`,
-                  role: "ai",
-                  content: finalContent,
-                  timestamp: Date.now(),
-                  turnId: currentTurnId.value || undefined,
-                });
-              }
-              parsed = null;
-            }
-
-            if (parsed) {
-              if (parsed.hasScheduleCall && parsed.scheduleCallData) {
-                await handleScheduleCall(parsed.scheduleCallData);
-              }
-
-              // 處理角色位置推測標籤
-              if (parsed.hasCharLocation && parsed.charLocationData) {
-                await handleCharLocationUpdate(parsed.charLocationData.location);
-              }
-
-              if (parsed.hasCalendarEvent && parsed.calendarEvents) {
-                for (const calEvent of parsed.calendarEvents) {
-                  await handleCalendarEvent(calEvent);
-                }
-              }
-
-              if (parsed.hasFoodRecord && parsed.foodRecords) {
-                for (const r of parsed.foodRecords) await handleFoodRecord(r);
-              }
-
-              // 處理時間跳轉標籤（偏移時間模式）
-              if (
-                parsed.hasTimeJump &&
-                parsed.timeJumpTarget &&
-                fakeTime.fakeTimeMode.value === "offset"
-              ) {
-                fakeTime.jumpToTime(parsed.timeJumpTarget);
-                await saveChat();
-              }
-
-              if (parsed.hasPlurkPost && parsed.plurkContent) {
-                await handlePlurkPost(parsed.plurkContent);
-              }
-
-              // 處理角色動作標籤（封鎖、解封、道歉外賣等）
-              if (
-                parsed.charActions &&
-                parsed.charActions.length > 0 &&
-                currentChatId.value
-              ) {
-                const blockSvc = BlockService.getInstance();
-                for (const action of parsed.charActions) {
-                  if (action.action === "block-user") {
-                    await blockSvc.handleCharacterBlock(
-                      currentChatId.value,
-                      action.reason || "",
-                    );
-                    // 先從 DB 讀取封鎖時間，再更新 UI 狀態
-                    const updatedChat = await refreshBlockStateFromStorage();
-                    currentBlockedAt.value = updatedChat?.blockState?.blockedAt ?? Date.now();
-                    isBlockedByChar.value = true;
-                    // 插入封鎖系統通知訊息（冪等：避免重複插入）
-                    const alreadyHasBlockNotif2 = messages.value.some(
-                      (m) => m.isCharBlockedNotification,
-                    );
-                    if (!alreadyHasBlockNotif2) {
-                      messages.value.push({
-                        id: `msg_blocked_${Date.now()}`,
-                        role: "system",
-                        content: "對方已將你封鎖",
-                        timestamp: Date.now(),
-                        isCharBlockedNotification: true,
-                        charBlockedReason: action.reason || "",
-                      });
-                    }
-                  } else if (action.action === "unblock-user") {
-                    await blockSvc.handleCharacterUnblock(currentChatId.value);
-                    // 即時更新 UI 封鎖狀態
-                    currentBlockedAt.value = 0;
-                    isBlockedByChar.value = false;
-                    await refreshBlockStateFromStorage();
-                  } else if (action.action === "apology-food") {
-                    // 道歉外賣：角色被封鎖時點外賣給用戶道歉
-                    try {
-                      const { default: ApologyFoodService } = await import("@/services/ApologyFoodService");
-                      const charId = props.characterId || currentCharacter.value?.id || "";
-                      await ApologyFoodService.getInstance().handleApologyFood(
-                        currentChatId.value,
-                        charId,
-                        action.item || "",
-                        action.message || "",
-                      );
-                      console.log("[ChatScreen] 道歉外賣已觸發:", { item: action.item, message: action.message });
-                    } catch (err) {
-                      console.error("[ChatScreen] 道歉外賣處理失敗:", err);
-                    }
-                  }
-                }
-              }
-
-              // 處理好感度更新（移至訊息建立後，以便綁定快照到第一條新 AI 訊息）
-              let _pendingAffinityUpdates2 = parsed.hasAffinityUpdate
-                ? parsed.affinityUpdates
-                : null;
-
-              if (msgIndex !== -1) {
-                messages.value.splice(msgIndex, 1);
-              }
-
-              let _firstNewAiMsgId2: string | undefined;
-              const _totalMsgs2 = parsed.messages.filter(
-                (pm) =>
-                  pm.content ||
-                  pm.isTimetravel ||
-                  pm.isRedpacket ||
-                  pm.isLocation ||
-                  pm.isTransfer ||
-                  pm.isGift ||
-                  pm.isAvatarChange ||
-                  pm.isAiImage ||
-                  pm.isHtmlBlock ||
-                  pm.isVoice ||
-                  pm.isWaimaiPaymentResult ||
-                  pm.isWaimaiDelivery ||
-                  pm.isCharRecall,
-              ).length;
-              let _shownMsgs2 = 0;
-              for (let i = 0; i < parsed.messages.length; i++) {
-                const parsedMsg = parsed.messages[i];
-
-                // 處理情頭動作（在跳過空內容之前執行，避免產生空白氣泡）
-                if (parsedMsg.isCoupleAvatar && parsedMsg.coupleAvatarAction) {
-                  await handleCoupleAvatarAction(parsedMsg.coupleAvatarAction);
-                }
-
-                if (
-                  !parsedMsg.content &&
-                  !parsedMsg.isTimetravel &&
-                  !parsedMsg.isRedpacket &&
-                  !parsedMsg.isLocation &&
-                  !parsedMsg.isTransfer &&
-                  !parsedMsg.isGift &&
-                  !parsedMsg.isAvatarChange &&
-                  !parsedMsg.isAiImage &&
-                  !parsedMsg.isHtmlBlock &&
-                  !parsedMsg.isVoice &&
-                  !parsedMsg.isWaimaiPaymentResult &&
-                  !parsedMsg.isWaimaiDelivery &&
-                  !parsedMsg.isCharRecall &&
-                  !parsedMsg.isFaceToFaceRequest &&
-                  !parsedMsg.isOnlineModeRequest
-                ) {
-                  continue;
-                }
-
-                const messageRole: "user" | "ai" | "system" =
-                  parsedMsg.isTimetravel ? "system" : "ai";
-                const charRecallContext2 = parsedMsg.isCharRecall
-                  ? parsedMsg.charRecallType === "seen"
-                    ? `(你撤回了訊息「${parsedMsg.charRecallContent || ""}」，但用戶已看見)`
-                    : `(你撤回了一條訊息，用戶沒看見，心情提示是${(parsedMsg.charRecallHints || []).join("、")})`
-                  : undefined;
-                const newMessage: Message = {
-                  id: `msg_${Date.now()}_${i}`,
-                  role: messageRole,
-                  content:
-                    parsedMsg.isCharRecall
-                      ? charRecallContext2 || ""
-                      : parsedMsg.isAiImage && parsedMsg.imageDescription
-                        ? `<pic>${parsedMsg.imageDescription}</pic>`
-                        : parsedMsg.isHtmlBlock
-                          ? ""
-                          : parsedMsg.isVoice
-                            ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
-                            : parsedMsg.content,
-                  timestamp: Date.now() + i,
-                  turnId: currentTurnId.value || undefined,
-                  thought: parsedMsg.thought,
-                  isTimetravel: parsedMsg.isTimetravel,
-                  timetravelContent: parsedMsg.timetravelContent,
-                  isRedpacket: parsedMsg.isRedpacket,
-                  redpacketData: parsedMsg.redpacketData,
-                  isLocation: parsedMsg.isLocation,
-                  locationContent: parsedMsg.locationContent,
-                  replyToContent: parsedMsg.replyToContent,
-                  isGift: parsedMsg.isGift,
-                  giftName: parsedMsg.giftName,
-                  isTransfer: parsedMsg.isTransfer,
-                  transferType: parsedMsg.transferType,
-                  transferAmount: parsedMsg.transferAmount,
-                  transferNote: parsedMsg.transferNote,
-                  transferStatus: parsedMsg.isTransfer
-                    ? parsedMsg.transferType === "refund"
-                      ? "refunded"
-                      : "pending"
-                    : undefined,
-                  isAvatarChange: parsedMsg.isAvatarChange,
-                  avatarChangeAction: parsedMsg.avatarChangeAction,
-                  avatarChangeMood: parsedMsg.avatarChangeMood,
-                  avatarChangeDesc: parsedMsg.avatarChangeDesc,
-                  messageType: parsedMsg.isAiImage
-                    ? "descriptive-image"
-                    : parsedMsg.isVoice
-                      ? "audio"
-                      : undefined,
-                  imageCaption: parsedMsg.isAiImage
-                    ? parsedMsg.imageDescription
-                    : undefined,
-                  imagePrompt: parsedMsg.imagePrompt,
-                  // HTML 區塊相關
-                  isHtmlBlock: parsedMsg.isHtmlBlock,
-                  htmlContent: parsedMsg.isHtmlBlock
-                    ? parsedMsg.content
-                    : undefined,
-                  // 語音訊息相關
-                  audioTranscript: parsedMsg.isVoice
-                    ? parsedMsg.voiceContent
-                    : undefined,
-                  // 角色撤回相關（線上模式）
-                  isCharRecall: parsedMsg.isCharRecall,
-                  charRecallType: parsedMsg.charRecallType,
-                  charRecallContent: parsedMsg.charRecallContent,
-                  charRecallHints: parsedMsg.charRecallHints,
-                  isFaceToFaceRequest: parsedMsg.isFaceToFaceRequest,
-                  faceToFaceRequestReason: parsedMsg.faceToFaceRequestReason,
-                  faceToFaceRequestStatus: parsedMsg.isFaceToFaceRequest
-                    ? "pending"
-                    : undefined,
-                  isOnlineModeRequest: parsedMsg.isOnlineModeRequest,
-                  onlineModeRequestReason: parsedMsg.onlineModeRequestReason,
-                  onlineModeRequestStatus: parsedMsg.isOnlineModeRequest
-                    ? "pending"
-                    : undefined,
-                };
-
-                // 外賣付款結果/送達
-                if (
-                  parsedMsg.isWaimaiPaymentResult ||
-                  parsedMsg.isWaimaiDelivery
-                ) {
-                  const recentOrder = findLatestWaimaiOrder(messages.value);
-                  if (recentOrder) {
-                    const clonedOrder = JSON.parse(JSON.stringify(recentOrder));
-                    if (
-                      parsedMsg.isWaimaiPaymentResult &&
-                      parsedMsg.waimaiPaymentStatus
-                    ) {
-                      clonedOrder.status = parsedMsg.waimaiPaymentStatus;
-                      if (parsedMsg.waimaiPaymentStatus === "paid")
-                        clonedOrder.paidAt = Date.now();
-                      newMessage.isWaimaiPaymentResult = true;
-                    }
-                    if (parsedMsg.isWaimaiDelivery) {
-                      clonedOrder.status = "delivered";
-                      clonedOrder.deliveredAt = Date.now();
-                      newMessage.isWaimaiDelivery = true;
-                    }
-                    newMessage.waimaiOrder = clonedOrder;
-                  }
-                }
-
-                // 逐條顯示延遲：多條訊息時，首條等 500ms，後續每條間隔 300ms
-                if (_totalMsgs2 > 1) {
-                  await _delay(2000);
-                }
-                _shownMsgs2++;
-                messages.value.push(newMessage);
-                scrollToBottom();
-
-                // 記錄第一條新 AI 訊息的 ID，用於好感度快照綁定
-                if (!_firstNewAiMsgId2 && newMessage.role === "ai") {
-                  _firstNewAiMsgId2 = newMessage.id;
-                }
-
-                if (parsedMsg.isAvatarChange && parsedMsg.avatarChangeAction) {
-                  await handleAvatarChange(
-                    parsedMsg.avatarChangeAction,
-                    parsedMsg.avatarChangeMood,
-                    parsedMsg.avatarChangeDesc,
-                  );
-                }
-
-                if (
-                  parsedMsg.isTransfer &&
-                  parsedMsg.transferType === "refund" &&
-                  parsedMsg.transferAmount
-                ) {
-                  await processAIRefund(parsedMsg.transferAmount);
-                }
-
-                if (
-                  parsedMsg.isAiImage &&
-                  (parsedMsg.imagePrompt || parsedMsg.imageDescription)
-                ) {
-                  tryGenerateImageForMessage(
-                    newMessage.id,
-                    parsedMsg.imagePrompt,
-                    parsedMsg.imageDescription,
-                  );
-                }
-                // MiniMax TTS 語音合成
-                processMessageTTS(newMessage.id, newMessage.content);
-              }
-
-              // 處理好感度更新（在訊息建立後呼叫，綁定快照到第一條新 AI 訊息）
-              if (
-                _pendingAffinityUpdates2 &&
-                _pendingAffinityUpdates2.length > 0
-              ) {
-                _handleAffinityUpdates(
-                  _pendingAffinityUpdates2,
-                  _firstNewAiMsgId2,
-                );
-              }
-
-              // 將原始 <update> 區塊附加到最後一條 AI 訊息，供重新掃描使用
-              if (parsed.rawUpdateBlock) {
-                const lastAiMsg = [...messages.value]
-                  .reverse()
-                  .find(
-                    (m) => m.role === "ai" && m.turnId === currentTurnId.value,
-                  );
-                if (lastAiMsg) {
-                  lastAiMsg._rawAffinityBlock = parsed.rawUpdateBlock;
-                }
-              }
-
-              if (parsed.messages.length === 0 || _shownMsgs2 === 0) {
-                if (_shownMsgs2 === 0 && parsed.messages.length > 0) {
-                  console.warn(
-                    "[ChatScreen] 流式：所有解析訊息被過濾，觸發 fallback",
-                    { parsedCount: parsed.messages.length },
-                  );
-                }
-                const fallbackContent = parsed.rawOutput || finalContent;
-                const strippedFallback = fallbackContent.replace(/<[^>]*>/g, "").trim();
-                if (strippedFallback) {
-                  const fallbackMessage: Message = {
-                    id: aiMessage.id,
-                    role: "ai",
-                    content: fallbackContent,
-                    timestamp: Date.now(),
-                    turnId: currentTurnId.value || undefined,
-                  };
-                  messages.value.push(fallbackMessage);
-                }
-              }
-            }
-          } else {
-            if (msgIndex !== -1) {
-              messages.value[msgIndex].content = finalContent;
-              messages.value[msgIndex].isStreaming = false;
-            } else if (finalContent) {
-              // 安全網：佔位符被移除但內容未丟失
-              console.warn("[ChatScreen] 流式完成但找不到佔位訊息，重新建立");
-              messages.value.push({
-                id: `msg_${Date.now()}`,
-                role: "ai",
-                content: finalContent,
-                timestamp: Date.now(),
-                turnId: currentTurnId.value || undefined,
-              });
-            }
-          }
-
-          if (useWindow) {
-            // 傳入 API 返回的 token 使用量
-            if (event.usage) {
-              streamingWindow.setUsage(event.usage);
             }
             streamingWindow.setComplete();
           }
-        } else if (event.type === "error") {
+        } else if (event && event.type === "error") {
+          const rawStreamError = (event as { error?: unknown }).error;
+          const streamError =
+            typeof rawStreamError === "string"
+              ? rawStreamError
+              : rawStreamError instanceof Error
+                ? rawStreamError.message
+                : rawStreamError !== undefined
+                  ? String(rawStreamError)
+                  : "生成過程中發生錯誤";
           const msgIndex = messages.value.findIndex(
             (m) => m.id === aiMessage.id,
           );
           if (msgIndex !== -1) {
             messages.value[msgIndex].content =
-              fullContent || `[錯誤] ${event.error}`;
+              fullContent || `[錯誤] ${streamError}`;
             messages.value[msgIndex].isStreaming = false;
           }
 
           if (useWindow) {
-            streamingWindow.setError(event.error || "生成過程中發生錯誤");
+            streamingWindow.setError(streamError);
           }
         }
       }
@@ -6453,7 +5605,7 @@ async function triggerAIResponse(options?: {
         role: "ai",
         content: `[錯誤] ${errorMsg}`,
         timestamp: Date.now(),
-        turnId: currentTurnId.value || undefined,
+        turnId: generationTurnId || undefined,
       };
       messages.value.push(aiMessage);
     }
@@ -6495,7 +5647,7 @@ async function triggerAIResponse(options?: {
     }
 
     // 附加暫存的 roundSwipes 到最後一條 AI 訊息
-    attachPendingRoundSwipes();
+    attachPendingRoundSwipes(generationTurnId || undefined);
 
     scrollToBottom();
     await saveChatImmediate();
@@ -6589,6 +5741,7 @@ async function handleStreamingClose() {
 
   // 取得目前仍在流式中的 AI 訊息，避免被隱藏的 [繼續] 提示干擾
   const lastMsg = getActiveStreamingAIMessage();
+  const closeTurnId = lastMsg?.turnId || currentTurnId.value || "";
   const windowContent = processAiOutputTemplate(
     applyAIOutputRegex(streamingWindow.content.value),
   );
@@ -6653,7 +5806,7 @@ async function handleStreamingClose() {
               role: "ai",
               content: parsedMsg.content,
               timestamp: Date.now() + i,
-              turnId: currentTurnId.value || undefined,
+              turnId: closeTurnId || undefined,
               isPrivateMessage: true,
               senderCharacterId: senderCharId,
               senderCharacterName: senderName,
@@ -6800,7 +5953,7 @@ async function handleStreamingClose() {
             role: "ai",
             content: windowMsgContent,
             timestamp: Date.now() + i,
-            turnId: currentTurnId.value || undefined,
+            turnId: closeTurnId || undefined,
             thought: parsedMsg.thought,
             messageType: parsedMsg.isAiImage
               ? "descriptive-image"
@@ -6881,7 +6034,7 @@ async function handleStreamingClose() {
             role: "ai",
             content: parsed.rawOutput || windowContent,
             timestamp: Date.now(),
-            turnId: currentTurnId.value || undefined,
+            turnId: closeTurnId || undefined,
           });
         }
       } else {
@@ -6901,7 +6054,7 @@ async function handleStreamingClose() {
             role: "ai",
             content: windowContent,
             timestamp: Date.now(),
-            turnId: currentTurnId.value || undefined,
+            turnId: closeTurnId || undefined,
           });
           parsed = null;
         }
@@ -6942,7 +6095,7 @@ async function handleStreamingClose() {
                       ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
                       : parsedMsg.content,
               timestamp: Date.now() + i,
-              turnId: currentTurnId.value || undefined,
+              turnId: closeTurnId || undefined,
               thought: parsedMsg.thought,
               isTimetravel: parsedMsg.isTimetravel,
               timetravelContent: parsedMsg.timetravelContent,
@@ -7458,8 +6611,9 @@ async function processMessageTTS(messageId: string, content: string) {
 
       const msgIdx = messages.value.findIndex((m) => m.id === messageId);
       if (msgIdx !== -1 && result.success && result.audioUrl) {
-        if (messages.value[msgIdx].ttsSegments?.[i]) {
-          messages.value[msgIdx].ttsSegments[i].audioUrl = result.audioUrl;
+        const segment = messages.value[msgIdx].ttsSegments?.[i];
+        if (segment) {
+          segment.audioUrl = result.audioUrl;
         }
         // 向下相容：第一段也寫入 ttsAudioUrl
         if (i === 0) {
@@ -8336,9 +7490,9 @@ async function loadOrCreateChat(overrideChatId?: string) {
   // 恢復輸入框草稿
   if (currentChatId.value) {
     const draft = chatStore.getDraft(currentChatId.value);
-    if (draft) {
-      inputText.value = draft;
-    }
+    inputText.value = draft || "";
+  } else {
+    inputText.value = "";
   }
 
   scrollToBottom();
@@ -8496,6 +7650,46 @@ async function loadImportantEventsForPrompt(): Promise<
   return [];
 }
 
+ function sanitizeStreamingContentForStorage(content: string): string {
+   const trimmed = content.trim();
+   if (!trimmed) return "";
+
+   try {
+     if (needsParsing(trimmed)) {
+       const parsed = parseAIResponse(trimmed);
+       const combined = parsed.messages
+         .map((msg) => {
+           if (msg.isAiImage && msg.imageDescription) return `<pic>${msg.imageDescription}</pic>`;
+           if (msg.isVoice) return `[語音訊息] ${msg.voiceContent || ""}`;
+           if (msg.isHtmlBlock) return "";
+           return msg.content || "";
+         })
+         .filter((text) => text.trim())
+         .join("\n");
+
+       if (combined.trim()) {
+         return combined.trim();
+       }
+
+       if (parsed.rawOutput.trim()) {
+         return parsed.rawOutput
+           .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "")
+           .replace(/<\/?content>/gi, "")
+           .replace(/<\/?msg>/gi, "")
+           .trim();
+       }
+     }
+   } catch (error) {
+     console.warn("[ChatScreen] 清理流式內容供持久化時解析失敗，改用正則回退:", error);
+   }
+
+   return trimmed
+     .replace(/<think(?:ing)?>[\s\S]*?(<\/think(?:ing)?>|$)/gi, "")
+     .replace(/<\/?content>/gi, "")
+     .replace(/<\/?msg>/gi, "")
+     .trim();
+ }
+
 // 將內部訊息格式轉換為 ChatMessage 格式（供儲存用）
 function convertToStorableMessage(m: any, charName: string): ChatMessage {
   // imageUrl/imageData 已經是引用 ID（chatimg_xxx）或新圖片的 base64
@@ -8509,7 +7703,10 @@ function convertToStorableMessage(m: any, charName: string): ChatMessage {
           ? ("assistant" as const)
           : ("system" as const),
     name: m.role === "user" ? "User" : m.senderCharacterName || charName,
-    content: m.content,
+    content:
+      m.isStreaming && m.role === "ai"
+        ? sanitizeStreamingContentForStorage(m.content || "")
+        : m.content,
     is_user: m.role === "user",
     status: "sent" as const,
     createdAt: m.timestamp,
@@ -9581,7 +8778,7 @@ onUnmounted(() => {
       :chat-do-not-disturb="chatDoNotDisturb"
       :enable-phone-decision="enablePhoneDecision"
       :novel-a-i-enabled="settingsStore.novelAIImage.enabled"
-      :novel-a-i-use-user-tag="settingsStore.novelAIImage.useUserTag"
+      :novel-a-i-use-user-tag="settingsStore.novelAIImage.useUserTag ?? false"
       :chat-minimax-t-t-s-enabled="chatMinimaxTTSEnabled"
       :show-more-menu="showMoreMenu"
       :is-char-blocked="isCharBlocked"
@@ -9594,10 +8791,10 @@ onUnmounted(() => {
       @close-nickname-edit="closeNicknameEdit"
       @toggle-rail="toggleRail"
       @toggle-persona-selector="togglePersonaSelector"
-      @select-persona="selectPersona"
+      @select-persona="onHeaderSelectPersona"
       @open-persona-edit="openPersonaEditPanel"
       @toggle-game-menu="toggleGameMenu"
-      @open-game="openGame"
+      @open-game="onHeaderOpenGame"
       @open-settings="handleSettings"
       @open-proactive-message-settings="showProactiveMessageSettings = true"
       @toggle-chat-settings-menu="toggleChatSettingsMenu"
@@ -9606,10 +8803,10 @@ onUnmounted(() => {
       @toggle-night-mode="toggleNightMode"
       @toggle-real-time-awareness="toggleRealTimeAwareness"
       @toggle-fake-time-panel="showFakeTimePanel = !showFakeTimePanel"
-      @set-fake-time-mode="setFakeTimeMode"
-      @update-fake-time-loop-start="updateFakeTimeLoopStart"
-      @update-fake-time-loop-end="updateFakeTimeLoopEnd"
-      @update-offset-start-datetime="updateOffsetStartDateTime"
+      @set-fake-time-mode="onHeaderSetFakeTimeMode"
+      @update-fake-time-loop-start="onHeaderUpdateFakeTimeLoopStart"
+      @update-fake-time-loop-end="onHeaderUpdateFakeTimeLoopEnd"
+      @update-offset-start-datetime="onHeaderUpdateOffsetStartDateTime"
       @update-time-jump-input="timeJumpInput = $event"
       @handle-time-jump="handleTimeJump"
       @toggle-chat-do-not-disturb="toggleChatDoNotDisturb"
@@ -9620,7 +8817,7 @@ onUnmounted(() => {
       @toggle-minimax-tts="toggleMinimaxTTS"
       @open-minimax-tts-settings="openMinimaxTTSSettings"
       @toggle-more-menu="toggleMoreMenu"
-      @navigate="navigateTo"
+      @navigate="onHeaderNavigate"
       @open-search-bar="openSearchBar"
       @open-chat-info="openChatInfo"
       @open-chat-files-panel="openChatFilesPanel"
@@ -9994,29 +9191,29 @@ onUnmounted(() => {
                   ? toggleMessageSelection(message.id)
                   : handleMessageClick(message.id)
             "
-            @edit="handleMessageEdit"
-            @delete="handleMessageDelete"
-            @copy="handleMessageCopy"
-            @regenerate="handleRegenerate"
-            @swipe="handleMessageSwipe"
-            @round-swipe="handleRoundSwipe"
-            @reply="handleReplyById"
-            @scroll-to-reply="scrollToMessage"
-            @multi-delete="handleMultiDeleteFromMessage"
-            @branch="handleBranchFromMessage"
-            @accept-transfer="handleAcceptTransfer"
-            @refund-transfer="handleRefundTransfer"
-            @update-transcript="handleUpdateTranscript"
-            @screenshot="handleMessageScreenshot"
-            @batch-screenshot="startScreenshotSelectMode"
-            @avatar-click="handleAvatarClick"
-            @split-regex-html="handleSplitRegexHtml"
-            @recall="handleMessageRecall"
-            @char-recall-reveal="handleCharRecallReveal"
-            @accept-face-to-face-request="handleAcceptFaceToFaceRequest"
-            @reject-face-to-face-request="handleRejectFaceToFaceRequest"
-            @accept-online-mode-request="handleAcceptOnlineModeRequest"
-            @reject-online-mode-request="handleRejectOnlineModeRequest"
+            @edit="onMessageEdit"
+            @delete="onMessageDelete"
+            @copy="onMessageCopy"
+            @regenerate="onMessageRegenerate"
+            @swipe="onMessageSwipe"
+            @round-swipe="onMessageRoundSwipe"
+            @reply="onMessageReply"
+            @scroll-to-reply="onMessageScrollToReply"
+            @multi-delete="onMessageMultiDelete"
+            @branch="onMessageBranch"
+            @accept-transfer="onMessageAcceptTransfer"
+            @refund-transfer="onMessageRefundTransfer"
+            @update-transcript="onMessageUpdateTranscript"
+            @screenshot="onMessageScreenshot"
+            @batch-screenshot="onMessageBatchScreenshot"
+            @avatar-click="onMessageAvatarClick"
+            @split-regex-html="onMessageSplitRegexHtml"
+            @recall="onMessageRecall"
+            @char-recall-reveal="onMessageCharRecallReveal"
+            @accept-face-to-face-request="onMessageAcceptFaceToFaceRequest"
+            @reject-face-to-face-request="onMessageRejectFaceToFaceRequest"
+            @accept-online-mode-request="onMessageAcceptOnlineModeRequest"
+            @reject-online-mode-request="onMessageRejectOnlineModeRequest"
           />
           <!-- 封鎖期間訊息的驚嘆號指示器（獨立行，在訊息下方顯示） -->
           <div
@@ -10113,13 +9310,13 @@ onUnmounted(() => {
       :is-input-expanded="isInputExpanded"
       @show-friend-request-input="showFriendRequestInput = true"
       @cancel-reply="cancelReply"
-      @handle-quick-input-wheel="handleQuickInputWheel"
-      @insert-quick-action="insertQuickAction"
+      @handle-quick-input-wheel="onInputQuickWheel"
+      @insert-quick-action="onInputInsertQuickAction"
       @open-quick-action-editor="openQuickActionEditor"
       @toggle-more-features="toggleMoreFeatures"
       @open-media-drawer="showMediaDrawer = true"
       @update:input-text="inputText = $event"
-      @handle-keydown="handleKeydown"
+      @handle-keydown="onInputKeydown"
       @auto-resize-input="autoResizeInput"
       @handle-input-focus-with-scroll="handleInputFocusWithScroll"
       @on-input-blur="onInputBlur"
@@ -10128,18 +9325,18 @@ onUnmounted(() => {
       @continue-generation="continueGeneration"
       @regenerate-last-a-i-response="regenerateLastAIResponse"
       @stop-a-i-generation="stopAIGeneration"
-      @on-mic-down="onMicDown"
+      @on-mic-down="onInputMicDown"
       @on-mic-up="onMicUp"
-      @start-recording="startRecording"
+      @start-recording="onInputStartRecording"
       @finish-recording="finishRecording"
       @send-and-trigger-a-i="sendAndTriggerAI"
       @update:show-text-voice-modal="showTextVoiceModal = $event"
       @update:text-voice-input="textVoiceInput = $event"
       @send-text-as-voice="sendTextAsVoice"
-      @handle-sticker-select="handleStickerSelect"
+      @handle-sticker-select="onInputStickerSelect"
       @close-sticker-panel="showStickerPanel = false"
       @open-gift-drawer="showGiftDrawer = true"
-      @handle-feature-click="handleFeatureClick"
+      @handle-feature-click="onInputFeatureClick"
       @close-expanded-input="closeExpandedInput"
       @send-from-expanded="sendFromExpanded"
       @update:show-more-features="showMoreFeatures = $event"

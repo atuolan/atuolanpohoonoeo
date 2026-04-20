@@ -134,6 +134,9 @@ const arbPeekPhoneData: fc.Arbitrary<PeekPhoneData> = fc.record({
   memos: fc.array(arbMemo, { minLength: 1, maxLength: 4 }),
   notes: fc.array(arbNote, { minLength: 1, maxLength: 3 }),
   diary: fc.array(arbDiaryEntry, { minLength: 1, maxLength: 3 }),
+  gallery: fc.constant([]),
+  browserHistory: fc.constant([]),
+  hiddenPhotos: fc.constant([]),
 });
 
 // ============================================================

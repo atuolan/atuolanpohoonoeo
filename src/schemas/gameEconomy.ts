@@ -159,7 +159,11 @@ export const ChatGameStateSchema = z.object({
   transactions: z.array(TransactionSchema).default([]),
 
   // 打工
-  workState: WorkStateSchema.default({}),
+  workState: WorkStateSchema.default({
+    dishesWashedToday: 0,
+    lastWorkDate: null,
+    totalDishesWashed: 0,
+  }),
 
   // 釣魚
   fishingRods: z.array(FishingRodSchema).default([]),
@@ -168,13 +172,23 @@ export const ChatGameStateSchema = z.object({
   totalFishCaught: z.number().min(0).default(0),
 
   // 賭博
-  gamblingStats: GamblingStatsSchema.default({}),
+  gamblingStats: GamblingStatsSchema.default({
+    totalWins: 0,
+    totalLosses: 0,
+    todayGambles: 0,
+    lastGambleDate: null,
+  }),
 
   // 掛機
   currentIdleSession: IdleSessionSchema.nullable().default(null),
 
   // 裝飾
-  decorations: DecorationStateSchema.default({}),
+  decorations: DecorationStateSchema.default({
+    ownedFrames: [],
+    ownedBubbles: [],
+    equippedFrameId: null,
+    equippedBubbleId: null,
+  }),
 
   // 背包
   inventory: z.array(InventoryItemSchema).default([]),

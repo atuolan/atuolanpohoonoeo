@@ -55,7 +55,7 @@ function makeMessage(overrides = {}) {
     imagePrompt: "a cat",
     isStreaming: false,
     ...overrides,
-  };
+  } as any;
 }
 
 /** 建立 useChatMedia 的 deps */

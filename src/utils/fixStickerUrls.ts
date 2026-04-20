@@ -4,6 +4,7 @@
  */
 
 import { db, DB_STORES } from "@/db/database";
+ import type { StickerCategory } from "@/types/sticker";
 
 export async function autoFixStickerUrls(): Promise<{
   fixed: number;
@@ -13,7 +14,7 @@ export async function autoFixStickerUrls(): Promise<{
     console.log("[FixStickerUrls] 開始檢查表情包 URL...");
 
     // 獲取所有表情包分類
-    const categories = await db.getAll(DB_STORES.STICKERS);
+    const categories = await db.getAll<StickerCategory>(DB_STORES.STICKERS);
 
     let totalFixed = 0;
     let totalStickers = 0;

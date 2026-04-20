@@ -75,6 +75,7 @@ import {
   loadChatById,
   loadChatsByCharacter,
   resolvePreferredDirectChat,
+  setLastActiveChatId,
 } from "@/storage/chatStorage";
 import { useUserStore } from "@/stores";
 import { usePhoneCallStore } from "@/stores/phoneCall";
@@ -1449,9 +1450,38 @@ function openExistingChat(chatId: string, characterId: string) {
 }
 
 // ChatScreen 內部切換聊天檔案時同步 chatId（不重建組件）
-function onChatSwitched(chatId: string) {
+async function onChatSwitched(chatId: string) {
   currentChatId.value = chatId;
+
+  const characterId = currentChatCharacterId.value;
+  if (characterId) {
+    try {
+      await setLastActiveChatId(characterId, chatId);
+    } catch (e) {
+      console.warn("[App] 保存最後活躍聊天失敗:", e);
+    }
+  }
 }
+
+const onOpenExistingChatEvent = (...args: any[]) =>
+  openExistingChat(args[0] as string, args[1] as string);
+const onChatSwitchedEvent = (...args: any[]) =>
+  void onChatSwitched(args[0] as string);
+const onChatNavigateEvent = (...args: any[]) =>
+  handleChatNavigate(
+    args[0] as
+      | "character"
+      | "worldbook"
+      | "settings"
+      | "shop"
+      | "media-log"
+      | "food-log"
+      | "peek-phone",
+  );
+const onEditCharacterEvent = (...args: any[]) =>
+  openCharacterEdit(args[0] as string);
+const onEditLorebookEvent = (...args: any[]) =>
+  openLorebookEdit(args[0] as string);
 
 // 開始新聯天（從聯繫人列表）
 async function startNewChat(characterId: string) {
@@ -2067,9 +2097,9 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       :key="`${currentChatCharacterId || ''}:${currentChatId || ''}`"
       @back="goToChatList"
       @settings="openThemeSettings"
-      @navigate="handleChatNavigate"
-      @edit-character="openCharacterEdit"
-      @edit-lorebook="openLorebookEdit"
+      @navigate="onChatNavigateEvent"
+      @edit-character="onEditCharacterEvent"
+      @edit-lorebook="onEditLorebookEvent"
       :character-id="currentChatCharacterId || undefined"
       :character-name="chatCharacterName"
       :character-avatar="chatCharacterAvatar"
@@ -2082,8 +2112,8 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       @pending-message-consumed="pendingChatMessage = ''"
       @phone-call-started="startPhoneCallFlag = false"
       @incoming-call-consumed="pendingIncomingCallReason = ''"
-      @open-chat="openExistingChat"
-      @chat-switched="onChatSwitched"
+      @open-chat="onOpenExistingChatEvent"
+      @chat-switched="onChatSwitchedEvent"
     />
 
     <!-- 設定頁 -->

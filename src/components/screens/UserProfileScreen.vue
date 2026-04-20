@@ -573,7 +573,7 @@ async function handleClearAll() {
             <div class="form-group">
               <label class="form-label">NAI 使用者串</label>
               <ExpandableTextarea
-                v-model="editingPersona.naiUserPrompt"
+                v-model="editingPersona.naiUserPrompt!"
                 :rows="3"
                 placeholder="例如：male, short hair, glasses"
                 label="NAI 使用者串"

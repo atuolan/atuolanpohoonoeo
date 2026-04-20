@@ -16,6 +16,7 @@ import {
     User,
     Wallet,
 } from "lucide-vue-next";
+import type { CSSProperties } from "vue";
 import { onMounted, onUnmounted, ref } from "vue";
 
 // ===== 轉盤狀態 =====
@@ -70,7 +71,7 @@ function getBaseAngle(index: number) {
 }
 
 // 按鈕樣式
-function getItemStyle(index: number) {
+function getItemStyle(index: number): CSSProperties {
   // 基礎角度 + 滾動偏移 + 收合偏移
   const baseAngle = getBaseAngle(index) + railOffset.value;
   const angle = baseAngle + collapseOffset.value;

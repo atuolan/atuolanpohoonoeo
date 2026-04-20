@@ -1424,7 +1424,7 @@ describe("Property 9: 掛機收益計算", () => {
           // Fish count should be based on duration (5 min per fish) and efficiency
           const config = store.getIdleConfig();
           const expectedBaseFishCount = Math.floor(
-            rewards.effectiveDuration / config.FISH_INTERVAL_MS,
+            (rewards.effectiveDuration / 60000) * config.FISH_PER_MINUTE_MAX,
           );
           const expectedFishCount = Math.floor(
             expectedBaseFishCount * rodItem.rodStats!.efficiency,
@@ -1782,7 +1782,7 @@ describe("Property 10: 掛機時長上限", () => {
 
         // Calculate expected fish count based on 24 hour cap
         const expectedBaseFishCount = Math.floor(
-          config.MAX_DURATION_MS / config.FISH_INTERVAL_MS,
+          (config.MAX_DURATION_MS / 60000) * config.FISH_PER_MINUTE_MAX,
         );
         const expectedFishCount = Math.floor(
           expectedBaseFishCount * highDurabilityRod.rodStats!.efficiency,

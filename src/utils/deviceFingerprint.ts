@@ -146,7 +146,10 @@ export class DeviceFingerprintCollector {
   private static async getWebGLFingerprint(): Promise<string> {
     try {
       const canvas = document.createElement('canvas')
-      const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl')
+      const gl = (canvas.getContext('webgl') ||
+        canvas.getContext('experimental-webgl')) as
+        | WebGLRenderingContext
+        | null
       if (!gl) return ''
 
       const debugInfo = (gl as any).getExtension('WEBGL_debug_renderer_info')

@@ -20,6 +20,8 @@ import { PromptBuilder } from "../PromptBuilder";
 function createMockCharacter(name: string = "Test Character"): StoredCharacter {
   return {
     id: crypto.randomUUID(),
+    nickname: "",
+    avatar: "",
     data: {
       name,
       description: "A test character",
@@ -43,6 +45,8 @@ function createMockCharacter(name: string = "Test Character"): StoredCharacter {
       },
       character_book: undefined,
     },
+    lorebookIds: [],
+    source: "manual",
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
