@@ -1745,6 +1745,14 @@ function goToSettings() {
   navigateToPage("settings", { mode: "replace" });
 }
 
+function goBackToSettingsSubpage() {
+  if (navigationHistory.value.length > 0) {
+    navigateBackWithFallback(goToSettings);
+  } else {
+    goToSettings();
+  }
+}
+
 // 打開角色導入
 function openCharacterImport() {
   importType.value = "character";
@@ -1952,8 +1960,8 @@ function handleGlobalSwipeBack() {
     "chat-list": goHome,
     chat: goToChatList,
     settings: goBackFromQuickNav,
-    "prompt-manager": goToSettings,
-    "regex-scripts": goToSettings,
+    "prompt-manager": goBackToSettingsSubpage,
+    "regex-scripts": goBackToSettingsSubpage,
     bookshelf: () => {
       if (currentBook.value) {
         currentBook.value = null;
@@ -2089,13 +2097,13 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <!-- 提示詞管理頁 -->
     <PromptManagerScreen
       v-else-if="currentPage === 'prompt-manager'"
-      @back="goToSettings"
+      @back="goBackToSettingsSubpage"
     />
 
     <!-- 正則腳本管理頁 -->
     <RegexScriptsScreen
       v-else-if="currentPage === 'regex-scripts'"
-      @back="goToSettings"
+      @back="goBackToSettingsSubpage"
     />
 
     <!-- 書架 -->
