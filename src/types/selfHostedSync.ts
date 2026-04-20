@@ -6,6 +6,8 @@ import type { Lorebook } from "@/types/worldinfo";
 import type { PromptDefinition } from "@/types/promptManager";
 import type { StickerCategory } from "@/types/sticker";
 import type { UserData } from "@/stores/user";
+import type { ImportantEventsLog } from "@/types/importantEvents";
+import type { ConversationSummary, DiaryEntry } from "@/db/database";
 
 export const SELF_HOSTED_SYNC_ENTITY_TYPES = [
   "chat_record",
@@ -20,6 +22,9 @@ export const SELF_HOSTED_SYNC_ENTITY_TYPES = [
   "prompt_library_item",
   "sticker_category",
   "user_data",
+  "conversation_summary",
+  "important_events_log",
+  "diary_entry",
   "idb_store_snapshot",
 ] as const;
 
@@ -39,6 +44,9 @@ export const SELF_HOSTED_SYNC_SCHEMA_VERSIONS = {
   prompt_library_item: 1,
   sticker_category: 1,
   user_data: 1,
+  conversation_summary: 1,
+  important_events_log: 1,
+  diary_entry: 1,
   idb_store_snapshot: 1,
 } as const;
 
@@ -176,6 +184,12 @@ export type SyncStickerCategoryPayload = StickerCategory;
 
 export type SyncUserDataPayload = UserData;
 
+export type SyncConversationSummaryPayload = ConversationSummary;
+
+export type SyncImportantEventsLogPayload = ImportantEventsLog;
+
+export type SyncDiaryEntryPayload = DiaryEntry;
+
 export interface SyncQZoneSettingsPayload {
   settings: QZoneSettings;
   autoInteractionConfig: AutoInteractionConfig;
@@ -251,6 +265,21 @@ export type SelfHostedSyncStickerCategoryEnvelope = SelfHostedSyncEntityEnvelope
 export type SelfHostedSyncUserDataEnvelope = SelfHostedSyncEntityEnvelope<
   "user_data",
   SyncUserDataPayload
+>;
+
+export type SelfHostedSyncConversationSummaryEnvelope = SelfHostedSyncEntityEnvelope<
+  "conversation_summary",
+  SyncConversationSummaryPayload
+>;
+
+export type SelfHostedSyncImportantEventsLogEnvelope = SelfHostedSyncEntityEnvelope<
+  "important_events_log",
+  SyncImportantEventsLogPayload
+>;
+
+export type SelfHostedSyncDiaryEntryEnvelope = SelfHostedSyncEntityEnvelope<
+  "diary_entry",
+  SyncDiaryEntryPayload
 >;
 
 export type SelfHostedSyncQZoneSettingsEnvelope = SelfHostedSyncEntityEnvelope<

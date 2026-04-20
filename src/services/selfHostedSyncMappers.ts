@@ -6,12 +6,17 @@ import type { Lorebook } from "@/types/worldinfo";
 import type { PromptDefinition } from "@/types/promptManager";
 import type { StickerCategory } from "@/types/sticker";
 import type { UserData } from "@/stores/user";
+import type { ImportantEventsLog } from "@/types/importantEvents";
+import type { ConversationSummary, DiaryEntry } from "@/db/database";
 import {
   SELF_HOSTED_SYNC_SCHEMA_VERSIONS,
   type SelfHostedSyncCharacterEnvelope,
+  type SelfHostedSyncConversationSummaryEnvelope,
   type SelfHostedSyncChatMessageEnvelope,
   type SelfHostedSyncChatRecordEnvelope,
+  type SelfHostedSyncDiaryEntryEnvelope,
   type SelfHostedSyncIdbStoreSnapshotEnvelope,
+  type SelfHostedSyncImportantEventsLogEnvelope,
   type SelfHostedSyncLorebookEnvelope,
   type SelfHostedSyncPromptLibraryItemEnvelope,
   type SelfHostedSyncQZonePostEnvelope,
@@ -21,9 +26,12 @@ import {
   type SelfHostedSyncStickerCategoryEnvelope,
   type SelfHostedSyncUserDataEnvelope,
   type SyncCharacterPayload,
+  type SyncConversationSummaryPayload,
   type SyncChatMessagePayload,
   type SyncChatRecordPayload,
+  type SyncDiaryEntryPayload,
   type SyncIdbStoreSnapshotPayload,
+  type SyncImportantEventsLogPayload,
   type SyncLorebookPayload,
   type SyncPromptLibraryItemPayload,
   type SyncQZoneSettingsPayload,
@@ -260,6 +268,67 @@ export function toSyncUserDataEnvelope(
     updatedAt: userData.updatedAt,
     deletedAt: options?.deletedAt ?? null,
     payload: toSyncUserDataPayload(userData),
+  };
+}
+
+export function toSyncConversationSummaryPayload(
+  summary: ConversationSummary,
+): SyncConversationSummaryPayload {
+  return JSON.parse(JSON.stringify(summary));
+}
+
+export function toSyncConversationSummaryEnvelope(
+  summary: ConversationSummary,
+  options?: { deletedAt?: number | null },
+): SelfHostedSyncConversationSummaryEnvelope {
+  return {
+    entityType: "conversation_summary",
+    entityId: summary.id,
+    schemaVersion: SELF_HOSTED_SYNC_SCHEMA_VERSIONS.conversation_summary,
+    createdAt: summary.createdAt,
+    updatedAt: summary.createdAt,
+    deletedAt: options?.deletedAt ?? null,
+    payload: toSyncConversationSummaryPayload(summary),
+  };
+}
+
+export function toSyncImportantEventsLogPayload(
+  log: ImportantEventsLog,
+): SyncImportantEventsLogPayload {
+  return JSON.parse(JSON.stringify(log));
+}
+
+export function toSyncImportantEventsLogEnvelope(
+  log: ImportantEventsLog,
+  options?: { deletedAt?: number | null },
+): SelfHostedSyncImportantEventsLogEnvelope {
+  return {
+    entityType: "important_events_log",
+    entityId: log.id,
+    schemaVersion: SELF_HOSTED_SYNC_SCHEMA_VERSIONS.important_events_log,
+    createdAt: log.createdAt,
+    updatedAt: log.updatedAt ?? log.createdAt ?? Date.now(),
+    deletedAt: options?.deletedAt ?? null,
+    payload: toSyncImportantEventsLogPayload(log),
+  };
+}
+
+export function toSyncDiaryEntryPayload(diary: DiaryEntry): SyncDiaryEntryPayload {
+  return JSON.parse(JSON.stringify(diary));
+}
+
+export function toSyncDiaryEntryEnvelope(
+  diary: DiaryEntry,
+  options?: { deletedAt?: number | null },
+): SelfHostedSyncDiaryEntryEnvelope {
+  return {
+    entityType: "diary_entry",
+    entityId: diary.id,
+    schemaVersion: SELF_HOSTED_SYNC_SCHEMA_VERSIONS.diary_entry,
+    createdAt: diary.createdAt,
+    updatedAt: diary.createdAt,
+    deletedAt: options?.deletedAt ?? null,
+    payload: toSyncDiaryEntryPayload(diary),
   };
 }
 

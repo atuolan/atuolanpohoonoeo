@@ -1,6 +1,10 @@
 import { ref, type Ref, type ComputedRef } from "vue";
 import { db, DB_STORES } from "@/db/database";
 import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
+import {
+  recordDeletedEntity,
+  scheduleSelfHostedAutoSync,
+} from "@/services/selfHostedSyncState";
 import type { SummarySettings } from "@/types/chat";
 import {
   useAIGenerationStore,
@@ -136,11 +140,25 @@ export function useChatSummaryDiary(deps: {
     const charId = deps.characterId || deps.currentCharacter.value?.id || "";
     const dbSummary = { ...summary, chatId, characterId: charId };
     await db.put(DB_STORES.SUMMARIES, JSON.parse(JSON.stringify(dbSummary)));
+    scheduleSelfHostedAutoSync();
     console.log("[SummaryDiary] 總結已保存:", summary.id);
   }
 
   async function deleteSummaryFromDB(id: string) {
+    const existing = await db.get(DB_STORES.SUMMARIES, id);
+    if (!existing) {
+      return;
+    }
     await db.delete(DB_STORES.SUMMARIES, id);
+    const deletedAt = Date.now();
+    await recordDeletedEntity({
+      entityType: "conversation_summary",
+      entityId: id,
+      updatedAt: deletedAt,
+      deletedAt,
+      payload: null,
+    });
+    scheduleSelfHostedAutoSync();
     console.log("[SummaryDiary] 總結已刪除:", id);
   }
 
@@ -149,11 +167,25 @@ export function useChatSummaryDiary(deps: {
     const charId = deps.characterId || deps.currentCharacter.value?.id || "";
     const dbDiary = { ...diary, chatId, characterId: charId };
     await db.put(DB_STORES.DIARIES, JSON.parse(JSON.stringify(dbDiary)));
+    scheduleSelfHostedAutoSync();
     console.log("[SummaryDiary] 日記已保存:", diary.id);
   }
 
   async function deleteDiaryFromDB(id: string) {
+    const existing = await db.get(DB_STORES.DIARIES, id);
+    if (!existing) {
+      return;
+    }
     await db.delete(DB_STORES.DIARIES, id);
+    const deletedAt = Date.now();
+    await recordDeletedEntity({
+      entityType: "diary_entry",
+      entityId: id,
+      updatedAt: deletedAt,
+      deletedAt,
+      payload: null,
+    });
+    scheduleSelfHostedAutoSync();
     console.log("[SummaryDiary] 日記已刪除:", id);
   }
 
@@ -726,10 +758,11 @@ ${recentMessagesText}
   }
 
   // 編輯總結
-  function handleEditSummary(id: string, newContent: string) {
+  async function handleEditSummary(id: string, newContent: string) {
     const summary = deps.chatSummaries.value.find((s) => s.id === id);
     if (summary) {
       summary.content = newContent;
+      await saveSummary(summary);
       // 向量記憶：標記向量為 stale
       markVectorStale(id).catch(err => console.error('[向量記憶] 標記 stale 失敗:', err))
     }

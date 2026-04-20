@@ -7,7 +7,10 @@ import {
   toSyncCharacterEnvelope,
   toSyncChatMessageEnvelope,
   toSyncChatRecordEnvelope,
+  toSyncConversationSummaryEnvelope,
+  toSyncDiaryEntryEnvelope,
   toSyncIdbStoreSnapshotEnvelope,
+  toSyncImportantEventsLogEnvelope,
   toSyncLorebookEnvelope,
   toSyncPromptLibraryItemEnvelope,
   toSyncQZonePostEnvelope,
@@ -26,7 +29,10 @@ import type {
   SyncCharacterPayload,
   SyncChatMessagePayload,
   SyncChatRecordPayload,
+  SyncConversationSummaryPayload,
+  SyncDiaryEntryPayload,
   SyncIdbStoreSnapshotPayload,
+  SyncImportantEventsLogPayload,
   SyncLorebookPayload,
   SyncPromptLibraryItemPayload,
   SyncQZonePostPayload,
@@ -43,6 +49,8 @@ import type { Lorebook } from "@/types/worldinfo";
 import type { PromptDefinition } from "@/types/promptManager";
 import type { StickerCategory } from "@/types/sticker";
 import type { UserData } from "@/stores/user";
+import type { ImportantEventsLog } from "@/types/importantEvents";
+import type { ConversationSummary, DiaryEntry } from "@/db/database";
 
 export interface SelfHostedSyncRunResult {
   pushed: number;
@@ -218,6 +226,21 @@ export class SelfHostedSyncService {
       items.push(toSyncUserDataEnvelope(userData));
     }
 
+    const summaries = await db.getAll<ConversationSummary>(DB_STORES.SUMMARIES);
+    for (const summary of summaries) {
+      items.push(toSyncConversationSummaryEnvelope(summary));
+    }
+
+    const importantEventsLogs = await db.getAll<ImportantEventsLog>(DB_STORES.IMPORTANT_EVENTS);
+    for (const log of importantEventsLogs) {
+      items.push(toSyncImportantEventsLogEnvelope(log));
+    }
+
+    const diaries = await db.getAll<DiaryEntry>(DB_STORES.DIARIES);
+    for (const diary of diaries) {
+      items.push(toSyncDiaryEntryEnvelope(diary));
+    }
+
     if (SelfHostedSyncService.ENABLE_GENERIC_STORE_SNAPSHOTS) {
       for (const storeName of SelfHostedSyncService.SNAPSHOT_STORE_NAMES) {
         const snapshot = await this.collectStoreSnapshot(storeName);
@@ -328,6 +351,21 @@ export class SelfHostedSyncService {
         item.entityType === "user_data" && item.deletedAt === null,
       );
 
+      const conversationSummaryItems = response.items.filter(
+      (item): item is SelfHostedSyncEntityEnvelope<"conversation_summary", SyncConversationSummaryPayload> =>
+        item.entityType === "conversation_summary" && item.deletedAt === null,
+      );
+
+      const importantEventsLogItems = response.items.filter(
+      (item): item is SelfHostedSyncEntityEnvelope<"important_events_log", SyncImportantEventsLogPayload> =>
+        item.entityType === "important_events_log" && item.deletedAt === null,
+      );
+
+      const diaryEntryItems = response.items.filter(
+      (item): item is SelfHostedSyncEntityEnvelope<"diary_entry", SyncDiaryEntryPayload> =>
+        item.entityType === "diary_entry" && item.deletedAt === null,
+      );
+
       const storeSnapshotItems = SelfHostedSyncService.ENABLE_GENERIC_STORE_SNAPSHOTS
         ? response.items.filter(
         (item): item is SelfHostedSyncEntityEnvelope<"idb_store_snapshot", SyncIdbStoreSnapshotPayload> =>
@@ -376,6 +414,21 @@ export class SelfHostedSyncService {
 
       for (const item of userDataItems) {
       const changed = await this.applyUserData(item.payload, forceOverwrite);
+      if (changed) applied += 1;
+      }
+
+      for (const item of conversationSummaryItems) {
+      const changed = await this.applyConversationSummary(item.payload, forceOverwrite);
+      if (changed) applied += 1;
+      }
+
+      for (const item of importantEventsLogItems) {
+      const changed = await this.applyImportantEventsLog(item.payload, forceOverwrite);
+      if (changed) applied += 1;
+      }
+
+      for (const item of diaryEntryItems) {
+      const changed = await this.applyDiaryEntry(item.payload, forceOverwrite);
       if (changed) applied += 1;
       }
 
@@ -576,6 +629,57 @@ export class SelfHostedSyncService {
       console.warn("[SelfHostedSyncService] 刷新使用者資料 store 失敗:", error);
     }
 
+    return true;
+  }
+
+  private async applyConversationSummary(
+    payload: SyncConversationSummaryPayload,
+    forceOverwrite = false,
+  ): Promise<boolean> {
+    const existing = await db.get<ConversationSummary>(DB_STORES.SUMMARIES, payload.id);
+    if (
+      !forceOverwrite &&
+      existing &&
+      this.computeUpdatedAt(existing) >= this.computeUpdatedAt(payload)
+    ) {
+      return false;
+    }
+
+    await db.put(DB_STORES.SUMMARIES, JSON.parse(JSON.stringify(payload)));
+    return true;
+  }
+
+  private async applyImportantEventsLog(
+    payload: SyncImportantEventsLogPayload,
+    forceOverwrite = false,
+  ): Promise<boolean> {
+    const existing = await db.get<ImportantEventsLog>(DB_STORES.IMPORTANT_EVENTS, payload.id);
+    if (
+      !forceOverwrite &&
+      existing &&
+      this.computeUpdatedAt(existing) >= this.computeUpdatedAt(payload)
+    ) {
+      return false;
+    }
+
+    await db.put(DB_STORES.IMPORTANT_EVENTS, JSON.parse(JSON.stringify(payload)));
+    return true;
+  }
+
+  private async applyDiaryEntry(
+    payload: SyncDiaryEntryPayload,
+    forceOverwrite = false,
+  ): Promise<boolean> {
+    const existing = await db.get<DiaryEntry>(DB_STORES.DIARIES, payload.id);
+    if (
+      !forceOverwrite &&
+      existing &&
+      this.computeUpdatedAt(existing) >= this.computeUpdatedAt(payload)
+    ) {
+      return false;
+    }
+
+    await db.put(DB_STORES.DIARIES, JSON.parse(JSON.stringify(payload)));
     return true;
   }
 
@@ -931,6 +1035,30 @@ export class SelfHostedSyncService {
         } catch (error) {
           console.warn("[SelfHostedSyncService] 刪除後刷新使用者資料 store 失敗:", error);
         }
+        return true;
+      }
+      case "conversation_summary": {
+        const existing = await db.get<ConversationSummary>(DB_STORES.SUMMARIES, item.entityId);
+        if (!existing || (!forceOverwrite && this.computeUpdatedAt(existing) > deletedAt)) {
+          return false;
+        }
+        await db.delete(DB_STORES.SUMMARIES, item.entityId);
+        return true;
+      }
+      case "important_events_log": {
+        const existing = await db.get<ImportantEventsLog>(DB_STORES.IMPORTANT_EVENTS, item.entityId);
+        if (!existing || (!forceOverwrite && this.computeUpdatedAt(existing) > deletedAt)) {
+          return false;
+        }
+        await db.delete(DB_STORES.IMPORTANT_EVENTS, item.entityId);
+        return true;
+      }
+      case "diary_entry": {
+        const existing = await db.get<DiaryEntry>(DB_STORES.DIARIES, item.entityId);
+        if (!existing || (!forceOverwrite && this.computeUpdatedAt(existing) > deletedAt)) {
+          return false;
+        }
+        await db.delete(DB_STORES.DIARIES, item.entityId);
         return true;
       }
       default:

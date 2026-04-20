@@ -11,6 +11,7 @@ import {
   usePromptManagerStore,
   useSettingsStore,
 } from "@/stores";
+import { scheduleSelfHostedAutoSync } from "@/services/selfHostedSyncState";
 
 interface Message {
   id: string;
@@ -216,6 +217,7 @@ export function useChatEventsExtraction(deps: {
     eventsLog.updatedAt = Date.now();
     const plainData = JSON.parse(JSON.stringify(eventsLog));
     await db.put(DB_STORES.IMPORTANT_EVENTS, plainData);
+    scheduleSelfHostedAutoSync();
 
     // 為新事件生成向量嵌入（背景執行，不阻塞主流程）
     const chatId = eventsLog.chatId || eventsLog.id;

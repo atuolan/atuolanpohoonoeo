@@ -1,5 +1,9 @@
 import { computed, nextTick, ref, type Ref, type ComputedRef } from "vue";
 import { db, DB_STORES } from "@/db/database";
+import {
+  recordDeletedEntity,
+  scheduleSelfHostedAutoSync,
+} from "@/services/selfHostedSyncState";
 import type { Chat } from "@/types/chat";
 import { createDefaultBlockState } from "@/types/block";
 
@@ -168,6 +172,14 @@ export function useChatExport(deps: {
       for (const s of allSummaries) {
         if (s.chatId === chatId || s.characterId === charId) {
           await db.delete(DB_STORES.SUMMARIES, s.id);
+          const deletedAt = Date.now();
+          await recordDeletedEntity({
+            entityType: "conversation_summary",
+            entityId: s.id,
+            updatedAt: deletedAt,
+            deletedAt,
+            payload: null,
+          });
         }
       }
       deps.chatSummaries.value = [];
@@ -182,6 +194,14 @@ export function useChatExport(deps: {
       for (const d of allDiaries) {
         if (d.chatId === chatId || d.characterId === charId) {
           await db.delete(DB_STORES.DIARIES, d.id);
+          const deletedAt = Date.now();
+          await recordDeletedEntity({
+            entityType: "diary_entry",
+            entityId: d.id,
+            updatedAt: deletedAt,
+            deletedAt,
+            payload: null,
+          });
         }
       }
       deps.chatDiaries.value = [];
@@ -189,17 +209,41 @@ export function useChatExport(deps: {
 
       // 4. 刪除此聊天的重要事件
       try {
+        const existing = await db.get(DB_STORES.IMPORTANT_EVENTS, chatId);
         await db.delete(DB_STORES.IMPORTANT_EVENTS, chatId);
+        if (existing) {
+          const deletedAt = Date.now();
+          await recordDeletedEntity({
+            entityType: "important_events_log",
+            entityId: chatId,
+            updatedAt: deletedAt,
+            deletedAt,
+            payload: null,
+          });
+        }
       } catch {
         // 可能不存在，忽略
       }
       if (charId && charId !== chatId) {
         try {
+          const existing = await db.get(DB_STORES.IMPORTANT_EVENTS, charId);
           await db.delete(DB_STORES.IMPORTANT_EVENTS, charId);
+          if (existing) {
+            const deletedAt = Date.now();
+            await recordDeletedEntity({
+              entityType: "important_events_log",
+              entityId: charId,
+              updatedAt: deletedAt,
+              deletedAt,
+              payload: null,
+            });
+          }
         } catch {
           // 忽略
         }
       }
+
+      scheduleSelfHostedAutoSync();
 
       // 4.5. 重置封鎖狀態（清除封鎖歷史，避免舊記錄持續注入 prompt）
       try {
