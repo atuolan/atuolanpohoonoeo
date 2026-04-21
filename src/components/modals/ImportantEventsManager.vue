@@ -355,6 +355,7 @@
 
 <script setup lang="ts">
 import { db, DB_STORES } from "@/db/database";
+import { scheduleSelfHostedAutoSync } from "@/services/selfHostedSyncState";
 import type {
     ImportantEvent,
     ImportantEventCategory,
@@ -543,6 +544,7 @@ async function saveEventsLog() {
     eventsLog.value.updatedAt = Date.now();
     const plainData = JSON.parse(JSON.stringify(eventsLog.value));
     await db.put(DB_STORES.IMPORTANT_EVENTS, plainData);
+    scheduleSelfHostedAutoSync();
   } catch (e) {
     console.error("保存重要事件失敗:", e);
   }
