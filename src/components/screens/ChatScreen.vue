@@ -2760,6 +2760,7 @@ const {
 } = useChatSummaryDiary({
   messages,
   currentChatId,
+  currentChatData,
   currentCharacter,
   effectivePersona,
   isGenerating,
@@ -7505,9 +7506,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
   }
 
   // 載入總結和日記（群聊模式不載入，群聊有自己的記憶管理）
-  if (!currentChatData.value?.isGroupChat) {
-    await loadSummariesAndDiaries();
-  }
+  await loadSummariesAndDiaries();
 
   // 恢復輸入框草稿
   if (currentChatId.value) {
@@ -7537,6 +7536,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
 async function loadSummariesAndDiaries() {
   const chatId = currentChatId.value || props.chatId;
   const charId = props.characterId || currentCharacter.value?.id;
+  const isGroupChat = currentChatData.value?.isGroupChat === true;
 
   if (!chatId && !charId) return;
 
@@ -7563,7 +7563,12 @@ async function loadSummariesAndDiaries() {
 
     chatSummaries.value = allSummaries
       .filter(
-        (s) => s.chatId === chatId && (!charId || s.characterId === charId),
+        (s) =>
+          s.chatId === chatId &&
+          (isGroupChat ||
+            !charId ||
+            !s.characterId ||
+            s.characterId === charId),
       )
       .map((s) => ({
         id: s.id,
@@ -7591,7 +7596,12 @@ async function loadSummariesAndDiaries() {
 
     chatDiaries.value = allDiaries
       .filter(
-        (d) => d.chatId === chatId && (!charId || d.characterId === charId),
+        (d) =>
+          d.chatId === chatId &&
+          (isGroupChat ||
+            !charId ||
+            !d.characterId ||
+            d.characterId === charId),
       )
       .map((d) => ({
         id: d.id,

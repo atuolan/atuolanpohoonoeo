@@ -87,6 +87,7 @@ interface StreamingWindow {
 export function useChatSummaryDiary(deps: {
   messages: Ref<Message[]>;
   currentChatId: Ref<string | null>;
+  currentChatData: ComputedRef<any>;
   currentCharacter: ComputedRef<any>;
   effectivePersona: ComputedRef<any>;
   isGenerating: ComputedRef<boolean>;
@@ -122,6 +123,83 @@ export function useChatSummaryDiary(deps: {
     }
   }
 
+  function isGroupSummaryMode(): boolean {
+    return deps.currentChatData.value?.isGroupChat === true;
+  }
+
+  function getGroupSummaryContext() {
+    const chatData = deps.currentChatData.value;
+    const groupName =
+      chatData?.groupMetadata?.groupName || chatData?.name || "這個群聊";
+    const memberNames = [
+      ...(chatData?.groupMetadata?.members?.map((m: any) => m.nickname || m.characterId) || []),
+      ...(chatData?.groupMetadata?.multiCharMembers?.map((m: any) => m.name) || []),
+    ].filter(Boolean);
+
+    return {
+      groupName,
+      memberNamesText:
+        memberNames.length > 0 ? memberNames.join("、") : "群裡的大家",
+    };
+  }
+
+  function buildGroupSummaryPrompts(sourceText: string) {
+    const { groupName, memberNamesText } = getGroupSummaryContext();
+    return [
+      {
+        role: "system" as const,
+        content: `你是群聊共同日記的寫手。請把這段群聊整理成一篇像是「群裡所有角色一起寫下來」的群像日記。
+
+輸出規則：
+1. 必須呈現多人共同書寫的感覺，不要寫成單一角色的第一人稱獨白
+2. 主要使用「我們」作為敘述主體，也可以自然穿插個別角色名字與彼此反應
+3. 重點保留互動氣氛、關鍵事件、情緒變化、角色間關係與有趣細節
+4. 文風要像一篇溫度感明顯的群聊日記，而不是條列摘要
+5. 字數控制在 300～500 字之間
+6. 直接輸出正文，不要加標題、前言、註解或清單`,
+      },
+      {
+        role: "user" as const,
+        content: `請為群聊「${groupName}」寫一篇群像共同日記。群成員包含：${memberNamesText}。
+
+以下是這段時間的群聊內容：
+
+${sourceText}
+
+請把它寫成一篇約 300～500 字、帶有大家一起記錄今天發生了什麼的感覺的群聊總結。`,
+      },
+    ];
+  }
+
+  function buildGroupDiaryPrompts(sourceText: string, currentDateTimeFull: string) {
+    const { groupName, memberNamesText } = getGroupSummaryContext();
+    return [
+      {
+        role: "system" as const,
+        content: `你是群聊共同日記的代筆者。請把這段群聊寫成一篇像是群裡眾人輪流接龍寫下來的共同日記。
+
+輸出規則：
+1. 必須呈現「多人接龍共寫」的感覺，可以有彼此補充、吐槽、搗亂、插話、糾正、搶筆的趣味感
+2. 但整體仍需可讀、連貫，最後看起來像一篇完整的群像日記，而不是零散聊天截圖
+3. 可以自然穿插「我們」、角色名字、短句式插嘴、補充括號、小小吐槽，但不要變成純對話稿
+4. 要保留這段群聊的氣氛、關鍵事件、情緒起伏、角色間互動與好笑細節
+5. 文風要有生活感、玩鬧感與共同記錄感，像大家一起在日記本上亂入留言
+6. 字數控制在 600～1000 字之間
+7. 直接輸出正文，不要加標題、前言、角色名清單或條列`,
+      },
+      {
+        role: "user" as const,
+        content: `今天的時間是 ${currentDateTimeFull}。請為群聊「${groupName}」寫一篇群像接龍日記。群成員包含：${memberNamesText}。
+
+以下是這段時間的群聊內容：
+
+${sourceText}
+
+請把它寫成一篇約 600～1000 字、像群裡大家輪流動筆寫下來的共同日記：有人補充、有人吐槽、有人故意搗亂一下也可以，但整體仍要自然好讀。`,
+      },
+    ];
+  }
+
   // 生成鎖定
   const summaryGeneratingLock = ref(false);
   const diaryGeneratingLock = ref(false);
@@ -137,7 +215,7 @@ export function useChatSummaryDiary(deps: {
   // IDB 持久化 helpers
   async function saveSummary(summary: SummaryItem) {
     const chatId = deps.currentChatId.value || deps.chatId || "";
-    const charId = deps.characterId || deps.currentCharacter.value?.id || "";
+    const charId = deps.currentCharacter.value?.id || deps.characterId || "";
     const dbSummary = {
       ...summary,
       chatId,
@@ -169,7 +247,7 @@ export function useChatSummaryDiary(deps: {
 
   async function saveDiary(diary: DiaryItem) {
     const chatId = deps.currentChatId.value || deps.chatId || "";
-    const charId = deps.characterId || deps.currentCharacter.value?.id || "";
+    const charId = deps.currentCharacter.value?.id || deps.characterId || "";
     const dbDiary = {
       ...diary,
       chatId,
@@ -395,30 +473,36 @@ export function useChatSummaryDiary(deps: {
         content: string;
       }> = [];
 
-      for (const orderEntry of diaryPromptOrder) {
-        if (!orderEntry.enabled) continue;
-        const promptDef = diaryPromptDefs.find(
-          (p) => p.identifier === orderEntry.identifier,
+      if (isGroupSummaryMode()) {
+        diaryPrompts.push(
+          ...buildGroupDiaryPrompts(recentMessagesText, currentDateTimeFull),
         );
-        if (!promptDef) continue;
+      } else {
+        for (const orderEntry of diaryPromptOrder) {
+          if (!orderEntry.enabled) continue;
+          const promptDef = diaryPromptDefs.find(
+            (p) => p.identifier === orderEntry.identifier,
+          );
+          if (!promptDef) continue;
 
-        let content = promptDef.content
-          .replace(/\{\{char\}\}/g, char.data.name)
-          .replace(/\{\{user\}\}/g, deps.effectivePersona.value?.name || "User")
-          .replace(/\{\{charDescription\}\}/g, char.data.description || "")
-          .replace(/\{\{charPersonality\}\}/g, char.data.personality || "")
-          .replace(
-            /\{\{userPersona\}\}/g,
-            deps.effectivePersona.value?.description || "",
-          )
-          .replace(/\{\{messagesForDiary\}\}/g, recentMessagesText)
-          .replace(/\{\{recentMessages\}\}/g, recentMessagesText)
-          .replace(/\{\{currentDateTime\}\}/g, currentDateTimeFull);
+          let content = promptDef.content
+            .replace(/\{\{char\}\}/g, char.data.name)
+            .replace(/\{\{user\}\}/g, deps.effectivePersona.value?.name || "User")
+            .replace(/\{\{charDescription\}\}/g, char.data.description || "")
+            .replace(/\{\{charPersonality\}\}/g, char.data.personality || "")
+            .replace(
+              /\{\{userPersona\}\}/g,
+              deps.effectivePersona.value?.description || "",
+            )
+            .replace(/\{\{messagesForDiary\}\}/g, recentMessagesText)
+            .replace(/\{\{recentMessages\}\}/g, recentMessagesText)
+            .replace(/\{\{currentDateTime\}\}/g, currentDateTimeFull);
 
-        diaryPrompts.push({
-          role: promptDef.role as "system" | "user" | "assistant",
-          content,
-        });
+          diaryPrompts.push({
+            role: promptDef.role as "system" | "user" | "assistant",
+            content,
+          });
+        }
       }
 
       if (diaryPrompts.length === 0) {
@@ -618,27 +702,31 @@ ${recentMessagesText}
         content: string;
       }> = [];
 
-      for (const orderEntry of summaryPromptOrder) {
-        if (!orderEntry.enabled) continue;
-        const promptDef = summaryPromptDefs.find(
-          (p) => p.identifier === orderEntry.identifier,
-        );
-        if (!promptDef) continue;
+      if (isGroupSummaryMode()) {
+        summaryPrompts.push(...buildGroupSummaryPrompts(recentMessages));
+      } else {
+        for (const orderEntry of summaryPromptOrder) {
+          if (!orderEntry.enabled) continue;
+          const promptDef = summaryPromptDefs.find(
+            (p) => p.identifier === orderEntry.identifier,
+          );
+          if (!promptDef) continue;
 
-        let content = promptDef.content
-          .replace(/\{\{char\}\}/g, char.data.name)
-          .replace(/\{\{user\}\}/g, deps.effectivePersona.value?.name || "User")
-          .replace(/\{\{messagesForSummary\}\}/g, recentMessages)
-          .replace(
-            /\{\{userPersona\}\}/g,
-            deps.effectivePersona.value?.description || "",
-          )
-          .replace(/\{\{charDescription\}\}/g, char.data.description || "");
+          let content = promptDef.content
+            .replace(/\{\{char\}\}/g, char.data.name)
+            .replace(/\{\{user\}\}/g, deps.effectivePersona.value?.name || "User")
+            .replace(/\{\{messagesForSummary\}\}/g, recentMessages)
+            .replace(
+              /\{\{userPersona\}\}/g,
+              deps.effectivePersona.value?.description || "",
+            )
+            .replace(/\{\{charDescription\}\}/g, char.data.description || "");
 
-        summaryPrompts.push({
-          role: promptDef.role as "system" | "user" | "assistant",
-          content,
-        });
+          summaryPrompts.push({
+            role: promptDef.role as "system" | "user" | "assistant",
+            content,
+          });
+        }
       }
 
       const client = new OpenAICompatibleClient(taskConfig.api);
@@ -821,10 +909,12 @@ ${recentMessagesText}
       const client = new OpenAICompatibleClient(taskConfig.api);
 
       const userName = deps.effectivePersona.value?.name || "User";
-      const metaPrompt = [
-        {
-          role: "system" as const,
-          content: `你是一個總結助手。你的任務是將多個對話總結合併成一個精簡的元總結，保留最重要的信息。
+      const metaPrompt = isGroupSummaryMode()
+        ? buildGroupSummaryPrompts(combinedContent)
+        : [
+            {
+              role: "system" as const,
+              content: `你是一個總結助手。你的任務是將多個對話總結合併成一個精簡的元總結，保留最重要的信息。
 
 ⚠️ 重要輸出規則：
 1. 你必須直接輸出總結內容，絕對不能輸出空白或拒絕回應
@@ -833,12 +923,12 @@ ${recentMessagesText}
 4. 不要使用第三人稱，不要用名字或暱稱稱呼任何一方
 5. 字數控制在 300-800字，確保內容完整不截斷
 6. 直接開始寫總結，不要加任何前言或說明`,
-        },
-        {
-          role: "user" as const,
-          content: `以下是需要合併的總結（共 ${selectedSummaries.length} 條）：\n\n${combinedContent}\n\n請以 ${char.data.name} 的第一人稱視角，將以上總結合併成一個精簡的元總結。直接輸出總結內容，不要有任何前言。`,
-        },
-      ];
+            },
+            {
+              role: "user" as const,
+              content: `以下是需要合併的總結（共 ${selectedSummaries.length} 條）：\n\n${combinedContent}\n\n請以 ${char.data.name} 的第一人稱視角，將以上總結合併成一個精簡的元總結。直接輸出總結內容，不要有任何前言。`,
+            },
+          ];
 
       let metaContent = "";
       const isStreamingEnabled = taskConfig.generation.streamingEnabled;
@@ -997,19 +1087,23 @@ ${recentMessagesText}
 
       const summaryPrompts: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
 
-      for (const orderEntry of summaryPromptOrder) {
-        if (!orderEntry.enabled) continue;
-        const promptDef = summaryPromptDefs.find(p => p.identifier === orderEntry.identifier);
-        if (!promptDef) continue;
+      if (isGroupSummaryMode()) {
+        summaryPrompts.push(...buildGroupSummaryPrompts(batchText));
+      } else {
+        for (const orderEntry of summaryPromptOrder) {
+          if (!orderEntry.enabled) continue;
+          const promptDef = summaryPromptDefs.find(p => p.identifier === orderEntry.identifier);
+          if (!promptDef) continue;
 
-        const content = promptDef.content
-          .replace(/\{\{char\}\}/g, charName)
-          .replace(/\{\{user\}\}/g, userName)
-          .replace(/\{\{messagesForSummary\}\}/g, batchText)
-          .replace(/\{\{userPersona\}\}/g, deps.effectivePersona.value?.description || '')
-          .replace(/\{\{charDescription\}\}/g, char?.data?.description || '');
+          const content = promptDef.content
+            .replace(/\{\{char\}\}/g, charName)
+            .replace(/\{\{user\}\}/g, userName)
+            .replace(/\{\{messagesForSummary\}\}/g, batchText)
+            .replace(/\{\{userPersona\}\}/g, deps.effectivePersona.value?.description || '')
+            .replace(/\{\{charDescription\}\}/g, char?.data?.description || '');
 
-        summaryPrompts.push({ role: promptDef.role as 'system' | 'user' | 'assistant', content });
+          summaryPrompts.push({ role: promptDef.role as 'system' | 'user' | 'assistant', content });
+        }
       }
 
       if (summaryPrompts.length === 0) {
