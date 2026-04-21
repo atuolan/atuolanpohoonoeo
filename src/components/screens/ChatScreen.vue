@@ -4761,43 +4761,87 @@ async function triggerAIResponse(options?: {
 
     let fullContent = "";
 
-    if (!isStreamingEnabled) {
-      // ===== 非流式模式：一次性取得完整回覆 =====
-      const streamGenerator = client.generateStream({
-        messages: apiMessages,
-        settings: chatSettings,
-        apiSettings: chatTaskConfig.api,
-        signal: controller.signal,
-        adjustLastMessageRole: true,
-      });
+    {
+      // ===== 取得完整回覆（流式 / 非流式皆支援，解析邏輯統一在拿到完整內容後執行） =====
+      let tokenUsage:
+        | { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+        | undefined;
 
-      for await (const event of streamGenerator) {
-        if (!event) continue;
-        if (event.type === "token" && event.token) {
-          fullContent += event.token;
-        } else if (event.type === "error") {
-          console.error("Error occurred during token generation:", event.error);
-          fullContent += `Error: ${String(event.error)}`;
-        } else {
-          console.log("Unknown event type:", event.type);
+      if (isStreamingEnabled) {
+        // 流式：逐 token 累積，同步到流式窗口或訊息氣泡
+        const streamGenerator = client.generateStream({
+          messages: apiMessages,
+          settings: chatSettings,
+          apiSettings: chatTaskConfig.api,
+          signal: controller.signal,
+          adjustLastMessageRole: true,
+        });
+
+        for await (const event of streamGenerator) {
+          if (!event) continue;
+          if (event.type === "token" && event.token) {
+            fullContent += event.token;
+
+            // 同步流式內容到全局 store（離開頁面後可恢復）
+            if (currentChatId.value) {
+              aiGenerationStore.updateContent(
+                currentChatId.value,
+                fullContent,
+                "chat",
+              );
+            }
+
+            if (useWindow) {
+              streamingWindow.appendToken(event.token);
+            } else {
+              const msgIndex = messages.value.findIndex(
+                (m) => m.id === aiMessage.id,
+              );
+              if (msgIndex !== -1) {
+                messages.value[msgIndex].content = fullContent;
+              }
+              scrollToBottom();
+            }
+          } else if (event.type === "done") {
+            if (event.content) {
+              fullContent = event.content;
+            }
+            const usage = (event as { usage?: typeof tokenUsage }).usage;
+            if (usage) tokenUsage = usage;
+          } else if (event.type === "error") {
+            const rawErr = (event as { error?: unknown }).error;
+            const errMsg =
+              typeof rawErr === "string"
+                ? rawErr
+                : rawErr instanceof Error
+                  ? rawErr.message
+                  : rawErr !== undefined
+                    ? String(rawErr)
+                    : "生成過程中發生錯誤";
+            throw new Error(errMsg);
+          }
+        }
+      } else {
+        // 非流式：一次性取得完整回覆
+        const result = await client.generate({
+          messages: apiMessages,
+          settings: chatSettings,
+          apiSettings: chatTaskConfig.api,
+          signal: controller.signal,
+          adjustLastMessageRole: true,
+        });
+        fullContent = result.content;
+        if (result.tokenCount) {
+          tokenUsage = {
+            prompt_tokens: result.tokenCount.prompt,
+            completion_tokens: result.tokenCount.completion,
+            total_tokens: result.tokenCount.total,
+          };
         }
       }
-      const result = await client.generate({
-        messages: apiMessages,
-        settings: chatSettings,
-        apiSettings: chatTaskConfig.api,
-        signal: controller.signal,
-        adjustLastMessageRole: true,
-      });
-      fullContent = result.content;
 
-      // 傳入 token 使用量到流式窗口（非流式模式也支援）
-      if (useWindow && result.tokenCount) {
-        streamingWindow.setUsage({
-          prompt_tokens: result.tokenCount.prompt,
-          completion_tokens: result.tokenCount.completion,
-          total_tokens: result.tokenCount.total,
-        });
+      if (useWindow && tokenUsage) {
+        streamingWindow.setUsage(tokenUsage);
       }
 
       // 直接處理完整回覆（套用角色 regex_scripts AI_OUTPUT）
@@ -5543,28 +5587,6 @@ async function triggerAIResponse(options?: {
               processMessageTTS(newMessage.id, newMessage.content);
             }
             streamingWindow.setComplete();
-          }
-        } else if (event && event.type === "error") {
-          const rawStreamError = (event as { error?: unknown }).error;
-          const streamError =
-            typeof rawStreamError === "string"
-              ? rawStreamError
-              : rawStreamError instanceof Error
-                ? rawStreamError.message
-                : rawStreamError !== undefined
-                  ? String(rawStreamError)
-                  : "生成過程中發生錯誤";
-          const msgIndex = messages.value.findIndex(
-            (m) => m.id === aiMessage.id,
-          );
-          if (msgIndex !== -1) {
-            messages.value[msgIndex].content =
-              fullContent || `[錯誤] ${streamError}`;
-            messages.value[msgIndex].isStreaming = false;
-          }
-
-          if (useWindow) {
-            streamingWindow.setError(streamError);
           }
         }
       }

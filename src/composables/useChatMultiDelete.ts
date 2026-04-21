@@ -1,5 +1,6 @@
 import { ref, type Ref, type ComputedRef } from "vue";
 import { db, DB_STORES } from "@/db/database";
+import { createChatRecord } from "@/storage/chatStorage";
 import { deleteMessage } from "@/storage/chatMessageStorage";
 import type { Chat, ChatMessage } from "@/types/chat";
 
@@ -61,7 +62,7 @@ export function useChatMultiDelete(deps: {
 
     const charName =
       deps.currentCharacter.value?.data?.name || deps.characterName;
-    const branchedMessages: ChatMessage[] = JSON.parse(
+    const rawBranchedMessages: ChatMessage[] = JSON.parse(
       JSON.stringify(
         deps.messages.value.slice(0, msgIndex + 1).map((m: any) => {
           return deps.convertToStorableMessage(m, charName);
@@ -69,13 +70,32 @@ export function useChatMultiDelete(deps: {
       ),
     );
 
+    // 重新配發 id，避免與原聊天訊息共用 chatMessages 主鍵而互相覆蓋
+    const idMap = new Map<string, string>();
+    for (const msg of rawBranchedMessages) {
+      const newId =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `msg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      idMap.set(msg.id, newId);
+      msg.id = newId;
+    }
+    // 修正訊息內部可能引用到的舊 id（如 replyTo）
+    for (const msg of rawBranchedMessages) {
+      const anyMsg = msg as any;
+      if (anyMsg.replyTo && idMap.has(anyMsg.replyTo)) {
+        anyMsg.replyTo = idMap.get(anyMsg.replyTo);
+      }
+    }
+    const branchedMessages = rawBranchedMessages;
+
     const now = Date.now();
     const lastMsg = branchedMessages[branchedMessages.length - 1];
     const branchChat: Chat = {
       ...JSON.parse(JSON.stringify(chatData)),
       id: `chat_${now}`,
       name: `${chatData.name} [分支]`,
-      messages: branchedMessages,
+      messages: [],
       lastMessagePreview: lastMsg?.content?.slice(0, 50) ?? "",
       messageCount: branchedMessages.length,
       createdAt: now,
@@ -85,7 +105,7 @@ export function useChatMultiDelete(deps: {
 
     try {
       await db.init();
-      await db.put(DB_STORES.CHATS, branchChat);
+      await createChatRecord(branchChat, branchedMessages);
 
       if (branchCopyMemory.value) {
         const srcChatId =
