@@ -89,13 +89,14 @@ export class SelfHostedSyncClient {
     });
   }
 
-  async pullItems(since?: number, limit?: number): Promise<SelfHostedSyncPullResponse> {
+  async pullItems(since?: number, limit?: number, signal?: AbortSignal): Promise<SelfHostedSyncPullResponse> {
     const params = new URLSearchParams();
     if (typeof since === "number") params.set("since", String(since));
     if (typeof limit === "number") params.set("limit", String(limit));
     const query = params.toString() ? `?${params.toString()}` : "";
     return this.request<SelfHostedSyncPullResponse>("GET", `/sync/pull${query}`, undefined, {
       requireAuth: true,
+      signal,
     });
   }
 
@@ -110,7 +111,7 @@ export class SelfHostedSyncClient {
     method: string,
     path: string,
     body?: unknown,
-    options?: { requireAuth?: boolean },
+    options?: { requireAuth?: boolean; signal?: AbortSignal },
   ): Promise<T> {
     const headers: Record<string, string> = {};
 
@@ -129,6 +130,7 @@ export class SelfHostedSyncClient {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: options?.signal,
     });
 
     if (!response.ok) {

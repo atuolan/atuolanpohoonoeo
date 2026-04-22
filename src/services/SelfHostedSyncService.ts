@@ -129,6 +129,27 @@ export class SelfHostedSyncService {
 
     syncStore.markSyncStarted();
 
+    const pullAbortController =
+      typeof AbortController !== "undefined" ? new AbortController() : null;
+
+    const onVisibilityChange = () => {
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState !== "visible" &&
+        pullAbortController &&
+        !pullAbortController.signal.aborted
+      ) {
+        recordRuntimeDiagnostic("event", "selfHostedSync.pull.abortedByHide", "Aborting in-flight pull: page went hidden", {
+          visibilityState: document.visibilityState,
+        });
+        pullAbortController.abort(new DOMException("Page hidden during pull", "AbortError"));
+      }
+    };
+
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisibilityChange);
+    }
+
     try {
       const client = syncStore.createClient();
       let currentSince = since;
@@ -137,7 +158,10 @@ export class SelfHostedSyncService {
       let batchNumber = 0;
 
       while (true) {
-        if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        if (
+          typeof document !== "undefined" &&
+          document.visibilityState !== "visible"
+        ) {
           recordRuntimeDiagnostic("event", "selfHostedSync.pull.hiddenMidBatch", "Pull stopped mid-batch: page went hidden", {
             batchNumber,
             totalApplied,
@@ -156,7 +180,7 @@ export class SelfHostedSyncService {
           isFullPull: typeof currentSince !== "number",
         });
 
-        const response = await client.pullItems(currentSince, PULL_BATCH_LIMIT);
+        const response = await client.pullItems(currentSince, PULL_BATCH_LIMIT, pullAbortController?.signal);
         lastServerTime = response.serverTime;
 
         recordRuntimeDiagnostic("event", "selfHostedSync.pull", `Received pull batch ${batchNumber}`, {
@@ -199,6 +223,10 @@ export class SelfHostedSyncService {
       }
       await syncStore.markSyncFailed(error);
       throw error;
+    } finally {
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+      }
     }
   }
 
