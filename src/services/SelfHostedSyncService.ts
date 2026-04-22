@@ -262,15 +262,37 @@ export class SelfHostedSyncService {
     });
     const pushResult = await this.pushAll();
 
-    // push 完成後讓出執行緒，給 GC 機會回收 push payload，再開始 pull
+    // push 完成後讓出執行緒，給 GC 機會回收 push payload
     await new Promise<void>((resolve) => setTimeout(resolve, 150));
 
+    // 輕量 meta 檢查：如果沒有其他裝置在 push 期間推送新資料，直接跳過 pull
+    // 這是單裝置使用最常見的情況，可以完全避免 post-push pull 的記憶體壓力
+    const client = syncStore.createClient();
+    const meta = await client.getMeta();
+    const pushServerTime = pushResult.serverTime ?? 0;
+    const remoteLatest = meta.latestUpdateAt ?? 0;
+
+    if (remoteLatest <= pushServerTime) {
+      updateRuntimeSessionStage("selfHostedSync:syncNow pull skipped (no remote updates)", {
+        pushServerTime,
+        remoteLatest,
+      });
+      recordRuntimeDiagnostic("event", "selfHostedSync.syncNow", "Post-push pull skipped: no newer remote data", {
+        pushServerTime,
+        remoteLatest,
+      });
+      return {
+        pushed: pushResult.pushed,
+        pulled: 0,
+        serverTime: pushResult.serverTime,
+      };
+    }
+
     updateRuntimeSessionStage("selfHostedSync:syncNow pulling", {
-      since: pushResult.serverTime ?? previousLastSyncAt ?? null,
+      since: pushServerTime,
+      remoteLatest,
     });
-    // 使用 push 完成的 serverTime 作為 since，避免把剛推上去的資料再拉回來
-    const pullSince = pushResult.serverTime ?? previousLastSyncAt;
-    const pullResult = await this.pullAll(pullSince);
+    const pullResult = await this.pullAll(pushServerTime || previousLastSyncAt);
 
     return {
       pushed: pushResult.pushed,
