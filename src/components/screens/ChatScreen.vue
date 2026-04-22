@@ -1822,6 +1822,25 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => chatStore.currentChat,
+  (chat) => {
+    if (!chat?.id) {
+      return;
+    }
+    if (currentChatId.value && chat.id !== currentChatId.value) {
+      return;
+    }
+
+    currentChatId.value = chat.id;
+    currentChatData.value = JSON.parse(JSON.stringify(chat));
+    messages.value = Array.isArray(chat.messages)
+      ? JSON.parse(JSON.stringify(chat.messages))
+      : [];
+  },
+  { deep: true },
+);
+
 // 從 App 級別接聽來電：透過 store 啟動來電通話
 watch(
   () => props.incomingCallReason,

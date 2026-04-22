@@ -87,7 +87,7 @@ interface StreamingWindow {
 export function useChatSummaryDiary(deps: {
   messages: Ref<Message[]>;
   currentChatId: Ref<string | null>;
-  currentChatData: ComputedRef<any>;
+  currentChatData: Ref<any> | ComputedRef<any>;
   currentCharacter: ComputedRef<any>;
   effectivePersona: ComputedRef<any>;
   isGenerating: ComputedRef<boolean>;

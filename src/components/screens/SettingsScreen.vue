@@ -183,6 +183,28 @@ const selfHostedSyncServerStatusText = computed(() => {
   return selfHostedSyncStore.serverStatusOk ? "正常" : "異常";
 });
 
+const selfHostedSyncGuardDetails = computed(() => {
+  const alert = selfHostedSyncStore.guardAlert;
+  if (!alert) {
+    return null;
+  }
+
+  const formatCounts = (counts: Record<string, number>) =>
+    Object.entries(counts)
+      .filter(([, count]) => count > 0)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([type, count]) => `${type}：${count}`)
+      .join("、");
+
+  return {
+    localTotal: alert.localSnapshot.totalActiveItems,
+    remoteTotal: alert.remoteSnapshot.totalActiveItems,
+    localTopTypes: formatCounts(alert.localSnapshot.countsByEntityType),
+    remoteTopTypes: formatCounts(alert.remoteSnapshot.countsByEntityType),
+  };
+});
+
 const selfHostedSyncStatusText = computed(() => {
   if (selfHostedSyncStore.syncStatus === "syncing") {
     return "同步中…";
@@ -358,6 +380,15 @@ async function handleSelfHostedRefreshStatus() {
 }
 
 async function handleSelfHostedPushNow() {
+  if (selfHostedSyncStore.guardAlert) {
+    const confirmed = confirm(
+      `${selfHostedSyncStore.guardAlert.message}\n\n若你確認是遠端資料出了問題，才繼續把本機資料推回遠端。`,
+    );
+    if (!confirmed) {
+      return;
+    }
+  }
+
   selfHostedSyncActionStatus.value = "running";
   try {
     await selfHostedSyncStore.pushNow();
@@ -369,6 +400,15 @@ async function handleSelfHostedPushNow() {
 }
 
 async function handleSelfHostedPullNow() {
+  if (selfHostedSyncStore.guardAlert) {
+    const confirmed = confirm(
+      `${selfHostedSyncStore.guardAlert.message}\n\n若你確認是本機資料遺失，才繼續從遠端拉回並覆蓋本機同步資料。`,
+    );
+    if (!confirmed) {
+      return;
+    }
+  }
+
   selfHostedSyncActionStatus.value = "running";
   try {
     await selfHostedSyncStore.pullNow();
@@ -5569,11 +5609,50 @@ function useClonedVoice(voiceId: string) {
               </button>
               <button
                 class="push-permission-btn test"
-                :disabled="!selfHostedSyncCanOperate"
+                :disabled="!selfHostedSyncCanOperate || selfHostedSyncStore.hasGuardAlert"
                 @click="handleSelfHostedSyncNow"
               >
                 手動同步
               </button>
+            </div>
+
+            <div
+              v-if="selfHostedSyncStore.guardAlert && selfHostedSyncGuardDetails"
+              class="cloud-push-status"
+              style="margin-top: 12px; padding: 12px; border-radius: 12px; background: rgba(255, 107, 107, 0.12); border: 1px solid rgba(255, 107, 107, 0.28)"
+            >
+              <div style="color: #ffb4b4; font-weight: 700; margin-bottom: 6px">
+                已偵測到可能的大量資料丟失，暫停自動同步
+              </div>
+              <div style="line-height: 1.5">
+                {{ selfHostedSyncStore.guardAlert.message }}
+              </div>
+              <div style="margin-top: 8px; font-size: 12px; opacity: 0.9">
+                <div>本機總量：{{ selfHostedSyncGuardDetails.localTotal }}</div>
+                <div>遠端總量：{{ selfHostedSyncGuardDetails.remoteTotal }}</div>
+                <div v-if="selfHostedSyncGuardDetails.localTopTypes">
+                  本機主要內容：{{ selfHostedSyncGuardDetails.localTopTypes }}
+                </div>
+                <div v-if="selfHostedSyncGuardDetails.remoteTopTypes">
+                  遠端主要內容：{{ selfHostedSyncGuardDetails.remoteTopTypes }}
+                </div>
+              </div>
+              <div class="cloud-push-actions" style="margin-top: 10px; flex-wrap: wrap">
+                <button
+                  class="push-permission-btn"
+                  :disabled="!selfHostedSyncCanOperate"
+                  @click="handleSelfHostedPullNow"
+                >
+                  確認從遠端拉回
+                </button>
+                <button
+                  class="push-permission-btn test"
+                  :disabled="!selfHostedSyncCanOperate"
+                  @click="handleSelfHostedPushNow"
+                >
+                  確認推送本機到遠端
+                </button>
+              </div>
             </div>
 
             <div class="cloud-push-status">

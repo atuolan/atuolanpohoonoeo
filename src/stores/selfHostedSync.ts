@@ -1,5 +1,9 @@
 import { db, DB_STORES } from "@/db/database";
 import { SelfHostedSyncClient } from "@/services/SelfHostedSyncClient";
+import type {
+  SelfHostedSyncGuardAlert,
+  SelfHostedSyncMetaResponse,
+} from "@/types/selfHostedSync";
 import { DeviceFingerprintCollector } from "@/utils/deviceFingerprint";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
@@ -25,6 +29,8 @@ interface PersistedSelfHostedSyncSettings {
   serverStatusOk: boolean | null;
   serverApiVersion: string | null;
   lastServerTime: number | null;
+  lastRemoteUpdateAt: number | null;
+  guardAlert: SelfHostedSyncGuardAlert | null;
 }
 
 export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
@@ -45,11 +51,14 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
   const serverStatusOk = ref<boolean | null>(null);
   const serverApiVersion = ref<string | null>(null);
   const lastServerTime = ref<number | null>(null);
+  const lastRemoteUpdateAt = ref<number | null>(null);
+  const guardAlert = ref<SelfHostedSyncGuardAlert | null>(null);
 
   let loadingPromise: Promise<void> | null = null;
 
   const isConfigured = computed(() => !!serverUrl.value.trim());
   const isAuthenticated = computed(() => !!accessToken.value && !!refreshToken.value);
+  const hasGuardAlert = computed(() => guardAlert.value !== null);
 
   function isAuthRetryableError(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error);
@@ -90,6 +99,8 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
           serverStatusOk.value = saved.serverStatusOk ?? null;
           serverApiVersion.value = saved.serverApiVersion ?? null;
           lastServerTime.value = saved.lastServerTime ?? null;
+          lastRemoteUpdateAt.value = saved.lastRemoteUpdateAt ?? null;
+          guardAlert.value = saved.guardAlert ?? null;
         }
 
         if (!serverUrl.value.trim()) {
@@ -133,6 +144,8 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
           serverStatusOk: serverStatusOk.value,
           serverApiVersion: serverApiVersion.value,
           lastServerTime: lastServerTime.value,
+          lastRemoteUpdateAt: lastRemoteUpdateAt.value,
+          guardAlert: guardAlert.value,
         } satisfies PersistedSelfHostedSyncSettings),
       );
       await db.put(DB_STORES.APP_SETTINGS, plainData);
@@ -184,6 +197,20 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
       serverUrl: serverUrl.value,
       accessToken: accessToken.value,
     });
+  }
+
+  async function refreshMeta(): Promise<SelfHostedSyncMetaResponse> {
+    await ensureDeviceId();
+    const client = createClient();
+    const result = await runSyncActionWithRetry(() => client.getMeta());
+    lastServerTime.value = result.serverTime ?? null;
+    lastRemoteUpdateAt.value = result.latestUpdateAt ?? null;
+    lastConnectionCheckAt.value = Date.now();
+    if (result.userId) {
+      userId.value = result.userId;
+    }
+    await saveSettings();
+    return result;
   }
 
   async function testConnection(): Promise<void> {
@@ -303,8 +330,27 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     accessToken.value = null;
     refreshToken.value = null;
     userId.value = null;
+    guardAlert.value = null;
     syncStatus.value = "idle";
     syncError.value = null;
+    await saveSettings();
+  }
+
+  async function setGuardAlert(alert: SelfHostedSyncGuardAlert): Promise<void> {
+    guardAlert.value = alert;
+    syncStatus.value = "error";
+    syncError.value = alert.message;
+    await saveSettings();
+  }
+
+  async function clearGuardAlert(): Promise<void> {
+    guardAlert.value = null;
+    if (syncStatus.value === "error" && syncError.value) {
+      syncStatus.value = isAuthenticated.value ? "idle" : "error";
+      if (isAuthenticated.value) {
+        syncError.value = null;
+      }
+    }
     await saveSettings();
   }
 
@@ -393,12 +439,16 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     serverStatusOk,
     serverApiVersion,
     lastServerTime,
+    lastRemoteUpdateAt,
     isConfigured,
     isAuthenticated,
+    hasGuardAlert,
+    guardAlert,
     loadSettings,
     saveSettings,
     ensureDeviceId,
     createClient,
+    refreshMeta,
     testConnection,
     refreshStatus,
     register,
@@ -413,5 +463,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     markSyncStarted,
     markSyncSucceeded,
     markSyncFailed,
+    setGuardAlert,
+    clearGuardAlert,
   };
 });

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import http from "node:http";
+import { WebSocketServer } from "ws";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = resolve(__dirname, "..");
@@ -30,6 +31,9 @@ if (!store.meta.tokenSecret) {
   saveStore();
 }
 
+const wsServer = new WebSocketServer({ noServer: true });
+const syncSocketClients = new Map();
+
 const server = http.createServer(async (req, res) => {
   try {
     addCorsHeaders(res);
@@ -54,6 +58,7 @@ const server = http.createServer(async (req, res) => {
           "POST /auth/login",
           "POST /auth/refresh",
           "GET /sync/status",
+          "GET /sync/meta",
           "POST /sync/push",
           "GET /sync/pull?since=...",
           "GET /admin  (admin UI)",
@@ -155,6 +160,24 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "GET" && url.pathname === "/sync/meta") {
+      const auth = requireBearerAuth(req);
+      const syncMeta = getSyncMetaForUser(auth.userId);
+      return sendJson(res, 200, {
+        ok: true,
+        serverTime: Date.now(),
+        userId: auth.userId,
+        latestUpdateAt: syncMeta.latestUpdateAt,
+        devices: Object.entries(syncMeta.devices)
+          .map(([deviceId, deviceMeta]) => ({
+            deviceId,
+            lastPushAt: deviceMeta.lastPushAt ?? null,
+            lastSeenAt: deviceMeta.lastSeenAt ?? null,
+          }))
+          .sort((a, b) => (b.lastPushAt || 0) - (a.lastPushAt || 0)),
+      });
+    }
+
     if (req.method === "POST" && url.pathname === "/sync/push") {
       const auth = requireBearerAuth(req);
       const body = await readJsonBody(req);
@@ -197,7 +220,18 @@ const server = http.createServer(async (req, res) => {
         accepted += 1;
       }
 
+      if (accepted > 0) {
+        markUserSyncUpdated(auth.userId, auth.deviceId, serverTime);
+      }
+
       saveStore();
+      notifySyncUpdate({
+        userId: auth.userId,
+        sourceDeviceId: auth.deviceId,
+        serverTime,
+        latestUpdateAt: accepted > 0 ? serverTime : getSyncMetaForUser(auth.userId).latestUpdateAt,
+        accepted,
+      });
       return sendJson(res, 200, {
         ok: true,
         serverTime,
@@ -473,9 +507,82 @@ server.on("error", (error) => {
   process.exit(1);
 });
 
+server.on("upgrade", (req, socket, head) => {
+  try {
+    const url = new URL(req.url || "/", `http://${req.headers.host || `127.0.0.1:${port}`}`);
+    if (url.pathname !== "/sync/ws") {
+      socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
+    const token = url.searchParams.get("token") || "";
+    if (!token) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
+    const auth = verifyToken(token);
+    req.syncAuth = auth;
+
+    wsServer.handleUpgrade(req, socket, head, (ws) => {
+      wsServer.emit("connection", ws, req);
+    });
+  } catch (error) {
+    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+    socket.destroy();
+  }
+});
+
+wsServer.on("connection", (ws, req) => {
+  const auth = req.syncAuth;
+  if (!auth?.userId || !auth?.deviceId) {
+    ws.close(1008, "Missing auth context");
+    return;
+  }
+
+  const client = {
+    ws,
+    userId: auth.userId,
+    deviceId: auth.deviceId,
+  };
+
+  syncSocketClients.set(ws, client);
+
+  ws.send(
+    JSON.stringify({
+      type: "sync:ready",
+      userId: auth.userId,
+      deviceId: auth.deviceId,
+      serverTime: Date.now(),
+    }),
+  );
+
+  ws.on("message", (raw) => {
+    try {
+      const payload = JSON.parse(raw.toString("utf8"));
+      if (payload?.type === "ping") {
+        ws.send(JSON.stringify({ type: "pong", serverTime: Date.now() }));
+      }
+    } catch {
+      ws.send(JSON.stringify({ type: "error", message: "Invalid websocket payload" }));
+    }
+  });
+
+  ws.on("close", () => {
+    syncSocketClients.delete(ws);
+  });
+
+  ws.on("error", () => {
+    syncSocketClients.delete(ws);
+  });
+});
+
 server.listen(port, "0.0.0.0", () => {
   console.log(`[SelfHostedSyncServer] listening on http://127.0.0.1:${port}`);
   console.log(`[SelfHostedSyncServer] admin UI:  http://127.0.0.1:${port}/admin`);
+  console.log(`[SelfHostedSyncServer] websocket: http://127.0.0.1:${port}/sync/ws?token=...`);
 });
 
 function sendHtmlFile(res, filePath) {
@@ -540,6 +647,7 @@ function loadStore() {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         tokenSecret: process.env.SYNC_TOKEN_SECRET || "",
+        syncUsers: {},
       },
       users: [],
       refreshTokens: [],
@@ -552,9 +660,18 @@ function loadStore() {
   const raw = readFileSync(storePath, "utf8");
   const parsed = JSON.parse(raw);
   parsed.meta ||= {};
+  parsed.meta.syncUsers ||= {};
   parsed.users ||= [];
   parsed.refreshTokens ||= [];
   parsed.entities ||= [];
+
+  const originalEntityCount = parsed.entities.length;
+  parsed.entities = parsed.entities.filter((entity) => entity?.entityType !== "idb_store_snapshot");
+  if (parsed.entities.length !== originalEntityCount) {
+    parsed.meta.updatedAt = Date.now();
+    writeFileSync(storePath, JSON.stringify(parsed, null, 2), "utf8");
+  }
+
   return parsed;
 }
 
@@ -621,6 +738,7 @@ function verifyPassword(password, salt, expectedHash) {
 
 function issueAuthSession({ userId, deviceId, username }) {
   const now = Date.now();
+  touchSyncDevice(userId, deviceId, now);
   const accessToken = signToken({
     type: "access",
     userId,
@@ -691,6 +809,68 @@ function requireBearerAuth(req) {
     throw createHttpError(401, "Missing bearer token");
   }
   return verifyToken(header.slice("Bearer ".length));
+}
+
+function ensureSyncUserState(userId) {
+  store.meta.syncUsers ||= {};
+  const syncUsers = store.meta.syncUsers;
+  syncUsers[userId] ||= {
+    latestUpdateAt: null,
+    devices: {},
+  };
+  syncUsers[userId].devices ||= {};
+  return syncUsers[userId];
+}
+
+function touchSyncDevice(userId, deviceId, lastSeenAt = Date.now()) {
+  const userState = ensureSyncUserState(userId);
+  userState.devices[deviceId] ||= {
+    lastPushAt: null,
+    lastSeenAt: null,
+  };
+  userState.devices[deviceId].lastSeenAt = lastSeenAt;
+  return userState.devices[deviceId];
+}
+
+function markUserSyncUpdated(userId, deviceId, timestamp) {
+  const userState = ensureSyncUserState(userId);
+  const deviceState = touchSyncDevice(userId, deviceId, timestamp);
+  userState.latestUpdateAt = timestamp;
+  deviceState.lastPushAt = timestamp;
+  deviceState.lastSeenAt = timestamp;
+}
+
+function getSyncMetaForUser(userId) {
+  return ensureSyncUserState(userId);
+}
+
+function notifySyncUpdate({ userId, sourceDeviceId, serverTime, latestUpdateAt, accepted }) {
+  if (!accepted) {
+    return;
+  }
+
+  const message = JSON.stringify({
+    type: "sync:update",
+    userId,
+    sourceDeviceId,
+    serverTime,
+    latestUpdateAt: latestUpdateAt ?? null,
+    accepted,
+  });
+
+  for (const [ws, client] of syncSocketClients.entries()) {
+    if (client.userId !== userId) {
+      continue;
+    }
+    if (client.deviceId === sourceDeviceId) {
+      continue;
+    }
+    if (ws.readyState !== ws.OPEN) {
+      syncSocketClients.delete(ws);
+      continue;
+    }
+    ws.send(message);
+  }
 }
 
 function validateSyncEnvelope(item) {

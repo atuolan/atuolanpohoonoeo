@@ -5,16 +5,14 @@ import type {
 } from "@/types/selfHostedSync";
 
 const DELETED_ENTITIES_KEY = "self-hosted-sync-deleted-entities";
-const AUTO_SYNC_TIMER_MS = 5000;
 
 interface DeletedEntitiesState {
   id: string;
   records: SelfHostedSyncDeletedEntityRecord[];
 }
 
-let pendingAutoSyncTimer: ReturnType<typeof setTimeout> | null = null;
-let autoSyncInFlight: Promise<void> | null = null;
 let autoSyncSuppressionDepth = 0;
+let hasPendingLocalChanges = false;
 
 export async function loadDeletedEntities(): Promise<SelfHostedSyncDeletedEntityRecord[]> {
   await db.init();
@@ -75,38 +73,11 @@ export function scheduleSelfHostedAutoSync(): void {
     return;
   }
 
-  if (pendingAutoSyncTimer) {
-    clearTimeout(pendingAutoSyncTimer);
-  }
-
-  pendingAutoSyncTimer = setTimeout(() => {
-    pendingAutoSyncTimer = null;
-    void runScheduledSelfHostedAutoSync();
-  }, AUTO_SYNC_TIMER_MS);
+  hasPendingLocalChanges = true;
 }
 
 export async function runScheduledSelfHostedAutoSync(): Promise<void> {
-  if (autoSyncInFlight) {
-    return autoSyncInFlight;
-  }
-
-  autoSyncInFlight = (async () => {
-    try {
-      const { useSelfHostedSyncStore } = await import("@/stores/selfHostedSync");
-      const syncStore = useSelfHostedSyncStore();
-      await syncStore.loadSettings();
-      if (!syncStore.enabled || !syncStore.isAuthenticated) {
-        return;
-      }
-      await syncStore.syncNow();
-    } catch (error) {
-      console.warn("[SelfHostedSync] 自動同步失敗:", error);
-    } finally {
-      autoSyncInFlight = null;
-    }
-  })();
-
-  return autoSyncInFlight;
+  return Promise.resolve();
 }
 
 export async function withSuppressedSelfHostedAutoSync<T>(
@@ -118,4 +89,12 @@ export async function withSuppressedSelfHostedAutoSync<T>(
   } finally {
     autoSyncSuppressionDepth = Math.max(0, autoSyncSuppressionDepth - 1);
   }
+}
+
+export function hasPendingSelfHostedLocalChanges(): boolean {
+  return hasPendingLocalChanges;
+}
+
+export function clearPendingSelfHostedLocalChanges(): void {
+  hasPendingLocalChanges = false;
 }

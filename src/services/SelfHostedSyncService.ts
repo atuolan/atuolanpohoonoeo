@@ -17,7 +17,6 @@ import {
   toSyncChatRecordEnvelope,
   toSyncConversationSummaryEnvelope,
   toSyncDiaryEntryEnvelope,
-  toSyncIdbStoreSnapshotEnvelope,
   toSyncImportantEventsLogEnvelope,
   toSyncLorebookEnvelope,
   toSyncPromptLibraryItemEnvelope,
@@ -28,18 +27,25 @@ import {
   toSyncStickerCategoryEnvelope,
   toSyncUserDataEnvelope,
 } from "@/services/selfHostedSyncMappers";
-import { clearDeletedEntities, loadDeletedEntities, withSuppressedSelfHostedAutoSync } from "@/services/selfHostedSyncState";
+import {
+  clearDeletedEntities,
+  clearPendingSelfHostedLocalChanges,
+  loadDeletedEntities,
+  withSuppressedSelfHostedAutoSync,
+} from "@/services/selfHostedSyncState";
+import { useNotificationStore } from "@/stores/notification";
 import { useSelfHostedSyncStore } from "@/stores/selfHostedSync";
 import { useSettingsStore } from "@/stores/settings";
 import type {
+  SelfHostedSyncContentSnapshot,
   SelfHostedSyncEntityEnvelope,
+  SelfHostedSyncGuardAlert,
   SelfHostedSyncPullResponse,
   SyncCharacterPayload,
   SyncChatMessagePayload,
   SyncChatRecordPayload,
   SyncConversationSummaryPayload,
   SyncDiaryEntryPayload,
-  SyncIdbStoreSnapshotPayload,
   SyncImportantEventsLogPayload,
   SyncLorebookPayload,
   SyncPromptLibraryItemPayload,
@@ -72,38 +78,8 @@ interface SelfHostedPullOptions {
 
 export class SelfHostedSyncService {
   private static readonly ENABLE_GENERIC_STORE_SNAPSHOTS = false;
-
-  private static readonly SNAPSHOT_STORE_NAMES = [
-    DB_STORES.SETTINGS,
-    DB_STORES.PROMPT_LIBRARY,
-    DB_STORES.CHARACTERS,
-    DB_STORES.LOREBOOKS,
-    DB_STORES.THEMES,
-    DB_STORES.LAYOUTS,
-    DB_STORES.STICKERS,
-    DB_STORES.IMPORTANT_EVENTS,
-    DB_STORES.SUMMARIES,
-    DB_STORES.DIARIES,
-    DB_STORES.HOLIDAY_RECORDS,
-    DB_STORES.CALENDAR_EVENTS,
-    DB_STORES.AUTH_STATE,
-    DB_STORES.GAME_STATES,
-    DB_STORES.PENDING_CALLS,
-    DB_STORES.CALL_HISTORY,
-    DB_STORES.RENDERER_RULES,
-    DB_STORES.BOOKS,
-    DB_STORES.BOOK_PROGRESS,
-    DB_STORES.CHAT_AFFINITY_STATES,
-    DB_STORES.CHARACTER_AFFECTIONS,
-    DB_STORES.PEEK_PHONE_DATA,
-    DB_STORES.APP_SETTINGS,
-  ] as const;
-
-  private static readonly EXCLUDED_APP_SETTINGS_IDS = new Set<string>([
-    "main-settings",
-    "self-hosted-sync-settings",
-    "self-hosted-sync-deleted-entities",
-  ]);
+  private static readonly GUARD_MIN_TOTAL_ITEMS = 20;
+  private static readonly GUARD_RATIO_THRESHOLD = 0.4;
 
   async pushAll(): Promise<SelfHostedSyncRunResult> {
     const syncStore = useSelfHostedSyncStore();
@@ -124,6 +100,10 @@ export class SelfHostedSyncService {
           .filter((item) => item.deletedAt !== null)
           .map((item) => ({ entityType: item.entityType, entityId: item.entityId })),
       );
+      if (syncStore.hasGuardAlert) {
+        await syncStore.clearGuardAlert();
+      }
+      clearPendingSelfHostedLocalChanges();
       await syncStore.markSyncSucceeded(response.serverTime);
       return {
         pushed: response.accepted,
@@ -149,6 +129,9 @@ export class SelfHostedSyncService {
       const client = syncStore.createClient();
       const response = await client.pullItems(since);
       const applied = await this.applyPullResponse(response, options);
+      if (syncStore.hasGuardAlert) {
+        await syncStore.clearGuardAlert();
+      }
       await syncStore.markSyncSucceeded(response.serverTime);
       return {
         pushed: 0,
@@ -166,6 +149,24 @@ export class SelfHostedSyncService {
     await syncStore.loadSettings();
     const previousLastSyncAt = syncStore.lastSyncAt ?? undefined;
 
+    if (typeof previousLastSyncAt === "number") {
+      const client = syncStore.createClient();
+      const localItems = await this.collectPushItems();
+      const remoteResponse = await client.pullItems();
+      const localSnapshot = this.buildContentSnapshot(localItems);
+      const remoteSnapshot = this.buildContentSnapshot(remoteResponse.items);
+      const guardAlert = this.detectGuardAlert(localSnapshot, remoteSnapshot);
+
+      if (guardAlert) {
+        await this.handleGuardAlert(guardAlert);
+        throw new Error(guardAlert.message);
+      }
+
+      if (syncStore.hasGuardAlert) {
+        await syncStore.clearGuardAlert();
+      }
+    }
+
     const pushResult = await this.pushAll();
     const pullResult = await this.pullAll(previousLastSyncAt);
 
@@ -174,6 +175,76 @@ export class SelfHostedSyncService {
       pulled: pullResult.pulled,
       serverTime: pullResult.serverTime ?? pushResult.serverTime,
     };
+  }
+
+  private buildContentSnapshot(
+    items: SelfHostedSyncEntityEnvelope[],
+  ): SelfHostedSyncContentSnapshot {
+    const countsByEntityType: SelfHostedSyncContentSnapshot["countsByEntityType"] = {};
+
+    for (const item of items) {
+      if (item.deletedAt !== null) {
+        continue;
+      }
+      countsByEntityType[item.entityType] = (countsByEntityType[item.entityType] ?? 0) + 1;
+    }
+
+    const totalActiveItems = Object.values(countsByEntityType).reduce(
+      (sum, count) => sum + count,
+      0,
+    );
+
+    return {
+      totalActiveItems,
+      countsByEntityType,
+      capturedAt: Date.now(),
+    };
+  }
+
+  private detectGuardAlert(
+    localSnapshot: SelfHostedSyncContentSnapshot,
+    remoteSnapshot: SelfHostedSyncContentSnapshot,
+  ): SelfHostedSyncGuardAlert | null {
+    const localTotal = localSnapshot.totalActiveItems;
+    const remoteTotal = remoteSnapshot.totalActiveItems;
+    const maxTotal = Math.max(localTotal, remoteTotal);
+
+    if (maxTotal < SelfHostedSyncService.GUARD_MIN_TOTAL_ITEMS) {
+      return null;
+    }
+
+    const threshold = SelfHostedSyncService.GUARD_RATIO_THRESHOLD;
+
+    if (localTotal < remoteTotal * threshold) {
+      return {
+        recommendedAction: "pull",
+        reason: "local_data_loss",
+        message: `偵測到本機同步資料量異常偏少（本機 ${localTotal}，遠端 ${remoteTotal}）。已暫停自動同步，請先確認是否要從遠端拉回資料。`,
+        localSnapshot,
+        remoteSnapshot,
+        triggeredAt: Date.now(),
+      };
+    }
+
+    if (remoteTotal < localTotal * threshold) {
+      return {
+        recommendedAction: "push",
+        reason: "remote_data_loss",
+        message: `偵測到遠端同步資料量異常偏少（本機 ${localTotal}，遠端 ${remoteTotal}）。已暫停自動同步，請先確認是否要把本機資料推回遠端。`,
+        localSnapshot,
+        remoteSnapshot,
+        triggeredAt: Date.now(),
+      };
+    }
+
+    return null;
+  }
+
+  private async handleGuardAlert(alert: SelfHostedSyncGuardAlert): Promise<void> {
+    const syncStore = useSelfHostedSyncStore();
+    const notificationStore = useNotificationStore();
+    await syncStore.setGuardAlert(alert);
+    notificationStore.notifySystem("同步已暫停", alert.message);
   }
 
   private async collectPushItems(): Promise<SelfHostedSyncEntityEnvelope[]> {
@@ -247,29 +318,6 @@ export class SelfHostedSyncService {
     const diaries = await db.getAll<DiaryEntry>(DB_STORES.DIARIES);
     for (const diary of diaries) {
       items.push(toSyncDiaryEntryEnvelope(diary));
-    }
-
-    if (SelfHostedSyncService.ENABLE_GENERIC_STORE_SNAPSHOTS) {
-      for (const storeName of SelfHostedSyncService.SNAPSHOT_STORE_NAMES) {
-        const snapshot = await this.collectStoreSnapshot(storeName);
-        if (snapshot) {
-          items.push(snapshot);
-        }
-      }
-    } else {
-      const deletedAt = Date.now();
-      for (const storeName of SelfHostedSyncService.SNAPSHOT_STORE_NAMES) {
-        items.push({
-          entityType: "idb_store_snapshot",
-          entityId: storeName,
-          schemaVersion: 1,
-          updatedAt: deletedAt,
-          deletedAt,
-          payload: {
-            storeName,
-          },
-        });
-      }
     }
 
     const chats = await loadAllChats();
@@ -374,13 +422,6 @@ export class SelfHostedSyncService {
         item.entityType === "diary_entry" && item.deletedAt === null,
       );
 
-      const storeSnapshotItems = SelfHostedSyncService.ENABLE_GENERIC_STORE_SNAPSHOTS
-        ? response.items.filter(
-        (item): item is SelfHostedSyncEntityEnvelope<"idb_store_snapshot", SyncIdbStoreSnapshotPayload> =>
-          item.entityType === "idb_store_snapshot" && item.deletedAt === null,
-        )
-        : [];
-
       const deletedItems = response.items.filter(
       (item): item is SelfHostedSyncEntityEnvelope => item.deletedAt !== null,
       );
@@ -438,11 +479,6 @@ export class SelfHostedSyncService {
       for (const item of diaryEntryItems) {
       const changed = await this.applyDiaryEntry(item.payload, forceOverwrite);
       if (changed) applied += 1;
-      }
-
-      for (const item of storeSnapshotItems) {
-        const changed = await this.applyStoreSnapshot(item.payload);
-        if (changed) applied += 1;
       }
 
       for (const item of chatRecordItems) {
@@ -689,77 +725,6 @@ export class SelfHostedSyncService {
 
     await db.put(DB_STORES.DIARIES, JSON.parse(JSON.stringify(payload)));
     return true;
-  }
-
-  private async collectStoreSnapshot(
-    storeName: (typeof SelfHostedSyncService.SNAPSHOT_STORE_NAMES)[number],
-  ): Promise<SelfHostedSyncEntityEnvelope | null> {
-    const entries = await this.loadSnapshotEntries(storeName);
-    const updatedAt = this.computeSnapshotUpdatedAt(entries);
-    return toSyncIdbStoreSnapshotEnvelope(storeName, entries, updatedAt);
-  }
-
-  private async loadSnapshotEntries(
-    storeName: string,
-  ): Promise<SyncIdbStoreSnapshotPayload["entries"]> {
-    const records = await db.getAll<unknown>(storeName);
-    const keys = await db.getAllKeys(storeName);
-    return records
-      .map((value, index) => ({
-        key: this.getRecordKey(storeName, value, keys[index]),
-        value: JSON.parse(JSON.stringify(value)),
-      }))
-      .filter((entry) => this.shouldIncludeSnapshotEntry(storeName, entry.key, entry.value));
-  }
-
-  private shouldIncludeSnapshotEntry(storeName: string, key: string, _value: unknown): boolean {
-    if (storeName !== DB_STORES.APP_SETTINGS) {
-      return true;
-    }
-
-    return !SelfHostedSyncService.EXCLUDED_APP_SETTINGS_IDS.has(key);
-  }
-
-  private async applyStoreSnapshot(payload: SyncIdbStoreSnapshotPayload): Promise<boolean> {
-    if (!SelfHostedSyncService.SNAPSHOT_STORE_NAMES.includes(payload.storeName as never)) {
-      return false;
-    }
-
-    const currentEntries = await this.loadSnapshotEntries(payload.storeName);
-    const currentHash = JSON.stringify(currentEntries);
-    const incomingHash = JSON.stringify(payload.entries);
-    if (currentHash === incomingHash) {
-      return false;
-    }
-
-    const preservedEntries =
-      payload.storeName === DB_STORES.APP_SETTINGS
-        ? currentEntries.filter((entry) =>
-            SelfHostedSyncService.EXCLUDED_APP_SETTINGS_IDS.has(entry.key),
-          )
-        : [];
-
-    await db.clear(payload.storeName);
-    for (const entry of payload.entries) {
-      await this.restoreSnapshotEntry(payload.storeName, entry);
-    }
-    for (const entry of preservedEntries) {
-      await this.restoreSnapshotEntry(payload.storeName, entry);
-    }
-    return true;
-  }
-
-  private async restoreSnapshotEntry(
-    storeName: string,
-    entry: SyncIdbStoreSnapshotPayload["entries"][number],
-  ): Promise<void> {
-    const value = JSON.parse(JSON.stringify(entry.value));
-    if (this.storeRequiresExplicitKey(storeName)) {
-      await db.put(storeName, value, entry.key);
-      return;
-    }
-
-    await db.put(storeName, value);
   }
 
   private async applySettingsFull(
@@ -1125,50 +1090,6 @@ export class SelfHostedSyncService {
     }
 
     return 0;
-  }
-
-  private computeSnapshotUpdatedAt(
-    entries: SyncIdbStoreSnapshotPayload["entries"],
-  ): number {
-    let maxUpdatedAt = 0;
-    for (const entry of entries) {
-      maxUpdatedAt = Math.max(maxUpdatedAt, this.computeUpdatedAt(entry.value));
-    }
-    return maxUpdatedAt || Date.now();
-  }
-
-  private getRecordKey(
-    storeName: string,
-    value: unknown,
-    rawKey?: IDBValidKey,
-  ): string {
-    if (typeof rawKey === "string") {
-      return rawKey;
-    }
-
-    if (value && typeof value === "object") {
-      const record = value as Record<string, unknown>;
-      if (typeof record.id === "string") return record.id;
-      if (typeof record.identifier === "string") return record.identifier;
-      if (storeName === DB_STORES.BOOK_PROGRESS && typeof record.bookId === "string") {
-        return record.bookId;
-      }
-      if (storeName === DB_STORES.CHAT_AFFINITY_STATES && typeof record.chatId === "string") {
-        return record.chatId;
-      }
-      if (storeName === DB_STORES.CHARACTER_AFFECTIONS && typeof record.characterId === "string") {
-        return record.characterId;
-      }
-    }
-
-    return JSON.stringify(value);
-  }
-
-  private storeRequiresExplicitKey(storeName: string): boolean {
-    return (
-      storeName === DB_STORES.SETTINGS ||
-      storeName === DB_STORES.PROMPT_LIBRARY
-    );
   }
 
   private createDefaultQZoneSettings(): QZoneSettings {

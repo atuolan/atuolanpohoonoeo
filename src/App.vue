@@ -136,6 +136,173 @@ const ghBackupDisplayText = computed(() => _ghBackupStore.displayText);
 
 const SELF_HOSTED_FOREGROUND_PULL_COOLDOWN_MS = 15000;
 let lastSelfHostedForegroundPullAt = 0;
+const SELF_HOSTED_WS_RECONNECT_BASE_MS = 3000;
+const SELF_HOSTED_WS_RECONNECT_MAX_MS = 30000;
+let selfHostedSyncSocket: WebSocket | null = null;
+let selfHostedSyncSocketReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let selfHostedSyncSocketReconnectAttempt = 0;
+let selfHostedSyncRemotePullInFlight: Promise<void> | null = null;
+let selfHostedSyncMetaCheckInFlight: Promise<boolean> | null = null;
+
+type SelfHostedSyncSocketMessage = {
+  type?: string;
+  userId?: string;
+  deviceId?: string;
+  sourceDeviceId?: string;
+  serverTime?: number;
+  latestUpdateAt?: number | null;
+  accepted?: number;
+  message?: string;
+};
+
+function clearSelfHostedSyncSocketReconnectTimer() {
+  if (selfHostedSyncSocketReconnectTimer) {
+    clearTimeout(selfHostedSyncSocketReconnectTimer);
+    selfHostedSyncSocketReconnectTimer = null;
+  }
+}
+
+function closeSelfHostedSyncSocket() {
+  clearSelfHostedSyncSocketReconnectTimer();
+  if (selfHostedSyncSocket) {
+    selfHostedSyncSocket.onopen = null;
+    selfHostedSyncSocket.onmessage = null;
+    selfHostedSyncSocket.onerror = null;
+    selfHostedSyncSocket.onclose = null;
+    selfHostedSyncSocket.close();
+    selfHostedSyncSocket = null;
+  }
+}
+
+function buildSelfHostedSyncWebSocketUrl(serverUrl: string, accessToken: string): string {
+  const normalized = serverUrl.trim().replace(/\/+$/, "");
+  const wsBase = normalized.replace(/^http:/i, "ws:").replace(/^https:/i, "wss:");
+  const url = new URL(`${wsBase}/sync/ws`);
+  url.searchParams.set("token", accessToken);
+  return url.toString();
+}
+
+async function shouldPullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | null): Promise<boolean> {
+  if (selfHostedSyncMetaCheckInFlight) {
+    return selfHostedSyncMetaCheckInFlight;
+  }
+
+  selfHostedSyncMetaCheckInFlight = (async () => {
+    await selfHostedSyncStore.loadSettings();
+    if (!selfHostedSyncStore.enabled || !selfHostedSyncStore.isAuthenticated) {
+      return false;
+    }
+
+    const localLastSyncAt = selfHostedSyncStore.lastSyncAt ?? 0;
+    if (typeof latestUpdateAtHint === "number") {
+      return latestUpdateAtHint > localLastSyncAt;
+    }
+
+    const meta = await selfHostedSyncStore.refreshMeta();
+    const remoteLastUpdateAt = meta.latestUpdateAt ?? 0;
+    return remoteLastUpdateAt > localLastSyncAt;
+  })();
+
+  try {
+    return await selfHostedSyncMetaCheckInFlight;
+  } finally {
+    selfHostedSyncMetaCheckInFlight = null;
+  }
+}
+
+async function pullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | null) {
+  if (selfHostedSyncRemotePullInFlight) {
+    return selfHostedSyncRemotePullInFlight;
+  }
+
+  selfHostedSyncRemotePullInFlight = (async () => {
+    try {
+      const shouldPull = await shouldPullSelfHostedRemoteUpdates(latestUpdateAtHint);
+      if (!shouldPull) {
+        return;
+      }
+      await selfHostedSyncStore.pullNow(selfHostedSyncStore.lastSyncAt ?? undefined);
+    } catch (error) {
+      console.warn("[App] 自架同步 metadata 檢查或拉取失敗:", error);
+    } finally {
+      selfHostedSyncRemotePullInFlight = null;
+    }
+  })();
+
+  return selfHostedSyncRemotePullInFlight;
+}
+
+function scheduleSelfHostedSyncSocketReconnect() {
+  if (selfHostedSyncSocketReconnectTimer || !authStore.isAuthenticated) {
+    return;
+  }
+
+  const delay = Math.min(
+    SELF_HOSTED_WS_RECONNECT_BASE_MS * Math.max(1, 2 ** selfHostedSyncSocketReconnectAttempt),
+    SELF_HOSTED_WS_RECONNECT_MAX_MS,
+  );
+  selfHostedSyncSocketReconnectAttempt += 1;
+  selfHostedSyncSocketReconnectTimer = setTimeout(() => {
+    selfHostedSyncSocketReconnectTimer = null;
+    void ensureSelfHostedSyncSocketConnected();
+  }, delay);
+}
+
+async function ensureSelfHostedSyncSocketConnected() {
+  await selfHostedSyncStore.loadSettings();
+
+  if (!authStore.isAuthenticated || !selfHostedSyncStore.enabled || !selfHostedSyncStore.accessToken) {
+    closeSelfHostedSyncSocket();
+    return;
+  }
+
+  if (selfHostedSyncSocket && selfHostedSyncSocket.readyState !== WebSocket.CLOSED) {
+    return;
+  }
+
+  closeSelfHostedSyncSocket();
+
+  try {
+    const socketUrl = buildSelfHostedSyncWebSocketUrl(
+      selfHostedSyncStore.serverUrl,
+      selfHostedSyncStore.accessToken,
+    );
+    const socket = new WebSocket(socketUrl);
+    selfHostedSyncSocket = socket;
+
+    socket.onopen = () => {
+      selfHostedSyncSocketReconnectAttempt = 0;
+      clearSelfHostedSyncSocketReconnectTimer();
+    };
+
+    socket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(String(event.data)) as SelfHostedSyncSocketMessage;
+        if (payload.type === "sync:update") {
+          void pullSelfHostedRemoteUpdates(payload.latestUpdateAt ?? null);
+        }
+      } catch (error) {
+        console.warn("[App] WebSocket 自架同步訊息解析失敗:", error);
+      }
+    };
+
+    socket.onerror = () => {
+      if (selfHostedSyncSocket === socket) {
+        scheduleSelfHostedSyncSocketReconnect();
+      }
+    };
+
+    socket.onclose = () => {
+      if (selfHostedSyncSocket === socket) {
+        selfHostedSyncSocket = null;
+        scheduleSelfHostedSyncSocketReconnect();
+      }
+    };
+  } catch (error) {
+    console.warn("[App] 無法建立自架同步 WebSocket:", error);
+    scheduleSelfHostedSyncSocketReconnect();
+  }
+}
 
 async function tryForegroundPullSelfHostedSync() {
   if (typeof document !== "undefined" && document.visibilityState !== "visible") {
@@ -156,9 +323,7 @@ async function tryForegroundPullSelfHostedSync() {
     }
 
     lastSelfHostedForegroundPullAt = now;
-    await selfHostedSyncStore.pullNow(
-      selfHostedSyncStore.lastSyncAt ?? undefined,
-    );
+    await pullSelfHostedRemoteUpdates();
   } catch (error) {
     console.warn("[App] 前景自架同步拉取失敗:", error);
   }
@@ -963,6 +1128,24 @@ watch(
     if (authenticated) {
       void loadAppData();
       initializeBrowserHistory();
+      void ensureSelfHostedSyncSocketConnected();
+    } else {
+      closeSelfHostedSyncSocket();
+    }
+  },
+);
+
+watch(
+  () => [
+    selfHostedSyncStore.enabled,
+    selfHostedSyncStore.serverUrl,
+    selfHostedSyncStore.accessToken,
+  ],
+  ([enabled, serverUrl, accessToken]) => {
+    if (enabled && serverUrl && accessToken && authStore.isAuthenticated) {
+      void ensureSelfHostedSyncSocketConnected();
+    } else {
+      closeSelfHostedSyncSocket();
     }
   },
 );
@@ -971,6 +1154,7 @@ watch(
 onMounted(async () => {
   // 初始化驗證狀態
   await authStore.initialize();
+  await selfHostedSyncStore.loadSettings();
 
   if (typeof document !== "undefined") {
     document.addEventListener(
@@ -987,6 +1171,7 @@ onMounted(async () => {
     await loadAppData();
     initializeBrowserHistory();
     void tryForegroundPullSelfHostedSync();
+    void ensureSelfHostedSyncSocketConnected();
   }
 
   // 監聽 SW 更新事件
@@ -1019,6 +1204,7 @@ onUnmounted(() => {
   if (typeof window !== "undefined") {
     window.removeEventListener("focus", handleSelfHostedSyncForegroundResume);
   }
+  closeSelfHostedSyncSocket();
   globalLanguageDestroy?.();
   // 停止待處理來電檢查
   stopPendingCallChecker();

@@ -115,10 +115,45 @@ export interface SelfHostedSyncStatusResponse {
   userId?: string;
 }
 
+export interface SelfHostedSyncMetaDeviceInfo {
+  deviceId: string;
+  lastPushAt: number | null;
+  lastSeenAt: number | null;
+}
+
+export interface SelfHostedSyncMetaResponse {
+  ok: boolean;
+  serverTime: number;
+  userId: string;
+  latestUpdateAt: number | null;
+  devices: SelfHostedSyncMetaDeviceInfo[];
+}
+
 export interface SelfHostedSyncHealthResponse {
   ok: boolean;
   serverTime?: number;
   version?: string;
+}
+
+export type SelfHostedSyncEntityCountMap = Partial<
+  Record<SelfHostedSyncEntityType, number>
+>;
+
+export interface SelfHostedSyncContentSnapshot {
+  totalActiveItems: number;
+  countsByEntityType: SelfHostedSyncEntityCountMap;
+  capturedAt: number;
+}
+
+export type SelfHostedSyncGuardAction = "push" | "pull";
+
+export interface SelfHostedSyncGuardAlert {
+  recommendedAction: SelfHostedSyncGuardAction;
+  reason: "local_data_loss" | "remote_data_loss";
+  message: string;
+  localSnapshot: SelfHostedSyncContentSnapshot;
+  remoteSnapshot: SelfHostedSyncContentSnapshot;
+  triggeredAt: number;
 }
 
 export type LocalOnlyChatFields = Pick<Chat, "unreadCount">;

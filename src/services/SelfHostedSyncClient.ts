@@ -3,6 +3,7 @@ import type {
   SelfHostedSyncEntityEnvelope,
   SelfHostedSyncHealthResponse,
   SelfHostedSyncLoginRequest,
+  SelfHostedSyncMetaResponse,
   SelfHostedSyncPullResponse,
   SelfHostedSyncPushRequest,
   SelfHostedSyncPushResponse,
@@ -69,6 +70,12 @@ export class SelfHostedSyncClient {
 
   async getStatus(): Promise<SelfHostedSyncStatusResponse> {
     return this.request<SelfHostedSyncStatusResponse>("GET", "/sync/status", undefined, {
+      requireAuth: true,
+    });
+  }
+
+  async getMeta(): Promise<SelfHostedSyncMetaResponse> {
+    return this.request<SelfHostedSyncMetaResponse>("GET", "/sync/meta", undefined, {
       requireAuth: true,
     });
   }
