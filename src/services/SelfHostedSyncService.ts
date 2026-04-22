@@ -236,9 +236,13 @@ export class SelfHostedSyncService {
     const previousLastSyncAt = syncStore.lastSyncAt ?? undefined;
 
     if (typeof previousLastSyncAt === "number") {
+      updateRuntimeSessionStage("selfHostedSync:syncNow guard check", {
+        previousLastSyncAt,
+      });
       const client = syncStore.createClient();
       const localItems = await this.collectPushItems();
-      const remoteResponse = await client.pullItems();
+      // 守衛檢查只需計算數量，限制 100 筆避免全量拉取佔滿記憶體
+      const remoteResponse = await client.pullItems(undefined, 100);
       const localSnapshot = this.buildContentSnapshot(localItems);
       const remoteSnapshot = this.buildContentSnapshot(remoteResponse.items);
       const guardAlert = this.detectGuardAlert(localSnapshot, remoteSnapshot);
@@ -253,8 +257,20 @@ export class SelfHostedSyncService {
       }
     }
 
+    updateRuntimeSessionStage("selfHostedSync:syncNow pushing", {
+      previousLastSyncAt: previousLastSyncAt ?? null,
+    });
     const pushResult = await this.pushAll();
-    const pullResult = await this.pullAll(previousLastSyncAt);
+
+    // push 完成後讓出執行緒，給 GC 機會回收 push payload，再開始 pull
+    await new Promise<void>((resolve) => setTimeout(resolve, 150));
+
+    updateRuntimeSessionStage("selfHostedSync:syncNow pulling", {
+      since: pushResult.serverTime ?? previousLastSyncAt ?? null,
+    });
+    // 使用 push 完成的 serverTime 作為 since，避免把剛推上去的資料再拉回來
+    const pullSince = pushResult.serverTime ?? previousLastSyncAt;
+    const pullResult = await this.pullAll(pullSince);
 
     return {
       pushed: pushResult.pushed,
