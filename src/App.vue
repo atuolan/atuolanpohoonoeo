@@ -287,6 +287,7 @@ async function pullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | null) {
       await new Promise<void>((resolve) => setTimeout(resolve, 200));
       updateRuntimeSessionStage("selfHostedSync:remote pull completed", {
         latestUpdateAtHint: latestUpdateAtHint ?? null,
+        pullSince: pullSince ?? null,
         lastSyncAt: selfHostedSyncStore.lastSyncAt ?? null,
       });
     } catch (error) {

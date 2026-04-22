@@ -122,7 +122,7 @@ export class SelfHostedSyncService {
     since?: number,
     options?: SelfHostedPullOptions,
   ): Promise<SelfHostedSyncRunResult> {
-    const PULL_BATCH_LIMIT = 300;
+    const PULL_BATCH_LIMIT = 50;
 
     const syncStore = useSelfHostedSyncStore();
     await syncStore.loadSettings();
@@ -291,6 +291,7 @@ export class SelfHostedSyncService {
     updateRuntimeSessionStage("selfHostedSync:syncNow pulling", {
       since: pushServerTime,
       remoteLatest,
+      batchLimit: 50,
     });
     const pullResult = await this.pullAll(pushServerTime || previousLastSyncAt);
 
@@ -1307,11 +1308,21 @@ export class SelfHostedSyncService {
         existingCount,
       });
 
-      // 使用 syncMessages：以 in-place 操作（push/splice/index assign）更新陣列
-      // Vue 只重渲真正變動的節點，不重建整個 DOM 列表——最省記憶體的方案
-      chatStore.syncMessages(latestMessages);
+      // 延後 500ms 再更新 UI：讓 pull payload 先被 GC 回收，降低 OOM 風險
+      // 資料已在 IDB，使用者短暫看到舊畫面是可接受的
+      const deferredMessages = latestMessages;
+      setTimeout(() => {
+        if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+          return;
+        }
+        chatStore.syncMessages(deferredMessages);
+        updateRuntimeSessionStage("selfHostedSync:active chat UI refresh complete (deferred)", {
+          currentChatId,
+          messageCount: deferredMessages.length,
+        });
+      }, 500);
 
-      updateRuntimeSessionStage("selfHostedSync:active chat UI refresh complete", {
+      updateRuntimeSessionStage("selfHostedSync:active chat UI refresh scheduled", {
         currentChatId,
         messageCount: latestMessages.length,
       });
