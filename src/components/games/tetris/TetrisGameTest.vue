@@ -96,8 +96,8 @@
 
           <!-- 中間：遊戲棋盤 -->
           <div class="desktop-center">
-            <div class="screen-container">
-              <div class="screen-area">
+            <div class="tetris-screen-container">
+              <div class="tetris-screen-area">
                 <TetrisBoard
                   :grid="grid"
                   :current-piece="currentPiece"
@@ -264,8 +264,8 @@
             </div>
 
             <!-- 中間棋盤 -->
-            <div class="screen-container" ref="screenContainerRef">
-              <div class="screen-area">
+            <div class="tetris-screen-container" ref="screenContainerRef">
+              <div class="tetris-screen-area">
                 <TetrisBoard
                   :grid="grid"
                   :current-piece="currentPiece"
@@ -1109,7 +1109,7 @@ const handleHold = () => {
       flex: 1;
       min-height: 0;
       max-width: 400px;
-      .screen-container {
+      .tetris-screen-container {
         background: #2c3e50;
         padding: 10px;
         border-radius: 16px;
@@ -1123,7 +1123,7 @@ const handleHold = () => {
         display: flex;
         flex-direction: column;
       }
-      .screen-area {
+      .tetris-screen-area {
         background: #1a1a1a;
         padding: 8px;
         border-radius: 12px;
@@ -1367,7 +1367,7 @@ const handleHold = () => {
       display: none;
     }
 
-    .screen-container {
+    .tetris-screen-container {
       background: #2c3e50;
       padding: clamp(4px, 0.8vh, 8px);
       border-radius: 12px;
@@ -1384,7 +1384,7 @@ const handleHold = () => {
       align-self: center;
     }
 
-    .screen-area {
+    .tetris-screen-area {
       background: #1a1a1a;
       padding: clamp(3px, 0.6vh, 8px);
       border-radius: 10px;

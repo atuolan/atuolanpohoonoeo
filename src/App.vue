@@ -271,11 +271,17 @@ async function pullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | null) {
         });
         return;
       }
+      const pullSince = selfHostedSyncStore.lastSyncAt ?? undefined;
       recordSelfHostedSyncDiagnostic("Starting remote pull", {
         latestUpdateAtHint: latestUpdateAtHint ?? null,
-        lastSyncAt: selfHostedSyncStore.lastSyncAt ?? null,
+        lastSyncAt: pullSince ?? null,
+        isFullPull: typeof pullSince !== "number",
       });
-      await selfHostedSyncStore.pullNow(selfHostedSyncStore.lastSyncAt ?? undefined);
+      updateRuntimeSessionStage("selfHostedSync:Starting remote pull", {
+        since: pullSince ?? null,
+        isFullPull: typeof pullSince !== "number",
+      });
+      await selfHostedSyncStore.pullNow(pullSince);
       updateRuntimeSessionStage("selfHostedSync:remote pull completed", {
         latestUpdateAtHint: latestUpdateAtHint ?? null,
         lastSyncAt: selfHostedSyncStore.lastSyncAt ?? null,

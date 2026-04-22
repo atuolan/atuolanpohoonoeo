@@ -11,6 +11,7 @@ import type {
   SelfHostedSyncRegisterRequest,
   SelfHostedSyncStatusResponse,
 } from "@/types/selfHostedSync";
+import { recordRuntimeDiagnostic, updateRuntimeSessionStage } from "@/utils/runtimeDiagnostics";
 
 export interface SelfHostedSyncClientOptions {
   serverUrl: string;
@@ -136,6 +137,21 @@ export class SelfHostedSyncClient {
 
     if (response.status === 204) {
       return undefined as T;
+    }
+
+    const contentLength = response.headers.get("content-length");
+    const contentLengthBytes = contentLength ? parseInt(contentLength, 10) : null;
+    updateRuntimeSessionStage("selfHostedSync:http response parsing", {
+      path,
+      status: response.status,
+      contentLengthBytes,
+    });
+    if (contentLengthBytes !== null && contentLengthBytes > 4 * 1024 * 1024) {
+      recordRuntimeDiagnostic("event", "selfHostedSync.largePayload", "Pull response payload is very large", {
+        path,
+        contentLengthBytes,
+        contentLengthMB: (contentLengthBytes / 1024 / 1024).toFixed(2),
+      });
     }
 
     return response.json() as Promise<T>;
