@@ -6,6 +6,13 @@ import { createApp } from "vue";
 import App from "./App.vue";
 import { initAutoBackup } from "./services/AutoBackupService";
 import "./styles/global.scss";
+import {
+  consumePendingRuntimeDiagnostics,
+  getRuntimeDiagnostics,
+  recordReloadReason,
+  recordRuntimeDiagnostic,
+  recordRuntimeError,
+} from "./utils/runtimeDiagnostics";
 import { CodeProtection } from "./utils/codeProtection";
 import { autoFixStickerUrls } from "./utils/fixStickerUrls";
 import { initStorageProtection } from "./utils/storagePersistence";
@@ -249,8 +256,74 @@ if (import.meta.env.PROD) {
   CodeProtection.initialize();
 }
 
+function showPendingRuntimeDiagnostics(): void {
+  const pendingEntries = consumePendingRuntimeDiagnostics();
+  if (pendingEntries.length === 0) {
+    return;
+  }
+
+  const message = pendingEntries
+    .map((entry) => {
+      const time = new Date(entry.timestamp).toLocaleString();
+      return `[${entry.kind}] ${entry.source} @ ${time}\n${entry.message}`;
+    })
+    .join("\n\n");
+
+  console.error("[RuntimeDiagnostics] 偵測到上次執行留下的錯誤/重載紀錄:\n" + message);
+  setTimeout(() => {
+    window.alert(`上次疑似異常中斷或重整：\n\n${message}`);
+  }, 0);
+}
+
+function installGlobalRuntimeDiagnostics(): void {
+  window.addEventListener("error", (event) => {
+    recordRuntimeError("window.error", event.error ?? event.message, {
+      filename: event.filename,
+      lineno: event.lineno,
+      colno: event.colno,
+    });
+  });
+
+  window.addEventListener("unhandledrejection", (event) => {
+    recordRuntimeError("window.unhandledrejection", event.reason, {
+      type: typeof event.reason,
+    });
+  });
+
+  window.addEventListener("beforeunload", () => {
+    recordRuntimeDiagnostic("event", "window.beforeunload", "Page is unloading");
+  });
+
+  const debugTarget = window as Window & {
+    __AGUAPHONE_DEBUG__?: {
+      getRuntimeDiagnostics: typeof getRuntimeDiagnostics;
+      recordRuntimeDiagnostic: typeof recordRuntimeDiagnostic;
+      recordRuntimeError: typeof recordRuntimeError;
+      recordReloadReason: typeof recordReloadReason;
+    };
+  };
+
+  debugTarget.__AGUAPHONE_DEBUG__ = {
+    getRuntimeDiagnostics,
+    recordRuntimeDiagnostic,
+    recordRuntimeError,
+    recordReloadReason,
+  };
+}
+
+installGlobalRuntimeDiagnostics();
+showPendingRuntimeDiagnostics();
+
 const app = createApp(App);
 const pinia = createPinia();
+
+app.config.errorHandler = (error, instance, info) => {
+  recordRuntimeError("vue.errorHandler", error, {
+    info,
+    component: instance?.$options?.name ?? instance?.$options?.__name ?? "anonymous",
+  });
+  console.error("[VueError]", error, info);
+};
 
 app.use(PrimeVue, {
   theme: {

@@ -2,6 +2,7 @@
 // 防止未授權使用和內容盜取
 
 import { AuthService } from "@/services/AuthService";
+import { recordReloadReason } from "@/utils/runtimeDiagnostics";
 
 export class CodeProtection {
   private static isInitialized = false;
@@ -204,6 +205,10 @@ export class CodeProtection {
             if (!inCooldown && pageVisible) {
               this.lastReloadAt = now;
               console.warn("[CodeProtection] 授權持續失敗，準備重整頁面");
+              recordReloadReason("CodeProtection.startAuthCheck", "Repeated auth check failures triggered page reload", {
+                authFailCount: this.authFailCount,
+                threshold: this.AUTH_FAIL_THRESHOLD,
+              });
               window.location.reload();
             } else {
               console.warn(

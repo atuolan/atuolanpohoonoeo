@@ -11,6 +11,8 @@
  * 我們能做的是提高授權成功率，並在拒絕時增加後續重試機會。
  */
 
+import { recordReloadReason } from "@/utils/runtimeDiagnostics";
+
 let persistRetryHooksBound = false;
 let lastPersistAttemptAt = 0;
 const PERSIST_RETRY_COOLDOWN_MS = 60 * 1000; // 1 分鐘內避免過度重試
@@ -83,6 +85,9 @@ export async function applyServiceWorkerUpdate(): Promise<void> {
   navigator.serviceWorker.addEventListener(
     "controllerchange",
     () => {
+      recordReloadReason("storagePersistence.applyServiceWorkerUpdate", "Service worker controller changed; reloading page", {
+        scope: registration.scope,
+      });
       window.location.reload();
     },
     { once: true },

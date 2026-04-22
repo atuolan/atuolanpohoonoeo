@@ -82,6 +82,11 @@ import { useUserStore } from "@/stores";
 import { usePhoneCallStore } from "@/stores/phoneCall";
 import type { CharacterImportResult } from "@/types/character";
 import type { Chat, MultiCharMember, WaimaiOrderSnapshot } from "@/types/chat";
+import {
+  consumePendingRuntimeDiagnostics,
+  recordRuntimeDiagnostic,
+  recordRuntimeError,
+} from "@/utils/runtimeDiagnostics";
 import { applyServiceWorkerUpdate } from "@/utils/storagePersistence";
 import { getIncomingCallScheduler } from "./services/IncomingCallScheduler";
 import { PendingCall } from "./types";
@@ -156,6 +161,24 @@ type SelfHostedSyncSocketMessage = {
   message?: string;
 };
 
+function recordSelfHostedSyncDiagnostic(message: string, details?: unknown) {
+  recordRuntimeDiagnostic("event", "selfHostedSync", message, details);
+}
+
+function recordSelfHostedSyncFailure(message: string, error: unknown, details?: unknown) {
+  recordRuntimeError("selfHostedSync", error, {
+    message,
+    details,
+  });
+}
+
+function notifyPendingRuntimeDiagnostics() {
+  const pendingEntries = consumePendingRuntimeDiagnostics();
+  pendingEntries.forEach((entry) => {
+    notificationStore.notifySystem(`上次${entry.kind === "reload" ? "重整" : "錯誤"}來源：${entry.source}`, entry.message);
+  });
+}
+
 function clearSelfHostedSyncSocketReconnectTimer() {
   if (selfHostedSyncSocketReconnectTimer) {
     clearTimeout(selfHostedSyncSocketReconnectTimer);
@@ -197,11 +220,19 @@ async function shouldPullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | n
 
     const localLastSyncAt = selfHostedSyncStore.lastSyncAt ?? 0;
     if (typeof latestUpdateAtHint === "number") {
+      recordSelfHostedSyncDiagnostic("Received remote latestUpdateAt hint", {
+        latestUpdateAtHint,
+        localLastSyncAt,
+      });
       return latestUpdateAtHint > localLastSyncAt;
     }
 
     const meta = await selfHostedSyncStore.refreshMeta();
     const remoteLastUpdateAt = meta.latestUpdateAt ?? 0;
+    recordSelfHostedSyncDiagnostic("Fetched self-hosted sync metadata", {
+      localLastSyncAt,
+      remoteLastUpdateAt,
+    });
     return remoteLastUpdateAt > localLastSyncAt;
   })();
 
@@ -223,8 +254,15 @@ async function pullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | null) {
       if (!shouldPull) {
         return;
       }
+      recordSelfHostedSyncDiagnostic("Starting remote pull", {
+        latestUpdateAtHint: latestUpdateAtHint ?? null,
+        lastSyncAt: selfHostedSyncStore.lastSyncAt ?? null,
+      });
       await selfHostedSyncStore.pullNow(selfHostedSyncStore.lastSyncAt ?? undefined);
     } catch (error) {
+      recordSelfHostedSyncFailure("Metadata check or remote pull failed", error, {
+        latestUpdateAtHint: latestUpdateAtHint ?? null,
+      });
       console.warn("[App] 自架同步 metadata 檢查或拉取失敗:", error);
     } finally {
       selfHostedSyncRemotePullInFlight = null;
@@ -277,6 +315,9 @@ async function ensureSelfHostedSyncSocketConnected() {
       selfHostedSyncStore.serverUrl,
       selfHostedSyncStore.accessToken,
     );
+    recordSelfHostedSyncDiagnostic("Opening self-hosted sync WebSocket", {
+      serverUrl: selfHostedSyncStore.serverUrl,
+    });
     const socket = new WebSocket(socketUrl);
     selfHostedSyncSocket = socket;
     selfHostedSyncSocketToken = selfHostedSyncStore.accessToken;
@@ -284,32 +325,66 @@ async function ensureSelfHostedSyncSocketConnected() {
     socket.onopen = () => {
       selfHostedSyncSocketReconnectAttempt = 0;
       clearSelfHostedSyncSocketReconnectTimer();
+      recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket opened", {
+        reconnectAttempt: selfHostedSyncSocketReconnectAttempt,
+      });
     };
 
     socket.onmessage = (event) => {
       try {
         const payload = JSON.parse(String(event.data)) as SelfHostedSyncSocketMessage;
         if (payload.type === "sync:update") {
+          // 忽略來自自己裝置的同步廣播，避免 push → 自回拉 → 大量寫入的回環
+          // 後端理論上已過濾，此處為 defense-in-depth（多 tab / 重連 / deviceId 漂移）
+          const localDeviceId = selfHostedSyncStore.deviceId;
+          const eventSourceDeviceId = payload.sourceDeviceId ?? payload.deviceId ?? null;
+          if (
+            localDeviceId &&
+            eventSourceDeviceId &&
+            eventSourceDeviceId === localDeviceId
+          ) {
+            recordSelfHostedSyncDiagnostic(
+              "Skipped self-originated sync:update",
+              {
+                sourceDeviceId: eventSourceDeviceId,
+                localDeviceId,
+                latestUpdateAt: payload.latestUpdateAt ?? null,
+              },
+            );
+            return;
+          }
           void pullSelfHostedRemoteUpdates(payload.latestUpdateAt ?? null);
         }
       } catch (error) {
+        recordSelfHostedSyncFailure("WebSocket message parse failed", error, {
+          rawData: String(event.data),
+        });
         console.warn("[App] WebSocket 自架同步訊息解析失敗:", error);
       }
     };
 
     socket.onerror = () => {
+      recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket error event", {
+        readyState: socket.readyState,
+      });
       if (selfHostedSyncSocket === socket) {
         scheduleSelfHostedSyncSocketReconnect();
       }
     };
 
     socket.onclose = () => {
+      recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket closed", {
+        readyState: socket.readyState,
+      });
       if (selfHostedSyncSocket === socket) {
         selfHostedSyncSocket = null;
         scheduleSelfHostedSyncSocketReconnect();
       }
     };
   } catch (error) {
+    recordSelfHostedSyncFailure("Unable to create self-hosted sync WebSocket", error, {
+      serverUrl: selfHostedSyncStore.serverUrl,
+    });
     console.warn("[App] 無法建立自架同步 WebSocket:", error);
     scheduleSelfHostedSyncSocketReconnect();
   }
@@ -336,6 +411,7 @@ async function tryForegroundPullSelfHostedSync() {
     lastSelfHostedForegroundPullAt = now;
     await pullSelfHostedRemoteUpdates();
   } catch (error) {
+    recordSelfHostedSyncFailure("Foreground self-hosted sync pull failed", error);
     console.warn("[App] 前景自架同步拉取失敗:", error);
   }
 }
@@ -1166,6 +1242,7 @@ onMounted(async () => {
   // 初始化驗證狀態
   await authStore.initialize();
   await selfHostedSyncStore.loadSettings();
+  notifyPendingRuntimeDiagnostics();
 
   if (typeof document !== "undefined") {
     document.addEventListener(
