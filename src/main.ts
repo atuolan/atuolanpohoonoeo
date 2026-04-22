@@ -274,7 +274,7 @@ function showPendingRuntimeDiagnostics(): void {
         const data = entry.details as Record<string, unknown>;
         const stageDetails = data.lastStageDetails;
         if (stageDetails && typeof stageDetails === "object" && Object.keys(stageDetails as object).length > 0) {
-          text += `\nstage data: ${JSON.stringify(stageDetails)}`;
+          text += `\nstage data:\n${JSON.stringify(stageDetails, null, 2)}`;
         }
       }
       return text;
@@ -295,7 +295,11 @@ function showPendingRuntimeDiagnostics(): void {
   banner.style.fontSize = "12px";
   banner.style.lineHeight = "1.5";
   banner.style.whiteSpace = "pre-wrap";
+  banner.style.wordBreak = "break-all";
+  banner.style.overflowWrap = "break-word";
   banner.style.boxShadow = "0 4px 12px rgba(0,0,0,0.35)";
+  banner.style.maxHeight = "60vh";
+  banner.style.overflowY = "auto";
   banner.textContent = `上次疑似異常中斷或重整：\n\n${message}`;
   banner.addEventListener("click", () => {
     banner.remove();
