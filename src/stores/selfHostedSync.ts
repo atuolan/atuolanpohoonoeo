@@ -101,9 +101,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
           lastServerTime.value = saved.lastServerTime ?? null;
           lastRemoteUpdateAt.value = saved.lastRemoteUpdateAt ?? null;
           guardAlert.value = saved.guardAlert ?? null;
-        }
-
-        if (!serverUrl.value.trim()) {
+        } else {
           serverUrl.value = DEFAULT_SELF_HOSTED_SYNC_SERVER_URL;
         }
 
@@ -395,7 +393,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
   }
 
   function setServerUrl(url: string): void {
-    serverUrl.value = url.trim();
+    serverUrl.value = url;
   }
 
   function setUsername(value: string): void {
