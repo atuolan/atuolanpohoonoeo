@@ -1140,6 +1140,14 @@ export class SelfHostedSyncService {
   ): Promise<void> {
     if (!affectedChatIds.size) return;
 
+    // 頁面不可見時跳過 UI 更新：使用者看不到，且此時做大量響應式更新是崩潰高風險點
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+      recordRuntimeDiagnostic("event", "selfHostedSync.refreshActiveChat", "Skipped: page is hidden", {
+        affectedChatCount: affectedChatIds.size,
+      });
+      return;
+    }
+
     try {
       const { useChatStore } = await import("@/stores/chat");
       const chatStore = useChatStore();
@@ -1148,13 +1156,37 @@ export class SelfHostedSyncService {
         return;
       }
 
-      const latestChat = await loadChatById(currentChatId);
-      if (!latestChat) return;
+      updateRuntimeSessionStage("selfHostedSync:refreshing active chat UI", {
+        currentChatId,
+      });
 
       const latestMessages = await loadMessages(currentChatId);
-      chatStore.loadChat({
-        ...latestChat,
-        messages: latestMessages,
+
+      // 再次確認頁面在 IDB 讀取期間沒有進入背景
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        recordRuntimeDiagnostic("event", "selfHostedSync.refreshActiveChat", "Skipped after IDB read: page went hidden", {
+          currentChatId,
+          messageCount: latestMessages.length,
+        });
+        return;
+      }
+
+      recordRuntimeDiagnostic("event", "selfHostedSync.refreshActiveChat", "Patching reactive messages", {
+        currentChatId,
+        messageCount: latestMessages.length,
+      });
+      updateRuntimeSessionStage("selfHostedSync:patching reactive messages", {
+        currentChatId,
+        messageCount: latestMessages.length,
+      });
+
+      // 使用 patchMessages 而非 loadChat：只更新 messages 陣列，
+      // 不替換整個 currentChat Proxy，避免 Vue 對大量訊息重建 Proxy 造成 OOM/崩潰
+      chatStore.patchMessages(latestMessages);
+
+      updateRuntimeSessionStage("selfHostedSync:active chat UI refresh complete", {
+        currentChatId,
+        messageCount: latestMessages.length,
       });
     } catch (error) {
       console.warn("[SelfHostedSyncService] 刷新當前聊天失敗:", error);

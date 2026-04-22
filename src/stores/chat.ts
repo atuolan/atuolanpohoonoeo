@@ -84,6 +84,15 @@ export const useChatStore = defineStore("chat", () => {
   }
 
   /**
+   * 只更新當前聊天的 messages 陣列，不替換整個 currentChat Proxy
+   * 用於同步完成後的輕量刷新，避免 Vue 對大量訊息重建 Proxy 造成崩潰
+   */
+  function patchMessages(messages: ChatMessage[]): void {
+    if (!currentChat.value) return;
+    currentChat.value.messages = [...messages];
+  }
+
+  /**
    * 添加消息
    */
   function addMessage(message: ChatMessage): void {
@@ -505,6 +514,7 @@ export const useChatStore = defineStore("chat", () => {
     // Actions
     createChat,
     loadChat,
+    patchMessages,
     addMessage,
     addUserMessage,
     addAssistantMessage,
