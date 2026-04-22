@@ -247,16 +247,24 @@ const server = http.createServer(async (req, res) => {
       if (sinceRaw && !Number.isFinite(since)) {
         return sendError(res, 400, "since must be a number");
       }
+      const limitRaw = url.searchParams.get("limit");
+      const limit = limitRaw ? Math.min(Math.max(1, Number(limitRaw)), 1000) : 300;
 
-      const items = store.entities
+      const sorted = store.entities
         .filter((item) => item.userId === auth.userId)
         .filter((item) => (typeof since === "number" ? item.updatedAt > since : true))
-        .sort((a, b) => a.updatedAt - b.updatedAt)
-        .map(({ userId, receivedAt, deviceId, ...entity }) => entity);
+        .sort((a, b) => a.updatedAt - b.updatedAt);
+
+      const hasMore = sorted.length > limit;
+      const page = sorted.slice(0, limit);
+      const nextSince = hasMore ? page[page.length - 1].updatedAt : null;
+      const items = page.map(({ userId, receivedAt, deviceId, ...entity }) => entity);
 
       return sendJson(res, 200, {
         serverTime: Date.now(),
         items,
+        hasMore,
+        nextSince,
       });
     }
 

@@ -82,6 +82,8 @@ export interface SelfHostedSyncPushResponse {
 export interface SelfHostedSyncPullResponse {
   serverTime: number;
   items: SelfHostedSyncEntityEnvelope[];
+  hasMore?: boolean;
+  nextSince?: number | null;
 }
 
 export interface SelfHostedSyncLoginRequest {

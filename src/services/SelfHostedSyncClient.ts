@@ -89,8 +89,11 @@ export class SelfHostedSyncClient {
     });
   }
 
-  async pullItems(since?: number): Promise<SelfHostedSyncPullResponse> {
-    const query = typeof since === "number" ? `?since=${encodeURIComponent(String(since))}` : "";
+  async pullItems(since?: number, limit?: number): Promise<SelfHostedSyncPullResponse> {
+    const params = new URLSearchParams();
+    if (typeof since === "number") params.set("since", String(since));
+    if (typeof limit === "number") params.set("limit", String(limit));
+    const query = params.toString() ? `?${params.toString()}` : "";
     return this.request<SelfHostedSyncPullResponse>("GET", `/sync/pull${query}`, undefined, {
       requireAuth: true,
     });

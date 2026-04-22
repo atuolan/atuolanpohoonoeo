@@ -122,6 +122,8 @@ export class SelfHostedSyncService {
     since?: number,
     options?: SelfHostedPullOptions,
   ): Promise<SelfHostedSyncRunResult> {
+    const PULL_BATCH_LIMIT = 300;
+
     const syncStore = useSelfHostedSyncStore();
     await syncStore.loadSettings();
 
@@ -129,25 +131,63 @@ export class SelfHostedSyncService {
 
     try {
       const client = syncStore.createClient();
-      const response = await client.pullItems(since);
-      recordRuntimeDiagnostic("event", "selfHostedSync.pull", "Received pull response", {
-        since: since ?? null,
-        itemCount: response.items.length,
-        serverTime: response.serverTime ?? null,
-      });
-      updateRuntimeSessionStage("selfHostedSync:pull response received", {
-        since: since ?? null,
-        itemCount: response.items.length,
-      });
-      const applied = await this.applyPullResponse(response, options);
+      let currentSince = since;
+      let totalApplied = 0;
+      let lastServerTime = Date.now();
+      let batchNumber = 0;
+
+      while (true) {
+        if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+          recordRuntimeDiagnostic("event", "selfHostedSync.pull.hiddenMidBatch", "Pull stopped mid-batch: page went hidden", {
+            batchNumber,
+            totalApplied,
+            currentSince: currentSince ?? null,
+          });
+          updateRuntimeSessionStage("selfHostedSync:pull stopped (page hidden)", {
+            batchNumber,
+            totalApplied,
+          });
+          break;
+        }
+
+        batchNumber += 1;
+        updateRuntimeSessionStage(`selfHostedSync:fetching pull batch ${batchNumber}`, {
+          since: currentSince ?? null,
+          isFullPull: typeof currentSince !== "number",
+        });
+
+        const response = await client.pullItems(currentSince, PULL_BATCH_LIMIT);
+        lastServerTime = response.serverTime;
+
+        recordRuntimeDiagnostic("event", "selfHostedSync.pull", `Received pull batch ${batchNumber}`, {
+          since: currentSince ?? null,
+          itemCount: response.items.length,
+          hasMore: response.hasMore ?? false,
+          nextSince: response.nextSince ?? null,
+          serverTime: response.serverTime ?? null,
+        });
+        updateRuntimeSessionStage(`selfHostedSync:pull batch ${batchNumber} received`, {
+          itemCount: response.items.length,
+          hasMore: response.hasMore ?? false,
+        });
+
+        const applied = await this.applyPullResponse(response, options);
+        totalApplied += applied;
+
+        if (!response.hasMore || !response.nextSince) {
+          break;
+        }
+        currentSince = response.nextSince;
+      }
+
       if (syncStore.hasGuardAlert) {
         await syncStore.clearGuardAlert();
       }
-      await syncStore.markSyncSucceeded(response.serverTime);
+      await syncStore.markSyncSucceeded(lastServerTime);
       return {
         pushed: 0,
-        pulled: applied,
-        serverTime: response.serverTime,
+        pulled: totalApplied,
+        serverTime: lastServerTime,
       };
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
