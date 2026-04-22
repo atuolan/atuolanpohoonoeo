@@ -5512,8 +5512,7 @@ function useClonedVoice(voiceId: string) {
                 type="url"
                 class="soft-input"
                 placeholder="https://your-sync-server.example.com"
-                @input="selfHostedSyncStore.setServerUrl(($event.target as HTMLInputElement).value)"
-                @change="selfHostedSyncStore.saveSettings()"
+                @input="selfHostedSyncStore.setServerUrl(($event.target as HTMLInputElement).value); void selfHostedSyncStore.saveSettings()"
               />
               <div class="cloud-push-actions" style="margin-top: 8px">
                 <button
