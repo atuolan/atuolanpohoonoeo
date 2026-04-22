@@ -10,8 +10,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
 const backendDir = resolve(repoRoot, "self-hosted-sync-server");
 
-const isWindows = process.platform === "win32";
-const npmCmd = isWindows ? "npm.cmd" : "npm";
 const nodeCmd = process.execPath;
 
 const procs = [
@@ -26,8 +24,8 @@ const procs = [
   {
     name: "frontend",
     color: "\x1b[35m", // magenta
-    command: npmCmd,
-    args: ["run", "dev"],
+    command: nodeCmd,
+    args: ["node_modules/vite/bin/vite.js"],
     cwd: repoRoot,
     env: { ...process.env },
   },
@@ -62,7 +60,6 @@ for (const def of procs) {
     cwd: def.cwd,
     env: def.env,
     stdio: ["ignore", "pipe", "pipe"],
-    shell: isWindows,
   });
   prefixStream(child.stdout, def.name, def.color);
   prefixStream(child.stderr, def.name, def.color);
@@ -83,13 +80,7 @@ function shutdown(exitCode) {
   for (const { child } of children) {
     if (child.exitCode === null && child.signalCode === null) {
       try {
-        if (isWindows) {
-          spawn("taskkill", ["/pid", String(child.pid), "/f", "/t"], {
-            stdio: "ignore",
-          });
-        } else {
-          child.kill("SIGINT");
-        }
+        child.kill("SIGINT");
       } catch {
         // ignore
       }

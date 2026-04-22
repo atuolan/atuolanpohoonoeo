@@ -36,6 +36,7 @@ import {
 import { useNotificationStore } from "@/stores/notification";
 import { useSelfHostedSyncStore } from "@/stores/selfHostedSync";
 import { useSettingsStore } from "@/stores/settings";
+import { recordRuntimeDiagnostic, updateRuntimeSessionStage } from "@/utils/runtimeDiagnostics";
 import type {
   SelfHostedSyncContentSnapshot,
   SelfHostedSyncEntityEnvelope,
@@ -80,6 +81,7 @@ export class SelfHostedSyncService {
   private static readonly ENABLE_GENERIC_STORE_SNAPSHOTS = false;
   private static readonly GUARD_MIN_TOTAL_ITEMS = 20;
   private static readonly GUARD_RATIO_THRESHOLD = 0.4;
+  private static readonly COOPERATIVE_YIELD_EVERY = 25;
 
   async pushAll(): Promise<SelfHostedSyncRunResult> {
     const syncStore = useSelfHostedSyncStore();
@@ -128,6 +130,15 @@ export class SelfHostedSyncService {
     try {
       const client = syncStore.createClient();
       const response = await client.pullItems(since);
+      recordRuntimeDiagnostic("event", "selfHostedSync.pull", "Received pull response", {
+        since: since ?? null,
+        itemCount: response.items.length,
+        serverTime: response.serverTime ?? null,
+      });
+      updateRuntimeSessionStage("selfHostedSync:pull response received", {
+        since: since ?? null,
+        itemCount: response.items.length,
+      });
       const applied = await this.applyPullResponse(response, options);
       if (syncStore.hasGuardAlert) {
         await syncStore.clearGuardAlert();
@@ -352,6 +363,19 @@ export class SelfHostedSyncService {
     const forceOverwrite = options?.forceOverwrite === true;
 
     return withSuppressedSelfHostedAutoSync(async () => {
+      const countsByEntityType = response.items.reduce<Record<string, number>>((acc, item) => {
+        acc[item.entityType] = (acc[item.entityType] ?? 0) + 1;
+        return acc;
+      }, {});
+      recordRuntimeDiagnostic("event", "selfHostedSync.applyPullResponse", "Applying pull response", {
+        itemCount: response.items.length,
+        countsByEntityType,
+      });
+      updateRuntimeSessionStage("selfHostedSync:apply pull start", {
+        itemCount: response.items.length,
+        countsByEntityType,
+      });
+
       const settingsItems = response.items.filter(
       (item): item is SelfHostedSyncEntityEnvelope<"settings_preferences", SyncSettingsPreferencesPayload> =>
         item.entityType === "settings_preferences" && item.deletedAt === null,
@@ -426,6 +450,12 @@ export class SelfHostedSyncService {
       (item): item is SelfHostedSyncEntityEnvelope => item.deletedAt !== null,
       );
 
+      await this.cooperativeYield("categorized pull items", {
+        itemCount: response.items.length,
+        chatMessageItems: chatMessageItems.length,
+        chatRecordItems: chatRecordItems.length,
+      });
+
       for (const item of settingsItems) {
       const changed = await this.applySettingsPreferences(item.payload, forceOverwrite);
       if (changed) applied += 1;
@@ -445,6 +475,12 @@ export class SelfHostedSyncService {
       const changed = await this.applyCharacter(item.payload, forceOverwrite);
       if (changed) applied += 1;
       }
+
+      await this.cooperativeYield("applied reference entities", {
+        applied,
+        characters: characterItems.length,
+        lorebooks: lorebookItems.length,
+      });
 
       for (const item of lorebookItems) {
       const changed = await this.applyLorebook(item.payload, forceOverwrite);
@@ -486,6 +522,11 @@ export class SelfHostedSyncService {
       if (changed) applied += 1;
       }
 
+      await this.cooperativeYield("applied chat records", {
+        applied,
+        chatRecordItems: chatRecordItems.length,
+      });
+
       const affectedChatIds = new Set<string>(chatRecordItems.map((item) => item.payload.id));
 
       const messageGroups = new Map<string, SyncChatMessagePayload[]>();
@@ -497,10 +538,19 @@ export class SelfHostedSyncService {
       }
 
       for (const [chatId, payloads] of messageGroups) {
+      updateRuntimeSessionStage("selfHostedSync:apply chat messages", {
+        chatId,
+        incomingCount: payloads.length,
+      });
       const changed = await this.applyChatMessages(chatId, payloads, forceOverwrite);
       if (changed > 0) {
         applied += changed;
       }
+      await this.cooperativeYield("applied chat message group", {
+        chatId,
+        incomingCount: payloads.length,
+        changed,
+      });
       }
 
       for (const item of qzonePostItems) {
@@ -514,6 +564,17 @@ export class SelfHostedSyncService {
       }
 
       await this.refreshActiveChatIfAffected(affectedChatIds);
+
+      recordRuntimeDiagnostic("event", "selfHostedSync.applyPullResponse", "Finished applying pull response", {
+        itemCount: response.items.length,
+        applied,
+        affectedChatCount: affectedChatIds.size,
+      });
+      updateRuntimeSessionStage("selfHostedSync:apply pull finished", {
+        itemCount: response.items.length,
+        applied,
+        affectedChatCount: affectedChatIds.size,
+      });
 
       return applied;
     });
@@ -800,6 +861,11 @@ export class SelfHostedSyncService {
     incomingPayloads: SyncChatMessagePayload[],
     forceOverwrite = false,
   ): Promise<number> {
+    recordRuntimeDiagnostic("event", "selfHostedSync.applyChatMessages", "Applying chat messages", {
+      chatId,
+      incomingCount: incomingPayloads.length,
+      forceOverwrite,
+    });
     const localMessages = await loadMessages(chatId);
     const merged = new Map<string, ChatMessage>();
 
@@ -824,9 +890,23 @@ export class SelfHostedSyncService {
     const nextMessages = [...merged.values()].sort(
       (a, b) => (a.createdAt || 0) - (b.createdAt || 0),
     );
+    updateRuntimeSessionStage("selfHostedSync:writing merged chat messages", {
+      chatId,
+      localCount: localMessages.length,
+      incomingCount: incomingPayloads.length,
+      mergedCount: nextMessages.length,
+      changed,
+    });
     await saveMessages(chatId, nextMessages);
     await refreshChatDerivedMetadata(chatId);
     return changed;
+  }
+
+  private async cooperativeYield(stage: string, details?: unknown): Promise<void> {
+    updateRuntimeSessionStage(`selfHostedSync:${stage}`, details);
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
   }
 
   private async applyQZoneSettings(

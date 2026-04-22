@@ -342,12 +342,48 @@ async function ensureSelfHostedSyncSocketConnected() {
       recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket opened", {
         reconnectAttempt: selfHostedSyncSocketReconnectAttempt,
       });
+      updateRuntimeSessionStage("selfHostedSync:websocket opened awaiting first message", {
+        reconnectAttempt: selfHostedSyncSocketReconnectAttempt,
+      });
     };
 
     socket.onmessage = (event) => {
       try {
+        recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket message received", {
+          rawLength: String(event.data).length,
+        });
+        updateRuntimeSessionStage("selfHostedSync:websocket message received", {
+          rawLength: String(event.data).length,
+        });
         const payload = JSON.parse(String(event.data)) as SelfHostedSyncSocketMessage;
+        recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket message parsed", {
+          type: payload.type ?? "unknown",
+          latestUpdateAt: payload.latestUpdateAt ?? null,
+        });
+        updateRuntimeSessionStage("selfHostedSync:websocket message parsed", {
+          type: payload.type ?? "unknown",
+          latestUpdateAt: payload.latestUpdateAt ?? null,
+        });
+        if (payload.type === "sync:ready") {
+          recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket ready", {
+            serverTime: payload.serverTime ?? null,
+            deviceId: payload.deviceId ?? null,
+          });
+          updateRuntimeSessionStage("selfHostedSync:websocket ready received", {
+            serverTime: payload.serverTime ?? null,
+            deviceId: payload.deviceId ?? null,
+          });
+          return;
+        }
         if (payload.type === "sync:update") {
+          recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket update received", {
+            latestUpdateAt: payload.latestUpdateAt ?? null,
+            sourceDeviceId: payload.sourceDeviceId ?? payload.deviceId ?? null,
+          });
+          updateRuntimeSessionStage("selfHostedSync:websocket update received", {
+            latestUpdateAt: payload.latestUpdateAt ?? null,
+            sourceDeviceId: payload.sourceDeviceId ?? payload.deviceId ?? null,
+          });
           // 忽略來自自己裝置的同步廣播，避免 push → 自回拉 → 大量寫入的回環
           // 後端理論上已過濾，此處為 defense-in-depth（多 tab / 重連 / deviceId 漂移）
           const localDeviceId = selfHostedSyncStore.deviceId;
@@ -367,6 +403,10 @@ async function ensureSelfHostedSyncSocketConnected() {
             );
             return;
           }
+          updateRuntimeSessionStage("selfHostedSync:websocket update triggering pull", {
+            latestUpdateAt: payload.latestUpdateAt ?? null,
+            sourceDeviceId: eventSourceDeviceId,
+          });
           void pullSelfHostedRemoteUpdates(payload.latestUpdateAt ?? null);
         }
       } catch (error) {
