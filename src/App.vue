@@ -29,7 +29,7 @@ import { useAIGenerationStore } from "@/stores/aiGeneration";
 import { useAuthStore } from "@/stores/auth";
 import { useGitHubBackupStore } from "@/stores/githubBackup";
 import { useSelfHostedSyncStore } from "@/stores/selfHostedSync";
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 // 頁面組件
 import {
   AICharacterModal,
@@ -282,10 +282,9 @@ async function pullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | null) {
         isFullPull: typeof pullSince !== "number",
       });
       await selfHostedSyncStore.pullNow(pullSince);
-      // 強制等 Vue 把本次 pull 積累的響應式更新全部 flush 完
-      // 如果崩潰發生在這裡，stage 會是 applyPullResponse 裡的某個更細的 stage
-      // 而不是 "remote pull completed"，幫助精確定位崩潰點
-      await nextTick();
+      // 等 200ms 讓所有 Vue cascade watcher flush 完（nextTick 只蓋一個 cycle）
+      // 如果崩潰在這期間，stage 會是 applyPullResponse 裡的細 stage 而非 completed
+      await new Promise<void>((resolve) => setTimeout(resolve, 200));
       updateRuntimeSessionStage("selfHostedSync:remote pull completed", {
         latestUpdateAtHint: latestUpdateAtHint ?? null,
         lastSyncAt: selfHostedSyncStore.lastSyncAt ?? null,
