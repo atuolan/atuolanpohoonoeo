@@ -269,7 +269,15 @@ function showPendingRuntimeDiagnostics(): void {
   const message = pendingEntries
     .map((entry) => {
       const time = new Date(entry.timestamp).toLocaleString();
-      return `[${entry.kind}] ${entry.source} @ ${time}\n${entry.message}`;
+      let text = `[${entry.kind}] ${entry.source} @ ${time}\n${entry.message}`;
+      if (entry.details && typeof entry.details === "object") {
+        const data = entry.details as Record<string, unknown>;
+        const stageDetails = data.lastStageDetails;
+        if (stageDetails && typeof stageDetails === "object" && Object.keys(stageDetails as object).length > 0) {
+          text += `\nstage data: ${JSON.stringify(stageDetails)}`;
+        }
+      }
+      return text;
     })
     .join("\n\n");
 
