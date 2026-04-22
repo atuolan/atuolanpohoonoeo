@@ -12,6 +12,11 @@ const backendDir = resolve(repoRoot, "self-hosted-sync-server");
 
 const nodeCmd = process.execPath;
 
+const cloudflaredExe =
+  process.platform === "win32"
+    ? "C:\\Program Files (x86)\\cloudflared\\cloudflared.exe"
+    : "cloudflared";
+
 const procs = [
   {
     name: "backend",
@@ -20,6 +25,14 @@ const procs = [
     args: ["src/server.js"],
     cwd: backendDir,
     env: { ...process.env, PORT: process.env.PORT || "3004" },
+  },
+  {
+    name: "tunnel",
+    color: "\x1b[33m", // yellow
+    command: cloudflaredExe,
+    args: ["tunnel", "--config", `${process.env.USERPROFILE || process.env.HOME}\\.cloudflared\\config.yml`, "run", "aguaphone-sync"],
+    cwd: repoRoot,
+    env: { ...process.env },
   },
   {
     name: "frontend",
@@ -95,5 +108,6 @@ process.on("SIGTERM", () => shutdown(0));
 process.stdout.write(
   `\x1b[36m[backend]\x1b[0m  http://127.0.0.1:${procs[0].env.PORT}\n` +
     `\x1b[36m[backend]\x1b[0m  admin UI: http://127.0.0.1:${procs[0].env.PORT}/admin\n` +
+    `\x1b[33m[tunnel]\x1b[0m   https://sync.aguacloud.uk  (permanent)\n` +
     `\x1b[35m[frontend]\x1b[0m starting vite...\n`,
 );
