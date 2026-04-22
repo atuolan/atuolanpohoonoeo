@@ -1239,15 +1239,34 @@ export class SelfHostedSyncService {
         return;
       }
 
+      const existingCount = chatStore.currentChat?.messages?.length ?? 0;
+      const MAX_SYNC_MESSAGES = 150;
+
+      // 訊息數量過多時跳過 UI 同步，避免大量 Vue DOM 更新造成 OOM 崩潰
+      // 資料已寫入 IDB，使用者重新進入聊天時會自動重載最新訊息
+      if (latestMessages.length > MAX_SYNC_MESSAGES) {
+        recordRuntimeDiagnostic("event", "selfHostedSync.refreshActiveChat", "Skipped: too many messages to safely sync reactively", {
+          currentChatId,
+          incomingCount: latestMessages.length,
+          existingCount,
+          limit: MAX_SYNC_MESSAGES,
+        });
+        updateRuntimeSessionStage("selfHostedSync:active chat UI refresh skipped (too many)", {
+          currentChatId,
+          incomingCount: latestMessages.length,
+        });
+        return;
+      }
+
       recordRuntimeDiagnostic("event", "selfHostedSync.refreshActiveChat", "Syncing reactive messages in-place", {
         currentChatId,
         incomingCount: latestMessages.length,
-        existingCount: chatStore.currentChat?.messages?.length ?? 0,
+        existingCount,
       });
       updateRuntimeSessionStage("selfHostedSync:syncing reactive messages", {
         currentChatId,
         incomingCount: latestMessages.length,
-        existingCount: chatStore.currentChat?.messages?.length ?? 0,
+        existingCount,
       });
 
       // 使用 syncMessages：以 in-place 操作（push/splice/index assign）更新陣列

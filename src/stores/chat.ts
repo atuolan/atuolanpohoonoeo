@@ -101,31 +101,33 @@ export const useChatStore = defineStore("chat", () => {
     if (!currentChat.value) return;
     const existing = getMutableMessages();
     const incomingById = new Map(incomingMessages.map((m) => [m.id, m]));
-    const existingById = new Map(existing.map((m, i) => [m.id, i] as [string, number]));
 
-    let orderChanged = false;
-
-    // 刪除不在 incoming 中的訊息（從尾部往前，避免 splice 移位問題）
+    // 第一步：刪除不在 incoming 中的訊息（從尾部往前，避免 splice 移位問題）
+    let anyDeleted = false;
     for (let i = existing.length - 1; i >= 0; i--) {
       if (!incomingById.has(existing[i].id)) {
         existing.splice(i, 1);
-        orderChanged = true;
+        anyDeleted = true;
       }
     }
 
-    // 新增 / 更新訊息
+    // 第二步：刪除完成後才建立 index map（確保索引正確）
+    const existingById = new Map(existing.map((m, i) => [m.id, i] as [string, number]));
+
+    // 第三步：新增 / 更新訊息
+    let anyAdded = false;
     for (const incoming of incomingMessages) {
       const idx = existingById.get(incoming.id);
       if (idx === undefined) {
         existing.push(incoming);
-        orderChanged = true;
+        anyAdded = true;
       } else if ((existing[idx]?.updatedAt ?? 0) < (incoming.updatedAt ?? 0)) {
         existing[idx] = incoming;
       }
     }
 
-    // 只在有新增/刪除時才重新排序（避免不必要的操作）
-    if (orderChanged) {
+    // 有新增或刪除才需要重排序（純更新時 createdAt 不變，順序不受影響）
+    if (anyDeleted || anyAdded) {
       existing.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     }
   }
