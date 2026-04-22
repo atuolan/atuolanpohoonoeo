@@ -1171,18 +1171,20 @@ export class SelfHostedSyncService {
         return;
       }
 
-      recordRuntimeDiagnostic("event", "selfHostedSync.refreshActiveChat", "Patching reactive messages", {
+      recordRuntimeDiagnostic("event", "selfHostedSync.refreshActiveChat", "Syncing reactive messages in-place", {
         currentChatId,
-        messageCount: latestMessages.length,
+        incomingCount: latestMessages.length,
+        existingCount: chatStore.currentChat?.messages?.length ?? 0,
       });
-      updateRuntimeSessionStage("selfHostedSync:patching reactive messages", {
+      updateRuntimeSessionStage("selfHostedSync:syncing reactive messages", {
         currentChatId,
-        messageCount: latestMessages.length,
+        incomingCount: latestMessages.length,
+        existingCount: chatStore.currentChat?.messages?.length ?? 0,
       });
 
-      // 使用 patchMessages 而非 loadChat：只更新 messages 陣列，
-      // 不替換整個 currentChat Proxy，避免 Vue 對大量訊息重建 Proxy 造成 OOM/崩潰
-      chatStore.patchMessages(latestMessages);
+      // 使用 syncMessages：以 in-place 操作（push/splice/index assign）更新陣列
+      // Vue 只重渲真正變動的節點，不重建整個 DOM 列表——最省記憶體的方案
+      chatStore.syncMessages(latestMessages);
 
       updateRuntimeSessionStage("selfHostedSync:active chat UI refresh complete", {
         currentChatId,

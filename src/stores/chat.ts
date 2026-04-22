@@ -93,6 +93,44 @@ export const useChatStore = defineStore("chat", () => {
   }
 
   /**
+   * 以 in-place 方式同步訊息陣列：新增、更新、刪除各別操作
+   * Vue 只會重渲真正變動的節點，不會重建整個列表
+   * 用於同步完成後的增量刷新，是比 patchMessages 更省記憶體的方案
+   */
+  function syncMessages(incomingMessages: ChatMessage[]): void {
+    if (!currentChat.value) return;
+    const existing = getMutableMessages();
+    const incomingById = new Map(incomingMessages.map((m) => [m.id, m]));
+    const existingById = new Map(existing.map((m, i) => [m.id, i] as [string, number]));
+
+    let orderChanged = false;
+
+    // 刪除不在 incoming 中的訊息（從尾部往前，避免 splice 移位問題）
+    for (let i = existing.length - 1; i >= 0; i--) {
+      if (!incomingById.has(existing[i].id)) {
+        existing.splice(i, 1);
+        orderChanged = true;
+      }
+    }
+
+    // 新增 / 更新訊息
+    for (const incoming of incomingMessages) {
+      const idx = existingById.get(incoming.id);
+      if (idx === undefined) {
+        existing.push(incoming);
+        orderChanged = true;
+      } else if ((existing[idx]?.updatedAt ?? 0) < (incoming.updatedAt ?? 0)) {
+        existing[idx] = incoming;
+      }
+    }
+
+    // 只在有新增/刪除時才重新排序（避免不必要的操作）
+    if (orderChanged) {
+      existing.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    }
+  }
+
+  /**
    * 添加消息
    */
   function addMessage(message: ChatMessage): void {
@@ -515,6 +553,7 @@ export const useChatStore = defineStore("chat", () => {
     createChat,
     loadChat,
     patchMessages,
+    syncMessages,
     addMessage,
     addUserMessage,
     addAssistantMessage,
