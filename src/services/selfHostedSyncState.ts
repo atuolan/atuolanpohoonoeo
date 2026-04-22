@@ -122,15 +122,18 @@ export async function runScheduledSelfHostedAutoSync(): Promise<void> {
         return;
       }
 
+      // 在 push 之前就樂觀清除 flag，讓 push 期間產生的新變更能正確重新設為 true
+      hasPendingLocalChanges = false;
       lastScheduledAutoSyncAt = Date.now();
       await syncStore.pushNow();
+      // push 成功：若 push 期間沒有新變更，hasPendingLocalChanges 仍為 false，不會重排
     } catch (error) {
       console.warn("[selfHostedSyncState] 自架同步自動推送失敗:", error);
-      if (hasPendingLocalChanges) {
-        queueScheduledSelfHostedAutoSync(SELF_HOSTED_PUSH_MIN_INTERVAL_MS);
-      }
+      hasPendingLocalChanges = true;
+      queueScheduledSelfHostedAutoSync(SELF_HOSTED_PUSH_MIN_INTERVAL_MS);
     } finally {
       scheduledAutoSyncInFlight = null;
+      // 只有 push 期間有新變更（hasPendingLocalChanges 被重新設為 true）才重排
       if (hasPendingLocalChanges) {
         queueScheduledSelfHostedAutoSync();
       }
