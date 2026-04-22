@@ -86,6 +86,7 @@ import {
   consumePendingRuntimeDiagnostics,
   recordRuntimeDiagnostic,
   recordRuntimeError,
+  updateRuntimeSessionStage,
 } from "@/utils/runtimeDiagnostics";
 import { applyServiceWorkerUpdate } from "@/utils/storagePersistence";
 import { getIncomingCallScheduler } from "./services/IncomingCallScheduler";
@@ -163,9 +164,11 @@ type SelfHostedSyncSocketMessage = {
 
 function recordSelfHostedSyncDiagnostic(message: string, details?: unknown) {
   recordRuntimeDiagnostic("event", "selfHostedSync", message, details);
+  updateRuntimeSessionStage(`selfHostedSync:${message}`, details);
 }
 
 function recordSelfHostedSyncFailure(message: string, error: unknown, details?: unknown) {
+  updateRuntimeSessionStage(`selfHostedSync failure:${message}`, details);
   recordRuntimeError("selfHostedSync", error, {
     message,
     details,
@@ -213,6 +216,9 @@ async function shouldPullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | n
   }
 
   selfHostedSyncMetaCheckInFlight = (async () => {
+    updateRuntimeSessionStage("selfHostedSync:metadata check start", {
+      latestUpdateAtHint: latestUpdateAtHint ?? null,
+    });
     await selfHostedSyncStore.loadSettings();
     if (!selfHostedSyncStore.enabled || !selfHostedSyncStore.isAuthenticated) {
       return false;
@@ -252,6 +258,9 @@ async function pullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | null) {
     try {
       const shouldPull = await shouldPullSelfHostedRemoteUpdates(latestUpdateAtHint);
       if (!shouldPull) {
+        updateRuntimeSessionStage("selfHostedSync:remote pull skipped", {
+          latestUpdateAtHint: latestUpdateAtHint ?? null,
+        });
         return;
       }
       recordSelfHostedSyncDiagnostic("Starting remote pull", {
@@ -259,6 +268,10 @@ async function pullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | null) {
         lastSyncAt: selfHostedSyncStore.lastSyncAt ?? null,
       });
       await selfHostedSyncStore.pullNow(selfHostedSyncStore.lastSyncAt ?? undefined);
+      updateRuntimeSessionStage("selfHostedSync:remote pull completed", {
+        latestUpdateAtHint: latestUpdateAtHint ?? null,
+        lastSyncAt: selfHostedSyncStore.lastSyncAt ?? null,
+      });
     } catch (error) {
       recordSelfHostedSyncFailure("Metadata check or remote pull failed", error, {
         latestUpdateAtHint: latestUpdateAtHint ?? null,
@@ -289,6 +302,7 @@ function scheduleSelfHostedSyncSocketReconnect() {
 }
 
 async function ensureSelfHostedSyncSocketConnected() {
+  updateRuntimeSessionStage("selfHostedSync:websocket ensure start");
   await selfHostedSyncStore.loadSettings();
 
   if (!authStore.isAuthenticated || !selfHostedSyncStore.enabled || !selfHostedSyncStore.accessToken) {
@@ -1240,8 +1254,16 @@ watch(
 // 應用啟動時載入數據
 onMounted(async () => {
   // 初始化驗證狀態
+  updateRuntimeSessionStage("App:onMounted start");
   await authStore.initialize();
+  updateRuntimeSessionStage("App:auth initialized", {
+    authenticated: authStore.isAuthenticated,
+  });
   await selfHostedSyncStore.loadSettings();
+  updateRuntimeSessionStage("App:selfHostedSync settings loaded", {
+    enabled: selfHostedSyncStore.enabled,
+    authenticated: selfHostedSyncStore.isAuthenticated,
+  });
   notifyPendingRuntimeDiagnostics();
 
   if (typeof document !== "undefined") {

@@ -7,11 +7,15 @@ import App from "./App.vue";
 import { initAutoBackup } from "./services/AutoBackupService";
 import "./styles/global.scss";
 import {
+  beginRuntimeSession,
   consumePendingRuntimeDiagnostics,
+  finalizeRuntimeSession,
   getRuntimeDiagnostics,
+  heartbeatRuntimeSession,
   recordReloadReason,
   recordRuntimeDiagnostic,
   recordRuntimeError,
+  updateRuntimeSessionStage,
 } from "./utils/runtimeDiagnostics";
 import { CodeProtection } from "./utils/codeProtection";
 import { autoFixStickerUrls } from "./utils/fixStickerUrls";
@@ -270,9 +274,25 @@ function showPendingRuntimeDiagnostics(): void {
     .join("\n\n");
 
   console.error("[RuntimeDiagnostics] 偵測到上次執行留下的錯誤/重載紀錄:\n" + message);
-  setTimeout(() => {
-    window.alert(`上次疑似異常中斷或重整：\n\n${message}`);
-  }, 0);
+  const banner = document.createElement("div");
+  banner.setAttribute("data-runtime-diagnostics-banner", "true");
+  banner.style.position = "fixed";
+  banner.style.top = "0";
+  banner.style.left = "0";
+  banner.style.right = "0";
+  banner.style.zIndex = "999999";
+  banner.style.background = "rgba(120, 0, 0, 0.95)";
+  banner.style.color = "#fff";
+  banner.style.padding = "12px 16px";
+  banner.style.fontSize = "12px";
+  banner.style.lineHeight = "1.5";
+  banner.style.whiteSpace = "pre-wrap";
+  banner.style.boxShadow = "0 4px 12px rgba(0,0,0,0.35)";
+  banner.textContent = `上次疑似異常中斷或重整：\n\n${message}`;
+  banner.addEventListener("click", () => {
+    banner.remove();
+  });
+  document.body.appendChild(banner);
 }
 
 function installGlobalRuntimeDiagnostics(): void {
@@ -291,7 +311,16 @@ function installGlobalRuntimeDiagnostics(): void {
   });
 
   window.addEventListener("beforeunload", () => {
+    finalizeRuntimeSession("beforeunload");
     recordRuntimeDiagnostic("event", "window.beforeunload", "Page is unloading");
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    heartbeatRuntimeSession(`visibility:${document.visibilityState}`);
+  });
+
+  window.addEventListener("pagehide", () => {
+    finalizeRuntimeSession("pagehide");
   });
 
   const debugTarget = window as Window & {
@@ -311,11 +340,20 @@ function installGlobalRuntimeDiagnostics(): void {
   };
 }
 
+beginRuntimeSession("main.ts bootstrap", {
+  userAgent: navigator.userAgent,
+  href: window.location.href,
+});
 installGlobalRuntimeDiagnostics();
 showPendingRuntimeDiagnostics();
 
+window.setInterval(() => {
+  heartbeatRuntimeSession();
+}, 10000);
+
 const app = createApp(App);
 const pinia = createPinia();
+updateRuntimeSessionStage("vue app created");
 
 app.config.errorHandler = (error, instance, info) => {
   recordRuntimeError("vue.errorHandler", error, {
@@ -334,16 +372,21 @@ app.use(PrimeVue, {
     },
   },
 });
+updateRuntimeSessionStage("primevue configured");
 app.use(pinia);
+updateRuntimeSessionStage("pinia configured");
 app.mount("#app");
+updateRuntimeSessionStage("app mounted");
 
 // Discord OAuth2 回傳參數處理（使用者從 Discord 授權頁面 redirect 回來時）
 (async () => {
   try {
+    updateRuntimeSessionStage("discord callback handling");
     const { useCloudPushStore } = await import("./stores/cloudPush");
     const cloudPushStore = useCloudPushStore();
     await cloudPushStore.loadSettings();
     await cloudPushStore.handleDiscordOAuthCallback();
+    updateRuntimeSessionStage("discord callback handled");
   } catch {
     // 非關鍵路徑
   }
@@ -353,10 +396,13 @@ app.mount("#app");
 updateAppHeight();
 
 // 應用掛載後註冊 Service Worker 並請求持久化存儲
+updateRuntimeSessionStage("storage protection init start");
 initStorageProtection();
+updateRuntimeSessionStage("storage protection init dispatched");
 
 // 初始化自動備份
 initAutoBackup();
+updateRuntimeSessionStage("auto backup initialized");
 
 // 主動發訊息服務由 App.vue 在 characters 載入後啟動，此處不再無條件啟動
 
