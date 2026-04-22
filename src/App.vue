@@ -139,6 +139,7 @@ let lastSelfHostedForegroundPullAt = 0;
 const SELF_HOSTED_WS_RECONNECT_BASE_MS = 3000;
 const SELF_HOSTED_WS_RECONNECT_MAX_MS = 30000;
 let selfHostedSyncSocket: WebSocket | null = null;
+let selfHostedSyncSocketToken: string | null = null;
 let selfHostedSyncSocketReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let selfHostedSyncSocketReconnectAttempt = 0;
 let selfHostedSyncRemotePullInFlight: Promise<void> | null = null;
@@ -172,6 +173,7 @@ function closeSelfHostedSyncSocket() {
     selfHostedSyncSocket.close();
     selfHostedSyncSocket = null;
   }
+  selfHostedSyncSocketToken = null;
 }
 
 function buildSelfHostedSyncWebSocketUrl(serverUrl: string, accessToken: string): string {
@@ -256,8 +258,16 @@ async function ensureSelfHostedSyncSocketConnected() {
     return;
   }
 
-  if (selfHostedSyncSocket && selfHostedSyncSocket.readyState !== WebSocket.CLOSED) {
+  if (
+    selfHostedSyncSocket &&
+    selfHostedSyncSocket.readyState !== WebSocket.CLOSED &&
+    selfHostedSyncSocketToken === selfHostedSyncStore.accessToken
+  ) {
     return;
+  }
+
+  if (selfHostedSyncSocket && selfHostedSyncSocket.readyState !== WebSocket.CLOSED) {
+    closeSelfHostedSyncSocket();
   }
 
   closeSelfHostedSyncSocket();
@@ -269,6 +279,7 @@ async function ensureSelfHostedSyncSocketConnected() {
     );
     const socket = new WebSocket(socketUrl);
     selfHostedSyncSocket = socket;
+    selfHostedSyncSocketToken = selfHostedSyncStore.accessToken;
 
     socket.onopen = () => {
       selfHostedSyncSocketReconnectAttempt = 0;

@@ -161,8 +161,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
 
     try {
       await ensureDeviceId();
-      const client = createClient();
-      const result = await runSyncActionWithRetry(() => client.getStatus());
+      const result = await runSyncActionWithRetry(() => createClient().getStatus());
       serverStatusOk.value = result.ok;
       serverApiVersion.value = result.apiVersion ?? null;
       lastServerTime.value = result.serverTime ?? null;
@@ -201,8 +200,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
 
   async function refreshMeta(): Promise<SelfHostedSyncMetaResponse> {
     await ensureDeviceId();
-    const client = createClient();
-    const result = await runSyncActionWithRetry(() => client.getMeta());
+    const result = await runSyncActionWithRetry(() => createClient().getMeta());
     lastServerTime.value = result.serverTime ?? null;
     lastRemoteUpdateAt.value = result.latestUpdateAt ?? null;
     lastConnectionCheckAt.value = Date.now();
