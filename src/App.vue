@@ -250,6 +250,14 @@ async function shouldPullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | n
 }
 
 async function pullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | null) {
+  if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+    recordSelfHostedSyncDiagnostic("Skipped pull: page is hidden", {
+      latestUpdateAtHint: latestUpdateAtHint ?? null,
+      visibilityState: document.visibilityState,
+    });
+    return;
+  }
+
   if (selfHostedSyncRemotePullInFlight) {
     return selfHostedSyncRemotePullInFlight;
   }
@@ -273,6 +281,13 @@ async function pullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | null) {
         lastSyncAt: selfHostedSyncStore.lastSyncAt ?? null,
       });
     } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        recordSelfHostedSyncDiagnostic("Remote pull aborted (expected, likely page hidden)", {
+          latestUpdateAtHint: latestUpdateAtHint ?? null,
+          visibilityState: typeof document !== "undefined" ? document.visibilityState : "unknown",
+        });
+        return;
+      }
       recordSelfHostedSyncFailure("Metadata check or remote pull failed", error, {
         latestUpdateAtHint: latestUpdateAtHint ?? null,
       });
@@ -465,6 +480,12 @@ async function tryForegroundPullSelfHostedSync() {
     lastSelfHostedForegroundPullAt = now;
     await pullSelfHostedRemoteUpdates();
   } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      recordSelfHostedSyncDiagnostic("Foreground pull aborted (expected, likely page hidden)", {
+        visibilityState: typeof document !== "undefined" ? document.visibilityState : "unknown",
+      });
+      return;
+    }
     recordSelfHostedSyncFailure("Foreground self-hosted sync pull failed", error);
     console.warn("[App] 前景自架同步拉取失敗:", error);
   }

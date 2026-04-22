@@ -150,6 +150,13 @@ export class SelfHostedSyncService {
         serverTime: response.serverTime,
       };
     } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        recordRuntimeDiagnostic("event", "selfHostedSync.pull.aborted", "Pull aborted (page hidden or browser-cancelled)", {
+          since: since ?? null,
+          visibilityState: typeof document !== "undefined" ? document.visibilityState : "unknown",
+        });
+        throw error;
+      }
       await syncStore.markSyncFailed(error);
       throw error;
     }

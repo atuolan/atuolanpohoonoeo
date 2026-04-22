@@ -305,8 +305,21 @@ function installGlobalRuntimeDiagnostics(): void {
   });
 
   window.addEventListener("unhandledrejection", (event) => {
-    recordRuntimeError("window.unhandledrejection", event.reason, {
-      type: typeof event.reason,
+    const reason = event.reason;
+    // AbortError 是瀏覽器在頁面背景化、freeze、或取消 fetch/IDB transaction 時的預期行為
+    // 不應視為崩潰，只需記錄為 diagnostic event
+    if (reason instanceof Error && reason.name === "AbortError") {
+      event.preventDefault();
+      recordRuntimeDiagnostic("event", "window.unhandledrejection.aborted", "Expected AbortError (page hidden or browser-cancelled operation)", {
+        message: reason.message,
+        visibilityState: document.visibilityState,
+        stack: reason.stack,
+      });
+      return;
+    }
+    recordRuntimeError("window.unhandledrejection", reason, {
+      type: typeof reason,
+      visibilityState: document.visibilityState,
     });
   });
 
