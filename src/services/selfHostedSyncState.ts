@@ -5,6 +5,8 @@ import type {
 } from "@/types/selfHostedSync";
 
 const DELETED_ENTITIES_KEY = "self-hosted-sync-deleted-entities";
+const SELF_HOSTED_PUSH_DEBOUNCE_MS = 1500;
+const SELF_HOSTED_PUSH_MIN_INTERVAL_MS = 5000;
 
 interface DeletedEntitiesState {
   id: string;
@@ -13,6 +15,24 @@ interface DeletedEntitiesState {
 
 let autoSyncSuppressionDepth = 0;
 let hasPendingLocalChanges = false;
+let scheduledAutoSyncTimer: ReturnType<typeof setTimeout> | null = null;
+let scheduledAutoSyncInFlight: Promise<void> | null = null;
+let lastScheduledAutoSyncAt = 0;
+
+function clearScheduledAutoSyncTimer(): void {
+  if (scheduledAutoSyncTimer) {
+    clearTimeout(scheduledAutoSyncTimer);
+    scheduledAutoSyncTimer = null;
+  }
+}
+
+function queueScheduledSelfHostedAutoSync(delayMs = SELF_HOSTED_PUSH_DEBOUNCE_MS): void {
+  clearScheduledAutoSyncTimer();
+  scheduledAutoSyncTimer = setTimeout(() => {
+    scheduledAutoSyncTimer = null;
+    void runScheduledSelfHostedAutoSync();
+  }, delayMs);
+}
 
 export async function loadDeletedEntities(): Promise<SelfHostedSyncDeletedEntityRecord[]> {
   await db.init();
@@ -74,10 +94,50 @@ export function scheduleSelfHostedAutoSync(): void {
   }
 
   hasPendingLocalChanges = true;
+  queueScheduledSelfHostedAutoSync();
 }
 
 export async function runScheduledSelfHostedAutoSync(): Promise<void> {
-  return Promise.resolve();
+  if (autoSyncSuppressionDepth > 0 || !hasPendingLocalChanges) {
+    return;
+  }
+
+  if (scheduledAutoSyncInFlight) {
+    return scheduledAutoSyncInFlight;
+  }
+
+  const now = Date.now();
+  const waitMs = lastScheduledAutoSyncAt + SELF_HOSTED_PUSH_MIN_INTERVAL_MS - now;
+  if (waitMs > 0) {
+    queueScheduledSelfHostedAutoSync(waitMs);
+    return;
+  }
+
+  scheduledAutoSyncInFlight = (async () => {
+    try {
+      const { useSelfHostedSyncStore } = await import("@/stores/selfHostedSync");
+      const syncStore = useSelfHostedSyncStore();
+      await syncStore.loadSettings();
+      if (!syncStore.enabled || !syncStore.isAuthenticated) {
+        return;
+      }
+
+      lastScheduledAutoSyncAt = Date.now();
+      await syncStore.pushNow();
+    } catch (error) {
+      console.warn("[selfHostedSyncState] 自架同步自動推送失敗:", error);
+      if (hasPendingLocalChanges) {
+        queueScheduledSelfHostedAutoSync(SELF_HOSTED_PUSH_MIN_INTERVAL_MS);
+      }
+    } finally {
+      scheduledAutoSyncInFlight = null;
+      if (hasPendingLocalChanges) {
+        queueScheduledSelfHostedAutoSync();
+      }
+    }
+  })();
+
+  return scheduledAutoSyncInFlight;
 }
 
 export async function withSuppressedSelfHostedAutoSync<T>(
@@ -97,4 +157,5 @@ export function hasPendingSelfHostedLocalChanges(): boolean {
 
 export function clearPendingSelfHostedLocalChanges(): void {
   hasPendingLocalChanges = false;
+  clearScheduledAutoSyncTimer();
 }
