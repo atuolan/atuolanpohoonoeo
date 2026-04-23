@@ -31,7 +31,17 @@ if (!store.meta.tokenSecret) {
   saveStore();
 }
 
-const wsServer = new WebSocketServer({ noServer: true });
+const wsServer = new WebSocketServer({
+  noServer: true,
+  // 開啟 permessage-deflate：JSON manifest/envelope 重複欄位多，壓縮率約 70–90%。
+  // 瀏覽器 WebSocket 自動協商此擴充，client 不需任何改動。
+  perMessageDeflate: {
+    zlibDeflateOptions: { level: 6 },
+    threshold: 1024, // 小於 1KB 的訊息不壓縮，省 CPU
+    clientNoContextTakeover: false,
+    serverNoContextTakeover: false,
+  },
+});
 const syncSocketClients = new Map();
 
 const server = http.createServer(async (req, res) => {
@@ -163,18 +173,31 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/sync/meta") {
       const auth = requireBearerAuth(req);
       const syncMeta = getSyncMetaForUser(auth.userId);
+      const onlineDeviceIds = getOnlineDeviceIdsForUser(auth.userId);
+      const onlineSet = new Set(onlineDeviceIds);
+      const { entityCounts, totalActiveItems, totalDeletedItems } =
+        computeUserEntityCounts(auth.userId);
       return sendJson(res, 200, {
         ok: true,
         serverTime: Date.now(),
         userId: auth.userId,
         latestUpdateAt: syncMeta.latestUpdateAt,
+        onlineDeviceIds,
+        onlineCount: onlineDeviceIds.length,
+        entityCounts,
+        totalActiveItems,
+        totalDeletedItems,
         devices: Object.entries(syncMeta.devices)
           .map(([deviceId, deviceMeta]) => ({
             deviceId,
             lastPushAt: deviceMeta.lastPushAt ?? null,
             lastSeenAt: deviceMeta.lastSeenAt ?? null,
+            online: onlineSet.has(deviceId),
           }))
-          .sort((a, b) => (b.lastPushAt || 0) - (a.lastPushAt || 0)),
+          .sort((a, b) => {
+            if (a.online !== b.online) return a.online ? -1 : 1;
+            return (b.lastPushAt || 0) - (a.lastPushAt || 0);
+          }),
       });
     }
 
@@ -516,9 +539,17 @@ server.on("error", (error) => {
 });
 
 server.on("upgrade", (req, socket, head) => {
+  const remote = `${req.socket.remoteAddress}:${req.socket.remotePort}`;
   try {
     const url = new URL(req.url || "/", `http://${req.headers.host || `127.0.0.1:${port}`}`);
+    console.log("[ws-upgrade] 收到升級請求", {
+      pathname: url.pathname,
+      remote,
+      host: req.headers.host,
+      hasToken: !!url.searchParams.get("token"),
+    });
     if (url.pathname !== "/sync/ws") {
+      console.log("[ws-upgrade] 404：非 /sync/ws 路徑");
       socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
       socket.destroy();
       return;
@@ -526,18 +557,42 @@ server.on("upgrade", (req, socket, head) => {
 
     const token = url.searchParams.get("token") || "";
     if (!token) {
+      console.log("[ws-upgrade] 401：缺少 token");
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;
     }
 
-    const auth = verifyToken(token);
+    let auth;
+    try {
+      auth = verifyToken(token);
+    } catch (verifyError) {
+      console.log("[ws-upgrade] 401：token 驗證失敗", {
+        error: verifyError?.message || String(verifyError),
+        tokenPrefix: token.slice(0, 24),
+      });
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
     req.syncAuth = auth;
+    console.log("[ws-upgrade] token 驗證通過，準備升級", {
+      userId: auth.userId,
+      deviceId: auth.deviceId,
+    });
 
     wsServer.handleUpgrade(req, socket, head, (ws) => {
+      console.log("[ws-upgrade] 升級成功，emitting connection", {
+        userId: auth.userId,
+        deviceId: auth.deviceId,
+      });
       wsServer.emit("connection", ws, req);
     });
   } catch (error) {
+    console.log("[ws-upgrade] 500：意外錯誤", {
+      error: error?.message || String(error),
+      stack: error?.stack,
+    });
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
   }
@@ -558,20 +613,29 @@ wsServer.on("connection", (ws, req) => {
 
   syncSocketClients.set(ws, client);
 
+  const readyOnlineDeviceIds = getOnlineDeviceIdsForUser(auth.userId);
   ws.send(
     JSON.stringify({
       type: "sync:ready",
       userId: auth.userId,
       deviceId: auth.deviceId,
       serverTime: Date.now(),
+      onlineDeviceIds: readyOnlineDeviceIds,
+      onlineCount: readyOnlineDeviceIds.length,
     }),
   );
+  broadcastPresence(auth.userId);
 
   ws.on("message", (raw) => {
     try {
       const payload = JSON.parse(raw.toString("utf8"));
       if (payload?.type === "ping") {
         ws.send(JSON.stringify({ type: "pong", serverTime: Date.now() }));
+        return;
+      }
+      if (typeof payload?.type === "string" && payload.type.startsWith("peer:")) {
+        handlePeerMessage(ws, client, payload);
+        return;
       }
     } catch {
       ws.send(JSON.stringify({ type: "error", message: "Invalid websocket payload" }));
@@ -580,10 +644,12 @@ wsServer.on("connection", (ws, req) => {
 
   ws.on("close", () => {
     syncSocketClients.delete(ws);
+    broadcastPresence(auth.userId);
   });
 
   ws.on("error", () => {
     syncSocketClients.delete(ws);
+    broadcastPresence(auth.userId);
   });
 });
 
@@ -852,11 +918,352 @@ function getSyncMetaForUser(userId) {
   return ensureSyncUserState(userId);
 }
 
+function computeUserEntityCounts(userId) {
+  const entityCounts = {};
+  let totalActiveItems = 0;
+  let totalDeletedItems = 0;
+  for (const item of store.entities) {
+    if (item.userId !== userId) continue;
+    if (item.deletedAt !== null && item.deletedAt !== undefined) {
+      totalDeletedItems += 1;
+      continue;
+    }
+    totalActiveItems += 1;
+    entityCounts[item.entityType] = (entityCounts[item.entityType] || 0) + 1;
+  }
+  return { entityCounts, totalActiveItems, totalDeletedItems };
+}
+
+// ===== Peer-to-peer sync message handling =====
+
+const SERVER_PEER_ID = "@server";
+const PEER_FETCH_BATCH_LIMIT = 100;
+
+function sendPeerError(ws, requestId, reason, detail) {
+  if (ws.readyState !== ws.OPEN) return;
+  ws.send(
+    JSON.stringify({
+      type: "peer:error",
+      requestId: requestId ?? null,
+      reason,
+      detail: detail ?? null,
+    }),
+  );
+}
+
+function handlePeerMessage(ws, client, payload) {
+  const targetDeviceId = payload.targetDeviceId;
+  console.log("[peer] 收到訊息", {
+    type: payload.type,
+    requestId: payload.requestId ?? null,
+    from: client.deviceId,
+    target: targetDeviceId ?? null,
+    userId: client.userId,
+  });
+
+  if (typeof targetDeviceId !== "string" || !targetDeviceId) {
+    console.log("[peer] 拒絕：缺少 targetDeviceId");
+    sendPeerError(ws, payload.requestId, "missing-target");
+    return;
+  }
+
+  if (targetDeviceId === SERVER_PEER_ID) {
+    console.log("[peer] 轉交 @server 虛擬 peer 處理", { type: payload.type });
+    handleServerPeerRequest(ws, client, payload);
+    return;
+  }
+
+  // 中繼給同 userId 的目標裝置
+  let delivered = false;
+  const onlineDevices = [];
+  for (const [ws2, c] of syncSocketClients.entries()) {
+    if (c.userId !== client.userId) continue;
+    onlineDevices.push({ deviceId: c.deviceId, state: ws2.readyState });
+    if (
+      c.deviceId === targetDeviceId &&
+      ws2.readyState === ws2.OPEN
+    ) {
+      ws2.send(
+        JSON.stringify({
+          ...payload,
+          sourceDeviceId: client.deviceId, // 伺服器權威填入，防偽造
+        }),
+      );
+      delivered = true;
+      console.log("[peer] 已中繼給目標裝置", {
+        type: payload.type,
+        requestId: payload.requestId,
+        target: targetDeviceId,
+      });
+      break;
+    }
+  }
+
+  if (!delivered) {
+    console.log("[peer] 目標裝置離線或不存在", {
+      target: targetDeviceId,
+      onlineDevicesForUser: onlineDevices,
+    });
+    sendPeerError(ws, payload.requestId, "peer-offline", { targetDeviceId });
+  }
+}
+
+function handleServerPeerRequest(ws, client, payload) {
+  switch (payload.type) {
+    case "peer:hash-request":
+      return handleServerHashRequest(ws, client, payload);
+    case "peer:manifest-request":
+      return handleServerManifestRequest(ws, client, payload);
+    case "peer:fetch-request":
+      return handleServerFetchRequest(ws, client, payload);
+    case "peer:apply-request":
+      return handleServerApplyRequest(ws, client, payload);
+    default:
+      sendPeerError(ws, payload.requestId, "unsupported-peer-type-for-server", {
+        type: payload.type,
+      });
+  }
+}
+
+// ==== peer hash: 與 client 的 src/services/peerHash.ts 保持完全相同的算法 ====
+const PEER_HASH_FNV_OFFSET = 0xcbf29ce484222325n;
+const PEER_HASH_FNV_PRIME = 0x100000001b3n;
+const PEER_HASH_FNV_MASK = 0xffffffffffffffffn;
+
+function peerFnv1a64Hex(input) {
+  let h = PEER_HASH_FNV_OFFSET;
+  for (let i = 0; i < input.length; i++) {
+    h = (h ^ BigInt(input.charCodeAt(i))) & PEER_HASH_FNV_MASK;
+    h = (h * PEER_HASH_FNV_PRIME) & PEER_HASH_FNV_MASK;
+  }
+  return h.toString(16).padStart(16, "0");
+}
+
+function peerComputeBucketHashes(entries) {
+  const grouped = new Map();
+  for (const e of entries) {
+    let list = grouped.get(e.entityType);
+    if (!list) {
+      list = [];
+      grouped.set(e.entityType, list);
+    }
+    list.push(e);
+  }
+  const buckets = [];
+  for (const [entityType, list] of grouped) {
+    list.sort((a, b) => (a.entityId < b.entityId ? -1 : a.entityId > b.entityId ? 1 : 0));
+    const combined = list
+      .map((e) => `${e.entityId}|${e.updatedAt}|${e.deletedAt ?? 0}\n`)
+      .join("");
+    buckets.push({
+      entityType,
+      count: list.length,
+      hash: peerFnv1a64Hex(combined),
+    });
+  }
+  buckets.sort((a, b) => (a.entityType < b.entityType ? -1 : a.entityType > b.entityType ? 1 : 0));
+  const rootInput = buckets
+    .map((b) => `${b.entityType}|${b.count}|${b.hash}\n`)
+    .join("");
+  return {
+    buckets,
+    rootHash: peerFnv1a64Hex(rootInput),
+    totalCount: entries.length,
+  };
+}
+
+function handleServerHashRequest(ws, client, payload) {
+  const entries = [];
+  for (const item of store.entities) {
+    if (item.userId !== client.userId) continue;
+    entries.push({
+      entityType: item.entityType,
+      entityId: item.entityId,
+      updatedAt: Number(item.updatedAt) || 0,
+      deletedAt: item.deletedAt ?? null,
+    });
+  }
+  const { buckets, rootHash, totalCount } = peerComputeBucketHashes(entries);
+  console.log("[peer@server] 回覆 hash", {
+    requestId: payload.requestId,
+    userId: client.userId,
+    bucketCount: buckets.length,
+    totalCount,
+    rootHash,
+  });
+  ws.send(
+    JSON.stringify({
+      type: "peer:hash-response",
+      requestId: payload.requestId,
+      sourceDeviceId: SERVER_PEER_ID,
+      buckets,
+      rootHash,
+      totalCount,
+    }),
+  );
+}
+
+function handleServerManifestRequest(ws, client, payload) {
+  const filterArr = Array.isArray(payload.entityTypes) ? payload.entityTypes : null;
+  const filter = filterArr && filterArr.length > 0 ? new Set(filterArr) : null;
+  const entries = [];
+  for (const item of store.entities) {
+    if (item.userId !== client.userId) continue;
+    if (filter && !filter.has(item.entityType)) continue;
+    entries.push({
+      entityType: item.entityType,
+      entityId: item.entityId,
+      updatedAt: Number(item.updatedAt) || 0,
+      deletedAt: item.deletedAt ?? null,
+    });
+  }
+  console.log("[peer@server] 回覆 manifest", {
+    requestId: payload.requestId,
+    userId: client.userId,
+    entryCount: entries.length,
+    entityTypes: filter ? Array.from(filter) : "ALL",
+  });
+  ws.send(
+    JSON.stringify({
+      type: "peer:manifest-response",
+      requestId: payload.requestId,
+      sourceDeviceId: SERVER_PEER_ID,
+      totalCount: entries.length,
+      entries,
+      ...(filter ? { entityTypes: Array.from(filter) } : {}),
+    }),
+  );
+}
+
+function handleServerFetchRequest(ws, client, payload) {
+  const refs = Array.isArray(payload.entityRefs) ? payload.entityRefs : [];
+  const refKey = (r) => `${r.entityType}::${r.entityId}`;
+  const wanted = new Set(refs.map(refKey));
+  const startIndex = Number(payload.cursor) > 0 ? Number(payload.cursor) : 0;
+
+  const envelopes = [];
+  let matched = 0;
+  let lastScannedIndex = startIndex;
+
+  for (let i = startIndex; i < store.entities.length; i++) {
+    lastScannedIndex = i;
+    const item = store.entities[i];
+    if (item.userId !== client.userId) continue;
+    const key = refKey(item);
+    if (!wanted.has(key)) continue;
+    envelopes.push({
+      entityType: item.entityType,
+      entityId: item.entityId,
+      schemaVersion: item.schemaVersion ?? 1,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+      deletedAt: item.deletedAt ?? null,
+      payload: item.payload,
+    });
+    matched += 1;
+    if (envelopes.length >= PEER_FETCH_BATCH_LIMIT) break;
+  }
+
+  const hasMore =
+    lastScannedIndex < store.entities.length - 1 && matched < wanted.size;
+
+  ws.send(
+    JSON.stringify({
+      type: "peer:fetch-response",
+      requestId: payload.requestId,
+      sourceDeviceId: SERVER_PEER_ID,
+      envelopes,
+      hasMore,
+      nextCursor: hasMore ? lastScannedIndex + 1 : null,
+    }),
+  );
+}
+
+function handleServerApplyRequest(ws, client, payload) {
+  const envelopes = Array.isArray(payload.envelopes) ? payload.envelopes : [];
+  let applied = 0;
+  const rejected = [];
+
+  for (const envelope of envelopes) {
+    if (
+      !envelope ||
+      typeof envelope.entityType !== "string" ||
+      typeof envelope.entityId !== "string" ||
+      typeof envelope.updatedAt !== "number"
+    ) {
+      rejected.push({
+        entityType: envelope?.entityType ?? "?",
+        entityId: envelope?.entityId ?? "?",
+        reason: "invalid-envelope",
+      });
+      continue;
+    }
+
+    const before = findEntityIndex(client.userId, envelope.entityType, envelope.entityId);
+    upsertEntity({
+      userId: client.userId,
+      entity: {
+        entityType: envelope.entityType,
+        entityId: envelope.entityId,
+        schemaVersion: envelope.schemaVersion ?? 1,
+        createdAt: envelope.createdAt,
+        updatedAt: envelope.updatedAt,
+        deletedAt: envelope.deletedAt ?? null,
+        payload: envelope.payload,
+      },
+    });
+    // upsertEntity 不回傳結果，簡單檢查：若 updatedAt 被接受就算 applied
+    const after = findEntityIndex(client.userId, envelope.entityType, envelope.entityId);
+    if (after !== -1) {
+      applied += 1;
+    } else {
+      rejected.push({
+        entityType: envelope.entityType,
+        entityId: envelope.entityId,
+        reason: "upsert-failed",
+      });
+    }
+    // 避免 linter 警告
+    void before;
+  }
+
+  if (applied > 0) {
+    markUserSyncUpdated(client.userId, client.deviceId, Date.now());
+    saveStore();
+  }
+
+  ws.send(
+    JSON.stringify({
+      type: "peer:apply-response",
+      requestId: payload.requestId,
+      sourceDeviceId: SERVER_PEER_ID,
+      applied,
+      rejected,
+      serverTime: Date.now(),
+    }),
+  );
+}
+
+function findEntityIndex(userId, entityType, entityId) {
+  for (let i = 0; i < store.entities.length; i++) {
+    const item = store.entities[i];
+    if (
+      item.userId === userId &&
+      item.entityType === entityType &&
+      item.entityId === entityId
+    ) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 function notifySyncUpdate({ userId, sourceDeviceId, serverTime, latestUpdateAt, accepted }) {
   if (!accepted) {
     return;
   }
 
+  const onlineDeviceIds = getOnlineDeviceIdsForUser(userId);
   const message = JSON.stringify({
     type: "sync:update",
     userId,
@@ -864,6 +1271,8 @@ function notifySyncUpdate({ userId, sourceDeviceId, serverTime, latestUpdateAt, 
     serverTime,
     latestUpdateAt: latestUpdateAt ?? null,
     accepted,
+    onlineDeviceIds,
+    onlineCount: onlineDeviceIds.length,
   });
 
   for (const [ws, client] of syncSocketClients.entries()) {
@@ -873,6 +1282,36 @@ function notifySyncUpdate({ userId, sourceDeviceId, serverTime, latestUpdateAt, 
     if (client.deviceId === sourceDeviceId) {
       continue;
     }
+    if (ws.readyState !== ws.OPEN) {
+      syncSocketClients.delete(ws);
+      continue;
+    }
+    ws.send(message);
+  }
+}
+
+function getOnlineDeviceIdsForUser(userId) {
+  const ids = new Set();
+  for (const client of syncSocketClients.values()) {
+    if (client.userId === userId && client.ws.readyState === client.ws.OPEN) {
+      ids.add(client.deviceId);
+    }
+  }
+  return Array.from(ids);
+}
+
+function broadcastPresence(userId) {
+  const onlineDeviceIds = getOnlineDeviceIdsForUser(userId);
+  const message = JSON.stringify({
+    type: "presence:update",
+    userId,
+    serverTime: Date.now(),
+    onlineDeviceIds,
+    onlineCount: onlineDeviceIds.length,
+  });
+
+  for (const [ws, client] of syncSocketClients.entries()) {
+    if (client.userId !== userId) continue;
     if (ws.readyState !== ws.OPEN) {
       syncSocketClients.delete(ws);
       continue;

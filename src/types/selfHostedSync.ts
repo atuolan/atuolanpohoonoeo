@@ -121,6 +121,7 @@ export interface SelfHostedSyncMetaDeviceInfo {
   deviceId: string;
   lastPushAt: number | null;
   lastSeenAt: number | null;
+  online?: boolean;
 }
 
 export interface SelfHostedSyncMetaResponse {
@@ -129,12 +130,147 @@ export interface SelfHostedSyncMetaResponse {
   userId: string;
   latestUpdateAt: number | null;
   devices: SelfHostedSyncMetaDeviceInfo[];
+  onlineDeviceIds?: string[];
+  onlineCount?: number;
+  entityCounts?: SelfHostedSyncEntityCountMap;
+  totalActiveItems?: number;
+  totalDeletedItems?: number;
 }
 
 export interface SelfHostedSyncHealthResponse {
   ok: boolean;
   serverTime?: number;
   version?: string;
+}
+
+// ===== Peer-to-peer sync protocol =====
+
+export const PEER_SYNC_SERVER_ID = "@server";
+
+export interface PeerManifestEntry {
+  entityType: SelfHostedSyncEntityType;
+  entityId: string;
+  updatedAt: number;
+  deletedAt: number | null;
+}
+
+export interface PeerEntityRef {
+  entityType: SelfHostedSyncEntityType;
+  entityId: string;
+}
+
+export interface PeerManifestRequest {
+  type: "peer:manifest-request";
+  requestId: string;
+  targetDeviceId: string;
+  /**
+   * 若指定，則只回傳這些類別的 entry。用來在 hash 比對後
+   * 只請求有差異的類別的完整 manifest，省流量。
+   */
+  entityTypes?: SelfHostedSyncEntityType[];
+}
+
+export interface PeerManifestResponse {
+  type: "peer:manifest-response";
+  requestId: string;
+  sourceDeviceId: string;
+  entries: PeerManifestEntry[];
+  totalCount: number;
+  /** 回覆所屬的類別範圍（echo，方便呼叫端確認） */
+  entityTypes?: SelfHostedSyncEntityType[];
+}
+
+/** 每個 entityType 的完整快照指紋（hash 僅依 entityId + updatedAt + deletedAt 組成） */
+export interface PeerBucketHash {
+  entityType: SelfHostedSyncEntityType;
+  count: number;
+  hash: string;
+}
+
+export interface PeerHashRequest {
+  type: "peer:hash-request";
+  requestId: string;
+  targetDeviceId: string;
+}
+
+export interface PeerHashResponse {
+  type: "peer:hash-response";
+  requestId: string;
+  sourceDeviceId: string;
+  buckets: PeerBucketHash[];
+  /** 全域總和指紋（可在 buckets 都比對完之後再用來做健全性檢查） */
+  rootHash: string;
+  totalCount: number;
+}
+
+export interface PeerFetchRequest {
+  type: "peer:fetch-request";
+  requestId: string;
+  targetDeviceId: string;
+  entityRefs: PeerEntityRef[];
+  cursor?: number | null;
+}
+
+export interface PeerFetchResponse {
+  type: "peer:fetch-response";
+  requestId: string;
+  sourceDeviceId: string;
+  envelopes: SelfHostedSyncEntityEnvelope[];
+  hasMore: boolean;
+  nextCursor: number | null;
+}
+
+export interface PeerApplyRequest {
+  type: "peer:apply-request";
+  requestId: string;
+  targetDeviceId: string;
+  envelopes: SelfHostedSyncEntityEnvelope[];
+  mode?: "overwrite";
+}
+
+export interface PeerApplyResponse {
+  type: "peer:apply-response";
+  requestId: string;
+  sourceDeviceId: string;
+  applied: number;
+  rejected: Array<{
+    entityType: SelfHostedSyncEntityType | string;
+    entityId: string;
+    reason: string;
+  }>;
+  serverTime?: number;
+}
+
+export interface PeerErrorMessage {
+  type: "peer:error";
+  requestId: string | null;
+  reason: string;
+  detail?: unknown;
+}
+
+export type PeerMessage =
+  | PeerHashRequest
+  | PeerHashResponse
+  | PeerManifestRequest
+  | PeerManifestResponse
+  | PeerFetchRequest
+  | PeerFetchResponse
+  | PeerApplyRequest
+  | PeerApplyResponse
+  | PeerErrorMessage;
+
+export interface PeerSyncDiff {
+  // 本機獨有（對方沒有）
+  onlyLocal: PeerManifestEntry[];
+  // 對方獨有（本機沒有）
+  onlyRemote: PeerManifestEntry[];
+  // 兩側都有但 updatedAt 不同
+  conflicts: Array<{
+    local: PeerManifestEntry;
+    remote: PeerManifestEntry;
+  }>;
+  // 兩側完全一致（數量統計用）
+  identicalCount: number;
 }
 
 export type SelfHostedSyncEntityCountMap = Partial<

@@ -83,7 +83,25 @@ export class SelfHostedSyncService {
   private static readonly GUARD_RATIO_THRESHOLD = 0.4;
   private static readonly COOPERATIVE_YIELD_EVERY = 25;
 
-  async pushAll(): Promise<SelfHostedSyncRunResult> {
+  /**
+   * 供 PeerSyncManager 使用：收集本機所有同步實體的 envelope。
+   * 與 pushAll 用的是同一條路徑，但永遠走完整（不做增量裁切）。
+   */
+  async collectAllEnvelopesForManifest(): Promise<SelfHostedSyncEntityEnvelope[]> {
+    return this.collectPushItems({ incremental: false });
+  }
+
+  /**
+   * 供 PeerSyncManager 使用：把 peer 傳來的 envelope 寫入本機 IndexedDB。
+   */
+  async applyPullResponsePublic(
+    response: SelfHostedSyncPullResponse,
+    options?: SelfHostedPullOptions,
+  ): Promise<number> {
+    return this.applyPullResponse(response, options);
+  }
+
+  async pushAll(options?: { forceFull?: boolean }): Promise<SelfHostedSyncRunResult> {
     const syncStore = useSelfHostedSyncStore();
     await syncStore.loadSettings();
     await syncStore.ensureDeviceId();
@@ -92,7 +110,26 @@ export class SelfHostedSyncService {
 
     try {
       const client = syncStore.createClient();
-      const items = await this.collectPushItems();
+      // 首次推送（cutoff 為 null）或呼叫方顯式指定 forceFull 時走全量；
+      // 其餘時候以 lastPushedServerTime 為界做增量推送，避免每次推整個資料庫。
+      const forceFull = !!options?.forceFull || syncStore.lastPushedServerTime === null;
+      const items = await this.collectPushItems({ incremental: !forceFull });
+      recordRuntimeDiagnostic(
+        "event",
+        "selfHostedSync.push",
+        forceFull ? "Full push collected" : "Incremental push collected",
+        {
+          itemCount: items.length,
+          cutoff: syncStore.lastPushedServerTime ?? null,
+          forceFull,
+        },
+      );
+
+      const maxUpdatedAt = items.reduce(
+        (acc, item) => (item.updatedAt > acc ? item.updatedAt : acc),
+        0,
+      );
+
       const response = await client.pushItems({
         deviceId: syncStore.deviceId,
         items,
@@ -106,6 +143,10 @@ export class SelfHostedSyncService {
         await syncStore.clearGuardAlert();
       }
       clearPendingSelfHostedLocalChanges();
+      await syncStore.markPushCompleted(
+        response.serverTime,
+        maxUpdatedAt > 0 ? maxUpdatedAt : null,
+      );
       await syncStore.markSyncSucceeded(response.serverTime);
       return {
         pushed: response.accepted,
@@ -240,20 +281,38 @@ export class SelfHostedSyncService {
         previousLastSyncAt,
       });
       const client = syncStore.createClient();
-      const localItems = await this.collectPushItems();
-      // 守衛檢查只需計算數量，限制 100 筆避免全量拉取佔滿記憶體
-      const remoteResponse = await client.pullItems(undefined, 100);
-      const localSnapshot = this.buildContentSnapshot(localItems);
-      const remoteSnapshot = this.buildContentSnapshot(remoteResponse.items);
-      const guardAlert = this.detectGuardAlert(localSnapshot, remoteSnapshot);
+      // 使用 /sync/meta 的服務端真實計數做守衛比較，避免 pull(limit=100) 的取樣
+      // 導致遠端資料量被嚴重低估而誤報。
+      const meta = await client.getMeta();
+      const remoteCounts = meta.entityCounts ?? null;
+      const remoteTotal = meta.totalActiveItems ?? null;
 
-      if (guardAlert) {
-        await this.handleGuardAlert(guardAlert);
-        throw new Error(guardAlert.message);
-      }
+      if (remoteCounts !== null && remoteTotal !== null) {
+        const localItems = await this.collectPushItems({ incremental: false });
+        const localSnapshot = this.buildContentSnapshot(localItems);
+        const remoteSnapshot: SelfHostedSyncContentSnapshot = {
+          totalActiveItems: remoteTotal,
+          countsByEntityType: { ...remoteCounts },
+          capturedAt: meta.serverTime ?? Date.now(),
+        };
+        const guardAlert = this.detectGuardAlert(localSnapshot, remoteSnapshot);
 
-      if (syncStore.hasGuardAlert) {
-        await syncStore.clearGuardAlert();
+        if (guardAlert) {
+          await this.handleGuardAlert(guardAlert);
+          throw new Error(guardAlert.message);
+        }
+
+        if (syncStore.hasGuardAlert) {
+          await syncStore.clearGuardAlert();
+        }
+      } else {
+        // 舊版伺服器不回傳計數：跳過守衛以免誤報
+        recordRuntimeDiagnostic(
+          "event",
+          "selfHostedSync.syncNow",
+          "Guard check skipped: server did not provide entity counts",
+          { latestUpdateAt: meta.latestUpdateAt ?? null },
+        );
       }
     }
 
@@ -372,7 +431,9 @@ export class SelfHostedSyncService {
     notificationStore.notifySystem("同步已暫停", alert.message);
   }
 
-  private async collectPushItems(): Promise<SelfHostedSyncEntityEnvelope[]> {
+  private async collectPushItems(
+    options?: { incremental?: boolean },
+  ): Promise<SelfHostedSyncEntityEnvelope[]> {
     const items: SelfHostedSyncEntityEnvelope[] = [];
 
     const settings = await loadSettingsData();
@@ -466,6 +527,17 @@ export class SelfHostedSyncService {
       });
     }
 
+    if (options?.incremental) {
+      const syncStore = useSelfHostedSyncStore();
+      // envelope.updatedAt 使用本機時鐘，因此 cutoff 必須也是本機時鐘域的值：
+      // 取上一次推送的所有 envelope 裡最大的 updatedAt。
+      // 若兩個字段都未設（首次推送）就不應走增量分支，但 defensive 再檢查一次。
+      const cutoff =
+        syncStore.lastPushedUpdatedAt ?? syncStore.lastPushedServerTime;
+      if (typeof cutoff === "number" && cutoff > 0) {
+        return items.filter((item) => item.updatedAt > cutoff);
+      }
+    }
     return items;
   }
 

@@ -29,6 +29,13 @@ import { useAIGenerationStore } from "@/stores/aiGeneration";
 import { useAuthStore } from "@/stores/auth";
 import { useGitHubBackupStore } from "@/stores/githubBackup";
 import { useSelfHostedSyncStore } from "@/stores/selfHostedSync";
+import {
+  dispatchPeerMessage,
+  isPeerMessageType,
+  setPeerSyncSocket,
+} from "@/services/peerSyncSocket";
+import { startPeerSyncResponder } from "@/services/PeerSyncResponder";
+import type { PeerMessage } from "@/types/selfHostedSync";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 // 頁面組件
 import {
@@ -146,6 +153,8 @@ const SELF_HOSTED_WS_RECONNECT_BASE_MS = 3000;
 const SELF_HOSTED_WS_RECONNECT_MAX_MS = 30000;
 let selfHostedSyncSocket: WebSocket | null = null;
 let selfHostedSyncSocketToken: string | null = null;
+let lastRefreshedAccessToken: string | null = null;
+let lastSessionRefreshAt = 0;
 let selfHostedSyncSocketReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let selfHostedSyncSocketReconnectAttempt = 0;
 let selfHostedSyncRemotePullInFlight: Promise<void> | null = null;
@@ -160,6 +169,8 @@ type SelfHostedSyncSocketMessage = {
   latestUpdateAt?: number | null;
   accepted?: number;
   message?: string;
+  onlineDeviceIds?: string[] | null;
+  onlineCount?: number | null;
 };
 
 function recordSelfHostedSyncDiagnostic(message: string, details?: unknown) {
@@ -199,6 +210,7 @@ function closeSelfHostedSyncSocket() {
     selfHostedSyncSocket.close();
     selfHostedSyncSocket = null;
   }
+  setPeerSyncSocket(null);
   selfHostedSyncSocketToken = null;
 }
 
@@ -335,6 +347,43 @@ async function ensureSelfHostedSyncSocketConnected() {
     return;
   }
 
+  // 已經連線且 token 沒變 → 直接返回（放在最前面，避免 refresh 觸發的二次呼叫進入 refresh 分支）
+  if (
+    selfHostedSyncSocket &&
+    selfHostedSyncSocket.readyState !== WebSocket.CLOSED &&
+    selfHostedSyncSocketToken === selfHostedSyncStore.accessToken
+  ) {
+    return;
+  }
+
+  // 開 WS 前主動刷新 access token，避免舊/過期 token 導致 WS 握手 401。
+  // 去重策略：60 秒內最多刷一次；已刷過的 token 直接信任。
+  try {
+    const now = Date.now();
+    const currentToken = selfHostedSyncStore.accessToken;
+    const recentlyRefreshed = now - lastSessionRefreshAt < 60_000;
+    const alreadyRefreshedThisToken =
+      !!currentToken && currentToken === lastRefreshedAccessToken;
+    if (
+      selfHostedSyncStore.refreshToken &&
+      currentToken &&
+      !alreadyRefreshedThisToken &&
+      !recentlyRefreshed
+    ) {
+      console.log("[App] 開 WS 前先刷新 access token");
+      lastSessionRefreshAt = now;
+      await selfHostedSyncStore.refreshSession();
+      // 把刷新後得到的新 token 記下來，避免 watcher 二次觸發時再刷一次
+      lastRefreshedAccessToken = selfHostedSyncStore.accessToken;
+    } else if (!alreadyRefreshedThisToken && currentToken) {
+      // token 還在冷卻內但之前沒記過 → 先標記成已知，防止 watcher 亂觸發
+      lastRefreshedAccessToken = currentToken;
+    }
+  } catch (error) {
+    console.warn("[App] 刷新 session 失敗，嘗試用現有 token 開 WS", error);
+  }
+
+  // 再檢查一次（refresh 後 accessToken 可能已變動）
   if (
     selfHostedSyncSocket &&
     selfHostedSyncSocket.readyState !== WebSocket.CLOSED &&
@@ -364,6 +413,9 @@ async function ensureSelfHostedSyncSocketConnected() {
     socket.onopen = () => {
       selfHostedSyncSocketReconnectAttempt = 0;
       clearSelfHostedSyncSocketReconnectTimer();
+      setPeerSyncSocket(socket);
+      startPeerSyncResponder();
+      console.log("[App] Peer sync WebSocket connected, responder started");
       recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket opened", {
         reconnectAttempt: selfHostedSyncSocketReconnectAttempt,
       });
@@ -380,7 +432,17 @@ async function ensureSelfHostedSyncSocketConnected() {
         updateRuntimeSessionStage("selfHostedSync:websocket message received", {
           rawLength: String(event.data).length,
         });
-        const payload = JSON.parse(String(event.data)) as SelfHostedSyncSocketMessage;
+        const rawPayload = JSON.parse(String(event.data));
+        if (isPeerMessageType(rawPayload?.type)) {
+          console.log("[App] ← peer message received:", {
+            type: rawPayload.type,
+            requestId: rawPayload.requestId ?? null,
+            sourceDeviceId: rawPayload.sourceDeviceId ?? null,
+          });
+          dispatchPeerMessage(rawPayload as PeerMessage);
+          return;
+        }
+        const payload = rawPayload as SelfHostedSyncSocketMessage;
         recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket message parsed", {
           type: payload.type ?? "unknown",
           latestUpdateAt: payload.latestUpdateAt ?? null,
@@ -393,14 +455,44 @@ async function ensureSelfHostedSyncSocketConnected() {
           recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket ready", {
             serverTime: payload.serverTime ?? null,
             deviceId: payload.deviceId ?? null,
+            onlineCount: payload.onlineCount ?? null,
           });
           updateRuntimeSessionStage("selfHostedSync:websocket ready received", {
             serverTime: payload.serverTime ?? null,
             deviceId: payload.deviceId ?? null,
           });
+          if (Array.isArray(payload.onlineDeviceIds)) {
+            selfHostedSyncStore.updatePresence({
+              onlineDeviceIds: payload.onlineDeviceIds,
+              onlineCount: payload.onlineCount ?? null,
+              serverTime: payload.serverTime ?? null,
+            });
+          }
+          // Seed device list + lastPush info so the UI shows it immediately
+          // after reconnecting without waiting for a manual 刷新狀態.
+          void selfHostedSyncStore.refreshMeta().catch(() => {});
+          return;
+        }
+        if (payload.type === "presence:update") {
+          recordSelfHostedSyncDiagnostic("Self-hosted sync presence update", {
+            onlineCount: payload.onlineCount ?? null,
+            serverTime: payload.serverTime ?? null,
+          });
+          selfHostedSyncStore.updatePresence({
+            onlineDeviceIds: payload.onlineDeviceIds ?? null,
+            onlineCount: payload.onlineCount ?? null,
+            serverTime: payload.serverTime ?? null,
+          });
           return;
         }
         if (payload.type === "sync:update") {
+          if (Array.isArray(payload.onlineDeviceIds)) {
+            selfHostedSyncStore.updatePresence({
+              onlineDeviceIds: payload.onlineDeviceIds,
+              onlineCount: payload.onlineCount ?? null,
+              serverTime: payload.serverTime ?? null,
+            });
+          }
           recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket update received", {
             latestUpdateAt: payload.latestUpdateAt ?? null,
             sourceDeviceId: payload.sourceDeviceId ?? payload.deviceId ?? null,
@@ -428,11 +520,11 @@ async function ensureSelfHostedSyncSocketConnected() {
             );
             return;
           }
-          updateRuntimeSessionStage("selfHostedSync:websocket update triggering pull", {
+          // P2P 手動模式：忽略來自其他裝置的 sync:update，不再自動拉取
+          recordSelfHostedSyncDiagnostic("Ignoring sync:update in P2P manual mode", {
             latestUpdateAt: payload.latestUpdateAt ?? null,
             sourceDeviceId: eventSourceDeviceId,
           });
-          void pullSelfHostedRemoteUpdates(payload.latestUpdateAt ?? null);
         }
       } catch (error) {
         recordSelfHostedSyncFailure("WebSocket message parse failed", error, {
@@ -470,35 +562,10 @@ async function ensureSelfHostedSyncSocketConnected() {
 }
 
 async function tryForegroundPullSelfHostedSync() {
-  if (typeof document !== "undefined" && document.visibilityState !== "visible") {
-    return;
-  }
-
-  const now = Date.now();
-  if (
-    now - lastSelfHostedForegroundPullAt < SELF_HOSTED_FOREGROUND_PULL_COOLDOWN_MS
-  ) {
-    return;
-  }
-
-  try {
-    await selfHostedSyncStore.loadSettings();
-    if (!selfHostedSyncStore.enabled || !selfHostedSyncStore.isAuthenticated) {
-      return;
-    }
-
-    lastSelfHostedForegroundPullAt = now;
-    await pullSelfHostedRemoteUpdates();
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      recordSelfHostedSyncDiagnostic("Foreground pull aborted (expected, likely page hidden)", {
-        visibilityState: typeof document !== "undefined" ? document.visibilityState : "unknown",
-      });
-      return;
-    }
-    recordSelfHostedSyncFailure("Foreground self-hosted sync pull failed", error);
-    console.warn("[App] 前景自架同步拉取失敗:", error);
-  }
+  // P2P 手動模式：已關閉所有自動拉取。保留函式簽名供既有呼叫點使用。
+  void lastSelfHostedForegroundPullAt;
+  void SELF_HOSTED_FOREGROUND_PULL_COOLDOWN_MS;
+  void pullSelfHostedRemoteUpdates;
 }
 
 function handleSelfHostedSyncForegroundResume() {

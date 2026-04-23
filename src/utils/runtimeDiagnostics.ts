@@ -234,6 +234,19 @@ export function finalizeRuntimeSession(stage = "shutdown"): void {
   });
 }
 
+// 從 hidden 回到 visible 時呼叫：把 session 重新標為「進行中」，
+// 以便真正崩潰時仍能被偵測；但不覆寫原本有意義的 lastStage。
+export function resumeRuntimeSession(stage?: string): void {
+  const currentState = readSessionState();
+  if (!currentState) return;
+  writeSessionState({
+    ...currentState,
+    endedGracefully: false,
+    lastHeartbeatAt: Date.now(),
+    lastStage: stage ?? currentState.lastStage,
+  });
+}
+
 export function consumePendingRuntimeDiagnostics(): RuntimeDiagnosticEntry[] {
   const storage = getStorage();
   if (!storage) return [];

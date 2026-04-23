@@ -89,12 +89,12 @@ export async function clearDeletedEntitiesByType(
 }
 
 export function scheduleSelfHostedAutoSync(): void {
+  // Phase 1（P2P 手動同步）：關閉自動推送，只保留 dirty 標記供未來 UI 徽章使用。
+  // 保留函式本體與呼叫點，避免同時改動上百處業務程式碼。
   if (autoSyncSuppressionDepth > 0) {
     return;
   }
-
   hasPendingLocalChanges = true;
-  queueScheduledSelfHostedAutoSync();
 }
 
 export async function runScheduledSelfHostedAutoSync(): Promise<void> {

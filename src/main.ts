@@ -15,6 +15,7 @@ import {
   recordReloadReason,
   recordRuntimeDiagnostic,
   recordRuntimeError,
+  resumeRuntimeSession,
   updateRuntimeSessionStage,
 } from "./utils/runtimeDiagnostics";
 import { CodeProtection } from "./utils/codeProtection";
@@ -340,8 +341,16 @@ function installGlobalRuntimeDiagnostics(): void {
     recordRuntimeDiagnostic("event", "window.beforeunload", "Page is unloading");
   });
 
+  // 依 Page Lifecycle API：頁面進入 hidden 後，系統/瀏覽器隨時可能凍結或回收此頁，
+  // 且多數行動裝置不會再觸發 pagehide/beforeunload。因此把「hidden」視為優雅檢查點，
+  // 避免把正常的背景回收誤判成「上次 session 異常中斷」。
+  // 回到 visible 時再把 session 標回「進行中」，真正崩潰時仍能捕捉。
   document.addEventListener("visibilitychange", () => {
-    heartbeatRuntimeSession(`visibility:${document.visibilityState}`);
+    if (document.visibilityState === "hidden") {
+      finalizeRuntimeSession("visibility:hidden");
+    } else {
+      resumeRuntimeSession("visibility:visible");
+    }
   });
 
   window.addEventListener("pagehide", () => {

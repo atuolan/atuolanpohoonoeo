@@ -205,6 +205,111 @@ const selfHostedSyncGuardDetails = computed(() => {
   };
 });
 
+function shortDeviceId(id: string | null | undefined): string {
+  if (!id) return "—";
+  if (id.length <= 12) return id;
+  return `${id.slice(0, 6)}…${id.slice(-4)}`;
+}
+
+const selfHostedSyncPresenceSummary = computed(() => {
+  const total = selfHostedSyncStore.devices.length;
+  const online = selfHostedSyncStore.onlineCount;
+  if (total === 0 && online === 0) {
+    return "尚未取得";
+  }
+  return `${online} 在線 / 共 ${total} 台`;
+});
+
+const selfHostedSyncDeviceList = computed(() => {
+  const currentId = selfHostedSyncStore.deviceId;
+  const items: Array<{
+    deviceId: string;
+    online: boolean;
+    lastPushAt: number | null;
+    lastSeenAt: number | null;
+    isCurrent: boolean;
+    isServer: boolean;
+    canPeerSync: boolean;
+    shortId: string;
+    lastPushText: string;
+    lastSeenText: string;
+  }> = [];
+
+  // 本機裝置（不可對自己 P2P 同步）
+  const selfDevice = selfHostedSyncStore.devices.find(
+    (d) => d.deviceId === currentId,
+  );
+  if (selfDevice) {
+    items.push({
+      deviceId: selfDevice.deviceId,
+      online: !!selfDevice.online,
+      lastPushAt: selfDevice.lastPushAt ?? null,
+      lastSeenAt: selfDevice.lastSeenAt ?? null,
+      isCurrent: true,
+      isServer: false,
+      canPeerSync: false,
+      shortId: shortDeviceId(selfDevice.deviceId),
+      lastPushText: selfDevice.lastPushAt
+        ? formatDateTime(selfDevice.lastPushAt)
+        : "尚未推送",
+      lastSeenText: selfDevice.lastSeenAt
+        ? formatDateTime(selfDevice.lastSeenAt)
+        : "—",
+    });
+  }
+
+  // 其他可同步 peer（含 @server）
+  for (const p of selfHostedSyncStore.peerList) {
+    items.push({
+      deviceId: p.deviceId,
+      online: p.online,
+      lastPushAt: p.lastPushAt,
+      lastSeenAt: p.lastSeenAt,
+      isCurrent: false,
+      isServer: p.isServer,
+      canPeerSync: p.online,
+      shortId: p.isServer ? "@server" : shortDeviceId(p.deviceId),
+      lastPushText: p.lastPushAt ? formatDateTime(p.lastPushAt) : "尚未推送",
+      lastSeenText: p.lastSeenAt ? formatDateTime(p.lastSeenAt) : "—",
+    });
+  }
+
+  return items;
+});
+
+async function handlePeerSync(
+  direction: "push" | "pull",
+  targetDeviceId: string,
+) {
+  selfHostedSyncActionStatus.value = "running";
+  try {
+    const outcome = await selfHostedSyncStore.peerSync(direction, targetDeviceId);
+    if (outcome.conflictsAborted) {
+      alert(
+        `偵測到 ${outcome.conflictCount} 筆同時被兩端修改的資料。\nPhase 1 尚未提供衝突解決對話框，本次同步已中止。\n請先調整資料後再試。`,
+      );
+      return;
+    }
+    const label = direction === "push" ? "推送" : "拉取";
+    const target =
+      targetDeviceId === "@server"
+        ? "伺服器快取"
+        : `裝置 ${shortDeviceId(targetDeviceId)}`;
+    if (outcome.applied === 0) {
+      alert(`已與 ${target} 同步（無需傳輸新資料）。`);
+    } else {
+      alert(`已向 ${target} ${label} ${outcome.applied} 筆資料。`);
+    }
+  } catch (error) {
+    console.error("[SettingsScreen] peerSync 失敗:", error);
+    alert(
+      `同步失敗：${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    selfHostedSyncActionStatus.value = "idle";
+  }
+}
+
 const selfHostedSyncStatusText = computed(() => {
   if (selfHostedSyncStore.syncStatus === "syncing") {
     return "同步中…";
@@ -372,6 +477,13 @@ async function handleSelfHostedRefreshStatus() {
   selfHostedSyncActionStatus.value = "running";
   try {
     await selfHostedSyncStore.refreshStatus();
+    if (selfHostedSyncStore.isAuthenticated) {
+      try {
+        await selfHostedSyncStore.refreshMeta();
+      } catch (metaError) {
+        console.warn("[SettingsScreen] Self-hosted sync refreshMeta 失敗:", metaError);
+      }
+    }
   } catch (error) {
     console.error("[SettingsScreen] Self-hosted sync 狀態刷新失敗:", error);
   } finally {
@@ -379,7 +491,7 @@ async function handleSelfHostedRefreshStatus() {
   }
 }
 
-async function handleSelfHostedPushNow() {
+async function handleSelfHostedPushNow(options?: { forceFull?: boolean }) {
   if (selfHostedSyncStore.guardAlert) {
     const confirmed = confirm(
       `${selfHostedSyncStore.guardAlert.message}\n\n若你確認是遠端資料出了問題，才繼續把本機資料推回遠端。`,
@@ -389,14 +501,27 @@ async function handleSelfHostedPushNow() {
     }
   }
 
+  if (options?.forceFull) {
+    const confirmed = confirm(
+      "強制全量推送會把本機所有同步資料重新上傳（可能耗費較多時間與流量），通常只在首次同步或懷疑遠端資料異常時需要。確定繼續嗎？",
+    );
+    if (!confirmed) {
+      return;
+    }
+  }
+
   selfHostedSyncActionStatus.value = "running";
   try {
-    await selfHostedSyncStore.pushNow();
+    await selfHostedSyncStore.pushNow(options);
   } catch (error) {
     console.error("[SettingsScreen] Self-hosted sync push 失敗:", error);
   } finally {
     selfHostedSyncActionStatus.value = "idle";
   }
+}
+
+async function handleSelfHostedForceFullPush() {
+  await handleSelfHostedPushNow({ forceFull: true });
 }
 
 async function handleSelfHostedPullNow() {
@@ -5595,7 +5720,7 @@ function useClonedVoice(voiceId: string) {
               <button
                 class="push-permission-btn"
                 :disabled="!selfHostedSyncCanOperate"
-                @click="handleSelfHostedPushNow"
+                @click="handleSelfHostedPushNow()"
               >
                 Push
               </button>
@@ -5612,6 +5737,16 @@ function useClonedVoice(voiceId: string) {
                 @click="handleSelfHostedSyncNow"
               >
                 手動同步
+              </button>
+              <button
+                class="push-permission-btn test"
+                :disabled="!selfHostedSyncCanOperate"
+                :title="selfHostedSyncStore.lastPushedServerTime
+                  ? `距上次完整推送 ${formatDateTime(selfHostedSyncStore.lastPushedServerTime)}`
+                  : '尚未做過推送'"
+                @click="handleSelfHostedForceFullPush"
+              >
+                強制全量推送
               </button>
             </div>
 
@@ -5647,7 +5782,7 @@ function useClonedVoice(voiceId: string) {
                 <button
                   class="push-permission-btn test"
                   :disabled="!selfHostedSyncCanOperate"
-                  @click="handleSelfHostedPushNow"
+                  @click="handleSelfHostedPushNow()"
                 >
                   確認推送本機到遠端
                 </button>
@@ -5679,6 +5814,91 @@ function useClonedVoice(voiceId: string) {
               </div>
               <div>Device ID：{{ selfHostedSyncStore.deviceId || "尚未建立" }}</div>
               <div v-if="selfHostedSyncStore.userId">User ID：{{ selfHostedSyncStore.userId }}</div>
+            </div>
+
+            <!-- 同步裝置狀態：顯示同帳號其他客戶端線上狀況與最新推送 -->
+            <div
+              v-if="selfHostedSyncStore.isAuthenticated"
+              class="self-hosted-presence"
+            >
+              <div class="self-hosted-presence-header">
+                <span class="self-hosted-presence-title">同步裝置狀態</span>
+                <span class="self-hosted-presence-summary">
+                  {{ selfHostedSyncPresenceSummary }}
+                </span>
+              </div>
+              <div
+                v-if="selfHostedSyncStore.lastRemoteUpdateAt"
+                class="self-hosted-presence-line"
+              >
+                遠端最新推送：{{ formatDateTime(selfHostedSyncStore.lastRemoteUpdateAt) }}
+              </div>
+              <div
+                v-if="selfHostedSyncStore.lastPresenceAt"
+                class="self-hosted-presence-line"
+              >
+                在線資訊更新：{{ formatDateTime(selfHostedSyncStore.lastPresenceAt) }}
+              </div>
+              <div v-if="selfHostedSyncDeviceList.length === 0" class="self-hosted-presence-empty">
+                尚未取得裝置清單，請點擊「刷新狀態」。
+              </div>
+              <ul v-else class="self-hosted-device-list">
+                <li
+                  v-for="device in selfHostedSyncDeviceList"
+                  :key="device.deviceId"
+                  class="self-hosted-device-item"
+                  :class="{ 'is-online': device.online, 'is-current': device.isCurrent }"
+                >
+                  <div class="self-hosted-device-header">
+                    <span
+                      class="self-hosted-device-dot"
+                      :class="{ online: device.online }"
+                      :title="device.online ? '在線' : '離線'"
+                    />
+                    <span class="self-hosted-device-name">
+                      <template v-if="device.isServer">☁️ 伺服器快取</template>
+                      <template v-else-if="device.isCurrent">本機裝置</template>
+                      <template v-else>其他裝置</template>
+                      <span class="self-hosted-device-id">（{{ device.shortId }}）</span>
+                    </span>
+                    <span
+                      class="self-hosted-device-status"
+                      :class="{ online: device.online }"
+                    >
+                      {{ device.online ? "在線" : "離線" }}
+                    </span>
+                  </div>
+                  <div class="self-hosted-device-meta">
+                    <span>最近推送：{{ device.lastPushText }}</span>
+                    <span>最後連線：{{ device.lastSeenText }}</span>
+                  </div>
+                  <div
+                    v-if="device.canPeerSync"
+                    class="self-hosted-device-actions"
+                  >
+                    <button
+                      class="peer-sync-btn push"
+                      :disabled="selfHostedSyncActionStatus === 'running'"
+                      @click="handlePeerSync('push', device.deviceId)"
+                    >
+                      推送到此
+                    </button>
+                    <button
+                      class="peer-sync-btn pull"
+                      :disabled="selfHostedSyncActionStatus === 'running'"
+                      @click="handlePeerSync('pull', device.deviceId)"
+                    >
+                      從此拉取
+                    </button>
+                  </div>
+                  <div
+                    v-else-if="!device.isCurrent && !device.online"
+                    class="self-hosted-device-offline-hint"
+                  >
+                    此裝置離線，暫時無法同步
+                  </div>
+                </li>
+              </ul>
             </div>
           </div>
         </div>
@@ -7531,6 +7751,185 @@ function useClonedVoice(voiceId: string) {
   font-size: 12px;
   color: var(--color-text-secondary, #999);
   line-height: 1.6;
+}
+
+.self-hosted-presence {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--color-surface-secondary, rgba(120, 170, 220, 0.08));
+  border: 1px solid var(--color-border, rgba(120, 170, 220, 0.18));
+  font-size: 12px;
+  color: var(--color-text-secondary, #999);
+  line-height: 1.6;
+}
+
+.self-hosted-presence-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.self-hosted-presence-title {
+  font-weight: 700;
+  color: var(--color-text-primary, #333);
+  font-size: 13px;
+}
+
+.self-hosted-presence-summary {
+  font-variant-numeric: tabular-nums;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(120, 170, 220, 0.18);
+  color: var(--color-text-primary, #333);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.self-hosted-presence-line {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.self-hosted-presence-empty {
+  margin-top: 6px;
+  opacity: 0.8;
+}
+
+.self-hosted-device-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.self-hosted-device-item {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.self-hosted-device-item.is-current {
+  background: rgba(120, 170, 220, 0.16);
+  border-color: rgba(120, 170, 220, 0.35);
+}
+
+.self-hosted-device-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-primary, #333);
+}
+
+.self-hosted-device-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #bbb;
+  flex-shrink: 0;
+}
+
+.self-hosted-device-dot.online {
+  background: #4caf50;
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+}
+
+.self-hosted-device-name {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.self-hosted-device-id {
+  font-weight: 400;
+  opacity: 0.75;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.self-hosted-device-status {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--color-text-secondary, #999);
+}
+
+.self-hosted-device-status.online {
+  background: rgba(76, 175, 80, 0.18);
+  color: #2e7d32;
+}
+
+.self-hosted-device-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 11px;
+  color: var(--color-text-secondary, #999);
+  padding-left: 16px;
+}
+
+.self-hosted-device-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-left: 16px;
+  margin-top: 8px;
+}
+
+.peer-sync-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.peer-sync-btn.push {
+  background: rgba(83, 144, 255, 0.18);
+  color: #5390ff;
+  border-color: rgba(83, 144, 255, 0.4);
+}
+
+.peer-sync-btn.push:hover:not(:disabled) {
+  background: rgba(83, 144, 255, 0.3);
+}
+
+.peer-sync-btn.pull {
+  background: rgba(255, 180, 70, 0.18);
+  color: #ffb446;
+  border-color: rgba(255, 180, 70, 0.4);
+}
+
+.peer-sync-btn.pull:hover:not(:disabled) {
+  background: rgba(255, 180, 70, 0.3);
+}
+
+.peer-sync-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.self-hosted-device-offline-hint {
+  padding-left: 16px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--color-text-secondary, #888);
+  font-style: italic;
 }
 
 .incoming-ringtone-card {

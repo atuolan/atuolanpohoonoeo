@@ -2860,6 +2860,45 @@ function openSearchBar() {
   _openSearchBar();
 }
 
+// 搜尋結果清單項目（含片段文字、角色、時間）
+const searchResultItems = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase();
+  if (!query || searchResults.value.length === 0) return [];
+  const msgMap = new Map(messages.value.map((m) => [m.id, m]));
+  const SNIPPET_PAD = 20;
+  return searchResults.value.map((id) => {
+    const msg = msgMap.get(id);
+    if (!msg) return { id, role: "ai", roleLabel: "?", timeLabel: "", before: "", match: "", after: "", snippet: "" };
+    const content = msg.content || "";
+    const lower = content.toLowerCase();
+    const pos = lower.indexOf(query);
+    const before = pos > 0 ? content.slice(Math.max(0, pos - SNIPPET_PAD), pos) : "";
+    const match = content.slice(pos, pos + query.length);
+    const afterStart = pos + query.length;
+    const after = content.slice(afterStart, afterStart + SNIPPET_PAD);
+    const role = msg.role as "user" | "ai" | "system";
+    const roleLabel = role === "user" ? "我" : role === "ai" ? "對方" : "系統";
+    const ts = msg.timestamp ? new Date(msg.timestamp) : null;
+    const timeLabel = ts
+      ? `${ts.getMonth() + 1}/${ts.getDate()} ${String(ts.getHours()).padStart(2, "0")}:${String(ts.getMinutes()).padStart(2, "0")}`
+      : "";
+    return { id, role, roleLabel, timeLabel, before: before ? (pos > SNIPPET_PAD ? "…" + before : before) : "", match, after: after + (afterStart + SNIPPET_PAD < content.length ? "…" : "") };
+  });
+});
+
+// 點擊結果清單某筆：設定為當前項目並跳轉
+function onSearchResultClick(idx: number) {
+  currentSearchIndex.value = idx;
+  scrollToMessage(searchResults.value[idx]);
+}
+
+// Enter 鍵：若有結果就跳到當前選中筆（預設第 0 筆）
+function onSearchEnter() {
+  if (searchResults.value.length === 0) return;
+  const idx = Math.max(0, currentSearchIndex.value);
+  onSearchResultClick(idx);
+}
+
 // 發送訊息（只添加用戶訊息，不觸發 AI）
 function addUserMessage() {
   const text = inputText.value.trim();
@@ -5665,6 +5704,13 @@ async function triggerAIResponse(options?: {
     // 完成全局生成狀態
     if (currentChatId.value) {
       aiGenerationStore.completeGeneration(currentChatId.value, "chat");
+    }
+
+    // 安全網：無論走哪個分支（含 needsParsing=false 的純文字回覆），
+    // 都要將流式窗口標記為完成，避免底部一直顯示「停止」按鈕。
+    // setComplete 是冪等的，重複調用無副作用。
+    if (useStreamingWindowEnabled.value) {
+      streamingWindow.setComplete();
     }
 
     // 安全網：非主動中止時，如果流式窗口已有內容，確保最後一條 AI 訊息也有內容
@@ -8903,31 +8949,11 @@ onUnmounted(() => {
             class="search-bar-input"
             placeholder="搜索聊天記錄..."
             @input="performSearch"
-            @keydown.enter="goToNextSearchResult"
+            @keydown.enter="onSearchEnter"
             @keydown.escape="closeSearchBar"
           />
           <div v-if="searchResults.length > 0" class="search-results-count">
-            {{ currentSearchIndex + 1 }} / {{ searchResults.length }}
-          </div>
-          <div class="search-nav-buttons">
-            <button
-              class="search-nav-btn"
-              :disabled="searchResults.length === 0"
-              @click="goToPrevSearchResult"
-            >
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z" />
-              </svg>
-            </button>
-            <button
-              class="search-nav-btn"
-              :disabled="searchResults.length === 0"
-              @click="goToNextSearchResult"
-            >
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
-              </svg>
-            </button>
+            {{ searchResults.length }} 筆
           </div>
           <button class="search-close-btn" @click="closeSearchBar">
             <svg viewBox="0 0 24 24" fill="currentColor">
@@ -8936,6 +8962,39 @@ onUnmounted(() => {
               />
             </svg>
           </button>
+        </div>
+
+        <!-- 搜尋結果清單：點擊才跳轉，避免打字過程中擴張 DOM 造成崩潰 -->
+        <div
+          v-if="searchQuery.trim() && searchResults.length > 0"
+          class="search-results-panel"
+        >
+          <div
+            v-for="(item, idx) in searchResultItems"
+            :key="item.id"
+            class="search-result-item"
+            :class="{ active: idx === currentSearchIndex }"
+            @click="onSearchResultClick(idx)"
+          >
+            <div class="search-result-meta">
+              <span
+                class="search-result-role"
+                :class="`role-${item.role}`"
+              >{{ item.roleLabel }}</span>
+              <span class="search-result-time">{{ item.timeLabel }}</span>
+            </div>
+            <div class="search-result-snippet">
+              <span v-if="item.before">{{ item.before }}</span>
+              <mark>{{ item.match }}</mark>
+              <span v-if="item.after">{{ item.after }}</span>
+            </div>
+          </div>
+        </div>
+        <div
+          v-else-if="searchQuery.trim() && searchResults.length === 0"
+          class="search-results-panel search-results-empty"
+        >
+          沒有符合的訊息
         </div>
       </div>
     </Transition>
@@ -12845,6 +12904,91 @@ onUnmounted(() => {
   &:hover {
     background: var(--color-surface-hover);
     color: var(--color-text);
+  }
+}
+
+// 搜索結果清單面板
+.search-results-panel {
+  max-height: 260px;
+  overflow-y: auto;
+  border-top: 1px solid var(--color-border);
+  margin-top: 6px;
+
+  &.search-results-empty {
+    padding: 12px 16px;
+    font-size: 13px;
+    color: var(--color-text-muted);
+    text-align: center;
+  }
+}
+
+.search-result-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  border-bottom: 1px solid var(--color-border);
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &:hover,
+  &.active {
+    background: var(--color-surface-hover);
+  }
+}
+
+.search-result-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.search-result-role {
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+
+  &.role-user {
+    background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+    color: var(--color-primary);
+  }
+
+  &.role-ai {
+    background: color-mix(in srgb, var(--color-success, #4caf50) 15%, transparent);
+    color: var(--color-success, #4caf50);
+  }
+
+  &.role-system {
+    background: color-mix(in srgb, var(--color-text-muted) 15%, transparent);
+    color: var(--color-text-muted);
+  }
+}
+
+.search-result-time {
+  font-size: 11px;
+}
+
+.search-result-snippet {
+  font-size: 13px;
+  color: var(--color-text);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  mark {
+    background: color-mix(in srgb, var(--color-primary) 30%, transparent);
+    color: var(--color-primary);
+    border-radius: 2px;
+    padding: 0 1px;
+    font-weight: 600;
   }
 }
 
