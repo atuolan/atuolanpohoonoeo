@@ -5,5 +5,9 @@ services:
       - "3004:3004"
     environment:
       PORT: 3004
+      # 重要：正式部署請修改以下兩個值
+      ADMIN_PASSWORD: "change-me-admin-password"
+      # SYNC_TOKEN_SECRET: "your-random-secret-here"  # 不填則自動生成（重啟後不變，因為有 volume 持久化）
     volumes:
       - ./data:/app/data
+    restart: unless-stopped

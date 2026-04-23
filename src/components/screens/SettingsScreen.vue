@@ -444,6 +444,46 @@ async function handleSelfHostedRegister() {
   }
 }
 
+/** 智慧開始同步：自動判斷登入或註冊 */
+async function handleSelfHostedStartSync() {
+  if (!selfHostedSyncStore.serverUrl.trim()) {
+    alert("請先輸入伺服器 URL");
+    return;
+  }
+  if (!selfHostedSyncStore.username.trim()) {
+    alert("請先輸入同步帳號");
+    return;
+  }
+  if (!selfHostedSyncPassword.value.trim()) {
+    alert("請先輸入同步密碼");
+    return;
+  }
+
+  selfHostedSyncActionStatus.value = "running";
+  try {
+    const outcome = await selfHostedSyncStore.loginOrRegister(
+      selfHostedSyncPassword.value,
+    );
+    selfHostedSyncPassword.value = "";
+    // 登入/註冊成功後自動抓一次裝置狀態
+    try {
+      await selfHostedSyncStore.refreshMeta();
+    } catch (metaError) {
+      console.warn("[SettingsScreen] loginOrRegister 後 refreshMeta 失敗:", metaError);
+    }
+    if (outcome === "register") {
+      alert("已為你建立同步帳號並登入。此帳號密碼請記好，其他裝置需用同樣的帳號密碼才能同步。");
+    }
+  } catch (error) {
+    console.error("[SettingsScreen] Self-hosted sync 開始同步失敗:", error);
+    alert(
+      `登入失敗：${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    selfHostedSyncActionStatus.value = "idle";
+  }
+}
+
 async function handleSelfHostedLogin() {
   if (!selfHostedSyncPassword.value.trim()) {
     alert("請先輸入同步密碼");
@@ -525,6 +565,8 @@ async function handleSelfHostedForceFullPush() {
 }
 
 async function handleSelfHostedPullNow() {
+  // 只在使用者明確透過 Guard 警示選擇「從遠端拉回覆蓋」時才強制覆蓋
+  let forceOverwrite = false;
   if (selfHostedSyncStore.guardAlert) {
     const confirmed = confirm(
       `${selfHostedSyncStore.guardAlert.message}\n\n若你確認是本機資料遺失，才繼續從遠端拉回並覆蓋本機同步資料。`,
@@ -532,11 +574,12 @@ async function handleSelfHostedPullNow() {
     if (!confirmed) {
       return;
     }
+    forceOverwrite = true;
   }
 
   selfHostedSyncActionStatus.value = "running";
   try {
-    await selfHostedSyncStore.pullNow();
+    await selfHostedSyncStore.pullNow(undefined, { forceOverwrite });
   } catch (error) {
     console.error("[SettingsScreen] Self-hosted sync pull 失敗:", error);
   } finally {
@@ -5610,12 +5653,12 @@ function useClonedVoice(voiceId: string) {
         </div>
 
         <!-- 自架同步 -->
-        <div class="push-notification-card cloud-push-card" style="margin-top: 16px">
+        <div class="push-notification-card self-hosted-sync-card" style="margin-top: 16px">
           <div class="toggle-item highlight">
             <div class="toggle-content">
               <span class="toggle-label">自架同步</span>
               <span class="toggle-desc">
-                使用你自己的同步伺服器，同步聊天與偏好設定
+                把聊天與設定同步到你自己的伺服器
               </span>
             </div>
             <label class="toggle-item" style="padding: 0; border: none">
@@ -5630,276 +5673,278 @@ function useClonedVoice(voiceId: string) {
           </div>
 
           <div class="cloud-push-options">
-            <div class="setting-group">
-              <label class="setting-label">伺服器 URL</label>
-              <input
-                :value="selfHostedSyncStore.serverUrl"
-                type="url"
-                class="soft-input"
-                placeholder="https://your-sync-server.example.com"
-                @input="selfHostedSyncStore.setServerUrl(($event.target as HTMLInputElement).value); void selfHostedSyncStore.saveSettings()"
-              />
-              <div class="cloud-push-actions" style="margin-top: 8px">
+            <!-- ═══ 狀態 A：尚未登入（首次使用 / 登出後） ═══ -->
+            <template v-if="!selfHostedSyncStore.isAuthenticated">
+              <div class="setting-group">
+                <label class="setting-label">伺服器 URL</label>
+                <input
+                  :value="selfHostedSyncStore.serverUrl"
+                  type="url"
+                  class="soft-input"
+                  placeholder="https://your-sync-server.example.com"
+                  @input="selfHostedSyncStore.setServerUrl(($event.target as HTMLInputElement).value); void selfHostedSyncStore.saveSettings()"
+                />
                 <button
-                  class="push-permission-btn test"
+                  class="shs-link-btn"
                   :disabled="selfHostedSyncActionStatus === 'running'"
                   @click="handleSelfHostedUseLocalServer"
                 >
                   使用本機伺服器（127.0.0.1:3004）
                 </button>
               </div>
-            </div>
 
-            <div class="setting-group">
-              <label class="setting-label">同步帳號</label>
-              <input
-                :value="selfHostedSyncStore.username"
-                type="text"
-                class="soft-input"
-                placeholder="輸入你的同步帳號"
-                @input="selfHostedSyncStore.setUsername(($event.target as HTMLInputElement).value)"
-                @change="selfHostedSyncStore.saveSettings()"
-              />
-            </div>
+              <div class="setting-group">
+                <label class="setting-label">同步帳號</label>
+                <input
+                  :value="selfHostedSyncStore.username"
+                  type="text"
+                  class="soft-input"
+                  placeholder="輸入任意代號，首次會自動建立"
+                  @input="selfHostedSyncStore.setUsername(($event.target as HTMLInputElement).value)"
+                  @change="selfHostedSyncStore.saveSettings()"
+                />
+              </div>
 
-            <div class="setting-group">
-              <label class="setting-label">同步密碼</label>
-              <input
-                v-model="selfHostedSyncPassword"
-                type="password"
-                class="soft-input"
-                placeholder="只保留在目前頁面，不會寫入本地設定"
-              />
-            </div>
+              <div class="setting-group">
+                <label class="setting-label">同步密碼</label>
+                <input
+                  v-model="selfHostedSyncPassword"
+                  type="password"
+                  class="soft-input"
+                  placeholder="請記住此密碼，其他裝置需用同樣密碼登入"
+                  @keydown.enter="handleSelfHostedStartSync"
+                />
+              </div>
 
-            <div class="cloud-push-actions" style="flex-wrap: wrap">
               <button
-                class="push-permission-btn"
+                class="shs-primary-btn"
+                :disabled="!selfHostedSyncCanAuth"
+                @click="handleSelfHostedStartSync"
+              >
+                {{ selfHostedSyncActionStatus === "running" ? "處理中…" : "開始同步" }}
+              </button>
+              <p class="shs-hint">
+                首次使用會自動建立帳號；已有帳號會自動登入。
+              </p>
+
+              <div
+                v-if="selfHostedSyncStore.syncStatus === 'error' && selfHostedSyncStore.syncError"
+                class="shs-error"
+              >
+                {{ selfHostedSyncStore.syncError }}
+              </div>
+
+              <button
+                class="shs-secondary-btn"
                 :disabled="!selfHostedSyncCanTestConnection"
                 @click="handleSelfHostedTestConnection"
               >
-                {{ selfHostedSyncActionStatus === "running" ? "處理中…" : "測試連線" }}
+                測試伺服器連線
               </button>
-              <button
-                v-if="selfHostedSyncStore.isAuthenticated"
-                class="push-permission-btn test"
-                :disabled="!selfHostedSyncCanOperate"
-                @click="handleSelfHostedRefreshStatus"
-              >
-                刷新狀態
-              </button>
-              <button
-                class="push-permission-btn test"
-                :disabled="!selfHostedSyncCanAuth"
-                @click="handleSelfHostedRegister"
-              >
-                註冊
-              </button>
-              <button
-                class="push-permission-btn test"
-                :disabled="!selfHostedSyncCanAuth"
-                @click="handleSelfHostedLogin"
-              >
-                登入
-              </button>
-              <button
-                v-if="selfHostedSyncStore.isAuthenticated"
-                class="push-permission-btn test"
-                :disabled="!selfHostedSyncCanOperate"
-                @click="handleSelfHostedLogout"
-              >
-                登出
-              </button>
-            </div>
+              <div v-if="selfHostedSyncStore.lastConnectionCheckAt" class="shs-small">
+                伺服器狀態：{{ selfHostedSyncServerStatusText
+                }}<span v-if="selfHostedSyncStore.serverApiVersion">
+                  · API v{{ selfHostedSyncStore.serverApiVersion }}</span>
+              </div>
+            </template>
 
-            <div
-              v-if="selfHostedSyncStore.isAuthenticated"
-              class="cloud-push-actions"
-              style="flex-wrap: wrap"
-            >
-              <button
-                class="push-permission-btn"
-                :disabled="!selfHostedSyncCanOperate"
-                @click="handleSelfHostedPushNow()"
+            <!-- ═══ 狀態 B：已登入（日常使用） ═══ -->
+            <template v-else>
+              <!-- 狀態橫條 -->
+              <div
+                class="shs-status-banner"
+                :class="{
+                  ok: selfHostedSyncStore.syncStatus === 'success' || (selfHostedSyncStore.syncStatus === 'idle' && selfHostedSyncStore.lastSyncAt),
+                  err: selfHostedSyncStore.syncStatus === 'error',
+                  busy: selfHostedSyncStore.syncStatus === 'syncing' || selfHostedSyncStore.syncStatus === 'connecting',
+                }"
               >
-                Push
-              </button>
-              <button
-                class="push-permission-btn test"
-                :disabled="!selfHostedSyncCanOperate"
-                @click="handleSelfHostedPullNow"
+                <span class="shs-status-dot" />
+                <span class="shs-status-text">{{ selfHostedSyncStatusText }}</span>
+              </div>
+
+              <!-- Guard 警示（簡化） -->
+              <div
+                v-if="selfHostedSyncStore.guardAlert && selfHostedSyncGuardDetails"
+                class="shs-guard"
               >
-                Pull
-              </button>
+                <div class="shs-guard-title">⚠ 偵測到可能的資料異常，請選擇方向</div>
+                <div class="shs-guard-body">
+                  本機 <b>{{ selfHostedSyncGuardDetails.localTotal }}</b> 筆 ·
+                  遠端 <b>{{ selfHostedSyncGuardDetails.remoteTotal }}</b> 筆
+                </div>
+                <div class="shs-guard-actions">
+                  <button
+                    class="shs-guard-btn"
+                    :disabled="!selfHostedSyncCanOperate"
+                    @click="handleSelfHostedPushNow()"
+                  >
+                    <b>本機較新</b><br />→ 上傳到遠端
+                  </button>
+                  <button
+                    class="shs-guard-btn"
+                    :disabled="!selfHostedSyncCanOperate"
+                    @click="handleSelfHostedPullNow"
+                  >
+                    <b>遠端較新</b><br />← 下載到本機
+                  </button>
+                </div>
+              </div>
+
+              <!-- 主按鈕 -->
               <button
-                class="push-permission-btn test"
+                class="shs-primary-btn"
                 :disabled="!selfHostedSyncCanOperate || selfHostedSyncStore.hasGuardAlert"
                 @click="handleSelfHostedSyncNow"
               >
-                手動同步
+                {{ selfHostedSyncStore.syncStatus === 'syncing' ? '同步中…' : '立即同步' }}
               </button>
-              <button
-                class="push-permission-btn test"
-                :disabled="!selfHostedSyncCanOperate"
-                :title="selfHostedSyncStore.lastPushedServerTime
-                  ? `距上次完整推送 ${formatDateTime(selfHostedSyncStore.lastPushedServerTime)}`
-                  : '尚未做過推送'"
-                @click="handleSelfHostedForceFullPush"
-              >
-                強制全量推送
-              </button>
-            </div>
+              <p class="shs-hint">
+                「立即同步」= 把本機變更上傳 + 把遠端變更下載回來
+              </p>
 
-            <div
-              v-if="selfHostedSyncStore.guardAlert && selfHostedSyncGuardDetails"
-              class="cloud-push-status"
-              style="margin-top: 12px; padding: 12px; border-radius: 12px; background: rgba(255, 107, 107, 0.12); border: 1px solid rgba(255, 107, 107, 0.28)"
-            >
-              <div style="color: #ffb4b4; font-weight: 700; margin-bottom: 6px">
-                已偵測到可能的大量資料丟失，暫停自動同步
-              </div>
-              <div style="line-height: 1.5">
-                {{ selfHostedSyncStore.guardAlert.message }}
-              </div>
-              <div style="margin-top: 8px; font-size: 12px; opacity: 0.9">
-                <div>本機總量：{{ selfHostedSyncGuardDetails.localTotal }}</div>
-                <div>遠端總量：{{ selfHostedSyncGuardDetails.remoteTotal }}</div>
-                <div v-if="selfHostedSyncGuardDetails.localTopTypes">
-                  本機主要內容：{{ selfHostedSyncGuardDetails.localTopTypes }}
-                </div>
-                <div v-if="selfHostedSyncGuardDetails.remoteTopTypes">
-                  遠端主要內容：{{ selfHostedSyncGuardDetails.remoteTopTypes }}
-                </div>
-              </div>
-              <div class="cloud-push-actions" style="margin-top: 10px; flex-wrap: wrap">
-                <button
-                  class="push-permission-btn"
-                  :disabled="!selfHostedSyncCanOperate"
-                  @click="handleSelfHostedPullNow"
-                >
-                  確認從遠端拉回
-                </button>
-                <button
-                  class="push-permission-btn test"
-                  :disabled="!selfHostedSyncCanOperate"
-                  @click="handleSelfHostedPushNow()"
-                >
-                  確認推送本機到遠端
+              <!-- 身分列 -->
+              <div class="shs-identity">
+                <span>帳號：<b>{{ selfHostedSyncStore.username }}</b></span>
+                <button class="shs-inline-link" @click="handleSelfHostedLogout">
+                  登出
                 </button>
               </div>
-            </div>
 
-            <div class="cloud-push-status">
-              <span
-                v-if="selfHostedSyncStore.syncStatus === 'error'"
-                style="color: #ff6b6b"
-              >
-                {{ selfHostedSyncStatusText }}
-              </span>
-              <span v-else>
-                {{ selfHostedSyncStatusText }}
-              </span>
-            </div>
-
-            <div class="cloud-push-status" style="font-size: 11px; margin-top: 4px">
-              <div>伺服器狀態：{{ selfHostedSyncServerStatusText }}</div>
-              <div v-if="selfHostedSyncStore.serverApiVersion">
-                API 版本：{{ selfHostedSyncStore.serverApiVersion }}
-              </div>
-              <div v-if="selfHostedSyncStore.lastServerTime">
-                伺服器時間：{{ formatDateTime(selfHostedSyncStore.lastServerTime) }}
-              </div>
-              <div v-if="selfHostedSyncStore.lastConnectionCheckAt">
-                最近檢查：{{ formatDateTime(selfHostedSyncStore.lastConnectionCheckAt) }}
-              </div>
-              <div>Device ID：{{ selfHostedSyncStore.deviceId || "尚未建立" }}</div>
-              <div v-if="selfHostedSyncStore.userId">User ID：{{ selfHostedSyncStore.userId }}</div>
-            </div>
-
-            <!-- 同步裝置狀態：顯示同帳號其他客戶端線上狀況與最新推送 -->
-            <div
-              v-if="selfHostedSyncStore.isAuthenticated"
-              class="self-hosted-presence"
-            >
-              <div class="self-hosted-presence-header">
-                <span class="self-hosted-presence-title">同步裝置狀態</span>
-                <span class="self-hosted-presence-summary">
-                  {{ selfHostedSyncPresenceSummary }}
-                </span>
-              </div>
-              <div
-                v-if="selfHostedSyncStore.lastRemoteUpdateAt"
-                class="self-hosted-presence-line"
-              >
-                遠端最新推送：{{ formatDateTime(selfHostedSyncStore.lastRemoteUpdateAt) }}
-              </div>
-              <div
-                v-if="selfHostedSyncStore.lastPresenceAt"
-                class="self-hosted-presence-line"
-              >
-                在線資訊更新：{{ formatDateTime(selfHostedSyncStore.lastPresenceAt) }}
-              </div>
-              <div v-if="selfHostedSyncDeviceList.length === 0" class="self-hosted-presence-empty">
-                尚未取得裝置清單，請點擊「刷新狀態」。
-              </div>
-              <ul v-else class="self-hosted-device-list">
-                <li
-                  v-for="device in selfHostedSyncDeviceList"
-                  :key="device.deviceId"
-                  class="self-hosted-device-item"
-                  :class="{ 'is-online': device.online, 'is-current': device.isCurrent }"
-                >
-                  <div class="self-hosted-device-header">
-                    <span
-                      class="self-hosted-device-dot"
-                      :class="{ online: device.online }"
-                      :title="device.online ? '在線' : '離線'"
-                    />
-                    <span class="self-hosted-device-name">
-                      <template v-if="device.isServer">☁️ 伺服器快取</template>
-                      <template v-else-if="device.isCurrent">本機裝置</template>
-                      <template v-else>其他裝置</template>
-                      <span class="self-hosted-device-id">（{{ device.shortId }}）</span>
-                    </span>
-                    <span
-                      class="self-hosted-device-status"
-                      :class="{ online: device.online }"
-                    >
-                      {{ device.online ? "在線" : "離線" }}
-                    </span>
-                  </div>
-                  <div class="self-hosted-device-meta">
-                    <span>最近推送：{{ device.lastPushText }}</span>
-                    <span>最後連線：{{ device.lastSeenText }}</span>
-                  </div>
-                  <div
-                    v-if="device.canPeerSync"
-                    class="self-hosted-device-actions"
-                  >
+              <!-- 進階操作（折疊） -->
+              <details class="shs-collapse">
+                <summary>進階操作</summary>
+                <div class="shs-collapse-body">
+                  <div class="shs-btn-row">
                     <button
-                      class="peer-sync-btn push"
-                      :disabled="selfHostedSyncActionStatus === 'running'"
-                      @click="handlePeerSync('push', device.deviceId)"
+                      class="shs-chip-btn"
+                      :disabled="!selfHostedSyncCanOperate"
+                      @click="handleSelfHostedPushNow()"
                     >
-                      推送到此
+                      ↑ 只上傳
                     </button>
                     <button
-                      class="peer-sync-btn pull"
-                      :disabled="selfHostedSyncActionStatus === 'running'"
-                      @click="handlePeerSync('pull', device.deviceId)"
+                      class="shs-chip-btn"
+                      :disabled="!selfHostedSyncCanOperate"
+                      @click="handleSelfHostedPullNow"
                     >
-                      從此拉取
+                      ↓ 只下載
                     </button>
                   </div>
-                  <div
-                    v-else-if="!device.isCurrent && !device.online"
-                    class="self-hosted-device-offline-hint"
-                  >
-                    此裝置離線，暫時無法同步
+                  <div class="shs-btn-row">
+                    <button
+                      class="shs-chip-btn"
+                      :disabled="!selfHostedSyncCanOperate"
+                      :title="selfHostedSyncStore.lastPushedServerTime
+                        ? `距上次完整上傳 ${formatDateTime(selfHostedSyncStore.lastPushedServerTime)}`
+                        : '尚未做過完整上傳'"
+                      @click="handleSelfHostedForceFullPush"
+                    >
+                      ↑↑ 強制完整上傳
+                    </button>
+                    <button
+                      class="shs-chip-btn"
+                      :disabled="selfHostedSyncActionStatus === 'running'"
+                      @click="handleSelfHostedRefreshStatus"
+                    >
+                      刷新狀態
+                    </button>
                   </div>
-                </li>
-              </ul>
-            </div>
+                  <p class="shs-hint">
+                    「完整上傳」會重新上傳所有本機資料，通常只在首次或懷疑遠端資料異常時需要。
+                  </p>
+                </div>
+              </details>
+
+              <!-- 跨裝置直連（折疊） -->
+              <details class="shs-collapse">
+                <summary>
+                  <span>跨裝置直連</span>
+                  <span class="shs-summary-badge">{{ selfHostedSyncPresenceSummary }}</span>
+                </summary>
+                <div class="shs-collapse-body">
+                  <p class="shs-hint">
+                    讓兩台裝置不經伺服器快取直接對傳。適合處理單一大檔或需要即時同步的場景。
+                  </p>
+                  <div
+                    v-if="selfHostedSyncStore.lastRemoteUpdateAt"
+                    class="shs-small"
+                  >
+                    遠端最新變更：{{ formatDateTime(selfHostedSyncStore.lastRemoteUpdateAt) }}
+                  </div>
+                  <div v-if="selfHostedSyncDeviceList.length === 0" class="shs-hint">
+                    尚未取得裝置清單，請先點擊「刷新狀態」。
+                  </div>
+                  <ul v-else class="self-hosted-device-list">
+                    <li
+                      v-for="device in selfHostedSyncDeviceList"
+                      :key="device.deviceId"
+                      class="self-hosted-device-item"
+                      :class="{ 'is-online': device.online, 'is-current': device.isCurrent }"
+                    >
+                      <div class="self-hosted-device-header">
+                        <span
+                          class="self-hosted-device-dot"
+                          :class="{ online: device.online }"
+                          :title="device.online ? '在線' : '離線'"
+                        />
+                        <span class="self-hosted-device-name">
+                          <template v-if="device.isServer">☁️ 伺服器快取</template>
+                          <template v-else-if="device.isCurrent">本機裝置</template>
+                          <template v-else>其他裝置</template>
+                          <span class="self-hosted-device-id">（{{ device.shortId }}）</span>
+                        </span>
+                      </div>
+                      <div class="self-hosted-device-meta">
+                        <span>最近上傳：{{ device.lastPushText }}</span>
+                      </div>
+                      <div v-if="device.canPeerSync" class="self-hosted-device-actions">
+                        <button
+                          class="shs-chip-btn"
+                          :disabled="selfHostedSyncActionStatus === 'running'"
+                          @click="handlePeerSync('push', device.deviceId)"
+                        >
+                          → 上傳到這台
+                        </button>
+                        <button
+                          class="shs-chip-btn"
+                          :disabled="selfHostedSyncActionStatus === 'running'"
+                          @click="handlePeerSync('pull', device.deviceId)"
+                        >
+                          ← 從這台下載
+                        </button>
+                      </div>
+                      <div
+                        v-else-if="!device.isCurrent && !device.online"
+                        class="self-hosted-device-offline-hint"
+                      >
+                        此裝置離線，暫時無法同步
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+              </details>
+
+              <!-- 連線資訊（折疊） -->
+              <details class="shs-collapse">
+                <summary>連線資訊</summary>
+                <div class="shs-collapse-body shs-info-block">
+                  <div>伺服器：{{ selfHostedSyncStore.serverUrl }}</div>
+                  <div>伺服器狀態：{{ selfHostedSyncServerStatusText }}</div>
+                  <div v-if="selfHostedSyncStore.serverApiVersion">
+                    API 版本：{{ selfHostedSyncStore.serverApiVersion }}
+                  </div>
+                  <div v-if="selfHostedSyncStore.lastServerTime">
+                    伺服器時間：{{ formatDateTime(selfHostedSyncStore.lastServerTime) }}
+                  </div>
+                  <div v-if="selfHostedSyncStore.lastConnectionCheckAt">
+                    最近檢查：{{ formatDateTime(selfHostedSyncStore.lastConnectionCheckAt) }}
+                  </div>
+                  <div>Device ID：{{ selfHostedSyncStore.deviceId || "尚未建立" }}</div>
+                  <div v-if="selfHostedSyncStore.userId">User ID：{{ selfHostedSyncStore.userId }}</div>
+                </div>
+              </details>
+            </template>
           </div>
         </div>
 
@@ -7930,6 +7975,382 @@ function useClonedVoice(voiceId: string) {
   font-size: 11px;
   color: var(--color-text-secondary, #888);
   font-style: italic;
+}
+
+// ═══════════════════════════════════════════════════════
+// 自架同步：新版 UI 樣式（shs = self-hosted-sync 命名空間）
+// ═══════════════════════════════════════════════════════
+
+// 主按鈕：「開始同步」/「立即同步」
+.shs-primary-btn {
+  width: 100%;
+  padding: 14px 16px;
+  margin-top: 4px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #7dd3a8, #5ec390);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(125, 211, 168, 0.25);
+
+  &:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(125, 211, 168, 0.35);
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+// 次按鈕：「測試連線」
+.shs-secondary-btn {
+  width: 100%;
+  padding: 10px 14px;
+  margin-top: 12px;
+  border: 1px solid var(--color-border, rgba(125, 211, 168, 0.3));
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-primary, #333);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover:not(:disabled) {
+    background: rgba(125, 211, 168, 0.08);
+    border-color: rgba(125, 211, 168, 0.5);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+// 文字連結按鈕：「使用本機伺服器」
+.shs-link-btn {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 4px 0;
+  background: transparent;
+  border: none;
+  color: var(--color-primary, #7dd3a8);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+
+  &:hover:not(:disabled) {
+    opacity: 0.75;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+// 小 chip 按鈕：進階操作、跨裝置同步
+.shs-chip-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+  border-radius: 8px;
+  background: var(--color-surface-secondary, rgba(255, 255, 255, 0.6));
+  color: var(--color-text-primary, #333);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  &:hover:not(:disabled) {
+    background: rgba(125, 211, 168, 0.1);
+    border-color: rgba(125, 211, 168, 0.4);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.shs-btn-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+// 提示文字
+.shs-hint {
+  font-size: 11px;
+  color: var(--color-text-secondary, #888);
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+
+.shs-small {
+  font-size: 11px;
+  color: var(--color-text-secondary, #888);
+  margin-top: 8px;
+}
+
+// 錯誤訊息
+.shs-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.28);
+  color: #ff6b6b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+// 狀態橫條
+.shs-status-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+
+  &.ok {
+    background: rgba(125, 211, 168, 0.12);
+    color: #2e7d5c;
+    border: 1px solid rgba(125, 211, 168, 0.3);
+
+    .shs-status-dot {
+      background: #4caf50;
+      box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+    }
+  }
+
+  &.err {
+    background: rgba(255, 107, 107, 0.1);
+    color: #c23838;
+    border: 1px solid rgba(255, 107, 107, 0.28);
+
+    .shs-status-dot {
+      background: #ff6b6b;
+    }
+  }
+
+  &.busy {
+    background: rgba(137, 207, 240, 0.12);
+    color: #2e6e9c;
+    border: 1px solid rgba(137, 207, 240, 0.3);
+
+    .shs-status-dot {
+      background: #89cff0;
+      animation: shs-pulse 1.4s ease-in-out infinite;
+    }
+  }
+
+  &:not(.ok):not(.err):not(.busy) {
+    background: rgba(0, 0, 0, 0.04);
+    color: var(--color-text-secondary, #888);
+    border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+
+    .shs-status-dot {
+      background: #bbb;
+    }
+  }
+}
+
+.shs-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.shs-status-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes shs-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+// Guard 警示（簡化版）
+.shs-guard {
+  margin-bottom: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 179, 71, 0.12);
+  border: 1px solid rgba(255, 179, 71, 0.35);
+}
+
+.shs-guard-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #b86e00;
+  margin-bottom: 6px;
+}
+
+.shs-guard-body {
+  font-size: 12px;
+  color: var(--color-text-primary, #333);
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
+.shs-guard-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.shs-guard-btn {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid rgba(255, 179, 71, 0.45);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--color-text-primary, #333);
+  font-size: 12px;
+  line-height: 1.45;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  b {
+    font-size: 13px;
+    color: #b86e00;
+  }
+
+  &:hover:not(:disabled) {
+    background: #fff;
+    border-color: #ffb347;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+// 身分列「帳號: xxx [登出]」
+.shs-identity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: var(--color-surface-secondary, rgba(0, 0, 0, 0.03));
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #666);
+
+  b {
+    color: var(--color-text-primary, #333);
+  }
+}
+
+.shs-inline-link {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.15));
+  border-radius: 6px;
+  color: var(--color-text-secondary, #888);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover {
+    background: rgba(255, 107, 107, 0.08);
+    border-color: rgba(255, 107, 107, 0.3);
+    color: #c23838;
+  }
+}
+
+// 折疊區塊
+.shs-collapse {
+  margin-top: 12px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-radius: 10px;
+  background: var(--color-surface-secondary, rgba(0, 0, 0, 0.02));
+  overflow: hidden;
+
+  summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-primary, #333);
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &::before {
+      content: "▸";
+      color: var(--color-text-secondary, #999);
+      font-size: 11px;
+      transition: transform 0.2s;
+      display: inline-block;
+      margin-right: 4px;
+    }
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.03);
+    }
+  }
+
+  &[open] summary::before {
+    transform: rotate(90deg);
+  }
+}
+
+.shs-summary-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(120, 170, 220, 0.18);
+  color: #3e6a94;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.shs-collapse-body {
+  padding: 8px 14px 14px;
+  border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.06));
+}
+
+.shs-info-block {
+  font-size: 11px;
+  color: var(--color-text-secondary, #888);
+  line-height: 1.8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-all;
 }
 
 .incoming-ringtone-card {

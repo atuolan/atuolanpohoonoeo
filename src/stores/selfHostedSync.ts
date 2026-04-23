@@ -389,6 +389,82 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     }
   }
 
+  /**
+   * 智慧登入：先嘗試 login，若帳號不存在（401）就自動 register。
+   * 若 register 回 409（帳號已存在）代表第一次 login 的 401 是密碼錯誤。
+   * @returns "login" 表示登入既有帳號；"register" 表示新建帳號
+   */
+  async function loginOrRegister(
+    password: string,
+  ): Promise<"login" | "register"> {
+    syncStatus.value = "connecting";
+    syncError.value = null;
+
+    try {
+      const normalizedUsername = username.value.trim();
+      if (!normalizedUsername) {
+        throw new Error("請先輸入同步帳號");
+      }
+      if (!password.trim()) {
+        throw new Error("請先輸入同步密碼");
+      }
+      await ensureDeviceId();
+      const client = createClient();
+
+      // 1. 先試登入
+      try {
+        const result = await client.login({
+          username: normalizedUsername,
+          password,
+          deviceId: deviceId.value,
+        });
+        accessToken.value = result.accessToken;
+        refreshToken.value = result.refreshToken;
+        userId.value = result.userId;
+        enabled.value = true;
+        syncStatus.value = "success";
+        syncError.value = null;
+        await saveSettings();
+        return "login";
+      } catch (loginError) {
+        const msg = loginError instanceof Error ? loginError.message : String(loginError);
+        // 不是 401 就直接丟出（例如網路錯誤、伺服器掛掉）
+        if (!msg.includes("(401)")) {
+          throw loginError;
+        }
+
+        // 2. 401 → 帳號不存在或密碼錯；嘗試 register
+        try {
+          const result = await client.register({
+            username: normalizedUsername,
+            password,
+            deviceId: deviceId.value,
+          });
+          accessToken.value = result.accessToken;
+          refreshToken.value = result.refreshToken;
+          userId.value = result.userId;
+          enabled.value = true;
+          syncStatus.value = "success";
+          syncError.value = null;
+          await saveSettings();
+          return "register";
+        } catch (registerError) {
+          const rMsg = registerError instanceof Error ? registerError.message : String(registerError);
+          // 409 = 帳號已存在 → 代表剛剛 login 401 的原因是「密碼錯誤」
+          if (rMsg.includes("(409)")) {
+            throw new Error("密碼錯誤：此帳號已存在，請確認密碼");
+          }
+          throw registerError;
+        }
+      }
+    } catch (error) {
+      syncStatus.value = "error";
+      syncError.value = error instanceof Error ? error.message : String(error);
+      await saveSettings();
+      throw error;
+    }
+  }
+
   async function refreshSession(): Promise<void> {
     syncStatus.value = "connecting";
     syncError.value = null;
@@ -474,12 +550,14 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     return runSyncActionWithRetry(() => syncService.pushAll(options));
   }
 
-  async function pullNow(since?: number) {
+  async function pullNow(since?: number, options?: { forceOverwrite?: boolean }) {
     await loadSettings();
     const syncService = await getSyncService();
+    // 預設不強制覆蓋：依 updatedAt 比較，保留本機較新的資料（避免 API profiles 被空/舊的 server 資料覆蓋）。
+    // 只有在 Guard 警示「確認從遠端拉回」這類明確指令時才傳 forceOverwrite=true。
     return runSyncActionWithRetry(() =>
       syncService.pullAll(since, {
-        forceOverwrite: typeof since !== "number",
+        forceOverwrite: options?.forceOverwrite === true,
       }),
     );
   }
@@ -638,6 +716,21 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
 
       await markSyncSucceeded(Date.now());
       console.log(LOG_TAG, "完成", { direction, targetDeviceId, applied });
+
+      // P2P pull 成功後，順手把新拉進來的本機資料 push 到 server，
+      // 保持 server 與其他裝置一致（best-effort，失敗不影響 peerSync 結果）。
+      if (direction === "pull" && applied > 0) {
+        void (async () => {
+          try {
+            console.log(LOG_TAG, "背景 push 到 server 以同步 server 快取");
+            const syncService = await getSyncService();
+            await runSyncActionWithRetry(() => syncService.pushAll());
+          } catch (e) {
+            console.warn(LOG_TAG, "背景 push 到 server 失敗（不影響本次 peerSync）", e);
+          }
+        })();
+      }
+
       return {
         direction,
         targetDeviceId,
@@ -742,6 +835,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     refreshStatus,
     register,
     login,
+    loginOrRegister,
     refreshSession,
     logout,
     pushNow,

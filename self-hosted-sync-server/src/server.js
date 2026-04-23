@@ -44,6 +44,8 @@ const wsServer = new WebSocketServer({
 });
 const syncSocketClients = new Map();
 
+let activeTunnel = null;
+
 const server = http.createServer(async (req, res) => {
   try {
     addCorsHeaders(res);
@@ -512,6 +514,71 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "GET" && url.pathname === "/admin/api/tunnel") {
+      requireAdminAuth(req);
+      return sendJson(res, 200, {
+        active: !!activeTunnel,
+        url: activeTunnel?.url ?? null,
+      });
+    }
+
+    if (req.method === "GET" && url.pathname === "/admin/api/tunnel/config") {
+      requireAdminAuth(req);
+      const token = store.meta.ngrokToken || null;
+      return sendJson(res, 200, {
+        hasToken: !!token,
+        tokenPreview: token ? `${token.slice(0, 6)}...${token.slice(-4)}` : null,
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/api/tunnel/config") {
+      requireAdminAuth(req);
+      const body = await readJsonBody(req);
+      const ngrokToken = typeof body.ngrokToken === "string" ? body.ngrokToken.trim() : "";
+      if (!ngrokToken) return sendError(res, 400, "ngrokToken is required");
+      store.meta.ngrokToken = ngrokToken;
+      saveStore();
+      return sendJson(res, 200, {
+        ok: true,
+        hasToken: true,
+        tokenPreview: `${ngrokToken.slice(0, 6)}...${ngrokToken.slice(-4)}`,
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/api/tunnel/start") {
+      requireAdminAuth(req);
+      if (activeTunnel) {
+        return sendJson(res, 200, { active: true, url: activeTunnel.url });
+      }
+      try {
+        const ngrok = await import("@ngrok/ngrok");
+        const authtoken = process.env.NGROK_AUTHTOKEN || store.meta.ngrokToken || "";
+        if (!authtoken) {
+          return sendError(res, 500, "請先在管理介面設定 ngrok Token");
+        }
+        const listener = await ngrok.forward({ addr: port, authtoken });
+        const tunnelUrl = listener.url();
+        activeTunnel = {
+          url: tunnelUrl,
+          close: () => listener.close(),
+        };
+        console.log(`[SelfHostedSyncServer] tunnel opened: ${tunnelUrl}`);
+        return sendJson(res, 200, { active: true, url: tunnelUrl });
+      } catch (err) {
+        return sendError(res, 500, "無法啟動隧道: " + err.message);
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/admin/api/tunnel/stop") {
+      requireAdminAuth(req);
+      if (activeTunnel) {
+        activeTunnel.close();
+        activeTunnel = null;
+        console.log("[SelfHostedSyncServer] tunnel closed");
+      }
+      return sendJson(res, 200, { active: false, url: null });
+    }
+
     return sendError(res, 404, "Not found");
   } catch (error) {
     console.error("[SelfHostedSyncServer] Request failed:", error);
@@ -756,7 +823,7 @@ function saveStore() {
 
 function addCorsHeaders(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, ngrok-skip-browser-warning");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
 }
 

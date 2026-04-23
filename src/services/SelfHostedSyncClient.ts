@@ -119,6 +119,10 @@ export class SelfHostedSyncClient {
       headers["Content-Type"] = "application/json";
     }
 
+    if (this.serverUrl.includes("ngrok")) {
+      headers["ngrok-skip-browser-warning"] = "true";
+    }
+
     if (options?.requireAuth) {
       if (!this.accessToken) {
         throw new Error("Self-hosted sync access token is missing");
@@ -135,6 +139,17 @@ export class SelfHostedSyncClient {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
+      if (
+        response.status === 511 ||
+        errorText.includes("Tunnel website ahead") ||
+        errorText.includes("localtunnel") ||
+        (errorText.includes("<html") && errorText.includes("tunnel"))
+      ) {
+        throw new Error(
+          `無法連線：偵測到 localtunnel (loca.lt) 攔截頁面（HTTP ${response.status}）。` +
+          `請先在瀏覽器中開啟隧道 URL，輸入頁面上顯示的 IP 位址通過驗證。`,
+        );
+      }
       throw new Error(
         `Self-hosted sync API error (${response.status}): ${errorText}`,
       );

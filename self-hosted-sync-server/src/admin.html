@@ -3,657 +3,562 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Aguaphone Sync Server · Admin</title>
+    <title>Aguaphone 同步伺服器</title>
     <style>
       :root {
-        color-scheme: dark;
-        --bg: #0f1115;
-        --panel: #171a21;
-        --panel-2: #1f242d;
-        --border: #2a303b;
-        --text: #e6e8ec;
-        --muted: #9aa3b2;
-        --accent: #5b8dff;
-        --accent-hover: #7aa3ff;
-        --danger: #ff6b6b;
-        --ok: #4ade80;
+        --bg: #f2faf5;
+        --card: #ffffff;
+        --border: #c6e8d2;
+        --text: #1a3022;
+        --muted: #5e7a68;
+        --accent: #27ae6e;
+        --accent-h: #1e9460;
+        --accent-light: #e8f8ef;
+        --danger: #dc2626;
+        --danger-bg: #fee2e2;
+        --ok-bg: #dcfce7;
+        --ok-text: #15803d;
+        --warn-bg: #fef3c7;
+        --warn-text: #92400e;
       }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
-        background: var(--bg);
-        color: var(--text);
-      }
-      header {
-        padding: 16px 24px;
-        border-bottom: 1px solid var(--border);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      header h1 {
-        font-size: 16px;
-        margin: 0;
-        font-weight: 600;
-      }
-      header .tag {
-        font-size: 12px;
-        color: var(--muted);
-      }
-      main {
-        padding: 24px;
-        max-width: 1100px;
-        margin: 0 auto;
-      }
-      .card {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 20px;
-        margin-bottom: 16px;
-      }
-      .card h2 {
-        font-size: 14px;
-        margin: 0 0 12px;
-        color: var(--muted);
-        font-weight: 600;
-        letter-spacing: 0.03em;
-        text-transform: uppercase;
-      }
-      label {
-        display: block;
-        font-size: 13px;
-        color: var(--muted);
-        margin-bottom: 6px;
-      }
-      input[type="password"],
-      input[type="text"] {
-        width: 100%;
-        padding: 10px 12px;
-        background: var(--panel-2);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        color: var(--text);
-        font-size: 14px;
-      }
-      input:focus {
-        outline: none;
-        border-color: var(--accent);
-      }
-      button {
-        padding: 9px 16px;
-        background: var(--accent);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: 500;
-      }
-      button:hover {
-        background: var(--accent-hover);
-      }
-      button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
-      button.ghost {
-        background: transparent;
-        border: 1px solid var(--border);
-        color: var(--text);
-      }
-      button.ghost:hover {
-        background: var(--panel-2);
-      }
-      .error {
-        color: var(--danger);
-        font-size: 13px;
-        margin-top: 10px;
-      }
-      .stats {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 12px;
-      }
-      .stat {
-        background: var(--panel-2);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 14px 16px;
-      }
-      .stat .k {
-        font-size: 12px;
-        color: var(--muted);
-      }
-      .stat .v {
-        font-size: 22px;
-        font-weight: 600;
-        margin-top: 4px;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 13px;
-      }
-      th,
-      td {
-        text-align: left;
-        padding: 8px 10px;
-        border-bottom: 1px solid var(--border);
-      }
-      th {
-        color: var(--muted);
-        font-weight: 500;
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.03em;
-      }
-      .row {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-      }
-      .muted {
-        color: var(--muted);
-      }
-      .hidden {
-        display: none !important;
-      }
-      .grid {
-        display: grid;
-        gap: 12px;
-      }
-      .grid.two {
-        grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
-      }
-      select {
-        width: 100%;
-        padding: 10px 12px;
-        background: var(--panel-2);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        color: var(--text);
-        font-size: 14px;
-      }
-      pre {
-        margin: 0;
-        white-space: pre-wrap;
-        word-break: break-word;
-        background: var(--panel-2);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 12px;
-        font-size: 12px;
-        max-height: 520px;
-        overflow: auto;
-      }
-      code {
-        font-family: "JetBrains Mono", Consolas, monospace;
-        font-size: 12px;
-        color: var(--muted);
-      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans TC", sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+
+      /* ── Header ── */
+      header { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 20px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 10; }
+      .logo { width: 32px; height: 32px; background: var(--accent); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 15px; flex-shrink: 0; }
+      .header-title { font-weight: 600; font-size: 15px; }
+      .header-sub { font-size: 12px; color: var(--muted); }
+      .header-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+      /* ── Layout ── */
+      main { max-width: 900px; margin: 0 auto; padding: 20px 16px; }
+
+      /* ── Cards ── */
+      .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 14px; }
+      .card-title { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 14px; display: flex; align-items: center; gap: 7px; }
+      .card-title .ico { font-size: 15px; }
+
+      /* ── Buttons ── */
+      .btn { display: inline-flex; align-items: center; gap: 5px; padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: background .12s, opacity .12s; white-space: nowrap; }
+      .btn-primary { background: var(--accent); color: #fff; }
+      .btn-primary:hover { background: var(--accent-h); }
+      .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+      .btn-ghost:hover { background: var(--bg); }
+      .btn-danger { background: transparent; border: 1px solid #fca5a5; color: var(--danger); }
+      .btn-danger:hover { background: var(--danger-bg); }
+      .btn:disabled { opacity: .45; cursor: not-allowed; }
+      .btn-sm { padding: 5px 10px; font-size: 12px; border-radius: 6px; }
+
+      /* ── Forms ── */
+      input, select { width: 100%; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 14px; outline: none; transition: border-color .12s, box-shadow .12s; }
+      input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(39,174,110,.15); }
+      label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 500; }
+      .form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+      .form-field { flex: 1; min-width: 130px; }
+
+      /* ── Stats ── */
+      .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+      .stat { background: var(--accent-light); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+      .stat-k { font-size: 11px; color: var(--muted); font-weight: 600; }
+      .stat-v { font-size: 26px; font-weight: 700; color: var(--accent); margin-top: 2px; line-height: 1; }
+      .stat-v.sm { font-size: 12px; color: var(--text); font-weight: 500; margin-top: 4px; }
+
+      /* ── Tables ── */
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 8px 10px; text-align: left; border-bottom: 2px solid var(--border); }
+      td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+      tr:last-child td { border-bottom: none; }
+      tbody tr:hover td { background: var(--accent-light); }
+      code { font-size: 11px; color: var(--muted); font-family: "JetBrains Mono", Consolas, monospace; background: var(--bg); padding: 2px 5px; border-radius: 4px; border: 1px solid var(--border); }
+
+      /* ── Badges ── */
+      .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+      .badge-ok { background: var(--ok-bg); color: var(--ok-text); }
+      .badge-warn { background: var(--warn-bg); color: var(--warn-text); }
+
+      /* ── Tunnel block ── */
+      .tunnel-body { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+      .tunnel-main { flex: 1; min-width: 200px; }
+      .tunnel-hint { font-size: 13px; color: var(--muted); line-height: 1.6; }
+      .tunnel-url-row { display: flex; gap: 8px; align-items: center; margin: 10px 0 6px; flex-wrap: wrap; }
+      .tunnel-url-text { font-size: 15px; font-weight: 700; color: var(--accent); word-break: break-all; }
+      .qr-wrap { flex-shrink: 0; }
+      .qr-wrap img { border-radius: 10px; border: 2px solid var(--border); display: block; }
+
+      /* ── Tabs ── */
+      .tabs { display: flex; gap: 4px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 4px; margin-bottom: 14px; }
+      .tab { flex: 1; padding: 8px 4px; text-align: center; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); transition: .12s; user-select: none; }
+      .tab.active { background: var(--accent); color: #fff; }
+      .tab-panel { display: none; }
+      .tab-panel.active { display: block; }
+
+      /* ── Messages ── */
+      .msg { font-size: 13px; padding: 8px 12px; border-radius: 8px; margin-top: 10px; }
+      .msg-ok { background: var(--ok-bg); color: var(--ok-text); }
+      .msg-err { background: var(--danger-bg); color: var(--danger); }
+
+      /* ── Login screen ── */
+      .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+      .login-card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 36px 32px; width: 100%; max-width: 360px; box-shadow: 0 4px 24px rgba(39,174,110,.08); }
+      .login-logo { width: 52px; height: 52px; background: var(--accent); border-radius: 16px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 22px; margin: 0 auto 18px; }
+      .login-title { text-align: center; font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+      .login-sub { text-align: center; font-size: 13px; color: var(--muted); margin-bottom: 24px; }
+
+      pre { white-space: pre-wrap; word-break: break-all; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 12px; font-family: "JetBrains Mono", Consolas, monospace; max-height: 360px; overflow: auto; }
+      .hidden { display: none !important; }
+
+      /* ── Setup wizard ── */
+      .setup-steps { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+      .setup-step { display: flex; align-items: flex-start; gap: 10px; }
+      .setup-step-num { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+      .setup-step-text { font-size: 13px; color: var(--text); line-height: 1.6; }
+      .setup-step-text a { color: var(--accent); font-weight: 600; }
+      .token-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--ok-bg); color: var(--ok-text); border: 1px solid #bbf7d0; border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 500; }
+      .download-note { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; background: var(--warn-bg); color: var(--warn-text); border-radius: 6px; padding: 7px 10px; }
     </style>
   </head>
   <body>
+
+  <!-- ══ LOGIN ══ -->
+  <div id="loginView" class="login-wrap">
+    <div class="login-card">
+      <div class="login-logo">A</div>
+      <div class="login-title">同步伺服器管理</div>
+      <div class="login-sub">Aguaphone Self-Hosted Sync</div>
+      <div style="margin-bottom:14px">
+        <label for="adminPassword">管理員密碼</label>
+        <input id="adminPassword" type="password" placeholder="輸入密碼…" autocomplete="current-password" />
+      </div>
+      <button class="btn btn-primary" id="loginBtn" style="width:100%;justify-content:center;padding:11px">登入</button>
+      <div id="loginError" class="msg msg-err hidden"></div>
+      <p style="margin-top:16px;font-size:12px;color:var(--muted);text-align:center">
+        密碼由 <code>ADMIN_PASSWORD</code> 環境變數設定
+      </p>
+    </div>
+  </div>
+
+  <!-- ══ DASHBOARD ══ -->
+  <div id="dashboardView" class="hidden">
     <header>
-      <h1>Aguaphone Sync Server · Admin</h1>
-      <span class="tag" id="serverTag">—</span>
+      <div class="logo">A</div>
+      <div>
+        <div class="header-title">Aguaphone 同步伺服器</div>
+        <div class="header-sub" id="serverTag">—</div>
+      </div>
+      <div class="header-right">
+        <button class="btn btn-ghost btn-sm" id="refreshBtn">↺ 刷新</button>
+        <button class="btn btn-ghost btn-sm" id="logoutBtn">登出</button>
+      </div>
     </header>
 
     <main>
-      <section id="loginView" class="card">
-        <h2>管理員登入</h2>
-        <label for="adminPassword">管理員密碼</label>
-        <input id="adminPassword" type="password" autocomplete="current-password" />
-        <div class="row" style="margin-top: 14px">
-          <button id="loginBtn">登入</button>
-          <span class="muted" style="font-size: 12px">
-            密碼由 <code>ADMIN_PASSWORD</code> 環境變數設定（預設 <code>admin</code>）
-          </span>
-        </div>
-        <div id="loginError" class="error hidden"></div>
-      </section>
 
-      <section id="dashboardView" class="hidden">
-        <div class="card">
-          <div class="row" style="justify-content: space-between">
-            <h2 style="margin: 0">概覽</h2>
-            <div class="row">
-              <button class="ghost" id="refreshBtn">刷新</button>
-              <button class="ghost" id="logoutBtn">登出</button>
+      <!-- 📡 Tunnel -->
+      <div class="card">
+        <div class="card-title"><span class="ico">📡</span>手機連線（本地隧道）</div>
+        <div class="tunnel-body">
+          <div class="tunnel-main">
+            <div id="tunnelOff">
+              <!-- Step A: No token yet -->
+              <div id="ngrokSetupGuide">
+                <div class="setup-steps">
+                  <div class="setup-step">
+                    <div class="setup-step-num">1</div>
+                    <div class="setup-step-text">前往 <a href="https://dashboard.ngrok.com/signup" target="_blank" rel="noopener">dashboard.ngrok.com</a> 免費註冊帳號</div>
+                  </div>
+                  <div class="setup-step">
+                    <div class="setup-step-num">2</div>
+                    <div class="setup-step-text">登入後在 <a href="https://dashboard.ngrok.com/get-started/your-authtoken" target="_blank" rel="noopener">Your Authtoken</a> 頁面複製你的 Token</div>
+                  </div>
+                  <div class="setup-step">
+                    <div class="setup-step-num">3</div>
+                    <div class="setup-step-text">貼到下方並儲存，之後一鍵啟動隧道</div>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <input id="ngrokTokenInput" type="password" placeholder="貼上 Authtoken（以 2... 或 4... 開頭）" style="flex:1;min-width:0" autocomplete="off" />
+                  <button class="btn btn-primary" id="saveTokenBtn">儲存</button>
+                </div>
+                <div id="saveTokenMsg" class="hidden"></div>
+              </div>
+              <!-- Step B: Token configured -->
+              <div id="ngrokReady" class="hidden">
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+                  <span class="token-badge">✓ ngrok Token 已設定 <code id="tokenPreviewText"></code></span>
+                  <button class="btn btn-ghost btn-sm" id="changeTokenBtn">變更 Token</button>
+                </div>
+                <button class="btn btn-primary" id="tunnelStartBtn">▶ 啟動隧道</button>
+                <p class="download-note" style="margin-top:10px">⬇ 首次啟動時若尚未安裝 ngrok，程式會自動下載（約 20MB），請稍候。</p>
+              </div>
+            </div>
+            <div id="tunnelOn" class="hidden">
+              <div class="tunnel-url-row">
+                <span class="tunnel-url-text" id="tunnelUrl">—</span>
+                <button class="btn btn-ghost btn-sm" id="tunnelCopyBtn">複製</button>
+                <a class="btn btn-ghost btn-sm" id="tunnelOpenBtn" href="#" target="_blank" rel="noopener">開啟</a>
+              </div>
+              <p class="tunnel-hint">在手機 Aguaphone → 設定 → 自架同步 → 伺服器網址，填入上方網址，然後注冊或登入即可。</p>
+              <button class="btn btn-danger btn-sm" id="tunnelStopBtn" style="margin-top:10px">■ 停止隧道</button>
             </div>
           </div>
-          <div class="stats" id="statsGrid" style="margin-top: 14px"></div>
-        </div>
-
-        <div class="card">
-          <h2>新建同步帳號</h2>
-          <div class="row" style="gap: 10px; flex-wrap: wrap">
-            <div style="flex: 1; min-width: 180px">
-              <label for="newUsername">帳號</label>
-              <input id="newUsername" type="text" autocomplete="off" />
-            </div>
-            <div style="flex: 1; min-width: 180px">
-              <label for="newPassword">密碼</label>
-              <input id="newPassword" type="text" autocomplete="new-password" />
-            </div>
-            <div style="align-self: flex-end">
-              <button id="createUserBtn">建立</button>
-            </div>
+          <div class="qr-wrap hidden" id="qrWrap">
+            <img id="qrImg" src="" width="148" height="148" alt="QR Code" />
           </div>
-          <div id="createUserMsg" class="error hidden"></div>
+        </div>
+        <div id="tunnelMsg" class="hidden"></div>
+      </div>
+
+      <!-- 📊 Stats -->
+      <div class="card">
+        <div class="card-title"><span class="ico">📊</span>概覽</div>
+        <div class="stats" id="statsGrid"></div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <div class="tab active" data-tab="users">👥 帳號管理</div>
+        <div class="tab" data-tab="data">🗂 同步資料</div>
+      </div>
+
+      <!-- ── Tab: Users ── -->
+      <div class="tab-panel active" id="tab-users">
+        <div class="card">
+          <div class="card-title"><span class="ico">➕</span>新建帳號</div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>帳號名稱</label>
+              <input id="newUsername" type="text" placeholder="user123" autocomplete="off" />
+            </div>
+            <div class="form-field">
+              <label>密碼</label>
+              <input id="newPassword" type="text" placeholder="設定密碼" autocomplete="new-password" />
+            </div>
+            <button class="btn btn-primary" id="createUserBtn">建立</button>
+          </div>
+          <div id="createUserMsg" class="hidden"></div>
         </div>
 
         <div class="card">
-          <h2>使用者</h2>
+          <div class="card-title"><span class="ico">👥</span>所有帳號</div>
           <table id="usersTable">
             <thead>
-              <tr>
-                <th>Username</th>
-                <th>ID</th>
-                <th>建立時間</th>
-                <th>最後更新</th>
-                <th>Refresh tokens</th>
-                <th>Entities</th>
-                <th>操作</th>
-              </tr>
+              <tr><th>帳號</th><th>資料筆數</th><th>建立時間</th><th>最後活躍</th><th>操作</th></tr>
             </thead>
             <tbody></tbody>
           </table>
         </div>
+      </div>
 
+      <!-- ── Tab: Data ── -->
+      <div class="tab-panel" id="tab-data">
         <div class="card">
-          <h2>最近同步項目</h2>
-          <table id="entitiesTable">
+          <div class="card-title"><span class="ico">🔍</span>同步資料檢查</div>
+          <div class="form-row" style="margin-bottom:14px">
+            <div class="form-field">
+              <label>篩選帳號</label>
+              <select id="entityUserFilter"><option value="">全部帳號</option></select>
+            </div>
+            <div class="form-field">
+              <label>資料類型</label>
+              <select id="entityTypeFilter"><option value="">全部類型</option></select>
+            </div>
+            <button class="btn btn-ghost" id="loadEntityInspectorBtn">載入</button>
+          </div>
+          <table id="entityInspectorTable">
             <thead>
-              <tr>
-                <th>Entity type</th>
-                <th>Entity ID</th>
-                <th>User</th>
-                <th>Device</th>
-                <th>Updated</th>
-                <th>Deleted</th>
-              </tr>
+              <tr><th>類型</th><th>ID</th><th>帳號</th><th>更新時間</th><th>狀態</th></tr>
             </thead>
             <tbody></tbody>
           </table>
-        </div>
-
-        <div class="card">
-          <div class="row" style="justify-content: space-between; align-items: flex-end; flex-wrap: wrap">
-            <h2 style="margin: 0">同步實體檢查</h2>
-            <div class="row" style="flex-wrap: wrap">
-              <div style="min-width: 180px">
-                <label for="entityUserFilter">使用者</label>
-                <select id="entityUserFilter">
-                  <option value="">全部使用者</option>
-                </select>
-              </div>
-              <div style="min-width: 180px">
-                <label for="entityTypeFilter">實體類型</label>
-                <select id="entityTypeFilter">
-                  <option value="">全部類型</option>
-                </select>
-              </div>
-              <div style="align-self: flex-end">
-                <button class="ghost" id="loadEntityInspectorBtn">載入明細</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="grid two" style="margin-top: 16px">
-            <div>
-              <table id="entityInspectorTable">
-                <thead>
-                  <tr>
-                    <th>Entity type</th>
-                    <th>Entity ID</th>
-                    <th>User</th>
-                    <th>Updated</th>
-                    <th>Deleted</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
-
-            <div class="grid">
-              <div>
-                <label>選取項目內容</label>
-                <pre id="entityPayloadViewer">請先載入明細並點選某筆實體。</pre>
-              </div>
-            </div>
+          <div style="margin-top:16px">
+            <label style="margin-bottom:8px">選取項目的完整內容</label>
+            <pre id="entityPayloadViewer">點選上方表格中的某一筆資料來查看。</pre>
           </div>
         </div>
-      </section>
+      </div>
+
     </main>
+  </div>
 
-    <script>
-      const STORAGE_KEY = "aguaphone-sync-admin-token";
-      const $ = (id) => document.getElementById(id);
+  <script>
+    const STORAGE_KEY = "aguaphone-sync-admin-token";
+    const $ = (id) => document.getElementById(id);
+    const getToken = () => localStorage.getItem(STORAGE_KEY);
 
-      async function api(path, { method = "GET", body, token } = {}) {
-        const headers = { "Content-Type": "application/json" };
-        if (token) headers.Authorization = "Bearer " + token;
-        const res = await fetch(path, {
-          method,
-          headers,
-          body: body ? JSON.stringify(body) : undefined,
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(data.error || "HTTP " + res.status);
-        }
-        return data;
-      }
+    async function api(path, { method = "GET", body, token } = {}) {
+      const headers = { "Content-Type": "application/json" };
+      if (token) headers.Authorization = "Bearer " + token;
+      const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "HTTP " + res.status);
+      return data;
+    }
 
-      function fmtTime(ts) {
-        if (!ts) return "—";
-        try {
-          return new Date(ts).toLocaleString();
-        } catch {
-          return String(ts);
-        }
-      }
+    function fmtTime(ts) {
+      if (!ts) return "—";
+      return new Date(ts).toLocaleString("zh-TW", { dateStyle: "short", timeStyle: "short" });
+    }
 
-      async function loadServerTag() {
-        try {
-          const info = await api("/");
-          $("serverTag").textContent =
-            (info.service || "sync-server") + " · v" + (info.version || "?");
-        } catch {
-          $("serverTag").textContent = "server offline";
-        }
-      }
+    function escapeHtml(s) {
+      return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
 
-      function showLogin() {
-        $("loginView").classList.remove("hidden");
-        $("dashboardView").classList.add("hidden");
-      }
+    async function loadServerTag() {
+      try {
+        const info = await api("/");
+        $("serverTag").textContent = (info.service || "sync-server") + " · v" + (info.version || "?");
+      } catch { $("serverTag").textContent = "無法連線"; }
+    }
 
-      function showDashboard() {
-        $("loginView").classList.add("hidden");
-        $("dashboardView").classList.remove("hidden");
-      }
+    // ── Login ───────────────────────────────
+    function showLogin() { $("loginView").classList.remove("hidden"); $("dashboardView").classList.add("hidden"); }
+    function showDashboard() { $("loginView").classList.add("hidden"); $("dashboardView").classList.remove("hidden"); }
 
-      let inspectedEntities = [];
-
-      async function doLogin() {
-        const btn = $("loginBtn");
-        const errEl = $("loginError");
-        errEl.classList.add("hidden");
-        btn.disabled = true;
-        try {
-          const pwd = $("adminPassword").value;
-          if (!pwd) throw new Error("請輸入管理員密碼");
-          const r = await api("/admin/login", {
-            method: "POST",
-            body: { password: pwd },
-          });
-          localStorage.setItem(STORAGE_KEY, r.adminToken);
-          $("adminPassword").value = "";
-          showDashboard();
-          await refreshOverview();
-        } catch (err) {
-          errEl.textContent = err.message || String(err);
-          errEl.classList.remove("hidden");
-        } finally {
-          btn.disabled = false;
-        }
-      }
-
-      function logout() {
-        localStorage.removeItem(STORAGE_KEY);
-        showLogin();
-      }
-
-      async function refreshOverview() {
-        const token = localStorage.getItem(STORAGE_KEY);
-        if (!token) return showLogin();
-        let data;
-        try {
-          data = await api("/admin/api/overview", { token });
-        } catch (err) {
-          if (/401|403|expired|invalid/i.test(err.message)) {
-            logout();
-            return;
-          }
-          alert("載入失敗: " + err.message);
-          return;
-        }
-
-        const stats = [
-          { k: "使用者", v: data.stats.userCount },
-          { k: "同步項目", v: data.stats.entityCount },
-          { k: "Refresh tokens", v: data.stats.refreshTokenCount },
-          { k: "Server 啟動於", v: fmtTime(data.stats.createdAt) },
-          { k: "最後寫入", v: fmtTime(data.stats.updatedAt) },
-        ];
-        $("statsGrid").innerHTML = stats
-          .map(
-            (s) =>
-              `<div class="stat"><div class="k">${s.k}</div><div class="v">${s.v}</div></div>`,
-          )
-          .join("");
-
-        const usersTbody = $("usersTable").querySelector("tbody");
-        usersTbody.innerHTML = data.users
-          .map(
-            (u) => `
-              <tr>
-                <td>${escapeHtml(u.username)}</td>
-                <td><code>${escapeHtml(u.id)}</code></td>
-                <td>${fmtTime(u.createdAt)}</td>
-                <td>${fmtTime(u.updatedAt)}</td>
-                <td>${u.refreshTokenCount}</td>
-                <td>${u.entityCount}</td>
-                <td>
-                  <button class="ghost" data-action="reset" data-id="${escapeHtml(u.id)}" data-username="${escapeHtml(u.username)}">重設密碼</button>
-                  <button class="ghost" data-action="delete" data-id="${escapeHtml(u.id)}" data-username="${escapeHtml(u.username)}">刪除</button>
-                </td>
-              </tr>
-            `,
-          )
-          .join("") || `<tr><td colspan="7" class="muted">尚無使用者</td></tr>`;
-
-        const userFilter = $("entityUserFilter");
-        userFilter.innerHTML =
-          `<option value="">全部使用者</option>` +
-          data.users
-            .map(
-              (u) => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.username)}</option>`,
-            )
-            .join("");
-
-        const entityTypes = [...new Set(data.recentEntities.map((e) => e.entityType))].sort();
-        const typeFilter = $("entityTypeFilter");
-        typeFilter.innerHTML =
-          `<option value="">全部類型</option>` +
-          entityTypes
-            .map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`)
-            .join("");
-
-        const entTbody = $("entitiesTable").querySelector("tbody");
-        entTbody.innerHTML = data.recentEntities
-          .map(
-            (e) => `
-              <tr>
-                <td>${escapeHtml(e.entityType)}</td>
-                <td><code>${escapeHtml(e.entityId)}</code></td>
-                <td>${escapeHtml(e.username || e.userId)}</td>
-                <td><code>${escapeHtml(e.deviceId || "—")}</code></td>
-                <td>${fmtTime(e.updatedAt)}</td>
-                <td>${e.deletedAt ? fmtTime(e.deletedAt) : "—"}</td>
-              </tr>
-            `,
-          )
-          .join("") || `<tr><td colspan="6" class="muted">尚無同步項目</td></tr>`;
-
-        await loadEntityInspector();
-      }
-
-      async function loadEntityInspector() {
-        const token = localStorage.getItem(STORAGE_KEY);
-        if (!token) return showLogin();
-
-        const userId = $("entityUserFilter").value;
-        const entityType = $("entityTypeFilter").value;
-        const params = new URLSearchParams({ limit: "100", offset: "0" });
-        if (userId) params.set("userId", userId);
-        if (entityType) params.set("entityType", entityType);
-
-        let data;
-        const candidates = [
-          "/admin/api/entities?" + params.toString(),
-          "/admin/entities?" + params.toString(),
-          "/api/admin/entities?" + params.toString(),
-        ];
-        let lastError = null;
-        for (const path of candidates) {
-          try {
-            data = await api(path, { token });
-            lastError = null;
-            break;
-          } catch (err) {
-            lastError = err;
-          }
-        }
-        if (!data) {
-          alert("載入實體明細失敗: " + (lastError?.message || "unknown error"));
-          return;
-        }
-
-        inspectedEntities = Array.isArray(data.items) ? data.items : [];
-        const tbody = $("entityInspectorTable").querySelector("tbody");
-        tbody.innerHTML = inspectedEntities
-          .map(
-            (entity, index) => `
-              <tr data-entity-index="${index}" style="cursor:pointer">
-                <td>${escapeHtml(entity.entityType)}</td>
-                <td><code>${escapeHtml(entity.entityId)}</code></td>
-                <td>${escapeHtml(entity.username || entity.userId)}</td>
-                <td>${fmtTime(entity.updatedAt)}</td>
-                <td>${entity.deletedAt ? fmtTime(entity.deletedAt) : "—"}</td>
-              </tr>
-            `,
-          )
-          .join("") || `<tr><td colspan="5" class="muted">沒有符合條件的實體</td></tr>`;
-
-        $("entityPayloadViewer").textContent = inspectedEntities.length
-          ? JSON.stringify(inspectedEntities[0], null, 2)
-          : "沒有符合條件的實體";
-      }
-
-      function escapeHtml(s) {
-        return String(s ?? "")
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;");
-      }
-
-      async function createUser() {
-        const btn = $("createUserBtn");
-        const msg = $("createUserMsg");
-        msg.classList.add("hidden");
-        const token = localStorage.getItem(STORAGE_KEY);
-        if (!token) return logout();
-        const username = $("newUsername").value.trim();
-        const password = $("newPassword").value;
-        if (!username || !password) {
-          msg.textContent = "帳號和密碼不可空白";
-          msg.classList.remove("hidden");
-          return;
-        }
-        btn.disabled = true;
-        try {
-          await api("/admin/api/users", {
-            method: "POST",
-            body: { username, password },
-            token,
-          });
-          $("newUsername").value = "";
-          $("newPassword").value = "";
-          await refreshOverview();
-        } catch (err) {
-          msg.textContent = err.message || String(err);
-          msg.classList.remove("hidden");
-        } finally {
-          btn.disabled = false;
-        }
-      }
-
-      async function resetUserPassword(userId, username) {
-        const pwd = prompt(`輸入「${username}」的新密碼：`);
-        if (!pwd) return;
-        const token = localStorage.getItem(STORAGE_KEY);
-        if (!token) return logout();
-        try {
-          await api("/admin/api/users/" + encodeURIComponent(userId) + "/password", {
-            method: "POST",
-            body: { password: pwd },
-            token,
-          });
-          alert("密碼已重設。該帳號的所有登入 session 已失效。");
-          await refreshOverview();
-        } catch (err) {
-          alert("重設失敗: " + err.message);
-        }
-      }
-
-      async function deleteUser(userId, username) {
-        if (!confirm(`確定要刪除「${username}」？\n這會一併刪除該帳號的同步資料與所有 refresh token。`)) return;
-        const token = localStorage.getItem(STORAGE_KEY);
-        if (!token) return logout();
-        try {
-          await api("/admin/api/users/" + encodeURIComponent(userId), {
-            method: "DELETE",
-            token,
-          });
-          await refreshOverview();
-        } catch (err) {
-          alert("刪除失敗: " + err.message);
-        }
-      }
-
-      $("loginBtn").addEventListener("click", doLogin);
-      $("adminPassword").addEventListener("keydown", (e) => {
-        if (e.key === "Enter") doLogin();
-      });
-      $("refreshBtn").addEventListener("click", refreshOverview);
-      $("logoutBtn").addEventListener("click", logout);
-      $("createUserBtn").addEventListener("click", createUser);
-      $("loadEntityInspectorBtn").addEventListener("click", loadEntityInspector);
-      $("newPassword").addEventListener("keydown", (e) => {
-        if (e.key === "Enter") createUser();
-      });
-      $("usersTable").addEventListener("click", (e) => {
-        const btn = e.target.closest("button[data-action]");
-        if (!btn) return;
-        const id = btn.getAttribute("data-id");
-        const username = btn.getAttribute("data-username");
-        if (btn.dataset.action === "reset") resetUserPassword(id, username);
-        else if (btn.dataset.action === "delete") deleteUser(id, username);
-      });
-      $("entityInspectorTable").addEventListener("click", (e) => {
-        const row = e.target.closest("tr[data-entity-index]");
-        if (!row) return;
-        const index = Number(row.getAttribute("data-entity-index"));
-        const entity = inspectedEntities[index];
-        if (!entity) return;
-        $("entityPayloadViewer").textContent = JSON.stringify(entity, null, 2);
-      });
-
-      loadServerTag();
-      if (localStorage.getItem(STORAGE_KEY)) {
+    async function doLogin() {
+      const btn = $("loginBtn"), errEl = $("loginError");
+      errEl.classList.add("hidden"); btn.disabled = true;
+      try {
+        const pwd = $("adminPassword").value;
+        if (!pwd) throw new Error("請輸入管理員密碼");
+        const r = await api("/admin/login", { method: "POST", body: { password: pwd } });
+        localStorage.setItem(STORAGE_KEY, r.adminToken);
+        $("adminPassword").value = "";
         showDashboard();
         refreshOverview();
-      } else {
-        showLogin();
+        loadTunnelStatus();
+      } catch (err) {
+        errEl.textContent = err.message; errEl.classList.remove("hidden");
+      } finally { btn.disabled = false; }
+    }
+
+    function logout() { localStorage.removeItem(STORAGE_KEY); showLogin(); }
+
+    // ── Tunnel ──────────────────────────────
+    async function loadTunnelConfig() {
+      const token = getToken(); if (!token) return;
+      try {
+        const r = await api("/admin/api/tunnel/config", { token });
+        setTokenUI(r.hasToken, r.tokenPreview);
+      } catch { setTokenUI(false, null); }
+    }
+
+    function setTokenUI(hasToken, tokenPreview) {
+      $("ngrokSetupGuide").classList.toggle("hidden", hasToken);
+      $("ngrokReady").classList.toggle("hidden", !hasToken);
+      if (hasToken && tokenPreview) $("tokenPreviewText").textContent = tokenPreview;
+    }
+
+    async function saveToken() {
+      const ngrokToken = $("ngrokTokenInput").value.trim();
+      if (!ngrokToken) return;
+      const btn = $("saveTokenBtn"), msgEl = $("saveTokenMsg");
+      btn.disabled = true; msgEl.className = "hidden";
+      try {
+        const r = await api("/admin/api/tunnel/config", { method: "POST", body: { ngrokToken }, token: getToken() });
+        $("ngrokTokenInput").value = "";
+        setTokenUI(true, r.tokenPreview);
+        msgEl.textContent = "Token 已儲存 ✓"; msgEl.className = "msg msg-ok";
+        setTimeout(() => msgEl.className = "hidden", 3000);
+      } catch (err) {
+        msgEl.textContent = "儲存失敗：" + err.message; msgEl.className = "msg msg-err";
+      } finally { btn.disabled = false; }
+    }
+
+    async function loadTunnelStatus() {
+      const token = getToken(); if (!token) return;
+      try {
+        const r = await api("/admin/api/tunnel", { token });
+        setTunnelState(r.active, r.url);
+      } catch { /* feature not available */ }
+    }
+
+    function setTunnelState(active, url) {
+      $("tunnelOff").classList.toggle("hidden", active);
+      $("tunnelOn").classList.toggle("hidden", !active);
+      $("qrWrap").classList.toggle("hidden", !active);
+      if (active && url) {
+        $("tunnelUrl").textContent = url;
+        $("tunnelOpenBtn").href = url;
+        $("qrImg").src = "https://api.qrserver.com/v1/create-qr-code/?size=148x148&data=" + encodeURIComponent(url);
       }
-    </script>
+    }
+
+    async function tunnelStart() {
+      const btn = $("tunnelStartBtn"), msgEl = $("tunnelMsg");
+      btn.disabled = true;
+      btn.textContent = "連線中…（首次可能需下載 ngrok，請稍候）";
+      msgEl.className = "hidden";
+      try {
+        const r = await api("/admin/api/tunnel/start", { method: "POST", token: getToken() });
+        setTunnelState(true, r.url);
+      } catch (err) {
+        msgEl.textContent = "啟動失敗：" + err.message; msgEl.className = "msg msg-err";
+      } finally { btn.disabled = false; btn.textContent = "▶ 啟動隧道"; }
+    }
+
+    async function tunnelStop() {
+      try {
+        await api("/admin/api/tunnel/stop", { method: "POST", token: getToken() });
+        setTunnelState(false, null);
+        $("tunnelMsg").className = "hidden";
+      } catch (err) {
+        $("tunnelMsg").textContent = err.message; $("tunnelMsg").className = "msg msg-err";
+      }
+    }
+
+    // ── Overview ────────────────────────────
+    let inspectedEntities = [];
+
+    async function refreshOverview() {
+      const token = getToken(); if (!token) return showLogin();
+      let data;
+      try {
+        data = await api("/admin/api/overview", { token });
+      } catch (err) {
+        if (/401|403|expired|invalid/i.test(err.message)) return logout();
+        alert("載入失敗: " + err.message); return;
+      }
+
+      const s = data.stats;
+      $("statsGrid").innerHTML = [
+        { k: "使用者", v: s.userCount },
+        { k: "同步項目", v: s.entityCount },
+        { k: "登入 Sessions", v: s.refreshTokenCount },
+        { k: "最後寫入", v: fmtTime(s.updatedAt), sm: true },
+      ].map(({ k, v, sm }) =>
+        `<div class="stat"><div class="stat-k">${k}</div><div class="stat-v${sm ? " sm" : ""}">${v}</div></div>`
+      ).join("");
+
+      $("usersTable").querySelector("tbody").innerHTML = data.users.map(u => `
+        <tr>
+          <td><strong>${escapeHtml(u.username)}</strong><br><code>${escapeHtml(u.id)}</code></td>
+          <td>${u.entityCount}</td>
+          <td>${fmtTime(u.createdAt)}</td>
+          <td>${fmtTime(u.updatedAt)}</td>
+          <td>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-ghost btn-sm" data-action="reset" data-id="${escapeHtml(u.id)}" data-username="${escapeHtml(u.username)}">重設密碼</button>
+              <button class="btn btn-danger btn-sm" data-action="delete" data-id="${escapeHtml(u.id)}" data-username="${escapeHtml(u.username)}">刪除</button>
+            </div>
+          </td>
+        </tr>
+      `).join("") || `<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">尚無帳號</td></tr>`;
+
+      $("entityUserFilter").innerHTML = `<option value="">全部帳號</option>` +
+        data.users.map(u => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.username)}</option>`).join("");
+
+      const types = [...new Set(data.recentEntities.map(e => e.entityType))].sort();
+      $("entityTypeFilter").innerHTML = `<option value="">全部類型</option>` +
+        types.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("");
+    }
+
+    async function loadEntityInspector() {
+      const token = getToken(); if (!token) return showLogin();
+      const params = new URLSearchParams({ limit: "100", offset: "0" });
+      const uid = $("entityUserFilter").value, et = $("entityTypeFilter").value;
+      if (uid) params.set("userId", uid);
+      if (et) params.set("entityType", et);
+      let data;
+      for (const p of ["/admin/api/entities", "/admin/entities", "/api/admin/entities"]) {
+        try { data = await api(p + "?" + params, { token }); break; } catch {}
+      }
+      if (!data) { alert("載入失敗"); return; }
+      inspectedEntities = data.items || [];
+      $("entityInspectorTable").querySelector("tbody").innerHTML = inspectedEntities.map((e, i) => `
+        <tr data-index="${i}" style="cursor:pointer">
+          <td>${escapeHtml(e.entityType)}</td>
+          <td><code>${escapeHtml(e.entityId)}</code></td>
+          <td>${escapeHtml(e.username || e.userId)}</td>
+          <td>${fmtTime(e.updatedAt)}</td>
+          <td>${e.deletedAt ? `<span class="badge badge-warn">已刪除</span>` : `<span class="badge badge-ok">正常</span>`}</td>
+        </tr>
+      `).join("") || `<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:16px">沒有符合條件的資料</td></tr>`;
+      if (inspectedEntities[0]) $("entityPayloadViewer").textContent = JSON.stringify(inspectedEntities[0], null, 2);
+    }
+
+    async function createUser() {
+      const btn = $("createUserBtn"), msg = $("createUserMsg");
+      msg.className = "hidden";
+      const token = getToken(); if (!token) return logout();
+      const username = $("newUsername").value.trim(), password = $("newPassword").value;
+      if (!username || !password) { msg.textContent = "帳號和密碼不可空白"; msg.className = "msg msg-err"; return; }
+      btn.disabled = true;
+      try {
+        await api("/admin/api/users", { method: "POST", body: { username, password }, token });
+        $("newUsername").value = ""; $("newPassword").value = "";
+        msg.textContent = `帳號「${username}」已建立 ✓`; msg.className = "msg msg-ok";
+        await refreshOverview();
+      } catch (err) {
+        msg.textContent = err.message; msg.className = "msg msg-err";
+      } finally { btn.disabled = false; }
+    }
+
+    async function resetUserPassword(userId, username) {
+      const pwd = prompt(`輸入「${username}」的新密碼：`); if (!pwd) return;
+      const token = getToken(); if (!token) return logout();
+      try {
+        await api("/admin/api/users/" + encodeURIComponent(userId) + "/password", { method: "POST", body: { password: pwd }, token });
+        alert("密碼已重設。該帳號的所有登入 session 已失效。");
+      } catch (err) { alert("失敗: " + err.message); }
+    }
+
+    async function deleteUser(userId, username) {
+      if (!confirm(`確定刪除「${username}」？\n此帳號的所有同步資料也會一併清除。`)) return;
+      const token = getToken(); if (!token) return logout();
+      try {
+        await api("/admin/api/users/" + encodeURIComponent(userId), { method: "DELETE", token });
+        await refreshOverview();
+      } catch (err) { alert("失敗: " + err.message); }
+    }
+
+    // ── Tab switching ────────────────────────
+    document.querySelectorAll(".tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+        document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+        tab.classList.add("active");
+        $("tab-" + tab.dataset.tab).classList.add("active");
+      });
+    });
+
+    // ── Event bindings ───────────────────────
+    $("loginBtn").addEventListener("click", doLogin);
+    $("adminPassword").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+    $("refreshBtn").addEventListener("click", refreshOverview);
+    $("logoutBtn").addEventListener("click", logout);
+    $("createUserBtn").addEventListener("click", createUser);
+    $("newPassword").addEventListener("keydown", e => { if (e.key === "Enter") createUser(); });
+    $("saveTokenBtn").addEventListener("click", saveToken);
+    $("ngrokTokenInput").addEventListener("keydown", e => { if (e.key === "Enter") saveToken(); });
+    $("changeTokenBtn").addEventListener("click", () => {
+      setTokenUI(false, null);
+      $("ngrokTokenInput").focus();
+    });
+    $("tunnelStartBtn").addEventListener("click", tunnelStart);
+    $("tunnelStopBtn").addEventListener("click", tunnelStop);
+    $("tunnelCopyBtn").addEventListener("click", () => {
+      navigator.clipboard.writeText($("tunnelUrl").textContent).then(() => {
+        $("tunnelCopyBtn").textContent = "已複製 ✓";
+        setTimeout(() => $("tunnelCopyBtn").textContent = "複製", 2000);
+      });
+    });
+    $("loadEntityInspectorBtn").addEventListener("click", loadEntityInspector);
+    $("usersTable").addEventListener("click", e => {
+      const btn = e.target.closest("button[data-action]"); if (!btn) return;
+      if (btn.dataset.action === "reset") resetUserPassword(btn.dataset.id, btn.dataset.username);
+      else if (btn.dataset.action === "delete") deleteUser(btn.dataset.id, btn.dataset.username);
+    });
+    $("entityInspectorTable").addEventListener("click", e => {
+      const row = e.target.closest("tr[data-index]"); if (!row) return;
+      const entity = inspectedEntities[+row.dataset.index];
+      if (entity) $("entityPayloadViewer").textContent = JSON.stringify(entity, null, 2);
+    });
+
+    // ── Init ─────────────────────────────────
+    loadServerTag();
+    if (getToken()) { showDashboard(); refreshOverview(); loadTunnelStatus(); loadTunnelConfig(); }
+    else showLogin();
+  </script>
   </body>
 </html>

@@ -983,6 +983,21 @@ export class SelfHostedSyncService {
       return false;
     }
 
+    // 資料保護：即使 forceOverwrite，也拒絕用「空 profiles」覆蓋「有 profiles」的本機資料。
+    // 這個情況通常代表 server 上的 settings_full 是尚未 push 過 profiles 的舊/空版本。
+    const localProfiles = Array.isArray(local?.profiles) ? local!.profiles : [];
+    const remoteProfiles = Array.isArray((payload as any).profiles)
+      ? ((payload as any).profiles as unknown[])
+      : [];
+    if (localProfiles.length > 0 && remoteProfiles.length === 0) {
+      console.warn(
+        "[SelfHostedSyncService] 拒絕覆蓋：遠端 settings_full 的 profiles 為空，但本機已有",
+        localProfiles.length,
+        "個 API 配置文件。跳過此次 settings_full 應用以避免資料遺失。",
+      );
+      return false;
+    }
+
     await saveSettingsData(JSON.parse(JSON.stringify(payload)));
 
     const settingsStore = useSettingsStore();

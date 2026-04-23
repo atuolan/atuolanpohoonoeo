@@ -33,6 +33,7 @@ const procs = [
     args: ["tunnel", "--config", `${process.env.USERPROFILE || process.env.HOME}\\.cloudflared\\config.yml`, "run", "aguaphone-sync"],
     cwd: repoRoot,
     env: { ...process.env },
+    optional: true,
   },
   {
     name: "frontend",
@@ -41,6 +42,7 @@ const procs = [
     args: ["node_modules/vite/bin/vite.js"],
     cwd: repoRoot,
     env: { ...process.env },
+    optional: true,
   },
 ];
 
@@ -80,7 +82,7 @@ for (const def of procs) {
     process.stdout.write(
       `${def.color}[${def.name}]${RESET} exited (code=${code}, signal=${signal})\n`,
     );
-    if (!shuttingDown) {
+    if (!shuttingDown && !def.optional) {
       shutdown(code ?? 1);
     }
   });
