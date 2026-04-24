@@ -31,6 +31,37 @@ if (!store.meta.tokenSecret) {
   saveStore();
 }
 
+// INITIAL_USERS: 格式 "username1:password1,username2:password2"
+// HF Spaces 重啟後資料會消失，此設定可讓伺服器自動補建帳號，免去手動重新註冊。
+if (process.env.INITIAL_USERS) {
+  let seeded = false;
+  for (const entry of process.env.INITIAL_USERS.split(",")) {
+    const colonIdx = entry.indexOf(":");
+    if (colonIdx < 1) continue;
+    const username = entry.slice(0, colonIdx).trim();
+    const password = entry.slice(colonIdx + 1).trim();
+    if (!username || !password) continue;
+    const userKey = username.toLowerCase();
+    if (!store.users.some((u) => u.usernameKey === userKey)) {
+      const now = Date.now();
+      const passwordSalt = randomBytes(16).toString("hex");
+      const passwordHash = hashPassword(password, passwordSalt);
+      store.users.push({
+        id: randomId("usr"),
+        username,
+        usernameKey: userKey,
+        passwordSalt,
+        passwordHash,
+        createdAt: now,
+        updatedAt: now,
+      });
+      console.log(`[SelfHostedSyncServer] INITIAL_USERS: 已建立帳號 "${username}"`);
+      seeded = true;
+    }
+  }
+  if (seeded) saveStore();
+}
+
 const wsServer = new WebSocketServer({
   noServer: true,
   // 開啟 permessage-deflate：JSON manifest/envelope 重複欄位多，壓縮率約 70–90%。
