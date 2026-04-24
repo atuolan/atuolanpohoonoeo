@@ -395,6 +395,18 @@ async function ensureSelfHostedSyncSocketConnected() {
     }
   } catch (error) {
     console.warn("[App] 刷新 session 失敗，嘗試用現有 token 開 WS", error);
+    // Refresh token 本身已失效（401）→ 繼續重連毫無意義，直接登出並通知用戶
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if (errMsg.includes("401") || errMsg.toLowerCase().includes("invalid or expired")) {
+      console.warn("[App] Refresh token 失效，自動登出");
+      closeSelfHostedSyncSocket();
+      await selfHostedSyncStore.logout();
+      notificationStore.notifySystem(
+        "同步登入已過期",
+        "請重新登入自架同步伺服器以繼續使用同步功能。",
+      );
+      return;
+    }
   }
 
   // 再檢查一次（refresh 後 accessToken 可能已變動）
