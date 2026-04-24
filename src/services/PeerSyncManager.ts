@@ -335,7 +335,9 @@ class PeerSyncManager {
       return batches;
     };
 
-    for (const batch of buildBatches()) {
+    // 並行發送全部批次，接收端第一批確認後後續自動放行
+    const batches = buildBatches();
+    const batchPromises = batches.map((batch) => {
       const requestId = this.nextRequestId("apply");
       const promise = this.registerPending<PeerApplyResponse>(
         requestId,
@@ -348,7 +350,10 @@ class PeerSyncManager {
         targetDeviceId,
         envelopes: batch,
       });
-      const resp = await promise;
+      return promise;
+    });
+    const responses = await Promise.all(batchPromises);
+    for (const resp of responses) {
       applied += resp.applied;
       if (resp.rejected?.length) rejected.push(...resp.rejected);
       lastServerTime = resp.serverTime ?? lastServerTime;

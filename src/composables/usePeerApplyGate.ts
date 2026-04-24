@@ -32,17 +32,43 @@ type GateResolve = (accepted: boolean) => void;
 const _pending = ref<PeerApplyRequest | null>(null);
 let _resolve: GateResolve | null = null;
 
+/** 已通過確認的 sender session：deviceId -> expiresAt（ms） */
+const _trustedSenders = new Map<string, number>();
+const TRUST_SESSION_MS = 10 * 60 * 1000; // 10 分鐘
+/** 已被拒絕的 sender session（本次拒絕後自動拒絕同一 sender 的後續批次） */
+const _rejectedSenders = new Set<string>();
+
+/** 清除 sender 的信任/拒絕狀態（下次需重新確認） */
+export function clearPeerSenderSession(sourceDeviceId: string): void {
+  _trustedSenders.delete(sourceDeviceId);
+  _rejectedSenders.delete(sourceDeviceId);
+}
+
 /** 由 PeerSyncResponder 呼叫：暫停執行，等待使用者確認。回傳 true = 接受，false = 拒絕 */
 export async function requestPeerApplyApproval(
   request: Omit<PeerApplyRequest, "receivedAt" | "expiresAt">,
 ): Promise<boolean> {
-  // 如果已有待處理的請求，自動拒絕舊的
+  const { sourceDeviceId } = request;
+
+  // 已拒絕的 sender → 自動拒絕後續批次
+  if (_rejectedSenders.has(sourceDeviceId)) {
+    return false;
+  }
+
+  // 已信任的 sender（還在 session 內）→ 自動放行
+  const trustedUntil = _trustedSenders.get(sourceDeviceId);
+  if (trustedUntil && trustedUntil > Date.now()) {
+    return true;
+  }
+  _trustedSenders.delete(sourceDeviceId);
+
+  // 如果已有 dialog 在等另一個 sender 的決定，先拒絕舊的
   if (_resolve) {
     _resolve(false);
   }
 
   const receivedAt = Date.now();
-  const expiresAt = receivedAt + 55_000; // 55s 給用戶決定（sender 會再等剩餘的傳輸時間）
+  const expiresAt = receivedAt + 55_000;
 
   _pending.value = { ...request, receivedAt, expiresAt };
 
@@ -53,19 +79,26 @@ export async function requestPeerApplyApproval(
 
 /** 使用者點擊「接受」 */
 export function approvePeerApply(): void {
-  if (!_resolve) return;
+  if (!_resolve || !_pending.value) return;
+  const { sourceDeviceId } = _pending.value;
   const r = _resolve;
   _resolve = null;
   _pending.value = null;
+  _trustedSenders.set(sourceDeviceId, Date.now() + TRUST_SESSION_MS);
+  _rejectedSenders.delete(sourceDeviceId);
   r(true);
 }
 
 /** 使用者點擊「拒絕」或 dialog 關閉 */
 export function rejectPeerApply(): void {
-  if (!_resolve) return;
+  if (!_resolve || !_pending.value) return;
+  const { sourceDeviceId } = _pending.value;
   const r = _resolve;
   _resolve = null;
   _pending.value = null;
+  _rejectedSenders.add(sourceDeviceId);
+  // 拒絕 session 在 5 分鐘後自動清除（避免永遠鎖死）
+  setTimeout(() => _rejectedSenders.delete(sourceDeviceId), 5 * 60 * 1000);
   r(false);
 }
 
