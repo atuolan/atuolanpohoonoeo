@@ -122,6 +122,20 @@ export interface SelfHostedSyncMetaDeviceInfo {
   lastPushAt: number | null;
   lastSeenAt: number | null;
   online?: boolean;
+  /** 由 client 自動從 User-Agent 偵測的機型描述，例如「iPhone」「Pixel 7」「Windows Chrome」 */
+  model?: string | null;
+  /** 使用者自訂的裝置名稱，例如「客廳手機」 */
+  customName?: string | null;
+}
+
+export interface SelfHostedSyncDeviceInfoUpdateRequest {
+  model?: string | null;
+  customName?: string | null;
+}
+
+export interface SelfHostedSyncDeviceInfoUpdateResponse {
+  ok: boolean;
+  device: SelfHostedSyncMetaDeviceInfo;
 }
 
 export interface SelfHostedSyncMetaResponse {

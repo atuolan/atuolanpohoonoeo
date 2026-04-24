@@ -24,6 +24,8 @@ import {
 import { getSelfHostedSyncService } from "@/services/SelfHostedSyncService";
 import type { SelfHostedSyncPullResponse } from "@/types/selfHostedSync";
 import { computeBucketHashes } from "@/services/peerHash";
+import { requestPeerApplyApproval } from "@/composables/usePeerApplyGate";
+import { useSelfHostedSyncStore } from "@/stores/selfHostedSync";
 
 const FETCH_BATCH_SIZE = 100;
 const LOG = "[PeerSyncResponder]";
@@ -226,6 +228,27 @@ async function handleFetchRequest(msg: PeerFetchRequest & {
   }
 }
 
+function buildApplySummary(envelopes: SelfHostedSyncEntityEnvelope[]) {
+  const counts = new Map<string, number>();
+  for (const env of envelopes) {
+    counts.set(env.entityType, (counts.get(env.entityType) ?? 0) + 1);
+  }
+  return Array.from(counts.entries()).map(([entityType, count]) => ({ entityType, count }));
+}
+
+function resolveSourceDisplayName(sourceDeviceId: string): string {
+  try {
+    const store = useSelfHostedSyncStore();
+    const peer = store.peerList.find((p) => p.deviceId === sourceDeviceId);
+    if (peer) {
+      return peer.customName ?? peer.model ?? `${sourceDeviceId.slice(0, 6)}…${sourceDeviceId.slice(-4)}`;
+    }
+  } catch {
+    // store 可能尚未初始化
+  }
+  return `${sourceDeviceId.slice(0, 6)}…${sourceDeviceId.slice(-4)}`;
+}
+
 async function handleApplyRequest(msg: PeerApplyRequest & {
   sourceDeviceId?: string;
 }): Promise<void> {
@@ -234,17 +257,40 @@ async function handleApplyRequest(msg: PeerApplyRequest & {
     warn("收到 apply-request 但沒有 sourceDeviceId，忽略", msg);
     return;
   }
-  log("收到 apply-request", {
+  const envelopes = msg.envelopes || [];
+  log("收到 apply-request，等待使用者確認", {
     requestId: msg.requestId,
     sourceDeviceId,
-    envelopeCount: msg.envelopes?.length ?? 0,
+    envelopeCount: envelopes.length,
   });
+
+  // 顯示確認 dialog，等待使用者決定
+  const accepted = await requestPeerApplyApproval({
+    requestId: msg.requestId,
+    sourceDeviceId,
+    totalEnvelopes: envelopes.length,
+    summary: buildApplySummary(envelopes),
+    sourceDisplayName: resolveSourceDisplayName(sourceDeviceId),
+  });
+
+  if (!accepted) {
+    log("使用者拒絕 apply-request", { requestId: msg.requestId });
+    sendPeerMessage({
+      type: "peer:apply-response",
+      requestId: msg.requestId,
+      sourceDeviceId: "__self__",
+      applied: 0,
+      rejected: envelopes.map((e) => ({ entityType: e.entityType, entityId: e.entityId, reason: "rejected-by-user" })),
+      ...({ targetDeviceId: sourceDeviceId } as Record<string, unknown>),
+    } as unknown as PeerMessage);
+    return;
+  }
 
   try {
     const service = getSelfHostedSyncService();
     const pseudoResponse: SelfHostedSyncPullResponse = {
       serverTime: Date.now(),
-      items: msg.envelopes || [],
+      items: envelopes,
       hasMore: false,
       nextSince: undefined,
     };

@@ -73,6 +73,7 @@ const server = http.createServer(async (req, res) => {
           "GET /sync/meta",
           "POST /sync/push",
           "GET /sync/pull?since=...",
+          "POST /devices/self  (update own device model/customName)",
           "GET /admin  (admin UI)",
           "POST /admin/login",
           "GET /admin/api/overview",
@@ -195,11 +196,50 @@ const server = http.createServer(async (req, res) => {
             lastPushAt: deviceMeta.lastPushAt ?? null,
             lastSeenAt: deviceMeta.lastSeenAt ?? null,
             online: onlineSet.has(deviceId),
+            model: deviceMeta.model ?? null,
+            customName: deviceMeta.customName ?? null,
           }))
           .sort((a, b) => {
             if (a.online !== b.online) return a.online ? -1 : 1;
             return (b.lastPushAt || 0) - (a.lastPushAt || 0);
           }),
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/devices/self") {
+      const auth = requireBearerAuth(req);
+      const body = await readJsonBody(req);
+      // model 由 client 自動偵測（User-Agent），customName 由使用者輸入
+      const modelInput = "model" in body ? sanitizeDeviceInfoString(body.model, 120) : undefined;
+      const customNameInput =
+        "customName" in body ? sanitizeDeviceInfoString(body.customName, 60) : undefined;
+
+      if (modelInput === undefined && "model" in body) {
+        return sendError(res, 400, "model must be a string or null");
+      }
+      if (customNameInput === undefined && "customName" in body) {
+        return sendError(res, 400, "customName must be a string or null");
+      }
+
+      const updates = {};
+      if ("model" in body) updates.model = modelInput;
+      if ("customName" in body) updates.customName = customNameInput;
+
+      const deviceState = setDeviceInfo(auth.userId, auth.deviceId, updates);
+      saveStore();
+
+      // 廣播給同 user 的其他裝置，讓 UI 可即時更新
+      broadcastDeviceInfoUpdate(auth.userId, auth.deviceId, deviceState);
+
+      return sendJson(res, 200, {
+        ok: true,
+        device: {
+          deviceId: auth.deviceId,
+          model: deviceState.model ?? null,
+          customName: deviceState.customName ?? null,
+          lastPushAt: deviceState.lastPushAt ?? null,
+          lastSeenAt: deviceState.lastSeenAt ?? null,
+        },
       });
     }
 
@@ -968,9 +1008,31 @@ function touchSyncDevice(userId, deviceId, lastSeenAt = Date.now()) {
   userState.devices[deviceId] ||= {
     lastPushAt: null,
     lastSeenAt: null,
+    model: null,
+    customName: null,
   };
-  userState.devices[deviceId].lastSeenAt = lastSeenAt;
-  return userState.devices[deviceId];
+  const deviceState = userState.devices[deviceId];
+  // Backfill optional fields for records created before this feature existed
+  if (!("model" in deviceState)) deviceState.model = null;
+  if (!("customName" in deviceState)) deviceState.customName = null;
+  deviceState.lastSeenAt = lastSeenAt;
+  return deviceState;
+}
+
+function sanitizeDeviceInfoString(value, maxLength) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") return undefined; // undefined = invalid
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  if (trimmed.length > maxLength) return trimmed.slice(0, maxLength);
+  return trimmed;
+}
+
+function setDeviceInfo(userId, deviceId, { model, customName }) {
+  const deviceState = touchSyncDevice(userId, deviceId);
+  if (model !== undefined) deviceState.model = model;
+  if (customName !== undefined) deviceState.customName = customName;
+  return deviceState;
 }
 
 function markUserSyncUpdated(userId, deviceId, timestamp) {
@@ -1365,6 +1427,30 @@ function getOnlineDeviceIdsForUser(userId) {
     }
   }
   return Array.from(ids);
+}
+
+function broadcastDeviceInfoUpdate(userId, deviceId, deviceState) {
+  const message = JSON.stringify({
+    type: "device:info",
+    userId,
+    deviceId,
+    serverTime: Date.now(),
+    device: {
+      deviceId,
+      model: deviceState.model ?? null,
+      customName: deviceState.customName ?? null,
+      lastPushAt: deviceState.lastPushAt ?? null,
+      lastSeenAt: deviceState.lastSeenAt ?? null,
+    },
+  });
+  for (const [ws, client] of syncSocketClients.entries()) {
+    if (client.userId !== userId) continue;
+    if (ws.readyState !== ws.OPEN) {
+      syncSocketClients.delete(ws);
+      continue;
+    }
+    ws.send(message);
+  }
 }
 
 function broadcastPresence(userId) {

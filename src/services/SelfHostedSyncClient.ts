@@ -1,5 +1,7 @@
 import type {
   SelfHostedSyncAuthResponse,
+  SelfHostedSyncDeviceInfoUpdateRequest,
+  SelfHostedSyncDeviceInfoUpdateResponse,
   SelfHostedSyncEntityEnvelope,
   SelfHostedSyncHealthResponse,
   SelfHostedSyncLoginRequest,
@@ -79,6 +81,17 @@ export class SelfHostedSyncClient {
     return this.request<SelfHostedSyncMetaResponse>("GET", "/sync/meta", undefined, {
       requireAuth: true,
     });
+  }
+
+  async updateDeviceInfo(
+    payload: SelfHostedSyncDeviceInfoUpdateRequest,
+  ): Promise<SelfHostedSyncDeviceInfoUpdateResponse> {
+    return this.request<SelfHostedSyncDeviceInfoUpdateResponse>(
+      "POST",
+      "/devices/self",
+      payload,
+      { requireAuth: true },
+    );
   }
 
   async pushItems(

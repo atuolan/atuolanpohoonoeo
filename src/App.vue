@@ -36,6 +36,12 @@ import {
 } from "@/services/peerSyncSocket";
 import { startPeerSyncResponder } from "@/services/PeerSyncResponder";
 import type { PeerMessage } from "@/types/selfHostedSync";
+import {
+  pendingPeerApply,
+  approvePeerApply,
+  rejectPeerApply,
+  formatEntityTypeLabel,
+} from "@/composables/usePeerApplyGate";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 // 頁面組件
 import {
@@ -171,6 +177,14 @@ type SelfHostedSyncSocketMessage = {
   message?: string;
   onlineDeviceIds?: string[] | null;
   onlineCount?: number | null;
+  /** device:info 廣播，server 推送某裝置的 model/customName 更新 */
+  device?: {
+    deviceId: string;
+    model?: string | null;
+    customName?: string | null;
+    lastPushAt?: number | null;
+    lastSeenAt?: number | null;
+  } | null;
 };
 
 function recordSelfHostedSyncDiagnostic(message: string, details?: unknown) {
@@ -471,6 +485,20 @@ async function ensureSelfHostedSyncSocketConnected() {
           // Seed device list + lastPush info so the UI shows it immediately
           // after reconnecting without waiting for a manual 刷新狀態.
           void selfHostedSyncStore.refreshMeta().catch(() => {});
+          // 順帶上傳本機的 model + customName（best-effort）
+          void selfHostedSyncStore.publishDeviceInfo().catch(() => {});
+          return;
+        }
+        if (payload.type === "device:info") {
+          if (payload.device && typeof payload.device.deviceId === "string") {
+            selfHostedSyncStore.applyRemoteDeviceInfo({
+              deviceId: payload.device.deviceId,
+              model: payload.device.model ?? null,
+              customName: payload.device.customName ?? null,
+              lastPushAt: payload.device.lastPushAt ?? null,
+              lastSeenAt: payload.device.lastSeenAt ?? null,
+            });
+          }
           return;
         }
         if (payload.type === "presence:update") {
@@ -3170,6 +3198,39 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       </div>
     </Teleport>
 
+    <!-- P2P 推送接收確認 dialog -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="pendingPeerApply" class="peer-apply-overlay" @click.self="rejectPeerApply">
+          <div class="peer-apply-dialog" role="dialog" aria-modal="true">
+            <div class="peer-apply-icon">📥</div>
+            <div class="peer-apply-title">收到同步推送</div>
+            <div class="peer-apply-source">
+              來自：<strong>{{ pendingPeerApply.sourceDisplayName }}</strong>
+            </div>
+            <div class="peer-apply-summary">
+              <div class="peer-apply-total">共 {{ pendingPeerApply.totalEnvelopes }} 筆資料</div>
+              <ul class="peer-apply-breakdown">
+                <li
+                  v-for="entry in pendingPeerApply.summary"
+                  :key="entry.entityType"
+                  class="peer-apply-breakdown-item"
+                >
+                  <span class="peer-apply-type">{{ formatEntityTypeLabel(entry.entityType) }}</span>
+                  <span class="peer-apply-count">{{ entry.count }} 筆</span>
+                </li>
+              </ul>
+            </div>
+            <div class="peer-apply-hint">接受後本機資料將被覆蓋更新</div>
+            <div class="peer-apply-actions">
+              <button class="peer-apply-btn reject" @click="rejectPeerApply">拒絕</button>
+              <button class="peer-apply-btn accept" @click="approvePeerApply">接受</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- GitHub 雲端備份全局進度條 -->
     <Teleport to="body">
       <div v-if="ghBackupBusy" class="gh-global-progress">
@@ -3731,5 +3792,134 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
   font-size: 11px;
   border-radius: 10px;
   pointer-events: auto;
+}
+
+// ===== P2P 推送接收確認 =====
+.peer-apply-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+}
+
+.peer-apply-dialog {
+  background: var(--color-surface, #1e2130);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  padding: 24px 22px 20px;
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.peer-apply-icon {
+  font-size: 36px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.peer-apply-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-text, #f0f0f0);
+}
+
+.peer-apply-source {
+  font-size: 14px;
+  color: var(--color-text-secondary, #9ca3af);
+
+  strong {
+    color: var(--color-text, #f0f0f0);
+  }
+}
+
+.peer-apply-summary {
+  width: 100%;
+  margin: 4px 0;
+}
+
+.peer-apply-total {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text, #f0f0f0);
+  margin-bottom: 6px;
+  text-align: center;
+}
+
+.peer-apply-breakdown {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.peer-apply-breakdown-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.peer-apply-type {
+  color: var(--color-text-secondary, #9ca3af);
+}
+
+.peer-apply-count {
+  font-weight: 600;
+  color: var(--color-text, #f0f0f0);
+}
+
+.peer-apply-hint {
+  font-size: 11px;
+  color: var(--color-text-muted, #6b7280);
+  text-align: center;
+}
+
+.peer-apply-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.peer-apply-btn {
+  flex: 1;
+  padding: 10px 0;
+  border-radius: 10px;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  &.reject {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--color-text-secondary, #9ca3af);
+  }
+
+  &.accept {
+    background: var(--color-primary, #7dd3a8);
+    color: #fff;
+  }
 }
 </style>

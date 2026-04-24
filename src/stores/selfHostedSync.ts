@@ -34,6 +34,8 @@ interface PersistedSelfHostedSyncSettings {
   guardAlert: SelfHostedSyncGuardAlert | null;
   lastPushedServerTime: number | null;
   lastPushedUpdatedAt: number | null;
+  /** 使用者為這台裝置設定的自訂名稱（持久化於本機） */
+  customDeviceName: string | null;
 }
 
 export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
@@ -58,6 +60,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
   const guardAlert = ref<SelfHostedSyncGuardAlert | null>(null);
   const lastPushedServerTime = ref<number | null>(null);
   const lastPushedUpdatedAt = ref<number | null>(null);
+  const customDeviceName = ref<string | null>(null);
   const devices = ref<SelfHostedSyncMetaDeviceInfo[]>([]);
   const onlineDeviceIds = ref<string[]>([]);
   const lastPresenceAt = ref<number | null>(null);
@@ -84,6 +87,8 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
       online: boolean;
       lastPushAt: number | null;
       lastSeenAt: number | null;
+      model: string | null;
+      customName: string | null;
     }> = [];
 
     if (isAuthenticated.value) {
@@ -94,6 +99,8 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
         online: serverStatusOk.value !== false,
         lastPushAt: lastRemoteUpdateAt.value,
         lastSeenAt: lastServerTime.value,
+        model: null,
+        customName: null,
       });
     }
 
@@ -106,6 +113,8 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
         online: !!d.online,
         lastPushAt: d.lastPushAt ?? null,
         lastSeenAt: d.lastSeenAt ?? null,
+        model: d.model ?? null,
+        customName: d.customName ?? null,
       });
     }
 
@@ -155,6 +164,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
           guardAlert.value = saved.guardAlert ?? null;
           lastPushedServerTime.value = saved.lastPushedServerTime ?? null;
           lastPushedUpdatedAt.value = saved.lastPushedUpdatedAt ?? null;
+          customDeviceName.value = saved.customDeviceName ?? null;
         } else {
           serverUrl.value = DEFAULT_SELF_HOSTED_SYNC_SERVER_URL;
         }
@@ -200,6 +210,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
           guardAlert: guardAlert.value,
           lastPushedServerTime: lastPushedServerTime.value,
           lastPushedUpdatedAt: lastPushedUpdatedAt.value,
+          customDeviceName: customDeviceName.value,
         } satisfies PersistedSelfHostedSyncSettings),
       );
       await db.put(DB_STORES.APP_SETTINGS, plainData);
@@ -275,6 +286,99 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     lastPresenceAt.value = result.serverTime ?? Date.now();
     await saveSettings();
     return result;
+  }
+
+  /**
+   * 將本機裝置的 model（自動偵測）與 customName（使用者自訂）上傳到 server。
+   * - 只有在已登入時才會呼叫
+   * - 失敗不拋例外，只記 console（屬於 best-effort 的裝飾性功能）
+   */
+  async function publishDeviceInfo(options?: {
+    model?: string | null;
+    customName?: string | null;
+  }): Promise<void> {
+    if (!isAuthenticated.value) return;
+    await ensureDeviceId();
+
+    let modelToSend: string | null | undefined = options?.model;
+    if (modelToSend === undefined) {
+      try {
+        const { detectDeviceModel } = await import("@/utils/deviceModel");
+        modelToSend = await detectDeviceModel();
+      } catch {
+        modelToSend = undefined;
+      }
+    }
+
+    const payload: { model?: string | null; customName?: string | null } = {};
+    if (modelToSend !== undefined) payload.model = modelToSend;
+    if (options && "customName" in options) {
+      payload.customName = options.customName ?? null;
+    } else {
+      // 若呼叫端沒指定 customName，就把本機持久化的值一併送出，確保 server 與 client 一致
+      payload.customName = customDeviceName.value;
+    }
+
+    if (Object.keys(payload).length === 0) return;
+
+    try {
+      const result = await runSyncActionWithRetry(() =>
+        createClient().updateDeviceInfo(payload),
+      );
+      // 把結果寫回本機 devices 快取，讓 UI 立刻更新
+      applyRemoteDeviceInfo({
+        deviceId: result.device.deviceId,
+        model: result.device.model ?? null,
+        customName: result.device.customName ?? null,
+        lastPushAt: result.device.lastPushAt ?? null,
+        lastSeenAt: result.device.lastSeenAt ?? null,
+      });
+    } catch (error) {
+      console.warn("[SelfHostedSyncStore] publishDeviceInfo 失敗:", error);
+    }
+  }
+
+  /** 使用者在 UI 輸入新名稱時呼叫。null / 空字串表示清除自訂名稱。 */
+  async function setCustomDeviceName(name: string | null): Promise<void> {
+    const trimmed = typeof name === "string" ? name.trim() : "";
+    const next = trimmed.length === 0 ? null : trimmed;
+    customDeviceName.value = next;
+    await saveSettings();
+    await publishDeviceInfo({ customName: next });
+  }
+
+  /**
+   * 套用從 server 收到的 device:info 廣播，或 updateDeviceInfo 的回覆。
+   * 只更新現有條目的欄位，不改變 online 狀態。
+   */
+  function applyRemoteDeviceInfo(info: {
+    deviceId: string;
+    model?: string | null;
+    customName?: string | null;
+    lastPushAt?: number | null;
+    lastSeenAt?: number | null;
+  }): void {
+    if (!info.deviceId) return;
+    const idx = devices.value.findIndex((d) => d.deviceId === info.deviceId);
+    if (idx >= 0) {
+      const prev = devices.value[idx];
+      devices.value[idx] = {
+        ...prev,
+        model: info.model ?? prev.model ?? null,
+        customName: info.customName ?? prev.customName ?? null,
+        lastPushAt: info.lastPushAt ?? prev.lastPushAt ?? null,
+        lastSeenAt: info.lastSeenAt ?? prev.lastSeenAt ?? null,
+      };
+    } else {
+      devices.value.push({
+        deviceId: info.deviceId,
+        model: info.model ?? null,
+        customName: info.customName ?? null,
+        lastPushAt: info.lastPushAt ?? null,
+        lastSeenAt: info.lastSeenAt ?? null,
+        online: onlineDeviceIds.value.includes(info.deviceId),
+      });
+    }
   }
 
   function updatePresence(payload: {
@@ -576,6 +680,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     applied: number;
     conflictCount: number;
     conflictsAborted: boolean;
+    rejectedByUser?: boolean;
   };
 
   async function peerSync(
@@ -691,7 +796,19 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
           });
           const resp = await manager.requestApply(targetDeviceId, envelopes);
           applied = resp.applied;
+          const rejectedByUser = resp.rejected?.some((r) => r.reason === "rejected-by-user") ?? false;
           console.log(LOG_TAG, "推送完成", { applied, rejected: resp.rejected });
+          if (rejectedByUser) {
+            await markSyncSucceeded(Date.now());
+            return {
+              direction,
+              targetDeviceId,
+              applied: 0,
+              conflictCount: 0,
+              conflictsAborted: false,
+              rejectedByUser: true,
+            };
+          }
         } else {
           console.log(LOG_TAG, "無需推送（onlyLocal=0）");
         }
@@ -823,6 +940,10 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     lastPushedServerTime,
     lastPushedUpdatedAt,
     updatePresence,
+    customDeviceName,
+    publishDeviceInfo,
+    setCustomDeviceName,
+    applyRemoteDeviceInfo,
     markPushCompleted,
     resetPushCutoff,
     peerSync,

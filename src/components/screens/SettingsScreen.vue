@@ -233,6 +233,9 @@ const selfHostedSyncDeviceList = computed(() => {
     shortId: string;
     lastPushText: string;
     lastSeenText: string;
+    model: string | null;
+    customName: string | null;
+    displayName: string;
   }> = [];
 
   // 本機裝置（不可對自己 P2P 同步）
@@ -240,6 +243,9 @@ const selfHostedSyncDeviceList = computed(() => {
     (d) => d.deviceId === currentId,
   );
   if (selfDevice) {
+    const customName = selfHostedSyncStore.customDeviceName ?? selfDevice.customName ?? null;
+    const model = selfDevice.model ?? null;
+    const displayName = customName ?? model ?? "本機裝置";
     items.push({
       deviceId: selfDevice.deviceId,
       online: !!selfDevice.online,
@@ -255,11 +261,17 @@ const selfHostedSyncDeviceList = computed(() => {
       lastSeenText: selfDevice.lastSeenAt
         ? formatDateTime(selfDevice.lastSeenAt)
         : "—",
+      model,
+      customName,
+      displayName,
     });
   }
 
   // 其他可同步 peer（含 @server）
   for (const p of selfHostedSyncStore.peerList) {
+    const customName = p.customName ?? null;
+    const model = p.model ?? null;
+    const displayName = p.isServer ? "伺服器快取" : (customName ?? model ?? "其他裝置");
     items.push({
       deviceId: p.deviceId,
       online: p.online,
@@ -271,11 +283,41 @@ const selfHostedSyncDeviceList = computed(() => {
       shortId: p.isServer ? "@server" : shortDeviceId(p.deviceId),
       lastPushText: p.lastPushAt ? formatDateTime(p.lastPushAt) : "尚未推送",
       lastSeenText: p.lastSeenAt ? formatDateTime(p.lastSeenAt) : "—",
+      model,
+      customName,
+      displayName,
     });
   }
 
   return items;
 });
+
+// ===== 裝置重新命名 =====
+const deviceRenameInput = ref("");
+const deviceRenameActive = ref(false);
+const deviceRenameLoading = ref(false);
+
+function startRenameDevice() {
+  deviceRenameInput.value = selfHostedSyncStore.customDeviceName ?? "";
+  deviceRenameActive.value = true;
+}
+
+function cancelRenameDevice() {
+  deviceRenameActive.value = false;
+  deviceRenameInput.value = "";
+}
+
+async function submitRenameDevice() {
+  deviceRenameLoading.value = true;
+  try {
+    await selfHostedSyncStore.setCustomDeviceName(deviceRenameInput.value || null);
+    deviceRenameActive.value = false;
+  } catch (error) {
+    alert(`命名失敗：${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    deviceRenameLoading.value = false;
+  }
+}
 
 async function handlePeerSync(
   direction: "push" | "pull",
@@ -288,6 +330,10 @@ async function handlePeerSync(
       alert(
         `偵測到 ${outcome.conflictCount} 筆同時被兩端修改的資料。\nPhase 1 尚未提供衝突解決對話框，本次同步已中止。\n請先調整資料後再試。`,
       );
+      return;
+    }
+    if (outcome.rejectedByUser) {
+      alert(`對方裝置拒絕了本次推送。`);
       return;
     }
     const label = direction === "push" ? "推送" : "拉取";
@@ -5890,10 +5936,41 @@ function useClonedVoice(voiceId: string) {
                         />
                         <span class="self-hosted-device-name">
                           <template v-if="device.isServer">☁️ 伺服器快取</template>
-                          <template v-else-if="device.isCurrent">本機裝置</template>
-                          <template v-else>其他裝置</template>
+                          <template v-else>
+                            <span class="device-display-name">{{ device.displayName }}</span>
+                          </template>
                           <span class="self-hosted-device-id">（{{ device.shortId }}）</span>
                         </span>
+                        <button
+                          v-if="device.isCurrent && !deviceRenameActive"
+                          class="shs-icon-btn"
+                          title="為這台裝置設定名稱"
+                          @click="startRenameDevice"
+                        >✏️</button>
+                      </div>
+                      <div v-if="device.model && !device.isServer" class="self-hosted-device-model">
+                        {{ device.model }}
+                      </div>
+                      <!-- 本機裝置改名表單 -->
+                      <div v-if="device.isCurrent && deviceRenameActive" class="device-rename-form">
+                        <input
+                          v-model="deviceRenameInput"
+                          class="device-rename-input"
+                          placeholder="輸入裝置名稱，例如：客廳手機"
+                          maxlength="60"
+                          @keydown.enter="submitRenameDevice"
+                          @keydown.esc="cancelRenameDevice"
+                        />
+                        <button
+                          class="shs-chip-btn"
+                          :disabled="deviceRenameLoading"
+                          @click="submitRenameDevice"
+                        >確認</button>
+                        <button
+                          class="shs-chip-btn"
+                          :disabled="deviceRenameLoading"
+                          @click="cancelRenameDevice"
+                        >取消</button>
                       </div>
                       <div class="self-hosted-device-meta">
                         <span>最近上傳：{{ device.lastPushText }}</span>
@@ -7902,6 +7979,57 @@ function useClonedVoice(voiceId: string) {
   opacity: 0.75;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11px;
+}
+
+.device-display-name {
+  font-weight: 600;
+}
+
+.self-hosted-device-model {
+  font-size: 11px;
+  color: var(--color-text-secondary, #999);
+  padding-left: 16px;
+  margin-top: -2px;
+}
+
+.device-rename-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0 4px 16px;
+  flex-wrap: wrap;
+}
+
+.device-rename-input {
+  flex: 1;
+  min-width: 140px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+  outline: none;
+}
+
+.device-rename-input:focus {
+  border-color: var(--color-accent, #4a90e2);
+}
+
+.shs-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 14px;
+  border-radius: 4px;
+  line-height: 1;
+  opacity: 0.65;
+  transition: opacity 0.15s;
+}
+
+.shs-icon-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .self-hosted-device-status {

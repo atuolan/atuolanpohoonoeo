@@ -1,3 +1,13 @@
+---
+title: Aguaphone Sync Server
+emoji: 🔄
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Aguaphone Self-Hosted Sync Server
 
 最小可跑的自架同步後端，對齊前端的 SelfHostedSync API contract。
@@ -25,14 +35,26 @@ docker compose up -d
 
 伺服器會跑在 `http://你的主機IP:3004`
 
-#### 方式 B：Railway / Render / Fly.io 等雲平台
+#### 方式 B：Hugging Face Spaces（免費，無需信用卡）
+
+1. 到 [huggingface.co/new-space](https://huggingface.co/new-space) 建立 Space
+2. **SDK 選 Docker**，Visibility 可設 Public 或 Private
+3. 把 `self-hosted-sync-server/` 資料夾的所有檔案上傳到 Space 的根目錄（Dockerfile、src/、package.json 等）
+4. 在 Space 的 **Settings → Repository secrets** 設定以下環境變數：
+   - `ADMIN_PASSWORD`：Admin UI 密碼（**務必設定**）
+   - `SYNC_TOKEN_SECRET`：隨機字串，確保重啟後 token 不失效
+5. Space 自動 build 並啟動，取得 `https://你的帳號-aguaphone-sync-server.hf.space` 這樣的公開 URL
+
+> ⚠️ **注意**：免費 HF Spaces 的儲存空間是**暫時性的**，Space 休眠或重啟後 `data/store.json` 會消失（即所有帳號和資料）。請務必設定 `SYNC_TOKEN_SECRET` 讓 secret 固定，並告知用戶資料可能遺失，或升級為 [HF Spaces 持久化儲存](https://huggingface.co/docs/hub/spaces-storage)（付費功能，掛載至 `/data`，此時請另設 `SYNC_DATA_DIR=/data`）。
+
+#### 方式 C：Railway / Render / Fly.io 等雲平台
 
 1. 把 `self-hosted-sync-server/` 資料夾上傳到你的 Git repo
 2. 在平台上指定這個資料夾為部署根目錄（有 Dockerfile 會自動識別）
 3. 設定環境變數（見下方）
 4. 取得平台給的公開 URL（如 `https://xxx.railway.app`）
 
-#### 方式 C：VPS / 本機直接跑
+#### 方式 D：VPS / 本機直接跑
 
 ```bash
 cd self-hosted-sync-server
@@ -60,7 +82,7 @@ https://xxx.railway.app
 
 | 變數 | 說明 | 預設值 |
 |---|---|---|
-| `PORT` | 監聽 port | `3004` |
+| `PORT` | 監聽 port | `7860`（HF Spaces）/ `3004`（docker-compose）|
 | `ADMIN_PASSWORD` | Admin UI 密碼，**務必修改** | `admin` |
 | `SYNC_TOKEN_SECRET` | JWT 簽名 secret | 自動生成並存入 data/store.json |
 | `SYNC_DATA_DIR` | 資料目錄 | `./data` |
