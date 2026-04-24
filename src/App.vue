@@ -423,6 +423,8 @@ async function ensureSelfHostedSyncSocketConnected() {
     const socket = new WebSocket(socketUrl);
     selfHostedSyncSocket = socket;
     selfHostedSyncSocketToken = selfHostedSyncStore.accessToken;
+    // 追蹤此 socket 是否曾成功收到 sync:ready（用來偵測握手 401）
+    let socketReceivedReady = false;
 
     socket.onopen = () => {
       selfHostedSyncSocketReconnectAttempt = 0;
@@ -466,6 +468,7 @@ async function ensureSelfHostedSyncSocketConnected() {
           latestUpdateAt: payload.latestUpdateAt ?? null,
         });
         if (payload.type === "sync:ready") {
+          socketReceivedReady = true;
           recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket ready", {
             serverTime: payload.serverTime ?? null,
             deviceId: payload.deviceId ?? null,
@@ -574,7 +577,14 @@ async function ensureSelfHostedSyncSocketConnected() {
     socket.onclose = () => {
       recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket closed", {
         readyState: socket.readyState,
+        socketReceivedReady,
       });
+      if (!socketReceivedReady) {
+        // WS 關閉前從未成功受到 sync:ready，很可能是 token 過期造成的 401
+        // 清除 token dedupe 標記，下次重連會強制 refresh session
+        console.log("[App] WS 未收到 sync:ready 即關閉，清除 token 快取以允許強制 refresh");
+        lastRefreshedAccessToken = null;
+      }
       if (selfHostedSyncSocket === socket) {
         selfHostedSyncSocket = null;
         scheduleSelfHostedSyncSocketReconnect();
