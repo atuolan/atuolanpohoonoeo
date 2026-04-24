@@ -749,6 +749,9 @@ wsServer.on("connection", (ws, req) => {
     deviceId: auth.deviceId,
   };
 
+  ws.isAlive = true;
+  ws.on("pong", () => { ws.isAlive = true; });
+
   syncSocketClients.set(ws, client);
 
   const readyOnlineDeviceIds = getOnlineDeviceIdsForUser(auth.userId);
@@ -790,6 +793,22 @@ wsServer.on("connection", (ws, req) => {
     broadcastPresence(auth.userId);
   });
 });
+
+// Server-side heartbeat：每 25 秒 ping 所有 client，防止 HF Spaces proxy 因閒置而斷線
+const WS_HEARTBEAT_INTERVAL_MS = 25_000;
+setInterval(() => {
+  for (const [ws, client] of syncSocketClients.entries()) {
+    if (!ws.isAlive) {
+      console.log("[heartbeat] 無回應，終止連線", { userId: client.userId, deviceId: client.deviceId });
+      syncSocketClients.delete(ws);
+      ws.terminate();
+      broadcastPresence(client.userId);
+      continue;
+    }
+    ws.isAlive = false;
+    ws.ping();
+  }
+}, WS_HEARTBEAT_INTERVAL_MS);
 
 server.listen(port, "0.0.0.0", () => {
   console.log(`[SelfHostedSyncServer] listening on http://127.0.0.1:${port}`);
