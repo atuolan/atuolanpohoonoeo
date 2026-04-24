@@ -398,14 +398,36 @@ async function ensureSelfHostedSyncSocketConnected() {
     // Refresh token 本身已失效（401）→ 繼續重連毫無意義，直接登出並通知用戶
     const errMsg = error instanceof Error ? error.message : String(error);
     if (errMsg.includes("401") || errMsg.toLowerCase().includes("invalid or expired")) {
-      console.warn("[App] Refresh token 失效，自動登出");
-      closeSelfHostedSyncSocket();
-      await selfHostedSyncStore.logout();
-      notificationStore.notifySystem(
-        "同步登入已過期",
-        "請重新登入自架同步伺服器以繼續使用同步功能。",
-      );
-      return;
+      // 有儲存密碼 → 嘗試自動重新登入，成功後重建 WS
+      if (selfHostedSyncStore.savedPassword && selfHostedSyncStore.username) {
+        try {
+          console.log("[App] Refresh token 失效，嘗試用儲存密碼自動重新登入");
+          await selfHostedSyncStore.login(selfHostedSyncStore.savedPassword);
+          console.log("[App] 自動重新登入成功，重建 WS");
+          // 重置 token 快取讓後續呼叫用新 token
+          lastRefreshedAccessToken = selfHostedSyncStore.accessToken;
+          lastSessionRefreshAt = Date.now();
+          // 不 return → 繼續往下建立新的 WS 連線
+        } catch (autoLoginErr) {
+          console.warn("[App] 自動重新登入失敗:", autoLoginErr);
+          closeSelfHostedSyncSocket();
+          await selfHostedSyncStore.logout();
+          notificationStore.notifySystem(
+            "同步登入已過期",
+            "請重新登入自架同步伺服器以繼續使用同步功能。",
+          );
+          return;
+        }
+      } else {
+        console.warn("[App] Refresh token 失效，自動登出");
+        closeSelfHostedSyncSocket();
+        await selfHostedSyncStore.logout();
+        notificationStore.notifySystem(
+          "同步登入已過期",
+          "請重新登入自架同步伺服器以繼續使用同步功能。",
+        );
+        return;
+      }
     }
   }
 

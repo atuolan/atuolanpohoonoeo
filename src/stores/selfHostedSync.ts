@@ -36,6 +36,8 @@ interface PersistedSelfHostedSyncSettings {
   lastPushedUpdatedAt: number | null;
   /** 使用者為這台裝置設定的自訂名稱（持久化於本機） */
   customDeviceName: string | null;
+  /** 記住密碼：明文儲存於本機（使用者選擇啟用時才存） */
+  savedPassword: string | null;
 }
 
 export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
@@ -61,6 +63,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
   const lastPushedServerTime = ref<number | null>(null);
   const lastPushedUpdatedAt = ref<number | null>(null);
   const customDeviceName = ref<string | null>(null);
+  const savedPassword = ref<string | null>(null);
   const devices = ref<SelfHostedSyncMetaDeviceInfo[]>([]);
   const onlineDeviceIds = ref<string[]>([]);
   const lastPresenceAt = ref<number | null>(null);
@@ -165,6 +168,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
           lastPushedServerTime.value = saved.lastPushedServerTime ?? null;
           lastPushedUpdatedAt.value = saved.lastPushedUpdatedAt ?? null;
           customDeviceName.value = saved.customDeviceName ?? null;
+          savedPassword.value = saved.savedPassword ?? null;
         } else {
           serverUrl.value = DEFAULT_SELF_HOSTED_SYNC_SERVER_URL;
         }
@@ -211,6 +215,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
           lastPushedServerTime: lastPushedServerTime.value,
           lastPushedUpdatedAt: lastPushedUpdatedAt.value,
           customDeviceName: customDeviceName.value,
+          savedPassword: savedPassword.value,
         } satisfies PersistedSelfHostedSyncSettings),
       );
       await db.put(DB_STORES.APP_SETTINGS, plainData);
@@ -596,7 +601,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     }
   }
 
-  async function logout(): Promise<void> {
+  async function logout(options?: { clearSavedPassword?: boolean }): Promise<void> {
     enabled.value = false;
     accessToken.value = null;
     refreshToken.value = null;
@@ -607,6 +612,19 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     // 登出後下次登入可能是另一個帳號 / 伺服器，cutoff 已失去意義。
     lastPushedServerTime.value = null;
     lastPushedUpdatedAt.value = null;
+    if (options?.clearSavedPassword) {
+      savedPassword.value = null;
+    }
+    await saveSettings();
+  }
+
+  async function savePassword(password: string): Promise<void> {
+    savedPassword.value = password;
+    await saveSettings();
+  }
+
+  async function clearSavedPassword(): Promise<void> {
+    savedPassword.value = null;
     await saveSettings();
   }
 
@@ -639,10 +657,21 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
       try {
         await refreshSession();
       } catch (refreshError) {
-        // Refresh token 本身失效 → 直接登出，讓 UI 回到登入狀態
+        // Refresh token 本身失效 → 嘗試用儲存的密碼自動重新登入
         const msg = refreshError instanceof Error ? refreshError.message : String(refreshError);
         if (msg.includes("401") || msg.toLowerCase().includes("invalid or expired")) {
-          await logout();
+          if (savedPassword.value && username.value) {
+            try {
+              console.log("[SelfHostedSyncStore] refresh token 失效，嘗試自動重新登入");
+              await login(savedPassword.value);
+              return action();
+            } catch (autoLoginError) {
+              console.warn("[SelfHostedSyncStore] 自動重新登入失敗:", autoLoginError);
+              await logout();
+            }
+          } else {
+            await logout();
+          }
         }
         throw refreshError;
       }
@@ -978,5 +1007,8 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     markSyncFailed,
     setGuardAlert,
     clearGuardAlert,
+    savedPassword,
+    savePassword,
+    clearSavedPassword,
   };
 });

@@ -159,6 +159,7 @@ const cloudPushSyncStatus = ref(cloudPushStore.syncStatus);
 const cloudPushSyncError = ref(cloudPushStore.syncError);
 const cloudPushNextAlarm = ref(cloudPushStore.nextAlarm);
 const selfHostedSyncPassword = ref("");
+const selfHostedSyncRememberPassword = ref(false);
 const selfHostedSyncActionStatus = ref<"idle" | "running">("idle");
 
 const selfHostedSyncCanTestConnection = computed(
@@ -507,9 +508,11 @@ async function handleSelfHostedStartSync() {
 
   selfHostedSyncActionStatus.value = "running";
   try {
-    const outcome = await selfHostedSyncStore.loginOrRegister(
-      selfHostedSyncPassword.value,
-    );
+    const pwd = selfHostedSyncPassword.value;
+    const outcome = await selfHostedSyncStore.loginOrRegister(pwd);
+    if (selfHostedSyncRememberPassword.value) {
+      await selfHostedSyncStore.savePassword(pwd);
+    }
     selfHostedSyncPassword.value = "";
     // 登入/註冊成功後自動抓一次裝置狀態
     try {
@@ -5762,6 +5765,24 @@ function useClonedVoice(voiceId: string) {
                 />
               </div>
 
+              <label class="shs-remember-row">
+                <input
+                  v-model="selfHostedSyncRememberPassword"
+                  type="checkbox"
+                  class="shs-remember-checkbox"
+                />
+                <span>記住密碼（token 失效時自動重新登入）</span>
+                <span
+                  v-if="selfHostedSyncStore.savedPassword"
+                  class="shs-saved-badge"
+                >已儲存</span>
+                <button
+                  v-if="selfHostedSyncStore.savedPassword"
+                  class="shs-clear-pwd-btn"
+                  @click="selfHostedSyncStore.clearSavedPassword()"
+                >清除</button>
+              </label>
+
               <button
                 class="shs-primary-btn"
                 :disabled="!selfHostedSyncCanAuth"
@@ -8220,6 +8241,43 @@ function useClonedVoice(voiceId: string) {
   display: flex;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+// 記住密碼列
+.shs-remember-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #888);
+  cursor: pointer;
+  user-select: none;
+  margin: 4px 0;
+}
+
+.shs-remember-checkbox {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.shs-saved-badge {
+  font-size: 11px;
+  background: rgba(125, 211, 168, 0.2);
+  color: #7dd3a8;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.shs-clear-pwd-btn {
+  font-size: 11px;
+  background: none;
+  border: none;
+  color: var(--color-text-secondary, #888);
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+  margin-left: 2px;
 }
 
 // 提示文字
