@@ -1126,6 +1126,7 @@ onUnmounted(() => {
             :style="{
               left: `${pos.coords?.x ?? 50}%`,
               top: `${pos.coords?.y ?? 50}%`,
+              ...(pos.coords?.rotate ? { transform: `translate(-50%, -50%) rotate(${pos.coords.rotate}deg)` } : {}),
             }"
           >
             <div
@@ -1230,6 +1231,7 @@ onUnmounted(() => {
             :style="{
               left: `${drawn.position.coords?.x ?? 50}%`,
               top: `${drawn.position.coords?.y ?? 50}%`,
+              ...(drawn.position.coords?.rotate ? { transform: `translate(-50%, -50%) rotate(${drawn.position.coords.rotate}deg)` } : {}),
             }"
           >
             <div class="fate-cards-area__slot">
