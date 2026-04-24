@@ -352,8 +352,9 @@ export function useChatGroupCall(deps: {
           const char = memberCharacters.find((c: any) => c.id === m.characterId);
           return {
             characterId: m.characterId,
-            name: char?.data?.name || char?.nickname || m.characterId,
+            name: char?.nickname || char?.data?.name || m.characterId,
             nickname: m.nickname,
+            originalName: char?.data?.name || m.characterId,
             personality: char?.data?.personality || "",
             description: char?.data?.description || "",
             avatar: char?.avatar || "",

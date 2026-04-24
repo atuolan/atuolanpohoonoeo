@@ -716,64 +716,83 @@ const messagesForInfo = computed(() => {
   }));
 });
 
-// 群聊輔助：根據角色名稱取得角色頭像
-function getGroupMemberAvatar(senderName: string): string {
-  if (!groupMetadata.value) return "";
+function resolveGroupMemberByName(senderName: string): {
+  characterId?: string;
+  avatar: string;
+  canonicalName: string;
+} {
+  const rawName = senderName.trim();
+  if (!groupMetadata.value || !rawName) {
+    return {
+      characterId: undefined,
+      avatar: "",
+      canonicalName: rawName,
+    };
+  }
 
-  // 多人卡模式：從 multiCharMembers 查找
+  const candidateNames = [
+    rawName,
+    rawName.replace(/[（(][^）)]*[）)]$/u, "").trim(),
+  ].filter((name, index, arr) => !!name && arr.indexOf(name) === index);
+
   if (
     groupMetadata.value.isMultiCharCard &&
     groupMetadata.value.multiCharMembers
   ) {
-    const member = groupMetadata.value.multiCharMembers.find(
-      (m) => m.name === senderName,
-    );
-    return member?.avatar || "";
+    for (const candidate of candidateNames) {
+      const member = groupMetadata.value.multiCharMembers.find(
+        (m) => m.name === candidate,
+      );
+      if (member) {
+        return {
+          characterId: member.id,
+          avatar: member.avatar || "",
+          canonicalName: member.name,
+        };
+      }
+    }
+
+    return {
+      characterId: undefined,
+      avatar: "",
+      canonicalName: rawName,
+    };
   }
 
-  // 普通群聊模式
-  for (const member of groupMetadata.value.members) {
-    const char = charactersStore.characters.find(
-      (c) => c.id === member.characterId,
-    );
-    if (
-      char &&
-      (char.data?.name === senderName || char.nickname === senderName)
-    ) {
-      return char.avatar || "";
+  for (const candidate of candidateNames) {
+    for (const member of groupMetadata.value.members) {
+      const char = charactersStore.characters.find(
+        (c) => c.id === member.characterId,
+      );
+      const aliases = [member.nickname, char?.nickname, char?.data?.name]
+        .map((name) => name?.trim())
+        .filter((name, index, arr): name is string => !!name && arr.indexOf(name) === index);
+
+      if (aliases.includes(candidate)) {
+        return {
+          characterId: member.characterId,
+          avatar: char?.avatar || "",
+          canonicalName: member.nickname?.trim() || char?.nickname?.trim() || char?.data?.name || rawName,
+        };
+      }
     }
   }
-  return "";
+
+  return {
+    characterId: undefined,
+    avatar: "",
+    canonicalName: rawName,
+  };
+ }
+
+// 群聊輔助：根據角色名稱取得角色頭像
+function getGroupMemberAvatar(senderName: string): string {
+  return resolveGroupMemberByName(senderName).avatar;
 }
 
 // 群聊輔助：根據角色名稱取得角色 ID
 function getGroupMemberIdByName(senderName: string): string | undefined {
-  if (!groupMetadata.value) return undefined;
-
-  // 多人卡模式：從 multiCharMembers 查找
-  if (
-    groupMetadata.value.isMultiCharCard &&
-    groupMetadata.value.multiCharMembers
-  ) {
-    const member = groupMetadata.value.multiCharMembers.find(
-      (m) => m.name === senderName,
-    );
-    return member?.id;
-  }
-
-  // 普通群聊模式
-  for (const member of groupMetadata.value.members) {
-    const char = charactersStore.characters.find(
-      (c) => c.id === member.characterId,
-    );
-    if (
-      char &&
-      (char.data?.name === senderName || char.nickname === senderName)
-    ) {
-      return member.characterId;
-    }
-  }
-  return undefined;
+  return resolveGroupMemberByName(senderName).characterId;
 }
 
 /**
@@ -4618,8 +4637,9 @@ async function triggerAIResponse(options?: {
               );
               return {
                 characterId: m.characterId,
-                name: char?.data?.name || char?.nickname || m.characterId,
+                name: char?.nickname || char?.data?.name || m.characterId,
                 nickname: m.nickname,
+                originalName: char?.data?.name || m.characterId,
                 personality: char?.data?.personality || "",
                 description: char?.data?.description || "",
                 avatar: char?.avatar || "",
@@ -4937,9 +4957,10 @@ async function triggerAIResponse(options?: {
 
           for (let i = 0; i < parsed.messages.length; i++) {
             const parsedMsg = parsed.messages[i];
-            const senderName = parsedMsg.senderName || "";
-            const senderCharId = getGroupMemberIdByName(senderName);
-            const senderAvatar = getGroupMemberAvatar(senderName);
+            const senderInfo = resolveGroupMemberByName(parsedMsg.senderName || "");
+            const senderName = senderInfo.canonicalName;
+            const senderCharId = senderInfo.characterId;
+            const senderAvatar = senderInfo.avatar;
 
             // 處理群管理動作
             if (parsedMsg.isGroupAction && parsedMsg.groupActionType) {
@@ -5857,9 +5878,10 @@ async function handleStreamingClose() {
 
         for (let i = 0; i < parsed.messages.length; i++) {
           const parsedMsg = parsed.messages[i];
-          const senderName = parsedMsg.senderName || "";
-          const senderCharId = getGroupMemberIdByName(senderName);
-          const senderAvatar = getGroupMemberAvatar(senderName);
+          const senderInfo = resolveGroupMemberByName(parsedMsg.senderName || "");
+          const senderName = senderInfo.canonicalName;
+          const senderCharId = senderInfo.characterId;
+          const senderAvatar = senderInfo.avatar;
 
           if (parsedMsg.isGroupAction) {
             messages.value.push({

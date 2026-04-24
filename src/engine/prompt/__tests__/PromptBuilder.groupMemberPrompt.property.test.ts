@@ -167,4 +167,44 @@ describe("PromptBuilder - Group Chat Member Prompt Inclusion", () => {
       { numRuns: 100 },
     );
   });
+
+  it("should use in-chat nicknames as canonical output names for duplicated real names", async () => {
+    const options = createGroupChatOptions({
+      groupName: "測試群",
+      groupMembers: [
+        {
+          characterId: "char_1",
+          name: "顧淵",
+          nickname: "小顧",
+          originalName: "顧淵",
+          personality: "安靜內向",
+          description: "弟弟",
+          avatar: "",
+          isAdmin: false,
+          isMuted: false,
+        },
+        {
+          characterId: "char_2",
+          name: "顧淵",
+          nickname: "大顧",
+          originalName: "顧淵",
+          personality: "成熟穩重",
+          description: "哥哥",
+          avatar: "",
+          isAdmin: false,
+          isMuted: false,
+        },
+      ],
+    });
+
+    const builder = new PromptBuilder(options);
+    const result = await builder.build();
+    const allContent = getAllMessageContent(result.messages);
+
+    expect(allContent).toContain("【小顧】（角色本名：顧淵）");
+    expect(allContent).toContain("【大顧】（角色本名：顧淵）");
+    expect(allContent).toContain("本次群聊共有 2 位角色：小顧、大顧");
+    expect(allContent).toContain("只能使用以上名字");
+    expect(allContent).toContain("禁止擅自改名或追加年齡等描述");
+  });
 });

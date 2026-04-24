@@ -231,6 +231,7 @@ export interface PromptBuilderOptions {
     characterId: string;
     name: string;
     nickname?: string;
+    originalName?: string;
     personality: string;
     description: string;
     avatar: string;
@@ -2114,12 +2115,15 @@ export class PromptBuilder {
       if (member.isAdmin) tags.push("[管理員]");
       if (member.isMuted) tags.push("[已禁言]");
 
-      const displayName = member.nickname
-        ? `${member.name}（暱稱：${member.nickname}）`
-        : member.name;
+      const canonicalName = (member.nickname || member.name || "").trim();
+      const originalName = (member.originalName || member.name || "").trim();
+      const identityNote =
+        originalName && originalName !== canonicalName
+          ? `（角色本名：${originalName}）`
+          : "";
 
       const tagStr = tags.length > 0 ? ` ${tags.join(" ")}` : "";
-      parts.push(`【${displayName}】${tagStr}`);
+      parts.push(`【${canonicalName}】${identityNote}${tagStr}`);
 
       if (member.personality) {
         parts.push(`  性格：${member.personality}`);
@@ -2129,6 +2133,13 @@ export class PromptBuilder {
       }
       parts.push("");
     }
+
+    parts.push(
+      `⚠️ 在所有 <msg name="...">、<recall name="...">、<dm name="...">、<group-action actor="..." target="..."> 等輸出欄位中，只能使用上方【】內的名字，必須完全一致。`,
+    );
+    parts.push(
+      `⚠️ 禁止把名字改回角色本名，禁止為名字追加年齡、括號、前後綴、暱稱說明或任何自創變體。`,
+    );
 
     parts.push(`</group_members>`);
 
@@ -2159,10 +2170,11 @@ export class PromptBuilder {
     // 普通群聊模式
     if (!groupMembers || groupMembers.length === 0) return null;
 
-    const names = groupMembers.map((m) => m.name);
+    const names = groupMembers.map((m) => (m.nickname || m.name || "").trim());
     const content = `<group_character_names>
 🎭 本次群聊共有 ${names.length} 位角色：${names.join("、")}
 ⚠️ 你必須扮演以上所有角色，每個角色都必須有機會發言，不能遺漏任何一位！
+⚠️ 所有輸出標籤中的 name / actor / target 只能使用以上名字，禁止擅自改名或追加年齡等描述！
 </group_character_names>`;
 
     return {
