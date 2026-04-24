@@ -7856,7 +7856,9 @@ function convertToStorableMessage(m: any, charName: string): ChatMessage {
     avatarChangeDesc: m.avatarChangeDesc,
     senderCharacterId: m.senderCharacterId,
     senderCharacterName: m.senderCharacterName,
-    senderCharacterAvatar: m.senderCharacterAvatar,
+    senderCharacterAvatar: m.senderCharacterId
+      ? undefined
+      : m.senderCharacterAvatar,
     isRecall: m.isRecall,
     recallContent: m.recallContent,
     isPrivateMessage: m.isPrivateMessage,

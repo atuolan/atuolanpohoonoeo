@@ -3,12 +3,13 @@
  * 用於自動檢測和修復數據完整性問題
  */
 
-import { db, DB_STORES } from '@/db/database';
+import { db, DB_STORES, getDatabase } from '@/db/database';
+import { scheduleSelfHostedAutoSync } from '@/services/selfHostedSyncState';
 import type { Chat } from '@/types/chat';
 import type { StoredCharacter } from '@/types/character';
 
 const MIGRATION_VERSION_KEY = 'data_migration_version';
-const CURRENT_VERSION = 1;
+const CURRENT_VERSION = 2;
 
 /**
  * 數據遷移服務
@@ -29,11 +30,10 @@ export class DataMigrationService {
         await this.setCurrentVersion(1);
       }
 
-      // 未來的遷移可以在這裡添加
-      // if (currentVersion < 2) {
-      //   await this.migration_v2_xxx();
-      //   await this.setCurrentVersion(2);
-      // }
+      if (currentVersion < 2) {
+        await this.migration_v2_cleanupGroupMessageAvatarSnapshots();
+        await this.setCurrentVersion(2);
+      }
 
       console.log(`[DataMigration] 遷移完成，當前版本: ${CURRENT_VERSION}`);
     } catch (error) {
@@ -172,6 +172,53 @@ export class DataMigrationService {
       }
     } catch (error) {
       console.error('[DataMigration] v1: 修復失敗:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 遷移 v2: 清理群聊訊息中重複持久化的 senderCharacterAvatar 快照
+   */
+  private async migration_v2_cleanupGroupMessageAvatarSnapshots(): Promise<void> {
+    console.log('[DataMigration] 執行遷移 v2: 清理群聊訊息頭像快照');
+
+    try {
+      const database = await getDatabase();
+      const tx = database.transaction(DB_STORES.CHAT_MESSAGES, 'readwrite');
+      const store = tx.objectStore(DB_STORES.CHAT_MESSAGES);
+
+      let cleanedCount = 0;
+      const touchedChatIds = new Set<string>();
+      let cursor = await store.openCursor();
+
+      while (cursor) {
+        const message = cursor.value as any;
+        if (
+          message?.senderCharacterId &&
+          typeof message.senderCharacterAvatar === 'string' &&
+          message.senderCharacterAvatar.length > 0
+        ) {
+          delete message.senderCharacterAvatar;
+          await cursor.update(message);
+          cleanedCount++;
+          if (typeof message.chatId === 'string' && message.chatId) {
+            touchedChatIds.add(message.chatId);
+          }
+        }
+        cursor = await cursor.continue();
+      }
+
+      await tx.done;
+
+      if (cleanedCount > 0) {
+        scheduleSelfHostedAutoSync();
+      }
+
+      console.log(
+        `[DataMigration] v2: 清理完成 - ${touchedChatIds.size} 個聊天，${cleanedCount} 條訊息已移除 senderCharacterAvatar`,
+      );
+    } catch (error) {
+      console.error('[DataMigration] v2: 清理失敗:', error);
       throw error;
     }
   }
