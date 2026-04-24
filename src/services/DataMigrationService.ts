@@ -9,7 +9,29 @@ import type { Chat } from '@/types/chat';
 import type { StoredCharacter } from '@/types/character';
 
 const MIGRATION_VERSION_KEY = 'data_migration_version';
-const CURRENT_VERSION = 2;
+const CURRENT_VERSION = 3;
+
+const CHAT_IMAGE_PREFIX = 'chatimg_';
+
+function isChatImageRef(value: unknown): value is string {
+  return typeof value === 'string' && value.startsWith(CHAT_IMAGE_PREFIX);
+}
+
+function isRawBase64ImageData(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  if (
+    value.startsWith('data:') ||
+    value.startsWith('http') ||
+    value.startsWith('blob:') ||
+    value.startsWith(CHAT_IMAGE_PREFIX) ||
+    value.startsWith('media/')
+  ) {
+    return false;
+  }
+  const normalized = value.replace(/\s+/g, '');
+  if (normalized.length < 256 || normalized.length % 4 !== 0) return false;
+  return /^[A-Za-z0-9+/=]+$/.test(normalized);
+}
 
 /**
  * 數據遷移服務
@@ -33,6 +55,11 @@ export class DataMigrationService {
       if (currentVersion < 2) {
         await this.migration_v2_cleanupGroupMessageAvatarSnapshots();
         await this.setCurrentVersion(2);
+      }
+
+      if (currentVersion < 3) {
+        await this.migration_v3_extractRawMessageImageData();
+        await this.setCurrentVersion(3);
       }
 
       console.log(`[DataMigration] 遷移完成，當前版本: ${CURRENT_VERSION}`);
@@ -219,6 +246,91 @@ export class DataMigrationService {
       );
     } catch (error) {
       console.error('[DataMigration] v2: 清理失敗:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 遷移 v3: 將舊訊息中的裸 base64 imageData 轉為 imageCache 引用
+   */
+  private async migration_v3_extractRawMessageImageData(): Promise<void> {
+    console.log('[DataMigration] 執行遷移 v3: 清理裸 base64 imageData');
+
+    try {
+      const database = await getDatabase();
+      const tx = database.transaction(
+        [DB_STORES.CHAT_MESSAGES, DB_STORES.IMAGE_CACHE],
+        'readwrite',
+      );
+      const messagesStore = tx.objectStore(DB_STORES.CHAT_MESSAGES);
+      const imageStore = tx.objectStore(DB_STORES.IMAGE_CACHE);
+
+      let cleanedCount = 0;
+      const touchedChatIds = new Set<string>();
+      const cache = new Map<string, string>();
+      let sequence = 0;
+      let cursor = await messagesStore.openCursor();
+
+      while (cursor) {
+        const message = cursor.value as any;
+        if (isRawBase64ImageData(message?.imageData)) {
+          const normalized = message.imageData.replace(/\s+/g, '');
+          let refId: string | undefined;
+
+          if (isChatImageRef(message.imageUrl)) {
+            refId = message.imageUrl;
+          } else if (cache.has(normalized)) {
+            refId = cache.get(normalized)!;
+          } else {
+            refId = `${CHAT_IMAGE_PREFIX}mig_${Date.now()}_${sequence++}`;
+            const now = Date.now();
+            const payload = typeof message.imageUrl === 'string' && message.imageUrl.startsWith('data:')
+              ? message.imageUrl
+              : normalized;
+
+            await imageStore.put({
+              id: refId,
+              data: payload,
+              thumbnail: '',
+              fileName: 'chat-image-migrated',
+              fileSize: payload.length,
+              mimeType: message.imageMimeType || 'image/jpeg',
+              createdAt: now,
+              lastUsedAt: now,
+              useCount: 0,
+            } as any);
+            cache.set(normalized, refId);
+          }
+
+          if (
+            typeof message.imageUrl === 'string' &&
+            message.imageUrl.startsWith('data:') &&
+            refId
+          ) {
+            message.imageUrl = refId;
+          }
+
+          message.imageData = refId;
+          await cursor.update(message);
+          cleanedCount++;
+          if (typeof message.chatId === 'string' && message.chatId) {
+            touchedChatIds.add(message.chatId);
+          }
+        }
+        cursor = await cursor.continue();
+      }
+
+      await tx.done;
+
+      if (cleanedCount > 0) {
+        scheduleSelfHostedAutoSync();
+      }
+
+      console.log(
+        `[DataMigration] v3: 清理完成 - ${touchedChatIds.size} 個聊天，${cleanedCount} 條訊息已轉為 imageCache 引用`,
+      );
+    } catch (error) {
+      console.error('[DataMigration] v3: 清理失敗:', error);
       throw error;
     }
   }

@@ -2126,13 +2126,19 @@ function restoreChatMedia(
         !msg.imageData.startsWith("http") &&
         mediaFiles[msg.imageData]
       ) {
-        const mimeType = getMimeTypeFromFilename(msg.imageData);
-        msg.imageData = uint8ArrayToDataUrl(
-          mediaFiles[msg.imageData],
-          mimeType,
-        );
+        msg.imageData = uint8ArrayToBase64(mediaFiles[msg.imageData]);
       }
     }
+  }
+
+  if (typeof chat.charAvatarOverride === "string") {
+    restoreMediaPathsInValue(chat, "charAvatarOverride", mediaFiles);
+  }
+  if (typeof chat.userAvatarOverride === "string") {
+    restoreMediaPathsInValue(chat, "userAvatarOverride", mediaFiles);
+  }
+  if (Array.isArray(chat.coupleAvatarLibrary)) {
+    restoreMediaPathsInValue(chat, "coupleAvatarLibrary", mediaFiles);
   }
 }
 
@@ -2156,6 +2162,14 @@ function uint8ArrayToDataUrl(data: Uint8Array, mimeType: string): string {
     binary += String.fromCharCode(data[i]);
   }
   return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
+function uint8ArrayToBase64(data: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < data.length; i++) {
+    binary += String.fromCharCode(data[i]);
+  }
+  return btoa(binary);
 }
 
 /**

@@ -34,6 +34,10 @@ import type { Chat, ChatMessage, MessageSender } from "../types/chat";
 import type { ImportantEventsLog } from "../types/importantEvents";
 import type { Lorebook, WorldInfoEntry } from "../types/worldinfo";
 import {
+  BackupMediaExtractor,
+  extractMediaFromChatBackupData,
+} from "../utils/backupMediaExtractor";
+import {
   createDefaultWorldInfoEntry,
   WorldInfoLogic,
   WorldInfoPosition,
@@ -1034,32 +1038,162 @@ export class ImportExportService {
   }
 
   /**
-   * 從訊息中提取媒體檔案
+   * 將 Uint8Array 轉換為 base64 字串（不含 data: 前綴）
    */
-  private extractMediaFromChat(chat: Chat): Map<string, string> {
-    const media = new Map<string, string>();
-    let mediaIndex = 0;
+  private uint8ArrayToBase64(data: Uint8Array): string {
+    let binary = "";
+    for (let i = 0; i < data.length; i++) {
+      binary += String.fromCharCode(data[i]);
+    }
+    return btoa(binary);
+  }
+
+  private rewriteMediaPathsInValue(value: any, mapPath: (path: string) => string): void {
+    if (value === null || value === undefined) return;
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        this.rewriteMediaPathsInValue(item, mapPath);
+      }
+      return;
+    }
+
+    if (typeof value !== "object") return;
+
+    for (const key of Object.keys(value)) {
+      const current = value[key];
+      if (typeof current === "string") {
+        if (current.startsWith("media/")) {
+          value[key] = mapPath(current);
+        }
+        continue;
+      }
+      this.rewriteMediaPathsInValue(current, mapPath);
+    }
+  }
+
+  private prepareChatMediaForExport(
+    chat: Chat,
+    mediaBasePath = "media",
+  ): { chatForExport: Chat; mediaFiles: Record<string, Uint8Array>; mediaCount: number } {
+    const chatForExport = JSON.parse(JSON.stringify(chat)) as Chat;
+    const extractor = new BackupMediaExtractor();
+    extractMediaFromChatBackupData(chatForExport, extractor);
+    const extracted = extractor.getResult();
+    const mediaFiles: Record<string, Uint8Array> = {};
+
+    for (const [filename, data] of Object.entries(extracted.files)) {
+      const relativeName = filename.startsWith("media/")
+        ? filename.slice("media/".length)
+        : filename;
+      mediaFiles[`${mediaBasePath}/${relativeName}`] = data;
+    }
+
+    this.rewriteMediaPathsInValue(chatForExport, (path) => {
+      const relativeName = path.startsWith("media/")
+        ? path.slice("media/".length)
+        : path;
+      return `${mediaBasePath}/${relativeName}`;
+    });
+
+    return {
+      chatForExport,
+      mediaFiles,
+      mediaCount: Object.keys(mediaFiles).length,
+    };
+  }
+
+  private restoreGenericMediaPathsInValue(
+    value: any,
+    files: Record<string, Uint8Array>,
+  ): number {
+    if (value === null || value === undefined) return 0;
+
+    if (Array.isArray(value)) {
+      return value.reduce(
+        (sum, item) => sum + this.restoreGenericMediaPathsInValue(item, files),
+        0,
+      );
+    }
+
+    if (typeof value !== "object") return 0;
+
+    let restored = 0;
+    for (const key of Object.keys(value)) {
+      const current = value[key];
+      if (typeof current === "string" && current.startsWith("media/") && files[current]) {
+        const mimeType = this.getMimeTypeFromFilename(current);
+        value[key] = this.uint8ArrayToDataUrl(files[current], mimeType);
+        restored++;
+        continue;
+      }
+      restored += this.restoreGenericMediaPathsInValue(current, files);
+    }
+
+    return restored;
+  }
+
+  private restoreChatMediaFromFiles(
+    chat: Chat,
+    files: Record<string, Uint8Array>,
+  ): number {
+    let mediaCount = 0;
 
     for (const msg of chat.messages) {
-      // 提取圖片 (Base64 DataURL)
-      if (msg.imageUrl?.startsWith("data:")) {
-        const ext = this.getExtensionFromDataUrl(msg.imageUrl);
-        const filename = `media/img_${mediaIndex++}.${ext}`;
-        media.set(msg.id, filename);
+      if (
+        msg.imageUrl &&
+        !msg.imageUrl.startsWith("data:") &&
+        !msg.imageUrl.startsWith("http") &&
+        files[msg.imageUrl]
+      ) {
+        const mimeType = this.getMimeTypeFromFilename(msg.imageUrl);
+        msg.imageUrl = this.uint8ArrayToDataUrl(files[msg.imageUrl], mimeType);
+        mediaCount++;
+      }
+
+      if (
+        msg.imageData &&
+        !msg.imageData.startsWith("data:") &&
+        !msg.imageData.startsWith("http") &&
+        files[msg.imageData]
+      ) {
+        msg.imageData = this.uint8ArrayToBase64(files[msg.imageData]);
+        mediaCount++;
       }
     }
 
-    // 提取聊天外觀桌布圖片
     if (
       chat.appearance?.wallpaper?.type === "image" &&
-      chat.appearance.wallpaper.value?.startsWith("data:")
+      chat.appearance.wallpaper.value &&
+      !chat.appearance.wallpaper.value.startsWith("data:") &&
+      !chat.appearance.wallpaper.value.startsWith("http") &&
+      files[chat.appearance.wallpaper.value]
     ) {
-      const ext = this.getExtensionFromDataUrl(chat.appearance.wallpaper.value);
-      const filename = `media/wallpaper.${ext}`;
-      media.set("__appearance_wallpaper__", filename);
+      const mimeType = this.getMimeTypeFromFilename(chat.appearance.wallpaper.value);
+      chat.appearance.wallpaper.value = this.uint8ArrayToDataUrl(
+        files[chat.appearance.wallpaper.value],
+        mimeType,
+      );
+      mediaCount++;
     }
 
-    return media;
+    if (chat.charAvatarOverride) {
+      const holder = { value: chat.charAvatarOverride };
+      mediaCount += this.restoreGenericMediaPathsInValue(holder, files);
+      chat.charAvatarOverride = holder.value;
+    }
+
+    if (chat.userAvatarOverride) {
+      const holder = { value: chat.userAvatarOverride };
+      mediaCount += this.restoreGenericMediaPathsInValue(holder, files);
+      chat.userAvatarOverride = holder.value;
+    }
+
+    if (chat.coupleAvatarLibrary) {
+      mediaCount += this.restoreGenericMediaPathsInValue(chat.coupleAvatarLibrary, files);
+    }
+
+    return mediaCount;
   }
 
   /**
@@ -1179,43 +1313,10 @@ export class ImportExportService {
         );
       }
 
-      // 提取媒體檔案映射
-      const mediaMap = this.extractMediaFromChat(chat);
+      const { chatForExport, mediaFiles, mediaCount } = this.prepareChatMediaForExport(chat);
 
-      // 準備 ZIP 內容
       const zipFiles: Record<string, Uint8Array> = {};
-
-      // 複製聊天資料，將圖片 URL 替換為檔案路徑
-      const chatForExport = JSON.parse(JSON.stringify(chat)) as Chat;
-      for (const msg of chatForExport.messages) {
-        if (msg.imageUrl?.startsWith("data:") && mediaMap.has(msg.id)) {
-          const originalUrl = chat.messages.find(
-            (m) => m.id === msg.id,
-          )?.imageUrl;
-          if (originalUrl) {
-            // 保存媒體檔案
-            const filename = mediaMap.get(msg.id)!;
-            zipFiles[filename] = this.dataUrlToUint8Array(originalUrl);
-            // 替換為相對路徑
-            msg.imageUrl = filename;
-          }
-        }
-      }
-
-      // 處理聊天外觀桌布圖片
-      if (
-        mediaMap.has("__appearance_wallpaper__") &&
-        chatForExport.appearance?.wallpaper?.value?.startsWith("data:")
-      ) {
-        const originalUrl = chat.appearance!.wallpaper!.value;
-        const filename = mediaMap.get("__appearance_wallpaper__")!;
-        zipFiles[filename] = this.dataUrlToUint8Array(originalUrl);
-        // 替換為相對路徑
-        chatForExport.appearance!.wallpaper!.value = filename;
-        console.log(
-          `[ImportExportService] 匯出聊天桌布圖片: ${filename} (${originalUrl.length} bytes)`,
-        );
-      }
+      Object.assign(zipFiles, mediaFiles);
 
       // 建立匯出資料
       const exportData = this.createChatExportData(chatForExport, {
@@ -1236,7 +1337,7 @@ export class ImportExportService {
         chatName: chat.name,
         characterId: chat.characterId,
         messageCount: chat.messages.length,
-        mediaCount: mediaMap.size,
+        mediaCount,
       };
       zipFiles["metadata.json"] = strToU8(JSON.stringify(metadata, null, 2));
 
@@ -1317,50 +1418,7 @@ export class ImportExportService {
 
       const chat = exportData.chat as Chat;
 
-      // 還原媒體檔案
-      let mediaCount = 0;
-      for (const msg of chat.messages) {
-        if (
-          msg.imageUrl &&
-          !msg.imageUrl.startsWith("data:") &&
-          !msg.imageUrl.startsWith("http")
-        ) {
-          // 這是相對路徑，嘗試從 ZIP 中還原
-          const mediaFile = files[msg.imageUrl];
-          if (mediaFile) {
-            const mimeType = this.getMimeTypeFromFilename(msg.imageUrl);
-            msg.imageUrl = this.uint8ArrayToDataUrl(mediaFile, mimeType);
-            mediaCount++;
-          }
-        }
-      }
-
-      // 還原聊天外觀桌布圖片
-      if (
-        chat.appearance?.wallpaper?.type === "image" &&
-        chat.appearance.wallpaper.value &&
-        !chat.appearance.wallpaper.value.startsWith("data:") &&
-        !chat.appearance.wallpaper.value.startsWith("http")
-      ) {
-        const wallpaperFile = files[chat.appearance.wallpaper.value];
-        if (wallpaperFile) {
-          const mimeType = this.getMimeTypeFromFilename(
-            chat.appearance.wallpaper.value,
-          );
-          chat.appearance.wallpaper.value = this.uint8ArrayToDataUrl(
-            wallpaperFile,
-            mimeType,
-          );
-          mediaCount++;
-          console.log(
-            `[ImportExportService] 還原聊天桌布圖片: ${chat.appearance.wallpaper.value.length} bytes`,
-          );
-        } else {
-          console.warn(
-            `[ImportExportService] 找不到聊天桌布圖片: ${chat.appearance.wallpaper.value}`,
-          );
-        }
-      }
+      const mediaCount = this.restoreChatMediaFromFiles(chat, files);
 
       // 生成新的 ID 避免衝突
       const oldChatId = chat.id;
@@ -1450,34 +1508,11 @@ export class ImportExportService {
           chat.messages = await restoreImagesToMessages(chat.messages);
         }
 
-        // 提取媒體
-        const mediaMap = this.extractMediaFromChat(chat);
-        const chatForExport = JSON.parse(JSON.stringify(chat)) as Chat;
-
-        // 處理媒體檔案
-        for (const msg of chatForExport.messages) {
-          if (msg.imageUrl?.startsWith("data:") && mediaMap.has(msg.id)) {
-            const originalUrl = chat.messages.find(
-              (m) => m.id === msg.id,
-            )?.imageUrl;
-            if (originalUrl) {
-              const filename = `chats/${i}/media/${mediaMap.get(msg.id)!.split("/").pop()}`;
-              zipFiles[filename] = this.dataUrlToUint8Array(originalUrl);
-              msg.imageUrl = filename;
-            }
-          }
-        }
-
-        // 處理聊天外觀桌布圖片
-        if (
-          mediaMap.has("__appearance_wallpaper__") &&
-          chatForExport.appearance?.wallpaper?.value?.startsWith("data:")
-        ) {
-          const originalUrl = chat.appearance!.wallpaper!.value;
-          const filename = `chats/${i}/media/wallpaper.${this.getExtensionFromDataUrl(originalUrl)}`;
-          zipFiles[filename] = this.dataUrlToUint8Array(originalUrl);
-          chatForExport.appearance!.wallpaper!.value = filename;
-        }
+        const { chatForExport, mediaFiles } = this.prepareChatMediaForExport(
+          chat,
+          `chats/${i}/media`,
+        );
+        Object.assign(zipFiles, mediaFiles);
 
         // 保存聊天 JSON
         zipFiles[`chats/${i}/chat.json`] = strToU8(

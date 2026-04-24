@@ -385,6 +385,24 @@ function isBase64DataUrl(str: string | undefined): boolean {
   return !!str && str.startsWith("data:");
 }
 
+/** 判斷字串是否為裸 base64 圖片資料（不含 data: 前綴） */
+function isRawBase64ImageData(str: string | undefined): boolean {
+  if (!str) return false;
+  if (
+    str.startsWith("data:") ||
+    str.startsWith("http") ||
+    str.startsWith("blob:") ||
+    str.startsWith(CHAT_IMAGE_PREFIX) ||
+    str.startsWith("media/")
+  ) {
+    return false;
+  }
+  if (str.length < 256) return false;
+  const normalized = str.replace(/\s+/g, "");
+  if (normalized.length < 256 || normalized.length % 4 !== 0) return false;
+  return /^[A-Za-z0-9+/=]+$/.test(normalized);
+ }
+
 /** 判斷字串是否為圖片引用 ID */
 export function isChatImageRef(str: string | undefined): boolean {
   return !!str && str.startsWith(CHAT_IMAGE_PREFIX);
@@ -475,7 +493,8 @@ export async function extractImagesFromMessages(
 
   for (const msg of messages) {
     const hasBase64Url = isBase64DataUrl(msg.imageUrl);
-    const hasBase64Data = isBase64DataUrl(msg.imageData);
+    const hasBase64Data =
+      isBase64DataUrl(msg.imageData) || isRawBase64ImageData(msg.imageData);
 
     if (!hasBase64Url && !hasBase64Data) {
       result.push(msg);

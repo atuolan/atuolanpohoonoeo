@@ -61,11 +61,32 @@ function parseDataUrl(dataUrl: string): { ext: string; data: Uint8Array } | null
   return null
 }
 
+function getImageExtensionFromMimeType(mimeType?: string): string {
+  const normalized = (mimeType || 'image/png').toLowerCase().split(';')[0]
+  const subtype = normalized.split('/')[1] || 'png'
+  return subtype === 'jpeg' ? 'jpg' : subtype
+}
+
 /** 簡易 hash（用前後各 1000 字元 + 長度），足以區分不同圖片 */
 function quickHash(str: string): string {
   const prefix = str.substring(0, 1000)
   const suffix = str.substring(str.length - 1000)
   return `${str.length}_${prefix}_${suffix}`
+}
+
+function isRawBase64ImageData(str: string | undefined): boolean {
+  if (!str) return false
+  if (
+    str.startsWith('data:') ||
+    str.startsWith('http') ||
+    str.startsWith('blob:') ||
+    str.startsWith('media/')
+  ) {
+    return false
+  }
+  const normalized = str.replace(/\s+/g, '')
+  if (normalized.length < 256 || normalized.length % 4 !== 0) return false
+  return /^[A-Za-z0-9+/=]+$/.test(normalized)
 }
 
 // ============================================================
@@ -79,6 +100,19 @@ export class BackupMediaExtractor {
   private dedupeHits = 0
   private totalExtracted = 0
 
+  private storeParsedMedia(hash: string, filename: string, data: Uint8Array): string {
+    if (this.cache.has(hash)) {
+      this.dedupeHits++
+      this.totalExtracted++
+      return this.cache.get(hash)!
+    }
+
+    this.files[filename] = data
+    this.cache.set(hash, filename)
+    this.totalExtracted++
+    return filename
+  }
+
   /**
    * 提取一個 base64 DataURL，回傳媒體檔案路徑。
    * 相同內容會去重，回傳同一個路徑。
@@ -90,21 +124,27 @@ export class BackupMediaExtractor {
       return null
     }
 
-    const hash = quickHash(dataUrl)
-    if (this.cache.has(hash)) {
-      this.dedupeHits++
-      this.totalExtracted++
-      return this.cache.get(hash)!
-    }
-
     const parsed = parseDataUrl(dataUrl)
     if (!parsed) return null
 
+    const hash = quickHash(`${parsed.ext}:${dataUrl.substring(dataUrl.indexOf(',') + 1)}`)
     const filename = `media/${prefix}_${this.index++}.${parsed.ext}`
-    this.files[filename] = parsed.data
-    this.cache.set(hash, filename)
-    this.totalExtracted++
-    return filename
+    return this.storeParsedMedia(hash, filename, parsed.data)
+  }
+
+  extractRawImageBase64(base64: string, prefix: string, mimeType?: string): string | null {
+    if (!isRawBase64ImageData(base64)) return null
+
+    const normalized = base64.replace(/\s+/g, '')
+    try {
+      const ext = getImageExtensionFromMimeType(mimeType)
+      const data = base64ToUint8Array(normalized)
+      const hash = quickHash(`${ext}:${normalized}`)
+      const filename = `media/${prefix}_${this.index++}.${ext}`
+      return this.storeParsedMedia(hash, filename, data)
+    } catch {
+      return null
+    }
   }
 
   /**
@@ -113,21 +153,12 @@ export class BackupMediaExtractor {
   extractAvatar(dataUrl: string, id: string): string | null {
     if (!dataUrl?.startsWith('data:image/')) return null
 
-    const hash = quickHash(dataUrl)
-    if (this.cache.has(hash)) {
-      this.dedupeHits++
-      this.totalExtracted++
-      return this.cache.get(hash)!
-    }
-
     const parsed = parseDataUrl(dataUrl)
     if (!parsed) return null
 
+    const hash = quickHash(`${parsed.ext}:${dataUrl.substring(dataUrl.indexOf(',') + 1)}`)
     const filename = `media/avatar_${id}.${parsed.ext}`
-    this.files[filename] = parsed.data
-    this.cache.set(hash, filename)
-    this.totalExtracted++
-    return filename
+    return this.storeParsedMedia(hash, filename, parsed.data)
   }
 
   /** 取得結果 */
@@ -143,6 +174,49 @@ export class BackupMediaExtractor {
 // ============================================================
 // 高階函式：掃描整個備份資料物件，提取所有 base64
 // ============================================================
+
+export function extractMediaFromChatBackupData(
+  chat: any,
+  extractor: BackupMediaExtractor,
+): void {
+  if (!chat || typeof chat !== 'object') return
+
+  if (Array.isArray(chat.messages)) {
+    for (const msg of chat.messages) {
+      if (msg.imageUrl?.startsWith('data:image/')) {
+        const f = extractor.extract(msg.imageUrl, 'chat')
+        if (f) msg.imageUrl = f
+      }
+      if (msg.imageData?.startsWith('data:image/')) {
+        const f = extractor.extract(msg.imageData, 'chat_data')
+        if (f) msg.imageData = f
+      } else if (isRawBase64ImageData(msg.imageData)) {
+        const f = extractor.extractRawImageBase64(msg.imageData, 'chat_data', msg.imageMimeType)
+        if (f) msg.imageData = f
+      }
+    }
+  }
+
+  if (
+    chat.appearance?.wallpaper?.type === 'image' &&
+    chat.appearance.wallpaper.value?.startsWith('data:image/')
+  ) {
+    const f = extractor.extract(chat.appearance.wallpaper.value, 'chat_wallpaper')
+    if (f) chat.appearance.wallpaper.value = f
+  }
+
+  if (typeof chat.charAvatarOverride === 'string') {
+    scanAndReplaceBase64InValue(chat, 'charAvatarOverride', extractor, `chat_char_avatar_${chat.id || 'unknown'}`)
+  }
+
+  if (typeof chat.userAvatarOverride === 'string') {
+    scanAndReplaceBase64InValue(chat, 'userAvatarOverride', extractor, `chat_user_avatar_${chat.id || 'unknown'}`)
+  }
+
+  if (Array.isArray(chat.coupleAvatarLibrary)) {
+    scanAndReplaceBase64InValue(chat, 'coupleAvatarLibrary', extractor, `chat_couple_${chat.id || 'unknown'}`)
+  }
+}
 
 /**
  * 掃描備份資料物件，將所有 base64 圖片提取到 media 資料夾並去重。
@@ -170,23 +244,7 @@ export function extractAllMediaFromBackupData(data: any, sharedExtractor?: Backu
   // 3. 聊天訊息圖片
   if (Array.isArray(data.chats)) {
     for (const chat of data.chats) {
-      if (!Array.isArray(chat.messages)) continue
-      for (const msg of chat.messages) {
-        if (msg.imageUrl?.startsWith('data:image/')) {
-          const f = extractor.extract(msg.imageUrl, 'chat')
-          if (f) msg.imageUrl = f
-        }
-        if (msg.imageData?.startsWith('data:image/')) {
-          const f = extractor.extract(msg.imageData, 'chat_data')
-          if (f) msg.imageData = f
-        }
-      }
-      // 聊天桌布
-      if (chat.appearance?.wallpaper?.type === 'image' &&
-          chat.appearance.wallpaper.value?.startsWith('data:image/')) {
-        const f = extractor.extract(chat.appearance.wallpaper.value, `chat_wallpaper`)
-        if (f) chat.appearance.wallpaper.value = f
-      }
+      extractMediaFromChatBackupData(chat, extractor)
     }
   }
 

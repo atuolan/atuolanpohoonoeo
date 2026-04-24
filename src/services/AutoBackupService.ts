@@ -12,6 +12,7 @@ import { restoreImagesToMessages } from "@/db/operations";
 import { loadMessages } from "@/storage/chatMessageStorage";
 import {
   BackupMediaExtractor,
+  extractMediaFromChatBackupData,
   extractAllMediaFromBackupData,
 } from "@/utils/backupMediaExtractor";
 import { strToU8, zip, Zip as FflateZip, AsyncZipDeflate, ZipPassThrough } from "fflate";
@@ -492,43 +493,22 @@ export async function buildBackupZipStreaming(
       // v24：從 chatMessages 表載入訊息
       chat.messages = await loadMessages(chat.id);
 
-      if (chat.messages?.length > 0) {
-        if (!excludeChatImages) {
-          try {
-            chat.messages = await restoreImagesToMessages(chat.messages);
-          } catch (imgErr) {
-            console.warn(`[AutoBackup] 聊天 "${chat.id}" 圖片還原失敗:`, imgErr);
-          }
-        }
-
-        // 立即提取該聊天的媒體，將 base64 替換為短路徑
-        for (const msg of chat.messages) {
-          if (excludeChatImages) {
-            // 排除聊天圖片模式：清除訊息中的圖片數據，僅保留文字
-            if (msg.imageUrl) msg.imageUrl = "";
-            if (msg.imageData) msg.imageData = "";
-          } else {
-            if (msg.imageUrl?.startsWith("data:image/")) {
-              const f = extractor.extract(msg.imageUrl, "chat");
-              if (f) msg.imageUrl = f;
-            }
-            if (msg.imageData?.startsWith("data:image/")) {
-              const f = extractor.extract(msg.imageData, "chat_data");
-              if (f) msg.imageData = f;
-            }
-          }
-        }
-        if (
-          chat.appearance?.wallpaper?.type === "image" &&
-          chat.appearance.wallpaper.value?.startsWith("data:image/")
-        ) {
-          const f = extractor.extract(
-            chat.appearance.wallpaper.value,
-            "chat_wallpaper",
-          );
-          if (f) chat.appearance.wallpaper.value = f;
+      if (chat.messages?.length > 0 && !excludeChatImages) {
+        try {
+          chat.messages = await restoreImagesToMessages(chat.messages);
+        } catch (imgErr) {
+          console.warn(`[AutoBackup] 聊天 "${chat.id}" 圖片還原失敗:`, imgErr);
         }
       }
+
+      if (excludeChatImages && chat.messages?.length > 0) {
+        for (const msg of chat.messages) {
+          if (msg.imageUrl) msg.imageUrl = "";
+          if (msg.imageData) msg.imageData = "";
+        }
+      }
+
+      extractMediaFromChatBackupData(chat, extractor)
 
       // 將聊天序列化後立即寫入 zip 流，然後釋放
       const chatJsonBytes = strToU8(JSON.stringify(chat));
