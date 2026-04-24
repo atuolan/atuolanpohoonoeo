@@ -32,7 +32,12 @@ import { getSelfHostedSyncService } from "@/services/SelfHostedSyncService";
 import { computeBucketHashes, diffBuckets } from "@/services/peerHash";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 60000;
-const APPLY_BATCH_SIZE = 100;
+/** apply 請求的 timeout 長一點，每批給 5 分鐘傳輸大檔 */
+const APPLY_REQUEST_TIMEOUT_MS = 300_000;
+/** 每批最多幾個 envelope */
+const APPLY_BATCH_SIZE = 20;
+/** 每批 payload 上限（byte），超過就提前切斷批次 */
+const APPLY_BATCH_MAX_BYTES = 3 * 1024 * 1024; // 3 MB
 
 interface PendingRequest<T> {
   resolve: (value: T) => void;
@@ -308,12 +313,34 @@ class PeerSyncManager {
     const rejected: PeerApplyResponse["rejected"] = [];
     let lastServerTime: number | undefined;
 
-    for (let i = 0; i < envelopes.length; i += APPLY_BATCH_SIZE) {
-      const batch = envelopes.slice(i, i + APPLY_BATCH_SIZE);
+    // 按數量和大小雙限制分批，避免單一訊息過大
+    const buildBatches = (): SelfHostedSyncEntityEnvelope[][] => {
+      const batches: SelfHostedSyncEntityEnvelope[][] = [];
+      let current: SelfHostedSyncEntityEnvelope[] = [];
+      let currentBytes = 0;
+      for (const env of envelopes) {
+        const envBytes = JSON.stringify(env).length;
+        if (
+          current.length > 0 &&
+          (current.length >= APPLY_BATCH_SIZE || currentBytes + envBytes > APPLY_BATCH_MAX_BYTES)
+        ) {
+          batches.push(current);
+          current = [];
+          currentBytes = 0;
+        }
+        current.push(env);
+        currentBytes += envBytes;
+      }
+      if (current.length > 0) batches.push(current);
+      return batches;
+    };
+
+    for (const batch of buildBatches()) {
       const requestId = this.nextRequestId("apply");
       const promise = this.registerPending<PeerApplyResponse>(
         requestId,
         "peer:apply-response",
+        APPLY_REQUEST_TIMEOUT_MS,
       );
       sendPeerMessage({
         type: "peer:apply-request",

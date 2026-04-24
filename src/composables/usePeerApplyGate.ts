@@ -42,7 +42,7 @@ export async function requestPeerApplyApproval(
   }
 
   const receivedAt = Date.now();
-  const expiresAt = receivedAt + 55_000; // 55s（sender timeout 60s）
+  const expiresAt = receivedAt + 55_000; // 55s 給用戶決定（sender 會再等剩餘的傳輸時間）
 
   _pending.value = { ...request, receivedAt, expiresAt };
 
