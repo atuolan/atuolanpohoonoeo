@@ -636,7 +636,16 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
         throw error;
       }
 
-      await refreshSession();
+      try {
+        await refreshSession();
+      } catch (refreshError) {
+        // Refresh token 本身失效 → 直接登出，讓 UI 回到登入狀態
+        const msg = refreshError instanceof Error ? refreshError.message : String(refreshError);
+        if (msg.includes("401") || msg.toLowerCase().includes("invalid or expired")) {
+          await logout();
+        }
+        throw refreshError;
+      }
       return action();
     }
   }
