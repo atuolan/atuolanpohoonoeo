@@ -750,7 +750,8 @@ wsServer.on("connection", (ws, req) => {
   };
 
   ws.isAlive = true;
-  ws.on("pong", () => { ws.isAlive = true; });
+  ws.missedPongs = 0;
+  ws.on("pong", () => { ws.isAlive = true; ws.missedPongs = 0; });
 
   syncSocketClients.set(ws, client);
 
@@ -799,11 +800,18 @@ const WS_HEARTBEAT_INTERVAL_MS = 25_000;
 setInterval(() => {
   for (const [ws, client] of syncSocketClients.entries()) {
     if (!ws.isAlive) {
-      console.log("[heartbeat] 無回應，終止連線", { userId: client.userId, deviceId: client.deviceId });
-      syncSocketClients.delete(ws);
-      ws.terminate();
-      broadcastPresence(client.userId);
-      continue;
+      ws.missedPongs = (ws.missedPongs || 0) + 1;
+      if (ws.missedPongs >= 2) {
+        console.log("[heartbeat] 連續無回應，終止連線", { userId: client.userId, deviceId: client.deviceId, missedPongs: ws.missedPongs });
+        syncSocketClients.delete(ws);
+        ws.terminate();
+        broadcastPresence(client.userId);
+        continue;
+      }
+      // 第一次沒回應先寬容，繼續 ping
+      console.log("[heartbeat] 無回應，再等一輪", { userId: client.userId, missedPongs: ws.missedPongs });
+    } else {
+      ws.missedPongs = 0;
     }
     ws.isAlive = false;
     ws.ping();
