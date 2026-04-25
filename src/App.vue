@@ -3248,7 +3248,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
         <div v-if="pendingPeerApply" class="peer-apply-overlay" @click.self="rejectPeerApply">
           <div class="peer-apply-dialog" role="dialog" aria-modal="true">
             <div class="peer-apply-icon">📥</div>
-            <div class="peer-apply-title">收到同步推送</div>
+            <div class="peer-apply-title">收到裝置同步請求</div>
             <div class="peer-apply-source">
               來自：<strong>{{ pendingPeerApply.sourceDisplayName }}</strong>
             </div>
@@ -3265,7 +3265,9 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
                 </li>
               </ul>
             </div>
-            <div class="peer-apply-hint">接受後本機資料將被覆蓋更新</div>
+            <div class="peer-apply-hint">
+              {{ pendingPeerApply.operation === 'push' ? '接受後本機資料將被覆蓋更新' : '接受後對方才能從本機拉取這些資料' }}
+            </div>
             <div class="peer-apply-actions">
               <button class="peer-apply-btn reject" @click="rejectPeerApply">拒絕</button>
               <button class="peer-apply-btn accept" @click="approvePeerApply">接受</button>

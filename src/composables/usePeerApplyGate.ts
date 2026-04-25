@@ -9,6 +9,8 @@
 import { ref, readonly } from "vue";
 import type { SelfHostedSyncEntityType } from "@/types/selfHostedSync";
 
+export type PeerApprovalOperation = "push" | "pull";
+
 export interface PeerApplySummaryEntry {
   entityType: SelfHostedSyncEntityType | string;
   count: number;
@@ -17,6 +19,7 @@ export interface PeerApplySummaryEntry {
 export interface PeerApplyRequest {
   requestId: string;
   sourceDeviceId: string;
+  operation: PeerApprovalOperation;
   totalEnvelopes: number;
   summary: PeerApplySummaryEntry[];
   /** 呼叫端解析出的顯示名稱（customName > model > shortId） */
@@ -38,29 +41,36 @@ const TRUST_SESSION_MS = 10 * 60 * 1000; // 10 分鐘
 /** 已被拒絕的 sender session（本次拒絕後自動拒絕同一 sender 的後續批次） */
 const _rejectedSenders = new Set<string>();
 
+function sessionKey(sourceDeviceId: string, operation: PeerApprovalOperation): string {
+  return `${sourceDeviceId}::${operation}`;
+}
+
 /** 清除 sender 的信任/拒絕狀態（下次需重新確認） */
 export function clearPeerSenderSession(sourceDeviceId: string): void {
-  _trustedSenders.delete(sourceDeviceId);
-  _rejectedSenders.delete(sourceDeviceId);
+  _trustedSenders.delete(sessionKey(sourceDeviceId, "push"));
+  _trustedSenders.delete(sessionKey(sourceDeviceId, "pull"));
+  _rejectedSenders.delete(sessionKey(sourceDeviceId, "push"));
+  _rejectedSenders.delete(sessionKey(sourceDeviceId, "pull"));
 }
 
 /** 由 PeerSyncResponder 呼叫：暫停執行，等待使用者確認。回傳 true = 接受，false = 拒絕 */
 export async function requestPeerApplyApproval(
   request: Omit<PeerApplyRequest, "receivedAt" | "expiresAt">,
 ): Promise<boolean> {
-  const { sourceDeviceId } = request;
+  const { sourceDeviceId, operation } = request;
+  const key = sessionKey(sourceDeviceId, operation);
 
   // 已拒絕的 sender → 自動拒絕後續批次
-  if (_rejectedSenders.has(sourceDeviceId)) {
+  if (_rejectedSenders.has(key)) {
     return false;
   }
 
   // 已信任的 sender（還在 session 內）→ 自動放行
-  const trustedUntil = _trustedSenders.get(sourceDeviceId);
+  const trustedUntil = _trustedSenders.get(key);
   if (trustedUntil && trustedUntil > Date.now()) {
     return true;
   }
-  _trustedSenders.delete(sourceDeviceId);
+  _trustedSenders.delete(key);
 
   // 如果已有 dialog 在等另一個 sender 的決定，先拒絕舊的
   if (_resolve) {
@@ -80,25 +90,27 @@ export async function requestPeerApplyApproval(
 /** 使用者點擊「接受」 */
 export function approvePeerApply(): void {
   if (!_resolve || !_pending.value) return;
-  const { sourceDeviceId } = _pending.value;
+  const { sourceDeviceId, operation } = _pending.value;
+  const key = sessionKey(sourceDeviceId, operation);
   const r = _resolve;
   _resolve = null;
   _pending.value = null;
-  _trustedSenders.set(sourceDeviceId, Date.now() + TRUST_SESSION_MS);
-  _rejectedSenders.delete(sourceDeviceId);
+  _trustedSenders.set(key, Date.now() + TRUST_SESSION_MS);
+  _rejectedSenders.delete(key);
   r(true);
 }
 
 /** 使用者點擊「拒絕」或 dialog 關閉 */
 export function rejectPeerApply(): void {
   if (!_resolve || !_pending.value) return;
-  const { sourceDeviceId } = _pending.value;
+  const { sourceDeviceId, operation } = _pending.value;
+  const key = sessionKey(sourceDeviceId, operation);
   const r = _resolve;
   _resolve = null;
   _pending.value = null;
-  _rejectedSenders.add(sourceDeviceId);
+  _rejectedSenders.add(key);
   // 拒絕 session 在 5 分鐘後自動清除（避免永遠鎖死）
-  setTimeout(() => _rejectedSenders.delete(sourceDeviceId), 5 * 60 * 1000);
+  setTimeout(() => _rejectedSenders.delete(key), 5 * 60 * 1000);
   r(false);
 }
 

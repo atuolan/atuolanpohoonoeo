@@ -79,7 +79,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
   );
 
   /**
-   * 同步 peer 清單：真實裝置 + 虛擬 @server。供 SettingsScreen 迭代顯示按鈕。
+   * 同步 peer 清單：真實裝置。供 SettingsScreen 迭代顯示按鈕。
    * 依在線狀態 + lastPushAt 排序；排除本機裝置（不對自己同步）。
    */
   const peerList = computed(() => {
@@ -93,19 +93,6 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
       model: string | null;
       customName: string | null;
     }> = [];
-
-    if (isAuthenticated.value) {
-      list.push({
-        deviceId: "@server",
-        isServer: true,
-        isSelf: false,
-        online: serverStatusOk.value !== false,
-        lastPushAt: lastRemoteUpdateAt.value,
-        lastSeenAt: lastServerTime.value,
-        model: null,
-        customName: null,
-      });
-    }
 
     for (const d of devices.value) {
       if (d.deviceId === deviceId.value) continue;
@@ -871,20 +858,6 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
 
       await markSyncSucceeded(Date.now());
       console.log(LOG_TAG, "完成", { direction, targetDeviceId, applied });
-
-      // P2P pull 成功後，順手把新拉進來的本機資料 push 到 server，
-      // 保持 server 與其他裝置一致（best-effort，失敗不影響 peerSync 結果）。
-      if (direction === "pull" && applied > 0) {
-        void (async () => {
-          try {
-            console.log(LOG_TAG, "背景 push 到 server 以同步 server 快取");
-            const syncService = await getSyncService();
-            await runSyncActionWithRetry(() => syncService.pushAll());
-          } catch (e) {
-            console.warn(LOG_TAG, "背景 push 到 server 失敗（不影響本次 peerSync）", e);
-          }
-        })();
-      }
 
       return {
         direction,

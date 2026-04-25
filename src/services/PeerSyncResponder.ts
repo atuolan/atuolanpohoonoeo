@@ -168,11 +168,33 @@ async function handleFetchRequest(msg: PeerFetchRequest & {
   });
 
   try {
+    const entityRefs = msg.entityRefs || [];
+    const accepted = await requestPeerApplyApproval({
+      requestId: msg.requestId,
+      sourceDeviceId,
+      operation: "pull",
+      totalEnvelopes: entityRefs.length,
+      summary: buildFetchSummary(entityRefs),
+      sourceDisplayName: resolveSourceDisplayName(sourceDeviceId),
+    });
+
+    if (!accepted) {
+      log("使用者拒絕 fetch-request", { requestId: msg.requestId });
+      sendPeerMessage({
+        type: "peer:error",
+        requestId: msg.requestId,
+        reason: "rejected-by-user",
+        detail: "peer fetch rejected by user",
+        ...({ targetDeviceId: sourceDeviceId } as Record<string, unknown>),
+      } as unknown as PeerMessage);
+      return;
+    }
+
     const service = getSelfHostedSyncService();
     const allEnvelopes = await service.collectAllEnvelopesForManifest();
     const refKey = (t: string, id: string) => `${t}::${id}`;
     const wanted = new Set(
-      (msg.entityRefs || []).map((r) => refKey(r.entityType, r.entityId)),
+      entityRefs.map((r) => refKey(r.entityType, r.entityId)),
     );
 
     const matched: SelfHostedSyncEntityEnvelope[] = [];
@@ -236,6 +258,14 @@ function buildApplySummary(envelopes: SelfHostedSyncEntityEnvelope[]) {
   return Array.from(counts.entries()).map(([entityType, count]) => ({ entityType, count }));
 }
 
+function buildFetchSummary(entityRefs: Array<{ entityType: string }>) {
+  const counts = new Map<string, number>();
+  for (const ref of entityRefs) {
+    counts.set(ref.entityType, (counts.get(ref.entityType) ?? 0) + 1);
+  }
+  return Array.from(counts.entries()).map(([entityType, count]) => ({ entityType, count }));
+}
+
 function resolveSourceDisplayName(sourceDeviceId: string): string {
   try {
     const store = useSelfHostedSyncStore();
@@ -268,6 +298,7 @@ async function handleApplyRequest(msg: PeerApplyRequest & {
   const accepted = await requestPeerApplyApproval({
     requestId: msg.requestId,
     sourceDeviceId,
+    operation: "push",
     totalEnvelopes: envelopes.length,
     summary: buildApplySummary(envelopes),
     sourceDisplayName: resolveSourceDisplayName(sourceDeviceId),

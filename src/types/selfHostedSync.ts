@@ -159,8 +159,6 @@ export interface SelfHostedSyncHealthResponse {
 
 // ===== Peer-to-peer sync protocol =====
 
-export const PEER_SYNC_SERVER_ID = "@server";
-
 export interface PeerManifestEntry {
   entityType: SelfHostedSyncEntityType;
   entityId: string;

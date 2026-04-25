@@ -268,11 +268,11 @@ const selfHostedSyncDeviceList = computed(() => {
     });
   }
 
-  // 其他可同步 peer（含 @server）
+  // 其他可同步 peer（僅真實裝置）
   for (const p of selfHostedSyncStore.peerList) {
     const customName = p.customName ?? null;
     const model = p.model ?? null;
-    const displayName = p.isServer ? "伺服器快取" : (customName ?? model ?? "其他裝置");
+    const displayName = customName ?? model ?? "其他裝置";
     items.push({
       deviceId: p.deviceId,
       online: p.online,
@@ -281,7 +281,7 @@ const selfHostedSyncDeviceList = computed(() => {
       isCurrent: false,
       isServer: p.isServer,
       canPeerSync: p.online,
-      shortId: p.isServer ? "@server" : shortDeviceId(p.deviceId),
+      shortId: shortDeviceId(p.deviceId),
       lastPushText: p.lastPushAt ? formatDateTime(p.lastPushAt) : "尚未推送",
       lastSeenText: p.lastSeenAt ? formatDateTime(p.lastSeenAt) : "—",
       model,
@@ -338,10 +338,7 @@ async function handlePeerSync(
       return;
     }
     const label = direction === "push" ? "推送" : "拉取";
-    const target =
-      targetDeviceId === "@server"
-        ? "伺服器快取"
-        : `裝置 ${shortDeviceId(targetDeviceId)}`;
+    const target = `裝置 ${shortDeviceId(targetDeviceId)}`;
     if (outcome.applied === 0) {
       alert(`已與 ${target} 同步（無需傳輸新資料）。`);
     } else {
@@ -470,7 +467,7 @@ async function handleSelfHostedTestConnection() {
 }
 
 async function handleSelfHostedUseLocalServer() {
-  selfHostedSyncStore.setServerUrl("http://127.0.0.1:3004");
+  selfHostedSyncStore.setServerUrl("https://lonson0215-aguaphone-sync.hf.space/");
   await selfHostedSyncStore.saveSettings();
 }
 
@@ -607,10 +604,6 @@ async function handleSelfHostedPushNow(options?: { forceFull?: boolean }) {
   } finally {
     selfHostedSyncActionStatus.value = "idle";
   }
-}
-
-async function handleSelfHostedForceFullPush() {
-  await handleSelfHostedPushNow({ forceFull: true });
 }
 
 async function handleSelfHostedPullNow() {
@@ -5752,7 +5745,7 @@ function useClonedVoice(voiceId: string) {
                   :disabled="selfHostedSyncActionStatus === 'running'"
                   @click="handleSelfHostedUseLocalServer"
                 >
-                  使用本機伺服器（127.0.0.1:3004）
+                  使用預設伺服器（HF Space）
                 </button>
               </div>
 
@@ -5899,32 +5892,6 @@ function useClonedVoice(voiceId: string) {
                   <div class="shs-btn-row">
                     <button
                       class="shs-chip-btn"
-                      :disabled="!selfHostedSyncCanOperate"
-                      @click="handleSelfHostedPushNow()"
-                    >
-                      ↑ 只上傳
-                    </button>
-                    <button
-                      class="shs-chip-btn"
-                      :disabled="!selfHostedSyncCanOperate"
-                      @click="handleSelfHostedPullNow"
-                    >
-                      ↓ 只下載
-                    </button>
-                  </div>
-                  <div class="shs-btn-row">
-                    <button
-                      class="shs-chip-btn"
-                      :disabled="!selfHostedSyncCanOperate"
-                      :title="selfHostedSyncStore.lastPushedServerTime
-                        ? `距上次完整上傳 ${formatDateTime(selfHostedSyncStore.lastPushedServerTime)}`
-                        : '尚未做過完整上傳'"
-                      @click="handleSelfHostedForceFullPush"
-                    >
-                      ↑↑ 強制完整上傳
-                    </button>
-                    <button
-                      class="shs-chip-btn"
                       :disabled="selfHostedSyncActionStatus === 'running'"
                       @click="handleSelfHostedRefreshStatus"
                     >
@@ -5932,7 +5899,7 @@ function useClonedVoice(voiceId: string) {
                     </button>
                   </div>
                   <p class="shs-hint">
-                    「完整上傳」會重新上傳所有本機資料，通常只在首次或懷疑遠端資料異常時需要。
+                    伺服器僅用於登入、在線狀態與裝置發現；實際同步請在下方使用跨裝置直連。
                   </p>
                 </div>
               </details>
@@ -5945,7 +5912,7 @@ function useClonedVoice(voiceId: string) {
                 </summary>
                 <div class="shs-collapse-body">
                   <p class="shs-hint">
-                    讓兩台裝置不經伺服器快取直接對傳。適合處理單一大檔或需要即時同步的場景。
+                    讓兩台裝置直接對傳。適合處理單一大檔或需要即時同步的場景。
                   </p>
                   <div
                     v-if="selfHostedSyncStore.lastRemoteUpdateAt"
@@ -5970,10 +5937,7 @@ function useClonedVoice(voiceId: string) {
                           :title="device.online ? '在線' : '離線'"
                         />
                         <span class="self-hosted-device-name">
-                          <template v-if="device.isServer">☁️ 伺服器快取</template>
-                          <template v-else>
-                            <span class="device-display-name">{{ device.displayName }}</span>
-                          </template>
+                          <span class="device-display-name">{{ device.displayName }}</span>
                           <span class="self-hosted-device-id">（{{ device.shortId }}）</span>
                         </span>
                         <button
