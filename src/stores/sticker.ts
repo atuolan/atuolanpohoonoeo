@@ -14,6 +14,10 @@ import type { StickerCategory, StickerItem } from "@/types/sticker";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
+function normalizeStickerLookupName(name: string): string {
+  return name.replace(/\u3000/g, " ").replace(/\s+/g, " ").trim();
+}
+
 export const useStickerStore = defineStore("sticker", () => {
   // 自定義表情分類（從 IndexedDB 載入）
   const customCategories = ref<StickerCategory[]>([]);
@@ -278,11 +282,31 @@ export const useStickerStore = defineStore("sticker", () => {
 
   // 根據名稱查找表情（用於渲染 [sticker:名稱] 格式）
   function findStickerByName(name: string): StickerItem | undefined {
+    const normalizedTarget = normalizeStickerLookupName(name);
+    if (!normalizedTarget) return undefined;
     // 搜索所有分類（包含系統 emoji 和自定義表情）
     for (const category of allCategories.value) {
-      const sticker = category.stickers.find((s) => s.name === name);
+      const sticker = category.stickers.find(
+        (s) => normalizeStickerLookupName(s.name) === normalizedTarget,
+      );
       if (sticker) return sticker;
     }
+    const nearbyCandidates = allCategories.value
+      .flatMap((category) => category.stickers.map((sticker) => sticker.name))
+      .filter((stickerName) => {
+        const normalizedName = normalizeStickerLookupName(stickerName);
+        return (
+          normalizedName.includes(normalizedTarget) ||
+          normalizedTarget.includes(normalizedName)
+        );
+      })
+      .slice(0, 10);
+    console.warn("[StickerStore] 找不到表情包名稱對應資源", {
+      rawName: name,
+      normalizedTarget,
+      nearbyCandidates,
+      categoryCount: allCategories.value.length,
+    });
     return undefined;
   }
 

@@ -1175,23 +1175,30 @@ const messageParts = computed<MessagePart[]>(() => {
 
     const mediaType = match[1];
     const mediaData = match[2];
-
+  
     if (mediaType === "sticker" || mediaType === "表情包") {
       // 表情包格式：[sticker:名稱] 或 [sticker:名稱|URL]
       const [name, providedUrl] = mediaData.split("|");
+      const cleanName = name.trim();
 
       // 如果沒有提供 URL，從表情包庫中查找
       let url = providedUrl;
       if (!url) {
-        const sticker = stickerStore.findStickerByName(name);
+        const sticker = stickerStore.findStickerByName(cleanName);
         if (sticker) {
           url = sticker.url;
+        } else {
+          console.warn("[MessageBubble] sticker 標籤未解析到對應資源", {
+            messageId: props.id,
+            rawStickerName: name,
+            cleanName,
+          });
         }
       }
-
+  
       parts.push({
         type: "sticker",
-        name: name || "表情包",
+        name: cleanName || "表情包",
         url: url || "",
       });
     } else {
