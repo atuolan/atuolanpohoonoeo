@@ -2665,9 +2665,79 @@ const showTextVoiceTranscript = ref(true);
           </div>
         </div>
 
-        <!-- 氣泡（位置消息不顯示氣泡） -->
         <div
-          v-if="!isLocation"
+          v-else-if="isFaceToFaceRequest"
+          class="face-to-face-request-wrapper"
+        >
+          <div class="face-to-face-request-card">
+            <div class="face-to-face-request-title">🤝 面對面請求</div>
+            <div class="face-to-face-request-text">
+              {{ faceToFaceRequestStatusText }}
+            </div>
+            <div
+              v-if="faceToFaceRequestStatus === 'pending' && faceToFaceRequestReason && faceToFaceRequestReason.trim()"
+              class="face-to-face-request-reason"
+            >
+              {{ faceToFaceRequestReason }}
+            </div>
+            <div
+              v-if="faceToFaceRequestStatus === 'pending'"
+              class="face-to-face-request-actions"
+            >
+              <button
+                class="face-to-face-request-btn accept"
+                @click.stop="emit('acceptFaceToFaceRequest', id)"
+              >
+                同意
+              </button>
+              <button
+                class="face-to-face-request-btn reject"
+                @click.stop="emit('rejectFaceToFaceRequest', id)"
+              >
+                先不要
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-else-if="isOnlineModeRequest"
+          class="online-mode-request-wrapper"
+        >
+          <div class="online-mode-request-card">
+            <div class="online-mode-request-title">📱 線上模式請求</div>
+            <div class="online-mode-request-text">
+              {{ onlineModeRequestStatusText }}
+            </div>
+            <div
+              v-if="onlineModeRequestReason && onlineModeRequestReason.trim()"
+              class="online-mode-request-reason"
+            >
+              {{ onlineModeRequestReason }}
+            </div>
+            <div
+              v-if="onlineModeRequestStatus === 'pending'"
+              class="online-mode-request-actions"
+            >
+              <button
+                class="online-mode-request-btn accept"
+                @click.stop="emit('acceptOnlineModeRequest', id)"
+              >
+                同意
+              </button>
+              <button
+                class="online-mode-request-btn reject"
+                @click.stop="emit('rejectOnlineModeRequest', id)"
+              >
+                先不要
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 氣泡（位置消息與模式邀請卡片不顯示氣泡） -->
+        <div
+          v-if="!isLocation && !isFaceToFaceRequest && !isOnlineModeRequest"
           class="bubble"
           :class="{
             user: isUser,
@@ -2787,76 +2857,6 @@ const showTextVoiceTranscript = ref(true);
                 @accept="emit('acceptTransfer', id)"
                 @refund="emit('refundTransfer', id)"
               />
-            </div>
-          </div>
-
-          <div
-            v-else-if="isFaceToFaceRequest"
-            class="face-to-face-request-wrapper"
-          >
-            <div class="face-to-face-request-card">
-              <div class="face-to-face-request-title">🤝 面對面請求</div>
-              <div class="face-to-face-request-text">
-                {{ faceToFaceRequestStatusText }}
-              </div>
-              <div
-                v-if="faceToFaceRequestStatus === 'pending' && faceToFaceRequestReason && faceToFaceRequestReason.trim()"
-                class="face-to-face-request-reason"
-              >
-                {{ faceToFaceRequestReason }}
-              </div>
-              <div
-                v-if="faceToFaceRequestStatus === 'pending'"
-                class="face-to-face-request-actions"
-              >
-                <button
-                  class="face-to-face-request-btn accept"
-                  @click.stop="emit('acceptFaceToFaceRequest', id)"
-                >
-                  同意
-                </button>
-                <button
-                  class="face-to-face-request-btn reject"
-                  @click.stop="emit('rejectFaceToFaceRequest', id)"
-                >
-                  先不要
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div
-            v-else-if="isOnlineModeRequest"
-            class="online-mode-request-wrapper"
-          >
-            <div class="online-mode-request-card">
-              <div class="online-mode-request-title">📱 線上模式請求</div>
-              <div class="online-mode-request-text">
-                {{ onlineModeRequestStatusText }}
-              </div>
-              <div
-                v-if="onlineModeRequestReason && onlineModeRequestReason.trim()"
-                class="online-mode-request-reason"
-              >
-                {{ onlineModeRequestReason }}
-              </div>
-              <div
-                v-if="onlineModeRequestStatus === 'pending'"
-                class="online-mode-request-actions"
-              >
-                <button
-                  class="online-mode-request-btn accept"
-                  @click.stop="emit('acceptOnlineModeRequest', id)"
-                >
-                  同意
-                </button>
-                <button
-                  class="online-mode-request-btn reject"
-                  @click.stop="emit('rejectOnlineModeRequest', id)"
-                >
-                  先不要
-                </button>
-              </div>
             </div>
           </div>
 
@@ -6373,9 +6373,15 @@ const showTextVoiceTranscript = ref(true);
 
 .face-to-face-request-wrapper {
   width: 100%;
+  display: flex;
+
+  .message-wrapper.user & {
+    justify-content: flex-end;
+  }
 }
 
 .face-to-face-request-card {
+  width: min(100%, 320px);
   padding: 12px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -6426,9 +6432,15 @@ const showTextVoiceTranscript = ref(true);
 
 .online-mode-request-wrapper {
   width: 100%;
+  display: flex;
+
+  .message-wrapper.user & {
+    justify-content: flex-end;
+  }
 }
 
 .online-mode-request-card {
+  width: min(100%, 320px);
   padding: 12px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.12);

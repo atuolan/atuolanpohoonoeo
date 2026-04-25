@@ -3057,6 +3057,49 @@ function handleMessageEdit(id: string) {
   }
 }
 
+function extractModeRequestReason(attrs: string): string | undefined {
+  const reasonMatch = attrs.match(/\breason=(['"])([\s\S]*?)\1/i);
+  const reason = reasonMatch?.[2]?.trim();
+  return reason || undefined;
+}
+
+function syncModeRequestFieldsFromContent(message: Message, content: string): void {
+  const faceToFaceMatch = content.match(/<face-to-face-request\s+([^>]*?)\s*\/?>/i);
+  if (faceToFaceMatch) {
+    const preservedStatus = message.isFaceToFaceRequest
+      ? message.faceToFaceRequestStatus
+      : undefined;
+    message.isFaceToFaceRequest = true;
+    message.faceToFaceRequestReason = extractModeRequestReason(faceToFaceMatch[1]);
+    message.faceToFaceRequestStatus = preservedStatus || "pending";
+    message.isOnlineModeRequest = false;
+    message.onlineModeRequestReason = undefined;
+    message.onlineModeRequestStatus = undefined;
+    return;
+  }
+
+  const onlineModeMatch = content.match(/<online-mode-request\s+([^>]*?)\s*\/?>/i);
+  if (onlineModeMatch) {
+    const preservedStatus = message.isOnlineModeRequest
+      ? message.onlineModeRequestStatus
+      : undefined;
+    message.isOnlineModeRequest = true;
+    message.onlineModeRequestReason = extractModeRequestReason(onlineModeMatch[1]);
+    message.onlineModeRequestStatus = preservedStatus || "pending";
+    message.isFaceToFaceRequest = false;
+    message.faceToFaceRequestReason = undefined;
+    message.faceToFaceRequestStatus = undefined;
+    return;
+  }
+
+  message.isFaceToFaceRequest = false;
+  message.faceToFaceRequestReason = undefined;
+  message.faceToFaceRequestStatus = undefined;
+  message.isOnlineModeRequest = false;
+  message.onlineModeRequestReason = undefined;
+  message.onlineModeRequestStatus = undefined;
+}
+
 // 保存編輯
 async function saveEdit() {
   if (!editingMessageId.value) return;
@@ -3067,6 +3110,7 @@ async function saveEdit() {
     const thought = editThoughtTextareaRef.value?.value ?? editingThought.value;
     message.content = content;
     message.thought = thought || undefined;
+    syncModeRequestFieldsFromContent(message, content);
     // 同步更新跳轉魔法內容
     if (message.isTimetravel) {
       message.timetravelContent = content;
@@ -5643,6 +5687,16 @@ async function triggerAIResponse(options?: {
                 charRecallType: parsedMsg.charRecallType,
                 charRecallContent: parsedMsg.charRecallContent,
                 charRecallHints: parsedMsg.charRecallHints,
+                isFaceToFaceRequest: parsedMsg.isFaceToFaceRequest,
+                faceToFaceRequestReason: parsedMsg.faceToFaceRequestReason,
+                faceToFaceRequestStatus: parsedMsg.isFaceToFaceRequest
+                  ? "pending"
+                  : undefined,
+                isOnlineModeRequest: parsedMsg.isOnlineModeRequest,
+                onlineModeRequestReason: parsedMsg.onlineModeRequestReason,
+                onlineModeRequestStatus: parsedMsg.isOnlineModeRequest
+                  ? "pending"
+                  : undefined,
               };
 
               if (parsedMsg.isWaimaiPaymentResult || parsedMsg.isWaimaiDelivery) {
@@ -7205,7 +7259,13 @@ async function loadOrCreateChat(overrideChatId?: string) {
             }
           }
 
-          return {
+          const needsModeRequestCompat =
+            !(m as any).isFaceToFaceRequest &&
+            !(m as any).isOnlineModeRequest &&
+            typeof m.content === "string" &&
+            /<face-to-face-request\s|<online-mode-request\s/i.test(m.content);
+
+          const loadedMessage = {
             id: m.id,
             role:
               m.sender === "user"
@@ -7361,10 +7421,15 @@ async function loadOrCreateChat(overrideChatId?: string) {
             isCallNotification: (m as any).isCallNotification,
             callNotificationType: (m as any).callNotificationType,
             callReason: (m as any).callReason,
-          };
-        });
+          } as Message;
 
-        // 載入聊天專屬的 Persona 覆蓋數據
+          if (needsModeRequestCompat) {
+            syncModeRequestFieldsFromContent(loadedMessage, loadedMessage.content);
+          }
+
+          return loadedMessage;
+        }) as Message[];
+  // 載入聊天專屬的 Persona 覆蓋數據
         const personaOverride = (chat.metadata as any)?.personaOverride;
         if (personaOverride) {
           chatPersonaOverride.value = {
@@ -7534,7 +7599,9 @@ async function loadOrCreateChat(overrideChatId?: string) {
                 !parsedMsg.isTransfer &&
                 !parsedMsg.isGift &&
                 !parsedMsg.isAiImage &&
-                !parsedMsg.isVoice
+                !parsedMsg.isVoice &&
+                !parsedMsg.isFaceToFaceRequest &&
+                !parsedMsg.isOnlineModeRequest
               )
                 continue;
 
@@ -7590,6 +7657,16 @@ async function loadOrCreateChat(overrideChatId?: string) {
                   : undefined,
                 audioTranscript: parsedMsg.isVoice
                   ? parsedMsg.voiceContent
+                  : undefined,
+                isFaceToFaceRequest: parsedMsg.isFaceToFaceRequest,
+                faceToFaceRequestReason: parsedMsg.faceToFaceRequestReason,
+                faceToFaceRequestStatus: parsedMsg.isFaceToFaceRequest
+                  ? "pending"
+                  : undefined,
+                isOnlineModeRequest: parsedMsg.isOnlineModeRequest,
+                onlineModeRequestReason: parsedMsg.onlineModeRequestReason,
+                onlineModeRequestStatus: parsedMsg.isOnlineModeRequest
+                  ? "pending"
                   : undefined,
               });
             }
