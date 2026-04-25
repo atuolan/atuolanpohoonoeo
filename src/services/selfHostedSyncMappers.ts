@@ -67,6 +67,10 @@ export function toSyncChatRecordPayload(chat: SyncableChatRecordSource): SyncCha
     pinnedToList: chat.pinnedToList,
     summarySettings: chat.summarySettings,
     locationOverride: chat.locationOverride,
+    charAvatarOverride: chat.charAvatarOverride,
+    userAvatarOverride: chat.userAvatarOverride,
+    coupleAvatarLibrary: chat.coupleAvatarLibrary,
+    activeCoupleAvatarId: chat.activeCoupleAvatarId,
   };
 }
 

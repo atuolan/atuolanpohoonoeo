@@ -152,7 +152,7 @@ async function deleteChat(chatId: string) {
 
   try {
     await deleteChatCascade(chatId);
-    chatList.value = chatList.value.filter((c) => c.id !== chatId);
+    await loadChats();
   } catch (e) {
     console.error("刪除對話失敗:", e);
   }
@@ -371,7 +371,7 @@ async function confirmDeleteChat() {
 
   try {
     await deleteChatCascade(chatId);
-    chatList.value = chatList.value.filter((c) => c.id !== chatId);
+    await loadChats();
   } catch (e) {
     console.error("刪除對話失敗:", e);
   }

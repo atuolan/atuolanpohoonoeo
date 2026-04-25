@@ -171,7 +171,11 @@ export async function deleteChatCascade(
       entityId: chatId,
       updatedAt: deletedAt,
       deletedAt,
-      payload: JSON.parse(JSON.stringify(chat)),
+      payload: {
+        id: chatId,
+        characterId: chat.characterId,
+        isGroupChat: chat.isGroupChat === true,
+      },
     });
   }
 

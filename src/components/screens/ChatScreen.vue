@@ -59,6 +59,8 @@ import { db, DB_STORES } from "@/db/database";
 import {
   extractAudioFromMessages,
   extractImagesFromMessages,
+  getChatImage,
+  isChatImageRef,
 } from "@/db/operations";
 import {
   createChatRecord,
@@ -4705,6 +4707,37 @@ async function triggerAIResponse(options?: {
 
     const promptResult = await builder.build();
 
+    const resolveImageDataForApi = async (
+      imageData: string | undefined,
+    ): Promise<string | null> => {
+      if (!imageData) return null;
+
+      const source = isChatImageRef(imageData)
+        ? await getChatImage(imageData)
+        : imageData;
+
+      if (!source) return null;
+
+      if (source.startsWith("data:")) {
+        const commaIndex = source.indexOf(",");
+        return commaIndex >= 0 ? source.slice(commaIndex + 1).replace(/\s+/g, "") : null;
+      }
+
+      return source.replace(/\s+/g, "");
+    };
+
+    const formatImageMessageAsText = (message: any) => {
+      const caption = message.imageCaption || "";
+      const prompt = message.imagePrompt || "";
+      const desc = caption || prompt || "圖片";
+      return {
+        role: message.role,
+        content: message.content
+          ? `${message.content}\n[圖片：${desc}]`
+          : `[圖片：${desc}]`,
+      };
+    };
+
     // 將消息轉換為 API 格式（處理圖片訊息）
     // 只保留最後一條帶圖片的用戶訊息的 base64 數據，歷史圖片用文字描述替代
     // 避免大量 base64 數據導致請求 body 過大（nginx 413 錯誤）
@@ -4714,35 +4747,42 @@ async function triggerAIResponse(options?: {
       return msg.role === "user" && msg.imageData && msg.imageMimeType;
     });
 
-    const apiMessages = promptResult.messages.map((m, index) => {
+    const apiMessages = [] as Array<any>;
+    for (let index = 0; index < promptResult.messages.length; index++) {
+      const m = promptResult.messages[index];
       const msgWithImage = m as any;
       if (msgWithImage.imageData && msgWithImage.imageMimeType) {
         if (index === lastImageMsgIndex) {
           // 最後一條帶圖片的用戶訊息：保留 base64 給 Vision API
-          return createImageMessage(
-            m.content,
-            msgWithImage.imageData,
-            msgWithImage.imageMimeType,
-            "auto",
-          );
+          const resolvedImageBase64 = await resolveImageDataForApi(msgWithImage.imageData);
+          if (resolvedImageBase64) {
+            apiMessages.push(
+              createImageMessage(
+                m.content,
+                resolvedImageBase64,
+                msgWithImage.imageMimeType,
+                "auto",
+              ),
+            );
+          } else {
+            console.warn("[ChatScreen] 圖片訊息無法解析為可送出的 base64，已降級為文字描述", {
+              messageId: msgWithImage.id,
+              imageData: msgWithImage.imageData,
+            });
+            apiMessages.push(formatImageMessageAsText(msgWithImage));
+          }
+          continue;
         }
         // 歷史圖片訊息：去掉 base64，用文字描述替代
-        const caption = msgWithImage.imageCaption || "";
-        const prompt = msgWithImage.imagePrompt || "";
-        const desc = caption || prompt || "圖片";
-        return {
-          role: m.role,
-          content: m.content
-            ? `${m.content}\n[圖片：${desc}]`
-            : `[圖片：${desc}]`,
-        };
+        apiMessages.push(formatImageMessageAsText(msgWithImage));
+        continue;
       }
       // 普通文字訊息
-      return {
+      apiMessages.push({
         role: m.role,
         content: m.content,
-      };
-    });
+      });
+    }
 
     const client = new OpenAICompatibleClient(chatTaskConfig.api);
 

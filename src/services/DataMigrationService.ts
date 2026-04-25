@@ -9,7 +9,7 @@ import type { Chat } from '@/types/chat';
 import type { StoredCharacter } from '@/types/character';
 
 const MIGRATION_VERSION_KEY = 'data_migration_version';
-const CURRENT_VERSION = 3;
+const CURRENT_VERSION = 4;
 
 const CHAT_IMAGE_PREFIX = 'chatimg_';
 
@@ -60,6 +60,11 @@ export class DataMigrationService {
       if (currentVersion < 3) {
         await this.migration_v3_extractRawMessageImageData();
         await this.setCurrentVersion(3);
+      }
+
+      if (currentVersion < 4) {
+        await this.migration_v4_resyncChatAvatarOverrides();
+        await this.setCurrentVersion(4);
       }
 
       console.log(`[DataMigration] 遷移完成，當前版本: ${CURRENT_VERSION}`);
@@ -331,6 +336,47 @@ export class DataMigrationService {
       );
     } catch (error) {
       console.error('[DataMigration] v3: 清理失敗:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 遷移 v4: 觸發帶有聊天專屬頭像/情頭資料的聊天重新同步
+   */
+  private async migration_v4_resyncChatAvatarOverrides(): Promise<void> {
+    console.log('[DataMigration] 執行遷移 v4: 重新同步聊天專屬頭像覆蓋');
+
+    try {
+      const chats = await db.getAll<Chat>(DB_STORES.CHATS);
+      const baseTime = Date.now();
+      let touchedCount = 0;
+
+      for (const chat of chats) {
+        const hasAvatarOverride =
+          typeof chat.charAvatarOverride === 'string' ||
+          typeof chat.userAvatarOverride === 'string' ||
+          (Array.isArray(chat.coupleAvatarLibrary) &&
+            chat.coupleAvatarLibrary.length > 0) ||
+          chat.activeCoupleAvatarId != null;
+
+        if (!hasAvatarOverride) {
+          continue;
+        }
+
+        chat.updatedAt = Math.max(chat.updatedAt || 0, baseTime + touchedCount + 1);
+        await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
+        touchedCount++;
+      }
+
+      if (touchedCount > 0) {
+        scheduleSelfHostedAutoSync();
+      }
+
+      console.log(
+        `[DataMigration] v4: 完成 - ${touchedCount} 個帶有聊天專屬頭像資料的聊天已標記為待重新同步`,
+      );
+    } catch (error) {
+      console.error('[DataMigration] v4: 失敗:', error);
       throw error;
     }
   }

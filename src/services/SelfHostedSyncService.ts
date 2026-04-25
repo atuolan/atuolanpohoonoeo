@@ -704,7 +704,11 @@ export class SelfHostedSyncService {
       }
 
       for (const item of chatRecordItems) {
-      const changed = await this.applyChatRecord(item.payload, forceOverwrite);
+      const changed = await this.applyChatRecord(
+        item.payload,
+        forceOverwrite,
+        item.schemaVersion,
+      );
       if (changed) applied += 1;
       }
 
@@ -1009,11 +1013,14 @@ export class SelfHostedSyncService {
   private async applyChatRecord(
     payload: SyncChatRecordPayload,
     forceOverwrite = false,
+    schemaVersion = 1,
   ): Promise<boolean> {
     const existing = await loadChatById(payload.id);
     if (!forceOverwrite && existing && (existing.updatedAt ?? 0) >= payload.updatedAt) {
       return false;
     }
+
+    const shouldPreserveLegacyAvatarFields = schemaVersion < 2;
 
     const nextChat: Chat = {
       id: payload.id,
@@ -1046,10 +1053,18 @@ export class SelfHostedSyncService {
       unreadCount: existing?.unreadCount,
       appearance: existing?.appearance,
       blockState: existing?.blockState,
-      charAvatarOverride: existing?.charAvatarOverride,
-      userAvatarOverride: existing?.userAvatarOverride,
-      coupleAvatarLibrary: existing?.coupleAvatarLibrary,
-      activeCoupleAvatarId: existing?.activeCoupleAvatarId,
+      charAvatarOverride: shouldPreserveLegacyAvatarFields
+        ? existing?.charAvatarOverride
+        : payload.charAvatarOverride,
+      userAvatarOverride: shouldPreserveLegacyAvatarFields
+        ? existing?.userAvatarOverride
+        : payload.userAvatarOverride,
+      coupleAvatarLibrary: shouldPreserveLegacyAvatarFields
+        ? existing?.coupleAvatarLibrary
+        : payload.coupleAvatarLibrary,
+      activeCoupleAvatarId: shouldPreserveLegacyAvatarFields
+        ? existing?.activeCoupleAvatarId
+        : payload.activeCoupleAvatarId,
     };
 
     await saveChatMetadata(nextChat);

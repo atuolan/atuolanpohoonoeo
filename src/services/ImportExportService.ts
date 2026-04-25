@@ -36,6 +36,7 @@ import type { Lorebook, WorldInfoEntry } from "../types/worldinfo";
 import {
   BackupMediaExtractor,
   extractMediaFromChatBackupData,
+  normalizeChatBackupMediaSources,
 } from "../utils/backupMediaExtractor";
 import {
   createDefaultWorldInfoEntry,
@@ -1072,11 +1073,12 @@ export class ImportExportService {
     }
   }
 
-  private prepareChatMediaForExport(
+  private async prepareChatMediaForExport(
     chat: Chat,
     mediaBasePath = "media",
-  ): { chatForExport: Chat; mediaFiles: Record<string, Uint8Array>; mediaCount: number } {
+  ): Promise<{ chatForExport: Chat; mediaFiles: Record<string, Uint8Array>; mediaCount: number }> {
     const chatForExport = JSON.parse(JSON.stringify(chat)) as Chat;
+    await normalizeChatBackupMediaSources(chatForExport);
     const extractor = new BackupMediaExtractor();
     extractMediaFromChatBackupData(chatForExport, extractor);
     const extracted = extractor.getResult();
@@ -1313,7 +1315,7 @@ export class ImportExportService {
         );
       }
 
-      const { chatForExport, mediaFiles, mediaCount } = this.prepareChatMediaForExport(chat);
+      const { chatForExport, mediaFiles, mediaCount } = await this.prepareChatMediaForExport(chat);
 
       const zipFiles: Record<string, Uint8Array> = {};
       Object.assign(zipFiles, mediaFiles);
@@ -1508,7 +1510,7 @@ export class ImportExportService {
           chat.messages = await restoreImagesToMessages(chat.messages);
         }
 
-        const { chatForExport, mediaFiles } = this.prepareChatMediaForExport(
+        const { chatForExport, mediaFiles } = await this.prepareChatMediaForExport(
           chat,
           `chats/${i}/media`,
         );

@@ -14,6 +14,7 @@ import {
   BackupMediaExtractor,
   extractMediaFromChatBackupData,
   extractAllMediaFromBackupData,
+  normalizeChatBackupMediaSources,
 } from "@/utils/backupMediaExtractor";
 import { strToU8, zip, Zip as FflateZip, AsyncZipDeflate, ZipPassThrough } from "fflate";
 
@@ -507,6 +508,8 @@ export async function buildBackupZipStreaming(
           if (msg.imageData) msg.imageData = "";
         }
       }
+
+      await normalizeChatBackupMediaSources(chat);
 
       extractMediaFromChatBackupData(chat, extractor)
 

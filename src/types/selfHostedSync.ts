@@ -32,7 +32,7 @@ export type SelfHostedSyncEntityType =
   (typeof SELF_HOSTED_SYNC_ENTITY_TYPES)[number];
 
 export const SELF_HOSTED_SYNC_SCHEMA_VERSIONS = {
-  chat_record: 1,
+  chat_record: 2,
   chat_message: 1,
   settings_preferences: 1,
   settings_profiles: 1,
@@ -341,6 +341,10 @@ export type SyncChatRecordPayload = Pick<
   | "pinnedToList"
   | "summarySettings"
   | "locationOverride"
+  | "charAvatarOverride"
+  | "userAvatarOverride"
+  | "coupleAvatarLibrary"
+  | "activeCoupleAvatarId"
 >;
 
 export interface SyncChatMessagePayload extends Omit<ChatMessage, "imageData" | "audioWaveform"> {

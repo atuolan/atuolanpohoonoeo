@@ -5,6 +5,8 @@
  * 供 SettingsScreen 完整匯出和 AutoBackupService 自動備份共用。
  */
 
+import { getChatImage, isChatImageRef } from '../db/operations'
+
 // ============================================================
 // 類型
 // ============================================================
@@ -361,6 +363,9 @@ function scanAndReplaceBase64InValue(
     if (val.startsWith('data:image/') && val.length > 200) {
       const f = extractor.extract(val, prefix)
       if (f) obj[key] = f
+    } else if (isRawBase64ImageData(val)) {
+      const f = extractor.extractRawImageBase64(val, prefix)
+      if (f) obj[key] = f
     }
     return
   }
@@ -376,5 +381,50 @@ function scanAndReplaceBase64InValue(
     for (const k of Object.keys(val)) {
       scanAndReplaceBase64InValue(val, k, extractor, prefix)
     }
+  }
+}
+
+async function replaceChatImageRefsInValue(
+  obj: any,
+  key: string | number,
+): Promise<void> {
+  const val = obj[key]
+  if (val === null || val === undefined) return
+
+  if (typeof val === 'string') {
+    if (isChatImageRef(val)) {
+      const resolved = await getChatImage(val)
+      if (resolved) obj[key] = resolved
+    }
+    return
+  }
+
+  if (Array.isArray(val)) {
+    for (let i = 0; i < val.length; i++) {
+      await replaceChatImageRefsInValue(val, i)
+    }
+    return
+  }
+
+  if (typeof val === 'object') {
+    for (const k of Object.keys(val)) {
+      await replaceChatImageRefsInValue(val, k)
+    }
+  }
+}
+
+export async function normalizeChatBackupMediaSources(chat: any): Promise<void> {
+  if (!chat || typeof chat !== 'object') return
+
+  if (typeof chat.charAvatarOverride === 'string') {
+    await replaceChatImageRefsInValue(chat, 'charAvatarOverride')
+  }
+
+  if (typeof chat.userAvatarOverride === 'string') {
+    await replaceChatImageRefsInValue(chat, 'userAvatarOverride')
+  }
+
+  if (Array.isArray(chat.coupleAvatarLibrary)) {
+    await replaceChatImageRefsInValue(chat, 'coupleAvatarLibrary')
   }
 }
