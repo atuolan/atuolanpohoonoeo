@@ -26,6 +26,7 @@ import type {
 import {
   isPeerSyncSocketOpen,
   onPeerMessage,
+  onPeerSocketDisconnect,
   sendPeerMessage,
 } from "@/services/peerSyncSocket";
 import { getSelfHostedSyncService } from "@/services/SelfHostedSyncService";
@@ -53,6 +54,7 @@ interface PendingRequest<T> {
 class PeerSyncManager {
   private pending = new Map<string, PendingRequest<unknown>>();
   private unsubscribe: (() => void) | null = null;
+  private disconnectUnsubscribe: (() => void) | null = null;
 
   private log(...args: unknown[]): void {
     console.log("[PeerSyncManager]", ...args);
@@ -64,14 +66,36 @@ class PeerSyncManager {
 
   constructor() {
     this.unsubscribe = onPeerMessage((message) => this.handleIncoming(message));
+    this.disconnectUnsubscribe = onPeerSocketDisconnect(() => this.handleSocketDisconnect());
   }
 
   dispose(): void {
     this.unsubscribe?.();
     this.unsubscribe = null;
+    this.disconnectUnsubscribe?.();
+    this.disconnectUnsubscribe = null;
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(new Error("PeerSyncManager disposed"));
+    }
+    this.pending.clear();
+  }
+
+  /** WebSocket 斷線時立即 reject 所有 pending request，避免傻等 timeout */
+  private handleSocketDisconnect(): void {
+    const count = this.pending.size;
+    if (count === 0) return;
+    this.warn("WebSocket 斷線，立即 reject 所有 pending request", {
+      count,
+      requestIds: Array.from(this.pending.keys()),
+    });
+    for (const [requestId, pending] of this.pending.entries()) {
+      clearTimeout(pending.timer);
+      pending.reject(
+        Object.assign(new Error(`Peer request ${requestId} aborted: WebSocket disconnected`), {
+          peerAbortReason: "socket-disconnected",
+        }),
+      );
     }
     this.pending.clear();
   }

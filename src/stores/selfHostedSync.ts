@@ -708,6 +708,31 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     rejectedByUser?: boolean;
   };
 
+  function isSocketDisconnectError(error: unknown): boolean {
+    return (
+      error instanceof Error &&
+      ("peerAbortReason" in error || error.message.includes("WebSocket disconnected"))
+    );
+  }
+
+  async function waitForPeerSocketReconnect(timeoutMs = 30_000): Promise<void> {
+    const { isPeerSyncSocketOpen } = await import("@/services/peerSyncSocket");
+    if (isPeerSyncSocketOpen()) return;
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pollInterval && clearInterval(pollInterval);
+        reject(new Error("等待 WebSocket 重連逾時"));
+      }, timeoutMs);
+      const pollInterval = setInterval(() => {
+        if (isPeerSyncSocketOpen()) {
+          clearInterval(pollInterval);
+          clearTimeout(timer);
+          resolve();
+        }
+      }, 500);
+    });
+  }
+
   async function peerSync(
     direction: "push" | "pull",
     targetDeviceId: string,
@@ -867,9 +892,90 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
         conflictsAborted: false,
       };
     } catch (error) {
+      // WebSocket 斷線時自動重試一次：等重連後重新執行整個 peerSync
+      if (isSocketDisconnectError(error)) {
+        console.warn(LOG_TAG, "WebSocket 斷線，等待重連後重試", error);
+        syncError.value = "連線中斷，正在重連…";
+        try {
+          await waitForPeerSocketReconnect();
+          console.log(LOG_TAG, "重連成功，開始重試");
+          syncError.value = null;
+          // 遞迴呼叫自己，但只重試一次（第二次斷線就不再重試）
+          const retryResult = await peerSyncInner(direction, targetDeviceId, manager);
+          return retryResult;
+        } catch (retryError) {
+          console.warn(LOG_TAG, "重試失敗", retryError);
+          await markSyncFailed(retryError);
+          throw retryError;
+        }
+      }
       await markSyncFailed(error);
       throw error;
     }
+  }
+
+  /** peerSync 內部邏輯，抽出來供 retry 使用（不重複 loadSettings / getManager） */
+  async function peerSyncInner(
+    direction: "push" | "pull",
+    targetDeviceId: string,
+    manager: InstanceType<typeof import("@/services/PeerSyncManager").PeerSyncManager>,
+  ): Promise<PeerSyncOutcome> {
+    const LOG_TAG = "[peerSync]";
+    syncStatus.value = "syncing";
+    syncError.value = null;
+
+    console.log(LOG_TAG, "1/4 並行交換 bucket hash（重試）");
+    const [localHashInfo, remoteHashInfo] = await Promise.all([
+      manager.collectLocalBucketHashes(),
+      manager.requestRemoteBucketHashes(targetDeviceId),
+    ]);
+
+    if (localHashInfo.rootHash === remoteHashInfo.rootHash) {
+      console.log(LOG_TAG, "rootHash 完全一致，兩端已同步，跳過");
+      await markSyncSucceeded(Date.now());
+      return { direction, targetDeviceId, applied: 0, conflictCount: 0, conflictsAborted: false };
+    }
+
+    const { differingTypes } = manager.diffBucketHashes(localHashInfo.buckets, remoteHashInfo.buckets);
+    const differingSet = new Set(differingTypes);
+    const localManifest = localHashInfo.entries.filter((e) => differingSet.has(e.entityType));
+    const remoteManifest = await manager.requestRemoteManifest(targetDeviceId, differingTypes);
+    const diff = manager.computeDiff(localManifest, remoteManifest);
+
+    if (diff.conflicts.length > 0) {
+      syncStatus.value = "idle";
+      return { direction, targetDeviceId, applied: 0, conflictCount: diff.conflicts.length, conflictsAborted: true };
+    }
+
+    let applied = 0;
+    if (direction === "push") {
+      if (diff.onlyLocal.length > 0) {
+        const wantRefs = diff.onlyLocal.map((e) => ({ entityType: e.entityType, entityId: e.entityId }));
+        const allLocal = await (await import("@/services/SelfHostedSyncService"))
+          .getSelfHostedSyncService()
+          .collectAllEnvelopesForManifest();
+        const byKey = new Map(allLocal.map((env) => [`${env.entityType}::${env.entityId}`, env]));
+        const envelopes = wantRefs
+          .map((r) => byKey.get(`${r.entityType}::${r.entityId}`))
+          .filter((e): e is NonNullable<typeof e> => e !== undefined);
+        const resp = await manager.requestApply(targetDeviceId, envelopes);
+        applied = resp.applied;
+        const rejectedByUser = resp.rejected?.some((r) => r.reason === "rejected-by-user") ?? false;
+        if (rejectedByUser) {
+          await markSyncSucceeded(Date.now());
+          return { direction, targetDeviceId, applied: 0, conflictCount: 0, conflictsAborted: false, rejectedByUser: true };
+        }
+      }
+    } else {
+      if (diff.onlyRemote.length > 0) {
+        const refs = diff.onlyRemote.map((e) => ({ entityType: e.entityType, entityId: e.entityId }));
+        const envelopes = await manager.requestFetch(targetDeviceId, refs);
+        applied = await manager.applyEnvelopesLocally(envelopes);
+      }
+    }
+
+    await markSyncSucceeded(Date.now());
+    return { direction, targetDeviceId, applied, conflictCount: 0, conflictsAborted: false };
   }
 
   function setServerUrl(url: string): void {

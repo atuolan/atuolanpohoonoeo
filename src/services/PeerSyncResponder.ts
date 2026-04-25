@@ -18,6 +18,7 @@ import type {
   SelfHostedSyncEntityType,
 } from "@/types/selfHostedSync";
 import {
+  isPeerSyncSocketOpen,
   onPeerMessage,
   sendPeerMessage,
 } from "@/services/peerSyncSocket";
@@ -232,6 +233,14 @@ async function handleFetchRequest(msg: PeerFetchRequest & {
 
     // 分批回覆
     for (let i = 0; i < matched.length; i += FETCH_BATCH_SIZE) {
+      if (!isPeerSyncSocketOpen()) {
+        warn("fetch-response 發送中途 WebSocket 已斷線，中止剩餘批次", {
+          requestId: msg.requestId,
+          sentBatches: Math.floor(i / FETCH_BATCH_SIZE),
+          remaining: matched.length - i,
+        });
+        return;
+      }
       const batch = matched.slice(i, i + FETCH_BATCH_SIZE);
       const hasMore = i + FETCH_BATCH_SIZE < matched.length;
       log("發送 fetch-response 批次", {

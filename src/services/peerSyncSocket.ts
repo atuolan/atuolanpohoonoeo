@@ -9,12 +9,26 @@
 import type { PeerMessage } from "@/types/selfHostedSync";
 
 type PeerMessageHandler = (message: PeerMessage) => void;
+type PeerDisconnectHandler = () => void;
 
 let socket: WebSocket | null = null;
 const handlers = new Set<PeerMessageHandler>();
+const disconnectHandlers = new Set<PeerDisconnectHandler>();
 
 export function setPeerSyncSocket(next: WebSocket | null): void {
+  const wasOpen = !!socket && socket.readyState === WebSocket.OPEN;
   socket = next;
+  // 如果從有連線變成 null（斷線），通知所有監聽者
+  if (wasOpen && !next) {
+    console.log("[peerSyncSocket] socket 斷線，通知 disconnect handlers");
+    for (const handler of disconnectHandlers) {
+      try {
+        handler();
+      } catch (error) {
+        console.warn("[peerSyncSocket] disconnect handler threw:", error);
+      }
+    }
+  }
 }
 
 export function isPeerSyncSocketOpen(): boolean {
@@ -49,6 +63,13 @@ export function onPeerMessage(handler: PeerMessageHandler): () => void {
   handlers.add(handler);
   return () => {
     handlers.delete(handler);
+  };
+}
+
+export function onPeerSocketDisconnect(handler: PeerDisconnectHandler): () => void {
+  disconnectHandlers.add(handler);
+  return () => {
+    disconnectHandlers.delete(handler);
   };
 }
 
