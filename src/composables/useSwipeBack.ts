@@ -35,6 +35,8 @@ export function useSwipeBack(onBack: () => void, enabled?: Ref<boolean>) {
       ".modal-content",
       ".modal-container",
       ".input-area",
+      ".expand-overlay",
+      ".expand-container",
       "[data-no-swipe-back]",
     ];
 
@@ -61,6 +63,10 @@ export function useSwipeBack(onBack: () => void, enabled?: Ref<boolean>) {
       ".slider",
       ".range-slider",
       'input[type="range"]',
+      // 文字輸入區域：選取拖動手柄可能從邊緣開始，不應觸發返回
+      "textarea",
+      "input",
+      "[contenteditable=\"true\"]",
     ];
     if (interactiveSelectors.some((s) => target.closest(s) !== null))
       return true;

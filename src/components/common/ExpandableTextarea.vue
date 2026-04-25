@@ -73,7 +73,7 @@ watch(
 
     <Teleport to="body">
       <Transition name="expand-fade">
-        <div v-if="expanded" class="expand-overlay" @click.self="cancelExpand">
+        <div v-if="expanded" class="expand-overlay" data-no-swipe-back @click.self="cancelExpand">
           <div class="expand-container">
             <div class="expand-header">
               <span class="expand-title">{{ label || "編輯" }}</span>
