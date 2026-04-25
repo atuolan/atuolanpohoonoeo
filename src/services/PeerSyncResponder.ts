@@ -169,6 +169,11 @@ async function handleFetchRequest(msg: PeerFetchRequest & {
 
   try {
     const entityRefs = msg.entityRefs || [];
+    log("fetch-request 等待使用者確認", {
+      requestId: msg.requestId,
+      sourceDeviceId,
+      entityRefCount: entityRefs.length,
+    });
     const accepted = await requestPeerApplyApproval({
       requestId: msg.requestId,
       sourceDeviceId,
@@ -176,6 +181,11 @@ async function handleFetchRequest(msg: PeerFetchRequest & {
       totalEnvelopes: entityRefs.length,
       summary: buildFetchSummary(entityRefs),
       sourceDisplayName: resolveSourceDisplayName(sourceDeviceId),
+    });
+
+    log("fetch-request 使用者確認結果", {
+      requestId: msg.requestId,
+      accepted,
     });
 
     if (!accepted) {
@@ -191,7 +201,16 @@ async function handleFetchRequest(msg: PeerFetchRequest & {
     }
 
     const service = getSelfHostedSyncService();
+    const collectStartedAt = Date.now();
+    log("fetch-request 開始收集本機 envelopes", {
+      requestId: msg.requestId,
+    });
     const allEnvelopes = await service.collectAllEnvelopesForManifest();
+    log("fetch-request 本機 envelopes 收集完成", {
+      requestId: msg.requestId,
+      totalLocal: allEnvelopes.length,
+      elapsedMs: Date.now() - collectStartedAt,
+    });
     const refKey = (t: string, id: string) => `${t}::${id}`;
     const wanted = new Set(
       entityRefs.map((r) => refKey(r.entityType, r.entityId)),
@@ -215,6 +234,13 @@ async function handleFetchRequest(msg: PeerFetchRequest & {
     for (let i = 0; i < matched.length; i += FETCH_BATCH_SIZE) {
       const batch = matched.slice(i, i + FETCH_BATCH_SIZE);
       const hasMore = i + FETCH_BATCH_SIZE < matched.length;
+      log("發送 fetch-response 批次", {
+        requestId: msg.requestId,
+        batchIndex: Math.floor(i / FETCH_BATCH_SIZE),
+        batchCount: batch.length,
+        hasMore,
+        nextCursor: hasMore ? i + FETCH_BATCH_SIZE : null,
+      });
       sendPeerMessage({
         type: "peer:fetch-response",
         requestId: msg.requestId,
@@ -228,6 +254,9 @@ async function handleFetchRequest(msg: PeerFetchRequest & {
 
     // 若 matched 為 0，至少回一個空 response 讓對方結束等待
     if (matched.length === 0) {
+      log("fetch-request 無匹配資料，發送空回覆", {
+        requestId: msg.requestId,
+      });
       sendPeerMessage({
         type: "peer:fetch-response",
         requestId: msg.requestId,
@@ -302,6 +331,12 @@ async function handleApplyRequest(msg: PeerApplyRequest & {
     totalEnvelopes: envelopes.length,
     summary: buildApplySummary(envelopes),
     sourceDisplayName: resolveSourceDisplayName(sourceDeviceId),
+  });
+
+  log("apply-request 使用者確認結果", {
+    requestId: msg.requestId,
+    accepted,
+    envelopeCount: envelopes.length,
   });
 
   if (!accepted) {

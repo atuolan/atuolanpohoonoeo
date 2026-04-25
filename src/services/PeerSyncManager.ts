@@ -32,6 +32,7 @@ import { getSelfHostedSyncService } from "@/services/SelfHostedSyncService";
 import { computeBucketHashes, diffBuckets } from "@/services/peerHash";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 60000;
+const FETCH_REQUEST_TIMEOUT_MS = 300_000;
 /** apply 請求的 timeout 長一點，每批給 5 分鐘傳輸大檔 */
 const APPLY_REQUEST_TIMEOUT_MS = 300_000;
 /** 每批最多幾個 envelope */
@@ -44,6 +45,7 @@ interface PendingRequest<T> {
   reject: (reason: unknown) => void;
   expectedResponseType: PeerMessage["type"];
   timer: ReturnType<typeof setTimeout>;
+  startedAt: number;
   // 針對 fetch 這種會分批回傳多次的類型，允許累加
   accumulator?: unknown;
 }
@@ -51,6 +53,14 @@ interface PendingRequest<T> {
 class PeerSyncManager {
   private pending = new Map<string, PendingRequest<unknown>>();
   private unsubscribe: (() => void) | null = null;
+
+  private log(...args: unknown[]): void {
+    console.log("[PeerSyncManager]", ...args);
+  }
+
+  private warn(...args: unknown[]): void {
+    console.warn("[PeerSyncManager]", ...args);
+  }
 
   constructor() {
     this.unsubscribe = onPeerMessage((message) => this.handleIncoming(message));
@@ -79,6 +89,13 @@ class PeerSyncManager {
       clearTimeout(pending.timer);
       this.pending.delete(message.requestId);
       const errMsg = message as PeerErrorMessage;
+      this.warn("收到 peer:error", {
+        requestId: message.requestId,
+        expectedResponseType: pending.expectedResponseType,
+        elapsedMs: Date.now() - pending.startedAt,
+        reason: errMsg.reason,
+        detail: errMsg.detail,
+      });
       pending.reject(
         new Error(`Peer error: ${errMsg.reason}`) as Error & {
           peerReason: string;
@@ -99,9 +116,21 @@ class PeerSyncManager {
         envelopes: SelfHostedSyncEntityEnvelope[];
       };
       acc.envelopes.push(...fetchMsg.envelopes);
+      this.log("收到 fetch-response 批次", {
+        requestId: message.requestId,
+        batchCount: fetchMsg.envelopes.length,
+        accumulatedCount: acc.envelopes.length,
+        hasMore: fetchMsg.hasMore,
+        elapsedMs: Date.now() - pending.startedAt,
+      });
       if (!fetchMsg.hasMore) {
         clearTimeout(pending.timer);
         this.pending.delete(message.requestId);
+        this.log("fetch-request 完成", {
+          requestId: message.requestId,
+          totalEnvelopes: acc.envelopes.length,
+          elapsedMs: Date.now() - pending.startedAt,
+        });
         pending.resolve(acc.envelopes);
       }
       // 若 hasMore=true 由呼叫端繼續發 cursor 請求
@@ -110,6 +139,11 @@ class PeerSyncManager {
 
     clearTimeout(pending.timer);
     this.pending.delete(message.requestId);
+    this.log("收到回應並結束等待", {
+      requestId: message.requestId,
+      responseType: message.type,
+      elapsedMs: Date.now() - pending.startedAt,
+    });
     pending.resolve(message);
   }
 
@@ -126,8 +160,15 @@ class PeerSyncManager {
     accumulator?: unknown,
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
+      const startedAt = Date.now();
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
+        this.warn("等待 peer 回應逾時", {
+          requestId,
+          expectedResponseType,
+          timeoutMs,
+          elapsedMs: Date.now() - startedAt,
+        });
         reject(new Error(`Peer request ${requestId} timed out after ${timeoutMs}ms`));
       }, timeoutMs);
       this.pending.set(requestId, {
@@ -135,6 +176,7 @@ class PeerSyncManager {
         reject,
         expectedResponseType,
         timer,
+        startedAt,
         accumulator,
       });
     });
@@ -285,10 +327,16 @@ class PeerSyncManager {
       envelopes: [],
     };
     const requestId = this.nextRequestId("fetch");
+    this.log("發送 fetch-request", {
+      requestId,
+      targetDeviceId,
+      entityRefCount: entityRefs.length,
+      timeoutMs: FETCH_REQUEST_TIMEOUT_MS,
+    });
     const promise = this.registerPending<SelfHostedSyncEntityEnvelope[]>(
       requestId,
       "peer:fetch-response",
-      DEFAULT_REQUEST_TIMEOUT_MS,
+      FETCH_REQUEST_TIMEOUT_MS,
       accumulator,
     );
     sendPeerMessage({
@@ -337,8 +385,19 @@ class PeerSyncManager {
 
     // 並行發送全部批次，接收端第一批確認後後續自動放行
     const batches = buildBatches();
+    this.log("發送 apply-request 批次", {
+      targetDeviceId,
+      envelopeCount: envelopes.length,
+      batchCount: batches.length,
+      timeoutMs: APPLY_REQUEST_TIMEOUT_MS,
+    });
     const batchPromises = batches.map((batch) => {
       const requestId = this.nextRequestId("apply");
+      this.log("發送 apply-request", {
+        requestId,
+        targetDeviceId,
+        batchEnvelopeCount: batch.length,
+      });
       const promise = this.registerPending<PeerApplyResponse>(
         requestId,
         "peer:apply-response",

@@ -9,6 +9,8 @@
 import { ref, readonly } from "vue";
 import type { SelfHostedSyncEntityType } from "@/types/selfHostedSync";
 
+const PEER_APPROVAL_TIMEOUT_MS = 295_000;
+
 export type PeerApprovalOperation = "push" | "pull";
 
 export interface PeerApplySummaryEntry {
@@ -26,7 +28,7 @@ export interface PeerApplyRequest {
   sourceDisplayName: string;
   /** Unix ms，請求到達時間，用來顯示倒數 */
   receivedAt: number;
-  /** 發送方 timeout 是 60s，我們給使用者 55s，快到時顯示警告 */
+  /** 發送方 timeout 接近 5 分鐘，我們預留 5 秒緩衝給使用者操作 */
   expiresAt: number;
 }
 
@@ -40,6 +42,10 @@ const _trustedSenders = new Map<string, number>();
 const TRUST_SESSION_MS = 10 * 60 * 1000; // 10 分鐘
 /** 已被拒絕的 sender session（本次拒絕後自動拒絕同一 sender 的後續批次） */
 const _rejectedSenders = new Set<string>();
+
+function log(...args: unknown[]): void {
+  console.log("[usePeerApplyGate]", ...args);
+}
 
 function sessionKey(sourceDeviceId: string, operation: PeerApprovalOperation): string {
   return `${sourceDeviceId}::${operation}`;
@@ -59,28 +65,52 @@ export async function requestPeerApplyApproval(
 ): Promise<boolean> {
   const { sourceDeviceId, operation } = request;
   const key = sessionKey(sourceDeviceId, operation);
+  log("收到同意請求", {
+    requestId: request.requestId,
+    sourceDeviceId,
+    operation,
+    totalEnvelopes: request.totalEnvelopes,
+  });
 
   // 已拒絕的 sender → 自動拒絕後續批次
   if (_rejectedSenders.has(key)) {
+    log("自動拒絕已被拒過的請求", {
+      requestId: request.requestId,
+      sourceDeviceId,
+      operation,
+    });
     return false;
   }
 
   // 已信任的 sender（還在 session 內）→ 自動放行
   const trustedUntil = _trustedSenders.get(key);
   if (trustedUntil && trustedUntil > Date.now()) {
+    log("自動放行已信任請求", {
+      requestId: request.requestId,
+      sourceDeviceId,
+      operation,
+      trustedForMs: trustedUntil - Date.now(),
+    });
     return true;
   }
   _trustedSenders.delete(key);
 
   // 如果已有 dialog 在等另一個 sender 的決定，先拒絕舊的
   if (_resolve) {
+    log("已有待決 dialog，先拒絕上一個請求");
     _resolve(false);
   }
 
   const receivedAt = Date.now();
-  const expiresAt = receivedAt + 55_000;
+  const expiresAt = receivedAt + PEER_APPROVAL_TIMEOUT_MS;
 
   _pending.value = { ...request, receivedAt, expiresAt };
+  log("顯示同意 dialog", {
+    requestId: request.requestId,
+    sourceDeviceId,
+    operation,
+    expiresInMs: expiresAt - receivedAt,
+  });
 
   return new Promise<boolean>((resolve) => {
     _resolve = resolve;
@@ -92,6 +122,11 @@ export function approvePeerApply(): void {
   if (!_resolve || !_pending.value) return;
   const { sourceDeviceId, operation } = _pending.value;
   const key = sessionKey(sourceDeviceId, operation);
+  log("使用者接受請求", {
+    requestId: _pending.value.requestId,
+    sourceDeviceId,
+    operation,
+  });
   const r = _resolve;
   _resolve = null;
   _pending.value = null;
@@ -105,6 +140,11 @@ export function rejectPeerApply(): void {
   if (!_resolve || !_pending.value) return;
   const { sourceDeviceId, operation } = _pending.value;
   const key = sessionKey(sourceDeviceId, operation);
+  log("使用者拒絕請求", {
+    requestId: _pending.value.requestId,
+    sourceDeviceId,
+    operation,
+  });
   const r = _resolve;
   _resolve = null;
   _pending.value = null;
