@@ -159,7 +159,6 @@ const cloudPushSyncStatus = ref(cloudPushStore.syncStatus);
 const cloudPushSyncError = ref(cloudPushStore.syncError);
 const cloudPushNextAlarm = ref(cloudPushStore.nextAlarm);
 const selfHostedSyncPassword = ref("");
-const selfHostedSyncRememberPassword = ref(false);
 const selfHostedSyncActionStatus = ref<"idle" | "running">("idle");
 
 const selfHostedSyncCanTestConnection = computed(
@@ -182,6 +181,20 @@ const selfHostedSyncServerStatusText = computed(() => {
     return "尚未取得";
   }
   return selfHostedSyncStore.serverStatusOk ? "正常" : "異常";
+});
+const selfHostedSyncStatusText = computed(() => {
+  switch (selfHostedSyncStore.syncStatus) {
+    case "connecting":
+      return "連線中";
+    case "syncing":
+      return "同步中";
+    case "success":
+      return "同步成功";
+    case "error":
+      return selfHostedSyncStore.syncError || "同步失敗";
+    default:
+      return selfHostedSyncStore.lastSyncAt ? "待命中" : "尚未同步";
+  }
 });
 
 const selfHostedSyncGuardDetails = computed(() => {
@@ -239,10 +252,7 @@ const selfHostedSyncDeviceList = computed(() => {
     displayName: string;
   }> = [];
 
-  // 本機裝置（不可對自己 P2P 同步）
-  const selfDevice = selfHostedSyncStore.devices.find(
-    (d) => d.deviceId === currentId,
-  );
+  const selfDevice = selfHostedSyncStore.devices.find((d) => d.deviceId === currentId);
   if (selfDevice) {
     const customName = selfHostedSyncStore.customDeviceName ?? selfDevice.customName ?? null;
     const model = selfDevice.model ?? null;
@@ -256,19 +266,14 @@ const selfHostedSyncDeviceList = computed(() => {
       isServer: false,
       canPeerSync: false,
       shortId: shortDeviceId(selfDevice.deviceId),
-      lastPushText: selfDevice.lastPushAt
-        ? formatDateTime(selfDevice.lastPushAt)
-        : "尚未推送",
-      lastSeenText: selfDevice.lastSeenAt
-        ? formatDateTime(selfDevice.lastSeenAt)
-        : "—",
+      lastPushText: selfDevice.lastPushAt ? formatDateTime(selfDevice.lastPushAt) : "尚未推送",
+      lastSeenText: selfDevice.lastSeenAt ? formatDateTime(selfDevice.lastSeenAt) : "—",
       model,
       customName,
       displayName,
     });
   }
 
-  // 其他可同步 peer（僅真實裝置）
   for (const p of selfHostedSyncStore.peerList) {
     const customName = p.customName ?? null;
     const model = p.model ?? null;
@@ -293,7 +298,6 @@ const selfHostedSyncDeviceList = computed(() => {
   return items;
 });
 
-// ===== 裝置重新命名 =====
 const deviceRenameInput = ref("");
 const deviceRenameActive = ref(false);
 const deviceRenameLoading = ref(false);
@@ -320,149 +324,50 @@ async function submitRenameDevice() {
   }
 }
 
-async function handlePeerSync(
-  direction: "push" | "pull",
-  targetDeviceId: string,
-) {
+async function handlePeerSync(direction: "push" | "pull", targetDeviceId: string) {
   selfHostedSyncActionStatus.value = "running";
   try {
-    const outcome = await selfHostedSyncStore.peerSync(direction, targetDeviceId);
-    if (outcome.conflictsAborted) {
-      alert(
-        `偵測到 ${outcome.conflictCount} 筆同時被兩端修改的資料。\nPhase 1 尚未提供衝突解決對話框，本次同步已中止。\n請先調整資料後再試。`,
-      );
-      return;
-    }
-    if (outcome.rejectedByUser) {
-      alert(`對方裝置拒絕了本次推送。`);
-      return;
-    }
-    const label = direction === "push" ? "推送" : "拉取";
-    const target = `裝置 ${shortDeviceId(targetDeviceId)}`;
-    if (outcome.applied === 0) {
-      alert(`已與 ${target} 同步（無需傳輸新資料）。`);
-    } else {
-      alert(`已向 ${target} ${label} ${outcome.applied} 筆資料。`);
-    }
+    await selfHostedSyncStore.peerSync(direction, targetDeviceId);
   } catch (error) {
-    console.error("[SettingsScreen] peerSync 失敗:", error);
-    alert(
-      `同步失敗：${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error("[SettingsScreen] Peer sync 失敗:", error);
+    alert(`同步失敗：${error instanceof Error ? error.message : String(error)}`);
   } finally {
     selfHostedSyncActionStatus.value = "idle";
   }
 }
 
-const selfHostedSyncStatusText = computed(() => {
-  if (selfHostedSyncStore.syncStatus === "syncing") {
-    return "同步中…";
-  }
-  if (selfHostedSyncStore.syncStatus === "connecting") {
-    return "連線中…";
-  }
-  if (selfHostedSyncStore.syncStatus === "success") {
-    if (selfHostedSyncStore.lastSyncAt) {
-      return `已同步 · ${formatDateTime(selfHostedSyncStore.lastSyncAt)}`;
-    }
-    return "操作成功";
-  }
-  if (selfHostedSyncStore.syncStatus === "error") {
-    return selfHostedSyncStore.syncError || "同步失敗";
-  }
-  return selfHostedSyncStore.isAuthenticated ? "已登入，尚未同步" : "尚未登入";
-});
-
-function handleCloudPushToggle() {
-  if (!cloudPushStore.enabled) {
-    cloudPushStore.disableCloudPush();
-  } else {
-    // 開啟時自動同步到雲端
-    cloudPushStore.saveSettings();
-    debouncedCloudSync();
-  }
+async function handleCloudPushToggle() {
+  await cloudPushStore.saveSettings();
 }
 
-function toggleCloudPushChannel(channel: "discord" | "webpush", event: Event) {
+async function toggleCloudPushChannel(channel: "discord" | "webpush", event: Event) {
   const checked = (event.target as HTMLInputElement).checked;
+  const next = new Set(cloudPushStore.enabledChannels);
   if (checked) {
-    if (!cloudPushStore.enabledChannels.includes(channel)) {
-      cloudPushStore.enabledChannels.push(channel);
-    }
+    next.add(channel);
   } else {
-    cloudPushStore.enabledChannels = cloudPushStore.enabledChannels.filter(
-      (c) => c !== channel,
-    );
+    next.delete(channel);
   }
-  cloudPushStore.saveSettings();
-  // 渠道變更後自動同步
-  debouncedCloudSync();
-}
-
-/** 防抖自動同步（避免連續操作觸發多次） */
-let _cloudSyncTimer: ReturnType<typeof setTimeout> | null = null;
-function debouncedCloudSync() {
-  if (_cloudSyncTimer) clearTimeout(_cloudSyncTimer);
-  _cloudSyncTimer = setTimeout(async () => {
-    _cloudSyncTimer = null;
-    cloudPushSyncStatus.value = "syncing";
-    cloudPushSyncError.value = null;
-    await cloudPushStore.syncToCloud();
-    cloudPushSyncStatus.value = cloudPushStore.syncStatus;
-    cloudPushSyncError.value = cloudPushStore.syncError;
-    cloudPushNextAlarm.value = cloudPushStore.nextAlarm;
-  }, 1500);
-}
-
-async function handleCloudPushSync() {
-  cloudPushSyncStatus.value = "syncing";
-  cloudPushSyncError.value = null;
-  await cloudPushStore.syncToCloud();
-  cloudPushSyncStatus.value = cloudPushStore.syncStatus;
-  cloudPushSyncError.value = cloudPushStore.syncError;
-  cloudPushNextAlarm.value = cloudPushStore.nextAlarm;
-}
-
-async function handleCloudPushTest() {
-  // 如果還沒同步過，先自動同步一次
-  if (cloudPushStore.syncStatus !== "success" && !cloudPushStore.lastSyncAt) {
-    await handleCloudPushSync();
-  }
-  try {
-    await cloudPushStore.testPushNotification();
-    alert("測試推送已發送！請檢查通知。");
-  } catch (e: any) {
-    alert(`測試推送失敗：${e.message}`);
-  }
-}
-
-async function handleWebPushTest() {
-  try {
-    const res = await cloudPushStore.testWebPushNotification();
-    if (res?.ok) {
-      alert("Web Push 測試通知已發送！請檢查系統通知。");
-    } else {
-      alert(`Web Push 測試失敗：${res?.error || "未知錯誤"}`);
-    }
-  } catch (e: any) {
-    alert(`Web Push 測試失敗：${e.message}`);
-  }
+  cloudPushStore.enabledChannels = Array.from(next) as Array<"discord" | "webpush">;
+  await cloudPushStore.saveSettings();
 }
 
 async function handleUnlinkDiscord() {
-  if (confirm("確定要解除 Discord 連結嗎？")) {
-    await cloudPushStore.unlinkDiscord();
-  }
+  await cloudPushStore.unlinkDiscord();
 }
 
-async function handleSelfHostedTestConnection() {
-  selfHostedSyncActionStatus.value = "running";
-  try {
-    await selfHostedSyncStore.testConnection();
-  } catch (error) {
-    console.error("[SettingsScreen] Self-hosted sync 測試連線失敗:", error);
-  } finally {
-    selfHostedSyncActionStatus.value = "idle";
+async function handleCloudPushSync() {
+  await cloudPushStore.syncToCloud();
+}
+
+async function handleCloudPushTest() {
+  await cloudPushStore.testPushNotification();
+}
+
+async function handleWebPushTest() {
+  const result = await cloudPushStore.testWebPushNotification();
+  if (result?.error) {
+    alert(`Web Push 測試失敗：${result.error}`);
   }
 }
 
@@ -471,24 +376,18 @@ async function handleSelfHostedUseLocalServer() {
   await selfHostedSyncStore.saveSettings();
 }
 
-async function handleSelfHostedRegister() {
-  if (!selfHostedSyncPassword.value.trim()) {
-    alert("請先輸入同步密碼");
-    return;
-  }
-
+async function handleSelfHostedTestConnection() {
   selfHostedSyncActionStatus.value = "running";
   try {
-    await selfHostedSyncStore.register(selfHostedSyncPassword.value);
-    selfHostedSyncPassword.value = "";
+    await selfHostedSyncStore.refreshStatus();
   } catch (error) {
-    console.error("[SettingsScreen] Self-hosted sync 註冊失敗:", error);
+    console.error("[SettingsScreen] Self-hosted sync 測試連線失敗:", error);
+    alert(`連線失敗：${error instanceof Error ? error.message : String(error)}`);
   } finally {
     selfHostedSyncActionStatus.value = "idle";
   }
 }
 
-/** 智慧開始同步：自動判斷登入或註冊 */
 async function handleSelfHostedStartSync() {
   if (!selfHostedSyncStore.serverUrl.trim()) {
     alert("請先輸入伺服器 URL");
@@ -507,13 +406,10 @@ async function handleSelfHostedStartSync() {
   try {
     const pwd = selfHostedSyncPassword.value;
     const outcome = await selfHostedSyncStore.loginOrRegister(pwd);
-    if (selfHostedSyncRememberPassword.value) {
-      await selfHostedSyncStore.savePassword(pwd);
-    }
+    await selfHostedSyncStore.savePassword(pwd);
     selfHostedSyncPassword.value = "";
-    // 登入/註冊成功後自動抓一次裝置狀態
     try {
-      await selfHostedSyncStore.refreshMeta();
+      await selfHostedSyncStore.refreshStatus();
     } catch (metaError) {
       console.warn("[SettingsScreen] loginOrRegister 後 refreshMeta 失敗:", metaError);
     }
@@ -522,26 +418,7 @@ async function handleSelfHostedStartSync() {
     }
   } catch (error) {
     console.error("[SettingsScreen] Self-hosted sync 開始同步失敗:", error);
-    alert(
-      `登入失敗：${error instanceof Error ? error.message : String(error)}`,
-    );
-  } finally {
-    selfHostedSyncActionStatus.value = "idle";
-  }
-}
-
-async function handleSelfHostedLogin() {
-  if (!selfHostedSyncPassword.value.trim()) {
-    alert("請先輸入同步密碼");
-    return;
-  }
-
-  selfHostedSyncActionStatus.value = "running";
-  try {
-    await selfHostedSyncStore.login(selfHostedSyncPassword.value);
-    selfHostedSyncPassword.value = "";
-  } catch (error) {
-    console.error("[SettingsScreen] Self-hosted sync 登入失敗:", error);
+    alert(`登入失敗：${error instanceof Error ? error.message : String(error)}`);
   } finally {
     selfHostedSyncActionStatus.value = "idle";
   }
@@ -5731,7 +5608,7 @@ function useClonedVoice(voiceId: string) {
           <div class="cloud-push-options">
             <!-- ═══ 狀態 A：尚未登入（首次使用 / 登出後） ═══ -->
             <template v-if="!selfHostedSyncStore.isAuthenticated">
-              <div class="setting-group">
+              <div v-if="debugOverlayActive" class="setting-group">
                 <label class="setting-label">伺服器 URL</label>
                 <input
                   :value="selfHostedSyncStore.serverUrl"
@@ -5772,23 +5649,18 @@ function useClonedVoice(voiceId: string) {
                 />
               </div>
 
-              <label class="shs-remember-row">
-                <input
-                  v-model="selfHostedSyncRememberPassword"
-                  type="checkbox"
-                  class="shs-remember-checkbox"
-                />
-                <span>記住密碼（token 失效時自動重新登入）</span>
+              <div class="shs-remember-row">
+                <span>密碼會自動記住（token 失效時自動重新登入）</span>
                 <span
                   v-if="selfHostedSyncStore.savedPassword"
                   class="shs-saved-badge"
                 >已儲存</span>
                 <button
-                  v-if="selfHostedSyncStore.savedPassword"
+                  v-if="debugOverlayActive && selfHostedSyncStore.savedPassword"
                   class="shs-clear-pwd-btn"
                   @click="selfHostedSyncStore.clearSavedPassword()"
                 >清除</button>
-              </label>
+              </div>
 
               <button
                 class="shs-primary-btn"

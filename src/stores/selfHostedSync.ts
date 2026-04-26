@@ -10,7 +10,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 const SETTINGS_KEY = "self-hosted-sync-settings";
-const DEFAULT_SELF_HOSTED_SYNC_SERVER_URL = "http://127.0.0.1:3004";
+const DEFAULT_SELF_HOSTED_SYNC_SERVER_URL = "https://lonson0215-aguaphone-sync.hf.space/";
 
 type SyncStatus = "idle" | "connecting" | "syncing" | "success" | "error";
 
@@ -36,7 +36,7 @@ interface PersistedSelfHostedSyncSettings {
   lastPushedUpdatedAt: number | null;
   /** 使用者為這台裝置設定的自訂名稱（持久化於本機） */
   customDeviceName: string | null;
-  /** 記住密碼：明文儲存於本機（使用者選擇啟用時才存） */
+  /** 已登入後預設記住密碼：明文儲存於本機，供 token 失效時重新登入 */
   savedPassword: string | null;
 }
 
@@ -137,7 +137,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
 
         if (saved) {
           enabled.value = saved.enabled ?? false;
-          serverUrl.value = saved.serverUrl ?? "";
+          serverUrl.value = saved.serverUrl?.trim() || DEFAULT_SELF_HOSTED_SYNC_SERVER_URL;
           username.value = saved.username ?? "";
           accessToken.value = saved.accessToken ?? null;
           refreshToken.value = saved.refreshToken ?? null;
@@ -184,7 +184,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
         JSON.stringify({
           id: SETTINGS_KEY,
           enabled: enabled.value,
-          serverUrl: serverUrl.value.trim(),
+          serverUrl: serverUrl.value.trim() || DEFAULT_SELF_HOSTED_SYNC_SERVER_URL,
           username: username.value.trim(),
           accessToken: accessToken.value,
           refreshToken: refreshToken.value,
@@ -979,7 +979,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
   }
 
   function setServerUrl(url: string): void {
-    serverUrl.value = url;
+    serverUrl.value = url.trim() || DEFAULT_SELF_HOSTED_SYNC_SERVER_URL;
   }
 
   function setUsername(value: string): void {
