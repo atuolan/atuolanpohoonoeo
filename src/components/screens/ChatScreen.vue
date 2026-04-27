@@ -5039,6 +5039,17 @@ async function triggerAIResponse(options?: {
             messages.value.splice(msgIndex, 1);
           }
 
+          // 群聊逐條顯示節奏：當有多條訊息時，每條之間延遲 2000ms（與 1v1 聊天一致）
+          const _totalGc = parsed.messages.length;
+          let _shownGc = 0;
+          const _gcDelayIfNeeded = async () => {
+            if (_totalGc > 1 && _shownGc > 0) {
+              await _delay(2000);
+            }
+            _shownGc++;
+            scrollToBottom();
+          };
+
           for (let i = 0; i < parsed.messages.length; i++) {
             const parsedMsg = parsed.messages[i];
             const senderInfo = resolveGroupMemberByName(parsedMsg.senderName || "");
@@ -5103,6 +5114,7 @@ async function triggerAIResponse(options?: {
                 groupActionTarget: parsedMsg.groupActionTarget ?? undefined,
                 groupActionValue: parsedMsg.groupActionValue ?? undefined,
               };
+              await _gcDelayIfNeeded();
               messages.value.push(actionMsg);
               continue;
             }
@@ -5119,6 +5131,7 @@ async function triggerAIResponse(options?: {
                 senderCharacterId: senderCharId,
                 senderCharacterName: senderName,
               };
+              await _gcDelayIfNeeded();
               messages.value.push(recallMsg);
               continue;
             }
@@ -5137,6 +5150,7 @@ async function triggerAIResponse(options?: {
                 senderCharacterName: senderName,
                 senderCharacterAvatar: senderAvatar,
               };
+              await _gcDelayIfNeeded();
               messages.value.push(dmNotice);
 
               // 嘗試找到對應角色的 1v1 聊天並插入訊息，找不到則自動建立
@@ -5412,6 +5426,7 @@ async function triggerAIResponse(options?: {
               }
             }
 
+            await _gcDelayIfNeeded();
             messages.value.push(newMessage);
 
             // 如果文生圖已開啟且有英文 prompt 或中文描述，觸發生圖

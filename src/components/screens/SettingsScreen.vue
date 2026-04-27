@@ -158,6 +158,7 @@ function handleShowPermissionGuide() {
 const cloudPushSyncStatus = ref(cloudPushStore.syncStatus);
 const cloudPushSyncError = ref(cloudPushStore.syncError);
 const cloudPushNextAlarm = ref(cloudPushStore.nextAlarm);
+const selfHostedSyncHelpOpen = ref(false);
 const selfHostedSyncPassword = ref("");
 const selfHostedSyncActionStatus = ref<"idle" | "running">("idle");
 
@@ -5589,7 +5590,16 @@ function useClonedVoice(voiceId: string) {
         <div class="push-notification-card self-hosted-sync-card" style="margin-top: 16px">
           <div class="toggle-item highlight">
             <div class="toggle-content">
-              <span class="toggle-label">自架同步</span>
+              <div class="self-hosted-sync-title-row">
+                <span class="toggle-label">自架同步</span>
+                <button
+                  type="button"
+                  class="self-hosted-sync-help-btn"
+                  :aria-expanded="selfHostedSyncHelpOpen"
+                  aria-label="查看自架同步使用說明"
+                  @click="selfHostedSyncHelpOpen = !selfHostedSyncHelpOpen"
+                >?</button>
+              </div>
               <span class="toggle-desc">
                 把聊天與設定同步到你自己的伺服器
               </span>
@@ -5603,6 +5613,25 @@ function useClonedVoice(voiceId: string) {
               />
               <span class="toggle-switch"></span>
             </label>
+          </div>
+
+          <div v-if="selfHostedSyncHelpOpen" class="self-hosted-sync-help-panel">
+            <div class="self-hosted-sync-help-title">使用說明</div>
+            <div class="self-hosted-sync-help-text">
+              感謝 膝蓋中了一箭 幫助完善這個功能。現在你可以在電腦和手機之間快速傳輸新內容，傳完後資料都會留在各自本機。
+            </div>
+            <div class="self-hosted-sync-help-text">
+              建議雙端資料不要差異過大，另一端最好不要完全空白，這樣比較不容易出問題。實測像 30MB 左右內容也能完整傳過去。
+            </div>
+            <div class="self-hosted-sync-help-text">
+              如果傳輸失敗，因為目前保存邏輯有調整，建議先把現有資料匯出，再重新匯入到本機後再使用同步功能。
+            </div>
+            <div class="self-hosted-sync-help-text">
+              帳號密碼可以自行設定，按「連線註冊」後，另一個網頁使用相同帳號密碼登入即可連線。
+            </div>
+            <div class="self-hosted-sync-help-text">
+              為了安全，拉取前需要雙端都同意。訊息不會互通，也不會保存到我的伺服器；我這裡只作為中轉，不保存你的資料。
+            </div>
           </div>
 
           <div class="cloud-push-options">
@@ -6492,6 +6521,55 @@ function useClonedVoice(voiceId: string) {
 .toggle-label {
   font-size: 15px;
   color: var(--color-text, #333);
+}
+
+.self-hosted-sync-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.self-hosted-sync-help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(125, 211, 168, 0.5);
+  border-radius: 999px;
+  background: rgba(125, 211, 168, 0.12);
+  color: var(--color-primary, #46a67d);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.self-hosted-sync-help-panel {
+  margin: 12px 16px 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(125, 211, 168, 0.28);
+  border-radius: 14px;
+  background: rgba(125, 211, 168, 0.08);
+}
+
+.self-hosted-sync-help-title {
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text, #333);
+}
+
+.self-hosted-sync-help-text {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--color-text-secondary, #5f6b66);
+
+  & + & {
+    margin-top: 8px;
+  }
 }
 
 .toggle-input {

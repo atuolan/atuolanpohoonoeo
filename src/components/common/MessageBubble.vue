@@ -430,6 +430,9 @@ const showRecallOptions = ref(false);
 // 角色撤回展開狀態（seen 類型，若之前已查看則預設展開）
 const charRecallExpanded = ref(props.charRecallRevealed ?? false);
 
+// 群聊撤回內容展開狀態（不持久化，僅本次會話有效）
+const groupRecallExpanded = ref(false);
+
 // 面對面請求狀態文本
 const faceToFaceRequestStatusText = computed(() => {
   const name = props.senderName || props.characterName || "對方";
@@ -2420,16 +2423,30 @@ const showTextVoiceTranscript = ref(true);
         </div>
         <div class="char-blocked-notification-line"></div>
       </div>
-      <!-- 群聊撤回通知（系統訊息樣式） -->
-      <div v-else-if="isRecall" class="system-message recall-message">
-        <svg viewBox="0 0 24 24" fill="currentColor" class="recall-icon">
-          <path
-            d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"
-          />
-        </svg>
-        <span
-          >{{ senderCharacterName || groupActionActor }} 撤回了一條訊息</span
-        >
+      <!-- 群聊撤回通知（系統訊息樣式，可點擊查看內容） -->
+      <div v-else-if="isRecall" class="char-recall-notification group-recall-notification">
+        <div class="char-recall-row">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="char-recall-icon">
+            <path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" />
+          </svg>
+          <span class="char-recall-text">{{ senderCharacterName || groupActionActor }} 撤回了一條訊息</span>
+          <button
+            v-if="recallContent"
+            class="char-recall-seen-btn"
+            @click.stop="groupRecallExpanded = !groupRecallExpanded"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" class="char-recall-eye-icon">
+              <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+            </svg>
+            查看
+          </button>
+        </div>
+        <Transition name="char-recall-expand">
+          <div
+            v-if="groupRecallExpanded && recallContent"
+            class="char-recall-content-preview"
+          >{{ recallContent }}</div>
+        </Transition>
       </div>
 
       <!-- 群聊管理動作（居中系統訊息） -->
