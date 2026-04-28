@@ -26,6 +26,7 @@ import MeritHub from "@/components/modals/MeritHub.vue";
 import PersonaEditPanel from "@/components/modals/PersonaEditPanel.vue";
 import PhoneCallModal from "@/components/modals/PhoneCallModal.vue";
 import ProactiveMessageSettingsModal from "@/components/modals/ProactiveMessageSettingsModal.vue";
+import RedPacketVoiceClaimModal from "@/components/modals/RedPacketVoiceClaimModal.vue";
 import ScreenshotPreviewModal from "@/components/modals/ScreenshotPreviewModal.vue";
 import VideoCallModal from "@/components/modals/VideoCallModal.vue";
 import ImageSearchPanel from "@/components/panels/ImageSearchPanel.vue";
@@ -592,6 +593,7 @@ import {
   canClaim as canClaimRedpacket,
   findClaimableRedPacket,
   userSpokeVoice,
+  fuzzyVoiceMatch,
 } from "@/services/RedPacketService";
 import { useWeatherStore } from "@/stores/weather";
 import type { CalendarEvent, CalendarEventData } from "@/types/calendar";
@@ -2020,6 +2022,46 @@ const onMessageAcceptOnlineModeRequest = (...args: any[]) =>
 const onMessageRejectOnlineModeRequest = (...args: any[]) =>
   handleRejectOnlineModeRequest(args[0] as string);
 
+// 語音紅包輸入彈窗狀態
+const voiceClaimModalState = ref<{
+  visible: boolean;
+  messageId: string;
+  phrase: string;
+  blessing: string;
+}>({
+  visible: false,
+  messageId: "",
+  phrase: "",
+  blessing: "",
+});
+
+// 執行用戶領取（已通過所有檢查），共用流程
+async function executeUserRedpacketClaim(msg: Message, claimerDisplayName: string) {
+  const cents = applyRedpacketClaim(msg, claimerDisplayName, undefined, true);
+  if (cents <= 0) return;
+  msg.redpacketState = {
+    ...msg.redpacketState!,
+    claims: [...msg.redpacketState!.claims],
+  };
+  const yuan = cents / 100;
+  gameEconomyStore.earnMoney(
+    GLOBAL_WALLET_ID,
+    yuan,
+    "transfer",
+    `領取${msg.senderCharacterName ? msg.senderCharacterName + "的" : ""}紅包`,
+  );
+  await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
+  messages.value.push({
+    id: `msg_${Date.now()}_rpc_user`,
+    role: "system",
+    content: `${claimerDisplayName} 領取了紅包，獲得 ¥${yuan.toFixed(2)}`,
+    timestamp: Date.now(),
+  });
+  if (typeof showToast === "function")
+    showToast(`你領到 ¥${yuan.toFixed(2)}`);
+  await saveChatImmediate();
+}
+
 // User 領取群聊紅包
 const onMessageClaimRedpacket = async (id: string) => {
   const msg = messages.value.find((m) => m.id === id);
@@ -2033,11 +2075,24 @@ const onMessageClaimRedpacket = async (id: string) => {
     userStore.currentPersona?.name ||
     "User";
 
-  // 語音紅包：要求用戶最近說過口令
+  // 語音紅包：彈出輸入框，讓用戶打字或語音輸入；模糊比對通過才領取
   if (msg.redpacketData.type === "voice") {
-    const phrase = msg.redpacketData.voice || msg.redpacketData.password || "";
-    if (phrase && !userSpokeVoice(messages.value, phrase, 6)) {
-      if (typeof showToast === "function") showToast(`先說「${phrase}」才能領取`);
+    const phrase = (msg.redpacketData.voice || msg.redpacketData.password || "").trim();
+    if (phrase) {
+      // 先檢查基本可領取狀態（exhausted / already-claimed）
+      const pre = canClaimRedpacket(msg, userName, true);
+      if (!pre.ok) {
+        if (pre.reason === "exhausted") {
+          if (typeof showToast === "function") showToast("紅包已被領完");
+        }
+        return;
+      }
+      voiceClaimModalState.value = {
+        visible: true,
+        messageId: id,
+        phrase,
+        blessing: msg.redpacketData.blessing || "",
+      };
       return;
     }
   }
@@ -2063,31 +2118,7 @@ const onMessageClaimRedpacket = async (id: string) => {
       }
       const targetIsAI = aiMemberNames.some((n) => n === target);
       if (!targetIsAI) {
-        // 視為 user 綽號 → 直接以 target 為名走領取流程
-        const cents = applyRedpacketClaim(msg, target || userName, undefined, true);
-        if (cents > 0) {
-          msg.redpacketState = {
-            ...msg.redpacketState!,
-            claims: [...msg.redpacketState!.claims],
-          };
-          const yuan = cents / 100;
-          gameEconomyStore.earnMoney(
-            GLOBAL_WALLET_ID,
-            yuan,
-            "transfer",
-            `領取${msg.senderCharacterName ? msg.senderCharacterName + "的" : ""}紅包`,
-          );
-          await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
-          messages.value.push({
-            id: `msg_${Date.now()}_rpc_user`,
-            role: "system",
-            content: `${target || userName} 領取了紅包，獲得 ¥${yuan.toFixed(2)}`,
-            timestamp: Date.now(),
-          });
-          if (typeof showToast === "function")
-            showToast(`你領到 ¥${yuan.toFixed(2)}`);
-          await saveChatImmediate();
-        }
+        await executeUserRedpacketClaim(msg, target || userName);
         return;
       }
       if (typeof showToast === "function")
@@ -2095,34 +2126,32 @@ const onMessageClaimRedpacket = async (id: string) => {
     }
     return;
   }
-  const cents = applyRedpacketClaim(msg, userName, undefined, true);
-  if (cents > 0) {
-    // 觸發 Vue 響應式更新（重新賦值整個 state 物件，含 claims 陣列）
-    msg.redpacketState = {
-      ...msg.redpacketState!,
-      claims: [...msg.redpacketState!.claims],
-    };
-    // 將金額加入用戶錢包（cents → 元）
-    const yuan = cents / 100;
-    gameEconomyStore.earnMoney(
-      GLOBAL_WALLET_ID,
-      yuan,
-      "transfer",
-      `領取${msg.senderCharacterName ? msg.senderCharacterName + "的" : ""}紅包`,
-    );
-    await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
-    // 推送系統訊息
-    messages.value.push({
-      id: `msg_${Date.now()}_rpc_user`,
-      role: "system",
-      content: `${userName} 領取了紅包，獲得 ¥${yuan.toFixed(2)}`,
-      timestamp: Date.now(),
-    });
-    if (typeof showToast === "function")
-      showToast(`你領到 ¥${yuan.toFixed(2)}`);
-    await saveChatImmediate();
-  }
+  await executeUserRedpacketClaim(msg, userName);
 };
+
+// 語音紅包：用戶提交輸入（文字或語音轉文字）
+async function handleVoiceRedpacketSubmit(text: string) {
+  const id = voiceClaimModalState.value.messageId;
+  const msg = messages.value.find((m) => m.id === id);
+  if (!msg || !msg.isRedpacket || !msg.redpacketData) {
+    voiceClaimModalState.value.visible = false;
+    return;
+  }
+  // 不做嚴格比對（簡繁體/口音/打字差異都允許），只要有輸入就通過
+  // 先把用戶輸入推為一條訊息（沉浸感）
+  messages.value.push({
+    id: `msg_${Date.now()}_rpc_voice`,
+    role: "user",
+    content: text,
+    timestamp: Date.now(),
+  });
+  voiceClaimModalState.value.visible = false;
+  const userName =
+    effectivePersona.value?.name ||
+    userStore.currentPersona?.name ||
+    "User";
+  await executeUserRedpacketClaim(msg, userName);
+}
 
 function _handleAffinityUpdates(
   updates: {
@@ -5476,32 +5505,6 @@ async function triggerAIResponse(options?: {
                 false,
               );
               if (target) {
-                // 語音紅包：檢查該角色最近是否說過口令
-                if (target.redpacketData?.type === "voice") {
-                  const phrase = (
-                    target.redpacketData.voice ||
-                    target.redpacketData.password ||
-                    ""
-                  ).trim();
-                  if (phrase) {
-                    // 抓取該角色最近 6 條訊息（不含表情/紅包/系統等非文字訊息）
-                    const aiMsgs = messages.value.filter(
-                      (m) =>
-                        m.role === "ai" &&
-                        (m.senderCharacterName === claimerName ||
-                          m.name === claimerName) &&
-                        typeof m.content === "string",
-                    );
-                    const recent = aiMsgs.slice(-6);
-                    const said = recent.some((m) =>
-                      (m.content || "").includes(phrase),
-                    );
-                    if (!said) {
-                      // 沒說口令 → 不允許領取，跳過此 claim
-                      continue;
-                    }
-                  }
-                }
                 const cents = applyRedpacketClaim(
                   target,
                   claimerName,
@@ -9915,6 +9918,15 @@ onUnmounted(() => {
 
       <!-- 電話通話模態框（全局 store 管理，v-if 由 store 控制） -->
       <PhoneCallModal v-if="showPhoneCallModal" @close="handlePhoneCallClose" />
+
+      <!-- 語音紅包輸入彈窗 -->
+      <RedPacketVoiceClaimModal
+        v-if="voiceClaimModalState.visible"
+        :phrase="voiceClaimModalState.phrase"
+        :blessing="voiceClaimModalState.blessing"
+        @close="voiceClaimModalState.visible = false"
+        @submit="handleVoiceRedpacketSubmit"
+      />
 
       <!-- 群通話模態框 -->
       <GroupCallModal

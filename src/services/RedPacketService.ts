@@ -3,7 +3,7 @@
  * 提供金額計算、拼手氣隨機分配、判定可領者等邏輯
  */
 
-import type { Message } from "@/types/chat";
+import type { ChatMessage as Message } from "@/types/chat";
 
 export type RedPacketType = "lucky" | "exclusive" | "voice" | "split";
 
@@ -92,7 +92,7 @@ export function canClaim(
   // 已領過則不可重領
   if (
     state.claims.some(
-      (c) => c.claimerName === claimerName && c.isUser === isUser,
+      (c: any) => c.claimerName === claimerName && c.isUser === isUser,
     )
   ) {
     return { ok: false, reason: "already-claimed" };
@@ -168,7 +168,57 @@ export function userSpokeVoice(
   if (!voicePhrase) return true;
   const phrase = voicePhrase.trim();
   if (!phrase) return true;
-  const userMsgs = messages.filter((m) => m.role === "user");
+  const userMsgs = messages.filter(
+    (m: any) => m.role === "user" || m.sender === "user" || m.is_user === true,
+  );
   const slice = userMsgs.slice(-lookback);
-  return slice.some((m) => (m.content || "").includes(phrase));
+  return slice.some((m) => fuzzyVoiceMatch(m.content || "", phrase));
+}
+
+/**
+ * 模糊比對語音紅包口令：
+ * - 去除空白與標點，全部小寫化
+ * - 包含關係（任一方包含另一方）即視為通過
+ * - 否則用 Levenshtein 距離計算相似度，>= 0.6 即通過
+ */
+export function fuzzyVoiceMatch(input: string, phrase: string): boolean {
+  if (!phrase) return true;
+  const a = normalizeForMatch(input);
+  const b = normalizeForMatch(phrase);
+  if (!a || !b) return false;
+  if (a.includes(b) || b.includes(a)) return true;
+  const dist = levenshtein(a, b);
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return true;
+  const similarity = 1 - dist / maxLen;
+  return similarity >= 0.6;
+}
+
+function normalizeForMatch(s: string): string {
+  return (s || "")
+    .toLowerCase()
+    .replace(/[\s\p{P}\p{S}]/gu, "");
+}
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp: number[] = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j];
+      if (a[i - 1] === b[j - 1]) {
+        dp[j] = prev;
+      } else {
+        dp[j] = 1 + Math.min(prev, dp[j], dp[j - 1]);
+      }
+      prev = tmp;
+    }
+  }
+  return dp[n];
 }
