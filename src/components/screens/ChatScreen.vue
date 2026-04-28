@@ -190,6 +190,23 @@ interface Message {
     blessing: string;
     password?: string;
     voice?: string;
+    type?: "lucky" | "exclusive" | "voice" | "split";
+    count?: number;
+    target?: string;
+  };
+  redpacketState?: {
+    totalCents: number;
+    totalCount: number;
+    remainingCents: number;
+    remainingCount: number;
+    claims: Array<{
+      claimerName: string;
+      claimerCharId?: string;
+      isUser: boolean;
+      cents: number;
+      timestamp: number;
+    }>;
+    fullyClaimed: boolean;
   };
   isLocation?: boolean;
   locationContent?: string;
@@ -569,6 +586,13 @@ import {
   type CharacterInfo,
 } from "@/services/IncomingCallScheduler";
 import type { FoodRecordData, ScheduleCallData } from "@/services/ResponseParser";
+import {
+  initRedPacketState,
+  applyClaim as applyRedpacketClaim,
+  canClaim as canClaimRedpacket,
+  findClaimableRedPacket,
+  userSpokeVoice,
+} from "@/services/RedPacketService";
 import { useWeatherStore } from "@/stores/weather";
 import type { CalendarEvent, CalendarEventData } from "@/types/calendar";
 import type { Holiday } from "@/types/holiday";
@@ -1995,6 +2019,110 @@ const onMessageAcceptOnlineModeRequest = (...args: any[]) =>
   handleAcceptOnlineModeRequest(args[0] as string);
 const onMessageRejectOnlineModeRequest = (...args: any[]) =>
   handleRejectOnlineModeRequest(args[0] as string);
+
+// User 領取群聊紅包
+const onMessageClaimRedpacket = async (id: string) => {
+  const msg = messages.value.find((m) => m.id === id);
+  if (!msg || !msg.isRedpacket || !msg.redpacketData) return;
+  // 容錯：若 state 缺失則初始化
+  if (!msg.redpacketState) {
+    msg.redpacketState = initRedPacketState(msg.redpacketData);
+  }
+  const userName =
+    effectivePersona.value?.name ||
+    userStore.currentPersona?.name ||
+    "User";
+
+  // 語音紅包：要求用戶最近說過口令
+  if (msg.redpacketData.type === "voice") {
+    const phrase = msg.redpacketData.voice || msg.redpacketData.password || "";
+    if (phrase && !userSpokeVoice(messages.value, phrase, 6)) {
+      if (typeof showToast === "function") showToast(`先說「${phrase}」才能領取`);
+      return;
+    }
+  }
+
+  const check = canClaimRedpacket(msg, userName, true);
+  if (!check.ok) {
+    if (check.reason === "exhausted") {
+      if (typeof showToast === "function") showToast("紅包已被領完");
+    } else if (check.reason === "already-claimed") {
+      // 已領過 → 由氣泡自行展開明細
+    } else if (check.reason === "not-target") {
+      // 寬容：若 target 不是任何 AI 角色的名字，視為 user 的綽號 → 允許領取
+      const target = (msg.redpacketData.target || "").trim();
+      const aiMemberNames: string[] = [];
+      const gm = groupMetadata.value;
+      if (gm?.isMultiCharCard && gm.multiCharMembers) {
+        aiMemberNames.push(...gm.multiCharMembers.map((m: any) => (m.name || "").trim()));
+      } else if (gm?.members) {
+        for (const member of gm.members) {
+          const ch = charactersStore.characters.find((c) => c.id === member.characterId);
+          if (ch?.name) aiMemberNames.push(ch.name.trim());
+        }
+      }
+      const targetIsAI = aiMemberNames.some((n) => n === target);
+      if (!targetIsAI) {
+        // 視為 user 綽號 → 直接以 target 為名走領取流程
+        const cents = applyRedpacketClaim(msg, target || userName, undefined, true);
+        if (cents > 0) {
+          msg.redpacketState = {
+            ...msg.redpacketState!,
+            claims: [...msg.redpacketState!.claims],
+          };
+          const yuan = cents / 100;
+          gameEconomyStore.earnMoney(
+            GLOBAL_WALLET_ID,
+            yuan,
+            "transfer",
+            `領取${msg.senderCharacterName ? msg.senderCharacterName + "的" : ""}紅包`,
+          );
+          await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
+          messages.value.push({
+            id: `msg_${Date.now()}_rpc_user`,
+            role: "system",
+            content: `${target || userName} 領取了紅包，獲得 ¥${yuan.toFixed(2)}`,
+            timestamp: Date.now(),
+          });
+          if (typeof showToast === "function")
+            showToast(`你領到 ¥${yuan.toFixed(2)}`);
+          await saveChatImmediate();
+        }
+        return;
+      }
+      if (typeof showToast === "function")
+        showToast(`這是給 ${msg.redpacketData.target} 的專屬紅包`);
+    }
+    return;
+  }
+  const cents = applyRedpacketClaim(msg, userName, undefined, true);
+  if (cents > 0) {
+    // 觸發 Vue 響應式更新（重新賦值整個 state 物件，含 claims 陣列）
+    msg.redpacketState = {
+      ...msg.redpacketState!,
+      claims: [...msg.redpacketState!.claims],
+    };
+    // 將金額加入用戶錢包（cents → 元）
+    const yuan = cents / 100;
+    gameEconomyStore.earnMoney(
+      GLOBAL_WALLET_ID,
+      yuan,
+      "transfer",
+      `領取${msg.senderCharacterName ? msg.senderCharacterName + "的" : ""}紅包`,
+    );
+    await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
+    // 推送系統訊息
+    messages.value.push({
+      id: `msg_${Date.now()}_rpc_user`,
+      role: "system",
+      content: `${userName} 領取了紅包，獲得 ¥${yuan.toFixed(2)}`,
+      timestamp: Date.now(),
+    });
+    if (typeof showToast === "function")
+      showToast(`你領到 ¥${yuan.toFixed(2)}`);
+    await saveChatImmediate();
+  }
+};
 
 function _handleAffinityUpdates(
   updates: {
@@ -5339,12 +5467,75 @@ async function triggerAIResponse(options?: {
               continue;
             }
 
+            // 處理 AI 領取群聊紅包（<redpacket-claim name="..." />）
+            if (parsedMsg.isRedpacketClaim) {
+              const claimerName = parsedMsg.redpacketClaimName || senderName;
+              const target = findClaimableRedPacket(
+                messages.value,
+                claimerName,
+                false,
+              );
+              if (target) {
+                // 語音紅包：檢查該角色最近是否說過口令
+                if (target.redpacketData?.type === "voice") {
+                  const phrase = (
+                    target.redpacketData.voice ||
+                    target.redpacketData.password ||
+                    ""
+                  ).trim();
+                  if (phrase) {
+                    // 抓取該角色最近 6 條訊息（不含表情/紅包/系統等非文字訊息）
+                    const aiMsgs = messages.value.filter(
+                      (m) =>
+                        m.role === "ai" &&
+                        (m.senderCharacterName === claimerName ||
+                          m.name === claimerName) &&
+                        typeof m.content === "string",
+                    );
+                    const recent = aiMsgs.slice(-6);
+                    const said = recent.some((m) =>
+                      (m.content || "").includes(phrase),
+                    );
+                    if (!said) {
+                      // 沒說口令 → 不允許領取，跳過此 claim
+                      continue;
+                    }
+                  }
+                }
+                const cents = applyRedpacketClaim(
+                  target,
+                  claimerName,
+                  senderCharId,
+                  false,
+                );
+                if (cents > 0) {
+                  // 觸發響應式更新
+                  target.redpacketState = {
+                    ...target.redpacketState!,
+                    claims: [...target.redpacketState!.claims],
+                  };
+                  await _gcDelayIfNeeded();
+                  messages.value.push({
+                    id: `msg_${Date.now()}_${i}_rpc`,
+                    role: "system",
+                    content: `${claimerName} 領取了紅包，獲得 ¥${(cents / 100).toFixed(2)}`,
+                    timestamp: Date.now() + i,
+                  });
+                }
+              }
+              continue;
+            }
+
             // 普通群聊訊息（非通話狀態）
             if (
               !parsedMsg.content &&
               !parsedMsg.isStickerMsg &&
               !parsedMsg.isVoice &&
-              !parsedMsg.isAiImage
+              !parsedMsg.isAiImage &&
+              !parsedMsg.isRedpacket &&
+              !parsedMsg.isLocation &&
+              !parsedMsg.isGift &&
+              !parsedMsg.isTransfer
             )
               continue;
 
@@ -5424,6 +5615,13 @@ async function triggerAIResponse(options?: {
                 }
                 newMessage.waimaiOrder = clonedOrder;
               }
+            }
+
+            // 群聊紅包：初始化領取狀態
+            if (newMessage.isRedpacket && newMessage.redpacketData) {
+              newMessage.redpacketState = initRedPacketState(
+                newMessage.redpacketData,
+              );
             }
 
             await _gcDelayIfNeeded();
@@ -7302,6 +7500,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
             timetravelContent: m.timetravelContent,
             isRedpacket: m.isRedpacket,
             redpacketData: m.redpacketData,
+            redpacketState: (m as any).redpacketState,
             isLocation: m.isLocation,
             locationContent: m.locationContent,
             replyToContent: m.replyToContent,
@@ -7973,6 +8172,9 @@ function convertToStorableMessage(m: any, charName: string): ChatMessage {
     timetravelContent: m.timetravelContent,
     isRedpacket: m.isRedpacket,
     redpacketData: m.redpacketData ? { ...m.redpacketData } : undefined,
+    redpacketState: m.redpacketState
+      ? JSON.parse(JSON.stringify(m.redpacketState))
+      : undefined,
     isLocation: m.isLocation,
     locationContent: m.locationContent,
     replyToContent: m.replyToContent,
@@ -9350,6 +9552,10 @@ onUnmounted(() => {
             :timetravel-content="message.timetravelContent"
             :is-redpacket="message.isRedpacket"
             :redpacket-data="message.redpacketData"
+            :redpacket-state="message.redpacketState"
+            :current-user-name="
+              effectivePersona?.name || userStore.currentPersona?.name || 'User'
+            "
             :is-location="message.isLocation"
             :location-content="message.locationContent"
             :reply-to-content="
@@ -9480,6 +9686,7 @@ onUnmounted(() => {
             @reject-face-to-face-request="onMessageRejectFaceToFaceRequest"
             @accept-online-mode-request="onMessageAcceptOnlineModeRequest"
             @reject-online-mode-request="onMessageRejectOnlineModeRequest"
+            @claim-redpacket="onMessageClaimRedpacket"
           />
           <!-- 封鎖期間訊息的驚嘆號指示器（獨立行，在訊息下方顯示） -->
           <div

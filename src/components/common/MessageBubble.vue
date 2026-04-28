@@ -142,7 +142,26 @@ interface MessageBubbleProps {
     blessing: string;
     password?: string;
     voice?: string;
+    type?: "lucky" | "exclusive" | "voice" | "split";
+    count?: number;
+    target?: string;
   };
+  redpacketState?: {
+    totalCents: number;
+    totalCount: number;
+    remainingCents: number;
+    remainingCount: number;
+    claims: Array<{
+      claimerName: string;
+      claimerCharId?: string;
+      isUser: boolean;
+      cents: number;
+      timestamp: number;
+    }>;
+    fullyClaimed: boolean;
+  };
+  /** 當前用戶在群聊中的顯示名（用來判斷是否為專屬紅包目標 / 是否已領取） */
+  currentUserName?: string;
   isLocation?: boolean;
   locationContent?: string;
   replyToContent?: string;
@@ -413,6 +432,7 @@ const emit = defineEmits<{
   (e: "rejectFaceToFaceRequest", id: string): void;
   (e: "acceptOnlineModeRequest", id: string): void;
   (e: "rejectOnlineModeRequest", id: string): void;
+  (e: "claimRedpacket", id: string): void;
 }>();
 
 // 群聊記錄 Modal 狀態
@@ -432,6 +452,60 @@ const charRecallExpanded = ref(props.charRecallRevealed ?? false);
 
 // 群聊撤回內容展開狀態（不持久化，僅本次會話有效）
 const groupRecallExpanded = ref(false);
+
+// ===== 群聊紅包相關 computed =====
+const redpacketTypeLabel = computed(() => {
+  const t = props.redpacketData?.type;
+  if (t === "lucky") return "看運氣啦紅包";
+  if (t === "exclusive") {
+    const target = props.redpacketData?.target?.trim();
+    return target ? `只給${target}紅包` : "只給某人紅包";
+  }
+  if (t === "voice") return "說說看吧紅包";
+  if (t === "split") return "大家都有份紅包";
+  return "看運氣啦紅包";
+});
+
+const redpacketUserClaim = computed(() => {
+  if (!props.redpacketState) return undefined;
+  return props.redpacketState.claims.find((c) => c.isUser);
+});
+
+const redpacketIsExhausted = computed(() => {
+  return !!props.redpacketState?.fullyClaimed;
+});
+
+const redpacketIsExclusiveBlocked = computed(() => {
+  if (props.redpacketData?.type !== "exclusive") return false;
+  const target = (props.redpacketData?.target || "").trim();
+  if (!target) return false;
+  const me = (props.currentUserName || "").trim();
+  // 假設 user 名是「我」或當前角色名；不匹配則視為 blocked
+  return target !== me;
+});
+
+const redpacketShowClaimList = ref(false);
+
+function onRedpacketClick() {
+  if (!props.isRedpacket || !props.redpacketData) return;
+  // 已領完 → 展開領取明細
+  if (redpacketIsExhausted.value) {
+    redpacketShowClaimList.value = !redpacketShowClaimList.value;
+    return;
+  }
+  // 已領過 → 展開明細
+  if (redpacketUserClaim.value) {
+    redpacketShowClaimList.value = !redpacketShowClaimList.value;
+    return;
+  }
+  // 專屬紅包但不是 target → 顯示明細不領取
+  if (redpacketIsExclusiveBlocked.value) {
+    redpacketShowClaimList.value = !redpacketShowClaimList.value;
+    return;
+  }
+  // 否則嘗試領取
+  emit("claimRedpacket", props.id);
+}
 
 // 面對面請求狀態文本
 const faceToFaceRequestStatusText = computed(() => {
@@ -2782,15 +2856,61 @@ const showTextVoiceTranscript = ref(true);
           </div>
 
           <!-- 紅包訊息 -->
-          <div
-            v-else-if="isRedpacket && redpacketData"
-            class="redpacket-message"
-          >
-            <div class="redpacket-icon">🧧</div>
-            <div class="redpacket-info">
-              <div class="redpacket-amount">{{ redpacketData.amount }}</div>
-              <div class="redpacket-blessing">{{ redpacketData.blessing }}</div>
+          <div v-else-if="isRedpacket && redpacketData" class="redpacket-wrapper">
+            <div
+              class="pixel-redpacket-card"
+              :class="{
+                'rp-exhausted': redpacketIsExhausted,
+                'rp-blocked': redpacketIsExclusiveBlocked,
+                'rp-claimed-by-user': !!redpacketUserClaim,
+              }"
+              @click.stop="onRedpacketClick"
+            >
+              <div class="rp-header">
+                <span class="title">RED PACKET</span>
+                <span class="menu-icon">≡</span>
+              </div>
+              <div class="rp-body">
+                <div class="amount-label">
+                  {{ redpacketTypeLabel }}
+                  <template v-if="redpacketState && redpacketState.totalCount > 1">
+                    · {{ redpacketState.totalCount - redpacketState.remainingCount }}/{{ redpacketState.totalCount }}
+                  </template>
+                </div>
+                <div class="amount-value">{{ redpacketData.blessing || "恭喜發財" }}</div>
+              </div>
+              
+              <div v-if="redpacketData.type === 'voice' && redpacketData.voice && !redpacketUserClaim && !redpacketIsExhausted" class="rp-note">
+                <span class="note-label">語音：</span>
+                <span class="note-text">{{ redpacketData.voice }}</span>
+              </div>
+
+              <div class="rp-info" :class="{'exhausted': redpacketIsExhausted, 'claimed': !!redpacketUserClaim}">
+                <span v-if="redpacketUserClaim">已領取 ¥{{ (redpacketUserClaim.cents / 100).toFixed(2) }}</span>
+                <span v-else-if="redpacketIsExhausted">已被領完</span>
+                <span v-else>點擊領取</span>
+              </div>
             </div>
+            <!-- 紅包領取明細 -->
+            <Transition name="char-recall-expand">
+              <div
+                v-if="
+                  redpacketState &&
+                  redpacketShowClaimList &&
+                  redpacketState.claims.length > 0
+                "
+                class="redpacket-claim-list"
+              >
+                <div
+                  v-for="(c, idx) in redpacketState.claims"
+                  :key="idx"
+                  class="redpacket-claim-item"
+                >
+                  <span class="rp-claimer">{{ c.isUser ? "我" : c.claimerName }}</span>
+                  <span class="rp-claim-amount">¥{{ (c.cents / 100).toFixed(2) }}</span>
+                </div>
+              </div>
+            </Transition>
           </div>
 
           <!-- 禮物寶箱訊息 -->
@@ -4138,6 +4258,14 @@ const showTextVoiceTranscript = ref(true);
     border-radius: 0;
   }
 
+  // 如果只有紅包包裹，也移除氣泡背景
+  &:has(> .redpacket-wrapper) {
+    background: transparent !important;
+    padding: 0;
+    box-shadow: none;
+    border-radius: 0;
+  }
+
   // 外賣卡片訊息不顯示預設氣泡底色
   &:has(.waimai-message-wrapper) {
     background: transparent !important;
@@ -4807,33 +4935,134 @@ const showTextVoiceTranscript = ref(true);
 }
 
 // 紅包訊息
-.redpacket-message {
+.redpacket-wrapper {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
-  border-radius: 12px;
-  color: white;
+  flex-direction: column;
+  padding: 10px;
+}
 
-  .redpacket-icon {
-    font-size: 32px;
+.pixel-redpacket-card {
+  background: #f5f5f5;
+  border: 3px solid #222;
+  border-radius: 4px;
+  width: 180px;
+  font-family: "Courier New", monospace;
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.2s ease, filter 0.2s ease;
+  
+  &.rp-exhausted,
+  &.rp-blocked {
+    filter: grayscale(0.6);
+    opacity: 0.78;
   }
 
-  .redpacket-info {
+  .rp-header {
+    background: #ef4444; // Red background instead of green
+    padding: 8px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    .title {
+      font-size: 14px;
+      font-weight: bold;
+      color: #fff;
+      letter-spacing: 1px;
+    }
+
+    .menu-icon {
+      font-size: 16px;
+      color: #fff;
+    }
+  }
+
+  .rp-body {
+    margin: 12px;
+    border: 3px solid #222;
+    padding: 8px;
+    background: #fff;
+    text-align: center;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    justify-content: center;
+    min-height: 60px;
+
+    .amount-label {
+      font-size: 10px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+
+    .amount-value {
+      font-size: 18px;
+      font-weight: bold;
+      color: #222;
+    }
   }
 
-  .redpacket-amount {
-    font-size: 18px;
+  .rp-note {
+    padding: 0 12px 8px;
+    font-size: 11px;
+
+    .note-label {
+      color: #666;
+    }
+
+    .note-text {
+      color: #333;
+    }
+  }
+
+  .rp-info {
+    padding: 12px;
+    text-align: center;
+    font-size: 11px;
     font-weight: bold;
+    color: #16a34a; // default unexhausted/claimed color
+
+    &.exhausted {
+      color: #b91c1c;
+    }
+    
+    &.claimed {
+      color: #16a34a;
+    }
+  }
+}
+
+.redpacket-claim-list {
+  margin-top: 6px;
+  background: #f5f5f5;
+  border: 3px solid #222;
+  border-radius: 4px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+  font-family: "Courier New", monospace;
+  width: 180px;
+
+  .redpacket-claim-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: bold;
+    color: #000;
+    border-bottom: 1px dashed #ccc;
+    padding-bottom: 4px;
+    
+    &:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
   }
 
-  .redpacket-blessing {
-    font-size: 13px;
-    opacity: 0.9;
+  .rp-claim-amount {
+    color: #ef4444;
   }
 }
 

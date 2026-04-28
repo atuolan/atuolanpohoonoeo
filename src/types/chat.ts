@@ -207,6 +207,28 @@ export interface ChatMessage {
     blessing: string;
     password?: string;
     voice?: string;
+    /** 群聊紅包類型：lucky=拼手氣, exclusive=專屬, voice=語音口令, split=平分 */
+    type?: "lucky" | "exclusive" | "voice" | "split";
+    /** 拼手氣/平分紅包總份數 */
+    count?: number;
+    /** 專屬紅包指定領取者本名 */
+    target?: string;
+  };
+  /** 群聊紅包領取狀態（首次入庫時由 ChatScreen 初始化） */
+  redpacketState?: {
+    /** 總金額（分）*/
+    totalCents: number;
+    totalCount: number;
+    remainingCents: number;
+    remainingCount: number;
+    claims: Array<{
+      claimerName: string;
+      claimerCharId?: string;
+      isUser: boolean;
+      cents: number;
+      timestamp: number;
+    }>;
+    fullyClaimed: boolean;
   };
   /** 是否為位置分享 */
   isLocation?: boolean;

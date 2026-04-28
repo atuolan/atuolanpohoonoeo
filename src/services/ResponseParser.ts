@@ -22,6 +22,9 @@ export interface ParsedMessage {
     blessing: string;
     password?: string;
     voice?: string;
+    type?: "lucky" | "exclusive" | "voice" | "split";
+    count?: number;
+    target?: string;
   };
   isLocation?: boolean;
   locationContent?: string;
@@ -520,11 +523,22 @@ function parseMessageContentWithoutTimetravel(content: string): ParsedMessage {
   if (redpacketMatch) {
     result.isRedpacket = true;
     const attrs = redpacketMatch[1];
+    const rpType = extractAttr(attrs, "type");
+    const rpCount = extractAttr(attrs, "count");
     result.redpacketData = {
       amount: extractAttr(attrs, "amount") || "0",
       blessing: extractAttr(attrs, "blessing") || "",
       password: extractAttr(attrs, "password"),
       voice: extractAttr(attrs, "voice"),
+      type:
+        rpType === "lucky" ||
+        rpType === "exclusive" ||
+        rpType === "voice" ||
+        rpType === "split"
+          ? rpType
+          : undefined,
+      count: rpCount ? Number(rpCount) || undefined : undefined,
+      target: extractAttr(attrs, "target"),
     };
     result.content = "";
   }
@@ -1244,11 +1258,22 @@ function parseMessageContent(content: string): ParsedMessage {
   if (redpacketMatch) {
     result.isRedpacket = true;
     const attrs = redpacketMatch[1];
+    const rpType = extractAttr(attrs, "type");
+    const rpCount = extractAttr(attrs, "count");
     result.redpacketData = {
       amount: extractAttr(attrs, "amount") || "0",
       blessing: extractAttr(attrs, "blessing") || "",
       password: extractAttr(attrs, "password"),
       voice: extractAttr(attrs, "voice"),
+      type:
+        rpType === "lucky" ||
+        rpType === "exclusive" ||
+        rpType === "voice" ||
+        rpType === "split"
+          ? rpType
+          : undefined,
+      count: rpCount ? Number(rpCount) || undefined : undefined,
+      target: extractAttr(attrs, "target"),
     };
     result.content = "";
   }
@@ -2271,6 +2296,9 @@ export interface ParsedGroupMessage extends ParsedMessage {
   /** 是否為離開通話 */
   isLeaveCall?: boolean;
   leaveCallReason?: string;
+  /** 是否為紅包領取動作 */
+  isRedpacketClaim?: boolean;
+  redpacketClaimName?: string;
 }
 
 export interface ParsedGroupResponse {
@@ -2316,9 +2344,9 @@ export function parseGroupChatResponse(
   result.rawOutput = outputContent;
 
   // 4. 解析各種標籤
-  // 使用正則逐一匹配 <msg>, <recall>, <dm>, <group-action>, <group-call-request>, <call-response>
+  // 使用正則逐一匹配 <msg>, <recall>, <dm>, <group-action>, <group-call-request>, <call-response>, <redpacket-claim>
   const tagRegex =
-    /<msg\s+([^>]*?)\/>|<msg\s+([^>]*?)>([\s\S]*?)<\/msg>|<recall\s+([^>]*?)>([\s\S]*?)<\/recall>|<dm\s+([^>]*?)>([\s\S]*?)<\/dm>|<group-action\s+([^>]*?)\s*\/?>|<group-call-request\s+([^>]*?)\s*\/?>|<call-response\s+([^>]*?)\s*\/?>/gi;
+    /<msg\s+([^>]*?)\/>|<msg\s+([^>]*?)>([\s\S]*?)<\/msg>|<recall\s+([^>]*?)>([\s\S]*?)<\/recall>|<dm\s+([^>]*?)>([\s\S]*?)<\/dm>|<group-action\s+([^>]*?)\s*\/?>|<group-call-request\s+([^>]*?)\s*\/?>|<call-response\s+([^>]*?)\s*\/?>|<redpacket-claim\s+([^>]*?)\s*\/?>/gi;
 
   let match;
   while ((match = tagRegex.exec(outputContent)) !== null) {
@@ -2475,6 +2503,16 @@ export function parseGroupChatResponse(
         isGroupCallResponse: true,
         groupCallResponseAction: action,
         groupCallDeclineReason: reason,
+      });
+    } else if (match[11] !== undefined) {
+      // <redpacket-claim> tag
+      const attrs = match[11];
+      const name = extractAttr(attrs, "name") || "";
+      result.messages.push({
+        content: "",
+        senderName: name,
+        isRedpacketClaim: true,
+        redpacketClaimName: name,
       });
     }
   }
