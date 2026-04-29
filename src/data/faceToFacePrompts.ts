@@ -1704,9 +1704,7 @@ export const FACE_TO_FACE_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "f2fEnvironmentAndNpc", enabled: true },
   { identifier: "f2fDoNotDisturbStatus", enabled: true },
   { identifier: "f2fForbiddenPatterns", enabled: true },
-  { identifier: "f2fFormatRules", enabled: true },
   { identifier: "f2fTimeJump", enabled: true },
-  { identifier: "f2fExampleScript", enabled: true },
   { identifier: "f2fChatHistory", enabled: true },
   { identifier: "f2fBlockMemory", enabled: true },
   { identifier: "f2fAuthorsNote", enabled: true },
@@ -1720,6 +1718,9 @@ export const FACE_TO_FACE_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "f2f_custom_no_sex_focus_story", enabled: false },
   { identifier: "f2fConfirmLastOutput", enabled: true },
   { identifier: "f2fThinkingGuide", enabled: true },
+  { identifier: "f2fFormatRules", enabled: true },
+  { identifier: "f2fExampleScript", enabled: true },
+  { identifier: "minimaxTTS", enabled: true },
   { identifier: "f2f_custom_1772288204573", enabled: true },
 ];
 

@@ -135,6 +135,7 @@ import {
   buildPostCallPrompt,
   createCallNotificationCard,
 } from "@/utils/postCallReaction";
+import { traditionalToSimplified } from "@/data/zhConversionMap";
 import {
   cleanTTSTags,
   hasTTSTags,
@@ -5642,7 +5643,13 @@ async function triggerAIResponse(options?: {
               );
             }
             // MiniMax TTS 語音合成
-            processMessageTTS(newMessage.id, newMessage.content);
+            processMessageTTS(
+              newMessage.id,
+              parsedMsg.isVoice && parsedMsg.voiceContent
+                ? parsedMsg.voiceContent
+                : newMessage.content,
+              parsedMsg.isVoice ? { force: true } : undefined,
+            );
           }
 
           // Fallback
@@ -5974,7 +5981,13 @@ async function triggerAIResponse(options?: {
                   parsedMsg.imageDescription,
                 );
               }
-              processMessageTTS(newMessage.id, newMessage.content);
+              processMessageTTS(
+                newMessage.id,
+                parsedMsg.isVoice && parsedMsg.voiceContent
+                  ? parsedMsg.voiceContent
+                  : newMessage.content,
+                parsedMsg.isVoice ? { force: true } : undefined,
+              );
             }
             streamingWindow.setComplete();
           }
@@ -6445,7 +6458,13 @@ async function handleStreamingClose() {
             );
           }
           // MiniMax TTS 語音合成
-          processMessageTTS(windowGcMsg.id, windowGcMsg.content);
+          processMessageTTS(
+            windowGcMsg.id,
+            parsedMsg.isVoice && parsedMsg.voiceContent
+              ? parsedMsg.voiceContent
+              : windowGcMsg.content,
+            parsedMsg.isVoice ? { force: true } : undefined,
+          );
         }
 
         if (parsed.messages.length === 0 && windowContent) {
@@ -6633,7 +6652,13 @@ async function handleStreamingClose() {
               );
             }
             // MiniMax TTS 語音合成
-            processMessageTTS(newMessage.id, newMessage.content);
+            processMessageTTS(
+              newMessage.id,
+              parsedMsg.isVoice && parsedMsg.voiceContent
+                ? parsedMsg.voiceContent
+                : newMessage.content,
+              parsedMsg.isVoice ? { force: true } : undefined,
+            );
           }
 
           // 將原始 <update> 區塊附加到最後一條 AI 訊息，供重新掃描使用
@@ -6973,16 +6998,27 @@ async function saveMinimaxTTSSettings() {
   showMinimaxTTSSettingsModal.value = false;
 }
 
+function convertTTSContentToSimplified(text: string): string {
+  return text
+    .split("")
+    .map((char) => traditionalToSimplified[char] || char)
+    .join("");
+}
+
 /**
  * 處理 AI 回覆的 TTS 語音合成
  * 1. 如果 TTS 啟用且內容含 TTS 標記，保存原始文字到 ttsRawContent
  * 2. 清除顯示文字中的 TTS 標記
  * 3. 逐句解析對話段落，各自獨立呼叫 MiniMax API 合成語音
  */
-async function processMessageTTS(messageId: string, content: string) {
+async function processMessageTTS(
+  messageId: string,
+  content: string,
+  options?: { force?: boolean },
+) {
   if (!chatMinimaxTTSEnabled.value) return;
   if (!settingsStore.minimaxTTS.apiKey) return;
-  if (!hasTTSTags(content)) return;
+  if (!options?.force && !hasTTSTags(content)) return;
 
   // 找到訊息並保存原始文字
   const idx = messages.value.findIndex((m) => m.id === messageId);
@@ -6995,7 +7031,19 @@ async function processMessageTTS(messageId: string, content: string) {
   // 自動把 [emotion=...] 替換成行內播放按鈕，最後 cleanTTSTags 兜底。
 
   // 逐句解析對話段落
-  const segments = parseTTSSegments(content);
+  const forcedParsedSegments = options?.force ? parseTTSSegments(content) : [];
+  const segments = options?.force
+    ? forcedParsedSegments.length > 0
+      ? forcedParsedSegments
+      : [
+          {
+            emotion: chatMinimaxTTSOverride.value.emotion || "neutral",
+            speed: chatMinimaxTTSOverride.value.speed ?? 1,
+            text: content,
+            clean: cleanTTSTags(content),
+          },
+        ]
+    : parseTTSSegments(content);
   if (segments.length === 0) return;
 
   // 寫入段落（先不帶 audioUrl）
@@ -7024,8 +7072,9 @@ async function processMessageTTS(messageId: string, content: string) {
         ...baseSettings,
         speed: seg.speed,
       };
+      const ttsText = convertTTSContentToSimplified(seg.text);
 
-      const result = await synthesizeSpeech(seg.text, mergedSettings, {
+      const result = await synthesizeSpeech(ttsText, mergedSettings, {
         emotion: seg.emotion !== "neutral" ? seg.emotion : override.emotion,
       });
 

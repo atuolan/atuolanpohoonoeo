@@ -39,6 +39,77 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 const STORAGE_KEY = "promptManagerConfig";
+const PROMPT_MANAGER_CONFIG_VERSION = 2;
+
+function clonePromptOrderEntry(entry: PromptOrderEntry): PromptOrderEntry {
+  return {
+    identifier: entry.identifier,
+    enabled: entry.enabled,
+  };
+}
+
+function ensurePromptOrderEntry(
+  order: PromptOrderEntry[],
+  defaultOrder: PromptOrderEntry[],
+  identifier: string,
+): void {
+  if (order.some((entry) => entry.identifier === identifier)) return;
+  const defaultEntry = defaultOrder.find((entry) => entry.identifier === identifier);
+  order.push(
+    defaultEntry ? clonePromptOrderEntry(defaultEntry) : { identifier, enabled: true },
+  );
+}
+
+function movePromptOrderEntryAfter(
+  order: PromptOrderEntry[],
+  identifier: string,
+  afterIdentifier: string,
+): void {
+  const currentIndex = order.findIndex((entry) => entry.identifier === identifier);
+  const anchorIndex = order.findIndex((entry) => entry.identifier === afterIdentifier);
+  if (currentIndex === -1 || anchorIndex === -1) return;
+
+  const [entry] = order.splice(currentIndex, 1);
+  const nextAnchorIndex = order.findIndex((item) => item.identifier === afterIdentifier);
+  order.splice(nextAnchorIndex + 1, 0, entry);
+}
+
+function migrateOnlinePromptOrder(
+  order: PromptOrderEntry[],
+  defaultOrder: PromptOrderEntry[],
+): void {
+  ensurePromptOrderEntry(order, defaultOrder, "minimaxTTS");
+  movePromptOrderEntryAfter(order, "thinkingGuide", "confirmLastOutput");
+  movePromptOrderEntryAfter(order, "custom_1776008320741", "thinkingGuide");
+  movePromptOrderEntryAfter(order, "exampleScript", "custom_1776008320741");
+  movePromptOrderEntryAfter(order, "custom_1776010724699", "exampleScript");
+  movePromptOrderEntryAfter(order, "custom_1776010669277", "custom_1776010724699");
+  movePromptOrderEntryAfter(order, "minimaxTTS", "custom_1776010669277");
+}
+
+function migrateFaceToFacePromptOrder(
+  order: PromptOrderEntry[],
+  defaultOrder: PromptOrderEntry[],
+): void {
+  ensurePromptOrderEntry(order, defaultOrder, "minimaxTTS");
+  movePromptOrderEntryAfter(order, "f2fThinkingGuide", "f2fConfirmLastOutput");
+  movePromptOrderEntryAfter(order, "f2fFormatRules", "f2fThinkingGuide");
+  movePromptOrderEntryAfter(order, "f2fExampleScript", "f2fFormatRules");
+  movePromptOrderEntryAfter(order, "minimaxTTS", "f2fExampleScript");
+}
+
+function migrateGroupChatPromptOrder(
+  order: PromptOrderEntry[],
+  defaultOrder: PromptOrderEntry[],
+): void {
+  ensurePromptOrderEntry(order, defaultOrder, "minimaxTTS");
+  movePromptOrderEntryAfter(order, "gcThinkingGuide", "gcDoNotDisturbStatus");
+  movePromptOrderEntryAfter(order, "gcForbiddenPatterns", "gcThinkingGuide");
+  movePromptOrderEntryAfter(order, "gcConfirmLastOutput", "gcForbiddenPatterns");
+  movePromptOrderEntryAfter(order, "gcFormatRules", "gcConfirmLastOutput");
+  movePromptOrderEntryAfter(order, "gcExampleScript", "gcFormatRules");
+  movePromptOrderEntryAfter(order, "minimaxTTS", "gcExampleScript");
+}
 
 export const usePromptManagerStore = defineStore("promptManager", () => {
   // ===== State =====
@@ -191,7 +262,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
       );
       if (stored) {
         // 合併默認值，確保新增的提示詞不會丟失
+        const previousVersion = stored.version ?? 1;
         config.value = mergeWithDefaults(stored);
+        if (previousVersion < PROMPT_MANAGER_CONFIG_VERSION) {
+          await saveConfig();
+        }
       } else {
         config.value = createDefaultPromptManagerConfig();
       }
@@ -223,6 +298,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
    */
   function mergeWithDefaults(stored: PromptManagerConfig): PromptManagerConfig {
     const defaults = createDefaultPromptManagerConfig();
+    const storedVersion = stored.version ?? 1;
 
     // 確保刪除追蹤字段存在（向後兼容舊存儲）
     if (!stored.deletedDefaultPromptIds) stored.deletedDefaultPromptIds = [];
@@ -291,6 +367,16 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
             "\n\n" + callDecisionSection[0];
         }
       }
+    }
+
+    if (
+      storedVersion < PROMPT_MANAGER_CONFIG_VERSION &&
+      stored.faceToFacePromptOrder
+    ) {
+      migrateFaceToFacePromptOrder(
+        stored.faceToFacePromptOrder,
+        defaults.faceToFacePromptOrder || DEFAULT_FACE_TO_FACE_PROMPT_ORDER,
+      );
     }
 
     // 檢查 formatRules - 追加缺失的格式定義而非覆蓋
@@ -389,6 +475,13 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
           }
         }
         stored.globalPromptOrder.push(defaultOrder);
+      }
+    }
+
+    if (storedVersion < PROMPT_MANAGER_CONFIG_VERSION) {
+      migrateOnlinePromptOrder(stored.globalPromptOrder, defaults.globalPromptOrder);
+      for (const charConfig of Object.values(stored.characterConfigs)) {
+        migrateOnlinePromptOrder(charConfig.promptOrder, defaults.globalPromptOrder);
       }
     }
 
@@ -718,6 +811,18 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
         }
       }
     }
+
+    if (
+      storedVersion < PROMPT_MANAGER_CONFIG_VERSION &&
+      stored.groupChatPromptOrder
+    ) {
+      migrateGroupChatPromptOrder(
+        stored.groupChatPromptOrder,
+        defaults.groupChatPromptOrder || DEFAULT_GROUP_CHAT_PROMPT_ORDER,
+      );
+    }
+
+    stored.version = PROMPT_MANAGER_CONFIG_VERSION;
 
     return stored;
   }

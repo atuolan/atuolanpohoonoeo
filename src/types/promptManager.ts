@@ -323,7 +323,7 @@ export const DEFAULT_GROUP_CHAT_PROMPT_ORDER: PromptOrderEntry[] =
 // ===== 創建默認配置 =====
 export function createDefaultPromptManagerConfig(): PromptManagerConfig {
   return {
-    version: 1,
+    version: 2,
     prompts: structuredClone(DEFAULT_PROMPT_DEFINITIONS),
     globalPromptOrder: structuredClone(DEFAULT_PROMPT_ORDER),
     characterConfigs: {},

@@ -2085,6 +2085,30 @@ const renderedVoiceTranscript = computed(() => {
   return cleanTTSTags(raw);
 });
 
+const formattedReplyToContent = computed(() => {
+  const raw = (props.replyToContent || "").trim();
+  if (!raw) return "";
+
+  const payMatch = raw.match(/<pay>([\d.]+)(?::([^<]*?))?<\/pay>/i);
+  if (payMatch) {
+    const amount = Number(payMatch[1]);
+    const note = payMatch[2]?.trim();
+    return note ? `收款 $${amount} · ${note}` : `收款 $${amount}`;
+  }
+
+  const refundMatch = raw.match(/<refund>([\d.]+)<\/refund>/i);
+  if (refundMatch) {
+    return `退款 $${Number(refundMatch[1])}`;
+  }
+
+  const voiceMatch = raw.match(/<voice>([\s\S]*?)<\/voice>/i);
+  if (voiceMatch) {
+    return `[語音訊息] ${voiceMatch[1].trim()}`;
+  }
+
+  return raw.replace(/<[^>]+>/g, "").trim();
+});
+
 /** 是否有可播放的 TTS 段落 */
 const hasTTSSegments = computed(() => {
   return (
@@ -2715,7 +2739,7 @@ const showTextVoiceTranscript = ref(true);
           <div class="reply-bar"></div>
           <div class="reply-body">
             <span v-if="replyToName" class="reply-name">{{ replyToName }}</span>
-            <span class="reply-text">{{ replyToContent }}</span>
+            <span class="reply-text">{{ formattedReplyToContent }}</span>
           </div>
         </div>
 

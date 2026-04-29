@@ -1077,12 +1077,6 @@ export class PromptBuilder {
     console.log("builtMessages 總數:", builtMessages.length);
     console.groupEnd();
 
-    // 6.5 動態注入 MiniMax TTS 語氣標籤提示詞（放在最後，靠近 AI 回覆）
-    const ttsPrompt = this.buildMinimaxTTSPrompt();
-    if (ttsPrompt) {
-      builtMessages.push(ttsPrompt);
-    }
-
     // 7. 合併連續相同 role 的訊息
     const mergedMessages = this.mergeConsecutiveMessages(builtMessages);
 
@@ -2422,26 +2416,49 @@ export class PromptBuilder {
     if (!this.options.minimaxTTSEnabled) return null;
 
     const content = `【語音合成標記規則】
-你的對話文字將被語音合成引擎朗讀。請在角色的對話中自然地加入以下標記：
+你的對話文字將被語音合成引擎朗讀。只有角色真正「說出口」的台詞需要加語音標記，敘述、動作、心理活動、場景描寫都不要加標記。
 
-1. 語氣標籤——直接寫在對話文字中自然觸發的位置，一句話最多1~2個：
+請以「自然、克制、像真人說話」為原則，不要為了表演感而過度插入標記。
+
+1. 語氣標籤——直接寫在對話文字中自然觸發的位置，只在確實需要時使用：
 (laughs)笑聲 (chuckle)輕笑 (sighs)嘆氣 (gasps)倒吸氣 (breath)呼吸 (emm)猶豫嗯 (crying)哭泣 (coughs)咳嗽 (sniffs)抽鼻 (pant)喘氣 (humming)哼唱 (groans)呻吟
 
-2. 停頓——<#秒數#>，範圍0.01~99.99，用於語句間的自然停頓
+使用原則：
+- 一句話通常0~1個，最多1~2個
+- 只在笑、喘、停頓猶豫、情緒明顯波動時才加
+- 普通對話不要硬塞 (laughs) 或 (sighs)
+- 標籤要貼近觸發位置，不要全部堆在句首或句尾
+
+2. 停頓——<#秒數#>，範圍0.01~99.99，用於語句間自然停頓
+
+使用原則：
+- 只在沉默、遲疑、轉折、哽住、刻意停一下時使用
+- 短停頓常用 0.2~0.6，明顯停頓常用 0.8~1.8
+- 不要每句都加停頓
 
 3. 情緒與語速——放在每句對話引號關閉前的最末尾：
 [emotion=情緒] 或 [emotion=情緒;speed=語速]
-emotion可選：happy/sad/angry/fearful/disgusted/surprised/calm
+emotion 可選：auto/happy/sad/angry/fearful/disgusted/surprised/calm/fluent/neutral
 speed：0.5~2.0，正常時省略
+
+情緒選擇原則：
+- 情緒明確時再指定；不明確時用 neutral 或 auto
+- 溫柔安撫、平靜聊天、日常敘述優先用 calm 或 neutral
+- 開心不一定等於大笑，難過也不一定每句都很慢
+- 除非文本真的強烈，否則避免動不動 angry、surprised、crying
 
 示例：
 她眼睛一亮。"真的嗎(laughs)？太好了！[emotion=happy]"
-他沉默了很久。"算了(sighs)……<#1.5#>有些事(breath)強求不來。[emotion=sad;speed=0.8]"
+他沉默了很久。"算了(sighs)……<#1.2#>有些事強求不來。[emotion=sad;speed=0.85]"
+她把聲音放輕。"沒事的，慢慢來，我在聽。[emotion=calm]"
+他停了一下，像是在整理措辭。"我不是不在乎，只是不知道該怎麼說。[emotion=neutral]"
 
-要求：
+硬性要求：
 - [emotion=...] 始終放在引號關閉前的最末尾
-- 根據上下文判斷情緒，別千篇一律
-- 敘述旁白正常寫，不加任何標記`;
+- 一段台詞最多只放一個 [emotion=...]
+- 敘述旁白正常寫，不加任何標記
+- 沒有明顯情緒時，寧可少標，也不要亂標
+- 優先保證台詞自然，其次才是語音表演效果`;
 
     return {
       role: "system",
