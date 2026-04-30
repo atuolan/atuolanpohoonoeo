@@ -1,13 +1,3 @@
-/**
- * Peer-to-Peer 同步管理器
- *
- * 負責：
- * - 透過 peerSyncSocket 送出 manifest / fetch / apply 請求，配對 requestId
- * - 計算兩端 manifest 的差集與衝突
- * - 呼叫 SelfHostedSyncService 的 apply 邏輯把收到的 envelope 寫入本機
- * - 組裝本機 envelope 供 push 使用
- */
-
 import type {
   PeerApplyResponse,
   PeerBucketHash,
@@ -18,7 +8,7 @@ import type {
   PeerManifestEntry,
   PeerManifestResponse,
   PeerMessage,
-  PeerSyncDiff,
+  PeerSessionAnswer,
   SelfHostedSyncEntityEnvelope,
   SelfHostedSyncEntityType,
   SelfHostedSyncPullResponse,
@@ -31,41 +21,45 @@ import {
 } from "@/services/peerSyncSocket";
 import { getSelfHostedSyncService } from "@/services/SelfHostedSyncService";
 import { computeBucketHashes, diffBuckets } from "@/services/peerHash";
+import { getPeerSyncCrypto } from "@/services/PeerSyncCrypto";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 60000;
 const FETCH_REQUEST_TIMEOUT_MS = 300_000;
-/** apply 請求的 timeout 長一點，每批給 5 分鐘傳輸大檔 */
 const APPLY_REQUEST_TIMEOUT_MS = 300_000;
-/** 每批最多幾個 envelope */
 const APPLY_BATCH_SIZE = 20;
-/** 每批 payload 上限（byte），超過就提前切斷批次 */
-const APPLY_BATCH_MAX_BYTES = 3 * 1024 * 1024; // 3 MB
+const APPLY_BATCH_MAX_BYTES = 3 * 1024 * 1024;
 
-interface PendingRequest<T> {
+type PendingRequest<T> = {
   resolve: (value: T) => void;
   reject: (reason: unknown) => void;
   expectedResponseType: PeerMessage["type"];
   timer: ReturnType<typeof setTimeout>;
   startedAt: number;
-  // 針對 fetch 這種會分批回傳多次的類型，允許累加
   accumulator?: unknown;
-}
+};
 
-class PeerSyncManager {
+type FetchAccumulator = {
+  envelopes: SelfHostedSyncEntityEnvelope[];
+};
+
+class PeerSyncSecureManager {
   private pending = new Map<string, PendingRequest<unknown>>();
   private unsubscribe: (() => void) | null = null;
   private disconnectUnsubscribe: (() => void) | null = null;
+  private readonly crypto = getPeerSyncCrypto();
 
   private log(...args: unknown[]): void {
-    console.log("[PeerSyncManager]", ...args);
+    console.log("[PeerSyncSecureManager]", ...args);
   }
 
   private warn(...args: unknown[]): void {
-    console.warn("[PeerSyncManager]", ...args);
+    console.warn("[PeerSyncSecureManager]", ...args);
   }
 
   constructor() {
-    this.unsubscribe = onPeerMessage((message) => this.handleIncoming(message));
+    this.unsubscribe = onPeerMessage((message) => {
+      void this.handleIncoming(message);
+    });
     this.disconnectUnsubscribe = onPeerSocketDisconnect(() => this.handleSocketDisconnect());
   }
 
@@ -76,12 +70,11 @@ class PeerSyncManager {
     this.disconnectUnsubscribe = null;
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
-      pending.reject(new Error("PeerSyncManager disposed"));
+      pending.reject(new Error("PeerSyncSecureManager disposed"));
     }
     this.pending.clear();
   }
 
-  /** WebSocket 斷線時立即 reject 所有 pending request，避免傻等 timeout */
   private handleSocketDisconnect(): void {
     const count = this.pending.size;
     if (count === 0) return;
@@ -100,7 +93,18 @@ class PeerSyncManager {
     this.pending.clear();
   }
 
-  private handleIncoming(message: PeerMessage): void {
+  private buildPeerError(message: PeerErrorMessage): Error {
+    return Object.assign(new Error(`Peer error: ${message.reason}`), {
+      peerReason: message.reason,
+      peerDetail: message.detail,
+      peerStage: message.stage,
+      peerEndpoint: message.endpoint,
+      peerSourceDeviceId: message.sourceDeviceId,
+      peerTargetDeviceId: message.targetDeviceId,
+    });
+  }
+
+  private async handleIncoming(message: PeerMessage): Promise<void> {
     if (!("requestId" in message) || !message.requestId) {
       return;
     }
@@ -119,13 +123,10 @@ class PeerSyncManager {
         elapsedMs: Date.now() - pending.startedAt,
         reason: errMsg.reason,
         detail: errMsg.detail,
+        stage: errMsg.stage,
+        endpoint: errMsg.endpoint,
       });
-      pending.reject(
-        new Error(`Peer error: ${errMsg.reason}`) as Error & {
-          peerReason: string;
-          peerDetail: unknown;
-        },
-      );
+      pending.reject(this.buildPeerError(errMsg));
       return;
     }
 
@@ -133,32 +134,23 @@ class PeerSyncManager {
       return;
     }
 
-    // fetch 回覆可能是分批的；由 requestFetch 自己處理，不在這裡 resolve
     if (message.type === "peer:fetch-response") {
       const fetchMsg = message as PeerFetchResponse;
-      const acc = pending.accumulator as {
-        envelopes: SelfHostedSyncEntityEnvelope[];
-      };
-      const batchEnvelopes = fetchMsg.envelopes ?? [];
-      acc.envelopes.push(...batchEnvelopes);
+      const acc = pending.accumulator as FetchAccumulator;
+      const payload = await this.decodeFetchResponse(fetchMsg);
+      acc.envelopes.push(...payload.envelopes);
       this.log("收到 fetch-response 批次", {
         requestId: message.requestId,
-        batchCount: batchEnvelopes.length,
+        batchCount: payload.envelopes.length,
         accumulatedCount: acc.envelopes.length,
-        hasMore: fetchMsg.hasMore,
+        hasMore: payload.hasMore,
         elapsedMs: Date.now() - pending.startedAt,
       });
-      if (!fetchMsg.hasMore) {
+      if (!payload.hasMore) {
         clearTimeout(pending.timer);
         this.pending.delete(message.requestId);
-        this.log("fetch-request 完成", {
-          requestId: message.requestId,
-          totalEnvelopes: acc.envelopes.length,
-          elapsedMs: Date.now() - pending.startedAt,
-        });
         pending.resolve(acc.envelopes);
       }
-      // 若 hasMore=true 由呼叫端繼續發 cursor 請求
       return;
     }
 
@@ -173,9 +165,7 @@ class PeerSyncManager {
   }
 
   private nextRequestId(prefix: string): string {
-    return `${prefix}-${Date.now().toString(36)}-${Math.random()
-      .toString(36)
-      .slice(2, 8)}`;
+    return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
   private registerPending<T>(
@@ -197,7 +187,7 @@ class PeerSyncManager {
         reject(new Error(`Peer request ${requestId} timed out after ${timeoutMs}ms`));
       }, timeoutMs);
       this.pending.set(requestId, {
-        resolve: resolve as (v: unknown) => void,
+        resolve: resolve as (value: unknown) => void,
         reject,
         expectedResponseType,
         timer,
@@ -207,56 +197,145 @@ class PeerSyncManager {
     });
   }
 
-  // ===== High-level operations =====
-
-  async requestRemoteManifest(
+  private async decodeHashResponse(
     targetDeviceId: string,
-    entityTypes?: SelfHostedSyncEntityType[],
-  ): Promise<PeerManifestEntry[]> {
-    if (!isPeerSyncSocketOpen()) {
-      throw new Error("WebSocket 未連線，無法進行同步");
-    }
-    const requestId = this.nextRequestId("manifest");
-    const promise = this.registerPending<PeerManifestResponse>(
-      requestId,
-      "peer:manifest-response",
-    );
-    sendPeerMessage({
-      type: "peer:manifest-request",
-      requestId,
-      targetDeviceId,
-      ...(entityTypes && entityTypes.length > 0 ? { entityTypes } : {}),
-    });
-    const response = await promise;
-    return response.entries ?? [];
-  }
-
-  /**
-   * 向對方請求 bucket-level hash。用途是在交換完整 manifest 前先確認哪些類別有差異。
-   * 若所有 bucket hash 都一致，就完全不需要傳 manifest。
-   */
-  async requestRemoteBucketHashes(
-    targetDeviceId: string,
+    response: PeerHashResponse,
   ): Promise<{ buckets: PeerBucketHash[]; rootHash: string; totalCount: number }> {
-    if (!isPeerSyncSocketOpen()) {
-      throw new Error("WebSocket 未連線，無法進行同步");
+    if (response.encryptedPayload && response.sessionId) {
+      return this.crypto.decrypt(targetDeviceId, response.sessionId, response.encryptedPayload);
     }
-    const requestId = this.nextRequestId("hash");
-    const promise = this.registerPending<PeerHashResponse>(
-      requestId,
-      "peer:hash-response",
-    );
-    sendPeerMessage({
-      type: "peer:hash-request",
-      requestId,
-      targetDeviceId,
-    });
-    const response = await promise;
     return {
       buckets: response.buckets ?? [],
       rootHash: response.rootHash ?? "",
       totalCount: response.totalCount ?? 0,
     };
+  }
+
+  private async decodeManifestResponse(
+    targetDeviceId: string,
+    response: PeerManifestResponse,
+  ): Promise<{ entries: PeerManifestEntry[]; totalCount: number }> {
+    if (response.encryptedPayload && response.sessionId) {
+      return this.crypto.decrypt(targetDeviceId, response.sessionId, response.encryptedPayload);
+    }
+    return {
+      entries: response.entries ?? [],
+      totalCount: response.totalCount ?? 0,
+    };
+  }
+
+  private async decodeFetchResponse(
+    response: PeerFetchResponse,
+  ): Promise<{ envelopes: SelfHostedSyncEntityEnvelope[]; hasMore: boolean; nextCursor: number | null }> {
+    if (response.encryptedPayload && response.sessionId) {
+      return this.crypto.decrypt(response.sourceDeviceId, response.sessionId, response.encryptedPayload);
+    }
+    return {
+      envelopes: response.envelopes ?? [],
+      hasMore: response.hasMore ?? false,
+      nextCursor: response.nextCursor ?? null,
+    };
+  }
+
+  private async decodeApplyResponse(
+    targetDeviceId: string,
+    response: PeerApplyResponse,
+  ): Promise<PeerApplyResponse> {
+    if (!response.encryptedPayload || !response.sessionId) {
+      return {
+        ...response,
+        applied: response.applied ?? 0,
+        rejected: response.rejected ?? [],
+      };
+    }
+    const payload = await this.crypto.decrypt<{
+      applied: number;
+      rejected: NonNullable<PeerApplyResponse["rejected"]>;
+      serverTime?: number;
+    }>(targetDeviceId, response.sessionId, response.encryptedPayload);
+    return {
+      ...response,
+      applied: payload.applied,
+      rejected: payload.rejected,
+      serverTime: payload.serverTime,
+    };
+  }
+
+  async openSession(targetDeviceId: string): Promise<string> {
+    if (!isPeerSyncSocketOpen()) {
+      throw new Error("WebSocket 未連線，無法進行同步");
+    }
+    const requestId = this.nextRequestId("session");
+    const promise = this.registerPending<PeerSessionAnswer>(requestId, "peer:session-answer");
+    const offer = await this.crypto.createOffer(targetDeviceId);
+    this.log("發送 peer session offer", {
+      requestId,
+      targetDeviceId,
+      sessionId: offer.sessionId,
+    });
+    try {
+      sendPeerMessage({
+        type: "peer:session-offer",
+        requestId,
+        targetDeviceId,
+        sessionId: offer.sessionId,
+        publicKeyJwk: offer.publicKeyJwk,
+      });
+      const response = await promise;
+      if (response.sessionId !== offer.sessionId) {
+        throw new Error("peer-session-mismatch");
+      }
+      await this.crypto.finalizeAnswer(targetDeviceId, offer.sessionId, response.publicKeyJwk);
+      return offer.sessionId;
+    } catch (error) {
+      this.crypto.dropSession(targetDeviceId, offer.sessionId);
+      throw error;
+    }
+  }
+
+  closeSession(targetDeviceId: string, sessionId: string): void {
+    this.crypto.dropSession(targetDeviceId, sessionId);
+  }
+
+  async requestRemoteManifest(
+    targetDeviceId: string,
+    entityTypes?: SelfHostedSyncEntityType[],
+    sessionId?: string,
+  ): Promise<PeerManifestEntry[]> {
+    if (!isPeerSyncSocketOpen()) {
+      throw new Error("WebSocket 未連線，無法進行同步");
+    }
+    const requestId = this.nextRequestId("manifest");
+    const promise = this.registerPending<PeerManifestResponse>(requestId, "peer:manifest-response");
+    sendPeerMessage({
+      type: "peer:manifest-request",
+      requestId,
+      targetDeviceId,
+      ...(entityTypes && entityTypes.length > 0 ? { entityTypes } : {}),
+      ...(sessionId ? { sessionId } : {}),
+    });
+    const response = await promise;
+    const payload = await this.decodeManifestResponse(targetDeviceId, response);
+    return payload.entries;
+  }
+
+  async requestRemoteBucketHashes(
+    targetDeviceId: string,
+    sessionId?: string,
+  ): Promise<{ buckets: PeerBucketHash[]; rootHash: string; totalCount: number }> {
+    if (!isPeerSyncSocketOpen()) {
+      throw new Error("WebSocket 未連線，無法進行同步");
+    }
+    const requestId = this.nextRequestId("hash");
+    const promise = this.registerPending<PeerHashResponse>(requestId, "peer:hash-response");
+    sendPeerMessage({
+      type: "peer:hash-request",
+      requestId,
+      targetDeviceId,
+      ...(sessionId ? { sessionId } : {}),
+    });
+    const response = await promise;
+    return this.decodeHashResponse(targetDeviceId, response);
   }
 
   async collectLocalBucketHashes(): Promise<{
@@ -270,7 +349,6 @@ class PeerSyncManager {
     return { buckets, rootHash, totalCount, entries };
   }
 
-  /** 比對雙方 bucket hash，回傳哪些類別需要後續 manifest 交換 */
   diffBucketHashes(
     local: PeerBucketHash[],
     remote: PeerBucketHash[],
@@ -279,8 +357,6 @@ class PeerSyncManager {
   }
 
   async collectLocalManifest(): Promise<PeerManifestEntry[]> {
-    // Phase 1: 直接呼叫現有的 collectPushItems 再取 meta 欄位。
-    // 未來可優化成只掃 meta 以省記憶體。
     const service = getSelfHostedSyncService();
     const envelopes = await service.collectAllEnvelopesForManifest();
     return envelopes.map((item) => ({
@@ -291,12 +367,8 @@ class PeerSyncManager {
     }));
   }
 
-  computeDiff(
-    local: PeerManifestEntry[],
-    remote: PeerManifestEntry[],
-  ): PeerSyncDiff {
-    const keyOf = (e: PeerManifestEntry) => `${e.entityType}::${e.entityId}`;
-
+  computeDiff(local: PeerManifestEntry[], remote: PeerManifestEntry[]) {
+    const keyOf = (entry: PeerManifestEntry) => `${entry.entityType}::${entry.entityId}`;
     const localMap = new Map<string, PeerManifestEntry>();
     for (const entry of local) {
       localMap.set(keyOf(entry), entry);
@@ -305,15 +377,10 @@ class PeerSyncManager {
     for (const entry of remote) {
       remoteMap.set(keyOf(entry), entry);
     }
-
     const onlyLocal: PeerManifestEntry[] = [];
     const onlyRemote: PeerManifestEntry[] = [];
-    const conflicts: PeerSyncDiff["conflicts"] = [];
+    const conflicts: Array<{ local: PeerManifestEntry; remote: PeerManifestEntry }> = [];
     let identicalCount = 0;
-
-    // Phase 1 衝突策略：Last-Write-Wins。
-    // 沒有向量時鐘，無法真正偵測「同時修改」；任何 updatedAt 差異都視為單邊較新。
-    // 只有在兩邊 updatedAt 完全一樣但內容 hash 不同時才算真衝突（此處無 hash，所以永不觸發）。
     for (const [key, localEntry] of localMap) {
       const remoteEntry = remoteMap.get(key);
       if (!remoteEntry) {
@@ -323,10 +390,8 @@ class PeerSyncManager {
       if (localEntry.updatedAt === remoteEntry.updatedAt) {
         identicalCount += 1;
       } else if (localEntry.updatedAt > remoteEntry.updatedAt) {
-        // 本機較新 → 推送這一筆
         onlyLocal.push(localEntry);
       } else {
-        // 遠端較新 → 拉取這一筆
         onlyRemote.push(remoteEntry);
       }
     }
@@ -335,41 +400,36 @@ class PeerSyncManager {
         onlyRemote.push(remoteEntry);
       }
     }
-
     return { onlyLocal, onlyRemote, conflicts, identicalCount };
   }
 
   async requestFetch(
     targetDeviceId: string,
     entityRefs: PeerEntityRef[],
+    sessionId: string,
   ): Promise<SelfHostedSyncEntityEnvelope[]> {
     if (entityRefs.length === 0) return [];
     if (!isPeerSyncSocketOpen()) {
       throw new Error("WebSocket 未連線，無法進行同步");
     }
-
-    const accumulator: { envelopes: SelfHostedSyncEntityEnvelope[] } = {
-      envelopes: [],
-    };
+    const accumulator: FetchAccumulator = { envelopes: [] };
     const requestId = this.nextRequestId("fetch");
-    this.log("發送 fetch-request", {
-      requestId,
-      targetDeviceId,
-      entityRefCount: entityRefs.length,
-      timeoutMs: FETCH_REQUEST_TIMEOUT_MS,
-    });
     const promise = this.registerPending<SelfHostedSyncEntityEnvelope[]>(
       requestId,
       "peer:fetch-response",
       FETCH_REQUEST_TIMEOUT_MS,
       accumulator,
     );
+    const encryptedPayload = await this.crypto.encrypt(targetDeviceId, sessionId, {
+      entityRefs,
+      cursor: null,
+    });
     sendPeerMessage({
       type: "peer:fetch-request",
       requestId,
       targetDeviceId,
-      entityRefs,
-      cursor: null,
+      sessionId,
+      encryptedPayload,
     });
     return promise;
   }
@@ -377,16 +437,15 @@ class PeerSyncManager {
   async requestApply(
     targetDeviceId: string,
     envelopes: SelfHostedSyncEntityEnvelope[],
+    sessionId: string,
   ): Promise<PeerApplyResponse> {
     if (!isPeerSyncSocketOpen()) {
       throw new Error("WebSocket 未連線，無法進行同步");
     }
-    // 分批送，避免單一訊息過大
     let applied = 0;
-    const rejected: PeerApplyResponse["rejected"] = [];
+    const rejected: NonNullable<PeerApplyResponse["rejected"]> = [];
     let lastServerTime: number | undefined;
 
-    // 按數量和大小雙限制分批，避免單一訊息過大
     const buildBatches = (): SelfHostedSyncEntityEnvelope[][] => {
       const batches: SelfHostedSyncEntityEnvelope[][] = [];
       let current: SelfHostedSyncEntityEnvelope[] = [];
@@ -404,43 +463,42 @@ class PeerSyncManager {
         current.push(env);
         currentBytes += envBytes;
       }
-      if (current.length > 0) batches.push(current);
+      if (current.length > 0) {
+        batches.push(current);
+      }
       return batches;
     };
 
-    // 並行發送全部批次，接收端第一批確認後後續自動放行
     const batches = buildBatches();
-    this.log("發送 apply-request 批次", {
-      targetDeviceId,
-      envelopeCount: envelopes.length,
-      batchCount: batches.length,
-      timeoutMs: APPLY_REQUEST_TIMEOUT_MS,
-    });
-    const batchPromises = batches.map((batch) => {
+    const batchPromises = batches.map(async (batch) => {
       const requestId = this.nextRequestId("apply");
-      this.log("發送 apply-request", {
-        requestId,
-        targetDeviceId,
-        batchEnvelopeCount: batch.length,
-      });
       const promise = this.registerPending<PeerApplyResponse>(
         requestId,
         "peer:apply-response",
         APPLY_REQUEST_TIMEOUT_MS,
       );
+      const encryptedPayload = await this.crypto.encrypt(targetDeviceId, sessionId, {
+        envelopes: batch,
+        mode: "overwrite" as const,
+      });
       sendPeerMessage({
         type: "peer:apply-request",
         requestId,
         targetDeviceId,
-        envelopes: batch,
+        sessionId,
+        encryptedPayload,
       });
-      return promise;
+      const response = await promise;
+      return this.decodeApplyResponse(targetDeviceId, response);
     });
+
     const responses = await Promise.all(batchPromises);
-    for (const resp of responses) {
-      applied += resp.applied ?? 0;
-      if (resp.rejected?.length) rejected.push(...resp.rejected);
-      lastServerTime = resp.serverTime ?? lastServerTime;
+    for (const response of responses) {
+      applied += response.applied ?? 0;
+      if (response.rejected?.length) {
+        rejected.push(...response.rejected);
+      }
+      lastServerTime = response.serverTime ?? lastServerTime;
     }
 
     return {
@@ -453,9 +511,7 @@ class PeerSyncManager {
     };
   }
 
-  async applyEnvelopesLocally(
-    envelopes: SelfHostedSyncEntityEnvelope[],
-  ): Promise<number> {
+  async applyEnvelopesLocally(envelopes: SelfHostedSyncEntityEnvelope[]): Promise<number> {
     if (envelopes.length === 0) return 0;
     const service = getSelfHostedSyncService();
     const pseudoResponse: SelfHostedSyncPullResponse = {
@@ -464,18 +520,17 @@ class PeerSyncManager {
       hasMore: false,
       nextSince: undefined,
     };
-    // forceOverwrite: 使用者已在 diff 判讀過，按 peer 指示覆蓋即可
     return service.applyPullResponsePublic(pseudoResponse, {
       forceOverwrite: true,
     });
   }
 }
 
-let instance: PeerSyncManager | null = null;
+let instance: PeerSyncSecureManager | null = null;
 
-export function getPeerSyncManager(): PeerSyncManager {
+export function getPeerSyncManager(): PeerSyncSecureManager {
   if (!instance) {
-    instance = new PeerSyncManager();
+    instance = new PeerSyncSecureManager();
   }
   return instance;
 }
@@ -485,4 +540,4 @@ export function disposePeerSyncManager(): void {
   instance = null;
 }
 
-export type { PeerSyncManager };
+export type { PeerSyncSecureManager as PeerSyncManager };

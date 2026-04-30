@@ -34,7 +34,7 @@ import {
   isPeerMessageType,
   setPeerSyncSocket,
 } from "@/services/peerSyncSocket";
-import { startPeerSyncResponder } from "@/services/PeerSyncResponder";
+import { startPeerSyncResponder } from "@/services/PeerSyncSecureResponder";
 import type { PeerMessage } from "@/types/selfHostedSync";
 import {
   pendingPeerApply,

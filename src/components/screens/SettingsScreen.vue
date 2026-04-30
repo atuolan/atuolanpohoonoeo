@@ -226,6 +226,30 @@ function shortDeviceId(id: string | null | undefined): string {
   return `${id.slice(0, 6)}…${id.slice(-4)}`;
 }
 
+function formatPeerSyncError(error: unknown): string {
+  if (error && typeof error === "object") {
+    const peerReason = (error as { peerReason?: string }).peerReason;
+    switch (peerReason) {
+      case "peer-offline":
+        return "目標裝置已離線";
+      case "rejected-by-user":
+        return "對方已拒絕此次同步";
+      case "responder-session-failed":
+        return "對方無法建立加密連線";
+      case "responder-fetch-decrypt-failed":
+      case "responder-apply-decrypt-failed":
+        return "對方無法解密同步資料";
+      case "responder-fetch-failed":
+        return "對方在提供資料時發生錯誤";
+      case "responder-apply-failed":
+        return "對方在套用資料時發生錯誤";
+      default:
+        break;
+    }
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
 const selfHostedSyncPresenceSummary = computed(() => {
   const total = selfHostedSyncStore.devices.length;
   const online = selfHostedSyncStore.onlineCount;
@@ -328,10 +352,33 @@ async function submitRenameDevice() {
 async function handlePeerSync(direction: "push" | "pull", targetDeviceId: string) {
   selfHostedSyncActionStatus.value = "running";
   try {
-    await selfHostedSyncStore.peerSync(direction, targetDeviceId);
+    const targetDevice = selfHostedSyncDeviceList.value.find((device) => device.deviceId === targetDeviceId);
+    const targetLabel = targetDevice?.displayName ?? shortDeviceId(targetDeviceId);
+    const outcome = await selfHostedSyncStore.peerSync(direction, targetDeviceId);
+    if (outcome.rejectedByUser) {
+      notificationStore.notifySystem(
+        "裝置同步已取消",
+        `${targetLabel} 已拒絕這次${direction === "push" ? "接收" : "提供"}資料。`,
+      );
+      return;
+    }
+    if (outcome.conflictsAborted) {
+      notificationStore.notifySystem(
+        "裝置同步已中止",
+        `${targetLabel} 與本機仍有 ${outcome.conflictCount} 筆差異需要先處理，已停止傳輸。`,
+      );
+      return;
+    }
+    notificationStore.notifySystem(
+      "裝置同步完成",
+      `${direction === "push" ? "已傳送" : "已拉取"} ${outcome.applied} 筆資料${direction === "push" ? "到" : "自"} ${targetLabel}。`,
+    );
   } catch (error) {
     console.error("[SettingsScreen] Peer sync 失敗:", error);
-    alert(`同步失敗：${error instanceof Error ? error.message : String(error)}`);
+    notificationStore.notifySystem(
+      "裝置同步失敗",
+      `${direction === "push" ? "傳送到" : "從"} ${shortDeviceId(targetDeviceId)} 同步失敗：${formatPeerSyncError(error)}`,
+    );
   } finally {
     selfHostedSyncActionStatus.value = "idle";
   }

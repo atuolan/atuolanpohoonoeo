@@ -171,6 +171,29 @@ export interface PeerEntityRef {
   entityId: string;
 }
 
+export interface PeerEncryptedPayload {
+  version: 1;
+  algorithm: "AES-GCM";
+  iv: string;
+  ciphertext: string;
+}
+
+export interface PeerSessionOffer {
+  type: "peer:session-offer";
+  requestId: string;
+  targetDeviceId: string;
+  sessionId: string;
+  publicKeyJwk: JsonWebKey;
+}
+
+export interface PeerSessionAnswer {
+  type: "peer:session-answer";
+  requestId: string;
+  sourceDeviceId: string;
+  sessionId: string;
+  publicKeyJwk: JsonWebKey;
+}
+
 export interface PeerManifestRequest {
   type: "peer:manifest-request";
   requestId: string;
@@ -180,16 +203,19 @@ export interface PeerManifestRequest {
    * 只請求有差異的類別的完整 manifest，省流量。
    */
   entityTypes?: SelfHostedSyncEntityType[];
+  sessionId?: string;
 }
 
 export interface PeerManifestResponse {
   type: "peer:manifest-response";
   requestId: string;
   sourceDeviceId: string;
-  entries: PeerManifestEntry[];
-  totalCount: number;
+  entries?: PeerManifestEntry[];
+  totalCount?: number;
   /** 回覆所屬的類別範圍（echo，方便呼叫端確認） */
   entityTypes?: SelfHostedSyncEntityType[];
+  sessionId?: string;
+  encryptedPayload?: PeerEncryptedPayload;
 }
 
 /** 每個 entityType 的完整快照指紋（hash 僅依 entityId + updatedAt + deletedAt 組成） */
@@ -203,54 +229,65 @@ export interface PeerHashRequest {
   type: "peer:hash-request";
   requestId: string;
   targetDeviceId: string;
+  sessionId?: string;
 }
 
 export interface PeerHashResponse {
   type: "peer:hash-response";
   requestId: string;
   sourceDeviceId: string;
-  buckets: PeerBucketHash[];
+  buckets?: PeerBucketHash[];
   /** 全域總和指紋（可在 buckets 都比對完之後再用來做健全性檢查） */
-  rootHash: string;
-  totalCount: number;
+  rootHash?: string;
+  totalCount?: number;
+  sessionId?: string;
+  encryptedPayload?: PeerEncryptedPayload;
 }
 
 export interface PeerFetchRequest {
   type: "peer:fetch-request";
   requestId: string;
   targetDeviceId: string;
-  entityRefs: PeerEntityRef[];
+  entityRefs?: PeerEntityRef[];
   cursor?: number | null;
+  sessionId?: string;
+  encryptedPayload?: PeerEncryptedPayload;
 }
 
 export interface PeerFetchResponse {
   type: "peer:fetch-response";
   requestId: string;
   sourceDeviceId: string;
-  envelopes: SelfHostedSyncEntityEnvelope[];
-  hasMore: boolean;
-  nextCursor: number | null;
+  envelopes?: SelfHostedSyncEntityEnvelope[];
+  hasMore?: boolean;
+  nextCursor?: number | null;
+  sessionId?: string;
+  encryptedPayload?: PeerEncryptedPayload;
 }
 
 export interface PeerApplyRequest {
   type: "peer:apply-request";
   requestId: string;
   targetDeviceId: string;
-  envelopes: SelfHostedSyncEntityEnvelope[];
+  envelopes?: SelfHostedSyncEntityEnvelope[];
   mode?: "overwrite";
+  sessionId?: string;
+  encryptedPayload?: PeerEncryptedPayload;
 }
 
 export interface PeerApplyResponse {
   type: "peer:apply-response";
   requestId: string;
   sourceDeviceId: string;
-  applied: number;
-  rejected: Array<{
+  applied?: number;
+  rejected?: Array<{
     entityType: SelfHostedSyncEntityType | string;
     entityId: string;
     reason: string;
   }>;
   serverTime?: number;
+  sessionId?: string;
+  encryptedPayload?: PeerEncryptedPayload;
 }
 
 export interface PeerErrorMessage {
@@ -258,9 +295,15 @@ export interface PeerErrorMessage {
   requestId: string | null;
   reason: string;
   detail?: unknown;
+  sourceDeviceId?: string;
+  targetDeviceId?: string;
+  stage?: "session" | "hash" | "manifest" | "fetch" | "apply" | "decrypt" | "local-apply";
+  endpoint?: "source" | "target" | "relay";
 }
 
 export type PeerMessage =
+  | PeerSessionOffer
+  | PeerSessionAnswer
   | PeerHashRequest
   | PeerHashResponse
   | PeerManifestRequest

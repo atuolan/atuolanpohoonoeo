@@ -741,18 +741,20 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     console.log(LOG_TAG, "開始", { direction, targetDeviceId });
     await loadSettings();
     const { getPeerSyncManager } = await import(
-      "@/services/PeerSyncManager"
+      "@/services/PeerSyncSecureManager"
     );
     const manager = getPeerSyncManager();
 
     syncStatus.value = "syncing";
     syncError.value = null;
+    let sessionId: string | null = null;
     try {
+      sessionId = await manager.openSession(targetDeviceId);
       // ===== Step A：先交換 bucket-level hash，判斷哪些 entityType 需要完整 manifest =====
       console.log(LOG_TAG, "1/4 並行交換 bucket hash");
       const [localHashInfo, remoteHashInfo] = await Promise.all([
         manager.collectLocalBucketHashes(),
-        manager.requestRemoteBucketHashes(targetDeviceId),
+        manager.requestRemoteBucketHashes(targetDeviceId, sessionId),
       ]);
       console.log(LOG_TAG, "bucket hash 取得完成", {
         localRootHash: localHashInfo.rootHash,
@@ -795,6 +797,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
       const remoteManifest = await manager.requestRemoteManifest(
         targetDeviceId,
         differingTypes,
+        sessionId,
       );
       console.log(LOG_TAG, "manifest 取得完成（僅差異類別）", {
         local: localManifest.length,
@@ -844,8 +847,8 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
           console.log(LOG_TAG, "4/4 推送 envelope", {
             count: envelopes.length,
           });
-          const resp = await manager.requestApply(targetDeviceId, envelopes);
-          applied = resp.applied;
+          const resp = await manager.requestApply(targetDeviceId, envelopes, sessionId);
+          applied = resp.applied ?? 0;
           const rejectedByUser = resp.rejected?.some((r) => r.reason === "rejected-by-user") ?? false;
           console.log(LOG_TAG, "推送完成", { applied, rejected: resp.rejected });
           if (rejectedByUser) {
@@ -870,7 +873,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
             entityId: e.entityId,
           }));
           console.log(LOG_TAG, "4/4 發送 fetch-request", { refs: refs.length });
-          const envelopes = await manager.requestFetch(targetDeviceId, refs);
+          const envelopes = await manager.requestFetch(targetDeviceId, refs, sessionId);
           console.log(LOG_TAG, "fetch 完成，準備寫入本機", {
             envelopeCount: envelopes.length,
           });
@@ -911,6 +914,10 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
       }
       await markSyncFailed(error);
       throw error;
+    } finally {
+      if (sessionId) {
+        manager.closeSession(targetDeviceId, sessionId);
+      }
     }
   }
 
@@ -918,64 +925,69 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
   async function peerSyncInner(
     direction: "push" | "pull",
     targetDeviceId: string,
-    manager: InstanceType<typeof import("@/services/PeerSyncManager").PeerSyncManager>,
+    manager: InstanceType<typeof import("@/services/PeerSyncSecureManager").PeerSyncManager>,
   ): Promise<PeerSyncOutcome> {
     const LOG_TAG = "[peerSync]";
     syncStatus.value = "syncing";
     syncError.value = null;
+    const sessionId = await manager.openSession(targetDeviceId);
 
-    console.log(LOG_TAG, "1/4 並行交換 bucket hash（重試）");
-    const [localHashInfo, remoteHashInfo] = await Promise.all([
-      manager.collectLocalBucketHashes(),
-      manager.requestRemoteBucketHashes(targetDeviceId),
-    ]);
+    try {
+      console.log(LOG_TAG, "1/4 並行交換 bucket hash（重試）");
+      const [localHashInfo, remoteHashInfo] = await Promise.all([
+        manager.collectLocalBucketHashes(),
+        manager.requestRemoteBucketHashes(targetDeviceId, sessionId),
+      ]);
 
-    if (localHashInfo.rootHash === remoteHashInfo.rootHash) {
-      console.log(LOG_TAG, "rootHash 完全一致，兩端已同步，跳過");
-      await markSyncSucceeded(Date.now());
-      return { direction, targetDeviceId, applied: 0, conflictCount: 0, conflictsAborted: false };
-    }
+      if (localHashInfo.rootHash === remoteHashInfo.rootHash) {
+        console.log(LOG_TAG, "rootHash 完全一致，兩端已同步，跳過");
+        await markSyncSucceeded(Date.now());
+        return { direction, targetDeviceId, applied: 0, conflictCount: 0, conflictsAborted: false };
+      }
 
-    const { differingTypes } = manager.diffBucketHashes(localHashInfo.buckets, remoteHashInfo.buckets);
-    const differingSet = new Set(differingTypes);
-    const localManifest = localHashInfo.entries.filter((e) => differingSet.has(e.entityType));
-    const remoteManifest = await manager.requestRemoteManifest(targetDeviceId, differingTypes);
-    const diff = manager.computeDiff(localManifest, remoteManifest);
+      const { differingTypes } = manager.diffBucketHashes(localHashInfo.buckets, remoteHashInfo.buckets);
+      const differingSet = new Set(differingTypes);
+      const localManifest = localHashInfo.entries.filter((e) => differingSet.has(e.entityType));
+      const remoteManifest = await manager.requestRemoteManifest(targetDeviceId, differingTypes, sessionId);
+      const diff = manager.computeDiff(localManifest, remoteManifest);
 
-    if (diff.conflicts.length > 0) {
-      syncStatus.value = "idle";
-      return { direction, targetDeviceId, applied: 0, conflictCount: diff.conflicts.length, conflictsAborted: true };
-    }
+      if (diff.conflicts.length > 0) {
+        syncStatus.value = "idle";
+        return { direction, targetDeviceId, applied: 0, conflictCount: diff.conflicts.length, conflictsAborted: true };
+      }
 
-    let applied = 0;
-    if (direction === "push") {
-      if (diff.onlyLocal.length > 0) {
-        const wantRefs = diff.onlyLocal.map((e) => ({ entityType: e.entityType, entityId: e.entityId }));
-        const allLocal = await (await import("@/services/SelfHostedSyncService"))
-          .getSelfHostedSyncService()
-          .collectAllEnvelopesForManifest();
-        const byKey = new Map(allLocal.map((env) => [`${env.entityType}::${env.entityId}`, env]));
-        const envelopes = wantRefs
-          .map((r) => byKey.get(`${r.entityType}::${r.entityId}`))
-          .filter((e): e is NonNullable<typeof e> => e !== undefined);
-        const resp = await manager.requestApply(targetDeviceId, envelopes);
-        applied = resp.applied;
-        const rejectedByUser = resp.rejected?.some((r) => r.reason === "rejected-by-user") ?? false;
-        if (rejectedByUser) {
-          await markSyncSucceeded(Date.now());
-          return { direction, targetDeviceId, applied: 0, conflictCount: 0, conflictsAborted: false, rejectedByUser: true };
+      let applied = 0;
+      if (direction === "push") {
+        if (diff.onlyLocal.length > 0) {
+          const wantRefs = diff.onlyLocal.map((e) => ({ entityType: e.entityType, entityId: e.entityId }));
+          const allLocal = await (await import("@/services/SelfHostedSyncService"))
+            .getSelfHostedSyncService()
+            .collectAllEnvelopesForManifest();
+          const byKey = new Map(allLocal.map((env) => [`${env.entityType}::${env.entityId}`, env]));
+          const envelopes = wantRefs
+            .map((r) => byKey.get(`${r.entityType}::${r.entityId}`))
+            .filter((e): e is NonNullable<typeof e> => e !== undefined);
+          const resp = await manager.requestApply(targetDeviceId, envelopes, sessionId);
+          applied = resp.applied ?? 0;
+          const rejectedByUser = resp.rejected?.some((r) => r.reason === "rejected-by-user") ?? false;
+          if (rejectedByUser) {
+            await markSyncSucceeded(Date.now());
+            return { direction, targetDeviceId, applied: 0, conflictCount: 0, conflictsAborted: false, rejectedByUser: true };
+          }
+        }
+      } else {
+        if (diff.onlyRemote.length > 0) {
+          const refs = diff.onlyRemote.map((e) => ({ entityType: e.entityType, entityId: e.entityId }));
+          const envelopes = await manager.requestFetch(targetDeviceId, refs, sessionId);
+          applied = await manager.applyEnvelopesLocally(envelopes);
         }
       }
-    } else {
-      if (diff.onlyRemote.length > 0) {
-        const refs = diff.onlyRemote.map((e) => ({ entityType: e.entityType, entityId: e.entityId }));
-        const envelopes = await manager.requestFetch(targetDeviceId, refs);
-        applied = await manager.applyEnvelopesLocally(envelopes);
-      }
-    }
 
-    await markSyncSucceeded(Date.now());
-    return { direction, targetDeviceId, applied, conflictCount: 0, conflictsAborted: false };
+      await markSyncSucceeded(Date.now());
+      return { direction, targetDeviceId, applied, conflictCount: 0, conflictsAborted: false };
+    } finally {
+      manager.closeSession(targetDeviceId, sessionId);
+    }
   }
 
   function setServerUrl(url: string): void {
