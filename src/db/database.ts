@@ -973,49 +973,23 @@ export function closeDatabase(): void {
     dbInstance.close();
     dbInstance = null;
   }
+  db._instance = null;
+  db._initialized = false;
 }
 
 /**
  * 清除所有資料（開發用）
  */
 export async function clearAllData(): Promise<void> {
-  const database = await getDatabase();
-  const stores = [
-    "themes",
-    "layouts",
-    "characterAffections",
-    "settings",
-    "promptLibrary",
-    "characters",
-    "lorebooks",
-    "chats",
-    "appSettings",
-    "stickers",
-    "importantEvents",
-    "summaries",
-    "diaries",
-    "qzonePosts",
-    "imageCache",
-    "pendingCalls",
-    "callHistory",
-    "gameStates",
-    "holidayRecords",
-    "calendarEvents",
-    "authState",
-    "rendererRules",
-    "books",
-    "bookProgress",
-    "audio-blobs",
-    "chatAffinityStates",
-    "vectorEmbeddings",
-    "peekPhoneData",
-    "chatMessages",
-  ] as const;
-  const tx = database.transaction(stores, "readwrite");
-  await Promise.all([
-    ...stores.map((store) => tx.objectStore(store).clear()),
-    tx.done,
-  ]);
+  closeDatabase();
+
+  try {
+    const { markUserClearedLocalData, clearAutoBackupArtifacts } = await import("@/services/autoBackup");
+    markUserClearedLocalData();
+    await clearAutoBackupArtifacts();
+  } catch (error) {
+    console.warn("[DB] 清除自動備份檔案失敗，仍繼續流程:", error);
+  }
 
   try {
     if (typeof localStorage !== "undefined") {
@@ -1033,6 +1007,30 @@ export async function clearAllData(): Promise<void> {
     console.warn("[DB] 清除 sessionStorage 失敗，仍繼續流程:", error);
   }
 
+  try {
+    const { markUserClearedLocalData } = await import("@/services/autoBackup");
+    markUserClearedLocalData();
+  } catch {
+    // ignore
+  }
+
+  try {
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase(DB_NAME);
+      req.onsuccess = () => resolve();
+      req.onerror = () => {
+        console.warn("[DB] 刪除主資料庫失敗，仍繼續流程");
+        resolve();
+      };
+      req.onblocked = () => {
+        console.warn("[DB] 刪除主資料庫被阻塞，仍繼續流程");
+        resolve();
+      };
+    });
+  } catch (error) {
+    console.warn("[DB] 刪除主資料庫失敗，仍繼續流程:", error);
+  }
+
   // 同時清除畫布佈局資料庫（Aguaphone_V2），包含 widget 自定義圖標等
   // 修復：避免 deleteDatabase 在 blocked 時先 resolve，導致後續導入寫回被「晚到刪除」覆蓋
   try {
@@ -1045,60 +1043,24 @@ export async function clearAllData(): Promise<void> {
     // 忽略
   }
 
-  // 改用「開啟資料庫後清空 canvas_layout store」取代 deleteDatabase，避免競態條件
+  // 危險操作時直接刪整個畫布資料庫，避免殘留自訂佈局資料
   try {
     await new Promise<void>((resolve) => {
-      const openReq = indexedDB.open("Aguaphone_V2");
-
-      openReq.onupgradeneeded = (e) => {
-        const idb = (e.target as IDBOpenDBRequest).result;
-        if (!idb.objectStoreNames.contains("canvas_layout")) {
-          idb.createObjectStore("canvas_layout", { keyPath: "id" });
-        }
-      };
-
-      openReq.onsuccess = (e) => {
-        const idb = (e.target as IDBOpenDBRequest).result;
-
-        if (!idb.objectStoreNames.contains("canvas_layout")) {
-          idb.close();
-          resolve();
-          return;
-        }
-
-        const tx = idb.transaction(["canvas_layout"], "readwrite");
-        const store = tx.objectStore("canvas_layout");
-        store.clear();
-
-        tx.oncomplete = () => {
-          idb.close();
-          resolve();
-        };
-        tx.onerror = () => {
-          console.warn("[DB] 清空 canvas_layout 失敗，仍繼續流程");
-          idb.close();
-          resolve();
-        };
-        tx.onabort = () => {
-          console.warn("[DB] 清空 canvas_layout 中止，仍繼續流程");
-          idb.close();
-          resolve();
-        };
-      };
-
-      openReq.onerror = () => {
-        console.warn("[DB] 開啟 Aguaphone_V2 失敗，仍繼續流程");
+      const req = indexedDB.deleteDatabase("Aguaphone_V2");
+      req.onsuccess = () => resolve();
+      req.onerror = () => {
+        console.warn("[DB] 刪除 Aguaphone_V2 失敗，仍繼續流程");
         resolve();
       };
-      openReq.onblocked = () => {
-        console.warn("[DB] 開啟 Aguaphone_V2 被阻塞，仍繼續流程");
+      req.onblocked = () => {
+        console.warn("[DB] 刪除 Aguaphone_V2 被阻塞，仍繼續流程");
         resolve();
       };
     });
 
-    console.log("[DB] 畫布佈局資料已清空");
+    console.log("[DB] 畫布佈局資料庫已刪除");
   } catch (e) {
-    console.warn("[DB] 清空畫布佈局資料失敗:", e);
+    console.warn("[DB] 刪除畫布佈局資料庫失敗:", e);
   }
 
   console.log("[DB] 所有資料已清除");

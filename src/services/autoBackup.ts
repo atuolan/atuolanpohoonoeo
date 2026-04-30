@@ -10,6 +10,9 @@ import { loadMessages } from '@/storage/chatMessageStorage'
 
 const BACKUP_FILENAME = 'aguaphone_auto_backup.json'
 const BACKUP_META_FILENAME = 'aguaphone_auto_backup_meta.json'
+const PRE_UPGRADE_BACKUP_FILENAME = 'aguaphone_pre_upgrade_backup.json'
+const PRE_UPGRADE_BACKUP_META_FILENAME = 'aguaphone_pre_upgrade_backup_meta.json'
+const USER_CLEARED_LOCAL_DATA_KEY = 'aguaphone_user_cleared_local_data'
 
 /** 需要備份的 store 列表（關鍵資料） */
 const BACKUP_STORES = [
@@ -26,6 +29,46 @@ interface BackupMeta {
   timestamp: number
   counts: Record<string, number>
   version: number
+}
+
+function hasUserClearedLocalData(): boolean {
+  try {
+    return localStorage.getItem(USER_CLEARED_LOCAL_DATA_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function clearUserClearedLocalDataMarker(): void {
+  try {
+    localStorage.removeItem(USER_CLEARED_LOCAL_DATA_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+export function markUserClearedLocalData(): void {
+  try {
+    localStorage.setItem(USER_CLEARED_LOCAL_DATA_KEY, '1')
+  } catch {
+    // ignore
+  }
+}
+
+export async function clearAutoBackupArtifacts(): Promise<void> {
+  if (!navigator.storage?.getDirectory) {
+    return
+  }
+
+  const root = await navigator.storage.getDirectory()
+  for (const filename of [
+    BACKUP_FILENAME,
+    BACKUP_META_FILENAME,
+    PRE_UPGRADE_BACKUP_FILENAME,
+    PRE_UPGRADE_BACKUP_META_FILENAME,
+  ]) {
+    await root.removeEntry(filename).catch(() => {})
+  }
 }
 
 // ─── OPFS 讀寫工具 ───────────────────────────────────────
@@ -74,7 +117,15 @@ export async function checkAndRestore(): Promise<boolean> {
 
     // 檢查 characters store 是否為空（最關鍵的指標）
     const charCount = await database.count(DB_STORES.CHARACTERS as 'characters')
-    if (charCount > 0) return false // IDB 有資料，不需要恢復
+    if (charCount > 0) {
+      clearUserClearedLocalDataMarker()
+      return false
+    }
+
+    if (hasUserClearedLocalData()) {
+      console.log('[自動備份] 偵測到使用者主動清空本機資料，跳過自動恢復')
+      return false
+    }
 
     // IDB 是空的，嘗試從備份恢復
     // 優先嘗試常規備份
@@ -84,8 +135,8 @@ export async function checkAndRestore(): Promise<boolean> {
 
     // 常規備份不存在或無角色，嘗試升級前的預防性備份
     if (!metaStr || !backupStr) {
-      const preUpgradeMeta = await readOPFS('aguaphone_pre_upgrade_backup_meta.json')
-      const preUpgradeData = await readOPFS('aguaphone_pre_upgrade_backup.json')
+      const preUpgradeMeta = await readOPFS(PRE_UPGRADE_BACKUP_META_FILENAME)
+      const preUpgradeData = await readOPFS(PRE_UPGRADE_BACKUP_FILENAME)
       if (preUpgradeMeta && preUpgradeData) {
         metaStr = preUpgradeMeta
         backupStr = preUpgradeData
