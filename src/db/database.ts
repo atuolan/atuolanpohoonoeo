@@ -1017,6 +1017,22 @@ export async function clearAllData(): Promise<void> {
     tx.done,
   ]);
 
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.clear();
+    }
+  } catch (error) {
+    console.warn("[DB] 清除 localStorage 失敗，仍繼續流程:", error);
+  }
+
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.clear();
+    }
+  } catch (error) {
+    console.warn("[DB] 清除 sessionStorage 失敗，仍繼續流程:", error);
+  }
+
   // 同時清除畫布佈局資料庫（Aguaphone_V2），包含 widget 自定義圖標等
   // 修復：避免 deleteDatabase 在 blocked 時先 resolve，導致後續導入寫回被「晚到刪除」覆蓋
   try {
