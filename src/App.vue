@@ -237,6 +237,11 @@ function buildSelfHostedSyncWebSocketUrl(serverUrl: string, accessToken: string)
 }
 
 async function shouldPullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | null): Promise<boolean> {
+  void latestUpdateAtHint;
+  return false;
+}
+
+async function shouldPullSelfHostedRemoteUpdatesLegacy(latestUpdateAtHint?: number | null): Promise<boolean> {
   if (selfHostedSyncMetaCheckInFlight) {
     return selfHostedSyncMetaCheckInFlight;
   }
@@ -276,6 +281,12 @@ async function shouldPullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | n
 }
 
 async function pullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | null) {
+  void latestUpdateAtHint;
+  recordSelfHostedSyncDiagnostic("Skipped remote pull: server-backed content sync disabled");
+  return;
+}
+
+async function pullSelfHostedRemoteUpdatesLegacy(latestUpdateAtHint?: number | null) {
   if (typeof document !== "undefined" && document.visibilityState !== "visible") {
     recordSelfHostedSyncDiagnostic("Skipped pull: page is hidden", {
       latestUpdateAtHint: latestUpdateAtHint ?? null,
@@ -307,15 +318,10 @@ async function pullSelfHostedRemoteUpdates(latestUpdateAtHint?: number | null) {
         since: pullSince ?? null,
         isFullPull: typeof pullSince !== "number",
       });
-      await selfHostedSyncStore.pullNow(pullSince);
-      // 等 200ms 讓所有 Vue cascade watcher flush 完（nextTick 只蓋一個 cycle）
-      // 如果崩潰在這期間，stage 會是 applyPullResponse 裡的細 stage 而非 completed
-      await new Promise<void>((resolve) => setTimeout(resolve, 200));
-      updateRuntimeSessionStage("selfHostedSync:remote pull completed", {
-        latestUpdateAtHint: latestUpdateAtHint ?? null,
+      recordSelfHostedSyncDiagnostic("Remote pull blocked in legacy path: server-backed content sync disabled", {
         pullSince: pullSince ?? null,
-        lastSyncAt: selfHostedSyncStore.lastSyncAt ?? null,
       });
+      return;
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         recordSelfHostedSyncDiagnostic("Remote pull aborted (expected, likely page hidden)", {

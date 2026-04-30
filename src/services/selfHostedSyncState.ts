@@ -98,49 +98,12 @@ export function scheduleSelfHostedAutoSync(): void {
 }
 
 export async function runScheduledSelfHostedAutoSync(): Promise<void> {
-  if (autoSyncSuppressionDepth > 0 || !hasPendingLocalChanges) {
-    return;
-  }
-
-  if (scheduledAutoSyncInFlight) {
-    return scheduledAutoSyncInFlight;
-  }
-
-  const now = Date.now();
-  const waitMs = lastScheduledAutoSyncAt + SELF_HOSTED_PUSH_MIN_INTERVAL_MS - now;
-  if (waitMs > 0) {
-    queueScheduledSelfHostedAutoSync(waitMs);
-    return;
-  }
-
-  scheduledAutoSyncInFlight = (async () => {
-    try {
-      const { useSelfHostedSyncStore } = await import("@/stores/selfHostedSync");
-      const syncStore = useSelfHostedSyncStore();
-      await syncStore.loadSettings();
-      if (!syncStore.enabled || !syncStore.isAuthenticated) {
-        return;
-      }
-
-      // 在 push 之前就樂觀清除 flag，讓 push 期間產生的新變更能正確重新設為 true
-      hasPendingLocalChanges = false;
-      lastScheduledAutoSyncAt = Date.now();
-      await syncStore.pushNow();
-      // push 成功：若 push 期間沒有新變更，hasPendingLocalChanges 仍為 false，不會重排
-    } catch (error) {
-      console.warn("[selfHostedSyncState] 自架同步自動推送失敗:", error);
-      hasPendingLocalChanges = true;
-      queueScheduledSelfHostedAutoSync(SELF_HOSTED_PUSH_MIN_INTERVAL_MS);
-    } finally {
-      scheduledAutoSyncInFlight = null;
-      // 只有 push 期間有新變更（hasPendingLocalChanges 被重新設為 true）才重排
-      if (hasPendingLocalChanges) {
-        queueScheduledSelfHostedAutoSync();
-      }
-    }
-  })();
-
-  return scheduledAutoSyncInFlight;
+  void autoSyncSuppressionDepth;
+  void scheduledAutoSyncInFlight;
+  void lastScheduledAutoSyncAt;
+  void SELF_HOSTED_PUSH_MIN_INTERVAL_MS;
+  clearScheduledAutoSyncTimer();
+  return;
 }
 
 export async function withSuppressedSelfHostedAutoSync<T>(

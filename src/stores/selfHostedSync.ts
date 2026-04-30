@@ -666,35 +666,19 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     }
   }
 
-  async function getSyncService() {
-    const { getSelfHostedSyncService } = await import(
-      "@/services/SelfHostedSyncService"
-    );
-    return getSelfHostedSyncService();
-  }
-
   async function pushNow(options?: { forceFull?: boolean }) {
-    await loadSettings();
-    const syncService = await getSyncService();
-    return runSyncActionWithRetry(() => syncService.pushAll(options));
+    void options;
+    throw new Error("遠端內容同步已停用；請使用跨裝置加密同步。");
   }
 
   async function pullNow(since?: number, options?: { forceOverwrite?: boolean }) {
-    await loadSettings();
-    const syncService = await getSyncService();
-    // 預設不強制覆蓋：依 updatedAt 比較，保留本機較新的資料（避免 API profiles 被空/舊的 server 資料覆蓋）。
-    // 只有在 Guard 警示「確認從遠端拉回」這類明確指令時才傳 forceOverwrite=true。
-    return runSyncActionWithRetry(() =>
-      syncService.pullAll(since, {
-        forceOverwrite: options?.forceOverwrite === true,
-      }),
-    );
+    void since;
+    void options;
+    throw new Error("遠端內容同步已停用；請使用跨裝置加密同步。");
   }
 
   async function syncNow() {
-    await loadSettings();
-    const syncService = await getSyncService();
-    return runSyncActionWithRetry(() => syncService.syncNow());
+    throw new Error("遠端內容同步已停用；請使用跨裝置加密同步。");
   }
 
   // ===== Peer-to-peer 同步（Phase 1） =====

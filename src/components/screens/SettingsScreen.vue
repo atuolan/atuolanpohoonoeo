@@ -190,34 +190,12 @@ const selfHostedSyncStatusText = computed(() => {
     case "syncing":
       return "同步中";
     case "success":
-      return "同步成功";
+      return "連線成功";
     case "error":
       return selfHostedSyncStore.syncError || "同步失敗";
     default:
       return selfHostedSyncStore.lastSyncAt ? "待命中" : "尚未同步";
   }
-});
-
-const selfHostedSyncGuardDetails = computed(() => {
-  const alert = selfHostedSyncStore.guardAlert;
-  if (!alert) {
-    return null;
-  }
-
-  const formatCounts = (counts: Record<string, number>) =>
-    Object.entries(counts)
-      .filter(([, count]) => count > 0)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 6)
-      .map(([type, count]) => `${type}：${count}`)
-      .join("、");
-
-  return {
-    localTotal: alert.localSnapshot.totalActiveItems,
-    remoteTotal: alert.remoteSnapshot.totalActiveItems,
-    localTopTypes: formatCounts(alert.localSnapshot.countsByEntityType),
-    remoteTopTypes: formatCounts(alert.remoteSnapshot.countsByEntityType),
-  };
 });
 
 function shortDeviceId(id: string | null | undefined): string {
@@ -497,69 +475,6 @@ async function handleSelfHostedRefreshStatus() {
     }
   } catch (error) {
     console.error("[SettingsScreen] Self-hosted sync 狀態刷新失敗:", error);
-  } finally {
-    selfHostedSyncActionStatus.value = "idle";
-  }
-}
-
-async function handleSelfHostedPushNow(options?: { forceFull?: boolean }) {
-  if (selfHostedSyncStore.guardAlert) {
-    const confirmed = confirm(
-      `${selfHostedSyncStore.guardAlert.message}\n\n若你確認是遠端資料出了問題，才繼續把本機資料推回遠端。`,
-    );
-    if (!confirmed) {
-      return;
-    }
-  }
-
-  if (options?.forceFull) {
-    const confirmed = confirm(
-      "強制全量推送會把本機所有同步資料重新上傳（可能耗費較多時間與流量），通常只在首次同步或懷疑遠端資料異常時需要。確定繼續嗎？",
-    );
-    if (!confirmed) {
-      return;
-    }
-  }
-
-  selfHostedSyncActionStatus.value = "running";
-  try {
-    await selfHostedSyncStore.pushNow(options);
-  } catch (error) {
-    console.error("[SettingsScreen] Self-hosted sync push 失敗:", error);
-  } finally {
-    selfHostedSyncActionStatus.value = "idle";
-  }
-}
-
-async function handleSelfHostedPullNow() {
-  // 只在使用者明確透過 Guard 警示選擇「從遠端拉回覆蓋」時才強制覆蓋
-  let forceOverwrite = false;
-  if (selfHostedSyncStore.guardAlert) {
-    const confirmed = confirm(
-      `${selfHostedSyncStore.guardAlert.message}\n\n若你確認是本機資料遺失，才繼續從遠端拉回並覆蓋本機同步資料。`,
-    );
-    if (!confirmed) {
-      return;
-    }
-    forceOverwrite = true;
-  }
-
-  selfHostedSyncActionStatus.value = "running";
-  try {
-    await selfHostedSyncStore.pullNow(undefined, { forceOverwrite });
-  } catch (error) {
-    console.error("[SettingsScreen] Self-hosted sync pull 失敗:", error);
-  } finally {
-    selfHostedSyncActionStatus.value = "idle";
-  }
-}
-
-async function handleSelfHostedSyncNow() {
-  selfHostedSyncActionStatus.value = "running";
-  try {
-    await selfHostedSyncStore.syncNow();
-  } catch (error) {
-    console.error("[SettingsScreen] Self-hosted sync 手動同步失敗:", error);
   } finally {
     selfHostedSyncActionStatus.value = "idle";
   }
@@ -1375,6 +1290,9 @@ onMounted(async () => {
   await settingsStore.loadSettings();
   await cloudPushStore.loadSettings();
   await selfHostedSyncStore.loadSettings();
+  if (selfHostedSyncStore.guardAlert) {
+    await selfHostedSyncStore.clearGuardAlert();
+  }
   await refreshStorageStatus();
 
   // 初始化系統通知權限狀態
@@ -5638,7 +5556,7 @@ function useClonedVoice(voiceId: string) {
           <div class="toggle-item highlight">
             <div class="toggle-content">
               <div class="self-hosted-sync-title-row">
-                <span class="toggle-label">自架同步</span>
+                <span class="toggle-label">加密跨裝置同步</span>
                 <button
                   type="button"
                   class="self-hosted-sync-help-btn"
@@ -5648,7 +5566,7 @@ function useClonedVoice(voiceId: string) {
                 >?</button>
               </div>
               <span class="toggle-desc">
-                把聊天與設定同步到你自己的伺服器
+                伺服器只負責登入、裝置發現與加密中繼，不保存同步內容
               </span>
             </div>
             <label class="toggle-item" style="padding: 0; border: none">
@@ -5743,10 +5661,10 @@ function useClonedVoice(voiceId: string) {
                 :disabled="!selfHostedSyncCanAuth"
                 @click="handleSelfHostedStartSync"
               >
-                {{ selfHostedSyncActionStatus === "running" ? "處理中…" : "開始同步" }}
+                {{ selfHostedSyncActionStatus === "running" ? "處理中…" : "連線 / 註冊" }}
               </button>
               <p class="shs-hint">
-                首次使用會自動建立帳號；已有帳號會自動登入。
+                首次使用會自動建立帳號；已有帳號會自動登入。此帳號只用於尋找在線裝置。
               </p>
 
               <div
@@ -5785,44 +5703,14 @@ function useClonedVoice(voiceId: string) {
                 <span class="shs-status-text">{{ selfHostedSyncStatusText }}</span>
               </div>
 
-              <!-- Guard 警示（簡化） -->
-              <div
-                v-if="selfHostedSyncStore.guardAlert && selfHostedSyncGuardDetails"
-                class="shs-guard"
-              >
-                <div class="shs-guard-title">⚠ 偵測到可能的資料異常，請選擇方向</div>
+              <div class="shs-guard">
+                <div class="shs-guard-title">🔒 遠端內容同步已停用</div>
                 <div class="shs-guard-body">
-                  本機 <b>{{ selfHostedSyncGuardDetails.localTotal }}</b> 筆 ·
-                  遠端 <b>{{ selfHostedSyncGuardDetails.remoteTotal }}</b> 筆
-                </div>
-                <div class="shs-guard-actions">
-                  <button
-                    class="shs-guard-btn"
-                    :disabled="!selfHostedSyncCanOperate"
-                    @click="handleSelfHostedPushNow()"
-                  >
-                    <b>本機較新</b><br />→ 上傳到遠端
-                  </button>
-                  <button
-                    class="shs-guard-btn"
-                    :disabled="!selfHostedSyncCanOperate"
-                    @click="handleSelfHostedPullNow"
-                  >
-                    <b>遠端較新</b><br />← 下載到本機
-                  </button>
+                  伺服器只用於登入、在線狀態與加密訊息中繼；內容請使用下方「跨裝置直連」。
                 </div>
               </div>
-
-              <!-- 主按鈕 -->
-              <button
-                class="shs-primary-btn"
-                :disabled="!selfHostedSyncCanOperate || selfHostedSyncStore.hasGuardAlert"
-                @click="handleSelfHostedSyncNow"
-              >
-                {{ selfHostedSyncStore.syncStatus === 'syncing' ? '同步中…' : '立即同步' }}
-              </button>
               <p class="shs-hint">
-                「立即同步」= 把本機變更上傳 + 把遠端變更下載回來
+                這裡不再提供「上傳到遠端 / 從遠端下載」入口，避免伺服器保存或讀取同步內容。
               </p>
 
               <!-- 身分列 -->
@@ -5860,14 +5748,8 @@ function useClonedVoice(voiceId: string) {
                 </summary>
                 <div class="shs-collapse-body">
                   <p class="shs-hint">
-                    讓兩台裝置直接對傳。適合處理單一大檔或需要即時同步的場景。
+                    透過伺服器中繼加密資料，只有兩端裝置能解密內容。
                   </p>
-                  <div
-                    v-if="selfHostedSyncStore.lastRemoteUpdateAt"
-                    class="shs-small"
-                  >
-                    遠端最新變更：{{ formatDateTime(selfHostedSyncStore.lastRemoteUpdateAt) }}
-                  </div>
                   <div v-if="selfHostedSyncDeviceList.length === 0" class="shs-hint">
                     尚未取得裝置清單，請先點擊「刷新狀態」。
                   </div>
@@ -5920,7 +5802,7 @@ function useClonedVoice(voiceId: string) {
                         >取消</button>
                       </div>
                       <div class="self-hosted-device-meta">
-                        <span>最近上傳：{{ device.lastPushText }}</span>
+                        <span>最近在線：{{ device.lastSeenText }}</span>
                       </div>
                       <div v-if="device.canPeerSync" class="self-hosted-device-actions">
                         <button
@@ -8105,7 +7987,7 @@ function useClonedVoice(voiceId: string) {
 // 自架同步：新版 UI 樣式（shs = self-hosted-sync 命名空間）
 // ═══════════════════════════════════════════════════════
 
-// 主按鈕：「開始同步」/「立即同步」
+// 主按鈕：「連線 / 註冊」
 .shs-primary-btn {
   width: 100%;
   padding: 14px 16px;
