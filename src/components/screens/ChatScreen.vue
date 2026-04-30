@@ -2064,7 +2064,9 @@ async function executeUserRedpacketClaim(msg: Message, claimerDisplayName: strin
 }
 
 // User 領取群聊紅包
-const onMessageClaimRedpacket = async (id: string) => {
+const onMessageClaimRedpacket = async (...args: unknown[]) => {
+  const id = typeof args[0] === "string" ? args[0] : "";
+  if (!id) return;
   const msg = messages.value.find((m) => m.id === id);
   if (!msg || !msg.isRedpacket || !msg.redpacketData) return;
   // 容錯：若 state 缺失則初始化
@@ -2114,7 +2116,8 @@ const onMessageClaimRedpacket = async (id: string) => {
       } else if (gm?.members) {
         for (const member of gm.members) {
           const ch = charactersStore.characters.find((c) => c.id === member.characterId);
-          if (ch?.name) aiMemberNames.push(ch.name.trim());
+          const name = ch?.nickname || ch?.data?.name;
+          if (name) aiMemberNames.push(name.trim());
         }
       }
       const targetIsAI = aiMemberNames.some((n) => n === target);
@@ -5504,7 +5507,7 @@ async function triggerAIResponse(options?: {
                 messages.value,
                 claimerName,
                 false,
-              );
+              ) as Message | undefined;
               if (target) {
                 const cents = applyRedpacketClaim(
                   target,

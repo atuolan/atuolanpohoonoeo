@@ -3,9 +3,38 @@
  * 提供金額計算、拼手氣隨機分配、判定可領者等邏輯
  */
 
-import type { ChatMessage as Message } from "@/types/chat";
-
 export type RedPacketType = "lucky" | "exclusive" | "voice" | "split";
+
+export interface RedPacketMessageLike {
+  content?: string;
+  role?: string;
+  sender?: string;
+  is_user?: boolean;
+  isRedpacket?: boolean;
+  redpacketData?: {
+    amount: string;
+    blessing: string;
+    password?: string;
+    voice?: string;
+    type?: RedPacketType;
+    count?: number;
+    target?: string;
+  };
+  redpacketState?: {
+    totalCents: number;
+    totalCount: number;
+    remainingCents: number;
+    remainingCount: number;
+    claims: Array<{
+      claimerName: string;
+      claimerCharId?: string;
+      isUser: boolean;
+      cents: number;
+      timestamp: number;
+    }>;
+    fullyClaimed: boolean;
+  };
+}
 
 /** 將「12.34」字串轉為分（整數），避免浮點誤差 */
 export function toCents(amount: string | number): number {
@@ -60,8 +89,8 @@ export function pickSplitShare(
 
 /** 初始化紅包領取狀態（首次入庫時呼叫） */
 export function initRedPacketState(
-  data: NonNullable<Message["redpacketData"]>,
-): NonNullable<Message["redpacketState"]> {
+  data: NonNullable<RedPacketMessageLike["redpacketData"]>,
+): NonNullable<RedPacketMessageLike["redpacketState"]> {
   const totalCents = toCents(data.amount);
   // 預設份數：lucky/split 至少 1，exclusive 固定 1，voice 預設用 count，缺則 1
   let totalCount = data.count && data.count > 0 ? Math.floor(data.count) : 1;
@@ -78,7 +107,7 @@ export function initRedPacketState(
 
 /** 判定指定領取者是否「有資格」領這個紅包（不檢查口令文字，由呼叫端處理） */
 export function canClaim(
-  msg: Message,
+  msg: RedPacketMessageLike,
   claimerName: string,
   isUser: boolean,
 ): { ok: boolean; reason?: string } {
@@ -108,7 +137,7 @@ export function canClaim(
 
 /** 套用一次領取，回傳領到的金額（分） */
 export function applyClaim(
-  msg: Message,
+  msg: RedPacketMessageLike,
   claimerName: string,
   claimerCharId: string | undefined,
   isUser: boolean,
@@ -146,10 +175,10 @@ export function applyClaim(
 
 /** 在訊息列表中尋找最近一個尚未領完、可被指定者領取的群聊紅包 */
 export function findClaimableRedPacket(
-  messages: Message[],
+  messages: RedPacketMessageLike[],
   claimerName: string,
   isUser: boolean,
-): Message | undefined {
+): RedPacketMessageLike | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (!m.isRedpacket || !m.redpacketData || !m.redpacketState) continue;
@@ -161,7 +190,7 @@ export function findClaimableRedPacket(
 
 /** 判斷用戶最近 K 條訊息是否有說出 voice 口令 */
 export function userSpokeVoice(
-  messages: Message[],
+  messages: RedPacketMessageLike[],
   voicePhrase: string,
   lookback = 6,
 ): boolean {
