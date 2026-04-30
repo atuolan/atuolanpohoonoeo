@@ -39,7 +39,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 const STORAGE_KEY = "promptManagerConfig";
-const PROMPT_MANAGER_CONFIG_VERSION = 2;
+const PROMPT_MANAGER_CONFIG_VERSION = 3;
 
 function clonePromptOrderEntry(entry: PromptOrderEntry): PromptOrderEntry {
   return {
@@ -105,10 +105,11 @@ function migrateGroupChatPromptOrder(
   ensurePromptOrderEntry(order, defaultOrder, "minimaxTTS");
   movePromptOrderEntryAfter(order, "gcThinkingGuide", "gcDoNotDisturbStatus");
   movePromptOrderEntryAfter(order, "gcForbiddenPatterns", "gcThinkingGuide");
-  movePromptOrderEntryAfter(order, "gcConfirmLastOutput", "gcForbiddenPatterns");
-  movePromptOrderEntryAfter(order, "gcFormatRules", "gcConfirmLastOutput");
+  movePromptOrderEntryAfter(order, "gcFormatRules", "gcForbiddenPatterns");
   movePromptOrderEntryAfter(order, "gcExampleScript", "gcFormatRules");
   movePromptOrderEntryAfter(order, "minimaxTTS", "gcExampleScript");
+  // v3: 將「確認最終輸出」移到 <think> 模塊正前方
+  movePromptOrderEntryAfter(order, "gcConfirmLastOutput", "gcFinalInstructions");
 }
 
 export const usePromptManagerStore = defineStore("promptManager", () => {
@@ -820,6 +821,42 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
         stored.groupChatPromptOrder,
         defaults.groupChatPromptOrder || DEFAULT_GROUP_CHAT_PROMPT_ORDER,
       );
+    }
+
+    // v3: 升級 gcFinalInstructions / gcConfirmLastOutput 內容
+    // 僅當用戶仍使用舊的默認內容時才更新，已自定義的版本保留不動
+    if (storedVersion < 3) {
+      const finalInstrIdx = stored.prompts.findIndex(
+        (p) => p.identifier === "gcFinalInstructions",
+      );
+      if (finalInstrIdx !== -1) {
+        const storedContent = stored.prompts[finalInstrIdx].content || "";
+        const defaultFinalInstr = defaults.prompts.find(
+          (p) => p.identifier === "gcFinalInstructions",
+        );
+        if (
+          defaultFinalInstr &&
+          storedContent.includes("最後提醒一下") &&
+          storedContent.includes("回復的第一個字必須是")
+        ) {
+          stored.prompts[finalInstrIdx].content = defaultFinalInstr.content;
+        }
+      }
+
+      const confirmIdx = stored.prompts.findIndex(
+        (p) => p.identifier === "gcConfirmLastOutput",
+      );
+      if (confirmIdx !== -1) {
+        const storedContent = (
+          stored.prompts[confirmIdx].content || ""
+        ).trim();
+        const defaultConfirm = defaults.prompts.find(
+          (p) => p.identifier === "gcConfirmLastOutput",
+        );
+        if (defaultConfirm && storedContent === "{{lastUserMessage}}") {
+          stored.prompts[confirmIdx].content = defaultConfirm.content;
+        }
+      }
     }
 
     stored.version = PROMPT_MANAGER_CONFIG_VERSION;
