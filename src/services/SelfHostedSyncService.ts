@@ -436,6 +436,15 @@ export class SelfHostedSyncService {
   ): Promise<SelfHostedSyncEntityEnvelope[]> {
     const items: SelfHostedSyncEntityEnvelope[] = [];
 
+    try {
+      const settingsStore = useSettingsStore();
+      if (settingsStore.isLoaded) {
+        await settingsStore.saveSettings();
+      }
+    } catch (error) {
+      console.warn("[SelfHostedSyncService] 同步前保存當前 API/設定狀態失敗，改用 IndexedDB 既有設定:", error);
+    }
+
     const settings = await loadSettingsData();
     if (settings) {
       items.push(toSyncSettingsPreferencesEnvelope(settings));
@@ -992,6 +1001,12 @@ export class SelfHostedSyncService {
       ? ((payload as any).profiles as unknown[])
       : [];
     const nextPayload = JSON.parse(JSON.stringify(payload)) as SyncSettingsFullPayload;
+    const nextPayloadWithApi = nextPayload as SyncSettingsFullPayload & {
+      api?: unknown;
+      generation?: unknown;
+      profiles?: unknown[];
+      currentProfileId?: string | null;
+    };
 
     if (localProfiles.length > 0 && remoteProfiles.length === 0) {
       console.warn(
@@ -1001,6 +1016,19 @@ export class SelfHostedSyncService {
         JSON.parse(JSON.stringify(localProfiles));
       (nextPayload as SyncSettingsFullPayload & { currentProfileId: string | null }).currentProfileId =
         local?.currentProfileId ?? null;
+    } else if (remoteProfiles.length === 0 && nextPayloadWithApi.api && nextPayloadWithApi.generation) {
+      const fallbackProfileId = `synced-api-${payload.updatedAt}`;
+      nextPayloadWithApi.profiles = [
+        {
+          id: fallbackProfileId,
+          name: "同步的 API 設定",
+          api: JSON.parse(JSON.stringify(nextPayloadWithApi.api)),
+          generation: JSON.parse(JSON.stringify(nextPayloadWithApi.generation)),
+          createdAt: payload.updatedAt,
+          updatedAt: payload.updatedAt,
+        },
+      ];
+      nextPayloadWithApi.currentProfileId = fallbackProfileId;
     }
 
     await saveSettingsData(nextPayload);

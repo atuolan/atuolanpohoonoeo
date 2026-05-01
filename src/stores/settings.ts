@@ -117,6 +117,8 @@ export interface IncomingCallRingtoneSettings {
 export interface SettingsData {
   id: string;
   currentProfileId: string | null;
+  api?: APISettings;
+  generation?: GenerationParams;
   profiles: APIProfile[];
   auxiliary: AuxiliaryAPIConfig;
   novelAIImage: NovelAIImageSettings;
@@ -353,6 +355,13 @@ export const useSettingsStore = defineStore("settings", () => {
           if (current) {
             Object.assign(api, current.api);
             Object.assign(generation, current.generation);
+          } else {
+            if (saved.api) {
+              Object.assign(api, saved.api);
+            }
+            if (saved.generation) {
+              Object.assign(generation, saved.generation);
+            }
           }
 
           // 載入備用 API 配置
@@ -612,6 +621,8 @@ export const useSettingsStore = defineStore("settings", () => {
       const data: SettingsData = {
         id: SETTINGS_ID,
         currentProfileId: currentProfileId.value,
+        api: { ...toRaw(api) },
+        generation: { ...toRaw(generation) },
         profiles: rawProfiles,
         auxiliary: rawAuxiliary,
         novelAIImage: { ...toRaw(novelAIImage) },

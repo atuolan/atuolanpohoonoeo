@@ -724,6 +724,9 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     const LOG_TAG = "[peerSync]";
     console.log(LOG_TAG, "開始", { direction, targetDeviceId });
     await loadSettings();
+    if (targetDeviceId === deviceId.value) {
+      throw new Error("不能同步到本機裝置，請選擇另一台在線裝置。");
+    }
     const { getPeerSyncManager } = await import(
       "@/services/PeerSyncSecureManager"
     );

@@ -164,10 +164,10 @@ class PeerSyncCrypto {
     const encrypted = await crypto.subtle.encrypt(
       {
         name: "AES-GCM",
-        iv,
+        iv: iv.buffer as ArrayBuffer,
       },
       record.sharedKey,
-      plainBytes,
+      plainBytes.buffer as ArrayBuffer,
     );
     return {
       version: 1,
@@ -184,16 +184,23 @@ class PeerSyncCrypto {
     }
     const iv = base64ToUint8(payload.iv);
     const ciphertext = base64ToUint8(payload.ciphertext);
-    const decrypted = await crypto.subtle.decrypt(
-      {
-        name: "AES-GCM",
-        iv,
-      },
-      record.sharedKey,
-      ciphertext,
-    );
-    const text = new TextDecoder().decode(decrypted);
-    return JSON.parse(text) as T;
+    try {
+      const decrypted = await crypto.subtle.decrypt(
+        {
+          name: "AES-GCM",
+          iv: iv.buffer as ArrayBuffer,
+        },
+        record.sharedKey,
+        ciphertext.buffer as ArrayBuffer,
+      );
+      const text = new TextDecoder().decode(decrypted);
+      return JSON.parse(text) as T;
+    } catch (error) {
+      throw Object.assign(new Error("peer-decrypt-failed"), {
+        cause: error,
+        peerReason: "peer-decrypt-failed",
+      });
+    }
   }
 
   dropSession(peerDeviceId: string, sessionId: string): void {
@@ -201,11 +208,22 @@ class PeerSyncCrypto {
   }
 }
 
-let instance: PeerSyncCrypto | null = null;
+const instances = new Map<string, PeerSyncCrypto>();
 
-export function getPeerSyncCrypto(): PeerSyncCrypto {
-  if (!instance) {
-    instance = new PeerSyncCrypto();
+export function getPeerSyncCrypto(scope = "default"): PeerSyncCrypto {
+  const existing = instances.get(scope);
+  if (existing) {
+    return existing;
   }
+  const instance = new PeerSyncCrypto();
+  instances.set(scope, instance);
   return instance;
+}
+
+export function resetPeerSyncCrypto(scope?: string): void {
+  if (scope) {
+    instances.delete(scope);
+    return;
+  }
+  instances.clear();
 }

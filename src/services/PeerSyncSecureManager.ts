@@ -46,7 +46,7 @@ class PeerSyncSecureManager {
   private pending = new Map<string, PendingRequest<unknown>>();
   private unsubscribe: (() => void) | null = null;
   private disconnectUnsubscribe: (() => void) | null = null;
-  private readonly crypto = getPeerSyncCrypto();
+  private readonly crypto = getPeerSyncCrypto("manager");
 
   private log(...args: unknown[]): void {
     console.log("[PeerSyncSecureManager]", ...args);

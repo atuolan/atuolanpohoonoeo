@@ -26,7 +26,7 @@ const FETCH_BATCH_SIZE = 100;
 const LOG = "[PeerSyncSecureResponder]";
 
 let unsubscribe: (() => void) | null = null;
-const peerCrypto = getPeerSyncCrypto();
+const peerCrypto = getPeerSyncCrypto("responder");
 
 function log(...args: unknown[]): void {
   console.log(LOG, ...args);
