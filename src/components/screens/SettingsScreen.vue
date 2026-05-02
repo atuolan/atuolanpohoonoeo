@@ -34,6 +34,10 @@ import {
 import { useCloudPushStore } from "@/stores/cloudPush";
 import { useSelfHostedSyncStore } from "@/stores/selfHostedSync";
 import { useThemeStore } from "@/stores/theme";
+import {
+  createDefaultCharacterData,
+  type StoredCharacter,
+} from "@/types/character";
 import type { APIProvider } from "@/types/settings";
 import {
   destroyDebugOverlay,
@@ -2028,6 +2032,109 @@ function uint8ArrayToBase64(data: Uint8Array): string {
   return btoa(binary);
 }
 
+function getFallbackCharacterNameFromChat(chat: any): string {
+  const rawName = String(
+    chat?.name || chat?.title || chat?.characterName || "",
+  ).trim();
+  if (rawName.startsWith("Chat with ")) {
+    return rawName.slice("Chat with ".length).trim() || "未命名角色";
+  }
+  return rawName || "未命名角色";
+}
+
+async function ensureCharacterForImportedChat(
+  chat: any,
+  knownCharacterIds: Set<string>,
+): Promise<boolean> {
+  if (!chat?.characterId || chat.isGroupChat) return false;
+  if (knownCharacterIds.has(chat.characterId)) return false;
+
+  const existing = await db.get<StoredCharacter>("characters", chat.characterId);
+  if (existing) {
+    knownCharacterIds.add(chat.characterId);
+    return false;
+  }
+
+  const name = getFallbackCharacterNameFromChat(chat);
+  const now = Date.now();
+  const systemPrompt = String(chat.systemPromptOverride || "");
+  const character: StoredCharacter = {
+    id: chat.characterId,
+    nickname: name,
+    avatar:
+      typeof chat.charAvatarOverride === "string" ? chat.charAvatarOverride : "",
+    data: {
+      ...createDefaultCharacterData(),
+      name,
+      description: systemPrompt.slice(0, 500),
+      first_mes: `你好，我是${name}。`,
+      system_prompt: systemPrompt,
+    },
+    lorebookIds: [],
+    source: "import",
+    createdAt: typeof chat.createdAt === "number" ? chat.createdAt : now,
+    updatedAt: typeof chat.updatedAt === "number" ? chat.updatedAt : now,
+  };
+
+  await db.put("characters", character);
+  knownCharacterIds.add(chat.characterId);
+  return true;
+}
+
+function splitZipEntryName(name: string): string[] {
+  return name.replace(/\\/g, "/").split("/").filter(Boolean);
+}
+
+function getZipEntryBaseName(name: string): string {
+  const parts = splitZipEntryName(name);
+  return parts[parts.length - 1]?.toLowerCase() || "";
+}
+
+function getZipEntryRelativeToFolder(
+  name: string,
+  folderName: string,
+): string | null {
+  const parts = splitZipEntryName(name);
+  const index = parts.findIndex((part) => part.toLowerCase() === folderName);
+  return index >= 0 ? parts.slice(index).join("/") : null;
+}
+
+function findBackupJsonEntry(
+  files: Record<string, Uint8Array>,
+): [string, Uint8Array] | undefined {
+  return Object.entries(files).find(([name]) => {
+    const baseName = getZipEntryBaseName(name);
+    return baseName === "backup.json" || baseName === "data.json";
+  });
+}
+
+function getZipChatJsonEntries(
+  files: Record<string, Uint8Array>,
+): Array<[string, Uint8Array]> {
+  return Object.entries(files)
+    .map(([name, content]) => {
+      const relativeName = getZipEntryRelativeToFolder(name, "chats");
+      return relativeName ? [relativeName, content] as [string, Uint8Array] : null;
+    })
+    .filter(
+      (entry): entry is [string, Uint8Array] =>
+        !!entry && entry[0].toLowerCase().endsWith(".json"),
+    );
+}
+
+function collectZipMediaFiles(
+  files: Record<string, Uint8Array>,
+): Record<string, Uint8Array> {
+  const result: Record<string, Uint8Array> = {};
+  for (const [filename, content] of Object.entries(files)) {
+    const mediaName = getZipEntryRelativeToFolder(filename, "media");
+    if (mediaName) {
+      result[mediaName] = content;
+    }
+  }
+  return result;
+}
+
 /**
  * 遞迴掃描 obj[key] 中所有字串值，將 media/ 路徑還原為 base64 DataURL。
  * 與 backupMediaExtractor 的 scanAndReplaceBase64InValue 互為逆操作。
@@ -2108,6 +2215,7 @@ async function handleFileImport(event: Event) {
       } else {
         // 真正的 ZIP — 先嘗試 fflate，失敗則 fallback 到 jszip
         let files: Record<string, Uint8Array>;
+        let unzipper = "fflate";
 
         try {
           const { unzip } = await import("fflate");
@@ -2120,6 +2228,7 @@ async function handleFileImport(event: Event) {
             },
           );
         } catch (fflateErr) {
+          unzipper = "jszip";
           console.warn("[Import] fflate 解壓失敗，嘗試 jszip:", fflateErr);
           const JSZip = (await import("jszip")).default;
           const zip = await JSZip.loadAsync(arrayBuffer);
@@ -2132,22 +2241,35 @@ async function handleFileImport(event: Event) {
         }
 
         const { strFromU8 } = await import("fflate");
+        const fileEntries = Object.entries(files);
+        const zipEntryNames = fileEntries.map(([name]) => name);
 
         // 檢查必要檔案（相容 backup.json 和 data.json 兩種命名）
-        const jsonFile = files["backup.json"] || files["data.json"];
-        if (!jsonFile) {
+        const backupEntry = findBackupJsonEntry(files);
+        if (!backupEntry) {
+          console.error("[Import] ZIP 解包條目:", zipEntryNames);
           throw new Error("ZIP 中找不到 backup.json 或 data.json");
         }
 
         // 解析資料
+        const [backupJsonName, jsonFile] = backupEntry;
         data = JSON.parse(strFromU8(jsonFile));
+        const chatFileEntries = getZipChatJsonEntries(files);
 
         // 收集媒體檔案
-        for (const [filename, content] of Object.entries(files)) {
-          if (filename.startsWith("media/")) {
-            mediaFiles[filename] = content;
-          }
-        }
+        mediaFiles = collectZipMediaFiles(files);
+
+        console.info("[Import] ZIP 解包診斷", {
+          unzipper,
+          entryCount: fileEntries.length,
+          backupJsonName,
+          backupJsonBytes: jsonFile.byteLength,
+          characters: Array.isArray(data.characters) ? data.characters.length : null,
+          inlineChats: Array.isArray(data.chats) ? data.chats.length : null,
+          chatFiles: chatFileEntries.length,
+          mediaFiles: Object.keys(mediaFiles).length,
+          sampleEntries: zipEntryNames.slice(0, 20),
+        });
 
         // 相容新版流式備份格式：聊天存在 chats/*.json 中
         // 不再一次性解析所有聊天到 data.chats，改為保留原始 Uint8Array 引用
@@ -2157,9 +2279,6 @@ async function handleFileImport(event: Event) {
           !Array.isArray(data.chats) ||
           data.chats.length === 0
         ) {
-          const chatFileEntries = Object.entries(files).filter(
-            ([name]) => name.startsWith("chats/") && name.endsWith(".json"),
-          );
           if (chatFileEntries.length > 0) {
             // 保留原始 bytes 引用，不立即解析
             (data as any)._pendingChatFiles = chatFileEntries;
@@ -2172,12 +2291,13 @@ async function handleFileImport(event: Event) {
 
         // 釋放不再需要的 ZIP 條目（非 media/、非 chats/、非 backup.json）
         for (const key of Object.keys(files)) {
+          const baseName = getZipEntryBaseName(key);
           if (
-            !key.startsWith("media/") &&
-            !key.startsWith("chats/") &&
-            key !== "backup.json" &&
-            key !== "data.json" &&
-            key !== "metadata.json"
+            !getZipEntryRelativeToFolder(key, "media") &&
+            !getZipEntryRelativeToFolder(key, "chats") &&
+            baseName !== "backup.json" &&
+            baseName !== "data.json" &&
+            baseName !== "metadata.json"
           ) {
             delete files[key];
           }
@@ -2234,6 +2354,9 @@ async function handleFileImport(event: Event) {
       throw new Error("無效的備份文件格式");
     }
 
+    const importedCharacterIds = new Set<string>();
+    let recoveredCharacterCount = 0;
+
     // 還原角色頭像
     if (data.characters && Array.isArray(data.characters)) {
       for (const char of data.characters) {
@@ -2259,6 +2382,7 @@ async function handleFileImport(event: Event) {
     if (data.characters && Array.isArray(data.characters)) {
       for (const char of data.characters) {
         await db.put("characters", char);
+        if (char?.id) importedCharacterIds.add(char.id);
       }
     }
 
@@ -2287,6 +2411,9 @@ async function handleFileImport(event: Event) {
           pendingChatFiles[ci] = null as any;
           // 還原媒體
           restoreChatMedia(chat, mediaFiles);
+          if (await ensureCharacterForImportedChat(chat, importedCharacterIds)) {
+            recoveredCharacterCount++;
+          }
           // v24：訊息分離儲存
           const messagesToSave = chat.messages || [];
           if (messagesToSave.length > 0) {
@@ -2310,6 +2437,9 @@ async function handleFileImport(event: Event) {
     }
     if (data.chats && Array.isArray(data.chats)) {
       for (const chat of data.chats) {
+        if (await ensureCharacterForImportedChat(chat, importedCharacterIds)) {
+          recoveredCharacterCount++;
+        }
         const messagesToSave = chat.messages || [];
         // v24：圖片分離 + 訊息分離儲存
         if (messagesToSave.length > 0) {
@@ -2638,6 +2768,7 @@ async function handleFileImport(event: Event) {
       `佈局: ${data.layouts?.length || 0}`,
       `好感度配置: ${data.characterAffections?.length || 0}`,
       `好感度狀態: ${data.chatAffinityStates?.length || 0}`,
+      `從聊天補回角色: ${recoveredCharacterCount}`,
       `使用者角色: ${data.userData?.personas?.length || 0}`,
       `渲染規則: ${data.rendererRules?.length || 0}`,
       `書籍: ${data.books?.length || 0}`,
