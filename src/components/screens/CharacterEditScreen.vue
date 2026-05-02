@@ -116,6 +116,9 @@ const lorebooksStore = useLorebooksStore();
 const fitnessStore = useFitnessStore();
 const affinityStore = useAffinityStore();
 
+const PNG_KEYWORD = "chara";
+const pngCrcTable = createPngCrcTable();
+
 // 健身夥伴設定
 const fitnessConfig = ref<CharacterFitnessConfig>({
   enabled: false,
@@ -457,8 +460,191 @@ function handleDelete() {
   }
 }
 
-// 導出角色卡 JSON（完整 CharacterCardV2 格式，包含綁定的世界書）
-async function exportJSON() {
+function createPngCrcTable(): Uint32Array {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    table[i] = c >>> 0;
+  }
+  return table;
+}
+
+function pngCrc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc = pngCrcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function writeUint32(bytes: Uint8Array, offset: number, value: number) {
+  bytes[offset] = (value >>> 24) & 0xff;
+  bytes[offset + 1] = (value >>> 16) & 0xff;
+  bytes[offset + 2] = (value >>> 8) & 0xff;
+  bytes[offset + 3] = value & 0xff;
+}
+
+function readUint32(bytes: Uint8Array, offset: number): number {
+  return (
+    ((bytes[offset] << 24) |
+      (bytes[offset + 1] << 16) |
+      (bytes[offset + 2] << 8) |
+      bytes[offset + 3]) >>>
+    0
+  );
+}
+
+function encodeUtf8Base64(value: string): string {
+  return btoa(unescape(encodeURIComponent(value)));
+}
+
+function dataUrlToBytes(dataUrl: string): Uint8Array {
+  const base64 = dataUrl.split(",")[1] ?? "";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function createPlaceholderPngDataUrl(): string {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 768;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    ctx.fillStyle = "#f8f5ff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#d9b8ff";
+    ctx.beginPath();
+    ctx.arc(canvas.width / 2, canvas.height / 2, 96, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return canvas.toDataURL("image/png");
+}
+
+async function renderAvatarToPngBytes(imageSource: string): Promise<Uint8Array> {
+  if (!imageSource) return dataUrlToBytes(createPlaceholderPngDataUrl());
+  const src =
+    imageSource.startsWith("data:") ||
+    imageSource.startsWith("http") ||
+    imageSource.startsWith("blob:")
+      ? imageSource
+      : `data:image/png;base64,${imageSource}`;
+
+  const dataUrl = await new Promise<string>((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const naturalWidth = img.naturalWidth || 512;
+      const naturalHeight = img.naturalHeight || 768;
+      const scale = Math.min(1, 800 / naturalWidth, 1200 / naturalHeight);
+      const width = Math.max(1, Math.round(naturalWidth * scale));
+      const height = Math.max(1, Math.round(naturalHeight * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(createPlaceholderPngDataUrl());
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      try {
+        resolve(canvas.toDataURL("image/png"));
+      } catch {
+        resolve(createPlaceholderPngDataUrl());
+      }
+    };
+    img.onerror = () => resolve(createPlaceholderPngDataUrl());
+    img.src = src;
+  });
+
+  return dataUrlToBytes(dataUrl);
+}
+
+function createPngTextChunk(keyword: string, text: string): Uint8Array {
+  const encoder = new TextEncoder();
+  const typeBytes = encoder.encode("tEXt");
+  const keywordBytes = encoder.encode(keyword);
+  const textBytes = encoder.encode(text);
+  const data = new Uint8Array(keywordBytes.length + 1 + textBytes.length);
+  data.set(keywordBytes, 0);
+  data[keywordBytes.length] = 0;
+  data.set(textBytes, keywordBytes.length + 1);
+
+  const chunk = new Uint8Array(12 + data.length);
+  writeUint32(chunk, 0, data.length);
+  chunk.set(typeBytes, 4);
+  chunk.set(data, 8);
+
+  const crcInput = new Uint8Array(typeBytes.length + data.length);
+  crcInput.set(typeBytes, 0);
+  crcInput.set(data, typeBytes.length);
+  writeUint32(chunk, 8 + data.length, pngCrc32(crcInput));
+  return chunk;
+}
+
+function findPngIendOffset(bytes: Uint8Array): number {
+  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+  for (let i = 0; i < signature.length; i++) {
+    if (bytes[i] !== signature[i]) return -1;
+  }
+
+  let offset = 8;
+  while (offset + 12 <= bytes.length) {
+    const length = readUint32(bytes, offset);
+    const type = String.fromCharCode(
+      bytes[offset + 4],
+      bytes[offset + 5],
+      bytes[offset + 6],
+      bytes[offset + 7],
+    );
+    if (offset + 12 + length > bytes.length) return -1;
+    if (type === "IEND") return offset;
+    offset += 12 + length;
+  }
+  return -1;
+}
+
+async function createCharacterCardPngBlob(
+  imageSource: string,
+  metadata: string,
+): Promise<Blob> {
+  const pngBytes = await renderAvatarToPngBytes(imageSource);
+  const iendOffset = findPngIendOffset(pngBytes);
+  if (iendOffset < 0) throw new Error("Invalid PNG");
+
+  const textChunk = createPngTextChunk(
+    PNG_KEYWORD,
+    encodeUtf8Base64(metadata),
+  );
+  const output = new Uint8Array(pngBytes.length + textChunk.length);
+  output.set(pngBytes.slice(0, iendOffset), 0);
+  output.set(textChunk, iendOffset);
+  output.set(pngBytes.slice(iendOffset), iendOffset + textChunk.length);
+  return new Blob([output], { type: "image/png" });
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function buildCharacterCardExportData(): Promise<{
+  exportData: any;
+  safeName: string;
+}> {
   // 從 store 取得完整角色資料（包含 extensions 等欄位）
   const fullCharacter = props.characterId
     ? charactersStore.characters.find((c) => c.id === props.characterId)
@@ -538,17 +724,32 @@ async function exportJSON() {
     spec_version: "2.0",
     data: baseData,
   };
+  // 檔名只保留安全字元，避免手機下載後副檔名遺失
+  const safeName = (fd.name || "character").replace(/[<>:"/\\|?*]/g, "_");
+  return { exportData, safeName };
+}
+
+// 導出角色卡 JSON（完整 CharacterCardV2 格式，包含綁定的世界書）
+async function exportJSON() {
+  const { exportData, safeName } = await buildCharacterCardExportData();
   const blob = new Blob([JSON.stringify(exportData, null, 2)], {
     type: "application/json",
   });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  // 檔名只保留安全字元，避免手機下載後副檔名遺失
-  const safeName = (fd.name || "character").replace(/[<>:"/\\|?*]/g, "_");
-  a.download = `${safeName}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, `${safeName}.json`);
+}
+
+async function exportPNG() {
+  try {
+    const { exportData, safeName } = await buildCharacterCardExportData();
+    const blob = await createCharacterCardPngBlob(
+      formData.value.avatar,
+      JSON.stringify(exportData),
+    );
+    downloadBlob(blob, `${safeName}.png`);
+  } catch (e) {
+    console.error("[CharacterEditScreen] Failed to export PNG:", e);
+    alert(`導出 PNG 失敗：${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 // 觸發頭像上傳
@@ -1935,6 +2136,9 @@ async function onRegexFileImport(e: Event) {
 
         <Transition name="slide">
           <div v-if="expandedSections.danger" class="section-content">
+            <button class="action-btn" @click="exportPNG">
+              🖼️ 導出角色卡 (PNG)
+            </button>
             <button class="action-btn" @click="exportJSON">
               📄 導出角色卡 (JSON)
             </button>
