@@ -797,6 +797,25 @@ const isExporting = ref(false);
 const isImporting = ref(false);
 const excludeChatImages = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
+let importWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearImportWatchdog() {
+  if (importWatchdogTimer) {
+    clearTimeout(importWatchdogTimer);
+    importWatchdogTimer = null;
+  }
+}
+
+function startImportWatchdog(input: HTMLInputElement) {
+  clearImportWatchdog();
+  importWatchdogTimer = setTimeout(() => {
+    if (!isImporting.value) return;
+    console.error("[Import] 導入逾時，已自動解除導入狀態");
+    isImporting.value = false;
+    input.value = "";
+    alert("導入逾時，已停止等待。原本資料不會因此被清除，請重新整理後再試一次。");
+  }, 5 * 60 * 1000);
+}
 
 // 模型拉取狀態
 const isFetchingModels = ref(false);
@@ -1313,6 +1332,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  clearImportWatchdog();
   stopRingtoneTest();
 });
 
@@ -2057,6 +2077,7 @@ async function handleFileImport(event: Event) {
   }
 
   isImporting.value = true;
+  startImportWatchdog(target);
   try {
     await db.init();
 
@@ -2064,7 +2085,7 @@ async function handleFileImport(event: Event) {
     let mediaFiles: Record<string, Uint8Array> = {};
 
     // 檢查檔案類型
-    if (file.name.endsWith(".zip")) {
+    if (fileName.endsWith(".zip")) {
       // 讀取檔案內容
       const arrayBuffer = await file.arrayBuffer();
       const bytes = new Uint8Array(arrayBuffer);
@@ -2213,39 +2234,6 @@ async function handleFileImport(event: Event) {
       throw new Error("無效的備份文件格式");
     }
 
-    // 當備份檔為 aguaphone-backup 開頭，主動清除本機舊資料
-    // 清除前先備份 auth 狀態，還原後回寫，避免重新驗證
-    if (
-      file.name.startsWith("aguaphone-backup-") &&
-      file.name.endsWith(".zip")
-    ) {
-      console.log("偵測到 aguaphone-backup，主動清除本機舊資料...");
-      // 備份 auth 狀態
-      const { AuthService } = await import("@/services/AuthService");
-      const savedAuth = await AuthService.getAuthState().catch(() => null);
-      // 備份 GitHub 雲端備份設定，避免還原後丟失 token/repo
-      const savedGhSettings = await loadGitHubSettings().catch(() => null);
-      await clearAllData();
-      await db.init();
-      // 還原 auth 狀態，避免清除後要求重新驗證
-      if (
-        savedAuth &&
-        savedAuth.isAuthenticated &&
-        savedAuth.discordUserId &&
-        savedAuth.discordUsername
-      ) {
-        await AuthService.saveAuthState(
-          savedAuth.discordUserId,
-          savedAuth.discordUsername,
-          savedAuth.discordDisplayName || savedAuth.discordUsername,
-        ).catch(() => {});
-      }
-      // 還原 GitHub 雲端備份設定
-      if (savedGhSettings && savedGhSettings.token) {
-        await saveGitHubSettings(savedGhSettings).catch(() => {});
-      }
-    }
-
     // 還原角色頭像
     if (data.characters && Array.isArray(data.characters)) {
       for (const char of data.characters) {
@@ -2290,8 +2278,10 @@ async function handleFileImport(event: Event) {
     if (pendingChatFiles && pendingChatFiles.length > 0) {
       const { strFromU8 } = await import("fflate");
       for (let ci = 0; ci < pendingChatFiles.length; ci++) {
+        let chatFileName = "";
         try {
-          const [, content] = pendingChatFiles[ci];
+          const [currentChatFileName, content] = pendingChatFiles[ci];
+          chatFileName = currentChatFileName;
           const chat = JSON.parse(strFromU8(content));
           // 釋放原始 bytes
           pendingChatFiles[ci] = null as any;
@@ -2308,7 +2298,12 @@ async function handleFileImport(event: Event) {
           await refreshChatDerivedMetadata(chat.id);
           importedChatCount++;
         } catch (parseErr) {
-          console.warn("[Import] 聊天檔案解析失敗，跳過:", parseErr);
+          console.error("[Import] 聊天檔案導入失敗:", parseErr);
+          throw new Error(
+            `聊天檔案 ${chatFileName || "未知"} 導入失敗: ${
+              parseErr instanceof Error ? parseErr.message : String(parseErr)
+            }`,
+          );
         }
       }
       delete (data as any)._pendingChatFiles;
@@ -2353,7 +2348,10 @@ async function handleFileImport(event: Event) {
           mimeType,
         );
       }
-      await db.put("appSettings", data.settings);
+      await db.put("appSettings", {
+        ...data.settings,
+        id: data.settings.id || "main-settings",
+      });
     }
 
     // 導入使用者角色資料
@@ -2374,7 +2372,10 @@ async function handleFileImport(event: Event) {
           }
         }
       }
-      await db.put("appSettings", data.userData);
+      await db.put("appSettings", {
+        ...data.userData,
+        id: data.userData.id || "user-data",
+      });
     }
 
     // 導入主題（還原桌布圖片）
@@ -2660,6 +2661,7 @@ async function handleFileImport(event: Event) {
     console.error("導入失敗:", e);
     alert("導入失敗: " + (e instanceof Error ? e.message : String(e)));
   } finally {
+    clearImportWatchdog();
     isImporting.value = false;
     target.value = "";
   }
