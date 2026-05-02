@@ -92,6 +92,39 @@ describe('BlockService 屬性測試', () => {
       expect(lastEntry.direction).toBe('user-blocked-char')
       expect(lastEntry.unblockedAt).toBeNull()
     })
+
+    it('用戶已封鎖角色時 handleCharacterBlock 不應覆蓋成 char-blocked-user', async () => {
+      const blockService = BlockService.getInstance()
+      const now = Date.now()
+      const history = [{
+        id: crypto.randomUUID(),
+        direction: 'user-blocked-char' as const,
+        reason: '用戶主動封鎖',
+        blockedAt: now,
+        unblockedAt: null,
+      }]
+      const chat = createTestChat({
+        blockState: {
+          ...createDefaultBlockState(),
+          status: 'user-blocked-char',
+          blockedAt: now,
+          reason: '用戶主動封鎖',
+          history,
+        },
+      })
+
+      await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)))
+
+      const didBlock = await blockService.handleCharacterBlock(chat.id, '角色反向封鎖')
+
+      const updated = await db.get<Chat>(DB_STORES.CHATS, chat.id)
+      expect(didBlock).toBe(false)
+      expect(updated!.blockState!.status).toBe('user-blocked-char')
+      expect(updated!.blockState!.reason).toBe('用戶主動封鎖')
+      expect(updated!.blockState!.history).toHaveLength(1)
+      expect(updated!.blockState!.history[0].direction).toBe('user-blocked-char')
+      expect(updated!.blockState!.history[0].unblockedAt).toBeNull()
+    })
   })
 
   /**
@@ -337,7 +370,7 @@ describe('BlockService 屬性測試', () => {
    * Property 11: 封鎖影響主動訊息與來電
    * **Validates: Requirements 11.1, 11.2**
    */
-  it('Property 11: shouldBlockProactiveMessage 和 shouldBlockIncomingCall 在非 none 狀態回傳 true', () => {
+  it('Property 11: shouldBlockProactiveMessage 僅在 char-blocked-user 時回傳 true', () => {
     fc.assert(
       fc.property(
         fc.constantFrom<BlockState['status']>('none', 'user-blocked-char', 'char-blocked-user'),
@@ -350,7 +383,7 @@ describe('BlockService 屬性測試', () => {
             expect(shouldBlockProactiveMessage(chat)).toBe(false)
             expect(shouldBlockIncomingCall(chat)).toBe(false)
           } else {
-            expect(shouldBlockProactiveMessage(chat)).toBe(true)
+            expect(shouldBlockProactiveMessage(chat)).toBe(status === 'char-blocked-user')
             expect(shouldBlockIncomingCall(chat)).toBe(true)
           }
         }

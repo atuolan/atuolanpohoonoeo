@@ -5742,12 +5742,13 @@ async function triggerAIResponse(options?: {
               const blockSvc = BlockService.getInstance();
               for (const action of parsed.charActions) {
                 if (action.action === "block-user") {
-                  await blockSvc.handleCharacterBlock(
+                  const didBlock = await blockSvc.handleCharacterBlock(
                     currentChatId.value,
                     action.reason || "",
                   );
                   // 先從 DB 讀取封鎖時間，再更新 UI 狀態（避免 v-memo 重渲染時 blockedAt 還是舊值）
                   const updatedChat = await refreshBlockStateFromStorage();
+                  if (!didBlock) continue;
                   currentBlockedAt.value = updatedChat?.blockState?.blockedAt ?? Date.now();
                   isBlockedByChar.value = true;
                   // 插入封鎖系統通知訊息（冪等：避免重複插入）

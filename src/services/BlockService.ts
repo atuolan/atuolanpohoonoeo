@@ -41,6 +41,32 @@ function sanitizeFriendRequests(requests: FriendRequestType[]): FriendRequestTyp
   return result
 }
 
+function normalizeConflictingActiveBlocks(chat: Chat, now: number): boolean {
+  const blockState = chat.blockState
+  if (!blockState) return false
+
+  const activeUserBlock = [...blockState.history]
+    .reverse()
+    .find(h => h.direction === 'user-blocked-char' && h.unblockedAt === null)
+  const activeCharBlock = [...blockState.history]
+    .reverse()
+    .find(h => h.direction === 'char-blocked-user' && h.unblockedAt === null)
+
+  if (!activeUserBlock || !activeCharBlock || blockState.status !== 'char-blocked-user') {
+    return false
+  }
+
+  activeCharBlock.unblockedAt = now
+  activeCharBlock.unblockedBy = 'user'
+  blockState.status = 'user-blocked-char'
+  blockState.reason = activeUserBlock.reason
+  blockState.blockedAt = activeUserBlock.blockedAt
+  blockState.nextFriendRequestAt = blockState.nextFriendRequestAt ?? now
+  chat.blockState = blockState
+  chat.updatedAt = now
+  return true
+}
+
 /**
  * 冷卻時間遞增策略
  * 第 0 次拒絕後：10 分鐘
@@ -146,6 +172,12 @@ class BlockService {
   async checkBlockedCharacters(): Promise<void> {
     const now = Date.now()
     const allChats = await db.getAll<Chat>(DB_STORES.CHATS)
+    for (const chat of allChats) {
+      if (normalizeConflictingActiveBlocks(chat, now)) {
+        await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)))
+        console.log(`[BlockService] 已修復角色 ${chat.characterId} 的衝突封鎖狀態`)
+      }
+    }
     const blockedChats = allChats.filter(c => c.blockState?.status === 'user-blocked-char')
 
     for (const chat of blockedChats) {
@@ -162,28 +194,32 @@ class BlockService {
         console.log(`[BlockService] 已清理 ${chat.characterId} 的 ${before - blockState.friendRequests.length} 筆重複好友申請記錄`)
       }
 
-      // 跳過已有 pending 申請的
-      if (blockState.friendRequests.some(r => r.result === 'pending')) continue
-
       // 檢查冷卻是否到期
       const nextAt = blockState.nextFriendRequestAt ?? blockState.blockedAt ?? 0
       if (now < nextAt) continue
 
-      // 建立角色向用戶的好友申請記錄（AI 生成由呼叫端處理）
-      const request: FriendRequestType = {
-        id: crypto.randomUUID(),
-        direction: 'char-to-user',
-        message: '',
-        createdAt: now,
-        result: 'pending',
+      const hasPendingRequest = blockState.friendRequests.some(r => r.result === 'pending')
+      let createdFriendRequest = false
+
+      if (!hasPendingRequest) {
+        // 建立角色向用戶的好友申請記錄（AI 生成由呼叫端處理）
+        const request: FriendRequestType = {
+          id: crypto.randomUUID(),
+          direction: 'char-to-user',
+          message: '',
+          createdAt: now,
+          result: 'pending',
+        }
+
+        blockState.friendRequests.push(request)
+        createdFriendRequest = true
+        console.log(`[BlockService] 已為角色 ${chat.characterId} 建立好友申請記錄`)
       }
 
-      blockState.friendRequests.push(request)
+      blockState.nextFriendRequestAt = now + BLOCK_POLL_INTERVAL_MS
       chat.blockState = blockState
       chat.updatedAt = now
       await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)))
-
-      console.log(`[BlockService] 已為角色 ${chat.characterId} 建立好友申請記錄`)
 
       // 觸發角色主動發一條訊息（封鎖後的「敲門」訊息，獨立於 ProactiveMessageService）
       try {
@@ -196,24 +232,26 @@ class BlockService {
       }
 
       // 發送好友申請通知，讓用戶知道角色來敲門了
-      try {
-        const { useNotificationStore } = await import('@/stores/notification')
-        const notificationStore = useNotificationStore()
-        const character = await db.get<{ id: string; avatar?: string; nickname?: string; data?: { name?: string } }>(
-          DB_STORES.CHARACTERS, chat.characterId
-        )
-        const charName = character?.nickname || character?.data?.name || '角色'
-        notificationStore.addNotification({
-          type: 'friend_request',
-          title: '好友申請',
-          message: `${charName} 想和你重新成為好友`,
-          characterId: chat.characterId,
-          characterAvatar: character?.avatar,
-          chatId: chat.id,
-          priority: 'high',
-        })
-      } catch (notifErr) {
-        console.warn('[BlockService] 好友申請通知發送失敗:', notifErr)
+      if (createdFriendRequest) {
+        try {
+          const { useNotificationStore } = await import('@/stores/notification')
+          const notificationStore = useNotificationStore()
+          const character = await db.get<{ id: string; avatar?: string; nickname?: string; data?: { name?: string } }>(
+            DB_STORES.CHARACTERS, chat.characterId
+          )
+          const charName = character?.nickname || character?.data?.name || '角色'
+          notificationStore.addNotification({
+            type: 'friend_request',
+            title: '好友申請',
+            message: `${charName} 想和你重新成為好友`,
+            characterId: chat.characterId,
+            characterAvatar: character?.avatar,
+            chatId: chat.id,
+            priority: 'high',
+          })
+        } catch (notifErr) {
+          console.warn('[BlockService] 好友申請通知發送失敗:', notifErr)
+        }
       }
     }
   }
@@ -341,11 +379,17 @@ class BlockService {
   // ============================================================
 
   /** 角色封鎖用戶（由 ResponseParser 觸發） */
-  async handleCharacterBlock(chatId: string, reason: string): Promise<void> {
+  async handleCharacterBlock(chatId: string, reason: string): Promise<boolean> {
     const chat = await db.get<Chat>(DB_STORES.CHATS, chatId)
     if (!chat) throw new Error('Chat not found')
 
     const blockState = chat.blockState ?? createDefaultBlockState()
+    if (blockState.status === 'user-blocked-char') {
+      console.log('[BlockService] 用戶已封鎖角色，忽略角色反向封鎖')
+      return false
+    }
+    if (blockState.status === 'char-blocked-user') return false
+
     const now = Date.now()
 
     // 更新封鎖狀態
@@ -380,6 +424,7 @@ class BlockService {
       chatId,
       priority: 'high',
     })
+    return true
   }
 
   /** 角色解除封鎖用戶 */
