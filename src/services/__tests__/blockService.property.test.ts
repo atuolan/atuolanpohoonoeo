@@ -13,6 +13,7 @@ import { createDefaultBlockState } from '@/types/block'
 import type { BlockState, BlockDirection } from '@/types/block'
 import type { Chat } from '@/types/chat'
 import { db, DB_STORES } from '@/db/database'
+import { saveChatMetadata } from '@/storage/chatStorage'
 
 /** 建立測試用 Chat 物件 */
 function createTestChat(overrides?: Partial<Chat>): Chat {
@@ -124,6 +125,39 @@ describe('BlockService 屬性測試', () => {
       expect(updated!.blockState!.history).toHaveLength(1)
       expect(updated!.blockState!.history[0].direction).toBe('user-blocked-char')
       expect(updated!.blockState!.history[0].unblockedAt).toBeNull()
+    })
+
+    it('舊的 Chat metadata 不應覆蓋 DB 中較新的封鎖狀態', async () => {
+      const now = Date.now()
+      const chat = createTestChat({
+        blockState: {
+          ...createDefaultBlockState(),
+          status: 'user-blocked-char',
+          blockedAt: now,
+          reason: '用戶主動封鎖',
+          history: [{
+            id: crypto.randomUUID(),
+            direction: 'user-blocked-char',
+            reason: '用戶主動封鎖',
+            blockedAt: now,
+            unblockedAt: null,
+          }],
+        },
+      })
+      await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)))
+
+      const staleChat = {
+        ...chat,
+        updatedAt: now + 1000,
+        blockState: undefined,
+      }
+
+      await saveChatMetadata(staleChat)
+
+      const updated = await db.get<Chat>(DB_STORES.CHATS, chat.id)
+      expect(updated!.blockState!.status).toBe('user-blocked-char')
+      expect(updated!.blockState!.blockedAt).toBe(now)
+      expect(updated!.blockState!.history).toHaveLength(1)
     })
   })
 

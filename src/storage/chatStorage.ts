@@ -11,6 +11,23 @@ import {
   loadMessages,
 } from "@/storage/chatMessageStorage";
 import type { Chat, ChatMessage } from "@/types/chat";
+import type { BlockState } from "@/types/block";
+
+function getBlockStateEventTime(blockState: BlockState | undefined): number {
+  if (!blockState) return 0;
+
+  let latest = blockState.blockedAt || 0;
+  for (const entry of blockState.history || []) {
+    latest = Math.max(latest, entry.blockedAt || 0, entry.unblockedAt || 0);
+  }
+  for (const request of blockState.friendRequests || []) {
+    latest = Math.max(latest, request.createdAt || 0, request.resolvedAt || 0);
+  }
+  for (const order of blockState.apologyFoodOrders || []) {
+    latest = Math.max(latest, order.createdAt || 0, order.estimatedDeliveryAt || 0, order.deliveredAt || 0);
+  }
+  return latest;
+}
 
 export async function loadChatById(chatId: string): Promise<Chat | undefined> {
   await db.init();
@@ -38,7 +55,15 @@ export async function loadChatsByCharacter(
 
 export async function saveChatMetadata(chat: Chat): Promise<void> {
   await db.init();
-  await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
+  const nextChat = JSON.parse(JSON.stringify(chat));
+  const existing = await db.get<Chat>(DB_STORES.CHATS, chat.id);
+  if (
+    existing?.blockState &&
+    getBlockStateEventTime(existing.blockState) > getBlockStateEventTime(nextChat.blockState)
+  ) {
+    nextChat.blockState = existing.blockState;
+  }
+  await db.put(DB_STORES.CHATS, nextChat);
   scheduleSelfHostedAutoSync();
 }
 

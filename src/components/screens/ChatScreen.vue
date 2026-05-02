@@ -1052,6 +1052,10 @@ async function refreshBlockStateFromStorage(): Promise<Chat | undefined> {
   if (updatedChat && currentChatData.value) {
     currentChatData.value.blockState = updatedChat.blockState;
   }
+  const status = updatedChat?.blockState?.status ?? "none";
+  isCharBlocked.value = status === "user-blocked-char";
+  isBlockedByChar.value = status === "char-blocked-user";
+  currentBlockedAt.value = updatedChat?.blockState?.blockedAt ?? 0;
   return updatedChat;
 }
 
@@ -6689,11 +6693,12 @@ async function handleStreamingClose() {
             const blockSvc = BlockService.getInstance();
             for (const action of parsed.charActions) {
               if (action.action === "block-user") {
-                await blockSvc.handleCharacterBlock(
+                const didBlock = await blockSvc.handleCharacterBlock(
                   currentChatId.value,
                   action.reason || "",
                 );
                 const updatedChat = await refreshBlockStateFromStorage();
+                if (!didBlock) continue;
                 currentBlockedAt.value = updatedChat?.blockState?.blockedAt ?? Date.now();
                 isBlockedByChar.value = true;
                 const alreadyHasBlockNotif3 = messages.value.some(
@@ -8605,6 +8610,7 @@ async function saveChatImmediate() {
     _saveChatTimer = null;
   }
   await _saveChatImpl();
+  await refreshBlockStateFromStorage();
 }
 
 // ===== 電話通話結束處理 =====
