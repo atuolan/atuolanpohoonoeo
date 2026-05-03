@@ -786,7 +786,19 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
       const client = new OpenAICompatibleClient(phoneCallDecisionConfig.api);
       const response = await client.generate({
         messages: [{ role: "user", content: decisionPrompt }],
-        settings: { maxContextLength: 32768, maxResponseLength: 32768, temperature: 0.7, topP: 1, topK: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1, stopSequences: [], streaming: false, useStreamingWindow: false },
+        settings: {
+          maxContextLength: phoneCallDecisionConfig.generation.maxContextLength,
+          maxResponseLength: phoneCallDecisionConfig.generation.maxTokens,
+          temperature: phoneCallDecisionConfig.generation.temperature,
+          topP: phoneCallDecisionConfig.generation.topP,
+          topK: 0,
+          frequencyPenalty: phoneCallDecisionConfig.generation.frequencyPenalty,
+          presencePenalty: phoneCallDecisionConfig.generation.presencePenalty,
+          repetitionPenalty: 1,
+          stopSequences: [],
+          streaming: false,
+          useStreamingWindow: false,
+        },
         apiSettings: phoneCallDecisionConfig.api,
       });
 
