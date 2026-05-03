@@ -39,7 +39,78 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 const STORAGE_KEY = "promptManagerConfig";
-const PROMPT_MANAGER_CONFIG_VERSION = 3;
+const PROMPT_MANAGER_CONFIG_VERSION = 4;
+
+function dedupeById<T extends { identifier: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of items) {
+    if (seen.has(item.identifier)) continue;
+    seen.add(item.identifier);
+    out.push(item);
+  }
+  return out;
+}
+
+function dedupeOrderInPlace<T extends { identifier: string }>(
+  arr: T[] | undefined | null,
+): void {
+  if (!arr) return;
+  const deduped = dedupeById(arr);
+  if (deduped.length !== arr.length) {
+    arr.splice(0, arr.length, ...deduped);
+  }
+}
+
+/**
+ * 將 defaults 中缺失的條目補進 stored，並盡量保持 defaults 的相對位置。
+ * 規則：
+ * 1. 已被使用者刪除（在 deletedIds 中）→ 略過
+ * 2. 已存在於 stored → 略過
+ * 3. 否則向前尋找 defaults 中已存在於 stored 的「前鄰居」，插入到其後
+ * 4. 找不到前鄰居則向後尋找「後鄰居」，插入到其前
+ * 5. 兩者都沒有則 push 到尾端
+ */
+function mergeOrderPreservingDefaults<T extends { identifier: string }>(
+  stored: T[],
+  defaults: T[] | undefined | null,
+  deletedIds: string[] | undefined,
+): void {
+  if (!defaults || defaults.length === 0) return;
+  const deleted = new Set(deletedIds ?? []);
+  for (let i = 0; i < defaults.length; i++) {
+    const defEntry = defaults[i];
+    if (deleted.has(defEntry.identifier)) continue;
+    if (stored.some((o) => o.identifier === defEntry.identifier)) continue;
+
+    // 向前找前鄰居
+    let inserted = false;
+    for (let j = i - 1; j >= 0; j--) {
+      const anchorId = defaults[j].identifier;
+      const idx = stored.findIndex((o) => o.identifier === anchorId);
+      if (idx !== -1) {
+        stored.splice(idx + 1, 0, defEntry);
+        inserted = true;
+        break;
+      }
+    }
+    if (inserted) continue;
+
+    // 向後找後鄰居
+    for (let j = i + 1; j < defaults.length; j++) {
+      const anchorId = defaults[j].identifier;
+      const idx = stored.findIndex((o) => o.identifier === anchorId);
+      if (idx !== -1) {
+        stored.splice(idx, 0, defEntry);
+        inserted = true;
+        break;
+      }
+    }
+    if (inserted) continue;
+
+    stored.push(defEntry);
+  }
+}
 
 function clonePromptOrderEntry(entry: PromptOrderEntry): PromptOrderEntry {
   return {
@@ -456,27 +527,18 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     }
 
     // 確保順序中包含所有提示詞（跳過用戶主動刪除的）
-    for (const defaultOrder of defaults.globalPromptOrder) {
-      if (stored.deletedDefaultPromptIds!.includes(defaultOrder.identifier)) {
-        continue;
-      }
-      if (
-        !stored.globalPromptOrder.find(
-          (o) => o.identifier === defaultOrder.identifier,
-        )
-      ) {
-        // 嘗試插入到 weatherInfo 之後（保持語意相鄰）
-        if (defaultOrder.identifier === "characterWorldContext") {
-          const weatherIdx = stored.globalPromptOrder.findIndex(
-            (o) => o.identifier === "weatherInfo",
-          );
-          if (weatherIdx !== -1) {
-            stored.globalPromptOrder.splice(weatherIdx + 1, 0, defaultOrder);
-            continue;
-          }
-        }
-        stored.globalPromptOrder.push(defaultOrder);
-      }
+    // 缺項補入時依 defaults 的相對位置插入，避免新增條目被一律推到尾端
+    mergeOrderPreservingDefaults(
+      stored.globalPromptOrder,
+      defaults.globalPromptOrder,
+      stored.deletedDefaultPromptIds,
+    );
+    for (const charConfig of Object.values(stored.characterConfigs)) {
+      mergeOrderPreservingDefaults(
+        charConfig.promptOrder,
+        defaults.globalPromptOrder,
+        stored.deletedDefaultPromptIds,
+      );
     }
 
     if (storedVersion < PROMPT_MANAGER_CONFIG_VERSION) {
@@ -510,18 +572,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     if (!stored.diaryPromptOrder) {
       stored.diaryPromptOrder = defaults.diaryPromptOrder;
     } else {
-      // 合併新增的日記順序（跳過用戶主動刪除的）
-      for (const defaultOrder of defaults.diaryPromptOrder || []) {
-        if (stored.deletedDiaryPromptIds!.includes(defaultOrder.identifier))
-          continue;
-        if (
-          !stored.diaryPromptOrder.find(
-            (o) => o.identifier === defaultOrder.identifier,
-          )
-        ) {
-          stored.diaryPromptOrder.push(defaultOrder);
-        }
-      }
+      mergeOrderPreservingDefaults(
+        stored.diaryPromptOrder,
+        defaults.diaryPromptOrder,
+        stored.deletedDiaryPromptIds,
+      );
     }
 
     // 確保總結提示詞存在
@@ -550,18 +605,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     if (!stored.summaryPromptOrder) {
       stored.summaryPromptOrder = defaults.summaryPromptOrder;
     } else {
-      // 合併新增的總結順序（跳過用戶主動刪除的）
-      for (const defaultOrder of defaults.summaryPromptOrder || []) {
-        if (stored.deletedSummaryPromptIds!.includes(defaultOrder.identifier))
-          continue;
-        if (
-          !stored.summaryPromptOrder.find(
-            (o) => o.identifier === defaultOrder.identifier,
-          )
-        ) {
-          stored.summaryPromptOrder.push(defaultOrder);
-        }
-      }
+      mergeOrderPreservingDefaults(
+        stored.summaryPromptOrder,
+        defaults.summaryPromptOrder,
+        stored.deletedSummaryPromptIds,
+      );
     }
 
     // 確保重要事件提示詞存在
@@ -590,18 +638,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     if (!stored.eventsPromptOrder) {
       stored.eventsPromptOrder = defaults.eventsPromptOrder;
     } else {
-      // 合併新增的重要事件順序（跳過用戶主動刪除的）
-      for (const defaultOrder of defaults.eventsPromptOrder || []) {
-        if (stored.deletedEventsPromptIds!.includes(defaultOrder.identifier))
-          continue;
-        if (
-          !stored.eventsPromptOrder.find(
-            (o) => o.identifier === defaultOrder.identifier,
-          )
-        ) {
-          stored.eventsPromptOrder.push(defaultOrder);
-        }
-      }
+      mergeOrderPreservingDefaults(
+        stored.eventsPromptOrder,
+        defaults.eventsPromptOrder,
+        stored.deletedEventsPromptIds,
+      );
     }
 
     // 確保噗浪發文提示詞存在
@@ -630,18 +671,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     if (!stored.plurkPostPromptOrder) {
       stored.plurkPostPromptOrder = defaults.plurkPostPromptOrder;
     } else {
-      // 合併新增的噗浪發文順序（跳過用戶主動刪除的）
-      for (const defaultOrder of defaults.plurkPostPromptOrder || []) {
-        if (stored.deletedPlurkPostPromptIds!.includes(defaultOrder.identifier))
-          continue;
-        if (
-          !stored.plurkPostPromptOrder.find(
-            (o) => o.identifier === defaultOrder.identifier,
-          )
-        ) {
-          stored.plurkPostPromptOrder.push(defaultOrder);
-        }
-      }
+      mergeOrderPreservingDefaults(
+        stored.plurkPostPromptOrder,
+        defaults.plurkPostPromptOrder,
+        stored.deletedPlurkPostPromptIds,
+      );
     }
 
     // 確保噗浪評論提示詞存在
@@ -671,20 +705,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     if (!stored.plurkCommentPromptOrder) {
       stored.plurkCommentPromptOrder = defaults.plurkCommentPromptOrder;
     } else {
-      // 合併新增的噗浪評論順序（跳過用戶主動刪除的）
-      for (const defaultOrder of defaults.plurkCommentPromptOrder || []) {
-        if (
-          stored.deletedPlurkCommentPromptIds!.includes(defaultOrder.identifier)
-        )
-          continue;
-        if (
-          !stored.plurkCommentPromptOrder.find(
-            (o) => o.identifier === defaultOrder.identifier,
-          )
-        ) {
-          stored.plurkCommentPromptOrder.push(defaultOrder);
-        }
-      }
+      mergeOrderPreservingDefaults(
+        stored.plurkCommentPromptOrder,
+        defaults.plurkCommentPromptOrder,
+        stored.deletedPlurkCommentPromptIds,
+      );
     }
 
     // 確保面對面模式提示詞存在
@@ -723,33 +748,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     if (!stored.faceToFacePromptOrder) {
       stored.faceToFacePromptOrder = defaults.faceToFacePromptOrder;
     } else {
-      // 合併新增的面對面模式順序（跳過用戶主動刪除的）
-      for (const defaultOrder of defaults.faceToFacePromptOrder || []) {
-        if (
-          stored.deletedFaceToFacePromptIds!.includes(defaultOrder.identifier)
-        )
-          continue;
-        if (
-          !stored.faceToFacePromptOrder.find(
-            (o) => o.identifier === defaultOrder.identifier,
-          )
-        ) {
-          if (defaultOrder.identifier === "f2fCharacterWorldContext") {
-            const weatherIdx = stored.faceToFacePromptOrder.findIndex(
-              (o) => o.identifier === "f2fWeatherInfo",
-            );
-            if (weatherIdx !== -1) {
-              stored.faceToFacePromptOrder.splice(
-                weatherIdx + 1,
-                0,
-                defaultOrder,
-              );
-              continue;
-            }
-          }
-          stored.faceToFacePromptOrder.push(defaultOrder);
-        }
-      }
+      mergeOrderPreservingDefaults(
+        stored.faceToFacePromptOrder,
+        defaults.faceToFacePromptOrder,
+        stored.deletedFaceToFacePromptIds,
+      );
     }
 
     // 確保群聊模式提示詞存在
@@ -786,31 +789,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     if (!stored.groupChatPromptOrder) {
       stored.groupChatPromptOrder = defaults.groupChatPromptOrder;
     } else {
-      // 合併新增的群聊模式順序（跳過用戶主動刪除的）
-      for (const defaultOrder of defaults.groupChatPromptOrder || []) {
-        if (stored.deletedGroupChatPromptIds!.includes(defaultOrder.identifier))
-          continue;
-        if (
-          !stored.groupChatPromptOrder.find(
-            (o) => o.identifier === defaultOrder.identifier,
-          )
-        ) {
-          if (defaultOrder.identifier === "gcCharacterWorldContext") {
-            const weatherIdx = stored.groupChatPromptOrder.findIndex(
-              (o) => o.identifier === "gcWeatherInfo",
-            );
-            if (weatherIdx !== -1) {
-              stored.groupChatPromptOrder.splice(
-                weatherIdx + 1,
-                0,
-                defaultOrder,
-              );
-              continue;
-            }
-          }
-          stored.groupChatPromptOrder.push(defaultOrder);
-        }
-      }
+      mergeOrderPreservingDefaults(
+        stored.groupChatPromptOrder,
+        defaults.groupChatPromptOrder,
+        stored.deletedGroupChatPromptIds,
+      );
     }
 
     if (
@@ -857,6 +840,29 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
           stored.prompts[confirmIdx].content = defaultConfirm.content;
         }
       }
+    }
+
+    // 去除重複 identifier（保留首筆），覆蓋舊版本可能寫入的重複資料
+    dedupeOrderInPlace(stored.prompts);
+    dedupeOrderInPlace(stored.globalPromptOrder);
+    dedupeOrderInPlace(stored.faceToFacePrompts);
+    dedupeOrderInPlace(stored.faceToFacePromptOrder);
+    dedupeOrderInPlace(stored.groupChatPrompts);
+    dedupeOrderInPlace(stored.groupChatPromptOrder);
+    dedupeOrderInPlace(stored.diaryPrompts);
+    dedupeOrderInPlace(stored.diaryPromptOrder);
+    dedupeOrderInPlace(stored.summaryPrompts);
+    dedupeOrderInPlace(stored.summaryPromptOrder);
+    dedupeOrderInPlace(stored.eventsPrompts);
+    dedupeOrderInPlace(stored.eventsPromptOrder);
+    dedupeOrderInPlace(stored.plurkPostPrompts);
+    dedupeOrderInPlace(stored.plurkPostPromptOrder);
+    dedupeOrderInPlace(stored.plurkCommentPrompts);
+    dedupeOrderInPlace(stored.plurkCommentPromptOrder);
+    dedupeOrderInPlace(stored.batchCommentsPrompts);
+    dedupeOrderInPlace(stored.batchCommentsPromptOrder);
+    for (const charConfig of Object.values(stored.characterConfigs)) {
+      dedupeOrderInPlace(charConfig.promptOrder);
     }
 
     stored.version = PROMPT_MANAGER_CONFIG_VERSION;

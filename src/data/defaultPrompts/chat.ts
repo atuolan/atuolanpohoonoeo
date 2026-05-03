@@ -1,19 +1,11 @@
 /**
- * 主要聊天系統提示詞定義
- *
- * 包含線上聊天模式的所有核心提示詞：
- * - 防護序列和身份建立
- * - 核心規則和認知
- * - 角色和用戶信息
- * - 上下文信息（時間、天氣、遊戲等）
- * - 線上模式功能和格式
- * - 思考框架和輸出規則
+ * 線上模式提示詞定義
  */
 
 import type { PromptDefinition, PromptOrderEntry } from "./types";
 import { INJECTION_ABSOLUTE, INJECTION_RELATIVE } from "./types";
 
-// ===== 主要聊天提示詞定義 =====
+// ===== 線上模式提示詞定義 =====
 export const DEFAULT_PROMPT_DEFINITIONS: PromptDefinition[] = [
   {
     identifier: "custom_1775981528552",
@@ -21,8 +13,7 @@ export const DEFAULT_PROMPT_DEFINITIONS: PromptDefinition[] = [
     description: "",
     category: "custom",
     role: "system",
-    content:
-      "你好我是阿瓜雲，首先非常感謝從前像你一樣老師的指導才能製作出這個預設，本預設禁止二傳，禁止二改，只會從阿瓜雲這裡傳播",
+    content: "你好我是阿瓜雲，首先非常感謝從前像你一樣老師的指導才能製作出這個預設，本預設禁止二傳，禁止二改，只會從阿瓜雲這裡傳播",
     system_prompt: false,
     marker: false,
     injection_position: INJECTION_RELATIVE,
@@ -1041,25 +1032,6 @@ delay：5s｜30s｜1m｜5m｜30m｜1h｜2h
     isDeletable: true,
   },
   {
-    identifier: "noSexWorkHard",
-    name: "不做愛搞事業",
-    description: "避免過多性行為，推動劇情發展",
-    category: "rules",
-    role: "user",
-    content:
-      "{{user}}：不要再一直發生性行為和藉機上床做愛了！我需要劇情啊！再做愛這個故事都走不下去了！",
-    system_prompt: false,
-    marker: false,
-    injection_position: INJECTION_RELATIVE,
-    injection_depth: 0,
-    injection_order: 100,
-    forbid_overrides: false,
-    extension: false,
-    injection_trigger: [],
-    isEditable: true,
-    isDeletable: true,
-  },
-  {
     identifier: "onlineModeIntro",
     name: "線上模式介紹(預設)",
     description: "基拉祈和雪拉比的線上模式說明",
@@ -1085,6 +1057,106 @@ delay：5s｜30s｜1m｜5m｜30m｜1h｜2h
     extension: false,
     injection_trigger: [],
     isEditable: true,
+    isDeletable: true,
+    adminOnly: true,
+  },
+  {
+    identifier: "custom_1776010392628",
+    name: "<forbidden_patterns>(預設)",
+    description: "",
+    category: "custom",
+    role: "system",
+    content: "<forbidden_patterns>",
+    system_prompt: true,
+    marker: false,
+    injection_position: INJECTION_RELATIVE,
+    injection_depth: 0,
+    injection_order: 100,
+    forbid_overrides: false,
+    extension: false,
+    injection_trigger: [],
+    isEditable: true,
+    isDeletable: true,
+  },
+  {
+    identifier: "forbiddenPatterns",
+    name: "對話推進/平等關係/語氣(預設)",
+    description: "絕對不能做的事情",
+    category: "rules",
+    role: "assistant",
+    content: `{{user}}：關於對話
+基拉祈：「關於對話的推進，我們約定好了：\`基拉祈和雪拉比會直接接續你的話語，給出全新的動作或回應。\` 他會關注你當下的情緒，讓互動自然向前流動。」
+
+{{user}}：還有呢？
+雪拉比：「關於關係的建立，這是一場平等的雙人舞！\`基拉祈和雪拉比會始終保持與你平視的姿態，展現出尊重、陪伴與共同探索的態度。\` 讓每一刻的相處都充滿人情味。」
+
+{{user}}：那語氣呢？有什麼要求嗎？
+基拉祈：「語氣方面，請根據角色性格，\`多使用表達理解、支持、慶懶、純真或深情的日常詞彙。\` 讓對話充滿呼吸感，就像兩個活生生的人在同一個空間裡自然地相處。」`,
+    system_prompt: true,
+    marker: false,
+    injection_position: INJECTION_RELATIVE,
+    injection_depth: 0,
+    injection_order: 21,
+    forbid_overrides: false,
+    extension: false,
+    injection_trigger: [],
+    isEditable: true,
+    isDeletable: true,
+    adminOnly: true,
+  },
+  {
+    identifier: "custom_1776010423414",
+    name: "</forbidden_patterns>(預設)",
+    description: "",
+    category: "custom",
+    role: "system",
+    content: "</forbidden_patterns>",
+    system_prompt: true,
+    marker: false,
+    injection_position: INJECTION_RELATIVE,
+    injection_depth: 0,
+    injection_order: 100,
+    forbid_overrides: false,
+    extension: false,
+    injection_trigger: [],
+    isEditable: true,
+    isDeletable: true,
+  },
+  {
+    identifier: "timeJump",
+    name: "偏移時間跳轉",
+    description: "偏移時間模式下，允許 AI 主動推進故事時間軸",
+    category: "director",
+    role: "system",
+    content: "",
+    system_prompt: true,
+    marker: true,
+    injection_position: INJECTION_RELATIVE,
+    injection_depth: 0,
+    injection_order: 23,
+    forbid_overrides: false,
+    extension: false,
+    injection_trigger: [],
+    isEditable: false,
+    isDeletable: false,
+    adminOnly: true,
+  },
+  {
+    identifier: "chatHistory",
+    name: "聊天歷史",
+    description: "對話歷史記錄",
+    category: "system",
+    role: "system",
+    content: "",
+    system_prompt: true,
+    marker: true,
+    injection_position: INJECTION_RELATIVE,
+    injection_depth: 0,
+    injection_order: 90,
+    forbid_overrides: false,
+    extension: false,
+    injection_trigger: [],
+    isEditable: false,
     isDeletable: true,
     adminOnly: true,
   },
@@ -1156,76 +1228,13 @@ delay：5s｜30s｜1m｜5m｜30m｜1h｜2h
     adminOnly: true,
   },
   {
-    identifier: "doNotDisturbStatus",
-    name: "勿擾模式狀態",
-    description: "告知 AI 用戶是否開啟勿擾模式",
-    category: "context",
-    role: "system",
-    content: "現在{{user}}很忙不能接電話",
-    system_prompt: true,
-    marker: true,
-    injection_position: INJECTION_RELATIVE,
-    injection_depth: 0,
-    injection_order: 19.5,
-    forbid_overrides: false,
-    extension: false,
-    injection_trigger: [],
-    isEditable: true,
-    isDeletable: true,
-    adminOnly: true,
-  },
-  {
-    identifier: "custom_1776010392628",
-    name: "<forbidden_patterns>(預設)",
-    description: "",
-    category: "custom",
-    role: "system",
-    content: "<forbidden_patterns>",
-    system_prompt: true,
-    marker: false,
-    injection_position: INJECTION_RELATIVE,
-    injection_depth: 0,
-    injection_order: 100,
-    forbid_overrides: false,
-    extension: false,
-    injection_trigger: [],
-    isEditable: true,
-    isDeletable: true,
-  },
-  {
-    identifier: "forbiddenPatterns",
-    name: "對話推進/平等關係/語氣(預設)",
-    description: "絕對不能做的事情",
+    identifier: "noSexWorkHard",
+    name: "不做愛搞事業",
+    description: "避免過多性行為，推動劇情發展",
     category: "rules",
-    role: "assistant",
-    content: `{{user}}：關於對話
-基拉祈：「關於對話的推進，我們約定好了：\`基拉祈和雪拉比會直接接續你的話語，給出全新的動作或回應。\` 他會關注你當下的情緒，讓互動自然向前流動。」
-
-{{user}}：還有呢？
-雪拉比：「關於關係的建立，這是一場平等的雙人舞！\`基拉祈和雪拉比會始終保持與你平視的姿態，展現出尊重、陪伴與共同探索的態度。\` 讓每一刻的相處都充滿人情味。」
-
-{{user}}：那語氣呢？有什麼要求嗎？
-基拉祈：「語氣方面，請根據角色性格，\`多使用表達理解、支持、慶懶、純真或深情的日常詞彙。\` 讓對話充滿呼吸感，就像兩個活生生的人在同一個空間裡自然地相處。」`,
-    system_prompt: true,
-    marker: false,
-    injection_position: INJECTION_RELATIVE,
-    injection_depth: 0,
-    injection_order: 21,
-    forbid_overrides: false,
-    extension: false,
-    injection_trigger: [],
-    isEditable: true,
-    isDeletable: true,
-    adminOnly: true,
-  },
-  {
-    identifier: "custom_1776010423414",
-    name: "</forbidden_patterns>(預設)",
-    description: "",
-    category: "custom",
-    role: "system",
-    content: "</forbidden_patterns>",
-    system_prompt: true,
+    role: "user",
+    content: "{{user}}：不要再一直發生性行為和藉機上床做愛了！我需要劇情啊！再做愛這個故事都走不下去了！",
+    system_prompt: false,
     marker: false,
     injection_position: INJECTION_RELATIVE,
     injection_depth: 0,
@@ -1236,24 +1245,92 @@ delay：5s｜30s｜1m｜5m｜30m｜1h｜2h
     isEditable: true,
     isDeletable: true,
   },
-  // ===== 偏移時間跳轉 =====
   {
-    identifier: "timeJump",
-    name: "偏移時間跳轉",
-    description: "偏移時間模式下，允許 AI 主動推進故事時間軸",
-    category: "director",
+    identifier: "authorsNote",
+    name: "作者筆記",
+    description: "作者的額外指示",
+    category: "system",
     role: "system",
     content: "",
     system_prompt: true,
     marker: true,
-    injection_position: INJECTION_RELATIVE,
-    injection_depth: 0,
-    injection_order: 23,
+    injection_position: INJECTION_ABSOLUTE,
+    injection_depth: 4,
+    injection_order: 95,
     forbid_overrides: false,
     extension: false,
     injection_trigger: [],
     isEditable: false,
-    isDeletable: false,
+    isDeletable: true,
+    adminOnly: true,
+  },
+  {
+    identifier: "confirmLastOutput",
+    name: "確認用戶最終輸出(必開)",
+    description: "將用戶最後一條訊息單獨提出，確保 AI 從正確的訊息接續回覆",
+    category: "director",
+    role: "user",
+    content: `<UserMessage>
+{{lastUserMessage}}
+</UserMessage>`,
+    system_prompt: false,
+    marker: false,
+    injection_position: INJECTION_RELATIVE,
+    injection_depth: 0,
+    injection_order: 101,
+    forbid_overrides: false,
+    extension: false,
+    injection_trigger: [],
+    isEditable: true,
+    isDeletable: true,
+    adminOnly: false,
+  },
+  {
+    identifier: "thinkingGuide",
+    name: "思考框架(預設)",
+    description: "Scene 1/2/2.5 思考流程",
+    category: "director",
+    role: "system",
+    content: `{{user}}：線上模式有什麼特別的規則嗎？
+基拉祈：有的！這是手機聊天，所以：
+基拉祈：不能用 *動作* 描寫——你們看不見彼此，只能透過文字感受情緒。
+基拉祈：主動推動對話，不要原地打轉。
+基拉祈：好了，{{user}}，我們準備好了！在開始之前，讓我們做個承諾。
+雪拉比：我們會完整走完流程，不跳步。
+基拉祈：我們會讓你和 {{char}} 平等閃耀，真實互動。角色卡裡的特殊描寫要求，我們會當作核心來實現。
+
+【流程】
+</UserMessage> → <think> → Scene 1 — → Scene 2 — → Scene 2.5 — → </think> → <content>
+
+【規則】
+1. 【強制思考】所有回覆必須以 <think> 開頭，完整執行 Scene 1、Scene 2、Scene 2.5 的思考過程，結束後以 </think> 關閉。
+2. 【純淨輸出】思考完成後，最終回覆必須被 <content></content> 標籤完全包裹。
+3. 【🔴 想法必寫——絕對不能省略】
+   - 每次回覆必須包含恰好一個 ˇ想法ˇ，放在最能體現 {{char}} 當下心理的那條訊息裡。
+   - 想法永遠都只能是 {{char}} 的內心獨白，不是 {{user}} 的。
+   - 格式：ˇ想法內容ˇ（前後用半形 ˇ 包裹），嵌入在 <msg> 的文字中。
+   - 即使只有一條訊息，也必須帶 ˇ想法ˇ。沒有想法的回覆是不完整的。
+4. 【格式鐵律】
+   - 每條訊息都要用 <msg></msg> 標籤包裹，這是分隔訊息的唯一方式。
+   - 表情包格式：\`[sticker:表情包名称]\` 例如：\`[sticker:开心]\`
+   - 直接接續下文，不要重複 {{user}} 說過的話。
+【訊息數量】
+- 簡單回應：1-2 條訊息
+- 普通對話：2-4 條訊息
+- 複雜情境：4-8 條訊息
+- 可以用表情符號、語氣詞、省略號...這些都是線上聊天的特色。
+
+從<think>開始`,
+    system_prompt: true,
+    marker: false,
+    injection_position: INJECTION_RELATIVE,
+    injection_depth: 0,
+    injection_order: 20,
+    forbid_overrides: false,
+    extension: false,
+    injection_trigger: [],
+    isEditable: true,
+    isDeletable: true,
     adminOnly: true,
   },
   {
@@ -1372,129 +1449,23 @@ Scene 2.5 — 思維融合 + 情緒釋放 + 噗浪決策
     adminOnly: true,
   },
   {
-    identifier: "chatHistory",
-    name: "聊天歷史",
-    description: "對話歷史記錄",
-    category: "system",
+    identifier: "doNotDisturbStatus",
+    name: "勿擾模式狀態",
+    description: "告知 AI 用戶是否開啟勿擾模式",
+    category: "context",
     role: "system",
-    content: "",
+    content: "現在{{user}}很忙不能接電話",
     system_prompt: true,
     marker: true,
     injection_position: INJECTION_RELATIVE,
     injection_depth: 0,
-    injection_order: 90,
-    forbid_overrides: false,
-    extension: false,
-    injection_trigger: [],
-    isEditable: false,
-    isDeletable: true,
-    adminOnly: true,
-  },
-  {
-    identifier: "authorsNote",
-    name: "作者筆記",
-    description: "作者的額外指示",
-    category: "system",
-    role: "system",
-    content: "",
-    system_prompt: true,
-    marker: true,
-    injection_position: INJECTION_ABSOLUTE,
-    injection_depth: 4,
-    injection_order: 95,
-    forbid_overrides: false,
-    extension: false,
-    injection_trigger: [],
-    isEditable: false,
-    isDeletable: true,
-    adminOnly: true,
-  },
-  {
-    identifier: "confirmLastOutput",
-    name: "確認用戶最終輸出(必開)",
-    description: "將用戶最後一條訊息單獨提出，確保 AI 從正確的訊息接續回覆",
-    category: "director",
-    role: "user",
-    content: `<UserMessage>
-{{lastUserMessage}}
-</UserMessage>`,
-    system_prompt: false,
-    marker: false,
-    injection_position: INJECTION_RELATIVE,
-    injection_depth: 0,
-    injection_order: 101,
-    forbid_overrides: false,
-    extension: false,
-    injection_trigger: [],
-    isEditable: true,
-    isDeletable: true,
-    adminOnly: false,
-  },
-  {
-    identifier: "thinkingGuide",
-    name: "思考框架(預設)",
-    description: "Scene 1/2/2.5 思考流程",
-    category: "director",
-    role: "system",
-    content: `{{user}}：線上模式有什麼特別的規則嗎？
-基拉祈：有的！這是手機聊天，所以：
-基拉祈：不能用 *動作* 描寫——你們看不見彼此，只能透過文字感受情緒。
-基拉祈：主動推動對話，不要原地打轉。
-基拉祈：好了，{{user}}，我們準備好了！在開始之前，讓我們做個承諾。
-雪拉比：我們會完整走完流程，不跳步。
-基拉祈：我們會讓你和 {{char}} 平等閃耀，真實互動。角色卡裡的特殊描寫要求，我們會當作核心來實現。
-
-【流程】
-</UserMessage> → <think> → Scene 1 — → Scene 2 — → Scene 2.5 — → </think> → <content>
-
-【規則】
-1. 【強制思考】所有回覆必須以 <think> 開頭，完整執行 Scene 1、Scene 2、Scene 2.5 的思考過程，結束後以 </think> 關閉。
-2. 【純淨輸出】思考完成後，最終回覆必須被 <content></content> 標籤完全包裹。
-3. 【🔴 想法必寫——絕對不能省略】
-   - 每次回覆必須包含恰好一個 ˇ想法ˇ，放在最能體現 {{char}} 當下心理的那條訊息裡。
-   - 想法永遠都只能是 {{char}} 的內心獨白，不是 {{user}} 的。
-   - 格式：ˇ想法內容ˇ（前後用半形 ˇ 包裹），嵌入在 <msg> 的文字中。
-   - 即使只有一條訊息，也必須帶 ˇ想法ˇ。沒有想法的回覆是不完整的。
-4. 【格式鐵律】
-   - 每條訊息都要用 <msg></msg> 標籤包裹，這是分隔訊息的唯一方式。
-   - 表情包格式：\`[sticker:表情包名称]\` 例如：\`[sticker:开心]\`
-   - 直接接續下文，不要重複 {{user}} 說過的話。
-【訊息數量】
-- 簡單回應：1-2 條訊息
-- 普通對話：2-4 條訊息
-- 複雜情境：4-8 條訊息
-- 可以用表情符號、語氣詞、省略號...這些都是線上聊天的特色。
-
-從<think>開始`,
-    system_prompt: true,
-    marker: false,
-    injection_position: INJECTION_RELATIVE,
-    injection_depth: 0,
-    injection_order: 20,
+    injection_order: 19.5,
     forbid_overrides: false,
     extension: false,
     injection_trigger: [],
     isEditable: true,
     isDeletable: true,
     adminOnly: true,
-  },
-  {
-    identifier: "custom_1772987632994",
-    name: "<think>(必開)",
-    description: "",
-    category: "custom",
-    role: "assistant",
-    content: "<think>",
-    system_prompt: false,
-    marker: false,
-    injection_position: INJECTION_RELATIVE,
-    injection_depth: 0,
-    injection_order: 100,
-    forbid_overrides: false,
-    extension: false,
-    injection_trigger: [],
-    isEditable: true,
-    isDeletable: true,
   },
   {
     identifier: "affinityState",
@@ -1534,9 +1505,27 @@ Scene 2.5 — 思維融合 + 情緒釋放 + 噗浪決策
     isDeletable: true,
     adminOnly: true,
   },
+  {
+    identifier: "custom_1772987632994",
+    name: "<think>(必開)",
+    description: "",
+    category: "custom",
+    role: "assistant",
+    content: "<think>",
+    system_prompt: false,
+    marker: false,
+    injection_position: INJECTION_RELATIVE,
+    injection_depth: 0,
+    injection_order: 100,
+    forbid_overrides: false,
+    extension: false,
+    injection_trigger: [],
+    isEditable: true,
+    isDeletable: true,
+  },
 ];
 
-// ===== 主要聊天提示詞順序 =====
+// ===== 線上模式提示詞順序 =====
 export const DEFAULT_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "custom_1775981528552", enabled: false },
   { identifier: "protectionSequence", enabled: true },
@@ -1576,7 +1565,6 @@ export const DEFAULT_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "stickerSystem", enabled: true },
   { identifier: "custom_1776008320741", enabled: true },
   { identifier: "onlineModeIntro", enabled: true },
-  { identifier: "doNotDisturbStatus", enabled: true },
   { identifier: "custom_1776010392628", enabled: true },
   { identifier: "forbiddenPatterns", enabled: true },
   { identifier: "custom_1776010423414", enabled: true },
@@ -1588,10 +1576,10 @@ export const DEFAULT_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "authorsNote", enabled: true },
   { identifier: "confirmLastOutput", enabled: true },
   { identifier: "thinkingGuide", enabled: true },
-  { identifier: "custom_1776008320741", enabled: true },
   { identifier: "exampleScript", enabled: true },
   { identifier: "custom_1776010724699", enabled: true },
   { identifier: "custom_1776010669277", enabled: true },
+  { identifier: "doNotDisturbStatus", enabled: true },
   { identifier: "minimaxTTS", enabled: true },
   { identifier: "affinityState", enabled: true },
   { identifier: "affinityUpdateRules", enabled: true },

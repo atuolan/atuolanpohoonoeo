@@ -1589,13 +1589,24 @@ function serializePromptContent(content: string): string {
   return JSON.stringify(normalized);
 }
 
+function dedupeById<T extends { identifier: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of items) {
+    if (seen.has(item.identifier)) continue;
+    seen.add(item.identifier);
+    out.push(item);
+  }
+  return out;
+}
+
 function buildPromptDefinitionsBlock(
   prompts: PromptDefinition[],
   exportName: string,
 ): string[] {
   const lines: string[] = [];
   lines.push(`export const ${exportName}: PromptDefinition[] = [`);
-  for (const prompt of prompts) {
+  for (const prompt of dedupeById(prompts)) {
     lines.push("  {");
     lines.push(`    identifier: ${JSON.stringify(prompt.identifier)},`);
     lines.push(`    name: ${JSON.stringify(prompt.name)},`);
@@ -1631,7 +1642,7 @@ function buildPromptDefinitionsBlock(
 function buildPromptOrderBlock(order: PromptOrderEntry[], exportName: string): string[] {
   const lines: string[] = [];
   lines.push(`export const ${exportName}: PromptOrderEntry[] = [`);
-  for (const entry of order) {
+  for (const entry of dedupeById(order)) {
     lines.push(
       `  { identifier: ${JSON.stringify(entry.identifier)}, enabled: ${entry.enabled} },`,
     );
@@ -1648,11 +1659,13 @@ type TsExportFile = {
 
 function buildChatTsFile(): TsExportFile {
   const config = promptManagerStore.config;
-  const orderedPrompts = config.globalPromptOrder
-    .map((entry) => config.prompts.find((p) => p.identifier === entry.identifier))
+  const dedupedOrder = dedupeById(config.globalPromptOrder);
+  const dedupedPrompts = dedupeById(config.prompts);
+  const orderedPrompts = dedupedOrder
+    .map((entry) => dedupedPrompts.find((p) => p.identifier === entry.identifier))
     .filter((p): p is PromptDefinition => p !== undefined);
-  const orderedIds = new Set(config.globalPromptOrder.map((e) => e.identifier));
-  const extraPrompts = config.prompts.filter((p) => !orderedIds.has(p.identifier));
+  const orderedIds = new Set(dedupedOrder.map((e) => e.identifier));
+  const extraPrompts = dedupedPrompts.filter((p) => !orderedIds.has(p.identifier));
   const allPrompts = [...orderedPrompts, ...extraPrompts];
   const lines: string[] = [
     "/**",
@@ -1672,7 +1685,7 @@ function buildChatTsFile(): TsExportFile {
     ...buildPromptDefinitionsBlock(allPrompts, "DEFAULT_PROMPT_DEFINITIONS"),
     "",
     "// ===== 主要聊天提示詞順序 =====",
-    ...buildPromptOrderBlock(config.globalPromptOrder, "DEFAULT_PROMPT_ORDER"),
+    ...buildPromptOrderBlock(dedupedOrder, "DEFAULT_PROMPT_ORDER"),
     "",
     "// ===== 向後兼容別名 =====",
     "export {",
@@ -1693,11 +1706,13 @@ function getOrderedPrompts(
   prompts: PromptDefinition[],
   order: PromptOrderEntry[],
 ): PromptDefinition[] {
-  const orderedPrompts = order
-    .map((entry) => prompts.find((p) => p.identifier === entry.identifier))
+  const dedupedPrompts = dedupeById(prompts);
+  const dedupedOrder = dedupeById(order);
+  const orderedPrompts = dedupedOrder
+    .map((entry) => dedupedPrompts.find((p) => p.identifier === entry.identifier))
     .filter((p): p is PromptDefinition => p !== undefined);
-  const orderedIds = new Set(order.map((entry) => entry.identifier));
-  const extraPrompts = prompts.filter((p) => !orderedIds.has(p.identifier));
+  const orderedIds = new Set(dedupedOrder.map((entry) => entry.identifier));
+  const extraPrompts = dedupedPrompts.filter((p) => !orderedIds.has(p.identifier));
   return [...orderedPrompts, ...extraPrompts];
 }
 
@@ -1710,7 +1725,7 @@ function getPromptExportPayload(
 } {
   return {
     prompts: getOrderedPrompts(prompts, order),
-    order: [...order],
+    order: dedupeById(order),
   };
 }
 
@@ -2047,24 +2062,26 @@ function doExport() {
   };
 
   // 根據選擇添加數據
+  const dedupedGlobalOrder = dedupeById(config.globalPromptOrder);
+  const dedupedGlobalPrompts = dedupeById(config.prompts);
   if (exportOptions.value.globalPrompts) {
     // 按照 globalPromptOrder 的順序排列 prompts
-    const orderedPrompts = config.globalPromptOrder
+    const orderedPrompts = dedupedGlobalOrder
       .map((entry) =>
-        config.prompts.find((p) => p.identifier === entry.identifier),
+        dedupedGlobalPrompts.find((p) => p.identifier === entry.identifier),
       )
       .filter((p): p is (typeof config.prompts)[0] => p !== undefined);
     // 添加不在順序中的提示詞（如果有的話）
     const orderedIds = new Set(
-      config.globalPromptOrder.map((e) => e.identifier),
+      dedupedGlobalOrder.map((e) => e.identifier),
     );
-    const extraPrompts = config.prompts.filter(
+    const extraPrompts = dedupedGlobalPrompts.filter(
       (p) => !orderedIds.has(p.identifier),
     );
     exportData.prompts = [...orderedPrompts, ...extraPrompts];
   }
   if (exportOptions.value.globalOrder) {
-    exportData.globalPromptOrder = config.globalPromptOrder;
+    exportData.globalPromptOrder = dedupedGlobalOrder;
   }
   if (exportOptions.value.faceToFace) {
     const faceToFaceExport = getFaceToFaceExportPayload();
