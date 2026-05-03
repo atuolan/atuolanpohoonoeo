@@ -231,6 +231,7 @@ async function generateCharacter() {
     // 取得 API 設定（優先使用備用 API）
     const taskConfig = settingsStore.getAPIForTask("characterGen");
     const apiConfig = taskConfig.api;
+    const generation = taskConfig.generation;
 
     // 調用 API
     const response = await fetch(getEndpoint(apiConfig.endpoint), {
@@ -245,8 +246,11 @@ async function generateCharacter() {
           { role: "system", content: systemPrompt },
           { role: "user", content: userMessage },
         ],
-        max_tokens: 2000000,
-        temperature: 0.8,
+        max_tokens: generation.maxTokens,
+        temperature: generation.temperature,
+        top_p: generation.topP,
+        frequency_penalty: generation.frequencyPenalty,
+        presence_penalty: generation.presencePenalty,
       }),
     });
 
