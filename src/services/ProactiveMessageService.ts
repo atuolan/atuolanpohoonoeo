@@ -272,6 +272,24 @@ export class ProactiveMessageService {
         `[ProactiveMessage] Sending message for character: ${characterId}`,
       );
 
+      // 該角色正在與用戶通話中 → 本次跳過（掛斷後下一輪自然恢復）
+      // 避免出現「邊通話邊傳『原本想聽妳聲音，結果你在通話中』」這種尷尬情境
+      try {
+        const { usePhoneCallStore } = await import("@/stores/phoneCall");
+        const phoneCallStore = usePhoneCallStore();
+        if (
+          phoneCallStore.isActive &&
+          phoneCallStore.activeCall?.characterId === characterId
+        ) {
+          console.log(
+            `[ProactiveMessage] 角色 ${characterId} 正在通話中，跳過本次主動訊息`,
+          );
+          return;
+        }
+      } catch {
+        // phoneCallStore 尚未初始化（例如 app 剛啟動），忽略並繼續
+      }
+
       const characterStore = useCharactersStore();
 
       // 確保 store 已載入
@@ -545,6 +563,25 @@ export class ProactiveMessageService {
         useStreamingWindow: taskConfig.generation.useStreamingWindow,
       };
 
+      // 進行中通話狀態（若當前 user 正在和別的角色通話，讓本角色知道 user 忙線）
+      // 注意：若通話對象 === 當前角色，上面已經 return，所以這裡進到的都是「別人正在通話」
+      let ongoingCallContext:
+        | { withCurrentCharacter: boolean; durationSeconds: number; isVideo?: boolean }
+        | undefined;
+      try {
+        const { usePhoneCallStore } = await import("@/stores/phoneCall");
+        const phoneCallStore = usePhoneCallStore();
+        if (phoneCallStore.isActive && phoneCallStore.activeCall) {
+          ongoingCallContext = {
+            withCurrentCharacter: false,
+            durationSeconds: phoneCallStore.callDuration,
+            isVideo: phoneCallStore.isVideoCallActive,
+          };
+        }
+      } catch {
+        // 忽略
+      }
+
       const promptBuilder = new PromptBuilder({
         character,
         lorebooks: characterLorebooks,
@@ -560,6 +597,7 @@ export class ProactiveMessageService {
         promptManagerConfig: promptManagerStore.config,
         // 從聊天記錄載入感知現實時間設定（默認開啟）
         enableRealTimeAwareness: chat.enableRealTimeAwareness !== false,
+        ongoingCallContext,
       });
 
       const promptData = await promptBuilder.build();

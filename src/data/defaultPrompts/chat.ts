@@ -1468,6 +1468,27 @@ Scene 2.5 — 思維融合 + 情緒釋放 + 噗浪決策
     adminOnly: true,
   },
   {
+    identifier: "ongoingCallStatus",
+    name: "進行中通話狀態",
+    description:
+      "告知 AI 目前是否有通話進行中（通話對象知道自己在電話裡、其他角色只知道 user 忙線）",
+    category: "context",
+    role: "system",
+    content:
+      "（由 PromptBuilder 根據 ongoingCallContext 動態產生：通話對象看到「你正在和 user 通話中」，其他角色看到「user 目前正在通話中」）",
+    system_prompt: true,
+    marker: true,
+    injection_position: INJECTION_RELATIVE,
+    injection_depth: 0,
+    injection_order: 19.6,
+    forbid_overrides: false,
+    extension: false,
+    injection_trigger: [],
+    isEditable: false,
+    isDeletable: false,
+    adminOnly: true,
+  },
+  {
     identifier: "affinityState",
     name: "好感度數值狀態",
     description: "角色好感度數值的當前狀態（由 EJS 模板渲染）",
@@ -1553,7 +1574,9 @@ export const DEFAULT_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "dialogueExamples", enabled: true },
   { identifier: "worldInfoAfter", enabled: true },
   { identifier: "socialMedia", enabled: true },
-  { identifier: "recentCallHistory", enabled: true },
+  // recentCallHistory 預設停用：通話結束紀錄已存在於 chatHistory 內（phoneCall.ts persistCallRecord），
+  // 另外的 DB_STORES.CALL_HISTORY 並未被 ChatScreen/ProactiveMessageService 實際填入此欄位，會渲染成空殼
+  { identifier: "recentCallHistory", enabled: false },
   { identifier: "callDecision", enabled: true },
   { identifier: "summaries", enabled: true },
   { identifier: "characterCorePersonality", enabled: true },
@@ -1580,6 +1603,7 @@ export const DEFAULT_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "custom_1776010724699", enabled: true },
   { identifier: "custom_1776010669277", enabled: true },
   { identifier: "doNotDisturbStatus", enabled: true },
+  { identifier: "ongoingCallStatus", enabled: true },
   { identifier: "minimaxTTS", enabled: true },
   { identifier: "affinityState", enabled: true },
   { identifier: "affinityUpdateRules", enabled: true },

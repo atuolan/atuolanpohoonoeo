@@ -1060,6 +1060,28 @@ assistant：我是基拉祈與雪拉比...。我是許願星與創世神。
     isDeletable: true,
     adminOnly: true,
   },
+  // ===== 進行中通話狀態 =====
+  {
+    identifier: "f2fOngoingCallStatus",
+    name: "進行中通話狀態",
+    description:
+      "告知 AI 目前是否有通話進行中（內容由 PromptBuilder 依 ongoingCallContext 動態產生）",
+    category: "context",
+    role: "system",
+    content:
+      "（由 PromptBuilder 根據 ongoingCallContext 動態產生：通話對象看到「你正在和 user 通話中」，其他角色看到「user 目前正在通話中」）",
+    system_prompt: true,
+    marker: true,
+    injection_position: INJECTION_RELATIVE,
+    injection_depth: 0,
+    injection_order: 19.6,
+    forbid_overrides: false,
+    extension: false,
+    injection_trigger: [],
+    isEditable: false,
+    isDeletable: false,
+    adminOnly: true,
+  },
   // ===== 思考框架 =====
   {
     identifier: "f2fThinkingGuide",
@@ -1687,7 +1709,8 @@ export const FACE_TO_FACE_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "f2fDialogueExamples", enabled: true },
   { identifier: "f2fWorldInfoAfter", enabled: true },
   { identifier: "f2fSocialMedia", enabled: true },
-  { identifier: "f2fRecentCallHistory", enabled: true },
+  // f2fRecentCallHistory 預設停用：通話紀錄已在 chatHistory 內，額外 DB 也沒被填入
+  { identifier: "f2fRecentCallHistory", enabled: false },
   { identifier: "f2fCallDecision", enabled: true },
   { identifier: "f2fStickerList", enabled: true },
   { identifier: "f2fStickerSystem", enabled: true },
@@ -1703,6 +1726,7 @@ export const FACE_TO_FACE_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "f2f_custom_1771960419103", enabled: true },
   { identifier: "f2fEnvironmentAndNpc", enabled: true },
   { identifier: "f2fDoNotDisturbStatus", enabled: true },
+  { identifier: "f2fOngoingCallStatus", enabled: true },
   { identifier: "f2fForbiddenPatterns", enabled: true },
   { identifier: "f2fTimeJump", enabled: true },
   { identifier: "f2fChatHistory", enabled: true },

@@ -300,6 +300,18 @@ export interface PromptBuilderOptions {
   nearbyPlaces?: NearbyPlace[];
   /** 角色世界設定 */
   characterWorldSettings?: CharacterWorldSettings;
+  /**
+   * 進行中通話狀態（由外部從 phoneCallStore 注入）。
+   * 只在普通聊天/面對面/群聊提示詞中使用，phoneCallMode=true 時忽略。
+   */
+  ongoingCallContext?: {
+    /** 當前聊天的角色 / 群聊，是否就是通話對象 */
+    withCurrentCharacter: boolean;
+    /** 已通話秒數 */
+    durationSeconds: number;
+    /** 是否為視訊通話 */
+    isVideo?: boolean;
+  };
 }
 
 /**
@@ -809,6 +821,7 @@ export class PromptBuilder {
         onlineModeFeatures: "f2fModeFeatures",
         onlineModeRules: "f2fModeRules",
         doNotDisturbStatus: "f2fDoNotDisturbStatus",
+        ongoingCallStatus: "f2fOngoingCallStatus",
         // 思考和格式
         thinkingGuide: "f2fThinkingGuide",
         forbiddenPatterns: "f2fForbiddenPatterns",
@@ -1955,6 +1968,34 @@ export class PromptBuilder {
         }
         // 勿擾模式關閉時不發送任何內容
         return null;
+
+      case "ongoingCallStatus":
+      case "f2fOngoingCallStatus":
+      case "gcOngoingCallStatus": {
+        // 進行中通話狀態（marker，只有通話進行中才發送）
+        // 電話模式本身已透過 phoneCallMode 旗標知道，不重複
+        if (this.options.phoneCallMode) return null;
+        const ctx = this.options.ongoingCallContext;
+        if (!ctx) return null;
+        const mins = Math.floor(ctx.durationSeconds / 60);
+        const secs = ctx.durationSeconds % 60;
+        const durationText =
+          mins > 0 ? `${mins} 分 ${secs} 秒` : `${secs} 秒`;
+        const callKind = ctx.isVideo ? "視訊通話" : "通話";
+        let raw: string;
+        if (ctx.withCurrentCharacter) {
+          raw = `<ongoing_call_status>
+⚠️ 你 ({{char}}) 目前正在和 {{user}} ${callKind}中（已${callKind} ${durationText}）。
+如果此時出現來自 {{user}} 的文字訊息，代表他在${callKind}中同時用訊息傳東西給你，請以「正在${callKind}中的你」的立場回應，不要表現得像不知道你們正在講電話，也不要再主動撥打電話給他。
+</ongoing_call_status>`;
+        } else {
+          raw = `<ongoing_call_status>
+📞 {{user}} 目前正在${callKind}中（已${callKind} ${durationText}），可能無法立即回覆文字訊息。
+</ongoing_call_status>`;
+        }
+        const content = await this.macroEngine.substitute(raw);
+        return content ? { role: getRole(), content, identifier } : null;
+      }
 
       // ===== 人稱模式（面對面模式專用 marker） =====
       case "f2fNarrativePerson":

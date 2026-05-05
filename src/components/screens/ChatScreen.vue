@@ -4912,6 +4912,21 @@ async function triggerAIResponse(options?: {
         }
         return undefined;
       })(),
+      // 進行中通話狀態：告知 AI 目前是否有通話進行中
+      // - 若當前聊天角色就是通話對象 → AI 收到「你正在和 user 通電話中」
+      // - 若通話對象是別人 → 當前角色收到「user 目前正在通話中」（不洩漏對方身分）
+      // - 群聊：一律以「user 忙線中」呈現，不提及對方是誰
+      ongoingCallContext: (() => {
+        const call = phoneCallStore.activeCall;
+        if (!call || !phoneCallStore.isActive) return undefined;
+        const isGroup = isGroupChat.value;
+        const withCurrent = !isGroup && call.characterId === (props.characterId || "");
+        return {
+          withCurrentCharacter: withCurrent,
+          durationSeconds: phoneCallStore.callDuration,
+          isVideo: phoneCallStore.isVideoCallActive,
+        };
+      })(),
     });
 
     const promptResult = await builder.build();
@@ -8627,24 +8642,26 @@ async function handlePhoneCallEnded(
 ) {
   if (callMessages.length === 0) return;
 
-  // 格式化通話時長
-  const mins = Math.floor(duration / 60);
-  const secs = duration % 60;
-  const durationText = mins > 0 ? `${mins}分${secs}秒` : `${secs}秒`;
+  // 通話紀錄由 phoneCallStore.persistCallRecord() 統一寫入 DB（phoneCall.ts endCall 內）。
+  // 這裡不再另建 callRecordMessage，避免造成「📞 通話結束」卡片雙寫 / 渲染兩次。
+  // 只負責從儲存重新載入訊息，讓目前打開的聊天 UI 立即看到那張通話卡片。
+  const chatId = currentChatId.value;
+  if (!chatId) return;
 
-  // 創建通話記錄訊息
-  const callRecordMessage: Message = {
-    id: `msg_call_${Date.now()}`,
-    role: "system",
-    content: `📞 通話結束\n時長：${durationText}\n\n--- 通話內容 ---\n${callMessages.map((m) => `${m.role === "user" ? "你" : props.characterName}: ${m.content}`).join("\n")}`,
-    timestamp: Date.now(),
-  };
+  try {
+    // persistCallRecord 是非同步 append，短暫等待確保寫入完成後再讀取
+    await new Promise((r) => setTimeout(r, 50));
+    const latest = (await loadMessages(chatId)) as unknown as Message[];
+    if (latest && Array.isArray(latest)) {
+      messages.value = latest;
+      _messagesLoadedAt = Date.now();
+    }
+    scrollToBottom();
+  } catch (err) {
+    console.error("[ChatScreen] 重新載入通話結束後的訊息失敗:", err);
+  }
 
-  messages.value.push(callRecordMessage);
-  scrollToBottom();
-  await saveChatImmediate();
-
-  console.log("[ChatScreen] 電話通話記錄已保存", {
+  console.log("[ChatScreen] 電話通話結束，已從儲存刷新 UI", {
     duration,
     messageCount: callMessages.length,
   });
