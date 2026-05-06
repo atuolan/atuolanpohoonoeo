@@ -7311,9 +7311,7 @@ function getReplyToName(messageId: string): string {
 }
 
 // 從遺留的 messageChunks 表恢復訊息（v13 遷移補救）
-async function recoverFromMessageChunks(
-  chatId: string,
-): Promise<ChatMessage[]> {
+async function recoverFromMessageChunks(chatId: string): Promise<ChatMessage[]> {
   const rawDb = (db as any)._instance;
   if (!rawDb) return [];
 
@@ -7350,6 +7348,225 @@ async function recoverFromMessageChunks(
     console.warn("[recoverFromMessageChunks] 讀取失敗:", e);
     return [];
   }
+}
+
+function inferUiRoleFromStoredMessage(m: any): Message["role"] {
+  if (m.role === "user" || m.role === "ai" || m.role === "system") {
+    return m.role;
+  }
+  if (m.sender === "user" || m.is_user === true) return "user";
+  if (m.sender === "assistant") return "ai";
+  return "system";
+}
+
+function isCallOrSystemRecord(m: any): boolean {
+  const content = String(m.content || "");
+  return (
+    String(m.id || "").startsWith("msg_call_") ||
+    content.includes("📞 通話結束") ||
+    m.isSystemNotification ||
+    m.isCallNotification ||
+    m.isGroupChatHistory ||
+    m.isGroupCallHistory ||
+    m.isCalendarEvent ||
+    m.isContinuePrompt
+  );
+}
+
+async function repairSystemSenderRegressionIfNeeded(
+  chat: Chat,
+  rawMessages: ChatMessage[],
+): Promise<ChatMessage[]> {
+  if (chat.isGroupChat || rawMessages.length < 3) return rawMessages;
+
+  const assistantCount = rawMessages.filter((m) => m.sender === "assistant").length;
+  const systemCount = rawMessages.filter((m) => m.sender === "system").length;
+  const suspiciousNormalSystemCount = rawMessages.filter(
+    (m) => m.sender === "system" && !isCallOrSystemRecord(m),
+  ).length;
+
+  if (
+    assistantCount > 0 ||
+    systemCount < Math.max(3, rawMessages.length * 0.5) ||
+    suspiciousNormalSystemCount === 0
+  ) {
+    return rawMessages;
+  }
+
+  const recovered = await recoverFromMessageChunks(chat.id);
+  const recoveredById = new Map(
+    recovered
+      .filter((m) => m.sender === "user" || m.sender === "assistant")
+      .map((m) => [m.id, m]),
+  );
+  if (recoveredById.size > 0) {
+    let restoredCount = 0;
+    const restoredFromChunks = rawMessages.map((m) => {
+      const old = recoveredById.get(m.id);
+      if (!old || m.sender !== "system" || isCallOrSystemRecord(m)) return m;
+      restoredCount++;
+      return {
+        ...m,
+        sender: old.sender,
+        name: old.name,
+        is_user: old.sender === "user",
+      };
+    });
+    if (restoredCount > 0) {
+      await saveMessages(chat.id, restoredFromChunks);
+      await refreshChatDerivedMetadata(chat.id);
+      console.warn("[ChatScreen] 已從 messageChunks 修復誤存為 system 的訊息", {
+        chatId: chat.id,
+        restoredCount,
+      });
+      return restoredFromChunks;
+    }
+  }
+
+  const repaired = rawMessages.map((m) => {
+    if (m.sender !== "system" || isCallOrSystemRecord(m)) return m;
+    const restoredSender =
+      (m as any).role === "user" || m.is_user === true || m.name === "User"
+        ? "user"
+        : "assistant";
+    return {
+      ...m,
+      sender: restoredSender as ChatMessage["sender"],
+      is_user: restoredSender === "user",
+    };
+  });
+
+  await saveMessages(chat.id, repaired);
+  await refreshChatDerivedMetadata(chat.id);
+  console.warn(
+    "[ChatScreen] 已修復疑似通話結束後誤存為 system 的訊息",
+    {
+      chatId: chat.id,
+      repairedCount: repaired.filter(
+        (m, i) => m.sender !== rawMessages[i]?.sender,
+      ).length,
+    },
+  );
+  return repaired;
+}
+
+function convertStoredMessageToUiMessage(m: ChatMessage, chat: Chat): Message {
+  let isGift = m.isGift;
+  let giftName = m.giftName;
+  if (!isGift && m.content) {
+    const giftMatch = m.content.match(/<送禮物>([\s\S]*?)<\/送禮物>/i);
+    if (giftMatch) {
+      isGift = true;
+      giftName = giftMatch[1].trim();
+    }
+  }
+
+  let isTransfer = m.isTransfer;
+  let transferAmount = m.transferAmount;
+  let transferType = m.transferType;
+  let transferNote = m.transferNote;
+  let transferStatus = m.transferStatus;
+  if (!isTransfer && m.content) {
+    const oldTransferMatch = m.content.match(/<轉帳>(\d+)\s*金幣<\/轉帳>/i);
+    if (oldTransferMatch) {
+      isTransfer = true;
+      transferAmount = parseInt(oldTransferMatch[1], 10);
+      transferType = "pay";
+      transferStatus = "sent";
+    }
+    const payMatch = m.content.match(/<pay>(\d+)(?::([^<]*?))?<\/pay>/i);
+    if (payMatch) {
+      isTransfer = true;
+      transferAmount = parseInt(payMatch[1], 10);
+      transferType = "pay";
+      transferNote = payMatch[2]?.trim() || undefined;
+      transferStatus = m.sender === "user" ? "sent" : transferStatus || "pending";
+    }
+    const refundMatch = m.content.match(/<refund>(\d+)<\/refund>/i);
+    if (refundMatch) {
+      isTransfer = true;
+      transferAmount = parseInt(refundMatch[1], 10);
+      transferType = "refund";
+      transferStatus = "refunded";
+    }
+  }
+
+  let isMusicShare = (m as any).isMusicShare;
+  let musicShareData = (m as any).musicShareData;
+  if (!isMusicShare && m.content) {
+    const musicMatch = m.content.match(/<分享歌曲>([\s\S]*?)<\/分享歌曲>/i);
+    if (musicMatch) {
+      isMusicShare = true;
+      const parts = musicMatch[1].trim().split(" - ");
+      musicShareData = {
+        name: parts[0] || "",
+        artist: parts[1] || "",
+      };
+    }
+  }
+
+  const needsModeRequestCompat =
+    !(m as any).isFaceToFaceRequest &&
+    !(m as any).isOnlineModeRequest &&
+    typeof m.content === "string" &&
+    /<face-to-face-request\s|<online-mode-request\s/i.test(m.content);
+
+  const loadedMessage = {
+    ...(m as any),
+    id: m.id,
+    role: inferUiRoleFromStoredMessage(m),
+    content: m.content,
+    timestamp: m.createdAt,
+    isGift,
+    giftName,
+    isTransfer,
+    transferAmount,
+    transferType,
+    transferNote,
+    transferStatus,
+    isMusicShare,
+    musicShareData,
+    senderCharacterName: m.senderCharacterId
+      ? (() => {
+          if (chat.groupMetadata?.isMultiCharCard) {
+            const mc = chat.groupMetadata.multiCharMembers?.find(
+              (member) => member.id === m.senderCharacterId,
+            );
+            if (mc) return mc.name;
+          }
+          const groupMember = chat.groupMetadata?.members?.find(
+            (mem) => mem.characterId === m.senderCharacterId,
+          );
+          if (groupMember?.nickname) return groupMember.nickname;
+          const c = charactersStore.characters.find(
+            (ch) => ch.id === m.senderCharacterId,
+          );
+          return c?.data?.name || m.senderCharacterName || "";
+        })()
+      : m.senderCharacterName || "",
+    senderCharacterAvatar: m.senderCharacterId
+      ? (() => {
+          if (chat.groupMetadata?.isMultiCharCard) {
+            const mc = chat.groupMetadata.multiCharMembers?.find(
+              (member) => member.id === m.senderCharacterId,
+            );
+            if (mc) return mc.avatar;
+          }
+          return (
+            charactersStore.characters.find(
+              (ch) => ch.id === m.senderCharacterId,
+            )?.avatar ?? m.senderCharacterAvatar ?? ""
+          );
+        })()
+      : m.senderCharacterAvatar || "",
+    _audioBlob: undefined,
+  } as Message;
+
+  if (needsModeRequestCompat) {
+    syncModeRequestFieldsFromContent(loadedMessage, loadedMessage.content);
+  }
+
+  return loadedMessage;
 }
 
 // 載入或創建聊天
@@ -7475,6 +7692,11 @@ async function loadOrCreateChat(overrideChatId?: string) {
             console.log("[ChatScreen] ✅ 已將修復後的訊息順序回寫到 chatMessages");
           }
         }
+
+        rawMessages = await repairSystemSenderRegressionIfNeeded(
+          chat,
+          rawMessages,
+        );
 
         // 圖片：不再一次性還原所有 base64 到記憶體，改為 MessageBubble 按需從 IndexedDB 讀取
         // 保持引用 ID（chatimg_xxx）在訊息中，大幅降低記憶體佔用（P1 修復）
@@ -8218,25 +8440,26 @@ async function loadImportantEventsForPrompt(): Promise<
 
 // 將內部訊息格式轉換為 ChatMessage 格式（供儲存用）
 function convertToStorableMessage(m: any, charName: string): ChatMessage {
+  const role = inferUiRoleFromStoredMessage(m);
   // imageUrl/imageData 已經是引用 ID（chatimg_xxx）或新圖片的 base64
   // extractImagesFromMessages 會在儲存時處理 base64 → 引用 ID 的轉換
   return {
     id: m.id,
     sender:
-      m.role === "user"
+      role === "user"
         ? ("user" as const)
-        : m.role === "ai"
+        : role === "ai"
           ? ("assistant" as const)
           : ("system" as const),
-    name: m.role === "user" ? "User" : m.senderCharacterName || charName,
+    name: role === "user" ? "User" : m.senderCharacterName || charName,
     content:
-      m.isStreaming && m.role === "ai"
+      m.isStreaming && role === "ai"
         ? sanitizeStreamingContentForStorage(m.content || "")
         : m.content,
-    is_user: m.role === "user",
+    is_user: role === "user",
     status: "sent" as const,
-    createdAt: m.timestamp,
-    updatedAt: m.timestamp,
+    createdAt: m.timestamp ?? m.createdAt ?? Date.now(),
+    updatedAt: m.timestamp ?? m.updatedAt ?? m.createdAt ?? Date.now(),
     swipes: m.swipes ? [...m.swipes] : undefined,
     swipeId: m.swipeId,
     roundSwipes: m.roundSwipes
@@ -8651,9 +8874,13 @@ async function handlePhoneCallEnded(
   try {
     // persistCallRecord 是非同步 append，短暫等待確保寫入完成後再讀取
     await new Promise((r) => setTimeout(r, 50));
-    const latest = (await loadMessages(chatId)) as unknown as Message[];
-    if (latest && Array.isArray(latest)) {
-      messages.value = latest;
+    const chat = (await loadChatById(chatId)) || currentChatData.value;
+    let latest = await loadMessages(chatId);
+    if (chat) {
+      latest = await repairSystemSenderRegressionIfNeeded(chat, latest);
+    }
+    if (chat && latest && Array.isArray(latest)) {
+      messages.value = latest.map((m) => convertStoredMessageToUiMessage(m, chat));
       _messagesLoadedAt = Date.now();
     }
     scrollToBottom();
