@@ -6,6 +6,8 @@ import {
 } from "@/services/selfHostedSyncState";
 import type { Chat } from "@/types/chat";
 import { createDefaultBlockState } from "@/types/block";
+import { deleteChatMessagesForChat } from "@/db/chatMessageStore";
+import { refreshChatDerivedMetadata } from "@/storage/chatStorage";
 
 /**
  * 聊天匯入/匯出/新對話/清空功能
@@ -26,6 +28,13 @@ export function useChatExport(deps: {
   saveChatImmediate: () => Promise<void>;
   loadOrCreateChat: () => Promise<void>;
   showMoreMenu: Ref<boolean>;
+  /**
+   * 通知 ChatScreen 已外部清空訊息（直接寫 DB）。
+   * ChatScreen 應於回呼中：取消 pending 的 debounce 保存、
+   * 重置 _lastSavedMessageCount / _lastSavedLastMessageId / _lastSavedMessageIds、
+   * 並把 _messagesLoadedAt 推進到現在，避免後續保存把舊訊息補回。
+   */
+  notifyChatCleared?: () => Promise<void> | void;
 }) {
   const jsonlFileInputRef = ref<HTMLInputElement | null>(null);
   const showNewConversationConfirm = ref(false);
@@ -286,7 +295,8 @@ export function useChatExport(deps: {
 
   async function clearChatHistory() {
     deps.showMoreMenu.value = false;
-    if (!deps.currentChatId.value) return;
+    const chatId = deps.currentChatId.value;
+    if (!chatId) return;
 
     if (
       !confirm(
@@ -296,13 +306,27 @@ export function useChatExport(deps: {
       return;
 
     try {
-      // 1. 清空消息
+      // 1. UI 清空
       deps.messages.value = [];
       deps.resetVisibleCount();
 
-      // 2. 保存聊天
-      await deps.saveChatImmediate();
+      // 2. 直接從 IndexedDB 刪除該聊天的所有訊息
+      //    繞過 _saveChatImplInner 的「DB ≥5 條、本地 ≤2 條」安全閘門
+      //    （該閘門對清空操作會誤判為意外覆蓋而拒絕保存）
+      await deleteChatMessagesForChat(chatId);
 
+      // 3. 重新計算 chat metadata（messageCount=0, lastMessagePreview=""）
+      await refreshChatDerivedMetadata(chatId);
+
+      // 4. 通知 ChatScreen 重置內部保存追蹤狀態，
+      //    避免下一次 saveChat 觸發安全閘門或把舊訊息補回
+      try {
+        await deps.notifyChatCleared?.();
+      } catch (notifyErr) {
+        console.warn("[useChatExport] notifyChatCleared 失敗（不影響清空結果）:", notifyErr);
+      }
+
+      // 5. 不寫 sync 刪除墓碑：保留「雲同步可救回誤清訊息」的能力
       alert("聊天內容已清空（總結、日記、重要事件已保留）");
     } catch (e) {
       console.error("清空聊天記錄失敗:", e);

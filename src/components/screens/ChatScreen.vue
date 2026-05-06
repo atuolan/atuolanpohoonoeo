@@ -6163,6 +6163,22 @@ const {
   saveChatImmediate,
   loadOrCreateChat,
   showMoreMenu,
+  notifyChatCleared: async () => {
+    // 取消任何 pending 的 debounce 保存，避免被 debounce 排程的舊保存
+    // 把已被刪掉的訊息又寫回去
+    if (_saveChatTimer) {
+      clearTimeout(_saveChatTimer);
+      _saveChatTimer = null;
+    }
+    _saveChatPending = false;
+    // 重置「上次成功儲存」追蹤狀態，下一次 saveChat 才不會把空當成異常
+    _lastSavedMessageCount = 0;
+    _lastSavedLastMessageId = "";
+    _lastSavedMessageIds = [];
+    // 推進載入時間戳，讓後續 saveChatMessages 的 snapshotTime 邏輯
+    // 不會「保留」舊訊息（雖然此處 DB 中已無該聊天訊息，仍補強防呆）
+    _messagesLoadedAt = Date.now();
+  },
 });
 
 // 停止 AI 生成
