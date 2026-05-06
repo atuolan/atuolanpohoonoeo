@@ -27,6 +27,39 @@
               尚未配置數值指標
             </div>
 
+            <!-- 重置按鈕 -->
+            <div v-if="metrics.length > 0" class="reset-section">
+              <button
+                class="reset-btn"
+                @click="handleResetDefaults"
+                title="以角色卡的 metric.initial / mvuInitialData 重新初始化此聊天"
+              >
+                以角色預設值重置
+              </button>
+              <button
+                v-if="greetings && greetings.length > 0"
+                class="reset-btn reset-btn-greeting"
+                @click="showGreetingPicker = !showGreetingPicker"
+                title="套用某個開場白內嵌的 <UpdateVariable><JSONPatch> 作為起點"
+              >
+                {{ showGreetingPicker ? "取消" : "套用開場白初始值" }}
+              </button>
+            </div>
+            <div v-if="showGreetingPicker" class="reset-greeting-picker">
+              <select v-model="selectedGreetingIdx" class="greeting-select">
+                <option
+                  v-for="(g, idx) in greetings"
+                  :key="idx"
+                  :value="idx"
+                >
+                  {{ g.label }}
+                </option>
+              </select>
+              <button class="reset-btn confirm" @click="handleResetGreeting">
+                套用
+              </button>
+            </div>
+
             <div
               v-for="m in metrics"
               :key="m.id"
@@ -128,13 +161,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useAffinityStore } from "@/stores/affinity";
+import {
+  applyGreetingInitToAffinity,
+  resetAffinityToCharacterDefaults,
+} from "@/services/AffinityGreetingInit";
 
 const props = defineProps<{
   visible: boolean;
   chatId: string;
   characterId: string;
+  /** 角色開場白列表，由 ChatScreen 傳入，用於「套用開場白初始值」入口 */
+  greetings?: { label: string; content: string }[];
 }>();
 
 const emit = defineEmits<{
@@ -172,6 +211,46 @@ function close() {
 
 function rescan() {
   emit("rescan");
+}
+
+const showGreetingPicker = ref(false);
+const selectedGreetingIdx = ref(0);
+
+async function handleResetDefaults() {
+  if (!props.chatId || !props.characterId) return;
+  if (!confirm("確定要將此聊天的好感度重置為角色預設值？此操作無法復原。")) {
+    return;
+  }
+  await resetAffinityToCharacterDefaults(
+    affinityStore,
+    props.chatId,
+    props.characterId,
+  );
+}
+
+async function handleResetGreeting() {
+  if (!props.chatId || !props.characterId) return;
+  const list = props.greetings ?? [];
+  const greeting = list[selectedGreetingIdx.value] ?? list[0];
+  if (!greeting) return;
+  if (
+    !confirm(
+      `確定要套用「${greeting.label}」的初始值作為好感度起點？此操作無法復原。`,
+    )
+  ) {
+    return;
+  }
+  await applyGreetingInitToAffinity(
+    affinityStore,
+    props.chatId,
+    props.characterId,
+    greeting.content,
+  );
+  // 套用後關閉選擇器並清除 lastRescannedMessageId，讓使用者下次手動 rescan
+  // 可以重新從訊息中拉取（greeting 沒對應訊息 id 可標記）
+  affinityStore.setLastRescannedMessageId(props.chatId, undefined);
+  await affinityStore.saveState(props.chatId);
+  showGreetingPicker.value = false;
 }
 </script>
 
@@ -271,6 +350,67 @@ function rescan() {
   color: #9ca3af;
   font-size: 14px;
   padding: 24px 0;
+}
+
+.reset-section {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.reset-btn {
+  flex: 1;
+  min-width: 110px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: white;
+  font-size: 12px;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover {
+    border-color: #7dd3a8;
+    color: #059669;
+    background: rgba(125, 211, 168, 0.05);
+  }
+
+  &.reset-btn-greeting:hover {
+    border-color: #6366f1;
+    color: #4338ca;
+    background: rgba(99, 102, 241, 0.05);
+  }
+
+  &.confirm {
+    flex: 0 0 auto;
+    padding: 6px 14px;
+    background: linear-gradient(135deg, #7dd3a8, #34d399);
+    color: white;
+    border-color: transparent;
+  }
+}
+
+.reset-greeting-picker {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+
+  .greeting-select {
+    flex: 1;
+    padding: 5px 8px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 12px;
+    color: #374151;
+    background: white;
+    cursor: pointer;
+  }
 }
 
 .metric-item {

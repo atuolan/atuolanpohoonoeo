@@ -1,8 +1,13 @@
-import { ref, type Ref, type ComputedRef } from "vue";
+import { computed, ref, type Ref, type ComputedRef } from "vue";
 import { db, DB_STORES } from "@/db/database";
 import { createChatRecord } from "@/storage/chatStorage";
 import { deleteMessage } from "@/storage/chatMessageStorage";
 import type { Chat, ChatMessage } from "@/types/chat";
+import { useAffinityStore } from "@/stores/affinity";
+import {
+  applyGreetingInitToAffinity,
+  resetAffinityToCharacterDefaults,
+} from "@/services/AffinityGreetingInit";
 
 /**
  * 多訊息刪除 + 分支聊天功能
@@ -28,6 +33,30 @@ export function useChatMultiDelete(deps: {
   const showBranchConfirm = ref(false);
   const branchPendingMessageId = ref<string | null>(null);
   const branchCopyMemory = ref(false);
+  /**
+   * 分支好感度起點模式：
+   *  - inherit：複製來源 chat 當下數值（預設）
+   *  - reset：重設為角色預設值（metric.initial / mvuInitialData）
+   *  - greeting：使用某個開場白內嵌的 <UpdateVariable><JSONPatch> 作為起點
+   */
+  const branchAffinityMode = ref<"inherit" | "reset" | "greeting">("inherit");
+  const branchAffinityGreetingIndex = ref(0);
+
+  /** 供分支對話框使用的開場白列表 */
+  const branchAvailableGreetings = computed(() => {
+    const char = deps.currentCharacter.value;
+    if (!char?.data) return [];
+    const list: { label: string; content: string }[] = [];
+    if (char.data.first_mes) {
+      list.push({ label: "開場白 1（預設）", content: char.data.first_mes });
+    }
+    if (Array.isArray(char.data.alternate_greetings)) {
+      char.data.alternate_greetings.forEach((g: string, i: number) => {
+        if (g) list.push({ label: `開場白 ${i + 2}`, content: g });
+      });
+    }
+    return list;
+  });
 
   function startDeleteMode() {
     deps.showMoreMenu.value = false;
@@ -43,6 +72,8 @@ export function useChatMultiDelete(deps: {
   function handleBranchFromMessage(messageId: string) {
     branchPendingMessageId.value = messageId;
     branchCopyMemory.value = false;
+    branchAffinityMode.value = "inherit";
+    branchAffinityGreetingIndex.value = 0;
     showBranchConfirm.value = true;
   }
 
@@ -174,6 +205,77 @@ export function useChatMultiDelete(deps: {
         }
       }
 
+      // 處理好感度起點（在切換聊天之前完成，讓 _loadAffinityForChat 能讀到正確 state）
+      try {
+        const charId = deps.characterId || deps.currentCharacter.value?.id || "";
+        const srcChatId = deps.currentChatId.value || "";
+        const newChatId = branchChat.id;
+        const lastAiMsgId = (() => {
+          for (let i = branchedMessages.length - 1; i >= 0; i--) {
+            const m = branchedMessages[i] as any;
+            // ChatMessage 與 UI message 標記 AI 的字段不同，取得 sender / role / is_user 標示
+            const isAi =
+              m.role === "ai" ||
+              m.role === "assistant" ||
+              m.sender === "assistant" ||
+              m.is_user === false;
+            if (isAi) return m.id as string;
+          }
+          return undefined;
+        })();
+
+        if (charId) {
+          const affinityStore = useAffinityStore();
+          await affinityStore.initialize();
+          const config = await affinityStore.loadConfig(charId);
+          if (config?.enabled) {
+            const mode = branchAffinityMode.value;
+            if (mode === "inherit" && srcChatId) {
+              await affinityStore.cloneStateForBranch(srcChatId, newChatId);
+              if (lastAiMsgId) {
+                affinityStore.setLastRescannedMessageId(newChatId, lastAiMsgId);
+                await affinityStore.saveState(newChatId);
+              }
+            } else if (mode === "greeting") {
+              const greeting =
+                branchAvailableGreetings.value[branchAffinityGreetingIndex.value] ??
+                branchAvailableGreetings.value[0];
+              if (greeting) {
+                await applyGreetingInitToAffinity(
+                  affinityStore,
+                  newChatId,
+                  charId,
+                  greeting.content,
+                );
+              } else {
+                await resetAffinityToCharacterDefaults(
+                  affinityStore,
+                  newChatId,
+                  charId,
+                );
+              }
+              if (lastAiMsgId) {
+                affinityStore.setLastRescannedMessageId(newChatId, lastAiMsgId);
+                await affinityStore.saveState(newChatId);
+              }
+            } else {
+              // reset 或 inherit 但找不到來源
+              await resetAffinityToCharacterDefaults(
+                affinityStore,
+                newChatId,
+                charId,
+              );
+              if (lastAiMsgId) {
+                affinityStore.setLastRescannedMessageId(newChatId, lastAiMsgId);
+                await affinityStore.saveState(newChatId);
+              }
+            }
+          }
+        }
+      } catch (affErr) {
+        console.error("[ChatScreen] 分支好感度處理失敗:", affErr);
+      }
+
       await deps.switchChatFile(branchChat.id);
     } catch (e) {
       console.error("[ChatScreen] 建立分支失敗:", e);
@@ -247,6 +349,9 @@ export function useChatMultiDelete(deps: {
     showBranchConfirm,
     branchPendingMessageId,
     branchCopyMemory,
+    branchAffinityMode,
+    branchAffinityGreetingIndex,
+    branchAvailableGreetings,
     startDeleteMode,
     handleMultiDeleteFromMessage,
     handleBranchFromMessage,

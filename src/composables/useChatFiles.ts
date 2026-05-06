@@ -8,6 +8,8 @@ import {
   toggleChatPinned,
 } from "@/storage/chatStorage";
 import type { Chat, ChatMessage } from "@/types/chat";
+import { useAffinityStore } from "@/stores/affinity";
+import { applyGreetingInitToAffinity } from "@/services/AffinityGreetingInit";
 
 /**
  * 聊天檔案管理功能
@@ -139,6 +141,31 @@ export function useChatFiles(deps: {
         newMessages[newMessages.length - 1]?.content?.slice(0, 100) || "",
     };
     await createChatRecord(newChat, newMessages);
+
+    // 套用 greeting 內嵌的 <UpdateVariable><JSONPatch> 作為該開場白的好感度初始值
+    if (withGreeting && availableGreetings.value.length > 0) {
+      const greeting =
+        availableGreetings.value[greetingIdx] ?? availableGreetings.value[0];
+      if (greeting && charId) {
+        try {
+          const affinityStore = useAffinityStore();
+          await applyGreetingInitToAffinity(
+            affinityStore,
+            newChatId,
+            charId,
+            greeting.content,
+          );
+          // greeting 即是最後一筆 AI 訊息；標記為已 rescan 以避免進入聊天時重複套用
+          const greetingMsgId = newMessages[newMessages.length - 1]?.id;
+          if (greetingMsgId) {
+            affinityStore.setLastRescannedMessageId(newChatId, greetingMsgId);
+            await affinityStore.saveState(newChatId);
+          }
+        } catch (e) {
+          console.error("[ChatFiles] 套用開場白好感度初始值失敗:", e);
+        }
+      }
+    }
 
     deps.messages.value = [];
     showChatFilesPanel.value = false;

@@ -3,6 +3,7 @@ import { db, DB_STORES } from "@/db/database";
 import { createChatRecord, refreshChatDerivedMetadata } from "@/storage/chatStorage";
 import { appendMessages } from "@/storage/chatMessageStorage";
 import type { Chat, ChatMessage } from "@/types/chat";
+import { useAffinityStore } from "@/stores/affinity";
 
 /**
  * 小劇場功能
@@ -219,6 +220,26 @@ export function useChatTheater(deps: {
               chatId: newChatId,
             });
           }
+        }
+
+        // 小劇場另開新檔：好感度繼承當下數值（小劇場為平行場景，情緒延續較自然）
+        try {
+          const charId =
+            deps.characterId || deps.currentCharacter.value?.id || "";
+          const srcChatId = deps.currentChatId.value || deps.chatId || "";
+          if (charId && srcChatId) {
+            const affinityStore = useAffinityStore();
+            await affinityStore.initialize();
+            const config = await affinityStore.loadConfig(charId);
+            if (config?.enabled) {
+              await affinityStore.cloneStateForBranch(srcChatId, newChatId);
+              // 標記沒有 lastRescannedMessageId（系統訊息沒有 <UpdateVariable>），
+              // 因此進入後 rescan 會找上一段 AI 訊息中的 patch；若該訊息 id
+              // 與來源 chat 相同（cloneStateForBranch 已搬過去），冪等鎖會避免重複套用
+            }
+          }
+        } catch (affErr) {
+          console.error("[Theater] 小劇場好感度繼承失敗:", affErr);
         }
 
         targetChatId = newChatId;

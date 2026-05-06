@@ -53,6 +53,9 @@ const listSettings = ref<ListSettings>({
   sortOrder: "desc",
 });
 
+// 檢視模式（網格 / 列表）
+const viewMode = ref<"grid" | "list">("grid");
+
 // 載入設定
 onMounted(() => {
   const saved = localStorage.getItem("characterListSettings");
@@ -63,7 +66,20 @@ onMounted(() => {
       /* ignore */
     }
   }
+  const savedView = localStorage.getItem("characterListViewMode");
+  if (savedView === "grid" || savedView === "list") {
+    viewMode.value = savedView;
+  }
 });
+
+function setViewMode(mode: "grid" | "list") {
+  viewMode.value = mode;
+  try {
+    localStorage.setItem("characterListViewMode", mode);
+  } catch {
+    /* ignore */
+  }
+}
 
 // 同步搜索到 store
 function updateSearch(value: string) {
@@ -95,6 +111,7 @@ const filteredCharacters = computed(() => {
     creator: isValidCreator(c.data.creator) ? c.data.creator : undefined,
     tags: c.data.tags,
     lorebookIds: c.lorebookIds,
+    description: c.data.description,
   }));
 });
 
@@ -196,6 +213,34 @@ const gridStyle = computed(() => ({
           </svg>
         </button>
 
+        <!-- 檢視模式切換 -->
+        <div class="view-toggle">
+          <button
+            class="view-btn"
+            :class="{ active: viewMode === 'grid' }"
+            title="卡片檢視"
+            @click.stop="setViewMode('grid')"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path
+                d="M3 3v8h8V3H3zm6 6H5V5h4v4zm-6 4v8h8v-8H3zm6 6H5v-4h4v4zm4-16v8h8V3h-8zm6 6h-4V5h4v4zm-6 4v8h8v-8h-8zm6 6h-4v-4h4v4z"
+              />
+            </svg>
+          </button>
+          <button
+            class="view-btn"
+            :class="{ active: viewMode === 'list' }"
+            title="列表檢視"
+            @click.stop="setViewMode('list')"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path
+                d="M3 5h18v2H3V5zm0 6h18v2H3v-2zm0 6h18v2H3v-2z"
+              />
+            </svg>
+          </button>
+        </div>
+
         <!-- 設定按鈕 -->
         <button class="header-btn" title="列表設定" @click.stop="openSettings">
           <svg viewBox="0 0 24 24" fill="currentColor">
@@ -267,7 +312,11 @@ const gridStyle = computed(() => ({
     </div>
 
     <!-- 角色網格 -->
-    <main class="soft-content grid" :style="gridStyle">
+    <main
+      class="soft-content"
+      :class="viewMode === 'grid' ? 'grid' : 'list'"
+      :style="gridStyle"
+    >
       <CharacterCard
         v-for="character in filteredCharacters"
         :key="character.id"
@@ -275,9 +324,13 @@ const gridStyle = computed(() => ({
         :name="character.name"
         :nickname="character.nickname"
         :avatar="character.avatar"
+        :layout="viewMode"
         :show-avatar="listSettings.showAvatar"
         :creator="listSettings.showCreator ? character.creator : undefined"
         :tags="listSettings.showTags ? character.tags : undefined"
+        :description="
+          listSettings.showDescription ? character.description : undefined
+        "
         :lorebook-count="
           listSettings.showLorebookCount
             ? character.lorebookIds?.length || 0
@@ -335,6 +388,14 @@ const gridStyle = computed(() => ({
 .character-list-screen {
   background: var(--color-background);
 
+  // 列表（橫式）模式
+  .soft-content.list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-content: start;
+  }
+
   // 動態網格 - 保留全局樣式，只覆蓋列數
   .soft-content.grid {
     grid-template-columns: repeat(var(--grid-columns, 2), 1fr);
@@ -391,6 +452,45 @@ const gridStyle = computed(() => ({
     &:hover {
       opacity: 1;
     }
+  }
+}
+
+// 檢視模式切換
+.view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--color-background);
+}
+
+.view-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  &:hover {
+    color: var(--color-text);
+  }
+
+  &.active {
+    background: var(--color-surface);
+    color: var(--color-primary);
+    box-shadow: var(--shadow-sm);
   }
 }
 

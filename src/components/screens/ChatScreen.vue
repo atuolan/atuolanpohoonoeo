@@ -1506,6 +1506,9 @@ const {
   showBranchConfirm,
   branchPendingMessageId,
   branchCopyMemory,
+  branchAffinityMode,
+  branchAffinityGreetingIndex,
+  branchAvailableGreetings,
   startDeleteMode,
   handleMultiDeleteFromMessage,
   handleBranchFromMessage,
@@ -2203,7 +2206,11 @@ function _handleAffinityUpdates(
  * 從最新的 AI 訊息中重新掃描 <update> 標籤並套用到好感度數值
  * 由 AffinityPanel 的「重新獲取」按鈕觸發
  */
-function rescanAffinityFromMessages() {
+function rescanAffinityFromMessages(options?: { force?: boolean }) {
+  const chatId = currentChatId.value;
+  if (!chatId) return;
+  const force = options?.force === true;
+
   // 從後往前找最後一條含 <update> 的 AI 訊息
   for (let i = messages.value.length - 1; i >= 0; i--) {
     const msg = messages.value[i];
@@ -2213,7 +2220,19 @@ function rescanAffinityFromMessages() {
     const searchContent = msg._rawAffinityBlock || msg.content;
     const updates = parseAffinityUpdateTags(searchContent);
     if (updates.length > 0) {
+      // 冪等檢查：避免進入聊天 / 自動 rescan 時把同一筆 <UpdateVariable>
+      // 絕對值反覆套用，覆蓋使用者手動調整或剛建立分支的起點
+      const lastApplied = affinityStore.getLastRescannedMessageId(chatId);
+      if (!force && lastApplied === msg.id) {
+        console.log(
+          "[ChatScreen] 重新掃描好感度：訊息",
+          msg.id,
+          "已套用過，跳過",
+        );
+        return;
+      }
       _handleAffinityUpdates(updates, msg.id);
+      affinityStore.setLastRescannedMessageId(chatId, msg.id);
       console.log(
         "[ChatScreen] 重新掃描好感度：從訊息",
         msg.id,
@@ -10318,8 +10337,9 @@ onUnmounted(() => {
         :visible="showAffinityPanel"
         :chat-id="currentChatId || ''"
         :character-id="props.characterId || currentCharacter?.id || ''"
+        :greetings="availableGreetings"
         @close="showAffinityPanel = false"
-        @rescan="rescanAffinityFromMessages"
+        @rescan="rescanAffinityFromMessages({ force: true })"
       />
 
       <ChatInfoModal
@@ -12509,6 +12529,69 @@ onUnmounted(() => {
             <input v-model="branchCopyMemory" type="checkbox" />
             <span>同時複製總結、日記與重要事件</span>
           </label>
+
+          <div
+            v-if="_affinityConfig?.enabled"
+            class="branch-affinity-section"
+          >
+            <div class="branch-affinity-title">好感度起點</div>
+            <label class="branch-affinity-option">
+              <input
+                v-model="branchAffinityMode"
+                type="radio"
+                value="inherit"
+              />
+              <div class="branch-affinity-info">
+                <span class="branch-affinity-label">繼承當下數值</span>
+                <span class="branch-affinity-desc">
+                  以目前聊天的好感度作為新分支起點（推薦）
+                </span>
+              </div>
+            </label>
+            <label class="branch-affinity-option">
+              <input
+                v-model="branchAffinityMode"
+                type="radio"
+                value="reset"
+              />
+              <div class="branch-affinity-info">
+                <span class="branch-affinity-label">重設為角色預設值</span>
+                <span class="branch-affinity-desc">
+                  使用角色卡的初始值（metric.initial / mvuInitialData）
+                </span>
+              </div>
+            </label>
+            <label
+              v-if="branchAvailableGreetings.length > 0"
+              class="branch-affinity-option"
+            >
+              <input
+                v-model="branchAffinityMode"
+                type="radio"
+                value="greeting"
+              />
+              <div class="branch-affinity-info">
+                <span class="branch-affinity-label">使用開場白初始值</span>
+                <span class="branch-affinity-desc">
+                  套用所選開場白內嵌的 &lt;UpdateVariable&gt; 起始狀態
+                </span>
+              </div>
+            </label>
+            <select
+              v-if="branchAffinityMode === 'greeting'"
+              v-model="branchAffinityGreetingIndex"
+              class="branch-affinity-greeting-select"
+            >
+              <option
+                v-for="(g, idx) in branchAvailableGreetings"
+                :key="idx"
+                :value="idx"
+              >
+                {{ g.label }}
+              </option>
+            </select>
+          </div>
+
           <div class="new-chat-confirm-actions">
             <button class="btn-cancel" @click="showBranchConfirm = false">
               取消
@@ -16179,6 +16262,70 @@ onUnmounted(() => {
       accent-color: var(--color-primary, #7dd3a8);
       cursor: pointer;
     }
+  }
+
+  .branch-affinity-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+    border-radius: 10px;
+    background: var(--color-surface-hover, rgba(0, 0, 0, 0.02));
+  }
+
+  .branch-affinity-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text, #333);
+  }
+
+  .branch-affinity-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    cursor: pointer;
+    padding: 4px 0;
+
+    input[type="radio"] {
+      width: 16px;
+      height: 16px;
+      margin-top: 2px;
+      accent-color: var(--color-primary, #7dd3a8);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+  }
+
+  .branch-affinity-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+  }
+
+  .branch-affinity-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text, #333);
+  }
+
+  .branch-affinity-desc {
+    font-size: 11px;
+    color: var(--color-text-secondary, #888);
+    line-height: 1.4;
+  }
+
+  .branch-affinity-greeting-select {
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border, rgba(0, 0, 0, 0.15));
+    background: var(--color-surface, #fff);
+    font-size: 13px;
+    color: var(--color-text, #333);
+    cursor: pointer;
+    margin-top: 2px;
   }
 }
 

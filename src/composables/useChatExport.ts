@@ -8,6 +8,11 @@ import type { Chat } from "@/types/chat";
 import { createDefaultBlockState } from "@/types/block";
 import { deleteChatMessagesForChat } from "@/db/chatMessageStore";
 import { refreshChatDerivedMetadata } from "@/storage/chatStorage";
+import { useAffinityStore } from "@/stores/affinity";
+import {
+  applyGreetingInitToAffinity,
+  resetAffinityToCharacterDefaults,
+} from "@/services/AffinityGreetingInit";
 
 /**
  * 聊天匯入/匯出/新對話/清空功能
@@ -267,18 +272,51 @@ export function useChatExport(deps: {
       }
 
       // 5. 重新加載角色開場白
+      let greetingMsgId: string | undefined;
+      let chosenGreetingContent: string | undefined;
       if (withGreeting && newConvAvailableGreetings.value.length > 0) {
         const greetingIdx = newConvGreetingIndex.value;
         const greeting =
           newConvAvailableGreetings.value[greetingIdx] ??
           newConvAvailableGreetings.value[0];
         if (greeting) {
+          greetingMsgId = `msg_${Date.now()}`;
+          chosenGreetingContent = greeting.content;
           deps.messages.value.push({
-            id: `msg_${Date.now()}`,
+            id: greetingMsgId,
             role: "ai",
             content: greeting.content,
             timestamp: Date.now(),
           });
+        }
+      }
+
+      // 5.5. 重置好感度狀態：套用 greeting 內嵌初始值，或回到角色預設值
+      const charIdForAff = deps.characterId || deps.currentCharacter.value?.id || "";
+      if (charIdForAff && chatId) {
+        try {
+          const affinityStore = useAffinityStore();
+          if (chosenGreetingContent) {
+            await applyGreetingInitToAffinity(
+              affinityStore,
+              chatId,
+              charIdForAff,
+              chosenGreetingContent,
+            );
+            if (greetingMsgId) {
+              affinityStore.setLastRescannedMessageId(chatId, greetingMsgId);
+              await affinityStore.saveState(chatId);
+            }
+          } else {
+            // 不帶開場白：直接重置為角色預設值
+            await resetAffinityToCharacterDefaults(
+              affinityStore,
+              chatId,
+              charIdForAff,
+            );
+          }
+        } catch (e) {
+          console.error("[ChatExport] 新對話重置好感度失敗:", e);
         }
       }
 

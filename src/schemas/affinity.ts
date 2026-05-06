@@ -5,6 +5,7 @@
  * 支援動態指標配置、Zod runtime 驗證、自動 clamp。
  */
 import { z } from "zod";
+import _ from "lodash";
 
 // ===== 階段定義 =====
 
@@ -118,6 +119,12 @@ export const ChatAffinityStateSchema = z.object({
     z.string(),
     z.record(z.string(), z.union([z.number(), z.string()])),
   ).default({}),
+  /**
+   * 最後一次 rescanAffinityFromMessages 已套用的 AI 訊息 id。
+   * 用於避免進入聊天 / 自動 rescan 時將同一筆 <UpdateVariable> 絕對值
+   * 反覆套用而覆蓋使用者手動調整或剛建立分支的起點。
+   */
+  lastRescannedMessageId: z.string().optional(),
   lastUpdated: z.number().default(0),
 });
 
@@ -137,17 +144,38 @@ export function createDefaultState(
   chatId: string,
   config: CharacterAffinityConfig,
 ): ChatAffinityState {
+  const mvuInitial = config.mvuInitialData ?? {};
   const values: Record<string, MetricValue> = {};
   for (const m of config.metrics) {
-    values[m.id] = m.initial;
+    // 優先使用 mvuInitialData 中對應 path 的數值（MVU 卡導入時 stat_data 才是
+    // 權威來源；metric.initial 預設 50 經常與卡片實際初始值不一致）。
+    const lookupPath = (m.path && m.path.trim()) || m.name;
+    const fromMvu = lookupPath ? _.get(mvuInitial, lookupPath) : undefined;
+    if (
+      fromMvu !== undefined &&
+      (typeof fromMvu === "number" || typeof fromMvu === "string")
+    ) {
+      if (m.type === "string") {
+        values[m.id] = String(fromMvu);
+      } else if (typeof fromMvu === "number") {
+        values[m.id] = Math.min(m.max, Math.max(m.min, fromMvu));
+      } else {
+        const n = Number(fromMvu);
+        values[m.id] = Number.isNaN(n)
+          ? m.initial
+          : Math.min(m.max, Math.max(m.min, n));
+      }
+    } else {
+      values[m.id] = m.initial;
+    }
   }
   return ChatAffinityStateSchema.parse({
     chatId,
     characterId: config.characterId,
     values,
     mvuState: {
-      statData: JSON.parse(JSON.stringify(config.mvuInitialData ?? {})) as Record<string, unknown>,
-      displayData: JSON.parse(JSON.stringify(config.mvuInitialData ?? {})) as Record<string, unknown>,
+      statData: JSON.parse(JSON.stringify(mvuInitial)) as Record<string, unknown>,
+      displayData: JSON.parse(JSON.stringify(mvuInitial)) as Record<string, unknown>,
       deltaData: {},
     },
   });

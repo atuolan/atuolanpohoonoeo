@@ -401,9 +401,12 @@ export const useAffinityStore = defineStore("affinity", () => {
   async function initializeFromConfig(
     chatId: string,
     config: CharacterAffinityConfig,
+    options?: { force?: boolean },
   ): Promise<ChatAffinityState> {
-    const existing = await loadState(chatId);
-    if (existing) return existing;
+    if (!options?.force) {
+      const existing = await loadState(chatId);
+      if (existing) return existing;
+    }
 
     configCache.value.set(config.characterId, config);
     const state = createDefaultState(chatId, config);
@@ -412,6 +415,48 @@ export const useAffinityStore = defineStore("affinity", () => {
     _dbLoadedIds.add(chatId);
     await saveState(chatId);
     return state;
+  }
+
+  /**
+   * 將來源 chat 的 affinity state 深複製為新 chat 的初始狀態（分支「繼承當下值」用）。
+   * 若來源不存在，回傳 null。
+   */
+  async function cloneStateForBranch(
+    srcChatId: string,
+    newChatId: string,
+  ): Promise<ChatAffinityState | null> {
+    let src = affinityStates.value.get(srcChatId);
+    if (!src) {
+      src = (await loadState(srcChatId)) ?? undefined;
+    }
+    if (!src) return null;
+
+    const cloned = JSON.parse(JSON.stringify(toRaw(src))) as ChatAffinityState;
+    cloned.chatId = newChatId;
+    cloned.lastUpdated = Date.now();
+    // 不繼承 lastRescannedMessageId 以外的快照鍵會跟著 messageId 走，這裡保留
+    affinityStates.value.set(newChatId, cloned);
+    _dbLoadedIds.add(newChatId);
+    await saveState(newChatId);
+    return cloned;
+  }
+
+  /**
+   * 設定 lastRescannedMessageId（避免 rescan 重複套用同一筆絕對值）。
+   */
+  function setLastRescannedMessageId(
+    chatId: string,
+    messageId: string | undefined,
+  ): void {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return;
+    state.lastRescannedMessageId = messageId;
+    state.lastUpdated = Date.now();
+    _scheduleAutoSave(chatId);
+  }
+
+  function getLastRescannedMessageId(chatId: string): string | undefined {
+    return affinityStates.value.get(chatId)?.lastRescannedMessageId;
   }
 
   // ===== 獲取狀態 =====
@@ -945,6 +990,9 @@ export const useAffinityStore = defineStore("affinity", () => {
     getConfig,
 
     initializeFromConfig,
+    cloneStateForBranch,
+    setLastRescannedMessageId,
+    getLastRescannedMessageId,
     getState,
 
     updateMetric,

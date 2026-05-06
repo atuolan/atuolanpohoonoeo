@@ -12,6 +12,8 @@ interface CharacterCardProps {
   lorebookCount?: number;
   isSelected?: boolean;
   showAvatar?: boolean;
+  description?: string;
+  layout?: "grid" | "list";
 }
 
 const props = withDefaults(defineProps<CharacterCardProps>(), {
@@ -21,6 +23,8 @@ const props = withDefaults(defineProps<CharacterCardProps>(), {
   lorebookCount: 0,
   isSelected: false,
   showAvatar: true,
+  description: "",
+  layout: "grid",
 });
 
 // Emits
@@ -109,7 +113,7 @@ function onContextMenu(e: MouseEvent) {
 <template>
   <div
     class="character-card soft-card"
-    :class="{ selected: isSelected }"
+    :class="[layout === 'list' ? 'layout-list' : 'layout-grid', { selected: isSelected }]"
     @click="handleClick"
     @touchstart.passive="onTouchStart"
     @touchend="onTouchEnd"
@@ -140,6 +144,11 @@ function onContextMenu(e: MouseEvent) {
     <div class="card-content">
       <div class="card-title">{{ displayName }}</div>
       <div v-if="subtitle" class="card-subtitle">{{ subtitle }}</div>
+
+      <!-- 描述（僅列表模式顯示） -->
+      <div v-if="layout === 'list' && description" class="card-description">
+        {{ description }}
+      </div>
 
       <!-- 標籤 -->
       <div v-if="tags.length > 0" class="card-tags">
@@ -198,6 +207,82 @@ function onContextMenu(e: MouseEvent) {
     border-color: var(--color-primary);
     box-shadow: 0 0 0 2px var(--color-primary-light);
   }
+
+  // ===== 列表（橫式）模式 =====
+  &.layout-list {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr) 48px;
+    align-items: stretch;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 140px;
+    overflow: hidden;
+
+    .card-avatar {
+      width: 88px;
+      min-width: 88px;
+      height: auto;
+      aspect-ratio: auto;
+      align-self: stretch;
+      border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+    }
+
+    .card-content {
+      min-width: 0;
+      padding: 12px 8px 10px 12px;
+      justify-content: flex-start;
+      overflow: hidden;
+    }
+
+    .card-title {
+      font-size: 15px;
+      margin-bottom: 2px;
+    }
+
+    .card-subtitle {
+      font-size: 11px;
+      margin-bottom: 6px;
+    }
+
+    .card-tags {
+      margin-top: 6px;
+    }
+
+    .card-actions {
+      display: flex;
+      flex-direction: column;
+      width: 44px;
+      min-width: 44px;
+      padding: 10px 10px 10px 4px;
+      gap: 6px;
+      flex-shrink: 0;
+      align-self: stretch;
+      box-sizing: border-box;
+    }
+
+    .action-btn {
+      flex: 0 0 auto;
+      width: 100%;
+      height: 30px;
+
+      svg {
+        width: 16px;
+        height: 16px;
+      }
+    }
+  }
+}
+
+.card-description {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
 }
 
 .card-avatar {
