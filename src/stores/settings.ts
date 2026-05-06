@@ -39,6 +39,8 @@ export interface APIProfile {
   generation: GenerationParams;
   createdAt: number;
   updatedAt: number;
+  /** 最近一次被切換為當前配置的時間（可選，舊資料可能沒有） */
+  lastUsedAt?: number;
 }
 
 export interface AuxiliaryProfile {
@@ -48,6 +50,8 @@ export interface AuxiliaryProfile {
   generation: GenerationParams;
   createdAt: number;
   updatedAt: number;
+  /** 最近一次被切換為當前配置的時間 */
+  lastUsedAt?: number;
 }
 
 export const ROUTABLE_TASKS = [
@@ -680,6 +684,7 @@ export const useSettingsStore = defineStore("settings", () => {
     const profile = profiles.value.find((p) => p.id === profileId);
     if (profile) {
       currentProfileId.value = profileId;
+      profile.lastUsedAt = Date.now();
       Object.assign(api, profile.api);
       Object.assign(generation, profile.generation);
     }
@@ -713,6 +718,42 @@ export const useSettingsStore = defineStore("settings", () => {
       profile.name = newName;
       profile.updatedAt = Date.now();
     }
+  }
+
+  /**
+   * 複製一份配置文件為新的配置（不切換當前）
+   */
+  function duplicateProfile(
+    profileId: string,
+    newName?: string,
+  ): APIProfile | null {
+    const source = profiles.value.find((p) => p.id === profileId);
+    if (!source) return null;
+    const profile: APIProfile = {
+      id: "profile-" + Date.now(),
+      name: newName?.trim() || `${source.name} (副本)`,
+      api: { ...toRaw(source.api) },
+      generation: { ...toRaw(source.generation) },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    profiles.value.push(profile);
+    return profile;
+  }
+
+  /**
+   * 將指定配置文件更新為傳入的 api / generation 內容（不改變當前選中）
+   */
+  function updateProfile(
+    profileId: string,
+    apiData?: Partial<APISettings>,
+    genData?: Partial<GenerationParams>,
+  ): void {
+    const profile = profiles.value.find((p) => p.id === profileId);
+    if (!profile) return;
+    if (apiData) Object.assign(profile.api, apiData);
+    if (genData) Object.assign(profile.generation, genData);
+    profile.updatedAt = Date.now();
   }
 
   /**
@@ -754,6 +795,7 @@ export const useSettingsStore = defineStore("settings", () => {
     const profile = auxiliary.profiles.find((p) => p.id === profileId);
     if (profile) {
       auxiliary.currentProfileId = profileId;
+      profile.lastUsedAt = Date.now();
       Object.assign(auxiliary.api, profile.api);
       Object.assign(auxiliary.generation, profile.generation);
     }
@@ -796,6 +838,42 @@ export const useSettingsStore = defineStore("settings", () => {
       profile.name = newName;
       profile.updatedAt = Date.now();
     }
+  }
+
+  /**
+   * 複製一份備用配置為新的配置（不切換當前）
+   */
+  function duplicateAuxiliaryProfile(
+    profileId: string,
+    newName?: string,
+  ): AuxiliaryProfile | null {
+    const source = auxiliary.profiles.find((p) => p.id === profileId);
+    if (!source) return null;
+    const profile: AuxiliaryProfile = {
+      id: "aux-profile-" + Date.now(),
+      name: newName?.trim() || `${source.name} (副本)`,
+      api: { ...toRaw(source.api) },
+      generation: { ...toRaw(source.generation) },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    auxiliary.profiles.push(profile);
+    return profile;
+  }
+
+  /**
+   * 將指定備用配置更新為傳入的 api / generation 內容（不改變當前選中）
+   */
+  function updateAuxiliaryProfile(
+    profileId: string,
+    apiData?: Partial<APISettings>,
+    genData?: Partial<GenerationParams>,
+  ): void {
+    const profile = auxiliary.profiles.find((p) => p.id === profileId);
+    if (!profile) return;
+    if (apiData) Object.assign(profile.api, apiData);
+    if (genData) Object.assign(profile.generation, genData);
+    profile.updatedAt = Date.now();
   }
 
   function isUsableAuxiliaryProfile(
@@ -1029,11 +1107,15 @@ export const useSettingsStore = defineStore("settings", () => {
     switchProfile,
     deleteProfile,
     renameProfile,
+    duplicateProfile,
+    updateProfile,
     copyToAuxiliary,
     createAuxiliaryProfile,
     switchAuxiliaryProfile,
     deleteAuxiliaryProfile,
     renameAuxiliaryProfile,
+    duplicateAuxiliaryProfile,
+    updateAuxiliaryProfile,
     shouldUseAuxiliary,
     getAPIForTask,
     resetToDefaults,

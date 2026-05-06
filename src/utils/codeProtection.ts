@@ -7,6 +7,13 @@ import { recordReloadReason } from "@/utils/runtimeDiagnostics";
 export class CodeProtection {
   private static isInitialized = false;
 
+  private static isEditableTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    return Boolean(
+      target.closest("input, textarea, [contenteditable='true'], [contenteditable='']"),
+    );
+  }
+
   // 初始化保護機制
   static initialize() {
     if (this.isInitialized) return;
@@ -34,6 +41,9 @@ export class CodeProtection {
   // 禁用右鍵選單
   private static disableContextMenu() {
     document.addEventListener("contextmenu", (e) => {
+      if (this.isEditableTarget(e.target)) {
+        return;
+      }
       e.preventDefault();
       return false;
     });
@@ -84,13 +94,7 @@ export class CodeProtection {
   private static disableTextSelection() {
     document.addEventListener("selectstart", (e) => {
       // 允許在輸入框內選取文字
-      const target = e.target as HTMLElement;
-      const tagName = target?.tagName?.toUpperCase();
-      if (
-        tagName === "INPUT" ||
-        tagName === "TEXTAREA" ||
-        target?.isContentEditable
-      ) {
+      if (this.isEditableTarget(e.target)) {
         return;
       }
       e.preventDefault();
@@ -104,12 +108,7 @@ export class CodeProtection {
         return; // 允許應用內部複製
       }
       // 允許在輸入框內複製
-      const tagName = target?.tagName?.toUpperCase();
-      if (
-        tagName === "INPUT" ||
-        tagName === "TEXTAREA" ||
-        target?.isContentEditable
-      ) {
+      if (this.isEditableTarget(e.target)) {
         return;
       }
       e.preventDefault();
@@ -118,13 +117,7 @@ export class CodeProtection {
 
     // 攔截貼上事件，但允許在輸入框內貼上
     document.addEventListener("paste", (e) => {
-      const target = e.target as HTMLElement;
-      const tagName = target?.tagName?.toUpperCase();
-      if (
-        tagName === "INPUT" ||
-        tagName === "TEXTAREA" ||
-        target?.isContentEditable
-      ) {
+      if (this.isEditableTarget(e.target)) {
         return;
       }
       e.preventDefault();

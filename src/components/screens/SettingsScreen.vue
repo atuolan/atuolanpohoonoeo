@@ -766,6 +766,29 @@ const newProfileName = ref("");
 const editingProfileId = ref<string | null>(null);
 const editingProfileName = ref("");
 
+// 標記哪一張卡片剛剛複製完成（顯示 ✓ 動畫）
+const copiedProfileId = ref<string | null>(null);
+
+// 切換配置時若當前表單有未保存改動，顯示確認彈窗
+const pendingSwitchProfileId = ref<string | null>(null);
+const showSwitchConfirm = ref(false);
+
+// 配置卡片的「複製」彈出選單
+const copyMenuProfileId = ref<string | null>(null);
+
+// 剪貼簿匯入結果提示
+const clipboardImportHint = ref<{ type: "success" | "error"; text: string } | null>(
+  null,
+);
+let clipboardImportHintTimer: ReturnType<typeof setTimeout> | null = null;
+function showClipboardImportHint(type: "success" | "error", text: string) {
+  clipboardImportHint.value = { type, text };
+  if (clipboardImportHintTimer) clearTimeout(clipboardImportHintTimer);
+  clipboardImportHintTimer = setTimeout(() => {
+    clipboardImportHint.value = null;
+  }, 2500);
+}
+
 function startRenameProfile(profileId: string) {
   const profile = settingsStore.profiles.find((p) => p.id === profileId);
   if (!profile) return;
@@ -1416,17 +1439,6 @@ function clearFetchedModels() {
   modelFetchError.value = "";
 }
 
-// 切換配置文件並清空模型
-function handleSwitchProfile(profileId: string) {
-  const prevEndpoint = settingsStore.api.endpoint;
-  settingsStore.switchProfile(profileId);
-  // 如果端點改變了，清空拉取的模型
-  if (prevEndpoint !== settingsStore.api.endpoint) {
-    clearFetchedModels();
-  }
-  connectionStatus.value = "none";
-}
-
 // 測試連接
 async function testConnection() {
   if (!settingsStore.api.endpoint || !settingsStore.api.apiKey) {
@@ -1693,12 +1705,36 @@ async function doSave() {
 
 // ===== 配置文件管理 =====
 
-// 創建新配置文件
-function createNewProfile() {
-  if (!newProfileName.value.trim()) {
-    newProfileName.value = `配置 ${settingsStore.profiles.length + 1}`;
-  }
-  settingsStore.createProfile(newProfileName.value.trim());
+// 打開新建配置 modal 時預填一個建議名稱
+function openNewProfileModal() {
+  newProfileName.value = getProfileNameSuggestion();
+  showProfileModal.value = true;
+}
+
+// 新建空白配置（除了名稱以外其他欄位全部留空，建完自動切換）
+function createProfileEmpty() {
+  const name =
+    newProfileName.value.trim() || `配置 ${settingsStore.profiles.length + 1}`;
+
+  // 先重置主 API 表單為預設空值
+  Object.assign(settingsStore.api, {
+    provider: "custom",
+    endpoint: "",
+    apiKey: "",
+    model: "",
+  });
+
+  settingsStore.createProfile(name);
+  newProfileName.value = "";
+  showProfileModal.value = false;
+  clearFetchedModels();
+  connectionStatus.value = "none";
+}
+
+// 用當前主 API 表單內容創建新配置
+function createProfileFromCurrent() {
+  const name = newProfileName.value.trim() || getProfileNameSuggestion();
+  settingsStore.createProfile(name);
   newProfileName.value = "";
   showProfileModal.value = false;
 }
@@ -1713,8 +1749,243 @@ function confirmDeleteProfile(profileId: string) {
   }
 }
 
-// 複製 API 端點和密鑰到剪貼板
-const copiedProfileId = ref<string | null>(null);
+// 複製一份指定配置（同名 + 副本）
+function duplicateProfileHandler(profileId: string) {
+  const created = settingsStore.duplicateProfile(profileId);
+  if (created) {
+    // 立即進入重命名模式，方便使用者改名
+    editingProfileId.value = created.id;
+    editingProfileName.value = created.name;
+  }
+}
+
+// ===== Provider / endpoint / 密鑰 顯示輔助 =====
+
+function getProviderLabel(provider: string | undefined): string {
+  switch (provider) {
+    case "openai":
+      return "OpenAI";
+    case "claude":
+      return "Claude";
+    case "gemini":
+      return "Gemini";
+    case "openrouter":
+      return "OpenRouter";
+    case "custom":
+      return "自定義";
+    default:
+      return provider || "";
+  }
+}
+
+function getEndpointHost(endpoint: string | undefined): string {
+  if (!endpoint) return "";
+  try {
+    const url = new URL(endpoint);
+    return url.host || endpoint;
+  } catch {
+    // 退回截斷後的字串
+    return endpoint.length > 32 ? endpoint.slice(0, 32) + "…" : endpoint;
+  }
+}
+
+function getMaskedApiKey(key: string | undefined): string {
+  if (!key) return "未設定密鑰";
+  if (key.length <= 8) return "sk-…" + key.slice(-2);
+  return key.slice(0, 4) + "…" + key.slice(-4);
+}
+
+// ===== 配置切換 dirty check =====
+
+function isCurrentFormDirty(): boolean {
+  const cur = settingsStore.currentProfileId;
+  if (!cur) return false;
+  const profile = settingsStore.profiles.find((p) => p.id === cur);
+  if (!profile) return false;
+  return (
+    profile.api.endpoint !== settingsStore.api.endpoint ||
+    profile.api.apiKey !== settingsStore.api.apiKey ||
+    profile.api.model !== settingsStore.api.model ||
+    profile.api.provider !== settingsStore.api.provider
+  );
+}
+
+function requestSwitchProfile(profileId: string) {
+  if (profileId === settingsStore.currentProfileId) return;
+  if (isCurrentFormDirty()) {
+    pendingSwitchProfileId.value = profileId;
+    showSwitchConfirm.value = true;
+    return;
+  }
+  performSwitchProfile(profileId);
+}
+
+function performSwitchProfile(profileId: string) {
+  const prevEndpoint = settingsStore.api.endpoint;
+  settingsStore.switchProfile(profileId);
+  if (prevEndpoint !== settingsStore.api.endpoint) {
+    clearFetchedModels();
+  }
+  connectionStatus.value = "none";
+  pendingSwitchProfileId.value = null;
+  showSwitchConfirm.value = false;
+}
+
+async function switchConfirmSaveAndGo() {
+  // 先把當前表單寫回當前配置，再切換
+  if (settingsStore.currentProfileId) {
+    settingsStore.updateProfile(
+      settingsStore.currentProfileId,
+      { ...settingsStore.api },
+      { ...settingsStore.generation },
+    );
+    await settingsStore.saveSettings();
+  }
+  if (pendingSwitchProfileId.value) {
+    performSwitchProfile(pendingSwitchProfileId.value);
+  }
+}
+
+function switchConfirmDiscardAndGo() {
+  if (pendingSwitchProfileId.value) {
+    performSwitchProfile(pendingSwitchProfileId.value);
+  }
+}
+
+function switchConfirmCancel() {
+  pendingSwitchProfileId.value = null;
+  showSwitchConfirm.value = false;
+}
+
+// ===== 兩個明確的保存動作 =====
+
+async function updateCurrentProfileAndSave() {
+  if (!settingsStore.currentProfileId) return;
+  settingsStore.updateProfile(
+    settingsStore.currentProfileId,
+    { ...settingsStore.api },
+    { ...settingsStore.generation },
+  );
+  await doSave();
+}
+
+function openSaveAsNewProfile() {
+  newProfileName.value = getProfileNameSuggestion();
+  showNewProfileConfirm.value = true;
+}
+
+// ===== 配置卡片：分項複製 =====
+
+async function copyTextWithFallback(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const el = document.createElement("textarea");
+    el.value = text;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand("copy");
+    document.body.removeChild(el);
+    return true;
+  }
+}
+
+function toggleCopyMenu(profileId: string) {
+  copyMenuProfileId.value =
+    copyMenuProfileId.value === profileId ? null : profileId;
+}
+
+function closeCopyMenu() {
+  copyMenuProfileId.value = null;
+}
+
+async function copyProfileEndpoint(profileId: string) {
+  const profile = settingsStore.profiles.find((p) => p.id === profileId);
+  if (!profile) return;
+  await copyTextWithFallback(profile.api.endpoint || "");
+  copiedProfileId.value = profileId;
+  setTimeout(() => (copiedProfileId.value = null), 1500);
+  closeCopyMenu();
+}
+
+async function copyProfileApiKey(profileId: string) {
+  const profile = settingsStore.profiles.find((p) => p.id === profileId);
+  if (!profile) return;
+  await copyTextWithFallback(profile.api.apiKey || "");
+  copiedProfileId.value = profileId;
+  setTimeout(() => (copiedProfileId.value = null), 1500);
+  closeCopyMenu();
+}
+
+// ===== 從剪貼簿匯入端點 + 金鑰 =====
+
+function parseEndpointAndKey(
+  raw: string,
+): { endpoint?: string; apiKey?: string } {
+  const result: { endpoint?: string; apiKey?: string } = {};
+  if (!raw) return result;
+
+  // 同時支援中英文標籤，逐行解析（與 copyProfileCredentials 對齊）
+  const lines = raw.split(/\r?\n+/).map((l) => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    const m =
+      /^(?:端點|endpoint|url|api[_\s-]*url)\s*[:：=]\s*(.+)$/i.exec(line);
+    if (m && !result.endpoint) {
+      result.endpoint = m[1].trim();
+      continue;
+    }
+    const k =
+      /^(?:密鑰|金鑰|key|api[_\s-]*key|token)\s*[:：=]\s*(.+)$/i.exec(line);
+    if (k && !result.apiKey) {
+      result.apiKey = k[1].trim();
+      continue;
+    }
+  }
+
+  // 沒從標籤找到，嘗試從整段內容用啟發式找 URL 和 key
+  if (!result.endpoint) {
+    const urlMatch = raw.match(/https?:\/\/[^\s"'<>]+/i);
+    if (urlMatch) result.endpoint = urlMatch[0].trim();
+  }
+  if (!result.apiKey) {
+    // 常見的 key 字首：sk- / pst- / Bearer / cuxxx... 取較長無空白片段
+    const keyMatch = raw.match(/(?:Bearer\s+)?(sk-[A-Za-z0-9_\-]{16,}|pst-[A-Za-z0-9_\-]{16,}|[A-Za-z0-9_\-]{32,})/);
+    if (keyMatch) result.apiKey = keyMatch[1].trim();
+  }
+
+  return result;
+}
+
+async function pasteCredentialsFromClipboard() {
+  let text = "";
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    showClipboardImportHint(
+      "error",
+      "無法讀取剪貼簿，請手動貼上到欄位中",
+    );
+    return;
+  }
+  if (!text) {
+    showClipboardImportHint("error", "剪貼簿是空的");
+    return;
+  }
+  const parsed = parseEndpointAndKey(text);
+  if (!parsed.endpoint && !parsed.apiKey) {
+    showClipboardImportHint("error", "未在剪貼簿中辨識到端點或密鑰");
+    return;
+  }
+  if (parsed.endpoint) settingsStore.api.endpoint = parsed.endpoint;
+  if (parsed.apiKey) settingsStore.api.apiKey = parsed.apiKey;
+  const filled: string[] = [];
+  if (parsed.endpoint) filled.push("端點");
+  if (parsed.apiKey) filled.push("密鑰");
+  showClipboardImportHint("success", `已填入${filled.join("、")}`);
+}
+
+// 複製 API 端點和密鑰到剪貼板（保留作為「全部複製」入口）
 async function copyProfileCredentials(profileId: string) {
   const profile = settingsStore.profiles?.find((p) => p.id === profileId);
   if (!profile) return;
@@ -3092,10 +3363,10 @@ function useClonedVoice(voiceId: string) {
         </button>
 
         <!-- 配置文件列表 -->
-        <div class="profiles-section">
+        <div class="profiles-section" @click="closeCopyMenu">
           <div class="profiles-header">
             <span class="profiles-title">API 配置文件</span>
-            <button class="add-profile-btn" @click="showProfileModal = true">
+            <button class="add-profile-btn" @click.stop="openNewProfileModal">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
               </svg>
@@ -3112,7 +3383,7 @@ function useClonedVoice(voiceId: string) {
               :key="profile.id"
               class="profile-item"
               :class="{ active: settingsStore.currentProfileId === profile.id }"
-              @click="handleSwitchProfile(profile.id)"
+              @click="requestSwitchProfile(profile.id)"
             >
               <div class="profile-info">
                 <template v-if="editingProfileId === profile.id">
@@ -3126,13 +3397,31 @@ function useClonedVoice(voiceId: string) {
                   />
                 </template>
                 <template v-else>
-                  <span class="profile-name">{{ profile.name }}</span>
+                  <div class="profile-name-row">
+                    <span class="profile-name">{{ profile.name }}</span>
+                    <span
+                      v-if="settingsStore.currentProfileId === profile.id"
+                      class="profile-active-badge"
+                    >使用中</span>
+                    <span class="profile-provider-tag">{{
+                      getProviderLabel(profile.api.provider)
+                    }}</span>
+                  </div>
                   <span class="profile-model">{{
-                    profile.api.model || "未設置"
+                    profile.api.model || "未設置模型"
                   }}</span>
+                  <span class="profile-meta">
+                    <span v-if="profile.api.endpoint" class="profile-host">{{
+                      getEndpointHost(profile.api.endpoint)
+                    }}</span>
+                    <span v-else class="profile-host empty">未設定端點</span>
+                    <span class="profile-key">{{
+                      getMaskedApiKey(profile.api.apiKey)
+                    }}</span>
+                  </span>
                 </template>
               </div>
-              <div class="profile-actions">
+              <div class="profile-actions" @click.stop>
                 <button
                   class="profile-action-btn rename"
                   title="重命名"
@@ -3146,28 +3435,54 @@ function useClonedVoice(voiceId: string) {
                 </button>
                 <button
                   class="profile-action-btn"
-                  :title="
-                    copiedProfileId === profile.id
-                      ? '已複製！'
-                      : '複製 API 端點和密鑰'
-                  "
-                  @click.stop="copyProfileCredentials(profile.id)"
+                  title="複製一份配置"
+                  @click.stop="duplicateProfileHandler(profile.id)"
                 >
-                  <svg
-                    v-if="copiedProfileId !== profile.id"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <path
-                      d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
-                    />
-                  </svg>
-                  <svg v-else viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-                    />
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 21H8V7h11v14zm0-16H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-3-4H4c-1.1 0-2 .9-2 2v14h2V3h12V1z" />
                   </svg>
                 </button>
+                <div class="profile-copy-wrapper">
+                  <button
+                    class="profile-action-btn"
+                    :title="
+                      copiedProfileId === profile.id
+                        ? '已複製！'
+                        : '複製端點 / 密鑰'
+                    "
+                    @click.stop="toggleCopyMenu(profile.id)"
+                  >
+                    <svg
+                      v-if="copiedProfileId !== profile.id"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <path
+                        d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                      />
+                    </svg>
+                    <svg v-else viewBox="0 0 24 24" fill="currentColor">
+                      <path
+                        d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
+                      />
+                    </svg>
+                  </button>
+                  <div
+                    v-if="copyMenuProfileId === profile.id"
+                    class="copy-menu"
+                    @click.stop
+                  >
+                    <button class="copy-menu-item" @click="copyProfileEndpoint(profile.id)">
+                      複製端點
+                    </button>
+                    <button class="copy-menu-item" @click="copyProfileApiKey(profile.id)">
+                      複製密鑰
+                    </button>
+                    <button class="copy-menu-item" @click="copyProfileCredentials(profile.id); closeCopyMenu()">
+                      端點 + 密鑰
+                    </button>
+                  </div>
+                </div>
                 <button
                   class="profile-action-btn delete"
                   title="刪除"
@@ -3184,6 +3499,33 @@ function useClonedVoice(voiceId: string) {
           </div>
           <div v-else class="profiles-empty">
             <p>尚無配置文件，點擊「新建」創建第一個</p>
+          </div>
+
+          <!-- 主表單保存動作 -->
+          <div
+            v-if="settingsStore.profiles && settingsStore.profiles.length > 0"
+            class="profile-save-actions"
+          >
+            <button
+              class="profile-save-btn primary"
+              :disabled="!settingsStore.currentProfileId || isSaving"
+              @click.stop="updateCurrentProfileAndSave"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" />
+              </svg>
+              更新當前配置
+            </button>
+            <button
+              class="profile-save-btn secondary"
+              :disabled="isSaving"
+              @click.stop="openSaveAsNewProfile"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+              </svg>
+              另存為新配置
+            </button>
           </div>
         </div>
 
@@ -3215,14 +3557,40 @@ function useClonedVoice(voiceId: string) {
 
         <!-- API 端點 -->
         <div class="setting-group">
-          <label class="setting-label">API 端點</label>
+          <div class="setting-label-row">
+            <label class="setting-label" for="main-api-endpoint">API 端點</label>
+            <button
+              type="button"
+              class="fetch-btn small"
+              @click="pasteCredentialsFromClipboard"
+              title="從剪貼簿讀取端點 + 密鑰並填入"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 2h-4.18C14.4.84 13.3 0 12 0c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V6h10v2z" />
+              </svg>
+              從剪貼簿填入
+            </button>
+          </div>
           <input
             v-model="settingsStore.api.endpoint"
             type="url"
             class="soft-input"
+            id="main-api-endpoint"
+            name="url"
             placeholder="https://api.openai.com/v1"
+            autocomplete="url"
+            inputmode="url"
+            autocorrect="off"
+            autocapitalize="none"
+            spellcheck="false"
           />
-          <p class="setting-hint">大多數 API 需要以 /v1 結尾</p>
+          <p
+            v-if="clipboardImportHint"
+            :class="['setting-hint', clipboardImportHint.type === 'success' ? 'success' : 'error']"
+          >
+            {{ clipboardImportHint.text }}
+          </p>
+          <p v-else class="setting-hint">大多數 API 需要以 /v1 結尾</p>
         </div>
 
         <!-- API 密鑰 -->
@@ -3231,13 +3599,14 @@ function useClonedVoice(voiceId: string) {
           <div class="api-key-input">
             <input
               v-model="settingsStore.api.apiKey"
-              type="text"
+              :type="showApiKey ? 'text' : 'password'"
               class="soft-input api-key-field"
-              :class="{ masked: !showApiKey }"
+              id="main-api-key"
+              name="password"
               placeholder="sk-..."
-              autocomplete="off"
+              autocomplete="current-password"
               autocorrect="off"
-              autocapitalize="off"
+              autocapitalize="none"
               spellcheck="false"
             />
             <button class="toggle-visibility" @click="showApiKey = !showApiKey">
@@ -3745,7 +4114,14 @@ function useClonedVoice(voiceId: string) {
                     v-model="settingsStore.embeddingAPI.endpoint"
                     type="url"
                     class="soft-input"
+                    id="embedding-api-endpoint"
+                    name="url"
                     placeholder="留空使用主 API 端點"
+                    autocomplete="url"
+                    inputmode="url"
+                    autocorrect="off"
+                    autocapitalize="none"
+                    spellcheck="false"
                   />
                 </div>
                 <div class="setting-group">
@@ -3754,8 +4130,13 @@ function useClonedVoice(voiceId: string) {
                     v-model="settingsStore.embeddingAPI.apiKey"
                     type="password"
                     class="soft-input"
+                    id="embedding-api-key"
+                    name="password"
                     placeholder="留空使用主 API Key"
-                    autocomplete="off"
+                    autocomplete="current-password"
+                    autocorrect="off"
+                    autocapitalize="none"
+                    spellcheck="false"
                   />
                 </div>
                 <div class="setting-group">
@@ -4106,8 +4487,13 @@ function useClonedVoice(voiceId: string) {
               type="password"
               v-model="settingsStore.minimaxTTS.apiKey"
               class="soft-input"
+              id="minimax-api-key"
+              name="password"
               placeholder="你的 MiniMax API Key"
-              autocomplete="off"
+              autocomplete="current-password"
+              autocorrect="off"
+              autocapitalize="none"
+              spellcheck="false"
               @change="saveSettings"
             />
           </div>
@@ -4288,10 +4674,17 @@ function useClonedVoice(voiceId: string) {
             <div class="setting-group">
               <label class="setting-label">Worker 代理地址（選填）</label>
               <input
-                type="text"
+                type="url"
                 v-model="settingsStore.minimaxTTS.proxyUrl"
                 class="soft-input"
+                id="minimax-proxy-url"
+                name="url"
                 placeholder="https://your-worker.workers.dev"
+                autocomplete="url"
+                inputmode="url"
+                autocorrect="off"
+                autocapitalize="none"
+                spellcheck="false"
                 @change="saveSettings"
               />
             </div>
@@ -6021,21 +6414,62 @@ function useClonedVoice(voiceId: string) {
       >
         <div class="profile-modal" @click.stop>
           <h3>新建 API 配置</h3>
+          <p class="confirm-desc">
+            請輸入配置名稱，並選擇要建空白、還是複製現在主 API 表單的內容。
+          </p>
           <input
             v-model="newProfileName"
             type="text"
             class="soft-input"
             placeholder="配置名稱（如：OpenAI 工作用）"
-            @keyup.enter="createNewProfile"
+            @keyup.enter="createProfileFromCurrent"
           />
-          <div class="modal-actions">
-            <button class="modal-btn cancel" @click="showProfileModal = false">
-              取消
+          <div class="modal-actions modal-actions-stack">
+            <button class="modal-btn cancel" @click="createProfileEmpty">
+              建空白配置
             </button>
-            <button class="modal-btn confirm" @click="createNewProfile">
-              創建
+            <button class="modal-btn confirm" @click="createProfileFromCurrent">
+              複製當前設定
             </button>
           </div>
+          <button
+            class="modal-btn-text"
+            @click="showProfileModal = false"
+          >
+            取消
+          </button>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 切換配置時未保存提示 -->
+    <Teleport to="body">
+      <div
+        v-if="showSwitchConfirm"
+        class="modal-overlay"
+        @click="switchConfirmCancel"
+      >
+        <div class="profile-modal confirm-modal" @click.stop>
+          <div class="confirm-icon">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+            </svg>
+          </div>
+          <h3>當前配置有未保存改動</h3>
+          <p class="confirm-desc">
+            當前表單與選中配置不一致，直接切換會丟掉這些改動。
+          </p>
+          <div class="modal-actions modal-actions-stack">
+            <button class="modal-btn confirm" @click="switchConfirmSaveAndGo">
+              先保存到當前配置再切換
+            </button>
+            <button class="modal-btn cancel" @click="switchConfirmDiscardAndGo">
+              丟掉改動並切換
+            </button>
+          </div>
+          <button class="modal-btn-text" @click="switchConfirmCancel">
+            取消
+          </button>
         </div>
       </div>
     </Teleport>
@@ -7321,6 +7755,14 @@ function useClonedVoice(voiceId: string) {
   min-width: 0;
 }
 
+.profile-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
 .profile-name {
   font-size: 14px;
   font-weight: 600;
@@ -7330,9 +7772,59 @@ function useClonedVoice(voiceId: string) {
   white-space: nowrap;
 }
 
+.profile-active-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: white;
+  background: linear-gradient(135deg, #a8e6cf, #7dd3a8);
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.5px;
+}
+
+.profile-provider-tag {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-primary, #5fbc8a);
+  background: rgba(125, 211, 168, 0.12);
+  padding: 2px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.3px;
+}
+
 .profile-model {
   font-size: 12px;
   color: var(--color-text-muted, #999);
+}
+
+.profile-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--color-text-muted, #999);
+  margin-top: 1px;
+
+  .profile-host {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--color-text-secondary, #666);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 60%;
+
+    &.empty {
+      color: var(--color-text-muted, #aaa);
+      font-style: italic;
+      font-family: inherit;
+    }
+  }
+
+  .profile-key {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--color-text-muted, #aaa);
+  }
 }
 
 .profile-actions {
@@ -7341,6 +7833,93 @@ function useClonedVoice(voiceId: string) {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.profile-copy-wrapper {
+  position: relative;
+}
+
+.copy-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 130px;
+  padding: 4px;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  z-index: 10;
+}
+
+.copy-menu-item {
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  text-align: left;
+  color: var(--color-text, #333);
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(125, 211, 168, 0.12);
+    color: var(--color-primary, #5fbc8a);
+  }
+}
+
+.profile-save-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.profile-save-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  &.primary {
+    background: linear-gradient(135deg, #a8e6cf, #7dd3a8);
+    color: white;
+
+    &:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(125, 211, 168, 0.35);
+    }
+  }
+
+  &.secondary {
+    background: var(--color-surface, #fff);
+    border-color: var(--color-border, #e2e8f0);
+    color: var(--color-text, #333);
+
+    &:hover:not(:disabled) {
+      border-color: var(--color-primary, #7dd3a8);
+      color: var(--color-primary, #5fbc8a);
+    }
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
 .profile-action-btn {
@@ -7590,6 +8169,27 @@ function useClonedVoice(voiceId: string) {
 .modal-actions {
   display: flex;
   gap: 12px;
+
+  &.modal-actions-stack {
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+.modal-btn-text {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  color: var(--color-text-muted, #999);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-text-secondary, #666);
+  }
 }
 
 .modal-btn {

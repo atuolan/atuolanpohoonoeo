@@ -41,6 +41,15 @@ body {
   color: var(--color-text, #4a4a6a);
 }
 
+input,
+textarea,
+[contenteditable="true"],
+[contenteditable=""] {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+
 // #app 容器：高度由 JS 設定為 screen.height（PWA）或 innerHeight（瀏覽器）
 // position: fixed 確保不受 body scroll 影響（iOS PWA 防彈跳）
 // transform: translateZ(0) 讓子元素的 position: fixed 相對於 #app 定位
