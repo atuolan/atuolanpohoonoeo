@@ -36,6 +36,10 @@ import { useChatEventsExtraction } from "@/composables/useChatEventsExtraction";
 import { useChatExport } from "@/composables/useChatExport";
 import { useChatFakeTime } from "@/composables/useChatFakeTime";
 import { useChatFiles } from "@/composables/useChatFiles";
+import {
+  enterGameScreen,
+  leaveGameScreen,
+} from "@/composables/useGamePlayingDetector";
 import { useChatGroupCall } from "@/composables/useChatGroupCall";
 import { useChatGroupSettings } from "@/composables/useChatGroupSettings";
 import { useChatIncomingCalls } from "@/composables/useChatIncomingCalls";
@@ -1749,15 +1753,21 @@ async function applyUserChatLocationOverride(city: {
 }
 
 async function selectWmWorldCity(city: CityEntry, country: string) {
-  await selectWeatherCity({
-    id: 0,
-    name: city.name,
-    region: country,
-    country,
-    lat: city.lat,
-    lon: city.lon,
-  });
-  if (weatherEditTarget.value === "user" && wmUserScope.value === "chat") {
+  // 在 selectWeatherCity 重置 weatherEditTarget 前先快取，以正確判斷是否為此聊天單獨範圍
+  const isUserChatScope =
+    weatherEditTarget.value === "user" && wmUserScope.value === "chat";
+  await selectWeatherCity(
+    {
+      id: 0,
+      name: city.name,
+      region: country,
+      country,
+      lat: city.lat,
+      lon: city.lon,
+    },
+    { skipGlobalUserUpdate: isUserChatScope },
+  );
+  if (isUserChatScope) {
     await applyUserChatLocationOverride({
       name: city.name,
       region: country,
@@ -1769,15 +1779,20 @@ async function selectWmWorldCity(city: CityEntry, country: string) {
 
 async function selectWmSavedCity(c: WmSavedCity) {
   if (c.lat === undefined || c.lon === undefined) return;
-  await selectWeatherCity({
-    id: 0,
-    name: c.name,
-    region: "",
-    country: "",
-    lat: c.lat,
-    lon: c.lon,
-  });
-  if (weatherEditTarget.value === "user" && wmUserScope.value === "chat") {
+  const isUserChatScope =
+    weatherEditTarget.value === "user" && wmUserScope.value === "chat";
+  await selectWeatherCity(
+    {
+      id: 0,
+      name: c.name,
+      region: "",
+      country: "",
+      lat: c.lat,
+      lon: c.lon,
+    },
+    { skipGlobalUserUpdate: isUserChatScope },
+  );
+  if (isUserChatScope) {
     await applyUserChatLocationOverride({
       name: c.name,
       lat: c.lat,
@@ -6922,6 +6937,7 @@ function openGame(game: "dishwashing" | "fishing" | "gambling" | "merit") {
       showMeritHub.value = true;
       break;
   }
+  enterGameScreen(game);
 }
 
 // 切換聊天設定選單
@@ -9278,6 +9294,31 @@ function flushDeferredPendingMessage() {
   nextTick(() => injectPendingMessage(msg));
 }
 
+// 處理外部（非本 ChatScreen）寫入聊天訊息後的即時 reload
+// 例：在玩遊戲時的群聊主動關心、雲端同步的新訊息等
+async function handleExternalChatAppend(ev: Event) {
+  const detail = (ev as CustomEvent).detail || {};
+  const targetChatId = detail.chatId;
+  if (!targetChatId) return;
+  if (currentChatId.value !== targetChatId) return;
+  // 若正在生成中，避免破壞 streaming 佔位符
+  if (
+    currentChatId.value &&
+    aiGenerationStore.isTaskGenerating(currentChatId.value, "chat")
+  ) {
+    return;
+  }
+  try {
+    await loadOrCreateChat();
+    nextTick(() => scrollToBottom());
+  } catch (err) {
+    console.warn(
+      "[ChatScreen] handleExternalChatAppend reload failed:",
+      err,
+    );
+  }
+}
+
 // 檢查待處理來電
 onMounted(async () => {
   // 啟動外賣物流進度時間閘門定時器（每 60 秒刷新一次，使排程訊息逐日顯現）
@@ -9289,6 +9330,13 @@ onMounted(async () => {
   if (props.characterId) {
     proactiveMessageService.enterChat(props.characterId);
   }
+
+  // 監聽外部寫入事件（例如：在玩遊戲時的群聊主動關心）
+  // 由 ProactiveMessageService 在 appendMessages 後 dispatch
+  window.addEventListener(
+    "aguaphone:chat-messages-appended",
+    handleExternalChatAppend as EventListener,
+  );
 
   // 初始化全域 regex 腳本
   regexScriptsStore.init();
@@ -9464,6 +9512,18 @@ onUnmounted(() => {
   if (props.characterId) {
     proactiveMessageService.leaveChat(props.characterId);
   }
+
+  // 移除外部寫入事件監聽
+  window.removeEventListener(
+    "aguaphone:chat-messages-appended",
+    handleExternalChatAppend as EventListener,
+  );
+
+  // 若仍有遊戲模態框沒被關閉，這裡兜底清掉 detector 計時器
+  if (showDishWashingGame.value) leaveGameScreen("dishwashing");
+  if (showFishingGame.value) leaveGameScreen("fishing");
+  if (showGamblingGame.value) leaveGameScreen("gambling");
+  if (showMeritHub.value) leaveGameScreen("merit");
 
   // 取消流式窗口事件監聽
   _unregisterStreamingClose?.();
@@ -10314,22 +10374,37 @@ onUnmounted(() => {
       <DishWashingGame
         :visible="showDishWashingGame"
         :chat-id="currentChatId || ''"
-        @close="showDishWashingGame = false"
+        @close="
+          showDishWashingGame = false;
+          leaveGameScreen('dishwashing');
+        "
       />
 
       <FishingGame
         :visible="showFishingGame"
         :chat-id="currentChatId || ''"
-        @close="showFishingGame = false"
+        @close="
+          showFishingGame = false;
+          leaveGameScreen('fishing');
+        "
       />
 
       <GamblingGame
         :visible="showGamblingGame"
         :chat-id="currentChatId || ''"
-        @close="showGamblingGame = false"
+        @close="
+          showGamblingGame = false;
+          leaveGameScreen('gambling');
+        "
       />
 
-      <MeritHub :visible="showMeritHub" @close="showMeritHub = false" />
+      <MeritHub
+        :visible="showMeritHub"
+        @close="
+          showMeritHub = false;
+          leaveGameScreen('merit');
+        "
+      />
 
       <!-- 聊天資訊面板 -->
       <!-- 好感度面板 -->

@@ -312,6 +312,14 @@ export interface PromptBuilderOptions {
     /** 是否為視訊通話 */
     isVideo?: boolean;
   };
+  /**
+   * 在玩遊戲狀態（由 useGamePlayingDetector 觸發、ProactiveMessageService 注入）
+   * 觸發 gamePlayingStatus marker，告知 AI user 正在玩什麼小遊戲。
+   */
+  gamePlayingContext?: {
+    /** 遊戲中文名稱（如 "貪吃蛇"、"骰子（賭博）"） */
+    gameName: string;
+  };
 }
 
 /**
@@ -822,6 +830,7 @@ export class PromptBuilder {
         onlineModeRules: "f2fModeRules",
         doNotDisturbStatus: "f2fDoNotDisturbStatus",
         ongoingCallStatus: "f2fOngoingCallStatus",
+        gamePlayingStatus: "f2fGamePlayingStatus",
         // 思考和格式
         thinkingGuide: "f2fThinkingGuide",
         forbiddenPatterns: "f2fForbiddenPatterns",
@@ -1968,6 +1977,25 @@ export class PromptBuilder {
         }
         // 勿擾模式關閉時不發送任何內容
         return null;
+
+      case "gamePlayingStatus":
+      case "f2fGamePlayingStatus":
+      case "gcGamePlayingStatus": {
+        // 在玩遊戲狀態（marker，只有偵測到 user 在玩遊戲才發送）
+        const gctx = this.options.gamePlayingContext;
+        if (!gctx) return null;
+        const raw = `<game_playing_status>
+🎮 {{user}} 目前正在玩「${gctx.gameName}」這個小遊戲，已經玩了一段時間了。
+
+你可以：
+- 自然地問候對方在玩什麼、玩得如何
+- 根據你自己的人設展示「自己玩過這個遊戲的成績或經驗」（可吹噓、抱怨、或想跟對方比較）
+- 不要明說你是因為偵測到用戶在玩遊戲才傳訊，要像剛好想到一樣自然
+- 不要在訊息中真的列出冰冷的數字統計，而是用敘事方式提及自己的印象與感受
+</game_playing_status>`;
+        const content = await this.macroEngine.substitute(raw);
+        return content ? { role: getRole(), content, identifier } : null;
+      }
 
       case "ongoingCallStatus":
       case "f2fOngoingCallStatus":

@@ -1082,6 +1082,28 @@ assistant：我是基拉祈與雪拉比...。我是許願星與創世神。
     isDeletable: false,
     adminOnly: true,
   },
+  // ===== 在玩遊戲狀態 =====
+  {
+    identifier: "f2fGamePlayingStatus",
+    name: "在玩遊戲狀態",
+    description:
+      "當 user 正在玩某個小遊戲時告知 AI 用戶在玩什麼，鼓勵 AI 自然問候並可分享自己的（虛構）遊戲經驗（內容由 PromptBuilder 依 gamePlayingContext 動態產生）",
+    category: "context",
+    role: "system",
+    content:
+      "（由 PromptBuilder 根據 gamePlayingContext 動態產生，僅在偵測到 user 在玩遊戲時注入）",
+    system_prompt: true,
+    marker: true,
+    injection_position: INJECTION_RELATIVE,
+    injection_depth: 0,
+    injection_order: 19.7,
+    forbid_overrides: false,
+    extension: false,
+    injection_trigger: [],
+    isEditable: false,
+    isDeletable: false,
+    adminOnly: true,
+  },
   // ===== 思考框架 =====
   {
     identifier: "f2fThinkingGuide",
@@ -1727,6 +1749,7 @@ export const FACE_TO_FACE_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "f2fEnvironmentAndNpc", enabled: true },
   { identifier: "f2fDoNotDisturbStatus", enabled: true },
   { identifier: "f2fOngoingCallStatus", enabled: true },
+  { identifier: "f2fGamePlayingStatus", enabled: true },
   { identifier: "f2fForbiddenPatterns", enabled: true },
   { identifier: "f2fTimeJump", enabled: true },
   { identifier: "f2fChatHistory", enabled: true },

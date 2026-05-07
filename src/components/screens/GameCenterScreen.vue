@@ -172,7 +172,11 @@ import {
     Sparkles,
     UtensilsCrossed,
 } from "lucide-vue-next";
-import { ref } from "vue";
+import { onBeforeUnmount, ref } from "vue";
+import {
+    enterGameScreen,
+    leaveGameScreen,
+} from "@/composables/useGamePlayingDetector";
 
 const emit = defineEmits<{
   back: [];
@@ -186,12 +190,27 @@ function goBack() {
 }
 
 function openGame(gameId: string) {
+  // 切換或新進入遊戲畫面：通知 detector
+  if (currentGame.value && currentGame.value !== gameId) {
+    leaveGameScreen(currentGame.value);
+  }
   currentGame.value = gameId;
+  enterGameScreen(gameId);
 }
 
 function closeGame() {
+  if (currentGame.value) {
+    leaveGameScreen(currentGame.value);
+  }
   currentGame.value = null;
 }
+
+onBeforeUnmount(() => {
+  if (currentGame.value) {
+    leaveGameScreen(currentGame.value);
+    currentGame.value = null;
+  }
+});
 
 function handleShareToChat(characterId: string, message: string) {
   currentGame.value = null;

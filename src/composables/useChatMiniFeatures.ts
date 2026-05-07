@@ -297,14 +297,17 @@ export function useChatMiniFeatures(deps: {
   }
 
   /** 選擇城市後，根據 editTarget 套用到用戶或角色 */
-  async function selectWeatherCity(city: {
-    id: number;
-    name: string;
-    region: string;
-    country: string;
-    lat: number;
-    lon: number;
-  }) {
+  async function selectWeatherCity(
+    city: {
+      id: number;
+      name: string;
+      region: string;
+      country: string;
+      lat: number;
+      lon: number;
+    },
+    options: { skipGlobalUserUpdate?: boolean } = {},
+  ) {
     weatherSearchLoading.value = true;
     try {
       let data: WeatherData;
@@ -342,11 +345,14 @@ export function useChatMiniFeatures(deps: {
         customWeatherData.value = data;
         customWeatherCity.value = city.name;
         // 同時更新全域天氣 store 的手動城市（帶座標，避免城市名稱查詢誤判）
-        const cityLabel = city.region
-          ? `${city.name}, ${city.region}`
-          : city.name;
-        await weatherStore.setManualCity(cityLabel, city.lat, city.lon);
-        await weatherStore.refreshWeather(true);
+        // 若呼叫端指定僅套用到此聊天，則跳過全域更新避免影響其他聊天
+        if (!options.skipGlobalUserUpdate) {
+          const cityLabel = city.region
+            ? `${city.name}, ${city.region}`
+            : city.name;
+          await weatherStore.setManualCity(cityLabel, city.lat, city.lon);
+          await weatherStore.refreshWeather(true);
+        }
       }
     } catch {
       console.warn("[天氣分享] 無法取得城市天氣");

@@ -40,6 +40,21 @@ export class ProactiveMessageService {
 
   private constructor() {}
 
+  /**
+   * 通知 UI 層該聊天有新訊息（讓開著的 ChatScreen 即時 reload）
+   */
+  private _emitChatUpdated(chatId: string) {
+    try {
+      window.dispatchEvent(
+        new CustomEvent("aguaphone:chat-messages-appended", {
+          detail: { chatId },
+        }),
+      );
+    } catch {
+      // 忽略（非瀏覽器環境 / 測試環境）
+    }
+  }
+
   static getInstance(): ProactiveMessageService {
     if (!ProactiveMessageService.instance) {
       ProactiveMessageService.instance = new ProactiveMessageService();
@@ -259,11 +274,481 @@ export class ProactiveMessageService {
   }
 
   /**
+   * 遊戲遊玩偵測器專用：user 在某遊戲畫面停留滿時間後，
+   * 由「最近一次有對話的非群組聊天角色」主動發訊關心遊戲。
+   *
+   * 不沿用封鎖 / 夜間免打擾 / 通話中 / 活躍 chat 等檢查；
+   * 直接照常觸發 sendProactiveMessage（只保留 pendingCharacters 防同角色併發）。
+   *
+   * @param gameId 遊戲 ID（如 '2048' / 'snake' / 'fishing' ...）
+   */
+  async sendGamePlayingProactiveMessage(gameId: string) {
+    try {
+      const { db, DB_STORES } = await import("@/db/database");
+      const allChats = await db.getAll<any>(DB_STORES.CHATS);
+
+      // 取最近一次有對話的聊天（包含群聊與單聊，依 updatedAt 排序）
+      // 注意：
+      // - 普通群聊必須有 groupMetadata.members
+      // - 多人卡群聊（isMultiCharCard）成員存在 multiCharMembers，不在 members
+      // - 單聊必須有 characterId
+      const candidate = allChats
+        .filter((c: any) => {
+          if (!c) return false;
+          if (c.isGroupChat) {
+            const gm = c.groupMetadata;
+            if (!gm) return false;
+            if (gm.isMultiCharCard) {
+              return (
+                Array.isArray(gm.multiCharMembers) &&
+                gm.multiCharMembers.length > 0
+              );
+            }
+            return Array.isArray(gm.members) && gm.members.length > 0;
+          }
+          return typeof c.characterId === "string" && c.characterId.length > 0;
+        })
+        .sort((a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+
+      if (!candidate) {
+        console.log(
+          "[ProactiveMessage] sendGamePlayingProactiveMessage: 沒有可用的聊天，跳過",
+        );
+        return;
+      }
+
+      // 中文遊戲名稱對照
+      const gameNameMap: Record<string, string> = {
+        "2048": "2048",
+        snake: "貪吃蛇",
+        sudoku: "數獨",
+        tetris: "俄羅斯方塊",
+        fishing: "釣魚",
+        dishwashing: "洗碗",
+        gambling: "骰子（賭博）",
+        merit: "修行（敲木魚／盤佛珠）",
+        "food-roulette": "轉轉飯堂",
+      };
+      const gameName = gameNameMap[gameId] || gameId;
+
+      // 群聊路徑
+      if (candidate.isGroupChat) {
+        console.log(
+          `[ProactiveMessage] sendGamePlayingProactiveMessage 觸發群聊：chatId=${candidate.id}，遊戲=${gameName}`,
+        );
+        await this._sendGroupChatGamePlayingMessage(candidate, gameName);
+        return;
+      }
+
+      // 單聊路徑
+      const characterId = candidate.characterId as string;
+      const characterStore = useCharactersStore();
+      if (
+        !characterStore.characters ||
+        !characterStore.characters.find((c) => c.id === characterId)
+      ) {
+        console.log(
+          `[ProactiveMessage] sendGamePlayingProactiveMessage: 角色 ${characterId} 不存在，跳過`,
+        );
+        return;
+      }
+
+      // 話題引導只負責「請主動發起對話」這個觸發動機；
+      // user 在玩什麼遊戲的具體上下文由 PromptBuilder 的 gamePlayingStatus marker 注入。
+      const customTopicInstruction = `<request>【話題引導】請主動傳訊息給用戶，根據系統提示中的當前狀態自然地發起對話，就像你剛好想到一樣，符合你的人設與性格。</request>`;
+
+      const tempSettings: ProactiveMessageSettings = {
+        enabled: true,
+        intervalMinutes: 15,
+        doNotDisturbEnabled: false,
+        doNotDisturbStart: "00:00",
+        doNotDisturbEnd: "06:00",
+        showNotification: true,
+      };
+
+      console.log(
+        `[ProactiveMessage] sendGamePlayingProactiveMessage 觸發單聊：角色=${characterId}，遊戲=${gameName}`,
+      );
+
+      await this.sendProactiveMessage(characterId, tempSettings, {
+        customTopicInstruction,
+        skipScheduleUpdate: true,
+        gamePlayingContext: { gameName },
+      });
+    } catch (err) {
+      console.error(
+        "[ProactiveMessage] sendGamePlayingProactiveMessage 失敗:",
+        err,
+      );
+    }
+  }
+
+  /**
+   * 群聊版本的「在玩遊戲」主動關心訊息
+   * 簡化版：只處理一般文字訊息（含 sticker / voice），不處理 group-action / dm / 來電請求等複雜標籤
+   */
+  private async _sendGroupChatGamePlayingMessage(
+    groupChat: any,
+    gameName: string,
+  ): Promise<void> {
+    const lockKey = `group:${groupChat.id}`;
+    if (this.pendingCharacters.has(lockKey)) {
+      console.log(
+        "[ProactiveMessage] _sendGroupChatGamePlayingMessage: 群聊已在處理中，跳過",
+      );
+      return;
+    }
+    this.pendingCharacters.add(lockKey);
+
+    try {
+      const characterStore = useCharactersStore();
+      const groupMetadata = groupChat.groupMetadata;
+      if (!groupMetadata) {
+        console.warn(
+          "[ProactiveMessage] _sendGroupChatGamePlayingMessage: 缺少 groupMetadata，跳過",
+          { chatId: groupChat.id, name: groupChat.name },
+        );
+        return;
+      }
+
+      const isMultiCharCard = !!groupMetadata.isMultiCharCard;
+
+      // ===== 確認成員存在 =====
+      if (isMultiCharCard) {
+        if (
+          !Array.isArray(groupMetadata.multiCharMembers) ||
+          groupMetadata.multiCharMembers.length === 0
+        ) {
+          console.warn(
+            "[ProactiveMessage] _sendGroupChatGamePlayingMessage: 多人卡群聊沒有 multiCharMembers，跳過",
+            { chatId: groupChat.id, name: groupChat.name },
+          );
+          return;
+        }
+      } else {
+        if (
+          !Array.isArray(groupMetadata.members) ||
+          groupMetadata.members.length === 0
+        ) {
+          console.warn(
+            "[ProactiveMessage] _sendGroupChatGamePlayingMessage: 普通群聊沒有 members，跳過",
+            { chatId: groupChat.id, name: groupChat.name },
+          );
+          return;
+        }
+      }
+
+      // ===== 解析 lead character 與 groupMembers =====
+      // 普通群聊：用第一個非禁言成員當作 PromptBuilder 的 character；groupMembers 由真實角色組成
+      // 多人卡：用 chat.characterId（宿主卡）當作 character；groupMembers 不傳，PromptBuilder 走 multiCharMembers 路徑
+      let leadCharacter: any = null;
+      let groupMembers: any[] | undefined;
+
+      if (isMultiCharCard) {
+        const hostId = groupChat.characterId;
+        leadCharacter = characterStore.characters.find(
+          (c) => c.id === hostId,
+        );
+        if (!leadCharacter) {
+          console.warn(
+            "[ProactiveMessage] _sendGroupChatGamePlayingMessage: 多人卡找不到宿主角色（chat.characterId）",
+            { chatId: groupChat.id, hostCharacterId: hostId },
+          );
+          return;
+        }
+        groupMembers = undefined; // 多人卡走 multiCharMembers 路徑
+      } else {
+        groupMembers = groupMetadata.members
+          .map((m: any) => {
+            const ch = characterStore.characters.find(
+              (c) => c.id === m.characterId,
+            );
+            if (!ch) return null;
+            return {
+              characterId: m.characterId,
+              name: ch.nickname || ch.data?.name || m.characterId,
+              nickname: m.nickname,
+              originalName: ch.data?.name || m.characterId,
+              personality: ch.data?.personality || "",
+              description: ch.data?.description || "",
+              avatar: ch.avatar || "",
+              isAdmin: !!m.isAdmin,
+              isMuted: !!m.isMuted,
+            };
+          })
+          .filter(Boolean) as any[];
+
+        if (groupMembers.length === 0) {
+          console.warn(
+            "[ProactiveMessage] _sendGroupChatGamePlayingMessage: 群聊成員都查無資料，跳過",
+          );
+          return;
+        }
+
+        const leadMember =
+          groupMembers.find((m) => !m.isMuted) || groupMembers[0];
+        leadCharacter = characterStore.characters.find(
+          (c) => c.id === leadMember.characterId,
+        );
+        if (!leadCharacter) {
+          console.warn(
+            "[ProactiveMessage] _sendGroupChatGamePlayingMessage: 找不到 leadCharacter",
+          );
+          return;
+        }
+      }
+
+      // 載入歷史訊息
+      const existingMessages = await loadMessages(groupChat.id);
+
+      // 話題引導訊息
+      const topicInstruction = `<request>【話題引導】用戶現在正在玩小遊戲。請從群聊成員中挑選 1-2 個合適的角色（非禁言）主動傳訊息給用戶，根據系統提示中的「在玩遊戲狀態」自然地問候並可選擇分享自己的遊戲經驗，符合各自人設。請使用 <msg name="角色名">內容</msg> 格式。</request>`;
+      const topicMessage = {
+        id: crypto.randomUUID(),
+        sender: "user" as const,
+        name: "System",
+        content: topicInstruction,
+        is_user: true,
+        status: "sent" as const,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      const messagesWithTopic = [...existingMessages, topicMessage];
+
+      // ===== 準備依賴 =====
+      const { useSettingsStore } = await import("@/stores/settings");
+      const { useUserStore } = await import("@/stores/user");
+      const { useLorebooksStore } = await import("@/stores/lorebooks");
+      const { usePromptManagerStore } = await import("@/stores/promptManager");
+      const settingsStore = useSettingsStore();
+      const userStore = useUserStore();
+      const lorebooksStore = useLorebooksStore();
+      const promptManagerStore = usePromptManagerStore();
+      await promptManagerStore.loadConfig();
+
+      const taskConfig = settingsStore.getAPIForTask("chat");
+      if (!taskConfig.api.apiKey) {
+        console.warn("[ProactiveMessage] API Key not configured");
+        return;
+      }
+
+      const currentPersona = userStore.currentPersona;
+      const characterLorebooks = leadCharacter.data.extensions?.world
+        ? lorebooksStore.lorebooks.filter(
+            (lb) => lb.id === leadCharacter.data.extensions?.world,
+          )
+        : [];
+
+      const chatSettings = {
+        maxContextLength: taskConfig.generation.maxContextLength,
+        maxResponseLength: taskConfig.generation.maxTokens,
+        temperature: taskConfig.generation.temperature,
+        topP: taskConfig.generation.topP,
+        topK: 0,
+        frequencyPenalty: taskConfig.generation.frequencyPenalty,
+        presencePenalty: taskConfig.generation.presencePenalty,
+        repetitionPenalty: 1.0,
+        stopSequences: [],
+        streaming: false, // 群聊主動關心使用非串流，簡化處理
+        useStreamingWindow: false,
+      };
+
+      const { PromptBuilder } = await import("@/engine/prompt/PromptBuilder");
+      const promptBuilder = new PromptBuilder({
+        character: leadCharacter,
+        lorebooks: characterLorebooks,
+        messages: messagesWithTopic,
+        settings: chatSettings,
+        userName: currentPersona?.name || "User",
+        userPersona: currentPersona?.description,
+        userSecrets: currentPersona?.secrets,
+        powerDynamic: currentPersona?.powerDynamic,
+        promptManagerConfig: promptManagerStore.config,
+        enableRealTimeAwareness: groupChat.enableRealTimeAwareness !== false,
+        groupChatMode: true,
+        groupMembers,
+        groupName: groupMetadata.groupName,
+        isMultiCharCard: !!groupMetadata.isMultiCharCard,
+        multiCharMembers: groupMetadata.isMultiCharCard
+          ? groupMetadata.multiCharMembers
+          : undefined,
+        gamePlayingContext: { gameName },
+      });
+
+      const promptData = await promptBuilder.build();
+
+      const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
+      const client = new OpenAICompatibleClient(taskConfig.api);
+      const result = await client.generate({
+        messages: promptData.messages,
+        settings: chatSettings,
+        apiSettings: taskConfig.api,
+        adjustLastMessageRole: true,
+      });
+      const aiContent = result?.content || "";
+      if (!aiContent) {
+        console.warn(
+          "[ProactiveMessage] _sendGroupChatGamePlayingMessage: AI 回覆為空，跳過",
+        );
+        return;
+      }
+
+      // 解析群聊回覆
+      const { parseGroupChatResponse } = await import(
+        "@/services/ResponseParser"
+      );
+      const parsed = parseGroupChatResponse(aiContent);
+      if (!parsed.messages.length) {
+        console.warn(
+          "[ProactiveMessage] _sendGroupChatGamePlayingMessage: 解析後沒有訊息，跳過",
+        );
+        return;
+      }
+
+      // 名稱 → characterId 解析（容錯：比對暱稱 / 本名 / 群暱稱）
+      // 多人卡：用 multiCharMembers 的 multi_xxx ID 與 name 比對
+      // 普通群聊：用 groupMembers 的 nickname / name / originalName 比對
+      function resolveSenderId(senderName: string): {
+        characterId?: string;
+        canonicalName: string;
+      } {
+        const lower = (senderName || "").trim().toLowerCase();
+        if (isMultiCharCard) {
+          for (const sub of groupMetadata.multiCharMembers || []) {
+            if ((sub.name || "").toLowerCase() === lower) {
+              return { characterId: sub.id, canonicalName: sub.name };
+            }
+          }
+          return { canonicalName: senderName };
+        }
+        for (const m of groupMembers || []) {
+          const aliases = [m.nickname, m.name, m.originalName].filter(
+            Boolean,
+          ) as string[];
+          if (aliases.some((a) => a.toLowerCase() === lower)) {
+            return { characterId: m.characterId, canonicalName: m.name };
+          }
+        }
+        return { canonicalName: senderName };
+      }
+
+      const now = Date.now();
+      const newMessages: any[] = [];
+      let textCount = 0;
+      let skipCount = 0;
+      for (let i = 0; i < parsed.messages.length; i++) {
+        const pm: any = parsed.messages[i];
+        // 簡化版：跳過複雜標籤（group-action / dm / 來電 / recall / 紅包認領）
+        if (
+          pm.isGroupAction ||
+          pm.isPrivateMessage ||
+          pm.isGroupCallRequest ||
+          pm.isGroupCallResponse ||
+          pm.isRecall ||
+          pm.isRedpacketClaim
+        ) {
+          skipCount++;
+          continue;
+        }
+        const { characterId: senderCharId, canonicalName } = resolveSenderId(
+          pm.senderName || "",
+        );
+        const baseMsg: any = {
+          id: crypto.randomUUID(),
+          sender: "assistant" as const,
+          name: canonicalName,
+          content: pm.content || "",
+          is_user: false,
+          status: "sent" as const,
+          createdAt: now + i,
+          updatedAt: now + i,
+          senderCharacterId: senderCharId,
+          senderCharacterName: canonicalName,
+          ...(pm.thought && { thought: pm.thought }),
+          ...(pm.isVoice && { isVoice: true, voiceContent: pm.voiceContent }),
+          ...(pm.isStickerMsg && {
+            isStickerMsg: true,
+            stickerMeaning: pm.stickerMeaning,
+          }),
+          ...(pm.isAiImage && {
+            isAiImage: true,
+            imageDescription: pm.imageDescription,
+            imagePrompt: pm.imagePrompt,
+            messageType: "descriptive-image" as const,
+            imageCaption: pm.imageDescription,
+          }),
+        };
+        newMessages.push(baseMsg);
+        textCount++;
+      }
+
+      if (skipCount > 0) {
+        console.log(
+          `[ProactiveMessage] _sendGroupChatGamePlayingMessage: 跳過 ${skipCount} 個複雜標籤訊息（簡化版不處理）`,
+        );
+      }
+      if (newMessages.length === 0) {
+        console.warn(
+          "[ProactiveMessage] _sendGroupChatGamePlayingMessage: 沒有可儲存的純文字訊息",
+        );
+        return;
+      }
+
+      await appendMessages(groupChat.id, newMessages);
+      await refreshChatDerivedMetadata(groupChat.id);
+      await incrementLocalChatUnreadCount(groupChat.id, newMessages.length);
+      this._emitChatUpdated(groupChat.id);
+
+      // 發通知（用第一條訊息）
+      try {
+        const { useNotificationStore } = await import(
+          "@/stores/notification"
+        );
+        const notificationStore = useNotificationStore();
+        const first = newMessages[0];
+        const groupName = groupMetadata.groupName || "群聊";
+        notificationStore.notifyChatMessage(
+          `${first.name}（${groupName}）`,
+          first.content || "",
+          groupChat.id,
+          first.senderCharacterId || "",
+          undefined,
+        );
+      } catch (notifErr) {
+        console.warn(
+          "[ProactiveMessage] _sendGroupChatGamePlayingMessage: 通知發送失敗（非致命）:",
+          notifErr,
+        );
+      }
+
+      console.log(
+        `[ProactiveMessage] _sendGroupChatGamePlayingMessage: 已寫入 ${textCount} 條訊息到群聊 ${groupChat.id}`,
+      );
+    } catch (err) {
+      console.error(
+        "[ProactiveMessage] _sendGroupChatGamePlayingMessage 失敗:",
+        err,
+      );
+    } finally {
+      this.pendingCharacters.delete(lockKey);
+    }
+  }
+
+  /**
    * 發送主動訊息
+   * @param characterId 角色 ID
+   * @param settings 主動發訊設定（可為臨時設定）
+   * @param options.customTopicInstruction 覆蓋預設的話題引導 instruction
+   * @param options.skipScheduleUpdate 跳過 nextScheduledTime / lastSentTime 寫回（事件型觸發用）
    */
   private async sendProactiveMessage(
     characterId: string,
     settings: ProactiveMessageSettings,
+    options?: {
+      customTopicInstruction?: string;
+      skipScheduleUpdate?: boolean;
+      gamePlayingContext?: { gameName: string };
+    },
   ) {
     // 標記該角色正在處理中，防止 setInterval 重複觸發
     this.pendingCharacters.add(characterId);
@@ -307,16 +792,19 @@ export class ProactiveMessageService {
       }
 
       // 先更新 nextScheduledTime，防止頁面重載後因時間已過期而重複發送
-      const earlyNextTime = Date.now() + settings.intervalMinutes * 60 * 1000;
-      await characterStore.updateCharacter(characterId, {
-        proactiveMessageSettings: {
-          ...settings,
-          nextScheduledTime: earlyNextTime,
-        },
-      });
-      console.log(
-        `[ProactiveMessage] Pre-set nextScheduledTime to ${new Date(earlyNextTime).toLocaleString()} to prevent duplicate sends`,
-      );
+      // 事件型觸發（skipScheduleUpdate）不寫入排程欄位，避免覆蓋 user 真實設定
+      if (!options?.skipScheduleUpdate) {
+        const earlyNextTime = Date.now() + settings.intervalMinutes * 60 * 1000;
+        await characterStore.updateCharacter(characterId, {
+          proactiveMessageSettings: {
+            ...settings,
+            nextScheduledTime: earlyNextTime,
+          },
+        });
+        console.log(
+          `[ProactiveMessage] Pre-set nextScheduledTime to ${new Date(earlyNextTime).toLocaleString()} to prevent duplicate sends`,
+        );
+      }
 
       // 動態導入 db 和相關類型
       const { db, DB_STORES } = await import("@/db/database");
@@ -348,7 +836,9 @@ export class ProactiveMessageService {
       }
 
       // 使用話題引導功能，讓角色主動發起對話
-      const topicInstruction = `<request>【話題引導】請主動向用戶發起對話。根據你們之前的對話歷史（如果有的話），用自然、符合你性格的方式提起一個話題，就像是你自己想到的一樣。如果沒有對話歷史，可以問候用戶或分享你最近的想法，如果在深夜可以預設用戶已經入睡了，但你想分享事情。</request>`;
+      const topicInstruction =
+        options?.customTopicInstruction ||
+        `<request>【話題引導】請主動向用戶發起對話。根據你們之前的對話歷史（如果有的話），用自然、符合你性格的方式提起一個話題，就像是你自己想到的一樣。如果沒有對話歷史，可以問候用戶或分享你最近的想法，如果在深夜可以預設用戶已經入睡了，但你想分享事情。</request>`;
 
       // 添加話題引導訊息（臨時，用於生成後會移除）
       const topicMessage = {
@@ -598,6 +1088,7 @@ export class ProactiveMessageService {
         // 從聊天記錄載入感知現實時間設定（默認開啟）
         enableRealTimeAwareness: chat.enableRealTimeAwareness !== false,
         ongoingCallContext,
+        gamePlayingContext: options?.gamePlayingContext,
       });
 
       const promptData = await promptBuilder.build();
@@ -926,6 +1417,7 @@ export class ProactiveMessageService {
 
           // v24：用 appendChatMessages 追加新訊息（無競態風險，不需讀取-修改-寫回）
           await appendMessages(chat.id, newMessages);
+          this._emitChatUpdated(chat.id);
 
           // 更新 chat metadata（不含訊息）
           const freshChat = await loadChatById(chat.id);
@@ -1018,20 +1510,27 @@ export class ProactiveMessageService {
       }
 
       // 更新最後發送時間，並重新計算下次預定時間（基於實際發送完成時間）
-      const finalNow = Date.now();
-      const finalNextTime = finalNow + settings.intervalMinutes * 60 * 1000;
+      // 事件型觸發（skipScheduleUpdate）不寫回排程欄位，避免覆蓋 user 真實設定
+      if (!options?.skipScheduleUpdate) {
+        const finalNow = Date.now();
+        const finalNextTime = finalNow + settings.intervalMinutes * 60 * 1000;
 
-      await characterStore.updateCharacter(characterId, {
-        proactiveMessageSettings: {
-          ...settings,
-          lastSentTime: finalNow,
-          nextScheduledTime: finalNextTime,
-        },
-      });
+        await characterStore.updateCharacter(characterId, {
+          proactiveMessageSettings: {
+            ...settings,
+            lastSentTime: finalNow,
+            nextScheduledTime: finalNextTime,
+          },
+        });
 
-      console.log(
-        `[ProactiveMessage] Message sent successfully. Next time: ${new Date(finalNextTime).toLocaleString()}`,
-      );
+        console.log(
+          `[ProactiveMessage] Message sent successfully. Next time: ${new Date(finalNextTime).toLocaleString()}`,
+        );
+      } else {
+        console.log(
+          `[ProactiveMessage] Message sent successfully (skipScheduleUpdate=true，未寫回排程)`,
+        );
+      }
     } catch (error) {
       console.error("[ProactiveMessage] Failed to send message:", error);
     } finally {
