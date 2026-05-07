@@ -127,7 +127,7 @@ export interface SettingsData {
   auxiliary: AuxiliaryAPIConfig;
   novelAIImage: NovelAIImageSettings;
   minimaxTTS: MiniMaxTTSSettings;
-  language: "zh-TW" | "zh-CN";
+  language: "zh-TW" | "zh-CN" | "none";
   doNotDisturb: boolean;
   faceToFaceMode: boolean;
   nightMode: boolean;
@@ -252,7 +252,8 @@ export const useSettingsStore = defineStore("settings", () => {
   );
 
   // 語言設定
-  const language = ref<"zh-TW" | "zh-CN">("zh-TW");
+  // 預設為 'none' = 不轉換（按使用者打字 / AI 回覆原樣顯示），避免簡體使用者預設被自動轉成繁體
+  const language = ref<"zh-TW" | "zh-CN" | "none">("none");
 
   // 勿擾模式設定
   const doNotDisturb = ref(false);
@@ -969,7 +970,7 @@ export const useSettingsStore = defineStore("settings", () => {
    * 語言切換需要立即持久化，避免後續任意 re-load settings
    * 把暫存中的 zh-TW 覆蓋回來，造成「簡體會自己失效」的體感。
    */
-  function setLanguage(lang: "zh-TW" | "zh-CN"): void {
+  function setLanguage(lang: "zh-TW" | "zh-CN" | "none"): void {
     if (language.value === lang) return;
 
     language.value = lang;

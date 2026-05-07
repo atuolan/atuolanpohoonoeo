@@ -21,7 +21,7 @@ const emit = defineEmits<{
 // Store
 const themeStore = useThemeStore();
 const settingsStore = useSettingsStore();
-const { currentLanguage, isSimplifiedChinese, t } = useLanguage();
+const { currentLanguage, t } = useLanguage();
 
 // 當前分頁
 const activeTab = ref<"colors" | "wallpaper" | "font" | "customFont" | "animation" | "css">(
@@ -685,20 +685,28 @@ watch(
                 <div class="font-switch-info">
                   <div class="font-switch-label">顯示字形</div>
                   <div class="font-switch-desc">
-                    切換介面文字的繁體/簡體顯示，資料儲存不受影響
+                    切換介面文字的繁體/簡體顯示，資料儲存不受影響。<br />
+                    選「原樣」則完全不轉換，按你打的字 / AI 回的字原樣顯示。
                   </div>
                 </div>
                 <div class="font-switch-toggle">
                   <button
                     class="lang-option"
-                    :class="{ active: !isSimplifiedChinese }"
+                    :class="{ active: currentLanguage === 'none' }"
+                    @click="settingsStore.setLanguage('none')"
+                  >
+                    原樣
+                  </button>
+                  <button
+                    class="lang-option"
+                    :class="{ active: currentLanguage === 'zh-TW' }"
                     @click="settingsStore.setLanguage('zh-TW')"
                   >
                     繁
                   </button>
                   <button
                     class="lang-option"
-                    :class="{ active: isSimplifiedChinese }"
+                    :class="{ active: currentLanguage === 'zh-CN' }"
                     @click="settingsStore.setLanguage('zh-CN')"
                   >
                     简

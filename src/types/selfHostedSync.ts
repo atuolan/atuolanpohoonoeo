@@ -393,7 +393,7 @@ export interface SyncChatMessagePayload extends Omit<ChatMessage, "imageData" | 
 }
 
 export interface SyncSettingsPreferencesPayload {
-  language: "zh-TW" | "zh-CN";
+  language: "zh-TW" | "zh-CN" | "none";
   doNotDisturb: boolean;
   faceToFaceMode: boolean;
   nightMode: boolean;
