@@ -42,6 +42,21 @@ const BUILTIN_SCRIPTS: RegexScript[] = [
     minDepth: -1,
     maxDepth: -1,
   },
+  {
+    id: "__builtin_delete_bushi_ershi",
+    scriptName: "[內置] 删除不是…而是",
+    findRegex: "/(?:不是[^。！？；]*?){1,}(?:而是|是)([^。！？；]+)/g",
+    replaceString: "$1",
+    trimStrings: [],
+    placement: [2],
+    disabled: false,
+    markdownOnly: true,
+    promptOnly: false,
+    runOnEdit: true,
+    substituteRegex: 0,
+    minDepth: -1,
+    maxDepth: -1,
+  },
 ];
 
 const STORAGE_KEY = "global-regex-scripts";
