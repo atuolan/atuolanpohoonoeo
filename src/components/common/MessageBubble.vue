@@ -4013,10 +4013,17 @@ const showTextVoiceTranscript = ref(true);
   flex-shrink: 0;
   width: var(--avatar-size, 40px);
   height: var(--avatar-size, 40px);
+  overflow: hidden;
 
   .soft-avatar {
     width: 100%;
     height: 100%;
+    object-fit: cover;
+    // 圖片載入失敗時不要讓 alt 文字撐大容器
+    font-size: 0;
+    line-height: 0;
+    color: transparent;
+    text-indent: -9999px;
 
     // 有頭像框時的樣式
     &.has-frame {

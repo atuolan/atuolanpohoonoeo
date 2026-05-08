@@ -23,7 +23,7 @@ export const PHONE_CALL_PROMPT_DEFINITIONS: PromptDefinition[] = [
 - 使用繁體中文
 
 📝 輸出格式（嚴格遵守）：
-輸出 JSON 陣列，每個元素是一句話：
+輸出 JSON 陣列，每個元素是一句話或一個動作：
 \`\`\`json
 [
   {"text": "說話內容", "tone": "語氣描述（可選）"},
@@ -33,10 +33,33 @@ export const PHONE_CALL_PROMPT_DEFINITIONS: PromptDefinition[] = [
 
 規則：
 - 必須是有效的 JSON 陣列格式
-- text: 說的話（必填）
+- text: 說的話（必填，動作項目除外）
 - tone: 語氣/動作描述，如「笑」「停頓」「嘆氣」（選填）
 - 可以回覆 1-4 句話，模擬真實通話節奏
-- 不要輸出 JSON 以外的任何內容`,
+- 不要輸出 JSON 以外的任何內容
+
+📞 主動掛斷（重要）：
+當你（{{char}}）在以下情況覺得需要結束通話時，可以主動掛電話：
+- 對話自然進入尾聲，已經互道再見
+- 有事要忙、被打擾、要去做別的事
+- 心情、情緒、劇情合理導致你想結束通話（生氣、害羞、尷尬、想哭等）
+- 已經講完想說的事，沒有繼續對話的必要
+
+掛斷時，在 JSON 陣列的最後加上一個動作項目：
+\`\`\`json
+[
+  {"text": "好啦，我先掛了", "tone": "輕快"},
+  {"text": "拜拜～", "tone": "道別"},
+  {"action": "hangup", "reason": "互道再見後正常結束通話"}
+]
+\`\`\`
+
+掛斷規則：
+- action 必須是 "hangup"
+- reason 是給系統看的內心想法，不會顯示給使用者（選填）
+- hangup 必須放在陣列最後一個位置
+- 一般對話請繼續講話，不要動不動就掛電話；只有真的合理才主動掛斷
+- 若使用者明確說再見/掛了/晚安等結束語，可以回應一句後掛斷`,
     system_prompt: true,
     marker: false,
     injection_position: INJECTION_RELATIVE,

@@ -645,7 +645,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
           aiGenerationStore.completeGeneration(phoneTaskId, "chat", finalContent);
           callMessages.value = callMessages.value.filter((m) => m.id !== aiMsg.id);
           const parsed = parsePhoneJsonOutput(finalContent);
-          for (const p of parsed) {
+          for (const p of parsed.messages) {
             callMessages.value.push({
               id: `call_msg_ai_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
               role: "ai", content: p.text, timestamp: Date.now(),
@@ -655,6 +655,20 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
 
           // 提取並套用 MVU 變量更新（卡內帶 MVU 時 AI 會輸出 <UpdateVariable>/<update> 標籤）
           await applyMvuUpdatesFromResponse(finalContent);
+
+          // AI 主動掛斷：在播放完訊息後結束通話
+          if (parsed.hangup && callState.value === "connected") {
+            console.log("[phoneCall] AI 主動掛斷", parsed.hangup.reason || "");
+            const delay = Math.min(
+              4000,
+              1500 + Math.max(0, parsed.messages.length - 1) * 800,
+            );
+            setTimeout(() => {
+              if (callState.value === "connected") {
+                endCall();
+              }
+            }, delay);
+          }
         }
       }
     } catch (error) {
@@ -668,8 +682,11 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   }
 
   // ===== 解析 JSON 輸出 =====
-  function parsePhoneJsonOutput(content: string): { text: string; tone?: string }[] {
-    if (!content?.trim()) return [{ text: "..." }];
+  function parsePhoneJsonOutput(content: string): {
+    messages: { text: string; tone?: string }[];
+    hangup?: { reason?: string };
+  } {
+    if (!content?.trim()) return { messages: [{ text: "..." }] };
     let cleaned = content.replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "")
       .replace(/```json\s*/gi, "").replace(/```\s*/g, "")
       // 剝離 MVU 變量更新標籤（卡內帶 MVU 時 AI 會輸出這些）
@@ -690,16 +707,48 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     const jsonMatch = cleaned.match(/\[\s*\{[\s\S]*\}\s*\]/);
     if (jsonMatch) {
       try {
-        let s = jsonMatch[0].replace(/[""]/g, '"').replace(/['']/g, "'");
+        const s = jsonMatch[0].replace(/[\u201c\u201d]/g, '"').replace(/[\u2018\u2019]/g, "'");
         const parsed = JSON.parse(s);
-        if (Array.isArray(parsed) && parsed.length > 0)
-          return parsed.map((item) => ({ text: String(item.text || item.content || "..."), tone: item.tone || item.emotion }));
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const messages: { text: string; tone?: string }[] = [];
+          let hangup: { reason?: string } | undefined;
+          for (const item of parsed) {
+            if (!item || typeof item !== "object") continue;
+            const action = typeof item.action === "string" ? item.action.toLowerCase() : "";
+            const isHangup =
+              action === "hangup" ||
+              action === "hang_up" ||
+              action === "endcall" ||
+              action === "end_call" ||
+              item.endCall === true ||
+              item.hangup === true;
+            if (isHangup) {
+              hangup = { reason: typeof item.reason === "string" ? item.reason : undefined };
+              // 動作項目仍可能附帶最後一句話
+              const rawText = item.text ?? item.content;
+              const text = rawText !== undefined && rawText !== null ? String(rawText).trim() : "";
+              if (text) {
+                messages.push({ text, tone: item.tone || item.emotion });
+              }
+              continue;
+            }
+            const rawText = item.text ?? item.content;
+            if (rawText === undefined || rawText === null) continue;
+            const text = String(rawText).trim();
+            if (!text) continue;
+            messages.push({ text, tone: item.tone || item.emotion });
+          }
+          if (messages.length === 0 && !hangup) {
+            messages.push({ text: "..." });
+          }
+          return { messages, hangup };
+        }
       } catch { /* fall through */ }
     }
     const voiceMatch = cleaned.match(/<voice>([\s\S]*?)<\/voice>/i);
-    if (voiceMatch) return [{ text: voiceMatch[1].trim() || "..." }];
+    if (voiceMatch) return { messages: [{ text: voiceMatch[1].trim() || "..." }] };
     cleaned = cleaned.replace(/<\/?(?:voice|content|msg)>/gi, "").trim();
-    return cleaned ? [{ text: cleaned }] : [{ text: "..." }];
+    return { messages: cleaned ? [{ text: cleaned }] : [{ text: "..." }] };
   }
 
   // ===== 從 AI 回覆中提取並套用 MVU 變量更新 =====
