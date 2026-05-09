@@ -3439,7 +3439,7 @@ const showTextVoiceTranscript = ref(true);
               :srcdoc="htmlBlockSrcdoc"
               class="html-block-iframe"
               :style="{ height: htmlBlockIframeHeight + 'px' }"
-              sandbox="allow-scripts allow-same-origin"
+              sandbox="allow-scripts"
               frameborder="0"
               scrolling="no"
             ></iframe>
@@ -3503,7 +3503,7 @@ const showTextVoiceTranscript = ref(true);
                 :srcdoc="regexHtmlDoc"
                 class="regex-html-iframe"
                 :style="{ height: regexIframeHeight + 'px' }"
-                sandbox="allow-scripts allow-same-origin"
+                sandbox="allow-scripts"
                 frameborder="0"
                 scrolling="no"
               ></iframe>

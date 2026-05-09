@@ -2003,10 +2003,46 @@ function getFirstHtmlFencePrefix(content: string): string {
   return match?.[1]?.trim().substring(0, 200) ?? "";
 }
 
+function getRegexHtmlSignature(htmlContent: string): string {
+  return htmlContent
+    .replace(
+      /<script\b[\s\S]*?<\/script>/gi,
+      (script) =>
+        script.includes("regex-audio-control") ||
+        script.includes("regex-iframe-height") ||
+        script.includes("function MiniQuery")
+          ? ""
+          : script,
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function hashString(value: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function getSplitRegexHtmlInsertIndex(messageId: string): number {
+  const idx = messages.value.findIndex((m) => m.id === messageId);
+  if (idx === -1) return -1;
+  let insertIdx = idx + 1;
+  while (insertIdx < messages.value.length) {
+    const msg = messages.value[insertIdx];
+    if (!msg.isHtmlBlock || !msg.id.startsWith(`${messageId}_html_`)) break;
+    insertIdx++;
+  }
+  return insertIdx;
+}
+
 function handleSplitRegexHtml(messageId: string, htmlContent: string) {
-  // 用內容前 200 字做 dedup key（比長度更穩定，不受 heightScript 版本差異影響）
-  const newPrefix = htmlContent.substring(0, 200);
-  const key = `${messageId}_${newPrefix}`;
+  const signature = getRegexHtmlSignature(htmlContent);
+  const signatureHash = hashString(signature);
+  const key = `${messageId}_${signatureHash}`;
   if (_splitRegexHtmlProcessed.has(key)) return;
   _splitRegexHtmlProcessed.add(key);
 
@@ -2028,48 +2064,43 @@ function handleSplitRegexHtml(messageId: string, htmlContent: string) {
   );
   const shouldInsertBefore = /^```(?:html)?\s*\n?/i.test(markdownRegexed.trimStart());
   const firstFencePrefix = getFirstHtmlFencePrefix(markdownRegexed);
+  const insertBefore =
+    shouldInsertBefore && firstFencePrefix && htmlContent.includes(firstFencePrefix);
+  const htmlId = `${messageId}_html_${signatureHash}_${insertBefore ? "before" : "after"}`;
+  const matchingIndexes = messages.value
+    .map((msg, index) => ({ msg, index }))
+    .filter(
+      ({ msg }) =>
+        msg.isHtmlBlock &&
+        msg.id.startsWith(`${messageId}_html_`) &&
+        getRegexHtmlSignature(msg.htmlContent ?? "") === signature,
+    )
+    .map(({ index }) => index);
 
-  if (shouldInsertBefore && firstFencePrefix && htmlContent.includes(firstFencePrefix)) {
-    const prev = messages.value[idx - 1];
-    const existingPrefix = prev?.htmlContent?.substring(0, 200) ?? "";
-    if (prev?.isHtmlBlock && prev.id.startsWith(`${messageId}_html`) && existingPrefix === newPrefix) {
-      prev.htmlContent = htmlContent;
+  if (matchingIndexes.length === 1) {
+    const existingIndex = matchingIndexes[0];
+    const existing = messages.value[existingIndex];
+    const expectedIndex = insertBefore ? idx - 1 : getSplitRegexHtmlInsertIndex(messageId);
+    if (existingIndex === expectedIndex - (insertBefore ? 0 : 1)) {
+      existing.id = htmlId;
+      existing.htmlContent = htmlContent;
       return;
     }
-
-    const htmlMessage: Message = {
-      id: `${messageId}_html_${Date.now()}_before`,
-      role: sourceMessage.role,
-      content: "",
-      timestamp: sourceMessage.timestamp - 0.1,
-      isHtmlBlock: true,
-      htmlContent: htmlContent,
-    };
-    messages.value.splice(idx, 0, htmlMessage);
-    saveChat();
-    return;
   }
 
-  // 掃描所有已有的 HTML 拆分氣泡，收集它們的前綴
-  let insertIdx = idx + 1;
-  while (insertIdx < messages.value.length) {
-    const msg = messages.value[insertIdx];
-    if (!msg.isHtmlBlock || !msg.id.startsWith(`${messageId}_html`)) break;
-    // 比對前 200 字（跳過尾部 heightScript 差異）
-    const existingPrefix = msg.htmlContent?.substring(0, 200) ?? "";
-    if (existingPrefix === newPrefix) {
-      // 已存在相同內容，更新 htmlContent 為最新版本（heightScript 可能更新）
-      msg.htmlContent = htmlContent;
-      return;
-    }
-    insertIdx++;
+  for (const duplicateIndex of [...matchingIndexes].sort((a, b) => b - a)) {
+    messages.value.splice(duplicateIndex, 1);
   }
+
+  const currentIdx = messages.value.findIndex((m) => m.id === messageId);
+  if (currentIdx === -1) return;
+  const insertIdx = insertBefore ? currentIdx : getSplitRegexHtmlInsertIndex(messageId);
 
   const htmlMessage: Message = {
-    id: `${messageId}_html_${Date.now()}_${insertIdx - idx}`,
-    role: "ai",
+    id: htmlId,
+    role: sourceMessage.role,
     content: "",
-    timestamp: messages.value[idx].timestamp + (insertIdx - idx),
+    timestamp: sourceMessage.timestamp + (insertBefore ? -0.1 : insertIdx - currentIdx),
     isHtmlBlock: true,
     htmlContent: htmlContent,
   };
