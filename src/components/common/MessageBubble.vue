@@ -1329,9 +1329,15 @@ const renderedContent = computed(() => {
       ...(props.characterRegexScripts ?? []),
     ];
 
+    // 依訊息來源選擇 placement：使用者訊息走 USER_INPUT，AI/系統走 AI_OUTPUT，
+    // 避免 AI_OUTPUT 限定的腳本（例如「刪除不是…而是」）誤吃使用者氣泡。
+    const bubblePlacement =
+      props.role === "user"
+        ? regex_placement.USER_INPUT
+        : regex_placement.AI_OUTPUT;
     processedContent = getRegexedString(
       processedContent,
-      regex_placement.AI_OUTPUT,
+      bubblePlacement,
       mergedScripts,
       { isMarkdown: true },
     );
