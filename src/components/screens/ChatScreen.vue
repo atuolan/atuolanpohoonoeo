@@ -1649,6 +1649,7 @@ const {
   userPersonaName: () => userStore.currentPersona?.name || "我",
   scrollToBottom,
   saveChat,
+  saveChatImmediate,
   switchChatFile,
   triggerAIResponse,
 });
@@ -4310,6 +4311,8 @@ async function triggerAIResponse(options?: {
   }
 
   const controller = startResult.controller!;
+  let latestFinalContent = "";
+  let usedStreamingWindowForCurrentGeneration = false;
 
   try {
     const chatTaskConfig = settingsStore.getAPIForTask("chat");
@@ -5106,6 +5109,7 @@ async function triggerAIResponse(options?: {
     const isStreamingEnabled = chatTaskConfig.generation.streamingEnabled;
     // 只有在串流開啟時才可能使用流式輸出窗口
     const useWindow = isStreamingEnabled && useStreamingWindowEnabled.value;
+    usedStreamingWindowForCurrentGeneration = useWindow;
 
     if (useWindow) {
       // 顯示流式輸出窗口
@@ -5222,7 +5226,15 @@ async function triggerAIResponse(options?: {
       }
 
       // 直接處理完整回覆（套用角色 regex_scripts AI_OUTPUT）
+      const rawFullContent =
+        useWindow &&
+        streamingWindow.content.value &&
+        streamingWindow.content.value.length > fullContent.length
+          ? streamingWindow.content.value
+          : fullContent;
+      fullContent = rawFullContent;
       const finalContent = processAiOutputTemplate(applyAIOutputRegex(fullContent));
+      latestFinalContent = finalContent;
       const msgIndex = messages.value.findIndex((m) => m.id === aiMessage.id);
 
       // 空回應檢測：若是使用者主動停止，直接移除佔位氣泡
@@ -6046,6 +6058,26 @@ async function triggerAIResponse(options?: {
                 parsedMsg.isVoice ? { force: true } : undefined,
               );
             }
+
+            if (parsed.messages.length === 0 || _shownMsgs1 === 0) {
+              if (_shownMsgs1 === 0 && parsed.messages.length > 0) {
+                console.warn(
+                  "[ChatScreen] 生成完成：所有解析訊息被過濾，觸發 fallback",
+                  { parsedCount: parsed.messages.length },
+                );
+              }
+              const fallbackContent = parsed.rawOutput || finalContent;
+              const strippedFallback = fallbackContent.replace(/<[^>]*>/g, "").trim();
+              if (strippedFallback) {
+                messages.value.push({
+                  id: `msg_${Date.now()}_fallback`,
+                  role: "ai",
+                  content: fallbackContent,
+                  timestamp: Date.now(),
+                  turnId: generationTurnId || undefined,
+                });
+              }
+            }
             streamingWindow.setComplete();
           }
         }
@@ -6102,9 +6134,28 @@ async function triggerAIResponse(options?: {
       aiGenerationStore.setError(currentChatId.value, errorMsg, "chat");
     }
   } finally {
+    let persistedGenerationContent = latestFinalContent;
+    if (
+      !persistedGenerationContent &&
+      usedStreamingWindowForCurrentGeneration &&
+      streamingWindow.content.value
+    ) {
+      try {
+        persistedGenerationContent = processAiOutputTemplate(
+          applyAIOutputRegex(streamingWindow.content.value),
+        );
+      } catch {
+        persistedGenerationContent = streamingWindow.content.value;
+      }
+    }
+
     // 完成全局生成狀態
     if (currentChatId.value) {
-      aiGenerationStore.completeGeneration(currentChatId.value, "chat");
+      aiGenerationStore.completeGeneration(
+        currentChatId.value,
+        "chat",
+        persistedGenerationContent || undefined,
+      );
     }
 
     // 安全網：無論走哪個分支（含 needsParsing=false 的純文字回覆），

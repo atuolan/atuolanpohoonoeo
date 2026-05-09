@@ -21,6 +21,7 @@ export function useChatTheater(deps: {
   userPersonaName: () => string;
   scrollToBottom: () => void;
   saveChat: () => void;
+  saveChatImmediate: () => Promise<void>;
   switchChatFile: (chatId: string) => Promise<void>;
   triggerAIResponse: (opts?: { theaterNudge?: boolean }) => Promise<void>;
 }) {
@@ -249,7 +250,7 @@ export function useChatTheater(deps: {
           deps.messages.value.push(msg as any);
         }
         deps.scrollToBottom();
-        await deps.saveChat();
+        await deps.saveChatImmediate();
         smallTheaterInput.value = "";
         await deps.triggerAIResponse({ theaterNudge: true });
         return;
@@ -267,7 +268,7 @@ export function useChatTheater(deps: {
       };
       deps.messages.value.push(smallTheaterMessage);
       deps.scrollToBottom();
-      await deps.saveChat();
+      await deps.saveChatImmediate();
       await deps.triggerAIResponse({ theaterNudge: true });
     }
 
