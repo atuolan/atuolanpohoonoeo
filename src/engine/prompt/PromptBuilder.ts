@@ -118,6 +118,7 @@ export interface PromptBuilderOptions {
   authorsNote?: AuthorsNoteMetadata;
   /** 系統提示詞覆蓋 */
   systemPromptOverride?: string;
+  htmlTemplatePrompt?: string;
   /** Token 計數器 */
   tokenCounter?: (text: string) => Promise<number>;
   /** 提示詞管理器配置（可選，如不提供則使用默認順序） */
@@ -2462,7 +2463,7 @@ export class PromptBuilder {
    * 這是系統提示詞的第一部分，不包含世界書
    */
   private async buildMainPrompt(): Promise<string> {
-    const { character, systemPromptOverride } = this.options;
+    const { character, systemPromptOverride, htmlTemplatePrompt } = this.options;
 
     // 主提示詞優先順序：覆蓋 > 角色設定 > 默認
     const mainPrompt =
@@ -2470,11 +2471,12 @@ export class PromptBuilder {
       character.data.system_prompt ||
       DEFAULT_PROMPTS.main;
 
-    if (mainPrompt) {
-      return await this.macroEngine.substitute(mainPrompt);
-    }
+    const parts = [mainPrompt, htmlTemplatePrompt]
+      .map((part) => part?.trim())
+      .filter((part): part is string => Boolean(part));
 
-    return "";
+    if (!parts.length) return "";
+    return await this.macroEngine.substitute(parts.join("\n\n"));
   }
 
   /**

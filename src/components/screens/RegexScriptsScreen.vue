@@ -34,6 +34,13 @@ const fRunOnEdit = ref(false);
 const fSubstituteRegex = ref(0);
 const fMinDepth = ref<number | "">("");
 const fMaxDepth = ref<number | "">("");
+const fIsHtmlTemplate = ref(false);
+const fHtmlTemplate = ref("");
+const fCssScope = ref("");
+const fAiPrompt = ref("");
+const fParseMode = ref<"text" | "json" | "kv">("text");
+const fRenderMode = ref<"inline" | "iframe">("iframe");
+const fOrder = ref<number | "">("");
 
 // 展開編輯器
 const expandReplace = ref(false);
@@ -83,6 +90,13 @@ function openNew() {
   fSubstituteRegex.value = 0;
   fMinDepth.value = "";
   fMaxDepth.value = "";
+  fIsHtmlTemplate.value = false;
+  fHtmlTemplate.value = "";
+  fCssScope.value = "";
+  fAiPrompt.value = "";
+  fParseMode.value = "text";
+  fRenderMode.value = "iframe";
+  fOrder.value = "";
   regexError.value = "";
   previewInput.value = "";
   showModal.value = true;
@@ -111,6 +125,13 @@ function openEdit(script: RegexScript) {
     script.minDepth != null && script.minDepth >= 0 ? script.minDepth : "";
   fMaxDepth.value =
     script.maxDepth != null && script.maxDepth >= 0 ? script.maxDepth : "";
+  fIsHtmlTemplate.value = !!script.isHtmlTemplate;
+  fHtmlTemplate.value = script.htmlTemplate ?? "";
+  fCssScope.value = script.cssScope ?? "";
+  fAiPrompt.value = script.aiPrompt ?? "";
+  fParseMode.value = script.parseMode ?? "text";
+  fRenderMode.value = script.renderMode ?? "iframe";
+  fOrder.value = script.order != null ? script.order : "";
   regexError.value = "";
   previewInput.value = "";
   showModal.value = true;
@@ -142,6 +163,13 @@ async function saveScript() {
     substituteRegex: fSubstituteRegex.value,
     minDepth: fMinDepth.value === "" ? -1 : Number(fMinDepth.value),
     maxDepth: fMaxDepth.value === "" ? -1 : Number(fMaxDepth.value),
+    isHtmlTemplate: fIsHtmlTemplate.value,
+    htmlTemplate: fHtmlTemplate.value,
+    cssScope: fCssScope.value,
+    aiPrompt: fAiPrompt.value,
+    parseMode: fParseMode.value,
+    renderMode: fRenderMode.value,
+    order: fOrder.value === "" ? 0 : Number(fOrder.value),
   };
 
   if (editingId.value) {
@@ -413,6 +441,63 @@ function placementLabel(script: RegexScript): string {
               </svg>
             </button>
           </div>
+
+          <label class="checkbox-item html-template-toggle">
+            <input type="checkbox" v-model="fIsHtmlTemplate" />
+            <span>HTML 模板規則</span>
+          </label>
+
+          <template v-if="fIsHtmlTemplate">
+            <div class="depth-row">
+              <div class="depth-field">
+                <label class="field-label">解析模式</label>
+                <select v-model="fParseMode" class="field-select">
+                  <option value="text">text（原始文字）</option>
+                  <option value="json">json（JSON 物件）</option>
+                  <option value="kv">kv（key=value）</option>
+                </select>
+              </div>
+              <div class="depth-field">
+                <label class="field-label">渲染模式</label>
+                <select v-model="fRenderMode" class="field-select">
+                  <option value="iframe">iframe（隔離渲染）</option>
+                  <option value="inline">inline（暫以 iframe 兼容）</option>
+                </select>
+              </div>
+            </div>
+
+            <label class="field-label">排序</label>
+            <input
+              v-model="fOrder"
+              type="number"
+              class="field-input"
+              placeholder="0"
+            />
+
+            <label class="field-label">HTML 模板</label>
+            <textarea
+              v-model="fHtmlTemplate"
+              class="field-textarea mono"
+              rows="8"
+              placeholder="<div>{{1.title}}</div>"
+            />
+
+            <label class="field-label">CSS</label>
+            <textarea
+              v-model="fCssScope"
+              class="field-textarea mono"
+              rows="5"
+              placeholder=".card { ... }"
+            />
+
+            <label class="field-label">AI 格式提示</label>
+            <textarea
+              v-model="fAiPrompt"
+              class="field-textarea"
+              rows="5"
+              placeholder="啟用後可匯出/保留，後續接入提示詞注入"
+            />
+          </template>
 
           <!-- 展開編輯 overlay -->
           <div

@@ -1,0 +1,118 @@
+import { regex_placement } from "@/services/RegexEngine";
+import type { RegexScript } from "@/types/character";
+import { describe, expect, it } from "vitest";
+import { applyHtmlTemplateRules, buildHtmlTemplatePrompt } from "../HtmlTemplateEngine";
+
+function makeRule(overrides: Partial<RegexScript>): RegexScript {
+  return {
+    id: "rule-1",
+    scriptName: "rule",
+    findRegex: "/<card>([\\s\\S]*?)<\\/card>/g",
+    replaceString: "",
+    trimStrings: [],
+    placement: [regex_placement.AI_OUTPUT],
+    disabled: false,
+    markdownOnly: false,
+    promptOnly: false,
+    runOnEdit: false,
+    substituteRegex: 0,
+    minDepth: -1,
+    maxDepth: -1,
+    isHtmlTemplate: true,
+    htmlTemplate: "<div>{{1.title}}</div>",
+    cssScope: ".card{color:red}",
+    aiPrompt: "請讓 {{char}} 輸出 <card>JSON</card>",
+    parseMode: "json",
+    renderMode: "iframe",
+    order: 0,
+    ...overrides,
+  };
+}
+
+describe("HtmlTemplateEngine", () => {
+  it("renders json templates into fenced html at the original position", () => {
+    const result = applyHtmlTemplateRules(
+      "前 <card>{\"title\":\"測試\"}</card> 後",
+      [makeRule({})],
+      { characterName: "阿水", userName: "User", placement: regex_placement.AI_OUTPUT },
+    );
+
+    expect(result.applied).toBe(1);
+    expect(result.htmlBlocks).toHaveLength(1);
+    expect(result.text).toContain("前");
+    expect(result.text).toContain("後");
+    expect(result.text).toContain("```html");
+    expect(result.text).toContain("<style>.card{color:red}</style><div>測試</div>");
+  });
+
+  it("escapes AI-provided values before inserting them into templates", () => {
+    const result = applyHtmlTemplateRules(
+      "<card>{\"title\":\"<script>alert(1)</script>\"}</card>",
+      [makeRule({})],
+      { placement: regex_placement.AI_OUTPUT },
+    );
+
+    expect(result.text).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(result.text).not.toContain("<script>alert(1)</script>");
+  });
+
+  it("supports kv parse mode", () => {
+    const result = applyHtmlTemplateRules(
+      "<card>title=銀行卡\namount:100</card>",
+      [makeRule({ parseMode: "kv", htmlTemplate: "<div>{{1.title}} {{1.amount}}</div>" })],
+      { placement: regex_placement.AI_OUTPUT },
+    );
+
+    expect(result.text).toContain("<div>銀行卡 100</div>");
+  });
+
+  it("skips rules whose placement does not match", () => {
+    const result = applyHtmlTemplateRules(
+      "<card>{\"title\":\"測試\"}</card>",
+      [makeRule({ placement: [regex_placement.USER_INPUT] })],
+      { placement: regex_placement.AI_OUTPUT },
+    );
+
+    expect(result.applied).toBe(0);
+    expect(result.text).toBe("<card>{\"title\":\"測試\"}</card>");
+  });
+
+  it("fast-path skips tag templates when the trigger tag is absent", () => {
+    const result = applyHtmlTemplateRules(
+      "普通對話內容",
+      [makeRule({})],
+      { placement: regex_placement.AI_OUTPUT },
+    );
+
+    expect(result.applied).toBe(0);
+    expect(result.htmlBlocks).toHaveLength(0);
+    expect(result.text).toBe("普通對話內容");
+  });
+
+  it("keeps compatibility for non-tag regex templates", () => {
+    const result = applyHtmlTemplateRules(
+      "score: 99",
+      [
+        makeRule({
+          findRegex: "/score:\\s*(\\d+)/g",
+          parseMode: "text",
+          htmlTemplate: "<div>分數 {{$1}}</div>",
+        }),
+      ],
+      { placement: regex_placement.AI_OUTPUT },
+    );
+
+    expect(result.applied).toBe(1);
+    expect(result.text).toContain("<div>分數 99</div>");
+  });
+
+  it("builds html template prompts with global macros", () => {
+    const prompt = buildHtmlTemplatePrompt([makeRule({})], {
+      characterName: "阿水",
+      placement: regex_placement.AI_OUTPUT,
+    });
+
+    expect(prompt).toContain("阿水");
+    expect(prompt).toContain("<card>JSON</card>");
+  });
+});

@@ -89,6 +89,10 @@ import {
 } from "@/storage/chatMessageStorage";
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import BlockService from "@/services/BlockService";
+import {
+  applyHtmlTemplateRules,
+  buildHtmlTemplatePrompt,
+} from "@/services/HtmlTemplateEngine";
 import { proactiveMessageService } from "@/services/ProactiveMessageService";
 import { getRegexedString, regex_placement } from "@/services/RegexEngine";
 import {
@@ -455,10 +459,16 @@ function applyAIOutputRegex(content: string): string {
   if (!scripts.length) return content;
   const charName = currentCharacter.value?.data?.name || props.characterName;
   const userName = userStore.currentPersona?.name || "User";
-  return getRegexedString(content, regex_placement.AI_OUTPUT, scripts, {
+  const regexed = getRegexedString(content, regex_placement.AI_OUTPUT, scripts, {
     characterName: charName,
     userName,
   });
+  const htmlTemplateResult = applyHtmlTemplateRules(regexed, scripts, {
+    characterName: charName,
+    userName,
+    placement: regex_placement.AI_OUTPUT,
+  });
+  return htmlTemplateResult.text;
 }
 
 function processAiOutputTemplate(content: string): string {
@@ -505,10 +515,15 @@ function applyUserInputRegex(content: string): string {
   if (!scripts.length) return content;
   const charName = currentCharacter.value?.data?.name || props.characterName;
   const userName = userStore.currentPersona?.name || "User";
-  return getRegexedString(content, regex_placement.USER_INPUT, scripts, {
+  const regexed = getRegexedString(content, regex_placement.USER_INPUT, scripts, {
     characterName: charName,
     userName,
   });
+  return applyHtmlTemplateRules(regexed, scripts, {
+    characterName: charName,
+    userName,
+    placement: regex_placement.USER_INPUT,
+  }).text;
 }
 
 // 快捷導航
@@ -4786,6 +4801,11 @@ async function triggerAIResponse(options?: {
       .filter((name) => name && name.trim());
 
     const waimaiAuthorsNote = buildWaimaiAuthorsNote(messagesToUse);
+    const htmlTemplatePrompt = buildHtmlTemplatePrompt(getActiveRegexScripts(), {
+      characterName: char.data.name || props.characterName,
+      userName: effectivePersona.value?.name || "User",
+      placement: regex_placement.AI_OUTPUT,
+    });
 
     const builder = new PromptBuilder({
       character: char,
@@ -4808,6 +4828,7 @@ async function triggerAIResponse(options?: {
       userPersona: effectivePersona.value?.description || undefined,
       userSecrets: effectivePersona.value?.secrets || undefined,
       powerDynamic: effectivePersona.value?.powerDynamic || undefined,
+      htmlTemplatePrompt: htmlTemplatePrompt || undefined,
       authorsNote: waimaiAuthorsNote,
       // 傳入提示詞管理器配置，使用用戶自定義的角色和位置設定
       promptManagerConfig: promptManagerStore.config,

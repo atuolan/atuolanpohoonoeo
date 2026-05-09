@@ -172,6 +172,7 @@ export function getRegexedString(
 
   for (const script of scripts) {
     if (script.disabled) continue;
+    if (script.isHtmlTemplate) continue;
 
     // 篩選邏輯（對應 ST engine.js）
     const { isMarkdown = false, isPrompt = false, isEdit = false } = params;
@@ -256,6 +257,13 @@ export function migrateRegexScript(script: Partial<RegexScript>): RegexScript {
   migrated.substituteRegex = migrated.substituteRegex ?? 0;
   migrated.minDepth = migrated.minDepth ?? -1;
   migrated.maxDepth = migrated.maxDepth ?? -1;
+  migrated.isHtmlTemplate = migrated.isHtmlTemplate ?? false;
+  migrated.htmlTemplate = migrated.htmlTemplate ?? "";
+  migrated.cssScope = migrated.cssScope ?? "";
+  migrated.aiPrompt = migrated.aiPrompt ?? "";
+  migrated.parseMode = migrated.parseMode ?? "text";
+  migrated.renderMode = migrated.renderMode ?? "iframe";
+  migrated.order = migrated.order ?? 0;
 
   return migrated;
 }

@@ -142,6 +142,13 @@ export interface RegexScript {
   minDepth: number;
   /** 最大深度 */
   maxDepth: number;
+  isHtmlTemplate?: boolean;
+  htmlTemplate?: string;
+  cssScope?: string;
+  aiPrompt?: string;
+  parseMode?: "text" | "json" | "kv";
+  renderMode?: "inline" | "iframe";
+  order?: number;
 }
 
 // ===== 角色卡擴展數據 =====
