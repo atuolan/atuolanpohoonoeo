@@ -759,20 +759,53 @@ function injectIframeHeightScript(html: string): string {
 <\/script>`;
   const heightScript = `<script>
 (function() {
-  var lastH = 0, stableCount = 0, tid;
-  function _reportHeight(){
-    var root = document.documentElement;
+  var lastH = 0, stableCount = 0, tid, busy = false;
+  function _applyAutoScale() {
     var body = document.body;
-    var h = Math.ceil(Math.max(
-      root ? root.scrollHeight : 0,
-      body ? body.scrollHeight : 0,
-      root ? root.offsetHeight : 0,
-      body ? body.offsetHeight : 0
-    ));
-    if (Math.abs(h - lastH) < 5) { stableCount++; if (stableCount > 3 && tid) { clearInterval(tid); tid = null; } return; }
-    stableCount = 0;
-    lastH = h;
-    window.parent.postMessage({type:'regex-iframe-height',height:h},'*');
+    if (!body) return 1;
+    // 先還原先前的縮放，重新測量原始內容寬度
+    body.style.transform = '';
+    body.style.transformOrigin = '';
+    body.style.width = '';
+    var viewportW = document.documentElement.clientWidth || window.innerWidth || 0;
+    if (!viewportW) return 1;
+    var contentW = Math.max(body.scrollWidth, document.documentElement.scrollWidth);
+    if (contentW > viewportW + 1) {
+      var scale = viewportW / contentW;
+      body.style.transformOrigin = 'top left';
+      body.style.transform = 'scale(' + scale + ')';
+      // 讓 body 在縮放後仍然填滿 viewport，避免右側出現空白
+      body.style.width = contentW + 'px';
+      return scale;
+    }
+    return 1;
+  }
+  function _reportHeight(){
+    if (busy) return;
+    busy = true;
+    try {
+      var scale = _applyAutoScale();
+      var root = document.documentElement;
+      var body = document.body;
+      var rawH = Math.max(
+        root ? root.scrollHeight : 0,
+        body ? body.scrollHeight : 0,
+        root ? root.offsetHeight : 0,
+        body ? body.offsetHeight : 0
+      );
+      var h = Math.ceil(rawH * (scale || 1));
+      if (Math.abs(h - lastH) < 5) {
+        stableCount++;
+        if (stableCount > 3 && tid) { clearInterval(tid); tid = null; }
+        return;
+      }
+      stableCount = 0;
+      lastH = h;
+      window.parent.postMessage({type:'regex-iframe-height',height:h},'*');
+    } finally {
+      // 下一個 tick 才解除，避免 MutationObserver 看到自己改的 style 又重入
+      setTimeout(function(){ busy = false; }, 30);
+    }
   }
   window.addEventListener('load', _reportHeight);
   window.addEventListener('resize', _reportHeight);
