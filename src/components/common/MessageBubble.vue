@@ -1338,17 +1338,32 @@ const renderedContent = computed(() => {
       //   必須在 shouldRenderAsRawHtml 之前，否則整篇會被誤判為純 HTML 塞進 iframe
       const rawHtmlFragment = extractRawHtmlFragment(processedContent);
       if (rawHtmlFragment) {
-        const inlineScopedHtml = scopeInlineHtmlStyles(
-          rawHtmlFragment.htmlContent,
-          getInlineHtmlScopeClass(props.id),
-        );
-        if (rawHtmlFragment.remainingText) {
-          regexHtmlDoc.value = "";
-          regexInlineHtml.value = inlineScopedHtml;
-          processedContent = rawHtmlFragment.remainingText;
+        // 含 <style>（複雜 HTML 模板）改走 iframe：可獲得樣式隔離、3D transform、自動縮放
+        // 不含 <style> 的小型片段（狀態欄等）維持 inline scope
+        const hasStyleBlock = /<style[\s>]/i.test(rawHtmlFragment.htmlContent);
+        if (hasStyleBlock) {
+          if (rawHtmlFragment.remainingText) {
+            regexInlineHtml.value = "";
+            regexHtmlDoc.value = injectIframeHeightScript(rawHtmlFragment.htmlContent);
+            processedContent = rawHtmlFragment.remainingText;
+          } else {
+            regexInlineHtml.value = "";
+            regexHtmlDoc.value = injectIframeHeightScript(rawHtmlFragment.htmlContent);
+            return "";
+          }
         } else {
-          regexInlineHtml.value = inlineScopedHtml;
-          return inlineScopedHtml;
+          const inlineScopedHtml = scopeInlineHtmlStyles(
+            rawHtmlFragment.htmlContent,
+            getInlineHtmlScopeClass(props.id),
+          );
+          if (rawHtmlFragment.remainingText) {
+            regexHtmlDoc.value = "";
+            regexInlineHtml.value = inlineScopedHtml;
+            processedContent = rawHtmlFragment.remainingText;
+          } else {
+            regexInlineHtml.value = inlineScopedHtml;
+            return inlineScopedHtml;
+          }
         }
       } else if (shouldRenderAsRawHtml(stripped)) {
         // 整篇都是 HTML（沒有混合文字）→ iframe 渲染
