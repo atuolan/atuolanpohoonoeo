@@ -50,6 +50,10 @@ const regexIframeRef = ref<HTMLIFrameElement | null>(null);
 const regexIframeHeight = ref(0);
 const regexInlineHtml = ref("");
 
+function startsWithHtmlFence(source: string): boolean {
+  return /^```(?:html)?\s*\n?/i.test(source.trimStart());
+}
+
 // ★ 正則產生 HTML 時需要拆分到獨立氣泡（避免在 computed 內直接修改 ref）
 const _regexHtmlEmitted = new Set<string>();
 function _emitSplitHtml(html: string) {
@@ -868,7 +872,10 @@ const renderedContent = computed(() => {
           injectIframeHeightScript(block),
         );
 
-        if (remainingText) {
+        if (remainingText && startsWithHtmlFence(html) && processedBlocks.length === 1) {
+          regexHtmlDoc.value = processedBlocks[0];
+          html = remainingText;
+        } else if (remainingText) {
           for (const block of processedBlocks) {
             _emitSplitHtml(block);
           }
@@ -1121,7 +1128,10 @@ const renderedContent = computed(() => {
           return injectIframeHeightScript(block);
         });
 
-        if (remainingText) {
+        if (remainingText && startsWithHtmlFence(stripped) && processedBlocks.length === 1) {
+          regexHtmlDoc.value = processedBlocks[0];
+          processedContent = remainingText;
+        } else if (remainingText) {
           // 有文字內容：所有 HTML 區塊 emit 給父組件建立獨立氣泡，當前氣泡保留文字
           for (const block of processedBlocks) {
             _emitSplitHtml(block);
@@ -1167,7 +1177,9 @@ const renderedContent = computed(() => {
       }
     }
     // 不是完整 HTML，清除之前的快取
-    regexHtmlDoc.value = "";
+    if (!regexHtmlDoc.value) {
+      regexHtmlDoc.value = "";
+    }
     if (!regexInlineHtml.value) {
       regexInlineHtml.value = "";
     }
@@ -3372,7 +3384,7 @@ const showTextVoiceTranscript = ref(true);
                 scrolling="no"
               ></iframe>
               <div
-                v-else
+                v-if="!regexHtmlDoc || renderedContent"
                 class="bubble-text"
                 v-html="renderedContent"
                 @click="onBubbleTextClick"
