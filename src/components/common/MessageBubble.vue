@@ -2330,6 +2330,96 @@ const renderedVoiceTranscript = computed(() => {
   return cleanTTSTags(raw);
 });
 
+// ===== 天氣分享卡片解析（不在氣泡內） =====
+interface WeatherShareSide {
+  location: string;
+  localTime: string; // HH:mm 部分
+  condition: string;
+  temp: number | null;
+  feelslike: number | null;
+  humidity: number | null;
+  emoji: string;
+}
+
+function pickWeatherEmoji(condition: string): string {
+  const c = (condition || "").toLowerCase();
+  if (/(雷|thunder)/i.test(c)) return "⛈️";
+  if (/(雪|snow|sleet|冰|hail)/i.test(c)) return "❄️";
+  if (/(雨|rain|drizzle|shower|毛毛)/i.test(c)) return "🌧️";
+  if (/(霧|mist|fog|haze|霾)/i.test(c)) return "🌫️";
+  if (/(晴|sunny|clear|陽)/i.test(c)) return "☀️";
+  if (/(局部|partly|多雲|間)/i.test(c)) return "⛅";
+  if (/(陰|overcast|cloud|雲)/i.test(c)) return "☁️";
+  return "🌤️";
+}
+
+const weatherShareData = computed<{
+  user: WeatherShareSide | null;
+  char: WeatherShareSide | null;
+  timeDiff: string;
+} | null>(() => {
+  const raw = props.content || "";
+  const block = raw.match(/<天氣分享>([\s\S]*?)<\/天氣分享>/);
+  if (!block) return null;
+  const inner = block[1];
+
+  const parseSide = (label: string): WeatherShareSide | null => {
+    // 抓【label】到下一個區塊邊界（【 或 [時區 或 \n* 或 結尾）
+    const re = new RegExp(
+      `【${label}】([\\s\\S]*?)(?=【|\\[時區|\\n\\s*\\*|$)`,
+    );
+    const m = inner.match(re);
+    if (!m) return null;
+    const body = m[1];
+    const get = (key: string): string => {
+      const r = new RegExp(`${key}[：:]\\s*([^\\n]+)`);
+      return body.match(r)?.[1].trim() || "";
+    };
+    const location = get("地點");
+    if (!location) return null;
+    const tempLine = get("溫度");
+    const tempMatch = tempLine.match(
+      /(-?\d+(?:\.\d+)?)°C(?:[（(]\s*體感\s*(-?\d+(?:\.\d+)?)°C[）)])?/,
+    );
+    const humidityLine = get("濕度");
+    const humidityMatch = humidityLine.match(/(\d+(?:\.\d+)?)/);
+    const localTimeRaw = get("當地時間");
+    // 取 HH:mm（若是 yyyy-MM-dd HH:mm 取後段；否則原樣）
+    const localTime = localTimeRaw.includes(" ")
+      ? localTimeRaw.split(" ").slice(-1)[0]
+      : localTimeRaw;
+    const condition = get("天氣");
+    return {
+      location,
+      localTime,
+      condition,
+      temp: tempMatch ? Number(tempMatch[1]) : null,
+      feelslike: tempMatch && tempMatch[2] ? Number(tempMatch[2]) : null,
+      humidity: humidityMatch ? Number(humidityMatch[1]) : null,
+      emoji: pickWeatherEmoji(condition),
+    };
+  };
+
+  const user = parseSide("我的天氣");
+  const char = parseSide("你的天氣");
+  if (!user && !char) return null;
+
+  // 時差：[時區差異] xxx。
+  const diffMatch = inner.match(/\[時區差異\]\s*([^\n]+)/);
+  let timeDiff = "";
+  if (diffMatch) {
+    const text = diffMatch[1].trim();
+    // 提取核心摘要（去除「客觀上的時區差異計算，」前綴與結尾句點）
+    const m = text.match(/對方所在時區比你(快|慢)\s*(\d+)\s*小時/);
+    if (m) timeDiff = `對方比你${m[1]} ${m[2]} 小時`;
+    else if (/雙方在同一個時區/.test(text)) timeDiff = "雙方在同一個時區";
+  }
+
+  return { user, char, timeDiff };
+});
+
+const isWeatherShare = computed(() => weatherShareData.value !== null);
+
 const formattedReplyToContent = computed(() => {
   const raw = (props.replyToContent || "").trim();
   if (!raw) return "";
@@ -2988,8 +3078,113 @@ const showTextVoiceTranscript = ref(true);
           </div>
         </div>
 
+        <!-- 天氣分享（獨立卡片，不在氣泡內） -->
+        <div v-if="isWeatherShare && weatherShareData" class="weather-share-card">
+          <div class="weather-share-card__header">
+            <span class="weather-share-card__icon">🌤️</span>
+            <span class="weather-share-card__title">天氣分享</span>
+          </div>
+
+          <!-- 雙方都有：左右兩段 + 中間時差 -->
+          <template v-if="weatherShareData.user && weatherShareData.char">
+            <div class="weather-share-card__sides">
+              <div class="weather-side weather-side--user">
+                <div class="weather-side__head">
+                  <span class="weather-side__who">我</span>
+                  <span v-if="weatherShareData.user.localTime" class="weather-side__time">
+                    {{ weatherShareData.user.localTime }}
+                  </span>
+                </div>
+                <div class="weather-side__main">
+                  <span class="weather-side__emoji">{{ weatherShareData.user.emoji }}</span>
+                  <span v-if="weatherShareData.user.temp !== null" class="weather-side__temp">
+                    {{ Math.round(weatherShareData.user.temp) }}°
+                  </span>
+                </div>
+                <div class="weather-side__cond">{{ weatherShareData.user.condition }}</div>
+                <div class="weather-side__loc">📍 {{ weatherShareData.user.location }}</div>
+                <div class="weather-side__meta">
+                  <span v-if="weatherShareData.user.feelslike !== null">體感 {{ Math.round(weatherShareData.user.feelslike) }}°</span>
+                  <span v-if="weatherShareData.user.humidity !== null">濕度 {{ weatherShareData.user.humidity }}%</span>
+                </div>
+              </div>
+
+              <div class="weather-share-card__divider">
+                <span v-if="weatherShareData.timeDiff" class="weather-share-card__diff">
+                  {{ weatherShareData.timeDiff }}
+                </span>
+              </div>
+
+              <div class="weather-side weather-side--char">
+                <div class="weather-side__head">
+                  <span class="weather-side__who">TA</span>
+                  <span v-if="weatherShareData.char.localTime" class="weather-side__time">
+                    {{ weatherShareData.char.localTime }}
+                  </span>
+                </div>
+                <div class="weather-side__main">
+                  <span class="weather-side__emoji">{{ weatherShareData.char.emoji }}</span>
+                  <span v-if="weatherShareData.char.temp !== null" class="weather-side__temp">
+                    {{ Math.round(weatherShareData.char.temp) }}°
+                  </span>
+                </div>
+                <div class="weather-side__cond">{{ weatherShareData.char.condition }}</div>
+                <div class="weather-side__loc">📍 {{ weatherShareData.char.location }}</div>
+                <div class="weather-side__meta">
+                  <span v-if="weatherShareData.char.feelslike !== null">體感 {{ Math.round(weatherShareData.char.feelslike) }}°</span>
+                  <span v-if="weatherShareData.char.humidity !== null">濕度 {{ weatherShareData.char.humidity }}%</span>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- 只有單邊 -->
+          <template v-else>
+            <div
+              class="weather-single"
+              :class="weatherShareData.user ? 'weather-single--user' : 'weather-single--char'"
+            >
+              <div class="weather-single__main">
+                <span class="weather-single__emoji">
+                  {{ (weatherShareData.user || weatherShareData.char)?.emoji }}
+                </span>
+                <div class="weather-single__num">
+                  <span
+                    v-if="(weatherShareData.user || weatherShareData.char)?.temp !== null"
+                    class="weather-single__temp"
+                  >
+                    {{ Math.round((weatherShareData.user || weatherShareData.char)!.temp!) }}°
+                  </span>
+                  <span class="weather-single__cond">
+                    {{ (weatherShareData.user || weatherShareData.char)?.condition }}
+                  </span>
+                </div>
+              </div>
+              <div class="weather-single__row">
+                <span class="weather-single__who">
+                  {{ weatherShareData.user ? "我" : "TA" }}
+                </span>
+                <span class="weather-single__loc">
+                  📍 {{ (weatherShareData.user || weatherShareData.char)?.location }}
+                </span>
+              </div>
+              <div class="weather-single__meta">
+                <span v-if="(weatherShareData.user || weatherShareData.char)?.localTime">
+                  🕐 {{ (weatherShareData.user || weatherShareData.char)?.localTime }}
+                </span>
+                <span v-if="(weatherShareData.user || weatherShareData.char)?.feelslike !== null">
+                  體感 {{ Math.round((weatherShareData.user || weatherShareData.char)!.feelslike!) }}°
+                </span>
+                <span v-if="(weatherShareData.user || weatherShareData.char)?.humidity !== null">
+                  濕度 {{ (weatherShareData.user || weatherShareData.char)?.humidity }}%
+                </span>
+              </div>
+            </div>
+          </template>
+        </div>
+
         <!-- 位置分享（獨立卡片，不在氣泡內） -->
-        <div v-if="isLocation" class="location-bubble-card">
+        <div v-else-if="isLocation" class="location-bubble-card">
           <!-- 地圖區域 -->
           <div class="location-map-area">
             <!-- 街區背景 -->
@@ -3104,7 +3299,7 @@ const showTextVoiceTranscript = ref(true);
 
         <!-- 氣泡（位置消息與模式邀請卡片不顯示氣泡） -->
         <div
-          v-if="!isLocation && !isFaceToFaceRequest && !isOnlineModeRequest"
+          v-if="!isLocation && !isWeatherShare && !isFaceToFaceRequest && !isOnlineModeRequest"
           class="bubble"
           :class="{
             user: isUser,
@@ -5698,6 +5893,314 @@ const showTextVoiceTranscript = ref(true);
         transform: rotate(45deg); /* 使箭頭指向右上方 */
       }
     }
+  }
+}
+
+// 天氣分享卡片（不在氣泡內）
+.weather-share-card {
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  background: linear-gradient(160deg, #e0f2fe 0%, #ffffff 60%, #f0f9ff 100%);
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  box-shadow: 0 6px 18px rgba(56, 189, 248, 0.12);
+  color: #0f172a;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px 8px;
+    border-bottom: 1px solid rgba(56, 189, 248, 0.1);
+    background: rgba(255, 255, 255, 0.55);
+  }
+
+  &__icon {
+    font-size: 14px;
+  }
+
+  &__title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #075985;
+    letter-spacing: 0.02em;
+  }
+
+  &__sides {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: stretch;
+    padding: 10px 8px 12px;
+    gap: 4px;
+  }
+
+  &__divider {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    min-width: 14px;
+    padding: 0 2px;
+
+    &::before {
+      content: "";
+      position: absolute;
+      top: 8%;
+      bottom: 8%;
+      width: 1px;
+      background: linear-gradient(
+        to bottom,
+        transparent,
+        rgba(15, 23, 42, 0.18),
+        transparent
+      );
+    }
+  }
+
+  &__diff {
+    position: relative;
+    z-index: 1;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    font-size: 10px;
+    font-weight: 700;
+    color: #0369a1;
+    background: rgba(186, 230, 253, 0.85);
+    padding: 6px 2px;
+    border-radius: 999px;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+}
+
+.weather-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  min-width: 0;
+
+  &__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px;
+  }
+
+  &__who {
+    font-size: 11px;
+    font-weight: 800;
+    color: #475569;
+    background: rgba(255, 255, 255, 0.7);
+    padding: 1px 7px;
+    border-radius: 999px;
+    line-height: 1.5;
+  }
+
+  &__time {
+    font-size: 11px;
+    color: #64748b;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__main {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    margin-top: 2px;
+  }
+
+  &__emoji {
+    font-size: 22px;
+    line-height: 1;
+  }
+
+  &__temp {
+    font-size: 26px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -1px;
+    color: #0f172a;
+  }
+
+  &__cond {
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f172a;
+    opacity: 0.85;
+  }
+
+  &__loc {
+    font-size: 11px;
+    color: #475569;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 10px;
+    color: #64748b;
+    font-weight: 600;
+  }
+
+  &--char {
+    .weather-side__who {
+      background: rgba(252, 231, 243, 0.85);
+      color: #9d174d;
+    }
+  }
+
+  &--user {
+    .weather-side__who {
+      background: rgba(186, 230, 253, 0.85);
+      color: #0369a1;
+    }
+  }
+}
+
+// 單邊版本
+.weather-single {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px 14px;
+
+  &__main {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  &__emoji {
+    font-size: 36px;
+    line-height: 1;
+  }
+
+  &__num {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__temp {
+    font-size: 32px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -1.5px;
+    color: #0f172a;
+  }
+
+  &__cond {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    opacity: 0.85;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+  }
+
+  &__who {
+    font-size: 11px;
+    font-weight: 800;
+    background: rgba(186, 230, 253, 0.85);
+    color: #0369a1;
+    padding: 1px 7px;
+    border-radius: 999px;
+    line-height: 1.5;
+    flex-shrink: 0;
+  }
+
+  &__loc {
+    font-size: 12px;
+    color: #475569;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 11px;
+    color: #64748b;
+    font-weight: 600;
+  }
+
+  &--char {
+    .weather-single__who {
+      background: rgba(252, 231, 243, 0.85);
+      color: #9d174d;
+    }
+  }
+}
+
+// 夜間模式
+:global(body.is-night-mode) .weather-share-card {
+  background: linear-gradient(160deg, #0f1d2e 0%, #16213e 60%, #0f1d2e 100%);
+  border-color: rgba(96, 165, 250, 0.2);
+  color: #e2e8f0;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+
+  .weather-share-card__header {
+    background: rgba(255, 255, 255, 0.04);
+    border-bottom-color: rgba(255, 255, 255, 0.06);
+  }
+  .weather-share-card__title {
+    color: #7dd3fc;
+  }
+  .weather-share-card__divider::before {
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      rgba(255, 255, 255, 0.18),
+      transparent
+    );
+  }
+  .weather-share-card__diff {
+    background: rgba(56, 189, 248, 0.18);
+    color: #bae6fd;
+  }
+  .weather-side__temp,
+  .weather-side__cond,
+  .weather-single__temp,
+  .weather-single__cond {
+    color: #f1f5f9;
+  }
+  .weather-side__loc,
+  .weather-single__loc {
+    color: #cbd5e1;
+  }
+  .weather-side__time,
+  .weather-side__meta,
+  .weather-single__meta {
+    color: #94a3b8;
+  }
+  .weather-side--user .weather-side__who,
+  .weather-single--user .weather-single__who,
+  .weather-single__who {
+    background: rgba(56, 189, 248, 0.18);
+    color: #bae6fd;
+  }
+  .weather-side--char .weather-side__who,
+  .weather-single--char .weather-single__who {
+    background: rgba(244, 114, 182, 0.18);
+    color: #fbcfe8;
   }
 }
 

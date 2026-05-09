@@ -7,7 +7,7 @@ import {
 import { useCharactersStore } from "@/stores/characters";
 import { useWeatherStore } from "@/stores/weather";
 import type { StoredCharacter } from "@/types/character";
-import { ref, watch, type Ref } from "vue";
+import { computed, ref, watch, type Ref } from "vue";
 
 /**
  * 聊天小功能合集：遊戲成績、話題引導、位置分享、天氣分享
@@ -244,16 +244,16 @@ export function useChatMiniFeatures(deps: {
   const charWeatherLoading = ref(false);
   // 編輯目標：'user' | 'char' | null
   const weatherEditTarget = ref<"user" | "char" | null>(null);
+  // 發送對象：'both' | 'user' | 'char'
+  const weatherSendTarget = ref<"both" | "user" | "char">("both");
 
   /** 開啟天氣 modal 時自動載入角色天氣 */
   async function openWeatherModal() {
     showWeatherModal.value = true;
-    // IP 定位通常不準確，自動進入用戶地點編輯模式，讓用戶直接輸入城市
-    if (weatherStore.userLocation.mode === 'ip') {
-      weatherEditTarget.value = 'user';
-    } else {
-      weatherEditTarget.value = null;
-    }
+    // 重新設計後：開啟時不再自動進入編輯模式，由整列可點的卡片引導
+    weatherEditTarget.value = null;
+    // 預設兩邊都送，後續會依資料可用性自動修正
+    weatherSendTarget.value = "both";
     // 自動查詢角色天氣
     const char = deps.currentCharacter?.value;
     const charLocation = char?.worldSettings?.location;
@@ -369,72 +369,129 @@ export function useChatMiniFeatures(deps: {
     customWeatherCity.value = "";
   }
 
-  async function sendWeatherMessage() {
-    // 優先使用自訂城市天氣，否則用全域天氣
-    let weather = customWeatherData.value ?? weatherStore.weatherData;
-    let locationName = customWeatherData.value
+  /**
+   * 組合天氣分享訊息文字。回傳 null 表示沒有任何可送出的天氣資料。
+   * 依 weatherSendTarget 決定要包含哪幾段（user / char / both）。
+   */
+  function buildWeatherContent(): {
+    content: string;
+    timeDiffHours: number;
+    diffSummary: string;
+    hasUser: boolean;
+    hasChar: boolean;
+  } | null {
+    const target = weatherSendTarget.value;
+    const userWeather = customWeatherData.value ?? weatherStore.weatherData;
+    const userLocationName = customWeatherData.value
       ? customWeatherData.value.location.name
       : weatherStore.locationName;
+    const charWeather = charWeatherData.value;
 
-    if (!weather) {
-      await weatherStore.refreshWeather();
-      weather = weatherStore.weatherData;
-      locationName = weatherStore.locationName;
+    const includeUser = (target === "both" || target === "user") && !!userWeather;
+    const includeChar = (target === "both" || target === "char") && !!charWeather;
+    if (!includeUser && !includeChar) return null;
+
+    const isRealTimeAware = deps.getRealTimeAwareness ? deps.getRealTimeAwareness() : true;
+    const currentVirtualTime = deps.getFakeTime ? deps.getFakeTime() : new Date();
+
+    // 計算時差（僅在雙方都有資料時有意義）
+    let timeDiffHours = 0;
+    let diffText = "";
+    let diffSummary = "";
+    if (
+      userWeather &&
+      charWeather &&
+      userWeather.location.localtime &&
+      charWeather.location.localtime
+    ) {
+      const uTime = new Date(userWeather.location.localtime.replace(" ", "T")).getTime();
+      const cTime = new Date(charWeather.location.localtime.replace(" ", "T")).getTime();
+      timeDiffHours = Math.round((cTime - uTime) / (1000 * 60 * 60));
+      if (Math.abs(timeDiffHours) > 0) {
+        diffSummary = `對方比你${timeDiffHours > 0 ? "快" : "慢"} ${Math.abs(timeDiffHours)} 小時`;
+        if (target === "both") {
+          diffText = `\n\n[時區差異] 客觀上的時區差異計算，對方所在時區比你${timeDiffHours > 0 ? "快" : "慢"} ${Math.abs(timeDiffHours)} 小時。`;
+        }
+      } else {
+        diffSummary = "雙方在同一個時區";
+        if (target === "both") {
+          diffText = `\n\n[時區差異] 雙方在同一個時區。`;
+        }
+      }
     }
-    if (!weather) {
+
+    const formatDt = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
+    const userTimeLine = isRealTimeAware && includeUser
+      ? `\n當地時間：${formatDt(currentVirtualTime)}`
+      : "";
+    const charTimeLine = isRealTimeAware && includeChar
+      ? `\n當地時間：${formatDt(new Date(currentVirtualTime.getTime() + timeDiffHours * 60 * 60 * 1000))}`
+      : "";
+
+    const userBlock = includeUser && userWeather
+      ? `【我的天氣】
+地點：${userLocationName}${userTimeLine}
+天氣：${userWeather.current.condition.text}
+溫度：${Math.round(userWeather.current.temp_c)}°C（體感 ${Math.round(userWeather.current.feelslike_c)}°C）
+濕度：${userWeather.current.humidity}%`
+      : "";
+
+    const charBlock = includeChar && charWeather
+      ? `【你的天氣】
+地點：${charWeather.location.name}${charTimeLine}
+天氣：${charWeather.current.condition.text}
+溫度：${Math.round(charWeather.current.temp_c)}°C（體感 ${Math.round(charWeather.current.feelslike_c)}°C）
+濕度：${charWeather.current.humidity}%`
+      : "";
+
+    const sections = [userBlock, charBlock].filter(Boolean).join("\n\n");
+
+    let prompt: string;
+    if (includeUser && includeChar) {
+      prompt = `*對方與你分享了天氣和時區，請針對以上天氣與時差情報做出符合情境的回應，不要複述冷冰冰的資訊，可以根據溫度差異、${isRealTimeAware ? "晚睡早起、" : ""}時差或目前時間來關心情境。*`;
+    } else if (includeUser) {
+      prompt = `*對方分享了自己這邊的天氣，請自然地回應，不要複述資訊，可以根據天氣關心對方的情境。*`;
+    } else {
+      prompt = `*對方主動詢問或描述了你（角色）那邊的天氣，請以角色的視角自然回應，不要複述資訊。*`;
+    }
+
+    const content = `<天氣分享>
+${sections}${diffText}
+
+${prompt}
+</天氣分享>`;
+
+    return {
+      content,
+      timeDiffHours,
+      diffSummary,
+      hasUser: includeUser,
+      hasChar: includeChar,
+    };
+  }
+
+  /** 預覽用 computed：依目前 weatherSendTarget / 資料即時組合 */
+  const weatherPreview = computed(() => buildWeatherContent());
+
+  async function sendWeatherMessage() {
+    // 若兩邊都沒資料且全域天氣也沒載入，嘗試刷新一次
+    if (!customWeatherData.value && !weatherStore.weatherData && !charWeatherData.value) {
+      await weatherStore.refreshWeather();
+    }
+
+    const built = buildWeatherContent();
+    if (!built) {
       console.warn("無法獲取天氣數據");
       showWeatherModal.value = false;
       return;
     }
 
-    const isRealTimeAware = deps.getRealTimeAwareness ? deps.getRealTimeAwareness() : true;
-    const currentVirtualTime = deps.getFakeTime ? deps.getFakeTime() : new Date();
-
-    // 計算時差
-    const charWeather = charWeatherData.value;
-    let diffText = "";
-    let timeDiffHours = 0;
-    if (charWeather && weather.location.localtime && charWeather.location.localtime) {
-      const uTime = new Date(weather.location.localtime.replace(" ", "T")).getTime();
-      const cTime = new Date(charWeather.location.localtime.replace(" ", "T")).getTime();
-      timeDiffHours = Math.round((cTime - uTime) / (1000 * 60 * 60));
-      if (Math.abs(timeDiffHours) > 0) {
-        diffText = `\n\n[時區差異] 客觀上的時區差異計算，對方所在時區比你${timeDiffHours > 0 ? "快" : "慢"} ${Math.abs(timeDiffHours)} 小時。`;
-      } else {
-        diffText = `\n\n[時區差異] 雙方在同一個時區。`;
-      }
-    }
-
-    const formatDt = (d: Date) => {
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-    };
-
-    let userTimeLine = `\n當地時間：${formatDt(currentVirtualTime)}`;
-    let charTimeLine = charWeather ? `\n當地時間：${formatDt(new Date(currentVirtualTime.getTime() + timeDiffHours * 60 * 60 * 1000))}` : "";
-
-    if (!isRealTimeAware) {
-      userTimeLine = "";
-      charTimeLine = "";
-    }
-
-    const weatherContent = `<天氣分享>
-【我的天氣】
-地點：${locationName}${userTimeLine}
-天氣：${weather.current.condition.text}
-溫度：${Math.round(weather.current.temp_c)}°C（體感 ${Math.round(weather.current.feelslike_c)}°C）
-濕度：${weather.current.humidity}%${charWeather ? `\n\n【你的天氣】
-地點：${charWeather.location.name}${charTimeLine}
-天氣：${charWeather.current.condition.text}
-溫度：${Math.round(charWeather.current.temp_c)}°C（體感 ${Math.round(charWeather.current.feelslike_c)}°C）
-濕度：${charWeather.current.humidity}%` : ""}${diffText}
-
-*對方與你分享了天氣和時區，請針對以上天氣與時差情報做出符合情境的回應，不要複述冷冰冰的資訊，可以根據溫度差異、${isRealTimeAware ? '晚睡早起、' : ''}時差或目前時間來關心情境。*
-</天氣分享>`;
-
     const weatherMessage = {
       id: `msg_weather_${Date.now()}`,
       role: "user" as const,
-      content: weatherContent,
+      content: built.content,
       timestamp: Date.now(),
     };
 
@@ -491,6 +548,8 @@ export function useChatMiniFeatures(deps: {
     weatherEditTarget,
     startWeatherEdit,
     cancelWeatherEdit,
+    weatherSendTarget,
+    weatherPreview,
     getVirtualLocalTime: (targetWeather: WeatherData | null) => {
       const isRealTimeAware = deps.getRealTimeAwareness ? deps.getRealTimeAwareness() : true;
       if (!isRealTimeAware) return "";
