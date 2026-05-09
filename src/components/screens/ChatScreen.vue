@@ -16212,6 +16212,100 @@ body.is-night-mode {
   .wm-city-sheet__empty {
     color: var(--color-text-secondary, #808090);
   }
+
+  // ===== PrimeVue 元件夜間覆蓋（穿透 scoped） =====
+  // PvButton：.wm-city-sheet__chip / .wm-city-sheet__city / .wm-target chip
+  :deep(.p-button.wm-city-sheet__chip),
+  :deep(.p-button.wm-city-sheet__city) {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: var(--color-text, #eaeaea);
+
+    &:not(:disabled):hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: color-mix(
+        in srgb,
+        var(--color-primary, #7dd3a8) 50%,
+        transparent
+      );
+      color: var(--color-text, #eaeaea);
+    }
+
+    &:disabled {
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--color-text-secondary, #707080);
+    }
+  }
+
+  // PvSelect：.wm-city-sheet__select
+  :deep(.p-select.wm-city-sheet__select) {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: var(--color-text, #eaeaea);
+
+    .p-select-label {
+      color: var(--color-text, #eaeaea);
+    }
+
+    .p-select-label.p-placeholder {
+      color: var(--color-text-secondary, #808090);
+    }
+
+    .p-select-dropdown {
+      color: var(--color-text-secondary, #b0b0c0);
+    }
+
+    &:not(.p-disabled):hover {
+      border-color: color-mix(
+        in srgb,
+        var(--color-primary, #7dd3a8) 60%,
+        transparent
+      );
+    }
+
+    &.p-focus,
+    &:not(.p-disabled).p-focus {
+      border-color: var(--color-primary, #7dd3a8);
+      box-shadow: 0 0 0 2px
+        color-mix(in srgb, var(--color-primary, #7dd3a8) 30%, transparent);
+    }
+  }
+}
+
+// PvSelect 的 overlay 是 Teleport 到 body 的，無法被 scoped data-v 命中，
+// 必須走全域 selector。用 :global 包起來避免被 scoped 機制改寫。
+:global(body.is-night-mode .p-select-overlay) {
+  background: rgba(22, 28, 48, 0.98);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--color-text, #eaeaea);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+:global(body.is-night-mode .p-select-overlay .p-select-list-container) {
+  background: transparent;
+}
+
+:global(body.is-night-mode .p-select-option) {
+  color: var(--color-text, #d8d8e8);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  &.p-select-option-selected {
+    background: color-mix(in srgb, var(--color-primary, #7dd3a8) 22%, transparent);
+    color: var(--color-text, #eaeaea);
+  }
+}
+
+:global(body.is-night-mode .p-select-filter) {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--color-text, #eaeaea);
+
+  &::placeholder {
+    color: var(--color-text-secondary, #707080);
+  }
 }
 
 // ===== 群聊設定彈窗 =====
