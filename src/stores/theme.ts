@@ -601,6 +601,9 @@ export const useThemeStore = defineStore("theme", () => {
       root.style.setProperty(key, value);
     });
 
+    // 同步夜晚模式 class 到 body，讓 SCSS 可以基於此覆蓋寫死的淺色
+    document.body.classList.toggle("is-night-mode", nightMode.value);
+
     // 應用自訂 CSS
     applyCustomCSS();
 
