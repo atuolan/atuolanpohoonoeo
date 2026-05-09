@@ -657,11 +657,13 @@ html, body {
   width: 100%;
   max-width: 100%;
   margin: 0;
-  padding: 0;
   background: transparent;
   overflow-x: hidden;
   box-sizing: border-box;
 }
+html { padding: 0; }
+/* 留邊給 box-shadow / outline 等 scrollHeight 不計入的視覺溢出 */
+body { padding: 2px 12px 12px 2px; }
 *, *::before, *::after {
   box-sizing: border-box;
 }

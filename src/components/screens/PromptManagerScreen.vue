@@ -2173,7 +2173,6 @@ async function adminLogin() {
   adminLoginError.value = "";
   const success = await adminStore.login(adminPassword.value);
   if (success) {
-    await convertAllCustomPromptsToSystem();
     showAdminLoginModal.value = false;
     adminPassword.value = "";
   } else {
@@ -2214,9 +2213,6 @@ onMounted(async () => {
   await promptLibraryStore.load();
   await charactersStore.loadCharacters();
   await adminStore.loadAdminState();
-  if (adminStore.isAdmin) {
-    await promptManagerStore.convertAllCustomPromptsToSystem();
-  }
 });
 
 onUnmounted(() => {
