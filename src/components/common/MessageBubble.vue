@@ -43,6 +43,8 @@ const regexScriptsStore = useRegexScriptsStore();
 
 // 音頻播放器
 const audioPlayer = useAudioPlayer();
+const regexHtmlAudioElements = new Map<string, HTMLAudioElement>();
+const regexHtmlAudioSettings = new Map<string, { volume: number; muted: boolean; mode?: string }>();
 
 // regex 腳本產生的完整 HTML 文件（需要用 iframe 渲染以執行 script）
 const regexHtmlDoc = ref("");
@@ -68,6 +70,58 @@ function _emitSplitHtml(html: string) {
   });
 }
 
+function getRegexAudioSettings(id: string) {
+  let settings = regexHtmlAudioSettings.get(id);
+  if (!settings) {
+    settings = { volume: 1, muted: false };
+    regexHtmlAudioSettings.set(id, settings);
+  }
+  return settings;
+}
+
+function applyRegexAudioSettings(id: string) {
+  const audio = regexHtmlAudioElements.get(id);
+  if (!audio) return;
+  const settings = getRegexAudioSettings(id);
+  audio.volume = Math.max(0, Math.min(1, settings.volume));
+  audio.muted = settings.muted;
+  audio.loop = settings.mode === "repeat_one";
+}
+
+function handleRegexAudioControl(data: {
+  action?: string;
+  id?: string;
+  payload?: { title?: string; url?: string; volume?: number; muted?: boolean; mode?: string };
+}) {
+  const id = data.id || "bgm";
+  if (data.action === "play") {
+    const url = data.payload?.url;
+    if (!url) return;
+    let audio = regexHtmlAudioElements.get(id);
+    if (!audio || audio.src !== url) {
+      audio?.pause();
+      audio = new Audio(url);
+      regexHtmlAudioElements.set(id, audio);
+    }
+    applyRegexAudioSettings(id);
+    audio.play().catch((error) => console.warn("[MessageBubble] regex HTML 音訊播放失敗:", error));
+    return;
+  }
+  if (data.action === "pause") {
+    regexHtmlAudioElements.get(id)?.pause();
+    return;
+  }
+  if (data.action === "settings") {
+    const settings = getRegexAudioSettings(id);
+    if (typeof data.payload?.volume === "number") {
+      settings.volume = data.payload.volume > 1 ? data.payload.volume / 100 : data.payload.volume;
+    }
+    if (typeof data.payload?.muted === "boolean") settings.muted = data.payload.muted;
+    if (typeof data.payload?.mode === "string") settings.mode = data.payload.mode;
+    applyRegexAudioSettings(id);
+  }
+}
+
 // HTML 區塊 iframe（來自 ResponseParser 拆分的完整 HTML）
 const htmlBlockIframeRef = ref<HTMLIFrameElement | null>(null);
 const htmlBlockIframeHeight = ref(0);
@@ -75,6 +129,13 @@ const htmlBlockIframeHeight = ref(0);
 // 監聽 iframe 內部回報的高度（使用生命週期管理，避免記憶體洩漏）
 // 加入死區防止高度微小震盪導致佈局抖動
 function handleIframeMessage(e: MessageEvent) {
+  const isFromThisIframe =
+    (regexIframeRef.value && e.source === regexIframeRef.value.contentWindow) ||
+    (htmlBlockIframeRef.value && e.source === htmlBlockIframeRef.value.contentWindow);
+  if (e.data?.type === "regex-audio-control" && isFromThisIframe) {
+    handleRegexAudioControl(e.data);
+    return;
+  }
   if (
     e.data?.type === "regex-iframe-height" &&
     typeof e.data.height === "number"
@@ -105,6 +166,11 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener("message", handleIframeMessage);
+  for (const audio of regexHtmlAudioElements.values()) {
+    audio.pause();
+  }
+  regexHtmlAudioElements.clear();
+  regexHtmlAudioSettings.clear();
 });
 
 // Props 定義
@@ -624,6 +690,61 @@ pre, code {
 }
 
 function injectIframeHeightScript(html: string): string {
+  const compatibilityScript = `<script>
+(function() {
+  if (window.$) return;
+  function MiniQuery(nodes) {
+    this.nodes = Array.prototype.slice.call(nodes || []);
+  }
+  MiniQuery.prototype.on = function(event, handler) {
+    this.nodes.forEach(function(node) { node.addEventListener(event, handler); });
+    return this;
+  };
+  MiniQuery.prototype.text = function(value) {
+    if (value === undefined) return this.nodes[0] ? this.nodes[0].textContent : '';
+    this.nodes.forEach(function(node) { node.textContent = value; });
+    return this;
+  };
+  MiniQuery.prototype.val = function(value) {
+    if (value === undefined) return this.nodes[0] ? this.nodes[0].value : '';
+    this.nodes.forEach(function(node) { node.value = value; });
+    return this;
+  };
+  MiniQuery.prototype.trigger = function(eventName) {
+    this.nodes.forEach(function(node) {
+      node.dispatchEvent(new Event(eventName, { bubbles: true }));
+    });
+    return this;
+  };
+  window.$ = function(selector) {
+    if (typeof selector === 'function') {
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', selector);
+      } else {
+        selector();
+      }
+      return new MiniQuery([]);
+    }
+    if (selector instanceof Element || selector === window || selector === document) {
+      return new MiniQuery([selector]);
+    }
+    return new MiniQuery(document.querySelectorAll(selector));
+  };
+  window.playAudio = function(id, payload) {
+    window.parent.postMessage({ type: 'regex-audio-control', action: 'play', id: id, payload: payload || {} }, '*');
+  };
+  window.pauseAudio = function(id) {
+    window.parent.postMessage({ type: 'regex-audio-control', action: 'pause', id: id }, '*');
+  };
+  window.setAudioSettings = function(id, payload) {
+    window.parent.postMessage({ type: 'regex-audio-control', action: 'settings', id: id, payload: payload || {} }, '*');
+  };
+  window.TavernHelper = window.TavernHelper || {};
+  window.TavernHelper.playAudio = window.playAudio;
+  window.TavernHelper.pauseAudio = window.pauseAudio;
+  window.TavernHelper.setAudioSettings = window.setAudioSettings;
+})();
+<\/script>`;
   const heightScript = `<script>
 (function() {
   var lastH = 0, stableCount = 0, tid;
@@ -654,9 +775,12 @@ function injectIframeHeightScript(html: string): string {
 <\/script>`;
 
   const normalized = ensureMobileFriendlyHtmlDocument(html);
-  return /<\/body>/i.test(normalized)
-    ? normalized.replace(/<\/body>/i, `${heightScript}</body>`)
-    : normalized + heightScript;
+  const withCompatibility = /<head[\s>]/i.test(normalized)
+    ? normalized.replace(/<head([^>]*)>/i, `<head$1>${compatibilityScript}`)
+    : compatibilityScript + normalized;
+  return /<\/body>/i.test(withCompatibility)
+    ? withCompatibility.replace(/<\/body>/i, `${heightScript}</body>`)
+    : withCompatibility + heightScript;
 }
 
 function isRenderableHtmlFragment(content: string): boolean {
@@ -3315,7 +3439,7 @@ const showTextVoiceTranscript = ref(true);
               :srcdoc="htmlBlockSrcdoc"
               class="html-block-iframe"
               :style="{ height: htmlBlockIframeHeight + 'px' }"
-              sandbox="allow-scripts"
+              sandbox="allow-scripts allow-same-origin"
               frameborder="0"
               scrolling="no"
             ></iframe>
@@ -3379,7 +3503,7 @@ const showTextVoiceTranscript = ref(true);
                 :srcdoc="regexHtmlDoc"
                 class="regex-html-iframe"
                 :style="{ height: regexIframeHeight + 'px' }"
-                sandbox="allow-scripts"
+                sandbox="allow-scripts allow-same-origin"
                 frameborder="0"
                 scrolling="no"
               ></iframe>
