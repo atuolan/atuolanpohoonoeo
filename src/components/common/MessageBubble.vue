@@ -657,13 +657,11 @@ html, body {
   width: 100%;
   max-width: 100%;
   margin: 0;
+  padding: 0;
   background: transparent;
   overflow-x: hidden;
   box-sizing: border-box;
 }
-html { padding: 0; }
-/* 留邊給 box-shadow / outline 等 scrollHeight 不計入的視覺溢出 */
-body { padding: 2px 12px 12px 2px; }
 *, *::before, *::after {
   box-sizing: border-box;
 }
@@ -782,6 +780,36 @@ function injectIframeHeightScript(html: string): string {
     }
     return 1;
   }
+  function _maxShadowBottom() {
+    // box-shadow 不算進 scrollHeight，需手動掃描所有元素，
+    // 取「元素底部 + shadow Y 偏移 + blur」的最大值，避免底部陰影被裁切
+    var body = document.body;
+    if (!body || !window.getComputedStyle) return 0;
+    var bodyTop = body.getBoundingClientRect().top;
+    var maxBottom = 0;
+    var els = body.querySelectorAll('*');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var cs;
+      try { cs = window.getComputedStyle(el); } catch (e) { continue; }
+      var shadow = cs && cs.boxShadow;
+      if (!shadow || shadow === 'none') continue;
+      // 可能有多重 shadow，用逗號切；但別誤切 rgba(...)，先把括號內容壓平
+      var flat = shadow.replace(/\\([^)]*\\)/g, '');
+      var parts = flat.split(',');
+      for (var j = 0; j < parts.length; j++) {
+        var m = parts[j].match(/(-?\\d+(?:\\.\\d+)?)px\\s+(-?\\d+(?:\\.\\d+)?)px(?:\\s+(-?\\d+(?:\\.\\d+)?)px)?(?:\\s+(-?\\d+(?:\\.\\d+)?)px)?/);
+        if (!m) continue;
+        var y = parseFloat(m[2]) || 0;
+        var blur = parseFloat(m[3]) || 0;
+        var spread = parseFloat(m[4]) || 0;
+        var rect = el.getBoundingClientRect();
+        var bottomExt = (rect.bottom - bodyTop) + Math.max(0, y) + blur + Math.max(0, spread);
+        if (bottomExt > maxBottom) maxBottom = bottomExt;
+      }
+    }
+    return maxBottom;
+  }
   function _reportHeight(){
     if (busy) return;
     busy = true;
@@ -793,9 +821,10 @@ function injectIframeHeightScript(html: string): string {
         root ? root.scrollHeight : 0,
         body ? body.scrollHeight : 0,
         root ? root.offsetHeight : 0,
-        body ? body.offsetHeight : 0
+        body ? body.offsetHeight : 0,
+        _maxShadowBottom()
       );
-      var h = Math.ceil(rawH * (scale || 1));
+      var h = Math.ceil(rawH * (scale || 1)) + 4; // 4px 緩衝避免亞像素裁切
       if (Math.abs(h - lastH) < 5) {
         stableCount++;
         if (stableCount > 3 && tid) { clearInterval(tid); tid = null; }
