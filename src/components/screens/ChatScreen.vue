@@ -325,6 +325,10 @@ interface Message {
   // HTML 區塊（完整 HTML 文件，用 iframe 渲染）
   isHtmlBlock?: boolean;
   htmlContent?: string;
+  // 由源訊息派生的 shadow segment
+  isShadowSegment?: boolean;
+  shadowSourceId?: string;
+  shadowOrdinal?: number;
   // 音頻/語音相關
   audioBlobId?: string;
   audioMimeType?: string;
@@ -1994,30 +1998,9 @@ function handleAvatarClick(_messageId: string) {
 }
 
 /**
- * 處理 MessageBubble 正則產生 HTML 後的拆分請求：
- * 在原訊息後面插入一個獨立的 isHtmlBlock 氣泡
+ * 處理 MessageBubble 拆分請求：依原訊息中的順序，
+ * 在源氣泡後面插入「文字 / HTML」shadow 氣泡。
  */
-const _splitRegexHtmlProcessed = new Set<string>();
-function getFirstHtmlFencePrefix(content: string): string {
-  const match = content.match(/```(?:html)?\s*\n?([\s\S]*?)\n?\s*```/i);
-  return match?.[1]?.trim().substring(0, 200) ?? "";
-}
-
-function getRegexHtmlSignature(htmlContent: string): string {
-  return htmlContent
-    .replace(
-      /<script\b[\s\S]*?<\/script>/gi,
-      (script) =>
-        script.includes("regex-audio-control") ||
-        script.includes("regex-iframe-height") ||
-        script.includes("function MiniQuery")
-          ? ""
-          : script,
-    )
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function hashString(value: string): string {
   let hash = 2166136261;
   for (let i = 0; i < value.length; i++) {
@@ -2027,85 +2010,66 @@ function hashString(value: string): string {
   return (hash >>> 0).toString(36);
 }
 
-function getSplitRegexHtmlInsertIndex(messageId: string): number {
-  const idx = messages.value.findIndex((m) => m.id === messageId);
-  if (idx === -1) return -1;
-  let insertIdx = idx + 1;
-  while (insertIdx < messages.value.length) {
-    const msg = messages.value[insertIdx];
-    if (!msg.isHtmlBlock || !msg.id.startsWith(`${messageId}_html_`)) break;
-    insertIdx++;
-  }
-  return insertIdx;
+function isShadowBubbleOf(msg: Message, sourceId: string): boolean {
+  if (msg.shadowSourceId === sourceId) return true;
+  // 兼容舊版：之前用 ${sourceId}_html_ 開頭、isHtmlBlock=true 的氣泡
+  if (msg.isHtmlBlock && msg.id.startsWith(`${sourceId}_html_`)) return true;
+  if (msg.id.startsWith(`${sourceId}_seg_`)) return true;
+  return false;
 }
 
-function handleSplitRegexHtml(messageId: string, htmlContent: string) {
-  const signature = getRegexHtmlSignature(htmlContent);
-  const signatureHash = hashString(signature);
-  const key = `${messageId}_${signatureHash}`;
-  if (_splitRegexHtmlProcessed.has(key)) return;
-  _splitRegexHtmlProcessed.add(key);
-
+function handleSplitRegexSegments(
+  messageId: string,
+  segments: Array<{ type: "text" | "html"; content: string }>,
+) {
   const idx = messages.value.findIndex((m) => m.id === messageId);
   if (idx === -1) return;
-
   const sourceMessage = messages.value[idx];
-  const charName = currentCharacter.value?.data?.name || props.characterName;
-  const userName = userStore.currentPersona?.name || "User";
-  const markdownRegexed = getRegexedString(
-    sourceMessage.content,
-    regex_placement.AI_OUTPUT,
-    getActiveRegexScripts(),
-    {
-      characterName: charName,
-      userName,
-      isMarkdown: true,
-    },
-  );
-  const shouldInsertBefore = /^```(?:html)?\s*\n?/i.test(markdownRegexed.trimStart());
-  const firstFencePrefix = getFirstHtmlFencePrefix(markdownRegexed);
-  const insertBefore =
-    shouldInsertBefore && firstFencePrefix && htmlContent.includes(firstFencePrefix);
-  const htmlId = `${messageId}_html_${signatureHash}_${insertBefore ? "before" : "after"}`;
-  const matchingIndexes = messages.value
+
+  // 1) 計算期望的 shadow 氣泡（含穩定 ID）
+  const desired = segments.map((seg, i) => {
+    const ordinal = i + 1; // segment 0 留在源氣泡裡
+    const sigHash = hashString(seg.content.replace(/\s+/g, " ").trim());
+    const id = `${messageId}_seg_${ordinal}_${seg.type}_${sigHash}`;
+    return { id, ordinal, seg };
+  });
+
+  // 2) 找出當前所有屬於此源訊息的 shadow 氣泡（含舊版相容）
+  const existing = messages.value
     .map((msg, index) => ({ msg, index }))
-    .filter(
-      ({ msg }) =>
-        msg.isHtmlBlock &&
-        msg.id.startsWith(`${messageId}_html_`) &&
-        getRegexHtmlSignature(msg.htmlContent ?? "") === signature,
-    )
-    .map(({ index }) => index);
+    .filter(({ msg }) => isShadowBubbleOf(msg, messageId));
 
-  if (matchingIndexes.length === 1) {
-    const existingIndex = matchingIndexes[0];
-    const existing = messages.value[existingIndex];
-    const expectedIndex = insertBefore ? idx - 1 : getSplitRegexHtmlInsertIndex(messageId);
-    if (existingIndex === expectedIndex - (insertBefore ? 0 : 1)) {
-      existing.id = htmlId;
-      existing.htmlContent = htmlContent;
-      return;
-    }
+  // 3) 完全匹配（ID 相同 + 緊接源氣泡 + 順序正確）→ 不動
+  const expectedStart = idx + 1;
+  const exactMatch =
+    existing.length === desired.length &&
+    existing.every((e, i) => e.msg.id === desired[i].id) &&
+    existing.every((e, i) => e.index === expectedStart + i);
+  if (exactMatch) return;
+
+  // 4) 不一致就先把舊的 shadow 全部移除（從尾端開始 splice 才不會錯位）
+  for (const { index } of [...existing].sort((a, b) => b.index - a.index)) {
+    messages.value.splice(index, 1);
   }
 
-  for (const duplicateIndex of [...matchingIndexes].sort((a, b) => b - a)) {
-    messages.value.splice(duplicateIndex, 1);
-  }
+  // 5) 重新定位源氣泡（理論上 idx 不變，但保險起見重找）
+  const refreshedIdx = messages.value.findIndex((m) => m.id === messageId);
+  if (refreshedIdx === -1) return;
 
-  const currentIdx = messages.value.findIndex((m) => m.id === messageId);
-  if (currentIdx === -1) return;
-  const insertIdx = insertBefore ? currentIdx : getSplitRegexHtmlInsertIndex(messageId);
-
-  const htmlMessage: Message = {
-    id: htmlId,
+  // 6) 依序插入新的 shadow 氣泡
+  const newMessages: Message[] = desired.map(({ id, ordinal, seg }) => ({
+    id,
     role: sourceMessage.role,
-    content: "",
-    timestamp: sourceMessage.timestamp + (insertBefore ? -0.1 : insertIdx - currentIdx),
-    isHtmlBlock: true,
-    htmlContent: htmlContent,
-  };
-  messages.value.splice(insertIdx, 0, htmlMessage);
-  // 延遲保存，確保 HTML 氣泡持久化
+    content: seg.type === "text" ? seg.content : "",
+    timestamp: sourceMessage.timestamp + ordinal * 0.001,
+    isHtmlBlock: seg.type === "html",
+    htmlContent: seg.type === "html" ? seg.content : undefined,
+    isShadowSegment: true,
+    shadowSourceId: messageId,
+    shadowOrdinal: ordinal,
+  }));
+
+  messages.value.splice(refreshedIdx + 1, 0, ...newMessages);
   saveChat();
 }
 
@@ -2129,8 +2093,11 @@ const onMessageScreenshot = (...args: any[]) => handleMessageScreenshot(args[0] 
 const onMessageBatchScreenshot = (...args: any[]) =>
   startScreenshotSelectMode(args[0] as string | undefined);
 const onMessageAvatarClick = (...args: any[]) => handleAvatarClick(args[0] as string);
-const onMessageSplitRegexHtml = (...args: any[]) =>
-  handleSplitRegexHtml(args[0] as string, args[1] as string);
+const onMessageSplitRegexSegments = (...args: any[]) =>
+  handleSplitRegexSegments(
+    args[0] as string,
+    args[1] as Array<{ type: "text" | "html"; content: string }>,
+  );
 const onMessageRecall = (...args: any[]) =>
   handleMessageRecall(args[0] as string, args[1] as "seen" | "unseen");
 const onMessageCharRecallReveal = (...args: any[]) => handleCharRecallReveal(args[0] as string);
@@ -8110,6 +8077,10 @@ async function loadOrCreateChat(overrideChatId?: string) {
             // HTML 區塊
             isHtmlBlock: (m as any).isHtmlBlock,
             htmlContent: (m as any).htmlContent,
+            // Shadow segment（源訊息派生）
+            isShadowSegment: (m as any).isShadowSegment,
+            shadowSourceId: (m as any).shadowSourceId,
+            shadowOrdinal: (m as any).shadowOrdinal,
             // MiniMax TTS 語音合成相關
             ttsRawContent: (m as any).ttsRawContent,
             ttsAudioUrl: (m as any).ttsAudioUrl,
@@ -8753,6 +8724,10 @@ function convertToStorableMessage(m: any, charName: string): ChatMessage {
     // HTML 區塊
     isHtmlBlock: m.isHtmlBlock,
     htmlContent: m.htmlContent,
+    // Shadow segment（源訊息派生）
+    isShadowSegment: m.isShadowSegment,
+    shadowSourceId: m.shadowSourceId,
+    shadowOrdinal: m.shadowOrdinal,
     // 用戶撤回相關
     isUserRecalled: m.isUserRecalled,
     userRecalledType: m.userRecalledType,
@@ -10234,7 +10209,7 @@ onUnmounted(() => {
             @screenshot="onMessageScreenshot"
             @batch-screenshot="onMessageBatchScreenshot"
             @avatar-click="onMessageAvatarClick"
-            @split-regex-html="onMessageSplitRegexHtml"
+            @split-regex-segments="onMessageSplitRegexSegments"
             @recall="onMessageRecall"
             @char-recall-reveal="onMessageCharRecallReveal"
             @accept-face-to-face-request="onMessageAcceptFaceToFaceRequest"

@@ -431,6 +431,14 @@ export interface ChatMessage {
   /** HTML 文件內容 */
   htmlContent?: string;
 
+  // --- 由源訊息派生的 shadow segment（正則拆分產生） ---
+  /** 是否為源訊息派生的 shadow 氣泡（不是獨立 AI 回覆，刷新時會由源訊息重新產生） */
+  isShadowSegment?: boolean;
+  /** 源訊息 ID */
+  shadowSourceId?: string;
+  /** 在源訊息中的順序（1, 2, 3...） */
+  shadowOrdinal?: number;
+
   // --- 行事曆事件 ---
   /** 是否為行事曆事件通知 */
   isCalendarEvent?: boolean;

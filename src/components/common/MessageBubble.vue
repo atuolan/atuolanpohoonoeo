@@ -56,17 +56,25 @@ function startsWithHtmlFence(source: string): boolean {
   return /^```(?:html)?\s*\n?/i.test(source.trimStart());
 }
 
-// ★ 正則產生 HTML 時需要拆分到獨立氣泡（避免在 computed 內直接修改 ref）
-const _regexHtmlEmitted = new Set<string>();
-function _emitSplitHtml(html: string) {
-  if (!html || !props.id) return;
-  // 用內容前 100 字作為 dedup key（比長度更穩定，不受 heightScript 版本差異影響）
-  const key = `${props.id}_${html.substring(0, 100)}`;
-  if (_regexHtmlEmitted.has(key)) return;
-  _regexHtmlEmitted.add(key);
+// ★ 正則產生 HTML/text 段時需要拆分到獨立氣泡（避免在 computed 內直接修改 ref）
+const _regexSegmentsEmitted = new Set<string>();
+function _segmentsSignature(
+  segments: Array<{ type: "text" | "html"; content: string }>,
+): string {
+  return segments
+    .map((s) => `${s.type}:${s.content.replace(/\s+/g, " ").trim()}`)
+    .join("||");
+}
+function _emitSplitSegments(
+  segments: Array<{ type: "text" | "html"; content: string }>,
+) {
+  if (!props.id || segments.length === 0) return;
+  const key = `${props.id}_${_segmentsSignature(segments)}`;
+  if (_regexSegmentsEmitted.has(key)) return;
+  _regexSegmentsEmitted.add(key);
   // 延遲到下一個微任務，避免在 computed 求值期間觸發副作用
   queueMicrotask(() => {
-    emit("splitRegexHtml", props.id, html);
+    emit("splitRegexSegments", props.id, segments);
   });
 }
 
@@ -495,7 +503,11 @@ const emit = defineEmits<{
   (e: "updateTranscript", id: string, transcript: string): void;
   (e: "screenshot", id: string): void;
   (e: "batchScreenshot", id: string): void;
-  (e: "splitRegexHtml", id: string, htmlContent: string): void;
+  (
+    e: "splitRegexSegments",
+    id: string,
+    segments: Array<{ type: "text" | "html"; content: string }>,
+  ): void;
   (e: "recall", id: string, type: "seen" | "unseen"): void;
   (e: "charRecallReveal", id: string): void;
   (e: "acceptFaceToFaceRequest", id: string): void;
@@ -862,16 +874,45 @@ function extractHtmlFenceBlocks(source: string): {
   htmlBlocks: string[];
   remainingText: string;
 } {
+  const segments = splitContentSegments(source);
   const htmlBlocks: string[] = [];
-  let textOnly = source.trim();
-  let safetyCounter = 0;
+  const textParts: string[] = [];
+  for (const seg of segments) {
+    if (seg.type === "html") htmlBlocks.push(seg.content);
+    else textParts.push(seg.content);
+  }
+  return {
+    htmlBlocks,
+    remainingText: textParts.join("\n\n").trim(),
+  };
+}
 
-  while (safetyCounter++ < 10) {
-    const openMatch = textOnly.match(/```(?:html)?\s*\n?/i);
+export type ContentSegment =
+  | { type: "text"; content: string; ordinal: number }
+  | { type: "html"; content: string; ordinal: number };
+
+/**
+ * 將「正則替換後的 AI 訊息內容」依出現順序拆成文字 / HTML 區段。
+ * 保留 HTML 區塊在原文中的位置，讓上層可以依序產生獨立氣泡。
+ */
+function splitContentSegments(source: string): ContentSegment[] {
+  const segments: ContentSegment[] = [];
+  let working = source;
+  let safetyCounter = 0;
+  let ordinal = 0;
+
+  const pushText = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    segments.push({ type: "text", content: trimmed, ordinal: ordinal++ });
+  };
+
+  while (safetyCounter++ < 20) {
+    const openMatch = working.match(/```(?:html)?\s*\n?/i);
     if (!openMatch) break;
 
     const afterOpen = openMatch.index! + openMatch[0].length;
-    const rest = textOnly.substring(afterOpen);
+    const rest = working.substring(afterOpen);
 
     let fenceEndInRest = -1;
     let fenceContentEnd = -1;
@@ -891,10 +932,11 @@ function extractHtmlFenceBlocks(source: string): {
     }
 
     if (fenceEndInRest < 0) {
-      const lastFence = rest.lastIndexOf("\n```");
-      if (lastFence >= 0) {
-        fenceContentEnd = lastFence;
-        fenceEndInRest = lastFence + 4;
+      // 改用第一個出現的 \n``` 而不是 lastIndexOf，避免兩段 fence 被合併成一段
+      const firstFence = rest.search(/\n```/);
+      if (firstFence >= 0) {
+        fenceContentEnd = firstFence;
+        fenceEndInRest = firstFence + 4;
       }
     }
     if (fenceEndInRest < 0) break;
@@ -904,17 +946,13 @@ function extractHtmlFenceBlocks(source: string): {
       break;
     }
 
-    htmlBlocks.push(fenceContent);
-    const fullFenceEnd = afterOpen + fenceEndInRest;
-    textOnly =
-      textOnly.substring(0, openMatch.index!) +
-      textOnly.substring(fullFenceEnd);
+    pushText(working.substring(0, openMatch.index!));
+    segments.push({ type: "html", content: fenceContent, ordinal: ordinal++ });
+    working = rest.substring(fenceEndInRest);
   }
 
-  return {
-    htmlBlocks,
-    remainingText: textOnly.trim(),
-  };
+  pushText(working);
+  return segments;
 }
 
 // HTML 區塊的 iframe srcdoc（注入自動回報高度的 script）
@@ -990,31 +1028,26 @@ const renderedContent = computed(() => {
     }
 
     if (!props.isHtmlBlock) {
-      const { htmlBlocks, remainingText } = extractHtmlFenceBlocks(html);
-      if (htmlBlocks.length > 0) {
-        const processedBlocks = htmlBlocks.map((block) =>
-          injectIframeHeightScript(block),
-        );
+      const segments = splitContentSegments(html);
+      const htmlSegmentsExist = segments.some((s) => s.type === "html");
+      if (htmlSegmentsExist) {
+        const first = segments[0];
+        const rest = segments.slice(1).map((s) => ({
+          type: s.type,
+          content: s.content,
+        }));
 
-        if (remainingText && startsWithHtmlFence(html) && processedBlocks.length === 1) {
-          regexHtmlDoc.value = processedBlocks[0];
-          html = remainingText;
-        } else if (remainingText) {
-          for (const block of processedBlocks) {
-            _emitSplitHtml(block);
-          }
-          regexHtmlDoc.value = "";
-          html = remainingText;
-        } else if (processedBlocks.length === 1) {
-          regexHtmlDoc.value = processedBlocks[0];
-          return "";
-        } else {
-          regexHtmlDoc.value = processedBlocks[0];
-          for (let i = 1; i < processedBlocks.length; i++) {
-            _emitSplitHtml(processedBlocks[i]);
-          }
+        if (first.type === "html") {
+          regexHtmlDoc.value = injectIframeHeightScript(first.content);
+          if (rest.length === 0) return "";
+          _emitSplitSegments(rest);
           return "";
         }
+
+        // first 是文字 → 源氣泡渲染這段文字，後續 segment 全部 emit
+        regexHtmlDoc.value = "";
+        html = first.content;
+        if (rest.length > 0) _emitSplitSegments(rest);
       }
     }
 
@@ -1244,37 +1277,28 @@ const renderedContent = computed(() => {
     if (processedContent !== beforeRegex) {
       const stripped = processedContent.trim();
 
-      const { htmlBlocks, remainingText } = extractHtmlFenceBlocks(stripped);
+      const segments = splitContentSegments(stripped);
+      const htmlSegmentsExist = segments.some((s) => s.type === "html");
 
-      if (htmlBlocks.length > 0) {
-        // 為每個 HTML 區塊注入高度回報 script 並包成完整文件
-        const processedBlocks = htmlBlocks.map((block) => {
-          return injectIframeHeightScript(block);
-        });
+      if (htmlSegmentsExist) {
+        const first = segments[0];
+        const rest = segments.slice(1).map((s) => ({
+          type: s.type,
+          content: s.content,
+        }));
 
-        if (remainingText && startsWithHtmlFence(stripped) && processedBlocks.length === 1) {
-          regexHtmlDoc.value = processedBlocks[0];
-          processedContent = remainingText;
-        } else if (remainingText) {
-          // 有文字內容：所有 HTML 區塊 emit 給父組件建立獨立氣泡，當前氣泡保留文字
-          for (const block of processedBlocks) {
-            _emitSplitHtml(block);
-          }
-          regexHtmlDoc.value = "";
-          processedContent = remainingText;
-          // 不 return，繼續走後面的 markdown 渲染流程
-        } else if (processedBlocks.length === 1) {
-          // 只有一個 HTML 區塊且沒有文字，直接在當前氣泡渲染
-          regexHtmlDoc.value = processedBlocks[0];
-          return "";
-        } else {
-          // 多個 HTML 區塊且沒有文字：第一個在當前氣泡渲染，其餘 emit
-          regexHtmlDoc.value = processedBlocks[0];
-          for (let i = 1; i < processedBlocks.length; i++) {
-            _emitSplitHtml(processedBlocks[i]);
-          }
+        if (first.type === "html") {
+          regexHtmlDoc.value = injectIframeHeightScript(first.content);
+          if (rest.length === 0) return "";
+          _emitSplitSegments(rest);
           return "";
         }
+
+        // 第一段是文字 → 源氣泡渲染這段文字，後續 segment 全部 emit
+        regexHtmlDoc.value = "";
+        processedContent = first.content;
+        if (rest.length > 0) _emitSplitSegments(rest);
+        // 不 return，繼續走後面的 markdown 渲染流程
       }
 
       // ★ 先嘗試拆分「正文 + 裸 HTML」混合內容（如 regex 產出的狀態欄）
