@@ -45,7 +45,7 @@ const BUILTIN_SCRIPTS: RegexScript[] = [
   {
     id: "__builtin_delete_bushi_ershi",
     scriptName: "[內置] 删除不是…而是",
-    findRegex: "/不是[^。！？；]*?而是([^。！？；]+)/g",
+    findRegex: "/(?:不是[^。！？；]*?){1,}(?:而是|是)([^。！？；]+)/g",
     replaceString: "$1",
     trimStrings: [],
     placement: [2],
