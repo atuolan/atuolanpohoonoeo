@@ -92,6 +92,7 @@ import BlockService from "@/services/BlockService";
 import {
   applyHtmlTemplateRules,
   buildHtmlTemplatePrompt,
+  hasRenderableHtmlBlock,
 } from "@/services/HtmlTemplateEngine";
 import { proactiveMessageService } from "@/services/ProactiveMessageService";
 import { getRegexedString, regex_placement } from "@/services/RegexEngine";
@@ -463,7 +464,15 @@ function applyAIOutputRegex(content: string): string {
     characterName: charName,
     userName,
   });
-  const htmlTemplateResult = applyHtmlTemplateRules(regexed, scripts, {
+  const markdownRegexed = getRegexedString(regexed, regex_placement.AI_OUTPUT, scripts, {
+    characterName: charName,
+    userName,
+    isMarkdown: true,
+  });
+  const displayRegexed = hasRenderableHtmlBlock(markdownRegexed)
+    ? markdownRegexed
+    : regexed;
+  const htmlTemplateResult = applyHtmlTemplateRules(displayRegexed, scripts, {
     characterName: charName,
     userName,
     placement: regex_placement.AI_OUTPUT,

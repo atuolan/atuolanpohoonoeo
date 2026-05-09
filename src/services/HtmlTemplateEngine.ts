@@ -200,6 +200,16 @@ function hasAnyTriggerTag(text: string, scripts: RegexScript[], params: Template
   return hasTemplateWithoutTag;
 }
 
+export function hasRenderableHtmlBlock(text: string): boolean {
+  const trimmed = text.trim();
+  return (
+    /```(?:html)?\s*\n?\s*<[a-zA-Z!]/i.test(trimmed) ||
+    /<!DOCTYPE\s[\s\S]*?<\/html\s*>/i.test(trimmed) ||
+    /<html[\s\S]*?<\/html\s*>/i.test(trimmed) ||
+    (trimmed.length > 200 && /<style[\s>]/i.test(trimmed) && /<div[\s>]/i.test(trimmed))
+  );
+}
+
 export function applyHtmlTemplateRules(
   text: string,
   scripts: RegexScript[],
