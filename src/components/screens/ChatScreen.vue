@@ -14537,17 +14537,17 @@ onUnmounted(() => {
   outline: none;
 
   &:focus {
-    background: #fff;
+    background: var(--color-surface, #fff);
   }
 }
 
 .edit-textarea-thought {
-  background: #f5f0ff;
+  background: var(--color-surface-hover, #f5f0ff);
   font-style: italic;
-  color: #6b5b95;
+  color: var(--color-text-secondary, #6b5b95);
 
   &:focus {
-    background: #ede8ff;
+    background: var(--color-surface, #ede8ff);
   }
 }
 
