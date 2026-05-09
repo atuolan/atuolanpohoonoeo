@@ -1998,6 +1998,11 @@ function handleAvatarClick(_messageId: string) {
  * 在原訊息後面插入一個獨立的 isHtmlBlock 氣泡
  */
 const _splitRegexHtmlProcessed = new Set<string>();
+function getFirstHtmlFencePrefix(content: string): string {
+  const match = content.match(/```(?:html)?\s*\n?([\s\S]*?)\n?\s*```/i);
+  return match?.[1]?.trim().substring(0, 200) ?? "";
+}
+
 function handleSplitRegexHtml(messageId: string, htmlContent: string) {
   // 用內容前 200 字做 dedup key（比長度更穩定，不受 heightScript 版本差異影響）
   const newPrefix = htmlContent.substring(0, 200);
@@ -2022,8 +2027,9 @@ function handleSplitRegexHtml(messageId: string, htmlContent: string) {
     },
   );
   const shouldInsertBefore = /^```(?:html)?\s*\n?/i.test(markdownRegexed.trimStart());
+  const firstFencePrefix = getFirstHtmlFencePrefix(markdownRegexed);
 
-  if (shouldInsertBefore) {
+  if (shouldInsertBefore && firstFencePrefix && htmlContent.includes(firstFencePrefix)) {
     const prev = messages.value[idx - 1];
     const existingPrefix = prev?.htmlContent?.substring(0, 200) ?? "";
     if (prev?.isHtmlBlock && prev.id.startsWith(`${messageId}_html`) && existingPrefix === newPrefix) {
