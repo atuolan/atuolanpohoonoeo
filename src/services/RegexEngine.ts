@@ -94,6 +94,23 @@ function filterString(
   return result;
 }
 
+function shouldFenceMarkdownHtmlReplacement(replacement: string): boolean {
+  const trimmed = replacement.trim();
+  if (!trimmed || /^```(?:html)?/i.test(trimmed)) return false;
+  return (
+    /^\s*<!DOCTYPE\s/i.test(trimmed) ||
+    /^\s*<html[\s>]/i.test(trimmed) ||
+    /^\s*<style[\s>]/i.test(trimmed) ||
+    /^\s*<details[\s>]/i.test(trimmed) ||
+    /^\s*<div[\s>]/i.test(trimmed)
+  );
+}
+
+function fenceMarkdownHtmlReplacement(replacement: string): string {
+  const trimmed = replacement.trim();
+  return `\n\`\`\`html\n${trimmed}\n\`\`\`\n`;
+}
+
 /**
  * 對應 ST 的 runRegexScript()
  * 對單一腳本執行查找替換
@@ -141,6 +158,13 @@ export function runRegexScript(
 
       // 展開替換結果中的 macros
       replacement = substituteMacros(replacement, params);
+
+      if (
+        params.isMarkdown &&
+        shouldFenceMarkdownHtmlReplacement(replacement)
+      ) {
+        return fenceMarkdownHtmlReplacement(replacement);
+      }
 
       return replacement;
     });
