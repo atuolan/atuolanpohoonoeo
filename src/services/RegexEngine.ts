@@ -100,8 +100,12 @@ function shouldFenceMarkdownHtmlReplacement(replacement: string): boolean {
   return (
     /^\s*<!DOCTYPE\s/i.test(trimmed) ||
     /^\s*<html[\s>]/i.test(trimmed) ||
+    /^\s*<link[\s>]/i.test(trimmed) ||
+    /^\s*<script[\s>]/i.test(trimmed) ||
     /^\s*<style[\s>]/i.test(trimmed) ||
     /^\s*<details[\s>]/i.test(trimmed) ||
+    /^\s*<section[\s>]/i.test(trimmed) ||
+    /^\s*<article[\s>]/i.test(trimmed) ||
     /^\s*<div[\s>]/i.test(trimmed)
   );
 }

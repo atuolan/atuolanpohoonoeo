@@ -43,4 +43,21 @@ describe("RegexEngine", () => {
 
     expect(result).toBe("<div class=\"music-player\">凡星</div>");
   });
+
+  it("fences markdown html replacements that start with external assets", () => {
+    const result = getRegexedString(
+      "<music>曲目1</music>正文",
+      regex_placement.AI_OUTPUT,
+      [
+        makeScript({
+          replaceString: "<link rel=\"stylesheet\" href=\"font.css\"><div>$1</div>",
+        }),
+      ],
+      { isMarkdown: true },
+    );
+
+    expect(result).toBe(
+      "\n```html\n<link rel=\"stylesheet\" href=\"font.css\"><div>曲目1</div>\n```\n正文",
+    );
+  });
 });

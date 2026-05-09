@@ -2008,6 +2008,42 @@ function handleSplitRegexHtml(messageId: string, htmlContent: string) {
   const idx = messages.value.findIndex((m) => m.id === messageId);
   if (idx === -1) return;
 
+  const sourceMessage = messages.value[idx];
+  const charName = currentCharacter.value?.data?.name || props.characterName;
+  const userName = userStore.currentPersona?.name || "User";
+  const markdownRegexed = getRegexedString(
+    sourceMessage.content,
+    regex_placement.AI_OUTPUT,
+    getActiveRegexScripts(),
+    {
+      characterName: charName,
+      userName,
+      isMarkdown: true,
+    },
+  );
+  const shouldInsertBefore = /^```(?:html)?\s*\n?/i.test(markdownRegexed.trimStart());
+
+  if (shouldInsertBefore) {
+    const prev = messages.value[idx - 1];
+    const existingPrefix = prev?.htmlContent?.substring(0, 200) ?? "";
+    if (prev?.isHtmlBlock && prev.id.startsWith(`${messageId}_html`) && existingPrefix === newPrefix) {
+      prev.htmlContent = htmlContent;
+      return;
+    }
+
+    const htmlMessage: Message = {
+      id: `${messageId}_html_${Date.now()}_before`,
+      role: sourceMessage.role,
+      content: "",
+      timestamp: sourceMessage.timestamp - 0.1,
+      isHtmlBlock: true,
+      htmlContent: htmlContent,
+    };
+    messages.value.splice(idx, 0, htmlMessage);
+    saveChat();
+    return;
+  }
+
   // 掃描所有已有的 HTML 拆分氣泡，收集它們的前綴
   let insertIdx = idx + 1;
   while (insertIdx < messages.value.length) {
