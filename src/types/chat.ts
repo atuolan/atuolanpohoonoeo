@@ -475,10 +475,21 @@ export interface ChatMessage {
   isSystemNotification?: boolean;
   /** 是否為繼續生成的隱藏提示（不顯示在聊天畫面上） */
   isContinuePrompt?: boolean;
-  /** 是否為好友申請訊息 */
+  /** 是否為好友申請訊息（用戶封鎖角色後，角色想重新加好友的系統訊息卡片） */
   isFriendRequest?: boolean;
   /** 好友申請結果 */
   friendRequestResult?: "accepted" | "rejected";
+  /** 對應的 BlockState.friendRequests 條目 id，用於後續查找/接受 */
+  friendRequestId?: string;
+  /** 好友申請卡片渲染資料 */
+  friendRequestData?: {
+    /** 申請方向 */
+    direction: "user-to-char" | "char-to-user";
+    /** 角色顯示名（快照） */
+    charName: string;
+    /** 申請建立時間 */
+    createdAt: number;
+  };
   /** 是否為面對面模式切換請求 */
   isFaceToFaceRequest?: boolean;
   /** 面對面模式切換請求原因 */

@@ -384,6 +384,14 @@ interface MessageBubbleProps {
   isOnlineModeRequest?: boolean;
   onlineModeRequestReason?: string;
   onlineModeRequestStatus?: "pending" | "accepted" | "rejected";
+  // 好友申請（用戶封鎖角色後，角色想重新加好友的系統卡片）
+  isFriendRequest?: boolean;
+  friendRequestData?: {
+    direction: "user-to-char" | "char-to-user";
+    charName: string;
+    createdAt: number;
+  };
+  friendRequestResult?: "accepted" | "rejected";
 }
 
 const props = withDefaults(defineProps<MessageBubbleProps>(), {
@@ -3183,6 +3191,32 @@ const showTextVoiceTranscript = ref(true);
           </template>
         </div>
 
+        <!-- 好友申請（獨立卡片，不在氣泡內） -->
+        <div v-else-if="isFriendRequest" class="friend-request-card">
+          <div class="friend-request-card__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <path d="M9 13a3 3 0 1 0 6 0 3 3 0 0 0-6 0"/>
+            </svg>
+          </div>
+          <div class="friend-request-card__body">
+            <div class="friend-request-card__title">好友申請</div>
+            <div class="friend-request-card__text">
+              <strong>{{ friendRequestData?.charName || senderName || "對方" }}</strong>
+              想和你重新成為好友
+            </div>
+            <div v-if="friendRequestResult" class="friend-request-card__status">
+              <span :class="`status-${friendRequestResult}`">
+                {{ friendRequestResult === "accepted" ? "已接受" : "已拒絕" }}
+              </span>
+            </div>
+            <div v-else class="friend-request-card__hint">
+              到設定中解除封鎖即可重新與對方對話
+            </div>
+          </div>
+        </div>
+
         <!-- 位置分享（獨立卡片，不在氣泡內） -->
         <div v-else-if="isLocation" class="location-bubble-card">
           <!-- 地圖區域 -->
@@ -3299,7 +3333,7 @@ const showTextVoiceTranscript = ref(true);
 
         <!-- 氣泡（位置消息與模式邀請卡片不顯示氣泡） -->
         <div
-          v-if="!isLocation && !isWeatherShare && !isFaceToFaceRequest && !isOnlineModeRequest"
+          v-if="!isLocation && !isWeatherShare && !isFriendRequest && !isFaceToFaceRequest && !isOnlineModeRequest"
           class="bubble"
           :class="{
             user: isUser,
@@ -6201,6 +6235,115 @@ const showTextVoiceTranscript = ref(true);
   .weather-single--char .weather-single__who {
     background: rgba(244, 114, 182, 0.18);
     color: #fbcfe8;
+  }
+}
+
+// 好友申請卡片（不在氣泡內）
+.friend-request-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 280px;
+  padding: 14px 16px;
+  background: linear-gradient(160deg, #fff7ed 0%, #ffffff 60%, #fff1f2 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(251, 146, 60, 0.18);
+  box-shadow: 0 4px 14px rgba(251, 146, 60, 0.1);
+  color: #1e293b;
+
+  &__icon {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(251, 146, 60, 0.18);
+    color: #c2410c;
+
+    svg {
+      width: 18px;
+      height: 18px;
+    }
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #c2410c;
+    text-transform: uppercase;
+  }
+
+  &__text {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.5;
+    color: #1e293b;
+    word-break: break-word;
+
+    strong {
+      font-weight: 700;
+    }
+  }
+
+  &__hint {
+    margin-top: 2px;
+    font-size: 11px;
+    color: #64748b;
+    line-height: 1.4;
+  }
+
+  &__status {
+    margin-top: 2px;
+    font-size: 11px;
+    font-weight: 700;
+
+    .status-accepted {
+      color: #15803d;
+    }
+    .status-rejected {
+      color: #b91c1c;
+    }
+  }
+}
+
+// 夜間模式
+:global(body.is-night-mode) .friend-request-card {
+  background: linear-gradient(160deg, #2a1d10 0%, #1f1410 60%, #2a1318 100%);
+  border-color: rgba(251, 146, 60, 0.22);
+  color: #f1f5f9;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+
+  .friend-request-card__icon {
+    background: rgba(251, 146, 60, 0.22);
+    color: #fdba74;
+  }
+  .friend-request-card__title {
+    color: #fdba74;
+  }
+  .friend-request-card__text {
+    color: #f1f5f9;
+  }
+  .friend-request-card__hint {
+    color: #94a3b8;
+  }
+  .friend-request-card__status {
+    .status-accepted {
+      color: #4ade80;
+    }
+    .status-rejected {
+      color: #fca5a5;
+    }
   }
 }
 

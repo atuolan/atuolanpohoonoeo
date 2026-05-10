@@ -221,12 +221,61 @@ class BlockService {
       chat.updatedAt = now
       await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)))
 
+      // 預先取角色資料：聊天卡片 + 推播都會用到
+      const character = await db.get<{ id: string; avatar?: string; nickname?: string; data?: { name?: string } }>(
+        DB_STORES.CHARACTERS, chat.characterId
+      )
+      const charName = character?.nickname || character?.data?.name || '角色'
+
+      // 在聊天裡寫入一張系統「敲門」卡片，獨立於 AI 主動訊息
+      // 即使 sendBlockedProactiveMessage 因任何原因 silent return，使用者重進聊天仍會看到這張卡片
+      if (createdFriendRequest) {
+        try {
+          // 取剛才推進去的那筆 char-to-user pending request（必為陣列最後一筆）
+          const lastRequest = blockState.friendRequests[blockState.friendRequests.length - 1]
+          const friendRequestId = lastRequest?.direction === 'char-to-user' && lastRequest.result === 'pending'
+            ? lastRequest.id
+            : undefined
+          const cardMessage: ChatMessage = {
+            id: `msg_friend_req_${crypto.randomUUID()}`,
+            sender: 'system',
+            name: 'System',
+            content: `${charName} 想和你重新成為好友`,
+            is_user: false,
+            status: 'sent',
+            createdAt: now,
+            updatedAt: now,
+            isFriendRequest: true,
+            friendRequestId,
+            friendRequestData: {
+              direction: 'char-to-user',
+              charName,
+              createdAt: now,
+            },
+          }
+          const { appendMessages } = await import('@/storage/chatMessageStorage')
+          const { refreshChatDerivedMetadata, incrementLocalChatUnreadCount } = await import('@/storage/chatStorage')
+          await appendMessages(chat.id, [cardMessage])
+          await refreshChatDerivedMetadata(chat.id)
+          await incrementLocalChatUnreadCount(chat.id, 1)
+          console.log(`[BlockService] 已寫入好友申請系統訊息卡片 → chat ${chat.id}`)
+        } catch (cardErr) {
+          console.warn('[BlockService] 寫入好友申請卡片失敗:', cardErr)
+        }
+      }
+
       // 觸發角色主動發一條訊息（封鎖後的「敲門」訊息，獨立於 ProactiveMessageService）
       try {
         const { ProactiveMessageService } = await import('@/services/ProactiveMessageService')
         const proactiveService = ProactiveMessageService.getInstance()
-        await proactiveService.sendBlockedProactiveMessage(chat.characterId)
-        console.log(`[BlockService] 已觸發角色 ${chat.characterId} 封鎖後主動發訊`)
+        const result = await proactiveService.sendBlockedProactiveMessage(chat.characterId)
+        if (result?.ok) {
+          console.log(`[BlockService] 已觸發角色 ${chat.characterId} 封鎖後主動發訊`)
+        } else {
+          console.warn(
+            `[BlockService] 封鎖後主動發訊未產生訊息（已有系統卡片墊底）：${result?.reason || 'unknown'}`,
+          )
+        }
       } catch (proactiveErr) {
         console.warn('[BlockService] 封鎖後主動發訊失敗:', proactiveErr)
       }
@@ -236,10 +285,6 @@ class BlockService {
         try {
           const { useNotificationStore } = await import('@/stores/notification')
           const notificationStore = useNotificationStore()
-          const character = await db.get<{ id: string; avatar?: string; nickname?: string; data?: { name?: string } }>(
-            DB_STORES.CHARACTERS, chat.characterId
-          )
-          const charName = character?.nickname || character?.data?.name || '角色'
           notificationStore.addNotification({
             type: 'friend_request',
             title: '好友申請',

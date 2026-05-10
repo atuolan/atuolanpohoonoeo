@@ -259,8 +259,15 @@ export class ProactiveMessageService {
   /**
    * 封鎖系統專用：觸發角色主動發一條訊息
    * 不依賴 proactiveMessageSettings，即使角色沒開主動訊息也能發
+   *
+   * 回傳 { ok, reason }：
+   * - ok=true 表示 AI 確實在最近的聊天中追加了至少一條訊息
+   * - ok=false 表示 sendProactiveMessage 因 silent return（API key 缺、並發、通話中、空回應…）
+   *   或內部錯誤而沒寫入訊息；reason 帶上可能原因方便日誌排查
    */
-  async sendBlockedProactiveMessage(characterId: string) {
+  async sendBlockedProactiveMessage(
+    characterId: string,
+  ): Promise<{ ok: boolean; reason?: string }> {
     // 使用臨時 settings，不影響正常排程
     const tempSettings: ProactiveMessageSettings = {
       enabled: true,
@@ -270,7 +277,61 @@ export class ProactiveMessageService {
       doNotDisturbEnd: '06:00',
       showNotification: true,
     }
-    await this.sendProactiveMessage(characterId, tempSettings)
+
+    // 先找出該角色最近的單聊（同 sendProactiveMessage 內部邏輯），記下訊息數
+    let chatId = ''
+    let beforeCount = 0
+    try {
+      const { db, DB_STORES } = await import('@/db/database')
+      const { getMessageCount } = await import('@/storage/chatMessageStorage')
+      const allChats = await db.getAll<any>(DB_STORES.CHATS)
+      const characterChats = allChats
+        .filter((c: any) => c.characterId === characterId && !c.isGroupChat)
+        .sort((a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0))
+      const targetChat = characterChats[0]
+      if (targetChat) {
+        chatId = targetChat.id
+        beforeCount = await getMessageCount(chatId).catch(() => 0)
+      }
+    } catch (lookupErr) {
+      console.warn('[ProactiveMessage] sendBlockedProactiveMessage: 預檢查找聊天失敗', lookupErr)
+    }
+
+    try {
+      await this.sendProactiveMessage(characterId, tempSettings)
+    } catch (err) {
+      return { ok: false, reason: `sendProactiveMessage threw: ${String(err)}` }
+    }
+
+    // 對照 messageCount 判斷是否真的追加了訊息
+    if (!chatId) {
+      // 沒找到既有聊天 → sendProactiveMessage 內部會新建一個 chat，這邊無法精準對照；
+      // 退而求其次：再撈一次最新聊天比對
+      try {
+        const { db, DB_STORES } = await import('@/db/database')
+        const { getMessageCount } = await import('@/storage/chatMessageStorage')
+        const allChats = await db.getAll<any>(DB_STORES.CHATS)
+        const recreated = allChats
+          .filter((c: any) => c.characterId === characterId && !c.isGroupChat)
+          .sort((a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0))[0]
+        if (recreated) {
+          const cnt = await getMessageCount(recreated.id).catch(() => 0)
+          return cnt > 0 ? { ok: true } : { ok: false, reason: 'no message appended' }
+        }
+        return { ok: false, reason: 'chat not found after send' }
+      } catch (postErr) {
+        return { ok: false, reason: `post-check failed: ${String(postErr)}` }
+      }
+    }
+
+    try {
+      const { getMessageCount } = await import('@/storage/chatMessageStorage')
+      const afterCount = await getMessageCount(chatId).catch(() => beforeCount)
+      if (afterCount > beforeCount) return { ok: true }
+      return { ok: false, reason: 'no message appended (silent return inside sendProactiveMessage)' }
+    } catch (postErr) {
+      return { ok: false, reason: `post-check failed: ${String(postErr)}` }
+    }
   }
 
   /**

@@ -376,6 +376,15 @@ interface Message {
   // 角色封鎖用戶的系統通知訊息
   isCharBlockedNotification?: boolean;
   charBlockedReason?: string;
+  // 好友申請（用戶封鎖角色後，角色想重新加好友的系統卡片）
+  isFriendRequest?: boolean;
+  friendRequestId?: string;
+  friendRequestData?: {
+    direction: "user-to-char" | "char-to-user";
+    charName: string;
+    createdAt: number;
+  };
+  friendRequestResult?: "accepted" | "rejected";
 }
 
 interface PendingInjectedMessage {
@@ -1903,8 +1912,8 @@ const weatherSendTargetOptions = computed(() => {
   const hasChar = !!charWeatherData.value;
   return [
     { value: "both", label: "雙方", disabled: !(hasUser && hasChar) },
-    { value: "user", label: "只送我", disabled: !hasUser },
-    { value: "char", label: "只送角色", disabled: !hasChar },
+    { value: "user", label: "只發我", disabled: !hasUser },
+    { value: "char", label: "只發角色", disabled: !hasChar },
   ] as const;
 });
 
@@ -7635,13 +7644,15 @@ function isCallOrSystemRecord(m: any): boolean {
   const content = String(m.content || "");
   return (
     String(m.id || "").startsWith("msg_call_") ||
+    String(m.id || "").startsWith("msg_friend_req_") ||
     content.includes("📞 通話結束") ||
     m.isSystemNotification ||
     m.isCallNotification ||
     m.isGroupChatHistory ||
     m.isGroupCallHistory ||
     m.isCalendarEvent ||
-    m.isContinuePrompt
+    m.isContinuePrompt ||
+    m.isFriendRequest
   );
 }
 
@@ -8203,6 +8214,11 @@ async function loadOrCreateChat(overrideChatId?: string) {
             // 封鎖系統相關
             sentWhileBlocked: (m as any).sentWhileBlocked,
             isSystemNotification: (m as any).isSystemNotification,
+            // 好友申請（用戶封鎖角色後，角色想重新加好友的系統卡片）
+            isFriendRequest: (m as any).isFriendRequest,
+            friendRequestId: (m as any).friendRequestId,
+            friendRequestData: (m as any).friendRequestData,
+            friendRequestResult: (m as any).friendRequestResult,
             // 繼續生成的隱藏提示
             isContinuePrompt: (m as any).isContinuePrompt,
             // 通話通知相關
@@ -8847,6 +8863,13 @@ function convertToStorableMessage(m: any, charName: string): ChatMessage {
     // 封鎖系統相關
     sentWhileBlocked: m.sentWhileBlocked,
     isSystemNotification: m.isSystemNotification,
+    // 好友申請（用戶封鎖角色後，角色想重新加好友的系統卡片）
+    isFriendRequest: m.isFriendRequest,
+    friendRequestId: m.friendRequestId,
+    friendRequestData: m.friendRequestData
+      ? JSON.parse(JSON.stringify(m.friendRequestData))
+      : undefined,
+    friendRequestResult: m.friendRequestResult,
     // 繼續生成的隱藏提示
     isContinuePrompt: m.isContinuePrompt,
     // 通話通知相關
@@ -10276,6 +10299,9 @@ onUnmounted(() => {
             :is-online-mode-request="message.isOnlineModeRequest"
             :online-mode-request-reason="message.onlineModeRequestReason"
             :online-mode-request-status="message.onlineModeRequestStatus"
+            :is-friend-request="message.isFriendRequest"
+            :friend-request-data="message.friendRequestData"
+            :friend-request-result="message.friendRequestResult"
             :is-selected="
               (isSelectingForDelete &&
                 selectedMessageIds.includes(message.id)) ||
