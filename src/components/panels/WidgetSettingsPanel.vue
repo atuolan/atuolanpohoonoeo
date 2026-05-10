@@ -8,11 +8,13 @@ import {
     foregroundColors,
     gradientPresets,
 } from "@/styles/color-presets";
-import { shapePresets } from "@/styles/shape-presets";
+import { getShapeStyle, shapePresets } from "@/styles/shape-presets";
 import type { ClockStyle, WidgetCustomStyle, WidgetInstance } from "@/types";
+import { resolveWidgetIcon } from "@/utils/widgetIconMap";
 import {
     Check,
     Clock,
+    Crosshair,
     Image as ImageIcon,
     Palette,
     RotateCcw,
@@ -47,6 +49,9 @@ const localStyle = ref<WidgetCustomStyle>({
   iconName: props.widget.data?.customStyle?.iconName,
   customIconUrl: props.widget.data?.customStyle?.customIconUrl,
   iconSize: props.widget.data?.customStyle?.iconSize,
+  iconOffsetX: props.widget.data?.customStyle?.iconOffsetX,
+  iconOffsetY: props.widget.data?.customStyle?.iconOffsetY,
+  iconScale: props.widget.data?.customStyle?.iconScale,
   shape: props.widget.data?.customStyle?.shape,
 });
 
@@ -261,6 +266,9 @@ function resetStyle() {
     iconName: undefined,
     customIconUrl: undefined,
     iconSize: undefined,
+    iconOffsetX: undefined,
+    iconOffsetY: undefined,
+    iconScale: undefined,
     shape: undefined,
   };
 
@@ -329,6 +337,21 @@ function saveAndClose() {
     cleanStyle.customIconUrl = localStyle.value.customIconUrl;
   if (localStyle.value.iconSize !== undefined)
     cleanStyle.iconSize = localStyle.value.iconSize;
+  if (
+    localStyle.value.iconOffsetX !== undefined &&
+    localStyle.value.iconOffsetX !== 0
+  )
+    cleanStyle.iconOffsetX = localStyle.value.iconOffsetX;
+  if (
+    localStyle.value.iconOffsetY !== undefined &&
+    localStyle.value.iconOffsetY !== 0
+  )
+    cleanStyle.iconOffsetY = localStyle.value.iconOffsetY;
+  if (
+    localStyle.value.iconScale !== undefined &&
+    localStyle.value.iconScale !== 1
+  )
+    cleanStyle.iconScale = localStyle.value.iconScale;
   if (localStyle.value.layout) cleanStyle.layout = localStyle.value.layout;
   if (localStyle.value.vinylStyle)
     cleanStyle.vinylStyle = localStyle.value.vinylStyle;
@@ -466,6 +489,79 @@ onUnmounted(() => {
   document.body.style.touchAction = "";
 });
 
+// === 圖標即時容器預覽 ===
+// 模擬 FluidButtonWidget .blob-shape 的形狀 + 背景 + 邊框
+const iconPreviewBlobStyle = computed(() => {
+  const style: Record<string, string> = {};
+
+  const shapeId = localStyle.value.shape;
+  if (shapeId) {
+    Object.assign(style, getShapeStyle(shapeId));
+  } else {
+    // 預設流體 blob
+    style.borderRadius = "62% 38% 45% 55% / 52% 58% 42% 48%";
+  }
+
+  if (localStyle.value.backgroundGradient) {
+    style.background = localStyle.value.backgroundGradient;
+    style.border = "none";
+  } else if (localStyle.value.backgroundColor) {
+    style.backgroundColor = localStyle.value.backgroundColor;
+    style.border = "none";
+  }
+
+  if (localStyle.value.borderColor) {
+    style.borderColor = localStyle.value.borderColor;
+    style.borderWidth = `${localStyle.value.borderWidth || 2}px`;
+    style.borderStyle = "solid";
+  }
+
+  return style;
+});
+
+// 預覽中的圖標元素樣式（大小 / X / Y 偏移 / 縮放 / 顏色）
+const iconPreviewIconStyle = computed(() => {
+  const size = localStyle.value.iconSize ?? 50;
+  const offsetX = localStyle.value.iconOffsetX ?? 0;
+  const offsetY = localStyle.value.iconOffsetY ?? 0;
+  const scale = localStyle.value.iconScale ?? 1;
+
+  const style: Record<string, string> = {
+    width: `${size}%`,
+    height: `${size}%`,
+    transform: `translate(${offsetX}%, ${offsetY}%) scale(${scale})`,
+  };
+
+  if (localStyle.value.foregroundColor) {
+    style.color = localStyle.value.foregroundColor;
+  }
+
+  return style;
+});
+
+// 預覽是否使用自訂圖片
+const previewUsesCustomImage = computed(
+  () => !!localStyle.value.customIconUrl,
+);
+
+// 預覽用預設圖標組件（依 iconName 或 widget label 解析）
+const previewIconComponent = computed(() => {
+  return resolveWidgetIcon(
+    localStyle.value.iconName || props.widget.data?.label,
+  );
+});
+
+// 將 X/Y 設回置中
+function centerIconOffset() {
+  localStyle.value.iconOffsetX = undefined;
+  localStyle.value.iconOffsetY = undefined;
+}
+
+// 重置圖標縮放為 1x
+function resetIconScale() {
+  localStyle.value.iconScale = undefined;
+}
+
 // color input 只接受 #rrggbb，過濾掉 rgba/transparent 等格式
 function toHexColor(color: string | undefined, fallback: string): string {
   if (!color) return fallback;
@@ -490,7 +586,36 @@ function toHexColor(color: string | undefined, fallback: string): string {
       <!-- 預覽區域 -->
       <div class="preview-section">
         <div class="preview-label">預覽效果</div>
-        <div class="preview-box" :style="previewStyle">
+        <!-- fluid-button：模擬實際 widget（流體形狀 + 圖標 + 標籤），即時反映色彩/形狀/圖標/大小/X/Y -->
+        <div v-if="showIconSettings" class="preview-box fluid-preview-box">
+          <div class="fluid-preview-mock">
+            <div class="fluid-preview-blob" :style="iconPreviewBlobStyle">
+              <img
+                v-if="previewUsesCustomImage"
+                :src="localStyle.customIconUrl"
+                alt="圖標預覽"
+                class="preview-icon-img"
+                :style="iconPreviewIconStyle"
+              />
+              <component
+                v-else
+                :is="previewIconComponent"
+                class="preview-icon-svg"
+                :style="iconPreviewIconStyle"
+                :stroke-width="1.5"
+              />
+            </div>
+            <span
+              v-if="widget.data?.label"
+              class="fluid-preview-label"
+              :style="previewContentStyle"
+            >
+              {{ widget.data?.label }}
+            </span>
+          </div>
+        </div>
+        <!-- 其他 widget：保留原有色塊文字預覽 -->
+        <div v-else class="preview-box" :style="previewStyle">
           <span class="preview-text" :style="previewContentStyle">
             {{ widget.data?.label || "預覽" }}
           </span>
@@ -1190,6 +1315,91 @@ function toHexColor(color: string | undefined, fallback: string): string {
             <span>大</span>
           </div>
         </div>
+
+        <!-- 圖標縮放比例 -->
+        <div class="setting-group">
+          <div class="group-label">
+            縮放比例
+            <span class="size-value"
+              >{{ (localStyle.iconScale ?? 1).toFixed(2) }}x</span
+            >
+          </div>
+          <input
+            type="range"
+            class="size-slider"
+            :value="localStyle.iconScale ?? 1"
+            min="0.5"
+            max="2"
+            step="0.05"
+            @input="
+              localStyle.iconScale = Number(
+                ($event.target as HTMLInputElement).value,
+              )
+            "
+          />
+          <div class="slider-labels">
+            <span>0.5x</span>
+            <span>2x</span>
+          </div>
+          <button class="center-btn" type="button" @click="resetIconScale">
+            <RotateCcw :size="14" />
+            還原 1x
+          </button>
+        </div>
+
+        <!-- 圖標水平位置 X -->
+        <div class="setting-group">
+          <div class="group-label">
+            水平位置 X
+            <span class="size-value">{{ localStyle.iconOffsetX ?? 0 }}%</span>
+          </div>
+          <input
+            type="range"
+            class="size-slider"
+            :value="localStyle.iconOffsetX ?? 0"
+            min="-100"
+            max="100"
+            step="5"
+            @input="
+              localStyle.iconOffsetX = Number(
+                ($event.target as HTMLInputElement).value,
+              )
+            "
+          />
+          <div class="slider-labels">
+            <span>左</span>
+            <span>右</span>
+          </div>
+        </div>
+
+        <!-- 圖標垂直位置 Y -->
+        <div class="setting-group">
+          <div class="group-label">
+            垂直位置 Y
+            <span class="size-value">{{ localStyle.iconOffsetY ?? 0 }}%</span>
+          </div>
+          <input
+            type="range"
+            class="size-slider"
+            :value="localStyle.iconOffsetY ?? 0"
+            min="-100"
+            max="100"
+            step="5"
+            @input="
+              localStyle.iconOffsetY = Number(
+                ($event.target as HTMLInputElement).value,
+              )
+            "
+          />
+          <div class="slider-labels">
+            <span>上</span>
+            <span>下</span>
+          </div>
+          <button class="center-btn" type="button" @click="centerIconOffset">
+            <Crosshair :size="14" />
+            置中（X / Y 歸零）
+          </button>
+        </div>
       </div>
 
       <!-- 底部按鈕 -->
@@ -1325,6 +1535,61 @@ function toHexColor(color: string | undefined, fallback: string): string {
   font-size: 16px;
   font-weight: 600;
   color: #374151;
+}
+
+// fluid-button 真實預覽（模擬畫布上的實際 widget）
+.preview-box.fluid-preview-box {
+  height: 160px;
+  background-color: #f8fafc;
+  background-image:
+    linear-gradient(45deg, #e5e7eb 25%, transparent 25%),
+    linear-gradient(-45deg, #e5e7eb 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e5e7eb 75%),
+    linear-gradient(-45deg, transparent 75%, #e5e7eb 75%);
+  background-size: 14px 14px;
+  background-position:
+    0 0,
+    0 7px,
+    7px -7px,
+    -7px 0;
+  border: 2px solid #e5e7eb;
+  padding: 8px;
+}
+
+.fluid-preview-mock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.fluid-preview-blob {
+  width: 110px;
+  height: 110px;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1.5px solid rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  transition: border-radius 0.2s;
+  flex-shrink: 0;
+}
+
+.fluid-preview-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #374151;
+  text-align: center;
+  letter-spacing: 0.2px;
+  flex-shrink: 0;
+  line-height: 1.2;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 // 標籤頁
@@ -1951,6 +2216,44 @@ function toHexColor(color: string | undefined, fallback: string): string {
   font-size: 11px;
   color: #9ca3af;
   margin-top: 4px;
+}
+
+// 預覽圖標子元素（共用於頂部 fluid-preview）
+.fluid-preview-blob {
+  .preview-icon-svg {
+    color: #1f2937;
+    opacity: 0.85;
+    min-width: 16px;
+    min-height: 16px;
+    transition: transform 0.15s ease-out;
+  }
+
+  .preview-icon-img {
+    object-fit: contain;
+    min-width: 18px;
+    min-height: 18px;
+    transition: transform 0.15s ease-out;
+  }
+}
+
+.center-btn {
+  margin-top: 10px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #f3f4f6;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  transition: background 0.2s;
+
+  &:hover {
+    background: #e5e7eb;
+  }
 }
 
 // 底部按鈕

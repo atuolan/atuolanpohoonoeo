@@ -53,9 +53,8 @@ function initCanvas() {
   canvas.height = rect.height * dpr;
   ctx.scale(dpr, dpr);
 
-  // 填充白色背景
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, rect.width, rect.height);
+  // 透明背景 - 不填充任何顏色
+  ctx.clearRect(0, 0, rect.width, rect.height);
 
   // 設定繪圖樣式
   ctx.lineCap = "round";
@@ -84,6 +83,13 @@ function getPosition(e: MouseEvent | TouchEvent): { x: number; y: number } {
   };
 }
 
+// 設定繪圖/擦除合成模式
+function applyCompositeMode(ctx: CanvasRenderingContext2D) {
+  ctx.globalCompositeOperation = isEraser.value
+    ? "destination-out"
+    : "source-over";
+}
+
 // 開始繪製
 function startDrawing(e: MouseEvent | TouchEvent) {
   e.preventDefault();
@@ -95,10 +101,13 @@ function startDrawing(e: MouseEvent | TouchEvent) {
   // 畫一個點（處理單擊）
   const ctx = getContext();
   if (ctx) {
+    applyCompositeMode(ctx);
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, brushSize.value / 2, 0, Math.PI * 2);
-    ctx.fillStyle = isEraser.value ? "#ffffff" : brushColor.value;
+    // destination-out 模式下任何不透明顏色都會擦除像素
+    ctx.fillStyle = isEraser.value ? "rgba(0,0,0,1)" : brushColor.value;
     ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
   }
 }
 
@@ -112,12 +121,14 @@ function draw(e: MouseEvent | TouchEvent) {
 
   const pos = getPosition(e);
 
+  applyCompositeMode(ctx);
   ctx.beginPath();
   ctx.moveTo(lastX.value, lastY.value);
   ctx.lineTo(pos.x, pos.y);
-  ctx.strokeStyle = isEraser.value ? "#ffffff" : brushColor.value;
+  ctx.strokeStyle = isEraser.value ? "rgba(0,0,0,1)" : brushColor.value;
   ctx.lineWidth = brushSize.value;
   ctx.stroke();
+  ctx.globalCompositeOperation = "source-over";
 
   lastX.value = pos.x;
   lastY.value = pos.y;
@@ -135,8 +146,7 @@ function clearCanvas() {
   if (!canvas || !ctx) return;
 
   const rect = canvas.getBoundingClientRect();
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, rect.width, rect.height);
+  ctx.clearRect(0, 0, rect.width, rect.height);
 }
 
 // 切換橡皮擦
@@ -358,16 +368,27 @@ onUnmounted(() => {
   }
 }
 
-// 畫布容器
+// 畫布容器（棋盤格背景表示透明區域）
 .canvas-container {
   width: 100%;
   aspect-ratio: 1;
-  background: #f8fafc;
   border-radius: 16px;
   border: 2px solid #e5e7eb;
   overflow: hidden;
   margin-bottom: 16px;
   touch-action: none;
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(45deg, #e5e7eb 25%, transparent 25%),
+    linear-gradient(-45deg, #e5e7eb 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e5e7eb 75%),
+    linear-gradient(-45deg, transparent 75%, #e5e7eb 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
 }
 
 .draw-canvas {
@@ -375,6 +396,7 @@ onUnmounted(() => {
   height: 100%;
   cursor: crosshair;
   touch-action: none;
+  background: transparent;
 }
 
 // 工具列

@@ -89,6 +89,9 @@ export interface WidgetCustomStyle {
   iconName?: string; // 預設圖標名稱
   customIconUrl?: string; // 自定義圖標 URL（Base64）
   iconSize?: number; // 圖標大小百分比 (30-80)
+  iconOffsetX?: number; // 圖標水平偏移百分比 (-100 ~ 100)
+  iconOffsetY?: number; // 圖標垂直偏移百分比 (-100 ~ 100)
+  iconScale?: number; // 圖標縮放倍率 (0.5 ~ 2，預設 1)
   layout?: string; // 組件佈局風格
   vinylStyle?: string; // 黑膠唱片子風格 (dark/pop)
   shape?: string; // 圖標形狀 ID（blob/circle/square/rounded-square/ellipse/star/diamond/petal/hexagon/shield/heart/cloud）

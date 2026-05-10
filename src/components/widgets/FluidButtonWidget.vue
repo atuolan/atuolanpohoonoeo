@@ -3,84 +3,7 @@ import { getIconSource, useWidgetStyle } from "@/composables/useWidgetStyle";
 import { useCanvasStore, useThemeStore } from "@/stores";
 import { getShapeStyle } from "@/styles/shape-presets";
 import type { WidgetCustomStyle } from "@/types";
-import {
-    Activity,
-    Archive,
-    AtSign,
-    Bell,
-    Bike,
-    Bluetooth,
-    Book,
-    Bookmark,
-    BookOpen,
-    Box,
-    Briefcase,
-    Bus,
-    Cake,
-    Calendar,
-    Camera,
-    Car,
-    Clock,
-    Coffee,
-    Compass,
-    CreditCard,
-    Download,
-    Dumbbell,
-    FileText,
-    Film,
-    Folder,
-    Fuel,
-    Gamepad2,
-    Gift,
-    Globe,
-    GraduationCap,
-    HardHat,
-    Heart,
-    Home,
-    Image,
-    Layers,
-    LayoutGrid,
-    Link2,
-    Mail,
-    MapPin,
-    MessageCircle,
-    MessageSquare,
-    Mic,
-    Moon,
-    Music,
-    Navigation,
-    Package,
-    Pencil,
-    // 額外的圖標用於自定義選擇
-    Phone,
-    Pill,
-    Plane,
-    Puzzle,
-    Search,
-    Send,
-    Settings,
-    Share2,
-    Ship,
-    ShoppingBag,
-    ShoppingCart,
-    Sparkles,
-    Star,
-    Sun,
-    Thermometer,
-    Train,
-    Trash2,
-    Trophy,
-    Truck,
-    User,
-    UserCircle,
-    UserPlus,
-    Users,
-    Utensils,
-    Volume2,
-    Wallet,
-    Wifi,
-    Wine,
-} from "lucide-vue-next";
+import { resolveWidgetIcon } from "@/utils/widgetIconMap";
 import { computed } from "vue";
 
 const props = defineProps<{
@@ -136,116 +59,17 @@ const { containerStyle, contentStyle, hasCustomBackground, hasCustomIcon } =
 // 從主題 store 獲取桌布亮度判斷（根據實際桌布顏色而非僅時間）
 const isDark = computed(() => themeStore.isWallpaperDark);
 
-// 所有可用圖標的映射（包含預設和可選擇的圖標）
-const allIconsMap: Record<string, any> = {
-  // 預設標籤映射
-  訊息: MessageCircle,
-  設置: Settings,
-  空間: Sparkles,
-  音樂: Music,
-  健身: Dumbbell,
-  錢包: Wallet,
-  相冊: LayoutGrid,
-  收藏: Globe,
-  遊戲: Gamepad2,
-  外賣: ShoppingBag,
-  購物: ShoppingCart,
-  世界書: Book,
-  紀念日: Heart,
-  短信: Mail,
-  角色: UserCircle,
-  使用者: User,
-  頭盔TA: HardHat,
-  偷窺TA: HardHat,
-  閱讀: BookOpen,
-  書架: Book,
-  占卜: Sparkles,
-  // 可選擇的圖標名稱映射
-  MessageCircle: MessageCircle,
-  Settings: Settings,
-  Sparkles: Sparkles,
-  Music: Music,
-  Dumbbell: Dumbbell,
-  Wallet: Wallet,
-  LayoutGrid: LayoutGrid,
-  Globe: Globe,
-  Gamepad2: Gamepad2,
-  ShoppingBag: ShoppingBag,
-  ShoppingCart: ShoppingCart,
-  Book: Book,
-  Heart: Heart,
-  Mail: Mail,
-  Phone: Phone,
-  Send: Send,
-  Share2: Share2,
-  Users: Users,
-  UserPlus: UserPlus,
-  MessageSquare: MessageSquare,
-  AtSign: AtSign,
-  Search: Search,
-  Camera: Camera,
-  Image: Image,
-  Film: Film,
-  Mic: Mic,
-  Volume2: Volume2,
-  Wifi: Wifi,
-  Bluetooth: Bluetooth,
-  Bell: Bell,
-  Calendar: Calendar,
-  Clock: Clock,
-  MapPin: MapPin,
-  Navigation: Navigation,
-  Compass: Compass,
-  Sun: Sun,
-  Moon: Moon,
-  CreditCard: CreditCard,
-  Gift: Gift,
-  Trophy: Trophy,
-  Puzzle: Puzzle,
-  Activity: Activity,
-  Thermometer: Thermometer,
-  Pill: Pill,
-  Coffee: Coffee,
-  Utensils: Utensils,
-  Wine: Wine,
-  Cake: Cake,
-  Briefcase: Briefcase,
-  GraduationCap: GraduationCap,
-  Folder: Folder,
-  FileText: FileText,
-  Pencil: Pencil,
-  Bookmark: Bookmark,
-  Link2: Link2,
-  Car: Car,
-  Plane: Plane,
-  Train: Train,
-  Bike: Bike,
-  Ship: Ship,
-  Bus: Bus,
-  Truck: Truck,
-  Fuel: Fuel,
-  Layers: Layers,
-  Box: Box,
-  Package: Package,
-  Archive: Archive,
-  Trash2: Trash2,
-  Download: Download,
-  Star: Star,
-  Home: Home,
-  User: User,
-};
-
 // 獲取圖標源
 const iconSource = computed(() => getIconSource(props.data?.customStyle));
 
-// 計算當前應該顯示的圖標組件
+// 計算當前應該顯示的圖標組件（透過共用 widgetIconMap 解析）
 const iconComponent = computed(() => {
   // 如果有自定義預設圖標
   if (iconSource.value.type === "preset" && iconSource.value.value) {
-    return allIconsMap[iconSource.value.value] || MessageCircle;
+    return resolveWidgetIcon(iconSource.value.value);
   }
   // 使用標籤映射的預設圖標
-  return allIconsMap[props.data?.label || ""] || MessageCircle;
+  return resolveWidgetIcon(props.data?.label);
 });
 
 // 是否使用自定義圖片
@@ -288,6 +112,22 @@ const blobStyle = computed(() => {
   // 應用圖標大小
   if (props.data?.customStyle?.iconSize) {
     style["--icon-size"] = `${props.data.customStyle.iconSize}%`;
+  }
+
+  // 應用圖標 X/Y 偏移（百分比）
+  const offsetX = props.data?.customStyle?.iconOffsetX;
+  if (typeof offsetX === "number" && offsetX !== 0) {
+    style["--icon-offset-x"] = `${offsetX}%`;
+  }
+  const offsetY = props.data?.customStyle?.iconOffsetY;
+  if (typeof offsetY === "number" && offsetY !== 0) {
+    style["--icon-offset-y"] = `${offsetY}%`;
+  }
+
+  // 應用圖標縮放倍率
+  const scale = props.data?.customStyle?.iconScale;
+  if (typeof scale === "number" && scale > 0 && scale !== 1) {
+    style["--icon-scale"] = `${scale}`;
   }
 
   // 應用自定義背景
@@ -417,9 +257,12 @@ const labelStyle = computed(() => {
     max-height: 64px;
     color: #1f2937;
     opacity: 0.7;
+    transform: translate(var(--icon-offset-x, 0%), var(--icon-offset-y, 0%))
+      scale(var(--icon-scale, 1));
     transition:
       opacity 0.2s,
-      color 0.2s;
+      color 0.2s,
+      transform 0.2s;
   }
 
   .custom-icon-image {
@@ -430,6 +273,8 @@ const labelStyle = computed(() => {
     max-width: 72px;
     max-height: 72px;
     object-fit: contain;
+    transform: translate(var(--icon-offset-x, 0%), var(--icon-offset-y, 0%))
+      scale(var(--icon-scale, 1));
     transition: transform 0.2s;
   }
 }
@@ -448,7 +293,8 @@ const labelStyle = computed(() => {
   }
 
   .custom-icon-image {
-    transform: scale(1.05);
+    transform: translate(var(--icon-offset-x, 0%), var(--icon-offset-y, 0%))
+      scale(calc(var(--icon-scale, 1) * 1.05));
   }
 }
 
