@@ -1,12 +1,17 @@
-// Aguaphone Service Worker v7
+// Aguaphone Service Worker v8
 // PWA + 系統推播通知 + 雲端推送支援
 //
 // 更新策略：
 //   - 不在 install 時 skipWaiting，避免強制接管導致 IDB blocking
 //   - 新 SW 安裝完成後通知頁面，由頁面決定何時 reload
 //   - 頁面 reload 後 IDB 連線自然關閉，不會有 UnknownError
+//
+// v8 變更：
+//   - fetch handler 跨域請求直接放行（不攔截、不快取、不合成 503）
+//   - 非 GET 請求直接放行，避免 POST body 在 SW 中重放的 WebKit 邊緣問題
+//   - 修正 NovelAI 代理、雲端推送 API 等跨域呼叫在 PWA 下被合成 503 的問題
 
-const CACHE_NAME = "aguaphone-v7";
+const CACHE_NAME = "aguaphone-v8";
 const OLD_CACHES = [
   "aguaphone-v1",
   "aguaphone-v2",
@@ -14,6 +19,7 @@ const OLD_CACHES = [
   "aguaphone-v4",
   "aguaphone-v5",
   "aguaphone-v6",
+  "aguaphone-v7",
 ];
 
 // install：不 skipWaiting，等待頁面安全 reload 後再接管
@@ -118,6 +124,27 @@ self.addEventListener("fetch", (event) => {
   if (!event.request.url.startsWith("http")) return;
 
   const url = new URL(event.request.url);
+
+  // 跨域請求直接交給瀏覽器處理
+  // 理由：SW 攔截跨域 POST 後再 fetch(event.request) 會在
+  //   - iOS PWA standalone
+  //   - CORS preflight / 長耗時請求（NovelAI 文生圖 30-60s）
+  //   - POST body 重放
+  //   等情境下不穩定；一旦底層 fetch reject，下方 catch 會合成 "Network error" 503，
+  //   把真實錯誤（CORS 被擋、網路斷、上游真 503）全蓋成同一個假 503，極難排查。
+  // 直接 return 讓瀏覽器以原生網路堆疊處理跨域請求即可。
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  // 非 GET 請求不攔截、不快取
+  // 理由：POST/PUT/DELETE 在 SW 中重放 request body 有 WebKit 邊緣 bug，
+  //   且這類請求本就不適合離線快取，放行給瀏覽器即可。
+  if (event.request.method !== "GET") {
+    return;
+  }
+
+  // 維持舊有 dev proxy 路徑排除（同源但不快取）
   if (
     url.pathname.startsWith("/ai-proxy/") ||
     url.pathname.startsWith("/ai-proxy-http/") ||
@@ -130,7 +157,6 @@ self.addEventListener("fetch", (event) => {
     fetch(event.request)
       .then((response) => {
         if (
-          event.request.method === "GET" &&
           response.status === 200 &&
           response.type === "basic"
         ) {

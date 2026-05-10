@@ -51,7 +51,7 @@ function corsHeaders(origin) {
   return {
     'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Api-Key, Anthropic-Version',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Api-Key, Anthropic-Version, X-Aguaphone-Client',
     'Access-Control-Max-Age': '86400',
   };
 }

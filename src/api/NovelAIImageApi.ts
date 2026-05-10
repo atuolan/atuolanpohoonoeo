@@ -376,6 +376,14 @@ async function fetchWithRetry(
 
 /**
  * 解析 API 錯誤，回傳友善訊息
+ *
+ * 503 來源分辨：
+ *  - SW 合成 503（body 為純文字 "Network error"）：通常代表跨域請求在
+ *    Service Worker 層被攔截後 fetch reject，真實原因可能是 CORS preflight
+ *    被擋、網路斷線、或 PWA 背景凍結。
+ *  - Cloudflare Worker 回 503（body 為 JSON、含 upstream_status）：
+ *    代表 Worker 代理到 NovelAI 時多次拿到 503，多半是 NAI 負載過高。
+ *  - NovelAI 上游 503（其他）：直接顯示原文。
  */
 async function parseApiError(response: Response): Promise<string> {
   const text = await response.text().catch(() => '');
@@ -393,7 +401,23 @@ async function parseApiError(response: Response): Promise<string> {
     case 429: return `請求過於頻繁 (429)，請稍後再試（已自動重試 3 次）`;
     case 500: return '伺服器內部錯誤 (500)，請稍後再試（已自動重試 3 次）';
     case 502: return '伺服器暫時無法連線 (502)，請稍後再試（已自動重試 3 次）';
-    case 503: return '服務暫時不可用 (503)\n\n可能原因：\n1. NovelAI 服務器負載過高\n2. 網絡連接不穩定\n3. API Key 使用頻率過高\n\n建議：稍後重試或切換網絡環境（已自動重試 3 次，每次等待 10-30 秒）';
+    case 503: {
+      // SW 合成 503（公開字樣："Network error"），代表根本沒發出去
+      if (text.trim() === 'Network error') {
+        return '網路請求未送達 (SW-503)\n\n可能原因：\n1. CORS preflight 被代理端拒絕\n2. PWA 在背景被凍結 / 網路中斷\n3. 代理網址無法解析\n\n建議：切換網絡環境重試，或暫時關閉「使用代理」改為直連測試';
+      }
+      // Cloudflare Worker 診斷 JSON
+      try {
+        const json = JSON.parse(text);
+        if (json && typeof json === 'object' && 'upstream_status' in json) {
+          const msg = json.message || json.error || '服務暫時不可用';
+          return `NovelAI 上游 503\n${msg}\n建議：${json.suggestion || '稍後重試或切換網絡環境'}`;
+        }
+      } catch {
+        // 非 JSON，走預設
+      }
+      return '服務暫時不可用 (503)\n\n可能原因：\n1. NovelAI 服務器負載過高\n2. 網絡連接不穩定\n3. API Key 使用頻率過高\n\n建議：稍後重試或切換網絡環境（已自動重試 3 次，每次等待 10-30 秒）';
+    }
     default:  return `生成失敗: ${response.status} ${response.statusText}`;
   }
 }
