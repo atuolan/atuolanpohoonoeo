@@ -436,6 +436,14 @@ export const useSettingsStore = defineStore("settings", () => {
               novelAIImage.positivePromptSuffix = "";
             if (novelAIImage.useUserTag === undefined)
               novelAIImage.useUserTag = false;
+
+            // 一次性遷移：代理修復（CORS preflight + SW 攔截）後，
+            // 把所有未遷移過的使用者強制翻回「使用代理 = ON」。
+            // 之後使用者再手動關閉就會永久保留 false，不會再被覆寫。
+            if (!novelAIImage.proxyDefaultEnforcedV1) {
+              novelAIImage.useProxy = true;
+              novelAIImage.proxyDefaultEnforcedV1 = true;
+            }
           }
 
           // 載入 MiniMax TTS 語音合成設定

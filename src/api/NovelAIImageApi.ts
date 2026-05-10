@@ -41,6 +41,12 @@ export interface NovelAIImageSettings {
   useProxy?: boolean;
   /** Cloudflare Worker 代理地址，例如 https://nai-proxy.aguacloud.uk */
   proxyBaseUrl?: string;
+  /**
+   * 內部用：標記「代理預設值=ON 的一次性遷移已套用」
+   * 載入時若為 false/undefined，會把 useProxy 強制設成 true 並寫入此旗標。
+   * 之後使用者手動關閉就會永久保留，不會被反覆覆寫。
+   */
+  proxyDefaultEnforcedV1?: boolean;
 }
 
 export interface NovelAIImageResponse {
@@ -120,6 +126,7 @@ export function createDefaultNovelAIImageSettings(): NovelAIImageSettings {
     qualityToggle: true,
     ucPreset: 3,
     useProxy: true,
+    proxyDefaultEnforcedV1: true,
   };
 }
 
