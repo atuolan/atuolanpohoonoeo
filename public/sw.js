@@ -1,4 +1,4 @@
-// Aguaphone Service Worker v6
+// Aguaphone Service Worker v7
 // PWA + 系統推播通知 + 雲端推送支援
 //
 // 更新策略：
@@ -6,13 +6,14 @@
 //   - 新 SW 安裝完成後通知頁面，由頁面決定何時 reload
 //   - 頁面 reload 後 IDB 連線自然關閉，不會有 UnknownError
 
-const CACHE_NAME = "aguaphone-v6";
+const CACHE_NAME = "aguaphone-v7";
 const OLD_CACHES = [
   "aguaphone-v1",
   "aguaphone-v2",
   "aguaphone-v3",
   "aguaphone-v4",
   "aguaphone-v5",
+  "aguaphone-v6",
 ];
 
 // install：不 skipWaiting，等待頁面安全 reload 後再接管
