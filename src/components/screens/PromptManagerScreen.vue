@@ -1331,7 +1331,15 @@ async function deleteCharacterConfig() {
 
 // 重置當前模式為默認（只影響當前分頁，不會動到其他模式）
 async function resetCurrentToDefault() {
-  if (selectedMode.value === "faceToFace") {
+  if (selectedMode.value === "global") {
+    if (
+      confirm(
+        "確定要重置「線上模式」的提示詞為預設嗎？\n（只會重置線上模式的提示詞內容與順序，不會影響面對面、群聊、日記、總結、重要事件、噗浪等其他模式）",
+      )
+    ) {
+      await promptManagerStore.resetToDefault();
+    }
+  } else if (selectedMode.value === "faceToFace") {
     if (confirm("確定要重置「面對面模式」的提示詞為預設嗎？\n（不會影響其他模式）")) {
       await promptManagerStore.resetFaceToFaceToDefault();
     }
@@ -1366,14 +1374,6 @@ async function resetCurrentToDefault() {
       )
     ) {
       await promptManagerStore.resetToDefault(selectedCharacterId.value);
-    }
-  } else {
-    if (
-      confirm(
-        "確定要重置「線上模式」的提示詞為預設嗎？\n（只會重置線上模式的提示詞內容與順序，不會影響面對面、群聊、日記、總結、重要事件、噗浪等其他模式）",
-      )
-    ) {
-      await promptManagerStore.resetToDefault();
     }
   }
 }

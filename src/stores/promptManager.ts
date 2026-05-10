@@ -1185,6 +1185,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
       // 重置全局配置（包含內容和順序）
       config.value.prompts = structuredClone(defaults.prompts);
       config.value.globalPromptOrder = structuredClone(DEFAULT_PROMPT_ORDER);
+      config.value.deletedDefaultPromptIds = [];
     }
     await saveConfig();
   }
@@ -1197,6 +1198,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     // 全局
     config.value.prompts = structuredClone(defaults.prompts);
     config.value.globalPromptOrder = structuredClone(DEFAULT_PROMPT_ORDER);
+    config.value.deletedDefaultPromptIds = [];
     // 面對面
     config.value.faceToFacePrompts = structuredClone(
       FACE_TO_FACE_PROMPT_DEFINITIONS,
@@ -1204,6 +1206,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     config.value.faceToFacePromptOrder = structuredClone(
       DEFAULT_FACE_TO_FACE_PROMPT_ORDER,
     );
+    config.value.deletedFaceToFacePromptIds = [];
     // 群聊
     config.value.groupChatPrompts = structuredClone(
       GROUP_CHAT_PROMPT_DEFINITIONS,
@@ -1211,14 +1214,17 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     config.value.groupChatPromptOrder = structuredClone(
       DEFAULT_GROUP_CHAT_PROMPT_ORDER,
     );
+    config.value.deletedGroupChatPromptIds = [];
     // 日記
     config.value.diaryPrompts = structuredClone(DIARY_PROMPT_DEFINITIONS);
     config.value.diaryPromptOrder = structuredClone(DEFAULT_DIARY_PROMPT_ORDER);
+    config.value.deletedDiaryPromptIds = [];
     // 總結
     config.value.summaryPrompts = structuredClone(SUMMARY_PROMPT_DEFINITIONS);
     config.value.summaryPromptOrder = structuredClone(
       DEFAULT_SUMMARY_PROMPT_ORDER,
     );
+    config.value.deletedSummaryPromptIds = [];
     // 重要事件
     config.value.eventsPrompts = structuredClone(
       IMPORTANT_EVENTS_PROMPT_DEFINITIONS,
@@ -1226,6 +1232,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     config.value.eventsPromptOrder = structuredClone(
       DEFAULT_IMPORTANT_EVENTS_PROMPT_ORDER,
     );
+    config.value.deletedEventsPromptIds = [];
     // 噗浪發文
     config.value.plurkPostPrompts = structuredClone(
       PLURK_POST_PROMPT_DEFINITIONS,
@@ -1233,6 +1240,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     config.value.plurkPostPromptOrder = structuredClone(
       DEFAULT_PLURK_POST_PROMPT_ORDER,
     );
+    config.value.deletedPlurkPostPromptIds = [];
     // 噗浪評論
     config.value.plurkCommentPrompts = structuredClone(
       PLURK_COMMENT_PROMPT_DEFINITIONS,
@@ -1240,6 +1248,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     config.value.plurkCommentPromptOrder = structuredClone(
       DEFAULT_PLURK_COMMENT_PROMPT_ORDER,
     );
+    config.value.deletedPlurkCommentPromptIds = [];
     await saveConfig();
   }
 
@@ -1332,6 +1341,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
   async function resetDiaryToDefault(): Promise<void> {
     config.value.diaryPrompts = structuredClone(DIARY_PROMPT_DEFINITIONS);
     config.value.diaryPromptOrder = structuredClone(DEFAULT_DIARY_PROMPT_ORDER);
+    config.value.deletedDiaryPromptIds = [];
     await saveConfig();
   }
 
@@ -1424,6 +1434,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     config.value.summaryPromptOrder = structuredClone(
       DEFAULT_SUMMARY_PROMPT_ORDER,
     );
+    config.value.deletedSummaryPromptIds = [];
     await saveConfig();
   }
 
@@ -1520,6 +1531,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     config.value.eventsPromptOrder = structuredClone(
       DEFAULT_IMPORTANT_EVENTS_PROMPT_ORDER,
     );
+    config.value.deletedEventsPromptIds = [];
     await saveConfig();
   }
 
@@ -1620,6 +1632,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     config.value.plurkPostPromptOrder = structuredClone(
       DEFAULT_PLURK_POST_PROMPT_ORDER,
     );
+    config.value.deletedPlurkPostPromptIds = [];
     await saveConfig();
   }
 
@@ -1720,6 +1733,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     config.value.plurkCommentPromptOrder = structuredClone(
       DEFAULT_PLURK_COMMENT_PROMPT_ORDER,
     );
+    config.value.deletedPlurkCommentPromptIds = [];
     await saveConfig();
   }
 
@@ -1820,6 +1834,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     config.value.faceToFacePromptOrder = structuredClone(
       DEFAULT_FACE_TO_FACE_PROMPT_ORDER,
     );
+    config.value.deletedFaceToFacePromptIds = [];
     await saveConfig();
   }
 
@@ -1918,6 +1933,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     config.value.groupChatPromptOrder = structuredClone(
       DEFAULT_GROUP_CHAT_PROMPT_ORDER,
     );
+    config.value.deletedGroupChatPromptIds = [];
     await saveConfig();
   }
 
