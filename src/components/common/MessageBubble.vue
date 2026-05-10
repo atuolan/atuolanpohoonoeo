@@ -17,7 +17,7 @@ import {
 } from "@/db/operations";
 import { formatTime } from "@/services/AudioRecorder";
 import { getRegexedString, regex_placement } from "@/services/RegexEngine";
-import { useStickerStore } from "@/stores";
+import { useSettingsStore, useStickerStore } from "@/stores";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
 import type { WaimaiOrderSnapshot } from "@/types/chat";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
@@ -40,6 +40,7 @@ marked.setOptions({
 
 const stickerStore = useStickerStore();
 const regexScriptsStore = useRegexScriptsStore();
+const settingsStore = useSettingsStore();
 
 // 音頻播放器
 const audioPlayer = useAudioPlayer();
@@ -257,6 +258,8 @@ interface MessageBubbleProps {
     | "audio";
   imageUrl?: string;
   imageCaption?: string;
+  // AI 文生圖原始 prompt（descriptive-image 失敗時用於重新生成）
+  imagePrompt?: string;
   // 音頻相關
   audioBlob?: Blob | null;
   audioBlobId?: string;
@@ -425,6 +428,7 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   messageType: "text",
   imageUrl: "",
   imageCaption: "",
+  imagePrompt: "",
   audioBlob: null,
   audioDuration: 0,
   audioWaveform: () => [],
@@ -500,6 +504,7 @@ const emit = defineEmits<{
   (e: "delete", id: string): void;
   (e: "copy", id: string): void;
   (e: "regenerate", id: string): void;
+  (e: "regenerateImage", id: string): void;
   (e: "swipe", id: string, direction: "prev" | "next"): void;
   (e: "roundSwipe", id: string, direction: "prev" | "next"): void;
   (e: "reply", id: string): void;
@@ -2098,6 +2103,20 @@ function handleRegenerate() {
   emit("regenerate", props.id);
 }
 
+function handleRegenerateImage() {
+  emit("regenerateImage", props.id);
+}
+
+// 是否顯示「重新生成圖片」按鈕
+// 條件：descriptive-image、非串流中、NovelAI 文生圖已啟用且有 API Key、且有英文 prompt 可重試
+const canRegenerateImage = computed(() => {
+  if (props.messageType !== "descriptive-image") return false;
+  if (props.isStreaming) return false;
+  if (!settingsStore.novelAIImage?.enabled) return false;
+  if (!settingsStore.novelAIImage?.apiKey) return false;
+  return !!props.imagePrompt?.trim();
+});
+
 function handleReply() {
   if (menuOpenedAt && Date.now() - menuOpenedAt < 800) return;
   showMenu.value = false;
@@ -3489,6 +3508,18 @@ const showTextVoiceTranscript = ref(true);
                 v-html="renderedContent"
                 @click="onBubbleTextClick"
               ></div>
+              <!-- 文生圖失敗：重新生成按鈕 -->
+              <button
+                v-if="canRegenerateImage"
+                type="button"
+                class="regen-image-btn"
+                @click.stop="handleRegenerateImage"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" class="regen-image-icon">
+                  <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-8 3.58-8 8s3.58 8 8 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                </svg>
+                <span>重新生成圖片</span>
+              </button>
             </template>
             <div class="pixel-transfer-wrapper">
               <PixelTransferCard
@@ -3851,6 +3882,18 @@ const showTextVoiceTranscript = ref(true);
                 v-html="renderedContent"
                 @click="onBubbleTextClick"
               ></div>
+              <!-- 文生圖失敗：重新生成按鈕 -->
+              <button
+                v-if="canRegenerateImage"
+                type="button"
+                class="regen-image-btn"
+                @click.stop="handleRegenerateImage"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" class="regen-image-icon">
+                  <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-8 3.58-8 8s3.58 8 8 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                </svg>
+                <span>重新生成圖片</span>
+              </button>
             </template>
           </template>
 
@@ -5163,6 +5206,43 @@ const showTextVoiceTranscript = ref(true);
     @media (max-width: 768px) {
       width: 240px;
     }
+  }
+}
+
+// 文生圖失敗：重新生成按鈕
+.regen-image-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  line-height: 1;
+  color: #555;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 999px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.05s ease;
+
+  &:hover {
+    background: #fff;
+    color: #222;
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  .regen-image-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
   }
 }
 

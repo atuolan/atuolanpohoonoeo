@@ -2186,6 +2186,8 @@ const onMessageEdit = (...args: any[]) => handleMessageEdit(args[0] as string);
 const onMessageDelete = (...args: any[]) => handleMessageDelete(args[0] as string);
 const onMessageCopy = (...args: any[]) => handleMessageCopy(args[0] as string);
 const onMessageRegenerate = (...args: any[]) => handleRegenerate(args[0] as string);
+const onMessageRegenerateImage = (...args: any[]) =>
+  handleRegenerateImage(args[0] as string);
 const onMessageSwipe = (...args: any[]) =>
   handleMessageSwipe(args[0] as string, args[1] as "prev" | "next");
 const onMessageRoundSwipe = (...args: any[]) =>
@@ -3921,6 +3923,20 @@ function handleMessageSwipe(id: string, direction: "prev" | "next") {
 
   // 保存
   saveChat();
+}
+
+// 重新生成文生圖（descriptive-image 失敗後的單張重試）
+async function handleRegenerateImage(id: string) {
+  const msg = messages.value.find((m) => m.id === id);
+  if (!msg) return;
+  if (msg.messageType !== "descriptive-image") return;
+  if (msg.isStreaming) return;
+
+  const prompt = msg.imagePrompt?.trim();
+  const caption = msg.imageCaption?.trim();
+  if (!prompt && !caption) return;
+
+  await tryGenerateImageForMessage(id, prompt, caption);
 }
 
 // 處理重新生成（菜單版，統一使用按鈕版的 round 邏輯）
@@ -10223,6 +10239,7 @@ onUnmounted(() => {
             :message-type="message.messageType"
             :image-url="message.imageUrl"
             :image-caption="message.imageCaption"
+            :image-prompt="message.imagePrompt"
             :is-gift="message.isGift"
             :gift-name="message.giftName"
             :gift-received="message.giftReceived"
@@ -10323,6 +10340,7 @@ onUnmounted(() => {
             @delete="onMessageDelete"
             @copy="onMessageCopy"
             @regenerate="onMessageRegenerate"
+            @regenerate-image="onMessageRegenerateImage"
             @swipe="onMessageSwipe"
             @round-swipe="onMessageRoundSwipe"
             @reply="onMessageReply"
