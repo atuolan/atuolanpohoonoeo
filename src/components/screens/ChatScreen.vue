@@ -2134,13 +2134,15 @@ function handleSplitRegexSegments(
   const idx = messages.value.findIndex((m) => m.id === messageId);
   if (idx === -1) return;
   const sourceMessage = messages.value[idx];
-  const htmlSegments = segments.filter(
-    (seg) => seg.type === "html" && seg.content.trim(),
-  );
-  if (htmlSegments.length === 0) return;
+  const nonEmptySegments = segments.filter((seg) => seg.content.trim());
+  const htmlSegmentCount = nonEmptySegments.filter(
+    (seg) => seg.type === "html",
+  ).length;
+  if (htmlSegmentCount === 0) return;
 
   // 1) 計算期望的 shadow 氣泡（含穩定 ID）
-  const desired = htmlSegments.map((seg, i) => {
+  // ★ 同時為 text 段產生獨立 shadow bubble，避免源氣泡被隱藏後正文消失
+  const desired = nonEmptySegments.map((seg, i) => {
     const ordinal = i + 1; // segment 0 留在源氣泡裡
     const sigHash = hashString(seg.content.replace(/\s+/g, " ").trim());
     const id = `${messageId}_seg_${ordinal}_${seg.type}_${sigHash}`;
@@ -2157,11 +2159,14 @@ function handleSplitRegexSegments(
   const exactMatch =
     existing.length === desired.length &&
     existing.every((e, i) => e.msg.id === desired[i].id) &&
-    existing.every(
-      (e, i) =>
-        e.msg.content === desired[i].seg.content &&
-        e.msg.htmlContent === desired[i].seg.content,
-    ) &&
+    existing.every((e, i) => {
+      const seg = desired[i].seg;
+      if (e.msg.content !== seg.content) return false;
+      if (seg.type === "html") {
+        return e.msg.isHtmlBlock === true && e.msg.htmlContent === seg.content;
+      }
+      return !e.msg.isHtmlBlock;
+    }) &&
     existing.every((e, i) => e.index === expectedStart + i);
   if (exactMatch) return;
 
@@ -2180,8 +2185,12 @@ function handleSplitRegexSegments(
     role: sourceMessage.role,
     content: seg.content,
     timestamp: sourceMessage.timestamp + ordinal * 0.001,
-    isHtmlBlock: true,
-    htmlContent: seg.content,
+    isHtmlBlock: seg.type === "html",
+    htmlContent: seg.type === "html" ? seg.content : undefined,
+    // 讓 text shadow bubble 繼承源訊息的頭像/名稱，避免顯示錯位
+    senderCharacterId: sourceMessage.senderCharacterId,
+    senderCharacterName: sourceMessage.senderCharacterName,
+    senderCharacterAvatar: sourceMessage.senderCharacterAvatar,
     isShadowSegment: true,
     shadowSourceId: messageId,
     shadowOrdinal: ordinal,
