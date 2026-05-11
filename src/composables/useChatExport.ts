@@ -271,6 +271,10 @@ export function useChatExport(deps: {
         // 忽略
       }
 
+      await deleteChatMessagesForChat(chatId);
+      await refreshChatDerivedMetadata(chatId);
+      await deps.notifyChatCleared?.();
+
       // 5. 重新加載角色開場白
       let greetingMsgId: string | undefined;
       let chosenGreetingContent: string | undefined;

@@ -55,6 +55,12 @@ import MediaLogManager from "@/components/modals/MediaLogManager.vue";
 import MultiCharSetupModal from "@/components/modals/MultiCharSetupModal.vue";
 import PhoneContactPickerModal from "@/components/modals/PhoneContactPickerModal.vue";
 import PomodoroCertModal from "@/components/modals/PomodoroCertModal.vue";
+import AnnouncementModal from "@/components/modals/AnnouncementModal.vue";
+import {
+  loadPendingAnnouncements,
+  acknowledgeAnnouncement,
+  type Announcement,
+} from "@/services/AnnouncementService";
 import BookReaderScreen from "@/components/screens/BookReaderScreen.vue";
 import BookShelfScreen from "@/components/screens/BookShelfScreen.vue";
 import CalendarScreen from "@/components/screens/CalendarScreen.vue";
@@ -826,6 +832,29 @@ const importType = ref<"character" | "lorebook">("character");
 // AI 角色生成彈窗
 const showAICharacterModal = ref(false);
 
+// 作者公告佇列（啟動時載入未確認的公告，逐一彈窗）
+const announcementQueue = ref<Announcement[]>([]);
+const currentAnnouncementIndex = ref(0);
+const currentAnnouncement = computed<Announcement | null>(() => {
+  if (currentAnnouncementIndex.value >= announcementQueue.value.length) return null;
+  return announcementQueue.value[currentAnnouncementIndex.value] || null;
+});
+async function handleAnnouncementAck(id: string) {
+  await acknowledgeAnnouncement(id);
+  currentAnnouncementIndex.value += 1;
+}
+async function loadAuthorAnnouncements() {
+  try {
+    const pending = await loadPendingAnnouncements();
+    if (pending.length > 0) {
+      announcementQueue.value = pending;
+      currentAnnouncementIndex.value = 0;
+    }
+  } catch (error) {
+    console.warn("[App] 載入作者公告失敗:", error);
+  }
+}
+
 // 書影記錄管理彈窗
 const showMediaLogManager = ref(false);
 
@@ -1499,6 +1528,9 @@ onMounted(async () => {
     void tryForegroundPullSelfHostedSync();
     void ensureSelfHostedSyncSocketConnected();
   }
+
+  // 作者公告（無論是否驗證都嘗試載入；fetch 失敗時靜默忽略）
+  void loadAuthorAnnouncements();
 
   // 監聽 SW 更新事件
   window.addEventListener("sw:update-available", handleSwUpdate);
@@ -2882,6 +2914,15 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       v-if="showPomodoroCert"
       @close="handlePomodoroCertClose"
       @forward-to-chat="handlePomodoroCertForward"
+    />
+
+    <!-- 作者公告（啟動時逐則彈窗，確認後寫入 IndexedDB 永不再彈） -->
+    <AnnouncementModal
+      v-if="currentAnnouncement"
+      :announcement="currentAnnouncement"
+      :index="currentAnnouncementIndex + 1"
+      :total="announcementQueue.length"
+      @ack="handleAnnouncementAck"
     />
 
     <!-- 多人卡模式設定彈窗 -->

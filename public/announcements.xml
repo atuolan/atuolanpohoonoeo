@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+========================================================================
+  作者公告檔案  Aguaphone Author Announcements
+========================================================================
+  怎麼發布一則公告？
+
+  1. 在 <announcements> 裡複製一個 <announcement> 區塊，貼在最前面。
+  2. 改 id（要唯一！已確認過的 id 永遠不會再彈）。
+  3. 在 <body><![CDATA[ ... ]]></body> 裡面直接寫內容，
+     可以隨意換行、用 **Markdown**、貼圖片，不用 escape 任何符號。
+  4. 想配圖（兩種寫法）：
+     A. 頂部封面圖：把 <image>/announcements/檔名.png</image>
+        放在 <title> 旁邊（不要放在 CDATA 裡面！）。
+     B. 內文嵌圖：在 CDATA 裡面用 Markdown 圖片語法：
+        ![說明文字](/announcements/檔名.png)
+     圖檔記得實際丟到 public/announcements/ 資料夾，否則會顯示破圖。
+  5. git push 就會自動部署給所有用戶。
+
+  想撤回：直接刪掉那個 <announcement> 區塊。
+  想重新提示相同內容：換一個新的 id 就行。
+========================================================================
+-->
+<announcements>
+
+  <announcement id="202605110500" level="info" date="2026-05-11">
+    <title>作者公告系統上線</title>
+    <image>/announcements/image.png</image>
+    <!-- <action label="查看詳情" url="https://example.com" /> -->
+    <body><![CDATA[
+
+歡迎使用 **Aguaphone**！
+
+以後有重要更新或公告，會在這裡通知你。
+
+- 點「我已知曉」會記錄在你的裝置，下次不會再彈
+- **小手机提示词有没办法读取到图片的bug，已经修复了，请到设置，提示词，重置提示词，就能正常**
+
+    ]]></body>
+  </announcement>
+
+  <!--
+    =====================================================================
+    以下是範本，要新增公告就複製下面這塊貼到 <announcements> 最前面。
+    =====================================================================
+
+  <announcement id="2026-??-??-填一個唯一名字" level="important" date="2026-??-??">
+    <title>這裡寫標題</title>
+    <image>/announcements/封面圖.png</image>
+    <action label="按鈕文字" url="https://外部連結.com" />
+    <body><![CDATA[
+
+這裡可以**隨便寫**。
+
+支援：
+- Markdown 清單
+- [連結](https://...)
+- 圖片：![說明](/announcements/範例.png)
+- 多行換行完全 OK
+
+    ]]></body>
+  </announcement>
+
+    level 可選三種（影響顏色）：
+      info       藍色  一般通知
+      important  黃色  重要公告
+      critical   紅色  緊急更新
+  -->
+
+</announcements>

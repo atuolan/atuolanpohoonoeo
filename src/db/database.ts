@@ -314,6 +314,11 @@ interface AguaphoneDB extends DBSchema {
       "by-updated": number;
     };
   };
+  // === v25 新增：作者公告已確認紀錄 ===
+  announcementAcks: {
+    key: string; // announcement id
+    value: { id: string; ackedAt: number };
+  };
 }
 
 // ============================================================
@@ -321,7 +326,7 @@ interface AguaphoneDB extends DBSchema {
 // ============================================================
 
 const DB_NAME = "aguaphone-db";
-const DB_VERSION = 24;
+const DB_VERSION = 25;
 
 // Store 名稱常量
 export const DB_STORES = {
@@ -354,6 +359,7 @@ export const DB_STORES = {
   VECTOR_EMBEDDINGS: "vectorEmbeddings",
   PEEK_PHONE_DATA: "peekPhoneData",
   CHAT_MESSAGES: "chatMessages",
+  ANNOUNCEMENT_ACKS: "announcementAcks",
 } as const;
 
 const SELF_HOSTED_SYNC_SNAPSHOT_STORES = new Set<string>([
@@ -856,6 +862,13 @@ export async function getDatabase(): Promise<IDBPDatabase<AguaphoneDB>> {
           keyPath: "id",
         });
         chatMessagesStore.createIndex("by-chatId", "chatId");
+      }
+
+      // === v25 新增表 ===
+
+      // 建立 announcementAcks 表（作者公告已確認紀錄）
+      if (!db.objectStoreNames.contains("announcementAcks")) {
+        db.createObjectStore("announcementAcks", { keyPath: "id" });
       }
     },
     blocked() {
