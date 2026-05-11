@@ -1046,55 +1046,87 @@ async function saveCharRegex() {
   showRegexModal.value = false;
 }
 
+async function importRegexScriptsFromText(text: string): Promise<number> {
+  if (!props.characterId) return 0;
+  const raw = JSON.parse(text);
+  const items: Partial<RegexScript>[] = Array.isArray(raw) ? raw : [raw];
+  const character = charactersStore.characters.find(
+    (c) => c.id === props.characterId,
+  );
+  if (!character) return 0;
+  const existing = character.data?.extensions?.regex_scripts ?? [];
+  const newScripts = [...existing];
+  let count = 0;
+  for (const item of items) {
+    if (!item.scriptName) continue;
+    newScripts.push({
+      id: crypto.randomUUID(),
+      scriptName: item.scriptName,
+      findRegex: item.findRegex ?? "",
+      replaceString: item.replaceString ?? "",
+      trimStrings: item.trimStrings ?? [],
+      placement: Array.isArray(item.placement) ? item.placement : [],
+      disabled: item.disabled ?? false,
+      markdownOnly: item.markdownOnly ?? false,
+      promptOnly: item.promptOnly ?? false,
+      runOnEdit: item.runOnEdit ?? false,
+      substituteRegex: item.substituteRegex ?? 0,
+      minDepth: item.minDepth ?? -1,
+      maxDepth: item.maxDepth ?? -1,
+    });
+    count++;
+  }
+  const updatedData = {
+    ...character.data,
+    extensions: {
+      ...(character.data.extensions ?? {}),
+      regex_scripts: newScripts,
+    },
+  };
+  await charactersStore.updateCharacter(props.characterId, {
+    data: updatedData,
+  });
+  return count;
+}
+
 async function onRegexFileImport(e: Event) {
   if (!props.characterId) return;
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
   try {
     const text = await file.text();
-    const raw = JSON.parse(text);
-    const items: Partial<RegexScript>[] = Array.isArray(raw) ? raw : [raw];
-    const character = charactersStore.characters.find(
-      (c) => c.id === props.characterId,
-    );
-    if (!character) return;
-    const existing = character.data?.extensions?.regex_scripts ?? [];
-    const newScripts = [...existing];
-    let count = 0;
-    for (const item of items) {
-      if (!item.scriptName) continue;
-      newScripts.push({
-        id: crypto.randomUUID(),
-        scriptName: item.scriptName,
-        findRegex: item.findRegex ?? "",
-        replaceString: item.replaceString ?? "",
-        trimStrings: item.trimStrings ?? [],
-        placement: Array.isArray(item.placement) ? item.placement : [],
-        disabled: item.disabled ?? false,
-        markdownOnly: item.markdownOnly ?? false,
-        promptOnly: item.promptOnly ?? false,
-        runOnEdit: item.runOnEdit ?? false,
-        substituteRegex: item.substituteRegex ?? 0,
-        minDepth: item.minDepth ?? -1,
-        maxDepth: item.maxDepth ?? -1,
-      });
-      count++;
-    }
-    const updatedData = {
-      ...character.data,
-      extensions: {
-        ...(character.data.extensions ?? {}),
-        regex_scripts: newScripts,
-      },
-    };
-    await charactersStore.updateCharacter(props.characterId, {
-      data: updatedData,
-    });
+    const count = await importRegexScriptsFromText(text);
     alert(`成功導入 ${count} 個角色腳本`);
   } catch {
     alert("導入失敗：JSON 格式錯誤");
   }
   if (regexFileInput.value) regexFileInput.value.value = "";
+}
+
+// ===== 貼上 JSON 導入 =====
+const showRegexPasteModal = ref(false);
+const regexPasteText = ref("");
+const regexPasteError = ref("");
+
+function openPasteRegex() {
+  regexPasteText.value = "";
+  regexPasteError.value = "";
+  showRegexPasteModal.value = true;
+}
+
+async function submitPasteRegex() {
+  const text = regexPasteText.value.trim();
+  if (!text) {
+    regexPasteError.value = "請貼上 JSON 內容";
+    return;
+  }
+  try {
+    const count = await importRegexScriptsFromText(text);
+    showRegexPasteModal.value = false;
+    alert(`成功導入 ${count} 個角色腳本`);
+  } catch {
+    regexPasteError.value = "JSON 格式錯誤，請檢查內容";
+  }
 }
 </script>
 
@@ -1559,7 +1591,14 @@ async function onRegexFileImport(e: Event) {
               style="margin-top: 4px; border-style: dotted"
               @click="regexFileInput?.click()"
             >
-              📥 導入 JSON
+              📥 導入 JSON 檔案
+            </button>
+            <button
+              class="add-lorebook-btn"
+              style="margin-top: 4px; border-style: dotted"
+              @click="openPasteRegex"
+            >
+              📋 貼上 JSON 文字
             </button>
             <input
               ref="regexFileInput"
@@ -1706,6 +1745,56 @@ async function onRegexFileImport(e: Event) {
               @click="saveCharRegex"
             >
               儲存
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 貼上 JSON 導入彈窗 ===== -->
+      <div
+        v-if="showRegexPasteModal"
+        class="modal-overlay"
+        @click.self="showRegexPasteModal = false"
+      >
+        <div class="regex-modal">
+          <div class="regex-modal-header">
+            <span>貼上 JSON 導入正則腳本</span>
+            <button
+              class="regex-modal-close"
+              @click="showRegexPasteModal = false"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path
+                  d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                />
+              </svg>
+            </button>
+          </div>
+          <div class="regex-modal-body">
+            <label class="form-label">JSON 內容（單個物件或陣列）</label>
+            <textarea
+              v-model="regexPasteText"
+              class="soft-input textarea"
+              rows="12"
+              style="font-family: monospace; font-size: 12px"
+              placeholder='{"scriptName": "...", "findRegex": "/.../i", "replaceString": "...", "placement": [2]}'
+            />
+            <p
+              v-if="regexPasteError"
+              style="font-size: 12px; color: #e53e3e; margin: 6px 0 0"
+            >
+              {{ regexPasteError }}
+            </p>
+          </div>
+          <div class="regex-modal-footer">
+            <button
+              class="regex-modal-cancel"
+              @click="showRegexPasteModal = false"
+            >
+              取消
+            </button>
+            <button class="regex-modal-save" @click="submitPasteRegex">
+              導入
             </button>
           </div>
         </div>
