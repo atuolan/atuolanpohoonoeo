@@ -344,8 +344,7 @@ export class OpenAICompatibleClient {
       const msg = messages[i];
       // system 訊息轉為 user（DS reasoner 不允許中間出現 system）
       const role: "user" | "assistant" = msg.role === "assistant" ? "assistant" : "user";
-      const content = this.getMessageText(msg);
-      remaining.push({ role, content });
+      remaining.push({ ...msg, role });
     }
 
     // 合併連續相同 role 的訊息
@@ -353,7 +352,7 @@ export class OpenAICompatibleClient {
       const last = result[result.length - 1];
       if (last && last.role === msg.role) {
         // 合併到上一條
-        last.content = this.getMessageText(last) + "\n\n" + this.getMessageText(msg);
+        last.content = this.mergeMessageContent(last.content, msg.content);
       } else {
         result.push({ ...msg });
       }
@@ -363,6 +362,37 @@ export class OpenAICompatibleClient {
       `[API] enforceStrictAlternation: ${messages.length} → ${result.length} 條訊息`,
     );
     return result;
+  }
+
+  private mergeMessageContent(
+    first: MessageContent,
+    second: MessageContent,
+  ): MessageContent {
+    const firstParts = typeof first === "string" ? [{ type: "text" as const, text: first }] : first;
+    const secondParts = typeof second === "string" ? [{ type: "text" as const, text: second }] : second;
+    const merged = [...firstParts];
+    const firstText = typeof first === "string" ? first : this.getMessageText({ role: "user", content: first });
+    const secondText = typeof second === "string" ? second : this.getMessageText({ role: "user", content: second });
+
+    if (firstText && secondText) {
+      let lastTextIndex = -1;
+      for (let i = merged.length - 1; i >= 0; i--) {
+        if (merged[i].type === "text") {
+          lastTextIndex = i;
+          break;
+        }
+      }
+      if (lastTextIndex >= 0 && merged[lastTextIndex].type === "text") {
+        merged[lastTextIndex] = {
+          type: "text",
+          text: `${(merged[lastTextIndex] as TextContent).text}\n\n${secondText}`,
+        };
+        merged.push(...secondParts.filter((part) => part.type !== "text"));
+        return merged;
+      }
+    }
+
+    return [...merged, ...secondParts];
   }
 
   /**
