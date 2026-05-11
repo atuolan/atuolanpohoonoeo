@@ -52,6 +52,7 @@ const regexHtmlDoc = ref("");
 const regexIframeRef = ref<HTMLIFrameElement | null>(null);
 const regexIframeHeight = ref(0);
 const regexInlineHtml = ref("");
+const hideSplitSourceBubble = ref(false);
 
 function startsWithHtmlFence(source: string): boolean {
   return /^```(?:html)?\s*\n?/i.test(source.trimStart());
@@ -129,6 +130,15 @@ function handleRegexAudioControl(data: {
     if (typeof data.payload?.mode === "string") settings.mode = data.payload.mode;
     applyRegexAudioSettings(id);
   }
+}
+
+function handleInlineCardAudioControl(event: Event) {
+  const customEvent = event as CustomEvent<{
+    action?: string;
+    id?: string;
+    payload?: { title?: string; url?: string; volume?: number; muted?: boolean; mode?: string };
+  }>;
+  handleRegexAudioControl(customEvent.detail || {});
 }
 
 // HTML 區塊 iframe（來自 ResponseParser 拆分的完整 HTML）
@@ -886,6 +896,8 @@ function isRenderableHtmlFragment(content: string): boolean {
 
 function shouldRenderAsRawHtml(content: string): boolean {
   const trimmed = content.trim();
+  // <aguaphone-inline-card>：模板引擎 inline 模式输出的自訂元素，不受長度門檻限制
+  if (/<aguaphone-inline-card[\s>]/i.test(trimmed)) return true;
   return (
     trimmed.length > 200 &&
     isRenderableHtmlFragment(trimmed) &&
@@ -929,11 +941,21 @@ function prefixCssSelectors(css: string, prefix: string): string {
   return `<div class="${scopeClass}">${styledHtml}</div>`;
  }
 
+/**
+ * 把 HTML 片段包進 <aguaphone-inline-card>（Shadow DOM 卡片）。
+ * 若已經是 card 則原樣返回，避免重複包裹。
+ */
+function wrapAsShadowCard(html: string): string {
+  const trimmed = html.trim();
+  if (/<aguaphone-inline-card[\s>]/i.test(trimmed)) return trimmed;
+  return `<aguaphone-inline-card>${trimmed}</aguaphone-inline-card>`;
+}
+
 function extractRawHtmlFragment(source: string): {
   htmlContent: string;
   remainingText: string;
 } | null {
-  const match = source.match(/<(style|details|div|html)\b|<!DOCTYPE\s+html/i);
+  const match = source.match(/<(style|details|div|html|aguaphone-inline-card)\b|<!DOCTYPE\s+html/i);
   if (!match || match.index === undefined) return null;
 
   const before = source.substring(0, match.index).trim();
@@ -1032,12 +1054,50 @@ function splitContentSegments(source: string): ContentSegment[] {
   return segments;
 }
 
-// HTML 區塊的 iframe srcdoc（注入自動回報高度的 script）
+// HTML 區塊的 iframe srcdoc（保留給顯式 iframe 模式用；Shadow DOM 路徑已不依賴此 computed）
 const htmlBlockSrcdoc = computed(() => {
   if (!props.isHtmlBlock || !props.htmlContent) return "";
-  let html = props.htmlContent;
-  // 如果是 HTML 片段（不是完整文件），包成完整文件
-  return injectIframeHeightScript(html);
+  return injectIframeHeightScript(props.htmlContent);
+});
+
+// ★ isHtmlBlock 舊訊息：歷史上由 _emitSplitSegments 拆分出的獨立 HTML bubble。
+// 現在統一走 Shadow DOM，不再新建此類 bubble；但資料庫中舊訊息仍可能帶 isHtmlBlock=true，
+// 這裡把它也包進 <aguaphone-inline-card> 走 inline 路徑，避免回退到 iframe。
+const htmlBlockInlineCard = computed(() => {
+  if (!props.isHtmlBlock || !props.htmlContent) return "";
+  return wrapAsShadowCard(props.htmlContent);
+});
+
+// ★ 是否為「純 HTML 氣泡」：透明背景 + 撐滿可用寬度，並隱藏頭像以獲得更多空間。
+// 綜合 props 與 renderedContent（regex 處理後輸出）來判斷，涵蓋 regex 替換後才成為 HTML 的情況。
+const isHtmlOnlyBubble = computed(() => {
+  // 1) 已標記為 HTML 區塊（含拆分出的 shadow bubble）
+  if (props.isHtmlBlock && props.htmlContent) return true;
+
+  // 2) renderedContent 處理後的副作用 refs（regex → inline card / iframe doc）
+  if (regexInlineHtml.value || regexHtmlDoc.value) return true;
+
+  // 3) renderedContent 最終輸出含 <aguaphone-inline-card>
+  // 讀取 renderedContent.value 建立反應依賴；該 computed 本身帶副作用會更新上方的 refs，
+  // 所以正常情況會由 (2) 命中；這裡作為保險。
+  const rc = renderedContent.value;
+  if (rc && /<aguaphone-inline-card[\s>]/i.test(rc)) return true;
+
+  // 4) 原始 props 內容直接含 HTML 特徵（無 regex 參與的情況）
+  const raw = (props.content || "").trim();
+  if (!raw) return false;
+  if (/<aguaphone-inline-card[\s>]/i.test(raw)) return true;
+  if (/^<!doctype\s+html/i.test(raw) || /^<html[\s>]/i.test(raw)) return true;
+  if (
+    raw.length > 200 &&
+    /<style[\s>]/i.test(raw) &&
+    (/<div[\s>]/i.test(raw) || /<details[\s>]/i.test(raw))
+  ) {
+    return true;
+  }
+  if (/^```(?:html)?\s*\n[\s\S]*<[a-z][\s\S]*?```/i.test(raw)) return true;
+
+  return false;
 });
 
 function replaceDisplayMacros(text: string): string {
@@ -1065,7 +1125,12 @@ function replaceDisplayMacros(text: string): string {
 const renderedContent = computed(() => {
   if (!props.content) return "";
 
+  // 使用局部變數追蹤寫入內容，避免 computed 讀取自身寫過的 ref 造成自依賴循環
+  // (Vue 3 偵測到這種模式會拋出 "Maximum recursive updates exceeded")
+  let localInlineHtml = "";
+  let localHtmlDoc = "";
   regexInlineHtml.value = "";
+  hideSplitSourceBubble.value = false;
 
   // 如果是真實圖片或圖片URL類型，不進行拍立得渲染
   if (props.messageType === "image" || props.messageType === "image-url") {
@@ -1108,23 +1173,13 @@ const renderedContent = computed(() => {
       const segments = splitContentSegments(html);
       const htmlSegmentsExist = segments.some((s) => s.type === "html");
       if (htmlSegmentsExist) {
-        const first = segments[0];
-        const rest = segments.slice(1).map((s) => ({
-          type: s.type,
-          content: s.content,
-        }));
-
-        if (first.type === "html") {
-          regexHtmlDoc.value = injectIframeHeightScript(first.content);
-          if (rest.length === 0) return "";
-          _emitSplitSegments(rest);
-          return "";
-        }
-
-        // first 是文字 → 源氣泡渲染這段文字，後續 segment 全部 emit
+        // ★ 用戶偏好「分裂成獨立 bubble」：文字段留在源氣泡，HTML 段 emit 為新氣泡（isHtmlBlock=true）。
+        // 新氣泡走 htmlBlockInlineCard computed → Shadow DOM（不是 iframe）。
+        _emitSplitSegments(segments.map((s) => ({ type: s.type, content: s.content })));
+        localHtmlDoc = "";
         regexHtmlDoc.value = "";
-        html = first.content;
-        if (rest.length > 0) _emitSplitSegments(rest);
+        hideSplitSourceBubble.value = true;
+        return "";
       }
     }
 
@@ -1168,24 +1223,30 @@ const renderedContent = computed(() => {
       if (htmlFenceMatch) {
         const fenceContent = htmlFenceMatch[1].trim();
         if (isRenderableHtmlFragment(fenceContent)) {
-          regexInlineHtml.value = "";
-          regexHtmlDoc.value = injectIframeHeightScript(fenceContent);
-          return "";
+          // ``` html ``` fence → 包進 Shadow DOM 卡片（取代舊 iframe）
+          const wrapped = wrapAsShadowCard(fenceContent);
+          localHtmlDoc = "";
+          regexHtmlDoc.value = "";
+          localInlineHtml = wrapped;
+          regexInlineHtml.value = wrapped;
+          return wrapped;
         }
       }
     }
 
-    // ★ 偵測裸露的 HTML 片段（含 <style> 標籤但沒有 fence 包裹的大型 HTML 區塊）
-    if (!props.isHtmlBlock && !regexHtmlDoc.value) {
+    // ★ 偵測裸露的 HTML 片段（含 <style> 標籤但沒有 fence 包裹的大型 HTML 區塊）→ Shadow DOM 卡片
+    if (!props.isHtmlBlock && !localHtmlDoc && !localInlineHtml) {
       if (
         html.length > 200 &&
         /<style[\s>]/i.test(html) &&
         /<div[\s>]/i.test(html)
       ) {
-        const fragment = html.trim();
-        regexInlineHtml.value = "";
-        regexHtmlDoc.value = injectIframeHeightScript(fragment);
-        return "";
+        const wrapped = wrapAsShadowCard(html);
+        localHtmlDoc = "";
+        regexHtmlDoc.value = "";
+        localInlineHtml = wrapped;
+        regexInlineHtml.value = wrapped;
+        return wrapped;
       }
     }
 
@@ -1364,42 +1425,57 @@ const renderedContent = computed(() => {
       const htmlSegmentsExist = segments.some((s) => s.type === "html");
 
       if (htmlSegmentsExist) {
-        const first = segments[0];
-        const rest = segments.slice(1).map((s) => ({
-          type: s.type,
-          content: s.content,
-        }));
-
-        if (first.type === "html") {
-          regexHtmlDoc.value = injectIframeHeightScript(first.content);
-          if (rest.length === 0) return "";
-          _emitSplitSegments(rest);
-          return "";
-        }
-
-        // 第一段是文字 → 源氣泡渲染這段文字，後續 segment 全部 emit
+        // ★ 用戶偏好「分裂成獨立 bubble」：文字段留在源氣泡，HTML 段 emit 為新氣泡（isHtmlBlock=true）。
+        // 新氣泡走 htmlBlockInlineCard computed → Shadow DOM（不是 iframe）。
+        _emitSplitSegments(segments.map((s) => ({ type: s.type, content: s.content })));
+        localHtmlDoc = "";
         regexHtmlDoc.value = "";
-        processedContent = first.content;
-        if (rest.length > 0) _emitSplitSegments(rest);
-        // 不 return，繼續走後面的 markdown 渲染流程
+        hideSplitSourceBubble.value = true;
+        return "";
       }
 
       // ★ 先嘗試拆分「正文 + 裸 HTML」混合內容（如 regex 產出的狀態欄）
       //   必須在 shouldRenderAsRawHtml 之前，否則整篇會被誤判為純 HTML 塞進 iframe
       const rawHtmlFragment = extractRawHtmlFragment(processedContent);
       if (rawHtmlFragment) {
-        // 含 <style>（複雜 HTML 模板）改走 iframe：可獲得樣式隔離、3D transform、自動縮放
-        // 不含 <style> 的小型片段（狀態欄等）維持 inline scope
-        const hasStyleBlock = /<style[\s>]/i.test(rawHtmlFragment.htmlContent);
-        if (hasStyleBlock) {
+        // ★ 模板引擎 inline 模式产出的 <aguaphone-inline-card>：
+        // 本元素本身會在 connectedCallback 里把子節點（含 <style>）搬進 shadow root，
+        // 所以此處不走 iframe、也不走 scopeInlineHtmlStyles 前綴化（前綴會破壞 shadow 內選擇器）。
+        const isShadowCard = /<aguaphone-inline-card[\s>]/i.test(rawHtmlFragment.htmlContent);
+        if (isShadowCard) {
           if (rawHtmlFragment.remainingText) {
-            regexInlineHtml.value = "";
-            regexHtmlDoc.value = injectIframeHeightScript(rawHtmlFragment.htmlContent);
+            localHtmlDoc = "";
+            regexHtmlDoc.value = "";
+            localInlineHtml = rawHtmlFragment.htmlContent;
+            regexInlineHtml.value = rawHtmlFragment.htmlContent;
             processedContent = rawHtmlFragment.remainingText;
           } else {
-            regexInlineHtml.value = "";
-            regexHtmlDoc.value = injectIframeHeightScript(rawHtmlFragment.htmlContent);
-            return "";
+            localInlineHtml = rawHtmlFragment.htmlContent;
+            regexInlineHtml.value = rawHtmlFragment.htmlContent;
+            return rawHtmlFragment.htmlContent;
+          }
+        } else {
+        // ★ 含 <style> 的複雜 HTML 片段（傳統 ST 正則 replaceString / AI 直吐含 <style>）：
+        //   自動包進 <aguaphone-inline-card> 走 Shadow DOM，取代舊的 iframe 路徑。
+        //   - 不再需要 iframe ↔ 父頁雙向同步高度（之前的死循環來源）
+        //   - 不再有手機端 iframe 寬度裁切問題
+        //   - <style> 隨子節點進入 shadow root，僅作用於本片段
+        //   只有顯式 ```html``` fence（splitContentSegments 處理）仍走 iframe，視作明確意圖。
+        const hasStyleBlock = /<style[\s>]/i.test(rawHtmlFragment.htmlContent);
+        if (hasStyleBlock) {
+          const wrapped = `<aguaphone-inline-card>${rawHtmlFragment.htmlContent}</aguaphone-inline-card>`;
+          if (rawHtmlFragment.remainingText) {
+            localHtmlDoc = "";
+            regexHtmlDoc.value = "";
+            localInlineHtml = wrapped;
+            regexInlineHtml.value = wrapped;
+            processedContent = rawHtmlFragment.remainingText;
+          } else {
+            localHtmlDoc = "";
+            regexHtmlDoc.value = "";
+            localInlineHtml = wrapped;
+            regexInlineHtml.value = wrapped;
+            return wrapped;
           }
         } else {
           const inlineScopedHtml = scopeInlineHtmlStyles(
@@ -1407,27 +1483,31 @@ const renderedContent = computed(() => {
             getInlineHtmlScopeClass(props.id),
           );
           if (rawHtmlFragment.remainingText) {
+            localHtmlDoc = "";
             regexHtmlDoc.value = "";
+            localInlineHtml = inlineScopedHtml;
             regexInlineHtml.value = inlineScopedHtml;
             processedContent = rawHtmlFragment.remainingText;
           } else {
+            localInlineHtml = inlineScopedHtml;
             regexInlineHtml.value = inlineScopedHtml;
             return inlineScopedHtml;
           }
         }
+        }
       } else if (shouldRenderAsRawHtml(stripped)) {
-        // 整篇都是 HTML（沒有混合文字）→ iframe 渲染
-        regexInlineHtml.value = "";
-        regexHtmlDoc.value = injectIframeHeightScript(stripped);
-        return "";
+        // 整篇都是 HTML（沒有混合文字）→ 包進 Shadow DOM 卡片渲染（取代舊的 iframe 路徑）。
+        // 若已含 <aguaphone-inline-card>（template 引擎 inline 模式產出）則不重複包裹。
+        const isAlreadyCard = /<aguaphone-inline-card[\s>]/i.test(stripped);
+        const wrapped = isAlreadyCard
+          ? stripped
+          : `<aguaphone-inline-card>${stripped}</aguaphone-inline-card>`;
+        localHtmlDoc = "";
+        regexHtmlDoc.value = "";
+        localInlineHtml = wrapped;
+        regexInlineHtml.value = wrapped;
+        return wrapped;
       }
-    }
-    // 不是完整 HTML，清除之前的快取
-    if (!regexHtmlDoc.value) {
-      regexHtmlDoc.value = "";
-    }
-    if (!regexInlineHtml.value) {
-      regexInlineHtml.value = "";
     }
 
     // 將「內容」轉換為帶有 quote 樣式的 span
@@ -1449,7 +1529,7 @@ const renderedContent = computed(() => {
     const _plainLen = renderedMarkdown.replace(/<[^>]*>/g, '').length;
     const _srcLen = processedContent.replace(/<[^>]*>/g, '').length;
     if (_plainLen < _srcLen * 0.8) console.warn(`[Bubble ${_dbgId}] marked.parse 可能吞字: 原文字數=${_srcLen}, 渲染後純文字=${_plainLen}`, '\n輸入:', processedContent, '\n輸出:', renderedMarkdown);
-    return `${renderedMarkdown}${regexInlineHtml.value}`;
+    return `${renderedMarkdown}${localInlineHtml}`;
   } catch {
     return props.content;
   }
@@ -2714,6 +2794,7 @@ const showTextVoiceTranscript = ref(true);
       'search-highlight': isSearchHighlight,
       'current-search': isCurrentSearch,
       'group-chat': isGroupChat,
+      'html-only': isHtmlOnlyBubble,
     }"
     :data-message-id="id"
     @click="handleClick"
@@ -2978,7 +3059,7 @@ const showTextVoiceTranscript = ref(true);
       <!-- AI 頭像（左側）- 群聊模式使用發送者頭像 -->
       <template v-else>
       <div
-        v-if="!isUser && showAvatar"
+        v-if="!isUser && showAvatar && !isHtmlOnlyBubble"
         class="avatar-container"
         @click="emit('avatarClick', id)"
       >
@@ -3086,7 +3167,7 @@ const showTextVoiceTranscript = ref(true);
       <div class="message-content">
         <!-- 發送者名稱（群聊模式顯示發送者角色名） -->
         <div
-          v-if="!isUser && (isGroupChat ? senderCharacterName : senderName)"
+          v-if="!isUser && !isHtmlOnlyBubble && (isGroupChat ? senderCharacterName : senderName)"
           class="sender-name"
         >
           {{ isGroupChat ? senderCharacterName : senderName }}
@@ -3353,6 +3434,7 @@ const showTextVoiceTranscript = ref(true);
         <!-- 氣泡（位置消息與模式邀請卡片不顯示氣泡） -->
         <div
           v-if="!isLocation && !isWeatherShare && !isFriendRequest && !isFaceToFaceRequest && !isOnlineModeRequest"
+          v-show="!hideSplitSourceBubble"
           class="bubble"
           :class="{
             user: isUser,
@@ -3360,11 +3442,12 @@ const showTextVoiceTranscript = ref(true);
             streaming: isStreaming,
             'has-thought': !!effectiveThought,
             'thought-expanded': showThought,
-            'transparent-bubble':
-              (isHtmlBlock && htmlBlockSrcdoc) || regexHtmlDoc,
+            'transparent-bubble': isHtmlOnlyBubble,
+            'html-only-bubble': isHtmlOnlyBubble,
             'menu-active': showMenu,
           }"
           @click.stop="onBubbleClick"
+          @aguaphone-audio-control.stop="handleInlineCardAudioControl"
         >
           <!-- 時空跳轉訊息 -->
           <div v-if="isTimetravel" class="timetravel-message">
@@ -3798,21 +3881,13 @@ const showTextVoiceTranscript = ref(true);
             ></div>
           </div>
 
-          <!-- HTML 區塊（完整 HTML 文件，用 iframe 渲染） -->
+          <!-- HTML 區塊：統一走 Shadow DOM 卡片（<aguaphone-inline-card>），
+               取代舊 iframe。自帶 max-height 捲動與樣式隔離，行動端寬度自適應。 -->
           <div
-            v-else-if="isHtmlBlock && htmlBlockSrcdoc"
+            v-else-if="isHtmlBlock && htmlBlockInlineCard"
             class="html-block-wrapper"
-          >
-            <iframe
-              ref="htmlBlockIframeRef"
-              :srcdoc="htmlBlockSrcdoc"
-              class="html-block-iframe"
-              :style="{ height: htmlBlockIframeHeight + 'px' }"
-              sandbox="allow-scripts"
-              frameborder="0"
-              scrolling="no"
-            ></iframe>
-          </div>
+            v-html="htmlBlockInlineCard"
+          ></div>
 
           <!-- 一般文字訊息 -->
           <template v-else>
@@ -4010,13 +4085,13 @@ const showTextVoiceTranscript = ref(true);
         </div>
 
         <!-- 時間戳 -->
-        <div v-if="timestamp" class="message-time">
+        <div v-if="timestamp && !isHtmlOnlyBubble" class="message-time">
           {{ formattedTime }}
         </div>
       </div>
 
       <!-- 用戶頭像（右側） -->
-      <div v-if="isUser && showAvatar" class="avatar-container user-avatar">
+      <div v-if="isUser && showAvatar && !isHtmlOnlyBubble" class="avatar-container user-avatar">
         <!-- 圖片圖層頭像框 -->
         <div v-if="isUserFrameImage" class="avatar-with-image-frame">
           <!-- 背景層 -->
@@ -4327,6 +4402,27 @@ const showTextVoiceTranscript = ref(true);
 
   &.system {
     justify-content: center;
+  }
+
+  // 純 HTML 訊息：脫離一般 avatar + 70% bubble 排版，整列置中撐滿
+  &.html-only {
+    justify-content: center;
+    gap: 0;
+    padding: 10px 10px;
+
+    > .message-content {
+      max-width: 100% !important;
+      width: 100% !important;
+      flex: 1 1 100% !important;
+      align-items: stretch;
+      margin: 0 !important;
+    }
+
+    .bubble {
+      width: 100% !important;
+      max-width: 100% !important;
+      margin: 0 auto;
+    }
   }
 
   &.selected {
@@ -4728,8 +4824,18 @@ const showTextVoiceTranscript = ref(true);
 
   // 如果包含透明氣泡，放寬寬度限制以利於 HTML 渲染
   &:has(.transparent-bubble) {
-    max-width: 95%;
+    max-width: 100%;
     width: 100%;
+  }
+
+  // 純 HTML 氣泡：撐滿可用寬度（頭像已隱藏），HTML 內容自適應並置中
+  .message-wrapper.html-only & {
+    max-width: 100%;
+    width: 100%;
+    flex: 1 1 100%;
+    align-items: center;
+    margin-left: auto;
+    margin-right: auto;
   }
 
   .user & {
@@ -4836,6 +4942,25 @@ const showTextVoiceTranscript = ref(true);
   &.transparent-bubble iframe {
     display: block;
     width: 100%;
+  }
+
+  // HTML-only 氣泡：inline card / html-block 包裹層撐滿並避免水平溢出
+  &.html-only-bubble {
+    display: block;
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+
+    aguaphone-inline-card,
+    .html-block-wrapper,
+    .html-block-wrapper > * {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+      margin-left: auto;
+      margin-right: auto;
+    }
   }
 
   &.user {

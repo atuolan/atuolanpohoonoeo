@@ -135,7 +135,15 @@ function aiProxyPlugin(): Plugin {
 export default defineConfig(({ mode }) => ({
   base: "/",
   plugins: [
-    vue(),
+    vue({
+      template: {
+        compilerOptions: {
+          // 讓編譯器把 <aguaphone-*> 視為原生自訂元素，
+          // 不嘗試解析成 Vue 組件、也不發出 unknown element 警告。
+          isCustomElement: (tag) => tag.startsWith("aguaphone-"),
+        },
+      },
+    }),
     aiProxyPlugin(),
     // 只在 inline 模式下啟用單文件打包
     mode === "inline" ? viteSingleFile() : null,
@@ -143,6 +151,10 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // ejs 預設入口 lib/ejs.js 在頂層 require('fs')，瀏覽器端會跳出
+      // "Module 'node:fs' has been externalized" 警告。改用包內的 UMD 瀏覽器
+      // 版（不含 fs/path 依賴），同時保持 render(template, data) API 相同。
+      ejs: fileURLToPath(new URL("./node_modules/ejs/ejs.min.js", import.meta.url)),
     },
   },
   server: {

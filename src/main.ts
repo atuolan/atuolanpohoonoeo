@@ -4,6 +4,7 @@ import Aura from "@primevue/themes/aura";
 import { createPinia } from "pinia";
 import { createApp } from "vue";
 import App from "./App.vue";
+import { registerAguaInlineCard } from "./components/common/AguaInlineCard";
 import { initAutoBackup } from "./services/AutoBackupService";
 import "./styles/global.scss";
 import {
@@ -385,9 +386,15 @@ window.setInterval(() => {
   heartbeatRuntimeSession();
 }, 10000);
 
+// 註冊自訂元素（必須在 createApp 前，確保 Vue 編譯器設定到位前 customElements 已知）
+registerAguaInlineCard();
+
 const app = createApp(App);
 const pinia = createPinia();
 updateRuntimeSessionStage("vue app created");
+
+// 註：<aguaphone-*> 自訂元素的識別已透過 vite.config.ts 的 @vitejs/plugin-vue
+// template.compilerOptions.isCustomElement 在編譯期完成；runtime-only build 不支援 app.config.compilerOptions。
 
 app.config.errorHandler = (error, instance, info) => {
   recordRuntimeError("vue.errorHandler", error, {

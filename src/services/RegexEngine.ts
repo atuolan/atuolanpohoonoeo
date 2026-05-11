@@ -94,6 +94,26 @@ function filterString(
   return result;
 }
 
+function substituteCaptureGroups(
+  replacement: string,
+  groups: string[],
+  trimStrings: string[],
+  params: RegexRunParams,
+): string {
+  const filteredGroups = groups.map((groupVal) =>
+    filterString(groupVal ?? "", trimStrings, params),
+  );
+  return replacement.replace(/\$(\d+)/g, (token, digits: string) => {
+    for (let len = digits.length; len > 0; len--) {
+      const index = Number(digits.slice(0, len));
+      if (index >= 1 && index <= filteredGroups.length) {
+        return `${filteredGroups[index - 1]}${digits.slice(len)}`;
+      }
+    }
+    return token;
+  });
+}
+
 function shouldFenceMarkdownHtmlReplacement(replacement: string): boolean {
   const trimmed = replacement.trim();
   if (!trimmed || /^```(?:html)?/i.test(trimmed)) return false;
@@ -150,15 +170,7 @@ export function runRegexScript(
       // 將 replaceString 中的 {{match}} 替換為完整匹配
       let replacement = script.replaceString.replace(/\{\{match\}\}/gi, fullMatch);
 
-      // 替換捕獲群組 $1, $2 ...
-      for (let i = 0; i < groups.length; i++) {
-        const groupVal = groups[i] ?? "";
-        const filtered = filterString(groupVal, trimStrings, params);
-        replacement = replacement.replace(
-          new RegExp(`\\$${i + 1}`, "g"),
-          filtered,
-        );
-      }
+      replacement = substituteCaptureGroups(replacement, groups, trimStrings, params);
 
       // 展開替換結果中的 macros
       replacement = substituteMacros(replacement, params);

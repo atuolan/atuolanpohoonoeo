@@ -124,4 +124,67 @@ describe("HtmlTemplateEngine", () => {
     expect(hasRenderableHtmlBlock("文字\n```html\n<div>卡片</div>\n```")).toBe(true);
     expect(hasRenderableHtmlBlock("普通文字")).toBe(false);
   });
+
+  // ===== inline 渲染模式（Shadow DOM）=====
+  it("inline mode wraps output in <aguaphone-inline-card> with embedded css", () => {
+    const result = applyHtmlTemplateRules(
+      "前 <card>{\"title\":\"狀態\"}</card> 後",
+      [makeRule({ renderMode: "inline" })],
+      { placement: regex_placement.AI_OUTPUT },
+    );
+
+    expect(result.applied).toBe(1);
+    expect(result.htmlBlocks).toHaveLength(1);
+    expect(result.text).toContain("前");
+    expect(result.text).toContain("後");
+    // inline 模式不包 ```html``` fence（避免被 iframe 路徑捕獲）
+    expect(result.text).not.toContain("```html");
+    // 但 cssScope 內嵌進自訂元素，由 shadow root 隔離
+    expect(result.text).toContain("<aguaphone-inline-card>");
+    expect(result.text).toContain("</aguaphone-inline-card>");
+    expect(result.text).toContain("<style>.card{color:red}</style>");
+    expect(result.text).toContain("<div>狀態</div>");
+  });
+
+  it("inline mode without cssScope omits the <style> block", () => {
+    const result = applyHtmlTemplateRules(
+      "<card>{\"title\":\"X\"}</card>",
+      [makeRule({ renderMode: "inline", cssScope: "" })],
+      { placement: regex_placement.AI_OUTPUT },
+    );
+
+    expect(result.text).toBe("<aguaphone-inline-card><div>X</div></aguaphone-inline-card>");
+  });
+
+  it("inline mode still escapes AI-provided values", () => {
+    const result = applyHtmlTemplateRules(
+      "<card>{\"title\":\"<img src=x onerror=alert(1)>\"}</card>",
+      [makeRule({ renderMode: "inline" })],
+      { placement: regex_placement.AI_OUTPUT },
+    );
+
+    expect(result.text).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    expect(result.text).not.toContain("<img src=x");
+  });
+
+  it("inline mode supports each-loops over JSON arrays", () => {
+    const result = applyHtmlTemplateRules(
+      "<list>{\"items\":[{\"n\":\"A\"},{\"n\":\"B\"}]}</list>",
+      [
+        makeRule({
+          findRegex: "/<list>([\\s\\S]*?)<\\/list>/g",
+          renderMode: "inline",
+          parseMode: "json",
+          htmlTemplate: "<ul>{{#each:1.items}}<li>{{n}}</li>{{/each}}</ul>",
+          cssScope: "",
+        }),
+      ],
+      { placement: regex_placement.AI_OUTPUT },
+    );
+
+    expect(result.applied).toBe(1);
+    expect(result.text).toContain("<aguaphone-inline-card>");
+    expect(result.text).toContain("<ul><li>A</li><li>B</li></ul>");
+    expect(result.text).not.toContain("```html");
+  });
 });

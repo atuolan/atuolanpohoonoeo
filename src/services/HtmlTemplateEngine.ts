@@ -227,15 +227,30 @@ export function applyHtmlTemplateRules(
     const pattern = expandGlobalMacros(script.findRegex, params).trim();
     const regex = regexFromString(pattern);
     if (!regex) continue;
+    const renderMode = script.renderMode ?? "iframe";
     let matched = false;
     try {
       result = result.replace(regex, (...args) => {
         const matches = args.slice(0, -2) as string[];
         const parsed = parseMatches(matches, script.parseMode ?? "text");
         const template = expandGlobalMacros(script.htmlTemplate ?? "", params);
-        const css = expandGlobalMacros(script.cssScope ?? "", params).trim();
-        const html = `${css ? `<style>${css}</style>` : ""}${renderTemplate(template, parsed)}`;
+        const innerHtml = renderTemplate(template, parsed);
         matched = true;
+        if (renderMode === "inline") {
+          // inline：包進 <aguaphone-inline-card> 自訂元素，由 Shadow DOM 隔離樣式。
+          //   - <style> 隨子節點一起進入 shadow root，僅作用於本卡片
+          //   - 不需要 class 前綴化（scopeInlineHtmlStyles）也不需要全域 CSS 注入
+          //   - 不包 ```html``` fence，避免被 iframe 路徑捕獲
+          // MessageBubble 的 inline 分支會偵測本標籤並跳過前綴處理。
+          const css = expandGlobalMacros(script.cssScope ?? "", params).trim();
+          const cssBlock = css ? `<style>${css}</style>` : "";
+          const card = `<aguaphone-inline-card>${cssBlock}${innerHtml}</aguaphone-inline-card>`;
+          htmlBlocks.push(card);
+          return card;
+        }
+        // iframe：CSS 內嵌進 fragment、用 ```html``` fence 包裹，走 sandbox iframe 渲染。
+        const css = expandGlobalMacros(script.cssScope ?? "", params).trim();
+        const html = `${css ? `<style>${css}</style>` : ""}${innerHtml}`;
         htmlBlocks.push(html);
         return `\`\`\`html\n${html}\n\`\`\``;
       });

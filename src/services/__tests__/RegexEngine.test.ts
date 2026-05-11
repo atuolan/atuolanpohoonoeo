@@ -60,4 +60,22 @@ describe("RegexEngine", () => {
       "\n```html\n<link rel=\"stylesheet\" href=\"font.css\"><div>曲目1</div>\n```\n正文",
     );
   });
+
+  it("substitutes multi-digit capture groups without consuming lower-numbered prefixes", () => {
+    const result = getRegexedString(
+      "<status>g1|g2|g3|g4|g5|g6|g7|g8|g9|g10|g11|g12</status>",
+      regex_placement.AI_OUTPUT,
+      [
+        makeScript({
+          findRegex:
+            "/<status>(.*?)\\|(.*?)\\|(.*?)\\|(.*?)\\|(.*?)\\|(.*?)\\|(.*?)\\|(.*?)\\|(.*?)\\|(.*?)\\|(.*?)\\|(.*?)<\\/status>/",
+          replaceString: "$1,$10,$12,$2",
+          markdownOnly: false,
+        }),
+      ],
+      {},
+    );
+
+    expect(result).toBe("g1,g10,g12,g2");
+  });
 });

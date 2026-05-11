@@ -2134,9 +2134,13 @@ function handleSplitRegexSegments(
   const idx = messages.value.findIndex((m) => m.id === messageId);
   if (idx === -1) return;
   const sourceMessage = messages.value[idx];
+  const htmlSegments = segments.filter(
+    (seg) => seg.type === "html" && seg.content.trim(),
+  );
+  if (htmlSegments.length === 0) return;
 
   // 1) 計算期望的 shadow 氣泡（含穩定 ID）
-  const desired = segments.map((seg, i) => {
+  const desired = htmlSegments.map((seg, i) => {
     const ordinal = i + 1; // segment 0 留在源氣泡裡
     const sigHash = hashString(seg.content.replace(/\s+/g, " ").trim());
     const id = `${messageId}_seg_${ordinal}_${seg.type}_${sigHash}`;
@@ -2153,6 +2157,11 @@ function handleSplitRegexSegments(
   const exactMatch =
     existing.length === desired.length &&
     existing.every((e, i) => e.msg.id === desired[i].id) &&
+    existing.every(
+      (e, i) =>
+        e.msg.content === desired[i].seg.content &&
+        e.msg.htmlContent === desired[i].seg.content,
+    ) &&
     existing.every((e, i) => e.index === expectedStart + i);
   if (exactMatch) return;
 
@@ -2169,10 +2178,10 @@ function handleSplitRegexSegments(
   const newMessages: Message[] = desired.map(({ id, ordinal, seg }) => ({
     id,
     role: sourceMessage.role,
-    content: seg.type === "text" ? seg.content : "",
+    content: seg.content,
     timestamp: sourceMessage.timestamp + ordinal * 0.001,
-    isHtmlBlock: seg.type === "html",
-    htmlContent: seg.type === "html" ? seg.content : undefined,
+    isHtmlBlock: true,
+    htmlContent: seg.content,
     isShadowSegment: true,
     shadowSourceId: messageId,
     shadowOrdinal: ordinal,
@@ -9060,20 +9069,46 @@ async function _saveChatImplInner() {
 
     // ★ 安全閘門：防止少量訊息（如初始開場白）覆蓋已有大量訊息的聊天記錄
     // 場景：通知點擊導致 ChatScreen 以錯誤上下文重新初始化，只剩開場白
+    //
+    // 注意：必須用 chatMessages 表的實際筆數，而不是 chat metadata 的 messageCount，
+    // 因為 metadata 的 messageCount 只在 refreshChatDerivedMetadata 時更新；
+    // 當使用者手動刪除訊息或整個輪次時，deleteMessage 已從 messages 表移除這些列，
+    // 但 metadata 仍為舊值，會誤觸發閘門並讓使用者的刪除/編輯被回滾。
     if (latestFromDb) {
-      const dbCount = latestFromDb.messageCount || 0;
-      // 如果 IDB 有 5+ 條訊息且本地訊息不超過 2 條（開場白級別），拒絕覆蓋
+      let dbCount = 0;
+      try {
+        dbCount = await getMessageCount(plainChat.id);
+      } catch {
+        dbCount = latestFromDb.messageCount || 0;
+      }
+      // 如果 IDB 實際還有 5+ 條訊息且本地只剩不超過 2 條（開場白級別），
+      // 代表使用者並未透過 deleteMessage 移除舊訊息，極可能是錯誤上下文重新初始化。
       if (dbCount >= 5 && localCount <= 2) {
-        console.error(
-          `[ChatScreen] ⚠️ 安全閘門觸發！拒絕保存：IDB messageCount=${dbCount}，本地只有 ${localCount} 條。`,
-          "可能是 ChatScreen 以錯誤上下文重新初始化，跳過此次保存以保護資料。",
-          {
-            chatId: plainChat.id,
-            localIds: plainMessages.slice(0, 3).map((m: any) => m.id),
-          },
-        );
-        _saveChatPending = false;
-        return;
+        // 二次確認：本地剩餘訊息的 ID 是否仍存在於 IDB 中。
+        // 若存在 → 是使用者保留的訊息，閘門誤判，放行；
+        // 若不存在 → 本地是全新（如開場白）覆蓋，攔截。
+        let localIdsExistInDb = false;
+        try {
+          const dbMessages = await loadMessages(plainChat.id);
+          const dbIds = new Set(dbMessages.map((m) => m.id));
+          localIdsExistInDb =
+            plainMessages.length > 0 &&
+            plainMessages.every((m: any) => dbIds.has(m.id));
+        } catch {
+          /* 讀取失敗時保守攔截 */
+        }
+        if (!localIdsExistInDb) {
+          console.error(
+            `[ChatScreen] ⚠️ 安全閘門觸發！拒絕保存：IDB 實際訊息數=${dbCount}，本地只有 ${localCount} 條且 ID 不在 IDB 中。`,
+            "可能是 ChatScreen 以錯誤上下文重新初始化，跳過此次保存以保護資料。",
+            {
+              chatId: plainChat.id,
+              localIds: plainMessages.slice(0, 3).map((m: any) => m.id),
+            },
+          );
+          _saveChatPending = false;
+          return;
+        }
       }
     }
 
@@ -13132,6 +13167,12 @@ onUnmounted(() => {
 
   :deep(.message-content) {
     max-width: var(--chat-bubble-max-width, var(--bubble-max-width, 75%));
+  }
+
+  // 純 HTML 訊息：跳過聊天外觀的 75% 寬度限制，由 .message-wrapper.html-only 自行撐滿
+  :deep(.message-wrapper.html-only > .message-content) {
+    max-width: 100% !important;
+    width: 100% !important;
   }
 
   // 聊天專屬頭像樣式
