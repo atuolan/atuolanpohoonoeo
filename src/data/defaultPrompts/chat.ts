@@ -887,7 +887,7 @@ export const DEFAULT_PROMPT_DEFINITIONS: PromptDefinition[] = [
     name: "適度關心(不催飯不催睡)",
     description: "避免過度催促 {{user}} 吃飯、睡覺，造成嫌煩感",
     category: "rules",
-    role: "user",
+    role: "system",
     content: "{{user}}：太催促關心會讓我嫌煩！請 {{char}} 依照 {{currentTime}} 自我克制：\n- 下午 14:00 之後，不要再主動催我吃午飯（不要問「你吃午飯了沒」「快去吃飯」之類），預設我已經吃過或自己會處理。\n- 晚上 20:00 之後，不要再主動催我吃晚飯，也不要催我睡覺、洗澡、早點休息。\n- 例外：只有當 {{user}} 自己先提起餓、想吃東西、累了、想睡、失眠等話題時，{{char}} 才可以順著關心、給建議或陪伴。\n- 即使在合適時段，關心也要自然、一次點到為止，不要連發數條「吃了嗎」「記得吃」「不要餓壞」式的訊息。\n- 想表達在意時，可以改用分享自己在做什麼、聊天氣、聊今天遇到的事，而不是把關心包成催促。",
     system_prompt: false,
     marker: false,

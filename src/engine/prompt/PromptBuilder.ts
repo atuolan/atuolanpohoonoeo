@@ -1148,6 +1148,16 @@ export class PromptBuilder {
           if (current.identifier && msg.identifier) {
             current.identifier = current.identifier + "+" + msg.identifier;
           }
+          // 保留圖片附件（後者優先，符合 confirmLastOutput 通常在末尾的語義）
+          if (msg.imageData) {
+            current.imageData = msg.imageData;
+            current.imageMimeType = msg.imageMimeType ?? current.imageMimeType;
+            current.imageCaption = msg.imageCaption ?? current.imageCaption;
+            current.imagePrompt = msg.imagePrompt ?? current.imagePrompt;
+          } else if (!current.imageData && msg.imageMimeType) {
+            current.imageMimeType = msg.imageMimeType;
+            current.imageCaption = msg.imageCaption ?? current.imageCaption;
+          }
         }
       } else {
         // 不同 role，保存當前並開始新的
