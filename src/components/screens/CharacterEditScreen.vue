@@ -852,6 +852,38 @@ async function toggleRegexScript(scriptId: string) {
   });
 }
 
+// 下載單個正則腳本為 JSON
+function downloadRegexScript(script: RegexScript) {
+  const payload = {
+    id: script.id,
+    scriptName: script.scriptName,
+    findRegex: script.findRegex,
+    replaceString: script.replaceString,
+    trimStrings: script.trimStrings ?? [],
+    placement: script.placement ?? [],
+    disabled: script.disabled ?? false,
+    markdownOnly: script.markdownOnly ?? false,
+    promptOnly: script.promptOnly ?? false,
+    runOnEdit: script.runOnEdit ?? false,
+    substituteRegex: script.substituteRegex ?? 0,
+    minDepth: script.minDepth ?? -1,
+    maxDepth: script.maxDepth ?? -1,
+  };
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const safeName =
+    (script.scriptName || "regex").replace(/[\\/:*?"<>|]+/g, "_").trim() ||
+    "regex";
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${safeName}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // 刪除腳本
 async function deleteRegexScript(scriptId: string) {
   if (!props.characterId) return;
@@ -1491,6 +1523,13 @@ async function onRegexFileImport(e: Event) {
                   <span class="regex-name" @click="openEditRegex(script)">{{
                     script.scriptName
                   }}</span>
+                  <button
+                    class="regex-download"
+                    @click.stop="downloadRegexScript(script)"
+                    title="下載 JSON"
+                  >
+                    ⬇
+                  </button>
                   <button
                     class="regex-delete"
                     @click="deleteRegexScript(script.id)"
@@ -2594,6 +2633,25 @@ async function onRegexFileImport(e: Event) {
   font-size: 14px;
   font-weight: 500;
   color: #333;
+}
+
+.regex-download {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  color: #999;
+  cursor: pointer;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover {
+    color: #4caf50;
+    background: rgba(76, 175, 80, 0.1);
+  }
 }
 
 .regex-delete {
