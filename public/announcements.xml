@@ -23,7 +23,7 @@
 -->
 <announcements>
 
-  <announcement id="202605110500" level="info" date="2026-05-11">
+  <announcement id="202605110503" level="critical" date="2026-05-11">
     <title>作者公告系統上線</title>
     <image>/announcements/image.png</image>
     <!-- <action label="查看詳情" url="https://example.com" /> -->
@@ -32,9 +32,9 @@
 歡迎使用 **Aguaphone**！
 
 以後有重要更新或公告，會在這裡通知你。
+- ## 小手机提示词有没办法读取到图片的bug，已经修复了，请到设置，提示词，重置提示词，就能正常
 
 - 點「我已知曉」會記錄在你的裝置，下次不會再彈
-- **小手机提示词有没办法读取到图片的bug，已经修复了，请到设置，提示词，重置提示词，就能正常**
 
     ]]></body>
   </announcement>
