@@ -1524,12 +1524,16 @@ export class PromptBuilder {
           );
           if (substituted) {
             // 檢查是否有圖片需要附帶
-            const lastMsgWithImage = lastUserTurnMsgs.find((m) => m.imageData);
+            const lastMsgWithImage = [...lastUserTurnMsgs]
+              .reverse()
+              .find((m) => (m.imageData || m.imageUrl) && m.imageMimeType);
+            const lastImageData =
+              lastMsgWithImage?.imageData || lastMsgWithImage?.imageUrl;
             return {
               role: getRole(),
               content: substituted,
               identifier,
-              imageData: lastMsgWithImage?.imageData,
+              imageData: lastImageData,
               imageMimeType: lastMsgWithImage?.imageMimeType,
               imageCaption: lastMsgWithImage?.imageCaption,
               imagePrompt: lastMsgWithImage?.imagePrompt,
@@ -1546,7 +1550,9 @@ export class PromptBuilder {
         for (const msg of lastUserTurnMsgs) {
           let msgContent = msg.content;
 
-          if (msg.imageData) {
+          const msgImageData = msg.imageData || msg.imageUrl;
+
+          if (msgImageData && msg.imageMimeType) {
             const imgDesc = msg.imageCaption
               ? `圖片說明：${msg.imageCaption}`
               : "用戶發送了一張圖片";
@@ -1561,7 +1567,7 @@ export class PromptBuilder {
             role: getRole(),
             content: msgContent,
             identifier,
-            imageData: msg.imageData,
+            imageData: msgImageData,
             imageMimeType: msg.imageMimeType,
             imageCaption: msg.imageCaption,
             imagePrompt: msg.imagePrompt,
