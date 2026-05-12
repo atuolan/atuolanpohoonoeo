@@ -6,6 +6,12 @@ import type { Plugin } from "vite";
 import { defineConfig } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
 
+const IMAGE_PROXY_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+};
+
 // AI API 動態代理插件（使用 Node.js 內建模組，無需額外依賴）
 function aiProxyPlugin(): Plugin {
   return {
@@ -26,51 +32,23 @@ function aiProxyPlugin(): Plugin {
           return;
         }
 
-        const parsedTarget = new URL(targetUrl);
-        const requestModule = targetUrl.startsWith("https") ? https : http;
-        const proxyReq = requestModule.get(targetUrl, {
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            Referer: `${parsedTarget.origin}/`,
-          },
-        }, (proxyRes) => {
-          // 跟隨重定向
+        const pipeImage = (currentUrl: string, redirects = 0) => {
+          const requestModule = currentUrl.startsWith("https") ? https : http;
+          const proxyReq = requestModule.get(currentUrl, {
+            headers: IMAGE_PROXY_HEADERS,
+          }, (proxyRes) => {
           if (
             proxyRes.statusCode &&
             proxyRes.statusCode >= 300 &&
             proxyRes.statusCode < 400 &&
-            proxyRes.headers.location
+            proxyRes.headers.location &&
+            redirects < 5
           ) {
             const redirectUrl = proxyRes.headers.location.startsWith("http")
               ? proxyRes.headers.location
-              : new URL(proxyRes.headers.location, targetUrl).href;
-            const redirectModule = redirectUrl.startsWith("https")
-              ? https
-              : http;
-            const parsedRedirect = new URL(redirectUrl);
-            redirectModule
-              .get(redirectUrl, {
-                headers: {
-                  "User-Agent":
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                  Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-                  Referer: `${parsedRedirect.origin}/`,
-                },
-              }, (finalRes) => {
-                res.writeHead(finalRes.statusCode || 200, {
-                  "Content-Type":
-                    finalRes.headers["content-type"] || "image/jpeg",
-                  "Cache-Control": "public, max-age=86400",
-                  "Access-Control-Allow-Origin": "*",
-                });
-                finalRes.pipe(res);
-              })
-              .on("error", () => {
-                res.writeHead(502);
-                res.end("Redirect proxy error");
-              });
+              : new URL(proxyRes.headers.location, currentUrl).href;
+            proxyRes.resume();
+            pipeImage(redirectUrl, redirects + 1);
             return;
           }
           res.writeHead(proxyRes.statusCode || 200, {
@@ -84,6 +62,8 @@ function aiProxyPlugin(): Plugin {
           res.writeHead(502);
           res.end("Proxy error");
         });
+        };
+        pipeImage(targetUrl);
       });
 
       server.middlewares.use((req, res, next) => {
