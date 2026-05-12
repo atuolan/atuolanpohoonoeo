@@ -155,7 +155,11 @@ self.addEventListener("fetch", (event) => {
 
   event.respondWith(
     fetch(event.request)
-      .then((response) => {
+      .then(async (response) => {
+        if (!response.ok) {
+          const cached = await caches.match(event.request);
+          if (cached) return cached;
+        }
         if (
           response.status === 200 &&
           response.type === "basic"

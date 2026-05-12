@@ -593,6 +593,7 @@ async function testTaskConnection(taskId: string) {
             :key="profile.id"
             class="profile-item"
             :class="{ active: settingsStore.auxiliary.currentProfileId === profile.id }"
+            :style="{ zIndex: copyMenuProfileId === profile.id ? 20 : 1, position: 'relative' }"
             @click="requestSwitchProfile(profile.id)"
           >
             <div class="profile-active-dot" v-if="settingsStore.auxiliary.currentProfileId === profile.id"></div>
@@ -629,7 +630,7 @@ async function testTaskConnection(taskId: string) {
                 <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" /></svg>
               </button>
               <button class="profile-action-btn" title="複製一份配置" @click.stop="duplicateProfileHandler(profile.id)">
-                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 21H8V7h11v14zm0-16H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-3-4H4c-1.1 0-2 .9-2 2v14h2V3h12V1z" /></svg>
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z" /></svg>
               </button>
               <div class="profile-copy-wrapper">
                 <button

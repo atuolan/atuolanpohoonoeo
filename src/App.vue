@@ -88,6 +88,7 @@ import TheaterScreen from "@/components/screens/TheaterScreen.vue";
 import UserProfileScreen from "@/components/screens/UserProfileScreen.vue";
 import WeatherScreen from "@/components/screens/WeatherScreen.vue";
 import { useBackgroundAudio } from "@/composables/useBackgroundAudio";
+import { useGlobalLanguage } from "@/composables/useGlobalLanguage";
 import { db, DB_STORES } from "@/db/database";
 import {
   createChatRecord,
@@ -1375,10 +1376,14 @@ async function loadAppData() {
   themeStore.setNightMode(settingsStore.nightMode);
 
   // 初始化全局繁簡轉換（需在 settings 載入後）
-  const { useGlobalLanguage } = await import("@/composables/useGlobalLanguage");
-  const globalLanguage = useGlobalLanguage();
-  globalLanguage.init();
-  globalLanguageDestroy = globalLanguage.destroy;
+  try {
+    const globalLanguage = useGlobalLanguage();
+    globalLanguage.init();
+    globalLanguageDestroy = globalLanguage.destroy;
+  } catch (error) {
+    console.error("[App] 全局繁簡轉換初始化失敗:", error);
+    recordRuntimeError("App.globalLanguage", error);
+  }
 
   // 啟動待處理來電檢查（App 啟動時檢查過期來電）
   startPendingCallChecker();

@@ -2,7 +2,73 @@ import { ref } from 'vue'
 
 function toScreenshotProxyUrl(url: string): string {
   if (!url || url.startsWith('data:') || url.startsWith('blob:')) return url
-  return `/image-proxy?url=${encodeURIComponent(url)}`
+  // 如果已經是代理 URL，不要重複代理
+  if (url.includes('nai-proxy.aguacloud.uk/image-proxy') || url.includes('/image-proxy?url=')) {
+    return url
+  }
+  const base = import.meta.env.DEV ? "" : "https://nai-proxy.aguacloud.uk"
+  return `${base}/image-proxy?url=${encodeURIComponent(url)}`
+}
+
+function copyVueScopedAttributes(source: HTMLElement | null, target: HTMLElement): void {
+  if (!source) return
+  for (const attr of Array.from(source.attributes)) {
+    if (attr.name.startsWith('data-v-')) {
+      target.setAttribute(attr.name, attr.value)
+    }
+  }
+}
+
+function hydrateClonedImages(source: HTMLElement, clone: HTMLElement): void {
+  const sourceImages = Array.from(source.querySelectorAll<HTMLImageElement>('img'))
+  const clonedImages = Array.from(clone.querySelectorAll<HTMLImageElement>('img'))
+  clonedImages.forEach((img, index) => {
+    const sourceImg = sourceImages[index]
+    const resolvedSrc =
+      sourceImg?.currentSrc ||
+      sourceImg?.src ||
+      sourceImg?.dataset.originalUrl ||
+      img.currentSrc ||
+      img.src ||
+      img.dataset.originalUrl ||
+      ''
+    if (resolvedSrc) {
+      img.src = resolvedSrc
+    }
+    img.loading = 'eager'
+    img.decoding = 'sync'
+  })
+}
+
+async function waitForImages(container: HTMLElement): Promise<void> {
+  const images = Array.from(container.querySelectorAll<HTMLImageElement>('img'))
+  await Promise.all(
+    images.map(async (img) => {
+      if (!img.src && img.dataset.originalUrl) {
+        img.src = img.dataset.originalUrl
+      }
+      if (!img.src) return
+      try {
+        if (typeof img.decode === 'function') {
+          await img.decode()
+          return
+        }
+      } catch {
+        // fall through to load/error listener
+      }
+      if (img.complete && img.naturalWidth > 0) return
+      await new Promise<void>((resolve) => {
+        const done = () => {
+          img.removeEventListener('load', done)
+          img.removeEventListener('error', done)
+          resolve()
+        }
+        img.addEventListener('load', done)
+        img.addEventListener('error', done)
+        if (img.complete) resolve()
+      })
+    }),
+  )
 }
 
 export interface ScreenshotOptions {
@@ -42,15 +108,31 @@ export function useScreenshot() {
     const images = container.querySelectorAll('img')
     await Promise.all(
       Array.from(images).map(async (img) => {
+        if (!img.src && img.dataset.originalUrl) {
+          img.src = img.dataset.originalUrl
+        }
         if (!img.src || img.src.startsWith('data:')) return
         try {
+          let res: Response | null = null
           let fetchUrl = img.src
-          // 外部 HTTP(S) URL 使用代理，避免 CORS 失敗（表情包、頭像等）
-          if (img.src.startsWith('http://') || img.src.startsWith('https://')) {
-            fetchUrl = toScreenshotProxyUrl(img.src)
+
+          // 先嘗試直接 fetch，如果失敗（例如 CORS 錯誤）再嘗試使用代理
+          try {
+            res = await fetch(fetchUrl)
+            if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          } catch (e) {
+            // 外部 HTTP(S) URL 使用代理，避免 CORS 失敗（表情包、頭像等）
+            if (img.src.startsWith('http://') || img.src.startsWith('https://')) {
+              fetchUrl = toScreenshotProxyUrl(img.src)
+              res = await fetch(fetchUrl)
+              if (!res.ok) throw new Error(`HTTP ${res.status}`)
+            } else {
+              throw e
+            }
           }
-          const res = await fetch(fetchUrl)
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+          if (!res) return
+
           const blob = await res.blob()
           const base64 = await new Promise<string>((resolve) => {
             const reader = new FileReader()
@@ -69,7 +151,8 @@ export function useScreenshot() {
             if (img.complete) { resolve() }
             void prev
           })
-        } catch {
+        } catch (e) {
+          console.warn('[useScreenshot] 圖片轉換 base64 失敗:', img.src, e)
           // 圖片轉換失敗就跳過
         }
       }),
@@ -224,19 +307,56 @@ export function useScreenshot() {
   ): Promise<string> {
     isCapturing.value = true
     error.value = null
+    let tempRoot: HTMLElement | null = null
 
     try {
-      // 建立臨時容器
-      const tempContainer = document.createElement('div')
-      tempContainer.style.cssText = `
+      const chatScreen = chatContainer.closest('.chat-screen') as HTMLElement | null
+      const sourceList = chatContainer.querySelector('.messages-list') as HTMLElement | null
+      const sourceContainerStyle = window.getComputedStyle(chatContainer)
+      const sourceListStyle = sourceList ? window.getComputedStyle(sourceList) : null
+      tempRoot = document.createElement('div')
+      tempRoot.className = chatScreen?.className || 'chat-screen'
+      copyVueScopedAttributes(chatScreen, tempRoot)
+      tempRoot.style.cssText = `
         position: fixed;
         left: -9999px;
         top: 0;
         width: ${chatContainer.offsetWidth}px;
-        padding: 12px;
         background: ${opts.backgroundColor || '#f5f5f5'};
+        overflow: visible;
+        pointer-events: none;
       `
-      document.body.appendChild(tempContainer)
+      tempRoot.setAttribute('data-screenshot-root', 'true')
+      if (chatScreen) {
+        tempRoot.style.cssText += chatScreen.style.cssText
+      }
+
+      const tempContainer = document.createElement('main')
+      tempContainer.className = chatContainer.className
+      copyVueScopedAttributes(chatContainer, tempContainer)
+      tempContainer.style.cssText = chatContainer.style.cssText
+      tempContainer.style.width = `${chatContainer.offsetWidth}px`
+      tempContainer.style.height = 'auto'
+      tempContainer.style.minHeight = '0'
+      tempContainer.style.overflow = 'visible'
+      tempContainer.style.background = opts.backgroundColor || sourceContainerStyle.backgroundColor || '#f5f5f5'
+
+      const tempList = document.createElement('div')
+      tempList.className = sourceList?.className || 'messages-list'
+      copyVueScopedAttributes(sourceList, tempList)
+      tempList.style.cssText = sourceList?.style.cssText || ''
+      tempList.style.minHeight = '0'
+      tempList.style.paddingTop = sourceListStyle?.paddingTop || '16px'
+      tempList.style.paddingRight = sourceListStyle?.paddingRight || '16px'
+      tempList.style.paddingBottom = sourceListStyle?.paddingBottom || '16px'
+      tempList.style.paddingLeft = sourceListStyle?.paddingLeft || '16px'
+      tempList.style.display = 'flex'
+      tempList.style.flexDirection = 'column'
+      tempList.style.gap = sourceListStyle?.gap || '12px'
+
+      tempContainer.appendChild(tempList)
+      tempRoot.appendChild(tempContainer)
+      document.body.appendChild(tempRoot)
 
       // 按順序 clone 選中的消息
       for (const msgId of messageIds) {
@@ -245,20 +365,24 @@ export function useScreenshot() {
         ) as HTMLElement
         if (el) {
           const clone = el.cloneNode(true) as HTMLElement
+          hydrateClonedImages(el, clone)
           clone
             .querySelectorAll('.message-menu, .menu-backdrop')
             .forEach((m) => m.remove())
-          tempContainer.appendChild(clone)
+          tempList.appendChild(clone)
         }
       }
 
+      await waitForImages(tempList)
       const dataUrl = await captureElement(tempContainer, opts)
-      document.body.removeChild(tempContainer)
+      tempRoot.remove()
+      tempRoot = null
       return dataUrl
     } catch (e: any) {
       error.value = e?.message || '批量截圖失敗'
       throw e
     } finally {
+      tempRoot?.remove()
       isCapturing.value = false
     }
   }

@@ -26,8 +26,16 @@ function aiProxyPlugin(): Plugin {
           return;
         }
 
+        const parsedTarget = new URL(targetUrl);
         const requestModule = targetUrl.startsWith("https") ? https : http;
-        const proxyReq = requestModule.get(targetUrl, (proxyRes) => {
+        const proxyReq = requestModule.get(targetUrl, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            Referer: `${parsedTarget.origin}/`,
+          },
+        }, (proxyRes) => {
           // 跟隨重定向
           if (
             proxyRes.statusCode &&
@@ -41,8 +49,16 @@ function aiProxyPlugin(): Plugin {
             const redirectModule = redirectUrl.startsWith("https")
               ? https
               : http;
+            const parsedRedirect = new URL(redirectUrl);
             redirectModule
-              .get(redirectUrl, (finalRes) => {
+              .get(redirectUrl, {
+                headers: {
+                  "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                  Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                  Referer: `${parsedRedirect.origin}/`,
+                },
+              }, (finalRes) => {
                 res.writeHead(finalRes.statusCode || 200, {
                   "Content-Type":
                     finalRes.headers["content-type"] || "image/jpeg",
