@@ -36,7 +36,16 @@ function hydrateClonedImages(source: HTMLElement, clone: HTMLElement): void {
     if (rasterized) {
       img.src = rasterized
     } else if (resolvedSrc) {
-      img.src = resolvedSrc
+      const isExternal =
+        /^https?:\/\//i.test(resolvedSrc) &&
+        !resolvedSrc.startsWith(window.location.origin)
+      if (isExternal) {
+        img.crossOrigin = 'anonymous'
+        img.referrerPolicy = 'no-referrer'
+        img.src = toScreenshotProxyUrl(resolvedSrc)
+      } else {
+        img.src = resolvedSrc
+      }
     }
     img.loading = 'eager'
     img.decoding = 'sync'
@@ -307,7 +316,7 @@ export function useScreenshot() {
         backgroundColor: options.backgroundColor,
         scale: options.scale,
         logging: false,
-        useCORS: false, // 已轉為 base64，不需要 CORS
+        useCORS: true,
         allowTaint: false,
         foreignObjectRendering: false,
         imageTimeout: 0,
