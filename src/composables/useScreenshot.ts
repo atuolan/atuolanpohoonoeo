@@ -32,7 +32,10 @@ function hydrateClonedImages(source: HTMLElement, clone: HTMLElement): void {
       img.src ||
       img.dataset.originalUrl ||
       ''
-    if (resolvedSrc) {
+    const rasterized = sourceImg ? rasterizeLoadedImageElement(sourceImg) : null
+    if (rasterized) {
+      img.src = rasterized
+    } else if (resolvedSrc) {
       img.src = resolvedSrc
     }
     img.loading = 'eager'
@@ -69,6 +72,43 @@ async function waitForImages(container: HTMLElement): Promise<void> {
       })
     }),
   )
+}
+
+async function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('image load failed'))
+    img.src = src
+  })
+}
+
+async function rasterizeImageDataUrl(dataUrl: string): Promise<string> {
+  const img = await loadImage(dataUrl)
+  const canvas = document.createElement('canvas')
+  canvas.width = img.naturalWidth || img.width
+  canvas.height = img.naturalHeight || img.height
+  const ctx = canvas.getContext('2d')
+  if (!ctx || !canvas.width || !canvas.height) return dataUrl
+  ctx.drawImage(img, 0, 0)
+  return canvas.toDataURL('image/png')
+}
+
+function rasterizeLoadedImageElement(img: HTMLImageElement): string | null {
+  if (!img.complete || !img.naturalWidth || !img.naturalHeight) return null
+  const width = img.naturalWidth
+  const height = img.naturalHeight
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  try {
+    ctx.drawImage(img, 0, 0, width, height)
+    return canvas.toDataURL('image/png')
+  } catch {
+    return null
+  }
 }
 
 export interface ScreenshotOptions {
@@ -139,11 +179,12 @@ export function useScreenshot() {
             reader.onloadend = () => resolve(reader.result as string)
             reader.readAsDataURL(blob)
           })
+          const rasterized = await rasterizeImageDataUrl(base64)
           // 等待新 src 載入完成後再繼續（避免 naturalWidth/naturalHeight 未更新）
           await new Promise<void>((resolve) => {
             const prev = img.src
-            img.src = base64
-            if (img.complete && img.src === base64) { resolve(); return }
+            img.src = rasterized
+            if (img.complete && img.src === rasterized) { resolve(); return }
             const onDone = () => { img.removeEventListener('load', onDone); img.removeEventListener('error', onDone); resolve() }
             img.addEventListener('load', onDone)
             img.addEventListener('error', onDone)
