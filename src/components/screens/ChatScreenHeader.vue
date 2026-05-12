@@ -40,6 +40,7 @@ const props = defineProps<{
   enablePhoneDecision: boolean;
   novelAIEnabled: boolean;
   novelAIUseUserTag: boolean;
+  chatImageSearchEnabled: boolean;
   chatMinimaxTTSEnabled: boolean;
   showMoreMenu: boolean;
   isCharBlocked: boolean;
@@ -77,6 +78,7 @@ const emit = defineEmits<{
   (e: "toggle-phone-decision"): void;
   (e: "toggle-novel-ai-image"): void;
   (e: "toggle-novel-ai-use-user-tag"): void;
+  (e: "toggle-chat-image-search"): void;
   (e: "open-novel-ai-settings"): void;
   (e: "toggle-minimax-tts"): void;
   (e: "open-minimax-tts-settings"): void;
@@ -443,6 +445,18 @@ function onTimeJumpInput(event: Event) {
               </div>
               <label class="toggle-switch-mini">
                 <input type="checkbox" :checked="novelAIUseUserTag" @change="emit('toggle-novel-ai-use-user-tag')" />
+                <span class="toggle-slider-mini"></span>
+              </label>
+            </div>
+            <div class="dropdown-toggle-item">
+              <div class="toggle-item-info">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M9.5 3C5.91 3 3 5.91 3 9.5S5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57L19.29 20 20.7 18.59l-5.56-5.56A6.47 6.47 0 0 0 16 9.5C16 5.91 13.09 3 9.5 3zm0 2C11.99 5 14 7.01 14 9.5S11.99 14 9.5 14 5 11.99 5 9.5 7.01 5 9.5 5z" />
+                </svg>
+                <span>使用搜圖</span>
+              </div>
+              <label class="toggle-switch-mini">
+                <input type="checkbox" :checked="chatImageSearchEnabled" @change="emit('toggle-chat-image-search')" />
                 <span class="toggle-slider-mini"></span>
               </label>
             </div>

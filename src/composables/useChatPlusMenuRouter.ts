@@ -27,6 +27,7 @@ export function useChatPlusMenuRouter(deps: {
   showTopicPromptModal: Ref<boolean>;
   showGameScorePicker: Ref<boolean>;
   showImageSearchPanel: Ref<boolean>;
+  imageSearchEnabled?: Ref<boolean>;
   // other deps
   scrollToBottom: () => void;
   saveChat: () => void;
@@ -120,6 +121,7 @@ export function useChatPlusMenuRouter(deps: {
         deps.emit("navigate", "food-log");
         break;
       case "image-search":
+        if (deps.imageSearchEnabled?.value === false) break;
         deps.showImageSearchPanel.value = true;
         break;
       case "music":

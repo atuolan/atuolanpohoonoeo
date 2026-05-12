@@ -41,6 +41,7 @@ export function useChatMedia(deps: {
   currentCharacter: Ref<StoredCharacter | undefined>;
   scrollToBottom: () => void;
   saveChat: () => void;
+  imageSearchEnabled?: Ref<boolean>;
 }) {
   const settingsStore = useSettingsStore();
   const userStore = useUserStore();
@@ -316,6 +317,12 @@ export function useChatMedia(deps: {
         isGeneratingImage.value = false;
         deps.saveChat();
       }
+      return;
+    }
+
+    if (deps.imageSearchEnabled?.value === false) {
+      fallbackToDescriptiveImage(messageId);
+      deps.saveChat();
       return;
     }
 

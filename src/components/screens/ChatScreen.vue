@@ -2079,6 +2079,7 @@ const chatFaceToFaceMode = ref(false); // 聊天專屬面對面模式
 const chatThirdPersonMode = ref(false); // 聊天專屬第三人稱模式
 const chatEnableRealTimeAwareness = ref(true); // 感知現實時間（默認開啟）
 const chatMinimaxTTSEnabled = ref(false); // 聊天專屬 MiniMax TTS（默認關閉）
+const chatImageSearchEnabled = ref(true);
 
 // 聊天專屬位置覆蓋（null 表示使用全域設定）
 const chatLocationOverride = ref<ChatLocationOverride | null>(null);
@@ -2646,6 +2647,7 @@ const {
   showTopicPromptModal,
   showGameScorePicker,
   showImageSearchPanel,
+  imageSearchEnabled: chatImageSearchEnabled,
   scrollToBottom,
   saveChat,
   openTheater,
@@ -3672,6 +3674,7 @@ const {
   currentCharacter,
   scrollToBottom,
   saveChat,
+  imageSearchEnabled: chatImageSearchEnabled,
 });
 
 // ===== 禮物面板處理 =====
@@ -7316,6 +7319,14 @@ function toggleNovelAIUseUserTag() {
   settingsStore.saveSettings();
 }
 
+async function toggleChatImageSearch() {
+  chatImageSearchEnabled.value = !chatImageSearchEnabled.value;
+  if (!chatImageSearchEnabled.value) {
+    showImageSearchPanel.value = false;
+  }
+  await saveChatImmediate();
+}
+
 // ===== MiniMax TTS 語音合成（單聊天開關） =====
 async function toggleMinimaxTTS() {
   chatMinimaxTTSEnabled.value = !chatMinimaxTTSEnabled.value;
@@ -8328,6 +8339,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
         fakeTime.loadFromChat(chat);
         // 載入 MiniMax TTS 設定（默認為 false）
         chatMinimaxTTSEnabled.value = chat.minimaxTTSEnabled === true;
+        chatImageSearchEnabled.value = chat.imageSearchEnabled !== false;
         // 載入 MiniMax TTS 音色覆蓋
         chatMinimaxTTSOverride.value = chat.minimaxTTSOverride
           ? { ...chat.minimaxTTSOverride }
@@ -8387,6 +8399,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
       userStore.autoSwitchPersonaForChat(charId, null);
     }
     chatBoundPersonaId.value = userStore.currentPersonaId;
+    chatImageSearchEnabled.value = true;
   }
 
   // 如果沒有訊息，添加開場白（群聯模式不添加角色開場白）
@@ -8962,6 +8975,7 @@ function buildChatMetadata(
     enableRealTimeAwareness: chatEnableRealTimeAwareness.value,
     ...fakeTime.toChatFields(),
     minimaxTTSEnabled: chatMinimaxTTSEnabled.value,
+    imageSearchEnabled: chatImageSearchEnabled.value,
     minimaxTTSOverride:
       Object.keys(chatMinimaxTTSOverride.value).length > 0
         ? { ...chatMinimaxTTSOverride.value }
@@ -9755,6 +9769,7 @@ watch(
           const prevPhoneDecision = enablePhoneDecision.value;
           const prevFaceToFaceMode = chatFaceToFaceMode.value;
           const prevThirdPersonMode = chatThirdPersonMode.value;
+          const prevImageSearchEnabled = chatImageSearchEnabled.value;
 
           await loadOrCreateChat();
 
@@ -9763,6 +9778,7 @@ watch(
           enablePhoneDecision.value = prevPhoneDecision;
           chatFaceToFaceMode.value = prevFaceToFaceMode;
           chatThirdPersonMode.value = prevThirdPersonMode;
+          chatImageSearchEnabled.value = prevImageSearchEnabled;
 
           scrollToBottom();
           console.log(
@@ -9947,6 +9963,7 @@ onUnmounted(() => {
       :enable-phone-decision="enablePhoneDecision"
       :novel-a-i-enabled="settingsStore.novelAIImage.enabled"
       :novel-a-i-use-user-tag="settingsStore.novelAIImage.useUserTag ?? false"
+      :chat-image-search-enabled="chatImageSearchEnabled"
       :chat-minimax-t-t-s-enabled="chatMinimaxTTSEnabled"
       :show-more-menu="showMoreMenu"
       :is-char-blocked="isCharBlocked"
@@ -9981,6 +9998,7 @@ onUnmounted(() => {
       @toggle-phone-decision="togglePhoneDecisionFromMenu"
       @toggle-novel-ai-image="toggleNovelAIImage"
       @toggle-novel-ai-use-user-tag="toggleNovelAIUseUserTag"
+      @toggle-chat-image-search="toggleChatImageSearch"
       @open-novel-ai-settings="openNovelAISettings"
       @toggle-minimax-tts="toggleMinimaxTTS"
       @open-minimax-tts-settings="openMinimaxTTSSettings"

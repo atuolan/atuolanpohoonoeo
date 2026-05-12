@@ -723,6 +723,7 @@ export interface Chat {
 
   /** 是否啟用 MiniMax TTS 語音合成（單聊天存取，默認關閉） */
   minimaxTTSEnabled?: boolean;
+  imageSearchEnabled?: boolean;
 
   /** 聊天專屬 MiniMax TTS 音色覆蓋（不設則用全域設定） */
   minimaxTTSOverride?: {

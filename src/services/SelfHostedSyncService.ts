@@ -1072,6 +1072,7 @@ export class SelfHostedSyncService {
       fakeTimeLoop: payload.fakeTimeLoop,
       fakeTimeOffset: payload.fakeTimeOffset,
       minimaxTTSEnabled: payload.minimaxTTSEnabled,
+      imageSearchEnabled: payload.imageSearchEnabled,
       minimaxTTSOverride: payload.minimaxTTSOverride,
       isBranch: payload.isBranch,
       pinnedToList: payload.pinnedToList,
