@@ -6,11 +6,20 @@ import type { Plugin } from "vite";
 import { defineConfig } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
 
-const IMAGE_PROXY_HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-};
+const IMAGE_PROXY_UAS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+  "Mozilla/5.0 (X11; Linux x86_64; rv:122.0) Gecko/20100101 Firefox/122.0",
+];
+const IMAGE_PROXY_ACCEPT =
+  "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8";
+function buildImageProxyHeaders(attempt: number): Record<string, string> {
+  return {
+    "User-Agent": IMAGE_PROXY_UAS[attempt % IMAGE_PROXY_UAS.length],
+    Accept: IMAGE_PROXY_ACCEPT,
+    "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
+  };
+}
 
 // AI API 動態代理插件（使用 Node.js 內建模組，無需額外依賴）
 function aiProxyPlugin(): Plugin {
@@ -32,36 +41,57 @@ function aiProxyPlugin(): Plugin {
           return;
         }
 
-        const pipeImage = (currentUrl: string, redirects = 0) => {
+        const MAX_REDIRECTS = 5;
+        const MAX_WAF_RETRIES = IMAGE_PROXY_UAS.length;
+        const pipeImage = (
+          currentUrl: string,
+          redirects = 0,
+          attempt = 0,
+        ) => {
           const requestModule = currentUrl.startsWith("https") ? https : http;
-          const proxyReq = requestModule.get(currentUrl, {
-            headers: IMAGE_PROXY_HEADERS,
-          }, (proxyRes) => {
-          if (
-            proxyRes.statusCode &&
-            proxyRes.statusCode >= 300 &&
-            proxyRes.statusCode < 400 &&
-            proxyRes.headers.location &&
-            redirects < 5
-          ) {
-            const redirectUrl = proxyRes.headers.location.startsWith("http")
-              ? proxyRes.headers.location
-              : new URL(proxyRes.headers.location, currentUrl).href;
-            proxyRes.resume();
-            pipeImage(redirectUrl, redirects + 1);
-            return;
-          }
-          res.writeHead(proxyRes.statusCode || 200, {
-            "Content-Type": proxyRes.headers["content-type"] || "image/jpeg",
-            "Cache-Control": "public, max-age=86400",
-            "Access-Control-Allow-Origin": "*",
+          const proxyReq = requestModule.get(
+            currentUrl,
+            { headers: buildImageProxyHeaders(attempt) },
+            (proxyRes) => {
+              const statusCode = proxyRes.statusCode || 0;
+              if (
+                statusCode >= 300 &&
+                statusCode < 400 &&
+                proxyRes.headers.location &&
+                redirects < MAX_REDIRECTS
+              ) {
+                const redirectUrl = proxyRes.headers.location.startsWith("http")
+                  ? proxyRes.headers.location
+                  : new URL(proxyRes.headers.location, currentUrl).href;
+                proxyRes.resume();
+                pipeImage(redirectUrl, redirects + 1, attempt);
+                return;
+              }
+              const contentType = String(
+                proxyRes.headers["content-type"] || "",
+              );
+              const wafBlock =
+                statusCode >= 400 &&
+                statusCode < 500 &&
+                contentType.includes("text/html");
+              if (wafBlock && attempt + 1 < MAX_WAF_RETRIES) {
+                proxyRes.resume();
+                pipeImage(targetUrl, 0, attempt + 1);
+                return;
+              }
+              res.writeHead(statusCode || 200, {
+                "Content-Type":
+                  proxyRes.headers["content-type"] || "image/jpeg",
+                "Cache-Control": "public, max-age=86400",
+                "Access-Control-Allow-Origin": "*",
+              });
+              proxyRes.pipe(res);
+            },
+          );
+          proxyReq.on("error", () => {
+            res.writeHead(502);
+            res.end("Proxy error");
           });
-          proxyRes.pipe(res);
-        });
-        proxyReq.on("error", () => {
-          res.writeHead(502);
-          res.end("Proxy error");
-        });
         };
         pipeImage(targetUrl);
       });

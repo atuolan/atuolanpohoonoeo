@@ -6,7 +6,9 @@ function toScreenshotProxyUrl(url: string): string {
   if (url.includes('nai-proxy.aguacloud.uk/image-proxy') || url.includes('/image-proxy?url=')) {
     return url
   }
-  const base = import.meta.env.DEV ? "" : "https://nai-proxy.aguacloud.uk"
+  // DEV 走本機 Vite 代理（同源），PROD 走 Cloudflare Worker。
+  // 本機代理會在被 WAF 擋 (403) 時自動重試。
+  const base = import.meta.env.DEV ? '' : 'https://nai-proxy.aguacloud.uk'
   return `${base}/image-proxy?url=${encodeURIComponent(url)}`
 }
 
