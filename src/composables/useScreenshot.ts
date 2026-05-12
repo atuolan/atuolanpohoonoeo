@@ -1,17 +1,5 @@
 import { ref } from 'vue'
 
-function toScreenshotProxyUrl(url: string): string {
-  if (!url || url.startsWith('data:') || url.startsWith('blob:')) return url
-  // 如果已經是代理 URL，不要重複代理
-  if (url.includes('nai-proxy.aguacloud.uk/image-proxy') || url.includes('/image-proxy?url=')) {
-    return url
-  }
-  // DEV 走本機 Vite 代理（同源），PROD 走 Cloudflare Worker。
-  // 本機代理會在被 WAF 擋 (403) 時自動重試。
-  const base = import.meta.env.DEV ? '' : 'https://nai-proxy.aguacloud.uk'
-  return `${base}/image-proxy?url=${encodeURIComponent(url)}`
-}
-
 function copyVueScopedAttributes(source: HTMLElement | null, target: HTMLElement): void {
   if (!source) return
   for (const attr of Array.from(source.attributes)) {
@@ -42,12 +30,11 @@ function hydrateClonedImages(source: HTMLElement, clone: HTMLElement): void {
         /^https?:\/\//i.test(resolvedSrc) &&
         !resolvedSrc.startsWith(window.location.origin)
       if (isExternal) {
+        // 上游已配 Access-Control-Allow-Origin，直接以 CORS 模式重新載入即可。
         img.crossOrigin = 'anonymous'
         img.referrerPolicy = 'no-referrer'
-        img.src = toScreenshotProxyUrl(resolvedSrc)
-      } else {
-        img.src = resolvedSrc
       }
+      img.src = resolvedSrc
     }
     img.loading = 'eager'
     img.decoding = 'sync'
@@ -152,8 +139,8 @@ export function useScreenshot() {
   const error = ref<string | null>(null)
 
   /**
-   * 將外部圖片轉為 base64（解決跨域問題）
-   * 對外部 HTTP(S) URL 使用本地 /ai-proxy/ 代理繞過 CORS 限制
+   * 將圖片轉成 base64 + 靜態 PNG，方便 html2canvas 穩定取像素。
+   * 上游已配 CORS，直接 fetch 同源/跨源圖片都能成功；失敗就跳過。
    */
   async function convertImagesToBase64(container: HTMLElement): Promise<void> {
     const images = container.querySelectorAll('img')
@@ -164,25 +151,8 @@ export function useScreenshot() {
         }
         if (!img.src || img.src.startsWith('data:')) return
         try {
-          let res: Response | null = null
-          let fetchUrl = img.src
-
-          // 先嘗試直接 fetch，如果失敗（例如 CORS 錯誤）再嘗試使用代理
-          try {
-            res = await fetch(fetchUrl)
-            if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          } catch (e) {
-            // 外部 HTTP(S) URL 使用代理，避免 CORS 失敗（表情包、頭像等）
-            if (img.src.startsWith('http://') || img.src.startsWith('https://')) {
-              fetchUrl = toScreenshotProxyUrl(img.src)
-              res = await fetch(fetchUrl)
-              if (!res.ok) throw new Error(`HTTP ${res.status}`)
-            } else {
-              throw e
-            }
-          }
-
-          if (!res) return
+          const res = await fetch(img.src, { mode: 'cors', credentials: 'omit' })
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
           const blob = await res.blob()
           const base64 = await new Promise<string>((resolve) => {
@@ -225,26 +195,8 @@ export function useScreenshot() {
       const fit = window.getComputedStyle(img).objectFit
       if (fit !== 'cover' && fit !== 'contain') return
 
-      if (!img.src.startsWith('data:')) {
-        try {
-          const currentUrl = img.currentSrc || img.src
-          if (currentUrl && !currentUrl.startsWith('blob:')) {
-            img.src = toScreenshotProxyUrl(currentUrl)
-            await new Promise<void>((resolve) => {
-              const onDone = () => {
-                img.removeEventListener('load', onDone)
-                img.removeEventListener('error', onDone)
-                resolve()
-              }
-              img.addEventListener('load', onDone)
-              img.addEventListener('error', onDone)
-              if (img.complete) resolve()
-            })
-          }
-        } catch {
-          return
-        }
-      }
+      // 上游已配 CORS，<img> 直接以 crossorigin="anonymous" 載入即可，
+      // 不再需要在這裡做代理 src 切換。
 
       const dw = img.offsetWidth || img.clientWidth
       const dh = img.offsetHeight || img.clientHeight

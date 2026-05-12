@@ -1652,31 +1652,10 @@ const parsedTextParts = computed(() => {
   });
 });
 
-// 將需要代理的圖片 URL 轉換為代理 URL
+// 上游已透過 Cloudflare Transform Rule 補 Access-Control-Allow-Origin: *，
+// 直接回傳原始 URL，配合 <img crossorigin="anonymous"> 讓 canvas 可讀像素。
 function getProxiedImageUrl(url: string): string {
-  if (!url) return url;
-
-  // 暫時禁用代理，直接返回原始 URL 進行測試
-  console.log("表情包 URL:", url);
-  return url;
-
-  /* 代理邏輯暫時註釋
-  // 如果是來自 aguacloudreve 的圖片，直接使用代理
-  if (url.includes('aguacloudreve.aguacloud.uk')) {
-    return `https://nai-proxy.aguacloud.uk/image-proxy?url=${encodeURIComponent(url)}`;
-  }
-  
-  // 其他外部圖片也使用代理
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    // 如果已經是代理 URL，不要重複代理
-    if (url.includes('nai-proxy.aguacloud.uk/image-proxy')) {
-      return url;
-    }
-    return `https://nai-proxy.aguacloud.uk/image-proxy?url=${encodeURIComponent(url)}`;
-  }
-  
-  return url;
-  */
+  return url || "";
 }
 
 // 圖片載入錯誤處理
@@ -3555,6 +3534,7 @@ const showTextVoiceTranscript = ref(true);
                       :alt="part.name"
                       :title="part.name"
                       class="message-sticker"
+                      crossorigin="anonymous"
                       referrerpolicy="no-referrer"
                       @error="onImageError"
                     />
@@ -3909,6 +3889,7 @@ const showTextVoiceTranscript = ref(true);
                     :alt="part.name"
                     :title="part.name"
                     class="message-sticker"
+                    crossorigin="anonymous"
                     referrerpolicy="no-referrer"
                     @error="onImageError"
                   />
