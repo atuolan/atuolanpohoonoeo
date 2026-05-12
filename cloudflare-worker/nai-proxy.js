@@ -208,11 +208,13 @@ async function handleImageProxy(request, url, origin) {
 
   try {
     // 發送請求獲取圖片
+    // 帶上自家專用 secret header，方便上游 Cloudflare WAF 寫一條 Skip 規則放行自家代理。
     const imageResponse = await fetch(targetUrl, {
       headers: {
         'User-Agent': NAI_USER_AGENT,
         'Accept': 'image/*,*/*',
         'Referer': parsedUrl.origin + '/',
+        'X-Aguaphone-Proxy': 'gkGHAmlzsZKuybu5yFrUWYvy9yBgKRaB',
       },
       cf: {
         cacheTtl: 3600, // 快取 1 小時

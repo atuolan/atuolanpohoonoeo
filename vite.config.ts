@@ -13,11 +13,14 @@ const IMAGE_PROXY_UAS = [
 ];
 const IMAGE_PROXY_ACCEPT =
   "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8";
+// 與 Cloudflare WAF Skip 規則配對的私密 header，讓自家代理繞過 Bot Fight / Custom Rules。
+const IMAGE_PROXY_SECRET = "gkGHAmlzsZKuybu5yFrUWYvy9yBgKRaB";
 function buildImageProxyHeaders(attempt: number): Record<string, string> {
   return {
     "User-Agent": IMAGE_PROXY_UAS[attempt % IMAGE_PROXY_UAS.length],
     Accept: IMAGE_PROXY_ACCEPT,
     "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
+    "X-Aguaphone-Proxy": IMAGE_PROXY_SECRET,
   };
 }
 
