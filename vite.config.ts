@@ -82,10 +82,15 @@ function aiProxyPlugin(): Plugin {
                 pipeImage(targetUrl, 0, attempt + 1);
                 return;
               }
-              res.writeHead(statusCode || 200, {
+              const finalStatus = statusCode || 200;
+              const cacheControl =
+                finalStatus >= 200 && finalStatus < 300
+                  ? "public, max-age=86400"
+                  : "no-store";
+              res.writeHead(finalStatus, {
                 "Content-Type":
                   proxyRes.headers["content-type"] || "image/jpeg",
-                "Cache-Control": "public, max-age=86400",
+                "Cache-Control": cacheControl,
                 "Access-Control-Allow-Origin": "*",
               });
               proxyRes.pipe(res);
