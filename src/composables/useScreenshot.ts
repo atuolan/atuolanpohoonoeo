@@ -266,6 +266,13 @@ export function useScreenshot() {
       // 動態載入 html2canvas
       const html2canvas = (await import('html2canvas')).default
 
+      // 等一個 frame，讓臨時容器與 clone 元素完成 layout，再讀真實尺寸。
+      await new Promise((r) => requestAnimationFrame(() => r(null)))
+
+      const rect = el.getBoundingClientRect()
+      const captureWidth = Math.max(el.scrollWidth, rect.width, el.offsetWidth)
+      const captureHeight = Math.max(el.scrollHeight, rect.height, el.offsetHeight)
+
       const canvas = await html2canvas(el, {
         backgroundColor: options.backgroundColor,
         scale: options.scale,
@@ -274,6 +281,14 @@ export function useScreenshot() {
         allowTaint: false,
         foreignObjectRendering: false,
         imageTimeout: 0,
+        width: captureWidth,
+        height: captureHeight,
+        windowWidth: captureWidth,
+        windowHeight: captureHeight,
+        scrollX: 0,
+        scrollY: 0,
+        x: 0,
+        y: 0,
       })
 
       // 恢復 object-fit 圖片原始狀態
@@ -318,32 +333,42 @@ export function useScreenshot() {
       const sourceList = chatContainer.querySelector('.messages-list') as HTMLElement | null
       const sourceContainerStyle = window.getComputedStyle(chatContainer)
       const sourceListStyle = sourceList ? window.getComputedStyle(sourceList) : null
+      const captureWidth = chatContainer.offsetWidth
+
+      // tempRoot 故意不繼承 chatScreen 的 cssText/className，避免帶入 height:100vh
+      // 之類限制造成截圖被裁切。
       tempRoot = document.createElement('div')
-      tempRoot.className = chatScreen?.className || 'chat-screen'
       copyVueScopedAttributes(chatScreen, tempRoot)
+      tempRoot.className = 'chat-screen'
+      tempRoot.setAttribute('data-screenshot-root', 'true')
       tempRoot.style.cssText = `
         position: fixed;
-        left: -9999px;
+        left: -10000px;
         top: 0;
-        width: ${chatContainer.offsetWidth}px;
+        width: ${captureWidth}px;
+        height: auto;
+        min-height: 0;
+        max-height: none;
         background: ${opts.backgroundColor || '#f5f5f5'};
         overflow: visible;
         pointer-events: none;
+        contain: none;
       `
-      tempRoot.setAttribute('data-screenshot-root', 'true')
-      if (chatScreen) {
-        tempRoot.style.cssText += chatScreen.style.cssText
-      }
 
       const tempContainer = document.createElement('main')
       tempContainer.className = chatContainer.className
       copyVueScopedAttributes(chatContainer, tempContainer)
-      tempContainer.style.cssText = chatContainer.style.cssText
-      tempContainer.style.width = `${chatContainer.offsetWidth}px`
-      tempContainer.style.height = 'auto'
-      tempContainer.style.minHeight = '0'
-      tempContainer.style.overflow = 'visible'
-      tempContainer.style.background = opts.backgroundColor || sourceContainerStyle.backgroundColor || '#f5f5f5'
+      // 只繼承背景色，不繼承會壓縮高度/限制 overflow 的樣式。
+      tempContainer.style.cssText = `
+        width: ${captureWidth}px;
+        height: auto;
+        min-height: 0;
+        max-height: none;
+        overflow: visible;
+        flex: none;
+        display: block;
+        background: ${opts.backgroundColor || sourceContainerStyle.backgroundColor || '#f5f5f5'};
+      `
 
       const tempList = document.createElement('div')
       tempList.className = sourceList?.className || 'messages-list'
