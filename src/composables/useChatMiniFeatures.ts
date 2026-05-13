@@ -201,6 +201,24 @@ export function useChatMiniFeatures(deps: {
   }
 
   // ===== 天氣分享（可編輯用戶/角色所在地） =====
+  /** 將 WeatherData.location 組成「城市, 地區, 國家」格式（缺項自動省略，重複自動去除） */
+  function formatFullLocation(
+    loc: { name?: string; region?: string; country?: string } | undefined | null,
+  ): string {
+    if (!loc) return "";
+    const parts: string[] = [];
+    const seen = new Set<string>();
+    for (const v of [loc.name, loc.region, loc.country]) {
+      const t = (v || "").trim();
+      if (!t) continue;
+      const norm = t.toLowerCase();
+      if (seen.has(norm)) continue;
+      seen.add(norm);
+      parts.push(t);
+    }
+    return parts.join(", ");
+  }
+
   const showWeatherModal = ref(false);
   // 搜尋
   const weatherSearchQuery = ref("");
@@ -317,6 +335,13 @@ export function useChatMiniFeatures(deps: {
         data = await getWeatherByCity(city.name);
       }
 
+      // 完整地點 label（城市, 地區, 國家），優先用 API 回傳的資料補足
+      const cityLabel = formatFullLocation({
+        name: city.name || data.location.name,
+        region: city.region || data.location.region,
+        country: city.country || data.location.country,
+      });
+
       const target = weatherEditTarget.value;
       if (target === "char") {
         // 更新角色所在地
@@ -324,9 +349,6 @@ export function useChatMiniFeatures(deps: {
         const char = deps.currentCharacter?.value;
         if (char) {
           const charactersStore = useCharactersStore();
-          const cityLabel = city.region
-            ? `${city.name}, ${city.region}`
-            : city.name;
           await charactersStore.updateCharacter(char.id, {
             worldSettings: {
               ...char.worldSettings,
@@ -343,13 +365,10 @@ export function useChatMiniFeatures(deps: {
       } else {
         // 更新用戶天氣
         customWeatherData.value = data;
-        customWeatherCity.value = city.name;
+        customWeatherCity.value = cityLabel;
         // 同時更新全域天氣 store 的手動城市（帶座標，避免城市名稱查詢誤判）
         // 若呼叫端指定僅套用到此聊天，則跳過全域更新避免影響其他聊天
         if (!options.skipGlobalUserUpdate) {
-          const cityLabel = city.region
-            ? `${city.name}, ${city.region}`
-            : city.name;
           await weatherStore.setManualCity(cityLabel, city.lat, city.lon);
           await weatherStore.refreshWeather(true);
         }
@@ -382,10 +401,16 @@ export function useChatMiniFeatures(deps: {
   } | null {
     const target = weatherSendTarget.value;
     const userWeather = customWeatherData.value ?? weatherStore.weatherData;
-    const userLocationName = customWeatherData.value
-      ? customWeatherData.value.location.name
-      : weatherStore.locationName;
+    const userLocationName = userWeather
+      ? formatFullLocation(userWeather.location) ||
+        (customWeatherData.value
+          ? customWeatherData.value.location.name
+          : weatherStore.locationName)
+      : "";
     const charWeather = charWeatherData.value;
+    const charLocationName = charWeather
+      ? formatFullLocation(charWeather.location) || charWeather.location.name
+      : "";
 
     const includeUser = (target === "both" || target === "user") && !!userWeather;
     const includeChar = (target === "both" || target === "char") && !!charWeather;
@@ -440,7 +465,7 @@ export function useChatMiniFeatures(deps: {
 
     const charBlock = includeChar && charWeather
       ? `【你的天氣】
-地點：${charWeather.location.name}${charTimeLine}
+地點：${charLocationName}${charTimeLine}
 天氣：${charWeather.current.condition.text}
 溫度：${Math.round(charWeather.current.temp_c)}°C（體感 ${Math.round(charWeather.current.feelslike_c)}°C）
 濕度：${charWeather.current.humidity}%`
@@ -550,6 +575,7 @@ ${prompt}
     cancelWeatherEdit,
     weatherSendTarget,
     weatherPreview,
+    formatFullLocation,
     getVirtualLocalTime: (targetWeather: WeatherData | null) => {
       const isRealTimeAware = deps.getRealTimeAwareness ? deps.getRealTimeAwareness() : true;
       if (!isRealTimeAware) return "";

@@ -1,11 +1,16 @@
 import { db, DB_STORES } from "@/db/database";
 import { SelfHostedSyncClient } from "@/services/SelfHostedSyncClient";
+import { getPeerSyncManager } from "@/services/PeerSyncSecureManager";
+import type { PeerSyncManager } from "@/services/PeerSyncSecureManager";
+import { isPeerSyncSocketOpen } from "@/services/peerSyncSocket";
+import { getSelfHostedSyncService } from "@/services/SelfHostedSyncService";
 import type {
   SelfHostedSyncGuardAlert,
   SelfHostedSyncMetaDeviceInfo,
   SelfHostedSyncMetaResponse,
 } from "@/types/selfHostedSync";
 import { DeviceFingerprintCollector } from "@/utils/deviceFingerprint";
+import { detectDeviceModel } from "@/utils/deviceModel";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
@@ -295,7 +300,6 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     let modelToSend: string | null | undefined = options?.model;
     if (modelToSend === undefined) {
       try {
-        const { detectDeviceModel } = await import("@/utils/deviceModel");
         modelToSend = await detectDeviceModel();
       } catch {
         modelToSend = undefined;
@@ -700,7 +704,6 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
   }
 
   async function waitForPeerSocketReconnect(timeoutMs = 30_000): Promise<void> {
-    const { isPeerSyncSocketOpen } = await import("@/services/peerSyncSocket");
     if (isPeerSyncSocketOpen()) return;
     return new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -727,9 +730,6 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     if (targetDeviceId === deviceId.value) {
       throw new Error("不能同步到本機裝置，請選擇另一台在線裝置。");
     }
-    const { getPeerSyncManager } = await import(
-      "@/services/PeerSyncSecureManager"
-    );
     const manager = getPeerSyncManager();
 
     syncStatus.value = "syncing";
@@ -818,11 +818,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
             entityType: e.entityType,
             entityId: e.entityId,
           }));
-          const allLocal = await (
-            await import("@/services/SelfHostedSyncService")
-          )
-            .getSelfHostedSyncService()
-            .collectAllEnvelopesForManifest();
+          const allLocal = await getSelfHostedSyncService().collectAllEnvelopesForManifest();
           const byKey = new Map(
             allLocal.map((env) => [`${env.entityType}::${env.entityId}`, env]),
           );
@@ -912,7 +908,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
   async function peerSyncInner(
     direction: "push" | "pull",
     targetDeviceId: string,
-    manager: InstanceType<typeof import("@/services/PeerSyncSecureManager").PeerSyncManager>,
+    manager: PeerSyncManager,
   ): Promise<PeerSyncOutcome> {
     const LOG_TAG = "[peerSync]";
     syncStatus.value = "syncing";
@@ -947,9 +943,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
       if (direction === "push") {
         if (diff.onlyLocal.length > 0) {
           const wantRefs = diff.onlyLocal.map((e) => ({ entityType: e.entityType, entityId: e.entityId }));
-          const allLocal = await (await import("@/services/SelfHostedSyncService"))
-            .getSelfHostedSyncService()
-            .collectAllEnvelopesForManifest();
+          const allLocal = await getSelfHostedSyncService().collectAllEnvelopesForManifest();
           const byKey = new Map(allLocal.map((env) => [`${env.entityType}::${env.entityId}`, env]));
           const envelopes = wantRefs
             .map((r) => byKey.get(`${r.entityType}::${r.entityId}`))

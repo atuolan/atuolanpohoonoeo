@@ -542,20 +542,10 @@ onUnmounted(() => {
   .score-container .score-box { padding: 3px 8px; .score-value { font-size: 12px; } }
 }
 
-// 橫向佈局：D-pad 移到右側
-@media (orientation: landscape) and (max-height: 500px) {
-  .game-container {
-    flex-direction: row;
-    align-items: stretch;
-    padding: 6px 12px;
-  }
-  .board-wrapper { flex: 1; }
-  .right-panel {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
+@media (hover: hover) and (pointer: fine) {
+  .dpad {
+    gap: 6px;
+    .dpad-btn { width: 42px; height: 42px; font-size: 16px; }
   }
 }
 

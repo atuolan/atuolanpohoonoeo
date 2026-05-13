@@ -1728,6 +1728,7 @@ const {
   cancelWeatherEdit,
   weatherSendTarget,
   weatherPreview,
+  formatFullLocation,
   getVirtualLocalTime,
 } = useChatMiniFeatures({
   messages,
@@ -1742,10 +1743,31 @@ const {
 });
 
 // ===== 天氣 modal：城市選擇 sheet 整合 WeatherScreen 的國家/城市與我的城市 =====
-interface WmSavedCity { name: string; lat?: number; lon?: number; }
+interface WmSavedCity { name: string; region?: string; country?: string; lat?: number; lon?: number; }
 const wmCountry = ref<string>("");
 const wmSavedCities = ref<WmSavedCity[]>([]);
 const wmCountryOptions = computed(() => Object.keys(WORLD_CITIES));
+
+/** 從可能的地點字串中偵測屬於 WORLD_CITIES 哪一個國家鍵 */
+function detectCountryKey(...candidates: (string | undefined | null)[]): string {
+  const keys = Object.keys(WORLD_CITIES);
+  for (const cand of candidates) {
+    if (!cand) continue;
+    const trimmed = cand.trim();
+    if (!trimmed) continue;
+    if (keys.includes(trimmed)) return trimmed;
+    const parts = trimmed.split(",").map((s) => s.trim()).filter(Boolean);
+    for (let i = parts.length - 1; i >= 0; i--) {
+      if (keys.includes(parts[i])) return parts[i];
+    }
+  }
+  return "";
+}
+
+/** 將 region/country 三段組成顯示 label */
+function wmFormatCityLabel(name: string, region?: string, country?: string): string {
+  return formatFullLocation({ name, region, country });
+}
 
 // 重新設計：用 boolean toggle 取代 'global'|'chat' scope
 const wmKeepInThisChat = ref<boolean>(false);
@@ -1759,11 +1781,49 @@ function loadWmSavedCities() {
   if (!saved) { wmSavedCities.value = []; return; }
   try {
     const parsed = JSON.parse(saved);
-    wmSavedCities.value = parsed.map((c: string | WmSavedCity) =>
-      typeof c === "string" ? { name: c } : c,
-    );
+    let migrated = false;
+    wmSavedCities.value = parsed.map((c: string | WmSavedCity): WmSavedCity => {
+      const base: WmSavedCity =
+        typeof c === "string"
+          ? { name: c }
+          : {
+              name: c.name,
+              region: c.region,
+              country: c.country,
+              lat: c.lat,
+              lon: c.lon,
+            };
+      // 舊資料相容：若沒有 country，但 name 內含已知國家後綴（如「雲林縣斗六, 台灣」），自動拆出國家
+      if (!base.country && base.name && base.name.includes(",")) {
+        const detected = detectCountryKey(base.name);
+        if (detected) {
+          base.country = detected;
+          // 把國家後綴從 name 中移除，避免和 country 重複顯示
+          const cleaned = base.name
+            .split(",")
+            .map((s) => s.trim())
+            .filter((s) => s && s !== detected)
+            .join(", ");
+          if (cleaned) base.name = cleaned;
+          migrated = true;
+        }
+      }
+      return base;
+    });
+    if (migrated) saveWmSavedCities();
   } catch {
     wmSavedCities.value = [];
+  }
+}
+
+function saveWmSavedCities() {
+  try {
+    localStorage.setItem(
+      "weather_custom_cities",
+      JSON.stringify(wmSavedCities.value),
+    );
+  } catch (e) {
+    console.warn("[天氣] 無法保存我的城市", e);
   }
 }
 
@@ -1785,11 +1845,29 @@ watch(showWeatherModal, (v) => {
   }
 });
 
-/** 開啟城市選擇 sheet（整列卡片可點觸發） */
+/** 開啟城市選擇 sheet（整列卡片可點觸發）。自動從現有地點偵測國家。 */
 function openWeatherCitySheet(target: "user" | "char") {
   weatherCitySheetTarget.value = target;
   startWeatherEdit(target); // 同步 weatherEditTarget，讓 selectWeatherCity 內部邏輯生效
-  wmCountry.value = "";
+  weatherSearchQuery.value = "";
+
+  if (target === "char") {
+    const charLoc = currentCharacter.value?.worldSettings?.location;
+    wmCountry.value = detectCountryKey(
+      charWeatherData.value?.location.country,
+      charWeatherData.value?.location.region,
+      charLoc,
+    );
+  } else {
+    const userCity = weatherStore.userLocation?.city;
+    wmCountry.value = detectCountryKey(
+      customWeatherData.value?.location.country,
+      customWeatherData.value?.location.region,
+      weatherStore.weatherData?.location.country,
+      weatherStore.weatherData?.location.region,
+      userCity,
+    );
+  }
 }
 
 /** 關閉城市選擇 sheet */
@@ -1809,10 +1887,11 @@ async function onWmKeepInThisChatChange(next: boolean) {
 async function applyUserChatLocationOverride(city: {
   name: string;
   region?: string;
+  country?: string;
   lat?: number;
   lon?: number;
 }) {
-  const cityLabel = city.region ? `${city.name}, ${city.region}` : city.name;
+  const cityLabel = wmFormatCityLabel(city.name, city.region, city.country) || city.name;
   chatLocationOverride.value = {
     mode: city.lat !== undefined && city.lon !== undefined ? "browser" : "manual",
     city: cityLabel,
@@ -1822,14 +1901,34 @@ async function applyUserChatLocationOverride(city: {
   await saveChatImmediate();
 }
 
+/** 將剛選擇的城市寫入「我的城市」（保留完整 region/country），相同 name 視為同一筆 */
+function upsertMyCity(entry: WmSavedCity) {
+  if (!entry.name) return;
+  const idx = wmSavedCities.value.findIndex((c) => c.name === entry.name);
+  const next: WmSavedCity = {
+    name: entry.name,
+    region: entry.region || undefined,
+    country: entry.country || undefined,
+    lat: entry.lat,
+    lon: entry.lon,
+  };
+  if (idx >= 0) wmSavedCities.value.splice(idx, 1, next);
+  else wmSavedCities.value.push(next);
+  saveWmSavedCities();
+}
+
 async function selectWmWorldCity(city: CityEntry, country: string) {
+  if (!country) {
+    if (typeof showToast === "function") showToast("請先選擇國家/地區");
+    return;
+  }
   const isUserChatScope =
     weatherCitySheetTarget.value === "user" && wmKeepInThisChat.value;
   await selectWeatherCity(
     {
       id: 0,
       name: city.name,
-      region: country,
+      region: "",
       country,
       lat: city.lat,
       lon: city.lon,
@@ -1839,24 +1938,32 @@ async function selectWmWorldCity(city: CityEntry, country: string) {
   if (isUserChatScope) {
     await applyUserChatLocationOverride({
       name: city.name,
-      region: country,
+      country,
       lat: city.lat,
       lon: city.lon,
     });
   }
+  upsertMyCity({ name: city.name, country, lat: city.lat, lon: city.lon });
   closeWeatherCitySheet();
 }
 
 async function selectWmSavedCity(c: WmSavedCity) {
   if (c.lat === undefined || c.lon === undefined) return;
+  if (!c.country) {
+    // 舊資料缺國家：要求使用者重新選擇以補上國家
+    if (typeof showToast === "function")
+      showToast("此城市缺少國家資訊，請從下方選擇國家/地區後重新選擇此城市");
+    wmCountry.value = "";
+    return;
+  }
   const isUserChatScope =
     weatherCitySheetTarget.value === "user" && wmKeepInThisChat.value;
   await selectWeatherCity(
     {
       id: 0,
       name: c.name,
-      region: "",
-      country: "",
+      region: c.region || "",
+      country: c.country || "",
       lat: c.lat,
       lon: c.lon,
     },
@@ -1865,6 +1972,8 @@ async function selectWmSavedCity(c: WmSavedCity) {
   if (isUserChatScope) {
     await applyUserChatLocationOverride({
       name: c.name,
+      region: c.region,
+      country: c.country,
       lat: c.lat,
       lon: c.lon,
     });
@@ -1872,8 +1981,16 @@ async function selectWmSavedCity(c: WmSavedCity) {
   closeWeatherCitySheet();
 }
 
-/** sheet 內：從搜尋結果選城市 */
+/** sheet 內：從搜尋結果選城市（搜尋結果本身帶 country） */
 async function selectWmSearchResult(city: { name: string; region: string; country: string; lat: number; lon: number }) {
+  if (!city.country && !wmCountry.value) {
+    if (typeof showToast === "function") showToast("請先在上方選擇國家/地區");
+    return;
+  }
+  const country = city.country || wmCountry.value;
+  // 自動回填國家選擇器（若搜尋結果國家剛好屬於 WORLD_CITIES）
+  const matchedKey = detectCountryKey(country);
+  if (matchedKey) wmCountry.value = matchedKey;
   const isUserChatScope =
     weatherCitySheetTarget.value === "user" && wmKeepInThisChat.value;
   await selectWeatherCity(
@@ -1881,7 +1998,7 @@ async function selectWmSearchResult(city: { name: string; region: string; countr
       id: 0,
       name: city.name,
       region: city.region || "",
-      country: city.country || "",
+      country,
       lat: city.lat,
       lon: city.lon,
     },
@@ -1891,10 +2008,12 @@ async function selectWmSearchResult(city: { name: string; region: string; countr
     await applyUserChatLocationOverride({
       name: city.name,
       region: city.region,
+      country,
       lat: city.lat,
       lon: city.lon,
     });
   }
+  upsertMyCity({ name: city.name, region: city.region, country, lat: city.lat, lon: city.lon });
   closeWeatherCitySheet();
 }
 
@@ -4905,7 +5024,7 @@ async function triggerAIResponse(options?: {
         }
         if (overrideWeather) {
           weatherInfoToSend = {
-            location: overrideWeather.location.name,
+            location: formatFullLocation(overrideWeather.location) || overrideWeather.location.name,
             condition: overrideWeather.current.condition.text,
             temperature: Math.round(overrideWeather.current.temp_c),
             feelsLike: Math.round(overrideWeather.current.feelslike_c),
@@ -4927,7 +5046,9 @@ async function triggerAIResponse(options?: {
       weatherStore.weatherData
     ) {
       weatherInfoToSend = {
-        location: weatherStore.locationName,
+        location:
+          formatFullLocation(weatherStore.weatherData.location) ||
+          weatherStore.locationName,
         condition: weatherStore.weatherCondition,
         temperature: Math.round(weatherStore.currentTemp || 0),
         feelsLike: Math.round(weatherStore.weatherData.current.feelslike_c),
@@ -11804,7 +11925,7 @@ onUnmounted(() => {
                     <template v-else-if="customWeatherData">
                       <div class="wm-row__title">
                         <MapPin :size="13" />
-                        <span class="wm-row__loc">{{ customWeatherData.location.name }}</span>
+                        <span class="wm-row__loc">{{ formatFullLocation(customWeatherData.location) || customWeatherData.location.name }}</span>
                         <span class="wm-row__time" v-if="getVirtualLocalTime(customWeatherData)">
                           · {{ (getVirtualLocalTime(customWeatherData) || "").split(" ")[1] || getVirtualLocalTime(customWeatherData) }}
                         </span>
@@ -11819,7 +11940,7 @@ onUnmounted(() => {
                     <template v-else-if="weatherStore.hasWeatherData">
                       <div class="wm-row__title">
                         <MapPin :size="13" />
-                        <span class="wm-row__loc">{{ weatherStore.locationName }}</span>
+                        <span class="wm-row__loc">{{ (weatherStore.weatherData && formatFullLocation(weatherStore.weatherData.location)) || weatherStore.locationName }}</span>
                         <span
                           class="wm-row__time"
                           v-if="getVirtualLocalTime(weatherStore.weatherData)"
@@ -11874,7 +11995,7 @@ onUnmounted(() => {
                     <template v-else-if="charWeatherData">
                       <div class="wm-row__title">
                         <MapPin :size="13" />
-                        <span class="wm-row__loc">{{ charWeatherData.location.name }}</span>
+                        <span class="wm-row__loc">{{ formatFullLocation(charWeatherData.location) || charWeatherData.location.name }}</span>
                         <span class="wm-row__time" v-if="getVirtualLocalTime(charWeatherData)">
                           · {{ (getVirtualLocalTime(charWeatherData) || "").split(" ")[1] || getVirtualLocalTime(charWeatherData) }}
                         </span>
@@ -11998,24 +12119,49 @@ onUnmounted(() => {
                 </div>
 
                 <div class="wm-city-sheet__body">
-                  <!-- 搜尋 -->
-                  <div class="wm-city-sheet__search">
-                    <Search :size="14" />
-                    <input
-                      v-model="weatherSearchQuery"
-                      type="text"
-                      placeholder="搜尋城市名稱（中英文皆可）"
-                      class="wm-city-sheet__search-input"
+                  <!-- 步驟 1：國家/地區（必選） -->
+                  <div class="wm-city-sheet__section">
+                    <div class="wm-city-sheet__section-title">
+                      國家/地區（必選）
+                      <PvTag value="步驟 1" severity="info" class="wm-city-sheet__tag" />
+                    </div>
+                    <PvSelect
+                      v-model="wmCountry"
+                      :options="wmCountryOptions"
+                      placeholder="選擇或搜尋國家/地區..."
+                      class="wm-city-sheet__select"
+                      filter
+                      show-clear
                     />
                   </div>
 
-                  <!-- 搜尋結果 -->
-                  <div
-                    v-if="weatherSearchQuery && weatherSearchResults.length > 0"
-                    class="wm-city-sheet__section"
-                  >
-                    <div class="wm-city-sheet__section-title">搜尋結果</div>
-                    <div class="wm-city-sheet__list">
+                  <!-- 步驟 2：地點 -->
+                  <div class="wm-city-sheet__section">
+                    <div class="wm-city-sheet__section-title">
+                      地點（必選）
+                      <PvTag value="步驟 2" severity="info" class="wm-city-sheet__tag" />
+                    </div>
+
+                    <!-- 搜尋 -->
+                    <div
+                      class="wm-city-sheet__search"
+                      :class="{ 'is-disabled': !wmCountry }"
+                    >
+                      <Search :size="14" />
+                      <input
+                        v-model="weatherSearchQuery"
+                        type="text"
+                        :placeholder="wmCountry ? '搜尋城市名稱（中英文皆可）' : '請先選擇國家/地區再搜尋'"
+                        :disabled="!wmCountry"
+                        class="wm-city-sheet__search-input"
+                      />
+                    </div>
+
+                    <!-- 搜尋結果 -->
+                    <div
+                      v-if="wmCountry && weatherSearchQuery && weatherSearchResults.length > 0"
+                      class="wm-city-sheet__list"
+                    >
                       <button
                         v-for="r in weatherSearchResults"
                         :key="r.id"
@@ -12027,20 +12173,42 @@ onUnmounted(() => {
                         <span class="wm-city-sheet__item-name">
                           {{ r.name }}<span v-if="r.region" class="wm-city-sheet__item-region">, {{ r.region }}</span>
                         </span>
-                        <span v-if="r.country" class="wm-city-sheet__item-country">{{ r.country }}</span>
+                        <span class="wm-city-sheet__item-country">{{ r.country || wmCountry }}</span>
                       </button>
                     </div>
-                  </div>
-                  <div
-                    v-else-if="weatherSearchQuery && !weatherSearchLoading"
-                    class="wm-city-sheet__empty"
-                  >
-                    {{ weatherSearchQuery.length < 2 ? "至少輸入 2 個字元" : "找不到符合的城市" }}
+                    <div
+                      v-else-if="wmCountry && weatherSearchQuery && !weatherSearchLoading"
+                      class="wm-city-sheet__empty"
+                    >
+                      {{ weatherSearchQuery.length < 2 ? "至少輸入 2 個字元" : "找不到符合的城市" }}
+                    </div>
+
+                    <!-- 依國家城市清單（精確座標） -->
+                    <div
+                      v-if="wmCountry && !weatherSearchQuery && WORLD_CITIES[wmCountry]"
+                      class="wm-city-sheet__grid"
+                    >
+                      <PvButton
+                        v-for="city in WORLD_CITIES[wmCountry]"
+                        :key="city.name"
+                        size="small"
+                        severity="secondary"
+                        text
+                        class="wm-city-sheet__city"
+                        @click="selectWmWorldCity(city, wmCountry)"
+                      >
+                        {{ city.name }}<span class="wm-city-sheet__city-country">, {{ wmCountry }}</span>
+                      </PvButton>
+                    </div>
+
+                    <div v-if="!wmCountry" class="wm-city-sheet__empty">
+                      請先在上方選擇國家/地區
+                    </div>
                   </div>
 
-                  <!-- 我的城市 -->
+                  <!-- 我的城市（已儲存的常用地點） -->
                   <div
-                    v-if="!weatherSearchQuery && wmSavedCities.length > 0"
+                    v-if="wmSavedCities.length > 0"
                     class="wm-city-sheet__section"
                   >
                     <div class="wm-city-sheet__section-title">我的城市</div>
@@ -12054,42 +12222,9 @@ onUnmounted(() => {
                         class="wm-city-sheet__chip"
                         @click="selectWmSavedCity(c)"
                       >
-                        <MapPin :size="12" style="margin-right: 4px" /> {{ c.name }}
-                      </PvButton>
-                    </div>
-                  </div>
-
-                  <!-- 依國家瀏覽 -->
-                  <div
-                    v-if="!weatherSearchQuery"
-                    class="wm-city-sheet__section"
-                  >
-                    <div class="wm-city-sheet__section-title">
-                      依國家瀏覽
-                      <PvTag value="精確座標" severity="info" class="wm-city-sheet__tag" />
-                    </div>
-                    <PvSelect
-                      v-model="wmCountry"
-                      :options="wmCountryOptions"
-                      placeholder="選擇國家/地區..."
-                      class="wm-city-sheet__select"
-                      filter
-                      show-clear
-                    />
-                    <div
-                      v-if="wmCountry && WORLD_CITIES[wmCountry]"
-                      class="wm-city-sheet__grid"
-                    >
-                      <PvButton
-                        v-for="city in WORLD_CITIES[wmCountry]"
-                        :key="city.name"
-                        size="small"
-                        severity="secondary"
-                        text
-                        class="wm-city-sheet__city"
-                        @click="selectWmWorldCity(city, wmCountry)"
-                      >
-                        {{ city.name }}
+                        <MapPin :size="12" style="margin-right: 4px" />
+                        {{ wmFormatCityLabel(c.name, c.region, c.country) || c.name }}
+                        <span v-if="!c.country" class="wm-city-sheet__chip-missing">（缺國家）</span>
                       </PvButton>
                     </div>
                   </div>
@@ -16052,6 +16187,11 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+
+  &.is-disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
   padding: 10px 12px;
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.04);
@@ -16128,6 +16268,20 @@ onUnmounted(() => {
   font-size: 11px;
   opacity: 0.6;
   font-weight: 600;
+}
+
+.wm-city-sheet__city-country {
+  font-size: 11px;
+  opacity: 0.6;
+  font-weight: 500;
+  margin-left: 2px;
+}
+
+.wm-city-sheet__chip-missing {
+  font-size: 10px;
+  margin-left: 4px;
+  opacity: 0.65;
+  color: var(--color-warning, #d97706);
 }
 
 .wm-city-sheet__empty {
