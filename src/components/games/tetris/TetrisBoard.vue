@@ -90,9 +90,9 @@ const props = withDefaults(defineProps<Props>(), {
 // 游戏板样式 - 使用CSS变量实现自适应
 const boardStyle = computed(() => ({
   '--cell-size': `${props.cellSize}px`,
-  width: '100%',
-  maxWidth: `${GRID_WIDTH * props.cellSize}px`,
-  aspectRatio: `${GRID_WIDTH} / ${GRID_HEIGHT}`,
+  '--grid-w': String(GRID_WIDTH),
+  '--grid-h': String(GRID_HEIGHT),
+  '--board-max': `${GRID_WIDTH * props.cellSize}px`,
 }));
 
 // 获取单元格类名
@@ -198,6 +198,10 @@ function getBlockStyle(x: number, y: number, color: string): Record<string, stri
   gap: 8px;
   flex: 1;
   min-height: 0;
+  // 容器查询：让内部 .tetris-board 同时受宽与高约束
+  container-type: size;
+  width: 100%;
+  height: 100%;
 }
 
 .tetris-board {
@@ -215,7 +219,11 @@ function getBlockStyle(x: number, y: number, color: string): Record<string, stri
   // 自适应网格布局
   grid-template-columns: repeat(10, 1fr);
   grid-template-rows: repeat(20, 1fr);
-  width: 100%;
+  // 取「填满宽度」与「按高度反推的宽度」中的较小值，
+  // 确保高度始终能容纳完整 20 行，避免底部被裁切。
+  width: min(100cqw, calc(100cqh * var(--grid-w) / var(--grid-h)), var(--board-max));
+  height: auto;
+  aspect-ratio: var(--grid-w) / var(--grid-h);
   box-sizing: border-box;
 
   .grid-background {
