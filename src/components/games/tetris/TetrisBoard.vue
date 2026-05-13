@@ -1,5 +1,5 @@
 <template>
-  <div class="tetris-board-container">
+  <div class="tetris-board-container" ref="containerRef">
     <!-- 游戏板 -->
     <div class="tetris-board" :style="boardStyle">
       <!-- 背景网格 -->
@@ -58,7 +58,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { GameGrid, Piece } from './tetrisTypes';
 import { GRID_WIDTH, GRID_HEIGHT, PIECE_COLORS } from './tetrisConstants';
 
@@ -87,13 +87,80 @@ const props = withDefaults(defineProps<Props>(), {
   showDebug: false,
 });
 
-// 游戏板样式 - 使用CSS变量实现自适应
-const boardStyle = computed(() => ({
-  '--cell-size': `${props.cellSize}px`,
-  '--grid-w': String(GRID_WIDTH),
-  '--grid-h': String(GRID_HEIGHT),
-  '--board-max': `${GRID_WIDTH * props.cellSize}px`,
-}));
+// 通过 ResizeObserver 测量容器尺寸，计算「最大可容纳的 10:20 框」
+// 避免 aspect-ratio + width:100% 在高度受限时溢出底部的问题。
+const containerRef = ref<HTMLElement | null>(null);
+const fittedSize = ref<{ w: number; h: number }>({ w: 0, h: 0 });
+
+// box-shadow 模拟的外框（3px+5px）共 5px，需要在每一边预留空间
+const OUTLINE_RESERVE = 6;
+function recomputeSize(width: number, height: number) {
+  if (width <= 0 || height <= 0) return;
+  const availW = Math.max(0, width - OUTLINE_RESERVE * 2);
+  const availH = Math.max(0, height - OUTLINE_RESERVE * 2);
+  // 以高度为约束算出的最大宽度
+  const widthByHeight = (availH * GRID_WIDTH) / GRID_HEIGHT;
+  let w: number;
+  let h: number;
+  if (widthByHeight <= availW) {
+    // 高度是限制因素
+    w = widthByHeight;
+    h = availH;
+  } else {
+    // 宽度是限制因素
+    w = availW;
+    h = (availW * GRID_HEIGHT) / GRID_WIDTH;
+  }
+  fittedSize.value = {
+    w: Math.max(0, Math.floor(w)),
+    h: Math.max(0, Math.floor(h)),
+  };
+}
+
+let resizeObserver: ResizeObserver | null = null;
+onMounted(() => {
+  if (!containerRef.value) return;
+  const el = containerRef.value;
+  recomputeSize(el.clientWidth, el.clientHeight);
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const cr = entry.contentRect;
+        recomputeSize(cr.width, cr.height);
+      }
+    });
+    resizeObserver.observe(el);
+  } else {
+    window.addEventListener('resize', onWindowResize);
+  }
+});
+
+function onWindowResize() {
+  if (!containerRef.value) return;
+  recomputeSize(containerRef.value.clientWidth, containerRef.value.clientHeight);
+}
+
+onBeforeUnmount(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
+  window.removeEventListener('resize', onWindowResize);
+});
+
+// 游戏板样式 - 使用 JS 测算出的固定尺寸，确保始终完整可见
+const boardStyle = computed(() => {
+  const { w, h } = fittedSize.value;
+  const fallbackW = GRID_WIDTH * props.cellSize;
+  const fallbackH = GRID_HEIGHT * props.cellSize;
+  return {
+    '--cell-size': `${props.cellSize}px`,
+    '--grid-w': String(GRID_WIDTH),
+    '--grid-h': String(GRID_HEIGHT),
+    width: `${w > 0 ? w : fallbackW}px`,
+    height: `${h > 0 ? h : fallbackH}px`,
+  };
+});
 
 // 获取单元格类名
 function getCellClass(cellValue: number): string {
@@ -198,10 +265,10 @@ function getBlockStyle(x: number, y: number, color: string): Record<string, stri
   gap: 8px;
   flex: 1;
   min-height: 0;
-  // 容器查询：让内部 .tetris-board 同时受宽与高约束
-  container-type: size;
   width: 100%;
   height: 100%;
+  // 防止 box-shadow 模拟边框在父级 overflow:hidden 时被裁切
+  overflow: hidden;
 }
 
 .tetris-board {
@@ -219,11 +286,8 @@ function getBlockStyle(x: number, y: number, color: string): Record<string, stri
   // 自适应网格布局
   grid-template-columns: repeat(10, 1fr);
   grid-template-rows: repeat(20, 1fr);
-  // 取「填满宽度」与「按高度反推的宽度」中的较小值，
-  // 确保高度始终能容纳完整 20 行，避免底部被裁切。
-  width: min(100cqw, calc(100cqh * var(--grid-w) / var(--grid-h)), var(--board-max));
-  height: auto;
-  aspect-ratio: var(--grid-w) / var(--grid-h);
+  // 尺寸由 JS (ResizeObserver) 计算并以 inline style 写入，确保 10:20
+  // 框完整容纳于父容器内。
   box-sizing: border-box;
 
   .grid-background {
