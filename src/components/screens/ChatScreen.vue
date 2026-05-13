@@ -4738,7 +4738,7 @@ async function triggerAIResponse(options?: {
           ? "User"
           : m.role === "system"
             ? "system"
-            : char.data.name,
+            : m.senderCharacterName || char.data.name,
       content: m.content,
       is_user: m.role === "user",
       status: "sent" as const,
