@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>輸入區伸縮線 Demo</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="phone-frame">
+    <div class="phone-content"></div>
+
+    <div class="input-bar">
+      <div class="input-row">
+        <div class="left-group" data-group="left">
+          <button class="icon-btn" data-icon="plus" aria-label="新增">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+          <button class="icon-btn" data-icon="image" aria-label="圖片">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
+              <path d="M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm1 13.5L9 13l3 3 4-5 4 5.5V5H5v12.5z"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="message-area" data-group="message">
+          <input type="text" class="message-input" placeholder="message" />
+        </div>
+
+        <div class="right-group" data-group="right">
+          <button class="icon-btn" data-icon="emoji" aria-label="表情">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M8 14s1.5 2 4 2 4-2 4-2" stroke-linecap="round" />
+              <circle cx="9" cy="10" r="1.2" fill="currentColor" />
+              <circle cx="15" cy="10" r="1.2" fill="currentColor" />
+            </svg>
+          </button>
+          <button class="icon-btn" data-icon="refresh" aria-label="重整">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 11a8 8 0 1 0-2.34 6.66" />
+              <polyline points="20 4 20 11 13 11" />
+            </svg>
+          </button>
+          <button class="icon-btn send-btn" data-icon="send" aria-label="送出">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
+              <path d="M5 3.5v17l16-8.5-16-8.5z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="underline-track">
+        <div class="underline-indicator" id="indicator"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

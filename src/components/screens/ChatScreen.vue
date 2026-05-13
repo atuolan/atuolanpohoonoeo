@@ -3246,6 +3246,9 @@ function scrollToBottom() {
 // 輸入框聚焦 + 鍵盤彈出後自動滾到底部
 function handleInputFocusWithScroll() {
   onInputFocus();
+  // 聚焦輸入框時自動關閉表情包面板與更多功能面板
+  if (showStickerPanel.value) showStickerPanel.value = false;
+  if (showMoreFeatures.value) showMoreFeatures.value = false;
   setTimeout(scrollToBottom, 350);
 }
 

@@ -590,8 +590,8 @@ function onTimeJumpInput(event: Event) {
   padding-top: calc(12px + var(--safe-top));
   padding-left: calc(16px + var(--safe-left));
   padding-right: calc(16px + var(--safe-right));
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 50%, transparent);
+  border-bottom: none;
   gap: 12px;
   flex-shrink: 0;
   overflow: visible;

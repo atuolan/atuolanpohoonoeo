@@ -1,0 +1,169 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f1ec;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC",
+    "Microsoft JhengHei", sans-serif;
+  padding: 20px;
+}
+
+.phone-frame {
+  width: min(420px, 100%);
+  height: 720px;
+  border: 4px solid #6b1f1f;
+  border-radius: 18px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 6px 8px 0 rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.phone-content {
+  flex: 1;
+  background: #fff;
+}
+
+.input-bar {
+  padding: 12px 14px 16px;
+  background: #fff;
+}
+
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.left-group,
+.right-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.message-area {
+  flex: 1;
+  padding: 0 6px;
+}
+
+.message-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  font-size: 18px;
+  font-style: italic;
+  color: #333;
+  background: transparent;
+  padding: 6px 2px;
+  font-family: "Brush Script MT", "Lucida Handwriting", cursive;
+}
+
+.message-input::placeholder {
+  color: #888;
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #111;
+  border-radius: 6px;
+  transition: transform 0.15s ease, color 0.2s ease;
+}
+
+.icon-btn:hover {
+  transform: translateY(-1px);
+}
+
+.icon-btn:active {
+  transform: scale(0.92);
+}
+
+.icon-btn.active {
+  color: #d49b00;
+}
+
+/* 當 message-input 聚焦時，隱藏 refresh，emoji 往右補位 */
+.right-group .icon-btn[data-icon="refresh"] {
+  max-width: 40px;
+  opacity: 1;
+  transform: scale(1);
+  transition: max-width 0.3s ease, opacity 0.25s ease, transform 0.25s ease,
+    padding 0.3s ease, margin 0.3s ease;
+  overflow: hidden;
+}
+
+.input-bar.message-focus .right-group .icon-btn[data-icon="refresh"] {
+  max-width: 0;
+  opacity: 0;
+  transform: scale(0.6);
+  padding-left: 0;
+  padding-right: 0;
+  margin-left: -4px;
+  pointer-events: none;
+}
+
+.icon-btn[data-icon="image"].active {
+  color: #4caf50;
+}
+
+.icon-btn[data-icon="plus"].active {
+  color: #4a90e2;
+}
+
+.icon-btn[data-icon="refresh"].active {
+  color: #b06bd9;
+}
+
+.icon-btn[data-icon="send"].active {
+  color: #111;
+}
+
+.underline-track {
+  position: relative;
+  height: 2px;
+  margin-top: 6px;
+  background: #000;
+  border-radius: 2px;
+  transition: background-color 0.25s ease;
+}
+
+.underline-track.dimmed {
+  background: transparent;
+}
+
+.underline-indicator {
+  position: absolute;
+  top: -1px;
+  height: 4px;
+  background: currentColor;
+  color: #d49b00;
+  border-radius: 4px;
+  left: 0;
+  width: 100%;
+  transition: left 0.35s cubic-bezier(0.34, 1.2, 0.64, 1),
+    width 0.35s cubic-bezier(0.34, 1.2, 0.64, 1),
+    color 0.25s ease,
+    background-color 0.25s ease;
+  box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+}
+
+.underline-indicator.color-plus { color: #4a90e2; }
+.underline-indicator.color-image { color: #4caf50; }
+.underline-indicator.color-message { color: #111; }
+.underline-indicator.color-emoji { color: #d49b00; }
+.underline-indicator.color-refresh { color: #b06bd9; }
+.underline-indicator.color-send { color: #e74c3c; }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from "vue";
 import StickerPanel from "@/components/common/StickerPanel.vue";
 import { formatTime as formatAudioTime } from "@/services/AudioRecorder";
 interface ReplyTarget {
@@ -84,6 +84,125 @@ const expandedTextareaRef = ref<HTMLTextAreaElement | null>(null);
 defineExpose({
   messageTextareaRef,
   expandedTextareaRef,
+});
+
+// ===== 底線指示器 =====
+const inputContainerRef = ref<HTMLElement | null>(null);
+const underlineTrackRef = ref<HTMLElement | null>(null);
+const plusBtnRef = ref<HTMLElement | null>(null);
+const imageBtnRef = ref<HTMLElement | null>(null);
+const emojiBtnRef = ref<HTMLElement | null>(null);
+const inputWrapperRef = ref<HTMLElement | null>(null);
+
+type IndicatorTarget = "full" | "plus" | "image" | "emoji" | "message";
+
+const indicatorTarget = computed<IndicatorTarget>(() => {
+  if (props.showMoreFeatures) return "plus";
+  if (props.showStickerPanel) return "emoji";
+  if (props.isInputFocused) return "message";
+  return "full";
+});
+
+const indicatorRect = ref<{ left: number; width: number }>({ left: 0, width: 0 });
+
+const indicatorColorClass = computed(() => {
+  switch (indicatorTarget.value) {
+    case "plus":
+      return "color-plus";
+    case "image":
+      return "color-image";
+    case "emoji":
+      return "color-emoji";
+    case "message":
+      return "color-message";
+    default:
+      return "color-message";
+  }
+});
+
+function getTargetEl(target: IndicatorTarget): HTMLElement | null {
+  switch (target) {
+    case "plus":
+      return plusBtnRef.value;
+    case "image":
+      return imageBtnRef.value;
+    case "emoji":
+      return emojiBtnRef.value;
+    case "message":
+      return inputWrapperRef.value;
+    default:
+      return null;
+  }
+}
+
+function updateIndicator() {
+  const track = underlineTrackRef.value;
+  if (!track) return;
+  const target = indicatorTarget.value;
+  if (target === "full") {
+    indicatorRect.value = { left: 0, width: track.clientWidth };
+    return;
+  }
+  const el = getTargetEl(target);
+  if (!el) {
+    indicatorRect.value = { left: 0, width: track.clientWidth };
+    return;
+  }
+  const a = el.getBoundingClientRect();
+  const b = track.getBoundingClientRect();
+  indicatorRect.value = { left: a.left - b.left, width: a.width };
+}
+
+let resizeObserver: ResizeObserver | null = null;
+
+function scheduleUpdate() {
+  nextTick(updateIndicator);
+  // 對應更多面板/表情包面板/按鈕 v-if 切換的 transition 結束，重新對齊
+  setTimeout(updateIndicator, 60);
+  setTimeout(updateIndicator, 220);
+  setTimeout(updateIndicator, 360);
+}
+
+watch(indicatorTarget, scheduleUpdate);
+// 三個狀態 props 各自變化時，即使 indicatorTarget 沒變，也可能導致同層按鈕 v-if 切換造成位移，需要重新量測
+watch(() => props.showMoreFeatures, scheduleUpdate);
+watch(() => props.showStickerPanel, scheduleUpdate);
+watch(() => props.isInputFocused, scheduleUpdate);
+watch(() => props.isGenerating, scheduleUpdate);
+watch(() => props.inputText, scheduleUpdate);
+watch(() => props.hasAIMessages, scheduleUpdate);
+
+onMounted(() => {
+  nextTick(updateIndicator);
+  if (typeof ResizeObserver !== "undefined" && underlineTrackRef.value) {
+    resizeObserver = new ResizeObserver(() => updateIndicator());
+    resizeObserver.observe(underlineTrackRef.value);
+    if (inputContainerRef.value) resizeObserver.observe(inputContainerRef.value);
+    if (inputWrapperRef.value) resizeObserver.observe(inputWrapperRef.value);
+    if (emojiBtnRef.value) resizeObserver.observe(emojiBtnRef.value);
+    if (plusBtnRef.value) resizeObserver.observe(plusBtnRef.value);
+  }
+  window.addEventListener("resize", updateIndicator);
+});
+
+// emoji / plus 等按鈕可能在 v-if 條件變化時被卸載重建，重新掛 observer
+watch(emojiBtnRef, (el) => {
+  if (resizeObserver && el) resizeObserver.observe(el);
+  scheduleUpdate();
+});
+watch(plusBtnRef, (el) => {
+  if (resizeObserver && el) resizeObserver.observe(el);
+  scheduleUpdate();
+});
+watch(imageBtnRef, (el) => {
+  if (resizeObserver && el) resizeObserver.observe(el);
+  scheduleUpdate();
+});
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+  window.removeEventListener("resize", updateIndicator);
 });
 
 function getPreviewText(content: string): string {
@@ -191,11 +310,12 @@ function handleAudioCommandChange(e: Event) {
       </div>
     </Transition>
 
-    <div class="input-container">
+    <div class="input-container" ref="inputContainerRef">
       <!-- 左側按鈕組 -->
       <div class="left-buttons" @click.stop>
         <!-- 更多功能按鈕 -->
         <button
+          ref="plusBtnRef"
           class="input-btn plus-btn"
           :class="{ active: showMoreFeatures }"
           @click="emit('toggleMoreFeatures')"
@@ -208,6 +328,7 @@ function handleAudioCommandChange(e: Event) {
         <!-- 圖片按鈕（未聚焦時顯示） -->
         <button
           v-if="!isInputFocused"
+          ref="imageBtnRef"
           class="input-btn image-btn"
           @click="emit('openMediaDrawer')"
         >
@@ -220,7 +341,7 @@ function handleAudioCommandChange(e: Event) {
       </div>
 
       <!-- 輸入框容器（包含表情按鈕） -->
-      <div class="input-wrapper" @click.stop>
+      <div class="input-wrapper" ref="inputWrapperRef" @click.stop>
         <textarea
           ref="messageTextareaRef"
           :value="inputText"
@@ -239,6 +360,7 @@ function handleAudioCommandChange(e: Event) {
 
         <!-- 表情按鈕（在輸入框內右側） -->
         <button
+          ref="emojiBtnRef"
           class="emoji-btn-inner"
           :class="{ active: showStickerPanel }"
           @click.stop="emit('toggleStickerPanel')"
@@ -376,6 +498,22 @@ function handleAudioCommandChange(e: Event) {
           </svg>
         </button>
       </div>
+    </div>
+
+    <!-- 動畫底線指示器（聚焦/點按時才顯示） -->
+    <div
+      class="underline-track"
+      :class="{ visible: indicatorTarget !== 'full' }"
+      ref="underlineTrackRef"
+    >
+      <div
+        class="underline-indicator"
+        :class="indicatorColorClass"
+        :style="{
+          left: indicatorRect.left + 'px',
+          width: indicatorRect.width + 'px',
+        }"
+      ></div>
     </div>
 
     <!-- 語音輸入 Modal -->
@@ -738,8 +876,8 @@ function handleAudioCommandChange(e: Event) {
   }
   padding-left: calc(12px + var(--safe-left, 0px));
   padding-right: calc(12px + var(--safe-right, 0px));
-  background: var(--color-surface, #fff);
-  border-top: 1px solid var(--color-border, #e2e8f0);
+  background: transparent;
+  border-top: none;
   flex-shrink: 0;
 }
 
@@ -899,6 +1037,54 @@ function handleAudioCommandChange(e: Event) {
   box-sizing: border-box;
 }
 
+// ===== 動畫底線指示器 =====
+.underline-track {
+  position: relative;
+  height: 2px;
+  margin: 4px auto 0;
+  width: 100%;
+  max-width: 800px;
+  background: transparent;
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+
+.underline-indicator {
+  position: absolute;
+  top: -1px;
+  height: 4px;
+  background: currentColor;
+  color: var(--color-text, #111);
+  border-radius: 4px;
+  left: 0;
+  width: 100%;
+  opacity: 0;
+  transition:
+    left 0.35s cubic-bezier(0.34, 1.2, 0.64, 1),
+    width 0.35s cubic-bezier(0.34, 1.2, 0.64, 1),
+    opacity 0.2s ease,
+    color 0.25s ease,
+    background-color 0.25s ease;
+  pointer-events: none;
+
+  &.color-plus {
+    color: var(--color-primary, #7dd3a8);
+  }
+  &.color-image {
+    color: #4caf50;
+  }
+  &.color-emoji {
+    color: #d49b00;
+  }
+  &.color-message {
+    color: var(--color-text, #111);
+  }
+}
+
+.underline-track.visible .underline-indicator {
+  opacity: 1;
+}
+
 .left-buttons,
 .right-buttons {
   display: flex;
@@ -962,26 +1148,27 @@ function handleAudioCommandChange(e: Event) {
 
 .message-input {
   width: 100%;
-  min-height: 40px;
+  min-height: 36px;
   max-height: 84px;
-  padding: 10px 64px 10px 16px;
-  border: 2px solid var(--color-primary, #7dd3a8);
-  border-radius: 20px;
-  background: var(--color-background, #fff);
+  padding: 8px 40px 8px 8px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
   color: var(--color-text);
   font-size: 15px;
   line-height: 1.4;
   resize: none;
   outline: none;
-  transition: all var(--transition-fast);
+  box-shadow: none;
+  transition: none;
 
   &::placeholder {
     color: var(--color-text-muted);
   }
 
   &:focus {
-    border-color: var(--color-primary, #7dd3a8);
-    box-shadow: 0 0 0 3px rgba(125, 211, 168, 0.15);
+    border: none;
+    box-shadow: none;
   }
 }
 
