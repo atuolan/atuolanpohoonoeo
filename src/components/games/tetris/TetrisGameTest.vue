@@ -1282,6 +1282,7 @@ const handleHold = () => {
     .board-row {
       display: flex;
       align-items: flex-start;
+      justify-content: center;
       gap: clamp(2px, 0.5vw, 6px);
       // 佔據剩餘空間但不讓子元素溢出
       flex: 1;
@@ -1375,13 +1376,14 @@ const handleHold = () => {
         inset 0 4px 8px rgba(0, 0, 0, 0.4),
         0 2px 4px rgba(0, 0, 0, 0.2);
       box-sizing: border-box;
-      flex: 1;
+      // 改用「高度驱动」尺寸：iOS Safari 在 flex+aspect-ratio+max-height
+      // 组合下不会强制收缩高度，导致容器吃满剩余空间。改为以 board-row
+      // 高度为基准，宽度由 aspect-ratio 反推，确保容器不超过 10:22。
+      flex: 0 1 auto;
       min-width: 0;
-      // 關鍵：限制最大高度為 board-row 的高度，防止溢出
-      max-height: 100%;
-      // 用 aspect-ratio 讓高度跟隨寬度，緊貼棋盤
+      height: 100%;
+      max-width: 100%;
       aspect-ratio: 10 / 22;
-      align-self: center;
     }
 
     .tetris-screen-area {
