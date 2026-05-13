@@ -123,6 +123,18 @@
             <span class="game-category">經典</span>
           </div>
         </div>
+
+        <!-- 吃豆人 -->
+        <div class="game-card" @click="openGame('pacman')">
+          <div class="game-icon game-pacman">
+            <Ghost class="icon" />
+          </div>
+          <div class="game-info">
+            <h3 class="game-name">吃豆人</h3>
+            <p class="game-desc">經典街機，閃躲幽靈</p>
+            <span class="game-category">經典</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -148,12 +160,14 @@
     />
     <GameSudoku v-if="currentGame === 'sudoku'" @close="closeGame" />
     <TetrisGameTest v-if="currentGame === 'tetris'" @close="closeGame" />
+    <GamePacman v-if="currentGame === 'pacman'" @close="closeGame" />
   </div>
 </template>
 
 <script setup lang="ts">
 import Game2048 from "@/components/games/Game2048.vue";
 import GameFoodRoulette from "@/components/games/GameFoodRoulette.vue";
+import GamePacman from "@/components/games/GamePacman.vue";
 import GameSnake from "@/components/games/GameSnake.vue";
 import GameSudoku from "@/components/games/GameSudoku.vue";
 import TetrisGameTest from "@/components/games/tetris/TetrisGameTest.vue";
@@ -166,6 +180,7 @@ import {
     ChevronLeft,
     Dices,
     Fish,
+    Ghost,
     Grid3x3,
     Hash,
     Joystick,
