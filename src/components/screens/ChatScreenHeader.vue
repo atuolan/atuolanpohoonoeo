@@ -590,16 +590,13 @@ function onTimeJumpInput(event: Event) {
   padding-top: calc(12px + var(--safe-top));
   padding-left: calc(16px + var(--safe-left));
   padding-right: calc(16px + var(--safe-right));
-  background: color-mix(in srgb, var(--color-surface) 50%, transparent);
+  background: transparent;
   border-bottom: none;
   gap: 12px;
   flex-shrink: 0;
   overflow: visible;
   position: relative;
   z-index: 10;
-  @supports not (background: color-mix(in srgb, white 50%, transparent)) {
-    background: rgba(255, 255, 255, 0.5);
-  }
 }
 
 .header-back {
