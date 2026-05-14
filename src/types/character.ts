@@ -272,6 +272,10 @@ export interface CharacterWorldSettings {
   location?: string;
   /** 角色本地時區（IANA 格式，如 "Asia/Tokyo"） */
   timezone?: string;
+  /** 角色所在地緯度（從城市搜尋結果取得，用於避免字串模糊 geocoding） */
+  lat?: number;
+  /** 角色所在地經度 */
+  lon?: number;
   /** 手動天氣描述（如「晴天，25°C」） */
   weatherOverride?: string;
 }

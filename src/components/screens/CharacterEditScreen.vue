@@ -172,6 +172,9 @@ async function selectWorldLocation(city: {
     .filter(Boolean)
     .join("，");
   worldSettings.value.location = displayName;
+  // 保存精確座標，避免之後查角色天氣時走字串模糊 geocoding
+  worldSettings.value.lat = city.lat;
+  worldSettings.value.lon = city.lon;
   // 嘗試從 Open-Meteo geocoding 取得時區
   try {
     const res = await fetch(
@@ -389,6 +392,8 @@ async function handleSave() {
       ? {
           location: ws.location?.trim() || undefined,
           timezone: ws.timezone?.trim() || undefined,
+          lat: typeof ws.lat === "number" ? ws.lat : undefined,
+          lon: typeof ws.lon === "number" ? ws.lon : undefined,
           weatherOverride: ws.weatherOverride?.trim() || undefined,
         }
       : undefined;
@@ -1878,6 +1883,8 @@ async function submitPasteRegex() {
               @click="
                 worldSettings.location = '';
                 worldSettings.timezone = '';
+                worldSettings.lat = undefined;
+                worldSettings.lon = undefined;
                 worldSettings.weatherOverride = '';
               "
             >

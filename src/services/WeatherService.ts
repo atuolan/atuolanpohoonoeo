@@ -494,8 +494,23 @@ async function fetchOpenMeteo(
   const condition = wmoToCondition(current.weather_code);
 
   // 組裝成 WeatherData 格式
-  const now = new Date();
-  const localtime = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  // 優先使用 Open-Meteo 回傳的當地時間（timezone=auto 時 current.time 已為當地）
+  // 格式為 "YYYY-MM-DDTHH:mm"，轉成 "YYYY-MM-DD HH:mm" 以對齊 WeatherAPI 格式
+  let localtime: string;
+  if (typeof current?.time === "string" && current.time.includes("T")) {
+    localtime = current.time.replace("T", " ").slice(0, 16);
+  } else if (typeof data.utc_offset_seconds === "number") {
+    // 退路：用 utc_offset_seconds 自行計算
+    const nowMs = Date.now();
+    const localMs = nowMs + data.utc_offset_seconds * 1000;
+    const d = new Date(localMs);
+    // 用 UTC getter 才能正確反映目標時區
+    localtime = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  } else {
+    // 最終退路：用本地時間（與舊行為一致）
+    const now = new Date();
+    localtime = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  }
 
   return {
     location: {
@@ -567,8 +582,9 @@ export async function getWeatherByIP(): Promise<WeatherData> {
  */
 export async function getWeatherByCity(city: string): Promise<WeatherData> {
   // 步驟1：Open-Meteo GeoNames geocoding → 取得精確座標
-  // 若城市名包含逗號（如「斗六市, 雲林縣」），先嘗試完整字串，再嘗試逗號前的主名稱
-  const primaryName = city.split(",")[0].trim();
+  // 若城市名包含逗號（如「斗六市, 雲林縣」或「東京，日本」），先嘗試完整字串，
+  // 再嘗試逗號前的主名稱。同時支援半形 "," 與全形 "，"。
+  const primaryName = city.split(/[,，]/)[0].trim();
   const queriesToTry = city !== primaryName ? [city, primaryName] : [city];
   for (const q of queriesToTry) {
     try {

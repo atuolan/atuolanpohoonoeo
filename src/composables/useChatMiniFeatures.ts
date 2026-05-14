@@ -7,6 +7,7 @@ import {
 import { useCharactersStore } from "@/stores/characters";
 import { useWeatherStore } from "@/stores/weather";
 import type { StoredCharacter } from "@/types/character";
+import { WORLD_CITIES } from "@/data/worldCities";
 import { computed, ref, watch, type Ref } from "vue";
 
 /**
@@ -265,6 +266,43 @@ export function useChatMiniFeatures(deps: {
   // 發送對象：'both' | 'user' | 'char'
   const weatherSendTarget = ref<"both" | "user" | "char">("both");
 
+  /**
+   * 嘗試從 WORLD_CITIES 為一段角色地點字串找出精確座標。
+   * 規則：在字串中找到屬於 WORLD_CITIES key 的國家後，再於該國的城市清單裡比對 name。
+   * 比對方式為「包含」雙向（容忍 "東京" vs "東京, 日本" vs "Tokyo" 等差異），全部失敗則回 null。
+   */
+  function lookupWorldCityCoords(
+    locationText: string,
+  ): { lat: number; lon: number; country: string; cityName: string } | null {
+    if (!locationText) return null;
+    const parts = locationText
+      .split(/[,，]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (parts.length === 0) return null;
+    const countryKeys = Object.keys(WORLD_CITIES);
+    let matchedCountry = "";
+    for (let i = parts.length - 1; i >= 0; i--) {
+      if (countryKeys.includes(parts[i])) {
+        matchedCountry = parts[i];
+        break;
+      }
+    }
+    if (!matchedCountry) return null;
+    const cities = WORLD_CITIES[matchedCountry];
+    if (!cities) return null;
+    // 城市名候選：扣掉 country 後的所有段落
+    const cityCandidates = parts.filter((p) => p !== matchedCountry);
+    for (const c of cities) {
+      for (const cand of cityCandidates) {
+        if (cand === c.name || cand.includes(c.name) || c.name.includes(cand)) {
+          return { lat: c.lat, lon: c.lon, country: matchedCountry, cityName: c.name };
+        }
+      }
+    }
+    return null;
+  }
+
   /** 開啟天氣 modal 時自動載入角色天氣 */
   async function openWeatherModal() {
     showWeatherModal.value = true;
@@ -274,11 +312,59 @@ export function useChatMiniFeatures(deps: {
     weatherSendTarget.value = "both";
     // 自動查詢角色天氣
     const char = deps.currentCharacter?.value;
-    const charLocation = char?.worldSettings?.location;
+    const ws = char?.worldSettings;
+    const charLocation = ws?.location;
     if (charLocation && !charWeatherData.value) {
       charWeatherLoading.value = true;
       try {
-        charWeatherData.value = await getWeatherByCity(charLocation);
+        // 1) 已存座標 → 直接用座標查（最準確）
+        if (typeof ws?.lat === "number" && typeof ws?.lon === "number") {
+          charWeatherData.value = await getWeatherByCoords(ws.lat, ws.lon);
+        } else {
+          // 2) 沒座標 → 先試 WORLD_CITIES 精確比對（避免 Open-Meteo geocoding 模糊命中）
+          const matched = lookupWorldCityCoords(charLocation);
+          if (matched) {
+            charWeatherData.value = await getWeatherByCoords(matched.lat, matched.lon);
+          } else {
+            // 3) 最後才走字串模糊查
+            charWeatherData.value = await getWeatherByCity(charLocation);
+          }
+
+          // 一次性回填座標 + 修正 location 字串，避免下次再走 fuzzy
+          if (charWeatherData.value && char) {
+            const data = charWeatherData.value;
+            const backfillLat = matched?.lat ?? data.location.lat;
+            const backfillLon = matched?.lon ?? data.location.lon;
+            if (typeof backfillLat === "number" && typeof backfillLon === "number") {
+              const correctedLabel =
+                formatFullLocation(data.location) || charLocation;
+              try {
+                const charactersStore = useCharactersStore();
+                await charactersStore.updateCharacter(char.id, {
+                  worldSettings: {
+                    ...char.worldSettings,
+                    location: correctedLabel,
+                    lat: backfillLat,
+                    lon: backfillLon,
+                  },
+                });
+                if (char.worldSettings) {
+                  char.worldSettings.location = correctedLabel;
+                  char.worldSettings.lat = backfillLat;
+                  char.worldSettings.lon = backfillLon;
+                } else {
+                  char.worldSettings = {
+                    location: correctedLabel,
+                    lat: backfillLat,
+                    lon: backfillLon,
+                  };
+                }
+              } catch (e) {
+                console.warn("[天氣分享] 回填角色座標失敗", e);
+              }
+            }
+          }
+        }
       } catch {
         console.warn("[天氣分享] 角色天氣查詢失敗");
       } finally {
@@ -353,13 +439,21 @@ export function useChatMiniFeatures(deps: {
             worldSettings: {
               ...char.worldSettings,
               location: cityLabel,
+              lat: city.lat,
+              lon: city.lon,
             },
           });
           // 同步本地 ref
           if (char.worldSettings) {
             char.worldSettings.location = cityLabel;
+            char.worldSettings.lat = city.lat;
+            char.worldSettings.lon = city.lon;
           } else {
-            char.worldSettings = { location: cityLabel };
+            char.worldSettings = {
+              location: cityLabel,
+              lat: city.lat,
+              lon: city.lon,
+            };
           }
         }
       } else {
