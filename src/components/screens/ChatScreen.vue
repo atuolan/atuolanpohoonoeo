@@ -2199,6 +2199,13 @@ const chatThirdPersonMode = ref(false); // 聊天專屬第三人稱模式
 const chatEnableRealTimeAwareness = ref(true); // 感知現實時間（默認開啟）
 const chatMinimaxTTSEnabled = ref(false); // 聊天專屬 MiniMax TTS（默認關閉）
 const chatImageSearchEnabled = ref(true);
+const chatSpeakerMode = ref<"user" | "char" | "system">("user");
+const showSpeakerModePopover = ref(false);
+async function setSpeakerMode(mode: "user" | "char" | "system") {
+  chatSpeakerMode.value = mode;
+  showSpeakerModePopover.value = false;
+  await saveChatImmediate();
+}
 
 // 聊天專屬位置覆蓋（null 表示使用全域設定）
 const chatLocationOverride = ref<ChatLocationOverride | null>(null);
@@ -3448,17 +3455,24 @@ function addUserMessage() {
   // 生成新的輪次 ID
   currentTurnId.value = crypto.randomUUID();
 
-  // 添加用戶訊息（套用角色 regex_scripts USER_INPUT）
-  const userMessage: Message = {
+  // 依發言模式決定 role：char → ai、system → system、user → user
+  const mode = chatSpeakerMode.value;
+  const role: "user" | "ai" | "system" =
+    mode === "char" ? "ai" : mode === "system" ? "system" : "user";
+  const content = mode === "user" ? applyUserInputRegex(text) : text;
+
+  const newMessage: Message = {
     id: `msg_${Date.now()}`,
-    role: "user",
-    content: applyUserInputRegex(text),
+    role,
+    content,
     timestamp: Date.now(),
     replyTo: replyingTo.value?.id, // 添加回覆引用
     // 被角色封鎖時，用戶發的訊息標記為「發送失敗」（角色暫時看不到，解封後可見）
-    ...(isBlockedByChar.value ? { sentWhileBlocked: true } : {}),
+    ...(mode === "user" && isBlockedByChar.value
+      ? { sentWhileBlocked: true }
+      : {}),
   };
-  messages.value.push(userMessage);
+  messages.value.push(newMessage);
   inputText.value = "";
   if (currentChatId.value) chatStore.clearDraft(currentChatId.value);
   replyingTo.value = null; // 清除回覆目標
@@ -3471,6 +3485,28 @@ function addUserMessage() {
 // 發送訊息並觸發 AI 回覆（點擊發送按鈕時使用）
 async function sendAndTriggerAI() {
   const text = inputText.value.trim();
+
+  // 發言模式：char / system 時不觸發 AI，直接以對應 role 插入訊息
+  if (text && !isGenerating.value && chatSpeakerMode.value !== "user") {
+    const mode = chatSpeakerMode.value;
+    clearSwipesOnLastAIMessage();
+    clearRoundSwipes();
+    currentTurnId.value = crypto.randomUUID();
+    const newMessage: Message = {
+      id: `msg_${Date.now()}`,
+      role: mode === "char" ? "ai" : "system",
+      content: text,
+      timestamp: Date.now(),
+      replyTo: replyingTo.value?.id,
+    };
+    messages.value.push(newMessage);
+    inputText.value = "";
+    if (currentChatId.value) chatStore.clearDraft(currentChatId.value);
+    replyingTo.value = null;
+    scrollToBottom();
+    await saveChatImmediate();
+    return;
+  }
 
   // 如果有輸入內容，先添加用戶訊息
   if (text && !isGenerating.value) {
@@ -3511,7 +3547,8 @@ async function sendAndTriggerAI() {
   if (isBlockedByChar.value) return;
 
   // 空輸入 + 最後一條是 AI 訊息 → 視為「繼續」（讓 AI 接著說）
-  if (!text && lastAIMessage.value) {
+  // 但 char / system 發言模式下不觸發繼續，避免誤觸
+  if (!text && lastAIMessage.value && chatSpeakerMode.value === "user") {
     const lastMsg = messages.value[messages.value.length - 1];
     // 確認最後一條確實是 AI 訊息（排除中間有系統通知的情況）
     if (lastMsg && lastMsg.role === "ai" && !lastMsg.isStreaming) {
@@ -3519,6 +3556,9 @@ async function sendAndTriggerAI() {
       return;
     }
   }
+
+  // 空輸入時，char / system 發言模式下不觸發 AI 生成
+  if (!text && chatSpeakerMode.value !== "user") return;
 
   // 空輸入觸發 AI 回覆時（如跳轉魔法後），生成新的輪次 ID
   // 避免與上一輪共用 turnId，否則重新生成時會誤刪上一輪訊息
@@ -7554,13 +7594,42 @@ async function processMessageTTS(
 
       const msgIdx = messages.value.findIndex((m) => m.id === messageId);
       if (msgIdx !== -1 && result.success && result.audioUrl) {
+        // MiniMax 回傳的是 Aliyun OSS 簽名 URL（約 24h 後過期），
+        // 立即下載並轉成 base64 data URL 保存，避免重新載入聊天時音頻失效。
+        let persistedUrl = result.audioUrl;
+        try {
+          const audioResp = await fetch(result.audioUrl);
+          if (audioResp.ok) {
+            const blob = await audioResp.blob();
+            persistedUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const r = reader.result;
+                if (typeof r === "string") resolve(r);
+                else reject(new Error("FileReader 結果非字串"));
+              };
+              reader.onerror = () => reject(reader.error);
+              reader.readAsDataURL(blob);
+            });
+          } else {
+            console.warn(
+              `[MiniMax TTS] 下載音頻失敗，HTTP ${audioResp.status}，仍使用臨時 URL`,
+            );
+          }
+        } catch (fetchErr) {
+          console.warn(
+            "[MiniMax TTS] 下載音頻失敗，仍使用臨時 URL：",
+            fetchErr,
+          );
+        }
+
         const segment = messages.value[msgIdx].ttsSegments?.[i];
         if (segment) {
-          segment.audioUrl = result.audioUrl;
+          segment.audioUrl = persistedUrl;
         }
         // 向下相容：第一段也寫入 ttsAudioUrl
         if (i === 0) {
-          messages.value[msgIdx].ttsAudioUrl = result.audioUrl;
+          messages.value[msgIdx].ttsAudioUrl = persistedUrl;
         }
         anySuccess = true;
       } else if (!result.success) {
@@ -8464,6 +8533,10 @@ async function loadOrCreateChat(overrideChatId?: string) {
         // 載入 MiniMax TTS 設定（默認為 false）
         chatMinimaxTTSEnabled.value = chat.minimaxTTSEnabled === true;
         chatImageSearchEnabled.value = chat.imageSearchEnabled !== false;
+        chatSpeakerMode.value =
+          chat.speakerMode === "char" || chat.speakerMode === "system"
+            ? chat.speakerMode
+            : "user";
         // 載入 MiniMax TTS 音色覆蓋
         chatMinimaxTTSOverride.value = chat.minimaxTTSOverride
           ? { ...chat.minimaxTTSOverride }
@@ -8524,6 +8597,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
     }
     chatBoundPersonaId.value = userStore.currentPersonaId;
     chatImageSearchEnabled.value = true;
+    chatSpeakerMode.value = "user";
   }
 
   // 如果沒有訊息，添加開場白（群聯模式不添加角色開場白）
@@ -9100,6 +9174,7 @@ function buildChatMetadata(
     ...fakeTime.toChatFields(),
     minimaxTTSEnabled: chatMinimaxTTSEnabled.value,
     imageSearchEnabled: chatImageSearchEnabled.value,
+    speakerMode: chatSpeakerMode.value,
     minimaxTTSOverride:
       Object.keys(chatMinimaxTTSOverride.value).length > 0
         ? { ...chatMinimaxTTSOverride.value }
@@ -9894,6 +9969,7 @@ watch(
           const prevFaceToFaceMode = chatFaceToFaceMode.value;
           const prevThirdPersonMode = chatThirdPersonMode.value;
           const prevImageSearchEnabled = chatImageSearchEnabled.value;
+          const prevSpeakerMode = chatSpeakerMode.value;
 
           await loadOrCreateChat();
 
@@ -9903,6 +9979,7 @@ watch(
           chatFaceToFaceMode.value = prevFaceToFaceMode;
           chatThirdPersonMode.value = prevThirdPersonMode;
           chatImageSearchEnabled.value = prevImageSearchEnabled;
+          chatSpeakerMode.value = prevSpeakerMode;
 
           scrollToBottom();
           console.log(
@@ -10641,6 +10718,10 @@ onUnmounted(() => {
       :show-text-voice-modal="showTextVoiceModal"
       :text-voice-input="textVoiceInput"
       :is-input-expanded="isInputExpanded"
+      :speaker-mode="chatSpeakerMode"
+      :show-speaker-mode-popover="showSpeakerModePopover"
+      @update:show-speaker-mode-popover="showSpeakerModePopover = $event"
+      @set-speaker-mode="setSpeakerMode($event)"
       @show-friend-request-input="showFriendRequestInput = true"
       @cancel-reply="cancelReply"
       @handle-quick-input-wheel="onInputQuickWheel"
@@ -10655,7 +10736,6 @@ onUnmounted(() => {
       @on-input-blur="onInputBlur"
       @toggle-sticker-panel="toggleStickerPanel"
       @toggle-input-expand="toggleInputExpand"
-      @continue-generation="continueGeneration"
       @regenerate-last-a-i-response="regenerateLastAIResponse"
       @stop-a-i-generation="stopAIGeneration"
       @on-mic-down="onInputMicDown"

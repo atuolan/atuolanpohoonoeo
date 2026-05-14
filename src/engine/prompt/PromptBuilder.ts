@@ -444,9 +444,10 @@ export class PromptBuilder {
 
     // 提取本輪用戶連續發送的所有訊息（用於 {{lastUserMessage}} 宏）
     // 線上模式下用戶可能分多次發送，這些都算同一輪
+    // 注意：{{lastUserMessage}} 只回傳用戶實際輸入的訊息，排除時間跳轉與小劇場提示
     const lastUserTurnMsgs = PromptBuilder.getLastUserTurnMessages(
       options.messages,
-    );
+    ).filter((m) => m.is_user && !m.isTimetravel && m.sender !== "narrator");
     const lastUserMsg =
       lastUserTurnMsgs
         .map((m) => {
@@ -477,10 +478,12 @@ export class PromptBuilder {
         .reverse()
         .find((m) => !m.is_user && !m.isTimetravel && m.sender !== "narrator")
         ?.content || "";
+    // {{lastMessage}}：上一條 AI 回覆之後所有未完成一輪的訊息（含時間跳轉、用戶輸入、小劇場）
     const lastMsg =
-      options.messages.length > 0
-        ? options.messages[options.messages.length - 1].content
-        : "";
+      PromptBuilder.getLastUserTurnMessages(options.messages)
+        .map((m) => PromptBuilder.formatMessageContentForMacro(m))
+        .filter((s) => s.length > 0)
+        .join("\n");
 
     // 設置宏上下文
     this.macroEngine.setContext({
@@ -587,9 +590,10 @@ export class PromptBuilder {
     }
 
     // 提取本輪用戶連續發送的所有訊息（用於 {{lastUserMessage}} 宏）
+    // 注意：{{lastUserMessage}} 只回傳用戶實際輸入的訊息，排除時間跳轉與小劇場提示
     const lastUserTurnMsgs = PromptBuilder.getLastUserTurnMessages(
       options.messages,
-    );
+    ).filter((m) => m.is_user && !m.isTimetravel && m.sender !== "narrator");
     const lastUserMsg =
       lastUserTurnMsgs
         .map((m) => {
@@ -620,10 +624,12 @@ export class PromptBuilder {
         .reverse()
         .find((m) => !m.is_user && !m.isTimetravel && m.sender !== "narrator")
         ?.content || "";
+    // {{lastMessage}}：上一條 AI 回覆之後所有未完成一輪的訊息（含時間跳轉、用戶輸入、小劇場）
     const lastMsg =
-      options.messages.length > 0
-        ? options.messages[options.messages.length - 1].content
-        : "";
+      PromptBuilder.getLastUserTurnMessages(options.messages)
+        .map((m) => PromptBuilder.formatMessageContentForMacro(m))
+        .filter((s) => s.length > 0)
+        .join("\n");
 
     // 設置宏上下文
     this.macroEngine.setContext({
@@ -675,6 +681,22 @@ export class PromptBuilder {
    */
   private static isUserInitiated(m: ChatMessage): boolean {
     return m.is_user || m.isTimetravel === true || m.sender === "narrator";
+  }
+
+  /**
+   * 將訊息格式化為「給 AI 看的內容」——時間跳轉與小劇場會被包裝成系統指令格式，
+   * 與 chat history 內呈現的形式一致。一般訊息直接回傳 content。
+   */
+  private static formatMessageContentForMacro(m: ChatMessage): string {
+    if (m.isTimetravel) {
+      const dest = m.timetravelContent || m.content;
+      return `[場景與時間切換到:${dest}]`;
+    }
+    if (m.sender === "narrator" && (m.content || "").startsWith("小劇場：")) {
+      const scenario = m.content.replace("小劇場：", "").trim();
+      return `[場景指令] 接下來請按照以下劇情發展進行扮演：${scenario}`;
+    }
+    return m.content || "";
   }
 
   /**

@@ -260,7 +260,9 @@ export const PHONE_CALL_PROMPT_DEFINITIONS: PromptDefinition[] = [
     description: "確認 AI 要回應用戶的最後發言",
     category: "director",
     role: "user",
-    content: `{{lastUserMessage}}
+    content: `<UserMessage>
+{{lastMessage}}
+</UserMessage>
 
 請以 {{char}} 的身份自然回應，記住：
 - 保持角色性格

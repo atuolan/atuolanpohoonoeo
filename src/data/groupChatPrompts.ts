@@ -1021,7 +1021,7 @@ const EXPORTED_GROUP_CHAT_CONFIG = {
       "description": "將用戶最後一條訊息單獨提出，確保 AI 從正確的訊息接續回覆",
       "category": "director",
       "role": "user",
-      "content": "用戶最終輸出(用戶發言規則)\n<UserMessage>\n{{lastUserMessage}}\n</UserMessage>",
+      "content": "<UserMessage>\n{{lastMessage}}\n</UserMessage>",
       "system_prompt": true,
       "marker": false,
       "injection_position": 0,

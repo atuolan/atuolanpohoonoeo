@@ -1669,7 +1669,7 @@ Scene 2.5 — 思維融合 + 情緒釋放 + 噗浪決策
     description: "將用戶最後一條訊息單獨提出，確保 AI 從正確的訊息接續回覆",
     category: "director",
     role: "user",
-    content: `{{lastUserMessage}}`,
+    content: `<UserMessage>\n{{lastMessage}}\n</UserMessage>`,
     system_prompt: false,
     marker: false,
     injection_position: INJECTION_RELATIVE,

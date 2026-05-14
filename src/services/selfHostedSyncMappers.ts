@@ -63,6 +63,7 @@ export function toSyncChatRecordPayload(chat: SyncableChatRecordSource): SyncCha
     fakeTimeOffset: chat.fakeTimeOffset,
     minimaxTTSEnabled: chat.minimaxTTSEnabled,
     imageSearchEnabled: chat.imageSearchEnabled,
+    speakerMode: chat.speakerMode,
     minimaxTTSOverride: chat.minimaxTTSOverride,
     isBranch: chat.isBranch,
     pinnedToList: chat.pinnedToList,

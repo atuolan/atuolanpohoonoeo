@@ -1097,7 +1097,7 @@ export const DEFAULT_PROMPT_DEFINITIONS: PromptDefinition[] = [
     description: "將用戶最後一條訊息單獨提出，確保 AI 從正確的訊息接續回覆",
     category: "director",
     role: "user",
-    content: "<UserMessage>\n{{lastUserMessage}}\n</UserMessage>",
+    content: "<UserMessage>\n{{lastMessage}}\n</UserMessage>",
     system_prompt: false,
     marker: false,
     injection_position: INJECTION_RELATIVE,

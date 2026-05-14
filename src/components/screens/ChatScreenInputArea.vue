@@ -40,6 +40,9 @@ const props = defineProps<{
   textVoiceInput: string;
   // 展開輸入框
   isInputExpanded: boolean;
+  // 發言模式
+  speakerMode: "user" | "char" | "system";
+  showSpeakerModePopover: boolean;
   // 更多功能面板內的按鈕狀態 - 不需要，由 emit 處理
 }>();
 
@@ -58,8 +61,9 @@ const emit = defineEmits<{
   (e: "onInputBlur"): void;
   (e: "toggleStickerPanel"): void;
   (e: "toggleInputExpand"): void;
-  (e: "continueGeneration"): void;
   (e: "regenerateLastAIResponse"): void;
+  (e: "update:showSpeakerModePopover", value: boolean): void;
+  (e: "setSpeakerMode", mode: "user" | "char" | "system"): void;
   (e: "stopAIGeneration"): void;
   (e: "onMicDown", event: MouseEvent | TouchEvent): void;
   (e: "onMicUp"): void;
@@ -325,19 +329,67 @@ function handleAudioCommandChange(e: Event) {
           </svg>
         </button>
 
-        <!-- 圖片按鈕（未聚焦時顯示） -->
-        <button
-          v-if="!isInputFocused"
-          ref="imageBtnRef"
-          class="input-btn image-btn"
-          @click="emit('openMediaDrawer')"
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path
-              d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
-            />
-          </svg>
-        </button>
+        <!-- 發言模式切換按鈕（取代原圖片按鈕位置） -->
+        <div class="speaker-mode-wrapper">
+          <button
+            class="input-btn speaker-mode-btn"
+            :class="['mode-' + speakerMode, { active: showSpeakerModePopover }]"
+            :title="speakerMode === 'user' ? '發言模式：我' : speakerMode === 'char' ? '發言模式：角色' : '發言模式：系統'"
+            @click.stop="emit('update:showSpeakerModePopover', !showSpeakerModePopover)"
+          >
+            <!-- user：人像 -->
+            <svg v-if="speakerMode === 'user'" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+            </svg>
+            <!-- char：對話氣泡 -->
+            <svg v-else-if="speakerMode === 'char'" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z" />
+            </svg>
+            <!-- system：齒輪 -->
+            <svg v-else viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+            </svg>
+          </button>
+
+          <Transition name="fade">
+            <div
+              v-if="showSpeakerModePopover"
+              class="speaker-mode-popover"
+              @click.stop
+            >
+              <button
+                class="speaker-mode-option"
+                :class="{ selected: speakerMode === 'user' }"
+                @click="emit('setSpeakerMode', 'user')"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                </svg>
+                <span>我（user）</span>
+              </button>
+              <button
+                class="speaker-mode-option"
+                :class="{ selected: speakerMode === 'char' }"
+                @click="emit('setSpeakerMode', 'char')"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z" />
+                </svg>
+                <span>角色（char）</span>
+              </button>
+              <button
+                class="speaker-mode-option"
+                :class="{ selected: speakerMode === 'system' }"
+                @click="emit('setSpeakerMode', 'system')"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+                </svg>
+                <span>系統（system）</span>
+              </button>
+            </div>
+          </Transition>
+        </div>
       </div>
 
       <!-- 輸入框容器（包含表情按鈕） -->
@@ -387,20 +439,18 @@ function handleAudioCommandChange(e: Event) {
 
       <!-- 右側按鈕組 -->
       <div class="right-buttons" @click.stop>
-        <!-- 繼續生成按鈕（有 AI 訊息且未生成中） -->
+        <!-- 圖片按鈕（未聚焦且無輸入時顯示，原 continue-btn 位置） -->
         <button
-          v-if="
-            hasAIMessages &&
-            !isGenerating &&
-            !inputText.trim() &&
-            !isInputFocused
-          "
-          class="input-btn continue-btn"
-          title="繼續生成"
-          @click="emit('continueGeneration')"
+          v-if="!isGenerating && !inputText.trim() && !isInputFocused"
+          ref="imageBtnRef"
+          class="input-btn image-btn"
+          title="圖片 / 媒體"
+          @click="emit('openMediaDrawer')"
         >
           <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M8 5v14l11-7z" />
+            <path
+              d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
+            />
           </svg>
         </button>
 
@@ -1132,6 +1182,82 @@ function handleAudioCommandChange(e: Event) {
 
   &:hover {
     color: #5cb88a;
+  }
+}
+
+// 發言模式切換按鈕
+.speaker-mode-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.speaker-mode-btn {
+  color: #888;
+  transition: color var(--transition-fast), background var(--transition-fast);
+
+  &.mode-user {
+    color: #888;
+  }
+  &.mode-char {
+    color: var(--color-primary, #7dd3a8);
+  }
+  &.mode-system {
+    color: #f59e0b;
+  }
+  &.active {
+    background: rgba(125, 211, 168, 0.12);
+  }
+}
+
+.speaker-mode-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 30;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  min-width: 148px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.speaker-mode-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text, #222);
+  text-align: left;
+  width: 100%;
+
+  svg {
+    width: 18px;
+    height: 18px;
+    color: #888;
+    flex-shrink: 0;
+  }
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.04);
+  }
+
+  &.selected {
+    background: rgba(125, 211, 168, 0.16);
+    color: var(--color-primary, #5cb88a);
+
+    svg {
+      color: var(--color-primary, #5cb88a);
+    }
   }
 }
 

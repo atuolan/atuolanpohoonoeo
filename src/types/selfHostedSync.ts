@@ -378,6 +378,7 @@ export type SyncChatRecordPayload = Pick<
   | "fakeTimeOffset"
   | "minimaxTTSEnabled"
   | "imageSearchEnabled"
+  | "speakerMode"
   | "minimaxTTSOverride"
   | "isBranch"
   | "pinnedToList"

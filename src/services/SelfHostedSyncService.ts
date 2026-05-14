@@ -1073,6 +1073,7 @@ export class SelfHostedSyncService {
       fakeTimeOffset: payload.fakeTimeOffset,
       minimaxTTSEnabled: payload.minimaxTTSEnabled,
       imageSearchEnabled: payload.imageSearchEnabled,
+      speakerMode: payload.speakerMode,
       minimaxTTSOverride: payload.minimaxTTSOverride,
       isBranch: payload.isBranch,
       pinnedToList: payload.pinnedToList,

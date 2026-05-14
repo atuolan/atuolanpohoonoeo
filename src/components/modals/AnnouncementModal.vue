@@ -296,6 +296,73 @@ function handleAction() {
     margin: 0 0 10px;
     opacity: 0.8;
   }
+
+  // 在公告 CDATA 中可直接使用：
+  //   <section class="ann-section feature"> 新功能 </section>
+  //   <section class="ann-section bug"> Bug 修復 </section>
+  // 或舊別名 .ann-feature-box / .ann-bug-box
+  :deep(.ann-section),
+  :deep(.ann-feature-box),
+  :deep(.ann-bug-box) {
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin: 0 0 12px;
+    border: 1px solid transparent;
+  }
+
+  // 主要文字維持 --text-color（亮/暗自適應），只用色塊背景與邊框做區分
+  :deep(.ann-section),
+  :deep(.ann-feature-box),
+  :deep(.ann-bug-box) {
+    color: inherit;
+  }
+
+  :deep(.ann-section.feature),
+  :deep(.ann-feature-box) {
+    background: rgba(34, 197, 94, 0.1);
+    border-color: rgba(34, 197, 94, 0.45);
+  }
+
+  :deep(.ann-section.bug),
+  :deep(.ann-bug-box) {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.45);
+  }
+
+  :deep(.ann-section h3),
+  :deep(.ann-feature-box h3),
+  :deep(.ann-bug-box h3) {
+    margin: 0 0 8px;
+    font-size: 15px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  // 標題用中間色調，亮/暗模式都有足夠對比
+  :deep(.ann-section.feature h3),
+  :deep(.ann-feature-box h3) {
+    color: #22c55e;
+  }
+
+  :deep(.ann-section.bug h3),
+  :deep(.ann-bug-box h3) {
+    color: #ef4444;
+  }
+
+  :deep(.ann-section strong),
+  :deep(.ann-feature-box strong),
+  :deep(.ann-bug-box strong) {
+    color: inherit;
+  }
+
+  // code 區塊：亮色模式用淺色底，暗色模式用深色底
+  :deep(.ann-section code),
+  :deep(.ann-feature-box code),
+  :deep(.ann-bug-box code) {
+    background: rgba(127, 127, 127, 0.18);
+  }
 }
 
 .ann-actions {

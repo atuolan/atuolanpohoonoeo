@@ -102,20 +102,8 @@ export function useChatMiniFeatures(deps: {
 
     const topicInstruction = `【話題引導】請根據以下話題主動向用戶發起對話。用自然、符合你性格的方式提起這個話題，就像是你自己想到的一樣。話題：${topic}`;
 
-    const topicMessage = {
-      id: `msg_topic_${Date.now()}`,
-      role: "user" as const,
-      content: topicInstruction,
-      timestamp: Date.now(),
-    };
-    deps.messages.value.push(topicMessage);
-
-    await deps.triggerAIResponse();
-
-    deps.messages.value = deps.messages.value.filter(
-      (m: any) => m.id !== topicMessage.id,
-    );
-    await deps.saveChatImmediate();
+    // 以隱藏的方式注入提示詞，不顯示在聊天記錄中
+    await deps.triggerAIResponse({ holidayTriggerPrompt: topicInstruction });
   }
 
   async function confirmTopicPrompt() {

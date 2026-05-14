@@ -23,13 +23,84 @@
 -->
 <announcements>
 
-  <announcement id="202605110503" level="critical" date="2026-05-11">
+  <announcement id="202605150244" level="important" date="2026-05-15">
+    <title>更新整理：發言模式切換 + 巨集修正 + 多項 UI 修補</title>
+    <body><![CDATA[
+
+<section class="ann-section feature">
+
+### 🆕 新增功能
+
+**發言模式切換（user / char / system）**
+
+- 輸入框左下角新增「**發言模式**」按鈕，原圖片按鈕移到右側送出鈕旁。
+- 三種模式：
+  - **我（user）**：原本行為，會觸發 AI 回覆。
+  - **角色（char）**：以**角色**身份發訊息，**不會**觸發 AI（手動代角色填補對話）。
+  - **系統（system）**：以系統訊息形式插入。
+- char/system 模式下：空輸入不會觸發「繼續生成」，避免誤觸。
+
+**小遊戲：小精靈（Pac-Man）**
+
+- BFS 鬼魂 AI、行動裝置友善控制。
+
+**聊天 UI 美化**
+
+- 頭部 / 輸入區改為完全透明背景。
+- 動畫底線指示器：focus / 表情 / 更多 動態切換。
+
+**預設詞統一**
+
+所有預設（聊天 / 面對面 / 群聊 / 電話通話）的「確認最終輸出」prompt 統一為：
+
+```
+<UserMessage>
+{{lastMessage}}
+</UserMessage>
+```
+
+> 若你的提示詞曾自定義過，舊內容會保留不變。要套用最新版請到「設置 → 提示詞 → 重置提示詞」或手動修改該條 content。
+
+**位置示意（發言模式按鈕在輸入框左下角）：**
+
+![發言模式按鈕位置](/announcements/image.png)
+
+</section>
+
+<section class="ann-section bug">
+
+### 🐛 Bug 修復
+
+**巨集語意修正**
+
+過去使用時間跳轉、小劇場後，巨集會把跳轉提示誤當成你輸入的訊息，已修正：
+
+- **`{{lastUserMessage}}`**：上一條 AI 回覆後**你實際打字**的內容（排除時間跳轉、小劇場 narrator）。
+- **`{{lastMessage}}`**：上一條 AI 回覆後**整輪所有訊息**（含時間跳轉、用戶輸入、小劇場），各自格式化:
+  - 時間跳轉 →  `[場景與時間切換到:xxx]`
+  - 小劇場 →  `[場景指令] 接下來請按照以下劇情發展進行扮演：xxx`
+- **`{{lastCharMessage}}`**：最後一條 AI 真實回覆（排除跳轉/narrator）。
+
+**其他修復**
+
+- **天氣**：角色定位的經緯度會被保存，並依角色當地真實時間顯示。
+- **iOS PWA**：home indicator 高度補回 `--safe-bottom`，避免輸入框被手勢區蓋住；輸入區/頭部加上 z-index 與 rgba fallback 防漏。
+- **自架同步**：靜態引入同步模組，修掉動態 chunk MIME 錯誤。
+- **群聊**：歷史 prompt 使用 `senderCharacterName` 作為前綴，多人卡角色名稱更準確。
+- **俄羅斯方塊**：行動裝置版面、棋盤底列裁切等多項修正。
+
+</section>
+
+    ]]></body>
+  </announcement>
+
+  <announcement id="202605150247" level="critical" date="2026-05-11">
     <title>作者公告系統上線</title>
     <image>/announcements/image.png</image>
     <!-- <action label="查看詳情" url="https://example.com" /> -->
     <body><![CDATA[
 
-歡迎使用 **Aguaphone**！
+謝謝你遊玩 **203號機**！
 
 以後有重要更新或公告，會在這裡通知你。
 - ## 小手机提示词有没办法读取到图片的bug，已经修复了，请到设置，提示词，重置提示词，就能正常
