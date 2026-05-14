@@ -876,9 +876,15 @@ function handleAudioCommandChange(e: Event) {
   }
   padding-left: calc(12px + var(--safe-left, 0px));
   padding-right: calc(12px + var(--safe-right, 0px));
-  background: transparent;
+  background: color-mix(in srgb, var(--color-surface) 50%, transparent);
   border-top: none;
   flex-shrink: 0;
+  position: relative;
+  z-index: 2;
+  // iOS PWA fallback：當 color-mix 不被支援時，至少還有一個半透明白底
+  @supports not (background: color-mix(in srgb, white 50%, transparent)) {
+    background: rgba(255, 255, 255, 0.5);
+  }
 }
 
 // 回覆預覽欄

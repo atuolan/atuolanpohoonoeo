@@ -597,6 +597,9 @@ function onTimeJumpInput(event: Event) {
   overflow: visible;
   position: relative;
   z-index: 10;
+  @supports not (background: color-mix(in srgb, white 50%, transparent)) {
+    background: rgba(255, 255, 255, 0.5);
+  }
 }
 
 .header-back {
