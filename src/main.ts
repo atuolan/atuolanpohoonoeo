@@ -156,13 +156,30 @@ function detectAndFixSafeArea(): void {
       window.screen.height >= 800 &&
       window.devicePixelRatio >= 2
     ) {
-      console.warn("[safeArea] 偵測到 iOS PWA safe-area bug，只補償頂部");
-      // 只補償頂部（瀏海/動態島），底部設為 0（不要空白）
+      console.warn("[safeArea] 偵測到 iOS PWA safe-area bug，補頂部 + 推算底部 home indicator");
+      // 補償頂部（瀏海/動態島）
       document.documentElement.style.setProperty("--safe-top", "59px");
       document.documentElement.style.setProperty("--safe-area-top", "59px");
-      // 底部明確設為 0 — 不要底部空白
-      document.documentElement.style.setProperty("--safe-bottom", "0px");
-      document.documentElement.style.setProperty("--safe-area-bottom", "0px");
+
+      // 推算底部 home indicator 高度：app-height 與 visualViewport 之差
+      // 不能直接設 0，否則無 Home 鍵的機型（iPhone X 之後）會把 input-area 推進手勢區看不到
+      const probeAppHeight =
+        parseFloat(
+          document.documentElement.style.getPropertyValue("--app-height"),
+        ) || window.innerHeight;
+      const vvH = window.visualViewport?.height ?? probeAppHeight;
+      const inferredBottom = Math.max(0, Math.round(probeAppHeight - vvH));
+      // 合理範圍：iPhone 系列 home indicator 約 20~50px
+      const safeBottomPx =
+        inferredBottom >= 10 && inferredBottom <= 60 ? inferredBottom : 34;
+      document.documentElement.style.setProperty("--safe-bottom", `${safeBottomPx}px`);
+      document.documentElement.style.setProperty(
+        "--safe-area-bottom",
+        `${safeBottomPx}px`,
+      );
+      console.log(
+        `[safeArea] 推算 home indicator: ${inferredBottom}px (app=${probeAppHeight}, vv=${vvH}) → 套用 ${safeBottomPx}px`,
+      );
     }
   });
 }
