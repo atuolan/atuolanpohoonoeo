@@ -1183,6 +1183,9 @@ export class ProactiveMessageService {
                   typeof m.content === "string"
                     ? m.content
                     : JSON.stringify(m.content),
+                identifier:
+                  typeof m.identifier === "string" ? m.identifier : undefined,
+                name: typeof m.name === "string" ? m.name : undefined,
               })),
             );
           }

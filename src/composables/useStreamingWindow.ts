@@ -20,6 +20,13 @@ export interface GenerationMetadata {
   model: string;
 }
 
+export interface PromptDebugMessage {
+  role: string;
+  content: string;
+  identifier?: string;
+  name?: string;
+}
+
 // ===== 事件回調類型 =====
 export type StreamingWindowEventType =
   | "close"
@@ -44,9 +51,13 @@ const promptTokens = ref(0);
 /** 輸出 completion tokens（從 API usage 返回） */
 const completionTokens = ref(0);
 /** 輸入提示詞內容（用於顯示/隱藏） */
-const promptContent = ref<Array<{ role: string; content: string }>>([]);
+const promptContent = ref<PromptDebugMessage[]>([]);
 /** 是否顯示提示詞（生成完成後可收合） */
 const showPrompt = ref(false);
+const internalPromptIdentifiers = new Set([
+  "chatHistoryOpenTag",
+  "chatHistoryCloseTag",
+]);
 let stopAbortCleanup: (() => void) | null = null;
 
 // 事件回調註冊表（單例）
@@ -151,7 +162,7 @@ export function useStreamingWindow() {
   /**
    * 設置輸入提示詞內容（用於顯示/隱藏）
    */
-  function setPromptContent(messages: Array<{ role: string; content: string }>) {
+  function setPromptContent(messages: PromptDebugMessage[]) {
     promptContent.value = messages;
   }
 
@@ -199,6 +210,26 @@ export function useStreamingWindow() {
   async function copyContent(): Promise<boolean> {
     try {
       await navigator.clipboard.writeText(content.value);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function copyPromptModuleOrder(): Promise<boolean> {
+    try {
+      const text = promptContent.value
+        .filter(
+          (message) =>
+            (message.name || message.identifier) &&
+            !internalPromptIdentifiers.has(message.identifier || ""),
+        )
+        .map((message, index) => {
+          const label = message.name || message.identifier;
+          return `${String(index + 1).padStart(2, "0")}. ${label}`;
+        })
+        .join("\n");
+      await navigator.clipboard.writeText(text);
       return true;
     } catch {
       return false;
@@ -319,6 +350,7 @@ export function useStreamingWindow() {
     setError,
     reset,
     copyContent,
+    copyPromptModuleOrder,
     setAutoScroll,
     toggleRawMode,
     toggleDebugPanel,

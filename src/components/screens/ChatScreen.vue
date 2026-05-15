@@ -59,7 +59,10 @@ import { useChatSearch } from "@/composables/useChatSearch";
 import { useChatSummaryDiary } from "@/composables/useChatSummaryDiary";
 import { useChatTheater } from "@/composables/useChatTheater";
 import { useHolidayTrigger } from "@/composables/useHolidayTrigger";
-import { useStreamingWindow } from "@/composables/useStreamingWindow";
+import {
+  useStreamingWindow,
+  type PromptDebugMessage,
+} from "@/composables/useStreamingWindow";
 import { db, DB_STORES } from "@/db/database";
 import {
   extractAudioFromMessages,
@@ -5389,6 +5392,19 @@ async function triggerAIResponse(options?: {
     });
 
     const apiMessages = [] as Array<any>;
+    const promptDebugMessages: PromptDebugMessage[] = [];
+    const stringifyDebugContent = (content: unknown): string =>
+      typeof content === "string" ? content : JSON.stringify(content);
+    const toPromptDebugMessage = (
+      source: any,
+      apiMessage: any,
+    ): PromptDebugMessage => ({
+      role: String(apiMessage.role),
+      content: stringifyDebugContent(apiMessage.content),
+      identifier:
+        typeof source.identifier === "string" ? source.identifier : undefined,
+      name: typeof source.name === "string" ? source.name : undefined,
+    });
     for (let index = 0; index < promptResult.messages.length; index++) {
       const m = promptResult.messages[index];
       const msgWithImage = m as any;
@@ -5397,32 +5413,38 @@ async function triggerAIResponse(options?: {
           // 最後一條帶圖片的用戶訊息：保留 base64 給 Vision API
           const resolvedImageBase64 = await resolveImageDataForApi(msgWithImage.imageData);
           if (resolvedImageBase64) {
-            apiMessages.push(
-              createImageMessage(
-                m.content,
-                resolvedImageBase64,
-                msgWithImage.imageMimeType,
-                "auto",
-              ),
+            const apiMessage = createImageMessage(
+              m.content,
+              resolvedImageBase64,
+              msgWithImage.imageMimeType,
+              "auto",
             );
+            apiMessages.push(apiMessage);
+            promptDebugMessages.push(toPromptDebugMessage(m, apiMessage));
           } else {
             console.warn("[ChatScreen] 圖片訊息無法解析為可送出的 base64，已降級為文字描述", {
               messageId: msgWithImage.id,
               imageData: msgWithImage.imageData,
             });
-            apiMessages.push(formatImageMessageAsText(msgWithImage));
+            const apiMessage = formatImageMessageAsText(msgWithImage);
+            apiMessages.push(apiMessage);
+            promptDebugMessages.push(toPromptDebugMessage(m, apiMessage));
           }
           continue;
         }
         // 歷史圖片訊息：去掉 base64，用文字描述替代
-        apiMessages.push(formatImageMessageAsText(msgWithImage));
+        const apiMessage = formatImageMessageAsText(msgWithImage);
+        apiMessages.push(apiMessage);
+        promptDebugMessages.push(toPromptDebugMessage(m, apiMessage));
         continue;
       }
       // 普通文字訊息
-      apiMessages.push({
+      const apiMessage = {
         role: m.role,
         content: m.content,
-      });
+      };
+      apiMessages.push(apiMessage);
+      promptDebugMessages.push(toPromptDebugMessage(m, apiMessage));
     }
 
     const client = new OpenAICompatibleClient(chatTaskConfig.api);
@@ -5433,7 +5455,13 @@ async function triggerAIResponse(options?: {
       // 找到最後一條 user 訊息並替換為帶音頻的版本
       for (let i = apiMessages.length - 1; i >= 0; i--) {
         if (apiMessages[i].role === "user") {
-          apiMessages[i] = options.audioApiMessage as any;
+          const apiMessage = options.audioApiMessage as any;
+          apiMessages[i] = apiMessage;
+          promptDebugMessages[i] = {
+            ...promptDebugMessages[i],
+            role: String(apiMessage.role),
+            content: stringifyDebugContent(apiMessage.content),
+          };
           break;
         }
       }
@@ -5471,6 +5499,12 @@ async function triggerAIResponse(options?: {
         role: "user",
         content: combinedPrompt,
       });
+      promptDebugMessages.splice(insertIndex, 0, {
+        role: "user",
+        content: combinedPrompt,
+        identifier: "appendedUserPrompt",
+        name: "附加提示詞",
+      });
     }
 
     // 創建 AI 訊息佔位符（用於流式輸出）
@@ -5496,13 +5530,7 @@ async function triggerAIResponse(options?: {
       streamingWindow.show(chatTaskConfig.api.model);
       // 傳入提示詞內容（用於調試面板查看/隱藏）
       streamingWindow.setPromptContent(
-        apiMessages.map((m) => ({
-          role: String(m.role),
-          content:
-            typeof m.content === "string"
-              ? m.content
-              : JSON.stringify(m.content),
-        })),
+        promptDebugMessages,
       );
     }
 

@@ -54,6 +54,7 @@ const {
   promptContent,
   showPrompt,
   copyContent,
+  copyPromptModuleOrder,
   setAutoScroll,
   toggleRawMode,
   toggleDebugPanel,
@@ -63,6 +64,7 @@ const {
 // Refs
 const scrollContainer = ref<HTMLElement | null>(null);
 const copySuccess = ref(false);
+const moduleOrderCopySuccess = ref(false);
 
 // 自動滾動閾值（像素）
 const AUTO_SCROLL_THRESHOLD = 50;
@@ -79,6 +81,16 @@ const renderedContent = computed(() => {
     return content.value;
   }
 });
+
+const promptModuleCount = computed(
+  () =>
+    promptContent.value.filter(
+      (msg) =>
+        (msg.name || msg.identifier) &&
+        msg.identifier !== "chatHistoryOpenTag" &&
+        msg.identifier !== "chatHistoryCloseTag",
+    ).length,
+);
 
 // 計算經過時間
 const elapsedTime = computed(() => {
@@ -122,6 +134,16 @@ async function handleCopy() {
     copySuccess.value = true;
     setTimeout(() => {
       copySuccess.value = false;
+    }, 2000);
+  }
+}
+
+async function handleCopyPromptModuleOrder() {
+  const success = await copyPromptModuleOrder();
+  if (success) {
+    moduleOrderCopySuccess.value = true;
+    setTimeout(() => {
+      moduleOrderCopySuccess.value = false;
     }, 2000);
   }
 }
@@ -288,12 +310,23 @@ onUnmounted(() => {
               </label>
             </div>
             <!-- 提示詞查看按鈕 -->
-            <div v-if="promptContent.length > 0" class="debug-row">
+            <div v-if="promptContent.length > 0" class="debug-row prompt-actions-row">
               <button class="prompt-toggle-btn" @click="togglePrompt">
                 {{ showPrompt ? "🔽 隱藏提示詞" : "📋 查看提示詞" }}
                 <span class="prompt-msg-count"
                   >({{ promptContent.length }} 條訊息)</span
                 >
+              </button>
+              <button
+                class="prompt-order-copy-btn"
+                @click="handleCopyPromptModuleOrder"
+                :disabled="promptModuleCount === 0"
+              >
+                {{
+                  moduleOrderCopySuccess
+                    ? "✅ 已複製順序"
+                    : `📑 複製模塊順序 (${promptModuleCount})`
+                }}
               </button>
             </div>
             <!-- 提示詞內容（可收合） -->
@@ -310,6 +343,9 @@ onUnmounted(() => {
                 >
                   <div class="prompt-role-tag">
                     {{ msg.role.toUpperCase() }}
+                  </div>
+                  <div v-if="msg.name || msg.identifier" class="prompt-module-name">
+                    {{ msg.name || msg.identifier }}
                   </div>
                   <pre class="prompt-text">{{ msg.content }}</pre>
                 </div>
@@ -720,6 +756,10 @@ onUnmounted(() => {
   }
 }
 
+.prompt-actions-row {
+  gap: 8px;
+}
+
 .debug-label {
   color: var(--color-text-secondary);
 }
@@ -765,7 +805,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   padding: 8px 12px;
   background: var(--color-surface-hover);
   border: 1px solid var(--color-border);
@@ -784,6 +825,28 @@ onUnmounted(() => {
   .prompt-msg-count {
     font-size: 12px;
     opacity: 0.7;
+  }
+}
+
+.prompt-order-copy-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+    border-color: var(--color-primary);
   }
 }
 
@@ -823,6 +886,13 @@ onUnmounted(() => {
   font-weight: 600;
   letter-spacing: 0.5px;
   margin-bottom: 4px;
+}
+
+.prompt-module-name {
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .prompt-role-system .prompt-role-tag {

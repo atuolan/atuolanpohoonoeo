@@ -90,6 +90,7 @@ interface PendingDepthPrompt {
   role: "system" | "user" | "assistant";
   content: string;
   identifier: string;
+  name?: string;
   depth: number;
   order: number;
 }
@@ -1026,6 +1027,7 @@ export class PromptBuilder {
                 role: msg.role,
                 content: msg.content,
                 identifier: msg.identifier || entry.identifier,
+                name: msg.name || promptDef.name,
                 depth: promptDef.injection_depth,
                 order: promptDef.injection_order,
               });
@@ -1055,9 +1057,15 @@ export class PromptBuilder {
               enabledPrompts,
             );
             if (isAfterHistory) {
-              postHistoryMessages.push(msg);
+              postHistoryMessages.push({
+                ...msg,
+                name: msg.name || promptDef?.name,
+              });
             } else {
-              preHistoryMessages.push(msg);
+              preHistoryMessages.push({
+                ...msg,
+                name: msg.name || promptDef?.name,
+              });
             }
           }
         }
@@ -2921,6 +2929,7 @@ speed：0.5~2.0，正常時省略
           role: roleToMessageRole(e.role),
           content: e.content,
           identifier: `wiDepth_${depth}`,
+          name: undefined as string | undefined,
           injected: true,
           order: 0, // 世界書默認 order 為 0
         }));
@@ -2932,6 +2941,7 @@ speed：0.5~2.0，正常時省略
           role: p.role,
           content: p.content,
           identifier: p.identifier,
+          name: p.name,
           injected: true,
           order: p.order,
         }));
@@ -2946,6 +2956,7 @@ speed：0.5~2.0，正常時省略
           role: entry.role,
           content: entry.content,
           identifier: entry.identifier,
+          name: entry.name,
           injected: entry.injected,
         });
       }
