@@ -1109,8 +1109,22 @@ export class PromptBuilder {
     }
 
     // 6. 按順序組裝最終消息列表
+    //    聊天歷史前後加上 <Chat history> / </Chat history> 標籤，
+    //    幫助 AI 清楚分辨「歷史對話」與其他系統提示
     builtMessages.push(...preHistoryMessages);
-    builtMessages.push(...chatMessages.messages);
+    if (chatMessages.messages.length > 0) {
+      builtMessages.push({
+        role: "system",
+        content: "<Chat history>",
+        identifier: "chatHistoryOpenTag",
+      });
+      builtMessages.push(...chatMessages.messages);
+      builtMessages.push({
+        role: "system",
+        content: "</Chat history>",
+        identifier: "chatHistoryCloseTag",
+      });
+    }
     builtMessages.push(...postHistoryMessages);
 
     // 🐛 調試：檢查各部分的消息數量

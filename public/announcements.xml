@@ -23,9 +23,21 @@
 -->
 <announcements>
 
-  <announcement id="202605150244" level="important" date="2026-05-15">
-    <title>更新整理：發言模式切換 + 巨集修正 + 多項 UI 修補</title>
+  <announcement id="202605151520" level="critical" date="2026-05-15">
+    <title>⚠️ 重要：請重置所有提示詞（聊天歷史結構升級）</title>
     <body><![CDATA[
+
+<section class="ann-section bug">
+
+### 🔴 必做：重置提示詞
+
+這次更新調整了**聊天歷史的注入結構**，並修正了多個預設詞。
+
+**請到「設置 → 提示詞 → 重置提示詞」一鍵重置所有預設**，否則新邏輯不會生效。
+
+> 你自己新增的「自定義 prompt」不會被刪除，只有預設詞會回到最新版。
+
+</section>
 
 <section class="ann-section feature">
 
@@ -40,7 +52,16 @@
   - **系統（system）**：以系統訊息形式插入。
 - char/system 模式下：空輸入不會觸發「繼續生成」，避免誤觸。
 
-**小遊戲：小精靈（Pac-Man）**
+**位置示意（發言模式按鈕在輸入框左下角）：**
+
+![發言模式按鈕位置](/announcements/image.png)
+
+**聊天歷史自動加上 `<Chat history>` 標籤**
+
+- 所有模式（一般 / 面對面 / 群聊 / 電話通話）的聊天歷史現在會自動被 `<Chat history>...</Chat history>` 包起來，AI 能更清楚分辨「歷史對話」與「系統指令」。
+- 完全自動，不需要你手動加 prompt。
+
+**小遊戲:小精靈（Pac-Man）**
 
 - BFS 鬼魂 AI、行動裝置友善控制。
 
@@ -58,12 +79,6 @@
 {{lastMessage}}
 </UserMessage>
 ```
-
-> 若你的提示詞曾自定義過，舊內容會保留不變。要套用最新版請到「設置 → 提示詞 → 重置提示詞」或手動修改該條 content。
-
-**位置示意（發言模式按鈕在輸入框左下角）：**
-
-![發言模式按鈕位置](/announcements/image.png)
 
 </section>
 
