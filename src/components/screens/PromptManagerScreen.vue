@@ -1719,13 +1719,22 @@ function getOrderedPrompts(
 function getPromptExportPayload(
   prompts: PromptDefinition[],
   order: PromptOrderEntry[],
+  allowedExternalOrderIds?: string[],
 ): {
   prompts: PromptDefinition[];
   order: PromptOrderEntry[];
 } {
+  const promptIds = new Set(prompts.map((prompt) => prompt.identifier));
+  const externalIds = new Set(allowedExternalOrderIds ?? []);
+  const filteredOrder = allowedExternalOrderIds
+    ? order.filter(
+        (entry) =>
+          promptIds.has(entry.identifier) || externalIds.has(entry.identifier),
+      )
+    : order;
   return {
     prompts: getOrderedPrompts(prompts, order),
-    order: dedupeById(order),
+    order: dedupeById(filteredOrder),
   };
 }
 
@@ -1786,6 +1795,7 @@ function getFaceToFaceExportPayload(): {
   return getPromptExportPayload(
     promptManagerStore.faceToFacePrompts,
     promptManagerStore.faceToFacePromptOrder,
+    ["f2fCharacterSettings", "f2fBlockMemory", "minimaxTTS"],
   );
 }
 
@@ -1808,6 +1818,7 @@ function buildModuleTsFile(options: {
   orderTitle: string;
   definitionsExportName: string;
   orderExportName: string;
+  orderAliasExportName?: string;
   prompts: PromptDefinition[];
   order: PromptOrderEntry[];
   aliases?: string[];
@@ -1843,6 +1854,12 @@ function buildModuleTsFile(options: {
   lines.push("");
   lines.push(`// ===== ${options.orderTitle} =====`);
   lines.push(...buildPromptOrderBlock(options.order, options.orderExportName));
+  if (options.orderAliasExportName) {
+    lines.push("");
+    lines.push(
+      `export const ${options.orderAliasExportName}: PromptOrderEntry[] = ${options.orderExportName};`,
+    );
+  }
 
   if (options.aliases && options.aliases.length > 0) {
     lines.push("");
@@ -1979,7 +1996,8 @@ function getSelectedTsExportFiles(): TsExportFile[] {
         definitionsTitle: "面對面模式提示詞定義",
         orderTitle: "面對面模式提示詞順序",
         definitionsExportName: "FACE_TO_FACE_PROMPT_DEFINITIONS",
-        orderExportName: "DEFAULT_FACE_TO_FACE_PROMPT_ORDER",
+        orderExportName: "FACE_TO_FACE_PROMPT_ORDER",
+        orderAliasExportName: "DEFAULT_FACE_TO_FACE_PROMPT_ORDER",
         prompts: faceToFaceExport.prompts,
         order: faceToFaceExport.order,
       }),
