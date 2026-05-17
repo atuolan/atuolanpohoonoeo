@@ -135,9 +135,16 @@ async function handleVerify() {
   isVerifying.value = true
   errorMessage.value = ''
 
-  // 如果不是純 6 位數字，嘗試管理員身分代碼
+  // 如果不是純 6 位數字，嘗試好友內置驗證碼或管理員身分代碼
   const input = verificationCode.value.trim()
   if (!/^\d{6}$/.test(input)) {
+    const friendResult = await authStore.friendBypass(input)
+    if (friendResult.success) {
+      errorMessage.value = ''
+      setTimeout(() => { window.location.reload() }, 500)
+      isVerifying.value = false
+      return
+    }
     const adminResult = await authStore.adminBypass(input)
     if (adminResult.success) {
       errorMessage.value = ''

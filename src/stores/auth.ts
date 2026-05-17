@@ -104,6 +104,18 @@ export const useAuthStore = defineStore('auth', () => {
     CodeProtection.removeWatermark()
   }
 
+  // 好友專用內置驗證碼（非管理員權限）
+  async function friendBypass(code: string): Promise<{ success: boolean; message: string }> {
+    if (code !== 'friendUSED') {
+      return { success: false, message: '' }
+    }
+    await AuthService.saveAuthState('friend', 'friend', '好友')
+    authState.value = await AuthService.getAuthState()
+    verificationAttempts.value = 0
+    CodeProtection.addWatermark('好友')
+    return { success: true, message: '好友驗證成功' }
+  }
+
   // 管理員身分代碼直接登入（跳過 TOTP）
   async function adminBypass(password: string): Promise<{ success: boolean; message: string }> {
     // 延遲導入避免 Pinia store 初始化順序問題
@@ -150,6 +162,7 @@ export const useAuthStore = defineStore('auth', () => {
     retryInitialize: initialize,
     verifyCode,
     adminBypass,
+    friendBypass,
     logout,
   }
 })
