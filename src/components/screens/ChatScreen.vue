@@ -13750,22 +13750,8 @@ onUnmounted(() => {
   }
 }
 
-// 標題欄
-.chat-header {
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  padding-top: calc(12px + var(--safe-top));
-  padding-left: calc(16px + var(--safe-left));
-  padding-right: calc(16px + var(--safe-right));
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
-  gap: 12px;
-  flex-shrink: 0;
-  overflow: visible;
-  position: relative;
-  z-index: 10;
-}
+// 標題欄樣式已遷移至 ChatScreenHeader.vue（單一來源），此處不再定義 .chat-header
+// 以避免父層 scoped CSS 透過 root element 的 data-v 套用造成 padding-top + margin-top 雙重 safe-top 疊加
 
 .header-back {
   width: 40px;
