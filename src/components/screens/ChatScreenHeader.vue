@@ -612,9 +612,10 @@ function onTimeJumpInput(event: Event) {
   display: flex;
   align-items: center;
   margin: 10px 12px;
-  margin-top: calc(10px + var(--safe-top));
-  margin-left: calc(12px + var(--safe-left));
-  margin-right: calc(12px + var(--safe-right));
+  // 不疊加 safe-top：在有瀏海/動態島時讓 pill 緊貼狀態列下方（用 max 取較大值）
+  margin-top: max(10px, var(--safe-top));
+  margin-left: max(12px, var(--safe-left));
+  margin-right: max(12px, var(--safe-right));
   padding: 8px 12px;
   border-radius: 20px;
   background: linear-gradient(
