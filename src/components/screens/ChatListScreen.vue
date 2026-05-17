@@ -81,6 +81,32 @@ const filteredChats = computed(() => {
   });
 });
 
+// 置頂與最近對話
+const pinnedChats = computed(() => filteredChats.value.filter(c => c.pinnedToList));
+const recentChats = computed(() => filteredChats.value.filter(c => !c.pinnedToList));
+
+// 預覽輔助函式
+function getPreviewContent(chat: Chat) {
+  return chat.lastMessagePreview || chat.messages[chat.messages.length - 1]?.content || "開始對話...";
+}
+
+function formatPreview(chat: Chat) {
+  const content = getPreviewContent(chat);
+  if (content.trim().startsWith("<style") || content.trim().startsWith("<script") || content.trim().startsWith("<div")) return "網頁卡片";
+  if (content.includes("[sticker:")) return "貼圖";
+  if (content.includes("[image]") || content.includes("data:image")) return "圖片";
+  const text = content.replace(/<[^>]*>?/gm, '');
+  return text.length > 50 ? text.substring(0, 50) + "..." : text;
+}
+
+function previewIconKind(chat: Chat) {
+  const content = getPreviewContent(chat);
+  if (content.trim().startsWith("<style") || content.trim().startsWith("<script") || content.trim().startsWith("<div")) return 'html';
+  if (content.includes("[sticker:")) return 'sticker';
+  if (content.includes("[image]") || content.includes("data:image")) return 'image';
+  return 'text';
+}
+
 // 過濾後的角色列表
 const filteredCharacters = computed(() => {
   if (!searchQuery.value.trim()) return charactersStore.characters;
@@ -398,65 +424,61 @@ async function togglePinChat() {
 
 <template>
   <div class="screen-container chat-list-screen">
-    <!-- 標題欄 -->
-    <header class="soft-header gradient">
-      <button class="header-back" @click="emit('back')">
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path
-            d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"
-          />
-        </svg>
-      </button>
+    <!-- 整合的頂部導航 -->
+    <div class="chat-list-topbar">
+      <!-- 標題欄 -->
+      <header class="topbar-header">
+        <button class="header-back" @click="emit('back')">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path
+              d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"
+            />
+          </svg>
+        </button>
+        <h1 class="header-title">訊息</h1>
+      </header>
 
-      <h1 class="header-title">訊息</h1>
-    </header>
+      <!-- 分頁標籤 -->
+      <nav class="pill-tabs">
+        <button
+          class="pill-tab"
+          :class="{ active: currentTab === 'chats' }"
+          @click="currentTab = 'chats'"
+        >
+          對話
+          <span v-if="chatList.length" class="pill-badge">{{ chatList.length }}</span>
+        </button>
+        <button
+          class="pill-tab"
+          :class="{ active: currentTab === 'contacts' }"
+          @click="currentTab = 'contacts'"
+        >
+          聯繫人
+          <span v-if="charactersStore.characters.length" class="pill-badge">{{ charactersStore.characters.length }}</span>
+        </button>
+      </nav>
 
-    <!-- 分頁標籤 -->
-    <nav class="tabs">
-      <button
-        class="tab"
-        :class="{ active: currentTab === 'chats' }"
-        @click="currentTab = 'chats'"
-      >
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path
-            d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"
+      <!-- 搜尋欄與新建群聊 -->
+      <div class="topbar-actions">
+        <div class="search-bar">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="search-icon">
+            <path
+              d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
+            />
+          </svg>
+          <input
+            v-model="searchQuery"
+            type="text"
+            :placeholder="currentTab === 'chats' ? '搜尋對話...' : '搜尋聯繫人...'"
           />
-        </svg>
-        對話
-        <span v-if="chatList.length" class="tab-badge">{{
-          chatList.length
-        }}</span>
-      </button>
-      <button
-        class="tab"
-        :class="{ active: currentTab === 'contacts' }"
-        @click="currentTab = 'contacts'"
-      >
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path
-            d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-          />
-        </svg>
-        聯繫人
-        <span v-if="charactersStore.characters.length" class="tab-badge">{{
-          charactersStore.characters.length
-        }}</span>
-      </button>
-    </nav>
-
-    <!-- 搜尋欄 -->
-    <div class="search-bar">
-      <svg viewBox="0 0 24 24" fill="currentColor">
-        <path
-          d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
-        />
-      </svg>
-      <input
-        v-model="searchQuery"
-        type="text"
-        :placeholder="currentTab === 'chats' ? '搜尋對話...' : '搜尋聯繫人...'"
-      />
+        </div>
+        <button v-if="currentTab === 'chats'" class="create-group-fab" @click="openGroupChatCreation" title="建立群聊">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+          </svg>
+          <span class="fab-label">群聊</span>
+        </button>
+      </div>
     </div>
 
     <!-- 內容區域 -->
@@ -471,119 +493,121 @@ async function togglePinChat() {
       <template v-else-if="currentTab === 'chats'">
         <div v-if="filteredChats.length === 0" class="empty-state">
           <svg viewBox="0 0 24 24" fill="currentColor">
-            <path
-              d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"
-            />
+            <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
           </svg>
           <p>還沒有對話</p>
           <div class="empty-actions">
-            <button class="start-btn" @click="currentTab = 'contacts'">
-              開始新對話
-            </button>
-            <button class="start-btn group-btn" @click="openGroupChatCreation">
-              建立群聊
-            </button>
+            <button class="btn-primary" @click="currentTab = 'contacts'">開始新對話</button>
+            <button class="btn-ghost" @click="openGroupChatCreation">建立群聊</button>
           </div>
         </div>
 
         <div v-else class="chat-list">
-          <!-- 建立群聊按鈕 -->
-          <button class="create-group-btn" @click="openGroupChatCreation">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M22 9V7h-2v2h-2v2h2v2h2v-2h2V9zM8 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4zm4.51-2.33C13.85 10.76 14.5 9.44 14.5 8c0-1.44-.65-2.76-1.99-3.67C13.85 5.24 14.5 6.56 14.5 8c0 1.44-.65 2.76-1.99 3.67zM16 14c1.46 1.03 2.5 2.73 2.5 4v2h3v-2c0-1.48-2.54-2.76-5.5-4z"
-              />
-            </svg>
-            <span>建立群聊</span>
-          </button>
-          <div
-            v-for="chat in filteredChats"
-            :key="chat.id"
-            class="chat-item"
-            @click="openChat(chat)"
-            @touchstart="handleChatTouchStart($event, chat)"
-            @touchend="handleChatTouchEnd"
-            @touchmove="handleChatTouchMove"
-            @mousedown="handleChatTouchStart($event, chat)"
-            @mouseup="handleChatTouchEnd"
-            @mouseleave="handleChatTouchEnd"
-          >
-            <div class="chat-avatar">
-              <img
-                v-if="!chat.isGroupChat && getCharacterAvatar(chat.characterId, chat)"
-                :src="getCharacterAvatar(chat.characterId, chat)"
-                :alt="getCharacterName(chat)"
-              />
-              <img
-                v-else-if="
-                  chat.isGroupChat &&
-                  chat.groupMetadata?.isMultiCharCard &&
-                  getCharacterAvatar(chat.characterId, chat)
-                "
-                :src="getCharacterAvatar(chat.characterId, chat)"
-                :alt="getCharacterName(chat)"
-              />
-              <img
-                v-else-if="chat.isGroupChat && chat.groupMetadata?.groupAvatar"
-                :src="chat.groupMetadata.groupAvatar"
-                :alt="getCharacterName(chat)"
-              />
-              <div
-                v-else-if="chat.isGroupChat"
-                class="group-avatar-placeholder"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"
-                  />
-                </svg>
+          <!-- 置頂對話 -->
+          <template v-if="pinnedChats.length > 0">
+            <div class="section-label">置頂對話</div>
+            <div
+              v-for="chat in pinnedChats"
+              :key="chat.id"
+              class="chat-item pinned"
+              @click="openChat(chat)"
+              @touchstart="handleChatTouchStart($event, chat)"
+              @touchend="handleChatTouchEnd"
+              @touchmove="handleChatTouchMove"
+              @mousedown="handleChatTouchStart($event, chat)"
+              @mouseup="handleChatTouchEnd"
+              @mouseleave="handleChatTouchEnd"
+            >
+              <div class="chat-avatar">
+                <img v-if="!chat.isGroupChat && getCharacterAvatar(chat.characterId, chat)" :src="getCharacterAvatar(chat.characterId, chat)" :alt="getCharacterName(chat)" />
+                <img v-else-if="chat.isGroupChat && chat.groupMetadata?.isMultiCharCard && getCharacterAvatar(chat.characterId, chat)" :src="getCharacterAvatar(chat.characterId, chat)" :alt="getCharacterName(chat)" />
+                <img v-else-if="chat.isGroupChat && chat.groupMetadata?.groupAvatar" :src="chat.groupMetadata.groupAvatar" :alt="getCharacterName(chat)" />
+                <div v-else-if="chat.isGroupChat" class="group-avatar-placeholder">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+                  </svg>
+                </div>
+                <div v-else class="avatar-placeholder">{{ getCharacterName(chat).charAt(0) }}</div>
+                
+                <div v-if="chat.unreadCount" class="avatar-dot unread"></div>
+                <div v-else-if="chat.groupMetadata?.isMultiCharCard" class="avatar-dot multi"></div>
+                <div v-else-if="chat.isGroupChat" class="avatar-dot group"></div>
               </div>
-              <div v-else class="avatar-placeholder">
-                {{ getCharacterName(chat).charAt(0) }}
+              <div class="chat-info">
+                <div class="chat-header">
+                  <span class="chat-name">
+                    <span v-if="chat.isGroupChat && !chat.groupMetadata?.isMultiCharCard" class="inline-badge group" title="群聊">群</span>
+                    <span v-else-if="chat.groupMetadata?.isMultiCharCard" class="inline-badge multi" title="多角卡">多</span>
+                    {{ getCharacterName(chat) }}
+                  </span>
+                </div>
+                <div class="preview-line">
+                  <svg v-if="previewIconKind(chat) === 'html'" class="preview-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95c-.32-1.25-.78-2.45-1.38-3.56 1.84.63 3.37 1.91 4.33 3.56zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56-1.84-.63-3.37-1.9-4.33-3.56zm2.95-8H5.08c.96-1.66 2.49-2.93 4.33-3.56C8.81 5.55 8.35 6.75 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.34.16-2h4.68c.09.66.16 1.32.16 2 0 .68-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95c-.96 1.65-2.49 2.93-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z"/></svg>
+                  <svg v-else-if="previewIconKind(chat) === 'sticker'" class="preview-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/></svg>
+                  <svg v-else-if="previewIconKind(chat) === 'image'" class="preview-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+                  <span class="chat-preview-text">{{ formatPreview(chat) }}</span>
+                </div>
+                <div v-if="chat.name" class="chat-file-label">{{ chat.name }}</div>
               </div>
-            </div>
-            <div class="chat-info">
-              <div class="chat-header">
-                <span class="chat-name">
-                  <span
-                    v-if="
-                      chat.isGroupChat && !chat.groupMetadata?.isMultiCharCard
-                    "
-                    class="group-badge"
-                    >群</span
-                  >
-                  <span
-                    v-else-if="chat.groupMetadata?.isMultiCharCard"
-                    class="group-badge multi-char-badge"
-                    >多</span
-                  >
-                  <span
-                    v-if="chat.pinnedToList"
-                    class="group-badge pinned-badge"
-                    title="已加入聊天列表"
-                    >列</span
-                  >
-                  {{ getCharacterName(chat) }}
-                </span>
+              <div class="meta-column">
                 <span class="chat-time">{{ formatTime(chat.updatedAt) }}</span>
+                <span v-if="chat.unreadCount" class="unread-badge">{{ chat.unreadCount > 99 ? "99+" : chat.unreadCount }}</span>
+                <svg v-else class="pin-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" /></svg>
               </div>
-              <p class="chat-preview">
-                {{
-                  chat.lastMessagePreview ||
-                  chat.messages[chat.messages.length - 1]?.content ||
-                  "開始對話..."
-                }}
-              </p>
-              <p v-if="chat.pinnedToList && chat.name" class="chat-file-label">
-                {{ chat.name }}
-              </p>
             </div>
-            <!-- 未讀訊息徽章 -->
-            <span v-if="chat.unreadCount" class="unread-badge">
-              {{ chat.unreadCount > 99 ? "99+" : chat.unreadCount }}
-            </span>
-            <!-- 群聊設定按鈕已移至群聊資訊內 -->
-          </div>
+          </template>
+
+          <!-- 最近對話 -->
+          <template v-if="recentChats.length > 0">
+            <div class="section-label" v-if="pinnedChats.length > 0">最近對話</div>
+            <div
+              v-for="chat in recentChats"
+              :key="chat.id"
+              class="chat-item"
+              @click="openChat(chat)"
+              @touchstart="handleChatTouchStart($event, chat)"
+              @touchend="handleChatTouchEnd"
+              @touchmove="handleChatTouchMove"
+              @mousedown="handleChatTouchStart($event, chat)"
+              @mouseup="handleChatTouchEnd"
+              @mouseleave="handleChatTouchEnd"
+            >
+              <div class="chat-avatar">
+                <img v-if="!chat.isGroupChat && getCharacterAvatar(chat.characterId, chat)" :src="getCharacterAvatar(chat.characterId, chat)" :alt="getCharacterName(chat)" />
+                <img v-else-if="chat.isGroupChat && chat.groupMetadata?.isMultiCharCard && getCharacterAvatar(chat.characterId, chat)" :src="getCharacterAvatar(chat.characterId, chat)" :alt="getCharacterName(chat)" />
+                <img v-else-if="chat.isGroupChat && chat.groupMetadata?.groupAvatar" :src="chat.groupMetadata.groupAvatar" :alt="getCharacterName(chat)" />
+                <div v-else-if="chat.isGroupChat" class="group-avatar-placeholder">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+                  </svg>
+                </div>
+                <div v-else class="avatar-placeholder">{{ getCharacterName(chat).charAt(0) }}</div>
+                
+                <div v-if="chat.unreadCount" class="avatar-dot unread"></div>
+                <div v-else-if="chat.groupMetadata?.isMultiCharCard" class="avatar-dot multi"></div>
+                <div v-else-if="chat.isGroupChat" class="avatar-dot group"></div>
+              </div>
+              <div class="chat-info">
+                <div class="chat-header">
+                  <span class="chat-name">
+                    <span v-if="chat.isGroupChat && !chat.groupMetadata?.isMultiCharCard" class="inline-badge group" title="群聊">群</span>
+                    <span v-else-if="chat.groupMetadata?.isMultiCharCard" class="inline-badge multi" title="多角卡">多</span>
+                    {{ getCharacterName(chat) }}
+                  </span>
+                </div>
+                <div class="preview-line">
+                  <svg v-if="previewIconKind(chat) === 'html'" class="preview-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95c-.32-1.25-.78-2.45-1.38-3.56 1.84.63 3.37 1.91 4.33 3.56zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56-1.84-.63-3.37-1.9-4.33-3.56zm2.95-8H5.08c.96-1.66 2.49-2.93 4.33-3.56C8.81 5.55 8.35 6.75 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.34.16-2h4.68c.09.66.16 1.32.16 2 0 .68-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95c-.96 1.65-2.49 2.93-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z"/></svg>
+                  <svg v-else-if="previewIconKind(chat) === 'sticker'" class="preview-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/></svg>
+                  <svg v-else-if="previewIconKind(chat) === 'image'" class="preview-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+                  <span class="chat-preview-text">{{ formatPreview(chat) }}</span>
+                </div>
+              </div>
+              <div class="meta-column">
+                <span class="chat-time">{{ formatTime(chat.updatedAt) }}</span>
+                <span v-if="chat.unreadCount" class="unread-badge">{{ chat.unreadCount > 99 ? "99+" : chat.unreadCount }}</span>
+              </div>
+            </div>
+          </template>
         </div>
       </template>
 
@@ -976,72 +1000,130 @@ async function togglePinChat() {
 <style lang="scss" scoped>
 .chat-list-screen {
   background: var(--color-background);
-}
-
-.tabs {
   display: flex;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
-  background: var(--color-surface, #fff);
+  flex-direction: column;
+  height: 100%;
 }
 
-.tab {
+/* --- 整合頂部導航區塊 --- */
+.chat-list-topbar {
+  background: var(--color-surface, #fff);
+  border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px 8px;
+  gap: 12px;
+}
+
+.header-back {
+  background: none;
+  border: none;
+  padding: 8px;
+  margin-left: -8px;
+  cursor: pointer;
+  color: var(--color-text, #333);
+  border-radius: 50%;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  svg {
+    width: 24px;
+    height: 24px;
+  }
+  
+  &:hover {
+    background: var(--color-background, #f5f5f5);
+  }
+}
+
+.header-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text, #333);
+  margin: 0;
+  flex: 1;
+}
+
+/* Pill Tabs */
+.pill-tabs {
+  display: flex;
+  padding: 0 16px 12px;
+  gap: 8px;
+}
+
+.pill-tab {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 12px;
-  background: none;
+  padding: 10px;
+  background: var(--color-background, #f5f5f5);
   border: none;
+  border-radius: 20px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--color-text-secondary, #666);
   cursor: pointer;
   transition: all 0.2s;
-  position: relative;
-
-  svg {
-    width: 18px;
-    height: 18px;
-  }
 
   &.active {
-    color: var(--color-primary, #7dd3a8);
+    background: var(--color-primary, #7dd3a8);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(125, 211, 168, 0.3);
 
-    &::after {
-      content: "";
-      position: absolute;
-      bottom: 0;
-      left: 20%;
-      right: 20%;
-      height: 3px;
-      background: var(--color-primary, #7dd3a8);
-      border-radius: 2px 2px 0 0;
+    .pill-badge {
+      background: rgba(255,255,255,0.2);
+      color: #fff;
     }
   }
 }
 
-.tab-badge {
-  background: var(--color-primary-light, #c7fcbb);
-  color: var(--color-primary, #7dd3a8);
+.pill-badge {
+  background: var(--color-border, #e2e8f0);
+  color: var(--color-text-secondary, #666);
   font-size: 11px;
   padding: 2px 6px;
   border-radius: 10px;
   font-weight: 600;
 }
 
+/* 搜尋欄 & FAB */
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  padding: 0 16px 12px;
+  gap: 12px;
+}
+
 .search-bar {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 12px 16px;
   padding: 10px 14px;
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border, #e2e8f0);
-  border-radius: 12px;
+  background: var(--color-background, #f9f9f9);
+  border: 1px solid transparent;
+  border-radius: 16px;
+  transition: all 0.2s;
 
-  svg {
+  &:focus-within {
+    background: var(--color-surface, #fff);
+    border-color: var(--color-primary, #7dd3a8);
+    box-shadow: 0 0 0 3px rgba(125, 211, 168, 0.15);
+  }
+
+  .search-icon {
     width: 18px;
     height: 18px;
     color: var(--color-text-muted, #999);
@@ -1061,10 +1143,43 @@ async function togglePinChat() {
   }
 }
 
+.create-group-fab {
+  height: 40px;
+  padding: 0 14px 0 12px;
+  border-radius: 20px;
+  background: var(--color-primary, #7dd3a8);
+  color: white;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(125, 211, 168, 0.35);
+  transition: all 0.2s;
+  font-size: 13px;
+  font-weight: 600;
+
+  svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .fab-label {
+    line-height: 1;
+  }
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(125, 211, 168, 0.5);
+  }
+}
+
+/* --- 內容區域 --- */
 .content {
   flex: 1;
   overflow-y: auto;
-  padding-bottom: var(--safe-bottom, 0px);
+  padding-bottom: var(--safe-bottom, 20px);
 }
 
 .loading {
@@ -1087,9 +1202,7 @@ async function togglePinChat() {
 }
 
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 
 .empty-state {
@@ -1119,28 +1232,55 @@ async function togglePinChat() {
     margin-top: 8px;
   }
 
-  .start-btn {
+  .empty-actions {
     margin-top: 20px;
+    display: flex;
+    gap: 12px;
+  }
+
+  .btn-primary, .btn-ghost {
     padding: 12px 24px;
-    background: linear-gradient(135deg, #a8e6cf, #7dd3a8);
-    border: none;
     border-radius: 20px;
-    color: white;
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
-
+    border: none;
+  }
+  
+  .btn-primary {
+    background: linear-gradient(135deg, #a8e6cf, #7dd3a8);
+    color: white;
     &:hover {
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(125, 211, 168, 0.4);
     }
   }
+
+  .btn-ghost {
+    background: var(--color-surface, #f0f0f0);
+    color: var(--color-text, #333);
+    &:hover {
+      background: var(--color-border, #e2e8f0);
+    }
+  }
 }
 
-// 對話列表
+/* --- 對話列表 --- */
 .chat-list {
-  padding: 0 16px;
+  padding: 12px 16px;
+}
+
+.section-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted, #999);
+  margin: 16px 0 8px 4px;
+  letter-spacing: 0.5px;
+  
+  &:first-child {
+    margin-top: 4px;
+  }
 }
 
 .chat-item {
@@ -1149,33 +1289,51 @@ async function togglePinChat() {
   gap: 12px;
   padding: 12px;
   background: var(--color-surface, #fff);
-  border-radius: 16px;
-  margin-bottom: 8px;
+  border: 1px solid var(--color-border, rgba(0,0,0,0.04));
+  border-radius: 14px;
+  margin-bottom: 6px;
   cursor: pointer;
   transition: all 0.2s;
+  position: relative;
 
   &:hover {
-    background: var(--color-primary-light, #c7fcbb);
+    transform: translateY(-1px);
+    border-color: var(--color-primary, #7dd3a8);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  }
+
+  &.pinned {
+    background: linear-gradient(to right, rgba(125, 211, 168, 0.05), var(--color-surface, #fff) 40%);
+    &::before {
+      content: '';
+      position: absolute;
+      left: -1px;
+      top: 12px;
+      bottom: 12px;
+      width: 3px;
+      background: var(--color-primary, #7dd3a8);
+      border-radius: 0 2px 2px 0;
+    }
   }
 }
 
+/* 三欄結構：avatar | info | meta */
 .chat-avatar {
-  width: 50px;
-  height: 50px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  overflow: hidden;
+  position: relative;
   flex-shrink: 0;
 
-  img {
+  img, .group-avatar-placeholder, .avatar-placeholder {
     width: 100%;
     height: 100%;
+    border-radius: 50%;
     object-fit: cover;
   }
 }
 
 .avatar-placeholder {
-  width: 100%;
-  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1184,38 +1342,100 @@ async function togglePinChat() {
   font-size: 20px;
   font-weight: 600;
 
-  &.large {
-    font-size: 28px;
+  &.large { font-size: 28px; }
+}
+
+.group-avatar-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary-light, #e8f5e9);
+  
+  svg {
+    width: 55%;
+    height: 55%;
+    color: var(--color-primary, #7dd3a8);
   }
+}
+
+/* 頭像右下角狀態點 */
+.avatar-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--color-surface, #fff);
+
+  &.unread { background: #e53e3e; }
+  &.multi { background: #89cff0; }
+  &.group { background: var(--color-primary, #7dd3a8); }
 }
 
 .chat-info {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
 }
 
 .chat-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 4px;
 }
 
 .chat-name {
   font-size: 15px;
   font-weight: 600;
   color: var(--color-text, #333);
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.chat-time {
-  font-size: 12px;
-  color: var(--color-text-muted, #999);
+.inline-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  height: 16px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  margin-right: 6px;
+  flex-shrink: 0;
+
+  &.group {
+    background: var(--color-primary-light, #e8f5e9);
+    color: var(--color-primary, #7dd3a8);
+  }
+  &.multi {
+    background: #e1f5fe;
+    color: #0288d1;
+  }
 }
 
-.chat-preview {
+.preview-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
   color: var(--color-text-secondary, #666);
-  margin: 0;
+}
+
+.preview-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--color-text-muted, #999);
+  flex-shrink: 0;
+}
+
+.chat-preview-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1224,79 +1444,56 @@ async function togglePinChat() {
 .chat-file-label {
   font-size: 11px;
   color: var(--color-primary, #7dd3a8);
-  margin: 2px 0 0;
+  margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.unread-badge {
+/* 右側 Meta Column */
+.meta-column {
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  min-width: 40px;
+  height: 42px;
+  flex-shrink: 0;
+}
+
+.chat-time {
+  font-size: 11px;
+  color: var(--color-text-muted, #999);
+  font-weight: 500;
+}
+
+.unread-badge {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 10px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
   background: #e53e3e;
   color: #fff;
   font-size: 11px;
-  font-weight: 600;
-  flex-shrink: 0;
+  font-weight: 700;
   line-height: 1;
 }
 
-.chat-action {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  opacity: 0;
-  transition: all 0.2s;
-  flex-shrink: 0;
-
-  svg {
-    width: 16px;
-    height: 16px;
-    color: var(--color-text-muted, #999);
-  }
-
-  &:disabled {
-    cursor: not-allowed;
-    opacity: 0.3 !important;
-  }
-
-  &.export:hover:not(:disabled) {
-    background: rgba(125, 211, 168, 0.2);
-
-    svg {
-      color: var(--color-primary, #7dd3a8);
-    }
-  }
-
-  &.delete:hover:not(:disabled) {
-    background: rgba(229, 62, 62, 0.1);
-
-    svg {
-      color: #e53e3e;
-    }
-  }
-
-  .chat-item:hover & {
-    opacity: 1;
-  }
+.pin-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--color-text-muted, #ccc);
+  margin-right: 2px;
 }
 
-// 聯繫人網格
+/* --- 聯繫人網格 --- */
 .contacts-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-auto-rows: 1fr; // 所有行等高，自適應內容
+  grid-auto-rows: 1fr;
   gap: 12px;
   padding: 0 16px;
   align-items: stretch;
@@ -1306,30 +1503,30 @@ async function togglePinChat() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
   padding: 16px 8px 12px;
   background: var(--color-surface, #fff);
-  border-radius: 16px;
+  border: 1px solid var(--color-border, rgba(0,0,0,0.04));
+  border-radius: 14px;
   cursor: pointer;
   transition: all 0.2s;
-  height: 100%; // 撐滿 grid row 高度，確保同行等高
+  height: 100%;
   box-sizing: border-box;
 
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-color: var(--color-primary, #7dd3a8);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   }
 }
 
 .contact-avatar {
-  width: 60px;
-  height: 60px;
-  min-width: 60px;
-  min-height: 60px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   overflow: hidden;
-  margin-bottom: 8px;
-  flex-shrink: 0; // 防止頭像被壓縮
+  margin-bottom: 10px;
+  flex-shrink: 0;
+  border: 1px solid var(--color-border, rgba(0,0,0,0.08));
 
   img {
     width: 100%;
@@ -1344,7 +1541,6 @@ async function togglePinChat() {
   color: var(--color-text, #333);
   text-align: center;
   width: 100%;
-  // 允許換行但最多兩行，避免撐高卡片
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1356,92 +1552,8 @@ async function togglePinChat() {
 .contact-hint {
   font-size: 11px;
   color: var(--color-text-muted, #999);
-  margin-top: 4px;
-  text-align: center;
-  white-space: nowrap;
-}
-
-// ===== 群聊相關樣式 =====
-
-.empty-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.group-btn {
-  background: var(--color-surface, #f0f0f0) !important;
-  color: var(--color-text, #333) !important;
-}
-
-.create-group-btn {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 12px 16px;
-  background: none;
-  border: 1px dashed var(--color-border, #ddd);
-  border-radius: 12px;
-  font-size: 14px;
-  color: var(--color-text-secondary, #666);
-  cursor: pointer;
-  margin-bottom: 8px;
-  transition: background 0.2s;
-
-  svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  &:hover {
-    background: var(--color-primary-light, #f0f0f0);
-  }
-}
-
-.group-avatar-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-primary-light, #e8f5e9);
-  border-radius: 50%;
-
-  svg {
-    width: 60%;
-    height: 60%;
-    color: var(--color-primary, #7dd3a8);
-  }
-}
-
-.group-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  background: var(--color-primary, #7dd3a8);
-  color: white;
-  font-size: 10px;
-  margin-right: 4px;
-  flex-shrink: 0;
-
-  &.multi-char-badge {
-    background: #89cff0;
-  }
-
-  &.pinned-badge {
-    background: var(--color-primary, #7dd3a8);
-    opacity: 0.75;
-  }
-}
-
-.chat-action.settings {
-  svg {
-    color: var(--color-text-secondary, #666);
-  }
+  margin-top: 6px;
+  letter-spacing: 0.5px;
 }
 
 // ===== 彈窗樣式 =====
