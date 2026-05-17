@@ -119,8 +119,9 @@ function onTimeJumpInput(event: Event) {
 <template>
   <header class="chat-header">
     <button class="header-back" @click="emit('back')">
-      <svg viewBox="0 0 24 24" fill="currentColor">
-        <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 12H5" />
+        <path d="M12 19l-7-7 7-7" />
       </svg>
     </button>
 
@@ -128,18 +129,22 @@ function onTimeJumpInput(event: Event) {
       <div class="char-avatar" title="AI 記憶管理" @click.stop="emit('open-ai-summary')">
         <img v-if="displayAvatar" :src="displayAvatar" :alt="characterName" />
         <div v-else-if="isGroupChat" class="avatar-placeholder group-avatar">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="9" cy="9" r="3" />
+            <circle cx="17" cy="10" r="2.2" />
+            <path d="M3 19v-1a5.5 5.5 0 0 1 11 0v1" />
+            <path d="M14 14a4 4 0 0 1 7 4v1" />
           </svg>
         </div>
         <div v-else class="avatar-placeholder">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z" />
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 20v-1a7 7 0 0 1 14 0v1" transform="translate(1 0)" />
           </svg>
         </div>
       </div>
-      <svg v-if="hasMemoryBadge" class="char-avatar-heart" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+      <svg v-if="hasMemoryBadge" class="char-avatar-heart" viewBox="0 0 24 24" fill="currentColor" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 20.5l-1.3-1.18C5.9 14.96 3 12.16 3 8.75 3 5.96 5.18 3.8 7.95 3.8c1.58 0 3.1.74 4.05 1.9.95-1.16 2.47-1.9 4.05-1.9 2.77 0 4.95 2.16 4.95 4.95 0 3.41-2.9 6.21-7.7 10.57L12 20.5z" />
       </svg>
     </div>
 
@@ -147,8 +152,9 @@ function onTimeJumpInput(event: Event) {
       <div class="chat-name-row">
         <h1 class="chat-name">{{ isGroupChat ? groupDisplayName : displayCharacterName }}</h1>
         <button v-if="!isGroupChat && currentCharacter" class="nickname-edit-btn" title="編輯暱稱" @click.stop="emit('start-nickname-edit')">
-          <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
           </svg>
         </button>
       </div>
@@ -163,8 +169,8 @@ function onTimeJumpInput(event: Event) {
           @keydown.escape="emit('close-nickname-edit')"
         />
         <button class="nickname-save-btn" @click="emit('save-nickname')">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 6 9 17l-5-5" />
           </svg>
         </button>
       </div>
@@ -173,11 +179,11 @@ function onTimeJumpInput(event: Event) {
     </div>
 
     <button class="rail-toggle-btn" :class="{ active: showRail }" @click.stop="emit('toggle-rail')">
-      <svg v-if="!showRail" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
+      <svg v-if="!showRail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m6 9 6 6 6-6" />
       </svg>
-      <svg v-else viewBox="0 0 24 24" fill="currentColor">
-        <path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z" />
+      <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m18 15-6-6-6 6" />
       </svg>
     </button>
 
@@ -187,8 +193,9 @@ function onTimeJumpInput(event: Event) {
           <div v-if="currentUserAvatar" class="persona-avatar-mini">
             <img :src="currentUserAvatar" :alt="currentUserName" />
           </div>
-          <svg v-else viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M5 20v-1a7 7 0 0 1 14 0v1" />
           </svg>
         </button>
 
@@ -207,8 +214,9 @@ function onTimeJumpInput(event: Event) {
               >
                 <div class="persona-item-avatar">
                   <img v-if="persona.avatar" :src="persona.avatar" :alt="persona.name" />
-                  <svg v-else viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                  <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="8" r="4" />
+                    <path d="M5 20v-1a7 7 0 0 1 14 0v1" />
                   </svg>
                 </div>
                 <div class="persona-item-info">
@@ -217,15 +225,16 @@ function onTimeJumpInput(event: Event) {
                     {{ persona.description.substring(0, 30) }}{{ persona.description.length > 30 ? '...' : '' }}
                   </span>
                 </div>
-                <svg v-if="persona.id === currentPersonaId" class="check-icon" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                <svg v-if="persona.id === currentPersonaId" class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 6 9 17l-5-5" />
                 </svg>
               </button>
             </div>
             <div class="persona-selector-footer">
               <button class="edit-persona-btn" @click="emit('open-persona-edit')">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
                 </svg>
                 <span>編輯設定</span>
               </button>
@@ -236,8 +245,12 @@ function onTimeJumpInput(event: Event) {
 
       <div class="game-dropdown" @click.stop>
         <button class="header-btn" :class="{ active: showGameMenu }" title="小遊戲" @click.stop="emit('toggle-game-menu')">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5S18.67 9 19.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="6" y1="12" x2="10" y2="12" />
+            <line x1="8" y1="10" x2="8" y2="14" />
+            <circle cx="15" cy="13" r="0.6" fill="currentColor" stroke="none" />
+            <circle cx="18" cy="11" r="0.6" fill="currentColor" stroke="none" />
+            <path d="M17.32 6H6.68A4 4 0 0 0 2.7 9.59C2.6 10.45 2 14.5 2 16a3 3 0 0 0 5.12 2.12L8.5 16.7a2 2 0 0 1 1.41-.59h4.18a2 2 0 0 1 1.41.59l1.38 1.42A3 3 0 0 0 22 16c0-1.5-.6-5.55-.7-6.41A4 4 0 0 0 17.32 6z" />
           </svg>
         </button>
 
@@ -287,21 +300,31 @@ function onTimeJumpInput(event: Event) {
       </div>
 
       <button class="header-btn" title="外觀設定" @click.stop="emit('open-settings')">
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
       </button>
 
       <button v-if="!isGroupChat && currentCharacter" class="header-btn" title="主動發訊息設置" @click.stop="emit('open-proactive-message-settings')">
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
         </svg>
       </button>
 
       <div class="chat-settings-dropdown" @click.stop>
         <button class="header-btn" :class="{ active: showChatSettingsMenu }" title="聊天設定" @click.stop="emit('toggle-chat-settings-menu')">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" />
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="6" x2="10" y2="6" />
+            <line x1="14" y1="6" x2="20" y2="6" />
+            <line x1="4" y1="12" x2="14" y2="12" />
+            <line x1="18" y1="12" x2="20" y2="12" />
+            <line x1="4" y1="18" x2="8" y2="18" />
+            <line x1="12" y1="18" x2="20" y2="18" />
+            <circle cx="12" cy="6" r="2" />
+            <circle cx="16" cy="12" r="2" />
+            <circle cx="10" cy="18" r="2" />
           </svg>
         </button>
 
@@ -492,8 +515,10 @@ function onTimeJumpInput(event: Event) {
 
       <div class="more-dropdown" @click.stop>
         <button class="header-btn" title="更多選項" @click.stop="emit('toggle-more-menu')">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none" />
+            <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+            <circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none" />
           </svg>
         </button>
 
@@ -586,13 +611,22 @@ function onTimeJumpInput(event: Event) {
 .chat-header {
   display: flex;
   align-items: center;
-  padding: 12px 16px;
-  padding-top: calc(12px + var(--safe-top));
-  padding-left: calc(16px + var(--safe-left));
-  padding-right: calc(16px + var(--safe-right));
-  background: transparent;
-  border-bottom: none;
-  gap: 12px;
+  margin: 10px 12px;
+  margin-top: calc(10px + var(--safe-top));
+  margin-left: calc(12px + var(--safe-left));
+  margin-right: calc(12px + var(--safe-right));
+  padding: 8px 12px;
+  border-radius: 28px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-surface) 85%, transparent) 0%,
+    color-mix(in srgb, var(--color-surface) 40%, transparent) 100%
+  );
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  gap: 10px;
   flex-shrink: 0;
   overflow: visible;
   position: relative;
@@ -600,29 +634,32 @@ function onTimeJumpInput(event: Event) {
 }
 
 .header-back {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-lg);
-  background: var(--color-background);
+  border-radius: 12px;
+  background: transparent;
   color: var(--color-text);
   cursor: pointer;
-  border: none;
+  border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
   transition: all var(--transition-fast);
 
   svg {
-    width: 24px;
-    height: 24px;
+    width: 20px;
+    height: 20px;
   }
 
   &:hover {
-    background: var(--color-surface-hover);
+    background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+    color: var(--color-primary);
     transform: scale(1.05);
   }
 
   &:active {
+    background: color-mix(in srgb, var(--color-primary) 16%, transparent);
     transform: scale(0.95);
   }
 }
@@ -636,13 +673,13 @@ function onTimeJumpInput(event: Event) {
 
 .char-avatar-heart {
   position: absolute;
-  bottom: -3px;
-  right: -3px;
+  bottom: -2px;
+  right: -2px;
   width: 14px;
   height: 14px;
-  color: #f472b6;
+  color: color-mix(in srgb, var(--color-primary) 75%, #ec4899);
   pointer-events: none;
-  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.4));
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.18));
 }
 
 .char-avatar {
@@ -653,10 +690,15 @@ function onTimeJumpInput(event: Event) {
   background: var(--color-background);
   cursor: pointer;
   transition: all var(--transition-fast);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-border) 70%, transparent),
+    0 1px 3px rgba(0, 0, 0, 0.05);
 
   &:hover {
     transform: scale(1.05);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    box-shadow:
+      0 0 0 1.5px color-mix(in srgb, var(--color-primary) 55%, transparent),
+      0 4px 10px rgba(0, 0, 0, 0.12);
   }
 
   &:active {
@@ -678,8 +720,8 @@ function onTimeJumpInput(event: Event) {
     color: var(--color-text-muted);
 
     svg {
-      width: 28px;
-      height: 28px;
+      width: 26px;
+      height: 26px;
     }
   }
 }
@@ -698,28 +740,30 @@ function onTimeJumpInput(event: Event) {
 
 .nickname-edit-btn {
   flex-shrink: 0;
+  align-self: center;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border: none;
   background: transparent;
   color: var(--color-text-secondary, #999);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 6px;
   padding: 0;
-  opacity: 0.5;
-  transition: opacity 0.2s, background 0.2s;
+  opacity: 0.65;
+  transition: opacity 0.2s, background 0.2s, color 0.2s;
 
   svg {
-    width: 14px;
-    height: 14px;
+    width: 13px;
+    height: 13px;
   }
 
   &:hover {
     opacity: 1;
-    background: rgba(255, 255, 255, 0.1);
+    color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   }
 }
 
@@ -733,18 +777,19 @@ function onTimeJumpInput(event: Event) {
 .nickname-edit-input {
   flex: 1;
   min-width: 0;
-  padding: 4px 8px;
-  border: 1px solid var(--color-primary, #7dd3a8);
-  border-radius: 6px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 60%, transparent);
+  border-radius: 10px;
   font-size: 13px;
   font-family: inherit;
   background: var(--color-surface, #fff);
   color: var(--color-text, #333);
   outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
 
   &:focus {
     border-color: var(--color-primary, #7dd3a8);
-    box-shadow: 0 0 0 2px rgba(125, 211, 168, 0.2);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent);
   }
 }
 
@@ -753,107 +798,138 @@ function onTimeJumpInput(event: Event) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border: none;
   background: var(--color-primary, #7dd3a8);
   color: white;
-  border-radius: 6px;
+  border-radius: 10px;
   cursor: pointer;
   padding: 0;
+  transition: transform 0.15s, box-shadow 0.2s;
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--color-primary) 30%, transparent);
 
   svg {
     width: 16px;
     height: 16px;
   }
-}
-
-.chat-name {
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--color-text);
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.chat-status {
-  font-size: 12px;
-  color: var(--color-primary);
-  margin: 2px 0 0;
-}
-
-.header-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.rail-toggle-btn {
-  display: none;
-  width: 36px;
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-lg);
-  background: var(--color-background);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  border: none;
-  flex-shrink: 0;
-  transition: all var(--transition-fast);
-
-  svg {
-    width: 20px;
-    height: 20px;
-    transition: transform 0.2s ease;
-  }
 
   &:hover {
-    background: var(--color-primary-light);
-    color: var(--color-primary);
-  }
-
-  &:active {
-    transform: scale(0.95);
-  }
-
-  &.active {
-    background: var(--color-primary-light);
-    color: var(--color-primary);
-  }
-}
-
-.header-btn {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-lg);
-  background: var(--color-background);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  border: none;
-  transition: all var(--transition-fast);
-
-  svg {
-    width: 22px;
-    height: 22px;
-  }
-
-  &:hover {
-    background: var(--color-primary-light);
-    color: var(--color-primary);
     transform: scale(1.05);
   }
 
   &:active {
     transform: scale(0.95);
   }
+}
+
+.chat-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-status {
+  font-size: 11px;
+  color: var(--color-primary);
+  margin: 2px 0 0;
+  min-height: 14px;
+  line-height: 1.2;
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-info {
+  // Reserve consistent vertical space so generating-status toggle does not jump header height
+  min-height: 38px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.header-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.rail-toggle-btn {
+  display: none;
+  width: 36px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+
+  svg {
+    width: 18px;
+    height: 18px;
+    transition: transform 0.2s ease;
+  }
+
+  &:hover {
+    background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+    color: var(--color-primary);
+  }
+
+  &:active {
+    transform: scale(0.96);
+  }
 
   &.active {
-    background: var(--color-primary-light);
+    background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+    color: var(--color-primary);
+  }
+}
+
+.header-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+  transition: all var(--transition-fast);
+
+  svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  &:hover {
+    background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+    color: var(--color-primary);
+    transform: scale(1.05);
+  }
+
+  &:active {
+    background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+    transform: scale(0.95);
+  }
+
+  &.active {
+    background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
     color: var(--color-primary);
   }
 }
@@ -874,10 +950,11 @@ function onTimeJumpInput(event: Event) {
 }
 
 .persona-avatar-mini {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   overflow: hidden;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-border) 60%, transparent);
 
   img {
     width: 100%;
@@ -1031,8 +1108,9 @@ function onTimeJumpInput(event: Event) {
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 180px;
-  max-height: calc(100dvh - 120px);
-  max-height: calc(100svh - 120px);
+  /* Use viewport height constraints but ensure it doesn't bleed out of the fixed app window */
+  max-height: calc(100dvh - 160px);
+  max-height: calc(100svh - 160px);
   z-index: 500;
 
   &::-webkit-scrollbar {
@@ -1308,20 +1386,25 @@ function onTimeJumpInput(event: Event) {
   .header-actions {
     display: none;
     position: absolute;
-    top: 100%;
+    top: calc(100% + 8px);
     left: 0;
     right: 0;
     z-index: 100;
     flex-wrap: wrap;
     gap: 6px;
-    padding: 10px 16px 12px;
-    padding-left: calc(16px + var(--safe-left));
-    padding-right: calc(16px + var(--safe-right));
-    background: var(--color-surface);
-    border-bottom: 1px solid var(--color-border);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    padding: 10px 12px;
+    border-radius: 20px;
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--color-surface) 90%, transparent) 0%,
+      color-mix(in srgb, var(--color-surface) 60%, transparent) 100%
+    );
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
     justify-content: center;
-    animation: rail-slide-in 0.2s ease-out;
+    animation: rail-slide-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 
     &.rail-open {
       display: flex;
@@ -1332,12 +1415,15 @@ function onTimeJumpInput(event: Event) {
     overflow: visible;
 
     .dropdown-menu {
-      position: fixed;
-      top: auto;
-      right: 8px;
-      left: 8px;
+      position: absolute;
+      top: calc(100% + 8px);
+      bottom: auto;
+      right: 0;
+      left: 0;
       width: auto;
-      max-width: calc(100vw - 16px);
+      max-width: none;
+      /* In mobile, the dropdown is positioned under the floating header-actions */
+      max-height: calc(100svh - 220px);
     }
 
     .persona-selector {
@@ -1363,9 +1449,10 @@ function onTimeJumpInput(event: Event) {
 
 @media (min-width: 768px) and (max-width: 1024px) {
   .chat-header {
-    padding: 14px 24px;
-    padding-left: calc(24px + var(--safe-left));
-    padding-right: calc(24px + var(--safe-right));
+    margin: 14px 24px;
+    margin-left: calc(24px + var(--safe-left));
+    margin-right: calc(24px + var(--safe-right));
+    padding: 10px 16px;
   }
 }
 
