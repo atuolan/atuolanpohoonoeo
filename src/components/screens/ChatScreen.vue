@@ -3364,6 +3364,14 @@ const lastAIMessage = computed(() => {
 const _delay = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+// 依訊息總數決定每條間的延遲（避免大量訊息時等待過久）
+function _messageRenderDelay(total: number): number {
+  if (total <= 2) return 2000;
+  if (total <= 5) return 800;
+  if (total <= 10) return 400;
+  return 200;
+}
+
 // 滾動到底部
 function scrollToBottom() {
   nextTick(() => {
@@ -5841,12 +5849,12 @@ async function triggerAIResponse(options?: {
             messages.value.splice(msgIndex, 1);
           }
 
-          // 群聊逐條顯示節奏：當有多條訊息時，每條之間延遲 2000ms（與 1v1 聊天一致）
+          // 群聊逐條顯示節奏：當有多條訊息時，每條之間根據訊息總數動態延遲
           const _totalGc = parsed.messages.length;
           let _shownGc = 0;
           const _gcDelayIfNeeded = async () => {
             if (_totalGc > 1 && _shownGc > 0) {
-              await _delay(2000);
+              await _delay(_messageRenderDelay(_totalGc));
             }
             _shownGc++;
             scrollToBottom();
@@ -6606,7 +6614,7 @@ async function triggerAIResponse(options?: {
               }
 
               if (_totalMsgs1 > 1) {
-                await _delay(2000);
+                await _delay(_messageRenderDelay(_totalMsgs1));
               }
               _shownMsgs1++;
               messages.value.push(newMessage);
@@ -7343,9 +7351,9 @@ async function handleStreamingClose() {
               }
             }
 
-            // 逐條顯示延遲：多條訊息時，首條等 500ms，後續每條間隔 300ms
+            // 逐條顯示延遲：多條訊息時，根據訊息總數動態調整間隔
             if (_totalMsgs3 > 1) {
-              await _delay(2000);
+              await _delay(_messageRenderDelay(_totalMsgs3));
             }
             _shownMsgs3++;
             messages.value.push(newMessage);
