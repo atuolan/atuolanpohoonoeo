@@ -616,7 +616,7 @@ function onTimeJumpInput(event: Event) {
   margin-left: calc(12px + var(--safe-left));
   margin-right: calc(12px + var(--safe-right));
   padding: 8px 12px;
-  border-radius: 28px;
+  border-radius: 20px;
   background: linear-gradient(
     135deg,
     color-mix(in srgb, var(--color-surface) 85%, transparent) 0%,
