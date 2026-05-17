@@ -628,7 +628,6 @@ function onTimeJumpInput(event: Event) {
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
   gap: 10px;
   flex-shrink: 0;
-  /* Allow overflow so the menu can float properly */
   overflow: visible;
   position: relative;
   z-index: 10;
@@ -1413,7 +1412,6 @@ function onTimeJumpInput(event: Event) {
   }
 
   .header-actions.rail-open {
-    /* Critical for mobile dropdowns to escape the floating container */
     overflow: visible;
 
     .dropdown-menu {
