@@ -4760,18 +4760,55 @@ function computeTheaterPhoneScriptRoleMap(
   parsedMessages: any[],
   userName?: string,
   charName?: string,
-  enableAlternateFallback: boolean = true,
 ): Map<number, { role: "user" | "ai"; content: string }> {
   const result = new Map<number, { role: "user" | "ai"; content: string }>();
   if (!Array.isArray(parsedMessages) || parsedMessages.length === 0) return result;
 
-  // pass 1：偵測前綴（字面 user/char 或 配置的 persona/角色名）
+  // 比對 senderName 用：除了 {{user}} / {{char}} 字面標記，也容忍 AI 改寫成實際名字。
+  const _normName = (s: unknown): string =>
+    typeof s === "string" ? s.trim().toLowerCase() : "";
+  const _trimmedUser = (userName || "").trim();
+  const _trimmedChar = (charName || "").trim();
+  const _userAliases = new Set<string>(
+    ["{{user}}", "user", "使用者", "用戶", "用户"]
+      .concat(_trimmedUser ? [_trimmedUser] : [])
+      .map((s) => s.toLowerCase()),
+  );
+  const _charAliases = new Set<string>(
+    ["{{char}}", "char", "角色"]
+      .concat(_trimmedChar ? [_trimmedChar] : [])
+      .map((s) => s.toLowerCase()),
+  );
+  const _roleFromSenderName = (
+    senderName: unknown,
+  ): "user" | "ai" | null => {
+    const norm = _normName(senderName);
+    if (!norm) return null;
+    if (_userAliases.has(norm)) return "user";
+    if (_charAliases.has(norm)) return "ai";
+    return null;
+  };
+
+  // pass 1：先看 <msg name="..."> 屬性，再看舊式內容前綴
   const eligibleIndices: number[] = [];
   let hits = 0;
   for (let i = 0; i < parsedMessages.length; i++) {
     const pm = parsedMessages[i];
     if (!_isTheaterScriptEligible(pm)) continue;
     eligibleIndices.push(i);
+
+    // 1a) 優先：<msg name="{{user}}"> / <msg name="{{char}}"> 屬性
+    const roleFromAttr = _roleFromSenderName(pm?.senderName);
+    if (roleFromAttr) {
+      result.set(i, {
+        role: roleFromAttr,
+        content: typeof pm?.content === "string" ? pm.content : "",
+      });
+      hits++;
+      continue;
+    }
+
+    // 1b) 後備：舊版內容前綴（user:/char:/persona名/角色名）
     const stripped = applyTheaterPhoneScriptPrefix(pm?.content, userName, charName);
     if (stripped) {
       result.set(i, stripped);
@@ -4779,73 +4816,8 @@ function computeTheaterPhoneScriptRoleMap(
     }
   }
 
-  // pass 1.5：若配置名對不到，但 AI 用了一致的 `Word:` 風格前綴
-  // （例如角色扮演中使用了與 persona 不同的暱稱 / 英文名），
-  // 自動偵測前 2 種出現最多的前綴並配對為 user / ai，避免全部擠在同一側。
+  // pass 2：AI 完全沒下前綴 → 交替分邊 fallback
   if (hits === 0 && eligibleIndices.length >= 2) {
-    const _genericPrefixRe = /^\s*([A-Za-z\u4e00-\u9fff_][\w\u4e00-\u9fff_-]{0,30})\s*[：:]\s*/;
-    type _Detected = { prefix: string; rest: string; firstAt: number };
-    const detected = new Map<number, _Detected>();
-    const counts = new Map<string, number>();
-    const firstSeen = new Map<string, number>();
-    for (const idx of eligibleIndices) {
-      const c = parsedMessages[idx]?.content;
-      if (typeof c !== "string") continue;
-      const m = c.match(_genericPrefixRe);
-      if (!m) continue;
-      const prefix = m[1];
-      const rest = c.slice(m[0].length);
-      detected.set(idx, { prefix, rest, firstAt: idx });
-      counts.set(prefix, (counts.get(prefix) || 0) + 1);
-      if (!firstSeen.has(prefix)) firstSeen.set(prefix, idx);
-    }
-    // 只有當 ≥ 2 種不同前綴、且偵測命中數佔合格訊息一半以上才採用
-    if (counts.size >= 2 && detected.size * 2 >= eligibleIndices.length) {
-      const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-      const top1 = sorted[0][0];
-      const top2 = sorted[1][0];
-      // 決定誰是 ai：若任一頂端前綴與 charName 模糊匹配，那一個就是 ai；
-      // 否則「先出現的視為 user，後出現的視為 ai」。
-      const cn = (charName || "").trim().toLowerCase();
-      const isCharLike = (p: string) => {
-        const lp = p.toLowerCase();
-        return cn.length > 0 && (lp === cn || lp.includes(cn) || cn.includes(lp));
-      };
-      let charPrefix: string;
-      let userPrefix: string;
-      if (isCharLike(top1) && !isCharLike(top2)) {
-        charPrefix = top1;
-        userPrefix = top2;
-      } else if (isCharLike(top2) && !isCharLike(top1)) {
-        charPrefix = top2;
-        userPrefix = top1;
-      } else {
-        // 兩個都像 / 都不像 → 用先出現順序：先出現的是 user
-        const f1 = firstSeen.get(top1) ?? Infinity;
-        const f2 = firstSeen.get(top2) ?? Infinity;
-        if (f1 <= f2) {
-          userPrefix = top1;
-          charPrefix = top2;
-        } else {
-          userPrefix = top2;
-          charPrefix = top1;
-        }
-      }
-      for (const idx of eligibleIndices) {
-        const d = detected.get(idx);
-        if (d && (d.prefix === charPrefix || d.prefix === userPrefix)) {
-          result.set(idx, {
-            role: d.prefix === userPrefix ? "user" : "ai",
-            content: d.rest,
-          });
-          hits++;
-        }
-      }
-    }
-  }
-
-  // pass 2：完全沒偵測到任何前綴 → 交替分邊 fallback（僅在 toggle 開啟時啟用）
-  if (enableAlternateFallback && hits === 0 && eligibleIndices.length >= 2) {
     let toggle: "user" | "ai" = "user";
     for (const idx of eligibleIndices) {
       const pm = parsedMessages[idx];
@@ -5692,28 +5664,25 @@ async function triggerAIResponse(options?: {
     // 🎭 當小劇場指令是最後一條時，補一條隱藏催促消息
     if (options?.theaterNudge) {
       appendedUserPrompts.push("[請根據上述場景指令，以角色身份繼續扮演]");
-      // 📱 小手機劇本格式：要求 AI 把每一句台詞用 <msg> 包起來，並以 user:/char: 前綴
-      // 開頭，前端會根據前綴把氣泡分到左右兩側。只在小劇場路徑使用，不影響日常聊天。
+      // 📱 小手機劇本格式：要求 AI 把每一句台詞用 <msg name="..."> 包起來，
+      // name 屬性用字面字串 {{user}} / {{char}} 作分邊標記（含雙大括號），
+      // 前端會根據 name 屬性把氣泡分到左右兩側。只在小劇場路徑使用，不影響日常聊天。
       if (options.theaterPhoneScript) {
-        const _ttUserName = (userStore.currentPersona?.name || "").trim();
-        const _ttCharName = (
-          currentCharacter.value?.data?.name ||
-          props.characterName ||
-          ""
-        ).trim();
-        const _ttUserHint = _ttUserName ? `user:（也可寫成 ${_ttUserName}:）` : "user:";
-        const _ttCharHint = _ttCharName ? `char:（也可寫成 ${_ttCharName}:）` : "char:";
         appendedUserPrompts.push(
           [
             "[小手機劇本格式｜強制規則]",
-            "1. 整個劇本只能輸出 <msg>…</msg>，<msg> 之外不可有任何文字（不要正文、敘述、狀態欄、旁白、解說、開場白）。",
-            `2. 每一個 <msg> 內容必須以「${_ttUserHint}」或「${_ttCharHint}」開頭，後面緊接該句台詞（半形冒號，冒號後不要空格）。`,
-            "3. 不允許省略前綴，每一條都要寫。即使是同一個人連續講十句，每一條 <msg> 都各自帶前綴。",
-            "4. 一個 <msg> 只放一句短台詞，模仿真實手機聊天節奏；想連發就拆成多個 <msg>。",
-            "5. 表情包用 [sticker:描述]、貼圖、語氣詞都正常使用，但同樣放在 <msg> 內並帶前綴。",
+            "1. 整個劇本只能輸出 <msg name=\"...\">…</msg>，<msg> 之外不可有任何文字（不要正文、敘述、狀態欄、旁白、解說、開場白）。",
+            "2. name 屬性只能填這兩種固定字串之一（請逐字輸出，包含雙大括號）：",
+            "   - 用戶發言用 name=\"{{user}}\"",
+            "   - 角色發言用 name=\"{{char}}\"",
+            "   注意：不要把 {{user}} / {{char}} 替換成實際名字，要保留雙大括號字面字串輸出。",
+            "3. 不允許省略 name 屬性，每一條 <msg> 都必須帶 name=\"{{user}}\" 或 name=\"{{char}}\"。",
+            "4. <msg> 內容只放該句台詞本身，不要再寫「user:」「char:」之類的前綴。",
+            "5. 一個 <msg> 只放一句短台詞，模仿真實手機聊天節奏；想連發就拆成多個 <msg>。",
+            "6. 表情包用 [sticker:描述]、貼圖、語氣詞都正常使用，但同樣放在 <msg> 內。",
             "範例（請完全照這個格式輸出）：",
-            "<msg>user:別生氣</msg><msg>user:我真的知道錯了</msg><msg>char:你只會說這一句嗎？</msg><msg>user:那我還能說什麼…</msg><msg>char:哄我。</msg>",
-            "再次提醒：每一個 <msg> 都必須以 user: 或 char: 開頭，違反此規則的訊息會被視為格式錯誤。",
+            "<msg name=\"{{user}}\">別生氣</msg><msg name=\"{{user}}\">我真的知道錯了</msg><msg name=\"{{char}}\">你只會說這一句嗎？</msg><msg name=\"{{user}}\">那我還能說什麼…</msg><msg name=\"{{char}}\">哄我。</msg>",
+            "再次提醒：每一個 <msg> 都必須帶 name=\"{{user}}\" 或 name=\"{{char}}\" 屬性，違反此規則的訊息會被視為格式錯誤。",
           ].join("\n"),
         );
       }
@@ -6565,15 +6534,14 @@ async function triggerAIResponse(options?: {
                 pm.isCharRecall,
             ).length;
             let _shownMsgs1 = 0;
-            // 📱 小手機劇本格式：預先決定每條訊息的左右分邊
-            // 即使 toggle 沒開，只要 AI 自己用一致的「Word:」前綴格式輸出，
-            // 也讓 pass 1 / pass 1.5 自動分邊；只有 toggle 開時才啟用「全部沒前綴 → 交替」fallback。
-            const _theaterRoleMap1 = computeTheaterPhoneScriptRoleMap(
-              parsed.messages,
-              userStore.currentPersona?.name,
-              currentCharacter.value?.data?.name || props.characterName,
-              !!options?.theaterPhoneScript,
-            );
+            // 📱 小手機劇本格式：預先決定每條訊息的左右分邊（含 AI 沒下前綴時的交替 fallback）
+            const _theaterRoleMap1 = options?.theaterPhoneScript
+              ? computeTheaterPhoneScriptRoleMap(
+                  parsed.messages,
+                  userStore.currentPersona?.name,
+                  currentCharacter.value?.data?.name || props.characterName,
+                )
+              : null;
             for (let i = 0; i < parsed.messages.length; i++) {
               const parsedMsg = parsed.messages[i];
 
@@ -7335,15 +7303,14 @@ async function handleStreamingClose() {
           let _firstNewAiMsgId3: string | undefined;
           const _totalMsgs3 = parsed.messages.length;
           let _shownMsgs3 = 0;
-          // 📱 小手機劇本格式：預先決定每條訊息的左右分邊
-          // 即使 toggle 沒開，只要 AI 自己用一致的「Word:」前綴格式輸出，
-          // 也讓 pass 1 / pass 1.5 自動分邊；只有 toggle 開時才啟用「全部沒前綴 → 交替」fallback。
-          const _theaterRoleMap3 = computeTheaterPhoneScriptRoleMap(
-            parsed.messages,
-            userStore.currentPersona?.name,
-            currentCharacter.value?.data?.name || props.characterName,
-            _theaterPhoneScriptForCurrentGeneration,
-          );
+          // 📱 小手機劇本格式：預先決定每條訊息的左右分邊（含 AI 沒下前綴時的交替 fallback）
+          const _theaterRoleMap3 = _theaterPhoneScriptForCurrentGeneration
+            ? computeTheaterPhoneScriptRoleMap(
+                parsed.messages,
+                userStore.currentPersona?.name,
+                currentCharacter.value?.data?.name || props.characterName,
+              )
+            : null;
           for (let i = 0; i < parsed.messages.length; i++) {
             const parsedMsg = parsed.messages[i];
 

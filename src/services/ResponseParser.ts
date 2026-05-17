@@ -12,6 +12,12 @@ export type { CalendarEventData, ScheduleCallData };
 export interface ParsedMessage {
   content: string;
   thought?: string; // ~(想法)~ 中的內容
+  /**
+   * `<msg name="...">` 上的 name 屬性值（原樣保存）。
+   * 小劇場手機劇本格式會輸出字面字串 `{{user}}` / `{{char}}` 作為分邊標記。
+   * 無 name 屬性時為 undefined。
+   */
+  senderName?: string;
   /** 是否為完整 HTML 文件（需要用 iframe 渲染） */
   isHtmlBlock?: boolean;
   isTimetravel?: boolean;
@@ -728,20 +734,35 @@ function extractMsgMatches(source: string): Array<{
   fullMatch: string;
   content: string;
   index: number;
+  attrName?: string;
 }> {
-  const msgRegex = /<msg>([\s\S]*?)<\/msg>/gi;
+  // 同時支援：
+  //   <msg>...</msg>
+  //   <msg name="xxx">...</msg>   ← 小劇場手機劇本格式
+  //   <msg name='xxx'>...</msg>
+  // 屬性區段允許其他屬性，但目前只擷取 name。
+  const msgRegex = /<msg(\s+[^>]*)?>([\s\S]*?)<\/msg>/gi;
+  const nameAttrRegex = /\bname\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
   const matches: Array<{
     fullMatch: string;
     content: string;
     index: number;
+    attrName?: string;
   }> = [];
   let msgExec: RegExpExecArray | null;
 
   while ((msgExec = msgRegex.exec(source)) !== null) {
+    const attrsRaw = msgExec[1] || "";
+    let attrName: string | undefined;
+    if (attrsRaw) {
+      const nm = attrsRaw.match(nameAttrRegex);
+      if (nm) attrName = nm[1] ?? nm[2] ?? "";
+    }
     matches.push({
       fullMatch: msgExec[0],
-      content: msgExec[1].trim(),
+      content: msgExec[2].trim(),
       index: msgExec.index,
+      attrName,
     });
   }
 
@@ -930,12 +951,15 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
       }
 
       // 處理 <msg> 標籤內的內容 - 檢查是否包含 timetravel 或其他特殊標籤需要拆分
+      const _attrName = msgMatch.attrName;
+      const _withSender = (m: ParsedMessage): ParsedMessage =>
+        _attrName ? { ...m, senderName: _attrName } : m;
       if (hasInlineSpecialTags(msgContent)) {
         // 使用通用拆分函數拆分成多條訊息
         const splitMessages = splitBySpecialTags(msgContent);
         for (const splitMsg of splitMessages) {
           if (isNonEmptyMessage(splitMsg)) {
-            result.messages.push(splitMsg);
+            result.messages.push(_withSender(splitMsg));
           }
         }
       } else {
@@ -944,7 +968,7 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
         if (htmlSplit) {
           for (const splitMsg of htmlSplit) {
             if (splitMsg.content || splitMsg.isHtmlBlock) {
-              result.messages.push(splitMsg);
+              result.messages.push(_withSender(splitMsg));
             }
           }
         } else {
@@ -966,7 +990,7 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
             parsed.isOnlineModeRequest ||
             parsed.isCoupleAvatar
           ) {
-            result.messages.push(parsed);
+            result.messages.push(_withSender(parsed));
           }
         }
       }
