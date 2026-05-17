@@ -1670,6 +1670,7 @@ const {
   theaterInheritHistory,
   theaterInheritSummary,
   theaterNewChatFile,
+  theaterPhoneScript,
   theaterForwardedMessages,
   openTheater,
   theaterChooseBranch,
@@ -4654,6 +4655,137 @@ function clearSwipesOnLastAIMessage() {
   }
 }
 
+/**
+ * 標記目前正在進行的 AI 生成是否處於小劇場「小手機劇本格式」模式。
+ * triggerAIResponse 啟動時設值，結束（finally）清掉；handleStreamingClose
+ * 也會讀這個 flag 以便在使用者手動關閉串流窗口時套用左右分邊。
+ */
+let _theaterPhoneScriptForCurrentGeneration = false;
+
+/** escape regex special chars in a runtime-supplied name */
+function _escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * 小劇場「小手機劇本格式」前綴檢測：
+ * 支援的前綴（不分大小寫，半形/全形冒號皆可，前後空格容錯）：
+ *   - 字面：user / char / 使用者 / 用戶 / 用户 / 角色
+ *   - 實際名字：傳入的 userName（如 persona 名稱）/ charName（如角色名）
+ * 若以「user 類」開頭 → 回傳 role: 'user'；以「char 類」開頭 → role: 'ai'。
+ * 沒有匹配時回傳 null（呼叫端維持原本的 role）。
+ */
+function applyTheaterPhoneScriptPrefix(
+  content: string | undefined | null,
+  userName?: string,
+  charName?: string,
+): { role: "user" | "ai"; content: string } | null {
+  if (!content || typeof content !== "string") return null;
+
+  // 1) 字面 user/char 前綴
+  const literalMatch = content.match(
+    /^\s*(user|char|使用者|用戶|用户|角色)\s*[：:]\s*/i,
+  );
+  if (literalMatch) {
+    const tag = literalMatch[1].toLowerCase();
+    const stripped = content.slice(literalMatch[0].length);
+    if (tag === "user" || tag === "使用者" || tag === "用戶" || tag === "用户") {
+      return { role: "user", content: stripped };
+    }
+    return { role: "ai", content: stripped };
+  }
+
+  // 2) 實際名字前綴（user persona 名 / char 名）
+  const trimmedUser = (userName || "").trim();
+  const trimmedChar = (charName || "").trim();
+  if (trimmedUser) {
+    const re = new RegExp(`^\\s*${_escapeRegex(trimmedUser)}\\s*[：:]\\s*`, "i");
+    const m = content.match(re);
+    if (m) return { role: "user", content: content.slice(m[0].length) };
+  }
+  if (trimmedChar) {
+    const re = new RegExp(`^\\s*${_escapeRegex(trimmedChar)}\\s*[：:]\\s*`, "i");
+    const m = content.match(re);
+    if (m) return { role: "ai", content: content.slice(m[0].length) };
+  }
+
+  return null;
+}
+
+/**
+ * 判斷某個 parsedMsg 是否適用「小手機劇本格式」前綴/分邊處理。
+ * 純文字訊息才會套，特殊類型（紅包、語音、時空跳轉、撤回、面對面…）一律跳過。
+ */
+function _isTheaterScriptEligible(parsedMsg: any): boolean {
+  if (!parsedMsg) return false;
+  return !(
+    parsedMsg.isTimetravel ||
+    parsedMsg.isRedpacket ||
+    parsedMsg.isLocation ||
+    parsedMsg.isTransfer ||
+    parsedMsg.isGift ||
+    parsedMsg.isAvatarChange ||
+    parsedMsg.isAiImage ||
+    parsedMsg.isHtmlBlock ||
+    parsedMsg.isVoice ||
+    parsedMsg.isCharRecall ||
+    parsedMsg.isFaceToFaceRequest ||
+    parsedMsg.isOnlineModeRequest ||
+    parsedMsg.isWaimaiPaymentResult ||
+    parsedMsg.isWaimaiDelivery
+  );
+}
+
+/**
+ * 為一整批 parsedMessages 預先決定每條訊息的左右分邊與內容清理。
+ *
+ * 邏輯：
+ *   1. 對每條符合資格的訊息嘗試前綴偵測（user:/char: 字面或實際名字）。
+ *   2. 若全批一條前綴都沒命中（AI 沒照格式輸出），且符合資格的訊息 ≥ 2
+ *      條，回退成「user 起頭交替分邊」（user, ai, user, ai…），避免全部
+ *      擠在同一側。
+ *   3. 部分命中的情況：尊重命中結果，沒命中的維持 null（由呼叫端用預設 ai）。
+ *
+ * 回傳的 Map：key = parsed.messages 索引；value = { role, content }（content 已剝前綴）。
+ */
+function computeTheaterPhoneScriptRoleMap(
+  parsedMessages: any[],
+  userName?: string,
+  charName?: string,
+): Map<number, { role: "user" | "ai"; content: string }> {
+  const result = new Map<number, { role: "user" | "ai"; content: string }>();
+  if (!Array.isArray(parsedMessages) || parsedMessages.length === 0) return result;
+
+  // pass 1：偵測前綴
+  const eligibleIndices: number[] = [];
+  let hits = 0;
+  for (let i = 0; i < parsedMessages.length; i++) {
+    const pm = parsedMessages[i];
+    if (!_isTheaterScriptEligible(pm)) continue;
+    eligibleIndices.push(i);
+    const stripped = applyTheaterPhoneScriptPrefix(pm?.content, userName, charName);
+    if (stripped) {
+      result.set(i, stripped);
+      hits++;
+    }
+  }
+
+  // pass 2：AI 完全沒下前綴 → 交替分邊 fallback
+  if (hits === 0 && eligibleIndices.length >= 2) {
+    let toggle: "user" | "ai" = "user";
+    for (const idx of eligibleIndices) {
+      const pm = parsedMessages[idx];
+      result.set(idx, {
+        role: toggle,
+        content: typeof pm?.content === "string" ? pm.content : "",
+      });
+      toggle = toggle === "user" ? "ai" : "user";
+    }
+  }
+
+  return result;
+}
+
 // 觸發 AI 回覆（不發送用戶訊息，只生成 AI 回覆）
 // skipAutoTrigger: 跳過自動觸發總結/日記（用於重新生成場景）
 async function triggerAIResponse(options?: {
@@ -4662,6 +4794,7 @@ async function triggerAIResponse(options?: {
   postCallPrompt?: string;
   audioApiMessage?: { role: string; content: any };
   theaterNudge?: boolean;
+  theaterPhoneScript?: boolean; // 小劇場小手機劇本格式：要求 AI 用 <msg> 分句並以 user:/char: 前綴
   bypassBlockCheck?: boolean; // 好友申請等特殊場景需要繞過封鎖檢查
 }) {
   if (!currentChatId.value) return;
@@ -4688,6 +4821,8 @@ async function triggerAIResponse(options?: {
   const controller = startResult.controller!;
   let latestFinalContent = "";
   let usedStreamingWindowForCurrentGeneration = false;
+  // 把本輪是否為小劇場小手機劇本格式存到模組變數，handleStreamingClose 可以讀
+  _theaterPhoneScriptForCurrentGeneration = !!options?.theaterPhoneScript;
 
   try {
     const chatTaskConfig = settingsStore.getAPIForTask("chat");
@@ -5483,6 +5618,31 @@ async function triggerAIResponse(options?: {
     // 🎭 當小劇場指令是最後一條時，補一條隱藏催促消息
     if (options?.theaterNudge) {
       appendedUserPrompts.push("[請根據上述場景指令，以角色身份繼續扮演]");
+      // 📱 小手機劇本格式：要求 AI 把每一句台詞用 <msg> 包起來，並以 user:/char: 前綴
+      // 開頭，前端會根據前綴把氣泡分到左右兩側。只在小劇場路徑使用，不影響日常聊天。
+      if (options.theaterPhoneScript) {
+        const _ttUserName = (userStore.currentPersona?.name || "").trim();
+        const _ttCharName = (
+          currentCharacter.value?.data?.name ||
+          props.characterName ||
+          ""
+        ).trim();
+        const _ttUserHint = _ttUserName ? `user:（也可寫成 ${_ttUserName}:）` : "user:";
+        const _ttCharHint = _ttCharName ? `char:（也可寫成 ${_ttCharName}:）` : "char:";
+        appendedUserPrompts.push(
+          [
+            "[小手機劇本格式｜強制規則]",
+            "1. 整個劇本只能輸出 <msg>…</msg>，<msg> 之外不可有任何文字（不要正文、敘述、狀態欄、旁白、解說、開場白）。",
+            `2. 每一個 <msg> 內容必須以「${_ttUserHint}」或「${_ttCharHint}」開頭，後面緊接該句台詞（半形冒號，冒號後不要空格）。`,
+            "3. 不允許省略前綴，每一條都要寫。即使是同一個人連續講十句，每一條 <msg> 都各自帶前綴。",
+            "4. 一個 <msg> 只放一句短台詞，模仿真實手機聊天節奏；想連發就拆成多個 <msg>。",
+            "5. 表情包用 [sticker:描述]、貼圖、語氣詞都正常使用，但同樣放在 <msg> 內並帶前綴。",
+            "範例（請完全照這個格式輸出）：",
+            "<msg>user:別生氣</msg><msg>user:我真的知道錯了</msg><msg>char:你只會說這一句嗎？</msg><msg>user:那我還能說什麼…</msg><msg>char:哄我。</msg>",
+            "再次提醒：每一個 <msg> 都必須以 user: 或 char: 開頭，違反此規則的訊息會被視為格式錯誤。",
+          ].join("\n"),
+        );
+      }
     }
 
     if (appendedUserPrompts.length > 0) {
@@ -5631,6 +5791,14 @@ async function triggerAIResponse(options?: {
 
       if (useWindow && tokenUsage) {
         streamingWindow.setUsage(tokenUsage);
+      }
+
+      // 串流本身已結束（所有 token 已收到），立刻把窗口標為完成，
+      // 讓「停止」按鈕 / spinner 停下來。後續的逐條氣泡渲染延遲（_delay 2000ms × N 條）
+      // 是純 UX 修飾、與 API 生成無關，不應該繼續顯示 streaming 狀態。
+      // setComplete 冪等，後面失敗/正常路徑仍會再呼叫一次（無副作用）。
+      if (useWindow) {
+        streamingWindow.setComplete();
       }
 
       // 直接處理完整回覆（套用角色 regex_scripts AI_OUTPUT）
@@ -6292,6 +6460,14 @@ async function triggerAIResponse(options?: {
                 pm.isCharRecall,
             ).length;
             let _shownMsgs1 = 0;
+            // 📱 小手機劇本格式：預先決定每條訊息的左右分邊（含 AI 沒下前綴時的交替 fallback）
+            const _theaterRoleMap1 = options?.theaterPhoneScript
+              ? computeTheaterPhoneScriptRoleMap(
+                  parsed.messages,
+                  userStore.currentPersona?.name,
+                  currentCharacter.value?.data?.name || props.characterName,
+                )
+              : null;
             for (let i = 0; i < parsed.messages.length; i++) {
               const parsedMsg = parsed.messages[i];
 
@@ -6322,8 +6498,16 @@ async function triggerAIResponse(options?: {
               }
 
               // 時空跳轉訊息使用 system role，這樣會渲染成特殊的系統訊息樣式
-              const messageRole: "user" | "ai" | "system" =
+              let messageRole: "user" | "ai" | "system" =
                 parsedMsg.isTimetravel ? "system" : "ai";
+              // 📱 小劇場小手機劇本格式：套用預先計算的分邊決策（含 fallback 交替）
+              if (_theaterRoleMap1) {
+                const decision = _theaterRoleMap1.get(i);
+                if (decision) {
+                  messageRole = decision.role;
+                  parsedMsg.content = decision.content;
+                }
+              }
               const charRecallContext = parsedMsg.isCharRecall
                 ? parsedMsg.charRecallType === "seen"
                   ? `(你撤回了訊息「${parsedMsg.charRecallContent || ""}」，但用戶已看見)`
@@ -7045,6 +7229,14 @@ async function handleStreamingClose() {
           let _firstNewAiMsgId3: string | undefined;
           const _totalMsgs3 = parsed.messages.length;
           let _shownMsgs3 = 0;
+          // 📱 小手機劇本格式：預先決定每條訊息的左右分邊（含 AI 沒下前綴時的交替 fallback）
+          const _theaterRoleMap3 = _theaterPhoneScriptForCurrentGeneration
+            ? computeTheaterPhoneScriptRoleMap(
+                parsed.messages,
+                userStore.currentPersona?.name,
+                currentCharacter.value?.data?.name || props.characterName,
+              )
+            : null;
           for (let i = 0; i < parsed.messages.length; i++) {
             const parsedMsg = parsed.messages[i];
 
@@ -7054,9 +7246,19 @@ async function handleStreamingClose() {
               if (!parsedMsg.content) continue;
             }
 
+            // 📱 小劇場小手機劇本格式：套用預先計算的分邊決策（含 fallback 交替）
+            let messageRoleWindowClose: "user" | "ai" | "system" = "ai";
+            if (_theaterRoleMap3) {
+              const decision = _theaterRoleMap3.get(i);
+              if (decision) {
+                messageRoleWindowClose = decision.role;
+                parsedMsg.content = decision.content;
+              }
+            }
+
             const newMessage: Message = {
               id: `msg_${Date.now()}_${i}`,
-              role: "ai",
+              role: messageRoleWindowClose,
               content:
                 parsedMsg.isAiImage && parsedMsg.imageDescription
                   ? `<pic>${parsedMsg.imageDescription}</pic>`
@@ -11811,6 +12013,23 @@ onUnmounted(() => {
                 rows="4"
                 placeholder="例如：在平行世界裡，他們一起去海邊散步..."
               ></textarea>
+              <div class="theater-options" style="margin-top: 8px;">
+                <label class="theater-option-row">
+                  <div class="option-info">
+                    <span class="option-label">小手機劇本格式</span>
+                    <span class="option-hint"
+                      >每句獨立氣泡，自動依 user:/char: 前綴左右分邊</span
+                    >
+                  </div>
+                  <div
+                    class="toggle-switch"
+                    :class="{ active: theaterPhoneScript }"
+                    @click="theaterPhoneScript = !theaterPhoneScript"
+                  >
+                    <div class="toggle-thumb"></div>
+                  </div>
+                </label>
+              </div>
               <div class="feature-modal-actions">
                 <button
                   class="modal-btn cancel"
@@ -15577,7 +15796,7 @@ onUnmounted(() => {
       align-items: center;
       justify-content: space-between;
       padding: 12px 0;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
       cursor: pointer;
 
       &:last-child {
@@ -15606,10 +15825,12 @@ onUnmounted(() => {
         width: 40px;
         height: 22px;
         border-radius: 11px;
-        background: rgba(255, 255, 255, 0.15);
+        // 關閉狀態：用 border token，深淺色模式都能看見
+        background: var(--color-border, #d1d5db);
         position: relative;
         flex-shrink: 0;
         transition: background 0.2s;
+        cursor: pointer;
 
         .toggle-thumb {
           position: absolute;
@@ -15619,6 +15840,8 @@ onUnmounted(() => {
           height: 16px;
           border-radius: 50%;
           background: #fff;
+          // 加陰影讓白底時也能看出圓點輪廓
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
           transition: transform 0.2s;
         }
 

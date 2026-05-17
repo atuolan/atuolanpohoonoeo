@@ -23,7 +23,7 @@ export function useChatTheater(deps: {
   saveChat: () => void;
   saveChatImmediate: () => Promise<void>;
   switchChatFile: (chatId: string) => Promise<void>;
-  triggerAIResponse: (opts?: { theaterNudge?: boolean }) => Promise<void>;
+  triggerAIResponse: (opts?: { theaterNudge?: boolean; theaterPhoneScript?: boolean }) => Promise<void>;
 }) {
   const showSmallTheaterModal = ref(false);
   const smallTheaterInput = ref("");
@@ -34,6 +34,7 @@ export function useChatTheater(deps: {
   const theaterInheritHistory = ref(false);
   const theaterInheritSummary = ref(false);
   const theaterNewChatFile = ref(false);
+  const theaterPhoneScript = ref(false);
   const theaterForwardedMessages = ref<
     Array<{
       senderName: string;
@@ -50,6 +51,7 @@ export function useChatTheater(deps: {
     theaterInheritHistory.value = false;
     theaterInheritSummary.value = false;
     theaterNewChatFile.value = false;
+    theaterPhoneScript.value = false;
     theaterForwardedMessages.value = [];
     showSmallTheaterModal.value = true;
   }
@@ -252,13 +254,13 @@ export function useChatTheater(deps: {
         deps.scrollToBottom();
         await deps.saveChatImmediate();
         smallTheaterInput.value = "";
-        await deps.triggerAIResponse({ theaterNudge: true });
+        await deps.triggerAIResponse({ theaterNudge: true, theaterPhoneScript: theaterPhoneScript.value });
         return;
       }
 
       smallTheaterInput.value = "";
       await deps.switchChatFile(targetChatId);
-      await deps.triggerAIResponse({ theaterNudge: true });
+      await deps.triggerAIResponse({ theaterNudge: true, theaterPhoneScript: theaterPhoneScript.value });
     } else {
       const smallTheaterMessage = {
         id: `msg_theater_${Date.now()}`,
@@ -269,7 +271,7 @@ export function useChatTheater(deps: {
       deps.messages.value.push(smallTheaterMessage);
       deps.scrollToBottom();
       await deps.saveChatImmediate();
-      await deps.triggerAIResponse({ theaterNudge: true });
+      await deps.triggerAIResponse({ theaterNudge: true, theaterPhoneScript: theaterPhoneScript.value });
     }
 
     smallTheaterInput.value = "";
@@ -288,6 +290,7 @@ export function useChatTheater(deps: {
     theaterInheritHistory,
     theaterInheritSummary,
     theaterNewChatFile,
+    theaterPhoneScript,
     theaterForwardedMessages,
     openTheater,
     theaterChooseBranch,

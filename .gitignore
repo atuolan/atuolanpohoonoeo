@@ -1,3 +1,4 @@
+node_modules
 self-hosted-sync-server/data/
 self-hosted-sync-server/.env
 # 依賴
@@ -84,4 +85,4 @@ update-online-prompts.cjs
 Untitled-1.xml
 
 # 獨立的雲端備份模板 repo
-aguaphone-cloud-backup/
+aguaphone-cloud-backup/　

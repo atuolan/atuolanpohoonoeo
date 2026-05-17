@@ -589,6 +589,10 @@ export class OpenAICompatibleClient {
     let streamUsage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null = null;
     // 記錄非 SSE 格式的行（用於診斷上游回了非串流回應的情況）
     let nonSSELines: string[] = [];
+    // 閒置超時：超過此毫秒沒有收到任何新 chunk → 視為上游已截斷／卡住，
+    // 主動結束 reader 並把已累積的內容當作正常 done 拋出。
+    const IDLE_TIMEOUT_MS = 30000;
+    let idleTimedOut = false;
 
     const processLine = (line: string): { delta: string | null; usage?: typeof streamUsage } => {
       const trimmed = line.trim();
@@ -628,7 +632,30 @@ export class OpenAICompatibleClient {
 
     try {
       while (true) {
-        const { done, value } = await reader.read();
+        // 每一輪 read 都競速一個 30s idle 計時器；收到 chunk 就 reset（進入下一輪重建）
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+        const readResult = await Promise.race<{ done: boolean; value?: Uint8Array }>([
+          reader.read() as Promise<{ done: boolean; value?: Uint8Array }>,
+          new Promise<{ done: true; value: undefined }>((resolve) => {
+            timeoutId = setTimeout(() => {
+              idleTimedOut = true;
+              resolve({ done: true, value: undefined });
+            }, IDLE_TIMEOUT_MS);
+          }),
+        ]);
+        if (timeoutId !== null) clearTimeout(timeoutId);
+
+        if (idleTimedOut) {
+          // 主動取消底層 stream，避免 reader 留著等
+          try {
+            await reader.cancel();
+          } catch {
+            // ignore
+          }
+          break;
+        }
+
+        const { done, value } = readResult;
         if (done) break;
 
         chunkCount++;
@@ -659,6 +686,22 @@ export class OpenAICompatibleClient {
       }
 
       const totalTime = Date.now() - streamStartTime;
+
+      // 閒置超時：把目前累積的內容當作正常 done 拋出（即使 fullContent 為空，
+      // 也不要走「空回應」的 error 路徑，因為這是上游卡死/截斷而非真正空回應）
+      if (idleTimedOut) {
+        console.warn(
+          `[API Stream] ${IDLE_TIMEOUT_MS}ms 內無新 chunk，視為串流截斷`,
+          {
+            chunkCount,
+            totalBytes,
+            fullContentLength: fullContent.length,
+            totalTime,
+          },
+        );
+        yield { type: "done", content: fullContent, usage: streamUsage ?? undefined };
+        return;
+      }
 
       // 空回應：提供詳細診斷資訊
       if (!fullContent) {
