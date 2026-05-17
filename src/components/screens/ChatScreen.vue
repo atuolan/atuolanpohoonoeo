@@ -5808,6 +5808,7 @@ async function triggerAIResponse(options?: {
       if (useWindow) {
         streamingWindow.setComplete();
       }
+      console.log("[ChatScreen][render] stream 結束，setComplete 已呼叫，準備進入訊息解析/渲染");
 
       // 直接處理完整回覆（套用角色 regex_scripts AI_OUTPUT）
       const rawFullContent =
@@ -5842,7 +5843,9 @@ async function triggerAIResponse(options?: {
       } else {
         // 群聊/多人卡模式：使用群聊解析器
         if (useGroupChatParser.value) {
+          console.log("[ChatScreen][render] 進入群聊解析器路徑");
           const parsed = parseGroupChatResponse(finalContent);
+          console.log("[ChatScreen][render] parseGroupChatResponse 完成", { count: parsed.messages.length });
 
           // 移除原始的佔位訊息
           if (msgIndex !== -1) {
@@ -6329,9 +6332,23 @@ async function triggerAIResponse(options?: {
         }
         // 非群聊模式：檢查是否需要解析（包含導演系統標籤）
         else if (needsParsing(finalContent)) {
+          console.log("[ChatScreen][render] 進入 1v1 解析路徑，準備呼叫 parseAIResponse");
           let parsed;
           try {
+            const _parseStart = Date.now();
             parsed = parseAIResponse(finalContent);
+            console.log("[ChatScreen][render] parseAIResponse 完成", {
+              elapsedMs: Date.now() - _parseStart,
+              messageCount: parsed?.messages?.length ?? 0,
+              hasAffinityUpdate: parsed?.hasAffinityUpdate,
+              hasScheduleCall: parsed?.hasScheduleCall,
+              hasCharLocation: parsed?.hasCharLocation,
+              hasCalendarEvent: parsed?.hasCalendarEvent,
+              hasFoodRecord: parsed?.hasFoodRecord,
+              hasTimeJump: parsed?.hasTimeJump,
+              hasPlurkPost: parsed?.hasPlurkPost,
+              charActionsCount: parsed?.charActions?.length ?? 0,
+            });
           } catch (parseError) {
             console.warn(
               "[ChatScreen] AI 回覆解析失敗，使用原始內容:",
@@ -6347,12 +6364,16 @@ async function triggerAIResponse(options?: {
           if (parsed) {
             // 處理來電預約標籤
             if (parsed.hasScheduleCall && parsed.scheduleCallData) {
+              console.log("[ChatScreen][render] await handleScheduleCall");
               await handleScheduleCall(parsed.scheduleCallData);
+              console.log("[ChatScreen][render] handleScheduleCall 完成");
             }
 
             // 處理角色位置推測標籤
             if (parsed.hasCharLocation && parsed.charLocationData) {
+              console.log("[ChatScreen][render] await handleCharLocationUpdate");
               await handleCharLocationUpdate(parsed.charLocationData.location);
+              console.log("[ChatScreen][render] handleCharLocationUpdate 完成");
             }
 
             // 處理行事曆事件標籤
@@ -6373,13 +6394,17 @@ async function triggerAIResponse(options?: {
               parsed.timeJumpTarget &&
               fakeTime.fakeTimeMode.value === "offset"
             ) {
+              console.log("[ChatScreen][render] fakeTime.jumpToTime");
               fakeTime.jumpToTime(parsed.timeJumpTarget);
+              console.log("[ChatScreen][render] fakeTime.jumpToTime 完成");
               await saveChat();
             }
 
             // 處理噗浪發文
             if (parsed.hasPlurkPost && parsed.plurkContent) {
+              console.log("[ChatScreen][render] await handlePlurkPost");
               await handlePlurkPost(parsed.plurkContent);
+              console.log("[ChatScreen][render] handlePlurkPost 完成");
             }
 
             // 處理角色動作標籤（封鎖、解封、道歉外賣等）
@@ -6443,6 +6468,12 @@ async function triggerAIResponse(options?: {
             let _pendingAffinityUpdates = parsed.hasAffinityUpdate
               ? parsed.affinityUpdates
               : null;
+
+            console.log("[ChatScreen][render] 進入 1v1 渲染迴圈", {
+              parsedCount: parsed.messages.length,
+              theaterPhoneScript: !!options?.theaterPhoneScript,
+              finalContentLen: finalContent.length,
+            });
 
             // 移除原始的佔位訊息
             if (msgIndex !== -1) {
