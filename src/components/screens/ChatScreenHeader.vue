@@ -1460,8 +1460,9 @@ function onTimeJumpInput(event: Event) {
     }
 
     .persona-selector {
-      position: fixed;
-      top: auto;
+      position: absolute;
+      top: calc(100% + 8px);
+      bottom: auto;
       left: 50%;
       right: auto;
       transform: translateX(-50%);

@@ -49,8 +49,8 @@ const isChatMode = computed(() => {
   return true;
 });
 
-// 是否使用聊天專屬外觀
-const useCustomAppearance = ref(false);
+// 是否使用聊天專屬外觀（預設 ON，僅在之前明確關過時才為 false）
+const useCustomAppearance = ref(true);
 
 // 當前分頁
 const activeTab = ref<
@@ -550,6 +550,7 @@ function handleTabsWheel(event: WheelEvent) {
 // 重置為預設
 function resetToDefault() {
   if (isChatMode.value) {
+    if (!confirm("確定要重置此聊天的外觀為全局設定嗎？")) return;
     // 聊天專屬模式：重置為使用全局設定
     useCustomAppearance.value = false;
     tempAvatarStyle.value = { ...themeStore.avatarStyle };
@@ -626,8 +627,8 @@ watch(
   () => props.visible,
   async (newVal) => {
     if (newVal && isChatMode.value) {
-      // 載入聊天專屬外觀
-      useCustomAppearance.value = props.chatAppearance?.useCustom ?? false;
+      // 載入聊天專屬外觀：僅在之前顯式關閉（false）時才為 false，其餘情況一律預設 ON
+      useCustomAppearance.value = props.chatAppearance?.useCustom !== false;
 
       // 先設定預設值
       const defaultColors = {
@@ -744,13 +745,20 @@ watch(
           </div>
 
           <!-- 聊天專屬模式開關 -->
-          <div v-if="isChatMode" class="chat-mode-toggle">
-            <label class="toggle-label">
+          <label
+            v-if="isChatMode"
+            class="chat-mode-toggle"
+            :class="{ active: useCustomAppearance }"
+          >
+            <div class="toggle-info">
+              <span class="toggle-title">使用此聊天專屬外觀</span>
+              <span class="toggle-sub">關閉則套用全局外觀設定</span>
+            </div>
+            <span class="toggle-switch">
               <input type="checkbox" v-model="useCustomAppearance" />
-              <span class="toggle-text">使用此聊天專屬外觀</span>
-            </label>
-            <span class="toggle-hint">關閉則使用全局設定</span>
-          </div>
+              <span class="switch-track"><span class="switch-thumb"></span></span>
+            </span>
+          </label>
 
           <!-- 分頁標籤 -->
           <div class="tabs-container" @wheel.prevent="handleTabsWheel">
@@ -769,15 +777,15 @@ watch(
               </button>
               <button
                 class="tab-item"
-                :class="{ active: activeTab === 'avatar' }"
-                @click="activeTab = 'avatar'"
+                :class="{ active: activeTab === 'wallpaper' }"
+                @click="activeTab = 'wallpaper'"
               >
                 <svg viewBox="0 0 24 24" fill="currentColor">
                   <path
-                    d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
+                    d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM5 15h14v3H5z"
                   />
                 </svg>
-                頭像
+                桌布
               </button>
               <button
                 class="tab-item"
@@ -793,15 +801,15 @@ watch(
               </button>
               <button
                 class="tab-item"
-                :class="{ active: activeTab === 'wallpaper' }"
-                @click="activeTab = 'wallpaper'"
+                :class="{ active: activeTab === 'avatar' }"
+                @click="activeTab = 'avatar'"
               >
                 <svg viewBox="0 0 24 24" fill="currentColor">
                   <path
-                    d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM5 15h14v3H5z"
+                    d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
                   />
                 </svg>
-                桌布
+                頭像
               </button>
               <button
                 class="tab-item"
@@ -1755,51 +1763,101 @@ watch(
   max-width: 500px;
   height: calc(100dvh - 40px);
   max-height: calc(100dvh - 40px);
+  border-radius: 24px;
 
-  // 小螢幕全屏
+  // 小螢幕保持柔和大圓角，避免直角觀感
   @media (max-height: 600px) {
-    height: 100dvh;
-    max-height: 100dvh;
-    border-radius: 0;
+    height: calc(100dvh - 24px);
+    max-height: calc(100dvh - 24px);
+    border-radius: 22px;
   }
 
   @media (max-width: 520px) {
-    max-width: 100%;
-    border-radius: 0;
-    height: 100dvh;
-    max-height: 100dvh;
+    max-width: calc(100vw - 24px);
+    height: calc(100dvh - 24px);
+    max-height: calc(100dvh - 24px);
+    border-radius: 22px;
   }
 }
 
-// 聊天專屬模式開關
+// 聊天專屬模式開關（卡片化）
 .chat-mode-toggle {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--color-border);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 20px 0;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: var(--color-background);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  user-select: none;
 
-  .toggle-label {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    cursor: pointer;
-
-    input[type="checkbox"] {
-      width: 18px;
-      height: 18px;
-      accent-color: var(--color-primary);
-    }
-
-    .toggle-text {
-      font-size: 14px;
-      color: var(--color-text);
-    }
+  &.active {
+    background: var(--color-primary-light);
   }
 
-  .toggle-hint {
+  .toggle-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .toggle-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .toggle-sub {
     font-size: 12px;
     color: var(--color-text-muted);
+  }
+
+  .toggle-switch {
+    position: relative;
+    width: 46px;
+    height: 28px;
+    flex-shrink: 0;
+
+    input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      cursor: pointer;
+    }
+
+    .switch-track {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.18);
+      border-radius: 999px;
+      transition: background 0.2s ease;
+    }
+
+    .switch-thumb {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    input:checked + .switch-track {
+      background: var(--color-primary);
+    }
+    input:checked + .switch-track .switch-thumb {
+      transform: translateX(18px);
+    }
   }
 }
 
@@ -1807,11 +1865,14 @@ watch(
   position: relative;
   z-index: 1;
   flex-shrink: 0;
-  padding: 12px 20px;
+  padding: 10px 16px;
   overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.05);
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
 
   &::-webkit-scrollbar {
     display: none;
@@ -1821,18 +1882,52 @@ watch(
 .soft-tabs {
   display: flex;
   flex-wrap: nowrap;
+  gap: 6px;
   min-width: max-content;
+  background: transparent;
+  padding: 0;
 
   .tab-item {
     display: flex;
     align-items: center;
     gap: 6px;
+    padding: 8px 14px;
     white-space: nowrap;
     flex-shrink: 0;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    scroll-snap-align: start;
+    transition:
+      background 0.18s ease,
+      color 0.18s ease,
+      transform 0.18s ease;
 
     svg {
-      width: 18px;
-      height: 18px;
+      width: 16px;
+      height: 16px;
+      color: currentColor;
+      opacity: 0.75;
+    }
+
+    &:hover {
+      color: var(--color-text);
+    }
+
+    &.active {
+      background: var(--color-primary-light);
+      color: var(--color-primary);
+      font-weight: 600;
+      box-shadow: none;
+      transform: scale(1.02);
+
+      svg {
+        opacity: 1;
+      }
     }
   }
 }
@@ -1864,7 +1959,7 @@ watch(
 // 預設主題網格
 .preset-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
   gap: 12px;
 }
 
@@ -1872,29 +1967,54 @@ watch(
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 12px 8px;
+  gap: 10px;
+  padding: 14px 8px;
   background: var(--color-background);
-  border: 2px solid transparent;
-  border-radius: var(--radius-lg);
+  border: none;
+  border-radius: 20px;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    transform 0.18s ease;
 
   &:hover {
     background: var(--color-surface-hover);
   }
 
+  &:active {
+    transform: scale(0.97);
+  }
+
   &.active {
-    border-color: var(--color-primary);
     background: var(--color-primary-light);
+
+    .preset-color {
+      box-shadow:
+        0 0 0 3px var(--color-surface),
+        0 0 0 5px var(--color-primary),
+        0 4px 12px rgba(0, 0, 0, 0.18);
+    }
+
+    .preset-color::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'><path d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/></svg>")
+        center / 18px no-repeat;
+      filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+    }
   }
 }
 
 .preset-color {
-  width: 36px;
-  height: 36px;
+  position: relative;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+    0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: box-shadow 0.2s ease;
 }
 
 .preset-name {
@@ -1916,18 +2036,26 @@ watch(
   gap: 4px;
   padding: 16px 12px;
   background: var(--color-background);
-  border: 2px solid transparent;
-  border-radius: var(--radius-lg);
+  border: none;
+  border-radius: 18px;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
 
   &:hover {
     background: var(--color-surface-hover);
   }
 
+  &:active {
+    transform: scale(0.97);
+  }
+
   &.active {
-    border-color: var(--color-primary);
     background: var(--color-primary-light);
+    box-shadow: inset 0 0 0 2px var(--color-primary);
+    color: var(--color-primary);
   }
 }
 
@@ -1952,23 +2080,39 @@ watch(
   display: flex;
   align-items: center;
   gap: 12px;
+  padding: 4px 2px;
 
   input[type="range"] {
     flex: 1;
-    height: 6px;
+    height: 4px;
     background: var(--color-border);
-    border-radius: 3px;
+    border-radius: 999px;
     appearance: none;
     cursor: pointer;
 
     &::-webkit-slider-thumb {
       appearance: none;
-      width: 20px;
-      height: 20px;
-      background: var(--color-primary);
+      width: 18px;
+      height: 18px;
+      background: #fff;
       border-radius: 50%;
       cursor: pointer;
-      box-shadow: 0 2px 6px var(--color-shadow);
+      box-shadow:
+        0 0 0 2px var(--color-primary),
+        0 4px 10px rgba(0, 0, 0, 0.15);
+      transition: box-shadow 0.15s ease;
+    }
+
+    &::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      background: #fff;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow:
+        0 0 0 2px var(--color-primary),
+        0 4px 10px rgba(0, 0, 0, 0.15);
     }
   }
 }
@@ -1997,12 +2141,15 @@ watch(
 }
 
 .slider-value {
-  min-width: 50px;
-  font-size: 14px;
+  min-width: 56px;
+  padding: 4px 10px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--color-text-secondary);
-  text-align: right;
+  text-align: center;
   flex-shrink: 0;
+  background: var(--color-background);
+  border-radius: 12px;
 }
 
 // 桌布顯示方式
@@ -2014,12 +2161,12 @@ watch(
 
 .fit-btn {
   padding: 6px 14px;
-  border-radius: 8px;
+  border-radius: 999px;
   font-size: 13px;
   font-weight: 500;
   color: var(--color-text-secondary);
-  background: var(--color-surface);
-  border: 1.5px solid var(--color-border);
+  background: var(--color-background);
+  border: none;
   transition: all 0.2s;
 
   &:hover {
@@ -2027,9 +2174,9 @@ watch(
   }
 
   &.active {
-    background: var(--color-primary);
-    color: white;
-    border-color: var(--color-primary);
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+    font-weight: 600;
   }
 }
 
@@ -2045,9 +2192,11 @@ watch(
 }
 
 .preview-card {
-  border-radius: var(--radius-lg);
+  border-radius: 20px;
   overflow: hidden;
-  box-shadow: var(--shadow-md);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.1),
+    0 2px 6px rgba(0, 0, 0, 0.05);
 
   .preview-header {
     padding: 12px 16px;
@@ -2132,18 +2281,29 @@ watch(
   gap: 8px;
   padding: 8px;
   background: transparent;
-  border: 2px solid transparent;
-  border-radius: var(--radius-lg);
+  border: none;
+  border-radius: 18px;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    transform 0.18s ease;
 
   &:hover {
     background: var(--color-background);
   }
 
+  &:active {
+    transform: scale(0.97);
+  }
+
   &.active {
-    border-color: var(--color-primary);
     background: var(--color-primary-light);
+
+    .wallpaper-preview {
+      box-shadow:
+        0 0 0 2px var(--color-surface),
+        0 0 0 4px var(--color-primary);
+    }
   }
 
   &.upload {
@@ -2156,6 +2316,7 @@ watch(
       display: flex;
       align-items: center;
       justify-content: center;
+      background: var(--color-background);
 
       svg {
         width: 24px;
@@ -2169,9 +2330,10 @@ watch(
 .wallpaper-preview {
   width: 100%;
   aspect-ratio: 16 / 9;
-  border-radius: var(--radius-md);
+  border-radius: 16px;
   background-size: cover;
   background-position: center;
+  transition: box-shadow 0.18s ease;
 
   // 跟隨時間主題的預覽樣式
   &.time-theme-preview {
@@ -2206,18 +2368,25 @@ watch(
   gap: 8px;
   padding: 16px 12px;
   background: var(--color-background);
-  border: 2px solid transparent;
-  border-radius: var(--radius-lg);
+  border: none;
+  border-radius: 20px;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
 
   &:hover {
     background: var(--color-surface-hover);
   }
 
+  &:active {
+    transform: scale(0.97);
+  }
+
   &.active {
-    border-color: var(--color-primary);
     background: var(--color-primary-light);
+    box-shadow: inset 0 0 0 2px var(--color-primary);
   }
 }
 
@@ -2269,31 +2438,33 @@ watch(
 .markdown-colors-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  gap: 10px;
 
   .color-item {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px;
+    padding: 8px 10px;
     background: var(--color-background);
-    border-radius: var(--radius-md);
+    border-radius: 14px;
 
     input[type="color"] {
       width: 32px;
       height: 32px;
       border: none;
-      border-radius: 6px;
+      border-radius: 50%;
       cursor: pointer;
       padding: 0;
+      overflow: hidden;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
 
       &::-webkit-color-swatch-wrapper {
-        padding: 2px;
+        padding: 0;
       }
 
       &::-webkit-color-swatch {
-        border-radius: 4px;
-        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-radius: 50%;
+        border: 2px solid var(--color-surface);
       }
     }
 
@@ -2307,31 +2478,36 @@ watch(
 
 .bubble-color-row {
   display: flex;
-  gap: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
 
   .color-item {
+    flex: 1;
+    min-width: 140px;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px;
+    gap: 10px;
+    padding: 8px 12px;
     background: var(--color-background);
-    border-radius: var(--radius-md);
+    border-radius: 14px;
 
     input[type="color"] {
       width: 32px;
       height: 32px;
       border: none;
-      border-radius: 6px;
+      border-radius: 50%;
       cursor: pointer;
       padding: 0;
+      overflow: hidden;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
 
       &::-webkit-color-swatch-wrapper {
-        padding: 2px;
+        padding: 0;
       }
 
       &::-webkit-color-swatch {
-        border-radius: 4px;
-        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-radius: 50%;
+        border: 2px solid var(--color-surface);
       }
     }
 
@@ -2356,25 +2532,32 @@ watch(
   align-items: center;
   gap: 8px;
   padding: 12px 8px;
-  background: var(--color-surface);
-  border: 2px solid transparent;
-  border-radius: 12px;
+  background: var(--color-background);
+  border: none;
+  border-radius: 18px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    background 0.2s,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
 
   &:hover {
     background: var(--color-surface-hover);
   }
 
+  &:active {
+    transform: scale(0.97);
+  }
+
   &.active {
-    border-color: var(--color-primary);
     background: var(--color-primary-light);
+    box-shadow: inset 0 0 0 2px var(--color-primary);
   }
 
   .decoration-icon {
     width: 48px;
     height: 48px;
-    border-radius: 10px;
+    border-radius: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
