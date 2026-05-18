@@ -611,22 +611,24 @@ function onTimeJumpInput(event: Event) {
 .chat-header {
   display: flex;
   align-items: center;
-  margin: 10px 12px;
-  // 不疊加 safe-top：在有瀏海/動態島時讓 pill 緊貼狀態列下方（用 max 取較大值）
-  margin-top: max(10px, var(--safe-top));
-  margin-left: max(12px, var(--safe-left));
-  margin-right: max(12px, var(--safe-right));
+  // 貼齊頂部：用 padding 吸收 safe-top，避免桌布渲染不到 safe-area 而留白
+  margin: 0;
   padding: 8px 12px;
-  border-radius: 20px;
+  padding-top: calc(8px + var(--safe-top));
+  padding-left: calc(12px + var(--safe-left));
+  padding-right: calc(12px + var(--safe-right));
+  // 只保留下方圓角；上方因被狀態列覆蓋，圓角看不到也不需要
+  border-radius: 0 0 20px 20px;
   background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--color-surface) 85%, transparent) 0%,
-    color-mix(in srgb, var(--color-surface) 40%, transparent) 100%
+    180deg,
+    color-mix(in srgb, var(--color-surface) 92%, transparent) 0%,
+    color-mix(in srgb, var(--color-surface) 60%, transparent) 100%
   );
   backdrop-filter: blur(16px) saturate(140%);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
   border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  border-top: none;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.06);
   gap: 10px;
   flex-shrink: 0;
   overflow: visible;
@@ -1450,10 +1452,10 @@ function onTimeJumpInput(event: Event) {
 
 @media (min-width: 768px) and (max-width: 1024px) {
   .chat-header {
-    margin: 14px 24px;
-    margin-left: calc(24px + var(--safe-left));
-    margin-right: calc(24px + var(--safe-right));
-    padding: 10px 16px;
+    padding: 10px 24px;
+    padding-top: calc(10px + var(--safe-top));
+    padding-left: calc(24px + var(--safe-left));
+    padding-right: calc(24px + var(--safe-right));
   }
 }
 
