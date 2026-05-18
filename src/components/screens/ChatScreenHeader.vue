@@ -632,7 +632,11 @@ function onTimeJumpInput(event: Event) {
   flex-shrink: 0;
   overflow: visible;
   position: relative;
-  z-index: 10;
+  z-index: 20;
+
+  &:has(.rail-open) {
+    z-index: 120;
+  }
 }
 
 .header-back {
@@ -1391,7 +1395,7 @@ function onTimeJumpInput(event: Event) {
     top: calc(100% + 8px);
     left: 0;
     right: 0;
-    z-index: 100;
+    z-index: 120;
     flex-wrap: wrap;
     gap: 6px;
     padding: 10px 12px;
@@ -1415,6 +1419,7 @@ function onTimeJumpInput(event: Event) {
 
   .header-actions.rail-open {
     overflow: visible;
+    z-index: 120;
 
     .dropdown-menu {
       position: absolute;
@@ -1426,6 +1431,7 @@ function onTimeJumpInput(event: Event) {
       max-width: none;
       /* In mobile, the dropdown is positioned under the floating header-actions */
       max-height: calc(100svh - 220px);
+      z-index: 130;
     }
 
     .persona-selector {
