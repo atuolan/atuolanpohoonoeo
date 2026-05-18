@@ -1,4 +1,4 @@
-// Aguaphone Service Worker v8
+// Aguaphone Service Worker v9
 // PWA + 系統推播通知 + 雲端推送支援
 //
 // 更新策略：
@@ -6,12 +6,16 @@
 //   - 新 SW 安裝完成後通知頁面，由頁面決定何時 reload
 //   - 頁面 reload 後 IDB 連線自然關閉，不會有 UnknownError
 //
+// v9 變更：
+//   - CACHE_NAME bump 到 v9，activate 時刪除 v1~v8 舊快取
+//   - 強制下次更新清掉 iOS PWA 殘留的舊 index.html 快取
+//
 // v8 變更：
 //   - fetch handler 跨域請求直接放行（不攔截、不快取、不合成 503）
 //   - 非 GET 請求直接放行，避免 POST body 在 SW 中重放的 WebKit 邊緣問題
 //   - 修正 NovelAI 代理、雲端推送 API 等跨域呼叫在 PWA 下被合成 503 的問題
 
-const CACHE_NAME = "aguaphone-v8";
+const CACHE_NAME = "aguaphone-v9";
 const OLD_CACHES = [
   "aguaphone-v1",
   "aguaphone-v2",
@@ -20,6 +24,7 @@ const OLD_CACHES = [
   "aguaphone-v5",
   "aguaphone-v6",
   "aguaphone-v7",
+  "aguaphone-v8",
 ];
 
 // install：不 skipWaiting，等待頁面安全 reload 後再接管
