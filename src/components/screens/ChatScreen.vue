@@ -53,6 +53,7 @@ import PvTag from "primevue/tag";
 import { CloudSun, User, Bot, X, MapPin, Wifi, ChevronRight, ChevronDown, ChevronUp, RefreshCcw, ArrowLeft, Search, Clock } from "lucide-vue-next";
 import { useChatMultiDelete } from "@/composables/useChatMultiDelete";
 import { useChatPersona } from "@/composables/useChatPersona";
+import { useChatPersistence } from "@/composables/useChatPersistence";
 import { useChatPlusMenuRouter } from "@/composables/useChatPlusMenuRouter";
 import { useChatScreenshot } from "@/composables/useChatScreenshot";
 import { useChatSearch } from "@/composables/useChatSearch";
@@ -65,8 +66,6 @@ import {
 } from "@/composables/useStreamingWindow";
 import { db, DB_STORES } from "@/db/database";
 import {
-  extractAudioFromMessages,
-  extractImagesFromMessages,
   getChatImage,
   isChatImageRef,
 } from "@/db/operations";
@@ -78,7 +77,6 @@ import {
   refreshChatDerivedMetadata,
   resolvePreferredDirectChat,
   renameChat,
-  saveChatMetadata,
   setLocalChatUnreadCount,
   setLastActiveChatId,
   toggleChatPinned,
@@ -86,7 +84,6 @@ import {
 import {
   appendMessages,
   deleteMessage,
-  getMessageCount,
   loadMessages,
   saveMessages,
 } from "@/storage/chatMessageStorage";
@@ -105,7 +102,6 @@ import {
   parseAIResponse,
   parseCalendarEventTags,
   parseFoodRecordTags,
-  parseGreeting,
   parseGroupChatResponse,
 } from "@/services/ResponseParser";
 import { createStTemplateContext } from "@/services/StTemplateContextService";
@@ -134,8 +130,14 @@ import type {
   ChatAppearance,
   ChatLocationOverride,
   ChatMessage,
-  WaimaiOrderSnapshot,
 } from "@/types/chat";
+import type {
+  ChatScreenImageData as ImageData,
+  ChatScreenMediaType as MediaType,
+  ChatScreenMessage as Message,
+  ChatScreenProps as ChatProps,
+  PendingInjectedMessage,
+} from "@/types/chatScreen";
 import { createDefaultChat } from "@/types/chat";
 import { formatMediaLogsForPrompt } from "@/types/mediaLog";
 import { formatFoodLogsForPrompt } from "@/types/fitness";
@@ -154,6 +156,16 @@ import {
   parseTTSSegments,
 } from "@/utils/ttsTagCleaner";
 import {
+  convertStoredMessageToUiMessage as mapStoredMessageToUiMessage,
+  convertToStorableMessage as mapToStorableMessage,
+} from "@/utils/chatMessageMapping";
+import { buildChatMetadataFromState } from "@/utils/chatMetadataBuilder";
+import { createGreetingMessages } from "@/utils/chatGreetingMessages";
+import {
+  loadAndRepairChatMessages,
+  repairSystemSenderRegressionIfNeeded,
+} from "@/utils/chatMessageLoading";
+import {
   computed,
   nextTick,
   onMounted,
@@ -163,270 +175,6 @@ import {
   watch,
   watchEffect,
 } from "vue";
-
-// 媒體發送類型定義
-type MediaType =
-  | "descriptive-image"
-  | "descriptive-video"
-  | "real-image"
-  | "image-url"
-  | "ai-generate";
-interface ImageData {
-  dataUrl: string;
-  base64: string;
-  mimeType: string;
-  caption?: string;
-}
-
-// 類型定義
-interface Message {
-  id: string;
-  role: "user" | "ai" | "system";
-  content: string;
-  timestamp: number;
-  // 輪次標記（user 訊息不帶，AI 回覆和系統 UI 帶同一個 turnId）
-  turnId?: string;
-  // 滑動支援（單條訊息）
-  swipes?: string[];
-  swipeId?: number;
-  // 整輪滑動支援（存在最後一條 AI 訊息上）
-  roundSwipes?: Message[][];
-  roundSwipeId?: number;
-  // 流式輸出
-  isStreaming?: boolean;
-  // 解析後的額外資訊
-  thought?: string; // ˇ想法ˇ 內容
-  isTimetravel?: boolean;
-  timetravelContent?: string;
-  isRedpacket?: boolean;
-  redpacketData?: {
-    amount: string;
-    blessing: string;
-    password?: string;
-    voice?: string;
-    type?: "lucky" | "exclusive" | "voice" | "split";
-    count?: number;
-    target?: string;
-  };
-  redpacketState?: {
-    totalCents: number;
-    totalCount: number;
-    remainingCents: number;
-    remainingCount: number;
-    claims: Array<{
-      claimerName: string;
-      claimerCharId?: string;
-      isUser: boolean;
-      cents: number;
-      timestamp: number;
-    }>;
-    fullyClaimed: boolean;
-  };
-  isLocation?: boolean;
-  locationContent?: string;
-  replyToContent?: string;
-  // 回覆引用
-  replyTo?: string; // 被回覆的消息 ID
-  // 圖片相關
-  messageType?:
-    | "text"
-    | "image"
-    | "descriptive-image"
-    | "descriptive-video"
-    | "image-url"
-    | "audio";
-  imageUrl?: string;
-  imageData?: string;
-  imageMimeType?: string;
-  imageCaption?: string;
-  imagePrompt?: string;
-  // 禮物相關
-  isGift?: boolean;
-  giftName?: string;
-  giftReceived?: boolean;
-  // 轉帳相關
-  isTransfer?: boolean;
-  transferAmount?: number;
-  transferReceived?: boolean;
-  transferType?: "pay" | "refund";
-  transferNote?: string;
-  transferStatus?: "sent" | "pending" | "received" | "refunded";
-  // 外賣相關
-  isWaimaiShare?: boolean;
-  isWaimaiPaymentRequest?: boolean;
-  isWaimaiPaymentConfirm?: boolean;
-  isWaimaiPaymentResult?: boolean;
-  isWaimaiProgress?: boolean;
-  isWaimaiDelivery?: boolean;
-  waimaiOrder?: WaimaiOrderSnapshot;
-  // 音樂分享相關
-  isMusicShare?: boolean;
-  musicShareData?: {
-    name: string;
-    artist: string;
-    album?: string;
-    cover?: string;
-    lyrics?: string;
-  };
-  // 換頭像相關
-  isAvatarChange?: boolean;
-  avatarChangeAction?: "accept" | "reject" | "forced" | "mood" | "restore";
-  avatarChangeMood?: string;
-  avatarChangeDesc?: string;
-  // 群聊相關
-  senderCharacterId?: string;
-  senderCharacterName?: string;
-  senderCharacterAvatar?: string;
-  isRecall?: boolean;
-  recallContent?: string;
-  isPrivateMessage?: boolean;
-  isGroupAction?: boolean;
-  groupActionType?: "rename" | "kick" | "mute" | "unmute";
-  groupActionActor?: string;
-  groupActionTarget?: string;
-  groupActionValue?: string;
-  isGroupChatHistory?: boolean;
-  groupChatHistoryData?: {
-    groupName: string;
-    messages: Array<{
-      senderName: string;
-      content: string;
-      timestamp: number;
-      isUser: boolean;
-    }>;
-  };
-  // 群通話記錄
-  isGroupCallHistory?: boolean;
-  groupCallHistoryData?: {
-    groupName: string;
-    participants: Array<{
-      characterId: string;
-      name: string;
-      avatar?: string;
-    }>;
-    messages: Array<{
-      type: "voice" | "system" | "user";
-      senderName?: string;
-      content: string;
-      timestamp: number;
-    }>;
-    startedAt: number;
-    endedAt: number;
-  };
-  // 行事曆事件
-  isCalendarEvent?: boolean;
-  calendarEventData?: {
-    type: "user" | "period";
-    title: string;
-    date: string;
-    description?: string;
-  };
-  // 通話通知相關
-  isCallNotification?: boolean;
-  callNotificationType?: "declined" | "missed";
-  callReason?: string;
-  // HTML 區塊（完整 HTML 文件，用 iframe 渲染）
-  isHtmlBlock?: boolean;
-  htmlContent?: string;
-  // 由源訊息派生的 shadow segment
-  isShadowSegment?: boolean;
-  shadowSourceId?: string;
-  shadowOrdinal?: number;
-  // 音頻/語音相關
-  audioBlobId?: string;
-  audioMimeType?: string;
-  audioDuration?: number;
-  audioWaveform?: number[];
-  audioTranscript?: string;
-  _audioBlob?: Blob;
-  _audioDataUri?: string;
-  // 原始好感度更新區塊（<update>...</update>），用於重新掃描
-  _rawAffinityBlock?: string;
-  // MiniMax TTS 語音合成相關
-  ttsRawContent?: string;
-  ttsAudioUrl?: string;
-  ttsSegments?: Array<{
-    emotion: string;
-    speed: number;
-    text: string;
-    clean: string;
-    audioUrl?: string;
-  }>;
-  // 用戶撤回相關
-  isUserRecalled?: boolean;
-  userRecalledType?: 'seen' | 'unseen';
-  // 角色撤回相關（線上模式）
-  isCharRecall?: boolean;
-  charRecallType?: 'seen' | 'hidden';
-  charRecallContent?: string;
-  charRecallHints?: string[];
-  charRecallRevealed?: boolean;
-  // 面對面請求相關
-  isFaceToFaceRequest?: boolean;
-  faceToFaceRequestReason?: string;
-  faceToFaceRequestStatus?: "pending" | "accepted" | "rejected";
-  // 線上模式請求相關
-  isOnlineModeRequest?: boolean;
-  onlineModeRequestReason?: string;
-  onlineModeRequestStatus?: "pending" | "accepted" | "rejected";
-  // 封鎖系統相關
-  sentWhileBlocked?: boolean;
-  isSystemNotification?: boolean;
-  // 飲食記錄系統通知
-  isFoodRecord?: boolean;
-  // 繼續生成的隱藏提示（不顯示在聊天畫面上）
-  isContinuePrompt?: boolean;
-  // 角色封鎖用戶的系統通知訊息
-  isCharBlockedNotification?: boolean;
-  charBlockedReason?: string;
-  // 好友申請（用戶封鎖角色後，角色想重新加好友的系統卡片）
-  isFriendRequest?: boolean;
-  friendRequestId?: string;
-  friendRequestData?: {
-    direction: "user-to-char" | "char-to-user";
-    charName: string;
-    createdAt: number;
-  };
-  friendRequestResult?: "accepted" | "rejected";
-}
-
-interface PendingInjectedMessage {
-  content: string;
-  isWaimaiShare?: boolean;
-  isWaimaiPaymentRequest?: boolean;
-  isWaimaiPaymentConfirm?: boolean;
-  isWaimaiPaymentResult?: boolean;
-  isWaimaiProgress?: boolean;
-  isWaimaiDelivery?: boolean;
-  waimaiOrder?: WaimaiOrderSnapshot;
-  waimaiProgressMessages?: Array<{
-    content: string;
-    isWaimaiProgress?: boolean;
-    isWaimaiDelivery?: boolean;
-    waimaiOrder?: WaimaiOrderSnapshot;
-    timestamp?: number;
-  }>;
-  isMusicShare?: boolean;
-  musicShareData?: {
-    name: string;
-    artist: string;
-    album?: string;
-    cover?: string;
-    lyrics?: string;
-  };
-}
-
-interface ChatProps {
-  chatId?: string;
-  characterId?: string;
-  characterName?: string;
-  characterAvatar?: string;
-  pendingAppearance?: ChatAppearance;
-  pendingMessage?: string | PendingInjectedMessage;
-  startPhoneCall?: boolean;
-  /** 從 App 級別接聽來電時傳入的來電原因，非空代表需要立即進入來電通話 */
-  incomingCallReason?: string;
-}
 
 const props = withDefaults(defineProps<ChatProps>(), {
   chatId: "",
@@ -6915,20 +6663,7 @@ const {
   loadOrCreateChat,
   showMoreMenu,
   notifyChatCleared: async () => {
-    // 取消任何 pending 的 debounce 保存，避免被 debounce 排程的舊保存
-    // 把已被刪掉的訊息又寫回去
-    if (_saveChatTimer) {
-      clearTimeout(_saveChatTimer);
-      _saveChatTimer = null;
-    }
-    _saveChatPending = false;
-    // 重置「上次成功儲存」追蹤狀態，下一次 saveChat 才不會把空當成異常
-    _lastSavedMessageCount = 0;
-    _lastSavedLastMessageId = "";
-    _lastSavedMessageIds = [];
-    // 推進載入時間戳，讓後續 saveChatMessages 的 snapshotTime 邏輯
-    // 不會「保留」舊訊息（雖然此處 DB 中已無該聊天訊息，仍補強防呆）
-    _messagesLoadedAt = Date.now();
+    resetAfterChatCleared();
   },
 });
 
@@ -8133,265 +7868,11 @@ function getReplyToName(messageId: string): string {
   return msg.senderCharacterName || currentCharacter.value?.data?.name || "";
 }
 
-// 從遺留的 messageChunks 表恢復訊息（v13 遷移補救）
-async function recoverFromMessageChunks(chatId: string): Promise<ChatMessage[]> {
-  const rawDb = (db as any)._instance;
-  if (!rawDb) return [];
-
-  // 檢查 messageChunks 表是否存在
-  if (!rawDb.objectStoreNames.contains("messageChunks")) {
-    return [];
-  }
-
-  try {
-    const tx = rawDb.transaction("messageChunks", "readonly");
-    const store = tx.objectStore("messageChunks");
-    const allKeys: string[] = await store.getAllKeys();
-    // 篩選屬於此聊天的 chunk keys
-    const chunkKeys = allKeys
-      .filter((k: string) => k.startsWith(`${chatId}_chunk_`))
-      .sort((a: string, b: string) => {
-        const idxA = parseInt(a.split("_chunk_")[1], 10);
-        const idxB = parseInt(b.split("_chunk_")[1], 10);
-        return idxA - idxB;
-      });
-
-    if (chunkKeys.length === 0) return [];
-
-    const allMessages: ChatMessage[] = [];
-    for (const key of chunkKeys) {
-      const chunk = await store.get(key);
-      if (chunk?.messages && Array.isArray(chunk.messages)) {
-        allMessages.push(...chunk.messages);
-      }
-    }
-    await tx.done;
-    return allMessages;
-  } catch (e) {
-    console.warn("[recoverFromMessageChunks] 讀取失敗:", e);
-    return [];
-  }
-}
-
-function inferUiRoleFromStoredMessage(m: any): Message["role"] {
-  if (m.role === "user" || m.role === "ai" || m.role === "system") {
-    return m.role;
-  }
-  if (m.sender === "user" || m.is_user === true) return "user";
-  if (m.sender === "assistant") return "ai";
-  return "system";
-}
-
-function isCallOrSystemRecord(m: any): boolean {
-  const content = String(m.content || "");
-  return (
-    String(m.id || "").startsWith("msg_call_") ||
-    String(m.id || "").startsWith("msg_friend_req_") ||
-    content.includes("📞 通話結束") ||
-    m.isSystemNotification ||
-    m.isCallNotification ||
-    m.isGroupChatHistory ||
-    m.isGroupCallHistory ||
-    m.isCalendarEvent ||
-    m.isContinuePrompt ||
-    m.isFriendRequest
-  );
-}
-
-async function repairSystemSenderRegressionIfNeeded(
-  chat: Chat,
-  rawMessages: ChatMessage[],
-): Promise<ChatMessage[]> {
-  if (chat.isGroupChat || rawMessages.length < 3) return rawMessages;
-
-  const assistantCount = rawMessages.filter((m) => m.sender === "assistant").length;
-  const systemCount = rawMessages.filter((m) => m.sender === "system").length;
-  const suspiciousNormalSystemCount = rawMessages.filter(
-    (m) => m.sender === "system" && !isCallOrSystemRecord(m),
-  ).length;
-
-  if (
-    assistantCount > 0 ||
-    systemCount < Math.max(3, rawMessages.length * 0.5) ||
-    suspiciousNormalSystemCount === 0
-  ) {
-    return rawMessages;
-  }
-
-  const recovered = await recoverFromMessageChunks(chat.id);
-  const recoveredById = new Map(
-    recovered
-      .filter((m) => m.sender === "user" || m.sender === "assistant")
-      .map((m) => [m.id, m]),
-  );
-  if (recoveredById.size > 0) {
-    let restoredCount = 0;
-    const restoredFromChunks = rawMessages.map((m) => {
-      const old = recoveredById.get(m.id);
-      if (!old || m.sender !== "system" || isCallOrSystemRecord(m)) return m;
-      restoredCount++;
-      return {
-        ...m,
-        sender: old.sender,
-        name: old.name,
-        is_user: old.sender === "user",
-      };
-    });
-    if (restoredCount > 0) {
-      await saveMessages(chat.id, restoredFromChunks);
-      await refreshChatDerivedMetadata(chat.id);
-      console.warn("[ChatScreen] 已從 messageChunks 修復誤存為 system 的訊息", {
-        chatId: chat.id,
-        restoredCount,
-      });
-      return restoredFromChunks;
-    }
-  }
-
-  const repaired = rawMessages.map((m) => {
-    if (m.sender !== "system" || isCallOrSystemRecord(m)) return m;
-    const restoredSender =
-      (m as any).role === "user" || m.is_user === true || m.name === "User"
-        ? "user"
-        : "assistant";
-    return {
-      ...m,
-      sender: restoredSender as ChatMessage["sender"],
-      is_user: restoredSender === "user",
-    };
-  });
-
-  await saveMessages(chat.id, repaired);
-  await refreshChatDerivedMetadata(chat.id);
-  console.warn(
-    "[ChatScreen] 已修復疑似通話結束後誤存為 system 的訊息",
-    {
-      chatId: chat.id,
-      repairedCount: repaired.filter(
-        (m, i) => m.sender !== rawMessages[i]?.sender,
-      ).length,
-    },
-  );
-  return repaired;
-}
-
 function convertStoredMessageToUiMessage(m: ChatMessage, chat: Chat): Message {
-  let isGift = m.isGift;
-  let giftName = m.giftName;
-  if (!isGift && m.content) {
-    const giftMatch = m.content.match(/<送禮物>([\s\S]*?)<\/送禮物>/i);
-    if (giftMatch) {
-      isGift = true;
-      giftName = giftMatch[1].trim();
-    }
-  }
-
-  let isTransfer = m.isTransfer;
-  let transferAmount = m.transferAmount;
-  let transferType = m.transferType;
-  let transferNote = m.transferNote;
-  let transferStatus = m.transferStatus;
-  if (!isTransfer && m.content) {
-    const oldTransferMatch = m.content.match(/<轉帳>(\d+)\s*金幣<\/轉帳>/i);
-    if (oldTransferMatch) {
-      isTransfer = true;
-      transferAmount = parseInt(oldTransferMatch[1], 10);
-      transferType = "pay";
-      transferStatus = "sent";
-    }
-    const payMatch = m.content.match(/<pay>(\d+)(?::([^<]*?))?<\/pay>/i);
-    if (payMatch) {
-      isTransfer = true;
-      transferAmount = parseInt(payMatch[1], 10);
-      transferType = "pay";
-      transferNote = payMatch[2]?.trim() || undefined;
-      transferStatus = m.sender === "user" ? "sent" : transferStatus || "pending";
-    }
-    const refundMatch = m.content.match(/<refund>(\d+)<\/refund>/i);
-    if (refundMatch) {
-      isTransfer = true;
-      transferAmount = parseInt(refundMatch[1], 10);
-      transferType = "refund";
-      transferStatus = "refunded";
-    }
-  }
-
-  let isMusicShare = (m as any).isMusicShare;
-  let musicShareData = (m as any).musicShareData;
-  if (!isMusicShare && m.content) {
-    const musicMatch = m.content.match(/<分享歌曲>([\s\S]*?)<\/分享歌曲>/i);
-    if (musicMatch) {
-      isMusicShare = true;
-      const parts = musicMatch[1].trim().split(" - ");
-      musicShareData = {
-        name: parts[0] || "",
-        artist: parts[1] || "",
-      };
-    }
-  }
-
-  const needsModeRequestCompat =
-    !(m as any).isFaceToFaceRequest &&
-    !(m as any).isOnlineModeRequest &&
-    typeof m.content === "string" &&
-    /<face-to-face-request\s|<online-mode-request\s/i.test(m.content);
-
-  const loadedMessage = {
-    ...(m as any),
-    id: m.id,
-    role: inferUiRoleFromStoredMessage(m),
-    content: m.content,
-    timestamp: m.createdAt,
-    isGift,
-    giftName,
-    isTransfer,
-    transferAmount,
-    transferType,
-    transferNote,
-    transferStatus,
-    isMusicShare,
-    musicShareData,
-    senderCharacterName: m.senderCharacterId
-      ? (() => {
-          if (chat.groupMetadata?.isMultiCharCard) {
-            const mc = chat.groupMetadata.multiCharMembers?.find(
-              (member) => member.id === m.senderCharacterId,
-            );
-            if (mc) return mc.name;
-          }
-          const groupMember = chat.groupMetadata?.members?.find(
-            (mem) => mem.characterId === m.senderCharacterId,
-          );
-          if (groupMember?.nickname) return groupMember.nickname;
-          const c = charactersStore.characters.find(
-            (ch) => ch.id === m.senderCharacterId,
-          );
-          return c?.data?.name || m.senderCharacterName || "";
-        })()
-      : m.senderCharacterName || "",
-    senderCharacterAvatar: m.senderCharacterId
-      ? (() => {
-          if (chat.groupMetadata?.isMultiCharCard) {
-            const mc = chat.groupMetadata.multiCharMembers?.find(
-              (member) => member.id === m.senderCharacterId,
-            );
-            if (mc) return mc.avatar;
-          }
-          return (
-            charactersStore.characters.find(
-              (ch) => ch.id === m.senderCharacterId,
-            )?.avatar ?? m.senderCharacterAvatar ?? ""
-          );
-        })()
-      : m.senderCharacterAvatar || "",
-    _audioBlob: undefined,
-  } as Message;
-
-  if (needsModeRequestCompat) {
-    syncModeRequestFieldsFromContent(loadedMessage, loadedMessage.content);
-  }
-
-  return loadedMessage;
+  return mapStoredMessageToUiMessage(m, chat, {
+    characters: charactersStore.characters,
+    syncModeRequestFieldsFromContent,
+  });
 }
 
 // 載入或創建聊天
@@ -8427,101 +7908,8 @@ async function loadOrCreateChat(overrideChatId?: string) {
           await setLocalChatUnreadCount(chat.id, 0);
         }
 
-        // v24：從獨立的 chatMessages 表讀取訊息
-        let rawMessages: ChatMessage[] = await loadMessages(chat.id);
-        _messagesLoadedAt = Date.now();
-
-        // 如果 chatMessages 為空但 messageCount > 0，嘗試從遺留的 messageChunks 表恢復
-        if (rawMessages.length === 0 && (chat.messageCount ?? 0) > 0) {
-          console.warn(
-            "[ChatScreen] chatMessages 為空但 messageCount =",
-            chat.messageCount,
-            "，嘗試從 messageChunks 恢復...",
-          );
-          try {
-            const recovered = await recoverFromMessageChunks(chat.id);
-            if (recovered.length > 0) {
-              rawMessages = recovered;
-              console.log(
-                "[ChatScreen] 從 messageChunks 恢復了",
-                recovered.length,
-                "條訊息，將寫入 chatMessages 表",
-              );
-              // 寫入獨立的 chatMessages 表
-              await saveMessages(chat.id, recovered);
-              await refreshChatDerivedMetadata(chat.id);
-            }
-          } catch (recoverErr) {
-            console.warn("[ChatScreen] messageChunks 恢復失敗:", recoverErr);
-          }
-        }
-
-        // 載入驗證：記錄從 IDB 讀取的訊息數量
-        const loadAI = rawMessages.filter((m) => m.sender === "assistant");
-        console.log(
-          "[ChatScreen] 載入驗證:",
-          `總共 ${rawMessages.length} 條, AI ${loadAI.length} 條`,
-          loadAI.map((m) => `[${m.id}] ${(m.content || "").substring(0, 30)}`),
-        );
-
-        // 防禦性檢查：偵測訊息順序是否被破壞（所有 user 在前、AI 在後 = 異常合併）
-        // 正常對話應該是交錯的（user, ai, user, ai...），如果偵測到大段連續同類型訊息
-        // 且 createdAt 時間戳顯示它們本應交錯，則按 createdAt 重新排序修復
-        if (rawMessages.length >= 4) {
-          let isOutOfOrder = false;
-          // 檢查：如果前半段全是 user、後半段全是 assistant，很可能是亂序
-          const midpoint = Math.floor(rawMessages.length / 2);
-          const firstHalfUsers = rawMessages
-            .slice(0, midpoint)
-            .filter((m) => m.sender === "user").length;
-          const secondHalfAIs = rawMessages
-            .slice(midpoint)
-            .filter((m) => m.sender === "assistant").length;
-          if (
-            firstHalfUsers === midpoint &&
-            secondHalfAIs === rawMessages.length - midpoint
-          ) {
-            isOutOfOrder = true;
-          }
-
-          // 更精確的檢查：比較相鄰訊息的 createdAt，如果後面的 createdAt 比前面小，說明亂序
-          if (!isOutOfOrder) {
-            let outOfOrderCount = 0;
-            for (let i = 1; i < rawMessages.length; i++) {
-              if (
-                rawMessages[i].createdAt <
-                rawMessages[i - 1].createdAt - 1000
-              ) {
-                outOfOrderCount++;
-              }
-            }
-            // 如果超過 30% 的相鄰對是亂序的，認為整體被打亂了
-            if (outOfOrderCount > rawMessages.length * 0.3) {
-              isOutOfOrder = true;
-            }
-          }
-
-          if (isOutOfOrder) {
-            console.warn(
-              "[ChatScreen] ⚠️ 偵測到訊息順序異常！按 createdAt 時間戳重新排序修復",
-              `亂序前: ${rawMessages.map((m) => m.sender[0]).join("")}`,
-            );
-            rawMessages.sort((a, b) => a.createdAt - b.createdAt);
-            console.log(
-              "[ChatScreen] 修復後:",
-              rawMessages.map((m) => m.sender[0]).join(""),
-            );
-            // 回寫修復後的順序到 chatMessages 表
-            await saveMessages(chat.id, rawMessages);
-            await refreshChatDerivedMetadata(chat.id);
-            console.log("[ChatScreen] ✅ 已將修復後的訊息順序回寫到 chatMessages");
-          }
-        }
-
-        rawMessages = await repairSystemSenderRegressionIfNeeded(
-          chat,
-          rawMessages,
-        );
+        const rawMessages = await loadAndRepairChatMessages(chat);
+        markMessagesLoaded();
 
         // 圖片：不再一次性還原所有 base64 到記憶體，改為 MessageBubble 按需從 IndexedDB 讀取
         // 保持引用 ID（chatimg_xxx）在訊息中，大幅降低記憶體佔用（P1 修復）
@@ -8529,253 +7917,10 @@ async function loadOrCreateChat(overrideChatId?: string) {
         // 音頻：不再一次性載入所有 Blob，改為按需載入（P1 修復：減少記憶體佔用）
         // audioBlobId 保留在訊息中，播放時再從 IndexedDB 讀取
 
-        messages.value = rawMessages.map((m) => {
-          // 兼容處理：檢查舊訊息是否包含 <送禮物> 標籤但沒有 isGift 屬性
-          let isGift = m.isGift;
-          let giftName = m.giftName;
-          if (!isGift && m.content) {
-            const giftMatch = m.content.match(/<送禮物>([\s\S]*?)<\/送禮物>/i);
-            if (giftMatch) {
-              isGift = true;
-              giftName = giftMatch[1].trim();
-            }
-          }
-
-          // 兼容處理：檢查舊訊息是否包含 <轉帳> 標籤但沒有 isTransfer 屬性
-          let isTransfer = m.isTransfer;
-          let transferAmount = m.transferAmount;
-          let transferType = m.transferType;
-          let transferNote = m.transferNote;
-          let transferStatus = m.transferStatus;
-          if (!isTransfer && m.content) {
-            // 兼容舊格式 <轉帳>金額 金幣</轉帳>
-            const oldTransferMatch =
-              m.content.match(/<轉帳>(\d+)\s*金幣<\/轉帳>/i);
-            if (oldTransferMatch) {
-              isTransfer = true;
-              transferAmount = parseInt(oldTransferMatch[1], 10);
-              transferType = "pay";
-              transferStatus = "sent";
-            }
-            // 兼容新格式 <pay>金額:備註</pay>
-            const payMatch = m.content.match(
-              /<pay>(\d+)(?::([^<]*?))?<\/pay>/i,
-            );
-            if (payMatch) {
-              isTransfer = true;
-              transferAmount = parseInt(payMatch[1], 10);
-              transferType = "pay";
-              transferNote = payMatch[2]?.trim() || undefined;
-              // 根據發送者決定狀態
-              transferStatus =
-                m.sender === "user" ? "sent" : transferStatus || "pending";
-            }
-            // 兼容 <refund>金額</refund>
-            const refundMatch = m.content.match(/<refund>(\d+)<\/refund>/i);
-            if (refundMatch) {
-              isTransfer = true;
-              transferAmount = parseInt(refundMatch[1], 10);
-              transferType = "refund";
-              transferStatus = "refunded";
-            }
-          }
-
-          // 兼容處理：檢查舊訊息是否包含 <分享歌曲> 標籤但沒有 isMusicShare 屬性
-          let isMusicShare = (m as any).isMusicShare;
-          let musicShareData = (m as any).musicShareData;
-          if (!isMusicShare && m.content) {
-            const musicMatch = m.content.match(/<分享歌曲>([\s\S]*?)<\/分享歌曲>/i);
-            if (musicMatch) {
-              isMusicShare = true;
-              const parts = musicMatch[1].trim().split(" - ");
-              musicShareData = {
-                name: parts[0] || "",
-                artist: parts[1] || "",
-              };
-            }
-          }
-
-          const needsModeRequestCompat =
-            !(m as any).isFaceToFaceRequest &&
-            !(m as any).isOnlineModeRequest &&
-            typeof m.content === "string" &&
-            /<face-to-face-request\s|<online-mode-request\s/i.test(m.content);
-
-          const loadedMessage = {
-            id: m.id,
-            role:
-              m.sender === "user"
-                ? "user"
-                : m.sender === "assistant"
-                  ? "ai"
-                  : "system",
-            content: m.content,
-            timestamp: m.createdAt,
-            // 載入滑動數據
-            swipes: m.swipes,
-            swipeId: m.swipeId,
-            // 載入整輪滑動數據
-            roundSwipes: (m as any).roundSwipes,
-            roundSwipeId: (m as any).roundSwipeId,
-            // 載入解析後的額外資訊
-            thought: m.thought,
-            isTimetravel: m.isTimetravel,
-            timetravelContent: m.timetravelContent,
-            isRedpacket: m.isRedpacket,
-            redpacketData: m.redpacketData,
-            redpacketState: (m as any).redpacketState,
-            isLocation: m.isLocation,
-            locationContent: m.locationContent,
-            replyToContent: m.replyToContent,
-            replyTo: m.replyTo,
-            // 載入圖片相關數據
-            messageType: m.messageType,
-            imageUrl: m.imageUrl,
-            imageData: m.imageData,
-            imageMimeType: m.imageMimeType,
-            imageCaption: m.imageCaption,
-            // imageUrl/imageData 保持引用 ID（chatimg_xxx），MessageBubble 按需載入
-            // 新發送的圖片仍為 base64，儲存時由 extractImagesFromMessages 自動提取
-            // 載入禮物相關數據（包含兼容處理）
-            isGift,
-            giftName,
-            giftReceived: m.giftReceived,
-            // 載入轉帳相關數據（包含兼容處理）
-            isTransfer,
-            transferAmount,
-            transferReceived: m.transferReceived,
-            transferType,
-            transferNote,
-            transferStatus,
-            // 載入外賣相關數據
-            isWaimaiShare: (m as any).isWaimaiShare,
-            isWaimaiPaymentRequest: (m as any).isWaimaiPaymentRequest,
-            isWaimaiPaymentConfirm: (m as any).isWaimaiPaymentConfirm,
-            isWaimaiPaymentResult: (m as any).isWaimaiPaymentResult,
-            isWaimaiProgress: (m as any).isWaimaiProgress,
-            isWaimaiDelivery: (m as any).isWaimaiDelivery,
-            waimaiOrder: (m as any).waimaiOrder,
-            // 載入音樂分享相關數據（包含兼容處理）
-            isMusicShare,
-            musicShareData,
-            // 載入換頭像相關數據
-            isAvatarChange: (m as any).isAvatarChange,
-            avatarChangeAction: (m as any).avatarChangeAction,
-            avatarChangeMood: (m as any).avatarChangeMood,
-            avatarChangeDesc: (m as any).avatarChangeDesc,
-            // 載入群聊相關數據（從 senderCharacterId 動態查找頭像和名稱）
-            senderCharacterId: m.senderCharacterId,
-            senderCharacterName: m.senderCharacterId
-              ? (() => {
-                  // 多人卡模式：從 multiCharMembers 查找
-                  if (chat.groupMetadata?.isMultiCharCard) {
-                    const mc = chat.groupMetadata.multiCharMembers?.find(
-                      (member) => member.id === m.senderCharacterId,
-                    );
-                    if (mc) return mc.name;
-                  }
-                  // 普通群聊：優先使用群成員暱稱，再用角色本名
-                  const groupMember = chat.groupMetadata?.members?.find(
-                    (mem) => mem.characterId === m.senderCharacterId,
-                  );
-                  if (groupMember?.nickname) return groupMember.nickname;
-                  const c = charactersStore.characters.find(
-                    (ch) => ch.id === m.senderCharacterId,
-                  );
-                  return c?.data?.name || m.senderCharacterName || "";
-                })()
-              : m.senderCharacterName || "",
-            senderCharacterAvatar: m.senderCharacterId
-              ? (() => {
-                  // 多人卡模式：從 multiCharMembers 查找
-                  if (chat.groupMetadata?.isMultiCharCard) {
-                    const mc = chat.groupMetadata.multiCharMembers?.find(
-                      (member) => member.id === m.senderCharacterId,
-                    );
-                    if (mc) return mc.avatar;
-                  }
-                  // 普通群聊：從 charactersStore 查找
-                  return (
-                    charactersStore.characters.find(
-                      (ch) => ch.id === m.senderCharacterId,
-                    )?.avatar ?? m.senderCharacterAvatar ?? ""
-                  );
-                })()
-              : m.senderCharacterAvatar || "",
-            isRecall: m.isRecall,
-            recallContent: m.recallContent,
-            isPrivateMessage: m.isPrivateMessage,
-            isGroupAction: m.isGroupAction,
-            groupActionType: m.groupActionType,
-            groupActionActor: m.groupActionActor,
-            groupActionTarget: m.groupActionTarget,
-            groupActionValue: m.groupActionValue,
-            // 群聊記錄卡片
-            isGroupChatHistory: m.isGroupChatHistory,
-            groupChatHistoryData: m.groupChatHistoryData,
-            // 群通話記錄卡片
-            isGroupCallHistory: m.isGroupCallHistory,
-            groupCallHistoryData: m.groupCallHistoryData,
-            // 行事曆事件
-            isCalendarEvent: (m as any).isCalendarEvent,
-            calendarEventData: (m as any).calendarEventData,
-            // 音頻/語音相關
-            audioBlobId: (m as any).audioBlobId,
-            audioMimeType: (m as any).audioMimeType,
-            audioDuration: (m as any).audioDuration,
-            audioWaveform: (m as any).audioWaveform,
-            audioTranscript: (m as any).audioTranscript,
-            // 音頻 Blob 改為按需載入，不在載入時一次性讀取
-            _audioBlob: undefined,
-            // HTML 區塊
-            isHtmlBlock: (m as any).isHtmlBlock,
-            htmlContent: (m as any).htmlContent,
-            // Shadow segment（源訊息派生）
-            isShadowSegment: (m as any).isShadowSegment,
-            shadowSourceId: (m as any).shadowSourceId,
-            shadowOrdinal: (m as any).shadowOrdinal,
-            // MiniMax TTS 語音合成相關
-            ttsRawContent: (m as any).ttsRawContent,
-            ttsAudioUrl: (m as any).ttsAudioUrl,
-            ttsSegments: (m as any).ttsSegments,
-            // 用戶撤回相關
-            isUserRecalled: (m as any).isUserRecalled,
-            userRecalledType: (m as any).userRecalledType,
-            // 角色撤回相關（線上模式）
-            isCharRecall: (m as any).isCharRecall,
-            charRecallType: (m as any).charRecallType,
-            charRecallContent: (m as any).charRecallContent,
-            charRecallHints: (m as any).charRecallHints,
-            charRecallRevealed: (m as any).charRecallRevealed,
-            isFaceToFaceRequest: (m as any).isFaceToFaceRequest,
-            faceToFaceRequestReason: (m as any).faceToFaceRequestReason,
-            faceToFaceRequestStatus: (m as any).faceToFaceRequestStatus,
-            isOnlineModeRequest: (m as any).isOnlineModeRequest,
-            onlineModeRequestReason: (m as any).onlineModeRequestReason,
-            onlineModeRequestStatus: (m as any).onlineModeRequestStatus,
-            // 封鎖系統相關
-            sentWhileBlocked: (m as any).sentWhileBlocked,
-            isSystemNotification: (m as any).isSystemNotification,
-            // 好友申請（用戶封鎖角色後，角色想重新加好友的系統卡片）
-            isFriendRequest: (m as any).isFriendRequest,
-            friendRequestId: (m as any).friendRequestId,
-            friendRequestData: (m as any).friendRequestData,
-            friendRequestResult: (m as any).friendRequestResult,
-            // 繼續生成的隱藏提示
-            isContinuePrompt: (m as any).isContinuePrompt,
-            // 通話通知相關
-            isCallNotification: (m as any).isCallNotification,
-            callNotificationType: (m as any).callNotificationType,
-            callReason: (m as any).callReason,
-          } as Message;
-
-          if (needsModeRequestCompat) {
-            syncModeRequestFieldsFromContent(loadedMessage, loadedMessage.content);
-          }
-
-          return loadedMessage;
-        }) as Message[];
-  // 載入聊天專屬的 Persona 覆蓋數據
+        messages.value = rawMessages.map((m) =>
+          convertStoredMessageToUiMessage(m, chat),
+        );
+        // 載入聊天專屬的 Persona 覆蓋數據
         const personaOverride = (chat.metadata as any)?.personaOverride;
         if (personaOverride) {
           chatPersonaOverride.value = {
@@ -8934,121 +8079,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
     const firstMessage = character?.data.first_mes;
 
     if (firstMessage) {
-      // 如果開場白包含 HTML 或特殊標籤，透過 parseGreeting 拆分成多個氣泡
-      if (needsParsing(firstMessage)) {
-        try {
-          const parsedMessages = parseGreeting(firstMessage);
-          if (parsedMessages.length > 0) {
-            const baseTime = Date.now();
-            for (let i = 0; i < parsedMessages.length; i++) {
-              const parsedMsg = parsedMessages[i];
-              // 跳過空內容
-              if (
-                !parsedMsg.content &&
-                !parsedMsg.isHtmlBlock &&
-                !parsedMsg.isTimetravel &&
-                !parsedMsg.isRedpacket &&
-                !parsedMsg.isLocation &&
-                !parsedMsg.isTransfer &&
-                !parsedMsg.isGift &&
-                !parsedMsg.isAiImage &&
-                !parsedMsg.isVoice &&
-                !parsedMsg.isFaceToFaceRequest &&
-                !parsedMsg.isOnlineModeRequest
-              )
-                continue;
-
-              const messageRole: "user" | "ai" | "system" =
-                parsedMsg.isTimetravel ? "system" : "ai";
-              messages.value.push({
-                id: `msg_${baseTime}_${i}`,
-                role: messageRole,
-                content:
-                  parsedMsg.isAiImage && parsedMsg.imageDescription
-                    ? `<pic>${parsedMsg.imageDescription}</pic>`
-                    : parsedMsg.isHtmlBlock
-                      ? ""
-                      : parsedMsg.isVoice
-                        ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
-                        : parsedMsg.content,
-                timestamp: baseTime + i,
-                thought: parsedMsg.thought,
-                isTimetravel: parsedMsg.isTimetravel,
-                timetravelContent: parsedMsg.timetravelContent,
-                isRedpacket: parsedMsg.isRedpacket,
-                redpacketData: parsedMsg.redpacketData,
-                isLocation: parsedMsg.isLocation,
-                locationContent: parsedMsg.locationContent,
-                replyToContent: parsedMsg.replyToContent,
-                isGift: parsedMsg.isGift,
-                giftName: parsedMsg.giftName,
-                isTransfer: parsedMsg.isTransfer,
-                transferType: parsedMsg.transferType,
-                transferAmount: parsedMsg.transferAmount,
-                transferNote: parsedMsg.transferNote,
-                transferStatus: parsedMsg.isTransfer
-                  ? parsedMsg.transferType === "refund"
-                    ? "refunded"
-                    : "pending"
-                  : undefined,
-                isAvatarChange: parsedMsg.isAvatarChange,
-                avatarChangeAction: parsedMsg.avatarChangeAction,
-                avatarChangeMood: parsedMsg.avatarChangeMood,
-                avatarChangeDesc: parsedMsg.avatarChangeDesc,
-                messageType: parsedMsg.isAiImage
-                  ? "descriptive-image"
-                  : parsedMsg.isVoice
-                    ? "audio"
-                    : undefined,
-                imageCaption: parsedMsg.isAiImage
-                  ? parsedMsg.imageDescription
-                  : undefined,
-                imagePrompt: parsedMsg.imagePrompt,
-                isHtmlBlock: parsedMsg.isHtmlBlock,
-                htmlContent: parsedMsg.isHtmlBlock
-                  ? parsedMsg.content
-                  : undefined,
-                audioTranscript: parsedMsg.isVoice
-                  ? parsedMsg.voiceContent
-                  : undefined,
-                isFaceToFaceRequest: parsedMsg.isFaceToFaceRequest,
-                faceToFaceRequestReason: parsedMsg.faceToFaceRequestReason,
-                faceToFaceRequestStatus: parsedMsg.isFaceToFaceRequest
-                  ? "pending"
-                  : undefined,
-                isOnlineModeRequest: parsedMsg.isOnlineModeRequest,
-                onlineModeRequestReason: parsedMsg.onlineModeRequestReason,
-                onlineModeRequestStatus: parsedMsg.isOnlineModeRequest
-                  ? "pending"
-                  : undefined,
-              });
-            }
-          } else {
-            messages.value.push({
-              id: `msg_${Date.now()}`,
-              role: "ai",
-              content: firstMessage,
-              timestamp: Date.now(),
-            });
-          }
-        } catch (e) {
-          console.warn("[ChatScreen] 開場白解析失敗，使用原始內容:", e);
-          messages.value.push({
-            id: `msg_${Date.now()}`,
-            role: "ai",
-            content: firstMessage,
-            timestamp: Date.now(),
-          });
-        }
-      } else {
-        // 不需要解析，直接作為單條訊息
-        messages.value.push({
-          id: `msg_${Date.now()}`,
-          role: "ai",
-          content: firstMessage,
-          timestamp: Date.now(),
-        });
-      }
+      messages.value.push(...createGreetingMessages(firstMessage));
 
       // 解析開場白中的好感度更新（支援 <update> _.set() 和 <affinity-update> 兩種格式）
       const greetingAffinityUpdates = parseAffinityUpdateTags(firstMessage);
@@ -9081,12 +8112,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
   });
 
   // 初始化增量寫入追蹤狀態（讓後續 saveChat 能正確判斷是否為純追加）
-  _lastSavedMessageCount = messages.value.length;
-  _lastSavedLastMessageId =
-    messages.value.length > 0
-      ? messages.value[messages.value.length - 1].id
-      : "";
-  _lastSavedMessageIds = messages.value.map((m) => m.id);
+  resetSaveTrackingFromMessages();
 }
 
 // 載入總結和日記
@@ -9239,243 +8265,32 @@ async function loadImportantEventsForPrompt(): Promise<
   return [];
 }
 
- function sanitizeStreamingContentForStorage(content: string): string {
-   const trimmed = content.trim();
-   if (!trimmed) return "";
-
-   try {
-     if (needsParsing(trimmed)) {
-       const parsed = parseAIResponse(trimmed);
-       const combined = parsed.messages
-         .map((msg) => {
-           if (msg.isAiImage && msg.imageDescription) return `<pic>${msg.imageDescription}</pic>`;
-           if (msg.isVoice) return `[語音訊息] ${msg.voiceContent || ""}`;
-           if (msg.isHtmlBlock) return "";
-           return msg.content || "";
-         })
-         .filter((text) => text.trim())
-         .join("\n");
-
-       if (combined.trim()) {
-         return combined.trim();
-       }
-
-       if (parsed.rawOutput.trim()) {
-         return parsed.rawOutput
-           .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "")
-           .replace(/<\/?content>/gi, "")
-           .replace(/<\/?msg>/gi, "")
-           .trim();
-       }
-     }
-   } catch (error) {
-     console.warn("[ChatScreen] 清理流式內容供持久化時解析失敗，改用正則回退:", error);
-   }
-
-   return trimmed
-     .replace(/<think(?:ing)?>[\s\S]*?(<\/think(?:ing)?>|$)/gi, "")
-     .replace(/<\/?content>/gi, "")
-     .replace(/<\/?msg>/gi, "")
-     .trim();
- }
-
 // 將內部訊息格式轉換為 ChatMessage 格式（供儲存用）
 function convertToStorableMessage(m: any, charName: string): ChatMessage {
-  const role = inferUiRoleFromStoredMessage(m);
-  // imageUrl/imageData 已經是引用 ID（chatimg_xxx）或新圖片的 base64
-  // extractImagesFromMessages 會在儲存時處理 base64 → 引用 ID 的轉換
-  return {
-    id: m.id,
-    sender:
-      role === "user"
-        ? ("user" as const)
-        : role === "ai"
-          ? ("assistant" as const)
-          : ("system" as const),
-    name: role === "user" ? "User" : m.senderCharacterName || charName,
-    content:
-      m.isStreaming && role === "ai"
-        ? sanitizeStreamingContentForStorage(m.content || "")
-        : m.content,
-    is_user: role === "user",
-    status: "sent" as const,
-    createdAt: m.timestamp ?? m.createdAt ?? Date.now(),
-    updatedAt: m.timestamp ?? m.updatedAt ?? m.createdAt ?? Date.now(),
-    swipes: m.swipes ? [...m.swipes] : undefined,
-    swipeId: m.swipeId,
-    roundSwipes: m.roundSwipes
-      ? JSON.parse(JSON.stringify(m.roundSwipes))
-      : undefined,
-    roundSwipeId: m.roundSwipeId,
-    thought: m.thought,
-    isTimetravel: m.isTimetravel,
-    timetravelContent: m.timetravelContent,
-    isRedpacket: m.isRedpacket,
-    redpacketData: m.redpacketData ? { ...m.redpacketData } : undefined,
-    redpacketState: m.redpacketState
-      ? JSON.parse(JSON.stringify(m.redpacketState))
-      : undefined,
-    isLocation: m.isLocation,
-    locationContent: m.locationContent,
-    replyToContent: m.replyToContent,
-    replyTo: m.replyTo,
-    messageType: m.messageType,
-    imageUrl: m.imageUrl,
-    imageData: m.imageData,
-    imageMimeType: m.imageMimeType,
-    imageCaption: m.imageCaption,
-    isGift: m.isGift,
-    giftName: m.giftName,
-    giftReceived: m.giftReceived,
-    isTransfer: m.isTransfer,
-    transferAmount: m.transferAmount,
-    transferReceived: m.transferReceived,
-    transferType: m.transferType,
-    transferNote: m.transferNote,
-    transferStatus: m.transferStatus,
-    isWaimaiShare: m.isWaimaiShare,
-    isWaimaiPaymentRequest: m.isWaimaiPaymentRequest,
-    isWaimaiPaymentConfirm: m.isWaimaiPaymentConfirm,
-    isWaimaiPaymentResult: m.isWaimaiPaymentResult,
-    isWaimaiProgress: m.isWaimaiProgress,
-    isWaimaiDelivery: m.isWaimaiDelivery,
-    waimaiOrder: m.waimaiOrder
-      ? JSON.parse(JSON.stringify(m.waimaiOrder))
-      : undefined,
-    isMusicShare: m.isMusicShare,
-    musicShareData: m.musicShareData
-      ? JSON.parse(JSON.stringify(m.musicShareData))
-      : undefined,
-    isAvatarChange: m.isAvatarChange,
-    avatarChangeAction: m.avatarChangeAction,
-    avatarChangeMood: m.avatarChangeMood,
-    avatarChangeDesc: m.avatarChangeDesc,
-    senderCharacterId: m.senderCharacterId,
-    senderCharacterName: m.senderCharacterName,
-    senderCharacterAvatar: m.senderCharacterId
-      ? undefined
-      : m.senderCharacterAvatar,
-    isRecall: m.isRecall,
-    recallContent: m.recallContent,
-    isPrivateMessage: m.isPrivateMessage,
-    isGroupAction: m.isGroupAction,
-    groupActionType: m.groupActionType,
-    groupActionActor: m.groupActionActor,
-    groupActionTarget: m.groupActionTarget,
-    groupActionValue: m.groupActionValue,
-    isGroupChatHistory: m.isGroupChatHistory,
-    groupChatHistoryData: m.groupChatHistoryData
-      ? JSON.parse(JSON.stringify(m.groupChatHistoryData))
-      : undefined,
-    isGroupCallHistory: m.isGroupCallHistory,
-    groupCallHistoryData: m.groupCallHistoryData
-      ? JSON.parse(JSON.stringify(m.groupCallHistoryData))
-      : undefined,
-    isCalendarEvent: m.isCalendarEvent,
-    calendarEventData: m.calendarEventData
-      ? JSON.parse(JSON.stringify(m.calendarEventData))
-      : undefined,
-    // 音頻/語音相關
-    audioBlobId: m.audioBlobId,
-    audioMimeType: m.audioMimeType,
-    audioDuration: m.audioDuration,
-    audioWaveform: m.audioWaveform ? [...m.audioWaveform] : undefined,
-    audioTranscript: m.audioTranscript,
-    _audioBlob: m._audioBlob,
-    // MiniMax TTS 語音合成相關
-    ttsRawContent: m.ttsRawContent,
-    ttsAudioUrl: m.ttsAudioUrl,
-    ttsSegments: m.ttsSegments,
-    // HTML 區塊
-    isHtmlBlock: m.isHtmlBlock,
-    htmlContent: m.htmlContent,
-    // Shadow segment（源訊息派生）
-    isShadowSegment: m.isShadowSegment,
-    shadowSourceId: m.shadowSourceId,
-    shadowOrdinal: m.shadowOrdinal,
-    // 用戶撤回相關
-    isUserRecalled: m.isUserRecalled,
-    userRecalledType: m.userRecalledType,
-    // 角色撤回相關（線上模式）
-    isCharRecall: m.isCharRecall,
-    charRecallType: m.charRecallType,
-    charRecallContent: m.charRecallContent,
-    charRecallHints: m.charRecallHints ? [...m.charRecallHints] : undefined,
-    charRecallRevealed: m.charRecallRevealed,
-    // 面對面/線上模式請求相關
-    isFaceToFaceRequest: m.isFaceToFaceRequest,
-    faceToFaceRequestReason: m.faceToFaceRequestReason,
-    faceToFaceRequestStatus: m.faceToFaceRequestStatus,
-    isOnlineModeRequest: m.isOnlineModeRequest,
-    onlineModeRequestReason: m.onlineModeRequestReason,
-    onlineModeRequestStatus: m.onlineModeRequestStatus,
-    // 封鎖系統相關
-    sentWhileBlocked: m.sentWhileBlocked,
-    isSystemNotification: m.isSystemNotification,
-    // 好友申請（用戶封鎖角色後，角色想重新加好友的系統卡片）
-    isFriendRequest: m.isFriendRequest,
-    friendRequestId: m.friendRequestId,
-    friendRequestData: m.friendRequestData
-      ? JSON.parse(JSON.stringify(m.friendRequestData))
-      : undefined,
-    friendRequestResult: m.friendRequestResult,
-    // 繼續生成的隱藏提示
-    isContinuePrompt: m.isContinuePrompt,
-    // 通話通知相關
-    isCallNotification: m.isCallNotification,
-    callNotificationType: m.callNotificationType,
-    callReason: m.callReason,
-  } as ChatMessage;
+  return mapToStorableMessage(m, charName);
 }
 
 // ===== 聊天儲存系統（debounce + 增量寫入） =====
 
-/** 上次成功儲存時的訊息數量（用於判斷是否為純追加） */
-let _lastSavedMessageCount = 0;
-/** 上次成功儲存時的最後一條訊息 ID（用於驗證追加一致性） */
-let _lastSavedLastMessageId = "";
-/** 上次成功儲存時的所有訊息 ID 快照（用於 dirty chunk 比對） */
-let _lastSavedMessageIds: string[] = [];
-/** 上次從 IDB 載入訊息的時間戳（用於 saveChatMessages 保護背景服務新增的訊息） */
-let _messagesLoadedAt = 0;
-/** debounce 計時器 */
-let _saveChatTimer: ReturnType<typeof setTimeout> | null = null;
-/** 是否有待處理的儲存 */
-let _saveChatPending = false;
-/** 儲存鎖：防止並發寫入導致資料遺失 */
-let _saveChatLock: Promise<void> | null = null;
-
-/**
- * 構建聊天元數據物件（不含訊息）
- */
 function buildChatMetadata(
   storableMessages: ChatMessage[],
   charName: string,
 ): Chat {
-  const lastMsg = storableMessages[storableMessages.length - 1];
-  // 保留現有 metadata 欄位（authorsNote、timedWorldInfo、variables 等），只覆蓋 personaOverride
-  const existingMetadata = currentChatData.value?.metadata ?? {};
-  return {
-    id: currentChatId.value!,
-    name: currentChatData.value?.name || `與 ${charName} 的對話`,
+  return buildChatMetadataFromState({
+    chatId: currentChatId.value!,
+    storableMessages,
+    charName,
+    currentChatData: currentChatData.value,
     characterId: props.characterId || currentCharacter.value?.id || "",
-    messages: storableMessages,
-    metadata: {
-      ...JSON.parse(JSON.stringify(toRaw(existingMetadata))),
-      personaOverride: {
-        personaId: chatBoundPersonaId.value || userStore.currentPersonaId || "",
-        secrets: chatPersonaOverride.value.secrets,
-        powerDynamic: chatPersonaOverride.value.powerDynamic,
-      },
-    },
-    createdAt: currentChatData.value?.createdAt || Date.now(),
-    updatedAt: Date.now(),
+    existingMetadata: toRaw(currentChatData.value?.metadata ?? {}),
+    personaId: chatBoundPersonaId.value || userStore.currentPersonaId || "",
+    chatPersonaOverride: chatPersonaOverride.value,
     enablePhoneDecision: enablePhoneDecision.value,
     doNotDisturb: chatDoNotDisturb.value,
     faceToFaceMode: chatFaceToFaceMode.value,
     thirdPersonMode: chatThirdPersonMode.value,
     enableRealTimeAwareness: chatEnableRealTimeAwareness.value,
-    ...fakeTime.toChatFields(),
+    fakeTimeFields: fakeTime.toChatFields(),
     minimaxTTSEnabled: chatMinimaxTTSEnabled.value,
     imageSearchEnabled: chatImageSearchEnabled.value,
     speakerMode: chatSpeakerMode.value,
@@ -9483,252 +8298,62 @@ function buildChatMetadata(
       Object.keys(chatMinimaxTTSOverride.value).length > 0
         ? { ...chatMinimaxTTSOverride.value }
         : undefined,
-    appearance: chatAppearance.value
-      ? JSON.parse(JSON.stringify(chatAppearance.value))
-      : undefined,
-    summarySettings: JSON.parse(
-      JSON.stringify(toRaw(chatSummarySettings.value)),
-    ),
-    isGroupChat: currentChatData.value?.isGroupChat,
-    groupMetadata: currentChatData.value?.groupMetadata
-      ? JSON.parse(JSON.stringify(currentChatData.value.groupMetadata))
-      : undefined,
-    lastMessagePreview: lastMsg?.content?.slice(0, 100) || "",
-    messageCount: storableMessages.length,
-    isBranch: currentChatData.value?.isBranch,
-    pinnedToList: currentChatData.value?.pinnedToList,
-    // 封鎖狀態（從 DB 中的現有資料保留，不由 ChatScreen 管理）
-    blockState: currentChatData.value?.blockState,
-    // 聊天專屬位置覆蓋
-    locationOverride: chatLocationOverride.value ?? undefined,
-    // 聊天專屬頭像覆蓋
+    appearance: chatAppearance.value,
+    summarySettings: toRaw(chatSummarySettings.value),
+    locationOverride: chatLocationOverride.value,
     charAvatarOverride: charAvatarOverride.value,
     userAvatarOverride: userAvatarOverride.value,
-    // 情頭系統
-    coupleAvatarLibrary: coupleAvatarLibrary.value.length > 0 ? coupleAvatarLibrary.value : undefined,
+    coupleAvatarLibrary:
+      coupleAvatarLibrary.value.length > 0 ? coupleAvatarLibrary.value : undefined,
     activeCoupleAvatarId: activeCoupleAvatarId.value,
-  };
+  });
 }
 
-/**
- * 實際執行儲存的核心函數（內部實作，不應直接呼叫）
- */
-async function _saveChatImplInner() {
-  const charName = currentCharacter.value?.data?.name || props.characterName;
-  // 原子快照：先複製一份當前訊息陣列的引用，避免在 map 過程中
-  // 被流式回覆的 splice/push 操作修改（競態條件防護）
-  const messagesSnapshot = [...messages.value];
-  const storableMessages = messagesSnapshot.map((m) =>
-    convertToStorableMessage(m, charName),
-  );
+const chatPersistence = useChatPersistence({
+  messages,
+  currentChatId,
+  currentChatData,
+  getCharName: () => currentCharacter.value?.data?.name || props.characterName,
+  getDirectCharacterId: () => props.characterId || currentCharacter.value?.id || "",
+  convertToStorableMessage,
+  buildChatMetadata,
+  initChatVariables: (chatId: string) => {
+    chatVariablesStore.initForChat(chatId);
+    getMacroEngine().registerVarMacros(chatVariablesStore);
+  },
+  refreshBlockStateFromStorage,
+});
 
-  if (!currentChatId.value) {
-    const directCharacterId = props.characterId || currentCharacter.value?.id || "";
-    if (directCharacterId) {
-      const preferredChat = await resolvePreferredDirectChat(directCharacterId);
-      if (preferredChat) {
-        currentChatId.value = preferredChat.id;
-        currentChatData.value = preferredChat;
-      }
-    }
-
-    if (!currentChatId.value) {
-      if (storableMessages.length === 0) {
-        _saveChatPending = false;
-        return;
-      }
-      currentChatId.value = `chat_${Date.now()}`;
-      chatVariablesStore.initForChat(currentChatId.value);
-      getMacroEngine().registerVarMacros(chatVariablesStore);
-    }
-  }
-
-  try {
-    // 圖片分離：將 base64 圖片提取到 imageCache 表，訊息中只存引用 ID
-    const afterImageExtract = await extractImagesFromMessages(storableMessages);
-
-    // 音頻分離：將音頻 Blob 提取到 audio-blobs 表，訊息中只存引用 ID
-    const messagesForStorage =
-      await extractAudioFromMessages(afterImageExtract);
-
-    const chat = buildChatMetadata(messagesForStorage, charName);
-
-    // Debug: 檢查外觀是否正確包含在 chat 中
-    console.log(
-      "[ChatScreen] 保存聊天，外觀:",
-      chat.appearance
-        ? {
-            useCustom: chat.appearance.useCustom,
-            wallpaperType: chat.appearance.wallpaper?.type,
-            wallpaperValueLength: chat.appearance.wallpaper?.value?.length,
-          }
-        : "undefined",
-    );
-
-    const currentCount = messagesForStorage.length;
-    const currentLastId =
-      messagesForStorage.length > 0
-        ? messagesForStorage[messagesForStorage.length - 1].id
-        : "";
-
-    // 轉換為純物件避免 Vue reactive proxy 導致的 DataCloneError
-    // structuredClone 比 JSON.parse(JSON.stringify()) 更省記憶體（不產生中間 JSON 字串）
-    let plainChat: any;
-    try {
-      plainChat = structuredClone(toRaw(chat));
-    } catch {
-      // fallback：如果仍有嵌套 proxy 導致 DataCloneError，退回 JSON 方式
-      plainChat = JSON.parse(JSON.stringify(toRaw(chat)));
-    }
-
-    // 提取訊息列表（用於寫入 chatMessages 表）
-    const plainMessages = plainChat.messages || [];
-    const localCount = plainMessages.length;
-
-    // 從 DB 讀取最新版本，用於安全檢查和狀態保護
-    let latestFromDb: any = null;
-    try {
-      latestFromDb = await loadChatById(plainChat.id);
-    } catch {
-      /* 讀取失敗時繼續，後面的保護邏輯會跳過 */
-    }
-
-    // ★ 安全閘門：防止少量訊息（如初始開場白）覆蓋已有大量訊息的聊天記錄
-    // 場景：通知點擊導致 ChatScreen 以錯誤上下文重新初始化，只剩開場白
-    //
-    // 注意：必須用 chatMessages 表的實際筆數，而不是 chat metadata 的 messageCount，
-    // 因為 metadata 的 messageCount 只在 refreshChatDerivedMetadata 時更新；
-    // 當使用者手動刪除訊息或整個輪次時，deleteMessage 已從 messages 表移除這些列，
-    // 但 metadata 仍為舊值，會誤觸發閘門並讓使用者的刪除/編輯被回滾。
-    if (latestFromDb) {
-      let dbCount = 0;
-      try {
-        dbCount = await getMessageCount(plainChat.id);
-      } catch {
-        dbCount = latestFromDb.messageCount || 0;
-      }
-      // 如果 IDB 實際還有 5+ 條訊息且本地只剩不超過 2 條（開場白級別），
-      // 代表使用者並未透過 deleteMessage 移除舊訊息，極可能是錯誤上下文重新初始化。
-      if (dbCount >= 5 && localCount <= 2) {
-        // 二次確認：本地剩餘訊息的 ID 是否仍存在於 IDB 中。
-        // 若存在 → 是使用者保留的訊息，閘門誤判，放行；
-        // 若不存在 → 本地是全新（如開場白）覆蓋，攔截。
-        let localIdsExistInDb = false;
-        try {
-          const dbMessages = await loadMessages(plainChat.id);
-          const dbIds = new Set(dbMessages.map((m) => m.id));
-          localIdsExistInDb =
-            plainMessages.length > 0 &&
-            plainMessages.every((m: any) => dbIds.has(m.id));
-        } catch {
-          /* 讀取失敗時保守攔截 */
-        }
-        if (!localIdsExistInDb) {
-          console.error(
-            `[ChatScreen] ⚠️ 安全閘門觸發！拒絕保存：IDB 實際訊息數=${dbCount}，本地只有 ${localCount} 條且 ID 不在 IDB 中。`,
-            "可能是 ChatScreen 以錯誤上下文重新初始化，跳過此次保存以保護資料。",
-            {
-              chatId: plainChat.id,
-              localIds: plainMessages.slice(0, 3).map((m: any) => m.id),
-            },
-          );
-          _saveChatPending = false;
-          return;
-        }
-      }
-    }
-
-    // 封鎖狀態保護：從 DB 讀取最新的 blockState，避免被覆蓋
-    // （BlockService 直接寫入 DB，ChatScreen 的 currentChatData 可能還沒同步）
-    if (latestFromDb?.blockState) {
-      plainChat.blockState = latestFromDb.blockState;
-    }
-
-    // v24：分開保存 metadata 和訊息
-    // 1) 保存訊息到 chatMessages 表（傳入 snapshotTime 保護背景服務新增的訊息）
-    await saveMessages(plainChat.id, plainMessages, _messagesLoadedAt || undefined);
-
-    // 2) 保存 chat metadata（不含訊息）到 chats 表
-    plainChat.messages = [];
-    await saveChatMetadata(plainChat);
-    await refreshChatDerivedMetadata(plainChat.id);
-
-    // 保存後立即回讀驗證（僅開發環境）
-    if (import.meta.env.DEV) {
-      try {
-        const savedCount = await getMessageCount(currentChatId.value!);
-        if (savedCount !== localCount) {
-          console.error(
-            "[ChatScreen] ⚠️ 保存後回讀數量不一致！寫入:",
-            localCount,
-            "讀回:",
-            savedCount,
-          );
-        }
-      } catch (verifyErr) {
-        console.warn("[ChatScreen] 回讀驗證失敗:", verifyErr);
-      }
-    }
-
-    // 更新追蹤狀態
-    _lastSavedMessageCount = currentCount;
-    _lastSavedLastMessageId = currentLastId;
-    _lastSavedMessageIds = messagesForStorage.map((m) => m.id);
-    _saveChatPending = false;
-  } catch (e) {
-    console.error("保存聊天失敗:", e);
-  }
+function markMessagesLoaded() {
+  chatPersistence.markMessagesLoaded();
 }
 
-/**
- * 帶鎖的儲存：確保同一時間只有一個儲存在執行
- * 如果前一個儲存還在進行中，等它完成後再執行新的儲存
- * 這樣可以避免並發寫入導致舊資料覆蓋新資料
- */
+function resetSaveTrackingFromMessages() {
+  chatPersistence.resetSaveTrackingFromMessages();
+}
+
+function resetAfterChatCleared() {
+  chatPersistence.resetAfterChatCleared();
+}
+
+function cancelPendingSaveTimer() {
+  chatPersistence.cancelPendingSaveTimer();
+}
+
+function hasPendingSave() {
+  return chatPersistence.hasPendingSave();
+}
+
 async function _saveChatImpl() {
-  // 等待前一個儲存完成（即使它失敗了也要等）
-  if (_saveChatLock) {
-    try {
-      await _saveChatLock;
-    } catch {
-      // 前一個儲存失敗不影響本次儲存
-    }
-  }
-  // 建立新的鎖
-  _saveChatLock = _saveChatImplInner();
-  try {
-    await _saveChatLock;
-  } finally {
-    _saveChatLock = null;
-  }
+  await chatPersistence.runSaveNow();
 }
 
-/**
- * 防抖儲存（預設 400ms）— 用於大多數非關鍵場景
- * 連續呼叫只會觸發一次實際寫入
- */
 function saveChat() {
-  _saveChatPending = true;
-  if (_saveChatTimer) {
-    clearTimeout(_saveChatTimer);
-  }
-  _saveChatTimer = setTimeout(() => {
-    _saveChatTimer = null;
-    _saveChatImpl();
-  }, 400);
+  chatPersistence.saveChat();
 }
 
-/**
- * 立即儲存 — 用於關鍵場景（離開頁面、用戶發送訊息、刪除等）
- * 會取消待處理的 debounce 並立即執行
- */
 async function saveChatImmediate() {
-  if (_saveChatTimer) {
-    clearTimeout(_saveChatTimer);
-    _saveChatTimer = null;
-  }
-  await _saveChatImpl();
-  await refreshBlockStateFromStorage();
+  await chatPersistence.saveChatImmediate();
 }
 
 // ===== 電話通話結束處理 =====
@@ -9761,7 +8386,7 @@ async function handlePhoneCallEnded(
     }
     if (chat && latest && Array.isArray(latest)) {
       messages.value = latest.map((m) => convertStoredMessageToUiMessage(m, chat));
-      _messagesLoadedAt = Date.now();
+      markMessagesLoaded();
     }
     scrollToBottom();
   } catch (err) {
@@ -9985,7 +8610,7 @@ let deferredPendingMessage: string | PendingInjectedMessage | null = null;
  */
 function findLatestWaimaiOrder(
   msgs: Message[],
-): WaimaiOrderSnapshot | undefined {
+): Message["waimaiOrder"] | undefined {
   return [...msgs]
     .slice(-30)
     .reverse()
@@ -10370,10 +8995,7 @@ onUnmounted(() => {
   }
 
   // 如果有待處理的 debounce 儲存，立即執行（避免切換聊天時丟失數據）
-  if (_saveChatTimer) {
-    clearTimeout(_saveChatTimer);
-    _saveChatTimer = null;
-  }
+  cancelPendingSaveTimer();
 
   // 如果正在流式生成中，將已累積的內容寫入佔位符再保存
   // 避免空氣泡被寫入 IDB；後台生成完成後 finally 會再次保存最終結果
@@ -10396,7 +9018,7 @@ onUnmounted(() => {
     }
     // 立即保存
     _saveChatImpl();
-  } else if (_saveChatPending) {
+  } else if (hasPendingSave()) {
     _saveChatImpl();
   }
   // 暫存輸入框草稿

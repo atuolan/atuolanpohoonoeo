@@ -550,9 +550,9 @@ function handleTabsWheel(event: WheelEvent) {
 // 重置為預設
 function resetToDefault() {
   if (isChatMode.value) {
-    if (!confirm("確定要重置此聊天的外觀為全局設定嗎？")) return;
-    // 聊天專屬模式：重置為使用全局設定
-    useCustomAppearance.value = false;
+    if (!confirm("確定要將此聊天的外觀重置為預設值嗎？")) return;
+    // 聊天專屬模式：重置為全局預設值，但保持聊天專屬外觀開啟
+    useCustomAppearance.value = true;
     tempAvatarStyle.value = { ...themeStore.avatarStyle };
     tempBubbleStyle.value = { ...themeStore.bubbleStyle };
     tempWallpaperStyle.value = { ...themeStore.wallpaperStyle };

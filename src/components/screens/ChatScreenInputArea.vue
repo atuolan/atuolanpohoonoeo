@@ -2,6 +2,8 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from "vue";
 import StickerPanel from "@/components/common/StickerPanel.vue";
 import { formatTime as formatAudioTime } from "@/services/AudioRecorder";
+import { useThemeStore } from "@/stores/theme";
+import { isCssColorDark } from "@/utils/wallpaperLuminance";
 interface ReplyTarget {
   role: "user" | "ai" | "system";
   content: string;
@@ -225,11 +227,70 @@ function handleAudioCommandChange(e: Event) {
     emit('update:showTextVoiceModal', false);
   }
 }
+
+// 偵測 chat-screen 實際渲染的桌布是否為深色（同 ChatScreenHeader 邏輯）
+const themeStore = useThemeStore();
+const inputAreaRef = ref<HTMLElement | null>(null);
+const detectedDark = ref<boolean | null>(null);
+
+function detectChatBackgroundDark() {
+  const el = inputAreaRef.value?.closest(".chat-screen") as HTMLElement | null;
+  if (!el) {
+    detectedDark.value = null;
+    return;
+  }
+  const cs = getComputedStyle(el);
+  const candidates = [
+    cs.getPropertyValue("--chat-wallpaper"),
+    cs.getPropertyValue("--wallpaper-value"),
+    cs.getPropertyValue("--time-theme-bg"),
+    cs.getPropertyValue("--color-background"),
+  ];
+  for (const raw of candidates) {
+    const v = (raw || "").trim();
+    if (!v || v.startsWith("var(") || v.startsWith("url(")) continue;
+    const result = isCssColorDark(v);
+    if (result !== null) {
+      detectedDark.value = result;
+      return;
+    }
+  }
+  detectedDark.value = null;
+}
+
+let bgObserver: MutationObserver | null = null;
+
+onMounted(() => {
+  detectChatBackgroundDark();
+  const el = inputAreaRef.value?.closest(".chat-screen") as HTMLElement | null;
+  if (el) {
+    bgObserver = new MutationObserver(() => detectChatBackgroundDark());
+    bgObserver.observe(el, {
+      attributes: true,
+      attributeFilter: ["style", "class"],
+    });
+  }
+});
+
+onBeforeUnmount(() => {
+  bgObserver?.disconnect();
+  bgObserver = null;
+});
+
+watch(
+  () => [themeStore.isWallpaperDark, themeStore.wallpaperStyle],
+  () => detectChatBackgroundDark(),
+  { deep: true },
+);
+
+const isDarkBackground = computed(() =>
+  detectedDark.value !== null ? detectedDark.value : themeStore.isWallpaperDark,
+);
 </script>
 
 <template>
   <!-- 輸入區 -->
-  <footer class="input-area">
+  <footer ref="inputAreaRef" class="input-area">
     <!-- 被角色封鎖提示列 -->
     <div v-if="isBlockedByChar" class="blocked-by-char-bar">
       <svg
@@ -314,7 +375,7 @@ function handleAudioCommandChange(e: Event) {
       </div>
     </Transition>
 
-    <div class="input-container" ref="inputContainerRef">
+    <div class="input-container" :class="{ 'dark-bg': isDarkBackground }" ref="inputContainerRef">
       <!-- 左側按鈕組 -->
       <div class="left-buttons" @click.stop>
         <!-- 更多功能按鈕 -->
@@ -1098,6 +1159,43 @@ function handleAudioCommandChange(e: Event) {
   -webkit-backdrop-filter: blur(16px) saturate(140%);
   border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+
+  // 深色背景：將輸入區的文字、placeholder、按鈕色調切換為亮色
+  &.dark-bg {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0.08) 100%
+    );
+    border-color: rgba(255, 255, 255, 0.22);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+
+    .message-input {
+      color: #ffffff;
+      &::placeholder {
+        color: rgba(255, 255, 255, 0.65);
+      }
+    }
+
+    .plus-btn {
+      color: rgba(255, 255, 255, 0.85);
+      &:hover { color: #ffffff; }
+      &.active { color: #ffffff; }
+      svg { color: inherit; }
+    }
+
+    // 發言模式按鈕（user / system 兩種非 primary 顏色變亮，char 維持主題色）
+    .input-btn {
+      &.mode-user { color: rgba(255, 255, 255, 0.9); }
+      &.mode-system { color: #fbbf24; }
+    }
+
+    // 表情按鈕等通用 input-btn 預設色
+    .emoji-btn {
+      color: rgba(255, 255, 255, 0.85);
+      &:hover { color: #ffffff; }
+    }
+  }
 }
 
 // ===== 動畫底線指示器 =====

@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useThemeStore } from "@/stores/theme";
+import { isCssColorDark } from "@/utils/wallpaperLuminance";
+
 interface PersonaOption {
   id: string;
   name: string;
@@ -114,10 +118,70 @@ function onTimeJumpInput(event: Event) {
   emit("update-time-jump-input", (event.target as HTMLInputElement).value);
 }
 
+const themeStore = useThemeStore();
+
+// 偵測 chat-screen 實際渲染的桌布是否為深色（包含每個聊天的自訂桌布）
+const headerEl = ref<HTMLElement | null>(null);
+const detectedDark = ref<boolean | null>(null);
+
+function detectChatBackgroundDark() {
+  const el = headerEl.value?.closest(".chat-screen") as HTMLElement | null;
+  if (!el) {
+    detectedDark.value = null;
+    return;
+  }
+  const cs = getComputedStyle(el);
+  const candidates = [
+    cs.getPropertyValue("--chat-wallpaper"),
+    cs.getPropertyValue("--wallpaper-value"),
+    cs.getPropertyValue("--time-theme-bg"),
+    cs.getPropertyValue("--color-background"),
+  ];
+  for (const raw of candidates) {
+    const v = (raw || "").trim();
+    if (!v || v.startsWith("var(") || v.startsWith("url(")) continue;
+    const result = isCssColorDark(v);
+    if (result !== null) {
+      detectedDark.value = result;
+      return;
+    }
+  }
+  detectedDark.value = null;
+}
+
+let observer: MutationObserver | null = null;
+
+onMounted(() => {
+  detectChatBackgroundDark();
+  const el = headerEl.value?.closest(".chat-screen") as HTMLElement | null;
+  if (el) {
+    observer = new MutationObserver(() => detectChatBackgroundDark());
+    observer.observe(el, {
+      attributes: true,
+      attributeFilter: ["style", "class"],
+    });
+  }
+});
+
+onBeforeUnmount(() => {
+  observer?.disconnect();
+  observer = null;
+});
+
+// 全局桌布/夜晚模式變化時也重新偵測
+watch(
+  () => [themeStore.isWallpaperDark, themeStore.wallpaperStyle],
+  () => detectChatBackgroundDark(),
+  { deep: true },
+);
+
+const isDarkBackground = computed(() =>
+  detectedDark.value !== null ? detectedDark.value : themeStore.isWallpaperDark,
+);
 </script>
 
 <template>
-  <header class="chat-header">
+  <header ref="headerEl" class="chat-header" :class="{ 'dark-bg': isDarkBackground }">
     <button class="header-back" @click="emit('back')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
         <path d="M19 12H5" />
@@ -636,6 +700,62 @@ function onTimeJumpInput(event: Event) {
 
   &:has(.rail-open) {
     z-index: 120;
+  }
+
+  // 深色背景：將標題與按鈕色調切換為亮色，提高對比
+  &.dark-bg {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0.08) 100%
+    );
+    border-color: rgba(255, 255, 255, 0.22);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+
+    .chat-name {
+      color: #ffffff;
+    }
+
+    .chat-status {
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .header-back,
+    .header-btn,
+    .rail-toggle-btn {
+      color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.32);
+
+      svg {
+        color: #ffffff;
+        stroke: currentColor;
+      }
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.16);
+        border-color: rgba(255, 255, 255, 0.5);
+        color: #ffffff;
+      }
+
+      &:active {
+        background: rgba(255, 255, 255, 0.22);
+      }
+
+      &.active {
+        background: rgba(255, 255, 255, 0.22);
+        border-color: rgba(255, 255, 255, 0.55);
+        color: #ffffff;
+      }
+    }
+
+    .nickname-edit-btn {
+      color: rgba(255, 255, 255, 0.75);
+
+      &:hover {
+        color: #ffffff;
+        background: rgba(255, 255, 255, 0.16);
+      }
+    }
   }
 }
 
