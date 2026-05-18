@@ -13646,6 +13646,11 @@ onUnmounted(() => {
     z-index: 1;
   }
 
+  // 讓 header（含其下拉選單）疊在訊息列表之上，避免訊息氣泡/貼圖遮擋 dropdown
+  > :deep(.chat-header) {
+    z-index: 30;
+  }
+
   // 聊天專屬外觀：覆蓋 MessageBubble 的樣式
   :deep(.bubble) {
     // 字體樣式

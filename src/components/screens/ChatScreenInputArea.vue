@@ -1087,6 +1087,17 @@ function handleAudioCommandChange(e: Event) {
   max-width: 800px;
   margin: 0 auto;
   box-sizing: border-box;
+  padding: 6px 10px;
+  border-radius: 22px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-surface) 85%, transparent) 0%,
+    color-mix(in srgb, var(--color-surface) 40%, transparent) 100%
+  );
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
 }
 
 // ===== 動畫底線指示器 =====

@@ -1003,6 +1003,7 @@ async function togglePinChat() {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-width: 0;
 }
 
 /* --- 整合頂部導航區塊 --- */
@@ -1014,11 +1015,13 @@ async function togglePinChat() {
   z-index: 10;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .topbar-header {
   display: flex;
   align-items: center;
+  min-width: 0;
   padding: max(12px, calc(var(--safe-top, 0px) + 8px)) 16px 8px;
   gap: 12px;
 }
@@ -1052,17 +1055,23 @@ async function togglePinChat() {
   color: var(--color-text, #333);
   margin: 0;
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Pill Tabs */
 .pill-tabs {
   display: flex;
+  min-width: 0;
   padding: 0 16px 12px;
   gap: 8px;
 }
 
 .pill-tab {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1076,6 +1085,9 @@ async function togglePinChat() {
   color: var(--color-text-secondary, #666);
   cursor: pointer;
   transition: all 0.2s;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 
   &.active {
     background: var(--color-primary, #7dd3a8);
@@ -1090,6 +1102,7 @@ async function togglePinChat() {
 }
 
 .pill-badge {
+  flex-shrink: 0;
   background: var(--color-border, #e2e8f0);
   color: var(--color-text-secondary, #666);
   font-size: 11px;
@@ -1102,12 +1115,14 @@ async function togglePinChat() {
 .topbar-actions {
   display: flex;
   align-items: center;
+  min-width: 0;
   padding: 0 16px 12px;
   gap: 12px;
 }
 
 .search-bar {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1131,6 +1146,7 @@ async function togglePinChat() {
 
   input {
     flex: 1;
+    min-width: 0;
     border: none;
     background: none;
     font-size: 14px;
@@ -1145,6 +1161,7 @@ async function togglePinChat() {
 
 .create-group-fab {
   height: 40px;
+  max-width: 44%;
   padding: 0 14px 0 12px;
   border-radius: 20px;
   background: var(--color-primary, #7dd3a8);
@@ -1159,14 +1176,20 @@ async function togglePinChat() {
   transition: all 0.2s;
   font-size: 13px;
   font-weight: 600;
+  overflow: hidden;
 
   svg {
     width: 18px;
     height: 18px;
+    flex-shrink: 0;
   }
 
   .fab-label {
+    min-width: 0;
     line-height: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &:hover {
@@ -1235,6 +1258,8 @@ async function togglePinChat() {
   .empty-actions {
     margin-top: 20px;
     display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
     gap: 12px;
   }
 
@@ -1286,6 +1311,7 @@ async function togglePinChat() {
 .chat-item {
   display: flex;
   align-items: center;
+  min-width: 0;
   gap: 12px;
   padding: 12px;
   background: var(--color-surface, #fff);
@@ -1385,9 +1411,12 @@ async function togglePinChat() {
 .chat-header {
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 
 .chat-name {
+  flex: 1;
+  min-width: 0;
   font-size: 15px;
   font-weight: 600;
   color: var(--color-text, #333);
@@ -1423,6 +1452,7 @@ async function togglePinChat() {
 .preview-line {
   display: flex;
   align-items: center;
+  min-width: 0;
   gap: 6px;
   font-size: 13px;
   color: var(--color-text-secondary, #666);
@@ -1436,6 +1466,7 @@ async function togglePinChat() {
 }
 
 .chat-preview-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1492,7 +1523,7 @@ async function togglePinChat() {
 /* --- 聯繫人網格 --- */
 .contacts-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-auto-rows: 1fr;
   gap: 12px;
   padding: 0 16px;
@@ -1503,6 +1534,7 @@ async function togglePinChat() {
   display: flex;
   flex-direction: column;
   align-items: center;
+  min-width: 0;
   padding: 16px 8px 12px;
   background: var(--color-surface, #fff);
   border: 1px solid var(--color-border, rgba(0,0,0,0.04));

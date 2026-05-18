@@ -7,6 +7,7 @@
 .screen-container {
   width: 100%;
   height: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -29,6 +30,7 @@
 .soft-header {
   display: flex;
   align-items: center;
+  min-width: 0;
   padding: 12px 16px;
   padding-top: calc(12px + var(--safe-top));
   padding-left: calc(16px + var(--safe-left));
@@ -78,13 +80,19 @@
 
   .header-title {
     flex: 1;
+    min-width: 0;
     font-size: 18px;
     font-weight: 600;
     color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .header-actions {
     display: flex;
+    min-width: 0;
+    flex-shrink: 0;
     gap: 8px;
   }
 
@@ -138,19 +146,19 @@
   // 帶網格的內容區
   &.grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
     align-content: start;
 
     // 平板適配
     @media (min-width: 600px) {
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 16px;
     }
 
     // 桌面適配
     @media (min-width: 900px) {
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 20px;
     }
   }
@@ -169,6 +177,7 @@
 
 // ===== 卡片元件 =====
 .soft-card {
+  min-width: 0;
   background: var(--color-surface);
   border-radius: var(--radius-xl);
   overflow: hidden;
@@ -195,6 +204,7 @@
   }
 
   .card-content {
+    min-width: 0;
     padding: 12px;
   }
 
@@ -212,6 +222,7 @@
     font-size: 13px;
     color: var(--color-text-secondary);
     margin-bottom: 8px;
+    overflow-wrap: anywhere;
   }
 
   .card-tags {
@@ -222,6 +233,7 @@
 
   .card-actions {
     display: flex;
+    min-width: 0;
     gap: 8px;
     padding: 12px;
     padding-top: 0;
@@ -232,12 +244,17 @@
 .soft-tag {
   display: inline-flex;
   align-items: center;
+  max-width: 100%;
+  min-width: 0;
   padding: 4px 10px;
   border-radius: var(--radius-full);
   font-size: 12px;
   font-weight: 500;
   background: var(--color-primary-light);
   color: var(--color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 
   &.secondary {
     background: rgba(179, 136, 255, 0.15);
@@ -265,6 +282,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  max-width: 100%;
+  min-width: 0;
   gap: 8px;
   padding: 12px 24px;
   border-radius: var(--radius-lg);
@@ -273,6 +292,12 @@
   cursor: pointer;
   border: none;
   transition: all var(--transition-fast);
+  text-align: center;
+
+  svg,
+  .icon {
+    flex-shrink: 0;
+  }
 
   &.primary {
     background: linear-gradient(
@@ -350,6 +375,7 @@
 // ===== 輸入框 =====
 .soft-input {
   width: 100%;
+  min-width: 0;
   padding: 12px 16px;
   border-radius: var(--radius-lg);
   border: 2px solid var(--color-border);
@@ -384,6 +410,7 @@ textarea.soft-input,
 .soft-search {
   display: flex;
   align-items: center;
+  min-width: 0;
   gap: 12px;
   padding: 10px 16px;
   border-radius: var(--radius-full);
@@ -400,6 +427,7 @@ textarea.soft-input,
 
   input {
     flex: 1;
+    min-width: 0;
     border: none;
     background: transparent;
     color: var(--color-text);
@@ -573,6 +601,7 @@ textarea.soft-input,
 // ===== 分頁標籤 =====
 .soft-tabs {
   display: flex;
+  min-width: 0;
   background: var(--color-background);
   border-radius: var(--radius-lg);
   padding: 4px;
@@ -580,6 +609,7 @@ textarea.soft-input,
 
   .tab-item {
     flex: 1;
+    min-width: 0;
     padding: 10px 16px;
     border-radius: var(--radius-md);
     font-size: 14px;
@@ -590,6 +620,9 @@ textarea.soft-input,
     cursor: pointer;
     transition: all var(--transition-fast);
     text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 
     &:hover {
       color: var(--color-text);

@@ -611,6 +611,7 @@ function onTimeJumpInput(event: Event) {
 .chat-header {
   display: flex;
   align-items: center;
+  min-width: 0;
   margin: 10px 12px;
   margin-top: max(10px, calc(var(--safe-top, 0px) + 4px));
   margin-left: max(12px, var(--safe-left));
@@ -641,6 +642,7 @@ function onTimeJumpInput(event: Event) {
 .header-back {
   width: 36px;
   height: 36px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -829,6 +831,8 @@ function onTimeJumpInput(event: Event) {
 }
 
 .chat-name {
+  min-width: 0;
+  max-width: 100%;
   font-size: 16px;
   font-weight: 600;
   color: var(--color-text);
@@ -862,6 +866,8 @@ function onTimeJumpInput(event: Event) {
 
 .header-actions {
   display: flex;
+  min-width: 0;
+  flex-shrink: 0;
   gap: 6px;
 }
 
@@ -905,6 +911,7 @@ function onTimeJumpInput(event: Event) {
 .header-btn {
   width: 36px;
   height: 36px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1113,6 +1120,7 @@ function onTimeJumpInput(event: Event) {
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 180px;
+  max-width: min(320px, calc(100vw - 32px));
   /* Use viewport height constraints but ensure it doesn't bleed out of the fixed app window */
   max-height: calc(100dvh - 160px);
   max-height: calc(100svh - 160px);
@@ -1135,6 +1143,7 @@ function onTimeJumpInput(event: Event) {
 .dropdown-item {
   display: flex;
   align-items: center;
+  min-width: 0;
   gap: 12px;
   width: 100%;
   padding: 14px 18px;
@@ -1144,6 +1153,13 @@ function onTimeJumpInput(event: Event) {
   color: var(--color-text);
   cursor: pointer;
   transition: background var(--transition-fast);
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
   svg {
     width: 20px;
@@ -1204,6 +1220,7 @@ function onTimeJumpInput(event: Event) {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-width: 0;
   gap: 12px;
   width: 100%;
   padding: 12px 18px;
@@ -1291,12 +1308,14 @@ function onTimeJumpInput(event: Event) {
 
 .fake-time-mode-selector {
   display: flex;
+  min-width: 0;
   gap: 4px;
   margin-bottom: 8px;
 }
 
 .fake-time-mode-btn {
   flex: 1;
+  min-width: 0;
   padding: 5px 0;
   font-size: 12px;
   border: 1px solid var(--color-border);
@@ -1305,6 +1324,9 @@ function onTimeJumpInput(event: Event) {
   color: var(--color-text-secondary);
   cursor: pointer;
   transition: all 0.2s;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 
   &.active {
     background: var(--color-primary);
@@ -1323,6 +1345,7 @@ function onTimeJumpInput(event: Event) {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-width: 0;
   font-size: 12px;
   color: var(--color-text-secondary);
   gap: 8px;
@@ -1330,6 +1353,7 @@ function onTimeJumpInput(event: Event) {
 
 .fake-time-input {
   flex: 1;
+  min-width: 0;
   padding: 4px 8px;
   font-size: 12px;
   border: 1px solid var(--color-border);
@@ -1347,10 +1371,12 @@ function onTimeJumpInput(event: Event) {
   background: var(--color-primary-light, rgba(var(--color-primary-rgb, 99, 102, 241), 0.1));
   border-radius: 6px;
   text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .fake-time-jump {
   display: flex;
+  min-width: 0;
   gap: 6px;
   margin-top: 6px;
   align-items: center;
