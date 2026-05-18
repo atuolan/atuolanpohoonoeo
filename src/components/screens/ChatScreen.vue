@@ -18260,12 +18260,6 @@ body.is-night-mode {
     grid-template-columns: repeat(5, 1fr);
   }
 
-  // 頂欄在平板上增加間距
-  .chat-header {
-    padding: 14px 24px;
-    padding-left: calc(24px + var(--safe-left));
-    padding-right: calc(24px + var(--safe-right));
-  }
 }
 
 // ===== 封鎖系統樣式 =====
