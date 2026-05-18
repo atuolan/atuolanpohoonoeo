@@ -1019,7 +1019,7 @@ async function togglePinChat() {
 .topbar-header {
   display: flex;
   align-items: center;
-  padding: 12px 16px 8px;
+  padding: max(12px, calc(var(--safe-top, 0px) + 8px)) 16px 8px;
   gap: 12px;
 }
 

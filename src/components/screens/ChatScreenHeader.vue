@@ -612,8 +612,7 @@ function onTimeJumpInput(event: Event) {
   display: flex;
   align-items: center;
   margin: 10px 12px;
-  // 不疊加 safe-top：在有瀏海/動態島時讓 pill 緊貼狀態列下方（用 max 取較大值）
-  margin-top: clamp(10px, calc(var(--safe-top, 0px) * 0.5), 24px);
+  margin-top: max(10px, calc(var(--safe-top, 0px) + 4px));
   margin-left: max(12px, var(--safe-left));
   margin-right: max(12px, var(--safe-right));
   padding: 8px 12px !important;
@@ -1458,7 +1457,7 @@ function onTimeJumpInput(event: Event) {
 @media (min-width: 768px) and (max-width: 1024px) {
   .chat-header {
     margin: 14px 24px;
-    margin-top: clamp(14px, calc(var(--safe-top, 0px) * 0.5), 28px);
+    margin-top: max(14px, calc(var(--safe-top, 0px) + 4px));
     margin-left: calc(24px + var(--safe-left));
     margin-right: calc(24px + var(--safe-right));
     padding: 10px 16px !important;
