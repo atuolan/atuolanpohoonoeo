@@ -5398,6 +5398,9 @@ async function triggerAIResponse(options?: {
 
     // 2. 收集所有需要附加的 user 提示詞
     const appendedUserPrompts: string[] = [];
+    const activeCharName = char.nickname || char.data.name || props.characterName || "角色";
+    const activeCharCardName = char.data.name || activeCharName;
+    const activeUserName = effectivePersona.value?.name || "User";
     
     // 🎉 如果是節日觸發，附加節日提示詞（不存入聊天記錄）
     if (options?.holidayTriggerPrompt) {
@@ -5411,7 +5414,15 @@ async function triggerAIResponse(options?: {
 
     // 🎭 當小劇場指令是最後一條時，補一條隱藏催促消息
     if (options?.theaterNudge) {
-      appendedUserPrompts.push("[請根據上述場景指令，以角色身份繼續扮演]");
+      appendedUserPrompts.push(
+        [
+          "[小劇場角色鎖定]",
+          `目前角色是「${activeCharName}」（角色卡名稱：${activeCharCardName}），使用者是「${activeUserName}」。`,
+          `請嚴格沿用「${activeCharName}」的角色卡、性格、語氣、權力關係、聊天記憶與目前小劇場上下文。`,
+          `不得改用其他角色、示例角色、模板角色或「測試小精靈」；不得把基拉祈/雪拉比當成正在對話的角色。`,
+          "請根據上述場景指令，以目前角色身份繼續扮演。",
+        ].join("\n"),
+      );
       // 📱 小手機劇本格式：要求 AI 把每一句台詞用 <msg name="..."> 包起來，
       // name 屬性用字面字串 {{user}} / {{char}} 作分邊標記（含雙大括號），
       // 前端會根據 name 屬性把氣泡分到左右兩側。只在小劇場路徑使用，不影響日常聊天。
