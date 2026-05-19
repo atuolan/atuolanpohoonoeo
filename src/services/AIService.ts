@@ -378,8 +378,12 @@ ${existingCommentsPrompt}
   const replyToChar = replyToCharacterId
     ? characters.find((c) => c.id === replyToCharacterId)
     : null;
+  const replyTargetDescription =
+    replyToChar?.id === post.authorId
+      ? `${replyToChar.name} 的貼文`
+      : `${replyToChar?.name} 的評論`;
   const replyPrioritySection = replyToChar
-    ? `\n# ⚠️ 重要：優先回覆指示\n用戶正在回覆 ${replyToChar.name} 的評論。**${replyToChar.name} 必須是第一個回覆的角色（c1）**，直接回應用戶的最新評論。其他角色的評論排在後面。\n`
+    ? `\n# ⚠️ 重要：優先回覆指示\n用戶正在回覆 ${replyTargetDescription}。**${replyToChar.name} 必須是第一個回覆的角色（c1）**，直接回應用戶的最新評論。其他角色的評論排在後面。\n`
     : "";
 
   // 正常模式（有角色參與）

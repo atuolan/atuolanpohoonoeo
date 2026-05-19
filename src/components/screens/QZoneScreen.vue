@@ -2119,6 +2119,7 @@
 
 <script setup lang="ts">
 import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
+import StickerPanel from "@/components/common/StickerPanel.vue";
 import { getDatabase } from "@/db/database";
 import { useBatchComments } from "@/composables/useBatchComments";
 import { loadMessages } from "@/storage/chatMessageStorage";
@@ -2358,7 +2359,7 @@ const repostComment = ref("");
 
 // 對話上下文設定
 const enableChatContext = ref(true);
-const chatContextCount = ref(10);
+const chatContextCount = ref(15);
 
 // ============================================================
 // 常量
@@ -3017,6 +3018,12 @@ async function submitDetailComment() {
         savedReplyingToComment?.authorId
       ) {
         priorityCharacterId = savedReplyingToComment.authorId;
+      } else if (
+        updatedPost?.authorType === "ai" &&
+        updatedPost.authorId &&
+        charactersStore.characters.some((c) => c.id === updatedPost.authorId)
+      ) {
+        priorityCharacterId = updatedPost.authorId;
       }
 
       console.log(
@@ -4124,7 +4131,7 @@ onMounted(async () => {
   tempUserName.value = qzoneStore.settings.nickname;
   autoAIReply.value = qzoneStore.settings.autoAIReply ?? true;
   enableChatContext.value = qzoneStore.settings.enableChatContext ?? true;
-  chatContextCount.value = qzoneStore.settings.chatContextCount ?? 10;
+  chatContextCount.value = qzoneStore.settings.chatContextCount ?? 15;
   updateDisplayTheme();
 
   // 監聽滾動

@@ -232,14 +232,17 @@ function handleAudioCommandChange(e: Event) {
 const themeStore = useThemeStore();
 const inputAreaRef = ref<HTMLElement | null>(null);
 const detectedDark = ref<boolean | null>(null);
+const hasCustomChatWallpaper = ref(false);
 
 function detectChatBackgroundDark() {
   const el = inputAreaRef.value?.closest(".chat-screen") as HTMLElement | null;
   if (!el) {
     detectedDark.value = null;
+    hasCustomChatWallpaper.value = false;
     return;
   }
   const cs = getComputedStyle(el);
+  hasCustomChatWallpaper.value = Boolean(cs.getPropertyValue("--chat-wallpaper").trim());
   const candidates = [
     cs.getPropertyValue("--chat-wallpaper"),
     cs.getPropertyValue("--wallpaper-value"),
@@ -284,7 +287,11 @@ watch(
 );
 
 const isDarkBackground = computed(() =>
-  detectedDark.value !== null ? detectedDark.value : themeStore.isWallpaperDark,
+  detectedDark.value !== null
+    ? detectedDark.value
+    : hasCustomChatWallpaper.value
+      ? false
+      : themeStore.isWallpaperDark,
 );
 </script>
 

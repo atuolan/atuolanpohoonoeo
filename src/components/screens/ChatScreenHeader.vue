@@ -123,14 +123,17 @@ const themeStore = useThemeStore();
 // 偵測 chat-screen 實際渲染的桌布是否為深色（包含每個聊天的自訂桌布）
 const headerEl = ref<HTMLElement | null>(null);
 const detectedDark = ref<boolean | null>(null);
+const hasCustomChatWallpaper = ref(false);
 
 function detectChatBackgroundDark() {
   const el = headerEl.value?.closest(".chat-screen") as HTMLElement | null;
   if (!el) {
     detectedDark.value = null;
+    hasCustomChatWallpaper.value = false;
     return;
   }
   const cs = getComputedStyle(el);
+  hasCustomChatWallpaper.value = Boolean(cs.getPropertyValue("--chat-wallpaper").trim());
   const candidates = [
     cs.getPropertyValue("--chat-wallpaper"),
     cs.getPropertyValue("--wallpaper-value"),
@@ -176,7 +179,11 @@ watch(
 );
 
 const isDarkBackground = computed(() =>
-  detectedDark.value !== null ? detectedDark.value : themeStore.isWallpaperDark,
+  detectedDark.value !== null
+    ? detectedDark.value
+    : hasCustomChatWallpaper.value
+      ? false
+      : themeStore.isWallpaperDark,
 );
 </script>
 

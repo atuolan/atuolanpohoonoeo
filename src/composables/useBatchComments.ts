@@ -154,6 +154,12 @@ export function useBatchComments() {
       // 準備已有評論（用於 replyTo 和歷史對話上下文）
       const existingComments =
         options?.includeExistingComments !== false ? post.comments : [];
+      const selectedCharacterIds = new Set(characters.map((char) => char.id));
+      const selectedChatContext = Object.fromEntries(
+        Object.entries(options?.chatContext || {}).filter(([characterId]) =>
+          selectedCharacterIds.has(characterId),
+        ),
+      );
 
       // 調用批量評論生成
       const result = await generateBatchComments({
@@ -168,7 +174,7 @@ export function useBatchComments() {
           (passerbyOnly ? 5 : Math.max(characters.length * 2, 8)),
         useStreaming: options?.useStreaming ?? false,
         passerbyOnly, // 傳遞路人模式標記
-        chatContext: options?.chatContext || {},
+        chatContext: selectedChatContext,
         replyToCharacterId: options?.replyToCharacterId,
       });
 

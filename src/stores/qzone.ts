@@ -44,7 +44,7 @@ export const useQzoneStore = defineStore("qzone", () => {
     themeMode: "auto",
     autoAIReply: true,
     enableChatContext: true,
-    chatContextCount: 10,
+    chatContextCount: 15,
   });
 
   // 自動互動配置
