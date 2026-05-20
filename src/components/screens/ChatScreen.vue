@@ -11939,7 +11939,7 @@ onUnmounted(() => {
                 <button
                   class="chat-file-btn"
                   :class="{ pinned: chat.pinnedToList }"
-                  :title="chat.pinnedToList ? '從聊天列表移除' : '加入聊天列表'"
+                  :title="chat.pinnedToList ? '取消聊天置頂' : '聊天置頂'"
                   @click="togglePinChatToList(chat.id, $event)"
                 >
                   <!-- 已加入：列表打勾；未加入：列表加號 -->
@@ -12052,7 +12052,7 @@ onUnmounted(() => {
 
             <label class="branch-memory-option">
               <input v-model="newChatPinToList" type="checkbox" />
-              <span>加入聊天列表（可同時與同一角色開多個聊天）</span>
+              <span>聊天置頂（可同時與同一角色開多個聊天）</span>
             </label>
             <div class="new-chat-confirm-actions">
               <button class="btn-cancel" @click="showNewChatConfirm = false">

@@ -978,7 +978,7 @@ async function togglePinChat() {
                 d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h8v-2H7v2zm0 4h8v-2H7v2zM7 7v2h8V7H7zm9 8v-3h-2v3h-3v2h3v3h2v-3h3v-2h-3z"
               />
             </svg>
-            {{ longPressChat.pinnedToList ? "從聊天列表移除" : "加入聊天列表" }}
+            {{ longPressChat.pinnedToList ? "取消聊天置頂" : "聊天置頂" }}
           </button>
           <button class="longpress-btn delete" @click="confirmDeleteChat">
             <svg viewBox="0 0 24 24" fill="currentColor">

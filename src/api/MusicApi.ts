@@ -18,6 +18,7 @@ const VKEYS_WORKER_PROXY_BASE = "https://nai-proxy.aguacloud.uk/proxy/api.vkeys.
 async function fetchFirstValidJson<T>(
   urls: string[],
   apiName: string,
+  isUsable?: (data: T) => boolean,
 ): Promise<T | null> {
   for (let i = 0; i < urls.length; i++) {
     const isLastAttempt = i === urls.length - 1;
@@ -25,7 +26,10 @@ async function fetchFirstValidJson<T>(
     try {
       const response = await fetch(urls[i]);
       const data = await parseJsonResponse<T>(response, label, !isLastAttempt);
-      if (data) return data;
+      if (data && (!isUsable || isUsable(data))) return data;
+      if (data && isLastAttempt) {
+        console.warn(`[MusicApi] ${apiName} 返回不可用數據`);
+      }
     } catch (error) {
       if (isLastAttempt) {
         console.warn(`[MusicApi] ${label} 網路錯誤:`, error);
@@ -69,6 +73,21 @@ interface QQMusicSongSearchResponse {
       perPage: number;
     };
   };
+}
+
+interface NeteaseSearchItem {
+  id?: string | number;
+  name?: string;
+  artist?: string | string[];
+  album?: string;
+  pic?: string;
+  picUrl?: string;
+  cover?: string;
+  url?: string;
+  lrc?: string;
+  lyric?: string;
+  duration?: number;
+  interval?: number;
 }
 
 async function parseJsonResponse<T>(
@@ -498,6 +517,7 @@ async function searchWithQQMusic(keyword: string): Promise<MusicTrack[]> {
     const data = await fetchFirstValidJson<QQMusicSongSearchResponse>(
       [proxyUrl, workerUrl, directUrl],
       "QQ 音樂搜索 API",
+      (responseData) => responseData.code === 0 && Array.isArray(responseData.data?.list),
     );
     if (!data) return [];
 
@@ -542,6 +562,9 @@ async function getQQMusicLink(mid: string): Promise<{
     const data = await fetchFirstValidJson<QQMusicLinkResponse>(
       [proxyUrl, workerUrl, directUrl],
       "QQ 音樂 link API",
+      (responseData) =>
+        (responseData.code === 200 || responseData.code === 0) &&
+        Boolean(responseData.data?.url),
     );
     if (!data) return null;
 
@@ -592,6 +615,48 @@ async function searchWithApi(keyword: string): Promise<MusicTrack | null> {
 }
 
 /**
+ * 使用網易雲 / Meting 搜索 API 作為 QQ 音樂搜索失效時的備援結果來源
+ */
+async function searchWithNeteaseList(keyword: string): Promise<MusicTrack[]> {
+  try {
+    const encodedKeyword = encodeURIComponent(keyword);
+    const proxyUrl = `/api/music/qjqq?server=netease&type=search&id=${encodedKeyword}&limit=20`;
+    const directMetingUrl = `https://meting.qjqq.cn/api.php?server=netease&type=search&id=${encodedKeyword}&limit=20`;
+    const gdstudioUrl = `https://music-api.gdstudio.xyz/api.php?types=search&name=${encodedKeyword}&count=20&pages=1`;
+
+    const data = await fetchFirstValidJson<NeteaseSearchItem[]>(
+      [proxyUrl, directMetingUrl, gdstudioUrl],
+      "網易雲搜索 API",
+      (responseData) => Array.isArray(responseData) && responseData.length > 0,
+    );
+    if (!data) return [];
+
+    return data
+      .filter((item) => item.id && item.name)
+      .map((item) => {
+        const artist = Array.isArray(item.artist)
+          ? item.artist.join(",")
+          : item.artist || "未知歌手";
+
+        return {
+          id: `netease_${item.id}`,
+          name: item.name || keyword,
+          artist,
+          album: item.album || "",
+          url: item.url || "",
+          cover: item.pic || item.picUrl || item.cover || "",
+          lrc: item.lrc || item.lyric || "",
+          duration: item.duration || item.interval,
+          source: "netease",
+        };
+      });
+  } catch (error) {
+    console.error("[MusicApi] 網易雲列表搜索失敗:", error);
+    return [];
+  }
+}
+
+/**
  * 本地搜索音樂
  */
 function searchLocal(keyword: string): MusicTrack[] {
@@ -610,7 +675,7 @@ function searchLocal(keyword: string): MusicTrack[] {
 
 /**
  * 搜索音樂
- * 同時搜索本地、QQ 音樂 API 和外部 Music.js API，返回合併結果
+ * 同時搜索本地、Music.js API、QQ 音樂 API 和網易雲備援，返回合併結果
  */
 export async function searchMusic(keyword: string): Promise<MusicTrack[]> {
   // 如果沒有關鍵詞，返回本地音樂
@@ -618,17 +683,23 @@ export async function searchMusic(keyword: string): Promise<MusicTrack[]> {
     return searchLocal(keyword);
   }
 
-  // 並行搜索：本地 + QQ 音樂 API
-  const [localResults, qqResults] = await Promise.all([
-    Promise.resolve(searchLocal(keyword)),
-    searchWithQQMusic(keyword),
-  ]);
+  // 並行搜索：本地 + Music.js API + QQ 音樂 API + 網易雲備援
+  const [localResults, musicJsResult, qqResults, neteaseResults] =
+    await Promise.all([
+      Promise.resolve(searchLocal(keyword)),
+      searchWithApi(keyword),
+      searchWithQQMusic(keyword),
+      searchWithNeteaseList(keyword),
+    ]);
 
-  // 合併結果，QQ 音樂結果在前，標記為線上
-  const onlineResults = qqResults.map((track) => ({
-    ...track,
-    source: "online",
-  }));
+  // 合併結果：Music.js 會直接給可播放 URL，優先顯示；QQ / 網易雲作為列表補充
+  const musicJsResults = musicJsResult ? [musicJsResult] : [];
+  const onlineResults = [...musicJsResults, ...qqResults, ...neteaseResults].map(
+    (track) => ({
+      ...track,
+      source: "online",
+    }),
+  );
 
   // 去重：如果 QQ 結果和本地結果有相同歌曲，保留 QQ 結果
   const localFiltered = localResults.filter(

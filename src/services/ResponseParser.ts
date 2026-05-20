@@ -125,7 +125,7 @@ export interface ParsedResponse {
  * 用於面對面模式等長文本場景，將特殊標籤從文字中拆分成獨立訊息
  */
 function hasInlineSpecialTags(content: string): boolean {
-  return /<(?:timetravel|voice|pay|refund|location|redpacket\s|waimai-pay\s|waimai-delivery|face-to-face-request\s|online-mode-request\s)[\s\S]*?>/i.test(
+  return /<(?:timetravel|voice|pay|transfer\s|refund|location|redpacket\s|waimai-pay\s|waimai-delivery|face-to-face-request\s|online-mode-request\s)[\s\S]*?>/i.test(
     content,
   );
 }
@@ -142,7 +142,7 @@ function hasInlineSpecialTags(content: string): boolean {
 function splitBySpecialTags(content: string): ParsedMessage[] {
   // 匹配所有需要拆分的特殊標籤（按出現順序）
   const tagRegex =
-    /<timetravel>([\s\S]*?)<\/timetravel>|<voice>([\s\S]*?)<\/voice>|<pay>([\d.]+)(?::([^<]*?))?<\/pay>|<refund>([\d.]+)<\/refund>|<location>([\s\S]*?)<\/location>|<redpacket\s+([^>]+)\/?>|<waimai-pay\s+([^>]*?)\s*\/?>|<waimai-delivery\s*\/?>|<face-to-face-request\s+([^>]*?)\s*\/?>|<online-mode-request\s+([^>]*?)\s*\/?>/gi;
+    /<timetravel>([\s\S]*?)<\/timetravel>|<voice>([\s\S]*?)<\/voice>|<pay>([\d.]+)(?::([^<]*?))?<\/pay>|<transfer\s+amount=["']?([\d.]+)["']?\s*>([\s\S]*?)<\/transfer>|<refund>([\d.]+)<\/refund>|<location>([\s\S]*?)<\/location>|<redpacket\s+([^>]+)\/?>|<waimai-pay\s+([^>]*?)\s*\/?>|<waimai-delivery\s*\/?>|<face-to-face-request\s+([^>]*?)\s*\/?>|<online-mode-request\s+([^>]*?)\s*\/?>/gi;
 
   interface TagMatch {
     index: number;
@@ -176,19 +176,28 @@ function splitBySpecialTags(content: string): ParsedMessage[] {
         transferNote: match[4]?.trim() || undefined,
       };
     } else if (match[5] !== undefined) {
+      // <transfer amount="...">備註</transfer>
+      msg = {
+        content: "",
+        isTransfer: true,
+        transferType: "pay",
+        transferAmount: parseFloat(match[5]),
+        transferNote: match[6]?.trim() || undefined,
+      };
+    } else if (match[7] !== undefined) {
       // <refund>
       msg = {
         content: "",
         isTransfer: true,
         transferType: "refund",
-        transferAmount: parseFloat(match[5]),
+        transferAmount: parseFloat(match[7]),
       };
-    } else if (match[6] !== undefined) {
+    } else if (match[8] !== undefined) {
       // <location>
-      msg = { content: "", isLocation: true, locationContent: match[6].trim() };
-    } else if (match[7] !== undefined) {
+      msg = { content: "", isLocation: true, locationContent: match[8].trim() };
+    } else if (match[9] !== undefined) {
       // <redpacket>
-      const attrs = match[7];
+      const attrs = match[9];
       msg = {
         content: "",
         isRedpacket: true,
@@ -199,9 +208,9 @@ function splitBySpecialTags(content: string): ParsedMessage[] {
           voice: extractAttr(attrs, "voice"),
         },
       };
-    } else if (match[8] !== undefined) {
+    } else if (match[10] !== undefined) {
       // <waimai-pay status="..."/>
-      const attrs = match[8];
+      const attrs = match[10];
       const status = extractAttr(attrs, "status") as
         | "paid"
         | "rejected"
@@ -221,17 +230,17 @@ function splitBySpecialTags(content: string): ParsedMessage[] {
         content: "",
         isWaimaiDelivery: true,
       };
-    } else if (match[9] !== undefined) {
+    } else if (match[11] !== undefined) {
       // <face-to-face-request reason="..."/>
-      const attrs = match[9];
+      const attrs = match[11];
       msg = {
         content: "",
         isFaceToFaceRequest: true,
         faceToFaceRequestReason: extractAttr(attrs, "reason") || undefined,
       };
-    } else if (match[10] !== undefined) {
+    } else if (match[12] !== undefined) {
       // <online-mode-request reason="..."/>
-      const attrs = match[10];
+      const attrs = match[12];
       msg = {
         content: "",
         isOnlineModeRequest: true,
@@ -577,9 +586,20 @@ function parseMessageContentWithoutTimetravel(content: string): ParsedMessage {
     result.content = "";
   }
 
-  // 檢查轉帳 <pay>金額:備註</pay> 或 <pay>金額</pay>（支援整數和小數）
+  // 檢查轉帳 <pay>金額:備註</pay>、<pay>金額</pay> 或 <transfer amount="金額">備註</transfer>（支援整數和小數）
+  const transferMatch = result.content.match(
+    /<transfer\s+amount=["']?([\d.]+)["']?\s*>([\s\S]*?)<\/transfer>/i,
+  );
   const payMatch = result.content.match(/<pay>([\d.]+)(?::([^<]*?))?<\/pay>/i);
-  if (payMatch) {
+  if (transferMatch) {
+    result.isTransfer = true;
+    result.transferType = "pay";
+    result.transferAmount = parseFloat(transferMatch[1]);
+    result.transferNote = transferMatch[2]?.trim() || undefined;
+    result.content = result.content
+      .replace(/<transfer\s+amount=["']?[\d.]+["']?\s*>[\s\S]*?<\/transfer>/gi, "")
+      .trim();
+  } else if (payMatch) {
     result.isTransfer = true;
     result.transferType = "pay";
     result.transferAmount = parseFloat(payMatch[1]);
@@ -1337,9 +1357,21 @@ function parseMessageContent(content: string): ParsedMessage {
     result.content = "";
   }
 
-  // 檢查轉帳 <pay>金額:備註</pay> 或 <pay>金額</pay>（支援整數和小數）
+  // 檢查轉帳 <pay>金額:備註</pay>、<pay>金額</pay> 或 <transfer amount="金額">備註</transfer>（支援整數和小數）
+  const transferMatch = result.content.match(
+    /<transfer\s+amount=["']?([\d.]+)["']?\s*>([\s\S]*?)<\/transfer>/i,
+  );
   const payMatch = result.content.match(/<pay>([\d.]+)(?::([^<]*?))?<\/pay>/i);
-  if (payMatch) {
+  if (transferMatch) {
+    result.isTransfer = true;
+    result.transferType = "pay";
+    result.transferAmount = parseFloat(transferMatch[1]);
+    result.transferNote = transferMatch[2]?.trim() || undefined;
+    // 移除 transfer 標籤，保留其他內容
+    result.content = result.content
+      .replace(/<transfer\s+amount=["']?[\d.]+["']?\s*>[\s\S]*?<\/transfer>/gi, "")
+      .trim();
+  } else if (payMatch) {
     result.isTransfer = true;
     result.transferType = "pay";
     result.transferAmount = parseFloat(payMatch[1]);
@@ -2020,7 +2052,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<送禮物>|<pay>|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }
