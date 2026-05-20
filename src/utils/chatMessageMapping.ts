@@ -309,6 +309,7 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     onlineModeRequestStatus: m.onlineModeRequestStatus,
     sentWhileBlocked: m.sentWhileBlocked,
     isSystemNotification: m.isSystemNotification,
+    isTransactionClaimNotice: m.isTransactionClaimNotice,
     isFriendRequest: m.isFriendRequest,
     friendRequestId: m.friendRequestId,
     friendRequestData: m.friendRequestData

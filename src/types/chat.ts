@@ -473,6 +473,8 @@ export interface ChatMessage {
   sentWhileBlocked?: boolean;
   /** 是否為系統通知訊息（封鎖/解封提示等，不作為普通聊天訊息顯示） */
   isSystemNotification?: boolean;
+  /** 是否為交易領取通知：資料上算 user role，畫面上渲染為系統通知樣式 */
+  isTransactionClaimNotice?: boolean;
   /** 是否為繼續生成的隱藏提示（不顯示在聊天畫面上） */
   isContinuePrompt?: boolean;
   /** 是否為好友申請訊息（用戶封鎖角色後，角色想重新加好友的系統訊息卡片） */

@@ -181,6 +181,7 @@ export interface ChatScreenMessage {
   onlineModeRequestStatus?: "pending" | "accepted" | "rejected";
   sentWhileBlocked?: boolean;
   isSystemNotification?: boolean;
+  isTransactionClaimNotice?: boolean;
   isFoodRecord?: boolean;
   isContinuePrompt?: boolean;
   isCharBlockedNotification?: boolean;

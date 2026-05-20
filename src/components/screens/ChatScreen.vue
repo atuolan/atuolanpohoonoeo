@@ -712,15 +712,36 @@ const loadMoreSentinelRef = ref<HTMLElement | null>(null); // 頂部哨兵元素
 const _waimaiProgressNow = ref(Date.now());
 let _waimaiProgressTimer: ReturnType<typeof setInterval> | undefined;
 
-// 可見訊息列表（只渲染最後 N 條，並過濾掉隱藏的繼續提示及未到時的物流進度）
+const SEARCH_CONTEXT_BEFORE_COUNT = 30;
+const SEARCH_CONTEXT_AFTER_COUNT = 30;
+const MAX_SEARCH_RESULT_ITEMS = 80;
+const isSearchContextMode = ref(false);
+const searchContextTargetId = ref<string | null>(null);
+const searchContextMessages = ref<Message[]>([]);
+const searchJumpStatus = ref<"idle" | "loading" | "error">("idle");
+
+function isMessageDisplayable(m: Message, now = _waimaiProgressNow.value): boolean {
+  if (m.isContinuePrompt) return false;
+  // 隱藏尚未到達排程時間的物流進度訊息，使其逐日顯現
+  if (m.isWaimaiProgress && m.timestamp > now) return false;
+  return true;
+}
+
+function exitSearchContextMode() {
+  isSearchContextMode.value = false;
+  searchContextTargetId.value = null;
+  searchContextMessages.value = [];
+  searchJumpStatus.value = "idle";
+}
+
+// 可見訊息列表（正常模式只渲染最後 N 條；搜尋定位模式只渲染目標附近上下文）
 const visibleMessages = computed(() => {
   const now = _waimaiProgressNow.value;
-  const filteredMessages = messages.value.filter((m) => {
-    if (m.isContinuePrompt) return false;
-    // 隱藏尚未到達排程時間的物流進度訊息，使其逐日顯現
-    if (m.isWaimaiProgress && m.timestamp > now) return false;
-    return true;
-  });
+  if (isSearchContextMode.value) {
+    return searchContextMessages.value.filter((m) => isMessageDisplayable(m, now));
+  }
+
+  const filteredMessages = messages.value.filter((m) => isMessageDisplayable(m, now));
   const total = filteredMessages.length;
   return total <= visibleCount.value
     ? filteredMessages
@@ -729,12 +750,13 @@ const visibleMessages = computed(() => {
 
 // 是否還有更早的訊息可以載入
 const hasMoreMessages = computed(() => {
+  if (isSearchContextMode.value) return false;
   return messages.value.length > visibleCount.value;
 });
 
 // 載入更多歷史訊息（向上滾動時觸發）
 function loadMoreMessages() {
-  if (isLoadingMore.value || !hasMoreMessages.value) return;
+  if (isSearchContextMode.value || isLoadingMore.value || !hasMoreMessages.value) return;
   isLoadingMore.value = true;
 
   const container = messagesContainer.value;
@@ -2131,6 +2153,52 @@ const voiceClaimModalState = ref<{
   blessing: "",
 });
 
+function formatClaimAmount(amount: number): string {
+  if (!Number.isFinite(amount)) return "0";
+  return amount
+    .toFixed(2)
+    .replace(/\.00$/, "")
+    .replace(/(\.\d)0$/, "$1");
+}
+
+function createTransactionClaimNoticeMessage(options: {
+  claimerName: string;
+  payerName: string;
+  kind: "轉帳" | "紅包";
+  amount: number;
+  timestamp?: number;
+  idSuffix?: string;
+}): Message {
+  const timestamp = options.timestamp ?? Date.now();
+  const suffix = options.idSuffix ?? Math.random().toString(36).slice(2, 6);
+  return {
+    id: `msg_claim_${timestamp}_${suffix}`,
+    role: "user",
+    content: `${options.claimerName}領取了${options.payerName}的${options.kind}${formatClaimAmount(options.amount)}元`,
+    timestamp,
+    isTransactionClaimNotice: true,
+  };
+}
+
+function getUserDisplayName(): string {
+  return effectivePersona.value?.name || userStore.currentPersona?.name || "User";
+}
+
+function getCharacterDisplayNameFromMessage(msg?: Message): string {
+  return (
+    msg?.senderCharacterName ||
+    currentCharacter.value?.nickname ||
+    currentCharacter.value?.data?.name ||
+    props.characterName ||
+    "角色"
+  );
+}
+
+function getRedpacketPayerName(msg: Message): string {
+  if (msg.role === "user") return getUserDisplayName();
+  return getCharacterDisplayNameFromMessage(msg);
+}
+
 // 執行用戶領取（已通過所有檢查），共用流程
 async function executeUserRedpacketClaim(msg: Message, claimerDisplayName: string) {
   const cents = applyRedpacketClaim(msg, claimerDisplayName, undefined, true);
@@ -2147,12 +2215,15 @@ async function executeUserRedpacketClaim(msg: Message, claimerDisplayName: strin
     `領取${msg.senderCharacterName ? msg.senderCharacterName + "的" : ""}紅包`,
   );
   await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
-  messages.value.push({
-    id: `msg_${Date.now()}_rpc_user`,
-    role: "system",
-    content: `${claimerDisplayName} 領取了紅包，獲得 ¥${yuan.toFixed(2)}`,
-    timestamp: Date.now(),
-  });
+  messages.value.push(
+    createTransactionClaimNoticeMessage({
+      claimerName: claimerDisplayName,
+      payerName: getRedpacketPayerName(msg),
+      kind: "紅包",
+      amount: yuan,
+      idSuffix: "rpc_user",
+    }),
+  );
   if (typeof showToast === "function")
     showToast(`你領到 ¥${yuan.toFixed(2)}`);
   await saveChatImmediate();
@@ -2168,10 +2239,7 @@ const onMessageClaimRedpacket = async (...args: unknown[]) => {
   if (!msg.redpacketState) {
     msg.redpacketState = initRedPacketState(msg.redpacketData);
   }
-  const userName =
-    effectivePersona.value?.name ||
-    userStore.currentPersona?.name ||
-    "User";
+  const userName = getUserDisplayName();
 
   // 語音紅包：彈出輸入框，讓用戶打字或語音輸入；模糊比對通過才領取
   if (msg.redpacketData.type === "voice") {
@@ -2245,10 +2313,7 @@ async function handleVoiceRedpacketSubmit(text: string) {
     timestamp: Date.now(),
   });
   voiceClaimModalState.value.visible = false;
-  const userName =
-    effectivePersona.value?.name ||
-    userStore.currentPersona?.name ||
-    "User";
+  const userName = getUserDisplayName();
   await executeUserRedpacketClaim(msg, userName);
 }
 
@@ -3122,6 +3187,7 @@ function _messageRenderDelay(total: number): number {
 
 // 滾動到底部
 function scrollToBottom() {
+  exitSearchContextMode();
   nextTick(() => {
     if (messagesContainer.value) {
       messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
@@ -3145,12 +3211,8 @@ const {
   searchResults,
   currentSearchIndex,
   openSearchBar: _openSearchBar,
-  closeSearchBar,
+  closeSearchBar: _closeSearchBar,
   performSearch,
-  goToPrevSearchResult,
-  goToNextSearchResult,
-  scrollToMessage,
-  ensureMessageVisible,
   resetVisibleCount,
 } = useChatSearch({
   messages,
@@ -3165,21 +3227,42 @@ function openSearchBar() {
   _openSearchBar();
 }
 
+function closeSearchBar() {
+  exitSearchContextMode();
+  _closeSearchBar();
+}
+
+const searchResultTotal = computed(() => searchResults.value.length);
+const searchResultOverflowCount = computed(() =>
+  Math.max(0, searchResults.value.length - MAX_SEARCH_RESULT_ITEMS),
+);
+
 // 搜尋結果清單項目（含片段文字、角色、時間）
 const searchResultItems = computed(() => {
   const query = searchQuery.value.trim().toLowerCase();
   if (!query || searchResults.value.length === 0) return [];
   const msgMap = new Map(messages.value.map((m) => [m.id, m]));
-  const SNIPPET_PAD = 20;
-  return searchResults.value.map((id) => {
+  const SNIPPET_PAD = 28;
+  return searchResults.value.slice(0, MAX_SEARCH_RESULT_ITEMS).map((id) => {
     const msg = msgMap.get(id);
-    if (!msg) return { id, role: "ai", roleLabel: "?", timeLabel: "", before: "", match: "", after: "", snippet: "" };
+    if (!msg) {
+      return {
+        id,
+        role: "ai",
+        roleLabel: "?",
+        timeLabel: "",
+        before: "",
+        match: "",
+        after: "",
+      };
+    }
     const content = msg.content || "";
     const lower = content.toLowerCase();
     const pos = lower.indexOf(query);
-    const before = pos > 0 ? content.slice(Math.max(0, pos - SNIPPET_PAD), pos) : "";
-    const match = content.slice(pos, pos + query.length);
-    const afterStart = pos + query.length;
+    const safePos = pos >= 0 ? pos : 0;
+    const before = safePos > 0 ? content.slice(Math.max(0, safePos - SNIPPET_PAD), safePos) : "";
+    const match = pos >= 0 ? content.slice(safePos, safePos + query.length) : content.slice(0, query.length);
+    const afterStart = safePos + query.length;
     const after = content.slice(afterStart, afterStart + SNIPPET_PAD);
     const role = msg.role as "user" | "ai" | "system";
     const roleLabel = role === "user" ? "我" : role === "ai" ? "對方" : "系統";
@@ -3187,14 +3270,88 @@ const searchResultItems = computed(() => {
     const timeLabel = ts
       ? `${ts.getMonth() + 1}/${ts.getDate()} ${String(ts.getHours()).padStart(2, "0")}:${String(ts.getMinutes()).padStart(2, "0")}`
       : "";
-    return { id, role, roleLabel, timeLabel, before: before ? (pos > SNIPPET_PAD ? "…" + before : before) : "", match, after: after + (afterStart + SNIPPET_PAD < content.length ? "…" : "") };
+    return {
+      id,
+      role,
+      roleLabel,
+      timeLabel,
+      before: before ? (safePos > SNIPPET_PAD ? "…" + before : before) : "",
+      match,
+      after: after + (afterStart + SNIPPET_PAD < content.length ? "…" : ""),
+    };
   });
 });
 
+function scrollRenderedMessageIntoView(messageId: string): boolean {
+  const messageElement = document.querySelector(
+    `[data-message-id="${CSS.escape(messageId)}"]`,
+  );
+  if (!messageElement) return false;
+  messageElement.scrollIntoView({ behavior: "auto", block: "center" });
+  messageElement.classList.add("highlight-message");
+  setTimeout(() => {
+    messageElement.classList.remove("highlight-message");
+  }, 2000);
+  return true;
+}
+
+async function activateSearchContext(targetMessageId: string): Promise<boolean> {
+  const targetIndex = messages.value.findIndex((m) => m.id === targetMessageId);
+  if (targetIndex === -1) return false;
+
+  const start = Math.max(0, targetIndex - SEARCH_CONTEXT_BEFORE_COUNT);
+  const end = Math.min(
+    messages.value.length,
+    targetIndex + SEARCH_CONTEXT_AFTER_COUNT + 1,
+  );
+  searchContextMessages.value = messages.value.slice(start, end);
+  searchContextTargetId.value = targetMessageId;
+  isSearchContextMode.value = true;
+
+  await nextTick();
+  await nextTick();
+  return scrollRenderedMessageIntoView(targetMessageId);
+}
+
+// 滾動到指定消息；搜尋/回覆定位時只渲染目標附近上下文，避免一次展開大量歷史訊息
+async function scrollToMessage(messageId: string) {
+  searchJumpStatus.value = "loading";
+  try {
+    if (scrollRenderedMessageIntoView(messageId)) {
+      searchJumpStatus.value = "idle";
+      return;
+    }
+    const ok = await activateSearchContext(messageId);
+    searchJumpStatus.value = ok ? "idle" : "error";
+  } catch (error) {
+    console.warn("[ChatScreen] 跳轉訊息失敗:", error);
+    searchJumpStatus.value = "error";
+  }
+}
+
 // 點擊結果清單某筆：設定為當前項目並跳轉
 function onSearchResultClick(idx: number) {
+  if (idx < 0 || idx >= searchResults.value.length) return;
   currentSearchIndex.value = idx;
   scrollToMessage(searchResults.value[idx]);
+}
+
+function goToPrevSearchResult() {
+  if (searchResults.value.length === 0) return;
+  const nextIdx =
+    currentSearchIndex.value <= 0
+      ? searchResults.value.length - 1
+      : currentSearchIndex.value - 1;
+  onSearchResultClick(nextIdx);
+}
+
+function goToNextSearchResult() {
+  if (searchResults.value.length === 0) return;
+  const nextIdx =
+    currentSearchIndex.value >= searchResults.value.length - 1
+      ? 0
+      : currentSearchIndex.value + 1;
+  onSearchResultClick(nextIdx);
 }
 
 // Enter 鍵：若有結果就跳到當前選中筆（預設第 0 筆）
@@ -3644,12 +3801,21 @@ async function handleAcceptTransfer(messageId: string) {
       GLOBAL_WALLET_ID,
       msg.transferAmount,
       "transfer",
-      `收到 ${props.characterName} 的轉帳`,
+      `收到 ${getCharacterDisplayNameFromMessage(msg)} 的轉帳`,
     );
     await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
+    messages.value.push(
+      createTransactionClaimNoticeMessage({
+        claimerName: getUserDisplayName(),
+        payerName: getCharacterDisplayNameFromMessage(msg),
+        kind: "轉帳",
+        amount: msg.transferAmount,
+        idSuffix: "transfer_user",
+      }),
+    );
   }
 
-  saveChat();
+  await saveChatImmediate();
 }
 
 // 處理退回轉帳（用戶退回 AI 的轉帳，或 AI 退回用戶的轉帳）
@@ -5968,12 +6134,16 @@ async function triggerAIResponse(options?: {
                     claims: [...target.redpacketState!.claims],
                   };
                   await _gcDelayIfNeeded();
-                  messages.value.push({
-                    id: `msg_${Date.now()}_${i}_rpc`,
-                    role: "system",
-                    content: `${claimerName} 領取了紅包，獲得 ¥${(cents / 100).toFixed(2)}`,
-                    timestamp: Date.now() + i,
-                  });
+                  messages.value.push(
+                    createTransactionClaimNoticeMessage({
+                      claimerName,
+                      payerName: getRedpacketPayerName(target),
+                      kind: "紅包",
+                      amount: cents / 100,
+                      timestamp: Date.now() + i,
+                      idSuffix: "rpc_char",
+                    }),
+                  );
                 }
               }
               continue;
@@ -9180,7 +9350,15 @@ onUnmounted(() => {
             @keydown.escape="closeSearchBar"
           />
           <div v-if="searchResults.length > 0" class="search-results-count">
-            {{ searchResults.length }} 筆
+            {{ currentSearchIndex + 1 }} / {{ searchResultTotal }} 筆
+          </div>
+          <div v-if="searchResults.length > 0" class="search-nav-buttons">
+            <button class="search-nav-btn" title="上一筆" @click="goToPrevSearchResult">
+              <ChevronUp :size="18" />
+            </button>
+            <button class="search-nav-btn" title="下一筆" @click="goToNextSearchResult">
+              <ChevronDown :size="18" />
+            </button>
           </div>
           <button class="search-close-btn" @click="closeSearchBar">
             <svg viewBox="0 0 24 24" fill="currentColor">
@@ -9189,6 +9367,17 @@ onUnmounted(() => {
               />
             </svg>
           </button>
+        </div>
+
+        <div v-if="searchJumpStatus === 'loading'" class="search-status-hint">
+          正在定位訊息上下文…
+        </div>
+        <div v-else-if="searchJumpStatus === 'error'" class="search-status-hint error">
+          無法定位該訊息，請稍後再試
+        </div>
+        <div v-if="isSearchContextMode" class="search-context-hint">
+          已切到搜尋上下文，只顯示目標訊息前後各 {{ SEARCH_CONTEXT_BEFORE_COUNT }} 則
+          <button @click="scrollToBottom">返回最新訊息</button>
         </div>
 
         <!-- 搜尋結果清單：點擊才跳轉，避免打字過程中擴張 DOM 造成崩潰 -->
@@ -9215,6 +9404,9 @@ onUnmounted(() => {
               <mark>{{ item.match }}</mark>
               <span v-if="item.after">{{ item.after }}</span>
             </div>
+          </div>
+          <div v-if="searchResultOverflowCount > 0" class="search-result-overflow">
+            還有 {{ searchResultOverflowCount }} 筆結果未顯示，請輸入更精確的關鍵字
           </div>
         </div>
         <div
@@ -9312,11 +9504,13 @@ onUnmounted(() => {
               screenshotSelectedIds.includes(message.id),
             searchResults.includes(message.id),
             searchResults[currentSearchIndex] === message.id,
+            searchContextTargetId === message.id,
             isCharBlocked,
             isBlockedByChar,
             currentBlockedAt,
             message.sentWhileBlocked,
             message.isUserRecalled,
+            message.isTransactionClaimNotice,
             groupMemberAvatarVersion,
           ]"
           class="message-memo-wrapper"
@@ -9330,9 +9524,9 @@ onUnmounted(() => {
             <div class="separator-line"></div>
           </div>
 
-          <!-- 系統通知（封鎖/解封等） -->
+          <!-- 系統通知（封鎖/解封等）；交易領取通知資料上仍算 user role，但畫面使用系統通知樣式 -->
           <div
-            v-if="message.isSystemNotification"
+            v-if="message.isSystemNotification || message.isTransactionClaimNotice"
             class="system-notification"
             :class="{
               'is-selected':
@@ -9527,7 +9721,8 @@ onUnmounted(() => {
             "
             :is-search-highlight="searchResults.includes(message.id)"
             :is-current-search="
-              searchResults[currentSearchIndex] === message.id
+              searchResults[currentSearchIndex] === message.id ||
+              searchContextTargetId === message.id
             "
             @click="
               isSelectingForScreenshot
@@ -13299,6 +13494,30 @@ onUnmounted(() => {
   }
 }
 
+.search-status-hint,
+.search-context-hint {
+  margin-top: 6px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  color: var(--color-text);
+  font-size: 12px;
+
+  &.error {
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+  }
+
+  button {
+    margin-left: 8px;
+    border: none;
+    background: transparent;
+    color: var(--color-primary);
+    font-weight: 600;
+    cursor: pointer;
+  }
+}
+
 // 搜索結果清單面板
 .search-results-panel {
   max-height: 260px;
@@ -13382,6 +13601,14 @@ onUnmounted(() => {
     padding: 0 1px;
     font-weight: 600;
   }
+}
+
+.search-result-overflow {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  text-align: center;
+  border-top: 1px solid var(--color-border);
 }
 
 // 搜索欄動畫

@@ -1535,6 +1535,12 @@ const renderedContent = computed(() => {
   }
 });
 
+const transferHasVisibleContent = computed(() => {
+  if (!props.isTransfer) return false;
+  if (hasMedia.value) return messageParts.value.length > 0;
+  return renderedContent.value.trim().length > 0;
+});
+
 // 解析消息中的圖片和表情包標記
 interface MessagePart {
   type: "text" | "image" | "sticker";
@@ -3423,6 +3429,7 @@ const showTextVoiceTranscript = ref(true);
             'thought-expanded': showThought,
             'transparent-bubble': isHtmlOnlyBubble,
             'html-only-bubble': isHtmlOnlyBubble,
+            'transfer-card-only': isTransfer && transferAmount && !transferHasVisibleContent,
             'menu-active': showMenu,
           }"
           @click.stop="onBubbleClick"
@@ -3518,8 +3525,8 @@ const showTextVoiceTranscript = ref(true);
             v-else-if="isTransfer && transferAmount"
             class="transfer-message-wrapper"
           >
-            <!-- 如果有文字內容，先顯示文字 -->
-            <template v-if="content && content.trim()">
+            <!-- 如果移除轉帳標籤後仍有文字/媒體內容，先顯示內容 -->
+            <template v-if="transferHasVisibleContent">
               <!-- 包含圖片/表情包的消息 -->
               <div v-if="hasMedia" class="message-mixed">
                 <template v-for="(part, idx) in messageParts" :key="idx">
@@ -4874,11 +4881,12 @@ const showTextVoiceTranscript = ref(true);
     border-radius: 0;
   }
 
-  // 如果是純轉帳訊息（沒有文字內容），移除氣泡背景和內邊距
-  // 注意：如果同時有文字內容（.bubble-text），保留氣泡背景
+  // 如果是純轉帳訊息（沒有文字/媒體內容），移除氣泡背景和內邊距
+  // 注意：如果同時有文字內容（.bubble-text）或媒體（.message-mixed），保留氣泡背景
+  &.transfer-card-only,
   &:has(.transfer-message-wrapper):not(
       :has(.transfer-message-wrapper .bubble-text)
-    ) {
+    ):not(:has(.transfer-message-wrapper .message-mixed)) {
     background: transparent !important;
     padding: 0;
     box-shadow: none;
