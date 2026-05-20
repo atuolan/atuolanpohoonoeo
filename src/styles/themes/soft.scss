@@ -626,10 +626,18 @@ textarea.soft-input,
   border-radius: var(--radius-lg);
   padding: 4px;
   gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 
   .tab-item {
-    flex: 1;
-    min-width: 0;
+    flex: 0 0 auto;
+    min-width: max-content;
     padding: 10px 16px;
     border-radius: var(--radius-md);
     font-size: 14px;

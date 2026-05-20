@@ -4315,7 +4315,10 @@ watch(newPromptInsertMode, (mode) => {
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   overflow-x: auto;
+  overflow-y: hidden;
   flex-shrink: 0;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 
   &::-webkit-scrollbar {
     display: none;
@@ -4325,9 +4328,16 @@ watch(newPromptInsertMode, (mode) => {
 .char-tabs-scroll {
   display: flex;
   gap: 8px;
+  flex: 0 0 auto;
+}
+
+.add-char-wrapper {
+  flex: 0 0 auto;
 }
 
 .char-tab {
+  flex: 0 0 auto;
+  min-width: max-content;
   padding: 8px 16px;
   border-radius: 20px;
   background: var(--color-background);
