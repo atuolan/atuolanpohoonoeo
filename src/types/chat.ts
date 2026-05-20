@@ -78,7 +78,13 @@ export interface ChatAppearance {
   };
   /** 桌布設定 */
   wallpaper?: {
-    type: "color" | "gradient" | "image" | "pattern" | "time-theme";
+    type:
+      | "color"
+      | "gradient"
+      | "image"
+      | "pattern"
+      | "time-theme"
+      | "global-image";
     value: string;
     blur: number;
     opacity: number;

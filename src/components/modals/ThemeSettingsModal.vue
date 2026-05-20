@@ -14,6 +14,8 @@ import { useGameEconomyStore } from "@/stores/gameEconomy";
 import type { ChatAppearance } from "@/types/chat";
 import { computed, ref, watch } from "vue";
 
+type ChatWallpaperStyle = NonNullable<ChatAppearance["wallpaper"]>;
+
 // Props
 interface Props {
   visible: boolean;
@@ -235,7 +237,7 @@ async function equipBubble(bubbleId: string | null) {
 // 臨時值（用於預覽）
 const tempAvatarStyle = ref<AvatarStyle>({ ...themeStore.avatarStyle });
 const tempBubbleStyle = ref<BubbleStyle>({ ...themeStore.bubbleStyle });
-const tempWallpaperStyle = ref<WallpaperStyle>({
+const tempWallpaperStyle = ref<ChatWallpaperStyle>({
   ...themeStore.wallpaperStyle,
 });
 // 臨時字體樣式（聊天專屬模式用）
@@ -410,6 +412,22 @@ function setBubbleMaxWidth(width: number) {
   }
 }
 
+const hasGlobalCustomImage = computed(() => {
+  return themeStore.wallpaperStyle.type === "image" && !!themeStore.wallpaperStyle.value;
+});
+
+const isUsingGlobalImageWallpaper = computed(() => {
+  return tempWallpaperStyle.value.type === "global-image";
+});
+
+const globalWallpaperPreviewStyle = computed(() => ({
+  backgroundImage: hasGlobalCustomImage.value
+    ? `url(${themeStore.wallpaperStyle.value})`
+    : undefined,
+  backgroundSize: "cover",
+  backgroundPosition: "center",
+}));
+
 // 處理桌布選擇
 function selectWallpaper(preset: (typeof wallpaperPresets)[0]) {
   console.log("[ThemeSettingsModal] selectWallpaper:", preset);
@@ -427,6 +445,34 @@ function selectWallpaper(preset: (typeof wallpaperPresets)[0]) {
       value: preset.value,
     });
   }
+}
+
+function copyGlobalWallpaperToChat() {
+  if (!hasGlobalCustomImage.value) return;
+  tempWallpaperStyle.value = {
+    ...tempWallpaperStyle.value,
+    type: "image",
+    value: themeStore.wallpaperStyle.value,
+    blur: themeStore.wallpaperStyle.blur,
+    opacity: themeStore.wallpaperStyle.opacity,
+    overlay: themeStore.wallpaperStyle.overlay,
+    fit: themeStore.wallpaperStyle.fit || "cover",
+  };
+  useCustomAppearance.value = true;
+}
+
+function followGlobalWallpaperImage() {
+  if (!hasGlobalCustomImage.value) return;
+  tempWallpaperStyle.value = {
+    ...tempWallpaperStyle.value,
+    type: "global-image",
+    value: "",
+    blur: tempWallpaperStyle.value.blur ?? themeStore.wallpaperStyle.blur,
+    opacity: tempWallpaperStyle.value.opacity ?? themeStore.wallpaperStyle.opacity,
+    overlay: tempWallpaperStyle.value.overlay ?? themeStore.wallpaperStyle.overlay,
+    fit: tempWallpaperStyle.value.fit || themeStore.wallpaperStyle.fit || "cover",
+  };
+  useCustomAppearance.value = true;
 }
 
 // 處理桌布模糊度變更
@@ -524,6 +570,7 @@ function onCropComplete(dataUrl: string) {
   showCropper.value = false;
   tempWallpaperStyle.value.type = "image";
   tempWallpaperStyle.value.value = dataUrl;
+  tempWallpaperStyle.value.fit = "cover";
   if (isChatMode.value) {
     useCustomAppearance.value = true;
   } else {
@@ -1185,7 +1232,48 @@ watch(
                 </label>
               </div>
 
-              <template v-if="tempWallpaperStyle.type === 'image'">
+              <div
+                v-if="isChatMode && hasGlobalCustomImage"
+                class="global-wallpaper-card"
+              >
+                <div
+                  class="global-wallpaper-preview"
+                  :style="globalWallpaperPreviewStyle"
+                ></div>
+                <div class="global-wallpaper-content">
+                  <div class="global-wallpaper-title">主畫面自訂圖片</div>
+                  <div class="global-wallpaper-desc">
+                    可複製目前主畫面圖片，或讓此聊天持續跟隨主畫面圖片。
+                  </div>
+                  <div class="global-wallpaper-actions">
+                    <button
+                      class="soft-mini-btn"
+                      :class="{
+                        active:
+                          tempWallpaperStyle.type === 'image' &&
+                          tempWallpaperStyle.value === themeStore.wallpaperStyle.value,
+                      }"
+                      @click="copyGlobalWallpaperToChat"
+                    >
+                      複製目前主畫面圖片
+                    </button>
+                    <button
+                      class="soft-mini-btn"
+                      :class="{ active: isUsingGlobalImageWallpaper }"
+                      @click="followGlobalWallpaperImage"
+                    >
+                      跟隨主畫面圖片
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <template
+                v-if="
+                  tempWallpaperStyle.type === 'image' ||
+                  tempWallpaperStyle.type === 'global-image'
+                "
+              >
                 <h3 class="section-title">顯示方式</h3>
                 <div class="fit-options">
                   <button
@@ -2272,6 +2360,76 @@ watch(
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+}
+
+.global-wallpaper-card {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 18px;
+  background: var(--color-background);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+}
+
+.global-wallpaper-preview {
+  width: 96px;
+  min-width: 96px;
+  aspect-ratio: 9 / 16;
+  border-radius: 14px;
+  background-size: cover;
+  background-position: center;
+  box-shadow: var(--shadow-sm);
+}
+
+.global-wallpaper-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.global-wallpaper-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.global-wallpaper-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.global-wallpaper-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.soft-mini-btn {
+  padding: 8px 10px;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  &.active {
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+    box-shadow: inset 0 0 0 1px var(--color-primary);
+  }
 }
 
 .wallpaper-item {

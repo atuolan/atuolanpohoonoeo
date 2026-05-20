@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import { ImageCropper } from "@/components/common";
 import { useLanguage } from "@/composables/useLanguage";
 import { useSettingsStore } from "@/stores/settings";
 import type { GlobalFontOverride, WallpaperStyle } from "@/stores/theme";
 import { useThemeStore } from "@/stores/theme";
-import { compressImage, compressionPresets } from "@/utils/imageCompression";
 import { computed, ref, watch } from "vue";
 
 // Props
@@ -156,42 +156,43 @@ function selectWallpaper(preset: (typeof wallpaperPresets)[0]) {
   });
 }
 
-// 處理圖片上傳
-async function handleImageUpload(event: Event) {
+// 處理圖片上傳（先讀取為 data URL，再交由剪裁器裁切）
+const showCropper = ref(false);
+const cropperImageSrc = ref("");
+
+function handleImageUpload(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
 
-  try {
-    // 使用壁紙預設壓縮圖片
-    const compressedDataUrl = await compressImage(
-      file,
-      compressionPresets.wallpaper,
-    );
-    tempWallpaperStyle.value.type = "image";
-    tempWallpaperStyle.value.value = compressedDataUrl;
-    themeStore.updateWallpaperStyle({
-      type: "image",
-      value: compressedDataUrl,
-    });
-  } catch (error) {
-    console.error("圖片壓縮失敗:", error);
-    // 降級：直接使用原始圖片
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target?.result as string;
-      tempWallpaperStyle.value.type = "image";
-      tempWallpaperStyle.value.value = dataUrl;
-      themeStore.updateWallpaperStyle({
-        type: "image",
-        value: dataUrl,
-      });
-    };
-    reader.readAsDataURL(file);
-  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const dataUrl = e.target?.result as string;
+    cropperImageSrc.value = dataUrl;
+    showCropper.value = true;
+  };
+  reader.readAsDataURL(file);
 
   // 清空 input 以便重複選擇同一檔案
   input.value = "";
+}
+
+// 剪裁完成：裁切器已輸出 JPEG（品質 0.92），直接套用
+function onCropComplete(dataUrl: string) {
+  showCropper.value = false;
+  tempWallpaperStyle.value.type = "image";
+  tempWallpaperStyle.value.value = dataUrl;
+  tempWallpaperStyle.value.fit = "cover";
+  themeStore.updateWallpaperStyle({
+    type: "image",
+    value: dataUrl,
+    fit: "cover",
+  });
+}
+
+function onCropClose() {
+  showCropper.value = false;
+  cropperImageSrc.value = "";
 }
 
 // 處理桌布模糊度變更
@@ -1046,6 +1047,16 @@ body {
         </div>
       </div>
     </Transition>
+
+    <!-- 圖片裁切器 -->
+    <ImageCropper
+      :visible="showCropper"
+      :image-src="cropperImageSrc"
+      :output-width="1024"
+      title="裁剪桌布圖片"
+      @crop="onCropComplete"
+      @close="onCropClose"
+    />
   </Teleport>
 </template>
 

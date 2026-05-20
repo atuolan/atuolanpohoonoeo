@@ -680,6 +680,11 @@ const isDarkBackground = computed(() =>
 
 <style lang="scss" scoped>
 .chat-header {
+  --chat-header-panel-bg: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-surface) 85%, transparent) 0%,
+    color-mix(in srgb, var(--color-surface) 40%, transparent) 100%
+  );
   display: flex;
   align-items: center;
   min-width: 0;
@@ -690,11 +695,7 @@ const isDarkBackground = computed(() =>
   padding: 8px 12px !important;
   box-sizing: border-box;
   border-radius: 20px;
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--color-surface) 85%, transparent) 0%,
-    color-mix(in srgb, var(--color-surface) 40%, transparent) 100%
-  );
+  background: var(--chat-header-panel-bg);
   backdrop-filter: blur(16px) saturate(140%);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
   border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
@@ -711,11 +712,12 @@ const isDarkBackground = computed(() =>
 
   // 深色背景：將標題與按鈕色調切換為亮色，提高對比
   &.dark-bg {
-    background: linear-gradient(
+    --chat-header-panel-bg: linear-gradient(
       135deg,
       rgba(255, 255, 255, 0.18) 0%,
       rgba(255, 255, 255, 0.08) 100%
     );
+    background: var(--chat-header-panel-bg);
     border-color: rgba(255, 255, 255, 0.22);
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
 
@@ -1552,11 +1554,7 @@ const isDarkBackground = computed(() =>
     gap: 6px;
     padding: 10px 12px;
     border-radius: 20px;
-    background: linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--color-surface) 90%, transparent) 0%,
-      color-mix(in srgb, var(--color-surface) 60%, transparent) 100%
-    );
+    background: var(--chat-header-panel-bg);
     backdrop-filter: blur(16px) saturate(140%);
     -webkit-backdrop-filter: blur(16px) saturate(140%);
     border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);

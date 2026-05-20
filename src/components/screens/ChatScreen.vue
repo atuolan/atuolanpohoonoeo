@@ -2943,19 +2943,36 @@ function applyChatAppearance(appearance?: ChatAppearance) {
   // 套用聊天專屬桌布樣式（無論有無桌布都要處理，確保舊值不殘留）
   if (appearance.wallpaper) {
     let wallpaperValue: string;
-    if (appearance.wallpaper.type === "image") {
-      // 圖片類型：檢查 URL 是否有效
-      const imageUrl = appearance.wallpaper.value;
+    let wallpaperBlur = appearance.wallpaper.blur ?? 0;
+    let wallpaperOpacity = appearance.wallpaper.opacity ?? 100;
+    let wallpaperFit = appearance.wallpaper.fit || "cover";
+
+    const toImageWallpaper = (imageUrl: string) => {
       if (
         imageUrl &&
         (imageUrl.startsWith("data:") ||
           imageUrl.startsWith("blob:") ||
           imageUrl.startsWith("http"))
       ) {
-        wallpaperValue = `url("${imageUrl}")`;
-      } else {
-        // 無效的圖片 URL，fallback 到全局桌布
+        return `url("${imageUrl}")`;
+      }
+      return "var(--wallpaper-value, var(--color-background))";
+    };
+
+    if (appearance.wallpaper.type === "image") {
+      // 圖片類型：檢查 URL 是否有效
+      wallpaperValue = toImageWallpaper(appearance.wallpaper.value);
+      if (wallpaperValue.startsWith("var(")) {
         console.warn("[ChatScreen] 無效的桌布圖片 URL，使用全局桌布");
+      }
+    } else if (appearance.wallpaper.type === "global-image") {
+      // 跟隨主畫面圖片：即時解析 themeStore 目前自訂圖片，不保存圖片副本
+      if (themeStore.wallpaperStyle.type === "image") {
+        wallpaperValue = toImageWallpaper(themeStore.wallpaperStyle.value);
+        wallpaperBlur = themeStore.wallpaperStyle.blur ?? wallpaperBlur;
+        wallpaperOpacity = themeStore.wallpaperStyle.opacity ?? wallpaperOpacity;
+        wallpaperFit = themeStore.wallpaperStyle.fit || wallpaperFit;
+      } else {
         wallpaperValue = "var(--wallpaper-value, var(--color-background))";
       }
     } else if (appearance.wallpaper.type === "time-theme") {
@@ -2979,20 +2996,20 @@ function applyChatAppearance(appearance?: ChatAppearance) {
     console.log("[ChatScreen] 套用桌布:", {
       type: appearance.wallpaper.type,
       value: wallpaperValue,
-      blur: appearance.wallpaper.blur,
-      opacity: appearance.wallpaper.opacity,
+      blur: wallpaperBlur,
+      opacity: wallpaperOpacity,
     });
     container.style.setProperty("--chat-wallpaper", wallpaperValue);
     container.style.setProperty(
       "--chat-wallpaper-blur",
-      `${appearance.wallpaper.blur ?? 0}px`,
+      `${wallpaperBlur}px`,
     );
     container.style.setProperty(
       "--chat-wallpaper-opacity",
-      `${(appearance.wallpaper.opacity ?? 100) / 100}`,
+      `${wallpaperOpacity / 100}`,
     );
     // 顯示模式
-    const fit = appearance.wallpaper.fit || "cover";
+    const fit = wallpaperFit;
     const bgSize =
       fit === "repeat" ? "auto" : fit === "fill" ? "100% 100%" : fit;
     container.style.setProperty("--chat-wallpaper-fit", bgSize);
@@ -7657,6 +7674,20 @@ watch(
       }
     });
   },
+);
+
+// 監聽主畫面桌布變化：聊天使用「跟隨主畫面圖片」時即時同步背景
+watch(
+  () => themeStore.wallpaperStyle,
+  () => {
+    if (settingsStore.nightMode) return;
+    if (chatAppearance.value?.wallpaper?.type !== "global-image") return;
+
+    nextTick(() => {
+      applyChatAppearance(chatAppearance.value);
+    });
+  },
+  { deep: true },
 );
 
 // 切換聊天勿擾模式（從選單）

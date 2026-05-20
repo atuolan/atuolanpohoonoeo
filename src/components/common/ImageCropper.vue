@@ -5,8 +5,8 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 const props = defineProps<{
   visible: boolean
   imageSrc: string
-  aspectRatio?: number // 寬高比 (width/height)，0 或 undefined 表示自由裁切
-  outputWidth?: number  // 輸出寬度，默認 512
+  aspectRatio?: number // 寬高比 (width/height)，0 或 undefined 表示自由裁切；預設 9/16（手機直式桌布）
+  outputWidth?: number  // 輸出寬度，默認 1080
   outputHeight?: number // 輸出高度（配合 aspectRatio 自動計算）
   title?: string
 }>()
@@ -18,10 +18,11 @@ const emit = defineEmits<{
 }>()
 
 // 預設值
-const outWidth = computed(() => props.outputWidth ?? 512)
+const outWidth = computed(() => props.outputWidth ?? 1080)
 const cropTitle = computed(() => props.title ?? '裁剪圖片')
+const effectiveAspectRatio = computed(() => props.aspectRatio ?? 9 / 16)
 
-// Canvas refs
+// Canvas ref
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const containerRef = ref<HTMLDivElement | null>(null)
 
@@ -29,24 +30,32 @@ const containerRef = ref<HTMLDivElement | null>(null)
 const imageLoaded = ref(false)
 const image = ref<HTMLImageElement | null>(null)
 
-// 裁剪框狀態 (x, y, width, height 相對於顯示圖片)
-const cropBox = ref({
-  x: 0,
-  y: 0,
-  width: 200,
-  height: 200
+// 圖片變換狀態（拖曳 + 縮放）
+const imageTransform = ref({
+  x: 0,    // 圖片相對於 viewport 中心的偏移 x
+  y: 0,    // 圖片相對於 viewport 中心的偏移 y
+  scale: 1, // 圖片縮放倍率（相對於 cover 尺寸）
 })
 
-// 拖拽狀態
+// 拖曳狀態
 const isDragging = ref(false)
-const isResizing = ref(false)
-const resizeHandle = ref('')
 const dragStart = ref({ x: 0, y: 0 })
-const cropStart = ref({ x: 0, y: 0, width: 0, height: 0 })
+const transformStart = ref({ x: 0, y: 0 })
 
-// 圖片顯示狀態
-const displaySize = ref({ width: 0, height: 0 })
-const imageOffset = ref({ x: 0, y: 0 })
+// 雙指縮放狀態
+const isPinching = ref(false)
+const initialPinchDistance = ref(0)
+const initialPinchScale = ref(1)
+
+// 顯示尺寸（圖片在 cover 模式下的尺寸）
+const coverSize = ref({ width: 0, height: 0 })
+
+// 視口（固定裁切區域）
+const viewport = ref({ x: 0, y: 0, width: 0, height: 0 })
+
+// 縮放範圍
+const minScale = 1
+const maxScale = 5
 
 // 載入圖片
 watch(() => [props.imageSrc, props.visible], ([src, vis]) => {
@@ -61,7 +70,7 @@ function loadImage(src: string) {
   img.onload = () => {
     image.value = img
     imageLoaded.value = true
-    nextTick(() => calculateDisplaySize())
+    nextTick(() => calculateLayout())
   }
   img.onerror = () => {
     alert('圖片載入失敗')
@@ -70,66 +79,110 @@ function loadImage(src: string) {
   img.src = src
 }
 
-// 計算顯示尺寸
-function calculateDisplaySize() {
+// 計算佈局：視口位置 + 圖片 cover 尺寸
+function calculateLayout() {
   if (!image.value || !containerRef.value) return
-  
-  const containerWidth = containerRef.value.clientWidth - 40
-  const containerHeight = containerRef.value.clientHeight - 40
-  
+
+  const containerWidth = containerRef.value.clientWidth
+  const containerHeight = containerRef.value.clientHeight
+
+  if (containerWidth === 0 || containerHeight === 0) return
+
+  const ratio = effectiveAspectRatio.value
+
+  // 計算視口尺寸（在容器內置中，留一些邊距）
+  const padding = 16
+  const availW = containerWidth - padding * 2
+  const availH = containerHeight - padding * 2
+
+  let vpW: number, vpH: number
+  if (ratio > availW / availH) {
+    // 視口較寬，以寬度為準
+    vpW = availW
+    vpH = vpW / ratio
+  } else {
+    // 視口較高，以高度為準
+    vpH = availH
+    vpW = vpH * ratio
+  }
+
+  viewport.value = {
+    x: (containerWidth - vpW) / 2,
+    y: (containerHeight - vpH) / 2,
+    width: vpW,
+    height: vpH,
+  }
+
+  // 計算 cover 尺寸：圖片填滿視口的最小尺寸
   const imgRatio = image.value.width / image.value.height
-  
-  let width, height
-  if (imgRatio > containerWidth / containerHeight) {
-    width = containerWidth
-    height = width / imgRatio
+  const vpRatio = vpW / vpH
+
+  let coverW: number, coverH: number
+  if (imgRatio > vpRatio) {
+    // 圖片較寬，以高度為準
+    coverH = vpH
+    coverW = coverH * imgRatio
   } else {
-    height = containerHeight
-    width = height * imgRatio
+    // 圖片較高，以寬度為準
+    coverW = vpW
+    coverH = coverW / imgRatio
   }
-  
-  displaySize.value = { width, height }
-  imageOffset.value = {
-    x: (containerWidth - width) / 2 + 20,
-    y: (containerHeight - height) / 2 + 20
-  }
-  
-  // 初始化裁剪框
-  initCropBox(width, height)
+
+  coverSize.value = { width: coverW, height: coverH }
+
+  // 重置變換
+  resetTransform()
 }
 
-function initCropBox(imgW: number, imgH: number) {
-  const ratio = props.aspectRatio
-  if (ratio && ratio > 0) {
-    // 固定比例
-    let cw: number, ch: number
-    if (ratio > imgW / imgH) {
-      cw = imgW * 0.85
-      ch = cw / ratio
-    } else {
-      ch = imgH * 0.85
-      cw = ch * ratio
-    }
-    cropBox.value = {
-      x: (imgW - cw) / 2,
-      y: (imgH - ch) / 2,
-      width: cw,
-      height: ch
-    }
-  } else {
-    // 自由裁切：預設用圖片 80%
-    const cw = imgW * 0.85
-    const ch = imgH * 0.85
-    cropBox.value = {
-      x: (imgW - cw) / 2,
-      y: (imgH - ch) / 2,
-      width: cw,
-      height: ch
-    }
+function resetTransform() {
+  imageTransform.value = { x: 0, y: 0, scale: 1 }
+}
+
+// 計算圖片在容器中的實際位置和尺寸
+const imageDisplayStyle = computed(() => {
+  const vp = viewport.value
+  const cs = coverSize.value
+  const tf = imageTransform.value
+
+  const scaledW = cs.width * tf.scale
+  const scaledH = cs.height * tf.scale
+
+  // 圖片中心對齊視口中心，再加上偏移
+  const vpCenterX = vp.x + vp.width / 2
+  const vpCenterY = vp.y + vp.height / 2
+
+  const left = vpCenterX - scaledW / 2 + tf.x
+  const top = vpCenterY - scaledH / 2 + tf.y
+
+  return {
+    width: `${scaledW}px`,
+    height: `${scaledH}px`,
+    left: `${left}px`,
+    top: `${top}px`,
+  }
+})
+
+// 限制偏移：確保視口不會超出圖片邊界
+function clampOffset(x: number, y: number, scale: number) {
+  const cs = coverSize.value
+  const vp = viewport.value
+
+  const scaledW = cs.width * scale
+  const scaledH = cs.height * scale
+
+  // 圖片中心相對於視口中心的偏移
+  // 視口邊緣不能超出圖片
+  const maxOffsetX = Math.max(0, (scaledW - vp.width) / 2)
+  const maxOffsetY = Math.max(0, (scaledH - vp.height) / 2)
+
+  return {
+    x: Math.max(-maxOffsetX, Math.min(maxOffsetX, x)),
+    y: Math.max(-maxOffsetY, Math.min(maxOffsetY, y)),
   }
 }
 
-function getClientPos(e: MouseEvent | TouchEvent) {
+// 取得滑鼠/觸控座標
+function getClientPos(e: MouseEvent | TouchEvent): { x: number; y: number } {
   if ('touches' in e && e.touches.length > 0) {
     return { x: e.touches[0].clientX, y: e.touches[0].clientY }
   }
@@ -139,135 +192,152 @@ function getClientPos(e: MouseEvent | TouchEvent) {
   return { x: 0, y: 0 }
 }
 
-// 處理拖拽開始
+// 雙指距離
+function getPinchDistance(e: TouchEvent): number {
+  if (e.touches.length < 2) return 0
+  const dx = e.touches[0].clientX - e.touches[1].clientX
+  const dy = e.touches[0].clientY - e.touches[1].clientY
+  return Math.sqrt(dx * dx + dy * dy)
+}
+
+// 拖曳開始
 function onDragStart(e: MouseEvent | TouchEvent) {
+  // 雙指時不處理拖曳
+  if ('touches' in e && e.touches.length >= 2) return
   e.preventDefault()
   isDragging.value = true
   const pos = getClientPos(e)
   dragStart.value = pos
-  cropStart.value = { ...cropBox.value }
+  transformStart.value = { x: imageTransform.value.x, y: imageTransform.value.y }
 }
 
-// 處理調整大小開始
-function onResizeStart(handle: string, e: MouseEvent | TouchEvent) {
-  e.preventDefault()
-  e.stopPropagation()
-  isResizing.value = true
-  resizeHandle.value = handle
-  const pos = getClientPos(e)
-  dragStart.value = pos
-  cropStart.value = { ...cropBox.value }
-}
-
-// 處理移動
+// 移動
 function onMove(e: MouseEvent | TouchEvent) {
-  if (!isDragging.value && !isResizing.value) return
-  
+  if (isPinching.value) return
+
+  // 雙指縮放
+  if ('touches' in e && e.touches.length === 2) {
+    e.preventDefault()
+    if (!isPinching.value) {
+      isPinching.value = true
+      isDragging.value = false
+      initialPinchDistance.value = getPinchDistance(e)
+      initialPinchScale.value = imageTransform.value.scale
+      return
+    }
+
+    const currentDist = getPinchDistance(e)
+    const scaleRatio = currentDist / initialPinchDistance.value
+    const newScale = Math.max(minScale, Math.min(maxScale, initialPinchScale.value * scaleRatio))
+    const clamped = clampOffset(imageTransform.value.x, imageTransform.value.y, newScale)
+    imageTransform.value = { x: clamped.x, y: clamped.y, scale: newScale }
+    return
+  }
+
+  if (!isDragging.value) return
+  e.preventDefault()
+
   const pos = getClientPos(e)
   const deltaX = pos.x - dragStart.value.x
   const deltaY = pos.y - dragStart.value.y
-  
-  if (isDragging.value) {
-    let newX = cropStart.value.x + deltaX
-    let newY = cropStart.value.y + deltaY
-    newX = Math.max(0, Math.min(newX, displaySize.value.width - cropBox.value.width))
-    newY = Math.max(0, Math.min(newY, displaySize.value.height - cropBox.value.height))
-    cropBox.value.x = newX
-    cropBox.value.y = newY
-  } else if (isResizing.value) {
-    handleResize(deltaX, deltaY)
+
+  const newX = transformStart.value.x + deltaX
+  const newY = transformStart.value.y + deltaY
+  const clamped = clampOffset(newX, newY, imageTransform.value.scale)
+
+  imageTransform.value = {
+    x: clamped.x,
+    y: clamped.y,
+    scale: imageTransform.value.scale,
   }
 }
 
-function handleResize(dx: number, dy: number) {
-  const ratio = props.aspectRatio
-  const minW = 60
-  const minH = 60
-  const s = cropStart.value
-  const imgW = displaySize.value.width
-  const imgH = displaySize.value.height
-  
-  let newX = s.x, newY = s.y, newW = s.width, newH = s.height
-  const handle = resizeHandle.value
-  
-  // 根據 handle 方向調整
-  if (handle.includes('r')) {
-    newW = Math.max(minW, Math.min(s.width + dx, imgW - s.x))
-  }
-  if (handle.includes('l')) {
-    const maxDx = s.width - minW
-    const clampedDx = Math.max(-s.x, Math.min(dx, maxDx))
-    newX = s.x + clampedDx
-    newW = s.width - clampedDx
-  }
-  if (handle.includes('b')) {
-    newH = Math.max(minH, Math.min(s.height + dy, imgH - s.y))
-  }
-  if (handle.includes('t')) {
-    const maxDy = s.height - minH
-    const clampedDy = Math.max(-s.y, Math.min(dy, maxDy))
-    newY = s.y + clampedDy
-    newH = s.height - clampedDy
-  }
-  
-  // 固定比例時，用寬度驅動高度
-  if (ratio && ratio > 0) {
-    if (handle.includes('l') || handle.includes('r')) {
-      newH = newW / ratio
-    } else {
-      newW = newH * ratio
-    }
-    // 邊界修正
-    if (newX + newW > imgW) newW = imgW - newX
-    if (newY + newH > imgH) newH = imgH - newY
-    if (newW / newH !== ratio) {
-      if (newW / ratio < newH) newH = newW / ratio
-      else newW = newH * ratio
-    }
-  }
-  
-  cropBox.value = { x: newX, y: newY, width: newW, height: newH }
-}
-
-// 處理結束
-function onEnd() {
+// 結束
+function onEnd(e: MouseEvent | TouchEvent) {
   isDragging.value = false
-  isResizing.value = false
-  resizeHandle.value = ''
+  // 雙指結束
+  if ('touches' in e) {
+    if (e.touches.length === 0) {
+      isPinching.value = false
+    }
+  } else {
+    isPinching.value = false
+  }
+}
+
+// 滾輪縮放
+function onWheel(e: WheelEvent) {
+  e.preventDefault()
+  const delta = e.deltaY > 0 ? -0.05 : 0.05
+  const newScale = Math.max(minScale, Math.min(maxScale, imageTransform.value.scale + delta))
+  const clamped = clampOffset(imageTransform.value.x, imageTransform.value.y, newScale)
+  imageTransform.value = { x: clamped.x, y: clamped.y, scale: newScale }
+}
+
+// 縮放滑桿
+function onZoomSliderInput(e: Event) {
+  const val = Number((e.target as HTMLInputElement).value)
+  const newScale = Math.max(minScale, Math.min(maxScale, val))
+  const clamped = clampOffset(imageTransform.value.x, imageTransform.value.y, newScale)
+  imageTransform.value = { x: clamped.x, y: clamped.y, scale: newScale }
 }
 
 // 執行裁剪
 function doCrop() {
   if (!image.value || !canvasRef.value) return
-  
+
   const canvas = canvasRef.value
   const ctx = canvas.getContext('2d')
   if (!ctx) return
-  
-  // 計算原圖上的裁剪區域
-  const scaleX = image.value.width / displaySize.value.width
-  const scaleY = image.value.height / displaySize.value.height
-  
-  const sourceX = cropBox.value.x * scaleX
-  const sourceY = cropBox.value.y * scaleY
-  const sourceW = cropBox.value.width * scaleX
-  const sourceH = cropBox.value.height * scaleY
-  
+
+  const vp = viewport.value
+  const cs = coverSize.value
+  const tf = imageTransform.value
+  const img = image.value
+
+  // 計算視口在「cover 尺寸 + 偏移 + 縮放」座標系中的位置
+  // 視口中心
+  const vpCenterX = vp.x + vp.width / 2
+  const vpCenterY = vp.y + vp.height / 2
+
+  // 圖片左上角在容器中的位置
+  const scaledW = cs.width * tf.scale
+  const scaledH = cs.height * tf.scale
+  const imgLeft = vpCenterX - scaledW / 2 + tf.x
+  const imgTop = vpCenterY - scaledH / 2 + tf.y
+
+  // 視口在圖片顯示座標中的區域
+  const cropDisplayX = vp.x - imgLeft
+  const cropDisplayY = vp.y - imgTop
+  const cropDisplayW = vp.width
+  const cropDisplayH = vp.height
+
+  // 映射到原圖座標
+  const scaleX = img.width / scaledW
+  const scaleY = img.height / scaledH
+
+  const sourceX = cropDisplayX * scaleX
+  const sourceY = cropDisplayY * scaleY
+  const sourceW = cropDisplayW * scaleX
+  const sourceH = cropDisplayH * scaleY
+
   // 輸出尺寸
   const outW = outWidth.value
   const outH = props.outputHeight
     ? props.outputHeight
-    : Math.round(outW * (sourceH / sourceW))
-  
+    : Math.round(outW / effectiveAspectRatio.value)
+
   canvas.width = outW
   canvas.height = outH
-  
+
   ctx.drawImage(
-    image.value,
-    sourceX, sourceY, sourceW, sourceH,
+    img,
+    Math.max(0, sourceX), Math.max(0, sourceY),
+    Math.min(sourceW, img.width - Math.max(0, sourceX)),
+    Math.min(sourceH, img.height - Math.max(0, sourceY)),
     0, 0, outW, outH
   )
-  
+
   const dataUrl = canvas.toDataURL('image/jpeg', 0.92)
   emit('crop', dataUrl)
 }
@@ -275,6 +345,32 @@ function doCrop() {
 function handleClose() {
   emit('close')
 }
+
+// 遮罩路徑（視口外部半透明遮罩）
+const maskPath = computed(() => {
+  const vp = viewport.value
+  if (!vp.width) return ''
+
+  const cw = containerRef.value?.clientWidth ?? 0
+  const ch = containerRef.value?.clientHeight ?? 0
+  if (!cw || !ch) return ''
+
+  return `
+    M 0,0
+    L ${cw},0
+    L ${cw},${ch}
+    L 0,${ch}
+    Z
+    M ${vp.x},${vp.y}
+    L ${vp.x + vp.width},${vp.y}
+    L ${vp.x + vp.width},${vp.y + vp.height}
+    L ${vp.x},${vp.y + vp.height}
+    Z
+  `
+})
+
+// 縮放百分比顯示
+const zoomPercent = computed(() => Math.round(imageTransform.value.scale * 100))
 
 // 事件監聽
 onMounted(() => {
@@ -289,41 +385,6 @@ onUnmounted(() => {
   window.removeEventListener('mouseup', onEnd)
   window.removeEventListener('touchmove', onMove)
   window.removeEventListener('touchend', onEnd)
-})
-
-// 裁剪框樣式
-const cropBoxStyle = computed(() => ({
-  left: `${cropBox.value.x + imageOffset.value.x}px`,
-  top: `${cropBox.value.y + imageOffset.value.y}px`,
-  width: `${cropBox.value.width}px`,
-  height: `${cropBox.value.height}px`
-}))
-
-// 遮罩路徑
-const maskPath = computed(() => {
-  if (!displaySize.value.width) return ''
-  
-  const ox = imageOffset.value.x
-  const oy = imageOffset.value.y
-  const w = displaySize.value.width
-  const h = displaySize.value.height
-  const cx = cropBox.value.x + ox
-  const cy = cropBox.value.y + oy
-  const cw = cropBox.value.width
-  const ch = cropBox.value.height
-  
-  return `
-    M ${ox},${oy}
-    L ${ox + w},${oy}
-    L ${ox + w},${oy + h}
-    L ${ox},${oy + h}
-    Z
-    M ${cx},${cy}
-    L ${cx},${cy + ch}
-    L ${cx + cw},${cy + ch}
-    L ${cx + cw},${cy}
-    Z
-  `
 })
 </script>
 
@@ -342,33 +403,36 @@ const maskPath = computed(() => {
               完成
             </button>
           </div>
-          
+
           <!-- 圖片區域 -->
-          <div class="cropper-content">
+          <div
+            class="cropper-content"
+            @wheel.prevent="onWheel"
+          >
             <template v-if="imageLoaded">
-              <!-- 圖片 -->
-              <img 
+              <!-- 圖片（可拖曳、可縮放） -->
+              <img
                 :src="imageSrc"
                 class="cropper-image"
-                :style="{
-                  width: `${displaySize.width}px`,
-                  height: `${displaySize.height}px`,
-                  left: `${imageOffset.x}px`,
-                  top: `${imageOffset.y}px`
-                }"
+                :style="imageDisplayStyle"
+                @mousedown="onDragStart"
+                @touchstart="onDragStart"
               />
-              
-              <!-- 遮罩 -->
+
+              <!-- 遮罩（視口外部變暗） -->
               <svg class="cropper-mask">
                 <path :d="maskPath" fill="rgba(0,0,0,0.6)" fill-rule="evenodd" />
               </svg>
-              
-              <!-- 裁剪框 -->
-              <div 
-                class="crop-box"
-                :style="cropBoxStyle"
-                @mousedown="onDragStart"
-                @touchstart="onDragStart"
+
+              <!-- 視口邊框 -->
+              <div
+                class="crop-viewport"
+                :style="{
+                  left: `${viewport.x}px`,
+                  top: `${viewport.y}px`,
+                  width: `${viewport.width}px`,
+                  height: `${viewport.height}px`,
+                }"
               >
                 <!-- 網格線 -->
                 <div class="grid-lines">
@@ -377,26 +441,42 @@ const maskPath = computed(() => {
                   <div class="grid-line v" style="left: 33.33%"></div>
                   <div class="grid-line v" style="left: 66.66%"></div>
                 </div>
-                
-                <!-- 四角 + 四邊 resize handles -->
-                <div class="corner tl" @mousedown.stop="onResizeStart('tl', $event)" @touchstart.stop="onResizeStart('tl', $event)"></div>
-                <div class="corner tr" @mousedown.stop="onResizeStart('tr', $event)" @touchstart.stop="onResizeStart('tr', $event)"></div>
-                <div class="corner bl" @mousedown.stop="onResizeStart('bl', $event)" @touchstart.stop="onResizeStart('bl', $event)"></div>
-                <div class="corner br" @mousedown.stop="onResizeStart('br', $event)" @touchstart.stop="onResizeStart('br', $event)"></div>
-                <div class="edge edge-t" @mousedown.stop="onResizeStart('t', $event)" @touchstart.stop="onResizeStart('t', $event)"></div>
-                <div class="edge edge-b" @mousedown.stop="onResizeStart('b', $event)" @touchstart.stop="onResizeStart('b', $event)"></div>
-                <div class="edge edge-l" @mousedown.stop="onResizeStart('l', $event)" @touchstart.stop="onResizeStart('l', $event)"></div>
-                <div class="edge edge-r" @mousedown.stop="onResizeStart('r', $event)" @touchstart.stop="onResizeStart('r', $event)"></div>
+
+                <!-- 四角裝飾 -->
+                <div class="corner tl"></div>
+                <div class="corner tr"></div>
+                <div class="corner bl"></div>
+                <div class="corner br"></div>
               </div>
             </template>
-            
+
             <!-- 載入中 -->
             <div v-else class="cropper-loading">
               <div class="spinner"></div>
               <p>載入中...</p>
             </div>
           </div>
-          
+
+          <!-- 底部控制列 -->
+          <div class="cropper-footer">
+            <button class="cropper-btn reset" @click="resetTransform">
+              重置
+            </button>
+            <div class="zoom-control">
+              <span class="zoom-label">縮放</span>
+              <input
+                type="range"
+                :min="minScale"
+                :max="maxScale"
+                step="0.01"
+                :value="imageTransform.scale"
+                @input="onZoomSliderInput"
+                class="zoom-slider"
+              />
+              <span class="zoom-value">{{ zoomPercent }}%</span>
+            </div>
+          </div>
+
           <!-- 隱藏的 canvas -->
           <canvas ref="canvasRef" class="hidden-canvas"></canvas>
         </div>
@@ -414,7 +494,6 @@ const maskPath = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  // 使用 dvh 適配手機地址欄收合
   height: 100dvh;
   height: 100vh; // fallback
 }
@@ -425,7 +504,6 @@ const maskPath = computed(() => {
   display: flex;
   flex-direction: column;
   background: #1a1a1a;
-  // 安全區域 padding，避開瀏海和底部橫條
   padding-top: var(--safe-top, env(safe-area-inset-top, 0px));
   padding-bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
   padding-left: var(--safe-left, env(safe-area-inset-left, 0px));
@@ -456,17 +534,26 @@ const maskPath = computed(() => {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
-  
+
   &.cancel {
     background: transparent;
     color: #888;
     &:hover { color: white; }
   }
-  
+
   &.confirm {
     background: var(--color-primary, #7DD3A8);
     color: white;
     &:hover { transform: scale(1.02); }
+  }
+
+  &.reset {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ccc;
+    padding: 6px 12px;
+    font-size: 13px;
+    border-radius: 6px;
+    &:hover { background: rgba(255, 255, 255, 0.2); }
   }
 }
 
@@ -474,12 +561,21 @@ const maskPath = computed(() => {
   flex: 1;
   position: relative;
   overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .cropper-image {
   position: absolute;
-  object-fit: contain;
-  pointer-events: none;
+  object-fit: fill;
+  pointer-events: auto;
+  cursor: grab;
+  will-change: transform;
+
+  &:active {
+    cursor: grabbing;
+  }
 }
 
 .cropper-mask {
@@ -490,20 +586,21 @@ const maskPath = computed(() => {
   pointer-events: none;
 }
 
-.crop-box {
+.crop-viewport {
   position: absolute;
-  border: 2px solid white;
-  cursor: move;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3);
 }
 
 .grid-lines {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  
+
   .grid-line {
     position: absolute;
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.2);
     &.h { left: 0; right: 0; height: 1px; }
     &.v { top: 0; bottom: 0; width: 1px; }
   }
@@ -514,20 +611,70 @@ const maskPath = computed(() => {
   width: 20px;
   height: 20px;
   border: 3px solid white;
-  
-  &.tl { top: -2px; left: -2px; border-right: none; border-bottom: none; cursor: nw-resize; }
-  &.tr { top: -2px; right: -2px; border-left: none; border-bottom: none; cursor: ne-resize; }
-  &.bl { bottom: -2px; left: -2px; border-right: none; border-top: none; cursor: sw-resize; }
-  &.br { bottom: -2px; right: -2px; border-left: none; border-top: none; cursor: se-resize; }
+
+  &.tl { top: -2px; left: -2px; border-right: none; border-bottom: none; }
+  &.tr { top: -2px; right: -2px; border-left: none; border-bottom: none; }
+  &.bl { bottom: -2px; left: -2px; border-right: none; border-top: none; }
+  &.br { bottom: -2px; right: -2px; border-left: none; border-top: none; }
 }
 
-.edge {
-  position: absolute;
-  
-  &.edge-t { top: -4px; left: 20px; right: 20px; height: 8px; cursor: n-resize; }
-  &.edge-b { bottom: -4px; left: 20px; right: 20px; height: 8px; cursor: s-resize; }
-  &.edge-l { left: -4px; top: 20px; bottom: 20px; width: 8px; cursor: w-resize; }
-  &.edge-r { right: -4px; top: 20px; bottom: 20px; width: 8px; cursor: e-resize; }
+.cropper-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #1a1a1a;
+  flex-shrink: 0;
+}
+
+.zoom-control {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zoom-label {
+  font-size: 12px;
+  color: #888;
+  white-space: nowrap;
+}
+
+.zoom-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  outline: none;
+
+  &::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--color-primary, #7DD3A8);
+    cursor: pointer;
+  }
+
+  &::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--color-primary, #7DD3A8);
+    cursor: pointer;
+    border: none;
+  }
+}
+
+.zoom-value {
+  font-size: 12px;
+  color: #ccc;
+  min-width: 40px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .cropper-loading {
@@ -539,7 +686,7 @@ const maskPath = computed(() => {
   justify-content: center;
   color: white;
   gap: 16px;
-  
+
   .spinner {
     width: 40px;
     height: 40px;
@@ -548,7 +695,7 @@ const maskPath = computed(() => {
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
-  
+
   p { font-size: 14px; color: #888; }
 }
 
