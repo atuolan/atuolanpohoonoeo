@@ -35,6 +35,7 @@ export interface BatchCommentsParams {
   minComments?: number;
   maxComments?: number;
   useStreaming?: boolean;
+  useStreamingWindow?: boolean;
   passerbyOnly?: boolean;
   chatContext?: Record<string, string>;
   replyToCharacterId?: string;
@@ -61,22 +62,15 @@ export async function generateBatchComments(
     existingComments = [],
     minComments = 3,
     maxComments = 8,
-    useStreaming = true,
+    useStreaming,
+    useStreamingWindow: useStreamingWindowOverride,
     passerbyOnly = false,
     chatContext = {},
     replyToCharacterId,
   } = params;
 
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log("💬 批量評論生成 - 開始");
-  console.log(`角色數量: ${characters.length}`);
-  console.log(`貼文作者: ${post.username}`);
-  console.log(`流式輸出: ${useStreaming}`);
-  console.log(`僅路人模式: ${passerbyOnly}`);
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-  // 獲取流式輸出窗口
-  const streamingWindow = useStreaming ? useStreamingWindow() : null;
+  let streamingWindow: ReturnType<typeof useStreamingWindow> | null = null;
+  let unbindAbort: (() => void) | null = null;
 
   try {
     const settingsStore = useSettingsStore();
@@ -87,6 +81,20 @@ export async function generateBatchComments(
     if (!taskConfig.api.apiKey) {
       return { success: false, comments: [], error: "API Key 未設定" };
     }
+
+    const isStreamingEnabled = useStreaming ?? !!taskConfig.generation.streamingEnabled;
+    const shouldUseWindow =
+      isStreamingEnabled &&
+      (useStreamingWindowOverride ?? !!taskConfig.generation.useStreamingWindow);
+
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("💬 批量評論生成 - 開始");
+    console.log(`角色數量: ${characters.length}`);
+    console.log(`貼文作者: ${post.username}`);
+    console.log(`流式輸出: ${isStreamingEnabled}`);
+    console.log(`流式窗口: ${shouldUseWindow}`);
+    console.log(`僅路人模式: ${passerbyOnly}`);
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     // 構建 API 設定對象
     const apiSettings = {
@@ -131,69 +139,87 @@ export async function generateBatchComments(
 
     const messages: APIMessage[] = [{ role: "user", content: messageContent }];
 
-    // 如果使用流式輸出，顯示窗口
-    if (streamingWindow) {
+    const generationSettings = {
+      maxContextLength: taskConfig.generation.maxContextLength,
+      maxResponseLength: taskConfig.generation.maxTokens,
+      temperature: taskConfig.generation.temperature,
+      topP: taskConfig.generation.topP,
+      topK: 0,
+      frequencyPenalty: taskConfig.generation.frequencyPenalty,
+      presencePenalty: taskConfig.generation.presencePenalty,
+      repetitionPenalty: 1,
+      stopSequences: [],
+      streaming: isStreamingEnabled,
+      useStreamingWindow: shouldUseWindow,
+    };
+
+    const controller = new AbortController();
+    if (shouldUseWindow) {
+      streamingWindow = useStreamingWindow();
       streamingWindow.show(apiSettings.model || "AI");
+      streamingWindow.setPromptContent([
+        {
+          role: "user",
+          content: typeof messageContent === "string" ? messageContent : prompt,
+          name: "噗浪批量評論提示詞",
+          identifier: "qzoneBatchCommentsPrompt",
+        },
+      ]);
+      unbindAbort = streamingWindow.bindAbortController(controller);
     }
 
     let fullContent = "";
+    let tokenUsage:
+      | { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+      | undefined;
 
-    if (useStreaming && streamingWindow) {
+    if (isStreamingEnabled) {
       // 流式生成
       const stream = await client.generateStream({
         messages,
-        settings: {
-          maxContextLength: taskConfig.generation.maxContextLength,
-          maxResponseLength: taskConfig.generation.maxTokens,
-          temperature: taskConfig.generation.temperature,
-          topP: taskConfig.generation.topP,
-          topK: 0,
-          frequencyPenalty: taskConfig.generation.frequencyPenalty,
-          presencePenalty: taskConfig.generation.presencePenalty,
-          repetitionPenalty: 1,
-          stopSequences: [],
-          streaming: true,
-          useStreamingWindow: true,
-        },
+        settings: generationSettings,
         apiSettings,
+        signal: controller.signal,
       });
 
       // 處理流式響應
       for await (const chunk of stream) {
         if (chunk.type === "token" && chunk.token) {
           fullContent += chunk.token;
-          streamingWindow.appendToken(chunk.token);
+          if (streamingWindow) streamingWindow.appendToken(chunk.token);
         } else if (chunk.type === "done") {
-          // 使用 done 事件的完整內容作為 fallback
-          if (!fullContent && chunk.content) {
+          if (chunk.content) {
             fullContent = chunk.content;
           }
+          const usage = (chunk as { usage?: typeof tokenUsage }).usage;
+          if (usage) tokenUsage = usage;
         } else if (chunk.type === "error") {
           throw new Error(chunk.error || "流式生成失敗");
         }
       }
-
-      streamingWindow.setComplete();
     } else {
       // 非流式生成
       const result = await client.generate({
         messages,
-        settings: {
-          maxContextLength: taskConfig.generation.maxContextLength,
-          maxResponseLength: taskConfig.generation.maxTokens,
-          temperature: taskConfig.generation.temperature,
-          topP: taskConfig.generation.topP,
-          topK: 0,
-          frequencyPenalty: taskConfig.generation.frequencyPenalty,
-          presencePenalty: taskConfig.generation.presencePenalty,
-          repetitionPenalty: 1,
-          stopSequences: [],
-          streaming: false,
-          useStreamingWindow: false,
-        },
+        settings: generationSettings,
         apiSettings,
+        signal: controller.signal,
       });
       fullContent = result.content;
+      if (result.tokenCount) {
+        tokenUsage = {
+          prompt_tokens: result.tokenCount.prompt,
+          completion_tokens: result.tokenCount.completion,
+          total_tokens: result.tokenCount.total,
+        };
+      }
+    }
+
+    if (streamingWindow && tokenUsage) {
+      streamingWindow.setUsage(tokenUsage);
+    }
+    if (streamingWindow) {
+      streamingWindow.setComplete();
     }
 
     console.log("📥 批量評論 - AI 原始響應:");
@@ -226,6 +252,9 @@ export async function generateBatchComments(
       comments: [],
       error: error instanceof Error ? error.message : String(error),
     };
+  } finally {
+    unbindAbort?.();
+    streamingWindow?.clearAbortBinding();
   }
 }
 
@@ -293,7 +322,7 @@ function buildBatchCommentsPrompt(params: {
   // 判斷發文人身份，給 AI 明確說明
   let postAuthorIdentityNote = "";
   if (post.authorType === "user") {
-    postAuthorIdentityNote = `\n⚠️ 重要：「${post.username}」是真實用戶（玩家本人），不是 AI 角色。角色在評論時應該把他當作真實的人來互動。`;
+    postAuthorIdentityNote = `\n⚠️ 重要：「${post.username}」是這則噗浪的發文人（真實用戶／玩家 persona），但不一定是每個角色私聊記錄裡的 {{user}}。角色評論時可以回應發文人，卻不能把發文人自動等同於自己的私聊對象。`;
   } else if (postAuthorIsCharacter) {
     postAuthorIdentityNote = `\n⚠️ 重要：「${post.username}」是 AI 角色，不是用戶。如果 ${post.username} 要評論，必須用第一人稱（我、我的），因為這是他自己發的貼文。其他角色應該把 ${post.username} 當作同伴角色，而不是用戶。`;
   } else {
@@ -368,10 +397,10 @@ ${existingCommentsPrompt}
       .map(([charId, context]) => {
         const char = characters.find((c) => c.id === charId);
         const charName = char?.name || "角色";
-        return `## ${charName} 與玩家的最近私聊：\n${context}`;
+        return `## ${charName} 的專屬最近私聊記憶\n${context}`;
       })
       .join("\n\n");
-    chatContextSection = `\n# 角色與玩家的私聊記錄（僅供參考角色記憶，玩家不一定是本貼文的發文人）\n注意：以下聊天記錄中的「用戶/玩家」是指與角色私聊的那個人，不一定是本貼文的作者。請根據貼文作者身份欄位判斷發文人是誰。\n\n${perCharSections}\n`;
+    chatContextSection = `\n# 各角色的專屬私聊記憶（嚴格身份邊界）\n重要規則：\n1. 每個區塊只屬於標題中的那一個角色，不能拿 A 角色的私聊 {{user}} 當成 B 角色的私聊對象。\n2. 「此角色的私聊 {{user}}」只代表該角色聊天記錄裡的使用者 persona；不等於噗浪發文人、留言者、被回覆者或路人，除非名稱與身份資訊明確相同。\n3. 生成評論時，請把「噗浪發文人／已有評論作者」與「角色私聊 {{user}}」分開理解：前者用貼文與評論欄位判斷，後者只作為角色記憶與口吻參考。\n4. 如果角色提到私聊記憶，必須以該角色自己的私聊對象為準，不要把當前發言人或回覆目標替換成私聊對象。\n\n${perCharSections}\n`;
   }
 
   // 構建被回覆角色的優先指示
@@ -383,7 +412,7 @@ ${existingCommentsPrompt}
       ? `${replyToChar.name} 的貼文`
       : `${replyToChar?.name} 的評論`;
   const replyPrioritySection = replyToChar
-    ? `\n# ⚠️ 重要：優先回覆指示\n用戶正在回覆 ${replyTargetDescription}。**${replyToChar.name} 必須是第一個回覆的角色（c1）**，直接回應用戶的最新評論。其他角色的評論排在後面。\n`
+    ? `\n# ⚠️ 重要：優先回覆指示\n用戶正在回覆 ${replyTargetDescription}。**${replyToChar.name} 必須是第一個回覆的角色（c1）**，直接回應用戶的最新評論。這裡的「用戶」是噗浪留言者／回覆操作者，不代表 ${replyToChar.name} 私聊記錄中的 {{user}}，除非身份資訊明確相同。其他角色的評論排在後面。\n`
     : "";
 
   // 正常模式（有角色參與）
@@ -395,6 +424,7 @@ ${existingCommentsPrompt}
 3. 評論必須是純文字，禁止任何動作描述（如「（微笑）」「*轉筆*」）
 4. 使用繁體中文，口語化表達
 5. 如果角色使用外語，只在外語部分後加括號翻譯
+6. 噗浪作者、已有評論作者、被回覆者、路人、以及各角色私聊中的 {{user}} 是不同身份欄位；不得因為看到「用戶／玩家」就自動合併。
 ${replyPrioritySection}
 # 評論區角色
 

@@ -142,7 +142,7 @@ export function buildCharactersPrompt(
       }
       info += `\n性格：${char.personality}\n簡介：${char.description}`;
       if (char.boundUserName) {
-        info += `\n綁定用戶：${char.boundUserName}（這是與 ${char.name} 私聊的玩家，不一定是本貼文的發文人）`;
+        info += `\n專屬私聊 {{user}}：${char.boundUserName}（這是與 ${char.name} 私聊的玩家 persona；不要自動等同於噗浪發文人、留言者或被回覆者）`;
       }
       if (isAuthor) {
         info += "\n⚠️ 這是貼文作者，評論時必須用第一人稱";

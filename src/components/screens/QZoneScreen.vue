@@ -2118,8 +2118,12 @@
 </template>
 
 <script setup lang="ts">
-import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
+import { OpenAICompatibleClient, type APIMessage } from "@/api/OpenAICompatible";
 import StickerPanel from "@/components/common/StickerPanel.vue";
+import {
+  useStreamingWindow,
+  type PromptDebugMessage,
+} from "@/composables/useStreamingWindow";
 import { getDatabase } from "@/db/database";
 import { useBatchComments } from "@/composables/useBatchComments";
 import { loadMessages } from "@/storage/chatMessageStorage";
@@ -2165,6 +2169,7 @@ const chatStore = useChatStore();
 const promptManagerStore = usePromptManagerStore();
 const userStore = useUserStore();
 const aiGenerationStore = useAIGenerationStore();
+const streamingWindow = useStreamingWindow();
 
 // 封鎖角色 ID 集合（用於過濾 QZone 動態）
 const blockedCharacterIds = ref<Set<string>>(new Set());
@@ -2813,7 +2818,6 @@ async function publishPost() {
       const allCharIds = charactersStore.characters.map((c) => c.id);
       const chatCtx = await buildChatContextForComments(allCharIds);
       const result = await batchGenerateComments(newPost.id, undefined, {
-        useStreaming: false,
         chatContext: chatCtx,
       });
       if (result.success) {
@@ -3034,7 +3038,6 @@ async function submitDetailComment() {
       const chatCtx = await buildChatContextForComments(allCharIds);
 
       const result = await batchGenerateComments(postId, undefined, {
-        useStreaming: false,
         includeExistingComments: true, // 帶上歷史對話
         replyToCharacterId: priorityCharacterId,
         chatContext: chatCtx,
@@ -3101,11 +3104,17 @@ async function buildChatContextForComments(
 
     for (const charId of ids) {
       // 用 by-character 索引查該角色的所有聊天
-      const chats = await db.getAllFromIndex("chats", "by-character", charId) as Chat[];
+      const chats = (await db.getAllFromIndex(
+        "chats",
+        "by-character",
+        charId,
+      )) as Chat[];
       if (!chats || chats.length === 0) continue;
 
       // 按 updatedAt 降序排列，取最新的聊天
-      chats.sort((a: Chat, b: Chat) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      chats.sort(
+        (a: Chat, b: Chat) => (b.updatedAt || 0) - (a.updatedAt || 0),
+      );
       const latestChat = chats[0];
 
       // v24：從 chatMessages 表載入訊息
@@ -3118,13 +3127,38 @@ async function buildChatContextForComments(
         charactersStore.characters.find((c) => c.id === charId)?.data?.name ||
         latestChat.name ||
         "角色";
+      const chatLockedPersonaId =
+        latestChat.metadata?.personaOverride?.personaId ?? null;
+      const resolvedPersonaId = userStore.resolvePersonaForChat(
+        charId,
+        chatLockedPersonaId,
+      );
+      const privateChatPersona = resolvedPersonaId
+        ? userStore.personas.find((p) => p.id === resolvedPersonaId)
+        : null;
+      const privateChatUserName =
+        privateChatPersona?.name ||
+        recentMsgs.find((msg) => msg.sender === "user" && msg.name)?.name ||
+        userStore.currentPersona?.name ||
+        userName.value ||
+        "私聊對象";
 
-      const contextStr = recentMsgs
+      const messageLines = recentMsgs
         .map((msg) => {
           const role =
-            msg.sender === "user" ? userName.value : msg.name || charName;
+            msg.sender === "user" ? privateChatUserName : msg.name || charName;
           return `${role}: ${msg.content}`;
         })
+        .join("\n");
+
+      const contextStr = [
+        `【角色】${charName}`,
+        `【此角色的私聊 {{user}}】${privateChatUserName}`,
+        `【身份邊界】${privateChatUserName} 只代表 ${charName} 最近私聊中的 {{user}}；不要把噗浪發文人、留言者或被回覆者自動當成這個私聊對象，除非名稱與身份資訊明確相同。`,
+        "【最近私聊內容】",
+        messageLines,
+      ]
+        .filter(Boolean)
         .join("\n");
 
       if (contextStr) {
@@ -3586,7 +3620,6 @@ async function startAutoScan() {
       minComments: characterIds.length,
       maxComments: characterIds.length * 2,
       includeExistingComments: true,
-      useStreaming: false,
       chatContext: chatCtx,
     });
 
@@ -3675,7 +3708,6 @@ async function executeManualScan() {
         minComments: selectedCharacterIds.value.length,
         maxComments: selectedCharacterIds.value.length * 2,
         includeExistingComments: true,
-        useStreaming: false,
         chatContext: chatCtx,
       },
     );
@@ -3806,21 +3838,29 @@ async function generateAIContent(
     }
   }
 
-  // 組裝原始 messages 陣列
-  const rawMessages: Array<{
-    role: "system" | "user" | "assistant";
-    content: string;
-  }> = [];
+  const rawMessages: APIMessage[] = [];
+  const promptDebugMessages: PromptDebugMessage[] = [];
+  const addMessage = (
+    role: "system" | "user" | "assistant",
+    content: string,
+    name: string,
+    identifier?: string,
+  ) => {
+    rawMessages.push({ role, content });
+    promptDebugMessages.push({ role, content, name, identifier });
+  };
 
   // 角色資訊作為第一個 system message
   if (charDescription || charPersonality) {
-    rawMessages.push({
-      role: "system",
-      content: `【角色資訊】
+    addMessage(
+      "system",
+      `【角色資訊】
 角色名稱：${charName}
 ${charDescription ? `角色描述：${charDescription}` : ""}
 ${charPersonality ? `角色性格：${charPersonality}` : ""}`,
-    });
+      "噗浪角色資訊",
+      "qzoneCharacterInfo",
+    );
   }
 
   if (type === "post") {
@@ -3835,20 +3875,18 @@ ${charPersonality ? `角色性格：${charPersonality}` : ""}`,
         (p) => p.identifier === orderEntry.identifier,
       );
       if (prompt && prompt.content) {
-        // 替換 {{char}} 宏
-        let content = prompt.content
+        const content = prompt.content
           .replace(/\{\{char\}\}/gi, charName)
           .replace(/\{\{user\}\}/gi, userName.value);
 
-        // 根據提示詞的 role 設定
         const role = prompt.role === "user" ? "user" : "system";
-        rawMessages.push({ role, content });
+        addMessage(role, content, prompt.name, prompt.identifier);
       }
     }
 
     // 加入對話上下文
     if (chatContextStr) {
-      rawMessages.push({ role: "system", content: chatContextStr });
+      addMessage("system", chatContextStr, "噗浪對話上下文", "qzoneChatContext");
     }
 
     // 獲取最近的動態作為參考（避免重複）
@@ -3857,17 +3895,21 @@ ${charPersonality ? `角色性格：${charPersonality}` : ""}`,
       const recentPostsStr = recentPosts
         .map((p) => `- ${p.username}: ${p.content}`)
         .join("\n");
-      rawMessages.push({
-        role: "system",
-        content: `【最近動態（請勿重複類似內容）】\n${recentPostsStr}`,
-      });
+      addMessage(
+        "system",
+        `【最近動態（請勿重複類似內容）】\n${recentPostsStr}`,
+        "噗浪最近動態",
+        "qzoneRecentPosts",
+      );
     }
 
     // 最後的 user prompt
-    rawMessages.push({
-      role: "user",
-      content: `請以 ${charName} 的身份發一條動態，分享你的想法、心情或日常。`,
-    });
+    addMessage(
+      "user",
+      `請以 ${charName} 的身份發一條動態，分享你的想法、心情或日常。`,
+      "噗浪發文最終指令",
+      "qzoneFinalPostInstruction",
+    );
   } else if (type === "comment" && targetPost) {
     // 使用 promptManagerStore 的噗浪評論提示詞
     const plurkCommentPrompts = promptManagerStore.plurkCommentPrompts;
@@ -3880,86 +3922,139 @@ ${charPersonality ? `角色性格：${charPersonality}` : ""}`,
         (p) => p.identifier === orderEntry.identifier,
       );
       if (prompt && prompt.content) {
-        let content = prompt.content
+        const content = prompt.content
           .replace(/\{\{char\}\}/gi, charName)
           .replace(/\{\{user\}\}/gi, userName.value);
 
         const role = prompt.role === "user" ? "user" : "system";
-        rawMessages.push({ role, content });
+        addMessage(role, content, prompt.name, prompt.identifier);
       }
     }
 
     if (chatContextStr) {
-      rawMessages.push({ role: "system", content: chatContextStr });
+      addMessage("system", chatContextStr, "噗浪對話上下文", "qzoneChatContext");
     }
 
     const postAuthor = targetPost.username || "某人";
     const postContent = targetPost.content || "";
-    rawMessages.push({
-      role: "user",
-      content: `${postAuthor} 發了一條動態：「${postContent}」
+    addMessage(
+      "user",
+      `${postAuthor} 發了一條動態：「${postContent}」
 請以 ${charName} 的身份回覆這條動態。只輸出評論內容，不要包含任何格式標籤。`,
-    });
+      "噗浪回覆最終指令",
+      "qzoneFinalCommentInstruction",
+    );
   }
 
   // 整合相連的相同 role 的訊息
-  const messages: Array<{
-    role: "system" | "user" | "assistant";
-    content: string;
-  }> = [];
+  const messages: APIMessage[] = [];
   for (const msg of rawMessages) {
     if (
+      typeof msg.content === "string" &&
       messages.length > 0 &&
-      messages[messages.length - 1].role === msg.role
+      messages[messages.length - 1].role === msg.role &&
+      typeof messages[messages.length - 1].content === "string"
     ) {
-      // 相同 role，合併內容
       messages[messages.length - 1].content += "\n\n" + msg.content;
     } else {
-      // 不同 role，新增訊息
       messages.push({ ...msg });
     }
   }
 
-  try {
-    // 使用備用 API 配置（如果有設定的話）
-    const apiConfig = taskConfig.api;
-    const genConfig = taskConfig.generation || settingsStore.generation;
-    const client = new OpenAICompatibleClient(apiConfig);
+  const apiConfig = taskConfig.api;
+  const genConfig = taskConfig.generation || settingsStore.generation;
+  const isStreamingEnabled = !!genConfig.streamingEnabled;
+  const useWindow = isStreamingEnabled && !!genConfig.useStreamingWindow;
+  const controller = new AbortController();
+  const unbindAbort = useWindow
+    ? streamingWindow.bindAbortController(controller)
+    : null;
 
-    // 使用 settings 中的 maxTokens
-    const maxTokens = genConfig?.maxTokens || 8192;
+  try {
+    const client = new OpenAICompatibleClient(apiConfig);
+    const generationSettings = {
+      maxContextLength: genConfig.maxContextLength || 128000,
+      maxResponseLength: genConfig.maxTokens || 8192,
+      temperature: genConfig.temperature || 0.9,
+      topP: genConfig.topP || 0.95,
+      topK: 0,
+      frequencyPenalty: genConfig.frequencyPenalty || 0,
+      presencePenalty: genConfig.presencePenalty || 0,
+      repetitionPenalty: 1,
+      stopSequences: [],
+      streaming: isStreamingEnabled,
+      useStreamingWindow: useWindow,
+    };
+
+    if (useWindow) {
+      streamingWindow.show(apiConfig.model || "AI");
+      streamingWindow.setPromptContent(promptDebugMessages);
+    }
 
     let result = "";
-    const streamGenerator = client.generateStream({
-      messages,
-      settings: {
-        maxContextLength: genConfig?.maxContextLength || 128000,
-        maxResponseLength: maxTokens,
-        temperature: genConfig?.temperature || 0.9,
-        topP: genConfig?.topP || 0.95,
-        topK: 0,
-        frequencyPenalty: genConfig?.frequencyPenalty || 0,
-        presencePenalty: genConfig?.presencePenalty || 0,
-        repetitionPenalty: 1,
-        stopSequences: [],
-        streaming: true,
-        useStreamingWindow: false,
-      },
-      apiSettings: apiConfig,
-    });
+    let tokenUsage:
+      | { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+      | undefined;
 
-    for await (const event of streamGenerator) {
-      if (event.type === "token" && event.token) {
-        result += event.token;
-      } else if (event.type === "done" && event.content) {
-        result = event.content;
+    if (isStreamingEnabled) {
+      const streamGenerator = client.generateStream({
+        messages,
+        settings: generationSettings,
+        apiSettings: apiConfig,
+        signal: controller.signal,
+      });
+
+      for await (const event of streamGenerator) {
+        if (event.type === "token" && event.token) {
+          result += event.token;
+          if (useWindow) streamingWindow.appendToken(event.token);
+        } else if (event.type === "done") {
+          if (event.content) result = event.content;
+          const usage = (event as { usage?: typeof tokenUsage }).usage;
+          if (usage) tokenUsage = usage;
+        } else if (event.type === "error") {
+          throw new Error(event.error || "噗浪生成失敗");
+        }
       }
+    } else {
+      const generated = await client.generate({
+        messages,
+        settings: generationSettings,
+        apiSettings: apiConfig,
+        signal: controller.signal,
+      });
+      result = generated.content;
+      if (generated.tokenCount) {
+        tokenUsage = {
+          prompt_tokens: generated.tokenCount.prompt,
+          completion_tokens: generated.tokenCount.completion,
+          total_tokens: generated.tokenCount.total,
+        };
+      }
+    }
+
+    if (useWindow && tokenUsage) {
+      streamingWindow.setUsage(tokenUsage);
+    }
+    if (useWindow) {
+      streamingWindow.setComplete();
     }
 
     return result.trim();
   } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
     console.error("生成 AI 內容失敗:", error);
+    if (useWindow) {
+      if ((error as { name?: string })?.name === "AbortError") {
+        streamingWindow.setComplete();
+      } else {
+        streamingWindow.setError(errorMsg);
+      }
+    }
     return null;
+  } finally {
+    unbindAbort?.();
+    if (useWindow) streamingWindow.clearAbortBinding();
   }
 }
 

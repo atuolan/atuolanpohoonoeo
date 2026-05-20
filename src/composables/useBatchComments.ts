@@ -136,12 +136,11 @@ export function useBatchComments() {
 
       // 準備角色資料（可能為空陣列，表示只有路人評論）
       const characterData = characters.map((char) => {
-        // 找出綁定了此角色的 persona，取第一個的名稱
-        const boundPersonaIds = userStore.getPersonasByBoundCharacter(char.id);
-        const boundPersona =
-          boundPersonaIds.length > 0
-            ? userStore.personas.find((p) => p.id === boundPersonaIds[0])
-            : null;
+        // 與聊天系統一致：優先使用角色／聊天解析出的 persona，而不是把貼文作者當作私聊對象
+        const resolvedPersonaId = userStore.resolvePersonaForChat(char.id);
+        const boundPersona = resolvedPersonaId
+          ? userStore.personas.find((p) => p.id === resolvedPersonaId)
+          : null;
         return {
           id: char.id,
           name: char.data?.name || char.nickname || "未知角色",
@@ -172,7 +171,7 @@ export function useBatchComments() {
         maxComments:
           options?.maxComments ??
           (passerbyOnly ? 5 : Math.max(characters.length * 2, 8)),
-        useStreaming: options?.useStreaming ?? false,
+        useStreaming: options?.useStreaming,
         passerbyOnly, // 傳遞路人模式標記
         chatContext: selectedChatContext,
         replyToCharacterId: options?.replyToCharacterId,
@@ -238,7 +237,6 @@ export function useBatchComments() {
 
       return await generateCommentsForPost(postId, characterIds, {
         includeExistingComments: false,
-        useStreaming: false,
       });
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
