@@ -1182,8 +1182,10 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
  * 用於過濾掉移除 PLURKPOST 等標籤後變成空白的訊息
  */
 function isNonEmptyMessage(msg: ParsedMessage): boolean {
-  const hasContent = !!(
-    msg.content ||
+  const hasTextContent =
+    typeof msg.content === "string" && msg.content.trim().length > 0;
+
+  const hasSpecialContent = !!(
     msg.isHtmlBlock ||
     msg.isTimetravel ||
     msg.isRedpacket ||
@@ -1201,12 +1203,7 @@ function isNonEmptyMessage(msg: ParsedMessage): boolean {
     msg.isCoupleAvatar
   );
 
-  // 調試日誌：記錄空消息過濾
-  if (!hasContent) {
-    console.log("[ResponseParser] Filtering out empty message:", msg);
-  }
-
-  return hasContent;
+  return hasTextContent || hasSpecialContent;
 }
 
 /**

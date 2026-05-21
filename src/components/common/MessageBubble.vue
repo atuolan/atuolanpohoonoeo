@@ -1541,6 +1541,52 @@ const transferHasVisibleContent = computed(() => {
   return renderedContent.value.trim().length > 0;
 });
 
+function hasVisibleRenderedBody(html: string): boolean {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<br\s*\/?\s*>/gi, "")
+    .replace(/<\/p>\s*<p>/gi, " ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim().length > 0;
+}
+
+const renderedContentHasVisibleBody = computed(() => {
+  const html = renderedContent.value;
+  return !!regexHtmlDoc.value || !!regexInlineHtml.value || hasVisibleRenderedBody(html);
+});
+
+const hasSpecialBubbleBody = computed(() => {
+  return !!(
+    props.isTimetravel ||
+    props.isRedpacket ||
+    props.isGift ||
+    props.isGroupChatHistory ||
+    props.isTransfer ||
+    props.isWaimaiShare ||
+    props.isWaimaiPaymentRequest ||
+    props.isWaimaiPaymentResult ||
+    props.isWaimaiDelivery ||
+    props.isMusicShare ||
+    props.isHtmlBlock ||
+    props.isPrivateMessage ||
+    props.messageType === "image" ||
+    props.messageType === "image-url" ||
+    props.messageType === "audio" ||
+    hasTTSSegments.value ||
+    hasTTSLegacy.value ||
+    canRegenerateImage.value
+  );
+});
+
+const shouldRenderMessageBubble = computed(() => {
+  if (props.isStreaming) return true;
+  if (hasMedia.value) return messageParts.value.length > 0;
+  return hasSpecialBubbleBody.value || renderedContentHasVisibleBody.value;
+});
+
 // 解析消息中的圖片和表情包標記
 interface MessagePart {
   type: "text" | "image" | "sticker";
@@ -3418,7 +3464,7 @@ const showTextVoiceTranscript = ref(true);
 
         <!-- 氣泡（位置消息與模式邀請卡片不顯示氣泡） -->
         <div
-          v-if="!isLocation && !isWeatherShare && !isFriendRequest && !isFaceToFaceRequest && !isOnlineModeRequest"
+          v-if="shouldRenderMessageBubble && !isLocation && !isWeatherShare && !isFriendRequest && !isFaceToFaceRequest && !isOnlineModeRequest"
           v-show="!hideSplitSourceBubble"
           class="bubble"
           :class="{
