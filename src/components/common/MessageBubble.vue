@@ -1610,7 +1610,8 @@ const messageParts = computed<MessagePart[]>(() => {
   let content = props.content;
   const parts: MessagePart[] = [];
 
-  if (typeof content !== "string") return parts;
+  if (content === undefined || content === null) return parts;
+  if (typeof content !== "string") content = String(content);
 
   // 移除轉帳相關標籤
   content = content.replace(/<pay>[\s\S]*?<\/pay>/gi, "").trim();
@@ -1697,10 +1698,10 @@ const messageParts = computed<MessagePart[]>(() => {
 // 預先解析 messageParts 中文字部分的 Markdown，避免在模板中重複呼叫 marked.parse
 const parsedTextParts = computed(() => {
   return messageParts.value.map((part) => {
-    if (part.type === "text" && part.text) {
-      return marked.parse(replaceDisplayMacros(part.text)) as string;
+    if (!part || part.type !== "text" || typeof part.text !== "string" || !part.text) {
+      return "";
     }
-    return "";
+    return marked.parse(replaceDisplayMacros(part.text)) as string;
   });
 });
 

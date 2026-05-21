@@ -15,6 +15,56 @@ interface StoredToUiMessageDeps {
   syncModeRequestFieldsFromContent: (message: ChatScreenMessage, content: string) => void;
 }
 
+function normalizeMessageContent(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value === undefined || value === null) return "";
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => normalizeMessageContent(item))
+      .filter((text) => text.trim())
+      .join("\n");
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if ("text" in record) return normalizeMessageContent(record.text);
+    if ("content" in record) return normalizeMessageContent(record.content);
+    if ("mes" in record) return normalizeMessageContent(record.mes);
+    if ("message" in record) return normalizeMessageContent(record.message);
+  }
+  return "";
+}
+
+function normalizeSwipeList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const swipes = value
+    .map((item) => normalizeMessageContent(item))
+    .filter((text) => text.trim());
+  return swipes.length > 0 ? swipes : undefined;
+}
+
+function normalizeRoundSwipes(value: unknown): ChatScreenMessage[][] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const rounds = value
+    .map((round) => {
+      if (!Array.isArray(round)) return [];
+      return round
+        .filter((message): message is Record<string, unknown> => Boolean(message) && typeof message === "object")
+        .map((message) => {
+          const content = normalizeMessageContent(message.content ?? message.text ?? message.mes);
+          const swipes = normalizeSwipeList(message.swipes);
+          return {
+            ...message,
+            content,
+            swipes,
+          } as unknown as ChatScreenMessage;
+        })
+        .filter((message) => message.id || message.content.trim());
+    })
+    .filter((round) => round.length > 0);
+  return rounds.length > 0 ? rounds : undefined;
+}
+
 export function inferUiRoleFromStoredMessage(m: any): ChatScreenMessage["role"] {
   if (m.role === "user" || m.role === "ai" || m.role === "system") {
     return m.role;
@@ -29,10 +79,14 @@ export function convertStoredMessageToUiMessage(
   chat: Chat,
   deps: StoredToUiMessageDeps,
 ): ChatScreenMessage {
+  const normalizedContent = normalizeMessageContent((m as any).content ?? (m as any).text ?? (m as any).mes);
+  const normalizedSwipes = normalizeSwipeList((m as any).swipes);
+  const normalizedRoundSwipes = normalizeRoundSwipes((m as any).roundSwipes);
+
   let isGift = m.isGift;
   let giftName = m.giftName;
-  if (!isGift && m.content) {
-    const giftMatch = m.content.match(/<送禮物>([\s\S]*?)<\/送禮物>/i);
+  if (!isGift && normalizedContent) {
+    const giftMatch = normalizedContent.match(/<送禮物>([\s\S]*?)<\/送禮物>/i);
     if (giftMatch) {
       isGift = true;
       giftName = giftMatch[1].trim();
@@ -44,15 +98,15 @@ export function convertStoredMessageToUiMessage(
   let transferType = m.transferType;
   let transferNote = m.transferNote;
   let transferStatus = m.transferStatus;
-  if (!isTransfer && m.content) {
-    const oldTransferMatch = m.content.match(/<轉帳>(\d+)\s*金幣<\/轉帳>/i);
+  if (!isTransfer && normalizedContent) {
+    const oldTransferMatch = normalizedContent.match(/<轉帳>(\d+)\s*金幣<\/轉帳>/i);
     if (oldTransferMatch) {
       isTransfer = true;
       transferAmount = parseInt(oldTransferMatch[1], 10);
       transferType = "pay";
       transferStatus = "sent";
     }
-    const payMatch = m.content.match(/<pay>(\d+)(?::([^<]*?))?<\/pay>/i);
+    const payMatch = normalizedContent.match(/<pay>(\d+)(?::([^<]*?))?<\/pay>/i);
     if (payMatch) {
       isTransfer = true;
       transferAmount = parseInt(payMatch[1], 10);
@@ -60,7 +114,7 @@ export function convertStoredMessageToUiMessage(
       transferNote = payMatch[2]?.trim() || undefined;
       transferStatus = m.sender === "user" ? "sent" : transferStatus || "pending";
     }
-    const refundMatch = m.content.match(/<refund>(\d+)<\/refund>/i);
+    const refundMatch = normalizedContent.match(/<refund>(\d+)<\/refund>/i);
     if (refundMatch) {
       isTransfer = true;
       transferAmount = parseInt(refundMatch[1], 10);
@@ -71,8 +125,8 @@ export function convertStoredMessageToUiMessage(
 
   let isMusicShare = (m as any).isMusicShare;
   let musicShareData = (m as any).musicShareData;
-  if (!isMusicShare && m.content) {
-    const musicMatch = m.content.match(/<分享歌曲>([\s\S]*?)<\/分享歌曲>/i);
+  if (!isMusicShare && normalizedContent) {
+    const musicMatch = normalizedContent.match(/<分享歌曲>([\s\S]*?)<\/分享歌曲>/i);
     if (musicMatch) {
       isMusicShare = true;
       const parts = musicMatch[1].trim().split(" - ");
@@ -86,14 +140,16 @@ export function convertStoredMessageToUiMessage(
   const needsModeRequestCompat =
     !(m as any).isFaceToFaceRequest &&
     !(m as any).isOnlineModeRequest &&
-    typeof m.content === "string" &&
-    /<face-to-face-request\s|<online-mode-request\s/i.test(m.content);
+    normalizedContent.length > 0 &&
+    /<face-to-face-request\s|<online-mode-request\s/i.test(normalizedContent);
 
   const loadedMessage = {
     ...(m as any),
     id: m.id,
     role: inferUiRoleFromStoredMessage(m),
-    content: m.content,
+    content: normalizedContent,
+    swipes: normalizedSwipes,
+    roundSwipes: normalizedRoundSwipes,
     timestamp: m.createdAt,
     isGift,
     giftName,
@@ -141,7 +197,7 @@ export function convertStoredMessageToUiMessage(
   } as ChatScreenMessage;
 
   if (needsModeRequestCompat) {
-    deps.syncModeRequestFieldsFromContent(loadedMessage, loadedMessage.content);
+    deps.syncModeRequestFieldsFromContent(loadedMessage, normalizedContent);
   }
 
   return loadedMessage;
@@ -200,17 +256,15 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     name: role === "user" ? "User" : m.senderCharacterName || charName,
     content:
       m.isStreaming && role === "ai"
-        ? sanitizeStreamingContentForStorage(m.content || "")
-        : m.content,
+        ? sanitizeStreamingContentForStorage(normalizeMessageContent(m.content))
+        : normalizeMessageContent(m.content),
     is_user: role === "user",
     status: "sent" as const,
     createdAt: m.timestamp ?? m.createdAt ?? Date.now(),
     updatedAt: m.timestamp ?? m.updatedAt ?? m.createdAt ?? Date.now(),
-    swipes: m.swipes ? [...m.swipes] : undefined,
+    swipes: normalizeSwipeList(m.swipes),
     swipeId: m.swipeId,
-    roundSwipes: m.roundSwipes
-      ? JSON.parse(JSON.stringify(m.roundSwipes))
-      : undefined,
+    roundSwipes: normalizeRoundSwipes(m.roundSwipes),
     roundSwipeId: m.roundSwipeId,
     thought: m.thought,
     isTimetravel: m.isTimetravel,
