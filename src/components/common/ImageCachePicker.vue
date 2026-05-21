@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ImageCropper from "@/components/common/ImageCropper.vue";
 import { useImageCacheStore } from "@/stores";
 import type { CachedImage } from "@/types/imageCache";
 import { computed, onMounted, ref } from "vue";
@@ -30,6 +31,9 @@ const isLoadingUrl = ref(false);
 
 // 錯誤訊息
 const errorMessage = ref("");
+const showCropper = ref(false);
+const cropperImageSrc = ref("");
+const pendingFileName = ref("");
 
 // 排序後的圖片列表
 const sortedImages = computed(() => imageCacheStore.sortedImages);
@@ -63,15 +67,73 @@ async function handleFileUpload(event: Event) {
   errorMessage.value = "";
 
   try {
-    const image = await imageCacheStore.addImageFromFile(file);
-    emit("select", image.data);
-    emit("close");
+    if (!file.type.startsWith("image/")) {
+      throw new Error("請選擇圖片檔案");
+    }
+
+    cropperImageSrc.value = await readFileAsDataUrl(file);
+    pendingFileName.value = file.name;
+    showCropper.value = true;
   } catch (err) {
     errorMessage.value = (err as Error).message;
   } finally {
     isUploading.value = false;
     input.value = "";
   }
+}
+
+async function handleAvatarCrop(dataUrl: string) {
+  isUploading.value = true;
+  errorMessage.value = "";
+
+  try {
+    const image = await imageCacheStore.addImage(
+      dataUrl,
+      getCroppedFileName(pendingFileName.value),
+      getDataUrlByteSize(dataUrl),
+      getDataUrlMimeType(dataUrl),
+    );
+    emit("select", image.data);
+    resetCropperState();
+    emit("close");
+  } catch (err) {
+    errorMessage.value = (err as Error).message;
+  } finally {
+    isUploading.value = false;
+  }
+}
+
+function handleCropperClose() {
+  resetCropperState();
+}
+
+function resetCropperState() {
+  showCropper.value = false;
+  cropperImageSrc.value = "";
+  pendingFileName.value = "";
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("讀取檔案失敗"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function getCroppedFileName(fileName: string): string {
+  const baseName = fileName.replace(/\.[^/.]+$/, "") || "avatar";
+  return `${baseName}_avatar.jpg`;
+}
+
+function getDataUrlMimeType(dataUrl: string): string {
+  return dataUrl.match(/^data:([^;]+);base64,/)?.[1] || "image/jpeg";
+}
+
+function getDataUrlByteSize(dataUrl: string): number {
+  const base64 = dataUrl.split(",")[1] || "";
+  return Math.round((base64.length * 3) / 4);
 }
 
 // 選擇緩存圖片
@@ -127,6 +189,7 @@ async function handleUrlSubmit() {
 
 // 關閉
 function handleClose() {
+  resetCropperState();
   emit("close");
 }
 
@@ -261,6 +324,18 @@ function formatFileSize(bytes: number): string {
         </div>
       </div>
     </Transition>
+
+    <ImageCropper
+      :visible="showCropper"
+      :image-src="cropperImageSrc"
+      :aspect-ratio="1"
+      :output-width="256"
+      :output-height="256"
+      :output-quality="0.82"
+      title="裁剪頭像"
+      @close="handleCropperClose"
+      @crop="handleAvatarCrop"
+    />
   </Teleport>
 </template>
 

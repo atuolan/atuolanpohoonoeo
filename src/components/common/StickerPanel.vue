@@ -32,6 +32,17 @@ const editInput = ref<HTMLInputElement>();
 // 批量刪除
 const batchDeleteMode = ref(false);
 const selectedForDelete = ref<Set<string>>(new Set());
+const LONG_PRESS_PIN_DELAY = 600;
+const LONG_PRESS_MOVE_THRESHOLD = 10;
+const longPressState = ref<{
+  stickerId: string;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  triggered: boolean;
+} | null>(null);
+const suppressNextClickStickerId = ref<string | null>(null);
+let longPressTimer: ReturnType<typeof window.setTimeout> | null = null;
 
 // 添加表情彈窗
 const showAddModal = ref(false);
@@ -54,13 +65,13 @@ const currentStickers = computed(() => {
   const category = stickerStore.allCategories.find(
     (c) => c.id === activeCategory.value,
   );
-  return category?.stickers || [];
+  return sortPinnedStickers(category?.stickers || []);
 });
 
 // 顯示的表情（搜索或普通模式）
 const displayStickers = computed(() => {
   if (searchQuery.value) {
-    return stickerStore.searchStickers(searchQuery.value);
+    return sortPinnedStickers(stickerStore.searchStickers(searchQuery.value));
   }
   return currentStickers.value;
 });
@@ -75,6 +86,11 @@ const isCurrentCategoryCustom = computed(() => {
 
 // 選擇表情
 function selectSticker(sticker: StickerItem) {
+  if (suppressNextClickStickerId.value === sticker.id) {
+    suppressNextClickStickerId.value = null;
+    return;
+  }
+
   if (batchDeleteMode.value) {
     toggleSelectForDelete(sticker.id);
     return;
@@ -87,6 +103,109 @@ function selectSticker(sticker: StickerItem) {
     // 系統 emoji 直接發送字符
     emit("select", (sticker as any).char);
   }
+}
+
+function sortPinnedStickers(stickers: StickerItem[]) {
+  return stickers
+    .map((sticker, index) => ({ sticker, index }))
+    .sort((a, b) => {
+      const aPinnedAt = a.sticker.pinnedAt || 0;
+      const bPinnedAt = b.sticker.pinnedAt || 0;
+
+      if (aPinnedAt !== bPinnedAt) {
+        return bPinnedAt - aPinnedAt;
+      }
+
+      return a.index - b.index;
+    })
+    .map((item) => item.sticker);
+}
+
+function canPinSticker(sticker: StickerItem) {
+  return Boolean(sticker.url);
+}
+
+function clearLongPressTimer() {
+  if (longPressTimer !== null) {
+    window.clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+}
+
+function clearLongPressState() {
+  clearLongPressTimer();
+  longPressState.value = null;
+}
+
+function setSuppressNextClick(stickerId: string) {
+  suppressNextClickStickerId.value = stickerId;
+  window.setTimeout(() => {
+    if (suppressNextClickStickerId.value === stickerId) {
+      suppressNextClickStickerId.value = null;
+    }
+  }, 350);
+}
+
+function startStickerPress(sticker: StickerItem, event: PointerEvent) {
+  const target = event.target as Element | null;
+  if (
+    batchDeleteMode.value ||
+    !canPinSticker(sticker) ||
+    target?.closest(".edit-btn")
+  ) {
+    return;
+  }
+
+  clearLongPressState();
+  longPressState.value = {
+    stickerId: sticker.id,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    triggered: false,
+  };
+
+  longPressTimer = window.setTimeout(async () => {
+    const state = longPressState.value;
+    if (!state || state.stickerId !== sticker.id) return;
+
+    state.triggered = true;
+    setSuppressNextClick(sticker.id);
+    await stickerStore.toggleStickerPinned(sticker.id);
+
+    if ("vibrate" in navigator) {
+      navigator.vibrate?.(12);
+    }
+  }, LONG_PRESS_PIN_DELAY);
+}
+
+function moveStickerPress(event: PointerEvent) {
+  const state = longPressState.value;
+  if (!state || state.pointerId !== event.pointerId || state.triggered) return;
+
+  const movedX = Math.abs(event.clientX - state.startX);
+  const movedY = Math.abs(event.clientY - state.startY);
+  if (movedX > LONG_PRESS_MOVE_THRESHOLD || movedY > LONG_PRESS_MOVE_THRESHOLD) {
+    clearLongPressState();
+  }
+}
+
+function endStickerPress(event: PointerEvent) {
+  const state = longPressState.value;
+  if (!state || state.pointerId !== event.pointerId) return;
+
+  if (state.triggered) {
+    setSuppressNextClick(state.stickerId);
+  }
+
+  clearLongPressState();
+}
+
+function getStickerTitle(sticker: StickerItem) {
+  if (!canPinSticker(sticker)) return sticker.name;
+  return sticker.pinnedAt
+    ? `${sticker.name}（長按取消置頂）`
+    : `${sticker.name}（長按置頂）`;
 }
 
 // 搜索
@@ -364,10 +483,17 @@ onMounted(() => {
           {
             selected: selectedForDelete.has(sticker.id),
             'delete-mode': batchDeleteMode,
+            pinned: sticker.pinnedAt,
           },
         ]"
-        :title="sticker.name"
+        :title="getStickerTitle(sticker)"
+        @contextmenu.prevent
         @click="selectSticker(sticker)"
+        @pointerdown="startStickerPress(sticker, $event)"
+        @pointermove="moveStickerPress"
+        @pointerup="endStickerPress"
+        @pointerleave="endStickerPress"
+        @pointercancel="endStickerPress"
       >
         <div class="sticker-content">
           <!-- 自定義表情（圖片） -->
@@ -375,6 +501,7 @@ onMounted(() => {
             v-if="sticker.url"
             :src="sticker.url"
             class="sticker-img"
+            draggable="false"
             referrerpolicy="no-referrer"
             @error="onImageError"
           />
@@ -391,6 +518,10 @@ onMounted(() => {
           class="select-indicator"
         >
           ✓
+        </div>
+
+        <div v-if="sticker.pinnedAt && !batchDeleteMode" class="pin-indicator">
+          ★
         </div>
 
         <!-- 編輯按鈕 -->
@@ -742,10 +873,17 @@ onMounted(() => {
   gap: 2px;
   position: relative;
   max-width: 72px;
+  user-select: none;
+  touch-action: manipulation;
 
   &:hover {
     background: var(--color-background, #f5f5f5);
     transform: scale(1.05);
+  }
+
+  &.pinned {
+    background: var(--color-primary-light, #e8f0fe);
+    box-shadow: inset 0 0 0 1px rgba(0, 123, 255, 0.18);
   }
 
   &.delete-mode.selected {
@@ -795,6 +933,21 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.pin-indicator {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 193, 7, 0.95);
+  color: white;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
 }
 
 .edit-btn {

@@ -235,6 +235,24 @@ export const useStickerStore = defineStore("sticker", () => {
     }
   }
 
+  async function toggleStickerPinned(stickerId: string) {
+    const category = customCategories.value.find((c) =>
+      c.stickers.some((s) => s.id === stickerId),
+    );
+    if (!category) return;
+
+    const sticker = category.stickers.find((s) => s.id === stickerId);
+    if (!sticker) return;
+
+    if (sticker.pinnedAt) {
+      delete sticker.pinnedAt;
+    } else {
+      sticker.pinnedAt = Date.now();
+    }
+
+    await saveCategory(category);
+  }
+
   // 創建新的自定義分類
   async function createCategory(
     name: string,
@@ -369,6 +387,7 @@ export const useStickerStore = defineStore("sticker", () => {
     addSticker,
     removeSticker,
     updateStickerName,
+    toggleStickerPinned,
     createCategory,
     removeCategory,
     renameCategory,

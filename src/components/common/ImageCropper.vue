@@ -8,6 +8,7 @@ const props = defineProps<{
   aspectRatio?: number // 寬高比 (width/height)，0 或 undefined 表示自由裁切；預設 9/16（手機直式桌布）
   outputWidth?: number  // 輸出寬度，默認 1080
   outputHeight?: number // 輸出高度（配合 aspectRatio 自動計算）
+  outputQuality?: number
   title?: string
 }>()
 
@@ -338,7 +339,7 @@ function doCrop() {
     0, 0, outW, outH
   )
 
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.92)
+  const dataUrl = canvas.toDataURL('image/jpeg', props.outputQuality ?? 0.92)
   emit('crop', dataUrl)
 }
 

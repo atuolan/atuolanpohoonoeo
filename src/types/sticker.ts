@@ -6,6 +6,7 @@ export interface StickerItem {
   url: string
   keywords?: string[]
   isCustom?: boolean
+  pinnedAt?: number
 }
 
 export interface StickerCategory {
