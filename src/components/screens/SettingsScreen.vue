@@ -920,19 +920,10 @@ function toEmbeddingProxyUrl(url: string): string {
     if (parsed.origin === window.location.origin) return url;
     const prefix =
       parsed.protocol === "http:" ? "/ai-proxy-http/" : "/ai-proxy/";
-    const proxiedPath = `${prefix}${parsed.host}${parsed.pathname}${parsed.search}`;
-    if (import.meta.env.DEV) return proxiedPath;
-    return `https://api-203.aguacloud.uk${proxiedPath}`;
+    return `https://api-203.aguacloud.uk${prefix}${parsed.host}${parsed.pathname}`;
   } catch {
     return url;
   }
-}
-
-async function createHttpError(response: Response): Promise<Error> {
-  const body = await response.text().catch(() => "");
-  return new Error(
-    `HTTP ${response.status}: ${response.statusText}${body ? ` | ${body.slice(0, 500)}` : ""}`,
-  );
 }
 
 /** 取得有效的 Embedding 端點（留空時 fallback 到主 API） */
@@ -973,12 +964,12 @@ async function fetchEmbeddingModels() {
       method: "GET",
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json",
+        "Content-Type": "application/json",
       },
     });
 
     if (!response.ok) {
-      throw await createHttpError(response);
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
     const data = await response.json();
@@ -1072,9 +1063,7 @@ function toProxyUrl(url: string): string {
     // 走灰雲子域名，繞過 Cloudflare timeout
     const prefix =
       parsed.protocol === "http:" ? "/ai-proxy-http/" : "/ai-proxy/";
-    const proxiedPath = `${prefix}${parsed.host}${parsed.pathname}${parsed.search}`;
-    if (import.meta.env.DEV) return proxiedPath;
-    return `https://api-203.aguacloud.uk${proxiedPath}`;
+    return `https://api-203.aguacloud.uk${prefix}${parsed.host}${parsed.pathname}`;
   } catch {
     return url;
   }
@@ -1525,12 +1514,12 @@ async function fetchModels() {
       method: "GET",
       headers: {
         Authorization: `Bearer ${settingsStore.api.apiKey}`,
-        Accept: "application/json",
+        "Content-Type": "application/json",
       },
     });
 
     if (!response.ok) {
-      throw await createHttpError(response);
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
     const data = await response.json();

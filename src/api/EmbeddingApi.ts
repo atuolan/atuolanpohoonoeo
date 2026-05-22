@@ -153,9 +153,7 @@ export class EmbeddingApiClient {
 
       // 外部 URL 走代理
       const prefix = parsed.protocol === 'http:' ? '/ai-proxy-http/' : '/ai-proxy/'
-      const proxiedPath = `${prefix}${parsed.host}${parsed.pathname}${parsed.search}`
-      if (import.meta.env.DEV) return proxiedPath
-      return `${AI_PROXY_HOST}${proxiedPath}`
+      return `${AI_PROXY_HOST}${prefix}${parsed.host}${parsed.pathname}`
     } catch {
       return url
     }

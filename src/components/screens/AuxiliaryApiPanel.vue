@@ -67,19 +67,10 @@ function toProxyUrl(url: string): string {
     if (parsed.origin === window.location.origin) return url;
     const prefix =
       parsed.protocol === "http:" ? "/ai-proxy-http/" : "/ai-proxy/";
-    const proxiedPath = `${prefix}${parsed.host}${parsed.pathname}${parsed.search}`;
-    if (import.meta.env.DEV) return proxiedPath;
-    return `https://api-203.aguacloud.uk${proxiedPath}`;
+    return `https://api-203.aguacloud.uk${prefix}${parsed.host}${parsed.pathname}`;
   } catch {
     return url;
   }
-}
-
-async function createHttpError(response: Response): Promise<Error> {
-  const body = await response.text().catch(() => "");
-  return new Error(
-    `HTTP ${response.status}: ${response.statusText}${body ? ` | ${body.slice(0, 500)}` : ""}`,
-  );
 }
 
 // ===== 可用模型列表 =====
@@ -483,9 +474,9 @@ async function fetchModelsFromApi() {
     const url = toProxyUrl(`${ep}/models`);
     const res = await fetch(url, {
       method: "GET",
-      headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     });
-    if (!res.ok) throw await createHttpError(res);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
 
     const data = await res.json();
     let models: string[] = [];

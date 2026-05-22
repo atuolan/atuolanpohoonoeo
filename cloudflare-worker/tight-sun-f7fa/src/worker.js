@@ -50,7 +50,7 @@ function corsHeaders(origin) {
 	return {
 		'Access-Control-Allow-Origin': allowed,
 		'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-		'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Api-Key, Anthropic-Version, X-Aguaphone-Client',
+		'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept, Cache-Control, X-Api-Key, Anthropic-Version, X-Aguaphone-Client',
 		'Access-Control-Max-Age': '86400',
 	};
 }
@@ -77,7 +77,7 @@ function withCors(response, origin) {
  * 建立乾淨的上游 headers，只保留白名單中的 headers
  * 避免轉發 CF-Connecting-IP、CF-Ray、CF-Worker 等 Cloudflare 注入的 headers
  */
-function buildUpstreamHeaders(request, targetHost, bodyLength) {
+function buildUpstreamHeaders(request, targetHost, bodyLength, upstreamProtocol = 'https:') {
 	const clean = new Headers();
 
 	// 只複製白名單中的 headers
@@ -88,20 +88,8 @@ function buildUpstreamHeaders(request, targetHost, bodyLength) {
 		}
 	}
 
-	// 設定正確的 Host
-	clean.set('Host', targetHost);
-
 	// 設定偽裝的 User-Agent（瀏覽器無法在 fetch 中覆寫 User-Agent，由 Worker 統一處理）
 	clean.set('User-Agent', NAI_USER_AGENT);
-
-	// 偽裝 Origin 和 Referer
-	if (targetHost === 'image.novelai.net') {
-		clean.set('Origin', 'https://novelai.net');
-		clean.set('Referer', 'https://novelai.net/');
-	} else if (targetHost === 'api.novelai.net') {
-		clean.set('Origin', 'https://api.novelai.net');
-		clean.set('Referer', 'https://api.novelai.net/');
-	}
 
 	// 確保有 Accept header
 	if (!clean.has('accept')) {
@@ -126,7 +114,57 @@ function buildUpstreamHeaders(request, targetHost, bodyLength) {
 	clean.delete('x-real-ip');
 	clean.delete('true-client-ip');
 
+	clean.delete('origin');
+	clean.delete('referer');
+	clean.delete('cookie');
+	clean.delete('sec-fetch-dest');
+	clean.delete('sec-fetch-mode');
+	clean.delete('sec-fetch-site');
+	clean.delete('sec-fetch-user');
+
+	if ((request.method === 'GET' || request.method === 'HEAD') && clean.has('content-type')) {
+		clean.delete('content-type');
+	}
+
+	// 偽裝 Origin 和 Referer
+	if (targetHost === 'image.novelai.net') {
+		clean.set('Origin', 'https://novelai.net');
+		clean.set('Referer', 'https://novelai.net/');
+	} else if (targetHost === 'api.novelai.net') {
+		clean.set('Origin', 'https://api.novelai.net');
+		clean.set('Referer', 'https://api.novelai.net/');
+	}
+
 	return clean;
+}
+
+function parseProxyTarget(path, url) {
+	let protocol = 'https:';
+	let rest = '';
+
+	if (path.startsWith('/ai-proxy-http/')) {
+		protocol = 'http:';
+		rest = path.slice('/ai-proxy-http/'.length);
+	} else if (path.startsWith('/ai-proxy/')) {
+		rest = path.slice('/ai-proxy/'.length);
+	} else if (path.startsWith('/proxy-http/')) {
+		protocol = 'http:';
+		rest = path.slice('/proxy-http/'.length);
+	} else if (path.startsWith('/proxy/')) {
+		rest = path.slice('/proxy/'.length);
+	} else {
+		return null;
+	}
+
+	const slashIdx = rest.indexOf('/');
+	if (slashIdx === -1) {
+		return { error: 'Bad Request: missing path after host' };
+	}
+
+	const targetHost = rest.slice(0, slashIdx);
+	const targetPath = rest.slice(slashIdx);
+	const upstream = `${protocol}//${targetHost}${targetPath}${url.search}`;
+	return { protocol, targetHost, upstream };
 }
 
 /**
@@ -279,6 +317,7 @@ async function handleRequest(request) {
 
 	let upstream;
 	let targetHost;
+	let upstreamProtocol = 'https:';
 
 	// ── NovelAI 專用路由 ──
 	if (path.startsWith('/nai/ai/')) {
@@ -288,19 +327,18 @@ async function handleRequest(request) {
 		targetHost = 'api.novelai.net';
 		upstream = 'https://' + targetHost + path.slice(4);
 	}
-	// ── 通用代理路由：/proxy/{host}/{path} ──
-	else if (path.startsWith('/proxy/')) {
-		const rest = path.slice(7); // 去掉 /proxy/
-		const slashIdx = rest.indexOf('/');
-		if (slashIdx === -1) {
-			return new Response('Bad Request: missing path after host', { status: 400 });
+	else {
+		const parsedProxyTarget = parseProxyTarget(path, url);
+		if (parsedProxyTarget?.error) {
+			return new Response(parsedProxyTarget.error, { status: 400 });
 		}
-		targetHost = rest.slice(0, slashIdx);
-		const targetPath = rest.slice(slashIdx);
-		// 必須包含 search params (query string) 否則上游收不到參數
-		upstream = `https://${targetHost}${targetPath}${url.search}`;
-	} else {
-		return new Response('Not Found', { status: 404 });
+		if (parsedProxyTarget) {
+			targetHost = parsedProxyTarget.targetHost;
+			upstream = parsedProxyTarget.upstream;
+			upstreamProtocol = parsedProxyTarget.protocol;
+		} else {
+			return new Response('Not Found', { status: 404 });
+		}
 	}
 
 	// 讀取 body（先完整讀取再轉發，避免 stream 斷裂導致上游 503）
@@ -318,7 +356,7 @@ async function handleRequest(request) {
 		}
 	}
 
-	const upstreamHeaders = buildUpstreamHeaders(request, targetHost, bodyLength);
+	const upstreamHeaders = buildUpstreamHeaders(request, targetHost, bodyLength, upstreamProtocol);
 
 	try {
 		const isNAI = targetHost.includes('novelai.net');
@@ -364,6 +402,7 @@ async function handleRequest(request) {
 					debug: {
 						target: upstream,
 						method: request.method,
+						upstream_status: upstreamResponse.status,
 						bodySize: bodyLength,
 						timestamp: new Date().toISOString(),
 					},
@@ -377,6 +416,15 @@ async function handleRequest(request) {
 				},
 			);
 			return resp;
+		}
+
+		if (!upstreamResponse.ok && upstreamResponse.status !== 401) {
+			const upstreamBody = await upstreamResponse.text().catch(() => '');
+			return new Response(upstreamBody, {
+				status: upstreamResponse.status,
+				statusText: upstreamResponse.statusText,
+				headers: responseHeaders,
+			});
 		}
 
 		return new Response(upstreamResponse.body, {

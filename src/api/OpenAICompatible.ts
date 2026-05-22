@@ -237,9 +237,7 @@ export class OpenAICompatibleClient {
       // 走灰雲子域名，繞過 Cloudflare timeout
       const prefix =
         parsed.protocol === "http:" ? "/ai-proxy-http/" : "/ai-proxy/";
-      const proxiedPath = `${prefix}${parsed.host}${parsed.pathname}${parsed.search}`;
-      if (import.meta.env.DEV) return proxiedPath;
-      return `${OpenAICompatibleClient.AI_PROXY_HOST}${proxiedPath}`;
+      return `${OpenAICompatibleClient.AI_PROXY_HOST}${prefix}${parsed.host}${parsed.pathname}`;
     } catch {
       return url;
     }
