@@ -148,6 +148,20 @@ export interface PromptBuildResult {
   chatHistoryTokens: number
   /** 是否截斷 */
   wasTruncated: boolean
+  chatHistoryBudget?: {
+    enabled: boolean
+    maxContextLength: number
+    maxResponseLength: number
+    reservedResponseTokens: number
+    fixedPromptTokens: number
+    maxHistoryTokens: number
+    chatHistoryTokens: number
+    sourceMessageCount: number
+    includedMessageCount: number
+    wasTruncated: boolean
+    strippedLastUserTurn: boolean
+    strippedLastUserTurnCount: number
+  }
   /** 世界書掃描結果（供進階使用） */
   wiResult?: import('./worldinfo').WIActivatedResult
 }

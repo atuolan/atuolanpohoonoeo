@@ -1095,23 +1095,29 @@ export class PromptBuilder {
       messages: BuiltMessage[];
       tokens: number;
       wasTruncated: boolean;
+      sourceMessageCount: number;
+      includedMessageCount: number;
+      strippedLastUserTurnCount: number;
     } = {
       messages: [],
       tokens: 0,
       wasTruncated: false,
+      sourceMessageCount: 0,
+      includedMessageCount: 0,
+      strippedLastUserTurnCount: 0,
     };
 
+    const isChatHistoryEnabled = enabledPrompts.some(
+      (e) =>
+        e.identifier === "chatHistory" ||
+        e.identifier === "f2fChatHistory" ||
+        e.identifier === "gcChatHistory",
+    );
+    let stripLastUserMessage = false;
     // 支持全局模式和面對面模式的 chatHistory
-    if (
-      enabledPrompts.some(
-        (e) =>
-          e.identifier === "chatHistory" ||
-          e.identifier === "f2fChatHistory" ||
-          e.identifier === "gcChatHistory",
-      )
-    ) {
+    if (isChatHistoryEnabled) {
       // 檢查是否啟用了「確認最終輸出」，如果是則從聊天歷史中移除最後一條用戶訊息
-      const stripLastUserMessage = enabledPrompts.some(
+      stripLastUserMessage = enabledPrompts.some(
         (e) =>
           e.identifier === "confirmLastOutput" ||
           e.identifier === "f2fConfirmLastOutput" ||
@@ -1166,6 +1172,20 @@ export class PromptBuilder {
       worldInfoTokens,
       chatHistoryTokens,
       wasTruncated,
+      chatHistoryBudget: {
+        enabled: isChatHistoryEnabled,
+        maxContextLength: settings.maxContextLength,
+        maxResponseLength: settings.maxResponseLength,
+        reservedResponseTokens: reservedTokens,
+        fixedPromptTokens: totalTokens - chatHistoryTokens,
+        maxHistoryTokens,
+        chatHistoryTokens,
+        sourceMessageCount: chatMessages.sourceMessageCount,
+        includedMessageCount: chatMessages.includedMessageCount,
+        wasTruncated: chatMessages.wasTruncated,
+        strippedLastUserTurn: stripLastUserMessage,
+        strippedLastUserTurnCount: chatMessages.strippedLastUserTurnCount,
+      },
       wiResult,
     };
   }
@@ -2715,6 +2735,9 @@ speed：0.5~2.0，正常時省略
     messages: BuiltMessage[];
     tokens: number;
     wasTruncated: boolean;
+    sourceMessageCount: number;
+    includedMessageCount: number;
+    strippedLastUserTurnCount: number;
   }> {
     const { messages: rawMessages, authorsNote, character } = this.options;
 
@@ -3015,7 +3038,14 @@ speed：0.5~2.0，正常時省略
       builtMessages.push(...buildAuthorsNoteBlock());
     }
 
-    return { messages: builtMessages, tokens: usedTokens, wasTruncated };
+    return {
+      messages: builtMessages,
+      tokens: usedTokens,
+      wasTruncated,
+      sourceMessageCount: messages.length,
+      includedMessageCount: tempMessages.length,
+      strippedLastUserTurnCount: rawMessages.length - messages.length,
+    };
   }
 
   /**

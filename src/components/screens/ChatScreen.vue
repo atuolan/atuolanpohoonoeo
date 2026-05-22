@@ -5462,6 +5462,22 @@ async function triggerAIResponse(options?: {
     });
 
     const promptResult = await builder.build();
+    const chatHistoryBudget = promptResult.chatHistoryBudget;
+    const isChatHistoryDroppedByBudget =
+      !!chatHistoryBudget?.enabled &&
+      chatHistoryBudget.sourceMessageCount > 0 &&
+      chatHistoryBudget.includedMessageCount === 0;
+    if (isChatHistoryDroppedByBudget && chatHistoryBudget) {
+      const budgetMessage = [
+        "聊天歷史沒有被送出：上下文預算不足。",
+        `上下文長度 ${chatHistoryBudget.maxContextLength} - 固定提示 ${chatHistoryBudget.fixedPromptTokens} - 預留回覆 ${chatHistoryBudget.reservedResponseTokens} = 歷史可用 ${chatHistoryBudget.maxHistoryTokens}`,
+        "請提高「上下文長度（符元數）」、降低「最大回覆長度」，或精簡角色卡/世界書/提示詞。",
+      ].join("\n");
+      console.warn("[ChatScreen] 聊天歷史因上下文預算不足被完全裁掉", {
+        chatHistoryBudget,
+      });
+      notificationStore.notifySystem("聊天歷史未送出", budgetMessage);
+    }
 
     const resolveImageDataForApi = async (
       imageData: string | undefined,
@@ -5517,6 +5533,23 @@ async function triggerAIResponse(options?: {
         typeof source.identifier === "string" ? source.identifier : undefined,
       name: typeof source.name === "string" ? source.name : undefined,
     });
+    if (isChatHistoryDroppedByBudget && chatHistoryBudget) {
+      promptDebugMessages.push({
+        role: "system",
+        identifier: "chatHistoryBudgetWarning",
+        name: "聊天歷史預算警告",
+        content: [
+          "[聊天歷史預算警告]",
+          "聊天歷史模組已啟用，但本次沒有任何聊天歷史被送入 API。",
+          `上下文長度：${chatHistoryBudget.maxContextLength}`,
+          `固定提示詞/角色卡/世界書：${chatHistoryBudget.fixedPromptTokens}`,
+          `最大回覆長度預留：${chatHistoryBudget.reservedResponseTokens}`,
+          `聊天歷史可用預算：${chatHistoryBudget.maxHistoryTokens}`,
+          `可用歷史訊息數：${chatHistoryBudget.sourceMessageCount}`,
+          `實際送入歷史訊息數：${chatHistoryBudget.includedMessageCount}`,
+        ].join("\n"),
+      });
+    }
     for (let index = 0; index < promptResult.messages.length; index++) {
       const m = promptResult.messages[index];
       const msgWithImage = m as any;
