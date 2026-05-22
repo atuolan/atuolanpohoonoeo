@@ -4292,6 +4292,34 @@ function useClonedVoice(voiceId: string) {
             <span>16384</span>
             <span>32768</span>
           </div>
+          <p class="setting-hint">
+            最大回覆長度會預留 AI 輸出空間；設得越高，留給聊天歷史的上下文空間越少。
+          </p>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label">
+            上下文長度（符元數）
+            <span class="value-badge">{{
+              settingsStore.generation.maxContextLength
+            }}</span>
+          </label>
+          <input
+            v-model.number="settingsStore.generation.maxContextLength"
+            type="range"
+            min="4096"
+            max="200000"
+            step="1024"
+            class="soft-slider"
+          />
+          <div class="range-labels">
+            <span>4096</span>
+            <span>100K</span>
+            <span>200K</span>
+          </div>
+          <p class="setting-hint">
+            全局通用：聊天、總結、日記、備用 API 任務等都使用這個上下文長度。
+          </p>
         </div>
 
         <div class="setting-group">

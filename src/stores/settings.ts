@@ -196,6 +196,14 @@ function createDefaultGenerationParams(): GenerationParams {
   };
 }
 
+function normalizeMaxContextLength(value: unknown): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return createDefaultGenerationParams().maxContextLength;
+  }
+  return Math.min(200000, Math.max(4096, Math.round(numeric)));
+}
+
 const createDefaultAuxiliaryConfig = (): AuxiliaryAPIConfig => ({
   enabled: false,
   api: createDefaultAPISettings(),
@@ -323,6 +331,15 @@ export const useSettingsStore = defineStore("settings", () => {
     directConnect: embeddingAPI.directConnect ?? false,
   }));
 
+  function getGlobalGenerationParams(
+    source: GenerationParams,
+  ): GenerationParams {
+    return {
+      ...toRaw(source),
+      maxContextLength: normalizeMaxContextLength(generation.maxContextLength),
+    };
+  }
+
   // ===== 方法 =====
 
   /** 正在進行的載入 Promise（用於防止並發載入時丟失等待） */
@@ -345,6 +362,10 @@ export const useSettingsStore = defineStore("settings", () => {
         const saved = await loadSettingsData();
 
         if (saved) {
+          const savedGlobalMaxContextLength = normalizeMaxContextLength(
+            saved.generation?.maxContextLength,
+          );
+
           // 載入配置文件列表
           if (saved.profiles && Array.isArray(saved.profiles)) {
             profiles.value = saved.profiles;
@@ -368,6 +389,7 @@ export const useSettingsStore = defineStore("settings", () => {
               Object.assign(generation, saved.generation);
             }
           }
+          generation.maxContextLength = savedGlobalMaxContextLength;
 
           // 載入備用 API 配置
           if (saved.auxiliary) {
@@ -692,10 +714,14 @@ export const useSettingsStore = defineStore("settings", () => {
   function switchProfile(profileId: string): void {
     const profile = profiles.value.find((p) => p.id === profileId);
     if (profile) {
+      const globalMaxContextLength = normalizeMaxContextLength(
+        generation.maxContextLength,
+      );
       currentProfileId.value = profileId;
       profile.lastUsedAt = Date.now();
       Object.assign(api, profile.api);
       Object.assign(generation, profile.generation);
+      generation.maxContextLength = globalMaxContextLength;
     }
   }
 
@@ -933,10 +959,10 @@ export const useSettingsStore = defineStore("settings", () => {
 
       if (useAux) {
         taskApi = { ...profile!.api };
-        taskGen = profile!.generation;
+        taskGen = getGlobalGenerationParams(profile!.generation);
       } else {
         taskApi = { ...api };
-        taskGen = generation;
+        taskGen = getGlobalGenerationParams(generation);
       }
 
       // 套用各任務直連覆寫
@@ -954,7 +980,7 @@ export const useSettingsStore = defineStore("settings", () => {
       );
     }
 
-    return { api, generation };
+    return { api, generation: getGlobalGenerationParams(generation) };
   }
 
   /**
