@@ -482,7 +482,7 @@ export class PromptBuilder {
     // {{lastMessage}}：上一條 AI 回覆之後所有未完成一輪的訊息（含時間跳轉、用戶輸入、小劇場）
     const lastMsg =
       PromptBuilder.getLastUserTurnMessages(options.messages)
-        .map((m) => PromptBuilder.formatMessageContentForMacro(m))
+        .map((m) => this.formatMessageContentForMacro(m))
         .filter((s) => s.length > 0)
         .join("\n");
 
@@ -628,7 +628,7 @@ export class PromptBuilder {
     // {{lastMessage}}：上一條 AI 回覆之後所有未完成一輪的訊息（含時間跳轉、用戶輸入、小劇場）
     const lastMsg =
       PromptBuilder.getLastUserTurnMessages(options.messages)
-        .map((m) => PromptBuilder.formatMessageContentForMacro(m))
+        .map((m) => this.formatMessageContentForMacro(m))
         .filter((s) => s.length > 0)
         .join("\n");
 
@@ -698,6 +698,19 @@ export class PromptBuilder {
       return `[場景指令] 接下來請按照以下劇情發展進行扮演：${scenario}`;
     }
     return m.content || "";
+  }
+
+  private formatMessageContentForMacro(m: ChatMessage): string {
+    const content = PromptBuilder.formatMessageContentForMacro(m);
+    const isSystemMsg = m.sender === "system" || m.sender === "narrator";
+    if (
+      this.options.enableRealTimeAwareness !== false &&
+      !isSystemMsg &&
+      m.createdAt
+    ) {
+      return `${this.formatMsgTimeTag(m.createdAt)} ${content}`;
+    }
+    return content;
   }
 
   /**

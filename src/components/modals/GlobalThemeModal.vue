@@ -2,7 +2,7 @@
 import { ImageCropper } from "@/components/common";
 import { useLanguage } from "@/composables/useLanguage";
 import { useSettingsStore } from "@/stores/settings";
-import type { GlobalFontOverride, WallpaperStyle } from "@/stores/theme";
+import type { GlobalFontOverride, GlobalFontPreset, WallpaperStyle } from "@/stores/theme";
 import { useThemeStore } from "@/stores/theme";
 import { computed, ref, watch } from "vue";
 
@@ -140,6 +140,37 @@ const isFontFileUrl = computed(() => {
   const url = tempGlobalFont.value.importUrl.trim();
   return /\.(ttf|otf|woff2?)(?:\?.*)?$/i.test(url);
 });
+
+const fontPresetName = ref("");
+const fontPresetStatus = ref("");
+
+const sortedFontPresets = computed(() => {
+  const presets = Array.isArray(themeStore.globalFontPresets)
+    ? themeStore.globalFontPresets
+    : [];
+  return [...presets].sort((a, b) => b.createdAt - a.createdAt);
+});
+
+const activeFontPresetId = computed(() => {
+  const current = normalizeFontForCompare(themeStore.globalFont);
+  return (
+    sortedFontPresets.value.find(
+      (preset) => normalizeFontForCompare(preset.font) === current,
+    )?.id || ""
+  );
+});
+
+function normalizeFontForCompare(font: GlobalFontOverride) {
+  return JSON.stringify({
+    importUrl: font.importUrl.trim(),
+    fontFamily: font.fontFamily.trim(),
+    fontWeight: font.fontWeight || "normal",
+    source: font.source,
+    fontSize: font.fontSize,
+    letterSpacing: font.letterSpacing,
+    lineHeight: font.lineHeight,
+  });
+}
 
 // 處理預設主題選擇
 function selectPreset(presetId: string) {
@@ -328,8 +359,7 @@ function handleFontUrlInput(event: Event) {
   }
 }
 
-// 套用全局字體
-function applyGlobalFont() {
+function normalizeTempFontUrl() {
   // 自動解析 @import 語句中的 URL
   let importUrl = tempGlobalFont.value.importUrl.trim();
   // 如果用戶貼了完整的 @import url("..."); 語句，提取 URL
@@ -338,12 +368,50 @@ function applyGlobalFont() {
     importUrl = importMatch[1];
     tempGlobalFont.value.importUrl = importUrl;
   }
+  return importUrl;
+}
+
+// 套用全局字體
+function applyGlobalFont() {
+  const importUrl = normalizeTempFontUrl();
 
   themeStore.updateGlobalFont({
     ...tempGlobalFont.value,
     enabled: true,
     importUrl,
   });
+}
+
+function saveCurrentFontPreset() {
+  const importUrl = normalizeTempFontUrl();
+  const fontSnapshot: GlobalFontOverride = {
+    ...tempGlobalFont.value,
+    enabled: true,
+    importUrl,
+  };
+
+  if (!fontSnapshot.importUrl.trim() && !fontSnapshot.fontFamily.trim()) {
+    fontPresetStatus.value = "請先輸入字體 URL 或 font-family 名稱";
+    return;
+  }
+
+  themeStore.addGlobalFontPreset(fontSnapshot, fontPresetName.value);
+  fontPresetName.value = "";
+  fontPresetStatus.value = "已存入字體存檔";
+}
+
+function applyFontPreset(preset: GlobalFontPreset) {
+  themeStore.applyGlobalFontPreset(preset.id);
+  tempGlobalFont.value = { ...themeStore.globalFont };
+  fontPresetStatus.value = `已套用「${preset.name}」`;
+}
+
+function deleteFontPreset(preset: GlobalFontPreset) {
+  if (!confirm(`確定要刪除字體存檔「${preset.name}」嗎？`)) return;
+  themeStore.deleteGlobalFontPreset(preset.id);
+  if (fontPresetStatus.value.includes(preset.name)) {
+    fontPresetStatus.value = "已刪除字體存檔";
+  }
 }
 
 // 清除全局字體
@@ -391,6 +459,8 @@ watch(
       tempWallpaperStyle.value = { ...themeStore.wallpaperStyle };
       tempCustomCSS.value = themeStore.customCSS;
       tempGlobalFont.value = { ...themeStore.globalFont };
+      fontPresetName.value = "";
+      fontPresetStatus.value = "";
       isCSSExpanded.value = false;
     }
   },
@@ -905,6 +975,65 @@ watch(
                       ? "預設"
                       : tempGlobalFont.lineHeight
                   }}</span>
+                </div>
+              </div>
+
+              <div class="font-preset-panel">
+                <div class="font-preset-header">
+                  <div>
+                    <h3 class="section-title">字體存檔</h3>
+                    <div class="font-preset-desc">
+                      把常用字體像 API 設定一樣存起來，下次直接套用。
+                    </div>
+                  </div>
+                  <span class="font-preset-count">
+                    {{ sortedFontPresets.length }} 組
+                  </span>
+                </div>
+
+                <div class="font-preset-save-row">
+                  <input
+                    v-model="fontPresetName"
+                    class="font-input"
+                    type="text"
+                    placeholder="存檔名稱（可留空，會用 font-family）"
+                    spellcheck="false"
+                  />
+                  <button class="soft-btn primary small" @click="saveCurrentFontPreset">
+                    存起來
+                  </button>
+                </div>
+
+                <div v-if="fontPresetStatus" class="font-preset-status">
+                  {{ fontPresetStatus }}
+                </div>
+
+                <div v-if="sortedFontPresets.length" class="font-preset-list">
+                  <div
+                    v-for="preset in sortedFontPresets"
+                    :key="preset.id"
+                    class="font-preset-item"
+                    :class="{ active: activeFontPresetId === preset.id }"
+                  >
+                    <button class="font-preset-main" @click="applyFontPreset(preset)">
+                      <span class="font-preset-name">{{ preset.name }}</span>
+                      <span class="font-preset-meta">
+                        {{ preset.font.fontFamily || '未設定 font-family' }}
+                        · {{ preset.font.source }}
+                      </span>
+                    </button>
+                    <button
+                      class="font-preset-delete"
+                      title="刪除存檔"
+                      @click="deleteFontPreset(preset)"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+
+                <div v-else class="font-preset-empty">
+                  還沒有字體存檔，填好上面的 URL 和 font-family 後按「存起來」。
                 </div>
               </div>
 
@@ -1667,6 +1796,146 @@ body {
   color: var(--color-text-muted);
   line-height: 1.4;
   margin-top: 2px;
+}
+
+.font-preset-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.font-preset-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+
+  .section-title {
+    padding-top: 0;
+  }
+}
+
+.font-preset-desc {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.font-preset-count {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: white;
+  background: var(--color-primary);
+}
+
+.font-preset-save-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+
+  .font-input {
+    flex: 1;
+  }
+
+  .soft-btn.small {
+    white-space: nowrap;
+  }
+}
+
+.font-preset-status {
+  font-size: 12px;
+  color: var(--color-primary);
+}
+
+.font-preset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.font-preset-item {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  transition: all 0.2s;
+
+  &.active {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px var(--color-primary-light);
+  }
+}
+
+.font-preset-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--color-surface-hover);
+  }
+}
+
+.font-preset-name,
+.font-preset-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.font-preset-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.font-preset-meta {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.font-preset-delete {
+  width: 38px;
+  border: none;
+  border-left: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: rgba(255, 123, 123, 0.12);
+    color: var(--color-error);
+  }
+}
+
+.font-preset-empty {
+  padding: 10px 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
 }
 
 .font-actions {

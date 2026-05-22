@@ -13,6 +13,7 @@ const IMAGE_PROXY_UAS = [
 ];
 const IMAGE_PROXY_ACCEPT =
   "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8";
+const AI_PROXY_USER_AGENT = IMAGE_PROXY_UAS[0];
 // 與 Cloudflare WAF Skip 規則配對的私密 header，讓自家代理繞過 Bot Fight / Custom Rules。
 const IMAGE_PROXY_SECRET = "gkGHAmlzsZKuybu5yFrUWYvy9yBgKRaB";
 function buildImageProxyHeaders(attempt: number): Record<string, string> {
@@ -131,6 +132,17 @@ function aiProxyPlugin(): Plugin {
         };
         delete headers.host;
         headers.host = host;
+        headers["user-agent"] = AI_PROXY_USER_AGENT;
+        headers["accept-language"] = "zh-TW,zh;q=0.9,en;q=0.8";
+        delete headers.origin;
+        delete headers.referer;
+        delete headers.connection;
+        delete headers["sec-fetch-site"];
+        delete headers["sec-fetch-mode"];
+        delete headers["sec-fetch-dest"];
+        delete headers["sec-ch-ua"];
+        delete headers["sec-ch-ua-mobile"];
+        delete headers["sec-ch-ua-platform"];
 
         const requestModule = protocol === "https" ? https : http;
         const proxyReq = requestModule.request(

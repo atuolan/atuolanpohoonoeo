@@ -299,6 +299,13 @@ export interface GlobalFontOverride {
   lineHeight: number; // 行高 (1.0 ~ 3.0, 預設 0 = 不覆蓋)
 }
 
+export interface GlobalFontPreset {
+  id: string;
+  name: string;
+  createdAt: number;
+  font: GlobalFontOverride;
+}
+
 const defaultGlobalFont: GlobalFontOverride = {
   enabled: false,
   importUrl: "",
@@ -389,6 +396,9 @@ export const useThemeStore = defineStore("theme", () => {
 
   // 全局字體覆蓋
   const globalFont = ref<GlobalFontOverride>({ ...defaultGlobalFont });
+
+  // 全局字體存檔
+  const globalFontPresets = ref<GlobalFontPreset[]>([]);
 
   // 夜晚模式氣泡配色
   const nightBubbleOverride: BubbleStyle = {
@@ -901,6 +911,50 @@ export const useThemeStore = defineStore("theme", () => {
     saveToStorage();
   }
 
+  function createGlobalFontPreset(
+    font: GlobalFontOverride,
+    name?: string,
+  ): GlobalFontPreset {
+    const snapshot: GlobalFontOverride = JSON.parse(JSON.stringify(font));
+    const trimmedName = name?.trim();
+    const fallbackName =
+      snapshot.fontFamily.trim() ||
+      (snapshot.importUrl.trim() ? snapshot.importUrl.trim() : "未命名字體");
+
+    return {
+      id: `font-preset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: trimmedName || fallbackName,
+      createdAt: Date.now(),
+      font: snapshot,
+    };
+  }
+
+  // 新增全局字體存檔
+  function addGlobalFontPreset(font: GlobalFontOverride, name?: string) {
+    globalFontPresets.value = [
+      createGlobalFontPreset(font, name),
+      ...globalFontPresets.value,
+    ];
+    saveToStorage();
+  }
+
+  // 套用全局字體存檔
+  function applyGlobalFontPreset(presetId: string) {
+    const preset = globalFontPresets.value.find((item) => item.id === presetId);
+    if (!preset) return;
+    globalFont.value = { ...defaultGlobalFont, ...preset.font, enabled: true };
+    applyGlobalFont();
+    saveToStorage();
+  }
+
+  // 刪除全局字體存檔
+  function deleteGlobalFontPreset(presetId: string) {
+    globalFontPresets.value = globalFontPresets.value.filter(
+      (item) => item.id !== presetId,
+    );
+    saveToStorage();
+  }
+
   // 切換預設主題
   function setPreset(preset: string) {
     if (themePresets[preset]) {
@@ -1023,6 +1077,7 @@ export const useThemeStore = defineStore("theme", () => {
           modalAnimation: modalAnimation.value,
           customCSS: customCSS.value,
           globalFont: globalFont.value,
+          globalFontPresets: globalFontPresets.value,
         }),
       );
       // settings store 沒有 keyPath，需要提供 key
@@ -1082,6 +1137,12 @@ export const useThemeStore = defineStore("theme", () => {
         modalAnimation.value = { ...defaultModalAnimation, ...data.modalAnimation };
         customCSS.value = data.customCSS || "";
         globalFont.value = { ...defaultGlobalFont, ...data.globalFont };
+        globalFontPresets.value = Array.isArray(data.globalFontPresets)
+          ? data.globalFontPresets.map((preset: GlobalFontPreset) => ({
+              ...preset,
+              font: { ...defaultGlobalFont, ...preset.font },
+            }))
+          : [];
       }
     } catch (e) {
       console.warn("Failed to load theme from IndexedDB:", e);
@@ -1101,6 +1162,7 @@ export const useThemeStore = defineStore("theme", () => {
     modalAnimation,
     customCSS,
     globalFont,
+    globalFontPresets,
     colors,
     cssVariables,
     isWallpaperDark,
@@ -1117,6 +1179,9 @@ export const useThemeStore = defineStore("theme", () => {
     updateModalAnimation,
     updateCustomCSS,
     updateGlobalFont,
+    addGlobalFontPreset,
+    applyGlobalFontPreset,
+    deleteGlobalFontPreset,
     applyGlobalFont,
     resetToDefault,
     saveToStorage,

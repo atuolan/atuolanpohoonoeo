@@ -80,7 +80,9 @@ function toProxyUrl(url: string): string {
     if (parsed.origin === window.location.origin) return url;
     const prefix =
       parsed.protocol === "http:" ? "/ai-proxy-http/" : "/ai-proxy/";
-    return `${AI_PROXY_HOST}${prefix}${parsed.host}${parsed.pathname}`;
+    const proxiedPath = `${prefix}${parsed.host}${parsed.pathname}${parsed.search}`;
+    if (import.meta.env.DEV) return proxiedPath;
+    return `${AI_PROXY_HOST}${proxiedPath}`;
   } catch {
     return url;
   }
