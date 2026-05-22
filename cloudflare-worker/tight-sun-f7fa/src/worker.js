@@ -42,6 +42,7 @@ const FORWARD_HEADERS = [
 
 /** 偽裝的 User-Agent（瀏覽器 fetch 無法覆蓋 User-Agent，所以由 Worker 來設定） */
 const NAI_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const AI_API_USER_AGENT = 'node-fetch';
 
 // ── 工具 ──────────────────────────────────────────────────────
 
@@ -79,6 +80,7 @@ function withCors(response, origin) {
  */
 function buildUpstreamHeaders(request, targetHost, bodyLength, upstreamProtocol = 'https:') {
 	const clean = new Headers();
+	const isNovelAI = targetHost.includes('novelai.net');
 
 	// 只複製白名單中的 headers
 	for (const name of FORWARD_HEADERS) {
@@ -88,11 +90,14 @@ function buildUpstreamHeaders(request, targetHost, bodyLength, upstreamProtocol 
 		}
 	}
 
-	// 設定偽裝的 User-Agent（瀏覽器無法在 fetch 中覆寫 User-Agent，由 Worker 統一處理）
-	clean.set('User-Agent', NAI_USER_AGENT);
+	clean.set('User-Agent', isNovelAI ? NAI_USER_AGENT : AI_API_USER_AGENT);
 
 	// 確保有 Accept header
-	if (!clean.has('accept')) {
+	if (isNovelAI) {
+		if (!clean.has('accept')) {
+			clean.set('Accept', '*/*');
+		}
+	} else {
 		clean.set('Accept', '*/*');
 	}
 
@@ -122,8 +127,8 @@ function buildUpstreamHeaders(request, targetHost, bodyLength, upstreamProtocol 
 	clean.delete('sec-fetch-site');
 	clean.delete('sec-fetch-user');
 
-	if ((request.method === 'GET' || request.method === 'HEAD') && clean.has('content-type')) {
-		clean.delete('content-type');
+	if (!isNovelAI && (request.method === 'GET' || request.method === 'HEAD')) {
+		clean.set('Content-Type', 'application/json');
 	}
 
 	// 偽裝 Origin 和 Referer
@@ -292,6 +297,84 @@ async function handleImageProxy(request, url, origin) {
 	}
 }
 
+async function handleDebugHeaders(request, url, origin) {
+	const targetHost = url.searchParams.get('host') || 'api.fanzisima.xyz';
+	const upstreamProtocol = url.searchParams.get('protocol') === 'http' ? 'http:' : 'https:';
+	const upstreamHeaders = buildUpstreamHeaders(request, targetHost, 0, upstreamProtocol);
+	const preparedHeaders = Object.fromEntries(upstreamHeaders.entries());
+
+	if (url.searchParams.get('upstream') === '1') {
+		const response = await fetch('https://httpbin.org/headers', {
+			method: 'GET',
+			headers: upstreamHeaders,
+		});
+		const body = await response.text();
+		return new Response(
+			JSON.stringify(
+				{
+					targetHost,
+					upstreamProtocol,
+					preparedHeaders,
+					httpbinStatus: response.status,
+					httpbinBody: JSON.parse(body),
+				},
+				null,
+				2,
+			),
+			{
+				status: response.status,
+				headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
+			},
+		);
+	}
+
+	return new Response(
+		JSON.stringify(
+			{
+				targetHost,
+				upstreamProtocol,
+				preparedHeaders,
+				requestHeadersSeenByWorker: Object.fromEntries(request.headers.entries()),
+			},
+			null,
+			2,
+		),
+		{
+			status: 200,
+			headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
+		},
+	);
+}
+
+async function handleDebugFanzisima(request, origin) {
+	const targetHost = 'api.fanzisima.xyz';
+	const upstream = `https://${targetHost}/v1/models`;
+	const upstreamHeaders = buildUpstreamHeaders(request, targetHost, 0, 'https:');
+	const response = await fetch(upstream, {
+		method: 'GET',
+		headers: upstreamHeaders,
+	});
+	const body = await response.text().catch(() => '');
+	return new Response(
+		JSON.stringify(
+			{
+				upstream,
+				status: response.status,
+				statusText: response.statusText,
+				preparedHeaders: Object.fromEntries(upstreamHeaders.entries()),
+				responseHeaders: Object.fromEntries(response.headers.entries()),
+				body: body.slice(0, 2000),
+			},
+			null,
+			2,
+		),
+		{
+			status: 200,
+			headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
+		},
+	);
+}
+
 // ── 主處理 ────────────────────────────────────────────────────
 
 async function handleRequest(request) {
@@ -313,6 +396,14 @@ async function handleRequest(request) {
 	// ── 圖片代理路由 ──
 	if (path === '/image-proxy') {
 		return handleImageProxy(request, url, origin);
+	}
+
+	if (path === '/debug-headers') {
+		return handleDebugHeaders(request, url, origin);
+	}
+
+	if (path === '/debug-fanzisima') {
+		return handleDebugFanzisima(request, origin);
 	}
 
 	let upstream;

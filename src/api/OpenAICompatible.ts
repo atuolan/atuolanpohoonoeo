@@ -207,7 +207,7 @@ export class OpenAICompatibleClient {
   /**
    * AI API 代理專用子域名（灰雲 DNS only，繞過 Cloudflare 100s timeout）
    */
-  private static readonly AI_PROXY_HOST = "https://api-203.aguacloud.uk";
+  private static readonly AI_PROXY_HOST = "https://tight-sun-f7fa.a23971123.workers.dev";
 
   /**
    * 將外部 API URL 轉為代理路徑（解決 CORS 問題）

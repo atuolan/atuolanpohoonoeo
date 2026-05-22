@@ -67,7 +67,7 @@ function toProxyUrl(url: string): string {
     if (parsed.origin === window.location.origin) return url;
     const prefix =
       parsed.protocol === "http:" ? "/ai-proxy-http/" : "/ai-proxy/";
-    return `https://api-203.aguacloud.uk${prefix}${parsed.host}${parsed.pathname}`;
+    return `https://tight-sun-f7fa.a23971123.workers.dev${prefix}${parsed.host}${parsed.pathname}`;
   } catch {
     return url;
   }

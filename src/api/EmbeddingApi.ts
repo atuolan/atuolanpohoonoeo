@@ -4,7 +4,7 @@
  */
 
 /** AI API 代理專用子域名（灰雲 DNS only，繞過 Cloudflare 100s timeout） */
-const AI_PROXY_HOST = 'https://api-203.aguacloud.uk'
+const AI_PROXY_HOST = 'https://tight-sun-f7fa.a23971123.workers.dev'
 
 // ─── 介面定義 ───────────────────────────────────────────────
 
