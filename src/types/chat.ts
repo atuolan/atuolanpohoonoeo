@@ -49,6 +49,14 @@ export interface ChatAppearance {
   colors?: {
     primary: string;
     primaryLight: string;
+    /** 聊天專屬背景色（覆蓋全局背景） */
+    background?: string;
+    /** 頂/底欄專屬表面色（覆蓋聊天頁頂欄與底欄的表面色） */
+    surface?: string;
+    /** 聊天專屬文字色（覆蓋全局文字色） */
+    text?: string;
+    /** 聊天專屬次要文字色（覆蓋全局次要文字色） */
+    textSecondary?: string;
   };
   /** 頭像設定 */
   avatar?: {

@@ -682,8 +682,8 @@ const isDarkBackground = computed(() =>
 .chat-header {
   --chat-header-panel-bg: linear-gradient(
     135deg,
-    color-mix(in srgb, var(--color-surface) 85%, transparent) 0%,
-    color-mix(in srgb, var(--color-surface) 40%, transparent) 100%
+    color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 85%, transparent) 0%,
+    color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 40%, transparent) 100%
   );
   display: flex;
   align-items: center;
@@ -777,7 +777,7 @@ const isDarkBackground = computed(() =>
   justify-content: center;
   border-radius: 12px;
   background: transparent;
-  color: var(--color-text);
+  color: var(--chat-header-text, var(--color-text));
   cursor: pointer;
   border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
   transition: all var(--transition-fast);
@@ -918,7 +918,7 @@ const isDarkBackground = computed(() =>
   border-radius: 10px;
   font-size: 13px;
   font-family: inherit;
-  background: var(--color-surface, #fff);
+  background: var(--chat-header-surface, var(--color-surface, #fff));
   color: var(--color-text, #333);
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -964,7 +964,7 @@ const isDarkBackground = computed(() =>
   max-width: 100%;
   font-size: 16px;
   font-weight: 600;
-  color: var(--color-text);
+  color: var(--chat-header-text, var(--color-text));
   margin: 0;
   line-height: 1.2;
   letter-spacing: -0.01em;
@@ -1008,7 +1008,7 @@ const isDarkBackground = computed(() =>
   justify-content: center;
   border-radius: 999px;
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--chat-header-text-secondary, var(--color-text-secondary));
   cursor: pointer;
   border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
   flex-shrink: 0;
@@ -1046,7 +1046,7 @@ const isDarkBackground = computed(() =>
   justify-content: center;
   border-radius: 12px;
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--chat-header-text-secondary, var(--color-text-secondary));
   cursor: pointer;
   border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
   transition: all var(--transition-fast);
@@ -1109,7 +1109,7 @@ const isDarkBackground = computed(() =>
   top: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
-  background: var(--color-surface);
+  background: var(--chat-header-surface, var(--color-surface));
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
@@ -1243,7 +1243,7 @@ const isDarkBackground = computed(() =>
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  background: var(--color-surface);
+  background: var(--chat-header-surface, var(--color-surface));
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
   overflow-y: auto;

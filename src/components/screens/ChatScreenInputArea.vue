@@ -1038,7 +1038,7 @@ const isDarkBackground = computed(() =>
 
   .reply-preview-text {
     font-size: 13px;
-    color: var(--color-text-secondary);
+    color: var(--chat-header-text-secondary, var(--color-text-secondary));
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1050,7 +1050,7 @@ const isDarkBackground = computed(() =>
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--color-surface);
+    background: var(--chat-header-surface, var(--color-surface));
     border: none;
     border-radius: 50%;
     color: var(--color-text-muted);
@@ -1065,7 +1065,7 @@ const isDarkBackground = computed(() =>
 
     &:hover {
       background: var(--color-surface-hover);
-      color: var(--color-text);
+      color: var(--chat-header-text, var(--color-text));
     }
   }
 }
@@ -1105,7 +1105,7 @@ const isDarkBackground = computed(() =>
   border: 1px solid var(--color-border, #e2e8f0);
   border-radius: 16px;
   font-size: 13px;
-  color: var(--color-text-secondary, #666);
+  color: var(--chat-header-text-secondary, var(--color-text-secondary, #666));
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
@@ -1159,8 +1159,8 @@ const isDarkBackground = computed(() =>
   border-radius: 22px;
   background: linear-gradient(
     135deg,
-    color-mix(in srgb, var(--color-surface) 85%, transparent) 0%,
-    color-mix(in srgb, var(--color-surface) 40%, transparent) 100%
+    color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 85%, transparent) 0%,
+    color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 40%, transparent) 100%
   );
   backdrop-filter: blur(16px) saturate(140%);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
@@ -1222,7 +1222,7 @@ const isDarkBackground = computed(() =>
   top: -1px;
   height: 4px;
   background: currentColor;
-  color: var(--color-text, #111);
+  color: var(--chat-header-text, var(--color-text, #111));
   border-radius: 4px;
   left: 0;
   width: 100%;
@@ -1245,7 +1245,7 @@ const isDarkBackground = computed(() =>
     color: #d49b00;
   }
   &.color-message {
-    color: var(--color-text, #111);
+    color: var(--chat-header-text, var(--color-text, #111));
   }
 }
 
@@ -1331,7 +1331,7 @@ const isDarkBackground = computed(() =>
   bottom: calc(100% + 8px);
   left: 0;
   z-index: 30;
-  background: var(--color-surface, #fff);
+  background: var(--chat-header-surface, var(--color-surface, #fff));
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
   border-radius: 12px;
   padding: 6px;
@@ -1352,7 +1352,7 @@ const isDarkBackground = computed(() =>
   border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
-  color: var(--color-text, #222);
+  color: var(--chat-header-text, var(--color-text, #222));
   text-align: left;
   width: 100%;
 
@@ -1398,7 +1398,7 @@ const isDarkBackground = computed(() =>
   border: none;
   border-radius: 0;
   background: transparent;
-  color: var(--color-text);
+  color: var(--chat-header-text, var(--color-text));
   font-size: 15px;
   line-height: 1.4;
   resize: none;
@@ -1538,7 +1538,7 @@ const isDarkBackground = computed(() =>
 // 更多功能面板
 .more-features-panel {
   padding: 16px;
-  background: var(--color-surface);
+  background: var(--chat-header-surface, var(--color-surface));
   border-top: 1px solid var(--color-border);
   border-radius: 16px 16px 0 0;
   margin-top: 8px;
@@ -1586,13 +1586,13 @@ const isDarkBackground = computed(() =>
   svg {
     width: 24px;
     height: 24px;
-    color: var(--color-text-secondary);
+    color: var(--chat-header-text-secondary, var(--color-text-secondary));
   }
 }
 
 .feature-label {
   font-size: 12px;
-  color: var(--color-text-secondary);
+  color: var(--chat-header-text-secondary, var(--color-text-secondary));
   text-align: center;
 }
 
@@ -1607,7 +1607,7 @@ const isDarkBackground = computed(() =>
   height: 60%;
   min-height: 250px;
   max-height: 80%;
-  background: var(--color-surface, #fff);
+  background: var(--chat-header-surface, var(--color-surface, #fff));
   display: flex;
   flex-direction: column;
   z-index: 50;
@@ -1639,7 +1639,7 @@ const isDarkBackground = computed(() =>
   background: transparent;
   border: none;
   border-radius: 50%;
-  color: var(--color-text-secondary, #666);
+  color: var(--chat-header-text-secondary, var(--color-text-secondary, #666));
   cursor: pointer;
   transition: all 0.15s ease;
 
@@ -1650,7 +1650,7 @@ const isDarkBackground = computed(() =>
 
   &:hover {
     background: var(--color-background, #f5f5f5);
-    color: var(--color-text, #333);
+    color: var(--chat-header-text, var(--color-text, #333));
   }
 }
 
@@ -1691,7 +1691,7 @@ const isDarkBackground = computed(() =>
   border: 2px solid var(--color-primary, #7dd3a8);
   border-radius: 16px;
   background: var(--color-background, #fff);
-  color: var(--color-text);
+  color: var(--chat-header-text, var(--color-text));
   font-size: 15px;
   line-height: 1.6;
   resize: none;
@@ -2152,7 +2152,7 @@ const isDarkBackground = computed(() =>
   font-size: 14px;
   resize: none;
   background: rgba(255, 255, 255, 0.8);
-  color: var(--color-text, #333);
+  color: var(--chat-header-text, var(--color-text, #333));
   outline: none;
   box-sizing: border-box;
   transition: border-color 0.2s;

@@ -56,7 +56,7 @@ const useCustomAppearance = ref(true);
 
 // 當前分頁
 const activeTab = ref<
-  "colors" | "avatar" | "bubble" | "wallpaper" | "font" | "decorations"
+  "colors" | "avatar" | "bubble" | "wallpaper" | "font" | "decorations" | "headerFooter"
 >("colors");
 
 // 預設主題列表
@@ -279,6 +279,10 @@ const tempColorPreset = ref<string>(themeStore.currentPreset);
 const tempColors = ref({
   primary: themeStore.colors.primary,
   primaryLight: themeStore.colors.primaryLight,
+  background: themeStore.colors.background,
+  surface: themeStore.colors.surface,
+  text: themeStore.colors.text,
+  textSecondary: themeStore.colors.textSecondary,
 });
 
 // 字體大小選項（改為滑块范围）
@@ -332,6 +336,10 @@ function selectPreset(presetId: string) {
         tempColors.value = {
           primary: colors.primary,
           primaryLight: colors.primaryLight,
+          background: colors.background || themeStore.colors.background,
+          surface: colors.surface || themeStore.colors.surface,
+          text: colors.text || themeStore.colors.text,
+          textSecondary: colors.textSecondary || themeStore.colors.textSecondary,
         };
         // 同步更新氣泡顏色
         tempBubbleStyle.value.userBgColor = colors.primary;
@@ -640,6 +648,10 @@ function handleClose() {
         ? {
             primary: tempColors.value.primary,
             primaryLight: tempColors.value.primaryLight,
+            background: tempColors.value.background,
+            surface: tempColors.value.surface,
+            text: tempColors.value.text,
+            textSecondary: tempColors.value.textSecondary,
           }
         : undefined,
       avatar: useCustomAppearance.value
@@ -681,6 +693,10 @@ watch(
       const defaultColors = {
         primary: themeStore.colors.primary,
         primaryLight: themeStore.colors.primaryLight,
+        background: themeStore.colors.background,
+        surface: themeStore.colors.surface,
+        text: themeStore.colors.text,
+        textSecondary: themeStore.colors.textSecondary,
       };
       const defaultAvatar = { ...themeStore.avatarStyle };
       const defaultBubble = { ...themeStore.bubbleStyle };
@@ -706,7 +722,14 @@ watch(
       if (props.chatAppearance?.useCustom) {
         // 載入聊天專屬設定，沒有的用全局預設
         tempColors.value = props.chatAppearance.colors
-          ? { ...props.chatAppearance.colors }
+          ? {
+              primary: props.chatAppearance.colors.primary,
+              primaryLight: props.chatAppearance.colors.primaryLight,
+              background: props.chatAppearance.colors.background || defaultColors.background,
+              surface: props.chatAppearance.colors.surface || defaultColors.surface,
+              text: props.chatAppearance.colors.text || defaultColors.text,
+              textSecondary: props.chatAppearance.colors.textSecondary || defaultColors.textSecondary,
+            }
           : defaultColors;
         tempAvatarStyle.value = props.chatAppearance.avatar
           ? { ...props.chatAppearance.avatar }
@@ -883,6 +906,17 @@ watch(
                 </svg>
                 裝飾
               </button>
+              <button
+                v-if="isChatMode"
+                class="tab-item"
+                :class="{ active: activeTab === 'headerFooter' }"
+                @click="activeTab = 'headerFooter'"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z" />
+                </svg>
+                頂/底欄
+              </button>
             </div>
           </div>
 
@@ -907,6 +941,7 @@ watch(
                 </button>
               </div>
 
+
               <div class="color-preview">
                 <div class="preview-label">預覽效果</div>
                 <div class="preview-card">
@@ -918,11 +953,11 @@ watch(
                   </div>
                   <div
                     class="preview-body"
-                    :style="{ background: themeStore.colors.background }"
+                    :style="{ background: tempColors.background || themeStore.colors.background }"
                   >
                     <div
                       class="preview-bubble ai"
-                      :style="{ background: themeStore.colors.surface }"
+                      :style="{ background: tempColors.surface || themeStore.colors.surface }"
                     >
                       AI 訊息
                     </div>
@@ -1169,6 +1204,23 @@ watch(
 
             <!-- 桌布設定 -->
             <div v-if="activeTab === 'wallpaper'" class="settings-section">
+              <template v-if="isChatMode">
+                <h3 class="section-title">自訂背景色</h3>
+                <div class="bubble-color-row">
+                  <div class="color-item">
+                    <input
+                      type="color"
+                      :value="tempColors.background || themeStore.colors.background"
+                      @input="
+                        tempColors.background = ($event.target as HTMLInputElement).value;
+                        useCustomAppearance = true;
+                      "
+                    />
+                    <span>背景色</span>
+                  </div>
+                </div>
+              </template>
+
               <h3 class="section-title">背景樣式</h3>
               <div class="wallpaper-grid">
                 <button
@@ -1623,6 +1675,46 @@ watch(
                   <code :style="{ color: tempFontStyle.markdownColors.code }"
                     >行內代碼</code
                   >
+                </div>
+              </div>
+            </div>
+
+            <!-- 頂/底欄設定 -->
+            <div v-if="activeTab === 'headerFooter' && isChatMode" class="settings-section">
+              <h3 class="section-title">頂/底欄顏色設定</h3>
+              <div class="bubble-color-row">
+                <div class="color-item">
+                  <input
+                    type="color"
+                    :value="tempColors.surface || themeStore.colors.surface"
+                    @input="
+                      tempColors.surface = ($event.target as HTMLInputElement).value;
+                      useCustomAppearance = true;
+                    "
+                  />
+                  <span>表面色</span>
+                </div>
+                <div class="color-item">
+                  <input
+                    type="color"
+                    :value="tempColors.text || themeStore.colors.text"
+                    @input="
+                      tempColors.text = ($event.target as HTMLInputElement).value;
+                      useCustomAppearance = true;
+                    "
+                  />
+                  <span>文字色</span>
+                </div>
+                <div class="color-item">
+                  <input
+                    type="color"
+                    :value="tempColors.textSecondary || themeStore.colors.textSecondary"
+                    @input="
+                      tempColors.textSecondary = ($event.target as HTMLInputElement).value;
+                      useCustomAppearance = true;
+                    "
+                  />
+                  <span>次要文字色</span>
                 </div>
               </div>
             </div>

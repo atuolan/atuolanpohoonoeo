@@ -2800,6 +2800,10 @@ function applyChatAppearance(appearance?: ChatAppearance) {
     container.style.removeProperty("--bubble-max-width");
     container.style.removeProperty("--color-primary");
     container.style.removeProperty("--color-primary-light");
+    container.style.removeProperty("--color-background");
+    container.style.removeProperty("--chat-header-surface");
+    container.style.removeProperty("--chat-header-text");
+    container.style.removeProperty("--chat-header-text-secondary");
     container.style.removeProperty("--avatar-border-radius");
     container.style.removeProperty("--avatar-size");
     container.style.removeProperty("--avatar-border-width");
@@ -2836,6 +2840,10 @@ function applyChatAppearance(appearance?: ChatAppearance) {
     container.style.removeProperty("--bubble-max-width");
     container.style.removeProperty("--color-primary");
     container.style.removeProperty("--color-primary-light");
+    container.style.removeProperty("--color-background");
+    container.style.removeProperty("--chat-header-surface");
+    container.style.removeProperty("--chat-header-text");
+    container.style.removeProperty("--chat-header-text-secondary");
     // 頭像相關
     container.style.removeProperty("--avatar-border-radius");
     container.style.removeProperty("--avatar-size");
@@ -2873,6 +2881,31 @@ function applyChatAppearance(appearance?: ChatAppearance) {
       "--color-primary-light",
       appearance.colors.primaryLight,
     );
+    if (appearance.colors.background) {
+      container.style.setProperty("--color-background", appearance.colors.background);
+    } else {
+      container.style.removeProperty("--color-background");
+    }
+    if (appearance.colors.surface) {
+      container.style.setProperty("--chat-header-surface", appearance.colors.surface);
+    } else {
+      container.style.removeProperty("--chat-header-surface");
+    }
+    if (appearance.colors.text) {
+      container.style.setProperty("--chat-header-text", appearance.colors.text);
+    } else {
+      container.style.removeProperty("--chat-header-text");
+    }
+    if (appearance.colors.textSecondary) {
+      container.style.setProperty("--chat-header-text-secondary", appearance.colors.textSecondary);
+    } else {
+      container.style.removeProperty("--chat-header-text-secondary");
+    }
+  } else {
+    container.style.removeProperty("--color-background");
+    container.style.removeProperty("--chat-header-surface");
+    container.style.removeProperty("--chat-header-text");
+    container.style.removeProperty("--chat-header-text-secondary");
   }
 
   // 套用聊天專屬頭像樣式
