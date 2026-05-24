@@ -123,8 +123,78 @@ export class AuthService {
         return;
       }
 
+      // 清除舊的 localStorage 結果
+      localStorage.removeItem("discord_oauth_result");
+
       const pollTimer = setInterval(() => {
         try {
+          // 檢查 localStorage 是否有結果
+          const resultStr = localStorage.getItem("discord_oauth_result");
+          if (resultStr) {
+            const resultData = JSON.parse(resultStr);
+            // 確保是最近 5 分鐘內的結果
+            if (Date.now() - resultData.timestamp < 5 * 60 * 1000) {
+              clearInterval(pollTimer);
+              pollResolved = true;
+              localStorage.removeItem("discord_oauth_result");
+              
+              const popupParams = new URLSearchParams(resultData.search);
+              const userId = popupParams.get("discord_user_id");
+              const username = popupParams.get("discord_username");
+              const displayName = popupParams.get("discord_display_name");
+              const error = popupParams.get("discord_error");
+              const authResultRaw = popupParams.get("auth_result");
+
+              if (!popup.closed) popup.close();
+
+              if (error) {
+                resolve({
+                  success: false,
+                  message: decodeURIComponent(error),
+                });
+                return;
+              }
+
+              if (authResultRaw) {
+                try {
+                  const authResult: DiscordOAuthResult = JSON.parse(
+                    decodeURIComponent(authResultRaw),
+                  );
+                  if (authResult.success) {
+                    resolve({
+                      success: true,
+                      message: "驗證通過",
+                      userId: userId || undefined,
+                      username: username || undefined,
+                      displayName: displayName || undefined,
+                      oauthResult: authResult,
+                    });
+                  } else {
+                    resolve({
+                      success: false,
+                      message:
+                        authResult.message || "不符合驗證條件",
+                      oauthResult: authResult,
+                    });
+                  }
+                } catch {
+                  resolve({
+                    success: false,
+                    message: "驗證結果解析失敗",
+                  });
+                }
+                return;
+              }
+
+              // 無 auth_result = 非 auth 用途的 callback（不應發生在 purpose=auth）
+              resolve({
+                success: false,
+                message: "未收到驗證結果，請確認 Discord App OAuth2 scope 已設定 guilds + guilds.members.read",
+              });
+              return;
+            }
+          }
+
           if (popup.closed) {
             clearInterval(pollTimer);
             // popup 被關閉但未收到結果 = 使用者取消
@@ -134,70 +204,9 @@ export class AuthService {
             }
             return;
           }
-
-          const popupUrl = popup.location.href;
-          if (
-            popupUrl.startsWith(currentOrigin) &&
-            popupUrl.includes("discord-callback.html")
-          ) {
-            clearInterval(pollTimer);
-            pollResolved = true;
-            const popupParams = new URL(popupUrl).searchParams;
-            const userId = popupParams.get("discord_user_id");
-            const username = popupParams.get("discord_username");
-            const displayName = popupParams.get("discord_display_name");
-            const error = popupParams.get("discord_error");
-            const authResultRaw = popupParams.get("auth_result");
-
-            popup.close();
-
-            if (error) {
-              resolve({
-                success: false,
-                message: decodeURIComponent(error),
-              });
-              return;
-            }
-
-            if (authResultRaw) {
-              try {
-                const authResult: DiscordOAuthResult = JSON.parse(
-                  decodeURIComponent(authResultRaw),
-                );
-                if (authResult.success) {
-                  resolve({
-                    success: true,
-                    message: "驗證通過",
-                    userId: userId || undefined,
-                    username: username || undefined,
-                    displayName: displayName || undefined,
-                    oauthResult: authResult,
-                  });
-                } else {
-                  resolve({
-                    success: false,
-                    message:
-                      authResult.message || "不符合驗證條件",
-                    oauthResult: authResult,
-                  });
-                }
-              } catch {
-                resolve({
-                  success: false,
-                  message: "驗證結果解析失敗",
-                });
-              }
-              return;
-            }
-
-            // 無 auth_result = 非 auth 用途的 callback（不應發生在 purpose=auth）
-            resolve({
-              success: false,
-              message: "未收到驗證結果，請確認 Discord App OAuth2 scope 已設定 guilds + guilds.members.read",
-            });
-          }
-        } catch {
-          // popup 跨域時無法讀取 location.href，繼續等待
+        } catch (e) {
+          // 忽略 JSON parse 錯誤等
+          console.error("Error polling localStorage:", e);
         }
       }, 300);
 

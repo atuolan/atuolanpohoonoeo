@@ -2,12 +2,35 @@
 <html><head><title>Discord 連結中…</title></head>
 <body><p>正在連結 Discord 帳號，請稍候…</p>
 <script>
-// 這個頁面只是一個中繼站，讓 opener（原頁面）讀取 URL 參數
-// 如果沒有 opener（直接跳轉模式），則 redirect 回首頁讓 SPA 處理
-if (!window.opener) {
-  // fallback：直接跳轉模式，把參數帶回首頁
-  window.location.href = '/' + window.location.search;
+// 這個頁面只是一個中繼站，將 URL 參數存入 localStorage 讓原頁面讀取
+// 解決 window.opener 遺失或跨域限制導致的卡死問題
+try {
+  const searchParams = window.location.search;
+  if (searchParams) {
+    // 存入 localStorage，加上時間戳避免讀到舊資料
+    localStorage.setItem('discord_oauth_result', JSON.stringify({
+      search: searchParams,
+      timestamp: Date.now()
+    }));
+  }
+} catch (e) {
+  console.error('Failed to save OAuth result to localStorage:', e);
 }
-// 有 opener 的話，什麼都不做，等 opener 的 setInterval 讀完參數後關閉此視窗
+
+// 嘗試關閉視窗
+window.close();
+
+// 如果視窗沒有被關閉，顯示提示訊息讓使用者手動關閉
+setTimeout(() => {
+  if (!window.closed) {
+    document.body.innerHTML = `
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; text-align: center; padding: 20px;">
+        <h2 style="color: #4CAF50;">驗證已完成</h2>
+        <p style="font-size: 18px; margin-bottom: 20px;">您可以安全地關閉此視窗，並回到原來的頁面繼續操作。</p>
+        <button onclick="window.close()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #4CAF50; color: white; border: none; border-radius: 5px;">關閉視窗</button>
+      </div>
+    `;
+  }
+}, 500);
 </script>
 </body></html>

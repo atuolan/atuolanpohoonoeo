@@ -1,3 +1,32 @@
+// 攔截 Discord OAuth 回調，避免在彈出視窗中載入整個 Vue 應用程式
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.has('auth_result') || urlParams.has('discord_error')) {
+  // 將結果存入 localStorage 供主視窗讀取
+  try {
+    localStorage.setItem('discord_oauth_result', JSON.stringify({
+      search: window.location.search,
+      timestamp: Date.now()
+    }));
+  } catch (e) {
+    console.error('Failed to save OAuth result to localStorage:', e);
+  }
+
+  // 嘗試關閉視窗
+  window.close();
+
+  // 如果無法關閉，顯示提示畫面並停止執行後續的 Vue 初始化
+  document.body.innerHTML = `
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; text-align: center; padding: 20px; background-color: #1e1e2e; color: #cdd6f4;">
+      <h2 style="color: #a6e3a1; margin-bottom: 10px;">驗證已完成</h2>
+      <p style="font-size: 16px; margin-bottom: 30px; color: #bac2de;">您可以安全地關閉此視窗，並回到原來的頁面繼續操作。</p>
+      <button onclick="window.close()" style="padding: 12px 24px; font-size: 16px; cursor: pointer; background-color: #89b4fa; color: #11111b; border: none; border-radius: 8px; font-weight: bold;">關閉視窗</button>
+    </div>
+  `;
+  
+  // 拋出錯誤以終止後續腳本執行
+  throw new Error("OAuth callback intercepted. Stopping Vue app initialization.");
+}
+
 import PrimeVue from "primevue/config";
 import Aura from "@primevue/themes/aura";
 

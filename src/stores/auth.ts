@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { AuthService } from '@/services/AuthService'
 import { CodeProtection } from '@/utils/codeProtection'
-import type { AuthState } from '@/types/auth'
+import type { AuthState, DiscordOAuthResult } from '@/types/auth'
 
 export const useAuthStore = defineStore('auth', () => {
   const authState = ref<AuthState | null>(null)
@@ -18,6 +18,35 @@ export const useAuthStore = defineStore('auth', () => {
   // 初始化：從 IndexedDB 恢復狀態（含重試，改善行動端暫時性存儲失效）
   async function initialize() {
     initError.value = null
+
+    // 檢查網址列是否有 OAuth 回傳的參數 (同分頁跳轉 fallback)
+    const urlParams = new URLSearchParams(window.location.search)
+    const authResultRaw = urlParams.get('auth_result')
+    const discordUserId = urlParams.get('discord_user_id')
+    const discordUsername = urlParams.get('discord_username')
+    const discordDisplayName = urlParams.get('discord_display_name')
+    const discordError = urlParams.get('discord_error')
+
+    if (authResultRaw || discordError) {
+      try {
+        if (discordError) {
+          console.error('[Auth] Discord OAuth 錯誤:', decodeURIComponent(discordError))
+        } else if (authResultRaw) {
+          const authResult = JSON.parse(decodeURIComponent(authResultRaw))
+          if (authResult.success && discordUserId && discordUsername && discordDisplayName) {
+            // 驗證成功，儲存狀態
+            await AuthService.saveAuthState(discordUserId, discordUsername, discordDisplayName)
+            console.log('[Auth] 從 URL 參數恢復驗證狀態成功')
+          }
+        }
+      } catch (e) {
+        console.error('[Auth] 解析 URL 驗證參數失敗:', e)
+      } finally {
+        // 清除網址列參數，避免重新整理時再次觸發
+        const newUrl = window.location.pathname
+        window.history.replaceState({}, document.title, newUrl)
+      }
+    }
 
     const maxRetries = 3
     let lastError: unknown = null
@@ -94,6 +123,41 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  // 透過 Discord OAuth2 驗證（跨社群身分組檢查）
+  async function verifyByDiscord(): Promise<{
+    success: boolean;
+    message: string;
+    oauthResult?: DiscordOAuthResult;
+  }> {
+    initError.value = null;
+    const result = await AuthService.verifyByDiscordOAuth();
+
+    if (result.success && result.userId && result.username) {
+      await AuthService.saveAuthState(
+        result.userId,
+        result.username,
+        result.displayName || result.username,
+      );
+      authState.value = await AuthService.getAuthState();
+
+      if (authState.value?.discordDisplayName) {
+        CodeProtection.addWatermark(authState.value.discordDisplayName);
+      }
+
+      return {
+        success: true,
+        message: "驗證成功",
+        oauthResult: result.oauthResult,
+      };
+    }
+
+    return {
+      success: false,
+      message: result.message || "驗證失敗",
+      oauthResult: result.oauthResult,
+    };
+  }
+
   // 登出
   async function logout() {
     await AuthService.clearAuth()
@@ -161,6 +225,7 @@ export const useAuthStore = defineStore('auth', () => {
     initialize,
     retryInitialize: initialize,
     verifyCode,
+    verifyByDiscord,
     adminBypass,
     friendBypass,
     logout,

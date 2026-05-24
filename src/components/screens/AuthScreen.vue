@@ -37,7 +37,7 @@
               v-model="verificationCode"
               type="text"
               placeholder="輸入 6 位數驗證碼"
-              :disabled="isVerifying"
+              :disabled="isVerifying || isVerifyingByOAuth"
               required
               autofocus
             />
@@ -49,7 +49,7 @@
             <button
               type="button"
               class="retry-btn"
-              :disabled="isVerifying"
+              :disabled="isVerifying || isVerifyingByOAuth"
               @click="handleRetryInit"
             >
               重試讀取
@@ -58,7 +58,25 @@
 
           <!-- 錯誤訊息 -->
           <div v-if="errorMessage" class="error-message">
-            {{ errorMessage }}
+            <div>{{ errorMessage }}</div>
+            <div v-if="oauthChecks && oauthChecks.length" class="oauth-checks-detail">
+              <div
+                v-for="check in oauthChecks"
+                :key="check.guildId"
+                class="oauth-check-row"
+                :class="{ passed: check.passed, failed: !check.passed }"
+              >
+                <span class="check-icon">{{ check.passed ? '✅' : '❌' }}</span>
+                <span class="check-guild">{{ check.guildName || check.guildId }}</span>
+                <span class="check-reason">
+                  <template v-if="check.reason === 'not_in_guild'">未加入此社群</template>
+                  <template v-else-if="check.reason === 'missing_role'">缺少必要身分組</template>
+                  <template v-else-if="check.reason === 'cannot_read_member'">無法驗證身分組（Bot 不需在該社群）</template>
+                  <template v-else-if="check.reason === 'cannot_read_guilds'">無法讀取社群列表（請確認已授權）</template>
+                  <template v-else>驗證通過</template>
+                </span>
+              </div>
+            </div>
           </div>
 
           <!-- 剩餘嘗試次數 -->
@@ -70,12 +88,36 @@
           <button
             type="submit"
             class="submit-btn"
-            :disabled="isVerifying || remainingAttempts === 0"
+            :disabled="isVerifying || isVerifyingByOAuth || remainingAttempts === 0"
           >
             <span v-if="!isVerifying">驗證</span>
             <span v-else>驗證中...</span>
           </button>
         </form>
+
+        <!-- Discord OAuth 登入 -->
+        <div class="oauth-section">
+          <div class="divider">
+            <span class="divider-text">或</span>
+          </div>
+
+          <button
+            type="button"
+            class="discord-btn"
+            :disabled="isVerifying || isVerifyingByOAuth"
+            @click="handleDiscordOAuth"
+          >
+            <svg class="discord-logo" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M20.317 4.37a19.8 19.8 0 0 0-4.885-1.515.07.07 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.6 12.6 0 0 0-.617-1.25.08.08 0 0 0-.079-.037A19.74 19.74 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.08.08 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.08.08 0 0 0 .084-.028 14.1 14.1 0 0 0 1.226-1.994.08.08 0 0 0-.041-.106 13.1 13.1 0 0 1-1.872-.892.08.08 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.07.07 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.07.07 0 0 1 .078.01q.18.149.372.292a.08.08 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.08.08 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.08.08 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.08.08 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.06.06 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+            </svg>
+            <span v-if="!isVerifyingByOAuth">使用 Discord 登入</span>
+            <span v-else>驗證中...</span>
+          </button>
+
+          <p class="oauth-desc">
+            授權後自動檢查你在夜宵攤與游鹿小島的社群身分組權限
+          </p>
+        </div>
 
         <!-- 幫助連結 -->
         <div class="help">
@@ -116,12 +158,15 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import type { GuildCheckResult } from '@/types/auth'
 
 const authStore = useAuthStore()
 
 const verificationCode = ref('')
 const isVerifying = ref(false)
 const errorMessage = ref('')
+const isVerifyingByOAuth = ref(false)
+const oauthChecks = ref<GuildCheckResult[] | null>(null)
 
 const remainingAttempts = computed(() => authStore.remainingAttempts)
 const initErrorMessage = computed(() => authStore.initError)
@@ -173,6 +218,33 @@ async function handleVerify() {
       errorMessage.value = '嘗試次數已用完，請重新整理頁面'
     }
     verificationCode.value = ''
+  }
+}
+
+async function handleDiscordOAuth() {
+  isVerifyingByOAuth.value = true
+  errorMessage.value = ''
+  oauthChecks.value = null
+
+  try {
+    const result = await authStore.verifyByDiscord()
+    if (result.success) {
+      errorMessage.value = ''
+      oauthChecks.value = null
+      setTimeout(() => {
+        window.location.reload()
+      }, 500)
+    } else {
+      errorMessage.value = result.message
+      if (result.oauthResult?.checks) {
+        oauthChecks.value = result.oauthResult.checks
+      }
+    }
+  } catch (e) {
+    errorMessage.value = 'Discord 驗證過程發生錯誤，請重試'
+    console.error('[AuthScreen] Discord OAuth 錯誤:', e)
+  } finally {
+    isVerifyingByOAuth.value = false
   }
 }
 
@@ -538,6 +610,128 @@ async function handleRetryInit() {
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(125, 211, 168, 0.4);
     }
+  }
+}
+
+// ── Discord OAuth 區塊樣式 ──
+
+.oauth-section {
+  margin-top: 0;
+  margin-bottom: 24px;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  margin: 20px 0;
+
+  &::before,
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #e2e8f0;
+  }
+
+  .divider-text {
+    padding: 0 16px;
+    font-size: 13px;
+    color: #a0aec0;
+    font-weight: 500;
+  }
+}
+
+.discord-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  color: white;
+  background: #5865f2;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 10px;
+
+  .discord-logo {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+
+  &:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(88, 101, 242, 0.4);
+    background: #4752c4;
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.oauth-desc {
+  font-size: 12px;
+  color: #a0aec0;
+  text-align: center;
+  margin: 0;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.oauth-checks-detail {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.oauth-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 6px;
+
+  &.passed {
+    background: rgba(72, 187, 120, 0.1);
+    .check-reason {
+      color: #276749;
+    }
+  }
+
+  &.failed {
+    background: rgba(245, 101, 101, 0.1);
+    .check-reason {
+      color: #9b2c2c;
+    }
+  }
+
+  .check-icon {
+    flex-shrink: 0;
+    font-size: 14px;
+  }
+
+  .check-guild {
+    font-weight: 600;
+    color: #2d3748;
+    flex-shrink: 0;
+  }
+
+  .check-reason {
+    color: #718096;
+    line-height: 1.4;
   }
 }
 </style>
