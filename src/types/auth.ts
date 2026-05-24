@@ -7,6 +7,8 @@ export interface AuthState {
   discordDisplayName?: string | null
   authenticatedAt: number | null
   expiresAt: number | null
+  /** 協議版本號：部署時遞增可強制所有用戶重新驗證 */
+  authProtocolVersion?: number
 }
 
 export interface VerificationResponse {
@@ -16,6 +18,21 @@ export interface VerificationResponse {
   username?: string
   displayName?: string
   expiresIn?: number
+}
+
+export interface GuildCheckResult {
+  guildId: string
+  guildName?: string
+  passed: boolean
+  reason: string | null  // null = passed, 'not_in_guild' | 'missing_role' | 'cannot_read_member'
+  requiredRoleId?: string
+  userRoles?: string[]
+}
+
+export interface DiscordOAuthResult {
+  success: boolean
+  message: string
+  checks: GuildCheckResult[]
 }
 
 export interface DeviceInfo {

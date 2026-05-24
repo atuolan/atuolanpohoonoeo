@@ -1,11 +1,15 @@
 // 驗證服務
 import { db, DB_STORES } from "@/db/database";
-import type { AuthState, VerificationResponse } from "@/types/auth";
+import type {
+  AuthState,
+  DiscordOAuthResult,
+  VerificationResponse,
+} from "@/types/auth";
 import { DeviceFingerprintCollector } from "@/utils/deviceFingerprint";
 
 const AUTH_RECORD_ID = "current_auth";
-const SESSION_DURATION = 14 * 24 * 60 * 60 * 1000; // 14天
-const SESSION_RENEW_THRESHOLD = 2 * 24 * 60 * 60 * 1000; // 剩餘 2 天內自動續期
+const SESSION_DURATION = 14 * 24 * 60 * 60 * 1000; // 14 天強制過期，之後需重新驗證
+const AUTH_PROTOCOL_VERSION = 1; // 部署時遞增此值可強制所有用戶重新驗證
 // 驗證 API 端點：本地開發走相對路徑，生產環境一律走 VPS 絕對路徑
 // （GitHub Pages 是純靜態，無法代理 /api/ 到 Discord bot）
 const API_ENDPOINT = (() => {
@@ -21,6 +25,11 @@ const API_ENDPOINT = (() => {
 const LEGACY_AUTH_KEY = "aguaphone_auth"; // 舊版 localStorage key（遷移用）
 const BACKUP_AUTH_KEY = "aguaphone_auth_backup_v2"; // 新版 localStorage 備援
 const AUTH_ENCRYPTION_KEY = "aguaphone_secret_key_2026";
+
+// Discord OAuth2 常數（用於跨社群身分組驗證）
+const DISCORD_CLIENT_ID = "1454468726899609761";
+const DISCORD_OAUTH_CALLBACK = "https://push.aguacloud.uk/discord/callback";
+const DISCORD_OAUTH_TIMEOUT = 120000; // 2分鐘超時
 
 type AuthRecord = AuthState & { id: string };
 
@@ -70,6 +79,141 @@ export class AuthService {
     }
   }
 
+  // 透過 Discord OAuth2 驗證（跨社群身分組檢查）
+  // 開啟 popup 視窗進行 Discord OAuth2 授權，Worker callback 會查跨社群身分組
+  // 輪詢 popup URL 直到授權完成或逾時
+  static async verifyByDiscordOAuth(): Promise<{
+    success: boolean;
+    message: string;
+    userId?: string;
+    username?: string;
+    displayName?: string;
+    oauthResult?: DiscordOAuthResult;
+  }> {
+    if (typeof window === "undefined") {
+      return { success: false, message: "此驗證方式僅支援瀏覽器環境" };
+    }
+
+    return new Promise((resolve) => {
+      const currentOrigin = window.location.origin;
+      const params = new URLSearchParams({
+        client_id: DISCORD_CLIENT_ID,
+        redirect_uri: DISCORD_OAUTH_CALLBACK,
+        response_type: "code",
+        scope: "identify guilds guilds.members.read",
+        state: currentOrigin + "|purpose=auth",
+      });
+      const authUrl = `https://discord.com/oauth2/authorize?${params.toString()}`;
+
+      const w = 500;
+      const h = 700;
+      const left = window.screenX + (window.outerWidth - w) / 2;
+      const top = window.screenY + (window.outerHeight - h) / 2;
+      const popup = window.open(
+        authUrl,
+        "discord-auth-oauth",
+        `width=${w},height=${h},left=${left},top=${top},popup=yes`,
+      );
+
+      if (!popup) {
+        resolve({
+          success: false,
+          message: "無法開啟 Discord 授權視窗（請允許彈出視窗）",
+        });
+        return;
+      }
+
+      const pollTimer = setInterval(() => {
+        try {
+          if (popup.closed) {
+            clearInterval(pollTimer);
+            // popup 被關閉但未收到結果 = 使用者取消
+            if (!pollResolved) {
+              pollResolved = true;
+              resolve({ success: false, message: "授權已取消" });
+            }
+            return;
+          }
+
+          const popupUrl = popup.location.href;
+          if (
+            popupUrl.startsWith(currentOrigin) &&
+            popupUrl.includes("discord-callback.html")
+          ) {
+            clearInterval(pollTimer);
+            pollResolved = true;
+            const popupParams = new URL(popupUrl).searchParams;
+            const userId = popupParams.get("discord_user_id");
+            const username = popupParams.get("discord_username");
+            const displayName = popupParams.get("discord_display_name");
+            const error = popupParams.get("discord_error");
+            const authResultRaw = popupParams.get("auth_result");
+
+            popup.close();
+
+            if (error) {
+              resolve({
+                success: false,
+                message: decodeURIComponent(error),
+              });
+              return;
+            }
+
+            if (authResultRaw) {
+              try {
+                const authResult: DiscordOAuthResult = JSON.parse(
+                  decodeURIComponent(authResultRaw),
+                );
+                if (authResult.success) {
+                  resolve({
+                    success: true,
+                    message: "驗證通過",
+                    userId: userId || undefined,
+                    username: username || undefined,
+                    displayName: displayName || undefined,
+                    oauthResult: authResult,
+                  });
+                } else {
+                  resolve({
+                    success: false,
+                    message:
+                      authResult.message || "不符合驗證條件",
+                    oauthResult: authResult,
+                  });
+                }
+              } catch {
+                resolve({
+                  success: false,
+                  message: "驗證結果解析失敗",
+                });
+              }
+              return;
+            }
+
+            // 無 auth_result = 非 auth 用途的 callback（不應發生在 purpose=auth）
+            resolve({
+              success: false,
+              message: "未收到驗證結果，請確認 Discord App OAuth2 scope 已設定 guilds + guilds.members.read",
+            });
+          }
+        } catch {
+          // popup 跨域時無法讀取 location.href，繼續等待
+        }
+      }, 300);
+
+      let pollResolved = false;
+
+      // 逾時處理
+      setTimeout(() => {
+        if (pollResolved) return;
+        pollResolved = true;
+        clearInterval(pollTimer);
+        if (!popup.closed) popup.close();
+        resolve({ success: false, message: "授權逾時，請重試" });
+      }, DISCORD_OAUTH_TIMEOUT);
+    });
+  }
+
   // 保存驗證狀態到 IndexedDB + localStorage 備援
   static async saveAuthState(
     userId: string,
@@ -85,6 +229,7 @@ export class AuthService {
       discordDisplayName: displayName,
       authenticatedAt: now,
       expiresAt: now + SESSION_DURATION,
+      authProtocolVersion: AUTH_PROTOCOL_VERSION,
     };
 
     // 先寫備援，確保 IDB 寫入失敗時仍可恢復
@@ -169,38 +314,13 @@ export class AuthService {
     return authState?.isAuthenticated ?? false;
   }
 
-  private static async renewIfNeeded(
+  // 不再自動續期：session 嚴格在 14 天後過期，用戶必須重新驗證
+  private static renewIfNeeded(
     authState: AuthRecord,
-  ): Promise<AuthState> {
-    const now = Date.now();
-    const expiresAt = authState.expiresAt ?? 0;
-
-    if (!expiresAt || expiresAt - now > SESSION_RENEW_THRESHOLD) {
-      // 同步補寫備援，確保歷史版本升級後也有 backup
-      this.saveBackupAuthState(authState);
-      return authState;
-    }
-
-    if (!authState.discordUserId || !authState.discordUsername) {
-      return authState;
-    }
-
-    try {
-      await this.saveAuthState(
-        authState.discordUserId,
-        authState.discordUsername,
-        authState.discordDisplayName || authState.discordUsername,
-      );
-
-      const renewed = await db.get<AuthRecord>(
-        DB_STORES.AUTH_STATE,
-        AUTH_RECORD_ID,
-      );
-      return renewed ?? authState;
-    } catch (e) {
-      console.warn("[Auth] 驗證續期失敗，維持原狀:", e);
-      return authState;
-    }
+  ): AuthState {
+    // 同步補寫備援，確保歷史版本升級後也有 backup
+    this.saveBackupAuthState(authState);
+    return authState;
   }
 
   private static async restoreFromLocalBackup(
@@ -280,6 +400,9 @@ export class AuthService {
   private static normalizeAuthState(raw: Partial<AuthState>): AuthState | null {
     if (!raw || raw.isAuthenticated !== true) return null;
 
+    // 版本號不匹配 = 部署後舊版驗證失效，強制重新驗證
+    if (raw.authProtocolVersion !== AUTH_PROTOCOL_VERSION) return null;
+
     const discordUserId = raw.discordUserId ?? null;
     const discordUsername = raw.discordUsername ?? null;
     if (!discordUserId || !discordUsername) return null;
@@ -289,6 +412,7 @@ export class AuthService {
       discordUserId,
       discordUsername,
       discordDisplayName: raw.discordDisplayName ?? discordUsername,
+      authProtocolVersion: AUTH_PROTOCOL_VERSION,
       authenticatedAt: raw.authenticatedAt ?? Date.now(),
       expiresAt: raw.expiresAt ?? Date.now() + SESSION_DURATION,
     };
