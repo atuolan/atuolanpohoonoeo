@@ -271,16 +271,24 @@ export class AuthService {
 
     // 3. 決定使用哪個狀態
     if (idbState) {
+      // 版本號不匹配 = 部署後舊版驗證失效，強制清除
+      if (idbState.authProtocolVersion !== AUTH_PROTOCOL_VERSION) {
+        console.warn(
+          `[Auth] 版本號不匹配 (IDB: ${idbState.authProtocolVersion}, current: ${AUTH_PROTOCOL_VERSION})，清除舊驗證`,
+        );
+        await this.clearAuth();
+        return null;
+      }
       if (this.isExpired(idbState)) {
         await this.clearAuth();
         return null;
       }
-      // IDB 有資料，同步備援並續期
-      const renewed = await this.renewIfNeeded(idbState);
+      // IDB 有資料，同步備援
+      const renewed = this.renewIfNeeded(idbState);
       return renewed;
     }
 
-    // IDB 無資料或超時，使用 localStorage 備援
+    // IDB 無資料或超時，使用 localStorage 備援（normalizeAuthState 已含版本號檢查）
     if (localBackup) {
       console.warn("[Auth] 使用 localStorage 備援恢復驗證狀態");
       // 背景嘗試回寫 IDB（不阻塞）
