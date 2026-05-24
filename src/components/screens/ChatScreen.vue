@@ -7591,8 +7591,10 @@ async function handleBack() {
     chatStore.saveDraft(currentChatId.value, inputText.value);
   }
 
-  // 保存當前聊天狀態
-  await saveChatImmediate();
+  // 保存當前聊天狀態 (不等待，避免阻塞 UI)
+  saveChatImmediate().catch(err => {
+    console.error("[ChatScreen] handleBack saveChatImmediate failed:", err);
+  });
 
   emit("back");
 }
