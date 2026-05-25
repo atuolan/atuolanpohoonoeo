@@ -4,7 +4,7 @@ import { useLanguage } from "@/composables/useLanguage";
 import { useSettingsStore } from "@/stores/settings";
 import type { GlobalFontOverride, GlobalFontPreset, WallpaperStyle } from "@/stores/theme";
 import { useThemeStore } from "@/stores/theme";
-import { lightenColor, normalizeHex } from "@/utils/wallpaperLuminance";
+import { deriveColorsFromPrimary, normalizeHex } from "@/utils/wallpaperLuminance";
 import { computed, ref, watch } from "vue";
 
 // Props
@@ -180,6 +180,9 @@ const isCustomColor = computed(() => {
   return hasCustom || !presetList.value.some((p) => p.id === current);
 });
 
+// 統一配色開關（true=改 primary 自動推導其他色）
+const unifiedColors = ref(true);
+
 // 自訂主題色 HEX 文字輸入
 const customHexInput = ref(themeStore.colors.primary);
 
@@ -201,14 +204,31 @@ function setCustomPrimaryFromHex(raw: string) {
 
 // 套用自訂主色到 themeStore
 function applyCustomPrimary(hex: string) {
-  const primaryLight = lightenColor(hex, 0.3);
-  themeStore.setCustomColor("primary", hex);
-  themeStore.setCustomColor("primaryLight", primaryLight);
+  if (unifiedColors.value) {
+    // 統一模式：自動推導所有顏色
+    const derived = deriveColorsFromPrimary(hex);
+    for (const [key, value] of Object.entries(derived)) {
+      if (key !== "background") {
+        themeStore.setCustomColor(key as keyof import("@/stores/theme").ThemeColors, value);
+      }
+    }
+  } else {
+    // 非統一模式：只改 primary + primaryLight
+    const primaryLight = deriveColorsFromPrimary(hex).primaryLight;
+    themeStore.setCustomColor("primary", hex);
+    themeStore.setCustomColor("primaryLight", primaryLight);
+  }
   // 同步更新氣泡顏色
+  const primaryLight = themeStore.colors.primaryLight;
   themeStore.updateBubbleStyle({
     userBgColor: hex,
     userBgGradient: `linear-gradient(135deg, ${hex}, ${primaryLight})`,
   });
+}
+
+// 設定單一自訂顏色（非統一模式用）
+function setIndividualColor(key: string, value: string) {
+  themeStore.setCustomColor(key as keyof import("@/stores/theme").ThemeColors, value);
 }
 
 // 處理預設主題選擇
@@ -216,6 +236,7 @@ function selectPreset(presetId: string) {
   themeStore.setPreset(presetId);
   // 選預設時清除自訂顏色
   customHexInput.value = themeStore.colors.primary;
+  unifiedColors.value = true;
 }
 
 // 處理桌布選擇
@@ -501,6 +522,7 @@ watch(
       tempCustomCSS.value = themeStore.customCSS;
       tempGlobalFont.value = { ...themeStore.globalFont };
       customHexInput.value = themeStore.colors.primary;
+      unifiedColors.value = true;
       fontPresetName.value = "";
       fontPresetStatus.value = "";
       isCSSExpanded.value = false;
@@ -647,6 +669,68 @@ watch(
                   @blur="setCustomPrimaryFromHex(($event.target as HTMLInputElement).value)"
                 />
                 <span class="custom-color-hint">色碼或選色</span>
+              </div>
+
+              <!-- 統一配色開關 -->
+              <div class="unified-toggle" @click="unifiedColors = !unifiedColors">
+                <div class="toggle-info">
+                  <span class="toggle-title">統一配色</span>
+                  <span class="toggle-sub">{{ unifiedColors ? '改主色自動推導其他色' : '各顏色獨立調整' }}</span>
+                </div>
+                <div class="toggle-switch">
+                  <input type="checkbox" v-model="unifiedColors" />
+                  <div class="switch-track" :class="{ active: unifiedColors }">
+                    <div class="switch-thumb" :class="{ active: unifiedColors }"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 非統一模式：各顏色獨立調整 -->
+              <div v-if="!unifiedColors" class="individual-colors">
+                <div class="color-item">
+                  <input type="color" :value="themeStore.colors.primaryLight" @input="setIndividualColor('primaryLight', ($event.target as HTMLInputElement).value)" />
+                  <span>主色亮版</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="themeStore.colors.secondary" @input="setIndividualColor('secondary', ($event.target as HTMLInputElement).value)" />
+                  <span>輔助色</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="themeStore.colors.surface" @input="setIndividualColor('surface', ($event.target as HTMLInputElement).value)" />
+                  <span>卡片背景</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="themeStore.colors.surfaceHover" @input="setIndividualColor('surfaceHover', ($event.target as HTMLInputElement).value)" />
+                  <span>滑過背景</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="themeStore.colors.text" @input="setIndividualColor('text', ($event.target as HTMLInputElement).value)" />
+                  <span>主要文字</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="themeStore.colors.textSecondary" @input="setIndividualColor('textSecondary', ($event.target as HTMLInputElement).value)" />
+                  <span>次要文字</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="themeStore.colors.textMuted" @input="setIndividualColor('textMuted', ($event.target as HTMLInputElement).value)" />
+                  <span>提示文字</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="themeStore.colors.border" @input="setIndividualColor('border', ($event.target as HTMLInputElement).value)" />
+                  <span>邊框線</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="themeStore.colors.success" @input="setIndividualColor('success', ($event.target as HTMLInputElement).value)" />
+                  <span>成功提示</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="themeStore.colors.error" @input="setIndividualColor('error', ($event.target as HTMLInputElement).value)" />
+                  <span>錯誤提示</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="themeStore.colors.warning" @input="setIndividualColor('warning', ($event.target as HTMLInputElement).value)" />
+                  <span>警告提示</span>
+                </div>
               </div>
 
               <div class="color-preview">
@@ -1429,6 +1513,129 @@ body {
   font-size: 12px;
   color: var(--color-text-muted);
   white-space: nowrap;
+}
+
+// 統一配色開關
+.unified-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--color-background);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  user-select: none;
+
+  &.active {
+    background: var(--color-primary-light);
+  }
+
+  .toggle-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .toggle-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .toggle-sub {
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+
+  .toggle-switch {
+    position: relative;
+    width: 46px;
+    height: 28px;
+    flex-shrink: 0;
+
+    input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      cursor: pointer;
+    }
+
+    .switch-track {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.18);
+      border-radius: 999px;
+      transition: background 0.2s ease;
+
+      &.active {
+        background: var(--color-primary);
+      }
+    }
+
+    .switch-thumb {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+
+      &.active {
+        transform: translateX(18px);
+      }
+    }
+  }
+}
+
+// 各顏色獨立調整
+.individual-colors {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+
+  .color-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--color-background);
+    border-radius: var(--radius-md);
+
+    input[type="color"] {
+      width: 32px;
+      height: 32px;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      padding: 0;
+      overflow: hidden;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+
+      &::-webkit-color-swatch-wrapper {
+        padding: 0;
+      }
+
+      &::-webkit-color-swatch {
+        border-radius: 50%;
+        border: 2px solid var(--color-surface);
+      }
+    }
+
+    span {
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      white-space: nowrap;
+    }
+  }
 }
 
 // 預覽區域

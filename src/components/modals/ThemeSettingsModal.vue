@@ -12,7 +12,7 @@ import type { AvatarStyle, BubbleStyle, WallpaperStyle } from "@/stores";
 import { useThemeStore } from "@/stores";
 import { useGameEconomyStore } from "@/stores/gameEconomy";
 import type { ChatAppearance } from "@/types/chat";
-import { lightenColor, normalizeHex } from "@/utils/wallpaperLuminance";
+import { deriveColorsFromPrimary, normalizeHex } from "@/utils/wallpaperLuminance";
 import { computed, ref, watch } from "vue";
 
 type ChatWallpaperStyle = NonNullable<ChatAppearance["wallpaper"]>;
@@ -57,7 +57,7 @@ const useCustomAppearance = ref(true);
 
 // 當前分頁
 const activeTab = ref<
-  "colors" | "avatar" | "bubble" | "wallpaper" | "font" | "decorations" | "headerFooter"
+  "colors" | "avatar" | "wallpaper" | "font" | "decorations" | "headerFooter"
 >("colors");
 
 // 預設主題列表
@@ -280,10 +280,18 @@ const tempColorPreset = ref<string>(themeStore.currentPreset);
 const tempColors = ref({
   primary: themeStore.colors.primary,
   primaryLight: themeStore.colors.primaryLight,
+  secondary: themeStore.colors.secondary,
   background: themeStore.colors.background,
   surface: themeStore.colors.surface,
+  surfaceHover: themeStore.colors.surfaceHover,
   text: themeStore.colors.text,
   textSecondary: themeStore.colors.textSecondary,
+  textMuted: themeStore.colors.textMuted,
+  border: themeStore.colors.border,
+  shadow: themeStore.colors.shadow,
+  success: themeStore.colors.success,
+  error: themeStore.colors.error,
+  warning: themeStore.colors.warning,
 });
 
 // 字體大小選項（改為滑块范围）
@@ -327,6 +335,9 @@ const isCustomColor = computed(() => {
   return hasCustom;
 });
 
+// 統一配色開關
+const unifiedColors = ref(true);
+
 // 自訂主題色 HEX 文字輸入
 const customHexInput = ref(themeStore.colors.primary);
 
@@ -348,20 +359,52 @@ function setCustomPrimaryFromHex(raw: string) {
 
 // 套用自訂主色
 function applyCustomPrimary(hex: string) {
-  const primaryLight = lightenColor(hex, 0.3);
+  if (unifiedColors.value) {
+    // 統一模式：自動推導所有顏色
+    const derived = deriveColorsFromPrimary(hex);
+    if (isChatMode.value) {
+      Object.assign(tempColors.value, derived);
+      tempBubbleStyle.value.userBgColor = hex;
+      tempBubbleStyle.value.userBgGradient = `linear-gradient(135deg, ${hex}, ${derived.primaryLight})`;
+      useCustomAppearance.value = true;
+    } else {
+      for (const [key, value] of Object.entries(derived)) {
+        if (key !== "background") {
+          themeStore.setCustomColor(key as keyof import("@/stores/theme").ThemeColors, value);
+        }
+      }
+      themeStore.updateBubbleStyle({
+        userBgColor: hex,
+        userBgGradient: `linear-gradient(135deg, ${hex}, ${derived.primaryLight})`,
+      });
+    }
+  } else {
+    // 非統一模式：只改 primary + primaryLight
+    const primaryLight = deriveColorsFromPrimary(hex).primaryLight;
+    if (isChatMode.value) {
+      tempColors.value.primary = hex;
+      tempColors.value.primaryLight = primaryLight;
+      tempBubbleStyle.value.userBgColor = hex;
+      tempBubbleStyle.value.userBgGradient = `linear-gradient(135deg, ${hex}, ${primaryLight})`;
+      useCustomAppearance.value = true;
+    } else {
+      themeStore.setCustomColor("primary", hex);
+      themeStore.setCustomColor("primaryLight", primaryLight);
+      themeStore.updateBubbleStyle({
+        userBgColor: hex,
+        userBgGradient: `linear-gradient(135deg, ${hex}, ${primaryLight})`,
+      });
+    }
+  }
+}
+
+// 設定單一自訂顏色（非統一模式用）
+function setIndividualColor(key: string, value: string) {
   if (isChatMode.value) {
-    tempColors.value.primary = hex;
-    tempColors.value.primaryLight = primaryLight;
-    tempBubbleStyle.value.userBgColor = hex;
-    tempBubbleStyle.value.userBgGradient = `linear-gradient(135deg, ${hex}, ${primaryLight})`;
+    (tempColors.value as any)[key] = value;
     useCustomAppearance.value = true;
   } else {
-    themeStore.setCustomColor("primary", hex);
-    themeStore.setCustomColor("primaryLight", primaryLight);
-    themeStore.updateBubbleStyle({
-      userBgColor: hex,
-      userBgGradient: `linear-gradient(135deg, ${hex}, ${primaryLight})`,
-    });
+    themeStore.setCustomColor(key as keyof import("@/stores/theme").ThemeColors, value);
   }
 }
 
@@ -382,17 +425,26 @@ function selectPreset(presetId: string) {
       const colors = themePresets[presetId];
       if (colors) {
         tempColors.value = {
+          ...tempColors.value,
           primary: colors.primary,
           primaryLight: colors.primaryLight,
-          background: colors.background || themeStore.colors.background,
+          secondary: colors.secondary || themeStore.colors.secondary,
           surface: colors.surface || themeStore.colors.surface,
+          surfaceHover: colors.surfaceHover || themeStore.colors.surfaceHover,
           text: colors.text || themeStore.colors.text,
           textSecondary: colors.textSecondary || themeStore.colors.textSecondary,
+          textMuted: colors.textMuted || themeStore.colors.textMuted,
+          border: colors.border || themeStore.colors.border,
+          shadow: colors.shadow || themeStore.colors.shadow,
+          success: colors.success || themeStore.colors.success,
+          error: colors.error || themeStore.colors.error,
+          warning: colors.warning || themeStore.colors.warning,
         };
         // 同步更新氣泡顏色
         tempBubbleStyle.value.userBgColor = colors.primary;
         tempBubbleStyle.value.userBgGradient = `linear-gradient(135deg, ${colors.primary}, ${colors.primaryLight})`;
         customHexInput.value = colors.primary;
+        unifiedColors.value = true;
       }
     });
   } else {
@@ -400,6 +452,7 @@ function selectPreset(presetId: string) {
     console.log("[ThemeSettingsModal] Global mode - updating themeStore");
     themeStore.setPreset(presetId);
     customHexInput.value = themeStore.colors.primary;
+    unifiedColors.value = true;
   }
 }
 
@@ -698,10 +751,19 @@ function handleClose() {
         ? {
             primary: tempColors.value.primary,
             primaryLight: tempColors.value.primaryLight,
+            secondary: tempColors.value.secondary,
             background: tempColors.value.background,
             surface: tempColors.value.surface,
+            surfaceHover: tempColors.value.surfaceHover,
             text: tempColors.value.text,
             textSecondary: tempColors.value.textSecondary,
+            textMuted: tempColors.value.textMuted,
+            border: tempColors.value.border,
+            shadow: tempColors.value.shadow,
+            success: tempColors.value.success,
+            error: tempColors.value.error,
+            warning: tempColors.value.warning,
+            unified: unifiedColors.value,
           }
         : undefined,
       avatar: useCustomAppearance.value
@@ -743,12 +805,21 @@ watch(
       const defaultColors = {
         primary: themeStore.colors.primary,
         primaryLight: themeStore.colors.primaryLight,
+        secondary: themeStore.colors.secondary,
         background: themeStore.colors.background,
         surface: themeStore.colors.surface,
+        surfaceHover: themeStore.colors.surfaceHover,
         text: themeStore.colors.text,
         textSecondary: themeStore.colors.textSecondary,
+        textMuted: themeStore.colors.textMuted,
+        border: themeStore.colors.border,
+        shadow: themeStore.colors.shadow,
+        success: themeStore.colors.success,
+        error: themeStore.colors.error,
+        warning: themeStore.colors.warning,
       };
       customHexInput.value = defaultColors.primary;
+      unifiedColors.value = props.chatAppearance?.colors?.unified !== false;
       const defaultAvatar = { ...themeStore.avatarStyle };
       const defaultBubble = { ...themeStore.bubbleStyle };
       const defaultWallpaper = { ...themeStore.wallpaperStyle };
@@ -774,12 +845,21 @@ watch(
         // 載入聊天專屬設定，沒有的用全局預設
         tempColors.value = props.chatAppearance.colors
           ? {
+              ...defaultColors,
               primary: props.chatAppearance.colors.primary,
               primaryLight: props.chatAppearance.colors.primaryLight,
-              background: props.chatAppearance.colors.background || defaultColors.background,
-              surface: props.chatAppearance.colors.surface || defaultColors.surface,
-              text: props.chatAppearance.colors.text || defaultColors.text,
-              textSecondary: props.chatAppearance.colors.textSecondary || defaultColors.textSecondary,
+              ...(props.chatAppearance.colors.background ? { background: props.chatAppearance.colors.background } : {}),
+              ...(props.chatAppearance.colors.surface ? { surface: props.chatAppearance.colors.surface } : {}),
+              ...(props.chatAppearance.colors.surfaceHover ? { surfaceHover: props.chatAppearance.colors.surfaceHover } : {}),
+              ...(props.chatAppearance.colors.text ? { text: props.chatAppearance.colors.text } : {}),
+              ...(props.chatAppearance.colors.textSecondary ? { textSecondary: props.chatAppearance.colors.textSecondary } : {}),
+              ...(props.chatAppearance.colors.textMuted ? { textMuted: props.chatAppearance.colors.textMuted } : {}),
+              ...(props.chatAppearance.colors.secondary ? { secondary: props.chatAppearance.colors.secondary } : {}),
+              ...(props.chatAppearance.colors.border ? { border: props.chatAppearance.colors.border } : {}),
+              ...(props.chatAppearance.colors.shadow ? { shadow: props.chatAppearance.colors.shadow } : {}),
+              ...(props.chatAppearance.colors.success ? { success: props.chatAppearance.colors.success } : {}),
+              ...(props.chatAppearance.colors.error ? { error: props.chatAppearance.colors.error } : {}),
+              ...(props.chatAppearance.colors.warning ? { warning: props.chatAppearance.colors.warning } : {}),
             }
           : defaultColors;
         tempAvatarStyle.value = props.chatAppearance.avatar
@@ -910,18 +990,6 @@ watch(
               </button>
               <button
                 class="tab-item"
-                :class="{ active: activeTab === 'bubble' }"
-                @click="activeTab = 'bubble'"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"
-                  />
-                </svg>
-                氣泡
-              </button>
-              <button
-                class="tab-item"
                 :class="{ active: activeTab === 'avatar' }"
                 @click="activeTab = 'avatar'"
               >
@@ -1014,6 +1082,20 @@ watch(
                 <span class="custom-color-hint">色碼或選色</span>
               </div>
 
+              <!-- 統一配色開關 -->
+              <div class="unified-toggle" @click="unifiedColors = !unifiedColors">
+                <div class="toggle-info">
+                  <span class="toggle-title">統一配色</span>
+                  <span class="toggle-sub">{{ unifiedColors ? '改主色自動推導其他色' : '各顏色獨立調整' }}</span>
+                </div>
+                <div class="toggle-switch">
+                  <input type="checkbox" v-model="unifiedColors" />
+                  <div class="switch-track" :class="{ active: unifiedColors }">
+                    <div class="switch-thumb" :class="{ active: unifiedColors }"></div>
+                  </div>
+                </div>
+              </div>
+
               <div class="color-preview">
                 <div class="preview-label">預覽效果</div>
                 <div class="preview-card">
@@ -1029,21 +1111,150 @@ watch(
                   >
                     <div
                       class="preview-bubble ai"
-                      :style="{ background: tempColors.surface || themeStore.colors.surface }"
+                      :style="{
+                        borderRadius: `${tempBubbleStyle.borderRadius}px`,
+                        borderBottomLeftRadius: '6px',
+                        maxWidth: `${tempBubbleStyle.maxWidth}%`,
+                        background: tempBubbleStyle.aiBgColor,
+                        color: tempBubbleStyle.aiTextColor,
+                      }"
                     >
-                      AI 訊息
+                      <div
+                        class="preview-sender-name"
+                        :style="{ color: displayColors.textSecondary }"
+                      >
+                        AI 角色
+                      </div>
+                      這是 AI 的訊息氣泡
+                      <div class="preview-time">12:00</div>
                     </div>
                     <div
                       class="preview-bubble user"
                       :style="{
-                        background: `linear-gradient(135deg, ${displayColors.primary}, ${displayColors.primaryLight})`,
-                        color: 'white',
+                        borderRadius: `${tempBubbleStyle.borderRadius}px`,
+                        borderBottomRightRadius: '6px',
+                        maxWidth: `${tempBubbleStyle.maxWidth}%`,
+                        background: tempBubbleStyle.userBgColor,
+                        color: tempBubbleStyle.userTextColor,
+                        marginLeft: 'auto',
                       }"
                     >
-                      用戶訊息
+                      <div
+                        class="preview-sender-name"
+                        :style="{ color: tempBubbleStyle.userTextColor }"
+                      >
+                        我
+                      </div>
+                      這是用戶的訊息氣泡
+                      <div class="preview-time">12:01</div>
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <!-- 非統一模式：各顏色獨立調整 -->
+              <div v-if="!unifiedColors" class="individual-colors">
+                <div class="color-item">
+                  <input type="color" :value="displayColors.primaryLight" @input="setIndividualColor('primaryLight', ($event.target as HTMLInputElement).value)" />
+                  <span>主色亮版</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="displayColors.secondary" @input="setIndividualColor('secondary', ($event.target as HTMLInputElement).value)" />
+                  <span>輔助色</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="displayColors.surface" @input="setIndividualColor('surface', ($event.target as HTMLInputElement).value)" />
+                  <span>卡片背景</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="displayColors.surfaceHover" @input="setIndividualColor('surfaceHover', ($event.target as HTMLInputElement).value)" />
+                  <span>滑過背景</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="displayColors.text" @input="setIndividualColor('text', ($event.target as HTMLInputElement).value)" />
+                  <span>主要文字</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="displayColors.textSecondary" @input="setIndividualColor('textSecondary', ($event.target as HTMLInputElement).value)" />
+                  <span>次要文字</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="displayColors.textMuted" @input="setIndividualColor('textMuted', ($event.target as HTMLInputElement).value)" />
+                  <span>提示文字</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="displayColors.border" @input="setIndividualColor('border', ($event.target as HTMLInputElement).value)" />
+                  <span>邊框線</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="displayColors.success" @input="setIndividualColor('success', ($event.target as HTMLInputElement).value)" />
+                  <span>成功提示</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="displayColors.error" @input="setIndividualColor('error', ($event.target as HTMLInputElement).value)" />
+                  <span>錯誤提示</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="displayColors.warning" @input="setIndividualColor('warning', ($event.target as HTMLInputElement).value)" />
+                  <span>警告提示</span>
+                </div>
+              </div>
+
+              <h3 class="section-title">訊息氣泡顏色</h3>
+              <div class="individual-colors">
+                <div class="color-item">
+                  <input type="color" :value="tempBubbleStyle.aiBgColor" @input="setBubbleColor('aiBgColor', ($event.target as HTMLInputElement).value)" />
+                  <span>AI 訊息背景</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="tempBubbleStyle.aiTextColor" @input="setBubbleColor('aiTextColor', ($event.target as HTMLInputElement).value)" />
+                  <span>AI 文字/時間</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="tempBubbleStyle.userBgColor" @input="setBubbleColor('userBgColor', ($event.target as HTMLInputElement).value)" />
+                  <span>我的訊息背景</span>
+                </div>
+                <div class="color-item">
+                  <input type="color" :value="tempBubbleStyle.userTextColor" @input="setBubbleColor('userTextColor', ($event.target as HTMLInputElement).value)" />
+                  <span>我的文字/時間</span>
+                </div>
+              </div>
+
+              <h3 class="section-title">訊息氣泡版面</h3>
+              <div class="slider-control">
+                <input
+                  type="range"
+                  min="8"
+                  max="32"
+                  step="2"
+                  :value="tempBubbleStyle.borderRadius"
+                  @input="
+                    setBubbleRadius(
+                      Number(($event.target as HTMLInputElement).value),
+                    )
+                  "
+                />
+                <span class="slider-value"
+                  >圓角 {{ tempBubbleStyle.borderRadius }}px</span
+                >
+              </div>
+
+              <div class="slider-control">
+                <input
+                  type="range"
+                  min="50"
+                  max="90"
+                  step="5"
+                  :value="tempBubbleStyle.maxWidth"
+                  @input="
+                    setBubbleMaxWidth(
+                      Number(($event.target as HTMLInputElement).value),
+                    )
+                  "
+                />
+                <span class="slider-value"
+                  >寬度 {{ tempBubbleStyle.maxWidth }}%</span
+                >
               </div>
             </div>
 
@@ -1128,148 +1339,6 @@ watch(
                       d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3z"
                     />
                   </svg>
-                </div>
-              </div>
-            </div>
-
-            <!-- 氣泡設定 -->
-            <div v-if="activeTab === 'bubble'" class="settings-section">
-              <h3 class="section-title">AI 氣泡顏色</h3>
-              <div class="bubble-color-row">
-                <div class="color-item">
-                  <input
-                    type="color"
-                    :value="tempBubbleStyle.aiBgColor"
-                    @input="
-                      setBubbleColor(
-                        'aiBgColor',
-                        ($event.target as HTMLInputElement).value,
-                      )
-                    "
-                  />
-                  <span>背景</span>
-                </div>
-                <div class="color-item">
-                  <input
-                    type="color"
-                    :value="tempBubbleStyle.aiTextColor"
-                    @input="
-                      setBubbleColor(
-                        'aiTextColor',
-                        ($event.target as HTMLInputElement).value,
-                      )
-                    "
-                  />
-                  <span>時間</span>
-                </div>
-              </div>
-
-              <h3 class="section-title">用戶氣泡顏色</h3>
-              <div class="bubble-color-row">
-                <div class="color-item">
-                  <input
-                    type="color"
-                    :value="tempBubbleStyle.userBgColor"
-                    @input="
-                      setBubbleColor(
-                        'userBgColor',
-                        ($event.target as HTMLInputElement).value,
-                      )
-                    "
-                  />
-                  <span>背景</span>
-                </div>
-                <div class="color-item">
-                  <input
-                    type="color"
-                    :value="tempBubbleStyle.userTextColor"
-                    @input="
-                      setBubbleColor(
-                        'userTextColor',
-                        ($event.target as HTMLInputElement).value,
-                      )
-                    "
-                  />
-                  <span>時間</span>
-                </div>
-              </div>
-
-              <h3 class="section-title">圓角大小</h3>
-              <div class="slider-control">
-                <input
-                  type="range"
-                  min="8"
-                  max="32"
-                  step="2"
-                  :value="tempBubbleStyle.borderRadius"
-                  @input="
-                    setBubbleRadius(
-                      Number(($event.target as HTMLInputElement).value),
-                    )
-                  "
-                />
-                <span class="slider-value"
-                  >{{ tempBubbleStyle.borderRadius }}px</span
-                >
-              </div>
-
-              <h3 class="section-title">最大寬度</h3>
-              <div class="slider-control">
-                <input
-                  type="range"
-                  min="50"
-                  max="90"
-                  step="5"
-                  :value="tempBubbleStyle.maxWidth"
-                  @input="
-                    setBubbleMaxWidth(
-                      Number(($event.target as HTMLInputElement).value),
-                    )
-                  "
-                />
-                <span class="slider-value"
-                  >{{ tempBubbleStyle.maxWidth }}%</span
-                >
-              </div>
-
-              <div class="bubble-preview">
-                <div class="preview-label">預覽效果</div>
-                <div class="preview-bubbles">
-                  <div
-                    class="preview-bubble ai"
-                    :style="{
-                      borderRadius: `${tempBubbleStyle.borderRadius}px`,
-                      borderBottomLeftRadius: '6px',
-                      maxWidth: `${tempBubbleStyle.maxWidth}%`,
-                      background: tempBubbleStyle.aiBgColor,
-                    }"
-                  >
-                    這是 AI 的訊息氣泡
-                    <div
-                      class="preview-time"
-                      :style="{ color: tempBubbleStyle.aiTextColor }"
-                    >
-                      12:00
-                    </div>
-                  </div>
-                  <div
-                    class="preview-bubble user"
-                    :style="{
-                      borderRadius: `${tempBubbleStyle.borderRadius}px`,
-                      borderBottomRightRadius: '6px',
-                      maxWidth: `${tempBubbleStyle.maxWidth}%`,
-                      background: tempBubbleStyle.userBgColor,
-                      marginLeft: 'auto',
-                    }"
-                  >
-                    這是用戶的訊息氣泡
-                    <div
-                      class="preview-time"
-                      :style="{ color: tempBubbleStyle.userTextColor }"
-                    >
-                      12:01
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -2325,6 +2394,129 @@ watch(
   white-space: nowrap;
 }
 
+// 統一配色開關
+.unified-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--color-background);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  user-select: none;
+
+  &.active {
+    background: var(--color-primary-light);
+  }
+
+  .toggle-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .toggle-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .toggle-sub {
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+
+  .toggle-switch {
+    position: relative;
+    width: 46px;
+    height: 28px;
+    flex-shrink: 0;
+
+    input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      cursor: pointer;
+    }
+
+    .switch-track {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.18);
+      border-radius: 999px;
+      transition: background 0.2s ease;
+
+      &.active {
+        background: var(--color-primary);
+      }
+    }
+
+    .switch-thumb {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+
+      &.active {
+        transform: translateX(18px);
+      }
+    }
+  }
+}
+
+// 各顏色獨立調整
+.individual-colors {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+
+  .color-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--color-background);
+    border-radius: var(--radius-md);
+
+    input[type="color"] {
+      width: 32px;
+      height: 32px;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      padding: 0;
+      overflow: hidden;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+
+      &::-webkit-color-swatch-wrapper {
+        padding: 0;
+      }
+
+      &::-webkit-color-swatch {
+        border-radius: 50%;
+        border: 2px solid var(--color-surface);
+      }
+    }
+
+    span {
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      white-space: nowrap;
+    }
+  }
+}
+
 // 選項網格
 .option-grid {
   display: grid;
@@ -2520,6 +2712,13 @@ watch(
   border-radius: 16px;
   font-size: 13px;
   max-width: 70%;
+
+  .preview-sender-name {
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    opacity: 0.9;
+  }
 
   &.ai {
     align-self: flex-start;

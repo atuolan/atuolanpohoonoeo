@@ -2888,24 +2888,81 @@ function applyChatAppearance(appearance?: ChatAppearance) {
     }
     if (appearance.colors.surface) {
       container.style.setProperty("--chat-header-surface", appearance.colors.surface);
+      container.style.setProperty("--color-surface", appearance.colors.surface);
     } else {
       container.style.removeProperty("--chat-header-surface");
+      container.style.removeProperty("--color-surface");
+    }
+    if (appearance.colors.surfaceHover) {
+      container.style.setProperty("--color-surface-hover", appearance.colors.surfaceHover);
+    } else {
+      container.style.removeProperty("--color-surface-hover");
     }
     if (appearance.colors.text) {
       container.style.setProperty("--chat-header-text", appearance.colors.text);
+      container.style.setProperty("--color-text", appearance.colors.text);
     } else {
       container.style.removeProperty("--chat-header-text");
+      container.style.removeProperty("--color-text");
     }
     if (appearance.colors.textSecondary) {
       container.style.setProperty("--chat-header-text-secondary", appearance.colors.textSecondary);
+      container.style.setProperty("--color-text-secondary", appearance.colors.textSecondary);
     } else {
       container.style.removeProperty("--chat-header-text-secondary");
+      container.style.removeProperty("--color-text-secondary");
+    }
+    if (appearance.colors.textMuted) {
+      container.style.setProperty("--color-text-muted", appearance.colors.textMuted);
+    } else {
+      container.style.removeProperty("--color-text-muted");
+    }
+    if (appearance.colors.secondary) {
+      container.style.setProperty("--color-secondary", appearance.colors.secondary);
+    } else {
+      container.style.removeProperty("--color-secondary");
+    }
+    if (appearance.colors.border) {
+      container.style.setProperty("--color-border", appearance.colors.border);
+    } else {
+      container.style.removeProperty("--color-border");
+    }
+    if (appearance.colors.shadow) {
+      container.style.setProperty("--color-shadow", appearance.colors.shadow);
+    } else {
+      container.style.removeProperty("--color-shadow");
+    }
+    if (appearance.colors.success) {
+      container.style.setProperty("--color-success", appearance.colors.success);
+    } else {
+      container.style.removeProperty("--color-success");
+    }
+    if (appearance.colors.error) {
+      container.style.setProperty("--color-error", appearance.colors.error);
+    } else {
+      container.style.removeProperty("--color-error");
+    }
+    if (appearance.colors.warning) {
+      container.style.setProperty("--color-warning", appearance.colors.warning);
+    } else {
+      container.style.removeProperty("--color-warning");
     }
   } else {
     container.style.removeProperty("--color-background");
     container.style.removeProperty("--chat-header-surface");
+    container.style.removeProperty("--color-surface");
+    container.style.removeProperty("--color-surface-hover");
     container.style.removeProperty("--chat-header-text");
+    container.style.removeProperty("--color-text");
     container.style.removeProperty("--chat-header-text-secondary");
+    container.style.removeProperty("--color-text-secondary");
+    container.style.removeProperty("--color-text-muted");
+    container.style.removeProperty("--color-secondary");
+    container.style.removeProperty("--color-border");
+    container.style.removeProperty("--color-shadow");
+    container.style.removeProperty("--color-success");
+    container.style.removeProperty("--color-error");
+    container.style.removeProperty("--color-warning");
   }
 
   // 套用聊天專屬頭像樣式

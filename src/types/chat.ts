@@ -53,10 +53,28 @@ export interface ChatAppearance {
     background?: string;
     /** 頂/底欄專屬表面色（覆蓋聊天頁頂欄與底欄的表面色） */
     surface?: string;
+    /** 懸停色 */
+    surfaceHover?: string;
     /** 聊天專屬文字色（覆蓋全局文字色） */
     text?: string;
     /** 聊天專屬次要文字色（覆蓋全局次要文字色） */
     textSecondary?: string;
+    /** 弱化文字色 */
+    textMuted?: string;
+    /** 次色 */
+    secondary?: string;
+    /** 邊框色 */
+    border?: string;
+    /** 陰影色 */
+    shadow?: string;
+    /** 成功色 */
+    success?: string;
+    /** 錯誤色 */
+    error?: string;
+    /** 警告色 */
+    warning?: string;
+    /** 是否統一配色（true=只改 primary 自動推導其他色） */
+    unified?: boolean;
   };
   /** 頭像設定 */
   avatar?: {
