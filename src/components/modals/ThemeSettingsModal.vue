@@ -12,6 +12,7 @@ import type { AvatarStyle, BubbleStyle, WallpaperStyle } from "@/stores";
 import { useThemeStore } from "@/stores";
 import { useGameEconomyStore } from "@/stores/gameEconomy";
 import type { ChatAppearance } from "@/types/chat";
+import { lightenColor, normalizeHex } from "@/utils/wallpaperLuminance";
 import { computed, ref, watch } from "vue";
 
 type ChatWallpaperStyle = NonNullable<ChatAppearance["wallpaper"]>;
@@ -317,6 +318,53 @@ const currentPreset = computed(() => {
   return themeStore.currentPreset;
 });
 
+// 是否正在使用自訂主題色
+const isCustomColor = computed(() => {
+  if (isChatMode.value) {
+    return !presetList.value.some((p) => p.color.toLowerCase() === tempColors.value.primary.toLowerCase());
+  }
+  const hasCustom = themeStore.customColors && Object.keys(themeStore.customColors).length > 0;
+  return hasCustom;
+});
+
+// 自訂主題色 HEX 文字輸入
+const customHexInput = ref(themeStore.colors.primary);
+
+// 處理自訂色盤變更
+function setCustomPrimaryFromPicker(value: string) {
+  const hex = normalizeHex(value);
+  if (!hex) return;
+  customHexInput.value = hex;
+  applyCustomPrimary(hex);
+}
+
+// 處理 HEX 文字輸入
+function setCustomPrimaryFromHex(raw: string) {
+  const hex = normalizeHex(raw);
+  if (!hex) return; // 無效不套用
+  customHexInput.value = raw;
+  applyCustomPrimary(hex);
+}
+
+// 套用自訂主色
+function applyCustomPrimary(hex: string) {
+  const primaryLight = lightenColor(hex, 0.3);
+  if (isChatMode.value) {
+    tempColors.value.primary = hex;
+    tempColors.value.primaryLight = primaryLight;
+    tempBubbleStyle.value.userBgColor = hex;
+    tempBubbleStyle.value.userBgGradient = `linear-gradient(135deg, ${hex}, ${primaryLight})`;
+    useCustomAppearance.value = true;
+  } else {
+    themeStore.setCustomColor("primary", hex);
+    themeStore.setCustomColor("primaryLight", primaryLight);
+    themeStore.updateBubbleStyle({
+      userBgColor: hex,
+      userBgGradient: `linear-gradient(135deg, ${hex}, ${primaryLight})`,
+    });
+  }
+}
+
 // 處理預設主題選擇
 function selectPreset(presetId: string) {
   console.log(
@@ -344,12 +392,14 @@ function selectPreset(presetId: string) {
         // 同步更新氣泡顏色
         tempBubbleStyle.value.userBgColor = colors.primary;
         tempBubbleStyle.value.userBgGradient = `linear-gradient(135deg, ${colors.primary}, ${colors.primaryLight})`;
+        customHexInput.value = colors.primary;
       }
     });
   } else {
     // 全局模式：更新 themeStore
     console.log("[ThemeSettingsModal] Global mode - updating themeStore");
     themeStore.setPreset(presetId);
+    customHexInput.value = themeStore.colors.primary;
   }
 }
 
@@ -698,6 +748,7 @@ watch(
         text: themeStore.colors.text,
         textSecondary: themeStore.colors.textSecondary,
       };
+      customHexInput.value = defaultColors.primary;
       const defaultAvatar = { ...themeStore.avatarStyle };
       const defaultBubble = { ...themeStore.bubbleStyle };
       const defaultWallpaper = { ...themeStore.wallpaperStyle };
@@ -930,7 +981,7 @@ watch(
                   v-for="preset in presetList"
                   :key="preset.id"
                   class="preset-item"
-                  :class="{ active: currentPreset === preset.id }"
+                  :class="{ active: !isCustomColor && currentPreset === preset.id }"
                   @click="selectPreset(preset.id)"
                 >
                   <div
@@ -941,6 +992,27 @@ watch(
                 </button>
               </div>
 
+              <!-- 自訂主題色 -->
+              <h3 class="section-title">自訂主題色</h3>
+              <div class="custom-color-row">
+                <input
+                  type="color"
+                  class="custom-color-picker"
+                  :value="displayColors.primary"
+                  @input="setCustomPrimaryFromPicker(($event.target as HTMLInputElement).value)"
+                />
+                <input
+                  type="text"
+                  class="custom-hex-input"
+                  :value="customHexInput"
+                  placeholder="#FF85A2"
+                  spellcheck="false"
+                  maxlength="7"
+                  @change="setCustomPrimaryFromHex(($event.target as HTMLInputElement).value)"
+                  @blur="setCustomPrimaryFromHex(($event.target as HTMLInputElement).value)"
+                />
+                <span class="custom-color-hint">色碼或選色</span>
+              </div>
 
               <div class="color-preview">
                 <div class="preview-label">預覽效果</div>
@@ -2200,6 +2272,57 @@ watch(
 .preset-name {
   font-size: 12px;
   color: var(--color-text-secondary);
+}
+
+// 自訂主題色
+.custom-color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.custom-color-picker {
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--color-border);
+  border-radius: 14px;
+  padding: 2px;
+  cursor: pointer;
+  background: transparent;
+  flex-shrink: 0;
+
+  &::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+
+  &::-webkit-color-swatch {
+    border: none;
+    border-radius: 10px;
+  }
+}
+
+.custom-hex-input {
+  width: 100px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 14px;
+  font-size: 14px;
+  font-family: monospace;
+  color: var(--color-text);
+  background: var(--color-surface);
+  text-transform: uppercase;
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px var(--color-primary-light);
+  }
+}
+
+.custom-color-hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
 }
 
 // 選項網格

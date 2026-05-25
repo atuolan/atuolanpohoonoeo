@@ -52,6 +52,37 @@ export function extractFirstColorFromGradient(gradient: string): string | null {
  * 判斷一個 CSS 顏色/漸層字串是否為深色
  * 回傳 null 表示無法判斷（例如圖片、pattern 或解析失敗）
  */
+/**
+ * 正規化 HEX 色碼：自動補 #、展開 #RGB → #RRGGBB
+ * 無效時回傳 null
+ */
+export function normalizeHex(raw: string): string | null {
+  if (!raw) return null;
+  let s = raw.trim();
+  if (!s.startsWith("#")) s = "#" + s;
+  const hex = s.slice(1).toLowerCase();
+  if (/^[0-9a-f]{3}$/.test(hex)) {
+    return "#" + hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+  }
+  if (/^[0-9a-f]{6}$/.test(hex)) {
+    return "#" + hex;
+  }
+  return null;
+}
+
+/**
+ * 將顏色變亮（混合白色），factor 0=原色, 1=純白
+ * 輸入必須是 #RRGGBB 格式
+ */
+export function lightenColor(hex: string, factor: number): string {
+  const rgb = parseColorToRgb(hex);
+  if (!rgb) return hex;
+  const r = Math.round(rgb.r + (255 - rgb.r) * factor);
+  const g = Math.round(rgb.g + (255 - rgb.g) * factor);
+  const b = Math.round(rgb.b + (255 - rgb.b) * factor);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+}
+
 export function isCssColorDark(value: string): boolean | null {
   if (!value) return null;
   const trimmed = value.trim();

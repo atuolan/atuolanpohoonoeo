@@ -4,6 +4,7 @@ import { useLanguage } from "@/composables/useLanguage";
 import { useSettingsStore } from "@/stores/settings";
 import type { GlobalFontOverride, GlobalFontPreset, WallpaperStyle } from "@/stores/theme";
 import { useThemeStore } from "@/stores/theme";
+import { lightenColor, normalizeHex } from "@/utils/wallpaperLuminance";
 import { computed, ref, watch } from "vue";
 
 // Props
@@ -172,9 +173,49 @@ function normalizeFontForCompare(font: GlobalFontOverride) {
   });
 }
 
+// 是否正在使用自訂主題色（不在任何預設中）
+const isCustomColor = computed(() => {
+  const current = themeStore.currentPreset;
+  const hasCustom = themeStore.customColors && Object.keys(themeStore.customColors).length > 0;
+  return hasCustom || !presetList.value.some((p) => p.id === current);
+});
+
+// 自訂主題色 HEX 文字輸入
+const customHexInput = ref(themeStore.colors.primary);
+
+// 處理自訂色盤變更
+function setCustomPrimaryFromPicker(value: string) {
+  const hex = normalizeHex(value);
+  if (!hex) return;
+  customHexInput.value = hex;
+  applyCustomPrimary(hex);
+}
+
+// 處理 HEX 文字輸入
+function setCustomPrimaryFromHex(raw: string) {
+  const hex = normalizeHex(raw);
+  if (!hex) return; // 無效不套用
+  customHexInput.value = raw;
+  applyCustomPrimary(hex);
+}
+
+// 套用自訂主色到 themeStore
+function applyCustomPrimary(hex: string) {
+  const primaryLight = lightenColor(hex, 0.3);
+  themeStore.setCustomColor("primary", hex);
+  themeStore.setCustomColor("primaryLight", primaryLight);
+  // 同步更新氣泡顏色
+  themeStore.updateBubbleStyle({
+    userBgColor: hex,
+    userBgGradient: `linear-gradient(135deg, ${hex}, ${primaryLight})`,
+  });
+}
+
 // 處理預設主題選擇
 function selectPreset(presetId: string) {
   themeStore.setPreset(presetId);
+  // 選預設時清除自訂顏色
+  customHexInput.value = themeStore.colors.primary;
 }
 
 // 處理桌布選擇
@@ -459,6 +500,7 @@ watch(
       tempWallpaperStyle.value = { ...themeStore.wallpaperStyle };
       tempCustomCSS.value = themeStore.customCSS;
       tempGlobalFont.value = { ...themeStore.globalFont };
+      customHexInput.value = themeStore.colors.primary;
       fontPresetName.value = "";
       fontPresetStatus.value = "";
       isCSSExpanded.value = false;
@@ -574,7 +616,7 @@ watch(
                   v-for="preset in presetList"
                   :key="preset.id"
                   class="preset-item"
-                  :class="{ active: themeStore.currentPreset === preset.id }"
+                  :class="{ active: !isCustomColor && themeStore.currentPreset === preset.id }"
                   @click="selectPreset(preset.id)"
                 >
                   <div
@@ -583,6 +625,28 @@ watch(
                   ></div>
                   <span class="preset-name">{{ preset.name }}</span>
                 </button>
+              </div>
+
+              <!-- 自訂主題色 -->
+              <h3 class="section-title">自訂主題色</h3>
+              <div class="custom-color-row">
+                <input
+                  type="color"
+                  class="custom-color-picker"
+                  :value="themeStore.colors.primary"
+                  @input="setCustomPrimaryFromPicker(($event.target as HTMLInputElement).value)"
+                />
+                <input
+                  type="text"
+                  class="custom-hex-input"
+                  :value="customHexInput"
+                  placeholder="#FF85A2"
+                  spellcheck="false"
+                  maxlength="7"
+                  @change="setCustomPrimaryFromHex(($event.target as HTMLInputElement).value)"
+                  @blur="setCustomPrimaryFromHex(($event.target as HTMLInputElement).value)"
+                />
+                <span class="custom-color-hint">色碼或選色</span>
               </div>
 
               <div class="color-preview">
@@ -1314,6 +1378,57 @@ body {
 .preset-name {
   font-size: 12px;
   color: var(--color-text-secondary);
+}
+
+// 自訂主題色
+.custom-color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.custom-color-picker {
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  cursor: pointer;
+  background: transparent;
+  flex-shrink: 0;
+
+  &::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+
+  &::-webkit-color-swatch {
+    border: none;
+    border-radius: 4px;
+  }
+}
+
+.custom-hex-input {
+  width: 100px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-family: monospace;
+  color: var(--color-text);
+  background: var(--color-surface);
+  text-transform: uppercase;
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px var(--color-primary-light);
+  }
+}
+
+.custom-color-hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
 }
 
 // 預覽區域
