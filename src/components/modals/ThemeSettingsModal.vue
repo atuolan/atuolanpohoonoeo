@@ -1148,6 +1148,35 @@ watch(
                       這是用戶的訊息氣泡
                       <div class="preview-time">12:01</div>
                     </div>
+                    <div class="preview-ui-samples">
+                      <div
+                        class="preview-ui-card"
+                        :style="{
+                          background: displayColors.surface,
+                          borderColor: displayColors.border,
+                          color: displayColors.text,
+                        }"
+                      >
+                        <span class="preview-ui-title">卡片背景 / 主要文字</span>
+                        <span :style="{ color: displayColors.textMuted }">提示文字範例</span>
+                      </div>
+                      <div
+                        class="preview-ui-card"
+                        :style="{
+                          background: displayColors.surfaceHover,
+                          borderColor: displayColors.secondary,
+                          color: displayColors.textSecondary,
+                        }"
+                      >
+                        <span class="preview-ui-title">滑過背景 / 輔助色</span>
+                        <span>次要文字範例</span>
+                      </div>
+                      <div class="preview-status-row">
+                        <span :style="{ background: displayColors.success }">成功</span>
+                        <span :style="{ background: displayColors.error }">錯誤</span>
+                        <span :style="{ background: displayColors.warning }">警告</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2280,20 +2309,22 @@ watch(
 // 預設主題網格
 .preset-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  width: 100%;
 }
 
 .preset-item {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 10px;
-  padding: 14px 8px;
+  gap: 8px;
+  padding: 8px 10px;
   background: var(--color-background);
   border: none;
-  border-radius: 20px;
+  border-radius: var(--radius-md);
   cursor: pointer;
+  min-width: 0;
   transition:
     background var(--transition-fast),
     transform 0.18s ease;
@@ -2329,8 +2360,9 @@ watch(
 
 .preset-color {
   position: relative;
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
   border-radius: 50%;
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.55),
@@ -2341,6 +2373,10 @@ watch(
 .preset-name {
   font-size: 12px;
   color: var(--color-text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 // 自訂主題色
@@ -2478,8 +2514,9 @@ watch(
 // 各顏色獨立調整
 .individual-colors {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 10px;
+  width: 100%;
 
   .color-item {
     display: flex;
@@ -2488,6 +2525,7 @@ watch(
     padding: 8px 10px;
     background: var(--color-background);
     border-radius: var(--radius-md);
+    min-width: 0;
 
     input[type="color"] {
       width: 32px;
@@ -2512,6 +2550,9 @@ watch(
     span {
       font-size: 12px;
       color: var(--color-text-secondary);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
       white-space: nowrap;
     }
   }
@@ -2733,6 +2774,48 @@ watch(
     font-size: 11px;
     margin-top: 4px;
     opacity: 0.9;
+  }
+}
+
+.preview-ui-samples {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.preview-ui-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid;
+  border-radius: var(--radius-md);
+  font-size: 11px;
+  min-width: 0;
+}
+
+.preview-ui-title {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+
+  span {
+    padding: 5px 8px;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
   }
 }
 

@@ -748,7 +748,11 @@ watch(
                   >
                     <div
                       class="preview-item"
-                      :style="{ background: themeStore.colors.surface }"
+                      :style="{
+                        background: themeStore.colors.surface,
+                        color: themeStore.colors.text,
+                        borderColor: themeStore.colors.border,
+                      }"
                     >
                       <div
                         class="preview-icon"
@@ -758,13 +762,46 @@ watch(
                     </div>
                     <div
                       class="preview-item"
-                      :style="{ background: themeStore.colors.surface }"
+                      :style="{
+                        background: themeStore.colors.surfaceHover,
+                        color: themeStore.colors.textSecondary,
+                        borderColor: themeStore.colors.secondary,
+                      }"
                     >
                       <div
                         class="preview-icon"
                         :style="{ background: themeStore.colors.primaryLight }"
                       ></div>
-                      <span>列表項目</span>
+                      <span>滑過項目 / 輔助色</span>
+                    </div>
+                    <div class="preview-ui-samples">
+                      <div
+                        class="preview-ui-card"
+                        :style="{
+                          background: themeStore.colors.surface,
+                          borderColor: themeStore.colors.border,
+                          color: themeStore.colors.text,
+                        }"
+                      >
+                        <span class="preview-ui-title">卡片背景 / 主要文字</span>
+                        <span :style="{ color: themeStore.colors.textMuted }">提示文字範例</span>
+                      </div>
+                      <div
+                        class="preview-ui-card"
+                        :style="{
+                          background: themeStore.colors.surfaceHover,
+                          borderColor: themeStore.colors.secondary,
+                          color: themeStore.colors.textSecondary,
+                        }"
+                      >
+                        <span class="preview-ui-title">滑過背景 / 輔助色</span>
+                        <span>次要文字範例</span>
+                      </div>
+                      <div class="preview-status-row">
+                        <span :style="{ background: themeStore.colors.success }">成功</span>
+                        <span :style="{ background: themeStore.colors.error }">錯誤</span>
+                        <span :style="{ background: themeStore.colors.warning }">警告</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1426,20 +1463,22 @@ body {
 // 預設主題網格
 .preset-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  width: 100%;
 }
 
 .preset-item {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   gap: 8px;
-  padding: 12px 8px;
+  padding: 8px 10px;
   background: var(--color-background);
   border: 2px solid transparent;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   cursor: pointer;
+  min-width: 0;
   transition: all var(--transition-fast);
 
   &:hover {
@@ -1453,8 +1492,9 @@ body {
 }
 
 .preset-color {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
   border-radius: 50%;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
@@ -1462,6 +1502,10 @@ body {
 .preset-name {
   font-size: 12px;
   color: var(--color-text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 // 自訂主題色
@@ -1599,8 +1643,9 @@ body {
 // 各顏色獨立調整
 .individual-colors {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 10px;
+  width: 100%;
 
   .color-item {
     display: flex;
@@ -1609,6 +1654,7 @@ body {
     padding: 8px 10px;
     background: var(--color-background);
     border-radius: var(--radius-md);
+    min-width: 0;
 
     input[type="color"] {
       width: 32px;
@@ -1633,6 +1679,9 @@ body {
     span {
       font-size: 12px;
       color: var(--color-text-secondary);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
       white-space: nowrap;
     }
   }
@@ -1673,6 +1722,7 @@ body {
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   font-size: 13px;
   color: var(--color-text);
@@ -1681,7 +1731,49 @@ body {
 .preview-icon {
   width: 32px;
   height: 32px;
+  flex-shrink: 0;
   border-radius: 50%;
+}
+
+.preview-ui-samples {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.preview-ui-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid;
+  border-radius: var(--radius-md);
+  font-size: 11px;
+  min-width: 0;
+}
+
+.preview-ui-title {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+
+  span {
+    padding: 5px 8px;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+  }
 }
 
 // 桌布網格
