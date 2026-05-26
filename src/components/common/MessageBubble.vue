@@ -4880,7 +4880,7 @@ const showTextVoiceTranscript = ref(true);
 
 .sender-name {
   font-size: 12px;
-  color: var(--color-text-secondary);
+  color: var(--bubble-ai-text, var(--color-text-secondary));
   margin-bottom: 4px;
   padding-left: 4px;
 }
@@ -5014,7 +5014,7 @@ const showTextVoiceTranscript = ref(true);
 
   &.ai {
     background: var(--bubble-ai-bg, white);
-    color: var(--bubble-ai-text, #4a4a6a);
+    color: var(--bubble-ai-content, #4a4a6a);
     border-bottom-left-radius: 6px;
     box-shadow: var(--shadow-sm);
 
@@ -7621,7 +7621,7 @@ const showTextVoiceTranscript = ref(true);
 .message-wrapper.group-chat {
   .sender-name {
     font-weight: 500;
-    color: var(--color-text-primary, #333);
+    color: var(--bubble-ai-text, var(--color-text-primary, #333));
   }
 }
 

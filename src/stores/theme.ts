@@ -131,7 +131,8 @@ export interface BubbleStyle {
   userBgGradient: string; // 用戶氣泡漸層
   userTextColor: string; // 用戶氣泡文字
   aiBgColor: string; // AI 氣泡背景
-  aiTextColor: string; // AI 氣泡文字
+  aiTextColor: string; // AI 發送者名稱 / 時間文字
+  aiContentColor: string; // AI 氣泡內主要文字
   thoughtBgColor: string; // 想法氣泡背景（hex，如 #ADD8E6）
   thoughtTextColor: string; // 想法氣泡文字（hex）
   thoughtGlowColor: string; // 想法氣泡光暈（hex，如 #ADD8E6）
@@ -295,6 +296,7 @@ const defaultBubbleStyle: BubbleStyle = {
   userTextColor: "#FFFFFF",
   aiBgColor: "#FFFFFF",
   aiTextColor: "#4A4A6A",
+  aiContentColor: "#4A4A6A",
   thoughtBgColor: "#ADD8E6",
   thoughtTextColor: "#4a6572",
   thoughtGlowColor: "#ADD8E6",
@@ -424,6 +426,7 @@ export const useThemeStore = defineStore("theme", () => {
     userTextColor: "#e0f0e8",
     aiBgColor: "#1e2a40",
     aiTextColor: "#d8d8e8",
+    aiContentColor: "#d8d8e8",
     thoughtBgColor: "#506EA0",
     thoughtTextColor: "#c0d0e8",
     thoughtGlowColor: "#648CC8",
@@ -547,6 +550,7 @@ export const useThemeStore = defineStore("theme", () => {
       "--bubble-user-text": b.userTextColor,
       "--bubble-ai-bg": b.aiBgColor,
       "--bubble-ai-text": b.aiTextColor,
+      "--bubble-ai-content": b.aiContentColor,
       "--bubble-radius": `${b.borderRadius}px`,
       "--bubble-max-width": `${b.maxWidth}%`,
 

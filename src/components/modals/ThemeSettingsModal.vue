@@ -499,7 +499,7 @@ function setAvatarBorderWidth(width: number) {
 
 // 處理氣泡顏色變更
 function setBubbleColor(
-  key: "aiBgColor" | "aiTextColor" | "userBgColor" | "userTextColor" | "thoughtBgColor" | "thoughtTextColor" | "thoughtGlowColor",
+  key: "aiBgColor" | "aiTextColor" | "aiContentColor" | "userBgColor" | "userTextColor" | "thoughtBgColor" | "thoughtTextColor" | "thoughtGlowColor",
   value: string,
 ) {
   tempBubbleStyle.value[key] = value;
@@ -1180,7 +1180,7 @@ watch(
                         borderBottomLeftRadius: '6px',
                         maxWidth: `${tempBubbleStyle.maxWidth}%`,
                         background: tempBubbleStyle.aiBgColor,
-                        color: tempBubbleStyle.aiTextColor,
+                        color: tempBubbleStyle.aiContentColor,
                       }"
                       tabindex="0"
                       role="button"
@@ -1190,12 +1190,12 @@ watch(
                     >
                       <div
                         class="preview-sender-name"
-                        :style="{ color: displayColors.textSecondary }"
+                        :style="{ color: tempBubbleStyle.aiTextColor }"
                       >
                         AI 角色
                       </div>
                       這是 AI 的訊息氣泡
-                      <div class="preview-time">12:00</div>
+                      <div class="preview-time" :style="{ color: tempBubbleStyle.aiTextColor }">12:00</div>
                       <span v-if="previewFocus === 'ai'" class="focus-badge">AI 氣泡設定</span>
                     </div>
                     <div
@@ -1317,7 +1317,7 @@ watch(
                         <span>AI 文字/時間</span>
                       </div>
                       <div class="color-item">
-                        <input type="color" :value="tempBubbleStyle.aiTextColor" @input="setBubbleColor('aiTextColor', ($event.target as HTMLInputElement).value)" />
+                        <input type="color" :value="tempBubbleStyle.aiContentColor" @input="setBubbleColor('aiContentColor', ($event.target as HTMLInputElement).value)" />
                         <span>AI 氣泡內主要顏色</span>
                       </div>
                       <div class="color-item">

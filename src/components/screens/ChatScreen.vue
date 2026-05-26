@@ -2800,10 +2800,12 @@ function applyChatAppearance(appearance?: ChatAppearance) {
     container.style.setProperty("--bubble-user-text", "#e0f0e8");
     container.style.setProperty("--bubble-ai-bg", "#1e2a40");
     container.style.setProperty("--bubble-ai-text", "#d8d8e8");
+    container.style.setProperty("--bubble-ai-content", "#d8d8e8");
     container.style.setProperty("--chat-bubble-user-bg", "#2a4a3a");
     container.style.setProperty("--chat-bubble-user-text", "#e0f0e8");
     container.style.setProperty("--chat-bubble-ai-bg", "#1e2a40");
     container.style.setProperty("--chat-bubble-ai-text", "#d8d8e8");
+    container.style.setProperty("--chat-bubble-ai-content", "#d8d8e8");
     // 清除其他聊天專屬覆蓋
     container.style.removeProperty("--bubble-radius");
     container.style.removeProperty("--bubble-max-width");
@@ -2850,6 +2852,7 @@ function applyChatAppearance(appearance?: ChatAppearance) {
     container.style.removeProperty("--bubble-user-text");
     container.style.removeProperty("--bubble-ai-bg");
     container.style.removeProperty("--bubble-ai-text");
+    container.style.removeProperty("--bubble-ai-content");
     container.style.removeProperty("--bubble-radius");
     container.style.removeProperty("--bubble-max-width");
     container.style.removeProperty("--color-primary");
@@ -3032,6 +3035,10 @@ function applyChatAppearance(appearance?: ChatAppearance) {
       appearance.bubble.aiTextColor,
     );
     container.style.setProperty(
+      "--bubble-ai-content",
+      appearance.bubble.aiContentColor ?? appearance.bubble.aiTextColor,
+    );
+    container.style.setProperty(
       "--bubble-radius",
       `${appearance.bubble.borderRadius}px`,
     );
@@ -3054,6 +3061,7 @@ function applyChatAppearance(appearance?: ChatAppearance) {
     container.style.removeProperty("--bubble-user-text");
     container.style.removeProperty("--bubble-ai-bg");
     container.style.removeProperty("--bubble-ai-text");
+    container.style.removeProperty("--bubble-ai-content");
     container.style.removeProperty("--bubble-radius");
     container.style.removeProperty("--bubble-max-width");
     container.style.removeProperty("--thought-bg");
@@ -7917,10 +7925,12 @@ watch(
         container.style.setProperty("--bubble-user-text", "#e0f0e8");
         container.style.setProperty("--bubble-ai-bg", "#1e2a40");
         container.style.setProperty("--bubble-ai-text", "#d8d8e8");
+        container.style.setProperty("--bubble-ai-content", "#d8d8e8");
         container.style.setProperty("--chat-bubble-user-bg", "#2a4a3a");
         container.style.setProperty("--chat-bubble-user-text", "#e0f0e8");
         container.style.setProperty("--chat-bubble-ai-bg", "#1e2a40");
         container.style.setProperty("--chat-bubble-ai-text", "#d8d8e8");
+        container.style.setProperty("--chat-bubble-ai-content", "#d8d8e8");
         // 清除桌布覆蓋，讓全局夜晚背景生效
         container.style.removeProperty("--chat-wallpaper");
         container.style.removeProperty("--chat-wallpaper-blur");
@@ -7935,10 +7945,12 @@ watch(
         container.style.removeProperty("--bubble-user-text");
         container.style.removeProperty("--bubble-ai-bg");
         container.style.removeProperty("--bubble-ai-text");
+        container.style.removeProperty("--bubble-ai-content");
         container.style.removeProperty("--chat-bubble-user-bg");
         container.style.removeProperty("--chat-bubble-user-text");
         container.style.removeProperty("--chat-bubble-ai-bg");
         container.style.removeProperty("--chat-bubble-ai-text");
+        container.style.removeProperty("--chat-bubble-ai-content");
         applyChatAppearance(chatAppearance.value);
       }
     });
@@ -12801,7 +12813,7 @@ onUnmounted(() => {
 
     &.ai {
       background: var(--chat-bubble-ai-bg, var(--bubble-ai-bg, white));
-      color: var(--chat-bubble-ai-text, var(--bubble-ai-text, #4a4a6a));
+      color: var(--chat-bubble-ai-content, var(--bubble-ai-content, #4a4a6a));
 
       .message-time {
         color: var(--chat-bubble-ai-text, var(--bubble-ai-text, #4a4a6a));
