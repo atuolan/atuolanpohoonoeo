@@ -98,6 +98,10 @@ export interface ChatAppearance {
     userTextColor: string;
     aiBgColor: string;
     aiTextColor: string;
+    thoughtBgColor?: string;
+    thoughtTextColor?: string;
+    thoughtGlowColor?: string;
+    thoughtGlowOpacity?: number;
     borderRadius: number;
     maxWidth: number;
     showAvatar: boolean;

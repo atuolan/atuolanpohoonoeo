@@ -499,7 +499,7 @@ function setAvatarBorderWidth(width: number) {
 
 // 處理氣泡顏色變更
 function setBubbleColor(
-  key: "aiBgColor" | "aiTextColor" | "userBgColor" | "userTextColor",
+  key: "aiBgColor" | "aiTextColor" | "userBgColor" | "userTextColor" | "thoughtBgColor" | "thoughtTextColor" | "thoughtGlowColor",
   value: string,
 ) {
   tempBubbleStyle.value[key] = value;
@@ -916,7 +916,7 @@ watch(
           ? { ...props.chatAppearance.avatar }
           : defaultAvatar;
         tempBubbleStyle.value = props.chatAppearance.bubble
-          ? { ...props.chatAppearance.bubble }
+          ? { ...defaultBubble, ...props.chatAppearance.bubble }
           : defaultBubble;
         tempWallpaperStyle.value = props.chatAppearance.wallpaper
           ? { ...props.chatAppearance.wallpaper }
@@ -1320,6 +1320,22 @@ watch(
                         <input type="color" :value="tempBubbleStyle.aiTextColor" @input="setBubbleColor('aiTextColor', ($event.target as HTMLInputElement).value)" />
                         <span>AI 氣泡內主要顏色</span>
                       </div>
+                      <div class="color-item">
+                        <input type="color" :value="tempBubbleStyle.thoughtBgColor" @input="setBubbleColor('thoughtBgColor', ($event.target as HTMLInputElement).value)" />
+                        <span>想法氣泡背景</span>
+                      </div>
+                      <div class="color-item">
+                        <input type="color" :value="tempBubbleStyle.thoughtTextColor" @input="setBubbleColor('thoughtTextColor', ($event.target as HTMLInputElement).value)" />
+                        <span>想法氣泡文字</span>
+                      </div>
+                      <div class="color-item">
+                        <input type="color" :value="tempBubbleStyle.thoughtGlowColor" @input="setBubbleColor('thoughtGlowColor', ($event.target as HTMLInputElement).value)" />
+                        <span>想法氣泡光暈</span>
+                      </div>
+                    </div>
+                    <div class="slider-control" style="margin-top: 6px">
+                      <input type="range" min="0.1" max="1" step="0.1" :value="tempBubbleStyle.thoughtGlowOpacity" @input="tempBubbleStyle.thoughtGlowOpacity = Number(($event.target as HTMLInputElement).value); useCustomAppearance = true" />
+                      <span class="slider-value">光暈強度 {{ Math.round(tempBubbleStyle.thoughtGlowOpacity * 100) }}%</span>
                     </div>
                   </div>
                   <div class="focus-section">
@@ -1590,53 +1606,6 @@ watch(
                 </template>
               </div>
 
-              <!-- 非統一模式：各顏色獨立調整 -->
-              <div v-if="!unifiedColors" class="individual-colors">
-                <div class="color-item">
-                  <input type="color" :value="displayColors.primaryLight" @input="setIndividualColor('primaryLight', ($event.target as HTMLInputElement).value)" />
-                  <span>主色亮版</span>
-                </div>
-                <div class="color-item">
-                  <input type="color" :value="displayColors.secondary" @input="setIndividualColor('secondary', ($event.target as HTMLInputElement).value)" />
-                  <span>輔助色</span>
-                </div>
-                <div class="color-item">
-                  <input type="color" :value="displayColors.surface" @input="setIndividualColor('surface', ($event.target as HTMLInputElement).value)" />
-                  <span>卡片背景</span>
-                </div>
-                <div class="color-item">
-                  <input type="color" :value="displayColors.surfaceHover" @input="setIndividualColor('surfaceHover', ($event.target as HTMLInputElement).value)" />
-                  <span>滑過背景</span>
-                </div>
-                <div class="color-item">
-                  <input type="color" :value="displayColors.text" @input="setIndividualColor('text', ($event.target as HTMLInputElement).value)" />
-                  <span>主要文字</span>
-                </div>
-                <div class="color-item">
-                  <input type="color" :value="displayColors.textSecondary" @input="setIndividualColor('textSecondary', ($event.target as HTMLInputElement).value)" />
-                  <span>次要文字</span>
-                </div>
-                <div class="color-item">
-                  <input type="color" :value="displayColors.textMuted" @input="setIndividualColor('textMuted', ($event.target as HTMLInputElement).value)" />
-                  <span>提示文字</span>
-                </div>
-                <div class="color-item">
-                  <input type="color" :value="displayColors.border" @input="setIndividualColor('border', ($event.target as HTMLInputElement).value)" />
-                  <span>邊框線</span>
-                </div>
-                <div class="color-item">
-                  <input type="color" :value="displayColors.success" @input="setIndividualColor('success', ($event.target as HTMLInputElement).value)" />
-                  <span>成功提示</span>
-                </div>
-                <div class="color-item">
-                  <input type="color" :value="displayColors.error" @input="setIndividualColor('error', ($event.target as HTMLInputElement).value)" />
-                  <span>錯誤提示</span>
-                </div>
-                <div class="color-item">
-                  <input type="color" :value="displayColors.warning" @input="setIndividualColor('warning', ($event.target as HTMLInputElement).value)" />
-                  <span>警告提示</span>
-                </div>
-              </div>
 
             </div>
 

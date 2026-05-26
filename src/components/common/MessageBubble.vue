@@ -5471,15 +5471,11 @@ const showTextVoiceTranscript = ref(true);
     align-items: flex-start;
     gap: 6px;
     padding: 10px 14px;
-    background: linear-gradient(
-      135deg,
-      rgba(173, 216, 230, 0.9),
-      rgba(176, 224, 230, 0.9)
-    );
+    background: var(--thought-bg, linear-gradient(135deg, rgba(173, 216, 230, 0.9), rgba(176, 224, 230, 0.9)));
     border-radius: 16px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 8px var(--thought-glow-1, rgba(173, 216, 230, 0.6));
     font-size: 13px;
-    color: #4a6572;
+    color: var(--thought-text, #4a6572);
     font-style: italic;
     max-width: 100%;
   }
@@ -5499,11 +5495,7 @@ const showTextVoiceTranscript = ref(true);
     left: 20px;
     width: 12px;
     height: 12px;
-    background: linear-gradient(
-      135deg,
-      rgba(173, 216, 230, 0.9),
-      rgba(176, 224, 230, 0.9)
-    );
+    background: var(--thought-bg, linear-gradient(135deg, rgba(173, 216, 230, 0.9), rgba(176, 224, 230, 0.9)));
     border-radius: 50%;
 
     &::before {
@@ -5513,11 +5505,7 @@ const showTextVoiceTranscript = ref(true);
       left: 4px;
       width: 8px;
       height: 8px;
-      background: linear-gradient(
-        135deg,
-        rgba(173, 216, 230, 0.9),
-        rgba(176, 224, 230, 0.9)
-      );
+      background: var(--thought-glow-2, rgba(173, 216, 230, 0.4));
       border-radius: 50%;
     }
 
@@ -5528,11 +5516,7 @@ const showTextVoiceTranscript = ref(true);
       left: 6px;
       width: 5px;
       height: 5px;
-      background: linear-gradient(
-        135deg,
-        rgba(173, 216, 230, 0.9),
-        rgba(176, 224, 230, 0.9)
-      );
+      background: var(--thought-glow-3, rgba(173, 216, 230, 0.2));
       border-radius: 50%;
     }
   }

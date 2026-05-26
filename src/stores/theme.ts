@@ -132,6 +132,10 @@ export interface BubbleStyle {
   userTextColor: string; // 用戶氣泡文字
   aiBgColor: string; // AI 氣泡背景
   aiTextColor: string; // AI 氣泡文字
+  thoughtBgColor: string; // 想法氣泡背景（hex，如 #ADD8E6）
+  thoughtTextColor: string; // 想法氣泡文字（hex）
+  thoughtGlowColor: string; // 想法氣泡光暈（hex，如 #ADD8E6）
+  thoughtGlowOpacity: number; // 想法氣泡光暈透明度 (0-1, 預設 0.6)
   borderRadius: number; // 圓角大小 (px)
   maxWidth: number; // 最大寬度 (%)
   showAvatar: boolean; // 是否顯示頭像
@@ -152,6 +156,15 @@ export interface ModalAnimation {
 }
 
 // ===== 預設主題配色 =====
+
+// hex → rgba 轉換
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 // 粉紅馬卡龍配色
 const softPinkTheme: ThemeColors = {
   primary: "#FF85A2", // 柔和粉紅
@@ -282,6 +295,10 @@ const defaultBubbleStyle: BubbleStyle = {
   userTextColor: "#FFFFFF",
   aiBgColor: "#FFFFFF",
   aiTextColor: "#4A4A6A",
+  thoughtBgColor: "#ADD8E6",
+  thoughtTextColor: "#4a6572",
+  thoughtGlowColor: "#ADD8E6",
+  thoughtGlowOpacity: 0.6,
   borderRadius: 20,
   maxWidth: 75,
   showAvatar: true,
@@ -407,6 +424,10 @@ export const useThemeStore = defineStore("theme", () => {
     userTextColor: "#e0f0e8",
     aiBgColor: "#1e2a40",
     aiTextColor: "#d8d8e8",
+    thoughtBgColor: "#506EA0",
+    thoughtTextColor: "#c0d0e8",
+    thoughtGlowColor: "#648CC8",
+    thoughtGlowOpacity: 0.4,
     borderRadius: 20,
     maxWidth: 75,
     showAvatar: true,
@@ -529,16 +550,12 @@ export const useThemeStore = defineStore("theme", () => {
       "--bubble-radius": `${b.borderRadius}px`,
       "--bubble-max-width": `${b.maxWidth}%`,
 
-      // 想法發光效果（夜晚模式用較暗的藍紫光）
-      "--thought-glow-1": nightMode.value
-        ? "rgba(100, 140, 200, 0.4)"
-        : "rgba(173, 216, 230, 0.6)",
-      "--thought-glow-2": nightMode.value
-        ? "rgba(100, 140, 200, 0.25)"
-        : "rgba(173, 216, 230, 0.4)",
-      "--thought-glow-3": nightMode.value
-        ? "rgba(100, 140, 200, 0.12)"
-        : "rgba(173, 216, 230, 0.2)",
+      // 想法氣泡
+      "--thought-bg": hexToRgba(b.thoughtBgColor, 0.9),
+      "--thought-text": b.thoughtTextColor,
+      "--thought-glow-1": hexToRgba(b.thoughtGlowColor, b.thoughtGlowOpacity),
+      "--thought-glow-2": hexToRgba(b.thoughtGlowColor, b.thoughtGlowOpacity * 0.6),
+      "--thought-glow-3": hexToRgba(b.thoughtGlowColor, b.thoughtGlowOpacity * 0.3),
 
       // 桌布變數
       // time-theme 類型會在 WhiteboardCanvas 中動態覆蓋

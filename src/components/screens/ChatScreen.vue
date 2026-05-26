@@ -2779,6 +2779,14 @@ function saveAppearance(appearance: ChatAppearance) {
   saveChat();
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 // 套用聊天外觀（只影響 ChatScreen 組件內部）
 function applyChatAppearance(appearance?: ChatAppearance) {
   const container = chatScreenRef.value;
@@ -2827,6 +2835,11 @@ function applyChatAppearance(appearance?: ChatAppearance) {
     container.style.removeProperty("--chat-md-quote");
     container.style.removeProperty("--chat-md-code");
     container.style.removeProperty("--chat-md-heading");
+    container.style.removeProperty("--thought-bg");
+    container.style.removeProperty("--thought-text");
+    container.style.removeProperty("--thought-glow-1");
+    container.style.removeProperty("--thought-glow-2");
+    container.style.removeProperty("--thought-glow-3");
     return;
   }
 
@@ -2871,6 +2884,11 @@ function applyChatAppearance(appearance?: ChatAppearance) {
     container.style.removeProperty("--chat-md-quote");
     container.style.removeProperty("--chat-md-code");
     container.style.removeProperty("--chat-md-heading");
+    container.style.removeProperty("--thought-bg");
+    container.style.removeProperty("--thought-text");
+    container.style.removeProperty("--thought-glow-1");
+    container.style.removeProperty("--thought-glow-2");
+    container.style.removeProperty("--thought-glow-3");
     return;
   }
 
@@ -3020,6 +3038,15 @@ function applyChatAppearance(appearance?: ChatAppearance) {
       "--bubble-max-width",
       `${appearance.bubble.maxWidth}%`,
     );
+    // 想法氣泡（使用 defaultBubble 預設值作為 fallback）
+    const tBg = appearance.bubble.thoughtBgColor ?? "#ADD8E6";
+    const tGlow = appearance.bubble.thoughtGlowColor ?? "#ADD8E6";
+    const tOpacity = appearance.bubble.thoughtGlowOpacity ?? 0.6;
+    container.style.setProperty("--thought-bg", hexToRgba(tBg, 0.9));
+    container.style.setProperty("--thought-text", appearance.bubble.thoughtTextColor ?? "#4a6572");
+    container.style.setProperty("--thought-glow-1", hexToRgba(tGlow, tOpacity));
+    container.style.setProperty("--thought-glow-2", hexToRgba(tGlow, tOpacity * 0.6));
+    container.style.setProperty("--thought-glow-3", hexToRgba(tGlow, tOpacity * 0.3));
   } else {
     // 沒有自訂氣泡：清除容器層級的覆蓋，讓全局主題值生效
     container.style.removeProperty("--bubble-user-bg");
@@ -3028,6 +3055,11 @@ function applyChatAppearance(appearance?: ChatAppearance) {
     container.style.removeProperty("--bubble-ai-text");
     container.style.removeProperty("--bubble-radius");
     container.style.removeProperty("--bubble-max-width");
+    container.style.removeProperty("--thought-bg");
+    container.style.removeProperty("--thought-text");
+    container.style.removeProperty("--thought-glow-1");
+    container.style.removeProperty("--thought-glow-2");
+    container.style.removeProperty("--thought-glow-3");
   }
 
   // 套用聊天專屬桌布樣式（無論有無桌布都要處理，確保舊值不殘留）
