@@ -52,9 +52,11 @@ const {
   promptTokens,
   completionTokens,
   promptContent,
+  diagnostics,
   showPrompt,
   copyContent,
   copyPromptModuleOrder,
+  copyDiagnostics,
   setAutoScroll,
   toggleRawMode,
   toggleDebugPanel,
@@ -65,6 +67,7 @@ const {
 const scrollContainer = ref<HTMLElement | null>(null);
 const copySuccess = ref(false);
 const moduleOrderCopySuccess = ref(false);
+const diagnosticsCopySuccess = ref(false);
 
 // 自動滾動閾值（像素）
 const AUTO_SCROLL_THRESHOLD = 50;
@@ -91,6 +94,28 @@ const promptModuleCount = computed(
         msg.identifier !== "chatHistoryCloseTag",
     ).length,
 );
+
+const diagnosticRows = computed(() => {
+  const d = diagnostics.value;
+  if (!d) return [];
+  const rows: Array<{ label: string; value: string; warning?: boolean }> = [];
+  if (d.finishReason || d.rawFinishReason) {
+    rows.push({
+      label: "結束原因",
+      value: d.rawFinishReason || d.finishReason || "-",
+      warning: !!d.finishReason && d.finishReason !== "stop",
+    });
+  }
+  if (typeof d.apiContentLength === "number") rows.push({ label: "API 原始長度", value: String(d.apiContentLength) });
+  if (typeof d.finalContentLength === "number") rows.push({ label: "前端處理後長度", value: String(d.finalContentLength), warning: d.apiContentLength !== undefined && d.apiContentLength > 0 && d.finalContentLength === 0 });
+  if (typeof d.requestBodyBytes === "number") rows.push({ label: "Request bytes", value: d.requestBodyBytes.toLocaleString() });
+  if (typeof d.requestMessageCount === "number") rows.push({ label: "API 訊息數", value: String(d.requestMessageCount) });
+  if (d.requestRoles?.length) rows.push({ label: "最後 roles", value: d.requestRoles.slice(-8).join(" > ") });
+  if (d.roleAdjustments?.length) rows.push({ label: "Role 轉換", value: d.roleAdjustments.map((r) => `${r.reason}: ${r.before}->${r.after}`).join("; "), warning: true });
+  if (typeof d.chunkCount === "number") rows.push({ label: "串流 chunks", value: String(d.chunkCount) });
+  if (typeof d.totalBytes === "number") rows.push({ label: "串流 bytes", value: d.totalBytes.toLocaleString() });
+  return rows;
+});
 
 // 計算經過時間
 const elapsedTime = computed(() => {
@@ -144,6 +169,16 @@ async function handleCopyPromptModuleOrder() {
     moduleOrderCopySuccess.value = true;
     setTimeout(() => {
       moduleOrderCopySuccess.value = false;
+    }, 2000);
+  }
+}
+
+async function handleCopyDiagnostics() {
+  const success = await copyDiagnostics();
+  if (success) {
+    diagnosticsCopySuccess.value = true;
+    setTimeout(() => {
+      diagnosticsCopySuccess.value = false;
     }, 2000);
   }
 }
@@ -299,6 +334,22 @@ onUnmounted(() => {
               <span class="debug-label">模型</span>
               <span class="debug-value">{{ metadata?.model || "-" }}</span>
             </div>
+            <template v-if="diagnosticRows.length > 0">
+              <div
+                v-for="row in diagnosticRows"
+                :key="row.label"
+                class="debug-row"
+                :class="{ 'diagnostic-warning': row.warning }"
+              >
+                <span class="debug-label">{{ row.label }}</span>
+                <span class="debug-value">{{ row.value }}</span>
+              </div>
+              <div class="debug-row prompt-actions-row">
+                <button class="prompt-order-copy-btn" @click="handleCopyDiagnostics">
+                  {{ diagnosticsCopySuccess ? "✅ 已複製診斷" : "🧪 複製診斷 JSON" }}
+                </button>
+              </div>
+            </template>
             <div class="debug-row">
               <label class="raw-mode-toggle">
                 <input
@@ -1065,4 +1116,9 @@ onUnmounted(() => {
   opacity: 0;
   border-radius: 50%;
 }
+
+.diagnostic-warning {
+  color: var(--color-warning, #f59e0b);
+}
+
 </style>

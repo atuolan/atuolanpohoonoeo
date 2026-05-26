@@ -4,6 +4,7 @@
  */
 
 import { computed, ref } from "vue";
+import type { GenerationDiagnostics } from "@/types/chat";
 
 // ===== 窗口狀態類型 =====
 export type WindowState = "hidden" | "visible" | "minimized";
@@ -52,6 +53,7 @@ const promptTokens = ref(0);
 const completionTokens = ref(0);
 /** 輸入提示詞內容（用於顯示/隱藏） */
 const promptContent = ref<PromptDebugMessage[]>([]);
+const diagnostics = ref<GenerationDiagnostics | null>(null);
 /** 是否顯示提示詞（生成完成後可收合） */
 const showPrompt = ref(false);
 const internalPromptIdentifiers = new Set([
@@ -89,6 +91,7 @@ export function useStreamingWindow() {
     promptTokens.value = 0;
     completionTokens.value = 0;
     promptContent.value = [];
+    diagnostics.value = null;
     showPrompt.value = false;
     isComplete.value = false;
     hasError.value = false;
@@ -166,6 +169,10 @@ export function useStreamingWindow() {
     promptContent.value = messages;
   }
 
+  function setDiagnostics(payload: GenerationDiagnostics | null) {
+    diagnostics.value = payload;
+  }
+
   /**
    * 切換提示詞顯示
    */
@@ -194,6 +201,7 @@ export function useStreamingWindow() {
     promptTokens.value = 0;
     completionTokens.value = 0;
     promptContent.value = [];
+    diagnostics.value = null;
     showPrompt.value = false;
     metadata.value = null;
     isAutoScrollEnabled.value = true;
@@ -230,6 +238,17 @@ export function useStreamingWindow() {
         })
         .join("\n");
       await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function copyDiagnostics(): Promise<boolean> {
+    try {
+      await navigator.clipboard.writeText(
+        JSON.stringify(diagnostics.value ?? {}, null, 2),
+      );
       return true;
     } catch {
       return false;
@@ -335,6 +354,7 @@ export function useStreamingWindow() {
     promptTokens,
     completionTokens,
     promptContent,
+    diagnostics,
     showPrompt,
 
     // 方法
@@ -346,11 +366,13 @@ export function useStreamingWindow() {
     setComplete,
     setUsage,
     setPromptContent,
+    setDiagnostics,
     togglePrompt,
     setError,
     reset,
     copyContent,
     copyPromptModuleOrder,
+    copyDiagnostics,
     setAutoScroll,
     toggleRawMode,
     toggleDebugPanel,

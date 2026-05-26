@@ -866,6 +866,61 @@ export type GenerationType =
   | "quiet" // 靜默生成（不顯示）
   | "regenerate"; // 重新生成
 
+export type GenerationStopReason =
+  | "stop"
+  | "length"
+  | "content_filter"
+  | "safety"
+  | "recitation"
+  | "prohibited_content"
+  | "blocklist"
+  | "other"
+  | "error";
+
+export interface GenerationMessageDiagnostic {
+  index: number;
+  role: string;
+  contentLength: number;
+  contentType: "text" | "multipart" | "unknown";
+}
+
+export interface GenerationRoleAdjustment {
+  reason: string;
+  before: string;
+  after: string;
+}
+
+export interface GenerationDiagnostics {
+  model?: string;
+  stream?: boolean;
+  maxTokens?: number;
+  requestBodyBytes?: number;
+  requestMessageCount?: number;
+  requestRoles?: string[];
+  lastMessages?: GenerationMessageDiagnostic[];
+  roleAdjustments?: GenerationRoleAdjustment[];
+  rawFinishReason?: string;
+  finishReason?: GenerationStopReason;
+  apiContentLength?: number;
+  finalContentLength?: number;
+  chunkCount?: number;
+  totalBytes?: number;
+  firstChunkTimeMs?: number;
+  totalTimeMs?: number;
+  nonSSELines?: string[];
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+  promptFeedback?: unknown;
+  safetyRatings?: unknown;
+  rawResponseMeta?: unknown;
+  promptDiagnostics?: unknown;
+  chatDiagnostics?: unknown;
+  parsingDiagnostics?: unknown;
+}
+
 // ===== 生成結果 =====
 export interface GenerationResult {
   /** 生成的文本 */
@@ -879,9 +934,12 @@ export interface GenerationResult {
   /** 生成時間（毫秒） */
   generationTime: number;
   /** 停止原因 */
-  stopReason: "stop" | "length" | "error";
+  stopReason: GenerationStopReason;
   /** 使用的模型 */
   model: string;
+  finishReason?: GenerationStopReason;
+  rawFinishReason?: string;
+  diagnostics?: GenerationDiagnostics;
 }
 
 // ===== 流式生成事件 =====
@@ -900,6 +958,9 @@ export interface StreamingEvent {
     completion_tokens: number;
     total_tokens: number;
   };
+  finishReason?: GenerationStopReason;
+  rawFinishReason?: string;
+  diagnostics?: GenerationDiagnostics;
 }
 
 // ===== 創建默認消息 =====

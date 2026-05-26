@@ -130,6 +130,7 @@ import type {
   ChatAppearance,
   ChatLocationOverride,
   ChatMessage,
+  GenerationDiagnostics,
 } from "@/types/chat";
 import type {
   ChatScreenImageData as ImageData,
@@ -5847,6 +5848,87 @@ async function triggerAIResponse(options?: {
       useStreamingWindow: useWindow,
     };
 
+    const getApiMessageTextLength = (message: any): number => {
+      if (typeof message?.content === "string") return message.content.length;
+      if (Array.isArray(message?.content)) {
+        return message.content
+          .filter((part: any) => part?.type === "text")
+          .map((part: any) => String(part.text || ""))
+          .join("\n")
+          .length;
+      }
+      return 0;
+    };
+    const promptDebugByIndex = new Map<number, PromptDebugMessage>();
+    promptDebugMessages.forEach((message, index) => promptDebugByIndex.set(index, message));
+    let generationDiagnostics: GenerationDiagnostics = {
+      model: chatTaskConfig.api.model,
+      stream: isStreamingEnabled,
+      maxTokens: chatSettings.maxResponseLength,
+      requestMessageCount: apiMessages.length,
+      requestRoles: apiMessages.map((message) => String(message.role)),
+      lastMessages: apiMessages.slice(-8).map((message, offset) => ({
+        index: apiMessages.length - Math.min(apiMessages.length, 8) + offset,
+        role: String(message.role),
+        contentLength: getApiMessageTextLength(message),
+        contentType: Array.isArray(message.content) ? "multipart" : typeof message.content === "string" ? "text" : "unknown",
+      })),
+      promptDiagnostics: {
+        faceToFaceMode: chatFaceToFaceMode.value,
+        groupChatMode: isGroupChat.value,
+        promptMessageCount: promptResult.messages.length,
+        promptDebugMessageCount: promptDebugMessages.length,
+        promptModules: promptDebugMessages
+          .filter((message) => message.name || message.identifier)
+          .map((message) => ({
+            role: message.role,
+            identifier: message.identifier,
+            name: message.name,
+            contentLength: message.content.length,
+          })),
+        chatHistoryBudget,
+      },
+      chatDiagnostics: {
+        chatId: props.chatId,
+        sourceMessageCount: messages.value.length,
+        eligibleMessageCount: eligibleMessages.length,
+        messagesToUseCount: messagesToUse.length,
+        actualMode,
+        actualCount,
+        summariesCount: summariesToSend.length,
+        summariesTotalLength: summariesToSend.reduce((sum, item) => sum + item.content.length, 0),
+        eventsCount: eventsToSend.length,
+        eventsTotalLength: eventsToSend.reduce((sum, item) => sum + item.content.length, 0),
+        vectorMemoriesCount: vectorMemories?.length ?? 0,
+        vectorMemoriesTotalLength: vectorMemories?.reduce((sum, item) => sum + item.content.length, 0) ?? 0,
+        lastUiMessages: messagesToUse.slice(-10).map((message) => ({
+          role: message.role,
+          contentLength: message.content?.length ?? 0,
+          isSystem: message.role === "system",
+          isTimetravel: !!message.isTimetravel,
+          sentWhileBlocked: !!message.sentWhileBlocked,
+          hasReplyTo: !!message.replyTo,
+          timestamp: message.timestamp,
+        })),
+      },
+      rawResponseMeta: {
+        preApiLastDebugMessages: apiMessages.slice(-8).map((message, offset) => {
+          const index = apiMessages.length - Math.min(apiMessages.length, 8) + offset;
+          const debug = promptDebugByIndex.get(index);
+          return {
+            index,
+            role: String(message.role),
+            identifier: debug?.identifier,
+            name: debug?.name,
+            contentLength: getApiMessageTextLength(message),
+          };
+        }),
+      },
+    };
+    if (useWindow) {
+      streamingWindow.setDiagnostics(generationDiagnostics);
+    }
+
     let fullContent = "";
 
     {
@@ -5896,6 +5978,12 @@ async function triggerAIResponse(options?: {
             }
             const usage = (event as { usage?: typeof tokenUsage }).usage;
             if (usage) tokenUsage = usage;
+            const doneEvent = event as import("@/types/chat").StreamingEvent;
+            if (doneEvent.diagnostics) {
+              generationDiagnostics = { ...generationDiagnostics, ...doneEvent.diagnostics };
+            }
+            if (doneEvent.rawFinishReason !== undefined) generationDiagnostics.rawFinishReason = doneEvent.rawFinishReason;
+            if (doneEvent.finishReason !== undefined) generationDiagnostics.finishReason = doneEvent.finishReason;
           } else if (event.type === "error") {
             const rawErr = (event as { error?: unknown }).error;
             const errMsg =
@@ -5926,6 +6014,9 @@ async function triggerAIResponse(options?: {
             total_tokens: result.tokenCount.total,
           };
         }
+        if (result.diagnostics) generationDiagnostics = { ...generationDiagnostics, ...result.diagnostics };
+        if (result.rawFinishReason !== undefined) generationDiagnostics.rawFinishReason = result.rawFinishReason;
+        if (result.finishReason !== undefined) generationDiagnostics.finishReason = result.finishReason;
       }
 
       if (useWindow && tokenUsage) {
@@ -5951,6 +6042,14 @@ async function triggerAIResponse(options?: {
       fullContent = rawFullContent;
       const finalContent = processAiOutputTemplate(applyAIOutputRegex(fullContent));
       latestFinalContent = finalContent;
+      generationDiagnostics.apiContentLength = fullContent.length;
+      generationDiagnostics.finalContentLength = finalContent.length;
+      generationDiagnostics.parsingDiagnostics = {
+        rawLength: fullContent.length,
+        afterTemplateLength: finalContent.length,
+        isEmpty: !finalContent || !finalContent.trim(),
+      };
+      if (useWindow) streamingWindow.setDiagnostics(generationDiagnostics);
       const msgIndex = messages.value.findIndex((m) => m.id === aiMessage.id);
 
       // 空回應檢測：若是使用者主動停止，直接移除佔位氣泡
@@ -5967,8 +6066,22 @@ async function triggerAIResponse(options?: {
         }
 
         if (msgIndex !== -1) {
+          const _d = generationDiagnostics;
+          const _diagParts: string[] = [];
+          if (_d.rawFinishReason) _diagParts.push(`結束原因: ${_d.rawFinishReason}`);
+          else if (_d.finishReason && _d.finishReason !== "stop") _diagParts.push(`結束原因: ${_d.finishReason}`);
+          if (typeof _d.apiContentLength === "number") _diagParts.push(`API 原始長度: ${_d.apiContentLength}`);
+          if (_d.requestRoles?.length) _diagParts.push(`最後 roles: ${_d.requestRoles.slice(-6).join(" > ")}`);
+          if (_d.roleAdjustments?.length) {
+            _diagParts.push(`role 轉換: ${(_d.roleAdjustments as Array<{reason:string;before:string;after:string}>).map((r) => `${r.reason}:${r.before}->${r.after}`).join("; ")}`);
+          }
+          if (_d.promptFeedback) _diagParts.push(`promptFeedback: ${JSON.stringify(_d.promptFeedback)}`);
+          if (_d.safetyRatings) _diagParts.push(`safetyRatings: ${JSON.stringify(_d.safetyRatings)}`);
+          if (typeof _d.chunkCount === "number") _diagParts.push(`chunks: ${_d.chunkCount}, bytes: ${_d.totalBytes ?? 0}`);
+          const _diagStr = _diagParts.length > 0 ? "\n診斷: " + _diagParts.join(" | ") : "";
+          console.warn("[ChatScreen] 空回應診斷", generationDiagnostics);
           messages.value[msgIndex].content =
-            "[空回應] API 返回了空內容，可能是網路不穩或連線中斷，請重試";
+            "[空回應] API 返回了空內容" + _diagStr + "\n請查看串流視窗「調試資訊」，或開啟開發者工具 Console 查看詳細診斷。";
           messages.value[msgIndex].isStreaming = false;
         }
       } else {

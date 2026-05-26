@@ -5,7 +5,10 @@
 
 import type {
     ChatSettings,
+    GenerationDiagnostics,
+    GenerationMessageDiagnostic,
     GenerationResult,
+    GenerationStopReason,
     StreamingEvent,
 } from "@/types/chat";
 import type { APISettings } from "@/types/settings";
@@ -185,6 +188,21 @@ export interface GenerationParams {
   /** 是否對最後一條訊息執行模型特定的 role 轉換（Gemini→assistant / Claude→user）。
    *  僅聊天 API 調用應設為 true，其他場景（來電決策、主動消息等）預設 false 不轉換。 */
   adjustLastMessageRole?: boolean;
+}
+
+interface BuiltRequest {
+  body: Record<string, unknown>;
+  diagnostics: GenerationDiagnostics;
+}
+
+interface StreamLineResult {
+  delta: string | null;
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
+  rawFinishReason?: string;
+  finishReason?: GenerationStopReason;
+  promptFeedback?: unknown;
+  safetyRatings?: unknown;
+  rawResponseMeta?: unknown;
 }
 
 /**
@@ -407,6 +425,93 @@ export class OpenAICompatibleClient {
       .join("\n");
   }
 
+  private byteLength(text: string): number {
+    return new TextEncoder().encode(text).length;
+  }
+
+  private normalizeStopReason(raw: unknown): GenerationStopReason {
+    if (raw === undefined || raw === null || raw === "") return "stop";
+    const value = String(raw).toLowerCase().replace(/[\s-]+/g, "_");
+    if (value === "stop" || value === "end_turn" || value === "finished") return "stop";
+    if (value === "length" || value === "max_tokens" || value === "max_output_tokens") return "length";
+    if (value.includes("content_filter")) return "content_filter";
+    if (value.includes("safety")) return "safety";
+    if (value.includes("recitation")) return "recitation";
+    if (value.includes("prohibited")) return "prohibited_content";
+    if (value.includes("blocklist") || value.includes("blocked")) return "blocklist";
+    if (value.includes("error")) return "error";
+    return "other";
+  }
+
+  private summarizeMessage(
+    msg: APIMessage,
+    index: number,
+  ): GenerationMessageDiagnostic {
+    const contentType =
+      typeof msg.content === "string"
+        ? "text"
+        : Array.isArray(msg.content)
+          ? "multipart"
+          : "unknown";
+    return {
+      index,
+      role: msg.role,
+      contentLength: this.getMessageText(msg).length,
+      contentType,
+    };
+  }
+
+  private summarizeResponseMeta(data: any, choice: any, rawFinishReason?: string) {
+    return {
+      id: data?.id,
+      object: data?.object,
+      created: data?.created,
+      model: data?.model,
+      choicesLength: Array.isArray(data?.choices) ? data.choices.length : undefined,
+      candidatesLength: Array.isArray(data?.candidates) ? data.candidates.length : undefined,
+      rawFinishReason,
+      finishReason: this.normalizeStopReason(rawFinishReason),
+      choiceKeys: choice && typeof choice === "object" ? Object.keys(choice) : undefined,
+      promptFeedback: data?.promptFeedback ?? data?.prompt_feedback,
+    };
+  }
+
+  private extractResponseDiagnostics(
+    data: any,
+    choice: any,
+    base: GenerationDiagnostics,
+    contentLength: number,
+  ): GenerationDiagnostics {
+    const rawFinishReason =
+      choice?.finish_reason ??
+      choice?.finishReason ??
+      data?.candidates?.[0]?.finishReason ??
+      data?.finishReason;
+    const normalized = this.normalizeStopReason(rawFinishReason);
+    const promptFeedback = data?.promptFeedback ?? data?.prompt_feedback;
+    const safetyRatings =
+      choice?.safety_ratings ??
+      choice?.safetyRatings ??
+      data?.candidates?.[0]?.safetyRatings ??
+      data?.safetyRatings;
+    return {
+      ...base,
+      rawFinishReason: rawFinishReason !== undefined ? String(rawFinishReason) : undefined,
+      finishReason: normalized,
+      apiContentLength: contentLength,
+      usage: data?.usage
+        ? {
+            prompt_tokens: data.usage.prompt_tokens ?? 0,
+            completion_tokens: data.usage.completion_tokens ?? 0,
+            total_tokens: data.usage.total_tokens ?? 0,
+          }
+        : undefined,
+      promptFeedback,
+      safetyRatings,
+      rawResponseMeta: this.summarizeResponseMeta(data, choice, rawFinishReason),
+    };
+  }
+
 
   /**
    * 建構請求體
@@ -417,7 +522,17 @@ export class OpenAICompatibleClient {
     stream: boolean,
     adjustLastMessageRole: boolean = false,
   ): Record<string, unknown> {
+    return this.buildRequest(messages, settings, stream, adjustLastMessageRole).body;
+  }
+
+  private buildRequest(
+    messages: APIMessage[],
+    settings: ChatSettings,
+    stream: boolean,
+    adjustLastMessageRole: boolean = false,
+  ): BuiltRequest {
     let processedMessages = [...messages];
+    const roleAdjustments: NonNullable<GenerationDiagnostics["roleAdjustments"]> = [];
 
     // 確保 messages 中至少有一條 user 訊息
     // 某些 API（如 Google AI）要求 contents 中必須有 user 訊息
@@ -425,10 +540,16 @@ export class OpenAICompatibleClient {
     const hasUserMessage = processedMessages.some((m) => m.role === "user");
     if (!hasUserMessage && processedMessages.length > 0) {
       const lastIdx = processedMessages.length - 1;
+      const before = processedMessages[lastIdx].role;
       processedMessages[lastIdx] = {
         ...processedMessages[lastIdx],
         role: "user",
       };
+      roleAdjustments.push({
+        reason: "ensure-user-message",
+        before,
+        after: "user",
+      });
     }
 
     // 僅在聊天 API 調用時（adjustLastMessageRole=true）才執行末尾 role 轉換
@@ -437,15 +558,27 @@ export class OpenAICompatibleClient {
       const lastMsg = processedMessages[processedMessages.length - 1];
 
       if (this.isGeminiModel() && lastMsg.role !== "assistant") {
+        const before = lastMsg.role;
         console.log(
           `[API] Gemini 模型：最後訊息角色 "${lastMsg.role}" → "assistant"`,
         );
         lastMsg.role = "assistant";
+        roleAdjustments.push({
+          reason: "gemini-last-message-role",
+          before,
+          after: "assistant",
+        });
       } else if (this.isClaudeModel() && lastMsg.role !== "user") {
+        const before = lastMsg.role;
         console.log(
           `[API] Claude 模型：最後訊息角色 "${lastMsg.role}" → "user"`,
         );
         lastMsg.role = "user";
+        roleAdjustments.push({
+          reason: "claude-last-message-role",
+          before,
+          after: "user",
+        });
       }
     }
 
@@ -478,7 +611,26 @@ export class OpenAICompatibleClient {
       body.stop = settings.stopSequences;
     }
 
-    return body;
+    const bodyText = JSON.stringify(body);
+    const diagnostics: GenerationDiagnostics = {
+      model: this.apiSettings.model,
+      stream,
+      maxTokens: settings.maxResponseLength,
+      requestBodyBytes: this.byteLength(bodyText),
+      requestMessageCount: processedMessages.length,
+      requestRoles: processedMessages.map((message) => message.role),
+      lastMessages: processedMessages
+        .slice(-8)
+        .map((message, offset) =>
+          this.summarizeMessage(
+            message,
+            processedMessages.length - Math.min(processedMessages.length, 8) + offset,
+          ),
+        ),
+      roleAdjustments,
+    };
+
+    return { body, diagnostics };
   }
 
   /**
@@ -487,11 +639,12 @@ export class OpenAICompatibleClient {
   async generate(params: GenerationParams): Promise<GenerationResult> {
     const startTime = Date.now();
     const { messages, settings, signal, adjustLastMessageRole } = params;
+    const request = this.buildRequest(messages, settings, false, adjustLastMessageRole);
 
     const response = await fetch(this.getEndpoint(), {
       method: "POST",
       headers: this.getHeaders(),
-      body: JSON.stringify(this.buildRequestBody(messages, settings, false, adjustLastMessageRole)),
+      body: JSON.stringify(request.body),
       signal,
     });
 
@@ -506,7 +659,13 @@ export class OpenAICompatibleClient {
     // 解析回應
     const choice = data.choices?.[0];
     const content = choice?.message?.content ?? "";
-    const stopReason = choice?.finish_reason === "length" ? "length" : "stop";
+    const diagnostics = this.extractResponseDiagnostics(
+      data,
+      choice,
+      request.diagnostics,
+      content.length,
+    );
+    const stopReason = diagnostics.finishReason ?? "stop";
 
     return {
       content,
@@ -518,6 +677,9 @@ export class OpenAICompatibleClient {
       generationTime,
       stopReason,
       model: data.model ?? this.apiSettings.model,
+      finishReason: stopReason,
+      rawFinishReason: diagnostics.rawFinishReason,
+      diagnostics,
     };
   }
 
@@ -528,6 +690,7 @@ export class OpenAICompatibleClient {
     params: GenerationParams,
   ): AsyncGenerator<StreamingEvent> {
     const { messages, settings, signal, adjustLastMessageRole } = params;
+    const request = this.buildRequest(messages, settings, true, adjustLastMessageRole);
 
     const response = await fetch(this.getEndpoint(), {
       method: "POST",
@@ -536,7 +699,7 @@ export class OpenAICompatibleClient {
         "Accept": "text/event-stream",
         "Cache-Control": "no-cache",
       },
-      body: JSON.stringify(this.buildRequestBody(messages, settings, true, adjustLastMessageRole)),
+      body: JSON.stringify(request.body),
       signal,
     });
 
@@ -587,6 +750,11 @@ export class OpenAICompatibleClient {
     let firstChunkTime = 0;
     const streamStartTime = Date.now();
     let streamUsage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null = null;
+    let rawFinishReason: string | undefined;
+    let finishReason: GenerationStopReason | undefined;
+    let promptFeedback: unknown;
+    let safetyRatings: unknown;
+    let rawResponseMeta: unknown;
     // 記錄非 SSE 格式的行（用於診斷上游回了非串流回應的情況）
     let nonSSELines: string[] = [];
     // 閒置超時：超過此毫秒沒有收到任何新 chunk → 視為上游已截斷／卡住，
@@ -594,7 +762,7 @@ export class OpenAICompatibleClient {
     const IDLE_TIMEOUT_MS = 30000;
     let idleTimedOut = false;
 
-    const processLine = (line: string): { delta: string | null; usage?: typeof streamUsage } => {
+    const processLine = (line: string): StreamLineResult => {
       const trimmed = line.trim();
       if (!trimmed || trimmed === "data: [DONE]") return { delta: null };
       if (!trimmed.startsWith("data: ")) {
@@ -606,17 +774,46 @@ export class OpenAICompatibleClient {
       }
       try {
         const json = JSON.parse(trimmed.slice(6));
+        const choice = json.choices?.[0];
+        const lineRawFinishReason =
+          choice?.finish_reason ??
+          choice?.finishReason ??
+          json?.candidates?.[0]?.finishReason ??
+          json?.finishReason;
+        const linePromptFeedback = json?.promptFeedback ?? json?.prompt_feedback;
+        const lineSafetyRatings =
+          choice?.safety_ratings ??
+          choice?.safetyRatings ??
+          json?.candidates?.[0]?.safetyRatings ??
+          json?.safetyRatings;
+        const lineMeta = this.summarizeResponseMeta(json, choice, lineRawFinishReason);
+        const baseResult: StreamLineResult = {
+          delta: choice?.delta?.content ?? null,
+          rawFinishReason:
+            lineRawFinishReason !== undefined ? String(lineRawFinishReason) : undefined,
+          finishReason:
+            lineRawFinishReason !== undefined
+              ? this.normalizeStopReason(lineRawFinishReason)
+              : undefined,
+          promptFeedback: linePromptFeedback,
+          safetyRatings: lineSafetyRatings,
+          rawResponseMeta: lineMeta,
+        };
         // 檢查上游是否回了錯誤物件（某些 API 在串流中回 error）
         if (json.error) {
           const errMsg = typeof json.error === 'string' ? json.error : (json.error.message || JSON.stringify(json.error));
           console.error(`[API Stream] 上游串流中回傳錯誤: ${errMsg}`);
           // 把錯誤當作 delta 回傳，讓用戶看到
-          return { delta: `\n[API 錯誤] ${errMsg}` };
+          return {
+            ...baseResult,
+            delta: `\n[API 錯誤] ${errMsg}`,
+            rawResponseMeta: { ...lineMeta, error: json.error },
+          };
         }
         // 捕獲 usage（OpenAI / OpenRouter 等會在最後一個 chunk 或獨立 chunk 中返回）
         if (json.usage) {
           return {
-            delta: json.choices?.[0]?.delta?.content ?? null,
+            ...baseResult,
             usage: {
               prompt_tokens: json.usage.prompt_tokens ?? 0,
               completion_tokens: json.usage.completion_tokens ?? 0,
@@ -624,10 +821,18 @@ export class OpenAICompatibleClient {
             },
           };
         }
-        return { delta: json.choices?.[0]?.delta?.content ?? null };
+        return baseResult;
       } catch {
         return { delta: null };
       }
+    };
+
+    const captureLineDiagnostics = (result: StreamLineResult) => {
+      if (result.rawFinishReason !== undefined) rawFinishReason = result.rawFinishReason;
+      if (result.finishReason !== undefined) finishReason = result.finishReason;
+      if (result.promptFeedback !== undefined) promptFeedback = result.promptFeedback;
+      if (result.safetyRatings !== undefined) safetyRatings = result.safetyRatings;
+      if (result.rawResponseMeta !== undefined) rawResponseMeta = result.rawResponseMeta;
     };
 
     try {
@@ -667,6 +872,7 @@ export class OpenAICompatibleClient {
 
         for (const line of lines) {
           const result = processLine(line);
+          captureLineDiagnostics(result);
           if (result.usage) streamUsage = result.usage;
           if (result.delta) {
             fullContent += result.delta;
@@ -678,6 +884,7 @@ export class OpenAICompatibleClient {
       // 處理 buffer 中殘留的最後一行（移動端瀏覽器常見）
       if (buffer.trim()) {
         const result = processLine(buffer);
+        captureLineDiagnostics(result);
         if (result.usage) streamUsage = result.usage;
         if (result.delta) {
           fullContent += result.delta;
@@ -686,6 +893,21 @@ export class OpenAICompatibleClient {
       }
 
       const totalTime = Date.now() - streamStartTime;
+      const buildDoneDiagnostics = (): GenerationDiagnostics => ({
+        ...request.diagnostics,
+        rawFinishReason,
+        finishReason: finishReason ?? "stop",
+        apiContentLength: fullContent.length,
+        chunkCount,
+        totalBytes,
+        firstChunkTimeMs: firstChunkTime,
+        totalTimeMs: totalTime,
+        nonSSELines: nonSSELines.length > 0 ? nonSSELines : undefined,
+        usage: streamUsage ?? undefined,
+        promptFeedback,
+        safetyRatings,
+        rawResponseMeta,
+      });
 
       // 閒置超時：把目前累積的內容當作正常 done 拋出（即使 fullContent 為空，
       // 也不要走「空回應」的 error 路徑，因為這是上游卡死/截斷而非真正空回應）
@@ -699,7 +921,15 @@ export class OpenAICompatibleClient {
             totalTime,
           },
         );
-        yield { type: "done", content: fullContent, usage: streamUsage ?? undefined };
+        const diagnostics = buildDoneDiagnostics();
+        yield {
+          type: "done",
+          content: fullContent,
+          usage: streamUsage ?? undefined,
+          finishReason: diagnostics.finishReason,
+          rawFinishReason: diagnostics.rawFinishReason,
+          diagnostics,
+        };
         return;
       }
 
@@ -733,11 +963,28 @@ export class OpenAICompatibleClient {
         }
       }
 
-      yield { type: "done", content: fullContent, usage: streamUsage ?? undefined };
+      const diagnostics = buildDoneDiagnostics();
+      yield {
+        type: "done",
+        content: fullContent,
+        usage: streamUsage ?? undefined,
+        finishReason: diagnostics.finishReason,
+        rawFinishReason: diagnostics.rawFinishReason,
+        diagnostics,
+      };
     } catch (e) {
       const totalTime = Date.now() - streamStartTime;
       if ((e as Error).name === "AbortError") {
-        yield { type: "done", content: fullContent };
+        const diagnostics: GenerationDiagnostics = {
+          ...request.diagnostics,
+          finishReason: "stop",
+          apiContentLength: fullContent.length,
+          chunkCount,
+          totalBytes,
+          firstChunkTimeMs: firstChunkTime,
+          totalTimeMs: totalTime,
+        };
+        yield { type: "done", content: fullContent, diagnostics };
       } else {
         const errMsg = e instanceof Error ? e.message : String(e);
         // 網路錯誤附加診斷
