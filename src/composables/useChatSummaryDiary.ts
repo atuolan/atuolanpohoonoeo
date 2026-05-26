@@ -80,6 +80,14 @@ interface StreamingWindow {
   setComplete: () => void;
 }
 
+/** 日記觸發時的消息快照，避免延遲執行時讀到過期資料 */
+interface DiarySnapshot {
+  messages: Message[];
+  settings: SummarySettings;
+  capturedAt: number;
+  chatId: string;
+}
+
 /**
  * 總結/日記自動觸發 + 手動總結 + 元總結 + CRUD
  * 從 ChatScreen.vue 抽取的獨立 composable
@@ -304,6 +312,44 @@ ${sourceText}
     return turns;
   }
 
+  /**
+   * 根據設定裁切消息列表（與 ChatScreen triggerAIResponse 一致的輪次計算）
+   * 按輪次時：從末尾往前數 AI 訊息，找到對應 user 訊息後 slice
+   * 按條數時：直接取最後 N 條
+   */
+  function sliceMessagesBySettings(
+    msgs: Message[],
+    actualMessageCount: number,
+    actualMessageMode: "message" | "turn",
+  ): Message[] {
+    if (actualMessageMode === "turn") {
+      let turnCount = 0;
+      let startIndex = msgs.length;
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].role === "ai") {
+          turnCount++;
+          if (turnCount >= actualMessageCount) {
+            // 往前找到這輪的 user 消息
+            for (let j = i - 1; j >= 0; j--) {
+              if (msgs[j].role === "user") {
+                startIndex = j;
+                break;
+              }
+            }
+            if (startIndex === msgs.length) {
+              startIndex = i;
+            }
+            break;
+          }
+        }
+        startIndex = i;
+      }
+      return msgs.slice(startIndex);
+    } else {
+      return msgs.slice(-actualMessageCount);
+    }
+  }
+
   // 檢查並觸發總結或日記生成
   function checkAndTriggerSummaryOrDiary() {
     if (!deps.currentChatId.value || deps.messages.value.length === 0) return;
@@ -349,8 +395,15 @@ ${sourceText}
 
     if (diaryProgress >= diaryInterval && !diaryGeneratingLock.value) {
       diaryGeneratingLock.value = true;
+      // 快照當前消息與設定，避免 4 秒後執行時讀到過期資料
+      const snapshot: DiarySnapshot = {
+        messages: [...validMessages],
+        settings: { ...deps.chatSummarySettings.value },
+        capturedAt: Date.now(),
+        chatId: deps.currentChatId.value,
+      };
       setTimeout(() => {
-        triggerAutoDiary();
+        triggerAutoDiary(snapshot);
       }, 4000);
     }
   }
@@ -387,7 +440,7 @@ ${sourceText}
   }
 
   // 自動觸發日記生成
-  async function triggerAutoDiary() {
+  async function triggerAutoDiary(snapshot?: DiarySnapshot) {
     if (diaryGeneratingLock.value === false) return;
     if (!deps.currentChatId.value) {
       diaryGeneratingLock.value = false;
@@ -396,7 +449,7 @@ ${sourceText}
 
     if (deps.isGenerating.value || deps.isGeneratingSummary.value) {
       console.log("📔 其他生成進行中，延遲日記生成");
-      setTimeout(() => triggerAutoDiary(), 5000);
+      setTimeout(() => triggerAutoDiary(snapshot), 5000);
       return;
     }
 
@@ -435,7 +488,8 @@ ${sourceText}
 
       await promptManagerStore.loadConfig();
 
-      const validMessages = deps.messages.value.filter(
+      // 優先使用快照，否則即時讀取
+      const validMessages = snapshot?.messages ?? deps.messages.value.filter(
         (m) => m.role === "user" || m.role === "ai",
       );
 
@@ -446,14 +500,31 @@ ${sourceText}
         return;
       }
 
-      const settings = deps.chatSummarySettings.value;
-      let messagesToUse: typeof validMessages;
+      const settings = snapshot?.settings ?? deps.chatSummarySettings.value;
+      const messagesToUse = sliceMessagesBySettings(
+        validMessages,
+        settings.actualMessageCount,
+        settings.actualMessageMode,
+      );
 
-      if (settings.actualMessageMode === "turn") {
-        messagesToUse = validMessages.slice(-(settings.actualMessageCount * 2));
-      } else {
-        messagesToUse = validMessages.slice(-settings.actualMessageCount);
-      }
+      // 診斷日誌：記錄日記實際讀取的消息範圍
+      console.log(`📔 日記消息選擇:`, {
+        totalValid: validMessages.length,
+        mode: settings.actualMessageMode,
+        count: settings.actualMessageCount,
+        selectedCount: messagesToUse.length,
+        firstMsgTime: messagesToUse[0]?.timestamp
+          ? new Date(messagesToUse[0].timestamp).toLocaleString()
+          : "N/A",
+        lastMsgTime: messagesToUse.length > 0
+          ? new Date(messagesToUse[messagesToUse.length - 1].timestamp).toLocaleString()
+          : "N/A",
+        snapshotAge: snapshot
+          ? `${Date.now() - snapshot.capturedAt}ms`
+          : "no snapshot",
+        snapshotChatId: snapshot?.chatId ?? "N/A",
+        currentChatId: chatId,
+      });
 
       const now = new Date();
       const currentDateTime = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -672,24 +743,15 @@ ${recentMessagesText}
         settings?.actualMessageMode ??
         deps.chatSummarySettings.value.actualMessageMode;
 
-      let messagesToRead: Message[];
-      if (actualMode === "turn") {
-        let turnCount = 0;
-        let startIndex = deps.messages.value.length;
-        for (
-          let i = deps.messages.value.length - 1;
-          i >= 0 && turnCount < actualCount;
-          i--
-        ) {
-          if (deps.messages.value[i].role === "user") {
-            turnCount++;
-          }
-          startIndex = i;
-        }
-        messagesToRead = deps.messages.value.slice(startIndex);
-      } else {
-        messagesToRead = deps.messages.value.slice(-actualCount);
-      }
+      // 過濾 user/ai 消息後用統一算法裁切（與 ChatScreen / 日記一致）
+      const validMsgs = deps.messages.value.filter(
+        (m) => m.role === "user" || m.role === "ai",
+      );
+      const messagesToRead = sliceMessagesBySettings(
+        validMsgs,
+        actualCount,
+        actualMode,
+      );
 
       const userName = deps.effectivePersona.value?.name || "User";
       const recentMessages = formatMessagesWithDates(
@@ -1201,11 +1263,27 @@ ${recentMessagesText}
     await deleteDiaryFromDB(id);
   }
 
-  // 手動觸發日記（暴露給外部）
-  function handleTriggerManualDiary() {
+  // 手動觸發日記（暴露給外部，可傳入覆蓋設定）
+  function handleTriggerManualDiary(overrideSettings?: {
+    actualMessageCount: number;
+    actualMessageMode: "message" | "turn";
+  }) {
     if (diaryGeneratingLock.value) return;
     diaryGeneratingLock.value = true;
-    triggerAutoDiary();
+    // 快照當前消息，使用覆蓋設定或已保存設定
+    const validMessages = deps.messages.value.filter(
+      (m) => m.role === "user" || m.role === "ai",
+    );
+    const settings = overrideSettings
+      ? { ...deps.chatSummarySettings.value, ...overrideSettings }
+      : { ...deps.chatSummarySettings.value };
+    const snapshot: DiarySnapshot = {
+      messages: [...validMessages],
+      settings,
+      capturedAt: Date.now(),
+      chatId: deps.currentChatId.value || deps.chatId,
+    };
+    triggerAutoDiary(snapshot);
   }
 
   return {

@@ -134,19 +134,27 @@
             <input
               v-model.number="localSettings.actualMessageCount"
               type="range"
-              :min="10"
-              :max="100"
-              :step="5"
+              :min="ACTUAL_MESSAGE_COUNT_MIN"
+              :max="ACTUAL_MESSAGE_COUNT_MAX"
+              step="1"
               class="range-input"
             />
-            <div class="count-display">
-              <span class="count-number">{{
-                localSettings.actualMessageCount
-              }}</span>
+            <div class="manual-count-control">
+              <input
+                v-model.number="localSettings.actualMessageCount"
+                type="number"
+                :min="ACTUAL_MESSAGE_COUNT_MIN"
+                :max="ACTUAL_MESSAGE_COUNT_MAX"
+                step="1"
+                inputmode="numeric"
+                class="manual-count-input"
+                @blur="clampActualMessageCount"
+              />
               <span class="count-label">條</span>
             </div>
           </div>
           <div class="count-hint">
+            <span>可手動輸入 1～1000。</span>
             <span
               v-if="localSettings.actualMessageCount >= currentSummaryInterval"
             >
@@ -322,6 +330,9 @@ const emit = defineEmits<{
   save: [settings: typeof localSettings.value];
 }>();
 
+const ACTUAL_MESSAGE_COUNT_MIN = 1;
+const ACTUAL_MESSAGE_COUNT_MAX = 1000;
+
 // 本地設置
 const localSettings = ref({
   intervalMode: "message" as "message" | "turn",
@@ -331,6 +342,21 @@ const localSettings = ref({
   summaryReadMode: "recent" as "all" | "recent",
   summaryReadCount: 5,
 });
+
+function normalizeActualMessageCount(value: unknown): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 60;
+  return Math.min(
+    ACTUAL_MESSAGE_COUNT_MAX,
+    Math.max(ACTUAL_MESSAGE_COUNT_MIN, Math.round(numeric)),
+  );
+}
+
+function clampActualMessageCount() {
+  localSettings.value.actualMessageCount = normalizeActualMessageCount(
+    localSettings.value.actualMessageCount,
+  );
+}
 
 // 計算屬性
 const currentSummaryInterval = computed({
@@ -359,6 +385,7 @@ const estimatedTokens = computed(() => {
 
 // 保存設置
 function saveSettings() {
+  clampActualMessageCount();
   emit("save", { ...localSettings.value });
   emit("close");
 }
@@ -627,6 +654,38 @@ function saveSettings() {
       color: var(--color-text-muted, #9ca3af);
       margin-top: 2px;
     }
+  }
+
+  .manual-count-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 98px;
+  }
+
+  .manual-count-input {
+    width: 72px;
+    padding: 6px 8px;
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: 8px;
+    background: var(--color-surface, #fff);
+    color: var(--color-primary, #7dd3a8);
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    outline: none;
+
+    &:focus {
+      border-color: var(--color-primary, #7dd3a8);
+      box-shadow: 0 0 0 2px rgba(125, 211, 168, 0.18);
+    }
+  }
+
+  .manual-count-control .count-label {
+    font-size: 11px;
+    color: var(--color-text-muted, #9ca3af);
+    white-space: nowrap;
   }
 }
 

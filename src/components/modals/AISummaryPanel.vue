@@ -416,21 +416,30 @@
                 <input
                   v-model.number="localSettings.actualMessageCount"
                   type="range"
-                  :min="localSettings.actualMessageMode === 'turn' ? 5 : 10"
-                  :max="localSettings.actualMessageMode === 'turn' ? 50 : 100"
-                  :step="localSettings.actualMessageMode === 'turn' ? 1 : 5"
+                  :min="ACTUAL_MESSAGE_COUNT_MIN"
+                  :max="ACTUAL_MESSAGE_COUNT_MAX"
+                  step="1"
                   class="range-input"
                 />
-                <div class="count-display">
-                  <span class="count-number">{{
-                    localSettings.actualMessageCount
-                  }}</span>
+                <div class="manual-count-control">
+                  <input
+                    v-model.number="localSettings.actualMessageCount"
+                    type="number"
+                    :min="ACTUAL_MESSAGE_COUNT_MIN"
+                    :max="ACTUAL_MESSAGE_COUNT_MAX"
+                    step="1"
+                    inputmode="numeric"
+                    class="manual-count-input"
+                    @blur="clampActualMessageCount"
+                  />
                   <span class="count-label">{{
                     localSettings.actualMessageMode === "turn" ? "輪" : "條"
                   }}</span>
                 </div>
               </div>
-              <div class="count-hint">AI 每次回覆時實際讀取的對話歷史</div>
+              <div class="count-hint">
+                AI 每次回覆時實際讀取的對話歷史，可手動輸入 1～1000
+              </div>
             </div>
           </div>
 
@@ -1225,7 +1234,7 @@
         <button
           class="btn-save"
           :disabled="isDiaryWriting"
-          @click="emit('trigger-manual-diary')"
+          @click="triggerManualDiary()"
         >
           <svg
             viewBox="0 0 24 24"
@@ -1393,7 +1402,12 @@ const emit = defineEmits<{
   "view-diary": [diary: DiaryData];
   "toggle-diary-favorite": [id: string];
   "delete-diary": [id: string];
-  "trigger-manual-diary": [];
+  "trigger-manual-diary": [
+    settings: {
+      actualMessageCount: number;
+      actualMessageMode: "message" | "turn";
+    },
+  ];
   "trigger-manual-summary": [
     settings: {
       actualMessageCount: number;
@@ -1410,6 +1424,8 @@ const emit = defineEmits<{
 const activeTab = ref<"history" | "settings" | "events" | "diary" | "batch">("history");
 const settingsSubTab = ref<'trigger' | 'read' | 'vector' | 'batch'>('trigger');
 const settingsStore = useSettingsStore();
+const ACTUAL_MESSAGE_COUNT_MIN = 1;
+const ACTUAL_MESSAGE_COUNT_MAX = 1000;
 
 // ===== 向量文件預覽 =====
 const vectorDocPreviews = ref<Map<string, string>>(new Map());
@@ -1546,7 +1562,16 @@ function toggleSummarySelection(id: string) {
 }
 
 function triggerManualSummary() {
+  clampActualMessageCount();
   emit("trigger-manual-summary", {
+    actualMessageCount: localSettings.value.actualMessageCount,
+    actualMessageMode: localSettings.value.actualMessageMode,
+  });
+}
+
+function triggerManualDiary() {
+  clampActualMessageCount();
+  emit("trigger-manual-diary", {
     actualMessageCount: localSettings.value.actualMessageCount,
     actualMessageMode: localSettings.value.actualMessageMode,
   });
@@ -1628,6 +1653,21 @@ const isDiaryWriting = computed(() =>
 
 // ===== 總結設置 =====
 const localSettings = ref<SummarySettings>(createDefaultSummarySettings());
+
+function normalizeActualMessageCount(value: unknown): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return createDefaultSummarySettings().actualMessageCount;
+  return Math.min(
+    ACTUAL_MESSAGE_COUNT_MAX,
+    Math.max(ACTUAL_MESSAGE_COUNT_MIN, Math.round(numeric)),
+  );
+}
+
+function clampActualMessageCount() {
+  localSettings.value.actualMessageCount = normalizeActualMessageCount(
+    localSettings.value.actualMessageCount,
+  );
+}
 
 const currentSummaryInterval = computed({
   get: () =>
@@ -1908,6 +1948,7 @@ function formatDate(timestamp: number) {
 }
 
 function saveAll() {
+  clampActualMessageCount();
   emit("save", { ...localSettings.value });
   saveEventsLog();
   emit("close");
@@ -2980,6 +3021,38 @@ onMounted(async () => {
       color: var(--color-text-muted, #9ca3af);
       margin-top: 2px;
     }
+  }
+
+  .manual-count-control {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 88px;
+  }
+
+  .manual-count-input {
+    width: 64px;
+    padding: 5px 6px;
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: 6px;
+    background: var(--color-surface, #fff);
+    color: var(--color-primary, #7dd3a8);
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    outline: none;
+
+    &:focus {
+      border-color: var(--color-primary, #7dd3a8);
+      box-shadow: 0 0 0 2px rgba(125, 211, 168, 0.18);
+    }
+  }
+
+  .manual-count-control .count-label {
+    font-size: 10px;
+    color: var(--color-text-muted, #9ca3af);
+    white-space: nowrap;
   }
 }
 

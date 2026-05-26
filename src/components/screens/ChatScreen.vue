@@ -3160,7 +3160,6 @@ function applyChatAppearance(appearance?: ChatAppearance) {
     // Markdown 樣式顏色
     if (appearance.font.markdownColors) {
       const mc = appearance.font.markdownColors;
-      container.style.setProperty("--chat-md-text", mc.text || "#4a4a6a");
       container.style.setProperty("--chat-md-italic", mc.italic || "#8b7355");
       container.style.setProperty("--chat-md-bold", mc.bold || "#4a4a6a");
       container.style.setProperty(
@@ -10117,7 +10116,7 @@ onUnmounted(() => {
         @toggle-diary-favorite="handleToggleDiaryFavorite"
         @delete-diary="handleDeleteDiary"
         @view-diary="handleViewDiary"
-        @trigger-manual-diary="handleTriggerManualDiary"
+        @trigger-manual-diary="handleTriggerManualDiary($event)"
         @trigger-manual-events="handleTriggerManualEvents"
         @delete-selected="handleDeleteSelected"
         @refresh-summaries="loadSummariesAndDiaries"
@@ -12642,13 +12641,13 @@ onUnmounted(() => {
     font-family: var(--chat-font-family, inherit);
     line-height: var(--chat-line-height, 1.6);
     letter-spacing: var(--chat-letter-spacing, 0px);
-    color: var(--chat-md-text, inherit);
 
     &.user {
       background: var(
         --chat-bubble-user-bg,
         var(--bubble-user-bg, linear-gradient(135deg, #ff85a2, #ffb6c8))
       );
+      color: var(--chat-bubble-user-text, var(--bubble-user-text, white));
 
       .message-time {
         color: var(--chat-bubble-user-text, var(--bubble-user-text, white));
@@ -12657,6 +12656,7 @@ onUnmounted(() => {
 
     &.ai {
       background: var(--chat-bubble-ai-bg, var(--bubble-ai-bg, white));
+      color: var(--chat-bubble-ai-text, var(--bubble-ai-text, #4a4a6a));
 
       .message-time {
         color: var(--chat-bubble-ai-text, var(--bubble-ai-text, #4a4a6a));

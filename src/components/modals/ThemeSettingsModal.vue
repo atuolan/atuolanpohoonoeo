@@ -57,8 +57,19 @@ const useCustomAppearance = ref(true);
 
 // 當前分頁
 const activeTab = ref<
-  "colors" | "avatar" | "wallpaper" | "font" | "decorations" | "headerFooter"
+  "colors" | "font" | "decorations"
 >("colors");
+
+// 預覽焦點：點擊預覽元素時聚焦，顯示聚合設定
+const previewFocus = ref<
+  "ai" | "user" | "header" | "wallpaper" | "surface" | "surfaceHover" | "status" | null
+>(null);
+
+function togglePreviewFocus(
+  target: "ai" | "user" | "header" | "wallpaper" | "surface" | "surfaceHover" | "status",
+) {
+  previewFocus.value = previewFocus.value === target ? null : target;
+}
 
 // 預設主題列表
 const presetList = computed(() => [
@@ -539,6 +550,44 @@ const globalWallpaperPreviewStyle = computed(() => ({
   backgroundPosition: "center",
 }));
 
+const previewWallpaperStyle = computed(() => {
+  const wallpaper = tempWallpaperStyle.value;
+  const fallbackBackground = tempColors.value.background || themeStore.colors.background;
+
+  if (wallpaper.type === "gradient" || wallpaper.type === "color") {
+    return { background: wallpaper.value || fallbackBackground };
+  }
+
+  if (wallpaper.type === "image" && wallpaper.value) {
+    return {
+      backgroundColor: fallbackBackground,
+      backgroundImage: `linear-gradient(${wallpaper.overlay || "transparent"}, ${wallpaper.overlay || "transparent"}), url(${wallpaper.value})`,
+      backgroundSize: wallpaper.fit === "repeat" ? "auto" : wallpaper.fit || "cover",
+      backgroundRepeat: wallpaper.fit === "repeat" ? "repeat" : "no-repeat",
+      backgroundPosition: "center",
+    };
+  }
+
+  if (wallpaper.type === "global-image" && hasGlobalCustomImage.value) {
+    return {
+      backgroundColor: fallbackBackground,
+      backgroundImage: `linear-gradient(${wallpaper.overlay || "transparent"}, ${wallpaper.overlay || "transparent"}), url(${themeStore.wallpaperStyle.value})`,
+      backgroundSize: wallpaper.fit === "repeat" ? "auto" : wallpaper.fit || "cover",
+      backgroundRepeat: wallpaper.fit === "repeat" ? "repeat" : "no-repeat",
+      backgroundPosition: "center",
+    };
+  }
+
+  if (wallpaper.type === "time-theme") {
+    return {
+      background:
+        "linear-gradient(135deg, #fff8f0 0%, #f8fafc 35%, #fef3e2 70%, #e0f2fe 100%)",
+    };
+  }
+
+  return { background: fallbackBackground };
+});
+
 // 處理桌布選擇
 function selectWallpaper(preset: (typeof wallpaperPresets)[0]) {
   console.log("[ThemeSettingsModal] selectWallpaper:", preset);
@@ -743,6 +792,7 @@ function resetToDefault() {
 
 // 關閉彈窗
 function handleClose() {
+  previewFocus.value = null;
   if (isChatMode.value) {
     // 聊天專屬模式：保存外觀設定
     const appearance: ChatAppearance = {
@@ -967,7 +1017,7 @@ watch(
               <button
                 class="tab-item"
                 :class="{ active: activeTab === 'colors' }"
-                @click="activeTab = 'colors'"
+                @click="activeTab = 'colors'; previewFocus = null"
               >
                 <svg viewBox="0 0 24 24" fill="currentColor">
                   <path
@@ -975,30 +1025,6 @@ watch(
                   />
                 </svg>
                 顏色
-              </button>
-              <button
-                class="tab-item"
-                :class="{ active: activeTab === 'wallpaper' }"
-                @click="activeTab = 'wallpaper'"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM5 15h14v3H5z"
-                  />
-                </svg>
-                桌布
-              </button>
-              <button
-                class="tab-item"
-                :class="{ active: activeTab === 'avatar' }"
-                @click="activeTab = 'avatar'"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-                  />
-                </svg>
-                頭像
               </button>
               <button
                 class="tab-item"
@@ -1024,17 +1050,6 @@ watch(
                   />
                 </svg>
                 裝飾
-              </button>
-              <button
-                v-if="isChatMode"
-                class="tab-item"
-                :class="{ active: activeTab === 'headerFooter' }"
-                @click="activeTab = 'headerFooter'"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z" />
-                </svg>
-                頂/底欄
               </button>
             </div>
           </div>
@@ -1097,20 +1112,69 @@ watch(
               </div>
 
               <div class="color-preview">
-                <div class="preview-label">預覽效果</div>
+                <div class="preview-label">預覽效果 <span class="preview-hint">（點擊可快速調整）</span></div>
                 <div class="preview-card">
                   <div
-                    class="preview-header"
-                    :style="{ background: displayColors.primary }"
+                    class="preview-header preview-clickable"
+                    :class="{ 'preview-focused': previewFocus === 'header' }"
+                    :style="{ background: tempColors.surface || displayColors.surface }"
+                    tabindex="0"
+                    role="button"
+                    aria-label="調整頂欄設定"
+                    @click="togglePreviewFocus('header')"
+                    @keydown.enter="togglePreviewFocus('header')"
                   >
-                    <span style="color: white">標題欄</span>
+                    <button
+                      class="preview-header-btn"
+                      :style="{ color: tempColors.text || displayColors.text }"
+                      aria-hidden="true"
+                      tabindex="-1"
+                    >
+                      ‹
+                    </button>
+                    <div
+                      class="preview-header-avatar"
+                      :style="{
+                        borderRadius:
+                          tempAvatarStyle.shape === 'circle'
+                            ? '50%'
+                            : tempAvatarStyle.shape === 'rounded'
+                              ? '14px'
+                              : '8px',
+                        border: `${tempAvatarStyle.borderWidth}px solid ${tempAvatarStyle.borderColor || '#ffffff'}`,
+                      }"
+                    >
+                      <span>🐾</span>
+                      <i></i>
+                    </div>
+                    <div class="preview-header-title">
+                      <span :style="{ color: tempColors.text || displayColors.text }">AI 角色</span>
+                      <small :style="{ color: tempColors.textSecondary || displayColors.textSecondary }">✎</small>
+                    </div>
+                    <button
+                      class="preview-header-btn"
+                      :style="{ color: tempColors.text || displayColors.text }"
+                      aria-hidden="true"
+                      tabindex="-1"
+                    >
+                      ⌄
+                    </button>
+                    <span v-if="previewFocus === 'header'" class="focus-badge">頂欄設定</span>
                   </div>
                   <div
-                    class="preview-body"
-                    :style="{ background: tempColors.background || themeStore.colors.background }"
+                    class="preview-body preview-clickable"
+                    :class="{ 'preview-focused': previewFocus === 'wallpaper' }"
+                    :style="previewWallpaperStyle"
+                    tabindex="0"
+                    role="button"
+                    aria-label="調整背景設定"
+                    @click="togglePreviewFocus('wallpaper')"
+                    @keydown.enter="togglePreviewFocus('wallpaper')"
                   >
+                    <span v-if="previewFocus === 'wallpaper'" class="focus-badge wallpaper-badge">背景設定</span>
                     <div
                       class="preview-bubble ai"
+                      :class="{ 'preview-focused': previewFocus === 'ai' }"
                       :style="{
                         borderRadius: `${tempBubbleStyle.borderRadius}px`,
                         borderBottomLeftRadius: '6px',
@@ -1118,6 +1182,11 @@ watch(
                         background: tempBubbleStyle.aiBgColor,
                         color: tempBubbleStyle.aiTextColor,
                       }"
+                      tabindex="0"
+                      role="button"
+                      aria-label="調整 AI 氣泡設定"
+                      @click.stop="togglePreviewFocus('ai')"
+                      @keydown.enter="togglePreviewFocus('ai')"
                     >
                       <div
                         class="preview-sender-name"
@@ -1127,9 +1196,11 @@ watch(
                       </div>
                       這是 AI 的訊息氣泡
                       <div class="preview-time">12:00</div>
+                      <span v-if="previewFocus === 'ai'" class="focus-badge">AI 氣泡設定</span>
                     </div>
                     <div
                       class="preview-bubble user"
+                      :class="{ 'preview-focused': previewFocus === 'user' }"
                       :style="{
                         borderRadius: `${tempBubbleStyle.borderRadius}px`,
                         borderBottomRightRadius: '6px',
@@ -1138,6 +1209,11 @@ watch(
                         color: tempBubbleStyle.userTextColor,
                         marginLeft: 'auto',
                       }"
+                      tabindex="0"
+                      role="button"
+                      aria-label="調整我的氣泡設定"
+                      @click.stop="togglePreviewFocus('user')"
+                      @keydown.enter="togglePreviewFocus('user')"
                     >
                       <div
                         class="preview-sender-name"
@@ -1147,38 +1223,371 @@ watch(
                       </div>
                       這是用戶的訊息氣泡
                       <div class="preview-time">12:01</div>
+                      <span v-if="previewFocus === 'user'" class="focus-badge">我的氣泡設定</span>
                     </div>
                     <div class="preview-ui-samples">
                       <div
-                        class="preview-ui-card"
+                        class="preview-ui-card preview-clickable"
+                        :class="{ 'preview-focused': previewFocus === 'surface' }"
                         :style="{
                           background: displayColors.surface,
                           borderColor: displayColors.border,
                           color: displayColors.text,
                         }"
+                        tabindex="0"
+                        role="button"
+                        aria-label="調整卡片背景與主要文字"
+                        @click.stop="togglePreviewFocus('surface')"
+                        @keydown.enter="togglePreviewFocus('surface')"
                       >
                         <span class="preview-ui-title">卡片背景 / 主要文字</span>
                         <span :style="{ color: displayColors.textMuted }">提示文字範例</span>
+                        <span v-if="previewFocus === 'surface'" class="focus-badge">卡片設定</span>
                       </div>
                       <div
-                        class="preview-ui-card"
+                        class="preview-ui-card preview-clickable"
+                        :class="{ 'preview-focused': previewFocus === 'surfaceHover' }"
                         :style="{
                           background: displayColors.surfaceHover,
                           borderColor: displayColors.secondary,
                           color: displayColors.textSecondary,
                         }"
+                        tabindex="0"
+                        role="button"
+                        aria-label="調整滑過背景與輔助色"
+                        @click.stop="togglePreviewFocus('surfaceHover')"
+                        @keydown.enter="togglePreviewFocus('surfaceHover')"
                       >
                         <span class="preview-ui-title">滑過背景 / 輔助色</span>
                         <span>次要文字範例</span>
                       </div>
-                      <div class="preview-status-row">
+                      <div
+                        class="preview-status-row preview-clickable"
+                        :class="{ 'preview-focused': previewFocus === 'status' }"
+                        tabindex="0"
+                        role="button"
+                        aria-label="調整狀態提示顏色"
+                        @click.stop="togglePreviewFocus('status')"
+                        @keydown.enter="togglePreviewFocus('status')"
+                      >
                         <span :style="{ background: displayColors.success }">成功</span>
                         <span :style="{ background: displayColors.error }">錯誤</span>
                         <span :style="{ background: displayColors.warning }">警告</span>
+                        <span v-if="previewFocus === 'status'" class="focus-badge">狀態色</span>
                       </div>
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <!-- 聚焦設定面板：根據預覽焦點動態顯示相關設定 -->
+              <div v-if="previewFocus" class="focus-settings-panel">
+                <div class="focus-settings-header">
+                  <span class="focus-settings-title">
+                    {{
+                      previewFocus === 'ai'
+                        ? 'AI 氣泡相關設定'
+                        : previewFocus === 'user'
+                          ? '我的氣泡相關設定'
+                          : previewFocus === 'header'
+                            ? '頂欄相關設定'
+                            : previewFocus === 'surface'
+                              ? '卡片與主要文字設定'
+                              : previewFocus === 'surfaceHover'
+                                ? '滑過背景與輔助色設定'
+                                : previewFocus === 'status'
+                                  ? '狀態提示色設定'
+                                  : '背景相關設定'
+                    }}
+                  </span>
+                  <button class="focus-close-btn" @click="previewFocus = null" aria-label="關閉聚焦設定">✕</button>
+                </div>
+
+                <!-- AI 氣泡聚焦 -->
+                <template v-if="previewFocus === 'ai'">
+                  <div class="focus-section">
+                    <h4 class="focus-subtitle">顏色</h4>
+                    <div class="individual-colors compact">
+                      <div class="color-item">
+                        <input type="color" :value="tempBubbleStyle.aiBgColor" @input="setBubbleColor('aiBgColor', ($event.target as HTMLInputElement).value)" />
+                        <span>AI 訊息背景</span>
+                      </div>
+                      <div class="color-item">
+                        <input type="color" :value="tempBubbleStyle.aiTextColor" @input="setBubbleColor('aiTextColor', ($event.target as HTMLInputElement).value)" />
+                        <span>AI 文字/時間</span>
+                      </div>
+                      <div class="color-item">
+                        <input type="color" :value="tempBubbleStyle.aiTextColor" @input="setBubbleColor('aiTextColor', ($event.target as HTMLInputElement).value)" />
+                        <span>AI 氣泡內主要顏色</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="focus-section">
+                    <h4 class="focus-subtitle">氣泡版面</h4>
+                    <div class="slider-control">
+                      <input type="range" min="8" max="32" step="2" :value="tempBubbleStyle.borderRadius" @input="setBubbleRadius(Number(($event.target as HTMLInputElement).value))" />
+                      <span class="slider-value">圓角 {{ tempBubbleStyle.borderRadius }}px</span>
+                    </div>
+                    <div class="slider-control">
+                      <input type="range" min="50" max="90" step="5" :value="tempBubbleStyle.maxWidth" @input="setBubbleMaxWidth(Number(($event.target as HTMLInputElement).value))" />
+                      <span class="slider-value">寬度 {{ tempBubbleStyle.maxWidth }}%</span>
+                    </div>
+                  </div>
+                  <div class="focus-section">
+                    <h4 class="focus-subtitle">頭像</h4>
+                    <div class="option-grid compact">
+                      <button v-for="shape in avatarShapes" :key="shape.id" class="option-item small" :class="{ active: tempAvatarStyle.shape === shape.id }" @click="setAvatarShape(shape.id as any)">
+                        <span class="option-icon">{{ shape.icon }}</span>
+                        <span class="option-name">{{ shape.name }}</span>
+                      </button>
+                    </div>
+                    <div class="option-grid compact" style="margin-top: 8px">
+                      <button v-for="size in avatarSizes" :key="size.id" class="option-item small" :class="{ active: tempAvatarStyle.size === size.id }" @click="setAvatarSize(size.id as any)">
+                        <span class="option-name">{{ size.name }}</span>
+                      </button>
+                    </div>
+                    <div class="slider-control" style="margin-top: 8px">
+                      <input type="range" min="0" max="4" step="1" :value="tempAvatarStyle.borderWidth" @input="setAvatarBorderWidth(Number(($event.target as HTMLInputElement).value))" />
+                      <span class="slider-value">邊框 {{ tempAvatarStyle.borderWidth }}px</span>
+                    </div>
+                  </div>
+                  <div v-if="isChatMode" class="focus-section">
+                    <h4 class="focus-subtitle">字體</h4>
+                    <div class="slider-control">
+                      <input type="range" :min="fontSizeMin" :max="fontSizeMax" step="1" :value="tempFontSizeValue" @input="setFontSizeValue(Number(($event.target as HTMLInputElement).value))" />
+                      <span class="slider-value">{{ tempFontSizeValue }}px</span>
+                    </div>
+                    <div class="individual-colors compact">
+                      <div class="color-item">
+                        <input type="color" :value="tempFontStyle.markdownColors.italic" @input="tempFontStyle.markdownColors.italic = ($event.target as HTMLInputElement).value; useCustomAppearance = true" />
+                        <span>斜體</span>
+                      </div>
+                      <div class="color-item">
+                        <input type="color" :value="tempFontStyle.markdownColors.bold" @input="tempFontStyle.markdownColors.bold = ($event.target as HTMLInputElement).value; useCustomAppearance = true" />
+                        <span>粗體</span>
+                      </div>
+                      <div class="color-item">
+                        <input type="color" :value="tempFontStyle.markdownColors.code" @input="tempFontStyle.markdownColors.code = ($event.target as HTMLInputElement).value; useCustomAppearance = true" />
+                        <span>代碼</span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- 用戶氣泡聚焦 -->
+                <template v-if="previewFocus === 'user'">
+                  <div class="focus-section">
+                    <h4 class="focus-subtitle">顏色</h4>
+                    <div class="individual-colors compact">
+                      <div class="color-item">
+                        <input type="color" :value="tempBubbleStyle.userBgColor" @input="setBubbleColor('userBgColor', ($event.target as HTMLInputElement).value)" />
+                        <span>我的訊息背景</span>
+                      </div>
+                      <div class="color-item">
+                        <input type="color" :value="tempBubbleStyle.userTextColor" @input="setBubbleColor('userTextColor', ($event.target as HTMLInputElement).value)" />
+                        <span>我的文字/時間</span>
+                      </div>
+                      <div class="color-item">
+                        <input type="color" :value="tempBubbleStyle.userTextColor" @input="setBubbleColor('userTextColor', ($event.target as HTMLInputElement).value)" />
+                        <span>我的氣泡內主要顏色</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="focus-section">
+                    <h4 class="focus-subtitle">氣泡版面</h4>
+                    <div class="slider-control">
+                      <input type="range" min="8" max="32" step="2" :value="tempBubbleStyle.borderRadius" @input="setBubbleRadius(Number(($event.target as HTMLInputElement).value))" />
+                      <span class="slider-value">圓角 {{ tempBubbleStyle.borderRadius }}px</span>
+                    </div>
+                    <div class="slider-control">
+                      <input type="range" min="50" max="90" step="5" :value="tempBubbleStyle.maxWidth" @input="setBubbleMaxWidth(Number(($event.target as HTMLInputElement).value))" />
+                      <span class="slider-value">寬度 {{ tempBubbleStyle.maxWidth }}%</span>
+                    </div>
+                  </div>
+                  <div class="focus-section">
+                    <h4 class="focus-subtitle">頭像</h4>
+                    <div class="option-grid compact">
+                      <button v-for="shape in avatarShapes" :key="shape.id" class="option-item small" :class="{ active: tempAvatarStyle.shape === shape.id }" @click="setAvatarShape(shape.id as any)">
+                        <span class="option-icon">{{ shape.icon }}</span>
+                        <span class="option-name">{{ shape.name }}</span>
+                      </button>
+                    </div>
+                    <div class="option-grid compact" style="margin-top: 8px">
+                      <button v-for="size in avatarSizes" :key="size.id" class="option-item small" :class="{ active: tempAvatarStyle.size === size.id }" @click="setAvatarSize(size.id as any)">
+                        <span class="option-name">{{ size.name }}</span>
+                      </button>
+                    </div>
+                    <div class="slider-control" style="margin-top: 8px">
+                      <input type="range" min="0" max="4" step="1" :value="tempAvatarStyle.borderWidth" @input="setAvatarBorderWidth(Number(($event.target as HTMLInputElement).value))" />
+                      <span class="slider-value">邊框 {{ tempAvatarStyle.borderWidth }}px</span>
+                    </div>
+                  </div>
+                  <div v-if="isChatMode" class="focus-section">
+                    <h4 class="focus-subtitle">字體</h4>
+                    <div class="slider-control">
+                      <input type="range" :min="fontSizeMin" :max="fontSizeMax" step="1" :value="tempFontSizeValue" @input="setFontSizeValue(Number(($event.target as HTMLInputElement).value))" />
+                      <span class="slider-value">{{ tempFontSizeValue }}px</span>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- 頂欄聚焦 -->
+                <template v-if="previewFocus === 'header'">
+                  <div class="focus-section">
+                    <h4 class="focus-subtitle">顏色</h4>
+                    <div class="individual-colors compact">
+                      <div class="color-item">
+                        <input type="color" :value="displayColors.primary" @input="setCustomPrimaryFromPicker(($event.target as HTMLInputElement).value)" />
+                        <span>主色（頂欄背景）</span>
+                      </div>
+                      <div v-if="isChatMode" class="color-item">
+                        <input type="color" :value="tempColors.surface || themeStore.colors.surface" @input="tempColors.surface = ($event.target as HTMLInputElement).value; useCustomAppearance = true" />
+                        <span>表面色</span>
+                      </div>
+                      <div v-if="isChatMode" class="color-item">
+                        <input type="color" :value="tempColors.text || themeStore.colors.text" @input="tempColors.text = ($event.target as HTMLInputElement).value; useCustomAppearance = true" />
+                        <span>文字色</span>
+                      </div>
+                      <div v-if="isChatMode" class="color-item">
+                        <input type="color" :value="tempColors.textSecondary || themeStore.colors.textSecondary" @input="tempColors.textSecondary = ($event.target as HTMLInputElement).value; useCustomAppearance = true" />
+                        <span>次要文字色</span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- 卡片背景 / 主要文字聚焦 -->
+                <template v-if="previewFocus === 'surface'">
+                  <div class="focus-section">
+                    <h4 class="focus-subtitle">卡片與文字</h4>
+                    <div class="individual-colors compact">
+                      <div class="color-item">
+                        <input type="color" :value="displayColors.surface" @input="setIndividualColor('surface', ($event.target as HTMLInputElement).value)" />
+                        <span>卡片背景</span>
+                      </div>
+                      <div class="color-item">
+                        <input type="color" :value="displayColors.text" @input="setIndividualColor('text', ($event.target as HTMLInputElement).value)" />
+                        <span>主要文字</span>
+                      </div>
+                      <div class="color-item">
+                        <input type="color" :value="displayColors.textMuted" @input="setIndividualColor('textMuted', ($event.target as HTMLInputElement).value)" />
+                        <span>提示文字</span>
+                      </div>
+                      <div class="color-item">
+                        <input type="color" :value="displayColors.border" @input="setIndividualColor('border', ($event.target as HTMLInputElement).value)" />
+                        <span>邊框線</span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- 滑過背景 / 輔助色聚焦 -->
+                <template v-if="previewFocus === 'surfaceHover'">
+                  <div class="focus-section">
+                    <h4 class="focus-subtitle">滑過與輔助色</h4>
+                    <div class="individual-colors compact">
+                      <div class="color-item">
+                        <input type="color" :value="displayColors.surfaceHover" @input="setIndividualColor('surfaceHover', ($event.target as HTMLInputElement).value)" />
+                        <span>滑過背景</span>
+                      </div>
+                      <div class="color-item">
+                        <input type="color" :value="displayColors.secondary" @input="setIndividualColor('secondary', ($event.target as HTMLInputElement).value)" />
+                        <span>輔助色</span>
+                      </div>
+                      <div class="color-item">
+                        <input type="color" :value="displayColors.textSecondary" @input="setIndividualColor('textSecondary', ($event.target as HTMLInputElement).value)" />
+                        <span>次要文字</span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- 狀態提示色聚焦 -->
+                <template v-if="previewFocus === 'status'">
+                  <div class="focus-section">
+                    <h4 class="focus-subtitle">狀態提示</h4>
+                    <div class="individual-colors compact">
+                      <div class="color-item">
+                        <input type="color" :value="displayColors.success" @input="setIndividualColor('success', ($event.target as HTMLInputElement).value)" />
+                        <span>成功提示</span>
+                      </div>
+                      <div class="color-item">
+                        <input type="color" :value="displayColors.error" @input="setIndividualColor('error', ($event.target as HTMLInputElement).value)" />
+                        <span>錯誤提示</span>
+                      </div>
+                      <div class="color-item">
+                        <input type="color" :value="displayColors.warning" @input="setIndividualColor('warning', ($event.target as HTMLInputElement).value)" />
+                        <span>警告提示</span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- 背景聚焦 -->
+                <template v-if="previewFocus === 'wallpaper'">
+                  <div class="focus-section">
+                    <h4 class="focus-subtitle">背景色</h4>
+                    <div class="individual-colors compact">
+                      <div class="color-item">
+                        <input
+                          type="color"
+                          :value="tempColors.background || themeStore.colors.background"
+                          @input="
+                            tempColors.background = ($event.target as HTMLInputElement).value;
+                            tempWallpaperStyle.type = 'color';
+                            tempWallpaperStyle.value = tempColors.background;
+                            useCustomAppearance = true;
+                          "
+                        />
+                        <span>背景色</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="focus-section">
+                    <h4 class="focus-subtitle">背景樣式</h4>
+                    <div class="wallpaper-grid compact">
+                      <button
+                        v-for="preset in wallpaperPresets"
+                        :key="preset.id"
+                        class="wallpaper-item small"
+                        :class="{
+                          active:
+                            tempWallpaperStyle.type === preset.type &&
+                            (preset.type === 'time-theme' ||
+                              tempWallpaperStyle.value === preset.value),
+                        }"
+                        @click="selectWallpaper(preset)"
+                      >
+                        <div
+                          class="wallpaper-preview"
+                          :class="{ 'time-theme-preview': preset.type === 'time-theme' }"
+                          :style="preset.type !== 'time-theme' ? { background: preset.value } : {}"
+                        ></div>
+                        <span class="wallpaper-name">{{ preset.name }}</span>
+                      </button>
+                      <label class="wallpaper-item upload small">
+                        <input type="file" accept="image/*" @change="handleImageUpload" />
+                        <div class="wallpaper-preview">
+                          <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                          </svg>
+                        </div>
+                        <span class="wallpaper-name">上傳</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div v-if="tempWallpaperStyle.type === 'image' || tempWallpaperStyle.type === 'global-image'" class="focus-section">
+                    <h4 class="focus-subtitle">模糊度 / 透明度</h4>
+                    <div class="slider-control">
+                      <input type="range" min="0" max="20" step="1" :value="tempWallpaperStyle.blur" @input="setWallpaperBlur(Number(($event.target as HTMLInputElement).value))" />
+                      <span class="slider-value">{{ tempWallpaperStyle.blur }}px</span>
+                    </div>
+                    <div class="slider-control">
+                      <input type="range" min="20" max="100" step="5" :value="tempWallpaperStyle.opacity" @input="setWallpaperOpacity(Number(($event.target as HTMLInputElement).value))" />
+                      <span class="slider-value">{{ tempWallpaperStyle.opacity }}%</span>
+                    </div>
+                  </div>
+                </template>
               </div>
 
               <!-- 非統一模式：各顏色獨立調整 -->
@@ -1229,365 +1638,10 @@ watch(
                 </div>
               </div>
 
-              <h3 class="section-title">訊息氣泡顏色</h3>
-              <div class="individual-colors">
-                <div class="color-item">
-                  <input type="color" :value="tempBubbleStyle.aiBgColor" @input="setBubbleColor('aiBgColor', ($event.target as HTMLInputElement).value)" />
-                  <span>AI 訊息背景</span>
-                </div>
-                <div class="color-item">
-                  <input type="color" :value="tempBubbleStyle.aiTextColor" @input="setBubbleColor('aiTextColor', ($event.target as HTMLInputElement).value)" />
-                  <span>AI 文字/時間</span>
-                </div>
-                <div class="color-item">
-                  <input type="color" :value="tempBubbleStyle.userBgColor" @input="setBubbleColor('userBgColor', ($event.target as HTMLInputElement).value)" />
-                  <span>我的訊息背景</span>
-                </div>
-                <div class="color-item">
-                  <input type="color" :value="tempBubbleStyle.userTextColor" @input="setBubbleColor('userTextColor', ($event.target as HTMLInputElement).value)" />
-                  <span>我的文字/時間</span>
-                </div>
-              </div>
-
-              <h3 class="section-title">訊息氣泡版面</h3>
-              <div class="slider-control">
-                <input
-                  type="range"
-                  min="8"
-                  max="32"
-                  step="2"
-                  :value="tempBubbleStyle.borderRadius"
-                  @input="
-                    setBubbleRadius(
-                      Number(($event.target as HTMLInputElement).value),
-                    )
-                  "
-                />
-                <span class="slider-value"
-                  >圓角 {{ tempBubbleStyle.borderRadius }}px</span
-                >
-              </div>
-
-              <div class="slider-control">
-                <input
-                  type="range"
-                  min="50"
-                  max="90"
-                  step="5"
-                  :value="tempBubbleStyle.maxWidth"
-                  @input="
-                    setBubbleMaxWidth(
-                      Number(($event.target as HTMLInputElement).value),
-                    )
-                  "
-                />
-                <span class="slider-value"
-                  >寬度 {{ tempBubbleStyle.maxWidth }}%</span
-                >
-              </div>
-            </div>
-
-            <!-- 頭像設定 -->
-            <div v-if="activeTab === 'avatar'" class="settings-section">
-              <h3 class="section-title">頭像形狀</h3>
-              <div class="option-grid">
-                <button
-                  v-for="shape in avatarShapes"
-                  :key="shape.id"
-                  class="option-item"
-                  :class="{ active: tempAvatarStyle.shape === shape.id }"
-                  @click="setAvatarShape(shape.id as any)"
-                >
-                  <span class="option-icon">{{ shape.icon }}</span>
-                  <span class="option-name">{{ shape.name }}</span>
-                </button>
-              </div>
-
-              <h3 class="section-title">頭像大小</h3>
-              <div class="option-grid">
-                <button
-                  v-for="size in avatarSizes"
-                  :key="size.id"
-                  class="option-item"
-                  :class="{ active: tempAvatarStyle.size === size.id }"
-                  @click="setAvatarSize(size.id as any)"
-                >
-                  <span class="option-name">{{ size.name }}</span>
-                  <span class="option-hint">{{ size.size }}</span>
-                </button>
-              </div>
-
-              <h3 class="section-title">邊框寬度</h3>
-              <div class="slider-control">
-                <input
-                  type="range"
-                  min="0"
-                  max="4"
-                  step="1"
-                  :value="tempAvatarStyle.borderWidth"
-                  @input="
-                    setAvatarBorderWidth(
-                      Number(($event.target as HTMLInputElement).value),
-                    )
-                  "
-                />
-                <span class="slider-value"
-                  >{{ tempAvatarStyle.borderWidth }}px</span
-                >
-              </div>
-
-              <div class="avatar-preview">
-                <div class="preview-label">預覽效果</div>
-                <div
-                  class="preview-avatar"
-                  :style="{
-                    width:
-                      tempAvatarStyle.size === 'small'
-                        ? '36px'
-                        : tempAvatarStyle.size === 'medium'
-                          ? '48px'
-                          : '64px',
-                    height:
-                      tempAvatarStyle.size === 'small'
-                        ? '36px'
-                        : tempAvatarStyle.size === 'medium'
-                          ? '48px'
-                          : '64px',
-                    borderRadius:
-                      tempAvatarStyle.shape === 'circle'
-                        ? '50%'
-                        : tempAvatarStyle.shape === 'rounded'
-                          ? '16px'
-                          : '8px',
-                    border: `${tempAvatarStyle.borderWidth}px solid white`,
-                    boxShadow: '0 4px 12px var(--color-shadow)',
-                  }"
-                >
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3z"
-                    />
-                  </svg>
-                </div>
-              </div>
-            </div>
-
-            <!-- 桌布設定 -->
-            <div v-if="activeTab === 'wallpaper'" class="settings-section">
-              <template v-if="isChatMode">
-                <h3 class="section-title">自訂背景色</h3>
-                <div class="bubble-color-row">
-                  <div class="color-item">
-                    <input
-                      type="color"
-                      :value="tempColors.background || themeStore.colors.background"
-                      @input="
-                        tempColors.background = ($event.target as HTMLInputElement).value;
-                        useCustomAppearance = true;
-                      "
-                    />
-                    <span>背景色</span>
-                  </div>
-                </div>
-              </template>
-
-              <h3 class="section-title">背景樣式</h3>
-              <div class="wallpaper-grid">
-                <button
-                  v-for="preset in wallpaperPresets"
-                  :key="preset.id"
-                  class="wallpaper-item"
-                  :class="{
-                    active:
-                      tempWallpaperStyle.type === preset.type &&
-                      (preset.type === 'time-theme' ||
-                        tempWallpaperStyle.value === preset.value),
-                  }"
-                  @click="selectWallpaper(preset)"
-                >
-                  <div
-                    class="wallpaper-preview"
-                    :class="{
-                      'time-theme-preview': preset.type === 'time-theme',
-                    }"
-                    :style="
-                      preset.type !== 'time-theme'
-                        ? { background: preset.value }
-                        : {}
-                    "
-                  ></div>
-                  <span class="wallpaper-name">{{ preset.name }}</span>
-                </button>
-
-                <!-- 已上傳的圖片 -->
-                <button
-                  v-if="
-                    tempWallpaperStyle.type === 'image' &&
-                    tempWallpaperStyle.value
-                  "
-                  class="wallpaper-item active"
-                >
-                  <div
-                    class="wallpaper-preview"
-                    :style="{
-                      backgroundImage: `url(${tempWallpaperStyle.value})`,
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center',
-                    }"
-                  ></div>
-                  <span class="wallpaper-name">已上傳</span>
-                </button>
-
-                <!-- 上傳按鈕 -->
-                <label class="wallpaper-item upload">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    @change="handleImageUpload"
-                  />
-                  <div class="wallpaper-preview">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                    </svg>
-                  </div>
-                  <span class="wallpaper-name">上傳圖片</span>
-                </label>
-              </div>
-
-              <div
-                v-if="isChatMode && hasGlobalCustomImage"
-                class="global-wallpaper-card"
-              >
-                <div
-                  class="global-wallpaper-preview"
-                  :style="globalWallpaperPreviewStyle"
-                ></div>
-                <div class="global-wallpaper-content">
-                  <div class="global-wallpaper-title">主畫面自訂圖片</div>
-                  <div class="global-wallpaper-desc">
-                    可複製目前主畫面圖片，或讓此聊天持續跟隨主畫面圖片。
-                  </div>
-                  <div class="global-wallpaper-actions">
-                    <button
-                      class="soft-mini-btn"
-                      :class="{
-                        active:
-                          tempWallpaperStyle.type === 'image' &&
-                          tempWallpaperStyle.value === themeStore.wallpaperStyle.value,
-                      }"
-                      @click="copyGlobalWallpaperToChat"
-                    >
-                      複製目前主畫面圖片
-                    </button>
-                    <button
-                      class="soft-mini-btn"
-                      :class="{ active: isUsingGlobalImageWallpaper }"
-                      @click="followGlobalWallpaperImage"
-                    >
-                      跟隨主畫面圖片
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <template
-                v-if="
-                  tempWallpaperStyle.type === 'image' ||
-                  tempWallpaperStyle.type === 'global-image'
-                "
-              >
-                <h3 class="section-title">顯示方式</h3>
-                <div class="fit-options">
-                  <button
-                    v-for="opt in [
-                      { id: 'cover', label: '填滿裁切' },
-                      { id: 'contain', label: '完整顯示' },
-                      { id: 'fill', label: '拉伸填滿' },
-                      { id: 'repeat', label: '平鋪重複' },
-                    ]"
-                    :key="opt.id"
-                    :class="[
-                      'fit-btn',
-                      {
-                        active: (tempWallpaperStyle.fit || 'cover') === opt.id,
-                      },
-                    ]"
-                    @click="setWallpaperFit(opt.id as any)"
-                  >
-                    {{ opt.label }}
-                  </button>
-                </div>
-
-                <h3 class="section-title">模糊度</h3>
-                <div class="slider-control">
-                  <input
-                    type="range"
-                    min="0"
-                    max="20"
-                    step="1"
-                    :value="tempWallpaperStyle.blur"
-                    @input="
-                      setWallpaperBlur(
-                        Number(($event.target as HTMLInputElement).value),
-                      )
-                    "
-                  />
-                  <span class="slider-value"
-                    >{{ tempWallpaperStyle.blur }}px</span
-                  >
-                </div>
-
-                <h3 class="section-title">透明度</h3>
-                <div class="slider-control">
-                  <input
-                    type="range"
-                    min="20"
-                    max="100"
-                    step="5"
-                    :value="tempWallpaperStyle.opacity"
-                    @input="
-                      setWallpaperOpacity(
-                        Number(($event.target as HTMLInputElement).value),
-                      )
-                    "
-                  />
-                  <span class="slider-value"
-                    >{{ tempWallpaperStyle.opacity }}%</span
-                  >
-                </div>
-              </template>
             </div>
 
             <!-- 字體設定 -->
             <div v-if="activeTab === 'font'" class="settings-section">
-              <h3 class="section-title">
-                字體大小 ({{ tempFontSizeValue }}px)
-              </h3>
-              <div class="slider-control">
-                <button class="size-preset-btn" @click="setFontSizeValue(14)">
-                  小
-                </button>
-                <input
-                  type="range"
-                  :min="fontSizeMin"
-                  :max="fontSizeMax"
-                  step="1"
-                  :value="tempFontSizeValue"
-                  @input="
-                    setFontSizeValue(
-                      Number(($event.target as HTMLInputElement).value),
-                    )
-                  "
-                />
-                <button class="size-preset-btn" @click="setFontSizeValue(15)">
-                  中
-                </button>
-                <button class="size-preset-btn" @click="setFontSizeValue(17)">
-                  大
-                </button>
-                <span class="slider-value">{{ tempFontSizeValue }}px</span>
-              </div>
-
               <h3 class="section-title">字體樣式</h3>
               <div class="font-family-grid">
                 <button
@@ -1669,19 +1723,6 @@ watch(
 
               <h3 v-if="isChatMode" class="section-title">Markdown 樣式顏色</h3>
               <div v-if="isChatMode" class="markdown-colors-grid">
-                <div class="color-item">
-                  <input
-                    type="color"
-                    :value="tempFontStyle.markdownColors.text"
-                    @input="
-                      tempFontStyle.markdownColors.text = (
-                        $event.target as HTMLInputElement
-                      ).value;
-                      useCustomAppearance = true;
-                    "
-                  />
-                  <span>主要文字</span>
-                </div>
                 <div class="color-item">
                   <input
                     type="color"
@@ -1809,7 +1850,6 @@ watch(
                             : 'monospace',
                     lineHeight: tempFontStyle.lineHeight,
                     letterSpacing: `${tempFontStyle.letterSpacing}px`,
-                    color: tempFontStyle.markdownColors.text,
                   }"
                 >
                   <span>這是一段預覽文字</span><br />
@@ -1845,46 +1885,6 @@ watch(
                   <code :style="{ color: tempFontStyle.markdownColors.code }"
                     >行內代碼</code
                   >
-                </div>
-              </div>
-            </div>
-
-            <!-- 頂/底欄設定 -->
-            <div v-if="activeTab === 'headerFooter' && isChatMode" class="settings-section">
-              <h3 class="section-title">頂/底欄顏色設定</h3>
-              <div class="bubble-color-row">
-                <div class="color-item">
-                  <input
-                    type="color"
-                    :value="tempColors.surface || themeStore.colors.surface"
-                    @input="
-                      tempColors.surface = ($event.target as HTMLInputElement).value;
-                      useCustomAppearance = true;
-                    "
-                  />
-                  <span>表面色</span>
-                </div>
-                <div class="color-item">
-                  <input
-                    type="color"
-                    :value="tempColors.text || themeStore.colors.text"
-                    @input="
-                      tempColors.text = ($event.target as HTMLInputElement).value;
-                      useCustomAppearance = true;
-                    "
-                  />
-                  <span>文字色</span>
-                </div>
-                <div class="color-item">
-                  <input
-                    type="color"
-                    :value="tempColors.textSecondary || themeStore.colors.textSecondary"
-                    @input="
-                      tempColors.textSecondary = ($event.target as HTMLInputElement).value;
-                      useCustomAppearance = true;
-                    "
-                  />
-                  <span>次要文字色</span>
                 </div>
               </div>
             </div>
@@ -2735,9 +2735,93 @@ watch(
     0 2px 6px rgba(0, 0, 0, 0.05);
 
   .preview-header {
-    padding: 12px 16px;
+    margin: 12px 12px 0;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 52px;
+    border-radius: 22px;
     font-size: 14px;
     font-weight: 500;
+    position: relative;
+    z-index: 1;
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.45),
+      0 6px 16px rgba(0, 0, 0, 0.06);
+
+    &.preview-focused {
+      background: var(--color-surface) !important;
+      z-index: 3;
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.65),
+        0 0 0 2.5px var(--color-primary),
+        0 8px 20px rgba(0, 0, 0, 0.12);
+    }
+  }
+
+  .preview-header-btn {
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.45);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    line-height: 1;
+    pointer-events: none;
+  }
+
+  .preview-header-avatar {
+    position: relative;
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    background: linear-gradient(135deg, #1f2937, #020617);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-sm);
+
+    span {
+      font-size: 20px;
+      filter: saturate(0.7);
+    }
+
+    i {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #9dd9b5;
+      border: 2px solid #fff;
+    }
+  }
+
+  .preview-header-title {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+
+    small {
+      font-size: 13px;
+      opacity: 0.75;
+    }
   }
 
   .preview-body {
@@ -2753,6 +2837,18 @@ watch(
   border-radius: 16px;
   font-size: 13px;
   max-width: 70%;
+  position: relative;
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
+
+  &:hover {
+    box-shadow: 0 0 0 2px var(--color-primary), 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+
+  &.preview-focused {
+    box-shadow: 0 0 0 2.5px var(--color-primary), 0 0 12px rgba(0, 0, 0, 0.15);
+    transform: scale(1.02);
+  }
 
   .preview-sender-name {
     font-size: 12px;
@@ -2777,6 +2873,187 @@ watch(
   }
 }
 
+// 可點擊預覽元素
+.preview-clickable {
+  cursor: pointer;
+  transition: box-shadow 0.2s ease;
+  position: relative;
+
+  &:hover {
+    box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb, 255, 133, 162), 0.5);
+  }
+
+  &.preview-focused:not(.preview-header) {
+    box-shadow: 0 0 0 2.5px var(--color-primary), 0 0 12px rgba(0, 0, 0, 0.12);
+  }
+}
+
+// 焦點標籤
+.focus-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--color-primary);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  z-index: 2;
+  animation: focus-badge-in 0.2s ease;
+
+  &.wallpaper-badge {
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    right: auto;
+  }
+}
+
+@keyframes focus-badge-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.preview-hint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+// 聚焦設定面板
+.focus-settings-panel {
+  margin-top: 12px;
+  padding: 14px;
+  background: var(--color-surface);
+  border-radius: 18px;
+  border: 1.5px solid var(--color-primary-light);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  animation: focus-panel-in 0.25s ease;
+}
+
+@keyframes focus-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.focus-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.focus-settings-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.focus-close-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-background);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+  }
+}
+
+.focus-section {
+  margin-bottom: 12px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.focus-subtitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+// 緊湊模式
+.individual-colors.compact {
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+
+  .color-item {
+    padding: 6px 8px;
+
+    input[type="color"] {
+      width: 28px;
+      height: 28px;
+    }
+
+    span {
+      font-size: 11px;
+    }
+  }
+}
+
+.option-grid.compact {
+  gap: 8px;
+}
+
+.option-item.small {
+  padding: 10px 8px;
+  border-radius: 14px;
+
+  .option-icon {
+    font-size: 18px;
+  }
+
+  .option-name {
+    font-size: 12px;
+  }
+}
+
+.wallpaper-grid.compact {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.wallpaper-item.small {
+  padding: 6px;
+  border-radius: 14px;
+
+  .wallpaper-preview {
+    border-radius: 12px;
+  }
+
+  .wallpaper-name {
+    font-size: 10px;
+  }
+}
+
 .preview-ui-samples {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
@@ -2793,6 +3070,7 @@ watch(
   border-radius: var(--radius-md);
   font-size: 11px;
   min-width: 0;
+  position: relative;
 }
 
 .preview-ui-title {
@@ -2808,8 +3086,12 @@ watch(
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+  position: relative;
+  min-height: 28px;
+  padding: 4px;
+  border-radius: var(--radius-md);
 
-  span {
+  > span:not(.focus-badge) {
     padding: 5px 8px;
     border-radius: 999px;
     color: #fff;

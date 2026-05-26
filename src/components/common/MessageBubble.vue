@@ -5004,6 +5004,7 @@ const showTextVoiceTranscript = ref(true);
       --bubble-user-bg,
       linear-gradient(135deg, #ff85a2, #ffb6c8)
     );
+    color: var(--bubble-user-text, white);
     border-bottom-right-radius: 6px;
 
     .message-time {
@@ -5013,6 +5014,7 @@ const showTextVoiceTranscript = ref(true);
 
   &.ai {
     background: var(--bubble-ai-bg, white);
+    color: var(--bubble-ai-text, #4a4a6a);
     border-bottom-left-radius: 6px;
     box-shadow: var(--shadow-sm);
 

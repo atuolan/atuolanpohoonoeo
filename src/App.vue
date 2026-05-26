@@ -50,6 +50,7 @@ import {
   ThemeSettingsModal,
 } from "@/components/modals";
 import GlobalThemeModal from "@/components/modals/GlobalThemeModal.vue";
+import ThemeTutorialOverlay from "@/components/common/ThemeTutorialOverlay.vue";
 import FoodLogManager from "@/components/modals/FoodLogManager.vue";
 import MediaLogManager from "@/components/modals/MediaLogManager.vue";
 import MultiCharSetupModal from "@/components/modals/MultiCharSetupModal.vue";
@@ -2859,6 +2860,9 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       @close="showThemeSettings = false"
       @save-chat-appearance="handleSaveChatAppearance"
     />
+
+    <!-- 主題教學引導（僅聊天頁面首次顯示，必須在 Modal 後面才能蓋住它） -->
+    <ThemeTutorialOverlay v-if="currentPage === 'chat'" :theme-settings-open="showThemeSettings" />
 
     <!-- 全局美化配置彈窗 -->
     <GlobalThemeModal

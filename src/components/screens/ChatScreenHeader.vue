@@ -714,36 +714,36 @@ const isDarkBackground = computed(() =>
   &.dark-bg {
     --chat-header-panel-bg: linear-gradient(
       135deg,
-      rgba(255, 255, 255, 0.18) 0%,
-      rgba(255, 255, 255, 0.08) 100%
+      color-mix(in srgb, var(--chat-header-surface, rgba(255, 255, 255, 0.18)) 85%, transparent) 0%,
+      color-mix(in srgb, var(--chat-header-surface, rgba(255, 255, 255, 0.08)) 40%, transparent) 100%
     );
     background: var(--chat-header-panel-bg);
     border-color: rgba(255, 255, 255, 0.22);
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
 
     .chat-name {
-      color: #ffffff;
+      color: var(--chat-header-text, #ffffff);
     }
 
     .chat-status {
-      color: rgba(255, 255, 255, 0.85);
+      color: var(--chat-header-text-secondary, rgba(255, 255, 255, 0.85));
     }
 
     .header-back,
     .header-btn,
     .rail-toggle-btn {
-      color: #ffffff;
+      color: var(--chat-header-text, #ffffff);
       border-color: rgba(255, 255, 255, 0.32);
 
       svg {
-        color: #ffffff;
+        color: currentColor;
         stroke: currentColor;
       }
 
       &:hover {
         background: rgba(255, 255, 255, 0.16);
         border-color: rgba(255, 255, 255, 0.5);
-        color: #ffffff;
+        color: var(--chat-header-text, #ffffff);
       }
 
       &:active {
@@ -753,15 +753,15 @@ const isDarkBackground = computed(() =>
       &.active {
         background: rgba(255, 255, 255, 0.22);
         border-color: rgba(255, 255, 255, 0.55);
-        color: #ffffff;
+        color: var(--chat-header-text, #ffffff);
       }
     }
 
     .nickname-edit-btn {
-      color: rgba(255, 255, 255, 0.75);
+      color: var(--chat-header-text-secondary, rgba(255, 255, 255, 0.75));
 
       &:hover {
-        color: #ffffff;
+        color: var(--chat-header-text, #ffffff);
         background: rgba(255, 255, 255, 0.16);
       }
     }
