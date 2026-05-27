@@ -618,21 +618,6 @@ const isDarkBackground = computed(() =>
       </div>
     </div>
 
-    <!-- 動畫底線指示器（聚焦/點按時才顯示） -->
-    <div
-      class="underline-track"
-      :class="{ visible: indicatorTarget !== 'full' }"
-      ref="underlineTrackRef"
-    >
-      <div
-        class="underline-indicator"
-        :class="indicatorColorClass"
-        :style="{
-          left: indicatorRect.left + 'px',
-          width: indicatorRect.width + 'px',
-        }"
-      ></div>
-    </div>
 
     <!-- 語音輸入 Modal -->
     <Teleport to="body">
@@ -1205,53 +1190,6 @@ const isDarkBackground = computed(() =>
   }
 }
 
-// ===== 動畫底線指示器 =====
-.underline-track {
-  position: relative;
-  height: 2px;
-  margin: 4px auto 0;
-  width: 100%;
-  max-width: 800px;
-  background: transparent;
-  border-radius: 2px;
-  box-sizing: border-box;
-}
-
-.underline-indicator {
-  position: absolute;
-  top: -1px;
-  height: 4px;
-  background: currentColor;
-  color: var(--chat-header-text, var(--color-text, #111));
-  border-radius: 4px;
-  left: 0;
-  width: 100%;
-  opacity: 0;
-  transition:
-    left 0.35s cubic-bezier(0.34, 1.2, 0.64, 1),
-    width 0.35s cubic-bezier(0.34, 1.2, 0.64, 1),
-    opacity 0.2s ease,
-    color 0.25s ease,
-    background-color 0.25s ease;
-  pointer-events: none;
-
-  &.color-plus {
-    color: var(--color-primary, #7dd3a8);
-  }
-  &.color-image {
-    color: #4caf50;
-  }
-  &.color-emoji {
-    color: #d49b00;
-  }
-  &.color-message {
-    color: var(--chat-header-text, var(--color-text, #111));
-  }
-}
-
-.underline-track.visible .underline-indicator {
-  opacity: 1;
-}
 
 .left-buttons,
 .right-buttons {
