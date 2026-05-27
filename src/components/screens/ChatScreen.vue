@@ -6,6 +6,7 @@ import {
 import {
   createImageMessage,
   OpenAICompatibleClient,
+  type APIMessage,
 } from "@/api/OpenAICompatible";
 import { MessageBubble } from "@/components/common";
 import ChatScreenHeader from "@/components/screens/ChatScreenHeader.vue";
@@ -131,6 +132,7 @@ import type {
   ChatLocationOverride,
   ChatMessage,
   GenerationDiagnostics,
+  GenerationContaminationProbeResult,
 } from "@/types/chat";
 import type {
   ChatScreenImageData as ImageData,
@@ -5937,6 +5939,170 @@ async function triggerAIResponse(options?: {
       streamingWindow.setDiagnostics(generationDiagnostics);
     }
 
+    const runContaminationDiagnostics = async (triggerReason: string) => {
+      const startedAt = Date.now();
+      const pairedMessages = apiMessages.map((message, index) => ({
+        message,
+        index,
+        debug: promptDebugByIndex.get(index) ?? promptDebugMessages[index],
+      }));
+      const moduleMatches = (debug: PromptDebugMessage | undefined, marker: string) =>
+        !!debug?.identifier?.includes(marker);
+      const isChatHistoryModule = (debug: PromptDebugMessage | undefined) =>
+        moduleMatches(debug, "chatMessage") ||
+        moduleMatches(debug, "chatHistoryOpenTag") ||
+        moduleMatches(debug, "chatHistoryCloseTag");
+      const removedModulesFor = (removed: typeof pairedMessages) =>
+        removed.slice(0, 30).map(({ message, index, debug }) => ({
+          index,
+          role: String(message.role),
+          identifier: debug?.identifier,
+          name: debug?.name,
+          contentLength: debug?.content.length ?? getApiMessageTextLength(message),
+        }));
+      const probeSettings = {
+        ...chatSettings,
+        maxResponseLength: Math.min(96, Math.max(16, chatSettings.maxResponseLength || 96)),
+        streaming: false,
+        useStreamingWindow: false,
+      };
+      const variants: Array<{
+        id: string;
+        label: string;
+        keep: (item: typeof pairedMessages[number]) => boolean;
+      }> = [
+        {
+          id: "remove_chat_history",
+          label: "移除聊天歷史",
+          keep: (item) => !isChatHistoryModule(item.debug),
+        },
+        {
+          id: "remove_events_context",
+          label: "移除重要事件/時間/天氣/世界上下文包",
+          keep: (item) => !moduleMatches(item.debug, "f2fImportantEvents"),
+        },
+        {
+          id: "remove_userinfo_summaries",
+          label: "移除用戶/角色/總結大包",
+          keep: (item) =>
+            !moduleMatches(item.debug, "f2fUserInfo") &&
+            !moduleMatches(item.debug, "f2fSummaries") &&
+            !moduleMatches(item.debug, "f2fCharDescription"),
+        },
+        {
+          id: "remove_custom_modules",
+          label: "移除自訂提示詞模組",
+          keep: (item) => !moduleMatches(item.debug, "f2f_custom_"),
+        },
+        {
+          id: "remove_tail_format",
+          label: "移除尾端思考/格式規則",
+          keep: (item) =>
+            !moduleMatches(item.debug, "f2fThinkingGuide") &&
+            !moduleMatches(item.debug, "f2fFormatRules") &&
+            !moduleMatches(item.debug, "f2fExampleScript"),
+        },
+        {
+          id: "minimal_shared_prompt",
+          label: "最小共享提示詞（移除動態/歷史/自訂）",
+          keep: (item) =>
+            !isChatHistoryModule(item.debug) &&
+            !moduleMatches(item.debug, "f2fImportantEvents") &&
+            !moduleMatches(item.debug, "f2fUserInfo") &&
+            !moduleMatches(item.debug, "f2fSummaries") &&
+            !moduleMatches(item.debug, "f2fCharDescription") &&
+            !moduleMatches(item.debug, "f2f_custom_"),
+        },
+      ];
+      let apiEndpointHost: string | undefined;
+      try {
+        apiEndpointHost = new URL(chatTaskConfig.api.endpoint).host;
+      } catch {
+        apiEndpointHost = chatTaskConfig.api.endpoint;
+      }
+      generationDiagnostics.contaminationDiagnostics = {
+        triggered: true,
+        triggerReason,
+        startedAt,
+        baselineFinishReason: generationDiagnostics.rawFinishReason || generationDiagnostics.finishReason,
+        results: [],
+      };
+      generationDiagnostics.rawResponseMeta = {
+        ...(typeof generationDiagnostics.rawResponseMeta === "object" && generationDiagnostics.rawResponseMeta !== null
+          ? generationDiagnostics.rawResponseMeta
+          : {}),
+        contaminationProbeEndpointHost: apiEndpointHost,
+        contaminationProbeModel: chatTaskConfig.api.model,
+      };
+      if (useWindow) streamingWindow.setDiagnostics(generationDiagnostics);
+
+      for (const variant of variants) {
+        if (controller.signal.aborted) break;
+        const kept = pairedMessages.filter(variant.keep);
+        const removed = pairedMessages.filter((item) => !variant.keep(item));
+        const baseResult: GenerationContaminationProbeResult = {
+          id: variant.id,
+          label: variant.label,
+          status: removed.length === 0 || kept.length === pairedMessages.length ? "skipped" : "empty",
+          messageCount: kept.length,
+          removedMessageCount: removed.length,
+          requestRoles: kept.map((item) => item.message.role),
+          removedModules: removedModulesFor(removed),
+        };
+        if (baseResult.status === "skipped") {
+          generationDiagnostics.contaminationDiagnostics.results.push(baseResult);
+          if (useWindow) streamingWindow.setDiagnostics(generationDiagnostics);
+          continue;
+        }
+        const probeStartedAt = Date.now();
+        try {
+          const result = await client.generate({
+            messages: kept.map((item) => item.message) as APIMessage[],
+            settings: probeSettings,
+            apiSettings: chatTaskConfig.api,
+            signal: controller.signal,
+            adjustLastMessageRole: true,
+          });
+          const finishReason = result.rawFinishReason || result.finishReason || result.stopReason;
+          const contentLength = result.content?.length ?? 0;
+          const status =
+            finishReason === "content_filter" ||
+            finishReason === "safety" ||
+            finishReason === "prohibited_content" ||
+            finishReason === "blocklist"
+              ? "filtered"
+              : contentLength > 0
+                ? "ok"
+                : "empty";
+          generationDiagnostics.contaminationDiagnostics.results.push({
+            ...baseResult,
+            status,
+            rawFinishReason: result.rawFinishReason,
+            finishReason: result.finishReason || result.stopReason,
+            contentLength,
+            promptTokens: result.tokenCount?.prompt,
+            completionTokens: result.tokenCount?.completion,
+            totalTokens: result.tokenCount?.total,
+            requestBodyBytes: result.diagnostics?.requestBodyBytes,
+            durationMs: Date.now() - probeStartedAt,
+          });
+        } catch (error) {
+          if (controller.signal.aborted) break;
+          generationDiagnostics.contaminationDiagnostics.results.push({
+            ...baseResult,
+            status: "error",
+            durationMs: Date.now() - probeStartedAt,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+        if (useWindow) streamingWindow.setDiagnostics(generationDiagnostics);
+      }
+
+      generationDiagnostics.contaminationDiagnostics.completedAt = Date.now();
+      console.warn("[ChatScreen] 污染定位診斷", generationDiagnostics.contaminationDiagnostics);
+      if (useWindow) streamingWindow.setDiagnostics(generationDiagnostics);
+    };
+
     let fullContent = "";
 
     {
@@ -6073,6 +6239,24 @@ async function triggerAIResponse(options?: {
           return;
         }
 
+        const shouldRunContaminationDiagnostics =
+          !generationDiagnostics.contaminationDiagnostics &&
+          (generationDiagnostics.finishReason === "content_filter" ||
+            generationDiagnostics.rawFinishReason === "content_filter" ||
+            generationDiagnostics.finishReason === "safety" ||
+            generationDiagnostics.rawFinishReason === "safety" ||
+            generationDiagnostics.apiContentLength === 0);
+        if (shouldRunContaminationDiagnostics) {
+          if (msgIndex !== -1) {
+            messages.value[msgIndex].content =
+              "[空回應] API 返回了空內容，正在執行污染定位診斷...";
+            messages.value[msgIndex].isStreaming = false;
+          }
+          await runContaminationDiagnostics(
+            generationDiagnostics.rawFinishReason || generationDiagnostics.finishReason || "empty_response",
+          );
+        }
+
         if (msgIndex !== -1) {
           const _d = generationDiagnostics;
           const _diagParts: string[] = [];
@@ -6086,10 +6270,14 @@ async function triggerAIResponse(options?: {
           if (_d.promptFeedback) _diagParts.push(`promptFeedback: ${JSON.stringify(_d.promptFeedback)}`);
           if (_d.safetyRatings) _diagParts.push(`safetyRatings: ${JSON.stringify(_d.safetyRatings)}`);
           if (typeof _d.chunkCount === "number") _diagParts.push(`chunks: ${_d.chunkCount}, bytes: ${_d.totalBytes ?? 0}`);
+          const _probeResults = _d.contaminationDiagnostics?.results
+            ?.filter((result) => result.status !== "skipped")
+            .map((result) => `${result.label}: ${result.status}${result.rawFinishReason ? `(${result.rawFinishReason})` : ""}`);
+          if (_probeResults?.length) _diagParts.push(`污染探針: ${_probeResults.join(" / ")}`);
           const _diagStr = _diagParts.length > 0 ? "\n診斷: " + _diagParts.join(" | ") : "";
           console.warn("[ChatScreen] 空回應診斷", generationDiagnostics);
           messages.value[msgIndex].content =
-            "[空回應] API 返回了空內容" + _diagStr + "\n請查看串流視窗「調試資訊」，或開啟開發者工具 Console 查看詳細診斷。";
+            "[空回應] API 返回了空內容" + _diagStr + "\n請查看串流視窗「調試資訊」並複製診斷 JSON，或開啟開發者工具 Console 查看完整污染定位結果。";
           messages.value[msgIndex].isStreaming = false;
         }
       } else {

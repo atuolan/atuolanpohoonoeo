@@ -891,6 +891,40 @@ export interface GenerationRoleAdjustment {
   after: string;
 }
 
+export interface GenerationContaminationProbeResult {
+  id: string;
+  label: string;
+  status: "ok" | "filtered" | "empty" | "error" | "skipped";
+  messageCount: number;
+  removedMessageCount: number;
+  requestRoles: string[];
+  requestBodyBytes?: number;
+  rawFinishReason?: string;
+  finishReason?: GenerationStopReason;
+  contentLength?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  durationMs?: number;
+  error?: string;
+  removedModules?: Array<{
+    index: number;
+    role: string;
+    identifier?: string;
+    name?: string;
+    contentLength: number;
+  }>;
+}
+
+export interface GenerationContaminationDiagnostics {
+  triggered: boolean;
+  triggerReason: string;
+  startedAt: number;
+  completedAt?: number;
+  baselineFinishReason?: string;
+  results: GenerationContaminationProbeResult[];
+}
+
 export interface GenerationDiagnostics {
   model?: string;
   stream?: boolean;
@@ -920,6 +954,7 @@ export interface GenerationDiagnostics {
   promptDiagnostics?: unknown;
   chatDiagnostics?: unknown;
   parsingDiagnostics?: unknown;
+  contaminationDiagnostics?: GenerationContaminationDiagnostics;
 }
 
 // ===== 生成結果 =====

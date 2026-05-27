@@ -114,6 +114,24 @@ const diagnosticRows = computed(() => {
   if (d.roleAdjustments?.length) rows.push({ label: "Role 轉換", value: d.roleAdjustments.map((r) => `${r.reason}: ${r.before}->${r.after}`).join("; "), warning: true });
   if (typeof d.chunkCount === "number") rows.push({ label: "串流 chunks", value: String(d.chunkCount) });
   if (typeof d.totalBytes === "number") rows.push({ label: "串流 bytes", value: d.totalBytes.toLocaleString() });
+  if (d.contaminationDiagnostics) {
+    const probe = d.contaminationDiagnostics;
+    const activeResults = probe.results.filter((result) => result.status !== "skipped");
+    const okResults = activeResults.filter((result) => result.status === "ok");
+    const filteredResults = activeResults.filter((result) => result.status === "filtered");
+    rows.push({
+      label: "污染探針",
+      value: `${activeResults.length}/${probe.results.length} 完成，ok=${okResults.length} filtered=${filteredResults.length}`,
+      warning: true,
+    });
+    if (okResults.length > 0) {
+      rows.push({
+        label: "疑似污染位置",
+        value: okResults.map((result) => result.label).join("、"),
+        warning: true,
+      });
+    }
+  }
   return rows;
 });
 

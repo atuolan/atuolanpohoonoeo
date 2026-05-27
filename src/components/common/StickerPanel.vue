@@ -503,6 +503,7 @@ onMounted(() => {
             class="sticker-img"
             draggable="false"
             referrerpolicy="no-referrer"
+            @contextmenu.prevent
             @error="onImageError"
           />
           <!-- 系統 emoji -->
@@ -904,6 +905,8 @@ onMounted(() => {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+  -webkit-touch-callout: none;
+  pointer-events: none;
 }
 
 .emoji-char {
