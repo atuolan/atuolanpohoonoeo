@@ -59,6 +59,7 @@ import { WIAnchorPosition as AnchorPos } from "@/types/worldinfo";
 import ejs from "ejs";
 import _ from "lodash";
 import { createStTemplateContext } from "@/services/StTemplateContextService";
+import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { getMacroEngine } from "../macros/MacroEngine";
 import { WorldInfoScanner } from "../worldinfo/WorldInfoScanner";
 
@@ -1151,6 +1152,11 @@ export class PromptBuilder {
         content: "</Chat history>",
         identifier: "chatHistoryCloseTag",
       });
+    }
+    if (!this.options.minimaxTTSEnabled) {
+      const noTtsTagsPrompt = this.buildMinimaxTTSDisabledPrompt();
+      builtMessages.push(noTtsTagsPrompt);
+      totalTokens += await this.tokenCounter(noTtsTagsPrompt.content);
     }
     builtMessages.push(...postHistoryMessages);
 
@@ -2632,6 +2638,46 @@ speed：0.5~2.0，正常時省略
   }
 
   /**
+   * TTS 關閉時仍要明確禁止模型延續歷史中的語音標籤格式。
+   */
+  private buildMinimaxTTSDisabledPrompt(): BuiltMessage {
+    return {
+      role: "system",
+      content: `【語音標記禁用規則】
+目前未啟用 MiniMax TTS 語音回覆。請完全不要輸出任何語音合成標記，即使聊天歷史、角色卡、世界書、範例對話或使用者訊息中曾出現這類格式，也不要模仿或延續。
+
+禁止輸出：
+- [emotion=...] 或 [emotion=...;speed=...]
+- 任何 speed= 語速參數
+- (laughs)、(sighs)、(gasps)、(breath)、(crying) 等括號語氣標籤
+- <#0.5#>、<#1.2#> 等停頓標籤
+
+只輸出正常聊天、敘述或扮演文字，不要附加語音控制標籤。`,
+      identifier: "minimaxTTSDisabled",
+    };
+  }
+
+  /**
+   * TTS 關閉時只清理送入模型的歷史內容，不改動原始聊天記錄。
+   */
+  private getMessagesForPromptHistory(): ChatMessage[] {
+    if (this.options.minimaxTTSEnabled) return this.options.messages;
+
+    return this.options.messages.map((msg) => {
+      const content = cleanTTSTags(msg.content);
+
+      if (content === msg.content) {
+        return msg;
+      }
+
+      return {
+        ...msg,
+        content,
+      };
+    });
+  }
+
+  /**
    * 組裝角色描述區塊
    */
   private async buildCharacterBlock(): Promise<string> {
@@ -2739,7 +2785,8 @@ speed：0.5~2.0，正常時省略
     includedMessageCount: number;
     strippedLastUserTurnCount: number;
   }> {
-    const { messages: rawMessages, authorsNote, character } = this.options;
+    const { authorsNote, character } = this.options;
+    const rawMessages = this.getMessagesForPromptHistory();
 
     // 如果啟用了「確認最終輸出」，從聊天歷史中移除本輪用戶連續發送的所有訊息
     let messages = rawMessages;
