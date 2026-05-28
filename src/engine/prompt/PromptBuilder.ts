@@ -1153,11 +1153,6 @@ export class PromptBuilder {
         identifier: "chatHistoryCloseTag",
       });
     }
-    if (!this.options.minimaxTTSEnabled) {
-      const noTtsTagsPrompt = this.buildMinimaxTTSDisabledPrompt();
-      builtMessages.push(noTtsTagsPrompt);
-      totalTokens += await this.tokenCounter(noTtsTagsPrompt.content);
-    }
     builtMessages.push(...postHistoryMessages);
 
     // 🐛 調試：檢查各部分的消息數量
@@ -2634,26 +2629,6 @@ speed：0.5~2.0，正常時省略
       role: "system",
       content,
       identifier: "minimaxTTS",
-    };
-  }
-
-  /**
-   * TTS 關閉時仍要明確禁止模型延續歷史中的語音標籤格式。
-   */
-  private buildMinimaxTTSDisabledPrompt(): BuiltMessage {
-    return {
-      role: "system",
-      content: `【語音標記禁用規則】
-目前未啟用 MiniMax TTS 語音回覆。請完全不要輸出任何語音合成標記，即使聊天歷史、角色卡、世界書、範例對話或使用者訊息中曾出現這類格式，也不要模仿或延續。
-
-禁止輸出：
-- [emotion=...] 或 [emotion=...;speed=...]
-- 任何 speed= 語速參數
-- (laughs)、(sighs)、(gasps)、(breath)、(crying) 等括號語氣標籤
-- <#0.5#>、<#1.2#> 等停頓標籤
-
-只輸出正常聊天、敘述或扮演文字，不要附加語音控制標籤。`,
-      identifier: "minimaxTTSDisabled",
     };
   }
 
