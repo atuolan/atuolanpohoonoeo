@@ -14126,7 +14126,8 @@ onUnmounted(() => {
 
 // 訊息列表
 .messages-container {
-  flex: 1;
+  flex: 1 1 0;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
@@ -14148,6 +14149,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 12px;
   min-height: 100%;
+  min-width: 0;
 }
 
 // 載入更多歷史訊息
