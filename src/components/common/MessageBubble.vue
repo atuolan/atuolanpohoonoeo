@@ -3877,16 +3877,20 @@ const showTextVoiceTranscript = ref(true);
           </div>
 
           <!-- HTML 區塊：完整文件 / style / script 走 sandbox iframe，避免污染主 DOM。 -->
-          <iframe
+          <div
             v-else-if="isHtmlBlock && htmlBlockSrcdoc"
-            ref="htmlBlockIframeRef"
-            :srcdoc="htmlBlockSrcdoc"
-            class="html-block-iframe"
-            :style="{ height: htmlBlockIframeHeight + 'px' }"
-            sandbox="allow-scripts"
-            frameborder="0"
-            scrolling="no"
-          ></iframe>
+            class="html-iframe-scroll"
+          >
+            <iframe
+              ref="htmlBlockIframeRef"
+              :srcdoc="htmlBlockSrcdoc"
+              class="html-block-iframe"
+              :style="{ height: htmlBlockIframeHeight + 'px' }"
+              sandbox="allow-scripts"
+              frameborder="0"
+              scrolling="no"
+            ></iframe>
+          </div>
           <!-- 簡單 HTML 片段才走 Shadow DOM 卡片。 -->
           <div
             v-else-if="isHtmlBlock && htmlBlockInlineCard"
@@ -3947,16 +3951,17 @@ const showTextVoiceTranscript = ref(true);
             <!-- 純文字訊息 -->
             <template v-else-if="!isStreaming">
               <!-- regex 產生的完整 HTML：用 iframe 渲染（script 才能執行） -->
-              <iframe
-                v-if="regexHtmlDoc"
-                ref="regexIframeRef"
-                :srcdoc="regexHtmlDoc"
-                class="regex-html-iframe"
-                :style="{ height: regexIframeHeight + 'px' }"
-                sandbox="allow-scripts"
-                frameborder="0"
-                scrolling="no"
-              ></iframe>
+              <div v-if="regexHtmlDoc" class="html-iframe-scroll">
+                <iframe
+                  ref="regexIframeRef"
+                  :srcdoc="regexHtmlDoc"
+                  class="regex-html-iframe"
+                  :style="{ height: regexIframeHeight + 'px' }"
+                  sandbox="allow-scripts"
+                  frameborder="0"
+                  scrolling="no"
+                ></iframe>
+              </div>
               <div
                 v-if="!regexHtmlDoc || renderedContent"
                 class="bubble-text"
@@ -4369,14 +4374,22 @@ const showTextVoiceTranscript = ref(true);
 .regex-html-iframe {
   width: 100%;
   max-width: 100%;
-  max-height: min(52vh, 420px);
   min-width: 0;
   display: block;
   border: none;
   border-radius: 0;
   background: transparent;
+}
+
+.html-iframe-scroll {
+  width: 100%;
+  max-width: 100%;
+  max-height: min(52vh, 420px);
+  min-width: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 0;
 }
 
 .html-block-wrapper {
@@ -4392,14 +4405,11 @@ const showTextVoiceTranscript = ref(true);
 .html-block-iframe {
   width: 100%;
   max-width: 100%;
-  max-height: min(52vh, 420px);
   min-width: 0;
   display: block;
   border: none;
   border-radius: 0;
   background: transparent;
-  overflow: auto;
-  overscroll-behavior: contain;
 }
 
 .message-wrapper {
@@ -4434,7 +4444,6 @@ const showTextVoiceTranscript = ref(true);
       width: 100% !important;
       max-width: 100% !important;
       max-height: min(58vh, 460px);
-      overflow: auto;
       overscroll-behavior: contain;
       margin: 0 auto;
     }
