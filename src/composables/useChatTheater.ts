@@ -23,6 +23,7 @@ export function useChatTheater(deps: {
   saveChat: () => void;
   saveChatImmediate: () => Promise<void>;
   switchChatFile: (chatId: string) => Promise<void>;
+  setFaceToFaceMode: (enabled: boolean) => void | Promise<void>;
   triggerAIResponse: (opts?: { theaterNudge?: boolean; theaterPhoneScript?: boolean }) => Promise<void>;
 }) {
   const showSmallTheaterModal = ref(false);
@@ -34,6 +35,7 @@ export function useChatTheater(deps: {
   const theaterInheritHistory = ref(false);
   const theaterInheritSummary = ref(false);
   const theaterNewChatFile = ref(false);
+  const theaterFaceToFaceMode = ref(true);
   const theaterPhoneScript = ref(false);
   const theaterForwardedMessages = ref<
     Array<{
@@ -51,9 +53,15 @@ export function useChatTheater(deps: {
     theaterInheritHistory.value = false;
     theaterInheritSummary.value = false;
     theaterNewChatFile.value = false;
+    theaterFaceToFaceMode.value = true;
     theaterPhoneScript.value = false;
     theaterForwardedMessages.value = [];
     showSmallTheaterModal.value = true;
+  }
+
+  async function applyTheaterFaceToFaceMode() {
+    if (!theaterFaceToFaceMode.value) return;
+    await deps.setFaceToFaceMode(true);
   }
 
   // 步驟1：用戶選擇是否開啟分支
@@ -175,6 +183,9 @@ export function useChatTheater(deps: {
           messages: [],
           createdAt: now,
           updatedAt: now,
+          faceToFaceMode: theaterFaceToFaceMode.value
+            ? true
+            : chatData.faceToFaceMode,
           isBranch: true,
         };
         await createChatRecord(newChat);
@@ -252,6 +263,7 @@ export function useChatTheater(deps: {
           deps.messages.value.push(msg as any);
         }
         deps.scrollToBottom();
+        await applyTheaterFaceToFaceMode();
         await deps.saveChatImmediate();
         smallTheaterInput.value = "";
         await deps.triggerAIResponse({ theaterNudge: true, theaterPhoneScript: theaterPhoneScript.value });
@@ -260,6 +272,7 @@ export function useChatTheater(deps: {
 
       smallTheaterInput.value = "";
       await deps.switchChatFile(targetChatId);
+      await applyTheaterFaceToFaceMode();
       await deps.triggerAIResponse({ theaterNudge: true, theaterPhoneScript: theaterPhoneScript.value });
     } else {
       const smallTheaterMessage = {
@@ -270,6 +283,7 @@ export function useChatTheater(deps: {
       };
       deps.messages.value.push(smallTheaterMessage);
       deps.scrollToBottom();
+      await applyTheaterFaceToFaceMode();
       await deps.saveChatImmediate();
       await deps.triggerAIResponse({ theaterNudge: true, theaterPhoneScript: theaterPhoneScript.value });
     }
@@ -290,6 +304,7 @@ export function useChatTheater(deps: {
     theaterInheritHistory,
     theaterInheritSummary,
     theaterNewChatFile,
+    theaterFaceToFaceMode,
     theaterPhoneScript,
     theaterForwardedMessages,
     openTheater,

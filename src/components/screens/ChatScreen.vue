@@ -1443,6 +1443,7 @@ const {
   theaterInheritHistory,
   theaterInheritSummary,
   theaterNewChatFile,
+  theaterFaceToFaceMode,
   theaterPhoneScript,
   theaterForwardedMessages,
   openTheater,
@@ -1465,6 +1466,9 @@ const {
   saveChat,
   saveChatImmediate,
   switchChatFile,
+  setFaceToFaceMode: (enabled: boolean) => {
+    chatFaceToFaceMode.value = enabled;
+  },
   triggerAIResponse,
 });
 
@@ -11416,6 +11420,21 @@ onUnmounted(() => {
                 placeholder="例如：在平行世界裡，他們一起去海邊散步..."
               ></textarea>
               <div class="theater-options" style="margin-top: 8px;">
+                <label class="theater-option-row">
+                  <div class="option-info">
+                    <span class="option-label">開啟面對面</span>
+                    <span class="option-hint"
+                      >開始小劇場前自動切到面對面模式，避免輸出混用線上聊天格式</span
+                    >
+                  </div>
+                  <div
+                    class="toggle-switch"
+                    :class="{ active: theaterFaceToFaceMode }"
+                    @click="theaterFaceToFaceMode = !theaterFaceToFaceMode"
+                  >
+                    <div class="toggle-thumb"></div>
+                  </div>
+                </label>
                 <label class="theater-option-row">
                   <div class="option-info">
                     <span class="option-label">小手機劇本格式</span>
