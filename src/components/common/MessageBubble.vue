@@ -4398,31 +4398,37 @@ const showTextVoiceTranscript = ref(true);
 .regex-html-iframe {
   width: 100%;
   max-width: 100%;
+  max-height: min(52vh, 420px);
   min-width: 0;
   display: block;
   border: none;
   border-radius: 0;
   background: transparent;
-  overflow: hidden;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .html-block-wrapper {
   width: 100%;
   max-width: 100%;
+  max-height: min(52vh, 420px);
   min-width: 0;
-  overflow: hidden;
+  overflow: auto;
+  overscroll-behavior: contain;
   border-radius: 0;
 }
 
 .html-block-iframe {
   width: 100%;
   max-width: 100%;
+  max-height: min(52vh, 420px);
   min-width: 0;
   display: block;
   border: none;
   border-radius: 0;
   background: transparent;
-  overflow: hidden;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .message-wrapper {
@@ -4456,6 +4462,9 @@ const showTextVoiceTranscript = ref(true);
     .bubble {
       width: 100% !important;
       max-width: 100% !important;
+      max-height: min(58vh, 460px);
+      overflow: auto;
+      overscroll-behavior: contain;
       margin: 0 auto;
     }
   }

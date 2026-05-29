@@ -39,8 +39,8 @@ export class AguaInlineCard extends HTMLElement {
       // 預設允許卡片自帶捲動：過寬時水平捲動，過高時垂直捲動。
       // 避免無限撐高聊天氣泡；可用 max-height / overflow 屬性覆蓋。
       // - max-height 優先讀 attribute（host 可寫 <aguaphone-inline-card max-height="320px">）
-      // - 若 attribute 未指定，fallback 到 60vh
-      const maxH = this.getAttribute("max-height") ?? "60vh";
+      // - 若 attribute 未指定，fallback 到不超過半屏，避免長 HTML 卡片把輸入區擠出視窗
+      const maxH = this.getAttribute("max-height") ?? "min(52vh, 420px)";
       const overflowAttr = this.getAttribute("overflow") ?? "auto";
       base.textContent = `
         :host {
@@ -52,6 +52,7 @@ export class AguaInlineCard extends HTMLElement {
           box-sizing: border-box;
           text-align: center; /* 兜底：行內 / inline-block 元素也置中 */
           -webkit-overflow-scrolling: touch;
+          overscroll-behavior: contain;
         }
         :host([hidden]) { display: none; }
         /* 模板的 <html>/<body> 會被 HTML parser 剝掉，body{} CSS 失效。
