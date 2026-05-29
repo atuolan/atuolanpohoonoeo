@@ -2181,9 +2181,9 @@ function handleRegenerateImage() {
 }
 
 // 是否顯示「重新生成圖片」按鈕
-// 條件：descriptive-image、非串流中、NovelAI 文生圖已啟用且有 API Key、且有英文 prompt 可重試
+// 條件：AI 文生圖訊息、非串流中、NovelAI 文生圖已啟用且有 API Key、且有英文 prompt 可重試
 const canRegenerateImage = computed(() => {
-  if (props.messageType !== "descriptive-image") return false;
+  if (!["descriptive-image", "image", "image-url"].includes(props.messageType || "")) return false;
   if (props.isStreaming) return false;
   if (!settingsStore.novelAIImage?.enabled) return false;
   if (!settingsStore.novelAIImage?.apiKey) return false;
@@ -4339,6 +4339,8 @@ const showTextVoiceTranscript = ref(true);
     :image-url="resolvedImageUrl"
     :caption="imageCaption"
     :date="formattedPhotoDate"
+    :can-regenerate="canRegenerateImage"
+    @regenerate="handleRegenerateImage"
     @update:visible="showPhotoPreview = $event"
   />
 

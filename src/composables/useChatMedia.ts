@@ -266,6 +266,7 @@ export function useChatMedia(deps: {
             imageUrl: `data:image/png;base64,${result.imageBase64}`,
             imageData: result.imageBase64,
             imageMimeType: "image/png",
+            imagePrompt,
             isStreaming: false,
           };
         } else {
@@ -366,10 +367,12 @@ export function useChatMedia(deps: {
           deps.messages.value[msgIndex] = {
             ...deps.messages.value[msgIndex],
             content: `[AI 生成] ${prompt}`,
+            messageType: "image",
             imageUrl: `data:image/png;base64,${result.imageBase64}`,
             imageData: result.imageBase64,
             imageMimeType: "image/png",
             imageCaption: prompt,
+            imagePrompt: prompt,
           };
         }
         deps.saveChat();

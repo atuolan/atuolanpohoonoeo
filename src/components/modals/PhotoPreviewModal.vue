@@ -12,15 +12,30 @@
               <path d="M18 6L6 18M6 6l12 12" stroke-width="2" />
             </svg>
           </button>
-          <button class="photo-preview-download" @click="downloadPhoto">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path
-                d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"
-                stroke-width="2"
-              />
-            </svg>
-            <span>下載</span>
-          </button>
+          <div class="photo-preview-actions">
+            <button
+              v-if="canRegenerate"
+              class="photo-preview-regenerate"
+              @click.stop="regeneratePhoto"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path
+                  d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
+                  stroke-width="2"
+                />
+              </svg>
+              <span>重生</span>
+            </button>
+            <button class="photo-preview-download" @click.stop="downloadPhoto">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path
+                  d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"
+                  stroke-width="2"
+                />
+              </svg>
+              <span>下載</span>
+            </button>
+          </div>
         </div>
 
         <div class="photo-preview-content">
@@ -49,11 +64,13 @@ interface Props {
   imageUrl: string;
   caption?: string;
   date?: string;
+  canRegenerate?: boolean;
 }
 
 const props = defineProps<Props>();
 const emit = defineEmits<{
   (e: "update:visible", value: boolean): void;
+  (e: "regenerate"): void;
 }>();
 
 const isVisible = ref(props.visible);
@@ -96,6 +113,11 @@ const downloadPhoto = async () => {
     console.error("下載照片失敗:", error);
   }
 };
+
+const regeneratePhoto = () => {
+  emit("regenerate");
+  close();
+};
 </script>
 
 <style scoped lang="scss">
@@ -130,6 +152,7 @@ const downloadPhoto = async () => {
 }
 
 .photo-preview-close,
+.photo-preview-regenerate,
 .photo-preview-download {
   display: flex;
   align-items: center;
@@ -153,6 +176,12 @@ const downloadPhoto = async () => {
     transform: scale(0.95);
     background: rgba(255, 255, 255, 0.2);
   }
+}
+
+.photo-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .photo-preview-content {

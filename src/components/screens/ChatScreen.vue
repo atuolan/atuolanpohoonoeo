@@ -4187,11 +4187,11 @@ function handleMessageSwipe(id: string, direction: "prev" | "next") {
   saveChat();
 }
 
-// 重新生成文生圖（descriptive-image 失敗後的單張重試）
+// 重新生成文生圖（支援失敗後的描述卡，以及已成功生成的圖片）
 async function handleRegenerateImage(id: string) {
   const msg = messages.value.find((m) => m.id === id);
   if (!msg) return;
-  if (msg.messageType !== "descriptive-image") return;
+  if (!["descriptive-image", "image", "image-url"].includes(msg.messageType || "")) return;
   if (msg.isStreaming) return;
 
   const prompt = msg.imagePrompt?.trim();
