@@ -895,16 +895,62 @@ function isRenderableHtmlFragment(content: string): boolean {
 }
 
 function shouldRenderAsRawHtml(content: string): boolean {
+  return shouldIsolateHtmlContent(content);
+}
+
+function stripHtmlFenceSource(source: string): string {
+  const trimmed = source.trim();
+  const fenceMatch = trimmed.match(/^```(?:html)?\s*\n?([\s\S]*?)\n?```$/i);
+  return fenceMatch ? fenceMatch[1].trim() : trimmed;
+}
+
+function shouldUseSandboxIframe(content: string): boolean {
+  const trimmed = stripHtmlFenceSource(content);
+  if (!trimmed) return false;
+  return (
+    startsWithHtmlFence(content) ||
+    /^\s*<!DOCTYPE\s/i.test(trimmed) ||
+    /^\s*<html[\s>]/i.test(trimmed) ||
+    /<body[\s>]/i.test(trimmed) ||
+    /<style[\s>]/i.test(trimmed) ||
+    /<script[\s>]/i.test(trimmed)
+  );
+}
+
+function shouldIsolateHtmlContent(content: string): boolean {
   const trimmed = content.trim();
-  // <aguaphone-inline-card>：模板引擎 inline 模式输出的自訂元素，不受長度門檻限制
+  if (!trimmed) return false;
+  if (startsWithHtmlFence(trimmed)) return true;
   if (/<aguaphone-inline-card[\s>]/i.test(trimmed)) return true;
+  if (shouldUseSandboxIframe(trimmed)) return true;
+  if (!isRenderableHtmlFragment(trimmed)) return false;
   return (
     trimmed.length > 200 &&
-    isRenderableHtmlFragment(trimmed) &&
-    (/<style[\s>]/i.test(trimmed) ||
-      /<details[\s>]/i.test(trimmed) ||
-      /<div[\s>]/i.test(trimmed))
+    /<(div|section|article|main|details|table|iframe|canvas|svg)\b/i.test(trimmed)
   );
+}
+
+function escapeHtmlText(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderIsolatedHtmlContent(content: string): string {
+  const html = stripHtmlFenceSource(content);
+  if (shouldUseSandboxIframe(content)) {
+    regexHtmlDoc.value = injectIframeHeightScript(html);
+    regexInlineHtml.value = "";
+    return "";
+  }
+
+  const wrapped = wrapAsShadowCard(html);
+  regexHtmlDoc.value = "";
+  regexInlineHtml.value = wrapped;
+  return wrapped;
 }
 
 function getInlineHtmlScopeClass(messageId?: string): string {
@@ -1054,17 +1100,18 @@ function splitContentSegments(source: string): ContentSegment[] {
   return segments;
 }
 
-// HTML 區塊的 iframe srcdoc（保留給顯式 iframe 模式用；Shadow DOM 路徑已不依賴此 computed）
+// HTML 區塊的 iframe srcdoc：含 style/script/完整文件時必須離開主 DOM。
 const htmlBlockSrcdoc = computed(() => {
   if (!props.isHtmlBlock || !props.htmlContent) return "";
+  if (!shouldUseSandboxIframe(props.htmlContent)) return "";
   return injectIframeHeightScript(props.htmlContent);
 });
 
 // ★ isHtmlBlock 舊訊息：歷史上由 _emitSplitSegments 拆分出的獨立 HTML bubble。
-// 現在統一走 Shadow DOM，不再新建此類 bubble；但資料庫中舊訊息仍可能帶 isHtmlBlock=true，
-// 這裡把它也包進 <aguaphone-inline-card> 走 inline 路徑，避免回退到 iframe。
+// 只有不含完整文件/style/script 的片段才用 Shadow DOM card；可疑 HTML 走 sandbox iframe。
 const htmlBlockInlineCard = computed(() => {
   if (!props.isHtmlBlock || !props.htmlContent) return "";
+  if (shouldUseSandboxIframe(props.htmlContent)) return "";
   return wrapAsShadowCard(props.htmlContent);
 });
 
@@ -1085,19 +1132,7 @@ const isHtmlOnlyBubble = computed(() => {
 
   // 4) 原始 props 內容直接含 HTML 特徵（無 regex 參與的情況）
   const raw = (props.content || "").trim();
-  if (!raw) return false;
-  if (/<aguaphone-inline-card[\s>]/i.test(raw)) return true;
-  if (/^<!doctype\s+html/i.test(raw) || /^<html[\s>]/i.test(raw)) return true;
-  if (
-    raw.length > 200 &&
-    /<style[\s>]/i.test(raw) &&
-    (/<div[\s>]/i.test(raw) || /<details[\s>]/i.test(raw))
-  ) {
-    return true;
-  }
-  if (/^```(?:html)?\s*\n[\s\S]*<[a-z][\s\S]*?```/i.test(raw)) return true;
-
-  return false;
+  return shouldIsolateHtmlContent(raw);
 });
 
 function replaceDisplayMacros(text: string): string {
@@ -1128,8 +1163,8 @@ const renderedContent = computed(() => {
   // 使用局部變數追蹤寫入內容，避免 computed 讀取自身寫過的 ref 造成自依賴循環
   // (Vue 3 偵測到這種模式會拋出 "Maximum recursive updates exceeded")
   let localInlineHtml = "";
-  let localHtmlDoc = "";
   regexInlineHtml.value = "";
+  regexHtmlDoc.value = "";
   hideSplitSourceBubble.value = false;
 
   // 如果是真實圖片或圖片URL類型，不進行拍立得渲染
@@ -1169,6 +1204,10 @@ const renderedContent = computed(() => {
       html = cleanTTSTags(html);
     }
 
+    if (!props.isHtmlBlock && shouldIsolateHtmlContent(html)) {
+      return renderIsolatedHtmlContent(html);
+    }
+
     if (!props.isHtmlBlock) {
       const segments = splitContentSegments(html);
       const htmlSegmentsExist = segments.some((s) => s.type === "html");
@@ -1176,7 +1215,6 @@ const renderedContent = computed(() => {
         // ★ 用戶偏好「分裂成獨立 bubble」：文字段留在源氣泡，HTML 段 emit 為新氣泡（isHtmlBlock=true）。
         // 新氣泡走 htmlBlockInlineCard computed → Shadow DOM（不是 iframe）。
         _emitSplitSegments(segments.map((s) => ({ type: s.type, content: s.content })));
-        localHtmlDoc = "";
         regexHtmlDoc.value = "";
         hideSplitSourceBubble.value = true;
         return "";
@@ -1224,30 +1262,14 @@ const renderedContent = computed(() => {
         const fenceContent = htmlFenceMatch[1].trim();
         if (isRenderableHtmlFragment(fenceContent)) {
           // ``` html ``` fence → 包進 Shadow DOM 卡片（取代舊 iframe）
-          const wrapped = wrapAsShadowCard(fenceContent);
-          localHtmlDoc = "";
-          regexHtmlDoc.value = "";
-          localInlineHtml = wrapped;
-          regexInlineHtml.value = wrapped;
-          return wrapped;
+          return renderIsolatedHtmlContent(fenceContent);
         }
       }
     }
 
     // ★ 偵測裸露的 HTML 片段（含 <style> 標籤但沒有 fence 包裹的大型 HTML 區塊）→ Shadow DOM 卡片
-    if (!props.isHtmlBlock && !localHtmlDoc && !localInlineHtml) {
-      if (
-        html.length > 200 &&
-        /<style[\s>]/i.test(html) &&
-        /<div[\s>]/i.test(html)
-      ) {
-        const wrapped = wrapAsShadowCard(html);
-        localHtmlDoc = "";
-        regexHtmlDoc.value = "";
-        localInlineHtml = wrapped;
-        regexInlineHtml.value = wrapped;
-        return wrapped;
-      }
+    if (!props.isHtmlBlock && !localInlineHtml && shouldIsolateHtmlContent(html)) {
+      return renderIsolatedHtmlContent(html);
     }
 
     // 移除轉帳相關標籤（這些會由 PixelTransferCard 組件單獨渲染）
@@ -1428,7 +1450,6 @@ const renderedContent = computed(() => {
         // ★ 用戶偏好「分裂成獨立 bubble」：文字段留在源氣泡，HTML 段 emit 為新氣泡（isHtmlBlock=true）。
         // 新氣泡走 htmlBlockInlineCard computed → Shadow DOM（不是 iframe）。
         _emitSplitSegments(segments.map((s) => ({ type: s.type, content: s.content })));
-        localHtmlDoc = "";
         regexHtmlDoc.value = "";
         hideSplitSourceBubble.value = true;
         return "";
@@ -1438,75 +1459,15 @@ const renderedContent = computed(() => {
       //   必須在 shouldRenderAsRawHtml 之前，否則整篇會被誤判為純 HTML 塞進 iframe
       const rawHtmlFragment = extractRawHtmlFragment(processedContent);
       if (rawHtmlFragment) {
-        // ★ 模板引擎 inline 模式产出的 <aguaphone-inline-card>：
-        // 本元素本身會在 connectedCallback 里把子節點（含 <style>）搬進 shadow root，
-        // 所以此處不走 iframe、也不走 scopeInlineHtmlStyles 前綴化（前綴會破壞 shadow 內選擇器）。
-        const isShadowCard = /<aguaphone-inline-card[\s>]/i.test(rawHtmlFragment.htmlContent);
-        if (isShadowCard) {
-          if (rawHtmlFragment.remainingText) {
-            localHtmlDoc = "";
-            regexHtmlDoc.value = "";
-            localInlineHtml = rawHtmlFragment.htmlContent;
-            regexInlineHtml.value = rawHtmlFragment.htmlContent;
-            processedContent = rawHtmlFragment.remainingText;
-          } else {
-            localInlineHtml = rawHtmlFragment.htmlContent;
-            regexInlineHtml.value = rawHtmlFragment.htmlContent;
-            return rawHtmlFragment.htmlContent;
-          }
+        const isolated = renderIsolatedHtmlContent(rawHtmlFragment.htmlContent);
+        localInlineHtml = isolated;
+        if (rawHtmlFragment.remainingText) {
+          processedContent = rawHtmlFragment.remainingText;
         } else {
-        // ★ 含 <style> 的複雜 HTML 片段（傳統 ST 正則 replaceString / AI 直吐含 <style>）：
-        //   自動包進 <aguaphone-inline-card> 走 Shadow DOM，取代舊的 iframe 路徑。
-        //   - 不再需要 iframe ↔ 父頁雙向同步高度（之前的死循環來源）
-        //   - 不再有手機端 iframe 寬度裁切問題
-        //   - <style> 隨子節點進入 shadow root，僅作用於本片段
-        //   只有顯式 ```html``` fence（splitContentSegments 處理）仍走 iframe，視作明確意圖。
-        const hasStyleBlock = /<style[\s>]/i.test(rawHtmlFragment.htmlContent);
-        if (hasStyleBlock) {
-          const wrapped = `<aguaphone-inline-card>${rawHtmlFragment.htmlContent}</aguaphone-inline-card>`;
-          if (rawHtmlFragment.remainingText) {
-            localHtmlDoc = "";
-            regexHtmlDoc.value = "";
-            localInlineHtml = wrapped;
-            regexInlineHtml.value = wrapped;
-            processedContent = rawHtmlFragment.remainingText;
-          } else {
-            localHtmlDoc = "";
-            regexHtmlDoc.value = "";
-            localInlineHtml = wrapped;
-            regexInlineHtml.value = wrapped;
-            return wrapped;
-          }
-        } else {
-          const inlineScopedHtml = scopeInlineHtmlStyles(
-            rawHtmlFragment.htmlContent,
-            getInlineHtmlScopeClass(props.id),
-          );
-          if (rawHtmlFragment.remainingText) {
-            localHtmlDoc = "";
-            regexHtmlDoc.value = "";
-            localInlineHtml = inlineScopedHtml;
-            regexInlineHtml.value = inlineScopedHtml;
-            processedContent = rawHtmlFragment.remainingText;
-          } else {
-            localInlineHtml = inlineScopedHtml;
-            regexInlineHtml.value = inlineScopedHtml;
-            return inlineScopedHtml;
-          }
-        }
+          return isolated;
         }
       } else if (shouldRenderAsRawHtml(stripped)) {
-        // 整篇都是 HTML（沒有混合文字）→ 包進 Shadow DOM 卡片渲染（取代舊的 iframe 路徑）。
-        // 若已含 <aguaphone-inline-card>（template 引擎 inline 模式產出）則不重複包裹。
-        const isAlreadyCard = /<aguaphone-inline-card[\s>]/i.test(stripped);
-        const wrapped = isAlreadyCard
-          ? stripped
-          : `<aguaphone-inline-card>${stripped}</aguaphone-inline-card>`;
-        localHtmlDoc = "";
-        regexHtmlDoc.value = "";
-        localInlineHtml = wrapped;
-        regexInlineHtml.value = wrapped;
-        return wrapped;
+        return renderIsolatedHtmlContent(stripped);
       }
     }
 
@@ -3915,8 +3876,18 @@ const showTextVoiceTranscript = ref(true);
             ></div>
           </div>
 
-          <!-- HTML 區塊：統一走 Shadow DOM 卡片（<aguaphone-inline-card>），
-               取代舊 iframe。自帶 max-height 捲動與樣式隔離，行動端寬度自適應。 -->
+          <!-- HTML 區塊：完整文件 / style / script 走 sandbox iframe，避免污染主 DOM。 -->
+          <iframe
+            v-else-if="isHtmlBlock && htmlBlockSrcdoc"
+            ref="htmlBlockIframeRef"
+            :srcdoc="htmlBlockSrcdoc"
+            class="html-block-iframe"
+            :style="{ height: htmlBlockIframeHeight + 'px' }"
+            sandbox="allow-scripts"
+            frameborder="0"
+            scrolling="no"
+          ></iframe>
+          <!-- 簡單 HTML 片段才走 Shadow DOM 卡片。 -->
           <div
             v-else-if="isHtmlBlock && htmlBlockInlineCard"
             class="html-block-wrapper"

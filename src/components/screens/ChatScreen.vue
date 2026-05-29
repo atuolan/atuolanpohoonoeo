@@ -13075,16 +13075,6 @@ onUnmounted(() => {
     width: 100% !important;
   }
 
-  // HTML 訊息可能很高，限制在訊息列內部捲動，避免把底部輸入區推離畫面
-  :deep(.message-wrapper.html-only .bubble),
-  :deep(.message-wrapper.html-only aguaphone-inline-card),
-  :deep(.message-wrapper.html-only .html-block-wrapper),
-  :deep(.message-wrapper.html-only .regex-html-iframe) {
-    max-height: min(58vh, 460px);
-    overflow: auto;
-    overscroll-behavior: contain;
-  }
-
   // 聊天專屬頭像樣式
   :deep(.soft-avatar) {
     border-radius: var(--avatar-border-radius, 50%);
