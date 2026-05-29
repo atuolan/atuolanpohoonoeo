@@ -2181,13 +2181,14 @@ function handleRegenerateImage() {
 }
 
 // 是否顯示「重新生成圖片」按鈕
-// 條件：AI 文生圖訊息、非串流中、NovelAI 文生圖已啟用且有 API Key、且有英文 prompt 可重試
+// 手機端的 NovelAI 設定可能和桌面端不同步，因此這裡只看訊息本身是否可重生。
+// 真正的 NovelAI 設定檢查留給點擊後的生成流程處理。
 const canRegenerateImage = computed(() => {
-  if (!["descriptive-image", "image", "image-url"].includes(props.messageType || "")) return false;
   if (props.isStreaming) return false;
-  if (!settingsStore.novelAIImage?.enabled) return false;
-  if (!settingsStore.novelAIImage?.apiKey) return false;
-  return !!props.imagePrompt?.trim();
+  const hasRegenerateSource = !!(props.imagePrompt?.trim() || props.imageCaption?.trim());
+  if (!hasRegenerateSource) return false;
+  if (["descriptive-image", "image", "image-url"].includes(props.messageType || "")) return true;
+  return !!props.imageUrl;
 });
 
 function handleReply() {

@@ -283,6 +283,7 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     imageData: m.imageData,
     imageMimeType: m.imageMimeType,
     imageCaption: m.imageCaption,
+    imagePrompt: m.imagePrompt,
     isGift: m.isGift,
     giftName: m.giftName,
     giftReceived: m.giftReceived,

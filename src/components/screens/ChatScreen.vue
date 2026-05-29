@@ -4191,7 +4191,10 @@ function handleMessageSwipe(id: string, direction: "prev" | "next") {
 async function handleRegenerateImage(id: string) {
   const msg = messages.value.find((m) => m.id === id);
   if (!msg) return;
-  if (!["descriptive-image", "image", "image-url"].includes(msg.messageType || "")) return;
+  const isRegenerableImage =
+    ["descriptive-image", "image", "image-url"].includes(msg.messageType || "") ||
+    !!msg.imageUrl;
+  if (!isRegenerableImage) return;
   if (msg.isStreaming) return;
 
   const prompt = msg.imagePrompt?.trim();

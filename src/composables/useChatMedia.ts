@@ -219,8 +219,8 @@ export function useChatMedia(deps: {
       settingsStore.novelAIImage.enabled &&
       settingsStore.novelAIImage.apiKey
     ) {
-      // NovelAI 需要英文 prompt — 若 imagePrompt 為空則跳過
-      if (!imagePrompt?.trim()) return;
+      // 舊資料可能只留下圖片描述，沒有保存英文 prompt；這時退回用描述重生。
+      const novelAIPrompt = imagePrompt?.trim() || effectivePrompt;
 
       deps.messages.value[msgIndex].content =
         `[生成圖片中...] ${deps.messages.value[msgIndex].imageCaption || ""}`;
@@ -248,7 +248,7 @@ export function useChatMedia(deps: {
         );
 
         const result = await Promise.race([
-          generateImage(imagePrompt, settingsStore.novelAIImage, {
+          generateImage(novelAIPrompt, settingsStore.novelAIImage, {
             characterPrompt: getCharacterPrompt(),
             userPrompt: getUserPrompt(),
           }),
@@ -266,7 +266,7 @@ export function useChatMedia(deps: {
             imageUrl: `data:image/png;base64,${result.imageBase64}`,
             imageData: result.imageBase64,
             imageMimeType: "image/png",
-            imagePrompt,
+            imagePrompt: novelAIPrompt,
             isStreaming: false,
           };
         } else {
@@ -280,11 +280,11 @@ export function useChatMedia(deps: {
           const errorMsg = result.error || "未知錯誤";
           if (errorMsg.includes("503")) {
             alert(
-              `NovelAI 圖片生成失敗 (503)\n\n${errorMsg}\n\n提示詞: ${imagePrompt}`,
+              `NovelAI 圖片生成失敗 (503)\n\n${errorMsg}\n\n提示詞: ${novelAIPrompt}`,
             );
           } else {
             alert(
-              `NovelAI 圖片生成失敗\n\n${errorMsg}\n\n提示詞: ${imagePrompt}`,
+              `NovelAI 圖片生成失敗\n\n${errorMsg}\n\n提示詞: ${novelAIPrompt}`,
             );
           }
         }
@@ -303,15 +303,15 @@ export function useChatMedia(deps: {
           error instanceof Error ? error.message : "網絡錯誤或請求超時";
         if (errorMsg.includes("503")) {
           alert(
-            `NovelAI 圖片生成異常 (503)\n\n服務暫時不可用，可能原因：\n1. NovelAI 服務器負載過高\n2. 網絡連接不穩定\n3. API Key 使用頻率過高\n\n建議：\n- 稍後重試（系統已自動重試 3 次）\n- 切換到 WiFi 網絡環境\n- 檢查 API Key 是否有效\n\n提示詞: ${imagePrompt}`,
+            `NovelAI 圖片生成異常 (503)\n\n服務暫時不可用，可能原因：\n1. NovelAI 服務器負載過高\n2. 網絡連接不穩定\n3. API Key 使用頻率過高\n\n建議：\n- 稍後重試（系統已自動重試 3 次）\n- 切換到 WiFi 網絡環境\n- 檢查 API Key 是否有效\n\n提示詞: ${novelAIPrompt}`,
           );
         } else if (errorMsg.includes("超時")) {
           alert(
-            `NovelAI 圖片生成超時\n\n${errorMsg}\n\n建議：\n- 檢查網絡連接\n- 切換到更穩定的網絡環境\n- 稍後重試\n\n提示詞: ${imagePrompt}`,
+            `NovelAI 圖片生成超時\n\n${errorMsg}\n\n建議：\n- 檢查網絡連接\n- 切換到更穩定的網絡環境\n- 稍後重試\n\n提示詞: ${novelAIPrompt}`,
           );
         } else {
           alert(
-            `NovelAI 圖片生成異常\n\n${errorMsg}\n\n提示詞: ${imagePrompt}`,
+            `NovelAI 圖片生成異常\n\n${errorMsg}\n\n提示詞: ${novelAIPrompt}`,
           );
         }
       } finally {
