@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useStickerStore } from "@/stores";
+import { EMOTION_DEFINITIONS, UNCATEGORIZED_EMOTION_ID, DEFAULT_CATEGORY_ID } from "@/data/defaultStickers";
 import {
   compressImage,
   compressionPresets,
@@ -15,7 +16,13 @@ const emit = defineEmits<{
 const stickerStore = useStickerStore();
 
 // 基本設置
-const selectedCategory = ref(stickerStore.customCategories[0]?.id || "");
+const selectedCategory = ref(stickerStore.customCategories.find((c) => c.isDefaultPack)?.id || stickerStore.customCategories[0]?.id || "");
+const selectedEmotion = ref(UNCATEGORIZED_EMOTION_ID);
+const isTargetDefaultPack = computed(() => {
+  const cat = stickerStore.customCategories.find(c => c.id === selectedCategory.value);
+  return cat?.isDefaultPack || cat?.id === DEFAULT_CATEGORY_ID;
+});
+
 const uploadMode = ref<"url" | "txtfile" | "file">("url");
 const autoNaming = ref(true);
 const namePrefix = ref("");
@@ -242,6 +249,7 @@ async function handleBatchUpload() {
         url,
         name,
         keywords: [name],
+        ...(isTargetDefaultPack.value ? { emotion: selectedEmotion.value } : {}),
       });
       addedCount++;
     }
@@ -251,6 +259,7 @@ async function handleBatchUpload() {
         url: sticker.url,
         name: sticker.name,
         keywords: [sticker.name],
+        ...(isTargetDefaultPack.value ? { emotion: selectedEmotion.value } : {}),
       });
       addedCount++;
     }
@@ -268,6 +277,7 @@ async function handleBatchUpload() {
         url: fileItem.base64!,
         name,
         keywords: [],
+        ...(isTargetDefaultPack.value ? { emotion: selectedEmotion.value } : {}),
       });
       addedCount++;
     }
@@ -297,6 +307,19 @@ async function handleBatchUpload() {
               :value="cat.id"
             >
               {{ cat.name }}
+            </option>
+          </select>
+        </div>
+        
+        <div v-if="isTargetDefaultPack" class="form-group" style="margin-top: 12px;">
+          <label>情緒分類</label>
+          <select v-model="selectedEmotion" class="form-control">
+            <option
+              v-for="emotion in EMOTION_DEFINITIONS"
+              :key="emotion.id"
+              :value="emotion.id"
+            >
+              {{ emotion.emoji }} {{ emotion.displayName }}
             </option>
           </select>
         </div>

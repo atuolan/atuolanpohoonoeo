@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { EMOTION_DEFINITIONS } from "@/data/defaultStickers";
 import BatchUploadModal from "@/components/modals/BatchUploadModal.vue";
 import { useStickerStore } from "@/stores";
 import type { StickerItem } from "@/types/sticker";
@@ -15,7 +16,10 @@ const stickerStore = useStickerStore();
 const showBatchModal = ref(false);
 
 // 當前選中的分類
-const activeCategory = ref("smileys");
+const activeCategory = ref("default-pack");
+
+// 當前選中的情緒 (僅「我的表情」)
+const activeEmotion = ref<string>("all");
 
 // 搜索相關
 const showSearch = ref(false);
@@ -32,6 +36,12 @@ const editInput = ref<HTMLInputElement>();
 // 批量刪除
 const batchDeleteMode = ref(false);
 const selectedForDelete = ref<Set<string>>(new Set());
+
+// 編輯情緒
+const editEmotionMode = ref(false);
+const selectedForEmotion = ref<Set<string>>(new Set());
+const showEmotionSheet = ref(false);
+
 const LONG_PRESS_PIN_DELAY = 600;
 const LONG_PRESS_MOVE_THRESHOLD = 10;
 const longPressState = ref<{
@@ -60,12 +70,31 @@ function openBatchUploadModal() {
   showManageMenu.value = false;
 }
 
+// 當前分類是否為預設表情包
+const isCurrentCategoryDefaultPack = computed(() => {
+  const category = stickerStore.allCategories.find(
+    (c) => c.id === activeCategory.value,
+  );
+  return 'isDefaultPack' in (category || {}) ? (category as StickerCategory).isDefaultPack || false : false;
+});
+
 // 當前分類的表情
 const currentStickers = computed(() => {
   const category = stickerStore.allCategories.find(
     (c) => c.id === activeCategory.value,
   );
-  return sortPinnedStickers(category?.stickers || []);
+  let stickers = category?.stickers || [];
+  
+  if (isCurrentCategoryDefaultPack.value && activeEmotion.value !== 'all') {
+    stickers = stickers.filter(s => {
+      if ('emotion' in s) {
+        return (s.emotion || 'uncategorized') === activeEmotion.value;
+      }
+      return false;
+    });
+  }
+  
+  return sortPinnedStickers(stickers);
 });
 
 // 顯示的表情（搜索或普通模式）
@@ -122,7 +151,7 @@ function sortPinnedStickers(stickers: StickerItem[]) {
 }
 
 function canPinSticker(sticker: StickerItem) {
-  return Boolean(sticker.url);
+  return Boolean(sticker && 'url' in sticker && sticker.url);
 }
 
 function clearLongPressTimer() {
@@ -315,6 +344,63 @@ async function confirmBatchDelete() {
   exitBatchDeleteMode();
 }
 
+// 編輯情緒模式
+function openEditEmotionMode() {
+  if (!isCurrentCategoryDefaultPack.value) {
+    showManageMenu.value = false;
+    return;
+  }
+  editEmotionMode.value = true;
+  selectedForEmotion.value = new Set();
+  showManageMenu.value = false;
+}
+
+function exitEditEmotionMode() {
+  editEmotionMode.value = false;
+  selectedForEmotion.value = new Set();
+  showEmotionSheet.value = false;
+}
+
+function toggleSelectForEmotion(stickerId: string) {
+  if (selectedForEmotion.value.has(stickerId)) {
+    selectedForEmotion.value.delete(stickerId);
+  } else {
+    selectedForEmotion.value.add(stickerId);
+  }
+  selectedForEmotion.value = new Set(selectedForEmotion.value);
+}
+
+function selectAllForEmotion() {
+  const currentCategoryStickers = currentStickers.value;
+  if (selectedForEmotion.value.size === currentCategoryStickers.length) {
+    selectedForEmotion.value.clear();
+  } else {
+    currentCategoryStickers.forEach(s => selectedForEmotion.value.add(s.id));
+  }
+  selectedForEmotion.value = new Set(selectedForEmotion.value);
+}
+
+function openEmotionSheet() {
+  if (selectedForEmotion.value.size === 0) return;
+  showEmotionSheet.value = true;
+}
+
+async function confirmMoveEmotion(emotionId: string) {
+  if (selectedForEmotion.value.size === 0) return;
+  
+  for (const stickerId of selectedForEmotion.value) {
+    await stickerStore.moveStickerEmotion(stickerId, emotionId);
+  }
+  
+  exitEditEmotionMode();
+}
+
+// 當 activeCategory 改變時，重置 activeEmotion
+function setActiveCategory(categoryId: string) {
+  activeCategory.value = categoryId;
+  activeEmotion.value = 'all';
+}
+
 // 圖片錯誤處理
 function onImageError(event: Event) {
   const img = event.target as HTMLImageElement;
@@ -360,7 +446,7 @@ onMounted(() => {
         :key="category.id"
         :class="['tab-btn', { active: activeCategory === category.id }]"
         :title="category.name"
-        @click.stop="activeCategory = category.id"
+        @click.stop="setActiveCategory(category.id)"
       >
         <!-- 系統分類用 SVG -->
         <svg
@@ -458,6 +544,27 @@ onMounted(() => {
       </button>
     </div>
 
+    <!-- 情緒標籤 (僅預設表情包且非搜索時顯示) -->
+    <div
+      v-if="isCurrentCategoryDefaultPack && !searchQuery"
+      class="emotion-tabs"
+    >
+      <button
+        :class="['emotion-btn', { active: activeEmotion === 'all' }]"
+        @click.stop="activeEmotion = 'all'"
+      >
+        全部
+      </button>
+      <button
+        v-for="emotion in EMOTION_DEFINITIONS"
+        :key="emotion.id"
+        :class="['emotion-btn', { active: activeEmotion === emotion.id }]"
+        @click.stop="activeEmotion = emotion.id"
+      >
+        {{ emotion.displayName }}
+      </button>
+    </div>
+
     <!-- 批量刪除提示 -->
     <div v-if="batchDeleteMode" class="batch-delete-bar">
       <span>已選擇 {{ selectedForDelete.size }} 個</span>
@@ -474,26 +581,27 @@ onMounted(() => {
     </div>
 
     <!-- 表情網格 -->
-    <div class="sticker-grid">
+    <div class="sticker-grid" :class="{ 'edit-emotion-mode': editEmotionMode }">
       <button
         v-for="sticker in displayStickers"
         :key="sticker.id"
         :class="[
           'sticker-btn',
           {
-            selected: selectedForDelete.has(sticker.id),
+            selected: selectedForDelete.has(sticker.id) || selectedForEmotion.has(sticker.id),
             'delete-mode': batchDeleteMode,
-            pinned: sticker.pinnedAt,
+            'emotion-mode': editEmotionMode,
+            pinned: sticker.pinnedAt && !editEmotionMode,
           },
         ]"
         :title="getStickerTitle(sticker)"
         @contextmenu.prevent
-        @click="selectSticker(sticker)"
-        @pointerdown="startStickerPress(sticker, $event)"
-        @pointermove="moveStickerPress"
-        @pointerup="endStickerPress"
-        @pointerleave="endStickerPress"
-        @pointercancel="endStickerPress"
+        @click="editEmotionMode ? toggleSelectForEmotion(sticker.id) : selectSticker(sticker)"
+        @pointerdown="!editEmotionMode && startStickerPress(sticker, $event)"
+        @pointermove="!editEmotionMode && moveStickerPress($event)"
+        @pointerup="!editEmotionMode && endStickerPress($event)"
+        @pointerleave="!editEmotionMode && endStickerPress($event)"
+        @pointercancel="!editEmotionMode && endStickerPress($event)"
       >
         <div class="sticker-content">
           <!-- 自定義表情（圖片） -->
@@ -510,27 +618,30 @@ onMounted(() => {
           <span v-else class="emoji-char">{{ (sticker as any).char }}</span>
         </div>
 
-        <!-- 表情名稱 -->
-        <span class="sticker-name">{{ sticker.name }}</span>
+        <!-- 表情名稱 (編輯情緒時改為顯示情緒分類) -->
+        <span v-if="editEmotionMode" class="sticker-name emotion-label">
+          {{ EMOTION_DEFINITIONS.find(e => e.id === (sticker.emotion || 'uncategorized'))?.displayName || '未分類' }}
+        </span>
+        <span v-else class="sticker-name">{{ sticker.name }}</span>
 
-        <!-- 批量刪除選擇標記 -->
+        <!-- 多選標記 -->
         <div
-          v-if="batchDeleteMode && selectedForDelete.has(sticker.id)"
+          v-if="(batchDeleteMode && selectedForDelete.has(sticker.id)) || (editEmotionMode && selectedForEmotion.has(sticker.id))"
           class="select-indicator"
         >
           ✓
         </div>
 
-        <div v-if="sticker.pinnedAt && !batchDeleteMode" class="pin-indicator">
+        <div v-if="sticker.pinnedAt && !batchDeleteMode && !editEmotionMode" class="pin-indicator">
           ★
         </div>
 
         <!-- 編輯按鈕 -->
         <button
-          v-if="sticker.url && !batchDeleteMode"
+          v-if="sticker.url && !batchDeleteMode && !editEmotionMode"
           class="edit-btn"
           title="編輯名稱"
-          @click="startEditSticker(sticker, $event)"
+          @click.stop="startEditSticker(sticker, $event)"
         >
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path
@@ -542,7 +653,7 @@ onMounted(() => {
 
       <!-- 添加按鈕 -->
       <button
-        v-if="isCurrentCategoryCustom && !batchDeleteMode && !searchQuery"
+        v-if="isCurrentCategoryCustom && !batchDeleteMode && !editEmotionMode && !searchQuery"
         class="sticker-btn add-sticker-btn"
         title="添加表情"
         @click="openAddModal"
@@ -599,6 +710,14 @@ onMounted(() => {
             />
           </svg>
           批量刪除
+        </button>
+        <button v-if="isCurrentCategoryDefaultPack" @click="openEditEmotionMode">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path
+              d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"
+            />
+          </svg>
+          編輯情緒分類
         </button>
       </div>
     </div>
@@ -687,6 +806,46 @@ onMounted(() => {
       @close="showBatchModal = false"
       @success="onBatchSuccess"
     />
+
+    <!-- 情緒分類編輯提示 -->
+    <div v-if="editEmotionMode" class="batch-delete-bar">
+      <span>已選擇 {{ selectedForEmotion.size }} 個</span>
+      <div class="batch-actions">
+        <button class="btn-small" @click="selectAllForEmotion">全選</button>
+        <button
+          class="btn-small btn-primary"
+          :disabled="selectedForEmotion.size === 0"
+          @click="openEmotionSheet"
+        >
+          移至...
+        </button>
+        <button class="btn-small" @click="exitEditEmotionMode">取消</button>
+      </div>
+    </div>
+
+    <!-- 選擇目標情緒的 Bottom Sheet -->
+    <div
+      v-if="showEmotionSheet"
+      class="modal-overlay emotion-sheet-overlay"
+      @click="showEmotionSheet = false"
+    >
+      <div class="emotion-sheet" @click.stop>
+        <div class="sheet-header">
+          <h3>移動至...</h3>
+        </div>
+        <div class="sheet-body">
+          <button
+            v-for="emotion in EMOTION_DEFINITIONS"
+            :key="emotion.id"
+            class="emotion-target-btn"
+            @click="confirmMoveEmotion(emotion.id)"
+          >
+            <span class="emoji">{{ emotion.emoji }}</span>
+            <span class="name">{{ emotion.displayName }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -792,7 +951,46 @@ onMounted(() => {
   }
 }
 
-// 批量刪除欄
+// 情緒標籤
+.emotion-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--color-border, #f0f0f0);
+  background: var(--color-surface-variant, #fafafa);
+  
+  &::-webkit-scrollbar {
+    height: 0;
+    display: none;
+  }
+
+  .emotion-btn {
+    padding: 6px 12px;
+    border: 1px solid var(--color-border, #e0e0e0);
+    border-radius: 16px;
+    background: var(--color-surface, white);
+    font-size: 13px;
+    color: var(--color-text-secondary, #666);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+
+    &:hover {
+      background: var(--color-background, #f5f5f5);
+      color: var(--color-text, #333);
+    }
+
+    &.active {
+      background: var(--color-primary, #007bff);
+      color: white;
+      border-color: var(--color-primary, #007bff);
+    }
+  }
+}
+
+// 批量操作欄
 .batch-delete-bar {
   padding: 10px 16px;
   background: #fff3cd;
@@ -828,6 +1026,21 @@ onMounted(() => {
 
     &:hover:not(:disabled) {
       background: #cc0000;
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  &.btn-primary {
+    background: var(--color-primary, #007bff);
+    color: white;
+    border-color: var(--color-primary, #007bff);
+
+    &:hover:not(:disabled) {
+      background: var(--color-primary-dark, #0056b3);
     }
 
     &:disabled {

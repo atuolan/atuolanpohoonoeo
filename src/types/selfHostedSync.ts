@@ -42,7 +42,7 @@ export const SELF_HOSTED_SYNC_SCHEMA_VERSIONS = {
   character: 1,
   lorebook: 1,
   prompt_library_item: 1,
-  sticker_category: 1,
+  sticker_category: 2,
   user_data: 1,
   conversation_summary: 1,
   important_events_log: 1,

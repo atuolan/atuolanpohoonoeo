@@ -5,6 +5,7 @@ export interface StickerItem {
   name: string
   url: string
   keywords?: string[]
+  emotion?: string
   isCustom?: boolean
   pinnedAt?: number
 }
@@ -14,6 +15,7 @@ export interface StickerCategory {
   name: string
   icon: string
   isCustom?: boolean
+  isDefaultPack?: boolean
   stickers: StickerItem[]
 }
 

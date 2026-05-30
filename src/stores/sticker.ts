@@ -1,7 +1,9 @@
 // 表情包管理 Store
 import {
+  DEFAULT_CATEGORY_ID,
   DEFAULT_CATEGORY_ICON,
   DEFAULT_CATEGORY_NAME,
+  UNCATEGORIZED_EMOTION_ID,
   defaultStickers,
 } from "@/data/defaultStickers";
 import { emojiCategories } from "@/data/emojis";
@@ -18,6 +20,32 @@ function normalizeStickerLookupName(name: string): string {
   return name.replace(/\u3000/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function isDefaultPackCategory(category: StickerCategory): boolean {
+  return (
+    category.id === DEFAULT_CATEGORY_ID ||
+    category.isDefaultPack === true ||
+    category.name === DEFAULT_CATEGORY_NAME
+  );
+}
+
+function getDefaultStickerEmotion(name: string): string | undefined {
+  return defaultStickers.find((sticker) => sticker.name === name)?.emotion;
+}
+
+function normalizeStickerEmotion(sticker: StickerItem): string {
+  return sticker.emotion || getDefaultStickerEmotion(sticker.name) || UNCATEGORIZED_EMOTION_ID;
+}
+
+function stampDefaultPack(category: StickerCategory) {
+  category.id = DEFAULT_CATEGORY_ID;
+  category.isDefaultPack = true;
+  category.icon = DEFAULT_CATEGORY_ICON;
+  category.stickers = category.stickers.map((sticker) => ({
+    ...sticker,
+    emotion: normalizeStickerEmotion(sticker),
+  }));
+}
+
 export const useStickerStore = defineStore("sticker", () => {
   // 自定義表情分類（從 IndexedDB 載入）
   const customCategories = ref<StickerCategory[]>([]);
@@ -25,7 +53,7 @@ export const useStickerStore = defineStore("sticker", () => {
   // 是否已初始化
   const initialized = ref(false);
 
-  // 所有分類（系統 emoji + 自定義表情）
+  // 所有分類（我的表情固定在最前面，其後為系統 emoji + 其他自定義表情）
   const allCategories = computed(() => {
     // 將系統 emoji 轉換為統一格式
     const systemCategories = emojiCategories.map((cat) => ({
@@ -42,7 +70,16 @@ export const useStickerStore = defineStore("sticker", () => {
       })),
     }));
 
-    return [...systemCategories, ...customCategories.value];
+    const defaultPack = customCategories.value.find(isDefaultPackCategory);
+    const otherCustomCategories = customCategories.value.filter(
+      (category) => category !== defaultPack,
+    );
+
+    return [
+      ...(defaultPack ? [defaultPack] : []),
+      ...systemCategories,
+      ...otherCustomCategories,
+    ];
   });
 
   // 初始化：從 IndexedDB 載入自定義表情
@@ -55,8 +92,8 @@ export const useStickerStore = defineStore("sticker", () => {
 
       if (saved && saved.length > 0) {
         customCategories.value = saved;
-        // 同步默認分類圖標
-        syncDefaultCategoryIcon();
+        // 同步默認分類身份、圖標與舊資料情緒
+        await syncDefaultPackMetadata();
         // 去重：合併同名分類，去除同名表情
         await deduplicateCategories();
         // 同步預設表情（補上新加的預設）
@@ -72,23 +109,26 @@ export const useStickerStore = defineStore("sticker", () => {
     }
   }
 
-  // 同步默認分類的圖標
-  function syncDefaultCategoryIcon() {
-    const defaultCategory = customCategories.value.find(
-      (c) => c.name === DEFAULT_CATEGORY_NAME,
-    );
-    if (defaultCategory && defaultCategory.icon !== DEFAULT_CATEGORY_ICON) {
-      defaultCategory.icon = DEFAULT_CATEGORY_ICON;
-      saveCategory(defaultCategory);
+  // 同步默認分類的穩定 ID、圖標與情緒欄位
+  async function syncDefaultPackMetadata() {
+    const defaultCategory = customCategories.value.find(isDefaultPackCategory);
+    if (!defaultCategory) return;
+
+    const oldId = defaultCategory.id;
+    stampDefaultPack(defaultCategory);
+
+    if (oldId !== DEFAULT_CATEGORY_ID) {
+      await db.delete(DB_STORES.STICKERS, oldId);
     }
+    await saveCategory(defaultCategory);
   }
 
   // 同步預設表情：把 defaultStickers 裡有但用戶還沒有的表情補進「我的表情」分類
   async function syncDefaultStickers() {
-    const defaultCategory = customCategories.value.find(
-      (c) => c.name === DEFAULT_CATEGORY_NAME,
-    );
+    const defaultCategory = customCategories.value.find(isDefaultPackCategory);
     if (!defaultCategory) return;
+
+    stampDefaultPack(defaultCategory);
 
     const existingNames = new Set(defaultCategory.stickers.map((s) => s.name));
     const toAdd = defaultStickers.filter((s) => !existingNames.has(s.name));
@@ -101,6 +141,7 @@ export const useStickerStore = defineStore("sticker", () => {
         url: sticker.url,
         name: sticker.name,
         keywords: [sticker.name],
+        emotion: sticker.emotion,
         isCustom: true,
       });
     }
@@ -117,13 +158,25 @@ export const useStickerStore = defineStore("sticker", () => {
     for (const cat of customCategories.value) {
       const existing = nameMap.get(cat.name);
       if (existing) {
+        const target = isDefaultPackCategory(cat) && !isDefaultPackCategory(existing)
+          ? cat
+          : existing;
+        const source = target === existing ? cat : existing;
+
+        if (target !== existing) {
+          nameMap.set(cat.name, target);
+        }
+
         // 同名分類：把表情合併到先出現的那個
-        for (const sticker of cat.stickers) {
-          if (!existing.stickers.some((s) => s.name === sticker.name)) {
-            existing.stickers.push(sticker);
+        for (const sticker of source.stickers) {
+          const duplicate = target.stickers.find((s) => s.name === sticker.name);
+          if (!duplicate) {
+            target.stickers.push(sticker);
+          } else if (!duplicate.emotion && sticker.emotion) {
+            duplicate.emotion = sticker.emotion;
           }
         }
-        duplicateIds.push(cat.id);
+        duplicateIds.push(source.id);
       } else {
         // 分類內部去重
         const seen = new Set<string>();
@@ -132,6 +185,9 @@ export const useStickerStore = defineStore("sticker", () => {
           seen.add(s.name);
           return true;
         });
+        if (isDefaultPackCategory(cat)) {
+          stampDefaultPack(cat);
+        }
         nameMap.set(cat.name, cat);
       }
     }
@@ -141,8 +197,10 @@ export const useStickerStore = defineStore("sticker", () => {
       for (const id of duplicateIds) {
         await db.delete(DB_STORES.STICKERS, id);
       }
-      customCategories.value = customCategories.value.filter(
-        (c) => !duplicateIds.includes(c.id),
+      customCategories.value = Array.from(nameMap.values()).filter(
+        (category, index, categories) =>
+          categories.findIndex((item) => item.id === category.id) === index &&
+          !duplicateIds.includes(category.id),
       );
       // 保存合併後的分類
       for (const cat of customCategories.value) {
@@ -162,15 +220,17 @@ export const useStickerStore = defineStore("sticker", () => {
         url: sticker.url,
         name: sticker.name,
         keywords: [sticker.name],
+        emotion: sticker.emotion,
         isCustom: true,
       }),
     );
 
     const defaultCategory: StickerCategory = {
-      id: `custom-${Date.now()}`,
+      id: DEFAULT_CATEGORY_ID,
       name: DEFAULT_CATEGORY_NAME,
       icon: DEFAULT_CATEGORY_ICON,
       isCustom: true,
+      isDefaultPack: true,
       stickers: defaultEmojis,
     };
 
@@ -205,6 +265,12 @@ export const useStickerStore = defineStore("sticker", () => {
       id: `sticker-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       isCustom: true,
     };
+    
+    if (isDefaultPackCategory(category)) {
+      newSticker.emotion = sticker.emotion || UNCATEGORIZED_EMOTION_ID;
+    } else {
+      delete newSticker.emotion; // 非預設表情包不需要 emotion 欄位
+    }
 
     category.stickers.push(newSticker);
     await saveCategory(category);
@@ -250,6 +316,19 @@ export const useStickerStore = defineStore("sticker", () => {
       sticker.pinnedAt = Date.now();
     }
 
+    await saveCategory(category);
+  }
+
+  async function moveStickerEmotion(stickerId: string, newEmotion: string) {
+    const category = customCategories.value.find(
+      (c) => isDefaultPackCategory(c) && c.stickers.some((s) => s.id === stickerId),
+    );
+    if (!category) return;
+
+    const sticker = category.stickers.find((s) => s.id === stickerId);
+    if (!sticker) return;
+
+    sticker.emotion = newEmotion || UNCATEGORIZED_EMOTION_ID;
     await saveCategory(category);
   }
 
@@ -388,6 +467,7 @@ export const useStickerStore = defineStore("sticker", () => {
     removeSticker,
     updateStickerName,
     toggleStickerPinned,
+    moveStickerEmotion,
     createCategory,
     removeCategory,
     renameCategory,

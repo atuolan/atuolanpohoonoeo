@@ -16,13 +16,20 @@ import type { BookReadingProgress, StoredBook } from "@/types/book";
 import type { CalendarEvent } from "@/types/calendar";
 import type { StoredCharacter } from "@/types/character";
 import type { Chat, ChatMessage } from "@/types/chat";
+import {
+  DEFAULT_CATEGORY_ID,
+  DEFAULT_CATEGORY_ICON,
+  DEFAULT_CATEGORY_NAME,
+  UNCATEGORIZED_EMOTION_ID,
+  defaultStickers,
+} from "@/data/defaultStickers";
 import type { HolidayTriggerRecord } from "@/types/holiday";
 import type { ImportantEventsLog } from "@/types/importantEvents";
 import type { AppSettings } from "@/types/settings";
-import type { StickerCategory } from "@/types/sticker";
+import type { StickerCategory, StickerItem } from "@/types/sticker";
 import type { PeekPhoneData } from "@/types/peekPhone";
 import type { Lorebook } from "@/types/worldinfo";
-import { DBSchema, IDBPDatabase, openDB } from "idb";
+import { DBSchema, IDBPDatabase, openDB, unwrap } from "idb";
 
 // ============================================================
 // 總結和日記類型定義
@@ -323,12 +330,12 @@ interface AguaphoneDB extends DBSchema {
 
 // ============================================================
 // 資料庫常數
-// ============================================================
-
-const DB_NAME = "aguaphone-db";
-const DB_VERSION = 25;
-
-// Store 名稱常量
+  // ============================================================
+  
+  const DB_NAME = "aguaphone-db";
+  const DB_VERSION = 26;
+  
+  // Store 名稱常量
 export const DB_STORES = {
   THEMES: "themes",
   LAYOUTS: "layouts",
@@ -870,6 +877,9 @@ export async function getDatabase(): Promise<IDBPDatabase<AguaphoneDB>> {
       if (!db.objectStoreNames.contains("announcementAcks")) {
         db.createObjectStore("announcementAcks", { keyPath: "id" });
       }
+
+      // === v26 資料遷移 ===
+      // 在 _migrateStickerEmotionsIfNeeded 中延後處理
     },
     blocked() {
       console.warn("[DB] 資料庫被阻擋，嘗試關閉舊連線以解除阻擋...");
@@ -911,6 +921,9 @@ export async function getDatabase(): Promise<IDBPDatabase<AguaphoneDB>> {
 
   // v24 遷移：將 chats.messages 搬到獨立的 chatMessages 表
   await _migrateChatMessagesIfNeeded(dbInstance);
+
+  // v26 貼圖情緒遷移
+  await _migrateStickerEmotionsIfNeeded(dbInstance);
 
   return dbInstance;
 }
@@ -975,6 +988,54 @@ async function _migrateChatMessagesIfNeeded(
     );
   } catch (error) {
     console.error("[DB] v24 訊息遷移失敗（非致命，下次啟動會重試）:", error);
+  }
+}
+
+async function _migrateStickerEmotionsIfNeeded(
+  database: IDBPDatabase<AguaphoneDB>,
+): Promise<void> {
+  try {
+    const MIGRATION_KEY = "v26_sticker_emotions_migrated";
+    const migrated = await database.get("settings", MIGRATION_KEY);
+    if (migrated) return;
+
+    console.log("[DB] v26 貼圖情緒分類遷移：開始處理 default pack...");
+    const keys = await database.getAllKeys("stickers");
+    let migratedCount = 0;
+
+    for (const key of keys) {
+      const category = await database.get("stickers", key);
+      if (!category) continue;
+
+      if (category.name === DEFAULT_CATEGORY_NAME || category.id === DEFAULT_CATEGORY_ID) {
+        const oldId = category.id;
+        category.id = DEFAULT_CATEGORY_ID;
+        category.isDefaultPack = true;
+        category.icon = DEFAULT_CATEGORY_ICON;
+        
+        const emotionMap = new Map<string, string>();
+        for (const ds of defaultStickers) {
+          emotionMap.set(ds.name, ds.emotion);
+        }
+        
+        for (const sticker of category.stickers) {
+          if (!sticker.emotion) {
+            sticker.emotion = emotionMap.get(sticker.name) || UNCATEGORIZED_EMOTION_ID;
+            migratedCount++;
+          }
+        }
+
+        if (oldId !== DEFAULT_CATEGORY_ID) {
+          await database.delete("stickers", oldId);
+        }
+        await database.put("stickers", category);
+      }
+    }
+
+    await database.put("settings", { done: true, timestamp: Date.now() } as any, MIGRATION_KEY);
+    console.log(`[DB] v26 貼圖遷移完成：更新了 ${migratedCount} 個貼圖的情緒分類`);
+  } catch (error) {
+    console.error("[DB] v26 貼圖遷移失敗:", error);
   }
 }
 
