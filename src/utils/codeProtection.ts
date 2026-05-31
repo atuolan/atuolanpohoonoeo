@@ -7,163 +7,16 @@ import { recordReloadReason } from "@/utils/runtimeDiagnostics";
 export class CodeProtection {
   private static isInitialized = false;
 
-  private static isEditableTarget(target: EventTarget | null): boolean {
-    if (!(target instanceof HTMLElement)) return false;
-    return Boolean(
-      target.closest("input, textarea, [contenteditable='true'], [contenteditable='']"),
-    );
-  }
-
   // 初始化保護機制
   static initialize() {
     if (this.isInitialized) return;
     this.isInitialized = true;
 
-    // 1. 禁用右鍵選單
-    this.disableContextMenu();
-
-    // 2. 禁用開發者工具快捷鍵
-    this.disableDevTools();
-
-    // 3. 禁用文字選取和複製
-    this.disableTextSelection();
-
-    // 4. 檢測開發者工具
-    this.detectDevTools();
-
-    // 5. 防止 iframe 嵌入
+    // 1. 防止 iframe 嵌入
     this.preventIframeEmbedding();
 
-    // 6. 定期驗證授權狀態
+    // 2. 定期驗證授權狀態
     this.startAuthCheck();
-  }
-
-  // 禁用右鍵選單
-  private static disableContextMenu() {
-    document.addEventListener("contextmenu", (e) => {
-      if (this.isEditableTarget(e.target)) {
-        return;
-      }
-      e.preventDefault();
-      return false;
-    });
-  }
-
-  // 禁用開發者工具快捷鍵
-  private static disableDevTools() {
-    document.addEventListener("keydown", (e) => {
-      // F12
-      if (e.key === "F12") {
-        e.preventDefault();
-        return false;
-      }
-
-      // Ctrl+Shift+I / Cmd+Option+I
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "I") {
-        e.preventDefault();
-        return false;
-      }
-
-      // Ctrl+Shift+J / Cmd+Option+J
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "J") {
-        e.preventDefault();
-        return false;
-      }
-
-      // Ctrl+Shift+C / Cmd+Option+C
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "C") {
-        e.preventDefault();
-        return false;
-      }
-
-      // Ctrl+U / Cmd+U (查看源代碼)
-      if ((e.ctrlKey || e.metaKey) && e.key === "u") {
-        e.preventDefault();
-        return false;
-      }
-
-      // Ctrl+S / Cmd+S (保存頁面)
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-        e.preventDefault();
-        return false;
-      }
-    });
-  }
-
-  // 禁用文字選取
-  private static disableTextSelection() {
-    document.addEventListener("selectstart", (e) => {
-      // 允許在輸入框內選取文字
-      if (this.isEditableTarget(e.target)) {
-        return;
-      }
-      e.preventDefault();
-      return false;
-    });
-
-    document.addEventListener("copy", (e) => {
-      // 允許應用內部的程式化複製（如聊天訊息複製按鈕）
-      const target = e.target as HTMLElement;
-      if (target?.getAttribute("data-app-copy") === "true") {
-        return; // 允許應用內部複製
-      }
-      // 允許在輸入框內複製
-      if (this.isEditableTarget(e.target)) {
-        return;
-      }
-      e.preventDefault();
-      return false;
-    });
-
-    // 攔截貼上事件，但允許在輸入框內貼上
-    document.addEventListener("paste", (e) => {
-      if (this.isEditableTarget(e.target)) {
-        return;
-      }
-      e.preventDefault();
-      return false;
-    });
-  }
-
-  // 檢測開發者工具
-  private static detectDevTools() {
-    const threshold = 160;
-    let devtoolsOpen = false;
-
-    const checkDevTools = () => {
-      const widthThreshold = window.outerWidth - window.innerWidth > threshold;
-      const heightThreshold =
-        window.outerHeight - window.innerHeight > threshold;
-
-      if (widthThreshold || heightThreshold) {
-        if (!devtoolsOpen) {
-          devtoolsOpen = true;
-          this.handleDevToolsDetected();
-        }
-      } else {
-        devtoolsOpen = false;
-      }
-    };
-
-    setInterval(checkDevTools, 1000);
-  }
-
-  // 處理開發者工具被檢測到
-  private static handleDevToolsDetected() {
-    console.clear();
-    console.log("%c⚠️ 警告", "color: red; font-size: 40px; font-weight: bold;");
-    console.log(
-      "%c此應用受版權保護，未經授權不得複製或修改",
-      "color: red; font-size: 16px;",
-    );
-    console.log(
-      "%c如需使用，請通過 Discord 進行驗證",
-      "color: orange; font-size: 14px;",
-    );
-
-    // 可選：清空 localStorage 和 IndexedDB
-    // localStorage.clear()
-    // indexedDB.databases().then(dbs => dbs.forEach(db => indexedDB.deleteDatabase(db.name!)))
   }
 
   // 防止 iframe 嵌入

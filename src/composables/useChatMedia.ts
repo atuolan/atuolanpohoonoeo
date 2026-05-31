@@ -261,7 +261,7 @@ export function useChatMedia(deps: {
         if (result.success && result.imageBase64) {
           deps.messages.value[idx] = {
             ...deps.messages.value[idx],
-            content: deps.messages.value[idx].imageCaption || imagePrompt,
+            content: deps.messages.value[idx].imageCaption || effectivePrompt,
             messageType: "image",
             imageUrl: `data:image/png;base64,${result.imageBase64}`,
             imageData: result.imageBase64,

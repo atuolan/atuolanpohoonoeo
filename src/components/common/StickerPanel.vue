@@ -2,7 +2,7 @@
 import { EMOTION_DEFINITIONS } from "@/data/defaultStickers";
 import BatchUploadModal from "@/components/modals/BatchUploadModal.vue";
 import { useStickerStore } from "@/stores";
-import type { StickerItem } from "@/types/sticker";
+import type { StickerCategory, StickerItem } from "@/types/sticker";
 import { computed, nextTick, onMounted, ref } from "vue";
 
 const emit = defineEmits<{
