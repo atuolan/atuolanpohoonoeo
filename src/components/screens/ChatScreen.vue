@@ -10,6 +10,7 @@ import {
 } from "@/api/OpenAICompatible";
 import { MessageBubble } from "@/components/common";
 import ChatScreenHeader from "@/components/screens/ChatScreenHeader.vue";
+import ChatDetailsScreen from "@/components/screens/ChatDetailsScreen.vue";
 import ChatScreenInputArea from "@/components/screens/ChatScreenInputArea.vue";
 import GiftDrawer from "@/components/common/GiftDrawer.vue";
 import MediaSendDrawer from "@/components/common/MediaSendDrawer.vue";
@@ -847,6 +848,9 @@ const inputAreaRef = ref<InstanceType<typeof ChatScreenInputArea> | null>(null);
 
 // 顯示更多選單
 const showMoreMenu = ref(false);
+
+// 顯示聊天詳情頁
+const showChatDetails = ref(false);
 
 // Rail 收合狀態（手機端頂欄按鈕收合）
 const showRail = ref(false);
@@ -8050,6 +8054,11 @@ function toggleMoreMenu() {
   showGameMenu.value = false;
 }
 
+function openChatDetails() {
+  closeMenus();
+  showChatDetails.value = true;
+}
+
 // 切換小遊戲選單
 function toggleGameMenu() {
   showGameMenu.value = !showGameMenu.value;
@@ -8499,6 +8508,7 @@ function closeMenus() {
   showGameMenu.value = false;
   showChatFilesPanel.value = false;
   showStickerPanel.value = false;
+  showChatDetails.value = false;
 }
 
 // ===== AI 記憶管理 =====
@@ -9818,6 +9828,7 @@ onUnmounted(() => {
       @toggle-minimax-tts="toggleMinimaxTTS"
       @open-minimax-tts-settings="openMinimaxTTSSettings"
       @toggle-more-menu="toggleMoreMenu"
+      @open-chat-details="openChatDetails"
       @navigate="onHeaderNavigate"
       @open-search-bar="openSearchBar"
       @open-chat-info="openChatInfo"
@@ -9827,7 +9838,35 @@ onUnmounted(() => {
       @start-new-conversation="startNewConversation"
       @toggle-block-character="toggleBlockCharacter"
       @clear-chat-history="clearChatHistory"
+      @open-proactive-message-settings="showProactiveMessageSettings = true"
     />
+
+    <!-- 聊天詳情頁 -->
+    <Teleport to="body">
+      <Transition name="slide-up">
+        <ChatDetailsScreen
+          v-if="showChatDetails"
+          :display-avatar="displayAvatar"
+          :character-name="props.characterName"
+          :is-group-chat="isGroupChat"
+          :group-display-name="groupDisplayName"
+          :display-character-name="displayCharacterName"
+          :current-character="currentCharacter"
+          :group-member-count="groupMemberCount"
+          :is-char-blocked="isCharBlocked"
+          @close="showChatDetails = false"
+          @navigate="onHeaderNavigate"
+          @open-search-bar="openSearchBar"
+          @open-chat-info="openChatInfo"
+          @open-chat-files-panel="openChatFilesPanel"
+          @export-current-chat="exportCurrentChat"
+          @trigger-jsonl-import="triggerJsonlImport"
+          @start-new-conversation="startNewConversation"
+          @toggle-block-character="toggleBlockCharacter"
+          @clear-chat-history="clearChatHistory"
+        />
+      </Transition>
+    </Teleport>
 
     <!-- 隱藏的 JSONL 檔案輸入 -->
     <input
