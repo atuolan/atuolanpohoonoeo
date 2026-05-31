@@ -9838,7 +9838,6 @@ onUnmounted(() => {
       @start-new-conversation="startNewConversation"
       @toggle-block-character="toggleBlockCharacter"
       @clear-chat-history="clearChatHistory"
-      @open-proactive-message-settings="showProactiveMessageSettings = true"
     />
 
     <!-- 聊天詳情頁 -->
@@ -9864,6 +9863,7 @@ onUnmounted(() => {
           @start-new-conversation="startNewConversation"
           @toggle-block-character="toggleBlockCharacter"
           @clear-chat-history="clearChatHistory"
+          @open-proactive-message-settings="showProactiveMessageSettings = true"
         />
       </Transition>
     </Teleport>
