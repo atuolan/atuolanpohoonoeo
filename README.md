@@ -37,8 +37,6 @@ npm install
 
 # 啟動開發服務器
 npm run dev
-node node_modules/vite/bin/vite.js
-
 
 # 構建生產版本
 npm run build

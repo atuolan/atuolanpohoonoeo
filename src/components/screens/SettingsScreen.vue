@@ -44,7 +44,7 @@ import {
   initDebugOverlay,
   isDebugOverlayActive,
 } from "@/utils/debugOverlay";
-import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 
 interface RingtoneOption {
   id: string;
@@ -759,6 +759,9 @@ const connectionStatus = ref<"none" | "success" | "error">("none");
 const connectionMessage = ref("");
 const showApiKey = ref(false);
 const isSaving = ref(false);
+const minimaxApiKeyDraft = ref("");
+const minimaxApiKeyFocused = ref(false);
+const minimaxApiKeyTouched = ref(false);
 // 配置文件相關
 const showProfileModal = ref(false);
 const showNewProfileConfirm = ref(false);
@@ -1334,6 +1337,7 @@ async function handleGhDelete(backupPath: string, backupName: string) {
 // 載入設定
 onMounted(async () => {
   await settingsStore.loadSettings();
+  syncMinimaxApiKeyDraft();
   await cloudPushStore.loadSettings();
   await selfHostedSyncStore.loadSettings();
   if (selfHostedSyncStore.guardAlert) {
@@ -1687,6 +1691,7 @@ async function handleSaveButton() {
 
 // 實際執行保存
 async function doSave() {
+  commitMinimaxApiKeyDraft();
   isSaving.value = true;
   try {
     await settingsStore.saveSettings();
@@ -3088,6 +3093,7 @@ async function deleteAllData() {
 function resetSettings() {
   if (!confirm("確定要重置所有設定為默認值嗎？")) return;
   settingsStore.resetToDefaults();
+  syncMinimaxApiKeyDraft();
 }
 
 // 返回
@@ -3104,12 +3110,56 @@ const minimaxVoiceList = ref<
 >([]);
 const minimaxVoiceError = ref("");
 
+function syncMinimaxApiKeyDraft() {
+  minimaxApiKeyDraft.value = settingsStore.minimaxTTS.apiKey || "";
+  minimaxApiKeyTouched.value = false;
+}
+
+function markMinimaxApiKeyTouched() {
+  if (minimaxApiKeyFocused.value) {
+    minimaxApiKeyTouched.value = true;
+  }
+}
+
+function commitMinimaxApiKeyDraft(): boolean {
+  if (!minimaxApiKeyTouched.value) return false;
+
+  if (settingsStore.minimaxTTS.apiKey !== minimaxApiKeyDraft.value) {
+    settingsStore.minimaxTTS.apiKey = minimaxApiKeyDraft.value;
+  }
+  minimaxApiKeyTouched.value = false;
+  return true;
+}
+
+async function saveMinimaxApiKeyDraft() {
+  if (!commitMinimaxApiKeyDraft()) return;
+  await saveSettings();
+}
+
+function getMinimaxTTSSettingsForRequest() {
+  return {
+    ...settingsStore.minimaxTTS,
+    apiKey: minimaxApiKeyDraft.value,
+  };
+}
+
+watch(
+  () => settingsStore.minimaxTTS.apiKey,
+  () => {
+    if (!minimaxApiKeyFocused.value && !minimaxApiKeyTouched.value) {
+      syncMinimaxApiKeyDraft();
+    }
+  },
+);
+
 async function testMinimaxConnection() {
   minimaxTesting.value = true;
   minimaxTestResult.value = null;
   try {
     const { testConnection } = await import("@/api/MiniMaxTTSApi");
-    minimaxTestResult.value = await testConnection(settingsStore.minimaxTTS);
+    minimaxTestResult.value = await testConnection(
+      getMinimaxTTSSettingsForRequest(),
+    );
   } catch {
     minimaxTestResult.value = false;
   } finally {
@@ -3126,7 +3176,7 @@ async function fetchMinimaxVoices() {
   minimaxVoiceError.value = "";
   try {
     const { fetchVoiceList } = await import("@/api/MiniMaxTTSApi");
-    const result = await fetchVoiceList(settingsStore.minimaxTTS);
+    const result = await fetchVoiceList(getMinimaxTTSSettingsForRequest());
     if (result.success) {
       minimaxVoiceList.value = result.voices;
     } else {
@@ -3603,9 +3653,9 @@ function useClonedVoice(voiceId: string) {
               :type="showApiKey ? 'text' : 'password'"
               class="soft-input api-key-field"
               id="main-api-key"
-              name="password"
+              name="main-api-key"
               placeholder="sk-..."
-              autocomplete="current-password"
+              autocomplete="new-password"
               autocorrect="off"
               autocapitalize="none"
               spellcheck="false"
@@ -4514,16 +4564,19 @@ function useClonedVoice(voiceId: string) {
             <label class="setting-label">MiniMax API Key</label>
             <input
               type="password"
-              v-model="settingsStore.minimaxTTS.apiKey"
+              v-model="minimaxApiKeyDraft"
               class="soft-input"
               id="minimax-api-key"
-              name="password"
+              name="minimax-api-key"
               placeholder="你的 MiniMax API Key"
-              autocomplete="current-password"
+              autocomplete="new-password"
               autocorrect="off"
               autocapitalize="none"
               spellcheck="false"
-              @change="saveSettings"
+              @focus="minimaxApiKeyFocused = true"
+              @blur="minimaxApiKeyFocused = false"
+              @input="markMinimaxApiKeyTouched"
+              @change="saveMinimaxApiKeyDraft"
             />
           </div>
 
@@ -4531,7 +4584,7 @@ function useClonedVoice(voiceId: string) {
           <div class="setting-group" style="display: flex; gap: 8px">
             <button
               class="soft-btn"
-              :disabled="minimaxTesting || !settingsStore.minimaxTTS.apiKey"
+              :disabled="minimaxTesting || !minimaxApiKeyDraft"
               @click="testMinimaxConnection"
             >
               {{
@@ -4546,9 +4599,7 @@ function useClonedVoice(voiceId: string) {
             </button>
             <button
               class="soft-btn"
-              :disabled="
-                minimaxFetchingVoices || !settingsStore.minimaxTTS.apiKey
-              "
+              :disabled="minimaxFetchingVoices || !minimaxApiKeyDraft"
               @click="fetchMinimaxVoices"
             >
               {{ minimaxFetchingVoices ? "載入中…" : "獲取音色列表" }}
