@@ -1350,12 +1350,19 @@ async function togglePinChat() {
   border-radius: 50%;
   position: relative;
   flex-shrink: 0;
+  overflow: hidden;
 
   img, .group-avatar-placeholder, .avatar-placeholder {
     width: 100%;
     height: 100%;
     border-radius: 50%;
     object-fit: cover;
+  }
+
+  img {
+    display: block;
+    color: transparent;
+    text-indent: -9999px;
   }
 }
 

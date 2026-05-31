@@ -1193,7 +1193,7 @@ const renderedContent = computed(() => {
         const seg = props.ttsSegments?.[segIdx];
         // 只要有分段就顯示按鈕（有無 audioUrl 都先渲染，點擊時再判斷）
         const btnHtml = seg
-          ? `<span class="tts-inline-btn" data-tts-idx="${segIdx}" title="${seg.emotion || ""}"${seg.audioUrl ? "" : ' style="opacity:0.3;cursor:default"'}>🔊</span>`
+          ? `<span class="tts-inline-btn" data-tts-idx="${segIdx}" title="${seg.emotion || ""}" role="button" aria-label="播放語音"${seg.audioUrl ? "" : ' style="opacity:0.3;cursor:default"'}><svg class="tts-inline-btn__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5.6v12.8c0 .7.8 1.1 1.4.7l9.2-6.4c.5-.3.5-1.1 0-1.4L9.4 4.9c-.6-.4-1.4 0-1.4.7Z" /></svg></span>`
           : "";
         segIdx++;
         return btnHtml;
@@ -2420,7 +2420,7 @@ const renderedVoiceTranscript = computed(() => {
     let html = raw.replace(/\[emotion=[^\]]*\]/g, () => {
       const seg = props.ttsSegments?.[segIdx];
       const btnHtml = seg
-        ? `<span class="tts-inline-btn" data-tts-idx="${segIdx}" title="${seg.emotion || ""}"${seg.audioUrl ? "" : ' style="opacity:0.3;cursor:default"'}>🔊</span>`
+        ? `<span class="tts-inline-btn" data-tts-idx="${segIdx}" title="${seg.emotion || ""}" role="button" aria-label="播放語音"${seg.audioUrl ? "" : ' style="opacity:0.3;cursor:default"'}><svg class="tts-inline-btn__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5.6v12.8c0 .7.8 1.1 1.4.7l9.2-6.4c.5-.3.5-1.1 0-1.4L9.4 4.9c-.6-.4-1.4 0-1.4.7Z" /></svg></span>`
         : "";
       segIdx++;
       return btnHtml;
@@ -7665,22 +7665,43 @@ const showTextVoiceTranscript = ref(true);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-left: 3px;
-  font-size: 0.85em;
+  width: 1.35em;
+  height: 1.35em;
+  margin-left: 4px;
+  font-size: 0.9em;
   cursor: pointer;
-  opacity: 0.7;
+  opacity: 0.82;
   vertical-align: middle;
   border-radius: 50%;
-  padding: 1px 2px;
+  padding: 0;
+  color: var(--color-primary, #7dd3a8);
+  background: rgba(125, 211, 168, 0.14);
+  box-shadow: 0 0 0 1px rgba(125, 211, 168, 0.22);
   transition:
     opacity 0.15s,
-    background 0.15s;
+    background 0.15s,
+    box-shadow 0.15s,
+    transform 0.15s;
   user-select: none;
 
   &:hover {
     opacity: 1;
-    background: rgba(0, 0, 0, 0.08);
+    background: rgba(125, 211, 168, 0.22);
+    box-shadow: 0 0 0 1px rgba(125, 211, 168, 0.36);
+    transform: translateY(-1px);
   }
+
+  &:active {
+    transform: translateY(0) scale(0.94);
+  }
+}
+
+:deep(.tts-inline-btn__icon) {
+  width: 0.78em;
+  height: 0.78em;
+  margin-left: 0.08em;
+  fill: currentColor;
+  pointer-events: none;
 }
 
 // ===== 撤回選擇彈窗（Teleport 到 body，需要 :global） =====
