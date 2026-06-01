@@ -1292,12 +1292,18 @@ const showImageSearchPanel = ref(false);
 const {
   showChatFilesPanel,
   chatFilesList,
+  normalChats,
+  branchChats,
   renamingChatId,
   renamingChatName,
   showNewChatConfirm,
   newChatPinToList,
   selectedGreetingIndex,
   availableGreetings,
+  isSelectingChats,
+  selectedChatIds,
+  normalCategoryExpanded,
+  branchCategoryExpanded,
   openChatFilesPanel,
   refreshChatFilesList,
   switchChatFile,
@@ -1307,6 +1313,12 @@ const {
   confirmRenameChat,
   deleteChatFile,
   formatChatFileTime,
+  enterSelectMode,
+  exitSelectMode,
+  toggleChatSelection,
+  selectAllInCategory,
+  isCategoryAllSelected,
+  deleteSelectedChats,
 } = useChatFiles({
   messages,
   currentChatId,
@@ -12643,119 +12655,213 @@ onUnmounted(() => {
         <div class="chat-files-panel">
           <div class="chat-files-header">
             <span class="chat-files-title">聊天檔案</span>
-            <button
-              class="chat-files-new-btn"
-              @click="
-                selectedGreetingIndex = 0;
-                showNewChatConfirm = true;
-              "
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                width="18"
-                height="18"
-              >
-                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-              </svg>
-              新建
-            </button>
+            <div class="chat-files-header-actions">
+              <!-- 多選模式：顯示刪除 + 取消 -->
+              <template v-if="isSelectingChats">
+                <button
+                  class="chat-files-action-btn danger"
+                  :disabled="selectedChatIds.size === 0"
+                  @click="deleteSelectedChats"
+                >
+                  刪除 {{ selectedChatIds.size > 0 ? `(${selectedChatIds.size})` : '' }}
+                </button>
+                <button class="chat-files-action-btn" @click="exitSelectMode">取消</button>
+              </template>
+              <!-- 一般模式：顯示多選 + 新建 -->
+              <template v-else>
+                <button class="chat-files-action-btn" @click="enterSelectMode">多選</button>
+                <button
+                  class="chat-files-new-btn"
+                  @click="selectedGreetingIndex = 0; showNewChatConfirm = true;"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                  </svg>
+                  新建
+                </button>
+              </template>
+            </div>
           </div>
           <div class="chat-files-list">
-            <div
-              v-for="chat in chatFilesList"
-              :key="chat.id"
-              class="chat-file-item"
-              :class="{ active: chat.id === currentChatId }"
-              @click="switchChatFile(chat.id)"
-            >
-              <div class="chat-file-info">
-                <template v-if="renamingChatId === chat.id">
-                  <input
-                    v-model="renamingChatName"
-                    class="chat-file-rename-input"
-                    @click.stop
-                    @keydown.enter="confirmRenameChat(chat.id)"
-                    @keydown.escape="renamingChatId = null"
-                    @blur="confirmRenameChat(chat.id)"
-                    autofocus
-                  />
-                </template>
-                <template v-else>
-                  <span class="chat-file-name">{{
-                    chat.name || "未命名對話"
-                  }}</span>
-                  <span class="chat-file-meta">
-                    {{ chat.messageCount ?? chat.messages?.length ?? 0 }} 則訊息
-                    · {{ formatChatFileTime(chat.updatedAt) }}
-                  </span>
-                </template>
-              </div>
-              <div class="chat-file-actions" @click.stop>
-                <button
-                  class="chat-file-btn"
-                  :class="{ pinned: chat.pinnedToList }"
-                  :title="chat.pinnedToList ? '取消聊天置頂' : '聊天置頂'"
-                  @click="togglePinChatToList(chat.id, $event)"
-                >
-                  <!-- 已加入：列表打勾；未加入：列表加號 -->
-                  <svg
-                    v-if="chat.pinnedToList"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="15"
-                    height="15"
-                  >
-                    <path
-                      d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"
-                    />
-                  </svg>
-                  <svg
-                    v-else
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="15"
-                    height="15"
-                  >
-                    <path
-                      d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h8v-2H7v2zm0 4h8v-2H7v2zM7 7v2h8V7H7zm9 8v-3h-2v3h-3v2h3v3h2v-3h3v-2h-3z"
-                    />
-                  </svg>
-                </button>
-                <button
-                  class="chat-file-btn"
-                  title="重命名"
-                  @click="startRenameChat(chat, $event)"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="15"
-                    height="15"
-                  >
-                    <path
-                      d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-                    />
-                  </svg>
-                </button>
-                <button
-                  class="chat-file-btn danger"
-                  title="刪除"
-                  @click="deleteChatFile(chat.id, $event)"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="15"
-                    height="15"
-                  >
-                    <path
-                      d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
-                    />
-                  </svg>
-                </button>
-              </div>
+
+            <!-- ── 普通聊天分類 ── -->
+            <div class="chat-category-header" @click.stop="normalCategoryExpanded = !normalCategoryExpanded">
+              <svg
+                class="chat-category-arrow"
+                :class="{ collapsed: !normalCategoryExpanded }"
+                viewBox="0 0 24 24" fill="currentColor" width="14" height="14"
+              >
+                <path d="M7 10l5 5 5-5z"/>
+              </svg>
+              <span class="chat-category-label">普通聊天</span>
+              <span class="chat-category-count">{{ normalChats.length }}</span>
+              <!-- 分類全選 checkbox（多選模式才顯示） -->
+              <label v-if="isSelectingChats && normalChats.length > 0" class="chat-category-select-all" @click.stop>
+                <input
+                  type="checkbox"
+                  :checked="isCategoryAllSelected('normal')"
+                  @change="selectAllInCategory('normal')"
+                />
+                全選
+              </label>
             </div>
+            <template v-if="normalCategoryExpanded">
+              <div
+                v-for="chat in normalChats"
+                :key="chat.id"
+                class="chat-file-item"
+                :class="{
+                  active: chat.id === currentChatId,
+                  'select-mode': isSelectingChats,
+                  selected: selectedChatIds.has(chat.id),
+                }"
+                @click="isSelectingChats ? toggleChatSelection(chat.id) : switchChatFile(chat.id)"
+              >
+                <!-- 多選 checkbox -->
+                <label v-if="isSelectingChats" class="chat-file-checkbox" @click.stop>
+                  <input
+                    type="checkbox"
+                    :checked="selectedChatIds.has(chat.id)"
+                    @change="toggleChatSelection(chat.id)"
+                  />
+                </label>
+                <div class="chat-file-info">
+                  <template v-if="renamingChatId === chat.id">
+                    <input
+                      v-model="renamingChatName"
+                      class="chat-file-rename-input"
+                      @click.stop
+                      @keydown.enter="confirmRenameChat(chat.id)"
+                      @keydown.escape="renamingChatId = null"
+                      @blur="confirmRenameChat(chat.id)"
+                      autofocus
+                    />
+                  </template>
+                  <template v-else>
+                    <span class="chat-file-name">{{ chat.name || "未命名對話" }}</span>
+                    <span class="chat-file-meta">
+                      {{ chat.messageCount ?? chat.messages?.length ?? 0 }} 則訊息
+                      · {{ formatChatFileTime(chat.updatedAt) }}
+                    </span>
+                  </template>
+                </div>
+                <div v-if="!isSelectingChats" class="chat-file-actions" @click.stop>
+                  <button
+                    class="chat-file-btn"
+                    :class="{ pinned: chat.pinnedToList }"
+                    :title="chat.pinnedToList ? '取消聊天置頂' : '聊天置頂'"
+                    @click="togglePinChatToList(chat.id, $event)"
+                  >
+                    <svg v-if="chat.pinnedToList" viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
+                      <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/>
+                    </svg>
+                    <svg v-else viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
+                      <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h8v-2H7v2zm0 4h8v-2H7v2zM7 7v2h8V7H7zm9 8v-3h-2v3h-3v2h3v3h2v-3h3v-2h-3z"/>
+                    </svg>
+                  </button>
+                  <button class="chat-file-btn" title="重命名" @click="startRenameChat(chat, $event)">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
+                      <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                    </svg>
+                  </button>
+                  <button class="chat-file-btn danger" title="刪除" @click="deleteChatFile(chat.id, $event)">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
+                      <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </template>
+
+            <!-- ── 分支 / 小劇場分類（有才顯示） ── -->
+            <template v-if="branchChats.length > 0">
+              <div class="chat-category-header" @click.stop="branchCategoryExpanded = !branchCategoryExpanded">
+                <svg
+                  class="chat-category-arrow"
+                  :class="{ collapsed: !branchCategoryExpanded }"
+                  viewBox="0 0 24 24" fill="currentColor" width="14" height="14"
+                >
+                  <path d="M7 10l5 5 5-5z"/>
+                </svg>
+                <span class="chat-category-label">小劇場 / 分支</span>
+                <span class="chat-category-count">{{ branchChats.length }}</span>
+                <label v-if="isSelectingChats" class="chat-category-select-all" @click.stop>
+                  <input
+                    type="checkbox"
+                    :checked="isCategoryAllSelected('branch')"
+                    @change="selectAllInCategory('branch')"
+                  />
+                  全選
+                </label>
+              </div>
+              <template v-if="branchCategoryExpanded">
+                <div
+                  v-for="chat in branchChats"
+                  :key="chat.id"
+                  class="chat-file-item"
+                  :class="{
+                    active: chat.id === currentChatId,
+                    'select-mode': isSelectingChats,
+                    selected: selectedChatIds.has(chat.id),
+                  }"
+                  @click="isSelectingChats ? toggleChatSelection(chat.id) : switchChatFile(chat.id)"
+                >
+                  <label v-if="isSelectingChats" class="chat-file-checkbox" @click.stop>
+                    <input
+                      type="checkbox"
+                      :checked="selectedChatIds.has(chat.id)"
+                      @change="toggleChatSelection(chat.id)"
+                    />
+                  </label>
+                  <div class="chat-file-info">
+                    <template v-if="renamingChatId === chat.id">
+                      <input
+                        v-model="renamingChatName"
+                        class="chat-file-rename-input"
+                        @click.stop
+                        @keydown.enter="confirmRenameChat(chat.id)"
+                        @keydown.escape="renamingChatId = null"
+                        @blur="confirmRenameChat(chat.id)"
+                        autofocus
+                      />
+                    </template>
+                    <template v-else>
+                      <span class="chat-file-name">{{ chat.name || "未命名對話" }}</span>
+                      <span class="chat-file-meta">
+                        {{ chat.messageCount ?? chat.messages?.length ?? 0 }} 則訊息
+                        · {{ formatChatFileTime(chat.updatedAt) }}
+                      </span>
+                    </template>
+                  </div>
+                  <div v-if="!isSelectingChats" class="chat-file-actions" @click.stop>
+                    <button
+                      class="chat-file-btn"
+                      :class="{ pinned: chat.pinnedToList }"
+                      :title="chat.pinnedToList ? '取消聊天置頂' : '聊天置頂'"
+                      @click="togglePinChatToList(chat.id, $event)"
+                    >
+                      <svg v-if="chat.pinnedToList" viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
+                        <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/>
+                      </svg>
+                      <svg v-else viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
+                        <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h8v-2H7v2zm0 4h8v-2H7v2zM7 7v2h8V7H7zm9 8v-3h-2v3h-3v2h3v3h2v-3h3v-2h-3z"/>
+                      </svg>
+                    </button>
+                    <button class="chat-file-btn" title="重命名" @click="startRenameChat(chat, $event)">
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
+                        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                      </svg>
+                    </button>
+                    <button class="chat-file-btn danger" title="刪除" @click="deleteChatFile(chat.id, $event)">
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
+                        <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </template>
+            </template>
+
           </div>
         </div>
       </div>
@@ -16945,6 +17051,41 @@ body.is-night-mode {
   color: var(--color-text, #333);
 }
 
+.chat-files-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-files-action-btn {
+  padding: 5px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--color-border, rgba(0,0,0,0.15));
+  background: transparent;
+  color: var(--color-text, #333);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: var(--color-hover, rgba(0,0,0,0.06));
+  }
+
+  &.danger {
+    color: #e53935;
+    border-color: rgba(229, 57, 53, 0.3);
+
+    &:hover:not(:disabled) {
+      background: rgba(229, 57, 53, 0.08);
+    }
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+  }
+}
+
 .chat-files-new-btn {
   display: flex;
   align-items: center;
@@ -16957,6 +17098,61 @@ body.is-night-mode {
   font-weight: 500;
   border: none;
   cursor: pointer;
+}
+
+/* ── 分類標題 ── */
+.chat-category-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px 4px;
+  cursor: pointer;
+  user-select: none;
+
+  &:hover {
+    background: var(--color-hover, rgba(0,0,0,0.03));
+  }
+}
+
+.chat-category-arrow {
+  color: var(--color-text-secondary, #999);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+
+  &.collapsed {
+    transform: rotate(-90deg);
+  }
+}
+
+.chat-category-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #999);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex: 1;
+}
+
+.chat-category-count {
+  font-size: 11px;
+  color: var(--color-text-secondary, #bbb);
+  background: var(--color-hover, rgba(0,0,0,0.06));
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+
+.chat-category-select-all {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #999);
+  cursor: pointer;
+  margin-left: 4px;
+
+  input[type="checkbox"] {
+    cursor: pointer;
+  }
 }
 
 .chat-files-list {
@@ -16984,6 +17180,28 @@ body.is-night-mode {
       color: var(--color-primary, #7dd3a8);
       font-weight: 600;
     }
+  }
+
+  &.select-mode {
+    padding-left: 12px;
+  }
+
+  &.selected {
+    background: rgba(125, 211, 168, 0.15);
+  }
+}
+
+.chat-file-checkbox {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+
+  input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--color-primary, #7dd3a8);
   }
 }
 

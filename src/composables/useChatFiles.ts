@@ -11,6 +11,9 @@ import type { Chat, ChatMessage } from "@/types/chat";
 import { useAffinityStore } from "@/stores/affinity";
 import { applyGreetingInitToAffinity } from "@/services/AffinityGreetingInit";
 
+/** 聊天分類 */
+export type ChatCategory = "normal" | "branch";
+
 /**
  * 聊天檔案管理功能
  * 從 ChatScreen.vue 抽取的獨立 composable
@@ -36,6 +39,24 @@ export function useChatFiles(deps: {
   const showNewChatConfirm = ref(false);
   const newChatPinToList = ref(false);
   const selectedGreetingIndex = ref(0);
+
+  // ── 多選狀態 ──
+  const isSelectingChats = ref(false);
+  const selectedChatIds = ref<Set<string>>(new Set());
+
+  // ── 分類收闔狀態 ──
+  const normalCategoryExpanded = ref(true);
+  const branchCategoryExpanded = ref(true);
+
+  /** 普通聊天（非分支） */
+  const normalChats = computed(() =>
+    chatFilesList.value.filter((c) => !c.isBranch),
+  );
+
+  /** 分支 / 小劇場聊天 */
+  const branchChats = computed(() =>
+    chatFilesList.value.filter((c) => c.isBranch),
+  );
 
   /** 取得當前角色所有開場白列表 */
   const availableGreetings = computed(() => {
@@ -247,15 +268,96 @@ export function useChatFiles(deps: {
     return `${date.getMonth() + 1}/${date.getDate()}`;
   }
 
+  // ── 多選操作 ──
+
+  function enterSelectMode() {
+    isSelectingChats.value = true;
+    selectedChatIds.value = new Set();
+  }
+
+  function exitSelectMode() {
+    isSelectingChats.value = false;
+    selectedChatIds.value = new Set();
+  }
+
+  function toggleChatSelection(chatId: string) {
+    const next = new Set(selectedChatIds.value);
+    if (next.has(chatId)) {
+      next.delete(chatId);
+    } else {
+      next.add(chatId);
+    }
+    selectedChatIds.value = next;
+  }
+
+  function selectAllInCategory(category: ChatCategory) {
+    const list = category === "normal" ? normalChats.value : branchChats.value;
+    const next = new Set(selectedChatIds.value);
+    const allSelected = list.every((c) => next.has(c.id));
+    if (allSelected) {
+      // 全部已選 → 取消全選
+      list.forEach((c) => next.delete(c.id));
+    } else {
+      // 否則全選
+      list.forEach((c) => next.add(c.id));
+    }
+    selectedChatIds.value = next;
+  }
+
+  function isCategoryAllSelected(category: ChatCategory): boolean {
+    const list = category === "normal" ? normalChats.value : branchChats.value;
+    return list.length > 0 && list.every((c) => selectedChatIds.value.has(c.id));
+  }
+
+  async function deleteSelectedChats() {
+    const ids = [...selectedChatIds.value];
+    if (ids.length === 0) return;
+
+    // 不能刪到最後一個普通聊天（至少保留一個）
+    const remainingNormal = normalChats.value.filter((c) => !selectedChatIds.value.has(c.id));
+    if (remainingNormal.length === 0 && normalChats.value.length > 0) {
+      alert("至少需要保留一個普通聊天記錄");
+      return;
+    }
+
+    if (!confirm(`確定要刪除選中的 ${ids.length} 個聊天記錄嗎？此操作不可恢復！`)) return;
+
+    exitSelectMode();
+
+    let needSwitch = false;
+    for (const chatId of ids) {
+      try {
+        await deleteChatCascade(chatId);
+        if (chatId === deps.currentChatId.value) needSwitch = true;
+      } catch (e) {
+        console.error("[ChatFiles] 批量刪除失敗:", chatId, e);
+      }
+    }
+
+    await refreshChatFilesList();
+
+    if (needSwitch && chatFilesList.value.length > 0) {
+      await switchChatFile(chatFilesList.value[0].id, { skipSaveCurrent: true });
+    }
+  }
+
   return {
     showChatFilesPanel,
     chatFilesList,
+    normalChats,
+    branchChats,
     renamingChatId,
     renamingChatName,
     showNewChatConfirm,
     newChatPinToList,
     selectedGreetingIndex,
     availableGreetings,
+    // 多選
+    isSelectingChats,
+    selectedChatIds,
+    normalCategoryExpanded,
+    branchCategoryExpanded,
+    // 函數
     openChatFilesPanel,
     refreshChatFilesList,
     switchChatFile,
@@ -265,5 +367,11 @@ export function useChatFiles(deps: {
     confirmRenameChat,
     deleteChatFile,
     formatChatFileTime,
+    enterSelectMode,
+    exitSelectMode,
+    toggleChatSelection,
+    selectAllInCategory,
+    isCategoryAllSelected,
+    deleteSelectedChats,
   };
 }

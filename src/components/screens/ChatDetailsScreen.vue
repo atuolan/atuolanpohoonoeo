@@ -13,7 +13,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "close"): void;
-  (e: "navigate", page: "character" | "worldbook" | "peek-phone"): void;
+  (e: "navigate", page: "character" | "worldbook" | "peek-phone" | "settings"): void;
   (e: "open-search-bar"): void;
   (e: "open-chat-info"): void;
   (e: "open-chat-files-panel"): void;
@@ -39,7 +39,8 @@ function handleAction(action: string) {
     case "character":
     case "worldbook":
     case "peek-phone":
-      emit("navigate", action);
+    case "settings":
+      emit("navigate", action as "character" | "worldbook" | "peek-phone" | "settings");
       break;
     case "search":
       emit("close");
@@ -151,6 +152,15 @@ function handleAction(action: string) {
                 </svg>
               </div>
               <span class="quick-label">頭盔TA</span>
+            </button>
+            <button class="quick-item" @click="handleAction('settings')">
+              <div class="quick-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+              </div>
+              <span class="quick-label">設置</span>
             </button>
           </div>
         </section>
