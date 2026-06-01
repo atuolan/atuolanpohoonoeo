@@ -1425,48 +1425,43 @@ export class PromptBuilder {
 
       case "charDescription":
       case "f2fCharDescription":
-      case "gcCharDescription":
-        if (character.data.description) {
-          const desc = await this.macroEngine.substitute(
-            character.data.description,
-          );
-          return {
-            role: getRole(),
-            content: desc,
-            identifier,
-          };
-        }
-        return null;
+      case "gcCharDescription": {
+        const rawDesc = character.data.description || '';
+        if (!rawDesc) return null;
+        // 若 promptDef.content 有自訂模板（含 {{charDescription}} 等宏），優先使用
+        // 否則 fallback 到直接輸出角色卡 description
+        const descTemplate = promptDef?.content?.trim()
+          ? promptDef.content
+          : rawDesc;
+        const desc = await this.macroEngine.substitute(descTemplate);
+        return desc ? { role: getRole(), content: desc, identifier } : null;
+      }
 
       case "charPersonality":
       case "f2fCharPersonality":
-      case "gcCharPersonality":
-        if (character.data.personality) {
-          const personality = await this.macroEngine.substitute(
-            character.data.personality,
-          );
-          return {
-            role: getRole(),
-            content: `${character.data.name}'s personality: ${personality}`,
-            identifier,
-          };
-        }
-        return null;
+      case "gcCharPersonality": {
+        const rawPersonality = character.data.personality || '';
+        if (!rawPersonality) return null;
+        // 若 promptDef.content 有自訂模板，優先使用；否則用預設格式
+        const personalityTemplate = promptDef?.content?.trim()
+          ? promptDef.content
+          : `${character.data.name}'s personality: {{charPersonality}}`;
+        const personality = await this.macroEngine.substitute(personalityTemplate);
+        return personality ? { role: getRole(), content: personality, identifier } : null;
+      }
 
       case "scenario":
       case "f2fScenario":
-      case "gcScenario":
-        if (character.data.scenario) {
-          const scenario = await this.macroEngine.substitute(
-            character.data.scenario,
-          );
-          return {
-            role: getRole(),
-            content: `Scenario: ${scenario}`,
-            identifier,
-          };
-        }
-        return null;
+      case "gcScenario": {
+        const rawScenario = character.data.scenario || '';
+        if (!rawScenario) return null;
+        // 若 promptDef.content 有自訂模板，優先使用；否則用預設格式
+        const scenarioTemplate = promptDef?.content?.trim()
+          ? promptDef.content
+          : `Scenario: {{charScenario}}`;
+        const scenario = await this.macroEngine.substitute(scenarioTemplate);
+        return scenario ? { role: getRole(), content: scenario, identifier } : null;
+      }
 
       case "enhanceDefinitions":
         if (promptDef && promptDef.content) {

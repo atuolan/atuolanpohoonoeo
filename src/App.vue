@@ -2058,6 +2058,9 @@ function openExistingChat(chatId: string, characterId: string) {
 // ChatScreen 內部切換聊天檔案時同步 chatId（不重建組件）
 async function onChatSwitched(chatId: string) {
   currentChatId.value = chatId;
+  // ChatScreen 內部切換聊天檔案不會重新進入 navigateToPage，需同步替換當前瀏覽器歷史狀態。
+  // 否則從設定等頁面返回時，popstate 會恢復到切換前的舊 chatId。
+  syncBrowserHistory("replace");
 
   const characterId = currentChatCharacterId.value;
   if (characterId) {

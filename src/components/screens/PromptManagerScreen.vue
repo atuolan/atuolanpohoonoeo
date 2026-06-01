@@ -97,7 +97,7 @@ const exportOptions = ref({
   groupChat: false,
   characterConfigs: false,
 });
-const exportFormat = ref<"json" | "typescript">("json");
+const exportFormat = ref<"json" | "typescript" | "sillytavern">("json");
 const newPromptName = ref("");
 const newPromptContent = ref("");
 const newPromptRole = ref<"system" | "user" | "assistant">("system");
@@ -2028,8 +2028,139 @@ function getSelectedTsExportFiles(): TsExportFile[] {
   return files;
 }
 
+// 將提示詞配置轉換為 SillyTavern 相容格式
+function buildSillyTavernExport(
+  prompts: typeof promptManagerStore.config.prompts,
+  order: typeof promptManagerStore.config.globalPromptOrder,
+): { prompts: Record<string, unknown>[] } {
+  const enabledMap = new Map(order.map((e) => [e.identifier, e.enabled]));
+  const orderedPrompts = order
+    .map((entry) => prompts.find((p) => p.identifier === entry.identifier))
+    .filter((p): p is NonNullable<typeof p> => p !== undefined);
+  // 加入不在 order 中的 prompts
+  const orderedIds = new Set(order.map((e) => e.identifier));
+  const extraPrompts = prompts.filter((p) => !orderedIds.has(p.identifier));
+  const allPrompts = [...orderedPrompts, ...extraPrompts];
+
+  return {
+    prompts: allPrompts.map((p, index) => {
+      const entry: Record<string, unknown> = {
+        identifier: p.identifier,
+        name: p.name,
+        enabled: enabledMap.get(p.identifier) ?? true,
+        injection_position: p.injection_position ?? 0,
+        injection_depth: p.injection_depth ?? 4,
+        // RELATIVE 條目（injection_position=0）用陣列 index 作為 injection_order，
+        // 確保 SillyTavern 按 injection_order 排序後與 UI 排列順序完全一致。
+        // ABSOLUTE 條目（injection_position=1）保留原始 injection_order（深度插入邏輯）。
+        injection_order: (p.injection_position ?? 0) === 0 ? index : (p.injection_order ?? 100),
+        role: p.role,
+        system_prompt: p.system_prompt ?? false,
+        marker: p.marker ?? false,
+        forbid_overrides: p.forbid_overrides ?? false,
+      };
+      if (p.content) entry.content = p.content;
+      if (p.injection_trigger && p.injection_trigger.length > 0) {
+        entry.injection_trigger = p.injection_trigger;
+      }
+      return entry;
+    }),
+  };
+}
+
+// 批量导入覆盖线上模式提示词
+const batchImportFileInput = ref<HTMLInputElement | null>(null);
+const showBatchImportConfirm = ref(false);
+const batchImportResult = ref<{
+  success: boolean;
+  imported: number;
+  updated: number;
+  errors: string[];
+} | null>(null);
+
+function openBatchImportFile() {
+  if (!batchImportFileInput.value) return;
+  batchImportFileInput.value.click();
+}
+
+async function handleBatchImportFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const jsonData = JSON.parse(text);
+    
+    // 显示确认对话框
+    const confirmed = confirm(
+      `确定要从 "${file.name}" 批量导入并覆盖线上模式提示词吗？\n\n` +
+      `这将会：\n` +
+      `- 更新所有已存在的提示词内容\n` +
+      `- 添加新的提示词\n` +
+      `- 更新提示词顺序\n` +
+      `- 确保 marker 内容正确连接\n\n` +
+      `建议在导入前先导出当前配置作为备份。`
+    );
+    
+    if (!confirmed) {
+      input.value = "";
+      return;
+    }
+
+    // 执行导入
+    const result = await promptManagerStore.importOnlineModePromptsFromJson(jsonData);
+    batchImportResult.value = result;
+    
+    if (result.success) {
+      alert(
+        `导入成功！\n\n` +
+        `新增：${result.imported} 个提示词\n` +
+        `更新：${result.updated} 个提示词\n` +
+        (result.errors.length > 0 ? `\n警告：\n${result.errors.join('\n')}` : '')
+      );
+      
+      // 刷新当前显示
+      await promptManagerStore.loadConfig();
+    } else {
+      alert(
+        `导入失败！\n\n` +
+        `错误信息：\n${result.errors.join('\n')}`
+      );
+    }
+  } catch (error) {
+    console.error('批量导入失败:', error);
+    alert(
+      `导入失败！\n\n` +
+      `错误：${error instanceof Error ? error.message : '未知错误'}\n\n` +
+      `请确认 JSON 格式正确。`
+    );
+  } finally {
+    input.value = "";
+  }
+}
+
 // 執行導出
 function doExport() {
+  if (exportFormat.value === "sillytavern") {
+    const config = promptManagerStore.config;
+    // 使用 currentPromptOrder（與 UI 顯示完全一致），而非 raw config.globalPromptOrder
+    const dedupedOrder = dedupeById(promptManagerStore.currentPromptOrder);
+    const dedupedPrompts = dedupeById(config.prompts);
+    const stData = buildSillyTavernExport(dedupedPrompts, dedupedOrder);
+    const json = JSON.stringify(stData, null, 4);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `prompt-sillytavern-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    alert("已下載 SillyTavern 格式提示詞配置！");
+    showExportModal.value = false;
+    return;
+  }
+
   if (exportFormat.value === "typescript") {
     const files = getSelectedTsExportFiles();
     const code =
@@ -2338,6 +2469,16 @@ watch(newPromptInsertMode, (mode) => {
               @click="openExportModal"
             >
               導出配置
+            </button>
+
+            <button
+              v-if="adminStore.isAdmin && selectedMode === 'global'"
+              class="header-menu-item"
+              role="menuitem"
+              title="批量導入覆蓋線上模式提示詞（確保 marker 正確連接）"
+              @click="openBatchImportFile"
+            >
+              批量導入線上模式
             </button>
 
             <button
@@ -3741,6 +3882,21 @@ watch(newPromptInsertMode, (mode) => {
                       <span class="option-desc">輸出純文字，用來貼去覆蓋對應的 .ts 檔案</span>
                     </span>
                   </label>
+                  <label
+                    class="export-option"
+                    :class="{ 'is-checked': exportFormat === 'sillytavern' }"
+                  >
+                    <input
+                      type="radio"
+                      v-model="exportFormat"
+                      value="sillytavern"
+                    />
+                    <span class="option-icon">🍺</span>
+                    <span class="option-content">
+                      <span class="option-name">SillyTavern 格式</span>
+                      <span class="option-desc">相容酒館的 prompts JSON，可直接匯入 SillyTavern</span>
+                    </span>
+                  </label>
                 </div>
               </div>
             </div>
@@ -3861,6 +4017,15 @@ watch(newPromptInsertMode, (mode) => {
         </div>
       </Transition>
     </Teleport>
+
+    <!-- 隐藏的批量导入文件输入框 -->
+    <input
+      ref="batchImportFileInput"
+      type="file"
+      accept=".json"
+      style="display: none"
+      @change="handleBatchImportFileChange"
+    />
   </div>
 </template>
 

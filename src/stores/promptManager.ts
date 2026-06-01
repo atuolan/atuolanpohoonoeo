@@ -2646,6 +2646,107 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     return removed;
   }
 
+  /**
+   * 从 JSON 文件批量导入并覆盖线上模式提示词
+   * @param jsonData 包含 prompts 和 prompt_order 的 JSON 对象
+   * @returns 导入结果统计
+   */
+  async function importOnlineModePromptsFromJson(jsonData: {
+    prompts?: PromptDefinition[];
+    prompt_order?: Array<{ character_id: number; order: PromptOrderEntry[] }>;
+  }): Promise<{
+    success: boolean;
+    imported: number;
+    updated: number;
+    errors: string[];
+  }> {
+    const result = {
+      success: false,
+      imported: 0,
+      updated: 0,
+      errors: [] as string[],
+    };
+
+    try {
+      if (!jsonData.prompts || !Array.isArray(jsonData.prompts)) {
+        result.errors.push("JSON 格式错误：缺少 prompts 数组");
+        return result;
+      }
+
+      // 创建 identifier 到提示词的映射
+      const importedPromptsMap = new Map<string, PromptDefinition>();
+      for (const prompt of jsonData.prompts) {
+        if (!prompt.identifier) {
+          result.errors.push(`跳过无 identifier 的提示词: ${prompt.name || "未命名"}`);
+          continue;
+        }
+        importedPromptsMap.set(prompt.identifier, prompt);
+      }
+
+      // 遍历现有的线上模式提示词，更新或添加
+      const existingIds = new Set(config.value.prompts.map((p) => p.identifier));
+      
+      for (const [identifier, importedPrompt] of importedPromptsMap) {
+        try {
+          if (existingIds.has(identifier)) {
+            // 更新现有提示词
+            const index = config.value.prompts.findIndex(
+              (p) => p.identifier === identifier,
+            );
+            if (index !== -1) {
+              // 保留某些本地属性，覆盖其他所有属性
+              const localPrompt = config.value.prompts[index];
+              config.value.prompts[index] = {
+                ...importedPrompt,
+                // 保留本地的 adminOnly 和 isDeletable 属性（如果存在）
+                adminOnly: localPrompt.adminOnly,
+                isDeletable: localPrompt.isDeletable,
+              };
+              result.updated++;
+            }
+          } else {
+            // 添加新提示词
+            config.value.prompts.push(importedPrompt);
+            result.imported++;
+          }
+        } catch (error) {
+          result.errors.push(
+            `处理提示词 ${identifier} 时出错: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+
+      // 更新提示词顺序（如果提供）
+      if (jsonData.prompt_order && Array.isArray(jsonData.prompt_order)) {
+        for (const orderConfig of jsonData.prompt_order) {
+          if (orderConfig.order && Array.isArray(orderConfig.order)) {
+            // 过滤出实际存在的提示词
+            const validOrder = orderConfig.order.filter((o) =>
+              config.value.prompts.some((p) => p.identifier === o.identifier),
+            );
+            
+            // 更新全局顺序
+            config.value.globalPromptOrder = validOrder;
+          }
+        }
+      }
+
+      // 去重并保存
+      dedupeOrderInPlace(config.value.prompts);
+      dedupeOrderInPlace(config.value.globalPromptOrder);
+      
+      await saveConfig();
+      
+      result.success = true;
+    } catch (error) {
+      result.errors.push(
+        `导入过程出错: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    return result;
+  }
+
   return {
     // State
     config,
@@ -2736,5 +2837,6 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     restorePresetModule,
     deletePromptForMode,
     deleteAllCustomPromptsForMode,
+    importOnlineModePromptsFromJson,
   };
 });

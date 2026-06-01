@@ -323,7 +323,7 @@ export const DEFAULT_GROUP_CHAT_PROMPT_ORDER: PromptOrderEntry[] =
 // ===== 創建默認配置 =====
 export function createDefaultPromptManagerConfig(): PromptManagerConfig {
   return {
-    version: 3,
+    version: 4,
     prompts: structuredClone(DEFAULT_PROMPT_DEFINITIONS),
     globalPromptOrder: structuredClone(DEFAULT_PROMPT_ORDER),
     characterConfigs: {},
@@ -400,10 +400,26 @@ export function isMarkerPrompt(prompt: PromptDefinition): boolean {
   return prompt.marker;
 }
 
+// 允許自訂 content 模板的 marker 條目（對齊 SillyTavern forceEditPrompts）
+const TEMPLATE_EDITABLE_MARKERS = new Set([
+  "charDescription",
+  "charPersonality",
+  "scenario",
+  "f2fCharDescription",
+  "f2fCharPersonality",
+  "f2fScenario",
+  "gcCharDescription",
+  "gcCharPersonality",
+  "gcScenario",
+]);
+
 // ===== 檢查是否可編輯 =====
 export function isPromptEditable(prompt: PromptDefinition): boolean {
-  // Marker 不可編輯內容（由系統填充）
-  // 但可以編輯注入位置等屬性
+  // 特定 marker 條目允許編輯 content（作為包裝模板，可用 {{charDescription}} 等宏）
+  if (prompt.marker && TEMPLATE_EDITABLE_MARKERS.has(prompt.identifier)) {
+    return true;
+  }
+  // 其他 Marker 不可編輯內容（由系統填充）
   return !prompt.marker;
 }
 

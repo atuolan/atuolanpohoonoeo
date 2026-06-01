@@ -98,24 +98,39 @@ export class MacroEngine {
       },
     })
 
-    // 角色描述
+    // 角色描述（{{description}} 和 {{charDescription}} 均可用）
     this.register({
       name: 'description',
       description: '角色描述',
       handler: () => this.context.charDescription || '',
     })
+    this.register({
+      name: 'charDescription',
+      description: '角色描述（同 {{description}}）',
+      handler: () => this.context.charDescription || '',
+    })
 
-    // 角色性格
+    // 角色性格（{{personality}} 和 {{charPersonality}} 均可用）
     this.register({
       name: 'personality',
       description: '角色性格',
       handler: () => this.context.charPersonality || '',
     })
+    this.register({
+      name: 'charPersonality',
+      description: '角色性格（同 {{personality}}）',
+      handler: () => this.context.charPersonality || '',
+    })
 
-    // 場景
+    // 場景（{{scenario}} 和 {{charScenario}} 均可用）
     this.register({
       name: 'scenario',
       description: '場景描述',
+      handler: () => this.context.scenario || '',
+    })
+    this.register({
+      name: 'charScenario',
+      description: '場景描述（同 {{scenario}}）',
       handler: () => this.context.scenario || '',
     })
 
