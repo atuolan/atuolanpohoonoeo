@@ -63,6 +63,9 @@ export async function saveChatMetadata(chat: Chat): Promise<void> {
   ) {
     nextChat.blockState = existing.blockState;
   }
+  if (existing?.chatVariables && !nextChat.chatVariables) {
+    nextChat.chatVariables = existing.chatVariables;
+  }
   await db.put(DB_STORES.CHATS, nextChat);
   scheduleSelfHostedAutoSync();
 }

@@ -28,6 +28,7 @@ export interface BuildChatMetadataOptions {
   userAvatarOverride: string | undefined;
   coupleAvatarLibrary: Chat["coupleAvatarLibrary"] | undefined;
   activeCoupleAvatarId: string | null;
+  chatVariables: Chat["chatVariables"] | undefined;
 }
 
 export function buildChatMetadataFromState(options: BuildChatMetadataOptions): Chat {
@@ -75,5 +76,8 @@ export function buildChatMetadataFromState(options: BuildChatMetadataOptions): C
     userAvatarOverride: options.userAvatarOverride,
     coupleAvatarLibrary: options.coupleAvatarLibrary,
     activeCoupleAvatarId: options.activeCoupleAvatarId,
+    chatVariables: options.chatVariables
+      ? JSON.parse(JSON.stringify(options.chatVariables))
+      : undefined,
   };
 }

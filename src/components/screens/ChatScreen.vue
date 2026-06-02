@@ -6126,7 +6126,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
         await loadBlockState();
 
         // 初始化聊天變量（{{getvar}} / {{setvar}} 宏系統）
-        chatVariablesStore.initForChat(chat.id);
+        chatVariablesStore.initForChatFromRecord(chat);
         getMacroEngine().registerVarMacros(chatVariablesStore, () =>
           isGroupChat.value ? "gc" : chatFaceToFaceMode.value ? "f2f" : "online",
         );
@@ -6529,6 +6529,13 @@ function buildChatMetadata(
         : undefined,
     appearance: chatAppearance.value,
     summarySettings: toRaw(chatSummarySettings.value),
+    chatVariables: currentChatId.value
+      ? {
+          version: 1,
+          localVars: { ...chatVariablesStore.localVars },
+          updatedAt: currentChatData.value?.chatVariables?.updatedAt ?? Date.now(),
+        }
+      : currentChatData.value?.chatVariables,
     locationOverride: chatLocationOverride.value,
     charAvatarOverride: charAvatarOverride.value,
     userAvatarOverride: userAvatarOverride.value,

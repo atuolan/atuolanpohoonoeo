@@ -706,6 +706,12 @@ export const createDefaultSummarySettings = (): SummarySettings => ({
 });
 
 // ===== 聊天會話 =====
+export interface ChatVariablesState {
+  version: 1;
+  localVars: Record<string, string>;
+  updatedAt: number;
+}
+
 export interface Chat {
   /** 唯一識別碼 */
   id: string;
@@ -787,6 +793,10 @@ export interface Chat {
   // --- 總結記憶設定 ---
   /** 聊天專屬總結設定 */
   summarySettings?: SummarySettings;
+
+  // --- 聊天變量 ---
+  /** 聊天專屬變量覆蓋與開關狀態（存入 IDB，隨聊天匯出/備份） */
+  chatVariables?: ChatVariablesState;
 
   // --- 分塊儲存輔助欄位 ---
   /** 最後一條訊息預覽（用於列表顯示，避免讀取全部訊息） */

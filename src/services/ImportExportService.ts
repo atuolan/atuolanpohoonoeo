@@ -1757,6 +1757,7 @@ export class ImportExportService {
         create_date: new Date(chat.createdAt).toISOString(),
         chat_metadata: {
           variables: chat.metadata?.variables || {},
+          chatVariables: chat.chatVariables,
         },
       };
 
@@ -1927,6 +1928,13 @@ export class ImportExportService {
         }
         chat.metadata.variables = { ...metadata.chat_metadata.variables };
       }
+      if (metadata.chat_metadata?.chatVariables) {
+        chat.chatVariables = {
+          version: 1,
+          localVars: { ...(metadata.chat_metadata.chatVariables.localVars ?? {}) },
+          updatedAt: Date.now(),
+        };
+      }
 
       // 保存（圖片分離後寫入 chatMessages 表）
       const msgsForStorage = await extractImagesFromMessages(messages);
@@ -2062,6 +2070,13 @@ export class ImportExportService {
       // 匯入 variables
       if (metadata.chat_metadata?.variables) {
         chat.metadata.variables = { ...metadata.chat_metadata.variables };
+      }
+      if (metadata.chat_metadata?.chatVariables) {
+        chat.chatVariables = {
+          version: 1,
+          localVars: { ...(metadata.chat_metadata.chatVariables.localVars ?? {}) },
+          updatedAt: Date.now(),
+        };
       }
 
       // v24：訊息分離儲存
