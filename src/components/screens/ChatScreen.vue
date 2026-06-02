@@ -11,6 +11,7 @@ import {
 import { MessageBubble } from "@/components/common";
 import ChatScreenHeader from "@/components/screens/ChatScreenHeader.vue";
 import ChatDetailsScreen from "@/components/screens/ChatDetailsScreen.vue";
+import ChatVarsPanel from "@/components/screens/ChatVarsPanel.vue";
 import ChatScreenInputArea from "@/components/screens/ChatScreenInputArea.vue";
 import ChatGameModals from "@/components/screens/ChatGameModals.vue";
 import GiftDrawer from "@/components/common/GiftDrawer.vue";
@@ -348,6 +349,7 @@ const promptManagerStore = usePromptManagerStore();
 
 // 當前聊天 ID
 const currentChatId = ref<string | null>(null);
+const activeChatId = computed(() => currentChatId.value ?? "");
 
 // ===== AI 生成狀態 composable =====
 const {
@@ -793,6 +795,9 @@ const showMoreMenu = ref(false);
 
 // 顯示聊天詳情頁
 const showChatDetails = ref(false);
+
+// 顯示聊天變量設定面板
+const showChatVarsPanel = ref(false);
 
 // Rail 收合狀態（手機端頂欄按鈕收合）
 const showRail = ref(false);
@@ -6122,7 +6127,9 @@ async function loadOrCreateChat(overrideChatId?: string) {
 
         // 初始化聊天變量（{{getvar}} / {{setvar}} 宏系統）
         chatVariablesStore.initForChat(chat.id);
-        getMacroEngine().registerVarMacros(chatVariablesStore);
+        getMacroEngine().registerVarMacros(chatVariablesStore, () =>
+          isGroupChat.value ? "gc" : chatFaceToFaceMode.value ? "f2f" : "online",
+        );
 
         // 清除未讀計數（只更新 metadata，不寫入訊息）
         if (chat.unreadCount) {
@@ -6541,7 +6548,9 @@ const chatPersistence = useChatPersistence({
   buildChatMetadata,
   initChatVariables: (chatId: string) => {
     chatVariablesStore.initForChat(chatId);
-    getMacroEngine().registerVarMacros(chatVariablesStore);
+    getMacroEngine().registerVarMacros(chatVariablesStore, () =>
+      isGroupChat.value ? "gc" : chatFaceToFaceMode.value ? "f2f" : "online",
+    );
   },
   refreshBlockStateFromStorage,
 });
@@ -7059,6 +7068,20 @@ useChatCleanup({
           @toggle-block-character="toggleBlockCharacter"
           @clear-chat-history="clearChatHistory"
           @open-proactive-message-settings="showProactiveMessageSettings = true"
+          @open-chat-vars="showChatVarsPanel = true"
+        />
+      </Transition>
+    </Teleport>
+
+    <!-- 聊天變量設定面板 -->
+    <Teleport to="body">
+      <Transition name="slide-up">
+        <ChatVarsPanel
+          v-if="showChatVarsPanel"
+          :chat-id="activeChatId"
+          :is-group-chat="isGroupChat"
+          :face-to-face-mode="chatFaceToFaceMode"
+          @close="showChatVarsPanel = false"
         />
       </Transition>
     </Teleport>

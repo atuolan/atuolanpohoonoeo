@@ -302,7 +302,7 @@ export class MacroEngine {
     if (!text) return ''
 
     // 匹配 {{macroName}} 或 {{macroName::arg1::arg2}}
-    const macroPattern = /\{\{([a-zA-Z_][a-zA-Z0-9_]*)((?:::[^}]+)*)\}\}/g
+    const macroPattern = /\{\{([\p{L}_][\p{L}\p{N}_]*)((?:::[^}]*)*)\}\}/gu
 
     let result = text
     let match: RegExpExecArray | null
@@ -330,7 +330,7 @@ export class MacroEngine {
       let args: Record<string, string> | undefined
       if (argsStr) {
         args = {}
-        const argParts = argsStr.split('::').filter(s => s)
+        const argParts = argsStr.startsWith('::') ? argsStr.slice(2).split('::') : []
         argParts.forEach((arg, index) => {
           args![String(index)] = arg
         })
@@ -368,7 +368,7 @@ export class MacroEngine {
   substituteSync(text: string): string {
     if (!text) return ''
 
-    const macroPattern = /\{\{([a-zA-Z_][a-zA-Z0-9_]*)((?:::[^}]+)*)\}\}/g
+    const macroPattern = /\{\{([\p{L}_][\p{L}\p{N}_]*)((?:::[^}]*)*)\}\}/gu
 
     return text.replace(macroPattern, (fullMatch, macroName, argsStr) => {
       const macro = this.macros.get(macroName)
@@ -384,7 +384,7 @@ export class MacroEngine {
       let args: Record<string, string> | undefined
       if (argsStr) {
         args = {}
-        const argParts = argsStr.split('::').filter((s: string) => s)
+        const argParts = argsStr.startsWith('::') ? argsStr.slice(2).split('::') : []
         argParts.forEach((arg: string, index: number) => {
           args![String(index)] = arg
         })
@@ -408,29 +408,50 @@ export class MacroEngine {
    * 注冊 SillyTavern 相容的局部/全局變量宏
    * 需傳入 chatVariablesStore 的操作代理，避免循環依賴
    */
-  registerVarMacros(store: {
-    getLocal: (name: string) => string;
-    setLocal: (name: string, value: string) => void;
-    addLocal: (name: string, increment: string) => void;
-    incLocal: (name: string) => string;
-    decLocal: (name: string) => string;
-    getGlobal: (name: string) => string;
-    setGlobal: (name: string, value: string) => void;
-    addGlobal: (name: string, increment: string) => void;
-    incGlobal: (name: string) => string;
-    decGlobal: (name: string) => string;
-  }): void {
+  registerVarMacros(
+    store: {
+      getLocal: (name: string) => string;
+      setLocal: (name: string, value: string) => void;
+      addLocal: (name: string, increment: string) => void;
+      incLocal: (name: string) => string;
+      decLocal: (name: string) => string;
+      getGlobal: (name: string) => string;
+      setGlobal: (name: string, value: string) => void;
+      addGlobal: (name: string, increment: string) => void;
+      incGlobal: (name: string) => string;
+      decGlobal: (name: string) => string;
+    },
+    getVarMode: () => "online" | "f2f" | "gc" = () => "online",
+  ): void {
+    const toScopedLocalName = (name: string) => {
+      const trimmedName = name.trim();
+      if (!trimmedName) return "";
+      return `${getVarMode()}__${trimmedName}`;
+    };
+
     // 局部變量
     this.register({
       name: "getvar",
       description: "讀取局部（當前聊天）變量",
-      handler: (args) => store.getLocal(args?.["0"] ?? ""),
+      handler: (args) => store.getLocal(toScopedLocalName(args?.["0"] ?? "")),
     });
     this.register({
       name: "setvar",
-      description: "設置局部變量（返回空字串）",
+      description: "設置局部變量（返回空字串）；若存在用戶覆蓋值則優先使用，可被單聊天開關停用",
       handler: (args) => {
-        store.setLocal(args?.["0"] ?? "", args?.["1"] ?? "");
+        const name = toScopedLocalName(args?.["0"] ?? "");
+        if (name) {
+          const enabledKey = `__enabled__${name}`;
+          if (store.getLocal(enabledKey) === "0") {
+            store.setLocal(name, "");
+            return "";
+          }
+
+          const overrideKey = `__override__${name}`;
+          const overrideSetKey = `__override_set__${name}`;
+          const overrideVal = store.getLocal(overrideKey);
+          store.setLocal(name, store.getLocal(overrideSetKey) === "1" ? overrideVal : (args?.["1"] ?? ""));
+        }
         return "";
       },
     });
@@ -438,19 +459,26 @@ export class MacroEngine {
       name: "addvar",
       description: "累加局部變量（數字加法或字串拼接）",
       handler: (args) => {
-        store.addLocal(args?.["0"] ?? "", args?.["1"] ?? "0");
+        const name = toScopedLocalName(args?.["0"] ?? "");
+        if (name) store.addLocal(name, args?.["1"] ?? "0");
         return "";
       },
     });
     this.register({
       name: "incvar",
       description: "局部變量遞增 1，返回新值",
-      handler: (args) => store.incLocal(args?.["0"] ?? ""),
+      handler: (args) => {
+        const name = toScopedLocalName(args?.["0"] ?? "");
+        return name ? store.incLocal(name) : "";
+      },
     });
     this.register({
       name: "decvar",
       description: "局部變量遞減 1，返回新值",
-      handler: (args) => store.decLocal(args?.["0"] ?? ""),
+      handler: (args) => {
+        const name = toScopedLocalName(args?.["0"] ?? "");
+        return name ? store.decLocal(name) : "";
+      },
     });
 
     // 全局變量

@@ -23,6 +23,7 @@ const emit = defineEmits<{
   (e: "toggle-block-character"): void;
   (e: "clear-chat-history"): void;
   (e: "open-proactive-message-settings"): void;
+  (e: "open-chat-vars"): void;
 }>();
 
 const displayName = computed(() => props.isGroupChat ? props.groupDisplayName : props.displayCharacterName);
@@ -48,6 +49,9 @@ function handleAction(action: string) {
       break;
     case "chat-info":
       emit("open-chat-info");
+      break;
+    case "chat-vars":
+      emit("open-chat-vars");
       break;
     case "chat-files":
       emit("close");
@@ -203,6 +207,20 @@ function handleAction(action: string) {
                 </svg>
               </div>
               <span class="list-label">聊天資訊</span>
+              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </button>
+            <button class="list-item" @click="handleAction('chat-vars')">
+              <div class="list-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 7h16" />
+                  <path d="M4 17h16" />
+                  <circle cx="8" cy="7" r="2" />
+                  <circle cx="16" cy="17" r="2" />
+                </svg>
+              </div>
+              <span class="list-label">變量設定</span>
               <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m9 18 6-6-6-6" />
               </svg>
