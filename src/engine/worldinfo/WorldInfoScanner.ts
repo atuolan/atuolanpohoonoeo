@@ -3,6 +3,7 @@
  * 移植自 SillyTavern world-info.js checkWorldInfo 函數
  */
 
+import { isWorldInfoEntryEnabled } from '@/utils/worldInfoEntryState'
 import type {
   WorldInfoEntry,
   Lorebook,
@@ -149,8 +150,8 @@ export class WorldInfoScanner {
           continue
         }
 
-        // 跳過禁用的條目
-        if (entry.disable) {
+        // 跳過禁用的條目（兼容導入資料的 enabled=false）
+        if (!isWorldInfoEntryEnabled(entry)) {
           continue
         }
 

@@ -13,6 +13,7 @@ import {
 } from "@/services/PeekPhoneService";
 import { useLorebooksStore } from "@/stores/lorebooks";
 import { useNotificationStore } from "@/stores/notification";
+import { isWorldInfoEntryEnabled } from "@/utils/worldInfoEntryState";
 import { useSettingsStore } from "@/stores/settings";
 import { useUserStore } from "@/stores/user";
 import type { StoredCharacter } from "@/types/character";
@@ -228,7 +229,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
 
     const lines: string[] = [];
     for (const lb of lorebooks) {
-      const enabledEntries = lb.entries.filter((e) => !e.disable && e.content);
+      const enabledEntries = lb.entries.filter(isWorldInfoEntryEnabled);
       if (enabledEntries.length === 0) continue;
       lines.push(`【${lb.name || "世界書"}】`);
       for (const entry of enabledEntries) {

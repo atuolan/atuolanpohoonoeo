@@ -19,6 +19,7 @@ import type {
 } from "@/types/book";
 import type { Chat, ChatMessage } from "@/types/chat";
 import type { StoredCharacter } from "@/types/character";
+import { isWorldInfoEntryEnabled } from "@/utils/worldInfoEntryState";
 import { computed, ref, type ComputedRef, type Ref } from "vue";
 
 // ===== 純函式：可獨立測試的核心邏輯 =====
@@ -328,7 +329,7 @@ function collectWorldInfo(
 
   const lines: string[] = [];
   for (const lb of linkedLorebooks) {
-    const enabledEntries = lb.entries.filter((e) => !e.disable && e.content);
+    const enabledEntries = lb.entries.filter(isWorldInfoEntryEnabled);
     if (enabledEntries.length === 0) continue;
     lines.push(`[${lb.name}]`);
     for (const entry of enabledEntries) {
