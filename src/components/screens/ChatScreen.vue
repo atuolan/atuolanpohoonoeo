@@ -12,19 +12,16 @@ import { MessageBubble } from "@/components/common";
 import ChatScreenHeader from "@/components/screens/ChatScreenHeader.vue";
 import ChatDetailsScreen from "@/components/screens/ChatDetailsScreen.vue";
 import ChatScreenInputArea from "@/components/screens/ChatScreenInputArea.vue";
+import ChatGameModals from "@/components/screens/ChatGameModals.vue";
 import GiftDrawer from "@/components/common/GiftDrawer.vue";
 import MediaSendDrawer from "@/components/common/MediaSendDrawer.vue";
 import AISummaryPanel from "@/components/modals/AISummaryPanel.vue";
 import AffinityPanel from "@/components/modals/AffinityPanel.vue";
 import ChatInfoModal from "@/components/modals/ChatInfoModal.vue";
 import DiaryViewModal from "@/components/modals/DiaryViewModal.vue";
-import DishWashingGame from "@/components/modals/DishWashingGame.vue";
-import FishingGame from "@/components/modals/FishingGame.vue";
-import GamblingGame from "@/components/modals/GamblingGame.vue";
 import GameScorePickerModal from "@/components/modals/GameScorePickerModal.vue";
 import GroupCallModal from "@/components/modals/GroupCallModal.vue";
 import IncomingCallModal from "@/components/modals/IncomingCallModal.vue";
-import MeritHub from "@/components/modals/MeritHub.vue";
 import PersonaEditPanel from "@/components/modals/PersonaEditPanel.vue";
 import PhoneCallModal from "@/components/modals/PhoneCallModal.vue";
 import ProactiveMessageSettingsModal from "@/components/modals/ProactiveMessageSettingsModal.vue";
@@ -32,6 +29,19 @@ import RedPacketVoiceClaimModal from "@/components/modals/RedPacketVoiceClaimMod
 import ScreenshotPreviewModal from "@/components/modals/ScreenshotPreviewModal.vue";
 import VideoCallModal from "@/components/modals/VideoCallModal.vue";
 import ImageSearchPanel from "@/components/panels/ImageSearchPanel.vue";
+import { _delay, _escapeRegex, _messageRenderDelay, formatClaimAmount, hashString, isShadowBubbleOf } from "@/utils/chatScreenHelpers";
+import { useChatAffinity } from "@/composables/useChatAffinity";
+import { useChatBlock } from "@/composables/useChatBlock";
+import { useChatRedpacket } from "@/composables/useChatRedpacket";
+import { useChatRegex } from "@/composables/useChatRegex";
+import { useChatWeatherModal } from "@/composables/useChatWeatherModal";
+import {
+  runChatGenerationRequest,
+  useChatGeneration,
+  type ChatTriggerAIResponseOptions,
+} from "@/composables/useChatGeneration";
+import { useChatRegeneration } from "@/composables/useChatRegeneration";
+import { useChatAppearance } from "@/composables/useChatAppearance";
 import { useChatAudioRecording } from "@/composables/useChatAudioRecording";
 import { useChatAvatarChange } from "@/composables/useChatAvatarChange";
 import { useChatEventsExtraction } from "@/composables/useChatEventsExtraction";
@@ -48,6 +58,17 @@ import { useChatIncomingCalls } from "@/composables/useChatIncomingCalls";
 import { useChatInputHelper } from "@/composables/useChatInputHelper";
 import { useChatMedia } from "@/composables/useChatMedia";
 import { useChatMiniFeatures } from "@/composables/useChatMiniFeatures";
+import { useChatMessageActions } from "@/composables/useChatMessageActions";
+import { useMultiCharMembers } from "@/composables/useMultiCharMembers";
+import { useChatTTS } from "@/composables/useChatTTS";
+import { useChatSideEffects } from "@/composables/useChatSideEffects";
+import { useChatInit } from "@/composables/useChatInit";
+import {
+  applyWaimaiParsedResultToMessage,
+  buildWaimaiAuthorsNote,
+} from "@/composables/useChatWaimai";
+import { useChatStreamingHandlers } from "@/composables/useChatStreamingHandlers";
+import { useChatCleanup } from "@/composables/useChatCleanup";
 import { WORLD_CITIES, type CityEntry } from "@/data/worldCities";
 import PvButton from "primevue/button";
 import PvSelect from "primevue/select";
@@ -113,7 +134,6 @@ import {
   getWeatherByCoords,
 } from "@/services/WeatherService";
 import {
-  useAIGenerationStore,
   useCharactersStore,
   useChatStore,
   useLorebooksStore,
@@ -145,20 +165,12 @@ import type {
 import { createDefaultChat } from "@/types/chat";
 import { formatMediaLogsForPrompt } from "@/types/mediaLog";
 import { formatFoodLogsForPrompt } from "@/types/fitness";
-import type { AuthorsNoteMetadata } from "@/types/prompt";
 import type { Lorebook } from "@/types/worldinfo";
-import { PromptRole } from "@/types/worldinfo";
 import ejs from "ejs";
 import {
   buildPostCallPrompt,
   createCallNotificationCard,
 } from "@/utils/postCallReaction";
-import { traditionalToSimplified } from "@/data/zhConversionMap";
-import {
-  cleanTTSTags,
-  hasTTSTags,
-  parseTTSSegments,
-} from "@/utils/ttsTagCleaner";
 import {
   convertStoredMessageToUiMessage as mapStoredMessageToUiMessage,
   convertToStorableMessage as mapToStorableMessage,
@@ -173,7 +185,6 @@ import {
   computed,
   nextTick,
   onMounted,
-  onUnmounted,
   ref,
   toRaw,
   watch,
@@ -210,67 +221,6 @@ const emit = defineEmits<{
   (e: "chatSwitched", chatId: string): void;
 }>();
 
-// ===== Regex 腳本套用 helpers =====
-// 取得合併腳本：全域腳本（先）+ 角色卡內嵌腳本（後），對應 ST 的 getRegexScripts()
-function getActiveRegexScripts() {
-  const global = regexScriptsStore.allScripts ?? [];
-  const charScripts =
-    currentCharacter.value?.data?.extensions?.regex_scripts ?? [];
-  return [...global, ...charScripts];
-}
-
-// 套用 AI_OUTPUT regex（在 finalContent 進入 parser 前呼叫）
-function applyAIOutputRegex(content: string): string {
-  // 內建清理：移除 AI 自行輸出的時間戳標記，如 [time:2026/04/14 1:10A.M]
-  content = content.replace(/\[time(?:stamp)?\s*[:：][^\]]*\]/gi, "").trimStart();
-
-  const scripts = getActiveRegexScripts();
-  if (!scripts.length) return content;
-  const charName = currentCharacter.value?.data?.name || props.characterName;
-  const userName = userStore.currentPersona?.name || "User";
-  const regexed = getRegexedString(content, regex_placement.AI_OUTPUT, scripts, {
-    characterName: charName,
-    userName,
-  });
-  const markdownRegexed = getRegexedString(regexed, regex_placement.AI_OUTPUT, scripts, {
-    characterName: charName,
-    userName,
-    isMarkdown: true,
-  });
-  const displayRegexed = hasRenderableHtmlBlock(markdownRegexed)
-    ? markdownRegexed
-    : regexed;
-  const htmlTemplateResult = applyHtmlTemplateRules(displayRegexed, scripts, {
-    characterName: charName,
-    userName,
-    placement: regex_placement.AI_OUTPUT,
-  });
-  return htmlTemplateResult.text;
-}
-
-function processAiOutputTemplate(content: string): string {
-  if (!content.includes("<%")) return content;
-
-  const processed = content.replace(
-    /(<%[-_=]?)(\s*[\s\S]*?)([-_]?%>)/g,
-    (_match, open, body, close) => open + body.replace(/\bawait\s+/g, "") + close,
-  );
-
-  try {
-    const ctx = createStTemplateContext({
-      affinityConfig: _affinityConfig.value,
-      affinityState: _affinityState.value,
-      charName: currentCharacter.value?.data?.name || props.characterName || "角色",
-      userName: effectivePersona.value?.name || userStore.currentPersona?.name || "User",
-      chatId: currentChatId.value || props.chatId,
-      messages: messages.value as unknown as ChatMessage[],
-    });
-    return ejs.render(processed, ctx, { async: false });
-  } catch (error) {
-    console.warn("[ChatScreen] AI 回覆模板預處理失敗，保留原文:", error);
-    return content;
-  }
-}
 
 const onHeaderSelectPersona = (...args: any[]) => selectPersona(args[0] as string);
 const onHeaderOpenGame = (...args: any[]) =>
@@ -285,23 +235,6 @@ const onHeaderUpdateOffsetStartDateTime = (...args: any[]) =>
   updateOffsetStartDateTime(args[0] as string);
 const onHeaderNavigate = (...args: any[]) =>
   navigateTo(args[0] as "character" | "worldbook" | "settings" | "peek-phone");
-
-// 套用 USER_INPUT regex（在用戶訊息 content 建立前呼叫）
-function applyUserInputRegex(content: string): string {
-  const scripts = getActiveRegexScripts();
-  if (!scripts.length) return content;
-  const charName = currentCharacter.value?.data?.name || props.characterName;
-  const userName = userStore.currentPersona?.name || "User";
-  const regexed = getRegexedString(content, regex_placement.USER_INPUT, scripts, {
-    characterName: charName,
-    userName,
-  });
-  return applyHtmlTemplateRules(regexed, scripts, {
-    characterName: charName,
-    userName,
-    placement: regex_placement.USER_INPUT,
-  }).text;
-}
 
 // 快捷導航
 const showCharacterNavModal = ref(false);
@@ -356,7 +289,6 @@ const charactersStore = useCharactersStore();
 const settingsStore = useSettingsStore();
 const themeStore = useThemeStore();
 const lorebooksStore = useLorebooksStore();
-const aiGenerationStore = useAIGenerationStore();
 const stickerStore = useStickerStore();
 const userStore = useUserStore();
 const fitnessStore = useFitnessStore();
@@ -416,6 +348,18 @@ const promptManagerStore = usePromptManagerStore();
 
 // 當前聊天 ID
 const currentChatId = ref<string | null>(null);
+
+// ===== AI 生成狀態 composable =====
+const {
+  isGenerating,
+  startChatGeneration,
+  updateChatGenerationContent,
+  completeChatGeneration,
+  setChatGenerationError,
+  stopChatGeneration,
+  isChatGenerating,
+  getChatGenerationTask,
+} = useChatGeneration({ currentChatId });
 
 // ===== 節日主動祝福觸發 =====
 // 進入聊天時，若今天是節日且尚未觸發，角色會主動發送祝福
@@ -711,10 +655,21 @@ const visibleCount = ref(MESSAGE_PAGE_SIZE); // 當前顯示的訊息數量
 const isLoadingMore = ref(false); // 是否正在載入更多
 const loadMoreSentinelRef = ref<HTMLElement | null>(null); // 頂部哨兵元素
 
-// ===== 外賣物流進度時間閘門 =====
-// 用於逐日顯示排程的物流進度訊息（而非一次性全部顯示）
-const _waimaiProgressNow = ref(Date.now());
-let _waimaiProgressTimer: ReturnType<typeof setInterval> | undefined;
+// ===== 聊天側效 composable（外賣時間閘門 / pending 注入 / 外部訊息 reload） =====
+const {
+  waimaiProgressNow,
+  isMessageDisplayable,
+  markInitialChatLoadDone,
+} = useChatSideEffects({
+  messages,
+  pendingMessage: () => props.pendingMessage,
+  currentChatId,
+  isChatGenerating,
+  loadOrCreateChat,
+  scrollToBottom,
+  saveChatImmediate,
+  emitPendingMessageConsumed: () => emit("pendingMessageConsumed"),
+});
 
 const SEARCH_CONTEXT_BEFORE_COUNT = 30;
 const SEARCH_CONTEXT_AFTER_COUNT = 30;
@@ -723,13 +678,6 @@ const isSearchContextMode = ref(false);
 const searchContextTargetId = ref<string | null>(null);
 const searchContextMessages = ref<Message[]>([]);
 const searchJumpStatus = ref<"idle" | "loading" | "error">("idle");
-
-function isMessageDisplayable(m: Message, now = _waimaiProgressNow.value): boolean {
-  if (m.isContinuePrompt) return false;
-  // 隱藏尚未到達排程時間的物流進度訊息，使其逐日顯現
-  if (m.isWaimaiProgress && m.timestamp > now) return false;
-  return true;
-}
 
 function exitSearchContextMode() {
   isSearchContextMode.value = false;
@@ -740,7 +688,7 @@ function exitSearchContextMode() {
 
 // 可見訊息列表（正常模式只渲染最後 N 條；搜尋定位模式只渲染目標附近上下文）
 const visibleMessages = computed(() => {
-  const now = _waimaiProgressNow.value;
+  const now = waimaiProgressNow.value;
   if (isSearchContextMode.value) {
     return searchContextMessages.value.filter((m) => isMessageDisplayable(m, now));
   }
@@ -831,12 +779,6 @@ const lastMessage = computed(() => {
 // 輸入框內容
 const inputText = ref("");
 
-// 是否正在生成（使用全局狀態）
-const isGenerating = computed(() => {
-  if (!currentChatId.value) return false;
-  return aiGenerationStore.isTaskGenerating(currentChatId.value, "chat");
-});
-
 // 訊息列表容器
 const messagesContainer = ref<HTMLElement | null>(null);
 
@@ -858,301 +800,6 @@ const showRail = ref(false);
 // 暱稱編輯
 const showNicknameEdit = ref(false);
 const nicknameEditValue = ref("");
-
-// 封鎖狀態
-const isCharBlocked = ref(false);
-const isBlockedByChar = ref(false);
-/** 當前封鎖的時間戳記（毫秒），用於判斷哪些訊息在封鎖之後 */
-const currentBlockedAt = ref<number>(0);
-const showFriendRequestInput = ref(false);
-const friendRequestMessage = ref("");
-
-async function refreshBlockStateFromStorage(): Promise<Chat | undefined> {
-  if (!currentChatId.value) return undefined;
-  const updatedChat = await loadChatById(currentChatId.value);
-  if (updatedChat && currentChatData.value) {
-    currentChatData.value.blockState = updatedChat.blockState;
-  }
-  const status = updatedChat?.blockState?.status ?? "none";
-  isCharBlocked.value = status === "user-blocked-char";
-  isBlockedByChar.value = status === "char-blocked-user";
-  currentBlockedAt.value = updatedChat?.blockState?.blockedAt ?? 0;
-  return updatedChat;
-}
-
-// 載入封鎖狀態
-async function loadBlockState() {
-  if (!currentChatId.value) return;
-  try {
-    const chat = await loadChatById(currentChatId.value);
-    if (chat?.blockState) {
-      isCharBlocked.value = chat.blockState.status === "user-blocked-char";
-      isBlockedByChar.value = chat.blockState.status === "char-blocked-user";
-      currentBlockedAt.value = chat.blockState.blockedAt ?? 0;
-    } else {
-      isCharBlocked.value = false;
-      isBlockedByChar.value = false;
-      currentBlockedAt.value = 0;
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
-/**
- * 判斷訊息是否應顯示驚嘆號（封鎖期間「發送失敗」指示器）
- * - 用戶封鎖角色：只有封鎖之後的 AI 回覆顯示驚嘆號
- * - 角色封鎖用戶：只有封鎖之後的用戶訊息顯示驚嘆號
- * - sentWhileBlocked 標記的訊息：始終顯示驚嘆號
- */
-function shouldShowBlockedIndicator(message: Message): boolean {
-  if (message.isSystemNotification) return false;
-  // 歷史訊息：被角色封鎖期間用戶發的訊息（已持久化標記）
-  if (message.sentWhileBlocked) return true;
-
-  // 使用獨立的 ref 取得封鎖時間（避免從 currentChatData 深層讀取導致 v-memo 無法追蹤）
-  const blockedAt = currentBlockedAt.value;
-
-  // 沒有封鎖時間戳記時，不顯示驚嘆號
-  if (!blockedAt) return false;
-
-  // 即時狀態：用戶封鎖角色時，只有封鎖之後的 AI 回覆顯示驚嘆號
-  if (
-    isCharBlocked.value &&
-    message.role === "ai" &&
-    message.timestamp > blockedAt
-  )
-    return true;
-  // 即時狀態：角色封鎖用戶時，只有封鎖之後的用戶訊息顯示驚嘆號
-  if (
-    isBlockedByChar.value &&
-    message.role === "user" &&
-    message.timestamp > blockedAt
-  )
-    return true;
-  return false;
-}
-
-// 封鎖/解封角色
-async function toggleBlockCharacter() {
-  if (!currentChatId.value) return;
-  const blockService = BlockService.getInstance();
-
-  if (isCharBlocked.value) {
-    await blockService.unblockCharacter(currentChatId.value);
-    currentBlockedAt.value = 0;
-    isCharBlocked.value = false;
-    // 同步更新 currentChatData 的 blockState（防止 saveChatImmediate 覆蓋）
-    await refreshBlockStateFromStorage();
-    // 插入系統提示訊息：已解除封鎖
-    const unblockMsg: Message = {
-      id: `msg_notify_${Date.now()}`,
-      role: "user",
-      content: `已解除對 ${displayCharacterName.value} 的封鎖`,
-      timestamp: Date.now(),
-      isSystemNotification: true,
-    };
-    messages.value.push(unblockMsg);
-    scrollToBottom();
-    await saveChatImmediate();
-  } else {
-    if (!confirm("確定要封鎖這個角色嗎？封鎖後將停止接收主動訊息和來電。"))
-      return;
-    await blockService.blockCharacter(currentChatId.value);
-    // 先從 DB 讀取封鎖時間戳記，再設定 isCharBlocked（避免 v-memo 重渲染時 blockedAt 還是舊值）
-    const updatedChat2 = await refreshBlockStateFromStorage();
-    currentBlockedAt.value = updatedChat2?.blockState?.blockedAt ?? Date.now();
-    isCharBlocked.value = true;
-    // 插入系統提示訊息：已封鎖
-    const blockMsg: Message = {
-      id: `msg_notify_${Date.now()}`,
-      role: "user",
-      content: `你已將 ${displayCharacterName.value} 封鎖`,
-      timestamp: Date.now(),
-      isSystemNotification: true,
-    };
-    messages.value.push(blockMsg);
-    scrollToBottom();
-    await saveChatImmediate();
-  }
-  showMoreMenu.value = false;
-  showRail.value = false;
-}
-
-// 提交好友申請
-async function submitFriendRequest() {
-  if (!currentChatId.value || !friendRequestMessage.value.trim()) return;
-  try {
-    const requestMsg = friendRequestMessage.value.trim();
-    showFriendRequestInput.value = false;
-    friendRequestMessage.value = "";
-
-    // 仿照 OVO 的做法：用獨立的輕量 API 呼叫讓角色決定接受/拒絕
-    // 不走主聊天流程，避免觸發重複 AI 生成
-    const chatTaskConfig = settingsStore.getAPIForTask("chat");
-    if (
-      !chatTaskConfig.api.endpoint ||
-      !chatTaskConfig.api.apiKey ||
-      !chatTaskConfig.api.model
-    ) {
-      alert("請先在設定中配置 API");
-      return;
-    }
-
-    const charName =
-      currentCharacter.value?.data?.name || props.characterName || "角色";
-    const charPersona =
-      currentCharacter.value?.data?.description ||
-      currentCharacter.value?.data?.personality ||
-      "";
-    const chat = await loadChatById(currentChatId.value);
-    const blockState = chat?.blockState;
-    const prevRejects =
-      blockState?.friendRequests?.filter((r) => r.result === "rejected") ?? [];
-
-    // 取最近 15 條對話歷史作為 API messages（讓 AI 有完整上下文）
-    const historyMessages: Array<{
-      role: "user" | "assistant" | "system";
-      content: string;
-    }> = [];
-    const recentMsgs = messages.value
-      .filter((m) => m.content?.trim() && !m.isSystemNotification)
-      .slice(-15);
-    for (const m of recentMsgs) {
-      if (m.role === "user") {
-        let content = (m.content || "").slice(0, 300);
-        if (m.sentWhileBlocked) content += "\n（此訊息發送於被封鎖期間）";
-        historyMessages.push({ role: "user", content });
-      } else if (m.role === "ai") {
-        historyMessages.push({
-          role: "assistant",
-          content: (m.content || "").slice(0, 300),
-        });
-      } else if (m.role === "system" && m.isCharBlockedNotification) {
-        historyMessages.push({
-          role: "system",
-          content: "（你在此時拉黑了用戶）",
-        });
-      }
-    }
-
-    let prompt = `你是「${charName}」。你的人設：\n${charPersona}\n\n`;
-    prompt += `你之前拉黑了用戶。用戶現在發來好友申請，申請理由：「${requestMsg.slice(0, 200)}」。\n`;
-    prompt += `這是用戶第 ${prevRejects.length + 1} 次申請。`;
-    if (prevRejects.length > 0) {
-      prompt += ` 之前你拒絕過 ${prevRejects.length} 次。`;
-    }
-    prompt += `\n\n請根據你的性格和對話記錄，決定是否接受好友申請。`;
-    prompt += `\n只輸出以下 JSON，不要任何其他文字：`;
-    prompt += `\n接受：{"accept":true,"reply":"你想對用戶說的話（符合你的性格）"}`;
-    prompt += `\n拒絕：{"accept":false,"rejectReason":"拒絕理由(30字內)","hint":"給用戶的小提示(可選)"}`;
-
-    const client = new OpenAICompatibleClient(chatTaskConfig.api);
-    const result = await client.generate({
-      messages: [
-        {
-          role: "system",
-          content: `你是「${charName}」，一個角色扮演助手。根據對話歷史和你的性格決定是否接受好友申請。只輸出一行 JSON，不要 markdown，不要解釋。`,
-        },
-        ...historyMessages,
-        { role: "user", content: prompt },
-      ],
-      settings: {
-        maxContextLength: chatTaskConfig.generation.maxContextLength,
-        maxResponseLength: chatTaskConfig.generation.maxTokens,
-        temperature: chatTaskConfig.generation.temperature,
-        topP: chatTaskConfig.generation.topP,
-        topK: 0,
-        frequencyPenalty: chatTaskConfig.generation.frequencyPenalty,
-        presencePenalty: chatTaskConfig.generation.presencePenalty,
-        repetitionPenalty: 1,
-        stopSequences: [],
-        streaming: false,
-        useStreamingWindow: false,
-      },
-      apiSettings: chatTaskConfig.api,
-    });
-
-    let accept = false;
-    let rejectReason = "";
-    let hint = "";
-    let reply = "";
-    try {
-      // 移除 markdown 代碼塊包裝（Gemini 常見）
-      let raw = result.content
-        .trim()
-        .replace(/^```(?:json)?\s*/i, "")
-        .replace(/\s*```$/, "")
-        .trim();
-      // 提取第一個 JSON 物件
-      const jsonStr = raw.replace(/^[\s\S]*?(\{[\s\S]*?\})[\s\S]*$/, "$1");
-      const obj = JSON.parse(jsonStr);
-      accept = !!obj.accept;
-      rejectReason = (obj.rejectReason || "").trim().slice(0, 100);
-      hint = (obj.hint || "").trim().slice(0, 100);
-      reply = (obj.reply || "").trim();
-    } catch {
-      // 嘗試從文字中判斷接受/拒絕
-      const raw = result.content.toLowerCase();
-      if (raw.includes('"accept":true') || raw.includes('"accept": true')) {
-        accept = true;
-        reply = "";
-      } else {
-        accept = false;
-        rejectReason = "對方暫時無法回應，請稍後再試。";
-      }
-    }
-
-    const blockService = BlockService.getInstance();
-
-    if (accept) {
-      // 直接解封
-      await blockService.handleCharacterUnblock(currentChatId.value);
-      currentBlockedAt.value = 0;
-      isBlockedByChar.value = false;
-      await refreshBlockStateFromStorage();
-      // 插入解封系統訊息
-      messages.value.push({
-        id: `msg_unblocked_${Date.now()}`,
-        role: "system",
-        content: `${charName} 已同意你的好友申請，可以繼續聊天`,
-        timestamp: Date.now(),
-        isSystemNotification: true,
-      });
-      // 如果 AI 有回覆，直接插入角色訊息（不需要再呼叫 API）
-      if (reply) {
-        messages.value.push({
-          id: `msg_${Date.now()}_reply`,
-          role: "ai",
-          content: reply,
-          timestamp: Date.now(),
-        });
-      }
-      await saveChatImmediate();
-    } else {
-      // 拒絕：插入系統訊息到聊天記錄，不用系統彈窗
-      const rejectText = rejectReason || "對方拒絕了你的好友申請";
-      messages.value.push({
-        id: `msg_reject_${Date.now()}`,
-        role: "system",
-        content: rejectText + (hint ? `\n💡 ${hint}` : ""),
-        timestamp: Date.now(),
-        isSystemNotification: true,
-      });
-      await saveChatImmediate();
-    }
-  } catch (err: any) {
-    console.error("[submitFriendRequest] 錯誤:", err);
-    // 錯誤插入系統訊息，不用系統彈窗
-    messages.value.push({
-      id: `msg_req_err_${Date.now()}`,
-      role: "system",
-      content: `好友申請發送失敗：${err.message || "未知錯誤"}`,
-      timestamp: Date.now(),
-      isSystemNotification: true,
-    });
-  }
-}
 
 // 仿照 OVO 的做法：用獨立的輕量 API 呼叫讓角色決定接受/拒絕
 // 不走主聊天流程，避免觸發重複 AI 生成
@@ -1216,17 +863,6 @@ function closeRail() {
 
 // 顯示表情包面板
 const showStickerPanel = ref(false);
-
-// 編輯中的訊息
-const editingMessageId = ref<string | null>(null);
-const editingContent = ref("");
-const editingThought = ref("");
-// 用 DOM ref 直接操作 textarea，避免 v-model 每次輸入都觸發 Vue 響應式更新導致卡頓
-const editContentTextareaRef = ref<HTMLTextAreaElement | null>(null);
-const editThoughtTextareaRef = ref<HTMLTextAreaElement | null>(null);
-
-// ===== 回覆引用功能 =====
-const replyingTo = ref<Message | null>(null);
 
 // ===== AI 記憶管理面板 =====
 const showAISummaryPanel = ref(false);
@@ -1334,6 +970,18 @@ const {
   emit: emit as (e: string, ...args: any[]) => void,
 });
 
+// ===== 好感度 composable =====
+const {
+  _affinityConfig,
+  _affinityState,
+  showAffinityPanel,
+  handleAvatarClick,
+  _handleAffinityUpdates,
+  rescanAffinityFromMessages,
+  _loadAffinityForChat,
+  onAffinityRollback,
+} = useChatAffinity({ currentChatId, messages });
+
 // ===== 多訊息刪除 composable =====
 const {
   showBranchConfirm,
@@ -1362,20 +1010,7 @@ const {
   saveChatImmediate,
   convertToStorableMessage,
   switchChatFile,
-  onAffinityRollback: (chatId: string, deletedMessageIds: string[]) => {
-    const rolled = affinityStore.rollbackToBeforeMessages(
-      chatId,
-      deletedMessageIds,
-    );
-    if (rolled) {
-      _affinityState.value = affinityStore.getState(chatId) ?? null;
-      console.log(
-        "[ChatScreen] 好感度已回滾，刪除的訊息:",
-        deletedMessageIds.length,
-        "條",
-      );
-    }
-  },
+  onAffinityRollback,
 });
 
 // ===== 批量截圖功能 =====
@@ -1407,11 +1042,87 @@ async function selectPersona(personaId: string) {
   await _selectPersonaInner(personaId);
 }
 
+// ===== 封鎖/好友申請 composable =====
+const {
+  isCharBlocked,
+  isBlockedByChar,
+  currentBlockedAt,
+  showFriendRequestInput,
+  friendRequestMessage,
+  loadBlockState,
+  refreshBlockStateFromStorage,
+  shouldShowBlockedIndicator,
+  toggleBlockCharacter,
+  submitFriendRequest,
+} = useChatBlock({
+  currentChatId,
+  currentChatData,
+  messages,
+  displayCharacterName,
+  currentCharacter,
+  characterName: props.characterName,
+  effectivePersona,
+  userStore,
+  scrollToBottom,
+  saveChatImmediate,
+  showMoreMenu,
+  showRail,
+});
+
+// ===== Regex 腳本套用 composable =====
+const {
+  getActiveRegexScripts,
+  applyAIOutputRegex,
+  applyUserInputRegex,
+  processAiOutputTemplate,
+} = useChatRegex({
+  currentCharacter,
+  characterName: props.characterName,
+  effectivePersona,
+  currentChatId,
+  messages,
+  _affinityConfig,
+  _affinityState,
+});
+
 // ===== 媒體發送抽屜 =====
 const showMediaDrawer = ref(false);
 
 // ===== 禮物面板 =====
 const showGiftDrawer = ref(false);
+
+// 獲取最後一條 AI 訊息
+const lastAIMessage = computed(() => {
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    if (messages.value[i].role === "ai") {
+      return messages.value[i];
+    }
+  }
+  return null;
+});
+
+// 當前輪次 ID（user 送出訊息時生成，本輪所有 AI 生成內容都帶此 ID）
+const currentTurnId = ref<string>("");
+
+// ===== 重新生成 / swipe composable =====
+const {
+  handleMessageSwipe,
+  handleRegenerate,
+  regenerateLastAIResponse,
+  attachPendingRoundSwipes,
+  handleRoundSwipe,
+  clearRoundSwipes,
+  continueGeneration,
+  clearSwipesOnLastAIMessage,
+} = useChatRegeneration({
+  messages,
+  isGenerating,
+  lastAIMessage,
+  currentTurnId,
+  saveChat,
+  deleteMessage,
+  triggerAIResponse,
+});
 
 // ===== 語音錄音 composable =====
 const {
@@ -1539,99 +1250,65 @@ const {
     currentChatData.value?.enableRealTimeAwareness ?? true,
 });
 
-// ===== 天氣 modal：城市選擇 sheet 整合 WeatherScreen 的國家/城市與我的城市 =====
-interface WmSavedCity { name: string; region?: string; country?: string; lat?: number; lon?: number; }
-const wmCountry = ref<string>("");
-const wmSavedCities = ref<WmSavedCity[]>([]);
-const wmCountryOptions = computed(() => Object.keys(WORLD_CITIES));
+// 聊天專屬位置覆蓋（null 表示使用全域設定）
+const chatLocationOverride = ref<ChatLocationOverride | null>(null);
 
-/** 從可能的地點字串中偵測屬於 WORLD_CITIES 哪一個國家鍵 */
-function detectCountryKey(...candidates: (string | undefined | null)[]): string {
-  const keys = Object.keys(WORLD_CITIES);
-  for (const cand of candidates) {
-    if (!cand) continue;
-    const trimmed = cand.trim();
-    if (!trimmed) continue;
-    if (keys.includes(trimmed)) return trimmed;
-    const parts = trimmed.split(",").map((s) => s.trim()).filter(Boolean);
-    for (let i = parts.length - 1; i >= 0; i--) {
-      if (keys.includes(parts[i])) return parts[i];
-    }
-  }
-  return "";
+const hasChatLocationOverride = computed(() => chatLocationOverride.value !== null);
+
+async function resetChatLocationOverride() {
+  if (!chatLocationOverride.value) return;
+  chatLocationOverride.value = null;
+  await saveChatImmediate();
 }
 
-/** 將 region/country 三段組成顯示 label */
-function wmFormatCityLabel(name: string, region?: string, country?: string): string {
-  return formatFullLocation({ name, region, country });
-}
-
-// 重新設計：用 boolean toggle 取代 'global'|'chat' scope
-const wmKeepInThisChat = ref<boolean>(false);
-// 城市選擇 sheet 的目標（null = sheet 關閉）
-const weatherCitySheetTarget = ref<"user" | "char" | null>(null);
-// 預覽展開狀態
-const weatherPreviewExpanded = ref<boolean>(false);
-
-function loadWmSavedCities() {
-  const saved = localStorage.getItem("weather_custom_cities");
-  if (!saved) { wmSavedCities.value = []; return; }
-  try {
-    const parsed = JSON.parse(saved);
-    let migrated = false;
-    wmSavedCities.value = parsed.map((c: string | WmSavedCity): WmSavedCity => {
-      const base: WmSavedCity =
-        typeof c === "string"
-          ? { name: c }
-          : {
-              name: c.name,
-              region: c.region,
-              country: c.country,
-              lat: c.lat,
-              lon: c.lon,
-            };
-      // 舊資料相容：若沒有 country，但 name 內含已知國家後綴（如「雲林縣斗六, 台灣」），自動拆出國家
-      if (!base.country && base.name && base.name.includes(",")) {
-        const detected = detectCountryKey(base.name);
-        if (detected) {
-          base.country = detected;
-          // 把國家後綴從 name 中移除，避免和 country 重複顯示
-          const cleaned = base.name
-            .split(",")
-            .map((s) => s.trim())
-            .filter((s) => s && s !== detected)
-            .join(", ");
-          if (cleaned) base.name = cleaned;
-          migrated = true;
-        }
-      }
-      return base;
-    });
-    if (migrated) saveWmSavedCities();
-  } catch {
-    wmSavedCities.value = [];
-  }
-}
-
-function saveWmSavedCities() {
-  try {
-    localStorage.setItem(
-      "weather_custom_cities",
-      JSON.stringify(wmSavedCities.value),
-    );
-  } catch (e) {
-    console.warn("[天氣] 無法保存我的城市", e);
-  }
-}
+// ===== 天氣 modal composable =====
+const {
+  wmCountry,
+  wmSavedCities,
+  wmKeepInThisChat,
+  weatherCitySheetTarget,
+  weatherPreviewExpanded,
+  wmCountryOptions,
+  detectCountryKey,
+  wmFormatCityLabel,
+  loadWmSavedCities,
+  saveWmSavedCities,
+  openWeatherCitySheet,
+  closeWeatherCitySheet,
+  onWmKeepInThisChatChange,
+  applyUserChatLocationOverride,
+  upsertMyCity,
+  selectWmWorldCity,
+  selectWmSavedCity,
+  selectWmSearchResult,
+  weatherCanSend,
+  weatherSendTargetOptions,
+  weatherTimeDiffSummary,
+  refreshWeatherInModal,
+} = useChatWeatherModal({
+  currentCharacter,
+  weatherStore,
+  customWeatherData,
+  charWeatherData,
+  charWeatherLoading,
+  chatLocationOverride,
+  weatherSendTarget,
+  weatherSearchQuery,
+  weatherPreview,
+  selectWeatherCity,
+  startWeatherEdit,
+  cancelWeatherEdit,
+  resetChatLocationOverride,
+  saveChatImmediate,
+  formatFullLocation,
+  showToast,
+});
 
 watch(showWeatherModal, (v) => {
   if (v) {
     loadWmSavedCities();
-    // 初始 keep toggle = 是否已有此聊天的位置覆蓋
     wmKeepInThisChat.value = chatLocationOverride.value !== null;
-    // 預覽預設折疊
     weatherPreviewExpanded.value = false;
-    // 自動修正 send target：若資料只剩一邊，預先選那邊
     const hasUser = !!(customWeatherData.value || weatherStore.weatherData);
     const hasChar = !!charWeatherData.value;
     if (hasUser && hasChar) weatherSendTarget.value = "both";
@@ -1641,219 +1318,6 @@ watch(showWeatherModal, (v) => {
     weatherCitySheetTarget.value = null;
   }
 });
-
-/** 開啟城市選擇 sheet（整列卡片可點觸發）。自動從現有地點偵測國家。 */
-function openWeatherCitySheet(target: "user" | "char") {
-  weatherCitySheetTarget.value = target;
-  startWeatherEdit(target); // 同步 weatherEditTarget，讓 selectWeatherCity 內部邏輯生效
-  weatherSearchQuery.value = "";
-
-  if (target === "char") {
-    const charLoc = currentCharacter.value?.worldSettings?.location;
-    wmCountry.value = detectCountryKey(
-      charWeatherData.value?.location.country,
-      charWeatherData.value?.location.region,
-      charLoc,
-    );
-  } else {
-    const userCity = weatherStore.userLocation?.city;
-    wmCountry.value = detectCountryKey(
-      customWeatherData.value?.location.country,
-      customWeatherData.value?.location.region,
-      weatherStore.weatherData?.location.country,
-      weatherStore.weatherData?.location.region,
-      userCity,
-    );
-  }
-}
-
-/** 關閉城市選擇 sheet */
-function closeWeatherCitySheet() {
-  weatherCitySheetTarget.value = null;
-  cancelWeatherEdit();
-}
-
-/** keep-in-this-chat toggle 變更：取消勾選時清掉覆蓋 */
-async function onWmKeepInThisChatChange(next: boolean) {
-  wmKeepInThisChat.value = next;
-  if (!next && chatLocationOverride.value) {
-    await resetChatLocationOverride();
-  }
-}
-
-async function applyUserChatLocationOverride(city: {
-  name: string;
-  region?: string;
-  country?: string;
-  lat?: number;
-  lon?: number;
-}) {
-  const cityLabel = wmFormatCityLabel(city.name, city.region, city.country) || city.name;
-  chatLocationOverride.value = {
-    mode: city.lat !== undefined && city.lon !== undefined ? "browser" : "manual",
-    city: cityLabel,
-    lat: city.lat,
-    lon: city.lon,
-  };
-  await saveChatImmediate();
-}
-
-/** 將剛選擇的城市寫入「我的城市」（保留完整 region/country），相同 name 視為同一筆 */
-function upsertMyCity(entry: WmSavedCity) {
-  if (!entry.name) return;
-  const idx = wmSavedCities.value.findIndex((c) => c.name === entry.name);
-  const next: WmSavedCity = {
-    name: entry.name,
-    region: entry.region || undefined,
-    country: entry.country || undefined,
-    lat: entry.lat,
-    lon: entry.lon,
-  };
-  if (idx >= 0) wmSavedCities.value.splice(idx, 1, next);
-  else wmSavedCities.value.push(next);
-  saveWmSavedCities();
-}
-
-async function selectWmWorldCity(city: CityEntry, country: string) {
-  if (!country) {
-    if (typeof showToast === "function") showToast("請先選擇國家/地區");
-    return;
-  }
-  const isUserChatScope =
-    weatherCitySheetTarget.value === "user" && wmKeepInThisChat.value;
-  await selectWeatherCity(
-    {
-      id: 0,
-      name: city.name,
-      region: "",
-      country,
-      lat: city.lat,
-      lon: city.lon,
-    },
-    { skipGlobalUserUpdate: isUserChatScope },
-  );
-  if (isUserChatScope) {
-    await applyUserChatLocationOverride({
-      name: city.name,
-      country,
-      lat: city.lat,
-      lon: city.lon,
-    });
-  }
-  upsertMyCity({ name: city.name, country, lat: city.lat, lon: city.lon });
-  closeWeatherCitySheet();
-}
-
-async function selectWmSavedCity(c: WmSavedCity) {
-  if (c.lat === undefined || c.lon === undefined) return;
-  if (!c.country) {
-    // 舊資料缺國家：要求使用者重新選擇以補上國家
-    if (typeof showToast === "function")
-      showToast("此城市缺少國家資訊，請從下方選擇國家/地區後重新選擇此城市");
-    wmCountry.value = "";
-    return;
-  }
-  const isUserChatScope =
-    weatherCitySheetTarget.value === "user" && wmKeepInThisChat.value;
-  await selectWeatherCity(
-    {
-      id: 0,
-      name: c.name,
-      region: c.region || "",
-      country: c.country || "",
-      lat: c.lat,
-      lon: c.lon,
-    },
-    { skipGlobalUserUpdate: isUserChatScope },
-  );
-  if (isUserChatScope) {
-    await applyUserChatLocationOverride({
-      name: c.name,
-      region: c.region,
-      country: c.country,
-      lat: c.lat,
-      lon: c.lon,
-    });
-  }
-  closeWeatherCitySheet();
-}
-
-/** sheet 內：從搜尋結果選城市（搜尋結果本身帶 country） */
-async function selectWmSearchResult(city: { name: string; region: string; country: string; lat: number; lon: number }) {
-  if (!city.country && !wmCountry.value) {
-    if (typeof showToast === "function") showToast("請先在上方選擇國家/地區");
-    return;
-  }
-  const country = city.country || wmCountry.value;
-  // 自動回填國家選擇器（若搜尋結果國家剛好屬於 WORLD_CITIES）
-  const matchedKey = detectCountryKey(country);
-  if (matchedKey) wmCountry.value = matchedKey;
-  const isUserChatScope =
-    weatherCitySheetTarget.value === "user" && wmKeepInThisChat.value;
-  await selectWeatherCity(
-    {
-      id: 0,
-      name: city.name,
-      region: city.region || "",
-      country,
-      lat: city.lat,
-      lon: city.lon,
-    },
-    { skipGlobalUserUpdate: isUserChatScope },
-  );
-  if (isUserChatScope) {
-    await applyUserChatLocationOverride({
-      name: city.name,
-      region: city.region,
-      country,
-      lat: city.lat,
-      lon: city.lon,
-    });
-  }
-  upsertMyCity({ name: city.name, region: city.region, country, lat: city.lat, lon: city.lon });
-  closeWeatherCitySheet();
-}
-
-/** 主畫面：發送對象自動修正（資料變動時） */
-const weatherCanSend = computed(() => {
-  const hasUser = !!(customWeatherData.value || weatherStore.weatherData);
-  const hasChar = !!charWeatherData.value;
-  if (weatherSendTarget.value === "user") return hasUser;
-  if (weatherSendTarget.value === "char") return hasChar;
-  return hasUser || hasChar;
-});
-
-const weatherSendTargetOptions = computed(() => {
-  const hasUser = !!(customWeatherData.value || weatherStore.weatherData);
-  const hasChar = !!charWeatherData.value;
-  return [
-    { value: "both", label: "雙方", disabled: !(hasUser && hasChar) },
-    { value: "user", label: "只發我", disabled: !hasUser },
-    { value: "char", label: "只發角色", disabled: !hasChar },
-  ] as const;
-});
-
-/** 主畫面顯示用的時差摘要 */
-const weatherTimeDiffSummary = computed(() => weatherPreview.value?.diffSummary || "");
-
-/** 標題列重新整理 */
-async function refreshWeatherInModal() {
-  await weatherStore.refreshWeather(true);
-  // 角色天氣若已存在城市則重抓
-  const char = currentCharacter.value;
-  const charLocation = char?.worldSettings?.location;
-  if (charLocation) {
-    charWeatherLoading.value = true;
-    try {
-      const fresh = await import("@/services/WeatherService").then(m => m.getWeatherByCity(charLocation));
-      charWeatherData.value = fresh;
-    } catch (e) {
-      console.warn("[天氣] 角色天氣重抓失敗", e);
-    } finally {
-      charWeatherLoading.value = false;
-    }
-  }
-}
 
 // ===== 聊天專屬頭像覆蓋 =====
 const charAvatarOverride = ref<string | undefined>(undefined);
@@ -2004,52 +1468,10 @@ async function setSpeakerMode(mode: "user" | "char" | "system") {
   await saveChatImmediate();
 }
 
-// 聊天專屬位置覆蓋（null 表示使用全域設定）
-const chatLocationOverride = ref<ChatLocationOverride | null>(null);
-
-const hasChatLocationOverride = computed(() => chatLocationOverride.value !== null);
-
-async function resetChatLocationOverride() {
-  if (!chatLocationOverride.value) return;
-  chatLocationOverride.value = null;
-  await saveChatImmediate();
-}
-
-// ===== 好感度 =====
-import type {
-  CharacterAffinityConfig,
-  ChatAffinityState,
-} from "@/schemas/affinity";
-const _affinityConfig = ref<CharacterAffinityConfig | null>(null);
-const _affinityState = ref<ChatAffinityState | null>(null);
-const showAffinityPanel = ref(false);
-
-function handleAvatarClick(_messageId: string) {
-  if (_affinityConfig.value?.enabled) {
-    showAffinityPanel.value = true;
-  }
-}
-
 /**
  * 處理 MessageBubble 拆分請求：依原訊息中的順序，
  * 在源氣泡後面插入「文字 / HTML」shadow 氣泡。
  */
-function hashString(value: string): string {
-  let hash = 2166136261;
-  for (let i = 0; i < value.length; i++) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
-}
-
-function isShadowBubbleOf(msg: Message, sourceId: string): boolean {
-  if (msg.shadowSourceId === sourceId) return true;
-  // 兼容舊版：之前用 ${sourceId}_html_ 開頭、isHtmlBlock=true 的氣泡
-  if (msg.isHtmlBlock && msg.id.startsWith(`${sourceId}_html_`)) return true;
-  if (msg.id.startsWith(`${sourceId}_seg_`)) return true;
-  return false;
-}
 
 function handleSplitRegexSegments(
   messageId: string,
@@ -2163,304 +1585,27 @@ const onMessageAcceptOnlineModeRequest = (...args: any[]) =>
 const onMessageRejectOnlineModeRequest = (...args: any[]) =>
   handleRejectOnlineModeRequest(args[0] as string);
 
-// 語音紅包輸入彈窗狀態
-const voiceClaimModalState = ref<{
-  visible: boolean;
-  messageId: string;
-  phrase: string;
-  blessing: string;
-}>({
-  visible: false,
-  messageId: "",
-  phrase: "",
-  blessing: "",
+// ===== 紅包 composable =====
+const {
+  voiceClaimModalState,
+  createTransactionClaimNoticeMessage,
+  executeUserRedpacketClaim,
+  onMessageClaimRedpacket,
+  handleVoiceRedpacketSubmit,
+  getUserDisplayName,
+  getCharacterDisplayNameFromMessage,
+  getRedpacketPayerName,
+} = useChatRedpacket({
+  messages,
+  currentCharacter,
+  characterName: props.characterName,
+  effectivePersona,
+  userStore,
+  groupMetadata,
+  charactersStore,
+  saveChatImmediate,
+  showToast,
 });
-
-function formatClaimAmount(amount: number): string {
-  if (!Number.isFinite(amount)) return "0";
-  return amount
-    .toFixed(2)
-    .replace(/\.00$/, "")
-    .replace(/(\.\d)0$/, "$1");
-}
-
-function createTransactionClaimNoticeMessage(options: {
-  claimerName: string;
-  payerName: string;
-  kind: "轉帳" | "紅包";
-  amount: number;
-  timestamp?: number;
-  idSuffix?: string;
-}): Message {
-  const timestamp = options.timestamp ?? Date.now();
-  const suffix = options.idSuffix ?? Math.random().toString(36).slice(2, 6);
-  return {
-    id: `msg_claim_${timestamp}_${suffix}`,
-    role: "user",
-    content: `${options.claimerName}領取了${options.payerName}的${options.kind}${formatClaimAmount(options.amount)}元`,
-    timestamp,
-    isTransactionClaimNotice: true,
-  };
-}
-
-function getUserDisplayName(): string {
-  return effectivePersona.value?.name || userStore.currentPersona?.name || "User";
-}
-
-function getCharacterDisplayNameFromMessage(msg?: Message): string {
-  return (
-    msg?.senderCharacterName ||
-    currentCharacter.value?.nickname ||
-    currentCharacter.value?.data?.name ||
-    props.characterName ||
-    "角色"
-  );
-}
-
-function getRedpacketPayerName(msg: Message): string {
-  if (msg.role === "user") return getUserDisplayName();
-  return getCharacterDisplayNameFromMessage(msg);
-}
-
-// 執行用戶領取（已通過所有檢查），共用流程
-async function executeUserRedpacketClaim(msg: Message, claimerDisplayName: string) {
-  const cents = applyRedpacketClaim(msg, claimerDisplayName, undefined, true);
-  if (cents <= 0) return;
-  msg.redpacketState = {
-    ...msg.redpacketState!,
-    claims: [...msg.redpacketState!.claims],
-  };
-  const yuan = cents / 100;
-  gameEconomyStore.earnMoney(
-    GLOBAL_WALLET_ID,
-    yuan,
-    "transfer",
-    `領取${msg.senderCharacterName ? msg.senderCharacterName + "的" : ""}紅包`,
-  );
-  await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
-  messages.value.push(
-    createTransactionClaimNoticeMessage({
-      claimerName: claimerDisplayName,
-      payerName: getRedpacketPayerName(msg),
-      kind: "紅包",
-      amount: yuan,
-      idSuffix: "rpc_user",
-    }),
-  );
-  if (typeof showToast === "function")
-    showToast(`你領到 ¥${yuan.toFixed(2)}`);
-  await saveChatImmediate();
-}
-
-// User 領取群聊紅包
-const onMessageClaimRedpacket = async (...args: unknown[]) => {
-  const id = typeof args[0] === "string" ? args[0] : "";
-  if (!id) return;
-  const msg = messages.value.find((m) => m.id === id);
-  if (!msg || !msg.isRedpacket || !msg.redpacketData) return;
-  // 容錯：若 state 缺失則初始化
-  if (!msg.redpacketState) {
-    msg.redpacketState = initRedPacketState(msg.redpacketData);
-  }
-  const userName = getUserDisplayName();
-
-  // 語音紅包：彈出輸入框，讓用戶打字或語音輸入；模糊比對通過才領取
-  if (msg.redpacketData.type === "voice") {
-    const phrase = (msg.redpacketData.voice || msg.redpacketData.password || "").trim();
-    if (phrase) {
-      // 先檢查基本可領取狀態（exhausted / already-claimed）
-      const pre = canClaimRedpacket(msg, userName, true);
-      if (!pre.ok) {
-        if (pre.reason === "exhausted") {
-          if (typeof showToast === "function") showToast("紅包已被領完");
-        }
-        return;
-      }
-      voiceClaimModalState.value = {
-        visible: true,
-        messageId: id,
-        phrase,
-        blessing: msg.redpacketData.blessing || "",
-      };
-      return;
-    }
-  }
-
-  const check = canClaimRedpacket(msg, userName, true);
-  if (!check.ok) {
-    if (check.reason === "exhausted") {
-      if (typeof showToast === "function") showToast("紅包已被領完");
-    } else if (check.reason === "already-claimed") {
-      // 已領過 → 由氣泡自行展開明細
-    } else if (check.reason === "not-target") {
-      // 寬容：若 target 不是任何 AI 角色的名字，視為 user 的綽號 → 允許領取
-      const target = (msg.redpacketData.target || "").trim();
-      const aiMemberNames: string[] = [];
-      const gm = groupMetadata.value;
-      if (gm?.isMultiCharCard && gm.multiCharMembers) {
-        aiMemberNames.push(...gm.multiCharMembers.map((m: any) => (m.name || "").trim()));
-      } else if (gm?.members) {
-        for (const member of gm.members) {
-          const ch = charactersStore.characters.find((c) => c.id === member.characterId);
-          const name = ch?.nickname || ch?.data?.name;
-          if (name) aiMemberNames.push(name.trim());
-        }
-      }
-      const targetIsAI = aiMemberNames.some((n) => n === target);
-      if (!targetIsAI) {
-        await executeUserRedpacketClaim(msg, target || userName);
-        return;
-      }
-      if (typeof showToast === "function")
-        showToast(`這是給 ${msg.redpacketData.target} 的專屬紅包`);
-    }
-    return;
-  }
-  await executeUserRedpacketClaim(msg, userName);
-};
-
-// 語音紅包：用戶提交輸入（文字或語音轉文字）
-async function handleVoiceRedpacketSubmit(text: string) {
-  const id = voiceClaimModalState.value.messageId;
-  const msg = messages.value.find((m) => m.id === id);
-  if (!msg || !msg.isRedpacket || !msg.redpacketData) {
-    voiceClaimModalState.value.visible = false;
-    return;
-  }
-  // 不做嚴格比對（簡繁體/口音/打字差異都允許），只要有輸入就通過
-  // 先把用戶輸入推為一條訊息（沉浸感）
-  messages.value.push({
-    id: `msg_${Date.now()}_rpc_voice`,
-    role: "user",
-    content: text,
-    timestamp: Date.now(),
-  });
-  voiceClaimModalState.value.visible = false;
-  const userName = getUserDisplayName();
-  await executeUserRedpacketClaim(msg, userName);
-}
-
-function _handleAffinityUpdates(
-  updates: {
-    metric: string;
-    change: number;
-    reason: string;
-    operation?: "remove" | "insert";
-    stringValue?: string;
-    isAbsolute?: boolean;
-    absoluteValue?: number;
-    sourceMetric?: string;
-    insertIndex?: string | number;
-  }[],
-  messageId?: string,
-) {
-  const chatId = currentChatId.value;
-  if (!chatId || !_affinityConfig.value?.enabled) return;
-
-  // 處理前先快照，用於刪除訊息時回滾
-  if (messageId) {
-    affinityStore.snapshotBeforeMessage(chatId, messageId);
-  }
-
-  affinityStore.resetMvuDeltaData(chatId);
-  affinityStore.batchUpdateByPath(chatId, updates);
-  _affinityState.value = affinityStore.getState(chatId) ?? null;
-  console.log(
-    "[ChatScreen] 好感度更新:",
-    updates
-      .map((u) => {
-        if (u.stringValue !== undefined) return `${u.metric} → "${u.stringValue}"`;
-        if (u.isAbsolute && u.absoluteValue !== undefined)
-          return `${u.metric} = ${u.absoluteValue}`;
-        return `${u.metric} ${u.change > 0 ? "+" : ""}${u.change}`;
-      })
-      .join(", "),
-  );
-}
-
-/**
- * 從最新的 AI 訊息中重新掃描 <update> 標籤並套用到好感度數值
- * 由 AffinityPanel 的「重新獲取」按鈕觸發
- */
-function rescanAffinityFromMessages(options?: { force?: boolean }) {
-  const chatId = currentChatId.value;
-  if (!chatId) return;
-  const force = options?.force === true;
-
-  // 從後往前找最後一條含 <update> 的 AI 訊息
-  for (let i = messages.value.length - 1; i >= 0; i--) {
-    const msg = messages.value[i];
-    if (msg.role !== "ai" || !msg.content) continue;
-
-    // 優先使用保存的原始 <update> 區塊（因為 msg.content 只包含 <content> 內的內容）
-    const searchContent = msg._rawAffinityBlock || msg.content;
-    const updates = parseAffinityUpdateTags(searchContent);
-    if (updates.length > 0) {
-      // 冪等檢查：避免進入聊天 / 自動 rescan 時把同一筆 <UpdateVariable>
-      // 絕對值反覆套用，覆蓋使用者手動調整或剛建立分支的起點
-      const lastApplied = affinityStore.getLastRescannedMessageId(chatId);
-      if (!force && lastApplied === msg.id) {
-        console.log(
-          "[ChatScreen] 重新掃描好感度：訊息",
-          msg.id,
-          "已套用過，跳過",
-        );
-        return;
-      }
-      _handleAffinityUpdates(updates, msg.id);
-      affinityStore.setLastRescannedMessageId(chatId, msg.id);
-      console.log(
-        "[ChatScreen] 重新掃描好感度：從訊息",
-        msg.id,
-        "獲取",
-        updates.length,
-        "筆更新",
-        msg._rawAffinityBlock ? "（使用原始 <update> 區塊）" : "",
-      );
-      return;
-    }
-  }
-  console.log("[ChatScreen] 重新掃描好感度：未找到含 <update> 的 AI 訊息");
-}
-
-async function _loadAffinityForChat(chatId: string, characterId: string) {
-  try {
-    await affinityStore.initialize();
-    const config = await affinityStore.loadConfig(characterId);
-    _affinityConfig.value = config;
-    if (config?.enabled) {
-      const state = await affinityStore.loadState(chatId);
-      if (state) {
-        _affinityState.value = state;
-      } else {
-        const newState = await affinityStore.initializeFromConfig(
-          chatId,
-          config,
-        );
-        _affinityState.value = newState;
-      }
-      // 進入聊天時自動從最新 AI 訊息重新掃描好感度數值
-      // 確保面板顯示的數值與 AI 最後輸出的 <update> 一致
-      nextTick(() => {
-        if (messages.value.length > 0) {
-          rescanAffinityFromMessages();
-        }
-      });
-    } else {
-      _affinityState.value = null;
-    }
-  } catch (e) {
-    console.error("[ChatScreen] 載入好感度失敗:", e);
-  }
-}
-
-const chatMinimaxTTSOverride = ref<{
-  voiceId?: string;
-  speed?: number;
-  pitch?: number;
-  emotion?: string;
-}>({});
-const showMinimaxTTSSettingsModal = ref(false);
 
 // ===== 來電功能 composable =====
 const {
@@ -2521,6 +1666,25 @@ const {
   saveChatImmediate,
   applyAIOutputRegex,
   getGroupMemberIdByName,
+});
+
+// ===== 多人卡子角色管理 =====
+const {
+  showAddMultiCharMember,
+  newMultiCharName,
+  newMultiCharAvatar,
+  multiCharAvatarInput,
+  editingMultiCharId,
+  failedMultiCharAvatars,
+  getProxiedUrl,
+  triggerMultiCharAvatarUpload,
+  handleMultiCharAvatarChange,
+  addMultiCharMember,
+  editMultiCharMember,
+  removeMultiCharMember,
+  resetMultiCharForm,
+} = useMultiCharMembers({
+  groupMetadata,
 });
 
 // ===== 群聊設定 composable =====
@@ -2632,110 +1796,25 @@ const onInputStartRecording = (...args: any[]) =>
 const onInputStickerSelect = (...args: any[]) => handleStickerSelect(args[0]);
 const onInputFeatureClick = (...args: any[]) => handleFeatureClick(args[0] as string);
 
-// ===== 多人卡子角色管理 =====
-const showAddMultiCharMember = ref(false);
-const newMultiCharName = ref("");
-const newMultiCharAvatar = ref("");
-const multiCharAvatarInput = ref<HTMLInputElement | null>(null);
-const editingMultiCharId = ref<string | null>(null);
-const failedMultiCharAvatars = ref(new Set<string>());
-
-// 代理外部圖片 URL（繞過 CORS/CSP）
-function getProxiedUrl(url: string): string {
-  if (
-    !url ||
-    url.startsWith("data:") ||
-    url.startsWith("blob:") ||
-    url.startsWith("/")
-  )
-    return url;
-  // 使用 /ai-proxy/ 路徑（nginx 已配置），同時相容 vite dev server 的 /image-proxy
-  try {
-    const parsed = new URL(url);
-    const hostAndPath = parsed.host + parsed.pathname + parsed.search;
-    if (parsed.protocol === "https:") {
-      return `/ai-proxy/${hostAndPath}`;
-    } else {
-      return `/ai-proxy-http/${hostAndPath}`;
-    }
-  } catch {
-    return `/image-proxy?url=${encodeURIComponent(url)}`;
-  }
-}
-
-function triggerMultiCharAvatarUpload() {
-  const input = multiCharAvatarInput.value as any;
-  if (Array.isArray(input)) {
-    const el = input.find((el: any) => el != null);
-    el?.click();
-  } else {
-    input?.click();
-  }
-}
-
-function handleMultiCharAvatarChange(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    newMultiCharAvatar.value = e.target?.result as string;
-  };
-  reader.readAsDataURL(file);
-  // 清空 input 以便重複選擇同一檔案
-  (event.target as HTMLInputElement).value = "";
-}
-
-function addMultiCharMember() {
-  if (!groupMetadata.value || !newMultiCharName.value.trim()) return;
-  if (!groupMetadata.value.multiCharMembers) {
-    groupMetadata.value.multiCharMembers = [];
-  }
-  if (editingMultiCharId.value) {
-    // 編輯模式
-    const member = groupMetadata.value.multiCharMembers.find(
-      (m) => m.id === editingMultiCharId.value,
-    );
-    if (member) {
-      member.name = newMultiCharName.value.trim();
-      if (newMultiCharAvatar.value) member.avatar = newMultiCharAvatar.value;
-    }
-  } else {
-    // 新增模式
-    groupMetadata.value.multiCharMembers.push({
-      id: `multi_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      name: newMultiCharName.value.trim(),
-      avatar: newMultiCharAvatar.value,
-    });
-  }
-  resetMultiCharForm();
-}
-
-function editMultiCharMember(member: {
-  id: string;
-  name: string;
-  avatar: string;
-}) {
-  editingMultiCharId.value = member.id;
-  newMultiCharName.value = member.name;
-  newMultiCharAvatar.value = member.avatar;
-  showAddMultiCharMember.value = true;
-}
-
-function removeMultiCharMember(id: string) {
-  if (!groupMetadata.value?.multiCharMembers) return;
-  groupMetadata.value.multiCharMembers =
-    groupMetadata.value.multiCharMembers.filter((m) => m.id !== id);
-}
-
-function resetMultiCharForm() {
-  showAddMultiCharMember.value = false;
-  newMultiCharName.value = "";
-  newMultiCharAvatar.value = "";
-  editingMultiCharId.value = null;
-}
-
 // ===== 聊天設定選單 =====
 const showChatSettingsMenu = ref(false);
+
+// ===== MiniMax TTS 語音合成 composable =====
+const {
+  chatMinimaxTTSOverride,
+  showMinimaxTTSSettingsModal,
+  toggleMinimaxTTS,
+  openMinimaxTTSSettings,
+  closeMinimaxTTSSettings,
+  saveMinimaxTTSSettings,
+  processMessageTTS,
+} = useChatTTS({
+  messages,
+  chatMinimaxTTSEnabled,
+  showChatSettingsMenu,
+  settingsStore,
+  saveChat,
+});
 
 // ===== 快速輸入助手 composable =====
 const {
@@ -2774,6 +1853,51 @@ watchEffect(() => {
   }
 });
 
+// ===== 訊息操作 composable =====
+const {
+  editingMessageId,
+  editingContent,
+  editingThought,
+  editContentTextareaRef,
+  editThoughtTextareaRef,
+  replyingTo,
+  handleMessageClick,
+  handleMessageEdit,
+  syncModeRequestFieldsFromContent,
+  saveEdit,
+  cancelEdit,
+  handleMessageDelete,
+  handleMessageRecall,
+  handleUndoRecall,
+  handleCharRecallReveal,
+  handleAcceptFaceToFaceRequest,
+  handleRejectFaceToFaceRequest,
+  handleAcceptOnlineModeRequest,
+  handleRejectOnlineModeRequest,
+  handleMessageCopy,
+  handleReplyById,
+  cancelReply,
+  getReplyToContent,
+  getReplyToName,
+} = useChatMessageActions({
+  messages,
+  chatFaceToFaceMode,
+  displayCharacterName,
+  userName: computed(() => userStore.currentName || "用戶"),
+  effectivePersona,
+  currentCharacter,
+  saveChatImmediate,
+  focusReplyInput: () => {
+    const textarea = isInputExpanded.value
+      ? expandedInputRef.value
+      : messageInputRef.value;
+    if (!textarea) return;
+    textarea.focus();
+    const cursorPosition = textarea.value.length;
+    textarea.setSelectionRange(cursorPosition, cursorPosition);
+  },
+});
+
 // 快速輸入助手橫向捲動
 function handleQuickInputWheel(e: WheelEvent) {
   const container = e.currentTarget as HTMLElement;
@@ -2783,478 +1907,22 @@ function handleQuickInputWheel(e: WheelEvent) {
   container.scrollLeft += delta;
 }
 
-// ===== 外觀設定 =====
-const chatAppearance = ref<ChatAppearance | undefined>(undefined);
-
-// 保存外觀設定
-function saveAppearance(appearance: ChatAppearance) {
-  console.log(
-    "[ChatScreen] saveAppearance 收到:",
-    JSON.stringify(appearance.wallpaper, null, 2),
-  );
-  chatStore.updateAppearance(appearance);
-  chatAppearance.value = appearance;
-  // 套用外觀到當前聊天（使用 nextTick 確保 DOM 已更新）
-  nextTick(() => {
-    applyChatAppearance(appearance);
-  });
-  // 保存到 IndexedDB
-  saveChat();
-}
-
-function hexToRgba(hex: string, alpha: number): string {
-  const h = hex.replace("#", "");
-  const r = parseInt(h.substring(0, 2), 16);
-  const g = parseInt(h.substring(2, 4), 16);
-  const b = parseInt(h.substring(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-// 套用聊天外觀（只影響 ChatScreen 組件內部）
-function applyChatAppearance(appearance?: ChatAppearance) {
-  const container = chatScreenRef.value;
-  if (!container) return;
-
-  // 夜晚模式下不套用聊天專屬外觀，強制使用夜晚配色
-  if (settingsStore.nightMode) {
-    // 強制設定夜晚氣泡配色
-    container.style.setProperty("--bubble-user-bg", "#2a4a3a");
-    container.style.setProperty("--bubble-user-text", "#e0f0e8");
-    container.style.setProperty("--bubble-ai-bg", "#1e2a40");
-    container.style.setProperty("--bubble-ai-text", "#d8d8e8");
-    container.style.setProperty("--bubble-ai-content", "#d8d8e8");
-    container.style.setProperty("--chat-bubble-user-bg", "#2a4a3a");
-    container.style.setProperty("--chat-bubble-user-text", "#e0f0e8");
-    container.style.setProperty("--chat-bubble-ai-bg", "#1e2a40");
-    container.style.setProperty("--chat-bubble-ai-text", "#d8d8e8");
-    container.style.setProperty("--chat-bubble-ai-content", "#d8d8e8");
-    // 清除其他聊天專屬覆蓋
-    container.style.removeProperty("--bubble-radius");
-    container.style.removeProperty("--bubble-max-width");
-    container.style.removeProperty("--color-primary");
-    container.style.removeProperty("--color-primary-light");
-    container.style.removeProperty("--color-background");
-    container.style.removeProperty("--chat-header-surface");
-    container.style.removeProperty("--chat-header-text");
-    container.style.removeProperty("--chat-header-text-secondary");
-    container.style.removeProperty("--avatar-border-radius");
-    container.style.removeProperty("--avatar-size");
-    container.style.removeProperty("--avatar-border-width");
-    container.style.removeProperty("--avatar-border-color");
-    container.style.removeProperty("--avatar-shadow");
-    container.style.removeProperty("--chat-wallpaper");
-    container.style.removeProperty("--chat-wallpaper-blur");
-    container.style.removeProperty("--chat-wallpaper-opacity");
-    container.style.removeProperty("--chat-wallpaper-fit");
-    container.style.removeProperty("--chat-wallpaper-repeat");
-    container.style.removeProperty("--chat-font-size");
-    container.style.removeProperty("--chat-font-family");
-    container.style.removeProperty("--chat-line-height");
-    container.style.removeProperty("--chat-letter-spacing");
-    container.style.removeProperty("--chat-md-text");
-    container.style.removeProperty("--chat-md-italic");
-    container.style.removeProperty("--chat-md-bold");
-    container.style.removeProperty("--chat-md-underline");
-    container.style.removeProperty("--chat-md-strikethrough");
-    container.style.removeProperty("--chat-md-highlight");
-    container.style.removeProperty("--chat-md-quote");
-    container.style.removeProperty("--chat-md-code");
-    container.style.removeProperty("--chat-md-heading");
-    container.style.removeProperty("--thought-bg");
-    container.style.removeProperty("--thought-text");
-    container.style.removeProperty("--thought-glow-1");
-    container.style.removeProperty("--thought-glow-2");
-    container.style.removeProperty("--thought-glow-3");
-    return;
-  }
-
-  if (!appearance || !appearance.useCustom) {
-    // 使用全局設定，移除聊天專屬樣式
-    container.style.removeProperty("--bubble-user-bg");
-    container.style.removeProperty("--bubble-user-text");
-    container.style.removeProperty("--bubble-ai-bg");
-    container.style.removeProperty("--bubble-ai-text");
-    container.style.removeProperty("--bubble-ai-content");
-    container.style.removeProperty("--bubble-radius");
-    container.style.removeProperty("--bubble-max-width");
-    container.style.removeProperty("--color-primary");
-    container.style.removeProperty("--color-primary-light");
-    container.style.removeProperty("--color-background");
-    container.style.removeProperty("--chat-header-surface");
-    container.style.removeProperty("--chat-header-text");
-    container.style.removeProperty("--chat-header-text-secondary");
-    // 頭像相關
-    container.style.removeProperty("--avatar-border-radius");
-    container.style.removeProperty("--avatar-size");
-    container.style.removeProperty("--avatar-border-width");
-    container.style.removeProperty("--avatar-border-color");
-    container.style.removeProperty("--avatar-shadow");
-    // 桌布相關
-    container.style.removeProperty("--chat-wallpaper");
-    container.style.removeProperty("--chat-wallpaper-blur");
-    container.style.removeProperty("--chat-wallpaper-opacity");
-    container.style.removeProperty("--chat-wallpaper-fit");
-    container.style.removeProperty("--chat-wallpaper-repeat");
-    // 字體相關
-    container.style.removeProperty("--chat-font-size");
-    container.style.removeProperty("--chat-font-family");
-    container.style.removeProperty("--chat-line-height");
-    container.style.removeProperty("--chat-letter-spacing");
-    // Markdown 顏色
-    container.style.removeProperty("--chat-md-text");
-    container.style.removeProperty("--chat-md-italic");
-    container.style.removeProperty("--chat-md-bold");
-    container.style.removeProperty("--chat-md-underline");
-    container.style.removeProperty("--chat-md-strikethrough");
-    container.style.removeProperty("--chat-md-highlight");
-    container.style.removeProperty("--chat-md-quote");
-    container.style.removeProperty("--chat-md-code");
-    container.style.removeProperty("--chat-md-heading");
-    container.style.removeProperty("--thought-bg");
-    container.style.removeProperty("--thought-text");
-    container.style.removeProperty("--thought-glow-1");
-    container.style.removeProperty("--thought-glow-2");
-    container.style.removeProperty("--thought-glow-3");
-    return;
-  }
-
-  // 套用聊天專屬顏色
-  if (appearance.colors) {
-    container.style.setProperty("--color-primary", appearance.colors.primary);
-    container.style.setProperty(
-      "--color-primary-light",
-      appearance.colors.primaryLight,
-    );
-    if (appearance.colors.background) {
-      container.style.setProperty("--color-background", appearance.colors.background);
-    } else {
-      container.style.removeProperty("--color-background");
-    }
-    if (appearance.colors.surface) {
-      container.style.setProperty("--chat-header-surface", appearance.colors.surface);
-      container.style.setProperty("--color-surface", appearance.colors.surface);
-    } else {
-      container.style.removeProperty("--chat-header-surface");
-      container.style.removeProperty("--color-surface");
-    }
-    if (appearance.colors.surfaceHover) {
-      container.style.setProperty("--color-surface-hover", appearance.colors.surfaceHover);
-    } else {
-      container.style.removeProperty("--color-surface-hover");
-    }
-    if (appearance.colors.text) {
-      container.style.setProperty("--chat-header-text", appearance.colors.text);
-      container.style.setProperty("--color-text", appearance.colors.text);
-    } else {
-      container.style.removeProperty("--chat-header-text");
-      container.style.removeProperty("--color-text");
-    }
-    if (appearance.colors.textSecondary) {
-      container.style.setProperty("--chat-header-text-secondary", appearance.colors.textSecondary);
-      container.style.setProperty("--color-text-secondary", appearance.colors.textSecondary);
-    } else {
-      container.style.removeProperty("--chat-header-text-secondary");
-      container.style.removeProperty("--color-text-secondary");
-    }
-    if (appearance.colors.textMuted) {
-      container.style.setProperty("--color-text-muted", appearance.colors.textMuted);
-    } else {
-      container.style.removeProperty("--color-text-muted");
-    }
-    if (appearance.colors.secondary) {
-      container.style.setProperty("--color-secondary", appearance.colors.secondary);
-    } else {
-      container.style.removeProperty("--color-secondary");
-    }
-    if (appearance.colors.border) {
-      container.style.setProperty("--color-border", appearance.colors.border);
-    } else {
-      container.style.removeProperty("--color-border");
-    }
-    if (appearance.colors.shadow) {
-      container.style.setProperty("--color-shadow", appearance.colors.shadow);
-    } else {
-      container.style.removeProperty("--color-shadow");
-    }
-    if (appearance.colors.success) {
-      container.style.setProperty("--color-success", appearance.colors.success);
-    } else {
-      container.style.removeProperty("--color-success");
-    }
-    if (appearance.colors.error) {
-      container.style.setProperty("--color-error", appearance.colors.error);
-    } else {
-      container.style.removeProperty("--color-error");
-    }
-    if (appearance.colors.warning) {
-      container.style.setProperty("--color-warning", appearance.colors.warning);
-    } else {
-      container.style.removeProperty("--color-warning");
-    }
-  } else {
-    container.style.removeProperty("--color-background");
-    container.style.removeProperty("--chat-header-surface");
-    container.style.removeProperty("--color-surface");
-    container.style.removeProperty("--color-surface-hover");
-    container.style.removeProperty("--chat-header-text");
-    container.style.removeProperty("--color-text");
-    container.style.removeProperty("--chat-header-text-secondary");
-    container.style.removeProperty("--color-text-secondary");
-    container.style.removeProperty("--color-text-muted");
-    container.style.removeProperty("--color-secondary");
-    container.style.removeProperty("--color-border");
-    container.style.removeProperty("--color-shadow");
-    container.style.removeProperty("--color-success");
-    container.style.removeProperty("--color-error");
-    container.style.removeProperty("--color-warning");
-  }
-
-  // 套用聊天專屬頭像樣式
-  if (appearance.avatar) {
-    const avatarRadius =
-      appearance.avatar.shape === "circle"
-        ? "50%"
-        : appearance.avatar.shape === "square"
-          ? "8px"
-          : "16px";
-    const avatarSize =
-      appearance.avatar.size === "small"
-        ? "36px"
-        : appearance.avatar.size === "medium"
-          ? "48px"
-          : "64px";
-    container.style.setProperty("--avatar-border-radius", avatarRadius);
-    container.style.setProperty("--avatar-size", avatarSize);
-    container.style.setProperty(
-      "--avatar-border-width",
-      `${appearance.avatar.borderWidth}px`,
-    );
-    container.style.setProperty(
-      "--avatar-border-color",
-      appearance.avatar.borderColor,
-    );
-    container.style.setProperty(
-      "--avatar-shadow",
-      appearance.avatar.shadowEnabled
-        ? "0 4px 12px var(--color-shadow)"
-        : "none",
-    );
-  }
-
-  // 套用聊天專屬氣泡樣式（無論有無設定都要處理，確保舊值不殘留）
-  if (appearance.bubble) {
-    container.style.setProperty(
-      "--bubble-user-bg",
-      appearance.bubble.userBgGradient || appearance.bubble.userBgColor,
-    );
-    container.style.setProperty(
-      "--bubble-user-text",
-      appearance.bubble.userTextColor,
-    );
-    container.style.setProperty("--bubble-ai-bg", appearance.bubble.aiBgColor);
-    container.style.setProperty(
-      "--bubble-ai-text",
-      appearance.bubble.aiTextColor,
-    );
-    container.style.setProperty(
-      "--bubble-ai-content",
-      appearance.bubble.aiContentColor ?? appearance.bubble.aiTextColor,
-    );
-    container.style.setProperty(
-      "--bubble-radius",
-      `${appearance.bubble.borderRadius}px`,
-    );
-    container.style.setProperty(
-      "--bubble-max-width",
-      `${appearance.bubble.maxWidth}%`,
-    );
-    // 想法氣泡（使用 defaultBubble 預設值作為 fallback）
-    const tBg = appearance.bubble.thoughtBgColor ?? "#ADD8E6";
-    const tGlow = appearance.bubble.thoughtGlowColor ?? "#ADD8E6";
-    const tOpacity = appearance.bubble.thoughtGlowOpacity ?? 0.6;
-    container.style.setProperty("--thought-bg", hexToRgba(tBg, 0.9));
-    container.style.setProperty("--thought-text", appearance.bubble.thoughtTextColor ?? "#4a6572");
-    container.style.setProperty("--thought-glow-1", hexToRgba(tGlow, tOpacity));
-    container.style.setProperty("--thought-glow-2", hexToRgba(tGlow, tOpacity * 0.6));
-    container.style.setProperty("--thought-glow-3", hexToRgba(tGlow, tOpacity * 0.3));
-  } else {
-    // 沒有自訂氣泡：清除容器層級的覆蓋，讓全局主題值生效
-    container.style.removeProperty("--bubble-user-bg");
-    container.style.removeProperty("--bubble-user-text");
-    container.style.removeProperty("--bubble-ai-bg");
-    container.style.removeProperty("--bubble-ai-text");
-    container.style.removeProperty("--bubble-ai-content");
-    container.style.removeProperty("--bubble-radius");
-    container.style.removeProperty("--bubble-max-width");
-    container.style.removeProperty("--thought-bg");
-    container.style.removeProperty("--thought-text");
-    container.style.removeProperty("--thought-glow-1");
-    container.style.removeProperty("--thought-glow-2");
-    container.style.removeProperty("--thought-glow-3");
-  }
-
-  // 套用聊天專屬桌布樣式（無論有無桌布都要處理，確保舊值不殘留）
-  if (appearance.wallpaper) {
-    let wallpaperValue: string;
-    let wallpaperBlur = appearance.wallpaper.blur ?? 0;
-    let wallpaperOpacity = appearance.wallpaper.opacity ?? 100;
-    let wallpaperFit = appearance.wallpaper.fit || "cover";
-
-    const toImageWallpaper = (imageUrl: string) => {
-      if (
-        imageUrl &&
-        (imageUrl.startsWith("data:") ||
-          imageUrl.startsWith("blob:") ||
-          imageUrl.startsWith("http"))
-      ) {
-        return `url("${imageUrl}")`;
-      }
-      return "var(--wallpaper-value, var(--color-background))";
-    };
-
-    if (appearance.wallpaper.type === "image") {
-      // 圖片類型：檢查 URL 是否有效
-      wallpaperValue = toImageWallpaper(appearance.wallpaper.value);
-      if (wallpaperValue.startsWith("var(")) {
-        console.warn("[ChatScreen] 無效的桌布圖片 URL，使用全局桌布");
-      }
-    } else if (appearance.wallpaper.type === "global-image") {
-      // 跟隨主畫面圖片：即時解析 themeStore 目前自訂圖片，不保存圖片副本
-      if (themeStore.wallpaperStyle.type === "image") {
-        wallpaperValue = toImageWallpaper(themeStore.wallpaperStyle.value);
-        wallpaperBlur = themeStore.wallpaperStyle.blur ?? wallpaperBlur;
-        wallpaperOpacity = themeStore.wallpaperStyle.opacity ?? wallpaperOpacity;
-        wallpaperFit = themeStore.wallpaperStyle.fit || wallpaperFit;
-      } else {
-        wallpaperValue = "var(--wallpaper-value, var(--color-background))";
-      }
-    } else if (appearance.wallpaper.type === "time-theme") {
-      // 跟隨時間：使用全局 time-theme 變數（由 theme store 動態更新）
-      wallpaperValue =
-        "var(--time-theme-bg, var(--wallpaper-value, var(--color-background)))";
-    } else if (
-      appearance.wallpaper.type === "gradient" ||
-      appearance.wallpaper.type === "color"
-    ) {
-      // 漸層或純色：直接使用 value
-      wallpaperValue =
-        appearance.wallpaper.value ||
-        "var(--wallpaper-value, var(--color-background))";
-    } else {
-      // 其他類型（pattern 等）
-      wallpaperValue =
-        appearance.wallpaper.value ||
-        "var(--wallpaper-value, var(--color-background))";
-    }
-    console.log("[ChatScreen] 套用桌布:", {
-      type: appearance.wallpaper.type,
-      value: wallpaperValue,
-      blur: wallpaperBlur,
-      opacity: wallpaperOpacity,
-    });
-    container.style.setProperty("--chat-wallpaper", wallpaperValue);
-    container.style.setProperty(
-      "--chat-wallpaper-blur",
-      `${wallpaperBlur}px`,
-    );
-    container.style.setProperty(
-      "--chat-wallpaper-opacity",
-      `${wallpaperOpacity / 100}`,
-    );
-    // 顯示模式
-    const fit = wallpaperFit;
-    const bgSize =
-      fit === "repeat" ? "auto" : fit === "fill" ? "100% 100%" : fit;
-    container.style.setProperty("--chat-wallpaper-fit", bgSize);
-    container.style.setProperty(
-      "--chat-wallpaper-repeat",
-      fit === "repeat" ? "repeat" : "no-repeat",
-    );
-  } else {
-    // 沒有自訂桌布：清除所有聊天專屬桌布變數，讓全局桌布生效
-    container.style.removeProperty("--chat-wallpaper");
-    container.style.removeProperty("--chat-wallpaper-blur");
-    container.style.removeProperty("--chat-wallpaper-opacity");
-    container.style.removeProperty("--chat-wallpaper-fit");
-    container.style.removeProperty("--chat-wallpaper-repeat");
-  }
-
-  // 套用聊天專屬字體樣式
-  if (appearance.font) {
-    // 支持新的 px 值格式（如 "16px"）或舊的名稱格式（"small"、"medium"、"large"）
-    let fontSize: string;
-    if (
-      typeof appearance.font.size === "string" &&
-      appearance.font.size.endsWith("px")
-    ) {
-      // 新格式：直接使用 px 值
-      fontSize = appearance.font.size;
-    } else {
-      // 舊格式：轉換名稱為 px 值
-      fontSize =
-        appearance.font.size === "small"
-          ? "14px"
-          : appearance.font.size === "medium"
-            ? "15px"
-            : "17px";
-    }
-
-    const fontFamily =
-      appearance.font.family === "system"
-        ? '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-        : appearance.font.family === "rounded"
-          ? '"Nunito", "Noto Sans TC", -apple-system, sans-serif'
-          : appearance.font.family === "serif"
-            ? '"Noto Serif TC", "Georgia", serif'
-            : '"Fira Code", "Source Code Pro", monospace';
-    container.style.setProperty("--chat-font-size", fontSize);
-    container.style.setProperty("--chat-font-family", fontFamily);
-
-    // 行高和字間距
-    container.style.setProperty(
-      "--chat-line-height",
-      `${appearance.font.lineHeight ?? 1.6}`,
-    );
-    container.style.setProperty(
-      "--chat-letter-spacing",
-      `${appearance.font.letterSpacing ?? 0}px`,
-    );
-
-    // Markdown 樣式顏色
-    if (appearance.font.markdownColors) {
-      const mc = appearance.font.markdownColors;
-      container.style.setProperty("--chat-md-italic", mc.italic || "#8b7355");
-      container.style.setProperty("--chat-md-bold", mc.bold || "#4a4a6a");
-      container.style.setProperty(
-        "--chat-md-underline",
-        mc.underline || "#8b2942",
-      );
-      container.style.setProperty(
-        "--chat-md-strikethrough",
-        mc.strikethrough || "#999999",
-      );
-      container.style.setProperty(
-        "--chat-md-highlight",
-        mc.highlight || "#fff3cd",
-      );
-      container.style.setProperty("--chat-md-quote", mc.quote || "#8b5a2b");
-      container.style.setProperty("--chat-md-code", mc.code || "#e83e8c");
-      container.style.setProperty("--chat-md-heading", mc.heading || "#4a4a6a");
-    }
-  }
-}
+// ===== 外觀設定 composable =====
+const { chatAppearance, saveAppearance, applyChatAppearance } = useChatAppearance({
+  chatScreenRef,
+  settingsStore,
+  themeStore,
+  chatStore,
+  saveChat,
+  getPendingAppearance: () => props.pendingAppearance,
+  onAppearanceApplied: () => emit("appearanceApplied"),
+});
 
 // ===== 流式輸出窗口 =====
 const streamingWindow = useStreamingWindow();
 // 是否正在最小化（用於動畫）— 現在由 App.vue 管理動畫
 // 保留 ref 以防其他地方引用
 const isMinimizing = ref(false);
-
-// 事件監聽取消函數
-let _unregisterStreamingClose: (() => void) | null = null;
-let _unregisterStreamingStop: (() => void) | null = null;
-let _unregisterStreamingMinimize: (() => void) | null = null;
-let _unregisterStreamingRestore: (() => void) | null = null;
 
 // 是否使用流式輸出窗口
 const useStreamingWindowEnabled = computed(
@@ -3331,28 +1999,6 @@ const {
 const hasAIMessages = computed(() =>
   messages.value.some((m) => m.role === "ai"),
 );
-
-// 獲取最後一條 AI 訊息
-const lastAIMessage = computed(() => {
-  for (let i = messages.value.length - 1; i >= 0; i--) {
-    if (messages.value[i].role === "ai") {
-      return messages.value[i];
-    }
-  }
-  return null;
-});
-
-// 逐條顯示訊息的延遲輔助（模擬真實聊天節奏）
-const _delay = (ms: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-// 依訊息總數決定每條間的延遲（避免大量訊息時等待過久）
-function _messageRenderDelay(total: number): number {
-  if (total <= 2) return 2000;
-  if (total <= 5) return 800;
-  if (total <= 10) return 400;
-  return 200;
-}
 
 // 滾動到底部
 function scrollToBottom() {
@@ -3676,191 +2322,6 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
-// 處理訊息點擊
-function handleMessageClick(id: string) {
-  console.log("Message clicked:", id);
-}
-
-// 處理訊息編輯
-function handleMessageEdit(id: string) {
-  const message = messages.value.find((m) => m.id === id);
-  if (message) {
-    editingMessageId.value = id;
-    editingContent.value = message.content;
-    editingThought.value = message.thought || "";
-    // 等 DOM 渲染後，將值寫入 textarea（繞過 v-model 響應式）
-    nextTick(() => {
-      if (editContentTextareaRef.value) {
-        editContentTextareaRef.value.value = message.content;
-      }
-      if (editThoughtTextareaRef.value) {
-        editThoughtTextareaRef.value.value = message.thought || "";
-      }
-    });
-  }
-}
-
-function extractModeRequestReason(attrs: string): string | undefined {
-  const reasonMatch = attrs.match(/\breason=(['"])([\s\S]*?)\1/i);
-  const reason = reasonMatch?.[2]?.trim();
-  return reason || undefined;
-}
-
-function syncModeRequestFieldsFromContent(message: Message, content: string): void {
-  const faceToFaceMatch = content.match(/<face-to-face-request\s+([^>]*?)\s*\/?>/i);
-  if (faceToFaceMatch) {
-    const preservedStatus = message.isFaceToFaceRequest
-      ? message.faceToFaceRequestStatus
-      : undefined;
-    message.isFaceToFaceRequest = true;
-    message.faceToFaceRequestReason = extractModeRequestReason(faceToFaceMatch[1]);
-    message.faceToFaceRequestStatus = preservedStatus || "pending";
-    message.isOnlineModeRequest = false;
-    message.onlineModeRequestReason = undefined;
-    message.onlineModeRequestStatus = undefined;
-    return;
-  }
-
-  const onlineModeMatch = content.match(/<online-mode-request\s+([^>]*?)\s*\/?>/i);
-  if (onlineModeMatch) {
-    const preservedStatus = message.isOnlineModeRequest
-      ? message.onlineModeRequestStatus
-      : undefined;
-    message.isOnlineModeRequest = true;
-    message.onlineModeRequestReason = extractModeRequestReason(onlineModeMatch[1]);
-    message.onlineModeRequestStatus = preservedStatus || "pending";
-    message.isFaceToFaceRequest = false;
-    message.faceToFaceRequestReason = undefined;
-    message.faceToFaceRequestStatus = undefined;
-    return;
-  }
-
-  message.isFaceToFaceRequest = false;
-  message.faceToFaceRequestReason = undefined;
-  message.faceToFaceRequestStatus = undefined;
-  message.isOnlineModeRequest = false;
-  message.onlineModeRequestReason = undefined;
-  message.onlineModeRequestStatus = undefined;
-}
-
-// 保存編輯
-async function saveEdit() {
-  if (!editingMessageId.value) return;
-  const message = messages.value.find((m) => m.id === editingMessageId.value);
-  if (message) {
-    // 從 DOM textarea 讀取最新值（不依賴 v-model 響應式）
-    const content = editContentTextareaRef.value?.value ?? editingContent.value;
-    const thought = editThoughtTextareaRef.value?.value ?? editingThought.value;
-    message.content = content;
-    message.thought = thought || undefined;
-    syncModeRequestFieldsFromContent(message, content);
-    // 同步更新跳轉魔法內容
-    if (message.isTimetravel) {
-      message.timetravelContent = content;
-    }
-    await saveChatImmediate();
-  }
-  cancelEdit();
-}
-
-// 取消編輯
-function cancelEdit() {
-  editingMessageId.value = null;
-  editingContent.value = "";
-  editingThought.value = "";
-}
-
-// 處理訊息刪除
-async function handleMessageDelete(id: string) {
-  if (confirm("確定要刪除這條訊息嗎？")) {
-    messages.value = messages.value.filter((m) => m.id !== id);
-    // 立即從 IDB 刪除，避免 snapshotTime 保護誤留
-    await deleteMessage(id);
-    await saveChatImmediate();
-  }
-}
-
-// 處理用戶撤回訊息
-async function handleMessageRecall(id: string, type: "seen" | "unseen") {
-  const msg = messages.value.find((m) => m.id === id);
-  if (!msg || msg.role !== "user") return;
-
-  // 保存原始內容到 recallContent
-  msg.recallContent = msg.content;
-  msg.isUserRecalled = true;
-  msg.userRecalledType = type;
-
-  // 修改 content 為發送給 AI 的內容
-  const charName = displayCharacterName.value || "對方";
-  const userName = userStore.currentName || "用戶";
-  if (type === "seen") {
-    msg.content = `(撤回的訊息被${charName}看見了，內容是「${msg.recallContent}」)`;
-  } else {
-    msg.content = `(${userName}撤回了此訊息)`;
-  }
-
-  await saveChatImmediate();
-}
-
-// 取消撤回，恢復原始訊息
-async function handleUndoRecall(id: string) {
-  const msg = messages.value.find((m) => m.id === id);
-  if (!msg || !msg.isUserRecalled || !msg.recallContent) return;
-
-  msg.content = msg.recallContent;
-  msg.isUserRecalled = false;
-  msg.userRecalledType = undefined;
-  msg.recallContent = undefined;
-
-  await saveChatImmediate();
-}
-
-// 角色撤回展開（seen 類型點擊後標記已查看）
-async function handleCharRecallReveal(id: string) {
-  const msg = messages.value.find((m) => m.id === id);
-  if (!msg || !msg.isCharRecall || msg.charRecallType !== 'seen') return;
-  msg.charRecallRevealed = true;
-  await saveChatImmediate();
-}
-
-async function handleAcceptFaceToFaceRequest(id: string) {
-  const msg = messages.value.find((m) => m.id === id);
-  if (!msg || !msg.isFaceToFaceRequest || msg.faceToFaceRequestStatus !== "pending") {
-    return;
-  }
-  msg.faceToFaceRequestStatus = "accepted";
-  chatFaceToFaceMode.value = true;
-  await saveChatImmediate();
-}
-
-async function handleRejectFaceToFaceRequest(id: string) {
-  const msg = messages.value.find((m) => m.id === id);
-  if (!msg || !msg.isFaceToFaceRequest || msg.faceToFaceRequestStatus !== "pending") {
-    return;
-  }
-  msg.faceToFaceRequestStatus = "rejected";
-  await saveChatImmediate();
-}
-
-async function handleAcceptOnlineModeRequest(id: string) {
-  const msg = messages.value.find((m) => m.id === id);
-  if (!msg || !msg.isOnlineModeRequest || msg.onlineModeRequestStatus !== "pending") {
-    return;
-  }
-  msg.onlineModeRequestStatus = "accepted";
-  chatFaceToFaceMode.value = false;
-  await saveChatImmediate();
-}
-
-async function handleRejectOnlineModeRequest(id: string) {
-  const msg = messages.value.find((m) => m.id === id);
-  if (!msg || !msg.isOnlineModeRequest || msg.onlineModeRequestStatus !== "pending") {
-    return;
-  }
-  msg.onlineModeRequestStatus = "rejected";
-  await saveChatImmediate();
-}
-
 // 日期分隔符：判斷是否顯示
 function shouldShowDateSeparator(index: number): boolean {
   if (index === 0) return true;
@@ -3886,12 +2347,6 @@ function getDateSeparatorText(timestamp: number): string {
   } else {
     return `${date.getMonth() + 1}月${date.getDate()}日`;
   }
-}
-
-// 處理訊息複製
-function handleMessageCopy(id: string) {
-  // 已在組件內處理
-  console.log("Message copied:", id);
 }
 
 // ===== 截圖 composable =====
@@ -4175,34 +2630,6 @@ async function recordGiftToImportantEvents(giftName: string) {
   }
 }
 
-// 處理滑動切換
-function handleMessageSwipe(id: string, direction: "prev" | "next") {
-  const msgIndex = messages.value.findIndex((m) => m.id === id);
-  if (msgIndex === -1) return;
-
-  const msg = messages.value[msgIndex];
-  if (!msg.swipes || msg.swipes.length <= 1) return;
-
-  const currentIndex = msg.swipeId ?? 0;
-  let newIndex: number;
-
-  if (direction === "next") {
-    newIndex = (currentIndex + 1) % msg.swipes.length;
-  } else {
-    newIndex = currentIndex === 0 ? msg.swipes.length - 1 : currentIndex - 1;
-  }
-
-  // 更新訊息
-  messages.value[msgIndex] = {
-    ...msg,
-    content: msg.swipes[newIndex],
-    swipeId: newIndex,
-  };
-
-  // 保存
-  saveChat();
-}
-
 // 重新生成文生圖（支援失敗後的描述卡，以及已成功生成的圖片）
 async function handleRegenerateImage(id: string) {
   const msg = messages.value.find((m) => m.id === id);
@@ -4220,546 +2647,12 @@ async function handleRegenerateImage(id: string) {
   await tryGenerateImageForMessage(id, prompt, caption);
 }
 
-// 處理重新生成（菜單版，統一使用按鈕版的 round 邏輯）
-async function handleRegenerate(id: string) {
-  if (isGenerating.value) return;
-
-  const msg = messages.value.find((m) => m.id === id);
-  if (!msg) return;
-
-  if (msg.turnId) {
-    await doRegenerateByTurnId(msg.turnId);
-  } else {
-    // fallback：舊資料沒有 turnId，找到這條訊息所在輪次的第一條 AI 訊息
-    const msgIndex = messages.value.findIndex((m) => m.id === id);
-    const currentRoundMessages = collectCurrentRoundMessages(msgIndex);
-    const firstAI = currentRoundMessages[0];
-    if (firstAI) {
-      await doRegenerateFromMessage(firstAI);
-    }
-  }
-}
-
-// 重新生成本輪所有 AI 回覆
-async function regenerateLastAIResponse() {
-  if (isGenerating.value) return;
-
-  const lastMessage = messages.value[messages.value.length - 1];
-  if (!lastMessage) return;
-
-  // 找最後一個有 turnId 的訊息，取得該輪 ID
-  let lastTurnId: string | undefined;
-  for (let i = messages.value.length - 1; i >= 0; i--) {
-    if (messages.value[i].turnId) {
-      lastTurnId = messages.value[i].turnId;
-      break;
-    }
-  }
-
-  if (lastMessage.role === "user") {
-    // 最後一條是用戶訊息
-    if (lastTurnId) {
-      // 上一輪有 turnId，詢問是否重新生成上一輪
-      const userChoice = confirm(
-        "當前輪次尚未有 AI 回復。\n\n" +
-          "點擊「確定」：重新生成上一輪 AI 回復\n" +
-          "點擊「取消」：生成本輪 AI 回復",
-      );
-      if (userChoice) {
-        // 先刪掉本輪所有 user 訊息（lastTurnId 之後到結尾的 user 訊息）
-        const lastTurnLastIdx = messages.value.reduce(
-          (acc, m, i) => (m.turnId === lastTurnId ? i : acc),
-          -1,
-        );
-        if (lastTurnLastIdx !== -1) {
-          const removedMsgs = messages.value.slice(lastTurnLastIdx + 1);
-          messages.value = messages.value.slice(0, lastTurnLastIdx + 1);
-          // 從 IDB 刪除被截斷的訊息
-          if (removedMsgs.length > 0) {
-            await Promise.all(removedMsgs.map((m) => deleteMessage(m.id)));
-          }
-        }
-        await doRegenerateByTurnId(lastTurnId);
-      } else {
-        currentTurnId.value = crypto.randomUUID();
-        await triggerAIResponse({ skipAutoTrigger: true });
-      }
-    } else {
-      // 沒有任何 turnId（舊資料），也要詢問
-      const firstAIOfLastRound = findFirstAIMessageOfLastRound();
-      if (firstAIOfLastRound) {
-        const userChoice = confirm(
-          "當前輪次尚未有 AI 回復。\n\n" +
-            "點擊「確定」：重新生成上一輪 AI 回復\n" +
-            "點擊「取消」：生成本輪 AI 回復",
-        );
-        if (userChoice) {
-          // 先刪掉本輪 user 訊息（最後一個 AI 訊息之後的所有訊息）
-          const lastAIIdx = messages.value.reduce(
-            (acc, m, i) => (m.role === "ai" || m.role === "system" ? i : acc),
-            -1,
-          );
-          if (lastAIIdx !== -1) {
-            const removedMsgsFb = messages.value.slice(lastAIIdx + 1);
-            messages.value = messages.value.slice(0, lastAIIdx + 1);
-            // 從 IDB 刪除被截斷的訊息
-            if (removedMsgsFb.length > 0) {
-              await Promise.all(removedMsgsFb.map((m) => deleteMessage(m.id)));
-            }
-          }
-          await doRegenerateFromMessage(firstAIOfLastRound);
-        } else {
-          currentTurnId.value = crypto.randomUUID();
-          await triggerAIResponse({ skipAutoTrigger: true });
-        }
-      } else {
-        // 完全沒有 AI 訊息，直接生成
-        currentTurnId.value = crypto.randomUUID();
-        await triggerAIResponse({ skipAutoTrigger: true });
-      }
-    }
-    return;
-  }
-
-  // 最後一條是 AI 訊息，重新生成最後一輪
-  if (lastTurnId) {
-    await doRegenerateByTurnId(lastTurnId);
-  } else {
-    // 舊資料沒有 turnId，fallback 到舊邏輯
-    const firstAIOfCurrentRound = findFirstAIMessageOfCurrentRound();
-    if (firstAIOfCurrentRound) {
-      await doRegenerateFromMessage(firstAIOfCurrentRound);
-    }
-  }
-}
-
-// 找到當前輪次的第一條 AI 訊息（最後一條用戶訊息之後的第一條 AI 或 AI 產生的系統訊息）
-function findFirstAIMessageOfCurrentRound(): Message | null {
-  // 從後往前找最後一條用戶訊息
-  let lastUserIndex = -1;
-  for (let i = messages.value.length - 1; i >= 0; i--) {
-    if (messages.value[i].role === "user") {
-      lastUserIndex = i;
-      break;
-    }
-  }
-
-  // 找到該用戶訊息之後的第一條 AI 訊息或 AI 產生的系統訊息（如 timetravel）
-  if (lastUserIndex >= 0) {
-    for (let i = lastUserIndex + 1; i < messages.value.length; i++) {
-      const msg = messages.value[i];
-      if (msg.role === "ai" || (msg.role === "system" && msg.isTimetravel)) {
-        return msg;
-      }
-    }
-  }
-
-  // 如果沒有用戶訊息，返回第一條 AI 訊息
-  return messages.value.find((m) => m.role === "ai") || null;
-}
-
-// 找到上一輪的第一條 AI 訊息（最後一條用戶訊息之前的那一輪）
-function findFirstAIMessageOfLastRound(): Message | null {
-  // 從後往前找，跳過最後的用戶訊息序列，找到 AI 訊息序列的開頭
-  let foundLastUser = false;
-  let lastAIIndex = -1;
-
-  for (let i = messages.value.length - 1; i >= 0; i--) {
-    const msg = messages.value[i];
-    if (msg.role === "user") {
-      if (!foundLastUser) {
-        foundLastUser = true;
-      } else if (lastAIIndex !== -1) {
-        // 找到了上一輪用戶訊息，返回其後的第一條 AI 訊息
-        for (let j = i + 1; j < messages.value.length; j++) {
-          if (messages.value[j].role === "ai") {
-            return messages.value[j];
-          }
-        }
-      }
-    } else if (msg.role === "ai" && foundLastUser) {
-      lastAIIndex = i;
-    }
-  }
-
-  // 如果只有一輪，返回第一條 AI 訊息
-  if (lastAIIndex !== -1) {
-    // 找到這一輪 AI 訊息的開頭
-    for (let i = 0; i <= lastAIIndex; i++) {
-      if (messages.value[i].role === "ai") {
-        // 檢查前面是否有用戶訊息
-        let hasUserBefore = false;
-        for (let j = i - 1; j >= 0; j--) {
-          if (messages.value[j].role === "user") {
-            hasUserBefore = true;
-            break;
-          }
-        }
-        if (hasUserBefore || i === 0) {
-          // 找到用戶訊息後的第一條 AI
-          for (let j = 0; j < messages.value.length; j++) {
-            if (messages.value[j].role === "user") {
-              for (let k = j + 1; k < messages.value.length; k++) {
-                if (messages.value[k].role === "ai") {
-                  return messages.value[k];
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return null;
-}
-
-// 找到最後一條用戶訊息之前的最後一條 AI 訊息（已棄用，保留兼容）
-function findLastAIMessageBeforeUser(): Message | null {
-  // 從後往前找，跳過最後的用戶訊息，找到 AI 訊息
-  let foundUser = false;
-  for (let i = messages.value.length - 1; i >= 0; i--) {
-    const msg = messages.value[i];
-    if (msg.role === "user") {
-      foundUser = true;
-      continue;
-    }
-    if (foundUser && msg.role === "ai") {
-      return msg;
-    }
-  }
-  return null;
-}
-
-// 收集當前輪次的 AI 訊息（從 targetIndex 開始到下一條用戶訊息之前）
-function collectCurrentRoundMessages(targetIndex: number): Message[] {
-  const roundMessages: Message[] = [];
-  for (let i = targetIndex; i < messages.value.length; i++) {
-    const msg = messages.value[i];
-    if (msg.role === "user" && i > targetIndex) break;
-    if (
-      msg.role === "ai" ||
-      (msg.role === "system" && (msg.isTimetravel || msg.isAvatarChange))
-    ) {
-      roundMessages.push(msg);
-    }
-  }
-  return roundMessages;
-}
-
-function getDisplayedRoundBounds(anchorIndex: number): {
-  startIdx: number;
-  endIdx: number;
-  roundMessages: Message[];
-} | null {
-  if (anchorIndex < 0 || anchorIndex >= messages.value.length) return null;
-
-  let startIdx = anchorIndex;
-  for (let i = anchorIndex - 1; i >= 0; i--) {
-    if (messages.value[i].role === "user") {
-      startIdx = i + 1;
-      break;
-    }
-    startIdx = i;
-  }
-
-  let endIdx = messages.value.length;
-  for (let i = anchorIndex + 1; i < messages.value.length; i++) {
-    if (messages.value[i].role === "user") {
-      endIdx = i;
-      break;
-    }
-  }
-
-  const roundMessages = messages.value.slice(startIdx, endIdx).filter(
-    (msg) =>
-      msg.role === "ai" ||
-      (msg.role === "system" && (msg.isTimetravel || msg.isAvatarChange)),
-  );
-
-  return { startIdx, endIdx, roundMessages };
-}
-
-// 找到當前輪次中攜帶 roundSwipes 的訊息（通常是最後一條 AI 訊息）
-function findRoundSwipeCarrier(roundMessages: Message[]): Message | null {
-  for (let i = roundMessages.length - 1; i >= 0; i--) {
-    if (roundMessages[i].roundSwipes) return roundMessages[i];
-  }
-  return null;
-}
-
-// 用 turnId 執行重新生成（新邏輯）
-async function doRegenerateByTurnId(turnId: string) {
-  const currentRoundMessages = messages.value.filter(
-    (m) => m.turnId === turnId,
-  );
-  if (currentRoundMessages.length === 0) return;
-
-  // 取得已有的 roundSwipes
-  const carrier = findRoundSwipeCarrier(currentRoundMessages);
-  const existingSwipes: Message[][] = carrier?.roundSwipes
-    ? [...carrier.roundSwipes]
-    : [];
-  const existingSwipeId = carrier?.roundSwipeId ?? -1;
-
-  // 深拷貝當前輪次（清除 roundSwipes 避免嵌套）
-  const savedRound: Message[] = currentRoundMessages.map((m) => {
-    const clone = { ...m };
-    delete clone.roundSwipes;
-    delete clone.roundSwipeId;
-    return clone;
-  });
-
-  if (existingSwipes.length === 0) {
-    existingSwipes.push(savedRound);
-  } else {
-    if (existingSwipeId >= 0 && existingSwipeId < existingSwipes.length) {
-      existingSwipes[existingSwipeId] = savedRound;
-    } else {
-      existingSwipes.push(savedRound);
-    }
-  }
-
-  pendingRoundSwipes.value = existingSwipes;
-
-  // 刪除這輪所有訊息（同時從 IDB 刪除，避免 snapshotTime 保護誤留）
-  const idsToRemove = currentRoundMessages.map((m) => m.id);
-  messages.value = messages.value.filter((m) => m.turnId !== turnId);
-  await Promise.all(idsToRemove.map((id) => deleteMessage(id)));
-
-  // 生成新的 turnId 並重新生成
-  currentTurnId.value = crypto.randomUUID();
-  await triggerAIResponse({ skipAutoTrigger: true });
-}
-
-// 執行重新生成：保存當前輪次到 roundSwipes，刪除後重新生成（舊邏輯，作為 fallback）
-async function doRegenerateFromMessage(targetAIMessage: Message) {
-  const targetIndex = messages.value.findIndex(
-    (m) => m.id === targetAIMessage.id,
-  );
-  if (targetIndex === -1) return;
-
-  // 收集當前輪次的 AI 訊息
-  const currentRoundMessages = collectCurrentRoundMessages(targetIndex);
-  if (currentRoundMessages.length === 0) {
-    console.warn("[ChatScreen] 沒有 AI 訊息需要重新生成");
-    return;
-  }
-
-  // 取得已有的 roundSwipes（可能之前已經重新生成過）
-  const carrier = findRoundSwipeCarrier(currentRoundMessages);
-  const existingSwipes: Message[][] = carrier?.roundSwipes
-    ? [...carrier.roundSwipes]
-    : [];
-  const existingSwipeId = carrier?.roundSwipeId ?? -1;
-
-  // 深拷貝當前輪次訊息（清除 roundSwipes 避免嵌套）
-  const savedRound: Message[] = currentRoundMessages.map((m) => {
-    const clone = { ...m };
-    delete clone.roundSwipes;
-    delete clone.roundSwipeId;
-    return clone;
-  });
-
-  // 如果 existingSwipes 為空，這是第一次重新生成，把當前輪次作為第一個候選
-  if (existingSwipes.length === 0) {
-    existingSwipes.push(savedRound);
-  } else {
-    // 如果當前顯示的不是最新生成的（用戶切換過），替換當前位置
-    if (existingSwipeId >= 0 && existingSwipeId < existingSwipes.length) {
-      existingSwipes[existingSwipeId] = savedRound;
-    } else {
-      existingSwipes.push(savedRound);
-    }
-  }
-
-  console.log(
-    `[ChatScreen] 重新生成：保存輪次（共 ${existingSwipes.length} 個候選），刪除 ${currentRoundMessages.length} 條 AI 訊息`,
-  );
-
-  // 暫存 roundSwipes 資料，等新訊息生成後附加上去
-  pendingRoundSwipes.value = existingSwipes;
-
-  // 刪除當前輪次的訊息（同時從 IDB 刪除，避免 snapshotTime 保護誤留）
-  const idsToDelete = new Set(currentRoundMessages.map((m) => m.id));
-  messages.value = messages.value.filter((m) => !idsToDelete.has(m.id));
-  await Promise.all([...idsToDelete].map((id) => deleteMessage(id)));
-
-  // 生成新的 turnId 並重新觸發 AI 生成
-  currentTurnId.value = crypto.randomUUID();
-  await triggerAIResponse({ skipAutoTrigger: true });
-}
-
-// 暫存的 roundSwipes（等待新生成完成後附加到最後一條 AI 訊息）
-const pendingRoundSwipes = ref<Message[][] | null>(null);
-
-// 當前輪次 ID（user 送出訊息時生成，本輪所有 AI 生成內容都帶此 ID）
-const currentTurnId = ref<string>("");
-
-// 將 roundSwipes 附加到最後一條 AI 訊息上（在 triggerAIResponse 完成後調用）
-function attachPendingRoundSwipes(targetTurnId?: string) {
-  if (!pendingRoundSwipes.value) return;
-
-  const roundMessages = (
-    targetTurnId
-      ? messages.value.filter((m) => m.turnId === targetTurnId)
-      : currentTurnId.value
-        ? messages.value.filter((m) => m.turnId === currentTurnId.value)
-        : (() => {
-            const firstAI = findFirstAIMessageOfCurrentRound();
-            if (!firstAI) return [];
-            const idx = messages.value.findIndex((m) => m.id === firstAI.id);
-            return idx === -1 ? [] : collectCurrentRoundMessages(idx);
-          })()
-  ).map((m) => {
-    const clone = { ...m };
-    delete clone.roundSwipes;
-    delete clone.roundSwipeId;
-    return clone;
-  });
-
-  const lastAI = [...messages.value]
-    .reverse()
-    .find(
-      (m) =>
-        m.role === "ai" &&
-        (!targetTurnId || m.turnId === targetTurnId),
-    ) || null;
-
-  if (lastAI) {
-    if (roundMessages.length > 0) {
-      pendingRoundSwipes.value.push(roundMessages);
-    }
-
-    lastAI.roundSwipes = pendingRoundSwipes.value;
-    lastAI.roundSwipeId = pendingRoundSwipes.value.length - 1;
-    console.log(
-      `[ChatScreen] 附加 roundSwipes：${pendingRoundSwipes.value.length} 個候選，當前索引 ${lastAI.roundSwipeId}`,
-    );
-  }
-
-  pendingRoundSwipes.value = null;
-}
-
-// 切換整輪 AI 回覆
-function handleRoundSwipe(lastAIMessageId: string, direction: "prev" | "next") {
-  // 找到攜帶 roundSwipes 的訊息
-  const carrierIndex = messages.value.findIndex(
-    (m) => m.id === lastAIMessageId,
-  );
-  if (carrierIndex === -1) return;
-
-  const carrier = messages.value[carrierIndex];
-  if (!carrier.roundSwipes || carrier.roundSwipes.length <= 1) return;
-
-  const currentIdx = carrier.roundSwipeId ?? 0;
-  let newIdx: number;
-  if (direction === "next") {
-    newIdx = (currentIdx + 1) % carrier.roundSwipes.length;
-  } else {
-    newIdx = currentIdx === 0 ? carrier.roundSwipes.length - 1 : currentIdx - 1;
-  }
-
-  // 取得目標輪次的訊息
-  const targetRound = carrier.roundSwipes[newIdx];
-  if (!targetRound || targetRound.length === 0) return;
-
-  // 先保存當前輪次到 roundSwipes（更新當前位置的快照）
-  const displayedRound = getDisplayedRoundBounds(carrierIndex);
-  if (displayedRound) {
-    const currentRound = displayedRound.roundMessages.map((m) => {
-      const clone = { ...m };
-      delete clone.roundSwipes;
-      delete clone.roundSwipeId;
-      return clone;
-    });
-    carrier.roundSwipes[currentIdx] = currentRound;
-  }
-
-  // 找到當前輪次的範圍
-  const roundBounds = displayedRound;
-  if (!roundBounds) return;
-  const { startIdx, endIdx } = roundBounds;
-
-  // 替換訊息：在目標輪次的最後一條 AI 訊息上附加 roundSwipes
-  const newMessages = targetRound.map((m, i) => {
-    const clone = { ...m };
-    // 在最後一條訊息上附加 roundSwipes
-    if (i === targetRound.length - 1) {
-      clone.roundSwipes = carrier.roundSwipes;
-      clone.roundSwipeId = newIdx;
-    }
-    return clone;
-  });
-
-  // 替換訊息列表中的對應範圍
-  messages.value.splice(startIdx, endIdx - startIdx, ...newMessages);
-
-  // 同步 currentTurnId 為切換後輪次的 turnId（若無則清空，讓下次走 fallback）
-  const restoredTurnId = newMessages.find((m) => m.turnId)?.turnId;
-  currentTurnId.value = restoredTurnId || "";
-
-  saveChat();
-}
-
-// 清除所有 roundSwipes（用戶發送新訊息時調用）
-function clearRoundSwipes() {
-  for (const msg of messages.value) {
-    if (msg.roundSwipes) {
-      delete msg.roundSwipes;
-      delete msg.roundSwipeId;
-    }
-  }
-}
-
-// 繼續生成（讓 AI 繼續未完成的回覆）
-async function continueGeneration() {
-  if (!lastAIMessage.value || isGenerating.value) return;
-
-  // 清理最後一條 AI 訊息的滑動選項（只保留當前選中的內容）
-  clearSwipesOnLastAIMessage();
-
-  // 添加一個隱藏提示讓 AI 繼續（不顯示在聊天畫面上）
-  const continuePrompt: Message = {
-    id: `msg_continue_${Date.now()}`,
-    role: "user",
-    content: "[繼續]",
-    timestamp: Date.now(),
-    isContinuePrompt: true,
-  };
-  messages.value.push(continuePrompt);
-
-  await triggerAIResponse();
-}
-
-// 清理最後一條 AI 訊息的滑動選項（只保留當前選中的內容）
-function clearSwipesOnLastAIMessage() {
-  const lastAI = lastAIMessage.value;
-  if (!lastAI) return;
-
-  const msgIndex = messages.value.findIndex((m) => m.id === lastAI.id);
-  if (msgIndex !== -1) {
-    const msg = messages.value[msgIndex];
-    // 清除滑動數據，只保留當前內容
-    messages.value[msgIndex] = {
-      ...msg,
-      swipes: undefined,
-      swipeId: undefined,
-    };
-  }
-}
-
 /**
  * 標記目前正在進行的 AI 生成是否處於小劇場「小手機劇本格式」模式。
  * triggerAIResponse 啟動時設值，結束（finally）清掉；handleStreamingClose
  * 也會讀這個 flag 以便在使用者手動關閉串流窗口時套用左右分邊。
  */
 let _theaterPhoneScriptForCurrentGeneration = false;
-
-/** escape regex special chars in a runtime-supplied name */
-function _escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 /**
  * 小劇場「小手機劇本格式」前綴檢測：
@@ -4920,15 +2813,7 @@ function computeTheaterPhoneScriptRoleMap(
 
 // 觸發 AI 回覆（不發送用戶訊息，只生成 AI 回覆）
 // skipAutoTrigger: 跳過自動觸發總結/日記（用於重新生成場景）
-async function triggerAIResponse(options?: {
-  skipAutoTrigger?: boolean;
-  holidayTriggerPrompt?: string;
-  postCallPrompt?: string;
-  audioApiMessage?: { role: string; content: any };
-  theaterNudge?: boolean;
-  theaterPhoneScript?: boolean; // 小劇場小手機劇本格式：要求 AI 用 <msg> 分句並以 user:/char: 前綴
-  bypassBlockCheck?: boolean; // 好友申請等特殊場景需要繞過封鎖檢查
-}) {
+async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
   if (!currentChatId.value) return;
   if (isGenerating.value) return;
   // 被角色封鎖期間，除非明確繞過（如好友申請），否則不觸發 AI 生成
@@ -4936,14 +2821,10 @@ async function triggerAIResponse(options?: {
   const generationTurnId = currentTurnId.value || "";
 
   // 使用全局狀態管理開始生成
-  const startResult = aiGenerationStore.startGeneration(
-    currentChatId.value,
-    "chat",
-    {
-      characterName: currentCharacter.value?.data?.name || props.characterName,
-      characterAvatar: props.characterAvatar,
-    },
-  );
+  const startResult = startChatGeneration({
+    characterName: currentCharacter.value?.data?.name || props.characterName,
+    characterAvatar: props.characterAvatar,
+  });
 
   if (!startResult.success) {
     console.warn("[ChatScreen] 無法開始生成:", startResult.error);
@@ -6130,94 +4011,34 @@ async function triggerAIResponse(options?: {
 
     {
       // ===== 取得完整回覆（流式 / 非流式皆支援，解析邏輯統一在拿到完整內容後執行） =====
-      let tokenUsage:
-        | { prompt_tokens: number; completion_tokens: number; total_tokens: number }
-        | undefined;
-
-      if (isStreamingEnabled) {
-        // 流式：逐 token 累積，同步到流式窗口或訊息氣泡
-        const streamGenerator = client.generateStream({
-          messages: apiMessages,
-          settings: chatSettings,
-          apiSettings: chatTaskConfig.api,
-          signal: controller.signal,
-          adjustLastMessageRole: true,
-        });
-
-        for await (const event of streamGenerator) {
-          if (!event) continue;
-          if (event.type === "token" && event.token) {
-            fullContent += event.token;
-
-            // 同步流式內容到全局 store（離開頁面後可恢復）
-            if (currentChatId.value) {
-              aiGenerationStore.updateContent(
-                currentChatId.value,
-                fullContent,
-                "chat",
-              );
-            }
-
-            if (useWindow) {
-              streamingWindow.appendToken(event.token);
-            } else {
-              const msgIndex = messages.value.findIndex(
-                (m) => m.id === aiMessage.id,
-              );
-              if (msgIndex !== -1) {
-                messages.value[msgIndex].content = fullContent;
-              }
-              scrollToBottom();
-            }
-          } else if (event.type === "done") {
-            if (event.content) {
-              fullContent = event.content;
-            }
-            const usage = (event as { usage?: typeof tokenUsage }).usage;
-            if (usage) tokenUsage = usage;
-            const doneEvent = event as import("@/types/chat").StreamingEvent;
-            if (doneEvent.diagnostics) {
-              generationDiagnostics = { ...generationDiagnostics, ...doneEvent.diagnostics };
-            }
-            if (doneEvent.rawFinishReason !== undefined) generationDiagnostics.rawFinishReason = doneEvent.rawFinishReason;
-            if (doneEvent.finishReason !== undefined) generationDiagnostics.finishReason = doneEvent.finishReason;
-          } else if (event.type === "error") {
-            const rawErr = (event as { error?: unknown }).error;
-            const errMsg =
-              typeof rawErr === "string"
-                ? rawErr
-                : rawErr instanceof Error
-                  ? rawErr.message
-                  : rawErr !== undefined
-                    ? String(rawErr)
-                    : "生成過程中發生錯誤";
-            throw new Error(errMsg);
+      const generationResult = await runChatGenerationRequest({
+        client,
+        messages: apiMessages,
+        settings: chatSettings,
+        apiSettings: chatTaskConfig.api,
+        signal: controller.signal,
+        streaming: isStreamingEnabled,
+        initialDiagnostics: generationDiagnostics,
+        onContentUpdate: updateChatGenerationContent,
+        onToken: (token, tokenFullContent) => {
+          if (useWindow) {
+            streamingWindow.appendToken(token);
+            return;
           }
-        }
-      } else {
-        // 非流式：一次性取得完整回覆
-        const result = await client.generate({
-          messages: apiMessages,
-          settings: chatSettings,
-          apiSettings: chatTaskConfig.api,
-          signal: controller.signal,
-          adjustLastMessageRole: true,
-        });
-        fullContent = result.content;
-        if (result.tokenCount) {
-          tokenUsage = {
-            prompt_tokens: result.tokenCount.prompt,
-            completion_tokens: result.tokenCount.completion,
-            total_tokens: result.tokenCount.total,
-          };
-        }
-        if (result.diagnostics) generationDiagnostics = { ...generationDiagnostics, ...result.diagnostics };
-        if (result.rawFinishReason !== undefined) generationDiagnostics.rawFinishReason = result.rawFinishReason;
-        if (result.finishReason !== undefined) generationDiagnostics.finishReason = result.finishReason;
-      }
+          const msgIndex = messages.value.findIndex(
+            (m) => m.id === aiMessage.id,
+          );
+          if (msgIndex !== -1) {
+            messages.value[msgIndex].content = tokenFullContent;
+          }
+          scrollToBottom();
+        },
+      });
+      fullContent = generationResult.content;
+      generationDiagnostics = generationResult.diagnostics;
 
-      if (useWindow && tokenUsage) {
-        streamingWindow.setUsage(tokenUsage);
+      if (useWindow && generationResult.tokenUsage) {
+        streamingWindow.setUsage(generationResult.tokenUsage);
       }
 
       // 串流本身已結束（所有 token 已收到），立刻把窗口標為完成，
@@ -6721,27 +4542,11 @@ async function triggerAIResponse(options?: {
             };
 
             // 外賣付款結果/送達（群聊）
-            if (parsedMsg.isWaimaiPaymentResult || parsedMsg.isWaimaiDelivery) {
-              const recentOrder = findLatestWaimaiOrder(messages.value);
-              if (recentOrder) {
-                const clonedOrder = JSON.parse(JSON.stringify(recentOrder));
-                if (
-                  parsedMsg.isWaimaiPaymentResult &&
-                  parsedMsg.waimaiPaymentStatus
-                ) {
-                  clonedOrder.status = parsedMsg.waimaiPaymentStatus;
-                  if (parsedMsg.waimaiPaymentStatus === "paid")
-                    clonedOrder.paidAt = Date.now();
-                  newMessage.isWaimaiPaymentResult = true;
-                }
-                if (parsedMsg.isWaimaiDelivery) {
-                  clonedOrder.status = "delivered";
-                  clonedOrder.deliveredAt = Date.now();
-                  newMessage.isWaimaiDelivery = true;
-                }
-                newMessage.waimaiOrder = clonedOrder;
-              }
-            }
+            applyWaimaiParsedResultToMessage(
+              newMessage,
+              parsedMsg,
+              messages.value,
+            );
 
             // 群聊紅包：初始化領取狀態
             if (newMessage.isRedpacket && newMessage.redpacketData) {
@@ -7089,27 +4894,11 @@ async function triggerAIResponse(options?: {
                   : undefined,
               };
 
-              if (parsedMsg.isWaimaiPaymentResult || parsedMsg.isWaimaiDelivery) {
-                const recentOrder = findLatestWaimaiOrder(messages.value);
-                if (recentOrder) {
-                  const clonedOrder = JSON.parse(JSON.stringify(recentOrder));
-                  if (
-                    parsedMsg.isWaimaiPaymentResult &&
-                    parsedMsg.waimaiPaymentStatus
-                  ) {
-                    clonedOrder.status = parsedMsg.waimaiPaymentStatus;
-                    if (parsedMsg.waimaiPaymentStatus === "paid")
-                      clonedOrder.paidAt = Date.now();
-                    newMessage.isWaimaiPaymentResult = true;
-                  }
-                  if (parsedMsg.isWaimaiDelivery) {
-                    clonedOrder.status = "delivered";
-                    clonedOrder.deliveredAt = Date.now();
-                    newMessage.isWaimaiDelivery = true;
-                  }
-                  newMessage.waimaiOrder = clonedOrder;
-                }
-              }
+              applyWaimaiParsedResultToMessage(
+                newMessage,
+                parsedMsg,
+                messages.value,
+              );
 
               if (_totalMsgs1 > 1) {
                 await _delay(_messageRenderDelay(_totalMsgs1));
@@ -7228,9 +5017,7 @@ async function triggerAIResponse(options?: {
     }
 
     // 設置全局狀態錯誤
-    if (currentChatId.value) {
-      aiGenerationStore.setError(currentChatId.value, errorMsg, "chat");
-    }
+    setChatGenerationError(errorMsg);
   } finally {
     let persistedGenerationContent = latestFinalContent;
     if (
@@ -7248,13 +5035,7 @@ async function triggerAIResponse(options?: {
     }
 
     // 完成全局生成狀態
-    if (currentChatId.value) {
-      aiGenerationStore.completeGeneration(
-        currentChatId.value,
-        "chat",
-        persistedGenerationContent || undefined,
-      );
-    }
+    completeChatGeneration(persistedGenerationContent || undefined);
 
     // 安全網：無論走哪個分支（含 needsParsing=false 的純文字回覆），
     // 都要將流式窗口標記為完成，避免底部一直顯示「停止」按鈕。
@@ -7353,9 +5134,7 @@ const {
 
 // 停止 AI 生成
 function stopAIGeneration() {
-  if (currentChatId.value) {
-    aiGenerationStore.abortGeneration(currentChatId.value, "chat");
-  }
+  stopChatGeneration();
 }
 
 function getActiveStreamingAIMessage() {
@@ -7631,27 +5410,11 @@ async function handleStreamingClose() {
           };
 
           // 外賣付款結果/送達（群聊窗口模式）
-          if (parsedMsg.isWaimaiPaymentResult || parsedMsg.isWaimaiDelivery) {
-            const recentOrder = findLatestWaimaiOrder(messages.value);
-            if (recentOrder) {
-              const clonedOrder = JSON.parse(JSON.stringify(recentOrder));
-              if (
-                parsedMsg.isWaimaiPaymentResult &&
-                parsedMsg.waimaiPaymentStatus
-              ) {
-                clonedOrder.status = parsedMsg.waimaiPaymentStatus;
-                if (parsedMsg.waimaiPaymentStatus === "paid")
-                  clonedOrder.paidAt = Date.now();
-                windowGcMsg.isWaimaiPaymentResult = true;
-              }
-              if (parsedMsg.isWaimaiDelivery) {
-                clonedOrder.status = "delivered";
-                clonedOrder.deliveredAt = Date.now();
-                windowGcMsg.isWaimaiDelivery = true;
-              }
-              windowGcMsg.waimaiOrder = clonedOrder;
-            }
-          }
+          applyWaimaiParsedResultToMessage(
+            windowGcMsg,
+            parsedMsg,
+            messages.value,
+          );
 
           messages.value.push(windowGcMsg);
 
@@ -7814,27 +5577,11 @@ async function handleStreamingClose() {
             };
 
             // 外賣付款結果/送達（窗口關閉時解析）
-            if (parsedMsg.isWaimaiPaymentResult || parsedMsg.isWaimaiDelivery) {
-              const recentOrder = findLatestWaimaiOrder(messages.value);
-              if (recentOrder) {
-                const clonedOrder = JSON.parse(JSON.stringify(recentOrder));
-                if (
-                  parsedMsg.isWaimaiPaymentResult &&
-                  parsedMsg.waimaiPaymentStatus
-                ) {
-                  clonedOrder.status = parsedMsg.waimaiPaymentStatus;
-                  if (parsedMsg.waimaiPaymentStatus === "paid")
-                    clonedOrder.paidAt = Date.now();
-                  newMessage.isWaimaiPaymentResult = true;
-                }
-                if (parsedMsg.isWaimaiDelivery) {
-                  clonedOrder.status = "delivered";
-                  clonedOrder.deliveredAt = Date.now();
-                  newMessage.isWaimaiDelivery = true;
-                }
-                newMessage.waimaiOrder = clonedOrder;
-              }
-            }
+            applyWaimaiParsedResultToMessage(
+              newMessage,
+              parsedMsg,
+              messages.value,
+            );
 
             // 逐條顯示延遲：多條訊息時，根據訊息總數動態調整間隔
             if (_totalMsgs3 > 1) {
@@ -8029,6 +5776,16 @@ function handleStreamingRestore() {
   streamingWindow.restore();
 }
 
+// ===== 流式窗口事件註冊 composable =====
+const { registerStreamingHandlers, unregisterStreamingHandlers } =
+  useChatStreamingHandlers({
+    streamingWindow,
+    onClose: handleStreamingClose,
+    onStop: handleStreamingStop,
+    onMinimize: handleStreamingMinimize,
+    onRestore: handleStreamingRestore,
+  });
+
 // 處理返回
 async function handleBack() {
   // 如果正在流式輸出，不中斷生成，讓它在後台繼續
@@ -8080,8 +5837,10 @@ function toggleGameMenu() {
   showPersonaSelector.value = false;
 }
 
+type ChatGameModalType = "dishwashing" | "fishing" | "gambling" | "merit";
+
 // 打開小遊戲
-function openGame(game: "dishwashing" | "fishing" | "gambling" | "merit") {
+function openGame(game: ChatGameModalType) {
   showGameMenu.value = false;
   showRail.value = false;
   switch (game) {
@@ -8099,6 +5858,24 @@ function openGame(game: "dishwashing" | "fishing" | "gambling" | "merit") {
       break;
   }
   enterGameScreen(game);
+}
+
+function closeGameModal(game: ChatGameModalType) {
+  switch (game) {
+    case "dishwashing":
+      showDishWashingGame.value = false;
+      break;
+    case "fishing":
+      showFishingGame.value = false;
+      break;
+    case "gambling":
+      showGamblingGame.value = false;
+      break;
+    case "merit":
+      showMeritHub.value = false;
+      break;
+  }
+  leaveGameScreen(game);
 }
 
 // 切換聊天設定選單
@@ -8127,65 +5904,6 @@ async function toggleNightMode() {
   await settingsStore.saveSettings();
   // watch 會自動同步到 theme store
 }
-
-// 監聽夜晚模式變化：強制覆蓋聊天專屬外觀
-watch(
-  () => settingsStore.nightMode,
-  (isNight) => {
-    nextTick(() => {
-      const container = chatScreenRef.value;
-      if (!container) return;
-      if (isNight) {
-        // 夜晚模式：強制設定夜晚氣泡配色到容器上，覆蓋所有自定義
-        container.style.setProperty("--bubble-user-bg", "#2a4a3a");
-        container.style.setProperty("--bubble-user-text", "#e0f0e8");
-        container.style.setProperty("--bubble-ai-bg", "#1e2a40");
-        container.style.setProperty("--bubble-ai-text", "#d8d8e8");
-        container.style.setProperty("--bubble-ai-content", "#d8d8e8");
-        container.style.setProperty("--chat-bubble-user-bg", "#2a4a3a");
-        container.style.setProperty("--chat-bubble-user-text", "#e0f0e8");
-        container.style.setProperty("--chat-bubble-ai-bg", "#1e2a40");
-        container.style.setProperty("--chat-bubble-ai-text", "#d8d8e8");
-        container.style.setProperty("--chat-bubble-ai-content", "#d8d8e8");
-        // 清除桌布覆蓋，讓全局夜晚背景生效
-        container.style.removeProperty("--chat-wallpaper");
-        container.style.removeProperty("--chat-wallpaper-blur");
-        container.style.removeProperty("--chat-wallpaper-opacity");
-        container.style.removeProperty("--chat-wallpaper-fit");
-        container.style.removeProperty("--chat-wallpaper-repeat");
-        container.style.removeProperty("--color-primary");
-        container.style.removeProperty("--color-primary-light");
-      } else {
-        // 關閉夜晚模式：清除所有夜晚強制覆蓋（包含 --bubble-* 和 --chat-bubble-*），重新套用聊天專屬外觀
-        container.style.removeProperty("--bubble-user-bg");
-        container.style.removeProperty("--bubble-user-text");
-        container.style.removeProperty("--bubble-ai-bg");
-        container.style.removeProperty("--bubble-ai-text");
-        container.style.removeProperty("--bubble-ai-content");
-        container.style.removeProperty("--chat-bubble-user-bg");
-        container.style.removeProperty("--chat-bubble-user-text");
-        container.style.removeProperty("--chat-bubble-ai-bg");
-        container.style.removeProperty("--chat-bubble-ai-text");
-        container.style.removeProperty("--chat-bubble-ai-content");
-        applyChatAppearance(chatAppearance.value);
-      }
-    });
-  },
-);
-
-// 監聽主畫面桌布變化：聊天使用「跟隨主畫面圖片」時即時同步背景
-watch(
-  () => themeStore.wallpaperStyle,
-  () => {
-    if (settingsStore.nightMode) return;
-    if (chatAppearance.value?.wallpaper?.type !== "global-image") return;
-
-    nextTick(() => {
-      applyChatAppearance(chatAppearance.value);
-    });
-  },
-  { deep: true },
-);
 
 // 切換聊天勿擾模式（從選單）
 async function toggleChatDoNotDisturb() {
@@ -8237,160 +5955,6 @@ async function toggleChatImageSearch() {
     showImageSearchPanel.value = false;
   }
   await saveChatImmediate();
-}
-
-// ===== MiniMax TTS 語音合成（單聊天開關） =====
-async function toggleMinimaxTTS() {
-  chatMinimaxTTSEnabled.value = !chatMinimaxTTSEnabled.value;
-  await saveChat();
-}
-
-function openMinimaxTTSSettings() {
-  showChatSettingsMenu.value = false;
-  showMinimaxTTSSettingsModal.value = true;
-}
-
-async function closeMinimaxTTSSettings() {
-  showMinimaxTTSSettingsModal.value = false;
-  await saveChat();
-}
-
-async function saveMinimaxTTSSettings() {
-  await saveChat();
-  showMinimaxTTSSettingsModal.value = false;
-}
-
-function convertTTSContentToSimplified(text: string): string {
-  return text
-    .split("")
-    .map((char) => traditionalToSimplified[char] || char)
-    .join("");
-}
-
-/**
- * 處理 AI 回覆的 TTS 語音合成
- * 1. 如果 TTS 啟用且內容含 TTS 標記，保存原始文字到 ttsRawContent
- * 2. 清除顯示文字中的 TTS 標記
- * 3. 逐句解析對話段落，各自獨立呼叫 MiniMax API 合成語音
- */
-async function processMessageTTS(
-  messageId: string,
-  content: string,
-  options?: { force?: boolean },
-) {
-  if (!chatMinimaxTTSEnabled.value) return;
-  if (!settingsStore.minimaxTTS.apiKey) return;
-  if (!options?.force && !hasTTSTags(content)) return;
-
-  // 找到訊息並保存原始文字
-  const idx = messages.value.findIndex((m) => m.id === messageId);
-  if (idx === -1) return;
-
-  // 保存帶 TTS 標記的原始文字（renderedContent 會用來注入 🔊 按鈕）
-  messages.value[idx].ttsRawContent = content;
-  // 注意：不再預先清除 content 中的 TTS 標記！
-  // renderedContent computed 會用 ttsSegments 偵測到有分段時，
-  // 自動把 [emotion=...] 替換成行內播放按鈕，最後 cleanTTSTags 兜底。
-
-  // 逐句解析對話段落
-  const forcedParsedSegments = options?.force ? parseTTSSegments(content) : [];
-  const segments = options?.force
-    ? forcedParsedSegments.length > 0
-      ? forcedParsedSegments
-      : [
-          {
-            emotion: chatMinimaxTTSOverride.value.emotion || "neutral",
-            speed: chatMinimaxTTSOverride.value.speed ?? 1,
-            text: content,
-            clean: cleanTTSTags(content),
-          },
-        ]
-    : parseTTSSegments(content);
-  if (segments.length === 0) return;
-
-  // 寫入段落（先不帶 audioUrl）
-  messages.value[idx].ttsSegments = segments.map((s) => ({
-    emotion: s.emotion,
-    speed: s.speed,
-    text: s.text,
-    clean: s.clean,
-  }));
-
-  // 異步逐句合成語音
-  try {
-    const { synthesizeSpeech } = await import("@/api/MiniMaxTTSApi");
-    const override = chatMinimaxTTSOverride.value;
-    const baseSettings = {
-      ...settingsStore.minimaxTTS,
-      ...(override.voiceId && { voiceId: override.voiceId }),
-      ...(override.pitch !== undefined && { pitch: override.pitch }),
-    };
-
-    let anySuccess = false;
-    for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i];
-      // 每段用自己的 speed 和 emotion
-      const mergedSettings = {
-        ...baseSettings,
-        speed: seg.speed,
-      };
-      const ttsText = convertTTSContentToSimplified(seg.text);
-
-      const result = await synthesizeSpeech(ttsText, mergedSettings, {
-        emotion: seg.emotion !== "neutral" ? seg.emotion : override.emotion,
-      });
-
-      const msgIdx = messages.value.findIndex((m) => m.id === messageId);
-      if (msgIdx !== -1 && result.success && result.audioUrl) {
-        // MiniMax 回傳的是 Aliyun OSS 簽名 URL（約 24h 後過期），
-        // 立即下載並轉成 base64 data URL 保存，避免重新載入聊天時音頻失效。
-        let persistedUrl = result.audioUrl;
-        try {
-          const audioResp = await fetch(result.audioUrl);
-          if (audioResp.ok) {
-            const blob = await audioResp.blob();
-            persistedUrl = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onloadend = () => {
-                const r = reader.result;
-                if (typeof r === "string") resolve(r);
-                else reject(new Error("FileReader 結果非字串"));
-              };
-              reader.onerror = () => reject(reader.error);
-              reader.readAsDataURL(blob);
-            });
-          } else {
-            console.warn(
-              `[MiniMax TTS] 下載音頻失敗，HTTP ${audioResp.status}，仍使用臨時 URL`,
-            );
-          }
-        } catch (fetchErr) {
-          console.warn(
-            "[MiniMax TTS] 下載音頻失敗，仍使用臨時 URL：",
-            fetchErr,
-          );
-        }
-
-        const segment = messages.value[msgIdx].ttsSegments?.[i];
-        if (segment) {
-          segment.audioUrl = persistedUrl;
-        }
-        // 向下相容：第一段也寫入 ttsAudioUrl
-        if (i === 0) {
-          messages.value[msgIdx].ttsAudioUrl = persistedUrl;
-        }
-        anySuccess = true;
-      } else if (!result.success) {
-        console.warn(`[MiniMax TTS] 段落 ${i} 合成失敗:`, result.error);
-      }
-    }
-
-    if (anySuccess) {
-      saveChat();
-    }
-  } catch (error) {
-    console.error("[MiniMax TTS] 錯誤:", error);
-  }
 }
 
 function openNovelAISettings() {
@@ -8525,58 +6089,6 @@ function closeMenus() {
 
 // ===== AI 記憶管理 =====
 // 函數定義在 saveChat 之後
-
-// ===== 回覆引用功能 =====
-
-// 處理回覆消息
-function handleReply(message: Message) {
-  console.log("回覆消息:", message);
-  replyingTo.value = message;
-  nextTick(() => {
-    const textarea = isInputExpanded.value
-      ? expandedInputRef.value
-      : messageInputRef.value;
-    if (!textarea) return;
-    textarea.focus();
-    const cursorPosition = textarea.value.length;
-    textarea.setSelectionRange(cursorPosition, cursorPosition);
-  });
-}
-
-// 通過 ID 處理回覆（從 MessageBubble emit）
-function handleReplyById(messageId: string) {
-  const message = messages.value.find((m) => m.id === messageId);
-  if (message) {
-    handleReply(message);
-  }
-}
-
-// 取消回覆
-function cancelReply() {
-  replyingTo.value = null;
-}
-
-// 獲取預覽文本（截斷過長的內容）
-function getPreviewText(content: string): string {
-  const text = content
-    .replace(/\[img:.*?\]/g, "[圖片]")
-    .replace(/\[sticker:.*?\]/g, "[表情包]");
-  return text.length > 50 ? text.substring(0, 50) + "..." : text;
-}
-
-// 獲取被回覆消息的內容
-function getReplyToContent(messageId: string): string {
-  const msg = messages.value.find((m) => m.id === messageId);
-  return msg ? getPreviewText(msg.content) : "";
-}
-
-// 獲取被回覆消息的發送者名稱
-function getReplyToName(messageId: string): string {
-  const msg = messages.value.find((m) => m.id === messageId);
-  if (!msg) return "";
-  if (msg.role === "user") return effectivePersona.value?.name || "我";
-  return msg.senderCharacterName || currentCharacter.value?.data?.name || "";
-}
 
 function convertStoredMessageToUiMessage(m: ChatMessage, chat: Chat): Message {
   return mapStoredMessageToUiMessage(m, chat, {
@@ -9313,268 +6825,35 @@ async function handlePlurkPost(content: string) {
   }
 }
 
-const isInitialChatLoadDone = ref(false);
-let deferredPendingMessage: string | PendingInjectedMessage | null = null;
-/**
- * 從最近訊息中找到最新的外賣訂單快照
- */
-function findLatestWaimaiOrder(
-  msgs: Message[],
-): Message["waimaiOrder"] | undefined {
-  return [...msgs]
-    .slice(-30)
-    .reverse()
-    .find((m) => m.waimaiOrder)?.waimaiOrder;
-}
-
-function buildWaimaiAuthorsNote(
-  sourceMessages: Message[],
-): AuthorsNoteMetadata | undefined {
-  const recent = sourceMessages.slice(-20);
-  const hasWaimaiContext = recent.some(
-    (m) =>
-      m.isWaimaiShare ||
-      m.isWaimaiPaymentRequest ||
-      m.isWaimaiPaymentConfirm ||
-      m.isWaimaiPaymentResult ||
-      m.isWaimaiDelivery,
-  );
-
-  if (!hasWaimaiContext) return undefined;
-
-  const order = findLatestWaimaiOrder(recent);
-  const amountLine = order
-    ? `目前可見訂單：${order.item.name}，小計🪙 ${order.subtotal}、運費🪙 ${order.shippingFee}、總計🪙 ${order.totalPrice}，收件人：${order.recipientName}。`
-    : "";
-
-  const latestWaimaiMsg = [...recent]
-    .reverse()
-    .find(
-      (m) =>
-        m.isWaimaiShare ||
-        m.isWaimaiPaymentRequest ||
-        m.isWaimaiPaymentConfirm ||
-        m.isWaimaiPaymentResult ||
-        m.isWaimaiDelivery,
-    );
-  const alreadyPaid = recent.some((m) => m.isWaimaiPaymentResult);
-  const alreadyDelivered = recent.some((m) => m.isWaimaiDelivery);
-
-  const lines: string[] = [
-    "[外賣互動規則]",
-    amountLine,
-    "",
-    "你可以使用以下標籤觸發外賣卡片 UI（標籤會自動渲染成卡片，不需重複寫商品名或金額）：",
-    '- 同意付款：<waimai-pay status="paid"/>',
-    '- 拒絕付款：<waimai-pay status="rejected"/>',
-    '- 付款失敗：<waimai-pay status="failed"/>',
-    "- 送達通知：<waimai-delivery/>",
-    "",
-  ];
-
-  if (latestWaimaiMsg?.isWaimaiPaymentRequest && !alreadyPaid) {
-    lines.push(
-      "【當前狀態】{{user}} 請你代付。",
-      "根據角色性格決定是否願意付款：",
-      '- 願意：先用文字表達同意，再附上 <waimai-pay status="paid"/>',
-      '- 拒絕：先說明原因，再附上 <waimai-pay status="rejected"/>',
-      "不要在沒有表態的情況下直接發標籤。",
-    );
-  } else if (latestWaimaiMsg?.isWaimaiShare && !alreadyPaid) {
-    lines.push(
-      "【當前狀態】{{user}} 分享了商品，尚未發起付款。",
-      "可以評論商品、討論需求，但不可自行宣稱已付款或發送付款標籤。",
-      "只有在 {{user}} 明確請你代付時，才能使用 <waimai-pay> 標籤。",
-    );
-  } else if (
-    latestWaimaiMsg?.isWaimaiPaymentConfirm ||
-    (alreadyPaid && !alreadyDelivered)
-  ) {
-    lines.push(
-      "【當前狀態】已付款，等待送達。",
-      "關心配送進度，在合適時機用 <waimai-delivery/> 表示送達。",
-    );
-  }
-
-  lines.push(
-    "",
-    "⚠️ 不要捏造不存在的訂單細節。不要無中生有地使用外賣標籤——只在有對應訂單時才使用。",
-  );
-
-  return {
-    prompt: lines.join("\n"),
-    interval: 1,
-    depth: 4,
-    position: 0,
-    role: PromptRole.SYSTEM,
-  };
-}
-function injectPendingMessage(msg: string | PendingInjectedMessage) {
-  const baseMessage: Message = {
-    id: `msg_${Date.now()}`,
-    role: "user",
-    content: typeof msg === "string" ? msg : msg.content,
-    timestamp: Date.now(),
-  };
-
-  if (typeof msg !== "string") {
-    baseMessage.isWaimaiShare = msg.isWaimaiShare;
-    baseMessage.isWaimaiPaymentRequest = msg.isWaimaiPaymentRequest;
-    baseMessage.isWaimaiPaymentConfirm = msg.isWaimaiPaymentConfirm;
-    baseMessage.isWaimaiPaymentResult = msg.isWaimaiPaymentResult;
-    baseMessage.isWaimaiProgress = msg.isWaimaiProgress;
-    baseMessage.isWaimaiDelivery = msg.isWaimaiDelivery;
-    baseMessage.waimaiOrder = msg.waimaiOrder;
-    baseMessage.isMusicShare = msg.isMusicShare;
-    baseMessage.musicShareData = msg.musicShareData;
-  }
-
-  messages.value.push(baseMessage);
-
-  if (typeof msg !== "string" && msg.waimaiProgressMessages?.length) {
-    const progressEntries = msg.waimaiProgressMessages
-      .map((entry, idx) => ({
-        id: `msg_${Date.now()}_waimai_progress_${idx}`,
-        role: "system" as const,
-        content: entry.content,
-        timestamp: entry.timestamp ?? Date.now(),
-        isWaimaiProgress: entry.isWaimaiProgress ?? true,
-        isWaimaiDelivery: entry.isWaimaiDelivery,
-        waimaiOrder: entry.waimaiOrder,
-      }))
-      .sort((a, b) => a.timestamp - b.timestamp);
-
-    messages.value.push(...progressEntries);
-  }
-  scrollToBottom();
-  saveChatImmediate();
-  emit("pendingMessageConsumed");
-}
-
-function flushDeferredPendingMessage() {
-  if (!deferredPendingMessage) return;
-  const msg = deferredPendingMessage;
-  deferredPendingMessage = null;
-  nextTick(() => injectPendingMessage(msg));
-}
-
-// 處理外部（非本 ChatScreen）寫入聊天訊息後的即時 reload
-// 例：在玩遊戲時的群聊主動關心、雲端同步的新訊息等
-async function handleExternalChatAppend(ev: Event) {
-  const detail = (ev as CustomEvent).detail || {};
-  const targetChatId = detail.chatId;
-  if (!targetChatId) return;
-  if (currentChatId.value !== targetChatId) return;
-  // 若正在生成中，避免破壞 streaming 佔位符
-  if (
-    currentChatId.value &&
-    aiGenerationStore.isTaskGenerating(currentChatId.value, "chat")
-  ) {
-    return;
-  }
-  try {
-    await loadOrCreateChat();
-    nextTick(() => scrollToBottom());
-  } catch (err) {
-    console.warn(
-      "[ChatScreen] handleExternalChatAppend reload failed:",
-      err,
-    );
-  }
-}
+// ===== 聊天初始化 composable =====
+const { initializeChatScreen } = useChatInit({
+  characterId: props.characterId,
+  regexScriptsStore,
+  loadAudioSettings,
+  registerStreamingHandlers,
+  userStore,
+  stickerStore,
+  weatherStore,
+  messages,
+  currentChatId,
+  isChatGenerating,
+  getChatGenerationTask,
+  loadOrCreateChat,
+  markInitialChatLoadDone,
+  startPendingCallChecker,
+  notificationStore,
+  setupLoadMoreObserver,
+});
 
 // 檢查待處理來電
 onMounted(async () => {
-  // 啟動外賣物流進度時間閘門定時器（每 60 秒刷新一次，使排程訊息逐日顯現）
-  _waimaiProgressTimer = setInterval(() => {
-    _waimaiProgressNow.value = Date.now();
-  }, 60_000);
-
-  // 通知主動發訊服務：用戶進入此角色的聊天頁面
-  if (props.characterId) {
-    proactiveMessageService.enterChat(props.characterId);
-  }
-
-  // 監聽外部寫入事件（例如：在玩遊戲時的群聊主動關心）
-  // 由 ProactiveMessageService 在 appendMessages 後 dispatch
-  window.addEventListener(
-    "aguaphone:chat-messages-appended",
-    handleExternalChatAppend as EventListener,
-  );
-
-  // 初始化全域 regex 腳本
-  regexScriptsStore.init();
-
-  // 載入音頻設定
-  loadAudioSettings();
-
-  // 註冊流式窗口全局事件監聯
-  _unregisterStreamingClose = streamingWindow.on("close", handleStreamingClose);
-  _unregisterStreamingStop = streamingWindow.on("stop", handleStreamingStop);
-  _unregisterStreamingMinimize = streamingWindow.on(
-    "minimize",
-    handleStreamingMinimize,
-  );
-  _unregisterStreamingRestore = streamingWindow.on(
-    "restore",
-    handleStreamingRestore,
-  );
-
-  // 載入使用者資料
-  if (!userStore.isLoaded) {
-    await userStore.loadUserData();
-  }
-  // 載入表情包資料
-  if (!stickerStore.initialized) {
-    await stickerStore.init();
-  }
-  // 載入天氣數據（如果還沒有）
-  if (!weatherStore.hasWeatherData) {
-    weatherStore.refreshWeather().catch((e) => {
-      console.warn("[ChatScreen] 載入天氣失敗:", e);
-    });
-  }
-  loadOrCreateChat().then(() => {
-    isInitialChatLoadDone.value = true;
-    flushDeferredPendingMessage();
-
-    // 如果後台仍有生成任務在跑，標記最後一條 AI 訊息為 streaming
-    // 這樣用戶回到聊天時能看到打字動畫而非空氣泡
-    if (
-      currentChatId.value &&
-      aiGenerationStore.isTaskGenerating(currentChatId.value, "chat")
-    ) {
-      const lastAI = [...messages.value].reverse().find((m) => m.role === "ai");
-      if (lastAI) {
-        lastAI.isStreaming = true;
-        // 如果全局 store 有累積內容，同步到訊息中
-        const task = aiGenerationStore.getTask(currentChatId.value, "chat");
-        if (task?.content && task.content.trim()) {
-          lastAI.content = task.content;
-        }
-      }
-    }
-  });
-
-  // 啟動待處理來電檢查
-  startPendingCallChecker();
-
-  // 設置當前活躍聊天 ID（用於通知判斷）
-  notificationStore.setActiveChatId(currentChatId.value);
-
-  // 設置「載入更多」哨兵的 IntersectionObserver
-  nextTick(() => {
-    setupLoadMoreObserver();
-  });
+  await initializeChatScreen();
 });
 
 // 監聽後台生成完成：如果重新進入聊天時有舊的生成任務還在跑，
 // 等它完成後重新從 IDB 載入訊息（避免切頁面後訊息丟失）
 watch(
-  () => {
-    if (!currentChatId.value) return false;
-    return aiGenerationStore.isTaskGenerating(currentChatId.value, "chat");
-  },
+  () => isChatGenerating(),
   async (isGenerating, wasGenerating) => {
     // 生成剛完成（從 true 變 false），重新載入聊天記錄
     if (wasGenerating && !isGenerating && currentChatId.value) {
@@ -9638,124 +6917,28 @@ watch(
   },
 );
 
-// 監聽 pendingAppearance prop 的變化（當從 App.vue 傳入新外觀時套用）
-watch(
-  () => props.pendingAppearance,
-  (newAppearance: ChatAppearance | undefined) => {
-    console.log("[ChatScreen] pendingAppearance changed:", newAppearance);
-    if (newAppearance) {
-      chatAppearance.value = newAppearance;
-      // 同步到 chatStore 緩存
-      chatStore.setAppearanceCache(newAppearance);
-      nextTick(() => {
-        console.log("[ChatScreen] Applying appearance and saving...");
-        applyChatAppearance(newAppearance);
-        // 保存到 IndexedDB
-        saveChat();
-        // 通知 App.vue 已套用
-        emit("appearanceApplied");
-      });
-    }
-  },
-  { deep: true },
-);
-
-// 監聽 pendingMessage prop（從遊戲分享成績、外賣分享等場景注入用戶訊息）
-watch(
-  () => props.pendingMessage,
-  (msg: string | PendingInjectedMessage) => {
-    if (!msg) return;
-
-    if (!isInitialChatLoadDone.value) {
-      deferredPendingMessage = msg;
-      return;
-    }
-    injectPendingMessage(msg);
-  },
-  { immediate: true },
-);
-
-onUnmounted(() => {
-  // 通知主動發訊服務：用戶離開此角色的聊天頁面，從現在起開始計算間隔
-  if (props.characterId) {
-    proactiveMessageService.leaveChat(props.characterId);
-  }
-
-  // 移除外部寫入事件監聽
-  window.removeEventListener(
-    "aguaphone:chat-messages-appended",
-    handleExternalChatAppend as EventListener,
-  );
-
-  // 若仍有遊戲模態框沒被關閉，這裡兜底清掉 detector 計時器
-  if (showDishWashingGame.value) leaveGameScreen("dishwashing");
-  if (showFishingGame.value) leaveGameScreen("fishing");
-  if (showGamblingGame.value) leaveGameScreen("gambling");
-  if (showMeritHub.value) leaveGameScreen("merit");
-
-  // 取消流式窗口事件監聽
-  _unregisterStreamingClose?.();
-  _unregisterStreamingStop?.();
-  _unregisterStreamingMinimize?.();
-  _unregisterStreamingRestore?.();
-
-  // 清理錄音資源
-  if (isRecording.value) {
-    isRecording.value = false;
-  }
-
-  // 如果有待處理的 debounce 儲存，立即執行（避免切換聊天時丟失數據）
-  cancelPendingSaveTimer();
-
-  // 如果正在流式生成中，將已累積的內容寫入佔位符再保存
-  // 避免空氣泡被寫入 IDB；後台生成完成後 finally 會再次保存最終結果
-  const isCurrentlyStreaming =
-    currentChatId.value &&
-    aiGenerationStore.isTaskGenerating(currentChatId.value, "chat");
-  if (isCurrentlyStreaming) {
-    const streamingIdx = messages.value.findIndex(
-      (m) => m.isStreaming && m.role === "ai",
-    );
-    if (streamingIdx !== -1) {
-      const task = aiGenerationStore.getTask(currentChatId.value!, "chat");
-      const accumulatedContent = task?.content || "";
-      if (accumulatedContent.trim()) {
-        // 已有部分內容，寫入佔位符（保留 isStreaming 標記）
-        messages.value[streamingIdx].content = accumulatedContent;
-      }
-      // 注意：不移除佔位符！後台 triggerAIResponse 閉包仍需透過 findIndex 找到它
-      // 來寫入最終完成的內容
-    }
-    // 立即保存
-    _saveChatImpl();
-  } else if (hasPendingSave()) {
-    _saveChatImpl();
-  }
-  // 暫存輸入框草稿
-  if (currentChatId.value) {
-    chatStore.saveDraft(currentChatId.value, inputText.value);
-  }
-  // 停止待處理來電檢查
-  stopPendingCallChecker();
-  // 清除載入更多觀察器
-  cleanupLoadMoreObserver();
-  // 清除聊天專屬外觀樣式
-  applyChatAppearance(undefined);
-  // 清除 chatStore 中的外觀緩存
-  chatStore.setAppearanceCache(undefined);
-  // 清除當前活躍聊天 ID
-  notificationStore.setActiveChatId(null);
-  // 停止假時間顯示定時器
-  fakeTime.stopDisplayTimer();
-  // 停止外賣物流進度時間閘門定時器
-  if (_waimaiProgressTimer) {
-    clearInterval(_waimaiProgressTimer);
-    _waimaiProgressTimer = undefined;
-  }
-  // 注意：不在 onUnmounted 呼叫 _restoreGlobalPersona()
-  // 因為它是 async fire-and-forget，會跟新聊天的 loadOrCreateChat 產生 race condition
-  // 導致新聊天載入的 persona 被覆蓋回全局設定
-  // persona 恢復已由 loadOrCreateChat 內部處理（讀取 personaOverride 或呼叫 _restoreGlobalPersona）
+useChatCleanup({
+  characterId: props.characterId,
+  showDishWashingGame,
+  showFishingGame,
+  showGamblingGame,
+  showMeritHub,
+  unregisterStreamingHandlers,
+  isRecording,
+  cancelPendingSaveTimer,
+  isChatGenerating,
+  messages,
+  getChatGenerationTask,
+  saveChatNow: _saveChatImpl,
+  hasPendingSave,
+  currentChatId,
+  inputText,
+  chatStore,
+  stopPendingCallChecker,
+  cleanupLoadMoreObserver,
+  applyChatAppearance,
+  notificationStore,
+  fakeTime,
 });
 </script>
 
@@ -10600,39 +7783,16 @@ onUnmounted(() => {
       />
 
       <!-- 小遊戲模態框 -->
-      <DishWashingGame
-        :visible="showDishWashingGame"
+      <ChatGameModals
+        :show-dish-washing-game="showDishWashingGame"
+        :show-fishing-game="showFishingGame"
+        :show-gambling-game="showGamblingGame"
+        :show-merit-hub="showMeritHub"
         :chat-id="currentChatId || ''"
-        @close="
-          showDishWashingGame = false;
-          leaveGameScreen('dishwashing');
-        "
-      />
-
-      <FishingGame
-        :visible="showFishingGame"
-        :chat-id="currentChatId || ''"
-        @close="
-          showFishingGame = false;
-          leaveGameScreen('fishing');
-        "
-      />
-
-      <GamblingGame
-        :visible="showGamblingGame"
-        :chat-id="currentChatId || ''"
-        @close="
-          showGamblingGame = false;
-          leaveGameScreen('gambling');
-        "
-      />
-
-      <MeritHub
-        :visible="showMeritHub"
-        @close="
-          showMeritHub = false;
-          leaveGameScreen('merit');
-        "
+        @close-dish-washing="closeGameModal('dishwashing')"
+        @close-fishing="closeGameModal('fishing')"
+        @close-gambling="closeGameModal('gambling')"
+        @close-merit="closeGameModal('merit')"
       />
 
       <!-- 聊天資訊面板 -->

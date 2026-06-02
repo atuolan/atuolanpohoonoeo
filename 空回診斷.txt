@@ -1,0 +1,1069 @@
+{
+  "model": "gemini-3.1-pro-preview",
+  "stream": true,
+  "maxTokens": 6912,
+  "requestMessageCount": 33,
+  "requestRoles": [
+    "system",
+    "user",
+    "system",
+    "user",
+    "system",
+    "assistant",
+    "system",
+    "assistant",
+    "system",
+    "assistant",
+    "system",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "system",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "system",
+    "user",
+    "system",
+    "assistant"
+  ],
+  "lastMessages": [
+    {
+      "index": 25,
+      "role": "user",
+      "contentLength": 65,
+      "contentType": "text"
+    },
+    {
+      "index": 26,
+      "role": "assistant",
+      "contentLength": 234,
+      "contentType": "text"
+    },
+    {
+      "index": 27,
+      "role": "user",
+      "contentLength": 61,
+      "contentType": "multipart"
+    },
+    {
+      "index": 28,
+      "role": "assistant",
+      "contentLength": 272,
+      "contentType": "text"
+    },
+    {
+      "index": 29,
+      "role": "system",
+      "contentLength": 15,
+      "contentType": "text"
+    },
+    {
+      "index": 30,
+      "role": "user",
+      "contentLength": 62,
+      "contentType": "text"
+    },
+    {
+      "index": 31,
+      "role": "system",
+      "contentLength": 505,
+      "contentType": "text"
+    },
+    {
+      "index": 32,
+      "role": "assistant",
+      "contentLength": 3512,
+      "contentType": "text"
+    }
+  ],
+  "promptDiagnostics": {
+    "faceToFaceMode": true,
+    "groupChatMode": false,
+    "promptMessageCount": 33,
+    "promptDebugMessageCount": 33,
+    "promptModules": [
+      {
+        "role": "system",
+        "identifier": "f2fProtectionSequence+f2fSovereigntyNegotiation+f2fCoreUnderstanding",
+        "name": "防護序列",
+        "contentLength": 2917
+      },
+      {
+        "role": "user",
+        "identifier": "f2fNarrativeMission",
+        "name": "敘事使命",
+        "contentLength": 341
+      },
+      {
+        "role": "system",
+        "identifier": "f2fLanguageMode",
+        "name": "語言模式",
+        "contentLength": 167
+      },
+      {
+        "role": "user",
+        "identifier": "f2fCoreRules",
+        "name": "核心規則",
+        "contentLength": 266
+      },
+      {
+        "role": "system",
+        "identifier": "f2fImportantEvents+f2fTimeInfo+f2fWeatherInfo+f2fCharacterWorldContext",
+        "name": "重要事件記錄本",
+        "contentLength": 951
+      },
+      {
+        "role": "assistant",
+        "identifier": "f2fAmbiguityVsLove",
+        "name": "曖昧與愛情",
+        "contentLength": 142
+      },
+      {
+        "role": "system",
+        "identifier": "f2fUserInfo+f2fCharDescription+f2fSocialMedia+f2fCallDecision+f2fStickerList+f2fSummaries+f2fCharacterCorePersonality+f2fHolidayInfo",
+        "name": "用戶信息",
+        "contentLength": 5725
+      },
+      {
+        "role": "assistant",
+        "identifier": "f2fModeIntro+f2fModeRules",
+        "name": "面對面模式介紹",
+        "contentLength": 736
+      },
+      {
+        "role": "system",
+        "identifier": "f2fNarrativePerson+f2f_custom_1771960419103+f2fEnvironmentAndNpc+f2fDoNotDisturbStatus",
+        "name": "人稱模式",
+        "contentLength": 732
+      },
+      {
+        "role": "assistant",
+        "identifier": "f2fForbiddenPatterns",
+        "name": "禁止模式",
+        "contentLength": 385
+      },
+      {
+        "role": "system",
+        "identifier": "f2fSacredCreation+f2f_custom_1770779797676",
+        "name": "神聖創造",
+        "contentLength": 456
+      },
+      {
+        "role": "assistant",
+        "identifier": "f2f_custom_1772277561996",
+        "name": "反冷漠=無知",
+        "contentLength": 90
+      },
+      {
+        "role": "user",
+        "identifier": "f2f_custom_1770779663478",
+        "name": "字數控制",
+        "contentLength": 30
+      },
+      {
+        "role": "assistant",
+        "identifier": "f2f_custom_1770745657172",
+        "name": "情緒釋放",
+        "contentLength": 211
+      },
+      {
+        "role": "user",
+        "identifier": "f2f_custom_1770745893818",
+        "name": "延續不早洩{{user}}說(可自訂)",
+        "contentLength": 126
+      },
+      {
+        "role": "assistant",
+        "identifier": "f2f_custom_1770745923664",
+        "name": "延續不早洩！收到！(感覺節奏太慢關閉)",
+        "contentLength": 542
+      },
+      {
+        "role": "system",
+        "identifier": "chatHistoryOpenTag",
+        "contentLength": 14
+      },
+      {
+        "role": "user",
+        "identifier": "chatMessage",
+        "name": "User",
+        "contentLength": 38
+      },
+      {
+        "role": "assistant",
+        "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+        "name": "哈维",
+        "contentLength": 263
+      },
+      {
+        "role": "user",
+        "identifier": "chatMessage+chatMessage",
+        "name": "User",
+        "contentLength": 67
+      },
+      {
+        "role": "assistant",
+        "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+        "name": "哈维",
+        "contentLength": 222
+      },
+      {
+        "role": "user",
+        "identifier": "chatMessage+chatMessage",
+        "name": "User",
+        "contentLength": 68
+      },
+      {
+        "role": "assistant",
+        "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+        "name": "哈维",
+        "contentLength": 247
+      },
+      {
+        "role": "user",
+        "identifier": "chatMessage+chatMessage",
+        "name": "User",
+        "contentLength": 65
+      },
+      {
+        "role": "assistant",
+        "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+        "name": "哈维",
+        "contentLength": 203
+      },
+      {
+        "role": "user",
+        "identifier": "chatMessage+chatMessage",
+        "name": "User",
+        "contentLength": 65
+      },
+      {
+        "role": "assistant",
+        "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+        "name": "哈维",
+        "contentLength": 234
+      },
+      {
+        "role": "user",
+        "identifier": "chatMessage+chatMessage",
+        "name": "User",
+        "contentLength": 141893
+      },
+      {
+        "role": "assistant",
+        "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+        "name": "哈维",
+        "contentLength": 272
+      },
+      {
+        "role": "system",
+        "identifier": "chatHistoryCloseTag",
+        "contentLength": 15
+      },
+      {
+        "role": "user",
+        "identifier": "f2fConfirmLastOutput",
+        "name": "確認最終輸出",
+        "contentLength": 62
+      },
+      {
+        "role": "system",
+        "identifier": "f2fThinkingGuide",
+        "name": "思考框架",
+        "contentLength": 505
+      },
+      {
+        "role": "assistant",
+        "identifier": "f2fFormatRules+f2fExampleScript+f2f_custom_1772288204573",
+        "name": "格式規則",
+        "contentLength": 3512
+      }
+    ],
+    "chatHistoryBudget": {
+      "enabled": true,
+      "maxContextLength": 54272,
+      "maxResponseLength": 6912,
+      "reservedResponseTokens": 7012,
+      "fixedPromptTokens": 4483,
+      "maxHistoryTokens": 42777,
+      "chatHistoryTokens": 178,
+      "sourceMessageCount": 42,
+      "includedMessageCount": 42,
+      "wasTruncated": false,
+      "strippedLastUserTurn": true,
+      "strippedLastUserTurnCount": 1
+    }
+  },
+  "chatDiagnostics": {
+    "chatId": "chat_1780325058345",
+    "sourceMessageCount": 830,
+    "eligibleMessageCount": 829,
+    "messagesToUseCount": 43,
+    "actualMode": "turn",
+    "actualCount": 30,
+    "summariesCount": 3,
+    "summariesTotalLength": 920,
+    "eventsCount": 6,
+    "eventsTotalLength": 381,
+    "vectorMemoriesCount": 0,
+    "vectorMemoriesTotalLength": 0,
+    "lastUiMessages": [
+      {
+        "role": "ai",
+        "contentLength": 23,
+        "isSystem": false,
+        "isTimetravel": false,
+        "sentWhileBlocked": false,
+        "hasReplyTo": false,
+        "timestamp": 1780309616268
+      },
+      {
+        "role": "user",
+        "contentLength": 4,
+        "isSystem": false,
+        "isTimetravel": false,
+        "sentWhileBlocked": false,
+        "hasReplyTo": false,
+        "timestamp": 1780309829271
+      },
+      {
+        "role": "user",
+        "contentLength": 3,
+        "isSystem": false,
+        "isTimetravel": false,
+        "sentWhileBlocked": false,
+        "hasReplyTo": false,
+        "timestamp": 1780309832168
+      },
+      {
+        "role": "ai",
+        "contentLength": 8,
+        "isSystem": false,
+        "isTimetravel": false,
+        "sentWhileBlocked": false,
+        "hasReplyTo": false,
+        "timestamp": 1780309850486
+      },
+      {
+        "role": "ai",
+        "contentLength": 19,
+        "isSystem": false,
+        "isTimetravel": false,
+        "sentWhileBlocked": false,
+        "hasReplyTo": false,
+        "timestamp": 1780309850888
+      },
+      {
+        "role": "ai",
+        "contentLength": 14,
+        "isSystem": false,
+        "isTimetravel": false,
+        "sentWhileBlocked": false,
+        "hasReplyTo": false,
+        "timestamp": 1780309851290
+      },
+      {
+        "role": "ai",
+        "contentLength": 26,
+        "isSystem": false,
+        "isTimetravel": false,
+        "sentWhileBlocked": false,
+        "hasReplyTo": false,
+        "timestamp": 1780309851691
+      },
+      {
+        "role": "ai",
+        "contentLength": 26,
+        "isSystem": false,
+        "isTimetravel": false,
+        "sentWhileBlocked": false,
+        "hasReplyTo": false,
+        "timestamp": 1780309852093
+      },
+      {
+        "role": "ai",
+        "contentLength": 13,
+        "isSystem": false,
+        "isTimetravel": false,
+        "sentWhileBlocked": false,
+        "hasReplyTo": false,
+        "timestamp": 1780309852495
+      },
+      {
+        "role": "user",
+        "contentLength": 7,
+        "isSystem": false,
+        "isTimetravel": false,
+        "sentWhileBlocked": false,
+        "hasReplyTo": false,
+        "timestamp": 1780310340393
+      }
+    ]
+  },
+  "rawResponseMeta": {
+    "id": "0EEeatq6B--2vdIPk7Sr4Ag",
+    "object": "chat.completion.chunk",
+    "created": 1780367824,
+    "model": "google/gemini-3.1-pro-preview",
+    "choicesLength": 1,
+    "rawFinishReason": "content_filter",
+    "finishReason": "content_filter",
+    "choiceKeys": [
+      "delta",
+      "finish_reason",
+      "index",
+      "logprobs"
+    ],
+    "contaminationProbeEndpointHost": "beta.smolproxy.org",
+    "contaminationProbeModel": "gemini-3.1-pro-preview"
+  },
+  "requestBodyBytes": 190172,
+  "roleAdjustments": [],
+  "rawFinishReason": "content_filter",
+  "finishReason": "content_filter",
+  "apiContentLength": 0,
+  "chunkCount": 2,
+  "totalBytes": 447,
+  "firstChunkTimeMs": 2,
+  "totalTimeMs": 9,
+  "usage": {
+    "prompt_tokens": 14865,
+    "completion_tokens": 0,
+    "total_tokens": 14865
+  },
+  "finalContentLength": 0,
+  "parsingDiagnostics": {
+    "rawLength": 0,
+    "afterTemplateLength": 0,
+    "isEmpty": true
+  },
+  "contaminationDiagnostics": {
+    "triggered": true,
+    "triggerReason": "content_filter",
+    "startedAt": 1780367824916,
+    "baselineFinishReason": "content_filter",
+    "results": [
+      {
+        "id": "remove_chat_history",
+        "label": "移除聊天歷史",
+        "status": "filtered",
+        "messageCount": 19,
+        "removedMessageCount": 14,
+        "requestRoles": [
+          "system",
+          "user",
+          "system",
+          "user",
+          "system",
+          "assistant",
+          "system",
+          "assistant",
+          "system",
+          "assistant",
+          "system",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "system",
+          "assistant"
+        ],
+        "removedModules": [
+          {
+            "index": 16,
+            "role": "system",
+            "identifier": "chatHistoryOpenTag",
+            "contentLength": 14
+          },
+          {
+            "index": 17,
+            "role": "user",
+            "identifier": "chatMessage",
+            "name": "User",
+            "contentLength": 38
+          },
+          {
+            "index": 18,
+            "role": "assistant",
+            "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+            "name": "哈维",
+            "contentLength": 263
+          },
+          {
+            "index": 19,
+            "role": "user",
+            "identifier": "chatMessage+chatMessage",
+            "name": "User",
+            "contentLength": 67
+          },
+          {
+            "index": 20,
+            "role": "assistant",
+            "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+            "name": "哈维",
+            "contentLength": 222
+          },
+          {
+            "index": 21,
+            "role": "user",
+            "identifier": "chatMessage+chatMessage",
+            "name": "User",
+            "contentLength": 68
+          },
+          {
+            "index": 22,
+            "role": "assistant",
+            "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+            "name": "哈维",
+            "contentLength": 247
+          },
+          {
+            "index": 23,
+            "role": "user",
+            "identifier": "chatMessage+chatMessage",
+            "name": "User",
+            "contentLength": 65
+          },
+          {
+            "index": 24,
+            "role": "assistant",
+            "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+            "name": "哈维",
+            "contentLength": 203
+          },
+          {
+            "index": 25,
+            "role": "user",
+            "identifier": "chatMessage+chatMessage",
+            "name": "User",
+            "contentLength": 65
+          },
+          {
+            "index": 26,
+            "role": "assistant",
+            "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+            "name": "哈维",
+            "contentLength": 234
+          },
+          {
+            "index": 27,
+            "role": "user",
+            "identifier": "chatMessage+chatMessage",
+            "name": "User",
+            "contentLength": 141893
+          },
+          {
+            "index": 28,
+            "role": "assistant",
+            "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+            "name": "哈维",
+            "contentLength": 272
+          },
+          {
+            "index": 29,
+            "role": "system",
+            "identifier": "chatHistoryCloseTag",
+            "contentLength": 15
+          }
+        ],
+        "rawFinishReason": "content_filter",
+        "finishReason": "content_filter",
+        "contentLength": 0,
+        "promptTokens": 12272,
+        "completionTokens": 0,
+        "totalTokens": 12272,
+        "requestBodyBytes": 44827,
+        "durationMs": 821
+      },
+      {
+        "id": "remove_events_context",
+        "label": "移除重要事件/時間/天氣/世界上下文包",
+        "status": "filtered",
+        "messageCount": 32,
+        "removedMessageCount": 1,
+        "requestRoles": [
+          "system",
+          "user",
+          "system",
+          "user",
+          "assistant",
+          "system",
+          "assistant",
+          "system",
+          "assistant",
+          "system",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "system",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "system",
+          "user",
+          "system",
+          "assistant"
+        ],
+        "removedModules": [
+          {
+            "index": 4,
+            "role": "system",
+            "identifier": "f2fImportantEvents+f2fTimeInfo+f2fWeatherInfo+f2fCharacterWorldContext",
+            "name": "重要事件記錄本",
+            "contentLength": 951
+          }
+        ],
+        "rawFinishReason": "content_filter",
+        "finishReason": "content_filter",
+        "contentLength": 0,
+        "promptTokens": 14201,
+        "completionTokens": 0,
+        "totalTokens": 14201,
+        "requestBodyBytes": 187806,
+        "durationMs": 1970
+      },
+      {
+        "id": "remove_userinfo_summaries",
+        "label": "移除用戶/角色/總結大包",
+        "status": "ok",
+        "messageCount": 32,
+        "removedMessageCount": 1,
+        "requestRoles": [
+          "system",
+          "user",
+          "system",
+          "user",
+          "system",
+          "assistant",
+          "assistant",
+          "system",
+          "assistant",
+          "system",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "system",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "system",
+          "user",
+          "system",
+          "assistant"
+        ],
+        "removedModules": [
+          {
+            "index": 6,
+            "role": "system",
+            "identifier": "f2fUserInfo+f2fCharDescription+f2fSocialMedia+f2fCallDecision+f2fStickerList+f2fSummaries+f2fCharacterCorePersonality+f2fHolidayInfo",
+            "name": "用戶信息",
+            "contentLength": 5725
+          }
+        ],
+        "rawFinishReason": "length",
+        "finishReason": "length",
+        "contentLength": 130,
+        "promptTokens": 10701,
+        "completionTokens": 94,
+        "totalTokens": 10795,
+        "requestBodyBytes": 174654,
+        "durationMs": 4615
+      },
+      {
+        "id": "remove_custom_modules",
+        "label": "移除自訂提示詞模組",
+        "status": "filtered",
+        "messageCount": 25,
+        "removedMessageCount": 8,
+        "requestRoles": [
+          "system",
+          "user",
+          "system",
+          "user",
+          "system",
+          "assistant",
+          "system",
+          "assistant",
+          "assistant",
+          "system",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "system",
+          "user",
+          "system"
+        ],
+        "removedModules": [
+          {
+            "index": 8,
+            "role": "system",
+            "identifier": "f2fNarrativePerson+f2f_custom_1771960419103+f2fEnvironmentAndNpc+f2fDoNotDisturbStatus",
+            "name": "人稱模式",
+            "contentLength": 732
+          },
+          {
+            "index": 10,
+            "role": "system",
+            "identifier": "f2fSacredCreation+f2f_custom_1770779797676",
+            "name": "神聖創造",
+            "contentLength": 456
+          },
+          {
+            "index": 11,
+            "role": "assistant",
+            "identifier": "f2f_custom_1772277561996",
+            "name": "反冷漠=無知",
+            "contentLength": 90
+          },
+          {
+            "index": 12,
+            "role": "user",
+            "identifier": "f2f_custom_1770779663478",
+            "name": "字數控制",
+            "contentLength": 30
+          },
+          {
+            "index": 13,
+            "role": "assistant",
+            "identifier": "f2f_custom_1770745657172",
+            "name": "情緒釋放",
+            "contentLength": 211
+          },
+          {
+            "index": 14,
+            "role": "user",
+            "identifier": "f2f_custom_1770745893818",
+            "name": "延續不早洩{{user}}說(可自訂)",
+            "contentLength": 126
+          },
+          {
+            "index": 15,
+            "role": "assistant",
+            "identifier": "f2f_custom_1770745923664",
+            "name": "延續不早洩！收到！(感覺節奏太慢關閉)",
+            "contentLength": 542
+          },
+          {
+            "index": 32,
+            "role": "assistant",
+            "identifier": "f2fFormatRules+f2fExampleScript+f2f_custom_1772288204573",
+            "name": "格式規則",
+            "contentLength": 3512
+          }
+        ],
+        "rawFinishReason": "content_filter",
+        "finishReason": "content_filter",
+        "contentLength": 0,
+        "promptTokens": 11026,
+        "completionTokens": 0,
+        "totalTokens": 11026,
+        "requestBodyBytes": 175688,
+        "durationMs": 2002
+      },
+      {
+        "id": "remove_tail_format",
+        "label": "移除尾端思考/格式規則",
+        "status": "filtered",
+        "messageCount": 31,
+        "removedMessageCount": 2,
+        "requestRoles": [
+          "system",
+          "user",
+          "system",
+          "user",
+          "system",
+          "assistant",
+          "system",
+          "assistant",
+          "system",
+          "assistant",
+          "system",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "system",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "user",
+          "assistant",
+          "system",
+          "user"
+        ],
+        "removedModules": [
+          {
+            "index": 31,
+            "role": "assistant",
+            "identifier": "f2fThinkingGuide",
+            "name": "思考框架",
+            "contentLength": 505
+          },
+          {
+            "index": 32,
+            "role": "assistant",
+            "identifier": "f2fFormatRules+f2fExampleScript+f2f_custom_1772288204573",
+            "name": "格式規則",
+            "contentLength": 3512
+          }
+        ],
+        "rawFinishReason": "content_filter",
+        "finishReason": "content_filter",
+        "contentLength": 0,
+        "promptTokens": 12303,
+        "completionTokens": 0,
+        "totalTokens": 12303,
+        "requestBodyBytes": 180714,
+        "durationMs": 1437
+      },
+      {
+        "id": "minimal_shared_prompt",
+        "label": "最小共享提示詞（移除動態/歷史/自訂）",
+        "status": "ok",
+        "messageCount": 9,
+        "removedMessageCount": 24,
+        "requestRoles": [
+          "system",
+          "user",
+          "system",
+          "user",
+          "assistant",
+          "assistant",
+          "assistant",
+          "assistant",
+          "assistant"
+        ],
+        "removedModules": [
+          {
+            "index": 4,
+            "role": "system",
+            "identifier": "f2fImportantEvents+f2fTimeInfo+f2fWeatherInfo+f2fCharacterWorldContext",
+            "name": "重要事件記錄本",
+            "contentLength": 951
+          },
+          {
+            "index": 6,
+            "role": "system",
+            "identifier": "f2fUserInfo+f2fCharDescription+f2fSocialMedia+f2fCallDecision+f2fStickerList+f2fSummaries+f2fCharacterCorePersonality+f2fHolidayInfo",
+            "name": "用戶信息",
+            "contentLength": 5725
+          },
+          {
+            "index": 8,
+            "role": "system",
+            "identifier": "f2fNarrativePerson+f2f_custom_1771960419103+f2fEnvironmentAndNpc+f2fDoNotDisturbStatus",
+            "name": "人稱模式",
+            "contentLength": 732
+          },
+          {
+            "index": 10,
+            "role": "system",
+            "identifier": "f2fSacredCreation+f2f_custom_1770779797676",
+            "name": "神聖創造",
+            "contentLength": 456
+          },
+          {
+            "index": 11,
+            "role": "assistant",
+            "identifier": "f2f_custom_1772277561996",
+            "name": "反冷漠=無知",
+            "contentLength": 90
+          },
+          {
+            "index": 12,
+            "role": "user",
+            "identifier": "f2f_custom_1770779663478",
+            "name": "字數控制",
+            "contentLength": 30
+          },
+          {
+            "index": 13,
+            "role": "assistant",
+            "identifier": "f2f_custom_1770745657172",
+            "name": "情緒釋放",
+            "contentLength": 211
+          },
+          {
+            "index": 14,
+            "role": "user",
+            "identifier": "f2f_custom_1770745893818",
+            "name": "延續不早洩{{user}}說(可自訂)",
+            "contentLength": 126
+          },
+          {
+            "index": 15,
+            "role": "assistant",
+            "identifier": "f2f_custom_1770745923664",
+            "name": "延續不早洩！收到！(感覺節奏太慢關閉)",
+            "contentLength": 542
+          },
+          {
+            "index": 16,
+            "role": "system",
+            "identifier": "chatHistoryOpenTag",
+            "contentLength": 14
+          },
+          {
+            "index": 17,
+            "role": "user",
+            "identifier": "chatMessage",
+            "name": "User",
+            "contentLength": 38
+          },
+          {
+            "index": 18,
+            "role": "assistant",
+            "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+            "name": "哈维",
+            "contentLength": 263
+          },
+          {
+            "index": 19,
+            "role": "user",
+            "identifier": "chatMessage+chatMessage",
+            "name": "User",
+            "contentLength": 67
+          },
+          {
+            "index": 20,
+            "role": "assistant",
+            "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+            "name": "哈维",
+            "contentLength": 222
+          },
+          {
+            "index": 21,
+            "role": "user",
+            "identifier": "chatMessage+chatMessage",
+            "name": "User",
+            "contentLength": 68
+          },
+          {
+            "index": 22,
+            "role": "assistant",
+            "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+            "name": "哈维",
+            "contentLength": 247
+          },
+          {
+            "index": 23,
+            "role": "user",
+            "identifier": "chatMessage+chatMessage",
+            "name": "User",
+            "contentLength": 65
+          },
+          {
+            "index": 24,
+            "role": "assistant",
+            "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+            "name": "哈维",
+            "contentLength": 203
+          },
+          {
+            "index": 25,
+            "role": "user",
+            "identifier": "chatMessage+chatMessage",
+            "name": "User",
+            "contentLength": 65
+          },
+          {
+            "index": 26,
+            "role": "assistant",
+            "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+            "name": "哈维",
+            "contentLength": 234
+          },
+          {
+            "index": 27,
+            "role": "user",
+            "identifier": "chatMessage+chatMessage",
+            "name": "User",
+            "contentLength": 141893
+          },
+          {
+            "index": 28,
+            "role": "assistant",
+            "identifier": "chatMessage+chatMessage+chatMessage+chatMessage+chatMessage+chatMessage",
+            "name": "哈维",
+            "contentLength": 272
+          },
+          {
+            "index": 29,
+            "role": "system",
+            "identifier": "chatHistoryCloseTag",
+            "contentLength": 15
+          },
+          {
+            "index": 32,
+            "role": "assistant",
+            "identifier": "f2fFormatRules+f2fExampleScript+f2f_custom_1772288204573",
+            "name": "格式規則",
+            "contentLength": 3512
+          }
+        ],
+        "rawFinishReason": "stop",
+        "finishReason": "stop",
+        "contentLength": 22,
+        "promptTokens": 3661,
+        "completionTokens": 8,
+        "totalTokens": 3669,
+        "requestBodyBytes": 12467,
+        "durationMs": 2000
+      }
+    ],
+    "completedAt": 1780367837761
+  }
+}

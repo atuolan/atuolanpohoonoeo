@@ -2068,7 +2068,7 @@ function buildSillyTavernExport(
   };
 }
 
-// 批量导入覆盖线上模式提示词
+// 批量導入覆蓋當前提示詞模塊
 const batchImportFileInput = ref<HTMLInputElement | null>(null);
 const showBatchImportConfirm = ref(false);
 const batchImportResult = ref<{
@@ -2088,52 +2088,51 @@ async function handleBatchImportFileChange(event: Event) {
   const file = input.files?.[0];
   if (!file) return;
 
+  const modeLabel = getCurrentModeLabel();
+
   try {
     const text = await file.text();
-    const jsonData = JSON.parse(text);
-    
-    // 显示确认对话框
+    const jsonData = JSON.parse(text) as Record<string, unknown>;
+
     const confirmed = confirm(
-      `确定要从 "${file.name}" 批量导入并覆盖线上模式提示词吗？\n\n` +
-      `这将会：\n` +
-      `- 更新所有已存在的提示词内容\n` +
-      `- 添加新的提示词\n` +
-      `- 更新提示词顺序\n` +
-      `- 确保 marker 内容正确连接\n\n` +
-      `建议在导入前先导出当前配置作为备份。`
+      `確定要從「${file.name}」批量導入並覆蓋「${modeLabel}」提示詞嗎？\n\n` +
+        `這將會：\n` +
+        `- 更新目前模式中所有已存在的提示詞內容\n` +
+        `- 添加目前模式的新提示詞\n` +
+        `- 若檔案包含目前模式的順序，會同步更新提示詞順序\n` +
+        `- 只會影響「${modeLabel}」，不會覆蓋其他模式\n\n` +
+        `建議在導入前先導出目前配置作為備份。`,
     );
-    
+
     if (!confirmed) {
       input.value = "";
       return;
     }
 
-    // 执行导入
-    const result = await promptManagerStore.importOnlineModePromptsFromJson(jsonData);
+    const result = await promptManagerStore.importPromptsForModeFromJson(
+      selectedMode.value,
+      jsonData,
+    );
     batchImportResult.value = result;
-    
+
     if (result.success) {
       alert(
-        `导入成功！\n\n` +
-        `新增：${result.imported} 个提示词\n` +
-        `更新：${result.updated} 个提示词\n` +
-        (result.errors.length > 0 ? `\n警告：\n${result.errors.join('\n')}` : '')
+        `導入「${modeLabel}」成功！\n\n` +
+          `新增：${result.imported} 個提示詞\n` +
+          `更新：${result.updated} 個提示詞\n` +
+          (result.errors.length > 0 ? `\n警告：\n${result.errors.join("\n")}` : ""),
       );
-      
-      // 刷新当前显示
+
       await promptManagerStore.loadConfig();
     } else {
-      alert(
-        `导入失败！\n\n` +
-        `错误信息：\n${result.errors.join('\n')}`
-      );
+      alert(`導入失敗！\n\n錯誤信息：\n${result.errors.join("\n")}`);
     }
   } catch (error) {
-    console.error('批量导入失败:', error);
+    console.error("批量導入失敗:", error);
     alert(
-      `导入失败！\n\n` +
-      `错误：${error instanceof Error ? error.message : '未知错误'}\n\n` +
-      `请确认 JSON 格式正确。`
+      `導入失敗！\n\n` +
+        `錯誤：${error instanceof Error ? error.message : "未知錯誤"}\n\n` +
+        `請確認 JSON 格式正確。`,
     );
   } finally {
     input.value = "";
@@ -2472,13 +2471,13 @@ watch(newPromptInsertMode, (mode) => {
             </button>
 
             <button
-              v-if="adminStore.isAdmin && selectedMode === 'global'"
+              v-if="adminStore.isAdmin"
               class="header-menu-item"
               role="menuitem"
-              title="批量導入覆蓋線上模式提示詞（確保 marker 正確連接）"
+              :title="`批量導入覆蓋${getCurrentModeLabel()}提示詞`"
               @click="openBatchImportFile"
             >
-              批量導入線上模式
+              批量導入{{ getCurrentModeLabel() }}
             </button>
 
             <button
@@ -4108,6 +4107,8 @@ watch(newPromptInsertMode, (mode) => {
   top: calc(100% + 14px);
   right: -6px;
   min-width: 220px;
+  max-height: calc(100vh - 100% - 28px);
+  overflow-y: auto;
   padding: 14px 12px;
   border: none;
   border-radius: 22px;

@@ -2646,15 +2646,131 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     return removed;
   }
 
+  type PromptModuleMode =
+    | "global"
+    | "faceToFace"
+    | "groupChat"
+    | "diary"
+    | "summary"
+    | "events"
+    | "plurkPost"
+    | "plurkComment"
+    | "batchComments";
+
+  type PromptModuleConfigKeys = {
+    promptsKey: keyof PromptManagerConfig;
+    orderKey: keyof PromptManagerConfig;
+    legacyPromptsKey?: string;
+    legacyOrderKey?: string;
+  };
+
+  const PROMPT_MODULE_CONFIG_KEYS: Record<PromptModuleMode, PromptModuleConfigKeys> = {
+    global: {
+      promptsKey: "prompts",
+      orderKey: "globalPromptOrder",
+      legacyPromptsKey: "prompts",
+      legacyOrderKey: "prompt_order",
+    },
+    faceToFace: {
+      promptsKey: "faceToFacePrompts",
+      orderKey: "faceToFacePromptOrder",
+    },
+    groupChat: {
+      promptsKey: "groupChatPrompts",
+      orderKey: "groupChatPromptOrder",
+    },
+    diary: {
+      promptsKey: "diaryPrompts",
+      orderKey: "diaryPromptOrder",
+    },
+    summary: {
+      promptsKey: "summaryPrompts",
+      orderKey: "summaryPromptOrder",
+    },
+    events: {
+      promptsKey: "eventsPrompts",
+      orderKey: "eventsPromptOrder",
+    },
+    plurkPost: {
+      promptsKey: "plurkPostPrompts",
+      orderKey: "plurkPostPromptOrder",
+    },
+    plurkComment: {
+      promptsKey: "plurkCommentPrompts",
+      orderKey: "plurkCommentPromptOrder",
+    },
+    batchComments: {
+      promptsKey: "batchCommentsPrompts",
+      orderKey: "batchCommentsPromptOrder",
+    },
+  };
+
+  function isPromptModuleMode(mode: string): mode is PromptModuleMode {
+    return mode in PROMPT_MODULE_CONFIG_KEYS;
+  }
+
+  function normalizeImportedPrompt(prompt: PromptDefinition): PromptDefinition {
+    return {
+      ...prompt,
+      category: prompt.category ?? "custom",
+      extension: prompt.extension ?? false,
+      isEditable: prompt.isEditable ?? true,
+      injection_trigger: prompt.injection_trigger ?? [],
+      description: prompt.description ?? "",
+    };
+  }
+
+  function extractImportedPrompts(
+    jsonData: Record<string, unknown>,
+    moduleKeys: PromptModuleConfigKeys,
+  ): PromptDefinition[] | undefined {
+    const candidates = [
+      moduleKeys.promptsKey,
+      moduleKeys.legacyPromptsKey,
+      "prompts",
+    ].filter(Boolean) as string[];
+    for (const key of candidates) {
+      const value = jsonData[key];
+      if (Array.isArray(value)) return value as PromptDefinition[];
+    }
+    return undefined;
+  }
+
+  function extractImportedOrder(
+    jsonData: Record<string, unknown>,
+    moduleKeys: PromptModuleConfigKeys,
+  ): PromptOrderEntry[] | undefined {
+    const directCandidates = [
+      moduleKeys.orderKey,
+      moduleKeys.legacyOrderKey,
+      "globalPromptOrder",
+    ].filter(Boolean) as string[];
+    for (const key of directCandidates) {
+      const value = jsonData[key];
+      if (Array.isArray(value)) {
+        if (key === "prompt_order") {
+          const firstOrderConfig = value.find(
+            (item): item is { order: PromptOrderEntry[] } =>
+              !!item && typeof item === "object" && Array.isArray((item as any).order),
+          );
+          return firstOrderConfig?.order;
+        }
+        return value as PromptOrderEntry[];
+      }
+    }
+    return undefined;
+  }
+
   /**
-   * 从 JSON 文件批量导入并覆盖线上模式提示词
-   * @param jsonData 包含 prompts 和 prompt_order 的 JSON 对象
+   * 从 JSON 文件批量导入并覆盖指定提示词模块
+   * @param mode 目标提示词模块
+   * @param jsonData 包含 prompts/order 的 JSON 对象
    * @returns 导入结果统计
    */
-  async function importOnlineModePromptsFromJson(jsonData: {
-    prompts?: PromptDefinition[];
-    prompt_order?: Array<{ character_id: number; order: PromptOrderEntry[] }>;
-  }): Promise<{
+  async function importPromptsForModeFromJson(
+    mode: string,
+    jsonData: Record<string, unknown>,
+  ): Promise<{
     success: boolean;
     imported: number;
     updated: number;
@@ -2668,45 +2784,52 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     };
 
     try {
-      if (!jsonData.prompts || !Array.isArray(jsonData.prompts)) {
-        result.errors.push("JSON 格式错误：缺少 prompts 数组");
+      if (!isPromptModuleMode(mode)) {
+        result.errors.push(`不支持的提示词模块：${mode}`);
         return result;
       }
 
-      // 创建 identifier 到提示词的映射
+      const moduleKeys = PROMPT_MODULE_CONFIG_KEYS[mode];
+      const targetPrompts = config.value[moduleKeys.promptsKey] as
+        | PromptDefinition[]
+        | undefined;
+      const targetOrder = config.value[moduleKeys.orderKey] as
+        | PromptOrderEntry[]
+        | undefined;
+
+      if (!targetPrompts || !targetOrder) {
+        result.errors.push(`目标模块配置不存在：${mode}`);
+        return result;
+      }
+
+      const importedPrompts = extractImportedPrompts(jsonData, moduleKeys);
+      if (!importedPrompts || !Array.isArray(importedPrompts)) {
+        result.errors.push("JSON 格式错误：缺少当前模块可用的 prompts 数组");
+        return result;
+      }
+
       const importedPromptsMap = new Map<string, PromptDefinition>();
-      for (const prompt of jsonData.prompts) {
+      for (const prompt of importedPrompts) {
         if (!prompt.identifier) {
           result.errors.push(`跳过无 identifier 的提示词: ${prompt.name || "未命名"}`);
           continue;
         }
-        importedPromptsMap.set(prompt.identifier, prompt);
+        importedPromptsMap.set(prompt.identifier, normalizeImportedPrompt(prompt));
       }
 
-      // 遍历现有的线上模式提示词，更新或添加
-      const existingIds = new Set(config.value.prompts.map((p) => p.identifier));
-      
       for (const [identifier, importedPrompt] of importedPromptsMap) {
         try {
-          if (existingIds.has(identifier)) {
-            // 更新现有提示词
-            const index = config.value.prompts.findIndex(
-              (p) => p.identifier === identifier,
-            );
-            if (index !== -1) {
-              // 保留某些本地属性，覆盖其他所有属性
-              const localPrompt = config.value.prompts[index];
-              config.value.prompts[index] = {
-                ...importedPrompt,
-                // 保留本地的 adminOnly 和 isDeletable 属性（如果存在）
-                adminOnly: localPrompt.adminOnly,
-                isDeletable: localPrompt.isDeletable,
-              };
-              result.updated++;
-            }
+          const index = targetPrompts.findIndex((p) => p.identifier === identifier);
+          if (index !== -1) {
+            const localPrompt = targetPrompts[index];
+            targetPrompts[index] = {
+              ...importedPrompt,
+              adminOnly: localPrompt.adminOnly,
+              isDeletable: localPrompt.isDeletable,
+            };
+            result.updated++;
           } else {
-            // 添加新提示词
-            config.value.prompts.push(importedPrompt);
+            targetPrompts.push(importedPrompt);
             result.imported++;
           }
         } catch (error) {
@@ -2716,27 +2839,18 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
         }
       }
 
-      // 更新提示词顺序（如果提供）
-      if (jsonData.prompt_order && Array.isArray(jsonData.prompt_order)) {
-        for (const orderConfig of jsonData.prompt_order) {
-          if (orderConfig.order && Array.isArray(orderConfig.order)) {
-            // 过滤出实际存在的提示词
-            const validOrder = orderConfig.order.filter((o) =>
-              config.value.prompts.some((p) => p.identifier === o.identifier),
-            );
-            
-            // 更新全局顺序
-            config.value.globalPromptOrder = validOrder;
-          }
-        }
+      const importedOrder = extractImportedOrder(jsonData, moduleKeys);
+      if (importedOrder && Array.isArray(importedOrder)) {
+        const validOrder = importedOrder.filter((o) =>
+          targetPrompts.some((p) => p.identifier === o.identifier),
+        );
+        targetOrder.splice(0, targetOrder.length, ...validOrder);
       }
 
-      // 去重并保存
-      dedupeOrderInPlace(config.value.prompts);
-      dedupeOrderInPlace(config.value.globalPromptOrder);
-      
+      dedupeOrderInPlace(targetPrompts);
+      dedupeOrderInPlace(targetOrder);
+
       await saveConfig();
-      
       result.success = true;
     } catch (error) {
       result.errors.push(
@@ -2745,6 +2859,10 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     }
 
     return result;
+  }
+
+  async function importOnlineModePromptsFromJson(jsonData: Record<string, unknown>) {
+    return importPromptsForModeFromJson("global", jsonData);
   }
 
   return {
@@ -2837,6 +2955,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     restorePresetModule,
     deletePromptForMode,
     deleteAllCustomPromptsForMode,
+    importPromptsForModeFromJson,
     importOnlineModePromptsFromJson,
   };
 });
