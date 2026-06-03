@@ -4773,7 +4773,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 pm.isVoice ||
                 pm.isWaimaiPaymentResult ||
                 pm.isWaimaiDelivery ||
-                pm.isCharRecall,
+                pm.isCharRecall ||
+                pm.isFaceToFaceRequest ||
+                pm.isOnlineModeRequest,
             ).length;
             let _shownMsgs1 = 0;
             // 📱 小手機劇本格式：預先決定每條訊息的左右分邊（含 AI 沒下前綴時的交替 fallback）

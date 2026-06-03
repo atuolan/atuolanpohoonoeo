@@ -1165,6 +1165,10 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     result.charLocationData = charLocationResult;
   }
 
+  // 12. 檢查放在 </content> 之後的模式切換請求標籤
+  // <content> 外的文字不會進入 outputContent，因此這類系統控制標籤需要從 rawResponse 額外轉成卡片訊息。
+  appendTopLevelModeRequestMessages(result.messages, rawResponse);
+
   // 從所有訊息中移除 char-location 標籤
   for (const msg of result.messages) {
     if (msg.content) {
@@ -1175,6 +1179,55 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
   }
 
   return result;
+}
+
+/**
+ * 將 rawResponse 中的模式切換請求補成獨立卡片訊息。
+ *
+ * 注意：正常聊天內容只會取 <content>...</content> 內部；如果 AI 按提示把
+ * <face-to-face-request> / <online-mode-request> 放在 </content> 後面，
+ * 就必須從原始回覆補掃描，否則 UI 不會生成請求卡片。
+ */
+function appendTopLevelModeRequestMessages(
+  messages: ParsedMessage[],
+  rawResponse: string,
+): void {
+  const existingFaceToFaceCount = messages.filter(
+    (msg) => msg.isFaceToFaceRequest,
+  ).length;
+  const existingOnlineModeCount = messages.filter(
+    (msg) => msg.isOnlineModeRequest,
+  ).length;
+
+  const requestRegex =
+    /<face-to-face-request\s+([^>]*?)\s*\/?>(?:<\/face-to-face-request>)?|<online-mode-request\s+([^>]*?)\s*\/?>(?:<\/online-mode-request>)?/gi;
+
+  let faceToFaceSeen = 0;
+  let onlineModeSeen = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = requestRegex.exec(rawResponse)) !== null) {
+    if (match[1] !== undefined) {
+      faceToFaceSeen++;
+      if (faceToFaceSeen <= existingFaceToFaceCount) continue;
+      messages.push({
+        content: "",
+        isFaceToFaceRequest: true,
+        faceToFaceRequestReason: extractAttr(match[1], "reason") || undefined,
+      });
+      continue;
+    }
+
+    if (match[2] !== undefined) {
+      onlineModeSeen++;
+      if (onlineModeSeen <= existingOnlineModeCount) continue;
+      messages.push({
+        content: "",
+        isOnlineModeRequest: true,
+        onlineModeRequestReason: extractAttr(match[2], "reason") || undefined,
+      });
+    }
+  }
 }
 
 /**
