@@ -55,6 +55,9 @@ const {
   diagnostics,
   showPrompt,
   copyContent,
+  downloadContentAsTxt,
+  copyPromptContent,
+  downloadPromptContentAsTxt,
   copyPromptModuleOrder,
   copyDiagnostics,
   setAutoScroll,
@@ -66,6 +69,9 @@ const {
 // Refs
 const scrollContainer = ref<HTMLElement | null>(null);
 const copySuccess = ref(false);
+const downloadSuccess = ref(false);
+const promptCopySuccess = ref(false);
+const promptDownloadSuccess = ref(false);
 const moduleOrderCopySuccess = ref(false);
 const diagnosticsCopySuccess = ref(false);
 
@@ -177,6 +183,36 @@ async function handleCopy() {
     copySuccess.value = true;
     setTimeout(() => {
       copySuccess.value = false;
+    }, 2000);
+  }
+}
+
+function handleDownloadContent() {
+  const success = downloadContentAsTxt();
+  if (success) {
+    downloadSuccess.value = true;
+    setTimeout(() => {
+      downloadSuccess.value = false;
+    }, 2000);
+  }
+}
+
+async function handleCopyPromptContent() {
+  const success = await copyPromptContent();
+  if (success) {
+    promptCopySuccess.value = true;
+    setTimeout(() => {
+      promptCopySuccess.value = false;
+    }, 2000);
+  }
+}
+
+function handleDownloadPromptContent() {
+  const success = downloadPromptContentAsTxt();
+  if (success) {
+    promptDownloadSuccess.value = true;
+    setTimeout(() => {
+      promptDownloadSuccess.value = false;
     }, 2000);
   }
 }
@@ -388,6 +424,20 @@ onUnmounted(() => {
               </button>
               <button
                 class="prompt-order-copy-btn"
+                @click="handleCopyPromptContent"
+                :disabled="promptContent.length === 0"
+              >
+                {{ promptCopySuccess ? "✅ 已複製提示詞" : "📋 複製全部提示詞" }}
+              </button>
+              <button
+                class="prompt-order-copy-btn"
+                @click="handleDownloadPromptContent"
+                :disabled="promptContent.length === 0"
+              >
+                {{ promptDownloadSuccess ? "✅ 已下載提示詞" : "💾 下載提示詞 txt" }}
+              </button>
+              <button
+                class="prompt-order-copy-btn"
                 @click="handleCopyPromptModuleOrder"
                 :disabled="promptModuleCount === 0"
               >
@@ -454,7 +504,19 @@ onUnmounted(() => {
           <svg v-else viewBox="0 0 24 24" fill="currentColor">
             <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
           </svg>
-          <span>{{ copySuccess ? "已複製" : "複製" }}</span>
+          <span>{{ copySuccess ? "已複製" : "複製輸出" }}</span>
+        </button>
+        <button
+          class="footer-btn copy-btn"
+          @click="handleDownloadContent"
+          :disabled="!content"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path
+              d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"
+            />
+          </svg>
+          <span>{{ downloadSuccess ? "已下載" : "下載輸出 txt" }}</span>
         </button>
       </div>
     </div>
@@ -826,6 +888,8 @@ onUnmounted(() => {
 }
 
 .prompt-actions-row {
+  flex-wrap: wrap;
+  justify-content: flex-start;
   gap: 8px;
 }
 

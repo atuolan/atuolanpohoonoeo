@@ -1580,6 +1580,10 @@ const messageParts = computed<MessagePart[]>(() => {
 
   // 正規化表情包標籤：將 AI 可能輸出的各種格式統一為 [sticker:name]
   content = content
+    // 標準 XML 格式：<sticker name="开心" />
+    .replace(/<sticker\s+name="([^"]+)"\s*\/>/gi, "[sticker:$1]")
+    .replace(/<sticker\s+name="([^"]+)"\s*><\/sticker>/gi, "[sticker:$1]")
+    // 舊格式相容
     .replace(/<sticker:([^/>]+)\s*\/>/gi, "[sticker:$1]")
     .replace(/<sticker:([^>]+)><\/sticker:[^>]+>/gi, "[sticker:$1]")
     .replace(/<sticker>([^<]+)<\/sticker>/gi, "[sticker:$1]")

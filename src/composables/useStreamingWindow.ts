@@ -212,6 +212,37 @@ export function useStreamingWindow() {
     errorMessage.value = null;
   }
 
+  function downloadTextFile(text: string, filename: string): boolean {
+    try {
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function buildPromptContentText(): string {
+    return promptContent.value
+      .map((message, index) => {
+        const parts = [
+          `#${index + 1}`,
+          `Role: ${message.role || "unknown"}`,
+        ];
+        if (message.name) parts.push(`Name: ${message.name}`);
+        if (message.identifier) parts.push(`Identifier: ${message.identifier}`);
+        return `${parts.join(" | ")}\n\n${message.content || ""}`;
+      })
+      .join("\n\n---\n\n");
+  }
+
   /**
    * 複製內容到剪貼板
    */
@@ -222,6 +253,26 @@ export function useStreamingWindow() {
     } catch {
       return false;
     }
+  }
+
+  function downloadContentAsTxt(): boolean {
+    return downloadTextFile(content.value, `streaming-output-${Date.now()}.txt`);
+  }
+
+  async function copyPromptContent(): Promise<boolean> {
+    try {
+      await navigator.clipboard.writeText(buildPromptContentText());
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function downloadPromptContentAsTxt(): boolean {
+    return downloadTextFile(
+      buildPromptContentText(),
+      `streaming-prompts-${Date.now()}.txt`,
+    );
   }
 
   async function copyPromptModuleOrder(): Promise<boolean> {
@@ -371,6 +422,9 @@ export function useStreamingWindow() {
     setError,
     reset,
     copyContent,
+    downloadContentAsTxt,
+    copyPromptContent,
+    downloadPromptContentAsTxt,
     copyPromptModuleOrder,
     copyDiagnostics,
     setAutoScroll,

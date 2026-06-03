@@ -2030,16 +2030,22 @@ function getSelectedTsExportFiles(): TsExportFile[] {
 
 // 將提示詞配置轉換為 SillyTavern 相容格式
 function buildSillyTavernExport(
-  prompts: typeof promptManagerStore.config.prompts,
-  order: typeof promptManagerStore.config.globalPromptOrder,
+  prompts: PromptDefinition[],
+  order: PromptOrderEntry[],
 ): { prompts: Record<string, unknown>[] } {
   const enabledMap = new Map(order.map((e) => [e.identifier, e.enabled]));
+  const orderIndexMap = new Map(
+    dedupeById(order).map((entry, index) => [entry.identifier, index]),
+  );
   const orderedPrompts = order
     .map((entry) => prompts.find((p) => p.identifier === entry.identifier))
     .filter((p): p is NonNullable<typeof p> => p !== undefined);
   // 加入不在 order 中的 prompts
   const orderedIds = new Set(order.map((e) => e.identifier));
   const extraPrompts = prompts.filter((p) => !orderedIds.has(p.identifier));
+  const extraIndexMap = new Map(
+    extraPrompts.map((prompt, index) => [prompt.identifier, orderIndexMap.size + index]),
+  );
   const allPrompts = [...orderedPrompts, ...extraPrompts];
 
   return {
@@ -2050,10 +2056,10 @@ function buildSillyTavernExport(
         enabled: enabledMap.get(p.identifier) ?? true,
         injection_position: p.injection_position ?? 0,
         injection_depth: p.injection_depth ?? 4,
-        // RELATIVE 條目（injection_position=0）用陣列 index 作為 injection_order，
-        // 確保 SillyTavern 按 injection_order 排序後與 UI 排列順序完全一致。
-        // ABSOLUTE 條目（injection_position=1）保留原始 injection_order（深度插入邏輯）。
-        injection_order: (p.injection_position ?? 0) === 0 ? index : (p.injection_order ?? 100),
+        // SillyTavern 的預設編輯器會用 injection_order 排列表面條目，
+        // 所以相對位置與聊天中/深度插入條目都使用原始 order 中的位置。
+        // injection_position / injection_depth 仍保留原設定，確保作者筆記等條目維持深度插入行為。
+        injection_order: orderIndexMap.get(p.identifier) ?? extraIndexMap.get(p.identifier) ?? index,
         role: p.role,
         system_prompt: p.system_prompt ?? false,
         marker: p.marker ?? false,
@@ -2066,6 +2072,79 @@ function buildSillyTavernExport(
       return entry;
     }),
   };
+}
+
+function getSelectedSillyTavernExportPayload(): {
+  prompts: PromptDefinition[];
+  order: PromptOrderEntry[];
+  label: string;
+} | null {
+  const config = promptManagerStore.config;
+  const selectedPayloads: Array<{
+    prompts: PromptDefinition[];
+    order: PromptOrderEntry[];
+    label: string;
+  }> = [];
+
+  if (exportOptions.value.globalPrompts || exportOptions.value.globalOrder) {
+    selectedPayloads.push({
+      prompts: dedupeById(config.prompts),
+      order: dedupeById(config.globalPromptOrder),
+      label: EXPORT_MODE_META.global.label,
+    });
+  }
+
+  if (exportOptions.value.faceToFace) {
+    selectedPayloads.push({
+      ...getFaceToFaceExportPayload(),
+      label: EXPORT_MODE_META.faceToFace.label,
+    });
+  }
+
+  if (exportOptions.value.groupChat) {
+    selectedPayloads.push({
+      ...getGroupChatExportPayload(),
+      label: EXPORT_MODE_META.groupChat.label,
+    });
+  }
+
+  if (exportOptions.value.diary) {
+    selectedPayloads.push({
+      ...getDiaryExportPayload(),
+      label: EXPORT_MODE_META.diary.label,
+    });
+  }
+
+  if (exportOptions.value.summary) {
+    selectedPayloads.push({
+      ...getSummaryExportPayload(),
+      label: EXPORT_MODE_META.summary.label,
+    });
+  }
+
+  if (exportOptions.value.events) {
+    selectedPayloads.push({
+      ...getEventsExportPayload(),
+      label: EXPORT_MODE_META.events.label,
+    });
+  }
+
+  if (exportOptions.value.plurkPost) {
+    selectedPayloads.push({
+      ...getPlurkPostExportPayload(),
+      label: EXPORT_MODE_META.plurkPost.label,
+    });
+  }
+
+  if (exportOptions.value.plurkComment) {
+    selectedPayloads.push({
+      ...getPlurkCommentExportPayload(),
+      label: EXPORT_MODE_META.plurkComment.label,
+    });
+  }
+
+  if (selectedPayloads.length !== 1) return null;
+  return selectedPayloads[0];
 }
 
 // 批量導入覆蓋當前提示詞模塊
@@ -2142,20 +2221,22 @@ async function handleBatchImportFileChange(event: Event) {
 // 執行導出
 function doExport() {
   if (exportFormat.value === "sillytavern") {
-    const config = promptManagerStore.config;
-    // 使用 currentPromptOrder（與 UI 顯示完全一致），而非 raw config.globalPromptOrder
-    const dedupedOrder = dedupeById(promptManagerStore.currentPromptOrder);
-    const dedupedPrompts = dedupeById(config.prompts);
-    const stData = buildSillyTavernExport(dedupedPrompts, dedupedOrder);
+    const payload = getSelectedSillyTavernExportPayload();
+    if (!payload) {
+      alert("SillyTavern 格式一次只能導出一個提示詞模組，請只勾選單一模式。");
+      return;
+    }
+
+    const stData = buildSillyTavernExport(payload.prompts, payload.order);
     const json = JSON.stringify(stData, null, 4);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `prompt-sillytavern-${Date.now()}.json`;
+    a.download = `prompt-sillytavern-${payload.label}-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    alert("已下載 SillyTavern 格式提示詞配置！");
+    alert(`已下載 ${payload.label} 的 SillyTavern 格式提示詞配置！`);
     showExportModal.value = false;
     return;
   }
@@ -3893,7 +3974,7 @@ watch(newPromptInsertMode, (mode) => {
                     <span class="option-icon">🍺</span>
                     <span class="option-content">
                       <span class="option-name">SillyTavern 格式</span>
-                      <span class="option-desc">相容酒館的 prompts JSON，可直接匯入 SillyTavern</span>
+                      <span class="option-desc">相容酒館的 prompts JSON；一次只支援導出單一模式</span>
                     </span>
                   </label>
                 </div>

@@ -479,13 +479,13 @@ function parseTextOnlyContent(content: string): ParsedMessage {
 function normalizeStickerTags(content: string): string {
   return (
     content
-      // <sticker:name/> → [sticker:name]
+      // <sticker name="开心" /> 或 <sticker name="开心"></sticker>（標準 XML 格式）
+      .replace(/<sticker\s+name="([^"]+)"\s*\/>/gi, "[sticker:$1]")
+      .replace(/<sticker\s+name="([^"]+)"\s*><\/sticker>/gi, "[sticker:$1]")
+      // 舊格式相容：<sticker:name/> <sticker:name></sticker:name> <sticker>name</sticker> <sticker:name>
       .replace(/<sticker:([^/>]+)\s*\/>/gi, "[sticker:$1]")
-      // <sticker:name></sticker:name> → [sticker:name]
       .replace(/<sticker:([^>]+)><\/sticker:[^>]+>/gi, "[sticker:$1]")
-      // <sticker>name</sticker> → [sticker:name]
       .replace(/<sticker>([^<]+)<\/sticker>/gi, "[sticker:$1]")
-      // <sticker:name> (未閉合) → [sticker:name]
       .replace(/<sticker:([^>/<]+)>/gi, "[sticker:$1]")
   );
 }

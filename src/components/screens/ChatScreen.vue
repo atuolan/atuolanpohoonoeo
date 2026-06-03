@@ -3695,7 +3695,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
             "3. 不允許省略 name 屬性，每一條 <msg> 都必須帶 name=\"{{user}}\" 或 name=\"{{char}}\"。",
             "4. <msg> 內容只放該句台詞本身，不要再寫「user:」「char:」之類的前綴。",
             "5. 一個 <msg> 只放一句短台詞，模仿真實手機聊天節奏；想連發就拆成多個 <msg>。",
-            "6. 表情包用 [sticker:描述]、貼圖、語氣詞都正常使用，但同樣放在 <msg> 內。",
+            "6. 表情包用 `<sticker name=\"描述\" />`、貼圖、語氣詞都正常使用，但同樣放在 <msg> 內。",
             "範例（請完全照這個格式輸出）：",
             "<msg name=\"{{user}}\">別生氣</msg><msg name=\"{{user}}\">我真的知道錯了</msg><msg name=\"{{char}}\">你只會說這一句嗎？</msg><msg name=\"{{user}}\">那我還能說什麼…</msg><msg name=\"{{char}}\">哄我。</msg>",
             "再次提醒：每一個 <msg> 都必須帶 name=\"{{user}}\" 或 name=\"{{char}}\" 屬性，違反此規則的訊息會被視為格式錯誤。",
