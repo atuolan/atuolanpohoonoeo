@@ -1566,6 +1566,118 @@ export class ImportExportService {
    * 從 SillyTavern JSONL 檔案匯入聊天記錄到指定聊天
    * JSONL 格式：第一行為 metadata，後續每行為一條訊息
    */
+  // ─── SillyTavern JSONL 正規化 helper ─────────────────────────────────────
+  private _normalizeSillyTavernMes(raw: string): string {
+    let s = raw;
+    // 1. 解開 <content>...</content> 包裹，只保留內層
+    const contentMatch = s.match(/<content>\s*([\s\S]*?)\s*<\/content>/i);
+    if (contentMatch) {
+      s = contentMatch[1];
+    }
+    // 2. 移除 HTML 註解
+    s = s.replace(/<!--[\s\S]*?-->/g, "");
+    // 3. 移除 SillyTavern 控制標籤（含內容）
+    s = s
+      .replace(/<imgthink>[\s\S]*?<\/imgthink>/gi, "")
+      .replace(/<image>[\s\S]*?<\/image>/gi, "")
+      .replace(/<imessage_status>[\s\S]*?<\/imessage_status>/gi, "")
+      .replace(/<horae>[\s\S]*?<\/horae>/gi, "")
+      .replace(/<horaeevent>[\s\S]*?<\/horaeevent>/gi, "");
+    return s.trim();
+  }
+
+  private _parseSillyTavernLine(
+    msgData: any,
+    userName: string,
+    characterName: string,
+  ): ChatMessage | null {
+    // 跳過沒有可見內容的純系統/隱藏訊息
+    // 規則：is_system 且 非 is_user 且沒有 mes → 跳過
+    //       is_hidden 且 非 is_user → 跳過
+    //       is_user:true 且 is_system:true 但有 mes → 保留為使用者訊息
+    const hasContent = !!(msgData.mes || "").trim();
+    if (msgData.is_hidden && !msgData.is_user) return null;
+    if (msgData.is_system && !msgData.is_user && !hasContent) return null;
+
+    const isUser = !!msgData.is_user;
+    const sender: MessageSender = isUser ? "user" : "assistant";
+    const name = isUser ? userName : msgData.name || characterName;
+
+    // 取得原始內容（處理 swipes）
+    let raw: string = msgData.mes || "";
+    if (
+      msgData.swipes &&
+      Array.isArray(msgData.swipes) &&
+      msgData.swipe_id !== undefined
+    ) {
+      raw = msgData.swipes[msgData.swipe_id] || raw;
+    }
+
+    // 替換使用者佔位符
+    raw = raw
+      .replace(/\{\{user\}\}/gi, userName)
+      .replace(/<user>/gi, userName);
+
+    // 清理 SillyTavern 外部格式
+    let content = this._normalizeSillyTavernMes(raw);
+    if (!content) return null;
+
+    let createdAt = Date.now();
+    if (msgData.send_date) {
+      const parsed = Date.parse(msgData.send_date);
+      if (!isNaN(parsed)) createdAt = parsed;
+    }
+
+    const message: ChatMessage = {
+      id: crypto.randomUUID(),
+      sender,
+      name,
+      content,
+      is_user: isUser,
+      status: "sent",
+      createdAt,
+      updatedAt: createdAt,
+    };
+
+    if (
+      msgData.swipes &&
+      Array.isArray(msgData.swipes) &&
+      msgData.swipes.length > 1
+    ) {
+      message.swipes = msgData.swipes.map((s: string) =>
+        this._normalizeSillyTavernMes(
+          s.replace(/\{\{user\}\}/gi, userName).replace(/<user>/gi, userName),
+        ),
+      );
+      message.swipeId = msgData.swipe_id ?? 0;
+    }
+    if (msgData.extra?.model) message.model = msgData.extra.model;
+    if (msgData.extra?.token_count) message.tokenCount = msgData.extra.token_count;
+
+    return message;
+  }
+
+  private _parseJsonlMessages(
+    lines: string[],
+    userName: string,
+    characterName: string,
+  ): ChatMessage[] {
+    const messages: ChatMessage[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      let msgData: any;
+      try {
+        msgData = JSON.parse(lines[i]);
+      } catch {
+        console.warn(`[ImportExportService] 跳過無法解析的 JSONL 行 ${i + 1}`);
+        continue;
+      }
+      const msg = this._parseSillyTavernLine(msgData, userName, characterName);
+      if (msg) messages.push(msg);
+    }
+    return messages;
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   async importChatFromJsonl(
     file: File,
     targetChatId: string,
@@ -1598,82 +1710,7 @@ export class ImportExportService {
       const userName = metadata.user_name || "User";
 
       // 解析訊息行
-      const messages: ChatMessage[] = [];
-      for (let i = 1; i < lines.length; i++) {
-        let msgData: any;
-        try {
-          msgData = JSON.parse(lines[i]);
-        } catch {
-          console.warn(
-            `[ImportExportService] 跳過無法解析的 JSONL 行 ${i + 1}`,
-          );
-          continue;
-        }
-
-        // 跳過系統訊息
-        if (msgData.is_system) continue;
-
-        const isUser = !!msgData.is_user;
-        const sender: MessageSender = isUser ? "user" : "assistant";
-        const name = isUser ? userName : msgData.name || characterName;
-
-        // 取得訊息內容（處理 swipes）
-        let content = msgData.mes || "";
-        if (
-          msgData.swipes &&
-          Array.isArray(msgData.swipes) &&
-          msgData.swipe_id !== undefined
-        ) {
-          content = msgData.swipes[msgData.swipe_id] || content;
-        }
-
-        // 替換 {{user}} 和 <user> 佔位符
-        content = content
-          .replace(/\{\{user\}\}/gi, userName)
-          .replace(/<user>/gi, userName);
-
-        // 解析時間
-        let createdAt = Date.now();
-        if (msgData.send_date) {
-          const parsed = Date.parse(msgData.send_date);
-          if (!isNaN(parsed)) createdAt = parsed;
-        }
-
-        const message: ChatMessage = {
-          id: crypto.randomUUID(),
-          sender,
-          name,
-          content,
-          is_user: isUser,
-          status: "sent",
-          createdAt,
-          updatedAt: createdAt,
-        };
-
-        // 保留 swipes 資訊
-        if (
-          msgData.swipes &&
-          Array.isArray(msgData.swipes) &&
-          msgData.swipes.length > 1
-        ) {
-          message.swipes = msgData.swipes.map((s: string) =>
-            s.replace(/\{\{user\}\}/gi, userName).replace(/<user>/gi, userName),
-          );
-          message.swipeId = msgData.swipe_id ?? 0;
-        }
-
-        // 保留模型資訊
-        if (msgData.extra?.model) {
-          message.model = msgData.extra.model;
-        }
-
-        // 保留 token 數量
-        if (msgData.extra?.token_count) {
-          message.tokenCount = msgData.extra.token_count;
-        }
-
-        messages.push(message);
-      }
+      const messages = this._parseJsonlMessages(lines, userName, characterName);
 
       if (messages.length === 0) {
         return { success: false, error: "JSONL 中沒有可匯入的訊息" };
@@ -1834,74 +1871,7 @@ export class ImportExportService {
       const userName = metadata.user_name || "User";
 
       // 解析訊息
-      const messages: ChatMessage[] = [];
-      for (let i = 1; i < lines.length; i++) {
-        let msgData: any;
-        try {
-          msgData = JSON.parse(lines[i]);
-        } catch {
-          console.warn(
-            `[ImportExportService] 跳過無法解析的 JSONL 行 ${i + 1}`,
-          );
-          continue;
-        }
-
-        if (msgData.is_system) continue;
-
-        const isUser = !!msgData.is_user;
-        const sender: MessageSender = isUser ? "user" : "assistant";
-        const name = isUser ? userName : msgData.name || characterName;
-
-        let content = msgData.mes || "";
-        if (
-          msgData.swipes &&
-          Array.isArray(msgData.swipes) &&
-          msgData.swipe_id !== undefined
-        ) {
-          content = msgData.swipes[msgData.swipe_id] || content;
-        }
-
-        content = content
-          .replace(/\{\{user\}\}/gi, userName)
-          .replace(/<user>/gi, userName);
-
-        let createdAt = Date.now();
-        if (msgData.send_date) {
-          const parsed = Date.parse(msgData.send_date);
-          if (!isNaN(parsed)) createdAt = parsed;
-        }
-
-        const message: ChatMessage = {
-          id: crypto.randomUUID(),
-          sender,
-          name,
-          content,
-          is_user: isUser,
-          status: "sent",
-          createdAt,
-          updatedAt: createdAt,
-        };
-
-        if (
-          msgData.swipes &&
-          Array.isArray(msgData.swipes) &&
-          msgData.swipes.length > 1
-        ) {
-          message.swipes = msgData.swipes.map((s: string) =>
-            s.replace(/\{\{user\}\}/gi, userName).replace(/<user>/gi, userName),
-          );
-          message.swipeId = msgData.swipe_id ?? 0;
-        }
-
-        if (msgData.extra?.model) {
-          message.model = msgData.extra.model;
-        }
-        if (msgData.extra?.token_count) {
-          message.tokenCount = msgData.extra.token_count;
-        }
-
-        messages.push(message);
-      }
+      const messages = this._parseJsonlMessages(lines, userName, characterName);
 
       if (messages.length === 0) {
         return { success: false, error: "JSONL 中沒有可匯入的訊息" };
@@ -1996,72 +1966,8 @@ export class ImportExportService {
         updatedAt: Date.now(),
       };
 
-      const importedMessages: ChatMessage[] = [];
-
       // 解析訊息
-      for (let i = 1; i < lines.length; i++) {
-        let msgData: any;
-        try {
-          msgData = JSON.parse(lines[i]);
-        } catch {
-          continue;
-        }
-
-        if (msgData.is_system) continue;
-
-        const isUser = !!msgData.is_user;
-        const sender: MessageSender = isUser ? "user" : "assistant";
-        const name = isUser ? userName : msgData.name || characterName;
-
-        let content = msgData.mes || "";
-        if (
-          msgData.swipes &&
-          Array.isArray(msgData.swipes) &&
-          msgData.swipe_id !== undefined
-        ) {
-          content = msgData.swipes[msgData.swipe_id] || content;
-        }
-        content = content
-          .replace(/\{\{user\}\}/gi, userName)
-          .replace(/<user>/gi, userName);
-
-        let createdAt = Date.now();
-        if (msgData.send_date) {
-          const parsed = Date.parse(msgData.send_date);
-          if (!isNaN(parsed)) createdAt = parsed;
-        }
-
-        const message: ChatMessage = {
-          id: crypto.randomUUID(),
-          sender,
-          name,
-          content,
-          is_user: isUser,
-          status: "sent",
-          createdAt,
-          updatedAt: createdAt,
-        };
-
-        if (
-          msgData.swipes &&
-          Array.isArray(msgData.swipes) &&
-          msgData.swipes.length > 1
-        ) {
-          message.swipes = msgData.swipes.map((s: string) =>
-            s.replace(/\{\{user\}\}/gi, userName).replace(/<user>/gi, userName),
-          );
-          message.swipeId = msgData.swipe_id ?? 0;
-        }
-
-        if (msgData.extra?.model) {
-          message.model = msgData.extra.model;
-        }
-        if (msgData.extra?.token_count) {
-          message.tokenCount = msgData.extra.token_count;
-        }
-
-        importedMessages.push(message);
-      }
+      const importedMessages = this._parseJsonlMessages(lines, userName, characterName);
 
       if (importedMessages.length === 0) {
         return { success: false, error: "JSONL 中沒有可匯入的訊息" };

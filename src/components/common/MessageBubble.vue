@@ -1396,22 +1396,24 @@ const renderedContent = computed(() => {
     // ★ 從已經處理過 TTS 行內按鈕的 html 繼續，而不是重新讀 props.content
     let processedContent = html;
 
-    // === DEBUG: 追蹤每步處理後的內容長度 ===
-    const _dbgId = props.id?.slice(-6) ?? '?';
-    const _dbgOrig = processedContent;
-
-    // 防線：清理 ResponseParser 可能遺漏的標記
-    // 移除漏網的 <think>...</think> 和 <thinking>...</thinking> 區塊
-    processedContent = processedContent
-      .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "")
-      .trim();
-    if (processedContent.length !== _dbgOrig.length) console.warn(`[Bubble ${_dbgId}] <think> 移除: ${_dbgOrig.length} → ${processedContent.length}`, '\n原文:', _dbgOrig, '\n結果:', processedContent);
-
-    // 移除缺少開頭標籤的殘留 think 內容（如串流截斷）
-    const _dbgB4orphan = processedContent;
-    processedContent = processedContent
-      .replace(/^[\s\S]*?<\/think(?:ing)?>/gis, "")
-      .trim();
+    // 防線：清理 ResponseParser 可能遺漏的標記。
+    // 串流中佔位氣泡會先拿到原始模型輸出；此處只做顯示層清理，避免把
+    // <thinking>/<UpdateVariable>/<horae> 等控制區塊或「結果:」鏡像內容渲染給用戶。
+    const firstContentMatch = processedContent.match(/<content>\s*([\s\S]*?)\s*<\/content>/i);
+    if (firstContentMatch) {
+      processedContent = firstContentMatch[1].trim();
+    } else {
+      processedContent = processedContent
+        .replace(/<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, "")
+        .replace(/^[\s\S]*?<\/think(?:ing)?>/gis, "")
+        .replace(/<UpdateVariable>[\s\S]*?<\/UpdateVariable>/gi, "")
+        .replace(/<update>[\s\S]*?<\/update>/gi, "")
+        .replace(/<horae>[\s\S]*?<\/horae>/gi, "")
+        .replace(/<horaeevent>[\s\S]*?<\/horaeevent>/gi, "")
+        .replace(/<StatusPlaceHolderImpl\s*\/?>/gi, "")
+        .replace(/\n?\s*結果\s*[:：]\s*<content>[\s\S]*?<\/content>\s*$/i, "")
+        .trim();
+    }
 
     // 移除漏網的 ˇ想法ˇ 和舊格式 ~(想法)~
     processedContent = processedContent
@@ -1486,10 +1488,6 @@ const renderedContent = computed(() => {
     );
 
     const renderedMarkdown = marked.parse(processedContent) as string;
-    // DEBUG: 檢查 marked 是否吞掉了文字（比較純文字長度）
-    const _plainLen = renderedMarkdown.replace(/<[^>]*>/g, '').length;
-    const _srcLen = processedContent.replace(/<[^>]*>/g, '').length;
-    if (_plainLen < _srcLen * 0.8) console.warn(`[Bubble ${_dbgId}] marked.parse 可能吞字: 原文字數=${_srcLen}, 渲染後純文字=${_plainLen}`, '\n輸入:', processedContent, '\n輸出:', renderedMarkdown);
     return `${renderedMarkdown}${localInlineHtml}`;
   } catch {
     return props.content;
