@@ -4484,6 +4484,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               !parsedMsg.isStickerMsg &&
               !parsedMsg.isVoice &&
               !parsedMsg.isAiImage &&
+              !parsedMsg.isShowPic &&
+              !parsedMsg.isShowVid &&
               !parsedMsg.isRedpacket &&
               !parsedMsg.isLocation &&
               !parsedMsg.isGift &&
@@ -4499,6 +4501,13 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
             // AI 圖片：將描述轉為 <pic> 標籤以觸發拍立得渲染
             if (parsedMsg.isAiImage && parsedMsg.imageDescription) {
               msgContent = `<pic>${parsedMsg.imageDescription}</pic>`;
+            }
+            // 面對面展示圖片/影片
+            if (parsedMsg.isShowPic && parsedMsg.showMediaDescription) {
+              const promptAttr = parsedMsg.showMediaPrompt ? ` prompt="${parsedMsg.showMediaPrompt}"` : "";
+              msgContent = `<show-pic${promptAttr}>${parsedMsg.showMediaDescription}</show-pic>`;
+            } else if (parsedMsg.isShowVid && parsedMsg.showMediaDescription) {
+              msgContent = `<show-vid>${parsedMsg.showMediaDescription}</show-vid>`;
             }
             // 語音：顯示語音條 UI
             if (parsedMsg.isVoice && parsedMsg.voiceContent) {
@@ -4804,6 +4813,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 !parsedMsg.isGift &&
                 !parsedMsg.isAvatarChange &&
                 !parsedMsg.isAiImage &&
+                !parsedMsg.isShowPic &&
+                !parsedMsg.isShowVid &&
                 !parsedMsg.isHtmlBlock &&
                 !parsedMsg.isVoice &&
                 !parsedMsg.isWaimaiPaymentResult &&
@@ -4839,11 +4850,15 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                     ? charRecallContext || ""
                     : parsedMsg.isAiImage && parsedMsg.imageDescription
                       ? `<pic>${parsedMsg.imageDescription}</pic>`
-                      : parsedMsg.isHtmlBlock
-                        ? ""
-                        : parsedMsg.isVoice
-                          ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
-                          : parsedMsg.content,
+                      : parsedMsg.isShowPic && parsedMsg.showMediaDescription
+                        ? `<show-pic${parsedMsg.showMediaPrompt ? ` prompt="${parsedMsg.showMediaPrompt}"` : ""}>${parsedMsg.showMediaDescription}</show-pic>`
+                        : parsedMsg.isShowVid && parsedMsg.showMediaDescription
+                          ? `<show-vid>${parsedMsg.showMediaDescription}</show-vid>`
+                          : parsedMsg.isHtmlBlock
+                            ? ""
+                            : parsedMsg.isVoice
+                              ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
+                              : parsedMsg.content,
                 timestamp: Date.now() + i,
                 turnId: generationTurnId || undefined,
                 thought: parsedMsg.thought,
@@ -5358,7 +5373,9 @@ async function handleStreamingClose() {
             !parsedMsg.content &&
             !parsedMsg.isStickerMsg &&
             !parsedMsg.isVoice &&
-            !parsedMsg.isAiImage
+            !parsedMsg.isAiImage &&
+            !parsedMsg.isShowPic &&
+            !parsedMsg.isShowVid
           )
             continue;
 
@@ -5370,6 +5387,13 @@ async function handleStreamingClose() {
           // AI 圖片：將描述轉為 <pic> 標籤以觸發拍立得渲染
           if (parsedMsg.isAiImage && parsedMsg.imageDescription) {
             windowMsgContent = `<pic>${parsedMsg.imageDescription}</pic>`;
+          }
+          // 面對面展示圖片/影片
+          if (parsedMsg.isShowPic && parsedMsg.showMediaDescription) {
+            const promptAttr = parsedMsg.showMediaPrompt ? ` prompt="${parsedMsg.showMediaPrompt}"` : "";
+            windowMsgContent = `<show-pic${promptAttr}>${parsedMsg.showMediaDescription}</show-pic>`;
+          } else if (parsedMsg.isShowVid && parsedMsg.showMediaDescription) {
+            windowMsgContent = `<show-vid>${parsedMsg.showMediaDescription}</show-vid>`;
           }
           // 語音：顯示語音條 UI
           if (parsedMsg.isVoice && parsedMsg.voiceContent) {
@@ -5525,11 +5549,15 @@ async function handleStreamingClose() {
               content:
                 parsedMsg.isAiImage && parsedMsg.imageDescription
                   ? `<pic>${parsedMsg.imageDescription}</pic>`
-                  : parsedMsg.isHtmlBlock
-                    ? ""
-                    : parsedMsg.isVoice
-                      ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
-                      : parsedMsg.content,
+                  : parsedMsg.isShowPic && parsedMsg.showMediaDescription
+                    ? `<show-pic${parsedMsg.showMediaPrompt ? ` prompt="${parsedMsg.showMediaPrompt}"` : ""}>${parsedMsg.showMediaDescription}</show-pic>`
+                    : parsedMsg.isShowVid && parsedMsg.showMediaDescription
+                      ? `<show-vid>${parsedMsg.showMediaDescription}</show-vid>`
+                      : parsedMsg.isHtmlBlock
+                        ? ""
+                        : parsedMsg.isVoice
+                          ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
+                          : parsedMsg.content,
               timestamp: Date.now() + i,
               turnId: closeTurnId || undefined,
               thought: parsedMsg.thought,
@@ -6803,9 +6831,8 @@ async function handleFoodRecord(data: FoodRecordData): Promise<void> {
 
 // ===== 噗浪發文處理 =====
 
-async function handlePlurkPost(content: string) {
-  console.log("[ChatScreen] handlePlurkPost 被調用，內容長度:", content.length);
-  console.log("[ChatScreen] handlePlurkPost 內容:", content);
+async function handlePlurkPost(rawContent: string) {
+  console.log("[ChatScreen] handlePlurkPost 被調用，內容長度:", rawContent.length);
 
   const char = currentCharacter.value;
   if (!char) {
@@ -6813,7 +6840,6 @@ async function handlePlurkPost(content: string) {
     return;
   }
 
-  // 確保 qzone store 已初始化
   if (!qzoneStore.isLoaded) {
     await qzoneStore.loadPosts();
   }
@@ -6822,21 +6848,46 @@ async function handlePlurkPost(content: string) {
   const authorAvatar = char.avatar || props.characterAvatar;
 
   try {
+    // 解析 <reactions> 標籤
+    const reactionsMatch = rawContent.match(/<reactions>([\s\S]*?)<\/reactions>/i);
+    const emoticons: Record<string, number> = {};
+    if (reactionsMatch) {
+      for (const pair of reactionsMatch[1].trim().split(/[,，]/)) {
+        const [emoji, count] = pair.split(':').map(s => s.trim());
+        const num = parseInt(count);
+        if (emoji && !isNaN(num) && num > 0) emoticons[emoji] = num;
+      }
+    }
+
+    // 解析 <image> 標籤
+    const imageMatch = rawContent.match(/<image>([^|]+)\|[\s\S]*?<\/image>/i);
+    const imageDescription = imageMatch ? imageMatch[1].trim() : undefined;
+
+    // 從 <post> 取內容，移除其他子標籤
+    const postMatch = rawContent.match(/<post>([\s\S]*?)<\/post>/i);
+    let content = postMatch
+      ? postMatch[1].trim()
+      : rawContent.replace(/<image>[\s\S]*?<\/image>/gi, '').replace(/<reactions>[\s\S]*?<\/reactions>/gi, '').trim();
+
     const newPost = await qzoneStore.addPost({
       authorId: char.id,
       username: authorName,
       avatar: authorAvatar,
       content,
+      imageDescription,
       type: "shuoshuo",
       visibility: "public",
       authorType: "ai",
+      emoticons,
+      views: Math.floor(Math.random() * 50) + 10,
+      repostCount: 0,
     });
 
     console.log("[ChatScreen] 噗浪發文成功:", {
       postId: newPost.id,
       author: authorName,
-      contentLength: content.length,
-      content: content.substring(0, 100) + (content.length > 100 ? "..." : ""),
+      emoticons,
+      views: newPost.views,
     });
   } catch (error) {
     console.error("[ChatScreen] 噗浪發文失敗:", error);

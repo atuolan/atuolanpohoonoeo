@@ -24,10 +24,11 @@ export const PLURK_POST_PROMPT_DEFINITIONS: PromptDefinition[] = [
 6. 使用繁體中文
 
 輸出格式：
-[PLURKPOST]發文內容[/PLURKPOST]
-
-如果想配圖，可以加上：
-[IMAGE]圖片描述｜英文提示詞[/IMAGE]`,
+<plurk>
+  <post>發文內容</post>
+  <image>中文描述｜英文提示詞</image>（有配圖時加，否則省略）
+  <reactions>❤️:12,👍:8</reactions>（必填，1-4個表情，數量1-99，👍❤️😂😮😢😠🎉👏🤔😊）
+</plurk>`,
     system_prompt: true,
     marker: false,
     injection_position: INJECTION_RELATIVE,

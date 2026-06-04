@@ -2712,6 +2712,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
   function normalizeImportedPrompt(prompt: PromptDefinition): PromptDefinition {
     return {
       ...prompt,
+      enabled: prompt.enabled ?? true, // 默認啟用（如果缺少此欄位）
       category: prompt.category ?? "custom",
       extension: prompt.extension ?? false,
       isEditable: prompt.isEditable ?? true,
@@ -2817,21 +2818,12 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
         importedPromptsMap.set(prompt.identifier, normalizeImportedPrompt(prompt));
       }
 
+      // 完全覆蓋：先清除所有現有條目，再寫入導入的條目
+      targetPrompts.splice(0, targetPrompts.length);
       for (const [identifier, importedPrompt] of importedPromptsMap) {
         try {
-          const index = targetPrompts.findIndex((p) => p.identifier === identifier);
-          if (index !== -1) {
-            const localPrompt = targetPrompts[index];
-            targetPrompts[index] = {
-              ...importedPrompt,
-              adminOnly: localPrompt.adminOnly,
-              isDeletable: localPrompt.isDeletable,
-            };
-            result.updated++;
-          } else {
-            targetPrompts.push(importedPrompt);
-            result.imported++;
-          }
+          targetPrompts.push(importedPrompt);
+          result.imported++;
         } catch (error) {
           result.errors.push(
             `处理提示词 ${identifier} 时出错: ${error instanceof Error ? error.message : String(error)}`,
@@ -2839,12 +2831,20 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
         }
       }
 
+      // 完全覆蓋順序：如果有導入順序就用導入的，否則根據新的 prompts 重建順序
       const importedOrder = extractImportedOrder(jsonData, moduleKeys);
       if (importedOrder && Array.isArray(importedOrder)) {
         const validOrder = importedOrder.filter((o) =>
           targetPrompts.some((p) => p.identifier === o.identifier),
         );
         targetOrder.splice(0, targetOrder.length, ...validOrder);
+      } else {
+        // 沒有順序數據時，根據新導入的 prompts 重建順序
+        const newOrder: PromptOrderEntry[] = targetPrompts.map((p) => ({
+          identifier: p.identifier,
+          enabled: p.enabled ?? true,
+        }));
+        targetOrder.splice(0, targetOrder.length, ...newOrder);
       }
 
       dedupeOrderInPlace(targetPrompts);

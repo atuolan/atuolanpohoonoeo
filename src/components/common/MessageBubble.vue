@@ -1299,6 +1299,24 @@ const renderedContent = computed(() => {
     // 如果移除標籤後內容為空，返回空字串
     if (!html) return "";
 
+    // 面對面模式：展示圖片/影片（手機展示 UI）
+    const showPicMatch = html.match(/<show-pic(?:\s[^>]*)?\s*>\s*([\s\S]*?)\s*<\/show-pic>/);
+    const showVidMatch = html.match(/<show-vid>\s*([\s\S]*?)\s*<\/show-vid>/);
+    if (showPicMatch || showVidMatch) {
+      const content = (showPicMatch?.[1] || showVidMatch?.[1] || "").trim();
+      const isVid = !!showVidMatch;
+      html = `<div class="show-media-container${isVid ? " show-media-vid" : ""}">
+        <div class="show-media-phone">
+          <div class="show-media-screen">
+            <div class="show-media-icon">${isVid ? "▶" : "🖼"}</div>
+            <div class="show-media-desc">${content.replace(/\n/g, "<br>")}</div>
+          </div>
+          <div class="show-media-label">${isVid ? "📱 展示影片" : "📱 展示圖片"}</div>
+        </div>
+      </div>`;
+      return html;
+    }
+
     // 檢測並美化 XML 格式的媒體描述
     // 支援新格式 <pic> 和舊格式 <圖片描述>，以及帶屬性的 <pic prompt="...">
     const imageDescMatch =
@@ -5072,6 +5090,48 @@ const showTextVoiceTranscript = ref(true);
   // 中文引號「」樣式
   :deep(.chinese-quote) {
     color: var(--chat-md-quote, #8b5a2b);
+  }
+
+  // 面對面展示圖片/影片樣式
+  :deep(.show-media-container) {
+    margin: 6px 0;
+    .show-media-phone {
+      background: #1a1a2e;
+      border-radius: 16px;
+      padding: 16px;
+      width: 220px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+      border: 2px solid #333;
+    }
+    .show-media-screen {
+      background: #0d0d1a;
+      border-radius: 10px;
+      min-height: 120px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      gap: 10px;
+      text-align: center;
+    }
+    .show-media-icon {
+      font-size: 28px;
+    }
+    .show-media-desc {
+      color: rgba(255,255,255,0.85);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .show-media-label {
+      margin-top: 10px;
+      font-size: 12px;
+      color: rgba(255,255,255,0.5);
+      text-align: center;
+    }
+    &.show-media-vid .show-media-screen {
+      background: #0a0a0a;
+    }
   }
 
   // 媒體描述樣式

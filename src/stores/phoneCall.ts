@@ -696,9 +696,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       // 剝離 affinity-update 標籤
       .replace(/<affinity-update\s+[^>]*?\s*\/?>/gi, "")
       // 剝離噗浪發文標籤
-      .replace(/\[PLURKPOST\][\s\S]*?\[\/PLURKPOST\]/gi, "")
-      // 剝離表情反應標籤
-      .replace(/\[REACTIONS\][\s\S]*?\[\/REACTIONS\]/gi, "")
+      .replace(/<plurk>[\s\S]*?<\/plurk>/gi, "")
       .trim();
     // 來電 assistant prefill 會導致 AI 回覆缺少開頭的 [，自動補齊
     if (cleaned.startsWith("{") && !cleaned.startsWith("[")) {

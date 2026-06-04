@@ -2174,11 +2174,10 @@ async function handleBatchImportFileChange(event: Event) {
     const jsonData = JSON.parse(text) as Record<string, unknown>;
 
     const confirmed = confirm(
-      `確定要從「${file.name}」批量導入並覆蓋「${modeLabel}」提示詞嗎？\n\n` +
+      `確定要從「${file.name}」完全覆蓋「${modeLabel}」提示詞嗎？\n\n` +
         `這將會：\n` +
-        `- 更新目前模式中所有已存在的提示詞內容\n` +
-        `- 添加目前模式的新提示詞\n` +
-        `- 若檔案包含目前模式的順序，會同步更新提示詞順序\n` +
+        `- 刪除「${modeLabel}」中所有現有條目\n` +
+        `- 以導入檔案的內容完全取代\n` +
         `- 只會影響「${modeLabel}」，不會覆蓋其他模式\n\n` +
         `建議在導入前先導出目前配置作為備份。`,
     );

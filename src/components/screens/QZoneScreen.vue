@@ -2611,9 +2611,9 @@ function getTotalEmoticons(postId: string): number {
 function renderContentWithMentions(content: string): string {
   if (!content) return "";
 
-  // 移除可能殘留的 [REACTIONS]...[/REACTIONS] 標籤
+  // 移除可能殘留的 <reactions> 標籤
   let rendered = content
-    .replace(/\[REACTIONS\][\s\S]*?\[\/REACTIONS\]/gi, "")
+    .replace(/<reactions>[\s\S]*?<\/reactions>/gi, "")
     .trim();
 
   // 先處理換行符
@@ -2657,21 +2657,14 @@ function renderContentWithMentions(content: string): string {
     return parts[0]?.trim() || "圖片";
   }
 
-  // 處理 [IMAGE]...[/IMAGE] 標籤 - 轉換為拍立得樣式
-  // 格式：[IMAGE]中文描述｜英文提示詞[/IMAGE]
+  // 處理 <image> XML 標籤（新格式）及舊 [IMAGE] 標籤（兼容）
+  rendered = rendered.replace(
+    /<image>([\s\S]*?)<\/image>/gi,
+    (_, imageContent) => renderPolaroidImage(extractImageDisplayText(imageContent)),
+  );
   rendered = rendered.replace(
     /\[IMAGE\]([\s\S]*?)\[\/IMAGE\]/gi,
-    (_, imageContent) => {
-      return renderPolaroidImage(extractImageDisplayText(imageContent));
-    },
-  );
-
-  // 處理未閉合的 [IMAGE]... 片段（常見於模型漏輸出 [/IMAGE]）
-  rendered = rendered.replace(
-    /\[IMAGE\]\s*([\s\S]*?)$/gi,
-    (_, imageContent) => {
-      return renderPolaroidImage(extractImageDisplayText(imageContent));
-    },
+    (_, imageContent) => renderPolaroidImage(extractImageDisplayText(imageContent)),
   );
 
   // 處理 <pic prompt="..."></pic> 標籤 - 與 [IMAGE] 使用相同拍立得樣式
@@ -3409,62 +3402,38 @@ function parseAIPostOutput(rawOutput: string): {
     result.qualifier = qualifierMatch[1].trim();
   }
 
-  // 解析 PLURKPOST
-  const plurkPostMatch = rawOutput.match(
-    /\[PLURKPOST\]([\s\S]*?)\[\/PLURKPOST\]/i,
-  );
-  if (plurkPostMatch) {
-    let postContent = plurkPostMatch[1].trim();
+  // 解析 <plurk> XML 格式
+  const plurkMatch = rawOutput.match(/<plurk>([\s\S]*?)<\/plurk>/i);
+  if (plurkMatch) {
+    const inner = plurkMatch[1];
 
-    // 解析並移除 IMAGE 標籤，保留描述
-    const imageMatches = postContent.matchAll(/\[IMAGE\](.*?)\[\/IMAGE\]/gi);
-    for (const match of imageMatches) {
-      // 可以在這裡處理圖片生成，目前先移除標籤
-      result.images.push(match[1]);
-    }
-    postContent = postContent.replace(/\[IMAGE\].*?\[\/IMAGE\]/gi, "").trim();
+    // 解析 <post>
+    const postMatch = inner.match(/<post>([\s\S]*?)<\/post>/i);
+    result.content = postMatch ? postMatch[1].trim() : "";
 
-    // 相容未閉合的 [IMAGE]... 片段（直到 PLURKPOST 結尾）
-    if (/\[IMAGE\]/i.test(postContent)) {
-      const looseImageMatch = postContent.match(/\[IMAGE\]\s*([\s\S]*)$/i);
-      if (looseImageMatch) {
-        result.images.push(looseImageMatch[1].trim());
-        postContent = postContent.replace(/\[IMAGE\]\s*[\s\S]*$/i, "").trim();
-      }
+    // 解析 <image>
+    for (const m of inner.matchAll(/<image>([\s\S]*?)<\/image>/gi)) {
+      result.images.push(m[1]);
     }
 
-    // 移除可能混入的 [REACTIONS] 標籤
-    postContent = postContent
-      .replace(/\[REACTIONS\].*?\[\/REACTIONS\]/gi, "")
-      .trim();
-
-    result.content = postContent;
-  } else {
-    // 如果沒有標籤，嘗試清理原始輸出
-    let cleanContent = rawOutput
-      .replace(/\[QUALIFIER\].*?\[\/QUALIFIER\]/gi, "")
-      .replace(/\[REACTIONS\].*?\[\/REACTIONS\]/gi, "")
-      .replace(/`/g, "")
-      .replace(/<content>|<\/content>/gi, "")
-      .trim();
-    result.content = cleanContent;
-  }
-
-  // 解析 REACTIONS
-  const reactionsMatch = rawOutput.match(/\[REACTIONS\](.*?)\[\/REACTIONS\]/i);
-  if (reactionsMatch) {
-    const reactionsStr = reactionsMatch[1].trim();
-    // 支援兩種分隔格式: 🤔:3,❤️:2 或 🎉:3|❤️:5|😊:2
-    const reactionPairs = reactionsStr.split(/[,|]/);
-    for (const pair of reactionPairs) {
-      const [emoji, countStr] = pair.split(":");
-      if (emoji && countStr) {
-        const count = parseInt(countStr.trim(), 10);
-        if (!isNaN(count) && count > 0) {
+    // 解析 <reactions>
+    const reactionsMatch = inner.match(/<reactions>([\s\S]*?)<\/reactions>/i);
+    if (reactionsMatch) {
+      for (const pair of reactionsMatch[1].trim().split(/[,|，]/)) {
+        const [emoji, countStr] = pair.split(":");
+        const count = parseInt((countStr || "").trim(), 10);
+        if (emoji && !isNaN(count) && count > 0) {
           result.reactions[emoji.trim()] = count;
         }
       }
     }
+  } else {
+    // 如果沒有標籤，嘗試清理原始輸出
+    result.content = rawOutput
+      .replace(/\[QUALIFIER\].*?\[\/QUALIFIER\]/gi, "")
+      .replace(/`/g, "")
+      .replace(/<content>|<\/content>/gi, "")
+      .trim();
   }
 
   return result;

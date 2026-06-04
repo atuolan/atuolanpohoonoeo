@@ -52,6 +52,11 @@ export interface ParsedMessage {
   isAiImage?: boolean;
   imageDescription?: string;
   imagePrompt?: string;
+  // 面對面展示圖片/影片
+  isShowPic?: boolean;
+  isShowVid?: boolean;
+  showMediaDescription?: string;
+  showMediaPrompt?: string;
   // 語音訊息相關
   isVoice?: boolean;
   voiceContent?: string;
@@ -268,8 +273,7 @@ function splitBySpecialTags(content: string): ParsedMessage[] {
   // 輔助函數：處理文字區塊，檢查是否包含 HTML 區塊需要進一步拆分
   function pushTextChunk(text: string) {
     const clean = text
-      .replace(/\[PLURKPOST\][\s\S]*?\[\/PLURKPOST\]/gi, "")
-      .replace(/\[REACTIONS\][\s\S]*?\[\/REACTIONS\]/gi, "")
+      .replace(/<plurk>[\s\S]*?<\/plurk>/gi, "")
       .trim();
     if (!clean) return;
     // 檢查是否包含完整 HTML 文件需要拆分
@@ -317,10 +321,9 @@ function parseTextOnlyContent(content: string): ParsedMessage {
   // 正規化表情包標籤格式
   result.content = normalizeStickerTags(result.content);
 
-  // 移除 PLURKPOST / REACTIONS 標籤
+  // 移除 <plurk> 標籤
   result.content = result.content
-    .replace(/\[PLURKPOST\][\s\S]*?\[\/PLURKPOST\]/gi, "")
-    .replace(/\[REACTIONS\][\s\S]*?\[\/REACTIONS\]/gi, "")
+    .replace(/<plurk>[\s\S]*?<\/plurk>/gi, "")
     .trim();
 
   // 提取 ˇ想法ˇ
@@ -416,6 +419,31 @@ function parseTextOnlyContent(content: string): ParsedMessage {
       .trim();
   }
 
+  // 檢查面對面展示圖片 <show-pic prompt="...">描述</show-pic>
+  const showPicMatch = result.content.match(
+    /<show-pic(?:\s+prompt=["']([^"']+)["'])?\s*>([\s\S]*?)<\/show-pic>/i,
+  );
+  if (showPicMatch) {
+    result.isShowPic = true;
+    result.showMediaPrompt = showPicMatch[1]?.trim();
+    result.showMediaDescription = showPicMatch[2].trim();
+    result.content = result.content
+      .replace(/<show-pic(?:\s+prompt=["'][^"']+["'])?\s*>[\s\S]*?<\/show-pic>/gi, "")
+      .trim();
+  }
+
+  // 檢查面對面展示影片 <show-vid>描述</show-vid>
+  const showVidMatch = !showPicMatch
+    ? result.content.match(/<show-vid>([\s\S]*?)<\/show-vid>/i)
+    : null;
+  if (showVidMatch) {
+    result.isShowVid = true;
+    result.showMediaDescription = showVidMatch[1].trim();
+    result.content = result.content
+      .replace(/<show-vid>[\s\S]*?<\/show-vid>/gi, "")
+      .trim();
+  }
+
   // 檢查角色撤回（線上模式）
   const textRecallSeenMatch = result.content.match(
     /<recall>([\s\S]*?)<\/recall>/i,
@@ -501,14 +529,9 @@ function parseMessageContentWithoutTimetravel(content: string): ParsedMessage {
   // 正規化表情包標籤格式
   result.content = normalizeStickerTags(result.content);
 
-  // 移除 [PLURKPOST]...[/PLURKPOST] 標籤
+  // 移除 <plurk> 標籤（噗浪發文，不應顯示在聊天氣泡中）
   result.content = result.content
-    .replace(/\[PLURKPOST\][\s\S]*?\[\/PLURKPOST\]/gi, "")
-    .trim();
-
-  // 移除 [REACTIONS]...[/REACTIONS] 標籤（噗浪表情反應，不應顯示在聊天氣泡中）
-  result.content = result.content
-    .replace(/\[REACTIONS\][\s\S]*?\[\/REACTIONS\]/gi, "")
+    .replace(/<plurk>[\s\S]*?<\/plurk>/gi, "")
     .trim();
 
   // 提取 ˇ想法ˇ （新格式，使用注音符號）
@@ -670,6 +693,31 @@ function parseMessageContentWithoutTimetravel(content: string): ParsedMessage {
     // 移除 <pic> 標籤
     result.content = result.content
       .replace(/<pic>[\s\S]*?<\/pic>/gi, "")
+      .trim();
+  }
+
+  // 檢查面對面展示圖片 <show-pic prompt="...">描述</show-pic>
+  const showPicMatch = result.content.match(
+    /<show-pic(?:\s+prompt=["']([^"']+)["'])?\s*>([\s\S]*?)<\/show-pic>/i,
+  );
+  if (showPicMatch) {
+    result.isShowPic = true;
+    result.showMediaPrompt = showPicMatch[1]?.trim();
+    result.showMediaDescription = showPicMatch[2].trim();
+    result.content = result.content
+      .replace(/<show-pic(?:\s+prompt=["'][^"']+["'])?\s*>[\s\S]*?<\/show-pic>/gi, "")
+      .trim();
+  }
+
+  // 檢查面對面展示影片 <show-vid>描述</show-vid>
+  const showVidMatch = !showPicMatch
+    ? result.content.match(/<show-vid>([\s\S]*?)<\/show-vid>/i)
+    : null;
+  if (showVidMatch) {
+    result.isShowVid = true;
+    result.showMediaDescription = showVidMatch[1].trim();
+    result.content = result.content
+      .replace(/<show-vid>[\s\S]*?<\/show-vid>/gi, "")
       .trim();
   }
 
@@ -898,9 +946,10 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     result.thinking = thinkMatch[1].trim();
   }
 
-  // 2. 提取 <content> 內容
+  // 2. 提取 <content> 內容（先移除 think 區塊，避免 think 內的 <content> 字串干擾匹配）
   let outputContent = "";
-  const outputMatch = rawResponse.match(/<content>([\s\S]*?)<\/content>/i);
+  const rawWithoutThink = rawResponse.replace(/<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/gi, "");
+  const outputMatch = rawWithoutThink.match(/<content>([\s\S]*?)<\/content>/i);
   if (outputMatch) {
     outputContent = outputMatch[1].trim();
   } else {
@@ -1008,7 +1057,9 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
             parsed.isCharRecall ||
             parsed.isFaceToFaceRequest ||
             parsed.isOnlineModeRequest ||
-            parsed.isCoupleAvatar
+            parsed.isCoupleAvatar ||
+            parsed.isShowPic ||
+            parsed.isShowVid
           ) {
             result.messages.push(_withSender(parsed));
           }
@@ -1074,9 +1125,7 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
   }
 
   // 5. 檢查噗浪發文
-  const plurkMatch = rawResponse.match(
-    /\[PLURKPOST\]([\s\S]*?)\[\/PLURKPOST\]/i,
-  );
+  const plurkMatch = rawResponse.match(/<plurk>([\s\S]*?)<\/plurk>/i);
   if (plurkMatch) {
     result.hasPlurkPost = true;
     result.plurkContent = plurkMatch[1].trim();
@@ -1253,7 +1302,9 @@ function isNonEmptyMessage(msg: ParsedMessage): boolean {
     msg.isCharRecall ||
     msg.isFaceToFaceRequest ||
     msg.isOnlineModeRequest ||
-    msg.isCoupleAvatar
+    msg.isCoupleAvatar ||
+    msg.isShowPic ||
+    msg.isShowVid
   );
 
   return hasTextContent || hasSpecialContent;
@@ -1288,9 +1339,9 @@ function parseMessageContent(content: string): ParsedMessage {
   // 正規化表情包標籤格式
   result.content = normalizeStickerTags(result.content);
 
-  // 移除 [PLURKPOST]...[/PLURKPOST] 標籤（已在上層處理發文）
+  // 移除 <plurk> 標籤（已在上層處理發文）
   result.content = result.content
-    .replace(/\[PLURKPOST\][\s\S]*?\[\/PLURKPOST\]/gi, "")
+    .replace(/<plurk>[\s\S]*?<\/plurk>/gi, "")
     .trim();
 
   // 移除 <affinity-update> 標籤（已在上層 parseAIResponse 處理）
@@ -1304,10 +1355,6 @@ function parseMessageContent(content: string): ParsedMessage {
     .replace(/<UpdateVariable>[\s\S]*?<\/UpdateVariable>/gi, "")
     .trim();
 
-  // 移除 [REACTIONS]...[/REACTIONS] 標籤（噗浪表情反應，不應顯示在聊天氣泡中）
-  result.content = result.content
-    .replace(/\[REACTIONS\][\s\S]*?\[\/REACTIONS\]/gi, "")
-    .trim();
 
   // 提取 ˇ想法ˇ （新格式，使用注音符號）
   const thoughtMatchNew = result.content.match(/ˇ([^ˇ]+)ˇ/g);
@@ -1494,6 +1541,31 @@ function parseMessageContent(content: string): ParsedMessage {
     // 移除 <pic> 標籤
     result.content = result.content
       .replace(/<pic>[\s\S]*?<\/pic>/gi, "")
+      .trim();
+  }
+
+  // 檢查面對面展示圖片 <show-pic prompt="...">描述</show-pic>
+  const showPicMatch = result.content.match(
+    /<show-pic(?:\s+prompt=["']([^"']+)["'])?\s*>([\s\S]*?)<\/show-pic>/i,
+  );
+  if (showPicMatch) {
+    result.isShowPic = true;
+    result.showMediaPrompt = showPicMatch[1]?.trim();
+    result.showMediaDescription = showPicMatch[2].trim();
+    result.content = result.content
+      .replace(/<show-pic(?:\s+prompt=["'][^"']+["'])?\s*>[\s\S]*?<\/show-pic>/gi, "")
+      .trim();
+  }
+
+  // 檢查面對面展示影片 <show-vid>描述</show-vid>
+  const showVidMatch = !showPicMatch
+    ? result.content.match(/<show-vid>([\s\S]*?)<\/show-vid>/i)
+    : null;
+  if (showVidMatch) {
+    result.isShowVid = true;
+    result.showMediaDescription = showVidMatch[1].trim();
+    result.content = result.content
+      .replace(/<show-vid>[\s\S]*?<\/show-vid>/gi, "")
       .trim();
   }
 
@@ -2432,9 +2504,10 @@ export function parseGroupChatResponse(
     result.thinking = thinkMatch[1].trim();
   }
 
-  // 2. 提取 <content> 內容
+  // 2. 提取 <content> 內容（先移除 think 區塊，避免 think 內的 <content> 字串干擾匹配）
   let outputContent = "";
-  const outputMatch = rawResponse.match(/<content>([\s\S]*?)<\/content>/i);
+  const rawWithoutThink = rawResponse.replace(/<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/gi, "");
+  const outputMatch = rawWithoutThink.match(/<content>([\s\S]*?)<\/content>/i);
   if (outputMatch) {
     outputContent = outputMatch[1].trim();
   } else {
