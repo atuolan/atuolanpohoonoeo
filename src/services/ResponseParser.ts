@@ -946,25 +946,11 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     result.thinking = thinkMatch[1].trim();
   }
 
-  // 2. 提取 <content> 內容（先移除 think 區塊，避免 think 內的 <content> 字串干擾匹配）
-  let outputContent = "";
-  const rawWithoutThink = rawResponse.replace(/<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/gi, "");
-  const outputMatch = rawWithoutThink.match(/<content>([\s\S]*?)<\/content>/i);
-  if (outputMatch) {
-    outputContent = outputMatch[1].trim();
-  } else {
-    // 如果沒有 <content> 標籤，嘗試移除 <think> 後使用剩餘內容
-    // 同時移除可能的 Scene、基拉祈、雪拉比 等思考過程標記
-    outputContent = rawResponse
-      .replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "")
-      .replace(/Scene\s*\d+[^<]*/gi, "") // 移除 Scene 標記
-      .replace(/基拉祈[：:][^<\n]*/gi, "") // 移除基拉祈的思考
-      .replace(/雪拉比[：:][^<\n]*/gi, "") // 移除雪拉比的思考
-      .replace(/💫[^<\n]*/gi, "") // 移除表情符號開頭的思考行
-      .replace(/📱[^<\n]*/gi, "")
-      .replace(/🔴[^<\n]*/gi, "")
-      .trim();
-  }
+  // 2. 消除 </thinking> 之前的所有內容（含 think 區塊本身）
+  let outputContent = rawResponse
+    .replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "")
+    .replace(/<\/?content>/gi, "")
+    .trim();
   result.rawOutput = outputContent;
 
   // 2.5 從 outputContent 中預先移除 char-action 標籤，避免它們出現在訊息氣泡裡
@@ -2504,18 +2490,11 @@ export function parseGroupChatResponse(
     result.thinking = thinkMatch[1].trim();
   }
 
-  // 2. 提取 <content> 內容（先移除 think 區塊，避免 think 內的 <content> 字串干擾匹配）
-  let outputContent = "";
-  const rawWithoutThink = rawResponse.replace(/<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/gi, "");
-  const outputMatch = rawWithoutThink.match(/<content>([\s\S]*?)<\/content>/i);
-  if (outputMatch) {
-    outputContent = outputMatch[1].trim();
-  } else {
-    // 沒有 <content> 標籤，移除 <think> 後使用剩餘內容
-    outputContent = rawResponse
-      .replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "")
-      .trim();
-  }
+  // 2. 消除 </thinking> 之前的所有內容（含 think 區塊本身）
+  let outputContent = rawResponse
+    .replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "")
+    .replace(/<\/?content>/gi, "")
+    .trim();
 
   // 3. 呼叫 fuzzy repair
   const repaired = repairXmlTags(outputContent);
