@@ -1299,6 +1299,17 @@ const renderedContent = computed(() => {
     // 如果移除標籤後內容為空，返回空字串
     if (!html) return "";
 
+    // ★ 前置清理：先剝離 <think>/<thinking>，再提取 <content>
+    // 必須在所有媒體標籤匹配（showPicMatch 等）之前執行，
+    // 否則 showPicMatch 會在含 <content> 包裹的原始文字上匹配並提前 return，丟失前後文字。
+    {
+      html = html
+        .replace(/<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, "")
+        .replace(/^[\s\S]*?<\/think(?:ing)?>/gis, "");
+      const _cm = html.match(/<content>\s*([\s\S]*?)\s*<\/content>/i);
+      if (_cm) html = _cm[1].trim();
+    }
+
     // 面對面模式：展示圖片/影片（手機展示 UI）
     const showPicMatch = html.match(/<show-pic(?:\s[^>]*)?\s*>\s*([\s\S]*?)\s*<\/show-pic>/);
     const showVidMatch = html.match(/<show-vid>\s*([\s\S]*?)\s*<\/show-vid>/);
@@ -1417,13 +1428,15 @@ const renderedContent = computed(() => {
     // 防線：清理 ResponseParser 可能遺漏的標記。
     // 串流中佔位氣泡會先拿到原始模型輸出；此處只做顯示層清理，避免把
     // <thinking>/<UpdateVariable>/<horae> 等控制區塊或「結果:」鏡像內容渲染給用戶。
+    // 先剝離 <think>/<thinking> 區塊，再提取 <content>，避免 thinking 內的 <content> 被誤捕
+    processedContent = processedContent
+      .replace(/<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, "")
+      .replace(/^[\s\S]*?<\/think(?:ing)?>/gis, "");
     const firstContentMatch = processedContent.match(/<content>\s*([\s\S]*?)\s*<\/content>/i);
     if (firstContentMatch) {
       processedContent = firstContentMatch[1].trim();
     } else {
       processedContent = processedContent
-        .replace(/<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, "")
-        .replace(/^[\s\S]*?<\/think(?:ing)?>/gis, "")
         .replace(/<UpdateVariable>[\s\S]*?<\/UpdateVariable>/gi, "")
         .replace(/<update>[\s\S]*?<\/update>/gi, "")
         .replace(/<horae>[\s\S]*?<\/horae>/gi, "")
