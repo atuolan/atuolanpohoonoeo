@@ -2855,7 +2855,12 @@ speed：0.5~2.0，正常時省略
         !isSystemMsg &&
         msg.createdAt
       ) {
-        msgContent = `${this.formatMsgTimeTag(msg.createdAt)} ${msgContent}`;
+        // 面對面模式使用不易被模型模仿的格式，避免模型把 [time:...] 輸出到正文
+        if (this.options.faceToFaceMode) {
+          msgContent = `<!--t:${this.formatMsgTimeTag(msg.createdAt)}-->${msgContent}`;
+        } else {
+          msgContent = `${this.formatMsgTimeTag(msg.createdAt)} ${msgContent}`;
+        }
       }
 
       // 被角色封鎖期間用戶發送的訊息：加上提示讓 AI 知道不該看見

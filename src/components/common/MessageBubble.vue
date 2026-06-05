@@ -1318,11 +1318,46 @@ const renderedContent = computed(() => {
       const isVid = !!showVidMatch;
       html = `<div class="show-media-container${isVid ? " show-media-vid" : ""}">
         <div class="show-media-phone">
-          <div class="show-media-screen">
-            <div class="show-media-icon">${isVid ? "▶" : "🖼"}</div>
-            <div class="show-media-desc">${content.replace(/\n/g, "<br>")}</div>
+          <div class="show-media-top-decor">
+            <div class="dot"></div><div class="dot"></div>
           </div>
-          <div class="show-media-label">${isVid ? "📱 展示影片" : "📱 展示圖片"}</div>
+          <div class="show-media-screen-bezel">
+            <div class="show-media-screen-header">
+              <div class="signal-icon">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12,21L15.6,16.2C14.6,15.45 13.35,15 12,15C10.65,15 9.4,15.45 8.4,16.2L12,21M12,3C7.95,3 4.21,4.34 1.2,6.6L3,9C5.5,7.12 8.62,6 12,6C15.38,6 18.5,7.12 21,9L22.8,6.6C19.79,4.34 16.05,3 12,3M12,9C9.3,9 6.81,9.89 4.8,11.4L6.6,13.8C8.1,12.67 9.97,12 12,12C14.03,12 15.9,12.67 17.4,13.8L19.2,11.4C17.19,9.89 14.7,9 12,9Z"></path></svg>
+              </div>
+              <div class="battery-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect height="10" rx="2" ry="2" stroke-width="2" width="16" x="2" y="7"></rect><line stroke-width="2" x1="22" x2="22" y1="11" y2="13"></line></svg>
+              </div>
+            </div>
+            <div class="show-media-screen">
+              <div class="show-media-icon">${isVid ? "▶" : "🖼"}</div>
+              <div class="show-media-desc">${content.replace(/\n/g, "<br>")}</div>
+            </div>
+            <div class="power-indicator"></div>
+          </div>
+          <div class="show-media-brand">SYLVEON</div>
+          <div class="show-media-controls">
+            <div class="show-media-dpad">
+              <div class="dpad-v"></div>
+              <div class="dpad-h"></div>
+              <div class="dpad-center"></div>
+            </div>
+            <div class="show-media-start-select">
+              <div class="btn-group"><div class="btn-ss"></div><span>Select</span></div>
+              <div class="btn-group"><div class="btn-ss"></div><span>Start</span></div>
+            </div>
+            <div class="show-media-btns">
+              <div class="btn-b">B</div>
+              <div class="btn-a">A</div>
+            </div>
+          </div>
+          <div class="show-media-speaker">
+            <div></div><div></div><div></div>
+          </div>
+          <div class="decor-flower">🌸</div>
+          <div class="decor-star">⭐</div>
+          <div class="decor-heart">💖</div>
         </div>
       </div>`;
       return html;
@@ -1437,6 +1472,7 @@ const renderedContent = computed(() => {
       processedContent = firstContentMatch[1].trim();
     } else {
       processedContent = processedContent
+        .replace(/<\/?content>/gi, "")
         .replace(/<UpdateVariable>[\s\S]*?<\/UpdateVariable>/gi, "")
         .replace(/<update>[\s\S]*?<\/update>/gi, "")
         .replace(/<horae>[\s\S]*?<\/horae>/gi, "")
@@ -1445,6 +1481,8 @@ const renderedContent = computed(() => {
         .replace(/\n?\s*結果\s*[:：]\s*<content>[\s\S]*?<\/content>\s*$/i, "")
         .trim();
     }
+    // 清理模型模仿歷史消息時間格式誤輸出的 [time:...] 標記
+    processedContent = processedContent.replace(/\[time:[^\]]*\]\s*/g, "").trim();
 
     // 移除漏網的 ˇ想法ˇ 和舊格式 ~(想法)~
     processedContent = processedContent
@@ -5105,45 +5143,284 @@ const showTextVoiceTranscript = ref(true);
     color: var(--chat-md-quote, #8b5a2b);
   }
 
-  // 面對面展示圖片/影片樣式
+  // 面對面展示圖片/影片樣式（Sylveon Gameboy 風格）
   :deep(.show-media-container) {
-    margin: 6px 0;
+    margin: 4px 0;
+    display: inline-block;
+    border-radius: 24px;
+    font-family: 'Nunito', sans-serif;
+    width: 240px; /* 縮小整體寬度 */
+
     .show-media-phone {
-      background: #1a1a2e;
-      border-radius: 16px;
-      padding: 16px;
-      width: 220px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
-      border: 2px solid #333;
+      background-color: #ffc0cb;
+      border-radius: 24px;
+      padding: 12px;
+      width: 100%;
+      box-sizing: border-box;
+      border: 3px solid #b4506e;
+      box-shadow: 3px 3px 0px rgba(180, 80, 110, 0.4);
+      position: relative;
     }
+
+    .show-media-top-decor {
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      display: flex;
+      gap: 3px;
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background-color: #b4506e;
+      }
+    }
+
+    .show-media-screen-bezel {
+      margin-top: 16px;
+      background-color: #ffe4e1;
+      border-radius: 12px;
+      border: 3px solid #b4506e;
+      box-shadow: inset 2px 2px 4px rgba(180, 80, 110, 0.3), inset -2px -2px 4px rgba(255, 255, 255, 0.8);
+      padding: 6px;
+      position: relative;
+      margin-bottom: 12px;
+    }
+
+    .show-media-screen-header {
+      display: flex;
+      justify-content: space-between;
+      color: #b4506e;
+      opacity: 0.5;
+      margin-bottom: 3px;
+      padding: 0 3px;
+      svg { width: 10px; height: 10px; }
+    }
+
     .show-media-screen {
-      background: #0d0d1a;
-      border-radius: 10px;
-      min-height: 120px;
+      background-color: #ffffff;
+      border-radius: 6px;
+      border: 2px solid #b4506e;
+      min-height: 90px;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 16px;
-      gap: 10px;
+      padding: 12px;
       text-align: center;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+      position: relative;
+      
+      &::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background-color: rgba(255, 192, 203, 0.2);
+        pointer-events: none;
+      }
     }
+
+    .power-indicator {
+      position: absolute;
+      bottom: 6px;
+      left: 12px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: #ef4444;
+      box-shadow: 0 0 4px rgba(239, 68, 68, 0.8);
+    }
+
     .show-media-icon {
-      font-size: 28px;
+      font-size: 22px;
+      margin-bottom: 6px;
+      z-index: 1;
     }
+
     .show-media-desc {
-      color: rgba(255,255,255,0.85);
-      font-size: 13px;
-      line-height: 1.5;
-    }
-    .show-media-label {
-      margin-top: 10px;
+      color: #5c2d3f;
       font-size: 12px;
-      color: rgba(255,255,255,0.5);
-      text-align: center;
+      line-height: 1.4;
+      z-index: 1;
+      font-weight: bold;
     }
-    &.show-media-vid .show-media-screen {
-      background: #0a0a0a;
+
+    .show-media-brand {
+      text-align: center;
+      color: #b4506e;
+      font-family: 'Fredoka One', cursive, sans-serif;
+      font-size: 14px;
+      letter-spacing: 0.1em;
+      opacity: 0.7;
+      margin-bottom: 8px;
+    }
+
+    .show-media-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 6px;
+      position: relative;
+      height: 60px;
+    }
+
+    .show-media-dpad {
+      position: relative;
+      width: 60px;
+      height: 60px;
+      
+      .dpad-v {
+        position: absolute;
+        top: 0; left: 35%;
+        width: 30%; height: 100%;
+        background: linear-gradient(135deg, #a65d78, #8c4a63);
+        border-radius: 6px;
+        border: 2px solid #5c2d3f;
+        box-shadow: 3px 3px 0px rgba(180, 80, 110, 0.4);
+        z-index: 10;
+      }
+      .dpad-h {
+        position: absolute;
+        top: 35%; left: 0;
+        width: 100%; height: 30%;
+        background: linear-gradient(135deg, #a65d78, #8c4a63);
+        border-radius: 6px;
+        border: 2px solid #5c2d3f;
+        box-shadow: 3px 3px 0px rgba(180, 80, 110, 0.4);
+        z-index: 10;
+      }
+      .dpad-center {
+        position: absolute;
+        top: 35%; left: 35%;
+        width: 30%; height: 30%;
+        background-color: #8c4a63;
+        z-index: 20;
+      }
+    }
+
+    .show-media-start-select {
+      position: absolute;
+      bottom: -8px;
+      left: 50%;
+      transform: translateX(-50%) rotate(-15deg);
+      display: flex;
+      gap: 12px;
+      
+      .btn-group {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .btn-ss {
+        width: 30px;
+        height: 10px;
+        background-color: #a65d78;
+        border-radius: 999px;
+        border: 2px solid #5c2d3f;
+        box-shadow: 3px 3px 0px rgba(180, 80, 110, 0.4);
+      }
+      span {
+        color: #b4506e;
+        font-size: 8px;
+        font-weight: bold;
+        margin-top: 3px;
+        text-transform: uppercase;
+      }
+    }
+
+    .show-media-btns {
+      position: relative;
+      width: 70px;
+      height: 60px;
+      transform: rotate(-15deg);
+      
+      .btn-a, .btn-b {
+        position: absolute;
+        width: 30px;
+        height: 30px;
+        background: linear-gradient(135deg, #c87693, #a65d78);
+        border-radius: 50%;
+        border: 2px solid #5c2d3f;
+        box-shadow: 3px 3px 0px rgba(180, 80, 110, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #5c2d3f;
+        font-family: 'Fredoka One', cursive, sans-serif;
+        font-size: 16px;
+        font-weight: bold;
+      }
+      .btn-b { bottom: 0; left: 0; }
+      .btn-a { top: 0; right: 0; }
+    }
+
+    .show-media-speaker {
+      position: absolute;
+      bottom: 18px;
+      right: 18px;
+      display: flex;
+      gap: 6px;
+      transform: rotate(-15deg);
+      
+      div {
+        width: 6px;
+        height: 30px;
+        background-color: #b4506e;
+        border-radius: 999px;
+        opacity: 0.6;
+        box-shadow: inset 2px 2px 4px rgba(180, 80, 110, 0.3), inset -2px -2px 4px rgba(255, 255, 255, 0.8);
+      }
+    }
+
+    .decor-flower, .decor-star, .decor-heart {
+      position: absolute;
+      pointer-events: none;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+    }
+    .decor-flower { top: 30px; left: -6px; font-size: 18px; }
+    .decor-star { top: 30%; right: -8px; font-size: 22px; transform: rotate(12deg); }
+    .decor-heart { bottom: 25%; left: -3px; font-size: 16px; transform: rotate(-12deg); }
+
+    &.show-media-vid {
+      .show-media-phone {
+        background-color: #b0e0e6; /* Light blue for video */
+        border-color: #4682b4;
+        box-shadow: 3px 3px 0px rgba(70, 130, 180, 0.4);
+      }
+      .show-media-screen-bezel {
+        background-color: #e0ffff;
+        border-color: #4682b4;
+        box-shadow: inset 2px 2px 4px rgba(70, 130, 180, 0.3), inset -2px -2px 4px rgba(255, 255, 255, 0.8);
+      }
+      .show-media-screen {
+        border-color: #4682b4;
+        &::after { background-color: rgba(176, 224, 230, 0.2); }
+      }
+      .show-media-screen-header { color: #4682b4; }
+      .show-media-brand { color: #4682b4; }
+      .show-media-desc { color: #2f4f4f; }
+      .show-media-dpad .dpad-v, .show-media-dpad .dpad-h {
+        background: linear-gradient(135deg, #87ceeb, #5f9ea0);
+        border-color: #2f4f4f;
+        box-shadow: 3px 3px 0px rgba(70, 130, 180, 0.4);
+      }
+      .show-media-dpad .dpad-center { background-color: #5f9ea0; }
+      .show-media-start-select .btn-ss {
+        background-color: #87ceeb;
+        border-color: #2f4f4f;
+        box-shadow: 3px 3px 0px rgba(70, 130, 180, 0.4);
+      }
+      .show-media-start-select span { color: #4682b4; }
+      .show-media-btns .btn-a, .show-media-btns .btn-b {
+        background: linear-gradient(135deg, #add8e6, #87ceeb);
+        border-color: #2f4f4f;
+        box-shadow: 3px 3px 0px rgba(70, 130, 180, 0.4);
+        color: #2f4f4f;
+      }
+      .show-media-speaker div {
+        background-color: #4682b4;
+        box-shadow: inset 2px 2px 4px rgba(70, 130, 180, 0.3), inset -2px -2px 4px rgba(255, 255, 255, 0.8);
+      }
     }
   }
 

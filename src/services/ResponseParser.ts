@@ -950,6 +950,7 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
   let outputContent = rawResponse
     .replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "")
     .replace(/<\/?content>/gi, "")
+    .replace(/\[time:[^\]]*\]\s*/g, "")
     .trim();
   result.rawOutput = outputContent;
 

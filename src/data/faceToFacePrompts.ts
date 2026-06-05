@@ -1223,7 +1223,7 @@ export const FACE_TO_FACE_PROMPT_DEFINITIONS: PromptDefinition[] = [
     description: "",
     category: "custom",
     role: "system",
-    content: "<format_rules>\n【特殊格式】\n- 跳轉魔法：<msg><timetravel>目的地描述</timetravel></msg>\n- 展示圖片：<msg><show-pic prompt=\"english keywords\">拿出手機展示的圖片內容描述</show-pic></msg>\n- 展示影片：<msg><show-vid>拿出手機展示的影片內容描述</show-vid></msg>\n- 噗浪格式：\n  <plurk>\n    <post>發文內容</post>\n    <image>中文描述｜英文提示詞</image>（可選）\n    <reactions>❤️:12,👍:8,😊:5</reactions>（必填，1-4個，數量1-99，👍❤️😂😮😢😠🎉👏🤔😊）\n  </plurk>\n- 來電預約：<schedule-call delay=\"時間\" reason=\"原因\"/>（放在 </content> 之後）\n- 行事曆記錄：<calendar-event type=\"user|period\" date=\"YYYY-MM-DD\" title=\"標題\" description=\"描述\"/>（放在 </content> 之後）\n- 角色位置更新：<char-location location=\"城市名, 地區\"/>（角色搬家、旅行、出差時，放在 </content> 之後）\n</format_rules><environment_and_npc_guide>",
+    content: "<format_rules>\n【特殊格式】\n- 跳轉魔法：<msg><timetravel>目的地描述</timetravel></msg>\n- 展示圖片：<show-pic prompt=\"english keywords\">拿出手機展示的圖片內容描述</show-pic>（直接嵌入 <content> 敘事中，勿包 <msg>）\n- 展示影片：<show-vid>拿出手機展示的影片內容描述</show-vid>（同上，直接嵌入 <content>）\n- 噗浪格式：\n  <plurk>\n    <post>發文內容</post>\n    <image>中文描述｜英文提示詞</image>（可選）\n    <reactions>❤️:12,👍:8,😊:5</reactions>（必填，1-4個，數量1-99，👍❤️😂😮😢😠🎉👏🤔😊）\n  </plurk>\n- 來電預約：<schedule-call delay=\"時間\" reason=\"原因\"/>（放在 </content> 之後）\n- 行事曆記錄：<calendar-event type=\"user|period\" date=\"YYYY-MM-DD\" title=\"標題\" description=\"描述\"/>（放在 </content> 之後）\n- 角色位置更新：<char-location location=\"城市名, 地區\"/>（角色搬家、旅行、出差時，放在 </content> 之後）\n【嚴禁】\n- 禁止在 <content> 內輸出 [time:...] 或任何時間戳記\n- 禁止在 <content> 內使用 <msg>...</msg> 線上聊天分段格式\n- 禁止模仿歷史訊息的 [time:...] 前綴格式輸出\n</format_rules><environment_and_npc_guide>",
     system_prompt: true,
     marker: false,
     injection_position: INJECTION_RELATIVE,
