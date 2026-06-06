@@ -1310,54 +1310,63 @@ const renderedContent = computed(() => {
       if (_cm) html = _cm[1].trim();
     }
 
-    // 面對面模式：展示圖片/影片（手機展示 UI）
+    // 面對面模式：展示圖片/影片（相機動畫 UI）
     const showPicMatch = html.match(/<show-pic(?:\s[^>]*)?\s*>\s*([\s\S]*?)\s*<\/show-pic>/);
     const showVidMatch = html.match(/<show-vid>\s*([\s\S]*?)\s*<\/show-vid>/);
     if (showPicMatch || showVidMatch) {
       const content = (showPicMatch?.[1] || showVidMatch?.[1] || "").trim();
       const isVid = !!showVidMatch;
+      const icon = isVid ? "🎬" : "🖼";
+      const screenBg = "#111";
+      const escapedContent = content.replace(/\n/g, "<br>").replace(/&/g,"&").replace(/</g,"<").replace(/>/g,">").replace(/<br>/g,"<br>");
       html = `<div class="show-media-container${isVid ? " show-media-vid" : ""}">
-        <div class="show-media-phone">
-          <div class="show-media-top-decor">
-            <div class="dot"></div><div class="dot"></div>
-          </div>
-          <div class="show-media-screen-bezel">
-            <div class="show-media-screen-header">
-              <div class="signal-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12,21L15.6,16.2C14.6,15.45 13.35,15 12,15C10.65,15 9.4,15.45 8.4,16.2L12,21M12,3C7.95,3 4.21,4.34 1.2,6.6L3,9C5.5,7.12 8.62,6 12,6C15.38,6 18.5,7.12 21,9L22.8,6.6C19.79,4.34 16.05,3 12,3M12,9C9.3,9 6.81,9.89 4.8,11.4L6.6,13.8C8.1,12.67 9.97,12 12,12C14.03,12 15.9,12.67 17.4,13.8L19.2,11.4C17.19,9.89 14.7,9 12,9Z"></path></svg>
+        <div class="show-media-camera" role="button" aria-label="點擊查看媒體">
+          <svg viewBox="0 0 260 220" xmlns="http://www.w3.org/2000/svg" class="smc-svg">
+            <defs>
+              <clipPath id="smcScreen"><rect x="30" y="68" width="160" height="118" rx="8"/></clipPath>
+            </defs>
+            <!-- 頂部突起 hump -->
+            <rect x="72" y="18" width="88" height="36" rx="14" class="smc-body-main" stroke="#1a1a1a" stroke-width="3.5"/>
+            <!-- 熱靴 -->
+            <rect x="96" y="14" width="40" height="10" rx="4" class="smc-body-dark" stroke="#1a1a1a" stroke-width="2.5"/>
+            <!-- 觀景窗 -->
+            <rect x="88" y="20" width="52" height="26" rx="8" fill="#2a2a2a" stroke="#1a1a1a" stroke-width="3"/>
+            <rect x="94" y="25" width="40" height="16" rx="5" fill="#1a1a2e"/>
+            <!-- 右側轉盤 -->
+            <circle cx="200" cy="34" r="16" class="smc-body-dark" stroke="#1a1a1a" stroke-width="3"/>
+            <circle cx="200" cy="34" r="9" class="smc-body-main"/>
+            <line x1="200" y1="22" x2="200" y2="46" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round"/>
+            <line x1="188" y1="34" x2="212" y2="34" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round"/>
+            <!-- 主機身 -->
+            <rect x="10" y="48" width="240" height="158" rx="22" class="smc-body-main" stroke="#1a1a1a" stroke-width="4"/>
+            <!-- 螢幕邊框（粗） -->
+            <rect x="26" y="64" width="168" height="126" rx="12" fill="#2a2a2a" stroke="#1a1a1a" stroke-width="3.5"/>
+            <!-- 螢幕內容 -->
+            <rect x="30" y="68" width="160" height="118" rx="8" fill="${screenBg}"/>
+            <!-- 螢幕光澤 -->
+            <rect x="32" y="70" width="70" height="14" rx="5" fill="white" opacity="0.3"/>
+            <!-- 右側按鈕群 -->
+            <circle cx="216" cy="110" r="14" class="smc-body-dark" stroke="#1a1a1a" stroke-width="3"/>
+            <circle cx="216" cy="110" r="7" class="smc-body-mid"/>
+            <!-- 小圓鈕 -->
+            <circle cx="216" cy="152" r="9" class="smc-body-dark" stroke="#1a1a1a" stroke-width="2.5"/>
+            <circle cx="216" cy="172" r="9" class="smc-body-dark" stroke="#1a1a1a" stroke-width="2.5"/>
+            <!-- 螢幕圖示與文字（foreignObject） -->
+            <foreignObject x="30" y="68" width="160" height="118">
+              <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:8px;box-sizing:border-box;text-align:center;font-family:'Nunito',sans-serif;">
+                <div style="font-size:10px;color:#eee;line-height:1.3;font-weight:bold;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden;">${escapedContent}</div>
               </div>
-              <div class="battery-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect height="10" rx="2" ry="2" stroke-width="2" width="16" x="2" y="7"></rect><line stroke-width="2" x1="22" x2="22" y1="11" y2="13"></line></svg>
-              </div>
-            </div>
-            <div class="show-media-screen">
-              <div class="show-media-icon">${isVid ? "▶" : "🖼"}</div>
-              <div class="show-media-desc">${content.replace(/\n/g, "<br>")}</div>
-            </div>
-            <div class="power-indicator"></div>
+            </foreignObject>
+            <!-- 螢幕斜線反光 -->
+            <polygon points="30,186 160,68 190,68 30,210" fill="white" opacity="0.25" clip-path="url(#smcScreen)"/>
+          </svg>
+          <div class="smc-hint">點擊拍照</div>
+        </div>
+        <div class="smc-photo" style="display:none">
+          <div class="smc-photo-inner">
+            <div class="smc-photo-desc">${content.replace(/\n/g, "<br>")}</div>
           </div>
-          <div class="show-media-brand">SYLVEON</div>
-          <div class="show-media-controls">
-            <div class="show-media-dpad">
-              <div class="dpad-v"></div>
-              <div class="dpad-h"></div>
-              <div class="dpad-center"></div>
-            </div>
-            <div class="show-media-start-select">
-              <div class="btn-group"><div class="btn-ss"></div><span>Select</span></div>
-              <div class="btn-group"><div class="btn-ss"></div><span>Start</span></div>
-            </div>
-            <div class="show-media-btns">
-              <div class="btn-b">B</div>
-              <div class="btn-a">A</div>
-            </div>
-          </div>
-          <div class="show-media-speaker">
-            <div></div><div></div><div></div>
-          </div>
-          <div class="decor-flower">🌸</div>
-          <div class="decor-star">⭐</div>
-          <div class="decor-heart">💖</div>
+          <div class="smc-photo-label">${isVid ? "VIDEO" : "PHOTO"} · 001</div>
         </div>
       </div>`;
       return html;
@@ -2322,8 +2331,34 @@ function onContextMenu(e: MouseEvent) {
   scrollIntoViewForMenu();
 }
 
-// 委派處理 bubble-text 內部的 TTS 行內按鈕點擊
+// 委派處理 bubble-text 內部的 TTS 行內按鈕點擊 & 相機展示點擊
 function onBubbleTextClick(e: MouseEvent) {
+  // 相機展示：點擊相機彈出照片
+  const camera = (e.target as HTMLElement).closest(".show-media-camera");
+  if (camera) {
+    e.stopPropagation();
+    const container = camera.closest(".show-media-container") as HTMLElement | null;
+    if (!container) return;
+    const photo = container.querySelector(".smc-photo") as HTMLElement | null;
+    if (!photo) return;
+    // 已顯示則不重複動畫
+    if (photo.style.display !== "none") return;
+    // 相機抖動
+    camera.classList.add("smc-shoot");
+    setTimeout(() => camera.classList.remove("smc-shoot"), 300);
+    // 閃光
+    const flash = document.createElement("div");
+    flash.className = "smc-flash";
+    document.body.appendChild(flash);
+    flash.addEventListener("animationend", () => flash.remove(), { once: true });
+    // 彈出照片
+    setTimeout(() => {
+      photo.style.display = "";
+      photo.classList.add("smc-eject");
+    }, 180);
+    return;
+  }
+
   const target = (e.target as HTMLElement).closest(".tts-inline-btn");
   if (!target) return;
   e.stopPropagation();
@@ -5027,6 +5062,15 @@ const showTextVoiceTranscript = ref(true);
     border-radius: 0;
   }
 
+  // show-media 掌機卡片：移除氣泡背景並允許溢出（裝飾 emoji 超出邊框）
+  &:has(.show-media-container) {
+    background: transparent !important;
+    padding: 0;
+    box-shadow: none;
+    border-radius: 0;
+    overflow: visible;
+  }
+
   // 如果包含 HTML 區塊 iframe 或 regex iframe，移除氣泡背景和內邊距，讓內容自由撐開
   &.transparent-bubble {
     background: transparent !important;
@@ -5143,285 +5187,131 @@ const showTextVoiceTranscript = ref(true);
     color: var(--chat-md-quote, #8b5a2b);
   }
 
-  // 面對面展示圖片/影片樣式（Sylveon Gameboy 風格）
+  // 面對面展示圖片/影片樣式（相機動畫風格）
   :deep(.show-media-container) {
     margin: 4px 0;
-    display: inline-block;
-    border-radius: 24px;
-    font-family: 'Nunito', sans-serif;
-    width: 240px; /* 縮小整體寬度 */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    font-family: 'Courier New', monospace;
 
-    .show-media-phone {
-      background-color: #ffc0cb;
-      border-radius: 24px;
-      padding: 12px;
-      width: 100%;
-      box-sizing: border-box;
-      border: 3px solid #b4506e;
-      box-shadow: 3px 3px 0px rgba(180, 80, 110, 0.4);
-      position: relative;
+    .smc-svg {
+      .smc-body-main { fill: color-mix(in srgb, var(--color-primary, #c8c8cc) 30%, white); }
+      .smc-body-dark  { fill: color-mix(in srgb, var(--color-primary, #b0b0b4) 45%, white); }
+      .smc-body-mid   { fill: color-mix(in srgb, var(--color-primary, #d0d0d4) 20%, white); }
     }
 
-    .show-media-top-decor {
-      position: absolute;
-      top: 6px;
-      left: 6px;
-      display: flex;
-      gap: 3px;
-      .dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background-color: #b4506e;
+    .show-media-camera {
+      cursor: pointer;
+      user-select: none;
+      transition: transform 0.08s ease;
+      &:hover { transform: scale(1.03); }
+      svg { width: 220px; height: auto; display: block; }
+      .smc-lens { transition: opacity 0.12s; }
+      &.smc-shoot {
+        animation: smcJiggle 0.28s ease-out;
+        .smc-lens { opacity: 0.1; }
       }
     }
 
-    .show-media-screen-bezel {
-      margin-top: 16px;
-      background-color: #ffe4e1;
-      border-radius: 12px;
-      border: 3px solid #b4506e;
-      box-shadow: inset 2px 2px 4px rgba(180, 80, 110, 0.3), inset -2px -2px 4px rgba(255, 255, 255, 0.8);
-      padding: 6px;
+    .smc-hint {
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: #999;
+      text-transform: uppercase;
+      text-align: center;
+      margin-top: 4px;
+      animation: smcPulse 2.2s ease-in-out infinite;
+    }
+
+    .smc-photo {
+      width: 155px;
+      background: white;
+      border-radius: 3px;
+      padding: 9px 9px 28px 9px;
       position: relative;
-      margin-bottom: 12px;
+      &.smc-eject { animation: smcEject 0.5s cubic-bezier(0.22,1,0.36,1) forwards; }
     }
 
-    .show-media-screen-header {
-      display: flex;
-      justify-content: space-between;
-      color: #b4506e;
-      opacity: 0.5;
-      margin-bottom: 3px;
-      padding: 0 3px;
-      svg { width: 10px; height: 10px; }
-    }
-
-    .show-media-screen {
-      background-color: #ffffff;
-      border-radius: 6px;
-      border: 2px solid #b4506e;
-      min-height: 90px;
+    .smc-photo-inner {
+      width: 100%;
+      min-height: 100px;
+      border-radius: 2px;
+      background: #f0f4ff;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 12px;
-      text-align: center;
-      box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
-      position: relative;
-      
-      &::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background-color: rgba(255, 192, 203, 0.2);
-        pointer-events: none;
-      }
-    }
-
-    .power-indicator {
-      position: absolute;
-      bottom: 6px;
-      left: 12px;
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background-color: #ef4444;
-      box-shadow: 0 0 4px rgba(239, 68, 68, 0.8);
-    }
-
-    .show-media-icon {
-      font-size: 22px;
-      margin-bottom: 6px;
-      z-index: 1;
-    }
-
-    .show-media-desc {
-      color: #5c2d3f;
-      font-size: 12px;
-      line-height: 1.4;
-      z-index: 1;
-      font-weight: bold;
-    }
-
-    .show-media-brand {
-      text-align: center;
-      color: #b4506e;
-      font-family: 'Fredoka One', cursive, sans-serif;
-      font-size: 14px;
-      letter-spacing: 0.1em;
-      opacity: 0.7;
-      margin-bottom: 8px;
-    }
-
-    .show-media-controls {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0 6px;
-      position: relative;
-      height: 60px;
-    }
-
-    .show-media-dpad {
-      position: relative;
-      width: 60px;
-      height: 60px;
-      
-      .dpad-v {
-        position: absolute;
-        top: 0; left: 35%;
-        width: 30%; height: 100%;
-        background: linear-gradient(135deg, #a65d78, #8c4a63);
-        border-radius: 6px;
-        border: 2px solid #5c2d3f;
-        box-shadow: 3px 3px 0px rgba(180, 80, 110, 0.4);
-        z-index: 10;
-      }
-      .dpad-h {
-        position: absolute;
-        top: 35%; left: 0;
-        width: 100%; height: 30%;
-        background: linear-gradient(135deg, #a65d78, #8c4a63);
-        border-radius: 6px;
-        border: 2px solid #5c2d3f;
-        box-shadow: 3px 3px 0px rgba(180, 80, 110, 0.4);
-        z-index: 10;
-      }
-      .dpad-center {
-        position: absolute;
-        top: 35%; left: 35%;
-        width: 30%; height: 30%;
-        background-color: #8c4a63;
-        z-index: 20;
-      }
-    }
-
-    .show-media-start-select {
-      position: absolute;
-      bottom: -8px;
-      left: 50%;
-      transform: translateX(-50%) rotate(-15deg);
-      display: flex;
-      gap: 12px;
-      
-      .btn-group {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-      }
-      .btn-ss {
-        width: 30px;
-        height: 10px;
-        background-color: #a65d78;
-        border-radius: 999px;
-        border: 2px solid #5c2d3f;
-        box-shadow: 3px 3px 0px rgba(180, 80, 110, 0.4);
-      }
-      span {
-        color: #b4506e;
-        font-size: 8px;
-        font-weight: bold;
-        margin-top: 3px;
-        text-transform: uppercase;
-      }
-    }
-
-    .show-media-btns {
-      position: relative;
-      width: 70px;
-      height: 60px;
-      transform: rotate(-15deg);
-      
-      .btn-a, .btn-b {
-        position: absolute;
-        width: 30px;
-        height: 30px;
-        background: linear-gradient(135deg, #c87693, #a65d78);
-        border-radius: 50%;
-        border: 2px solid #5c2d3f;
-        box-shadow: 3px 3px 0px rgba(180, 80, 110, 0.4);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #5c2d3f;
-        font-family: 'Fredoka One', cursive, sans-serif;
-        font-size: 16px;
-        font-weight: bold;
-      }
-      .btn-b { bottom: 0; left: 0; }
-      .btn-a { top: 0; right: 0; }
-    }
-
-    .show-media-speaker {
-      position: absolute;
-      bottom: 18px;
-      right: 18px;
-      display: flex;
+      padding: 10px;
       gap: 6px;
-      transform: rotate(-15deg);
-      
-      div {
-        width: 6px;
-        height: 30px;
-        background-color: #b4506e;
-        border-radius: 999px;
-        opacity: 0.6;
-        box-shadow: inset 2px 2px 4px rgba(180, 80, 110, 0.3), inset -2px -2px 4px rgba(255, 255, 255, 0.8);
-      }
+      text-align: center;
     }
 
-    .decor-flower, .decor-star, .decor-heart {
-      position: absolute;
-      pointer-events: none;
-      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+    .smc-photo-desc {
+      font-size: 11px;
+      color: #333;
+      line-height: 1.4;
+      font-family: 'Nunito', sans-serif;
     }
-    .decor-flower { top: 30px; left: -6px; font-size: 18px; }
-    .decor-star { top: 30%; right: -8px; font-size: 22px; transform: rotate(12deg); }
-    .decor-heart { bottom: 25%; left: -3px; font-size: 16px; transform: rotate(-12deg); }
+
+    .smc-photo-label {
+      position: absolute;
+      bottom: 5px;
+      left: 0; right: 0;
+      text-align: center;
+      font-size: 8px;
+      letter-spacing: 1.5px;
+      color: #bbb;
+      text-transform: uppercase;
+    }
+
+    .smc-screen-content {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+      box-sizing: border-box;
+      text-align: center;
+      font-family: 'Nunito', sans-serif;
+    }
+    .smc-screen-icon {
+      font-size: 24px;
+      margin-bottom: 4px;
+    }
+    .smc-screen-text {
+      font-size: 10px;
+      color: #eee;
+      line-height: 1.3;
+      font-weight: bold;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
 
     &.show-media-vid {
-      .show-media-phone {
-        background-color: #b0e0e6; /* Light blue for video */
-        border-color: #4682b4;
-        box-shadow: 3px 3px 0px rgba(70, 130, 180, 0.4);
-      }
-      .show-media-screen-bezel {
-        background-color: #e0ffff;
-        border-color: #4682b4;
-        box-shadow: inset 2px 2px 4px rgba(70, 130, 180, 0.3), inset -2px -2px 4px rgba(255, 255, 255, 0.8);
-      }
-      .show-media-screen {
-        border-color: #4682b4;
-        &::after { background-color: rgba(176, 224, 230, 0.2); }
-      }
-      .show-media-screen-header { color: #4682b4; }
-      .show-media-brand { color: #4682b4; }
-      .show-media-desc { color: #2f4f4f; }
-      .show-media-dpad .dpad-v, .show-media-dpad .dpad-h {
-        background: linear-gradient(135deg, #87ceeb, #5f9ea0);
-        border-color: #2f4f4f;
-        box-shadow: 3px 3px 0px rgba(70, 130, 180, 0.4);
-      }
-      .show-media-dpad .dpad-center { background-color: #5f9ea0; }
-      .show-media-start-select .btn-ss {
-        background-color: #87ceeb;
-        border-color: #2f4f4f;
-        box-shadow: 3px 3px 0px rgba(70, 130, 180, 0.4);
-      }
-      .show-media-start-select span { color: #4682b4; }
-      .show-media-btns .btn-a, .show-media-btns .btn-b {
-        background: linear-gradient(135deg, #add8e6, #87ceeb);
-        border-color: #2f4f4f;
-        box-shadow: 3px 3px 0px rgba(70, 130, 180, 0.4);
-        color: #2f4f4f;
-      }
-      .show-media-speaker div {
-        background-color: #4682b4;
-        box-shadow: inset 2px 2px 4px rgba(70, 130, 180, 0.3), inset -2px -2px 4px rgba(255, 255, 255, 0.8);
-      }
+      .smc-photo-inner { background: #fff8e8; }
     }
+  }
+
+  @keyframes smcJiggle {
+    0%   { transform: rotate(0deg) scale(1); }
+    25%  { transform: rotate(-2.5deg) scale(0.96); }
+    65%  { transform: rotate(1.5deg) scale(0.99); }
+    100% { transform: rotate(0deg) scale(1); }
+  }
+  @keyframes smcEject {
+    0%   { opacity: 0; transform: translateY(-55px) scale(0.72); }
+    65%  { opacity: 1; transform: translateY(8px) scale(1.02); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes smcPulse {
+    0%,100% { opacity: 0.35; }
+    50%      { opacity: 1; }
   }
 
   // 媒體描述樣式
@@ -8267,5 +8157,19 @@ const showTextVoiceTranscript = ref(true);
 
 :global(.recall-dialog-cancel:hover) {
   color: var(--color-text, #333);
+}
+
+:global(.smc-flash) {
+  position: fixed;
+  inset: 0;
+  background: white;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 9999;
+  animation: smcFlash 0.28s ease-out forwards;
+}
+@keyframes smcFlash {
+  0%   { opacity: 0.6; }
+  100% { opacity: 0; }
 }
 </style>

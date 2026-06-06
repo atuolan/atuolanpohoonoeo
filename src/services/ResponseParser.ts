@@ -964,7 +964,7 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
 
   // 3. 解析 <msg> 標籤
   let msgMatchArray = extractMsgMatches(outputContent);
-  if (msgMatchArray.length === 0 && !outputMatch) {
+  if (msgMatchArray.length === 0) {
     const rawMsgMatches = extractMsgMatches(rawResponse);
     if (rawMsgMatches.length > 0) {
       outputContent = rawResponse
@@ -1029,25 +1029,7 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
           }
         } else {
           const parsed = parseMessageContent(msgContent);
-          if (
-            parsed.content ||
-            parsed.isTimetravel ||
-            parsed.isRedpacket ||
-            parsed.isLocation ||
-            parsed.isTransfer ||
-            parsed.isGift ||
-            parsed.isAvatarChange ||
-            parsed.isVoice ||
-            parsed.isAiImage ||
-            parsed.isWaimaiPaymentResult ||
-            parsed.isWaimaiDelivery ||
-            parsed.isCharRecall ||
-            parsed.isFaceToFaceRequest ||
-            parsed.isOnlineModeRequest ||
-            parsed.isCoupleAvatar ||
-            parsed.isShowPic ||
-            parsed.isShowVid
-          ) {
+          if (isNonEmptyMessage(parsed)) {
             result.messages.push(_withSender(parsed));
           }
         }
@@ -1270,9 +1252,18 @@ function appendTopLevelModeRequestMessages(
  * 檢查解析後的訊息是否有實質內容（非空）
  * 用於過濾掉移除 PLURKPOST 等標籤後變成空白的訊息
  */
+function hasVisibleTextContent(content: string): boolean {
+  return content
+    .replace(/<br\s*\/?\s*>/gi, "")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim().length > 0;
+}
+
 function isNonEmptyMessage(msg: ParsedMessage): boolean {
   const hasTextContent =
-    typeof msg.content === "string" && msg.content.trim().length > 0;
+    typeof msg.content === "string" && hasVisibleTextContent(msg.content);
 
   const hasSpecialContent = !!(
     msg.isHtmlBlock ||

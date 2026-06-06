@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Camera</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+  .scene {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 28px;
+  }
+  .camera-wrap {
+    cursor: pointer;
+    position: relative;
+    user-select: none;
+    filter: drop-shadow(0 10px 28px rgba(0,0,0,0.4));
+    transition: transform 0.08s ease;
+  }
+  .camera-wrap:hover { transform: scale(1.03); }
+  .camera-wrap svg { width: 280px; height: auto; display: block; }
+
+  .flash {
+    position: fixed;
+    inset: 0;
+    background: white;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 999;
+  }
+  .flash.bang { animation: flashAnim 0.32s ease-out forwards; }
+  @keyframes flashAnim {
+    0%   { opacity: 0.85; }
+    100% { opacity: 0; }
+  }
+
+  .camera-wrap.shoot { animation: jiggle 0.28s ease-out; }
+  @keyframes jiggle {
+    0%   { transform: rotate(0deg) scale(1); }
+    25%  { transform: rotate(-2.5deg) scale(0.96); }
+    65%  { transform: rotate(1.5deg) scale(0.99); }
+    100% { transform: rotate(0deg) scale(1); }
+  }
+
+  /* lens closes on shoot */
+  #lens-glass { transition: opacity 0.12s; }
+  .camera-wrap.shoot #lens-glass { opacity: 0.1; }
+
+  .photo-stack {
+    position: relative;
+    width: 170px;
+    min-height: 10px;
+  }
+
+  .photo {
+    position: absolute;
+    width: 155px;
+    height: 165px;
+    background: white;
+    border-radius: 3px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+    padding: 9px 9px 28px 9px;
+    top: 0; left: 0;
+    animation: ejectPhoto 0.5s cubic-bezier(0.22,1,0.36,1) forwards;
+    transform: rotate(var(--tilt));
+  }
+  @keyframes ejectPhoto {
+    0%   { opacity: 0; transform: translateY(-55px) rotate(var(--tilt)) scale(0.72); }
+    65%  { opacity: 1; transform: translateY(8px) rotate(var(--tilt)) scale(1.02); }
+    100% { opacity: 1; transform: translateY(0) rotate(var(--tilt)) scale(1); }
+  }
+
+  .photo-inner {
+    width: 100%;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--photo-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.8rem;
+  }
+  .photo-label {
+    position: absolute;
+    bottom: 5px;
+    left: 0; right: 0;
+    text-align: center;
+    font-size: 8px;
+    letter-spacing: 1.5px;
+    color: #bbb;
+    font-family: 'Courier New', monospace;
+    text-transform: uppercase;
+  }
+
+  .hint {
+    font-size: 10px;
+    letter-spacing: 2.5px;
+    color: #999;
+    text-transform: uppercase;
+    font-family: 'Courier New', monospace;
+    animation: pulse 2.2s ease-in-out infinite;
+    transition: opacity 0.6s;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 0.35; }
+    50%      { opacity: 1; }
+  }
+</style>
+</head>
+<body>
+
+<div class="flash" id="flash"></div>
+
+<div class="scene">
+  <div class="camera-wrap" id="camera" onclick="shoot()">
+    <svg viewBox="0 0 280 195" xmlns="http://www.w3.org/2000/svg">
+      <!-- body shadow -->
+      <ellipse cx="140" cy="186" rx="90" ry="7" fill="rgba(0,0,0,0.1)"/>
+
+      <!-- main body -->
+      <rect x="20" y="75" width="240" height="100" rx="15" fill="#252525"/>
+      <!-- top hump -->
+      <rect x="55" y="46" width="140" height="42" rx="11" fill="#1e1e1e"/>
+
+      <!-- grip (left) -->
+      <rect x="20" y="75" width="38" height="100" rx="15" fill="#1a1a1a"/>
+      <line x1="30" y1="90" x2="30" y2="162" stroke="#2e2e2e" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 5"/>
+      <line x1="37" y1="90" x2="37" y2="162" stroke="#2e2e2e" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 5"/>
+
+      <!-- mode dial -->
+      <ellipse cx="210" cy="56" rx="20" ry="15" fill="#181818"/>
+      <ellipse cx="210" cy="56" rx="14" ry="10" fill="#2c2c2c"/>
+      <circle  cx="210" cy="47" r="2" fill="#555"/>
+      <circle  cx="219" cy="50" r="2" fill="#555"/>
+      <circle  cx="222" cy="59" r="2" fill="#555"/>
+
+      <!-- viewfinder -->
+      <rect x="165" y="51" width="24" height="15" rx="4" fill="#0e0e0e"/>
+      <rect x="167" y="53" width="20" height="11" rx="3" fill="#0a1828"/>
+
+      <!-- shutter button (red) -->
+      <ellipse cx="64" cy="75" rx="10" ry="7" fill="#b81c00"/>
+      <ellipse cx="64" cy="73" rx="8" ry="5" fill="#e62b00"/>
+
+      <!-- yellow AF indicator -->
+      <circle cx="205" cy="100" r="5.5" fill="#d4a000"/>
+      <circle cx="205" cy="100" r="3.5" fill="#ffc300"/>
+
+      <!-- lens barrel outer -->
+      <circle cx="126" cy="125" r="56" fill="#161616"/>
+      <circle cx="126" cy="125" r="51" fill="#2e2e2e"/>
+      <circle cx="126" cy="125" r="46" fill="#1c1c1c"/>
+      <!-- tick marks -->
+      <g stroke="#555" stroke-width="1.2" stroke-linecap="round" opacity="0.7">
+        <line x1="126" y1="72" x2="126" y2="78"/>
+        <line x1="126" y1="172" x2="126" y2="178"/>
+        <line x1="73"  y1="125" x2="79"  y2="125"/>
+        <line x1="173" y1="125" x2="179" y2="125"/>
+        <line x1="89"  y1="88"  x2="93"  y2="92"/>
+        <line x1="159" y1="158" x2="163" y2="162"/>
+        <line x1="89"  y1="162" x2="93"  y2="158"/>
+        <line x1="159" y1="92"  x2="163" y2="88"/>
+      </g>
+      <!-- lens inner ring -->
+      <circle cx="126" cy="125" r="40" fill="#383838"/>
+      <circle cx="126" cy="125" r="36" fill="#111"/>
+      <!-- lens glass -->
+      <circle id="lens-glass" cx="126" cy="125" r="32" fill="url(#lensGrad)"/>
+      <!-- lens shine -->
+      <ellipse cx="114" cy="113" rx="11" ry="8" fill="white" opacity="0.15" transform="rotate(-20 114 113)"/>
+      <ellipse cx="135" cy="134" rx="5"  ry="3"  fill="white" opacity="0.07" transform="rotate(-20 135 134)"/>
+
+      <!-- body top highlight -->
+      <rect x="57" y="77" width="183" height="4" rx="2" fill="white" opacity="0.04"/>
+
+      <defs>
+        <radialGradient id="lensGrad" cx="38%" cy="36%" r="65%">
+          <stop offset="0%"   stop-color="#7ad4f5" stop-opacity="0.9"/>
+          <stop offset="45%"  stop-color="#1e5a8c" stop-opacity="0.8"/>
+          <stop offset="100%" stop-color="#071525" stop-opacity="1"/>
+        </radialGradient>
+      </defs>
+    </svg>
+  </div>
+
+  <div class="photo-stack" id="photoStack"></div>
+  <div class="hint" id="hint">點擊相機拍照</div>
+</div>
+
+<script>
+  const subjects = [
+    { emoji: '🌸', bg: '#fde8f0', label: 'BLOOM' },
+    { emoji: '🌊', bg: '#d4eef8', label: 'OCEAN' },
+    { emoji: '🌙', bg: '#12122e', label: 'NIGHT' },
+    { emoji: '🦋', bg: '#eef5d5', label: 'GARDEN' },
+    { emoji: '🌅', bg: '#fdebd0', label: 'GOLDEN HOUR' },
+    { emoji: '🍄', bg: '#f0e6d3', label: 'FOREST' },
+    { emoji: '⭐', bg: '#e0daf5', label: 'COSMOS' },
+    { emoji: '🐠', bg: '#cdf0e8', label: 'REEF' },
+    { emoji: '🌿', bg: '#d6f0df', label: 'BOTANICA' },
+    { emoji: '🔮', bg: '#ddd6f5', label: 'MYSTIC' },
+    { emoji: '🌈', bg: '#fff5d6', label: 'SPECTRUM' },
+    { emoji: '🦊', bg: '#fde5cc', label: 'WILD' },
+  ];
+
+  let count = 0;
+  let shooting = false;
+
+  function shoot() {
+    if (shooting) return;
+    shooting = true;
+
+    const cam   = document.getElementById('camera');
+    const flash = document.getElementById('flash');
+    const stack = document.getElementById('photoStack');
+
+    // camera jiggle
+    cam.classList.add('shoot');
+    setTimeout(() => cam.classList.remove('shoot'), 300);
+
+    // white flash
+    flash.classList.add('bang');
+    flash.addEventListener('animationend', () => flash.classList.remove('bang'), { once: true });
+
+    // eject photo
+    setTimeout(() => {
+      const s = subjects[count % subjects.length];
+      count++;
+
+      // nudge existing photos back slightly
+      Array.from(stack.children).forEach((el, i) => {
+        const base = parseFloat(el.dataset.tilt || 0);
+        el.style.transform = `translateY(${(stack.children.length - i) * 5}px) rotate(${base}deg)`;
+        el.style.zIndex = i;
+      });
+
+      const photo = document.createElement('div');
+      photo.className = 'photo';
+      const tilt = (Math.random() * 18 - 9).toFixed(1);
+      photo.style.setProperty('--tilt', tilt + 'deg');
+      photo.dataset.tilt = tilt;
+      photo.style.zIndex = count + 10;
+      photo.innerHTML = `
+        <div class="photo-inner" style="--photo-bg:${s.bg}">${s.emoji}</div>
+        <div class="photo-label">${s.label} · ${String(count).padStart(3,'0')}</div>
+      `;
+      stack.appendChild(photo);
+
+      // expand stack height so photos don't clip
+      stack.style.height = (170 + stack.children.length * 5) + 'px';
+
+      if (count === 1) document.getElementById('hint').style.opacity = '0';
+
+      shooting = false;
+    }, 200);
+  }
+</script>
+</body>
+</html>

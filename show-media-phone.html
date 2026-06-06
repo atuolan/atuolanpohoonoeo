@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Show Media Phone</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+  }
+  .scene {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+  }
+
+  .phone-wrap {
+    cursor: pointer;
+    position: relative;
+    user-select: none;
+    filter: drop-shadow(0 14px 36px rgba(0,0,0,0.5));
+    transition: transform 0.08s ease;
+  }
+  .phone-wrap:hover { transform: scale(1.02); }
+  .phone-wrap svg { width: 200px; height: auto; display: block; }
+
+  .phone-wrap.tap { animation: phoneTap 0.3s ease-out; }
+  @keyframes phoneTap {
+    0%   { transform: scale(1); }
+    30%  { transform: scale(0.94) translateY(4px); }
+    70%  { transform: scale(1.03) translateY(-2px); }
+    100% { transform: scale(1); }
+  }
+
+  /* screen glow pulse when idle */
+  #phone-screen { transition: opacity 0.15s; }
+  .phone-wrap.tap #phone-screen { opacity: 0.3; }
+
+  /* flash overlay */
+  .flash {
+    position: fixed;
+    inset: 0;
+    background: white;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 999;
+  }
+  .flash.bang { animation: flashAnim 0.28s ease-out forwards; }
+  @keyframes flashAnim {
+    0%   { opacity: 0.6; }
+    100% { opacity: 0; }
+  }
+
+  /* photo stack */
+  .photo-stack {
+    position: relative;
+    width: 170px;
+    min-height: 10px;
+  }
+  .photo {
+    position: absolute;
+    width: 155px;
+    height: 165px;
+    background: white;
+    border-radius: 3px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.35);
+    padding: 9px 9px 28px 9px;
+    top: 0; left: 0;
+    animation: ejectPhoto 0.5s cubic-bezier(0.22,1,0.36,1) forwards;
+    transform: rotate(var(--tilt));
+  }
+  @keyframes ejectPhoto {
+    0%   { opacity: 0; transform: translateY(-60px) rotate(var(--tilt)) scale(0.7); }
+    65%  { opacity: 1; transform: translateY(8px)  rotate(var(--tilt)) scale(1.02); }
+    100% { opacity: 1; transform: translateY(0)    rotate(var(--tilt)) scale(1); }
+  }
+  .photo-inner {
+    width: 100%; height: 100%;
+    border-radius: 2px;
+    background: var(--photo-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.8rem;
+  }
+  .photo-label {
+    position: absolute;
+    bottom: 5px; left: 0; right: 0;
+    text-align: center;
+    font-size: 8px;
+    letter-spacing: 1.5px;
+    color: #bbb;
+    text-transform: uppercase;
+  }
+
+  .hint {
+    font-size: 10px;
+    letter-spacing: 2.5px;
+    color: #999;
+    text-transform: uppercase;
+    animation: pulse 2.2s ease-in-out infinite;
+    transition: opacity 0.6s;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 0.35; }
+    50%      { opacity: 1; }
+  }
+</style>
+</head>
+<body>
+
+<div class="flash" id="flash"></div>
+
+<div class="scene">
+  <div class="phone-wrap" id="phone" onclick="tap()">
+    <svg viewBox="0 0 200 380" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="screenGrad" cx="40%" cy="35%" r="70%">
+          <stop offset="0%"   stop-color="#a78bfa" stop-opacity="0.9"/>
+          <stop offset="45%"  stop-color="#6d28d9" stop-opacity="0.8"/>
+          <stop offset="100%" stop-color="#0d0d1a"  stop-opacity="1"/>
+        </radialGradient>
+        <linearGradient id="bodyGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%"   stop-color="#1a1a1a"/>
+          <stop offset="50%"  stop-color="#2c2c2c"/>
+          <stop offset="100%" stop-color="#1a1a1a"/>
+        </linearGradient>
+        <clipPath id="screenClip">
+          <rect x="18" y="48" width="164" height="288" rx="8"/>
+        </clipPath>
+      </defs>
+
+      <!-- body shadow -->
+      <ellipse cx="100" cy="372" rx="62" ry="6" fill="rgba(0,0,0,0.15)"/>
+
+      <!-- phone body -->
+      <rect x="8" y="8" width="184" height="364" rx="28" fill="url(#bodyGrad)"/>
+      <!-- side sheen -->
+      <rect x="8"   y="8" width="4"  height="364" rx="2" fill="white" opacity="0.04"/>
+      <rect x="188" y="8" width="4"  height="364" rx="2" fill="white" opacity="0.02"/>
+
+      <!-- volume buttons -->
+      <rect x="4" y="90"  width="4" height="32" rx="2" fill="#222"/>
+      <rect x="4" y="132" width="4" height="32" rx="2" fill="#222"/>
+      <!-- power button -->
+      <rect x="192" y="100" width="4" height="48" rx="2" fill="#222"/>
+
+      <!-- screen bezel -->
+      <rect x="14" y="44" width="172" height="296" rx="12" fill="#0a0a0a"/>
+      <!-- screen -->
+      <rect id="phone-screen" x="18" y="48" width="164" height="288" rx="8" fill="url(#screenGrad)"/>
+
+      <!-- screen shine -->
+      <ellipse cx="78" cy="100" rx="38" ry="24" fill="white" opacity="0.07"
+               transform="rotate(-18 78 100)" clip-path="url(#screenClip)"/>
+
+      <!-- notch / dynamic island -->
+      <rect x="76" y="52" width="48" height="14" rx="7" fill="#0a0a0a"/>
+
+      <!-- home indicator -->
+      <rect x="76" y="326" width="48" height="5" rx="2.5" fill="white" opacity="0.25"/>
+
+      <!-- tiny camera dot in notch -->
+      <circle cx="108" cy="59" r="3.5" fill="#1a1a1a"/>
+      <circle cx="108" cy="59" r="2"   fill="#162030"/>
+      <circle cx="107" cy="58" r="0.8" fill="white" opacity="0.4"/>
+
+      <!-- bottom connector -->
+      <rect x="86" y="356" width="28" height="6" rx="3" fill="#111"/>
+      <rect x="92" y="357" width="4"  height="4" rx="1" fill="#1e1e1e"/>
+      <rect x="104" y="357" width="4" height="4" rx="1" fill="#1e1e1e"/>
+    </svg>
+  </div>
+
+  <div class="photo-stack" id="photoStack"></div>
+  <div class="hint" id="hint">點擊手機展示媒體</div>
+</div>
+
+<script>
+  const subjects = [
+    { emoji: '🌸', bg: '#fde8f0', label: 'BLOOM' },
+    { emoji: '🌊', bg: '#d4eef8', label: 'OCEAN' },
+    { emoji: '🌙', bg: '#12122e', label: 'NIGHT' },
+    { emoji: '🦋', bg: '#eef5d5', label: 'GARDEN' },
+    { emoji: '🌅', bg: '#fdebd0', label: 'GOLDEN HOUR' },
+    { emoji: '🍄', bg: '#f0e6d3', label: 'FOREST' },
+    { emoji: '⭐', bg: '#e0daf5', label: 'COSMOS' },
+    { emoji: '🐠', bg: '#cdf0e8', label: 'REEF' },
+    { emoji: '🌿', bg: '#d6f0df', label: 'BOTANICA' },
+    { emoji: '🔮', bg: '#ddd6f5', label: 'MYSTIC' },
+    { emoji: '🌈', bg: '#fff5d6', label: 'SPECTRUM' },
+    { emoji: '🦊', bg: '#fde5cc', label: 'WILD' },
+  ];
+
+  let count = 0, tapping = false;
+
+  function tap() {
+    if (tapping) return;
+    tapping = true;
+
+    const phone = document.getElementById('phone');
+    const flash = document.getElementById('flash');
+    const stack = document.getElementById('photoStack');
+
+    phone.classList.add('tap');
+    setTimeout(() => phone.classList.remove('tap'), 320);
+
+    flash.classList.add('bang');
+    flash.addEventListener('animationend', () => flash.classList.remove('bang'), { once: true });
+
+    setTimeout(() => {
+      const s = subjects[count % subjects.length];
+      count++;
+
+      Array.from(stack.children).forEach((el, i) => {
+        const base = parseFloat(el.dataset.tilt || 0);
+        el.style.transform = `translateY(${(stack.children.length - i) * 5}px) rotate(${base}deg)`;
+        el.style.zIndex = i;
+      });
+
+      const photo = document.createElement('div');
+      photo.className = 'photo';
+      const tilt = (Math.random() * 18 - 9).toFixed(1);
+      photo.style.setProperty('--tilt', tilt + 'deg');
+      photo.dataset.tilt = tilt;
+      photo.style.zIndex = count + 10;
+      photo.innerHTML = `
+        <div class="photo-inner" style="--photo-bg:${s.bg}">${s.emoji}</div>
+        <div class="photo-label">${s.label} · ${String(count).padStart(3,'0')}</div>
+      `;
+      stack.appendChild(photo);
+      stack.style.height = (170 + stack.children.length * 5) + 'px';
+
+      if (count === 1) document.getElementById('hint').style.opacity = '0';
+      tapping = false;
+    }, 180);
+  }
+</script>
+</body>
+</html>
