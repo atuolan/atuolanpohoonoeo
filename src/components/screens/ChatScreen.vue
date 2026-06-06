@@ -5610,6 +5610,17 @@ async function handleStreamingClose() {
               charRecallType: parsedMsg.charRecallType,
               charRecallContent: parsedMsg.charRecallContent,
               charRecallHints: parsedMsg.charRecallHints,
+              // 模式切換請求相關
+              isFaceToFaceRequest: parsedMsg.isFaceToFaceRequest,
+              faceToFaceRequestReason: parsedMsg.faceToFaceRequestReason,
+              faceToFaceRequestStatus: parsedMsg.isFaceToFaceRequest
+                ? "pending"
+                : undefined,
+              isOnlineModeRequest: parsedMsg.isOnlineModeRequest,
+              onlineModeRequestReason: parsedMsg.onlineModeRequestReason,
+              onlineModeRequestStatus: parsedMsg.isOnlineModeRequest
+                ? "pending"
+                : undefined,
             };
 
             // 外賣付款結果/送達（窗口關閉時解析）

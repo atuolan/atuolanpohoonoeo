@@ -946,8 +946,9 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     result.thinking = thinkMatch[1].trim();
   }
 
-  // 2. 消除 </thinking> 之前的所有內容（含 think 區塊本身）
-  let outputContent = rawResponse
+  // 2. 正常聊天訊息只解析 <content>...</content> 內部；content 外的控制標籤會在後續步驟另行處理。
+  const contentMatch = rawResponse.match(/<content>([\s\S]*?)<\/content>/i);
+  let outputContent = (contentMatch ? contentMatch[1] : rawResponse)
     .replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "")
     .replace(/<\/?content>/gi, "")
     .replace(/\[time:[^\]]*\]\s*/g, "")
@@ -1210,39 +1211,52 @@ function appendTopLevelModeRequestMessages(
   messages: ParsedMessage[],
   rawResponse: string,
 ): void {
-  const existingFaceToFaceCount = messages.filter(
-    (msg) => msg.isFaceToFaceRequest,
-  ).length;
-  const existingOnlineModeCount = messages.filter(
-    (msg) => msg.isOnlineModeRequest,
-  ).length;
+  const topLevelResponse = rawResponse
+    .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "")
+    .replace(/<content>[\s\S]*?<\/content>/gi, "");
 
   const requestRegex =
     /<face-to-face-request\s+([^>]*?)\s*\/?>(?:<\/face-to-face-request>)?|<online-mode-request\s+([^>]*?)\s*\/?>(?:<\/online-mode-request>)?/gi;
 
-  let faceToFaceSeen = 0;
-  let onlineModeSeen = 0;
+  const normalizeReason = (reason?: string): string => (reason || "").trim();
+  const hasFaceToFaceRequest = (reason?: string): boolean => {
+    const normalizedReason = normalizeReason(reason);
+    return messages.some(
+      (msg) =>
+        msg.isFaceToFaceRequest &&
+        normalizeReason(msg.faceToFaceRequestReason) === normalizedReason,
+    );
+  };
+  const hasOnlineModeRequest = (reason?: string): boolean => {
+    const normalizedReason = normalizeReason(reason);
+    return messages.some(
+      (msg) =>
+        msg.isOnlineModeRequest &&
+        normalizeReason(msg.onlineModeRequestReason) === normalizedReason,
+    );
+  };
+
   let match: RegExpExecArray | null;
 
-  while ((match = requestRegex.exec(rawResponse)) !== null) {
+  while ((match = requestRegex.exec(topLevelResponse)) !== null) {
     if (match[1] !== undefined) {
-      faceToFaceSeen++;
-      if (faceToFaceSeen <= existingFaceToFaceCount) continue;
+      const reason = extractAttr(match[1], "reason") || undefined;
+      if (hasFaceToFaceRequest(reason)) continue;
       messages.push({
         content: "",
         isFaceToFaceRequest: true,
-        faceToFaceRequestReason: extractAttr(match[1], "reason") || undefined,
+        faceToFaceRequestReason: reason,
       });
       continue;
     }
 
     if (match[2] !== undefined) {
-      onlineModeSeen++;
-      if (onlineModeSeen <= existingOnlineModeCount) continue;
+      const reason = extractAttr(match[2], "reason") || undefined;
+      if (hasOnlineModeRequest(reason)) continue;
       messages.push({
         content: "",
         isOnlineModeRequest: true,
-        onlineModeRequestReason: extractAttr(match[2], "reason") || undefined,
+        onlineModeRequestReason: reason,
       });
     }
   }

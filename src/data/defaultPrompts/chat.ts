@@ -1151,7 +1151,7 @@ export const DEFAULT_PROMPT_DEFINITIONS: PromptDefinition[] = [
 export const DEFAULT_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "custom_1780407927079", enabled: true },
   { identifier: "custom_1775981528552", enabled: false },
-  { identifier: "protectionSequence", enabled: true },
+  { identifier: "protectionSequence", enabled: false },
   { identifier: "sovereigntyNegotiation", enabled: true },
   { identifier: "coreUnderstanding", enabled: true },
   { identifier: "narrativeMission", enabled: true },
