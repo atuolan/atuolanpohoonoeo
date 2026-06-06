@@ -4806,6 +4806,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               // 跳過空內容的訊息（例如只有 PLURKPOST 標籤被移除後的空訊息）
               if (
                 !parsedMsg.content &&
+                !parsedMsg.thought &&
                 !parsedMsg.isTimetravel &&
                 !parsedMsg.isRedpacket &&
                 !parsedMsg.isLocation &&

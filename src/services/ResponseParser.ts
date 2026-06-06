@@ -1266,6 +1266,7 @@ function isNonEmptyMessage(msg: ParsedMessage): boolean {
     typeof msg.content === "string" && hasVisibleTextContent(msg.content);
 
   const hasSpecialContent = !!(
+    msg.thought ||
     msg.isHtmlBlock ||
     msg.isTimetravel ||
     msg.isRedpacket ||
@@ -1343,8 +1344,11 @@ function parseMessageContent(content: string): ParsedMessage {
     if (innerMatch) {
       result.thought = innerMatch[1];
     }
-    // 從內容中移除想法
-    result.content = result.content.replace(/\s*ˇ[^ˇ]+ˇ/g, "").trim();
+    // 從內容中移除想法，並清除殘留的 <br>
+    result.content = result.content
+      .replace(/\s*ˇ[^ˇ]+ˇ/g, "")
+      .replace(/^\s*(<br\s*\/?>\s*)+|(<br\s*\/?>\s*)+$/gi, "")
+      .trim();
   } else {
     // 兼容舊格式 ~(想法)~
     const thoughtMatchOld = result.content.match(/~\(([^)]+)\)~/g);

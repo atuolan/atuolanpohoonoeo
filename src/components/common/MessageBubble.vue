@@ -1842,23 +1842,32 @@ function scrollIntoViewForMenu() {
 // 想法展開狀態
 const showThought = ref(false);
 
+// 純想法訊息：content 為空但有 thought（AI 輸出 <msg>ˇ...ˇ</msg>）
+const isPureThought = computed(() =>
+  !!props.thought && !props.content?.trim()
+);
+
+function normalizeThoughtText(value: string): string {
+  return value.replace(/<br\s*\/?>/gi, "\n").trim();
+}
+
 // 有效的想法內容（props.thought 優先，否則從 content 中提取漏網的 ˇ想法ˇ 或 ~(想法)~）
 const effectiveThought = computed(() => {
-  if (props.thought) return props.thought;
+  if (props.thought) return normalizeThoughtText(props.thought);
   if (!props.content || typeof props.content !== "string") return "";
   // 新格式 ˇ想法ˇ（注音符號）
   const newMatches = props.content.match(/ˇ([^ˇ]+)ˇ/g);
   if (newMatches && newMatches.length > 0) {
     const last = newMatches[newMatches.length - 1];
     const inner = last.match(/ˇ([^ˇ]+)ˇ/);
-    return inner ? inner[1] : "";
+    return inner ? normalizeThoughtText(inner[1]) : "";
   }
   // 舊格式 ~(想法)~
   const oldMatches = props.content.match(/~\(([\s\S]+?)\)~/g);
   if (oldMatches && oldMatches.length > 0) {
     const last = oldMatches[oldMatches.length - 1];
     const inner = last.match(/~\(([\s\S]+?)\)~/);
-    return inner ? inner[1] : "";
+    return inner ? normalizeThoughtText(inner[1]) : "";
   }
   return "";
 });
@@ -3531,9 +3540,33 @@ const showTextVoiceTranscript = ref(true);
           </div>
         </div>
 
+        <!-- 純想法卡片（content 為空，僅有 thought） -->
+        <div v-if="isPureThought" class="pure-thought-wrapper">
+          <div
+            class="pure-thought-card"
+            :class="{ 'pure-thought-expanded': showThought }"
+            @click.stop="toggleThought"
+          >
+            <span class="pure-thought-icon">💭</span>
+          </div>
+          <Transition name="thought-pop">
+            <div
+              v-if="showThought"
+              class="thought-bubble pure-thought-expanded-bubble"
+              @click.stop="toggleThought"
+            >
+              <div class="thought-bubble-content">
+                <span class="thought-icon">💭</span>
+                <span class="thought-text-content">{{ effectiveThought }}</span>
+              </div>
+              <div class="thought-bubble-tail"></div>
+            </div>
+          </Transition>
+        </div>
+
         <!-- 氣泡（位置消息與模式邀請卡片不顯示氣泡） -->
         <div
-          v-if="shouldRenderMessageBubble && !isLocation && !isWeatherShare && !isFriendRequest && !isFaceToFaceRequest && !isOnlineModeRequest"
+          v-if="!isPureThought && shouldRenderMessageBubble && !isLocation && !isWeatherShare && !isFriendRequest && !isFaceToFaceRequest && !isOnlineModeRequest"
           v-show="!hideSplitSourceBubble"
           class="bubble"
           :class="{
@@ -4132,7 +4165,7 @@ const showTextVoiceTranscript = ref(true);
         <!-- 想法氣泡（展開時顯示，在主氣泡外面） -->
         <Transition name="thought-pop">
           <div
-            v-if="effectiveThought && showThought"
+            v-if="!isPureThought && effectiveThought && showThought"
             class="thought-bubble"
             @click.stop="toggleThought"
           >
@@ -5694,16 +5727,52 @@ const showTextVoiceTranscript = ref(true);
   }
 }
 
+// 純想法卡片（無正文，僅有想法）
+.pure-thought-wrapper {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: max-content;
+  max-width: 100%;
+}
+
+.pure-thought-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  padding: 6px 12px;
+  background: var(--thought-bg, linear-gradient(135deg, rgba(173, 216, 230, 0.85), rgba(176, 224, 230, 0.85)));
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--thought-text, #4a6572);
+  font-style: italic;
+  box-shadow: 0 0 8px var(--thought-glow-1, rgba(173, 216, 230, 0.6));
+  transition: box-shadow 0.2s;
+
+  &:hover {
+    box-shadow: 0 0 14px var(--thought-glow-1, rgba(173, 216, 230, 0.9));
+  }
+
+  .pure-thought-icon { font-style: normal; font-size: 15px; }
+}
+
 // 想法氣泡
 .thought-bubble {
   position: relative;
+  width: 0;
+  min-width: 0;
   margin-top: 8px;
   cursor: pointer;
+  overflow: visible;
 
   .thought-bubble-content {
     display: flex;
     align-items: flex-start;
     gap: 6px;
+    width: max-content;
+    max-width: min(360px, calc(100vw - 96px));
     padding: 10px 14px;
     background: var(--thought-bg, linear-gradient(135deg, rgba(173, 216, 230, 0.9), rgba(176, 224, 230, 0.9)));
     border-radius: 16px;
@@ -5711,7 +5780,7 @@ const showTextVoiceTranscript = ref(true);
     font-size: 13px;
     color: var(--thought-text, #4a6572);
     font-style: italic;
-    max-width: 100%;
+    box-sizing: border-box;
   }
 
   .thought-icon {
@@ -5721,6 +5790,9 @@ const showTextVoiceTranscript = ref(true);
 
   .thought-text-content {
     line-height: 1.4;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    white-space: pre-line;
   }
 
   .thought-bubble-tail {

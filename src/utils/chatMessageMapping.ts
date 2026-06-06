@@ -215,6 +215,7 @@ export function sanitizeStreamingContentForStorage(content: string): string {
           if (msg.isAiImage && msg.imageDescription) return `<pic>${msg.imageDescription}</pic>`;
           if (msg.isVoice) return `[語音訊息] ${msg.voiceContent || ""}`;
           if (msg.isHtmlBlock) return "";
+          if (!msg.content && msg.thought) return `ˇ${msg.thought}ˇ`;
           return msg.content || "";
         })
         .filter((text) => text.trim())
