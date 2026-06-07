@@ -4,7 +4,7 @@
  */
 import { defineStore } from "pinia";
 import { db, DB_STORES } from "@/db/database";
-import type { Chat } from "@/types/chat";
+import type { Chat, ChatLocalPrompt } from "@/types/chat";
 
 const LS_GLOBAL_KEY = "aguaphone_global_vars";
 const CHAT_VARIABLES_SAVE_DELAY_MS = 500;
@@ -21,9 +21,37 @@ function toStringRecord(value: unknown): Record<string, string> {
   );
 }
 
+function toBooleanRecord(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(([, val]) => typeof val === "boolean"),
+  ) as Record<string, boolean>;
+}
+
+function toChatPrompts(value: unknown): ChatLocalPrompt[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is ChatLocalPrompt => {
+    if (!item || typeof item !== "object") return false;
+    const prompt = item as Partial<ChatLocalPrompt>;
+    return (
+      typeof prompt.id === "string" &&
+      typeof prompt.name === "string" &&
+      typeof prompt.role === "string" &&
+      typeof prompt.content === "string" &&
+      typeof prompt.injection_position === "number" &&
+      typeof prompt.injection_depth === "number" &&
+      typeof prompt.injection_order === "number" &&
+      typeof prompt.enabled === "boolean"
+    );
+  });
+}
+
 export const useChatVariablesStore = defineStore("chatVariables", {
   state: () => ({
     localVars: {} as Record<string, string>,
+    promptToggles: {} as Record<string, boolean>,
+    chatPrompts: [] as ChatLocalPrompt[],
     globalVars: {} as Record<string, string>,
     _currentChatId: "",
     _localRevision: 0,
@@ -51,7 +79,12 @@ export const useChatVariablesStore = defineStore("chatVariables", {
         ? toStringRecord(idbVars)
         : this._loadLegacyLocalVars(chat.id);
 
-      this._setCurrentChatVars(chat.id, nextVars);
+      this._setCurrentChatState(
+        chat.id,
+        nextVars,
+        toBooleanRecord(chat.chatVariables?.promptToggles),
+        toChatPrompts(chat.chatVariables?.chatPrompts),
+      );
       this._loadGlobal();
 
       if (!idbVars && Object.keys(nextVars).length > 0) {
@@ -108,6 +141,72 @@ export const useChatVariablesStore = defineStore("chatVariables", {
       }
     },
 
+    // ── 聊天專屬提示詞開關 ────────────────────────────────────
+    getPromptToggle(identifier: string, defaultEnabled: boolean): boolean {
+      if (Object.prototype.hasOwnProperty.call(this.promptToggles, identifier)) {
+        return this.promptToggles[identifier];
+      }
+      return defaultEnabled;
+    },
+
+    setPromptToggle(identifier: string, enabled: boolean, defaultEnabled: boolean): void {
+      const next = { ...this.promptToggles };
+      if (enabled === defaultEnabled) {
+        delete next[identifier];
+      } else {
+        next[identifier] = enabled;
+      }
+      this.promptToggles = next;
+      this._localRevision += 1;
+      this._scheduleSaveLocalToIdb();
+    },
+
+    prunePromptToggles(validIds: string[]): void {
+      const valid = new Set(validIds);
+      const next = Object.fromEntries(
+        Object.entries(this.promptToggles).filter(([key]) => valid.has(key)),
+      ) as Record<string, boolean>;
+      if (Object.keys(next).length === Object.keys(this.promptToggles).length) return;
+      this.promptToggles = next;
+      this._localRevision += 1;
+      this._scheduleSaveLocalToIdb();
+    },
+
+    // ── 聊天專屬提示詞 ────────────────────────────────────────
+    addChatPrompt(prompt: Omit<ChatLocalPrompt, "id" | "createdAt" | "updatedAt"> & { id?: string }): ChatLocalPrompt {
+      const now = Date.now();
+      const created: ChatLocalPrompt = {
+        ...prompt,
+        id: prompt.id || `chat__${now}_${Math.random().toString(36).slice(2, 10)}`,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.chatPrompts = [...this.chatPrompts, created];
+      this._localRevision += 1;
+      this._scheduleSaveLocalToIdb();
+      return created;
+    },
+
+    updateChatPrompt(id: string, patch: Partial<Omit<ChatLocalPrompt, "id" | "createdAt">>): void {
+      const now = Date.now();
+      this.chatPrompts = this.chatPrompts.map((prompt) =>
+        prompt.id === id ? { ...prompt, ...patch, updatedAt: now } : prompt,
+      );
+      this._localRevision += 1;
+      this._scheduleSaveLocalToIdb();
+    },
+
+    deleteChatPrompt(id: string): void {
+      const before = this.chatPrompts.length;
+      this.chatPrompts = this.chatPrompts.filter((prompt) => prompt.id !== id);
+      if (this.chatPrompts.length === before) return;
+      const nextToggles = { ...this.promptToggles };
+      delete nextToggles[id];
+      this.promptToggles = nextToggles;
+      this._localRevision += 1;
+      this._scheduleSaveLocalToIdb();
+    },
+
     // ── 全局變量 ──────────────────────────────────────────────
     getGlobal(name: string): string {
       return String(this.globalVars[name] ?? "");
@@ -155,6 +254,15 @@ export const useChatVariablesStore = defineStore("chatVariables", {
     },
 
     _setCurrentChatVars(chatId: string, vars: Record<string, string>): void {
+      this._setCurrentChatState(chatId, vars, {}, []);
+    },
+
+    _setCurrentChatState(
+      chatId: string,
+      vars: Record<string, string>,
+      promptToggles: Record<string, boolean>,
+      chatPrompts: ChatLocalPrompt[],
+    ): void {
       if (this._saveLocalTimer) {
         clearTimeout(this._saveLocalTimer);
         this._saveLocalTimer = undefined;
@@ -162,6 +270,8 @@ export const useChatVariablesStore = defineStore("chatVariables", {
       this._currentChatId = chatId;
       this._localRevision += 1;
       this.localVars = vars;
+      this.promptToggles = promptToggles;
+      this.chatPrompts = chatPrompts;
     },
 
     _saveLocal(): void {
@@ -186,8 +296,12 @@ export const useChatVariablesStore = defineStore("chatVariables", {
         const idbVars = chat?.chatVariables?.localVars;
         if (idbVars && typeof idbVars === "object") {
           const nextVars = toStringRecord(idbVars);
+          const nextToggles = toBooleanRecord(chat?.chatVariables?.promptToggles);
+          const nextPrompts = toChatPrompts(chat?.chatVariables?.chatPrompts);
           if (this._localRevision === loadRevision) {
             this.localVars = nextVars;
+            this.promptToggles = nextToggles;
+            this.chatPrompts = nextPrompts;
             try {
               localStorage.setItem(localKey(chatId), JSON.stringify(nextVars));
             } catch {
@@ -210,13 +324,20 @@ export const useChatVariablesStore = defineStore("chatVariables", {
       if (this._saveLocalTimer) clearTimeout(this._saveLocalTimer);
 
       const chatId = this._currentChatId;
-      const snapshot = { ...this.localVars };
+      const varsSnapshot = { ...this.localVars };
+      const toggleSnapshot = { ...this.promptToggles };
+      const promptsSnapshot = this.chatPrompts.map((prompt) => ({ ...prompt }));
       this._saveLocalTimer = setTimeout(() => {
-        void this._saveLocalToIdb(chatId, snapshot);
+        void this._saveLocalToIdb(chatId, varsSnapshot, toggleSnapshot, promptsSnapshot);
       }, CHAT_VARIABLES_SAVE_DELAY_MS);
     },
 
-    async _saveLocalToIdb(chatId: string, snapshot: Record<string, string>): Promise<void> {
+    async _saveLocalToIdb(
+      chatId: string,
+      snapshot: Record<string, string>,
+      promptToggles: Record<string, boolean> = {},
+      chatPrompts: ChatLocalPrompt[] = [],
+    ): Promise<void> {
       try {
         const chat = await db.get<Chat>(DB_STORES.CHATS, chatId);
         if (!chat) return;
@@ -224,6 +345,8 @@ export const useChatVariablesStore = defineStore("chatVariables", {
         chat.chatVariables = {
           version: 1,
           localVars: snapshot,
+          promptToggles: Object.keys(promptToggles).length > 0 ? promptToggles : undefined,
+          chatPrompts: chatPrompts.length > 0 ? chatPrompts : undefined,
           updatedAt: Date.now(),
         };
 

@@ -32,7 +32,7 @@ import type {
   CharacterWorldSettings,
   StoredCharacter,
 } from "@/types/character";
-import type { ChatMessage, ChatSettings } from "@/types/chat";
+import type { ChatLocalPrompt, ChatMessage, ChatSettings } from "@/types/chat";
 import type { AuthorsNoteMetadata, PromptBuildResult } from "@/types/prompt";
 import { DEFAULT_PROMPTS } from "@/types/prompt";
 import type {
@@ -127,6 +127,10 @@ export interface PromptBuilderOptions {
   promptManagerConfig?: PromptManagerConfig;
   /** 提示詞順序（可選，優先於 promptManagerConfig） */
   promptOrder?: PromptOrderEntry[];
+  /** 聊天專屬提示詞開關覆蓋（稀疏：只包含與默認不同的狀態） */
+  chatPromptToggles?: Record<string, boolean>;
+  /** 聊天專屬提示詞條目 */
+  chatLocalPrompts?: ChatLocalPrompt[];
   /** 對話歷史總結 */
   summaries?: Array<{
     id: string;
@@ -784,15 +788,15 @@ export class PromptBuilder {
         }
       }
 
-      return baseOrder;
+      return this.applyChatPromptOverrides(baseOrder);
     }
 
     // 群聊模式：使用群聊專屬的提示詞順序
     if (this.options.groupChatMode) {
       if (this.options.promptManagerConfig?.groupChatPromptOrder) {
-        return this.options.promptManagerConfig.groupChatPromptOrder;
+        return this.applyChatPromptOverrides(this.options.promptManagerConfig.groupChatPromptOrder);
       }
-      return [...DEFAULT_GROUP_CHAT_PROMPT_ORDER];
+      return this.applyChatPromptOverrides([...DEFAULT_GROUP_CHAT_PROMPT_ORDER]);
     }
 
     // 面對面模式：使用面對面專屬的提示詞順序
@@ -883,7 +887,7 @@ export class PromptBuilder {
       };
 
       // 替換全局模式提示詞為面對面模式提示詞
-      return baseOrder.map((entry) => {
+      const mappedOrder = baseOrder.map((entry) => {
         if (globalToF2FMap[entry.identifier]) {
           return {
             ...entry,
@@ -892,11 +896,12 @@ export class PromptBuilder {
         }
         return entry;
       });
+      return this.applyChatPromptOverrides(mappedOrder);
     }
 
     // 優先使用直接傳入的順序
     if (this.options.promptOrder) {
-      return this.options.promptOrder;
+      return this.applyChatPromptOverrides(this.options.promptOrder);
     }
     // 其次使用 PromptManagerConfig
     if (this.options.promptManagerConfig) {
@@ -904,12 +909,30 @@ export class PromptBuilder {
       const charConfig =
         this.options.promptManagerConfig.characterConfigs[charId];
       if (charConfig && charConfig.promptOrder.length > 0) {
-        return charConfig.promptOrder;
+        return this.applyChatPromptOverrides(charConfig.promptOrder);
       }
-      return this.options.promptManagerConfig.globalPromptOrder;
+      return this.applyChatPromptOverrides(this.options.promptManagerConfig.globalPromptOrder);
     }
     // 默認順序
-    return DEFAULT_PROMPT_ORDER;
+    return this.applyChatPromptOverrides(DEFAULT_PROMPT_ORDER);
+  }
+
+  private applyChatPromptOverrides(order: PromptOrderEntry[]): PromptOrderEntry[] {
+    const toggles = this.options.chatPromptToggles ?? {};
+    const overridden = order.map((entry) =>
+      Object.prototype.hasOwnProperty.call(toggles, entry.identifier)
+        ? { ...entry, enabled: toggles[entry.identifier] }
+        : { ...entry },
+    );
+
+    const existingIds = new Set(overridden.map((entry) => entry.identifier));
+    for (const prompt of this.options.chatLocalPrompts ?? []) {
+      if (existingIds.has(prompt.id)) continue;
+      overridden.push({ identifier: prompt.id, enabled: prompt.enabled });
+      existingIds.add(prompt.id);
+    }
+
+    return overridden;
   }
 
   /**
@@ -919,6 +942,30 @@ export class PromptBuilder {
   private getPromptDefinition(
     identifier: string,
   ): PromptDefinition | undefined {
+    const chatPrompt = this.options.chatLocalPrompts?.find(
+      (prompt) => prompt.id === identifier,
+    );
+    if (chatPrompt) {
+      return {
+        identifier: chatPrompt.id,
+        name: chatPrompt.name,
+        description: "聊天專屬提示詞",
+        category: "custom",
+        role: chatPrompt.role,
+        content: chatPrompt.content,
+        system_prompt: false,
+        marker: false,
+        injection_position: chatPrompt.injection_position,
+        injection_depth: chatPrompt.injection_depth,
+        injection_order: chatPrompt.injection_order,
+        forbid_overrides: true,
+        extension: false,
+        injection_trigger: ["normal"],
+        isEditable: true,
+        isDeletable: true,
+      };
+    }
+
     // 電話模式優先從電話提示詞定義中查找（電話模式沒有用戶自定義配置）
     if (this.options.phoneCallMode) {
       const phonePrompt = PHONE_CALL_PROMPT_DEFINITIONS.find(

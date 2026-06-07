@@ -625,6 +625,8 @@ export class ProactiveMessageService {
         userSecrets: currentPersona?.secrets,
         powerDynamic: currentPersona?.powerDynamic,
         promptManagerConfig: promptManagerStore.config,
+        chatPromptToggles: groupChat.chatVariables?.promptToggles,
+        chatLocalPrompts: groupChat.chatVariables?.chatPrompts,
         enableRealTimeAwareness: groupChat.enableRealTimeAwareness !== false,
         groupChatMode: true,
         groupMembers,
@@ -1146,6 +1148,8 @@ export class ProactiveMessageService {
         importantEvents: eventsToSend,
         // 使用用戶自訂的提示詞管理器配置（順序、啟用狀態、角色獨立配置）
         promptManagerConfig: promptManagerStore.config,
+        chatPromptToggles: chat.chatVariables?.promptToggles,
+        chatLocalPrompts: chat.chatVariables?.chatPrompts,
         // 從聊天記錄載入感知現實時間設定（默認開啟）
         enableRealTimeAwareness: chat.enableRealTimeAwareness !== false,
         ongoingCallContext,

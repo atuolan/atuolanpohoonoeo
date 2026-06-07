@@ -289,7 +289,7 @@ function placementLabel(script: RegexScript): string {
       </svg>
       <span
         >全域腳本對所有角色有效。角色卡內嵌的腳本在角色編輯頁管理。支援導入酒館
-        regex JSON 格式。</span
+        regex JSON 格式。內置腳本預設啟用，也可以在下方單獨停用。</span
       >
     </div>
 
@@ -300,6 +300,7 @@ function placementLabel(script: RegexScript): string {
         v-for="script in store.builtinScripts"
         :key="script.id"
         class="script-item builtin"
+        :class="{ disabled: script.disabled }"
       >
         <div class="script-main">
           <div class="script-name">
@@ -312,6 +313,25 @@ function placementLabel(script: RegexScript): string {
             <span v-if="script.promptOnly" class="meta-tag">僅提示詞</span>
           </div>
           <div class="script-regex">{{ script.findRegex }}</div>
+        </div>
+        <div class="script-actions">
+          <button
+            class="toggle-btn"
+            :class="{ active: !script.disabled }"
+            @click.stop="store.toggleBuiltinScript(script.id)"
+            :title="script.disabled ? '啟用內置腳本' : '停用內置腳本'"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path
+                v-if="!script.disabled"
+                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"
+              />
+              <path
+                v-else
+                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"
+              />
+            </svg>
+          </button>
         </div>
       </div>
     </div>
@@ -803,7 +823,7 @@ function placementLabel(script: RegexScript): string {
   transition: opacity 0.2s;
 }
 .script-item.builtin {
-  opacity: 0.75;
+  opacity: 0.9;
   border: 1px dashed var(--color-border, #ddd);
 }
 .script-item.builtin .script-main {
@@ -811,6 +831,9 @@ function placementLabel(script: RegexScript): string {
 }
 .script-item.disabled {
   opacity: 0.5;
+}
+.script-item.builtin.disabled {
+  opacity: 0.45;
 }
 
 .builtin-badge {

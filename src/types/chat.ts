@@ -5,6 +5,7 @@
 
 import type { BlockState } from "@/types/block";
 import type { AuthorsNoteMetadata } from "./prompt";
+import type { PromptInjectionPosition, PromptRoleType } from "./promptManager";
 import type {
   WaimaiDestinationSnapshot,
   WaimaiEtaSnapshot,
@@ -706,9 +707,36 @@ export const createDefaultSummarySettings = (): SummarySettings => ({
 });
 
 // ===== 聊天會話 =====
+export interface ChatLocalPrompt {
+  /** 聊天專屬提示詞 ID（例如 chat__uuid） */
+  id: string;
+  /** 顯示名稱 */
+  name: string;
+  /** 角色（system/user/assistant） */
+  role: PromptRoleType;
+  /** 提示詞內容 */
+  content: string;
+  /** 注入位置類型 */
+  injection_position: PromptInjectionPosition;
+  /** 注入深度（僅 ABSOLUTE 位置有效） */
+  injection_depth: number;
+  /** 注入順序（同深度時的排序） */
+  injection_order: number;
+  /** 是否啟用 */
+  enabled: boolean;
+  /** 創建時間 */
+  createdAt: number;
+  /** 更新時間 */
+  updatedAt: number;
+}
+
 export interface ChatVariablesState {
   version: 1;
   localVars: Record<string, string>;
+  /** 聊天專屬提示詞開關覆蓋（稀疏存儲：只保存與默認值不同的狀態） */
+  promptToggles?: Record<string, boolean>;
+  /** 聊天專屬提示詞條目 */
+  chatPrompts?: ChatLocalPrompt[];
   updatedAt: number;
 }
 

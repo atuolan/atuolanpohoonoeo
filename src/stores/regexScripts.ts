@@ -10,7 +10,7 @@ import type { RegexScript } from "@/types/character";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
-// ===== 內置正則腳本（不可被使用者刪除，始終生效） =====
+// ===== 內置正則腳本（不可被使用者刪除，預設啟用，可由使用者停用） =====
 const BUILTIN_SCRIPTS: RegexScript[] = [
   {
     id: "__builtin_delete_jiqi",
@@ -60,17 +60,24 @@ const BUILTIN_SCRIPTS: RegexScript[] = [
 ];
 
 const STORAGE_KEY = "global-regex-scripts";
+const BUILTIN_DISABLED_STORAGE_KEY = "builtin-regex-disabled-ids";
 
 export const useRegexScriptsStore = defineStore("regexScripts", () => {
   const scripts = ref<RegexScript[]>([]);
+  const builtinDisabledIds = ref<Set<string>>(new Set());
   const initialized = ref(false);
 
-  /** 內置腳本（唯讀） */
-  const builtinScripts = BUILTIN_SCRIPTS;
+  /** 內置腳本（預設啟用，依使用者設定覆寫 disabled） */
+  const builtinScripts = computed<RegexScript[]>(() =>
+    BUILTIN_SCRIPTS.map((script) => ({
+      ...script,
+      disabled: builtinDisabledIds.value.has(script.id),
+    })),
+  );
 
   /** 合併內置 + 使用者腳本（消費者應使用此列表） */
   const allScripts = computed<RegexScript[]>(() => [
-    ...BUILTIN_SCRIPTS.filter((b) => !b.disabled),
+    ...builtinScripts.value.filter((b) => !b.disabled),
     ...scripts.value,
   ]);
 
@@ -79,7 +86,16 @@ export const useRegexScriptsStore = defineStore("regexScripts", () => {
     try {
       await db.init();
       const saved = await db.get<RegexScript[]>("settings", STORAGE_KEY);
+      const savedBuiltinDisabledIds = await db.get<string[]>(
+        "settings",
+        BUILTIN_DISABLED_STORAGE_KEY,
+      );
       scripts.value = (saved ?? []).map(migrateRegexScript);
+      builtinDisabledIds.value = new Set(
+        (savedBuiltinDisabledIds ?? []).filter((id) =>
+          BUILTIN_SCRIPTS.some((script) => script.id === id),
+        ),
+      );
       initialized.value = true;
       console.log(
         "[RegexScriptsStore] 初始化完成，腳本數:",
@@ -98,6 +114,23 @@ export const useRegexScriptsStore = defineStore("regexScripts", () => {
       console.log("[RegexScriptsStore] 已持久化，腳本數:", plain.length);
     } catch (e) {
       console.error("[RegexScriptsStore] 儲存失敗:", e);
+    }
+  }
+
+  async function persistBuiltinSettings(): Promise<void> {
+    try {
+      if (!db.isOpen()) await db.init();
+      await db.put(
+        "settings",
+        Array.from(builtinDisabledIds.value),
+        BUILTIN_DISABLED_STORAGE_KEY,
+      );
+      console.log(
+        "[RegexScriptsStore] 已持久化內置腳本停用設定，停用數:",
+        builtinDisabledIds.value.size,
+      );
+    } catch (e) {
+      console.error("[RegexScriptsStore] 儲存內置腳本設定失敗:", e);
     }
   }
 
@@ -134,6 +167,18 @@ export const useRegexScriptsStore = defineStore("regexScripts", () => {
     await updateScript(id, { disabled: !s.disabled });
   }
 
+  async function toggleBuiltinScript(id: string): Promise<void> {
+    if (!BUILTIN_SCRIPTS.some((script) => script.id === id)) return;
+    const next = new Set(builtinDisabledIds.value);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    builtinDisabledIds.value = next;
+    await persistBuiltinSettings();
+  }
+
   /** 導入 ST regex JSON（單一物件或陣列），回傳導入數量 */
   async function importFromJson(json: string): Promise<number> {
     const raw = JSON.parse(json);
@@ -166,6 +211,7 @@ export const useRegexScriptsStore = defineStore("regexScripts", () => {
     updateScript,
     deleteScript,
     toggleScript,
+    toggleBuiltinScript,
     importFromJson,
     exportToJson,
   };

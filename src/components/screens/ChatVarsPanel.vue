@@ -1,16 +1,36 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useChatVariablesStore } from "@/stores/chatVariables";
 import { usePromptManagerStore } from "@/stores/promptManager";
-import type { PromptDefinition } from "@/types/promptManager";
+import type { ChatLocalPrompt } from "@/types/chat";
+import type { PromptDefinition, PromptOrderEntry, PromptRoleType } from "@/types/promptManager";
+import { CATEGORY_INFO, PromptInjectionPosition } from "@/types/promptManager";
 
-type VarMode = "online" | "f2f" | "gc";
+type PromptMode = "online" | "f2f" | "gc";
 
-interface ChatVarEntry {
+interface PromptToggleEntry {
+  identifier: string;
   name: string;
-  defaultValue: string;
-  scopedKey: string;
-  promptNames: string[];
+  description?: string;
+  category: PromptDefinition["category"];
+  role: PromptRoleType;
+  defaultEnabled: boolean;
+  prompt: PromptDefinition;
+  /** 是否為聊天專屬條目 */
+  isChatLocal?: boolean;
+  /** 聊天專屬條目的原始資料 */
+  chatLocalPrompt?: ChatLocalPrompt;
+}
+
+interface ChatPromptDraft {
+  id?: string;
+  name: string;
+  role: PromptRoleType;
+  content: string;
+  injection_position: PromptInjectionPosition;
+  injection_depth: number;
+  injection_order: number;
+  enabled: boolean;
 }
 
 const props = defineProps<{
@@ -26,17 +46,16 @@ const emit = defineEmits<{
 const promptManagerStore = usePromptManagerStore();
 const chatVariablesStore = useChatVariablesStore();
 
-const modeTabs: Array<{ key: VarMode; label: string; desc: string }> = [
-  { key: "online", label: "線上模式", desc: "一般聊天提示詞中的變量" },
-  { key: "f2f", label: "面對面模式", desc: "面對面模式提示詞中的變量" },
-  { key: "gc", label: "群組模式", desc: "群組聊天提示詞中的變量" },
+const modeTabs: Array<{ key: PromptMode; label: string; desc: string }> = [
+  { key: "online", label: "線上模式", desc: "一般聊天提示詞開關" },
+  { key: "f2f", label: "面對面模式", desc: "面對面模式提示詞開關" },
+  { key: "gc", label: "群組模式", desc: "群組聊天提示詞開關" },
 ];
 
-const activeMode = ref<VarMode>(getDefaultMode());
-const draftValues = ref<Record<string, string>>({});
-const savedKeys = ref<Record<string, boolean>>({});
-const expandedKeys = ref<Record<string, boolean>>({});
-const editorRefs = ref<Record<string, HTMLTextAreaElement | null>>({});
+const activeMode = ref<PromptMode>(getDefaultMode());
+const editingPromptId = ref<string | null>(null);
+const showPromptEditor = ref(false);
+const draftPrompt = ref<ChatPromptDraft>(createEmptyDraft());
 
 const visibleTabs = computed(() => {
   if (props.isGroupChat) return modeTabs.filter((tab) => tab.key === "gc");
@@ -45,265 +64,218 @@ const visibleTabs = computed(() => {
 
 const activeTab = computed(() => modeTabs.find((tab) => tab.key === activeMode.value) ?? modeTabs[0]);
 
-const promptDefinitionsByMode = computed<Record<VarMode, PromptDefinition[]>>(() => ({
+const promptDefinitionsByMode = computed<Record<PromptMode, PromptDefinition[]>>(() => ({
   online: promptManagerStore.prompts,
   f2f: promptManagerStore.faceToFacePrompts,
   gc: promptManagerStore.groupChatPrompts,
 }));
 
-const entriesByMode = computed<Record<VarMode, ChatVarEntry[]>>(() => ({
-  online: extractDefineVarEntries(promptDefinitionsByMode.value.online, "online"),
-  f2f: extractDefineVarEntries(promptDefinitionsByMode.value.f2f, "f2f"),
-  gc: extractDefineVarEntries(promptDefinitionsByMode.value.gc, "gc"),
+const promptOrdersByMode = computed<Record<PromptMode, PromptOrderEntry[]>>(() => ({
+  online: promptManagerStore.globalPromptOrder,
+  f2f: promptManagerStore.faceToFacePromptOrder,
+  gc: promptManagerStore.groupChatPromptOrder,
 }));
 
-const currentEntries = computed(() => entriesByMode.value[activeMode.value] ?? []);
-const hasEntries = computed(() => currentEntries.value.length > 0);
+const currentPromptEntries = computed<PromptToggleEntry[]>(() => {
+  const definitions = promptDefinitionsByMode.value[activeMode.value] ?? [];
+  const definitionMap = new Map(definitions.map((prompt) => [prompt.identifier, prompt]));
+  const order = promptOrdersByMode.value[activeMode.value] ?? [];
+  const entries: PromptToggleEntry[] = [];
+
+  for (const entry of order) {
+    const prompt = definitionMap.get(entry.identifier);
+    if (!prompt || prompt.marker) continue;
+    entries.push({
+      identifier: entry.identifier,
+      name: prompt.name || entry.identifier,
+      description: prompt.description,
+      category: prompt.category,
+      role: prompt.role,
+      defaultEnabled: entry.enabled,
+      prompt,
+    });
+  }
+
+  // 將聊天專屬提示詞按 injection_order 插入列表
+  for (const cp of chatVariablesStore.chatPrompts) {
+    entries.push({
+      identifier: cp.id,
+      name: cp.name,
+      category: "custom",
+      role: cp.role,
+      defaultEnabled: cp.enabled,
+      prompt: {} as PromptDefinition,
+      isChatLocal: true,
+      chatLocalPrompt: cp,
+    });
+  }
+
+  // 按 injection_order 排序（chatLocal 條目以自身 injection_order 為準）
+  const orderMap = new Map(order.map((e, i) => [e.identifier, i]));
+  entries.sort((a, b) => {
+    const aOrder = a.isChatLocal
+      ? (a.chatLocalPrompt!.injection_order + 10000)
+      : (orderMap.get(a.identifier) ?? 9999);
+    const bOrder = b.isChatLocal
+      ? (b.chatLocalPrompt!.injection_order + 10000)
+      : (orderMap.get(b.identifier) ?? 9999);
+    return aOrder - bOrder;
+  });
+
+  return entries;
+});
+
+const groupedPromptEntries = computed(() => {
+  const groups = new Map<string, { key: string; label: string; entries: PromptToggleEntry[] }>();
+  for (const entry of currentPromptEntries.value) {
+    const info = CATEGORY_INFO[entry.category];
+    // 聊天專屬條目歸入獨立群組
+    const key = entry.isChatLocal ? "__chat_local__" : entry.category;
+    const label = entry.isChatLocal ? "聊天專屬" : (info?.name ?? key);
+    if (!groups.has(key)) {
+      groups.set(key, { key, label, entries: [] });
+    }
+    groups.get(key)?.entries.push(entry);
+  }
+  // 確保聊天專屬群組排最後
+  const result = Array.from(groups.values());
+  const chatLocalIdx = result.findIndex((g) => g.key === "__chat_local__");
+  if (chatLocalIdx > 0) result.push(result.splice(chatLocalIdx, 1)[0]);
+  return result;
+});
+
+const chatPrompts = computed(() => chatVariablesStore.chatPrompts);
+const validPromptIds = computed(() => [
+  ...currentPromptEntries.value.map((entry) => entry.identifier),
+  ...chatPrompts.value.map((prompt) => prompt.id),
+]);
 
 watch(
   () => [props.chatId, props.isGroupChat, props.faceToFaceMode] as const,
   () => {
     chatVariablesStore.initForChat(props.chatId);
     activeMode.value = getDefaultMode();
-    syncDraftValues();
   },
   { immediate: true },
 );
 
 watch(
-  currentEntries,
-  () => syncDraftValues(),
+  validPromptIds,
+  (ids) => chatVariablesStore.prunePromptToggles(ids),
   { immediate: true },
 );
 
-watch(
-  () => chatVariablesStore.localVars,
-  () => syncDraftValues(),
-  { deep: true },
-);
-
-function getDefaultMode(): VarMode {
+function getDefaultMode(): PromptMode {
   if (props.isGroupChat) return "gc";
   return props.faceToFaceMode ? "f2f" : "online";
 }
 
-function scopedVarKey(mode: VarMode, name: string): string {
-  return `${mode}__${name.trim()}`;
-}
-
-function extractDefineVarEntries(prompts: PromptDefinition[], mode: VarMode): ChatVarEntry[] {
-  const entries = new Map<string, ChatVarEntry>();
-  const defineVarPattern = /\{\{setvar::([^:}]+)::([\s\S]*?)\}\}/gu;
-
-  for (const prompt of prompts) {
-    const content = prompt.content ?? "";
-    defineVarPattern.lastIndex = 0;
-    let match: RegExpExecArray | null;
-
-    while ((match = defineVarPattern.exec(content)) !== null) {
-      const name = (match[1] ?? "").trim();
-      if (!name) continue;
-
-      const defaultValue = match[2] ?? "";
-      const scopedKey = scopedVarKey(mode, name);
-      const promptName = prompt.name || prompt.identifier || "未命名提示詞";
-      const existing = entries.get(scopedKey);
-
-      if (existing) {
-        if (!existing.promptNames.includes(promptName)) {
-          existing.promptNames.push(promptName);
-        }
-        if (existing.defaultValue.trim() === "" && defaultValue.trim() !== "") {
-          existing.defaultValue = defaultValue;
-        }
-        continue;
-      }
-
-      entries.set(scopedKey, {
-        name,
-        defaultValue,
-        scopedKey,
-        promptNames: [promptName],
-      });
-    }
-  }
-
-  return Array.from(entries.values()).sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
-}
-
-function overrideKey(scopedKey: string): string {
-  return `__override__${scopedKey}`;
-}
-
-function overrideSetKey(scopedKey: string): string {
-  return `__override_set__${scopedKey}`;
-}
-
-function globalEnabledKey(scopedKey: string): string {
-  return `__global_enabled__${scopedKey}`;
-}
-
-function enabledKey(scopedKey: string): string {
-  return `__enabled__${scopedKey}`;
-}
-
-function clearOverride(entry: ChatVarEntry): void {
-  chatVariablesStore.setLocal(overrideKey(entry.scopedKey), "");
-  chatVariablesStore.setLocal(overrideSetKey(entry.scopedKey), "");
-}
-
-function getGlobalOverrideValue(entry: ChatVarEntry): string {
-  const scopedOverrideSet = chatVariablesStore.getGlobal(overrideSetKey(entry.scopedKey)) === "1";
-  if (scopedOverrideSet) return chatVariablesStore.getGlobal(overrideKey(entry.scopedKey));
-
-  const scopedValue = chatVariablesStore.getGlobal(entry.scopedKey);
-  if (scopedValue !== "") return scopedValue;
-
-  const rawValue = chatVariablesStore.getGlobal(entry.name);
-  return rawValue;
-}
-
-function getInheritedValue(entry: ChatVarEntry): string {
-  const globalValue = getGlobalOverrideValue(entry);
-  return globalValue !== "" ? globalValue : entry.defaultValue;
-}
-
-function getStoredOrDefaultValue(entry: ChatVarEntry): string {
-  const hasOverride = chatVariablesStore.getLocal(overrideSetKey(entry.scopedKey)) === "1";
-  const saved = chatVariablesStore.getLocal(overrideKey(entry.scopedKey));
-  const inheritedValue = getInheritedValue(entry);
-
-  // 舊版本可能因為空白 textarea 失焦而誤存「空白覆蓋值」。
-  // 若全局或提示詞本身有預設內容，就自動清掉這個空白覆蓋，回到繼承值。
-  if (hasOverride && saved === "" && inheritedValue.trim() !== "") {
-    clearOverride(entry);
-    return inheritedValue;
-  }
-
-  return hasOverride ? saved : inheritedValue;
-}
-
-function syncDraftValues(): void {
-  const nextDrafts = { ...draftValues.value };
-
-  for (const entries of Object.values(entriesByMode.value)) {
-    for (const entry of entries) {
-      if (savedKeys.value[entry.scopedKey] === false) continue;
-      nextDrafts[entry.scopedKey] = getStoredOrDefaultValue(entry);
-    }
-  }
-
-  draftValues.value = nextDrafts;
-}
-
-function getDraftValue(entry: ChatVarEntry): string {
-  // 总是返回最新的值
-  const value = getStoredOrDefaultValue(entry);
-  if (!(entry.scopedKey in draftValues.value)) {
-    draftValues.value[entry.scopedKey] = value;
-  }
-  return draftValues.value[entry.scopedKey] ?? value;
-}
-
-function updateDraftValue(entry: ChatVarEntry, value: string): void {
-  draftValues.value = {
-    ...draftValues.value,
-    [entry.scopedKey]: value,
-  };
-  savedKeys.value = {
-    ...savedKeys.value,
-    [entry.scopedKey]: false,
-  };
-}
-
-function saveEntry(entry: ChatVarEntry): void {
-  const value = getDraftValue(entry);
-  const inheritedValue = getInheritedValue(entry);
-  if (value === inheritedValue || (value === "" && inheritedValue.trim() !== "")) {
-    clearOverride(entry);
-    draftValues.value = { ...draftValues.value, [entry.scopedKey]: inheritedValue };
-  } else {
-    chatVariablesStore.setLocal(overrideKey(entry.scopedKey), value);
-    chatVariablesStore.setLocal(overrideSetKey(entry.scopedKey), "1");
-  }
-  savedKeys.value = { ...savedKeys.value, [entry.scopedKey]: true };
-}
-
-function resetEntry(entry: ChatVarEntry): void {
-  const inheritedValue = getInheritedValue(entry);
-  draftValues.value = { ...draftValues.value, [entry.scopedKey]: inheritedValue };
-  clearOverride(entry);
-  savedKeys.value = { ...savedKeys.value, [entry.scopedKey]: true };
-}
-
-function saveAll(): void {
-  for (const entry of currentEntries.value) {
-    saveEntry(entry);
-  }
-}
-
-function switchMode(mode: VarMode): void {
+function switchMode(mode: PromptMode): void {
   activeMode.value = mode;
-  syncDraftValues();
 }
 
-function isExpanded(entry: ChatVarEntry): boolean {
-  return expandedKeys.value[entry.scopedKey] === true;
+function isPromptEnabled(entry: PromptToggleEntry): boolean {
+  if (entry.isChatLocal) return entry.chatLocalPrompt!.enabled;
+  return chatVariablesStore.getPromptToggle(entry.identifier, entry.defaultEnabled);
 }
 
-function setEditorRef(entry: ChatVarEntry, el: unknown): void {
-  editorRefs.value[entry.scopedKey] = el instanceof HTMLTextAreaElement ? el : null;
+function isPromptCustomized(entry: PromptToggleEntry): boolean {
+  if (entry.isChatLocal) return false;
+  return Object.prototype.hasOwnProperty.call(chatVariablesStore.promptToggles, entry.identifier);
 }
 
-async function toggleEditor(entry: ChatVarEntry): Promise<void> {
-  const shouldOpen = !isExpanded(entry);
-  expandedKeys.value = {
-    ...expandedKeys.value,
-    [entry.scopedKey]: shouldOpen,
+function setPromptEnabled(entry: PromptToggleEntry, enabled: boolean): void {
+  if (entry.isChatLocal) {
+    chatVariablesStore.updateChatPrompt(entry.identifier, { enabled });
+    return;
+  }
+  chatVariablesStore.setPromptToggle(entry.identifier, enabled, entry.defaultEnabled);
+}
+
+function resetPromptToggle(entry: PromptToggleEntry): void {
+  chatVariablesStore.setPromptToggle(entry.identifier, entry.defaultEnabled, entry.defaultEnabled);
+}
+
+function createEmptyDraft(): ChatPromptDraft {
+  return {
+    name: "",
+    role: "system",
+    content: "",
+    injection_position: PromptInjectionPosition.RELATIVE,
+    injection_depth: 0,
+    injection_order: 100,
+    enabled: true,
+  };
+}
+
+function startCreateChatPrompt(): void {
+  editingPromptId.value = null;
+  draftPrompt.value = createEmptyDraft();
+  showPromptEditor.value = true;
+}
+
+function startEditChatPrompt(prompt: ChatLocalPrompt): void {
+  editingPromptId.value = prompt.id;
+  draftPrompt.value = {
+    id: prompt.id,
+    name: prompt.name,
+    role: prompt.role,
+    content: prompt.content,
+    injection_position: prompt.injection_position,
+    injection_depth: prompt.injection_depth,
+    injection_order: prompt.injection_order,
+    enabled: prompt.enabled,
+  };
+  showPromptEditor.value = true;
+}
+
+function cancelEditChatPrompt(): void {
+  editingPromptId.value = null;
+  showPromptEditor.value = false;
+  draftPrompt.value = createEmptyDraft();
+}
+
+function saveChatPrompt(): void {
+  const draft = draftPrompt.value;
+  if (!draft.name.trim() || !draft.content.trim()) return;
+
+  const payload = {
+    name: draft.name.trim(),
+    role: draft.role,
+    content: draft.content,
+    injection_position: Number(draft.injection_position) as PromptInjectionPosition,
+    injection_depth: Number(draft.injection_depth) || 0,
+    injection_order: Number(draft.injection_order) || 0,
+    enabled: draft.enabled,
   };
 
-  if (!shouldOpen) return;
-  await nextTick();
-  editorRefs.value[entry.scopedKey]?.focus();
-}
-
-function isEntryEnabled(entry: ChatVarEntry): boolean {
-  const localValue = chatVariablesStore.getLocal(enabledKey(entry.scopedKey));
-  
-  // 如果当前聊天没有设置，则使用全局设置
-  if (localValue === "") {
-    const globalValue = chatVariablesStore.getGlobal(globalEnabledKey(entry.scopedKey));
-    // 如果全局也没有设置，默认启用
-    return globalValue !== "0";
+  if (editingPromptId.value) {
+    chatVariablesStore.updateChatPrompt(editingPromptId.value, payload);
+  } else {
+    chatVariablesStore.addChatPrompt(payload);
   }
-  
-  return localValue !== "0";
+  cancelEditChatPrompt();
 }
 
-function setEntryEnabled(entry: ChatVarEntry, enabled: boolean): void {
-  chatVariablesStore.setLocal(enabledKey(entry.scopedKey), enabled ? "1" : "0");
+function setChatPromptEnabled(prompt: ChatLocalPrompt, enabled: boolean): void {
+  chatVariablesStore.updateChatPrompt(prompt.id, { enabled });
 }
 
-function isUsingGlobalSetting(entry: ChatVarEntry): boolean {
-  return chatVariablesStore.getLocal(enabledKey(entry.scopedKey)) === "";
-}
-
-function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
-  chatVariablesStore.setGlobal(globalEnabledKey(entry.scopedKey), enabled ? "1" : "0");
-  // 同时清除所有聊天的局部设置，使其继承全局设置
-  // 注意：这里只清除当前聊天的设置
-  chatVariablesStore.setLocal(enabledKey(entry.scopedKey), "");
+function deleteChatPrompt(prompt: ChatLocalPrompt): void {
+  if (!confirm(`確定刪除聊天專屬提示詞「${prompt.name}」？`)) return;
+  chatVariablesStore.deleteChatPrompt(prompt.id);
+  if (editingPromptId.value === prompt.id) cancelEditChatPrompt();
 }
 </script>
 
 <template>
   <div class="chat-vars-panel-backdrop" @click.self="emit('close')">
-    <aside class="chat-vars-panel" role="dialog" aria-modal="true" aria-label="聊天變量設定">
+    <aside class="chat-vars-panel" role="dialog" aria-modal="true" aria-label="聊天提示詞設定">
       <header class="panel-header">
         <div>
-          <p class="panel-eyebrow">Chat Variables</p>
-          <h2>變量設定</h2>
-          <p class="panel-subtitle">編輯此聊天在不同模式下的提示詞變量。</p>
+          <p class="panel-eyebrow">Chat Prompts</p>
+          <h2>提示詞開關</h2>
+          <p class="panel-subtitle">設定此聊天專屬的提示詞開關，並新增只屬於此聊天的提示詞條目。</p>
         </div>
         <button class="close-btn" type="button" title="關閉" @click="emit('close')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -313,7 +285,7 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
         </button>
       </header>
 
-      <nav class="mode-tabs" aria-label="變量模式分頁">
+      <nav class="mode-tabs" aria-label="提示詞模式分頁">
         <button
           v-for="tab in visibleTabs"
           :key="tab.key"
@@ -323,84 +295,148 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
           @click="switchMode(tab.key)"
         >
           <span>{{ tab.label }}</span>
-          <small>{{ entriesByMode[tab.key].length }} 個條目</small>
+          <small>{{ currentPromptEntries.length }} 個可切換提示詞</small>
         </button>
       </nav>
 
-      <section v-if="hasEntries" class="vars-list">
-        <article
-          v-for="entry in currentEntries"
-          :key="entry.scopedKey"
-          class="var-card"
-          :class="{ expanded: isExpanded(entry), disabled: !isEntryEnabled(entry) }"
-        >
-          <div
-            class="var-card-summary"
-            role="button"
-            tabindex="0"
-            @click="toggleEditor(entry)"
-            @keydown.enter.prevent="toggleEditor(entry)"
-            @keydown.space.prevent="toggleEditor(entry)"
-          >
-            <div class="var-card-title">
-              <div class="var-title-main">
-                <h4>{{ entry.name }}</h4>
-                <p>來源：{{ entry.promptNames.join('、') }}</p>
-              </div>
-              <span class="var-key">{{ entry.scopedKey }}</span>
+      <section class="vars-list">
+        <div class="section-title">
+          <div>
+            <h3>{{ activeTab.label }}</h3>
+            <p>{{ activeTab.desc }}。只保存與默認值不同的開關。</p>
+          </div>
+        </div>
+
+        <template v-if="groupedPromptEntries.length > 0">
+          <section v-for="group in groupedPromptEntries" :key="group.key" class="prompt-group">
+            <div class="prompt-group-header">
+              <h4>{{ group.label }}</h4>
+              <button
+                v-if="group.key === '__chat_local__'"
+                type="button"
+                class="mini-btn"
+                @click="startCreateChatPrompt"
+              >＋ 新增</button>
             </div>
-            <div class="var-card-controls">
-              <label
-                class="var-switch"
-                :class="{ 'using-global': isUsingGlobalSetting(entry) }"
-                :title="isUsingGlobalSetting(entry) ? '遵循全局設定' : (isEntryEnabled(entry) ? '此聊天啟用' : '此聊天停用')"
-                @click.stop
-                @keydown.stop
-              >
-                <input
-                  type="checkbox"
-                  :checked="isEntryEnabled(entry)"
-                  @change="setEntryEnabled(entry, ($event.target as HTMLInputElement).checked)"
-                />
-                <span></span>
-              </label>
-              <span class="expand-icon">{{ isExpanded(entry) ? '收起' : '編輯' }}</span>
+            <article
+              v-for="entry in group.entries"
+              :key="entry.identifier"
+              class="var-card prompt-card"
+              :class="{
+                disabled: !isPromptEnabled(entry),
+                customized: isPromptCustomized(entry),
+                'chat-local': entry.isChatLocal,
+              }"
+            >
+              <div class="var-card-summary prompt-summary">
+                <div class="var-card-title">
+                  <div class="var-title-main">
+                    <h4>{{ entry.name }}</h4>
+                    <p v-if="entry.isChatLocal">
+                      {{ entry.chatLocalPrompt!.role }} ·
+                      {{ entry.chatLocalPrompt!.injection_position === PromptInjectionPosition.ABSOLUTE
+                        ? `絕對深度 ${entry.chatLocalPrompt!.injection_depth}`
+                        : `相對位置 order ${entry.chatLocalPrompt!.injection_order}` }}
+                    </p>
+                    <p v-else>{{ entry.description || entry.identifier }}</p>
+                  </div>
+                  <span v-if="entry.isChatLocal" class="chat-local-badge">聊天專屬</span>
+                  <span v-else-if="isPromptCustomized(entry)" class="custom-badge">已自訂</span>
+                </div>
+                <div class="var-card-controls">
+                  <template v-if="entry.isChatLocal">
+                    <button type="button" class="mini-btn" @click="startEditChatPrompt(entry.chatLocalPrompt!)">編輯</button>
+                    <button type="button" class="mini-btn danger" @click="deleteChatPrompt(entry.chatLocalPrompt!)">刪除</button>
+                  </template>
+                  <button
+                    v-else-if="isPromptCustomized(entry)"
+                    type="button"
+                    class="mini-btn"
+                    @click="resetPromptToggle(entry)"
+                  >
+                    回默認
+                  </button>
+                  <label class="var-switch" :title="isPromptEnabled(entry) ? '此聊天啟用' : '此聊天停用'">
+                    <input
+                      type="checkbox"
+                      :checked="isPromptEnabled(entry)"
+                      @change="setPromptEnabled(entry, ($event.target as HTMLInputElement).checked)"
+                    />
+                    <span></span>
+                  </label>
+                </div>
+              </div>
+            </article>
+
+            <!-- 聊天專屬群組：若無條目顯示提示，並顯示新增按鈕 -->
+            <div v-if="group.key === '__chat_local__' && group.entries.length === 0" class="empty-state compact">
+              <p>尚無聊天專屬提示詞，點擊上方「＋ 新增」來建立。</p>
+            </div>
+          </section>
+        </template>
+
+        <!-- 完全沒有任何提示詞時的空狀態 -->
+        <section v-if="groupedPromptEntries.length === 0" class="empty-state compact">
+          <div class="empty-icon">P</div>
+          <h3>沒有可切換提示詞</h3>
+          <p>目前 {{ activeTab.label }} 沒有非 Marker 提示詞條目。</p>
+        </section>
+
+        <!-- 沒有系統提示詞但有聊天專屬的情況：顯示新增按鈕 -->
+        <section v-if="groupedPromptEntries.length === 0 || !groupedPromptEntries.find(g => g.key === '__chat_local__')" class="local-prompts-add">
+          <button type="button" class="ghost-btn" @click="startCreateChatPrompt">＋ 新增聊天專屬提示詞</button>
+        </section>
+
+        <!-- 聊天專屬提示詞編輯表單 -->
+        <form v-if="showPromptEditor" class="local-prompt-editor" @submit.prevent="saveChatPrompt">
+          <label>
+            <span>名稱</span>
+            <input v-model="draftPrompt.name" type="text" placeholder="例如：此聊天特殊規則" required />
+          </label>
+          <label>
+            <span>角色</span>
+            <select v-model="draftPrompt.role">
+              <option value="system">system</option>
+              <option value="user">user</option>
+              <option value="assistant">assistant</option>
+            </select>
+          </label>
+          <label>
+            <span>注入位置</span>
+            <select v-model.number="draftPrompt.injection_position">
+              <option :value="PromptInjectionPosition.RELATIVE">相對位置</option>
+              <option :value="PromptInjectionPosition.ABSOLUTE">絕對深度</option>
+            </select>
+          </label>
+          <label v-if="draftPrompt.injection_position === PromptInjectionPosition.ABSOLUTE">
+            <span>深度</span>
+            <input v-model.number="draftPrompt.injection_depth" type="number" min="0" />
+          </label>
+          <label>
+            <span>排序 (order)</span>
+            <input v-model.number="draftPrompt.injection_order" type="number" />
+          </label>
+          <label class="full-row">
+            <span>內容</span>
+            <textarea v-model="draftPrompt.content" rows="8" placeholder="輸入此聊天專屬提示詞內容" required></textarea>
+          </label>
+          <label class="inline-check full-row">
+            <input v-model="draftPrompt.enabled" type="checkbox" />
+            <span>保存後立即啟用</span>
+          </label>
+          <div class="var-actions full-row">
+            <span class="save-status">{{ editingPromptId ? '正在編輯聊天專屬條目' : '新增聊天專屬條目' }}</span>
+            <div class="var-buttons">
+              <button type="button" class="ghost-btn" @click="cancelEditChatPrompt">取消</button>
+              <button type="submit" class="primary-btn">保存</button>
             </div>
           </div>
-
-          <div v-if="isExpanded(entry)" class="var-editor">
-            <textarea
-              :ref="(el) => setEditorRef(entry, el)"
-              :value="getDraftValue(entry)"
-              rows="6"
-              spellcheck="false"
-              :disabled="!isEntryEnabled(entry)"
-              @input="updateDraftValue(entry, ($event.target as HTMLTextAreaElement).value)"
-              @blur="saveEntry(entry)"
-            ></textarea>
-
-            <div class="var-actions">
-              <span class="save-status" :class="{ saved: savedKeys[entry.scopedKey] }">
-                {{ savedKeys[entry.scopedKey] ? '已保存' : '失焦自動保存' }}
-              </span>
-              <div class="var-buttons">
-                <button type="button" class="ghost-btn" @click="resetEntry(entry)">重置預設</button>
-                <button type="button" class="primary-btn" :disabled="!isEntryEnabled(entry)" @click="saveEntry(entry)">保存</button>
-              </div>
-            </div>
-          </div>
-        </article>
-      </section>
-
-      <section v-else class="empty-state">
-        <div class="empty-icon">{{ '{ }' }}</div>
-        <h3>沒有找到變量條目</h3>
-        <p>目前 {{ activeTab.label }} 的提示詞中沒有 <code>setvar</code> 條目。</p>
+        </form>
       </section>
 
       <footer class="panel-footer">
+        <span class="save-status saved">變更會自動保存到此聊天</span>
         <button type="button" class="ghost-btn" @click="emit('close')">關閉</button>
-        <button type="button" class="primary-btn" :disabled="!hasEntries" @click="saveAll">保存全部</button>
       </footer>
     </aside>
   </div>
@@ -420,8 +456,8 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
 }
 
 .chat-vars-panel {
-  width: min(860px, 100%);
-  height: min(820px, calc(100vh - 48px));
+  width: min(920px, 100%);
+  height: min(860px, calc(100vh - 48px));
   display: flex;
   flex-direction: column;
   background:
@@ -490,7 +526,7 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
 }
 
 .mode-tab {
-  min-width: 130px;
+  min-width: 150px;
   padding: 12px 14px;
   border: 1px solid rgba(97, 75, 55, 0.12);
   border-radius: 18px;
@@ -538,6 +574,48 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
   padding: 0 20px 12px;
 }
 
+.section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+
+  h3,
+  p {
+    margin: 0;
+  }
+
+  h3 {
+    font-size: 1rem;
+    font-weight: 800;
+  }
+
+  p {
+    margin-top: 4px;
+    color: rgba(62, 48, 36, 0.58);
+    font-size: 0.82rem;
+  }
+}
+
+.prompt-group {
+  margin-bottom: 14px;
+}
+
+.prompt-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+
+  h4 {
+    margin: 0;
+    color: rgba(63, 48, 37, 0.72);
+    font-size: 0.82rem;
+    font-weight: 800;
+  }
+}
+
 .var-card {
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.62);
@@ -550,39 +628,18 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
     margin-top: 8px;
   }
 
-  &.expanded {
-    border-color: rgba(143, 101, 63, 0.24);
-    box-shadow: 0 8px 24px rgba(92, 72, 55, 0.1);
-  }
-
   &.disabled {
     opacity: 0.62;
   }
 
-  textarea {
-    width: 100%;
-    min-height: 90px;
-    padding: 10px 12px;
-    resize: vertical;
-    border-radius: 12px;
-    border: 1px solid rgba(94, 74, 55, 0.16);
-    background: rgba(255, 252, 248, 0.9);
-    color: #342b24;
-    line-height: 1.5;
-    font-size: 0.9rem;
-    font: inherit;
-    outline: none;
+  &.customized {
+    border-color: rgba(143, 101, 63, 0.28);
+    box-shadow: 0 8px 24px rgba(92, 72, 55, 0.1);
+  }
 
-    &:focus {
-      border-color: rgba(143, 101, 63, 0.48);
-      box-shadow: 0 0 0 3px rgba(143, 101, 63, 0.12);
-    }
-
-    &:disabled {
-      cursor: not-allowed;
-      background: rgba(238, 232, 225, 0.72);
-      color: rgba(52, 43, 36, 0.48);
-    }
+  &.chat-local {
+    border-color: rgba(63, 101, 143, 0.26);
+    background: rgba(240, 246, 255, 0.72);
   }
 }
 
@@ -592,12 +649,11 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
   justify-content: space-between;
   gap: 8px;
   align-items: center;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border: 0;
   background: transparent;
   color: inherit;
   text-align: left;
-  cursor: pointer;
 }
 
 .var-card-title {
@@ -629,7 +685,7 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
 
   p {
     color: rgba(62, 48, 36, 0.55);
-    font-size: 0.7rem;
+    font-size: 0.72rem;
     line-height: 1.3;
     white-space: nowrap;
     overflow: hidden;
@@ -644,24 +700,29 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
   flex: 0 0 auto;
 }
 
-.var-editor {
-  padding: 0 14px 12px;
-}
-
-.var-key {
-  display: none;
-}
-
-.expand-icon {
-  min-width: 36px;
-  padding: 5px 8px;
+.custom-badge {
+  padding: 4px 8px;
   border-radius: 999px;
-  background: rgba(103, 78, 56, 0.08);
-  color: rgba(63, 48, 37, 0.72);
-  font-size: 0.72rem;
-  font-weight: 700;
+  background: rgba(143, 101, 63, 0.12);
+  color: rgba(92, 61, 37, 0.86);
+  font-size: 0.7rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.chat-local-badge {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(63, 101, 143, 0.12);
+  color: rgba(37, 61, 92, 0.86);
+  font-size: 0.7rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.local-prompts-add {
+  padding: 8px 0;
   text-align: center;
-  line-height: 1.2;
 }
 
 .var-switch {
@@ -670,23 +731,6 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
   height: 22px;
   display: inline-block;
   cursor: pointer;
-
-  &.using-global span {
-    background: rgba(100, 140, 200, 0.3);
-    
-    &::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      border-radius: 999px;
-      border: 2px dashed rgba(100, 140, 200, 0.4);
-      pointer-events: none;
-    }
-  }
-
-  &.using-global input:checked + span {
-    background: linear-gradient(135deg, rgba(100, 140, 200, 0.7), rgba(100, 140, 200, 0.85));
-  }
 
   input {
     position: absolute;
@@ -724,16 +768,68 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
   }
 }
 
+.local-prompt-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(92, 72, 55, 0.12);
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: rgba(63, 48, 37, 0.72);
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  input,
+  select,
+  textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(94, 74, 55, 0.16);
+    background: rgba(255, 252, 248, 0.9);
+    color: #342b24;
+    line-height: 1.5;
+    font: inherit;
+    outline: none;
+
+    &:focus {
+      border-color: rgba(143, 101, 63, 0.48);
+      box-shadow: 0 0 0 3px rgba(143, 101, 63, 0.12);
+    }
+  }
+
+  textarea {
+    min-height: 130px;
+    resize: vertical;
+  }
+}
+
+.full-row {
+  grid-column: 1 / -1;
+}
+
+.inline-check {
+  flex-direction: row !important;
+  align-items: center;
+
+  input {
+    width: auto;
+  }
+}
+
 .var-actions,
 .panel-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-}
-
-.var-actions {
-  margin-top: 10px;
 }
 
 .var-buttons {
@@ -751,7 +847,8 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
 }
 
 .ghost-btn,
-.primary-btn {
+.primary-btn,
+.mini-btn {
   border: 0;
   border-radius: 999px;
   padding: 9px 14px;
@@ -769,6 +866,18 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
   }
 }
 
+.mini-btn {
+  padding: 6px 10px;
+  background: rgba(103, 78, 56, 0.08);
+  color: rgba(63, 48, 37, 0.72);
+  font-size: 0.72rem;
+
+  &.danger {
+    background: rgba(176, 65, 65, 0.1);
+    color: #a34040;
+  }
+}
+
 .ghost-btn {
   background: rgba(103, 78, 56, 0.08);
   color: rgba(63, 48, 37, 0.72);
@@ -781,7 +890,6 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
 }
 
 .empty-state {
-  flex: 1;
   display: grid;
   place-items: center;
   align-content: center;
@@ -789,6 +897,10 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
   padding: 30px;
   text-align: center;
   color: rgba(62, 48, 36, 0.62);
+
+  &.compact {
+    padding: 18px;
+  }
 
   h3,
   p {
@@ -837,6 +949,7 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
   }
 
   .var-card-summary,
+  .section-title,
   .var-actions {
     flex-direction: column;
     align-items: stretch;
@@ -846,8 +959,8 @@ function setGlobalEnabled(entry: ChatVarEntry, enabled: boolean): void {
     justify-content: space-between;
   }
 
-  .var-key {
-    max-width: 100%;
+  .local-prompt-editor {
+    grid-template-columns: 1fr;
   }
 
   .var-buttons {

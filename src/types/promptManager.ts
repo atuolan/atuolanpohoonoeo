@@ -140,6 +140,8 @@ export interface PromptOrderEntry {
 
 // ===== 提示詞定義 =====
 export interface PromptDefinition {
+  /** 啟用狀態（部分導入/舊版提示詞資料會帶此欄位；實際排序仍以 PromptOrderEntry.enabled 為準） */
+  enabled?: boolean;
   /** 唯一標識符 */
   identifier: string;
   /** 顯示名稱 */
@@ -154,8 +156,8 @@ export interface PromptDefinition {
   content: string;
   /** 是否為系統內建提示詞 */
   system_prompt: boolean;
-  /** 是否為 Marker（佔位符，內容由系統填充） */
-  marker: boolean;
+  /** 是否為 Marker（佔位符，內容由系統填充；部分導入/舊版提示詞資料可能未定義） */
+  marker?: boolean;
   /** 注入位置類型 */
   injection_position: PromptInjectionPosition;
   /** 注入深度（僅 ABSOLUTE 位置有效） */
@@ -170,8 +172,8 @@ export interface PromptDefinition {
   injection_trigger: string[];
   /** 是否可編輯內容 */
   isEditable: boolean;
-  /** 是否可刪除 */
-  isDeletable: boolean;
+  /** 是否可刪除（部分導入/舊版提示詞資料可能未定義） */
+  isDeletable?: boolean;
   /** 依賴的其他模塊 ID */
   dependencies?: string[];
   /** 是否僅管理員可見/可編輯 */
@@ -397,7 +399,7 @@ export function getPromptDefinition(
 
 // ===== 檢查是否為 Marker =====
 export function isMarkerPrompt(prompt: PromptDefinition): boolean {
-  return prompt.marker;
+  return !!prompt.marker;
 }
 
 // 允許自訂 content 模板的 marker 條目（對齊 SillyTavern forceEditPrompts）

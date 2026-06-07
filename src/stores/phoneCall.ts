@@ -518,12 +518,17 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       const now = new Date();
       const lastChatTime = info.lastMessageTime ? formatTimeSince(info.lastMessageTime) : "未知";
 
+      const chatRecord = info.chatId
+        ? await db.get<any>(DB_STORES.CHATS, info.chatId).catch(() => undefined)
+        : undefined;
+      const chatPromptToggles = chatRecord?.chatVariables?.promptToggles;
+      const chatLocalPrompts = chatRecord?.chatVariables?.chatPrompts;
+
       // 向量記憶檢索（使用全域開關）
       let vectorMemories: import('@/services/memoryRetriever').RetrievedMemory[] | undefined;
       if (info.chatId) {
         try {
-          const chat = await db.get<any>(DB_STORES.CHATS, info.chatId);
-          const summarySettings = chat?.summarySettings;
+          const summarySettings = chatRecord?.summarySettings;
           if (settingsStore.vectorMemoryEnabled && summarySettings?.summaryReadMode !== 'all') {
             const lastUserMsg = [...filteredCallMessages].reverse().find((m) => m.role === 'user');
             if (lastUserMsg?.content) {
@@ -561,6 +566,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
         userName: userStore.currentPersona?.name || "User",
         userPersona: userStore.currentPersona?.description,
         promptManagerConfig: promptManagerStore.config,
+        chatPromptToggles,
+        chatLocalPrompts,
         phoneCallMode: true,
         incomingCallMode: info.isIncoming && isIncomingFirstMessage,
         callReason: info.callReason,

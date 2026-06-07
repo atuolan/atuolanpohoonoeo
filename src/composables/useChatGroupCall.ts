@@ -385,6 +385,8 @@ export function useChatGroupCall(deps: {
         userName: userStore.currentPersona?.name || "User",
         userPersona: deps.effectivePersona.value?.description,
         promptManagerConfig: promptManagerStore.config,
+        chatPromptToggles: deps.currentChatData.value?.chatVariables?.promptToggles,
+        chatLocalPrompts: deps.currentChatData.value?.chatVariables?.chatPrompts,
         groupChatMode: true,
         groupMembers: groupMembersData,
         groupName: deps.groupMetadata.value.groupName,
