@@ -721,14 +721,29 @@ function parseMessageContentWithoutTimetravel(content: string): ParsedMessage {
       .trim();
   }
 
-  // 檢查語音訊息 <voice>語音內容</voice>
-  const voiceMatch = result.content.match(/<voice>([\s\S]*?)<\/voice>/i);
-  if (voiceMatch) {
+  // 檢查 <recall><voice>...</voice></recall> 嵌套格式（voice 被 recall 包裹，先處理避免 voice 先吃掉內容）
+  const recallVoiceMatch = result.content.match(
+    /<recall>\s*<voice>([\s\S]*?)<\/voice>\s*<\/recall>/i,
+  );
+  if (recallVoiceMatch) {
+    result.isCharRecall = true;
+    result.charRecallType = "seen";
     result.isVoice = true;
-    result.voiceContent = voiceMatch[1].trim();
+    result.voiceContent = recallVoiceMatch[1].trim();
+    result.charRecallContent = recallVoiceMatch[1].trim();
     result.content = result.content
-      .replace(/<voice>[\s\S]*?<\/voice>/gi, "")
+      .replace(/<recall>\s*<voice>[\s\S]*?<\/voice>\s*<\/recall>/gi, "")
       .trim();
+  } else {
+    // 檢查語音訊息 <voice>語音內容</voice>
+    const voiceMatch = result.content.match(/<voice>([\s\S]*?)<\/voice>/i);
+    if (voiceMatch) {
+      result.isVoice = true;
+      result.voiceContent = voiceMatch[1].trim();
+      result.content = result.content
+        .replace(/<voice>[\s\S]*?<\/voice>/gi, "")
+        .trim();
+    }
   }
 
   // 檢查外賣付款結果 <waimai-pay status="paid|rejected|failed"/>
@@ -1565,14 +1580,29 @@ function parseMessageContent(content: string): ParsedMessage {
       .trim();
   }
 
-  // 檢查語音訊息 <voice>語音內容</voice>
-  const voiceMatch = result.content.match(/<voice>([\s\S]*?)<\/voice>/i);
-  if (voiceMatch) {
+  // 檢查 <recall><voice>...</voice></recall> 嵌套格式
+  const recallVoiceMatch2 = result.content.match(
+    /<recall>\s*<voice>([\s\S]*?)<\/voice>\s*<\/recall>/i,
+  );
+  if (recallVoiceMatch2) {
+    result.isCharRecall = true;
+    result.charRecallType = "seen";
     result.isVoice = true;
-    result.voiceContent = voiceMatch[1].trim();
+    result.voiceContent = recallVoiceMatch2[1].trim();
+    result.charRecallContent = recallVoiceMatch2[1].trim();
     result.content = result.content
-      .replace(/<voice>[\s\S]*?<\/voice>/gi, "")
+      .replace(/<recall>\s*<voice>[\s\S]*?<\/voice>\s*<\/recall>/gi, "")
       .trim();
+  } else {
+    // 檢查語音訊息 <voice>語音內容</voice>
+    const voiceMatch = result.content.match(/<voice>([\s\S]*?)<\/voice>/i);
+    if (voiceMatch) {
+      result.isVoice = true;
+      result.voiceContent = voiceMatch[1].trim();
+      result.content = result.content
+        .replace(/<voice>[\s\S]*?<\/voice>/gi, "")
+        .trim();
+    }
   }
 
   // 檢查外賣付款結果 <waimai-pay status="paid|rejected|failed"/>

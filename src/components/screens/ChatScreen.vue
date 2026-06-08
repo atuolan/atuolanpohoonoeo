@@ -4885,11 +4885,13 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 avatarChangeAction: parsedMsg.avatarChangeAction,
                 avatarChangeMood: parsedMsg.avatarChangeMood,
                 avatarChangeDesc: parsedMsg.avatarChangeDesc,
-                messageType: parsedMsg.isAiImage
-                  ? "descriptive-image"
-                  : parsedMsg.isVoice
-                    ? "audio"
-                    : undefined,
+                messageType: parsedMsg.isCharRecall
+                  ? undefined
+                  : parsedMsg.isAiImage
+                    ? "descriptive-image"
+                    : parsedMsg.isVoice
+                      ? "audio"
+                      : undefined,
                 imageCaption: parsedMsg.isAiImage
                   ? parsedMsg.imageDescription
                   : undefined,
@@ -4898,9 +4900,11 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 htmlContent: parsedMsg.isHtmlBlock
                   ? parsedMsg.content
                   : undefined,
-                audioTranscript: parsedMsg.isVoice
-                  ? parsedMsg.voiceContent
-                  : undefined,
+                audioTranscript: parsedMsg.isCharRecall
+                  ? undefined
+                  : parsedMsg.isVoice
+                    ? parsedMsg.voiceContent
+                    : undefined,
                 isCharRecall: parsedMsg.isCharRecall,
                 charRecallType: parsedMsg.charRecallType,
                 charRecallContent: parsedMsg.charRecallContent,
@@ -4927,8 +4931,42 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 await _delay(_messageRenderDelay(_totalMsgs1));
               }
               _shownMsgs1++;
-              messages.value.push(newMessage);
-              scrollToBottom();
+              if (parsedMsg.isCharRecall) {
+                // 先顯示原始訊息，3秒後原地替換為撤回狀態
+                const recallContent = parsedMsg.charRecallContent || "";
+                const tempMsg: Message = {
+                  ...newMessage,
+                  isCharRecall: false,
+                  charRecallType: undefined,
+                  content: parsedMsg.isVoice
+                    ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
+                    : recallContent,
+                  messageType: parsedMsg.isVoice ? "audio" : undefined,
+                  audioTranscript: parsedMsg.isVoice ? parsedMsg.voiceContent : undefined,
+                };
+                messages.value.push(tempMsg);
+                scrollToBottom();
+                setTimeout(() => {
+                  const idx = messages.value.findIndex((m) => m.id === tempMsg.id);
+                  if (idx !== -1) {
+                    const current = messages.value[idx];
+                    const replaced = {
+                      ...newMessage,
+                      audioBlobId: current.audioBlobId,
+                      audioMimeType: current.audioMimeType,
+                      audioDuration: current.audioDuration,
+                      audioWaveform: current.audioWaveform,
+                      ttsAudioUrl: current.ttsAudioUrl,
+                      ttsSegments: current.ttsSegments,
+                      ttsRawContent: current.ttsRawContent,
+                    };
+                    messages.value[idx] = replaced;
+                  }
+                }, 3000);
+              } else {
+                messages.value.push(newMessage);
+                scrollToBottom();
+              }
 
               if (!_firstNewAiMsgId && newMessage.role === "ai") {
                 _firstNewAiMsgId = newMessage.id;
@@ -5587,11 +5625,13 @@ async function handleStreamingClose() {
               avatarChangeMood: parsedMsg.avatarChangeMood,
               avatarChangeDesc: parsedMsg.avatarChangeDesc,
               // AI 圖片相關
-              messageType: parsedMsg.isAiImage
-                ? "descriptive-image"
-                : parsedMsg.isVoice
-                  ? "audio"
-                  : undefined,
+              messageType: parsedMsg.isCharRecall
+                ? undefined
+                : parsedMsg.isAiImage
+                  ? "descriptive-image"
+                  : parsedMsg.isVoice
+                    ? "audio"
+                    : undefined,
               imageCaption: parsedMsg.isAiImage
                 ? parsedMsg.imageDescription
                 : undefined,
@@ -5602,9 +5642,11 @@ async function handleStreamingClose() {
                 ? parsedMsg.content
                 : undefined,
               // 語音訊息相關
-              audioTranscript: parsedMsg.isVoice
-                ? parsedMsg.voiceContent
-                : undefined,
+              audioTranscript: parsedMsg.isCharRecall
+                ? undefined
+                : parsedMsg.isVoice
+                  ? parsedMsg.voiceContent
+                  : undefined,
               // 角色撤回相關（線上模式）
               isCharRecall: parsedMsg.isCharRecall,
               charRecallType: parsedMsg.charRecallType,
@@ -5635,8 +5677,40 @@ async function handleStreamingClose() {
               await _delay(_messageRenderDelay(_totalMsgs3));
             }
             _shownMsgs3++;
-            messages.value.push(newMessage);
-            scrollToBottom();
+            if (parsedMsg.isCharRecall) {
+              const recallContent = parsedMsg.charRecallContent || "";
+              const tempMsg: Message = {
+                ...newMessage,
+                isCharRecall: false,
+                charRecallType: undefined,
+                content: parsedMsg.isVoice
+                  ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
+                  : recallContent,
+                messageType: parsedMsg.isVoice ? "audio" : undefined,
+                audioTranscript: parsedMsg.isVoice ? parsedMsg.voiceContent : undefined,
+              };
+              messages.value.push(tempMsg);
+              scrollToBottom();
+              setTimeout(() => {
+                const idx = messages.value.findIndex((m) => m.id === tempMsg.id);
+                if (idx !== -1) {
+                  const current = messages.value[idx];
+                  messages.value[idx] = {
+                    ...newMessage,
+                    audioBlobId: current.audioBlobId,
+                    audioMimeType: current.audioMimeType,
+                    audioDuration: current.audioDuration,
+                    audioWaveform: current.audioWaveform,
+                    ttsAudioUrl: current.ttsAudioUrl,
+                    ttsSegments: current.ttsSegments,
+                    ttsRawContent: current.ttsRawContent,
+                  };
+                }
+              }, 3000);
+            } else {
+              messages.value.push(newMessage);
+              scrollToBottom();
+            }
 
             // 記錄第一條新 AI 訊息的 ID，用於好感度快照綁定
             if (!_firstNewAiMsgId3 && newMessage.role === "ai") {
@@ -7346,6 +7420,7 @@ useChatCleanup({
             currentBlockedAt,
             message.sentWhileBlocked,
             message.isUserRecalled,
+            message.isCharRecall,
             message.isTransactionClaimNotice,
             groupMemberAvatarVersion,
           ]"
