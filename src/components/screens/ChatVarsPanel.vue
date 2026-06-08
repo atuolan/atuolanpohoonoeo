@@ -4,7 +4,7 @@ import { useChatVariablesStore } from "@/stores/chatVariables";
 import { usePromptManagerStore } from "@/stores/promptManager";
 import type { ChatLocalPrompt } from "@/types/chat";
 import type { PromptDefinition, PromptOrderEntry, PromptRoleType } from "@/types/promptManager";
-import { CATEGORY_INFO, PromptInjectionPosition } from "@/types/promptManager";
+import { PromptInjectionPosition } from "@/types/promptManager";
 
 type PromptMode = "online" | "f2f" | "gc";
 
@@ -31,6 +31,8 @@ interface ChatPromptDraft {
   injection_depth: number;
   injection_order: number;
   enabled: boolean;
+  anchorId: string;   // "" = 末尾
+  anchorPos: "before" | "after";
 }
 
 const props = defineProps<{
@@ -110,39 +112,17 @@ const currentPromptEntries = computed<PromptToggleEntry[]>(() => {
     });
   }
 
-  // 按 injection_order 排序（chatLocal 條目以自身 injection_order 為準）
-  const orderMap = new Map(order.map((e, i) => [e.identifier, i]));
+  // 普通條目 sort key = index * 100，聊天專屬用自身 injection_order
+  const orderMap = new Map(order.map((e, i) => [e.identifier, i * 100]));
   entries.sort((a, b) => {
-    const aOrder = a.isChatLocal
-      ? (a.chatLocalPrompt!.injection_order + 10000)
-      : (orderMap.get(a.identifier) ?? 9999);
-    const bOrder = b.isChatLocal
-      ? (b.chatLocalPrompt!.injection_order + 10000)
-      : (orderMap.get(b.identifier) ?? 9999);
+    const aOrder = a.isChatLocal ? a.chatLocalPrompt!.injection_order : (orderMap.get(a.identifier) ?? 999900);
+    const bOrder = b.isChatLocal ? b.chatLocalPrompt!.injection_order : (orderMap.get(b.identifier) ?? 999900);
     return aOrder - bOrder;
   });
 
   return entries;
 });
 
-const groupedPromptEntries = computed(() => {
-  const groups = new Map<string, { key: string; label: string; entries: PromptToggleEntry[] }>();
-  for (const entry of currentPromptEntries.value) {
-    const info = CATEGORY_INFO[entry.category];
-    // 聊天專屬條目歸入獨立群組
-    const key = entry.isChatLocal ? "__chat_local__" : entry.category;
-    const label = entry.isChatLocal ? "聊天專屬" : (info?.name ?? key);
-    if (!groups.has(key)) {
-      groups.set(key, { key, label, entries: [] });
-    }
-    groups.get(key)?.entries.push(entry);
-  }
-  // 確保聊天專屬群組排最後
-  const result = Array.from(groups.values());
-  const chatLocalIdx = result.findIndex((g) => g.key === "__chat_local__");
-  if (chatLocalIdx > 0) result.push(result.splice(chatLocalIdx, 1)[0]);
-  return result;
-});
 
 const chatPrompts = computed(() => chatVariablesStore.chatPrompts);
 const validPromptIds = computed(() => [
@@ -196,6 +176,27 @@ function resetPromptToggle(entry: PromptToggleEntry): void {
   chatVariablesStore.setPromptToggle(entry.identifier, entry.defaultEnabled, entry.defaultEnabled);
 }
 
+/** 根據錨點計算 injection_order（普通條目 key = index*100，夾在前後之間） */
+function calcOrderFromAnchor(anchorId: string, anchorPos: "before" | "after"): number {
+  const entries = currentPromptEntries.value;
+  if (!anchorId) return (entries.length + 1) * 100 + 50; // 末尾
+  const idx = entries.findIndex((e) => e.identifier === anchorId);
+  if (idx === -1) return (entries.length + 1) * 100 + 50;
+  const orderMap = new Map(
+    promptOrdersByMode.value[activeMode.value].map((e, i) => [e.identifier, i * 100])
+  );
+  const getKey = (e: PromptToggleEntry) =>
+    e.isChatLocal ? e.chatLocalPrompt!.injection_order : (orderMap.get(e.identifier) ?? 999900);
+  const anchorKey = getKey(entries[idx]);
+  if (anchorPos === "before") {
+    const prevKey = idx > 0 ? getKey(entries[idx - 1]) : anchorKey - 100;
+    return Math.round((prevKey + anchorKey) / 2);
+  } else {
+    const nextKey = idx < entries.length - 1 ? getKey(entries[idx + 1]) : anchorKey + 100;
+    return Math.round((anchorKey + nextKey) / 2);
+  }
+}
+
 function createEmptyDraft(): ChatPromptDraft {
   return {
     name: "",
@@ -205,6 +206,8 @@ function createEmptyDraft(): ChatPromptDraft {
     injection_depth: 0,
     injection_order: 100,
     enabled: true,
+    anchorId: "",
+    anchorPos: "after",
   };
 }
 
@@ -225,6 +228,8 @@ function startEditChatPrompt(prompt: ChatLocalPrompt): void {
     injection_depth: prompt.injection_depth,
     injection_order: prompt.injection_order,
     enabled: prompt.enabled,
+    anchorId: "",
+    anchorPos: "after",
   };
   showPromptEditor.value = true;
 }
@@ -239,13 +244,16 @@ function saveChatPrompt(): void {
   const draft = draftPrompt.value;
   if (!draft.name.trim() || !draft.content.trim()) return;
 
+  const resolvedOrder = draft.anchorId
+    ? calcOrderFromAnchor(draft.anchorId, draft.anchorPos)
+    : Number(draft.injection_order) || 0;
   const payload = {
     name: draft.name.trim(),
     role: draft.role,
     content: draft.content,
     injection_position: Number(draft.injection_position) as PromptInjectionPosition,
     injection_depth: Number(draft.injection_depth) || 0,
-    injection_order: Number(draft.injection_order) || 0,
+    injection_order: resolvedOrder,
     enabled: draft.enabled,
   };
 
@@ -305,86 +313,64 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
             <h3>{{ activeTab.label }}</h3>
             <p>{{ activeTab.desc }}。只保存與默認值不同的開關。</p>
           </div>
+          <button type="button" class="mini-btn" @click="startCreateChatPrompt">＋ 新增聊天專屬</button>
         </div>
 
-        <template v-if="groupedPromptEntries.length > 0">
-          <section v-for="group in groupedPromptEntries" :key="group.key" class="prompt-group">
-            <div class="prompt-group-header">
-              <h4>{{ group.label }}</h4>
+        <!-- 平鋪列表，保持與提示詞管理器相同順序 -->
+        <article
+          v-for="entry in currentPromptEntries"
+          :key="entry.identifier"
+          class="var-card prompt-card"
+          :class="{
+            disabled: !isPromptEnabled(entry),
+            customized: isPromptCustomized(entry),
+            'chat-local': entry.isChatLocal,
+          }"
+        >
+          <div class="var-card-summary prompt-summary">
+            <div class="var-card-title">
+              <div class="var-title-main">
+                <h4>{{ entry.name }}</h4>
+                <p v-if="entry.isChatLocal">
+                  {{ entry.chatLocalPrompt!.role }} ·
+                  {{ entry.chatLocalPrompt!.injection_position === PromptInjectionPosition.ABSOLUTE
+                    ? `絕對深度 ${entry.chatLocalPrompt!.injection_depth}`
+                    : `相對位置 order ${entry.chatLocalPrompt!.injection_order}` }}
+                </p>
+                <p v-else>{{ entry.description || entry.identifier }}</p>
+              </div>
+              <span v-if="entry.isChatLocal" class="chat-local-badge">聊天專屬</span>
+              <span v-else-if="isPromptCustomized(entry)" class="custom-badge">已自訂</span>
+            </div>
+            <div class="var-card-controls">
+              <template v-if="entry.isChatLocal">
+                <button type="button" class="mini-btn" @click="startEditChatPrompt(entry.chatLocalPrompt!)">編輯</button>
+                <button type="button" class="mini-btn danger" @click="deleteChatPrompt(entry.chatLocalPrompt!)">刪除</button>
+              </template>
               <button
-                v-if="group.key === '__chat_local__'"
+                v-else-if="isPromptCustomized(entry)"
                 type="button"
                 class="mini-btn"
-                @click="startCreateChatPrompt"
-              >＋ 新增</button>
+                @click="resetPromptToggle(entry)"
+              >
+                回默認
+              </button>
+              <label class="var-switch" :title="isPromptEnabled(entry) ? '此聊天啟用' : '此聊天停用'">
+                <input
+                  type="checkbox"
+                  :checked="isPromptEnabled(entry)"
+                  @change="setPromptEnabled(entry, ($event.target as HTMLInputElement).checked)"
+                />
+                <span></span>
+              </label>
             </div>
-            <article
-              v-for="entry in group.entries"
-              :key="entry.identifier"
-              class="var-card prompt-card"
-              :class="{
-                disabled: !isPromptEnabled(entry),
-                customized: isPromptCustomized(entry),
-                'chat-local': entry.isChatLocal,
-              }"
-            >
-              <div class="var-card-summary prompt-summary">
-                <div class="var-card-title">
-                  <div class="var-title-main">
-                    <h4>{{ entry.name }}</h4>
-                    <p v-if="entry.isChatLocal">
-                      {{ entry.chatLocalPrompt!.role }} ·
-                      {{ entry.chatLocalPrompt!.injection_position === PromptInjectionPosition.ABSOLUTE
-                        ? `絕對深度 ${entry.chatLocalPrompt!.injection_depth}`
-                        : `相對位置 order ${entry.chatLocalPrompt!.injection_order}` }}
-                    </p>
-                    <p v-else>{{ entry.description || entry.identifier }}</p>
-                  </div>
-                  <span v-if="entry.isChatLocal" class="chat-local-badge">聊天專屬</span>
-                  <span v-else-if="isPromptCustomized(entry)" class="custom-badge">已自訂</span>
-                </div>
-                <div class="var-card-controls">
-                  <template v-if="entry.isChatLocal">
-                    <button type="button" class="mini-btn" @click="startEditChatPrompt(entry.chatLocalPrompt!)">編輯</button>
-                    <button type="button" class="mini-btn danger" @click="deleteChatPrompt(entry.chatLocalPrompt!)">刪除</button>
-                  </template>
-                  <button
-                    v-else-if="isPromptCustomized(entry)"
-                    type="button"
-                    class="mini-btn"
-                    @click="resetPromptToggle(entry)"
-                  >
-                    回默認
-                  </button>
-                  <label class="var-switch" :title="isPromptEnabled(entry) ? '此聊天啟用' : '此聊天停用'">
-                    <input
-                      type="checkbox"
-                      :checked="isPromptEnabled(entry)"
-                      @change="setPromptEnabled(entry, ($event.target as HTMLInputElement).checked)"
-                    />
-                    <span></span>
-                  </label>
-                </div>
-              </div>
-            </article>
+          </div>
+        </article>
 
-            <!-- 聊天專屬群組：若無條目顯示提示，並顯示新增按鈕 -->
-            <div v-if="group.key === '__chat_local__' && group.entries.length === 0" class="empty-state compact">
-              <p>尚無聊天專屬提示詞，點擊上方「＋ 新增」來建立。</p>
-            </div>
-          </section>
-        </template>
-
-        <!-- 完全沒有任何提示詞時的空狀態 -->
-        <section v-if="groupedPromptEntries.length === 0" class="empty-state compact">
+        <section v-if="currentPromptEntries.length === 0" class="empty-state compact">
           <div class="empty-icon">P</div>
           <h3>沒有可切換提示詞</h3>
           <p>目前 {{ activeTab.label }} 沒有非 Marker 提示詞條目。</p>
-        </section>
-
-        <!-- 沒有系統提示詞但有聊天專屬的情況：顯示新增按鈕 -->
-        <section v-if="groupedPromptEntries.length === 0 || !groupedPromptEntries.find(g => g.key === '__chat_local__')" class="local-prompts-add">
-          <button type="button" class="ghost-btn" @click="startCreateChatPrompt">＋ 新增聊天專屬提示詞</button>
         </section>
       </section>
 
@@ -413,9 +399,22 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
           <span>深度</span>
           <input v-model.number="draftPrompt.injection_depth" type="number" min="0" />
         </label>
-        <label>
-          <span>排序 (order)</span>
-          <input v-model.number="draftPrompt.injection_order" type="number" />
+        <label class="full-row">
+          <span>插入位置</span>
+          <div class="anchor-row">
+            <select v-model="draftPrompt.anchorPos" class="anchor-pos-select">
+              <option value="before">在...之前</option>
+              <option value="after">在...之後</option>
+            </select>
+            <select v-model="draftPrompt.anchorId" class="anchor-id-select">
+              <option value="">列表末尾</option>
+              <option
+                v-for="entry in currentPromptEntries.filter(e => e.identifier !== draftPrompt.id)"
+                :key="entry.identifier"
+                :value="entry.identifier"
+              >{{ entry.name }}</option>
+            </select>
+          </div>
         </label>
         <label class="full-row">
           <span>內容</span>
@@ -595,24 +594,6 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
     margin-top: 4px;
     color: rgba(62, 48, 36, 0.58);
     font-size: 0.82rem;
-  }
-}
-
-.prompt-group {
-  margin-bottom: 14px;
-}
-
-.prompt-group-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-
-  h4 {
-    margin: 0;
-    color: rgba(63, 48, 37, 0.72);
-    font-size: 0.82rem;
-    font-weight: 800;
   }
 }
 
@@ -821,6 +802,21 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
 
   input {
     width: auto;
+  }
+}
+
+.anchor-row {
+  display: flex;
+  gap: 8px;
+
+  .anchor-pos-select {
+    flex: 0 0 auto;
+    width: auto;
+  }
+
+  .anchor-id-select {
+    flex: 1;
+    min-width: 0;
   }
 }
 
