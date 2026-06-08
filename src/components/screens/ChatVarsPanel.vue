@@ -386,53 +386,53 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
         <section v-if="groupedPromptEntries.length === 0 || !groupedPromptEntries.find(g => g.key === '__chat_local__')" class="local-prompts-add">
           <button type="button" class="ghost-btn" @click="startCreateChatPrompt">＋ 新增聊天專屬提示詞</button>
         </section>
-
-        <!-- 聊天專屬提示詞編輯表單 -->
-        <form v-if="showPromptEditor" class="local-prompt-editor" @submit.prevent="saveChatPrompt">
-          <label>
-            <span>名稱</span>
-            <input v-model="draftPrompt.name" type="text" placeholder="例如：此聊天特殊規則" required />
-          </label>
-          <label>
-            <span>角色</span>
-            <select v-model="draftPrompt.role">
-              <option value="system">system</option>
-              <option value="user">user</option>
-              <option value="assistant">assistant</option>
-            </select>
-          </label>
-          <label>
-            <span>注入位置</span>
-            <select v-model.number="draftPrompt.injection_position">
-              <option :value="PromptInjectionPosition.RELATIVE">相對位置</option>
-              <option :value="PromptInjectionPosition.ABSOLUTE">絕對深度</option>
-            </select>
-          </label>
-          <label v-if="draftPrompt.injection_position === PromptInjectionPosition.ABSOLUTE">
-            <span>深度</span>
-            <input v-model.number="draftPrompt.injection_depth" type="number" min="0" />
-          </label>
-          <label>
-            <span>排序 (order)</span>
-            <input v-model.number="draftPrompt.injection_order" type="number" />
-          </label>
-          <label class="full-row">
-            <span>內容</span>
-            <textarea v-model="draftPrompt.content" rows="8" placeholder="輸入此聊天專屬提示詞內容" required></textarea>
-          </label>
-          <label class="inline-check full-row">
-            <input v-model="draftPrompt.enabled" type="checkbox" />
-            <span>保存後立即啟用</span>
-          </label>
-          <div class="var-actions full-row">
-            <span class="save-status">{{ editingPromptId ? '正在編輯聊天專屬條目' : '新增聊天專屬條目' }}</span>
-            <div class="var-buttons">
-              <button type="button" class="ghost-btn" @click="cancelEditChatPrompt">取消</button>
-              <button type="submit" class="primary-btn">保存</button>
-            </div>
-          </div>
-        </form>
       </section>
+
+      <!-- 聊天專屬提示詞編輯表單（移出滾動區，始終可見） -->
+      <form v-if="showPromptEditor" class="local-prompt-editor" @submit.prevent="saveChatPrompt">
+        <label>
+          <span>名稱</span>
+          <input v-model="draftPrompt.name" type="text" placeholder="例如：此聊天特殊規則" required />
+        </label>
+        <label>
+          <span>角色</span>
+          <select v-model="draftPrompt.role">
+            <option value="system">system</option>
+            <option value="user">user</option>
+            <option value="assistant">assistant</option>
+          </select>
+        </label>
+        <label>
+          <span>注入位置</span>
+          <select v-model.number="draftPrompt.injection_position">
+            <option :value="PromptInjectionPosition.RELATIVE">相對位置</option>
+            <option :value="PromptInjectionPosition.ABSOLUTE">絕對深度</option>
+          </select>
+        </label>
+        <label v-if="draftPrompt.injection_position === PromptInjectionPosition.ABSOLUTE">
+          <span>深度</span>
+          <input v-model.number="draftPrompt.injection_depth" type="number" min="0" />
+        </label>
+        <label>
+          <span>排序 (order)</span>
+          <input v-model.number="draftPrompt.injection_order" type="number" />
+        </label>
+        <label class="full-row">
+          <span>內容</span>
+          <textarea v-model="draftPrompt.content" rows="6" placeholder="輸入此聊天專屬提示詞內容" required></textarea>
+        </label>
+        <label class="inline-check full-row">
+          <input v-model="draftPrompt.enabled" type="checkbox" />
+          <span>保存後立即啟用</span>
+        </label>
+        <div class="var-actions full-row">
+          <span class="save-status">{{ editingPromptId ? '正在編輯聊天專屬條目' : '新增聊天專屬條目' }}</span>
+          <div class="var-buttons">
+            <button type="button" class="ghost-btn" @click="cancelEditChatPrompt">取消</button>
+            <button type="submit" class="primary-btn">保存</button>
+          </div>
+        </div>
+      </form>
 
       <footer class="panel-footer">
         <span class="save-status saved">變更會自動保存到此聊天</span>
@@ -772,10 +772,10 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  padding: 14px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.62);
-  border: 1px solid rgba(92, 72, 55, 0.12);
+  padding: 14px 20px;
+  border-top: 1px solid rgba(92, 72, 55, 0.12);
+  background: rgba(255, 252, 248, 0.85);
+  flex-shrink: 0;
 
   label {
     display: flex;
