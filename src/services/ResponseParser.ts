@@ -147,7 +147,7 @@ function hasInlineSpecialTags(content: string): boolean {
 function splitBySpecialTags(content: string): ParsedMessage[] {
   // 匹配所有需要拆分的特殊標籤（按出現順序）
   const tagRegex =
-    /<timetravel>([\s\S]*?)<\/timetravel>|<voice>([\s\S]*?)<\/voice>|<pay>([\d.]+)(?::([^<]*?))?<\/pay>|<transfer\s+amount=["']?([\d.]+)["']?\s*>([\s\S]*?)<\/transfer>|<refund>([\d.]+)<\/refund>|<location>([\s\S]*?)<\/location>|<redpacket\s+([^>]+)\/?>|<waimai-pay\s+([^>]*?)\s*\/?>|<waimai-delivery\s*\/?>|<face-to-face-request\s+([^>]*?)\s*\/?>|<online-mode-request\s+([^>]*?)\s*\/?>/gi;
+    /<timetravel>([\s\S]*?)<\/timetravel>|<recall>\s*<voice>([\s\S]*?)<\/voice>\s*<\/recall>|<voice>([\s\S]*?)<\/voice>|<pay>([\d.]+)(?::([^<]*?))?<\/pay>|<transfer\s+amount=["']?([\d.]+)["']?\s*>([\s\S]*?)<\/transfer>|<refund>([\d.]+)<\/refund>|<location>([\s\S]*?)<\/location>|<redpacket\s+([^>]+)\/?>|<waimai-pay\s+([^>]*?)\s*\/?>|<waimai-delivery\s*\/?>|<face-to-face-request\s+([^>]*?)\s*\/?>|<online-mode-request\s+([^>]*?)\s*\/?>/gi;
 
   interface TagMatch {
     index: number;
@@ -169,40 +169,50 @@ function splitBySpecialTags(content: string): ParsedMessage[] {
         timetravelContent: match[1].trim(),
       };
     } else if (match[2] !== undefined) {
-      // <voice>
-      msg = { content: "", isVoice: true, voiceContent: match[2].trim() };
+      // <recall><voice>...</voice></recall>
+      msg = {
+        content: "",
+        isCharRecall: true,
+        charRecallType: "seen",
+        isVoice: true,
+        voiceContent: match[2].trim(),
+        charRecallContent: match[2].trim(),
+      };
     } else if (match[3] !== undefined) {
+      // <voice>
+      msg = { content: "", isVoice: true, voiceContent: match[3].trim() };
+    } else if (match[4] !== undefined) {
       // <pay>
       msg = {
         content: "",
         isTransfer: true,
         transferType: "pay",
-        transferAmount: parseFloat(match[3]),
-        transferNote: match[4]?.trim() || undefined,
+        transferAmount: parseFloat(match[4]),
+        transferNote: match[5]?.trim() || undefined,
       };
-    } else if (match[5] !== undefined) {
+    } else if (match[6] !== undefined) {
       // <transfer amount="...">備註</transfer>
       msg = {
         content: "",
         isTransfer: true,
         transferType: "pay",
-        transferAmount: parseFloat(match[5]),
-        transferNote: match[6]?.trim() || undefined,
+        transferAmount: parseFloat(match[6]),
+        transferNote: match[7]?.trim() || undefined,
       };
-    } else if (match[7] !== undefined) {
+    } else if (match[8] !== undefined) {
       // <refund>
       msg = {
         content: "",
         isTransfer: true,
         transferType: "refund",
-        transferAmount: parseFloat(match[7]),
+        transferAmount: parseFloat(match[8]),
       };
-    } else if (match[8] !== undefined) {
-      // <location>
-      msg = { content: "", isLocation: true, locationContent: match[8].trim() };
     } else if (match[9] !== undefined) {
+      // <location>
+      msg = { content: "", isLocation: true, locationContent: match[9].trim() };
+    } else if (match[10] !== undefined) {
       // <redpacket>
-      const attrs = match[9];
+      const attrs = match[10];
       msg = {
         content: "",
         isRedpacket: true,
@@ -213,9 +223,9 @@ function splitBySpecialTags(content: string): ParsedMessage[] {
           voice: extractAttr(attrs, "voice"),
         },
       };
-    } else if (match[10] !== undefined) {
+    } else if (match[11] !== undefined) {
       // <waimai-pay status="..."/>
-      const attrs = match[10];
+      const attrs = match[11];
       const status = extractAttr(attrs, "status") as
         | "paid"
         | "rejected"
@@ -235,17 +245,17 @@ function splitBySpecialTags(content: string): ParsedMessage[] {
         content: "",
         isWaimaiDelivery: true,
       };
-    } else if (match[11] !== undefined) {
+    } else if (match[12] !== undefined) {
       // <face-to-face-request reason="..."/>
-      const attrs = match[11];
+      const attrs = match[12];
       msg = {
         content: "",
         isFaceToFaceRequest: true,
         faceToFaceRequestReason: extractAttr(attrs, "reason") || undefined,
       };
-    } else if (match[12] !== undefined) {
+    } else if (match[13] !== undefined) {
       // <online-mode-request reason="..."/>
-      const attrs = match[12];
+      const attrs = match[13];
       msg = {
         content: "",
         isOnlineModeRequest: true,

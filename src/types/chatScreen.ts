@@ -168,6 +168,8 @@ export interface ChatScreenMessage {
   }>;
   isUserRecalled?: boolean;
   userRecalledType?: "seen" | "unseen";
+  /** 撤回動畫過渡中的臨時訊息，3秒後會被替換，不應持久化 */
+  _isPendingRecall?: boolean;
   isCharRecall?: boolean;
   charRecallType?: "seen" | "hidden";
   charRecallContent?: string;

@@ -66,7 +66,13 @@ export function useChatPersistence(deps: UseChatPersistenceDeps) {
 
   async function saveChatImplInner() {
     const charName = deps.getCharName();
-    const messagesSnapshot = [...deps.messages.value];
+    const recallIds = new Set(deps.messages.value.map((m) => m.id));
+    const messagesSnapshot = deps.messages.value.flatMap((m) => {
+      if (!m._isPendingRecall) return [m];
+      // 3秒 setTimeout 尚未觸發時，直接升級為 recall 版本保存
+      if (recallIds.has(`${m.id}_recall`)) return []; // recall 版本已存在，過濾掉 tempMsg
+      return [{ ...m, _isPendingRecall: undefined, isCharRecall: true }];
+    });
     const storableMessages = messagesSnapshot.map((m) =>
       deps.convertToStorableMessage(m, charName),
     );
@@ -172,14 +178,51 @@ export function useChatPersistence(deps: UseChatPersistenceDeps) {
 
       if (import.meta.env.DEV) {
         try {
-          const savedCount = await getMessageCount(deps.currentChatId.value!);
+          const savedMessages = await loadMessages(deps.currentChatId.value!);
+          const savedCount = savedMessages.length;
           if (savedCount !== localCount) {
-            console.error(
-              "[ChatScreen] ⚠️ 保存後回讀數量不一致！寫入:",
-              localCount,
-              "讀回:",
-              savedCount,
+            const incomingIds = new Set<string>(
+              plainMessages
+                .map((m: any) => m?.id)
+                .filter((id: unknown): id is string => typeof id === "string" && id.length > 0),
             );
+            const savedIds = new Set<string>(
+              savedMessages
+                .map((m: any) => m?.id)
+                .filter((id: unknown): id is string => typeof id === "string" && id.length > 0),
+            );
+            const lostIncomingIds = [...incomingIds].filter((id) => !savedIds.has(id));
+            const preservedExternalMessages = savedMessages.filter((m: any) => {
+              if (!m?.id || incomingIds.has(m.id)) return false;
+              return messagesLoadedAt > 0 && (m.createdAt || 0) > messagesLoadedAt;
+            });
+
+            if (
+              lostIncomingIds.length === 0 &&
+              preservedExternalMessages.length === savedCount - localCount
+            ) {
+              console.info(
+                "[ChatScreen] 保存後回讀數量較多：已保留快照後由背景服務追加的訊息。",
+                {
+                  written: localCount,
+                  readBack: savedCount,
+                  preservedExternalIds: preservedExternalMessages.map((m: any) => m.id),
+                },
+              );
+            } else {
+              console.error(
+                "[ChatScreen] ⚠️ 保存後回讀數量不一致！寫入:",
+                localCount,
+                "讀回:",
+                savedCount,
+                {
+                  lostIncomingIds,
+                  extraSavedIds: savedMessages
+                    .filter((m: any) => m?.id && !incomingIds.has(m.id))
+                    .map((m: any) => m.id),
+                },
+              );
+            }
           }
         } catch (verifyErr) {
           console.warn("[ChatScreen] 回讀驗證失敗:", verifyErr);

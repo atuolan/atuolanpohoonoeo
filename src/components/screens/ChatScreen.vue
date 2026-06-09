@@ -4938,6 +4938,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                   ...newMessage,
                   isCharRecall: false,
                   charRecallType: undefined,
+                  _isPendingRecall: true,
                   content: parsedMsg.isVoice
                     ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
                     : recallContent,
@@ -4950,8 +4951,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                   const idx = messages.value.findIndex((m) => m.id === tempMsg.id);
                   if (idx !== -1) {
                     const current = messages.value[idx];
-                    const replaced = {
+                    messages.value.splice(idx, 1, {
                       ...newMessage,
+                      id: `${newMessage.id}_recall`,
                       audioBlobId: current.audioBlobId,
                       audioMimeType: current.audioMimeType,
                       audioDuration: current.audioDuration,
@@ -4959,8 +4961,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                       ttsAudioUrl: current.ttsAudioUrl,
                       ttsSegments: current.ttsSegments,
                       ttsRawContent: current.ttsRawContent,
-                    };
-                    messages.value[idx] = replaced;
+                    });
                   }
                 }, 3000);
               } else {
@@ -5683,6 +5684,7 @@ async function handleStreamingClose() {
                 ...newMessage,
                 isCharRecall: false,
                 charRecallType: undefined,
+                _isPendingRecall: true,
                 content: parsedMsg.isVoice
                   ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
                   : recallContent,
@@ -5695,8 +5697,9 @@ async function handleStreamingClose() {
                 const idx = messages.value.findIndex((m) => m.id === tempMsg.id);
                 if (idx !== -1) {
                   const current = messages.value[idx];
-                  messages.value[idx] = {
+                  messages.value.splice(idx, 1, {
                     ...newMessage,
+                    id: `${newMessage.id}_recall`,
                     audioBlobId: current.audioBlobId,
                     audioMimeType: current.audioMimeType,
                     audioDuration: current.audioDuration,
@@ -5704,7 +5707,7 @@ async function handleStreamingClose() {
                     ttsAudioUrl: current.ttsAudioUrl,
                     ttsSegments: current.ttsSegments,
                     ttsRawContent: current.ttsRawContent,
-                  };
+                  });
                 }
               }, 3000);
             } else {
