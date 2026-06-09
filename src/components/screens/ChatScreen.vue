@@ -7364,7 +7364,7 @@ useChatCleanup({
             rows="3"
             style="
               width: 100%;
-              border: 1px solid var(--border-color);
+              border: 1px solid var(--color-border);
               border-radius: 8px;
               padding: 8px;
               font-size: 14px;
@@ -10852,9 +10852,12 @@ useChatCleanup({
     padding: 10px 16px 12px;
     padding-left: calc(16px + var(--safe-left));
     padding-right: calc(16px + var(--safe-right));
-    background: var(--color-surface);
-    border-bottom: 1px solid var(--color-border);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    /* 加強毛玻璃：使用半透明 + backdrop-filter，避免被桌布完全遮蓋而看不清 */
+    background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
     justify-content: center;
     animation: rail-slide-in 0.2s ease-out;
 
@@ -11188,7 +11191,8 @@ useChatCleanup({
     }
 
     &:hover {
-      background: rgba(255, 123, 123, 0.1);
+      // 對齊主題色族 → --color-error
+      background: color-mix(in srgb, var(--color-error) 12%, transparent);
     }
   }
 }
@@ -12094,13 +12098,15 @@ useChatCleanup({
 }
 
 .blocked-badge-icon {
-  color: #ff4d4f;
+  // 對齊主題色族 → --color-error
+  color: var(--color-error, #ff4d4f);
   font-size: 12px;
 }
 
 .blocked-badge-text {
   font-size: 11px;
-  color: #ff4d4f;
+  // 對齊主題色族 → --color-error
+  color: var(--color-error, #ff4d4f);
   opacity: 0.8;
 }
 
@@ -12339,7 +12345,8 @@ useChatCleanup({
     transition: all 0.2s;
 
     &:hover:not(:disabled) {
-      background: #c53030;
+      // 對齊主題色族：darken --color-error 一點作為 hover 態
+      background: color-mix(in srgb, var(--color-error) 85%, #000);
       transform: scale(1.02);
     }
 
@@ -14423,11 +14430,12 @@ body.is-night-mode {
   }
 
   &.danger {
-    color: #e53935;
-    border-color: rgba(229, 57, 53, 0.3);
+    // 對齊主題色族 → --color-error
+    color: var(--color-error, #e53935);
+    border-color: color-mix(in srgb, var(--color-error) 30%, transparent);
 
     &:hover:not(:disabled) {
-      background: rgba(229, 57, 53, 0.08);
+      background: color-mix(in srgb, var(--color-error) 8%, transparent);
     }
 
     &:disabled {
@@ -14615,8 +14623,9 @@ body.is-night-mode {
   }
 
   &.danger:hover {
-    background: rgba(229, 62, 62, 0.1);
-    color: #e53e3e;
+    // 對齊主題色族 → --color-error
+    background: color-mix(in srgb, var(--color-error) 10%, transparent);
+    color: var(--color-error, #e53e3e);
   }
 
   &.pinned {
@@ -15277,7 +15286,7 @@ body.is-night-mode {
 }
 
 .friend-request-dialog {
-  background: var(--bg-primary, #fff);
+  background: var(--color-surface, #fff);
   border-radius: 16px;
   padding: 20px;
   width: 320px;
@@ -15297,7 +15306,7 @@ body.is-night-mode {
 .block-cancel-btn {
   padding: 8px 16px;
   border-radius: 8px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--color-border);
   background: transparent;
   cursor: pointer;
 }
@@ -15306,7 +15315,7 @@ body.is-night-mode {
   padding: 8px 16px;
   border-radius: 8px;
   border: none;
-  background: var(--primary-color, #4a90e2);
+  background: var(--color-primary, #4a90e2);
   color: white;
   cursor: pointer;
   &:disabled {

@@ -958,9 +958,11 @@ const isDarkBackground = computed(() =>
     gap: 6px;
     padding: 6px 12px;
     font-size: 12px;
-    color: rgba(180, 50, 50, 0.85);
-    background: rgba(255, 80, 80, 0.06);
-    border-bottom: 1px solid rgba(255, 80, 80, 0.12);
+    // 對齊 ThemeSettingsModal 預覽卡的紅色族 → --color-error
+    color: color-mix(in srgb, var(--color-error) 85%, transparent);
+    background: color-mix(in srgb, var(--color-error) 6%, transparent);
+    border-bottom: 1px solid
+      color-mix(in srgb, var(--color-error) 12%, transparent);
   }
 
   .blocked-friend-request-btn {
@@ -1317,7 +1319,8 @@ const isDarkBackground = computed(() =>
 
 .gift-feature-icon {
   svg {
-    color: #e53935 !important;
+    // 對齊主題色族 → --color-error
+    color: var(--color-error, #e53935) !important;
   }
 }
 
@@ -1337,8 +1340,11 @@ const isDarkBackground = computed(() =>
   border-radius: 0;
   background: transparent;
   color: var(--chat-header-text, var(--color-text));
-  font-size: 15px;
-  line-height: 1.4;
+  // 對齊 ThemeSettingsModal 預覽卡 ✎ 文字綁定的字體族變數
+  font-family: var(--chat-font-family, inherit);
+  font-size: var(--chat-font-size, 15px);
+  line-height: var(--chat-line-height, 1.4);
+  letter-spacing: var(--chat-letter-spacing, normal);
   resize: none;
   outline: none;
   box-shadow: none;
@@ -1463,7 +1469,7 @@ const isDarkBackground = computed(() =>
   color: var(--color-error, #e53e3e);
 
   &:hover {
-    background: rgba(229, 62, 62, 0.1);
+    background: color-mix(in srgb, var(--color-error) 10%, transparent);
   }
 }
 
@@ -2131,14 +2137,16 @@ const isDarkBackground = computed(() =>
 }
 
 .recording-time-text {
-  color: #e53e3e;
+  // 對齊主題色族 → --color-error
+  color: var(--color-error, #e53e3e);
   font-weight: bold;
 }
 
 // 麥克風按鈕樣式
 .mic-btn {
   &:active {
-    color: #e53e3e;
+    // 對齊主題色族 → --color-error
+    color: var(--color-error, #e53e3e);
   }
 }
 
@@ -2151,7 +2159,8 @@ const isDarkBackground = computed(() =>
   }
 
   &:active {
-    color: #e53e3e;
+    // 對齊主題色族 → --color-error
+    color: var(--color-error, #e53e3e);
   }
 }
 

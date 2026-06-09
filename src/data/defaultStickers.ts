@@ -113,7 +113,7 @@ export const defaultStickers: DefaultSticker[] = [
   { name: '嘻嘻', url: 'https://aguacloudreve.aguacloud.uk/f/RQ5td/hehe.png' },
   { name: '好棒', url: 'https://aguacloudreve.aguacloud.uk/f/A77u1/%E5%A5%BD%E6%A3%92.gif' },
   { name: '驚喜', url: 'https://aguacloudreve.aguacloud.uk/f/5NVfp/%E9%A9%9A%E8%A8%9D.gif' },
-  { name: '聰明如我', url: 'https://aguacloudreve.aguacloud.uk/f/rJDCp/729CF75F892F083E449B8F879974DBD2.gif?raw=true' },
+  { name: '聰明如我', url: 'https://aguacloudreve.aguacloud.uk/f/rJDCp/729CF75F892F083E449B8F879974DBD2.gif' },
   { name: '我他嗎快笑死', url: 'https://aguacloudreve.aguacloud.uk/f/XZkHk/discord_099.png' },
   { name: '得意轉圈圈', url: 'https://aguacloudreve.aguacloud.uk/f/Rr5Ud/%E5%BE%97%E6%84%8F%E8%BD%89%E5%9C%88%E5%9C%88.gif' },
   { name: '得意扭扭', url: 'https://aguacloudreve.aguacloud.uk/f/6Nqfw/%E5%BE%97%E6%84%8F%E6%89%AD%E6%89%AD.gif' },

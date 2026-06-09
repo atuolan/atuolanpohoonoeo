@@ -120,15 +120,10 @@ function handleAction(action: string) {
         </div>
         <h2 class="profile-name">{{ displayName }}</h2>
         <p v-if="nickname" class="profile-subtitle">{{ nickname }}</p>
-      </section>
 
-      <!-- 內容流 -->
-      <div class="content-flow">
-        <!-- 快捷導航 -->
-        <section class="glass-panel organic-shape-1">
-          <div class="panel-deco panel-deco--tr"></div>
-          <h3 class="panel-title">快捷導航</h3>
-          <div class="quick-grid">
+        <!-- 快捷導航：直接置於名稱下方，無面板包裹 -->
+        <div class="quick-honeycomb">
+          <div class="hex-row hex-row--top">
             <button class="quick-item" @click="handleAction('character')">
               <div class="quick-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -137,6 +132,17 @@ function handleAction(action: string) {
                 </svg>
               </div>
               <span class="quick-label">角色卡</span>
+            </button>
+            <button class="quick-item quick-item--hero" @click="handleAction('chat-vars')">
+              <div class="quick-icon quick-icon--hero">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 7h16" />
+                  <path d="M4 17h16" />
+                  <circle cx="8" cy="7" r="2" />
+                  <circle cx="16" cy="17" r="2" />
+                </svg>
+              </div>
+              <span class="quick-label">專屬預設</span>
             </button>
             <button class="quick-item" @click="handleAction('worldbook')">
               <div class="quick-icon">
@@ -148,6 +154,8 @@ function handleAction(action: string) {
               </div>
               <span class="quick-label">世界書</span>
             </button>
+          </div>
+          <div class="hex-row hex-row--bottom">
             <button class="quick-item" @click="handleAction('peek-phone')">
               <div class="quick-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -167,8 +175,11 @@ function handleAction(action: string) {
               <span class="quick-label">設置</span>
             </button>
           </div>
-        </section>
+        </div>
+      </section>
 
+      <!-- 內容流 -->
+      <div class="content-flow">
         <!-- 聊天管理 -->
         <section class="glass-panel rounded-soft">
           <div class="panel-deco panel-deco--bl"></div>
@@ -207,20 +218,6 @@ function handleAction(action: string) {
                 </svg>
               </div>
               <span class="list-label">聊天資訊</span>
-              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m9 18 6-6-6-6" />
-              </svg>
-            </button>
-            <button class="list-item" @click="handleAction('chat-vars')">
-              <div class="list-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M4 7h16" />
-                  <path d="M4 17h16" />
-                  <circle cx="8" cy="7" r="2" />
-                  <circle cx="16" cy="17" r="2" />
-                </svg>
-              </div>
-              <span class="list-label">變量設定</span>
               <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m9 18 6-6-6-6" />
               </svg>
@@ -443,7 +440,7 @@ function handleAction(action: string) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 
 .avatar-container {
@@ -454,13 +451,7 @@ function handleAction(action: string) {
 }
 
 .avatar-glow {
-  position: absolute;
-  inset: 0;
-  border-radius: 9999px;
-  background: var(--color-primary, #00723a);
-  filter: blur(20px);
-  opacity: 0.18;
-  transform: scale(1.08);
+  display: none;
 }
 
 .avatar-frame {
@@ -597,13 +588,35 @@ function handleAction(action: string) {
   margin: 0 0 16px;
 }
 
-/* === 快捷導航 === */
-.quick-grid {
+/* === 快捷導航：3+2 錯位蜂窩（直接置於 profile-name 下方） === */
+.quick-honeycomb {
   position: relative;
   z-index: 1;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 2px 4px;
+  margin-top: 18px;
+  width: 100%;
+}
+
+.hex-row {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.hex-row--top {
+  gap: 14px;
+}
+
+/* 下排向左偏移半格，與上排錯開呼應蜂窩 */
+.hex-row--bottom {
+  gap: 14px;
+  margin-top: -10px;
+  // 偏移：向右半格抵消，使下排兩顆嵌入上排三顆之間
+  transform: translateX(0);
 }
 
 .quick-item {
@@ -611,36 +624,83 @@ function handleAction(action: string) {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 4px 0;
+  padding: 0;
   background: transparent;
   border: none;
   cursor: pointer;
+  transition: transform 0.32s cubic-bezier(0.34, 1.32, 0.64, 1);
 
-  &:active .quick-icon {
-    transform: scale(0.92);
+  &:hover {
+    transform: translateY(-3px);
+  }
+
+  &:active {
+    transform: translateY(-1px) scale(0.96);
   }
 
   &:hover .quick-icon {
     background: var(--color-primary, #00723a);
     color: var(--color-on-primary, #ffffff);
+    box-shadow:
+      0 10px 22px color-mix(in srgb, var(--color-primary, #00723a) 28%, transparent),
+      0 2px 6px rgba(0, 0, 0, 0.05);
   }
 }
 
+/* 六邊形圖示 */
 .quick-icon {
-  width: 52px;
-  height: 52px;
+  position: relative;
+  width: 56px;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 18px;
+  // CSS hexagon via clip-path
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
   background: color-mix(in srgb, var(--color-surface) 95%, transparent);
   color: var(--color-primary, #00723a);
+  // clip-path 會切掉 box-shadow，改用內陰影模擬輕浮感
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
-  transition: all 0.25s;
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease,
+    box-shadow 0.4s ease,
+    transform 0.45s cubic-bezier(0.34, 1.32, 0.64, 1);
 
   svg {
     width: 24px;
     height: 24px;
+  }
+}
+
+/* 中央主角：專屬預設（蜂巢蜂后） */
+.quick-item--hero {
+  position: relative;
+
+  .quick-label {
+    color: var(--color-primary, #00723a);
+    font-weight: 600;
+  }
+}
+
+.quick-icon--hero {
+  width: 68px;
+  height: 78px;
+  background: color-mix(in srgb, var(--color-primary, #00723a) 14%, var(--color-surface));
+  color: var(--color-primary, #00723a);
+  // 雙層蜂巢：外圍邊框由 ::before 提供
+  &::before {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    background: color-mix(in srgb, var(--color-primary, #00723a) 32%, transparent);
+    z-index: -1;
+  }
+
+  svg {
+    width: 30px;
+    height: 30px;
   }
 }
 
@@ -649,6 +709,15 @@ function handleAction(action: string) {
   font-weight: 500;
   color: var(--color-text-secondary);
   letter-spacing: 0.3px;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quick-item,
+  .quick-icon {
+    transition: none !important;
+    animation: none !important;
+  }
 }
 
 /* === 列表群組 === */

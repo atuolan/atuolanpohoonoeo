@@ -130,11 +130,17 @@ export interface BubbleStyle {
   userBgColor: string; // 用戶氣泡背景
   userBgGradient: string; // 用戶氣泡漸層
   userTextColor: string; // 用戶氣泡文字
+  userTextGradient: string; // 用戶文字漸層（套用於文字色，使用 background-clip: text）
   aiBgColor: string; // AI 氣泡背景
+  aiBgGradient: string; // AI 氣泡漸層
   aiTextColor: string; // AI 發送者名稱 / 時間文字
+  aiTextGradient: string; // AI 發送者名稱 / 時間文字漸層
   aiContentColor: string; // AI 氣泡內主要文字
+  aiContentGradient: string; // AI 氣泡內主要文字漸層
   thoughtBgColor: string; // 想法氣泡背景（hex，如 #ADD8E6）
+  thoughtBgGradient: string; // 想法氣泡背景漸層（覆蓋純色）
   thoughtTextColor: string; // 想法氣泡文字（hex）
+  thoughtTextGradient: string; // 想法氣泡文字漸層
   thoughtGlowColor: string; // 想法氣泡光暈（hex，如 #ADD8E6）
   thoughtGlowOpacity: number; // 想法氣泡光暈透明度 (0-1, 預設 0.6)
   borderRadius: number; // 圓角大小 (px)
@@ -294,11 +300,17 @@ const defaultBubbleStyle: BubbleStyle = {
   userBgColor: "#FF85A2",
   userBgGradient: "linear-gradient(135deg, #FF85A2, #FFB6C8)",
   userTextColor: "#FFFFFF",
+  userTextGradient: "",
   aiBgColor: "#FFFFFF",
+  aiBgGradient: "",
   aiTextColor: "#4A4A6A",
+  aiTextGradient: "",
   aiContentColor: "#4A4A6A",
+  aiContentGradient: "",
   thoughtBgColor: "#ADD8E6",
+  thoughtBgGradient: "",
   thoughtTextColor: "#4a6572",
+  thoughtTextGradient: "",
   thoughtGlowColor: "#ADD8E6",
   thoughtGlowOpacity: 0.6,
   borderRadius: 20,
@@ -424,11 +436,17 @@ export const useThemeStore = defineStore("theme", () => {
     userBgColor: "#2a4a3a",
     userBgGradient: "",
     userTextColor: "#e0f0e8",
+    userTextGradient: "",
     aiBgColor: "#1e2a40",
+    aiBgGradient: "",
     aiTextColor: "#d8d8e8",
+    aiTextGradient: "",
     aiContentColor: "#d8d8e8",
+    aiContentGradient: "",
     thoughtBgColor: "#506EA0",
+    thoughtBgGradient: "",
     thoughtTextColor: "#c0d0e8",
+    thoughtTextGradient: "",
     thoughtGlowColor: "#648CC8",
     thoughtGlowOpacity: 0.4,
     borderRadius: 20,
@@ -548,15 +566,23 @@ export const useThemeStore = defineStore("theme", () => {
       // 氣泡變數
       "--bubble-user-bg": b.userBgGradient || b.userBgColor,
       "--bubble-user-text": b.userTextColor,
-      "--bubble-ai-bg": b.aiBgColor,
+      "--bubble-user-text-gradient": b.userTextGradient || "none",
+      "--bubble-user-text-fill": b.userTextGradient ? "transparent" : b.userTextColor,
+      "--bubble-ai-bg": b.aiBgGradient || b.aiBgColor,
       "--bubble-ai-text": b.aiTextColor,
+      "--bubble-ai-text-gradient": b.aiTextGradient || "none",
+      "--bubble-ai-text-fill": b.aiTextGradient ? "transparent" : b.aiTextColor,
       "--bubble-ai-content": b.aiContentColor,
+      "--bubble-ai-content-gradient": b.aiContentGradient || "none",
+      "--bubble-ai-content-fill": b.aiContentGradient ? "transparent" : b.aiContentColor,
       "--bubble-radius": `${b.borderRadius}px`,
       "--bubble-max-width": `${b.maxWidth}%`,
 
       // 想法氣泡
-      "--thought-bg": hexToRgba(b.thoughtBgColor, 0.9),
+      "--thought-bg": b.thoughtBgGradient || hexToRgba(b.thoughtBgColor, 0.9),
       "--thought-text": b.thoughtTextColor,
+      "--thought-text-gradient": b.thoughtTextGradient || "none",
+      "--thought-text-fill": b.thoughtTextGradient ? "transparent" : b.thoughtTextColor,
       "--thought-glow-1": hexToRgba(b.thoughtGlowColor, b.thoughtGlowOpacity),
       "--thought-glow-2": hexToRgba(b.thoughtGlowColor, b.thoughtGlowOpacity * 0.6),
       "--thought-glow-3": hexToRgba(b.thoughtGlowColor, b.thoughtGlowOpacity * 0.3),

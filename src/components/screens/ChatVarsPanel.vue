@@ -296,10 +296,9 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
   <div class="chat-vars-panel-backdrop" @click.self="emit('close')">
     <aside class="chat-vars-panel" role="dialog" aria-modal="true" aria-label="聊天提示詞設定">
       <header class="panel-header">
-        <div>
-          <p class="panel-eyebrow">Chat Prompts</p>
+        <div class="panel-header-text">
           <h2>提示詞開關</h2>
-          <p class="panel-subtitle">設定此聊天專屬的提示詞開關，並新增只屬於此聊天的提示詞條目。</p>
+          <small class="panel-subtitle">設定此聊天專屬的提示詞開關，並新增條目。</small>
         </div>
         <button class="close-btn" type="button" title="關閉" @click="emit('close')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -319,15 +318,15 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
           @click="switchMode(tab.key)"
         >
           <span>{{ tab.label }}</span>
-          <small>{{ currentPromptEntries.length }} 個可切換提示詞</small>
+          <small>{{ currentPromptEntries.length }}個提示詞</small>
         </button>
       </nav>
 
       <section class="vars-list">
         <div class="section-title">
-          <div>
+          <div class="section-title-text">
             <h3>{{ activeTab.label }}</h3>
-            <p>{{ activeTab.desc }}。只保存與默認值不同的開關。</p>
+            <small>{{ activeTab.desc }}。只保存與默認值不同的開關。</small>
           </div>
           <button type="button" class="mini-btn" @click="startCreateChatPrompt">＋ 新增聊天專屬</button>
         </div>
@@ -488,35 +487,37 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
 .panel-header {
   display: flex;
   justify-content: space-between;
-  gap: 18px;
-  padding: 28px 24px 18px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px 10px;
   border-bottom: 1px solid rgba(92, 72, 55, 0.12);
 
+  .panel-header-text {
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
   h2 {
-    margin: 4px 0 6px;
-    font-size: 1.55rem;
+    margin: 0;
+    font-size: 1.1rem;
     font-weight: 800;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
   }
 }
 
-.panel-eyebrow {
-  margin: 0;
-  color: rgba(90, 68, 46, 0.62);
-  font-size: 0.72rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
 .panel-subtitle {
-  margin: 0;
-  color: rgba(62, 48, 36, 0.64);
-  font-size: 0.9rem;
+  color: rgba(62, 48, 36, 0.6);
+  font-size: 0.74rem;
+  line-height: 1.3;
 }
 
 .close-btn {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   flex: 0 0 auto;
   border: 0;
   border-radius: 999px;
@@ -528,42 +529,40 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
   box-shadow: 0 8px 24px rgba(83, 64, 44, 0.12);
 
   svg {
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
   }
 }
 
 .mode-tabs {
   display: flex;
-  gap: 10px;
-  padding: 16px 20px 10px;
+  gap: 8px;
+  padding: 8px 20px 6px;
   overflow-x: auto;
 }
 
 .mode-tab {
-  min-width: 150px;
-  padding: 12px 14px;
+  min-width: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 12px;
   border: 1px solid rgba(97, 75, 55, 0.12);
-  border-radius: 18px;
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.52);
   color: rgba(63, 48, 37, 0.72);
   cursor: pointer;
   text-align: left;
+  white-space: nowrap;
   transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
-
-  span,
-  small {
-    display: block;
-  }
 
   span {
     font-weight: 700;
-    font-size: 0.92rem;
+    font-size: 0.86rem;
   }
 
   small {
-    margin-top: 4px;
-    font-size: 0.74rem;
+    font-size: 0.7rem;
     color: rgba(62, 48, 36, 0.52);
   }
 
@@ -590,26 +589,39 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
 }
 
 .section-title {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin: 12px 0;
+  margin: 0 -20px 8px;
+  padding: 10px 20px;
+  background: rgba(252, 247, 240, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(92, 72, 55, 0.08);
 
-  h3,
-  p {
-    margin: 0;
+  .section-title-text {
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 
   h3 {
-    font-size: 1rem;
+    margin: 0;
+    font-size: 0.98rem;
     font-weight: 800;
+    flex-shrink: 0;
   }
 
-  p {
-    margin-top: 4px;
+  small {
     color: rgba(62, 48, 36, 0.58);
-    font-size: 0.82rem;
+    font-size: 0.74rem;
+    line-height: 1.3;
   }
 }
 
@@ -950,7 +962,7 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
   }
 
   .panel-header {
-    padding: 24px 18px 16px;
+    padding: 10px 16px 8px;
   }
 
   .mode-tabs,

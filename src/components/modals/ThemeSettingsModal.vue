@@ -65,6 +65,49 @@ const previewFocus = ref<
   "ai" | "user" | "header" | "wallpaper" | "surface" | "surfaceHover" | "status" | null
 >(null);
 
+// 可套用漸層的氣泡顏色欄位（key → 對應純色/漸層欄位）
+type GradientKey =
+  | "aiBg"
+  | "userBg"
+  | "aiText"
+  | "aiContent"
+  | "userText"
+  | "thoughtBg"
+  | "thoughtText";
+
+// 僅字串型欄位（純色與漸層都是 string）
+type BubbleStringKey = {
+  [K in keyof BubbleStyle]: BubbleStyle[K] extends string ? K : never;
+}[keyof BubbleStyle];
+
+const GRADIENT_FIELD_MAP: Record<
+  GradientKey,
+  { color: BubbleStringKey; gradient: BubbleStringKey; defaultBase: string }
+> = {
+  aiBg: { color: "aiBgColor", gradient: "aiBgGradient", defaultBase: "#ffffff" },
+  userBg: { color: "userBgColor", gradient: "userBgGradient", defaultBase: "#FF85A2" },
+  aiText: { color: "aiTextColor", gradient: "aiTextGradient", defaultBase: "#4A4A6A" },
+  aiContent: { color: "aiContentColor", gradient: "aiContentGradient", defaultBase: "#4A4A6A" },
+  userText: { color: "userTextColor", gradient: "userTextGradient", defaultBase: "#FFFFFF" },
+  thoughtBg: { color: "thoughtBgColor", gradient: "thoughtBgGradient", defaultBase: "#ADD8E6" },
+  thoughtText: { color: "thoughtTextColor", gradient: "thoughtTextGradient", defaultBase: "#4a6572" },
+};
+
+// 漸層設定面板展開狀態（點擊色卡才展開）
+const gradientPanelOpen = ref<Record<GradientKey, boolean>>({
+  aiBg: false,
+  userBg: false,
+  aiText: false,
+  aiContent: false,
+  userText: false,
+  thoughtBg: false,
+  thoughtText: false,
+});
+
+function toggleGradientPanel(key: GradientKey) {
+  gradientPanelOpen.value[key] = !gradientPanelOpen.value[key];
+}
+
 function togglePreviewFocus(
   target: "ai" | "user" | "header" | "wallpaper" | "surface" | "surfaceHover" | "status",
 ) {
@@ -503,9 +546,19 @@ function setBubbleColor(
   value: string,
 ) {
   tempBubbleStyle.value[key] = value;
-  // 用戶背景色變更時同步更新漸層
-  if (key === "userBgColor") {
-    tempBubbleStyle.value.userBgGradient = "";
+  // 純色變更時清除對應漸層（改用純色）
+  const COLOR_TO_GRADIENT: Partial<Record<typeof key, keyof BubbleStyle>> = {
+    userBgColor: "userBgGradient",
+    aiBgColor: "aiBgGradient",
+    userTextColor: "userTextGradient",
+    aiTextColor: "aiTextGradient",
+    aiContentColor: "aiContentGradient",
+    thoughtBgColor: "thoughtBgGradient",
+    thoughtTextColor: "thoughtTextGradient",
+  };
+  const gradientKey = COLOR_TO_GRADIENT[key];
+  if (gradientKey) {
+    (tempBubbleStyle.value[gradientKey] as string) = "";
   }
   if (isChatMode.value) {
     useCustomAppearance.value = true;
@@ -532,6 +585,74 @@ function setBubbleMaxWidth(width: number) {
   } else {
     themeStore.updateBubbleStyle({ maxWidth: width });
   }
+}
+
+// ===== 漸層編輯器輔助 =====
+function extractGradientColor(gradient: string, index: number): string {
+  const matches = gradient.match(/#[0-9a-fA-F]{6}/g);
+  if (matches && matches[index]) return matches[index];
+  return index === 0 ? "#ffffff" : "#cccccc";
+}
+
+function extractGradientAngle(gradient: string): number {
+  const match = gradient.match(/(\d+)deg/);
+  return match ? parseInt(match[1]) : 135;
+}
+
+function buildGradient(angle: number, color1: string, color2: string): string {
+  return `linear-gradient(${angle}deg, ${color1}, ${color2})`;
+}
+
+function toggleBubbleGradient(key: GradientKey, enabled: boolean) {
+  const { color, gradient, defaultBase } = GRADIENT_FIELD_MAP[key];
+  if (enabled) {
+    const base = (tempBubbleStyle.value[color] as string) || defaultBase;
+    // 自動生成比基色略淡的結束色
+    tempBubbleStyle.value[gradient] = buildGradient(135, base, lightenHex(base, 30));
+  } else {
+    tempBubbleStyle.value[gradient] = "";
+  }
+  if (isChatMode.value) {
+    useCustomAppearance.value = true;
+  } else {
+    themeStore.updateBubbleStyle({ [gradient]: tempBubbleStyle.value[gradient] });
+  }
+}
+
+function updateGradientColor(key: GradientKey, index: number, color: string) {
+  const { gradient } = GRADIENT_FIELD_MAP[key];
+  const current = tempBubbleStyle.value[gradient] as string;
+  const angle = extractGradientAngle(current);
+  const colors = [extractGradientColor(current, 0), extractGradientColor(current, 1)];
+  colors[index] = color;
+  tempBubbleStyle.value[gradient] = buildGradient(angle, colors[0], colors[1]);
+  if (isChatMode.value) {
+    useCustomAppearance.value = true;
+  } else {
+    themeStore.updateBubbleStyle({ [gradient]: tempBubbleStyle.value[gradient] });
+  }
+}
+
+function updateGradientAngle(key: GradientKey, angle: number) {
+  const { gradient } = GRADIENT_FIELD_MAP[key];
+  const current = tempBubbleStyle.value[gradient] as string;
+  const c1 = extractGradientColor(current, 0);
+  const c2 = extractGradientColor(current, 1);
+  tempBubbleStyle.value[gradient] = buildGradient(angle, c1, c2);
+  if (isChatMode.value) {
+    useCustomAppearance.value = true;
+  } else {
+    themeStore.updateBubbleStyle({ [gradient]: tempBubbleStyle.value[gradient] });
+  }
+}
+
+/** 將 hex 顏色變亮 amount (0-100) */
+function lightenHex(hex: string, amount: number): string {
+  const h = hex.replace("#", "");
+  const r = Math.min(255, parseInt(h.substring(0, 2), 16) + Math.round(255 * amount / 100));
+  const g = Math.min(255, parseInt(h.substring(2, 4), 16) + Math.round(255 * amount / 100));
+  const b = Math.min(255, parseInt(h.substring(4, 6), 16) + Math.round(255 * amount / 100));
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
 }
 
 const hasGlobalCustomImage = computed(() => {
@@ -1172,58 +1293,94 @@ watch(
                     @keydown.enter="togglePreviewFocus('wallpaper')"
                   >
                     <span v-if="previewFocus === 'wallpaper'" class="focus-badge wallpaper-badge">背景設定</span>
-                    <div
-                      class="preview-bubble ai"
-                      :class="{ 'preview-focused': previewFocus === 'ai' }"
-                      :style="{
-                        borderRadius: `${tempBubbleStyle.borderRadius}px`,
-                        borderBottomLeftRadius: '6px',
-                        maxWidth: `${tempBubbleStyle.maxWidth}%`,
-                        background: tempBubbleStyle.aiBgColor,
-                        color: tempBubbleStyle.aiContentColor,
-                      }"
-                      tabindex="0"
-                      role="button"
-                      aria-label="調整 AI 氣泡設定"
-                      @click.stop="togglePreviewFocus('ai')"
-                      @keydown.enter="togglePreviewFocus('ai')"
-                    >
+                    <!-- AI 訊息列：頭像（左） + 角色名 + 氣泡 + 時間 -->
+                    <div class="preview-message-row ai">
                       <div
-                        class="preview-sender-name"
-                        :style="{ color: tempBubbleStyle.aiTextColor }"
+                        class="preview-row-avatar"
+                        :class="['size-' + tempAvatarStyle.size]"
+                        :style="{
+                          borderRadius:
+                            tempAvatarStyle.shape === 'circle'
+                              ? '50%'
+                              : tempAvatarStyle.shape === 'rounded'
+                                ? '10px'
+                                : '6px',
+                          border: `${tempAvatarStyle.borderWidth}px solid ${tempAvatarStyle.borderColor || '#ffffff'}`,
+                        }"
+                        aria-hidden="true"
                       >
-                        AI 角色
+                        <span>🐾</span>
                       </div>
-                      這是 AI 的訊息氣泡
-                      <div class="preview-time" :style="{ color: tempBubbleStyle.aiTextColor }">12:00</div>
-                      <span v-if="previewFocus === 'ai'" class="focus-badge">AI 氣泡設定</span>
+                      <div class="preview-message-content">
+                        <div
+                          class="preview-sender-name"
+                          :style="{ color: tempColors.textSecondary || displayColors.textSecondary }"
+                        >
+                          AI 角色
+                        </div>
+                        <div
+                          class="preview-bubble ai"
+                          :class="{ 'preview-focused': previewFocus === 'ai' }"
+                          :style="{
+                            borderRadius: `${tempBubbleStyle.borderRadius}px`,
+                            borderBottomLeftRadius: '6px',
+                            maxWidth: `${tempBubbleStyle.maxWidth}%`,
+                            background: tempBubbleStyle.aiBgGradient || tempBubbleStyle.aiBgColor,
+                            color: tempBubbleStyle.aiContentColor,
+                          }"
+                          tabindex="0"
+                          role="button"
+                          aria-label="調整 AI 氣泡設定"
+                          @click.stop="togglePreviewFocus('ai')"
+                          @keydown.enter="togglePreviewFocus('ai')"
+                        >
+                          這是 AI 的訊息氣泡
+                          <span v-if="previewFocus === 'ai'" class="focus-badge">AI 氣泡設定</span>
+                        </div>
+                        <div class="preview-time" :style="{ color: tempColors.textMuted || displayColors.textMuted }">12:00</div>
+                      </div>
                     </div>
-                    <div
-                      class="preview-bubble user"
-                      :class="{ 'preview-focused': previewFocus === 'user' }"
-                      :style="{
-                        borderRadius: `${tempBubbleStyle.borderRadius}px`,
-                        borderBottomRightRadius: '6px',
-                        maxWidth: `${tempBubbleStyle.maxWidth}%`,
-                        background: tempBubbleStyle.userBgColor,
-                        color: tempBubbleStyle.userTextColor,
-                        marginLeft: 'auto',
-                      }"
-                      tabindex="0"
-                      role="button"
-                      aria-label="調整我的氣泡設定"
-                      @click.stop="togglePreviewFocus('user')"
-                      @keydown.enter="togglePreviewFocus('user')"
-                    >
-                      <div
-                        class="preview-sender-name"
-                        :style="{ color: tempBubbleStyle.userTextColor }"
-                      >
-                        我
+
+                    <!-- 用戶訊息列：氣泡 + 時間 + 頭像（右），用戶側不顯示角色名（與真實聊天一致） -->
+                    <div class="preview-message-row user">
+                      <div class="preview-message-content">
+                        <div
+                          class="preview-bubble user"
+                          :class="{ 'preview-focused': previewFocus === 'user' }"
+                          :style="{
+                            borderRadius: `${tempBubbleStyle.borderRadius}px`,
+                            borderBottomRightRadius: '6px',
+                            maxWidth: `${tempBubbleStyle.maxWidth}%`,
+                            background: tempBubbleStyle.userBgGradient || tempBubbleStyle.userBgColor,
+                            color: tempBubbleStyle.userTextColor,
+                          }"
+                          tabindex="0"
+                          role="button"
+                          aria-label="調整我的氣泡設定"
+                          @click.stop="togglePreviewFocus('user')"
+                          @keydown.enter="togglePreviewFocus('user')"
+                        >
+                          這是用戶的訊息氣泡
+                          <span v-if="previewFocus === 'user'" class="focus-badge">我的氣泡設定</span>
+                        </div>
+                        <div class="preview-time" :style="{ color: tempColors.textMuted || displayColors.textMuted }">12:01</div>
                       </div>
-                      這是用戶的訊息氣泡
-                      <div class="preview-time">12:01</div>
-                      <span v-if="previewFocus === 'user'" class="focus-badge">我的氣泡設定</span>
+                      <div
+                        class="preview-row-avatar user-side"
+                        :class="['size-' + tempAvatarStyle.size]"
+                        :style="{
+                          borderRadius:
+                            tempAvatarStyle.shape === 'circle'
+                              ? '50%'
+                              : tempAvatarStyle.shape === 'rounded'
+                                ? '10px'
+                                : '6px',
+                          border: `${tempAvatarStyle.borderWidth}px solid ${tempAvatarStyle.borderColor || '#ffffff'}`,
+                        }"
+                        aria-hidden="true"
+                      >
+                        <span>🙂</span>
+                      </div>
                     </div>
                     <div class="preview-ui-samples">
                       <div
@@ -1308,26 +1465,158 @@ watch(
                   <div class="focus-section">
                     <h4 class="focus-subtitle">顏色</h4>
                     <div class="individual-colors compact">
-                      <div class="color-item">
-                        <input type="color" :value="tempBubbleStyle.aiBgColor" @input="setBubbleColor('aiBgColor', ($event.target as HTMLInputElement).value)" />
-                        <span>AI 訊息背景</span>
+                      <!-- 訊息背景：附帶可展開的漸層設定 -->
+                      <!-- AI 訊息背景 -->
+                      <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.aiBg }" @click="toggleGradientPanel('aiBg')">
+                        <div class="color-item-head">
+                          <input type="color" :value="tempBubbleStyle.aiBgColor" @click.stop @input="setBubbleColor('aiBgColor', ($event.target as HTMLInputElement).value)" />
+                          <span>AI 訊息背景</span>
+                          <span class="gradient-chevron">{{ gradientPanelOpen.aiBg ? '▾' : '▸' }}</span>
+                        </div>
+                        <div v-if="gradientPanelOpen.aiBg" class="gradient-detail">
+                          <label class="gradient-switch">
+                            <input type="checkbox" :checked="!!tempBubbleStyle.aiBgGradient" @change="toggleBubbleGradient('aiBg', ($event.target as HTMLInputElement).checked)" />
+                            <span>啟用漸層</span>
+                          </label>
+                          <template v-if="tempBubbleStyle.aiBgGradient">
+                            <div class="gradient-colors">
+                              <div class="color-item mini">
+                                <input type="color" :value="extractGradientColor(tempBubbleStyle.aiBgGradient, 0)" @input="updateGradientColor('aiBg', 0, ($event.target as HTMLInputElement).value)" />
+                                <span>起始</span>
+                              </div>
+                              <div class="color-item mini">
+                                <input type="color" :value="extractGradientColor(tempBubbleStyle.aiBgGradient, 1)" @input="updateGradientColor('aiBg', 1, ($event.target as HTMLInputElement).value)" />
+                                <span>結束</span>
+                              </div>
+                            </div>
+                            <div class="slider-control compact">
+                              <input type="range" min="0" max="360" step="15" :value="extractGradientAngle(tempBubbleStyle.aiBgGradient)" @input="updateGradientAngle('aiBg', Number(($event.target as HTMLInputElement).value))" />
+                              <span class="slider-value">角度 {{ extractGradientAngle(tempBubbleStyle.aiBgGradient) }}°</span>
+                            </div>
+                          </template>
+                        </div>
                       </div>
-                      <div class="color-item">
-                        <input type="color" :value="tempBubbleStyle.aiTextColor" @input="setBubbleColor('aiTextColor', ($event.target as HTMLInputElement).value)" />
-                        <span>AI 文字/時間</span>
+                      <!-- AI 文字/時間 -->
+                      <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.aiText }" @click="toggleGradientPanel('aiText')">
+                        <div class="color-item-head">
+                          <input type="color" :value="tempBubbleStyle.aiTextColor" @click.stop @input="setBubbleColor('aiTextColor', ($event.target as HTMLInputElement).value)" />
+                          <span>AI 文字/時間</span>
+                          <span class="gradient-chevron">{{ gradientPanelOpen.aiText ? '▾' : '▸' }}</span>
+                        </div>
+                        <div v-if="gradientPanelOpen.aiText" class="gradient-detail">
+                          <label class="gradient-switch">
+                            <input type="checkbox" :checked="!!tempBubbleStyle.aiTextGradient" @change="toggleBubbleGradient('aiText', ($event.target as HTMLInputElement).checked)" />
+                            <span>啟用漸層</span>
+                          </label>
+                          <template v-if="tempBubbleStyle.aiTextGradient">
+                            <div class="gradient-colors">
+                              <div class="color-item mini">
+                                <input type="color" :value="extractGradientColor(tempBubbleStyle.aiTextGradient, 0)" @input="updateGradientColor('aiText', 0, ($event.target as HTMLInputElement).value)" />
+                                <span>起始</span>
+                              </div>
+                              <div class="color-item mini">
+                                <input type="color" :value="extractGradientColor(tempBubbleStyle.aiTextGradient, 1)" @input="updateGradientColor('aiText', 1, ($event.target as HTMLInputElement).value)" />
+                                <span>結束</span>
+                              </div>
+                            </div>
+                            <div class="slider-control compact">
+                              <input type="range" min="0" max="360" step="15" :value="extractGradientAngle(tempBubbleStyle.aiTextGradient)" @input="updateGradientAngle('aiText', Number(($event.target as HTMLInputElement).value))" />
+                              <span class="slider-value">角度 {{ extractGradientAngle(tempBubbleStyle.aiTextGradient) }}°</span>
+                            </div>
+                          </template>
+                        </div>
                       </div>
-                      <div class="color-item">
-                        <input type="color" :value="tempBubbleStyle.aiContentColor" @input="setBubbleColor('aiContentColor', ($event.target as HTMLInputElement).value)" />
-                        <span>AI 氣泡內主要顏色</span>
+                      <!-- AI 氣泡內主要顏色 -->
+                      <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.aiContent }" @click="toggleGradientPanel('aiContent')">
+                        <div class="color-item-head">
+                          <input type="color" :value="tempBubbleStyle.aiContentColor" @click.stop @input="setBubbleColor('aiContentColor', ($event.target as HTMLInputElement).value)" />
+                          <span>AI 氣泡內主要顏色</span>
+                          <span class="gradient-chevron">{{ gradientPanelOpen.aiContent ? '▾' : '▸' }}</span>
+                        </div>
+                        <div v-if="gradientPanelOpen.aiContent" class="gradient-detail">
+                          <label class="gradient-switch">
+                            <input type="checkbox" :checked="!!tempBubbleStyle.aiContentGradient" @change="toggleBubbleGradient('aiContent', ($event.target as HTMLInputElement).checked)" />
+                            <span>啟用漸層</span>
+                          </label>
+                          <template v-if="tempBubbleStyle.aiContentGradient">
+                            <div class="gradient-colors">
+                              <div class="color-item mini">
+                                <input type="color" :value="extractGradientColor(tempBubbleStyle.aiContentGradient, 0)" @input="updateGradientColor('aiContent', 0, ($event.target as HTMLInputElement).value)" />
+                                <span>起始</span>
+                              </div>
+                              <div class="color-item mini">
+                                <input type="color" :value="extractGradientColor(tempBubbleStyle.aiContentGradient, 1)" @input="updateGradientColor('aiContent', 1, ($event.target as HTMLInputElement).value)" />
+                                <span>結束</span>
+                              </div>
+                            </div>
+                            <div class="slider-control compact">
+                              <input type="range" min="0" max="360" step="15" :value="extractGradientAngle(tempBubbleStyle.aiContentGradient)" @input="updateGradientAngle('aiContent', Number(($event.target as HTMLInputElement).value))" />
+                              <span class="slider-value">角度 {{ extractGradientAngle(tempBubbleStyle.aiContentGradient) }}°</span>
+                            </div>
+                          </template>
+                        </div>
                       </div>
-                      <div class="color-item">
-                        <input type="color" :value="tempBubbleStyle.thoughtBgColor" @input="setBubbleColor('thoughtBgColor', ($event.target as HTMLInputElement).value)" />
-                        <span>想法氣泡背景</span>
+                      <!-- 想法氣泡背景 -->
+                      <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.thoughtBg }" @click="toggleGradientPanel('thoughtBg')">
+                        <div class="color-item-head">
+                          <input type="color" :value="tempBubbleStyle.thoughtBgColor" @click.stop @input="setBubbleColor('thoughtBgColor', ($event.target as HTMLInputElement).value)" />
+                          <span>想法氣泡背景</span>
+                          <span class="gradient-chevron">{{ gradientPanelOpen.thoughtBg ? '▾' : '▸' }}</span>
+                        </div>
+                        <div v-if="gradientPanelOpen.thoughtBg" class="gradient-detail">
+                          <label class="gradient-switch">
+                            <input type="checkbox" :checked="!!tempBubbleStyle.thoughtBgGradient" @change="toggleBubbleGradient('thoughtBg', ($event.target as HTMLInputElement).checked)" />
+                            <span>啟用漸層</span>
+                          </label>
+                          <template v-if="tempBubbleStyle.thoughtBgGradient">
+                            <div class="gradient-colors">
+                              <div class="color-item mini">
+                                <input type="color" :value="extractGradientColor(tempBubbleStyle.thoughtBgGradient, 0)" @input="updateGradientColor('thoughtBg', 0, ($event.target as HTMLInputElement).value)" />
+                                <span>起始</span>
+                              </div>
+                              <div class="color-item mini">
+                                <input type="color" :value="extractGradientColor(tempBubbleStyle.thoughtBgGradient, 1)" @input="updateGradientColor('thoughtBg', 1, ($event.target as HTMLInputElement).value)" />
+                                <span>結束</span>
+                              </div>
+                            </div>
+                            <div class="slider-control compact">
+                              <input type="range" min="0" max="360" step="15" :value="extractGradientAngle(tempBubbleStyle.thoughtBgGradient)" @input="updateGradientAngle('thoughtBg', Number(($event.target as HTMLInputElement).value))" />
+                              <span class="slider-value">角度 {{ extractGradientAngle(tempBubbleStyle.thoughtBgGradient) }}°</span>
+                            </div>
+                          </template>
+                        </div>
                       </div>
-                      <div class="color-item">
-                        <input type="color" :value="tempBubbleStyle.thoughtTextColor" @input="setBubbleColor('thoughtTextColor', ($event.target as HTMLInputElement).value)" />
-                        <span>想法氣泡文字</span>
+                      <!-- 想法氣泡文字 -->
+                      <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.thoughtText }" @click="toggleGradientPanel('thoughtText')">
+                        <div class="color-item-head">
+                          <input type="color" :value="tempBubbleStyle.thoughtTextColor" @click.stop @input="setBubbleColor('thoughtTextColor', ($event.target as HTMLInputElement).value)" />
+                          <span>想法氣泡文字</span>
+                          <span class="gradient-chevron">{{ gradientPanelOpen.thoughtText ? '▾' : '▸' }}</span>
+                        </div>
+                        <div v-if="gradientPanelOpen.thoughtText" class="gradient-detail">
+                          <label class="gradient-switch">
+                            <input type="checkbox" :checked="!!tempBubbleStyle.thoughtTextGradient" @change="toggleBubbleGradient('thoughtText', ($event.target as HTMLInputElement).checked)" />
+                            <span>啟用漸層</span>
+                          </label>
+                          <template v-if="tempBubbleStyle.thoughtTextGradient">
+                            <div class="gradient-colors">
+                              <div class="color-item mini">
+                                <input type="color" :value="extractGradientColor(tempBubbleStyle.thoughtTextGradient, 0)" @input="updateGradientColor('thoughtText', 0, ($event.target as HTMLInputElement).value)" />
+                                <span>起始</span>
+                              </div>
+                              <div class="color-item mini">
+                                <input type="color" :value="extractGradientColor(tempBubbleStyle.thoughtTextGradient, 1)" @input="updateGradientColor('thoughtText', 1, ($event.target as HTMLInputElement).value)" />
+                                <span>結束</span>
+                              </div>
+                            </div>
+                            <div class="slider-control compact">
+                              <input type="range" min="0" max="360" step="15" :value="extractGradientAngle(tempBubbleStyle.thoughtTextGradient)" @input="updateGradientAngle('thoughtText', Number(($event.target as HTMLInputElement).value))" />
+                              <span class="slider-value">角度 {{ extractGradientAngle(tempBubbleStyle.thoughtTextGradient) }}°</span>
+                            </div>
+                          </template>
+                        </div>
                       </div>
+                      <!-- 想法氣泡光暈（僅純色 + 強度） -->
                       <div class="color-item">
                         <input type="color" :value="tempBubbleStyle.thoughtGlowColor" @input="setBubbleColor('thoughtGlowColor', ($event.target as HTMLInputElement).value)" />
                         <span>想法氣泡光暈</span>
@@ -1395,17 +1684,66 @@ watch(
                   <div class="focus-section">
                     <h4 class="focus-subtitle">顏色</h4>
                     <div class="individual-colors compact">
-                      <div class="color-item">
-                        <input type="color" :value="tempBubbleStyle.userBgColor" @input="setBubbleColor('userBgColor', ($event.target as HTMLInputElement).value)" />
-                        <span>我的訊息背景</span>
+                      <!-- 訊息背景：附帶可展開的漸層設定 -->
+                      <!-- 我的訊息背景 -->
+                      <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.userBg }" @click="toggleGradientPanel('userBg')">
+                        <div class="color-item-head">
+                          <input type="color" :value="tempBubbleStyle.userBgColor" @click.stop @input="setBubbleColor('userBgColor', ($event.target as HTMLInputElement).value)" />
+                          <span>我的訊息背景</span>
+                          <span class="gradient-chevron">{{ gradientPanelOpen.userBg ? '▾' : '▸' }}</span>
+                        </div>
+                        <div v-if="gradientPanelOpen.userBg" class="gradient-detail">
+                          <label class="gradient-switch">
+                            <input type="checkbox" :checked="!!tempBubbleStyle.userBgGradient" @change="toggleBubbleGradient('userBg', ($event.target as HTMLInputElement).checked)" />
+                            <span>啟用漸層</span>
+                          </label>
+                          <template v-if="tempBubbleStyle.userBgGradient">
+                            <div class="gradient-colors">
+                              <div class="color-item mini">
+                                <input type="color" :value="extractGradientColor(tempBubbleStyle.userBgGradient, 0)" @input="updateGradientColor('userBg', 0, ($event.target as HTMLInputElement).value)" />
+                                <span>起始</span>
+                              </div>
+                              <div class="color-item mini">
+                                <input type="color" :value="extractGradientColor(tempBubbleStyle.userBgGradient, 1)" @input="updateGradientColor('userBg', 1, ($event.target as HTMLInputElement).value)" />
+                                <span>結束</span>
+                              </div>
+                            </div>
+                            <div class="slider-control compact">
+                              <input type="range" min="0" max="360" step="15" :value="extractGradientAngle(tempBubbleStyle.userBgGradient)" @input="updateGradientAngle('userBg', Number(($event.target as HTMLInputElement).value))" />
+                              <span class="slider-value">角度 {{ extractGradientAngle(tempBubbleStyle.userBgGradient) }}°</span>
+                            </div>
+                          </template>
+                        </div>
                       </div>
-                      <div class="color-item">
-                        <input type="color" :value="tempBubbleStyle.userTextColor" @input="setBubbleColor('userTextColor', ($event.target as HTMLInputElement).value)" />
-                        <span>我的文字/時間</span>
-                      </div>
-                      <div class="color-item">
-                        <input type="color" :value="tempBubbleStyle.userTextColor" @input="setBubbleColor('userTextColor', ($event.target as HTMLInputElement).value)" />
-                        <span>我的氣泡內主要顏色</span>
+                      <!-- 我的文字/時間（含氣泡內文字，共用 userText） -->
+                      <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.userText }" @click="toggleGradientPanel('userText')">
+                        <div class="color-item-head">
+                          <input type="color" :value="tempBubbleStyle.userTextColor" @click.stop @input="setBubbleColor('userTextColor', ($event.target as HTMLInputElement).value)" />
+                          <span>我的文字/時間</span>
+                          <span class="gradient-chevron">{{ gradientPanelOpen.userText ? '▾' : '▸' }}</span>
+                        </div>
+                        <div v-if="gradientPanelOpen.userText" class="gradient-detail">
+                          <label class="gradient-switch">
+                            <input type="checkbox" :checked="!!tempBubbleStyle.userTextGradient" @change="toggleBubbleGradient('userText', ($event.target as HTMLInputElement).checked)" />
+                            <span>啟用漸層</span>
+                          </label>
+                          <template v-if="tempBubbleStyle.userTextGradient">
+                            <div class="gradient-colors">
+                              <div class="color-item mini">
+                                <input type="color" :value="extractGradientColor(tempBubbleStyle.userTextGradient, 0)" @input="updateGradientColor('userText', 0, ($event.target as HTMLInputElement).value)" />
+                                <span>起始</span>
+                              </div>
+                              <div class="color-item mini">
+                                <input type="color" :value="extractGradientColor(tempBubbleStyle.userTextGradient, 1)" @input="updateGradientColor('userText', 1, ($event.target as HTMLInputElement).value)" />
+                                <span>結束</span>
+                              </div>
+                            </div>
+                            <div class="slider-control compact">
+                              <input type="range" min="0" max="360" step="15" :value="extractGradientAngle(tempBubbleStyle.userTextGradient)" @input="updateGradientAngle('userText', Number(($event.target as HTMLInputElement).value))" />
+                              <span class="slider-value">角度 {{ extractGradientAngle(tempBubbleStyle.userTextGradient) }}°</span>
+                            </div>
+                          </template>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1452,10 +1790,6 @@ watch(
                   <div class="focus-section">
                     <h4 class="focus-subtitle">顏色</h4>
                     <div class="individual-colors compact">
-                      <div class="color-item">
-                        <input type="color" :value="displayColors.primary" @input="setCustomPrimaryFromPicker(($event.target as HTMLInputElement).value)" />
-                        <span>主色（頂欄背景）</span>
-                      </div>
                       <div v-if="isChatMode" class="color-item">
                         <input type="color" :value="tempColors.surface || themeStore.colors.surface" @input="tempColors.surface = ($event.target as HTMLInputElement).value; useCustomAppearance = true" />
                         <span>表面色</span>
@@ -2797,7 +3131,84 @@ watch(
     padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
+  }
+}
+
+// 訊息列：頭像（側） + 訊息內容（角色名 / 氣泡 / 時間）
+.preview-message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+
+  &.ai {
+    justify-content: flex-start;
+  }
+
+  &.user {
+    justify-content: flex-end;
+  }
+}
+
+.preview-row-avatar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #cbd5f5, #a5b4fc);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  font-size: 18px;
+
+  &.size-small {
+    width: 30px;
+    height: 30px;
+    font-size: 15px;
+  }
+
+  &.size-medium {
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+  }
+
+  &.size-large {
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+  }
+
+  &.user-side {
+    background: linear-gradient(135deg, #fbcfe8, #f9a8d4);
+  }
+}
+
+.preview-message-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: calc(100% - 44px);
+
+  .preview-message-row.user & {
+    align-items: flex-end;
+  }
+
+  .preview-sender-name {
+    font-size: 12px;
+    font-weight: 500;
+    margin-bottom: 4px;
+    padding-left: 4px;
+    opacity: 0.9;
+  }
+
+  .preview-time {
+    font-size: 11px;
+    margin-top: 4px;
+    padding: 0 4px;
+    opacity: 0.85;
   }
 }
 
@@ -2805,10 +3216,12 @@ watch(
   padding: 10px 14px;
   border-radius: 16px;
   font-size: 13px;
-  max-width: 70%;
   position: relative;
   cursor: pointer;
   transition: box-shadow 0.2s ease, transform 0.15s ease;
+  width: fit-content;
+  max-width: 100%;
+  word-break: break-word;
 
   &:hover {
     box-shadow: 0 0 0 2px var(--color-primary), 0 4px 12px rgba(0, 0, 0, 0.1);
@@ -2819,26 +3232,8 @@ watch(
     transform: scale(1.02);
   }
 
-  .preview-sender-name {
-    font-size: 12px;
-    font-weight: 600;
-    margin-bottom: 4px;
-    opacity: 0.9;
-  }
-
   &.ai {
-    align-self: flex-start;
     box-shadow: var(--shadow-sm);
-  }
-
-  &.user {
-    align-self: flex-end;
-  }
-
-  .preview-time {
-    font-size: 11px;
-    margin-top: 4px;
-    opacity: 0.9;
   }
 }
 
@@ -2986,6 +3381,114 @@ watch(
       font-size: 11px;
     }
   }
+}
+
+// 訊息背景色卡：整張可點擊展開，漸層選項顯示於下方
+.color-item.bg-with-gradient {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  cursor: pointer;
+
+  // 展開漸層後跨整列，避免被擠在網格單格內
+  &.gradient-on {
+    grid-column: 1 / -1;
+  }
+
+  .color-item-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    input[type="color"] {
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+
+    > span {
+      font-size: 11px;
+      flex: 1;
+    }
+
+    // 展開指示箭頭
+    .gradient-chevron {
+      flex: 0 0 auto;
+      font-size: 11px;
+      line-height: 1;
+      color: var(--color-text-secondary, var(--color-text));
+      opacity: 0.7;
+    }
+  }
+
+  &.gradient-on .gradient-chevron {
+    color: var(--color-primary);
+    opacity: 1;
+  }
+
+  .gradient-detail {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--color-border, rgba(0, 0, 0, 0.1));
+    cursor: default;
+
+    .gradient-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 11px;
+      white-space: nowrap;
+
+      input[type="checkbox"] {
+        width: 14px;
+        height: 14px;
+        accent-color: var(--color-primary);
+        cursor: pointer;
+      }
+    }
+  }
+}
+
+.gradient-colors {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+
+  .color-item.mini {
+    flex: 1;
+    padding: 6px 8px;
+
+    input[type="color"] {
+      width: 26px;
+      height: 26px;
+    }
+
+    span {
+      font-size: 11px;
+    }
+  }
+}
+
+.slider-control.compact {
+  margin-top: 8px;
+
+  input[type="range"] {
+    height: 4px;
+  }
+
+  .slider-value {
+    font-size: 11px;
+    min-width: 56px;
+  }
+}
+
+.focus-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  opacity: 0.85;
 }
 
 .option-grid.compact {

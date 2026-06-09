@@ -97,11 +97,17 @@ export interface ChatAppearance {
     userBgColor: string;
     userBgGradient: string;
     userTextColor: string;
+    userTextGradient?: string;
     aiBgColor: string;
+    aiBgGradient?: string;
     aiTextColor: string;
+    aiTextGradient?: string;
     aiContentColor?: string;
+    aiContentGradient?: string;
     thoughtBgColor?: string;
+    thoughtBgGradient?: string;
     thoughtTextColor?: string;
+    thoughtTextGradient?: string;
     thoughtGlowColor?: string;
     thoughtGlowOpacity?: number;
     borderRadius: number;

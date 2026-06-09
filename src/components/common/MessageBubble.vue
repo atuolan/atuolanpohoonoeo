@@ -4648,7 +4648,8 @@ const showTextVoiceTranscript = ref(true);
 .char-blocked-notification-line {
   width: 40%;
   height: 1px;
-  background: rgba(255, 80, 80, 0.3);
+  // 對齊主題色族 → --color-error
+  background: color-mix(in srgb, var(--color-error) 30%, transparent);
 }
 
 .char-blocked-notification-body {
@@ -4656,7 +4657,8 @@ const showTextVoiceTranscript = ref(true);
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: rgba(200, 60, 60, 0.85);
+  // 對齊主題色族 → --color-error
+  color: color-mix(in srgb, var(--color-error) 85%, transparent);
 }
 
 .char-blocked-why-btn {
@@ -4768,10 +4770,11 @@ const showTextVoiceTranscript = ref(true);
     width: 14px;
     height: 14px;
     flex-shrink: 0;
-    color: #9ca3af;
+    color: var(--color-text-muted, #9ca3af);
 
     &.declined {
-      color: #e53e3e;
+      // 對齊主題色族 → --color-error
+      color: var(--color-error, #e53e3e);
     }
   }
 
@@ -5012,6 +5015,10 @@ const showTextVoiceTranscript = ref(true);
 .sender-name {
   font-size: 12px;
   color: var(--bubble-ai-text, var(--color-text-secondary));
+  background-image: var(--bubble-ai-text-gradient, none);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: var(--bubble-ai-text-fill, var(--bubble-ai-text, var(--color-text-secondary)));
   margin-bottom: 4px;
   padding-left: 4px;
 }
@@ -5147,8 +5154,19 @@ const showTextVoiceTranscript = ref(true);
     color: var(--bubble-user-text, white);
     border-bottom-right-radius: 6px;
 
+    .bubble-text {
+      background-image: var(--bubble-user-text-gradient, none);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: var(--bubble-user-text-fill, var(--bubble-user-text, white));
+    }
+
     .message-time {
       color: var(--bubble-user-text, white);
+      background-image: var(--bubble-user-text-gradient, none);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: var(--bubble-user-text-fill, var(--bubble-user-text, white));
     }
   }
 
@@ -5158,8 +5176,19 @@ const showTextVoiceTranscript = ref(true);
     border-bottom-left-radius: 6px;
     box-shadow: var(--shadow-sm);
 
+    .bubble-text {
+      background-image: var(--bubble-ai-content-gradient, none);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: var(--bubble-ai-content-fill, var(--bubble-ai-content, #4a4a6a));
+    }
+
     .message-time {
       color: var(--bubble-ai-text, #4a4a6a);
+      background-image: var(--bubble-ai-text-gradient, none);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: var(--bubble-ai-text-fill, var(--bubble-ai-text, #4a4a6a));
     }
 
     // 有想法時發光效果
@@ -5747,6 +5776,10 @@ const showTextVoiceTranscript = ref(true);
   cursor: pointer;
   font-size: 13px;
   color: var(--thought-text, #4a6572);
+  background-image: var(--thought-text-gradient, none);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: var(--thought-text-fill, var(--thought-text, #4a6572));
   font-style: italic;
   box-shadow: 0 0 8px var(--thought-glow-1, rgba(173, 216, 230, 0.6));
   transition: box-shadow 0.2s;
@@ -5793,6 +5826,10 @@ const showTextVoiceTranscript = ref(true);
     min-width: 0;
     overflow-wrap: anywhere;
     white-space: pre-line;
+    background-image: var(--thought-text-gradient, none);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: var(--thought-text-fill, var(--thought-text, #4a6572));
   }
 
   .thought-bubble-tail {
@@ -7129,20 +7166,20 @@ const showTextVoiceTranscript = ref(true);
   margin-top: 6px;
   padding: 3px 10px 3px 6px;
   border-radius: 12px;
-  background: rgba(var(--primary-rgb, 100, 100, 255), 0.1);
+  background: color-mix(in srgb, var(--color-primary, #6366f1) 10%, transparent);
   cursor: pointer;
   user-select: none;
   transition: background 0.2s;
 
   &:active {
-    background: rgba(var(--primary-rgb, 100, 100, 255), 0.2);
+    background: color-mix(in srgb, var(--color-primary, #6366f1) 20%, transparent);
   }
 }
 
 .tts-icon {
   width: 16px;
   height: 16px;
-  color: var(--primary-color, #6366f1);
+  color: var(--color-primary, #6366f1);
   flex-shrink: 0;
 
   &.tts-playing {
@@ -7152,7 +7189,7 @@ const showTextVoiceTranscript = ref(true);
 
 .tts-label {
   font-size: 11px;
-  color: var(--primary-color, #6366f1);
+  color: var(--color-primary, #6366f1);
   white-space: nowrap;
 }
 
@@ -7189,21 +7226,21 @@ const showTextVoiceTranscript = ref(true);
   height: 22px;
   border: none;
   border-radius: 50%;
-  background: rgba(var(--primary-rgb, 100, 100, 255), 0.12);
+  background: color-mix(in srgb, var(--color-primary, #6366f1) 12%, transparent);
   cursor: pointer;
   padding: 0;
   transition: background 0.2s;
 
   &:active,
   &.playing {
-    background: rgba(var(--primary-rgb, 100, 100, 255), 0.25);
+    background: color-mix(in srgb, var(--color-primary, #6366f1) 25%, transparent);
   }
 }
 
 .tts-seg-icon {
   width: 12px;
   height: 12px;
-  color: var(--primary-color, #6366f1);
+  color: var(--color-primary, #6366f1);
 }
 
 .tts-seg-emotion {
@@ -7216,16 +7253,16 @@ const showTextVoiceTranscript = ref(true);
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
-  border: 1px solid rgba(var(--primary-rgb, 100, 100, 255), 0.2);
+  border: 1px solid color-mix(in srgb, var(--color-primary, #6366f1) 20%, transparent);
   border-radius: 10px;
   background: transparent;
   font-size: 11px;
-  color: var(--primary-color, #6366f1);
+  color: var(--color-primary, #6366f1);
   cursor: pointer;
   white-space: nowrap;
 
   &:active {
-    background: rgba(var(--primary-rgb, 100, 100, 255), 0.1);
+    background: color-mix(in srgb, var(--color-primary, #6366f1) 10%, transparent);
   }
 }
 
@@ -7594,7 +7631,8 @@ const showTextVoiceTranscript = ref(true);
     }
 
     &:hover {
-      background: rgba(255, 123, 123, 0.1);
+      // 對齊主題色族 → --color-error
+      background: color-mix(in srgb, var(--color-error) 12%, transparent);
     }
   }
 

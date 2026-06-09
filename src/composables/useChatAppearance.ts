@@ -122,6 +122,9 @@ function setNightModeAppearance(container: HTMLElement) {
   container.style.setProperty("--chat-bubble-ai-bg", "#1e2a40");
   container.style.setProperty("--chat-bubble-ai-text", "#d8d8e8");
   container.style.setProperty("--chat-bubble-ai-content", "#d8d8e8");
+  // 夜晚模式下的 markdown 顏色覆寫，避免淺色背景下的顏色（如引用文字 #8b5a2b）
+  // 在深色氣泡背景下對比度過低、難以閱讀
+  container.style.setProperty("--chat-md-quote", "#e8b88a");
 }
 
 function clearNightModeAppearance(container: HTMLElement) {
@@ -136,6 +139,7 @@ function clearNightModeAppearance(container: HTMLElement) {
     "--chat-bubble-ai-bg",
     "--chat-bubble-ai-text",
     "--chat-bubble-ai-content",
+    "--chat-md-quote",
   ]);
 }
 
@@ -257,18 +261,34 @@ export function useChatAppearance(context: ChatAppearanceContext) {
     }
 
     if (appearance.bubble) {
+      const userTextGradient = appearance.bubble.userTextGradient || "";
+      const aiTextGradient = appearance.bubble.aiTextGradient || "";
+      const aiContentGradient = appearance.bubble.aiContentGradient || "";
+      const thoughtTextGradient = appearance.bubble.thoughtTextGradient || "";
+      const thoughtBgGradient = appearance.bubble.thoughtBgGradient || "";
+      const aiContentSolid = appearance.bubble.aiContentColor ?? appearance.bubble.aiTextColor;
+
       container.style.setProperty("--bubble-user-bg", appearance.bubble.userBgGradient || appearance.bubble.userBgColor);
       container.style.setProperty("--bubble-user-text", appearance.bubble.userTextColor);
-      container.style.setProperty("--bubble-ai-bg", appearance.bubble.aiBgColor);
+      container.style.setProperty("--bubble-user-text-gradient", userTextGradient || "none");
+      container.style.setProperty("--bubble-user-text-fill", userTextGradient ? "transparent" : appearance.bubble.userTextColor);
+      container.style.setProperty("--bubble-ai-bg", appearance.bubble.aiBgGradient || appearance.bubble.aiBgColor);
       container.style.setProperty("--bubble-ai-text", appearance.bubble.aiTextColor);
-      container.style.setProperty("--bubble-ai-content", appearance.bubble.aiContentColor ?? appearance.bubble.aiTextColor);
+      container.style.setProperty("--bubble-ai-text-gradient", aiTextGradient || "none");
+      container.style.setProperty("--bubble-ai-text-fill", aiTextGradient ? "transparent" : appearance.bubble.aiTextColor);
+      container.style.setProperty("--bubble-ai-content", aiContentSolid);
+      container.style.setProperty("--bubble-ai-content-gradient", aiContentGradient || "none");
+      container.style.setProperty("--bubble-ai-content-fill", aiContentGradient ? "transparent" : aiContentSolid);
       container.style.setProperty("--bubble-radius", `${appearance.bubble.borderRadius}px`);
       container.style.setProperty("--bubble-max-width", `${appearance.bubble.maxWidth}%`);
       const tBg = appearance.bubble.thoughtBgColor ?? "#ADD8E6";
       const tGlow = appearance.bubble.thoughtGlowColor ?? "#ADD8E6";
       const tOpacity = appearance.bubble.thoughtGlowOpacity ?? 0.6;
-      container.style.setProperty("--thought-bg", hexToRgba(tBg, 0.9));
-      container.style.setProperty("--thought-text", appearance.bubble.thoughtTextColor ?? "#4a6572");
+      const tText = appearance.bubble.thoughtTextColor ?? "#4a6572";
+      container.style.setProperty("--thought-bg", thoughtBgGradient || hexToRgba(tBg, 0.9));
+      container.style.setProperty("--thought-text", tText);
+      container.style.setProperty("--thought-text-gradient", thoughtTextGradient || "none");
+      container.style.setProperty("--thought-text-fill", thoughtTextGradient ? "transparent" : tText);
       container.style.setProperty("--thought-glow-1", hexToRgba(tGlow, tOpacity));
       container.style.setProperty("--thought-glow-2", hexToRgba(tGlow, tOpacity * 0.6));
       container.style.setProperty("--thought-glow-3", hexToRgba(tGlow, tOpacity * 0.3));
@@ -276,13 +296,21 @@ export function useChatAppearance(context: ChatAppearanceContext) {
       removeStyleProperties(container, [
         "--bubble-user-bg",
         "--bubble-user-text",
+        "--bubble-user-text-gradient",
+        "--bubble-user-text-fill",
         "--bubble-ai-bg",
         "--bubble-ai-text",
+        "--bubble-ai-text-gradient",
+        "--bubble-ai-text-fill",
         "--bubble-ai-content",
+        "--bubble-ai-content-gradient",
+        "--bubble-ai-content-fill",
         "--bubble-radius",
         "--bubble-max-width",
         "--thought-bg",
         "--thought-text",
+        "--thought-text-gradient",
+        "--thought-text-fill",
         "--thought-glow-1",
         "--thought-glow-2",
         "--thought-glow-3",

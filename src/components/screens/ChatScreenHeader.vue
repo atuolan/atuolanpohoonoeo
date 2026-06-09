@@ -747,9 +747,14 @@ const isDarkBackground = computed(() =>
   background: var(--color-background);
   cursor: pointer;
   transition: all var(--transition-fast);
-  box-shadow:
+  // 自定義邊框：透過 useChatAppearance 注入；未啟用時 fallback 為 0/transparent，回到既有的 box-shadow 描邊外觀
+  border: var(--avatar-border-width, 0) solid
+    var(--avatar-border-color, transparent);
+  box-shadow: var(
+    --avatar-shadow,
     0 0 0 1px color-mix(in srgb, var(--color-border) 70%, transparent),
-    0 1px 3px rgba(0, 0, 0, 0.05);
+    0 1px 3px rgba(0, 0, 0, 0.05)
+  );
 
   &:hover {
     transform: scale(1.05);
@@ -896,7 +901,8 @@ const isDarkBackground = computed(() =>
 
 .chat-status {
   font-size: 11px;
-  color: var(--color-primary);
+  // 對齊 ThemeSettingsModal 預覽卡 ✎ 圖示綁定的 textSecondary
+  color: var(--chat-header-text-secondary, var(--color-text-secondary));
   margin: 2px 0 0;
   min-height: 14px;
   line-height: 1.2;
@@ -1226,7 +1232,7 @@ const isDarkBackground = computed(() =>
     color: var(--color-error);
 
     &:hover {
-      background: rgba(255, 123, 123, 0.1);
+      background: color-mix(in srgb, var(--color-error) 12%, transparent);
     }
   }
 }
@@ -1475,17 +1481,33 @@ const isDarkBackground = computed(() =>
     gap: 6px;
     padding: 10px 12px;
     border-radius: 20px;
-    background: var(--chat-header-panel-bg);
-    backdrop-filter: blur(16px) saturate(140%);
-    -webkit-backdrop-filter: blur(16px) saturate(140%);
-    border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    /* 加強毛玻璃：提高背景不透明度（85%/40% → 96%/82%）並增強模糊與飽和 */
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 96%, transparent) 0%,
+      color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 82%, transparent) 100%
+    );
+    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
     justify-content: center;
     animation: rail-slide-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 
     &.rail-open {
       display: flex;
     }
+  }
+
+  /* 深色背景下的 rail：保持白色玻璃感的同時更實在 */
+  .chat-header.dark-bg .header-actions {
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--chat-header-surface, rgba(20, 22, 36, 0.85)) 96%, transparent) 0%,
+      color-mix(in srgb, var(--chat-header-surface, rgba(20, 22, 36, 0.7)) 82%, transparent) 100%
+    );
+    border-color: rgba(255, 255, 255, 0.28);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
   }
 
   .header-actions.rail-open {
