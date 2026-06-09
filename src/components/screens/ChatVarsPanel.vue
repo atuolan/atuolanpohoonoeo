@@ -37,7 +37,9 @@ interface ChatPromptDraft {
 
 const props = defineProps<{
   chatId: string;
+  characterId: string;
   isGroupChat: boolean;
+  isMultiCharCard?: boolean;
   faceToFaceMode: boolean;
 }>();
 
@@ -131,9 +133,23 @@ const validPromptIds = computed(() => [
 ]);
 
 watch(
-  () => [props.chatId, props.isGroupChat, props.faceToFaceMode] as const,
+  () => [
+    props.chatId,
+    props.characterId,
+    props.isGroupChat,
+    props.isMultiCharCard ?? false,
+    props.faceToFaceMode,
+  ] as const,
   () => {
+    // localVars 仍以 chatId 為準
     chatVariablesStore.initForChat(props.chatId);
+    // promptToggles / chatPrompts 改用 scope 化儲存
+    void chatVariablesStore.initForScope({
+      id: props.chatId,
+      characterId: props.characterId,
+      isGroupChat: props.isGroupChat,
+      groupMetadata: { isMultiCharCard: !!props.isMultiCharCard },
+    });
     activeMode.value = getDefaultMode();
   },
   { immediate: true },

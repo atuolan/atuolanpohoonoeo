@@ -385,8 +385,22 @@ export function useChatGroupCall(deps: {
         userName: userStore.currentPersona?.name || "User",
         userPersona: deps.effectivePersona.value?.description,
         promptManagerConfig: promptManagerStore.config,
-        chatPromptToggles: deps.currentChatData.value?.chatVariables?.promptToggles,
-        chatLocalPrompts: deps.currentChatData.value?.chatVariables?.chatPrompts,
+        ...(await (async () => {
+          const chat = deps.currentChatData.value;
+          if (!chat) return {};
+          const { loadPromptOverrideForChat } = await import("@/utils/promptOverrideScope");
+          const o = await loadPromptOverrideForChat({
+            id: chat.id,
+            characterId: chat.characterId,
+            isGroupChat: chat.isGroupChat,
+            groupMetadata: chat.groupMetadata,
+            chatVariables: chat.chatVariables,
+          });
+          return {
+            chatPromptToggles: o.chatPromptToggles,
+            chatLocalPrompts: o.chatLocalPrompts,
+          };
+        })()),
         groupChatMode: true,
         groupMembers: groupMembersData,
         groupName: deps.groupMetadata.value.groupName,

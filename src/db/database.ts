@@ -15,7 +15,7 @@ import type { AuthState } from "@/types/auth";
 import type { BookReadingProgress, StoredBook } from "@/types/book";
 import type { CalendarEvent } from "@/types/calendar";
 import type { StoredCharacter } from "@/types/character";
-import type { Chat, ChatMessage } from "@/types/chat";
+import type { Chat, ChatMessage, PromptOverrideRecord } from "@/types/chat";
 import {
   DEFAULT_CATEGORY_ID,
   DEFAULT_CATEGORY_ICON,
@@ -326,6 +326,11 @@ interface AguaphoneDB extends DBSchema {
     key: string; // announcement id
     value: { id: string; ackedAt: number };
   };
+  // === v27 新增：提示詞覆蓋（按角色卡 / 群聊作用域） ===
+  promptOverrides: {
+    key: string; // scopeKey: char__${characterId} 或 group__${chatId}
+    value: PromptOverrideRecord;
+  };
 }
 
 // ============================================================
@@ -333,7 +338,7 @@ interface AguaphoneDB extends DBSchema {
   // ============================================================
   
   const DB_NAME = "aguaphone-db";
-  const DB_VERSION = 26;
+  const DB_VERSION = 27;
   
   // Store 名稱常量
 export const DB_STORES = {
@@ -367,6 +372,7 @@ export const DB_STORES = {
   PEEK_PHONE_DATA: "peekPhoneData",
   CHAT_MESSAGES: "chatMessages",
   ANNOUNCEMENT_ACKS: "announcementAcks",
+  PROMPT_OVERRIDES: "promptOverrides",
 } as const;
 
 const SELF_HOSTED_SYNC_SNAPSHOT_STORES = new Set<string>([
@@ -880,6 +886,13 @@ export async function getDatabase(): Promise<IDBPDatabase<AguaphoneDB>> {
 
       // === v26 資料遷移 ===
       // 在 _migrateStickerEmotionsIfNeeded 中延後處理
+
+      // === v27 新增表 ===
+
+      // 建立 promptOverrides 表（提示詞覆蓋按角色卡 / 群聊作用域儲存）
+      if (!db.objectStoreNames.contains("promptOverrides")) {
+        db.createObjectStore("promptOverrides", { keyPath: "scopeKey" });
+      }
     },
     blocked() {
       console.warn("[DB] 資料庫被阻擋，嘗試關閉舊連線以解除阻擋...");

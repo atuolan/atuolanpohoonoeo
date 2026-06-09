@@ -615,6 +615,14 @@ export class ProactiveMessageService {
       };
 
       const { PromptBuilder } = await import("@/engine/prompt/PromptBuilder");
+      const { loadPromptOverrideForChat } = await import("@/utils/promptOverrideScope");
+      const groupChatOverrides = await loadPromptOverrideForChat({
+        id: groupChat.id,
+        characterId: groupChat.characterId,
+        isGroupChat: groupChat.isGroupChat,
+        groupMetadata: groupChat.groupMetadata,
+        chatVariables: groupChat.chatVariables,
+      });
       const promptBuilder = new PromptBuilder({
         character: leadCharacter,
         lorebooks: characterLorebooks,
@@ -625,8 +633,8 @@ export class ProactiveMessageService {
         userSecrets: currentPersona?.secrets,
         powerDynamic: currentPersona?.powerDynamic,
         promptManagerConfig: promptManagerStore.config,
-        chatPromptToggles: groupChat.chatVariables?.promptToggles,
-        chatLocalPrompts: groupChat.chatVariables?.chatPrompts,
+        chatPromptToggles: groupChatOverrides.chatPromptToggles,
+        chatLocalPrompts: groupChatOverrides.chatLocalPrompts,
         enableRealTimeAwareness: groupChat.enableRealTimeAwareness !== false,
         groupChatMode: true,
         groupMembers,
@@ -1135,6 +1143,14 @@ export class ProactiveMessageService {
         // 忽略
       }
 
+      const { loadPromptOverrideForChat: loadPromptOverrideForChat1v1 } = await import("@/utils/promptOverrideScope");
+      const proactiveOverrides = await loadPromptOverrideForChat1v1({
+        id: chat.id,
+        characterId: chat.characterId,
+        isGroupChat: chat.isGroupChat,
+        groupMetadata: chat.groupMetadata,
+        chatVariables: chat.chatVariables,
+      });
       const promptBuilder = new PromptBuilder({
         character,
         lorebooks: characterLorebooks,
@@ -1148,8 +1164,8 @@ export class ProactiveMessageService {
         importantEvents: eventsToSend,
         // 使用用戶自訂的提示詞管理器配置（順序、啟用狀態、角色獨立配置）
         promptManagerConfig: promptManagerStore.config,
-        chatPromptToggles: chat.chatVariables?.promptToggles,
-        chatLocalPrompts: chat.chatVariables?.chatPrompts,
+        chatPromptToggles: proactiveOverrides.chatPromptToggles,
+        chatLocalPrompts: proactiveOverrides.chatLocalPrompts,
         // 從聊天記錄載入感知現實時間設定（默認開啟）
         enableRealTimeAwareness: chat.enableRealTimeAwareness !== false,
         ongoingCallContext,

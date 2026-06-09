@@ -3347,6 +3347,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       authorsNote: waimaiAuthorsNote,
       // 傳入提示詞管理器配置，使用用戶自定義的角色和位置設定
       promptManagerConfig: promptManagerStore.config,
+      // 傳入聊天/角色作用域的提示詞覆蓋（從 chatVariablesStore，已綁定到正確 scope）
+      chatPromptToggles: { ...chatVariablesStore.promptToggles },
+      chatLocalPrompts: chatVariablesStore.chatPrompts.map((p) => ({ ...p })),
       // 傳入總結和重要事件
       summaries: summariesToSend,
       importantEvents: eventsToSend,
@@ -7241,7 +7244,9 @@ useChatCleanup({
         <ChatVarsPanel
           v-if="showChatVarsPanel"
           :chat-id="activeChatId"
+          :character-id="props.characterId || currentCharacter?.id || ''"
           :is-group-chat="isGroupChat"
+          :is-multi-char-card="!!groupMetadata?.isMultiCharCard"
           :face-to-face-mode="chatFaceToFaceMode"
           @close="showChatVarsPanel = false"
         />

@@ -733,11 +733,40 @@ export interface ChatLocalPrompt {
 export interface ChatVariablesState {
   version: 1;
   localVars: Record<string, string>;
-  /** 聊天專屬提示詞開關覆蓋（稀疏存儲：只保存與默認值不同的狀態） */
+  /**
+   * @deprecated 自 v27 起改存於 PROMPT_OVERRIDES（按角色/群聊作用域）。
+   * 仍保留欄位以便讀取舊資料並執行一次性遷移。
+   */
+  promptToggles?: Record<string, boolean>;
+  /**
+   * @deprecated 自 v27 起改存於 PROMPT_OVERRIDES（按角色/群聊作用域）。
+   * 仍保留欄位以便讀取舊資料並執行一次性遷移。
+   */
+  chatPrompts?: ChatLocalPrompt[];
+  updatedAt: number;
+}
+
+/**
+ * 提示詞覆蓋紀錄
+ * 以「角色卡」或「群聊」為單位儲存提示詞開關覆蓋與聊天專屬提示詞條目。
+ *
+ * scopeKey 規則：
+ * - `char__${characterId}`：1v1 聊天 與 多人卡（同一角色卡的多形態）共享
+ * - `group__${chatId}`：真正的群聊（多張卡合併）獨立
+ */
+export interface PromptOverrideRecord {
+  /** 作用域鍵（主鍵） */
+  scopeKey: string;
+  /** 結構版本 */
+  version: 1;
+  /** 提示詞開關覆蓋（稀疏存儲：只保存與默認值不同的狀態） */
   promptToggles?: Record<string, boolean>;
   /** 聊天專屬提示詞條目 */
   chatPrompts?: ChatLocalPrompt[];
+  /** 更新時間 */
   updatedAt: number;
+  /** 來自哪些舊 chat 記錄遷移而來（除錯用） */
+  migratedFromChatIds?: string[];
 }
 
 export interface Chat {

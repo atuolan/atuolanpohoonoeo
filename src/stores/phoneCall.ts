@@ -521,8 +521,20 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       const chatRecord = info.chatId
         ? await db.get<any>(DB_STORES.CHATS, info.chatId).catch(() => undefined)
         : undefined;
-      const chatPromptToggles = chatRecord?.chatVariables?.promptToggles;
-      const chatLocalPrompts = chatRecord?.chatVariables?.chatPrompts;
+      let chatPromptToggles: Record<string, boolean> | undefined;
+      let chatLocalPrompts: import("@/types/chat").ChatLocalPrompt[] | undefined;
+      if (chatRecord) {
+        const { loadPromptOverrideForChat } = await import("@/utils/promptOverrideScope");
+        const overrides = await loadPromptOverrideForChat({
+          id: chatRecord.id,
+          characterId: chatRecord.characterId,
+          isGroupChat: chatRecord.isGroupChat,
+          groupMetadata: chatRecord.groupMetadata,
+          chatVariables: chatRecord.chatVariables,
+        });
+        chatPromptToggles = overrides.chatPromptToggles;
+        chatLocalPrompts = overrides.chatLocalPrompts;
+      }
 
       // 向量記憶檢索（使用全域開關）
       let vectorMemories: import('@/services/memoryRetriever').RetrievedMemory[] | undefined;
