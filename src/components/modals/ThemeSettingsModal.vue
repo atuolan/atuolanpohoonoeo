@@ -1473,7 +1473,7 @@ watch(
                           <span>AI 訊息背景</span>
                           <span class="gradient-chevron">{{ gradientPanelOpen.aiBg ? '▾' : '▸' }}</span>
                         </div>
-                        <div v-if="gradientPanelOpen.aiBg" class="gradient-detail">
+                        <div v-if="gradientPanelOpen.aiBg" class="gradient-detail" @click.stop>
                           <label class="gradient-switch">
                             <input type="checkbox" :checked="!!tempBubbleStyle.aiBgGradient" @change="toggleBubbleGradient('aiBg', ($event.target as HTMLInputElement).checked)" />
                             <span>啟用漸層</span>
@@ -1503,7 +1503,7 @@ watch(
                           <span>AI 文字/時間</span>
                           <span class="gradient-chevron">{{ gradientPanelOpen.aiText ? '▾' : '▸' }}</span>
                         </div>
-                        <div v-if="gradientPanelOpen.aiText" class="gradient-detail">
+                        <div v-if="gradientPanelOpen.aiText" class="gradient-detail" @click.stop>
                           <label class="gradient-switch">
                             <input type="checkbox" :checked="!!tempBubbleStyle.aiTextGradient" @change="toggleBubbleGradient('aiText', ($event.target as HTMLInputElement).checked)" />
                             <span>啟用漸層</span>
@@ -1533,7 +1533,7 @@ watch(
                           <span>AI 氣泡內主要顏色</span>
                           <span class="gradient-chevron">{{ gradientPanelOpen.aiContent ? '▾' : '▸' }}</span>
                         </div>
-                        <div v-if="gradientPanelOpen.aiContent" class="gradient-detail">
+                        <div v-if="gradientPanelOpen.aiContent" class="gradient-detail" @click.stop>
                           <label class="gradient-switch">
                             <input type="checkbox" :checked="!!tempBubbleStyle.aiContentGradient" @change="toggleBubbleGradient('aiContent', ($event.target as HTMLInputElement).checked)" />
                             <span>啟用漸層</span>
@@ -1563,7 +1563,7 @@ watch(
                           <span>想法氣泡背景</span>
                           <span class="gradient-chevron">{{ gradientPanelOpen.thoughtBg ? '▾' : '▸' }}</span>
                         </div>
-                        <div v-if="gradientPanelOpen.thoughtBg" class="gradient-detail">
+                        <div v-if="gradientPanelOpen.thoughtBg" class="gradient-detail" @click.stop>
                           <label class="gradient-switch">
                             <input type="checkbox" :checked="!!tempBubbleStyle.thoughtBgGradient" @change="toggleBubbleGradient('thoughtBg', ($event.target as HTMLInputElement).checked)" />
                             <span>啟用漸層</span>
@@ -1593,7 +1593,7 @@ watch(
                           <span>想法氣泡文字</span>
                           <span class="gradient-chevron">{{ gradientPanelOpen.thoughtText ? '▾' : '▸' }}</span>
                         </div>
-                        <div v-if="gradientPanelOpen.thoughtText" class="gradient-detail">
+                        <div v-if="gradientPanelOpen.thoughtText" class="gradient-detail" @click.stop>
                           <label class="gradient-switch">
                             <input type="checkbox" :checked="!!tempBubbleStyle.thoughtTextGradient" @change="toggleBubbleGradient('thoughtText', ($event.target as HTMLInputElement).checked)" />
                             <span>啟用漸層</span>
@@ -1692,7 +1692,7 @@ watch(
                           <span>我的訊息背景</span>
                           <span class="gradient-chevron">{{ gradientPanelOpen.userBg ? '▾' : '▸' }}</span>
                         </div>
-                        <div v-if="gradientPanelOpen.userBg" class="gradient-detail">
+                        <div v-if="gradientPanelOpen.userBg" class="gradient-detail" @click.stop>
                           <label class="gradient-switch">
                             <input type="checkbox" :checked="!!tempBubbleStyle.userBgGradient" @change="toggleBubbleGradient('userBg', ($event.target as HTMLInputElement).checked)" />
                             <span>啟用漸層</span>
@@ -1722,7 +1722,7 @@ watch(
                           <span>我的文字/時間</span>
                           <span class="gradient-chevron">{{ gradientPanelOpen.userText ? '▾' : '▸' }}</span>
                         </div>
-                        <div v-if="gradientPanelOpen.userText" class="gradient-detail">
+                        <div v-if="gradientPanelOpen.userText" class="gradient-detail" @click.stop>
                           <label class="gradient-switch">
                             <input type="checkbox" :checked="!!tempBubbleStyle.userTextGradient" @change="toggleBubbleGradient('userText', ($event.target as HTMLInputElement).checked)" />
                             <span>啟用漸層</span>
