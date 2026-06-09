@@ -6765,6 +6765,19 @@ async function handleScheduleCall(data: ScheduleCallData) {
     return;
   }
 
+  // 🔴 核心修復：檢查該角色是否正在與用戶通話中
+  const phoneCallStore = usePhoneCallStore();
+  if (phoneCallStore.isActive && phoneCallStore.activeCall?.characterId === char.id) {
+    console.log(
+      "[ChatScreen] 該角色正在與用戶通話中，忽略 <schedule-call> 標籤",
+      {
+        characterId: char.id,
+        characterName: char.nickname || char.data.name,
+      }
+    );
+    return;
+  }
+
   const characterInfo: CharacterInfo = {
     id: char.id,
     name: char.nickname || char.data.name || props.characterName,

@@ -86,6 +86,20 @@ export function useChatIncomingCalls(deps: {
       if (pendingCall) {
         const charId = deps.characterId || deps.currentCharacter.value?.id;
         if (pendingCall.characterId === charId) {
+          // 🟡 防禦性修復：檢查是否為同一角色正在通話中
+          if (phoneCallStore.activeCall?.characterId === pendingCall.characterId) {
+            console.log(
+              "[IncomingCalls] 同一角色正在通話中，靜默取消來電（不觸發失落反應）",
+              {
+                characterId: pendingCall.characterId,
+                characterName: pendingCall.characterName,
+              }
+            );
+            await incomingCallScheduler.cancelPendingCall(pendingCall.id);
+            return;
+          }
+
+          // 其他角色的來電才觸發 busy 反應
           console.log("[IncomingCalls] 通話中，自動拒絕來電:", pendingCall.characterName);
 
           await incomingCallScheduler.recordCallHistory(

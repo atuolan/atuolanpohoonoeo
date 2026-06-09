@@ -1364,27 +1364,39 @@ export class ProactiveMessageService {
             parsedResponse.scheduleCallData
           ) {
             try {
-              const { getIncomingCallScheduler } =
-                await import("@/services/IncomingCallScheduler");
-              const characterInfo = {
-                id: character.id,
-                name: character.nickname || character.data.name,
-                avatar: character.avatar,
-              };
-              const pendingCall =
-                await getIncomingCallScheduler().schedulePendingCall(
-                  parsedResponse.scheduleCallData,
-                  characterInfo,
-                  chat.id,
+              // 🟢 額外防禦：再次檢查該角色是否正在通話中（雙重保險）
+              const { usePhoneCallStore } = await import("@/stores/phoneCall");
+              const phoneCallStore = usePhoneCallStore();
+              
+              if (phoneCallStore.isActive &&
+                  phoneCallStore.activeCall?.characterId === characterId) {
+                console.log(
+                  "[ProactiveMessage] 該角色正在通話中，忽略 <schedule-call> 標籤（防禦性檢查）",
+                  { characterId }
                 );
-              if (pendingCall) {
-                console.log("[ProactiveMessage] 來電已排程:", {
-                  delay: parsedResponse.scheduleCallData.delay,
-                  reason: parsedResponse.scheduleCallData.reason,
-                  triggerTime: new Date(
-                    pendingCall.triggerTime,
-                  ).toLocaleString(),
-                });
+              } else {
+                const { getIncomingCallScheduler } =
+                  await import("@/services/IncomingCallScheduler");
+                const characterInfo = {
+                  id: character.id,
+                  name: character.nickname || character.data.name,
+                  avatar: character.avatar,
+                };
+                const pendingCall =
+                  await getIncomingCallScheduler().schedulePendingCall(
+                    parsedResponse.scheduleCallData,
+                    characterInfo,
+                    chat.id,
+                  );
+                if (pendingCall) {
+                  console.log("[ProactiveMessage] 來電已排程:", {
+                    delay: parsedResponse.scheduleCallData.delay,
+                    reason: parsedResponse.scheduleCallData.reason,
+                    triggerTime: new Date(
+                      pendingCall.triggerTime,
+                    ).toLocaleString(),
+                  });
+                }
               }
             } catch (error) {
               console.error("[ProactiveMessage] 來電排程失敗:", error);
