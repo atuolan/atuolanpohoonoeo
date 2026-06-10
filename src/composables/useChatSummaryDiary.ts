@@ -81,6 +81,11 @@ interface StreamingWindow {
   setComplete: () => void;
 }
 
+type ActualReadSettings = {
+  actualMessageCount: number;
+  actualMessageMode: "message" | "turn";
+};
+
 /** 日記觸發時的消息快照，避免延遲執行時讀到過期資料 */
 interface DiarySnapshot {
   messages: Message[];
@@ -332,6 +337,28 @@ ${sourceText}
     }
   }
 
+  function resolveSummaryActualReadSettings(settings: SummarySettings): ActualReadSettings {
+    return {
+      actualMessageCount: settings.summaryActualMessageEnabled
+        ? (settings.summaryActualMessageCount ?? settings.actualMessageCount)
+        : settings.actualMessageCount,
+      actualMessageMode: settings.summaryActualMessageEnabled
+        ? (settings.summaryActualMessageMode ?? settings.actualMessageMode)
+        : settings.actualMessageMode,
+    };
+  }
+
+  function resolveDiaryActualReadSettings(settings: SummarySettings): ActualReadSettings {
+    return {
+      actualMessageCount: settings.diaryActualMessageEnabled
+        ? (settings.diaryActualMessageCount ?? settings.actualMessageCount)
+        : settings.actualMessageCount,
+      actualMessageMode: settings.diaryActualMessageEnabled
+        ? (settings.diaryActualMessageMode ?? settings.actualMessageMode)
+        : settings.actualMessageMode,
+    };
+  }
+
   // 檢查並觸發總結或日記生成
   function checkAndTriggerSummaryOrDiary() {
     if (!deps.currentChatId.value || deps.messages.value.length === 0) return;
@@ -398,10 +425,9 @@ ${sourceText}
     }
 
     try {
-      await handleTriggerManualSummary({
-        actualMessageCount: deps.chatSummarySettings.value.actualMessageCount,
-        actualMessageMode: deps.chatSummarySettings.value.actualMessageMode,
-      });
+      await handleTriggerManualSummary(
+        resolveSummaryActualReadSettings(deps.chatSummarySettings.value),
+      );
 
       deps.lastSummaryTime.value = Date.now();
       console.log("📝 自動總結生成完成");
@@ -483,17 +509,19 @@ ${sourceText}
       }
 
       const settings = snapshot?.settings ?? deps.chatSummarySettings.value;
+      const actualReadSettings = resolveDiaryActualReadSettings(settings);
       const messagesToUse = sliceMessagesBySettings(
         validMessages,
-        settings.actualMessageCount,
-        settings.actualMessageMode,
+        actualReadSettings.actualMessageCount,
+        actualReadSettings.actualMessageMode,
       );
 
       // 診斷日誌：記錄日記實際讀取的消息範圍
       console.log(`📔 日記消息選擇:`, {
         totalValid: validMessages.length,
-        mode: settings.actualMessageMode,
-        count: settings.actualMessageCount,
+        mode: actualReadSettings.actualMessageMode,
+        count: actualReadSettings.actualMessageCount,
+        customEnabled: settings.diaryActualMessageEnabled === true,
         selectedCount: messagesToUse.length,
         firstMsgTime: messagesToUse[0]?.timestamp
           ? new Date(messagesToUse[0].timestamp).toLocaleString()
@@ -678,10 +706,7 @@ ${recentMessagesText}
   }
 
   // 手動觸發 AI 生成總結
-  async function handleTriggerManualSummary(settings?: {
-    actualMessageCount: number;
-    actualMessageMode: "message" | "turn";
-  }) {
+  async function handleTriggerManualSummary(settings?: ActualReadSettings) {
     if (deps.isGeneratingSummary.value || deps.messages.value.length === 0) return;
 
     const chatId = deps.currentChatId.value;
@@ -718,12 +743,10 @@ ${recentMessagesText}
       const summaryPromptDefs = promptManagerStore.summaryPrompts;
       const summaryPromptOrder = promptManagerStore.summaryPromptOrder;
 
-      const actualCount =
-        settings?.actualMessageCount ??
-        deps.chatSummarySettings.value.actualMessageCount;
-      const actualMode =
-        settings?.actualMessageMode ??
-        deps.chatSummarySettings.value.actualMessageMode;
+      const actualReadSettings =
+        settings ?? resolveSummaryActualReadSettings(deps.chatSummarySettings.value);
+      const actualCount = actualReadSettings.actualMessageCount;
+      const actualMode = actualReadSettings.actualMessageMode;
 
       // 過濾 user/ai 消息後用統一算法裁切（與 ChatScreen / 日記一致）
       const validMsgs = deps.messages.value.filter(
@@ -1246,10 +1269,7 @@ ${recentMessagesText}
   }
 
   // 手動觸發日記（暴露給外部，可傳入覆蓋設定）
-  function handleTriggerManualDiary(overrideSettings?: {
-    actualMessageCount: number;
-    actualMessageMode: "message" | "turn";
-  }) {
+  function handleTriggerManualDiary(overrideSettings?: ActualReadSettings) {
     if (diaryGeneratingLock.value) return;
     diaryGeneratingLock.value = true;
     // 快照當前消息，使用覆蓋設定或已保存設定
@@ -1257,7 +1277,12 @@ ${recentMessagesText}
       (m) => m.role === "user" || m.role === "ai",
     );
     const settings = overrideSettings
-      ? { ...deps.chatSummarySettings.value, ...overrideSettings }
+      ? {
+          ...deps.chatSummarySettings.value,
+          diaryActualMessageEnabled: true,
+          diaryActualMessageCount: overrideSettings.actualMessageCount,
+          diaryActualMessageMode: overrideSettings.actualMessageMode,
+        }
       : { ...deps.chatSummarySettings.value };
     const snapshot: DiarySnapshot = {
       messages: [...validMessages],

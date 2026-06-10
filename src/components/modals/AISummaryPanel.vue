@@ -379,7 +379,7 @@
             </div>
 
             <div class="setting-section">
-              <label class="section-label">實際讀取消息</label>
+              <label class="section-label">聊天實際讀取消息</label>
               <div class="radio-group horizontal" style="margin-bottom: 10px">
                 <label
                   class="radio-option compact"
@@ -438,8 +438,148 @@
                 </div>
               </div>
               <div class="count-hint">
-                AI 每次回覆時實際讀取的對話歷史，可手動輸入 1～1000
+                一般聊天每次回覆時實際讀取的對話歷史，可手動輸入 1～1000
               </div>
+            </div>
+
+            <div class="setting-section">
+              <label class="custom-read-toggle">
+                <input
+                  v-model="localSettings.summaryActualMessageEnabled"
+                  type="checkbox"
+                />
+                <span>自訂總結讀取數</span>
+              </label>
+              <div class="count-hint">
+                未勾選時，總結會跟隨上方聊天實際讀取設定（目前 {{ currentSummaryActualMessageCount }} {{ currentSummaryActualMessageMode === "turn" ? "輪" : "條" }}）。
+              </div>
+              <Transition name="fade">
+                <div v-if="localSettings.summaryActualMessageEnabled" class="custom-read-body">
+                  <div class="radio-group horizontal" style="margin-bottom: 10px">
+                    <label
+                      class="radio-option compact"
+                      :class="{ active: currentSummaryActualMessageMode === 'message' }"
+                    >
+                      <input
+                        v-model="currentSummaryActualMessageMode"
+                        type="radio"
+                        value="message"
+                        class="radio-input"
+                      />
+                      <div class="option-content">
+                        <div class="option-title">按消息數</div>
+                      </div>
+                    </label>
+                    <label
+                      class="radio-option compact"
+                      :class="{ active: currentSummaryActualMessageMode === 'turn' }"
+                    >
+                      <input
+                        v-model="currentSummaryActualMessageMode"
+                        type="radio"
+                        value="turn"
+                        class="radio-input"
+                      />
+                      <div class="option-content">
+                        <div class="option-title">按輪次</div>
+                      </div>
+                    </label>
+                  </div>
+                  <div class="count-input-wrapper">
+                    <input
+                      v-model.number="currentSummaryActualMessageCount"
+                      type="range"
+                      :min="ACTUAL_MESSAGE_COUNT_MIN"
+                      :max="ACTUAL_MESSAGE_COUNT_MAX"
+                      step="1"
+                      class="range-input"
+                    />
+                    <div class="manual-count-control">
+                      <input
+                        v-model.number="currentSummaryActualMessageCount"
+                        type="number"
+                        :min="ACTUAL_MESSAGE_COUNT_MIN"
+                        :max="ACTUAL_MESSAGE_COUNT_MAX"
+                        step="1"
+                        inputmode="numeric"
+                        class="manual-count-input"
+                        @blur="clampSummaryActualMessageCount"
+                      />
+                      <span class="count-label">{{ currentSummaryActualMessageMode === "turn" ? "輪" : "條" }}</span>
+                    </div>
+                  </div>
+                </div>
+              </Transition>
+            </div>
+
+            <div class="setting-section">
+              <label class="custom-read-toggle">
+                <input
+                  v-model="localSettings.diaryActualMessageEnabled"
+                  type="checkbox"
+                />
+                <span>自訂日記讀取數</span>
+              </label>
+              <div class="count-hint">
+                未勾選時，日記會跟隨上方聊天實際讀取設定（目前 {{ currentDiaryActualMessageCount }} {{ currentDiaryActualMessageMode === "turn" ? "輪" : "條" }}）。
+              </div>
+              <Transition name="fade">
+                <div v-if="localSettings.diaryActualMessageEnabled" class="custom-read-body">
+                  <div class="radio-group horizontal" style="margin-bottom: 10px">
+                    <label
+                      class="radio-option compact"
+                      :class="{ active: currentDiaryActualMessageMode === 'message' }"
+                    >
+                      <input
+                        v-model="currentDiaryActualMessageMode"
+                        type="radio"
+                        value="message"
+                        class="radio-input"
+                      />
+                      <div class="option-content">
+                        <div class="option-title">按消息數</div>
+                      </div>
+                    </label>
+                    <label
+                      class="radio-option compact"
+                      :class="{ active: currentDiaryActualMessageMode === 'turn' }"
+                    >
+                      <input
+                        v-model="currentDiaryActualMessageMode"
+                        type="radio"
+                        value="turn"
+                        class="radio-input"
+                      />
+                      <div class="option-content">
+                        <div class="option-title">按輪次</div>
+                      </div>
+                    </label>
+                  </div>
+                  <div class="count-input-wrapper">
+                    <input
+                      v-model.number="currentDiaryActualMessageCount"
+                      type="range"
+                      :min="ACTUAL_MESSAGE_COUNT_MIN"
+                      :max="ACTUAL_MESSAGE_COUNT_MAX"
+                      step="1"
+                      class="range-input"
+                    />
+                    <div class="manual-count-control">
+                      <input
+                        v-model.number="currentDiaryActualMessageCount"
+                        type="number"
+                        :min="ACTUAL_MESSAGE_COUNT_MIN"
+                        :max="ACTUAL_MESSAGE_COUNT_MAX"
+                        step="1"
+                        inputmode="numeric"
+                        class="manual-count-input"
+                        @blur="clampDiaryActualMessageCount"
+                      />
+                      <span class="count-label">{{ currentDiaryActualMessageMode === "turn" ? "輪" : "條" }}</span>
+                    </div>
+                  </div>
+                </div>
+              </Transition>
             </div>
           </div>
 
@@ -1562,18 +1702,18 @@ function toggleSummarySelection(id: string) {
 }
 
 function triggerManualSummary() {
-  clampActualMessageCount();
+  clampAllActualMessageCounts();
   emit("trigger-manual-summary", {
-    actualMessageCount: localSettings.value.actualMessageCount,
-    actualMessageMode: localSettings.value.actualMessageMode,
+    actualMessageCount: currentSummaryActualMessageCount.value,
+    actualMessageMode: currentSummaryActualMessageMode.value,
   });
 }
 
 function triggerManualDiary() {
-  clampActualMessageCount();
+  clampAllActualMessageCounts();
   emit("trigger-manual-diary", {
-    actualMessageCount: localSettings.value.actualMessageCount,
-    actualMessageMode: localSettings.value.actualMessageMode,
+    actualMessageCount: currentDiaryActualMessageCount.value,
+    actualMessageMode: currentDiaryActualMessageMode.value,
   });
 }
 
@@ -1669,6 +1809,31 @@ function clampActualMessageCount() {
   );
 }
 
+function clampSummaryActualMessageCount() {
+  localSettings.value.summaryActualMessageCount = normalizeActualMessageCount(
+    localSettings.value.summaryActualMessageCount,
+  );
+}
+
+function clampDiaryActualMessageCount() {
+  localSettings.value.diaryActualMessageCount = normalizeActualMessageCount(
+    localSettings.value.diaryActualMessageCount,
+  );
+}
+
+function clampAllActualMessageCounts() {
+  clampActualMessageCount();
+  clampSummaryActualMessageCount();
+  clampDiaryActualMessageCount();
+}
+
+function mergeSummarySettings(settings?: SummarySettings): SummarySettings {
+  return {
+    ...createDefaultSummarySettings(),
+    ...(settings ?? {}),
+  };
+}
+
 const currentSummaryInterval = computed({
   get: () =>
     localSettings.value.intervalMode === "turn"
@@ -1690,6 +1855,50 @@ const currentDiaryInterval = computed({
     if (localSettings.value.intervalMode === "turn")
       localSettings.value.diaryIntervalTurn = val;
     else localSettings.value.diaryIntervalMessage = val;
+  },
+});
+
+const currentSummaryActualMessageCount = computed({
+  get: () =>
+    localSettings.value.summaryActualMessageEnabled
+      ? (localSettings.value.summaryActualMessageCount ??
+        localSettings.value.actualMessageCount)
+      : localSettings.value.actualMessageCount,
+  set: (val: number) => {
+    localSettings.value.summaryActualMessageCount = val;
+  },
+});
+
+const currentSummaryActualMessageMode = computed({
+  get: () =>
+    localSettings.value.summaryActualMessageEnabled
+      ? (localSettings.value.summaryActualMessageMode ??
+        localSettings.value.actualMessageMode)
+      : localSettings.value.actualMessageMode,
+  set: (val: "message" | "turn") => {
+    localSettings.value.summaryActualMessageMode = val;
+  },
+});
+
+const currentDiaryActualMessageCount = computed({
+  get: () =>
+    localSettings.value.diaryActualMessageEnabled
+      ? (localSettings.value.diaryActualMessageCount ??
+        localSettings.value.actualMessageCount)
+      : localSettings.value.actualMessageCount,
+  set: (val: number) => {
+    localSettings.value.diaryActualMessageCount = val;
+  },
+});
+
+const currentDiaryActualMessageMode = computed({
+  get: () =>
+    localSettings.value.diaryActualMessageEnabled
+      ? (localSettings.value.diaryActualMessageMode ??
+        localSettings.value.actualMessageMode)
+      : localSettings.value.actualMessageMode,
+  set: (val: "message" | "turn") => {
+    localSettings.value.diaryActualMessageMode = val;
   },
 });
 
@@ -1948,7 +2157,7 @@ function formatDate(timestamp: number) {
 }
 
 function saveAll() {
-  clampActualMessageCount();
+  clampAllActualMessageCounts();
   emit("save", { ...localSettings.value });
   saveEventsLog();
   emit("close");
@@ -2119,6 +2328,7 @@ function parseJsonlToMessages(text: string): { messages: BatchMessage[]; charNam
       content,
       timestamp,
     });
+    
   }
 
   return messages.length > 0 ? { messages, charName, userName } : null;
@@ -2268,13 +2478,20 @@ async function backfillKeywords() {
   }
 }
 
+watch(
+  () => props.initialSettings,
+  (settings) => {
+    localSettings.value = mergeSummarySettings(settings);
+    clampAllActualMessageCounts();
+  },
+  { deep: true, immediate: true },
+);
+
 onMounted(async () => {
   await loadEventsLog();
   backfillKeywords(); // 背景回填，不阻塞
   loadVectorStats();
-  // 從 props 載入現有設定
   if (props.initialSettings) {
-    localSettings.value = { ...props.initialSettings };
     console.log("[AISummaryPanel] 載入現有設定:", props.initialSettings);
   }
 });
@@ -2917,6 +3134,29 @@ onMounted(async () => {
     height: 16px;
     color: var(--color-primary, #7dd3a8);
   }
+}
+
+.custom-read-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--color-text, #1f2937);
+  cursor: pointer;
+
+  input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--color-primary, #7dd3a8);
+    cursor: pointer;
+  }
+}
+
+.custom-read-body {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--color-border, #e5e7eb);
 }
 
 .radio-group {

@@ -683,10 +683,22 @@ export interface SummarySettings {
   diaryIntervalMessage: number;
   /** 日記間隔（輪次模式） */
   diaryIntervalTurn: number;
-  /** 實際讀取消息數量 */
+  /** 聊天實際讀取消息數量 */
   actualMessageCount: number;
-  /** 實際讀取模式：message = 按消息數，turn = 按輪次 */
+  /** 聊天實際讀取模式：message = 按消息數，turn = 按輪次 */
   actualMessageMode: "message" | "turn";
+  /** 是否為自動/手動總結使用獨立讀取數；false 時跟隨聊天實際讀取設定 */
+  summaryActualMessageEnabled?: boolean;
+  /** 總結自訂實際讀取消息數量 */
+  summaryActualMessageCount?: number;
+  /** 總結自訂實際讀取模式：message = 按消息數，turn = 按輪次 */
+  summaryActualMessageMode?: "message" | "turn";
+  /** 是否為自動/手動日記使用獨立讀取數；false 時跟隨聊天實際讀取設定 */
+  diaryActualMessageEnabled?: boolean;
+  /** 日記自訂實際讀取消息數量 */
+  diaryActualMessageCount?: number;
+  /** 日記自訂實際讀取模式：message = 按消息數，turn = 按輪次 */
+  diaryActualMessageMode?: "message" | "turn";
   /** 總結讀取模式：all = 全部，recent = 最近 N 條 */
   summaryReadMode: "all" | "recent";
   /** 讀取最近 N 條總結 */
@@ -708,6 +720,12 @@ export const createDefaultSummarySettings = (): SummarySettings => ({
   diaryIntervalTurn: 30,
   actualMessageCount: 30,
   actualMessageMode: "turn",
+  summaryActualMessageEnabled: false,
+  summaryActualMessageCount: 30,
+  summaryActualMessageMode: "turn",
+  diaryActualMessageEnabled: false,
+  diaryActualMessageCount: 30,
+  diaryActualMessageMode: "turn",
   summaryReadMode: "recent",
   summaryReadCount: 5,
 });
