@@ -6479,6 +6479,23 @@ function useClonedVoice(voiceId: string) {
           </div>
         </div>
 
+        <!-- 支持作者 -->
+        <div class="donation-card">
+          <div class="donation-copy">
+            <div class="donation-title">
+              <span class="donation-icon">🧋</span>
+              <span>打賞作者</span>
+            </div>
+            <p>
+              感謝大家的喜愛和支持！如果你很喜歡這個小手機，想要支持作者、請我喝奶茶，
+              可以掃描這裡打賞。
+            </p>
+          </div>
+          <div class="donation-qr-wrap">
+            <img class="donation-qr" src="/收款碼.png" alt="打賞作者收款碼" loading="lazy" />
+          </div>
+        </div>
+
         <!-- 危險操作 -->
         <div class="danger-zone">
           <div class="danger-header">
@@ -7484,6 +7501,82 @@ function useClonedVoice(voiceId: string) {
   color: var(--color-text-muted, #999);
   text-align: center;
   margin: 0;
+}
+
+// 支持作者
+.donation-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255, 244, 226, 0.9), rgba(255, 232, 238, 0.9));
+  border: 1px solid rgba(244, 161, 97, 0.26);
+  box-shadow: 0 12px 30px rgba(244, 161, 97, 0.12);
+}
+
+.donation-copy {
+  flex: 1;
+  min-width: 0;
+
+  p {
+    margin: 8px 0 0;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--color-text-secondary, #64748b);
+  }
+}
+
+.donation-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text, #1e293b);
+}
+
+.donation-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(244, 161, 97, 0.18);
+}
+
+.donation-qr-wrap {
+  flex: 0 0 auto;
+  padding: 8px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+}
+
+.donation-qr {
+  display: block;
+  width: 108px;
+  height: 108px;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+@media (max-width: 420px) {
+  .donation-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .donation-qr-wrap {
+    align-self: center;
+  }
+
+  .donation-qr {
+    width: 132px;
+    height: 132px;
+  }
 }
 
 // 危險區域
