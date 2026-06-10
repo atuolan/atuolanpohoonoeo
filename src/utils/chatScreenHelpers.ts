@@ -19,62 +19,45 @@ export function isShadowBubbleOf(
   return false;
 }
 
-/** 計算某條訊息所屬「邏輯輪次」的去重 key。
- * - shadow segment（正則拆分產生的影子氣泡）歸併到源訊息
- * - 有 turnId 的訊息（同一輪 AI 可能分多條氣泡）歸併到同一 turnId
- * - 都沒有時退回訊息自身 id（每條獨立成輪，保底相容）
- */
-function turnKeyOf(msg: {
-  id: string;
-  turnId?: string;
-  shadowSourceId?: string;
-}): string {
-  if (msg.shadowSourceId) return `src:${msg.shadowSourceId}`;
-  if (msg.turnId) return `turn:${msg.turnId}`;
-  return `id:${msg.id}`;
-}
-
 /**
  * 按「對話輪次」從尾端裁切訊息列表。
  * 一輪 = 一個完整回合（用戶發言 + AI 的整段回覆）。
- * 同一輪 AI 即使被拆成多條氣泡（共享 turnId 或為 shadow segment），只計為一輪。
+ * 一輪的 AI 回覆 = 一段「連續的 AI 氣泡」（中間沒有插入 user 訊息），
+ * 不論 AI 把回覆拆成多少條氣泡、是否帶 turnId，都只計為一輪。
+ * 之所以不依賴 turnId/shadowSourceId：實際資料中 AI 連發的多條氣泡
+ * 往往各自帶不同 turnId（獨立主動發送），用 turnId 去重會嚴重多算。
  *
  * @param msgs        訊息列表（時間順序，舊→新）
  * @param maxTurns    要保留的輪次數
  * @returns 從末尾保留 maxTurns 輪後的訊息子陣列
  */
-export function sliceMessagesByTurns<
-  T extends { id: string; role: string; turnId?: string; shadowSourceId?: string },
->(msgs: T[], maxTurns: number): T[] {
+export function sliceMessagesByTurns<T extends { role: string }>(
+  msgs: T[],
+  maxTurns: number,
+): T[] {
   if (maxTurns <= 0) return [];
-  let turnCount = 0;
-  let startIndex = msgs.length;
-  // 已計入的 AI 輪次 key，避免同一輪多條氣泡被重複計數
-  const countedTurnKeys = new Set<string>();
+  let aiBlocks = 0;
+  let startIndex = 0;
+  // 緊鄰其後（索引較大側）剛訪問過的訊息是否為 AI，用來判斷 AI 連續塊邊界
+  let nextIsAi = false;
 
   for (let i = msgs.length - 1; i >= 0; i--) {
-    const msg = msgs[i];
-    if (msg.role === "ai") {
-      const key = turnKeyOf(msg);
-      // 同一輪 AI 的多條氣泡只在第一次遇到時 +1
-      if (!countedTurnKeys.has(key)) {
-        countedTurnKeys.add(key);
-        turnCount++;
-      }
-      if (turnCount >= maxTurns) {
-        // 往前找到這輪對應的 user 訊息作為起點
-        for (let j = i - 1; j >= 0; j--) {
-          if (msgs[j].role === "user") {
-            startIndex = j;
-            break;
-          }
+    const role = msgs[i].role;
+    if (role === "ai") {
+      // 反向掃描時，連續 AI 塊的「最新一條」即新塊的起點
+      if (!nextIsAi) {
+        aiBlocks++;
+        if (aiBlocks > maxTurns) {
+          // 這個 AI 塊已超出保留範圍，從它之後（含其前的 user）開始
+          startIndex = i + 1;
+          break;
         }
-        if (startIndex === msgs.length) {
-          startIndex = i;
-        }
-        break;
       }
+      nextIsAi = true;
+    } else if (role === "user") {
+      nextIsAi = false;
     }
+    // 其他角色（system 等）不打斷 AI 連續塊，也不改變 nextIsAi
     startIndex = i;
   }
   return msgs.slice(startIndex);
@@ -82,22 +65,25 @@ export function sliceMessagesByTurns<
 
 /**
  * 統計訊息列表中包含的「對話輪次」數量。
- * 以 AI 氣泡為錨點，按 turnId / shadowSourceId 去重，
- * 與 sliceMessagesByTurns 採用同一套去重規則，確保顯示與裁切一致。
+ * 一輪 = 一段連續的 AI 氣泡，與 sliceMessagesByTurns 採同一套規則，
+ * 確保「顯示的輪數」與「實際裁切的輪數」一致。
  *
  * @param msgs 訊息列表
- * @returns 去重後的 AI 輪次數
+ * @returns AI 連續塊（輪次）數量
  */
-export function countTurns(
-  msgs: Array<{ id: string; role: string; turnId?: string; shadowSourceId?: string }>,
-): number {
-  const countedTurnKeys = new Set<string>();
+export function countTurns(msgs: Array<{ role: string }>): number {
+  let turns = 0;
+  let prevIsAi = false;
   for (const msg of msgs) {
     if (msg.role === "ai") {
-      countedTurnKeys.add(turnKeyOf(msg));
+      if (!prevIsAi) turns++;
+      prevIsAi = true;
+    } else if (msg.role === "user") {
+      prevIsAi = false;
     }
+    // 其他角色不打斷 AI 連續塊
   }
-  return countedTurnKeys.size;
+  return turns;
 }
 
 export function formatClaimAmount(amount: number): string {
