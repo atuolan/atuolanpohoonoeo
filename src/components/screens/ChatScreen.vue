@@ -30,7 +30,7 @@ import RedPacketVoiceClaimModal from "@/components/modals/RedPacketVoiceClaimMod
 import ScreenshotPreviewModal from "@/components/modals/ScreenshotPreviewModal.vue";
 import VideoCallModal from "@/components/modals/VideoCallModal.vue";
 import ImageSearchPanel from "@/components/panels/ImageSearchPanel.vue";
-import { _delay, _escapeRegex, _messageRenderDelay, formatClaimAmount, hashString, isShadowBubbleOf } from "@/utils/chatScreenHelpers";
+import { _delay, _escapeRegex, _messageRenderDelay, formatClaimAmount, hashString, isShadowBubbleOf, sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
 import { useChatAffinity } from "@/composables/useChatAffinity";
 import { useChatBlock } from "@/composables/useChatBlock";
 import { useChatRedpacket } from "@/composables/useChatRedpacket";
@@ -3012,29 +3012,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
     let messagesToUse: typeof messages.value;
     if (actualMode === "turn") {
-      // 按輪次讀取：每輪 = 用戶發言 + AI 回覆
-      let turnCount = 0;
-      let startIndex = eligibleMessages.length;
-      for (let i = eligibleMessages.length - 1; i >= 0; i--) {
-        if (eligibleMessages[i].role === "ai") {
-          turnCount++;
-          if (turnCount >= actualCount) {
-            // 往前找到這輪的 user 消息
-            for (let j = i - 1; j >= 0; j--) {
-              if (eligibleMessages[j].role === "user") {
-                startIndex = j;
-                break;
-              }
-            }
-            if (startIndex === eligibleMessages.length) {
-              startIndex = i;
-            }
-            break;
-          }
-        }
-        startIndex = i;
-      }
-      messagesToUse = eligibleMessages.slice(startIndex);
+      // 按輪次讀取：每輪 = 用戶發言 + AI 整段回覆。
+      // 同一輪 AI 即使被拆成多條氣泡（共享 turnId 或 shadow segment），只計為一輪。
+      messagesToUse = sliceMessagesByTurns(eligibleMessages, actualCount);
     } else {
       // 按消息數讀取
       messagesToUse = eligibleMessages.slice(-actualCount);
@@ -3628,9 +3608,12 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         continue;
       }
       // 普通文字訊息
+      // 保留 identifier，供 Anthropic 原生緩存（方案B）將 system 內容分類為
+      // 穩定塊(可緩存)/動態塊(時間/天氣/時區/節日，不緩存)。
       const apiMessage = {
         role: m.role,
         content: m.content,
+        identifier: (m as { identifier?: string }).identifier,
       };
       apiMessages.push(apiMessage);
       promptDebugMessages.push(toPromptDebugMessage(m, apiMessage));

@@ -85,6 +85,50 @@ interface BuiltMessage {
 }
 
 /**
+ * 「動態」提示詞 identifier 集合。
+ *
+ * 這些提示詞每次組裝時內容都可能變動（含當前時間/秒數、天氣、時區本地時間、
+ * 節日日期等），若被放進 Anthropic 緩存前綴會導致前綴每輪都不同，
+ * 造成「只寫入不讀取」。方案B 會把這些塊排到 cache_control 斷點「之後」、不緩存。
+ *
+ * 注意：此處列出的是「基礎名」，實際 identifier 可能帶 f2f/gc 前綴，
+ * 因此判定時用 {@link isDynamicPromptIdentifier} 做包含式比對。
+ */
+export const DYNAMIC_PROMPT_IDENTIFIERS: readonly string[] = [
+  "timeInfo",
+  "f2fTimeInfo",
+  "gcTimeInfo",
+  "timeJump",
+  "f2fTimeJump",
+  "gcTimeJump",
+  "weatherInfo",
+  "f2fWeatherInfo",
+  "gcWeatherInfo",
+  "characterWorldContext",
+  "f2fCharacterWorldContext",
+  "gcCharacterWorldContext",
+  "holidayInfo",
+  "f2fHolidayInfo",
+  "gcHolidayInfo",
+];
+
+/**
+ * 判定某個（可能為複合）identifier 是否屬於「動態」提示詞。
+ *
+ * mergeConsecutiveMessages 會把連續同 role 的訊息合併並用 "+" 串接 identifier
+ * （例如 "main+charDescription+timeInfo"）。為保險起見，只要複合 identifier 中
+ * 任一段命中動態集合，就整塊視為動態。實務上方案B 已在 merge 階段阻止動態塊與
+ * 穩定塊合併，因此這裡多為單一 identifier 比對。
+ */
+export function isDynamicPromptIdentifier(
+  identifier: string | undefined,
+): boolean {
+  if (!identifier) return false;
+  const parts = identifier.split("+");
+  return parts.some((p) => DYNAMIC_PROMPT_IDENTIFIERS.includes(p.trim()));
+}
+
+/**
  * 待深度插入的提示詞
  */
 interface PendingDepthPrompt {
@@ -1264,6 +1308,15 @@ export class PromptBuilder {
           current.role === "assistant" &&
           current.name !== msg.name
         ) {
+          merged.push(current);
+          current = { ...msg };
+        } else if (
+          current.role === "system" &&
+          isDynamicPromptIdentifier(current.identifier) !==
+            isDynamicPromptIdentifier(msg.identifier)
+        ) {
+          // 方案B：穩定 system 塊與動態 system 塊（時間/天氣/時區/節日）不可合併，
+          // 否則動態內容會污染可緩存的穩定前綴，導致 Anthropic 緩存「只寫不讀」。
           merged.push(current);
           current = { ...msg };
         } else {

@@ -15,6 +15,7 @@ import { useNotificationStore } from "@/stores/notification";
 import { MemoryRetrieverService } from "@/services/memoryRetriever";
 import { deleteVectorEmbedding, markVectorStale } from "@/db/vectorStore";
 import { extractSummaryKeywords } from "@/utils/summaryKeywordExtractor";
+import { sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
 
 /**
  * 將消息列表格式化為帶日期標記的文本
@@ -323,28 +324,9 @@ ${sourceText}
     actualMessageMode: "message" | "turn",
   ): Message[] {
     if (actualMessageMode === "turn") {
-      let turnCount = 0;
-      let startIndex = msgs.length;
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        if (msgs[i].role === "ai") {
-          turnCount++;
-          if (turnCount >= actualMessageCount) {
-            // 往前找到這輪的 user 消息
-            for (let j = i - 1; j >= 0; j--) {
-              if (msgs[j].role === "user") {
-                startIndex = j;
-                break;
-              }
-            }
-            if (startIndex === msgs.length) {
-              startIndex = i;
-            }
-            break;
-          }
-        }
-        startIndex = i;
-      }
-      return msgs.slice(startIndex);
+      // 一輪 = 一個完整回合（用戶發言 + AI 整段回覆）。
+      // 同一輪 AI 即使被拆成多條氣泡（共享 turnId 或 shadow segment），只計為一輪。
+      return sliceMessagesByTurns(msgs, actualMessageCount);
     } else {
       return msgs.slice(-actualMessageCount);
     }

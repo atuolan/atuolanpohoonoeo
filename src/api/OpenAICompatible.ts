@@ -17,6 +17,43 @@ import type { APISettings } from "@/types/settings";
 // const CF_WORKER_BASE = "https://nai-proxy.aguacloud.uk";
 
 /**
+ * 「動態」提示詞 identifier 集合（與 PromptBuilder.DYNAMIC_PROMPT_IDENTIFIERS 對齊）。
+ * 這些 system 內容每輪都會變動（時間/秒數、天氣、時區本地時間、節日日期），
+ * Anthropic 原生緩存（方案B）會把它們排到 cache_control 斷點「之後」、不緩存，
+ * 以保證可緩存前綴逐字節穩定，達成 cache_read 命中。
+ *
+ * 註：此處內聯一份以避免 API 層反向依賴 engine 層造成循環依賴。
+ */
+const ANTHROPIC_DYNAMIC_IDENTIFIERS: ReadonlySet<string> = new Set([
+  "timeInfo",
+  "f2fTimeInfo",
+  "gcTimeInfo",
+  "timeJump",
+  "f2fTimeJump",
+  "gcTimeJump",
+  "weatherInfo",
+  "f2fWeatherInfo",
+  "gcWeatherInfo",
+  "characterWorldContext",
+  "f2fCharacterWorldContext",
+  "gcCharacterWorldContext",
+  "holidayInfo",
+  "f2fHolidayInfo",
+  "gcHolidayInfo",
+]);
+
+/**
+ * 判定（可能為複合 "a+b+c" 形式的）identifier 是否屬於動態提示詞。
+ * 只要任一段命中動態集合即視為動態。
+ */
+function isAnthropicDynamicIdentifier(identifier: string | undefined): boolean {
+  if (!identifier) return false;
+  return identifier
+    .split("+")
+    .some((p) => ANTHROPIC_DYNAMIC_IDENTIFIERS.has(p.trim()));
+}
+
+/**
  * 圖片內容格式（用於 Vision API）
  */
 export interface ImageContent {
@@ -70,6 +107,12 @@ export interface APIMessage {
   role: "system" | "user" | "assistant";
   content: MessageContent;
   name?: string;
+  /**
+   * 提示詞標識符（來自 PromptBuilder 的 BuiltMessage.identifier）。
+   * Anthropic 原生緩存（方案B）用它把 system 內容分類為
+   * 「穩定塊（可緩存）」與「動態塊（時間/天氣/時區/節日，不緩存）」。
+   */
+  identifier?: string;
 }
 
 /**
@@ -733,26 +776,45 @@ export class OpenAICompatibleClient {
       }
     }
 
-    // 1. 分離 system 與對話訊息
-    const systemTexts: string[] = [];
+    // 1. 分離 system 與對話訊息。
+    //    方案B：依 identifier 把 system 內容再分成「穩定塊」與「動態塊」：
+    //      - 穩定塊：角色設定/世界書/規則等每輪不變的內容 → 可緩存
+    //      - 動態塊：時間(含秒)/天氣/時區本地時間/節日等每輪變動的內容 → 不緩存
+    //    動態塊若混進緩存前綴，會使前綴逐字節不同，導致「只寫入不讀取」。
+    const stableSystemTexts: string[] = [];
+    const dynamicSystemTexts: string[] = [];
     const convoMessages: APIMessage[] = [];
     for (const msg of processedMessages) {
       if (msg.role === "system") {
         const text = this.getMessageText(msg);
-        if (text.trim()) systemTexts.push(text);
+        if (!text.trim()) continue;
+        if (isAnthropicDynamicIdentifier(msg.identifier)) {
+          dynamicSystemTexts.push(text);
+        } else {
+          stableSystemTexts.push(text);
+        }
       } else {
         convoMessages.push(msg);
       }
     }
 
-    // 2. 建構頂層 system 陣列，並在最後一塊掛 cache_control 斷點
+    // 2. 建構頂層 system 陣列：
+    //    [穩定塊(掛 cache_control 斷點), 動態塊(無斷點、不緩存)]
+    //    Anthropic 緩存採前綴比對，斷點之前（=穩定塊）逐字節穩定即可被後續命中；
+    //    動態塊排在斷點之後，每輪變動也不影響前綴緩存。
     const systemBlocks: Array<TextContent> = [];
-    if (systemTexts.length > 0) {
-      const mergedSystem = systemTexts.join("\n\n");
+    if (stableSystemTexts.length > 0) {
       systemBlocks.push({
         type: "text",
-        text: mergedSystem,
+        text: stableSystemTexts.join("\n\n"),
         cache_control: { type: "ephemeral" },
+      });
+    }
+    if (dynamicSystemTexts.length > 0) {
+      // 若沒有任何穩定塊（理論上罕見），動態塊也不掛斷點，避免緩存變動內容。
+      systemBlocks.push({
+        type: "text",
+        text: dynamicSystemTexts.join("\n\n"),
       });
     }
 
@@ -821,6 +883,42 @@ export class OpenAICompatibleClient {
     }
 
     const bodyText = JSON.stringify(body);
+
+    // 緩存診斷：印出「可緩存前綴指紋」。
+    // Anthropic 緩存命中要求斷點之前的內容逐字節相同；若前綴每輪變動（如 system
+    // 含動態時間/隨機值），就會「只寫入不讀取」。比對兩輪 log 的 hash 是否相同即可定位。
+    try {
+      const cacheablePrefixParts: string[] = [];
+      for (const sb of systemBlocks) {
+        cacheablePrefixParts.push(sb.text || "");
+        if (sb.cache_control) break; // 只統計到第一個 system 斷點為止
+      }
+      // 倒數第二條訊息（讀取命中邊界）之前的所有對話內容
+      const readBoundaryIdx = lastIdx - 1;
+      for (let i = 0; i <= readBoundaryIdx && i < anthropicMessages.length; i++) {
+        const m = anthropicMessages[i];
+        for (const blk of m.content) {
+          if (blk.type === "text") cacheablePrefixParts.push(String(blk.text ?? ""));
+        }
+      }
+      const prefixStr = cacheablePrefixParts.join("\u0001");
+      let h = 0;
+      for (let i = 0; i < prefixStr.length; i++) {
+        h = (h * 31 + prefixStr.charCodeAt(i)) | 0;
+      }
+      const prefixHash = (h >>> 0).toString(36);
+      console.log(
+        `[Anthropic][緩存前綴診斷] hash=${prefixHash} 前綴字元數=${prefixStr.length} ` +
+          `system塊數=${systemBlocks.length}(穩定${stableSystemTexts.length}/動態${dynamicSystemTexts.length}) ` +
+          `訊息數=${anthropicMessages.length} ` +
+          `斷點: 穩定system末尾 + 訊息#${lastIdx - 1}(讀取) + 訊息#${lastIdx}(寫入)。` +
+          `動態塊(時間/天氣/時區/節日)已排在斷點之後、不緩存。` +
+          `若兩輪 hash 仍不同 → 穩定前綴仍含變動內容，需檢查 identifier 分類。`,
+      );
+    } catch {
+      /* 診斷失敗不影響主流程 */
+    }
+
     const diagnostics: GenerationDiagnostics = {
       model: this.apiSettings.model,
       stream,
