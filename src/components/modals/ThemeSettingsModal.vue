@@ -1469,7 +1469,9 @@ watch(
                       <!-- AI 訊息背景 -->
                       <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.aiBg }" @click="toggleGradientPanel('aiBg')">
                         <div class="color-item-head">
-                          <input type="color" :value="tempBubbleStyle.aiBgColor" @click.stop @input="setBubbleColor('aiBgColor', ($event.target as HTMLInputElement).value)" />
+                          <span class="bg-swatch" :class="{ 'has-gradient': tempBubbleStyle.aiBgGradient }" :style="tempBubbleStyle.aiBgGradient ? { backgroundImage: tempBubbleStyle.aiBgGradient } : {}">
+                            <input type="color" :value="tempBubbleStyle.aiBgColor" @click.stop @input="setBubbleColor('aiBgColor', ($event.target as HTMLInputElement).value)" />
+                          </span>
                           <span>AI 訊息背景</span>
                           <span class="gradient-chevron">{{ gradientPanelOpen.aiBg ? '▾' : '▸' }}</span>
                         </div>
@@ -1499,7 +1501,9 @@ watch(
                       <!-- AI 文字/時間 -->
                       <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.aiText }" @click="toggleGradientPanel('aiText')">
                         <div class="color-item-head">
-                          <input type="color" :value="tempBubbleStyle.aiTextColor" @click.stop @input="setBubbleColor('aiTextColor', ($event.target as HTMLInputElement).value)" />
+                          <span class="bg-swatch" :class="{ 'has-gradient': tempBubbleStyle.aiTextGradient }" :style="tempBubbleStyle.aiTextGradient ? { backgroundImage: tempBubbleStyle.aiTextGradient } : {}">
+                            <input type="color" :value="tempBubbleStyle.aiTextColor" @click.stop @input="setBubbleColor('aiTextColor', ($event.target as HTMLInputElement).value)" />
+                          </span>
                           <span>AI 文字/時間</span>
                           <span class="gradient-chevron">{{ gradientPanelOpen.aiText ? '▾' : '▸' }}</span>
                         </div>
@@ -1529,7 +1533,9 @@ watch(
                       <!-- AI 氣泡內主要顏色 -->
                       <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.aiContent }" @click="toggleGradientPanel('aiContent')">
                         <div class="color-item-head">
-                          <input type="color" :value="tempBubbleStyle.aiContentColor" @click.stop @input="setBubbleColor('aiContentColor', ($event.target as HTMLInputElement).value)" />
+                          <span class="bg-swatch" :class="{ 'has-gradient': tempBubbleStyle.aiContentGradient }" :style="tempBubbleStyle.aiContentGradient ? { backgroundImage: tempBubbleStyle.aiContentGradient } : {}">
+                            <input type="color" :value="tempBubbleStyle.aiContentColor" @click.stop @input="setBubbleColor('aiContentColor', ($event.target as HTMLInputElement).value)" />
+                          </span>
                           <span>AI 氣泡內主要顏色</span>
                           <span class="gradient-chevron">{{ gradientPanelOpen.aiContent ? '▾' : '▸' }}</span>
                         </div>
@@ -1559,7 +1565,9 @@ watch(
                       <!-- 想法氣泡背景 -->
                       <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.thoughtBg }" @click="toggleGradientPanel('thoughtBg')">
                         <div class="color-item-head">
-                          <input type="color" :value="tempBubbleStyle.thoughtBgColor" @click.stop @input="setBubbleColor('thoughtBgColor', ($event.target as HTMLInputElement).value)" />
+                          <span class="bg-swatch" :class="{ 'has-gradient': tempBubbleStyle.thoughtBgGradient }" :style="tempBubbleStyle.thoughtBgGradient ? { backgroundImage: tempBubbleStyle.thoughtBgGradient } : {}">
+                            <input type="color" :value="tempBubbleStyle.thoughtBgColor" @click.stop @input="setBubbleColor('thoughtBgColor', ($event.target as HTMLInputElement).value)" />
+                          </span>
                           <span>想法氣泡背景</span>
                           <span class="gradient-chevron">{{ gradientPanelOpen.thoughtBg ? '▾' : '▸' }}</span>
                         </div>
@@ -1589,7 +1597,9 @@ watch(
                       <!-- 想法氣泡文字 -->
                       <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.thoughtText }" @click="toggleGradientPanel('thoughtText')">
                         <div class="color-item-head">
-                          <input type="color" :value="tempBubbleStyle.thoughtTextColor" @click.stop @input="setBubbleColor('thoughtTextColor', ($event.target as HTMLInputElement).value)" />
+                          <span class="bg-swatch" :class="{ 'has-gradient': tempBubbleStyle.thoughtTextGradient }" :style="tempBubbleStyle.thoughtTextGradient ? { backgroundImage: tempBubbleStyle.thoughtTextGradient } : {}">
+                            <input type="color" :value="tempBubbleStyle.thoughtTextColor" @click.stop @input="setBubbleColor('thoughtTextColor', ($event.target as HTMLInputElement).value)" />
+                          </span>
                           <span>想法氣泡文字</span>
                           <span class="gradient-chevron">{{ gradientPanelOpen.thoughtText ? '▾' : '▸' }}</span>
                         </div>
@@ -1688,7 +1698,9 @@ watch(
                       <!-- 我的訊息背景 -->
                       <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.userBg }" @click="toggleGradientPanel('userBg')">
                         <div class="color-item-head">
-                          <input type="color" :value="tempBubbleStyle.userBgColor" @click.stop @input="setBubbleColor('userBgColor', ($event.target as HTMLInputElement).value)" />
+                          <span class="bg-swatch" :class="{ 'has-gradient': tempBubbleStyle.userBgGradient }" :style="tempBubbleStyle.userBgGradient ? { backgroundImage: tempBubbleStyle.userBgGradient } : {}">
+                            <input type="color" :value="tempBubbleStyle.userBgColor" @click.stop @input="setBubbleColor('userBgColor', ($event.target as HTMLInputElement).value)" />
+                          </span>
                           <span>我的訊息背景</span>
                           <span class="gradient-chevron">{{ gradientPanelOpen.userBg ? '▾' : '▸' }}</span>
                         </div>
@@ -1718,7 +1730,9 @@ watch(
                       <!-- 我的文字/時間（含氣泡內文字，共用 userText） -->
                       <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.userText }" @click="toggleGradientPanel('userText')">
                         <div class="color-item-head">
-                          <input type="color" :value="tempBubbleStyle.userTextColor" @click.stop @input="setBubbleColor('userTextColor', ($event.target as HTMLInputElement).value)" />
+                          <span class="bg-swatch" :class="{ 'has-gradient': tempBubbleStyle.userTextGradient }" :style="tempBubbleStyle.userTextGradient ? { backgroundImage: tempBubbleStyle.userTextGradient } : {}">
+                            <input type="color" :value="tempBubbleStyle.userTextColor" @click.stop @input="setBubbleColor('userTextColor', ($event.target as HTMLInputElement).value)" />
+                          </span>
                           <span>我的文字/時間</span>
                           <span class="gradient-chevron">{{ gradientPanelOpen.userText ? '▾' : '▸' }}</span>
                         </div>
@@ -3405,6 +3419,38 @@ watch(
       height: 28px;
       flex-shrink: 0;
       cursor: pointer;
+    }
+
+    // 漸層預覽外框：保持圓形，啟用漸層時顯示漸層色
+    .bg-swatch {
+      position: relative;
+      display: block;
+      flex: 0 0 28px;
+      width: 28px;
+      height: 28px;
+      min-width: 28px;
+      max-width: 28px;
+      border-radius: 50%;
+      overflow: hidden;
+      background-size: cover;
+      background-position: center;
+
+      input[type="color"] {
+        width: 100%;
+        height: 100%;
+        border: none;
+        border-radius: 50%;
+        padding: 0;
+        background: transparent;
+        cursor: pointer;
+      }
+
+      &.has-gradient {
+        // 漸層顯示於外框背景，輸入框透明讓漸層透出
+        input[type="color"] {
+          opacity: 0;
+        }
+      }
     }
 
     > span {
