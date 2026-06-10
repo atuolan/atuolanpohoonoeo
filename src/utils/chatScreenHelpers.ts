@@ -80,6 +80,26 @@ export function sliceMessagesByTurns<
   return msgs.slice(startIndex);
 }
 
+/**
+ * 統計訊息列表中包含的「對話輪次」數量。
+ * 以 AI 氣泡為錨點，按 turnId / shadowSourceId 去重，
+ * 與 sliceMessagesByTurns 採用同一套去重規則，確保顯示與裁切一致。
+ *
+ * @param msgs 訊息列表
+ * @returns 去重後的 AI 輪次數
+ */
+export function countTurns(
+  msgs: Array<{ id: string; role: string; turnId?: string; shadowSourceId?: string }>,
+): number {
+  const countedTurnKeys = new Set<string>();
+  for (const msg of msgs) {
+    if (msg.role === "ai") {
+      countedTurnKeys.add(turnKeyOf(msg));
+    }
+  }
+  return countedTurnKeys.size;
+}
+
 export function formatClaimAmount(amount: number): string {
   if (!Number.isFinite(amount)) return "0";
   return amount

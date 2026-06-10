@@ -30,7 +30,7 @@ import RedPacketVoiceClaimModal from "@/components/modals/RedPacketVoiceClaimMod
 import ScreenshotPreviewModal from "@/components/modals/ScreenshotPreviewModal.vue";
 import VideoCallModal from "@/components/modals/VideoCallModal.vue";
 import ImageSearchPanel from "@/components/panels/ImageSearchPanel.vue";
-import { _delay, _escapeRegex, _messageRenderDelay, formatClaimAmount, hashString, isShadowBubbleOf, sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
+import { _delay, _escapeRegex, _messageRenderDelay, countTurns, formatClaimAmount, hashString, isShadowBubbleOf, sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
 import { useChatAffinity } from "@/composables/useChatAffinity";
 import { useChatBlock } from "@/composables/useChatBlock";
 import { useChatRedpacket } from "@/composables/useChatRedpacket";
@@ -3020,6 +3020,14 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       messagesToUse = eligibleMessages.slice(-actualCount);
     }
 
+    // 永久診斷：實際發送的輪數 / 消息數。
+    // debug overlay 會攔截 console 並常駐顯示，方便隨時核對「讀取設定 vs 實際發送」。
+    const actualTurnsToSend = countTurns(messagesToUse);
+    console.log(
+      `[輪數診斷] 模式=${actualMode} | 設定=${actualCount}${actualMode === "turn" ? "輪" : "條"}` +
+        ` | 實際發送=${actualTurnsToSend}輪 / ${messagesToUse.length}條訊息`,
+    );
+
     const chatMessages: ChatMessage[] = messagesToUse.map((m) => ({
       id: m.id,
       sender:
@@ -3798,6 +3806,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         sourceMessageCount: messages.value.length,
         eligibleMessageCount: eligibleMessages.length,
         messagesToUseCount: messagesToUse.length,
+        turnsToUseCount: actualTurnsToSend,
         actualMode,
         actualCount,
         summariesCount: summariesToSend.length,
