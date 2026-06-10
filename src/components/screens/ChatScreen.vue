@@ -1462,7 +1462,8 @@ const timeJumpInput = ref("");
 const enablePhoneDecision = ref(true); // 默認開啟角色決定接電話
 const chatDoNotDisturb = ref(false); // 聊天專屬勿擾模式
 const chatFaceToFaceMode = ref(false); // 聊天專屬面對面模式
-const chatThirdPersonMode = ref(false); // 聊天專屬第三人稱模式
+const chatCharNarrativePerson = ref<"first" | "third">("first"); // {{char}} 敘事人稱
+const chatUserNarrativePerson = ref<"first" | "second" | "third">("second"); // {{user}} 敘事人稱
 const chatEnableRealTimeAwareness = ref(true); // 感知現實時間（默認開啟）
 const chatMinimaxTTSEnabled = ref(false); // 聊天專屬 MiniMax TTS（默認關閉）
 const chatImageSearchEnabled = ref(true);
@@ -3382,8 +3383,10 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       stickerList: stickerNames,
       // 傳入面對面模式狀態
       faceToFaceMode: chatFaceToFaceMode.value,
-      // 傳入第三人稱模式狀態
-      thirdPersonMode: chatThirdPersonMode.value,
+      // 傳入人稱模式狀態（thirdPersonMode 保留供舊邏輯相容）
+      thirdPersonMode: chatCharNarrativePerson.value === "third",
+      charNarrativePerson: chatCharNarrativePerson.value,
+      userNarrativePerson: chatUserNarrativePerson.value,
       // 傳入感知現實時間狀態
       enableRealTimeAwareness: chatEnableRealTimeAwareness.value,
       // 傳入假時間覆蓋（非 real 模式時計算假時間）
@@ -6014,11 +6017,29 @@ async function toggleFaceToFaceMode() {
   await saveChat();
 }
 
-// 切換第三人稱模式（聊天專屬，面對面模式下）
-async function toggleThirdPersonMode() {
-  chatThirdPersonMode.value = !chatThirdPersonMode.value;
+// 設定 {{char}} 敘事人稱（聊天專屬，面對面模式下）
+async function setCharNarrativePerson(value: "first" | "third") {
+  chatCharNarrativePerson.value = value;
+  if (value === "first" && chatUserNarrativePerson.value === "first") {
+    chatUserNarrativePerson.value = "second";
+  }
   await saveChat();
 }
+
+// 設定 {{user}} 敘事人稱（聊天專屬，面對面模式下）
+async function setUserNarrativePerson(value: "first" | "second" | "third") {
+  if (chatCharNarrativePerson.value === "first" && value === "first") {
+    chatUserNarrativePerson.value = "second";
+  } else {
+    chatUserNarrativePerson.value = value;
+  }
+  await saveChat();
+}
+
+const onHeaderSetCharNarrativePerson = (...args: any[]) =>
+  setCharNarrativePerson(args[0] as "first" | "third");
+const onHeaderSetUserNarrativePerson = (...args: any[]) =>
+  setUserNarrativePerson(args[0] as "first" | "second" | "third");
 
 // 切換夜晚模式
 async function toggleNightMode() {
@@ -6318,8 +6339,22 @@ async function loadOrCreateChat(overrideChatId?: string) {
         chatDoNotDisturb.value = chat.doNotDisturb === true;
         // 載入面對面模式設定（默認為 false）
         chatFaceToFaceMode.value = chat.faceToFaceMode === true;
-        // 載入第三人稱模式設定（默認為 false）
-        chatThirdPersonMode.value = chat.thirdPersonMode === true;
+        // 載入人稱模式設定；舊聊天用 thirdPersonMode 遷移 {{char}} 人稱
+        chatCharNarrativePerson.value =
+          chat.charNarrativePerson === "third" || chat.charNarrativePerson === "first"
+            ? chat.charNarrativePerson
+            : chat.thirdPersonMode === true
+              ? "third"
+              : "first";
+        chatUserNarrativePerson.value =
+          chat.userNarrativePerson === "third" ||
+          chat.userNarrativePerson === "second" ||
+          chat.userNarrativePerson === "first"
+            ? chat.userNarrativePerson
+            : "second";
+        if (chatCharNarrativePerson.value === "first" && chatUserNarrativePerson.value === "first") {
+          chatUserNarrativePerson.value = "second";
+        }
         // 載入感知現實時間設定（默認為 true）
         chatEnableRealTimeAwareness.value =
           chat.enableRealTimeAwareness !== false;
@@ -6634,7 +6669,9 @@ function buildChatMetadata(
     enablePhoneDecision: enablePhoneDecision.value,
     doNotDisturb: chatDoNotDisturb.value,
     faceToFaceMode: chatFaceToFaceMode.value,
-    thirdPersonMode: chatThirdPersonMode.value,
+    thirdPersonMode: chatCharNarrativePerson.value === "third",
+    charNarrativePerson: chatCharNarrativePerson.value,
+    userNarrativePerson: chatUserNarrativePerson.value,
     enableRealTimeAwareness: chatEnableRealTimeAwareness.value,
     fakeTimeFields: fakeTime.toChatFields(),
     minimaxTTSEnabled: chatMinimaxTTSEnabled.value,
@@ -7054,7 +7091,8 @@ watch(
           const prevDoNotDisturb = chatDoNotDisturb.value;
           const prevPhoneDecision = enablePhoneDecision.value;
           const prevFaceToFaceMode = chatFaceToFaceMode.value;
-          const prevThirdPersonMode = chatThirdPersonMode.value;
+          const prevCharNarrativePerson = chatCharNarrativePerson.value;
+          const prevUserNarrativePerson = chatUserNarrativePerson.value;
           const prevImageSearchEnabled = chatImageSearchEnabled.value;
           const prevSpeakerMode = chatSpeakerMode.value;
 
@@ -7064,7 +7102,8 @@ watch(
           chatDoNotDisturb.value = prevDoNotDisturb;
           enablePhoneDecision.value = prevPhoneDecision;
           chatFaceToFaceMode.value = prevFaceToFaceMode;
-          chatThirdPersonMode.value = prevThirdPersonMode;
+          chatCharNarrativePerson.value = prevCharNarrativePerson;
+          chatUserNarrativePerson.value = prevUserNarrativePerson;
           chatImageSearchEnabled.value = prevImageSearchEnabled;
           chatSpeakerMode.value = prevSpeakerMode;
 
@@ -7138,7 +7177,8 @@ useChatCleanup({
       :show-game-menu="showGameMenu"
       :show-chat-settings-menu="showChatSettingsMenu"
       :chat-face-to-face-mode="chatFaceToFaceMode"
-      :chat-third-person-mode="chatThirdPersonMode"
+      :chat-char-narrative-person="chatCharNarrativePerson"
+      :chat-user-narrative-person="chatUserNarrativePerson"
       :night-mode="settingsStore.nightMode"
       :chat-enable-real-time-awareness="chatEnableRealTimeAwareness"
       :show-fake-time-panel="showFakeTimePanel"
@@ -7173,7 +7213,8 @@ useChatCleanup({
       @open-proactive-message-settings="showProactiveMessageSettings = true"
       @toggle-chat-settings-menu="toggleChatSettingsMenu"
       @toggle-face-to-face-mode="toggleFaceToFaceMode"
-      @toggle-third-person-mode="toggleThirdPersonMode"
+      @set-char-narrative-person="onHeaderSetCharNarrativePerson"
+      @set-user-narrative-person="onHeaderSetUserNarrativePerson"
       @toggle-night-mode="toggleNightMode"
       @toggle-real-time-awareness="toggleRealTimeAwareness"
       @toggle-fake-time-panel="showFakeTimePanel = !showFakeTimePanel"

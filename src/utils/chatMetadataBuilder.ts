@@ -15,6 +15,8 @@ export interface BuildChatMetadataOptions {
   doNotDisturb: boolean;
   faceToFaceMode: boolean;
   thirdPersonMode: boolean;
+  charNarrativePerson: "first" | "third";
+  userNarrativePerson: "first" | "second" | "third";
   enableRealTimeAwareness: boolean;
   fakeTimeFields: Partial<Chat>;
   minimaxTTSEnabled: boolean;
@@ -51,7 +53,9 @@ export function buildChatMetadataFromState(options: BuildChatMetadataOptions): C
     enablePhoneDecision: options.enablePhoneDecision,
     doNotDisturb: options.doNotDisturb,
     faceToFaceMode: options.faceToFaceMode,
-    thirdPersonMode: options.thirdPersonMode,
+    thirdPersonMode: options.charNarrativePerson === "third",
+    charNarrativePerson: options.charNarrativePerson,
+    userNarrativePerson: options.userNarrativePerson,
     enableRealTimeAwareness: options.enableRealTimeAwareness,
     ...options.fakeTimeFields,
     minimaxTTSEnabled: options.minimaxTTSEnabled,

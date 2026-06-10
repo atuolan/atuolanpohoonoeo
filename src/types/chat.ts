@@ -829,8 +829,14 @@ export interface Chat {
   /** 面對面模式（此聊天使用面對面敘事風格） */
   faceToFaceMode?: boolean;
 
-  /** 第三人稱模式（面對面模式下使用第三人稱敘事） */
+  /** 第三人稱模式（面對面模式下使用第三人稱敘事）— 舊欄位，保留相容；由 charNarrativePerson 推導 */
   thirdPersonMode?: boolean;
+
+  /** {{char}} 敘事人稱：third=第三人稱(用名字)、first=第一人稱(我) */
+  charNarrativePerson?: "first" | "third";
+
+  /** {{user}} 敘事人稱：third=第三人稱(用名字)、second=第二人稱(你)、first=第一人稱(我) */
+  userNarrativePerson?: "first" | "second" | "third";
 
   /** 感知現實時間（關閉後不注入時間標籤和時間提示詞，讓用戶可以自由使用時間跳轉魔法） */
   enableRealTimeAwareness?: boolean;

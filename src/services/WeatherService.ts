@@ -20,6 +20,10 @@ export interface WeatherData {
     lat: number;
     lon: number;
     localtime: string;
+    /** IANA 時區 ID，例如 Asia/Taipei */
+    tzId?: string;
+    /** 目標地點相對 UTC 的偏移秒數 */
+    utcOffsetSeconds?: number;
   };
   current: {
     temp_c: number;
@@ -220,6 +224,38 @@ out body;`.trim();
 /**
  * 從 WeatherAPI 獲取天氣數據
  */
+function getUtcOffsetSecondsForTimeZone(
+  timeZone: string | undefined,
+  date = new Date(),
+): number | undefined {
+  if (!timeZone) return undefined;
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).formatToParts(date);
+    const values = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+    const hour = values.hour === "24" ? 0 : Number(values.hour);
+    const localAsUtcMs = Date.UTC(
+      Number(values.year),
+      Number(values.month) - 1,
+      Number(values.day),
+      hour,
+      Number(values.minute),
+      Number(values.second),
+    );
+    return Math.round((localAsUtcMs - date.getTime()) / 1000);
+  } catch {
+    return undefined;
+  }
+}
+
 async function fetchWeather(
   query: string,
   includeForecast = false,
@@ -248,7 +284,18 @@ async function fetchWeather(
 
   const result = await response.json();
   console.log("[WeatherAPI] station:", result.location?.name, result.location?.region, "| temp:", result.current?.temp_c, "°C | query:", query);
-  return result;
+
+  const tzId = typeof result.location?.tz_id === "string"
+    ? result.location.tz_id
+    : undefined;
+  return {
+    ...result,
+    location: {
+      ...result.location,
+      tzId,
+      utcOffsetSeconds: getUtcOffsetSecondsForTimeZone(tzId),
+    },
+  };
 }
 
 /**
@@ -520,6 +567,10 @@ async function fetchOpenMeteo(
       lat,
       lon,
       localtime,
+      tzId: typeof data.timezone === "string" ? data.timezone : undefined,
+      utcOffsetSeconds: typeof data.utc_offset_seconds === "number"
+        ? data.utc_offset_seconds
+        : undefined,
     },
     current: {
       temp_c: current.temperature_2m,

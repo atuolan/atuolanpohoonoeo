@@ -372,6 +372,8 @@ export type SyncChatRecordPayload = Pick<
   | "doNotDisturb"
   | "faceToFaceMode"
   | "thirdPersonMode"
+  | "charNarrativePerson"
+  | "userNarrativePerson"
   | "enableRealTimeAwareness"
   | "fakeTimeMode"
   | "fakeTimeLoop"

@@ -84,6 +84,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   const callState = ref<CallState>("ringing");
   const callMessages = ref<CallMessage[]>([]);
   const callDuration = ref(0);
+  const callStartedAt = ref<number | null>(null);
   const isGenerating = ref(false);
   const rejectReason = ref("");
   const isMuted = ref(false);
@@ -124,6 +125,38 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     const secs = callDuration.value % 60;
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   });
+
+  function formatCallDateTime(timestamp: number): string {
+    const date = new Date(timestamp);
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, "0");
+    const day = date.getDate().toString().padStart(2, "0");
+    const hours = date.getHours().toString().padStart(2, "0");
+    const minutes = date.getMinutes().toString().padStart(2, "0");
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+  }
+
+  function formatDurationText(durationSeconds: number): string {
+    const mins = Math.floor(durationSeconds / 60);
+    const secs = durationSeconds % 60;
+    return mins > 0 ? `${mins}分${secs}秒` : `${secs}秒`;
+  }
+
+  function buildPhoneCallRecordContent(options: {
+    title?: string;
+    durationSeconds: number;
+    startedAt?: number | null;
+    endedAt: number;
+    characterName: string;
+    messages: CallMessage[];
+  }): string {
+    const startedAt = options.startedAt ?? Math.max(options.endedAt - options.durationSeconds * 1000, 0);
+    const callLines = options.messages
+      .map((m) => `${m.role === "user" ? "你" : options.characterName}: ${m.content}`)
+      .join("\n");
+
+    return `<phone_call>\n${options.title || "📞 通話結束"}\n開始時間：${formatCallDateTime(startedAt)}\n結束時間：${formatCallDateTime(options.endedAt)}\n時長：${formatDurationText(options.durationSeconds)}\n\n電話內容：\n${callLines}\n</phone_call>`;
+  }
   const canRegenerateLastAi = computed(() => {
     if (isGenerating.value || callState.value !== "connected") return false;
     const last = callMessages.value[callMessages.value.length - 1];
@@ -183,6 +216,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     callState.value = "connected";
     callMessages.value = [];
     callDuration.value = 0;
+    callStartedAt.value = Date.now();
     isGenerating.value = false;
     rejectReason.value = "";
     isMuted.value = false;
@@ -220,6 +254,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     callState.value = "ringing";
     callMessages.value = [];
     callDuration.value = 0;
+    callStartedAt.value = null;
     isGenerating.value = false;
     rejectReason.value = "";
     isMuted.value = false;
@@ -267,6 +302,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   // ===== 接聽 =====
   async function handleAnswer(openingMessages?: { text: string; tone?: string }[]) {
     callState.value = "connected";
+    callStartedAt.value = Date.now();
     durationTimer = setInterval(() => { callDuration.value++; }, 1000);
 
     const info = activeCall.value!;
@@ -343,9 +379,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       const chat = await loadChatById(info.chatId);
       if (!chat) return;
 
-      const mins = Math.floor(callDuration.value / 60);
-      const secs = callDuration.value % 60;
-      const durationText = mins > 0 ? `${mins}分${secs}秒` : `${secs}秒`;
+      const endedAt = Date.now();
 
       const callRecordMessage = {
         id: `msg_call_${Date.now()}`,
@@ -353,10 +387,16 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
         sender: "system",
         name: "系統",
         is_user: false,
-        content: `📞 通話結束\n時長：${durationText}\n\n--- 通話內容 ---\n${msgs.map((m) => `${m.role === "user" ? "你" : info.characterName}: ${m.content}`).join("\n")}`,
-        timestamp: Date.now(),
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+        content: buildPhoneCallRecordContent({
+          durationSeconds: callDuration.value,
+          startedAt: callStartedAt.value,
+          endedAt,
+          characterName: info.characterName,
+          messages: msgs,
+        }),
+        timestamp: endedAt,
+        createdAt: endedAt,
+        updatedAt: endedAt,
         status: "sent",
       };
 
@@ -989,6 +1029,7 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
       activeCall: activeCall.value,
       callState: callState.value,
       callDuration: callDuration.value,
+      callStartedAt: callStartedAt.value,
       // 避免把大圖 base64 存進 localStorage 導致超量
       callMessages: callMessages.value
         .filter((m) => !m.isStreaming)
@@ -1004,6 +1045,7 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
     activeCall: ActiveCallInfo;
     callState: CallState;
     callDuration: number;
+    callStartedAt?: number | null;
     callMessages: CallMessage[];
     videoSession?: VideoCallSession;
     savedAt: number;
@@ -1037,6 +1079,7 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
     activeCall.value = snapshot.activeCall;
     callState.value = "connected";
     callDuration.value = snapshot.callDuration;
+    callStartedAt.value = snapshot.callStartedAt ?? Math.max(snapshot.savedAt - snapshot.callDuration * 1000, 0);
     callMessages.value = snapshot.callMessages;
     isExpanded.value = true;
     videoSession.value =
@@ -1064,14 +1107,19 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
       const chat = await db.get<any>(DB_STORES.CHATS, snapshot.activeCall.chatId);
       if (!chat) return;
       const msgs = snapshot.callMessages.filter((m) => m.role !== "system");
-      const mins = Math.floor(snapshot.callDuration / 60);
-      const secs = snapshot.callDuration % 60;
-      const durationText = mins > 0 ? `${mins}分${secs}秒` : `${secs}秒`;
+      const endedAt = Date.now();
       const callRecordMessage = {
         id: `msg_call_${Date.now()}`,
         role: "system", sender: "system", name: "系統", is_user: false,
-        content: `📞 通話結束（頁面關閉）\n時長：${durationText}\n\n--- 通話內容 ---\n${msgs.map((m) => `${m.role === "user" ? "你" : snapshot.activeCall.characterName}: ${m.content}`).join("\n")}`,
-        timestamp: Date.now(), createdAt: Date.now(), updatedAt: Date.now(), status: "sent",
+        content: buildPhoneCallRecordContent({
+          title: "📞 通話結束（頁面關閉）",
+          durationSeconds: snapshot.callDuration,
+          startedAt: snapshot.callStartedAt ?? Math.max(snapshot.savedAt - snapshot.callDuration * 1000, 0),
+          endedAt,
+          characterName: snapshot.activeCall.characterName,
+          messages: msgs,
+        }),
+        timestamp: endedAt, createdAt: endedAt, updatedAt: endedAt, status: "sent",
       };
       // v24：用 appendChatMessages 追加通話記錄
       await appendMessages(chat.id, [callRecordMessage as any]);

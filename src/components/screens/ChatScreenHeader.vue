@@ -30,7 +30,8 @@ const props = defineProps<{
   showGameMenu: boolean;
   showChatSettingsMenu: boolean;
   chatFaceToFaceMode: boolean;
-  chatThirdPersonMode: boolean;
+  chatCharNarrativePerson: "first" | "third";
+  chatUserNarrativePerson: "first" | "second" | "third";
   nightMode: boolean;
   chatEnableRealTimeAwareness: boolean;
   showFakeTimePanel: boolean;
@@ -68,7 +69,8 @@ const emit = defineEmits<{
   (e: "open-proactive-message-settings"): void;
   (e: "toggle-chat-settings-menu"): void;
   (e: "toggle-face-to-face-mode"): void;
-  (e: "toggle-third-person-mode"): void;
+  (e: "set-char-narrative-person", value: "first" | "third"): void;
+  (e: "set-user-narrative-person", value: "first" | "second" | "third"): void;
   (e: "toggle-night-mode"): void;
   (e: "toggle-real-time-awareness"): void;
   (e: "toggle-fake-time-panel"): void;
@@ -418,17 +420,32 @@ const isDarkBackground = computed(() =>
                 <span class="toggle-slider-mini"></span>
               </label>
             </div>
-            <div v-if="chatFaceToFaceMode" class="dropdown-toggle-item">
-              <div class="toggle-item-info">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                </svg>
-                <span>第三人稱</span>
+            <div v-if="chatFaceToFaceMode" class="narrative-person-panel">
+              <div class="narrative-person-row">
+                <div class="toggle-item-info narrative-person-label">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                  </svg>
+                  <span>角色人稱</span>
+                </div>
+                <div class="fake-time-mode-selector narrative-person-selector">
+                  <button :class="['fake-time-mode-btn', { active: chatCharNarrativePerson === 'third' }]" @click="emit('set-char-narrative-person', 'third')">第三人稱</button>
+                  <button :class="['fake-time-mode-btn', { active: chatCharNarrativePerson === 'first' }]" @click="emit('set-char-narrative-person', 'first')">我</button>
+                </div>
               </div>
-              <label class="toggle-switch-mini">
-                <input type="checkbox" :checked="chatThirdPersonMode" @change="emit('toggle-third-person-mode')" />
-                <span class="toggle-slider-mini"></span>
-              </label>
+              <div class="narrative-person-row">
+                <div class="toggle-item-info narrative-person-label">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+                  </svg>
+                  <span>用戶人稱</span>
+                </div>
+                <div class="fake-time-mode-selector narrative-person-selector">
+                  <button :class="['fake-time-mode-btn', { active: chatUserNarrativePerson === 'third' }]" @click="emit('set-user-narrative-person', 'third')">第三人稱</button>
+                  <button :class="['fake-time-mode-btn', { active: chatUserNarrativePerson === 'second' }]" @click="emit('set-user-narrative-person', 'second')">你</button>
+                  <button v-if="chatCharNarrativePerson !== 'first'" :class="['fake-time-mode-btn', { active: chatUserNarrativePerson === 'first' }]" @click="emit('set-user-narrative-person', 'first')">我</button>
+                </div>
+              </div>
             </div>
             <div class="dropdown-toggle-item">
               <div class="toggle-item-info">
@@ -1360,6 +1377,30 @@ const isDarkBackground = computed(() =>
 .fake-time-panel {
   padding: 8px 18px 12px;
   border-top: 1px solid var(--color-border);
+}
+
+.narrative-person-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 18px;
+}
+
+.narrative-person-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.narrative-person-label {
+  flex: 0 0 auto;
+}
+
+.narrative-person-selector {
+  flex: 1;
+  min-width: 132px;
+  margin-bottom: 0;
 }
 
 .fake-time-mode-selector {

@@ -244,8 +244,12 @@ export interface PromptBuilderOptions {
   stickerList?: string[];
   /** 面對面模式（開啟時使用面對面模式的提示詞） */
   faceToFaceMode?: boolean;
-  /** 第三人稱模式（面對面模式下，開啟時使用第三人稱，關閉時使用第二人稱） */
+  /** 第三人稱模式（面對面模式下，開啟時使用第三人稱，關閉時使用第一人稱）— 舊選項，保留相容 */
   thirdPersonMode?: boolean;
+  /** {{char}} 敘事人稱：third=第三人稱(用名字)、first=第一人稱(我) */
+  charNarrativePerson?: "first" | "third";
+  /** {{user}} 敘事人稱：third=第三人稱(用名字)、second=第二人稱(你)、first=第一人稱(我) */
+  userNarrativePerson?: "first" | "second" | "third";
   /** 遊戲經濟狀態（用於注入遊戲狀態 Prompt） */
   gameState?: ChatGameState;
   /** 最近的禮物事件（用於注入禮物 Prompt） */
@@ -1472,6 +1476,7 @@ export class PromptBuilder {
       case "userSecrets":
       case "f2fUserSecrets":
       case "gcUserSecrets":
+      case "phoneCallUserSecrets":
         if (this.options.userSecrets && this.options.userSecrets.trim()) {
           const secrets = await this.macroEngine.substitute(
             this.options.userSecrets,
@@ -1499,6 +1504,7 @@ export class PromptBuilder {
       case "powerDynamic":
       case "f2fPowerDynamic":
       case "gcPowerDynamic":
+      case "phoneCallPowerDynamic":
         if (this.options.powerDynamic && this.options.powerDynamic.trim()) {
           const powerDynamic = await this.macroEngine.substitute(
             this.options.powerDynamic,
@@ -1837,8 +1843,10 @@ export class PromptBuilder {
 
       case "weatherInfo":
       case "f2fWeatherInfo":
-      case "gcWeatherInfo": { // 天氣信息
+      case "gcWeatherInfo":
+      case "phoneCallWeatherInfo": { // 天氣信息
         const hasCharLocation = !!this.options.characterWorldSettings?.location?.trim();
+        const isPhoneCallWeather = identifier === "phoneCallWeatherInfo";
         if (!this.options.weatherInfo && !this.options.charWeatherInfo && hasCharLocation) return null;
         const sections: string[] = [];
         const userName = this.options.userName || "{{user}}";
@@ -1854,24 +1862,27 @@ export class PromptBuilder {
         if (this.options.charWeatherInfo) {
           sections.push(this.formatWeatherBlock(`${charName} 所在地天氣`, this.options.charWeatherInfo));
         }
-        // 角色無所在地時，提示 AI 推測並輸出 char-location 標籤
-        if (!hasCharLocation) {
-          sections.push(
-            `[${charName} 所在地未知]\n` +
-            `系統尚未記錄 ${charName} 的所在地。請根據以下優先級推測：\n` +
-            `1. 對話紀錄中提及的地點（優先級最高）\n` +
-            `2. 角色描述、設定中暗示的地點\n` +
-            `推測出後，在 </content> 之後輸出：\n` +
-            `<char-location location="城市名, 地區"/>\n` +
-            `例如：<char-location location="東京, 日本"/>\n` +
-            `注意：location 值應為可搜尋天氣的城市名稱（英文或中文皆可）。`,
-          );
-        } else {
-          // 已有所在地，但角色可能因劇情而移動
-          sections.push(
-            `如果 ${charName} 在對話中提到搬家、旅行、出差等位置變化，` +
-            `請在 </content> 之後輸出：<char-location location="新城市名, 地區"/> 以更新所在地。`,
-          );
+        // 角色無所在地時，提示 AI 推測並輸出 char-location 標籤。
+        // 電話模式嚴格要求 JSON 陣列輸出，不能混入 </content> 或 <char-location> 類標籤指令。
+        if (!isPhoneCallWeather) {
+          if (!hasCharLocation) {
+            sections.push(
+              `[${charName} 所在地未知]\n` +
+              `系統尚未記錄 ${charName} 的所在地。請根據以下優先級推測：\n` +
+              `1. 對話紀錄中提及的地點（優先級最高）\n` +
+              `2. 角色描述、設定中暗示的地點\n` +
+              `推測出後，在 </content> 之後輸出：\n` +
+              `<char-location location="城市名, 地區"/>\n` +
+              `例如：<char-location location="東京, 日本"/>\n` +
+              `注意：location 值應為可搜尋天氣的城市名稱（英文或中文皆可）。`,
+            );
+          } else {
+            // 已有所在地，但角色可能因劇情而移動
+            sections.push(
+              `如果 ${charName} 在對話中提到搬家、旅行、出差等位置變化，` +
+              `請在 </content> 之後輸出：<char-location location="新城市名, 地區"/> 以更新所在地。`,
+            );
+          }
         }
         const weatherContent = sections.join("\n\n");
         if (promptDef?.content) {
@@ -2216,42 +2227,56 @@ export class PromptBuilder {
       }
 
       // ===== 人稱模式（面對面模式專用 marker） =====
-      case "f2fNarrativePerson":
-        if (this.options.thirdPersonMode) {
-          const content = await this.macroEngine.substitute(
-            `<narrative_person_mode>
-⚠️ 人稱模式：第三人稱敘事
+      case "f2fNarrativePerson": {
+        const charPerson = this.options.charNarrativePerson ?? (this.options.thirdPersonMode ? "third" : "first");
+        const userPerson =
+          charPerson === "first" && this.options.userNarrativePerson === "first"
+            ? "second"
+            : (this.options.userNarrativePerson ?? "second");
 
-所有動作描寫和敘述必須使用第三人稱，以 {{char}} 的名字作為主語。
-對話（「」內的內容）仍然用第一人稱「我」。
+        const charRule =
+          charPerson === "third"
+            ? "{{char}} 用第三人稱：敘述以 {{char}} 的名字作主語；對話（「」內）仍可自稱「我」。"
+            : "{{char}} 用第一人稱：動作、心理與對話都以「我」出發。";
+        const userRule =
+          userPerson === "third"
+            ? "{{user}} 用第三人稱：敘述以 {{user}} 的名字稱呼用戶。"
+            : userPerson === "first"
+              ? "{{user}} 用第一人稱：敘述以「我」稱呼用戶；避免讓 {{char}} 也用「我」作敘述主語。"
+              : "{{user}} 用第二人稱：敘述以「你」稱呼用戶。";
+        const positiveExample =
+          charPerson === "third"
+            ? userPerson === "third"
+              ? "✅ {{char}}走到{{user}}身邊坐下。「今天很累吧？」{{char}}摸了摸{{user}}的頭。"
+              : userPerson === "first"
+                ? "✅ {{char}}走到我身邊坐下。「今天很累吧？」{{char}}摸了摸我的頭。"
+                : "✅ {{char}}走到你身邊坐下。「今天很累吧？」{{char}}摸了摸你的頭。"
+            : userPerson === "third"
+              ? "✅ *走到{{user}}身邊坐下*「今天很累吧？」*摸摸{{user}}的頭*"
+              : "✅ *走到你身邊坐下*「今天很累吧？」*摸摸你的頭*";
+        const negativeExample =
+          charPerson === "third"
+            ? "❌ *走到你身邊坐下*「今天很累吧？」*摸摸你的頭*"
+            : "❌ {{char}}走到{{user}}身邊坐下。{{char}}摸了摸{{user}}的頭。";
 
-✅ 正確示範：
-{{char}}走到{{user}}身邊，輕輕坐下。「今天很累吧？」{{char}}伸出手，溫柔地摸了摸{{user}}的頭。ˇ看到{{user}}這樣，真是讓人心疼...ˇ
+        const content = await this.macroEngine.substitute(
+          `<narrative_person_mode>
+<{{char}}人稱>
+模式：${charPerson === "third" ? "第三人稱" : "第一人稱"}
+${charRule}
+</{{char}}人稱>
 
-❌ 錯誤示範（不要這樣寫）：
-*走到你身邊，輕輕坐下*「今天很累吧？」*溫柔地摸摸你的頭*
-（這是第一人稱，不是第三人稱）
+<{{user}}人稱>
+模式：${userPerson === "third" ? "第三人稱" : userPerson === "first" ? "第一人稱" : "第二人稱"}
+${userRule}
+</{{user}}人稱>
+
+${positiveExample}
+${negativeExample}
 </narrative_person_mode>`,
-          );
-          return content ? { role: getRole(), content, identifier } : null;
-        } else {
-          const content = await this.macroEngine.substitute(
-            `<narrative_person_mode>
-⚠️ 人稱模式：第一人稱敘事
-
-{{char}}必須以自己的視角敘述，使用「我」稱呼自己，使用「你」稱呼 {{user}}。
-動作描寫和對話都從 {{char}} 的第一人稱出發。
-
-✅ 正確示範：
-*走到你身邊，輕輕坐下* 「今天很累吧？」*溫柔地摸摸你的頭* ˇ看到你這樣，真是讓人心疼...ˇ
-
-❌ 錯誤示範（不要這樣寫）：
-{{char}}走到{{user}}身邊，輕輕坐下。{{char}}伸出手摸了摸{{user}}的頭。
-（這是第三人稱，不是第一人稱）
-</narrative_person_mode>`,
-          );
-          return content ? { role: getRole(), content, identifier } : null;
-        }
+        );
+        return content ? { role: getRole(), content, identifier } : null;
+      }
 
       // ===== 健身資訊模塊 =====
       case "fitnessInfo":

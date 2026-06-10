@@ -26,6 +26,70 @@ export function useChatMiniFeatures(deps: {
 }) {
   const weatherStore = useWeatherStore();
 
+  function formatDateTime(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function getTimeZoneOffsetSeconds(timeZone: string | undefined, date = new Date()): number | undefined {
+    if (!timeZone) return undefined;
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        hour12: false,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).formatToParts(date);
+      const values = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+      const hour = values.hour === "24" ? 0 : Number(values.hour);
+      const localAsUtcMs = Date.UTC(
+        Number(values.year),
+        Number(values.month) - 1,
+        Number(values.day),
+        hour,
+        Number(values.minute),
+        Number(values.second),
+      );
+      return Math.round((localAsUtcMs - date.getTime()) / 1000);
+    } catch {
+      return undefined;
+    }
+  }
+
+  function parseLocaltimeOffsetSeconds(localtime: string | undefined, reference = new Date()): number | undefined {
+    if (!localtime) return undefined;
+    const match = localtime.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (!match) return undefined;
+    const [, y, m, d, h, min, sec] = match;
+    const localAsUtcMs = Date.UTC(
+      Number(y),
+      Number(m) - 1,
+      Number(d),
+      Number(h),
+      Number(min),
+      Number(sec ?? "0"),
+    );
+    return Math.round((localAsUtcMs - reference.getTime()) / 1000);
+  }
+
+  function getWeatherOffsetSeconds(weather: WeatherData | null | undefined, role: "user" | "char", reference = new Date()): number | undefined {
+    if (!weather) return undefined;
+    if (typeof weather.location.utcOffsetSeconds === "number") {
+      return weather.location.utcOffsetSeconds;
+    }
+
+    const tzId = weather.location.tzId || (role === "char" ? deps.currentCharacter?.value?.worldSettings?.timezone : undefined);
+    return getTimeZoneOffsetSeconds(tzId, reference) ?? parseLocaltimeOffsetSeconds(weather.location.localtime, reference);
+  }
+
+  function formatTimeDiffAmount(hours: number): string {
+    const rounded = Math.round(Math.abs(hours) * 2) / 2;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  }
+ 
   // ===== 遊戲成績 =====
   const showGameScorePicker = ref(false);
 
@@ -501,25 +565,25 @@ export function useChatMiniFeatures(deps: {
     const isRealTimeAware = deps.getRealTimeAwareness ? deps.getRealTimeAwareness() : true;
     const currentVirtualTime = deps.getFakeTime ? deps.getFakeTime() : new Date();
 
-    // 計算時差（僅在雙方都有資料時有意義）
+    // 計算時差（僅在雙方都有資料時有意義）。優先比較 UTC 偏移，避免同時區城市因 API localtime 刷新粒度不同被誤判。
     let timeDiffHours = 0;
+    let timeDiffSeconds = 0;
     let diffText = "";
     let diffSummary = "";
-    if (
-      userWeather &&
-      charWeather &&
-      userWeather.location.localtime &&
-      charWeather.location.localtime
-    ) {
-      const uTime = new Date(userWeather.location.localtime.replace(" ", "T")).getTime();
-      const cTime = new Date(charWeather.location.localtime.replace(" ", "T")).getTime();
-      timeDiffHours = Math.round((cTime - uTime) / (1000 * 60 * 60));
+    if (userWeather && charWeather) {
+      const userOffset = getWeatherOffsetSeconds(userWeather, "user", currentVirtualTime);
+      const charOffset = getWeatherOffsetSeconds(charWeather, "char", currentVirtualTime);
+      if (typeof userOffset === "number" && typeof charOffset === "number") {
+        timeDiffSeconds = charOffset - userOffset;
+        timeDiffHours = Math.round((timeDiffSeconds / (60 * 60)) * 2) / 2;
+      }
       if (Math.abs(timeDiffHours) > 0) {
-        diffSummary = `對方比你${timeDiffHours > 0 ? "快" : "慢"} ${Math.abs(timeDiffHours)} 小時`;
+        const amount = formatTimeDiffAmount(timeDiffHours);
+        diffSummary = `對方比你${timeDiffHours > 0 ? "快" : "慢"} ${amount} 小時`;
         if (target === "both") {
-          diffText = `\n\n[時區差異] 客觀上的時區差異計算，對方所在時區比你${timeDiffHours > 0 ? "快" : "慢"} ${Math.abs(timeDiffHours)} 小時。`;
+          diffText = `\n\n[時區差異] 客觀上的時區差異計算，對方所在時區比你${timeDiffHours > 0 ? "快" : "慢"} ${amount} 小時。`;
         }
-      } else {
+      } else if (typeof userOffset === "number" && typeof charOffset === "number") {
         diffSummary = "雙方在同一個時區";
         if (target === "both") {
           diffText = `\n\n[時區差異] 雙方在同一個時區。`;
@@ -527,14 +591,11 @@ export function useChatMiniFeatures(deps: {
       }
     }
 
-    const formatDt = (d: Date) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-
     const userTimeLine = isRealTimeAware && includeUser
-      ? `\n當地時間：${formatDt(currentVirtualTime)}`
+      ? `\n當地時間：${formatDateTime(currentVirtualTime)}`
       : "";
     const charTimeLine = isRealTimeAware && includeChar
-      ? `\n當地時間：${formatDt(new Date(currentVirtualTime.getTime() + timeDiffHours * 60 * 60 * 1000))}`
+      ? `\n當地時間：${formatDateTime(new Date(currentVirtualTime.getTime() + timeDiffSeconds * 1000))}`
       : "";
 
     const userBlock = includeUser && userWeather
@@ -662,25 +723,25 @@ ${prompt}
       const isRealTimeAware = deps.getRealTimeAwareness ? deps.getRealTimeAwareness() : true;
       if (!isRealTimeAware) return "";
       const virtualNow = deps.getFakeTime ? deps.getFakeTime() : new Date();
-      const formatDt = (d: Date) => {
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-      };
 
-      if (!targetWeather || !targetWeather.location.localtime) {
-        return formatDt(virtualNow);
+      if (!targetWeather) {
+        return formatDateTime(virtualNow);
       }
       
       const baseWeather = customWeatherData.value ?? weatherStore.weatherData;
-      if (!baseWeather || !baseWeather.location.localtime) {
-        return formatDt(virtualNow);
+      if (!baseWeather) {
+        return formatDateTime(virtualNow);
+      }
+
+      const baseOffset = getWeatherOffsetSeconds(baseWeather, "user", virtualNow);
+      const targetRole = targetWeather === charWeatherData.value ? "char" : "user";
+      const targetOffset = getWeatherOffsetSeconds(targetWeather, targetRole, virtualNow);
+      if (typeof baseOffset !== "number" || typeof targetOffset !== "number") {
+        return formatDateTime(virtualNow);
       }
       
-      const uTime = new Date(baseWeather.location.localtime.replace(" ", "T")).getTime();
-      const tTime = new Date(targetWeather.location.localtime.replace(" ", "T")).getTime();
-      const diffHours = Math.round((tTime - uTime) / (1000 * 60 * 60));
-      
-      const targetVirtualTime = new Date(virtualNow.getTime() + diffHours * 60 * 60 * 1000);
-      return formatDt(targetVirtualTime);
+      const targetVirtualTime = new Date(virtualNow.getTime() + (targetOffset - baseOffset) * 1000);
+      return formatDateTime(targetVirtualTime);
     }
   };
 }
