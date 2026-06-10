@@ -7,6 +7,34 @@ let logContainer: HTMLDivElement | null = null;
 let isMinimized = false;
 let updateTimer: number | null = null;
 
+// 自訂常駐資訊行（key -> 文字），顯示在資訊列底部，不會被滾動日誌淹沒。
+// 例如輪數診斷：setDebugInfoLine("turns", "輪數: 設定20 / 實際20")
+const customInfoLines = new Map<string, string>();
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * 設定/更新 debug 視窗資訊列中的一條常駐自訂資訊。
+ * 即使 debug overlay 尚未開啟也可呼叫（值會被保存，開啟後立即顯示）。
+ * @param key  唯一識別鍵（同一 key 會覆蓋）
+ * @param text 顯示文字；傳入空字串可清除該行
+ */
+export function setDebugInfoLine(key: string, text: string): void {
+  if (text) {
+    customInfoLines.set(key, text);
+  } else {
+    customInfoLines.delete(key);
+  }
+  // 立即刷新（若視窗已開啟）
+  updateInfo();
+}
+
 // 拖拽狀態
 let isDragging = false;
 let dragStartX = 0;
@@ -239,11 +267,16 @@ function updateInfo(): void {
   const safeBottom = cs.getPropertyValue("--safe-bottom").trim();
   const appHeight = cs.getPropertyValue("--app-height").trim();
 
-  infoBar.innerHTML = [
+  const baseLines = [
     `vv: ${vvW}×${vvH} | inner: ${iW}×${iH} | screen: ${sH} | dpr: ${dpr}`,
     `standalone: ${isStandalone} | safe: T=${safeTop} B=${safeBottom} | --app-height: ${appHeight || "unset"}`,
     `probe: ${probeH} | #app: ${appRect}`,
-  ].join("<br>");
+  ];
+  // 附加自訂常駐資訊行（如輪數診斷），以醒目顏色顯示在底部
+  const customLines = Array.from(customInfoLines.values()).map(
+    (text) => `<span style="color:#fbbf24;font-weight:bold;">${escapeHtml(text)}</span>`,
+  );
+  infoBar.innerHTML = [...baseLines, ...customLines].join("<br>");
 }
 
 function addLog(type: "log" | "warn" | "error" | "info", args: unknown[]): void {

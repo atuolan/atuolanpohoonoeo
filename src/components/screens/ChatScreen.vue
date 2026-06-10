@@ -31,6 +31,7 @@ import ScreenshotPreviewModal from "@/components/modals/ScreenshotPreviewModal.v
 import VideoCallModal from "@/components/modals/VideoCallModal.vue";
 import ImageSearchPanel from "@/components/panels/ImageSearchPanel.vue";
 import { _delay, _escapeRegex, _messageRenderDelay, countTurns, formatClaimAmount, hashString, isShadowBubbleOf, sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
+import { setDebugInfoLine } from "@/utils/debugOverlay";
 import { useChatAffinity } from "@/composables/useChatAffinity";
 import { useChatBlock } from "@/composables/useChatBlock";
 import { useChatRedpacket } from "@/composables/useChatRedpacket";
@@ -3021,12 +3022,14 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     }
 
     // 永久診斷：實際發送的輪數 / 消息數。
-    // debug overlay 會攔截 console 並常駐顯示，方便隨時核對「讀取設定 vs 實際發送」。
+    // 1) console.log：debug overlay 攔截後存入滾動日誌（含時間戳，可回溯歷史）。
+    // 2) setDebugInfoLine：固定在 debug 視窗頂部資訊列，醒目常駐、不被海量日誌淹沒。
     const actualTurnsToSend = countTurns(messagesToUse);
-    console.log(
-      `[輪數診斷] 模式=${actualMode} | 設定=${actualCount}${actualMode === "turn" ? "輪" : "條"}` +
-        ` | 實際發送=${actualTurnsToSend}輪 / ${messagesToUse.length}條訊息`,
-    );
+    const turnDiagText =
+      `輪數: 模式=${actualMode} | 設定=${actualCount}${actualMode === "turn" ? "輪" : "條"}` +
+      ` | 實際發送=${actualTurnsToSend}輪 / ${messagesToUse.length}條`;
+    console.log(`[輪數診斷] ${turnDiagText}`);
+    setDebugInfoLine("turns", turnDiagText);
 
     const chatMessages: ChatMessage[] = messagesToUse.map((m) => ({
       id: m.id,
