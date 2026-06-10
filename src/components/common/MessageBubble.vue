@@ -55,7 +55,9 @@ const regexInlineHtml = ref("");
 const hideSplitSourceBubble = ref(false);
 
 function startsWithHtmlFence(source: string): boolean {
-  return /^```(?:html)?\s*\n?/i.test(source.trimStart());
+  // 僅匹配「``` 後緊接換行/空白」或「```html」的 fence；
+  // 避免 ```javascript / ```python 等其他語言 fence 開頭被誤判為 HTML 而走隔離渲染
+  return /^```(?:html)?[ \t]*\r?\n/i.test(source.trimStart());
 }
 
 // ★ 正則產生 HTML/text 段時需要拆分到獨立氣泡（避免在 computed 內直接修改 ref）
@@ -5237,10 +5239,19 @@ const showTextVoiceTranscript = ref(true);
     border-radius: 8px;
     overflow-x: auto;
     margin: 8px 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    // 長行自動折行，避免長程式碼撐破氣泡（fit-content 會被超長行撐寬）
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 
     code {
       background: none;
       padding: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
   }
 
