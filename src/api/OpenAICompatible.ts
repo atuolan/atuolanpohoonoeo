@@ -773,18 +773,33 @@ export class OpenAICompatibleClient {
       });
     }
 
-    // 4. 在最後一條訊息的最後一個文字塊掛 cache_control 斷點
-    //    這樣 system + 歷史對話前綴都會被緩存，只有每輪新增的尾巴重新處理
-    const lastMsg = anthropicMessages[anthropicMessages.length - 1];
-    if (Array.isArray(lastMsg.content) && lastMsg.content.length > 0) {
-      for (let i = lastMsg.content.length - 1; i >= 0; i--) {
-        const block = lastMsg.content[i];
+    // 4. 掛 cache_control 斷點（前綴緩存核心）
+    //    Anthropic 緩存採「前綴比對」：只有斷點「之前」的內容會被寫入並可被後續命中。
+    //    多輪累加對話下，每輪都會新增一條 user 訊息，因此需要兩個對話斷點：
+    //      - 倒數第二條訊息末尾：上一輪的緩存邊界 → 本輪在此「讀取命中」
+    //      - 最後一條訊息末尾：本輪的新邊界 → 寫入，供下一輪命中
+    //    （加上 system 末尾共最多 3 個斷點，未超過 Anthropic 上限 4 個）
+    const setCacheBreakpointOnLastTextBlock = (
+      msg: { content: Array<Record<string, unknown>> } | undefined,
+    ): void => {
+      if (!msg || !Array.isArray(msg.content) || msg.content.length === 0)
+        return;
+      for (let i = msg.content.length - 1; i >= 0; i--) {
+        const block = msg.content[i];
         if (block.type === "text") {
           block.cache_control = { type: "ephemeral" };
-          break;
+          return;
         }
       }
+    };
+
+    const lastIdx = anthropicMessages.length - 1;
+    // 倒數第二條（上一輪邊界）→ 本輪讀取命中
+    if (lastIdx - 1 >= 0) {
+      setCacheBreakpointOnLastTextBlock(anthropicMessages[lastIdx - 1]);
     }
+    // 最後一條（本輪邊界）→ 寫入供下一輪命中
+    setCacheBreakpointOnLastTextBlock(anthropicMessages[lastIdx]);
 
     const body: Record<string, unknown> = {
       model: this.apiSettings.model,
