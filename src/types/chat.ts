@@ -1020,7 +1020,13 @@ export interface GenerationDiagnostics {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    /** Anthropic 緩存寫入 token（首次建立緩存，計費 1.25x） */
+    cache_creation_input_tokens?: number;
+    /** Anthropic 緩存讀取 token（命中緩存，計費 0.1x） */
+    cache_read_input_tokens?: number;
   };
+  /** 是否走 Anthropic 原生 /v1/messages 路徑（Claude 緩存模式） */
+  anthropicNative?: boolean;
   promptFeedback?: unknown;
   safetyRatings?: unknown;
   rawResponseMeta?: unknown;
@@ -1066,6 +1072,10 @@ export interface StreamingEvent {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    /** Anthropic 緩存寫入 token（首次建立緩存） */
+    cache_creation_input_tokens?: number;
+    /** Anthropic 緩存讀取 token（命中緩存） */
+    cache_read_input_tokens?: number;
   };
   finishReason?: GenerationStopReason;
   rawFinishReason?: string;

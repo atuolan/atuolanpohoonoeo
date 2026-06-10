@@ -3692,6 +3692,25 @@ function useClonedVoice(voiceId: string) {
           </p>
         </div>
 
+        <!-- Claude 原生緩存模式 -->
+        <div class="setting-group">
+          <label class="toggle-item">
+            <span class="toggle-label">Claude 原生緩存模式</span>
+            <input
+              type="checkbox"
+              v-model="settingsStore.api.useClaudeNativeCache"
+              class="toggle-input"
+            />
+            <span class="toggle-switch"></span>
+          </label>
+          <p class="setting-hint">
+            僅當模型為 Claude 系列時生效。開啟後改走 Anthropic 原生
+            /v1/messages 端點並啟用 Prompt Caching（5
+            分鐘緩存、命中時僅 0.1 倍費用）。需中轉站／上游支援
+            /v1/messages；若遇到報錯請關閉以回退至 OpenAI 相容格式。
+          </p>
+        </div>
+
         <!-- 模型選擇 -->
         <div class="setting-group">
           <div class="setting-label-row">

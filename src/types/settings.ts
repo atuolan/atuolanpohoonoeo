@@ -30,6 +30,13 @@ export interface APISettings {
   proxy?: string;
   /** 直連模式：跳過伺服器代理，從瀏覽器直接請求 API（可能遇到 CORS 問題） */
   directConnect?: boolean;
+  /**
+   * Claude 原生緩存模式：僅當模型為 Claude 系列時生效。
+   * 開啟後改走 Anthropic 原生 /v1/messages 端點，並注入 cache_control 與 metadata.user_id
+   * 以啟用 Anthropic Prompt Caching。需中轉站／上游支援 /v1/messages 與 x-api-key。
+   * 預設關閉，關閉時維持原本 OpenAI 相容 /v1/chat/completions 行為。
+   */
+  useClaudeNativeCache?: boolean;
 }
 
 // ===== 頭像樣式 =====

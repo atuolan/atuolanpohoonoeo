@@ -28,11 +28,21 @@ export interface ImageContent {
 }
 
 /**
+ * Anthropic 緩存控制標記
+ * 掛在內容塊上以啟用 Anthropic Prompt Caching（前綴緩存）。
+ */
+export interface CacheControl {
+  type: "ephemeral";
+}
+
+/**
  * 文字內容格式
  */
 export interface TextContent {
   type: "text";
   text: string;
+  /** Anthropic 緩存斷點標記（僅 Claude 原生緩存模式使用，OpenAI 路徑會忽略） */
+  cache_control?: CacheControl;
 }
 
 /**
@@ -284,6 +294,35 @@ export class OpenAICompatibleClient {
   }
 
   /**
+   * Anthropic 原生端點 /v1/messages（Claude 緩存模式專用）
+   * 將用戶設定的端點正規化為 .../v1/messages，並走既有代理。
+   */
+  private getAnthropicEndpoint(): string {
+    let endpoint = this.apiSettings.endpoint.trim();
+
+    // 已經是 /v1/messages：直接用
+    if (endpoint.endsWith("/v1/messages")) {
+      return this.toProxyUrl(endpoint);
+    }
+
+    // 去掉 OpenAI 風格的尾巴，再補上 /v1/messages
+    endpoint = endpoint
+      .replace(/\/chat\/completions\/?$/, "")
+      .replace(/\/v1\/?$/, "")
+      .replace(/\/+$/, "");
+
+    return this.toProxyUrl(`${endpoint}/v1/messages`);
+  }
+
+  /**
+   * 是否應該走 Anthropic 原生緩存路徑
+   * 條件：用戶開啟 useClaudeNativeCache 開關 且 當前為 Claude 模型。
+   */
+  private shouldUseAnthropicNative(): boolean {
+    return !!this.apiSettings.useClaudeNativeCache && this.isClaudeModel();
+  }
+
+  /**
    * 建構請求頭
    */
   private getHeaders(): Record<string, string> {
@@ -291,11 +330,17 @@ export class OpenAICompatibleClient {
       "Content-Type": "application/json",
     };
 
-    if (this.apiSettings.apiKey) {
+    if (this.shouldUseAnthropicNative()) {
+      // Anthropic 原生：使用 x-api-key + anthropic-version，不用 Authorization
+      if (this.apiSettings.apiKey) {
+        headers["x-api-key"] = this.apiSettings.apiKey;
+      }
+      headers["anthropic-version"] = "2023-06-01";
+    } else if (this.apiSettings.apiKey) {
       headers["Authorization"] = `Bearer ${this.apiSettings.apiKey}`;
     }
 
-    // 添加自定義頭
+    // 添加自定義頭（用戶自定義優先級最高，可覆蓋上面的預設）
     if (this.apiSettings.customHeaders) {
       Object.assign(headers, this.apiSettings.customHeaders);
     }
@@ -634,9 +679,283 @@ export class OpenAICompatibleClient {
   }
 
   /**
+   * 取得一個在同一 user/session 內保持穩定的 user_id（Anthropic 路由提示）。
+   * 用穩定字串確保連續請求落到同一節點，緩存才讀得到。
+   * 優先用 customHeaders 內既有的識別碼，否則用 apiKey 雜湊作為穩定值，最後退回固定字串。
+   */
+  private getAnthropicUserId(): string {
+    const headerId = this.apiSettings.customHeaders?.["x-user-id"];
+    if (headerId) return headerId;
+
+    const key = this.apiSettings.apiKey || "";
+    if (key) {
+      // 簡單穩定雜湊（非加密用途，只為產生穩定路由值）
+      let hash = 0;
+      for (let i = 0; i < key.length; i++) {
+        hash = (hash * 31 + key.charCodeAt(i)) | 0;
+      }
+      return `aguaphone-${(hash >>> 0).toString(36)}`;
+    }
+    return "aguaphone-default-user";
+  }
+
+  /**
+   * 建構 Anthropic 原生 /v1/messages 請求體（Claude 緩存模式）。
+   *
+   * 與 OpenAI 格式的差異：
+   * 1. system 訊息抽成頂層 `system` 陣列（不放進 messages）
+   * 2. messages 只保留 user / assistant，並轉成 content block 陣列
+   * 3. 在 system 最後一塊與最後一條歷史訊息掛 cache_control: ephemeral 作為緩存斷點
+   * 4. 頂層加 metadata.user_id 作為路由提示（緩存命中必要條件）
+   *
+   * 緩存最低門檻為 2048 tokens；若 system 太短，緩存會被上游靜默忽略（不報錯）。
+   */
+  private buildAnthropicRequest(
+    messages: APIMessage[],
+    settings: ChatSettings,
+    stream: boolean,
+    adjustLastMessageRole: boolean = false,
+  ): BuiltRequest {
+    const processedMessages = [...messages];
+    const roleAdjustments: NonNullable<GenerationDiagnostics["roleAdjustments"]> = [];
+
+    // Claude 要求最後一條訊息為 user（與 OpenAI 路徑一致的調整）
+    if (adjustLastMessageRole && processedMessages.length > 0) {
+      const lastMsg = processedMessages[processedMessages.length - 1];
+      if (lastMsg.role !== "user" && lastMsg.role !== "system") {
+        const before = lastMsg.role;
+        lastMsg.role = "user";
+        roleAdjustments.push({
+          reason: "claude-last-message-role",
+          before,
+          after: "user",
+        });
+      }
+    }
+
+    // 1. 分離 system 與對話訊息
+    const systemTexts: string[] = [];
+    const convoMessages: APIMessage[] = [];
+    for (const msg of processedMessages) {
+      if (msg.role === "system") {
+        const text = this.getMessageText(msg);
+        if (text.trim()) systemTexts.push(text);
+      } else {
+        convoMessages.push(msg);
+      }
+    }
+
+    // 2. 建構頂層 system 陣列，並在最後一塊掛 cache_control 斷點
+    const systemBlocks: Array<TextContent> = [];
+    if (systemTexts.length > 0) {
+      const mergedSystem = systemTexts.join("\n\n");
+      systemBlocks.push({
+        type: "text",
+        text: mergedSystem,
+        cache_control: { type: "ephemeral" },
+      });
+    }
+
+    // 3. 將對話訊息轉為 Anthropic content block 格式
+    //    確保至少有一條 user 訊息（Anthropic 要求 messages 非空且首條通常為 user）
+    const anthropicMessages = convoMessages.map((msg) => {
+      const role: "user" | "assistant" =
+        msg.role === "assistant" ? "assistant" : "user";
+      const content = this.toAnthropicContent(msg.content);
+      return { role, content };
+    });
+
+    // 若沒有任何對話訊息，補一條空 user（避免 Anthropic 400）
+    if (anthropicMessages.length === 0) {
+      anthropicMessages.push({
+        role: "user",
+        content: [{ type: "text", text: " " }],
+      });
+    }
+
+    // 4. 在最後一條訊息的最後一個文字塊掛 cache_control 斷點
+    //    這樣 system + 歷史對話前綴都會被緩存，只有每輪新增的尾巴重新處理
+    const lastMsg = anthropicMessages[anthropicMessages.length - 1];
+    if (Array.isArray(lastMsg.content) && lastMsg.content.length > 0) {
+      for (let i = lastMsg.content.length - 1; i >= 0; i--) {
+        const block = lastMsg.content[i];
+        if (block.type === "text") {
+          block.cache_control = { type: "ephemeral" };
+          break;
+        }
+      }
+    }
+
+    const body: Record<string, unknown> = {
+      model: this.apiSettings.model,
+      messages: anthropicMessages,
+      stream,
+      max_tokens: settings.maxResponseLength,
+      temperature: settings.temperature,
+      metadata: { user_id: this.getAnthropicUserId() },
+    };
+
+    if (systemBlocks.length > 0) {
+      body.system = systemBlocks;
+    }
+    if (settings.topP !== 1) {
+      body.top_p = settings.topP || Number.EPSILON;
+    }
+    if (settings.stopSequences && settings.stopSequences.length > 0) {
+      body.stop_sequences = settings.stopSequences;
+    }
+
+    const bodyText = JSON.stringify(body);
+    const diagnostics: GenerationDiagnostics = {
+      model: this.apiSettings.model,
+      stream,
+      maxTokens: settings.maxResponseLength,
+      requestBodyBytes: this.byteLength(bodyText),
+      requestMessageCount: anthropicMessages.length,
+      requestRoles: anthropicMessages.map((m) => m.role),
+      anthropicNative: true,
+      roleAdjustments,
+    };
+
+    return { body, diagnostics };
+  }
+
+  /**
+   * 將 OpenAI 風格的 MessageContent 轉為 Anthropic content block 陣列。
+   * - 純文字 → [{type:text}]
+   * - 圖片 image_url(data uri) → [{type:image, source:{type:base64}}]
+   * - 圖片 image_url(http url) → [{type:image, source:{type:url}}]
+   * 不支援的型別（如 input_audio）會被忽略。
+   */
+  private toAnthropicContent(content: MessageContent): Array<Record<string, unknown>> {
+    if (typeof content === "string") {
+      return [{ type: "text", text: content }];
+    }
+    const blocks: Array<Record<string, unknown>> = [];
+    for (const part of content) {
+      if (part.type === "text") {
+        blocks.push({ type: "text", text: part.text });
+      } else if (part.type === "image_url") {
+        const url = part.image_url.url;
+        const dataMatch = /^data:([^;]+);base64,(.+)$/.exec(url);
+        if (dataMatch) {
+          blocks.push({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: dataMatch[1],
+              data: dataMatch[2],
+            },
+          });
+        } else {
+          blocks.push({
+            type: "image",
+            source: { type: "url", url },
+          });
+        }
+      }
+      // input_audio 等 Anthropic 不支援的型別：略過
+    }
+    return blocks.length > 0 ? blocks : [{ type: "text", text: " " }];
+  }
+
+  /**
+   * 從 Anthropic 回應的 usage 物件提取 token 統計（含緩存欄位）。
+   */
+  private extractAnthropicUsage(usage: any) {
+    if (!usage) return undefined;
+    const inputTokens = usage.input_tokens ?? 0;
+    const cacheCreation = usage.cache_creation_input_tokens ?? 0;
+    const cacheRead = usage.cache_read_input_tokens ?? 0;
+    const outputTokens = usage.output_tokens ?? 0;
+    return {
+      prompt_tokens: inputTokens + cacheCreation + cacheRead,
+      completion_tokens: outputTokens,
+      total_tokens: inputTokens + cacheCreation + cacheRead + outputTokens,
+      cache_creation_input_tokens: cacheCreation,
+      cache_read_input_tokens: cacheRead,
+    };
+  }
+
+  /**
+   * Anthropic 原生非串流生成（/v1/messages）。
+   */
+  private async generateAnthropic(
+    params: GenerationParams,
+  ): Promise<GenerationResult> {
+    const startTime = Date.now();
+    const { messages, settings, signal, adjustLastMessageRole } = params;
+    const request = this.buildAnthropicRequest(
+      messages,
+      settings,
+      false,
+      adjustLastMessageRole,
+    );
+
+    const response = await fetch(this.getAnthropicEndpoint(), {
+      method: "POST",
+      headers: this.getHeaders(),
+      body: JSON.stringify(request.body),
+      signal,
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`API error: ${response.status} - ${error}`);
+    }
+
+    const data = await response.json();
+    const generationTime = Date.now() - startTime;
+
+    // Anthropic 回應：content 是 block 陣列，文字在 type==="text" 的 block
+    const content = Array.isArray(data.content)
+      ? data.content
+          .filter((b: any) => b.type === "text")
+          .map((b: any) => b.text)
+          .join("")
+      : "";
+
+    const usage = this.extractAnthropicUsage(data.usage);
+    const stopReason = this.normalizeStopReason(data.stop_reason);
+
+    if (usage) {
+      console.log(
+        `[Anthropic] 緩存統計 → 寫入: ${usage.cache_creation_input_tokens}, 讀取: ${usage.cache_read_input_tokens}`,
+      );
+    }
+
+    return {
+      content,
+      tokenCount: {
+        prompt: usage?.prompt_tokens ?? 0,
+        completion: usage?.completion_tokens ?? 0,
+        total: usage?.total_tokens ?? 0,
+      },
+      generationTime,
+      stopReason,
+      model: data.model ?? this.apiSettings.model,
+      finishReason: stopReason,
+      rawFinishReason: data.stop_reason ? String(data.stop_reason) : undefined,
+      diagnostics: {
+        ...request.diagnostics,
+        rawFinishReason: data.stop_reason ? String(data.stop_reason) : undefined,
+        finishReason: stopReason,
+        apiContentLength: content.length,
+        usage,
+        totalTimeMs: generationTime,
+      },
+    };
+  }
+
+  /**
    * 非流式生成
    */
   async generate(params: GenerationParams): Promise<GenerationResult> {
+    // Claude 緩存模式：走 Anthropic 原生路徑
+    if (this.shouldUseAnthropicNative()) {
+      return this.generateAnthropic(params);
+    }
+
     const startTime = Date.now();
     const { messages, settings, signal, adjustLastMessageRole } = params;
     const request = this.buildRequest(messages, settings, false, adjustLastMessageRole);
@@ -684,11 +1003,186 @@ export class OpenAICompatibleClient {
   }
 
   /**
+   * Anthropic 原生串流生成（/v1/messages SSE）。
+   *
+   * Anthropic 的 SSE 事件與 OpenAI 完全不同：
+   * - message_start：含初始 usage（input/cache tokens）
+   * - content_block_delta：data.delta.text 為實際輸出 token
+   * - message_delta：含 stop_reason 與 output_tokens
+   * - message_stop：結束
+   */
+  private async *_generateAnthropicStream(
+    params: GenerationParams,
+  ): AsyncGenerator<StreamingEvent> {
+    const { messages, settings, signal, adjustLastMessageRole } = params;
+    const request = this.buildAnthropicRequest(
+      messages,
+      settings,
+      true,
+      adjustLastMessageRole,
+    );
+
+    const response = await fetch(this.getAnthropicEndpoint(), {
+      method: "POST",
+      headers: {
+        ...this.getHeaders(),
+        Accept: "text/event-stream",
+        "Cache-Control": "no-cache",
+      },
+      body: JSON.stringify(request.body),
+      signal,
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      let diagnosis = "";
+      if (response.status === 401 || response.status === 403) {
+        diagnosis = `\n[診斷] ${response.status} = API Key 無效或上游不支援 Anthropic 原生 /v1/messages。可嘗試關閉「Claude 原生緩存模式」回退 OpenAI 格式。`;
+      } else if (response.status === 404) {
+        diagnosis = `\n[診斷] 404 = 上游沒有 /v1/messages 端點。此中轉站可能不支援 Anthropic 原生格式，請關閉「Claude 原生緩存模式」。`;
+      } else if (response.status === 400) {
+        diagnosis = `\n[診斷] 400 = 請求格式不被上游接受，可能不支援 Anthropic 原生格式或緩存欄位。`;
+      }
+      yield {
+        type: "error",
+        error: `API error: ${response.status} - ${error.slice(0, 1000)}${diagnosis}`,
+      };
+      return;
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      yield { type: "error", error: "No response body（Anthropic 串流回應體為空）" };
+      return;
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let fullContent = "";
+    const streamStartTime = Date.now();
+    let stopReason: GenerationStopReason = "stop";
+    let rawStopReason: string | undefined;
+    let inputTokens = 0;
+    let cacheCreation = 0;
+    let cacheRead = 0;
+    let outputTokens = 0;
+
+    const parseEventData = (jsonStr: string): StreamingEvent | null => {
+      let evt: any;
+      try {
+        evt = JSON.parse(jsonStr);
+      } catch {
+        return null;
+      }
+      switch (evt.type) {
+        case "message_start": {
+          const u = evt.message?.usage;
+          if (u) {
+            inputTokens = u.input_tokens ?? 0;
+            cacheCreation = u.cache_creation_input_tokens ?? 0;
+            cacheRead = u.cache_read_input_tokens ?? 0;
+          }
+          return null;
+        }
+        case "content_block_delta": {
+          const text = evt.delta?.text ?? evt.delta?.partial_json ?? "";
+          if (text) {
+            fullContent += text;
+            return { type: "token", token: text };
+          }
+          return null;
+        }
+        case "message_delta": {
+          if (evt.delta?.stop_reason) {
+            rawStopReason = String(evt.delta.stop_reason);
+            stopReason = this.normalizeStopReason(evt.delta.stop_reason);
+          }
+          if (evt.usage?.output_tokens != null) {
+            outputTokens = evt.usage.output_tokens;
+          }
+          return null;
+        }
+        case "error": {
+          const msg =
+            evt.error?.message || JSON.stringify(evt.error || evt);
+          return { type: "error", error: `[Anthropic 串流錯誤] ${msg}` };
+        }
+        default:
+          return null;
+      }
+    };
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          // SSE：只處理 data: 行，event: 行可忽略（type 已在 data 內）
+          if (!trimmed.startsWith("data:")) continue;
+          const payload = trimmed.slice(5).trim();
+          if (!payload || payload === "[DONE]") continue;
+          const event = parseEventData(payload);
+          if (event) {
+            yield event;
+            if (event.type === "error") return;
+          }
+        }
+      }
+
+      const usage = {
+        prompt_tokens: inputTokens + cacheCreation + cacheRead,
+        completion_tokens: outputTokens,
+        total_tokens: inputTokens + cacheCreation + cacheRead + outputTokens,
+        cache_creation_input_tokens: cacheCreation,
+        cache_read_input_tokens: cacheRead,
+      };
+      console.log(
+        `[Anthropic Stream] 緩存統計 → 寫入: ${cacheCreation}, 讀取: ${cacheRead}`,
+      );
+
+      yield {
+        type: "done",
+        content: fullContent,
+        usage,
+        finishReason: stopReason,
+        rawFinishReason: rawStopReason,
+        diagnostics: {
+          ...request.diagnostics,
+          rawFinishReason: rawStopReason,
+          finishReason: stopReason,
+          apiContentLength: fullContent.length,
+          usage,
+          totalTimeMs: Date.now() - streamStartTime,
+        },
+      };
+    } catch (e) {
+      if ((e as Error).name === "AbortError") {
+        yield { type: "done", content: fullContent };
+      } else {
+        const errMsg = e instanceof Error ? e.message : String(e);
+        yield { type: "error", error: errMsg };
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  /**
    * 流式生成（內部實現）
    */
   private async *_generateStreamInternal(
     params: GenerationParams,
   ): AsyncGenerator<StreamingEvent> {
+    // Claude 緩存模式：走 Anthropic 原生串流
+    if (this.shouldUseAnthropicNative()) {
+      yield* this._generateAnthropicStream(params);
+      return;
+    }
+
     const { messages, settings, signal, adjustLastMessageRole } = params;
     const request = this.buildRequest(messages, settings, true, adjustLastMessageRole);
 
