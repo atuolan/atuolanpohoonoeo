@@ -1,0 +1,16 @@
+{
+  "name": "aguaphone-self-hosted-sync-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@ngrok/ngrok": "^1.4.0",
+    "ws": "^8.18.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

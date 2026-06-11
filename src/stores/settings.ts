@@ -132,6 +132,7 @@ export interface SettingsData {
   faceToFaceMode: boolean;
   nightMode: boolean;
   customQuickActions: QuickActionItem[];
+  backgroundGenerationEnabled: boolean;
   backgroundAudioEnabled: boolean;
   keepAliveMode: "audio";
   audio: AudioSettings;
@@ -274,6 +275,9 @@ export const useSettingsStore = defineStore("settings", () => {
 
   // 自定義快速輸入按鈕
   const customQuickActions = ref<QuickActionItem[]>([]);
+
+  // HF 後台生成全域開關（預設關閉，保持既有本地生成行為）
+  const backgroundGenerationEnabled = ref(false);
 
   // 背景無聲音樂（防止瀏覽器後台暫停）
   const backgroundAudioEnabled = ref(false);
@@ -501,6 +505,11 @@ export const useSettingsStore = defineStore("settings", () => {
             customQuickActions.value = saved.customQuickActions;
           }
 
+          // 載入 HF 後台生成設定
+          if (saved.backgroundGenerationEnabled !== undefined) {
+            backgroundGenerationEnabled.value = saved.backgroundGenerationEnabled;
+          }
+
           // 載入背景無聲音樂設定
           if (saved.backgroundAudioEnabled !== undefined) {
             backgroundAudioEnabled.value = saved.backgroundAudioEnabled;
@@ -669,6 +678,7 @@ export const useSettingsStore = defineStore("settings", () => {
         customQuickActions: customQuickActions.value.map((a) => ({
           ...toRaw(a),
         })),
+        backgroundGenerationEnabled: backgroundGenerationEnabled.value,
         backgroundAudioEnabled: backgroundAudioEnabled.value,
         keepAliveMode: keepAliveMode.value,
         audio: { ...toRaw(audio) },
@@ -1095,6 +1105,20 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   /**
+   * 設定 HF 後台生成開關
+   */
+  function setBackgroundGenerationEnabled(enabled: boolean): void {
+    backgroundGenerationEnabled.value = enabled;
+  }
+
+  /**
+   * 切換 HF 後台生成開關
+   */
+  function toggleBackgroundGeneration(): void {
+    backgroundGenerationEnabled.value = !backgroundGenerationEnabled.value;
+  }
+
+  /**
    * 切換背景無聲音樂
    */
   function toggleBackgroundAudio(): void {
@@ -1119,6 +1143,7 @@ export const useSettingsStore = defineStore("settings", () => {
     nightMode,
     language,
     customQuickActions,
+    backgroundGenerationEnabled,
     backgroundAudioEnabled,
     keepAliveMode,
     audio,
@@ -1166,6 +1191,8 @@ export const useSettingsStore = defineStore("settings", () => {
     updateCustomQuickAction,
     removeCustomQuickAction,
     setCustomQuickActions,
+    setBackgroundGenerationEnabled,
+    toggleBackgroundGeneration,
     toggleBackgroundAudio,
   };
 });

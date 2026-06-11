@@ -11,6 +11,10 @@ import { useAIGenerationStore } from "@/stores";
 export interface ChatGenerationStartMeta {
   characterName?: string;
   characterAvatar?: string;
+  isRemote?: boolean;
+  remoteTaskId?: string;
+  lastMessageHash?: string;
+  recoveryLocked?: boolean;
 }
 
 export interface ChatTriggerAIResponseOptions {
@@ -170,6 +174,29 @@ export function useChatGeneration(context: {
     return aiGenerationStore.getTask(context.currentChatId.value, "chat");
   }
 
+  function markRemoteChatGenerationTask(
+    remoteTaskId: string,
+    lastMessageHash?: string,
+  ): void {
+    if (!context.currentChatId.value) return;
+    aiGenerationStore.markRemoteTask(
+      context.currentChatId.value,
+      remoteTaskId,
+      "chat",
+      lastMessageHash,
+    );
+  }
+
+  function setChatGenerationRecoveryLocked(locked: boolean): void {
+    if (!context.currentChatId.value) return;
+    aiGenerationStore.setRecoveryLocked(context.currentChatId.value, locked, "chat");
+  }
+
+  function isChatGenerationRecoveryLocked(): boolean {
+    if (!context.currentChatId.value) return false;
+    return aiGenerationStore.isRecoveryLocked(context.currentChatId.value);
+  }
+
   return {
     isGenerating,
     startChatGeneration,
@@ -179,5 +206,8 @@ export function useChatGeneration(context: {
     stopChatGeneration,
     isChatGenerating,
     getChatGenerationTask,
+    markRemoteChatGenerationTask,
+    setChatGenerationRecoveryLocked,
+    isChatGenerationRecoveryLocked,
   };
 }

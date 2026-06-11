@@ -35,6 +35,10 @@ export interface GenerationTask {
   characterAvatar?: string; // 角色頭像
   error?: string; // 錯誤信息
   isComplete?: boolean; // 是否已完成
+  isRemote?: boolean; // 是否由 HF 後台生成接管
+  remoteTaskId?: string; // HF 後台生成任務 ID
+  lastMessageHash?: string; // 用於瀏覽器關閉後按聊天找回任務
+  recoveryLocked?: boolean; // 取回/落地期間強鎖輸入，避免順序錯亂
 }
 
 // 最大並發生成數量
@@ -117,6 +121,10 @@ export const useAIGenerationStore = defineStore("aiGeneration", () => {
     options?: {
       characterName?: string;
       characterAvatar?: string;
+      isRemote?: boolean;
+      remoteTaskId?: string;
+      lastMessageHash?: string;
+      recoveryLocked?: boolean;
     },
   ): { success: boolean; controller?: AbortController; error?: string } {
     // 檢查並發限制
@@ -152,6 +160,10 @@ export const useAIGenerationStore = defineStore("aiGeneration", () => {
       content: "",
       characterName: options?.characterName,
       characterAvatar: options?.characterAvatar,
+      isRemote: options?.isRemote,
+      remoteTaskId: options?.remoteTaskId,
+      lastMessageHash: options?.lastMessageHash,
+      recoveryLocked: options?.recoveryLocked,
     };
 
     tasks.value.set(taskId, task);
@@ -192,6 +204,48 @@ export const useAIGenerationStore = defineStore("aiGeneration", () => {
     if (task) {
       task.content += token;
     }
+  }
+
+  /**
+   * 標記遠端後台任務資訊
+   */
+  function markRemoteTask(
+    chatId: string,
+    remoteTaskId: string,
+    taskType: GenerationTaskType = "chat",
+    lastMessageHash?: string,
+  ): void {
+    const taskId = getTaskId(chatId, taskType);
+    const task = tasks.value.get(taskId);
+    if (task) {
+      task.isRemote = true;
+      task.remoteTaskId = remoteTaskId;
+      if (lastMessageHash !== undefined) task.lastMessageHash = lastMessageHash;
+    }
+  }
+
+  /**
+   * 設定遠端恢復/落地強鎖
+   */
+  function setRecoveryLocked(
+    chatId: string,
+    locked: boolean,
+    taskType: GenerationTaskType = "chat",
+  ): void {
+    const taskId = getTaskId(chatId, taskType);
+    const task = tasks.value.get(taskId);
+    if (task) {
+      task.recoveryLocked = locked;
+    }
+  }
+
+  /**
+   * 檢查聊天是否處於遠端恢復/落地強鎖
+   */
+  function isRecoveryLocked(chatId: string): boolean {
+    return Array.from(tasks.value.values()).some(
+      (task) => task.chatId === chatId && task.isGenerating && task.recoveryLocked,
+    );
   }
 
   /**
@@ -324,6 +378,9 @@ export const useAIGenerationStore = defineStore("aiGeneration", () => {
     startGeneration,
     updateContent,
     appendContent,
+    markRemoteTask,
+    setRecoveryLocked,
+    isRecoveryLocked,
     completeGeneration,
     setError,
     abortGeneration,

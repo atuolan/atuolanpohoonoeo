@@ -42,6 +42,9 @@ import {
   useChatGeneration,
   type ChatTriggerAIResponseOptions,
 } from "@/composables/useChatGeneration";
+import { bgGenerationPoller } from "@/services/BgGenerationPoller";
+import { useSelfHostedSyncStore } from "@/stores/selfHostedSync";
+import type { BgGenerationTaskView } from "@/types/bgGeneration";
 import { useChatRegeneration } from "@/composables/useChatRegeneration";
 import { useChatAppearance } from "@/composables/useChatAppearance";
 import { useChatAudioRecording } from "@/composables/useChatAudioRecording";
@@ -187,6 +190,7 @@ import {
   computed,
   nextTick,
   onMounted,
+  onUnmounted,
   ref,
   toRaw,
   watch,
@@ -300,6 +304,7 @@ const chatVariablesStore = useChatVariablesStore();
 const regexScriptsStore = useRegexScriptsStore();
 const phoneCallStore = usePhoneCallStore();
 const weatherStore = useWeatherStore();
+const selfHostedSyncStore = useSelfHostedSyncStore();
 
 // 通知 Store
 import { useNotificationStore } from "@/stores/notification";
@@ -362,7 +367,30 @@ const {
   stopChatGeneration,
   isChatGenerating,
   getChatGenerationTask,
+  markRemoteChatGenerationTask,
+  setChatGenerationRecoveryLocked,
+  isChatGenerationRecoveryLocked,
 } = useChatGeneration({ currentChatId });
+
+const isChatInputStrongLocked = computed(
+  () => isGenerating.value || isChatGenerationRecoveryLocked(),
+);
+
+function normalizeRemoteGenerationEndpoint(endpoint: string): string {
+  return endpoint.trim().replace(/\/chat\/completions\/?$/, "").replace(/\/$/, "");
+}
+
+function createRemoteGenerationParams(chatSettings: {
+  maxResponseLength?: number;
+  temperature?: number;
+  topP?: number;
+}): Record<string, unknown> {
+  return {
+    max_tokens: chatSettings.maxResponseLength,
+    temperature: chatSettings.temperature,
+    top_p: chatSettings.topP,
+  };
+}
 
 // ===== 節日主動祝福觸發 =====
 // 進入聊天時，若今天是節日且尚未觸發，角色會主動發送祝福
@@ -2223,6 +2251,11 @@ function addUserMessage() {
 
 // 發送訊息並觸發 AI 回覆（點擊發送按鈕時使用）
 async function sendAndTriggerAI() {
+  if (isChatGenerationRecoveryLocked()) {
+    notificationStore.notifySystem("後台生成取回中", "正在取回並落地 HF 後台生成結果，請稍候再發送新訊息。");
+    return;
+  }
+
   const text = inputText.value.trim();
 
   // 發言模式：char / system 時不觸發 AI，直接以對應 role 插入訊息
@@ -2311,6 +2344,14 @@ async function sendAndTriggerAI() {
 
 // 處理按鍵（線上模式：Enter 發送訊息；面對面模式：Enter 換行，不發送）
 function handleKeydown(e: KeyboardEvent) {
+  if (isChatGenerationRecoveryLocked()) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      notificationStore.notifySystem("後台生成取回中", "正在取回並落地 HF 後台生成結果，暫時鎖定輸入。");
+    }
+    return;
+  }
+
   // 面對面模式：Enter 總是換行，不發送訊息
   if (chatFaceToFaceMode.value) {
     // 不阻止默認行為，允許自由換行
@@ -2841,6 +2882,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
   const controller = startResult.controller!;
   let latestFinalContent = "";
   let usedStreamingWindowForCurrentGeneration = false;
+  let remoteGenerationStarted = false;
   // 把本輪是否為小劇場小手機劇本格式存到模組變數，handleStreamingClose 可以讀
   _theaterPhoneScriptForCurrentGeneration = !!options?.theaterPhoneScript;
 
@@ -4015,6 +4057,41 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
     let fullContent = "";
 
+    if (settingsStore.backgroundGenerationEnabled) {
+      const lastMessageHash = hashString(JSON.stringify({ chatId: currentChatId.value, messages: apiMessages }));
+      const deviceId = await selfHostedSyncStore.ensureDeviceId();
+      const remoteResult = await selfHostedSyncStore.createClient().startRemoteGeneration({
+        deviceId,
+        chatId: currentChatId.value,
+        taskType: "chat",
+        endpoint: normalizeRemoteGenerationEndpoint(chatTaskConfig.api.endpoint),
+        model: chatTaskConfig.api.model,
+        messages: apiMessages as APIMessage[],
+        params: createRemoteGenerationParams(chatSettings),
+        apiKey: chatTaskConfig.api.apiKey,
+        lastMessageHash,
+      });
+
+      remoteGenerationStarted = true;
+      markRemoteChatGenerationTask(remoteResult.taskId, lastMessageHash);
+      bgGenerationPoller.watchTask({
+        taskId: remoteResult.taskId,
+        chatId: currentChatId.value,
+        lastMessageHash,
+      });
+      // 不顯示佔位氣泡，只用系統通知告知；移除先前 push 的串流佔位訊息
+      const placeholderIdx = messages.value.findIndex((m) => m.id === aiMessage.id);
+      if (placeholderIdx !== -1) {
+        messages.value.splice(placeholderIdx, 1);
+      }
+      await saveChatImmediate();
+      notificationStore.notifySystem(
+        "HF 後台生成已開始",
+        "你可以切換頁面、鎖屏或關閉瀏覽器；結果完成後會自動取回並寫入目前聊天。",
+      );
+      return;
+    }
+
     {
       // ===== 取得完整回覆（流式 / 非流式皆支援，解析邏輯統一在拿到完整內容後執行） =====
       const generationResult = await runChatGenerationRequest({
@@ -5097,8 +5174,10 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       }
     }
 
-    // 完成全局生成狀態
-    completeChatGeneration(persistedGenerationContent || undefined);
+    // 完成全局生成狀態；HF 後台模式需保持生成鎖，直到輪詢取回並落地結果。
+    if (!remoteGenerationStarted) {
+      completeChatGeneration(persistedGenerationContent || undefined);
+    }
 
     // 安全網：無論走哪個分支（含 needsParsing=false 的純文字回覆），
     // 都要將流式窗口標記為完成，避免底部一直顯示「停止」按鈕。
@@ -5197,6 +5276,14 @@ const {
 
 // 停止 AI 生成
 function stopAIGeneration() {
+  const task = getChatGenerationTask();
+  if (task?.isRemote && task.remoteTaskId) {
+    selfHostedSyncStore
+      .createClient()
+      .abortGenerationTask(task.remoteTaskId)
+      .catch((error) => console.warn("[ChatScreen] 中止 HF 後台生成失敗", error));
+    bgGenerationPoller.unwatchTask(task.remoteTaskId);
+  }
   stopChatGeneration();
 }
 
@@ -7031,6 +7118,366 @@ async function handlePlurkPost(rawContent: string) {
   }
 }
 
+function buildRemoteParsedMessages(
+  finalContent: string,
+  baseTimestamp: number,
+  baseId: string,
+  turnId?: string,
+): Message[] {
+  if (!needsParsing(finalContent)) {
+    return [
+      {
+        id: `${baseId}_0`,
+        role: "ai",
+        content: finalContent,
+        timestamp: baseTimestamp,
+        turnId,
+        isStreaming: false,
+      },
+    ];
+  }
+
+  try {
+    const parsed = parseAIResponse(finalContent);
+    const parsedMessages: Message[] = [];
+
+    for (let i = 0; i < parsed.messages.length; i++) {
+      const parsedMsg = parsed.messages[i];
+      if (
+        !parsedMsg.content &&
+        !parsedMsg.thought &&
+        !parsedMsg.isTimetravel &&
+        !parsedMsg.isRedpacket &&
+        !parsedMsg.isLocation &&
+        !parsedMsg.isTransfer &&
+        !parsedMsg.isGift &&
+        !parsedMsg.isAvatarChange &&
+        !parsedMsg.isAiImage &&
+        !parsedMsg.isShowPic &&
+        !parsedMsg.isShowVid &&
+        !parsedMsg.isHtmlBlock &&
+        !parsedMsg.isVoice &&
+        !parsedMsg.isWaimaiPaymentResult &&
+        !parsedMsg.isWaimaiDelivery &&
+        !parsedMsg.isCharRecall &&
+        !parsedMsg.isFaceToFaceRequest &&
+        !parsedMsg.isOnlineModeRequest
+      ) {
+        continue;
+      }
+
+      const charRecallContext = parsedMsg.isCharRecall
+        ? parsedMsg.charRecallType === "seen"
+          ? `(你撤回了訊息「${parsedMsg.charRecallContent || ""}」，但用戶已看見)`
+          : `(你撤回了一條訊息，用戶沒看見，心情提示是${(parsedMsg.charRecallHints || []).join("、")})`
+        : undefined;
+
+      const message: Message = {
+        id: `${baseId}_${i}`,
+        role: parsedMsg.isTimetravel ? "system" : "ai",
+        content: parsedMsg.isCharRecall
+          ? charRecallContext || ""
+          : parsedMsg.isAiImage && parsedMsg.imageDescription
+            ? `<pic>${parsedMsg.imageDescription}</pic>`
+            : parsedMsg.isShowPic && parsedMsg.showMediaDescription
+              ? `<show-pic${parsedMsg.showMediaPrompt ? ` prompt="${parsedMsg.showMediaPrompt}"` : ""}>${parsedMsg.showMediaDescription}</show-pic>`
+              : parsedMsg.isShowVid && parsedMsg.showMediaDescription
+                ? `<show-vid>${parsedMsg.showMediaDescription}</show-vid>`
+                : parsedMsg.isHtmlBlock
+                  ? ""
+                  : parsedMsg.isVoice
+                    ? `[語音訊息] ${parsedMsg.voiceContent || ""}`
+                    : parsedMsg.content,
+        timestamp: baseTimestamp + i,
+        turnId,
+        isStreaming: false,
+        thought: parsedMsg.thought,
+        isTimetravel: parsedMsg.isTimetravel,
+        timetravelContent: parsedMsg.timetravelContent,
+        isRedpacket: parsedMsg.isRedpacket,
+        redpacketData: parsedMsg.redpacketData,
+        isLocation: parsedMsg.isLocation,
+        locationContent: parsedMsg.locationContent,
+        replyToContent: parsedMsg.replyToContent,
+        isGift: parsedMsg.isGift,
+        giftName: parsedMsg.giftName,
+        isTransfer: parsedMsg.isTransfer,
+        transferType: parsedMsg.transferType,
+        transferAmount: parsedMsg.transferAmount,
+        transferNote: parsedMsg.transferNote,
+        transferStatus: parsedMsg.isTransfer
+          ? parsedMsg.transferType === "refund"
+            ? "refunded"
+            : "pending"
+          : undefined,
+        isAvatarChange: parsedMsg.isAvatarChange,
+        avatarChangeAction: parsedMsg.avatarChangeAction,
+        avatarChangeMood: parsedMsg.avatarChangeMood,
+        avatarChangeDesc: parsedMsg.avatarChangeDesc,
+        messageType: parsedMsg.isCharRecall
+          ? undefined
+          : parsedMsg.isAiImage
+            ? "descriptive-image"
+            : parsedMsg.isVoice
+              ? "audio"
+              : undefined,
+        imageCaption: parsedMsg.isAiImage ? parsedMsg.imageDescription : undefined,
+        imagePrompt: parsedMsg.imagePrompt,
+        isHtmlBlock: parsedMsg.isHtmlBlock,
+        htmlContent: parsedMsg.isHtmlBlock ? parsedMsg.content : undefined,
+        audioTranscript: parsedMsg.isCharRecall
+          ? undefined
+          : parsedMsg.isVoice
+            ? parsedMsg.voiceContent
+            : undefined,
+        isCharRecall: parsedMsg.isCharRecall,
+        charRecallType: parsedMsg.charRecallType,
+        charRecallContent: parsedMsg.charRecallContent,
+        charRecallHints: parsedMsg.charRecallHints,
+        isFaceToFaceRequest: parsedMsg.isFaceToFaceRequest,
+        faceToFaceRequestReason: parsedMsg.faceToFaceRequestReason,
+        faceToFaceRequestStatus: parsedMsg.isFaceToFaceRequest ? "pending" : undefined,
+        isOnlineModeRequest: parsedMsg.isOnlineModeRequest,
+        onlineModeRequestReason: parsedMsg.onlineModeRequestReason,
+        onlineModeRequestStatus: parsedMsg.isOnlineModeRequest ? "pending" : undefined,
+      };
+
+      applyWaimaiParsedResultToMessage(message, parsedMsg, messages.value);
+      if (message.isRedpacket && message.redpacketData) {
+        message.redpacketState = initRedPacketState(message.redpacketData);
+      }
+      parsedMessages.push(message);
+    }
+
+    if (parsedMessages.length > 0) {
+      if (parsed.rawUpdateBlock) {
+        const firstAiMessage = parsedMessages.find((message) => message.role === "ai");
+        if (firstAiMessage) {
+          firstAiMessage._rawAffinityBlock = parsed.rawUpdateBlock;
+        }
+      }
+      return parsedMessages;
+    }
+
+    const fallbackContent = parsed.rawOutput || finalContent;
+    if (fallbackContent.replace(/<[^>]*>/g, "").trim()) {
+      return [
+        {
+          id: `${baseId}_fallback`,
+          role: "ai",
+          content: fallbackContent,
+          timestamp: baseTimestamp,
+          turnId,
+          isStreaming: false,
+        },
+      ];
+    }
+  } catch (error) {
+    console.warn("[ChatScreen] HF 後台回覆解析失敗，使用原始內容:", error);
+  }
+
+  return [
+    {
+      id: `${baseId}_raw`,
+      role: "ai",
+      content: finalContent,
+      timestamp: baseTimestamp,
+      turnId,
+      isStreaming: false,
+    },
+  ];
+}
+
+async function applyRemoteParsedMessageSideEffects(remoteMessages: Message[]): Promise<void> {
+  for (const message of remoteMessages) {
+    if (message.isAvatarChange && message.avatarChangeAction) {
+      await handleAvatarChange(
+        message.avatarChangeAction,
+        message.avatarChangeMood,
+        message.avatarChangeDesc,
+      );
+    }
+
+    if (message.isTransfer && message.transferType === "refund" && message.transferAmount) {
+      processAIRefund(message.transferAmount);
+    }
+
+    if (
+      message.messageType === "descriptive-image" &&
+      (message.imagePrompt || message.imageCaption)
+    ) {
+      tryGenerateImageForMessage(message.id, message.imagePrompt, message.imageCaption);
+    }
+
+    processMessageTTS(
+      message.id,
+      message.messageType === "audio" && message.audioTranscript
+        ? message.audioTranscript
+        : message.content,
+      message.messageType === "audio" ? { force: true } : undefined,
+    );
+  }
+}
+
+function toStoredRemoteMessage(message: Message, fallbackName: string): ChatMessage {
+  return {
+    id: message.id,
+    sender: message.role === "user" ? "user" : message.role === "system" ? "system" : "assistant",
+    name: fallbackName,
+    content: message.content,
+    is_user: message.role === "user",
+    status: "sent",
+    createdAt: message.timestamp,
+    updatedAt: message.timestamp,
+    thought: message.thought,
+    isTimetravel: message.isTimetravel,
+    timetravelContent: message.timetravelContent,
+    isRedpacket: message.isRedpacket,
+    redpacketData: message.redpacketData,
+    redpacketState: message.redpacketState,
+    isLocation: message.isLocation,
+    locationContent: message.locationContent,
+    replyToContent: message.replyToContent,
+    isGift: message.isGift,
+    giftName: message.giftName,
+    isTransfer: message.isTransfer,
+    transferAmount: message.transferAmount,
+    transferType: message.transferType,
+    transferNote: message.transferNote,
+    transferStatus: message.transferStatus,
+    isAvatarChange: message.isAvatarChange,
+    avatarChangeAction: message.avatarChangeAction,
+    avatarChangeMood: message.avatarChangeMood,
+    messageType: message.messageType,
+    imageCaption: message.imageCaption,
+    imagePrompt: message.imagePrompt,
+    isHtmlBlock: message.isHtmlBlock,
+    htmlContent: message.htmlContent,
+    audioTranscript: message.audioTranscript,
+    isCharRecall: message.isCharRecall,
+    charRecallType: message.charRecallType,
+    charRecallContent: message.charRecallContent,
+    charRecallHints: message.charRecallHints,
+    isFaceToFaceRequest: message.isFaceToFaceRequest,
+    faceToFaceRequestReason: message.faceToFaceRequestReason,
+    faceToFaceRequestStatus: message.faceToFaceRequestStatus,
+    isOnlineModeRequest: message.isOnlineModeRequest,
+    onlineModeRequestReason: message.onlineModeRequestReason,
+    onlineModeRequestStatus: message.onlineModeRequestStatus,
+    isWaimaiPaymentResult: message.isWaimaiPaymentResult,
+    isWaimaiDelivery: message.isWaimaiDelivery,
+    waimaiOrder: message.waimaiOrder,
+  };
+}
+
+async function landRemoteGenerationTask(task: BgGenerationTaskView): Promise<void> {
+  const finalContent = processAiOutputTemplate(applyAIOutputRegex(task.content || ""));
+  const landedAt = Date.now();
+  const baseId = `msg_${landedAt}_${task.taskId}`;
+  const characterName = currentCharacter.value?.data?.name || props.characterName || "角色";
+  const turnId = currentTurnId.value || undefined;
+  const remoteMessages = buildRemoteParsedMessages(finalContent, landedAt, baseId, turnId);
+
+  if (!finalContent.trim()) {
+    await handleRemoteGenerationError(task, "HF 後台生成返回空內容");
+    return;
+  }
+
+  if (task.chatId !== currentChatId.value) {
+    await appendMessages(
+      task.chatId,
+      remoteMessages.map((message) => toStoredRemoteMessage(message, characterName)),
+    );
+    await refreshChatDerivedMetadata(task.chatId);
+    notificationStore.notifySystem("HF 後台生成完成", "有一則後台生成回覆已寫入對應聊天。");
+    return;
+  }
+
+  if (!isChatGenerating()) {
+    startChatGeneration({
+      characterName: currentCharacter.value?.data?.name || props.characterName,
+      characterAvatar: props.characterAvatar,
+      isRemote: true,
+      remoteTaskId: task.taskId,
+      lastMessageHash: task.lastMessageHash,
+      recoveryLocked: true,
+    });
+  } else {
+    markRemoteChatGenerationTask(task.taskId, task.lastMessageHash);
+    setChatGenerationRecoveryLocked(true);
+  }
+
+  try {
+    const placeholderIndexes = messages.value
+      .map((message, index) => ({ message, index }))
+      .filter(
+        ({ message }) =>
+          message.role === "ai" &&
+          (message.content.includes("HF 後台生成中") ||
+            (message.isStreaming &&
+              (message.content.includes("HF 後台生成") || !message.content.trim()))),
+      )
+      .map(({ index }) => index);
+
+    if (placeholderIndexes.length > 0) {
+      const firstPlaceholderIndex = placeholderIndexes[0];
+      for (let i = placeholderIndexes.length - 1; i >= 0; i--) {
+        messages.value.splice(placeholderIndexes[i], 1);
+      }
+      messages.value.splice(firstPlaceholderIndex, 0, ...remoteMessages);
+    } else {
+      messages.value.push(...remoteMessages);
+    }
+
+    await applyRemoteParsedMessageSideEffects(remoteMessages);
+    completeChatGeneration(finalContent);
+    scrollToBottom();
+    await saveChatImmediate();
+    await processGiftReceived();
+    checkAndTriggerSummaryOrDiary();
+    notificationStore.notifySystem("HF 後台生成完成", "後台生成結果已取回並寫入聊天。多段 <msg> 已拆成多個氣泡。");
+  } finally {
+    setChatGenerationRecoveryLocked(false);
+  }
+}
+
+async function handleRemoteGenerationError(
+  task: BgGenerationTaskView,
+  fallbackMessage?: string,
+): Promise<void> {
+  const errorText = fallbackMessage || task.error || "HF 後台生成失敗";
+
+  if (task.chatId !== currentChatId.value) {
+    notificationStore.notifySystem("HF 後台生成失敗", errorText);
+    return;
+  }
+
+  const placeholder = messages.value.find(
+    (message) =>
+      message.role === "ai" &&
+      (message.content.includes("HF 後台生成中") ||
+        (message.isStreaming &&
+          (message.content.includes("HF 後台生成") || !message.content.trim()))),
+  );
+  if (placeholder) {
+    placeholder.content = `[錯誤] ${errorText}`;
+    placeholder.isStreaming = false;
+  } else {
+    messages.value.push({
+      id: `msg_${Date.now()}_${task.taskId}`,
+      role: "ai",
+      content: `[錯誤] ${errorText}`,
+      timestamp: Date.now(),
+    });
+  }
+
+  setChatGenerationError(errorText);
+  setChatGenerationRecoveryLocked(false);
+  completeChatGeneration();
+  await saveChatImmediate();
+  notificationStore.notifySystem("HF 後台生成失敗", errorText);
+}
+
 // ===== 聊天初始化 composable =====
 const { initializeChatScreen } = useChatInit({
   characterId: props.characterId,
@@ -7051,9 +7498,27 @@ const { initializeChatScreen } = useChatInit({
   setupLoadMoreObserver,
 });
 
+const cleanupBgGenerationPollerHandlers: Array<() => void> = [];
+
 // 檢查待處理來電
 onMounted(async () => {
+  bgGenerationPoller.configure(() => selfHostedSyncStore.createClient());
+  cleanupBgGenerationPollerHandlers.push(
+    bgGenerationPoller.onCompleted((task) => landRemoteGenerationTask(task)),
+    bgGenerationPoller.onError((task) => handleRemoteGenerationError(task)),
+  );
+
   await initializeChatScreen();
+
+  bgGenerationPoller
+    .recoverActiveTasks()
+    .catch((error) => console.warn("[ChatScreen] 恢復 HF 後台生成任務失敗", error));
+});
+
+onUnmounted(() => {
+  for (const cleanup of cleanupBgGenerationPollerHandlers.splice(0)) {
+    cleanup();
+  }
 });
 
 // 監聽後台生成完成：如果重新進入聊天時有舊的生成任務還在跑，
@@ -7808,7 +8273,7 @@ useChatCleanup({
       :input-text="inputText"
       :show-more-features="showMoreFeatures"
       :show-sticker-panel="showStickerPanel"
-      :is-generating="isGenerating"
+      :is-generating="isChatInputStrongLocked"
       :has-a-i-messages="hasAIMessages"
       :can-record="canRecord"
       :is-recording="isRecording"

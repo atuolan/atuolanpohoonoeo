@@ -4435,6 +4435,24 @@ function useClonedVoice(voiceId: string) {
         >
           開啟後在獨立浮動窗口顯示 AI 回覆，關閉後直接在訊息氣泡中顯示
         </p>
+
+        <label class="toggle-item">
+          <div class="toggle-content">
+            <span class="toggle-label">HF 後台生成</span>
+            <span class="toggle-desc">
+              開啟後聊天回覆會交由 HF Space 後台生成，離開、鎖屏或關閉瀏覽器後仍可取回結果
+            </span>
+          </div>
+          <input
+            type="checkbox"
+            v-model="settingsStore.backgroundGenerationEnabled"
+            class="toggle-input"
+          />
+          <span class="toggle-switch"></span>
+        </label>
+        <p class="setting-hint">
+          需先在自架同步 / HF Space 設定中登入伺服器；關閉時維持原本本地生成與串流行為。
+        </p>
       </div>
 
       <!-- 備用 API 設定 -->

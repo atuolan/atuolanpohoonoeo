@@ -13,6 +13,14 @@ import type {
   SelfHostedSyncRegisterRequest,
   SelfHostedSyncStatusResponse,
 } from "@/types/selfHostedSync";
+import type {
+  AbortGenerationTaskResponse,
+  BgGenerationPendingResponse,
+  BgGenerationTaskListResponse,
+  BgGenerationTaskView,
+  StartGenerationRequest,
+  StartGenerationResponse,
+} from "@/types/bgGeneration";
 import { recordRuntimeDiagnostic, updateRuntimeSessionStage } from "@/utils/runtimeDiagnostics";
 
 export interface SelfHostedSyncClientOptions {
@@ -118,6 +126,58 @@ export class SelfHostedSyncClient {
     items: SelfHostedSyncEntityEnvelope[],
   ): Promise<SelfHostedSyncPushResponse> {
     return this.pushItems({ deviceId, items });
+  }
+
+  async startRemoteGeneration(
+    payload: StartGenerationRequest,
+  ): Promise<StartGenerationResponse> {
+    return this.request<StartGenerationResponse>("POST", "/generate", payload, {
+      requireAuth: true,
+    });
+  }
+
+  async getGenerationStatus(taskId: string): Promise<BgGenerationTaskView> {
+    return this.request<BgGenerationTaskView>(
+      "GET",
+      `/generate/${encodeURIComponent(taskId)}`,
+      undefined,
+      { requireAuth: true },
+    );
+  }
+
+  async listGenerationTasks(statuses?: string[]): Promise<BgGenerationTaskListResponse> {
+    const params = new URLSearchParams();
+    if (statuses?.length) params.set("status", statuses.join(","));
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return this.request<BgGenerationTaskListResponse>(
+      "GET",
+      `/generate${query}`,
+      undefined,
+      { requireAuth: true },
+    );
+  }
+
+  async findPendingGenerationByChat(
+    chatId: string,
+    lastMessageHash?: string,
+  ): Promise<BgGenerationPendingResponse> {
+    const params = new URLSearchParams({ chatId });
+    if (lastMessageHash) params.set("lastMessageHash", lastMessageHash);
+    return this.request<BgGenerationPendingResponse>(
+      "GET",
+      `/generate/pending?${params.toString()}`,
+      undefined,
+      { requireAuth: true },
+    );
+  }
+
+  async abortGenerationTask(taskId: string): Promise<AbortGenerationTaskResponse> {
+    return this.request<AbortGenerationTaskResponse>(
+      "POST",
+      `/generate/${encodeURIComponent(taskId)}/abort`,
+      {},
+      { requireAuth: true },
+    );
   }
 
   private async request<T>(
