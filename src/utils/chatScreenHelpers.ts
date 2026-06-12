@@ -105,11 +105,9 @@ export function hexToRgba(hex: string, alpha: number): string {
 export const _delay = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-export function _messageRenderDelay(total: number): number {
-  if (total <= 2) return 2000;
-  if (total <= 5) return 800;
-  if (total <= 10) return 400;
-  return 200;
+export function _messageRenderDelay(_total: number): number {
+  // 逐條顯示節奏：統一每條間隔 800ms（不再依訊息總數動態縮短）
+  return 800;
 }
 
 export function extractModeRequestReason(attrs: string): string | undefined {

@@ -4060,6 +4060,14 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     if (settingsStore.backgroundGenerationEnabled) {
       const lastMessageHash = hashString(JSON.stringify({ chatId: currentChatId.value, messages: apiMessages }));
       const deviceId = await selfHostedSyncStore.ensureDeviceId();
+      // 取得雲端推送 userId（與 Web Push 訂閱同一套 ID），讓 HF 完成時能在關閉瀏覽器後仍推送
+      let cloudPushUserId: string | undefined;
+      try {
+        const { getPushUserId } = await import("@/services/CloudPushService");
+        cloudPushUserId = await getPushUserId();
+      } catch (error) {
+        console.warn("[ChatScreen] 取得雲端推送 userId 失敗，HF 後台生成將不發送離線推送", error);
+      }
       const remoteResult = await selfHostedSyncStore.createClient().startRemoteGeneration({
         deviceId,
         chatId: currentChatId.value,
@@ -4070,6 +4078,10 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         params: createRemoteGenerationParams(chatSettings),
         apiKey: chatTaskConfig.api.apiKey,
         lastMessageHash,
+        cloudPushUserId,
+        cloudPushCharacterName:
+          currentCharacter.value?.data?.name || props.characterName || "角色",
+        cloudPushCharacterId: props.characterId || currentCharacter.value?.id,
       });
 
       remoteGenerationStarted = true;
@@ -4844,7 +4856,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               messages.value.splice(msgIndex, 1);
             }
 
-            // 為每個解析後的訊息創建獨立的聊天訊息（逐條顯示：首條延遲 500ms，後續每條間隔 300ms）
+            // 為每個解析後的訊息創建獨立的聊天訊息（逐條顯示：多條訊息時每條間隔 800ms）
             let _firstNewAiMsgId: string | undefined;
             const _totalMsgs1 = parsed.messages.filter(
               (pm) =>
@@ -5640,7 +5652,7 @@ async function handleStreamingClose() {
             messages.value.splice(lastMsgIndex, 1);
           }
 
-          // 為每個解析後的訊息創建獨立的聊天訊息（逐條顯示：首條延遲 500ms，後續每條間隔 300ms）
+          // 為每個解析後的訊息創建獨立的聊天訊息（逐條顯示：多條訊息時每條間隔 800ms）
           let _firstNewAiMsgId3: string | undefined;
           const _totalMsgs3 = parsed.messages.length;
           let _shownMsgs3 = 0;

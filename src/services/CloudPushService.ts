@@ -26,6 +26,15 @@ async function getUserId(): Promise<string> {
   return fp.fingerprint;
 }
 
+/**
+ * 對外公開的雲端推送 userId 取得方法。
+ * 與 Web Push 訂閱（subscribePush）使用同一套 ID 解析邏輯，
+ * 確保 HF 後台生成完成時能透過相同 userId 定位到正確的推送訂閱。
+ */
+export async function getPushUserId(): Promise<string> {
+  return getUserId();
+}
+
 /** 通用請求封裝 */
 async function request<T>(
   method: string,

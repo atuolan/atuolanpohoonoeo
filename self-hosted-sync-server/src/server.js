@@ -19,6 +19,12 @@ const generationTaskTtlMs = Number(process.env.GENERATION_TASK_TTL_MS || 60 * 60
 const generationTaskTimeoutMs = Number(process.env.GENERATION_TASK_TIMEOUT_MS || 5 * 60 * 1000);
 const maxConcurrentGenerationTasks = Number(process.env.GENERATION_MAX_CONCURRENT || 3);
 const generationTaskControllers = new Map();
+// Cloudflare Web Push 端點：任務完成時轉發推送請求，讓使用者關閉瀏覽器後仍能收到通知。
+// 預設指向既有的雲端推送 Worker；可用 CLOUD_PUSH_NOTIFY_URL 覆寫或停用（設為空字串）。
+const cloudPushNotifyUrl =
+  process.env.CLOUD_PUSH_NOTIFY_URL !== undefined
+    ? process.env.CLOUD_PUSH_NOTIFY_URL
+    : "https://push.aguacloud.uk/push/notify";
 
 if (adminPassword === "admin") {
   console.warn(
@@ -407,6 +413,13 @@ const server = http.createServer(async (req, res) => {
         content: "",
         error: null,
         lastMessageHash: typeof body.lastMessageHash === "string" ? body.lastMessageHash : null,
+        // 雲端推送資訊：任務完成時用來呼叫 Cloudflare /push/notify，
+        // 讓使用者即使關閉瀏覽器也能收到系統推送
+        cloudPushUserId: typeof body.cloudPushUserId === "string" ? body.cloudPushUserId : null,
+        cloudPushCharacterName:
+          typeof body.cloudPushCharacterName === "string" ? body.cloudPushCharacterName : null,
+        cloudPushCharacterId:
+          typeof body.cloudPushCharacterId === "string" ? body.cloudPushCharacterId : null,
         createdAt: now,
         updatedAt: now,
         startedAt: null,
@@ -1819,16 +1832,24 @@ async function runGenerationTask(userId, taskId, generationRequest) {
       throw new Error("AI API returned invalid JSON");
     }
     const content = data?.choices?.[0]?.message?.content ?? data?.choices?.[0]?.text ?? "";
+    const finalContent = typeof content === "string" ? content : String(content ?? "");
     updateGenerationTask(task, {
       status: "done",
-      content: typeof content === "string" ? content : String(content ?? ""),
+      content: finalContent,
       error: null,
       finishedAt: Date.now(),
     });
     console.log("[generation] task done", {
       taskId,
       durationMs: Date.now() - startedAt,
-      contentLength: typeof content === "string" ? content.length : String(content ?? "").length,
+      contentLength: finalContent.length,
+    });
+    // 任務完成後主動發送離線推送（不阻塞、不影響任務狀態）
+    sendCloudPushNotification(task, finalContent).catch((error) => {
+      console.warn("[generation] cloud push notify failed", {
+        taskId,
+        error: error?.message || String(error),
+      });
     });
   } catch (error) {
     if (task.status === "canceled") return;
@@ -1847,6 +1868,54 @@ async function runGenerationTask(userId, taskId, generationRequest) {
   } finally {
     clearTimeout(timer);
     generationTaskControllers.delete(taskId);
+  }
+}
+
+/**
+ * 任務完成時，轉發一則 Web Push 通知到 Cloudflare 雲端推送 Worker。
+ * Worker 會用儲存的 push subscription + VAPID 私鑰實際發出系統推送，
+ * 因此使用者即使已關閉瀏覽器（前端輪詢已停止）也能收到通知。
+ *
+ * 此呼叫為盡力而為（best-effort）：任何失敗都只記 log，不影響任務本身狀態。
+ */
+async function sendCloudPushNotification(task, content) {
+  if (!cloudPushNotifyUrl) return; // 已停用
+  if (!task?.cloudPushUserId) return; // 前端未提供推送 userId（例如未啟用雲端推送）
+  const trimmed = (content || "").trim();
+  if (!trimmed) return; // 空內容不推送
+
+  const payload = {
+    characterName: task.cloudPushCharacterName || "角色",
+    characterId: task.cloudPushCharacterId || undefined,
+    chatId: task.chatId || undefined,
+    content: trimmed.slice(0, 200),
+  };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch(cloudPushNotifyUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        // Cloudflare Worker 用 X-User-Id 定位該使用者的 push subscription DO
+        "X-User-Id": task.cloudPushUserId,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      console.warn("[generation] cloud push notify non-OK", {
+        taskId: task.taskId,
+        status: res.status,
+        body: text.slice(0, 200),
+      });
+    } else {
+      console.log("[generation] cloud push notify sent", { taskId: task.taskId });
+    }
+  } finally {
+    clearTimeout(timer);
   }
 }
 
