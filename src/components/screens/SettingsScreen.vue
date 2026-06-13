@@ -165,6 +165,12 @@ const cloudPushNextAlarm = ref(cloudPushStore.nextAlarm);
 const selfHostedSyncHelpOpen = ref(false);
 const selfHostedSyncPassword = ref("");
 const selfHostedSyncActionStatus = ref<"idle" | "running">("idle");
+// HF 後台生成說明的伸縮顯示（「這是什麼？」）
+const bgGenHintOpen = ref(false);
+// 瀏覽器直連說明的伸縮顯示（「這是什麼？」）
+const directConnectHintOpen = ref(false);
+// Claude 原生緩存模式說明的伸縮顯示（「這是什麼？」）
+const claudeCacheHintOpen = ref(false);
 
 const selfHostedSyncCanTestConnection = computed(
   () => selfHostedSyncActionStatus.value === "idle" && !!selfHostedSyncStore.serverUrl,
@@ -173,6 +179,13 @@ const selfHostedSyncCanAuth = computed(
   () =>
     selfHostedSyncActionStatus.value === "idle" &&
     !!selfHostedSyncStore.serverUrl &&
+    !!selfHostedSyncStore.username &&
+    !!selfHostedSyncPassword.value.trim(),
+);
+// HF 後台生成快速連線：帳號 + 密碼即可（伺服器 URL 缺省時自動帶入預設 HF Space）
+const bgQuickConnectCanAuth = computed(
+  () =>
+    selfHostedSyncActionStatus.value === "idle" &&
     !!selfHostedSyncStore.username &&
     !!selfHostedSyncPassword.value.trim(),
 );
@@ -452,6 +465,30 @@ async function handleSelfHostedStartSync() {
   } finally {
     selfHostedSyncActionStatus.value = "idle";
   }
+}
+
+// HF 後台生成開關：開啟時檢測是否已連線（已建立 / 登入同步帳號），否則提醒並回退
+function handleBackgroundGenerationToggle() {
+  if (
+    settingsStore.backgroundGenerationEnabled &&
+    !selfHostedSyncStore.isAuthenticated
+  ) {
+    alert(
+      "尚未連線到 HF Space 伺服器。請先在下方建立或登入同步帳號，連線成功後再開啟 HF 後台生成。",
+    );
+    settingsStore.backgroundGenerationEnabled = false;
+  }
+}
+
+// HF 後台生成區塊內的快速連線：缺伺服器 URL 時自動帶入預設 HF Space，再建立 / 登入帳號
+async function handleBgQuickConnect() {
+  if (!selfHostedSyncStore.serverUrl.trim()) {
+    selfHostedSyncStore.setServerUrl(
+      "https://lonson0215-aguaphone-sync.hf.space/",
+    );
+    await selfHostedSyncStore.saveSettings();
+  }
+  await handleSelfHostedStartSync();
 }
 
 async function handleSelfHostedLogout() {
@@ -3675,42 +3712,6 @@ function useClonedVoice(voiceId: string) {
           </div>
         </div>
 
-        <!-- 直連模式 -->
-        <div class="setting-group">
-          <label class="toggle-item">
-            <span class="toggle-label">瀏覽器直連</span>
-            <input
-              type="checkbox"
-              v-model="settingsStore.api.directConnect"
-              class="toggle-input"
-            />
-            <span class="toggle-switch"></span>
-          </label>
-          <p class="setting-hint">
-            開啟後請求直接從瀏覽器發出，不經過伺服器代理。API
-            金鑰不會經過伺服器，但部分站點可能因 CORS 限制而無法使用。
-          </p>
-        </div>
-
-        <!-- Claude 原生緩存模式 -->
-        <div class="setting-group">
-          <label class="toggle-item">
-            <span class="toggle-label">Claude 原生緩存模式</span>
-            <input
-              type="checkbox"
-              v-model="settingsStore.api.useClaudeNativeCache"
-              class="toggle-input"
-            />
-            <span class="toggle-switch"></span>
-          </label>
-          <p class="setting-hint">
-            僅當模型為 Claude 系列時生效。開啟後改走 Anthropic 原生
-            /v1/messages 端點並啟用 Prompt Caching（5
-            分鐘緩存、命中時僅 0.1 倍費用）。需中轉站／上游支援
-            /v1/messages；若遇到報錯請關閉以回退至 OpenAI 相容格式。
-          </p>
-        </div>
-
         <!-- 模型選擇 -->
         <div class="setting-group">
           <div class="setting-label-row">
@@ -3824,6 +3825,148 @@ function useClonedVoice(voiceId: string) {
               />
             </svg>
             <span>{{ connectionMessage }}</span>
+          </div>
+        </div>
+
+        <!-- 直連模式 -->
+        <div class="setting-group">
+          <label class="toggle-item">
+            <span class="toggle-label">瀏覽器直連</span>
+            <input
+              type="checkbox"
+              v-model="settingsStore.api.directConnect"
+              class="toggle-input"
+            />
+            <span class="toggle-switch"></span>
+          </label>
+          <button
+            type="button"
+            class="bg-gen-help-toggle"
+            @click="directConnectHintOpen = !directConnectHintOpen"
+          >
+            這是什麼？
+          </button>
+          <p v-if="directConnectHintOpen" class="setting-hint">
+            開啟後請求直接從瀏覽器發出，不經過伺服器代理。API
+            金鑰不會經過伺服器，但部分站點可能因 CORS 限制而無法使用。
+          </p>
+        </div>
+
+        <!-- Claude 原生緩存模式 + HF 後台生成（並排） -->
+        <div
+          class="setting-group"
+          style="
+            display: flex;
+            flex-direction: row;
+            gap: 12px;
+            align-items: flex-start;
+          "
+        >
+          <div style="flex: 1; min-width: 0">
+            <label class="toggle-item">
+              <span class="toggle-label">Claude 原生緩存模式</span>
+              <input
+                type="checkbox"
+                v-model="settingsStore.api.useClaudeNativeCache"
+                class="toggle-input"
+              />
+              <span class="toggle-switch"></span>
+            </label>
+            <button
+              type="button"
+              class="bg-gen-help-toggle"
+              @click="claudeCacheHintOpen = !claudeCacheHintOpen"
+            >
+              這是什麼？
+            </button>
+            <p v-if="claudeCacheHintOpen" class="setting-hint">
+              僅當模型為 Claude 系列時生效。開啟後改走 Anthropic 原生
+              /v1/messages 端點並啟用 Prompt Caching（5
+              分鐘緩存、命中時僅 0.1 倍費用）。需中轉站／上游支援
+              /v1/messages；若遇到報錯請關閉以回退至 OpenAI 相容格式。
+            </p>
+          </div>
+          <div style="flex: 1; min-width: 0">
+            <label class="toggle-item">
+              <span class="toggle-label">
+                HF 後台生成
+                <span
+                  v-if="selfHostedSyncStore.isAuthenticated"
+                  class="bg-gen-auth-ok-inline"
+                >
+                  <span class="shs-saved-badge">已連線</span>
+                  <span class="bg-gen-auth-ok-name">{{
+                    selfHostedSyncStore.username
+                  }}</span>
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                v-model="settingsStore.backgroundGenerationEnabled"
+                class="toggle-input"
+                @change="handleBackgroundGenerationToggle"
+              />
+              <span class="toggle-switch"></span>
+            </label>
+            <button
+              type="button"
+              class="bg-gen-help-toggle"
+              @click="bgGenHintOpen = !bgGenHintOpen"
+            >
+              這是什麼？
+            </button>
+            <p v-if="bgGenHintOpen" class="setting-hint">
+              開啟後聊天回覆交由 HF Space 後台生成，離開、鎖屏或關閉瀏覽器後仍可取回結果。需先連線到
+              HF Space 伺服器（在下方建立或登入同步帳號）；關閉時維持原本本地生成與串流行為。
+            </p>
+          </div>
+        </div>
+
+        <!-- HF 後台生成：建立 / 登入同步帳號（連線檢測） -->
+        <div
+          v-if="!selfHostedSyncStore.isAuthenticated"
+          class="setting-group"
+        >
+          <div class="bg-gen-auth">
+            <input
+              :value="selfHostedSyncStore.username"
+              type="text"
+              class="soft-input"
+              placeholder="帳號（任意代號，首次自動建立）"
+              @input="
+                selfHostedSyncStore.setUsername(
+                  ($event.target as HTMLInputElement).value,
+                )
+              "
+              @change="selfHostedSyncStore.saveSettings()"
+            />
+            <input
+              v-model="selfHostedSyncPassword"
+              type="password"
+              class="soft-input"
+              placeholder="密碼（請記住，其他裝置需相同）"
+              @keydown.enter="handleBgQuickConnect"
+            />
+            <button
+              class="shs-primary-btn"
+              :disabled="!bgQuickConnectCanAuth"
+              @click="handleBgQuickConnect"
+            >
+              {{
+                selfHostedSyncActionStatus === "running"
+                  ? "處理中…"
+                  : "連線 / 建立帳號"
+              }}
+            </button>
+            <p
+              v-if="
+                selfHostedSyncStore.syncStatus === 'error' &&
+                selfHostedSyncStore.syncError
+              "
+              class="bg-gen-auth-error"
+            >
+              {{ selfHostedSyncStore.syncError }}
+            </p>
           </div>
         </div>
 
@@ -4436,23 +4579,6 @@ function useClonedVoice(voiceId: string) {
           開啟後在獨立浮動窗口顯示 AI 回覆，關閉後直接在訊息氣泡中顯示
         </p>
 
-        <label class="toggle-item">
-          <div class="toggle-content">
-            <span class="toggle-label">HF 後台生成</span>
-            <span class="toggle-desc">
-              開啟後聊天回覆會交由 HF Space 後台生成，離開、鎖屏或關閉瀏覽器後仍可取回結果
-            </span>
-          </div>
-          <input
-            type="checkbox"
-            v-model="settingsStore.backgroundGenerationEnabled"
-            class="toggle-input"
-          />
-          <span class="toggle-switch"></span>
-        </label>
-        <p class="setting-hint">
-          需先在自架同步 / HF Space 設定中登入伺服器；關閉時維持原本本地生成與串流行為。
-        </p>
       </div>
 
       <!-- 備用 API 設定 -->
@@ -9041,6 +9167,66 @@ function useClonedVoice(voiceId: string) {
   display: flex;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+// HF 後台生成：「這是什麼？」伸縮說明按鈕
+.bg-gen-help-toggle {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 12px;
+  color: var(--color-accent, #4a90d9);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.bg-gen-help-toggle:hover {
+  opacity: 0.8;
+}
+
+// HF 後台生成：內嵌建立 / 登入同步帳號
+.bg-gen-auth {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+  border-radius: 8px;
+  background: var(--color-surface-secondary, rgba(255, 255, 255, 0.5));
+}
+
+.bg-gen-auth-error {
+  margin: 0;
+  font-size: 12px;
+  color: #d9534f;
+}
+
+.bg-gen-auth-ok {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.bg-gen-auth-ok-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary, #333);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// HF 後台生成：toggle-label 旁的「已連線」徽章
+.bg-gen-auth-ok-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  min-width: 0;
 }
 
 // 記住密碼列
