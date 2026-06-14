@@ -4673,6 +4673,18 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 parsedMsg.imageDescription,
               );
             }
+            // 面對面 show-pic：若文生圖已開啟，使用 show-pic 模式生成當前畫面
+            if (
+              parsedMsg.isShowPic &&
+              (parsedMsg.showMediaPrompt || parsedMsg.showMediaDescription)
+            ) {
+              tryGenerateImageForMessage(
+                newMessage.id,
+                parsedMsg.showMediaPrompt,
+                parsedMsg.showMediaDescription,
+                "show-pic",
+              );
+            }
             // MiniMax TTS 語音合成
             processMessageTTS(
               newMessage.id,
@@ -5087,6 +5099,18 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                   newMessage.id,
                   parsedMsg.imagePrompt,
                   parsedMsg.imageDescription,
+                );
+              }
+              // 面對面 show-pic：嘗試生成或搜尋當前畫面圖片
+              if (
+                parsedMsg.isShowPic &&
+                (parsedMsg.showMediaPrompt || parsedMsg.showMediaDescription)
+              ) {
+                tryGenerateImageForMessage(
+                  newMessage.id,
+                  parsedMsg.showMediaPrompt,
+                  parsedMsg.showMediaDescription,
+                  "show-pic",
                 );
               }
               processMessageTTS(
@@ -5600,6 +5624,18 @@ async function handleStreamingClose() {
               parsedMsg.imageDescription,
             );
           }
+          // 面對面 show-pic：嘗試生成或搜尋當前畫面圖片
+          if (
+            parsedMsg.isShowPic &&
+            (parsedMsg.showMediaPrompt || parsedMsg.showMediaDescription)
+          ) {
+            tryGenerateImageForMessage(
+              windowGcMsg.id,
+              parsedMsg.showMediaPrompt,
+              parsedMsg.showMediaDescription,
+              "show-pic",
+            );
+          }
           // MiniMax TTS 語音合成
           processMessageTTS(
             windowGcMsg.id,
@@ -5847,6 +5883,18 @@ async function handleStreamingClose() {
                 newMessage.id,
                 parsedMsg.imagePrompt,
                 parsedMsg.imageDescription,
+              );
+            }
+            // 面對面 show-pic：嘗試生成或搜尋當前畫面圖片
+            if (
+              parsedMsg.isShowPic &&
+              (parsedMsg.showMediaPrompt || parsedMsg.showMediaDescription)
+            ) {
+              tryGenerateImageForMessage(
+                newMessage.id,
+                parsedMsg.showMediaPrompt,
+                parsedMsg.showMediaDescription,
+                "show-pic",
               );
             }
             // MiniMax TTS 語音合成
@@ -7319,6 +7367,27 @@ async function applyRemoteParsedMessageSideEffects(remoteMessages: Message[]): P
       (message.imagePrompt || message.imageCaption)
     ) {
       tryGenerateImageForMessage(message.id, message.imagePrompt, message.imageCaption);
+    }
+
+    // 面對面 show-pic：HF 後台路徑下解析訊息內容，觸發圖片生成
+    const showPicMatch = typeof message.content === "string"
+      ? message.content.match(/<show-pic(?:\s+prompt="([^"]*)")?\s*>([\s\S]*?)<\/show-pic>/)
+      : null;
+    if (showPicMatch) {
+      const showPicPrompt = showPicMatch[1]?.trim() || message.imagePrompt;
+      const showPicDescription = showPicMatch[2]?.trim() || message.imageCaption;
+      if (showPicPrompt || showPicDescription) {
+        // 將 imageCaption 預先寫入訊息，方便 fallback 顯示
+        if (!message.imageCaption && showPicDescription) {
+          message.imageCaption = showPicDescription;
+        }
+        tryGenerateImageForMessage(
+          message.id,
+          showPicPrompt,
+          showPicDescription,
+          "show-pic",
+        );
+      }
     }
 
     processMessageTTS(

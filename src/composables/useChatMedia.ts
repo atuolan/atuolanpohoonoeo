@@ -120,17 +120,32 @@ export function useChatMedia(deps: {
 
   /**
    * 將訊息降級為純文字描述圖片
+   * - 普通模式：messageType=descriptive-image，content=純文字描述
+   * - 面對面 show-pic 模式：保留 <show-pic> 包裹，讓 MessageBubble 渲染相機動畫
    */
-  function fallbackToDescriptiveImage(messageId: string) {
+  function fallbackToDescriptiveImage(
+    messageId: string,
+    mode: "pic" | "show-pic" = "pic",
+  ) {
     const idx = deps.messages.value.findIndex((m) => m.id === messageId);
     if (idx === -1) return;
     const caption = deps.messages.value[idx].imageCaption || "";
-    deps.messages.value[idx] = {
-      ...deps.messages.value[idx],
-      content: caption,
-      messageType: "descriptive-image",
-      isStreaming: false,
-    };
+    if (mode === "show-pic") {
+      deps.messages.value[idx] = {
+        ...deps.messages.value[idx],
+        content: `<show-pic>${caption}</show-pic>`,
+        // 保持 messageType 為 undefined，避免被當成普通描述圖渲染
+        messageType: undefined,
+        isStreaming: false,
+      };
+    } else {
+      deps.messages.value[idx] = {
+        ...deps.messages.value[idx],
+        content: caption,
+        messageType: "descriptive-image",
+        isStreaming: false,
+      };
+    }
   }
 
   /**
@@ -151,14 +166,18 @@ export function useChatMedia(deps: {
   /**
    * Pixabay 遞補：NovelAI 未啟用時搜尋 Pixabay 圖片
    */
-  async function tryPixabayFallback(messageId: string, imagePrompt: string) {
+  async function tryPixabayFallback(
+    messageId: string,
+    imagePrompt: string,
+    mode: "pic" | "show-pic" = "pic",
+  ) {
     const idx = deps.messages.value.findIndex((m) => m.id === messageId);
     if (idx === -1) return;
 
     // 精簡查詢關鍵字，避免 Pixabay API 400 錯誤
     const sanitizedQuery = sanitizePixabayQuery(imagePrompt);
     if (!sanitizedQuery) {
-      fallbackToDescriptiveImage(messageId);
+      fallbackToDescriptiveImage(messageId, mode);
       deps.saveChat();
       return;
     }
@@ -192,11 +211,11 @@ export function useChatMedia(deps: {
         };
       } else {
         // 無結果：降級為純文字描述
-        fallbackToDescriptiveImage(messageId);
+        fallbackToDescriptiveImage(messageId, mode);
       }
     } catch {
       // 錯誤：降級為純文字描述
-      fallbackToDescriptiveImage(messageId);
+      fallbackToDescriptiveImage(messageId, mode);
     } finally {
       deps.saveChat();
     }
@@ -206,6 +225,7 @@ export function useChatMedia(deps: {
     messageId: string,
     imagePrompt?: string,
     imageDescription?: string,
+    mode: "pic" | "show-pic" = "pic",
   ) {
     // 若 imagePrompt 為空，使用 imageDescription 作為搜尋關鍵字
     const effectivePrompt = imagePrompt?.trim() || imageDescription?.trim();
@@ -213,6 +233,11 @@ export function useChatMedia(deps: {
 
     const msgIndex = deps.messages.value.findIndex((m) => m.id === messageId);
     if (msgIndex === -1) return;
+
+    // 確保 imageCaption 已寫入（fallback 渲染相機動畫時會用到）
+    if (!deps.messages.value[msgIndex].imageCaption && imageDescription) {
+      deps.messages.value[msgIndex].imageCaption = imageDescription.trim();
+    }
 
     // 遞補鏈：NovelAI 啟用時使用 NovelAI，否則使用 Pixabay
     if (
@@ -222,9 +247,15 @@ export function useChatMedia(deps: {
       // 舊資料可能只留下圖片描述，沒有保存英文 prompt；這時退回用描述重生。
       const novelAIPrompt = imagePrompt?.trim() || effectivePrompt;
 
-      deps.messages.value[msgIndex].content =
-        `[生成圖片中...] ${deps.messages.value[msgIndex].imageCaption || ""}`;
-      deps.messages.value[msgIndex].isStreaming = true;
+      const caption = deps.messages.value[msgIndex].imageCaption || "";
+      if (mode === "show-pic") {
+        // 面對面 show-pic：保留 <show-pic> 包裝讓 MessageBubble 持續顯示相機動畫
+        // 不切到 isStreaming，避免相機動畫被打字提示覆蓋
+        deps.messages.value[msgIndex].content = `<show-pic>${caption}</show-pic>`;
+      } else {
+        deps.messages.value[msgIndex].content = `[生成圖片中...] ${caption}`;
+        deps.messages.value[msgIndex].isStreaming = true;
+      }
       isGeneratingImage.value = true;
 
       try {
@@ -270,10 +301,7 @@ export function useChatMedia(deps: {
             isStreaming: false,
           };
         } else {
-          const caption = deps.messages.value[idx].imageCaption || "";
-          deps.messages.value[idx].content = `<pic>${caption}</pic>`;
-          deps.messages.value[idx].messageType = "descriptive-image";
-          deps.messages.value[idx].isStreaming = false;
+          fallbackToDescriptiveImage(messageId, mode);
           console.warn("[AI Image] 生成失敗:", result.error);
 
           // 更友好的錯誤提示
@@ -290,13 +318,7 @@ export function useChatMedia(deps: {
         }
       } catch (error) {
         console.error("[AI Image] 錯誤:", error);
-        const idx = deps.messages.value.findIndex((m) => m.id === messageId);
-        if (idx !== -1) {
-          const caption = deps.messages.value[idx].imageCaption || "";
-          deps.messages.value[idx].content = `<pic>${caption}</pic>`;
-          deps.messages.value[idx].messageType = "descriptive-image";
-          deps.messages.value[idx].isStreaming = false;
-        }
+        fallbackToDescriptiveImage(messageId, mode);
 
         // 更友好的異常錯誤提示
         const errorMsg =
@@ -322,13 +344,13 @@ export function useChatMedia(deps: {
     }
 
     if (deps.imageSearchEnabled?.value === false) {
-      fallbackToDescriptiveImage(messageId);
+      fallbackToDescriptiveImage(messageId, mode);
       deps.saveChat();
       return;
     }
 
     // Pixabay 遞補：NovelAI 未啟用時搜尋 Pixabay
-    await tryPixabayFallback(messageId, effectivePrompt);
+    await tryPixabayFallback(messageId, effectivePrompt, mode);
   }
 
   async function handleAIGenerateImage(prompt: string) {

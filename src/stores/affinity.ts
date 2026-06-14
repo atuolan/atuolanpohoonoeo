@@ -646,13 +646,26 @@ export const useAffinityStore = defineStore("affinity", () => {
     path: string,
   ): { metricId: string; value: MetricValue } | null {
     const state = affinityStates.value.get(chatId);
-    if (!state) return null;
+    if (!state) {
+      console.warn("[AffinityStore][getMetricByPath] state 不存在", { chatId, path });
+      return null;
+    }
 
     const config = configCache.value.get(state.characterId);
-    if (!config) return null;
+    if (!config) {
+      console.warn("[AffinityStore][getMetricByPath] config 不存在", {
+        chatId,
+        characterId: state.characterId,
+        path,
+      });
+      return null;
+    }
 
     const normalizedPath = normalizeMetricPath(path);
-    if (!normalizedPath) return null;
+    if (!normalizedPath) {
+      console.warn("[AffinityStore][getMetricByPath] normalizedPath 為空", { path });
+      return null;
+    }
 
     const tail = normalizedPath.split(".").pop() ?? "";
 
@@ -678,8 +691,22 @@ export const useAffinityStore = defineStore("affinity", () => {
 
       return false;
     });
-    if (!metric) return null;
+    if (!metric) {
+      console.log("[AffinityStore][getMetricByPath] 未匹配到 metric", {
+        rawPath: path,
+        normalizedPath,
+        tail,
+        configMetrics: config.metrics.map((m) => ({ id: m.id, name: m.name, path: m.path })),
+      });
+      return null;
+    }
 
+    console.log("[AffinityStore][getMetricByPath] 匹配成功", {
+      rawPath: path,
+      normalizedPath,
+      matchedMetricId: metric.id,
+      matchedMetricName: metric.name,
+    });
     return {
       metricId: metric.id,
       value: state.values[metric.id] ?? metric.initial,
@@ -849,15 +876,36 @@ export const useAffinityStore = defineStore("affinity", () => {
     sourceNumberValue: number | undefined,
   ): void {
     const state = affinityStates.value.get(chatId);
-    if (!state) return;
+    if (!state) {
+      console.warn("[AffinityStore][_autoRepairMvuUpdate] state 不存在", { chatId, u });
+      return;
+    }
 
     const normalizedPath = normalizeMetricPath(u.metric);
-    if (!normalizedPath) return;
+    if (!normalizedPath) {
+      console.warn("[AffinityStore][_autoRepairMvuUpdate] normalizedPath 為空", { u });
+      return;
+    }
 
     const mvuState = _ensureMvuState(chatId);
-    if (!mvuState) return;
+    if (!mvuState) {
+      console.warn("[AffinityStore][_autoRepairMvuUpdate] mvuState 取得失敗", { chatId });
+      return;
+    }
 
     const previousValue = _.get(mvuState.statData, normalizedPath);
+    console.log("[AffinityStore][_autoRepairMvuUpdate] 開始修復", {
+      rawMetric: u.metric,
+      normalizedPath,
+      previousValue,
+      change: u.change,
+      isAbsolute: u.isAbsolute,
+      stringValue: u.stringValue,
+      absoluteValue: u.absoluteValue,
+      sourceTreeValue,
+      sourceStringValue,
+      sourceNumberValue,
+    });
 
     // 推算最終值：優先順序為 stringValue > sourceTree string > sourceMetric string
     //              > absoluteValue > sourceTree number > sourceMetric number
@@ -913,6 +961,18 @@ export const useAffinityStore = defineStore("affinity", () => {
       if (state.history.length > MAX_HISTORY_LENGTH) {
         state.history = state.history.slice(-MAX_HISTORY_LENGTH);
       }
+      console.log("[AffinityStore][_autoRepairMvuUpdate] 寫入完成", {
+        normalizedPath,
+        oldForHistory,
+        newForHistory,
+        historyLength: state.history.length,
+      });
+    } else {
+      console.log("[AffinityStore][_autoRepairMvuUpdate] 新舊值相同，未推 history", {
+        normalizedPath,
+        oldForHistory,
+        newForHistory,
+      });
     }
 
     state.lastUpdated = Date.now();
@@ -934,14 +994,41 @@ export const useAffinityStore = defineStore("affinity", () => {
       insertIndex?: string | number;
     }[],
   ): void {
+    console.log("[AffinityStore][batchUpdateByPath] 收到更新", {
+      chatId,
+      updateCount: updates.length,
+      updates,
+    });
+
+    const state = affinityStates.value.get(chatId);
+    const config = state ? configCache.value.get(state.characterId) : null;
+    console.log("[AffinityStore][batchUpdateByPath] 當前狀態", {
+      hasState: !!state,
+      characterId: state?.characterId,
+      hasConfig: !!config,
+      configMetricsCount: config?.metrics.length ?? 0,
+      configMetrics: config?.metrics.map((m) => ({
+        id: m.id,
+        name: m.name,
+        path: m.path,
+        type: m.type,
+      })),
+    });
+
     const resolved = updates.flatMap((u) => {
       if (u.operation === "remove") {
+        console.log("[AffinityStore][batchUpdateByPath] remove 操作", { metric: u.metric });
         removeMvuValueByPath(chatId, u.metric);
         return [];
       }
 
       if (u.operation === "insert") {
         const insertValue = u.stringValue ?? u.absoluteValue;
+        console.log("[AffinityStore][batchUpdateByPath] insert 操作", {
+          metric: u.metric,
+          insertValue,
+          insertIndex: u.insertIndex,
+        });
         if (insertValue !== undefined) {
           insertMvuValueByPath(chatId, u.metric, insertValue, u.insertIndex);
         }
@@ -962,6 +1049,13 @@ export const useAffinityStore = defineStore("affinity", () => {
 
       // 自動修復：metric 未匹配到任何 config 時，直接寫入 mvuState 並推送友善 history
       if (!metric) {
+        console.log("[AffinityStore][batchUpdateByPath] 未匹配 metric，走自動修復", {
+          metric: u.metric,
+          change: u.change,
+          isAbsolute: u.isAbsolute,
+          stringValue: u.stringValue,
+          absoluteValue: u.absoluteValue,
+        });
         _autoRepairMvuUpdate(
           chatId,
           u,
@@ -971,6 +1065,13 @@ export const useAffinityStore = defineStore("affinity", () => {
         );
         return [];
       }
+
+      console.log("[AffinityStore][batchUpdateByPath] 匹配到 metric，走 batchUpdate", {
+        rawMetric: u.metric,
+        matchedMetricId: metric.metricId,
+        change: u.change,
+        isAbsolute: u.isAbsolute,
+      });
 
       return [{
         metricId: metric.metricId,
@@ -986,6 +1087,11 @@ export const useAffinityStore = defineStore("affinity", () => {
           (typeof sourceTreeValue === "number" ? sourceTreeValue : undefined) ??
           sourceNumberValue,
       }];
+    });
+
+    console.log("[AffinityStore][batchUpdateByPath] 即將呼叫 batchUpdate", {
+      resolvedCount: resolved.length,
+      resolved,
     });
 
     batchUpdate(chatId, resolved);

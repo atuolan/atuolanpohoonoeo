@@ -2020,7 +2020,24 @@ function _pushJsonPatchResult(
 ): void {
   const pathSegments = path.replace(/^\/+/, "").split("/").filter(Boolean);
   const normalizedPath = pathSegments.join(".");
-  if (!normalizedPath) return;
+  if (!normalizedPath) {
+    console.warn("[ResponseParser][_pushJsonPatchResult] normalizedPath 為空", {
+      rawPath: path,
+      op,
+      value,
+      fromPath,
+    });
+    return;
+  }
+
+  console.log("[ResponseParser][_pushJsonPatchResult] 處理 patch op", {
+    rawPath: path,
+    normalizedPath,
+    op,
+    value,
+    valueType: typeof value,
+    fromPath,
+  });
 
   if (op === "delta" && typeof value === "number" && !Number.isNaN(value)) {
     results.push({
@@ -2187,20 +2204,41 @@ export function parseAffinityUpdateTags(
 
   while ((updateVariableMatch = updateVariableRegex.exec(rawResponse)) !== null) {
     const jsonText = updateVariableMatch[1].trim();
+    console.log("[ResponseParser][parseAffinityUpdateTags] 找到 UpdateVariable JSONPatch 區塊", {
+      jsonTextPreview: jsonText.slice(0, 500),
+    });
     try {
       const patch = JSON.parse(jsonText) as Array<Record<string, unknown>>;
-      if (!Array.isArray(patch)) continue;
+      if (!Array.isArray(patch)) {
+        console.warn("[ResponseParser][parseAffinityUpdateTags] JSONPatch 不是陣列", { patch });
+        continue;
+      }
+      console.log("[ResponseParser][parseAffinityUpdateTags] 解析出 patch ops", {
+        opCount: patch.length,
+        ops: patch,
+      });
       for (const op of patch) {
         const rawPath = typeof op.path === "string" ? op.path : "";
         const rawOp = typeof op.op === "string" ? op.op.toLowerCase() : "";
-        if (!rawPath || !rawOp) continue;
+        if (!rawPath || !rawOp) {
+          console.warn("[ResponseParser][parseAffinityUpdateTags] 跳過無效 op", { op });
+          continue;
+        }
         const rawFrom = typeof op.from === "string" ? op.from : "";
         _pushJsonPatchResult(results, rawPath, rawOp, op.value, rawFrom);
       }
-    } catch {
-      // 忽略非法 JSONPatch 區塊
+    } catch (error) {
+      console.error("[ResponseParser][parseAffinityUpdateTags] JSONPatch 解析失敗", {
+        error,
+        jsonText: jsonText.slice(0, 500),
+      });
     }
   }
+
+  console.log("[ResponseParser][parseAffinityUpdateTags] 解析完成", {
+    totalEntries: results.length,
+    entries: results,
+  });
 
   return results;
 }
