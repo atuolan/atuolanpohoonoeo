@@ -191,10 +191,37 @@ const recentHistory = computed(() => {
   return [...state.history].reverse().slice(0, 10);
 });
 
+/**
+ * 取得 metric 的可讀顯示名稱。
+ *
+ * metricId 可能來自三種情境：
+ * 1. 已配置的 metric.id：直接由 config 中找到 name
+ * 2. 已配置 metric 的 path/name：透過 path 或 name 找到 config
+ * 3. 自動修復寫入的裸路徑（例如 `谭尧.好感度`）：config 中找不到，
+ *    取最後一個 segment 顯示，避免 UI 出現 `stat_data.角色.欄位` 這種冗長字串。
+ */
 function getMetricName(metricId: string): string {
   const config = affinityStore.getConfig(props.characterId);
-  const m = config?.metrics.find((x) => x.id === metricId);
-  return m?.name || metricId;
+  if (config) {
+    const direct = config.metrics.find(
+      (x) => x.id === metricId || x.name === metricId || x.path === metricId,
+    );
+    if (direct) return direct.name || direct.id;
+
+    // 路徑型 metricId：嘗試用末段比對 config
+    const tail = metricId.split(".").pop() ?? metricId;
+    const byTail = config.metrics.find(
+      (x) =>
+        x.name === tail ||
+        x.id === tail ||
+        (x.path ? x.path.split(".").slice(-1)[0] === tail : false),
+    );
+    if (byTail) return byTail.name || byTail.id;
+
+    // 無對應配置時，回傳末段路徑作為友善名稱
+    return tail || metricId;
+  }
+  return metricId.split(".").pop() || metricId;
 }
 
 function adjust(metricId: string, delta: number) {

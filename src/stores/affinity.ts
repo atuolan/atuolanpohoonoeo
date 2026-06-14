@@ -30,8 +30,31 @@ const AFFINITY_STATES_STORE = DB_STORES.CHAT_AFFINITY_STATES;
 const AFFINITY_CONFIG_STORE = DB_STORES.CHARACTER_AFFECTIONS;
 const AUTO_SAVE_DELAY_MS = 300;
 
+/**
+ * MVU 三層視圖的根前綴。AI 產生的 JSONPatch 路徑常以 `/stat_data/角色/欄位` 形式
+ * 出現，但 `mvuState` 內部本來就分為 statData / displayData / deltaData 三層儲存，
+ * 因此在比對 metric path 與寫入 mvuState 時，這層前綴必須剝除，否則會出現
+ * 「路徑不匹配 → metric 找不到 → 變更被當作未配置欄位」的問題。
+ */
+const MVU_VIEW_PREFIXES = [
+  "stat_data",
+  "display_data",
+  "delta_data",
+  "stat",
+  "display",
+  "delta",
+];
+
 function normalizeMetricPath(path: string): string {
-  return path.replace(/^\/+/, "").replace(/\//g, ".");
+  let normalized = path.replace(/^\/+/, "").replace(/\//g, ".");
+  for (const prefix of MVU_VIEW_PREFIXES) {
+    if (normalized.startsWith(`${prefix}.`)) {
+      normalized = normalized.slice(prefix.length + 1);
+      break;
+    }
+    if (normalized === prefix) return "";
+  }
+  return normalized;
 }
 
 function deepClone<T>(value: T): T {
@@ -609,6 +632,15 @@ export const useAffinityStore = defineStore("affinity", () => {
     return true;
   }
 
+  /**
+   * 用 path/name/id 多重 fallback 匹配 metric，避免 AI 給出
+   * 「stat_data.角色.好感度」「角色.好感度」「好感度」等不同寫法時找不到。
+   *
+   * 匹配優先級：
+   * 1. 完全相等（path/name/id 任一欄位）
+   * 2. 雙向 endsWith（使用者只給末段或多給前綴皆可）
+   * 3. 末段名稱匹配（最後一個 segment 對 name/id/metricTail）
+   */
   function getMetricByPath(
     chatId: string,
     path: string,
@@ -620,14 +652,32 @@ export const useAffinityStore = defineStore("affinity", () => {
     if (!config) return null;
 
     const normalizedPath = normalizeMetricPath(path);
-    const metric = config.metrics.find(
-      (m) =>
-        m.path === normalizedPath ||
-        m.name === normalizedPath ||
-        m.id === normalizedPath ||
-        normalizedPath.endsWith(`.${m.name}`) ||
-        (m.path ? normalizedPath.endsWith(`.${m.path.split(".").slice(-1)[0]}`) : false),
-    );
+    if (!normalizedPath) return null;
+
+    const tail = normalizedPath.split(".").pop() ?? "";
+
+    const metric = config.metrics.find((m) => {
+      const metricPath = m.path ? normalizeMetricPath(m.path) : "";
+      const metricTail = metricPath ? metricPath.split(".").pop() ?? "" : "";
+
+      // 1. 直接相等
+      if (m.id === normalizedPath) return true;
+      if (m.name === normalizedPath) return true;
+      if (metricPath && metricPath === normalizedPath) return true;
+
+      // 2. endsWith 雙向匹配
+      if (metricPath && normalizedPath.endsWith(`.${metricPath}`)) return true;
+      if (metricPath && metricPath.endsWith(`.${normalizedPath}`)) return true;
+      if (m.name && normalizedPath.endsWith(`.${m.name}`)) return true;
+      if (m.id && normalizedPath.endsWith(`.${m.id}`)) return true;
+
+      // 3. 末段名稱匹配
+      if (tail && (tail === m.name || tail === m.id || (metricTail && tail === metricTail))) {
+        return true;
+      }
+
+      return false;
+    });
     if (!metric) return null;
 
     return {
@@ -776,6 +826,100 @@ export const useAffinityStore = defineStore("affinity", () => {
     return setMetric(chatId, resolved.metricId, value, reason);
   }
 
+  /**
+   * 自動修復：當 batchUpdateByPath 的 metric 在 character config 中找不到時，
+   * 直接把更新寫入 mvuState 三層視圖（statData/displayData/deltaData），
+   * 並在 history 中以路徑為 metricId 推送一筆紀錄，確保：
+   * 1. 數值仍能被 EJS 模板與 AI 後續輪次讀到（透過 mvuState）
+   * 2. UI 的「近期變化」面板能顯示出此次變更（透過 history）
+   * 3. 不會因為配置缺漏而靜默丟失 AI 的更新
+   */
+  function _autoRepairMvuUpdate(
+    chatId: string,
+    u: {
+      metric: string;
+      change: number;
+      reason: string;
+      stringValue?: string;
+      isAbsolute?: boolean;
+      absoluteValue?: number;
+    },
+    sourceTreeValue: unknown,
+    sourceStringValue: string | undefined,
+    sourceNumberValue: number | undefined,
+  ): void {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return;
+
+    const normalizedPath = normalizeMetricPath(u.metric);
+    if (!normalizedPath) return;
+
+    const mvuState = _ensureMvuState(chatId);
+    if (!mvuState) return;
+
+    const previousValue = _.get(mvuState.statData, normalizedPath);
+
+    // 推算最終值：優先順序為 stringValue > sourceTree string > sourceMetric string
+    //              > absoluteValue > sourceTree number > sourceMetric number
+    //              > delta（基於 previousValue 加總）
+    let newValue: unknown;
+    let isStringWrite = false;
+
+    if (u.stringValue !== undefined) {
+      newValue = u.stringValue;
+      isStringWrite = true;
+    } else if (typeof sourceTreeValue === "string") {
+      newValue = sourceTreeValue;
+      isStringWrite = true;
+    } else if (sourceStringValue !== undefined) {
+      newValue = sourceStringValue;
+      isStringWrite = true;
+    } else if (u.isAbsolute) {
+      if (u.absoluteValue !== undefined) newValue = u.absoluteValue;
+      else if (typeof sourceTreeValue === "number") newValue = sourceTreeValue;
+      else if (sourceNumberValue !== undefined) newValue = sourceNumberValue;
+      else return;
+    } else {
+      const base = typeof previousValue === "number" ? previousValue : 0;
+      newValue = base + u.change;
+    }
+
+    _.set(mvuState.statData, normalizedPath, deepClone(newValue));
+    _.set(mvuState.displayData, normalizedPath, deepClone(newValue));
+    // deltaData：對 delta 操作記錄差值，其他情況存最終值
+    const deltaValue =
+      !u.isAbsolute && !isStringWrite && typeof newValue === "number"
+        ? u.change
+        : newValue;
+    _.set(mvuState.deltaData, normalizedPath, deepClone(deltaValue));
+
+    // 友善 history：metricId 用完整 normalizedPath，oldValue/newValue 取 MetricValue 可接受的型別
+    const toMetricValue = (v: unknown): MetricValue => {
+      if (typeof v === "number" || typeof v === "string") return v;
+      if (v === undefined || v === null) return 0;
+      return String(v);
+    };
+    const oldForHistory = toMetricValue(previousValue);
+    const newForHistory = toMetricValue(newValue);
+
+    if (oldForHistory !== newForHistory) {
+      state.history.push({
+        metricId: normalizedPath,
+        oldValue: oldForHistory,
+        newValue: newForHistory,
+        reason: u.reason,
+        timestamp: Date.now(),
+      });
+      if (state.history.length > MAX_HISTORY_LENGTH) {
+        state.history = state.history.slice(-MAX_HISTORY_LENGTH);
+      }
+    }
+
+    state.lastUpdated = Date.now();
+    _scheduleAutoSave(chatId);
+    _triggerReactivity(chatId);
+  }
+
   function batchUpdateByPath(
     chatId: string,
     updates: {
@@ -811,20 +955,36 @@ export const useAffinityStore = defineStore("affinity", () => {
           ? _.get(sourceTree, normalizeMetricPath(u.sourceMetric))
           : undefined;
       const sourceMetric = u.sourceMetric ? getMetricByPath(chatId, u.sourceMetric) : null;
+      const sourceStringValue =
+        typeof sourceMetric?.value === "string" ? sourceMetric.value : undefined;
+      const sourceNumberValue =
+        typeof sourceMetric?.value === "number" ? sourceMetric.value : undefined;
+
+      // 自動修復：metric 未匹配到任何 config 時，直接寫入 mvuState 並推送友善 history
+      if (!metric) {
+        _autoRepairMvuUpdate(
+          chatId,
+          u,
+          sourceTreeValue,
+          sourceStringValue,
+          sourceNumberValue,
+        );
+        return [];
+      }
 
       return [{
-        metricId: metric?.metricId || normalizeMetricPath(u.metric),
+        metricId: metric.metricId,
         change: u.change,
         reason: u.reason,
         stringValue:
           u.stringValue ??
           (typeof sourceTreeValue === "string" ? sourceTreeValue : undefined) ??
-          (typeof sourceMetric?.value === "string" ? sourceMetric.value : undefined),
+          sourceStringValue,
         isAbsolute: u.isAbsolute,
         absoluteValue:
           u.absoluteValue ??
           (typeof sourceTreeValue === "number" ? sourceTreeValue : undefined) ??
-          (typeof sourceMetric?.value === "number" ? sourceMetric.value : undefined),
+          sourceNumberValue,
       }];
     });
 
