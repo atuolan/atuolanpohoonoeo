@@ -10,6 +10,7 @@ import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import { parseAffinityUpdateTags } from "@/services/ResponseParser";
 import { loadChatById, refreshChatDerivedMetadata } from "@/storage/chatStorage";
 import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
+import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
@@ -23,6 +24,8 @@ export interface CallMessage {
   imageData?: string;
   imageMimeType?: string;
   imageCaption?: string;
+  /** MiniMax TTS 合成後的語音（base64 data URL），用於即時播放與事後回放 */
+  audioUrl?: string;
 }
 
 export type CallState = "ringing" | "connected" | "ended" | "rejected";
@@ -89,6 +92,13 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   const rejectReason = ref("");
   const isMuted = ref(false);
   const isSpeaker = ref(false);
+  /** 該聊天是否開啟 MiniMax（決定喇叭按鈕是否可用，作為自動語音開關前提） */
+  const ttsAvailable = ref(false);
+  /** 聊天專屬 MiniMax 音色覆蓋（不設則用全域設定） */
+  const ttsOverride = ref<{ voiceId?: string; speed?: number; pitch?: number; emotion?: string }>({});
+  // 語音播放基礎設施：單一 Audio 實例 + 播放序號（遞增即可中斷進行中的序列）
+  let currentAudio: HTMLAudioElement | null = null;
+  let playbackToken = 0;
 
   // UI 狀態：是否展開全屏（false = 縮小成迷你條）
   const isExpanded = ref(true);
@@ -157,6 +167,29 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
 
     return `<phone_call>\n${options.title || "📞 通話結束"}\n開始時間：${formatCallDateTime(startedAt)}\n結束時間：${formatCallDateTime(options.endedAt)}\n時長：${formatDurationText(options.durationSeconds)}\n\n電話內容：\n${callLines}\n</phone_call>`;
   }
+
+  /** 構建結構化通話記錄數據（含逐條語音 audioUrl，供事後回放） */
+  function buildPhoneCallHistoryData(options: {
+    characterName: string;
+    characterAvatar?: string;
+    startedAt: number;
+    endedAt: number;
+    messages: CallMessage[];
+  }) {
+    return {
+      characterName: options.characterName,
+      characterAvatar: options.characterAvatar,
+      startedAt: options.startedAt,
+      endedAt: options.endedAt,
+      messages: options.messages.map((m) => ({
+        role: (m.role === "user" ? "user" : "ai") as "user" | "ai",
+        content: m.content,
+        tone: m.tone,
+        audioUrl: m.audioUrl,
+        timestamp: m.timestamp,
+      })),
+    };
+  }
   const canRegenerateLastAi = computed(() => {
     if (isGenerating.value || callState.value !== "connected") return false;
     const last = callMessages.value[callMessages.value.length - 1];
@@ -202,6 +235,142 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
 
   loadVideoConfig();
 
+  // ===== MiniMax TTS 自動語音 =====
+  /** 載入該聊天的 MiniMax 開關與音色覆蓋，決定自動語音是否可用 */
+  async function loadTTSConfig(info: ActiveCallInfo) {
+    ttsAvailable.value = false;
+    ttsOverride.value = {};
+    isSpeaker.value = false;
+    try {
+      if (!info.chatId) return;
+      const chat = await loadChatById(info.chatId);
+      if (!chat) return;
+      const { useSettingsStore } = await import("@/stores");
+      const settingsStore = useSettingsStore();
+      const enabled =
+        !!(chat as any).minimaxTTSEnabled && !!settingsStore.minimaxTTS?.apiKey;
+      ttsAvailable.value = enabled;
+      ttsOverride.value = (chat as any).minimaxTTSOverride
+        ? { ...(chat as any).minimaxTTSOverride }
+        : {};
+      // 自動語音預設：可用時開啟（喇叭亮起）
+      isSpeaker.value = enabled;
+    } catch (e) {
+      console.warn("[phoneCall] 載入 TTS 設定失敗:", e);
+    }
+  }
+
+  /** 取得合併後的 MiniMax 設定（全域 + 聊天覆蓋） */
+  function getMergedTTSSettings(settingsStore: any) {
+    const override = ttsOverride.value;
+    return {
+      ...settingsStore.minimaxTTS,
+      ...(override.voiceId && { voiceId: override.voiceId }),
+      ...(override.pitch !== undefined && { pitch: override.pitch }),
+      ...(override.speed !== undefined && { speed: override.speed }),
+    };
+  }
+
+  /** 停止當前播放並使進行中的播放序列失效 */
+  function stopPlayback() {
+    playbackToken++;
+    if (currentAudio) {
+      try {
+        currentAudio.pause();
+        currentAudio.src = "";
+      } catch {
+        /* ignore */
+      }
+      currentAudio = null;
+    }
+  }
+
+  /** 播放單一音頻並等待結束（可被 stopPlayback 中斷） */
+  function playAudioUrl(url: string, token: number): Promise<void> {
+    return new Promise((resolve) => {
+      if (token !== playbackToken) {
+        resolve();
+        return;
+      }
+      const audio = new Audio(url);
+      currentAudio = audio;
+      const done = () => {
+        if (currentAudio === audio) currentAudio = null;
+        resolve();
+      };
+      audio.onended = done;
+      audio.onerror = done;
+      audio.play().catch(() => done());
+    });
+  }
+
+  /** 合成單條通話訊息語音，下載轉 base64 存入該訊息 audioUrl；回傳 url（失敗回傳 null） */
+  async function synthesizeCallMessage(msg: CallMessage): Promise<string | null> {
+    if (msg.audioUrl) return msg.audioUrl;
+    const text = cleanTTSTags(msg.content || "").trim();
+    if (!text) return null;
+    try {
+      const { useSettingsStore } = await import("@/stores");
+      const settingsStore = useSettingsStore();
+      if (!settingsStore.minimaxTTS?.apiKey) return null;
+      const { synthesizeSpeech } = await import("@/api/MiniMaxTTSApi");
+      const mergedSettings = getMergedTTSSettings(settingsStore);
+      const emotion = msg.tone?.trim() || ttsOverride.value.emotion || undefined;
+      const result = await synthesizeSpeech(
+        text,
+        mergedSettings,
+        emotion ? { emotion } : undefined,
+      );
+      if (!result.success || !result.audioUrl) {
+        console.warn("[phoneCall] TTS 合成失敗:", result.error);
+        return null;
+      }
+      // MiniMax 回傳的是簽名 URL（約 24h 後過期），立即下載轉 base64 保存
+      let persistedUrl = result.audioUrl;
+      try {
+        const resp = await fetch(result.audioUrl);
+        if (resp.ok) {
+          const blob = await resp.blob();
+          persistedUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const r = reader.result;
+              if (typeof r === "string") resolve(r);
+              else reject(new Error("FileReader 結果非字串"));
+            };
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+          });
+        }
+      } catch (e) {
+        console.warn("[phoneCall] TTS 音頻下載失敗，使用臨時 URL:", e);
+      }
+      // 用 id 查找寫回，避免引用失效
+      const idx = callMessages.value.findIndex((m) => m.id === msg.id);
+      if (idx !== -1) callMessages.value[idx].audioUrl = persistedUrl;
+      msg.audioUrl = persistedUrl;
+      return persistedUrl;
+    } catch (e) {
+      console.error("[phoneCall] TTS 合成異常:", e);
+      return null;
+    }
+  }
+
+  /** 依序合成並即時播放一組 AI 訊息（喇叭開啟且 TTS 可用時） */
+  async function autoVoiceMessages(messageIds: string[]) {
+    if (!ttsAvailable.value || !isSpeaker.value) return;
+    const token = ++playbackToken;
+    for (const id of messageIds) {
+      if (token !== playbackToken) return;
+      const msg = callMessages.value.find((m) => m.id === id);
+      if (!msg || msg.role !== "ai") continue;
+      const url = await synthesizeCallMessage(msg);
+      if (!url) continue;
+      if (token !== playbackToken || !isSpeaker.value) return;
+      await playAudioUrl(url, token);
+    }
+  }
+
   // ===== 開始視訊通話（靜態模式 MVP） =====
   async function startVideoCall(
     info: ActiveCallInfo,
@@ -240,6 +409,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
         "",
     };
 
+    await loadTTSConfig(info);
+
     durationTimer = setInterval(() => {
       callDuration.value++;
     }, 1000);
@@ -268,6 +439,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
 
     // 載入輔助資料
     await loadSummariesAndEvents(info);
+    await loadTTSConfig(info);
 
     // 來電模式：直接接聽
     if (info.isIncoming) {
@@ -320,11 +492,14 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       await generateAIResponse(true);
     } else {
       if (openingMessages?.length) {
+        const openingIds: string[] = [];
         for (const message of openingMessages) {
           const text = message.text?.trim();
           if (!text) continue;
+          const id = `call_msg_ai_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          openingIds.push(id);
           callMessages.value.push({
-            id: `call_msg_ai_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            id,
             role: "ai",
             content: text,
             timestamp: Date.now(),
@@ -332,6 +507,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
             tone: message.tone?.trim() || undefined,
           });
         }
+        // 開場白自動語音
+        if (openingIds.length) void autoVoiceMessages(openingIds);
       }
 
       if (openingMessages?.some((message) => message.text?.trim())) {
@@ -380,6 +557,9 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       if (!chat) return;
 
       const endedAt = Date.now();
+      const startedAt =
+        callStartedAt.value ??
+        Math.max(endedAt - callDuration.value * 1000, 0);
 
       const callRecordMessage = {
         id: `msg_call_${Date.now()}`,
@@ -389,9 +569,17 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
         is_user: false,
         content: buildPhoneCallRecordContent({
           durationSeconds: callDuration.value,
-          startedAt: callStartedAt.value,
+          startedAt,
           endedAt,
           characterName: info.characterName,
+          messages: msgs,
+        }),
+        isPhoneCallHistory: true,
+        phoneCallHistoryData: buildPhoneCallHistoryData({
+          characterName: info.characterName,
+          characterAvatar: info.characterAvatar,
+          startedAt,
+          endedAt,
           messages: msgs,
         }),
         timestamp: endedAt,
@@ -457,11 +645,16 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   function minimize() { isExpanded.value = false; }
   function expand() { isExpanded.value = true; }
   function toggleMuteState() { isMuted.value = !isMuted.value; }
-  function toggleSpeakerState() { isSpeaker.value = !isSpeaker.value; }
+  function toggleSpeakerState() {
+    isSpeaker.value = !isSpeaker.value;
+    // 關閉自動語音時立即停止當前播放
+    if (!isSpeaker.value) stopPlayback();
+  }
 
   // ===== 重新生成最後一輪 AI 回覆（移除尾端 AI 連續段後重生） =====
   async function regenerateLastAiResponse() {
     if (!canRegenerateLastAi.value || isGenerating.value) return;
+    stopPlayback();
 
     let end = callMessages.value.length - 1;
     if (end < 0 || callMessages.value[end].role !== "ai") return;
@@ -704,13 +897,19 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
           aiGenerationStore.completeGeneration(phoneTaskId, "chat", finalContent);
           callMessages.value = callMessages.value.filter((m) => m.id !== aiMsg.id);
           const parsed = parsePhoneJsonOutput(finalContent);
+          const newAiMessageIds: string[] = [];
           for (const p of parsed.messages) {
+            const id = `call_msg_ai_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+            newAiMessageIds.push(id);
             callMessages.value.push({
-              id: `call_msg_ai_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              id,
               role: "ai", content: p.text, timestamp: Date.now(),
               isStreaming: false, tone: p.tone,
             });
           }
+
+          // 自動語音：合成並即時播放每條新 AI 訊息
+          if (newAiMessageIds.length) void autoVoiceMessages(newAiMessageIds);
 
           // 提取並套用 MVU 變量更新（卡內帶 MVU 時 AI 會輸出 <UpdateVariable>/<update> 標籤）
           await applyMvuUpdatesFromResponse(finalContent);
@@ -1014,6 +1213,7 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
     if (durationTimer) { clearInterval(durationTimer); durationTimer = null; }
     if (autoAnswerTimer) { clearTimeout(autoAnswerTimer); autoAnswerTimer = null; }
     if (abortController) { abortController.abort(); abortController = null; }
+    stopPlayback();
   }
 
   // ===== 通話快照（防止頁面關閉/崩潰時丟失） =====
@@ -1033,7 +1233,8 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
       // 避免把大圖 base64 存進 localStorage 導致超量
       callMessages: callMessages.value
         .filter((m) => !m.isStreaming)
-        .map(({ imageData: _img, imageMimeType: _mime, ...rest }) => rest),
+        // 避免把大圖與 base64 音頻存進 localStorage 導致超量
+        .map(({ imageData: _img, imageMimeType: _mime, audioUrl: _audio, ...rest }) => rest),
       videoSession: videoSession.value,
       savedAt: Date.now(),
     };
@@ -1108,15 +1309,26 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
       if (!chat) return;
       const msgs = snapshot.callMessages.filter((m) => m.role !== "system");
       const endedAt = Date.now();
+      const startedAt =
+        snapshot.callStartedAt ??
+        Math.max(snapshot.savedAt - snapshot.callDuration * 1000, 0);
       const callRecordMessage = {
         id: `msg_call_${Date.now()}`,
         role: "system", sender: "system", name: "系統", is_user: false,
         content: buildPhoneCallRecordContent({
           title: "📞 通話結束（頁面關閉）",
           durationSeconds: snapshot.callDuration,
-          startedAt: snapshot.callStartedAt ?? Math.max(snapshot.savedAt - snapshot.callDuration * 1000, 0),
+          startedAt,
           endedAt,
           characterName: snapshot.activeCall.characterName,
+          messages: msgs,
+        }),
+        isPhoneCallHistory: true,
+        phoneCallHistoryData: buildPhoneCallHistoryData({
+          characterName: snapshot.activeCall.characterName,
+          characterAvatar: snapshot.activeCall.characterAvatar,
+          startedAt,
+          endedAt,
           messages: msgs,
         }),
         timestamp: endedAt, createdAt: endedAt, updatedAt: endedAt, status: "sent",
@@ -1129,7 +1341,7 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
 
   return {
     activeCall, callState, callMessages, callDuration, isGenerating,
-    rejectReason, isMuted, isSpeaker, isExpanded,
+    rejectReason, isMuted, isSpeaker, ttsAvailable, isExpanded,
     videoConfig, videoSession,
     isActive, isVideoCallActive, formattedDuration, canRegenerateLastAi, canTriggerManualResponse,
     startCall, startVideoCall, endCall, sendMessage, addUserMessage, triggerAIResponse, handleAnswer, regenerateLastAiResponse,

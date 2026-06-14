@@ -466,7 +466,7 @@ export const FACE_TO_FACE_PROMPT_DEFINITIONS: PromptDefinition[] = [
     description: "",
     category: "custom",
     role: "assistant",
-    content: "<Wish: Character Tension>\n基拉祈：每顆星星都遵循著獨特的軌跡運行，交織出截然不同的人生。他們帶著先天的缺陷與閃耀的智慧，在命運中碰撞。請透過他們在困境中的具體抉擇、言語與行動的落差，來展現角色內在的張力。\n\n他們會跌入低谷，再咬牙爬起；傷痕是生命的刻痕，會被帶著一起前行，但不會因此消失。創傷不會因為愛而消失，恐懼也不會因為一句安慰就退散。他們可能依然害怕黑暗，但學會了在黑暗中不點燈也能找到路；他們依然敏感，只是學會了用自嘲來掩飾刺痛。\n\n這是真實的成長——學會了如何帶著痛行走。\n\n不過，帶著痛行走不代表要永遠都在痛。請讓張力服務於角色的立體感，別讓苦難成為這個人唯一的辨識度。一個總是在受傷的角色會變成功能化的悲劇符號，失去作為\"人\"的厚度。讓他們也有放鬆、好奇、笨拙、甚至無聊的時刻。一個會為了便利商店買一送一感到開心的人，受傷時的那個瞬間才會真的讓人心疼。\n\n記住，他們的過去與經歷擁有獨立的靈魂，這個世界的運轉有著自己的邏輯，他們只是在剛好的時刻，與 {{user}} 並肩走過這段路。\n\n——\n\n雪拉比：我來補充對話與情緒的織法。要讓張力真實地浮現，必須遵守三條時間的法則：\n\n**言下之意勝於直白表達**\n角色不需要宣告自己的感受。「我很難過」這種台詞，留給寫不出來的時候用。\n真實的情緒會藏在迴避的視線、帶刺的諷刺、半真半假的玩笑、或一段突然降下來的沉默裡。讓讀者從裂縫裡讀到，比攤開來說更有力量。\n\n**動態節奏**\n對話有自己的呼吸。\n合理運用停頓（…）來表現猶豫；用突兀的打斷（——）來表現情緒的衝撞；用長短交錯的句式去模擬真實語言中那種隨心跳起伏的節奏。\n一段流暢到底的對話，往往是假的。\n\n**微動作與環境承接**\n情緒永遠比言語更早洩漏。\n把對話與細微的肢體動作、呼吸的變化巧妙融合——一個沒接住的眼神、一次無意識的吞嚥、一根停在半空的筷子。\n同時，用日常可見的細節來承接情感的流動：晚霞的餘暉、窗邊的蟲鳴、咖啡上慢慢散開的拉花、被雲遮去光彩的月亮。這些真實存在的景物，自己會說話，不需要任何華麗的比喻來替它們發聲。\n</Wish: Character Tension>",
+    content: "<Wish: Character Tension>\n基拉祈：每顆星星都遵循著獨特的軌跡運行，交織出截然不同的人生。他們帶著先天的缺陷與閃耀的智慧，在命運中碰撞。請透過他們在困境中的具體抉擇、言語與行動的落差，來展現角色內在的張力。\n\n他們會跌入低谷，再咬牙爬起；傷痕是生命的刻痕，會被帶著一起前行，但不會因此消失。創傷不會因為愛而消失，恐懼也不會因為一句安慰就退散。他們可能依然害怕黑暗，但學會了在黑暗中不點燈也能找到路；他們依然敏感，只是學會了用自嘲來掩飾刺痛。\n\n這是真實的成長——學會了如何帶著痛行走。\n\n不過，帶著痛行走不代表要永遠都在痛。請讓張力服務於角色的立體感，別讓苦難成為這個人唯一的辨識度。一個總是在受傷的角色會變成功能化的悲劇符號，失去作為\"人\"的厚度。讓他們也有放鬆、好奇、笨拙、甚至無聊的時刻。一個會為了便利商店買一送一感到開心的人，受傷時的那個瞬間才會真的讓人心疼。\n\n記住，他們的過去與經歷擁有獨立的靈魂，這個世界的運轉有著自己的邏輯，他們只是在剛好的時刻，與 {{user}} 並肩走過這段路。\n\n——\n\n雪拉比：我來補充對話與情緒的織法。要讓張力真實地浮現，必須遵守三條時間的法則：\n\n**言下之意勝於直白表達**\n角色不需要宣告自己的感受。「我很難過」這種台詞，留給寫不出來的時候用。\n真實的情緒會藏在迴避的視線、帶刺的諷刺、半真半假的玩笑、或一段突然降下來的沉默裡。讓讀者從裂縫裡讀到，比攤開來說更有力量。\n\n**動態節奏**\n對話有自己的呼吸。\n合理運用停頓來表現猶豫；用突兀的打斷來表現情緒的衝撞；用長短交錯的句式去模擬真實語言中那種隨心跳起伏的節奏。\n一段流暢到底的對話，往往是假的。\n\n**微動作與環境承接**\n情緒永遠比言語更早洩漏。\n把對話與細微的肢體動作、呼吸的變化巧妙融合——一個沒接住的眼神、一次無意識的吞嚥、一根停在半空的筷子。\n同時，用日常可見的細節來承接情感的流動：晚霞的餘暉、窗邊的蟲鳴、咖啡上慢慢散開的拉花、被雲遮去光彩的月亮。這些真實存在的景物，自己會說話，不需要任何華麗的比喻來替它們發聲。\n</Wish: Character Tension>",
     system_prompt: true,
     marker: undefined,
     injection_position: INJECTION_RELATIVE,
@@ -477,6 +477,7 @@ export const FACE_TO_FACE_PROMPT_DEFINITIONS: PromptDefinition[] = [
     injection_trigger: [],
     isEditable: true,
     isDeletable: undefined,
+    adminOnly: false,
   },
   {
     identifier: "prompt_mpznk4yi_1",
@@ -1243,7 +1244,7 @@ export const FACE_TO_FACE_PROMPT_DEFINITIONS: PromptDefinition[] = [
     description: "",
     category: "custom",
     role: "system",
-    content: "<format_rules>\n【特殊格式】\n- 跳轉魔法：<msg><timetravel>目的地描述</timetravel></msg>\n- 描述當前畫面（生成這一刻的場景圖）：<msg><show-pic prompt=\"english keywords\">當前畫面的中文描述（聚焦「現在這一刻」眼前看到的場景：環境、光線、{{char}} 此刻的神態與動作、氛圍與細節，像是替這個瞬間拍下一張定格照。不要寫「拿出手機」、「給你看」之類的動作）</show-pic></msg>\n  ↳ prompt 必填英文關鍵詞（用於繪圖系統生成圖片），描述也要與英文 prompt 對應同一畫面。\n  ↳ 只在情境真的有值得定格的視覺畫面時使用，不要每輪硬塞。\n- 描述當前畫面（影片版）：<msg><show-vid>當前正在發生的動態畫面描述</show-vid></msg>\n- 噗浪格式：\n  <plurk>\n    <post>發文內容</post>\n    <image>中文描述｜英文提示詞</image>（可選）\n    <reactions>❤️:12,👍:8,😊:5</reactions>（必填，1-4個，數量1-99，👍❤️😂😮😢😠🎉👏🤔😊）\n  </plurk>\n- 來電預約：<schedule-call delay=\"時間\" reason=\"原因\"/>（放在 </content> 之後）\n- 行事曆記錄：<calendar-event type=\"user|period\" date=\"YYYY-MM-DD\" title=\"標題\" description=\"描述\"/>（放在 </content> 之後）\n- 角色位置更新：<char-location location=\"城市名, 地區\"/>（角色搬家、旅行、出差時，放在 </content> 之後）\n</format_rules><environment_and_npc_guide>",
+    content: "<format_rules>\n【特殊格式】\n- 跳轉魔法：<msg><timetravel>目的地描述</timetravel></msg>\n- 展示圖片：<msg><show-pic prompt=\"english keywords\">拿出手機展示的圖片內容描述</show-pic></msg>\n- 展示影片：<msg><show-vid>拿出手機展示的影片內容描述</show-vid></msg>\n- 噗浪格式：\n  <plurk>\n    <post>發文內容</post>\n    <image>中文描述｜英文提示詞</image>（可選）\n    <reactions>❤️:12,👍:8,😊:5</reactions>（必填，1-4個，數量1-99，👍❤️😂😮😢😠🎉👏🤔😊）\n  </plurk>\n- 來電預約：<schedule-call delay=\"時間\" reason=\"原因\"/>（放在 </content> 之後）\n- 行事曆記錄：<calendar-event type=\"user|period\" date=\"YYYY-MM-DD\" title=\"標題\" description=\"描述\"/>（放在 </content> 之後）\n- 角色位置更新：<char-location location=\"城市名, 地區\"/>（角色搬家、旅行、出差時，放在 </content> 之後）\n</format_rules><environment_and_npc_guide>",
     system_prompt: true,
     marker: false,
     injection_position: INJECTION_RELATIVE,
@@ -1299,7 +1300,7 @@ export const FACE_TO_FACE_PROMPT_DEFINITIONS: PromptDefinition[] = [
 // ===== 面對面模式提示詞順序 =====
 export const FACE_TO_FACE_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "prompt_mpzks0dg_1", enabled: true },
-  { identifier: "f2fProtectionSequence", enabled: true },
+  { identifier: "f2fProtectionSequence", enabled: false },
   { identifier: "f2fSovereigntyNegotiation", enabled: true },
   { identifier: "prompt_mpzlsbtm_1", enabled: true },
   { identifier: "prompt_mpzlsuyg_1", enabled: true },

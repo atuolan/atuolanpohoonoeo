@@ -332,6 +332,10 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     groupCallHistoryData: m.groupCallHistoryData
       ? JSON.parse(JSON.stringify(m.groupCallHistoryData))
       : undefined,
+    isPhoneCallHistory: m.isPhoneCallHistory,
+    phoneCallHistoryData: m.phoneCallHistoryData
+      ? JSON.parse(JSON.stringify(m.phoneCallHistoryData))
+      : undefined,
     isCalendarEvent: m.isCalendarEvent,
     calendarEventData: m.calendarEventData
       ? JSON.parse(JSON.stringify(m.calendarEventData))

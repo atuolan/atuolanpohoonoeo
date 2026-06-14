@@ -134,6 +134,20 @@ export interface ChatScreenMessage {
     startedAt: number;
     endedAt: number;
   };
+  isPhoneCallHistory?: boolean;
+  phoneCallHistoryData?: {
+    characterName: string;
+    characterAvatar?: string;
+    startedAt: number;
+    endedAt: number;
+    messages: Array<{
+      role: "user" | "ai";
+      content: string;
+      tone?: string;
+      audioUrl?: string;
+      timestamp: number;
+    }>;
+  };
   isCalendarEvent?: boolean;
   calendarEventData?: {
     type: "user" | "period";

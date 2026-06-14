@@ -57,13 +57,31 @@ export function useChatAffinity(context: {
     const updateResult = affinityStore.batchUpdateByPath(chatId, updates);
     _affinityState.value = affinityStore.getState(chatId) ?? null;
 
+    // 套用完即標記此訊息，避免 rescanAffinityFromMessages() 之後重複套用同一筆更新
+    // （重複套用時值已相同，會得到 appliedCount:0 而誤報「未生效」）。
+    if (messageId) affinityStore.setLastRescannedMessageId(chatId, messageId);
+
     if (!updateResult.applied) {
-      console.warn("[useChatAffinity] MVU/好感更新未生效", {
-        chatId,
-        messageId,
-        resetDeltaOk,
-        ...updateResult,
-      });
+      // 區分兩種情況：
+      // 1. 指標有對應到（resolvedCount/repairedCount > 0）但值沒變 → 多半是重複套用，屬正常，不需警告。
+      // 2. 完全找不到可對應的指標 → 才是真正需要關注的失敗。
+      const hadTargets =
+        updateResult.resolvedCount + updateResult.repairedCount > 0;
+      if (hadTargets) {
+        console.log("[useChatAffinity] MVU/好感更新無數值變化（多半已套用過，屬正常）", {
+          chatId,
+          messageId,
+          resetDeltaOk,
+          ...updateResult,
+        });
+      } else {
+        console.warn("[useChatAffinity] MVU/好感更新未生效：找不到可對應的指標", {
+          chatId,
+          messageId,
+          resetDeltaOk,
+          ...updateResult,
+        });
+      }
       return;
     }
 

@@ -27,6 +27,7 @@ import GroupCallHistoryModal from "../modals/GroupCallHistoryModal.vue";
 import GroupChatHistoryModal from "../modals/GroupChatHistoryModal.vue";
 import PhotoPreviewModal from "../modals/PhotoPreviewModal.vue";
 import GroupCallHistoryCard from "./GroupCallHistoryCard.vue";
+import PhoneCallHistoryCard from "./PhoneCallHistoryCard.vue";
 import GroupChatHistoryCard from "./GroupChatHistoryCard.vue";
 import MusicShareCard from "./MusicShareCard.vue";
 import PixelGiftChest from "./PixelGiftChest.vue";
@@ -355,6 +356,21 @@ interface MessageBubbleProps {
     startedAt: number;
     endedAt: number;
   };
+  // 電話通話記錄卡片
+  isPhoneCallHistory?: boolean;
+  phoneCallHistoryData?: {
+    characterName: string;
+    characterAvatar?: string;
+    startedAt: number;
+    endedAt: number;
+    messages: Array<{
+      role: "user" | "ai";
+      content: string;
+      tone?: string;
+      audioUrl?: string;
+      timestamp: number;
+    }>;
+  };
   // 行事曆事件
   isCalendarEvent?: boolean;
   calendarEventData?: {
@@ -483,6 +499,8 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   groupChatHistoryData: undefined,
   isGroupCallHistory: false,
   groupCallHistoryData: undefined,
+  isPhoneCallHistory: false,
+  phoneCallHistoryData: undefined,
   isCalendarEvent: false,
   calendarEventData: undefined,
   isCallNotification: false,
@@ -3002,6 +3020,19 @@ const showTextVoiceTranscript = ref(true);
             },
           ]"
           @close="showGroupCallHistoryModal = false"
+        />
+      </div>
+      <!-- 電話通話記錄卡片（系統訊息樣式） -->
+      <div
+        v-else-if="isPhoneCallHistory && phoneCallHistoryData"
+        class="phone-call-history-system-message"
+      >
+        <PhoneCallHistoryCard
+          :character-name="phoneCallHistoryData.characterName"
+          :character-avatar="phoneCallHistoryData.characterAvatar"
+          :messages="phoneCallHistoryData.messages"
+          :started-at="phoneCallHistoryData.startedAt"
+          :ended-at="phoneCallHistoryData.endedAt"
         />
       </div>
       <!-- 通話通知卡片 -->

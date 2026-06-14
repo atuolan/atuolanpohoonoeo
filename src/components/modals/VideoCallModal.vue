@@ -181,12 +181,13 @@
         </button>
 
         <button
-          v-if="callState === 'connected'"
+          v-if="callState === 'connected' && ttsAvailable"
           class="control-btn speaker"
           :class="{ active: isSpeaker }"
           @click="toggleSpeaker"
+          :title="isSpeaker ? '自動語音：開（點擊靜音）' : '自動語音：靜音（點擊開啟）'"
         >
-          擴音
+          {{ isSpeaker ? '擴音' : '靜音' }}
         </button>
       </div>
     </div>
@@ -231,6 +232,7 @@ const callMessages = computed(() => phoneCallStore.callMessages);
 const isGenerating = computed(() => phoneCallStore.isGenerating);
 const isMuted = computed(() => phoneCallStore.isMuted);
 const isSpeaker = computed(() => phoneCallStore.isSpeaker);
+const ttsAvailable = computed(() => phoneCallStore.ttsAvailable);
 const formattedDuration = computed(() => phoneCallStore.formattedDuration);
 const canRegenerateLastAi = computed(() => phoneCallStore.canRegenerateLastAi);
 const canTriggerManualResponse = computed(() => phoneCallStore.canTriggerManualResponse);

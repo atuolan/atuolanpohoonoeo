@@ -461,6 +461,23 @@ export interface ChatMessage {
     endedAt: number;
   };
 
+  /** 是否為電話通話記錄卡片 */
+  isPhoneCallHistory?: boolean;
+  /** 電話通話記錄數據（含逐條語音 audioUrl，可事後回放） */
+  phoneCallHistoryData?: {
+    characterName: string;
+    characterAvatar?: string;
+    startedAt: number;
+    endedAt: number;
+    messages: Array<{
+      role: "user" | "ai";
+      content: string;
+      tone?: string;
+      audioUrl?: string;
+      timestamp: number;
+    }>;
+  };
+
   // --- 通話通知相關 ---
   /** 是否為通話通知卡片 */
   isCallNotification?: boolean;
