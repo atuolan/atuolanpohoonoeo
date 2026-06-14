@@ -5122,6 +5122,22 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               );
             }
 
+            // 將原始 <update>/<UpdateVariable> 區塊附加到本輪第一條 AI 訊息，供重新掃描/回滾使用。
+            // 先前一般 1v1 生成路徑只解析出 parsed.rawUpdateBlock，卻沒有保存到訊息上，
+            // 導致 rescanAffinityFromMessages() 掃描已清理後的 content 時找不到 MVU 標籤。
+            if (parsed.rawUpdateBlock) {
+              const targetAiMsg = messages.value.find(
+                (m) => m.id === _firstNewAiMsgId,
+              );
+              if (targetAiMsg) {
+                targetAiMsg._rawAffinityBlock = parsed.rawUpdateBlock;
+              }
+            }
+
+            if (_pendingAffinityUpdates?.length) {
+              _handleAffinityUpdates(_pendingAffinityUpdates, _firstNewAiMsgId);
+            }
+
             if (parsed.messages.length === 0 || _shownMsgs1 === 0) {
               if (_shownMsgs1 === 0 && parsed.messages.length > 0) {
                 console.warn(
