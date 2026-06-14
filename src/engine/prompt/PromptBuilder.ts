@@ -851,7 +851,9 @@ export class PromptBuilder {
     if (this.options.faceToFaceMode) {
       // 優先使用面對面模式的專屬順序
       if (this.options.promptManagerConfig?.faceToFacePromptOrder) {
-        return this.options.promptManagerConfig.faceToFacePromptOrder;
+        return this.applyChatPromptOverrides(
+          this.options.promptManagerConfig.faceToFacePromptOrder,
+        );
       }
       // 如果沒有面對面專屬順序，則從全局順序映射
       // 獲取基礎順序
