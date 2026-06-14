@@ -32,21 +32,56 @@ export function useChatAffinity(context: {
     messageId?: string,
   ) {
     const chatId = context.currentChatId.value;
-    if (!chatId || !_affinityConfig.value?.enabled) return;
+    if (!chatId) {
+      console.warn("[useChatAffinity] MVU/好感更新跳過：目前沒有 chatId", { updates });
+      return;
+    }
+    if (!_affinityConfig.value) {
+      console.warn("[useChatAffinity] MVU/好感更新跳過：好感度配置尚未載入", {
+        chatId,
+        updates,
+      });
+      return;
+    }
+    if (!_affinityConfig.value.enabled) {
+      console.warn("[useChatAffinity] MVU/好感更新跳過：好感度未啟用", {
+        chatId,
+        characterId: _affinityConfig.value.characterId,
+        updates,
+      });
+      return;
+    }
+
     if (messageId) affinityStore.snapshotBeforeMessage(chatId, messageId);
-    affinityStore.resetMvuDeltaData(chatId);
-    affinityStore.batchUpdateByPath(chatId, updates);
+    const resetDeltaOk = affinityStore.resetMvuDeltaData(chatId);
+    const updateResult = affinityStore.batchUpdateByPath(chatId, updates);
     _affinityState.value = affinityStore.getState(chatId) ?? null;
-    console.log(
-      "[useChatAffinity] 好感度更新:",
-      updates
+
+    if (!updateResult.applied) {
+      console.warn("[useChatAffinity] MVU/好感更新未生效", {
+        chatId,
+        messageId,
+        resetDeltaOk,
+        ...updateResult,
+      });
+      return;
+    }
+
+    console.log("[useChatAffinity] MVU/好感更新已套用", {
+      chatId,
+      messageId,
+      resetDeltaOk,
+      appliedCount: updateResult.appliedCount,
+      repairedCount: updateResult.repairedCount,
+      resolvedCount: updateResult.resolvedCount,
+      updates: updates
         .map((u) => {
           if (u.stringValue !== undefined) return `${u.metric} → "${u.stringValue}"`;
           if (u.isAbsolute && u.absoluteValue !== undefined) return `${u.metric} = ${u.absoluteValue}`;
           return `${u.metric} ${u.change > 0 ? "+" : ""}${u.change}`;
         })
         .join(", "),
-    );
+    });
   }
 
   function rescanAffinityFromMessages(options?: { force?: boolean }) {
@@ -70,7 +105,10 @@ export function useChatAffinity(context: {
         return;
       }
     }
-    console.log("[useChatAffinity] 未找到含 <update> 的 AI 訊息");
+    console.warn("[useChatAffinity] 未找到可套用的 MVU/好感更新標籤", {
+      chatId,
+      messageCount: context.messages.value.length,
+    });
   }
 
   async function _loadAffinityForChat(chatId: string, characterId: string) {

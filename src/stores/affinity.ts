@@ -30,6 +30,15 @@ const AFFINITY_STATES_STORE = DB_STORES.CHAT_AFFINITY_STATES;
 const AFFINITY_CONFIG_STORE = DB_STORES.CHARACTER_AFFECTIONS;
 const AUTO_SAVE_DELAY_MS = 300;
 
+export interface AffinityBatchUpdateResult {
+  applied: boolean;
+  appliedCount: number;
+  repairedCount: number;
+  resolvedCount: number;
+  skippedCount: number;
+  reason?: string;
+}
+
 /**
  * MVU 三層視圖的根前綴。AI 產生的 JSONPatch 路徑常以 `/stat_data/角色/欄位` 形式
  * 出現，但 `mvuState` 內部本來就分為 statData / displayData / deltaData 三層儲存，
@@ -993,32 +1002,65 @@ export const useAffinityStore = defineStore("affinity", () => {
       sourceMetric?: string;
       insertIndex?: string | number;
     }[],
-  ): void {
-    console.log("[AffinityStore][batchUpdateByPath] 收到更新", {
+  ): AffinityBatchUpdateResult {
+    console.log("[AffinityStore][batchUpdateByPath] 收到 MVU/好感更新", {
       chatId,
       updateCount: updates.length,
       updates,
     });
 
+    if (updates.length === 0) {
+      return {
+        applied: false,
+        appliedCount: 0,
+        repairedCount: 0,
+        resolvedCount: 0,
+        skippedCount: 0,
+        reason: "updates 為空",
+      };
+    }
+
     const state = affinityStates.value.get(chatId);
-    const config = state ? configCache.value.get(state.characterId) : null;
-    console.log("[AffinityStore][batchUpdateByPath] 當前狀態", {
-      hasState: !!state,
-      characterId: state?.characterId,
-      hasConfig: !!config,
-      configMetricsCount: config?.metrics.length ?? 0,
-      configMetrics: config?.metrics.map((m) => ({
-        id: m.id,
-        name: m.name,
-        path: m.path,
-        type: m.type,
-      })),
-    });
+    if (!state) {
+      console.warn("[AffinityStore][batchUpdateByPath] 無法套用：state 不存在", {
+        chatId,
+        updates,
+      });
+      return {
+        applied: false,
+        appliedCount: 0,
+        repairedCount: 0,
+        resolvedCount: 0,
+        skippedCount: updates.length,
+        reason: "state 不存在",
+      };
+    }
+
+    const config = configCache.value.get(state.characterId);
+    if (!config) {
+      console.warn("[AffinityStore][batchUpdateByPath] 無法套用：config 不存在", {
+        chatId,
+        characterId: state.characterId,
+        updates,
+      });
+      return {
+        applied: false,
+        appliedCount: 0,
+        repairedCount: 0,
+        resolvedCount: 0,
+        skippedCount: updates.length,
+        reason: "config 不存在",
+      };
+    }
+
+    let repairedCount = 0;
+    let skippedCount = 0;
 
     const resolved = updates.flatMap((u) => {
       if (u.operation === "remove") {
         console.log("[AffinityStore][batchUpdateByPath] remove 操作", { metric: u.metric });
-        removeMvuValueByPath(chatId, u.metric);
+        if (removeMvuValueByPath(chatId, u.metric)) repairedCount += 1;
+        else skippedCount += 1;
         return [];
       }
 
@@ -1029,8 +1071,10 @@ export const useAffinityStore = defineStore("affinity", () => {
           insertValue,
           insertIndex: u.insertIndex,
         });
-        if (insertValue !== undefined) {
-          insertMvuValueByPath(chatId, u.metric, insertValue, u.insertIndex);
+        if (insertValue !== undefined && insertMvuValueByPath(chatId, u.metric, insertValue, u.insertIndex) !== undefined) {
+          repairedCount += 1;
+        } else {
+          skippedCount += 1;
         }
         return [];
       }
@@ -1063,6 +1107,7 @@ export const useAffinityStore = defineStore("affinity", () => {
           sourceStringValue,
           sourceNumberValue,
         );
+        repairedCount += 1;
         return [];
       }
 
@@ -1091,10 +1136,28 @@ export const useAffinityStore = defineStore("affinity", () => {
 
     console.log("[AffinityStore][batchUpdateByPath] 即將呼叫 batchUpdate", {
       resolvedCount: resolved.length,
+      repairedCount,
+      skippedCount,
       resolved,
     });
 
-    batchUpdate(chatId, resolved);
+    const appliedCount = batchUpdate(chatId, resolved) + repairedCount;
+    const result: AffinityBatchUpdateResult = {
+      applied: appliedCount > 0,
+      appliedCount,
+      repairedCount,
+      resolvedCount: resolved.length,
+      skippedCount,
+      reason: appliedCount > 0 ? undefined : "沒有任何更新成功寫入",
+    };
+    if (!result.applied) {
+      console.warn("[AffinityStore][batchUpdateByPath] MVU/好感更新沒有生效", {
+        chatId,
+        result,
+        updates,
+      });
+    }
+    return result;
   }
 
   /**
@@ -1111,28 +1174,33 @@ export const useAffinityStore = defineStore("affinity", () => {
       isAbsolute?: boolean;
       absoluteValue?: number;
     }[],
-  ): void {
+  ): number {
+    let appliedCount = 0;
     for (const u of updates) {
       const config = configCache.value.get(
         affinityStates.value.get(chatId)?.characterId ?? "",
       );
       const mc = config?.metrics.find((m) => m.id === u.metricId);
+      let applied = false;
 
       if (u.isAbsolute) {
         // _.set() 絕對賦值：字串或數字直接 setMetric
         if (u.stringValue !== undefined) {
-          setMetric(chatId, u.metricId, u.stringValue, u.reason);
+          applied = setMetric(chatId, u.metricId, u.stringValue, u.reason);
         } else if (u.absoluteValue !== undefined) {
-          setMetric(chatId, u.metricId, u.absoluteValue, u.reason);
+          applied = setMetric(chatId, u.metricId, u.absoluteValue, u.reason);
         }
       } else if (mc?.type === "string" && u.stringValue !== undefined) {
-        setMetric(chatId, u.metricId, u.stringValue, u.reason);
+        applied = setMetric(chatId, u.metricId, u.stringValue, u.reason);
       } else {
-        updateMetric(chatId, u.metricId, u.change, u.reason);
+        applied = updateMetric(chatId, u.metricId, u.change, u.reason);
       }
+
+      if (applied) appliedCount += 1;
     }
 
     // batchUpdate 內部的 updateMetric/setMetric 已各自觸發響應式更新
+    return appliedCount;
   }
 
   // ===== 查詢 =====
