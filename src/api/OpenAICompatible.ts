@@ -1342,6 +1342,10 @@ export class OpenAICompatibleClient {
       },
       body: JSON.stringify(request.body),
       signal,
+      // 強制繞過瀏覽器 / Service Worker 快取層：手機 PWA standalone 模式下，
+      // 僅靠 Cache-Control 標頭不足以阻止快取回放，no-store 才能確保每次都
+      // 真正打到上游，避免「秒回空內容」這類疑似快取回放的情況。
+      cache: "no-store",
     });
 
     if (!response.ok) {
@@ -1572,7 +1576,7 @@ export class OpenAICompatibleClient {
         totalBytes += value?.byteLength ?? 0;
         const decodedChunk = decoder.decode(value, { stream: true });
         buffer += decodedChunk;
-        if (rawStreamPreview.length < 800) rawStreamPreview += decodedChunk;
+        if (rawStreamPreview.length < 4000) rawStreamPreview += decodedChunk;
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
 
@@ -1681,7 +1685,7 @@ export class OpenAICompatibleClient {
         // 原始串流預覽永遠附上：當上述結構化擷取全部落空時，這是唯一能看清
         // 上游實際回傳內容（例如 gemini 的 finishReason=STOP 空 parts）的依據。
         if (rawStreamPreview.trim()) {
-          diagParts.push(`原始串流: ${JSON.stringify(rawStreamPreview.slice(0, 600))}`);
+          diagParts.push(`原始串流: ${JSON.stringify(rawStreamPreview.slice(0, 4000))}`);
         }
         const diagMsg = diagParts.join(' | ');
         console.warn(diagMsg);
