@@ -244,11 +244,46 @@ export function useStreamingWindow() {
   }
 
   /**
+   * 組合可匯出的完整文字。
+   * 當正常內容為空（例如上游回了空回應 / 被安全過濾擋下）時，
+   * 仍能匯出錯誤訊息與診斷 JSON，方便用戶把完整資訊回報給開發者。
+   */
+  function buildExportText(): string {
+    const sections: string[] = [];
+    if (content.value) {
+      sections.push(content.value);
+    }
+    if (errorMessage.value) {
+      sections.push(`===== 錯誤訊息 =====\n${errorMessage.value}`);
+    }
+    if (diagnostics.value) {
+      try {
+        sections.push(
+          `===== 診斷資訊 (JSON) =====\n${JSON.stringify(diagnostics.value, null, 2)}`,
+        );
+      } catch {
+        // ignore
+      }
+    }
+    return sections.join("\n\n");
+  }
+
+  /**
+   * 是否有任何可匯出的內容（正常內容、錯誤訊息或診斷）。
+   * 用來控制「複製／下載」按鈕在空回應時仍可點擊。
+   */
+  const hasExportableText = computed(
+    () => !!(content.value || errorMessage.value || diagnostics.value),
+  );
+
+  /**
    * 複製內容到剪貼板
    */
   async function copyContent(): Promise<boolean> {
     try {
-      await navigator.clipboard.writeText(content.value);
+      const text = buildExportText();
+      if (!text) return false;
+      await navigator.clipboard.writeText(text);
       return true;
     } catch {
       return false;
@@ -256,7 +291,9 @@ export function useStreamingWindow() {
   }
 
   function downloadContentAsTxt(): boolean {
-    return downloadTextFile(content.value, `streaming-output-${Date.now()}.txt`);
+    const text = buildExportText();
+    if (!text) return false;
+    return downloadTextFile(text, `streaming-output-${Date.now()}.txt`);
   }
 
   async function copyPromptContent(): Promise<boolean> {
@@ -396,6 +433,7 @@ export function useStreamingWindow() {
     isComplete,
     hasError,
     errorMessage,
+    hasExportableText,
 
     // 計算屬性
     isVisible,

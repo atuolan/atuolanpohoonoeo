@@ -54,6 +54,7 @@ const {
   promptContent,
   diagnostics,
   showPrompt,
+  hasExportableText,
   copyContent,
   downloadContentAsTxt,
   copyPromptContent,
@@ -494,7 +495,7 @@ onUnmounted(() => {
         <button
           class="footer-btn copy-btn"
           @click="handleCopy"
-          :disabled="!content"
+          :disabled="!hasExportableText"
         >
           <svg v-if="!copySuccess" viewBox="0 0 24 24" fill="currentColor">
             <path
@@ -509,7 +510,7 @@ onUnmounted(() => {
         <button
           class="footer-btn copy-btn"
           @click="handleDownloadContent"
-          :disabled="!content"
+          :disabled="!hasExportableText"
         >
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path
