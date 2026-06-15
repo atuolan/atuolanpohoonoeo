@@ -464,6 +464,15 @@ async function callAPIForPhase(
         throw new Error(chunk.error || "生成失敗");
       }
     }
+    // 空回防護：上游可能「秒回空內容」（內容審查、安全攔截、或模型直接給空），
+    // 串流結束時 full 為空字串卻不算錯誤，會被靜默當成功 → 顯示「生成完畢」但畫面全空、無報錯。
+    // 這裡主動丟出可見錯誤，讓使用者知道是空回而非真的生成成功。
+    if (!full.trim()) {
+      throw new Error(
+        "AI 回傳了空內容（串流模式）。常見原因：內容被上游安全審查攔截、模型直接給空回應、或中轉站異常。" +
+          "可嘗試重新生成、調整提示詞，或更換線路／模型。",
+      );
+    }
     return full;
   } else {
     const result = await client.generate({
@@ -472,6 +481,13 @@ async function callAPIForPhase(
       apiSettings: taskConfig.api,
       signal,
     });
+    // 空回防護（非串流模式）：同上，避免空內容被靜默當成功。
+    if (!result.content.trim()) {
+      throw new Error(
+        "AI 回傳了空內容（非串流模式）。常見原因：內容被上游安全審查攔截、模型直接給空回應、或中轉站異常。" +
+          "可嘗試重新生成、調整提示詞，或更換線路／模型。",
+      );
+    }
     return result.content;
   }
 }
