@@ -1073,12 +1073,46 @@ export class OpenAICompatibleClient {
     const { messages, settings, signal, adjustLastMessageRole } = params;
     const request = this.buildRequest(messages, settings, false, adjustLastMessageRole);
 
-    const response = await fetch(this.getEndpoint(), {
-      method: "POST",
-      headers: this.getHeaders(),
-      body: JSON.stringify(request.body),
-      signal,
-    });
+    // 非串流路徑沒有 reader 迴圈可以判斷閒置，若上游（或中轉/代理）卡住，
+    // fetch 會永遠 pending：手機端會出現「空白氣泡、轉圈、完全沒有錯誤」。
+    // 因此這裡用內部 timeout 的 AbortController 與呼叫方傳入的 signal 合併，
+    // 超時就主動中止並丟出可見的錯誤。
+    const NON_STREAM_TIMEOUT_MS = 90000;
+    const timeoutController = new AbortController();
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      timeoutController.abort();
+    }, NON_STREAM_TIMEOUT_MS);
+    const onExternalAbort = () => timeoutController.abort();
+    if (signal) {
+      if (signal.aborted) timeoutController.abort();
+      else signal.addEventListener("abort", onExternalAbort, { once: true });
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(this.getEndpoint(), {
+        method: "POST",
+        headers: this.getHeaders(),
+        body: JSON.stringify(request.body),
+        signal: timeoutController.signal,
+      });
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (signal) signal.removeEventListener("abort", onExternalAbort);
+      if (timedOut) {
+        throw new Error(
+          `等待回應超過 ${Math.round(NON_STREAM_TIMEOUT_MS / 1000)} 秒仍無任何數據（非串流模式）。` +
+            `可能是上游或中轉/代理卡住、或首個回應過慢。建議改用串流模式、更換線路，或稍後再試。`,
+        );
+      }
+      // 呼叫方主動取消或其他網路錯誤，原樣拋出
+      throw err;
+    }
+
+    clearTimeout(timeoutId);
+    if (signal) signal.removeEventListener("abort", onExternalAbort);
 
     if (!response.ok) {
       const error = await response.text();

@@ -174,6 +174,8 @@ const selectedChat = computed(() =>
 // ===== 互動聊天：以手機主人身份回覆聯絡人 =====
 const replyInput = ref("");
 const chatMessagesEl = ref<HTMLElement | null>(null);
+// 互動聊天的錯誤訊息（直接顯示在 phone-frame 浮層內，避免系統通知被浮層蓋住而看不到）
+const replyError = ref<string>("");
 // 正在等待回覆的聊天串（來自 store，與批量生成分開）
 const replyingThreadId = computed(() => peekPhoneStore.replyingThreadId);
 // 當前開啟的聊天串是否正在等待聯絡人回覆
@@ -196,6 +198,7 @@ async function sendReply(): Promise<void> {
   if (replyingThreadId.value) return; // 生成中，避免重複發送
   const threadId = selectedChatId.value;
   replyInput.value = "";
+  replyError.value = ""; // 清除上一則錯誤
   scrollMessagesToBottom();
   try {
     await peekPhoneStore.sendMessageToContact(
@@ -203,8 +206,10 @@ async function sendReply(): Promise<void> {
       text,
       character.value,
     );
-  } catch {
-    // 錯誤已在 store 內以系統通知呈現，這裡不重複處理
+  } catch (err: any) {
+    // 系統通知可能被 phone-frame 全屏浮層蓋住而看不到，
+    // 因此同時把錯誤訊息直接顯示在聊天界面內的橫幅上。
+    replyError.value = err?.message ?? "聯絡人回覆失敗";
   } finally {
     scrollMessagesToBottom();
   }
@@ -212,6 +217,7 @@ async function sendReply(): Promise<void> {
 
 function cancelReply(): void {
   peekPhoneStore.cancelContactReply();
+  replyError.value = "";
 }
 
 // 切換聊天串或訊息數量變化時，自動捲動到底部
@@ -644,6 +650,17 @@ function getAppTitle(key: PeekPhoneTab) {
                       <span class="typing-dot" />
                     </div>
                   </div>
+                </div>
+                <!-- 錯誤橫幅：直接顯示在浮層內，避免系統通知被 phone-frame 蓋住 -->
+                <div v-if="replyError" class="chat-error-banner">
+                  <span class="chat-error-text">{{ replyError }}</span>
+                  <button
+                    class="chat-error-close"
+                    title="關閉"
+                    @click="replyError = ''"
+                  >
+                    ✕
+                  </button>
                 </div>
                 <!-- 以手機主人身份回覆聯絡人的輸入列 -->
                 <div class="chat-input-bar">
@@ -1789,6 +1806,45 @@ $blob-bg: #d4f2cc;
     transform: translateY(-4px);
     opacity: 1;
   }
+}
+
+// ===== 錯誤橫幅（顯示在浮層內，避免系統通知被 phone-frame 蓋住）=====
+.chat-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 2px solid #d23f3f;
+  border-radius: 12px;
+  background: #ffe3e3;
+  box-shadow: 2px 2px 0 #d23f3f;
+  flex-shrink: 0;
+}
+.chat-error-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #b32020;
+  word-break: break-word;
+}
+.chat-error-close {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: #d23f3f;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 // ===== 回覆輸入列 =====
