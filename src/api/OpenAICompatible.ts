@@ -1709,6 +1709,28 @@ export class OpenAICompatibleClient {
           return;
         }
 
+        // 上游讀取了完整 prompt 卻產出 0 個 completion token（usage 明確回報
+        // completion_tokens=0、prompt_tokens>0），且 SSE 乾淨地以 [DONE] 結束、
+        // finishReason 為 null。這不是格式不相容，而是模型「靜默拒答」：
+        // gemini 等模型在提示內容（常見於某張特定角色卡的人設／世界書）觸發
+        // 安全策略時，會回空內容卻不給 content_filter 之類的明確 finishReason。
+        // 換一張卡即正常，正是因為是該卡的內容本身被擋。必須給出準確診斷，
+        // 不能再誤報成「回應格式不相容」。
+        if (
+          streamUsage &&
+          streamUsage.completion_tokens === 0 &&
+          streamUsage.prompt_tokens > 0
+        ) {
+          yield {
+            type: "error",
+            error:
+              `上游模型讀取了提示（prompt_tokens: ${streamUsage.prompt_tokens}）卻沒有生成任何文字（completion_tokens: 0）。\n` +
+              `這通常是「靜默拒答」：模型因提示內容（多半是某張角色卡的人設／世界書／開場白）觸發安全策略而拒絕生成，卻未回報明確的過濾原因。\n` +
+              `若換一張角色卡即正常，即可確認是該卡內容所致。可嘗試：更換模型／API、調整或精簡該卡的敏感內容。\n${diagMsg}`,
+          };
+          return;
+        }
+
         // 根據情況給用戶更有用的錯誤提示
         if (chunkCount === 0) {
           yield {
