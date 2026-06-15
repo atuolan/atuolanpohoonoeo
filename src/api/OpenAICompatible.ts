@@ -1402,6 +1402,10 @@ export class OpenAICompatibleClient {
     // 用於診斷上游把內容放在我們沒覆蓋到的欄位（例如 reasoning_content、
     // text、output_text 等）導致空回應的情況。
     const emptyDataSamples: string[] = [];
+    // 原始串流預覽：無論能否解析，都累積前若干位元組的解碼文字。
+    // 這是診斷「手機端空回」的最後手段——當所有結構化擷取都失敗時，
+    // 直接把上游真正回傳的位元組攤開，才能看清 gemini 等模型實際回了什麼。
+    let rawStreamPreview = "";
     // 兩段式超時：
     // - 首個 chunk 到達前允許較長等待。大型「小劇場」提示詞的首字延遲可能很長，
     //   行動網路上傳大提示詞 + 上游模型推理時間容易超過 30s；若沿用 30s 會在
@@ -1566,7 +1570,9 @@ export class OpenAICompatibleClient {
         chunkCount++;
         if (chunkCount === 1) firstChunkTime = Date.now() - streamStartTime;
         totalBytes += value?.byteLength ?? 0;
-        buffer += decoder.decode(value, { stream: true });
+        const decodedChunk = decoder.decode(value, { stream: true });
+        buffer += decodedChunk;
+        if (rawStreamPreview.length < 800) rawStreamPreview += decodedChunk;
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
 
@@ -1666,9 +1672,17 @@ export class OpenAICompatibleClient {
           `耗時: ${totalTime}ms`,
           `首chunk: ${firstChunkTime}ms`,
         ];
+        if (finishReason || rawFinishReason) {
+          diagParts.push(`finishReason: ${finishReason ?? "?"}${rawFinishReason ? ` (${rawFinishReason})` : ""}`);
+        }
         if (buffer.trim()) diagParts.push(`buffer殘留: "${buffer.slice(0, 200)}"`);
         if (nonSSELines.length > 0) diagParts.push(`非SSE內容: ${JSON.stringify(nonSSELines)}`);
         if (emptyDataSamples.length > 0) diagParts.push(`空內容樣本: ${JSON.stringify(emptyDataSamples)}`);
+        // 原始串流預覽永遠附上：當上述結構化擷取全部落空時，這是唯一能看清
+        // 上游實際回傳內容（例如 gemini 的 finishReason=STOP 空 parts）的依據。
+        if (rawStreamPreview.trim()) {
+          diagParts.push(`原始串流: ${JSON.stringify(rawStreamPreview.slice(0, 600))}`);
+        }
         const diagMsg = diagParts.join(' | ');
         console.warn(diagMsg);
 
@@ -1713,6 +1727,16 @@ export class OpenAICompatibleClient {
           };
           return;
         }
+        // 收到 chunk、是合法 SSE、且帶有 finishReason，但內容為空（例如 gemini
+        // 回 finishReason=STOP 卻沒有任何 parts）。這正是「手機端空回、電腦端正常」
+        // 的核心情況：上游模型回報生成結束卻未輸出任何文字，最常見於內容被
+        // 靜默安全過濾或提示詞觸發模型拒答。絕不能靜默回空，必須把 finishReason
+        // 與原始串流位元組一併報錯，用戶才知道發生了什麼。
+        yield {
+          type: "error",
+          error: `收到串流回應但內容為空（finishReason: ${finishReason ?? "未知"}${rawFinishReason ? ` / ${rawFinishReason}` : ""}）。\n上游模型回報生成結束卻未輸出任何文字，常見於內容被靜默過濾或提示詞觸發模型拒答。\n可嘗試更換模型／API 或調整提示內容。\n${diagMsg}`,
+        };
+        return;
       }
 
       const diagnostics = buildDoneDiagnostics();
