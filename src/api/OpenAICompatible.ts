@@ -1368,8 +1368,12 @@ export class OpenAICompatibleClient {
     // 用於診斷上游把內容放在我們沒覆蓋到的欄位（例如 reasoning_content、
     // text、output_text 等）導致空回應的情況。
     const emptyDataSamples: string[] = [];
-    // 閒置超時：超過此毫秒沒有收到任何新 chunk → 視為上游已截斷／卡住，
-    // 主動結束 reader 並把已累積的內容當作正常 done 拋出。
+    // 兩段式超時：
+    // - 首個 chunk 到達前允許較長等待。大型「小劇場」提示詞的首字延遲可能很長，
+    //   行動網路上傳大提示詞 + 上游模型推理時間容易超過 30s；若沿用 30s 會在
+    //   首字到達前就誤判為截斷並「靜默回空」，這正是手機端空回、電腦端正常的主因。
+    // - 開始串流之後，chunk 之間的閒置才用較短的 30s 判定截斷。
+    const FIRST_CHUNK_TIMEOUT_MS = 90000;
     const IDLE_TIMEOUT_MS = 30000;
     let idleTimedOut = false;
     // 是否曾收到真正的串流增量（delta.content）。用來避免在「先串流 delta、
@@ -1496,7 +1500,10 @@ export class OpenAICompatibleClient {
 
     try {
       while (true) {
-        // 每一輪 read 都競速一個 30s idle 計時器；收到 chunk 就 reset（進入下一輪重建）
+        // 兩段式超時：首個 chunk 到達前用較長的 FIRST_CHUNK_TIMEOUT_MS，
+        // 之後 chunk 之間的閒置才用較短的 IDLE_TIMEOUT_MS。
+        const currentTimeout =
+          chunkCount === 0 ? FIRST_CHUNK_TIMEOUT_MS : IDLE_TIMEOUT_MS;
         let timeoutId: ReturnType<typeof setTimeout> | null = null;
         const readResult = await Promise.race<{ done: boolean; value?: Uint8Array }>([
           reader.read() as Promise<{ done: boolean; value?: Uint8Array }>,
@@ -1504,7 +1511,7 @@ export class OpenAICompatibleClient {
             timeoutId = setTimeout(() => {
               idleTimedOut = true;
               resolve({ done: true, value: undefined });
-            }, IDLE_TIMEOUT_MS);
+            }, currentTimeout);
           }),
         ]);
         if (timeoutId !== null) clearTimeout(timeoutId);
@@ -1568,11 +1575,15 @@ export class OpenAICompatibleClient {
         rawResponseMeta,
       });
 
-      // 閒置超時：把目前累積的內容當作正常 done 拋出（即使 fullContent 為空，
-      // 也不要走「空回應」的 error 路徑，因為這是上游卡死/截斷而非真正空回應）
+      // 超時處理：
+      // - 已收到部分內容 → 當作正常 done 拋出（截斷的部分輸出仍勝於丟棄）。
+      // - 完全沒有內容 → 必須報錯，不能靜默回空。否則用戶（尤其手機端大提示詞
+      //   首字超時）只會看到「空回」卻毫無線索。錯誤訊息要區分是「首字超時」
+      //   還是「串流中途閒置超時」。
       if (idleTimedOut) {
+        const waited = chunkCount === 0 ? FIRST_CHUNK_TIMEOUT_MS : IDLE_TIMEOUT_MS;
         console.warn(
-          `[API Stream] ${IDLE_TIMEOUT_MS}ms 內無新 chunk，視為串流截斷`,
+          `[API Stream] ${waited}ms 內無新 chunk，視為串流截斷`,
           {
             chunkCount,
             totalBytes,
@@ -1580,14 +1591,34 @@ export class OpenAICompatibleClient {
             totalTime,
           },
         );
-        const diagnostics = buildDoneDiagnostics();
+        if (fullContent) {
+          const diagnostics = buildDoneDiagnostics();
+          yield {
+            type: "done",
+            content: fullContent,
+            usage: streamUsage ?? undefined,
+            finishReason: diagnostics.finishReason,
+            rawFinishReason: diagnostics.rawFinishReason,
+            diagnostics,
+          };
+          return;
+        }
+        if (chunkCount === 0) {
+          yield {
+            type: "error",
+            error:
+              `等待首個回應超過 ${Math.round(FIRST_CHUNK_TIMEOUT_MS / 1000)} 秒仍無任何數據。\n` +
+              `大型「小劇場」提示詞在行動網路上常見此情況：上傳大提示詞 + 上游推理時間過長，連線在首字到達前就被判定超時。\n` +
+              `可嘗試：改用較快的網路、縮短聊天記錄上下文、或更換回應更快的模型／API。\n` +
+              `[診斷] chunks: ${chunkCount} | bytes: ${totalBytes} | 耗時: ${totalTime}ms`,
+          };
+          return;
+        }
         yield {
-          type: "done",
-          content: fullContent,
-          usage: streamUsage ?? undefined,
-          finishReason: diagnostics.finishReason,
-          rawFinishReason: diagnostics.rawFinishReason,
-          diagnostics,
+          type: "error",
+          error:
+            `串流中途閒置超過 ${Math.round(IDLE_TIMEOUT_MS / 1000)} 秒且未累積任何內容，連線可能已中斷。\n` +
+            `[診斷] chunks: ${chunkCount} | bytes: ${totalBytes} | 耗時: ${totalTime}ms`,
         };
         return;
       }
