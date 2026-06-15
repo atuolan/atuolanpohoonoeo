@@ -1368,6 +1368,9 @@ export class OpenAICompatibleClient {
     // 主動結束 reader 並把已累積的內容當作正常 done 拋出。
     const IDLE_TIMEOUT_MS = 30000;
     let idleTimedOut = false;
+    // 是否曾收到真正的串流增量（delta.content）。用來避免在「先串流 delta、
+    // 最後一個 chunk 又夾帶完整 message.content」的上游行為下重複累加內容。
+    let sawStreamingDelta = false;
 
     const processLine = (line: string): StreamLineResult => {
       const trimmed = line.trim();
@@ -1394,8 +1397,37 @@ export class OpenAICompatibleClient {
           json?.candidates?.[0]?.safetyRatings ??
           json?.safetyRatings;
         const lineMeta = this.summarizeResponseMeta(json, choice, lineRawFinishReason);
+        // 內容擷取：優先取串流 delta.content；若上游把「完整回應」包成單一 SSE chunk
+        // （此時 delta 缺失、內容落在 message.content），或回傳 Gemini 風格的
+        // candidates[].content.parts[].text，則退而求其次，避免出現「空回應」。
+        const extractLineContent = (): string | null => {
+          const deltaContent = choice?.delta?.content;
+          if (typeof deltaContent === "string" && deltaContent.length > 0) {
+            sawStreamingDelta = true;
+            return deltaContent;
+          }
+          // 已經在串流增量模式下，最後一個 chunk 常會夾帶完整 message.content，
+          // 此時不可再退回 message.content / parts，否則會重複累加整段內容。
+          if (sawStreamingDelta) {
+            return deltaContent ?? null;
+          }
+          const messageContent = choice?.message?.content;
+          if (typeof messageContent === "string" && messageContent.length > 0) {
+            return messageContent;
+          }
+          const geminiParts =
+            json?.candidates?.[0]?.content?.parts ??
+            choice?.content?.parts;
+          if (Array.isArray(geminiParts)) {
+            const text = geminiParts
+              .map((p: { text?: string }) => (typeof p?.text === "string" ? p.text : ""))
+              .join("");
+            if (text.length > 0) return text;
+          }
+          return deltaContent ?? null;
+        };
         const baseResult: StreamLineResult = {
-          delta: choice?.delta?.content ?? null,
+          delta: extractLineContent(),
           rawFinishReason:
             lineRawFinishReason !== undefined ? String(lineRawFinishReason) : undefined,
           finishReason:
