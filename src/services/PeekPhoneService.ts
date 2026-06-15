@@ -23,6 +23,7 @@ import type {
 } from "@/types/peekPhone";
 import {
   buildCombinedPrompt,
+  buildContactReplyPrompt,
   buildGroupAPrompt,
   buildGroupBCPrompt,
   buildGroupBPrompt,
@@ -721,4 +722,92 @@ export async function generateSinglePhase(
       return { gallery, browserHistory, hiddenPhotos };
     }
   }
+}
+
+/**
+ * 將某個聊天串的歷史對話序列化為純文字，供聯絡人回覆 prompt 使用
+ * isSelf=true 視為手機主人（角色本人），其餘視為聯絡人
+ */
+function serializeThreadHistory(
+  thread: PeekChatThread,
+  ownerName: string,
+): string {
+  if (!thread.messages || thread.messages.length === 0) return "";
+  return thread.messages
+    .map((msg) => {
+      const speaker = msg.isSelf
+        ? ownerName
+        : msg.senderName || thread.contactName;
+      return `${speaker}: ${msg.content}`;
+    })
+    .join("\n");
+}
+
+/**
+ * 清理 AI 回覆：去除前後空白、可能多出的「聯絡人名稱:」前綴與包裹引號
+ */
+function cleanContactReply(raw: string, contactName: string): string {
+  let text = (raw || "").trim();
+  // 去除可能的 "聯絡人名稱:" / "聯絡人名稱：" 前綴
+  const prefixPattern = new RegExp(
+    `^${contactName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*[:：]\\s*`,
+  );
+  text = text.replace(prefixPattern, "").trim();
+  // 去除整段包裹的引號
+  if (
+    (text.startsWith("\"") && text.endsWith("\"")) ||
+    (text.startsWith("「") && text.endsWith("」")) ||
+    (text.startsWith("'") && text.endsWith("'"))
+  ) {
+    text = text.slice(1, -1).trim();
+  }
+  return text;
+}
+
+/** 聯絡人回覆參數 */
+export interface ContactReplyParams {
+  /** 手機主人（角色本人）名稱 */
+  ownerName: string;
+  /** 手機主人描述 */
+  ownerDesc: string;
+  /** 手機主人性格 */
+  ownerPersona: string;
+  /** 故事場景 */
+  scenario: string;
+  /** 世界觀設定 */
+  worldInfo: string;
+  /** 正在回覆的聯絡人名稱 */
+  contactName: string;
+  /** 該聯絡人的完整對話串 */
+  thread: PeekChatThread;
+  /** 手機主人剛剛送出的新訊息 */
+  newMessage: string;
+}
+
+/**
+ * 生成單一聯絡人的回覆（純文字，不走 YAML parser）
+ * 與批量重新生成完全分開，使用獨立的 buildContactReplyPrompt 預設
+ */
+export async function generateContactReply(
+  params: ContactReplyParams,
+  signal?: AbortSignal,
+  onToken?: (token: string) => void,
+): Promise<string> {
+  const history = serializeThreadHistory(params.thread, params.ownerName);
+  const prompt = buildContactReplyPrompt(
+    params.ownerName,
+    params.ownerDesc,
+    params.ownerPersona,
+    params.scenario,
+    params.worldInfo,
+    params.contactName,
+    history,
+    params.newMessage,
+  );
+  const raw = await callAPIForPhase(prompt, 1500, signal, onToken);
+  const reply = cleanContactReply(raw, params.contactName);
+  if (!reply) {
+    throw new Error("聯絡人沒有回覆任何內容");
+  }
+  return reply;
 }

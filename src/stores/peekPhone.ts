@@ -8,6 +8,7 @@ import { db, DB_STORES } from "@/db/database";
 import {
   extractChatContext,
   extractSummariesAndEvents,
+  generateContactReply,
   generateSequential,
   generateSinglePhase,
 } from "@/services/PeekPhoneService";
@@ -18,7 +19,11 @@ import { useSettingsStore } from "@/stores/settings";
 import { useUserStore } from "@/stores/user";
 import type { StoredCharacter } from "@/types/character";
 import type { Chat } from "@/types/chat";
-import type { PeekPhoneData } from "@/types/peekPhone";
+import type {
+  PeekChatMessage,
+  PeekChatThread,
+  PeekPhoneData,
+} from "@/types/peekPhone";
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
@@ -57,6 +62,11 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
 
   /** AbortController for the current combined in-flight request */
   const abortController = ref<AbortController | null>(null);
+
+  /** 正在等待聯絡人回覆的聊天串 id（用於顯示「對方輸入中」與避免重複發送） */
+  const replyingThreadId = ref<string | null>(null);
+  /** 聯絡人回覆專用的 AbortController（與批量生成分開） */
+  const replyAbortController = ref<AbortController | null>(null);
 
   // ===== Cache Actions =====
 
@@ -244,6 +254,133 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
   function abortAll(): void {
     abortController.value?.abort();
     abortController.value = null;
+  }
+
+  /** 取消正在進行的聯絡人回覆 */
+  function cancelContactReply(): void {
+    replyAbortController.value?.abort();
+    replyAbortController.value = null;
+    replyingThreadId.value = null;
+  }
+
+  /**
+   * 以手機主人（角色本人）的身份向某個聯絡人發送訊息，並取得該聯絡人的 AI 回覆。
+   * 與批量重新生成完全分開，使用獨立的 generateContactReply。
+   * 流程：追加 isSelf=true 的主人訊息 → 呼叫 generateContactReply → 追加聯絡人回覆
+   *       → 更新 thread.updatedAt → 更新 data 與快取 → 持久化到 IDB。
+   */
+  async function sendMessageToContact(
+    threadId: string,
+    text: string,
+    character: StoredCharacter,
+  ): Promise<void> {
+    const content = text.trim();
+    if (!content) return;
+    if (!characterId.value || !chatId.value || !data.value) return;
+    // 避免在等待回覆時重複發送
+    if (replyingThreadId.value) return;
+
+    const charId = characterId.value;
+    const cId = chatId.value;
+
+    const thread = data.value.chats.find((t) => t.id === threadId);
+    if (!thread) return;
+
+    const ownerName = character.data.name || character.nickname || "我";
+
+    // 1. 追加手機主人送出的訊息（isSelf=true）
+    const ownerMessage: PeekChatMessage = {
+      id: `peek-msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      senderName: ownerName,
+      content,
+      isSelf: true,
+      timestamp: Date.now(),
+    };
+    appendMessageToThread(threadId, ownerMessage);
+
+    // 2. 呼叫 AI 取得聯絡人回覆
+    const controller = new AbortController();
+    replyAbortController.value = controller;
+    replyingThreadId.value = threadId;
+
+    try {
+      const worldInfo = extractWorldInfo(character);
+      const reply = await generateContactReply(
+        {
+          ownerName,
+          ownerDesc: character.data.description || "",
+          ownerPersona: character.data.personality || "",
+          scenario: character.data.scenario || "",
+          worldInfo,
+          contactName: thread.contactName,
+          thread,
+          newMessage: content,
+        },
+        controller.signal,
+      );
+
+      // 3. 追加聯絡人回覆（isSelf=false）
+      const contactMessage: PeekChatMessage = {
+        id: `peek-msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        senderName: thread.contactName,
+        senderAvatar: thread.contactAvatar,
+        content: reply,
+        isSelf: false,
+        timestamp: Date.now(),
+      };
+      appendMessageToThread(threadId, contactMessage);
+
+      // 4. 持久化
+      storeCache(charId, cId, data.value);
+      await saveToIDB(charId, cId, data.value);
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        return;
+      }
+      const msg = err?.message ?? "聯絡人回覆失敗";
+      const notificationStore = useNotificationStore();
+      notificationStore.addNotification({
+        type: "system",
+        title: "📱 聯絡人回覆失敗",
+        message: `${thread.contactName} 沒有回覆：${msg}`,
+        characterId: charId,
+        characterName: character.data.name || character.nickname || "角色",
+        characterAvatar: character.avatar,
+        priority: "normal",
+      });
+      throw err;
+    } finally {
+      if (replyAbortController.value === controller) {
+        replyAbortController.value = null;
+      }
+      if (replyingThreadId.value === threadId) {
+        replyingThreadId.value = null;
+      }
+    }
+  }
+
+  /**
+   * 將一則訊息追加到指定聊天串，並把該串移到列表最前面、更新 updatedAt。
+   * 以不可變方式更新 data.value，確保 Vue 響應式正確觸發。
+   */
+  function appendMessageToThread(
+    threadId: string,
+    message: PeekChatMessage,
+  ): void {
+    if (!data.value) return;
+    const now = Date.now();
+    let updatedThread: PeekChatThread | null = null;
+    const chats = data.value.chats.map((t) => {
+      if (t.id !== threadId) return t;
+      updatedThread = {
+        ...t,
+        messages: [...t.messages, message],
+        updatedAt: now,
+      };
+      return updatedThread;
+    });
+    if (!updatedThread) return;
+    data.value = { ...data.value, chats };
   }
 
   /**
@@ -554,6 +691,11 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     regeneratePhase,
     retryGroup,
     abortAll,
+    // Contact reply (interactive chat)
+    replyingThreadId,
+    replyAbortController,
+    sendMessageToContact,
+    cancelContactReply,
     // Exposed for testing
     cache,
     abortController,

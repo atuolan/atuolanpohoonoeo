@@ -566,3 +566,71 @@ hidden_photos:
       為什麼藏起來的原因（內心獨白）
     date: "2026-02-19"`;
 }
+
+/**
+ * 建構「聯絡人即時回覆」的 prompt（與批量生成完全獨立的預設）
+ *
+ * 場景：使用者冒充手機主人（角色本人），用 TA 的手機回覆 TA 的某個聯絡人。
+ * 本 prompt 指示 AI 扮演「該聯絡人」，針對手機主人剛發出的新訊息，
+ * 用該聯絡人自己的性格、語氣回覆一句自然對話（純文字，非 YAML）。
+ *
+ * @param ownerName     手機主人（角色本人）名稱
+ * @param ownerDesc     手機主人描述
+ * @param ownerPersona  手機主人性格
+ * @param scenario      故事場景
+ * @param worldInfo     世界觀設定（可空）
+ * @param contactName   聯絡人名稱（AI 要扮演的對象）
+ * @param history       該對話串的完整歷史，格式：每行「發送者: 內容」
+ * @param newMessage    手機主人剛發出的新訊息
+ */
+export function buildContactReplyPrompt(
+  ownerName: string,
+  ownerDesc: string,
+  ownerPersona: string,
+  scenario: string,
+  worldInfo: string,
+  contactName: string,
+  history: string,
+  newMessage: string,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    `你正在一個角色扮演聊天模擬中扮演「${contactName}」這個聯絡人。`,
+  );
+  lines.push(
+    `你的聊天對象是「${ownerName}」，你正在用手機與對方傳訊息聊天。`,
+  );
+  lines.push("");
+  lines.push("【你正在跟誰聊天 —— 對方的資料】");
+  lines.push(`對方名稱: ${ownerName}`);
+  if (ownerDesc) lines.push(`對方描述: ${ownerDesc}`);
+  if (ownerPersona) lines.push(`對方性格: ${ownerPersona}`);
+  if (scenario) lines.push(`故事場景: ${scenario}`);
+  if (worldInfo) {
+    lines.push("");
+    lines.push(`世界觀設定:\n${worldInfo}`);
+  }
+  lines.push("");
+  lines.push("【你（聯絡人）與對方的歷史對話紀錄】");
+  lines.push(history || "（這是你們的第一次對話）");
+  lines.push("");
+  lines.push(`【${ownerName} 剛剛傳給你的新訊息】`);
+  lines.push(newMessage);
+  lines.push("");
+  lines.push("【回覆要求】");
+  lines.push(
+    `1. 你只能以「${contactName}」的身份回覆，絕對不要替「${ownerName}」說話，也不要旁白或描述動作。`,
+  );
+  lines.push(
+    "2. 根據你與對方的關係、歷史對話和你自己的性格，給出一句自然、口語化的訊息回覆。",
+  );
+  lines.push(
+    "3. 回覆要符合手機傳訊息的真實語氣，可以短、可以隨意，不需要長篇大論。",
+  );
+  lines.push(
+    `4. 直接輸出回覆內容本身，不要加上「${contactName}:」之類的前綴，不要加引號，不要輸出 YAML 或任何格式標記。`,
+  );
+  lines.push("");
+  lines.push(buildTranslationRule());
+  return lines.join("\n");
+}

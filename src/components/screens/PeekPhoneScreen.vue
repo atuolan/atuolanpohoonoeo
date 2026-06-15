@@ -26,12 +26,13 @@ import {
     MessageCircle,
     RefreshCw,
     Search,
+    Send,
     Signal,
     Smile,
     UtensilsCrossed,
     Wifi,
 } from "lucide-vue-next";
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 const emit = defineEmits<{ back: [] }>();
 const props = defineProps<{ characterId: string; chatId: string }>();
@@ -169,6 +170,56 @@ const selectedChatId = ref<string | null>(null);
 const selectedChat = computed(() =>
   chats.value.find((c) => c.id === selectedChatId.value),
 );
+
+// ===== 互動聊天：以手機主人身份回覆聯絡人 =====
+const replyInput = ref("");
+const chatMessagesEl = ref<HTMLElement | null>(null);
+// 正在等待回覆的聊天串（來自 store，與批量生成分開）
+const replyingThreadId = computed(() => peekPhoneStore.replyingThreadId);
+// 當前開啟的聊天串是否正在等待聯絡人回覆
+const isReplyingCurrent = computed(
+  () => !!selectedChatId.value && replyingThreadId.value === selectedChatId.value,
+);
+
+function scrollMessagesToBottom(): void {
+  nextTick(() => {
+    const el = chatMessagesEl.value;
+    if (el) el.scrollTop = el.scrollHeight;
+  });
+}
+
+async function sendReply(): Promise<void> {
+  const text = replyInput.value.trim();
+  if (!text) return; // 空輸入忽略
+  if (!selectedChatId.value) return;
+  if (!character.value || !chatRecord.value) return;
+  if (replyingThreadId.value) return; // 生成中，避免重複發送
+  const threadId = selectedChatId.value;
+  replyInput.value = "";
+  scrollMessagesToBottom();
+  try {
+    await peekPhoneStore.sendMessageToContact(
+      threadId,
+      text,
+      character.value,
+    );
+  } catch {
+    // 錯誤已在 store 內以系統通知呈現，這裡不重複處理
+  } finally {
+    scrollMessagesToBottom();
+  }
+}
+
+function cancelReply(): void {
+  peekPhoneStore.cancelContactReply();
+}
+
+// 切換聊天串或訊息數量變化時，自動捲動到底部
+watch(
+  () => selectedChat.value?.messages.length,
+  () => scrollMessagesToBottom(),
+);
+watch(selectedChatId, () => scrollMessagesToBottom());
 
 // 記事本詳情
 const selectedNoteId = ref<string | null>(null);
@@ -573,7 +624,7 @@ function getAppTitle(key: PeekPhoneTab) {
                     selectedChat.contactName
                   }}</span>
                 </div>
-                <div class="chat-messages">
+                <div ref="chatMessagesEl" class="chat-messages">
                   <div
                     v-for="msg in selectedChat.messages"
                     :key="msg.id"
@@ -585,6 +636,42 @@ function getAppTitle(key: PeekPhoneTab) {
                       {{ formatTime(msg.timestamp) }}
                     </div>
                   </div>
+                  <!-- 對方輸入中提示 -->
+                  <div v-if="isReplyingCurrent" class="chat-msg">
+                    <div class="chat-bubble typing">
+                      <span class="typing-dot" />
+                      <span class="typing-dot" />
+                      <span class="typing-dot" />
+                    </div>
+                  </div>
+                </div>
+                <!-- 以手機主人身份回覆聯絡人的輸入列 -->
+                <div class="chat-input-bar">
+                  <input
+                    v-model="replyInput"
+                    class="chat-input"
+                    type="text"
+                    :placeholder="`以 ${charName} 的身份回覆…`"
+                    :disabled="isReplyingCurrent"
+                    @keydown.enter.prevent="sendReply"
+                  />
+                  <button
+                    v-if="isReplyingCurrent"
+                    class="chat-send-btn cancel"
+                    title="取消"
+                    @click="cancelReply"
+                  >
+                    <Loader2 :size="18" class="spin" />
+                  </button>
+                  <button
+                    v-else
+                    class="chat-send-btn"
+                    :disabled="!replyInput.trim()"
+                    title="發送"
+                    @click="sendReply"
+                  >
+                    <Send :size="18" />
+                  </button>
                 </div>
               </div>
             </template>
@@ -1628,6 +1715,9 @@ $blob-bg: #d4f2cc;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 8px;
 }
 .chat-msg {
   display: flex;
@@ -1665,6 +1755,112 @@ $blob-bg: #d4f2cc;
   color: $text-sec;
   margin-top: 6px;
   padding: 0 4px;
+}
+
+// ===== 對方輸入中提示 =====
+.chat-bubble.typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 14px 16px;
+}
+.typing-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: $text-sec;
+  display: inline-block;
+  animation: peek-typing 1.2s infinite ease-in-out;
+  &:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+  &:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+}
+@keyframes peek-typing {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+// ===== 回覆輸入列 =====
+.chat-input-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 2px dashed $frame-border;
+  flex-shrink: 0;
+}
+.chat-input {
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+  padding: 0 16px;
+  border: 2px solid $frame-border;
+  border-radius: 21px;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  color: $text-main;
+  box-shadow: 2px 2px 0 $frame-border;
+  &::placeholder {
+    color: $text-sec;
+    font-weight: 700;
+  }
+  &:focus {
+    outline: none;
+  }
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+.chat-send-btn {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid $frame-border;
+  background: $text-main;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 $frame-border;
+  &:active {
+    transform: translate(2px, 2px);
+    box-shadow: 0 0 0 $frame-border;
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  &.cancel {
+    background: #fff;
+    color: $text-main;
+  }
+  .spin {
+    animation: spin 1s linear infinite;
+  }
+}
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 // ===== Schedule =====
