@@ -1607,6 +1607,25 @@ export class OpenAICompatibleClient {
         const diagMsg = diagParts.join(' | ');
         console.warn(diagMsg);
 
+        // 內容被上游安全過濾擋下：finishReason 會是 content_filter / safety /
+        // recitation / prohibited_content / blocklist，但沒有任何文字內容。
+        // 這是「小劇場」這類同人/敏感題材最常見的空回原因——必須報錯，
+        // 不能靜默回空，否則用戶只會看到「空回」而不知道是被擋了。
+        const blockedReasons = [
+          "content_filter",
+          "safety",
+          "recitation",
+          "prohibited_content",
+          "blocklist",
+        ];
+        if (finishReason && blockedReasons.includes(finishReason)) {
+          yield {
+            type: "error",
+            error: `內容被上游模型的安全審查擋下（finishReason: ${finishReason}${rawFinishReason ? ` / ${rawFinishReason}` : ""}），未生成任何文字。\n小劇場等較敏感的題材容易觸發此類過濾，可嘗試更換模型／API 或調整提示內容。\n${diagMsg}`,
+          };
+          return;
+        }
+
         // 根據情況給用戶更有用的錯誤提示
         if (chunkCount === 0) {
           yield {

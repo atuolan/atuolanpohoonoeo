@@ -963,7 +963,7 @@ const {
   showChatFilesPanel,
   chatFilesList,
   normalChats,
-  branchChats,
+  theaterChats,
   renamingChatId,
   renamingChatName,
   showNewChatConfirm,
@@ -973,7 +973,7 @@ const {
   isSelectingChats,
   selectedChatIds,
   normalCategoryExpanded,
-  branchCategoryExpanded,
+  theaterCategoryExpanded,
   openChatFilesPanel,
   refreshChatFilesList,
   switchChatFile,
@@ -10722,30 +10722,30 @@ useChatCleanup({
               </div>
             </template>
 
-            <!-- ── 分支 / 小劇場分類（有才顯示） ── -->
-            <template v-if="branchChats.length > 0">
-              <div class="chat-category-header" @click.stop="branchCategoryExpanded = !branchCategoryExpanded">
+            <!-- ── 小劇場分類（有才顯示） ── -->
+            <template v-if="theaterChats.length > 0">
+              <div class="chat-category-header" @click.stop="theaterCategoryExpanded = !theaterCategoryExpanded">
                 <svg
                   class="chat-category-arrow"
-                  :class="{ collapsed: !branchCategoryExpanded }"
+                  :class="{ collapsed: !theaterCategoryExpanded }"
                   viewBox="0 0 24 24" fill="currentColor" width="14" height="14"
                 >
                   <path d="M7 10l5 5 5-5z"/>
                 </svg>
-                <span class="chat-category-label">小劇場 / 分支</span>
-                <span class="chat-category-count">{{ branchChats.length }}</span>
+                <span class="chat-category-label">小劇場</span>
+                <span class="chat-category-count">{{ theaterChats.length }}</span>
                 <label v-if="isSelectingChats" class="chat-category-select-all" @click.stop>
                   <input
                     type="checkbox"
-                    :checked="isCategoryAllSelected('branch')"
-                    @change="selectAllInCategory('branch')"
+                    :checked="isCategoryAllSelected('theater')"
+                    @change="selectAllInCategory('theater')"
                   />
                   全選
                 </label>
               </div>
-              <template v-if="branchCategoryExpanded">
+              <template v-if="theaterCategoryExpanded">
                 <div
-                  v-for="chat in branchChats"
+                  v-for="chat in theaterChats"
                   :key="chat.id"
                   class="chat-file-item"
                   :class="{

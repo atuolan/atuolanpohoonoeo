@@ -887,6 +887,9 @@ export interface Chat {
   /** 是否為分支聊天（不顯示在主列表，只在角色卡聊天檔案中顯示） */
   isBranch?: boolean;
 
+  /** 是否為小劇場聊天（在聊天檔案中獨立分類，與普通／分支聊天區隔） */
+  isTheater?: boolean;
+
   /** 是否釘選到聊天列表（允許同一角色的多個聊天同時出現在列表中） */
   pinnedToList?: boolean;
 

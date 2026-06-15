@@ -12,7 +12,7 @@ import { useAffinityStore } from "@/stores/affinity";
 import { applyGreetingInitToAffinity } from "@/services/AffinityGreetingInit";
 
 /** 聊天分類 */
-export type ChatCategory = "normal" | "branch";
+export type ChatCategory = "normal" | "theater";
 
 /**
  * 聊天檔案管理功能
@@ -46,16 +46,16 @@ export function useChatFiles(deps: {
 
   // ── 分類收闔狀態 ──
   const normalCategoryExpanded = ref(true);
-  const branchCategoryExpanded = ref(true);
+  const theaterCategoryExpanded = ref(true);
 
-  /** 普通聊天（非分支） */
+  /** 普通聊天（含分支，分支不再獨立分類） */
   const normalChats = computed(() =>
-    chatFilesList.value.filter((c) => !c.isBranch),
+    chatFilesList.value.filter((c) => !c.isTheater),
   );
 
-  /** 分支 / 小劇場聊天 */
-  const branchChats = computed(() =>
-    chatFilesList.value.filter((c) => c.isBranch),
+  /** 小劇場聊天（獨立分類） */
+  const theaterChats = computed(() =>
+    chatFilesList.value.filter((c) => c.isTheater),
   );
 
   /** 取得當前角色所有開場白列表 */
@@ -291,7 +291,7 @@ export function useChatFiles(deps: {
   }
 
   function selectAllInCategory(category: ChatCategory) {
-    const list = category === "normal" ? normalChats.value : branchChats.value;
+    const list = category === "normal" ? normalChats.value : theaterChats.value;
     const next = new Set(selectedChatIds.value);
     const allSelected = list.every((c) => next.has(c.id));
     if (allSelected) {
@@ -305,7 +305,7 @@ export function useChatFiles(deps: {
   }
 
   function isCategoryAllSelected(category: ChatCategory): boolean {
-    const list = category === "normal" ? normalChats.value : branchChats.value;
+    const list = category === "normal" ? normalChats.value : theaterChats.value;
     return list.length > 0 && list.every((c) => selectedChatIds.value.has(c.id));
   }
 
@@ -345,7 +345,7 @@ export function useChatFiles(deps: {
     showChatFilesPanel,
     chatFilesList,
     normalChats,
-    branchChats,
+    theaterChats,
     renamingChatId,
     renamingChatName,
     showNewChatConfirm,
@@ -356,7 +356,7 @@ export function useChatFiles(deps: {
     isSelectingChats,
     selectedChatIds,
     normalCategoryExpanded,
-    branchCategoryExpanded,
+    theaterCategoryExpanded,
     // 函數
     openChatFilesPanel,
     refreshChatFilesList,

@@ -186,7 +186,9 @@ export function useChatTheater(deps: {
           faceToFaceMode: theaterFaceToFaceMode.value
             ? true
             : chatData.faceToFaceMode,
-          isBranch: true,
+          // 小劇場另開新檔在聊天檔案中獨立分類（與普通／分支聊天區隔）
+          isBranch: false,
+          isTheater: true,
         };
         await createChatRecord(newChat);
         await appendMessages(newChatId, branchMessages);
