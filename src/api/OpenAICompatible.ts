@@ -1364,6 +1364,10 @@ export class OpenAICompatibleClient {
     let rawResponseMeta: unknown;
     // 記錄非 SSE 格式的行（用於診斷上游回了非串流回應的情況）
     let nonSSELines: string[] = [];
+    // 記錄「成功解析成 JSON 的 data: 行，但擷取不到任何內容」的樣本。
+    // 用於診斷上游把內容放在我們沒覆蓋到的欄位（例如 reasoning_content、
+    // text、output_text 等）導致空回應的情況。
+    const emptyDataSamples: string[] = [];
     // 閒置超時：超過此毫秒沒有收到任何新 chunk → 視為上游已截斷／卡住，
     // 主動結束 reader 並把已累積的內容當作正常 done 拋出。
     const IDLE_TIMEOUT_MS = 30000;
@@ -1438,6 +1442,22 @@ export class OpenAICompatibleClient {
           safetyRatings: lineSafetyRatings,
           rawResponseMeta: lineMeta,
         };
+        // 診斷：成功解析成 JSON，但擷取不到任何文字內容時，記錄樣本結構。
+        // 這能揭露上游把內容放在我們沒覆蓋到的欄位（reasoning_content、
+        // text、output_text、content 為陣列等）導致空回應的真正原因。
+        if (
+          !baseResult.delta &&
+          !json.error &&
+          !json.usage &&
+          lineRawFinishReason === undefined &&
+          emptyDataSamples.length < 3
+        ) {
+          try {
+            emptyDataSamples.push(JSON.stringify(json).slice(0, 300));
+          } catch {
+            // ignore
+          }
+        }
         // 檢查上游是否回了錯誤物件（某些 API 在串流中回 error）
         if (json.error) {
           const errMsg = typeof json.error === 'string' ? json.error : (json.error.message || JSON.stringify(json.error));
@@ -1583,6 +1603,7 @@ export class OpenAICompatibleClient {
         ];
         if (buffer.trim()) diagParts.push(`buffer殘留: "${buffer.slice(0, 200)}"`);
         if (nonSSELines.length > 0) diagParts.push(`非SSE內容: ${JSON.stringify(nonSSELines)}`);
+        if (emptyDataSamples.length > 0) diagParts.push(`空內容樣本: ${JSON.stringify(emptyDataSamples)}`);
         const diagMsg = diagParts.join(' | ');
         console.warn(diagMsg);
 
@@ -1597,6 +1618,14 @@ export class OpenAICompatibleClient {
           yield {
             type: "error",
             error: `收到了數據但非串流格式，上游可能回傳了錯誤頁面: ${nonSSELines[0]}\n${diagMsg}`,
+          };
+          return;
+        } else if (emptyDataSamples.length > 0) {
+          // 收到了合法的 SSE JSON，但內容欄位是我們沒覆蓋到的格式。
+          // 直接報錯並附上樣本結構，而不是靜默回空，方便定位上游回應格式。
+          yield {
+            type: "error",
+            error: `收到了串流數據但無法擷取文字內容，上游回應格式可能不相容。\n${diagMsg}`,
           };
           return;
         }
