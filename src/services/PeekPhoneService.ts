@@ -4,7 +4,9 @@
  * 生成偷窺手機各模塊組的 AI 內容
  */
 import { getAPIClient, type APIMessage } from "@/api/OpenAICompatible";
+import { getMacroEngine } from "@/engine/macros/MacroEngine";
 import { loadMessages } from "@/storage/chatMessageStorage";
+import { usePromptManagerStore } from "@/stores/promptManager";
 import { useSettingsStore } from "@/stores/settings";
 import type { StoredCharacter } from "@/types/character";
 import type { Chat, ChatMessage } from "@/types/chat";
@@ -419,18 +421,83 @@ export function serializeForContext(partial: Partial<PeekPhoneData>): string {
 }
 
 /**
- * 內部共用：呈句呼叫 API，支持串流和非串流模式
+ * 偷窺手機越獄／預設提示詞白名單。
+ * 這些就是正常聊天經 PromptBuilder 注入的核心越獄鏈，沒有它們
+ * 敏感角色卡會被上游模型靜默拒絕（completion_tokens=0、回空內容）。
+ * 實際是否注入仍以使用者在 promptManager 的啟用設定為準。
+ */
+const PEEK_JAILBREAK_IDENTIFIERS = new Set<string>([
+  "protectionSequence",
+  "sovereigntyNegotiation",
+  "coreUnderstanding",
+  "narrativeMission",
+  "languageMode",
+  "coreRules",
+]);
+
+/** 偷窺手機 API 呼叫時用於宏替換的上下文 */
+export interface PeekMacroContext {
+  /** 角色（手機主人）名稱，用於 {{char}} */
+  charName?: string;
+  /** 使用者名稱，用於 {{user}} */
+  userName?: string;
+}
+
+/**
+ * 依照使用者在 promptManager 的啟用順序，組裝越獄／預設系統訊息。
+ * 與正常聊天共用同一份提示詞定義，並以 MacroEngine 解析 {{roll}}／{{user}}／{{char}} 等宏。
+ */
+async function buildJailbreakMessages(
+  macroContext?: PeekMacroContext,
+): Promise<APIMessage[]> {
+  try {
+    const promptStore = usePromptManagerStore();
+    const enabledOrder = promptStore.enabledPromptOrder.filter((entry) =>
+      PEEK_JAILBREAK_IDENTIFIERS.has(entry.identifier),
+    );
+    if (enabledOrder.length === 0) return [];
+
+    const macroEngine = getMacroEngine();
+    macroEngine.setContext({
+      charName: macroContext?.charName || "",
+      userName: macroContext?.userName || "User",
+    });
+
+    const messages: APIMessage[] = [];
+    for (const entry of enabledOrder) {
+      const def = promptStore.getPrompt(entry.identifier);
+      if (!def || !def.content) continue;
+      const content = await macroEngine.substitute(def.content);
+      if (!content.trim()) continue;
+      const role: APIMessage["role"] =
+        def.role === "user" || def.role === "assistant" ? def.role : "system";
+      messages.push({ role, content, identifier: def.identifier });
+    }
+    return messages;
+  } catch (e) {
+    console.warn("[PeekPhone] 注入越獄提示詞失敗，改用裸提示詞：", e);
+    return [];
+  }
+}
+
+/**
+ * 內部共用：組句呼叫 API，支持串流和非串流模式
  */
 async function callAPIForPhase(
   prompt: string,
   maxResponseLength: number,
   signal: AbortSignal | undefined,
   onToken?: (token: string) => void,
+  macroContext?: PeekMacroContext,
 ): Promise<string> {
   const settingsStore = useSettingsStore();
   const taskConfig = settingsStore.getAPIForTask("peekPhone");
   const client = getAPIClient(taskConfig.api);
-  const messages: APIMessage[] = [{ role: "user", content: prompt }];
+  const jailbreakMessages = await buildJailbreakMessages(macroContext);
+  const messages: APIMessage[] = [
+    ...jailbreakMessages,
+    { role: "user", content: prompt },
+  ];
   const isStreaming = taskConfig.generation.streamingEnabled;
 
   const baseSettings = {
@@ -603,7 +670,14 @@ export async function generateCombined(
 
   const taskConfig = settingsStore.getAPIForTask("peekPhone");
   const client = getAPIClient(taskConfig.api);
-  const messages: APIMessage[] = [{ role: "user", content: prompt }];
+  const jailbreakMessages = await buildJailbreakMessages({
+    charName,
+    userName,
+  });
+  const messages: APIMessage[] = [
+    ...jailbreakMessages,
+    { role: "user", content: prompt },
+  ];
   const isStreamingEnabled = taskConfig.generation.streamingEnabled;
 
   let yamlContent: string;
@@ -820,7 +894,10 @@ export async function generateContactReply(
     history,
     params.newMessage,
   );
-  const raw = await callAPIForPhase(prompt, 1500, signal, onToken);
+  const raw = await callAPIForPhase(prompt, 1500, signal, onToken, {
+    charName: params.ownerName,
+    userName: params.contactName,
+  });
   const reply = cleanContactReply(raw, params.contactName);
   if (!reply) {
     throw new Error("聯絡人沒有回覆任何內容");
