@@ -11,6 +11,7 @@ import { parseAffinityUpdateTags } from "@/services/ResponseParser";
 import { loadChatById, refreshChatDerivedMetadata } from "@/storage/chatStorage";
 import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
+import { computeChatNow } from "@/utils/fakeTime";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
@@ -748,12 +749,17 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
 
       await promptManagerStore.loadConfig();
 
-      const now = new Date();
       const lastChatTime = info.lastMessageTime ? formatTimeSince(info.lastMessageTime) : "未知";
 
       const chatRecord = info.chatId
         ? await db.get<any>(DB_STORES.CHATS, info.chatId).catch(() => undefined)
         : undefined;
+
+      // 感知現實時間設定（預設開啟）；關閉時電話不注入任何時間，純依劇情時間推進
+      const enableRealTimeAwareness = chatRecord?.enableRealTimeAwareness !== false;
+      // 依聊天的假時間設定計算有效時間（輪迴／偏移模式沿用聊天設定，real 模式即真實時間）
+      const now = computeChatNow(chatRecord);
+
       let chatPromptToggles: Record<string, boolean> | undefined;
       let chatLocalPrompts: import("@/types/chat").ChatLocalPrompt[] | undefined;
       if (chatRecord) {
@@ -819,6 +825,10 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
         summaries: summaries.value,
         vectorMemories,
         importantEvents: importantEvents.value,
+        // 感知現實時間：關閉時 PromptBuilder 會跳過電話模式的時間注入
+        enableRealTimeAwareness,
+        // 假時間覆蓋：讓訊息時間戳與時間提示沿用聊天的輪迴／偏移設定
+        fakeTimeOverride: now,
         phoneContext: {
           currentTime: now.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }),
           currentDate: now.toLocaleDateString("zh-TW"),

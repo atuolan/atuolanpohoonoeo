@@ -8208,6 +8208,8 @@ useChatCleanup({
             :group-chat-history-data="message.groupChatHistoryData"
             :is-group-call-history="message.isGroupCallHistory"
             :group-call-history-data="message.groupCallHistoryData"
+            :is-phone-call-history="message.isPhoneCallHistory"
+            :phone-call-history-data="message.phoneCallHistoryData"
             :is-call-notification="message.isCallNotification"
             :call-notification-type="message.callNotificationType"
             :call-reason="message.callReason"

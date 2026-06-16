@@ -11,26 +11,15 @@
  */
 
 import type { Chat } from "@/types/chat";
-import { ref, onUnmounted, watch } from "vue";
+import { ref } from "vue";
+import { computeLoopTime } from "@/utils/fakeTime";
+import type { FakeTimeMode } from "@/utils/fakeTime";
 
-export type FakeTimeMode = "real" | "loop" | "offset";
+export type { FakeTimeMode } from "@/utils/fakeTime";
 
 export interface FakeTimeLoopConfig {
   startDateTime: string; // ISO string
   endDateTime: string; // ISO string
-}
-
-/**
- * 計算輪迴時間
- * 將真實時間映射到 [start, end] 的循環區間內
- */
-function computeLoopTime(now: Date, start: Date, end: Date): Date {
-  const loopDuration = end.getTime() - start.getTime();
-  if (loopDuration <= 0) return start;
-
-  const elapsed = now.getTime() - start.getTime();
-  const offset = ((elapsed % loopDuration) + loopDuration) % loopDuration;
-  return new Date(start.getTime() + offset);
 }
 
 function formatDateTime(d: Date): string {

@@ -805,7 +805,14 @@ export class PromptBuilder {
   private getEffectivePromptOrder(): PromptOrderEntry[] {
     // 電話模式使用專屬提示詞順序
     if (this.options.phoneCallMode) {
-      const baseOrder = [...DEFAULT_PHONE_CALL_PROMPT_ORDER];
+      let baseOrder = [...DEFAULT_PHONE_CALL_PROMPT_ORDER];
+
+      // 關閉現實時間感知：移除以時間為主的電話上下文提示詞，純依劇情時間推進
+      if (this.options.enableRealTimeAwareness === false) {
+        baseOrder = baseOrder.filter(
+          (e) => e.identifier !== "phoneCallContext",
+        );
+      }
 
       // 來電模式：在 chatHistory 之前插入來電上下文
       if (this.options.incomingCallMode && this.options.callReason) {
@@ -1021,7 +1028,23 @@ export class PromptBuilder {
       const phonePrompt = PHONE_CALL_PROMPT_DEFINITIONS.find(
         (p) => p.identifier === identifier,
       );
-      if (phonePrompt) return phonePrompt;
+      if (phonePrompt) {
+        // 關閉現實時間感知：移除來電上下文中的「通話時間／上次聊天」時間行，純依劇情時間推進
+        if (
+          this.options.enableRealTimeAwareness === false &&
+          identifier === "incomingCallContext"
+        ) {
+          const strippedContent = phonePrompt.content
+            .split("\n")
+            .filter(
+              (line) =>
+                !line.includes("通話時間：") && !line.includes("上次聊天："),
+            )
+            .join("\n");
+          return { ...phonePrompt, content: strippedContent };
+        }
+        return phonePrompt;
+      }
     }
 
     // 群聊模式：優先使用用戶自定義配置，再回退到硬編碼默認值

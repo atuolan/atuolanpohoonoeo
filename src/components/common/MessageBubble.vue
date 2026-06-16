@@ -2089,15 +2089,18 @@ const isUser = computed(() => props.role === "user");
 const isSystem = computed(() => props.role === "system");
 
 // 是否是電話通話總結系統訊息
+// 兼容兩種格式：新版以 📞 通話結束 開頭，舊版以 <phone_call> 標籤包裹
 const isPhoneCallSummary = computed(
   () =>
     isSystem.value &&
     typeof props.content === "string" &&
-    props.content.startsWith("📞 通話結束"),
+    (props.content.startsWith("📞 通話結束") ||
+      /<phone_call>/i.test(props.content)),
 );
 
 const phoneCallSummaryMeta = computed(() => {
-  const text = props.content || "";
+  // 剝除 <phone_call> 標籤再解析，避免標籤干擾
+  const text = (props.content || "").replace(/<\/?phone_call>/gi, "").trim();
   const titleMatch = text.match(/^📞\s*([^\n]*)/m);
   const durationMatch = text.match(/時長：([^\n]+)/);
 
@@ -2108,12 +2111,16 @@ const phoneCallSummaryMeta = computed(() => {
 });
 
 const phoneCallSummaryTranscript = computed(() => {
-  const text = props.content || "";
-  const marker = "--- 通話內容 ---";
-  const markerIndex = text.indexOf(marker);
-
-  if (markerIndex === -1) return "";
-  return text.slice(markerIndex + marker.length).trim();
+  const text = (props.content || "").replace(/<\/?phone_call>/gi, "").trim();
+  // 兼容多種通話內容標記
+  const markers = ["--- 通話內容 ---", "電話內容："];
+  for (const marker of markers) {
+    const markerIndex = text.indexOf(marker);
+    if (markerIndex !== -1) {
+      return text.slice(markerIndex + marker.length).trim();
+    }
+  }
+  return "";
 });
 
 // 頭像框樣式
