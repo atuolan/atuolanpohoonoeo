@@ -65,6 +65,7 @@ const editingInjectionPosition = ref<0 | 1>(0); // 0=RELATIVE, 1=ABSOLUTE
 const editingInjectionDepth = ref(0);
 const editingInjectionOrder = ref(0);
 const editingAdminOnly = ref(false);
+const editingContentCharCount = computed(() => editingContent.value.length);
 
 // 新建提示詞
 const showNewPromptModal = ref(false);
@@ -3062,7 +3063,16 @@ watch(newPromptInsertMode, (mode) => {
               </div>
               <!-- 內容編輯 -->
               <div class="form-group">
-                <label class="form-label">內容</label>
+                <label class="form-label content-label">
+                  <span>內容</span>
+                  <span
+                    v-if="!editingPrompt.adminOnly || adminStore.isAdmin"
+                    class="char-count-badge"
+                    aria-live="polite"
+                  >
+                    字數 {{ editingContentCharCount }}
+                  </span>
+                </label>
                 <div
                   v-if="editingPrompt.adminOnly && !adminStore.isAdmin"
                   class="admin-locked-content"
@@ -5320,6 +5330,21 @@ watch(newPromptInsertMode, (mode) => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.content-label {
+  justify-content: space-between;
+}
+
+.char-count-badge {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .form-label-sm {
