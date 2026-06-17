@@ -466,6 +466,59 @@ export const PHONE_CALL_PROMPT_DEFINITIONS: PromptDefinition[] = [
     adminOnly: true,
   },
   {
+    identifier: "phoneCallMinimaxTTS",
+    name: "電話語音合成標記",
+    description: "電話通話 MiniMax TTS 語音標記規則（僅在該聊天開啟 MiniMax 時注入）",
+    category: "context",
+    role: "system",
+    content: `【電話語音合成標記規則】
+你輸出的每句 \`text\` 內容都會被語音合成引擎朗讀。請在 \`text\` 字串裡自然嵌入下列語音標記，讓合成語音更像真人說話。
+
+以「自然、克制、像真人講電話」為原則，不要為了表演而過度插入標記。
+
+1. 語氣標籤——直接寫在 \`text\` 內自然觸發的位置，只在確實需要時使用：
+(laughs)笑聲 (chuckle)輕笑 (coughs)咳嗽 (clear-throat)清嗓 (sighs)嘆氣 (gasps)倒吸氣 (breath)呼吸 (emm)猶豫嗯 (crying)哭泣 (sniffs)抽鼻 (pant)喘氣 (humming)哼唱 (groans)呻吟
+
+使用原則：
+- 一句話通常 0~1 個，最多 1~2 個
+- 只在笑、喘、停頓猶豫、情緒明顯波動時才加
+- 普通對話不要硬塞 (laughs) 或 (sighs)
+- 標籤要貼近觸發位置，不要全部堆在句首或句尾
+
+2. 停頓——\`<#秒數#>\`，範圍 0.01~99.99，寫在 \`text\` 內用於語句間自然停頓
+- 只在沉默、遲疑、轉折、哽住、刻意停一下時使用
+- 短停頓常用 0.2~0.6，明顯停頓常用 0.8~1.8
+- 不要每句都加停頓
+
+3. 情緒——透過每個項目的 \`tone\` 欄位描述（例如「笑」「嘆氣」「溫柔」「生氣」），不要把 [emotion=...] 寫進 \`text\` 裡。
+
+JSON 輸出範例（語音標記寫在 text 內、情緒走 tone）：
+\`\`\`json
+[
+  {"text": "真的嗎(laughs)？太好了！", "tone": "驚喜"},
+  {"text": "算了(sighs)……<#1.2#>有些事強求不來。", "tone": "嘆氣"},
+  {"text": "沒事的，慢慢來，我在聽。", "tone": "溫柔"}
+]
+\`\`\`
+
+硬性要求：
+- 語音標記（語氣標籤、停頓）只能出現在 \`text\` 內，且符合 JSON 字串格式
+- 不要在 \`text\` 裡寫 [emotion=...]
+- 沒有明顯情緒時，寧可少標，也不要亂標
+- 優先保證台詞自然，其次才是語音表演效果`,
+    system_prompt: true,
+    marker: false,
+    injection_position: INJECTION_RELATIVE,
+    injection_depth: 0,
+    injection_order: 10,
+    forbid_overrides: false,
+    extension: false,
+    injection_trigger: [],
+    isEditable: true,
+    isDeletable: true,
+    adminOnly: true,
+  },
+  {
     identifier: "incomingCallContext",
     name: "來電上下文",
     description: "角色主動來電時的上下文提示",
@@ -518,6 +571,7 @@ export const DEFAULT_PHONE_CALL_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "phoneCallWeatherInfo", enabled: true },
   { identifier: "phoneCallProgressionAndPlayful", enabled: true },
   { identifier: "phoneCallExample", enabled: true },
+  { identifier: "phoneCallMinimaxTTS", enabled: true },
   { identifier: "chatHistory", enabled: true },
   { identifier: "phoneCallConfirmLastOutput", enabled: true },
 ];

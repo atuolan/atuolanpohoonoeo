@@ -820,6 +820,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
         chatPromptToggles,
         chatLocalPrompts,
         phoneCallMode: true,
+        // 該聊天開啟 MiniMax 且有 apiKey 時，注入電話語音合成標記提示詞
+        minimaxTTSEnabled: ttsAvailable.value,
         incomingCallMode: info.isIncoming && isIncomingFirstMessage,
         callReason: info.callReason,
         summaries: summaries.value,

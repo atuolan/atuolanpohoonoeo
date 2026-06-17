@@ -814,6 +814,13 @@ export class PromptBuilder {
         );
       }
 
+      // 未啟用 MiniMax TTS：移除電話語音合成標記提示詞，避免污染輸出
+      if (!this.options.minimaxTTSEnabled) {
+        baseOrder = baseOrder.filter(
+          (e) => e.identifier !== "phoneCallMinimaxTTS",
+        );
+      }
+
       // 來電模式：在 chatHistory 之前插入來電上下文
       if (this.options.incomingCallMode && this.options.callReason) {
         const chatHistoryIndex = baseOrder.findIndex(
