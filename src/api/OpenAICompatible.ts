@@ -250,6 +250,12 @@ interface BuiltRequest {
 
 interface StreamLineResult {
   delta: string | null;
+  /**
+   * 推理內容增量（OpenAI 兼容的 reasoning_content / DeepSeek-R 系列思維鏈）。
+   * 與 delta（正文）分開累積：正常情況下忽略；僅當整段串流結束後正文完全為空、
+   * 卻有推理內容時，才把它當作正文回退返回，避免「明明收到內容卻報空回」。
+   */
+  reasoningDelta?: string | null;
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
   rawFinishReason?: string;
   finishReason?: GenerationStopReason;
@@ -1124,7 +1130,17 @@ export class OpenAICompatibleClient {
 
     // 解析回應
     const choice = data.choices?.[0];
-    const content = choice?.message?.content ?? "";
+    // 正文優先取 message.content；若正文為空但有推理內容（reasoning_content，
+    // DeepSeek-R 系列等思維鏈），回退使用推理內容，避免「明明有內容卻空回」。
+    const rawContent = choice?.message?.content;
+    const reasoningContent =
+      choice?.message?.reasoning_content ?? choice?.message?.reasoning;
+    const content =
+      typeof rawContent === "string" && rawContent.length > 0
+        ? rawContent
+        : typeof reasoningContent === "string" && reasoningContent.length > 0
+          ? reasoningContent
+          : (rawContent ?? "");
     const diagnostics = this.extractResponseDiagnostics(
       data,
       choice,
@@ -1390,6 +1406,10 @@ export class OpenAICompatibleClient {
     const decoder = new TextDecoder();
     let buffer = "";
     let fullContent = "";
+    // 推理內容（reasoning_content）獨立累積。正常情況下不使用；僅當整段串流
+    // 結束後正文 fullContent 完全為空、卻收到了推理內容時，才把它當作正文回退，
+    // 避免「只吐思維鏈、正文為 null」的模型（如某些 deepseek 推理模型）被誤報空回。
+    let fullReasoning = "";
     let chunkCount = 0;
     let totalBytes = 0;
     let firstChunkTime = 0;
@@ -1476,8 +1496,19 @@ export class OpenAICompatibleClient {
           }
           return deltaContent ?? null;
         };
+        // 推理內容擷取：OpenAI 兼容的 reasoning_content（DeepSeek-R 系列等思維鏈）。
+        // 與正文分開累積，避免污染正文；僅在正文最終為空時作為回退。
+        const extractLineReasoning = (): string | null => {
+          const r =
+            choice?.delta?.reasoning_content ??
+            choice?.delta?.reasoning ??
+            choice?.message?.reasoning_content;
+          return typeof r === "string" && r.length > 0 ? r : null;
+        };
+        const lineReasoning = extractLineReasoning();
         const baseResult: StreamLineResult = {
           delta: extractLineContent(),
+          reasoningDelta: lineReasoning,
           rawFinishReason:
             lineRawFinishReason !== undefined ? String(lineRawFinishReason) : undefined,
           finishReason:
@@ -1493,6 +1524,7 @@ export class OpenAICompatibleClient {
         // text、output_text、content 為陣列等）導致空回應的真正原因。
         if (
           !baseResult.delta &&
+          !baseResult.reasoningDelta &&
           !json.error &&
           !json.usage &&
           lineRawFinishReason === undefined &&
@@ -1584,6 +1616,7 @@ export class OpenAICompatibleClient {
           const result = processLine(line);
           captureLineDiagnostics(result);
           if (result.usage) streamUsage = result.usage;
+          if (result.reasoningDelta) fullReasoning += result.reasoningDelta;
           if (result.delta) {
             fullContent += result.delta;
             yield { type: "token", token: result.delta };
@@ -1596,10 +1629,23 @@ export class OpenAICompatibleClient {
         const result = processLine(buffer);
         captureLineDiagnostics(result);
         if (result.usage) streamUsage = result.usage;
+        if (result.reasoningDelta) fullReasoning += result.reasoningDelta;
         if (result.delta) {
           fullContent += result.delta;
           yield { type: "token", token: result.delta };
         }
+      }
+
+      // 正文為空但收到了推理內容（reasoning_content）的回退：
+      // 某些推理模型（如本次的 deepseek-v4-pro）會把全部內容輸出在 reasoning_content，
+      // 而正文 content 始終為 null。此時把推理內容當作正文，避免誤判為「空回應」。
+      // 必須在後續所有「空回應」診斷分支之前生效。
+      if (!fullContent && fullReasoning) {
+        console.warn(
+          `[API Stream] 正文為空但收到推理內容（reasoning_content），回退為正文。長度: ${fullReasoning.length}`,
+        );
+        fullContent = fullReasoning;
+        yield { type: "token", token: fullReasoning };
       }
 
       const totalTime = Date.now() - streamStartTime;
