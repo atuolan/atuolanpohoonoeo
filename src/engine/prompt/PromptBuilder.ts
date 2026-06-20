@@ -2194,6 +2194,11 @@ export class PromptBuilder {
       case "f2fCallDecision":
       case "gcCallDecision":
         // 來電決策提示詞
+        // 勿擾模式開啟時，完全不注入來電決策（避免與「禁止來電」的勿擾狀態互相矛盾，
+        // 進而讓 AI 自我合理化撥打電話）。勿擾狀態本身由 doNotDisturbStatus 提示詞負責告知。
+        if (this.options.doNotDisturb) {
+          return null;
+        }
         if (promptDef && promptDef.content) {
           const content = await this.macroEngine.substitute(promptDef.content);
           return content ? { role: getRole(), content, identifier } : null;

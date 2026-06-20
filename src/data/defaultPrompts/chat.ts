@@ -623,7 +623,7 @@ export const DEFAULT_PROMPT_DEFINITIONS: PromptDefinition[] = [
     description: "",
     category: "custom",
     role: "system",
-    content: "現在{{user}}很忙不能接電話",
+    content: "🚫 {{user}} 開了勿擾，現在打不通。別打電話、也別在話裡說要打給他，就算很急也先用訊息講，等他關掉勿擾再說。",
     system_prompt: true,
     marker: true,
     injection_position: INJECTION_RELATIVE,
