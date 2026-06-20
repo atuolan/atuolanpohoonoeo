@@ -893,6 +893,9 @@ export interface Chat {
   /** 是否釘選到聊天列表（允許同一角色的多個聊天同時出現在列表中） */
   pinnedToList?: boolean;
 
+  /** 是否鎖定（鎖定後無法刪除，需先解鎖；通常用於置頂的重要對話） */
+  lockedFromDelete?: boolean;
+
   // --- 外觀設定 ---
   /** 聊天專屬外觀設定 */
   appearance?: ChatAppearance;

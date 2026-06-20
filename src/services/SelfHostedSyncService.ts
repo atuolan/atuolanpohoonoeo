@@ -1079,6 +1079,7 @@ export class SelfHostedSyncService {
       minimaxTTSOverride: payload.minimaxTTSOverride,
       isBranch: payload.isBranch,
       pinnedToList: payload.pinnedToList,
+      lockedFromDelete: payload.lockedFromDelete,
       summarySettings: payload.summarySettings,
       locationOverride: payload.locationOverride,
       messageCount: existing?.messageCount,

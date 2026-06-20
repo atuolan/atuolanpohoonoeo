@@ -384,6 +384,7 @@ export type SyncChatRecordPayload = Pick<
   | "minimaxTTSOverride"
   | "isBranch"
   | "pinnedToList"
+  | "lockedFromDelete"
   | "summarySettings"
   | "locationOverride"
   | "charAvatarOverride"

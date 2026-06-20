@@ -174,6 +174,11 @@ function startNewChat(characterId: string) {
 
 // 刪除對話
 async function deleteChat(chatId: string) {
+  const target = chatList.value.find((c) => c.id === chatId);
+  if (target?.lockedFromDelete) {
+    alert("此對話已鎖定，請先解除鎖定才能刪除。");
+    return;
+  }
   if (!confirm("確定要刪除這個對話嗎？")) return;
 
   try {
@@ -392,6 +397,10 @@ function closeLongPressMenu() {
 
 async function confirmDeleteChat() {
   if (!longPressChat.value) return;
+  if (longPressChat.value.lockedFromDelete) {
+    alert("此對話已鎖定，請先解除鎖定才能刪除。");
+    return;
+  }
   const chatId = longPressChat.value.id;
   closeLongPressMenu();
 
@@ -413,11 +422,31 @@ async function togglePinChat() {
     const chat = await db.get<Chat>(DB_STORES.CHATS, chatId);
     if (!chat) return;
     chat.pinnedToList = !wasPinned;
+    // 取消置頂時一併解除鎖定，避免出現「無法刪除但不在置頂」的孤兒狀態
+    if (wasPinned) chat.lockedFromDelete = false;
     chat.updatedAt = Date.now();
     await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
     await loadChats();
   } catch (e) {
     console.error("切換釘選失敗:", e);
+  }
+}
+
+async function toggleLockChat() {
+  if (!longPressChat.value) return;
+  const chatId = longPressChat.value.id;
+  const wasLocked = longPressChat.value.lockedFromDelete;
+  closeLongPressMenu();
+
+  try {
+    const chat = await db.get<Chat>(DB_STORES.CHATS, chatId);
+    if (!chat) return;
+    chat.lockedFromDelete = !wasLocked;
+    chat.updatedAt = Date.now();
+    await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
+    await loadChats();
+  } catch (e) {
+    console.error("切換鎖定失敗:", e);
   }
 }
 </script>
@@ -552,6 +581,7 @@ async function togglePinChat() {
               <div class="meta-column">
                 <span class="chat-time">{{ formatTime(chat.updatedAt) }}</span>
                 <span v-if="chat.unreadCount" class="unread-badge">{{ chat.unreadCount > 99 ? "99+" : chat.unreadCount }}</span>
+                <svg v-else-if="chat.lockedFromDelete" class="lock-icon" viewBox="0 0 24 24" fill="currentColor" title="已鎖定，無法刪除"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6zm3 11c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z" /></svg>
                 <svg v-else class="pin-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" /></svg>
               </div>
             </div>
@@ -980,13 +1010,34 @@ async function togglePinChat() {
             </svg>
             {{ longPressChat.pinnedToList ? "取消聊天置頂" : "聊天置頂" }}
           </button>
-          <button class="longpress-btn delete" @click="confirmDeleteChat">
+          <button
+            v-if="longPressChat.pinnedToList"
+            class="longpress-btn lock"
+            @click="toggleLockChat"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path
+                v-if="longPressChat.lockedFromDelete"
+                d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2z"
+              />
+              <path
+                v-else
+                d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9.9c-1.71 0-3.1-1.39-3.1-3.1 0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1 0 1.71-1.39 3.1-3.1 3.1zM8.9 8V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H8.9z"
+              />
+            </svg>
+            {{ longPressChat.lockedFromDelete ? "解除鎖定" : "鎖定（防止刪除）" }}
+          </button>
+          <button
+            class="longpress-btn delete"
+            :class="{ disabled: longPressChat.lockedFromDelete }"
+            @click="confirmDeleteChat"
+          >
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path
                 d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
               />
             </svg>
-            刪除對話
+            {{ longPressChat.lockedFromDelete ? "已鎖定（無法刪除）" : "刪除對話" }}
           </button>
           <button class="longpress-btn cancel" @click="closeLongPressMenu">
             取消
@@ -1527,6 +1578,13 @@ async function togglePinChat() {
   margin-right: 2px;
 }
 
+.lock-icon {
+  width: 14px;
+  height: 14px;
+  color: #d69e2e;
+  margin-right: 2px;
+}
+
 /* --- 聯繫人網格 --- */
 .contacts-grid {
   display: grid;
@@ -2000,6 +2058,16 @@ async function togglePinChat() {
     &:hover {
       background: rgba(229, 62, 62, 0.1);
     }
+
+    &.disabled {
+      color: var(--color-text-secondary, #999);
+      cursor: not-allowed;
+      opacity: 0.6;
+
+      &:hover {
+        background: transparent;
+      }
+    }
   }
 
   &.pin {
@@ -2007,6 +2075,14 @@ async function togglePinChat() {
 
     &:hover {
       background: rgba(125, 211, 168, 0.1);
+    }
+  }
+
+  &.lock {
+    color: #d69e2e;
+
+    &:hover {
+      background: rgba(214, 158, 46, 0.1);
     }
   }
 
