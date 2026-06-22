@@ -13,6 +13,7 @@ import { useFateStore } from "@/stores/fate";
 import { useOracleStore } from "@/stores/oracle";
 import type { AstroDiceReading } from "@/types/astroDice";
 import type { FateReading, FateSpread } from "@/types/fate";
+import type { OracleReading } from "@/types/oracle";
 import { marked } from "marked";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 
@@ -106,9 +107,15 @@ function selectSpread(s: FateSpread) {
 const showHistory = ref(false);
 
 // 展開查看完整解讀
+type HistoryReadingType = "tarot" | "astro" | "oracle";
+type HistoryReadingItem =
+  | { type: "tarot"; reading: FateReading; createdAt: number }
+  | { type: "astro"; reading: AstroDiceReading; createdAt: number }
+  | { type: "oracle"; reading: OracleReading; createdAt: number };
 type ExpandedReading =
   | { type: "tarot"; reading: FateReading }
   | { type: "astro"; reading: AstroDiceReading }
+  | { type: "oracle"; reading: OracleReading }
   | null;
 const expandedReading = ref<ExpandedReading>(null);
 
@@ -121,19 +128,30 @@ const expandedInterpretationHtml = computed(() => {
 
 function openReading(type: "tarot", reading: FateReading): void;
 function openReading(type: "astro", reading: AstroDiceReading): void;
+function openReading(type: "oracle", reading: OracleReading): void;
+function openReading(item: HistoryReadingItem): void;
 function openReading(
-  type: "tarot" | "astro",
-  reading: FateReading | AstroDiceReading,
+  typeOrItem: HistoryReadingType | HistoryReadingItem,
+  reading?: FateReading | AstroDiceReading | OracleReading,
 ) {
-  expandedReading.value = { type, reading } as ExpandedReading;
+  if (typeof typeOrItem === "object") {
+    expandedReading.value = {
+      type: typeOrItem.type,
+      reading: typeOrItem.reading,
+    } as ExpandedReading;
+    return;
+  }
+
+  if (!reading) return;
+  expandedReading.value = { type: typeOrItem, reading } as ExpandedReading;
 }
 
 function closeExpandedReading() {
   expandedReading.value = null;
 }
 
-// 合併兩種歷史，按時間排序
-const allReadings = computed(() => {
+// 合併歷史，按時間排序
+const allReadings = computed<HistoryReadingItem[]>(() => {
   const tarot = fateStore.readings.map((r) => ({
     type: "tarot" as const,
     reading: r,
@@ -144,7 +162,12 @@ const allReadings = computed(() => {
     reading: r,
     createdAt: r.createdAt,
   }));
-  return [...tarot, ...astro].sort((a, b) => b.createdAt - a.createdAt);
+  const oracle = oracleStore.readings.map((r) => ({
+    type: "oracle" as const,
+    reading: r,
+    createdAt: r.createdAt,
+  }));
+  return [...tarot, ...astro, ...oracle].sort((a, b) => b.createdAt - a.createdAt);
 });
 
 // ===== 洗牌邏輯 =====
@@ -334,10 +357,11 @@ function formatTime(ts: number): string {
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function handleDeleteReading(type: "tarot" | "astro", id: string) {
+function handleDeleteReading(type: HistoryReadingType, id: string) {
   if (confirm("確定要刪除這條記錄嗎？")) {
     if (type === "tarot") fateStore.deleteReading(id);
-    else astroDiceStore.deleteReading(id);
+    else if (type === "astro") astroDiceStore.deleteReading(id);
+    else oracleStore.deleteReading(id);
   }
 }
 
@@ -345,6 +369,7 @@ function handleClearHistory() {
   if (confirm("確定要清空所有歷史記錄嗎？此操作不可撤銷。")) {
     fateStore.clearHistory();
     astroDiceStore.clearHistory();
+    oracleStore.clearHistory();
   }
 }
 
@@ -496,7 +521,11 @@ onUnmounted(() => {
           </button>
           <span class="fate-history__detail-type">
             {{
-              expandedReading.type === "tarot" ? "🃏 塔羅占卜" : "🎲 占星骰子"
+              expandedReading.type === "tarot"
+                ? "🃏 塔羅占卜"
+                : expandedReading.type === "astro"
+                  ? "🎲 占星骰子"
+                  : "🌙 神諭卡"
             }}
           </span>
         </div>
@@ -522,7 +551,7 @@ onUnmounted(() => {
         </template>
 
         <!-- 占星骰子詳情 -->
-        <template v-else>
+        <template v-else-if="expandedReading.type === 'astro'">
           <div class="fate-history__detail-dice">
             <span class="fate-history__detail-die">
               {{ (expandedReading.reading as any).result.planet.symbol }}
@@ -537,6 +566,23 @@ onUnmounted(() => {
             <span class="fate-history__detail-die">
               {{ (expandedReading.reading as any).result.house.romanNumeral }}
               {{ (expandedReading.reading as any).result.house.nameCn }}
+            </span>
+          </div>
+        </template>
+
+        <!-- 神諭卡詳情 -->
+        <template v-else>
+          <div class="fate-history__detail-meta">
+            {{ (expandedReading.reading as any).spread.name }} ·
+            {{ (expandedReading.reading as any).drawnCards.length }} 張牌
+          </div>
+          <div class="fate-history__detail-cards">
+            <span
+              v-for="drawn in (expandedReading.reading as any).drawnCards"
+              :key="drawn.position.id"
+              class="fate-history__item-card-tag"
+            >
+              {{ drawn.card.name }}（{{ drawn.position.name }}）
             </span>
           </div>
         </template>
@@ -587,11 +633,11 @@ onUnmounted(() => {
             v-for="item in allReadings"
             :key="item.reading.id"
             class="fate-history__item fate-history__item--clickable"
-            @click="item.type === 'tarot' ? openReading('tarot', item.reading as any) : openReading('astro', item.reading as any)"
+            @click="openReading(item)"
           >
             <div class="fate-history__item-time">
               <span class="fate-history__item-badge">
-                {{ item.type === "tarot" ? "🃏" : "🎲" }}
+                {{ item.type === "tarot" ? "🃏" : item.type === "astro" ? "🎲" : "🌙" }}
               </span>
               {{ formatTime(item.reading.createdAt) }}
             </div>
@@ -617,7 +663,7 @@ onUnmounted(() => {
             </template>
 
             <!-- 占星骰子摘要 -->
-            <template v-else>
+            <template v-else-if="item.type === 'astro'">
               <div class="fate-history__item-meta fate-history__item-dice">
                 <span
                   >{{ (item.reading as any).result.planet.symbol }}
@@ -633,6 +679,23 @@ onUnmounted(() => {
                   >{{ (item.reading as any).result.house.romanNumeral }}
                   {{ (item.reading as any).result.house.nameCn }}</span
                 >
+              </div>
+            </template>
+
+            <!-- 神諭卡摘要 -->
+            <template v-else>
+              <div class="fate-history__item-meta">
+                {{ (item.reading as any).spread.name }} ·
+                {{ (item.reading as any).drawnCards.length }} 張牌
+              </div>
+              <div class="fate-history__item-cards">
+                <span
+                  v-for="drawn in (item.reading as any).drawnCards"
+                  :key="drawn.position.id"
+                  class="fate-history__item-card-tag"
+                >
+                  {{ drawn.card.name }}
+                </span>
               </div>
             </template>
 
