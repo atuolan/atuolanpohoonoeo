@@ -221,6 +221,12 @@ function restartTarot() {
     cancelAnimationFrame(fanAnimId);
     fanAnimId = null;
   }
+  if (fanMoveRafId) {
+    cancelAnimationFrame(fanMoveRafId);
+    fanMoveRafId = 0;
+  }
+  latestFanMoveEvent = null;
+  unbindFanPointerListeners();
 }
 
 // ===== 扇形選牌拖拽邏輯 =====
@@ -235,6 +241,9 @@ let fanAnimId: number | null = null;
 let fanPointerDown = false;
 let fanDirDetermined = false;
 let fanIsHorizontal = false;
+let fanPointerListenersBound = false;
+let fanMoveRafId = 0;
+let latestFanMoveEvent: MouseEvent | TouchEvent | null = null;
 const FAN_DIR_THRESHOLD = 8;
 const CARD_ANGLE_STEP = 3.2;
 const FAN_VISIBLE_ANGLE = 50;
@@ -269,9 +278,10 @@ function onFanPointerDown(e: MouseEvent | TouchEvent) {
   fanDirDetermined = false;
   fanIsHorizontal = false;
   isFanDragging = false;
+  bindFanPointerListeners();
 }
 
-function onFanPointerMove(e: MouseEvent | TouchEvent) {
+function runFanPointerMove(e: MouseEvent | TouchEvent) {
   if (!fanPointerDown) return;
   const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
   const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
@@ -297,12 +307,58 @@ function onFanPointerMove(e: MouseEvent | TouchEvent) {
   lastFanX = clientX;
 }
 
+function onFanPointerMove(e: MouseEvent | TouchEvent) {
+  latestFanMoveEvent = e;
+  if (fanMoveRafId) return;
+  fanMoveRafId = requestAnimationFrame(() => {
+    fanMoveRafId = 0;
+    if (!latestFanMoveEvent) return;
+    const event = latestFanMoveEvent;
+    latestFanMoveEvent = null;
+    runFanPointerMove(event);
+  });
+}
+
+function flushFanPointerMove() {
+  if (!latestFanMoveEvent) return;
+  const event = latestFanMoveEvent;
+  latestFanMoveEvent = null;
+  if (fanMoveRafId) {
+    cancelAnimationFrame(fanMoveRafId);
+    fanMoveRafId = 0;
+  }
+  runFanPointerMove(event);
+}
+
+function bindFanPointerListeners() {
+  if (fanPointerListenersBound) return;
+  fanPointerListenersBound = true;
+  window.addEventListener("mousemove", onFanPointerMove);
+  window.addEventListener("mouseup", onFanPointerUp);
+  window.addEventListener("touchmove", onFanPointerMove, { passive: true });
+  window.addEventListener("touchend", onFanPointerUp);
+  window.addEventListener("touchcancel", onFanPointerUp);
+}
+
+function unbindFanPointerListeners() {
+  if (!fanPointerListenersBound) return;
+  fanPointerListenersBound = false;
+  window.removeEventListener("mousemove", onFanPointerMove);
+  window.removeEventListener("mouseup", onFanPointerUp);
+  window.removeEventListener("touchmove", onFanPointerMove);
+  window.removeEventListener("touchend", onFanPointerUp);
+  window.removeEventListener("touchcancel", onFanPointerUp);
+}
+
 function onFanPointerUp() {
+  flushFanPointerMove();
   fanPointerDown = false;
   if (isFanDragging && Math.abs(fanVelocity) > 0.1) startFanAnim();
   isFanDragging = false;
   fanDirDetermined = false;
   fanIsHorizontal = false;
+  latestFanMoveEvent = null;
+  unbindFanPointerListeners();
 }
 
 function animateFan() {
@@ -452,18 +508,13 @@ onMounted(() => {
   if (!fateStore.isHistoryLoaded) fateStore.loadHistory();
   if (!astroDiceStore.isHistoryLoaded) astroDiceStore.loadHistory();
   if (!oracleStore.isHistoryLoaded) oracleStore.loadHistory();
-  window.addEventListener("mousemove", onFanPointerMove);
-  window.addEventListener("mouseup", onFanPointerUp);
-  window.addEventListener("touchmove", onFanPointerMove, { passive: true });
-  window.addEventListener("touchend", onFanPointerUp);
 });
 
 onUnmounted(() => {
   if (fanAnimId) cancelAnimationFrame(fanAnimId);
-  window.removeEventListener("mousemove", onFanPointerMove);
-  window.removeEventListener("mouseup", onFanPointerUp);
-  window.removeEventListener("touchmove", onFanPointerMove);
-  window.removeEventListener("touchend", onFanPointerUp);
+  if (fanMoveRafId) cancelAnimationFrame(fanMoveRafId);
+  latestFanMoveEvent = null;
+  unbindFanPointerListeners();
 });
 </script>
 

@@ -3,7 +3,7 @@ import WidgetSettingsPanel from "@/components/panels/WidgetSettingsPanel.vue";
 import { useCanvasStore } from "@/stores";
 import type { WidgetInstance } from "@/types";
 import { Maximize2, Settings, X } from "lucide-vue-next";
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onUnmounted, ref } from "vue";
 
 const props = defineProps<{
   widget: WidgetInstance;
@@ -130,6 +130,7 @@ function onDragStart(e: MouseEvent | TouchEvent) {
   if (navigator.vibrate) {
     navigator.vibrate(30);
   }
+  bindPointerListeners();
 }
 
 function onDragMove(e: MouseEvent | TouchEvent) {
@@ -240,6 +241,8 @@ function onResizeStart(e: MouseEvent | TouchEvent) {
   if (navigator.vibrate) {
     navigator.vibrate(30);
   }
+
+  bindPointerListeners();
 }
 
 function onResizeMove(e: MouseEvent | TouchEvent) {
@@ -280,29 +283,78 @@ function onResizeEnd() {
   canvasStore.updateWidgetSize(props.widget.id, clampedWidth, clampedHeight);
 }
 
-// 全局事件監聽
-function onPointerMove(e: MouseEvent | TouchEvent) {
+// 全局事件監聽：只在拖曳/縮放期間綁定，並以 rAF 合併高頻 move 事件
+let pointerListenersBound = false;
+let pointerMoveRafId = 0;
+let latestPointerMoveEvent: MouseEvent | TouchEvent | null = null;
+
+function runPointerMove(e: MouseEvent | TouchEvent) {
   onDragMove(e);
   onResizeMove(e);
 }
 
-function onPointerEnd() {
-  onDragEnd();
-  onResizeEnd();
+function flushPendingPointerMove() {
+  if (!latestPointerMoveEvent) return;
+  const event = latestPointerMoveEvent;
+  latestPointerMoveEvent = null;
+  if (pointerMoveRafId) {
+    cancelAnimationFrame(pointerMoveRafId);
+    pointerMoveRafId = 0;
+  }
+  runPointerMove(event);
 }
 
-onMounted(() => {
+function onPointerMove(e: MouseEvent | TouchEvent) {
+  latestPointerMoveEvent = e;
+  if (pointerMoveRafId) return;
+  pointerMoveRafId = requestAnimationFrame(() => {
+    pointerMoveRafId = 0;
+    if (!latestPointerMoveEvent) return;
+    const event = latestPointerMoveEvent;
+    latestPointerMoveEvent = null;
+    runPointerMove(event);
+  });
+}
+
+function bindPointerListeners() {
+  if (pointerListenersBound) return;
+  pointerListenersBound = true;
   window.addEventListener("mousemove", onPointerMove);
   window.addEventListener("mouseup", onPointerEnd);
   window.addEventListener("touchmove", onPointerMove, { passive: true });
   window.addEventListener("touchend", onPointerEnd);
-});
+  window.addEventListener("touchcancel", onPointerEnd);
+}
 
-onUnmounted(() => {
+function unbindPointerListeners() {
+  if (!pointerListenersBound) return;
+  pointerListenersBound = false;
   window.removeEventListener("mousemove", onPointerMove);
   window.removeEventListener("mouseup", onPointerEnd);
   window.removeEventListener("touchmove", onPointerMove);
   window.removeEventListener("touchend", onPointerEnd);
+  window.removeEventListener("touchcancel", onPointerEnd);
+}
+
+function onPointerEnd() {
+  flushPendingPointerMove();
+  onDragEnd();
+  onResizeEnd();
+  latestPointerMoveEvent = null;
+  if (pointerMoveRafId) {
+    cancelAnimationFrame(pointerMoveRafId);
+    pointerMoveRafId = 0;
+  }
+  unbindPointerListeners();
+}
+
+onUnmounted(() => {
+  latestPointerMoveEvent = null;
+  if (pointerMoveRafId) {
+    cancelAnimationFrame(pointerMoveRafId);
+    pointerMoveRafId = 0;
+  }
+  unbindPointerListeners();
 });
 
 // 刪除組件

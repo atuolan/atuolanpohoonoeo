@@ -802,37 +802,87 @@ function injectIframeHeightScript(html: string): string {
 <\/script>`;
   const heightScript = `<script>
 (function() {
-  var lastH = 0, stableCount = 0, tid, busy = false;
+  var lastH = 0;
+  var stableCount = 0;
+  var busy = false;
+  var rafId = 0;
+  var debounceId = 0;
+  var shadowCandidates = [];
+  var shadowCandidatesDirty = true;
+  var lastScale = 1;
+  var lastBodyWidth = '';
+  var DEAD_ZONE = 8;
+  var DEBOUNCE_MS = 80;
+
+  function _setStyleIfChanged(el, prop, value) {
+    if (el.style[prop] !== value) el.style[prop] = value;
+  }
+
   function _applyAutoScale() {
     var body = document.body;
-    if (!body) return 1;
-    // 先還原先前的縮放，重新測量原始內容寬度
-    body.style.transform = '';
-    body.style.transformOrigin = '';
-    body.style.width = '';
-    var viewportW = document.documentElement.clientWidth || window.innerWidth || 0;
+    var root = document.documentElement;
+    if (!body || !root) return 1;
+    var viewportW = root.clientWidth || window.innerWidth || 0;
     if (!viewportW) return 1;
-    var contentW = Math.max(body.scrollWidth, document.documentElement.scrollWidth);
+
+    // 若先前設定了固定寬度，scrollWidth 仍能反映未縮放內容寬度；避免每次重置 style 造成 MutationObserver 迴圈。
+    var contentW = Math.max(body.scrollWidth, root.scrollWidth, body.offsetWidth || 0);
     if (contentW > viewportW + 1) {
       var scale = viewportW / contentW;
-      body.style.transformOrigin = 'top left';
-      body.style.transform = 'scale(' + scale + ')';
-      // 讓 body 在縮放後仍然填滿 viewport，避免右側出現空白
-      body.style.width = contentW + 'px';
+      var width = contentW + 'px';
+      if (Math.abs(scale - lastScale) > 0.001 || lastBodyWidth !== width) {
+        _setStyleIfChanged(body, 'transformOrigin', 'top left');
+        _setStyleIfChanged(body, 'transform', 'scale(' + scale + ')');
+        // 讓 body 在縮放後仍然填滿 viewport，避免右側出現空白
+        _setStyleIfChanged(body, 'width', width);
+        lastScale = scale;
+        lastBodyWidth = width;
+      }
       return scale;
+    }
+
+    if (lastScale !== 1 || lastBodyWidth) {
+      _setStyleIfChanged(body, 'transform', '');
+      _setStyleIfChanged(body, 'transformOrigin', '');
+      _setStyleIfChanged(body, 'width', '');
+      lastScale = 1;
+      lastBodyWidth = '';
     }
     return 1;
   }
-  function _maxShadowBottom() {
-    // box-shadow 不算進 scrollHeight，需手動掃描所有元素，
-    // 取「元素底部 + shadow Y 偏移 + blur」的最大值，避免底部陰影被裁切
+
+  function _refreshShadowCandidates() {
     var body = document.body;
-    if (!body || !window.getComputedStyle) return 0;
-    var bodyTop = body.getBoundingClientRect().top;
-    var maxBottom = 0;
+    shadowCandidates = [];
+    shadowCandidatesDirty = false;
+    if (!body || !window.getComputedStyle) return;
+
+    // 全量掃描只在初始化或 DOM 子節點變化後執行；一般高度回報只重用候選清單。
     var els = body.querySelectorAll('*');
     for (var i = 0; i < els.length; i++) {
       var el = els[i];
+      var cs;
+      try { cs = window.getComputedStyle(el); } catch (e) { continue; }
+      var shadow = cs && cs.boxShadow;
+      if (shadow && shadow !== 'none') shadowCandidates.push(el);
+    }
+  }
+
+  function _maxShadowBottom() {
+    // box-shadow 不算進 scrollHeight；只針對已快取的陰影候選元素計算，避免每次 querySelectorAll('*')。
+    var body = document.body;
+    if (!body || !window.getComputedStyle) return 0;
+    if (shadowCandidatesDirty) _refreshShadowCandidates();
+    if (!shadowCandidates.length) return 0;
+
+    var bodyTop = body.getBoundingClientRect().top;
+    var maxBottom = 0;
+    for (var i = 0; i < shadowCandidates.length; i++) {
+      var el = shadowCandidates[i];
+      if (!el || !el.isConnected) {
+        shadowCandidatesDirty = true;
+        continue;
+      }
       var cs;
       try { cs = window.getComputedStyle(el); } catch (e) { continue; }
       var shadow = cs && cs.boxShadow;
@@ -853,7 +903,9 @@ function injectIframeHeightScript(html: string): string {
     }
     return maxBottom;
   }
-  function _reportHeight(){
+
+  function _reportHeight() {
+    rafId = 0;
     if (busy) return;
     busy = true;
     try {
@@ -868,28 +920,53 @@ function injectIframeHeightScript(html: string): string {
         _maxShadowBottom()
       );
       var h = Math.ceil(rawH * (scale || 1)) + 4; // 4px 緩衝避免亞像素裁切
-      if (Math.abs(h - lastH) < 5) {
+      if (Math.abs(h - lastH) < DEAD_ZONE) {
         stableCount++;
-        if (stableCount > 3 && tid) { clearInterval(tid); tid = null; }
         return;
       }
       stableCount = 0;
       lastH = h;
       window.parent.postMessage({type:'regex-iframe-height',height:h},'*');
     } finally {
-      // 下一個 tick 才解除，避免 MutationObserver 看到自己改的 style 又重入
-      setTimeout(function(){ busy = false; }, 30);
+      // 下一個 frame 才解除，避免 observer 因本輪 style 寫入立即重入。
+      requestAnimationFrame(function(){ busy = false; });
     }
   }
-  window.addEventListener('load', _reportHeight);
-  window.addEventListener('resize', _reportHeight);
+
+  function _requestReport() {
+    if (rafId) return;
+    rafId = requestAnimationFrame(_reportHeight);
+  }
+
+  function _scheduleReport(immediate) {
+    if (debounceId) {
+      clearTimeout(debounceId);
+      debounceId = 0;
+    }
+    if (immediate) {
+      _requestReport();
+      return;
+    }
+    debounceId = setTimeout(function() {
+      debounceId = 0;
+      _requestReport();
+    }, DEBOUNCE_MS);
+  }
+
+  window.addEventListener('load', function(){ _scheduleReport(true); });
+  window.addEventListener('resize', function(){ _scheduleReport(false); });
+  if (document.readyState !== 'loading') _scheduleReport(true);
+  else document.addEventListener('DOMContentLoaded', function(){ _scheduleReport(true); });
+
   if (window.ResizeObserver && document.body) {
-    new ResizeObserver(_reportHeight).observe(document.body);
+    new ResizeObserver(function(){ _scheduleReport(false); }).observe(document.body);
   }
   if (document.body) {
-    new MutationObserver(_reportHeight).observe(document.body, {childList:true, subtree:true, attributes:true});
+    new MutationObserver(function(){
+      shadowCandidatesDirty = true;
+      _scheduleReport(false);
+    }).observe(document.body, {childList:true, subtree:true});
   }
-  tid = setInterval(_reportHeight, 1000);
 })();
 <\/script>`;
 

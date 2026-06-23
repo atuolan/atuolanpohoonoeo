@@ -686,6 +686,61 @@ function flushDragScrollX() {
   }
 }
 
+// ===== 全局指標監聽：僅在互動期間綁定，並以 rAF 合併高頻 move =====
+let canvasPointerListenersBound = false;
+let pointerMoveRafId: number | null = null;
+let latestPointerMoveEvent: MouseEvent | TouchEvent | null = null;
+
+function onPointerMove(e: MouseEvent | TouchEvent) {
+  latestPointerMoveEvent = e;
+  if (pointerMoveRafId !== null) return;
+  pointerMoveRafId = requestAnimationFrame(() => {
+    pointerMoveRafId = null;
+    if (!latestPointerMoveEvent) return;
+    const event = latestPointerMoveEvent;
+    latestPointerMoveEvent = null;
+    runPointerMove(event);
+  });
+}
+
+function flushPendingPointerMove() {
+  if (pointerMoveRafId !== null) {
+    cancelAnimationFrame(pointerMoveRafId);
+    pointerMoveRafId = null;
+  }
+  if (latestPointerMoveEvent) {
+    const event = latestPointerMoveEvent;
+    latestPointerMoveEvent = null;
+    runPointerMove(event);
+  }
+}
+
+function onPointerUp(e: MouseEvent | TouchEvent) {
+  flushPendingPointerMove();
+  runPointerUp(e);
+  unbindCanvasPointerListeners();
+}
+
+function bindCanvasPointerListeners() {
+  if (canvasPointerListenersBound) return;
+  canvasPointerListenersBound = true;
+  window.addEventListener("mousemove", onPointerMove);
+  window.addEventListener("mouseup", onPointerUp);
+  window.addEventListener("touchmove", onPointerMove, { passive: true });
+  window.addEventListener("touchend", onPointerUp);
+  window.addEventListener("touchcancel", onPointerUp);
+}
+
+function unbindCanvasPointerListeners() {
+  if (!canvasPointerListenersBound) return;
+  canvasPointerListenersBound = false;
+  window.removeEventListener("mousemove", onPointerMove);
+  window.removeEventListener("mouseup", onPointerUp);
+  window.removeEventListener("touchmove", onPointerMove);
+  window.removeEventListener("touchend", onPointerUp);
+  window.removeEventListener("touchcancel", onPointerUp);
+}
+
 // ===== 觸控方向判定（防止卡住） =====
 let isTouchPending = false; // 觸控已按下但尚未確定方向
 let touchStartClientX = 0; // 原始螢幕座標（用於方向判定）
@@ -751,6 +806,9 @@ function stopSelectionEdgeScroll() {
 
 // ===== 觸控/滑鼠事件 =====
 function onPointerDown(e: MouseEvent | TouchEvent) {
+  // 互動開始才綁定全局 move/up 監聽，結束即解除
+  bindCanvasPointerListeners();
+
   // 只有在框選模式下才啟用框選
   if (canvasStore.isEditMode && canvasStore.isSelectMode) {
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
@@ -809,7 +867,7 @@ function onPointerDown(e: MouseEvent | TouchEvent) {
   velocity = 0;
 }
 
-function onPointerMove(e: MouseEvent | TouchEvent) {
+function runPointerMove(e: MouseEvent | TouchEvent) {
   // 框選模式
   if (isSelecting.value && canvasStore.isEditMode && canvasStore.isSelectMode) {
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
@@ -882,7 +940,7 @@ function onPointerMove(e: MouseEvent | TouchEvent) {
   queueDragScrollX(newScrollX);
 }
 
-function onPointerUp(e: MouseEvent | TouchEvent) {
+function runPointerUp(e: MouseEvent | TouchEvent) {
   // 完成框選
   if (isSelecting.value && canvasStore.isEditMode && canvasStore.isSelectMode) {
     stopSelectionEdgeScroll();
@@ -1090,12 +1148,7 @@ const scrollProgress = computed(() => {
 });
 
 // ===== 生命週期 =====
-onMounted(() => {
-  window.addEventListener("mousemove", onPointerMove);
-  window.addEventListener("mouseup", onPointerUp);
-  window.addEventListener("touchmove", onPointerMove, { passive: true });
-  window.addEventListener("touchend", onPointerUp);
-});
+// 全局指標監聽改為在 onPointerDown 時才綁定（見 bindCanvasPointerListeners）
 
 onUnmounted(() => {
   stopAnimation();
@@ -1103,10 +1156,8 @@ onUnmounted(() => {
   stopSelectionEdgeScroll();
   onLongPressCancel();
   canvasStore.cleanup(); // 清理 resize 監聽器
-  window.removeEventListener("mousemove", onPointerMove);
-  window.removeEventListener("mouseup", onPointerUp);
-  window.removeEventListener("touchmove", onPointerMove);
-  window.removeEventListener("touchend", onPointerUp);
+  flushPendingPointerMove();
+  unbindCanvasPointerListeners();
 });
 </script>
 

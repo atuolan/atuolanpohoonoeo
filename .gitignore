@@ -24,6 +24,8 @@ aguaphone-backup-*.zip
 # 日誌與除錯
 *.log
 ts_error.txt
+Trace-*.json
+trace-*.json
 
 # 敏感配置（nginx、服務器相關）
 nginx-203aguaphone.conf

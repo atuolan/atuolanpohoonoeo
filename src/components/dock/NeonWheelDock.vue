@@ -17,7 +17,7 @@ import {
     Wallet,
 } from "lucide-vue-next";
 import type { CSSProperties } from "vue";
-import { onMounted, onUnmounted, ref } from "vue";
+import { onUnmounted, ref } from "vue";
 
 // ===== 轉盤狀態 =====
 const railOffset = ref(0);
@@ -31,6 +31,9 @@ let startRailX = 0;
 let animationId: number | null = null;
 let collapseAnimationId: number | null = null;
 let pointerDownActive = false;
+let railPointerListenersBound = false;
+let railMoveRafId = 0;
+let latestRailMoveEvent: MouseEvent | TouchEvent | null = null;
 
 // 方向判定
 let directionDetermined = false;
@@ -100,9 +103,10 @@ function onRailPointerDown(e: MouseEvent | TouchEvent) {
   directionDetermined = false;
   isHorizontalSwipe = false;
   isRailDragging = false;
+  bindRailPointerListeners();
 }
 
-function onRailPointerMove(e: MouseEvent | TouchEvent) {
+function runRailPointerMove(e: MouseEvent | TouchEvent) {
   if (!pointerDownActive) return;
 
   const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
@@ -136,7 +140,51 @@ function onRailPointerMove(e: MouseEvent | TouchEvent) {
   lastRailX = clientX;
 }
 
+function onRailPointerMove(e: MouseEvent | TouchEvent) {
+  latestRailMoveEvent = e;
+  if (railMoveRafId) return;
+  railMoveRafId = requestAnimationFrame(() => {
+    railMoveRafId = 0;
+    if (!latestRailMoveEvent) return;
+    const event = latestRailMoveEvent;
+    latestRailMoveEvent = null;
+    runRailPointerMove(event);
+  });
+}
+
+function flushRailPointerMove() {
+  if (!latestRailMoveEvent) return;
+  const event = latestRailMoveEvent;
+  latestRailMoveEvent = null;
+  if (railMoveRafId) {
+    cancelAnimationFrame(railMoveRafId);
+    railMoveRafId = 0;
+  }
+  runRailPointerMove(event);
+}
+
+function bindRailPointerListeners() {
+  if (railPointerListenersBound) return;
+  railPointerListenersBound = true;
+  window.addEventListener("mousemove", onRailPointerMove);
+  window.addEventListener("mouseup", onRailPointerUp);
+  window.addEventListener("touchmove", onRailPointerMove, { passive: true });
+  window.addEventListener("touchend", onRailPointerUp);
+  window.addEventListener("touchcancel", onRailPointerUp);
+}
+
+function unbindRailPointerListeners() {
+  if (!railPointerListenersBound) return;
+  railPointerListenersBound = false;
+  window.removeEventListener("mousemove", onRailPointerMove);
+  window.removeEventListener("mouseup", onRailPointerUp);
+  window.removeEventListener("touchmove", onRailPointerMove);
+  window.removeEventListener("touchend", onRailPointerUp);
+  window.removeEventListener("touchcancel", onRailPointerUp);
+}
+
 function onRailPointerUp() {
+  flushRailPointerMove();
   pointerDownActive = false;
 
   if (isRailDragging && Math.abs(railVelocity) > 0.1) {
@@ -146,6 +194,8 @@ function onRailPointerUp() {
   isRailDragging = false;
   directionDetermined = false;
   isHorizontalSwipe = false;
+  latestRailMoveEvent = null;
+  unbindRailPointerListeners();
 }
 
 // 慣性動畫
@@ -270,20 +320,12 @@ function onItemClick(item: (typeof dockItems)[0]) {
   emit("navigate", item.id);
 }
 
-onMounted(() => {
-  window.addEventListener("mousemove", onRailPointerMove);
-  window.addEventListener("mouseup", onRailPointerUp);
-  window.addEventListener("touchmove", onRailPointerMove, { passive: true });
-  window.addEventListener("touchend", onRailPointerUp);
-});
-
 onUnmounted(() => {
   if (animationId) cancelAnimationFrame(animationId);
   if (collapseAnimationId) cancelAnimationFrame(collapseAnimationId);
-  window.removeEventListener("mousemove", onRailPointerMove);
-  window.removeEventListener("mouseup", onRailPointerUp);
-  window.removeEventListener("touchmove", onRailPointerMove);
-  window.removeEventListener("touchend", onRailPointerUp);
+  if (railMoveRafId) cancelAnimationFrame(railMoveRafId);
+  latestRailMoveEvent = null;
+  unbindRailPointerListeners();
 });
 </script>
 

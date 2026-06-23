@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
 
 // Props
 const props = defineProps<{
@@ -201,11 +201,44 @@ function getPinchDistance(e: TouchEvent): number {
   return Math.sqrt(dx * dx + dy * dy)
 }
 
+let moveListenersBound = false
+let moveRafId = 0
+let latestMoveEvent: MouseEvent | TouchEvent | null = null
+
+function bindMoveListeners() {
+  if (moveListenersBound) return
+  moveListenersBound = true
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onEnd)
+  window.addEventListener('touchmove', onMove, { passive: false })
+  window.addEventListener('touchend', onEnd)
+  window.addEventListener('touchcancel', onEnd)
+}
+
+function unbindMoveListeners() {
+  if (!moveListenersBound) return
+  moveListenersBound = false
+  window.removeEventListener('mousemove', onMove)
+  window.removeEventListener('mouseup', onEnd)
+  window.removeEventListener('touchmove', onMove)
+  window.removeEventListener('touchend', onEnd)
+  window.removeEventListener('touchcancel', onEnd)
+}
+
 // 拖曳開始
 function onDragStart(e: MouseEvent | TouchEvent) {
-  // 雙指時不處理拖曳
-  if ('touches' in e && e.touches.length >= 2) return
   e.preventDefault()
+  bindMoveListeners()
+
+  // 雙指時直接進入縮放，避免常駐 touchmove 監聽
+  if ('touches' in e && e.touches.length >= 2) {
+    isPinching.value = true
+    isDragging.value = false
+    initialPinchDistance.value = getPinchDistance(e)
+    initialPinchScale.value = imageTransform.value.scale
+    return
+  }
+
   isDragging.value = true
   const pos = getClientPos(e)
   dragStart.value = pos
@@ -213,7 +246,7 @@ function onDragStart(e: MouseEvent | TouchEvent) {
 }
 
 // 移動
-function onMove(e: MouseEvent | TouchEvent) {
+function runMove(e: MouseEvent | TouchEvent) {
   if (isPinching.value) return
 
   // 雙指縮放
@@ -253,16 +286,42 @@ function onMove(e: MouseEvent | TouchEvent) {
   }
 }
 
+function onMove(e: MouseEvent | TouchEvent) {
+  latestMoveEvent = e
+  if (moveRafId) return
+  moveRafId = requestAnimationFrame(() => {
+    moveRafId = 0
+    if (!latestMoveEvent) return
+    const event = latestMoveEvent
+    latestMoveEvent = null
+    runMove(event)
+  })
+}
+
+function flushMove() {
+  if (!latestMoveEvent) return
+  const event = latestMoveEvent
+  latestMoveEvent = null
+  if (moveRafId) {
+    cancelAnimationFrame(moveRafId)
+    moveRafId = 0
+  }
+  runMove(event)
+}
+
 // 結束
 function onEnd(e: MouseEvent | TouchEvent) {
+  flushMove()
   isDragging.value = false
   // 雙指結束
   if ('touches' in e) {
     if (e.touches.length === 0) {
       isPinching.value = false
+      unbindMoveListeners()
     }
   } else {
     isPinching.value = false
+    unbindMoveListeners()
   }
 }
 
@@ -374,18 +433,13 @@ const maskPath = computed(() => {
 const zoomPercent = computed(() => Math.round(imageTransform.value.scale * 100))
 
 // 事件監聽
-onMounted(() => {
-  window.addEventListener('mousemove', onMove)
-  window.addEventListener('mouseup', onEnd)
-  window.addEventListener('touchmove', onMove, { passive: false })
-  window.addEventListener('touchend', onEnd)
-})
-
 onUnmounted(() => {
-  window.removeEventListener('mousemove', onMove)
-  window.removeEventListener('mouseup', onEnd)
-  window.removeEventListener('touchmove', onMove)
-  window.removeEventListener('touchend', onEnd)
+  latestMoveEvent = null
+  if (moveRafId) {
+    cancelAnimationFrame(moveRafId)
+    moveRafId = 0
+  }
+  unbindMoveListeners()
 })
 </script>
 
