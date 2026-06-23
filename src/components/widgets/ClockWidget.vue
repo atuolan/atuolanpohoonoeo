@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useThemeStore } from "@/stores";
 import type { WidgetCustomStyle } from "@/types";
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
 // 時鐘樣式類型
 type ClockStyle =
@@ -29,7 +29,7 @@ const themeStore = useThemeStore();
 
 // 當前時間
 const now = ref(new Date());
-let intervalId: number | null = null;
+let timerId: number | null = null;
 
 // 時間狀態
 const hours = computed(() => now.value.getHours());
@@ -62,16 +62,20 @@ const clockStyle = computed(() => props.data?.clockStyle || "minimal");
 const showSeconds = computed(() => props.data?.showSeconds ?? true);
 const showDate = computed(() => props.data?.showDate ?? true);
 
-// 模擬時鐘角度
-const secondsAngle = computed(() => seconds.value * 6);
-const minutesAngle = computed(() => minutes.value * 6 + seconds.value * 0.1);
+// 模擬時鐘角度：未顯示秒數時避免每秒細分造成不必要重算
+const secondsAngle = computed(() => (showSeconds.value ? seconds.value * 6 : 0));
+const minutesAngle = computed(
+  () => minutes.value * 6 + (showSeconds.value ? seconds.value * 0.1 : 0),
+);
 const hoursAngle = computed(
   () => (hours.value % 12) * 30 + minutes.value * 0.5,
 );
 
 // 進度環計算
 const circumference = 2 * Math.PI * 150;
-const secondsOffset = computed(() => circumference * (1 - seconds.value / 60));
+const secondsOffset = computed(() =>
+  showSeconds.value ? circumference * (1 - seconds.value / 60) : circumference,
+);
 const minutesOffset = computed(() => circumference * (1 - minutes.value / 60));
 const hoursOffset = computed(
   () => circumference * (1 - (hours.value % 12) / 12),
@@ -104,7 +108,9 @@ function orbitPos(angleDeg: number, radius: number) {
 }
 const orbitHourPos = computed(() => orbitPos(((hours.value % 12) / 12) * 360, 35));
 const orbitMinutePos = computed(() => orbitPos((minutes.value / 60) * 360, 55));
-const orbitSecondPos = computed(() => orbitPos((seconds.value / 60) * 360, 75));
+const orbitSecondPos = computed(() =>
+  showSeconds.value ? orbitPos((seconds.value / 60) * 360, 75) : orbitPos(0, 75),
+);
 function getMarkerStyle(i: number) {
   const angle = (i * 30 - 90) * (Math.PI / 180);
   const x = 50 + 38 * Math.cos(angle);
@@ -257,13 +263,37 @@ function updateTime() {
   now.value = newNow;
 }
 
+function clearTimer() {
+  if (timerId !== null) {
+    window.clearTimeout(timerId);
+    timerId = null;
+  }
+}
+
+function scheduleNextTick() {
+  clearTimer();
+  const current = new Date();
+  const delay = showSeconds.value
+    ? 1000 - current.getMilliseconds()
+    : (60 - current.getSeconds()) * 1000 - current.getMilliseconds();
+  timerId = window.setTimeout(() => {
+    updateTime();
+    scheduleNextTick();
+  }, Math.max(250, delay));
+}
+
 onMounted(() => {
   updateTime();
-  intervalId = window.setInterval(updateTime, 1000);
+  scheduleNextTick();
+});
+
+watch(showSeconds, () => {
+  updateTime();
+  scheduleNextTick();
 });
 
 onUnmounted(() => {
-  if (intervalId) clearInterval(intervalId);
+  clearTimer();
 });
 
 // 自定義樣式計算
@@ -517,7 +547,7 @@ const hasCustomBackground = computed(() => {
     <template v-else-if="clockStyle === 'progress'">
       <div class="progress-clock" :style="textStyle">
         <div class="progress-rings">
-          <svg class="ring seconds-ring" viewBox="0 0 320 320">
+          <svg v-if="showSeconds" class="ring seconds-ring" viewBox="0 0 320 320">
             <circle class="ring-bg" cx="160" cy="160" r="150" />
             <circle
               class="ring-progress"
@@ -575,7 +605,7 @@ const hasCustomBackground = computed(() => {
             ></div>
             <span>分</span>
           </div>
-          <div class="legend-item">
+          <div v-if="showSeconds" class="legend-item">
             <div
               class="legend-dot"
               :style="{ background: triColorSecond }"

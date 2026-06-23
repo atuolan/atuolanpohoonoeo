@@ -1,3 +1,45 @@
+<script lang="ts">
+type MessageBubbleIframeHandler = (event: MessageEvent) => void;
+
+const messageBubbleIframeHandlers = new WeakMap<object, Set<MessageBubbleIframeHandler>>();
+let messageBubbleIframeListenerInstalled = false;
+
+function dispatchMessageBubbleIframeEvent(event: MessageEvent) {
+  const source = event.source;
+  if (!source || typeof source !== "object") return;
+  const handlers = messageBubbleIframeHandlers.get(source);
+  if (!handlers) return;
+  for (const handler of Array.from(handlers)) handler(event);
+}
+
+function ensureMessageBubbleIframeListener() {
+  if (messageBubbleIframeListenerInstalled || typeof window === "undefined") return;
+  window.addEventListener("message", dispatchMessageBubbleIframeEvent);
+  messageBubbleIframeListenerInstalled = true;
+}
+
+function registerMessageBubbleIframeWindow(
+  source: Window | null | undefined,
+  handler: MessageBubbleIframeHandler,
+): () => void {
+  if (!source) return () => {};
+  ensureMessageBubbleIframeListener();
+  const key = source as unknown as object;
+  let handlers = messageBubbleIframeHandlers.get(key);
+  if (!handlers) {
+    handlers = new Set<MessageBubbleIframeHandler>();
+    messageBubbleIframeHandlers.set(key, handlers);
+  }
+  handlers.add(handler);
+  return () => {
+    const current = messageBubbleIframeHandlers.get(key);
+    if (!current) return;
+    current.delete(handler);
+    if (current.size === 0) messageBubbleIframeHandlers.delete(key);
+  };
+}
+</script>
+
 <script setup lang="ts">
 import { useAudioPlayer } from "@/composables/useAudioPlayer";
 import {
@@ -150,11 +192,33 @@ const htmlBlockIframeHeight = ref(0);
 
 // 監聽 iframe 內部回報的高度（使用生命週期管理，避免記憶體洩漏）
 // 加入死區防止高度微小震盪導致佈局抖動
-function handleIframeMessage(e: MessageEvent) {
-  const isFromThisIframe =
-    (regexIframeRef.value && e.source === regexIframeRef.value.contentWindow) ||
-    (htmlBlockIframeRef.value && e.source === htmlBlockIframeRef.value.contentWindow);
-  if (e.data?.type === "regex-audio-control" && isFromThisIframe) {
+const iframeMessageUnregisterFns: Array<() => void> = [];
+
+function clearIframeMessageRegistrations() {
+  while (iframeMessageUnregisterFns.length) iframeMessageUnregisterFns.pop()?.();
+}
+
+function registerCurrentIframeWindows() {
+  clearIframeMessageRegistrations();
+  const regexWindow = regexIframeRef.value?.contentWindow;
+  if (regexWindow) {
+    iframeMessageUnregisterFns.push(
+      registerMessageBubbleIframeWindow(regexWindow, handleRegexIframeMessage),
+    );
+  }
+  const htmlBlockWindow = htmlBlockIframeRef.value?.contentWindow;
+  if (htmlBlockWindow) {
+    iframeMessageUnregisterFns.push(
+      registerMessageBubbleIframeWindow(htmlBlockWindow, handleHtmlBlockIframeMessage),
+    );
+  }
+}
+
+function handleIframePayload(
+  e: MessageEvent,
+  targetHeight: typeof regexIframeHeight | typeof htmlBlockIframeHeight,
+) {
+  if (e.data?.type === "regex-audio-control") {
     handleRegexAudioControl(e.data);
     return;
   }
@@ -163,31 +227,26 @@ function handleIframeMessage(e: MessageEvent) {
     typeof e.data.height === "number"
   ) {
     const newH = Math.ceil(e.data.height);
-    if (
-      regexIframeRef.value &&
-      e.source === regexIframeRef.value.contentWindow
-    ) {
-      if (Math.abs(newH - regexIframeHeight.value) >= 5) {
-        regexIframeHeight.value = newH;
-      }
-    }
-    if (
-      htmlBlockIframeRef.value &&
-      e.source === htmlBlockIframeRef.value.contentWindow
-    ) {
-      if (Math.abs(newH - htmlBlockIframeHeight.value) >= 5) {
-        htmlBlockIframeHeight.value = newH;
-      }
+    if (Math.abs(newH - targetHeight.value) >= 5) {
+      targetHeight.value = newH;
     }
   }
 }
 
+function handleRegexIframeMessage(e: MessageEvent) {
+  handleIframePayload(e, regexIframeHeight);
+}
+
+function handleHtmlBlockIframeMessage(e: MessageEvent) {
+  handleIframePayload(e, htmlBlockIframeHeight);
+}
+
 onMounted(() => {
-  window.addEventListener("message", handleIframeMessage);
+  nextTick(registerCurrentIframeWindows);
 });
 
 onUnmounted(() => {
-  window.removeEventListener("message", handleIframeMessage);
+  clearIframeMessageRegistrations();
   for (const audio of regexHtmlAudioElements.values()) {
     audio.pause();
   }
@@ -807,12 +866,21 @@ function injectIframeHeightScript(html: string): string {
   var busy = false;
   var rafId = 0;
   var debounceId = 0;
+  var throttleId = 0;
+  var pendingImmediate = false;
   var shadowCandidates = [];
   var shadowCandidatesDirty = true;
+  var shadowBottomDirty = true;
+  var cachedShadowBottom = 0;
+  var lastObservedHeight = 0;
+  var lastObservedWidth = 0;
+  var lastReportAt = 0;
   var lastScale = 1;
   var lastBodyWidth = '';
   var DEAD_ZONE = 8;
-  var DEBOUNCE_MS = 80;
+  var OBSERVER_DEAD_ZONE = 2;
+  var DEBOUNCE_MS = 120;
+  var THROTTLE_MS = 120;
 
   function _setStyleIfChanged(el, prop, value) {
     if (el.style[prop] !== value) el.style[prop] = value;
@@ -869,18 +937,27 @@ function injectIframeHeightScript(html: string): string {
   }
 
   function _maxShadowBottom() {
-    // box-shadow 不算進 scrollHeight；只針對已快取的陰影候選元素計算，避免每次 querySelectorAll('*')。
+    // box-shadow 不算進 scrollHeight。這段會觸發 layout，所以只在 DOM 結構或陰影候選變更後重算。
     var body = document.body;
     if (!body || !window.getComputedStyle) return 0;
-    if (shadowCandidatesDirty) _refreshShadowCandidates();
-    if (!shadowCandidates.length) return 0;
+    if (shadowCandidatesDirty) {
+      _refreshShadowCandidates();
+      shadowBottomDirty = true;
+    }
+    if (!shadowBottomDirty) return cachedShadowBottom;
+    if (!shadowCandidates.length) {
+      cachedShadowBottom = 0;
+      shadowBottomDirty = false;
+      return 0;
+    }
 
     var bodyTop = body.getBoundingClientRect().top;
     var maxBottom = 0;
+    var sawDisconnected = false;
     for (var i = 0; i < shadowCandidates.length; i++) {
       var el = shadowCandidates[i];
       if (!el || !el.isConnected) {
-        shadowCandidatesDirty = true;
+        sawDisconnected = true;
         continue;
       }
       var cs;
@@ -901,7 +978,30 @@ function injectIframeHeightScript(html: string): string {
         if (bottomExt > maxBottom) maxBottom = bottomExt;
       }
     }
+    if (sawDisconnected) shadowCandidatesDirty = true;
+    cachedShadowBottom = maxBottom;
+    shadowBottomDirty = false;
     return maxBottom;
+  }
+
+  function _postHeight(h, immediate) {
+    var now = Date.now ? Date.now() : new Date().getTime();
+    var elapsed = now - lastReportAt;
+    if (!immediate && elapsed < THROTTLE_MS) {
+      if (throttleId) clearTimeout(throttleId);
+      throttleId = setTimeout(function() {
+        throttleId = 0;
+        lastReportAt = Date.now ? Date.now() : new Date().getTime();
+        window.parent.postMessage({type:'regex-iframe-height',height:lastH},'*');
+      }, THROTTLE_MS - elapsed);
+      return;
+    }
+    if (throttleId) {
+      clearTimeout(throttleId);
+      throttleId = 0;
+    }
+    lastReportAt = now;
+    window.parent.postMessage({type:'regex-iframe-height',height:h},'*');
   }
 
   function _reportHeight() {
@@ -926,30 +1026,33 @@ function injectIframeHeightScript(html: string): string {
       }
       stableCount = 0;
       lastH = h;
-      window.parent.postMessage({type:'regex-iframe-height',height:h},'*');
+      _postHeight(h, pendingImmediate);
     } finally {
+      pendingImmediate = false;
       // 下一個 frame 才解除，避免 observer 因本輪 style 寫入立即重入。
       requestAnimationFrame(function(){ busy = false; });
     }
   }
 
-  function _requestReport() {
+  function _requestReport(immediate) {
+    if (immediate) pendingImmediate = true;
     if (rafId) return;
     rafId = requestAnimationFrame(_reportHeight);
   }
 
   function _scheduleReport(immediate) {
-    if (debounceId) {
-      clearTimeout(debounceId);
-      debounceId = 0;
-    }
     if (immediate) {
-      _requestReport();
+      if (debounceId) {
+        clearTimeout(debounceId);
+        debounceId = 0;
+      }
+      _requestReport(true);
       return;
     }
+    if (debounceId) return;
     debounceId = setTimeout(function() {
       debounceId = 0;
-      _requestReport();
+      _requestReport(false);
     }, DEBOUNCE_MS);
   }
 
@@ -959,12 +1062,30 @@ function injectIframeHeightScript(html: string): string {
   else document.addEventListener('DOMContentLoaded', function(){ _scheduleReport(true); });
 
   if (window.ResizeObserver && document.body) {
-    new ResizeObserver(function(){ _scheduleReport(false); }).observe(document.body);
+    new ResizeObserver(function(entries){
+      var entry = entries && entries[0];
+      var rect = entry && entry.contentRect;
+      var nextH = rect ? rect.height : (document.body ? document.body.offsetHeight : 0);
+      var nextW = rect ? rect.width : (document.body ? document.body.offsetWidth : 0);
+      if (Math.abs(nextH - lastObservedHeight) < OBSERVER_DEAD_ZONE && Math.abs(nextW - lastObservedWidth) < OBSERVER_DEAD_ZONE) return;
+      lastObservedHeight = nextH;
+      lastObservedWidth = nextW;
+      _scheduleReport(false);
+    }).observe(document.body);
   }
   if (document.body) {
-    new MutationObserver(function(){
-      shadowCandidatesDirty = true;
-      _scheduleReport(false);
+    new MutationObserver(function(mutations){
+      var shouldReport = false;
+      for (var i = 0; i < mutations.length; i++) {
+        var m = mutations[i];
+        if (m.type === 'childList' && (m.addedNodes.length || m.removedNodes.length)) {
+          shadowCandidatesDirty = true;
+          shadowBottomDirty = true;
+          shouldReport = true;
+          break;
+        }
+      }
+      if (shouldReport) _scheduleReport(false);
     }).observe(document.body, {childList:true, subtree:true});
   }
 })();
@@ -1129,7 +1250,7 @@ function extractHtmlFenceBlocks(source: string): {
   };
 }
 
-export type ContentSegment =
+type ContentSegment =
   | { type: "text"; content: string; ordinal: number }
   | { type: "html"; content: string; ordinal: number };
 
@@ -4146,6 +4267,7 @@ const showTextVoiceTranscript = ref(true);
               sandbox="allow-scripts"
               frameborder="0"
               scrolling="no"
+              @load="registerCurrentIframeWindows"
             ></iframe>
           </div>
           <!-- 簡單 HTML 片段才走 Shadow DOM 卡片。 -->
@@ -4217,6 +4339,7 @@ const showTextVoiceTranscript = ref(true);
                   sandbox="allow-scripts"
                   frameborder="0"
                   scrolling="no"
+                  @load="registerCurrentIframeWindows"
                 ></iframe>
               </div>
               <div
@@ -4638,6 +4761,7 @@ const showTextVoiceTranscript = ref(true);
   border: none;
   border-radius: 0;
   background: transparent;
+  contain: layout paint;
 }
 
 .html-iframe-scroll {
@@ -4649,6 +4773,7 @@ const showTextVoiceTranscript = ref(true);
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   border-radius: 0;
+  contain: layout paint;
 }
 
 .html-block-wrapper {
@@ -4669,6 +4794,7 @@ const showTextVoiceTranscript = ref(true);
   border: none;
   border-radius: 0;
   background: transparent;
+  contain: layout paint;
 }
 
 .message-wrapper {

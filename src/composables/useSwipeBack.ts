@@ -23,6 +23,8 @@ export function useSwipeBack(onBack: () => void, enabled?: Ref<boolean>) {
   let fired = false;
   let decided = false;
   let swipeStartedFromEdge = false;
+  let touchMoveListenersAttached = false;
+  let pointerMoveListenersAttached = false;
 
   /**
    * 檢查觸控目標是否在受保護區域內（modal、input 等）
@@ -86,6 +88,68 @@ export function useSwipeBack(onBack: () => void, enabled?: Ref<boolean>) {
     return false;
   }
 
+  function attachTouchMoveListeners() {
+    if (touchMoveListenersAttached) return;
+    document.addEventListener("touchmove", onTouchMove, {
+      passive: false,
+      capture: true,
+    });
+    document.addEventListener("touchend", onTouchEnd, {
+      passive: true,
+      capture: true,
+    });
+    document.addEventListener("touchcancel", onTouchEnd, {
+      passive: true,
+      capture: true,
+    });
+    touchMoveListenersAttached = true;
+  }
+
+  function detachTouchMoveListeners() {
+    if (!touchMoveListenersAttached) return;
+    document.removeEventListener("touchmove", onTouchMove, {
+      capture: true,
+    } as EventListenerOptions);
+    document.removeEventListener("touchend", onTouchEnd, {
+      capture: true,
+    } as EventListenerOptions);
+    document.removeEventListener("touchcancel", onTouchEnd, {
+      capture: true,
+    } as EventListenerOptions);
+    touchMoveListenersAttached = false;
+  }
+
+  function attachPointerMoveListeners() {
+    if (pointerMoveListenersAttached) return;
+    document.addEventListener("pointermove", onPointerMove, {
+      passive: true,
+      capture: true,
+    });
+    document.addEventListener("pointerup", onPointerUp, {
+      passive: true,
+      capture: true,
+    });
+    document.addEventListener("pointercancel", onPointerUp, {
+      passive: true,
+      capture: true,
+    });
+    pointerMoveListenersAttached = true;
+  }
+
+  function detachPointerMoveListeners() {
+    if (!pointerMoveListenersAttached) return;
+    document.removeEventListener("pointermove", onPointerMove, {
+      capture: true,
+    } as EventListenerOptions);
+    document.removeEventListener("pointerup", onPointerUp, {
+      capture: true,
+    } as EventListenerOptions);
+    document.removeEventListener("pointercancel", onPointerUp, {
+      capture: true,
+    } as EventListenerOptions);
+    pointerMoveListenersAttached = false;
+  }
+
   /**
    * 重置所有狀態
    */
@@ -94,6 +158,7 @@ export function useSwipeBack(onBack: () => void, enabled?: Ref<boolean>) {
     fired = false;
     decided = false;
     swipeStartedFromEdge = false;
+    detachTouchMoveListeners();
   }
 
   function onTouchStart(e: TouchEvent) {
@@ -111,6 +176,7 @@ export function useSwipeBack(onBack: () => void, enabled?: Ref<boolean>) {
     fired = false;
     decided = false;
     swipeStartedFromEdge = true;
+    attachTouchMoveListeners();
   }
 
   function onTouchMove(e: TouchEvent) {
@@ -130,12 +196,12 @@ export function useSwipeBack(onBack: () => void, enabled?: Ref<boolean>) {
       decided = true;
       // 垂直位移大於水平位移，判定為滾動
       if (absDy > absDx) {
-        tracking = false;
+        resetState();
         return;
       }
       // 向左滑不處理
       if (dx < 0) {
-        tracking = false;
+        resetState();
         return;
       }
     }
@@ -147,6 +213,7 @@ export function useSwipeBack(onBack: () => void, enabled?: Ref<boolean>) {
       // 觸發返回
       fired = true;
       tracking = false;
+      detachTouchMoveListeners();
       onBack();
     }
   }
@@ -175,6 +242,7 @@ export function useSwipeBack(onBack: () => void, enabled?: Ref<boolean>) {
     pointerFired = false;
     pointerDecided = false;
     swipeStartedFromEdge = true;
+    attachPointerMoveListeners();
   }
 
   function onPointerMove(e: PointerEvent) {
@@ -191,7 +259,7 @@ export function useSwipeBack(onBack: () => void, enabled?: Ref<boolean>) {
     if (!pointerDecided) {
       pointerDecided = true;
       if (absDy > absDx || dx < 0) {
-        pointerTracking = false;
+        onPointerUp();
         return;
       }
     }
@@ -200,6 +268,7 @@ export function useSwipeBack(onBack: () => void, enabled?: Ref<boolean>) {
     if (dx >= THRESHOLD) {
       pointerFired = true;
       pointerTracking = false;
+      detachPointerMoveListeners();
       onBack();
     }
   }
@@ -209,6 +278,7 @@ export function useSwipeBack(onBack: () => void, enabled?: Ref<boolean>) {
     pointerFired = false;
     pointerDecided = false;
     swipeStartedFromEdge = false;
+    detachPointerMoveListeners();
   }
 
   onMounted(() => {
@@ -216,27 +286,7 @@ export function useSwipeBack(onBack: () => void, enabled?: Ref<boolean>) {
       passive: true,
       capture: true,
     });
-    document.addEventListener("touchmove", onTouchMove, {
-      passive: false,
-      capture: true,
-    });
-    document.addEventListener("touchend", onTouchEnd, {
-      passive: true,
-      capture: true,
-    });
-    document.addEventListener("touchcancel", onTouchEnd, {
-      passive: true,
-      capture: true,
-    });
     document.addEventListener("pointerdown", onPointerDown, {
-      passive: true,
-      capture: true,
-    });
-    document.addEventListener("pointermove", onPointerMove, {
-      passive: true,
-      capture: true,
-    });
-    document.addEventListener("pointerup", onPointerUp, {
       passive: true,
       capture: true,
     });
@@ -247,23 +297,10 @@ export function useSwipeBack(onBack: () => void, enabled?: Ref<boolean>) {
     document.removeEventListener("touchstart", onTouchStart, {
       capture: true,
     } as EventListenerOptions);
-    document.removeEventListener("touchmove", onTouchMove, {
-      capture: true,
-    } as EventListenerOptions);
-    document.removeEventListener("touchend", onTouchEnd, {
-      capture: true,
-    } as EventListenerOptions);
-    document.removeEventListener("touchcancel", onTouchEnd, {
-      capture: true,
-    } as EventListenerOptions);
+    detachTouchMoveListeners();
     document.removeEventListener("pointerdown", onPointerDown, {
       capture: true,
     } as EventListenerOptions);
-    document.removeEventListener("pointermove", onPointerMove, {
-      capture: true,
-    } as EventListenerOptions);
-    document.removeEventListener("pointerup", onPointerUp, {
-      capture: true,
-    } as EventListenerOptions);
+    detachPointerMoveListeners();
   });
 }
