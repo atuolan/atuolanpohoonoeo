@@ -324,6 +324,12 @@ export class AuthService {
     localStorage.removeItem(BACKUP_AUTH_KEY);
   }
 
+  // 啟動首幀同步讀取 localStorage 備援，避免已驗證用戶先閃出驗證頁。
+  // 注意：這只讀本地備援，不觸碰 IndexedDB；正式校驗仍由 getAuthState() 完成。
+  static getCachedAuthStateSync(): AuthState | null {
+    return this.restoreFromLocalBackupSync();
+  }
+
   // 檢查是否已驗證
   // 注意：如果 IndexedDB 暫時不可用，會使用 localStorage 備援
   static async isAuthenticated(): Promise<boolean> {
@@ -343,12 +349,17 @@ export class AuthService {
   private static async restoreFromLocalBackup(
     tryWriteBackToIdb: boolean,
   ): Promise<AuthState | null> {
+    const backup = this.restoreFromLocalBackupSync();
+    if (backup && tryWriteBackToIdb) {
+      await this.tryWriteBackToIdb(backup);
+    }
+    return backup;
+  }
+
+  private static restoreFromLocalBackupSync(): AuthState | null {
     // 1) 先讀新版備援
     const backup = this.readBackupAuthState(BACKUP_AUTH_KEY);
     if (backup) {
-      if (tryWriteBackToIdb) {
-        await this.tryWriteBackToIdb(backup);
-      }
       return backup;
     }
 
@@ -361,10 +372,6 @@ export class AuthService {
     // 成功讀到舊版後，升級寫入新版備援
     this.saveBackupAuthState(legacy);
     localStorage.removeItem(LEGACY_AUTH_KEY);
-
-    if (tryWriteBackToIdb) {
-      await this.tryWriteBackToIdb(legacy);
-    }
 
     return legacy;
   }

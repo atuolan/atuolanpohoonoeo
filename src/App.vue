@@ -154,6 +154,9 @@ const notificationStore = useNotificationStore();
 // 驗證 store
 const authStore = useAuthStore();
 const selfHostedSyncStore = useSelfHostedSyncStore();
+const shouldShowAuthScreen = computed(
+  () => authStore.hasResolvedAuthState && !authStore.isAuthenticated,
+);
 
 // GitHub 雲端備份全局狀態
 const _ghBackupStore = useGitHubBackupStore();
@@ -2637,11 +2640,11 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
 <template>
   <div class="app-container" :class="{ 'is-dark': isDark }" :style="themeStyle">
     <Transition name="page">
-      <!-- 驗證頁面 -->
-      <AuthScreen v-if="!authStore.isAuthenticated" />
+      <!-- 驗證頁面：初始化狀態未知時先不渲染，避免已驗證用戶首幀閃出驗證頁 -->
+      <AuthScreen v-if="shouldShowAuthScreen" />
 
       <!-- 主頁：橫向白板畫布 -->
-      <div v-else-if="currentPage === 'home'" class="home-screen-wrapper screen-container">
+      <div v-else-if="authStore.isAuthenticated && currentPage === 'home'" class="home-screen-wrapper screen-container">
         <WhiteboardCanvas @navigate="handleNavigate" />
         <NeonWheelDock
           @navigate="handleNavigate"

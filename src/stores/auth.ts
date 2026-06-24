@@ -6,10 +6,12 @@ import { CodeProtection } from '@/utils/codeProtection'
 import type { AuthState, DiscordOAuthResult } from '@/types/auth'
 
 export const useAuthStore = defineStore('auth', () => {
-  const authState = ref<AuthState | null>(null)
+  const authState = ref<AuthState | null>(AuthService.getCachedAuthStateSync())
   const verificationAttempts = ref(0)
   const maxAttempts = 5
   const initError = ref<string | null>(null)
+  const isInitializing = ref(false)
+  const isInitialized = ref(false)
 
   async function sleep(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms))
@@ -17,67 +19,74 @@ export const useAuthStore = defineStore('auth', () => {
 
   // 初始化：從 IndexedDB 恢復狀態（含重試，改善行動端暫時性存儲失效）
   async function initialize() {
+    if (isInitializing.value) return
+    isInitializing.value = true
     initError.value = null
 
-    // 檢查網址列是否有 OAuth 回傳的參數 (同分頁跳轉 fallback)
-    const urlParams = new URLSearchParams(window.location.search)
-    const authResultRaw = urlParams.get('auth_result')
-    const discordUserId = urlParams.get('discord_user_id')
-    const discordUsername = urlParams.get('discord_username')
-    const discordDisplayName = urlParams.get('discord_display_name')
-    const discordError = urlParams.get('discord_error')
+    try {
+      // 檢查網址列是否有 OAuth 回傳的參數 (同分頁跳轉 fallback)
+      const urlParams = new URLSearchParams(window.location.search)
+      const authResultRaw = urlParams.get('auth_result')
+      const discordUserId = urlParams.get('discord_user_id')
+      const discordUsername = urlParams.get('discord_username')
+      const discordDisplayName = urlParams.get('discord_display_name')
+      const discordError = urlParams.get('discord_error')
 
-    if (authResultRaw || discordError) {
-      try {
-        if (discordError) {
-          console.error('[Auth] Discord OAuth 錯誤:', decodeURIComponent(discordError))
-        } else if (authResultRaw) {
-          const authResult = JSON.parse(decodeURIComponent(authResultRaw))
-          if (authResult.success && discordUserId && discordUsername && discordDisplayName) {
-            // 驗證成功，儲存狀態
-            await AuthService.saveAuthState(discordUserId, discordUsername, discordDisplayName)
-            console.log('[Auth] 從 URL 參數恢復驗證狀態成功')
+      if (authResultRaw || discordError) {
+        try {
+          if (discordError) {
+            console.error('[Auth] Discord OAuth 錯誤:', decodeURIComponent(discordError))
+          } else if (authResultRaw) {
+            const authResult = JSON.parse(decodeURIComponent(authResultRaw))
+            if (authResult.success && discordUserId && discordUsername && discordDisplayName) {
+              // 驗證成功，儲存狀態
+              await AuthService.saveAuthState(discordUserId, discordUsername, discordDisplayName)
+              console.log('[Auth] 從 URL 參數恢復驗證狀態成功')
+            }
+          }
+        } catch (e) {
+          console.error('[Auth] 解析 URL 驗證參數失敗:', e)
+        } finally {
+          // 清除網址列參數，避免重新整理時再次觸發
+          const newUrl = window.location.pathname
+          window.history.replaceState({}, document.title, newUrl)
+        }
+      }
+
+      const maxRetries = 3
+      let lastError: unknown = null
+
+      for (let i = 0; i < maxRetries; i++) {
+        try {
+          authState.value = await AuthService.getAuthState()
+          lastError = null
+          break
+        } catch (e) {
+          lastError = e
+          console.error(`[Auth] 初始化讀取驗證狀態失敗（第 ${i + 1}/${maxRetries} 次）:`, e)
+
+          if (i < maxRetries - 1) {
+            // 400ms / 800ms 退避
+            await sleep(400 * (i + 1))
           }
         }
-      } catch (e) {
-        console.error('[Auth] 解析 URL 驗證參數失敗:', e)
-      } finally {
-        // 清除網址列參數，避免重新整理時再次觸發
-        const newUrl = window.location.pathname
-        window.history.replaceState({}, document.title, newUrl)
       }
-    }
 
-    const maxRetries = 3
-    let lastError: unknown = null
-
-    for (let i = 0; i < maxRetries; i++) {
-      try {
-        authState.value = await AuthService.getAuthState()
-        lastError = null
-        break
-      } catch (e) {
-        lastError = e
-        console.error(`[Auth] 初始化讀取驗證狀態失敗（第 ${i + 1}/${maxRetries} 次）:`, e)
-
-        if (i < maxRetries - 1) {
-          // 400ms / 800ms 退避
-          await sleep(400 * (i + 1))
-        }
+      if (lastError) {
+        initError.value = '讀取驗證狀態失敗（行動端儲存暫時不可用），請點擊「重試讀取」'
+        // 不主動覆寫 authState，避免把「暫時異常」誤判成「已登出」
       }
-    }
 
-    if (lastError) {
-      initError.value = '讀取驗證狀態失敗（行動端儲存暫時不可用），請點擊「重試讀取」'
-      // 不主動覆寫 authState，避免把「暫時異常」誤判成「已登出」
-    }
-
-    // 如果已驗證，添加水印
-    if (
-      authState.value?.isAuthenticated &&
-      authState.value.discordDisplayName
-    ) {
-      CodeProtection.addWatermark(authState.value.discordDisplayName)
+      // 如果已驗證，添加水印
+      if (
+        authState.value?.isAuthenticated &&
+        authState.value.discordDisplayName
+      ) {
+        CodeProtection.addWatermark(authState.value.discordDisplayName)
+      }
+    } finally {
+      isInitialized.value = true
+      isInitializing.value = false
     }
   }
 
@@ -213,6 +222,9 @@ export const useAuthStore = defineStore('auth', () => {
   const remainingAttempts = computed(() =>
     Math.max(0, maxAttempts - verificationAttempts.value)
   )
+  const hasResolvedAuthState = computed(
+    () => isInitialized.value || authState.value?.isAuthenticated === true
+  )
 
   return {
     authState,
@@ -222,6 +234,9 @@ export const useAuthStore = defineStore('auth', () => {
     discordDisplayName,
     remainingAttempts,
     initError,
+    isInitializing,
+    isInitialized,
+    hasResolvedAuthState,
     initialize,
     retryInitialize: initialize,
     verifyCode,
