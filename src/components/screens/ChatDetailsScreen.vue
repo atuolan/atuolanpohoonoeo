@@ -8,12 +8,87 @@ interface GroupMemberInfo {
   avatar: string;
   isAdmin: boolean;
   isMuted: boolean;
+  /** 是否為用戶本人（置頂、不可移除） */
+  isSelf?: boolean;
+  // === 多人卡子角色徽章資訊 ===
+  /** 子角色來源類型：inline/character/multichar/persona */
+  subCharSource?: "inline" | "character" | "multichar" | "persona";
+  /** 是否為使用者角色型（由 AI 代演） */
+  isPersonaMember?: boolean;
+  /** 綁定的使用者名稱（關係綁定） */
+  boundPersonaName?: string;
+  /** 關係標籤（戀人/青梅竹馬等） */
+  relationLabel?: string;
+  /** 是否引入好感度 */
+  affinityEnabled?: boolean;
 }
 
 interface SelectableCharacter {
   id: string;
   name: string;
   avatar: string;
+}
+
+// === 子角色匯入來源（多人卡）===
+interface CharacterSourceItem {
+  id: string;
+  name: string;
+  avatar: string;
+  description?: string;
+  personality?: string;
+  scenario?: string;
+  privateChatId?: string;
+}
+interface MultiCharSourceItem {
+  sourceChatId: string;
+  cardName: string;
+  member: {
+    id: string;
+    name: string;
+    avatar: string;
+    source?: string;
+    personaSnapshot?: {
+      description?: string;
+      personality?: string;
+      scenario?: string;
+    };
+  };
+}
+interface PersonaSourceItem {
+  id: string;
+  name: string;
+  avatar: string;
+  description?: string;
+}
+interface BindablePersona {
+  id: string;
+  name: string;
+}
+
+/** 加子角色 emit payload（與 useMultiCharMembers.AddSubCharPayload 對齊） */
+interface AddSubCharEmitPayload {
+  name: string;
+  avatar?: string;
+  source?: "inline" | "character" | "multichar" | "persona";
+  sourceId?: string;
+  sourceChatId?: string;
+  personaSnapshot?: {
+    description?: string;
+    personality?: string;
+    scenario?: string;
+  };
+  isPersonaMember?: boolean;
+  userBinding?: {
+    mode: "none" | "bound";
+    boundPersonaId?: string;
+    boundPersonaName?: string;
+    relationLabel?: string;
+    flaunt?: boolean;
+  };
+  affinity?: {
+    enabled: boolean;
+    sourceChatId?: string;
+  };
 }
 
 interface LorebookInfo {
@@ -31,11 +106,20 @@ const props = defineProps<{
   groupMemberCount?: number;
   isCharBlocked: boolean;
   groupMembers?: GroupMemberInfo[];
+  /** 用戶本人名稱（顯示於成員列表頂部） */
+  currentUserName?: string;
+  /** 用戶本人頭像 */
+  currentUserAvatar?: string;
   isMultiCharCard?: boolean;
   groupAvatar?: string;
   availableCharacters?: SelectableCharacter[];
   groupLorebookIds?: string[];
   availableLorebooks?: LorebookInfo[];
+  // === 子角色匯入來源（多人卡）===
+  characterSources?: CharacterSourceItem[];
+  multiCharSources?: MultiCharSourceItem[];
+  personaSources?: PersonaSourceItem[];
+  bindablePersonas?: BindablePersona[];
 }>();
 
 const emit = defineEmits<{
@@ -59,7 +143,7 @@ const emit = defineEmits<{
   "toggle-member-admin": [characterId: string];
   "toggle-member-mute": [characterId: string];
   "toggle-lorebook": [lorebookId: string];
-  "add-multichar-member": [payload: { name: string; avatar: string }];
+  "add-multichar-member": [payload: AddSubCharEmitPayload];
   "remove-multichar-member": [id: string];
 }>();
 
@@ -74,10 +158,34 @@ const nickname = computed(() => {
 
 // === 群聊成員清單（含收合） ===
 const allMembers = computed<GroupMemberInfo[]>(() => props.groupMembers || []);
+
+// 用戶本人作為群成員，置頂顯示且不可移除
+const selfMember = computed<GroupMemberInfo>(() => ({
+  characterId: "__self__",
+  name: props.currentUserName || "我",
+  avatar: props.currentUserAvatar || "",
+  isAdmin: false,
+  isMuted: false,
+  isSelf: true,
+}));
+
+// 含用戶本人的完整成員清單（用戶置頂）
+const membersWithSelf = computed<GroupMemberInfo[]>(() => [
+  selfMember.value,
+  ...allMembers.value,
+]);
+
+// 成員總數（角色 + 用戶本人）
+const totalMemberCount = computed(
+  () => (props.groupMemberCount || allMembers.value.length) + 1,
+);
+
 const showAllMembers = ref(false);
 // 預設只顯示前 8 位，其餘收合
 const visibleMembers = computed(() =>
-  showAllMembers.value ? allMembers.value : allMembers.value.slice(0, 8),
+  showAllMembers.value
+    ? membersWithSelf.value
+    : membersWithSelf.value.slice(0, 8),
 );
 
 const hasCustomAvatar = computed(() => !!props.groupAvatar);
@@ -135,6 +243,46 @@ const showSubcharForm = ref(false);
 const subcharName = ref("");
 const subcharAvatar = ref("");
 const subcharAvatarInputRef = ref<HTMLInputElement | null>(null);
+
+// 來源類型：inline=手動輸入；character=角色卡；multichar=其他多人卡子角色；persona=使用者角色
+const subcharSourceType = ref<"inline" | "character" | "multichar" | "persona">(
+  "inline",
+);
+// 選中的來源實體 ID（character→characterId；multichar→sourceChatId::memberId；persona→personaId）
+const subcharSelectedSourceKey = ref("");
+// 好感度引入開關（僅 character 來源、且該角色有私聊時可用）
+const subcharAffinityEnabled = ref(false);
+// 關係綁定
+const subcharBindMode = ref<"none" | "bound">("none");
+const subcharBoundPersonaId = ref("");
+const subcharRelationLabel = ref("");
+const subcharFlaunt = ref(false);
+
+const charSources = computed<CharacterSourceItem[]>(
+  () => props.characterSources || [],
+);
+const mcSources = computed<MultiCharSourceItem[]>(
+  () => props.multiCharSources || [],
+);
+const personaSrc = computed<PersonaSourceItem[]>(
+  () => props.personaSources || [],
+);
+const bindablePersonaList = computed<BindablePersona[]>(
+  () => props.bindablePersonas || [],
+);
+
+// 當前選中的角色卡來源（用於判斷好感度可用性）
+const selectedCharacterSource = computed<CharacterSourceItem | null>(() => {
+  if (subcharSourceType.value !== "character") return null;
+  return (
+    charSources.value.find((c) => c.id === subcharSelectedSourceKey.value) ||
+    null
+  );
+});
+const affinityAvailable = computed(
+  () => !!selectedCharacterSource.value?.privateChatId,
+);
+
 function triggerSubcharAvatarUpload() {
   subcharAvatarInputRef.value?.click();
 }
@@ -149,19 +297,120 @@ function onSubcharAvatarFileChange(event: Event) {
   reader.readAsDataURL(file);
   input.value = "";
 }
+
+// 切換來源類型時重置選擇
+function onSourceTypeChange() {
+  subcharSelectedSourceKey.value = "";
+  subcharAffinityEnabled.value = false;
+}
+
+function buildUserBinding(): AddSubCharEmitPayload["userBinding"] {
+  if (subcharBindMode.value !== "bound" || !subcharBoundPersonaId.value) {
+    return { mode: "none" };
+  }
+  const persona = bindablePersonaList.value.find(
+    (p) => p.id === subcharBoundPersonaId.value,
+  );
+  return {
+    mode: "bound",
+    boundPersonaId: subcharBoundPersonaId.value,
+    boundPersonaName: persona?.name,
+    relationLabel: subcharRelationLabel.value.trim() || undefined,
+    flaunt: subcharFlaunt.value,
+  };
+}
+
 function confirmAddSubchar() {
-  const name = subcharName.value.trim();
-  if (!name) return;
-  emit("add-multichar-member", { name, avatar: subcharAvatar.value });
+  const type = subcharSourceType.value;
+  let payload: AddSubCharEmitPayload | null = null;
+
+  if (type === "inline") {
+    const name = subcharName.value.trim();
+    if (!name) return;
+    payload = {
+      name,
+      avatar: subcharAvatar.value,
+      source: "inline",
+      userBinding: buildUserBinding(),
+    };
+  } else if (type === "character") {
+    const src = charSources.value.find(
+      (c) => c.id === subcharSelectedSourceKey.value,
+    );
+    if (!src) return;
+    payload = {
+      name: src.name,
+      avatar: src.avatar,
+      source: "character",
+      sourceId: src.id,
+      sourceChatId: src.privateChatId,
+      personaSnapshot: {
+        description: src.description,
+        personality: src.personality,
+        scenario: src.scenario,
+      },
+      userBinding: buildUserBinding(),
+      affinity:
+        subcharAffinityEnabled.value && src.privateChatId
+          ? { enabled: true, sourceChatId: src.privateChatId }
+          : { enabled: false },
+    };
+  } else if (type === "multichar") {
+    const src = mcSources.value.find(
+      (m) => `${m.sourceChatId}::${m.member.id}` === subcharSelectedSourceKey.value,
+    );
+    if (!src) return;
+    payload = {
+      name: src.member.name,
+      avatar: src.member.avatar,
+      source: "multichar",
+      sourceId: src.member.id,
+      sourceChatId: src.sourceChatId,
+      personaSnapshot: src.member.personaSnapshot,
+      userBinding: buildUserBinding(),
+    };
+  } else if (type === "persona") {
+    const src = personaSrc.value.find(
+      (p) => p.id === subcharSelectedSourceKey.value,
+    );
+    if (!src) return;
+    payload = {
+      name: src.name,
+      avatar: src.avatar,
+      source: "persona",
+      sourceId: src.id,
+      isPersonaMember: true,
+      personaSnapshot: { description: src.description },
+      userBinding: buildUserBinding(),
+    };
+  }
+
+  if (!payload) return;
+  emit("add-multichar-member", payload);
+  resetSubcharForm();
+}
+
+function resetSubcharForm() {
   subcharName.value = "";
   subcharAvatar.value = "";
+  subcharSourceType.value = "inline";
+  subcharSelectedSourceKey.value = "";
+  subcharAffinityEnabled.value = false;
+  subcharBindMode.value = "none";
+  subcharBoundPersonaId.value = "";
+  subcharRelationLabel.value = "";
+  subcharFlaunt.value = false;
   showSubcharForm.value = false;
 }
 function cancelAddSubchar() {
-  subcharName.value = "";
-  subcharAvatar.value = "";
-  showSubcharForm.value = false;
+  resetSubcharForm();
 }
+
+// 確認按鈕是否可用
+const canConfirmSubchar = computed(() => {
+  if (subcharSourceType.value === "inline") return !!subcharName.value.trim();
+  return !!subcharSelectedSourceKey.value;
+});
 
 // 快捷操作/面板「加成員」：普通群聊展開角色挑選，多人卡展開子角色表單
 function onAddMemberQuick() {
@@ -309,7 +558,7 @@ function handleAction(action: string) {
             </button>
           </template>
         </div>
-        <p class="profile-subtitle">{{ groupMemberCount || allMembers.length }} 位成員</p>
+        <p class="profile-subtitle">{{ totalMemberCount }} 位成員</p>
 
         <!-- 快捷操作列：搜尋 / 加成員 / 清空 -->
         <div class="quick-actions">
@@ -352,7 +601,7 @@ function handleAction(action: string) {
         <section class="glass-panel rounded-soft">
           <div class="panel-deco panel-deco--bl"></div>
           <div class="panel-head">
-            <h3 class="panel-title">成員 · {{ groupMemberCount || allMembers.length }}</h3>
+            <h3 class="panel-title">成員 · {{ totalMemberCount }}</h3>
             <button class="panel-head-action" @click="onAddMemberQuick">
               + 加{{ isMultiCharCard ? '子角色' : '成員' }}
             </button>
@@ -371,12 +620,23 @@ function handleAction(action: string) {
               <div class="member-row-info">
                 <span class="member-row-name">{{ member.name }}</span>
                 <div class="member-row-badges">
+                  <span v-if="member.isSelf" class="badge badge--self">我</span>
                   <span v-if="member.isAdmin" class="badge badge--admin">管理員</span>
                   <span v-if="member.isMuted" class="badge badge--muted">已禁言</span>
+                  <!-- 多人卡子角色來源徽章 -->
+                  <span v-if="member.isPersonaMember" class="badge badge--persona">使用者角色·代演</span>
+                  <span v-else-if="member.subCharSource === 'character'" class="badge badge--source">角色卡</span>
+                  <span v-else-if="member.subCharSource === 'multichar'" class="badge badge--source">多人卡</span>
+                  <span v-if="member.boundPersonaName" class="badge badge--bound">
+                    綁定·{{ member.relationLabel || member.boundPersonaName }}
+                  </span>
+                  <span v-if="member.affinityEnabled" class="badge badge--affinity">好感度</span>
                 </div>
               </div>
+              <!-- 用戶本人：不可操作 -->
+              <div v-if="member.isSelf" class="member-row-actions"></div>
               <!-- 普通群聊：管理員 / 禁言 / 移除 -->
-              <div v-if="!isMultiCharCard" class="member-row-actions">
+              <div v-else-if="!isMultiCharCard" class="member-row-actions">
                 <button
                   class="member-op"
                   :class="{ active: member.isAdmin }"
@@ -425,11 +685,11 @@ function handleAction(action: string) {
           </div>
 
           <button
-            v-if="allMembers.length > 8"
+            v-if="membersWithSelf.length > 8"
             class="member-show-all"
             @click="showAllMembers = !showAllMembers"
           >
-            {{ showAllMembers ? '收起' : `顯示全部 ${allMembers.length} 位成員` }}
+            {{ showAllMembers ? '收起' : `顯示全部 ${totalMemberCount} 位成員` }}
           </button>
 
           <!-- 加成員：普通群聊角色挑選（內聯） -->
@@ -461,42 +721,173 @@ function handleAction(action: string) {
             </div>
           </div>
 
-          <!-- 加子角色：多人卡內聯表單 -->
+          <!-- 加子角色：多人卡內聯表單（多來源 + 關係綁定 + 好感度） -->
           <div v-if="isMultiCharCard && showSubcharForm" class="subchar-form">
-            <div class="subchar-row">
-              <button class="subchar-avatar" @click="triggerSubcharAvatarUpload">
-                <img v-if="subcharAvatar" :src="subcharAvatar" alt="頭像預覽" />
-                <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 5v14" />
-                  <path d="M5 12h14" />
-                </svg>
+            <!-- 來源類型選擇 -->
+            <div class="subchar-source-tabs">
+              <button
+                class="source-tab"
+                :class="{ active: subcharSourceType === 'inline' }"
+                @click="subcharSourceType = 'inline'; onSourceTypeChange()"
+              >
+                手動輸入
               </button>
+              <button
+                class="source-tab"
+                :class="{ active: subcharSourceType === 'character' }"
+                @click="subcharSourceType = 'character'; onSourceTypeChange()"
+              >
+                角色卡
+              </button>
+              <button
+                class="source-tab"
+                :class="{ active: subcharSourceType === 'multichar' }"
+                @click="subcharSourceType = 'multichar'; onSourceTypeChange()"
+              >
+                其他多人卡
+              </button>
+              <button
+                class="source-tab"
+                :class="{ active: subcharSourceType === 'persona' }"
+                @click="subcharSourceType = 'persona'; onSourceTypeChange()"
+              >
+                使用者角色
+              </button>
+            </div>
+
+            <!-- 手動輸入 -->
+            <template v-if="subcharSourceType === 'inline'">
+              <div class="subchar-row">
+                <button class="subchar-avatar" @click="triggerSubcharAvatarUpload">
+                  <img v-if="subcharAvatar" :src="subcharAvatar" alt="頭像預覽" />
+                  <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 5v14" />
+                    <path d="M5 12h14" />
+                  </svg>
+                </button>
+                <input
+                  v-model="subcharName"
+                  class="subchar-input"
+                  type="text"
+                  placeholder="角色名稱"
+                  @keydown.enter="confirmAddSubchar"
+                />
+              </div>
               <input
-                v-model="subcharName"
+                v-model="subcharAvatar"
                 class="subchar-input"
                 type="text"
-                placeholder="角色名稱"
-                @keydown.enter="confirmAddSubchar"
+                placeholder="頭像連結（或點左側上傳圖片）"
               />
+              <input
+                ref="subcharAvatarInputRef"
+                type="file"
+                accept="image/*"
+                class="hidden-file-input"
+                @change="onSubcharAvatarFileChange"
+              />
+            </template>
+
+            <!-- 角色卡來源 -->
+            <template v-else-if="subcharSourceType === 'character'">
+              <div v-if="charSources.length === 0" class="empty-hint">
+                尚無角色卡
+              </div>
+              <select v-else v-model="subcharSelectedSourceKey" class="subchar-select">
+                <option value="" disabled>選擇要引入的角色卡</option>
+                <option v-for="c in charSources" :key="c.id" :value="c.id">
+                  {{ c.name }}
+                </option>
+              </select>
+              <!-- 好感度引入開關 -->
+              <label
+                v-if="affinityAvailable"
+                class="subchar-toggle"
+              >
+                <input type="checkbox" v-model="subcharAffinityEnabled" />
+                <span>引入私聊好感度（唯讀，群聊不增減）</span>
+              </label>
+              <p
+                v-else-if="subcharSelectedSourceKey"
+                class="subchar-hint-mini"
+              >
+                此角色無私聊紀錄，無法引入好感度
+              </p>
+            </template>
+
+            <!-- 其他多人卡子角色來源 -->
+            <template v-else-if="subcharSourceType === 'multichar'">
+              <div v-if="mcSources.length === 0" class="empty-hint">
+                尚無其他多人卡子角色
+              </div>
+              <select v-else v-model="subcharSelectedSourceKey" class="subchar-select">
+                <option value="" disabled>選擇要引入的子角色</option>
+                <option
+                  v-for="m in mcSources"
+                  :key="`${m.sourceChatId}::${m.member.id}`"
+                  :value="`${m.sourceChatId}::${m.member.id}`"
+                >
+                  {{ m.member.name }}（來自 {{ m.cardName }}）
+                </option>
+              </select>
+            </template>
+
+            <!-- 使用者角色來源 -->
+            <template v-else-if="subcharSourceType === 'persona'">
+              <div v-if="personaSrc.length === 0" class="empty-hint">
+                尚無使用者角色
+              </div>
+              <select v-else v-model="subcharSelectedSourceKey" class="subchar-select">
+                <option value="" disabled>選擇要引入的使用者角色</option>
+                <option v-for="p in personaSrc" :key="p.id" :value="p.id">
+                  {{ p.name }}
+                </option>
+              </select>
+              <p class="subchar-hint-mini">此使用者角色將由 AI 代演</p>
+            </template>
+
+            <!-- 關係綁定（所有來源皆可設定，persona 來源除外的角色才有意義，但統一提供） -->
+            <div v-if="subcharSourceType !== 'persona'" class="subchar-binding">
+              <div class="subchar-binding-head">關係綁定</div>
+              <div class="subchar-bind-modes">
+                <label class="subchar-radio">
+                  <input type="radio" value="none" v-model="subcharBindMode" />
+                  <span>只針對當前使用者</span>
+                </label>
+                <label class="subchar-radio">
+                  <input type="radio" value="bound" v-model="subcharBindMode" />
+                  <span>已綁定其他使用者</span>
+                </label>
+              </div>
+              <template v-if="subcharBindMode === 'bound'">
+                <select v-model="subcharBoundPersonaId" class="subchar-select">
+                  <option value="" disabled>選擇綁定的使用者角色</option>
+                  <option
+                    v-for="p in bindablePersonaList"
+                    :key="p.id"
+                    :value="p.id"
+                  >
+                    {{ p.name }}
+                  </option>
+                </select>
+                <input
+                  v-model="subcharRelationLabel"
+                  class="subchar-input"
+                  type="text"
+                  placeholder="關係描述（如：戀人 / 青梅竹馬 / 主從）"
+                />
+                <label class="subchar-toggle">
+                  <input type="checkbox" v-model="subcharFlaunt" />
+                  <span>允許炫耀與綁定使用者的甜蜜日常</span>
+                </label>
+              </template>
             </div>
-            <input
-              v-model="subcharAvatar"
-              class="subchar-input"
-              type="text"
-              placeholder="頭像連結（或點左側上傳圖片）"
-            />
-            <input
-              ref="subcharAvatarInputRef"
-              type="file"
-              accept="image/*"
-              class="hidden-file-input"
-              @change="onSubcharAvatarFileChange"
-            />
+
             <div class="subchar-actions">
               <button class="subchar-cancel" @click="cancelAddSubchar">取消</button>
               <button
                 class="subchar-confirm"
-                :disabled="!subcharName.trim()"
+                :disabled="!canConfirmSubchar"
                 @click="confirmAddSubchar"
               >
                 新增
@@ -1412,6 +1803,31 @@ function handleAction(action: string) {
     color: var(--color-error, #b3261e);
     background: color-mix(in srgb, var(--color-error, #b3261e) 12%, transparent);
   }
+
+  &--self {
+    color: var(--color-primary, #00723a);
+    background: color-mix(in srgb, var(--color-primary, #00723a) 18%, transparent);
+  }
+
+  &--persona {
+    color: #7c3aed;
+    background: color-mix(in srgb, #7c3aed 14%, transparent);
+  }
+
+  &--source {
+    color: var(--color-text-secondary);
+    background: color-mix(in srgb, var(--color-text-secondary) 14%, transparent);
+  }
+
+  &--bound {
+    color: #d946a6;
+    background: color-mix(in srgb, #d946a6 14%, transparent);
+  }
+
+  &--affinity {
+    color: #d97706;
+    background: color-mix(in srgb, #d97706 14%, transparent);
+  }
 }
 
 .member-row-actions {
@@ -1666,6 +2082,108 @@ function handleAction(action: string) {
   &:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+}
+
+/* === 多人卡：加子角色來源選擇器 === */
+.subchar-source-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.source-tab {
+  flex: 1 1 auto;
+  min-width: 64px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, var(--color-text-secondary) 20%, transparent);
+  background: color-mix(in srgb, var(--color-surface) 85%, transparent);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+
+  &.active {
+    color: var(--color-on-primary, #ffffff);
+    background: var(--color-primary, #00723a);
+    border-color: var(--color-primary, #00723a);
+  }
+}
+
+.subchar-select {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 14px;
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-surface) 85%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-text-secondary) 20%, transparent);
+  border-radius: 12px;
+  padding: 9px 12px;
+  outline: none;
+  cursor: pointer;
+
+  &:focus {
+    border-color: var(--color-primary, #00723a);
+  }
+}
+
+.subchar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text);
+  cursor: pointer;
+
+  input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--color-primary, #00723a);
+    cursor: pointer;
+  }
+}
+
+.subchar-hint-mini {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.subchar-binding {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-text-secondary) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-text-secondary) 12%, transparent);
+}
+
+.subchar-binding-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.subchar-bind-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.subchar-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text);
+  cursor: pointer;
+
+  input {
+    accent-color: var(--color-primary, #00723a);
+    cursor: pointer;
   }
 }
 

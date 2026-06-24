@@ -32,7 +32,12 @@ import type {
   CharacterWorldSettings,
   StoredCharacter,
 } from "@/types/character";
-import type { ChatLocalPrompt, ChatMessage, ChatSettings } from "@/types/chat";
+import type {
+  ChatLocalPrompt,
+  ChatMessage,
+  ChatSettings,
+  MultiCharMember,
+} from "@/types/chat";
 import type { AuthorsNoteMetadata, PromptBuildResult } from "@/types/prompt";
 import { DEFAULT_PROMPTS } from "@/types/prompt";
 import type {
@@ -303,8 +308,8 @@ export interface PromptBuilderOptions {
   groupCallMode?: boolean;
   /** 是否為多人卡模式 */
   isMultiCharCard?: boolean;
-  /** 多人卡子角色列表 */
-  multiCharMembers?: Array<{ id: string; name: string; avatar: string }>;
+  /** 多人卡子角色列表（含多來源 / 關係綁定 / 好感度唯讀） */
+  multiCharMembers?: MultiCharMember[];
   /** 節日資訊（由外部傳入，PromptBuilder 不自己檢測） */
   holidayInfo?: {
     todayHoliday: {
@@ -2399,16 +2404,95 @@ ${negativeExample}
     const { groupMembers, groupName, isMultiCharCard, multiCharMembers } =
       this.options;
 
-    // 多人卡模式：只列出子角色名字，人設在卡的 description 裡
+    // 多人卡模式：列出子角色，並注入多來源人設 / 關係綁定 / 代演 / 好感度唯讀
     if (isMultiCharCard && multiCharMembers && multiCharMembers.length > 0) {
+      // 預先收集「在場的被代演使用者角色」(persona 成員) 的 personaId → 名字，
+      // 供「互相認知」使用：若某角色綁定的使用者剛好也在群裡，雙方互相知道關係。
+      const presentPersonaById = new Map<string, string>();
+      for (const m of multiCharMembers) {
+        const isPersona = m.isPersonaMember ?? m.source === "persona";
+        if (isPersona) {
+          const pid = m.sourceId || m.id;
+          if (pid) presentPersonaById.set(pid, m.name);
+        }
+      }
+
       const parts: string[] = [];
       parts.push(`<group_members>`);
       parts.push(`👥 多人卡「${groupName || "聊天"}」角色列表\n`);
+
       for (const member of multiCharMembers) {
-        parts.push(`【${member.name}】`);
+        const source = member.source || "inline";
+        const isPersona = member.isPersonaMember ?? source === "persona";
+
+        // 標題 + 類型標記
+        const typeTag = isPersona
+          ? "（使用者角色／需由你代演）"
+          : source === "character"
+            ? "（引入自其他角色卡）"
+            : source === "multichar"
+              ? "（引入自其他多人卡）"
+              : "";
+        parts.push(`【${member.name}】${typeTag}`);
+
+        // 人設快照（即時引用失效時的 fallback；inline 角色人設在卡 description 中）
+        const snap = member.personaSnapshot;
+        if (snap) {
+          if (snap.personality) parts.push(`  性格：${snap.personality}`);
+          if (snap.description) parts.push(`  人設：${snap.description}`);
+          if (snap.scenario) parts.push(`  情境：${snap.scenario}`);
+        }
+
+        // 代演指示
+        if (isPersona) {
+          parts.push(
+            `  🎭 此為一名「使用者角色」，除了真實使用者本人外，群裡的使用者角色都由你（AI）代為扮演發言與行動。`,
+          );
+        }
+
+        // 關係綁定注入
+        const binding = member.userBinding;
+        if (binding && binding.mode === "bound") {
+          const partnerName = binding.boundPersonaName || "另一位使用者";
+          const relation = binding.relationLabel || "特殊關係";
+          parts.push(
+            `  💞 關係綁定：此角色與「${partnerName}」是${relation}，心有所屬，對當前對話的使用者「沒有戀愛情感」，不會對其示好或曖昧。`,
+          );
+          if (binding.flaunt) {
+            parts.push(
+              `  ✨ 此角色樂於在群裡炫耀與「${partnerName}」的甜蜜日常。`,
+            );
+          }
+          // 互相認知：綁定的使用者角色也在場
+          if (
+            binding.boundPersonaId &&
+            presentPersonaById.has(binding.boundPersonaId)
+          ) {
+            parts.push(
+              `  👀 互相認知：「${partnerName}」此刻也在群裡，雙方清楚彼此是${relation}，互動時應體現這層關係。`,
+            );
+          }
+        }
+
+        // 好感度唯讀注入
+        const aff = member.affinity;
+        if (aff && aff.enabled && aff.metricsSnapshot && aff.metricsSnapshot.length > 0) {
+          const metricStr = aff.metricsSnapshot
+            .map((mt) => {
+              const stagePart = mt.stage ? `（${mt.stage}）` : "";
+              return `${mt.name}：${mt.value}${stagePart}`;
+            })
+            .join("、");
+          parts.push(
+            `  📊 對當前使用者的既有好感度（來自私聊，唯讀）：${metricStr}。請依此關係進度表現，但群聊中此數值「只讀不變」，不增不減。`,
+          );
+        }
+
+        parts.push("");
       }
+
       parts.push(
-        `\n⚠️ 以上角色的詳細人設請參考角色描述（description）中的內容。`,
+        `⚠️ 以上「inline / 引入角色卡」角色的完整人設亦可參考角色描述（description）中的內容。`,
       );
       parts.push(`</group_members>`);
       return {
@@ -2475,9 +2559,17 @@ ${negativeExample}
     // 多人卡模式
     if (isMultiCharCard && multiCharMembers && multiCharMembers.length > 0) {
       const names = multiCharMembers.map((m) => m.name);
+      // 被代演的使用者角色（persona 成員）
+      const personaNames = multiCharMembers
+        .filter((m) => m.isPersonaMember ?? m.source === "persona")
+        .map((m) => m.name);
+      const personaLine =
+        personaNames.length > 0
+          ? `\n🧑 其中「${personaNames.join("、")}」是使用者角色，除真實使用者本人外，這些角色一律由你（AI）代為扮演發言與行動。`
+          : "";
       const content = `<group_character_names>
 🎭 本次多人卡共有 ${names.length} 位角色：${names.join("、")}
-⚠️ 你必須扮演以上所有角色，每個角色都必須有機會發言，不能遺漏任何一位！
+⚠️ 你必須扮演以上所有角色，每個角色都必須有機會發言，不能遺漏任何一位！${personaLine}
 </group_character_names>`;
       return { role: "system", content, identifier: "gcGroupCharacterNames" };
     }

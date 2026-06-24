@@ -620,7 +620,43 @@ export interface GroupCallState {
 }
 
 // ===== 多人卡子角色 =====
-/** 多人卡子角色（一張卡內的多個角色） */
+
+/** 子角色來源類型 */
+export type SubCharSource =
+  | "inline" // 本卡子角色（手動輸入，人設在卡的 description）
+  | "character" // 引入其他角色卡
+  | "multichar" // 引入其他多人卡的子角色
+  | "persona"; // 引入其他使用者角色（Persona），由 AI 代演
+
+/** 子角色與「使用者」的關係綁定 */
+export interface SubCharUserBinding {
+  /** 綁定模式：none = 只針對當前使用者；bound = 已綁定另一個使用者 */
+  mode: "none" | "bound";
+  /** 綁定的使用者角色（Persona）ID（mode=bound 時有效） */
+  boundPersonaId?: string;
+  /** 綁定使用者的名稱快照（避免 persona 被刪後失聯） */
+  boundPersonaName?: string;
+  /** 關係描述（例：戀人 / 青梅竹馬 / 主從），注入到 prompt 用 */
+  relationLabel?: string;
+  /** 是否允許炫耀與綁定使用者的甜蜜日常（注入行為引導） */
+  flaunt?: boolean;
+}
+
+/** 引入的好感度數值（唯讀快照，群聊不寫回私聊） */
+export interface SubCharAffinitySnapshot {
+  /** 是否啟用好感度引入 */
+  enabled: boolean;
+  /** 來源私聊 chatId（即時讀取現值用） */
+  sourceChatId?: string;
+  /** 引入當下的數值快照（來源不可用時的 fallback，僅供顯示/注入） */
+  metricsSnapshot?: Array<{
+    name: string;
+    value: string | number;
+    stage?: string;
+  }>;
+}
+
+/** 多人卡子角色（一張卡內的多個角色，或引入的外部來源角色） */
 export interface MultiCharMember {
   /** 虛擬 ID（用於消息的 senderCharacterId，格式：multi_xxx） */
   id: string;
@@ -628,6 +664,26 @@ export interface MultiCharMember {
   name: string;
   /** 頭像 URL */
   avatar: string;
+
+  // ===== 多來源 / 關係綁定擴展（皆為可選，向後相容；未設定時視為 inline） =====
+  /** 來源類型，未設定時視為 'inline' */
+  source?: SubCharSource;
+  /** 來源實體 ID：character → characterId；multichar → 來源子角色 id；persona → personaId */
+  sourceId?: string;
+  /** 來源多人卡 / 私聊的 chatId（multichar 追溯、character 讀好感度用） */
+  sourceChatId?: string;
+  /** 人設快照（即時引用的 fallback，來源被改/刪後仍可用） */
+  personaSnapshot?: {
+    description?: string;
+    personality?: string;
+    scenario?: string;
+  };
+  /** 是否為使用者角色型成員（source=persona）。在群裡是「被代演的使用者角色」 */
+  isPersonaMember?: boolean;
+  /** 與使用者的關係綁定設定 */
+  userBinding?: SubCharUserBinding;
+  /** 引入的好感度（唯讀，群聊不增減/不寫回） */
+  affinity?: SubCharAffinitySnapshot;
 }
 
 // ===== 群聊元數據 =====

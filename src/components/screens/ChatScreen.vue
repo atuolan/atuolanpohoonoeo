@@ -159,7 +159,11 @@ import type {
   ChatMessage,
   GenerationDiagnostics,
   GenerationContaminationProbeResult,
+  SubCharSource,
+  SubCharUserBinding,
+  SubCharAffinitySnapshot,
 } from "@/types/chat";
+import { useSubCharSources } from "@/composables/useSubCharSources";
 import type {
   ChatScreenImageData as ImageData,
   ChatScreenMediaType as MediaType,
@@ -486,6 +490,17 @@ const groupMembersForInfo = computed(() => {
       avatar: member.avatar,
       isAdmin: false,
       isMuted: false,
+      subCharSource: member.source,
+      isPersonaMember: member.isPersonaMember,
+      boundPersonaName:
+        member.userBinding?.mode === "bound"
+          ? member.userBinding.boundPersonaName
+          : undefined,
+      relationLabel:
+        member.userBinding?.mode === "bound"
+          ? member.userBinding.relationLabel
+          : undefined,
+      affinityEnabled: member.affinity?.enabled,
     }));
   }
 
@@ -1840,19 +1855,102 @@ async function handleDetailsToggleLorebook(lorebookId: string) {
   await saveChatImmediate();
 }
 
-// 新增子角色（多人卡，即時儲存）
-async function handleDetailsAddSubchar(payload: {
+// 加子角色 emit payload（與 ChatDetailsScreen / useMultiCharMembers 對齊）
+interface AddSubCharEmitPayload {
   name: string;
-  avatar: string;
-}) {
+  avatar?: string;
+  source?: SubCharSource;
+  sourceId?: string;
+  sourceChatId?: string;
+  personaSnapshot?: {
+    description?: string;
+    personality?: string;
+    scenario?: string;
+  };
+  isPersonaMember?: boolean;
+  userBinding?: {
+    mode: "none" | "bound";
+    boundPersonaId?: string;
+    boundPersonaName?: string;
+    relationLabel?: string;
+    flaunt?: boolean;
+  };
+  affinity?: {
+    enabled: boolean;
+    sourceChatId?: string;
+  };
+}
+
+// 子角色匯入來源清單（角色卡 / 其他多人卡子角色 / persona）
+const {
+  characterSources: subcharCharacterSources,
+  multiCharSources: subcharMultiCharSources,
+  personaSources: subcharPersonaSources,
+  bindablePersonas: subcharBindablePersonas,
+} = useSubCharSources({
+  currentChatId: () => currentChatId.value ?? undefined,
+});
+
+// 新增子角色（多人卡，即時儲存，支援多來源 + 關係綁定 + 好感度唯讀引入）
+async function handleDetailsAddSubchar(payload: AddSubCharEmitPayload) {
   if (!groupMetadata.value) return;
+  if (!payload.name?.trim()) return;
   if (!groupMetadata.value.multiCharMembers) {
     groupMetadata.value.multiCharMembers = [];
   }
+
+  const source: SubCharSource = payload.source || "inline";
+
+  // 關係綁定
+  let userBinding: SubCharUserBinding | undefined;
+  if (payload.userBinding && payload.userBinding.mode === "bound") {
+    userBinding = {
+      mode: "bound",
+      boundPersonaId: payload.userBinding.boundPersonaId,
+      boundPersonaName: payload.userBinding.boundPersonaName,
+      relationLabel: payload.userBinding.relationLabel,
+      flaunt: payload.userBinding.flaunt,
+    };
+  } else if (payload.userBinding) {
+    userBinding = { mode: "none" };
+  }
+
+  // 好感度唯讀快照（引入私聊現值作為 fallback）
+  let affinity: SubCharAffinitySnapshot | undefined;
+  if (payload.affinity?.enabled && payload.affinity.sourceChatId) {
+    const sourceChatId = payload.affinity.sourceChatId;
+    let metricsSnapshot:
+      | Array<{ name: string; value: string | number; stage?: string }>
+      | undefined;
+    try {
+      await affinityStore.loadState(sourceChatId);
+      const snap = affinityStore.getMetricsSnapshot(sourceChatId);
+      if (snap.length > 0) {
+        metricsSnapshot = snap.map((m) => ({
+          name: m.name,
+          value: m.value as string | number,
+          stage: m.stage ?? undefined,
+        }));
+      }
+    } catch (err) {
+      console.warn("[多人卡] 引入好感度快照失敗", err);
+    }
+    affinity = { enabled: true, sourceChatId, metricsSnapshot };
+  } else if (payload.affinity) {
+    affinity = { enabled: false };
+  }
+
   groupMetadata.value.multiCharMembers.push({
     id: `multi_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    name: payload.name,
-    avatar: payload.avatar,
+    name: payload.name.trim(),
+    avatar: payload.avatar || "",
+    source,
+    sourceId: payload.sourceId,
+    sourceChatId: payload.sourceChatId,
+    personaSnapshot: payload.personaSnapshot,
+    isPersonaMember: payload.isPersonaMember ?? source === "persona",
+    userBinding,
+    affinity,
   });
   await saveChatImmediate();
 }
@@ -3472,6 +3570,46 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       placement: regex_placement.AI_OUTPUT,
     });
 
+    // 多人卡子角色：好感度「即時讀取為主、快照 fallback」
+    // 對啟用好感度引入的成員，從來源私聊重新讀取現值，刷新 metricsSnapshot（唯讀，不寫回私聊）
+    let resolvedMultiCharMembers = groupMetadata.value?.isMultiCharCard
+      ? groupMetadata.value.multiCharMembers
+      : undefined;
+    if (resolvedMultiCharMembers && resolvedMultiCharMembers.length > 0) {
+      const refreshed = await Promise.all(
+        resolvedMultiCharMembers.map(async (member) => {
+          const aff = member.affinity;
+          if (!aff?.enabled || !aff.sourceChatId) return member;
+          try {
+            await affinityStore.loadState(aff.sourceChatId);
+            const live = affinityStore.getMetricsSnapshot(aff.sourceChatId);
+            if (live && live.length > 0) {
+              return {
+                ...member,
+                affinity: {
+                  ...aff,
+                  metricsSnapshot: live.map((m) => ({
+                    name: m.name,
+                    value: m.value as string | number,
+                    stage: m.stage ?? undefined,
+                  })),
+                },
+              };
+            }
+          } catch (err) {
+            console.warn(
+              "[ChatScreen] 多人卡好感度即時讀取失敗，沿用快照",
+              { memberId: member.id, sourceChatId: aff.sourceChatId },
+              err,
+            );
+          }
+          // 來源不可用 → 沿用既有快照 fallback
+          return member;
+        }),
+      );
+      resolvedMultiCharMembers = refreshed;
+    }
+
     const builder = new PromptBuilder({
       character: char,
       lorebooks: linkedLorebooks,
@@ -3562,9 +3700,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         !(groupMetadata.value?.isMultiCharCard && chatFaceToFaceMode.value),
       // 多人卡模式參數
       isMultiCharCard: groupMetadata.value?.isMultiCharCard || false,
-      multiCharMembers: groupMetadata.value?.isMultiCharCard
-        ? groupMetadata.value.multiCharMembers
-        : undefined,
+      multiCharMembers: resolvedMultiCharMembers,
       // 普通群聊成員（多人卡模式不需要）
       groupMembers:
         isGroupChat.value &&
@@ -7993,11 +8129,17 @@ useChatCleanup({
           :group-member-count="groupMemberCount"
           :is-char-blocked="isCharBlocked"
           :group-members="groupMembersForInfo"
+          :current-user-name="userStore.currentName"
+          :current-user-avatar="displayUserAvatar"
           :is-multi-char-card="!!groupMetadata?.isMultiCharCard"
           :group-avatar="detailsGroupAvatar"
           :available-characters="detailsAvailableCharacters"
           :group-lorebook-ids="detailsGroupLorebookIds"
           :available-lorebooks="detailsAvailableLorebooks"
+          :character-sources="subcharCharacterSources"
+          :multi-char-sources="subcharMultiCharSources"
+          :persona-sources="subcharPersonaSources"
+          :bindable-personas="subcharBindablePersonas"
           @close="closeChatDetails"
           @navigate="onHeaderNavigate"
           @open-search-bar="openSearchBar"

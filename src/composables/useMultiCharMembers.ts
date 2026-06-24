@@ -1,5 +1,27 @@
 import { ref, type ComputedRef } from "vue";
-import type { MultiCharMember } from "@/types/chat";
+import type {
+  MultiCharMember,
+  SubCharSource,
+  SubCharUserBinding,
+  SubCharAffinitySnapshot,
+} from "@/types/chat";
+
+/** 帶來源/關係/好感度的子角色新增 payload */
+export interface AddSubCharPayload {
+  name: string;
+  avatar?: string;
+  source?: SubCharSource;
+  sourceId?: string;
+  sourceChatId?: string;
+  personaSnapshot?: {
+    description?: string;
+    personality?: string;
+    scenario?: string;
+  };
+  isPersonaMember?: boolean;
+  userBinding?: SubCharUserBinding;
+  affinity?: SubCharAffinitySnapshot;
+}
 
 export function useMultiCharMembers(context: {
   groupMetadata: ComputedRef<any>;
@@ -108,6 +130,48 @@ export function useMultiCharMembers(context: {
     editingMultiCharId.value = null;
   }
 
+  /**
+   * 帶來源/關係/好感度的新增（步驟3）。
+   * 供 UI 的多來源匯入使用：character / multichar / persona / inline。
+   * 編輯模式（editingMultiCharId 有值）時，會就地更新該成員的所有欄位。
+   */
+  function addMultiCharMemberFromPayload(payload: AddSubCharPayload) {
+    if (!context.groupMetadata.value || !payload.name?.trim()) return;
+    if (!context.groupMetadata.value.multiCharMembers) {
+      context.groupMetadata.value.multiCharMembers = [];
+    }
+
+    const source: SubCharSource = payload.source || "inline";
+    const fields: Partial<MultiCharMember> = {
+      name: payload.name.trim(),
+      source,
+      sourceId: payload.sourceId,
+      sourceChatId: payload.sourceChatId,
+      personaSnapshot: payload.personaSnapshot,
+      isPersonaMember: payload.isPersonaMember ?? source === "persona",
+      userBinding: payload.userBinding,
+      affinity: payload.affinity,
+    };
+
+    if (editingMultiCharId.value) {
+      const member = context.groupMetadata.value.multiCharMembers.find(
+        (m: MultiCharMember) => m.id === editingMultiCharId.value,
+      );
+      if (member) {
+        Object.assign(member, fields);
+        if (payload.avatar) member.avatar = payload.avatar;
+      }
+    } else {
+      context.groupMetadata.value.multiCharMembers.push({
+        id: `multi_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        avatar: payload.avatar || "",
+        ...fields,
+      } as MultiCharMember);
+    }
+
+    resetMultiCharForm();
+  }
+
   return {
     showAddMultiCharMember,
     newMultiCharName,
@@ -119,6 +183,7 @@ export function useMultiCharMembers(context: {
     triggerMultiCharAvatarUpload,
     handleMultiCharAvatarChange,
     addMultiCharMember,
+    addMultiCharMemberFromPayload,
     editMultiCharMember,
     removeMultiCharMember,
     resetMultiCharForm,
