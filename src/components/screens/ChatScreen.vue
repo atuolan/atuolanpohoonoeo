@@ -1747,6 +1747,122 @@ const {
   resetMultiCharForm,
 });
 
+// ===== ChatDetailsScreen 群聊內聯編輯：傳入資料與處理函式 =====
+// 群頭像（自訂群頭像，與顯示用 displayAvatar 區分）
+const detailsGroupAvatar = computed(() => groupMetadata.value?.groupAvatar || "");
+
+// 可加入群聊的角色（尚未在群內）
+const detailsAvailableCharacters = computed(() => {
+  if (!groupMetadata.value || groupMetadata.value.isMultiCharCard) return [];
+  return charactersStore.characters
+    .filter(
+      (c) =>
+        !groupMetadata.value?.members?.some(
+          (m: any) => m.characterId === c.id,
+        ),
+    )
+    .map((c) => ({
+      id: c.id,
+      name: c.data?.name || c.nickname || "未命名",
+      avatar: c.avatar || "",
+    }));
+});
+
+// 群組綁定世界書 id 清單
+const detailsGroupLorebookIds = computed(
+  () => groupMetadata.value?.lorebookIds || [],
+);
+
+// 可綁定的世界書清單
+const detailsAvailableLorebooks = computed(() =>
+  lorebooksStore.lorebooks.map((lb) => ({
+    id: lb.id,
+    name: lb.name,
+    entries: lb.entries,
+  })),
+);
+
+// 更新群名稱（即時儲存）
+async function handleDetailsUpdateGroupName(name: string) {
+  if (!groupMetadata.value) return;
+  groupMetadata.value.groupName = name;
+  await saveChatImmediate();
+}
+
+// 變更群頭像（即時儲存）
+async function handleDetailsChangeGroupAvatar(dataUrl: string) {
+  if (!groupMetadata.value) return;
+  groupMetadata.value.groupAvatar = dataUrl;
+  await saveChatImmediate();
+}
+
+// 移除群頭像（即時儲存）
+async function handleDetailsRemoveGroupAvatar() {
+  if (!groupMetadata.value) return;
+  groupMetadata.value.groupAvatar = undefined;
+  await saveChatImmediate();
+}
+
+// 加成員（即時儲存）
+async function handleDetailsAddMember(characterId: string) {
+  addMemberToGroup(characterId);
+  await saveChatImmediate();
+}
+
+// 移除成員（即時儲存）
+async function handleDetailsRemoveMember(characterId: string) {
+  removeGroupMember(characterId);
+  await saveChatImmediate();
+}
+
+// 切換管理員（即時儲存）
+async function handleDetailsToggleAdmin(characterId: string) {
+  toggleGroupMemberAdmin(characterId);
+  await saveChatImmediate();
+}
+
+// 切換禁言（即時儲存）
+async function handleDetailsToggleMute(characterId: string) {
+  toggleGroupMemberMute(characterId);
+  await saveChatImmediate();
+}
+
+// 切換綁定世界書（直接改 groupMetadata，即時儲存）
+async function handleDetailsToggleLorebook(lorebookId: string) {
+  if (!groupMetadata.value) return;
+  const ids: string[] = groupMetadata.value.lorebookIds || [];
+  const idx = ids.indexOf(lorebookId);
+  if (idx === -1) {
+    groupMetadata.value.lorebookIds = [...ids, lorebookId];
+  } else {
+    groupMetadata.value.lorebookIds = ids.filter((id) => id !== lorebookId);
+  }
+  await saveChatImmediate();
+}
+
+// 新增子角色（多人卡，即時儲存）
+async function handleDetailsAddSubchar(payload: {
+  name: string;
+  avatar: string;
+}) {
+  if (!groupMetadata.value) return;
+  if (!groupMetadata.value.multiCharMembers) {
+    groupMetadata.value.multiCharMembers = [];
+  }
+  groupMetadata.value.multiCharMembers.push({
+    id: `multi_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    name: payload.name,
+    avatar: payload.avatar,
+  });
+  await saveChatImmediate();
+}
+
+// 移除子角色（多人卡，即時儲存）
+async function handleDetailsRemoveSubchar(id: string) {
+  removeMultiCharMember(id);
+  await saveChatImmediate();
+}
+
 // ===== 分享歌曲到聊天 =====
 async function handleShareMusicToChat() {
   const musicStore = useMusicStore();
@@ -5326,6 +5442,28 @@ const {
   },
 });
 
+// ===== 開啟新對話：模式選擇（保留當前另開新對話 / 清除當前重開）=====
+const newConvMode = ref<"new" | "clear">("new");
+
+/** 群組詳情 / 更多選單觸發「開啟新對話」：重置為預設模式後開啟確認彈窗 */
+function onStartNewConversation() {
+  newConvMode.value = "new";
+  newChatPinToList.value = false;
+  startNewConversation();
+}
+
+/** 依所選模式分派：保留當前→新建聊天檔案；清除當前→清空重開 */
+async function onConfirmNewConversation(withGreeting: boolean) {
+  if (newConvMode.value === "new") {
+    // 同步開場白選擇到新建聊天流程
+    selectedGreetingIndex.value = newConvGreetingIndex.value;
+    showNewConversationConfirm.value = false;
+    await createNewChatFile(withGreeting);
+  } else {
+    await confirmNewConversation(withGreeting);
+  }
+}
+
 // 停止 AI 生成
 function stopAIGeneration() {
   const task = getChatGenerationTask();
@@ -6114,6 +6252,33 @@ function toggleMoreMenu() {
 function openChatDetails() {
   closeMenus();
   showChatDetails.value = true;
+  // 推入一筆瀏覽器歷史，讓「返回上一頁」先關閉詳情頁而非離開聊天
+  if (typeof window !== "undefined") {
+    window.history.pushState(
+      { ...(window.history.state || {}), __chatDetails: true },
+      "",
+    );
+  }
+}
+
+// 關閉詳情頁：若是透過 openChatDetails 推入的歷史條目，改用 history.back()
+// 觸發 popstate 來關閉，保持瀏覽器歷史一致；否則直接隱藏。
+function closeChatDetails() {
+  if (
+    typeof window !== "undefined" &&
+    window.history.state?.__chatDetails
+  ) {
+    window.history.back();
+  } else {
+    showChatDetails.value = false;
+  }
+}
+
+// 監聽返回鍵：詳情頁開啟時，返回鍵先關閉詳情頁
+function handleChatDetailsPopState() {
+  if (showChatDetails.value) {
+    showChatDetails.value = false;
+  }
 }
 
 // 切換小遊戲選單
@@ -7610,11 +7775,19 @@ onMounted(async () => {
   bgGenerationPoller
     .recoverActiveTasks()
     .catch((error) => console.warn("[ChatScreen] 恢復 HF 後台生成任務失敗", error));
+
+  // 監聽返回鍵，讓詳情頁開啟時返回鍵先關閉詳情頁
+  if (typeof window !== "undefined") {
+    window.addEventListener("popstate", handleChatDetailsPopState);
+  }
 });
 
 onUnmounted(() => {
   for (const cleanup of cleanupBgGenerationPollerHandlers.splice(0)) {
     cleanup();
+  }
+  if (typeof window !== "undefined") {
+    window.removeEventListener("popstate", handleChatDetailsPopState);
   }
 });
 
@@ -7802,7 +7975,7 @@ useChatCleanup({
       @open-chat-files-panel="openChatFilesPanel"
       @export-current-chat="exportCurrentChat"
       @trigger-jsonl-import="triggerJsonlImport"
-      @start-new-conversation="startNewConversation"
+      @start-new-conversation="onStartNewConversation"
       @toggle-block-character="toggleBlockCharacter"
       @clear-chat-history="clearChatHistory"
     />
@@ -7817,21 +7990,36 @@ useChatCleanup({
           :is-group-chat="isGroupChat"
           :group-display-name="groupDisplayName"
           :display-character-name="displayCharacterName"
-          :current-character="currentCharacter"
           :group-member-count="groupMemberCount"
           :is-char-blocked="isCharBlocked"
-          @close="showChatDetails = false"
+          :group-members="groupMembersForInfo"
+          :is-multi-char-card="!!groupMetadata?.isMultiCharCard"
+          :group-avatar="detailsGroupAvatar"
+          :available-characters="detailsAvailableCharacters"
+          :group-lorebook-ids="detailsGroupLorebookIds"
+          :available-lorebooks="detailsAvailableLorebooks"
+          @close="closeChatDetails"
           @navigate="onHeaderNavigate"
           @open-search-bar="openSearchBar"
           @open-chat-info="openChatInfo"
           @open-chat-files-panel="openChatFilesPanel"
           @export-current-chat="exportCurrentChat"
           @trigger-jsonl-import="triggerJsonlImport"
-          @start-new-conversation="startNewConversation"
+          @start-new-conversation="onStartNewConversation"
           @toggle-block-character="toggleBlockCharacter"
           @clear-chat-history="clearChatHistory"
           @open-proactive-message-settings="showProactiveMessageSettings = true"
           @open-chat-vars="showChatVarsPanel = true"
+          @update-group-name="handleDetailsUpdateGroupName"
+          @change-group-avatar="handleDetailsChangeGroupAvatar"
+          @remove-group-avatar="handleDetailsRemoveGroupAvatar"
+          @add-group-member="handleDetailsAddMember"
+          @remove-group-member="handleDetailsRemoveMember"
+          @toggle-member-admin="handleDetailsToggleAdmin"
+          @toggle-member-mute="handleDetailsToggleMute"
+          @toggle-lorebook="handleDetailsToggleLorebook"
+          @add-multichar-member="handleDetailsAddSubchar"
+          @remove-multichar-member="handleDetailsRemoveSubchar"
         />
       </Transition>
     </Teleport>
@@ -10893,9 +11081,48 @@ useChatCleanup({
         >
           <div class="new-chat-confirm-modal">
             <h3>開啟新對話</h3>
-            <p style="color: var(--color-danger, #e53e3e); font-size: 13px;">
-              將清除所有聊天內容、總結記憶、日記和重要事件，不可恢復！
-            </p>
+
+            <!-- 模式選擇 -->
+            <div class="new-conv-mode-list">
+              <div
+                class="new-conv-mode-option"
+                :class="{ selected: newConvMode === 'new' }"
+                @click="newConvMode = 'new'"
+              >
+                <div class="greeting-radio">
+                  <div
+                    v-if="newConvMode === 'new'"
+                    class="greeting-radio-dot"
+                  ></div>
+                </div>
+                <div class="greeting-option-content">
+                  <span class="greeting-option-label">另開新對話（保留當前）</span>
+                  <span class="greeting-option-preview"
+                    >建立一個全新的聊天，當前對話會完整保留，可從「聊天檔案」切換回去。</span
+                  >
+                </div>
+              </div>
+              <div
+                class="new-conv-mode-option"
+                :class="{ selected: newConvMode === 'clear' }"
+                @click="newConvMode = 'clear'"
+              >
+                <div class="greeting-radio">
+                  <div
+                    v-if="newConvMode === 'clear'"
+                    class="greeting-radio-dot"
+                  ></div>
+                </div>
+                <div class="greeting-option-content">
+                  <span class="greeting-option-label">清除當前重開</span>
+                  <span
+                    class="greeting-option-preview"
+                    style="color: var(--color-danger, #e53e3e);"
+                    >將清除當前聊天內容、總結記憶、日記和重要事件，不可恢復！</span
+                  >
+                </div>
+              </div>
+            </div>
 
             <!-- 開場白選擇列表 -->
             <div
@@ -10930,14 +11157,22 @@ useChatCleanup({
               </div>
             </div>
 
+            <label
+              v-if="newConvMode === 'new'"
+              class="branch-memory-option"
+            >
+              <input v-model="newChatPinToList" type="checkbox" />
+              <span>聊天置頂（可同時與同一角色開多個聊天）</span>
+            </label>
+
             <div class="new-chat-confirm-actions">
               <button class="btn-cancel" @click="showNewConversationConfirm = false">
                 取消
               </button>
-              <button class="btn-secondary" @click="confirmNewConversation(false)">
+              <button class="btn-secondary" @click="onConfirmNewConversation(false)">
                 不帶開場白
               </button>
-              <button class="btn-confirm" @click="confirmNewConversation(true)">
+              <button class="btn-confirm" @click="onConfirmNewConversation(true)">
                 帶開場白
               </button>
             </div>
@@ -15361,6 +15596,34 @@ body.is-night-mode {
     font-weight: 500;
     color: var(--color-text, #333);
     margin-bottom: 2px;
+  }
+}
+
+// 開啟新對話：模式選擇列表
+.new-conv-mode-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.new-conv-mode-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: var(--color-surface-hover, rgba(0, 0, 0, 0.03));
+  }
+
+  &.selected {
+    border-color: var(--color-primary, #7dd3a8);
+    background: var(--color-primary-light, rgba(125, 211, 168, 0.08));
   }
 }
 
