@@ -145,6 +145,8 @@ const emit = defineEmits<{
   "toggle-lorebook": [lorebookId: string];
   "add-multichar-member": [payload: AddSubCharEmitPayload];
   "remove-multichar-member": [id: string];
+  /** 普通群聊：新增成員（多來源 + 關係綁定 + 好感度，與多人卡同 payload） */
+  "add-group-member-rich": [payload: AddSubCharEmitPayload];
 }>();
 
 const displayName = computed(() => props.isGroupChat ? props.groupDisplayName : props.displayCharacterName);
@@ -386,7 +388,11 @@ function confirmAddSubchar() {
   }
 
   if (!payload) return;
-  emit("add-multichar-member", payload);
+  if (props.isMultiCharCard) {
+    emit("add-multichar-member", payload);
+  } else {
+    emit("add-group-member-rich", payload);
+  }
   resetSubcharForm();
 }
 
@@ -412,13 +418,9 @@ const canConfirmSubchar = computed(() => {
   return !!subcharSelectedSourceKey.value;
 });
 
-// 快捷操作/面板「加成員」：普通群聊展開角色挑選，多人卡展開子角色表單
+// 快捷操作/面板「加成員」：統一展開多來源子角色表單（普通群聊與多人卡共用）
 function onAddMemberQuick() {
-  if (props.isMultiCharCard) {
-    showSubcharForm.value = true;
-  } else {
-    showMemberPicker.value = true;
-  }
+  showSubcharForm.value = true;
 }
 
 // === 世界書 ===
@@ -721,8 +723,8 @@ function handleAction(action: string) {
             </div>
           </div>
 
-          <!-- 加子角色：多人卡內聯表單（多來源 + 關係綁定 + 好感度） -->
-          <div v-if="isMultiCharCard && showSubcharForm" class="subchar-form">
+          <!-- 加成員/子角色：多來源內聯表單（普通群聊與多人卡共用，含關係綁定 + 好感度） -->
+          <div v-if="showSubcharForm" class="subchar-form">
             <!-- 來源類型選擇 -->
             <div class="subchar-source-tabs">
               <button

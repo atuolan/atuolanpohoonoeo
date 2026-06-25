@@ -583,7 +583,11 @@ export interface ChatMessage {
 
 // ===== 群聊成員 =====
 export interface GroupMember {
-  /** 角色 ID */
+  /**
+   * 成員 ID。
+   * - 一般角色卡成員：真實 characterId。
+   * - 虛擬成員（手動 / persona / 引入來源無真實卡）：虛擬 ID（格式：gm_xxx）。
+   */
   characterId: string;
   /** 群暱稱（可選，覆蓋角色本名） */
   nickname?: string;
@@ -593,6 +597,35 @@ export interface GroupMember {
   isMuted: boolean;
   /** 加入時間 */
   joinedAt: number;
+
+  // ===== 多來源 / 關係綁定擴展（皆為可選，向後相容；未設定時視為一般角色卡成員） =====
+  /**
+   * 是否為虛擬成員（無對應真實角色卡，人設由 name/personaSnapshot 承載）。
+   * 未設定時視為一般角色卡成員（沿用 characterStore 查找）。
+   */
+  isVirtual?: boolean;
+  /** 虛擬成員顯示名稱（isVirtual 時必填；一般成員留空，由角色卡決定） */
+  name?: string;
+  /** 虛擬成員頭像 URL（isVirtual 時使用） */
+  avatar?: string;
+  /** 來源類型，未設定時：有 characterId 對應真實卡視為 'character'，否則 'inline' */
+  source?: SubCharSource;
+  /** 來源實體 ID：character → characterId；multichar → 來源子角色 id；persona → personaId */
+  sourceId?: string;
+  /** 來源多人卡 / 私聊的 chatId（multichar 追溯、character 讀好感度用） */
+  sourceChatId?: string;
+  /** 人設快照（即時引用的 fallback，來源被改/刪後仍可用） */
+  personaSnapshot?: {
+    description?: string;
+    personality?: string;
+    scenario?: string;
+  };
+  /** 是否為使用者角色型成員（source=persona）。在群裡是「被代演的使用者角色」 */
+  isPersonaMember?: boolean;
+  /** 與使用者的關係綁定設定 */
+  userBinding?: SubCharUserBinding;
+  /** 引入的好感度（唯讀，群聊不增減/不寫回） */
+  affinity?: SubCharAffinitySnapshot;
 }
 
 // ===== 群通話參與者 =====

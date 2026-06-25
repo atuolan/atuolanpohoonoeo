@@ -37,6 +37,9 @@ import type {
   ChatMessage,
   ChatSettings,
   MultiCharMember,
+  SubCharSource,
+  SubCharUserBinding,
+  SubCharAffinitySnapshot,
 } from "@/types/chat";
 import type { AuthorsNoteMetadata, PromptBuildResult } from "@/types/prompt";
 import { DEFAULT_PROMPTS } from "@/types/prompt";
@@ -297,6 +300,21 @@ export interface PromptBuilderOptions {
     avatar: string;
     isAdmin: boolean;
     isMuted: boolean;
+    // ===== 多來源 / 關係綁定擴展（皆為可選，向後相容） =====
+    /** 來源類型（inline/character/multichar/persona） */
+    source?: SubCharSource;
+    /** 是否為使用者角色型成員（由 AI 代演） */
+    isPersonaMember?: boolean;
+    /** 人設快照（虛擬成員或引入來源失效時的 fallback） */
+    personaSnapshot?: {
+      description?: string;
+      personality?: string;
+      scenario?: string;
+    };
+    /** 與使用者的關係綁定設定 */
+    userBinding?: SubCharUserBinding;
+    /** 引入的好感度（唯讀，群聊不增減/不寫回） */
+    affinity?: SubCharAffinitySnapshot;
   }>;
   /** 群名稱 */
   groupName?: string;
@@ -2505,11 +2523,29 @@ ${negativeExample}
     // 普通群聊模式
     if (!groupMembers || groupMembers.length === 0) return null;
 
+    // 預先收集「在場的被代演使用者角色」(persona 成員) 的 personaId → 名字，供互相認知使用
+    const presentPersonaById = new Map<string, string>();
+    for (const m of groupMembers) {
+      const isPersona = m.isPersonaMember ?? m.source === "persona";
+      if (isPersona) {
+        const pid =
+          (m.userBinding?.mode === "bound" && m.userBinding.boundPersonaId) ||
+          undefined;
+        // persona 成員自身的識別名
+        const selfName = (m.nickname || m.name || "").trim();
+        if (selfName) presentPersonaById.set(selfName, selfName);
+        if (pid) presentPersonaById.set(pid, selfName);
+      }
+    }
+
     const parts: string[] = [];
     parts.push(`<group_members>`);
     parts.push(`👥 群聊「${groupName || "群聊"}」成員列表\n`);
 
     for (const member of groupMembers) {
+      const source = member.source || "character";
+      const isPersona = member.isPersonaMember ?? source === "persona";
+
       const tags: string[] = [];
       if (member.isAdmin) tags.push("[管理員]");
       if (member.isMuted) tags.push("[已禁言]");
@@ -2521,15 +2557,82 @@ ${negativeExample}
           ? `（角色本名：${originalName}）`
           : "";
 
-      const tagStr = tags.length > 0 ? ` ${tags.join(" ")}` : "";
-      parts.push(`【${canonicalName}】${identityNote}${tagStr}`);
+      // 來源類型標記
+      const typeTag = isPersona
+        ? "（使用者角色／需由你代演）"
+        : source === "character"
+          ? ""
+          : source === "multichar"
+            ? "（引入自其他多人卡）"
+            : "";
 
-      if (member.personality) {
-        parts.push(`  性格：${member.personality}`);
+      const tagStr = tags.length > 0 ? ` ${tags.join(" ")}` : "";
+      parts.push(`【${canonicalName}】${identityNote}${typeTag}${tagStr}`);
+
+      // 人設：優先用成員自帶（虛擬成員），否則用角色卡帶入的 personality/description
+      const snap = member.personaSnapshot;
+      const personality = snap?.personality || member.personality;
+      const description = snap?.description || member.description;
+      if (personality) {
+        parts.push(`  性格：${personality}`);
       }
-      if (member.description) {
-        parts.push(`  描述：${member.description}`);
+      if (description) {
+        parts.push(`  描述：${description}`);
       }
+      if (snap?.scenario) {
+        parts.push(`  情境：${snap.scenario}`);
+      }
+
+      // 代演指示
+      if (isPersona) {
+        parts.push(
+          `  🎭 此為一名「使用者角色」，除了真實使用者本人外，群裡的使用者角色都由你（AI）代為扮演發言與行動。`,
+        );
+      }
+
+      // 關係綁定注入
+      const binding = member.userBinding;
+      if (binding && binding.mode === "bound") {
+        const partnerName = binding.boundPersonaName || "另一位使用者";
+        const relation = binding.relationLabel || "特殊關係";
+        parts.push(
+          `  💞 關係綁定：此角色與「${partnerName}」是${relation}，心有所屬，對當前對話的使用者「沒有戀愛情感」，不會對其示好或曖昧。`,
+        );
+        if (binding.flaunt) {
+          parts.push(
+            `  ✨ 此角色樂於在群裡炫耀與「${partnerName}」的甜蜜日常。`,
+          );
+        }
+        // 互相認知：綁定的使用者角色也在場
+        if (
+          binding.boundPersonaId &&
+          presentPersonaById.has(binding.boundPersonaId)
+        ) {
+          parts.push(
+            `  👀 互相認知：「${partnerName}」此刻也在群裡，雙方清楚彼此是${relation}，互動時應體現這層關係。`,
+          );
+        }
+      }
+
+      // 好感度唯讀注入
+      const aff = member.affinity;
+      if (
+        aff &&
+        aff.enabled &&
+        aff.metricsSnapshot &&
+        aff.metricsSnapshot.length > 0
+      ) {
+        const metricStr = aff.metricsSnapshot
+          .map((mt) => {
+            const stagePart = mt.stage ? `（${mt.stage}）` : "";
+            return `${mt.name}：${mt.value}${stagePart}`;
+          })
+          .join("、");
+        parts.push(
+          `  📊 對當前使用者的既有好感度（來自私聊，唯讀）：${metricStr}。請依此關係進度表現，但群聊中此數值「只讀不變」，不增不減。`,
+        );
+      }
+
       parts.push("");
     }
 
@@ -2578,10 +2681,18 @@ ${negativeExample}
     if (!groupMembers || groupMembers.length === 0) return null;
 
     const names = groupMembers.map((m) => (m.nickname || m.name || "").trim());
+    // 被代演的使用者角色（persona 成員）
+    const personaNames = groupMembers
+      .filter((m) => m.isPersonaMember ?? m.source === "persona")
+      .map((m) => (m.nickname || m.name || "").trim());
+    const personaLine =
+      personaNames.length > 0
+        ? `\n🧑 其中「${personaNames.join("、")}」是使用者角色，除真實使用者本人外，這些角色一律由你（AI）代為扮演發言與行動。`
+        : "";
     const content = `<group_character_names>
 🎭 本次群聊共有 ${names.length} 位角色：${names.join("、")}
 ⚠️ 你必須扮演以上所有角色，每個角色都必須有機會發言，不能遺漏任何一位！
-⚠️ 所有輸出標籤中的 name / actor / target 只能使用以上名字，禁止擅自改名或追加年齡等描述！
+⚠️ 所有輸出標籤中的 name / actor / target 只能使用以上名字，禁止擅自改名或追加年齡等描述！${personaLine}
 </group_character_names>`;
 
     return {

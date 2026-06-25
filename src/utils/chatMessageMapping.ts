@@ -171,6 +171,15 @@ export function convertStoredMessageToUiMessage(
           const groupMember = chat.groupMetadata?.members?.find(
             (mem) => mem.characterId === m.senderCharacterId,
           );
+          // 虛擬成員：名稱由成員自身承載
+          if (groupMember?.isVirtual) {
+            return (
+              groupMember.nickname ||
+              groupMember.name ||
+              m.senderCharacterName ||
+              ""
+            );
+          }
           if (groupMember?.nickname) return groupMember.nickname;
           const c = deps.characters.find(
             (ch) => ch.id === m.senderCharacterId,
@@ -185,6 +194,13 @@ export function convertStoredMessageToUiMessage(
               (member) => member.id === m.senderCharacterId,
             );
             if (mc) return mc.avatar;
+          }
+          // 虛擬成員：頭像由成員自身承載
+          const groupMember = chat.groupMetadata?.members?.find(
+            (mem) => mem.characterId === m.senderCharacterId,
+          );
+          if (groupMember?.isVirtual) {
+            return groupMember.avatar ?? m.senderCharacterAvatar ?? "";
           }
           return (
             deps.characters.find(

@@ -505,6 +505,29 @@ const groupMembersForInfo = computed(() => {
   }
 
   return groupMetadata.value.members.map((member) => {
+    // 虛擬成員（手動 / persona / 引入無真實卡）：人設由 member 自身承載
+    if (member.isVirtual) {
+      return {
+        characterId: member.characterId,
+        name: member.name || "未命名成員",
+        nickname: member.nickname,
+        avatar: member.avatar || "",
+        isAdmin: member.isAdmin,
+        isMuted: member.isMuted,
+        subCharSource: member.source,
+        isPersonaMember: member.isPersonaMember,
+        boundPersonaName:
+          member.userBinding?.mode === "bound"
+            ? member.userBinding.boundPersonaName
+            : undefined,
+        relationLabel:
+          member.userBinding?.mode === "bound"
+            ? member.userBinding.relationLabel
+            : undefined,
+        affinityEnabled: member.affinity?.enabled,
+      };
+    }
+    // 一般角色卡成員
     const char = charactersStore.characters.find(
       (c) => c.id === member.characterId,
     );
@@ -515,6 +538,16 @@ const groupMembersForInfo = computed(() => {
       avatar: char?.avatar || "",
       isAdmin: member.isAdmin,
       isMuted: member.isMuted,
+      subCharSource: member.source,
+      boundPersonaName:
+        member.userBinding?.mode === "bound"
+          ? member.userBinding.boundPersonaName
+          : undefined,
+      relationLabel:
+        member.userBinding?.mode === "bound"
+          ? member.userBinding.relationLabel
+          : undefined,
+      affinityEnabled: member.affinity?.enabled,
     };
   });
 });
@@ -576,6 +609,25 @@ function resolveGroupMemberByName(senderName: string): {
 
   for (const candidate of candidateNames) {
     for (const member of groupMetadata.value.members) {
+      // 虛擬成員（手動 / persona / 引入無真實卡）：以 member 自帶名稱比對
+      if (member.isVirtual) {
+        const aliases = [member.nickname, member.name]
+          .map((name) => name?.trim())
+          .filter(
+            (name, index, arr): name is string =>
+              !!name && arr.indexOf(name) === index,
+          );
+        if (aliases.includes(candidate)) {
+          return {
+            characterId: member.characterId,
+            avatar: member.avatar || "",
+            canonicalName:
+              member.nickname?.trim() || member.name?.trim() || rawName,
+          };
+        }
+        continue;
+      }
+
       const char = charactersStore.characters.find(
         (c) => c.id === member.characterId,
       );
@@ -1958,6 +2010,90 @@ async function handleDetailsAddSubchar(payload: AddSubCharEmitPayload) {
 // 移除子角色（多人卡，即時儲存）
 async function handleDetailsRemoveSubchar(id: string) {
   removeMultiCharMember(id);
+  await saveChatImmediate();
+}
+
+// 新增成員（普通群聊，即時儲存，支援多來源 + 關係綁定 + 好感度唯讀引入）
+// 與多人卡共用 payload；character 來源沿用真實 characterId，其餘來源用虛擬 ID。
+async function handleDetailsAddGroupMemberRich(payload: AddSubCharEmitPayload) {
+  if (!groupMetadata.value) return;
+  if (!payload.name?.trim()) return;
+  if (!groupMetadata.value.members) {
+    groupMetadata.value.members = [];
+  }
+
+  const source: SubCharSource = payload.source || "inline";
+
+  // 關係綁定
+  let userBinding: SubCharUserBinding | undefined;
+  if (payload.userBinding && payload.userBinding.mode === "bound") {
+    userBinding = {
+      mode: "bound",
+      boundPersonaId: payload.userBinding.boundPersonaId,
+      boundPersonaName: payload.userBinding.boundPersonaName,
+      relationLabel: payload.userBinding.relationLabel,
+      flaunt: payload.userBinding.flaunt,
+    };
+  } else if (payload.userBinding) {
+    userBinding = { mode: "none" };
+  }
+
+  // 好感度唯讀快照（引入私聊現值作為 fallback）
+  let affinity: SubCharAffinitySnapshot | undefined;
+  if (payload.affinity?.enabled && payload.affinity.sourceChatId) {
+    const sourceChatId = payload.affinity.sourceChatId;
+    let metricsSnapshot:
+      | Array<{ name: string; value: string | number; stage?: string }>
+      | undefined;
+    try {
+      await affinityStore.loadState(sourceChatId);
+      const snap = affinityStore.getMetricsSnapshot(sourceChatId);
+      if (snap.length > 0) {
+        metricsSnapshot = snap.map((m) => ({
+          name: m.name,
+          value: m.value as string | number,
+          stage: m.stage ?? undefined,
+        }));
+      }
+    } catch (err) {
+      console.warn("[群聊] 引入好感度快照失敗", err);
+    }
+    affinity = { enabled: true, sourceChatId, metricsSnapshot };
+  } else if (payload.affinity) {
+    affinity = { enabled: false };
+  }
+
+  // character 來源：使用真實 characterId（與舊邏輯相容，可被頭像/人設查找）
+  // 其餘來源（inline / multichar / persona）：虛擬成員，用 gm_ ID 承載人設快照
+  const isVirtual = source !== "character";
+  const memberId = isVirtual
+    ? `gm_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+    : payload.sourceId || `gm_${Date.now()}`;
+
+  // 避免重複加入同一張角色卡
+  if (
+    !isVirtual &&
+    groupMetadata.value.members.some((m) => m.characterId === memberId)
+  ) {
+    return;
+  }
+
+  groupMetadata.value.members.push({
+    characterId: memberId,
+    isAdmin: false,
+    isMuted: false,
+    joinedAt: Date.now(),
+    isVirtual,
+    name: payload.name.trim(),
+    avatar: payload.avatar || "",
+    source,
+    sourceId: payload.sourceId,
+    sourceChatId: payload.sourceChatId,
+    personaSnapshot: payload.personaSnapshot,
+    isPersonaMember: payload.isPersonaMember ?? source === "persona",
+    userBinding,
+    affinity,
+  });
   await saveChatImmediate();
 }
 
@@ -3610,6 +3746,47 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       resolvedMultiCharMembers = refreshed;
     }
 
+    // 普通群聊成員：好感度「即時讀取為主、快照 fallback」（與多人卡同邏輯，唯讀不寫回）
+    let resolvedGroupMembers =
+      isGroupChat.value &&
+      groupMetadata.value &&
+      !groupMetadata.value.isMultiCharCard
+        ? groupMetadata.value.members
+        : undefined;
+    if (resolvedGroupMembers && resolvedGroupMembers.length > 0) {
+      const refreshedGroup = await Promise.all(
+        resolvedGroupMembers.map(async (member) => {
+          const aff = member.affinity;
+          if (!aff?.enabled || !aff.sourceChatId) return member;
+          try {
+            await affinityStore.loadState(aff.sourceChatId);
+            const live = affinityStore.getMetricsSnapshot(aff.sourceChatId);
+            if (live && live.length > 0) {
+              return {
+                ...member,
+                affinity: {
+                  ...aff,
+                  metricsSnapshot: live.map((m) => ({
+                    name: m.name,
+                    value: m.value as string | number,
+                    stage: m.stage ?? undefined,
+                  })),
+                },
+              };
+            }
+          } catch (err) {
+            console.warn(
+              "[ChatScreen] 群聊成員好感度即時讀取失敗，沿用快照",
+              { characterId: member.characterId, sourceChatId: aff.sourceChatId },
+              err,
+            );
+          }
+          return member;
+        }),
+      );
+      resolvedGroupMembers = refreshedGroup;
+    }
+
     const builder = new PromptBuilder({
       character: char,
       lorebooks: linkedLorebooks,
@@ -3702,27 +3879,50 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       isMultiCharCard: groupMetadata.value?.isMultiCharCard || false,
       multiCharMembers: resolvedMultiCharMembers,
       // 普通群聊成員（多人卡模式不需要）
-      groupMembers:
-        isGroupChat.value &&
-        groupMetadata.value &&
-        !groupMetadata.value.isMultiCharCard
-          ? groupMetadata.value.members.map((m) => {
-              const char = charactersStore.characters.find(
-                (c) => c.id === m.characterId,
-              );
+      groupMembers: resolvedGroupMembers
+        ? resolvedGroupMembers.map((m) => {
+            // 虛擬成員（手動 / persona / 引入無真實卡）：人設由 member 自身承載
+            if (m.isVirtual) {
+              const vName = m.name || m.characterId;
               return {
                 characterId: m.characterId,
-                name: char?.nickname || char?.data?.name || m.characterId,
+                name: m.nickname || vName,
                 nickname: m.nickname,
-                originalName: char?.data?.name || m.characterId,
-                personality: char?.data?.personality || "",
-                description: char?.data?.description || "",
-                avatar: char?.avatar || "",
+                originalName: vName,
+                personality: m.personaSnapshot?.personality || "",
+                description: m.personaSnapshot?.description || "",
+                avatar: m.avatar || "",
                 isAdmin: m.isAdmin,
                 isMuted: m.isMuted,
+                source: m.source,
+                isPersonaMember: m.isPersonaMember,
+                personaSnapshot: m.personaSnapshot,
+                userBinding: m.userBinding,
+                affinity: m.affinity,
               };
-            })
-          : undefined,
+            }
+            // 一般角色卡成員
+            const char = charactersStore.characters.find(
+              (c) => c.id === m.characterId,
+            );
+            return {
+              characterId: m.characterId,
+              name: char?.nickname || char?.data?.name || m.characterId,
+              nickname: m.nickname,
+              originalName: char?.data?.name || m.characterId,
+              personality: char?.data?.personality || "",
+              description: char?.data?.description || "",
+              avatar: char?.avatar || "",
+              isAdmin: m.isAdmin,
+              isMuted: m.isMuted,
+              source: m.source,
+              isPersonaMember: m.isPersonaMember,
+              personaSnapshot: m.personaSnapshot,
+              userBinding: m.userBinding,
+              affinity: m.affinity,
+            };
+          })
+        : undefined,
       groupName: isGroupChat.value ? groupMetadata.value?.groupName : undefined,
       // 傳入飲食記錄
       foodLogs: fitnessStore.mealLogs.length > 0
@@ -8162,6 +8362,7 @@ useChatCleanup({
           @toggle-lorebook="handleDetailsToggleLorebook"
           @add-multichar-member="handleDetailsAddSubchar"
           @remove-multichar-member="handleDetailsRemoveSubchar"
+          @add-group-member-rich="handleDetailsAddGroupMemberRich"
         />
       </Transition>
     </Teleport>
