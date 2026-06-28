@@ -6,6 +6,7 @@ import { allFateCards } from "@/data/fateCards";
 import { buildFateInterpretationPrompt } from "@/data/fatePrompts";
 import { fateSpreads } from "@/data/fateSpreads";
 import { db } from "@/db/database";
+import { pickGenerationToggles } from "@/utils/generationToggles";
 import type {
   FateCard,
   FateDrawnCard,
@@ -166,13 +167,13 @@ export const useFateStore = defineStore("fate", () => {
           maxResponseLength: taskConfig.generation.maxTokens,
           maxContextLength: taskConfig.generation.maxContextLength,
           topP: taskConfig.generation.topP,
-          topK: 0,
           frequencyPenalty: taskConfig.generation.frequencyPenalty,
           presencePenalty: taskConfig.generation.presencePenalty,
           repetitionPenalty: 1,
           stopSequences: [],
           streaming: true,
           useStreamingWindow: false,
+          ...pickGenerationToggles(taskConfig.generation),
         },
         apiSettings,
       });

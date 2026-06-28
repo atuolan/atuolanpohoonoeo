@@ -687,18 +687,25 @@ export class OpenAICompatibleClient {
       messages: processedMessages,
       stream,
       max_tokens: settings.maxResponseLength,
-      temperature: settings.temperature,
     };
 
-    // 可選參數
-    if (settings.topP !== 1) {
+    // temperature（開關關閉則完全不發送，undefined 視為啟用以相容舊資料）
+    if (settings.enableTemperature !== false) {
+      body.temperature = settings.temperature;
+    }
+
+    // 可選參數（各自受開關控制；undefined 視為相容舊行為）
+    if (settings.enableTopP !== false && settings.topP !== 1) {
       // DeepSeek API 要求 top_p > 0
       body.top_p = settings.topP || Number.EPSILON;
     }
-    if (settings.frequencyPenalty !== 0) {
+    if (settings.enableTopK === true && typeof settings.topK === "number" && settings.topK > 0) {
+      body.top_k = settings.topK;
+    }
+    if (settings.enableFrequencyPenalty !== false && settings.frequencyPenalty !== 0) {
       body.frequency_penalty = settings.frequencyPenalty;
     }
-    if (settings.presencePenalty !== 0) {
+    if (settings.enablePresencePenalty !== false && settings.presencePenalty !== 0) {
       body.presence_penalty = settings.presencePenalty;
     }
     if (settings.stopSequences && settings.stopSequences.length > 0) {
@@ -874,15 +881,23 @@ export class OpenAICompatibleClient {
       messages: anthropicMessages,
       stream,
       max_tokens: settings.maxResponseLength,
-      temperature: settings.temperature,
       metadata: { user_id: this.getAnthropicUserId() },
     };
+
+    // temperature（開關關閉則完全不發送，undefined 視為啟用以相容舊資料）
+    if (settings.enableTemperature !== false) {
+      body.temperature = settings.temperature;
+    }
 
     if (systemBlocks.length > 0) {
       body.system = systemBlocks;
     }
-    if (settings.topP !== 1) {
+    if (settings.enableTopP !== false && settings.topP !== 1) {
       body.top_p = settings.topP || Number.EPSILON;
+    }
+    // Anthropic 原生支援 top_k
+    if (settings.enableTopK === true && typeof settings.topK === "number" && settings.topK > 0) {
+      body.top_k = settings.topK;
     }
     if (settings.stopSequences && settings.stopSequences.length > 0) {
       body.stop_sequences = settings.stopSequences;

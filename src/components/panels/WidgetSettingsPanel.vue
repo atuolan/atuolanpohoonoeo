@@ -141,7 +141,7 @@ const currentLayout = ref(
               "weather",
               "calendar",
             ].includes(props.widget.type)
-          ? "pop"
+          ? "classic"
           : "compact"),
 );
 
@@ -156,7 +156,7 @@ const vinylStyles = [
 
 // 當前黑膠子風格
 const currentVinylStyle = ref(
-  props.widget.data?.customStyle?.vinylStyle || "pop",
+  props.widget.data?.customStyle?.vinylStyle || "classic",
 );
 
 // 選擇黑膠子風格
@@ -287,7 +287,7 @@ function resetStyle() {
       "calendar",
     ].includes(props.widget.type)
   ) {
-    currentLayout.value = "pop";
+    currentLayout.value = "classic";
   } else {
     currentLayout.value = "compact";
   }

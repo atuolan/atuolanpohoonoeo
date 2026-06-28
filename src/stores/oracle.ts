@@ -6,6 +6,7 @@ import { ORACLE_CARDS } from '@/data/oracleCards'
 import { buildOracleInterpretationPrompt } from '@/data/oraclePrompts'
 import { ORACLE_SPREADS } from '@/data/oracleSpreads'
 import { db } from '@/db/database'
+import { pickGenerationToggles } from '@/utils/generationToggles'
 import type {
   OracleCard,
   OracleDrawnCard,
@@ -154,13 +155,13 @@ export const useOracleStore = defineStore('oracle', () => {
           maxResponseLength: taskConfig.generation.maxTokens,
           maxContextLength: taskConfig.generation.maxContextLength,
           topP: taskConfig.generation.topP,
-          topK: 0,
           frequencyPenalty: taskConfig.generation.frequencyPenalty,
           presencePenalty: taskConfig.generation.presencePenalty,
           repetitionPenalty: 1,
           stopSequences: [],
           streaming: true,
           useStreamingWindow: false,
+          ...pickGenerationToggles(taskConfig.generation),
         },
         apiSettings,
       })

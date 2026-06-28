@@ -26,10 +26,21 @@ export interface GenerationParams {
   maxTokens: number;
   maxContextLength: number;
   topP: number;
+  topK: number;
   frequencyPenalty: number;
   presencePenalty: number;
   streamingEnabled: boolean;
   useStreamingWindow: boolean;
+  /** 是否發送 temperature 參數（關閉則不傳給 API） */
+  enableTemperature: boolean;
+  /** 是否發送 top_p 參數 */
+  enableTopP: boolean;
+  /** 是否發送 top_k 參數 */
+  enableTopK: boolean;
+  /** 是否發送 frequency_penalty 參數 */
+  enableFrequencyPenalty: boolean;
+  /** 是否發送 presence_penalty 參數 */
+  enablePresencePenalty: boolean;
 }
 
 export interface APIProfile {
@@ -190,11 +201,38 @@ function createDefaultGenerationParams(): GenerationParams {
     maxTokens: 2048,
     maxContextLength: 12000,
     topP: 1,
+    topK: 0,
     frequencyPenalty: 0,
     presencePenalty: 0,
     streamingEnabled: true,
     useStreamingWindow: true,
+    // 開關預設：temperature / topP 開啟，penalty / topK 關閉
+    enableTemperature: true,
+    enableTopP: true,
+    enableTopK: false,
+    enableFrequencyPenalty: false,
+    enablePresencePenalty: false,
   };
+}
+
+/**
+ * 補齊舊資料缺少的生成參數欄位（新增的 topK 與開關）。
+ * 直接在傳入物件上補值並回傳，確保 reactive 物件欄位完整。
+ */
+function ensureGenerationParamsDefaults(
+  params: Partial<GenerationParams> & Record<string, unknown>,
+): GenerationParams {
+  const defaults = createDefaultGenerationParams();
+  if (params.topK === undefined) params.topK = defaults.topK;
+  if (params.enableTemperature === undefined)
+    params.enableTemperature = defaults.enableTemperature;
+  if (params.enableTopP === undefined) params.enableTopP = defaults.enableTopP;
+  if (params.enableTopK === undefined) params.enableTopK = defaults.enableTopK;
+  if (params.enableFrequencyPenalty === undefined)
+    params.enableFrequencyPenalty = defaults.enableFrequencyPenalty;
+  if (params.enablePresencePenalty === undefined)
+    params.enablePresencePenalty = defaults.enablePresencePenalty;
+  return params as GenerationParams;
 }
 
 function normalizeMaxContextLength(value: unknown): number {
@@ -394,6 +432,13 @@ export const useSettingsStore = defineStore("settings", () => {
             }
           }
           generation.maxContextLength = savedGlobalMaxContextLength;
+          // 補齊舊資料缺少的生成參數欄位（topK 與開關）
+          ensureGenerationParamsDefaults(generation);
+          for (const profile of profiles.value) {
+            if (profile.generation) {
+              ensureGenerationParamsDefaults(profile.generation);
+            }
+          }
 
           // 載入備用 API 配置
           if (saved.auxiliary) {
@@ -401,6 +446,16 @@ export const useSettingsStore = defineStore("settings", () => {
             // 確保 profiles 和 currentProfileId 存在
             if (!auxiliary.profiles) auxiliary.profiles = [];
             if (!auxiliary.currentProfileId) auxiliary.currentProfileId = null;
+            
+            // 補齊備用 API 生成參數的新欄位
+            if (auxiliary.generation) {
+              ensureGenerationParamsDefaults(auxiliary.generation);
+            }
+            for (const profile of auxiliary.profiles) {
+              if (profile.generation) {
+                ensureGenerationParamsDefaults(profile.generation);
+              }
+            }
 
             const profileIds = new Set(auxiliary.profiles.map((p) => p.id));
             const migratedBindings = normalizeTaskBindings(

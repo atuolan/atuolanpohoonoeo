@@ -4,6 +4,7 @@
  */
 
 import type { APIMessage } from "@/api/OpenAICompatible";
+import { pickGenerationToggles } from "@/utils/generationToggles";
 import { useCharactersStore } from "@/stores/characters";
 import {
   createChatRecord,
@@ -505,13 +506,13 @@ export function useCompanionChat(
           maxResponseLength: chatTaskConfig.generation.maxTokens || 8190,
           temperature: chatTaskConfig.generation.temperature ?? 0.7,
           topP: chatTaskConfig.generation.topP ?? 1,
-          topK: 0,
           frequencyPenalty: 0,
           presencePenalty: 0,
           repetitionPenalty: 1,
           stopSequences: [],
           streaming: true,
           useStreamingWindow: false,
+          ...pickGenerationToggles(chatTaskConfig.generation),
         },
         apiSettings: chatTaskConfig.api,
         adjustLastMessageRole: true,
@@ -601,13 +602,13 @@ export function useCompanionChat(
           maxResponseLength: chatTaskConfig.generation.maxTokens || 8190,
           temperature: chatTaskConfig.generation.temperature ?? 0.7,
           topP: chatTaskConfig.generation.topP ?? 1,
-          topK: 0,
           frequencyPenalty: 0,
           presencePenalty: 0,
           repetitionPenalty: 1,
           stopSequences: [],
           streaming: true,
           useStreamingWindow: false,
+          ...pickGenerationToggles(chatTaskConfig.generation),
         },
         apiSettings: chatTaskConfig.api,
         adjustLastMessageRole: true,

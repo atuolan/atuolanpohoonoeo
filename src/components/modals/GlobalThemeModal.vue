@@ -239,6 +239,19 @@ function selectPreset(presetId: string) {
   unifiedColors.value = true;
 }
 
+// 皮膚（形態質感）列表：只控制圓角/陰影/過渡，不碰顏色
+const skinList = [
+  { id: "soft", name: "柔和", desc: "中等圓角 · 柔和陰影" },
+  { id: "glass", name: "玻璃", desc: "大圓角 · iOS 質感" },
+  { id: "flat", name: "極簡", desc: "小圓角 · 弱陰影" },
+  { id: "plump", name: "圓潤", desc: "超大圓角 · 厚陰影" },
+];
+
+// 處理皮膚切換
+function selectSkin(skinId: string) {
+  themeStore.setSkin(skinId);
+}
+
 // 處理桌布選擇
 function selectWallpaper(preset: (typeof wallpaperPresets)[0]) {
   tempWallpaperStyle.value.type = preset.type as WallpaperStyle["type"];
@@ -646,6 +659,21 @@ watch(
                     :style="{ background: preset.color }"
                   ></div>
                   <span class="preset-name">{{ preset.name }}</span>
+                </button>
+              </div>
+
+              <!-- 形態質感（皮膚）切換器 -->
+              <h3 class="section-title">形態質感</h3>
+              <div class="skin-grid">
+                <button
+                  v-for="skin in skinList"
+                  :key="skin.id"
+                  class="skin-item"
+                  :class="{ active: themeStore.currentSkin === skin.id }"
+                  @click="selectSkin(skin.id)"
+                >
+                  <span class="skin-name">{{ skin.name }}</span>
+                  <span class="skin-desc">{{ skin.desc }}</span>
                 </button>
               </div>
 
@@ -1506,6 +1534,54 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+// 形態質感（皮膚）切換器
+.skin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.skin-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--color-background);
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  min-width: 0;
+  text-align: left;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    background: var(--color-surface-hover);
+  }
+
+  &.active {
+    border-color: var(--color-primary);
+    background: var(--color-primary-light);
+  }
+}
+
+.skin-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.skin-desc {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 // 自訂主題色

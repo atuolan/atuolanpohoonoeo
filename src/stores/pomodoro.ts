@@ -5,6 +5,7 @@
 
 import { getAPIClient } from '@/api/OpenAICompatible'
 import type { APIMessage } from '@/api/OpenAICompatible'
+import { pickGenerationToggles } from '@/utils/generationToggles'
 import {
   getEncouragementPromptCountdown,
   getEncouragementPromptStopwatch,
@@ -303,7 +304,6 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
           maxContextLength: settingsStore.generation.maxContextLength,
           maxResponseLength: settingsStore.generation.maxTokens,
           topP: settingsStore.generation.topP,
-          topK: 0,
           temperature: settingsStore.generation.temperature,
           frequencyPenalty: settingsStore.generation.frequencyPenalty,
           presencePenalty: settingsStore.generation.presencePenalty,
@@ -311,6 +311,7 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
           stopSequences: [],
           streaming: false,
           useStreamingWindow: false,
+          ...pickGenerationToggles(settingsStore.generation),
         },
         apiSettings: settingsStore.api as any,
       })

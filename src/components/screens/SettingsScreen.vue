@@ -4462,13 +4462,24 @@ function useClonedVoice(voiceId: string) {
         <!-- 生成參數 -->
         <h3 class="section-title">生成參數</h3>
 
-        <div class="setting-group">
-          <label class="setting-label">
-            溫度 (Temperature)
+        <div class="setting-group param-card">
+          <div class="param-header">
+            <div class="param-meta">
+              <span class="param-name">溫度 (Temperature)</span>
+              <span class="param-hint-text">關閉則不發送給 API</span>
+            </div>
             <span class="value-badge">{{
               settingsStore.generation.temperature
             }}</span>
-          </label>
+            <label class="toggle-item param-toggle">
+              <input
+                type="checkbox"
+                v-model="settingsStore.generation.enableTemperature"
+                class="toggle-input"
+              />
+              <span class="toggle-switch"></span>
+            </label>
+          </div>
           <input
             v-model.number="settingsStore.generation.temperature"
             type="range"
@@ -4476,6 +4487,7 @@ function useClonedVoice(voiceId: string) {
             max="2"
             step="0.1"
             class="soft-slider"
+            :disabled="!settingsStore.generation.enableTemperature"
           />
           <div class="range-labels">
             <span>精確</span>
@@ -4534,11 +4546,22 @@ function useClonedVoice(voiceId: string) {
           </p>
         </div>
 
-        <div class="setting-group">
-          <label class="setting-label">
-            Top P
+        <div class="setting-group param-card">
+          <div class="param-header">
+            <div class="param-meta">
+              <span class="param-name">Top P</span>
+              <span class="param-hint-text">關閉則不發送給 API</span>
+            </div>
             <span class="value-badge">{{ settingsStore.generation.topP }}</span>
-          </label>
+            <label class="toggle-item param-toggle">
+              <input
+                type="checkbox"
+                v-model="settingsStore.generation.enableTopP"
+                class="toggle-input"
+              />
+              <span class="toggle-switch"></span>
+            </label>
+          </div>
           <input
             v-model.number="settingsStore.generation.topP"
             type="range"
@@ -4546,6 +4569,92 @@ function useClonedVoice(voiceId: string) {
             max="1"
             step="0.05"
             class="soft-slider"
+            :disabled="!settingsStore.generation.enableTopP"
+          />
+        </div>
+
+        <div class="setting-group param-card">
+          <div class="param-header">
+            <div class="param-meta">
+              <span class="param-name">Top K</span>
+              <span class="param-hint-text">僅部分模型支援，不支援請關閉</span>
+            </div>
+            <span class="value-badge">{{ settingsStore.generation.topK }}</span>
+            <label class="toggle-item param-toggle">
+              <input
+                type="checkbox"
+                v-model="settingsStore.generation.enableTopK"
+                class="toggle-input"
+              />
+              <span class="toggle-switch"></span>
+            </label>
+          </div>
+          <input
+            v-model.number="settingsStore.generation.topK"
+            type="range"
+            min="0"
+            max="200"
+            step="1"
+            class="soft-slider"
+            :disabled="!settingsStore.generation.enableTopK"
+          />
+        </div>
+
+        <div class="setting-group param-card">
+          <div class="param-header">
+            <div class="param-meta">
+              <span class="param-name">頻率懲罰 (Frequency Penalty)</span>
+              <span class="param-hint-text">關閉則不發送給 API</span>
+            </div>
+            <span class="value-badge">{{
+              settingsStore.generation.frequencyPenalty
+            }}</span>
+            <label class="toggle-item param-toggle">
+              <input
+                type="checkbox"
+                v-model="settingsStore.generation.enableFrequencyPenalty"
+                class="toggle-input"
+              />
+              <span class="toggle-switch"></span>
+            </label>
+          </div>
+          <input
+            v-model.number="settingsStore.generation.frequencyPenalty"
+            type="range"
+            min="-2"
+            max="2"
+            step="0.1"
+            class="soft-slider"
+            :disabled="!settingsStore.generation.enableFrequencyPenalty"
+          />
+        </div>
+
+        <div class="setting-group param-card">
+          <div class="param-header">
+            <div class="param-meta">
+              <span class="param-name">存在懲罰 (Presence Penalty)</span>
+              <span class="param-hint-text">關閉則不發送給 API</span>
+            </div>
+            <span class="value-badge">{{
+              settingsStore.generation.presencePenalty
+            }}</span>
+            <label class="toggle-item param-toggle">
+              <input
+                type="checkbox"
+                v-model="settingsStore.generation.enablePresencePenalty"
+                class="toggle-input"
+              />
+              <span class="toggle-switch"></span>
+            </label>
+          </div>
+          <input
+            v-model.number="settingsStore.generation.presencePenalty"
+            type="range"
+            min="-2"
+            max="2"
+            step="0.1"
+            class="soft-slider"
+            :disabled="!settingsStore.generation.enablePresencePenalty"
           />
         </div>
 
@@ -7243,6 +7352,10 @@ function useClonedVoice(voiceId: string) {
   border-radius: 4px;
   outline: none;
 
+  &:disabled {
+    display: none;
+  }
+
   &::-webkit-slider-thumb {
     -webkit-appearance: none;
     width: 22px;
@@ -7277,6 +7390,52 @@ function useClonedVoice(voiceId: string) {
 .toggle-label {
   font-size: 15px;
   color: var(--color-text, #333);
+}
+
+// iOS-style parameter card with inline toggle
+.param-card {
+  background: var(--color-surface, #fff);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+
+.param-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.param-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.param-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text, #333);
+  line-height: 1.3;
+}
+
+.param-hint-text {
+  font-size: 12px;
+  color: var(--color-text-secondary, #8e8e93);
+  line-height: 1.3;
+}
+
+.param-toggle {
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
 }
 
 .self-hosted-sync-title-row {

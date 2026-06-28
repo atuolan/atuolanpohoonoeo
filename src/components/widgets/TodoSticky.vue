@@ -105,7 +105,7 @@ const hasCustomBackground = computed(() => {
 });
 
 const currentLayout = computed(() => {
-  return props.data?.customStyle?.layout || "pop";
+  return props.data?.customStyle?.layout || "classic";
 });
 </script>
 
@@ -319,18 +319,18 @@ const currentLayout = computed(() => {
   &.pop {
     padding: 16px;
     background: #fef08a;
-    border: 3px solid #1a1a1a;
+    border: 2px solid #1a1a1a;
     border-radius: 16px;
-    box-shadow: 4px 4px 0px #1a1a1a;
+    box-shadow: 3px 3px 0px #1a1a1a;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
     
     &:hover {
       transform: translate(-1px, -1px);
-      box-shadow: 5px 5px 0px #1a1a1a;
+      box-shadow: 4px 4px 0px #1a1a1a;
     }
 
     &.has-custom-bg {
-      box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.8);
+      box-shadow: 3px 3px 0px rgba(0, 0, 0, 0.8);
     }
 
     .sticky-header {

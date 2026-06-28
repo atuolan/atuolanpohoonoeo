@@ -86,7 +86,7 @@ onUnmounted(() => {
 });
 
 const currentLayout = computed(() => {
-  return props.data?.customStyle?.layout || "pop";
+  return props.data?.customStyle?.layout || "classic";
 });
 </script>
 
@@ -154,8 +154,8 @@ const currentLayout = computed(() => {
   background-color: #fef3c7;
   background-image: linear-gradient(145deg, #fef3c7 0%, #fde68a 100%);
   border-radius: 16px;
-  border: 3px solid #1a1a1a;
-  box-shadow: 4px 4px 0px #1a1a1a;
+  border: 2px solid #1a1a1a;
+  box-shadow: 3px 3px 0px #1a1a1a;
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -290,8 +290,8 @@ const currentLayout = computed(() => {
     background-color: #fef3c7;
     background-image: linear-gradient(145deg, #fef3c7 0%, #fde68a 100%);
     border-radius: 16px;
-    border: 3px solid #1a1a1a;
-    box-shadow: 4px 4px 0px #1a1a1a;
+    border: 2px solid #1a1a1a;
+    box-shadow: 3px 3px 0px #1a1a1a;
     padding: 16px;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 

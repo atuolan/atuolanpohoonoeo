@@ -38,6 +38,14 @@ export const shapePresets: ShapePreset[] = [
       "M18,8 H42 A10,10 0 0,1 52,18 V42 A10,10 0 0,1 42,52 H18 A10,10 0 0,1 8,42 V18 A10,10 0 0,1 18,8Z",
   },
   {
+    id: "squircle",
+    name: "超橢圓",
+    // iOS 風格 squircle：約 23% 連續曲率圓角（貼近 iOS App 圖標標準比例）
+    borderRadius: "23%",
+    previewPath:
+      "M14,8 H46 A14,14 0 0,1 52,22 V42 A14,14 0 0,1 38,52 H22 A14,14 0 0,1 8,38 V22 A14,14 0 0,1 14,8Z",
+  },
+  {
     id: "ellipse",
     name: "橢圓形",
     borderRadius: "50% / 40%",

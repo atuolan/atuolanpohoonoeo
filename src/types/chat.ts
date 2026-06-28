@@ -1049,6 +1049,16 @@ export interface ChatSettings {
   streaming: boolean;
   /** 是否使用流式輸出窗口 */
   useStreamingWindow: boolean;
+  /** 是否發送 temperature 參數（undefined 視為啟用，相容舊資料） */
+  enableTemperature?: boolean;
+  /** 是否發送 top_p 參數（undefined 視為啟用） */
+  enableTopP?: boolean;
+  /** 是否發送 top_k 參數（undefined 視為停用） */
+  enableTopK?: boolean;
+  /** 是否發送 frequency_penalty 參數（undefined 視為啟用） */
+  enableFrequencyPenalty?: boolean;
+  /** 是否發送 presence_penalty 參數（undefined 視為啟用） */
+  enablePresencePenalty?: boolean;
 }
 
 // ===== 生成請求 =====

@@ -2119,6 +2119,7 @@
 
 <script setup lang="ts">
 import { OpenAICompatibleClient, type APIMessage } from "@/api/OpenAICompatible";
+import { pickGenerationToggles } from "@/utils/generationToggles";
 import StickerPanel from "@/components/common/StickerPanel.vue";
 import {
   useStreamingWindow,
@@ -3946,7 +3947,7 @@ ${charPersonality ? `角色性格：${charPersonality}` : ""}`,
       maxResponseLength: genConfig.maxTokens || 8192,
       temperature: genConfig.temperature || 0.9,
       topP: genConfig.topP || 0.95,
-      topK: 0,
+      ...pickGenerationToggles(genConfig),
       frequencyPenalty: genConfig.frequencyPenalty || 0,
       presencePenalty: genConfig.presencePenalty || 0,
       repetitionPenalty: 1,

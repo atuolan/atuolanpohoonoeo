@@ -14,6 +14,7 @@ import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
 import { useCharactersStore } from "@/stores/characters";
 import { useChatStore } from "@/stores/chat";
 import { pushNotificationService } from "./PushNotificationService";
+import { pickGenerationToggles } from "@/utils/generationToggles";
 
 export interface ProactiveMessageSettings {
   enabled: boolean;
@@ -605,13 +606,13 @@ export class ProactiveMessageService {
         maxResponseLength: taskConfig.generation.maxTokens,
         temperature: taskConfig.generation.temperature,
         topP: taskConfig.generation.topP,
-        topK: 0,
         frequencyPenalty: taskConfig.generation.frequencyPenalty,
         presencePenalty: taskConfig.generation.presencePenalty,
         repetitionPenalty: 1.0,
         stopSequences: [],
         streaming: false, // 群聊主動關心使用非串流，簡化處理
         useStreamingWindow: false,
+        ...pickGenerationToggles(taskConfig.generation),
       };
 
       const { PromptBuilder } = await import("@/engine/prompt/PromptBuilder");
@@ -1115,13 +1116,13 @@ export class ProactiveMessageService {
         maxResponseLength: taskConfig.generation.maxTokens,
         temperature: taskConfig.generation.temperature,
         topP: taskConfig.generation.topP,
-        topK: 0,
         frequencyPenalty: taskConfig.generation.frequencyPenalty,
         presencePenalty: taskConfig.generation.presencePenalty,
         repetitionPenalty: 1.0,
         stopSequences: [],
         streaming: taskConfig.generation.streamingEnabled,
         useStreamingWindow: taskConfig.generation.useStreamingWindow,
+        ...pickGenerationToggles(taskConfig.generation),
       };
 
       // 進行中通話狀態（若當前 user 正在和別的角色通話，讓本角色知道 user 忙線）

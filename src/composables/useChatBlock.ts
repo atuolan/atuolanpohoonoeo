@@ -2,6 +2,7 @@ import BlockService from "@/services/BlockService";
 import { loadChatById } from "@/storage/chatStorage";
 import { useSettingsStore } from "@/stores";
 import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
+import { pickGenerationToggles } from "@/utils/generationToggles";
 import { ref, type Ref } from "vue";
 
 export function useChatBlock(context: {
@@ -156,13 +157,13 @@ export function useChatBlock(context: {
           maxResponseLength: chatTaskConfig.generation.maxTokens,
           temperature: chatTaskConfig.generation.temperature,
           topP: chatTaskConfig.generation.topP,
-          topK: 0,
           frequencyPenalty: chatTaskConfig.generation.frequencyPenalty,
           presencePenalty: chatTaskConfig.generation.presencePenalty,
           repetitionPenalty: 1,
           stopSequences: [],
           streaming: false,
           useStreamingWindow: false,
+          ...pickGenerationToggles(chatTaskConfig.generation),
         },
         apiSettings: chatTaskConfig.api,
       });

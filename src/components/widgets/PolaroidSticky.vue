@@ -107,7 +107,7 @@ const hasCustomBackground = computed(() => {
 });
 
 const currentLayout = computed(() => {
-  return props.data?.customStyle?.layout || "pop";
+  return props.data?.customStyle?.layout || "classic";
 });
 </script>
 
@@ -283,8 +283,8 @@ const currentLayout = computed(() => {
     padding: 12px;
     padding-bottom: 8px;
     border-radius: 8px;
-    border: 3px solid #1a1a1a;
-    box-shadow: 4px 4px 0px #1a1a1a;
+    border: 2px solid #1a1a1a;
+    box-shadow: 3px 3px 0px #1a1a1a;
     transform: rotate(-2deg);
     transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
     
@@ -294,7 +294,7 @@ const currentLayout = computed(() => {
     }
 
     &.has-custom-bg {
-      box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.8);
+      box-shadow: 3px 3px 0px rgba(0, 0, 0, 0.8);
       &:hover {
         box-shadow: 5px 5px 0px rgba(0, 0, 0, 0.9);
       }

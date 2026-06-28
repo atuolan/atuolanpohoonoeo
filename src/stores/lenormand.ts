@@ -8,6 +8,7 @@ import {
   lenormandSpreads,
 } from "@/data/lenormandSpreads";
 import { db } from "@/db/database";
+import { pickGenerationToggles } from "@/utils/generationToggles";
 import type {
   LenormandCard,
   LenormandDrawnCard,
@@ -154,13 +155,13 @@ export const useLenormandStore = defineStore("lenormand", () => {
           maxResponseLength: taskConfig.generation.maxTokens,
           maxContextLength: taskConfig.generation.maxContextLength,
           topP: taskConfig.generation.topP,
-          topK: 0,
           frequencyPenalty: taskConfig.generation.frequencyPenalty,
           presencePenalty: taskConfig.generation.presencePenalty,
           repetitionPenalty: 1,
           stopSequences: [],
           streaming: true,
           useStreamingWindow: false,
+          ...pickGenerationToggles(taskConfig.generation),
         },
         apiSettings,
       });

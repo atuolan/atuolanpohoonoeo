@@ -152,9 +152,9 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   background-color: white;
-  border: 3px solid #1a1a1a;
+  border: 2px solid #1a1a1a;
   border-radius: 16px;
-  box-shadow: 4px 4px 0px #1a1a1a;
+  box-shadow: 3px 3px 0px #1a1a1a;
   color: #1a1a1a;
   overflow: hidden;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -162,11 +162,11 @@ onMounted(() => {
   
   &:hover {
     transform: translate(-1px, -1px);
-    box-shadow: 5px 5px 0px #1a1a1a;
+    box-shadow: 4px 4px 0px #1a1a1a;
   }
 
   &.has-custom-bg {
-    box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.8);
+    box-shadow: 3px 3px 0px rgba(0, 0, 0, 0.8);
   }
 
   // Shelf 樣式

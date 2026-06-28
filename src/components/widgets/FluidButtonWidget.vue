@@ -2,6 +2,7 @@
 import { getIconSource, useWidgetStyle } from "@/composables/useWidgetStyle";
 import { useCanvasStore, useThemeStore } from "@/stores";
 import { getShapeStyle } from "@/styles/shape-presets";
+import { getSkin } from "@/styles/skin-presets";
 import type { WidgetCustomStyle } from "@/types";
 import { resolveWidgetIcon } from "@/utils/widgetIconMap";
 import { computed } from "vue";
@@ -81,10 +82,20 @@ const useCustomImage = computed(() => {
 const customImageUrl = computed(() => iconSource.value.value);
 
 // 根據 type 決定不規則形狀
-const blobShape = computed(() => {
-  // 如果有自定義形狀，使用形狀預設
+// 解析「當前生效的形狀 id」：
+// 1. 元件層級自定義形狀（customStyle.shape）最優先
+// 2. 否則跟隨當前皮（skin）的預設圖標形狀，讓切換皮膚時形狀即時改變
+const effectiveShapeId = computed(() => {
   if (props.data?.customStyle?.shape) {
-    return null; // 由 getShapeStyle 處理
+    return props.data.customStyle.shape;
+  }
+  return getSkin(themeStore.currentSkin).icon.shape;
+});
+
+const blobShape = computed(() => {
+  // 「流體」形狀採用依 type 變化的不規則 blob，視覺更活潑
+  if (effectiveShapeId.value !== "blob") {
+    return null; // 其餘形狀交給 getShapeStyle 處理
   }
   const shapes = [
     "62% 38% 45% 55% / 52% 58% 42% 48%",
@@ -100,13 +111,12 @@ const blobShape = computed(() => {
 const blobStyle = computed(() => {
   const style: Record<string, string> = {};
 
-  // 形狀：優先使用自定義形狀，否則使用預設 blob
-  const shapeId = props.data?.customStyle?.shape;
-  if (shapeId) {
-    const shapeStyles = getShapeStyle(shapeId);
-    Object.assign(style, shapeStyles);
-  } else if (blobShape.value) {
+  // 形狀：blob 用不規則圓角；其餘形狀走 getShapeStyle（含 clipPath）
+  if (blobShape.value) {
     style.borderRadius = blobShape.value;
+  } else {
+    const shapeStyles = getShapeStyle(effectiveShapeId.value);
+    Object.assign(style, shapeStyles);
   }
 
   // 應用圖標大小
@@ -223,28 +233,76 @@ const labelStyle = computed(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   cursor: pointer;
   padding: 4px;
   box-sizing: border-box;
 }
 
 .blob-shape {
-  // 自適應大小 - 填滿可用空間
-  flex: 1;
-  width: 100%;
-  min-width: 40px;
-  min-height: 40px;
+  // 正方形容器：大小由「剩餘高度」決定（扣掉 label 後），
+  // 再以 aspect-ratio 推得等寬，避免撐滿寬度後高度過大壓到文字
+  flex: 0 1 auto;
+  min-height: 0;
+  height: 100%;
+  aspect-ratio: 1 / 1;
+  max-width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: 1.5px solid rgba(0, 0, 0, 0.25);
+  // 預設：白底半透明 + 深色邊框陰影（避免透明底造成破圖）
+  background: rgba(255, 255, 255, 0.55);
+  border: none;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.08),
+    0 2px 8px rgba(0, 0, 0, 0.06);
   transition: all 0.2s ease;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
+
+  // 玻璃皮：iOS Liquid Glass 風格（明亮霧面玻璃）
+  [data-skin="glass"] & {
+    // 淺色半透明霧面底，配合高飽和背景模糊
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.18) 100%);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    // 內側頂部亮邊 + 底部柔光 + 外部投影
+    box-shadow:
+      inset 0 1px 1px rgba(255, 255, 255, 0.9),
+      inset 0 -6px 14px rgba(255, 255, 255, 0.3),
+      0 6px 16px rgba(31, 38, 135, 0.14);
+
+    // 偽元素：高光與內霧邊
+    &::before,
+    &::after {
+      content: '';
+      position: absolute;
+      border-radius: inherit;
+      pointer-events: none;
+    }
+
+    // 頂部鏡面高光
+    &::before {
+      inset: 0;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 48%);
+      opacity: 0.85;
+    }
+
+    // 內側白色霧邊光暈
+    &::after {
+      inset: 0;
+      box-shadow: inset 0 0 18px 5px rgba(255, 255, 255, 0.5);
+    }
+  }
 
   &.has-background {
     border: none;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    
+    [data-skin="glass"] & {
+      box-shadow: none;
+    }
   }
 
   .icon {
@@ -263,6 +321,15 @@ const labelStyle = computed(() => {
       opacity 0.2s,
       color 0.2s,
       transform 0.2s;
+    position: relative;
+    z-index: 1;
+    
+    // 玻璃皮下圖標：顏色跟隨背景（深底白字 / 淺底黑字，由 iconStyle 控制），
+    // 僅補一層柔和投影增加玻璃立體感，不覆蓋顏色。
+    [data-skin="glass"] & {
+      opacity: 0.95;
+      filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.18));
+    }
   }
 
   .custom-icon-image {
@@ -276,16 +343,33 @@ const labelStyle = computed(() => {
     transform: translate(var(--icon-offset-x, 0%), var(--icon-offset-y, 0%))
       scale(var(--icon-scale, 1));
     transition: transform 0.2s;
+    position: relative;
+    z-index: 1;
   }
 }
 
 .fluid-button:hover .blob-shape {
-  border-color: rgba(0, 0, 0, 0.4);
-  background: rgba(255, 255, 255, 0.15);
+  // hover 時略微增強陰影（不改背景，避免覆蓋皮膚特定樣式）
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.12),
+    0 4px 12px rgba(0, 0, 0, 0.1);
+  
+  // 玻璃皮 hover 效果：略增亮度與投影
+  [data-skin="glass"] & {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.28) 100%);
+    box-shadow:
+      inset 0 1px 1px rgba(255, 255, 255, 0.95),
+      inset 0 -6px 14px rgba(255, 255, 255, 0.35),
+      0 8px 20px rgba(31, 38, 135, 0.18);
+  }
 
   &.has-background {
     transform: scale(1.02);
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+    
+    [data-skin="glass"] & {
+      box-shadow: none;
+    }
   }
 
   .icon {
@@ -301,11 +385,16 @@ const labelStyle = computed(() => {
 .label {
   font-size: 10px;
   font-weight: 500;
+  line-height: 1.2;
   color: #374151;
   text-align: center;
   letter-spacing: 0.2px;
-  margin-top: 2px;
   flex-shrink: 0;
+  // 不換行、超出以省略號顯示，避免占用過多高度而與圖標重疊
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: color 0.2s;
 }
 </style>

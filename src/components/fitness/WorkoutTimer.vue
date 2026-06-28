@@ -6,6 +6,7 @@ import { useCharactersStore } from '@/stores/characters'
 import { useSettingsStore } from '@/stores/settings'
 import { getRandomFitnessMessage } from '@/data/fitnessPrompts'
 import { OpenAICompatibleClient } from '@/api/OpenAICompatible'
+import { pickGenerationToggles } from '@/utils/generationToggles'
 import type { CharacterFitnessConfig } from '@/types/fitness'
 
 // 單項運動設定
@@ -152,7 +153,7 @@ async function fetchAIEncouragement() {
         maxResponseLength: currentProfile.generation.maxTokens,
         temperature: currentProfile.generation.temperature,
         topP: currentProfile.generation.topP,
-        topK: 0,
+        ...pickGenerationToggles(currentProfile.generation),
         frequencyPenalty: currentProfile.generation.frequencyPenalty,
         presencePenalty: currentProfile.generation.presencePenalty,
         repetitionPenalty: 1,

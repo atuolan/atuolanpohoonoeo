@@ -95,7 +95,7 @@ const hasCustomBackground = computed(() => {
 });
 
 const currentLayout = computed(() => {
-  return props.data?.customStyle?.layout || "pop";
+  return props.data?.customStyle?.layout || "classic";
 });
 </script>
 
@@ -213,8 +213,8 @@ const currentLayout = computed(() => {
     padding: 20px 16px 16px;
     background: #c4b5fd;
     border-radius: 16px;
-    border: 3px solid #1a1a1a;
-    box-shadow: 4px 4px 0px #1a1a1a;
+    border: 2px solid #1a1a1a;
+    box-shadow: 3px 3px 0px #1a1a1a;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 
     &:hover {
@@ -223,7 +223,7 @@ const currentLayout = computed(() => {
     }
 
     &.has-custom-bg {
-      box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.8);
+      box-shadow: 3px 3px 0px rgba(0, 0, 0, 0.8);
     }
 
     .quote-icon {

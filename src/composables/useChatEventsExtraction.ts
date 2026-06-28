@@ -1,6 +1,7 @@
 import { type Ref, type ComputedRef } from "vue";
 import { db, DB_STORES } from "@/db/database";
 import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
+import { pickGenerationToggles } from "@/utils/generationToggles";
 import {
   createDefaultImportantEventsLog,
   createImportantEvent,
@@ -116,13 +117,13 @@ export function useChatEventsExtraction(deps: {
         maxResponseLength: settingsStore.generation.maxTokens || 4096,
         temperature: 0.3,
         topP: 0.9,
-        topK: 0,
         frequencyPenalty: 0,
         presencePenalty: 0,
         repetitionPenalty: 1,
         stopSequences: [],
         streaming: true,
         useStreamingWindow: useWindow,
+        ...pickGenerationToggles(settingsStore.generation),
       },
       apiSettings: taskConfig.api,
       signal: controller?.signal,

@@ -1,5 +1,6 @@
 import { ref, type Ref, type ComputedRef } from "vue";
 import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
+import { pickGenerationToggles } from "@/utils/generationToggles";
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import { parseGroupChatResponse } from "@/services/ResponseParser";
 import type { ChatMessage } from "@/types/chat";
@@ -374,13 +375,13 @@ export function useChatGroupCall(deps: {
           maxResponseLength: settingsStore.generation.maxTokens || 200000,
           temperature: settingsStore.generation.temperature,
           topP: settingsStore.generation.topP,
-          topK: 0,
           frequencyPenalty: 0,
           presencePenalty: 0,
           repetitionPenalty: 1,
           stopSequences: [],
           streaming: true,
           useStreamingWindow: settingsStore.generation.useStreamingWindow,
+          ...pickGenerationToggles(settingsStore.generation),
         },
         userName: userStore.currentPersona?.name || "User",
         userPersona: deps.effectivePersona.value?.description,
@@ -449,13 +450,13 @@ export function useChatGroupCall(deps: {
           maxResponseLength: settingsStore.generation.maxTokens || 200000,
           temperature: settingsStore.generation.temperature,
           topP: settingsStore.generation.topP,
-          topK: 0,
           frequencyPenalty: 0,
           presencePenalty: 0,
           repetitionPenalty: 1,
           stopSequences: [],
           streaming: true,
           useStreamingWindow: false,
+          ...pickGenerationToggles(settingsStore.generation),
         },
         apiSettings: groupCallTaskConfig.api,
         adjustLastMessageRole: true,

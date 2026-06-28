@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
+import { pickGenerationToggles } from "@/utils/generationToggles";
 import { useSettingsStore } from "@/stores";
 import type { MultiCharMember } from "@/types/chat";
 import { Loader2, Plus, Sparkles, Trash2, Users, X } from "lucide-vue-next";
@@ -77,7 +78,7 @@ async function autoDetectCharacters() {
         maxResponseLength: settingsStore.generation.maxTokens,
         temperature: settingsStore.generation.temperature,
         topP: settingsStore.generation.topP,
-        topK: 0,
+        ...pickGenerationToggles(settingsStore.generation),
         frequencyPenalty: settingsStore.generation.frequencyPenalty,
         presencePenalty: settingsStore.generation.presencePenalty,
         repetitionPenalty: 1,

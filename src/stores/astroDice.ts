@@ -10,6 +10,7 @@ import {
   getRandomPlanet,
   getRandomSign,
 } from "@/data/astroDiceData";
+import { pickGenerationToggles } from "@/utils/generationToggles";
 import { buildAstroDiceInterpretationPrompt } from "@/data/astroDicePrompts";
 import { db } from "@/db/database";
 import type {
@@ -142,13 +143,13 @@ export const useAstroDiceStore = defineStore("astroDice", () => {
           maxResponseLength: taskConfig.generation.maxTokens,
           maxContextLength: taskConfig.generation.maxContextLength,
           topP: taskConfig.generation.topP,
-          topK: 0,
           frequencyPenalty: taskConfig.generation.frequencyPenalty,
           presencePenalty: taskConfig.generation.presencePenalty,
           repetitionPenalty: 1,
           stopSequences: [],
           streaming: true,
           useStreamingWindow: false,
+          ...pickGenerationToggles(taskConfig.generation),
         },
         apiSettings,
       });

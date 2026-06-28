@@ -1,5 +1,11 @@
 import { defineStore } from "pinia";
 import { computed, ref, watch } from "vue";
+import {
+  skinPresets,
+  getSkin,
+  resolveShadow,
+  DEFAULT_SKIN_ID,
+} from "@/styles/skin-presets";
 
 /**
  * 從 CSS 顏色字串解析 RGB 值
@@ -392,6 +398,9 @@ export const useThemeStore = defineStore("theme", () => {
   // 自定義顏色（覆蓋預設）
   const customColors = ref<Partial<ThemeColors>>({});
 
+  // 當前皮（形態：圓角/陰影/模糊/互動/圖標質感）
+  const currentSkin = ref<string>(DEFAULT_SKIN_ID);
+
   // 夜晚模式狀態（從 settings store 同步）
   const nightMode = ref<boolean>(false);
 
@@ -536,6 +545,7 @@ export const useThemeStore = defineStore("theme", () => {
     const a = avatarStyle.value;
     const b = nightMode.value ? nightBubbleOverride : bubbleStyle.value;
     const w = wallpaperStyle.value;
+    const skin = getSkin(currentSkin.value);
 
     return {
       // 顏色變數
@@ -627,18 +637,31 @@ export const useThemeStore = defineStore("theme", () => {
       "--safe-left": "env(safe-area-inset-left, 0px)",
       "--safe-right": "env(safe-area-inset-right, 0px)",
 
-      // 通用變數
-      "--radius-sm": "8px",
-      "--radius-md": "12px",
-      "--radius-lg": "16px",
-      "--radius-xl": "24px",
-      "--radius-full": "9999px",
-      "--transition-fast": "0.15s cubic-bezier(0.34, 1.56, 0.64, 1)",
-      "--transition-normal": "0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
-      "--transition-slow": "0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
-      "--shadow-sm": `0 2px 8px ${c.shadow}`,
-      "--shadow-md": `0 4px 16px ${c.shadow}`,
-      "--shadow-lg": `0 8px 32px ${c.shadow}`,
+      // ===== 皮（Skin）變數 =====
+      // 形態由當前皮決定，陰影顏色由當前配色決定（兩者正交）
+      "--radius-sm": skin.radius.sm,
+      "--radius-md": skin.radius.md,
+      "--radius-lg": skin.radius.lg,
+      "--radius-xl": skin.radius.xl,
+      "--radius-full": skin.radius.full,
+      "--transition-fast": skin.transition.fast,
+      "--transition-normal": skin.transition.normal,
+      "--transition-slow": skin.transition.slow,
+      "--shadow-sm": resolveShadow(skin.shadow.sm, c.shadow),
+      "--shadow-md": resolveShadow(skin.shadow.md, c.shadow),
+      "--shadow-lg": resolveShadow(skin.shadow.lg, c.shadow),
+
+      // 表面質感（玻璃皮用）
+      "--skin-surface-blur": skin.surface.blur,
+      "--skin-surface-opacity": `${skin.surface.opacity}`,
+      "--skin-surface-saturate": skin.surface.saturate,
+      "--skin-border-width": skin.borderWidth,
+
+      // 圖標質感
+      "--skin-icon-shadow": resolveShadow(skin.icon.shadow, c.shadow),
+
+      // 互動回饋
+      "--skin-press-scale": skin.pressScale,
     };
   });
 
@@ -660,6 +683,9 @@ export const useThemeStore = defineStore("theme", () => {
 
     // 同步夜晚模式 class 到 body，讓 SCSS 可以基於此覆蓋寫死的淺色
     document.body.classList.toggle("is-night-mode", nightMode.value);
+
+    // 同步當前皮到 root，讓 SCSS 可基於 [data-skin] 做形態微調
+    root.setAttribute("data-skin", currentSkin.value);
 
     // 應用自訂 CSS
     applyCustomCSS();
@@ -1015,6 +1041,15 @@ export const useThemeStore = defineStore("theme", () => {
     }
   }
 
+  // 設置當前皮（形態）
+  function setSkin(skinId: string) {
+    if (skinPresets[skinId]) {
+      currentSkin.value = skinId;
+      applyTheme();
+      saveToStorage();
+    }
+  }
+
   // 設置自定義顏色
   function setCustomColor(key: keyof ThemeColors, value: string) {
     customColors.value[key] = value;
@@ -1053,6 +1088,7 @@ export const useThemeStore = defineStore("theme", () => {
   // 重置為預設
   function resetToDefault() {
     currentPreset.value = "soft-pink";
+    currentSkin.value = DEFAULT_SKIN_ID;
     customColors.value = {};
     avatarStyle.value = { ...defaultAvatarStyle };
     bubbleStyle.value = { ...defaultBubbleStyle };
@@ -1117,6 +1153,7 @@ export const useThemeStore = defineStore("theme", () => {
         JSON.stringify({
           currentStyle: currentStyle.value,
           currentPreset: currentPreset.value,
+          currentSkin: currentSkin.value,
           customColors: customColors.value,
           avatarStyle: avatarStyle.value,
           bubbleStyle: bubbleStyle.value,
@@ -1143,6 +1180,9 @@ export const useThemeStore = defineStore("theme", () => {
       if (data) {
         currentStyle.value = data.currentStyle || "soft";
         currentPreset.value = data.currentPreset || "soft-pink";
+        currentSkin.value = skinPresets[data.currentSkin]
+          ? data.currentSkin
+          : DEFAULT_SKIN_ID;
         customColors.value = data.customColors || {};
         avatarStyle.value = { ...defaultAvatarStyle, ...data.avatarStyle };
         bubbleStyle.value = { ...defaultBubbleStyle, ...data.bubbleStyle };
@@ -1201,6 +1241,7 @@ export const useThemeStore = defineStore("theme", () => {
     // 狀態
     currentStyle,
     currentPreset,
+    currentSkin,
     customColors,
     nightMode,
     avatarStyle,
@@ -1218,6 +1259,7 @@ export const useThemeStore = defineStore("theme", () => {
     applyTheme,
     applyCustomCSS,
     setPreset,
+    setSkin,
     setCustomColor,
     setNightMode,
     updateAvatarStyle,

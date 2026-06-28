@@ -32,6 +32,7 @@ import VideoCallModal from "@/components/modals/VideoCallModal.vue";
 import ImageSearchPanel from "@/components/panels/ImageSearchPanel.vue";
 import { _delay, _escapeRegex, _messageRenderDelay, countTurns, formatClaimAmount, hashString, isShadowBubbleOf, sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
 import { setDebugInfoLine } from "@/utils/debugOverlay";
+import { pickGenerationToggles } from "@/utils/generationToggles";
 import { useChatAffinity } from "@/composables/useChatAffinity";
 import { useChatBlock } from "@/composables/useChatBlock";
 import { useChatRedpacket } from "@/composables/useChatRedpacket";
@@ -3796,13 +3797,13 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         maxResponseLength: settingsStore.generation.maxTokens || 200000,
         temperature: settingsStore.generation.temperature,
         topP: settingsStore.generation.topP,
-        topK: 0,
-        frequencyPenalty: 0,
-        presencePenalty: 0,
+        frequencyPenalty: settingsStore.generation.frequencyPenalty ?? 0,
+        presencePenalty: settingsStore.generation.presencePenalty ?? 0,
         repetitionPenalty: 1,
         stopSequences: [],
         streaming: false,
         useStreamingWindow: false,
+        ...pickGenerationToggles(settingsStore.generation),
       },
       userName: effectivePersona.value?.name || "User",
       userPersona: effectivePersona.value?.description || undefined,
@@ -4252,13 +4253,13 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       maxResponseLength: chatTaskConfig.generation.maxTokens || 200000,
       temperature: chatTaskConfig.generation.temperature,
       topP: chatTaskConfig.generation.topP,
-      topK: 0,
-      frequencyPenalty: 0,
-      presencePenalty: 0,
+      frequencyPenalty: chatTaskConfig.generation.frequencyPenalty ?? 0,
+      presencePenalty: chatTaskConfig.generation.presencePenalty ?? 0,
       repetitionPenalty: 1,
       stopSequences: [],
       streaming: isStreamingEnabled,
       useStreamingWindow: useWindow,
+      ...pickGenerationToggles(chatTaskConfig.generation),
     };
 
     const getApiMessageTextLength = (message: any): number => {

@@ -84,7 +84,7 @@ const currentLayout = computed(
 
 // 獲取黑膠唱片子風格
 const vinylStyle = computed(
-  () => props.data?.customStyle?.vinylStyle || "pop",
+  () => props.data?.customStyle?.vinylStyle || "classic",
 );
 
 function formatTime(seconds: number) {
@@ -449,6 +449,8 @@ onUnmounted(() => {
   flex-shrink: 0;
   height: 100%;
   aspect-ratio: 1 / 1;
+  // 防止在縮小（接近正方形）時封面吃掉全部寬度，導致內容沒有空間
+  max-width: 35%;
 
   .album-cover {
     width: 100%;
@@ -743,15 +745,15 @@ onUnmounted(() => {
   // === 普普風（預設） ===
   &.pop {
     background-color: #fce7f3;
-    border: 3px solid #1a1a1a;
+    border: 2px solid #1a1a1a;
     border-radius: 16px;
-    box-shadow: 4px 4px 0px #1a1a1a;
-    &:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0px #1a1a1a; }
-    .vinyl-record { box-shadow: 4px 4px 0px rgba(0,0,0,0.5); border: 3px solid #1a1a1a;
-      .vinyl-label { background: #fcd34d; border: 3px solid #1a1a1a; svg { color: #1a1a1a; } }
+    box-shadow: 3px 3px 0px #1a1a1a;
+    &:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0px #1a1a1a; }
+    .vinyl-record { box-shadow: 3px 3px 0px rgba(0,0,0,0.5); border: 2px solid #1a1a1a;
+      .vinyl-label { background: #fcd34d; border: 2px solid #1a1a1a; svg { color: #1a1a1a; } }
     }
     .tonearm { background: #fdfaf6; border: 2px solid #1a1a1a; box-shadow: 2px 2px 0px #1a1a1a;
-      .arm-base { background: #c4b5fd; border: 3px solid #1a1a1a; box-shadow: 2px 2px 0px #1a1a1a; }
+      .arm-base { background: #c4b5fd; border: 2px solid #1a1a1a; box-shadow: 2px 2px 0px #1a1a1a; }
     }
     .vinyl-controls-overlay .vinyl-buttons {
       .play-btn { background: #38bdf8; color: #1a1a1a; border: 2px solid #1a1a1a; box-shadow: 2px 2px 0px #1a1a1a;
@@ -763,7 +765,7 @@ onUnmounted(() => {
         &:active { transform: scale(0.95); box-shadow: 0 0 0 transparent; }
       }
     }
-    .tap-hint { background: #ffb4b4; color: #1a1a1a; border: 3px solid #1a1a1a; box-shadow: 2px 2px 0px #1a1a1a; border-radius: 12px; font-weight: 800; }
+    .tap-hint { background: #ffb4b4; color: #1a1a1a; border: 2px solid #1a1a1a; box-shadow: 2px 2px 0px #1a1a1a; border-radius: 12px; font-weight: 800; }
   }
 
   // === 極簡風格 ===

@@ -4,6 +4,7 @@
  * 生成偷窺手機各模塊組的 AI 內容
  */
 import { getAPIClient, type APIMessage } from "@/api/OpenAICompatible";
+import { pickGenerationToggles } from "@/utils/generationToggles";
 import { getMacroEngine } from "@/engine/macros/MacroEngine";
 import { loadMessages } from "@/storage/chatMessageStorage";
 import { usePromptManagerStore } from "@/stores/promptManager";
@@ -293,13 +294,13 @@ export async function generateGroup(
         maxResponseLength: taskConfig.generation.maxTokens,
         temperature: taskConfig.generation.temperature,
         topP: taskConfig.generation.topP,
-        topK: 0,
         frequencyPenalty: taskConfig.generation.frequencyPenalty,
         presencePenalty: taskConfig.generation.presencePenalty,
         repetitionPenalty: 1,
         stopSequences: [],
         streaming: true,
         useStreamingWindow: false,
+        ...pickGenerationToggles(taskConfig.generation),
       },
       apiSettings: taskConfig.api,
       signal,
@@ -329,13 +330,13 @@ export async function generateGroup(
         maxResponseLength: taskConfig.generation.maxTokens,
         temperature: taskConfig.generation.temperature,
         topP: taskConfig.generation.topP,
-        topK: 0,
         frequencyPenalty: taskConfig.generation.frequencyPenalty,
         presencePenalty: taskConfig.generation.presencePenalty,
         repetitionPenalty: 1,
         stopSequences: [],
         streaming: false,
         useStreamingWindow: false,
+        ...pickGenerationToggles(taskConfig.generation),
       },
       apiSettings: taskConfig.api,
       signal,
@@ -505,12 +506,12 @@ async function callAPIForPhase(
     maxResponseLength,
     temperature: taskConfig.generation.temperature,
     topP: taskConfig.generation.topP,
-    topK: 0,
     frequencyPenalty: taskConfig.generation.frequencyPenalty,
     presencePenalty: taskConfig.generation.presencePenalty,
     repetitionPenalty: 1,
     stopSequences: [] as string[],
     useStreamingWindow: false,
+    ...pickGenerationToggles(taskConfig.generation),
   };
 
   if (isStreaming) {
@@ -691,13 +692,13 @@ export async function generateCombined(
         maxResponseLength: taskConfig.generation.maxTokens,
         temperature: taskConfig.generation.temperature,
         topP: taskConfig.generation.topP,
-        topK: 0,
         frequencyPenalty: taskConfig.generation.frequencyPenalty,
         presencePenalty: taskConfig.generation.presencePenalty,
         repetitionPenalty: 1,
         stopSequences: [],
         streaming: true,
         useStreamingWindow: false,
+        ...pickGenerationToggles(taskConfig.generation),
       },
       apiSettings: taskConfig.api,
       signal,
@@ -725,13 +726,13 @@ export async function generateCombined(
         maxResponseLength: taskConfig.generation.maxTokens,
         temperature: taskConfig.generation.temperature,
         topP: taskConfig.generation.topP,
-        topK: 0,
         frequencyPenalty: taskConfig.generation.frequencyPenalty,
         presencePenalty: taskConfig.generation.presencePenalty,
         repetitionPenalty: 1,
         stopSequences: [],
         streaming: false,
         useStreamingWindow: false,
+        ...pickGenerationToggles(taskConfig.generation),
       },
       apiSettings: taskConfig.api,
       signal,

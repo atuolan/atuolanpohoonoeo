@@ -749,12 +749,84 @@ async function testTaskConnection(taskId: string) {
       </div>
 
       <!-- 溫度 -->
-      <div class="setting-group">
-        <label class="setting-label">
-          溫度 <span class="value-badge">{{ settingsStore.auxiliary.generation.temperature }}</span>
-        </label>
-        <input v-model.number="settingsStore.auxiliary.generation.temperature" type="range" min="0" max="1" step="0.1" class="soft-slider" @change="persist" />
+      <div class="setting-group param-card">
+        <div class="param-header">
+          <div class="param-meta">
+            <span class="param-name">溫度</span>
+            <span class="param-hint-text">關閉則不發送給 API</span>
+          </div>
+          <span class="value-badge">{{ settingsStore.auxiliary.generation.temperature }}</span>
+          <label class="toggle-item param-toggle">
+            <input type="checkbox" v-model="settingsStore.auxiliary.generation.enableTemperature" class="toggle-input" @change="persist" />
+            <span class="toggle-switch"></span>
+          </label>
+        </div>
+        <input v-model.number="settingsStore.auxiliary.generation.temperature" type="range" min="0" max="1" step="0.1" class="soft-slider" :disabled="!settingsStore.auxiliary.generation.enableTemperature" @change="persist" />
         <p class="setting-hint">備用 API 建議使用較低溫度（0.3-0.5）以確保輸出穩定</p>
+      </div>
+
+      <!-- Top P -->
+      <div class="setting-group param-card">
+        <div class="param-header">
+          <div class="param-meta">
+            <span class="param-name">Top P</span>
+            <span class="param-hint-text">關閉則不發送給 API</span>
+          </div>
+          <span class="value-badge">{{ settingsStore.auxiliary.generation.topP }}</span>
+          <label class="toggle-item param-toggle">
+            <input type="checkbox" v-model="settingsStore.auxiliary.generation.enableTopP" class="toggle-input" @change="persist" />
+            <span class="toggle-switch"></span>
+          </label>
+        </div>
+        <input v-model.number="settingsStore.auxiliary.generation.topP" type="range" min="0" max="1" step="0.05" class="soft-slider" :disabled="!settingsStore.auxiliary.generation.enableTopP" @change="persist" />
+      </div>
+
+      <!-- Top K -->
+      <div class="setting-group param-card">
+        <div class="param-header">
+          <div class="param-meta">
+            <span class="param-name">Top K</span>
+            <span class="param-hint-text">僅部分模型支援，不支援請關閉</span>
+          </div>
+          <span class="value-badge">{{ settingsStore.auxiliary.generation.topK }}</span>
+          <label class="toggle-item param-toggle">
+            <input type="checkbox" v-model="settingsStore.auxiliary.generation.enableTopK" class="toggle-input" @change="persist" />
+            <span class="toggle-switch"></span>
+          </label>
+        </div>
+        <input v-model.number="settingsStore.auxiliary.generation.topK" type="range" min="0" max="200" step="1" class="soft-slider" :disabled="!settingsStore.auxiliary.generation.enableTopK" @change="persist" />
+      </div>
+
+      <!-- 頻率懲罰 -->
+      <div class="setting-group param-card">
+        <div class="param-header">
+          <div class="param-meta">
+            <span class="param-name">頻率懲罰</span>
+            <span class="param-hint-text">關閉則不發送給 API</span>
+          </div>
+          <span class="value-badge">{{ settingsStore.auxiliary.generation.frequencyPenalty }}</span>
+          <label class="toggle-item param-toggle">
+            <input type="checkbox" v-model="settingsStore.auxiliary.generation.enableFrequencyPenalty" class="toggle-input" @change="persist" />
+            <span class="toggle-switch"></span>
+          </label>
+        </div>
+        <input v-model.number="settingsStore.auxiliary.generation.frequencyPenalty" type="range" min="-2" max="2" step="0.1" class="soft-slider" :disabled="!settingsStore.auxiliary.generation.enableFrequencyPenalty" @change="persist" />
+      </div>
+
+      <!-- 存在懲罰 -->
+      <div class="setting-group param-card">
+        <div class="param-header">
+          <div class="param-meta">
+            <span class="param-name">存在懲罰</span>
+            <span class="param-hint-text">關閉則不發送給 API</span>
+          </div>
+          <span class="value-badge">{{ settingsStore.auxiliary.generation.presencePenalty }}</span>
+          <label class="toggle-item param-toggle">
+            <input type="checkbox" v-model="settingsStore.auxiliary.generation.enablePresencePenalty" class="toggle-input" @change="persist" />
+            <span class="toggle-switch"></span>
+          </label>
+        </div>
+        <input v-model.number="settingsStore.auxiliary.generation.presencePenalty" type="range" min="-2" max="2" step="0.1" class="soft-slider" :disabled="!settingsStore.auxiliary.generation.enablePresencePenalty" @change="persist" />
       </div>
 
       <!-- 直連模式 -->
@@ -917,6 +989,52 @@ async function testTaskConnection(taskId: string) {
 <style lang="scss">
 // 匯入設定頁面共用樣式
 @use "../../styles/settings-shared";
+
+// iOS 風格參數卡片（內嵌開關）
+.param-card {
+  background: var(--color-surface, #fff);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+
+.param-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.param-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.param-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text, #333);
+  line-height: 1.3;
+}
+
+.param-hint-text {
+  font-size: 12px;
+  color: var(--color-text-secondary, #8e8e93);
+  line-height: 1.3;
+}
+
+.param-toggle {
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
 
 // 任務路由綁定列表（AuxiliaryApiPanel 專用）
 

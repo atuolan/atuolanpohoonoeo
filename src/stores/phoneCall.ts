@@ -12,6 +12,7 @@ import { loadChatById, refreshChatDerivedMetadata } from "@/storage/chatStorage"
 import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { computeChatNow } from "@/utils/fakeTime";
+import { pickGenerationToggles } from "@/utils/generationToggles";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
@@ -811,8 +812,9 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
           maxResponseLength: settingsStore.generation.maxTokens || 200000,
           temperature: settingsStore.generation.temperature,
           topP: settingsStore.generation.topP,
-          topK: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1,
+          frequencyPenalty: settingsStore.generation.frequencyPenalty ?? 0, presencePenalty: settingsStore.generation.presencePenalty ?? 0, repetitionPenalty: 1,
           stopSequences: [], streaming: isStreamingEnabled, useStreamingWindow: useWindow,
+          ...pickGenerationToggles(settingsStore.generation),
         },
         userName: userStore.currentPersona?.name || "User",
         userPersona: userStore.currentPersona?.description,
@@ -881,8 +883,9 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
           maxResponseLength: settingsStore.generation.maxTokens || 200000,
           temperature: settingsStore.generation.temperature,
           topP: settingsStore.generation.topP,
-          topK: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1,
+          frequencyPenalty: settingsStore.generation.frequencyPenalty ?? 0, presencePenalty: settingsStore.generation.presencePenalty ?? 0, repetitionPenalty: 1,
           stopSequences: [], streaming: isStreamingEnabled, useStreamingWindow: useWindow,
+          ...pickGenerationToggles(settingsStore.generation),
         },
         apiSettings: phoneCallTaskConfig.api,
         signal: abortController!.signal,
@@ -1108,13 +1111,13 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
           maxResponseLength: phoneCallDecisionConfig.generation.maxTokens,
           temperature: phoneCallDecisionConfig.generation.temperature,
           topP: phoneCallDecisionConfig.generation.topP,
-          topK: 0,
           frequencyPenalty: phoneCallDecisionConfig.generation.frequencyPenalty,
           presencePenalty: phoneCallDecisionConfig.generation.presencePenalty,
           repetitionPenalty: 1,
           stopSequences: [],
           streaming: false,
           useStreamingWindow: false,
+          ...pickGenerationToggles(phoneCallDecisionConfig.generation),
         },
         apiSettings: phoneCallDecisionConfig.api,
       });

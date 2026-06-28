@@ -10,6 +10,7 @@ import {
     type TextContent,
 } from "@/api/OpenAICompatible";
 import { useStreamingWindow } from "@/composables/useStreamingWindow";
+import { pickGenerationToggles } from "@/utils/generationToggles";
 import { usePromptManagerStore } from "@/stores/promptManager";
 import { useSettingsStore } from "@/stores/settings";
 import type { GeneratedComment, QZoneComment, QZonePost } from "@/types/qzone";
@@ -144,13 +145,13 @@ export async function generateBatchComments(
       maxResponseLength: taskConfig.generation.maxTokens,
       temperature: taskConfig.generation.temperature,
       topP: taskConfig.generation.topP,
-      topK: 0,
       frequencyPenalty: taskConfig.generation.frequencyPenalty,
       presencePenalty: taskConfig.generation.presencePenalty,
       repetitionPenalty: 1,
       stopSequences: [],
       streaming: isStreamingEnabled,
       useStreamingWindow: shouldUseWindow,
+      ...pickGenerationToggles(taskConfig.generation),
     };
 
     const controller = new AbortController();

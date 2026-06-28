@@ -479,11 +479,12 @@ function onWrapperClick(e: MouseEvent) {
   }
 
   &.is-dragging {
-    opacity: 0.9;
+    opacity: 0.95;
 
     .widget-content {
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-      transform: scale(1.02);
+      // iOS 風格輕盈陰影：淡化 + 近距離（避免厚重感）
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+      transform: scale(1.01);
     }
   }
 
@@ -512,8 +513,16 @@ function onWrapperClick(e: MouseEvent) {
 .widget-content {
   width: 100%;
   height: 100%;
+  // 容器只負責定位，不負責裁切：形狀與陰影由各元件自己決定。
+  // 圓角僅用於「拖曳時容器自身的投影」呈現圓角外觀。
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  background: transparent;
+  // 關鍵修正：不可使用 overflow: hidden。
+  // 元件（如日曆卡片）自帶 border-radius(16px) + box-shadow，
+  // 若外層以皮膚的 --radius-lg 裁切（極簡為 12px，比子卡片更小），
+  // 角落會留出縫隙，子元件的陰影被裁成深色弧形殘影擠在四角。
+  // 讓容器不裁切，陰影自然向外柔和擴散即可消除弧形殘影。
+  overflow: visible;
   transition:
     transform 0.2s,
     box-shadow 0.2s;
