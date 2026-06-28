@@ -46,6 +46,10 @@ const containerStyle = computed(() => {
   const style = props.data?.customStyle;
   if (!style) return {};
 
+  if (style.layout === "pearl") {
+    return {};
+  }
+
   const result: Record<string, string> = {};
   if (style.backgroundGradient) {
     result.background = style.backgroundGradient;
@@ -62,6 +66,7 @@ const containerStyle = computed(() => {
 
 const textStyle = computed(() => {
   const style = props.data?.customStyle;
+  if (style?.layout === "pearl") return {};
   if (style?.textColor) return { color: style.textColor };
   if (style?.foregroundColor) return { color: style.foregroundColor };
   return {};
@@ -174,7 +179,7 @@ onMounted(() => {
     padding: 16px;
     display: flex;
     flex-direction: column;
-    background-color: #fce7f3;
+    background-color: rgba(252, 231, 243, 0.5); // 改為半透明，讓自訂背景更好透出
 
     .shelf-header {
       display: flex;
@@ -240,19 +245,48 @@ onMounted(() => {
       .book-spine {
         width: 28px;
         height: 85%;
-        border-radius: 6px;
+        border-radius: 4px 4px 2px 2px;
         border: 2px solid #1a1a1a;
         position: relative;
         cursor: pointer;
-        transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-        box-shadow: 2px 2px 0px #1a1a1a;
+        transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        box-shadow:
+          2px 2px 0px #1a1a1a,
+          inset 2px 0 0 rgba(255, 255, 255, 0.25),
+          inset -2px 0 0 rgba(0, 0, 0, 0.15);
         display: flex;
         justify-content: center;
         align-items: center;
         flex-shrink: 0;
+        overflow: hidden;
+
+        &::before {
+          content: '';
+          position: absolute;
+          top: 6px;
+          left: 0;
+          right: 0;
+          height: 2px;
+          background: rgba(255, 255, 255, 0.6);
+          box-shadow: 0 4px 0 rgba(255, 255, 255, 0.6);
+        }
+
+        &::after {
+          content: '';
+          position: absolute;
+          bottom: 8px;
+          left: 0;
+          right: 0;
+          height: 2px;
+          background: rgba(255, 255, 255, 0.6);
+        }
 
         &:hover {
-          transform: translateY(-8px);
+          transform: translateY(-10px) rotate(-2deg);
+          box-shadow:
+            4px 6px 0px rgba(26, 26, 26, 0.8),
+            inset 2px 0 0 rgba(255, 255, 255, 0.25),
+            inset -2px 0 0 rgba(0, 0, 0, 0.15);
         }
 
         &:nth-child(even) {
@@ -295,13 +329,30 @@ onMounted(() => {
     }
 
     .shelf-wood {
-      height: 12px;
-      background: #fcd34d;
-      border: 3px solid #1a1a1a;
-      border-radius: 6px;
+      height: 14px;
+      background: linear-gradient(to bottom, #fcd34d 0%, #d97706 100%);
+      border: 2px solid #1a1a1a;
+      border-radius: 4px;
       margin-top: -2px;
       z-index: 10;
-      box-shadow: 0px 4px 0px rgba(0,0,0,0.1);
+      position: relative;
+      box-shadow:
+        0px 4px 0px rgba(0,0,0,0.15),
+        inset 0 2px 0 rgba(255,255,255,0.4);
+      
+      &::before {
+        content: '';
+        position: absolute;
+        top: -5px;
+        left: -2px;
+        right: -2px;
+        height: 4px;
+        background: #fde68a;
+        border: 2px solid #1a1a1a;
+        border-bottom: none;
+        border-radius: 4px 4px 0 0;
+        z-index: -1;
+      }
     }
   }
 
@@ -409,6 +460,140 @@ onMounted(() => {
 
       span {
         font-size: 12px;
+      }
+    }
+  }
+
+  // 珍珠畫廊風
+  &.pearl {
+    background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
+    border: 2px solid #FFCE05;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      width: 7px;
+      height: 7px;
+      background: radial-gradient(circle, rgba(255, 206, 5, 0.95) 0%, transparent 70%);
+      box-shadow:
+        0 0 6px 2px rgba(255, 206, 5, 0.5),
+        -45px 25px 0 -2px rgba(71, 131, 222, 0.85),
+        -45px 25px 6px 0 rgba(71, 131, 222, 0.4),
+        18px 38px 0 -3px rgba(255, 198, 174, 0.75),
+        18px 38px 5px -1px rgba(255, 198, 174, 0.35);
+      border-radius: 50%;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .shelf-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      position: relative;
+      z-index: 1;
+
+      .shelf-title {
+        font-family: Georgia, 'Times New Roman', serif;
+        font-style: italic;
+        color: #F8F6F0;
+        font-size: 16px;
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        padding: 0;
+      }
+
+      .more-btn {
+        background: transparent;
+        border: none;
+        color: #F8F6F0;
+        &:hover {
+          color: #FFCE05;
+        }
+      }
+    }
+
+    .bookshelf {
+      flex: 1;
+      display: flex;
+      gap: 6px;
+      padding-bottom: 4px;
+      overflow-x: auto;
+      align-items: flex-end;
+      position: relative;
+      z-index: 1;
+
+      &::-webkit-scrollbar {
+        height: 4px;
+      }
+      &::-webkit-scrollbar-thumb {
+        background: rgba(255, 206, 5, 0.3);
+        border-radius: 4px;
+      }
+
+      .book-spine {
+        width: 24px;
+        height: 80%;
+        border-radius: 2px 2px 0 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: inset -2px 0 4px rgba(0, 0, 0, 0.2);
+        writing-mode: vertical-rl;
+        text-orientation: mixed;
+        border: 1px solid rgba(255, 206, 5, 0.3);
+        border-bottom: none;
+
+        .book-spine-title {
+          font-family: Georgia, serif;
+          font-size: 10px;
+          color: #F8F6F0;
+          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+          white-space: nowrap;
+        }
+      }
+
+      .empty-shelf {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        color: #D4C8B0;
+        opacity: 0.8;
+
+        span {
+          font-family: Georgia, serif;
+          font-style: italic;
+          font-size: 13px;
+        }
+      }
+    }
+
+    .shelf-wood {
+      height: 6px;
+      background: rgba(71, 131, 222, 0.3);
+      border-radius: 3px;
+      margin-top: 0;
+      position: relative;
+      z-index: 1;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(255, 206, 5, 0.2);
+
+      &::before {
+        display: none;
       }
     }
   }

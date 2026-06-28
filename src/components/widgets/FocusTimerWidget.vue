@@ -588,6 +588,81 @@ const currentLayout = computed(() => {
       }
     }
   }
+
+  // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）
+  &.pearl {
+    background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
+    border: 2px solid #FFCE05;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+    position: relative;
+    overflow: hidden;
+
+    // 右上角靜態星光（mustard + 藍色衣領 + 溫暖膚色）
+    &::before {
+      content: '';
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      width: 7px;
+      height: 7px;
+      background: radial-gradient(circle, rgba(255, 206, 5, 0.95) 0%, transparent 70%);
+      box-shadow:
+        0 0 6px 2px rgba(255, 206, 5, 0.5),
+        -45px 25px 0 -2px rgba(71, 131, 222, 0.85),
+        -45px 25px 6px 0 rgba(71, 131, 222, 0.4),
+        18px 38px 0 -3px rgba(255, 198, 174, 0.75),
+        18px 38px 5px -1px rgba(255, 198, 174, 0.35);
+      border-radius: 50%;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .mode-indicator {
+      position: relative; z-index: 1;
+      display: flex; align-items: center; gap: 6px; padding: 5px 14px;
+      border-radius: 999px;
+      background: rgba(71, 131, 222, 0.18);
+      border: 1px solid rgba(255, 206, 5, 0.4);
+      color: #F8F6F0;
+      font-family: Georgia, 'Times New Roman', serif;
+      font-style: italic;
+      white-space: nowrap;
+    }
+
+    .timer-circle {
+      position: relative; z-index: 1; width: 130px; height: 130px; flex-shrink: 0;
+      .progress-track { stroke: rgba(255, 206, 5, 0.18); }
+      .progress-bar { stroke: #FFCE05; stroke-linecap: round; transition: stroke-dashoffset 0.3s ease; &.break { stroke: #7BADEE; } }
+      .timer-display {
+        position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        border-radius: 50%;
+        background: linear-gradient(155deg, rgba(62, 58, 88, 0.6), rgba(51, 45, 75, 0.6));
+        border: 2px solid rgba(255, 206, 5, 0.5);
+        .time { font-size: 21px; font-weight: 400; letter-spacing: 1px; color: #F8F6F0; font-family: Georgia, 'Times New Roman', serif; font-variant-numeric: tabular-nums; margin-top: 4px; }
+        .sessions { font-size: 10px; font-weight: 400; font-style: italic; letter-spacing: 0.5px; color: #D4C8B0; font-family: Georgia, serif; margin-top: 1px; }
+      }
+    }
+
+    .controls {
+      position: relative; z-index: 1;
+      display: flex; align-items: center; gap: 16px; flex-shrink: 0;
+      .control-btn {
+        border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0;
+        transition: all 0.2s;
+        &.reset {
+          width: 40px; height: 40px;
+          background: rgba(71, 131, 222, 0.2); border: 1.5px solid rgba(71, 131, 222, 0.6); color: #7BADEE;
+          &:hover { border-color: #FFCE05; color: #FFCE05; }
+        }
+        &.play {
+          width: 52px; height: 52px; background: #4783DE; border: none; color: #F8F6F0;
+          &:hover { background: #FFCE05; color: #332D4B; }
+          &.pause { background: #FFCE05; color: #332D4B; }
+        }
+      }
+    }
+  }
 }
 
 // 小尺寸響應式調整

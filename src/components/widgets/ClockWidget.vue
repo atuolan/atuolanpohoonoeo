@@ -301,6 +301,8 @@ const containerStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
 
+  if (customStyle?.layout === "pearl") return style;
+
   if (customStyle?.backgroundGradient) {
     style.background = customStyle.backgroundGradient;
   } else if (customStyle?.backgroundColor) {
@@ -325,6 +327,9 @@ const containerStyle = computed(() => {
 const textStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
+  
+  if (customStyle?.layout === "pearl") return style;
+
   if (customStyle?.textColor) {
     style.color = customStyle.textColor;
   } else if (customStyle?.foregroundColor) {
@@ -1654,6 +1659,99 @@ const hasCustomBackground = computed(() => {
   }
   50% {
     opacity: 0.5;
+  }
+}
+
+/* 珍珠畫廊風 */
+.clock-widget.style-pearl {
+  background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
+  border: 2px solid #FFCE05;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+  position: relative;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    width: 7px;
+    height: 7px;
+    background: radial-gradient(circle, rgba(255, 206, 5, 0.95) 0%, transparent 70%);
+    box-shadow:
+      0 0 6px 2px rgba(255, 206, 5, 0.5),
+      -45px 25px 0 -2px rgba(71, 131, 222, 0.85),
+      -45px 25px 6px 0 rgba(71, 131, 222, 0.4),
+      18px 38px 0 -3px rgba(255, 198, 174, 0.75),
+      18px 38px 5px -1px rgba(255, 198, 174, 0.35);
+    border-radius: 50%;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  /* 強制將時鐘字體改為 Georgia */
+  .minimal-clock,
+  .digital-clock,
+  .flip-clock,
+  .analog-clock,
+  .neon-clock,
+  .progress-clock,
+  .binary-clock,
+  .dotmatrix-clock,
+  .orbit-clock {
+    position: relative;
+    z-index: 1;
+    font-family: Georgia, serif;
+    color: #F8F6F0;
+  }
+
+  .time-display,
+  .date-display,
+  .digital-date,
+  .analog-date,
+  .neon-date,
+  .flip-date,
+  .progress-date,
+  .binary-date,
+  .dotmatrix-date,
+  .orbit-date {
+    color: #F8F6F0 !important;
+  }
+
+  .digit-card, .flip-digit {
+    background: rgba(71, 131, 222, 0.18) !important;
+    border: 1px solid rgba(255, 206, 5, 0.4) !important;
+    color: #F8F6F0 !important;
+  }
+
+  .separator-dots .dot {
+    background: #FFCE05 !important;
+  }
+
+  .analog-clock {
+    .clock-face {
+      background: rgba(62, 58, 88, 0.6) !important;
+      border: 2px solid rgba(255, 206, 5, 0.5) !important;
+    }
+    .hour-marker {
+      background: #7BADEE !important;
+      &.quarter {
+        background: #FFCE05 !important;
+      }
+    }
+    .center-dot {
+      background: #FFCE05 !important;
+    }
+    .hour-hand {
+      background: #F8F6F0 !important;
+    }
+    .minute-hand {
+      background: #D4C8B0 !important;
+    }
+    .second-hand {
+      background: #CE8221 !important;
+    }
   }
 }
 

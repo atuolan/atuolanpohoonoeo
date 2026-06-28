@@ -1,5 +1,9 @@
 import { storageService } from "@/services/storage";
 import type { WidgetCustomStyle, WidgetData, WidgetInstance } from "@/types";
+import {
+  STANDARD_LAYOUT_WIDGET_TYPES,
+  type ThemePack,
+} from "@/styles/theme-packs";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
@@ -521,6 +525,57 @@ export const useCanvasStore = defineStore("canvas", () => {
   // 獲取選取的組件數量
   const selectedCount = computed(() => selectedWidgetIds.value.size);
 
+  // 主題包一鍵套用：批次更新現有組件的 layout / clockStyle / shape
+  // 只覆寫風格相關欄位，保留各組件的內容資料與使用者自訂顏色。
+  function applyThemePackLayouts(pack: ThemePack) {
+    let changed = false;
+
+    for (let i = 0; i < widgets.value.length; i++) {
+      const widget = widgets.value[i];
+      const patch: Partial<WidgetCustomStyle> = {};
+      const dataPatch: Partial<WidgetData> = {};
+
+      // 統一套用圖標形狀
+      patch.shape = pack.shape;
+
+      // 依組件類型套用對應風格
+      if (STANDARD_LAYOUT_WIDGET_TYPES.includes(widget.type)) {
+        patch.layout = pack.widgets.standardLayout;
+      } else if (widget.type === "habit-tracker") {
+        patch.layout = pack.widgets.habitLayout;
+      } else if (widget.type === "clock") {
+        // 時鐘讀 data.clockStyle，需另外寫入
+        dataPatch.clockStyle = pack.widgets.clockStyle;
+      }
+
+      const nextData: WidgetData = {
+        ...widget.data,
+        ...dataPatch,
+        customStyle: {
+          ...widget.data?.customStyle,
+          ...patch,
+        },
+      };
+
+      widgets.value[i] = { ...widget, data: nextData };
+      changed = true;
+    }
+
+    if (changed) {
+      saveData();
+    }
+  }
+
+  // 主題包還原首頁佈局：完全取代當前 widgets
+  // 用於匯入「包含 layoutSnapshot」的主題包時還原使用者的首頁桌面
+  function replaceLayout(snapshot: WidgetInstance[]) {
+    if (!Array.isArray(snapshot)) return;
+    // 深拷貝以避免共享引用
+    widgets.value = JSON.parse(JSON.stringify(snapshot)) as WidgetInstance[];
+    clearSelection();
+    saveData();
+  }
+
   // 更新滾動位置
   function setScrollX(value: number) {
     const maxScroll = canvasWidth.value - window.innerWidth / canvasScale.value;
@@ -570,5 +625,7 @@ export const useCanvasStore = defineStore("canvas", () => {
     updateSelectedWidgetsStyle,
     resizeSelectedWidgets,
     getSelectedWidgets,
+    applyThemePackLayouts,
+    replaceLayout,
   };
 });

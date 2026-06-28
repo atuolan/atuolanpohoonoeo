@@ -127,6 +127,10 @@ const containerStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
 
+  if (customStyle?.layout === "pearl") {
+    return style;
+  }
+
   if (customStyle?.backgroundGradient) {
     style.background = customStyle.backgroundGradient;
   } else if (customStyle?.backgroundColor) {
@@ -145,6 +149,10 @@ const containerStyle = computed(() => {
 const textStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
+
+  if (customStyle?.layout === "pearl") {
+    return style;
+  }
 
   if (customStyle?.textColor) {
     style.color = customStyle.textColor;
@@ -597,6 +605,50 @@ const currentLayout = computed(() => {
         &.today { background: #93E2B6; color: white; }
         &.holiday:not(.today) { color: #f43f5e; position: relative; }
         &:not(.other-month):not(.today):hover { background: #F8C6DB; color: white; }
+      }
+    }
+  }
+
+  // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）
+  // 深紫畫布 + 芥末黃外框 + 角落發光星星，無動畫
+  &.pearl {
+    background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
+    border: 2px solid #FFCE05;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+    position: relative;
+    overflow: hidden;
+
+    // 角落發光星星（純 CSS、靜態）
+    &::before {
+      content: ''; position: absolute; top: 10px; right: 12px; width: 7px; height: 7px;
+      background: radial-gradient(circle, rgba(255,206,5,0.95) 0%, transparent 70%);
+      box-shadow: 0 0 6px 2px rgba(255,206,5,0.5), -180px 14px 0 -1px rgba(123,173,238,0.8), -40px 120px 0 -2px rgba(255,198,174,0.65);
+      border-radius: 50%; z-index: 0; pointer-events: none;
+    }
+
+    .calendar-header {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-shrink: 0; position: relative; z-index: 1;
+      .nav-btn {
+        width: 30px; height: 30px; min-width: 30px; border-radius: 8px; border: 1px solid rgba(255,206,5,0.4); display: flex; align-items: center; justify-content: center; color: #FFCE05; background: rgba(71,131,222,0.22); transition: all 0.2s; flex-shrink: 0;
+        &:hover { background: #4783DE; }
+      }
+      .month-year { font-size: 15px; font-weight: 600; font-family: "Georgia", serif; color: #F8F6F0; cursor: pointer; white-space: nowrap; padding: 4px 14px; border-radius: 8px; border: 1px solid rgba(255,206,5,0.45); background: rgba(71,131,222,0.18); transition: all 0.2s; &:hover { border-color: #FFCE05; } }
+    }
+
+    .weekdays {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 8px; flex-shrink: 0; position: relative; z-index: 1;
+      .weekday { text-align: center; font-size: 12px; font-weight: 600; color: rgba(255,206,5,0.7); text-transform: uppercase; }
+    }
+
+    .days-grid {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; flex: 1; min-height: 0; position: relative; z-index: 1;
+      .day {
+        display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 500; color: #F8F6F0; border-radius: 50%; border: 1px solid transparent; aspect-ratio: 1; transition: all 0.2s; cursor: default;
+        &.other-month { color: rgba(248,246,240,0.25); }
+        &.today { background: #FFCE05; color: #332D4B; font-weight: 700; }
+        &.holiday:not(.today) { color: #FF8E6E; }
+        &:not(.other-month):not(.today):hover { border-color: #4783DE; background: rgba(71,131,222,0.25); }
       }
     }
   }

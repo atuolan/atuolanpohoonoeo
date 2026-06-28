@@ -1,19 +1,31 @@
 <script setup lang="ts">
 import AddWidgetPanel from "@/components/panels/AddWidgetPanel.vue";
 import BatchStylePanel from "@/components/panels/BatchStylePanel.vue";
+import AffinityMeterWidget from "@/components/widgets/AffinityMeterWidget.vue";
+import BatteryRingWidget from "@/components/widgets/BatteryRingWidget.vue";
 import BookmarkSticky from "@/components/widgets/BookmarkSticky.vue";
 import CalendarWidget from "@/components/widgets/CalendarWidget.vue";
 import CharPhoneWidget from "@/components/widgets/CharPhoneWidget.vue";
+import CharStatusWidget from "@/components/widgets/CharStatusWidget.vue";
 import ClockWidget from "@/components/widgets/ClockWidget.vue";
+import ColorBlockWidget from "@/components/widgets/ColorBlockWidget.vue";
+import CompanionPetWidget from "@/components/widgets/CompanionPetWidget.vue";
 import CountdownSticky from "@/components/widgets/CountdownSticky.vue";
 import FluidButtonWidget from "@/components/widgets/FluidButtonWidget.vue";
 import FocusTimerWidget from "@/components/widgets/FocusTimerWidget.vue";
 import HabitTrackerWidget from "@/components/widgets/HabitTrackerWidget.vue";
 import MoodDiarySticky from "@/components/widgets/MoodDiarySticky.vue";
 import MusicPlayerWidget from "@/components/widgets/MusicPlayerWidget.vue";
+import PhotoFrameWidget from "@/components/widgets/PhotoFrameWidget.vue";
 import PolaroidSticky from "@/components/widgets/PolaroidSticky.vue";
+import ProgressRingWidget from "@/components/widgets/ProgressRingWidget.vue";
 import QuoteSticky from "@/components/widgets/QuoteSticky.vue";
+import RecentChatWidget from "@/components/widgets/RecentChatWidget.vue";
+import RelationshipCounterWidget from "@/components/widgets/RelationshipCounterWidget.vue";
+import StickerWidget from "@/components/widgets/StickerWidget.vue";
+import TextBannerWidget from "@/components/widgets/TextBannerWidget.vue";
 import TodoSticky from "@/components/widgets/TodoSticky.vue";
+import WashiTapeWidget from "@/components/widgets/WashiTapeWidget.vue";
 import WeatherWidget from "@/components/widgets/WeatherWidget.vue";
 import WidgetWrapper from "@/components/widgets/WidgetWrapper.vue";
 import WorldBookWidget from "@/components/widgets/WorldBookWidget.vue";
@@ -388,6 +400,18 @@ const widgetComponents: Record<string, any> = {
   "focus-timer": FocusTimerWidget,
   "world-book": WorldBookWidget,
   "char-phone": CharPhoneWidget,
+  "progress-ring": ProgressRingWidget,
+  "washi-tape": WashiTapeWidget,
+  "photo-frame": PhotoFrameWidget,
+  sticker: StickerWidget,
+  "battery-ring": BatteryRingWidget,
+  "color-block": ColorBlockWidget,
+  "text-banner": TextBannerWidget,
+  "relationship-counter": RelationshipCounterWidget,
+  "affinity-meter": AffinityMeterWidget,
+  "recent-chat": RecentChatWidget,
+  "char-status": CharStatusWidget,
+  "companion-pet": CompanionPetWidget,
 };
 
 // 初始化預設組件
@@ -1260,25 +1284,51 @@ onUnmounted(() => {
       >
         <GripHorizontal :size="16" :stroke-width="2" />
       </div>
-      <button class="toolbar-btn reset-btn" @click="canvasStore.resetLayout()">
-        <RotateCcw :size="18" :stroke-width="2" />
-        重置
-      </button>
-      <div class="divider"></div>
-      <button
-        class="toolbar-btn select-btn"
-        :class="{ active: canvasStore.isSelectMode }"
-        @click="canvasStore.toggleSelectMode()"
-      >
-        <SquareDashedMousePointer :size="18" :stroke-width="2" />
-        {{
-          canvasStore.isSelectMode
-            ? `框選中${canvasStore.selectedCount > 0 ? ` (${canvasStore.selectedCount})` : ""}`
-            : "框選"
-        }}
-      </button>
-      <!-- 全選和置中按鈕（框選模式下顯示） -->
-      <template v-if="canvasStore.isSelectMode">
+
+      <!-- 第一列：重置 / 框選 -->
+      <div class="toolbar-row">
+        <button
+          class="toolbar-btn reset-btn"
+          @click="canvasStore.resetLayout()"
+        >
+          <RotateCcw :size="18" :stroke-width="2" />
+          重置
+        </button>
+        <button
+          class="toolbar-btn select-btn"
+          :class="{ active: canvasStore.isSelectMode }"
+          @click="canvasStore.toggleSelectMode()"
+        >
+          <SquareDashedMousePointer :size="18" :stroke-width="2" />
+          {{
+            canvasStore.isSelectMode
+              ? `框選中${canvasStore.selectedCount > 0 ? ` (${canvasStore.selectedCount})` : ""}`
+              : "框選"
+          }}
+        </button>
+      </div>
+
+      <!-- 第二列：導出 / 導入 -->
+      <div class="toolbar-row">
+        <button class="toolbar-btn export-btn" @click="exportLayout">
+          <Download :size="18" :stroke-width="2" />
+          導出
+        </button>
+        <button class="toolbar-btn import-btn" @click="triggerImportLayout">
+          <Upload :size="18" :stroke-width="2" />
+          導入
+        </button>
+        <input
+          ref="layoutFileInput"
+          type="file"
+          accept=".json"
+          style="display: none"
+          @change="handleLayoutImport"
+        />
+      </div>
+
+      <!-- 框選工具列（框選模式下顯示） -->
+      <div class="toolbar-row select-tools-row" v-if="canvasStore.isSelectMode">
         <button
           class="toolbar-btn select-all-btn"
           @click="canvasStore.selectAll()"
@@ -1329,35 +1379,22 @@ onUnmounted(() => {
             <Plus :size="16" :stroke-width="2" />
           </button>
         </div>
-      </template>
-      <div class="divider"></div>
-      <button class="toolbar-btn export-btn" @click="exportLayout">
-        <Download :size="18" :stroke-width="2" />
-        導出
-      </button>
-      <button class="toolbar-btn import-btn" @click="triggerImportLayout">
-        <Upload :size="18" :stroke-width="2" />
-        導入
-      </button>
-      <input
-        ref="layoutFileInput"
-        type="file"
-        accept=".json"
-        style="display: none"
-        @change="handleLayoutImport"
-      />
-      <div class="divider"></div>
-      <button class="toolbar-btn add-btn" @click="showAddPanel = true">
-        <Plus :size="18" :stroke-width="2" />
-        新增
-      </button>
-      <button
-        class="toolbar-btn done-btn"
-        @click="canvasStore.setEditMode(false)"
-      >
-        <Check :size="18" :stroke-width="2" />
-        完成
-      </button>
+      </div>
+
+      <!-- 第二列：主要操作 -->
+      <div class="toolbar-row primary-row">
+        <button class="toolbar-btn add-btn" @click="showAddPanel = true">
+          <Plus :size="18" :stroke-width="2" />
+          新增
+        </button>
+        <button
+          class="toolbar-btn done-btn"
+          @click="canvasStore.setEditMode(false)"
+        >
+          <Check :size="18" :stroke-width="2" />
+          完成
+        </button>
+      </div>
     </div>
 
     <!-- 新增組件面板 -->
@@ -1560,47 +1597,53 @@ onUnmounted(() => {
   }
 }
 
-// 編輯工具列 - 少女風改造
+// 編輯工具列 - 輕量 iOS 風格
 .edit-toolbar {
   position: fixed;
-  top: max(20px, env(safe-area-inset-top)); // 懸浮在頂部
+  top: max(16px, env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
-  width: auto;
-  max-width: calc(100vw - 32px); // 自適應螢幕寬度，留出邊距
+  // 重要：祖先 .whiteboard-viewport 有 overflow:hidden，且手機殼層可能含 transform
+  // 會把 fixed 的 containing block 限制成 viewport 內側，因此這裡用 100% 作為寬度上限
+  // 確保工具列永遠塞得進可視區域，不被祖先 overflow:hidden 裁切
+  width: max-content;
+  max-width: calc(100% - 24px);
   height: auto;
-  min-height: 56px;
+  box-sizing: border-box;
 
-  background: rgba(255, 255, 255, 0.65);
-  backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(25px) saturate(200%);
+  -webkit-backdrop-filter: blur(25px) saturate(200%);
+  border: 0.5px solid rgba(0, 0, 0, 0.08);
+  border-radius: 22px;
   box-shadow:
-    0 8px 32px rgba(31, 38, 135, 0.1),
-    0 4px 12px rgba(0, 0, 0, 0.05);
+    0 8px 24px rgba(0, 0, 0, 0.06),
+    0 2px 8px rgba(0, 0, 0, 0.04);
 
+  // 垂直堆疊
   display: flex;
-  flex-wrap: wrap; // 允許換行
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 8px 12px;
-  gap: 6px;
+  padding: 6px 10px;
+  gap: 4px;
   z-index: 100;
   animation: floatDown 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 
   // 拖曳中狀態
   &.dragging {
     cursor: grabbing;
+    transform: translateX(-50%) scale(1.02);
     box-shadow:
-      0 12px 40px rgba(31, 38, 135, 0.15),
-      0 6px 16px rgba(0, 0, 0, 0.08);
+      0 12px 32px rgba(0, 0, 0, 0.1),
+      0 4px 12px rgba(0, 0, 0, 0.06);
   }
 
-  // 手機端樣式調整
+  // 手機端樣式
   @media (max-width: 600px) {
-    padding: 6px 8px;
+    padding: 6px 10px;
     gap: 4px;
     border-radius: 20px;
+    min-height: 40px;
   }
 }
 
@@ -1609,22 +1652,22 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  color: #9ca3af;
+  width: 24px; // 縮小
+  height: 32px; // 稍微拉長方便點擊
+  border-radius: 6px;
+  color: #c7c7cc; // iOS 風格灰色
   cursor: grab;
   transition: all 0.2s ease;
   flex-shrink: 0;
 
   &:hover {
-    background: rgba(0, 0, 0, 0.05);
-    color: #6b7280;
+    background: rgba(0, 0, 0, 0.04);
+    color: #8e8e93;
   }
 
   &:active {
     cursor: grabbing;
-    background: rgba(0, 0, 0, 0.08);
+    background: rgba(0, 0, 0, 0.06);
   }
 }
 
@@ -1639,173 +1682,166 @@ onUnmounted(() => {
   }
 }
 
-.divider {
-  width: 1px;
-  height: 24px;
-  background: rgba(0, 0, 0, 0.1);
-  margin: 0 2px;
-  flex-shrink: 0;
+// 工具列每一列 - 水平排列、置中，列與列之間靠父層 gap 分開，徹底避免重疊
+// 不設 width:100%，避免在 width:auto 容器下百分比塌縮導致按鈕溢出
+.toolbar-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px; // 列內按鈕間距
+}
 
-  // 手機端隱藏分隔線
-  @media (max-width: 600px) {
-    display: none;
-  }
+// 框選工具列 - 藍色系淡底，呼應選取主題
+.select-tools-row {
+  padding: 3px;
+  border-radius: 14px;
+  background: rgba(0, 122, 255, 0.07);
+}
+
+// 主要操作列 - 按鈕本身已夠顯眼，間距稍大
+.primary-row {
+  gap: 8px;
 }
 
 .toolbar-btn {
-  height: 40px;
-  padding: 0 12px;
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
+  // !important 用於對抗全局 _settings-shared.scss 裡裸 .reset-btn 的污染
+  // （該樣式設了 width:100% + padding:12px，會把 reset-btn 撐到滿版）
+  width: auto !important;
+  height: 30px;
+  padding: 0 8px !important;
+  border-radius: 15px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.1px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  flex-grow: 0;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  border: none;
+  background: none;
+  min-width: 0;
+
+  // 圖示縮小，避免被壓扁
+  :deep(svg) {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+  }
 
   &.add-btn {
-    background: linear-gradient(135deg, #c3fcc7 0%, #fc8ea894 100%);
-    color: #5b4b8a;
-    box-shadow: 0 4px 12px rgba(142, 197, 252, 0.3);
+    background: rgba(0, 122, 255, 0.1); // iOS 藍色調
+    color: #007aff;
 
     &:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(142, 197, 252, 0.4);
+      background: rgba(0, 122, 255, 0.15);
     }
 
     &:active {
-      transform: translateY(0);
+      background: rgba(0, 122, 255, 0.2);
     }
   }
 
   &.done-btn {
-    background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
-    color: #2c7a7b;
-    box-shadow: 0 4px 12px rgba(132, 250, 176, 0.3);
+    background: #34c759; // iOS 綠色
+    color: white;
 
     &:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(132, 250, 176, 0.4);
+      background: #2ebd4f;
     }
 
     &:active {
-      transform: translateY(0);
+      background: #28a745;
     }
   }
 
   &.reset-btn {
-    background: #f3f4f6;
-    color: #6b7280;
+    background: transparent;
+    color: #ff3b30; // iOS 紅色
 
     &:hover {
-      background: #e5e7eb;
-      color: #374151;
+      background: rgba(255, 59, 48, 0.1);
     }
   }
 
   &.select-btn {
-    background: #f3f4f6;
-    color: #6b7280;
+    background: transparent;
+    color: #1c1c1e;
 
     &:hover {
-      background: #e5e7eb;
-      color: #374151;
+      background: rgba(0, 0, 0, 0.05);
     }
 
     &.active {
-      background: linear-gradient(135deg, #a5b4fc 0%, #818cf8 100%);
-      color: white;
-      box-shadow: 0 4px 12px rgba(129, 140, 248, 0.4);
-
-      &:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 16px rgba(129, 140, 248, 0.5);
-      }
+      background: rgba(0, 122, 255, 0.1);
+      color: #007aff;
     }
   }
 
-  &.export-btn {
-    background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
-    color: #92400e;
-    box-shadow: 0 4px 12px rgba(252, 182, 159, 0.3);
-
-    &:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(252, 182, 159, 0.4);
-    }
-
-    &:active {
-      transform: translateY(0);
-    }
-  }
-
+  // 檔案操作 - 中性灰，屬於次要工具
+  &.export-btn,
   &.import-btn {
-    background: #e0f2fe;
-    color: #0369a1;
-    box-shadow: 0 4px 12px rgba(3, 105, 161, 0.15);
+    background: transparent;
+    color: #3c3c43;
 
     &:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(3, 105, 161, 0.25);
-    }
-
-    &:active {
-      transform: translateY(0);
+      background: rgba(0, 0, 0, 0.05);
     }
   }
 
   &.select-all-btn {
-    background: #e0e7ff;
-    color: #4338ca;
+    background: transparent;
+    color: #007aff;
 
     &:hover {
-      background: #c7d2fe;
+      background: rgba(0, 122, 255, 0.1);
     }
   }
 
   &.center-btn {
-    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-    color: #92400e;
-    box-shadow: 0 4px 12px rgba(253, 230, 138, 0.3);
+    background: transparent;
+    color: #3c3c43; // 中性灰，屬於排版工具
 
     &:hover:not(:disabled) {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(253, 230, 138, 0.4);
+      background: rgba(0, 0, 0, 0.06);
     }
 
     &:disabled {
-      opacity: 0.5;
+      opacity: 0.3;
       cursor: not-allowed;
     }
   }
 
   &.style-btn {
-    background: linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%);
-    color: #5b21b6;
-    box-shadow: 0 4px 12px rgba(224, 195, 252, 0.3);
+    background: transparent;
+    color: #5856d6; // iOS 紫色
 
     &:hover:not(:disabled) {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(224, 195, 252, 0.4);
+      background: rgba(88, 86, 214, 0.1);
     }
 
     &:disabled {
-      opacity: 0.5;
+      opacity: 0.3;
       cursor: not-allowed;
     }
   }
 
+  // 大小調整 - 中性灰按鈕，避免色彩雜訊
   &.resize-btn {
     padding: 6px;
-    min-width: 32px;
-    background: rgba(99, 102, 241, 0.1);
-    color: #6366f1;
+    min-width: 30px;
+    background: rgba(120, 120, 128, 0.12);
+    color: #3c3c43;
     border-radius: 8px;
 
     &:hover {
-      background: rgba(99, 102, 241, 0.2);
-      transform: translateY(-1px);
+      background: rgba(120, 120, 128, 0.2);
     }
 
     &:active {
@@ -1814,18 +1850,19 @@ onUnmounted(() => {
   }
 }
 
+// 大小調整子群組 - 內嵌於框選工具區塊
 .resize-group {
   display: flex;
   align-items: center;
   gap: 4px;
-  background: rgba(99, 102, 241, 0.06);
+  background: rgba(255, 255, 255, 0.6);
   border-radius: 10px;
   padding: 2px 6px;
 
   .resize-label {
     font-size: 11px;
     font-weight: 600;
-    color: #6366f1;
+    color: #3c3c43;
     user-select: none;
   }
 }

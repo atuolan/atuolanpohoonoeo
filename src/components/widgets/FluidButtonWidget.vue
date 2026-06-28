@@ -257,7 +257,9 @@ const labelStyle = computed(() => {
     0 0 0 1px rgba(0, 0, 0, 0.08),
     0 2px 8px rgba(0, 0, 0, 0.06);
   transition: all 0.2s ease;
-  overflow: visible;
+  // 需要裁切子元素，讓自訂圖片跟隨目前選擇的容器形狀（圓形/多邊形等）。
+  // 自身 box-shadow 不會被 overflow 影響；只裁掉內部圖片超出形狀的部分。
+  overflow: hidden;
   position: relative;
 
   // 玻璃皮：iOS Liquid Glass 風格（明亮霧面玻璃）

@@ -147,6 +147,8 @@ const containerStyle = computed(() => {
   const style = props.data?.customStyle;
   if (!style) return {};
 
+  if (style.layout === "pearl") return {};
+
   const result: Record<string, string> = {};
   if (style.backgroundGradient) {
     result.background = style.backgroundGradient;
@@ -163,6 +165,7 @@ const containerStyle = computed(() => {
 
 const textStyle = computed(() => {
   const style = props.data?.customStyle;
+  if (style?.layout === "pearl") return {};
   if (style?.textColor) return { color: style.textColor };
   if (style?.foregroundColor) return { color: style.foregroundColor };
   return {};
@@ -894,6 +897,46 @@ onUnmounted(() => {
       }
     }
     .tap-hint { background: white; color: #d06d9a; border: 2px solid #EAA3C5; box-shadow: 2px 2px 0px #F5C6DA; border-radius: 4px; font-weight: bold; text-transform: uppercase; }
+  }
+
+  // === 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）===
+  &.pearl {
+    background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
+    border-radius: 10px;
+    border: 2px solid #FFCE05;
+    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+    &::before {
+      content: ''; position: absolute; top: 10px; left: 12px; width: 7px; height: 7px; z-index: 15;
+      background: radial-gradient(circle, rgba(255,206,5,0.95) 0%, transparent 70%);
+      box-shadow:
+        0 0 6px 2px rgba(255,206,5,0.5),
+        40px 18px 0 -2px rgba(71,131,222,0.85),
+        40px 18px 6px 0 rgba(71,131,222,0.4),
+        14px 34px 0 -3px rgba(255,198,174,0.75);
+      border-radius: 50%; pointer-events: none;
+    }
+    .vinyl-record { box-shadow: 0 0 18px rgba(0,0,0,0.5); border: 2px solid #FFCE05;
+      .vinyl-grooves { border-color: rgba(255,206,5,0.14); &::after { border-color: rgba(255,206,5,0.1); } }
+      .vinyl-label { background: #4783DE; border: 2px solid #FFCE05; svg { color: #FFCE05; } }
+    }
+    .tonearm { background: #D4C8B0; border: 1px solid rgba(255,206,5,0.4); box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+      .arm-base { background: #CE8221; border: 2px solid rgba(255,206,5,0.4); box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+    }
+    .vinyl-controls-overlay {
+      background: linear-gradient(to top, rgba(51,45,75,0.9), transparent);
+      .vinyl-info { .v-title { font-family: Georgia, serif; font-style: italic; color: #F8F6F0; text-shadow: 0 1px 4px rgba(0,0,0,0.6); } .v-artist { color: #D4C8B0; } }
+      .vinyl-buttons {
+        .play-btn { background: #4783DE; color: #F8F6F0; border: none; border-radius: 50%; box-shadow: 0 2px 8px rgba(71,131,222,0.4);
+          &:hover { background: #FFCE05; color: #332D4B; transform: scale(1.05); }
+          &:active { transform: scale(0.95); }
+        }
+        .control-btn { background: rgba(71,131,222,0.18); border: 1px solid rgba(255,206,5,0.4); color: #7BADEE; border-radius: 50%; box-shadow: none;
+          &:hover { border-color: #FFCE05; color: #FFCE05; transform: scale(1.05); }
+          &:active { transform: scale(0.95); }
+        }
+      }
+    }
+    .tap-hint { background: rgba(71,131,222,0.2); color: #F8F6F0; border: 1px solid rgba(255,206,5,0.4); box-shadow: 0 4px 12px rgba(0,0,0,0.3); border-radius: 8px; font-family: Georgia, serif; font-style: italic; }
   }
 
   .vinyl-record {

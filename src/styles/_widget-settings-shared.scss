@@ -1,0 +1,15 @@
+// 組件設定面板（WidgetSettingsPanel 及其子組件）共用樣式
+// 由母組件與各 widget-settings/* 子組件 @use 引用，
+// 因為 Vue scoped 樣式不會穿透到子組件內部元素，
+// 共用的 .setting-group / .group-label 必須在每個用到的組件各自注入。
+
+.setting-group {
+  margin-bottom: 20px;
+}
+
+.group-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 10px;
+}

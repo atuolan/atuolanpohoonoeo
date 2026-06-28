@@ -6,6 +6,7 @@ import {
   resolveShadow,
   DEFAULT_SKIN_ID,
 } from "@/styles/skin-presets";
+import type { ThemePack } from "@/styles/theme-packs";
 
 /**
  * 從 CSS 顏色字串解析 RGB 值
@@ -400,6 +401,12 @@ export const useThemeStore = defineStore("theme", () => {
 
   // 當前皮（形態：圓角/陰影/模糊/互動/圖標質感）
   const currentSkin = ref<string>(DEFAULT_SKIN_ID);
+
+  // 當前套用的主題包 id（用於設定面板高亮，未套用時為空字串）
+  const currentThemePack = ref<string>("");
+
+  // 使用者自訂的主題包列表（從匯出 / 儲存當前設定建立）
+  const customThemePacks = ref<ThemePack[]>([]);
 
   // 夜晚模式狀態（從 settings store 同步）
   const nightMode = ref<boolean>(false);
@@ -1085,6 +1092,34 @@ export const useThemeStore = defineStore("theme", () => {
     saveToStorage();
   }
 
+  // ===== 主題包一鍵套用（視覺面：配色 / 皮膚 / 桌布 / 氣泡）=====
+  // 組件 layout / clockStyle / shape 的批次更新由 canvas store 的
+  // applyThemePackLayouts 負責，兩者在 UI 層一起呼叫。
+  function applyThemePack(pack: ThemePack) {
+    // 配色：走 customColors 全覆蓋，確保深色主題（賽博霓虹）也能正確呈現
+    customColors.value = { ...pack.colors };
+    // 形態皮膚
+    if (skinPresets[pack.skin]) {
+      currentSkin.value = pack.skin;
+    }
+    // 桌布
+    wallpaperStyle.value = {
+      ...wallpaperStyle.value,
+      type: pack.wallpaper.type,
+      value: pack.wallpaper.value,
+      blur: pack.wallpaper.blur ?? 0,
+      opacity: pack.wallpaper.opacity ?? 100,
+      overlay: pack.wallpaper.overlay ?? "transparent",
+    };
+    // 氣泡主色同步主題包主色
+    bubbleStyle.value.userBgColor = pack.colors.primary;
+    bubbleStyle.value.userBgGradient = `linear-gradient(135deg, ${pack.colors.primary}, ${pack.colors.primaryLight})`;
+    // 記錄當前主題包
+    currentThemePack.value = pack.id;
+    applyTheme();
+    saveToStorage();
+  }
+
   // 重置為預設
   function resetToDefault() {
     currentPreset.value = "soft-pink";
@@ -1096,6 +1131,7 @@ export const useThemeStore = defineStore("theme", () => {
     modalAnimation.value = { ...defaultModalAnimation };
     customCSS.value = "";
     globalFont.value = { ...defaultGlobalFont };
+    currentThemePack.value = "";
     applyTheme();
     saveToStorage();
   }
@@ -1104,6 +1140,42 @@ export const useThemeStore = defineStore("theme", () => {
   function setNightMode(enabled: boolean) {
     nightMode.value = enabled;
     applyTheme();
+  }
+
+  // ===== 自訂主題包管理 =====
+  // 加入一個自訂主題包（同 id 則覆蓋）
+  function addCustomThemePack(pack: ThemePack) {
+    const normalized: ThemePack = {
+      ...pack,
+      isCustom: true,
+      createdAt: pack.createdAt ?? Date.now(),
+    };
+    const idx = customThemePacks.value.findIndex((p) => p.id === normalized.id);
+    if (idx === -1) {
+      customThemePacks.value = [...customThemePacks.value, normalized];
+    } else {
+      const next = [...customThemePacks.value];
+      next[idx] = normalized;
+      customThemePacks.value = next;
+    }
+    saveToStorage();
+  }
+
+  // 移除一個自訂主題包
+  function removeCustomThemePack(id: string) {
+    customThemePacks.value = customThemePacks.value.filter((p) => p.id !== id);
+    if (currentThemePack.value === id) {
+      currentThemePack.value = "";
+    }
+    saveToStorage();
+  }
+
+  // 更新自訂主題包的名稱
+  function renameCustomThemePack(id: string, name: string) {
+    customThemePacks.value = customThemePacks.value.map((p) =>
+      p.id === id ? { ...p, name } : p,
+    );
+    saveToStorage();
   }
 
   // 背景圖 Base64 分離儲存的 key 前綴
@@ -1162,6 +1234,8 @@ export const useThemeStore = defineStore("theme", () => {
           customCSS: customCSS.value,
           globalFont: globalFont.value,
           globalFontPresets: globalFontPresets.value,
+          currentThemePack: currentThemePack.value,
+          customThemePacks: customThemePacks.value,
         }),
       );
       // settings store 沒有 keyPath，需要提供 key
@@ -1223,6 +1297,10 @@ export const useThemeStore = defineStore("theme", () => {
 
         modalAnimation.value = { ...defaultModalAnimation, ...data.modalAnimation };
         customCSS.value = data.customCSS || "";
+        currentThemePack.value = data.currentThemePack || "";
+        customThemePacks.value = Array.isArray(data.customThemePacks)
+          ? data.customThemePacks
+          : [];
         globalFont.value = { ...defaultGlobalFont, ...data.globalFont };
         globalFontPresets.value = Array.isArray(data.globalFontPresets)
           ? data.globalFontPresets.map((preset: GlobalFontPreset) => ({
@@ -1242,6 +1320,8 @@ export const useThemeStore = defineStore("theme", () => {
     currentStyle,
     currentPreset,
     currentSkin,
+    currentThemePack,
+    customThemePacks,
     customColors,
     nightMode,
     avatarStyle,
@@ -1261,6 +1341,10 @@ export const useThemeStore = defineStore("theme", () => {
     setPreset,
     setSkin,
     setCustomColor,
+    applyThemePack,
+    addCustomThemePack,
+    removeCustomThemePack,
+    renameCustomThemePack,
     setNightMode,
     updateAvatarStyle,
     updateBubbleStyle,

@@ -71,6 +71,10 @@ const containerStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
 
+  if (customStyle?.layout === "pearl") {
+    return style;
+  }
+
   if (customStyle?.backgroundGradient) {
     style.background = customStyle.backgroundGradient;
   } else if (customStyle?.backgroundColor) {
@@ -89,6 +93,10 @@ const containerStyle = computed(() => {
 const textStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
+
+  if (customStyle?.layout === "pearl") {
+    return style;
+  }
 
   if (customStyle?.textColor) {
     style.color = customStyle.textColor;
@@ -508,6 +516,127 @@ const currentLayout = computed(() => {
       .caption-input {
         width: 100%; border: 2px solid #EAA3C5; background: white; padding: 4px; font-size: 14px; font-weight: bold; color: #d06d9a; text-align: center; font-family: inherit;
         &:focus { outline: none; }
+      }
+    }
+  }
+
+  // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）
+  // 深紫畫布 + 芥末黃外框 + 角落發光星星 + 金線畫廊銘牌標籤
+  &.pearl {
+    padding: 14px;
+    padding-bottom: 12px;
+    background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
+    border-radius: 10px;
+    border: 2px solid #FFCE05;
+    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45),
+      inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+    position: relative;
+    overflow: hidden;
+
+    .tape { display: none; }
+
+    // 角落發光星星（純 CSS、靜態，不做呼吸動畫）
+    &::before {
+      content: '';
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      width: 8px;
+      height: 8px;
+      background:
+        radial-gradient(circle, rgba(255, 206, 5, 0.95) 0%, transparent 70%);
+      box-shadow:
+        0 0 6px 2px rgba(255, 206, 5, 0.55),
+        18px 26px 0 -2px rgba(123, 173, 238, 0.9),
+        -120px 60px 0 -3px rgba(255, 198, 174, 0.7);
+      border-radius: 50%;
+      z-index: 3;
+      pointer-events: none;
+    }
+    // 右下角橘色幾何色塊（拼貼感）
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: -14px;
+      left: -14px;
+      width: 46px;
+      height: 46px;
+      background: rgba(206, 130, 33, 0.32);
+      transform: rotate(18deg);
+      border-radius: 8px;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .photo-area {
+      background: #2A2540;
+      border: 2px solid rgba(255, 206, 5, 0.55);
+      border-radius: 6px;
+      position: relative;
+      z-index: 1;
+
+      &:hover .change-btn { opacity: 1; transform: scale(1); }
+
+      .placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        color: #D4C8B0;
+        transition: color 0.2s;
+
+        span { font-size: 12px; font-weight: 600; letter-spacing: 0.5px; }
+
+        &:hover { color: #FFCE05; }
+      }
+
+      .change-btn {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: #4783DE;
+        border: 1px solid #FFCE05;
+        box-shadow: 0 2px 6px rgba(51, 45, 75, 0.5);
+        color: #F8F6F0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transform: scale(0.85);
+        transition: all 0.2s ease;
+
+        &:hover { background: #FFCE05; color: #332D4B; transform: scale(1.05); }
+      }
+    }
+
+    .caption-area {
+      padding-top: 12px;
+      position: relative;
+      z-index: 1;
+
+      .caption-input {
+        width: 100%;
+        border: none;
+        border-bottom: 1px solid rgba(255, 206, 5, 0.45);
+        background: transparent;
+        padding: 4px 2px;
+        font-size: 13px;
+        font-weight: 500;
+        font-style: italic;
+        letter-spacing: 0.5px;
+        color: #F8F6F0;
+        text-align: center;
+        font-family: "Georgia", "Times New Roman", serif;
+
+        &::placeholder {
+          color: rgba(212, 200, 176, 0.55);
+          font-style: italic;
+        }
+
+        &:focus { outline: none; border-bottom-color: #FFCE05; }
       }
     }
   }

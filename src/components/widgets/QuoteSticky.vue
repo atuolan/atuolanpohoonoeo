@@ -59,6 +59,11 @@ const containerStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
 
+  // 珍珠風格由 SCSS 完整控制配色，不套用 inline 背景，避免覆蓋深紫底
+  if (customStyle?.layout === "pearl") {
+    return style;
+  }
+
   if (customStyle?.backgroundGradient) {
     style.background = customStyle.backgroundGradient;
   } else if (customStyle?.backgroundColor) {
@@ -77,6 +82,11 @@ const containerStyle = computed(() => {
 const textStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
+
+  // 珍珠風格文字色由 SCSS 控制（畫布白），不套用 inline 文字色
+  if (customStyle?.layout === "pearl") {
+    return style;
+  }
 
   if (customStyle?.textColor) {
     style.color = customStyle.textColor;
@@ -447,5 +457,84 @@ const currentLayout = computed(() => {
       }
     }
   }
+
+  // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）
+  &.pearl {
+  background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
+  border: 2px solid #FFCE05;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+  position: relative;
+  overflow: hidden;
+
+  // 右上角靜態星光（mustard + 藍色衣領 + 溫暖膚色）
+  &::before {
+    content: '';
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    width: 7px;
+    height: 7px;
+    background: radial-gradient(circle, rgba(255, 206, 5, 0.95) 0%, transparent 70%);
+    box-shadow:
+      0 0 6px 2px rgba(255, 206, 5, 0.5),
+      -45px 25px 0 -2px rgba(71, 131, 222, 0.85),
+      -45px 25px 6px 0 rgba(71, 131, 222, 0.4),
+      18px 38px 0 -3px rgba(255, 198, 174, 0.75),
+      18px 38px 5px -1px rgba(255, 198, 174, 0.35);
+    border-radius: 50%;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .quote-icon {
+    position: relative;
+    z-index: 1;
+    color: #FFCE05;
+  }
+
+  .quote-text {
+    position: relative;
+    z-index: 1;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-style: italic;
+    color: #F8F6F0;
+    background: transparent;
+    border: none;
+
+    &::placeholder {
+      color: rgba(248, 246, 240, 0.45);
+      font-style: italic;
+    }
+  }
+
+  .quote-author {
+    position: relative;
+    z-index: 1;
+
+    .dash {
+      color: #D4C8B0;
+    }
+
+    .author-input {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-style: italic;
+      color: #F8F6F0;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid rgba(255, 206, 5, 0.35);
+      padding-bottom: 1px;
+
+      &::placeholder {
+        color: rgba(248, 246, 240, 0.4);
+        font-style: italic;
+      }
+
+      &:focus {
+        border-bottom-color: #FFCE05;
+      }
+    }
+  }
+}
 }
 </style>

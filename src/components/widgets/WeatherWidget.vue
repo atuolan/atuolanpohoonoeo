@@ -59,6 +59,10 @@ const weatherIconComponent = computed(() => {
 const backgroundStyle = computed(() => {
   const customStyle = props.data?.customStyle;
 
+  if (customStyle?.layout === "pearl") {
+    return {};
+  }
+
   if (customStyle?.backgroundGradient) {
     return { background: customStyle.backgroundGradient };
   }
@@ -88,6 +92,7 @@ const backgroundStyle = computed(() => {
 });
 
 const textClass = computed(() => {
+  if (props.data?.customStyle?.layout === "pearl") return "";
   if (
     props.data?.customStyle?.textColor ||
     props.data?.customStyle?.foregroundColor
@@ -100,6 +105,7 @@ const textClass = computed(() => {
 
 const textStyle = computed(() => {
   const style: Record<string, string> = {};
+  if (props.data?.customStyle?.layout === "pearl") return style;
   if (props.data?.customStyle?.textColor) {
     style.color = props.data.customStyle.textColor;
   } else if (props.data?.customStyle?.foregroundColor) {
@@ -641,6 +647,61 @@ const currentLayout = computed(() => {
     .error-state .retry-btn {
       margin-top: 8px; padding: 6px 14px; background: #F4A2C5; color: white; border: 2px solid #EAA3C5; box-shadow: 2px 2px 0px #F5C6DA; font-size: 14px; font-weight: bold; cursor: pointer;
       &:active { transform: translate(2px, 2px); box-shadow: none; }
+    }
+  }
+
+  // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）
+  // 深紫畫布 + 芥末黃外框 + 角落發光星星 + 藍/橘幾何色塊，無動畫
+  &.pearl {
+    border-radius: 10px;
+    border: 2px solid #FFCE05;
+    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+    color: #F8F6F0;
+    background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
+    position: relative;
+    overflow: hidden;
+
+    &.light-text { color: #F8F6F0; }
+
+    // 角落發光星星（純 CSS、靜態）
+    &::before {
+      content: ''; position: absolute; top: 10px; right: 12px; width: 7px; height: 7px;
+      background: radial-gradient(circle, rgba(255,206,5,0.95) 0%, transparent 70%);
+      box-shadow: 0 0 6px 2px rgba(255,206,5,0.5), 16px 40px 0 -1px rgba(123,173,238,0.85), -160px 70px 0 -2px rgba(255,198,174,0.7);
+      border-radius: 50%; z-index: 0; pointer-events: none;
+    }
+
+    .weather-header {
+      display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; margin-bottom: 8px; position: relative; z-index: 1;
+      .location { display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; letter-spacing: 0.3px; color: #F8F6F0; }
+      .refresh-btn {
+        background: rgba(71,131,222,0.25); border: 1px solid rgba(255,206,5,0.4); border-radius: 8px; padding: 3px; cursor: pointer; color: #FFCE05; transition: all 0.2s;
+        &:hover { background: #4783DE; color: #FFCE05; }
+        &.refreshing svg { animation: spin 1s linear infinite; }
+      }
+    }
+
+    .weather-main {
+      display: flex; align-items: center; justify-content: center; gap: 12px; flex: 1; position: relative; z-index: 1;
+      .weather-icon { filter: drop-shadow(0 2px 6px rgba(255,206,5,0.3)); flex-shrink: 0; color: #FFCE05; }
+      .temperature { font-size: 44px; font-weight: 600; letter-spacing: -1px; font-family: "Georgia", serif; color: #F8F6F0; }
+    }
+
+    .weather-footer {
+      display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 500; flex-shrink: 0; position: relative; z-index: 1;
+      background: rgba(71,131,222,0.18); border: 1px solid rgba(255,206,5,0.28); padding: 6px 12px; margin-top: 8px; border-radius: 8px; color: #D4C8B0;
+      .condition, .humidity { display: flex; align-items: center; gap: 4px; }
+    }
+
+    .loading-state, .error-state, .empty-state {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-size: 15px; font-weight: 500; position: relative; z-index: 1; color: #D4C8B0;
+    }
+
+    .empty-state { cursor: pointer; }
+
+    .error-state .retry-btn {
+      margin-top: 8px; padding: 6px 16px; background: #4783DE; color: #F8F6F0; border: 1px solid #FFCE05; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s;
+      &:hover { background: #FFCE05; color: #332D4B; }
     }
   }
 }

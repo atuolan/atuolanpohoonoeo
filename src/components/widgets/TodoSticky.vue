@@ -69,6 +69,10 @@ const containerStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
 
+  if (customStyle?.layout === "pearl") {
+    return style;
+  }
+
   if (customStyle?.backgroundGradient) {
     style.background = customStyle.backgroundGradient;
   } else if (customStyle?.backgroundColor) {
@@ -87,6 +91,10 @@ const containerStyle = computed(() => {
 const textStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
+
+  if (customStyle?.layout === "pearl") {
+    return style;
+  }
 
   if (customStyle?.textColor) {
     style.color = customStyle.textColor;
@@ -868,6 +876,72 @@ const currentLayout = computed(() => {
         width: 30px; height: 30px; border: 2px solid #EAA3C5; background: #93E2B6; color: white; display: flex; align-items: center; justify-content: center;
         box-shadow: 2px 2px 0px #F5C6DA;
         &:active { box-shadow: none; transform: translate(2px, 2px); }
+      }
+    }
+  }
+
+  // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）
+  // 深紫畫布 + 芥末黃外框 + 角落發光星星，無動畫
+  &.pearl {
+    padding: 14px 12px 12px;
+    background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
+    border: 2px solid #FFCE05;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+    position: relative;
+    overflow: hidden;
+
+    // 角落發光星星（純 CSS、靜態）
+    &::before {
+      content: ''; position: absolute; top: 10px; right: 12px; width: 7px; height: 7px;
+      background: radial-gradient(circle, rgba(255,206,5,0.95) 0%, transparent 70%);
+      box-shadow: 0 0 6px 2px rgba(255,206,5,0.5), -160px 30px 0 -1px rgba(123,173,238,0.8), -30px 140px 0 -2px rgba(255,198,174,0.6);
+      border-radius: 50%; z-index: 0; pointer-events: none;
+    }
+
+    .sticky-header {
+      margin-bottom: 8px; position: relative; z-index: 1;
+      .title-input {
+        width: 100%; border: none; border-bottom: 1px solid rgba(255,206,5,0.45); background: transparent; font-size: 15px; font-family: "Georgia", serif; font-weight: 600; font-style: italic; letter-spacing: 0.3px; color: #F8F6F0; padding: 4px 2px;
+        &::placeholder { color: rgba(212,200,176,0.5); }
+        &:focus { outline: none; border-bottom-color: #FFCE05; }
+      }
+    }
+
+    .todo-list {
+      flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; position: relative; z-index: 1;
+    }
+
+    .todo-item {
+      display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: rgba(71,131,222,0.16);
+      border: 1px solid rgba(255,206,5,0.25); border-radius: 8px; flex-shrink: 0;
+
+      .check-btn {
+        width: 16px; height: 16px; min-width: 16px; border: 1px solid #FFCE05; border-radius: 50%; background: transparent; display: flex; align-items: center; justify-content: center; color: transparent;
+      }
+      .item-text { flex: 1; font-size: 13px; font-weight: 500; color: #F8F6F0; }
+      .remove-btn {
+        opacity: 0; color: #D4C8B0; background: none; border: none; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+        &:hover { color: #FF8E6E; }
+      }
+      &:hover .remove-btn { opacity: 1; }
+
+      &.done {
+        .check-btn { background: #FFCE05; color: #332D4B; }
+        .item-text { text-decoration: line-through; opacity: 0.5; }
+      }
+    }
+
+    .add-item {
+      display: flex; gap: 6px; margin-top: 8px; position: relative; z-index: 1;
+      input {
+        flex: 1; border: 1px solid rgba(255,206,5,0.3); border-radius: 8px; background: rgba(71,131,222,0.12); padding: 6px 10px; font-family: "Georgia", serif; color: #F8F6F0;
+        &::placeholder { color: rgba(212,200,176,0.5); }
+        &:focus { outline: none; border-color: #FFCE05; }
+      }
+      .add-btn {
+        width: 30px; height: 30px; border: 1px solid #FFCE05; border-radius: 8px; background: #4783DE; color: #F8F6F0; display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+        &:hover { background: #FFCE05; color: #332D4B; }
       }
     }
   }

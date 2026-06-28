@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import { ImageCropper } from "@/components/common";
+import ThemePackIcon from "@/components/common/ThemePackIcon.vue";
 import { useLanguage } from "@/composables/useLanguage";
+import { useCanvasStore } from "@/stores/canvas";
 import { useSettingsStore } from "@/stores/settings";
 import type { GlobalFontOverride, GlobalFontPreset, WallpaperStyle } from "@/stores/theme";
 import { useThemeStore } from "@/stores/theme";
+import {
+  STANDARD_LAYOUT_WIDGET_TYPES,
+  themePacks,
+  type ThemePack,
+  type ThemePackIconId,
+} from "@/styles/theme-packs";
 import { deriveColorsFromPrimary, normalizeHex } from "@/utils/wallpaperLuminance";
 import { computed, ref, watch } from "vue";
 
@@ -22,7 +30,289 @@ const emit = defineEmits<{
 // Store
 const themeStore = useThemeStore();
 const settingsStore = useSettingsStore();
+const canvasStore = useCanvasStore();
 const { currentLanguage, t } = useLanguage();
+
+// ===== 主題包一鍵套用 =====
+const themePackList = themePacks;
+const customThemePackList = computed(() => themeStore.customThemePacks);
+const applyThemePackStatus = ref("");
+
+// 套用主題包：視覺面（theme store）+ 桌面組件批次風格（canvas store）
+// 若主題包帶有 layoutSnapshot，會詢問是否同時還原首頁佈局
+function applyThemePack(pack: ThemePack) {
+  themeStore.applyThemePack(pack);
+  canvasStore.applyThemePackLayouts(pack);
+
+  // 若有完整首頁佈局快照，詢問使用者是否套用（避免意外覆蓋）
+  if (pack.layoutSnapshot && pack.layoutSnapshot.length > 0) {
+    const restore = window.confirm(
+      `「${pack.name}」包含完整首頁佈局（${pack.layoutSnapshot.length} 個組件）\n是否同時還原首頁桌面？\n（取消僅套用配色／皮膚／背景）`,
+    );
+    if (restore) {
+      canvasStore.replaceLayout(pack.layoutSnapshot);
+      applyThemePackStatus.value = `已套用「${pack.name}」並還原首頁佈局`;
+      return;
+    }
+  }
+  applyThemePackStatus.value = `已套用「${pack.name}」主題包`;
+}
+
+// ===== 主題包匯出 / 匯入 / 自訂儲存 =====
+const importThemePackError = ref("");
+const themePackFileInput = ref<HTMLInputElement | null>(null);
+
+// 儲存為主題包對話框
+const showSavePackDialog = ref(false);
+const savePackForm = ref({
+  name: "",
+  description: "",
+  icon: "custom" as ThemePackIconId,
+  includeLayout: true,
+  includeWallpaperImage: true,
+});
+
+// 圖示選項（給「儲存為主題包」時挑選圖示用）
+const iconChoices: ThemePackIconId[] = [
+  "custom",
+  "cream",
+  "y2k",
+  "cyber",
+  "journal",
+  "mono",
+  "pearl",
+  "sunset",
+  "ocean",
+  "forest",
+  "sakura",
+];
+
+// 把 blob: URL / Object URL 轉成 Base64（用於匯出時嵌入背景圖）
+async function blobUrlToBase64(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result));
+      fr.onerror = () => reject(fr.error);
+      fr.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.warn("[Theme] 背景圖轉 Base64 失敗:", e);
+    return null;
+  }
+}
+
+// 從當前視覺狀態 + 桌面組件取樣，建構 ThemePack
+// options.includeLayout：是否內含首頁佈局快照
+// options.includeWallpaperImage：背景是圖片時是否內嵌 Base64
+async function buildThemePackFromCurrent(options: {
+  id?: string;
+  name?: string;
+  description?: string;
+  icon?: ThemePackIconId;
+  includeLayout: boolean;
+  includeWallpaperImage: boolean;
+}): Promise<ThemePack> {
+  // 取樣桌面組件目前的風格作為主題包預設值
+  let standardLayout = "classic";
+  let clockStyle = "minimal";
+  let habitLayout = "list";
+  let shape = "rounded-square";
+
+  for (const widget of canvasStore.widgets) {
+    const layout = widget.data?.customStyle?.layout;
+    const widgetShape = widget.data?.customStyle?.shape;
+    if (widgetShape) shape = widgetShape;
+    if (STANDARD_LAYOUT_WIDGET_TYPES.includes(widget.type) && layout) {
+      standardLayout = layout;
+    } else if (widget.type === "habit-tracker" && layout) {
+      habitLayout = layout;
+    } else if (widget.type === "clock" && widget.data?.clockStyle) {
+      clockStyle = widget.data.clockStyle;
+    }
+  }
+
+  const wp = themeStore.wallpaperStyle;
+
+  // 處理背景圖：blob: / data:image 都嘗試轉為 Base64
+  let imageData: string | undefined;
+  if (
+    options.includeWallpaperImage &&
+    wp.type === "image" &&
+    typeof wp.value === "string" &&
+    wp.value.length > 0
+  ) {
+    if (wp.value.startsWith("data:")) {
+      imageData = wp.value;
+    } else if (wp.value.startsWith("blob:") || /^https?:/.test(wp.value)) {
+      const base64 = await blobUrlToBase64(wp.value);
+      if (base64) imageData = base64;
+    }
+  }
+
+  return {
+    id: options.id ?? `custom-${Date.now()}`,
+    name: options.name ?? "我的主題包",
+    icon: options.icon ?? "custom",
+    description: options.description ?? "從當前桌面樣式匯出的自訂主題包。",
+    preview: themeStore.colors.primary,
+    colors: { ...themeStore.colors },
+    skin: themeStore.currentSkin,
+    shape,
+    wallpaper: {
+      type: wp.type,
+      value: imageData ?? wp.value,
+      blur: wp.blur,
+      opacity: wp.opacity,
+      overlay: wp.overlay,
+      ...(imageData ? { imageData } : {}),
+    },
+    widgets: { standardLayout, clockStyle, habitLayout },
+    ...(options.includeLayout
+      ? {
+          layoutSnapshot: JSON.parse(JSON.stringify(canvasStore.widgets)),
+        }
+      : {}),
+  };
+}
+
+// 匯出當前主題包為 JSON 檔案（含背景圖與首頁佈局）
+async function exportThemePack() {
+  applyThemePackStatus.value = "正在匯出主題包…";
+  const pack = await buildThemePackFromCurrent({
+    includeLayout: true,
+    includeWallpaperImage: true,
+  });
+
+  const blob = new Blob([JSON.stringify(pack, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `theme-pack-${pack.id}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  applyThemePackStatus.value = `已匯出主題包（含背景圖、首頁佈局共 ${pack.layoutSnapshot?.length ?? 0} 個組件）`;
+}
+
+// 打開「儲存為主題包」對話框
+function openSavePackDialog() {
+  savePackForm.value = {
+    name: "我的主題包",
+    description: "從當前桌面樣式建立的自訂主題包。",
+    icon: "custom",
+    includeLayout: true,
+    includeWallpaperImage: true,
+  };
+  showSavePackDialog.value = true;
+}
+
+// 確認儲存到自訂主題包庫
+async function confirmSavePack() {
+  if (!savePackForm.value.name.trim()) {
+    return;
+  }
+  applyThemePackStatus.value = "正在儲存主題包…";
+  const pack = await buildThemePackFromCurrent({
+    name: savePackForm.value.name.trim(),
+    description: savePackForm.value.description.trim() || "自訂主題包",
+    icon: savePackForm.value.icon,
+    includeLayout: savePackForm.value.includeLayout,
+    includeWallpaperImage: savePackForm.value.includeWallpaperImage,
+  });
+  themeStore.addCustomThemePack(pack);
+  showSavePackDialog.value = false;
+  applyThemePackStatus.value = `已儲存「${pack.name}」到主題包庫`;
+}
+
+// 刪除自訂主題包
+function deleteCustomPack(pack: ThemePack) {
+  if (!window.confirm(`確定要刪除主題包「${pack.name}」嗎？`)) return;
+  themeStore.removeCustomThemePack(pack.id);
+  applyThemePackStatus.value = `已刪除「${pack.name}」`;
+}
+
+// 觸發檔案選擇
+function triggerImportThemePack() {
+  importThemePackError.value = "";
+  themePackFileInput.value?.click();
+}
+
+// 驗證解析後的物件是否為合法 ThemePack
+function isValidThemePack(obj: unknown): obj is ThemePack {
+  if (!obj || typeof obj !== "object") return false;
+  const p = obj as Record<string, unknown>;
+  const w = p.widgets as Record<string, unknown> | undefined;
+  return (
+    typeof p.colors === "object" &&
+    p.colors !== null &&
+    typeof p.skin === "string" &&
+    typeof p.shape === "string" &&
+    typeof p.wallpaper === "object" &&
+    p.wallpaper !== null &&
+    typeof w === "object" &&
+    w !== null &&
+    typeof w.standardLayout === "string" &&
+    typeof w.clockStyle === "string" &&
+    typeof w.habitLayout === "string"
+  );
+}
+
+// 讀取上傳的 JSON：套用 + 詢問是否加入「自訂主題包庫」
+function handleImportThemePack(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(String(reader.result)) as ThemePack;
+      if (!isValidThemePack(parsed)) {
+        importThemePackError.value = "主題包格式不正確，缺少必要欄位";
+        return;
+      }
+      // 確保 icon 欄位存在（舊版可能只有 emoji）
+      if (!parsed.icon) parsed.icon = "custom";
+
+      // 套用視覺
+      themeStore.applyThemePack(parsed);
+      canvasStore.applyThemePackLayouts(parsed);
+
+      // 若帶有首頁佈局，詢問是否還原
+      if (parsed.layoutSnapshot && parsed.layoutSnapshot.length > 0) {
+        const restore = window.confirm(
+          `主題包包含 ${parsed.layoutSnapshot.length} 個首頁組件\n是否同時還原首頁佈局？`,
+        );
+        if (restore) {
+          canvasStore.replaceLayout(parsed.layoutSnapshot);
+        }
+      }
+
+      // 詢問是否加入自訂主題包庫，方便下次快速切換
+      const addToLibrary = window.confirm(
+        `已套用「${parsed.name || "自訂主題包"}」\n是否將其加入「我的主題包」以便快速切換？`,
+      );
+      if (addToLibrary) {
+        themeStore.addCustomThemePack({
+          ...parsed,
+          // 重新分配 id 以避免覆蓋
+          id: parsed.isCustom ? parsed.id : `custom-${Date.now()}`,
+        });
+      }
+
+      applyThemePackStatus.value = `已匯入並套用「${parsed.name || "自訂主題包"}」`;
+      importThemePackError.value = "";
+    } catch {
+      importThemePackError.value = "無法解析 JSON 檔案";
+    } finally {
+      input.value = "";
+    }
+  };
+  reader.readAsText(file);
+}
 
 // 當前分頁
 const activeTab = ref<"colors" | "wallpaper" | "font" | "customFont" | "animation" | "css">(
@@ -645,6 +935,193 @@ watch(
           <div class="modal-content">
             <!-- 顏色設定 -->
             <div v-if="activeTab === 'colors'" class="settings-section">
+              <!-- 主題包一鍵套用 -->
+              <div class="theme-pack-section-header">
+                <h3 class="section-title">主題包（一鍵套用）</h3>
+                <span class="theme-pack-count">{{ themePackList.length }} 款預設</span>
+              </div>
+              <div class="theme-pack-grid">
+                <button
+                  v-for="pack in themePackList"
+                  :key="pack.id"
+                  class="theme-pack-item"
+                  :class="{ active: themeStore.currentThemePack === pack.id }"
+                  @click="applyThemePack(pack)"
+                >
+                  <div
+                    class="theme-pack-preview"
+                    :style="{ background: pack.preview }"
+                  >
+                    <ThemePackIcon :icon="pack.icon" :size="32" />
+                  </div>
+                  <div class="theme-pack-info">
+                    <span class="theme-pack-name">{{ pack.name }}</span>
+                    <span class="theme-pack-desc">{{ pack.description }}</span>
+                  </div>
+                  <span
+                    v-if="themeStore.currentThemePack === pack.id"
+                    class="theme-pack-check"
+                    aria-hidden="true"
+                  >
+                    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path
+                        d="M3.5 8.5l3 3 6-7"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </span>
+                </button>
+              </div>
+
+              <!-- 我的主題包（自訂） -->
+              <div class="theme-pack-section-header" style="margin-top: 18px">
+                <h3 class="section-title">我的主題包</h3>
+                <span class="theme-pack-count">
+                  {{ customThemePackList.length }} 款自訂
+                </span>
+              </div>
+              <div v-if="customThemePackList.length > 0" class="theme-pack-grid">
+                <div
+                  v-for="pack in customThemePackList"
+                  :key="pack.id"
+                  class="theme-pack-item theme-pack-item--custom"
+                  :class="{ active: themeStore.currentThemePack === pack.id }"
+                >
+                  <button
+                    type="button"
+                    class="theme-pack-apply"
+                    @click="applyThemePack(pack)"
+                  >
+                    <div
+                      class="theme-pack-preview"
+                      :style="{ background: pack.preview }"
+                    >
+                      <ThemePackIcon :icon="pack.icon" :size="32" />
+                    </div>
+                    <div class="theme-pack-info">
+                      <span class="theme-pack-name">{{ pack.name }}</span>
+                      <span class="theme-pack-desc">
+                        {{ pack.description }}
+                        <span
+                          v-if="pack.layoutSnapshot && pack.layoutSnapshot.length > 0"
+                          class="theme-pack-badge"
+                        >含首頁</span>
+                      </span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    class="theme-pack-delete"
+                    title="刪除這個主題包"
+                    @click.stop="deleteCustomPack(pack)"
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M9 3h6v2H9zM4 7h16v1.5l-1.5 12.5a1.5 1.5 0 0 1-1.5 1.3H7a1.5 1.5 0 0 1-1.5-1.3L4 8.5z"
+                        stroke="currentColor"
+                        stroke-width="1.6"
+                        stroke-linejoin="round"
+                      />
+                      <path
+                        d="M10 11v7M14 11v7"
+                        stroke="currentColor"
+                        stroke-width="1.6"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <p v-else class="theme-pack-empty">
+                把當前設定儲存為主題包，下次可以一鍵切回。
+              </p>
+
+              <p v-if="applyThemePackStatus" class="theme-pack-status">
+                {{ applyThemePackStatus }}
+              </p>
+              <p class="theme-pack-hint">
+                套用後會同步更新背景、配色、形態質感與桌面組件風格；含「首頁」徽章的主題包能還原桌面佈局。
+              </p>
+
+              <div class="theme-pack-actions">
+                <button
+                  class="theme-pack-action-btn theme-pack-action-btn--primary"
+                  @click="openSavePackDialog"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      d="M5 4h11l3 3v13H5z M9 4v6h7V4 M8 14h8v6H8z"
+                      stroke="currentColor"
+                      stroke-width="1.6"
+                      stroke-linejoin="round"
+                      fill="none"
+                    />
+                  </svg>
+                  儲存當前為主題包
+                </button>
+                <button class="theme-pack-action-btn" @click="exportThemePack">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      d="M12 4v11m0 0l-4-4m4 4l4-4M5 20h14"
+                      stroke="currentColor"
+                      stroke-width="1.6"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                  匯出 JSON
+                </button>
+                <button class="theme-pack-action-btn" @click="triggerImportThemePack">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      d="M12 20V9m0 0l-4 4m4-4l4 4M5 4h14"
+                      stroke="currentColor"
+                      stroke-width="1.6"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                  匯入 JSON
+                </button>
+                <input
+                  ref="themePackFileInput"
+                  type="file"
+                  accept="application/json,.json"
+                  style="display: none"
+                  @change="handleImportThemePack"
+                />
+              </div>
+              <p v-if="importThemePackError" class="theme-pack-error">
+                {{ importThemePackError }}
+              </p>
+
               <h3 class="section-title">全局主題配色</h3>
               <div class="preset-grid">
                 <button
@@ -1399,6 +1876,90 @@ body {
       @crop="onCropComplete"
       @close="onCropClose"
     />
+
+    <!-- 儲存為主題包對話框 -->
+    <div
+      v-if="showSavePackDialog"
+      class="save-pack-mask"
+      @click.self="showSavePackDialog = false"
+    >
+      <div class="save-pack-dialog">
+        <div class="save-pack-header">
+          <h3>儲存為主題包</h3>
+          <button class="save-pack-close" @click="showSavePackDialog = false">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+              <path
+                d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+              />
+            </svg>
+          </button>
+        </div>
+        <div class="save-pack-body">
+          <label class="save-pack-field">
+            <span class="save-pack-label">名稱</span>
+            <input
+              v-model="savePackForm.name"
+              type="text"
+              class="save-pack-input"
+              placeholder="例如：我的奶油風"
+              maxlength="20"
+            />
+          </label>
+          <label class="save-pack-field">
+            <span class="save-pack-label">描述</span>
+            <input
+              v-model="savePackForm.description"
+              type="text"
+              class="save-pack-input"
+              placeholder="可選"
+              maxlength="40"
+            />
+          </label>
+
+          <div class="save-pack-field">
+            <span class="save-pack-label">圖示</span>
+            <div class="save-pack-icon-grid">
+              <button
+                v-for="iconId in iconChoices"
+                :key="iconId"
+                type="button"
+                class="save-pack-icon-btn"
+                :class="{ active: savePackForm.icon === iconId }"
+                :style="{ background: themeStore.colors.primary }"
+                @click="savePackForm.icon = iconId"
+              >
+                <ThemePackIcon :icon="iconId" :size="22" />
+              </button>
+            </div>
+          </div>
+
+          <label class="save-pack-toggle">
+            <input v-model="savePackForm.includeLayout" type="checkbox" />
+            <span>
+              包含首頁佈局（{{ canvasStore.widgets.length }} 個組件）
+              <small>套用時可一鍵還原桌面組件位置與內容</small>
+            </span>
+          </label>
+          <label class="save-pack-toggle">
+            <input v-model="savePackForm.includeWallpaperImage" type="checkbox" />
+            <span>
+              包含背景圖（若有）
+              <small>會把當前背景圖內嵌進主題包（檔案會較大）</small>
+            </span>
+          </label>
+        </div>
+        <div class="save-pack-footer">
+          <button class="save-pack-btn" @click="showSavePackDialog = false">取消</button>
+          <button
+            class="save-pack-btn save-pack-btn--primary"
+            :disabled="!savePackForm.name.trim()"
+            @click="confirmSavePack"
+          >
+            儲存
+          </button>
+        </div>
+      </div>
+    </div>
   </Teleport>
 </template>
 
@@ -1534,6 +2095,512 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+// ===== 主題包區塊 =====
+.theme-pack-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+
+  .section-title {
+    margin: 0;
+  }
+}
+
+.theme-pack-count {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  background: var(--color-surface-hover);
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+// 主題包網格
+.theme-pack-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.theme-pack-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  min-width: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: all var(--transition-fast);
+  overflow: hidden;
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+    background: linear-gradient(
+      135deg,
+      var(--color-primary-light) 0%,
+      transparent 60%
+    );
+  }
+
+  &:hover {
+    border-color: var(--color-primary);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px var(--color-shadow);
+
+    &::before {
+      opacity: 0.35;
+    }
+
+    .theme-pack-preview {
+      transform: scale(1.02);
+    }
+  }
+
+  &.active {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 1.5px var(--color-primary) inset, 0 4px 14px var(--color-shadow);
+
+    &::before {
+      opacity: 0.45;
+    }
+  }
+}
+
+.theme-pack-item--custom {
+  // 包含刪除按鈕的卡片，需要為內層 button 提供完整覆蓋
+  padding: 0;
+
+  .theme-pack-apply {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px;
+    background: transparent;
+    border: none;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+  }
+}
+
+.theme-pack-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  color: white;
+  cursor: pointer;
+  opacity: 0;
+  transition: all var(--transition-fast);
+
+  .theme-pack-item:hover & {
+    opacity: 1;
+  }
+
+  &:hover {
+    background: var(--color-error);
+    transform: scale(1.1);
+  }
+}
+
+.theme-pack-preview {
+  position: relative;
+  width: 100%;
+  height: 64px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18), inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform var(--transition-fast);
+  overflow: hidden;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+      circle at 30% 20%,
+      rgba(255, 255, 255, 0.25),
+      transparent 60%
+    );
+    pointer-events: none;
+  }
+}
+
+.theme-pack-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.theme-pack-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-pack-desc {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.theme-pack-badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 6px;
+  font-size: 10px;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+.theme-pack-check {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary);
+  color: white;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px var(--color-shadow);
+  z-index: 1;
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+.theme-pack-empty {
+  margin: 0;
+  padding: 14px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  text-align: center;
+  background: var(--color-surface-hover);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  line-height: 1.5;
+}
+
+.theme-pack-status {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.theme-pack-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.theme-pack-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.theme-pack-action-btn {
+  flex: 1 1 auto;
+  min-width: 130px;
+  padding: 8px 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+
+  svg {
+    flex-shrink: 0;
+  }
+
+  &:hover {
+    background: var(--color-surface-hover);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+}
+
+.theme-pack-action-btn--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+
+  &:hover {
+    filter: brightness(1.05);
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: white;
+  }
+}
+
+.theme-pack-error {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--color-error);
+  line-height: 1.5;
+}
+
+// ===== 儲存為主題包對話框 =====
+.save-pack-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 10010;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: save-pack-fade 0.18s ease-out;
+}
+
+@keyframes save-pack-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.save-pack-dialog {
+  width: 100%;
+  max-width: 380px;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+  overflow: hidden;
+  animation: save-pack-rise 0.22s ease-out;
+}
+
+@keyframes save-pack-rise {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.save-pack-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+
+  h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+}
+
+.save-pack-close {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+  }
+}
+
+.save-pack-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.save-pack-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.save-pack-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.save-pack-input {
+  padding: 8px 10px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-background);
+  transition: border-color var(--transition-fast);
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-primary);
+  }
+}
+
+.save-pack-icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+  gap: 6px;
+}
+
+.save-pack-icon-btn {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  background: var(--color-primary);
+  color: white;
+  opacity: 0.55;
+
+  &:hover {
+    opacity: 0.9;
+    transform: scale(1.05);
+  }
+
+  &.active {
+    border-color: var(--color-text);
+    opacity: 1;
+    box-shadow: 0 2px 6px var(--color-shadow);
+  }
+}
+
+.save-pack-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--color-background);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+
+  input[type="checkbox"] {
+    margin-top: 2px;
+    accent-color: var(--color-primary);
+    cursor: pointer;
+  }
+
+  span {
+    flex: 1;
+    font-size: 12px;
+    color: var(--color-text);
+    line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  small {
+    font-size: 10px;
+    color: var(--color-text-muted);
+  }
+}
+
+.save-pack-footer {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.save-pack-btn {
+  flex: 1;
+  padding: 9px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover:not(:disabled) {
+    background: var(--color-surface-hover);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.save-pack-btn--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+
+  &:hover:not(:disabled) {
+    filter: brightness(1.05);
+    background: var(--color-primary);
+  }
 }
 
 // 形態質感（皮膚）切換器

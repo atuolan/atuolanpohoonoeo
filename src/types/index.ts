@@ -63,7 +63,20 @@ export type WidgetType =
   | "habit-tracker" // 習慣追蹤器
   | "focus-timer" // 專注計時器
   | "world-book" // 世界書組件
-  | "char-phone"; // 角色手機組件
+  | "char-phone" // 角色手機組件
+  // ===== 裝飾性組件 =====
+  | "progress-ring" // 活動 / 進度環
+  | "color-block" // 漸層色塊
+  | "text-banner" // 文字橫幅
+  | "washi-tape" // 紙膠帶
+  | "photo-frame" // 相框貼紙
+  | "battery-ring" // 電量 / 進度環
+  // ===== 角色綁定組件 =====
+  | "relationship-counter" // 紀念日 / 認識天數
+  | "affinity-meter" // 好感度儀表
+  | "recent-chat" // 最近聊天預覽
+  | "char-status" // 角色狀態卡
+  | "companion-pet"; // 養成寵物 / 水族箱
 
 // ===== 時鐘樣式類型 =====
 export type ClockStyle =
