@@ -28,7 +28,8 @@ export const clockStyles: {
   { id: "dotmatrix", name: "點陣", desc: "LED 風格", icon: "🔲" },
   { id: "orbit", name: "軌道", desc: "行星系統", icon: "🌍" },
   { id: "pearl", name: "珍珠", desc: "維梅爾畫廊靜謐", icon: "✨" },
-] as any; // 繞過 TypeScript 檢查，新增 pearl
+  { id: "lineart", name: "線描", desc: "純白底黑細線速寫", icon: "✏️" },
+] as any; // 繞過 TypeScript 檢查，新增 pearl / lineart
 
 // 音樂播放器佈局選項
 export const musicLayouts: LayoutOption[] = [
@@ -59,7 +60,7 @@ export const habitLayouts: LayoutOption[] = [
   { id: "streak", name: "火焰", desc: "連續天數大字火焰" },
 ];
 
-// 拍立得和其他小工具佈局選項（共用 6 皮膚）
+// 拍立得和其他小工具佈局選項（共用 7 皮膚）
 export const styleLayouts: LayoutOption[] = [
   { id: "pop", name: "普普風", desc: "新粗野派立體互動" },
   { id: "classic", name: "極簡", desc: "傳統簡約留白" },
@@ -67,6 +68,7 @@ export const styleLayouts: LayoutOption[] = [
   { id: "illustration", name: "復古", desc: "90年代復古視窗" },
   { id: "pixel", name: "像素", desc: "點陣微復古網格" },
   { id: "pearl", name: "珍珠", desc: "維梅爾畫廊靜謐" },
+  { id: "lineart", name: "線描", desc: "純白底黑細線速寫" },
 ];
 
 // 黑膠唱片子風格選項（與 styleLayouts 一致）
@@ -77,6 +79,7 @@ export const vinylStyles: LayoutOption[] = [
   { id: "illustration", name: "復古", desc: "90年代復古視窗" },
   { id: "pixel", name: "像素", desc: "點陣微復古網格" },
   { id: "pearl", name: "珍珠", desc: "維梅爾畫廊靜謐" },
+  { id: "lineart", name: "線描", desc: "純白底黑細線速寫" },
 ];
 
 // 角色綁定組件類型

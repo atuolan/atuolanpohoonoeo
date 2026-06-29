@@ -663,6 +663,58 @@ const currentLayout = computed(() => {
       }
     }
   }
+
+  // 線描風（純白底＋黑細線速寫）
+  &.lineart {
+    background: #ffffff;
+    border: 1.5px solid #1a1a1a;
+    border-radius: 14px;
+    box-shadow: none;
+
+    .mode-indicator {
+      position: relative; z-index: 1;
+      display: flex; align-items: center; gap: 6px; padding: 4px 14px;
+      border-radius: 999px;
+      background: #ffffff;
+      border: 1.5px solid #1a1a1a;
+      color: #1a1a1a;
+      font-family: 'Noto Serif TC', Georgia, serif;
+      white-space: nowrap;
+    }
+
+    .timer-circle {
+      position: relative; z-index: 1; width: 130px; height: 130px; flex-shrink: 0;
+      .progress-track { stroke: rgba(26, 26, 26, 0.12); }
+      .progress-bar { stroke: #1a1a1a; stroke-linecap: round; transition: stroke-dashoffset 0.3s ease; &.break { stroke: #1a1a1a; } }
+      .timer-display {
+        position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        border-radius: 50%;
+        background: #ffffff;
+        border: 1.5px solid #1a1a1a;
+        .time { font-size: 21px; font-weight: 400; letter-spacing: 1px; color: #1a1a1a; font-family: 'Noto Serif TC', Georgia, serif; font-variant-numeric: tabular-nums; margin-top: 4px; }
+        .sessions { font-size: 10px; font-weight: 400; letter-spacing: 0.5px; color: #1a1a1a; font-family: 'Noto Serif TC', Georgia, serif; margin-top: 1px; filter: grayscale(1); }
+      }
+    }
+
+    .controls {
+      position: relative; z-index: 1;
+      display: flex; align-items: center; gap: 16px; flex-shrink: 0;
+      .control-btn {
+        border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0;
+        transition: all 0.2s;
+        &.reset {
+          width: 40px; height: 40px;
+          background: #ffffff; border: 1.5px solid #1a1a1a; color: #1a1a1a;
+          &:hover { background: #1a1a1a; color: #ffffff; }
+        }
+        &.play {
+          width: 52px; height: 52px; background: #ffffff; border: 1.5px solid #1a1a1a; color: #1a1a1a;
+          &:hover { background: #1a1a1a; color: #ffffff; }
+          &.pause { background: #1a1a1a; color: #ffffff; }
+        }
+      }
+    }
+  }
 }
 
 // 小尺寸響應式調整

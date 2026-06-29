@@ -301,7 +301,7 @@ const containerStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
 
-  if (customStyle?.layout === "pearl") return style;
+  if (customStyle?.layout === "pearl" || customStyle?.layout === "lineart") return style;
 
   if (customStyle?.backgroundGradient) {
     style.background = customStyle.backgroundGradient;
@@ -328,7 +328,7 @@ const textStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
   
-  if (customStyle?.layout === "pearl") return style;
+  if (customStyle?.layout === "pearl" || customStyle?.layout === "lineart") return style;
 
   if (customStyle?.textColor) {
     style.color = customStyle.textColor;
@@ -1751,6 +1751,78 @@ const hasCustomBackground = computed(() => {
     }
     .second-hand {
       background: #CE8221 !important;
+    }
+  }
+}
+
+/* 線描風（純白底黑細線速寫） */
+.clock-widget.style-lineart {
+  background: #ffffff;
+  border: 1.5px solid #1a1a1a;
+  border-radius: 14px;
+  box-shadow: none;
+  position: relative;
+
+  .minimal-clock,
+  .digital-clock,
+  .flip-clock,
+  .analog-clock,
+  .neon-clock,
+  .progress-clock,
+  .binary-clock,
+  .dotmatrix-clock,
+  .orbit-clock {
+    font-family: "Noto Serif TC", Georgia, serif;
+    color: #1a1a1a;
+  }
+
+  .time-display,
+  .date-display,
+  .digital-date,
+  .analog-date,
+  .neon-date,
+  .flip-date,
+  .progress-date,
+  .binary-date,
+  .dotmatrix-date,
+  .orbit-date {
+    color: #1a1a1a !important;
+  }
+
+  .digit-card,
+  .flip-digit {
+    background: #ffffff !important;
+    border: 1.5px solid #1a1a1a !important;
+    box-shadow: none !important;
+    color: #1a1a1a !important;
+  }
+
+  .separator-dots .dot {
+    background: #1a1a1a !important;
+  }
+
+  .analog-clock {
+    .clock-face {
+      background: #ffffff !important;
+      border: 1.5px solid #1a1a1a !important;
+    }
+    .hour-marker {
+      background: #1a1a1a !important;
+      &.quarter {
+        background: #1a1a1a !important;
+      }
+    }
+    .center-dot {
+      background: #1a1a1a !important;
+    }
+    .hour-hand {
+      background: #1a1a1a !important;
+    }
+    .minute-hand {
+      background: #1a1a1a !important;
+    }
+    .second-hand {
+      background: #1a1a1a !important;
     }
   }
 }

@@ -199,10 +199,35 @@ withDefaults(defineProps<Props>(), {
       <circle cx="19" cy="19" r="1" fill="white" opacity="0.85" />
     </g>
 
+    <!-- 線描插畫：鉛筆速寫 -->
+    <g v-if="icon === 'lineart'">
+      <!-- 鉛筆筆桿 -->
+      <path
+        d="M9 23 L21 11 L24 14 L12 26 L8 27 Z"
+        stroke="currentColor"
+        stroke-width="1.6"
+        stroke-linejoin="round"
+        fill="none"
+      />
+      <!-- 筆尖墨點 -->
+      <path d="M8 27 L10 25" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+      <!-- 筆頭金屬箍 -->
+      <path d="M19 13 L22 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+      <!-- 手繪線條（速寫筆觸） -->
+      <path
+        d="M7 9 Q11 7 15 9 T23 9"
+        stroke="currentColor"
+        stroke-width="1.4"
+        stroke-linecap="round"
+        fill="none"
+        opacity="0.5"
+      />
+    </g>
+
     <!-- 兜底：圓圈 -->
     <circle
       v-if="
-        !['cream', 'y2k', 'cyber', 'journal', 'mono', 'pearl', 'custom', 'sunset', 'ocean', 'forest', 'sakura'].includes(
+        !['cream', 'y2k', 'cyber', 'journal', 'mono', 'pearl', 'custom', 'sunset', 'ocean', 'forest', 'sakura', 'lineart'].includes(
           icon,
         )
       "

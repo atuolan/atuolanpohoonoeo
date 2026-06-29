@@ -546,6 +546,17 @@ export const useCanvasStore = defineStore("canvas", () => {
       } else if (widget.type === "clock") {
         // 時鐘讀 data.clockStyle，需另外寫入
         dataPatch.clockStyle = pack.widgets.clockStyle;
+      } else if (widget.type === "music") {
+        // 音樂播放器：主題包指定 vinylStyle 時，切到黑膠佈局並套用子風格
+        if (pack.widgets.vinylStyle) {
+          patch.layout = "vinyl";
+          patch.vinylStyle = pack.widgets.vinylStyle;
+        }
+      } else if (widget.type === "world-book") {
+        // 世界書：主題包指定 worldBookLayout 時覆寫佈局
+        if (pack.widgets.worldBookLayout) {
+          patch.layout = pack.widgets.worldBookLayout;
+        }
       }
 
       const nextData: WidgetData = {

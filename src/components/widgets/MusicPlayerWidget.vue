@@ -939,6 +939,38 @@ onUnmounted(() => {
     .tap-hint { background: rgba(71,131,222,0.2); color: #F8F6F0; border: 1px solid rgba(255,206,5,0.4); box-shadow: 0 4px 12px rgba(0,0,0,0.3); border-radius: 8px; font-family: Georgia, serif; font-style: italic; }
   }
 
+  // === 線描風（純白底＋黑細線速寫）===
+  &.lineart {
+    background: #ffffff;
+    border: 1.5px solid #1a1a1a;
+    border-radius: 14px;
+    box-shadow: none;
+    .vinyl-record {
+      background: #ffffff; box-shadow: none; border: 1.5px solid #1a1a1a;
+      .vinyl-grooves { border-color: rgba(26,26,26,0.25); &::after { border-color: rgba(26,26,26,0.18); } }
+      .vinyl-label { background: #ffffff; border: 1.5px solid #1a1a1a; svg { color: #1a1a1a; } }
+    }
+    .tonearm {
+      background: #1a1a1a;
+      &::before { background: #1a1a1a; }
+    }
+    .vinyl-controls-overlay {
+      background: linear-gradient(to top, rgba(255,255,255,0.95), transparent);
+      .vinyl-info { .v-title { font-family: 'Noto Serif TC', Georgia, serif; color: #1a1a1a; text-shadow: none; } .v-artist { color: #1a1a1a; } }
+      .vinyl-buttons {
+        .play-btn { background: #ffffff; color: #1a1a1a; border: 1.5px solid #1a1a1a; border-radius: 50%; box-shadow: none;
+          &:hover { background: #1a1a1a; color: #ffffff; transform: scale(1.05); }
+          &:active { transform: scale(0.95); }
+        }
+        .control-btn { background: #ffffff; border: 1.5px solid #1a1a1a; color: #1a1a1a; border-radius: 50%; box-shadow: none;
+          &:hover { background: #1a1a1a; color: #ffffff; transform: scale(1.05); }
+          &:active { transform: scale(0.95); }
+        }
+      }
+    }
+    .tap-hint { background: #ffffff; color: #1a1a1a; border: 1.5px solid #1a1a1a; box-shadow: none; border-radius: 8px; font-family: 'Noto Serif TC', Georgia, serif; }
+  }
+
   .vinyl-record {
     width: min(70%, 70cqh);
     aspect-ratio: 1 / 1;

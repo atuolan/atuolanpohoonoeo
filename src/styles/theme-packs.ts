@@ -22,6 +22,12 @@ export interface ThemePackWidgetStyles {
   clockStyle: string;
   // 習慣追蹤：list / ring / heatmap / streak
   habitLayout: string;
+  // 音樂播放器黑膠子風格（vinylStyle）：pop / classic / flat / illustration / pixel / pearl / lineart
+  // 未指定時不覆寫使用者既有設定
+  vinylStyle?: string;
+  // 世界書佈局（layout）：shelf / featured / icon / pearl / lineart
+  // 未指定時不覆寫使用者既有設定
+  worldBookLayout?: string;
 }
 
 // 主題包桌布
@@ -48,7 +54,8 @@ export type ThemePackIconId =
   | "sunset"
   | "ocean"
   | "forest"
-  | "sakura";
+  | "sakura"
+  | "lineart";
 
 // 主題包
 export interface ThemePack {
@@ -118,6 +125,9 @@ const creamPack: ThemePack = {
     standardLayout: "illustration",
     clockStyle: "analog",
     habitLayout: "streak",
+    // 黑膠唱片同步復古插圖皮膚，世界書用精選大封面呼應食譜手帳
+    vinylStyle: "illustration",
+    worldBookLayout: "featured",
   },
 };
 
@@ -164,6 +174,9 @@ const y2kPack: ThemePack = {
     standardLayout: "pop",
     clockStyle: "dotmatrix",
     habitLayout: "ring",
+    // 黑膠同步普普風撞色，世界書用精選大封面呼應千禧電子介面
+    vinylStyle: "pop",
+    worldBookLayout: "featured",
   },
 };
 
@@ -220,6 +233,9 @@ const cyberPack: ThemePack = {
     standardLayout: "pop",
     clockStyle: "binary",
     habitLayout: "heatmap",
+    // 黑膠用 classic 暗黑漸層唱機，呼應賽博機殼；世界書用 icon 終端機式圖標
+    vinylStyle: "classic",
+    worldBookLayout: "shelf",
   },
 };
 
@@ -266,6 +282,9 @@ const journalPack: ThemePack = {
     standardLayout: "illustration",
     clockStyle: "analog",
     habitLayout: "ring",
+    // 黑膠同步復古插圖皮膚，世界書用書架呼應手帳本的拼貼收藏感
+    vinylStyle: "illustration",
+    worldBookLayout: "shelf",
   },
 };
 
@@ -312,6 +331,9 @@ const monoPack: ThemePack = {
     standardLayout: "classic",
     clockStyle: "minimal",
     habitLayout: "heatmap",
+    // 黑膠用 classic 極簡唱機，世界書用 icon 仿 App 的克制圖標排版
+    vinylStyle: "classic",
+    worldBookLayout: "shelf",
   },
 };
 
@@ -363,6 +385,66 @@ const pearlPack: ThemePack = {
     clockStyle: "pearl",
     // ring：圓環進度，像珍珠項鍊的圓潤迴圈
     habitLayout: "ring",
+    // 音樂播放器與世界書同步珍珠風
+    vinylStyle: "pearl",
+    worldBookLayout: "pearl",
+  },
+};
+
+// ===== 線描插畫 =====
+// 設計意圖：Streamline 風格的純黑白手繪線稿 — 速寫本上的細線塗鴉，大片留白。
+//
+// 與「極簡黑白（mono）」的區別：
+// - mono 是 MUJI / Kinfolk 的「灰階雜誌」調性，帶米白暖灰、有灰色中間調。
+// - lineart 是「純黑線 + 純白底」的速寫本，零彩色、零中間灰，只有黑與白，
+//   像參考圖那種 1,600 minimal illustrations 的細線手繪插畫。
+//
+// 組件選擇邏輯（全部追求乾淨線稿、零裝飾）：
+// - skin: flat — 無陰影、無玻璃折射，最貼近紙上線稿的扁平乾淨。
+// - shape: rounded-square — 微圓角方形，像速寫本邊框，比純 square 柔一點。
+// - standardLayout: lineart — 純白底＋黑細線速寫皮膚，最貼近參考線稿。
+// - clockStyle: lineart — 純白底黑細線時鐘，呼應手繪線條的纖細。
+// - habitLayout: heatmap — 黑白方格，像速寫本上的網格筆記。
+const lineartPack: ThemePack = {
+  id: "lineart",
+  name: "線描插畫",
+  icon: "lineart",
+  description: "純黑細線手繪、大片留白、速寫本上的極簡塗鴉。",
+  preview: "linear-gradient(135deg, #FFFFFF 0%, #FFFFFF 55%, #1A1A1A 100%)",
+  colors: {
+    primary: "#1A1A1A",          // 純黑墨線
+    primaryLight: "#3D3D3D",     // 淡墨（hover）
+    secondary: "#1A1A1A",        // 次要也用黑，維持純粹黑白
+    background: "#FFFFFF",       // 純白紙
+    surface: "#FFFFFF",          // 純白卡片
+    surfaceHover: "#F5F5F5",     // 極淡灰（僅互動回饋）
+    text: "#1A1A1A",             // 黑墨字
+    textSecondary: "#4A4A4A",
+    textMuted: "#9A9A9A",
+    border: "#1A1A1A",           // 黑線邊框（呼應線稿描邊）
+    shadow: "rgba(0, 0, 0, 0.08)",
+    success: "#1A1A1A",
+    error: "#1A1A1A",
+    warning: "#1A1A1A",
+  },
+  skin: "flat",
+  shape: "rounded-square",
+  wallpaper: {
+    type: "color",
+    // 純白紙底，讓黑色線稿組件像畫在速寫本上
+    value: "#FFFFFF",
+    blur: 0,
+    opacity: 100,
+    overlay: "transparent",
+  },
+  widgets: {
+    standardLayout: "lineart",
+    clockStyle: "lineart",
+    habitLayout: "heatmap",
+    // 音樂播放器：黑膠唱片改用線描黑白皮膚
+    vinylStyle: "lineart",
+    // 世界書：線描黑白書架
+    worldBookLayout: "lineart",
   },
 };
 
@@ -374,6 +456,7 @@ export const themePacks: ThemePack[] = [
   journalPack,
   monoPack,
   pearlPack,
+  lineartPack,
 ];
 
 /**

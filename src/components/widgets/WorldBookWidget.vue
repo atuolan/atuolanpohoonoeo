@@ -46,7 +46,7 @@ const containerStyle = computed(() => {
   const style = props.data?.customStyle;
   if (!style) return {};
 
-  if (style.layout === "pearl") {
+  if (style.layout === "pearl" || style.layout === "lineart") {
     return {};
   }
 
@@ -66,11 +66,17 @@ const containerStyle = computed(() => {
 
 const textStyle = computed(() => {
   const style = props.data?.customStyle;
-  if (style?.layout === "pearl") return {};
+  if (style?.layout === "pearl" || style?.layout === "lineart") return {};
   if (style?.textColor) return { color: style.textColor };
   if (style?.foregroundColor) return { color: style.foregroundColor };
   return {};
 });
+
+// lineart 時不套用書脊的彩色封面，改由 CSS 統一黑白
+const isLineart = computed(() => props.data?.customStyle?.layout === "lineart");
+function bookSpineStyle(cover: string) {
+  return isLineart.value ? {} : { background: cover };
+}
 
 // 載入世界書
 onMounted(() => {
@@ -86,8 +92,8 @@ onMounted(() => {
     :style="containerStyle"
     :class="currentLayout"
   >
-    <!-- 風格 1: Shelf (書架模式 - 預設) -->
-    <template v-if="currentLayout === 'shelf'">
+    <!-- 風格 1: Shelf (書架模式 - 預設) / Lineart (線描黑白書架) -->
+    <template v-if="currentLayout === 'shelf' || currentLayout === 'lineart'">
       <div class="shelf-header">
         <span class="shelf-title" :style="textStyle">我的世界書</span>
         <button class="more-btn"><MoreHorizontal :size="16" /></button>
@@ -98,7 +104,7 @@ onMounted(() => {
             v-for="book in books"
             :key="book.id"
             class="book-spine"
-            :style="{ background: book.cover }"
+            :style="bookSpineStyle(book.cover)"
           >
             <span class="book-spine-title">{{ book.shortTitle }}</span>
           </div>
@@ -591,6 +597,161 @@ onMounted(() => {
       z-index: 1;
       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
       border: 1px solid rgba(255, 206, 5, 0.2);
+
+      &::before {
+        display: none;
+      }
+    }
+  }
+
+  // 線描風（純白底＋黑細線速寫書架）
+  &.lineart {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border: 1.5px solid #1a1a1a;
+    border-radius: 14px;
+    box-shadow: none;
+
+    &:hover {
+      transform: none;
+      box-shadow: none;
+    }
+
+    .shelf-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+
+      .shelf-title {
+        font-family: 'Noto Serif TC', Georgia, serif;
+        font-size: 16px;
+        font-weight: 500;
+        color: #1a1a1a;
+        background: #ffffff;
+        padding: 2px 10px;
+        border-radius: 999px;
+        border: 1.5px solid #1a1a1a;
+        box-shadow: none;
+      }
+
+      .more-btn {
+        background: #ffffff;
+        border: 1.5px solid #1a1a1a;
+        border-radius: 8px;
+        box-shadow: none;
+        color: #1a1a1a;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+
+        &:hover {
+          background: #1a1a1a;
+          color: #ffffff;
+          transform: none;
+          box-shadow: none;
+        }
+      }
+    }
+
+    .bookshelf {
+      flex: 1;
+      display: flex;
+      align-items: flex-end;
+      gap: 6px;
+      padding-bottom: 4px;
+      overflow-x: auto;
+
+      &::-webkit-scrollbar {
+        height: 4px;
+      }
+      &::-webkit-scrollbar-thumb {
+        background: #1a1a1a;
+        border-radius: 3px;
+      }
+
+      .book-spine {
+        width: 28px;
+        height: 85%;
+        background: #ffffff !important;
+        border: 1.5px solid #1a1a1a;
+        border-radius: 3px 3px 0 0;
+        position: relative;
+        cursor: pointer;
+        transition: transform 0.2s ease;
+        box-shadow: none;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-shrink: 0;
+        overflow: hidden;
+        writing-mode: vertical-rl;
+
+        &::before,
+        &::after {
+          display: none;
+        }
+
+        &:hover {
+          transform: translateY(-6px);
+          box-shadow: none;
+        }
+
+        &:nth-child(even) {
+          height: 90%;
+        }
+        &:nth-child(3n) {
+          height: 80%;
+        }
+
+        .book-spine-title {
+          writing-mode: vertical-rl;
+          font-family: 'Noto Serif TC', Georgia, serif;
+          font-size: 11px;
+          font-weight: 500;
+          color: #1a1a1a;
+          text-shadow: none;
+          letter-spacing: 2px;
+          white-space: nowrap;
+          overflow: hidden;
+          max-height: 90%;
+          text-overflow: ellipsis;
+        }
+      }
+
+      .empty-shelf {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        gap: 6px;
+        opacity: 0.7;
+        color: #1a1a1a;
+
+        span {
+          font-family: 'Noto Serif TC', Georgia, serif;
+          font-size: 13px;
+          font-weight: 500;
+        }
+      }
+    }
+
+    .shelf-wood {
+      height: 6px;
+      background: #1a1a1a;
+      border: none;
+      border-radius: 2px;
+      margin-top: 0;
+      z-index: 10;
+      position: relative;
+      box-shadow: none;
 
       &::before {
         display: none;

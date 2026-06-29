@@ -127,7 +127,7 @@ const containerStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
 
-  if (customStyle?.layout === "pearl") {
+  if (customStyle?.layout === "pearl" || customStyle?.layout === "lineart") {
     return style;
   }
 
@@ -150,7 +150,7 @@ const textStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
 
-  if (customStyle?.layout === "pearl") {
+  if (customStyle?.layout === "pearl" || customStyle?.layout === "lineart") {
     return style;
   }
 
@@ -649,6 +649,39 @@ const currentLayout = computed(() => {
         &.today { background: #FFCE05; color: #332D4B; font-weight: 700; }
         &.holiday:not(.today) { color: #FF8E6E; }
         &:not(.other-month):not(.today):hover { border-color: #4783DE; background: rgba(71,131,222,0.25); }
+      }
+    }
+  }
+
+  // 線描插畫風（純白底 + 黑細線手繪 + 零彩色）
+  &.lineart {
+    background: #ffffff;
+    border: 1.5px solid #1a1a1a;
+    border-radius: 14px;
+    box-shadow: none;
+
+    .calendar-header {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-shrink: 0;
+      .nav-btn {
+        width: 26px; height: 26px; min-width: 26px; border-radius: 50%; border: 1.5px solid #1a1a1a; display: flex; align-items: center; justify-content: center; color: #1a1a1a; background: transparent; transition: all 0.2s; flex-shrink: 0;
+        &:hover { background: #1a1a1a; color: #ffffff; }
+      }
+      .month-year { font-size: 14px; font-weight: 600; color: #1a1a1a; cursor: pointer; white-space: nowrap; padding: 4px 12px; }
+    }
+
+    .weekdays {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 6px; flex-shrink: 0;
+      .weekday { text-align: center; font-size: 11px; font-weight: 600; color: rgba(26,26,26,0.55); text-transform: uppercase; }
+    }
+
+    .days-grid {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; flex: 1; min-height: 0;
+      .day {
+        display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; color: #1a1a1a; border-radius: 50%; border: 1px solid transparent; aspect-ratio: 1; transition: all 0.2s; cursor: default;
+        &.other-month { color: rgba(26,26,26,0.25); }
+        &.today { border-color: #1a1a1a; font-weight: 700; }
+        &.holiday:not(.today) { text-decoration: underline; text-underline-offset: 2px; }
+        &:not(.other-month):not(.today):hover { border-color: #1a1a1a; }
       }
     }
   }

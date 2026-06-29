@@ -59,7 +59,7 @@ const weatherIconComponent = computed(() => {
 const backgroundStyle = computed(() => {
   const customStyle = props.data?.customStyle;
 
-  if (customStyle?.layout === "pearl") {
+  if (customStyle?.layout === "pearl" || customStyle?.layout === "lineart") {
     return {};
   }
 
@@ -92,7 +92,11 @@ const backgroundStyle = computed(() => {
 });
 
 const textClass = computed(() => {
-  if (props.data?.customStyle?.layout === "pearl") return "";
+  if (
+    props.data?.customStyle?.layout === "pearl" ||
+    props.data?.customStyle?.layout === "lineart"
+  )
+    return "";
   if (
     props.data?.customStyle?.textColor ||
     props.data?.customStyle?.foregroundColor
@@ -105,7 +109,11 @@ const textClass = computed(() => {
 
 const textStyle = computed(() => {
   const style: Record<string, string> = {};
-  if (props.data?.customStyle?.layout === "pearl") return style;
+  if (
+    props.data?.customStyle?.layout === "pearl" ||
+    props.data?.customStyle?.layout === "lineart"
+  )
+    return style;
   if (props.data?.customStyle?.textColor) {
     style.color = props.data.customStyle.textColor;
   } else if (props.data?.customStyle?.foregroundColor) {
@@ -702,6 +710,137 @@ const currentLayout = computed(() => {
     .error-state .retry-btn {
       margin-top: 8px; padding: 6px 16px; background: #4783DE; color: #F8F6F0; border: 1px solid #FFCE05; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s;
       &:hover { background: #FFCE05; color: #332D4B; }
+    }
+  }
+
+  // 線描插畫風（純白底 + 黑細線手繪 + 零彩色）
+  &.lineart {
+    background: #ffffff;
+    border: 1.5px solid #1a1a1a;
+    border-radius: 14px;
+    box-shadow: none;
+    color: #1a1a1a;
+    font-family: 'Noto Serif TC', Georgia, serif;
+
+    .weather-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+
+      .location {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 13px;
+        font-weight: 500;
+        color: #1a1a1a;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+
+        svg { flex-shrink: 0; }
+        span {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+      }
+
+      .refresh-btn {
+        background: transparent;
+        border: none;
+        padding: 4px;
+        cursor: pointer;
+        color: #1a1a1a;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.2s;
+        flex-shrink: 0;
+
+        &.refreshing svg { animation: spin 1s linear infinite; }
+      }
+    }
+
+    .weather-main {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      flex: 1;
+      min-height: 0;
+
+      .weather-icon {
+        flex-shrink: 0;
+        color: #1a1a1a;
+      }
+
+      .temperature {
+        font-size: 44px;
+        font-weight: 400;
+        letter-spacing: -1px;
+        color: #1a1a1a;
+        line-height: 1;
+      }
+    }
+
+    .weather-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 500;
+      flex-shrink: 0;
+      background: transparent;
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      border-radius: 0;
+      padding-top: 6px;
+      color: #1a1a1a;
+
+      .condition {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: #1a1a1a;
+      }
+
+      .humidity {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+        color: #1a1a1a;
+      }
+    }
+
+    .loading-state,
+    .error-state,
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      font-size: 13px;
+      color: #1a1a1a;
+    }
+
+    .empty-state { cursor: pointer; }
+
+    .error-state .retry-btn {
+      margin-top: 8px;
+      padding: 6px 16px;
+      background: #ffffff;
+      color: #1a1a1a;
+      border: 1.5px solid #1a1a1a;
+      border-radius: 20px;
+      cursor: pointer;
+      &:hover { background: #1a1a1a; color: #ffffff; }
     }
   }
 }

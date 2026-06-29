@@ -59,8 +59,8 @@ const containerStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
 
-  // 珍珠風格由 SCSS 完整控制配色，不套用 inline 背景，避免覆蓋深紫底
-  if (customStyle?.layout === "pearl") {
+  // 珍珠／線描風格由 SCSS 完整控制配色，不套用 inline 背景
+  if (customStyle?.layout === "pearl" || customStyle?.layout === "lineart") {
     return style;
   }
 
@@ -83,8 +83,8 @@ const textStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
 
-  // 珍珠風格文字色由 SCSS 控制（畫布白），不套用 inline 文字色
-  if (customStyle?.layout === "pearl") {
+  // 珍珠／線描風格文字色由 SCSS 控制，不套用 inline 文字色
+  if (customStyle?.layout === "pearl" || customStyle?.layout === "lineart") {
     return style;
   }
 
@@ -536,5 +536,74 @@ const currentLayout = computed(() => {
     }
   }
 }
+
+  // 線描插畫風（純白底 + 黑細線手繪 + 零彩色）
+  &.lineart {
+    padding: 16px;
+    background: #ffffff;
+    border: 1.5px solid #1a1a1a;
+    border-radius: 14px;
+    box-shadow: none;
+
+    .quote-icon {
+      color: #1a1a1a;
+      margin-bottom: 8px;
+    }
+
+    .quote-text {
+      flex: 1;
+      width: 100%;
+      min-height: 40px;
+      border: none;
+      background: transparent;
+      resize: none;
+      font-size: 14px;
+      line-height: 1.7;
+      color: #1a1a1a;
+      overflow-y: auto;
+      font-family: "Noto Serif TC", serif;
+
+      &::placeholder {
+        color: rgba(26, 26, 26, 0.35);
+      }
+      &:focus {
+        outline: none;
+      }
+    }
+
+    .quote-author {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 12px;
+      flex-shrink: 0;
+      justify-content: flex-end;
+      align-self: flex-end;
+
+      .dash {
+        color: #1a1a1a;
+        font-weight: 500;
+        font-size: 14px;
+      }
+
+      .author-input {
+        width: 100%;
+        max-width: 100px;
+        border: none;
+        border-bottom: 1px solid #1a1a1a;
+        background: transparent;
+        font-size: 12px;
+        color: #1a1a1a;
+        text-align: right;
+
+        &::placeholder {
+          color: rgba(26, 26, 26, 0.35);
+        }
+        &:focus {
+          outline: none;
+        }
+      }
+    }
+  }
 }
 </style>

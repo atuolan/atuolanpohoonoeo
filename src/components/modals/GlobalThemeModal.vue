@@ -85,6 +85,7 @@ const iconChoices: ThemePackIconId[] = [
   "ocean",
   "forest",
   "sakura",
+  "lineart",
 ];
 
 // 把 blob: URL / Object URL 轉成 Base64（用於匯出時嵌入背景圖）

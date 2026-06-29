@@ -71,7 +71,7 @@ const containerStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
 
-  if (customStyle?.layout === "pearl") {
+  if (customStyle?.layout === "pearl" || customStyle?.layout === "lineart") {
     return style;
   }
 
@@ -94,7 +94,7 @@ const textStyle = computed(() => {
   const style: Record<string, string> = {};
   const customStyle = props.data?.customStyle;
 
-  if (customStyle?.layout === "pearl") {
+  if (customStyle?.layout === "pearl" || customStyle?.layout === "lineart") {
     return style;
   }
 
@@ -148,15 +148,6 @@ const currentLayout = computed(() => {
       </button>
     </div>
 
-    <!-- 文字區域 -->
-    <div class="caption-area">
-      <input
-        v-model="caption"
-        type="text"
-        class="caption-input"
-        placeholder="寫點什麼..."
-      />
-    </div>
   </div>
 </template>
 
@@ -637,6 +628,45 @@ const currentLayout = computed(() => {
         }
 
         &:focus { outline: none; border-bottom-color: #FFCE05; }
+      }
+    }
+  }
+
+  // 線描插畫風（純白底 + 黑細線手繪 + 零彩色）
+  &.lineart {
+    padding: 12px;
+    background: #ffffff;
+    border: 1.5px solid #1a1a1a;
+    border-radius: 4px;
+    box-shadow: none;
+
+    .photo-area {
+      background: #ffffff;
+      border: 1.5px solid #1a1a1a;
+      border-radius: 2px;
+
+      .placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        color: #1a1a1a;
+
+        span {
+          font-size: 12px;
+          font-weight: 500;
+        }
+      }
+
+      .photo {
+        filter: grayscale(1) contrast(1.05);
+      }
+
+      .change-btn {
+        background: #ffffff;
+        border: 1.5px solid #1a1a1a;
+        color: #1a1a1a;
+        border-radius: 4px;
       }
     }
   }
