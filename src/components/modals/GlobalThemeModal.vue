@@ -229,9 +229,17 @@ async function confirmSavePack() {
   applyThemePackStatus.value = `已儲存「${pack.name}」到主題包庫`;
 }
 
-// 刪除自訂主題包
+// 刪除自訂主題包（二次確認）
 function deleteCustomPack(pack: ThemePack) {
+  // 第一次確認
   if (!window.confirm(`確定要刪除主題包「${pack.name}」嗎？`)) return;
+  // 第二次確認（避免誤刪）
+  if (
+    !window.confirm(
+      `再次確認：刪除後「${pack.name}」將無法復原，確定要刪除嗎？`,
+    )
+  )
+    return;
   themeStore.removeCustomThemePack(pack.id);
   applyThemePackStatus.value = `已刪除「${pack.name}」`;
 }
@@ -2123,8 +2131,8 @@ body {
 // 主題包網格
 .theme-pack-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
   width: 100%;
 }
 
@@ -2133,8 +2141,8 @@ body {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  padding: 7px;
   background: var(--color-surface);
   border: 1.5px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -2230,6 +2238,12 @@ body {
   &:hover {
     background: var(--color-error);
     transform: scale(1.1);
+  }
+
+  // 觸控裝置沒有 hover，刪除鈕常駐顯示
+  @media (hover: none) {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.45);
   }
 }
 
