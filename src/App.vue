@@ -50,6 +50,7 @@ import {
   ThemeSettingsModal,
 } from "@/components/modals";
 import GlobalThemeModal from "@/components/modals/GlobalThemeModal.vue";
+import HomeGlobalThemeTutorialOverlay from "@/components/common/HomeGlobalThemeTutorialOverlay.vue";
 import ThemeTutorialOverlay from "@/components/common/ThemeTutorialOverlay.vue";
 import FoodLogManager from "@/components/modals/FoodLogManager.vue";
 import MediaLogManager from "@/components/modals/MediaLogManager.vue";
@@ -2869,6 +2870,12 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
 
     <!-- 主題教學引導（僅聊天頁面首次顯示，必須在 Modal 後面才能蓋住它） -->
     <ThemeTutorialOverlay v-if="currentPage === 'chat'" :theme-settings-open="showThemeSettings" />
+
+    <!-- 首頁全局設定教學：引導長按核心按鈕 -->
+    <HomeGlobalThemeTutorialOverlay
+      v-if="currentPage === 'home' && authStore.isAuthenticated"
+      :global-theme-open="showGlobalTheme"
+    />
 
     <!-- 全局美化配置彈窗 -->
     <GlobalThemeModal

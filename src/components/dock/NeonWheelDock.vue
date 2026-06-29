@@ -299,9 +299,14 @@ function onCoreLongPress() {
 
 // 長按計時器
 let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+let suppressNextCoreClick = false;
 
 function onCorePointerDown() {
+  suppressNextCoreClick = false;
+  if (longPressTimer) clearTimeout(longPressTimer);
+
   longPressTimer = setTimeout(() => {
+    suppressNextCoreClick = true;
     onCoreLongPress();
     longPressTimer = null;
   }, 500);
@@ -314,6 +319,15 @@ function onCorePointerUp() {
   }
 }
 
+function onCoreClickAfterPointer() {
+  if (suppressNextCoreClick) {
+    suppressNextCoreClick = false;
+    return;
+  }
+
+  onCoreClick();
+}
+
 // 點擊 dock 項目
 function onItemClick(item: (typeof dockItems)[0]) {
   console.log("點擊:", item.label);
@@ -324,6 +338,7 @@ onUnmounted(() => {
   if (animationId) cancelAnimationFrame(animationId);
   if (collapseAnimationId) cancelAnimationFrame(collapseAnimationId);
   if (railMoveRafId) cancelAnimationFrame(railMoveRafId);
+  if (longPressTimer) clearTimeout(longPressTimer);
   latestRailMoveEvent = null;
   unbindRailPointerListeners();
 });
@@ -364,10 +379,12 @@ onUnmounted(() => {
     <!-- 中央按鈕 -->
     <button
       class="core-btn"
-      @click="onCoreClick"
+      @click="onCoreClickAfterPointer"
       @pointerdown="onCorePointerDown"
       @pointerup="onCorePointerUp"
       @pointerleave="onCorePointerUp"
+      @pointercancel="onCorePointerUp"
+      @contextmenu.prevent
     >
       <LayoutGrid :size="28" :stroke-width="1.5" color="#1f2937" />
     </button>
