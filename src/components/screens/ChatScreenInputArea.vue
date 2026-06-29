@@ -1144,25 +1144,32 @@ const isDarkBackground = computed(() =>
   box-sizing: border-box;
   padding: 6px 10px;
   border-radius: 22px;
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 85%, transparent) 0%,
-    color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 40%, transparent) 100%
-  );
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  // 半透明色票（如 pearl 主題 surface 只有 12% alpha）疊在不透明底色上，避免聊天內容透出輸入區。
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 94%, transparent) 0%,
+      color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 78%, transparent) 100%
+    ),
+    var(--color-background, #1a1a2e);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  box-shadow:
+    0 12px 34px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
 
   // 深色背景：將輸入區的文字、placeholder、按鈕色調切換為亮色
   &.dark-bg {
     background: linear-gradient(
       135deg,
-      rgba(255, 255, 255, 0.18) 0%,
-      rgba(255, 255, 255, 0.08) 100%
+      rgba(255, 255, 255, 0.3) 0%,
+      rgba(255, 255, 255, 0.18) 100%
     );
-    border-color: rgba(255, 255, 255, 0.22);
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+    border-color: rgba(255, 255, 255, 0.36);
+    box-shadow:
+      0 12px 34px rgba(0, 0, 0, 0.34),
+      inset 0 1px 0 rgba(255, 255, 255, 0.28);
 
     .message-input {
       color: #ffffff;

@@ -12314,7 +12314,18 @@ useChatCleanup({
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  background: var(--color-surface);
+  // 半透明色票（如 pearl 主題 surface 僅 12% alpha）疊在不透明底色上，
+  // 避免聊天內容透出下拉選單，並加上毛玻璃模糊做區隔。
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--color-surface) 94%, transparent) 0%,
+      color-mix(in srgb, var(--color-surface) 82%, transparent) 100%
+    ),
+    var(--color-background, #1a1a2e);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid color-mix(in srgb, var(--color-border) 68%, transparent);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
   overflow-y: auto;

@@ -618,11 +618,15 @@ const isDarkBackground = computed(() =>
 
 <style lang="scss" scoped>
 .chat-header {
-  --chat-header-panel-bg: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 85%, transparent) 0%,
-    color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 40%, transparent) 100%
-  );
+  // 半透明色票（如 pearl 主題的 surface 只有 12% alpha）疊在不透明底色上，
+  // 才能避免聊天內容透出面板。底層用主題的不透明 --color-background 當隔離層。
+  --chat-header-panel-bg:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 94%, transparent) 0%,
+      color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 78%, transparent) 100%
+    ),
+    var(--color-background, #1a1a2e);
   display: flex;
   align-items: center;
   min-width: 0;
@@ -634,10 +638,12 @@ const isDarkBackground = computed(() =>
   box-sizing: border-box;
   border-radius: 20px;
   background: var(--chat-header-panel-bg);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  box-shadow:
+    0 12px 34px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
   gap: 10px;
   flex-shrink: 0;
   overflow: visible;
@@ -652,12 +658,14 @@ const isDarkBackground = computed(() =>
   &.dark-bg {
     --chat-header-panel-bg: linear-gradient(
       135deg,
-      color-mix(in srgb, var(--chat-header-surface, rgba(255, 255, 255, 0.18)) 85%, transparent) 0%,
-      color-mix(in srgb, var(--chat-header-surface, rgba(255, 255, 255, 0.08)) 40%, transparent) 100%
+      color-mix(in srgb, var(--chat-header-surface, rgba(255, 255, 255, 0.3)) 92%, transparent) 0%,
+      color-mix(in srgb, var(--chat-header-surface, rgba(255, 255, 255, 0.18)) 76%, transparent) 100%
     );
     background: var(--chat-header-panel-bg);
-    border-color: rgba(255, 255, 255, 0.22);
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+    border-color: rgba(255, 255, 255, 0.36);
+    box-shadow:
+      0 12px 34px rgba(0, 0, 0, 0.34),
+      inset 0 1px 0 rgba(255, 255, 255, 0.28);
 
     .chat-name {
       color: var(--chat-header-text, #ffffff);
@@ -1187,9 +1195,21 @@ const isDarkBackground = computed(() =>
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  background: var(--chat-header-surface, var(--color-surface));
+  // 半透明色票疊在不透明底色上，避免聊天內容透出下拉選單。
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 94%, transparent) 0%,
+      color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 82%, transparent) 100%
+    ),
+    var(--color-background, #1a1a2e);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid color-mix(in srgb, var(--color-border) 68%, transparent);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg);
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42);
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 180px;
