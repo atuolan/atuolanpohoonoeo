@@ -41,6 +41,14 @@ const hoursStr = computed(() => String(hours.value).padStart(2, "0"));
 const minutesStr = computed(() => String(minutes.value).padStart(2, "0"));
 const secondsStr = computed(() => String(seconds.value).padStart(2, "0"));
 
+// 12 小時制與 AM/PM（模擬時鐘數位顯示用）
+const hours12 = computed(() => {
+  const h = hours.value % 12;
+  return h === 0 ? 12 : h;
+});
+const hours12Str = computed(() => String(hours12.value).padStart(2, "0"));
+const ampm = computed(() => (hours.value < 12 ? "AM" : "PM"));
+
 // 格式化日期
 const formattedDate = computed(() => {
   const month = now.value.getMonth() + 1;
@@ -113,12 +121,12 @@ const orbitSecondPos = computed(() =>
 );
 function getMarkerStyle(i: number) {
   const angle = (i * 30 - 90) * (Math.PI / 180);
-  const x = 50 + 38 * Math.cos(angle);
-  const y = 50 + 38 * Math.sin(angle);
+  const x = 50 + 40 * Math.cos(angle);
+  const y = 50 + 40 * Math.sin(angle);
   return {
     left: `${x}%`,
     top: `${y}%`,
-    transform: "translate(-50%, -50%)",
+    transform: `translate(-50%, -50%) rotate(${i * 30}deg)`,
   };
 }
 
@@ -427,16 +435,19 @@ const hasCustomBackground = computed(() => {
 
     <!-- ===== 模擬時鐘 (Analog) ===== -->
     <template v-else-if="clockStyle === 'analog'">
-      <div class="analog-clock" :style="textStyle">
+      <div
+        class="analog-clock"
+        :class="{ 'analog-dark': themeStore.isWallpaperDark }"
+        :style="textStyle"
+      >
         <div class="clock-face">
           <div
             v-for="i in 12"
+            v-show="i % 3 === 0"
             :key="'marker-' + i"
             class="hour-marker"
-            :class="{ quarter: i % 3 === 0 }"
             :style="getMarkerStyle(i)"
           />
-          <div class="center-dot"></div>
           <div
             class="hand hour-hand"
             :style="{ transform: `rotate(${hoursAngle}deg)` }"
@@ -450,8 +461,15 @@ const hasCustomBackground = computed(() => {
             class="hand second-hand"
             :style="{ transform: `rotate(${secondsAngle}deg)` }"
           ></div>
+          <div class="center-dot"></div>
         </div>
-        <div v-if="showDate" class="analog-date">{{ formattedDate }}</div>
+        <div class="analog-info">
+          <div class="analog-digital">
+            <span class="analog-time">{{ hours12Str }}:{{ minutesStr }}</span>
+            <span class="analog-ampm">{{ ampm }}</span>
+          </div>
+          <div v-if="showDate" class="analog-date">{{ formattedDate }}</div>
+        </div>
       </div>
     </template>
 
@@ -1109,47 +1127,54 @@ const hasCustomBackground = computed(() => {
   justify-content: center;
   width: 100%;
   height: 100%;
+  gap: 4cqmin;
+
+  /* 柔和擬物（neumorphism）配色 — 淺色預設 */
+  --clock-face: #eaecf3;
+  --clock-shadow-light: rgba(255, 255, 255, 0.95);
+  --clock-shadow-dark: rgba(166, 166, 166, 0.45);
+  --hand-color: #000000;
+  --accent-color: #3f3db6;
+  --marker-color: #9e9fa6;
+  --center-ring: #ffffff;
+  --analog-text: #000000;
+  --analog-date-color: #605e65;
+
+  &.analog-dark {
+    --clock-face: #2d3038;
+    --clock-shadow-light: rgba(255, 255, 255, 0.06);
+    --clock-shadow-dark: rgba(0, 0, 0, 0.5);
+    --hand-color: #f1f3f7;
+    --accent-color: #8f8df5;
+    --marker-color: #565b69;
+    --center-ring: #2d3038;
+    --analog-text: #f1f3f7;
+    --analog-date-color: #888d9b;
+  }
 
   .clock-face {
     position: relative;
-    width: min(140px, 80%);
-    height: min(140px, 80%);
+    /* 以容器較短邊為基準縮放，並設上限避免過大 */
+    width: min(150px, 52cqmin);
+    height: min(150px, 52cqmin);
+    max-width: 100%;
+    max-height: 100%;
+    flex-shrink: 0;
     aspect-ratio: 1;
     border-radius: 50%;
-    background: linear-gradient(
-      135deg,
-      rgba(0, 0, 0, 0.1) 0%,
-      rgba(0, 0, 0, 0.05) 100%
-    );
-    backdrop-filter: blur(10px);
-    border: 3px solid rgba(0, 0, 0, 0.2);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    background: var(--clock-face);
+    box-shadow:
+      -7px -7px 16px var(--clock-shadow-light),
+      7px 7px 18px var(--clock-shadow-dark),
+      inset 1px 1px 2px rgba(255, 255, 255, 0.35);
   }
 
   .hour-marker {
     position: absolute;
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: rgba(0, 0, 0, 0.5);
-
-    &.quarter {
-      width: 7px;
-      height: 7px;
-    }
-  }
-
-  .center-dot {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 10px;
-    height: 10px;
-    background: #374151;
-    border-radius: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 20;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    width: 2px;
+    height: 9px;
+    border-radius: 2px;
+    background: var(--marker-color);
   }
 
   .hand {
@@ -1161,34 +1186,128 @@ const hasCustomBackground = computed(() => {
   }
 
   .hour-hand {
-    width: 25%;
+    width: 26%;
     height: 4px;
-    background: #374151;
+    background: var(--hand-color);
     transform: translate(0, -2px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    z-index: 12;
   }
 
   .minute-hand {
-    width: 35%;
+    width: 37%;
     height: 3px;
-    background: #6b7280;
+    background: var(--hand-color);
     transform: translate(0, -1.5px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+    z-index: 13;
   }
 
   .second-hand {
-    width: 38%;
-    height: 1.5px;
-    background: #f472b6;
-    transform: translate(0, -0.75px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    width: 40%;
+    height: 2px;
+    background: var(--accent-color);
+    transform: translate(0, -1px);
+    border-radius: 2px;
+    z-index: 14;
+
+    &::after {
+      content: "";
+      position: absolute;
+      right: 100%;
+      top: 50%;
+      width: 24%;
+      height: 2px;
+      background: var(--accent-color);
+      border-radius: 2px;
+      transform: translateY(-50%);
+    }
+  }
+
+  .center-dot {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 9px;
+    height: 9px;
+    background: var(--accent-color);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 20;
+    box-shadow: 0 0 0 2px var(--center-ring);
+  }
+
+  .analog-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5cqmin;
+    min-width: 0;
+  }
+
+  .analog-digital {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    color: var(--analog-text);
+    line-height: 1;
+    font-family: "Poppins", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  .analog-time {
+    /* 改用 cqmin，避免寬扁容器中字級爆大 */
+    font-size: clamp(20px, 16cqmin, 48px);
+    font-weight: 400;
+    letter-spacing: 0.5px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .analog-ampm {
+    font-size: clamp(9px, 5cqmin, 18px);
+    font-weight: 400;
+    opacity: 0.8;
+    margin-top: 2px;
   }
 
   .analog-date {
-    margin-top: 12px;
-    font-size: clamp(9px, 4cqw, 14px);
-    opacity: 0.7;
-    letter-spacing: 1px;
+    font-size: clamp(8px, 4cqmin, 14px);
+    font-family: "Poppins", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-weight: 400;
+    color: var(--analog-date-color);
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+  }
+}
+
+/* 寬扁容器（橫幅）：切換為橫向佈局，時鐘在左、時間/日期在右 */
+@container (min-aspect-ratio: 7 / 5) {
+  .analog-clock {
+    flex-direction: row;
+    gap: 6cqmin;
+
+    .clock-face {
+      /* 寬扁時 cqmin = 高度，讓錶面吃滿約 90% 可用高度 */
+      width: min(220px, 90cqmin);
+      height: min(220px, 90cqmin);
+    }
+
+    .analog-info {
+      align-items: flex-start;
+    }
+
+    .analog-time {
+      font-size: clamp(20px, 30cqmin, 52px);
+    }
+
+    .analog-ampm {
+      font-size: clamp(9px, 9cqmin, 18px);
+    }
+
+    .analog-date {
+      font-size: clamp(8px, 7cqmin, 14px);
+    }
   }
 }
 
@@ -1348,8 +1467,10 @@ const hasCustomBackground = computed(() => {
 
   .progress-rings {
     position: relative;
-    width: min(160px, 70%);
-    height: min(160px, 70%);
+    width: min(160px, 70cqmin);
+    height: min(160px, 70cqmin);
+    max-width: 100%;
+    max-height: 100%;
     aspect-ratio: 1;
   }
 
