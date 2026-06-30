@@ -11,6 +11,7 @@ import { parseAffinityUpdateTags } from "@/services/ResponseParser";
 import { loadChatById, refreshChatDerivedMetadata } from "@/storage/chatStorage";
 import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
+import { traditionalToSimplified } from "@/data/zhConversionMap";
 import { computeChatNow } from "@/utils/fakeTime";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 import { defineStore } from "pinia";
@@ -98,9 +99,22 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   const ttsAvailable = ref(false);
   /** 聊天專屬 MiniMax 音色覆蓋（不設則用全域設定） */
   const ttsOverride = ref<{ voiceId?: string; speed?: number; pitch?: number; emotion?: string }>({});
-  // 語音播放基礎設施：單一 Audio 實例 + 播放序號（遞增即可中斷進行中的序列）
-  let currentAudio: HTMLAudioElement | null = null;
+  /** 最近一次 TTS 合成/播放錯誤訊息（供 UI 顯示，null = 無錯誤） */
+  const ttsError = ref<string | null>(null);
+  // 語音播放基礎設施：單一已解鎖的 Audio 實例 + 播放序號（遞增即可中斷進行中的序列）
+  // 在使用者手勢（接聽/撥打按鈕）內預先 play 一次來解鎖手機自動播放限制，之後重設 src 重用
+  let unlockedAudio: HTMLAudioElement | null = null;
+  let audioUnlocked = false;
   let playbackToken = 0;
+
+  /** 繁→簡轉換（MiniMax 對簡體發音較準，比照聊天路徑） */
+  function convertTTSContentToSimplified(text: string): string {
+    return text
+      .split("")
+      .map((char) => traditionalToSimplified[char] || char)
+      .join("");
+  }
+
 
   // UI 狀態：是否展開全屏（false = 縮小成迷你條）
   const isExpanded = ref(true);
@@ -273,36 +287,83 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     };
   }
 
-  /** 停止當前播放並使進行中的播放序列失效 */
-  function stopPlayback() {
-    playbackToken++;
-    if (currentAudio) {
-      try {
-        currentAudio.pause();
-        currentAudio.src = "";
-      } catch {
-        /* ignore */
+  /**
+   * 在使用者手勢（接聽/撥打按鈕）內解鎖音頻播放。
+   * 手機（尤其 iOS Safari）只允許在使用者手勢中啟動的 Audio 後續以程式播放，
+   * 因此這裡建立單一可重用的 Audio 元素並在手勢內 play 一次（用靜音檔），
+   * 之後自動語音只需重設這個元素的 src 即可繞過自動播放限制。
+   */
+  function unlockAudioPlayback() {
+    try {
+      if (!unlockedAudio) {
+        unlockedAudio = new Audio();
+        unlockedAudio.preload = "auto";
       }
-      currentAudio = null;
+      // 用內建靜音檔做一次手勢內播放來解鎖
+      unlockedAudio.src = "/silent.mp3";
+      const p = unlockedAudio.play();
+      if (p && typeof p.then === "function") {
+        p.then(() => {
+          audioUnlocked = true;
+        }).catch((e) => {
+          console.warn("[phoneCall] 音頻解鎖失敗（將於播放時重試）:", e);
+        });
+      } else {
+        audioUnlocked = true;
+      }
+    } catch (e) {
+      console.warn("[phoneCall] 音頻解鎖異常:", e);
     }
   }
 
-  /** 播放單一音頻並等待結束（可被 stopPlayback 中斷） */
+  /** 停止當前播放並使進行中的播放序列失效 */
+  function stopPlayback() {
+    playbackToken++;
+    if (unlockedAudio) {
+      try {
+        unlockedAudio.pause();
+        unlockedAudio.removeAttribute("src");
+        unlockedAudio.onended = null;
+        unlockedAudio.onerror = null;
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  /** 播放單一音頻並等待結束（可被 stopPlayback 中斷）。重用已解鎖的 Audio 元素。 */
   function playAudioUrl(url: string, token: number): Promise<void> {
     return new Promise((resolve) => {
       if (token !== playbackToken) {
         resolve();
         return;
       }
-      const audio = new Audio(url);
-      currentAudio = audio;
+      // 若尚未建立解鎖元素（例如非手勢觸發路徑），退而求其次建立新元素
+      if (!unlockedAudio) {
+        unlockedAudio = new Audio();
+        unlockedAudio.preload = "auto";
+      }
+      const audio = unlockedAudio;
+      let settled = false;
       const done = () => {
-        if (currentAudio === audio) currentAudio = null;
+        if (settled) return;
+        settled = true;
+        audio.onended = null;
+        audio.onerror = null;
         resolve();
       };
       audio.onended = done;
-      audio.onerror = done;
-      audio.play().catch(() => done());
+      audio.onerror = () => {
+        ttsError.value = "語音播放失敗";
+        console.warn("[phoneCall] 語音播放錯誤");
+        done();
+      };
+      audio.src = url;
+      audio.play().catch((e) => {
+        ttsError.value = "瀏覽器封鎖了自動播放，請點一下喇叭按鈕";
+        console.warn("[phoneCall] 自動播放被封鎖:", e);
+        done();
+      });
     });
   }
 
@@ -314,19 +375,26 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     try {
       const { useSettingsStore } = await import("@/stores");
       const settingsStore = useSettingsStore();
-      if (!settingsStore.minimaxTTS?.apiKey) return null;
+      if (!settingsStore.minimaxTTS?.apiKey) {
+        ttsError.value = "尚未設定 MiniMax API Key";
+        return null;
+      }
       const { synthesizeSpeech } = await import("@/api/MiniMaxTTSApi");
       const mergedSettings = getMergedTTSSettings(settingsStore);
       const emotion = msg.tone?.trim() || ttsOverride.value.emotion || undefined;
+      // 比照聊天路徑做繁→簡轉換，MiniMax 對簡體發音較準
+      const ttsText = convertTTSContentToSimplified(text);
       const result = await synthesizeSpeech(
-        text,
+        ttsText,
         mergedSettings,
         emotion ? { emotion } : undefined,
       );
       if (!result.success || !result.audioUrl) {
+        ttsError.value = `語音合成失敗：${result.error || "未知錯誤"}`;
         console.warn("[phoneCall] TTS 合成失敗:", result.error);
         return null;
       }
+      ttsError.value = null;
       // MiniMax 回傳的是簽名 URL（約 24h 後過期），立即下載轉 base64 保存
       let persistedUrl = result.audioUrl;
       try {
@@ -422,6 +490,11 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   async function startCall(info: ActiveCallInfo) {
     // 清理舊通話
     cleanup();
+
+    // 趁使用者手勢（撥打/接聽按鈕）尚未失效，立即解鎖音頻自動播放（手機限制）
+    // 必須在任何 await 之前同步呼叫，否則手勢上下文消失，後續自動語音會被封鎖
+    unlockAudioPlayback();
+    ttsError.value = null;
 
     activeCall.value = info;
     callState.value = "ringing";
@@ -649,8 +722,14 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   function toggleMuteState() { isMuted.value = !isMuted.value; }
   function toggleSpeakerState() {
     isSpeaker.value = !isSpeaker.value;
-    // 關閉自動語音時立即停止當前播放
-    if (!isSpeaker.value) stopPlayback();
+    if (isSpeaker.value) {
+      // 開啟喇叭是使用者手勢，趁機解鎖音頻自動播放（二次保險）
+      unlockAudioPlayback();
+      ttsError.value = null;
+    } else {
+      // 關閉自動語音時立即停止當前播放
+      stopPlayback();
+    }
   }
 
   // ===== 重新生成最後一輪 AI 回覆（移除尾端 AI 連續段後重生） =====
@@ -1356,7 +1435,7 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
 
   return {
     activeCall, callState, callMessages, callDuration, isGenerating,
-    rejectReason, isMuted, isSpeaker, ttsAvailable, isExpanded,
+    rejectReason, isMuted, isSpeaker, ttsAvailable, ttsError, isExpanded,
     videoConfig, videoSession,
     isActive, isVideoCallActive, formattedDuration, canRegenerateLastAi, canTriggerManualResponse,
     startCall, startVideoCall, endCall, sendMessage, addUserMessage, triggerAIResponse, handleAnswer, regenerateLastAiResponse,

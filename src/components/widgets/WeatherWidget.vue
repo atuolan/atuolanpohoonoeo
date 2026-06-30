@@ -392,9 +392,16 @@ const currentLayout = computed(() => {
         gap: 4px;
         font-size: 13px;
         font-weight: 800;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        min-width: 0;
+        flex: 1;
+
+        svg { flex-shrink: 0; }
+        span {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          min-width: 0;
+        }
       }
 
       .refresh-btn {
@@ -526,7 +533,12 @@ const currentLayout = computed(() => {
       background: white; padding: 6px 14px; border-radius: 9999px;
       border: 3px solid #332650; box-shadow: 0 4px 0px #332650; margin-bottom: 8px;
       
-      .location { display: flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 800; }
+      .location {
+        display: flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 800;
+        min-width: 0; flex: 1;
+        svg { flex-shrink: 0; }
+        span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      }
       .refresh-btn {
         background: transparent; border: none; padding: 2px; cursor: pointer; color: inherit; display: flex; align-items: center; justify-content: center; transition: transform 0.2s;
         &:hover { transform: rotate(45deg); }
@@ -581,7 +593,12 @@ const currentLayout = computed(() => {
 
     .weather-header {
       display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; margin-bottom: 8px;
-      .location { display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; background: white; border: 2px solid #1a1a1a; padding: 2px 8px; }
+      .location {
+        display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; background: white; border: 2px solid #1a1a1a; padding: 2px 8px;
+        min-width: 0; flex: 1; overflow: hidden;
+        svg { flex-shrink: 0; }
+        span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      }
       .refresh-btn {
         background: white; border: 2px solid #1a1a1a; padding: 2px; cursor: pointer; color: inherit; box-shadow: 2px 2px 0px #1a1a1a;
         &:active { box-shadow: 0px 0px 0px #1a1a1a; transform: translate(2px, 2px); }
@@ -632,7 +649,12 @@ const currentLayout = computed(() => {
 
     .weather-header {
       display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; margin-bottom: 8px; z-index: 1;
-      .location { display: flex; align-items: center; gap: 4px; font-size: 14px; font-weight: bold; background: white; border: 2px dashed #EAA3C5; padding: 2px 6px; }
+      .location {
+        display: flex; align-items: center; gap: 4px; font-size: 14px; font-weight: bold; background: white; border: 2px dashed #EAA3C5; padding: 2px 6px;
+        min-width: 0; flex: 1; overflow: hidden;
+        svg { flex-shrink: 0; }
+        span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      }
       .refresh-btn {
         background: white; border: 2px solid #EAA3C5; padding: 2px; cursor: pointer; color: inherit; box-shadow: 2px 2px 0px #F5C6DA;
         &:active { box-shadow: none; transform: translate(2px, 2px); }

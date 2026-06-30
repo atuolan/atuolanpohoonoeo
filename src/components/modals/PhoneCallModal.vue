@@ -80,11 +80,16 @@
                     <span v-if="msg.tone" class="message-tone"
                       >（{{ msg.tone }}）</span
                     >
-                    <span>{{ msg.content }}</span>
+                    <span>{{ displayContent(msg.content) }}</span>
                   </template>
                 </div>
               </div>
             </template>
+          </div>
+
+          <!-- TTS 錯誤提示（合成或自動播放失敗時顯示） -->
+          <div v-if="ttsError" class="tts-error-banner">
+            {{ ttsError }}
           </div>
 
           <!-- 語音輸入區域 -->
@@ -203,9 +208,15 @@
 
 <script setup lang="ts">
 import { usePhoneCallStore } from "@/stores/phoneCall";
+import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 const phoneCallStore = usePhoneCallStore();
+
+/** 顯示用：清除 TTS 標記（(chuckle)、<#0.5#>、[emotion=...] 等），避免原始標記外露 */
+function displayContent(content: string): string {
+  return cleanTTSTags(content || "");
+}
 
 // 本地 UI 狀態
 const inputText = ref("");
@@ -242,6 +253,7 @@ const isGenerating = computed(() => phoneCallStore.isGenerating);
 const isMuted = computed(() => phoneCallStore.isMuted);
 const isSpeaker = computed(() => phoneCallStore.isSpeaker);
 const ttsAvailable = computed(() => phoneCallStore.ttsAvailable);
+const ttsError = computed(() => phoneCallStore.ttsError);
 const rejectReason = computed(() => phoneCallStore.rejectReason);
 const formattedDuration = computed(() => phoneCallStore.formattedDuration);
 const canRegenerateLastAi = computed(() => phoneCallStore.canRegenerateLastAi);
