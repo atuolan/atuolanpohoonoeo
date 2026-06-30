@@ -1102,11 +1102,11 @@ export const useThemeStore = defineStore("theme", () => {
     if (skinPresets[pack.skin]) {
       currentSkin.value = pack.skin;
     }
-    // 桌布
+    // 桌布（優先使用 imageData 欄位，確保匯入時圖片不遺失）
     wallpaperStyle.value = {
       ...wallpaperStyle.value,
       type: pack.wallpaper.type,
-      value: pack.wallpaper.value,
+      value: pack.wallpaper.imageData || pack.wallpaper.value,
       blur: pack.wallpaper.blur ?? 0,
       opacity: pack.wallpaper.opacity ?? 100,
       overlay: pack.wallpaper.overlay ?? "transparent",
