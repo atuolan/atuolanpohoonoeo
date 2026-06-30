@@ -69,7 +69,22 @@
                 {{ msg.content }}
               </div>
               <!-- 用戶/AI 訊息氣泡 -->
-              <div v-else class="call-message" :class="msg.role">
+              <div
+                v-else
+                class="call-message"
+                :class="[
+                  msg.role,
+                  {
+                    playable: msg.role === 'ai' && !msg.isStreaming,
+                    playing: playingMessageId === msg.id,
+                  },
+                ]"
+                @click="
+                  msg.role === 'ai' && !msg.isStreaming
+                    ? playMessageAudio(msg.id)
+                    : null
+                "
+              >
                 <div class="message-content">
                   <span v-if="msg.isStreaming" class="streaming-indicator">
                     <span class="dot"></span>
@@ -81,6 +96,22 @@
                       >（{{ msg.tone }}）</span
                     >
                     <span>{{ displayContent(msg.content) }}</span>
+                    <span
+                      v-if="msg.role === 'ai' && ttsAvailable"
+                      class="play-icon"
+                      :title="playingMessageId === msg.id ? '停止播放' : '點擊播放語音'"
+                    >
+                      <svg
+                        v-if="playingMessageId === msg.id"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <path d="M6 6h4v12H6zm8 0h4v12h-4z" />
+                      </svg>
+                      <svg v-else viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </span>
                   </template>
                 </div>
               </div>
@@ -254,6 +285,12 @@ const isMuted = computed(() => phoneCallStore.isMuted);
 const isSpeaker = computed(() => phoneCallStore.isSpeaker);
 const ttsAvailable = computed(() => phoneCallStore.ttsAvailable);
 const ttsError = computed(() => phoneCallStore.ttsError);
+const playingMessageId = computed(() => phoneCallStore.playingMessageId);
+
+/** 點擊 AI 氣泡手動播放/停止該則語音（使用者手勢，繞過喇叭開關） */
+function playMessageAudio(messageId: string) {
+  phoneCallStore.playMessageAudio(messageId);
+}
 const rejectReason = computed(() => phoneCallStore.rejectReason);
 const formattedDuration = computed(() => phoneCallStore.formattedDuration);
 const canRegenerateLastAi = computed(() => phoneCallStore.canRegenerateLastAi);

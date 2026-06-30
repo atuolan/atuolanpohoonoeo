@@ -101,6 +101,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   const ttsOverride = ref<{ voiceId?: string; speed?: number; pitch?: number; emotion?: string }>({});
   /** 最近一次 TTS 合成/播放錯誤訊息（供 UI 顯示，null = 無錯誤） */
   const ttsError = ref<string | null>(null);
+  /** 目前正在播放（或合成中）的訊息 id，供 UI 標示播放狀態（null = 無） */
+  const playingMessageId = ref<string | null>(null);
   // 語音播放基礎設施：單一已解鎖的 Audio 實例 + 播放序號（遞增即可中斷進行中的序列）
   // 在使用者手勢（接聽/撥打按鈕）內預先 play 一次來解鎖手機自動播放限制，之後重設 src 重用
   let unlockedAudio: HTMLAudioElement | null = null;
@@ -439,6 +441,36 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       if (token !== playbackToken || !isSpeaker.value) return;
       await playAudioUrl(url, token);
     }
+  }
+
+  /**
+   * 手動播放單一訊息語音（由使用者點擊氣泡觸發）。
+   * 點擊本身即為使用者手勢，因此繞過喇叭開關判斷，並在此同步解鎖音頻。
+   * 同一訊息再次點擊則停止播放（切換）。
+   */
+  async function playMessageAudio(messageId: string) {
+    const msg = callMessages.value.find((m) => m.id === messageId);
+    if (!msg || msg.role !== "ai") return;
+    // 同一則正在播放 → 視為停止
+    if (playingMessageId.value === messageId) {
+      stopPlayback();
+      playingMessageId.value = null;
+      return;
+    }
+    // 趁點擊手勢有效，立即解鎖音頻（手機限制）
+    unlockAudioPlayback();
+    ttsError.value = null;
+    // 中斷既有播放並取得新 token
+    const token = ++playbackToken;
+    playingMessageId.value = messageId;
+    const url = await synthesizeCallMessage(msg);
+    if (!url) {
+      playingMessageId.value = null;
+      return;
+    }
+    if (token !== playbackToken) return;
+    await playAudioUrl(url, token);
+    if (token === playbackToken) playingMessageId.value = null;
   }
 
   // ===== 開始視訊通話（靜態模式 MVP） =====
@@ -1436,9 +1468,11 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
   return {
     activeCall, callState, callMessages, callDuration, isGenerating,
     rejectReason, isMuted, isSpeaker, ttsAvailable, ttsError, isExpanded,
+    playingMessageId,
     videoConfig, videoSession,
     isActive, isVideoCallActive, formattedDuration, canRegenerateLastAi, canTriggerManualResponse,
     startCall, startVideoCall, endCall, sendMessage, addUserMessage, triggerAIResponse, handleAnswer, regenerateLastAiResponse,
+    playMessageAudio,
     updateVideoConfig,
     minimize, expand, toggleMuteState, toggleSpeakerState,
     saveCallSnapshot, loadCallSnapshot, clearCallSnapshot, resumeFromSnapshot, discardSnapshot,
