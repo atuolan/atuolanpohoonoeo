@@ -249,11 +249,12 @@ const currentLayout = computed(() => {
         display: flex;
         align-items: center;
         gap: 4px;
-        font-size: 14px;
+        font-size: clamp(12px, 3vw, 14px);
         font-weight: 500;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        min-width: 0;
       }
 
       .refresh-btn {
@@ -292,9 +293,9 @@ const currentLayout = computed(() => {
       }
 
       .temperature {
-        font-size: 48px;
+        font-size: clamp(32px, 10vw, 48px);
         font-weight: 300;
-        letter-spacing: -2px;
+        letter-spacing: clamp(-1.5px, -0.3vw, -2px);
       }
     }
 
@@ -302,14 +303,17 @@ const currentLayout = computed(() => {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 14px;
+      font-size: clamp(12px, 3vw, 14px);
       font-weight: 500;
       flex-shrink: 0;
+      gap: 8px;
 
       .condition {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        min-width: 0;
+        flex: 1;
       }
 
       .humidity {
@@ -658,12 +662,14 @@ const currentLayout = computed(() => {
     }
   }
 
-  // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）
-  // 深紫畫布 + 芥末黃外框 + 角落發光星星 + 藍/橘幾何色塊，無動畫
+  // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）- 優化版
   &.pearl {
-    border-radius: 10px;
-    border: 2px solid #FFCE05;
-    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+    border-radius: 12px;
+    border: 2.5px solid #FFCE05;
+    box-shadow:
+      0 8px 24px rgba(51, 45, 75, 0.45),
+      0 2px 8px rgba(255, 206, 5, 0.15),
+      inset 0 0 0 1px rgba(255, 206, 5, 0.18);
     color: #F8F6F0;
     background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
     position: relative;
@@ -671,45 +677,208 @@ const currentLayout = computed(() => {
 
     &.light-text { color: #F8F6F0; }
 
-    // 角落發光星星（純 CSS、靜態）
+    // 右上角發光星點裝飾
     &::before {
-      content: ''; position: absolute; top: 10px; right: 12px; width: 7px; height: 7px;
-      background: radial-gradient(circle, rgba(255,206,5,0.95) 0%, transparent 70%);
-      box-shadow: 0 0 6px 2px rgba(255,206,5,0.5), 16px 40px 0 -1px rgba(123,173,238,0.85), -160px 70px 0 -2px rgba(255,198,174,0.7);
-      border-radius: 50%; z-index: 0; pointer-events: none;
+      content: '';
+      position: absolute;
+      top: 12px;
+      right: 14px;
+      width: 8px;
+      height: 8px;
+      background: radial-gradient(circle, rgba(255, 206, 5, 0.95) 0%, transparent 70%);
+      box-shadow:
+        0 0 8px 2px rgba(255, 206, 5, 0.6),
+        -48px 28px 0 -2px rgba(71, 131, 222, 0.9),
+        -48px 28px 8px 0 rgba(71, 131, 222, 0.45),
+        20px 42px 0 -3px rgba(255, 198, 174, 0.8),
+        20px 42px 6px -1px rgba(255, 198, 174, 0.4);
+      border-radius: 50%;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    // 左下角幾何裝飾
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: 14px;
+      left: 12px;
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(45deg, rgba(71, 131, 222, 0.15) 0%, transparent 100%);
+      border-left: 1.5px solid rgba(71, 131, 222, 0.3);
+      border-bottom: 1.5px solid rgba(71, 131, 222, 0.3);
+      z-index: 0;
+      pointer-events: none;
     }
 
     .weather-header {
-      display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; margin-bottom: 8px; position: relative; z-index: 1;
-      .location { display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; letter-spacing: 0.3px; color: #F8F6F0; }
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+      margin-bottom: 10px;
+      position: relative;
+      z-index: 1;
+
+      .location {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 13.5px;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+        color: #F8F6F0;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+        min-width: 0;
+        flex: 1;
+
+        svg { flex-shrink: 0; }
+        span {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          min-width: 0;
+        }
+      }
+
       .refresh-btn {
-        background: rgba(71,131,222,0.25); border: 1px solid rgba(255,206,5,0.4); border-radius: 8px; padding: 3px; cursor: pointer; color: #FFCE05; transition: all 0.2s;
-        &:hover { background: #4783DE; color: #FFCE05; }
-        &.refreshing svg { animation: spin 1s linear infinite; }
+        background: rgba(71, 131, 222, 0.2);
+        border: 1.5px solid rgba(255, 206, 5, 0.4);
+        border-radius: 8px;
+        padding: 4px;
+        cursor: pointer;
+        color: #FFCE05;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+
+        &:hover {
+          background: rgba(71, 131, 222, 0.4);
+          border-color: rgba(255, 206, 5, 0.6);
+          transform: translateY(-1px);
+        }
+
+        &:active {
+          transform: scale(0.95);
+        }
+
+        &.refreshing svg {
+          animation: spin 1s linear infinite;
+        }
       }
     }
 
     .weather-main {
-      display: flex; align-items: center; justify-content: center; gap: 12px; flex: 1; position: relative; z-index: 1;
-      .weather-icon { filter: drop-shadow(0 2px 6px rgba(255,206,5,0.3)); flex-shrink: 0; color: #FFCE05; }
-      .temperature { font-size: 44px; font-weight: 600; letter-spacing: -1px; font-family: "Georgia", serif; color: #F8F6F0; }
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      flex: 1;
+      position: relative;
+      z-index: 1;
+      padding: 6px 0;
+      min-height: 0;
+      overflow: hidden;
+
+      .weather-icon {
+        filter: drop-shadow(0 2px 6px rgba(255, 206, 5, 0.4));
+        flex-shrink: 0;
+        color: #FFCE05;
+        width: clamp(32px, 10vw, 48px);
+        height: clamp(32px, 10vw, 48px);
+      }
+
+      .temperature {
+        font-size: clamp(28px, 8vw, 40px);
+        font-weight: 600;
+        letter-spacing: -1px;
+        font-family: Georgia, serif;
+        color: #F8F6F0;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+      }
     }
 
     .weather-footer {
-      display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 500; flex-shrink: 0; position: relative; z-index: 1;
-      background: rgba(71,131,222,0.18); border: 1px solid rgba(255,206,5,0.28); padding: 6px 12px; margin-top: 8px; border-radius: 8px; color: #D4C8B0;
-      .condition, .humidity { display: flex; align-items: center; gap: 4px; }
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 500;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 1;
+      background: rgba(71, 131, 222, 0.2);
+      border: 1.5px solid rgba(255, 206, 5, 0.3);
+      padding: 8px 12px;
+      margin-top: 10px;
+      border-radius: 9px;
+      color: rgba(212, 200, 176, 0.95);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+
+      .condition,
+      .humidity {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+      }
     }
 
-    .loading-state, .error-state, .empty-state {
-      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-size: 15px; font-weight: 500; position: relative; z-index: 1; color: #D4C8B0;
+    .loading-state,
+    .error-state,
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      position: relative;
+      z-index: 1;
+      color: rgba(212, 200, 176, 0.9);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
     }
 
-    .empty-state { cursor: pointer; }
+    .empty-state {
+      cursor: pointer;
+      transition: all 0.2s ease;
+
+      &:hover {
+        color: #FFCE05;
+        transform: scale(1.02);
+      }
+    }
 
     .error-state .retry-btn {
-      margin-top: 8px; padding: 6px 16px; background: #4783DE; color: #F8F6F0; border: 1px solid #FFCE05; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s;
-      &:hover { background: #FFCE05; color: #332D4B; }
+      margin-top: 8px;
+      padding: 8px 18px;
+      background: rgba(71, 131, 222, 0.5);
+      color: #F8F6F0;
+      border: 1.5px solid #FFCE05;
+      border-radius: 9px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+
+      &:hover {
+        background: #FFCE05;
+        color: #332D4B;
+        transform: translateY(-1px);
+        box-shadow: 0 3px 6px rgba(0, 0, 0, 0.25);
+      }
+
+      &:active {
+        transform: translateY(0);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+      }
     }
   }
 
@@ -859,12 +1028,18 @@ const currentLayout = computed(() => {
 }
 
 // 小尺寸響應式調整
+// 注意：選擇器使用 .weather-widget.weather-widget 重複類別以提高優先級，
+// 確保能覆蓋各風格（如 .weather-widget.pearl ...）的固定字級設定
 @container (max-height: 120px) {
-  .weather-widget {
+  .weather-widget.weather-widget {
     padding: 10px;
   }
 
-  .weather-header .location {
+  .weather-widget.weather-widget .weather-header {
+    margin-bottom: 6px;
+  }
+
+  .weather-widget.weather-widget .weather-header .location {
     font-size: 11px;
 
     svg {
@@ -873,8 +1048,9 @@ const currentLayout = computed(() => {
     }
   }
 
-  .weather-main {
+  .weather-widget.weather-widget .weather-main {
     gap: 8px;
+    padding: 0;
 
     .weather-icon {
       width: 28px;
@@ -886,17 +1062,19 @@ const currentLayout = computed(() => {
     }
   }
 
-  .weather-footer {
+  .weather-widget.weather-widget .weather-footer {
     font-size: 10px;
+    padding: 4px 8px;
+    margin-top: 6px;
   }
 }
 
 @container (max-width: 120px) {
-  .weather-header .location span {
+  .weather-widget.weather-widget .weather-header .location span {
     display: none;
   }
 
-  .weather-main {
+  .weather-widget.weather-widget .weather-main {
     flex-direction: column;
     gap: 4px;
 
@@ -905,7 +1083,7 @@ const currentLayout = computed(() => {
     }
   }
 
-  .weather-footer {
+  .weather-widget.weather-widget .weather-footer {
     flex-direction: column;
     gap: 2px;
     text-align: center;
@@ -914,15 +1092,15 @@ const currentLayout = computed(() => {
 
 // 極小尺寸：只顯示溫度和圖標
 @container (max-height: 80px) {
-  .weather-header {
+  .weather-widget.weather-widget .weather-header {
     display: none;
   }
 
-  .weather-footer {
+  .weather-widget.weather-widget .weather-footer {
     display: none;
   }
 
-  .weather-main {
+  .weather-widget.weather-widget .weather-main {
     gap: 6px;
 
     .weather-icon {
@@ -935,9 +1113,9 @@ const currentLayout = computed(() => {
     }
   }
 
-  .loading-state,
-  .error-state,
-  .empty-state {
+  .weather-widget.weather-widget .loading-state,
+  .weather-widget.weather-widget .error-state,
+  .weather-widget.weather-widget .empty-state {
     font-size: 10px;
     gap: 4px;
 
@@ -947,7 +1125,7 @@ const currentLayout = computed(() => {
     }
   }
 
-  .error-state .retry-btn {
+  .weather-widget.weather-widget .error-state .retry-btn {
     padding: 2px 8px;
     font-size: 10px;
   }
@@ -955,7 +1133,7 @@ const currentLayout = computed(() => {
 
 // 超小尺寸
 @container (max-height: 60px) and (max-width: 80px) {
-  .weather-main {
+  .weather-widget.weather-widget .weather-main {
     .weather-icon {
       display: none;
     }

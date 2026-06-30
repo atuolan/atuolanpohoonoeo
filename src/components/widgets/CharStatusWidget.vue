@@ -39,6 +39,21 @@ const containerStyle = computed(() => {
   return style;
 });
 
+// 角色卡面作為背景：需在設定中勾選「角色卡面背景」才顯示
+const showCharacterBg = computed(
+  () => !!props.data?.customStyle?.useCharacterBg && !!avatar.value,
+);
+
+// 透明度：預設 50%，可在設定中調整 (0-100)
+const bgImageStyle = computed(() => {
+  if (!showCharacterBg.value) return {};
+  const opacity = (props.data?.customStyle?.characterBgOpacity ?? 50) / 100;
+  return {
+    backgroundImage: `url("${avatar.value}")`,
+    opacity: String(opacity),
+  } as Record<string, string>;
+});
+
 function handleClick() {
   if (isEditMode.value) return;
   if (character.value) {
@@ -54,10 +69,13 @@ function handleClick() {
     :style="containerStyle"
     @click="handleClick"
   >
+    <div v-if="showCharacterBg" class="bg-image" :style="bgImageStyle"></div>
+
     <template v-if="!character">
       <div class="empty-hint">
         <span class="emoji">🪪</span>
-        <span class="hint-text">點擊設定綁定角色</span>
+        <span class="hint-text" v-if="!isEditMode">長按進入編輯模式</span>
+        <span class="hint-text" v-else>點擊齒輪圖示綁定角色</span>
       </div>
     </template>
 
@@ -116,6 +134,34 @@ function handleClick() {
   cursor: pointer;
   overflow: hidden;
   gap: 8px;
+  position: relative;
+}
+
+/* 角色卡面背景層：漸層遮罩，文字仍可讀 */
+.bg-image {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  z-index: 0;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.9) 0%,
+    rgba(0, 0, 0, 0.35) 100%
+  );
+  mask-image: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.9) 0%,
+    rgba(0, 0, 0, 0.35) 100%
+  );
+}
+
+/* 內容置於背景層之上 */
+.char-status-widget > *:not(.bg-image) {
+  position: relative;
+  z-index: 1;
 }
 
 .empty-hint {

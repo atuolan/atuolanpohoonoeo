@@ -1783,35 +1783,53 @@ const hasCustomBackground = computed(() => {
   }
 }
 
-/* 珍珠畫廊風 */
+/* 珍珠畫廊風 - 優化版 */
 .clock-widget.style-pearl {
   background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
-  border: 2px solid #FFCE05;
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+  border: 2.5px solid #FFCE05;
+  border-radius: 12px;
+  box-shadow:
+    0 8px 24px rgba(51, 45, 75, 0.45),
+    0 2px 8px rgba(255, 206, 5, 0.15),
+    inset 0 0 0 1px rgba(255, 206, 5, 0.18);
   position: relative;
   overflow: hidden;
 
+  // 右上角發光星點裝飾
   &::before {
     content: '';
     position: absolute;
-    top: 10px;
-    right: 12px;
-    width: 7px;
-    height: 7px;
+    top: 12px;
+    right: 14px;
+    width: 8px;
+    height: 8px;
     background: radial-gradient(circle, rgba(255, 206, 5, 0.95) 0%, transparent 70%);
     box-shadow:
-      0 0 6px 2px rgba(255, 206, 5, 0.5),
-      -45px 25px 0 -2px rgba(71, 131, 222, 0.85),
-      -45px 25px 6px 0 rgba(71, 131, 222, 0.4),
-      18px 38px 0 -3px rgba(255, 198, 174, 0.75),
-      18px 38px 5px -1px rgba(255, 198, 174, 0.35);
+      0 0 8px 2px rgba(255, 206, 5, 0.6),
+      -48px 28px 0 -2px rgba(71, 131, 222, 0.9),
+      -48px 28px 8px 0 rgba(71, 131, 222, 0.45),
+      20px 42px 0 -3px rgba(255, 198, 174, 0.8),
+      20px 42px 6px -1px rgba(255, 198, 174, 0.4);
     border-radius: 50%;
     z-index: 0;
     pointer-events: none;
   }
 
-  /* 強制將時鐘字體改為 Georgia */
+  // 左下角幾何裝飾
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: 14px;
+    left: 12px;
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(45deg, rgba(71, 131, 222, 0.15) 0%, transparent 100%);
+    border-left: 1.5px solid rgba(71, 131, 222, 0.3);
+    border-bottom: 1.5px solid rgba(71, 131, 222, 0.3);
+    z-index: 0;
+    pointer-events: none;
+  }
+
   .minimal-clock,
   .digital-clock,
   .flip-clock,
@@ -1823,7 +1841,7 @@ const hasCustomBackground = computed(() => {
   .orbit-clock {
     position: relative;
     z-index: 1;
-    font-family: Georgia, serif;
+    font-family: Georgia, 'Noto Serif TC', serif;
     color: #F8F6F0;
   }
 
@@ -1838,40 +1856,52 @@ const hasCustomBackground = computed(() => {
   .dotmatrix-date,
   .orbit-date {
     color: #F8F6F0 !important;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   }
 
   .digit-card, .flip-digit {
-    background: rgba(71, 131, 222, 0.18) !important;
-    border: 1px solid rgba(255, 206, 5, 0.4) !important;
+    background: rgba(71, 131, 222, 0.2) !important;
+    border: 1.5px solid rgba(255, 206, 5, 0.45) !important;
     color: #F8F6F0 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
   }
 
   .separator-dots .dot {
     background: #FFCE05 !important;
+    box-shadow: 0 0 6px rgba(255, 206, 5, 0.5);
   }
 
   .analog-clock {
     .clock-face {
-      background: rgba(62, 58, 88, 0.6) !important;
-      border: 2px solid rgba(255, 206, 5, 0.5) !important;
+      background: rgba(62, 58, 88, 0.65) !important;
+      border: 2px solid rgba(255, 206, 5, 0.6) !important;
+      box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.25),
+        inset 0 1px 0 rgba(255, 206, 5, 0.1);
     }
     .hour-marker {
-      background: #7BADEE !important;
+      background: rgba(123, 173, 238, 0.8) !important;
+      box-shadow: 0 0 3px rgba(123, 173, 238, 0.5);
       &.quarter {
         background: #FFCE05 !important;
+        box-shadow: 0 0 6px rgba(255, 206, 5, 0.6);
       }
     }
     .center-dot {
       background: #FFCE05 !important;
+      box-shadow: 0 0 8px rgba(255, 206, 5, 0.6);
     }
     .hour-hand {
       background: #F8F6F0 !important;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
     }
     .minute-hand {
-      background: #D4C8B0 !important;
+      background: rgba(212, 200, 176, 0.95) !important;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
     }
     .second-hand {
       background: #CE8221 !important;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
     }
   }
 }

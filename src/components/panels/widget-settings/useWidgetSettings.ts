@@ -74,6 +74,8 @@ export function useWidgetSettings(
     iconOffsetX: widget.data?.customStyle?.iconOffsetX,
     iconOffsetY: widget.data?.customStyle?.iconOffsetY,
     iconScale: widget.data?.customStyle?.iconScale,
+    useCharacterBg: widget.data?.customStyle?.useCharacterBg,
+    characterBgOpacity: widget.data?.customStyle?.characterBgOpacity,
     shape: widget.data?.customStyle?.shape,
   });
 
@@ -237,6 +239,8 @@ export function useWidgetSettings(
       iconOffsetX: undefined,
       iconOffsetY: undefined,
       iconScale: undefined,
+      useCharacterBg: undefined,
+      characterBgOpacity: undefined,
       shape: undefined,
     };
 
@@ -323,6 +327,13 @@ export function useWidgetSettings(
     if (localStyle.value.layout) cleanStyle.layout = localStyle.value.layout;
     if (localStyle.value.vinylStyle)
       cleanStyle.vinylStyle = localStyle.value.vinylStyle;
+    if (localStyle.value.useCharacterBg)
+      cleanStyle.useCharacterBg = localStyle.value.useCharacterBg;
+    if (
+      localStyle.value.characterBgOpacity !== undefined &&
+      localStyle.value.characterBgOpacity !== 50
+    )
+      cleanStyle.characterBgOpacity = localStyle.value.characterBgOpacity;
     if (localStyle.value.shape) cleanStyle.shape = localStyle.value.shape;
 
     // 如果沒有任何自定義，則清空 customStyle

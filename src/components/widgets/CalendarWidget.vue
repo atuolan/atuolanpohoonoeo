@@ -613,42 +613,186 @@ const currentLayout = computed(() => {
   // 深紫畫布 + 芥末黃外框 + 角落發光星星，無動畫
   &.pearl {
     background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
-    border: 2px solid #FFCE05;
-    border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+    border: 2.5px solid #FFCE05;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45),
+                0 0 20px rgba(255, 206, 5, 0.15),
+                inset 0 0 0 1px rgba(255, 206, 5, 0.18),
+                inset 0 2px 8px rgba(255, 206, 5, 0.08);
     position: relative;
     overflow: hidden;
 
-    // 角落發光星星（純 CSS、靜態）
+    // 角落發光星星（純 CSS、靜態）- 增強版
     &::before {
-      content: ''; position: absolute; top: 10px; right: 12px; width: 7px; height: 7px;
-      background: radial-gradient(circle, rgba(255,206,5,0.95) 0%, transparent 70%);
-      box-shadow: 0 0 6px 2px rgba(255,206,5,0.5), -180px 14px 0 -1px rgba(123,173,238,0.8), -40px 120px 0 -2px rgba(255,198,174,0.65);
-      border-radius: 50%; z-index: 0; pointer-events: none;
+      content: '';
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      width: 8px;
+      height: 8px;
+      background: radial-gradient(circle, rgba(255, 206, 5, 0.95) 0%, transparent 70%);
+      box-shadow: 0 0 8px 3px rgba(255, 206, 5, 0.6),
+                  -180px 14px 0 -1px rgba(123, 173, 238, 0.85),
+                  -40px 120px 0 -2px rgba(255, 198, 174, 0.7);
+      border-radius: 50%;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    // 左下角幾何裝飾
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: 12px;
+      left: 10px;
+      width: 24px;
+      height: 24px;
+      background: linear-gradient(45deg, rgba(71, 131, 222, 0.15) 0%, transparent 100%);
+      border-left: 1.5px solid rgba(71, 131, 222, 0.3);
+      border-bottom: 1.5px solid rgba(71, 131, 222, 0.3);
+      z-index: 0;
+      pointer-events: none;
     }
 
     .calendar-header {
-      display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-shrink: 0; position: relative; z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 1;
+
       .nav-btn {
-        width: 30px; height: 30px; min-width: 30px; border-radius: 8px; border: 1px solid rgba(255,206,5,0.4); display: flex; align-items: center; justify-content: center; color: #FFCE05; background: rgba(71,131,222,0.22); transition: all 0.2s; flex-shrink: 0;
-        &:hover { background: #4783DE; }
+        width: 32px;
+        height: 32px;
+        min-width: 32px;
+        border-radius: 8px;
+        border: 1.5px solid rgba(255, 206, 5, 0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #FFCE05;
+        background: rgba(71, 131, 222, 0.22);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15),
+                    inset 0 1px 2px rgba(255, 206, 5, 0.1);
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        flex-shrink: 0;
+        cursor: pointer;
+
+        &:hover {
+          background: #4783DE;
+          border-color: #FFCE05;
+          box-shadow: 0 3px 8px rgba(71, 131, 222, 0.3),
+                      0 0 12px rgba(71, 131, 222, 0.2);
+          transform: translateY(-1px);
+        }
+
+        &:active {
+          transform: translateY(0);
+        }
       }
-      .month-year { font-size: 15px; font-weight: 600; font-family: "Georgia", serif; color: #F8F6F0; cursor: pointer; white-space: nowrap; padding: 4px 14px; border-radius: 8px; border: 1px solid rgba(255,206,5,0.45); background: rgba(71,131,222,0.18); transition: all 0.2s; &:hover { border-color: #FFCE05; } }
+
+      .month-year {
+        font-size: 15px;
+        font-weight: 600;
+        font-family: "Georgia", serif;
+        color: #F8F6F0;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        cursor: pointer;
+        white-space: nowrap;
+        padding: 6px 16px;
+        border-radius: 9px;
+        border: 1.5px solid rgba(255, 206, 5, 0.45);
+        background: rgba(71, 131, 222, 0.18);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12),
+                    inset 0 1px 2px rgba(255, 206, 5, 0.08);
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+
+        &:hover {
+          border-color: #FFCE05;
+          background: rgba(71, 131, 222, 0.25);
+          box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18),
+                      0 0 12px rgba(255, 206, 5, 0.15);
+          transform: translateY(-1px);
+        }
+      }
     }
 
     .weekdays {
-      display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 8px; flex-shrink: 0; position: relative; z-index: 1;
-      .weekday { text-align: center; font-size: 12px; font-weight: 600; color: rgba(255,206,5,0.7); text-transform: uppercase; }
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 1;
+
+      .weekday {
+        text-align: center;
+        font-size: 12px;
+        font-weight: 600;
+        color: rgba(255, 206, 5, 0.75);
+        text-transform: uppercase;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        letter-spacing: 0.5px;
+      }
     }
 
     .days-grid {
-      display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; flex: 1; min-height: 0; position: relative; z-index: 1;
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 5px;
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      z-index: 1;
+
       .day {
-        display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 500; color: #F8F6F0; border-radius: 50%; border: 1px solid transparent; aspect-ratio: 1; transition: all 0.2s; cursor: default;
-        &.other-month { color: rgba(248,246,240,0.25); }
-        &.today { background: #FFCE05; color: #332D4B; font-weight: 700; }
-        &.holiday:not(.today) { color: #FF8E6E; }
-        &:not(.other-month):not(.today):hover { border-color: #4783DE; background: rgba(71,131,222,0.25); }
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        font-weight: 500;
+        color: #F8F6F0;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        border-radius: 50%;
+        border: 1px solid transparent;
+        aspect-ratio: 1;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: default;
+        background: rgba(255, 255, 255, 0.02);
+
+        &.other-month {
+          color: rgba(248, 246, 240, 0.25);
+          text-shadow: none;
+        }
+
+        &.today {
+          background: linear-gradient(135deg, #FFCE05 0%, #CE8221 100%);
+          color: #332D4B;
+          font-weight: 700;
+          border: 1.5px solid rgba(255, 255, 255, 0.3);
+          box-shadow: 0 3px 8px rgba(255, 206, 5, 0.4),
+                      0 0 12px rgba(255, 206, 5, 0.3),
+                      inset 0 1px 2px rgba(255, 255, 255, 0.3);
+          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+        }
+
+        &.holiday:not(.today) {
+          color: #FF8E6E;
+          font-weight: 600;
+          text-shadow: 0 1px 3px rgba(255, 142, 110, 0.4);
+        }
+
+        &:not(.other-month):not(.today):hover {
+          border-color: #4783DE;
+          background: rgba(71, 131, 222, 0.3);
+          box-shadow: 0 2px 6px rgba(71, 131, 222, 0.25),
+                      inset 0 1px 2px rgba(71, 131, 222, 0.2);
+          transform: scale(1.05);
+          cursor: pointer;
+        }
       }
     }
   }

@@ -156,14 +156,15 @@ const currentLayout = computed(() => {
   border-radius: 16px;
   border: 2px solid #1a1a1a;
   box-shadow: 3px 3px 0px #1a1a1a;
-  padding: 16px;
+  padding: clamp(8px, 3vw, 16px);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: clamp(6px, 2vw, 12px);
   container-type: size;
   overflow: hidden;
+  min-height: 0;
 
   // Classic 傳統樣式
   &.classic {
@@ -190,8 +191,10 @@ const currentLayout = computed(() => {
 
     .timer-circle {
       position: relative;
-      width: 120px;
-      height: 120px;
+      width: clamp(80px, 25vw, 120px);
+      height: clamp(80px, 25vw, 120px);
+      flex-shrink: 0;
+      min-width: 0;
 
       .progress-ring {
         width: 100%;
@@ -222,14 +225,14 @@ const currentLayout = computed(() => {
         justify-content: center;
 
         .time {
-          font-size: 28px;
+          font-size: clamp(18px, 5vw, 28px);
           font-weight: 700;
           color: #1f2937;
           font-variant-numeric: tabular-nums;
         }
 
         .sessions {
-          font-size: 12px;
+          font-size: clamp(10px, 2.5vw, 12px);
           color: #4b5563;
         }
       }
@@ -292,8 +295,10 @@ const currentLayout = computed(() => {
     border-radius: 16px;
     border: 2px solid #1a1a1a;
     box-shadow: 3px 3px 0px #1a1a1a;
-    padding: 16px;
+    padding: clamp(8px, 3vw, 16px);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
+    min-height: 0;
+    overflow: hidden;
 
     &:hover {
       transform: translate(-1px, -1px);
@@ -325,9 +330,10 @@ const currentLayout = computed(() => {
 
     .timer-circle {
       position: relative;
-      width: 120px;
-      height: 120px;
+      width: clamp(80px, 25vw, 120px);
+      height: clamp(80px, 25vw, 120px);
       flex-shrink: 0;
+      min-width: 0;
 
       .progress-ring {
         width: 100%;
@@ -365,7 +371,7 @@ const currentLayout = computed(() => {
         box-shadow: inset 2px 2px 0px rgba(0,0,0,0.1), 2px 2px 0px #1a1a1a;
 
         .time {
-          font-size: 26px;
+          font-size: clamp(18px, 5vw, 26px);
           font-weight: 900;
           color: #1a1a1a;
           font-variant-numeric: tabular-nums;
@@ -373,7 +379,7 @@ const currentLayout = computed(() => {
         }
 
         .sessions {
-          font-size: 13px;
+          font-size: clamp(10px, 2.8vw, 13px);
           font-weight: 800;
           color: #1a1a1a;
           margin-top: -2px;
@@ -397,10 +403,11 @@ const currentLayout = computed(() => {
         transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 
         &.reset {
-          width: 40px;
-          height: 40px;
+          width: clamp(32px, 8vw, 40px);
+          height: clamp(32px, 8vw, 40px);
           background: white;
           color: #1a1a1a;
+          font-size: clamp(14px, 3.5vw, 16px);
 
           &:hover {
             background: #f0f0f0;
@@ -414,8 +421,8 @@ const currentLayout = computed(() => {
         }
 
         &.play {
-          width: 52px;
-          height: 52px;
+          width: clamp(40px, 10vw, 52px);
+          height: clamp(40px, 10vw, 52px);
           background: #ef4444;
           color: white;
 
@@ -447,7 +454,9 @@ const currentLayout = computed(() => {
     border-radius: 32px;
     border: 3px solid #332650;
     box-shadow: 0 6px 0px #332650;
-    padding: 24px;
+    padding: clamp(12px, 4vw, 24px);
+    min-height: 0;
+    overflow: hidden;
 
     .mode-indicator {
       display: flex; align-items: center; gap: 6px; padding: 6px 14px;
@@ -457,7 +466,11 @@ const currentLayout = computed(() => {
     }
 
     .timer-circle {
-      position: relative; width: 130px; height: 130px; flex-shrink: 0;
+      position: relative;
+      width: clamp(90px, 28vw, 130px);
+      height: clamp(90px, 28vw, 130px);
+      flex-shrink: 0;
+      min-width: 0;
       .progress-ring { width: 100%; height: 100%; transform: rotate(-90deg); }
       .progress-bg { stroke: #332650; stroke-opacity: 0.1; }
       .progress-bar { stroke: #FCD24B; stroke-linecap: round; transition: stroke-dashoffset 0.3s ease; &.break { stroke: #10B981; } }
@@ -465,8 +478,19 @@ const currentLayout = computed(() => {
         position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
         background: white; margin: 16px; border-radius: 50%;
         border: 3px solid #332650; box-shadow: 0 4px 0px #332650;
-        .time { font-size: 28px; font-weight: 900; color: #332650; font-variant-numeric: tabular-nums; margin-top: 4px; }
-        .sessions { font-size: 13px; font-weight: 800; color: #332650; margin-top: -2px; }
+        .time {
+          font-size: clamp(18px, 5vw, 28px);
+          font-weight: 900;
+          color: #332650;
+          font-variant-numeric: tabular-nums;
+          margin-top: 4px;
+        }
+        .sessions {
+          font-size: clamp(10px, 2.8vw, 13px);
+          font-weight: 800;
+          color: #332650;
+          margin-top: -2px;
+        }
       }
     }
 
@@ -592,73 +616,195 @@ const currentLayout = computed(() => {
   // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）
   &.pearl {
     background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
-    border: 2px solid #FFCE05;
-    border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+    border: 2.5px solid #FFCE05;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45),
+                0 0 20px rgba(255, 206, 5, 0.15),
+                inset 0 0 0 1px rgba(255, 206, 5, 0.18),
+                inset 0 2px 8px rgba(255, 206, 5, 0.08);
     position: relative;
     overflow: hidden;
 
-    // 右上角靜態星光（mustard + 藍色衣領 + 溫暖膚色）
+    // 右上角靜態星光（增強版 - mustard + 藍色衣領 + 溫暖膚色）
     &::before {
       content: '';
       position: absolute;
       top: 10px;
       right: 12px;
-      width: 7px;
-      height: 7px;
+      width: 8px;
+      height: 8px;
       background: radial-gradient(circle, rgba(255, 206, 5, 0.95) 0%, transparent 70%);
-      box-shadow:
-        0 0 6px 2px rgba(255, 206, 5, 0.5),
-        -45px 25px 0 -2px rgba(71, 131, 222, 0.85),
-        -45px 25px 6px 0 rgba(71, 131, 222, 0.4),
-        18px 38px 0 -3px rgba(255, 198, 174, 0.75),
-        18px 38px 5px -1px rgba(255, 198, 174, 0.35);
+      box-shadow: 0 0 8px 3px rgba(255, 206, 5, 0.6),
+                  -45px 25px 0 -2px rgba(71, 131, 222, 0.9),
+                  -45px 25px 8px 0 rgba(71, 131, 222, 0.45),
+                  18px 38px 0 -3px rgba(255, 198, 174, 0.8),
+                  18px 38px 6px -1px rgba(255, 198, 174, 0.4);
       border-radius: 50%;
       z-index: 0;
       pointer-events: none;
     }
 
+    // 左下角幾何裝飾
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: 12px;
+      left: 10px;
+      width: 24px;
+      height: 24px;
+      background: linear-gradient(45deg, rgba(71, 131, 222, 0.15) 0%, transparent 100%);
+      border-left: 1.5px solid rgba(71, 131, 222, 0.3);
+      border-bottom: 1.5px solid rgba(71, 131, 222, 0.3);
+      z-index: 0;
+      pointer-events: none;
+    }
+
     .mode-indicator {
-      position: relative; z-index: 1;
-      display: flex; align-items: center; gap: 6px; padding: 5px 14px;
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 16px;
       border-radius: 999px;
-      background: rgba(71, 131, 222, 0.18);
-      border: 1px solid rgba(255, 206, 5, 0.4);
+      background: rgba(71, 131, 222, 0.2);
+      border: 1.5px solid rgba(255, 206, 5, 0.45);
       color: #F8F6F0;
       font-family: Georgia, 'Times New Roman', serif;
       font-style: italic;
       white-space: nowrap;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2),
+                  inset 0 1px 2px rgba(71, 131, 222, 0.15);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
     }
 
     .timer-circle {
-      position: relative; z-index: 1; width: 130px; height: 130px; flex-shrink: 0;
-      .progress-track { stroke: rgba(255, 206, 5, 0.18); }
-      .progress-bar { stroke: #FFCE05; stroke-linecap: round; transition: stroke-dashoffset 0.3s ease; &.break { stroke: #7BADEE; } }
+      position: relative;
+      z-index: 1;
+      width: clamp(90px, 28vw, 130px);
+      height: clamp(90px, 28vw, 130px);
+      flex-shrink: 0;
+      min-width: 0;
+
+      .progress-track {
+        stroke: rgba(255, 206, 5, 0.2);
+      }
+
+      .progress-bar {
+        stroke: #FFCE05;
+        stroke-linecap: round;
+        transition: stroke-dashoffset 0.3s ease;
+        filter: drop-shadow(0 0 4px rgba(255, 206, 5, 0.5));
+
+        &.break {
+          stroke: #7BADEE;
+          filter: drop-shadow(0 0 4px rgba(123, 173, 238, 0.5));
+        }
+      }
+
       .timer-display {
-        position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
         border-radius: 50%;
-        background: linear-gradient(155deg, rgba(62, 58, 88, 0.6), rgba(51, 45, 75, 0.6));
-        border: 2px solid rgba(255, 206, 5, 0.5);
-        .time { font-size: 21px; font-weight: 400; letter-spacing: 1px; color: #F8F6F0; font-family: Georgia, 'Times New Roman', serif; font-variant-numeric: tabular-nums; margin-top: 4px; }
-        .sessions { font-size: 10px; font-weight: 400; font-style: italic; letter-spacing: 0.5px; color: #D4C8B0; font-family: Georgia, serif; margin-top: 1px; }
+        background: linear-gradient(155deg, rgba(62, 58, 88, 0.65), rgba(51, 45, 75, 0.65));
+        border: 2.5px solid rgba(255, 206, 5, 0.55);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3),
+                    inset 0 2px 6px rgba(255, 206, 5, 0.1),
+                    0 0 16px rgba(255, 206, 5, 0.2);
+
+        .time {
+          font-size: clamp(16px, 4.5vw, 21px);
+          font-weight: 400;
+          letter-spacing: clamp(0.5px, 0.2vw, 1px);
+          color: #F8F6F0;
+          font-family: Georgia, 'Times New Roman', serif;
+          font-variant-numeric: tabular-nums;
+          margin-top: 4px;
+          text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4),
+                       0 2px 6px rgba(0, 0, 0, 0.2);
+        }
+
+        .sessions {
+          font-size: clamp(9px, 2.2vw, 10px);
+          font-weight: 400;
+          font-style: italic;
+          letter-spacing: 0.5px;
+          color: #D4C8B0;
+          font-family: Georgia, serif;
+          margin-top: 1px;
+          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
       }
     }
 
     .controls {
-      position: relative; z-index: 1;
-      display: flex; align-items: center; gap: 16px; flex-shrink: 0;
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+
       .control-btn {
-        border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0;
-        transition: all 0.2s;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+
         &.reset {
-          width: 40px; height: 40px;
-          background: rgba(71, 131, 222, 0.2); border: 1.5px solid rgba(71, 131, 222, 0.6); color: #7BADEE;
-          &:hover { border-color: #FFCE05; color: #FFCE05; }
+          width: clamp(32px, 8vw, 42px);
+          height: clamp(32px, 8vw, 42px);
+          background: rgba(71, 131, 222, 0.22);
+          border: 1.5px solid rgba(71, 131, 222, 0.65);
+          color: #7BADEE;
+          font-size: clamp(14px, 3.5vw, 16px);
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2),
+                      inset 0 1px 2px rgba(71, 131, 222, 0.15);
+
+          &:hover {
+            border-color: #FFCE05;
+            color: #FFCE05;
+            background: rgba(71, 131, 222, 0.3);
+            box-shadow: 0 3px 8px rgba(255, 206, 5, 0.3),
+                        0 0 12px rgba(255, 206, 5, 0.2);
+            transform: scale(1.05);
+          }
         }
+
         &.play {
-          width: 52px; height: 52px; background: #4783DE; border: none; color: #F8F6F0;
-          &:hover { background: #FFCE05; color: #332D4B; }
-          &.pause { background: #FFCE05; color: #332D4B; }
+          width: 56px;
+          height: 56px;
+          background: linear-gradient(135deg, #4783DE 0%, #3A6FC5 100%);
+          border: none;
+          color: #F8F6F0;
+          box-shadow: 0 4px 12px rgba(71, 131, 222, 0.45),
+                      0 0 16px rgba(71, 131, 222, 0.25),
+                      inset 0 1px 2px rgba(255, 255, 255, 0.2);
+
+          &:hover {
+            background: linear-gradient(135deg, #FFCE05 0%, #CE8221 100%);
+            color: #332D4B;
+            box-shadow: 0 5px 14px rgba(255, 206, 5, 0.5),
+                        0 0 20px rgba(255, 206, 5, 0.3);
+            transform: scale(1.05);
+          }
+
+          &.pause {
+            background: linear-gradient(135deg, #FFCE05 0%, #CE8221 100%);
+            color: #332D4B;
+            box-shadow: 0 4px 12px rgba(255, 206, 5, 0.45),
+                        0 0 16px rgba(255, 206, 5, 0.25);
+          }
+
+          &:active {
+            transform: scale(0.95);
+          }
         }
       }
     }

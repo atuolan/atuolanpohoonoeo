@@ -171,11 +171,14 @@ const currentLayout = computed(() => {
       border: none;
       background: transparent;
       resize: none;
-      font-size: 14px;
+      font-size: clamp(12px, 3vw, 14px);
       line-height: 1.6;
       color: #312e81;
       overflow-y: auto;
+      overflow-x: hidden;
+      word-wrap: break-word;
       font-family: "Noto Serif TC", serif;
+      min-height: 0;
 
       &::placeholder {
         color: rgba(49, 46, 129, 0.4);
@@ -204,9 +207,11 @@ const currentLayout = computed(() => {
         max-width: 100px;
         border: none;
         background: transparent;
-        font-size: 12px;
+        font-size: clamp(10px, 2.5vw, 12px);
         color: #4f46e5;
         text-align: right;
+        overflow: hidden;
+        text-overflow: ellipsis;
 
         &::placeholder {
           color: rgba(79, 70, 229, 0.5);
@@ -250,12 +255,15 @@ const currentLayout = computed(() => {
       border: none;
       background: transparent;
       resize: none;
-      font-size: 15px;
+      font-size: clamp(13px, 3.2vw, 15px);
       font-weight: 700;
       line-height: 1.6;
       color: #1a1a1a;
       overflow-y: auto;
+      overflow-x: hidden;
+      word-wrap: break-word;
       font-family: inherit;
+      min-height: 0;
 
       &::placeholder {
         color: rgba(26, 26, 26, 0.4);
@@ -458,31 +466,54 @@ const currentLayout = computed(() => {
     }
   }
 
-  // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）
+  // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）- 優化版
   &.pearl {
   background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
-  border: 2px solid #FFCE05;
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+  border: 2.5px solid #FFCE05;
+  border-radius: 12px;
+  box-shadow:
+    0 8px 24px rgba(51, 45, 75, 0.45),
+    0 2px 8px rgba(255, 206, 5, 0.15),
+    inset 0 0 0 1px rgba(255, 206, 5, 0.18);
   position: relative;
   overflow: hidden;
+  padding: 16px 14px 14px;
 
   // 右上角靜態星光（mustard + 藍色衣領 + 溫暖膚色）
   &::before {
     content: '';
     position: absolute;
-    top: 10px;
-    right: 12px;
-    width: 7px;
-    height: 7px;
+    top: 12px;
+    right: 14px;
+    width: 8px;
+    height: 8px;
     background: radial-gradient(circle, rgba(255, 206, 5, 0.95) 0%, transparent 70%);
     box-shadow:
-      0 0 6px 2px rgba(255, 206, 5, 0.5),
-      -45px 25px 0 -2px rgba(71, 131, 222, 0.85),
-      -45px 25px 6px 0 rgba(71, 131, 222, 0.4),
-      18px 38px 0 -3px rgba(255, 198, 174, 0.75),
-      18px 38px 5px -1px rgba(255, 198, 174, 0.35);
+      0 0 8px 2px rgba(255, 206, 5, 0.6),
+      -48px 28px 0 -2px rgba(71, 131, 222, 0.9),
+      -48px 28px 8px 0 rgba(71, 131, 222, 0.45),
+      20px 42px 0 -3px rgba(255, 198, 174, 0.8),
+      20px 42px 6px -1px rgba(255, 198, 174, 0.4);
     border-radius: 50%;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  // 左下角幾何裝飾
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: 12px;
+    left: 10px;
+    width: 24px;
+    height: 24px;
+    background:
+      linear-gradient(45deg,
+        rgba(71, 131, 222, 0.15) 0%,
+        transparent 100%
+      );
+    border-left: 1.5px solid rgba(71, 131, 222, 0.3);
+    border-bottom: 1.5px solid rgba(71, 131, 222, 0.3);
     z-index: 0;
     pointer-events: none;
   }
@@ -491,21 +522,44 @@ const currentLayout = computed(() => {
     position: relative;
     z-index: 1;
     color: #FFCE05;
+    opacity: 0.95;
+    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
+    margin-bottom: 2px;
   }
 
   .quote-text {
     position: relative;
     z-index: 1;
-    font-family: Georgia, 'Times New Roman', serif;
+    font-family: Georgia, 'Noto Serif TC', serif;
     font-style: italic;
+    font-size: 15px;
+    line-height: 1.5;
     color: #F8F6F0;
     background: transparent;
     border: none;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    letter-spacing: 0.3px;
+    margin-bottom: 14px;
 
     &::placeholder {
-      color: rgba(248, 246, 240, 0.45);
+      color: rgba(248, 246, 240, 0.5);
       font-style: italic;
     }
+  }
+
+  .quote-divider {
+    position: relative;
+    z-index: 1;
+    height: 1.5px;
+    background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 206, 5, 0.5) 20%,
+      rgba(255, 206, 5, 0.5) 80%,
+      transparent 100%
+    );
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    margin: 12px 0;
+    opacity: 0.9;
   }
 
   .quote-author {
@@ -513,25 +567,35 @@ const currentLayout = computed(() => {
     z-index: 1;
 
     .dash {
-      color: #D4C8B0;
+      color: rgba(212, 200, 176, 0.8);
+      margin-right: 6px;
+      font-weight: 400;
     }
 
     .author-input {
-      font-family: Georgia, 'Times New Roman', serif;
+      font-family: Georgia, 'Noto Serif TC', serif;
       font-style: italic;
+      font-size: 14px;
       color: #F8F6F0;
       background: transparent;
       border: none;
-      border-bottom: 1px solid rgba(255, 206, 5, 0.35);
-      padding-bottom: 1px;
+      border-bottom: 1.5px solid rgba(255, 206, 5, 0.4);
+      padding-bottom: 2px;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+      transition: border-color 0.2s ease;
 
       &::placeholder {
-        color: rgba(248, 246, 240, 0.4);
+        color: rgba(248, 246, 240, 0.45);
         font-style: italic;
       }
 
       &:focus {
-        border-bottom-color: #FFCE05;
+        border-bottom-color: rgba(255, 206, 5, 0.8);
+        outline: none;
+      }
+
+      &:hover {
+        border-bottom-color: rgba(255, 206, 5, 0.6);
       }
     }
   }

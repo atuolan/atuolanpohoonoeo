@@ -325,7 +325,7 @@ const currentLayout = computed(() => {
 
   // Pop普普風/新粗野派樣式
   &.pop {
-    padding: 16px;
+    padding: clamp(8px, 3vw, 16px);
     background: #fef08a;
     border: 2px solid #1a1a1a;
     border-radius: 16px;
@@ -349,11 +349,14 @@ const currentLayout = computed(() => {
         width: 100%;
         border: none;
         background: transparent;
-        font-size: 16px;
+        font-size: clamp(13px, 3.5vw, 16px);
         font-weight: 900;
         color: #1a1a1a;
         padding-bottom: 4px;
         border-bottom: 3px solid #1a1a1a;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
 
         &:focus {
           outline: none;
@@ -421,13 +424,14 @@ const currentLayout = computed(() => {
 
       .item-text {
         flex: 1;
-        font-size: 14px;
+        font-size: clamp(12px, 3vw, 14px);
         font-weight: 700;
         color: #1a1a1a;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
         transition: opacity 0.2s;
+        min-width: 0;
       }
 
       .remove-btn {
@@ -535,7 +539,7 @@ const currentLayout = computed(() => {
 
   // 平面風 (Flat / Illustration)
   &.flat {
-    padding: 16px;
+    padding: clamp(8px, 3vw, 16px);
     background: #FFF0F5;
     border: 3px solid #332650;
     border-radius: 24px;
@@ -549,10 +553,13 @@ const currentLayout = computed(() => {
         width: 100%;
         border: none;
         background: transparent;
-        font-size: 16px;
+        font-size: clamp(13px, 3.5vw, 16px);
         font-weight: 800;
         color: #332650;
         padding-bottom: 4px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
 
         &:focus {
           outline: none;
@@ -600,12 +607,13 @@ const currentLayout = computed(() => {
 
       .item-text {
         flex: 1;
-        font-size: 14px;
+        font-size: clamp(12px, 3vw, 14px);
         font-weight: 700;
         color: #332650;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        min-width: 0;
       }
 
       .remove-btn {
@@ -654,8 +662,8 @@ const currentLayout = computed(() => {
         border: 3px solid #332650;
         background: white;
         border-radius: 9999px;
-        padding: 6px 12px;
-        font-size: 13px;
+        padding: clamp(4px, 1.2vw, 6px) clamp(8px, 2vw, 12px);
+        font-size: clamp(11px, 2.8vw, 13px);
         font-weight: 700;
         color: #332650;
 
@@ -880,68 +888,263 @@ const currentLayout = computed(() => {
     }
   }
 
-  // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）
-  // 深紫畫布 + 芥末黃外框 + 角落發光星星，無動畫
+  // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）- 優化版
   &.pearl {
-    padding: 14px 12px 12px;
+    padding: 16px 14px 14px;
     background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
-    border: 2px solid #FFCE05;
-    border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+    border: 2.5px solid #FFCE05;
+    border-radius: 12px;
+    box-shadow:
+      0 8px 24px rgba(51, 45, 75, 0.45),
+      0 2px 8px rgba(255, 206, 5, 0.15),
+      inset 0 0 0 1px rgba(255, 206, 5, 0.18);
     position: relative;
     overflow: hidden;
 
-    // 角落發光星星（純 CSS、靜態）
+    // 右上角發光星點裝飾
     &::before {
-      content: ''; position: absolute; top: 10px; right: 12px; width: 7px; height: 7px;
-      background: radial-gradient(circle, rgba(255,206,5,0.95) 0%, transparent 70%);
-      box-shadow: 0 0 6px 2px rgba(255,206,5,0.5), -160px 30px 0 -1px rgba(123,173,238,0.8), -30px 140px 0 -2px rgba(255,198,174,0.6);
-      border-radius: 50%; z-index: 0; pointer-events: none;
+      content: '';
+      position: absolute;
+      top: 12px;
+      right: 14px;
+      width: 8px;
+      height: 8px;
+      background: radial-gradient(circle, rgba(255, 206, 5, 0.95) 0%, transparent 70%);
+      box-shadow:
+        0 0 8px 2px rgba(255, 206, 5, 0.6),
+        -48px 28px 0 -2px rgba(71, 131, 222, 0.9),
+        -48px 28px 8px 0 rgba(71, 131, 222, 0.45),
+        20px 42px 0 -3px rgba(255, 198, 174, 0.8),
+        20px 42px 6px -1px rgba(255, 198, 174, 0.4);
+      border-radius: 50%;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    // 左下角幾何裝飾
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: 14px;
+      left: 12px;
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(45deg, rgba(71, 131, 222, 0.15) 0%, transparent 100%);
+      border-left: 1.5px solid rgba(71, 131, 222, 0.3);
+      border-bottom: 1.5px solid rgba(71, 131, 222, 0.3);
+      z-index: 0;
+      pointer-events: none;
     }
 
     .sticky-header {
-      margin-bottom: 8px; position: relative; z-index: 1;
+      margin-bottom: 10px;
+      position: relative;
+      z-index: 1;
+      
       .title-input {
-        width: 100%; border: none; border-bottom: 1px solid rgba(255,206,5,0.45); background: transparent; font-size: 15px; font-family: "Georgia", serif; font-weight: 600; font-style: italic; letter-spacing: 0.3px; color: #F8F6F0; padding: 4px 2px;
-        &::placeholder { color: rgba(212,200,176,0.5); }
-        &:focus { outline: none; border-bottom-color: #FFCE05; }
+        width: 100%;
+        border: none;
+        border-bottom: 1.5px solid rgba(255, 206, 5, 0.5);
+        background: transparent;
+        font-size: clamp(13px, 3.5vw, 16px);
+        font-family: Georgia, 'Noto Serif TC', serif;
+        font-weight: 600;
+        font-style: italic;
+        letter-spacing: clamp(0.2px, 0.1vw, 0.4px);
+        color: #F8F6F0;
+        padding: 5px 2px;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        transition: border-color 0.2s ease;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        
+        &::placeholder {
+          color: rgba(212, 200, 176, 0.55);
+          font-style: italic;
+        }
+        
+        &:focus {
+          outline: none;
+          border-bottom-color: rgba(255, 206, 5, 0.85);
+        }
       }
     }
 
     .todo-list {
-      flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; position: relative; z-index: 1;
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      position: relative;
+      z-index: 1;
+      
+      &::-webkit-scrollbar {
+        width: 5px;
+      }
+      &::-webkit-scrollbar-track {
+        background: rgba(0, 0, 0, 0.1);
+        border-radius: 3px;
+      }
+      &::-webkit-scrollbar-thumb {
+        background: rgba(255, 206, 5, 0.35);
+        border-radius: 3px;
+        
+        &:hover {
+          background: rgba(255, 206, 5, 0.5);
+        }
+      }
     }
 
     .todo-item {
-      display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: rgba(71,131,222,0.16);
-      border: 1px solid rgba(255,206,5,0.25); border-radius: 8px; flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: rgba(71, 131, 222, 0.18);
+      border: 1px solid rgba(255, 206, 5, 0.3);
+      border-radius: 9px;
+      flex-shrink: 0;
+      transition: all 0.2s ease;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+
+      &:hover {
+        background: rgba(71, 131, 222, 0.22);
+        border-color: rgba(255, 206, 5, 0.45);
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+      }
 
       .check-btn {
-        width: 16px; height: 16px; min-width: 16px; border: 1px solid #FFCE05; border-radius: 50%; background: transparent; display: flex; align-items: center; justify-content: center; color: transparent;
+        width: 18px;
+        height: 18px;
+        min-width: 18px;
+        border: 1.5px solid #FFCE05;
+        border-radius: 50%;
+        background: transparent;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: transparent;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 0 0 2px transparent;
+        
+        &:hover {
+          box-shadow: 0 0 0 2px rgba(255, 206, 5, 0.2);
+          transform: scale(1.1);
+        }
       }
-      .item-text { flex: 1; font-size: 13px; font-weight: 500; color: #F8F6F0; }
+      
+      .item-text {
+        flex: 1;
+        font-size: clamp(11px, 2.8vw, 13.5px);
+        font-weight: 500;
+        color: #F8F6F0;
+        line-height: 1.4;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      
       .remove-btn {
-        opacity: 0; color: #D4C8B0; background: none; border: none; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
-        &:hover { color: #FF8E6E; }
+        opacity: 0;
+        color: rgba(212, 200, 176, 0.8);
+        background: none;
+        border: none;
+        width: 22px;
+        height: 22px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-radius: 4px;
+        
+        &:hover {
+          color: #FF8E6E;
+          background: rgba(255, 142, 110, 0.15);
+        }
       }
-      &:hover .remove-btn { opacity: 1; }
+      
+      &:hover .remove-btn {
+        opacity: 1;
+      }
 
       &.done {
-        .check-btn { background: #FFCE05; color: #332D4B; }
-        .item-text { text-decoration: line-through; opacity: 0.5; }
+        .check-btn {
+          background: #FFCE05;
+          color: #332D4B;
+          border-color: #FFCE05;
+          box-shadow: 0 0 8px rgba(255, 206, 5, 0.4);
+        }
+        .item-text {
+          text-decoration: line-through;
+          opacity: 0.5;
+        }
       }
     }
 
     .add-item {
-      display: flex; gap: 6px; margin-top: 8px; position: relative; z-index: 1;
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      position: relative;
+      z-index: 1;
+      
       input {
-        flex: 1; border: 1px solid rgba(255,206,5,0.3); border-radius: 8px; background: rgba(71,131,222,0.12); padding: 6px 10px; font-family: "Georgia", serif; color: #F8F6F0;
-        &::placeholder { color: rgba(212,200,176,0.5); }
-        &:focus { outline: none; border-color: #FFCE05; }
+        flex: 1;
+        min-width: 0;
+        border: 1.5px solid rgba(255, 206, 5, 0.35);
+        border-radius: 9px;
+        background: rgba(71, 131, 222, 0.14);
+        padding: clamp(4px, 1.5vw, 8px) clamp(6px, 2vw, 12px);
+        font-family: Georgia, 'Noto Serif TC', serif;
+        font-size: clamp(11px, 2.8vw, 13px);
+        color: #F8F6F0;
+        transition: all 0.2s ease;
+        
+        &::placeholder {
+          color: rgba(212, 200, 176, 0.55);
+          font-style: italic;
+        }
+        
+        &:focus {
+          outline: none;
+          border-color: rgba(255, 206, 5, 0.6);
+          background: rgba(71, 131, 222, 0.18);
+          box-shadow: 0 0 0 3px rgba(255, 206, 5, 0.1);
+        }
       }
+      
       .add-btn {
-        width: 30px; height: 30px; border: 1px solid #FFCE05; border-radius: 8px; background: #4783DE; color: #F8F6F0; display: flex; align-items: center; justify-content: center; transition: all 0.2s;
-        &:hover { background: #FFCE05; color: #332D4B; }
+        width: 34px;
+        height: 34px;
+        border: 1.5px solid #FFCE05;
+        border-radius: 9px;
+        background: rgba(71, 131, 222, 0.5);
+        color: #F8F6F0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        
+        &:hover {
+          background: #FFCE05;
+          color: #332D4B;
+          transform: translateY(-1px);
+          box-shadow: 0 3px 6px rgba(0, 0, 0, 0.25);
+        }
+        
+        &:active {
+          transform: translateY(0);
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
       }
     }
   }

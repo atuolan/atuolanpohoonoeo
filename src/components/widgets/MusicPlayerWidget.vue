@@ -902,41 +902,160 @@ onUnmounted(() => {
   // === 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）===
   &.pearl {
     background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
-    border-radius: 10px;
-    border: 2px solid #FFCE05;
-    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+    border-radius: 12px;
+    border: 2.5px solid #FFCE05;
+    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45),
+                0 0 20px rgba(255, 206, 5, 0.15),
+                inset 0 0 0 1px rgba(255, 206, 5, 0.18),
+                inset 0 2px 8px rgba(255, 206, 5, 0.08);
+
+    // 角落發光星星（增強版）
     &::before {
-      content: ''; position: absolute; top: 10px; left: 12px; width: 7px; height: 7px; z-index: 15;
-      background: radial-gradient(circle, rgba(255,206,5,0.95) 0%, transparent 70%);
-      box-shadow:
-        0 0 6px 2px rgba(255,206,5,0.5),
-        40px 18px 0 -2px rgba(71,131,222,0.85),
-        40px 18px 6px 0 rgba(71,131,222,0.4),
-        14px 34px 0 -3px rgba(255,198,174,0.75);
-      border-radius: 50%; pointer-events: none;
+      content: '';
+      position: absolute;
+      top: 10px;
+      left: 12px;
+      width: 8px;
+      height: 8px;
+      z-index: 15;
+      background: radial-gradient(circle, rgba(255, 206, 5, 0.95) 0%, transparent 70%);
+      box-shadow: 0 0 8px 3px rgba(255, 206, 5, 0.6),
+                  40px 18px 0 -2px rgba(71, 131, 222, 0.9),
+                  40px 18px 8px 0 rgba(71, 131, 222, 0.45),
+                  14px 34px 0 -3px rgba(255, 198, 174, 0.8);
+      border-radius: 50%;
+      pointer-events: none;
     }
-    .vinyl-record { box-shadow: 0 0 18px rgba(0,0,0,0.5); border: 2px solid #FFCE05;
-      .vinyl-grooves { border-color: rgba(255,206,5,0.14); &::after { border-color: rgba(255,206,5,0.1); } }
-      .vinyl-label { background: #4783DE; border: 2px solid #FFCE05; svg { color: #FFCE05; } }
+
+    // 左下角幾何裝飾
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: 12px;
+      left: 10px;
+      width: 24px;
+      height: 24px;
+      background: linear-gradient(45deg, rgba(71, 131, 222, 0.15) 0%, transparent 100%);
+      border-left: 1.5px solid rgba(71, 131, 222, 0.3);
+      border-bottom: 1.5px solid rgba(71, 131, 222, 0.3);
+      z-index: 15;
+      pointer-events: none;
     }
-    .tonearm { background: #D4C8B0; border: 1px solid rgba(255,206,5,0.4); box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-      .arm-base { background: #CE8221; border: 2px solid rgba(255,206,5,0.4); box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
-    }
-    .vinyl-controls-overlay {
-      background: linear-gradient(to top, rgba(51,45,75,0.9), transparent);
-      .vinyl-info { .v-title { font-family: Georgia, serif; font-style: italic; color: #F8F6F0; text-shadow: 0 1px 4px rgba(0,0,0,0.6); } .v-artist { color: #D4C8B0; } }
-      .vinyl-buttons {
-        .play-btn { background: #4783DE; color: #F8F6F0; border: none; border-radius: 50%; box-shadow: 0 2px 8px rgba(71,131,222,0.4);
-          &:hover { background: #FFCE05; color: #332D4B; transform: scale(1.05); }
-          &:active { transform: scale(0.95); }
+
+    .vinyl-record {
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.55),
+                  0 0 12px rgba(255, 206, 5, 0.2);
+      border: 2.5px solid #FFCE05;
+
+      .vinyl-grooves {
+        border-color: rgba(255, 206, 5, 0.16);
+        &::after {
+          border-color: rgba(255, 206, 5, 0.12);
         }
-        .control-btn { background: rgba(71,131,222,0.18); border: 1px solid rgba(255,206,5,0.4); color: #7BADEE; border-radius: 50%; box-shadow: none;
-          &:hover { border-color: #FFCE05; color: #FFCE05; transform: scale(1.05); }
-          &:active { transform: scale(0.95); }
+      }
+
+      .vinyl-label {
+        background: #4783DE;
+        border: 2.5px solid #FFCE05;
+        box-shadow: 0 2px 8px rgba(71, 131, 222, 0.4),
+                    inset 0 1px 3px rgba(255, 206, 5, 0.15);
+        svg {
+          color: #FFCE05;
+          filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
         }
       }
     }
-    .tap-hint { background: rgba(71,131,222,0.2); color: #F8F6F0; border: 1px solid rgba(255,206,5,0.4); box-shadow: 0 4px 12px rgba(0,0,0,0.3); border-radius: 8px; font-family: Georgia, serif; font-style: italic; }
+
+    .tonearm {
+      background: #D4C8B0;
+      border: 1.5px solid rgba(255, 206, 5, 0.45);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45),
+                  0 1px 3px rgba(255, 206, 5, 0.2);
+
+      .arm-base {
+        background: linear-gradient(135deg, #CE8221 0%, #B5721D 100%);
+        border: 2.5px solid rgba(255, 206, 5, 0.45);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35),
+                    0 0 8px rgba(206, 130, 33, 0.3);
+      }
+    }
+
+    .vinyl-controls-overlay {
+      background: linear-gradient(to top, rgba(51, 45, 75, 0.92), transparent);
+
+      .vinyl-info {
+        .v-title {
+          font-family: Georgia, serif;
+          font-style: italic;
+          color: #F8F6F0;
+          text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7),
+                       0 2px 8px rgba(0, 0, 0, 0.4);
+        }
+
+        .v-artist {
+          color: #D4C8B0;
+          text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+        }
+      }
+
+      .vinyl-buttons {
+        .play-btn {
+          background: linear-gradient(135deg, #4783DE 0%, #3A6FC5 100%);
+          color: #F8F6F0;
+          border: none;
+          border-radius: 50%;
+          box-shadow: 0 3px 10px rgba(71, 131, 222, 0.45),
+                      0 0 12px rgba(71, 131, 222, 0.25),
+                      inset 0 1px 2px rgba(255, 255, 255, 0.2);
+
+          &:hover {
+            background: linear-gradient(135deg, #FFCE05 0%, #CE8221 100%);
+            color: #332D4B;
+            transform: scale(1.08);
+            box-shadow: 0 4px 12px rgba(255, 206, 5, 0.5),
+                        0 0 16px rgba(255, 206, 5, 0.3);
+          }
+
+          &:active {
+            transform: scale(0.95);
+          }
+        }
+
+        .control-btn {
+          background: rgba(71, 131, 222, 0.2);
+          border: 1.5px solid rgba(255, 206, 5, 0.45);
+          color: #7BADEE;
+          border-radius: 50%;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2),
+                      inset 0 1px 2px rgba(71, 131, 222, 0.15);
+
+          &:hover {
+            border-color: #FFCE05;
+            color: #FFCE05;
+            background: rgba(71, 131, 222, 0.3);
+            transform: scale(1.08);
+            box-shadow: 0 3px 8px rgba(255, 206, 5, 0.3),
+                        0 0 12px rgba(255, 206, 5, 0.2);
+          }
+
+          &:active {
+            transform: scale(0.95);
+          }
+        }
+      }
+    }
+
+    .tap-hint {
+      background: rgba(71, 131, 222, 0.22);
+      color: #F8F6F0;
+      border: 1.5px solid rgba(255, 206, 5, 0.45);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35),
+                  0 0 12px rgba(71, 131, 222, 0.2);
+      border-radius: 9px;
+      font-family: Georgia, serif;
+      font-style: italic;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
   }
 
   // === 線描風（純白底＋黑細線速寫）===

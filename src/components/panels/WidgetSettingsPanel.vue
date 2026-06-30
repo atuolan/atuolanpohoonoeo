@@ -240,6 +240,7 @@ const {
           :characters="charactersStore.characters"
           :layouts="characterLayouts"
           :character-layout="characterLayout"
+          :local-style="localStyle"
           @select-layout="selectCharacterLayout"
         />
 

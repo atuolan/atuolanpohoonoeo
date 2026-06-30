@@ -399,13 +399,25 @@ const currentLayout = computed(() => {
 
     .sticky-header {
       display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
-      .mood-icon { color: #332650; }
-      .date { font-size: 14px; font-weight: 800; color: #332650; }
+      .mood-icon {
+        color: #332650;
+        width: clamp(20px, 5vw, 24px);
+        height: clamp(20px, 5vw, 24px);
+      }
+      .date {
+        font-size: clamp(12px, 3vw, 14px);
+        font-weight: 800;
+        color: #332650;
+      }
     }
 
     .diary-content {
       flex: 1; width: 100%; border: none; background: transparent; resize: none;
-      font-size: 15px; font-weight: 700; color: #332650; line-height: 1.6;
+      font-size: clamp(13px, 3.2vw, 15px);
+      font-weight: 700;
+      color: #332650;
+      line-height: 1.6;
+      min-height: 0;
       &::placeholder { color: rgba(51, 38, 80, 0.4); }
       &:focus { outline: none; }
     }
@@ -443,13 +455,30 @@ const currentLayout = computed(() => {
 
     .sticky-header {
       display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
-      .mood-icon { color: #1a1a1a; }
-      .date { font-size: 13px; font-weight: 800; color: #1a1a1a; background: white; padding: 2px 8px; border: 2px solid #1a1a1a; box-shadow: 2px 2px 0px #1a1a1a; }
+      .mood-icon {
+        color: #1a1a1a;
+        width: clamp(18px, 5vw, 22px);
+        height: clamp(18px, 5vw, 22px);
+      }
+      .date {
+        font-size: clamp(11px, 2.8vw, 13px);
+        font-weight: 800;
+        color: #1a1a1a;
+        background: white;
+        padding: 2px clamp(4px, 1.5vw, 8px);
+        border: 2px solid #1a1a1a;
+        box-shadow: 2px 2px 0px #1a1a1a;
+      }
     }
 
     .diary-content {
       flex: 1; width: 100%; border: 2px solid #1a1a1a; background: white; resize: none;
-      font-size: 14px; font-weight: 700; color: #1a1a1a; line-height: 1.6; padding: 8px;
+      font-size: clamp(12px, 3vw, 14px);
+      font-weight: 700;
+      color: #1a1a1a;
+      line-height: 1.6;
+      padding: clamp(4px, 1.5vw, 8px);
+      min-height: 0;
       &:focus { outline: none; }
     }
 
@@ -485,13 +514,27 @@ const currentLayout = computed(() => {
 
     .sticky-header {
       display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
-      .mood-icon { color: #d06d9a; }
-      .date { font-size: 14px; font-weight: bold; color: #d06d9a; }
+      .mood-icon {
+        color: #d06d9a;
+        width: clamp(18px, 5vw, 22px);
+        height: clamp(18px, 5vw, 22px);
+      }
+      .date {
+        font-size: clamp(12px, 3vw, 14px);
+        font-weight: bold;
+        color: #d06d9a;
+      }
     }
 
     .diary-content {
       flex: 1; width: 100%; border: 2px dashed #EAA3C5; background: white; resize: none;
-      font-size: 14px; font-weight: 600; color: #d06d9a; line-height: 1.6; padding: 8px; font-family: inherit;
+      font-size: clamp(12px, 3vw, 14px);
+      font-weight: 600;
+      color: #d06d9a;
+      line-height: 1.6;
+      padding: clamp(4px, 1.5vw, 8px);
+      font-family: inherit;
+      min-height: 0;
       &:focus { outline: none; border-style: solid; box-shadow: inset 1px 1px 3px rgba(0,0,0,0.05); }
     }
 
@@ -508,31 +551,49 @@ const currentLayout = computed(() => {
     }
   }
 
-  // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）
+  // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）- 優化版
   &.pearl {
     background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
-    border: 2px solid #FFCE05;
-    border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+    border: 2.5px solid #FFCE05;
+    border-radius: 12px;
+    box-shadow:
+      0 8px 24px rgba(51, 45, 75, 0.45),
+      0 2px 8px rgba(255, 206, 5, 0.15),
+      inset 0 0 0 1px rgba(255, 206, 5, 0.18);
     position: relative;
     overflow: hidden;
 
-    // 右上角靜態星光（mustard + 藍色衣領 + 溫暖膚色）
+    // 右上角發光星點裝飾
     &::before {
       content: '';
       position: absolute;
-      top: 10px;
-      right: 12px;
-      width: 7px;
-      height: 7px;
+      top: 12px;
+      right: 14px;
+      width: 8px;
+      height: 8px;
       background: radial-gradient(circle, rgba(255, 206, 5, 0.95) 0%, transparent 70%);
       box-shadow:
-        0 0 6px 2px rgba(255, 206, 5, 0.5),
-        -45px 25px 0 -2px rgba(71, 131, 222, 0.85),
-        -45px 25px 6px 0 rgba(71, 131, 222, 0.4),
-        18px 38px 0 -3px rgba(255, 198, 174, 0.75),
-        18px 38px 5px -1px rgba(255, 198, 174, 0.35);
+        0 0 8px 2px rgba(255, 206, 5, 0.6),
+        -48px 28px 0 -2px rgba(71, 131, 222, 0.9),
+        -48px 28px 8px 0 rgba(71, 131, 222, 0.45),
+        20px 42px 0 -3px rgba(255, 198, 174, 0.8),
+        20px 42px 6px -1px rgba(255, 198, 174, 0.4);
       border-radius: 50%;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    // 左下角幾何裝飾
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: 14px;
+      left: 12px;
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(45deg, rgba(71, 131, 222, 0.15) 0%, transparent 100%);
+      border-left: 1.5px solid rgba(71, 131, 222, 0.3);
+      border-bottom: 1.5px solid rgba(71, 131, 222, 0.3);
       z-index: 0;
       pointer-events: none;
     }
@@ -540,46 +601,123 @@ const currentLayout = computed(() => {
     .sticky-header {
       position: relative;
       z-index: 1;
-      display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
-      .mood-icon { color: #FFCE05; }
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      flex-shrink: 0;
+      gap: 8px;
+
+      .mood-icon {
+        color: #FFCE05;
+        filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
+        flex-shrink: 0;
+        width: clamp(20px, 5vw, 24px);
+        height: clamp(20px, 5vw, 24px);
+      }
+
       .date {
-        font-family: Georgia, 'Times New Roman', serif;
+        font-family: Georgia, 'Noto Serif TC', serif;
         font-style: italic;
-        font-size: 13px;
-        font-weight: 700;
-        color: #D4C8B0;
+        font-size: clamp(11px, 2.8vw, 13px);
+        font-weight: 600;
+        color: rgba(212, 200, 176, 0.9);
+        letter-spacing: 0.3px;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
     }
 
     .diary-content {
       position: relative;
       z-index: 1;
-      flex: 1; width: 100%; border: none; resize: none;
-      font-family: Georgia, 'Times New Roman', serif;
+      flex: 1;
+      width: 100%;
+      border: none;
+      resize: none;
+      font-family: Georgia, 'Noto Serif TC', serif;
       font-style: italic;
+      font-size: clamp(12px, 3vw, 14px);
+      line-height: 1.55;
       color: #F8F6F0;
       background: transparent;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+      letter-spacing: 0.2px;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      word-wrap: break-word;
 
       &::placeholder {
-        color: rgba(248, 246, 240, 0.45);
+        color: rgba(248, 246, 240, 0.5);
         font-style: italic;
+      }
+
+      &::-webkit-scrollbar {
+        width: 5px;
+      }
+      &::-webkit-scrollbar-track {
+        background: rgba(0, 0, 0, 0.1);
+        border-radius: 3px;
+      }
+      &::-webkit-scrollbar-thumb {
+        background: rgba(255, 206, 5, 0.35);
+        border-radius: 3px;
+
+        &:hover {
+          background: rgba(255, 206, 5, 0.5);
+        }
       }
     }
 
-    .sticky-footer { margin-top: 12px; }
+    .sticky-footer {
+      margin-top: 14px;
+    }
 
     .mood-selector {
       position: relative;
       z-index: 1;
-      display: flex; gap: 6px; justify-content: flex-end;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+
       .mood-btn {
-        width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-        background: rgba(71, 131, 222, 0.18);
-        border: 1.5px solid rgba(71, 131, 222, 0.6);
-        color: #7BADEE;
-        transition: all 0.2s;
-        &:hover { border-color: #FFCE05; color: #FFCE05; }
-        &.active { background: #FFCE05; border-color: #FFCE05; color: #332D4B; }
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(71, 131, 222, 0.2);
+        border: 1.5px solid rgba(71, 131, 222, 0.5);
+        color: rgba(123, 173, 238, 0.9);
+        transition: all 0.2s ease;
+        cursor: pointer;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+
+        &:hover {
+          border-color: rgba(255, 206, 5, 0.7);
+          color: #FFCE05;
+          background: rgba(71, 131, 222, 0.25);
+          transform: translateY(-1px);
+          box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        &.active {
+          background: #FFCE05;
+          border-color: #FFCE05;
+          color: #332D4B;
+          box-shadow:
+            0 2px 6px rgba(255, 206, 5, 0.4),
+            0 0 8px rgba(255, 206, 5, 0.3);
+          transform: scale(1.05);
+        }
+
+        &:active {
+          transform: scale(0.95);
+        }
       }
     }
   }

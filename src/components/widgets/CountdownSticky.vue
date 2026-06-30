@@ -165,15 +165,18 @@ const displayColor = computed(() => {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .content {
   flex: 1;
-  padding: 16px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
   position: relative;
   z-index: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .header {
@@ -181,12 +184,21 @@ const displayColor = computed(() => {
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 8px;
+  gap: 8px;
+  flex-shrink: 0;
 
   .title {
     font-size: 14px;
     font-weight: 600;
     color: #4b5563;
     line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
+    flex: 1;
   }
 
   .edit-trigger {
@@ -194,6 +206,7 @@ const displayColor = computed(() => {
     transition: opacity 0.2s;
     color: #9ca3af;
     padding: 4px;
+    flex-shrink: 0;
 
     &:hover {
       color: var(--theme-color);
@@ -210,14 +223,17 @@ const displayColor = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 0;
 
   .days-wrapper {
     display: flex;
     align-items: baseline;
     gap: 4px;
+    flex-wrap: wrap;
+    justify-content: center;
 
     .number {
-      font-size: 42px;
+      font-size: clamp(32px, 8vw, 48px);
       font-weight: 800;
       color: var(--theme-color);
       line-height: 1;
@@ -226,7 +242,7 @@ const displayColor = computed(() => {
     }
 
     .unit {
-      font-size: 14px;
+      font-size: clamp(12px, 3vw, 14px);
       color: #6b7280;
       font-weight: 500;
     }
@@ -239,6 +255,7 @@ const displayColor = computed(() => {
     gap: 8px;
     color: var(--theme-color);
     font-weight: 700;
+    font-size: clamp(14px, 3.5vw, 16px);
     animation: bounce 1s infinite;
 
     .party-icon {
@@ -259,13 +276,16 @@ const displayColor = computed(() => {
 
 .footer {
   text-align: center;
+  flex-shrink: 0;
 
   .target-date {
     font-size: 11px;
     color: #9ca3af;
     background: #f3f4f6;
-    padding: 2px 8px;
-    border-radius: 10px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    display: inline-block;
+    white-space: nowrap;
   }
 }
 
@@ -276,6 +296,7 @@ const displayColor = computed(() => {
   filter: blur(20px);
   z-index: 0;
   opacity: 0.4;
+  pointer-events: none;
 
   &.c1 {
     width: 60px;
@@ -304,20 +325,23 @@ const displayColor = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 12px;
 }
 
 .edit-form {
-  width: 90%;
+  width: 100%;
+  max-width: 90%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 
   .edit-input {
     width: 100%;
-    padding: 8px;
-    border: 1px solid #e5e7eb;
+    padding: 10px;
+    border: 1.5px solid #e5e7eb;
     border-radius: 8px;
-    font-size: 12px;
+    font-size: 13px;
+    transition: border-color 0.2s;
 
     &:focus {
       outline: none;
@@ -326,12 +350,21 @@ const displayColor = computed(() => {
   }
 
   .save-btn {
-    padding: 6px;
+    padding: 8px;
     background: var(--theme-color);
     color: white;
     border-radius: 8px;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
+    transition: opacity 0.2s;
+
+    &:hover {
+      opacity: 0.9;
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
   }
 }
 </style>

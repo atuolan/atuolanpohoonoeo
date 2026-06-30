@@ -92,8 +92,8 @@ onMounted(() => {
     :style="containerStyle"
     :class="currentLayout"
   >
-    <!-- 風格 1: Shelf (書架模式 - 預設) / Lineart (線描黑白書架) -->
-    <template v-if="currentLayout === 'shelf' || currentLayout === 'lineart'">
+    <!-- 風格 1: Shelf (書架模式 - 預設) / Pearl (珍珠畫廊) / Lineart (線描黑白書架) -->
+    <template v-if="currentLayout === 'shelf' || currentLayout === 'pearl' || currentLayout === 'lineart'">
       <div class="shelf-header">
         <span class="shelf-title" :style="textStyle">我的世界書</span>
         <button class="more-btn"><MoreHorizontal :size="16" /></button>
@@ -470,18 +470,21 @@ onMounted(() => {
     }
   }
 
-  // 珍珠畫廊風
+  // 珍珠畫廊風 - 優化版（維梅爾風格幾何拼貼）
   &.pearl {
     background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
     border: 2px solid #FFCE05;
-    border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45), inset 0 0 0 1px rgba(255, 206, 5, 0.18);
-    padding: 16px;
+    border-radius: 12px;
+    box-shadow:
+      0 8px 24px rgba(51, 45, 75, 0.45),
+      inset 0 0 0 1px rgba(255, 206, 5, 0.18);
+    padding: 14px;
     display: flex;
     flex-direction: column;
     position: relative;
     overflow: hidden;
 
+    // 右上角發光星點裝飾
     &::before {
       content: '';
       position: absolute;
@@ -491,11 +494,11 @@ onMounted(() => {
       height: 7px;
       background: radial-gradient(circle, rgba(255, 206, 5, 0.95) 0%, transparent 70%);
       box-shadow:
-        0 0 6px 2px rgba(255, 206, 5, 0.5),
+        0 0 8px 2px rgba(255, 206, 5, 0.5),
         -45px 25px 0 -2px rgba(71, 131, 222, 0.85),
-        -45px 25px 6px 0 rgba(71, 131, 222, 0.4),
+        -45px 25px 8px 0 rgba(71, 131, 222, 0.4),
         18px 38px 0 -3px rgba(255, 198, 174, 0.75),
-        18px 38px 5px -1px rgba(255, 198, 174, 0.35);
+        18px 38px 6px -1px rgba(255, 198, 174, 0.35);
       border-radius: 50%;
       z-index: 0;
       pointer-events: none;
@@ -505,7 +508,7 @@ onMounted(() => {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 8px;
+      margin-bottom: 10px;
       position: relative;
       z-index: 1;
 
@@ -513,19 +516,38 @@ onMounted(() => {
         font-family: Georgia, 'Times New Roman', serif;
         font-style: italic;
         color: #F8F6F0;
-        font-size: 16px;
+        font-size: 15px;
+        font-weight: 500;
         background: transparent;
         border: none;
         box-shadow: none;
         padding: 0;
+        letter-spacing: 0.3px;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
       }
 
       .more-btn {
-        background: transparent;
-        border: none;
+        background: rgba(255, 206, 5, 0.1);
+        border: 1px solid rgba(255, 206, 5, 0.3);
+        border-radius: 6px;
         color: #F8F6F0;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+        box-shadow: none;
+        
         &:hover {
+          background: rgba(255, 206, 5, 0.2);
           color: #FFCE05;
+          border-color: rgba(255, 206, 5, 0.5);
+          transform: none;
+        }
+        
+        &:active {
+          transform: scale(0.95);
         }
       }
     }
@@ -533,40 +555,124 @@ onMounted(() => {
     .bookshelf {
       flex: 1;
       display: flex;
-      gap: 6px;
-      padding-bottom: 4px;
+      gap: 7px;
+      padding-bottom: 6px;
       overflow-x: auto;
+      overflow-y: hidden;
       align-items: flex-end;
       position: relative;
       z-index: 1;
+      min-height: 0;
 
       &::-webkit-scrollbar {
         height: 4px;
       }
+      &::-webkit-scrollbar-track {
+        background: rgba(0, 0, 0, 0.1);
+        border-radius: 2px;
+      }
       &::-webkit-scrollbar-thumb {
-        background: rgba(255, 206, 5, 0.3);
-        border-radius: 4px;
+        background: rgba(255, 206, 5, 0.35);
+        border-radius: 2px;
+        
+        &:hover {
+          background: rgba(255, 206, 5, 0.5);
+        }
       }
 
       .book-spine {
-        width: 24px;
-        height: 80%;
-        border-radius: 2px 2px 0 0;
+        width: 32px;
+        min-width: 32px;
+        height: 85%;
+        max-height: 90px;
+        border-radius: 3px 3px 0 0;
         display: flex;
         align-items: center;
         justify-content: center;
-        box-shadow: inset -2px 0 4px rgba(0, 0, 0, 0.2);
-        writing-mode: vertical-rl;
-        text-orientation: mixed;
-        border: 1px solid rgba(255, 206, 5, 0.3);
+        padding: 6px 4px;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        position: relative;
+        flex-shrink: 0;
+        overflow: hidden;
+        
+        // 使用主題色系的書脊背景
+        background: linear-gradient(165deg,
+          rgba(255, 206, 5, 0.25) 0%,
+          rgba(206, 130, 33, 0.3) 100%
+        );
+        border: 1px solid rgba(255, 206, 5, 0.4);
         border-bottom: none;
+        box-shadow:
+          inset -2px 0 6px rgba(0, 0, 0, 0.25),
+          inset 2px 0 4px rgba(255, 206, 5, 0.15);
+
+        // 書脊紋理線
+        &::before {
+          content: '';
+          position: absolute;
+          top: 8px;
+          left: 2px;
+          right: 2px;
+          height: 1px;
+          background: linear-gradient(90deg,
+            transparent 0%,
+            rgba(255, 206, 5, 0.4) 50%,
+            transparent 100%
+          );
+        }
+
+        &::after {
+          content: '';
+          position: absolute;
+          bottom: 8px;
+          left: 2px;
+          right: 2px;
+          height: 1px;
+          background: linear-gradient(90deg,
+            transparent 0%,
+            rgba(255, 206, 5, 0.4) 50%,
+            transparent 100%
+          );
+        }
+
+        &:hover {
+          transform: translateY(-8px);
+          box-shadow:
+            0 4px 8px rgba(0, 0, 0, 0.3),
+            inset -2px 0 6px rgba(0, 0, 0, 0.25),
+            inset 2px 0 4px rgba(255, 206, 5, 0.15);
+          background: linear-gradient(165deg,
+            rgba(255, 206, 5, 0.35) 0%,
+            rgba(206, 130, 33, 0.4) 100%
+          );
+        }
+
+        // 不同高度變化
+        &:nth-child(2n) {
+          height: 80%;
+        }
+        &:nth-child(3n) {
+          height: 88%;
+        }
+        &:nth-child(5n) {
+          height: 82%;
+        }
 
         .book-spine-title {
-          font-family: Georgia, serif;
-          font-size: 10px;
+          writing-mode: vertical-rl;
+          text-orientation: mixed;
+          font-family: Georgia, 'Noto Serif TC', serif;
+          font-size: 11px;
+          font-weight: 500;
           color: #F8F6F0;
-          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+          text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+          letter-spacing: 1px;
           white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-height: 100%;
+          line-height: 1.3;
         }
       }
 
@@ -576,27 +682,34 @@ onMounted(() => {
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 6px;
-        color: #D4C8B0;
-        opacity: 0.8;
+        gap: 8px;
+        color: rgba(212, 200, 176, 0.7);
+        opacity: 0.9;
 
         span {
-          font-family: Georgia, serif;
+          font-family: Georgia, 'Noto Serif TC', serif;
           font-style: italic;
           font-size: 13px;
+          font-weight: 400;
         }
       }
     }
 
     .shelf-wood {
-      height: 6px;
-      background: rgba(71, 131, 222, 0.3);
-      border-radius: 3px;
+      height: 8px;
+      background: linear-gradient(180deg,
+        rgba(71, 131, 222, 0.35) 0%,
+        rgba(71, 131, 222, 0.25) 100%
+      );
+      border-radius: 4px;
       margin-top: 0;
       position: relative;
       z-index: 1;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-      border: 1px solid rgba(255, 206, 5, 0.2);
+      box-shadow:
+        0 2px 6px rgba(0, 0, 0, 0.25),
+        inset 0 1px 0 rgba(255, 206, 5, 0.15);
+      border: 1px solid rgba(255, 206, 5, 0.25);
+      border-bottom-color: rgba(255, 206, 5, 0.3);
 
       &::before {
         display: none;

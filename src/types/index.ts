@@ -105,6 +105,8 @@ export interface WidgetCustomStyle {
   iconOffsetX?: number; // 圖標水平偏移百分比 (-100 ~ 100)
   iconOffsetY?: number; // 圖標垂直偏移百分比 (-100 ~ 100)
   iconScale?: number; // 圖標縮放倍率 (0.5 ~ 2，預設 1)
+  useCharacterBg?: boolean; // 角色卡面作為背景（僅角色綁定組件）
+  characterBgOpacity?: number; // 角色卡面背景透明度 (0-100，預設 50)
   layout?: string; // 組件佈局風格
   vinylStyle?: string; // 黑膠唱片子風格 (dark/pop)
   shape?: string; // 圖標形狀 ID（blob/circle/square/rounded-square/ellipse/star/diamond/petal/hexagon/shield/heart/cloud）

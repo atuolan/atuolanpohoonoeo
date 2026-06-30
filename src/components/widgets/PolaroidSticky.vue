@@ -257,11 +257,13 @@ const currentLayout = computed(() => {
         width: 100%;
         border: none;
         background: transparent;
-        font-size: 12px;
+        font-size: clamp(10px, 2.5vw, 12px);
         font-weight: normal;
         color: #374151;
         text-align: center;
         font-family: "Comic Sans MS", cursive, sans-serif;
+        overflow: hidden;
+        text-overflow: ellipsis;
 
         &::placeholder {
           color: #9ca3af;
@@ -370,11 +372,13 @@ const currentLayout = computed(() => {
         width: 100%;
         border: none;
         background: transparent;
-        font-size: 13px;
+        font-size: clamp(11px, 2.8vw, 13px);
         font-weight: 800;
         color: #1a1a1a;
         text-align: center;
         font-family: inherit;
+        overflow: hidden;
+        text-overflow: ellipsis;
 
         &::placeholder {
           color: rgba(26,26,26,0.3);
@@ -511,86 +515,113 @@ const currentLayout = computed(() => {
     }
   }
 
-  // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）
-  // 深紫畫布 + 芥末黃外框 + 角落發光星星 + 金線畫廊銘牌標籤
+  // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）- 優化版
   &.pearl {
-    padding: 14px;
-    padding-bottom: 12px;
+    padding: 16px;
+    padding-bottom: 14px;
     background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
-    border-radius: 10px;
-    border: 2px solid #FFCE05;
-    box-shadow: 0 8px 24px rgba(51, 45, 75, 0.45),
+    border-radius: 12px;
+    border: 2.5px solid #FFCE05;
+    box-shadow:
+      0 8px 24px rgba(51, 45, 75, 0.45),
+      0 2px 8px rgba(255, 206, 5, 0.15),
       inset 0 0 0 1px rgba(255, 206, 5, 0.18);
     position: relative;
     overflow: hidden;
 
     .tape { display: none; }
 
-    // 角落發光星星（純 CSS、靜態，不做呼吸動畫）
+    // 右上角發光星點裝飾
     &::before {
       content: '';
       position: absolute;
-      top: 10px;
-      right: 12px;
+      top: 12px;
+      right: 14px;
       width: 8px;
       height: 8px;
-      background:
-        radial-gradient(circle, rgba(255, 206, 5, 0.95) 0%, transparent 70%);
+      background: radial-gradient(circle, rgba(255, 206, 5, 0.95) 0%, transparent 70%);
       box-shadow:
-        0 0 6px 2px rgba(255, 206, 5, 0.55),
-        18px 26px 0 -2px rgba(123, 173, 238, 0.9),
-        -120px 60px 0 -3px rgba(255, 198, 174, 0.7);
+        0 0 8px 2px rgba(255, 206, 5, 0.6),
+        -48px 28px 0 -2px rgba(71, 131, 222, 0.9),
+        -48px 28px 8px 0 rgba(71, 131, 222, 0.45),
+        20px 42px 0 -3px rgba(255, 198, 174, 0.8),
+        20px 42px 6px -1px rgba(255, 198, 174, 0.4);
       border-radius: 50%;
       z-index: 3;
       pointer-events: none;
     }
-    // 右下角橘色幾何色塊（拼貼感）
+
+    // 左下角幾何裝飾（拼貼感）
     &::after {
       content: '';
       position: absolute;
-      bottom: -14px;
-      left: -14px;
-      width: 46px;
-      height: 46px;
-      background: rgba(206, 130, 33, 0.32);
-      transform: rotate(18deg);
-      border-radius: 8px;
+      bottom: 12px;
+      left: 10px;
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(45deg, rgba(206, 130, 33, 0.25) 0%, transparent 100%);
+      border-left: 1.5px solid rgba(206, 130, 33, 0.4);
+      border-bottom: 1.5px solid rgba(206, 130, 33, 0.4);
       z-index: 0;
       pointer-events: none;
     }
 
     .photo-area {
-      background: #2A2540;
-      border: 2px solid rgba(255, 206, 5, 0.55);
-      border-radius: 6px;
+      background: linear-gradient(155deg, #2A2540 0%, #252139 100%);
+      border: 2px solid rgba(255, 206, 5, 0.6);
+      border-radius: 8px;
       position: relative;
       z-index: 1;
+      box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.25),
+        inset 0 1px 0 rgba(255, 206, 5, 0.1);
+      transition: all 0.2s ease;
 
-      &:hover .change-btn { opacity: 1; transform: scale(1); }
+      &:hover {
+        border-color: rgba(255, 206, 5, 0.75);
+        box-shadow:
+          0 4px 12px rgba(0, 0, 0, 0.3),
+          inset 0 1px 0 rgba(255, 206, 5, 0.15);
+      }
+
+      &:hover .change-btn {
+        opacity: 1;
+        transform: scale(1);
+      }
 
       .placeholder {
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 8px;
-        color: #D4C8B0;
+        gap: 10px;
+        color: rgba(212, 200, 176, 0.8);
         transition: color 0.2s;
 
-        span { font-size: 12px; font-weight: 600; letter-spacing: 0.5px; }
+        span {
+          font-size: clamp(10px, 2.6vw, 12.5px);
+          font-weight: 600;
+          letter-spacing: clamp(0.3px, 0.1vw, 0.5px);
+          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
 
         &:hover { color: #FFCE05; }
       }
 
+      .photo {
+        border-radius: 6px;
+        box-shadow: inset 0 0 0 1px rgba(255, 206, 5, 0.15);
+      }
+
       .change-btn {
         position: absolute;
-        top: 8px;
-        right: 8px;
-        width: 30px;
-        height: 30px;
+        top: 10px;
+        right: 10px;
+        width: 32px;
+        height: 32px;
         border-radius: 8px;
-        background: #4783DE;
-        border: 1px solid #FFCE05;
-        box-shadow: 0 2px 6px rgba(51, 45, 75, 0.5);
+        background: rgba(71, 131, 222, 0.6);
+        border: 1.5px solid #FFCE05;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
         color: #F8F6F0;
         display: flex;
         align-items: center;
@@ -598,36 +629,57 @@ const currentLayout = computed(() => {
         opacity: 0;
         transform: scale(0.85);
         transition: all 0.2s ease;
+        cursor: pointer;
 
-        &:hover { background: #FFCE05; color: #332D4B; transform: scale(1.05); }
+        &:hover {
+          background: #FFCE05;
+          color: #332D4B;
+          transform: scale(1.05);
+          box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+        }
+        
+        &:active {
+          transform: scale(0.95);
+        }
       }
     }
 
     .caption-area {
-      padding-top: 12px;
+      padding-top: 14px;
       position: relative;
       z-index: 1;
 
       .caption-input {
         width: 100%;
         border: none;
-        border-bottom: 1px solid rgba(255, 206, 5, 0.45);
+        border-bottom: 1.5px solid rgba(255, 206, 5, 0.5);
         background: transparent;
-        padding: 4px 2px;
-        font-size: 13px;
+        padding: 5px 4px;
+        font-size: clamp(11px, 2.9vw, 13.5px);
         font-weight: 500;
         font-style: italic;
-        letter-spacing: 0.5px;
+        letter-spacing: clamp(0.3px, 0.1vw, 0.5px);
         color: #F8F6F0;
         text-align: center;
-        font-family: "Georgia", "Times New Roman", serif;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+        font-family: Georgia, 'Noto Serif TC', serif;
+        transition: border-color 0.2s ease;
+        overflow: hidden;
+        text-overflow: ellipsis;
 
         &::placeholder {
-          color: rgba(212, 200, 176, 0.55);
+          color: rgba(212, 200, 176, 0.6);
           font-style: italic;
         }
 
-        &:focus { outline: none; border-bottom-color: #FFCE05; }
+        &:focus {
+          outline: none;
+          border-bottom-color: rgba(255, 206, 5, 0.85);
+        }
+        
+        &:hover {
+          border-bottom-color: rgba(255, 206, 5, 0.65);
+        }
       }
     }
   }
