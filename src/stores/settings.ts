@@ -78,6 +78,7 @@ export const ROUTABLE_TASKS = [
   "theater",
   "characterGen",
   "fate",
+  "themeAssistant",
 ] as const;
 
 export type RoutableTaskType = (typeof ROUTABLE_TASKS)[number];
@@ -113,6 +114,7 @@ export const AUXILIARY_TASKS: readonly AuxiliaryTaskOption[] = [
   { id: "theater", name: "小劇場", icon: "🎭", description: "小劇場博主自動生成" },
   { id: "characterGen", name: "生成角色卡", icon: "👤", description: "AI 角色卡生成" },
   { id: "fate", name: "占卜", icon: "🔮", description: "塔羅占卜 AI 解讀" },
+  { id: "themeAssistant", name: "介面美化助手", icon: "✨", description: "對話式 AI 美化介面外觀" },
 ] as const;
 
 export interface EmbeddingAPIConfig {

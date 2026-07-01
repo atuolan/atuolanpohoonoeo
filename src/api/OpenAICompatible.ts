@@ -423,6 +423,37 @@ export class OpenAICompatibleClient {
   }
 
   /**
+   * 解析 Anthropic 模型的「實際輸出上限」（max_tokens 必填時使用）。
+   * 當呼叫端未設人工上限（送 0）時，改用該模型官方文件公布的最大輸出 token。
+   * 對照 Anthropic 各世代 output token 上限；未知型號給一個安全的高值。
+   */
+  private resolveAnthropicMaxOutputTokens(): number {
+    const model = this.apiSettings.model.toLowerCase();
+    // Claude 3.5 Sonnet / Haiku：8192
+    if (model.includes("claude-3-5") || model.includes("claude-3.5")) {
+      return 8192;
+    }
+    // Claude 3.7 Sonnet：64000
+    if (model.includes("claude-3-7") || model.includes("claude-3.7")) {
+      return 64000;
+    }
+    // Claude 4 / Opus 4 / Sonnet 4 系列：至少 32000，Sonnet 可達 64000
+    if (
+      model.includes("claude-opus-4") ||
+      model.includes("claude-sonnet-4") ||
+      model.includes("claude-4")
+    ) {
+      return 64000;
+    }
+    // Claude 3 舊世代（opus/sonnet/haiku）：4096
+    if (model.includes("claude-3")) {
+      return 4096;
+    }
+    // 未知 Claude 型號：給一個安全的高值，避免又被硬切。
+    return 8192;
+  }
+
+  /**
    * 強制訊息嚴格交替（user/assistant）
    * 用於 DeepSeek Reasoner 等要求嚴格交替的模型
    *
@@ -686,8 +717,12 @@ export class OpenAICompatibleClient {
       model: this.apiSettings.model,
       messages: processedMessages,
       stream,
-      max_tokens: settings.maxResponseLength,
     };
+    // maxResponseLength > 0 才帶 max_tokens；送 0（或未設）代表「不設人工上限」，
+    // 直接省略此欄位，交由模型用自身的輸出上限（OpenAI 相容端點允許省略）。
+    if (settings.maxResponseLength && settings.maxResponseLength > 0) {
+      body.max_tokens = settings.maxResponseLength;
+    }
 
     // temperature（開關關閉則完全不發送，undefined 視為啟用以相容舊資料）
     if (settings.enableTemperature !== false) {
@@ -876,11 +911,17 @@ export class OpenAICompatibleClient {
     // 最後一條（本輪邊界）→ 寫入供下一輪命中
     setCacheBreakpointOnLastTextBlock(anthropicMessages[lastIdx]);
 
+    // Anthropic 的 max_tokens 為必填，無法像 OpenAI 相容端點那樣省略。
+    // 送 0（或未設）代表「不設人工上限」→ 改用該模型的實際輸出上限。
+    const anthropicMaxTokens =
+      settings.maxResponseLength && settings.maxResponseLength > 0
+        ? settings.maxResponseLength
+        : this.resolveAnthropicMaxOutputTokens();
     const body: Record<string, unknown> = {
       model: this.apiSettings.model,
       messages: anthropicMessages,
       stream,
-      max_tokens: settings.maxResponseLength,
+      max_tokens: anthropicMaxTokens,
       metadata: { user_id: this.getAnthropicUserId() },
     };
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ImageCropper } from "@/components/common";
+import AIThemeChatModal from "@/components/modals/AIThemeChatModal.vue";
 import ThemePackIcon from "@/components/common/ThemePackIcon.vue";
 import { useLanguage } from "@/composables/useLanguage";
 import { useCanvasStore } from "@/stores/canvas";
@@ -32,6 +33,9 @@ const themeStore = useThemeStore();
 const settingsStore = useSettingsStore();
 const canvasStore = useCanvasStore();
 const { currentLanguage, t } = useLanguage();
+
+// ===== AI 美化助手 =====
+const showAIChat = ref(false);
 
 // ===== 主題包一鍵套用 =====
 const themePackList = themePacks;
@@ -171,6 +175,10 @@ async function buildThemePackFromCurrent(options: {
       ...(imageData ? { imageData } : {}),
     },
     widgets: { standardLayout, clockStyle, habitLayout },
+    // 全域自訂 CSS（AI 美化助手寫入的全站樣式），隨主題包一起分享
+    ...(themeStore.customCSS && themeStore.customCSS.trim()
+      ? { customCSS: themeStore.customCSS }
+      : {}),
     ...(options.includeLayout
       ? {
           layoutSnapshot: JSON.parse(JSON.stringify(canvasStore.widgets)),
@@ -812,6 +820,17 @@ function resetToDefault() {
   }
 }
 
+// AI 美化助手關閉後：重新同步暫存值
+// （AI 可能已改動 store 的 customCSS / 桌布 / 字體 / 配色，
+//   不重新同步的話 textarea 會顯示舊值，且 handleClose 會用舊值覆寫回 store）
+function onAIChatClose() {
+  showAIChat.value = false;
+  tempWallpaperStyle.value = { ...themeStore.wallpaperStyle };
+  tempCustomCSS.value = themeStore.customCSS;
+  tempGlobalFont.value = { ...themeStore.globalFont };
+  customHexInput.value = themeStore.colors.primary;
+}
+
 // 關閉彈窗
 function handleClose() {
   // 關閉前自動保存自訂 CSS
@@ -851,13 +870,22 @@ watch(
           <!-- 標題 -->
           <div class="modal-header">
             <h2 class="modal-title">全局美化配置</h2>
-            <button class="modal-close" @click="handleClose">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                />
-              </svg>
-            </button>
+            <div class="modal-header-actions">
+              <button
+                class="ai-beautify-btn"
+                title="用 AI 對話美化介面"
+                @click="showAIChat = true"
+              >
+                ✨ 用 AI 美化
+              </button>
+              <button class="modal-close" @click="handleClose">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                  />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <div class="modal-hint">
@@ -1969,6 +1997,7 @@ body {
         </div>
       </div>
     </div>
+    <AIThemeChatModal :visible="showAIChat" @close="onAIChatClose" />
   </Teleport>
 </template>
 
@@ -1976,6 +2005,42 @@ body {
 .global-theme-modal {
   width: 100%;
   max-width: 500px;
+}
+
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-beautify-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #a78bfa, #6366f1);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    filter 0.15s ease;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+
+  &:hover {
+    filter: brightness(1.05);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.45);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
 }
 
 .modal-hint {

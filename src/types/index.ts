@@ -127,6 +127,12 @@ export interface WidgetInstance {
 // 組件數據（包含自定義樣式）
 export interface WidgetData {
   customStyle?: WidgetCustomStyle;
+  /**
+   * AI 創建型工具產出的「裸 CSS 內容」（不含外層選擇器）。
+   * 作用域由 useWidgetCustomCSS 聚合器自動包裝成
+   * `#app [data-widget-id="<id>"] ...`，AI 永遠不寫選擇器。
+   */
+  customCSS?: string;
   [key: string]: any;
 }
 

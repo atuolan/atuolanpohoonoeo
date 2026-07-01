@@ -13,6 +13,7 @@ import AuthScreen from "@/components/screens/AuthScreen.vue";
 import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import { useSwipeBack } from "@/composables/useSwipeBack";
 import { useTimeTheme } from "@/composables/useTimeTheme";
+import { useWidgetCustomCSS } from "@/composables/useWidgetCustomCSS";
 import { proactiveMessageService } from "@/services/ProactiveMessageService";
 import {
   useCanvasStore,
@@ -116,6 +117,9 @@ import { PendingCall } from "./types";
 
 // 時間動態主題
 const { backgroundColor, textColor, isDark } = useTimeTheme();
+
+// 啟用 per-組件自訂 CSS 聚合器（AI 創建型工具產出的 customCSS 會自動注入並作用域化）
+useWidgetCustomCSS();
 
 type ServiceWorkerMessageData = {
   type?: string;

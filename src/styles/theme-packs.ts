@@ -76,6 +76,9 @@ export interface ThemePack {
   // 自訂主題包選用：完整桌面組件佈局快照（位置 / 大小 / 內容 / 樣式）
   // 匯出 / 匯入時用來還原使用者首頁，預設主題包不攜帶
   layoutSnapshot?: WidgetInstance[];
+  // 自訂主題包選用：全域自訂 CSS（對應 theme store 的 customCSS）
+  // 讓 AI／使用者寫在「全局美化」框的 CSS 也能隨主題包分享出去，預設主題包不攜帶
+  customCSS?: string;
   // 是否為使用者自訂主題包
   isCustom?: boolean;
   // 建立時間（自訂主題包用）

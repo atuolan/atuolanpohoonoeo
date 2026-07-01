@@ -18,18 +18,20 @@ function parseColorToRgb(
   if (!color) return null;
   const s = color.trim().toLowerCase();
 
-  // #rgb or #rrggbb
+  // #rgb / #rgba / #rrggbb / #rrggbbaa（alpha 位僅用於取色，這裡忽略）
   const hexMatch = s.match(/^#([0-9a-f]{3,8})$/);
   if (hexMatch) {
     const hex = hexMatch[1];
-    if (hex.length === 3) {
+    // 3 或 4 碼短碼：每碼加倍展開，第 4 碼為 alpha（略過）
+    if (hex.length === 3 || hex.length === 4) {
       return {
         r: parseInt(hex[0] + hex[0], 16),
         g: parseInt(hex[1] + hex[1], 16),
         b: parseInt(hex[2] + hex[2], 16),
       };
     }
-    if (hex.length >= 6) {
+    // 6 或 8 碼：前 6 碼為 RGB，第 7-8 碼為 alpha（略過）
+    if (hex.length === 6 || hex.length === 8) {
       return {
         r: parseInt(hex.slice(0, 2), 16),
         g: parseInt(hex.slice(2, 4), 16),
@@ -173,11 +175,33 @@ export interface ModalAnimation {
 
 // hex → rgba 轉換
 function hexToRgba(hex: string, alpha: number): string {
-  const h = hex.replace("#", "");
+  let h = hex.replace("#", "").trim();
+
+  // 展開短碼：3 碼 (rgb) → 6 碼，4 碼 (rgba) → 8 碼
+  if (h.length === 3 || h.length === 4) {
+    h = h
+      .split("")
+      .map((ch) => ch + ch)
+      .join("");
+  }
+
+  // 非預期長度時退回黑色，避免產生 NaN
+  if (h.length !== 6 && h.length !== 8) {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+
   const r = parseInt(h.substring(0, 2), 16);
   const g = parseInt(h.substring(2, 4), 16);
   const b = parseInt(h.substring(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+
+  // 若 hex 自帶 alpha（8 碼），與傳入 alpha 相乘
+  let a = alpha;
+  if (h.length === 8) {
+    const hexAlpha = parseInt(h.substring(6, 8), 16) / 255;
+    a = alpha * hexAlpha;
+  }
+
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 // 粉紅馬卡龍配色
 const softPinkTheme: ThemeColors = {
@@ -1039,6 +1063,10 @@ export const useThemeStore = defineStore("theme", () => {
   function setPreset(preset: string) {
     if (themePresets[preset]) {
       currentPreset.value = preset;
+      // 清空自訂配色覆蓋，否則 colors computed 的 { ...preset, ...customColors }
+      // 會讓殘留的 customColors（例如先前套用主題包時寫入的整組 14 色）
+      // 完全蓋住新 preset，導致「設定配色預設」看起來沒有任何變化。
+      customColors.value = {};
       // 更新氣泡顏色以匹配主題
       const theme = themePresets[preset];
       bubbleStyle.value.userBgColor = theme.primary;
@@ -1114,6 +1142,12 @@ export const useThemeStore = defineStore("theme", () => {
     // 氣泡主色同步主題包主色
     bubbleStyle.value.userBgColor = pack.colors.primary;
     bubbleStyle.value.userBgGradient = `linear-gradient(135deg, ${pack.colors.primary}, ${pack.colors.primaryLight})`;
+    // 全域自訂 CSS：主題包若帶有 customCSS 則一併還原（可跨裝置分享 AI 寫入的全域樣式）
+    // 未攜帶時（undefined）不動使用者現有的全域 CSS，避免套用預設主題包時清空
+    if (typeof pack.customCSS === "string") {
+      customCSS.value = pack.customCSS;
+      applyCustomCSS();
+    }
     // 記錄當前主題包
     currentThemePack.value = pack.id;
     applyTheme();

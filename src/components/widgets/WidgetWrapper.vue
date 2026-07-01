@@ -388,6 +388,7 @@ function onWrapperClick(e: MouseEvent) {
 <template>
   <div
     class="widget-wrapper"
+    :data-widget-id="widget.id"
     :class="{
       'edit-mode': canvasStore.isEditMode,
       'is-dragging': isDragging,
