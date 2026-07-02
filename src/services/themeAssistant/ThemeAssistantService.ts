@@ -267,6 +267,10 @@ export async function runThemeAssistant(
   const messageParts: string[] = [];
   let lastRaw = "";
 
+  // 去重快取：同一次執行內，相同的查詢（工具名 + 參數）只實際查一次，
+  // 之後重複呼叫直接回短提示，避免 AI 反覆查同一區塊把 context 撐爆（token 防爆第 5 層）。
+  const seenQueries = new Set<string>();
+
   const client = getAPIClient(apiSettings);
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -348,7 +352,26 @@ export async function runThemeAssistant(
       }
 
       allToolCalls.push(call);
-      const r = executeToolCall(call.tool, call.args, ctx);
+      // 查詢型工具去重：相同工具 + 相同參數在本次執行內重覆呼叫時，
+      // 不再實際查詢，直接回短提示，省 token。
+      let r: ToolExecResult;
+      if (tool?.query) {
+        const key = `${call.tool}:${JSON.stringify(call.args ?? {})}`;
+        if (seenQueries.has(key)) {
+          r = {
+            ok: true,
+            tool: call.tool,
+            isQuery: true,
+            appliedArgs: call.args,
+            info: "（你本次已經查過這個項目，結果與先前相同；請直接根據先前查到的資訊動手，不要重複查詢。）",
+          };
+        } else {
+          seenQueries.add(key);
+          r = executeToolCall(call.tool, call.args, ctx);
+        }
+      } else {
+        r = executeToolCall(call.tool, call.args, ctx);
+      }
       roundResults.push(r);
       allExecResults.push(r);
 
@@ -469,6 +492,7 @@ export interface ThemeSnapshot {
   bubbleStyle: unknown;
   wallpaperStyle: unknown;
   customCSS: string;
+  surfaceCustomCSS: Record<string, string>;
   globalFont: unknown;
   widgets: { id: string; customCSS: string; clockStyle?: string }[];
 }
@@ -491,6 +515,9 @@ export function captureSnapshot(): ThemeSnapshot {
     bubbleStyle: deepClone(theme.bubbleStyle),
     wallpaperStyle: deepClone(theme.wallpaperStyle),
     customCSS: theme.customCSS,
+    surfaceCustomCSS: deepClone(
+      theme.surfaceCustomCSS as Record<string, string>,
+    ),
     globalFont: deepClone(theme.globalFont),
     widgets: canvas.widgets.map((w) => ({
       id: w.id,
@@ -521,6 +548,8 @@ export function restoreSnapshot(snap: ThemeSnapshot): void {
   theme.applyTheme();
 
   theme.updateCustomCSS(snap.customCSS);
+  // 還原各 UI 表面的自訂 CSS（舊快照可能沒有此欄位，以空物件兜底）
+  theme.surfaceCustomCSS = deepClone(snap.surfaceCustomCSS ?? {});
   theme.updateGlobalFont(snap.globalFont as Parameters<typeof theme.updateGlobalFont>[0]);
 
   // 還原各組件的 customCSS / clockStyle

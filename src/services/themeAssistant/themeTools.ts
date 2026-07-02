@@ -18,6 +18,12 @@ import { themePacks } from "@/styles/theme-packs";
 import { shapePresets } from "@/styles/shape-presets";
 import { styleLayouts } from "@/components/panels/widget-settings/widgetSettingsOptions";
 import { formatWidgetStyleDetail } from "./widgetStyleHints";
+import {
+  listSurfacesBrief,
+  listRegionsBrief,
+  inspectRegion,
+  allSurfaceIds,
+} from "./uiSurfaceRegistry";
 import type { WidgetType } from "@/types";
 
 // ===== 執行上下文 =====
@@ -615,6 +621,154 @@ export const THEME_TOOLS: ThemeTool[] = [
         return `• widgetId="${w.id}"，型別=${w.type}${tags ? `（${tags}）` : ""}`;
       });
       return ["# 畫布組件清單", ...lines].join("\n");
+    },
+  },
+
+  // ---- D2. UI 表面查詢型工具（三段式漸進揭露，token 防爆核心） ----
+  {
+    name: "列出可美化介面",
+    description:
+      "想美化「彈窗 / 設定頁 / 聊天室」這類介面表面（不是桌面組件）時，第一步先用它。回傳所有可精修的 UI 表面清單（id、名稱、分類、一句話簡介），不含細節。挑定表面後再用「列出介面區塊」往下查。",
+    params: [],
+    query: true,
+    inspect() {
+      const surfaces = listSurfacesBrief();
+      if (surfaces.length === 0) return "目前沒有登記任何可美化的 UI 表面。";
+      const lines = surfaces.map(
+        (s) => `• id="${s.id}"（${s.label}，分類=${s.category}）：${s.summary}`,
+      );
+      return [
+        "# 可美化 UI 表面清單",
+        "挑定要改哪個表面後，用「列出介面區塊」查它的區塊。",
+        ...lines,
+      ].join("\n");
+    },
+  },
+  {
+    name: "列出介面區塊",
+    description:
+      "在「列出可美化介面」挑定某個表面後，用它查該表面有哪些功能區塊（標題列 / 訊息區 / 輸入框…）。只回區塊的 id、名稱、簡介，不含 class 明細。挑定區塊後再用「檢視介面區塊」看真實 class。",
+    params: [
+      {
+        name: "surfaceId",
+        type: "enum",
+        values: allSurfaceIds(),
+        description: "目標表面 id（來自「列出可美化介面」）",
+      },
+    ],
+    query: true,
+    inspect(args) {
+      const surfaceId = args.surfaceId as string;
+      const regions = listRegionsBrief(surfaceId);
+      if (regions === null) {
+        return `找不到表面 id="${surfaceId}"。請先用「列出可美化介面」取得正確 id。`;
+      }
+      if (regions.length === 0) return `表面「${surfaceId}」目前沒有登記任何區塊。`;
+      const lines = regions.map(
+        (r) => `• regionId="${r.id}"（${r.label}）：${r.summary}`,
+      );
+      return [
+        `# 表面「${surfaceId}」的區塊清單`,
+        "挑定區塊後，用「檢視介面區塊」看它可改的真實 class。",
+        ...lines,
+      ].join("\n");
+    },
+  },
+  {
+    name: "檢視介面區塊",
+    description:
+      "在「列出介面區塊」挑定某區塊後，用它查該區塊可改的真實 class 與用途，拿到後才能寫 CSS。class 較多時可帶 keyword 只看相關的（例如「背景」「按鈕」「邊框」），系統也會在超量時自動截斷並提示。看完再用「美化介面」動手。",
+    params: [
+      {
+        name: "surfaceId",
+        type: "enum",
+        values: allSurfaceIds(),
+        description: "目標表面 id",
+      },
+      {
+        name: "regionId",
+        type: "string",
+        description: "目標區塊 id（來自「列出介面區塊」）",
+      },
+      {
+        name: "keyword",
+        type: "string",
+        required: false,
+        maxLength: 40,
+        description:
+          "選填。只回 selector 或用途命中此關鍵字的 class（不分大小寫），用來在 class 很多時縮小範圍",
+      },
+    ],
+    query: true,
+    inspect(args) {
+      const surfaceId = args.surfaceId as string;
+      const regionId = args.regionId as string;
+      const keyword = args.keyword as string | undefined;
+      const result = inspectRegion(surfaceId, regionId, keyword);
+      if (result === null) {
+        return `找不到表面「${surfaceId}」的區塊「${regionId}」。請先用「列出可美化介面」與「列出介面區塊」確認 id。`;
+      }
+      const lines: string[] = [
+        `# 表面「${result.surfaceId}」▸ 區塊「${result.regionLabel}」可改 class`,
+        `表面根選擇器：${result.rootSelector}（你不用寫，系統會自動把作用域鎖在這個根之下）`,
+        "",
+        "【怎麼寫 CSS】用「美化介面」工具，只提供裸 CSS 規則；:scope 代表表面根本身，其餘 class 直接寫（如 .send-btn { ... }），系統會自動加作用域前綴，你不能也不需要寫真實全域選擇器。",
+      ];
+      if (result.classes.length === 0) {
+        lines.push("", "（沒有符合的 class）");
+      } else {
+        lines.push("", "可改 class：");
+        for (const c of result.classes) {
+          lines.push(`• ${c.selector}：${c.usage}`);
+        }
+      }
+      if (result.tips && result.tips.length) {
+        lines.push("", "調樣式技巧：");
+        for (const t of result.tips) lines.push(`- ${t}`);
+      }
+      if (result.note) {
+        lines.push("", `※ ${result.note}`);
+      }
+      return lines.join("\n");
+    },
+  },
+
+  // ---- C2. UI 表面創建型工具（AI 只輸出裸 CSS，作用域鎖到表面根） ----
+  {
+    name: "美化介面",
+    description:
+      "為某個 UI 表面（彈窗 / 設定頁 / 聊天室，非桌面組件）套用專屬外觀。動手前務必先走「列出可美化介面 → 列出介面區塊 → 檢視介面區塊」拿到真實 class。你只提供裸 CSS 規則內容，作用域由系統自動鎖到該表面根之下，你不需要也不能寫真實全域選擇器。\n【★整份覆蓋，不是追加】本工具會用你這次送的 CSS「整包取代」該表面目前的自訂 CSS，舊規則不會保留。若只是要改 / 刪其中一條，請把原本那份保留、只動要處理的行，再整份送回。\n【:scope】:scope 代表表面根本身（如彈窗最外層）；一般 class 直接寫（如 .ai-theme-header { ... }），系統會自動加 `#app 表面根` 前綴確保蓋過元件 scoped 樣式。",
+    params: [
+      {
+        name: "surfaceId",
+        type: "enum",
+        values: allSurfaceIds(),
+        description: "目標表面 id（來自「列出可美化介面」）",
+      },
+      {
+        name: "css",
+        type: "css",
+        description:
+          "裸 CSS 規則，使用「檢視介面區塊」列出的真實 class（如 .ai-theme-header { ... }）；:scope 代表表面根本身。不要寫 #app 或表面根本身，系統會自動加",
+      },
+    ],
+    execute(args, ctx) {
+      ctx.theme.updateSurfaceCSS(args.surfaceId as string, args.css as string);
+    },
+  },
+  {
+    name: "清除介面美化",
+    description: "移除某個 UI 表面先前由「美化介面」加上的專屬外觀，恢復原樣。",
+    params: [
+      {
+        name: "surfaceId",
+        type: "enum",
+        values: allSurfaceIds(),
+        description: "目標表面 id",
+      },
+    ],
+    execute(args, ctx) {
+      ctx.theme.clearSurfaceCSS(args.surfaceId as string);
     },
   },
 

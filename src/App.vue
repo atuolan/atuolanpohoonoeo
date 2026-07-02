@@ -14,6 +14,7 @@ import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import { useSwipeBack } from "@/composables/useSwipeBack";
 import { useTimeTheme } from "@/composables/useTimeTheme";
 import { useWidgetCustomCSS } from "@/composables/useWidgetCustomCSS";
+import { useSurfaceCustomCSS } from "@/composables/useSurfaceCustomCSS";
 import { proactiveMessageService } from "@/services/ProactiveMessageService";
 import {
   useCanvasStore,
@@ -120,6 +121,9 @@ const { backgroundColor, textColor, isDark } = useTimeTheme();
 
 // 啟用 per-組件自訂 CSS 聚合器（AI 創建型工具產出的 customCSS 會自動注入並作用域化）
 useWidgetCustomCSS();
+
+// 啟用 per-UI 表面自訂 CSS 聚合器（AI 對彈窗/設定頁的美化會自動注入並鎖定表面作用域）
+useSurfaceCustomCSS();
 
 type ServiceWorkerMessageData = {
   type?: string;

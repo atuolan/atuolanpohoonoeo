@@ -450,6 +450,10 @@ export const useThemeStore = defineStore("theme", () => {
   // 自訂 CSS
   const customCSS = ref<string>("");
 
+  // 各 UI 表面的裸 CSS（key = surfaceId，來自 uiSurfaceRegistry）
+  // 由 useSurfaceCustomCSS 聚合器加作用域前綴後注入，AI 只寫裸 CSS
+  const surfaceCustomCSS = ref<Record<string, string>>({});
+
   // 響應式當前小時，每整點更新一次，讓 time-theme 的 computed 能自動重算
   const currentHour = ref(new Date().getHours());
   function _scheduleHourUpdate() {
@@ -1155,6 +1159,19 @@ export const useThemeStore = defineStore("theme", () => {
   }
 
   // 重置為預設
+  // 更新 / 清除單一 UI 表面的裸 CSS（css 為空字串時等同清除）
+  function updateSurfaceCSS(surfaceId: string, css: string) {
+    if (css && css.trim()) {
+      surfaceCustomCSS.value[surfaceId] = css;
+    } else {
+      delete surfaceCustomCSS.value[surfaceId];
+    }
+  }
+
+  function clearSurfaceCSS(surfaceId: string) {
+    delete surfaceCustomCSS.value[surfaceId];
+  }
+
   function resetToDefault() {
     currentPreset.value = "soft-pink";
     currentSkin.value = DEFAULT_SKIN_ID;
@@ -1164,6 +1181,7 @@ export const useThemeStore = defineStore("theme", () => {
     wallpaperStyle.value = { ...defaultWallpaperStyle };
     modalAnimation.value = { ...defaultModalAnimation };
     customCSS.value = "";
+    surfaceCustomCSS.value = {};
     globalFont.value = { ...defaultGlobalFont };
     currentThemePack.value = "";
     applyTheme();
@@ -1266,6 +1284,7 @@ export const useThemeStore = defineStore("theme", () => {
           wallpaperStyle: wallpaperSnapshot,
           modalAnimation: modalAnimation.value,
           customCSS: customCSS.value,
+          surfaceCustomCSS: surfaceCustomCSS.value,
           globalFont: globalFont.value,
           globalFontPresets: globalFontPresets.value,
           currentThemePack: currentThemePack.value,
@@ -1331,6 +1350,10 @@ export const useThemeStore = defineStore("theme", () => {
 
         modalAnimation.value = { ...defaultModalAnimation, ...data.modalAnimation };
         customCSS.value = data.customCSS || "";
+        surfaceCustomCSS.value =
+          data.surfaceCustomCSS && typeof data.surfaceCustomCSS === "object"
+            ? data.surfaceCustomCSS
+            : {};
         currentThemePack.value = data.currentThemePack || "";
         customThemePacks.value = Array.isArray(data.customThemePacks)
           ? data.customThemePacks
@@ -1363,6 +1386,7 @@ export const useThemeStore = defineStore("theme", () => {
     wallpaperStyle,
     modalAnimation,
     customCSS,
+    surfaceCustomCSS,
     globalFont,
     globalFontPresets,
     colors,
@@ -1385,6 +1409,8 @@ export const useThemeStore = defineStore("theme", () => {
     updateWallpaperStyle,
     updateModalAnimation,
     updateCustomCSS,
+    updateSurfaceCSS,
+    clearSurfaceCSS,
     updateGlobalFont,
     addGlobalFontPreset,
     applyGlobalFontPreset,
