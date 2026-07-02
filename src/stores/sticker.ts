@@ -130,10 +130,35 @@ export const useStickerStore = defineStore("sticker", () => {
 
     stampDefaultPack(defaultCategory);
 
-    const existingNames = new Set(defaultCategory.stickers.map((s) => s.name));
-    const toAdd = defaultStickers.filter((s) => !existingNames.has(s.name));
+    // 清理失效的「已刪除預設表情」記錄：
+    // 若某名稱已不在 defaultStickers 中（開發者移除了該預設），就不必再保留記錄，
+    // 避免 removedDefaultStickerNames 無限增長。
+    const defaultStickerNames = new Set(defaultStickers.map((s) => s.name));
+    let removedListChanged = false;
+    if (defaultCategory.removedDefaultStickerNames?.length) {
+      const cleaned = defaultCategory.removedDefaultStickerNames.filter((name) =>
+        defaultStickerNames.has(name),
+      );
+      if (cleaned.length !== defaultCategory.removedDefaultStickerNames.length) {
+        defaultCategory.removedDefaultStickerNames = cleaned;
+        removedListChanged = true;
+      }
+    }
 
-    if (toAdd.length === 0) return;
+    const removedNames = new Set(defaultCategory.removedDefaultStickerNames ?? []);
+    const existingNames = new Set(defaultCategory.stickers.map((s) => s.name));
+    // 只補回「用戶目前沒有」且「未被用戶主動刪除」的預設表情。
+    const toAdd = defaultStickers.filter(
+      (s) => !existingNames.has(s.name) && !removedNames.has(s.name),
+    );
+
+    if (toAdd.length === 0) {
+      // 即使沒有新增表情，也可能清理過失效記錄，需要保存。
+      if (removedListChanged) {
+        await saveCategory(defaultCategory);
+      }
+      return;
+    }
 
     for (const sticker of toAdd) {
       defaultCategory.stickers.push({
@@ -273,6 +298,19 @@ export const useStickerStore = defineStore("sticker", () => {
     }
 
     category.stickers.push(newSticker);
+
+    // 若使用者把先前刪除的同名預設表情重新加回來，撤銷刪除記錄，
+    // 讓它恢復成正常的預設表情（之後 sync 也不再排除它）。
+    if (
+      isDefaultPackCategory(category) &&
+      category.removedDefaultStickerNames?.includes(newSticker.name)
+    ) {
+      category.removedDefaultStickerNames =
+        category.removedDefaultStickerNames.filter(
+          (name) => name !== newSticker.name,
+        );
+    }
+
     await saveCategory(category);
   }
 
@@ -280,6 +318,20 @@ export const useStickerStore = defineStore("sticker", () => {
   async function removeSticker(categoryId: string, stickerId: string) {
     const category = customCategories.value.find((c) => c.id === categoryId);
     if (!category) return;
+
+    const target = category.stickers.find((s) => s.id === stickerId);
+
+    // 若刪除的是「預設表情包」分類中的預設表情，記錄其名稱，
+    // 避免重啟後 syncDefaultStickers 又把它補回來。
+    if (
+      target &&
+      isDefaultPackCategory(category) &&
+      defaultStickers.some((s) => s.name === target.name)
+    ) {
+      const removed = new Set(category.removedDefaultStickerNames ?? []);
+      removed.add(target.name);
+      category.removedDefaultStickerNames = Array.from(removed);
+    }
 
     category.stickers = category.stickers.filter((s) => s.id !== stickerId);
     await saveCategory(category);

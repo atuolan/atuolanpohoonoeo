@@ -748,6 +748,58 @@ export class OpenAICompatibleClient {
     }
 
     const bodyText = JSON.stringify(body);
+
+    // 緩存診斷（OpenAI 相容路徑）：即使未開啟 Claude 專屬緩存也能定位「只寫不讀」。
+    // 這條路徑不送 cache_control 斷點，緩存完全交由中轉站依前綴自動判斷。
+    //
+    // 重點：真正的「可緩存前綴」不只開頭那幾條 system，而是「最後一條 user 訊息之前」
+    // 的所有訊息（角色設定/世界書/規則常被轉成 user/assistant 角色，散在中間）。
+    // 每輪只在尾端新增訊息，前面理應逐字節不變。因此這裡掃到最後一條 user 之前，
+    // 對每條訊息各自算 hash。連續兩輪比對，hash 改變的那一條就是前綴失效的元兇。
+    try {
+      const hashStr = (s: string): string => {
+        let hh = 0;
+        for (let i = 0; i < s.length; i++) hh = (hh * 31 + s.charCodeAt(i)) | 0;
+        return (hh >>> 0).toString(36);
+      };
+      // 找出最後一條 user 訊息的索引，前綴邊界＝它之前（不含）的所有訊息。
+      let lastUserIdx = -1;
+      for (let i = processedMessages.length - 1; i >= 0; i--) {
+        if (processedMessages[i].role === "user") {
+          lastUserIdx = i;
+          break;
+        }
+      }
+      const prefixBoundary = lastUserIdx >= 0 ? lastUserIdx : processedMessages.length;
+      const prefixParts: Array<{ role: string; identifier: string; text: string }> = [];
+      for (let i = 0; i < prefixBoundary; i++) {
+        const msg = processedMessages[i];
+        prefixParts.push({
+          role: msg.role,
+          identifier: msg.identifier || "(無identifier)",
+          text: this.getMessageText(msg),
+        });
+      }
+      const prefixStr = prefixParts.map((p) => p.text).join("\u0001");
+      const prefixHash = hashStr(prefixStr);
+      console.log(
+        `[OpenAI][緩存前綴診斷] hash=${prefixHash} 前綴字元數=${prefixStr.length} ` +
+          `前綴塊數=${prefixParts.length}(至最後一條user之前) 訊息總數=${processedMessages.length}。` +
+          `此路徑無 cache_control 斷點，緩存由中轉站依前綴自動判斷。` +
+          `若兩輪 hash 不同 → 前綴含每輪變動內容，緩存無法命中。` +
+          `逐塊比對可定位是哪一塊在變。`,
+      );
+      const perBlockDiag = prefixParts
+        .map(
+          (p, i) =>
+            `#${i}[${p.role}] ${p.identifier} hash=${hashStr(p.text)} 字元=${p.text.length}`,
+        )
+        .join(" | ");
+      console.log(`[OpenAI][前綴逐塊診斷] ${perBlockDiag}`);
+    } catch {
+      /* 診斷失敗不影響主流程 */
+    }
+
     const diagnostics: GenerationDiagnostics = {
       model: this.apiSettings.model,
       stream,
@@ -832,6 +884,9 @@ export class OpenAICompatibleClient {
     const stableSystemTexts: string[] = [];
     const dynamicSystemTexts: string[] = [];
     const convoMessages: APIMessage[] = [];
+    // 診斷用：逐塊記錄穩定 system 的來源 identifier 與內容，
+    // 以便定位「哪個穩定塊每輪在變」導致緩存前綴失效（只寫不讀）。
+    const stableSystemParts: Array<{ identifier: string; text: string }> = [];
     for (const msg of processedMessages) {
       if (msg.role === "system") {
         const text = this.getMessageText(msg);
@@ -840,6 +895,10 @@ export class OpenAICompatibleClient {
           dynamicSystemTexts.push(text);
         } else {
           stableSystemTexts.push(text);
+          stableSystemParts.push({
+            identifier: msg.identifier ?? "(無 identifier)",
+            text,
+          });
         }
       } else {
         convoMessages.push(msg);
@@ -977,6 +1036,21 @@ export class OpenAICompatibleClient {
           `動態塊(時間/天氣/時區/節日)已排在斷點之後、不緩存。` +
           `若兩輪 hash 仍不同 → 穩定前綴仍含變動內容，需檢查 identifier 分類。`,
       );
+
+      // 逐塊 hash 診斷：對每個穩定 system 塊各自算一次 hash。
+      // 連續兩輪比對，hash 改變的那一塊就是導致緩存前綴失效的元兇。
+      const hashStr = (s: string): string => {
+        let hh = 0;
+        for (let i = 0; i < s.length; i++) hh = (hh * 31 + s.charCodeAt(i)) | 0;
+        return (hh >>> 0).toString(36);
+      };
+      const perBlockDiag = stableSystemParts
+        .map(
+          (p, i) =>
+            `#${i} ${p.identifier} hash=${hashStr(p.text)} 字元=${p.text.length}`,
+        )
+        .join(" | ");
+      console.log(`[Anthropic][穩定塊逐塊診斷] ${perBlockDiag}`);
     } catch {
       /* 診斷失敗不影響主流程 */
     }

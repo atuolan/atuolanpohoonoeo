@@ -17,6 +17,11 @@ export interface StickerCategory {
   isCustom?: boolean
   isDefaultPack?: boolean
   stickers: StickerItem[]
+  /**
+   * 使用者主動刪除的「預設表情」名稱清單（僅預設表情包分類使用）。
+   * 用來避免重啟後 syncDefaultStickers 又把已刪除的預設表情補回來。
+   */
+  removedDefaultStickerNames?: string[]
 }
 
 // 系統 Emoji（Unicode）

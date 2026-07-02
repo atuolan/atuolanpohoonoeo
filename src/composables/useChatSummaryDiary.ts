@@ -891,8 +891,18 @@ ${recentMessagesText}
 
   // 處理總結設置保存
   async function handleSummarySettingsSave(settings: SummarySettings) {
-    console.log("[SummaryDiary] 保存總結設置:", settings);
+    console.log(
+      "[SummaryDiary] 保存總結設置:",
+      `summaryReadMode=${settings.summaryReadMode}`,
+      `summaryReadCount=${settings.summaryReadCount}`,
+      settings,
+    );
     deps.chatSummarySettings.value = { ...settings };
+    console.log(
+      "[SummaryDiary] deps 更新後:",
+      `summaryReadMode=${deps.chatSummarySettings.value.summaryReadMode}`,
+      `summaryReadCount=${deps.chatSummarySettings.value.summaryReadCount}`,
+    );
     await deps.saveChat();
     console.log("[SummaryDiary] 總結設置已保存到 IDB");
   }

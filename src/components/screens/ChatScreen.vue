@@ -3483,6 +3483,13 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               isImportant: s.isImportant,
             }))
         : [];
+    console.log(
+      `[ChatScreen] 📋 總結讀取診斷: summaryReadMode=${chatSummarySettings.value.summaryReadMode}, ` +
+      `summaryReadCount設定=${chatSummarySettings.value.summaryReadCount}, ` +
+      `實際讀取數=${summaryReadCount}, ` +
+      `chatSummaries總數=${chatSummaries.value.length}, ` +
+      `summariesToSend=${summariesToSend.length}`,
+    );
 
     // 向量記憶檢索（使用全域開關，排除數量跟隨總結讀取設定）
     let vectorMemories:

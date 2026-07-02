@@ -351,8 +351,21 @@ export const useImageCacheStore = defineStore("imageCache", () => {
     images.value[index].lastUsedAt = Date.now();
     images.value[index].useCount++;
 
-    await saveImage(images.value[index]);
-    return images.value[index];
+    // 防呆：因為 loadImageMetadataOnly 為了省記憶體會把 data 設為空字串，
+    // 這裡若直接把記憶體中的空 data 寫回 DB，會覆寫掉 DB 中完整的 base64。
+    // 因此當記憶體 data 為空時，先從 DB 讀取完整 data 一起寫回，確保不丟資料。
+    const memImage = images.value[index];
+    if (!memImage.data || memImage.data.length === 0) {
+      const fullData = await getImageDataFromDB(id);
+      if (fullData) {
+        // 僅更新用於寫回 DB 的副本，避免把大量 base64 常駐記憶體
+        await saveImage({ ...toRaw(memImage), data: fullData });
+        return memImage;
+      }
+    }
+
+    await saveImage(memImage);
+    return memImage;
   }
 
   /**
@@ -375,8 +388,7 @@ export const useImageCacheStore = defineStore("imageCache", () => {
     }
 
     // 否則從 IDB 按需讀取
-    const data = await getImageDataFromDB(id);
-    return data;
+    return await getImageDataFromDB(id);
   }
 
   /**
