@@ -760,7 +760,7 @@ watch(
   .header-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 14px;
   }
 
   .text-btn {
@@ -777,13 +777,23 @@ watch(
   }
 
   .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
     border: none;
+    border-radius: 8px;
     background: transparent;
-    font-size: 20px;
+    font-size: 26px;
     line-height: 1;
-    padding: 0 4px;
     color: var(--color-text-secondary, #888);
     cursor: pointer;
+    transition: background 0.15s ease;
+
+    &:hover {
+      background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
+    }
   }
 
   .close-btn {

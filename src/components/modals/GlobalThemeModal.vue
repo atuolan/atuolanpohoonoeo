@@ -876,7 +876,7 @@ watch(
                 title="用 AI 對話美化介面"
                 @click="showAIChat = true"
               >
-                ✨ 用 AI 美化
+                用 AI 美化
               </button>
               <button class="modal-close" @click="handleClose">
                 <svg viewBox="0 0 24 24" fill="currentColor">
@@ -2021,7 +2021,11 @@ body {
   font-size: 13px;
   font-weight: 600;
   color: #fff;
-  background: linear-gradient(135deg, #a78bfa, #6366f1);
+  background: linear-gradient(
+    135deg,
+    var(--color-primary-light),
+    var(--color-primary)
+  );
   border: none;
   border-radius: 999px;
   cursor: pointer;
@@ -2030,12 +2034,12 @@ body {
     transform 0.15s ease,
     box-shadow 0.15s ease,
     filter 0.15s ease;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+  box-shadow: 0 2px 8px var(--color-shadow);
 
   &:hover {
     filter: brightness(1.05);
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.45);
+    box-shadow: 0 4px 12px var(--color-shadow);
   }
 
   &:active {
