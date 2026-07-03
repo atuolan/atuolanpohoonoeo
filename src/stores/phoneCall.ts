@@ -101,8 +101,10 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   const ttsOverride = ref<{ voiceId?: string; speed?: number; pitch?: number; emotion?: string }>({});
   /** 最近一次 TTS 合成/播放錯誤訊息（供 UI 顯示，null = 無錯誤） */
   const ttsError = ref<string | null>(null);
-  /** 目前正在播放（或合成中）的訊息 id，供 UI 標示播放狀態（null = 無） */
+  /** 目前正在播放的訊息 id，供 UI 標示播放狀態（null = 無） */
   const playingMessageId = ref<string | null>(null);
+  /** 目前正在合成（載入語音中）的訊息 id，供 UI 顯示載入指示（null = 無） */
+  const synthesizingMessageId = ref<string | null>(null);
   // 語音播放基礎設施：單一已解鎖的 Audio 實例 + 播放序號（遞增即可中斷進行中的序列）
   // 在使用者手勢（接聽/撥打按鈕）內預先 play 一次來解鎖手機自動播放限制，之後重設 src 重用
   let unlockedAudio: HTMLAudioElement | null = null;
@@ -115,6 +117,18 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       .split("")
       .map((char) => traditionalToSimplified[char] || char)
       .join("");
+  }
+
+  /**
+   * MiniMax emotion 僅接受特定英文列舉值，傳中文語氣描述（如「慵懶、帶笑」）
+   * 會回傳 invalid params 導致合成失敗。此函式只放行合法值，其餘一律回傳 undefined。
+   */
+  const VALID_EMOTIONS = new Set([
+    "happy", "sad", "angry", "fearful", "disgusted", "surprised", "neutral",
+  ]);
+  function toValidEmotion(raw?: string): string | undefined {
+    const v = raw?.trim().toLowerCase();
+    return v && VALID_EMOTIONS.has(v) ? v : undefined;
   }
 
 
@@ -321,6 +335,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   /** 停止當前播放並使進行中的播放序列失效 */
   function stopPlayback() {
     playbackToken++;
+    synthesizingMessageId.value = null;
     if (unlockedAudio) {
       try {
         unlockedAudio.pause();
@@ -383,14 +398,30 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       }
       const { synthesizeSpeech } = await import("@/api/MiniMaxTTSApi");
       const mergedSettings = getMergedTTSSettings(settingsStore);
-      const emotion = msg.tone?.trim() || ttsOverride.value.emotion || undefined;
+      // MiniMax 的 emotion 只接受特定英文列舉值；AI 產生的 msg.tone 多為中文語氣描述
+      // （例如「慵懶、帶笑」「調侃」），直接傳會被 API 拒絕（invalid params）導致合成失敗、沒有聲音。
+      // 因此僅在值屬於合法列舉時才傳，中文語氣描述僅供 UI 顯示、不送 API。
+      const emotion = toValidEmotion(msg.tone) || toValidEmotion(ttsOverride.value.emotion);
       // 比照聊天路徑做繁→簡轉換，MiniMax 對簡體發音較準
       const ttsText = convertTTSContentToSimplified(text);
-      const result = await synthesizeSpeech(
+      let result = await synthesizeSpeech(
         ttsText,
         mergedSettings,
         emotion ? { emotion } : undefined,
       );
+      // 部分 MiniMax 模型不支援 emotion 欄位，會回傳「voice_setting emotion」invalid params。
+      // 這種情況下自動移除 emotion 重試一次，確保仍能發聲（優雅降級）。
+      if (
+        (!result.success || !result.audioUrl) &&
+        emotion &&
+        /emotion/i.test(result.error || "")
+      ) {
+        console.warn(
+          "[phoneCall] 模型拒絕 emotion 欄位，移除 emotion 後重試:",
+          result.error,
+        );
+        result = await synthesizeSpeech(ttsText, mergedSettings, undefined);
+      }
       if (!result.success || !result.audioUrl) {
         ttsError.value = `語音合成失敗：${result.error || "未知錯誤"}`;
         console.warn("[phoneCall] TTS 合成失敗:", result.error);
@@ -436,7 +467,10 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       if (token !== playbackToken) return;
       const msg = callMessages.value.find((m) => m.id === id);
       if (!msg || msg.role !== "ai") continue;
+      // 標示合成中，讓 UI 顯示載入指示（僅在尚未有音頻時）
+      if (!msg.audioUrl) synthesizingMessageId.value = id;
       const url = await synthesizeCallMessage(msg);
+      if (synthesizingMessageId.value === id) synthesizingMessageId.value = null;
       if (!url) continue;
       if (token !== playbackToken || !isSpeaker.value) return;
       await playAudioUrl(url, token);
@@ -462,13 +496,16 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     ttsError.value = null;
     // 中斷既有播放並取得新 token
     const token = ++playbackToken;
-    playingMessageId.value = messageId;
+    // 尚未有音頻 → 先標示合成中，讓 UI 顯示載入指示；已快取則直接進入播放
+    if (!msg.audioUrl) synthesizingMessageId.value = messageId;
     const url = await synthesizeCallMessage(msg);
+    if (synthesizingMessageId.value === messageId)
+      synthesizingMessageId.value = null;
     if (!url) {
-      playingMessageId.value = null;
       return;
     }
     if (token !== playbackToken) return;
+    playingMessageId.value = messageId;
     await playAudioUrl(url, token);
     if (token === playbackToken) playingMessageId.value = null;
   }
@@ -1468,7 +1505,7 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
   return {
     activeCall, callState, callMessages, callDuration, isGenerating,
     rejectReason, isMuted, isSpeaker, ttsAvailable, ttsError, isExpanded,
-    playingMessageId,
+    playingMessageId, synthesizingMessageId,
     videoConfig, videoSession,
     isActive, isVideoCallActive, formattedDuration, canRegenerateLastAi, canTriggerManualResponse,
     startCall, startVideoCall, endCall, sendMessage, addUserMessage, triggerAIResponse, handleAnswer, regenerateLastAiResponse,

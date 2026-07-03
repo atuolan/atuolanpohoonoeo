@@ -99,15 +99,44 @@
                     <span
                       v-if="msg.role === 'ai' && ttsAvailable"
                       class="play-icon"
-                      :title="playingMessageId === msg.id ? '停止播放' : '點擊播放語音'"
+                      :class="{
+                        loading: synthesizingMessageId === msg.id,
+                        active: playingMessageId === msg.id,
+                      }"
+                      :title="
+                        synthesizingMessageId === msg.id
+                          ? '語音載入中…'
+                          : playingMessageId === msg.id
+                            ? '停止播放'
+                            : '點擊播放語音'
+                      "
                     >
+                      <!-- 合成中：旋轉載入圈 -->
                       <svg
-                        v-if="playingMessageId === msg.id"
+                        v-if="synthesizingMessageId === msg.id"
+                        class="spinner"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                      >
+                        <circle
+                          cx="12"
+                          cy="12"
+                          r="9"
+                          stroke="currentColor"
+                          stroke-width="2.5"
+                          stroke-linecap="round"
+                          stroke-dasharray="40 20"
+                        />
+                      </svg>
+                      <!-- 播放中：暫停鍵 -->
+                      <svg
+                        v-else-if="playingMessageId === msg.id"
                         viewBox="0 0 24 24"
                         fill="currentColor"
                       >
                         <path d="M6 6h4v12H6zm8 0h4v12h-4z" />
                       </svg>
+                      <!-- 待播放：播放鍵 -->
                       <svg v-else viewBox="0 0 24 24" fill="currentColor">
                         <path d="M8 5v14l11-7z" />
                       </svg>
@@ -286,6 +315,9 @@ const isSpeaker = computed(() => phoneCallStore.isSpeaker);
 const ttsAvailable = computed(() => phoneCallStore.ttsAvailable);
 const ttsError = computed(() => phoneCallStore.ttsError);
 const playingMessageId = computed(() => phoneCallStore.playingMessageId);
+const synthesizingMessageId = computed(
+  () => phoneCallStore.synthesizingMessageId,
+);
 
 /** 點擊 AI 氣泡手動播放/停止該則語音（使用者手勢，繞過喇叭開關） */
 function playMessageAudio(messageId: string) {
@@ -739,6 +771,72 @@ async function handleRegenerate() {
     opacity: 0.7;
     margin-bottom: 4px;
     font-style: italic;
+  }
+
+  // 可點擊播放的 AI 氣泡
+  &.playable {
+    cursor: pointer;
+
+    .message-content {
+      transition: background 0.2s ease;
+    }
+
+    &:active .message-content {
+      background: rgba(255, 255, 255, 0.28);
+    }
+  }
+
+  // 行內播放圖示（緊接文字，小尺寸）
+  // 用圓形底色提升可見度：白色圖示直接貼在半透明白氣泡上幾乎看不見
+  .play-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin-left: 6px;
+    vertical-align: -5px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.22);
+    color: #fff;
+    opacity: 0.95;
+    transition:
+      background 0.2s ease,
+      opacity 0.2s ease;
+
+    svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    // 合成中：載入旋轉圈
+    &.loading {
+      background: rgba(255, 255, 255, 0.15);
+
+      .spinner {
+        animation: playIconSpin 0.8s linear infinite;
+        transform-origin: center;
+      }
+    }
+
+    // 播放中：高亮
+    &.active {
+      background: rgba(255, 255, 255, 0.4);
+      opacity: 1;
+    }
+  }
+
+  &.playing .play-icon {
+    opacity: 1;
+  }
+}
+
+@keyframes playIconSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
   }
 }
 
