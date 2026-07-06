@@ -128,8 +128,13 @@ export function useChatFiles(deps: {
       deps.currentCharacter.value?.data?.name || deps.characterName;
     const newChatId = `chat_${Date.now()}`;
 
+    // 檢查當前是否為群組對話
+    const isCurrentlyGroupChat = deps.isGroupChat.value;
+    const currentGroupMetadata = deps.currentChatData.value?.groupMetadata;
+
     const newMessages: ChatMessage[] = [];
-    if (withGreeting && availableGreetings.value.length > 0) {
+    // 群組對話不添加開場白（群組對話沒有開場白概念）
+    if (!isCurrentlyGroupChat && withGreeting && availableGreetings.value.length > 0) {
       const greeting =
         availableGreetings.value[greetingIdx] ?? availableGreetings.value[0];
       if (greeting) {
@@ -148,7 +153,9 @@ export function useChatFiles(deps: {
 
     const newChat: Chat = {
       id: newChatId,
-      name: `與 ${charName} 的對話`,
+      name: isCurrentlyGroupChat
+        ? currentGroupMetadata?.groupName || "群聊"
+        : `與 ${charName} 的對話`,
       characterId: charId,
       messages: [],
       metadata: {
@@ -160,11 +167,31 @@ export function useChatFiles(deps: {
       messageCount: newMessages.length,
       lastMessagePreview:
         newMessages[newMessages.length - 1]?.content?.slice(0, 100) || "",
+      // 繼承群組對話標記和元數據
+      ...(isCurrentlyGroupChat && {
+        isGroupChat: true,
+        groupMetadata: currentGroupMetadata
+          ? {
+              // 深拷貝群組元數據，避免引用污染
+              groupName: currentGroupMetadata.groupName,
+              members: JSON.parse(JSON.stringify(currentGroupMetadata.members || [])),
+              groupAvatar: currentGroupMetadata.groupAvatar,
+              lorebookIds: [...(currentGroupMetadata.lorebookIds || [])],
+              isMultiCharCard: currentGroupMetadata.isMultiCharCard,
+              multiCharMembers: currentGroupMetadata.multiCharMembers
+                ? JSON.parse(JSON.stringify(currentGroupMetadata.multiCharMembers))
+                : undefined,
+              // 不繼承通話狀態、日記、總結等運行時數據
+              // callState, groupDiary, conversationSummaries 留空
+            }
+          : undefined,
+      }),
     };
     await createChatRecord(newChat, newMessages);
 
     // 套用 greeting 內嵌的 <UpdateVariable><JSONPatch> 作為該開場白的好感度初始值
-    if (withGreeting && availableGreetings.value.length > 0) {
+    // 只在單人對話時套用開場白好感度
+    if (!isCurrentlyGroupChat && withGreeting && availableGreetings.value.length > 0) {
       const greeting =
         availableGreetings.value[greetingIdx] ?? availableGreetings.value[0];
       if (greeting && charId) {

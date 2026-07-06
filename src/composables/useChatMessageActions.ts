@@ -190,7 +190,15 @@ export function useChatMessageActions(context: {
 
   function handleReply(message: Message) {
     console.log("回覆消息:", message);
-    replyingTo.value = message;
+    // 在群聊中，使用 senderCharacterName 作為實際發送者名稱
+    const senderName = message.role === "ai" && message.senderCharacterName
+      ? message.senderCharacterName
+      : undefined;
+    
+    replyingTo.value = {
+      ...message,
+      senderName,
+    };
     nextTick(() => {
       context.focusReplyInput?.();
     });
@@ -216,6 +224,8 @@ export function useChatMessageActions(context: {
     const msg = context.messages.value.find((m) => m.id === messageId);
     if (!msg) return "";
     if (msg.role === "user") return context.effectivePersona.value?.name || "我";
+    // 群聊模式：使用 senderCharacterName（必須有值）
+    // 非群聊模式：使用當前角色名稱
     return msg.senderCharacterName || context.currentCharacter.value?.data?.name || "";
   }
 

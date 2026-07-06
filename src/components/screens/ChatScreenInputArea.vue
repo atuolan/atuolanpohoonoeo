@@ -7,6 +7,7 @@ import { isCssColorDark } from "@/utils/wallpaperLuminance";
 interface ReplyTarget {
   role: "user" | "ai" | "system";
   content: string;
+  senderName?: string; // 群聊中實際發送者的名稱
 }
 
 interface QuickAction {
@@ -332,7 +333,7 @@ const isDarkBackground = computed(() =>
             </svg>
             <span class="reply-to-name"
               >回覆
-              {{ replyingTo.role === "user" ? "自己" : characterName }}</span
+              {{ replyingTo.role === "user" ? "自己" : (replyingTo.senderName || characterName) }}</span
             >
           </div>
           <div class="reply-preview-text">

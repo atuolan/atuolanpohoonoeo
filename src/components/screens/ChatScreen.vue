@@ -608,6 +608,7 @@ function resolveGroupMemberByName(senderName: string): {
     };
   }
 
+  // 第一輪：精確匹配
   for (const candidate of candidateNames) {
     for (const member of groupMetadata.value.members) {
       // 虛擬成員（手動 / persona / 引入無真實卡）：以 member 自帶名稱比對
@@ -637,6 +638,50 @@ function resolveGroupMemberByName(senderName: string): {
         .filter((name, index, arr): name is string => !!name && arr.indexOf(name) === index);
 
       if (aliases.includes(candidate)) {
+        return {
+          characterId: member.characterId,
+          avatar: char?.avatar || "",
+          canonicalName: member.nickname?.trim() || char?.nickname?.trim() || char?.data?.name || rawName,
+        };
+      }
+    }
+  }
+
+  // 第二輪：部分匹配（當 AI 使用複合名稱中的單一名稱時）
+  // 例如：AI 輸出 "雪拉比" 應該匹配到群組成員 "基拉祈和雪拉比"
+  for (const candidate of candidateNames) {
+    // 候選名稱至少要有 2 個字元才進行部分匹配，避免誤匹配
+    if (candidate.length < 2) continue;
+
+    for (const member of groupMetadata.value.members) {
+      if (member.isVirtual) {
+        const aliases = [member.nickname, member.name]
+          .map((name) => name?.trim())
+          .filter((name): name is string => !!name);
+        
+        // 檢查候選名稱是否為任一別名的子字串
+        const matchedAlias = aliases.find((alias) => alias.includes(candidate));
+        if (matchedAlias) {
+          return {
+            characterId: member.characterId,
+            avatar: member.avatar || "",
+            canonicalName:
+              member.nickname?.trim() || member.name?.trim() || rawName,
+          };
+        }
+        continue;
+      }
+
+      const char = charactersStore.characters.find(
+        (c) => c.id === member.characterId,
+      );
+      const aliases = [member.nickname, char?.nickname, char?.data?.name]
+        .map((name) => name?.trim())
+        .filter((name): name is string => !!name);
+
+      // 檢查候選名稱是否為任一別名的子字串
+      const matchedAlias = aliases.find((alias) => alias.includes(candidate));
+      if (matchedAlias) {
         return {
           characterId: member.characterId,
           avatar: char?.avatar || "",

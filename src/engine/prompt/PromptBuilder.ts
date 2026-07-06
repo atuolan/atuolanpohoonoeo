@@ -779,14 +779,41 @@ export class PromptBuilder {
   private formatMessageContentForMacro(m: ChatMessage): string {
     const content = PromptBuilder.formatMessageContentForMacro(m);
     const isSystemMsg = m.sender === "system" || m.sender === "narrator";
+    
+    // 處理回覆引用
+    let finalContent = content;
+    if (m.replyTo && !isSystemMsg && this.options?.messages) {
+      const repliedMsg = this.options.messages.find((r) => r.id === m.replyTo);
+      if (repliedMsg) {
+        const preview = repliedMsg.content
+          .replace(/\[img:.*?\]/g, "[圖片]")
+          .replace(/\[sticker:.*?\]/g, "[表情包]");
+        const truncated =
+          preview.length > 60 ? preview.substring(0, 60) + "…" : preview;
+        
+        // 在群聊中，需要特別處理發送者名稱
+        let senderName: string;
+        if (repliedMsg.is_user) {
+          senderName = this.options.userName || "{{user}}";
+        } else if (repliedMsg.senderCharacterName) {
+          // 群聊中使用 senderCharacterName
+          senderName = repliedMsg.senderCharacterName;
+        } else {
+          senderName = repliedMsg.name || this.options.character?.data.name || "角色";
+        }
+        
+        finalContent = `[回覆 ${senderName}：「${truncated}」]\n${content}`;
+      }
+    }
+    
     if (
       this.options.enableRealTimeAwareness !== false &&
       !isSystemMsg &&
       m.createdAt
     ) {
-      return `${this.formatMsgTimeTag(m.createdAt)} ${content}`;
+      return `${this.formatMsgTimeTag(m.createdAt)} ${finalContent}`;
     }
-    return content;
+    return finalContent;
   }
 
   /**
