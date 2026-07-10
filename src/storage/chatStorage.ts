@@ -63,6 +63,11 @@ export async function saveChatMetadata(chat: Chat): Promise<void> {
   ) {
     nextChat.blockState = existing.blockState;
   }
+  // appearance 缺失代表畫面尚未完成 hydration，不是使用者要求清除外觀。
+  // 明確關閉聊天專屬外觀會傳入 { useCustom: false }，仍可正常覆寫。
+  if (existing?.appearance && !nextChat.appearance) {
+    nextChat.appearance = existing.appearance;
+  }
   if (existing?.chatVariables && !nextChat.chatVariables) {
     nextChat.chatVariables = existing.chatVariables;
   }

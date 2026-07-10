@@ -361,6 +361,10 @@ const promptManagerStore = usePromptManagerStore();
 // 當前聊天 ID
 const currentChatId = ref<string | null>(null);
 const activeChatId = computed(() => currentChatId.value ?? "");
+// 現有聊天的完整資料（包含外觀）尚未從 IDB 還原前，不得用初始空狀態回寫 metadata。
+const isChatHydrated = ref(false);
+// 返回按鈕已發起保存時，卸載清理不再重複發起第二次保存。
+const hasStartedExitSave = ref(false);
 
 // ===== AI 生成狀態 composable =====
 const {
@@ -937,6 +941,8 @@ const showMoreMenu = ref(false);
 
 // 顯示聊天詳情頁
 const showChatDetails = ref(false);
+// 關閉詳情會非同步等待 popstate；期間忽略重複點擊，避免一次跨越多筆 history。
+let isClosingChatDetails = false;
 
 // 顯示聊天變量設定面板
 const showChatVarsPanel = ref(false);
@@ -6616,10 +6622,17 @@ async function handleBack() {
     chatStore.saveDraft(currentChatId.value, inputText.value);
   }
 
-  // 保存當前聊天狀態 (不等待，避免阻塞 UI)
-  saveChatImmediate().catch(err => {
-    console.error("[ChatScreen] handleBack saveChatImmediate failed:", err);
-  });
+  // 只有完整 hydration 後才可保存。否則快速返回會用 appearance: undefined
+  // 覆蓋 IDB 中已存在的聊天桌布與氣泡色；快速連點也只能發起一次離場保存。
+  if (isChatHydrated.value && !hasStartedExitSave.value) {
+    hasStartedExitSave.value = true;
+    // 不等待，避免阻塞返回 UI；卸載清理會透過 hasStartedExitSave 避免重複保存。
+    saveChatImmediate().catch((err) => {
+      console.error("[ChatScreen] handleBack saveChatImmediate failed:", err);
+    });
+  } else if (!isChatHydrated.value) {
+    console.info("[ChatScreen] 聊天尚未完成載入，跳過返回保存以保護既有 metadata");
+  }
 
   emit("back");
 }
@@ -6640,6 +6653,7 @@ function toggleMoreMenu() {
 
 function openChatDetails() {
   closeMenus();
+  isClosingChatDetails = false;
   showChatDetails.value = true;
   // 推入一筆瀏覽器歷史，讓「返回上一頁」先關閉詳情頁而非離開聊天
   if (typeof window !== "undefined") {
@@ -6653,18 +6667,23 @@ function openChatDetails() {
 // 關閉詳情頁：若是透過 openChatDetails 推入的歷史條目，改用 history.back()
 // 觸發 popstate 來關閉，保持瀏覽器歷史一致；否則直接隱藏。
 function closeChatDetails() {
+  if (isClosingChatDetails) return;
+
   if (
     typeof window !== "undefined" &&
     window.history.state?.__chatDetails
   ) {
+    isClosingChatDetails = true;
     window.history.back();
   } else {
     showChatDetails.value = false;
+    isClosingChatDetails = false;
   }
 }
 
 // 監聽返回鍵：詳情頁開啟時，返回鍵先關閉詳情頁
 function handleChatDetailsPopState() {
+  isClosingChatDetails = false;
   if (showChatDetails.value) {
     showChatDetails.value = false;
   }
@@ -6959,6 +6978,7 @@ function convertStoredMessageToUiMessage(m: ChatMessage, chat: Chat): Message {
 
 // 載入或創建聊天
 async function loadOrCreateChat(overrideChatId?: string) {
+  isChatHydrated.value = false;
   await db.init();
   resetVisibleCount();
 
@@ -7128,6 +7148,8 @@ async function loadOrCreateChat(overrideChatId?: string) {
         chatAppearance.value = chat.appearance;
         // 同步到 chatStore 緩存（讓 App.vue 可以讀取）
         chatStore.setAppearanceCache(chat.appearance);
+        // 外觀與其餘 metadata 都已從同一筆聊天記錄還原，現在才允許保存。
+        isChatHydrated.value = true;
         // 使用 nextTick 確保 DOM 已更新
         nextTick(() => {
           applyChatAppearance(chat.appearance);
@@ -7137,6 +7159,8 @@ async function loadOrCreateChat(overrideChatId?: string) {
       console.error("載入聊天失敗:", e);
     }
   } else {
+    // 新聊天沒有既有 metadata 可被覆蓋，可直接開放保存。
+    isChatHydrated.value = true;
     // 新聊天（沒有 chatId）：嘗試透過角色綁定或預設 persona 自動切換
     const charId = props.characterId;
     if (charId) {
@@ -8258,6 +8282,7 @@ useChatCleanup({
   unregisterStreamingHandlers,
   isRecording,
   cancelPendingSaveTimer,
+  shouldSaveOnUnmount: () => isChatHydrated.value && !hasStartedExitSave.value,
   isChatGenerating,
   messages,
   getChatGenerationTask,

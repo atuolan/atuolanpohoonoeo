@@ -12,6 +12,7 @@ export function useChatCleanup(context: {
   unregisterStreamingHandlers: () => void;
   isRecording: Ref<boolean>;
   cancelPendingSaveTimer: () => void;
+  shouldSaveOnUnmount: () => boolean;
   isChatGenerating: () => boolean;
   messages: Ref<Message[]>;
   getChatGenerationTask: () => { content?: string } | undefined;
@@ -52,29 +53,32 @@ export function useChatCleanup(context: {
       context.isRecording.value = false;
     }
 
-    // 如果有待處理的 debounce 儲存，立即執行（避免切換聊天時丟失數據）。
+    // 如果有待處理的 debounce 儲存，先取消計時器；是否立即保存由 hydration gate 決定。
+    // 現有聊天尚未載入完整 metadata 時，絕不能用初始空狀態覆蓋 IDB。
     context.cancelPendingSaveTimer();
 
-    // 如果正在流式生成中，將已累積的內容寫入佔位符再保存。
-    // 避免空氣泡被寫入 IDB；後台生成完成後 finally 會再次保存最終結果。
-    const isCurrentlyStreaming = context.isChatGenerating();
-    if (isCurrentlyStreaming) {
-      const streamingIdx = context.messages.value.findIndex(
-        (m) => m.isStreaming && m.role === "ai",
-      );
-      if (streamingIdx !== -1) {
-        const task = context.getChatGenerationTask();
-        const accumulatedContent = task?.content || "";
-        if (accumulatedContent.trim()) {
-          // 已有部分內容，寫入佔位符（保留 isStreaming 標記）。
-          context.messages.value[streamingIdx].content = accumulatedContent;
+    if (context.shouldSaveOnUnmount()) {
+      // 如果正在流式生成中，將已累積的內容寫入佔位符再保存。
+      // 避免空氣泡被寫入 IDB；後台生成完成後 finally 會再次保存最終結果。
+      const isCurrentlyStreaming = context.isChatGenerating();
+      if (isCurrentlyStreaming) {
+        const streamingIdx = context.messages.value.findIndex(
+          (m) => m.isStreaming && m.role === "ai",
+        );
+        if (streamingIdx !== -1) {
+          const task = context.getChatGenerationTask();
+          const accumulatedContent = task?.content || "";
+          if (accumulatedContent.trim()) {
+            // 已有部分內容，寫入佔位符（保留 isStreaming 標記）。
+            context.messages.value[streamingIdx].content = accumulatedContent;
+          }
+          // 注意：不移除佔位符！後台 triggerAIResponse 閉包仍需透過 findIndex 找到它
+          // 來寫入最終完成的內容。
         }
-        // 注意：不移除佔位符！後台 triggerAIResponse 閉包仍需透過 findIndex 找到它
-        // 來寫入最終完成的內容。
+        context.saveChatNow();
+      } else if (context.hasPendingSave()) {
+        context.saveChatNow();
       }
-      context.saveChatNow();
-    } else if (context.hasPendingSave()) {
-      context.saveChatNow();
     }
 
     if (context.currentChatId.value) {
