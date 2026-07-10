@@ -464,14 +464,18 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 24px;
+  padding: clamp(12px, 3vw, 24px);
   background: rgba(10, 10, 12, 0.42);
   backdrop-filter: blur(10px);
+  overflow: hidden;
 }
 
 .chat-vars-panel {
   width: min(920px, 100%);
-  height: min(860px, calc(100vh - 48px));
+  max-height: 860px;
+  height: calc(100vh - clamp(24px, 6vw, 48px));
+  height: calc(100dvh - clamp(24px, 6vw, 48px));
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background:
@@ -485,6 +489,7 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
 }
 
 .panel-header {
+  flex: 0 0 auto;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -535,6 +540,7 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
 }
 
 .mode-tabs {
+  flex: 0 0 auto;
   display: flex;
   gap: 8px;
   padding: 8px 20px 6px;
@@ -583,8 +589,11 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
 }
 
 .vars-list {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: 0 20px 12px;
 }
 
@@ -687,12 +696,15 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
   flex-wrap: wrap;
 
   h4 {
+    min-width: 0;
     font-size: 0.88rem;
     font-weight: 700;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
 
   p {
+    min-width: 0;
+    max-width: 100%;
     color: rgba(62, 48, 36, 0.55);
     font-size: 0.72rem;
     line-height: 1.3;
@@ -781,10 +793,14 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  max-height: min(55vh, 500px);
+  max-height: min(55dvh, 500px);
   padding: 14px 20px;
   border-top: 1px solid rgba(92, 72, 55, 0.12);
   background: rgba(255, 252, 248, 0.85);
-  flex-shrink: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  flex: 0 1 auto;
 
   label {
     display: flex;
@@ -944,7 +960,8 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
 }
 
 .panel-footer {
-  padding: 16px 20px calc(16px + env(safe-area-inset-bottom));
+  flex: 0 0 auto;
+  padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
   border-top: 1px solid rgba(92, 72, 55, 0.12);
   background: rgba(252, 248, 242, 0.82);
 }
@@ -956,13 +973,15 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
   }
 
   .chat-vars-panel {
-    width: 100vw;
+    width: 100%;
+    max-height: none;
     height: 100vh;
+    height: 100dvh;
     border-radius: 0;
   }
 
   .panel-header {
-    padding: 10px 16px 8px;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 8px;
   }
 
   .mode-tabs,
@@ -972,23 +991,63 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
     padding-right: 16px;
   }
 
-  .var-card-summary,
+  .section-title {
+    margin-right: -16px;
+    margin-left: -16px;
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
   .section-title,
   .var-actions {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .var-card-controls {
-    justify-content: space-between;
+  .var-card-summary {
+    padding: 10px 12px;
+  }
+
+  .var-card-title {
+    overflow: hidden;
   }
 
   .local-prompt-editor {
     grid-template-columns: 1fr;
+    max-height: 60dvh;
+    padding-right: 16px;
+    padding-left: 16px;
   }
 
   .var-buttons {
     justify-content: flex-end;
+  }
+}
+
+@media (max-height: 620px) {
+  .panel-subtitle,
+  .section-title small {
+    display: none;
+  }
+
+  .panel-header {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .mode-tabs {
+    padding-top: 6px;
+    padding-bottom: 4px;
+  }
+
+  .section-title {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .panel-footer {
+    padding-top: 8px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
   }
 }
 </style>
