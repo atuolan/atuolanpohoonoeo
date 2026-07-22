@@ -337,11 +337,28 @@ async function confirmBatchDelete() {
   const count = selectedForDelete.value.size;
   if (!confirm(`確定要刪除 ${count} 個表情嗎？`)) return;
 
-  for (const stickerId of selectedForDelete.value) {
-    await stickerStore.removeSticker(activeCategory.value, stickerId);
-  }
+  await stickerStore.removeStickers(
+    activeCategory.value,
+    Array.from(selectedForDelete.value),
+  );
 
   exitBatchDeleteMode();
+}
+
+async function confirmRestoreDefaultStickerPack() {
+  showManageMenu.value = false;
+  if (
+    !confirm(
+      "確定要恢復預設表情包嗎？\n「我的表情」內目前的內容與分類調整會恢復為初始設定，其他自建表情分類不受影響。",
+    )
+  ) {
+    return;
+  }
+
+  await stickerStore.restoreDefaultStickerPack();
+  activeCategory.value = "default-pack";
+  activeEmotion.value = "all";
+  searchQuery.value = "";
 }
 
 // 編輯情緒模式
@@ -718,6 +735,14 @@ onMounted(() => {
             />
           </svg>
           編輯情緒分類
+        </button>
+        <button class="restore-default-btn" @click="confirmRestoreDefaultStickerPack">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path
+              d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6a6 6 0 0 1-10.89 3.48l-1.46 1.46A8 8 0 0 0 20 13c0-4.42-3.58-8-8-8z"
+            />
+          </svg>
+          恢復預設表情包
         </button>
       </div>
     </div>

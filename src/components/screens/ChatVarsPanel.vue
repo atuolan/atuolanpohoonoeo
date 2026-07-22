@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useAdminStore } from "@/stores/admin";
 import { useChatVariablesStore } from "@/stores/chatVariables";
 import { usePromptManagerStore } from "@/stores/promptManager";
 import type { ChatLocalPrompt } from "@/types/chat";
@@ -47,8 +48,10 @@ const emit = defineEmits<{
   (e: "close"): void;
 }>();
 
+const adminStore = useAdminStore();
 const promptManagerStore = usePromptManagerStore();
 const chatVariablesStore = useChatVariablesStore();
+void adminStore.loadAdminState();
 
 const modeTabs: Array<{ key: PromptMode; label: string; desc: string }> = [
   { key: "online", label: "線上模式", desc: "一般聊天提示詞開關" },
@@ -57,6 +60,7 @@ const modeTabs: Array<{ key: PromptMode; label: string; desc: string }> = [
 ];
 
 const activeMode = ref<PromptMode>(getDefaultMode());
+const expandedPromptId = ref<string | null>(null);
 const editingPromptId = ref<string | null>(null);
 const showPromptEditor = ref(false);
 const draftPrompt = ref<ChatPromptDraft>(createEmptyDraft());
@@ -141,6 +145,7 @@ watch(
     props.faceToFaceMode,
   ] as const,
   () => {
+    expandedPromptId.value = null;
     // localVars 仍以 chatId 為準
     chatVariablesStore.initForChat(props.chatId);
     // promptToggles / chatPrompts 改用 scope 化儲存
@@ -168,6 +173,20 @@ function getDefaultMode(): PromptMode {
 
 function switchMode(mode: PromptMode): void {
   activeMode.value = mode;
+  expandedPromptId.value = null;
+}
+
+function isPromptContentLocked(entry: PromptToggleEntry): boolean {
+  return !entry.isChatLocal && !!entry.prompt.adminOnly && !adminStore.isAdmin;
+}
+
+function getPromptContent(entry: PromptToggleEntry): string {
+  if (isPromptContentLocked(entry)) return "";
+  return entry.isChatLocal ? entry.chatLocalPrompt?.content ?? "" : entry.prompt.content ?? "";
+}
+
+function togglePromptContent(entry: PromptToggleEntry): void {
+  expandedPromptId.value = expandedPromptId.value === entry.identifier ? null : entry.identifier;
 }
 
 function isPromptEnabled(entry: PromptToggleEntry): boolean {
@@ -339,10 +358,19 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
           :class="{
             disabled: !isPromptEnabled(entry),
             customized: isPromptCustomized(entry),
+            expanded: expandedPromptId === entry.identifier,
             'chat-local': entry.isChatLocal,
           }"
         >
-          <div class="var-card-summary prompt-summary">
+          <div
+            class="var-card-summary prompt-summary"
+            role="button"
+            tabindex="0"
+            :aria-expanded="expandedPromptId === entry.identifier"
+            @click="togglePromptContent(entry)"
+            @keydown.enter.prevent="togglePromptContent(entry)"
+            @keydown.space.prevent="togglePromptContent(entry)"
+          >
             <div class="var-card-title">
               <div class="var-title-main">
                 <h4>{{ entry.name }}</h4>
@@ -355,9 +383,12 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
                 <p v-else>{{ entry.description || entry.identifier }}</p>
               </div>
               <span v-if="entry.isChatLocal" class="chat-local-badge">聊天專屬</span>
+              <span v-else-if="entry.prompt.adminOnly" class="admin-only-badge" title="管理員專屬內容">
+                {{ adminStore.isAdmin ? '管理員' : '內容鎖定' }}
+              </span>
               <span v-else-if="isPromptCustomized(entry)" class="custom-badge">已自訂</span>
             </div>
-            <div class="var-card-controls">
+            <div class="var-card-controls" @click.stop @keydown.stop>
               <template v-if="entry.isChatLocal">
                 <button type="button" class="mini-btn" @click="startEditChatPrompt(entry.chatLocalPrompt!)">編輯</button>
                 <button type="button" class="mini-btn danger" @click="deleteChatPrompt(entry.chatLocalPrompt!)">刪除</button>
@@ -378,7 +409,20 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
                 />
                 <span></span>
               </label>
+              <span class="expand-indicator" aria-hidden="true"></span>
             </div>
+          </div>
+          <div v-if="expandedPromptId === entry.identifier" class="prompt-content-panel">
+            <div v-if="isPromptContentLocked(entry)" class="prompt-content-locked" role="status">
+              此提示詞內容僅限管理員查看。
+            </div>
+            <template v-else>
+              <div class="prompt-content-meta">
+                <span>角色：{{ entry.role }}</span>
+                <span>{{ getPromptContent(entry).length }} 字元</span>
+              </div>
+              <pre class="prompt-content-text">{{ getPromptContent(entry) || '此提示詞沒有內容。' }}</pre>
+            </template>
           </div>
         </article>
 
@@ -659,6 +703,10 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
     border-color: rgba(63, 101, 143, 0.26);
     background: rgba(240, 246, 255, 0.72);
   }
+
+  &.expanded {
+    border-color: rgba(143, 101, 63, 0.3);
+  }
 }
 
 .var-card-summary {
@@ -672,6 +720,12 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
   background: transparent;
   color: inherit;
   text-align: left;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 3px solid rgba(143, 101, 63, 0.24);
+    outline-offset: -3px;
+  }
 }
 
 .var-card-title {
@@ -739,6 +793,76 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
   font-size: 0.7rem;
   font-weight: 800;
   white-space: nowrap;
+}
+
+.admin-only-badge {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(105, 72, 45, 0.12);
+  color: rgba(78, 50, 29, 0.88);
+  font-size: 0.7rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.expand-indicator {
+  width: 8px;
+  height: 8px;
+  margin: 0 3px 4px 1px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  opacity: 0.5;
+  transform: rotate(45deg);
+  transition: transform 0.18s ease, margin 0.18s ease;
+
+  .expanded & {
+    margin-top: 4px;
+    margin-bottom: 0;
+    transform: rotate(225deg);
+  }
+}
+
+.prompt-content-panel {
+  padding: 0 14px 14px;
+  border-top: 1px solid rgba(92, 72, 55, 0.09);
+}
+
+.prompt-content-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0 8px;
+  color: rgba(62, 48, 36, 0.55);
+  font-size: 0.7rem;
+}
+
+.prompt-content-text {
+  max-height: min(38vh, 320px);
+  max-height: min(38dvh, 320px);
+  margin: 0;
+  padding: 12px;
+  border: 1px solid rgba(92, 72, 55, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 252, 248, 0.78);
+  color: #3c332b;
+  font-family: inherit;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+}
+
+.prompt-content-locked {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid rgba(105, 72, 45, 0.12);
+  border-radius: 8px;
+  background: rgba(105, 72, 45, 0.07);
+  color: rgba(62, 48, 36, 0.68);
+  font-size: 0.78rem;
+  text-align: center;
 }
 
 .local-prompts-add {
@@ -1010,6 +1134,16 @@ function deleteChatPrompt(prompt: ChatLocalPrompt): void {
 
   .var-card-title {
     overflow: hidden;
+  }
+
+  .prompt-content-panel {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .prompt-content-text {
+    max-height: 42dvh;
+    padding: 10px;
   }
 
   .local-prompt-editor {

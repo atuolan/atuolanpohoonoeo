@@ -18,6 +18,21 @@ let hasPendingLocalChanges = false;
 let scheduledAutoSyncTimer: ReturnType<typeof setTimeout> | null = null;
 let scheduledAutoSyncInFlight: Promise<void> | null = null;
 let lastScheduledAutoSyncAt = 0;
+// 刪除墓碑以「讀取－修改－寫入」保存；所有修改必須序列化，避免批量操作
+// 同時讀到舊資料後互相覆寫，造成已刪除項目被遠端同步復原。
+let deletedEntitiesMutationQueue: Promise<void> = Promise.resolve();
+
+function mutateDeletedEntities(
+  mutation: (records: SelfHostedSyncDeletedEntityRecord[]) => SelfHostedSyncDeletedEntityRecord[],
+): Promise<void> {
+  const operation = deletedEntitiesMutationQueue.then(async () => {
+    const records = await loadDeletedEntities();
+    await saveDeletedEntities(mutation(records));
+  });
+  // 即使某次 IDB 操作失敗，也不能讓後續修改永遠卡在 rejected queue。
+  deletedEntitiesMutationQueue = operation.catch(() => undefined);
+  return operation;
+}
 
 function clearScheduledAutoSyncTimer(): void {
   if (scheduledAutoSyncTimer) {
@@ -56,36 +71,35 @@ export async function saveDeletedEntities(
 export async function recordDeletedEntity(
   record: SelfHostedSyncDeletedEntityRecord,
 ): Promise<void> {
-  const records = await loadDeletedEntities();
-  const next = records.filter(
-    (item) => !(item.entityType === record.entityType && item.entityId === record.entityId),
-  );
-  next.push(record);
-  await saveDeletedEntities(next);
+  await mutateDeletedEntities((records) => {
+    const next = records.filter(
+      (item) => !(item.entityType === record.entityType && item.entityId === record.entityId),
+    );
+    next.push(record);
+    return next;
+  });
 }
 
 export async function clearDeletedEntities(
   items: Array<Pick<SelfHostedSyncDeletedEntityRecord, "entityType" | "entityId">>,
 ): Promise<void> {
   if (items.length === 0) return;
-  const records = await loadDeletedEntities();
-  const next = records.filter(
-    (record) =>
-      !items.some(
-        (item) => item.entityType === record.entityType && item.entityId === record.entityId,
-      ),
+  await mutateDeletedEntities((records) =>
+    records.filter(
+      (record) =>
+        !items.some(
+          (item) => item.entityType === record.entityType && item.entityId === record.entityId,
+        ),
+    ),
   );
-  if (next.length === records.length) return;
-  await saveDeletedEntities(next);
 }
 
 export async function clearDeletedEntitiesByType(
   entityType: SelfHostedSyncEntityType,
 ): Promise<void> {
-  const records = await loadDeletedEntities();
-  const next = records.filter((record) => record.entityType !== entityType);
-  if (next.length === records.length) return;
-  await saveDeletedEntities(next);
+  await mutateDeletedEntities((records) =>
+    records.filter((record) => record.entityType !== entityType),
+  );
 }
 
 export function scheduleSelfHostedAutoSync(): void {

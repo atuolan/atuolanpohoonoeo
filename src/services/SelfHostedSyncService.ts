@@ -892,8 +892,17 @@ export class SelfHostedSyncService {
     forceOverwrite = false,
   ): Promise<boolean> {
     const existing = await db.get<StickerCategory>(DB_STORES.STICKERS, payload.id);
-    if (!forceOverwrite && existing && JSON.stringify(existing) === JSON.stringify(payload)) {
-      return false;
+    if (!forceOverwrite && existing) {
+      // 新版分類帶 updatedAt：本機較新或同時時，不允許舊的遠端分類把
+      // 已刪除的部分表情重新帶回來。舊資料沒有時間戳時維持 JSON 比對相容。
+      const localUpdatedAt = this.computeUpdatedAt(existing);
+      const remoteUpdatedAt = this.computeUpdatedAt(payload);
+      if (
+        (localUpdatedAt > 0 && localUpdatedAt >= remoteUpdatedAt) ||
+        JSON.stringify(existing) === JSON.stringify(payload)
+      ) {
+        return false;
+      }
     }
 
     await db.put(DB_STORES.STICKERS, JSON.parse(JSON.stringify(payload)));

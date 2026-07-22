@@ -266,6 +266,7 @@ export const useStickerStore = defineStore("sticker", () => {
   // 保存分類到 IndexedDB
   async function saveCategory(category: StickerCategory) {
     try {
+      category.updatedAt = Date.now();
       const plainCategory = JSON.parse(JSON.stringify(category));
       await db.put(DB_STORES.STICKERS, plainCategory);
       scheduleSelfHostedAutoSync();
@@ -316,25 +317,71 @@ export const useStickerStore = defineStore("sticker", () => {
 
   // 刪除自定義表情
   async function removeSticker(categoryId: string, stickerId: string) {
+    await removeStickers(categoryId, [stickerId]);
+  }
+
+  // 批量刪除自定義表情：一次更新分類並只寫入一次 IDB，避免逐筆保存時
+  // 中途重新載入或同步取得尚未完成的分類快照。
+  async function removeStickers(categoryId: string, stickerIds: string[]) {
     const category = customCategories.value.find((c) => c.id === categoryId);
-    if (!category) return;
+    if (!category || stickerIds.length === 0) return;
 
-    const target = category.stickers.find((s) => s.id === stickerId);
+    const idsToRemove = new Set(stickerIds);
 
-    // 若刪除的是「預設表情包」分類中的預設表情，記錄其名稱，
+    // 若刪除的是「預設表情包」分類中的預設表情，記錄所有名稱，
     // 避免重啟後 syncDefaultStickers 又把它補回來。
-    if (
-      target &&
-      isDefaultPackCategory(category) &&
-      defaultStickers.some((s) => s.name === target.name)
-    ) {
+    if (isDefaultPackCategory(category)) {
       const removed = new Set(category.removedDefaultStickerNames ?? []);
-      removed.add(target.name);
+      const defaultNames = new Set(defaultStickers.map((sticker) => sticker.name));
+      for (const sticker of category.stickers) {
+        if (idsToRemove.has(sticker.id) && defaultNames.has(sticker.name)) {
+          removed.add(sticker.name);
+        }
+      }
       category.removedDefaultStickerNames = Array.from(removed);
     }
 
-    category.stickers = category.stickers.filter((s) => s.id !== stickerId);
+    category.stickers = category.stickers.filter((s) => !idsToRemove.has(s.id));
     await saveCategory(category);
+  }
+
+  // 將「我的表情」恢復成程式內建的預設內容；保留其他自建分類。
+  async function restoreDefaultStickerPack() {
+    const defaultEmojis: StickerItem[] = defaultStickers.map(
+      (sticker, index) => ({
+        id: `sticker-${Date.now()}-${index}`,
+        url: sticker.url,
+        name: sticker.name,
+        keywords: [sticker.name],
+        emotion: sticker.emotion,
+        isCustom: true,
+      }),
+    );
+
+    const existing = customCategories.value.find(isDefaultPackCategory);
+    if (existing) {
+      existing.id = DEFAULT_CATEGORY_ID;
+      existing.name = DEFAULT_CATEGORY_NAME;
+      existing.icon = DEFAULT_CATEGORY_ICON;
+      existing.isCustom = true;
+      existing.isDefaultPack = true;
+      existing.stickers = defaultEmojis;
+      // 清除使用者曾刪除預設表情的排除清單，讓完整預設包恢復。
+      existing.removedDefaultStickerNames = [];
+      await saveCategory(existing);
+    } else {
+      const defaultCategory: StickerCategory = {
+        id: DEFAULT_CATEGORY_ID,
+        name: DEFAULT_CATEGORY_NAME,
+        icon: DEFAULT_CATEGORY_ICON,
+        isCustom: true,
+        isDefaultPack: true,
+        stickers: defaultEmojis,
+        removedDefaultStickerNames: [],
+      };
+      customCategories.value.unshift(defaultCategory);
+      await saveCategory(defaultCategory);
+    }
   }
 
   // 更新表情名稱
@@ -517,6 +564,8 @@ export const useStickerStore = defineStore("sticker", () => {
     init,
     addSticker,
     removeSticker,
+    removeStickers,
+    restoreDefaultStickerPack,
     updateStickerName,
     toggleStickerPinned,
     moveStickerEmotion,

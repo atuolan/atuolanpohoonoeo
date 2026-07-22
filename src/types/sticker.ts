@@ -14,6 +14,8 @@ export interface StickerCategory {
   id: string
   name: string
   icon: string
+  /** 分類內容最後修改時間，用於避免較舊的同步資料覆蓋本機刪除結果。 */
+  updatedAt?: number
   isCustom?: boolean
   isDefaultPack?: boolean
   stickers: StickerItem[]

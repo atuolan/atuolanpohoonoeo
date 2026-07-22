@@ -926,7 +926,13 @@ ${recentMessagesText}
 
   // 批量刪除選取的總結
   async function handleDeleteSelected(ids: string[]) {
-    await Promise.all(ids.map((id) => deleteSummaryFromDB(id)));
+    // 必須依序寫入刪除墓碑。deleteSummaryFromDB 內的 recordDeletedEntity
+    // 採「讀取目前清單 → 加入一筆 → 覆寫清單」；若並行執行，多個刪除會
+    // 讀到同一份舊清單並互相覆寫，導致同步時只有最後一筆刪除被保留，
+    // 其餘總結在重新整理／拉取遠端資料後又出現。
+    for (const id of ids) {
+      await deleteSummaryFromDB(id);
+    }
     deps.chatSummaries.value = deps.chatSummaries.value.filter(
       (s) => !ids.includes(s.id),
     );
