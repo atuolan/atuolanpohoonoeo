@@ -1201,6 +1201,8 @@ export interface GenerationResult {
   finishReason?: GenerationStopReason;
   rawFinishReason?: string;
   diagnostics?: GenerationDiagnostics;
+  /** Parsed model tool calls, when the selected protocol supports tools. */
+  toolCalls?: import("@/services/toolCalling/types").ToolCall[];
 }
 
 // ===== 流式生成事件 =====
@@ -1226,6 +1228,15 @@ export interface StreamingEvent {
   finishReason?: GenerationStopReason;
   rawFinishReason?: string;
   diagnostics?: GenerationDiagnostics;
+  /** Incremental native tool-call fragment (streaming responses). */
+  toolCallDelta?: {
+    index?: number;
+    id?: string;
+    name?: string;
+    arguments?: string;
+  };
+  /** Complete parsed tool calls on the terminal event. */
+  toolCalls?: import("@/services/toolCalling/types").ToolCall[];
 }
 
 // ===== 創建默認消息 =====
