@@ -54,4 +54,9 @@ describe("tool protocol adapters", () => {
     expect(createToolProtocolAdapter("native").buildRequestTools([definition])).toEqual([{ type: "function", function: definition }]);
     expect(createToolProtocolAdapter("disabled").buildRequestTools([definition])).toBeUndefined();
   });
+
+  it("extracts Claude text blocks and keeps DeepSeek reasoning fallback intact", () => {
+    expect(new TextToolProtocolAdapter().parseGeneration({ content: [{ type: "text", text: "hello" }] }).content).toBe("hello");
+    expect(new OpenAIToolProtocolAdapter().parseGeneration({ choices: [{ message: { content: "", reasoning_content: "reason" } }] }).content).toBe("");
+  });
 });
