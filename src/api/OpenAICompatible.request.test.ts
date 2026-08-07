@@ -112,4 +112,36 @@ describe("OpenAICompatible request integration", () => {
     expect(result.content).toBe("Working");
     expect(result.toolCalls?.[0].id).toBe("c2");
   });
+
+  it("falls back once from auto native tools on explicit 400 unsupported-tools", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      if (fetchMock.mock.calls.length === 1) {
+        expect(body.tools).toBeDefined();
+        return { ok: false, status: 400, text: async () => "unknown field tools" } as Response;
+      }
+      expect(body.tools).toBeUndefined();
+      return jsonResponse({ choices: [{ message: { content: "text fallback" } }] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await new OpenAICompatibleClient(api()).generate({
+      messages: [{ role: "user", content: "what time?" }],
+      settings,
+      apiSettings: api(),
+      tools: [{ name: "get_time", description: "time", parameters: { type: "object" } }],
+      toolProtocol: "auto",
+    });
+    expect(result.content).toBe("text fallback");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not fallback native protocol or unrelated HTTP errors", async () => {
+    const fetchMock = vi.fn(async () => ({ ok: false, status: 400, text: async () => "unknown field tools" }) as Response);
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(new OpenAICompatibleClient(api()).generate({
+      messages: [{ role: "user", content: "x" }], settings, apiSettings: api(),
+      tools: [{ name: "x", parameters: { type: "object" } }], toolProtocol: "native",
+    })).rejects.toThrow(/400/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
