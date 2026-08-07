@@ -65,7 +65,32 @@ const emit = defineEmits<{
 
 // Stores
 const settingsStore = useSettingsStore();
-const toolProtocols: ToolProtocol[] = ["auto", "native", "text", "disabled"];
+const toolProtocolOptions: Array<{
+  value: ToolProtocol;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "auto",
+    label: "自動",
+    description: "優先使用原生工具，上游不支援時自動改走文字協議",
+  },
+  {
+    value: "native",
+    label: "原生",
+    description: "只使用 API 原生 tool calling，不自動回退",
+  },
+  {
+    value: "text",
+    label: "文字",
+    description: "以文字格式描述工具，相容不支援原生工具的中轉站",
+  },
+  {
+    value: "disabled",
+    label: "停用",
+    description: "不傳送任何工具定義",
+  },
+];
 const charactersStore = useCharactersStore();
 const lorebooksStore = useLorebooksStore();
 const userStore = useUserStore();
@@ -179,20 +204,69 @@ const claudeCacheHintOpen = ref(false);
 // 工具呼叫說明的伸縮顯示（「這是什麼？」）
 const toolCallingHintOpen = ref(false);
 
-const promptPostProcessingOptions: Array<{
+type PromptPostProcessingOption = {
   value: PromptPostProcessingType;
   label: string;
   description: string;
-}> = [
+};
+
+/** 不涉及工具語意的模式，置於分組之外。 */
+const promptPostProcessingPlainOptions: PromptPostProcessingOption[] = [
   { value: "none", label: "不處理", description: "保留原始訊息結構" },
-  { value: "claude", label: "Claude 相容", description: "等同合併相鄰角色訊息" },
-  { value: "merge", label: "合併角色訊息", description: "合併連續相同角色" },
-  { value: "merge_tools", label: "合併並保留工具", description: "合併角色，同時保留工具欄位" },
-  { value: "semi", label: "半嚴格", description: "只保留第一則 system 訊息" },
-  { value: "semi_tools", label: "半嚴格並保留工具", description: "半嚴格處理並保留工具欄位" },
-  { value: "strict", label: "嚴格", description: "加入 user 起始佔位訊息" },
-  { value: "strict_tools", label: "嚴格並保留工具", description: "嚴格處理並保留工具欄位" },
-  { value: "single", label: "單一 user", description: "將全部內容合併為一則 user 訊息" },
+  {
+    value: "claude",
+    label: "Claude 相容",
+    description: "等同「合併連續角色」，為相容舊設定保留",
+  },
+];
+
+/** 保留 tool_calls 與 tool 角色，供原生工具呼叫使用。 */
+const promptPostProcessingToolOptions: PromptPostProcessingOption[] = [
+  {
+    value: "merge_tools",
+    label: "合併連續角色（含工具）",
+    description: "合併連續相同角色，保留工具欄位",
+  },
+  {
+    value: "semi_tools",
+    label: "半嚴格（角色交替；含工具）",
+    description: "只保留第一則 system，其餘轉為 user，保留工具欄位",
+  },
+  {
+    value: "strict_tools",
+    label: "嚴格（使用者優先，角色交替；含工具）",
+    description: "半嚴格處理並補上 user 起始訊息，保留工具欄位",
+  },
+];
+
+/** 移除 tool_calls 並將 tool 角色轉為 user。 */
+const promptPostProcessingNoToolOptions: PromptPostProcessingOption[] = [
+  {
+    value: "merge",
+    label: "合併連續角色",
+    description: "合併連續相同角色，移除工具欄位",
+  },
+  {
+    value: "semi",
+    label: "半嚴格（交替角色）",
+    description: "只保留第一則 system，其餘轉為 user",
+  },
+  {
+    value: "strict",
+    label: "嚴格（使用者優先，交替角色）",
+    description: "半嚴格處理並補上 user 起始訊息",
+  },
+  {
+    value: "single",
+    label: "單一使用者訊息（無工具）",
+    description: "將全部內容合併為一則 user 訊息",
+  },
+];
+
+const promptPostProcessingOptions: PromptPostProcessingOption[] = [
+  ...promptPostProcessingPlainOptions,
+  ...promptPostProcessingToolOptions,
+  ...promptPostProcessingNoToolOptions,
 ];
 
 const selfHostedSyncCanTestConnection = computed(
@@ -3833,12 +3907,30 @@ function useClonedVoice(voiceId: string) {
               class="soft-select"
             >
               <option
-                v-for="option in promptPostProcessingOptions"
+                v-for="option in promptPostProcessingPlainOptions"
                 :key="option.value"
                 :value="option.value"
               >
                 {{ option.label }}
               </option>
+              <optgroup label="含工具">
+                <option
+                  v-for="option in promptPostProcessingToolOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </optgroup>
+              <optgroup label="不含工具">
+                <option
+                  v-for="option in promptPostProcessingNoToolOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </optgroup>
             </select>
             <p class="setting-hint">
               {{
@@ -3867,16 +3959,23 @@ function useClonedVoice(voiceId: string) {
               id="tool-protocol"
               v-model="settingsStore.api.toolProtocol"
               class="soft-select"
-              :disabled="!settingsStore.api.toolsEnabled"
+              :disabled="settingsStore.api.toolsEnabled === false"
             >
               <option
-                v-for="protocol in toolProtocols"
-                :key="protocol"
-                :value="protocol"
+                v-for="option in toolProtocolOptions"
+                :key="option.value"
+                :value="option.value"
               >
-                {{ protocol }}
+                {{ option.label }}
               </option>
             </select>
+            <p class="setting-hint">
+              {{
+                toolProtocolOptions.find(
+                  (option) => option.value === settingsStore.api.toolProtocol,
+                )?.description || "優先使用原生工具，上游不支援時自動改走文字協議"
+              }}
+            </p>
             <button
               type="button"
               class="bg-gen-help-toggle"
@@ -7277,7 +7376,8 @@ function useClonedVoice(voiceId: string) {
   position: relative;
 }
 
-.prompt-post-processing-setting {
+.prompt-post-processing-setting,
+.select-setting {
   display: grid;
   gap: 8px;
   margin-top: 16px;
@@ -7321,10 +7421,22 @@ function useClonedVoice(voiceId: string) {
   &:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+
+    &:hover {
+      border-color: var(--color-border, #e2e8f0);
+    }
+  }
+
+  optgroup {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-text-secondary, #5f6b66);
   }
 
   option {
     padding: 8px;
+    font-weight: 400;
+    color: var(--color-text, #333);
   }
 }
 
