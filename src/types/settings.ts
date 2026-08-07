@@ -244,7 +244,7 @@ export const createDefaultAPISettings = (): APISettings => ({
   model: "gpt-4o-mini",
   promptPostProcessing: "none",
   toolProtocol: "auto",
-  toolsEnabled: true,
+  toolsEnabled: false,
 });
 
 // ===== 創建默認 UI 設定 =====

@@ -176,6 +176,8 @@ const bgGenHintOpen = ref(false);
 const directConnectHintOpen = ref(false);
 // Claude 原生緩存模式說明的伸縮顯示（「這是什麼？」）
 const claudeCacheHintOpen = ref(false);
+// 工具呼叫說明的伸縮顯示（「這是什麼？」）
+const toolCallingHintOpen = ref(false);
 
 const promptPostProcessingOptions: Array<{
   value: PromptPostProcessingType;
@@ -1787,7 +1789,7 @@ function createProfileEmpty() {
     model: "",
     promptPostProcessing: "none",
     toolProtocol: "auto",
-    toolsEnabled: true,
+    toolsEnabled: false,
   });
 
   settingsStore.createProfile(name);
@@ -1877,8 +1879,8 @@ function isCurrentFormDirty(): boolean {
       (settingsStore.api.promptPostProcessing ?? "none") ||
     (profile.api.toolProtocol ?? "auto") !==
       (settingsStore.api.toolProtocol ?? "auto") ||
-    (profile.api.toolsEnabled ?? true) !==
-      (settingsStore.api.toolsEnabled ?? true)
+    (profile.api.toolsEnabled ?? false) !==
+      (settingsStore.api.toolsEnabled ?? false)
   );
 }
 
@@ -3651,14 +3653,6 @@ function useClonedVoice(voiceId: string) {
         <div class="section-divider"></div>
 
         <!-- 提供者選擇 -->
-        <div class="setting-group tool-calling-settings">
-          <label class="setting-label">聊天工具呼叫</label>
-          <label><input v-model="settingsStore.api.toolsEnabled" type="checkbox" /> 啟用角色工具</label>
-          <label>工具協議
-            <select v-model="settingsStore.api.toolProtocol"><option v-for="protocol in toolProtocols" :key="protocol" :value="protocol">{{ protocol }}</option></select>
-          </label>
-        </div>
-
         <div class="setting-group">
           <label class="setting-label">API 提供者</label>
           <div class="provider-grid">
@@ -3853,6 +3847,50 @@ function useClonedVoice(voiceId: string) {
                     option.value === settingsStore.api.promptPostProcessing,
                 )?.description || "保留原始訊息結構"
               }}
+            </p>
+          </div>
+
+          <!-- 聊天工具呼叫 -->
+          <div class="tool-calling-settings">
+            <label class="setting-label">聊天工具呼叫</label>
+            <label class="toggle-item">
+              <span class="toggle-label">啟用角色工具</span>
+              <input
+                v-model="settingsStore.api.toolsEnabled"
+                type="checkbox"
+                class="toggle-input"
+              />
+              <span class="toggle-switch"></span>
+            </label>
+            <label class="setting-label" for="tool-protocol">工具協議</label>
+            <select
+              id="tool-protocol"
+              v-model="settingsStore.api.toolProtocol"
+              class="soft-select"
+              :disabled="!settingsStore.api.toolsEnabled"
+            >
+              <option
+                v-for="protocol in toolProtocols"
+                :key="protocol"
+                :value="protocol"
+              >
+                {{ protocol }}
+              </option>
+            </select>
+            <button
+              type="button"
+              class="bg-gen-help-toggle"
+              @click="toolCallingHintOpen = !toolCallingHintOpen"
+            >
+              這是什麼？
+            </button>
+            <p v-if="toolCallingHintOpen" class="setting-hint">
+              啟用後，AI
+              可以在聊天中呼叫手機功能，例如查詢時間、天氣、搜尋音樂或安排來電。工具呼叫可能需要多次
+              API
+              往返：模型先提出工具呼叫，系統執行工具，再把結果送回模型產生最終回答。因此會增加
+              API 呼叫次數、輸入 token、工具結果 token
+              與整體成本。低風險工具會直接執行；高風險工具會先要求你確認。關閉後不會把工具定義送給模型，也不會執行工具。
             </p>
           </div>
         </div>
@@ -7245,6 +7283,14 @@ function useClonedVoice(voiceId: string) {
   margin-top: 16px;
 }
 
+.tool-calling-settings {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border, #e2e8f0);
+}
+
 .soft-select {
   width: 100%;
   padding: 12px 16px;
@@ -7270,6 +7316,11 @@ function useClonedVoice(voiceId: string) {
 
   &:hover {
     border-color: var(--color-primary, #7dd3a8);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 
   option {
