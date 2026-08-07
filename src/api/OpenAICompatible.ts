@@ -12,6 +12,14 @@ import type {
     StreamingEvent,
 } from "@/types/chat";
 import type { APISettings } from "@/types/settings";
+import { postProcessPrompt, type PromptPostProcessingType } from "@/utils/promptPostProcessor";
+import {
+  createToolProtocolAdapter,
+  type OpenAIToolDefinition,
+  type ToolProtocol,
+  type ToolCallAccumulator,
+} from "@/services/toolCalling/protocolAdapters";
+import type { ChatToolContext, ToolCall } from "@/services/toolCalling/types";
 
 /** 預設 Cloudflare Worker 代理地址（僅 NovelAI 使用） */
 // const CF_WORKER_BASE = "https://nai-proxy.aguacloud.uk";
@@ -241,12 +249,19 @@ export interface GenerationParams {
   /** 是否對最後一條訊息執行模型特定的 role 轉換（Gemini→assistant / Claude→user）。
    *  僅聊天 API 調用應設為 true，其他場景（來電決策、主動消息等）預設 false 不轉換。 */
   adjustLastMessageRole?: boolean;
+  /** Tool definitions and transport options for this request. */
+  tools?: OpenAIToolDefinition[];
+  toolProtocol?: ToolProtocol;
+  promptPostProcessing?: PromptPostProcessingType;
+  toolContext?: ChatToolContext;
 }
 
 interface BuiltRequest {
   body: Record<string, unknown>;
   diagnostics: GenerationDiagnostics;
 }
+
+type RequestToolOptions = Pick<GenerationParams, "tools" | "toolProtocol" | "promptPostProcessing" | "toolContext">;
 
 interface StreamLineResult {
   delta: string | null;
@@ -646,8 +661,9 @@ export class OpenAICompatibleClient {
     settings: ChatSettings,
     stream: boolean,
     adjustLastMessageRole: boolean = false,
+    options: RequestToolOptions = {},
   ): Record<string, unknown> {
-    return this.buildRequest(messages, settings, stream, adjustLastMessageRole).body;
+    return this.buildRequest(messages, settings, stream, adjustLastMessageRole, options).body;
   }
 
   private buildRequest(
@@ -655,8 +671,14 @@ export class OpenAICompatibleClient {
     settings: ChatSettings,
     stream: boolean,
     adjustLastMessageRole: boolean = false,
+    options: RequestToolOptions = {},
   ): BuiltRequest {
-    let processedMessages = [...messages];
+    const requestedMode = options.promptPostProcessing ?? this.apiSettings.promptPostProcessing ?? "none";
+    const protocol = options.toolProtocol ?? this.apiSettings.toolProtocol ?? "auto";
+    const promptMode = options.tools?.length && (protocol === "native" || protocol === "auto") && requestedMode !== "none" && !requestedMode.endsWith("_tools")
+      ? `${requestedMode}_tools` as PromptPostProcessingType
+      : requestedMode;
+    let processedMessages = postProcessPrompt(messages, promptMode);
     const roleAdjustments: NonNullable<GenerationDiagnostics["roleAdjustments"]> = [];
 
     // 確保 messages 中至少有一條 user 訊息
@@ -713,11 +735,17 @@ export class OpenAICompatibleClient {
       processedMessages = this.enforceStrictAlternation(processedMessages);
     }
 
+    const toolsEnabled = this.apiSettings.toolsEnabled !== false;
+    const adapter = createToolProtocolAdapter(protocol, false);
     const body: Record<string, unknown> = {
       model: this.apiSettings.model,
       messages: processedMessages,
       stream,
     };
+    const requestTools = toolsEnabled && protocol !== "text" && protocol !== "disabled" && options.tools?.length
+      ? adapter.buildRequestTools(options.tools)
+      : undefined;
+    if (requestTools?.length) body.tools = requestTools;
     // maxResponseLength > 0 才帶 max_tokens；送 0（或未設）代表「不設人工上限」，
     // 直接省略此欄位，交由模型用自身的輸出上限（OpenAI 相容端點允許省略）。
     if (settings.maxResponseLength && settings.maxResponseLength > 0) {
@@ -858,8 +886,14 @@ export class OpenAICompatibleClient {
     settings: ChatSettings,
     stream: boolean,
     adjustLastMessageRole: boolean = false,
+    options: RequestToolOptions = {},
   ): BuiltRequest {
-    const processedMessages = [...messages];
+    const requestedMode = options.promptPostProcessing ?? this.apiSettings.promptPostProcessing ?? "none";
+    const protocol = options.toolProtocol ?? this.apiSettings.toolProtocol ?? "auto";
+    const promptMode = options.tools?.length && (protocol === "native" || protocol === "auto") && requestedMode !== "none" && !requestedMode.endsWith("_tools")
+      ? `${requestedMode}_tools` as PromptPostProcessingType
+      : requestedMode;
+    const processedMessages = postProcessPrompt(messages, promptMode);
     const roleAdjustments: NonNullable<GenerationDiagnostics["roleAdjustments"]> = [];
 
     // Claude 要求最後一條訊息為 user（與 OpenAI 路徑一致的調整）
@@ -927,10 +961,14 @@ export class OpenAICompatibleClient {
 
     // 3. 將對話訊息轉為 Anthropic content block 格式
     //    確保至少有一條 user 訊息（Anthropic 要求 messages 非空且首條通常為 user）
+    const adapter = createToolProtocolAdapter(protocol, true);
+    const requestTools = this.apiSettings.toolsEnabled !== false && protocol !== "text" && protocol !== "disabled" && options.tools?.length
+      ? adapter.buildRequestTools(options.tools)
+      : undefined;
     const anthropicMessages = convoMessages.map((msg) => {
       const role: "user" | "assistant" =
         msg.role === "assistant" ? "assistant" : "user";
-      const content = this.toAnthropicContent(msg.content);
+      const content = this.toAnthropicMessageContent(msg);
       return { role, content };
     });
 
@@ -992,6 +1030,7 @@ export class OpenAICompatibleClient {
     if (systemBlocks.length > 0) {
       body.system = systemBlocks;
     }
+    if (requestTools?.length) body.tools = requestTools;
     if (settings.enableTopP !== false && settings.topP !== 1) {
       body.top_p = settings.topP || Number.EPSILON;
     }
@@ -1108,6 +1147,30 @@ export class OpenAICompatibleClient {
     return blocks.length > 0 ? blocks : [{ type: "text", text: " " }];
   }
 
+  private toAnthropicMessageContent(message: APIMessage): Array<Record<string, unknown>> {
+    if (message.role === "tool" && message.tool_call_id) {
+      return [{
+        type: "tool_result",
+        tool_use_id: message.tool_call_id,
+        content: this.getMessageText(message),
+      }];
+    }
+    const blocks = this.toAnthropicContent(message.content);
+    if (message.tool_calls?.length) {
+      for (const call of message.tool_calls) {
+        let input: Record<string, unknown> = {};
+        try {
+          const parsed = JSON.parse(call.function.arguments || "{}");
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) input = parsed;
+        } catch {
+          // Preserve malformed arguments as an empty object for provider validity.
+        }
+        blocks.push({ type: "tool_use", id: call.id, name: call.function.name, input });
+      }
+    }
+    return blocks;
+  }
+
   /**
    * 從 Anthropic 回應的 usage 物件提取 token 統計（含緩存欄位）。
    */
@@ -1139,6 +1202,7 @@ export class OpenAICompatibleClient {
       settings,
       false,
       adjustLastMessageRole,
+      params,
     );
 
     const response = await fetch(this.getAnthropicEndpoint(), {
@@ -1157,12 +1221,9 @@ export class OpenAICompatibleClient {
     const generationTime = Date.now() - startTime;
 
     // Anthropic 回應：content 是 block 陣列，文字在 type==="text" 的 block
-    const content = Array.isArray(data.content)
-      ? data.content
-          .filter((b: any) => b.type === "text")
-          .map((b: any) => b.text)
-          .join("")
-      : "";
+    const adapter = createToolProtocolAdapter(params.toolProtocol ?? this.apiSettings.toolProtocol ?? "auto", true);
+    const parsed = adapter.parseGeneration(data);
+    const content = parsed.content;
 
     const usage = this.extractAnthropicUsage(data.usage);
     const stopReason = this.normalizeStopReason(data.stop_reason);
@@ -1185,6 +1246,7 @@ export class OpenAICompatibleClient {
       model: data.model ?? this.apiSettings.model,
       finishReason: stopReason,
       rawFinishReason: data.stop_reason ? String(data.stop_reason) : undefined,
+      toolCalls: parsed.toolCalls,
       diagnostics: {
         ...request.diagnostics,
         rawFinishReason: data.stop_reason ? String(data.stop_reason) : undefined,
@@ -1207,7 +1269,7 @@ export class OpenAICompatibleClient {
 
     const startTime = Date.now();
     const { messages, settings, signal, adjustLastMessageRole } = params;
-    const request = this.buildRequest(messages, settings, false, adjustLastMessageRole);
+    const request = this.buildRequest(messages, settings, false, adjustLastMessageRole, params);
 
     // 非串流路徑沒有 reader 迴圈可以判斷閒置，若上游（或中轉/代理）卡住，
     // fetch 會永遠 pending：手機端會出現「空白氣泡、轉圈、完全沒有錯誤」。
@@ -1262,7 +1324,9 @@ export class OpenAICompatibleClient {
     const choice = data.choices?.[0];
     // 正文優先取 message.content；若正文為空但有推理內容（reasoning_content，
     // DeepSeek-R 系列等思維鏈），回退使用推理內容，避免「明明有內容卻空回」。
-    const rawContent = choice?.message?.content;
+    const adapter = createToolProtocolAdapter(params.toolProtocol ?? this.apiSettings.toolProtocol ?? "auto", false);
+    const parsed = adapter.parseGeneration(data);
+    const rawContent = parsed.content || choice?.message?.content;
     const reasoningContent =
       choice?.message?.reasoning_content ?? choice?.message?.reasoning;
     const content =
@@ -1292,6 +1356,7 @@ export class OpenAICompatibleClient {
       finishReason: stopReason,
       rawFinishReason: diagnostics.rawFinishReason,
       diagnostics,
+      toolCalls: parsed.toolCalls,
     };
   }
 
@@ -1313,6 +1378,7 @@ export class OpenAICompatibleClient {
       settings,
       true,
       adjustLastMessageRole,
+      params,
     );
 
     const response = await fetch(this.getAnthropicEndpoint(), {
@@ -1477,7 +1543,10 @@ export class OpenAICompatibleClient {
     }
 
     const { messages, settings, signal, adjustLastMessageRole } = params;
-    const request = this.buildRequest(messages, settings, true, adjustLastMessageRole);
+    const request = this.buildRequest(messages, settings, true, adjustLastMessageRole, params);
+    const protocolAdapter = createToolProtocolAdapter(params.toolProtocol ?? this.apiSettings.toolProtocol ?? "auto", false);
+    const toolAccumulator = protocolAdapter.createAccumulator();
+    let parsedToolCalls: ToolCall[] = [];
 
     const response = await fetch(this.getEndpoint(), {
       method: "POST",
@@ -1584,6 +1653,8 @@ export class OpenAICompatibleClient {
       }
       try {
         const json = JSON.parse(trimmed.slice(6));
+        const parsedTools = protocolAdapter.parseGeneration(json, toolAccumulator);
+        if (parsedTools.toolCalls.length) parsedToolCalls = parsedTools.toolCalls;
         const choice = json.choices?.[0];
         const lineRawFinishReason =
           choice?.finish_reason ??
@@ -1648,6 +1719,13 @@ export class OpenAICompatibleClient {
           promptFeedback: linePromptFeedback,
           safetyRatings: lineSafetyRatings,
           rawResponseMeta: lineMeta,
+        };
+        const toolDelta = choice?.delta?.tool_calls?.[0];
+        if (toolDelta) (baseResult as StreamLineResult & { toolCallDelta?: StreamingEvent["toolCallDelta"] }).toolCallDelta = {
+          index: toolDelta.index,
+          id: toolDelta.id,
+          name: toolDelta.function?.name,
+          arguments: toolDelta.function?.arguments,
         };
         // 診斷：成功解析成 JSON，但擷取不到任何文字內容時，記錄樣本結構。
         // 這能揭露上游把內容放在我們沒覆蓋到的欄位（reasoning_content、
@@ -1751,6 +1829,9 @@ export class OpenAICompatibleClient {
             fullContent += result.delta;
             yield { type: "token", token: result.delta };
           }
+          if ((result as StreamLineResult & { toolCallDelta?: StreamingEvent["toolCallDelta"] }).toolCallDelta) {
+            yield { type: "token", toolCallDelta: (result as StreamLineResult & { toolCallDelta?: StreamingEvent["toolCallDelta"] }).toolCallDelta };
+          }
         }
       }
 
@@ -1763,6 +1844,9 @@ export class OpenAICompatibleClient {
         if (result.delta) {
           fullContent += result.delta;
           yield { type: "token", token: result.delta };
+        }
+        if ((result as StreamLineResult & { toolCallDelta?: StreamingEvent["toolCallDelta"] }).toolCallDelta) {
+          yield { type: "token", toolCallDelta: (result as StreamLineResult & { toolCallDelta?: StreamingEvent["toolCallDelta"] }).toolCallDelta };
         }
       }
 
@@ -1949,6 +2033,7 @@ export class OpenAICompatibleClient {
         finishReason: diagnostics.finishReason,
         rawFinishReason: diagnostics.rawFinishReason,
         diagnostics,
+        toolCalls: parsedToolCalls.length ? parsedToolCalls : undefined,
       };
     } catch (e) {
       const totalTime = Date.now() - streamStartTime;
