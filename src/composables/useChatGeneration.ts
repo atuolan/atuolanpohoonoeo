@@ -7,6 +7,12 @@ import type {
 } from "@/types/chat";
 import type { APISettings } from "@/types/settings";
 import { useAIGenerationStore } from "@/stores";
+import { ToolExecutionEngine, type ToolExecutionOutcome, type ToolExecutionRequestContext } from "@/services/toolCalling/toolExecutionEngine";
+import { ToolRegistry } from "@/services/toolCalling/toolRegistry";
+import type { ChatToolDefinition, PendingToolConfirmation, ToolResult } from "@/services/toolCalling/types";
+import { filterToolsForCharacter } from "@/services/toolCalling/permissions";
+import type { ToolProtocol } from "@/services/toolCalling/protocolAdapters";
+import type { CharacterToolPermissions } from "@/types/character";
 
 export interface ChatGenerationStartMeta {
   characterName?: string;
@@ -43,12 +49,26 @@ export interface ChatGenerationRequestRunnerContext {
   initialDiagnostics: GenerationDiagnostics;
   onContentUpdate?: (content: string) => void;
   onToken?: (token: string, fullContent: string) => void;
+  /** Chat-only tool definitions. Omit to preserve the legacy generation path. */
+  tools?: ChatToolDefinition[];
+  toolProtocol?: ToolProtocol;
+  promptPostProcessing?: string;
+  characterId?: string;
+  chatId?: string;
+  toolPermissions?: CharacterToolPermissions | null;
+  globalToolsEnabled?: boolean;
+  toolContext?: Record<string, unknown>;
+  onToolEvent?: (event: { type: "started" | "completed" | "confirmation_required"; tool?: string; result?: ToolResult; pending?: PendingToolConfirmation }) => void;
+  onConfirmationRequired?: (pending: PendingToolConfirmation, resolve: (decision: "approve" | "reject") => Promise<ChatGenerationRequestRunnerResult>) => void;
 }
 
 export interface ChatGenerationRequestRunnerResult {
   content: string;
   tokenUsage?: ChatGenerationTokenUsage;
   diagnostics: GenerationDiagnostics;
+  toolResults?: ToolResult[];
+  confirmationRequired?: PendingToolConfirmation;
+  resolveToolConfirmation?: (decision: "approve" | "reject") => Promise<ChatGenerationRequestRunnerResult>;
 }
 
 function normalizeGenerationError(error: unknown): string {
@@ -61,6 +81,63 @@ function normalizeGenerationError(error: unknown): string {
 export async function runChatGenerationRequest(
   context: ChatGenerationRequestRunnerContext,
 ): Promise<ChatGenerationRequestRunnerResult> {
+  const toolDefinitions = context.tools ?? [];
+  if (toolDefinitions.length > 0 && context.globalToolsEnabled !== false && context.toolProtocol !== "disabled") {
+    const registry = new ToolRegistry(toolDefinitions);
+    const engine = new ToolExecutionEngine({
+      registry,
+      generate: async (messages, requestContext) => {
+        const request = {
+          messages,
+          settings: context.settings,
+          apiSettings: context.apiSettings,
+          signal: context.signal,
+          adjustLastMessageRole: true,
+          tools: registry.toOpenAITools().map((item) => item.function),
+          toolProtocol: context.toolProtocol,
+          promptPostProcessing: context.promptPostProcessing as any,
+          toolContext: requestContext,
+        };
+        context.onToolEvent?.({ type: "started" });
+        if (context.streaming) {
+          let content = "";
+          let terminal: StreamingEvent | undefined;
+          for await (const event of context.client.generateStream(request)) {
+            if (event.type === "token" && event.token) {
+              content += event.token;
+              context.onContentUpdate?.(content);
+              context.onToken?.(event.token, content);
+            }
+            if (event.type === "done") terminal = event;
+            if (event.type === "error") throw new Error(normalizeGenerationError(event.error));
+          }
+          return { content: terminal?.content ?? content, toolCalls: terminal?.toolCalls };
+        }
+        const result = await context.client.generate(request);
+        return { content: result.content, toolCalls: result.toolCalls };
+      },
+    });
+    const requestContext: ToolExecutionRequestContext = {
+      ...(context.toolContext ?? {}),
+      chatId: context.chatId,
+      characterId: context.characterId,
+      globalEnabled: context.globalToolsEnabled ?? context.apiSettings.toolsEnabled !== false,
+      permissions: context.toolPermissions,
+      signal: context.signal,
+    };
+    const finish = (outcome: ToolExecutionOutcome): ChatGenerationRequestRunnerResult => {
+      if (outcome.status === "confirmation_required") {
+        const resolve = async (decision: "approve" | "reject") => finish(await engine.resolveToolConfirmation(outcome.pending.id, decision));
+        context.onConfirmationRequired?.(outcome.pending, resolve);
+        context.onToolEvent?.({ type: "confirmation_required", pending: outcome.pending });
+        return { content: "", diagnostics: { ...context.initialDiagnostics }, confirmationRequired: outcome.pending, resolveToolConfirmation: resolve };
+      }
+      for (const result of outcome.toolResults) context.onToolEvent?.({ type: "completed", tool: result.name, result });
+      return { content: outcome.content, diagnostics: { ...context.initialDiagnostics }, toolResults: outcome.toolResults };
+    };
+    return finish(await engine.run(context.messages, requestContext));
+  }
+
   let fullContent = "";
   let tokenUsage: ChatGenerationTokenUsage | undefined;
   let diagnostics = { ...context.initialDiagnostics };
