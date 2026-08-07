@@ -82,7 +82,8 @@ export async function runChatGenerationRequest(
   context: ChatGenerationRequestRunnerContext,
 ): Promise<ChatGenerationRequestRunnerResult> {
   const toolDefinitions = context.tools ?? [];
-  if (toolDefinitions.length > 0 && context.globalToolsEnabled !== false && context.toolProtocol !== "disabled") {
+  const effectiveToolProtocol = context.toolProtocol ?? context.apiSettings.toolProtocol ?? "auto";
+  if (toolDefinitions.length > 0 && context.globalToolsEnabled !== false && effectiveToolProtocol !== "disabled") {
     const registry = new ToolRegistry(toolDefinitions);
     const engine = new ToolExecutionEngine({
       registry,

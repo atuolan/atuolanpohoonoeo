@@ -8,6 +8,7 @@ vi.mock("@/storage/settingsStorage", () => ({
 }));
 
 import { useSettingsStore } from "./settings";
+import { createDefaultAPISettings } from "@/types/settings";
 
 describe("settings prompt post-processing profiles", () => {
   beforeEach(() => {
@@ -18,6 +19,10 @@ describe("settings prompt post-processing profiles", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("disables role tools by default", () => {
+    expect(createDefaultAPISettings().toolsEnabled).toBe(false);
   });
 
   it("uses API defaults when switching to a legacy profile without new fields", () => {
@@ -37,7 +42,7 @@ describe("settings prompt post-processing profiles", () => {
 
     expect(store.api.promptPostProcessing).toBe("none");
     expect(store.api.toolProtocol).toBe("auto");
-    expect(store.api.toolsEnabled).toBe(true);
+    expect(store.api.toolsEnabled).toBe(false);
   });
 
   it("keeps prompt post-processing values isolated per profile", () => {

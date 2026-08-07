@@ -790,7 +790,7 @@ export const useSettingsStore = defineStore("settings", () => {
       // 舊 profile 可能沒有新加入的可選 API 欄位，切換時不可沿用上一個 profile 的值。
       api.promptPostProcessing = profile.api.promptPostProcessing ?? "none";
       api.toolProtocol = profile.api.toolProtocol ?? "auto";
-      api.toolsEnabled = profile.api.toolsEnabled ?? true;
+      api.toolsEnabled = profile.api.toolsEnabled ?? false;
       Object.assign(generation, profile.generation);
       generation.maxContextLength = globalMaxContextLength;
     }

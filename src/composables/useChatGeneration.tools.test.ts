@@ -37,4 +37,20 @@ describe("runChatGenerationRequest tool integration", () => {
     expect(result.content).toBe("Hi");
     expect(onToken).toHaveBeenCalledWith("Hi", "Hi");
   });
+
+  it("honors a disabled API tool protocol when the request omits an override", async () => {
+    const generate = vi.fn().mockResolvedValue({ content: "No tools.", tokenCount: { prompt: 1, completion: 1, total: 2 } });
+    const result = await runChatGenerationRequest({
+      client: { generate, generateStream: vi.fn() },
+      messages: [{ role: "user", content: "hello" }],
+      settings,
+      apiSettings: { ...apiSettings, toolProtocol: "disabled" },
+      signal: new AbortController().signal,
+      streaming: false,
+      initialDiagnostics: {},
+      tools: [tool()],
+    });
+    expect(result.content).toBe("No tools.");
+    expect(generate).toHaveBeenCalledTimes(1);
+  });
 });
