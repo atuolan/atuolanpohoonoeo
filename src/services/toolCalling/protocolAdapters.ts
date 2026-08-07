@@ -47,7 +47,7 @@ function parseArguments(id: string, name: string, raw: string): { call?: ToolCal
   }
 }
 
-function unsupportedToolsError(error: unknown): boolean {
+export function isExplicitUnsupportedToolsError(error: unknown): boolean {
   const source = error as { status?: number; message?: string; error?: { message?: string } };
   if (source?.status !== 400 && source?.status !== 422) return false;
   const message = String(source.message ?? source.error?.message ?? error ?? "").toLowerCase();
@@ -91,7 +91,7 @@ export class OpenAIToolProtocolAdapter implements ToolProtocolAdapter {
     return { role: "tool", tool_call_id: result.toolCallId, content: result.content };
   }
 
-  isUnsupportedToolsError(error: unknown): boolean { return unsupportedToolsError(error); }
+  isUnsupportedToolsError(error: unknown): boolean { return isExplicitUnsupportedToolsError(error); }
 }
 
 export class ClaudeToolProtocolAdapter implements ToolProtocolAdapter {
@@ -118,7 +118,7 @@ export class ClaudeToolProtocolAdapter implements ToolProtocolAdapter {
     return { role: "user", content: [{ type: "tool_result", tool_use_id: result.toolCallId, content: result.content, ...(result.ok ? {} : { is_error: true }) }] };
   }
 
-  isUnsupportedToolsError(error: unknown): boolean { return unsupportedToolsError(error); }
+  isUnsupportedToolsError(error: unknown): boolean { return isExplicitUnsupportedToolsError(error); }
 }
 
 const FENCED_TOOL_CALLS = /```tool_calls\s*\n([\s\S]*?)\n?```/gi;
@@ -128,7 +128,11 @@ export class TextToolProtocolAdapter implements ToolProtocolAdapter {
   buildRequestTools(): undefined { return undefined; }
 
   parseGeneration(raw: any): ParsedGeneration {
-    const source = typeof raw === "string" ? raw : String(raw?.content ?? "");
+    const source = typeof raw === "string"
+      ? raw
+      : Array.isArray(raw?.content)
+        ? raw.content.filter((block: any) => block?.type === "text").map((block: any) => String(block.text ?? "")).join("")
+        : String(raw?.choices?.[0]?.message?.content ?? raw?.content ?? "");
     const toolCalls: ToolCall[] = [];
     const errors: ToolCallParseError[] = [];
     const content = source.replace(FENCED_TOOL_CALLS, (_match, body: string) => {
@@ -153,7 +157,7 @@ export class TextToolProtocolAdapter implements ToolProtocolAdapter {
     return { role: "user", content: `Tool result (${result.name}, ${result.toolCallId}): ${result.content}` };
   }
 
-  isUnsupportedToolsError(error: unknown): boolean { return unsupportedToolsError(error); }
+  isUnsupportedToolsError(error: unknown): boolean { return isExplicitUnsupportedToolsError(error); }
 }
 
 class DisabledToolProtocolAdapter extends OpenAIToolProtocolAdapter {

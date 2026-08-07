@@ -15,6 +15,7 @@ import type { APISettings } from "@/types/settings";
 import { postProcessPrompt, type PromptPostProcessingType } from "@/utils/promptPostProcessor";
 import {
   createToolProtocolAdapter,
+  isExplicitUnsupportedToolsError,
   type OpenAIToolDefinition,
   type ToolProtocol,
   type ToolCallAccumulator,
@@ -1327,6 +1328,10 @@ export class OpenAICompatibleClient {
 
     if (!response.ok) {
       const error = await response.text();
+      const requestedProtocol = params.toolProtocol ?? this.apiSettings.toolProtocol ?? "auto";
+      if (requestedProtocol === "auto" && params.tools?.length && isExplicitUnsupportedToolsError({ status: response.status, message: error })) {
+        return this.generate({ ...params, toolProtocol: "text" });
+      }
       throw new Error(`API error: ${response.status} - ${error}`);
     }
 
@@ -1578,6 +1583,15 @@ export class OpenAICompatibleClient {
 
     if (!response.ok) {
       const error = await response.text();
+      const requestedProtocol = params.toolProtocol ?? this.apiSettings.toolProtocol ?? "auto";
+      if (
+        requestedProtocol === "auto" &&
+        params.tools?.length &&
+        isExplicitUnsupportedToolsError({ status: response.status, message: error })
+      ) {
+        yield* this._generateStreamInternal({ ...params, toolProtocol: "text" });
+        return;
+      }
       // 針對常見 HTTP 狀態碼提供更明確的中文診斷
       let diagnosis = '';
       if (response.status === 524) {
