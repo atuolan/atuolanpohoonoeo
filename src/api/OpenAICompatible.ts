@@ -100,13 +100,26 @@ export type MessageContent =
   | string
   | Array<TextContent | ImageContent | InputAudioContent>;
 
+export interface ToolCallFunction {
+  name: string;
+  arguments: string;
+}
+
+export interface ToolCallPayload {
+  id: string;
+  type: "function";
+  function: ToolCallFunction;
+}
+
 /**
  * API 消息格式
  */
 export interface APIMessage {
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: MessageContent;
   name?: string;
+  tool_calls?: ToolCallPayload[];
+  tool_call_id?: string;
   /**
    * 提示詞標識符（來自 PromptBuilder 的 BuiltMessage.identifier）。
    * Anthropic 原生緩存（方案B）用它把 system 內容分類為

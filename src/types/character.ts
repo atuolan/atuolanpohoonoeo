@@ -280,6 +280,28 @@ export interface CharacterWorldSettings {
   weatherOverride?: string;
 }
 
+export interface CharacterToolPermissions {
+  enabled: boolean;
+  categories: Record<string, boolean>;
+  tools: Record<string, boolean>;
+}
+
+export const createDefaultCharacterToolPermissions = (): CharacterToolPermissions => ({
+  enabled: true,
+  categories: {},
+  tools: {},
+});
+
+export function normalizeCharacterToolPermissions(
+  permissions?: Partial<CharacterToolPermissions> | null,
+): CharacterToolPermissions {
+  return {
+    enabled: permissions?.enabled ?? true,
+    categories: { ...(permissions?.categories ?? {}) },
+    tools: { ...(permissions?.tools ?? {}) },
+  };
+}
+
 // ===== 應用內部使用的角色類型 =====
 export interface StoredCharacter {
   /** 唯一識別碼 */
@@ -311,6 +333,8 @@ export interface StoredCharacter {
   };
   /** 角色世界設定（undefined 表示無世界設定） */
   worldSettings?: CharacterWorldSettings;
+  /** Per-character tool permissions. Older records default to enabled. */
+  toolPermissions?: CharacterToolPermissions;
 }
 
 // ===== 角色卡導入結果 =====
@@ -371,4 +395,13 @@ export const createDefaultStoredCharacter = (): StoredCharacter => ({
   source: "manual",
   createdAt: Date.now(),
   updatedAt: Date.now(),
+  toolPermissions: createDefaultCharacterToolPermissions(),
 });
+
+/** Apply defaults when loading characters created before tool permissions existed. */
+export function normalizeStoredCharacter(character: StoredCharacter): StoredCharacter {
+  return {
+    ...character,
+    toolPermissions: normalizeCharacterToolPermissions(character.toolPermissions),
+  };
+}
