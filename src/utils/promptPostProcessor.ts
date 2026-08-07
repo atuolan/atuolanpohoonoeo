@@ -30,15 +30,28 @@ function toTextParts(content: MessageContent): Array<string | ContentBlock> {
 }
 
 function mergeContent(messages: APIMessage[]): MessageContent {
+  const hasMultimodal = messages.some((message) => Array.isArray(message.content));
+  if (hasMultimodal) {
+    const blocks: ContentBlock[] = [];
+    messages.forEach((message, index) => {
+      if (index > 0) blocks.push({ type: "text", text: "\n\n" });
+      if (typeof message.content === "string") blocks.push({ type: "text", text: message.content });
+      else blocks.push(...message.content.map((part) => ({ ...part } as ContentBlock)));
+    });
+    return blocks;
+  }
   const parts: Array<string | ContentBlock> = [];
   messages.forEach((message, index) => {
     const incoming = toTextParts(message.content);
     if (index > 0 && parts.length && incoming.length) {
       const last = parts[parts.length - 1];
-      if (typeof last === "string" && typeof incoming[0] === "string") {
+      const first = incoming[0];
+      if (typeof last === "string" && typeof first === "string") {
         parts[parts.length - 1] = `${last}\n\n${incoming.shift()}`;
-      } else if (typeof last === "string" || typeof incoming[0] === "string") {
-        parts.push("\n\n");
+      } else {
+        // MessageContent arrays must contain provider content blocks only;
+        // represent boundaries as a text block when either side is multimodal.
+        parts.push({ type: "text", text: "\n\n" });
       }
     }
     parts.push(...incoming);
