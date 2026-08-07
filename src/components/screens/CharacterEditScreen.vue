@@ -13,7 +13,9 @@ import { searchCities } from "@/services/WeatherService";
 import { useCharactersStore, useLorebooksStore } from "@/stores";
 import { useAffinityStore } from "@/stores/affinity";
 import { useFitnessStore } from "@/stores/fitness";
-import type { CharacterWorldSettings, RegexScript } from "@/types/character";
+import { createDefaultCharacterToolPermissions, type CharacterToolPermissions, type CharacterWorldSettings, type RegexScript } from "@/types/character";
+import CharacterToolPermissionsPanel from "@/components/panels/CharacterToolPermissionsPanel.vue";
+import { CHAT_TOOLS } from "@/services/toolCalling/chatTools";
 import type { CharacterFitnessConfig } from "@/types/fitness";
 import { computed, onMounted, ref } from "vue";
 
@@ -44,6 +46,7 @@ interface Character {
   createdAt?: number;
   updatedAt?: number;
   worldSettings?: CharacterWorldSettings;
+  toolPermissions?: CharacterToolPermissions;
 }
 
 // Lorebook 類型已從 availableLorebooks computed 中推斷
@@ -86,6 +89,11 @@ const formData = ref<Character>({
   source: "manual",
   createdAt: Date.now(),
   updatedAt: Date.now(),
+  toolPermissions: createDefaultCharacterToolPermissions(),
+});
+const toolPermissions = computed<CharacterToolPermissions>({
+  get: () => formData.value.toolPermissions ?? createDefaultCharacterToolPermissions(),
+  set: (value) => { formData.value.toolPermissions = value; },
 });
 
 // 新標籤輸入
@@ -2254,6 +2262,11 @@ async function submitPasteRegex() {
           </div>
         </Transition>
       </section>
+
+      <CharacterToolPermissionsPanel
+        v-model="toolPermissions"
+        :tools="CHAT_TOOLS"
+      />
 
       <!-- ===== 危險區域 ===== -->
       <section class="edit-section danger-section" v-if="!isCreateMode">

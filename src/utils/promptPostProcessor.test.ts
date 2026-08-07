@@ -45,12 +45,44 @@ describe("prompt post processor", () => {
   it("merges multimodal text while preserving blocks", () => {
     const image = { type: "image_url" as const, image_url: { url: "data:image/png;base64,x" } };
     const result = postProcessPrompt([msg("user", [{ type: "text", text: "a" }, image]), msg("user", [{ type: "text", text: "b" }])], "merge");
-    expect(result[0].content).toEqual([{ type: "text", text: "a" }, image, { type: "text", text: "b" }]);
+    expect(result[0].content).toEqual([{ type: "text", text: "a" }, image, { type: "text", text: "\n\n" }, { type: "text", text: "b" }]);
+  });
+  it("uses valid text blocks for string and multimodal boundaries", () => {
+    const image = { type: "image_url" as const, image_url: { url: "data:image/png;base64,x" } };
+    expect(postProcessPrompt([msg("user", "before"), msg("user", [image])], "merge")[0].content).toEqual([
+      { type: "text", text: "before" },
+      { type: "text", text: "\n\n" },
+      image,
+    ]);
+    expect(postProcessPrompt([msg("user", [image]), msg("user", "after")], "merge")[0].content).toEqual([
+      image,
+      { type: "text", text: "\n\n" },
+      { type: "text", text: "after" },
+    ]);
+  });
+  it("separates adjacent text blocks with a valid text block", () => {
+    const result = postProcessPrompt([
+      msg("user", [{ type: "text", text: "one" }]),
+      msg("user", [{ type: "text", text: "two" }]),
+    ], "merge");
+    expect(result[0].content).toEqual([{ type: "text", text: "one" }, { type: "text", text: "\n\n" }, { type: "text", text: "two" }]);
   });
   it("does not mutate nested input", () => {
     const input = [msg("user", [{ type: "text", text: "x" }], { tool_calls: [{ id: "1", type: "function", function: { name: "x", arguments: "{}" } }] })];
     const snapshot = structuredClone(input);
     postProcessPrompt(input, "merge_tools");
     expect(input).toEqual(snapshot);
+  });
+  it("preserves identifiers and keeps distinct tool results separate", () => {
+    const merged = postProcessPrompt([
+      msg("system", "a", { identifier: "first" }),
+      msg("system", "b", { identifier: "second" }),
+    ], "merge");
+    expect(merged[0].identifier).toBe("first+second");
+    const tools = postProcessPrompt([
+      msg("tool", "one", { tool_call_id: "call-1" }),
+      msg("tool", "two", { tool_call_id: "call-2" }),
+    ], "merge_tools");
+    expect(tools).toHaveLength(2);
   });
 });

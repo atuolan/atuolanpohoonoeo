@@ -30,15 +30,28 @@ function toTextParts(content: MessageContent): Array<string | ContentBlock> {
 }
 
 function mergeContent(messages: APIMessage[]): MessageContent {
+  const hasMultimodal = messages.some((message) => Array.isArray(message.content));
+  if (hasMultimodal) {
+    const blocks: ContentBlock[] = [];
+    messages.forEach((message, index) => {
+      if (index > 0) blocks.push({ type: "text", text: "\n\n" });
+      if (typeof message.content === "string") blocks.push({ type: "text", text: message.content });
+      else blocks.push(...message.content.map((part) => ({ ...part } as ContentBlock)));
+    });
+    return blocks;
+  }
   const parts: Array<string | ContentBlock> = [];
   messages.forEach((message, index) => {
     const incoming = toTextParts(message.content);
     if (index > 0 && parts.length && incoming.length) {
       const last = parts[parts.length - 1];
-      if (typeof last === "string" && typeof incoming[0] === "string") {
+      const first = incoming[0];
+      if (typeof last === "string" && typeof first === "string") {
         parts[parts.length - 1] = `${last}\n\n${incoming.shift()}`;
-      } else if (typeof last === "string" || typeof incoming[0] === "string") {
-        parts.push("\n\n");
+      } else {
+        // MessageContent arrays must contain provider content blocks only;
+        // represent boundaries as a text block when either side is multimodal.
+        parts.push({ type: "text", text: "\n\n" });
       }
     }
     parts.push(...incoming);
@@ -51,7 +64,8 @@ function mergeMessages(messages: APIMessage[]): APIMessage[] {
   const result: APIMessage[] = [];
   for (const message of messages) {
     const previous = result[result.length - 1];
-    if (previous && previous.role === message.role) {
+    const canMergeToolResults = previous?.role !== "tool" || message.tool_call_id === previous.tool_call_id;
+    if (previous && previous.role === message.role && canMergeToolResults) {
       const prefix = (m: APIMessage): APIMessage => {
         if (!m.name) return m;
         if (typeof m.content === "string") return { ...m, content: `${m.name}: ${m.content}` };
@@ -59,6 +73,13 @@ function mergeMessages(messages: APIMessage[]): APIMessage[] {
       };
       const merged = { ...previous, content: mergeContent([prefix(previous), prefix(message)]) };
       if (!merged.name) merged.name = message.name;
+      if (previous.identifier || message.identifier) {
+        const identifiers = [previous.identifier, message.identifier]
+          .filter((value): value is string => Boolean(value))
+          .flatMap((value) => value.split("+"))
+          .filter((value, index, all) => all.indexOf(value) === index);
+        merged.identifier = identifiers.join("+");
+      }
       if (message.tool_calls) merged.tool_calls = [...(previous.tool_calls ?? []), ...message.tool_calls];
       if (message.tool_call_id) merged.tool_call_id = message.tool_call_id;
       result[result.length - 1] = merged;

@@ -1443,6 +1443,9 @@ export class OpenAICompatibleClient {
     let cacheCreation = 0;
     let cacheRead = 0;
     let outputTokens = 0;
+    const claudeAdapter = createToolProtocolAdapter(params.toolProtocol ?? this.apiSettings.toolProtocol ?? "auto", true);
+    const anthropicBlocks: any[] = [];
+    let activeAnthropicBlock: any | null = null;
 
     const parseEventData = (jsonStr: string): StreamingEvent | null => {
       let evt: any;
@@ -1452,6 +1455,11 @@ export class OpenAICompatibleClient {
         return null;
       }
       switch (evt.type) {
+        case "content_block_start": {
+          activeAnthropicBlock = { ...(evt.content_block ?? {}) };
+          anthropicBlocks[evt.index ?? anthropicBlocks.length] = activeAnthropicBlock;
+          return null;
+        }
         case "message_start": {
           const u = evt.message?.usage;
           if (u) {
@@ -1463,6 +1471,11 @@ export class OpenAICompatibleClient {
         }
         case "content_block_delta": {
           const text = evt.delta?.text ?? evt.delta?.partial_json ?? "";
+          const block = anthropicBlocks[evt.index ?? -1] ?? activeAnthropicBlock;
+          if (block) {
+            if (evt.delta?.text) block.text = `${block.text ?? ""}${evt.delta.text}`;
+            if (evt.delta?.partial_json) block.inputRaw = `${block.inputRaw ?? ""}${evt.delta.partial_json}`;
+          }
           if (text) {
             fullContent += text;
             return { type: "token", token: text };
@@ -1517,6 +1530,14 @@ export class OpenAICompatibleClient {
         cache_creation_input_tokens: cacheCreation,
         cache_read_input_tokens: cacheRead,
       };
+      const parsedAnthropic = claudeAdapter.parseGeneration({
+        content: anthropicBlocks.filter(Boolean).map((block) => {
+          if (typeof block.inputRaw === "string") {
+            try { block.input = JSON.parse(block.inputRaw); } catch { /* adapter reports malformed input */ }
+          }
+          return block;
+        }),
+      });
       console.log(
         `[Anthropic Stream] 緩存統計 → 寫入: ${cacheCreation}, 讀取: ${cacheRead}`,
       );
@@ -1524,6 +1545,7 @@ export class OpenAICompatibleClient {
       yield {
         type: "done",
         content: fullContent,
+        toolCalls: parsedAnthropic.toolCalls.length ? parsedAnthropic.toolCalls : undefined,
         usage,
         finishReason: stopReason,
         rawFinishReason: rawStopReason,
@@ -1875,6 +1897,15 @@ export class OpenAICompatibleClient {
         if ((result as StreamLineResult & { toolCallDelta?: StreamingEvent["toolCallDelta"] }).toolCallDelta) {
           yield { type: "token", toolCallDelta: (result as StreamLineResult & { toolCallDelta?: StreamingEvent["toolCallDelta"] }).toolCallDelta };
         }
+      }
+
+      // Text fallback blocks can span multiple SSE chunks. Parse the complete
+      // accumulated response once at stream end so the fenced block is removed
+      // from visible content and its tool calls reach the execution engine.
+      if ((params.toolProtocol ?? this.apiSettings.toolProtocol ?? "auto") === "text") {
+        const parsedText = protocolAdapter.parseGeneration(fullContent);
+        if (parsedText.toolCalls.length) parsedToolCalls = parsedText.toolCalls;
+        fullContent = parsedText.content;
       }
 
       // 正文為空但收到了推理內容（reasoning_content）的回退：

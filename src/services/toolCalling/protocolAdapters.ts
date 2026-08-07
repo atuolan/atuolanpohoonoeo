@@ -135,7 +135,7 @@ export class TextToolProtocolAdapter implements ToolProtocolAdapter {
         : String(raw?.choices?.[0]?.message?.content ?? raw?.content ?? "");
     const toolCalls: ToolCall[] = [];
     const errors: ToolCallParseError[] = [];
-    const content = source.replace(FENCED_TOOL_CALLS, (_match, body: string) => {
+    const content = source.replace(FENCED_TOOL_CALLS, (_match: string, body: string) => {
       try {
         const parsed: unknown = JSON.parse(body);
         const entries = Array.isArray(parsed) ? parsed : [parsed];
