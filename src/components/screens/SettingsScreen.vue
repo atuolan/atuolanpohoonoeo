@@ -38,7 +38,10 @@ import {
   createDefaultCharacterData,
   type StoredCharacter,
 } from "@/types/character";
-import type { APIProvider } from "@/types/settings";
+import type {
+  APIProvider,
+  PromptPostProcessingType,
+} from "@/types/settings";
 import {
   destroyDebugOverlay,
   initDebugOverlay,
@@ -171,6 +174,22 @@ const bgGenHintOpen = ref(false);
 const directConnectHintOpen = ref(false);
 // Claude 原生緩存模式說明的伸縮顯示（「這是什麼？」）
 const claudeCacheHintOpen = ref(false);
+
+const promptPostProcessingOptions: Array<{
+  value: PromptPostProcessingType;
+  label: string;
+  description: string;
+}> = [
+  { value: "none", label: "不處理", description: "保留原始訊息結構" },
+  { value: "claude", label: "Claude 相容", description: "等同合併相鄰角色訊息" },
+  { value: "merge", label: "合併角色訊息", description: "合併連續相同角色" },
+  { value: "merge_tools", label: "合併並保留工具", description: "合併角色，同時保留工具欄位" },
+  { value: "semi", label: "半嚴格", description: "只保留第一則 system 訊息" },
+  { value: "semi_tools", label: "半嚴格並保留工具", description: "半嚴格處理並保留工具欄位" },
+  { value: "strict", label: "嚴格", description: "加入 user 起始佔位訊息" },
+  { value: "strict_tools", label: "嚴格並保留工具", description: "嚴格處理並保留工具欄位" },
+  { value: "single", label: "單一 user", description: "將全部內容合併為一則 user 訊息" },
+];
 
 const selfHostedSyncCanTestConnection = computed(
   () => selfHostedSyncActionStatus.value === "idle" && !!selfHostedSyncStore.serverUrl,
@@ -1764,6 +1783,7 @@ function createProfileEmpty() {
     endpoint: "",
     apiKey: "",
     model: "",
+    promptPostProcessing: "none",
   });
 
   settingsStore.createProfile(name);
@@ -1848,7 +1868,9 @@ function isCurrentFormDirty(): boolean {
     profile.api.endpoint !== settingsStore.api.endpoint ||
     profile.api.apiKey !== settingsStore.api.apiKey ||
     profile.api.model !== settingsStore.api.model ||
-    profile.api.provider !== settingsStore.api.provider
+    profile.api.provider !== settingsStore.api.provider ||
+    (profile.api.promptPostProcessing ?? "none") !==
+      (settingsStore.api.promptPostProcessing ?? "none")
   );
 }
 
@@ -3788,6 +3810,34 @@ function useClonedVoice(voiceId: string) {
             class="info-hint-inline"
           >
             當前模型: {{ settingsStore.api.model }}
+          </div>
+
+          <!-- 提示詞後處理 -->
+          <div class="prompt-post-processing-setting">
+            <label class="setting-label" for="prompt-post-processing">
+              提示詞後處理
+            </label>
+            <select
+              id="prompt-post-processing"
+              v-model="settingsStore.api.promptPostProcessing"
+              class="soft-select"
+            >
+              <option
+                v-for="option in promptPostProcessingOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+            <p class="setting-hint">
+              {{
+                promptPostProcessingOptions.find(
+                  (option) =>
+                    option.value === settingsStore.api.promptPostProcessing,
+                )?.description || "保留原始訊息結構"
+              }}
+            </p>
           </div>
         </div>
 
@@ -7171,6 +7221,12 @@ function useClonedVoice(voiceId: string) {
 
 .model-select-group {
   position: relative;
+}
+
+.prompt-post-processing-setting {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 .soft-select {
