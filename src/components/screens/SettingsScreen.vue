@@ -65,7 +65,6 @@ const emit = defineEmits<{
 
 // Stores
 const settingsStore = useSettingsStore();
-const promptModes: PromptPostProcessingType[] = ["none", "claude", "merge", "merge_tools", "semi", "semi_tools", "strict", "strict_tools", "single"];
 const toolProtocols: ToolProtocol[] = ["auto", "native", "text", "disabled"];
 const charactersStore = useCharactersStore();
 const lorebooksStore = useLorebooksStore();
