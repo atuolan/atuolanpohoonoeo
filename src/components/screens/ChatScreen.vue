@@ -29,6 +29,7 @@ import ProactiveMessageSettingsModal from "@/components/modals/ProactiveMessageS
 import RedPacketVoiceClaimModal from "@/components/modals/RedPacketVoiceClaimModal.vue";
 import ScreenshotPreviewModal from "@/components/modals/ScreenshotPreviewModal.vue";
 import VideoCallModal from "@/components/modals/VideoCallModal.vue";
+import ToolConfirmationModal from "@/components/modals/ToolConfirmationModal.vue";
 import ImageSearchPanel from "@/components/panels/ImageSearchPanel.vue";
 import { _delay, _escapeRegex, _messageRenderDelay, countTurns, formatClaimAmount, hashString, isShadowBubbleOf, sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
 import { setDebugInfoLine } from "@/utils/debugOverlay";
@@ -150,6 +151,8 @@ import {
   useThemeStore,
 } from "@/stores";
 import { usePhoneCallStore } from "@/stores/phoneCall";
+import { CHAT_TOOLS } from "@/services/toolCalling/chatTools";
+import type { PendingToolConfirmation } from "@/services/toolCalling/types";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
 import { useUserStore } from "@/stores/user";
 import { useFitnessStore } from "@/stores/fitness";
@@ -303,6 +306,7 @@ const lorebooksStore = useLorebooksStore();
 const stickerStore = useStickerStore();
 const userStore = useUserStore();
 const fitnessStore = useFitnessStore();
+const musicStore = useMusicStore();
 const gameEconomyStore = useGameEconomyStore();
 const affinityStore = useAffinityStore();
 const chatVariablesStore = useChatVariablesStore();
@@ -360,6 +364,8 @@ const promptManagerStore = usePromptManagerStore();
 
 // 當前聊天 ID
 const currentChatId = ref<string | null>(null);
+const pendingToolConfirmation = ref<PendingToolConfirmation | null>(null);
+let activeToolDecision: ((decision: "approve" | "reject" | null) => void) | null = null;
 const activeChatId = computed(() => currentChatId.value ?? "");
 // 現有聊天的完整資料（包含外觀）尚未從 IDB 還原前，不得用初始空狀態回寫 metadata。
 const isChatHydrated = ref(false);
@@ -4617,6 +4623,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
     {
       // ===== 取得完整回覆（流式 / 非流式皆支援，解析邏輯統一在拿到完整內容後執行） =====
+      let toolDecisionWaiter: Promise<"approve" | "reject" | null> | null = null;
+      let resolveToolDecision: ((decision: "approve" | "reject" | null) => void) | null = null;
       const generationResult = await runChatGenerationRequest({
         client,
         messages: apiMessages,
@@ -4639,12 +4647,44 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           }
           scrollToBottom();
         },
+        tools: !isGroupChat.value ? CHAT_TOOLS : undefined,
+        toolProtocol: chatTaskConfig.api.toolProtocol,
+        promptPostProcessing: chatTaskConfig.api.promptPostProcessing,
+        characterId: char.id,
+        chatId: currentChatId.value || undefined,
+        toolPermissions: char.toolPermissions,
+        globalToolsEnabled: chatTaskConfig.api.toolsEnabled,
+        toolContext: {
+          locationCity: char.worldSettings?.location,
+          timezone: char.worldSettings?.timezone,
+          characterName: char.nickname || char.data.name || props.characterName,
+          characterAvatar: char.avatar,
+          weatherService: weatherStore,
+          music: musicStore,
+          theme: themeStore,
+          incomingCallScheduler: getIncomingCallScheduler(),
+        },
+        onConfirmationRequired: (pending) => {
+          pendingToolConfirmation.value = pending;
+          toolDecisionWaiter = new Promise((resolve) => { resolveToolDecision = resolve; });
+          activeToolDecision = resolveToolDecision;
+        },
       });
-      fullContent = generationResult.content;
-      generationDiagnostics = generationResult.diagnostics;
+      let resolvedGenerationResult = generationResult;
+      while (resolvedGenerationResult.confirmationRequired) {
+        const decision = toolDecisionWaiter ? await toolDecisionWaiter : null;
+        pendingToolConfirmation.value = null;
+        activeToolDecision = null;
+        if (!decision || controller.signal.aborted) throw new DOMException("Generation aborted", "AbortError");
+        resolvedGenerationResult = await resolvedGenerationResult.resolveToolConfirmation!(decision);
+        toolDecisionWaiter = null;
+        resolveToolDecision = null;
+      }
+      fullContent = resolvedGenerationResult.content;
+      generationDiagnostics = resolvedGenerationResult.diagnostics;
 
-      if (useWindow && generationResult.tokenUsage) {
-        streamingWindow.setUsage(generationResult.tokenUsage);
+      if (useWindow && resolvedGenerationResult.tokenUsage) {
+        streamingWindow.setUsage(resolvedGenerationResult.tokenUsage);
       }
 
       // 串流本身已結束（所有 token 已收到），立刻把窗口標為完成，
@@ -5861,6 +5901,9 @@ async function onConfirmNewConversation(withGreeting: boolean) {
 
 // 停止 AI 生成
 function stopAIGeneration() {
+  activeToolDecision?.(null);
+  activeToolDecision = null;
+  pendingToolConfirmation.value = null;
   const task = getChatGenerationTask();
   if (task?.isRemote && task.remoteTaskId) {
     selfHostedSyncStore
@@ -5870,6 +5913,16 @@ function stopAIGeneration() {
     bgGenerationPoller.unwatchTask(task.remoteTaskId);
   }
   stopChatGeneration();
+}
+
+function approvePendingTool(id: string): void {
+  if (pendingToolConfirmation.value?.id !== id) return;
+  activeToolDecision?.("approve");
+}
+
+function rejectPendingTool(id: string): void {
+  if (pendingToolConfirmation.value?.id !== id) return;
+  activeToolDecision?.("reject");
 }
 
 function getActiveStreamingAIMessage() {
@@ -6978,6 +7031,11 @@ function convertStoredMessageToUiMessage(m: ChatMessage, chat: Chat): Message {
 
 // 載入或創建聊天
 async function loadOrCreateChat(overrideChatId?: string) {
+  if (pendingToolConfirmation.value && overrideChatId && overrideChatId !== currentChatId.value) {
+    activeToolDecision?.(null);
+    activeToolDecision = null;
+    pendingToolConfirmation.value = null;
+  }
   isChatHydrated.value = false;
   await db.init();
   resetVisibleCount();
@@ -8196,6 +8254,9 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  activeToolDecision?.(null);
+  activeToolDecision = null;
+  pendingToolConfirmation.value = null;
   for (const cleanup of cleanupBgGenerationPollerHandlers.splice(0)) {
     cleanup();
   }
@@ -9026,6 +9087,12 @@ useChatCleanup({
       @close-expanded-input="closeExpandedInput"
       @send-from-expanded="sendFromExpanded"
       @update:show-more-features="showMoreFeatures = $event"
+    />
+
+    <ToolConfirmationModal
+      :pending="pendingToolConfirmation"
+      @approve="approvePendingTool"
+      @reject="rejectPendingTool"
     />
 
     <!-- 編輯訊息模態框 -->
