@@ -64,7 +64,8 @@ function mergeMessages(messages: APIMessage[]): APIMessage[] {
   const result: APIMessage[] = [];
   for (const message of messages) {
     const previous = result[result.length - 1];
-    if (previous && previous.role === message.role) {
+    const canMergeToolResults = previous?.role !== "tool" || message.tool_call_id === previous.tool_call_id;
+    if (previous && previous.role === message.role && canMergeToolResults) {
       const prefix = (m: APIMessage): APIMessage => {
         if (!m.name) return m;
         if (typeof m.content === "string") return { ...m, content: `${m.name}: ${m.content}` };
@@ -72,6 +73,13 @@ function mergeMessages(messages: APIMessage[]): APIMessage[] {
       };
       const merged = { ...previous, content: mergeContent([prefix(previous), prefix(message)]) };
       if (!merged.name) merged.name = message.name;
+      if (previous.identifier || message.identifier) {
+        const identifiers = [previous.identifier, message.identifier]
+          .filter((value): value is string => Boolean(value))
+          .flatMap((value) => value.split("+"))
+          .filter((value, index, all) => all.indexOf(value) === index);
+        merged.identifier = identifiers.join("+");
+      }
       if (message.tool_calls) merged.tool_calls = [...(previous.tool_calls ?? []), ...message.tool_calls];
       if (message.tool_call_id) merged.tool_call_id = message.tool_call_id;
       result[result.length - 1] = merged;

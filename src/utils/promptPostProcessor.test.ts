@@ -73,4 +73,16 @@ describe("prompt post processor", () => {
     postProcessPrompt(input, "merge_tools");
     expect(input).toEqual(snapshot);
   });
+  it("preserves identifiers and keeps distinct tool results separate", () => {
+    const merged = postProcessPrompt([
+      msg("system", "a", { identifier: "first" }),
+      msg("system", "b", { identifier: "second" }),
+    ], "merge");
+    expect(merged[0].identifier).toBe("first+second");
+    const tools = postProcessPrompt([
+      msg("tool", "one", { tool_call_id: "call-1" }),
+      msg("tool", "two", { tool_call_id: "call-2" }),
+    ], "merge_tools");
+    expect(tools).toHaveLength(2);
+  });
 });
