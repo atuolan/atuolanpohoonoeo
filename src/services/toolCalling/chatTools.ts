@@ -142,7 +142,7 @@ export const CHAT_TOOLS: ChatToolDefinition[] = [
     parameters: object({ delay: { type: "string", description: "延遲，例如 5m、1h", enum: ["5m", "10m", "30m", "1h", "2h", "1d"] }, reason: string("來電原因", 240), opening: string("開場白", 500) }, ["delay", "reason"]),
     async execute(args, context) {
       const scheduler = service<{ schedulePendingCall?: (data: Record<string, unknown>, character: Record<string, unknown>, chatId: string) => Promise<unknown> }>(context, "incomingCallScheduler") ?? getIncomingCallScheduler();
-      return scheduler.schedulePendingCall({ delay: args.delay as string, reason: args.reason as string, opening: args.opening as string | undefined }, { id: context.characterId ?? "", name: String(context.characterName ?? ""), avatar: typeof context.characterAvatar === "string" ? context.characterAvatar : undefined }, context.chatId ?? "");
+      return scheduler.schedulePendingCall!({ delay: args.delay as string, reason: args.reason as string, opening: args.opening as string | undefined }, { id: context.characterId ?? "", name: String(context.characterName ?? ""), avatar: typeof context.characterAvatar === "string" ? context.characterAvatar : undefined }, context.chatId ?? "");
     },
   },
 ];
@@ -150,3 +150,4 @@ export const CHAT_TOOLS: ChatToolDefinition[] = [
 export function createChatToolRegistry(_context: ChatToolContext): ToolRegistry {
   return new ToolRegistry(CHAT_TOOLS);
 }
+
