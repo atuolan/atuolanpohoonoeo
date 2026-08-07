@@ -35,6 +35,7 @@ interface PendingState {
   calls: ToolCall[];
   callIndex: number;
   generatedContent: string;
+  assistantMessageAppended: boolean;
 }
 
 export interface ToolExecutionEngineOptions {
@@ -96,6 +97,7 @@ export class ToolExecutionEngine {
       calls: [] as ToolCall[],
       callIndex: 0,
       generatedContent: "",
+      assistantMessageAppended: false,
     };
     return this.continue(state);
   }
@@ -120,6 +122,7 @@ export class ToolExecutionEngine {
 
   private async continue(state: Omit<PendingState, "pending">): Promise<ToolExecutionOutcome> {
     while (state.round < this.maxRounds) {
+      if (state.context.signal?.aborted) return this.complete(state, "工具執行已取消");
       state.round += 1;
       let generated: ToolGenerationResult;
       try { generated = await this.generate(state.messages, state.context); }
@@ -127,6 +130,7 @@ export class ToolExecutionEngine {
       state.generatedContent = generated.content ?? "";
       state.calls = generated.toolCalls ?? [];
       state.callIndex = 0;
+      state.assistantMessageAppended = false;
       if (!state.calls.length) return this.complete(state, state.generatedContent);
       const outcome = await this.continueCalls(state);
       if (outcome.status === "confirmation_required") return outcome;
@@ -137,8 +141,9 @@ export class ToolExecutionEngine {
   }
 
   private async continueCalls(state: Omit<PendingState, "pending">): Promise<ToolExecutionOutcome> {
-    if (state.calls.length) {
+    if (state.calls.length && !state.assistantMessageAppended) {
       state.messages.push({ role: "assistant", content: state.generatedContent, tool_calls: state.calls.map((call) => ({ id: call.id, type: "function", function: { name: call.name, arguments: JSON.stringify(call.arguments) } })) });
+      state.assistantMessageAppended = true;
     }
     while (state.callIndex < state.calls.length) {
       const call = state.calls[state.callIndex];
@@ -160,6 +165,9 @@ export class ToolExecutionEngine {
       if (tool.risk === "high") {
         const pending: PendingToolConfirmation = { id: makeId(), chatId: state.context.chatId, toolCall: call, tool, createdAt: Date.now() };
         this.pending.set(pending.id, { ...state, pending });
+        setTimeout(() => {
+          if (this.pending.get(pending.id)?.pending === pending) this.pending.delete(pending.id);
+        }, 5 * 60 * 1000);
         return { status: "confirmation_required", pending };
       }
       const result = await this.executeCall(tool, call, state.context);

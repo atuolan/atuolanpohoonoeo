@@ -6,7 +6,7 @@
 |---|---|
 | `npm test` | 52 tests passed |
 | `npm run type-check` | Existing baseline errors remain in `useChatMessageActions.ts` and `fixGroupChatSenderNames.ts`; no feature-specific errors after fixes |
-| `npm run build` | Pending final run |
+| `npm run build:fast` | Passed; Vite production bundle generated |
 
 ## Manual Matrix
 
