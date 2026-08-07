@@ -104,9 +104,9 @@ export function postProcessPrompt(
   options: PromptPostProcessingOptions = {},
 ): APIMessage[] {
   const mode = type || "none";
+  if (mode === "none") return messages.map(cloneMessage);
   const preserveTools = mode.endsWith("_tools");
   let working = messages.map((message) => preserveTools ? cloneMessage(message) : stripTools(message));
-  if (mode === "none") return working;
   if (mode === "single") {
     const converted = working.map((message) => ({ ...message, role: "user" as const }));
     return [{ role: "user", content: mergeContent(converted) }];

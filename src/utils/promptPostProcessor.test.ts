@@ -12,6 +12,13 @@ describe("prompt post processor", () => {
     expect(out).not.toBe(input);
     expect(out[0]).not.toBe(input[0]);
   });
+  it("preserves native tool history in none mode", () => {
+    const input = [
+      msg("assistant", "", { tool_calls: [{ id: "1", type: "function", function: { name: "x", arguments: "{}" } }] }),
+      msg("tool", "ok", { tool_call_id: "1" }),
+    ];
+    expect(postProcessPrompt(input, "none")).toEqual(input);
+  });
   it("treats claude as merge and merges adjacent roles", () => {
     const input = [msg("system", "a", { identifier: "x" }), msg("system", "b"), msg("user", "c"), msg("user", "d")];
     expect(postProcessPrompt(input, "claude")).toEqual(postProcessPrompt(input, "merge"));

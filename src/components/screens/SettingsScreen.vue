@@ -1786,6 +1786,8 @@ function createProfileEmpty() {
     apiKey: "",
     model: "",
     promptPostProcessing: "none",
+    toolProtocol: "auto",
+    toolsEnabled: true,
   });
 
   settingsStore.createProfile(name);
@@ -1872,7 +1874,11 @@ function isCurrentFormDirty(): boolean {
     profile.api.model !== settingsStore.api.model ||
     profile.api.provider !== settingsStore.api.provider ||
     (profile.api.promptPostProcessing ?? "none") !==
-      (settingsStore.api.promptPostProcessing ?? "none")
+      (settingsStore.api.promptPostProcessing ?? "none") ||
+    (profile.api.toolProtocol ?? "auto") !==
+      (settingsStore.api.toolProtocol ?? "auto") ||
+    (profile.api.toolsEnabled ?? true) !==
+      (settingsStore.api.toolsEnabled ?? true)
   );
 }
 

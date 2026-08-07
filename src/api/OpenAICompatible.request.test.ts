@@ -93,7 +93,30 @@ describe("OpenAICompatible request integration", () => {
       messages: [
         { role: "assistant", content: "", tool_calls: [{ id: "c1", type: "function", function: { name: "x", arguments: "{}" } }] },
         { role: "tool", content: "result", tool_call_id: "c1" },
-      ], settings, apiSettings: api(), tools: [{ name: "x", description: "x", parameters: { type: "object" } }], toolProtocol: "disabled", promptPostProcessing: "none",
+      ], settings, apiSettings: api(), tools: [{ name: "x", description: "x", parameters: { type: "object" } }], toolProtocol: "disabled", promptPostProcessing: "merge",
+    });
+  });
+
+  it("keeps single mode when native tools are enabled", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      expect(body.messages).toEqual([
+        { role: "user", content: "Rules\n\nHello" },
+      ]);
+      expect(body.tools).toHaveLength(1);
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await new OpenAICompatibleClient(api()).generate({
+      messages: [
+        { role: "system", content: "Rules" },
+        { role: "user", content: "Hello" },
+      ],
+      settings,
+      apiSettings: api(),
+      tools: [{ name: "x", description: "x", parameters: { type: "object" } }],
+      toolProtocol: "native",
+      promptPostProcessing: "single",
     });
   });
 

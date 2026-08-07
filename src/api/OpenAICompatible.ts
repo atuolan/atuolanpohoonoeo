@@ -277,6 +277,22 @@ interface BuiltRequest {
 
 type RequestToolOptions = Pick<GenerationParams, "tools" | "toolProtocol" | "promptPostProcessing" | "toolContext">;
 
+function getToolCompatiblePromptMode(
+  requestedMode: PromptPostProcessingType,
+): PromptPostProcessingType {
+  switch (requestedMode) {
+    case "claude":
+    case "merge":
+      return "merge_tools";
+    case "semi":
+      return "semi_tools";
+    case "strict":
+      return "strict_tools";
+    default:
+      return requestedMode;
+  }
+}
+
 interface StreamLineResult {
   delta: string | null;
   /**
@@ -689,8 +705,8 @@ export class OpenAICompatibleClient {
   ): BuiltRequest {
     const requestedMode = options.promptPostProcessing ?? this.apiSettings.promptPostProcessing ?? "none";
     const protocol = options.toolProtocol ?? this.apiSettings.toolProtocol ?? "auto";
-    const promptMode = options.tools?.length && (protocol === "native" || protocol === "auto") && requestedMode !== "none" && !requestedMode.endsWith("_tools")
-      ? `${requestedMode}_tools` as PromptPostProcessingType
+    const promptMode = options.tools?.length && (protocol === "native" || protocol === "auto")
+      ? getToolCompatiblePromptMode(requestedMode)
       : requestedMode;
     let processedMessages = postProcessPrompt(messages, promptMode);
     const roleAdjustments: NonNullable<GenerationDiagnostics["roleAdjustments"]> = [];
@@ -904,8 +920,8 @@ export class OpenAICompatibleClient {
   ): BuiltRequest {
     const requestedMode = options.promptPostProcessing ?? this.apiSettings.promptPostProcessing ?? "none";
     const protocol = options.toolProtocol ?? this.apiSettings.toolProtocol ?? "auto";
-    const promptMode = options.tools?.length && (protocol === "native" || protocol === "auto") && requestedMode !== "none" && !requestedMode.endsWith("_tools")
-      ? `${requestedMode}_tools` as PromptPostProcessingType
+    const promptMode = options.tools?.length && (protocol === "native" || protocol === "auto")
+      ? getToolCompatiblePromptMode(requestedMode)
       : requestedMode;
     const processedMessages = postProcessPrompt(messages, promptMode);
     const roleAdjustments: NonNullable<GenerationDiagnostics["roleAdjustments"]> = [];
