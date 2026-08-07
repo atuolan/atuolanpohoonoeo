@@ -9,7 +9,10 @@ import {
   scheduleSelfHostedAutoSync,
 } from "@/services/selfHostedSyncState";
 import type { StoredCharacter } from "../types/character";
-import { createDefaultStoredCharacter } from "../types/character";
+import {
+  createDefaultStoredCharacter,
+  normalizeStoredCharacter,
+} from "../types/character";
 
 const STORAGE_KEY = "aguaphone_characters";
 
@@ -28,13 +31,14 @@ export class CharacterService {
       }
       // 優先使用 IndexedDB
       if (db.isOpen()) {
-        return await db.getAll<StoredCharacter>(DB_STORES.CHARACTERS);
+        const characters = await db.getAll<StoredCharacter>(DB_STORES.CHARACTERS);
+        return characters.map(normalizeStoredCharacter);
       }
 
       // 備用 localStorage（僅在 IDB 完全無法使用時）
       console.warn("[CharacterService] IndexedDB 不可用，降級使用 localStorage");
       const data = localStorage.getItem(STORAGE_KEY);
-      return data ? JSON.parse(data) : [];
+      return data ? (JSON.parse(data) as StoredCharacter[]).map(normalizeStoredCharacter) : [];
     } catch (e) {
       console.error("[CharacterService] Failed to get all characters:", e);
       return [];
@@ -47,9 +51,8 @@ export class CharacterService {
   async getById(id: string): Promise<StoredCharacter | null> {
     try {
       if (db.isOpen()) {
-        return (
-          (await db.get<StoredCharacter>(DB_STORES.CHARACTERS, id)) ?? null
-        );
+        const character = await db.get<StoredCharacter>(DB_STORES.CHARACTERS, id);
+        return character ? normalizeStoredCharacter(character) : null;
       }
 
       const all = await this.getAll();
@@ -64,13 +67,13 @@ export class CharacterService {
    * 創建新角色
    */
   async create(data: Partial<StoredCharacter> = {}): Promise<StoredCharacter> {
-    const character: StoredCharacter = {
+    const character = normalizeStoredCharacter({
       ...createDefaultStoredCharacter(),
       ...data,
       id: data.id || crypto.randomUUID(),
       createdAt: Date.now(),
       updatedAt: Date.now(),
-    };
+    });
 
     try {
       if (db.isOpen()) {
@@ -103,12 +106,12 @@ export class CharacterService {
       const existing = await this.getById(id);
       if (!existing) return null;
 
-      const updated: StoredCharacter = {
+      const updated = normalizeStoredCharacter({
         ...existing,
         ...updates,
         id, // 確保 ID 不變
         updatedAt: Date.now(),
-      };
+      });
 
       if (db.isOpen()) {
         // 轉換為純 JavaScript 物件，避免 Vue 響應式物件導致 DataCloneError

@@ -14,6 +14,19 @@ export type APIProvider =
   | "openrouter"
   | "custom";
 
+export type PromptPostProcessingType =
+  | "none"
+  | "claude"
+  | "merge"
+  | "merge_tools"
+  | "semi"
+  | "semi_tools"
+  | "strict"
+  | "strict_tools"
+  | "single";
+
+export type ToolProtocol = "auto" | "native" | "text" | "disabled";
+
 // ===== API 設定 =====
 export interface APISettings {
   /** 當前提供者 */
@@ -37,6 +50,12 @@ export interface APISettings {
    * 預設關閉，關閉時維持原本 OpenAI 相容 /v1/chat/completions 行為。
    */
   useClaudeNativeCache?: boolean;
+  /** SillyTavern-compatible prompt post-processing mode. */
+  promptPostProcessing?: PromptPostProcessingType;
+  /** Tool calling transport preference. */
+  toolProtocol?: ToolProtocol;
+  /** Globally enable chat tools. */
+  toolsEnabled?: boolean;
 }
 
 // ===== 頭像樣式 =====
@@ -223,6 +242,9 @@ export const createDefaultAPISettings = (): APISettings => ({
   endpoint: "https://api.openai.com/v1",
   apiKey: "",
   model: "gpt-4o-mini",
+  promptPostProcessing: "none",
+  toolProtocol: "auto",
+  toolsEnabled: true,
 });
 
 // ===== 創建默認 UI 設定 =====
