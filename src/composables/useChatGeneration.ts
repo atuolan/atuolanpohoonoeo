@@ -93,7 +93,7 @@ export async function runChatGenerationRequest(
           apiSettings: context.apiSettings,
           signal: context.signal,
           adjustLastMessageRole: true,
-          tools: registry.toOpenAITools().map((item) => item.function),
+          tools: registry.toOpenAITools() as any,
           toolProtocol: context.toolProtocol,
           promptPostProcessing: context.promptPostProcessing as any,
           toolContext: requestContext,
