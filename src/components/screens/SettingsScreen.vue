@@ -39,6 +39,7 @@ import {
   type StoredCharacter,
 } from "@/types/character";
 import type { APIProvider } from "@/types/settings";
+import type { PromptPostProcessingType, ToolProtocol } from "@/types/settings";
 import {
   destroyDebugOverlay,
   initDebugOverlay,
@@ -61,6 +62,8 @@ const emit = defineEmits<{
 
 // Stores
 const settingsStore = useSettingsStore();
+const promptModes: PromptPostProcessingType[] = ["none", "claude", "merge", "merge_tools", "semi", "semi_tools", "strict", "strict_tools", "single"];
+const toolProtocols: ToolProtocol[] = ["auto", "native", "text", "disabled"];
 const charactersStore = useCharactersStore();
 const lorebooksStore = useLorebooksStore();
 const userStore = useUserStore();
@@ -3621,6 +3624,19 @@ function useClonedVoice(voiceId: string) {
         <div class="section-divider"></div>
 
         <!-- 提供者選擇 -->
+        <div class="setting-group tool-calling-settings">
+          <label class="setting-label">聊天工具呼叫</label>
+          <label><input v-model="settingsStore.api.toolsEnabled" type="checkbox" /> 啟用角色工具</label>
+          <label>提示詞後處理
+            <select v-model="settingsStore.api.promptPostProcessing">
+              <option v-for="mode in promptModes" :key="mode" :value="mode">{{ mode }}</option>
+            </select>
+          </label>
+          <label>工具協議
+            <select v-model="settingsStore.api.toolProtocol"><option v-for="protocol in toolProtocols" :key="protocol" :value="protocol">{{ protocol }}</option></select>
+          </label>
+        </div>
+
         <div class="setting-group">
           <label class="setting-label">API 提供者</label>
           <div class="provider-grid">
