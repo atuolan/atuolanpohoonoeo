@@ -674,6 +674,10 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     cleanup();
     callState.value = "ended";
 
+    // 通知排程服務記錄掛斷時間（冷卻用）
+    const { getIncomingCallScheduler } = await import("@/services/IncomingCallScheduler");
+    getIncomingCallScheduler().recordCallEnded();
+
     // 立即把通話記錄存進 IndexedDB，防止頁面被系統殺掉後丟失
     await persistCallRecord();
 

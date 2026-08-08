@@ -22,6 +22,22 @@ export interface CharacterInfo {
 }
 
 /**
+ * 同一角色最多允許的待處理來電數量
+ */
+const MAX_PENDING_CALLS_PER_CHARACTER = 2;
+
+/**
+ * 掛斷電話後的冷卻時間（毫秒）— 避免連續觸發
+ */
+const POST_HANGUP_COOLDOWN_MS = 60_000; // 60 秒
+
+/**
+ * DND 期間過期來電的最大容忍時間（毫秒）
+ * 超過此時間的過期來電會被自動清除而非觸發
+ */
+const EXPIRED_CALL_TTL_MS = 10 * 60_000; // 10 分鐘
+
+/**
  * 延遲時間單位對應的毫秒數
  */
 const DELAY_UNITS: Record<string, number> = {
@@ -103,6 +119,14 @@ export function shouldTriggerCall(
  * 來電排程服務類
  */
 export class IncomingCallScheduler {
+  /** 上次電話結束的時間戳，用於冷卻判斷 */
+  private lastCallEndedAt = 0;
+
+  /** 記錄掛斷時間，供冷卻邏輯使用 */
+  recordCallEnded() {
+    this.lastCallEndedAt = Date.now();
+  }
+
   /**
    * 排程新來電
    *
@@ -120,6 +144,24 @@ export class IncomingCallScheduler {
     if (triggerTime === null) {
       console.warn("[IncomingCallScheduler] 無效的延遲時間格式:", data.delay);
       return null;
+    }
+
+    // 限制同一角色的待處理來電數量
+    try {
+      const allPending = await db.getAll<PendingCall>(DB_STORES.PENDING_CALLS);
+      const characterPending = allPending.filter(
+        (c) => c.characterId === characterInfo.id,
+      );
+      if (characterPending.length >= MAX_PENDING_CALLS_PER_CHARACTER) {
+        console.log(
+          "[IncomingCallScheduler] 角色待處理來電已達上限，拒絕排程:",
+          characterInfo.name,
+          `(${characterPending.length}/${MAX_PENDING_CALLS_PER_CHARACTER})`,
+        );
+        return null;
+      }
+    } catch {
+      // 查詢失敗不阻擋排程
     }
 
     const pendingCall: PendingCall = {
@@ -163,7 +205,13 @@ export class IncomingCallScheduler {
   ): Promise<PendingCall | null> {
     // 全域勿擾模式開啟時不觸發來電
     if (globalDoNotDisturb) {
-      console.log("[IncomingCallScheduler] 全域勿擾模式開啟，不觸發來電");
+      // 自動清理 DND 期間已過期太久的來電，避免關閉 DND 後一堆電話湧入
+      await this.cleanupExpiredCalls();
+      return null;
+    }
+
+    // 掛斷冷卻：上次通話結束後短時間內不觸發新來電
+    if (Date.now() - this.lastCallEndedAt < POST_HANGUP_COOLDOWN_MS) {
       return null;
     }
 
@@ -173,10 +221,23 @@ export class IncomingCallScheduler {
       );
       const now = Date.now();
 
+      // 清除過期太久的來電（不論 DND 狀態）
+      const expiredCalls = allPendingCalls.filter(
+        (call) => call.triggerTime <= now - EXPIRED_CALL_TTL_MS,
+      );
+      for (const call of expiredCalls) {
+        await db.delete(DB_STORES.PENDING_CALLS, call.id);
+        console.log("[IncomingCallScheduler] 自動清除過期來電:", call.id);
+      }
+
       // 找出所有已到期的來電，按建立時間排序
       // 同時過濾掉該聊天開啟勿擾模式的來電
       const overdueCalls = allPendingCalls
         .filter((call) => {
+          // 已被清除的過期來電跳過
+          if (call.triggerTime <= now - EXPIRED_CALL_TTL_MS) {
+            return false;
+          }
           // 檢查是否已到期
           if (call.triggerTime > now) {
             return false;
@@ -201,6 +262,32 @@ export class IncomingCallScheduler {
     } catch (e) {
       console.error("[IncomingCallScheduler] 檢查待處理來電失敗:", e);
       return null;
+    }
+  }
+
+  /**
+   * 清除過期太久的來電（DND 期間呼叫）
+   */
+  private async cleanupExpiredCalls(): Promise<void> {
+    try {
+      const allPendingCalls = await db.getAll<PendingCall>(
+        DB_STORES.PENDING_CALLS,
+      );
+      const now = Date.now();
+      const expired = allPendingCalls.filter(
+        (call) => call.triggerTime <= now - EXPIRED_CALL_TTL_MS,
+      );
+      for (const call of expired) {
+        await db.delete(DB_STORES.PENDING_CALLS, call.id);
+      }
+      if (expired.length > 0) {
+        console.log(
+          "[IncomingCallScheduler] DND 期間清除過期來電:",
+          expired.length,
+        );
+      }
+    } catch {
+      // 清理失敗不影響主流程
     }
   }
 

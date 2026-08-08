@@ -229,6 +229,7 @@ export function useChatIncomingCalls(deps: {
 
     showIncomingCallModal.value = false;
     currentPendingCall.value = null;
+    incomingCallScheduler.recordCallEnded();
 
     insertCallNotificationCard(
       "declined",
@@ -267,6 +268,7 @@ export function useChatIncomingCalls(deps: {
 
     showIncomingCallModal.value = false;
     currentPendingCall.value = null;
+    incomingCallScheduler.recordCallEnded();
 
     insertCallNotificationCard(
       "missed",
@@ -293,6 +295,7 @@ export function useChatIncomingCalls(deps: {
   ) {
     isIncomingCallMode.value = false;
     incomingCallReason.value = "";
+    incomingCallScheduler.recordCallEnded();
     await deps.handlePhoneCallEnded(callMessages, duration);
   }
 
