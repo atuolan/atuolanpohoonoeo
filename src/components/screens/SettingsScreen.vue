@@ -1197,10 +1197,8 @@ function toProxyUrl(url: string): string {
   try {
     const parsed = new URL(url, window.location.origin);
     if (parsed.origin === window.location.origin) return url;
-    // 走灰雲子域名，繞過 Cloudflare timeout
-    const prefix =
-      parsed.protocol === "http:" ? "/ai-proxy-http/" : "/ai-proxy/";
-    return `https://tight-sun-f7fa.a23971123.workers.dev${prefix}${parsed.host}${parsed.pathname}`;
+    // 使用 /proxy/{host}/{path} 格式，符合 Worker 路由規則
+    return `https://tight-sun-f7fa.a23971123.workers.dev/proxy/${parsed.host}${parsed.pathname}${parsed.search}`;
   } catch {
     return url;
   }
@@ -3894,6 +3892,25 @@ function useClonedVoice(voiceId: string) {
             class="info-hint-inline"
           >
             當前模型: {{ settingsStore.api.model }}
+          </div>
+
+          <!-- 最後提示詞角色覆蓋 -->
+          <div class="last-prompt-role-setting">
+            <label class="setting-label" for="last-prompt-role">
+              最後提示詞角色
+            </label>
+            <select
+              id="last-prompt-role"
+              v-model="settingsStore.api.lastPromptRoleOverride"
+              class="soft-select"
+            >
+              <option value="system">system</option>
+              <option value="user">user</option>
+              <option value="assistant">assistant</option>
+            </select>
+            <p class="setting-hint">
+              設定最後一個提示詞的發言角色（覆蓋提示詞管理器設定）
+            </p>
           </div>
 
           <!-- 提示詞後處理 -->

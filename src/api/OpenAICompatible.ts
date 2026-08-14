@@ -759,6 +759,27 @@ export class OpenAICompatibleClient {
       }
     }
 
+    // 應用最後提示詞角色覆蓋（在模型特殊處理之後執行，優先級最高）
+    const roleOverride = this.apiSettings.lastPromptRoleOverride;
+    if (roleOverride && roleOverride !== "none" && processedMessages.length > 0) {
+      const lastIdx = processedMessages.length - 1;
+      const before = processedMessages[lastIdx].role;
+      if (before !== roleOverride) {
+        processedMessages[lastIdx] = {
+          ...processedMessages[lastIdx],
+          role: roleOverride as "system" | "user" | "assistant",
+        };
+        roleAdjustments.push({
+          reason: "last-prompt-role-override",
+          before,
+          after: roleOverride as "system" | "user" | "assistant",
+        });
+        console.log(
+          `[API] 最後提示詞角色覆蓋：${before} → ${roleOverride}`,
+        );
+      }
+    }
+
     // DeepSeek Reasoner 特殊處理：強制訊息嚴格 user/assistant 交替
     // DS reasoner 不允許連續相同 role 或中間出現 system 訊息
     if (this.isDeepSeekReasonerModel()) {

@@ -3109,11 +3109,9 @@ watch(newPromptInsertMode, (mode) => {
                     <span class="label-hint">AI 如何理解這條訊息</span>
                   </label>
                   <select v-model="editingRole" class="select-field">
-                    <option value="system">system - 行為準則和背景設定</option>
-                    <option value="user">user - AI 認為是人類說的話</option>
-                    <option value="assistant">
-                      assistant - AI 認為是自己說過的話
-                    </option>
+                    <option value="system">system</option>
+                    <option value="user">user</option>
+                    <option value="assistant">assistant</option>
                   </select>
                 </div>
 
@@ -3436,11 +3434,9 @@ watch(newPromptInsertMode, (mode) => {
                     <span class="label-hint">AI 如何理解這條訊息</span>
                   </label>
                   <select v-model="newPromptRole" class="select-field">
-                    <option value="system">system - 行為準則和背景設定</option>
-                    <option value="user">user - AI 認為是人類說的話</option>
-                    <option value="assistant">
-                      assistant - AI 認為是自己說過的話
-                    </option>
+                    <option value="system">system</option>
+                    <option value="user">user</option>
+                    <option value="assistant">assistant</option>
                   </select>
                 </div>
 

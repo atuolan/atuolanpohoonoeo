@@ -56,6 +56,8 @@ export interface APISettings {
   toolProtocol?: ToolProtocol;
   /** Globally enable chat tools. */
   toolsEnabled?: boolean;
+  /** 最後提示詞角色覆蓋：設定最後一個提示詞的發言角色 */
+  lastPromptRoleOverride?: "none" | "system" | "user" | "assistant";
 }
 
 // ===== 頭像樣式 =====
@@ -242,9 +244,10 @@ export const createDefaultAPISettings = (): APISettings => ({
   endpoint: "https://api.openai.com/v1",
   apiKey: "",
   model: "gpt-4o-mini",
-  promptPostProcessing: "none",
+  promptPostProcessing: "strict",
   toolProtocol: "auto",
   toolsEnabled: false,
+  lastPromptRoleOverride: "system",
 });
 
 // ===== 創建默認 UI 設定 =====

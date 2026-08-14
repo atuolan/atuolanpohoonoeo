@@ -52,7 +52,7 @@ function corsHeaders(origin) {
   return {
     'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Api-Key, Anthropic-Version, X-Aguaphone-Client',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Api-Key, Anthropic-Version, X-Aguaphone-Client, Cache-Control',
     'Access-Control-Max-Age': '86400',
   };
 }
@@ -299,9 +299,10 @@ async function handleRequest(request) {
       targetHost = 'api.novelai.net';
       upstream = 'https://' + targetHost + path.slice(4);
     }
-    // ── 通用代理路由：/proxy/{host}/{path} ──
-    else if (path.startsWith('/proxy/')) {
-      const rest = path.slice(7); // 去掉 /proxy/
+    // ── 通用代理路由：/proxy/{host}/{path} 或 /ai-proxy/{host}/{path} ──
+    else if (path.startsWith('/proxy/') || path.startsWith('/ai-proxy/')) {
+      const prefixLen = path.startsWith('/ai-proxy/') ? 10 : 7; // /ai-proxy/ = 10, /proxy/ = 7
+      const rest = path.slice(prefixLen);
       const slashIdx = rest.indexOf('/');
       if (slashIdx === -1) {
         return new Response('Bad Request: missing path after host', { status: 400 });
