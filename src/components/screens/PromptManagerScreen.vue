@@ -27,6 +27,7 @@ import {
   isPromptEditable,
   isPromptToggleable,
 } from "@/types/promptManager";
+import { getPromptRoleLabel } from "@/utils/promptRole";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
 // Emits
@@ -618,14 +619,7 @@ function getRoleLabel(
   identifier: string,
 ): { text: string; class: string } | null {
   const def = getPromptDef(identifier);
-  if (!def || def.role === "system") return null;
-
-  if (def.role === "user") {
-    return { text: "使用者", class: "role-user" };
-  } else if (def.role === "assistant") {
-    return { text: "AI", class: "role-assistant" };
-  }
-  return null;
+  return def ? getPromptRoleLabel(def.role) : null;
 }
 
 // 獲取位置標籤
@@ -3115,10 +3109,10 @@ watch(newPromptInsertMode, (mode) => {
                     <span class="label-hint">AI 如何理解這條訊息</span>
                   </label>
                   <select v-model="editingRole" class="select-field">
-                    <option value="system">系統 - 行為準則和背景設定</option>
-                    <option value="user">使用者 - AI 認為是人類說的話</option>
+                    <option value="system">system - 行為準則和背景設定</option>
+                    <option value="user">user - AI 認為是人類說的話</option>
                     <option value="assistant">
-                      AI 助手 - AI 認為是自己說過的話
+                      assistant - AI 認為是自己說過的話
                     </option>
                   </select>
                 </div>
@@ -3442,10 +3436,10 @@ watch(newPromptInsertMode, (mode) => {
                     <span class="label-hint">AI 如何理解這條訊息</span>
                   </label>
                   <select v-model="newPromptRole" class="select-field">
-                    <option value="system">系統 - 行為準則和背景設定</option>
-                    <option value="user">使用者 - AI 認為是人類說的話</option>
+                    <option value="system">system - 行為準則和背景設定</option>
+                    <option value="user">user - AI 認為是人類說的話</option>
                     <option value="assistant">
-                      AI 助手 - AI 認為是自己說過的話
+                      assistant - AI 認為是自己說過的話
                     </option>
                   </select>
                 </div>
@@ -5064,6 +5058,11 @@ watch(newPromptInsertMode, (mode) => {
   &.role-assistant {
     background: #e0f2f1;
     color: #00695c;
+  }
+
+  &.role-system {
+    background: #f3e5f5;
+    color: #7b1fa2;
   }
 
   &.position-depth {
