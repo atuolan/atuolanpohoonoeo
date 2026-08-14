@@ -25,6 +25,7 @@ const ALLOWED_ORIGINS = [
   'https://203aguaphone.aguacloud.uk',
   'http://203aguaphone.aguacloud.uk',
   'http://localhost:5173',
+  'http://127.0.0.1:5173',
   'http://localhost:3002',
 ];
 
