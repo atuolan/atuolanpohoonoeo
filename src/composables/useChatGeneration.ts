@@ -150,6 +150,7 @@ export async function runChatGenerationRequest(
       apiSettings: context.apiSettings,
       signal: context.signal,
       adjustLastMessageRole: true,
+      promptPostProcessing: "strict",
     });
 
     for await (const event of streamGenerator) {
@@ -184,6 +185,7 @@ export async function runChatGenerationRequest(
       apiSettings: context.apiSettings,
       signal: context.signal,
       adjustLastMessageRole: true,
+      promptPostProcessing: "strict",
     });
     fullContent = result.content;
     if (result.tokenCount) {

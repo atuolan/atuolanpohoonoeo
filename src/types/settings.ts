@@ -244,7 +244,7 @@ export const createDefaultAPISettings = (): APISettings => ({
   endpoint: "https://api.openai.com/v1",
   apiKey: "",
   model: "gpt-4o-mini",
-  promptPostProcessing: "strict",
+  promptPostProcessing: "none",
   toolProtocol: "auto",
   toolsEnabled: false,
   lastPromptRoleOverride: "system",
