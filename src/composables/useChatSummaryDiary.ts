@@ -613,7 +613,10 @@ ${recentMessagesText}
         );
       }
 
-      const client = new OpenAICompatibleClient(taskConfig.api);
+      const client = new OpenAICompatibleClient({
+        ...taskConfig.api,
+        lastPromptRoleOverride: "none", // 日記不使用角色覆蓋
+      });
 
       let diaryContent = "";
       const isStreamingEnabled = taskConfig.generation.streamingEnabled;
@@ -798,7 +801,10 @@ ${recentMessagesText}
         }
       }
 
-      const client = new OpenAICompatibleClient(taskConfig.api);
+      const client = new OpenAICompatibleClient({
+        ...taskConfig.api,
+        lastPromptRoleOverride: "none", // 總結不使用角色覆蓋
+      });
 
       let summaryContent = "";
       const isStreamingEnabled = taskConfig.generation.streamingEnabled;
@@ -1023,7 +1029,12 @@ ${recentMessagesText}
         deps.streamingWindow.show(taskConfig.api.model || "AI");
       }
 
-      const streamGenerator = client.generateStream({
+      const metaClient = new OpenAICompatibleClient({
+        ...taskConfig.api,
+        lastPromptRoleOverride: "none", // 元總結不使用角色覆蓋
+      });
+
+      const streamGenerator = metaClient.generateStream({
         messages: metaPrompt,
         settings: {
           maxContextLength: taskConfig.generation.maxContextLength || 200000,
@@ -1199,7 +1210,10 @@ ${recentMessagesText}
         );
       }
 
-      const client = new OpenAICompatibleClient(taskConfig.api);
+      const client = new OpenAICompatibleClient({
+        ...taskConfig.api,
+        lastPromptRoleOverride: "none", // 自動批量總結不使用角色覆蓋
+      });
       let summaryContent = '';
 
       const streamGenerator = client.generateStream({
