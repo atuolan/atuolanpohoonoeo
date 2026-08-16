@@ -100,7 +100,10 @@ export function useChatEventsExtraction(deps: {
     }
 
     const taskConfig = settingsStore.getAPIForTask("importantEvents");
-    const client = new OpenAICompatibleClient(taskConfig.api);
+    const client = new OpenAICompatibleClient({
+      ...taskConfig.api,
+      lastPromptRoleOverride: "none", // 重要事件提取不使用角色覆蓋
+    });
 
     let eventsContent = "";
     const isStreamingEnabled = settingsStore.generation.streamingEnabled;

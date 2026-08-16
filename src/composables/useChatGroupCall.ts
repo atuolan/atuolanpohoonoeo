@@ -413,8 +413,11 @@ export function useChatGroupCall(deps: {
       const promptResult = await builder.build();
 
       const groupCallTaskConfig = settingsStore.getAPIForTask("groupCall");
-      const client = new OpenAICompatibleClient(groupCallTaskConfig.api);
-      
+      const client = new OpenAICompatibleClient({
+        ...groupCallTaskConfig.api,
+        lastPromptRoleOverride: "none", // 群聊通話不使用角色覆蓋
+      });
+
       // 將 BuiltMessage 轉換為 APIMessage，處理圖片數據
       const apiMessages = promptResult.messages.map((m: any) => {
         // 如果消息包含圖片數據，構建混合內容

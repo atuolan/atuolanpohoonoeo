@@ -60,7 +60,10 @@ async function autoDetectCharacters() {
   detectError.value = "";
 
   try {
-    const client = new OpenAICompatibleClient(settingsStore.api);
+    const client = new OpenAICompatibleClient({
+      ...settingsStore.api,
+      lastPromptRoleOverride: "none", // 多人卡角色識別不使用角色覆蓋
+    });
     const result = await client.generate({
       messages: [
         {

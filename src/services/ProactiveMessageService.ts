@@ -650,7 +650,10 @@ export class ProactiveMessageService {
       const promptData = await promptBuilder.build();
 
       const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
-      const client = new OpenAICompatibleClient(taskConfig.api);
+      const client = new OpenAICompatibleClient({
+        ...taskConfig.api,
+        lastPromptRoleOverride: "none", // 主動消息不使用角色覆蓋
+      });
       const result = await client.generate({
         messages: promptData.messages,
         settings: chatSettings,
@@ -1177,7 +1180,10 @@ export class ProactiveMessageService {
 
       // 創建 API 客戶端
       const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
-      const client = new OpenAICompatibleClient(taskConfig.api);
+      const client = new OpenAICompatibleClient({
+        ...taskConfig.api,
+        lastPromptRoleOverride: "none", // 主動消息流式生成不使用角色覆蓋
+      });
 
       let aiContent = "";
 

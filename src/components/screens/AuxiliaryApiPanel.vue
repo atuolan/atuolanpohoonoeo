@@ -519,7 +519,10 @@ async function testConnection() {
   isTestingConnection.value = true;
   connectionStatus.value = "none";
   try {
-    const client = new OpenAICompatibleClient(settingsStore.auxiliary.api);
+    const client = new OpenAICompatibleClient({
+      ...settingsStore.auxiliary.api,
+      lastPromptRoleOverride: "none", // API 測試不使用角色覆蓋
+    });
     const result = await client.testConnection();
     if (result.success) {
       connectionStatus.value = "success";
@@ -547,7 +550,10 @@ async function testTaskConnection(taskId: string) {
       taskTestMessage.value[taskId] = "端點或密鑰未設置";
       return;
     }
-    const client = new OpenAICompatibleClient(taskApi);
+    const client = new OpenAICompatibleClient({
+      ...taskApi,
+      lastPromptRoleOverride: "none", // 任務 API 測試不使用角色覆蓋
+    });
     const result = await client.testConnection();
     if (result.success) {
       taskTestStatus.value[taskId] = "success";

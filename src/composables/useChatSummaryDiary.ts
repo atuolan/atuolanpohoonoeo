@@ -997,7 +997,10 @@ ${recentMessagesText}
         throw new Error("請先在設定中配置 API");
       }
 
-      const client = new OpenAICompatibleClient(taskConfig.api);
+      const client = new OpenAICompatibleClient({
+        ...taskConfig.api,
+        lastPromptRoleOverride: "none", // 元總結生成（已有 metaClient，這是後備）不使用角色覆蓋
+      });
 
       const userName = deps.effectivePersona.value?.name || "User";
       const metaPrompt = isGroupSummaryMode()

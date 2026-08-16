@@ -131,6 +131,7 @@ async function fetchAIEncouragement() {
       endpoint: currentProfile.api.endpoint,
       apiKey: currentProfile.api.apiKey,
       model: currentProfile.api.model,
+      lastPromptRoleOverride: "none", // 健身鼓勵不使用角色覆蓋
     })
     
     // 建立簡單的訊息

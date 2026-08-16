@@ -145,7 +145,10 @@ export function useChatBlock(context: {
       prompt += `\n接受：{"accept":true,"reply":"你想對用戶說的話（符合你的性格）"}`;
       prompt += `\n拒絕：{"accept":false,"rejectReason":"拒絕理由(30字內)","hint":"給用戶的小提示(可選)"}`;
 
-      const client = new OpenAICompatibleClient(chatTaskConfig.api);
+      const client = new OpenAICompatibleClient({
+        ...chatTaskConfig.api,
+        lastPromptRoleOverride: "none", // 聊天封鎖檢測不使用角色覆蓋
+      });
       const result = await client.generate({
         messages: [
           { role: "system", content: `你是「${charName}」，一個角色扮演助手。根據對話歷史和你的性格決定是否接受好友申請。只輸出一行 JSON，不要 markdown，不要解釋。` },
