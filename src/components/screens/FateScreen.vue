@@ -174,6 +174,68 @@ const allReadings = computed<HistoryReadingItem[]>(() => {
 const isShuffling = ref(false);
 const shuffleCount = ref(0);
 
+// ===== 輸入式抽牌 =====
+const showInputMode = ref(false);
+const cardNumberInput = ref("");
+const inputError = ref("");
+
+function parseCardInput(input: string): number[] {
+  const trimmed = input.trim();
+  if (!trimmed) return [];
+  
+  // 支援格式：1,3,5 或 1 3 5 或 1-3
+  const parts = trimmed.split(/[,\s]+/);
+  const numbers: number[] = [];
+  
+  for (const part of parts) {
+    // 支援範圍格式如 1-3
+    if (part.includes('-')) {
+      const [start, end] = part.split('-').map(s => parseInt(s.trim()));
+      if (!isNaN(start) && !isNaN(end) && start <= end) {
+        for (let i = start; i <= end; i++) {
+          numbers.push(i);
+        }
+      }
+    } else {
+      const num = parseInt(part);
+      if (!isNaN(num)) {
+        numbers.push(num);
+      }
+    }
+  }
+  
+  return numbers;
+}
+
+function handleInputDraw() {
+  inputError.value = "";
+  const numbers = parseCardInput(cardNumberInput.value);
+  
+  if (numbers.length === 0) {
+    inputError.value = "請輸入牌號（例如：1,5,7）";
+    return;
+  }
+  
+  const result = fateStore.drawCardsByInput(numbers);
+  
+  if (!result.success) {
+    inputError.value = result.error || "輸入錯誤";
+  } else {
+    // 成功，清空輸入並重置
+    cardNumberInput.value = "";
+    inputError.value = "";
+    showInputMode.value = false;
+  }
+}
+
+function toggleInputMode() {
+  showInputMode.value = !showInputMode.value;
+  if (showInputMode.value) {
+    cardNumberInput.value = "";
+    inputError.value = "";
+  }
+}
+
 // 雙擊偵測
 let lastTapTime = 0;
 const DOUBLE_TAP_MS = 350;
@@ -1179,7 +1241,26 @@ onUnmounted(() => {
             >點擊洗牌 · 雙擊重置</span
           >
         </p>
-        <div class="fate-shuffle-energy">
+
+        <!-- 切換按鈕 -->
+        <div class="fate-input-toggle">
+          <button
+            :class="['fate-input-toggle__btn', { 'fate-input-toggle__btn--active': !showInputMode }]"
+            @click="showInputMode = false"
+          >
+            🔮 洗牌抽取
+          </button>
+          <button
+            :class="['fate-input-toggle__btn', { 'fate-input-toggle__btn--active': showInputMode }]"
+            @click="toggleInputMode"
+          >
+            ⌨️ 直接輸入
+          </button>
+        </div>
+
+        <!-- 傳統洗牌模式 -->
+        <div v-if="!showInputMode" class="fate-shuffle-traditional">
+          <div class="fate-shuffle-energy">
           <div class="fate-shuffle-energy__ring">
             <div
               class="fate-shuffle-energy__fill"
@@ -1216,14 +1297,55 @@ onUnmounted(() => {
           >
         </div>
 
-        <div class="fate-phase__actions">
-          <button
-            class="fate-btn fate-btn--primary"
-            :disabled="shuffleCount === 0 || isShuffling"
-            @click="confirmShuffle"
-          >
-            確認，展開牌堆
-          </button>
+          <div class="fate-phase__actions">
+            <button
+              class="fate-btn fate-btn--primary"
+              :disabled="shuffleCount === 0 || isShuffling"
+              @click="confirmShuffle"
+            >
+              確認，展開牌堆
+            </button>
+          </div>
+        </div>
+
+        <!-- 輸入模式 -->
+        <div v-else class="fate-input-mode">
+          <div class="fate-input-info">
+            <div class="fate-input-info__title">📝 輸入牌號直接抽取</div>
+            <div class="fate-input-info__desc">
+              當前牌陣需要 <strong>{{ fateStore.requiredPicks }}</strong> 張牌<br />
+              塔羅牌共 78 張（1-78）
+            </div>
+            <div class="fate-input-info__examples">
+              格式範例：<br />
+              單張：<code>5</code><br />
+              多張：<code>1,3,7</code> 或 <code>1 3 7</code><br />
+              範圍：<code>1-3</code>（代表 1,2,3）
+            </div>
+          </div>
+
+          <div class="fate-input-field">
+            <input
+              v-model="cardNumberInput"
+              type="text"
+              class="fate-input-field__input"
+              placeholder="例如：1,5,7"
+              @keyup.enter="handleInputDraw"
+            />
+            <div v-if="inputError" class="fate-input-field__error">
+              ⚠️ {{ inputError }}
+            </div>
+          </div>
+
+          <div class="fate-phase__actions">
+            <button
+              class="fate-btn fate-btn--primary"
+              :disabled="!cardNumberInput.trim()"
+              @click="handleInputDraw"
+            >
+              確認抽取
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1232,85 +1354,147 @@ onUnmounted(() => {
         v-if="currentDivination === 'tarot' && fateStore.phase === 'pick'"
         class="fate-phase fate-phase--pick"
       >
-        <div class="fate-spread-layout">
-          <div
-            v-for="(pos, idx) in fateStore.spread.positions"
-            :key="pos.id"
-            class="fate-spread-layout__position"
-            :style="{
-              left: `${pos.coords?.x ?? 50}%`,
-              top: `${pos.coords?.y ?? 50}%`,
-              ...(pos.coords?.rotate ? { transform: `translate(-50%, -50%) rotate(${pos.coords.rotate}deg)` } : {}),
-            }"
+        <!-- 切換按鈕 -->
+        <div class="fate-input-toggle" style="margin-bottom: 16px;">
+          <button
+            :class="['fate-input-toggle__btn', { 'fate-input-toggle__btn--active': !showInputMode }]"
+            @click="showInputMode = false"
           >
-            <div
-              :class="[
-                'fate-pick-slots__slot',
-                { 'fate-pick-slots__slot--filled': idx < fateStore.pickedCount },
-              ]"
-            >
-              <div class="fate-pick-slots__label">{{ pos.nameCn }}</div>
-              <div
-                v-if="idx < fateStore.pickedCount"
-                class="fate-pick-slots__filled"
-              >
-                ✦
-              </div>
-              <div v-else class="fate-pick-slots__empty">?</div>
-            </div>
-          </div>
-        </div>
-        <div class="fate-pick-progress">
-          <div class="fate-pick-progress__bar">
-            <div
-              class="fate-pick-progress__fill"
-              :style="{
-                width: `${(fateStore.pickedCount / fateStore.requiredPicks) * 100}%`,
-              }"
-            />
-          </div>
-        </div>
-        <p class="fate-phase__subtitle" style="margin-bottom: 4px">
-          憑直覺選出 {{ fateStore.requiredPicks }} 張牌（{{
-            fateStore.pickedCount
-          }}
-          / {{ fateStore.requiredPicks }}）
-        </p>
-        <p class="fate-pick-hint">← 滑動瀏覽牌堆，點擊抽牌 →</p>
-        <div
-          class="fate-fan"
-          data-no-swipe-back
-          @mousedown="onFanPointerDown"
-          @touchstart.passive="onFanPointerDown"
-        >
-          <div
-            v-for="(item, index) in fateStore.shuffledDeck"
-            :key="item.card.id + '-' + index"
-            class="fate-fan__card"
-            :style="getFanCardStyle(index)"
-            @click="handleFanCardPick(index)"
-          >
-            <div class="fate-fan__card-inner">
-              <div class="fate-fan__card-border" />
-              <div class="fate-fan__card-back">
-                <span class="fate-fan__card-symbol">✦</span>
-                <span class="fate-fan__card-corner fate-fan__card-corner--tl">✦</span>
-                <span class="fate-fan__card-corner fate-fan__card-corner--br">✦</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="fate-phase__actions">
-          <button class="fate-btn fate-btn--ghost" @click="fateStore.goToPhase('shuffle')">
-            重新洗牌
+            🃏 扇形選牌
           </button>
           <button
-            class="fate-btn fate-btn--primary"
-            :disabled="fateStore.pickedCount < fateStore.requiredPicks"
-            @click="fateStore.goToPhase('draw')"
+            :class="['fate-input-toggle__btn', { 'fate-input-toggle__btn--active': showInputMode }]"
+            @click="toggleInputMode"
           >
-            確認，展開牌堆
+            ⌨️ 輸入牌號
           </button>
+        </div>
+
+        <!-- 扇形選牌模式 -->
+        <div v-if="!showInputMode">
+          <div class="fate-spread-layout">
+            <div
+              v-for="(pos, idx) in fateStore.spread.positions"
+              :key="pos.id"
+              class="fate-spread-layout__position"
+              :style="{
+                left: `${pos.coords?.x ?? 50}%`,
+                top: `${pos.coords?.y ?? 50}%`,
+                ...(pos.coords?.rotate ? { transform: `translate(-50%, -50%) rotate(${pos.coords.rotate}deg)` } : {}),
+              }"
+            >
+              <div
+                :class="[
+                  'fate-pick-slots__slot',
+                  { 'fate-pick-slots__slot--filled': idx < fateStore.pickedCount },
+                ]"
+              >
+                <div class="fate-pick-slots__label">{{ pos.nameCn }}</div>
+                <div
+                  v-if="idx < fateStore.pickedCount"
+                  class="fate-pick-slots__filled"
+                >
+                  ✦
+                </div>
+                <div v-else class="fate-pick-slots__empty">?</div>
+              </div>
+            </div>
+          </div>
+          <div class="fate-pick-progress">
+            <div class="fate-pick-progress__bar">
+              <div
+                class="fate-pick-progress__fill"
+                :style="{
+                  width: `${(fateStore.pickedCount / fateStore.requiredPicks) * 100}%`,
+                }"
+              />
+            </div>
+          </div>
+          <p class="fate-phase__subtitle" style="margin-bottom: 4px">
+            憑直覺選出 {{ fateStore.requiredPicks }} 張牌（{{
+              fateStore.pickedCount
+            }}
+            / {{ fateStore.requiredPicks }}）
+          </p>
+          <p class="fate-pick-hint">← 滑動瀏覽牌堆，點擊抽牌 →</p>
+          <div
+            class="fate-fan"
+            data-no-swipe-back
+            @mousedown="onFanPointerDown"
+            @touchstart.passive="onFanPointerDown"
+          >
+            <div
+              v-for="(item, index) in fateStore.shuffledDeck"
+              :key="item.card.id + '-' + index"
+              class="fate-fan__card"
+              :style="getFanCardStyle(index)"
+              @click="handleFanCardPick(index)"
+            >
+              <div class="fate-fan__card-inner">
+                <div class="fate-fan__card-border" />
+                <div class="fate-fan__card-back">
+                  <span class="fate-fan__card-symbol">✦</span>
+                  <span class="fate-fan__card-corner fate-fan__card-corner--tl">✦</span>
+                  <span class="fate-fan__card-corner fate-fan__card-corner--br">✦</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="fate-phase__actions">
+            <button class="fate-btn fate-btn--ghost" @click="fateStore.goToPhase('shuffle')">
+              重新洗牌
+            </button>
+            <button
+              class="fate-btn fate-btn--primary"
+              :disabled="fateStore.pickedCount < fateStore.requiredPicks"
+              @click="fateStore.goToPhase('draw')"
+            >
+              確認，展開牌堆
+            </button>
+          </div>
+        </div>
+
+        <!-- 輸入模式 -->
+        <div v-else class="fate-input-mode">
+          <div class="fate-input-info">
+            <div class="fate-input-info__title">📝 輸入牌號直接選取</div>
+            <div class="fate-input-info__desc">
+              當前牌陣需要 <strong>{{ fateStore.requiredPicks }}</strong> 張牌<br />
+              從已洗好的 78 張牌中選擇（1-78）
+            </div>
+            <div class="fate-input-info__examples">
+              格式範例：<br />
+              單張：<code>5</code><br />
+              多張：<code>1,3,7</code> 或 <code>1 3 7</code><br />
+              範圍：<code>1-3</code>（代表 1,2,3）
+            </div>
+          </div>
+
+          <div class="fate-input-field">
+            <input
+              v-model="cardNumberInput"
+              type="text"
+              class="fate-input-field__input"
+              placeholder="例如：1,5,7"
+              @keyup.enter="handleInputDraw"
+            />
+            <div v-if="inputError" class="fate-input-field__error">
+              ⚠️ {{ inputError }}
+            </div>
+          </div>
+
+          <div class="fate-phase__actions">
+            <button class="fate-btn fate-btn--ghost" @click="fateStore.goToPhase('shuffle')">
+              重新洗牌
+            </button>
+            <button
+              class="fate-btn fate-btn--primary"
+              :disabled="!cardNumberInput.trim()"
+              @click="handleInputDraw"
+            >
+              確認選取
+            </button>
+          </div>
         </div>
       </div>
 
@@ -2171,6 +2355,213 @@ $r-pill: 100px;
   font-size: 12px;
   color: $text-m;
 }
+
+// 輸入模式切換按鈕
+.fate-input-toggle {
+  display: flex;
+  gap: 8px;
+  margin: 0 auto 20px;
+  justify-content: center;
+  max-width: 400px;
+
+  &__btn {
+    flex: 1;
+    padding: 12px 20px;
+    border-radius: $r-lg;
+    border: 1px solid $border-l;
+    background: $surface;
+    color: $text-2;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: $sh-sm;
+    position: relative;
+    overflow: hidden;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(192, 132, 252, 0.08), rgba(242, 139, 130, 0.08));
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+
+    &:hover:not(&--active) {
+      border-color: $border-m;
+      background: $surface-h;
+      transform: translateY(-1px);
+      box-shadow: $sh-md;
+    }
+
+    &--active {
+      background: linear-gradient(135deg, rgba(192, 132, 252, 0.15), rgba(242, 139, 130, 0.1));
+      border-color: rgba(192, 132, 252, 0.35);
+      color: $text-1;
+      box-shadow:
+        0 4px 12px rgba(192, 132, 252, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      transform: translateY(-2px);
+
+      &::before {
+        opacity: 1;
+      }
+    }
+  }
+}
+
+// 輸入模式內容區
+.fate-input-mode {
+  padding: 8px 0 16px;
+  animation: fadeSlideIn 0.3s ease;
+}
+
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fate-input-info {
+  background: linear-gradient(135deg, rgba(192, 132, 252, 0.05), rgba(242, 139, 130, 0.03));
+  border: 1px solid rgba(192, 132, 252, 0.15);
+  border-radius: $r-lg;
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow:
+    $sh-sm,
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  position: relative;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(192, 132, 252, 0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  &__title {
+    font-size: 16px;
+    font-weight: 700;
+    color: $text-1;
+    margin-bottom: 14px;
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__desc {
+    font-size: 14px;
+    color: $text-2;
+    line-height: 1.7;
+    margin-bottom: 14px;
+
+    strong {
+      color: #c084fc;
+      font-weight: 700;
+      padding: 0 2px;
+    }
+  }
+
+  &__examples {
+    font-size: 13px;
+    color: $text-3;
+    line-height: 2;
+    padding: 14px 16px;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: $r-md;
+    border-left: 3px solid rgba(192, 132, 252, 0.5);
+    backdrop-filter: blur(8px);
+
+    code {
+      display: inline-block;
+      padding: 3px 8px;
+      margin: 0 2px;
+      background: linear-gradient(135deg, rgba(192, 132, 252, 0.2), rgba(192, 132, 252, 0.15));
+      border: 1px solid rgba(192, 132, 252, 0.3);
+      border-radius: $r-sm;
+      color: #d9b8ff;
+      font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    }
+  }
+}
+
+.fate-input-field {
+  margin-bottom: 24px;
+  position: relative;
+
+  &__input {
+    width: 100%;
+    padding: 16px 20px;
+    background: $surface;
+    border: 2px solid $border-m;
+    border-radius: $r-lg;
+    color: $text-1;
+    font-size: 16px;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: $sh-sm;
+
+    &::placeholder {
+      color: $text-m;
+      font-weight: 400;
+    }
+
+    &:hover:not(:focus) {
+      border-color: rgba(192, 132, 252, 0.3);
+      background: $surface-h;
+    }
+
+    &:focus {
+      outline: none;
+      border-color: rgba(192, 132, 252, 0.6);
+      background: $surface-h;
+      box-shadow:
+        0 0 0 4px rgba(192, 132, 252, 0.12),
+        0 4px 12px rgba(192, 132, 252, 0.15);
+      transform: translateY(-1px);
+    }
+  }
+
+  &__error {
+    margin-top: 12px;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(220, 38, 38, 0.08));
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    border-radius: $r-md;
+    color: #fca5a5;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.6;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.15);
+    animation: shake 0.4s ease;
+  }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
 .fate-shuffle-energy {
   display: flex;
   flex-direction: column;

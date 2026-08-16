@@ -3,7 +3,7 @@
  * 核心服務，負責協調 prompt 建構、API 呼叫、回應解析
  * 生成偷窺手機各模塊組的 AI 內容
  */
-import { getAPIClient, type APIMessage } from "@/api/OpenAICompatible";
+import { OpenAICompatibleClient, type APIMessage } from "@/api/OpenAICompatible";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 import { getMacroEngine } from "@/engine/macros/MacroEngine";
 import { loadMessages } from "@/storage/chatMessageStorage";
@@ -276,7 +276,10 @@ export async function generateGroup(
 
   // 呼叫 API（優先使用備用 API）
   const taskConfig = settingsStore.getAPIForTask("peekPhone");
-  const client = getAPIClient(taskConfig.api);
+  const client = new OpenAICompatibleClient({
+    ...taskConfig.api,
+    lastPromptRoleOverride: "none",
+  });
   const messages: APIMessage[] = [{ role: "user", content: prompt }];
 
   // 讀取全局串流設定
@@ -493,7 +496,10 @@ async function callAPIForPhase(
 ): Promise<string> {
   const settingsStore = useSettingsStore();
   const taskConfig = settingsStore.getAPIForTask("peekPhone");
-  const client = getAPIClient(taskConfig.api);
+  const client = new OpenAICompatibleClient({
+    ...taskConfig.api,
+    lastPromptRoleOverride: "none",
+  });
   const jailbreakMessages = await buildJailbreakMessages(macroContext);
   const messages: APIMessage[] = [
     ...jailbreakMessages,
@@ -670,7 +676,10 @@ export async function generateCombined(
   );
 
   const taskConfig = settingsStore.getAPIForTask("peekPhone");
-  const client = getAPIClient(taskConfig.api);
+  const client = new OpenAICompatibleClient({
+    ...taskConfig.api,
+    lastPromptRoleOverride: "none",
+  });
   const jailbreakMessages = await buildJailbreakMessages({
     charName,
     userName,

@@ -500,7 +500,6 @@ export function useCompanionChat(
 
       const client = new OpenAICompatibleClient({
         ...chatTaskConfig.api,
-        lastPromptRoleOverride: "none", // 陪伴聊天不使用角色覆蓋
       });
       const streamGen = client.generateStream({
         messages: prompt,
@@ -599,7 +598,6 @@ export function useCompanionChat(
 
       const client = new OpenAICompatibleClient({
         ...chatTaskConfig.api,
-        lastPromptRoleOverride: "none", // 陪伴聊天（第二個調用點）不使用角色覆蓋
       });
       const streamGen = client.generateStream({
         messages: prompt,

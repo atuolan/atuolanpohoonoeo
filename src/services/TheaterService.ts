@@ -4,7 +4,7 @@
  * 支援流式視窗顯示生成過程
  */
 
-import { getAPIClient, type APIMessage } from "@/api/OpenAICompatible";
+import { OpenAICompatibleClient, type APIMessage } from "@/api/OpenAICompatible";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import {
@@ -226,7 +226,10 @@ export async function generateTheater(params: {
     minTokens,
   });
 
-  const client = getAPIClient(taskConfig.api);
+  const client = new OpenAICompatibleClient({
+    ...taskConfig.api,
+    lastPromptRoleOverride: "none",
+  });
   const messages: APIMessage[] = [{ role: "user", content: prompt }];
 
   let fullContent = "";
@@ -404,7 +407,10 @@ export async function continueTheater(
     isContinuation: true,
   });
 
-  const client = getAPIClient(taskConfig.api);
+  const client = new OpenAICompatibleClient({
+    ...taskConfig.api,
+    lastPromptRoleOverride: "none",
+  });
   const messages: APIMessage[] = [{ role: "user", content: prompt }];
 
   const useStreaming = settingsStore.generation.streamingEnabled;
@@ -528,7 +534,10 @@ export async function generateCharComment(params: {
     userName: post.cast.userName,
   });
 
-  const client = getAPIClient(taskConfig.api);
+  const client = new OpenAICompatibleClient({
+    ...taskConfig.api,
+    lastPromptRoleOverride: "none",
+  });
 
   try {
     const result = await client.generate({

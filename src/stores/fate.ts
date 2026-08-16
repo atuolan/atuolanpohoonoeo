@@ -148,8 +148,11 @@ export const useFateStore = defineStore("fate", () => {
         throw new Error("請先在設定中配置 API");
       }
 
-      const { getAPIClient } = await import("@/api/OpenAICompatible");
-      const client = getAPIClient(apiSettings);
+      const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
+      const client = new OpenAICompatibleClient({
+        ...apiSettings,
+        lastPromptRoleOverride: "none",
+      });
 
       const prompt = buildFateInterpretationPrompt(
         question.value,
@@ -218,6 +221,77 @@ export const useFateStore = defineStore("fate", () => {
     interpretError.value = null;
     shuffledDeck.value = [];
     pickedIndices.value = new Set();
+  }
+
+  /** 輸入式抽牌：根據牌號直接抽取指定的牌 */
+  function drawCardsByInput(cardNumbers: number[]): {
+    success: boolean;
+    error?: string;
+    drawnCards?: FateDrawnCard[];
+  } {
+    // 驗證輸入
+    if (!cardNumbers || cardNumbers.length === 0) {
+      return { success: false, error: "請輸入至少一個牌號" };
+    }
+
+    // 檢查是否有重複
+    const uniqueNumbers = new Set(cardNumbers);
+    if (uniqueNumbers.size !== cardNumbers.length) {
+      return { success: false, error: "輸入的牌號有重複，請確保每個牌號只出現一次" };
+    }
+
+    // 驗證牌號範圍（1-78）
+    const invalidNumbers = cardNumbers.filter((n) => n < 1 || n > 78);
+    if (invalidNumbers.length > 0) {
+      return {
+        success: false,
+        error: `牌號必須在 1-78 之間，無效的牌號：${invalidNumbers.join(", ")}`,
+      };
+    }
+
+    // 檢查數量是否符合牌陣要求
+    if (cardNumbers.length !== spread.value.positions.length) {
+      return {
+        success: false,
+        error: `當前牌陣需要 ${spread.value.positions.length} 張牌，但您輸入了 ${cardNumbers.length} 個牌號`,
+      };
+    }
+
+    // 如果在 shuffle 階段，先執行洗牌
+    if (phase.value === "shuffle") {
+      shuffleOnly();
+    }
+
+    // 驗證 shuffledDeck 是否已準備好
+    if (shuffledDeck.value.length === 0) {
+      return { success: false, error: "請先洗牌" };
+    }
+
+    // 驗證索引範圍（基於 shuffledDeck）
+    const invalidIndices = cardNumbers.filter((n) => n < 1 || n > shuffledDeck.value.length);
+    if (invalidIndices.length > 0) {
+      return {
+        success: false,
+        error: `牌號必須在 1-${shuffledDeck.value.length} 之間，無效的牌號：${invalidIndices.join(", ")}`,
+      };
+    }
+
+    // 從洗好的牌堆中按索引抽取（牌號從1開始，數組索引從0開始）
+    const selectedCards: FateDrawnCard[] = cardNumbers.map((num, idx) => {
+      const { card, isReversed } = shuffledDeck.value[num - 1];
+      const position = spread.value.positions[idx];
+      return { card, isReversed, position };
+    });
+
+    // 更新 store 狀態
+    drawnCards.value = selectedCards;
+    revealedCount.value = 0;
+    phase.value = "draw";
+
+    return {
+      success: true,
+      drawnCards: selectedCards,
+    };
   }
 
   // ===== 歷史記錄方法 =====
@@ -303,5 +377,6 @@ export const useFateStore = defineStore("fate", () => {
     loadHistory,
     deleteReading,
     clearHistory,
+    drawCardsByInput,
   };
 });

@@ -247,7 +247,7 @@ export const createDefaultAPISettings = (): APISettings => ({
   promptPostProcessing: "none",
   toolProtocol: "auto",
   toolsEnabled: false,
-  lastPromptRoleOverride: "system",
+  lastPromptRoleOverride: "none",
 });
 
 // ===== 創建默認 UI 設定 =====

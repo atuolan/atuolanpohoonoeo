@@ -7,10 +7,72 @@ import { lenormandSpreads } from "@/data/lenormandSpreads";
 import { useLenormandStore } from "@/stores/lenormand";
 import type { LenormandSpread, LenormandSpreadPosition } from "@/types/lenormand";
 import { marked } from "marked";
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 const emit = defineEmits<{ back: [] }>();
 const store = useLenormandStore();
+
+// ===== 輸入式抽牌 =====
+const showInputMode = ref(false);
+const cardNumberInput = ref("");
+const inputError = ref("");
+
+function parseCardInput(input: string): number[] {
+  const trimmed = input.trim();
+  if (!trimmed) return [];
+  
+  // 支援格式：1,3,5 或 1 3 5 或 1-3
+  const parts = trimmed.split(/[,\s]+/);
+  const numbers: number[] = [];
+  
+  for (const part of parts) {
+    // 支援範圍格式如 1-3
+    if (part.includes('-')) {
+      const [start, end] = part.split('-').map(s => parseInt(s.trim()));
+      if (!isNaN(start) && !isNaN(end) && start <= end) {
+        for (let i = start; i <= end; i++) {
+          numbers.push(i);
+        }
+      }
+    } else {
+      const num = parseInt(part);
+      if (!isNaN(num)) {
+        numbers.push(num);
+      }
+    }
+  }
+  
+  return numbers;
+}
+
+function handleInputDraw() {
+  inputError.value = "";
+  const numbers = parseCardInput(cardNumberInput.value);
+  
+  if (numbers.length === 0) {
+    inputError.value = "請輸入牌號（例如：1,5,7）";
+    return;
+  }
+  
+  const result = store.drawCardsByInput(numbers);
+  
+  if (!result.success) {
+    inputError.value = result.error || "輸入錯誤";
+  } else {
+    // 成功，清空輸入並重置
+    cardNumberInput.value = "";
+    inputError.value = "";
+    showInputMode.value = false;
+  }
+}
+
+function toggleInputMode() {
+  showInputMode.value = !showInputMode.value;
+  if (showInputMode.value) {
+    cardNumberInput.value = "";
+    inputError.value = "";
+  }
+}
 
 const interpretationHtml = computed(() => {
   if (!store.interpretation) return "";
@@ -201,81 +263,208 @@ function getRevealCardState(index: number) {
     <!-- 洗牌階段 -->
     <div v-if="store.phase === 'shuffle'" class="leno-phase">
       <h2 class="leno-phase__title">洗牌</h2>
-      <p class="leno-phase__subtitle">集中精神，默念你的問題</p>
+      <p class="leno-phase__subtitle">
+        集中精神，默念你的問題<br />
+        <span class="leno-hint">點擊牌堆洗牌</span>
+      </p>
 
-      <div
-        class="leno-deck"
-        :class="{ 'leno-deck--shuffling': store.isShuffling }"
-        @click="store.shuffleDeck()"
-      >
-        <div
-          v-for="i in 10"
-          :key="i"
-          class="leno-deck__card"
-          :style="{ '--i': i - 1 }"
+      <!-- 切換按鈕 -->
+      <div class="leno-input-toggle">
+        <button
+          :class="['leno-input-toggle__btn', { 'leno-input-toggle__btn--active': !showInputMode }]"
+          @click="showInputMode = false"
         >
-          <span class="leno-deck__card-symbol">🃏</span>
+          🔮 洗牌抽取
+        </button>
+        <button
+          :class="['leno-input-toggle__btn', { 'leno-input-toggle__btn--active': showInputMode }]"
+          @click="toggleInputMode"
+        >
+          ⌨️ 直接輸入
+        </button>
+      </div>
+
+      <!-- 傳統洗牌模式 -->
+      <div v-if="!showInputMode" class="leno-shuffle-traditional">
+        <div
+          class="leno-deck"
+          :class="{ 'leno-deck--shuffling': store.isShuffling }"
+          @click="store.shuffleDeck()"
+        >
+          <div
+            v-for="i in 10"
+            :key="i"
+            class="leno-deck__card"
+            :style="{ '--i': i - 1 }"
+          >
+            <span class="leno-deck__card-symbol">🃏</span>
+          </div>
+        </div>
+
+        <div class="leno-shuffle-count">
+          <span v-if="store.shuffleCount === 0">點擊牌堆開始洗牌</span>
+          <span v-else>已洗 {{ store.shuffleCount }} 次</span>
+        </div>
+
+        <div class="leno-actions">
+          <button class="leno-btn leno-btn--ghost" @click="handleBack">
+            返回
+          </button>
+          <button
+            class="leno-btn leno-btn--primary"
+            :disabled="store.shuffleCount === 0 || store.isShuffling"
+            @click="store.confirmShuffle()"
+          >
+            確認，開始選牌
+          </button>
         </div>
       </div>
 
-      <div class="leno-shuffle-count">
-        <span v-if="store.shuffleCount === 0">點擊牌堆開始洗牌</span>
-        <span v-else>已洗 {{ store.shuffleCount }} 次</span>
-      </div>
+      <!-- 輸入模式 -->
+      <div v-else class="leno-input-mode">
+        <div class="leno-input-info">
+          <div class="leno-input-info__title">📝 輸入牌號直接抽取</div>
+          <div class="leno-input-info__desc">
+            當前牌陣需要 <strong>{{ store.requiredPicks }}</strong> 張牌<br />
+            雷諾曼牌共 36 張（1-36）
+          </div>
+          <div class="leno-input-info__examples">
+            格式範例：<br />
+            單張：<code>5</code><br />
+            多張：<code>1,3,7</code> 或 <code>1 3 7</code><br />
+            範圍：<code>1-3</code>（代表 1,2,3）
+          </div>
+        </div>
 
-      <div class="leno-actions">
-        <button class="leno-btn leno-btn--ghost" @click="handleBack">
-          返回
-        </button>
-        <button
-          class="leno-btn leno-btn--primary"
-          :disabled="store.shuffleCount === 0 || store.isShuffling"
-          @click="store.confirmShuffle()"
-        >
-          確認，開始選牌
-        </button>
+        <div class="leno-input-field">
+          <input
+            v-model="cardNumberInput"
+            type="text"
+            class="leno-input-field__input"
+            placeholder="例如：1,5,7"
+            @keyup.enter="handleInputDraw"
+          />
+          <div v-if="inputError" class="leno-input-field__error">
+            ⚠️ {{ inputError }}
+          </div>
+        </div>
+
+        <div class="leno-actions">
+          <button class="leno-btn leno-btn--ghost" @click="handleBack">
+            返回
+          </button>
+          <button
+            class="leno-btn leno-btn--primary"
+            :disabled="!cardNumberInput.trim()"
+            @click="handleInputDraw"
+          >
+            確認抽取
+          </button>
+        </div>
       </div>
     </div>
 
     <!-- 選牌階段（網格） -->
     <div v-if="store.phase === 'pick'" class="leno-phase">
-      <div class="leno-pick-slots">
-        <div
-          v-for="(pos, idx) in store.spread.positions"
-          :key="pos.id"
-          class="leno-pick-slot"
-          :class="{ 'leno-pick-slot--filled': idx < store.pickedCount }"
+      <!-- 切換按鈕 -->
+      <div class="leno-input-toggle" style="margin-bottom: 16px;">
+        <button
+          :class="['leno-input-toggle__btn', { 'leno-input-toggle__btn--active': !showInputMode }]"
+          @click="showInputMode = false"
         >
-          <span class="leno-pick-slot__label">{{ pos.nameCn }}</span>
-          <div v-if="idx < store.pickedCount" class="leno-pick-slot__card">
-            <div class="leno-pick-slot__card-back" />
-            <span class="leno-pick-slot__card-status">已選</span>
+          🃏 網格選牌
+        </button>
+        <button
+          :class="['leno-input-toggle__btn', { 'leno-input-toggle__btn--active': showInputMode }]"
+          @click="toggleInputMode"
+        >
+          ⌨️ 輸入牌號
+        </button>
+      </div>
+
+      <!-- 網格選牌模式 -->
+      <div v-if="!showInputMode">
+        <div class="leno-pick-slots">
+          <div
+            v-for="(pos, idx) in store.spread.positions"
+            :key="pos.id"
+            class="leno-pick-slot"
+            :class="{ 'leno-pick-slot--filled': idx < store.pickedCount }"
+          >
+            <span class="leno-pick-slot__label">{{ pos.nameCn }}</span>
+            <div v-if="idx < store.pickedCount" class="leno-pick-slot__card">
+              <div class="leno-pick-slot__card-back" />
+              <span class="leno-pick-slot__card-status">已選</span>
+            </div>
+            <span v-else class="leno-pick-slot__empty">?</span>
           </div>
-          <span v-else class="leno-pick-slot__empty">?</span>
+        </div>
+
+        <p class="leno-pick-hint">
+          憑直覺選出 {{ store.requiredPicks }} 張牌（{{ store.pickedCount }} /
+          {{ store.requiredPicks }}）
+        </p>
+
+        <div class="leno-grid">
+          <button
+            v-for="(card, index) in store.shuffledDeck"
+            :key="index"
+            class="leno-grid__card"
+            :class="{ 'leno-grid__card--picked': store.pickedIndices.has(index) }"
+            :disabled="
+              store.pickedIndices.has(index) ||
+              store.pickedCount >= store.requiredPicks
+            "
+            @click="store.pickCard(index)"
+          >
+            <!-- 背面：未選中顯示牌背 -->
+            <div v-if="!store.pickedIndices.has(index)" class="leno-grid__back" />
+            <span v-else class="leno-grid__check">✓</span>
+          </button>
         </div>
       </div>
 
-      <p class="leno-pick-hint">
-        憑直覺選出 {{ store.requiredPicks }} 張牌（{{ store.pickedCount }} /
-        {{ store.requiredPicks }}）
-      </p>
+      <!-- 輸入模式 -->
+      <div v-else class="leno-input-mode">
+        <div class="leno-input-info">
+          <div class="leno-input-info__title">📝 輸入牌號直接選取</div>
+          <div class="leno-input-info__desc">
+            當前牌陣需要 <strong>{{ store.requiredPicks }}</strong> 張牌<br />
+            從已洗好的 36 張牌中選擇（1-36）
+          </div>
+          <div class="leno-input-info__examples">
+            格式範例：<br />
+            單張：<code>5</code><br />
+            多張：<code>1,3,7</code> 或 <code>1 3 7</code><br />
+            範圍：<code>1-3</code>（代表 1,2,3）
+          </div>
+        </div>
 
-      <div class="leno-grid">
-        <button
-          v-for="(card, index) in store.shuffledDeck"
-          :key="index"
-          class="leno-grid__card"
-          :class="{ 'leno-grid__card--picked': store.pickedIndices.has(index) }"
-          :disabled="
-            store.pickedIndices.has(index) ||
-            store.pickedCount >= store.requiredPicks
-          "
-          @click="store.pickCard(index)"
-        >
-          <!-- 背面：未選中顯示牌背 -->
-          <div v-if="!store.pickedIndices.has(index)" class="leno-grid__back" />
-          <span v-else class="leno-grid__check">✓</span>
-        </button>
+        <div class="leno-input-field">
+          <input
+            v-model="cardNumberInput"
+            type="text"
+            class="leno-input-field__input"
+            placeholder="例如：1,5,7"
+            @keyup.enter="handleInputDraw"
+          />
+          <div v-if="inputError" class="leno-input-field__error">
+            ⚠️ {{ inputError }}
+          </div>
+        </div>
+
+        <div class="leno-actions">
+          <button class="leno-btn leno-btn--ghost" @click="store.goToPhase('shuffle')">
+            重新洗牌
+          </button>
+          <button
+            class="leno-btn leno-btn--primary"
+            :disabled="!cardNumberInput.trim()"
+            @click="handleInputDraw"
+          >
+            確認選取
+          </button>
+        </div>
       </div>
     </div>
 
@@ -1081,5 +1270,160 @@ $r-lg: 16px;
   50% {
     opacity: 0.5;
   }
+}
+
+// ===== 輸入式抽牌樣式 =====
+.leno-hint {
+  font-size: 11px;
+  color: $text-m;
+  animation: fadeInOut 4s ease-in-out infinite;
+}
+
+@keyframes fadeInOut {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.leno-input-toggle {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 20px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 100px;
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
+
+  &__btn {
+    padding: 8px 20px;
+    border-radius: 100px;
+    font-size: 14px;
+    font-weight: 500;
+    background: transparent;
+    border: none;
+    color: $text-3;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+
+    &:hover:not(&--active) {
+      color: $text-2;
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    &--active {
+      background: linear-gradient(135deg, #a78bfa, #c084fc);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(167, 139, 250, 0.3);
+    }
+  }
+}
+
+.leno-shuffle-traditional {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.leno-input-mode {
+  width: 100%;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.leno-input-info {
+  background: rgba(167, 139, 250, 0.08);
+  border: 1px solid rgba(167, 139, 250, 0.2);
+  border-radius: $r-lg;
+  padding: 20px;
+  margin-bottom: 20px;
+
+  &__title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #a78bfa;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+
+  &__desc {
+    font-size: 14px;
+    color: $text-2;
+    line-height: 1.6;
+    margin-bottom: 12px;
+    text-align: center;
+
+    strong {
+      color: #a78bfa;
+      font-weight: 600;
+    }
+  }
+
+  &__examples {
+    font-size: 12px;
+    color: $text-3;
+    line-height: 1.7;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 12px;
+    border-radius: $r-sm;
+
+    code {
+      background: rgba(167, 139, 250, 0.15);
+      color: #c4b5fd;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 11px;
+    }
+  }
+}
+
+.leno-input-field {
+  margin-bottom: 20px;
+
+  &__input {
+    width: 100%;
+    padding: 14px 16px;
+    background: $surface;
+    border: 2px solid $border-m;
+    border-radius: $r-md;
+    color: $text-1;
+    font-size: 15px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    text-align: center;
+    transition: all 0.2s;
+    box-sizing: border-box;
+
+    &::placeholder {
+      color: $text-m;
+      font-family: inherit;
+    }
+
+    &:focus {
+      outline: none;
+      border-color: #a78bfa;
+      box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.1);
+    }
+  }
+
+  &__error {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: rgba(248, 113, 113, 0.1);
+    border: 1px solid rgba(248, 113, 113, 0.3);
+    border-radius: $r-sm;
+    color: #fca5a5;
+    font-size: 13px;
+    text-align: center;
+    animation: shake 0.4s;
+  }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
 }
 </style>

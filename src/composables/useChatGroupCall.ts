@@ -415,7 +415,6 @@ export function useChatGroupCall(deps: {
       const groupCallTaskConfig = settingsStore.getAPIForTask("groupCall");
       const client = new OpenAICompatibleClient({
         ...groupCallTaskConfig.api,
-        lastPromptRoleOverride: "none", // 群聊通話不使用角色覆蓋
       });
 
       // 將 BuiltMessage 轉換為 APIMessage，處理圖片數據

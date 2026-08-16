@@ -615,7 +615,6 @@ ${recentMessagesText}
 
       const client = new OpenAICompatibleClient({
         ...taskConfig.api,
-        lastPromptRoleOverride: "none", // 日記不使用角色覆蓋
       });
 
       let diaryContent = "";
@@ -803,7 +802,6 @@ ${recentMessagesText}
 
       const client = new OpenAICompatibleClient({
         ...taskConfig.api,
-        lastPromptRoleOverride: "none", // 總結不使用角色覆蓋
       });
 
       let summaryContent = "";
@@ -999,7 +997,6 @@ ${recentMessagesText}
 
       const client = new OpenAICompatibleClient({
         ...taskConfig.api,
-        lastPromptRoleOverride: "none", // 元總結生成（已有 metaClient，這是後備）不使用角色覆蓋
       });
 
       const userName = deps.effectivePersona.value?.name || "User";
@@ -1034,7 +1031,6 @@ ${recentMessagesText}
 
       const metaClient = new OpenAICompatibleClient({
         ...taskConfig.api,
-        lastPromptRoleOverride: "none", // 元總結不使用角色覆蓋
       });
 
       const streamGenerator = metaClient.generateStream({
@@ -1215,7 +1211,6 @@ ${recentMessagesText}
 
       const client = new OpenAICompatibleClient({
         ...taskConfig.api,
-        lastPromptRoleOverride: "none", // 自動批量總結不使用角色覆蓋
       });
       let summaryContent = '';
 

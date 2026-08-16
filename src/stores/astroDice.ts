@@ -125,8 +125,11 @@ export const useAstroDiceStore = defineStore("astroDice", () => {
         throw new Error("請先在設定中配置 API");
       }
 
-      const { getAPIClient } = await import("@/api/OpenAICompatible");
-      const client = getAPIClient(apiSettings);
+      const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
+      const client = new OpenAICompatibleClient({
+        ...apiSettings,
+        lastPromptRoleOverride: "none",
+      });
 
       const prompt = buildAstroDiceInterpretationPrompt(
         question.value,

@@ -3,7 +3,7 @@
  * 管理任務列表、計時器狀態、AI 互動
  */
 
-import { getAPIClient } from '@/api/OpenAICompatible'
+import { OpenAICompatibleClient } from '@/api/OpenAICompatible'
 import type { APIMessage } from '@/api/OpenAICompatible'
 import { pickGenerationToggles } from '@/utils/generationToggles'
 import {
@@ -296,7 +296,11 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
     aiMessage.value = ''
 
     try {
-      const client = getAPIClient()
+      const settingsStore = useSettingsStore()
+      const client = new OpenAICompatibleClient({
+        ...settingsStore.api,
+        lastPromptRoleOverride: "none",
+      })
 
       const result = await client.generate({
         messages,

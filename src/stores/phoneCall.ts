@@ -996,7 +996,6 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       const promptResult = await builder.build();
       const client = new OpenAICompatibleClient({
         ...phoneCallTaskConfig.api,
-        lastPromptRoleOverride: "none", // 電話不使用角色覆蓋
       });
       
       // 將 BuiltMessage 轉換為 APIMessage，處理圖片數據
@@ -1260,7 +1259,6 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
       const phoneCallDecisionConfig = settingsStore.getAPIForTask("phoneCall");
       const client = new OpenAICompatibleClient({
         ...phoneCallDecisionConfig.api,
-        lastPromptRoleOverride: "none", // 電話決策不使用角色覆蓋
       });
       const response = await client.generate({
         messages: [{ role: "user", content: decisionPrompt }],

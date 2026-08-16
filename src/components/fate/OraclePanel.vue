@@ -12,6 +12,68 @@ import { marked } from 'marked'
 
 const store = useOracleStore()
 
+// ===== 輸入式抽牌 =====
+const showInputMode = ref(false)
+const cardNumberInput = ref('')
+const inputError = ref('')
+
+function parseCardInput(input: string): number[] {
+  const trimmed = input.trim()
+  if (!trimmed) return []
+  
+  // 支援格式：1,3,5 或 1 3 5 或 1-3
+  const parts = trimmed.split(/[,\s]+/)
+  const numbers: number[] = []
+  
+  for (const part of parts) {
+    // 支援範圍格式如 1-3
+    if (part.includes('-')) {
+      const [start, end] = part.split('-').map(s => parseInt(s.trim()))
+      if (!isNaN(start) && !isNaN(end) && start <= end) {
+        for (let i = start; i <= end; i++) {
+          numbers.push(i)
+        }
+      }
+    } else {
+      const num = parseInt(part)
+      if (!isNaN(num)) {
+        numbers.push(num)
+      }
+    }
+  }
+  
+  return numbers
+}
+
+function handleInputDraw() {
+  inputError.value = ''
+  const numbers = parseCardInput(cardNumberInput.value)
+  
+  if (numbers.length === 0) {
+    inputError.value = '請輸入牌號（例如：1,5,7）'
+    return
+  }
+  
+  const result = store.drawCardsByInput(numbers)
+  
+  if (!result.success) {
+    inputError.value = result.error || '輸入錯誤'
+  } else {
+    // 成功，清空輸入並重置
+    cardNumberInput.value = ''
+    inputError.value = ''
+    showInputMode.value = false
+  }
+}
+
+function toggleInputMode() {
+  showInputMode.value = !showInputMode.value
+  if (showInputMode.value) {
+    cardNumberInput.value = ''
+    inputError.value = ''
+  }
+}
+
 // ── 洗牌動畫 ─────────────────────────────────────────────
 const isShuffling = ref(false)
 const shuffleCount = ref(0)
@@ -227,35 +289,111 @@ onMounted(() => {
 
     <!-- ══ 洗牌 ══ -->
     <div v-if="store.phase === 'shuffle'" class="orc-phase orc-phase--center">
-      <h2 class="orc-phase__title">靜心洗牌</h2>
-      <p class="orc-phase__subtitle">
-        閉上眼睛，深呼吸，默念你的問題<br />
-        <span class="orc-hint">點擊牌堆洗牌</span>
-      </p>
-
-      <div class="orc-deck" :class="{ 'orc-deck--shuffling': isShuffling }" @click="handleShuffle">
-        <div v-for="i in 10" :key="i" class="orc-deck__card" :style="{ '--i': i - 1 }">
-          <span class="orc-deck__card-symbol">✦</span>
-        </div>
-      </div>
-
-      <div class="orc-shuffle-count">
-        <span v-if="shuffleCount === 0">點擊牌堆開始洗牌</span>
-        <span v-else>已洗 {{ shuffleCount }} 次</span>
-      </div>
-
-      <div class="orc-actions">
-        <button class="orc-btn orc-btn--ghost" @click="handleBack">返回</button>
+      <!-- 模式切換按鈕 -->
+      <div class="orc-input-toggle">
         <button
-          class="orc-btn orc-btn--primary"
-          :disabled="shuffleCount === 0 || isShuffling"
-          @click="store.confirmShuffle()"
-        >確認，開始選牌</button>
+          :class="['orc-input-toggle__btn', { 'orc-input-toggle__btn--active': !showInputMode }]"
+          @click="showInputMode = false"
+        >
+          傳統洗牌
+        </button>
+        <button
+          :class="['orc-input-toggle__btn', { 'orc-input-toggle__btn--active': showInputMode }]"
+          @click="toggleInputMode"
+        >
+          輸入牌號
+        </button>
       </div>
+
+      <!-- 傳統洗牌模式 -->
+      <template v-if="!showInputMode">
+        <h2 class="orc-phase__title">靜心洗牌</h2>
+        <p class="orc-phase__subtitle">
+          閉上眼睛，深呼吸，默念你的問題<br />
+          <span class="orc-hint">點擊牌堆洗牌</span>
+        </p>
+
+        <div class="orc-deck" :class="{ 'orc-deck--shuffling': isShuffling }" @click="handleShuffle">
+          <div v-for="i in 10" :key="i" class="orc-deck__card" :style="{ '--i': i - 1 }">
+            <span class="orc-deck__card-symbol">✦</span>
+          </div>
+        </div>
+
+        <div class="orc-shuffle-count">
+          <span v-if="shuffleCount === 0">點擊牌堆開始洗牌</span>
+          <span v-else>已洗 {{ shuffleCount }} 次</span>
+        </div>
+
+        <div class="orc-actions">
+          <button class="orc-btn orc-btn--ghost" @click="handleBack">返回</button>
+          <button
+            class="orc-btn orc-btn--primary"
+            :disabled="shuffleCount === 0 || isShuffling"
+            @click="store.confirmShuffle()"
+          >確認，開始選牌</button>
+        </div>
+      </template>
+
+      <!-- 輸入模式 -->
+      <template v-else>
+        <h2 class="orc-phase__title">輸入牌號</h2>
+        <div class="orc-input-mode">
+          <div class="orc-input-info">
+            <p>神諭卡共 52 張（1-52）</p>
+            <p>當前牌陣需要 {{ store.spread.positions.length }} 張牌</p>
+            <p class="orc-input-hint">
+              支援多種格式：<br />
+              • 逗號分隔：1,5,7<br />
+              • 空格分隔：1 5 7<br />
+              • 範圍：1-3（表示 1,2,3）
+            </p>
+          </div>
+
+          <div class="orc-input-field" :class="{ 'orc-input-field--error': inputError }">
+            <input
+              v-model="cardNumberInput"
+              type="text"
+              placeholder="例如：1,5,7"
+              @keyup.enter="handleInputDraw"
+            />
+            <button
+              class="orc-btn orc-btn--primary"
+              :disabled="!cardNumberInput.trim()"
+              @click="handleInputDraw"
+            >
+              確認抽牌
+            </button>
+          </div>
+
+          <div v-if="inputError" class="orc-input-error">
+            {{ inputError }}
+          </div>
+        </div>
+
+        <div class="orc-actions">
+          <button class="orc-btn orc-btn--ghost" @click="handleBack">返回</button>
+        </div>
+      </template>
     </div>
 
     <!-- ══ 選牌（網格） ══ -->
     <div v-if="store.phase === 'pick'" class="orc-phase">
+      <!-- 模式切換按鈕 -->
+      <div class="orc-input-toggle">
+        <button
+          :class="['orc-input-toggle__btn', { 'orc-input-toggle__btn--active': !showInputMode }]"
+          @click="showInputMode = false"
+        >
+          傳統選牌
+        </button>
+        <button
+          :class="['orc-input-toggle__btn', { 'orc-input-toggle__btn--active': showInputMode }]"
+          @click="toggleInputMode"
+        >
+          輸入牌號
+        </button>
+      </div>
+
       <div class="orc-pick-slots">
         <div
           v-for="(pos, idx) in store.spread.positions"
@@ -271,23 +409,62 @@ onMounted(() => {
         </div>
       </div>
 
-      <p class="orc-pick-hint">
-        憑直覺選出 {{ store.requiredPicks }} 張牌（{{ store.pickedCount }} / {{ store.requiredPicks }}）
-      </p>
+      <!-- 傳統選牌模式 -->
+      <template v-if="!showInputMode">
+        <p class="orc-pick-hint">
+          憑直覺選出 {{ store.requiredPicks }} 張牌（{{ store.pickedCount }} / {{ store.requiredPicks }}）
+        </p>
 
-      <div class="orc-grid">
-        <button
-          v-for="(_card, index) in store.shuffledDeck.slice(0, 21)"
-          :key="index"
-          class="orc-grid__card"
-          :class="{ 'orc-grid__card--picked': store.pickedIndices.has(index) }"
-          :disabled="store.pickedIndices.has(index) || store.pickedCount >= store.requiredPicks"
-          @click="store.pickCard(index)"
-        >
-          <div v-if="!store.pickedIndices.has(index)" class="orc-grid__back" />
-          <span v-else class="orc-grid__check">✓</span>
-        </button>
-      </div>
+        <div class="orc-grid">
+          <button
+            v-for="(_card, index) in store.shuffledDeck.slice(0, 21)"
+            :key="index"
+            class="orc-grid__card"
+            :class="{ 'orc-grid__card--picked': store.pickedIndices.has(index) }"
+            :disabled="store.pickedIndices.has(index) || store.pickedCount >= store.requiredPicks"
+            @click="store.pickCard(index)"
+          >
+            <div v-if="!store.pickedIndices.has(index)" class="orc-grid__back" />
+            <span v-else class="orc-grid__check">✓</span>
+          </button>
+        </div>
+      </template>
+
+      <!-- 輸入模式 -->
+      <template v-else>
+        <div class="orc-input-mode">
+          <div class="orc-input-info">
+            <p>從已洗好的牌堆中選擇（1-{{ store.shuffledDeck.length }}）</p>
+            <p>當前牌陣需要 {{ store.spread.positions.length }} 張牌</p>
+            <p class="orc-input-hint">
+              支援多種格式：<br />
+              • 逗號分隔：1,5,7<br />
+              • 空格分隔：1 5 7<br />
+              • 範圍：1-3（表示 1,2,3）
+            </p>
+          </div>
+
+          <div class="orc-input-field" :class="{ 'orc-input-field--error': inputError }">
+            <input
+              v-model="cardNumberInput"
+              type="text"
+              placeholder="例如：1,5,7"
+              @keyup.enter="handleInputDraw"
+            />
+            <button
+              class="orc-btn orc-btn--primary"
+              :disabled="!cardNumberInput.trim()"
+              @click="handleInputDraw"
+            >
+              確認抽牌
+            </button>
+          </div>
+
+          <div v-if="inputError" class="orc-input-error">
+            {{ inputError }}
+          </div>
+        </div>
+      </template>
     </div>
 
     <!-- ══ 翻牌揭示 ══ -->
@@ -665,5 +842,124 @@ $r-lg: 16px;
   }
   &__item-footer { display: flex; justify-content: space-between; align-items: center; }
   &__item-hint { font-size: 11px; color: $text-m; }
+}
+
+// ── 輸入模式 ──
+.orc-input-toggle {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 20px;
+  
+  &__btn {
+    padding: 8px 20px;
+    border: 1px solid $border-l;
+    border-radius: $r-md;
+    background: rgba(255, 255, 255, 0.03);
+    color: $text-2;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    
+    &:hover {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(199, 125, 255, 0.3);
+    }
+    
+    &--active {
+      background: linear-gradient(135deg, rgba(199, 125, 255, 0.2), rgba(147, 51, 234, 0.2));
+      border-color: rgba(199, 125, 255, 0.5);
+      color: $accent;
+      font-weight: 600;
+    }
+  }
+}
+
+.orc-input-mode {
+  width: 100%;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.orc-input-info {
+  background: $surface;
+  border: 1px solid $border-l;
+  border-radius: $r-md;
+  padding: 16px;
+  margin-bottom: 16px;
+  
+  p {
+    margin: 0;
+    font-size: 14px;
+    color: $text-2;
+    line-height: 1.6;
+    
+    &:not(:last-child) {
+      margin-bottom: 8px;
+    }
+  }
+  
+  .orc-input-hint {
+    font-size: 12px;
+    color: $text-3;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid $border-l;
+  }
+}
+
+.orc-input-field {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  
+  input {
+    flex: 1;
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid $border-l;
+    border-radius: $r-md;
+    color: $text-1;
+    font-size: 14px;
+    transition: all 0.2s;
+    
+    &::placeholder {
+      color: $text-m;
+    }
+    
+    &:focus {
+      outline: none;
+      border-color: rgba(199, 125, 255, 0.5);
+      background: rgba(255, 255, 255, 0.05);
+    }
+  }
+  
+  button {
+    padding: 12px 24px;
+    white-space: nowrap;
+  }
+  
+  &--error {
+    input {
+      border-color: rgba(252, 165, 165, 0.5);
+      animation: shake 0.3s;
+    }
+  }
+}
+
+.orc-input-error {
+  padding: 8px 12px;
+  background: rgba(252, 165, 165, 0.1);
+  border: 1px solid rgba(252, 165, 165, 0.3);
+  border-radius: $r-sm;
+  color: #fca5a5;
+  font-size: 13px;
+  text-align: center;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
 }
 </style>

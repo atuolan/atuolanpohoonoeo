@@ -147,7 +147,6 @@ export function useChatBlock(context: {
 
       const client = new OpenAICompatibleClient({
         ...chatTaskConfig.api,
-        lastPromptRoleOverride: "none", // 聊天封鎖檢測不使用角色覆蓋
       });
       const result = await client.generate({
         messages: [
