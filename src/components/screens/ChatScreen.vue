@@ -195,11 +195,6 @@ import {
   repairSystemSenderRegressionIfNeeded,
 } from "@/utils/chatMessageLoading";
 import {
-  hasMoreVisibleMessages,
-  MAX_RENDERED_MESSAGE_COUNT,
-  nextVisibleMessageCount,
-} from "@/utils/chatMessagePagination";
-import {
   computed,
   nextTick,
   onMounted,
@@ -862,11 +857,7 @@ const visibleMessages = computed(() => {
 // 是否還有更早的訊息可以載入
 const hasMoreMessages = computed(() => {
   if (isSearchContextMode.value) return false;
-  return hasMoreVisibleMessages(
-    messages.value.length,
-    visibleCount.value,
-    MAX_RENDERED_MESSAGE_COUNT,
-  );
+  return messages.value.length > visibleCount.value;
 });
 
 // 載入更多歷史訊息（向上滾動時觸發）
@@ -885,11 +876,9 @@ function loadMoreMessages() {
   const prevScrollTop = container.scrollTop;
 
   // 增加可見數量
-  visibleCount.value = nextVisibleMessageCount(
-    visibleCount.value,
+  visibleCount.value = Math.min(
+    visibleCount.value + MESSAGE_PAGE_SIZE,
     messages.value.length,
-    MESSAGE_PAGE_SIZE,
-    MAX_RENDERED_MESSAGE_COUNT,
   );
 
   // 等待 DOM 更新後恢復滾動位置
