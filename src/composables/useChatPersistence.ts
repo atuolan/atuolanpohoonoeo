@@ -1,6 +1,11 @@
 import { toRaw, type Ref } from "vue";
 import { extractAudioFromMessages, extractImagesFromMessages } from "@/db/operations";
-import { getMessageCount, loadMessages, saveMessages } from "@/storage/chatMessageStorage";
+import {
+  getMessageCount,
+  loadMessages,
+  saveMessages,
+  upsertMessages,
+} from "@/storage/chatMessageStorage";
 import {
   loadChatById,
   refreshChatDerivedMetadata,
@@ -9,6 +14,7 @@ import {
 } from "@/storage/chatStorage";
 import type { Chat, ChatMessage } from "@/types/chat";
 import type { ChatScreenMessage } from "@/types/chatScreen";
+import { chatPerfMark } from "@/utils/chatPerformanceDebug";
 
 export interface UseChatPersistenceDeps {
   messages: Ref<ChatScreenMessage[]>;
@@ -20,6 +26,8 @@ export interface UseChatPersistenceDeps {
   buildChatMetadata: (messages: ChatMessage[], charName: string) => Chat;
   initChatVariables: (chatId: string) => void;
   refreshBlockStateFromStorage: () => Promise<unknown>;
+  /** True when `messages` contains the complete chat history. */
+  isMessagesComplete?: () => boolean;
 }
 
 export function useChatPersistence(deps: UseChatPersistenceDeps) {
@@ -65,6 +73,7 @@ export function useChatPersistence(deps: UseChatPersistenceDeps) {
   }
 
   async function saveChatImplInner() {
+    chatPerfMark("save:start", { messageCount: deps.messages.value.length });
     const charName = deps.getCharName();
     const recallIds = new Set(deps.messages.value.map((m) => m.id));
     const messagesSnapshot = deps.messages.value.flatMap((m) => {
@@ -76,6 +85,12 @@ export function useChatPersistence(deps: UseChatPersistenceDeps) {
     const storableMessages = messagesSnapshot.map((m) =>
       deps.convertToStorableMessage(m, charName),
     );
+    const messagesAreComplete = deps.isMessagesComplete?.() ?? true;
+    chatPerfMark("save:snapshotReady", {
+      messageCount: deps.messages.value.length,
+      snapshotCount: messagesSnapshot.length,
+      storableCount: storableMessages.length,
+    });
 
     if (!deps.currentChatId.value) {
       const directCharacterId = deps.getDirectCharacterId();
@@ -130,19 +145,19 @@ export function useChatPersistence(deps: UseChatPersistenceDeps) {
       const localCount = plainMessages.length;
 
       let latestFromDb: any = null;
+      let existingDbCount: number | null = null;
       try {
         latestFromDb = await loadChatById(plainChat.id);
       } catch {
       }
 
       if (latestFromDb) {
-        let dbCount = 0;
         try {
-          dbCount = await getMessageCount(plainChat.id);
+          existingDbCount = await getMessageCount(plainChat.id);
         } catch {
-          dbCount = latestFromDb.messageCount || 0;
+          existingDbCount = latestFromDb.messageCount || 0;
         }
-        if (dbCount >= 5 && localCount <= 2) {
+        if ((existingDbCount ?? 0) >= 5 && localCount <= 2) {
           let localIdsExistInDb = false;
           try {
             const dbMessages = await loadMessages(plainChat.id);
@@ -154,7 +169,7 @@ export function useChatPersistence(deps: UseChatPersistenceDeps) {
           }
           if (!localIdsExistInDb) {
             console.error(
-              `[ChatScreen] ⚠️ 安全閘門觸發！拒絕保存：IDB 實際訊息數=${dbCount}，本地只有 ${localCount} 條且 ID 不在 IDB 中。`,
+              `[ChatScreen] ⚠️ 安全閘門觸發！拒絕保存：IDB 實際訊息數=${existingDbCount}，本地只有 ${localCount} 條且 ID 不在 IDB 中。`,
               "可能是 ChatScreen 以錯誤上下文重新初始化，跳過此次保存以保護資料。",
               {
                 chatId: plainChat.id,
@@ -171,12 +186,23 @@ export function useChatPersistence(deps: UseChatPersistenceDeps) {
         plainChat.blockState = latestFromDb.blockState;
       }
 
-      await saveMessages(plainChat.id, plainMessages, messagesLoadedAt || undefined);
+      if (messagesAreComplete) {
+        await saveMessages(plainChat.id, plainMessages, messagesLoadedAt || undefined);
+      } else {
+        await upsertMessages(plainChat.id, plainMessages);
+        existingDbCount = await getMessageCount(plainChat.id);
+        plainChat.messageCount = existingDbCount;
+      }
       plainChat.messages = [];
       await saveChatMetadata(plainChat);
       await refreshChatDerivedMetadata(plainChat.id);
+      chatPerfMark("save:complete", {
+        chatId: plainChat.id,
+        savedCount: messagesAreComplete ? localCount : existingDbCount,
+        paged: !messagesAreComplete,
+      });
 
-      if (import.meta.env.DEV) {
+      if (import.meta.env.DEV && messagesAreComplete) {
         try {
           const savedMessages = await loadMessages(deps.currentChatId.value!);
           const savedCount = savedMessages.length;

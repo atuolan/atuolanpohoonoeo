@@ -2,6 +2,7 @@ import { db } from "@/db/database";
 import { loadMessages, saveMessages } from "@/storage/chatMessageStorage";
 import { refreshChatDerivedMetadata } from "@/storage/chatStorage";
 import type { Chat, ChatMessage } from "@/types/chat";
+import { chatPerfEnabled, chatPerfMark } from "@/utils/chatPerformanceDebug";
 
 export async function recoverFromMessageChunks(chatId: string): Promise<ChatMessage[]> {
   const rawDb = (db as any)._instance;
@@ -134,7 +135,9 @@ export async function repairSystemSenderRegressionIfNeeded(
 }
 
 export async function loadAndRepairChatMessages(chat: Chat): Promise<ChatMessage[]> {
+  chatPerfMark("loadAndRepair:start", { chatId: chat.id });
   let rawMessages: ChatMessage[] = await loadMessages(chat.id);
+  chatPerfMark("loadAndRepair:loadMessages", { count: rawMessages.length });
 
   if (rawMessages.length === 0 && (chat.messageCount ?? 0) > 0) {
     console.warn(
@@ -160,11 +163,23 @@ export async function loadAndRepairChatMessages(chat: Chat): Promise<ChatMessage
   }
 
   const loadAI = rawMessages.filter((m) => m.sender === "assistant");
+  chatPerfMark("loadAndRepair:beforeValidation", {
+    count: rawMessages.length,
+    assistantCount: loadAI.length,
+  });
+  const validationLogStart = chatPerfEnabled() ? performance.now() : 0;
   console.log(
     "[ChatScreen] 載入驗證:",
     `總共 ${rawMessages.length} 條, AI ${loadAI.length} 條`,
     loadAI.map((m) => `[${m.id}] ${(m.content || "").substring(0, 30)}`),
   );
+  chatPerfMark("loadAndRepair:validationLogComplete", {
+    count: rawMessages.length,
+    assistantCount: loadAI.length,
+    logMs: chatPerfEnabled()
+      ? Math.round((performance.now() - validationLogStart) * 10) / 10
+      : undefined,
+  });
 
   if (rawMessages.length >= 4) {
     let isOutOfOrder = false;
@@ -213,5 +228,10 @@ export async function loadAndRepairChatMessages(chat: Chat): Promise<ChatMessage
     }
   }
 
-  return repairSystemSenderRegressionIfNeeded(chat, rawMessages);
+  const repairedMessages = await repairSystemSenderRegressionIfNeeded(chat, rawMessages);
+  chatPerfMark("loadAndRepair:complete", {
+    count: repairedMessages.length,
+    replacedArray: repairedMessages !== rawMessages,
+  });
+  return repairedMessages;
 }

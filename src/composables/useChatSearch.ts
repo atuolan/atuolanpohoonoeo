@@ -6,6 +6,7 @@ import { nextTick, ref, type Ref } from "vue";
  */
 export function useChatSearch(deps: {
   messages: Ref<{ id: string; content: string }[]>;
+  getMessages?: () => { id: string; content: string }[];
   visibleCount: Ref<number>;
   messagePageSize: number;
   scrollToBottom: () => void;
@@ -98,7 +99,7 @@ export function useChatSearch(deps: {
     }
 
     const results: string[] = [];
-    const msgs = deps.messages.value;
+    const msgs = deps.getMessages?.() ?? deps.messages.value;
     for (let i = 0; i < msgs.length; i++) {
       const msg = msgs[i];
       if (msg.content && msg.content.toLowerCase().includes(query)) {

@@ -309,6 +309,7 @@ interface AguaphoneDB extends DBSchema {
     value: StoredChatMessage;
     indexes: {
       "by-chatId": string;
+      "by-chat-createdAt-id": [string, number, string];
     };
   };
   // === v23 新增：偷窺手機資料持久化 ===
@@ -338,7 +339,9 @@ interface AguaphoneDB extends DBSchema {
   // ============================================================
   
   const DB_NAME = "aguaphone-db";
-  const DB_VERSION = 27;
+  // v29 repairs installations that reached v28 before the paging index was
+  // successfully created. The upgrade callback is intentionally idempotent.
+  const DB_VERSION = 29;
   
   // Store 名稱常量
 export const DB_STORES = {
@@ -612,7 +615,7 @@ export async function getDatabase(): Promise<IDBPDatabase<AguaphoneDB>> {
   await preUpgradeBackup();
 
   dbInstance = await openDB<AguaphoneDB>(DB_NAME, DB_VERSION, {
-    upgrade(db, oldVersion, newVersion) {
+    upgrade(db, oldVersion, newVersion, transaction) {
       console.log(`[DB] 升級資料庫 v${oldVersion} -> v${newVersion}`);
 
       // 建立 themes 表
@@ -875,6 +878,18 @@ export async function getDatabase(): Promise<IDBPDatabase<AguaphoneDB>> {
           keyPath: "id",
         });
         chatMessagesStore.createIndex("by-chatId", "chatId");
+        chatMessagesStore.createIndex(
+          "by-chat-createdAt-id",
+          ["chatId", "createdAt", "id"],
+        );
+      } else {
+        const existingStore = transaction.objectStore("chatMessages");
+        if (!existingStore.indexNames.contains("by-chat-createdAt-id")) {
+          existingStore.createIndex(
+            "by-chat-createdAt-id",
+            ["chatId", "createdAt", "id"],
+          );
+        }
       }
 
       // === v25 新增表 ===

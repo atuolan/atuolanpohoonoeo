@@ -114,9 +114,11 @@ import {
 import {
   appendMessages,
   deleteMessage,
+  loadMessagePage,
   loadMessages,
   saveMessages,
 } from "@/storage/chatMessageStorage";
+import type { ChatMessageCursor } from "@/db/chatMessageStore";
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import BlockService from "@/services/BlockService";
 import {
@@ -194,6 +196,11 @@ import {
   loadAndRepairChatMessages,
   repairSystemSenderRegressionIfNeeded,
 } from "@/utils/chatMessageLoading";
+import { chatPerfEnabled, chatPerfMark } from "@/utils/chatPerformanceDebug";
+import {
+  hasMoreHistoryFromMetadata,
+  shouldLoadOlderMessages,
+} from "@/utils/chatPaging";
 import {
   computed,
   nextTick,
@@ -804,10 +811,15 @@ function getCharacterNameById(characterId: string): string {
 const messages = ref<Message[]>([]);
 
 // ===== 訊息分頁顯示（性能優化） =====
-const MESSAGE_PAGE_SIZE = 100; // 每次載入的訊息數量
+const MESSAGE_PAGE_SIZE = 50; // 每次載入的訊息數量
 const visibleCount = ref(MESSAGE_PAGE_SIZE); // 當前顯示的訊息數量
 const isLoadingMore = ref(false); // 是否正在載入更多
 const loadMoreSentinelRef = ref<HTMLElement | null>(null); // 頂部哨兵元素
+let messagePageBefore: ChatMessageCursor | null = null;
+const hasMoreChatMessages = ref(false);
+let allMessagesLoaded = false;
+let fullHistoryMessages: Message[] | null = null;
+let fullHistoryLoadPromise: Promise<void> | null = null;
 
 // ===== 聊天側效 composable（外賣時間閘門 / pending 注入 / 外部訊息 reload） =====
 const {
@@ -849,21 +861,83 @@ const visibleMessages = computed(() => {
 
   const filteredMessages = messages.value.filter((m) => isMessageDisplayable(m, now));
   const total = filteredMessages.length;
-  return total <= visibleCount.value
+  const result = total <= visibleCount.value
     ? filteredMessages
     : filteredMessages.slice(total - visibleCount.value);
+  chatPerfMark("visibleMessages:computed", {
+    totalMessages: messages.value.length,
+    displayableMessages: total,
+    visibleCount: visibleCount.value,
+    renderedMessages: result.length,
+  });
+  return result;
 });
+
+/** Load the complete history only for workflows that require it (generation,
+ * search, export, or a full-fidelity mutation). The initial UI stays page-sized.
+ */
+async function ensureAllMessagesLoaded(): Promise<void> {
+  if (fullHistoryMessages || fullHistoryLoadPromise || !currentChatId.value) {
+    if (fullHistoryLoadPromise) await fullHistoryLoadPromise;
+    return;
+  }
+
+  const chat = currentChatData.value;
+  if (!chat) return;
+  fullHistoryLoadPromise = (async () => {
+    const rawMessages = await loadAndRepairChatMessages(chat);
+    const historyById = new Map<string, Message>();
+    for (const rawMessage of rawMessages) {
+      const uiMessage = convertStoredMessageToUiMessage(rawMessage, chat);
+      historyById.set(uiMessage.id, uiMessage);
+    }
+    // Include unsaved messages or edits currently in the UI window.
+    for (const uiMessage of messages.value) {
+      historyById.set(uiMessage.id, uiMessage);
+    }
+    fullHistoryMessages = [...historyById.values()].sort(
+      (a, b) =>
+        (a.timestamp || 0) - (b.timestamp || 0) || a.id.localeCompare(b.id),
+    );
+    chatPerfMark("loadOrCreate:fullHistoryReady", {
+      count: fullHistoryMessages.length,
+      uiWindowCount: messages.value.length,
+    });
+  })();
+  try {
+    await fullHistoryLoadPromise;
+  } finally {
+    fullHistoryLoadPromise = null;
+  }
+}
+
+function getMessageHistory(): Message[] {
+  return fullHistoryMessages || messages.value;
+}
 
 // 是否還有更早的訊息可以載入
 const hasMoreMessages = computed(() => {
   if (isSearchContextMode.value) return false;
-  return messages.value.length > visibleCount.value;
+  if (allMessagesLoaded) return messages.value.length > visibleCount.value;
+
+  // Metadata is reactive and remains authoritative even if a legacy page
+  // result reports `hasMore: false` or the paging index is unavailable.
+  const metadataCount = Number(currentChatData.value?.messageCount);
+  return (
+    hasMoreChatMessages.value ||
+    (Number.isFinite(metadataCount) && metadataCount > messages.value.length)
+  );
 });
 
 // 載入更多歷史訊息（向上滾動時觸發）
-function loadMoreMessages() {
+async function loadMoreMessages() {
   if (isSearchContextMode.value || isLoadingMore.value || !hasMoreMessages.value) return;
   isLoadingMore.value = true;
+  chatPerfMark("loadMore:start", {
+    visibleCount: visibleCount.value,
+    loadedMessageCount: messages.value.length,
+    hasMore: hasMoreMessages.value,
+  });
 
   const container = messagesContainer.value;
   if (!container) {
@@ -875,11 +949,48 @@ function loadMoreMessages() {
   const prevScrollHeight = container.scrollHeight;
   const prevScrollTop = container.scrollTop;
 
-  // 增加可見數量
-  visibleCount.value = Math.min(
-    visibleCount.value + MESSAGE_PAGE_SIZE,
-    messages.value.length,
-  );
+  if (!allMessagesLoaded && currentChatId.value) {
+    try {
+      const page = await loadMessagePage(
+        currentChatId.value,
+        MESSAGE_PAGE_SIZE,
+        messagePageBefore,
+      );
+      const chat = currentChatData.value;
+      if (chat && page.messages.length > 0) {
+        const olderMessages = page.messages.map((m) =>
+          convertStoredMessageToUiMessage(m, chat),
+        );
+        messages.value = [...olderMessages, ...messages.value];
+        visibleCount.value = Math.min(
+          visibleCount.value + olderMessages.length,
+          messages.value.length,
+        );
+      }
+      messagePageBefore = page.before;
+      hasMoreChatMessages.value =
+        page.messages.length > 0 &&
+        hasMoreHistoryFromMetadata({
+          pageHasMore: page.hasMore,
+          metadataCount: currentChatData.value?.messageCount,
+          loadedCount: messages.value.length,
+        });
+      chatPerfMark("loadMore:pageReady", {
+        pageCount: page.messages.length,
+        loadedMessageCount: messages.value.length,
+        pageHasMore: page.hasMore,
+        hasMore: hasMoreChatMessages.value,
+      });
+    } catch (error) {
+      console.warn("[ChatScreen] 分頁載入歷史訊息失敗:", error);
+    }
+  } else {
+    // Full-history workflows keep the existing incremental DOM behavior.
+    visibleCount.value = Math.min(
+      visibleCount.value + MESSAGE_PAGE_SIZE,
+      messages.value.length,
+    );
+  }
 
   // 等待 DOM 更新後恢復滾動位置
   nextTick(() => {
@@ -889,7 +1000,29 @@ function loadMoreMessages() {
         prevScrollTop + (newScrollHeight - prevScrollHeight);
     }
     isLoadingMore.value = false;
+    setupLoadMoreObserver();
+    chatPerfMark("loadMore:complete", {
+      visibleCount: visibleCount.value,
+      loadedMessageCount: messages.value.length,
+      hasMore: hasMoreMessages.value,
+    });
   });
+}
+
+function handleMessagesScroll() {
+  const container = messagesContainer.value;
+  if (
+    !container ||
+    !shouldLoadOlderMessages({
+      scrollTop: container.scrollTop,
+      hasMoreMessages: hasMoreMessages.value,
+      isLoadingMore: isLoadingMore.value,
+      isSearchContextMode: isSearchContextMode.value,
+    })
+  ) {
+    return;
+  }
+  void loadMoreMessages();
 }
 
 // IntersectionObserver 實例（用於偵測滾動到頂部載入更多）
@@ -1579,11 +1712,18 @@ watch(
       return;
     }
 
+    // chatStore keeps metadata for v24+ chats and intentionally leaves
+    // `messages` empty. Never let that metadata update replace the paged UI
+    // window (or rehydrate the complete history into Vue's reactive graph).
+    if (!isChatHydrated.value) {
+      return;
+    }
+
     currentChatId.value = chat.id;
     currentChatData.value = JSON.parse(JSON.stringify(chat));
-    messages.value = Array.isArray(chat.messages)
-      ? JSON.parse(JSON.stringify(chat.messages))
-      : [];
+    if (allMessagesLoaded && Array.isArray(chat.messages) && chat.messages.length > 0) {
+      messages.value = JSON.parse(JSON.stringify(chat.messages));
+    }
   },
   { deep: true },
 );
@@ -1637,6 +1777,12 @@ function handleSplitRegexSegments(
   messageId: string,
   segments: Array<{ type: "text" | "html"; content: string }>,
 ) {
+  chatPerfMark("splitRegexSegments:start", {
+    messageId,
+    segmentCount: segments.length,
+    htmlSegmentCount: segments.filter((segment) => segment.type === "html").length,
+    totalMessages: messages.value.length,
+  });
   const idx = messages.value.findIndex((m) => m.id === messageId);
   if (idx === -1) return;
   const sourceMessage = messages.value[idx];
@@ -1703,6 +1849,11 @@ function handleSplitRegexSegments(
   }));
 
   messages.value.splice(refreshedIdx + 1, 0, ...newMessages);
+  chatPerfMark("splitRegexSegments:mutated", {
+    messageId,
+    insertedCount: newMessages.length,
+    totalMessages: messages.value.length,
+  });
   saveChat();
 }
 
@@ -2470,10 +2621,11 @@ const {
   currentSearchIndex,
   openSearchBar: _openSearchBar,
   closeSearchBar: _closeSearchBar,
-  performSearch,
+  performSearch: _performSearch,
   resetVisibleCount,
 } = useChatSearch({
   messages,
+  getMessages: getMessageHistory,
   visibleCount,
   messagePageSize: MESSAGE_PAGE_SIZE,
   scrollToBottom,
@@ -2488,6 +2640,13 @@ function openSearchBar() {
 function closeSearchBar() {
   exitSearchContextMode();
   _closeSearchBar();
+  // Search is the only UI workflow that needs the full cache; release it
+  // when the search surface closes so the renderer returns to page-sized state.
+  fullHistoryMessages = null;
+}
+
+function performSearch() {
+  void ensureAllMessagesLoaded().then(() => _performSearch());
 }
 
 const searchResultTotal = computed(() => searchResults.value.length);
@@ -2499,7 +2658,7 @@ const searchResultOverflowCount = computed(() =>
 const searchResultItems = computed(() => {
   const query = searchQuery.value.trim().toLowerCase();
   if (!query || searchResults.value.length === 0) return [];
-  const msgMap = new Map(messages.value.map((m) => [m.id, m]));
+  const msgMap = new Map(getMessageHistory().map((m) => [m.id, m]));
   const SNIPPET_PAD = 28;
   return searchResults.value.slice(0, MAX_SEARCH_RESULT_ITEMS).map((id) => {
     const msg = msgMap.get(id);
@@ -2554,15 +2713,16 @@ function scrollRenderedMessageIntoView(messageId: string): boolean {
 }
 
 async function activateSearchContext(targetMessageId: string): Promise<boolean> {
-  const targetIndex = messages.value.findIndex((m) => m.id === targetMessageId);
+  const history = getMessageHistory();
+  const targetIndex = history.findIndex((m) => m.id === targetMessageId);
   if (targetIndex === -1) return false;
 
   const start = Math.max(0, targetIndex - SEARCH_CONTEXT_BEFORE_COUNT);
   const end = Math.min(
-    messages.value.length,
+    history.length,
     targetIndex + SEARCH_CONTEXT_AFTER_COUNT + 1,
   );
-  searchContextMessages.value = messages.value.slice(start, end);
+  searchContextMessages.value = history.slice(start, end);
   searchContextTargetId.value = targetMessageId;
   isSearchContextMode.value = true;
 
@@ -3274,6 +3434,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
   if (isGenerating.value) return;
   // 被角色封鎖期間，除非明確繞過（如好友申請），否則不觸發 AI 生成
   if (isBlockedByChar.value && !options?.bypassBlockCheck) return;
+  await ensureAllMessagesLoaded();
   const generationTurnId = currentTurnId.value || "";
 
   // 使用全局狀態管理開始生成
@@ -3458,11 +3619,11 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
     // 先過濾掉尚未到達排程時間的物流進度訊息，避免角色「看到未來」
     const now = Date.now();
-    const eligibleMessages = messages.value.filter(
+    const eligibleMessages = getMessageHistory().filter(
       (m) => !(m.isWaimaiProgress && m.timestamp > now),
     );
 
-    let messagesToUse: typeof messages.value;
+    let messagesToUse: Message[];
     if (actualMode === "turn") {
       // 按輪次讀取：每輪 = 用戶發言 + AI 整段回覆。
       // 同一輪 AI 即使被拆成多條氣泡（共享 turnId 或 shadow segment），只計為一輪。
@@ -3566,7 +3727,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
             await import("@/services/memoryRetriever")
           ).MemoryRetrieverService();
           // 傳入近期對話訊息和角色名稱，啟用雙路搜尋 + 關鍵詞擴展
-          const recentMsgs = messages.value.slice(-15);
+      const recentMsgs = getMessageHistory().slice(-15);
           const charNames = [
             char.data.name,
             ...(char.data.alternate_greetings ? [] : []),
@@ -5815,6 +5976,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
     scrollToBottom();
     await saveChatImmediate();
+    // The cache represented the pre-generation history. Rebuild it from IDB
+    // on the next generation/search after the newly persisted messages land.
+    fullHistoryMessages = null;
 
     // 處理禮物接收（標記為已接收並記錄重要事件）
     await processGiftReceived();
@@ -7031,6 +7195,10 @@ function convertStoredMessageToUiMessage(m: ChatMessage, chat: Chat): Message {
 
 // 載入或創建聊天
 async function loadOrCreateChat(overrideChatId?: string) {
+  chatPerfMark("loadOrCreate:start", {
+    overrideChatId: overrideChatId ?? null,
+    propChatId: props.chatId,
+  });
   if (pendingToolConfirmation.value && overrideChatId && overrideChatId !== currentChatId.value) {
     activeToolDecision?.(null);
     activeToolDecision = null;
@@ -7039,6 +7207,11 @@ async function loadOrCreateChat(overrideChatId?: string) {
   isChatHydrated.value = false;
   await db.init();
   resetVisibleCount();
+  messagePageBefore = null;
+  hasMoreChatMessages.value = false;
+  allMessagesLoaded = false;
+  fullHistoryMessages = null;
+  fullHistoryLoadPromise = null;
 
   // 確保設定已載入
   if (settingsStore.isLoading) {
@@ -7052,6 +7225,10 @@ async function loadOrCreateChat(overrideChatId?: string) {
     try {
       const chat = await loadChatById(targetChatId);
       if (chat) {
+        chatPerfMark("loadOrCreate:chatLoaded", {
+          chatId: chat.id,
+          metadataMessageCount: chat.messageCount ?? null,
+        });
         currentChatId.value = chat.id;
         currentChatData.value = chat;
 
@@ -7070,8 +7247,36 @@ async function loadOrCreateChat(overrideChatId?: string) {
           await setLocalChatUnreadCount(chat.id, 0);
         }
 
-        const rawMessages = await loadAndRepairChatMessages(chat);
+        let initialPage;
+        try {
+          initialPage = await loadMessagePage(chat.id, MESSAGE_PAGE_SIZE);
+        } catch (error) {
+          chatPerfMark("loadOrCreate:pageFailed", {
+            name: error instanceof Error ? error.name : typeof error,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          console.warn("[ChatScreen] 首屏分頁載入失敗，回退完整訊息載入:", error);
+          const rawMessages = await loadAndRepairChatMessages(chat);
+          initialPage = {
+            messages: rawMessages,
+            before: null,
+            hasMore: false,
+          };
+          allMessagesLoaded = true;
+        }
+        const rawMessages = initialPage.messages;
         markMessagesLoaded();
+        messagePageBefore = initialPage.before;
+        hasMoreChatMessages.value = hasMoreHistoryFromMetadata({
+          pageHasMore: initialPage.hasMore,
+          metadataCount: chat.messageCount,
+          loadedCount: rawMessages.length,
+        });
+        chatPerfMark("loadOrCreate:messagesReady", {
+          count: rawMessages.length,
+          paged: !allMessagesLoaded,
+          hasMore: hasMoreChatMessages.value,
+        });
 
         // 圖片：不再一次性還原所有 base64 到記憶體，改為 MessageBubble 按需從 IndexedDB 讀取
         // 保持引用 ID（chatimg_xxx）在訊息中，大幅降低記憶體佔用（P1 修復）
@@ -7079,9 +7284,36 @@ async function loadOrCreateChat(overrideChatId?: string) {
         // 音頻：不再一次性載入所有 Blob，改為按需載入（P1 修復：減少記憶體佔用）
         // audioBlobId 保留在訊息中，播放時再從 IndexedDB 讀取
 
-        messages.value = rawMessages.map((m) =>
+        const mappingStart = chatPerfEnabled() ? performance.now() : 0;
+        const uiMessages = rawMessages.map((m) =>
           convertStoredMessageToUiMessage(m, chat),
         );
+        chatPerfMark("loadOrCreate:mapComplete", {
+          count: uiMessages.length,
+          mapMs: chatPerfEnabled()
+            ? Math.round((performance.now() - mappingStart) * 10) / 10
+            : undefined,
+        });
+        messages.value = uiMessages;
+        // The init composable can run before the first paged render exists.
+        // Re-arm the sentinel after its v-if condition becomes reactive.
+        setupLoadMoreObserver();
+        chatPerfMark("loadOrCreate:messagesAssigned", {
+          count: messages.value.length,
+        });
+        if (chatPerfEnabled()) {
+          await nextTick();
+          chatPerfMark("loadOrCreate:domUpdated", {
+            visibleMessages: visibleMessages.value.length,
+            messageWrappers: document.querySelectorAll(".message-memo-wrapper").length,
+          });
+          requestAnimationFrame(() => {
+            chatPerfMark("loadOrCreate:firstPaintFrame", {
+              visibleMessages: visibleMessages.value.length,
+              messageWrappers: document.querySelectorAll(".message-memo-wrapper").length,
+            });
+          });
+        }
         // 載入聊天專屬的 Persona 覆蓋數據
         const personaOverride = (chat.metadata as any)?.personaOverride;
         if (personaOverride) {
@@ -7513,6 +7745,7 @@ const chatPersistence = useChatPersistence({
     );
   },
   refreshBlockStateFromStorage,
+  isMessagesComplete: () => allMessagesLoaded,
 });
 
 function markMessagesLoaded() {
@@ -7525,6 +7758,7 @@ function resetSaveTrackingFromMessages() {
 
 function resetAfterChatCleared() {
   chatPersistence.resetAfterChatCleared();
+  fullHistoryMessages = null;
 }
 
 function cancelPendingSaveTimer() {
@@ -7577,6 +7811,9 @@ async function handlePhoneCallEnded(
     }
     if (chat && latest && Array.isArray(latest)) {
       messages.value = latest.map((m) => convertStoredMessageToUiMessage(m, chat));
+      allMessagesLoaded = true;
+      hasMoreChatMessages.value = false;
+      messagePageBefore = null;
       markMessagesLoaded();
     }
     scrollToBottom();
@@ -8670,6 +8907,7 @@ useChatCleanup({
     <main
       ref="messagesContainer"
       class="messages-container"
+      @scroll="handleMessagesScroll"
       @click="showRail && closeRail()"
     >
       <div class="messages-list">
@@ -8684,7 +8922,14 @@ useChatCleanup({
               <span></span><span></span><span></span>
             </div>
           </div>
-          <div v-else class="load-more-hint">向上滾動載入更多訊息</div>
+          <button
+            v-else
+            type="button"
+            class="load-more-button"
+            @click.stop="loadMoreMessages"
+          >
+            載入更多對話
+          </button>
         </div>
         <div
           v-for="(message, index) in visibleMessages"
@@ -13059,6 +13304,22 @@ useChatCleanup({
 .load-more-hint {
   font-size: 12px;
   color: var(--color-text-secondary, #999);
+  opacity: 0.6;
+}
+
+.load-more-button {
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.load-more-button:disabled {
+  cursor: default;
   opacity: 0.6;
 }
 

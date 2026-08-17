@@ -4,13 +4,24 @@ import {
   deleteChatMessagesForChat,
   getChatMessageCount,
   loadChatMessages,
+  loadChatMessagesPage,
   saveChatMessages,
+  upsertChatMessages,
 } from "@/db/chatMessageStore";
+import type { ChatMessageCursor, ChatMessagePage } from "@/db/chatMessageStore";
 import { recordDeletedEntity, scheduleSelfHostedAutoSync } from "@/services/selfHostedSyncState";
 import type { ChatMessage } from "@/types/chat";
 
 export async function loadMessages(chatId: string): Promise<ChatMessage[]> {
   return loadChatMessages(chatId);
+}
+
+export async function loadMessagePage(
+  chatId: string,
+  limit: number,
+  before?: ChatMessageCursor | null,
+): Promise<ChatMessagePage> {
+  return loadChatMessagesPage(chatId, limit, before);
 }
 
 export async function saveMessages(
@@ -19,6 +30,14 @@ export async function saveMessages(
   snapshotTime?: number,
 ): Promise<void> {
   await saveChatMessages(chatId, messages, snapshotTime);
+  scheduleSelfHostedAutoSync();
+}
+
+export async function upsertMessages(
+  chatId: string,
+  messages: ChatMessage[],
+): Promise<void> {
+  await upsertChatMessages(chatId, messages);
   scheduleSelfHostedAutoSync();
 }
 

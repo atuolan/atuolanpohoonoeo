@@ -17,6 +17,80 @@ import type { StoredChatMessage } from "@/db/database";
 // 重新匯出供外部使用
 export type { StoredChatMessage } from "@/db/database";
 
+export interface ChatMessageCursor {
+  createdAt: number;
+  id: string;
+}
+
+export interface ChatMessagePage {
+  messages: ChatMessage[];
+  /** Cursor for the next request that should load older messages. */
+  before: ChatMessageCursor | null;
+  hasMore: boolean;
+}
+
+function messageSortKey(message: Pick<ChatMessage, "createdAt" | "id">): [number, string] {
+  const createdAt = Number(message.createdAt);
+  return [Number.isFinite(createdAt) ? createdAt : 0, message.id];
+}
+
+function compareMessageKeys(
+  left: [number, string],
+  right: [number, string],
+): number {
+  return left[0] - right[0] || left[1].localeCompare(right[1]);
+}
+
+/**
+ * Legacy records may not have createdAt, so they are absent from the
+ * compound index. Scan the chatId index with a bounded in-memory page rather
+ * than loading the full chat into the renderer.
+ */
+async function loadChatMessagesPageByChatId(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  chatId: string,
+  pageSize: number,
+  before?: ChatMessageCursor | null,
+): Promise<ChatMessagePage> {
+  const index = db
+    .transaction("chatMessages", "readonly")
+    .objectStore("chatMessages")
+    .index("by-chatId");
+  const records: StoredChatMessage[] = [];
+  let eligibleCount = 0;
+  let cursor = await index.openCursor(chatId, "next");
+  while (cursor) {
+    const value = cursor.value as StoredChatMessage;
+    const key = messageSortKey(value);
+    if (!before || compareMessageKeys(key, [before.createdAt, before.id]) < 0) {
+      eligibleCount++;
+      let low = 0;
+      let high = records.length;
+      while (low < high) {
+        const middle = (low + high) >> 1;
+        if (compareMessageKeys(messageSortKey(records[middle]), key) <= 0) {
+          low = middle + 1;
+        } else {
+          high = middle;
+        }
+      }
+      records.splice(low, 0, value);
+      if (records.length > pageSize) records.shift();
+    }
+    cursor = await cursor.continue();
+  }
+
+  const first = records[0];
+  return {
+    messages: records,
+    before:
+      records.length === pageSize && first
+        ? { createdAt: messageSortKey(first)[0], id: first.id }
+        : null,
+    hasMore: eligibleCount > pageSize,
+  };
+}
+
 /**
  * 載入指定聊天的所有訊息（按 createdAt 排序）
  */
@@ -30,8 +104,82 @@ export async function loadChatMessages(
     chatId,
   );
   // 按 createdAt 升序排列，確保訊息順序正確
-  records.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  records.sort(
+    (a, b) =>
+      (a.createdAt || 0) - (b.createdAt || 0) || a.id.localeCompare(b.id),
+  );
   return records;
+}
+
+/**
+ * Load the newest page (or the page immediately before `before`) without
+ * materializing the rest of the chat in renderer memory.
+ */
+export async function loadChatMessagesPage(
+  chatId: string,
+  limit: number,
+  before?: ChatMessageCursor | null,
+): Promise<ChatMessagePage> {
+  const pageSize = Math.max(1, Math.floor(limit));
+  const db = await getDatabase();
+  try {
+    const tx = db.transaction("chatMessages", "readonly");
+    const store = tx.objectStore("chatMessages");
+    const chatIndex = store.index("by-chatId");
+    const index = store.index("by-chat-createdAt-id");
+    const lower: [string, number, string] = [
+      chatId,
+      Number.MIN_SAFE_INTEGER,
+      "",
+    ];
+    const upper: [string, number, string] = [
+      chatId,
+      Number.MAX_SAFE_INTEGER,
+      "\uffff",
+    ];
+    const fullRange = IDBKeyRange.bound(lower, upper);
+    const range = before
+      ? IDBKeyRange.bound(
+          lower,
+          [chatId, before.createdAt, before.id],
+          false,
+          true,
+        )
+      : fullRange;
+
+    // A compound index silently omits records with missing key-path fields.
+    // Detect that case before returning an incomplete page.
+    const [chatCount, indexedCount] = await Promise.all([
+      chatIndex.count(chatId),
+      index.count(fullRange),
+    ]);
+    if (chatCount !== indexedCount) {
+      return loadChatMessagesPageByChatId(db, chatId, pageSize, before);
+    }
+
+    const records: StoredChatMessage[] = [];
+    let cursor = await index.openCursor(range, "prev");
+    while (cursor && records.length < pageSize) {
+      records.push(cursor.value);
+      cursor = await cursor.continue();
+    }
+
+    records.reverse();
+    const first = records[0];
+    return {
+      messages: records,
+      before:
+        records.length === pageSize && first
+          ? { createdAt: messageSortKey(first)[0], id: first.id }
+          : null,
+      hasMore: records.length === pageSize,
+    };
+  } catch (error) {
+    // Existing databases can be opened before the v28 index migration. Keep
+    // the first paint paged even when that index is not yet available.
+    console.warn("[chatMessageStore] compound paging index unavailable; using chatId cursor", error);
+    return loadChatMessagesPageByChatId(db, chatId, pageSize, before);
+  }
 }
 
 /**
@@ -85,6 +233,25 @@ export async function saveChatMessages(
     await store.put({ ...msg, chatId } as StoredChatMessage);
   }
 
+  await tx.done;
+}
+
+/**
+ * Upsert only the supplied records. This is the write path for a paged UI:
+ * records outside the current window remain untouched in IndexedDB.
+ */
+export async function upsertChatMessages(
+  chatId: string,
+  messages: ChatMessage[],
+): Promise<void> {
+  if (!messages.length) return;
+  const db = await getDatabase();
+  const tx = db.transaction("chatMessages", "readwrite");
+  const store = tx.objectStore("chatMessages");
+  for (const msg of messages) {
+    if (!msg || !msg.id) continue;
+    await store.put({ ...msg, chatId } as StoredChatMessage);
+  }
   await tx.done;
 }
 
