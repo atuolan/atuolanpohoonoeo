@@ -491,6 +491,18 @@ function handleClearHistory() {
   }
 }
 
+async function handleReinterpret(reading: FateReading) {
+  // 關閉歷史記錄面板和詳情
+  expandedReading.value = null;
+  showHistory.value = false;
+
+  // 切換到塔羅牌占卜模式
+  currentDivination.value = "tarot";
+
+  // 呼叫 store 的重新解讀方法
+  await fateStore.reinterpretFromHistory(reading);
+}
+
 // ===== 返回邏輯 =====
 function handleBack() {
   if (expandedReading.value) {
@@ -707,6 +719,16 @@ onUnmounted(() => {
             v-html="expandedInterpretationHtml"
           />
           <p v-else class="fate-history__detail-empty">無解讀記錄</p>
+        </div>
+
+        <!-- 重新解讀按鈕 -->
+        <div v-if="expandedReading.type === 'tarot'" class="fate-history__detail-actions">
+          <button
+            class="fate-btn fate-btn--primary"
+            @click="handleReinterpret(expandedReading.reading as any)"
+          >
+            重新解讀
+          </button>
         </div>
       </div>
 
@@ -3332,6 +3354,12 @@ $r-pill: 100px;
     color: $text-3;
     text-align: center;
     padding: 24px 0;
+  }
+  &__detail-actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 20px;
   }
 }
 

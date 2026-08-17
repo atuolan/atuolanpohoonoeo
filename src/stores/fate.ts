@@ -346,6 +346,21 @@ export const useFateStore = defineStore("fate", () => {
     }
   }
 
+  /** 從歷史記錄恢復並重新解讀 */
+  async function reinterpretFromHistory(reading: FateReading) {
+    // 恢復占卜狀態
+    question.value = reading.question;
+    spread.value = reading.spread;
+    drawnCards.value = JSON.parse(JSON.stringify(reading.drawnCards));
+    revealedCount.value = drawnCards.value.length;
+    interpretation.value = "";
+    interpretError.value = null;
+    phase.value = "interpret";
+
+    // 開始重新解讀
+    await startInterpretation();
+  }
+
   return {
     // 狀態
     phase,
@@ -378,5 +393,6 @@ export const useFateStore = defineStore("fate", () => {
     deleteReading,
     clearHistory,
     drawCardsByInput,
+    reinterpretFromHistory,
   };
 });

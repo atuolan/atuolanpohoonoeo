@@ -82,7 +82,9 @@ function persistMessages() {
     ...m,
     streaming: false,
   }));
-  void saveThemeChatHistory(serializable);
+  // 使用 JSON 深拷貝去除 Vue Proxy，避免 DataCloneError
+  const plainData = JSON.parse(JSON.stringify(serializable));
+  void saveThemeChatHistory(plainData);
 }
 
 const messages = ref<UIMessage[]>([]);
