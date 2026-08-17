@@ -1,0 +1,21 @@
+Claude Code 任務：高樓層聊天卡頓與閃退根因
+
+工作目錄：C:\Users\a2397\new aguaphone
+
+邊界：只讀調查，不修改程式碼、不套用修復。先讀錯誤、git 最近變更，再追蹤資料流；所有結論附檔案與行號。
+
+問題：聊天歷史累積到高樓層後，訊息顯示卡頓並可能閃退。確認是否由長歷史造成渲染、反應式更新、prompt 組裝或儲存同步的非線性成本。
+
+優先檢查：
+- ChatScreen.vue 的 visibleMessages、分頁哨兵、watch/watchEffect、串流 token 更新與 JSON.stringify。
+- MessageBubble.vue 的 renderedContent、parsedTextParts、marked.parse、regex 腳本、HTML iframe/shadow card、副作用 computed。
+- useChatGeneration.ts、useChatPersistence.ts、訊息 loading/mapping 與 IDB 讀寫。
+
+必須回答：
+1. 以最短步驟描述可重現條件。
+2. 給出從狀態變更到卡頓/崩潰的呼叫鏈。
+3. 列出最多 5 個帶 path:line 的證據，區分已證實與推測。
+4. 形成單一首要根因假設。
+5. 提供一個最小驗證實驗或 instrumentation 命令，不要修改檔案。
+
+回報：繁體中文，先結論再證據；不要提供未經驗證的修復方案。

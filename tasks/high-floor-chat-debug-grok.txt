@@ -1,0 +1,24 @@
+Grok 任務：高樓層聊天卡頓與閃退根因
+
+工作目錄：C:\Users\a2397\new aguaphone
+
+邊界：只讀調查，不修改程式碼、不套用修復。所有結論附檔案與行號。
+
+問題：聊天歷史累積到高樓層後，訊息顯示卡頓，最後可能閃退。找出能解釋「訊息數增加後才惡化」的具體資料流或資源耗用。
+
+調查範圍：
+1. src/components/screens/ChatScreen.vue
+2. src/components/common/MessageBubble.vue
+3. src/composables/useChatGeneration.ts
+4. src/composables/useChatPersistence.ts
+5. src/utils/chatMessageLoading.ts、src/utils/chatMessageMapping.ts
+6. src/services/SelfHostedSyncService.ts 與 scripts/*trace* / scripts/*performance*
+
+必須回答：
+- 可重現條件與最短步驟。
+- 從訊息載入、API prompt、串流更新、儲存/同步到 Vue 渲染的呼叫鏈。
+- O(n^2)、無界陣列、全量 DOM、重複 watcher/listener、深拷貝/序列化、Markdown/HTML/regex 重算的證據。
+- 一個首要根因假設，並標記已證實或仍是假設。
+- 一個最小 instrumentation 或驗證命令；不得一次提出多個修復。
+
+回報：繁體中文；最多 5 個高信號發現；每項使用 path:line 證據。最後附「首要根因 / 最小驗證 / 未知資訊」。

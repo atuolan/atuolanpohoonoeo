@@ -1,0 +1,57 @@
+高樓層聊天除錯目前證據（2026-08-17）
+
+外部任務狀態
+- Claude Code：縮小只讀任務已回報；指出 MessageBubble 的每訊息 regex/Markdown/HTML 計算與非虛擬列表風險。但它把部分行號與元件名稱混淆，不能直接視為根因證明。
+- Grok：任務檔已送出並成功啟動；6 回合只完成掃描準備，18 回合超過本地 CLI 時限，沒有最終報告。中間推理不採信。
+
+已核對的程式碼證據
+1. ChatScreen.vue:806-810：MESSAGE_PAGE_SIZE=100，visibleCount 初始 100。
+2. ChatScreen.vue:843-855：visibleMessages 每次先 filter 全部 messages，再依 visibleCount slice；搜尋模式例外。
+3. ChatScreen.vue:863-892：向上載入每次 visibleCount += 100，沒有固定上限；使用者可逐步把整個歷史放入 DOM。
+4. ChatScreen.vue:8689-8780：visibleMessages 逐條建立 MessageBubble；v-memo 只避免部分更新，不是虛擬列表。
+5. MessageBubble.vue:1378-1791：renderedContent 每個 bubble 會清理標記、執行 regex 腳本、拆 HTML、最後 marked.parse；computed 會寫入 regexInlineHtml/regexHtmlDoc/hideSplitSourceBubble refs。
+6. MessageBubble.vue:1957-1965：messageParts 的每個文字段再呼叫 marked.parse。
+7. ChatScreen.vue:3454-3472：生成設定的 actualMessageCount 直接裁切要送出的歷史；turn 模式由 sliceMessagesByTurns 計算。
+8. SummarySettingsModal.vue:334、AISummaryPanel.vue:1568：ACTUAL_MESSAGE_COUNT_MAX=1000；提示可手動輸入 1-1000 輪/條。
+9. ChatScreen.vue:3527-3535：summaryReadMode=all 時 summaryReadCount 直接使用 chatSummaries.length，未設上限。
+10. PromptBuilder.ts:3185-3291：對每條歷史逐條 await tokenCounter；replyTo 存在時對 messages 做 find；長歷史成本隨資料量增加。
+11. ChatScreen.vue:4578-4595：背景生成前對完整 apiMessages 做 JSON.stringify hash，並把完整 apiMessages 傳給遠端。
+12. ChatScreen.vue:1573-1588：對 chatStore.currentChat 使用 deep watch，每次變更都 JSON.parse(JSON.stringify(chat.messages)) 複製完整歷史。
+
+首要待驗證假設
+- 長歷史達到高設定值時，生成前的 prompt 組裝/JSON 序列化與 UI 長列表渲染共同造成主執行緒長任務；目前證據支持「非線性/高常數成本」，尚未取得瀏覽器崩潰堆疊或效能 trace，因此不能宣稱唯一根因。
+
+最小驗證
+1. 同一聊天分別將 actualMessageCount 設為 30、300、1000；記錄 triggerAIResponse 前後 performance.now()、apiMessages.length、JSON.stringify(apiMessages).length。
+2. Chrome Performance 錄製一次「30」與一次「1000」；同時記錄 performance.memory.usedJSHeapSize（可用時）與 Long Task。
+3. UI 另做 visibleCount=100、500、1000 對照，觀察 MessageBubble 數、主執行緒長任務與 renderer crash。
+
+現有基線
+- npm run type-check：已有既存 TypeScript 錯誤（useChatMessageActions.ts、fixGroupChatSenderNames.ts）。
+- npm test：45 個測試檔通過，2 個 .worktrees 測試檔失敗，失敗在 OpenAICompatible tool metadata 斷言；與本次只讀調查沒有直接因果證據。
+
+新增審查結果（2026-08-17 11:25）
+- UI 路徑審查已完成，與上述證據一致：8000 條會全量進 reactive；visibleMessages 仍全量 filter；visibleCount 每次 +100 且不回收；沒有 virtualization；MessageBubble 逐條跑 regex/HTML/marked。
+- 生成路徑的資料邊界：ChatScreen.vue:3456-3472 先以 actualMessageCount 裁切 messagesToUse，PromptBuilder 再依 maxContextLength/token budget 裁切；因此「8000 條全部送 API」尚未證實。若 actualMessageCount=1000，生成端最多先看到該設定範圍，而 UI 仍保留全部 8000。
+- PromptBuilder.ts:3182-3291 對 prompt history 逐條 await tokenCounter；tokenCounter 目前是 text.length/4 的輕量估算，但每條仍有 O(n) 迭代，replyTo 會對 messages.find。這是生成延遲放大因子，不足以單獨證明 renderer crash。
+- ChatScreen.vue:4578-4595 僅在 backgroundGenerationEnabled 時對完整 apiMessages 做 JSON.stringify 並送遠端；是否造成閃退需以實際設定與 Performance trace 判斷。
+- ChatScreen.vue:4642-4649 串流 token 會直接改最後一條 reactive 訊息；在可見列表已展開時，會重新觸發該 bubble 與 visibleMessages 依賴。這是 UI 根因假設的放大器，仍需 trace。
+- ChatScreen.vue:5813-5818 每次生成 finally 都會 await saveChatImmediate；useChatPersistence.ts:67-78、100-129、174-177 會從完整 reactive messages 建快照、轉成可存格式、structuredClone chat，再全量保存。
+- db/chatMessageStore.ts:47-88 的 saveChatMessages 會掃描該聊天既有 IDB cursor，並逐條 put incoming；因此高樓層生成結束時，保存路徑也可能產生長任務與記憶體峰值。
+
+目前最精確的首要根因假設
+- 已證實的觸發條件是「全量歷史 reactive + 無界可見 bubble + 每 bubble 字串解析」；這條鏈可解釋 8000 樓後 UI 卡頓與 renderer 記憶體壓力。
+- 深層 watch、PromptBuilder、背景生成 JSON 序列化是額外放大器，尚未有 crash stack/trace 證明其中任何一項是唯一根因。
+- 若 actualMessageCount 被設到 8000 或接近上限，PromptBuilder 的 `messages.find` 會讓 replyTo 密集的歷史出現 O(N^2) 風險；目前預設上限 1000，因此必須以實際設定確認。
+
+使用者補充：已開啟「僅讀取幾樓」
+- 這個設定只套用在 triggerAIResponse 的 `messagesToUse`，也就是送入 PromptBuilder/API 的歷史範圍（ChatScreen.vue:3454-3473）。
+- 聊天載入仍由 `loadAndRepairChatMessages(chat)` 取得全部 IDB 訊息，再全部寫入 `messages.value`（ChatScreen.vue:7039-7084）；因此它不會降低初始 reactive 陣列、visibleMessages 全量掃描或向上展開 bubble 的成本。
+- 在此設定已開啟的前提下，生成 prompt/JSON 的優先級下降；先做「不生成，只開啟並向上展開」的 UI 實驗，再單獨測試生成結束的全量保存。
+
+最小驗證實驗
+1. 同一聊天冷載入後記錄 visibleCount=100 的 heap、DOM、Long Task。
+2. 逐次觸發頂部哨兵到 1000/3000/8000，記錄 `.message-memo-wrapper` 數量、heap 與 renderer 狀態。
+3. 在相同 visibleCount 下，以 actualMessageCount=30/300/1000 各做一次生成，記錄 PromptBuilder 完成時間、apiMessages.length、JSON.stringify 長度；分開判斷 UI 與生成路徑。
+4. Chrome Performance trace 若只在 visibleCount 上升時惡化，優先歸因 UI；若未展開 UI 也只在生成時惡化，再追 PromptBuilder/序列化。
+5. 固定 visibleCount 不上滑，分別關閉/開啟背景生成；比較 prompt build、background `JSON.stringify`、finally `saveChatImmediate` 的耗時與 heap 峰值，再以 actualMessageCount=30/300/1000 重跑。
