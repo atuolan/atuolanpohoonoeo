@@ -19,10 +19,14 @@ describe("MessageBubble TTS regeneration action", () => {
     expect(source).toContain("function handleRegenerateVoice()");
     expect(source).toContain('@click="handleRegenerateVoice"');
     expect(source).toContain("<span>重新生成語音</span>");
+    expect(source).toContain('<template v-if="role === \'ai\'">');
 
     const aiBranch = source.indexOf('<template v-if="!isUser">');
+    const aiOnlyBranch = source.indexOf('<template v-if="role === \'ai\'">');
     const action = source.indexOf("重新生成語音");
     expect(aiBranch).toBeGreaterThanOrEqual(0);
+    expect(aiOnlyBranch).toBeGreaterThan(aiBranch);
     expect(action).toBeGreaterThan(aiBranch);
+    expect(action).toBeGreaterThan(aiOnlyBranch);
   });
 });
