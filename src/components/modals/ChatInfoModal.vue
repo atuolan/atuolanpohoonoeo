@@ -189,6 +189,14 @@ interface GroupMemberInfo {
   isMuted: boolean;
 }
 
+interface ChatInfoStats {
+  totalMessages: number;
+  userMessages: number;
+  aiMessages: number;
+  systemMessages: number;
+  memberMessageCounts: Record<string, number>;
+}
+
 const props = defineProps<{
   visible: boolean;
   // 單人聊天
@@ -201,6 +209,7 @@ const props = defineProps<{
   groupMembers?: GroupMemberInfo[];
   // 共用
   messages: Message[];
+  stats?: ChatInfoStats | null;
   createdAt?: number;
 }>();
 
@@ -211,12 +220,14 @@ const emit = defineEmits<{
 
 // 統計數據
 const failedAvatars = ref(new Set<string>());
-const messageCount = computed(() => props.messages.length);
+const messageCount = computed(
+  () => props.stats?.totalMessages ?? props.messages.length,
+);
 const userMessageCount = computed(
-  () => props.messages.filter((m) => m.role === "user").length,
+  () => props.stats?.userMessages ?? props.messages.filter((m) => m.role === "user").length,
 );
 const aiMessageCount = computed(
-  () => props.messages.filter((m) => m.role === "ai").length,
+  () => props.stats?.aiMessages ?? props.messages.filter((m) => m.role === "ai").length,
 );
 // 輪次計算：每輪 = 用戶發言 + AI 回覆，以用戶訊息數為準
 const turnCount = computed(() => userMessageCount.value);
@@ -237,10 +248,20 @@ const groupMembersWithStats = computed(() => {
   // 計算每個成員的訊息數
   const memberMessageCounts = new Map<string, number>();
 
-  for (const msg of props.messages) {
-    if (msg.role === "ai" && msg.senderCharacterId) {
-      const count = memberMessageCounts.get(msg.senderCharacterId) || 0;
-      memberMessageCounts.set(msg.senderCharacterId, count + 1);
+  if (props.stats?.memberMessageCounts) {
+    for (const [characterId, count] of Object.entries(
+      props.stats.memberMessageCounts,
+    )) {
+      memberMessageCounts.set(characterId, count);
+    }
+  }
+
+  if (!props.stats) {
+    for (const msg of props.messages) {
+      if (msg.role === "ai" && msg.senderCharacterId) {
+        const count = memberMessageCounts.get(msg.senderCharacterId) || 0;
+        memberMessageCounts.set(msg.senderCharacterId, count + 1);
+      }
     }
   }
 

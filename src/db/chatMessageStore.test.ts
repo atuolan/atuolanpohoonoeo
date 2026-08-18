@@ -8,6 +8,7 @@ import { closeDatabase, getDatabase } from "@/db/database";
 import {
   appendChatMessages,
   deleteChatMessage,
+  getChatMessageStats,
   loadChatMessages,
   loadChatMessagesPage,
   upsertChatMessages,
@@ -117,6 +118,28 @@ describe("chat message paging", () => {
       { ...original, chatId: "chat-main" },
     ]);
     expect(await loadChatMessages("chat-branch")).toEqual([]);
+  });
+
+  it("calculates complete-chat stats without relying on the loaded page", async () => {
+    await appendChatMessages("chat-stats", [
+      { ...message(0), sender: "user", is_user: true },
+      { ...message(1), sender: "assistant", is_user: false },
+      {
+        ...message(3),
+        sender: "assistant",
+        is_user: false,
+        senderCharacterId: "char-cass",
+      } as ChatMessage,
+      { ...message(4), sender: "system", is_user: false },
+    ]);
+
+    expect(await getChatMessageStats("chat-stats")).toEqual({
+      totalMessages: 4,
+      userMessages: 1,
+      aiMessages: 2,
+      systemMessages: 1,
+      memberMessageCounts: { "char-cass": 1 },
+    });
   });
 
   it("pages records when legacy messages do not have createdAt", async () => {

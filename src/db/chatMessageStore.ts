@@ -29,6 +29,14 @@ export interface ChatMessagePage {
   hasMore: boolean;
 }
 
+export interface ChatMessageStats {
+  totalMessages: number;
+  userMessages: number;
+  aiMessages: number;
+  systemMessages: number;
+  memberMessageCounts: Record<string, number>;
+}
+
 function messageSortKey(message: Pick<ChatMessage, "createdAt" | "id">): [number, string] {
   const createdAt = Number(message.createdAt);
   return [Number.isFinite(createdAt) ? createdAt : 0, message.id];
@@ -109,6 +117,61 @@ export async function loadChatMessages(
       (a.createdAt || 0) - (b.createdAt || 0) || a.id.localeCompare(b.id),
   );
   return records;
+}
+
+/**
+ * Calculate chat statistics from the chatId index without loading every
+ * message into renderer memory. Legacy records may only have sender/is_user,
+ * while newer records can also carry an explicit role.
+ */
+export async function getChatMessageStats(
+  chatId: string,
+): Promise<ChatMessageStats> {
+  const db = await getDatabase();
+  const index = db
+    .transaction("chatMessages", "readonly")
+    .objectStore("chatMessages")
+    .index("by-chatId");
+  const stats: ChatMessageStats = {
+    totalMessages: 0,
+    userMessages: 0,
+    aiMessages: 0,
+    systemMessages: 0,
+    memberMessageCounts: {},
+  };
+
+  let cursor = await index.openCursor(chatId);
+  while (cursor) {
+    const message = cursor.value as StoredChatMessage & {
+      role?: "user" | "ai" | "system";
+    };
+    const role =
+      message.role === "user" || message.role === "ai" || message.role === "system"
+        ? message.role
+        : message.sender === "user" || message.is_user === true
+          ? "user"
+          : message.sender === "assistant"
+            ? "ai"
+            : "system";
+
+    stats.totalMessages += 1;
+    if (role === "user") {
+      stats.userMessages += 1;
+    } else if (role === "ai") {
+      stats.aiMessages += 1;
+      const memberId = (message as any).senderCharacterId;
+      if (memberId) {
+        stats.memberMessageCounts[memberId] =
+          (stats.memberMessageCounts[memberId] || 0) + 1;
+      }
+    } else {
+      stats.systemMessages += 1;
+    }
+
+    cursor = await cursor.continue();
+  }
+
+  return stats;
 }
 
 /**

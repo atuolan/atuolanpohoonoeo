@@ -115,10 +115,14 @@ import {
   appendMessages,
   deleteMessage,
   loadMessagePage,
+  loadMessageStats,
   loadMessages,
   saveMessages,
 } from "@/storage/chatMessageStorage";
-import type { ChatMessageCursor } from "@/db/chatMessageStore";
+import type {
+  ChatMessageCursor,
+  ChatMessageStats,
+} from "@/db/chatMessageStore";
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import BlockService from "@/services/BlockService";
 import {
@@ -1763,6 +1767,7 @@ watch(
 
 // ===== 聊天資訊 =====
 const showChatInfoModal = ref(false);
+const chatInfoStats = ref<ChatMessageStats | null>(null);
 const showFakeTimePanel = ref(false);
 const timeJumpInput = ref("");
 const enablePhoneDecision = ref(true); // 默認開啟角色決定接電話
@@ -7166,10 +7171,22 @@ async function handleNAIConfigImport(event: Event) {
   }
 }
 
-// 打開聊天資訊面板
-function openChatInfo() {
+// 打開聊天資訊面板；統計從完整 IDB 聊天資料計算，不使用目前分頁窗口。
+async function openChatInfo() {
   console.log("[ChatScreen] 打開聊天資訊面板");
   showMoreMenu.value = false;
+
+  chatInfoStats.value = null;
+  const chatId = currentChatId.value;
+  if (chatId) {
+    try {
+      await saveChatImmediate();
+      chatInfoStats.value = await loadMessageStats(chatId);
+    } catch (error) {
+      console.warn("[ChatScreen] 載入聊天統計失敗，使用目前視窗資料:", error);
+    }
+  }
+
   showChatInfoModal.value = true;
 }
 
@@ -9542,7 +9559,8 @@ useChatCleanup({
         :group-avatar="groupMetadata?.groupAvatar"
         :group-members="groupMembersForInfo"
         :messages="messagesForInfo"
-        :created-at="messages[0]?.timestamp"
+        :stats="chatInfoStats"
+        :created-at="currentChatData?.createdAt || messages[0]?.timestamp"
         @close="showChatInfoModal = false"
         @open-settings="handleOpenGroupSettings"
       />

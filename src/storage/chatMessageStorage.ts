@@ -2,18 +2,27 @@ import {
   appendChatMessages,
   deleteChatMessage,
   deleteChatMessagesForChat,
+  getChatMessageStats,
   getChatMessageCount,
   loadChatMessages,
   loadChatMessagesPage,
   saveChatMessages,
   upsertChatMessages,
 } from "@/db/chatMessageStore";
-import type { ChatMessageCursor, ChatMessagePage } from "@/db/chatMessageStore";
+import type {
+  ChatMessageCursor,
+  ChatMessagePage,
+  ChatMessageStats,
+} from "@/db/chatMessageStore";
 import { recordDeletedEntity, scheduleSelfHostedAutoSync } from "@/services/selfHostedSyncState";
 import type { ChatMessage } from "@/types/chat";
 
 export async function loadMessages(chatId: string): Promise<ChatMessage[]> {
   return loadChatMessages(chatId);
+}
+
+export async function loadMessageStats(chatId: string): Promise<ChatMessageStats> {
+  return getChatMessageStats(chatId);
 }
 
 export async function loadMessagePage(
