@@ -25,6 +25,7 @@ export function useChatTheater(deps: {
   switchChatFile: (chatId: string) => Promise<void>;
   setFaceToFaceMode: (enabled: boolean) => void | Promise<void>;
   triggerAIResponse: (opts?: { theaterNudge?: boolean; theaterPhoneScript?: boolean }) => Promise<void>;
+  getCompleteMessages?: () => Promise<any[]>;
 }) {
   const showSmallTheaterModal = ref(false);
   const smallTheaterInput = ref("");
@@ -84,7 +85,10 @@ export function useChatTheater(deps: {
           ? settings.summaryIntervalTurn
           : Math.floor(settings.summaryIntervalMessage / 2);
 
-      const validMsgs = deps.messages.value.filter(
+      const sourceMessages = deps.getCompleteMessages
+        ? await deps.getCompleteMessages()
+        : deps.messages.value;
+      const validMsgs = sourceMessages.filter(
         (m: any) => m.role === "user" || m.role === "ai",
       );
       const takeMsgs = validMsgs.slice(-(roundCount * 2));
@@ -128,7 +132,10 @@ export function useChatTheater(deps: {
           settings.intervalMode === "turn"
             ? settings.summaryIntervalTurn
             : Math.floor(settings.summaryIntervalMessage / 2);
-        const validMsgs = deps.messages.value.filter(
+        const sourceMessages = deps.getCompleteMessages
+          ? await deps.getCompleteMessages()
+          : deps.messages.value;
+        const validMsgs = sourceMessages.filter(
           (m: any) => m.role === "user" || m.role === "ai",
         );
         const takeMsgs = validMsgs.slice(-(roundCount * 2));

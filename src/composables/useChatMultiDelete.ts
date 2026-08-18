@@ -26,6 +26,7 @@ export function useChatMultiDelete(deps: {
   saveChatImmediate: () => Promise<void>;
   convertToStorableMessage: (m: any, charName: string) => ChatMessage;
   switchChatFile: (chatId: string) => Promise<void>;
+  loadCompleteMessages?: () => Promise<any[]>;
   /** 好感度回滾回調：刪除訊息時嘗試回滾好感度快照 */
   onAffinityRollback?: (chatId: string, deletedMessageIds: string[]) => void;
 }) {
@@ -86,7 +87,10 @@ export function useChatMultiDelete(deps: {
     const chatData = deps.currentChatData.value;
     if (!chatData) return;
 
-    const msgIndex = deps.messages.value.findIndex(
+    const sourceMessages = deps.loadCompleteMessages
+      ? await deps.loadCompleteMessages()
+      : deps.messages.value;
+    const msgIndex = sourceMessages.findIndex(
       (m: any) => m.id === messageId,
     );
     if (msgIndex === -1) return;
@@ -95,7 +99,7 @@ export function useChatMultiDelete(deps: {
       deps.currentCharacter.value?.data?.name || deps.characterName;
     const rawBranchedMessages: ChatMessage[] = JSON.parse(
       JSON.stringify(
-        deps.messages.value.slice(0, msgIndex + 1).map((m: any) => {
+        sourceMessages.slice(0, msgIndex + 1).map((m: any) => {
           return deps.convertToStorableMessage(m, charName);
         }),
       ),
@@ -327,7 +331,11 @@ export function useChatMultiDelete(deps: {
         (m: any) => !idsToDelete.has(m.id),
       );
 
-      await Promise.all(orderedIds.map((id) => deleteMessage(id)));
+      await Promise.all(
+        orderedIds.map((id) =>
+          deleteMessage(id, { chatId: deps.currentChatId.value || undefined }),
+        ),
+      );
 
       // 嘗試回滾好感度到最早被刪訊息之前的快照
       const chatId = deps.currentChatId.value;

@@ -57,7 +57,8 @@ export async function deleteMessage(
     suppressSyncDeletionRecord?: boolean;
   },
 ): Promise<void> {
-  await deleteChatMessage(messageId);
+  const deleted = await deleteChatMessage(messageId, options?.chatId);
+  if (!deleted) return;
   if (options?.suppressSyncDeletionRecord) {
     return;
   }

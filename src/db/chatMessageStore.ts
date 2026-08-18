@@ -230,6 +230,15 @@ export async function saveChatMessages(
   // 寫入所有 incoming 訊息（put = insert or update）
   for (const msg of messages) {
     if (!msg || !msg.id) continue;
+    const existing = await store.get(msg.id);
+    if (existing?.chatId && existing.chatId !== chatId) {
+      console.warn("[chatMessageStore] skip cross-chat message overwrite", {
+        messageId: msg.id,
+        existingChatId: existing.chatId,
+        incomingChatId: chatId,
+      });
+      continue;
+    }
     await store.put({ ...msg, chatId } as StoredChatMessage);
   }
 
@@ -250,6 +259,15 @@ export async function upsertChatMessages(
   const store = tx.objectStore("chatMessages");
   for (const msg of messages) {
     if (!msg || !msg.id) continue;
+    const existing = await store.get(msg.id);
+    if (existing?.chatId && existing.chatId !== chatId) {
+      console.warn("[chatMessageStore] skip cross-chat message overwrite", {
+        messageId: msg.id,
+        existingChatId: existing.chatId,
+        incomingChatId: chatId,
+      });
+      continue;
+    }
     await store.put({ ...msg, chatId } as StoredChatMessage);
   }
   await tx.done;
@@ -270,6 +288,15 @@ export async function appendChatMessages(
 
   for (const msg of newMessages) {
     if (!msg || !msg.id) continue;
+    const existing = await store.get(msg.id);
+    if (existing?.chatId && existing.chatId !== chatId) {
+      console.warn("[chatMessageStore] skip cross-chat message overwrite", {
+        messageId: msg.id,
+        existingChatId: existing.chatId,
+        incomingChatId: chatId,
+      });
+      continue;
+    }
     await store.put({ ...msg, chatId } as StoredChatMessage);
   }
 
@@ -296,9 +323,17 @@ export async function deleteChatMessagesForChat(
 /**
  * 刪除指定的單條訊息
  */
-export async function deleteChatMessage(messageId: string): Promise<void> {
+export async function deleteChatMessage(
+  messageId: string,
+  chatId?: string,
+): Promise<boolean> {
   const db = await getDatabase();
+  const existing = await db.get("chatMessages", messageId);
+  if (!existing || (chatId && existing.chatId !== chatId)) {
+    return false;
+  }
   await db.delete("chatMessages", messageId);
+  return true;
 }
 
 /**

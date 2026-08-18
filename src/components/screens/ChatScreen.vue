@@ -201,6 +201,7 @@ import {
   hasMoreHistoryFromMetadata,
   shouldLoadOlderMessages,
 } from "@/utils/chatPaging";
+import { getTtsAudioRenderKey } from "@/utils/ttsRenderKey";
 import {
   computed,
   nextTick,
@@ -1302,8 +1303,16 @@ const {
   saveChatImmediate,
   convertToStorableMessage,
   switchChatFile,
+  loadCompleteMessages: async () => {
+    await ensureAllMessagesLoaded();
+    return getMessageHistory();
+  },
   onAffinityRollback,
 });
+
+async function deleteCurrentChatMessage(messageId: string): Promise<void> {
+  await deleteMessage(messageId, { chatId: currentChatId.value || undefined });
+}
 
 // ===== 批量截圖功能 =====
 const isSelectingForScreenshot = ref(false);
@@ -1412,7 +1421,7 @@ const {
   lastAIMessage,
   currentTurnId,
   saveChat,
-  deleteMessage,
+  deleteMessage: deleteCurrentChatMessage,
   triggerAIResponse,
 });
 
@@ -1489,6 +1498,10 @@ const {
     chatFaceToFaceMode.value = enabled;
   },
   triggerAIResponse,
+  getCompleteMessages: async () => {
+    await ensureAllMessagesLoaded();
+    return getMessageHistory();
+  },
 });
 
 // ===== 假時間 composable =====
@@ -2475,6 +2488,7 @@ const {
   getReplyToName,
 } = useChatMessageActions({
   messages,
+  currentChatId,
   chatFaceToFaceMode,
   displayCharacterName,
   userName: computed(() => userStore.currentName || "用戶"),
@@ -8936,6 +8950,7 @@ useChatCleanup({
           :key="message.id"
           v-memo="[
             message.content,
+            getTtsAudioRenderKey(message.ttsSegments, message.ttsAudioUrl),
             message.swipeId,
             message.roundSwipeId,
             message.isStreaming,

@@ -7,6 +7,7 @@ import { closeDatabase, getDatabase } from "@/db/database";
 
 import {
   appendChatMessages,
+  deleteChatMessage,
   loadChatMessages,
   loadChatMessagesPage,
   upsertChatMessages,
@@ -77,6 +78,45 @@ describe("chat message paging", () => {
       "edited in the UI window",
     );
     expect(saved[0].id).toBe(records[0].id);
+  });
+
+  it("does not let another chat overwrite an existing message id", async () => {
+    const original = message(1);
+    await appendChatMessages("chat-main", [original]);
+
+    await upsertChatMessages("chat-branch", [
+      { ...original, content: "edited in branch" },
+    ]);
+
+    expect(await loadChatMessages("chat-main")).toEqual([
+      { ...original, chatId: "chat-main" },
+    ]);
+    expect(await loadChatMessages("chat-branch")).toEqual([]);
+  });
+
+  it("does not let another chat delete an existing message id", async () => {
+    const original = message(2);
+    await appendChatMessages("chat-main", [original]);
+
+    await deleteChatMessage(original.id, "chat-branch");
+
+    expect(await loadChatMessages("chat-main")).toEqual([
+      { ...original, chatId: "chat-main" },
+    ]);
+  });
+
+  it("does not let append move an existing message to another chat", async () => {
+    const original = message(3);
+    await appendChatMessages("chat-main", [original]);
+
+    await appendChatMessages("chat-branch", [
+      { ...original, content: "appended in branch" },
+    ]);
+
+    expect(await loadChatMessages("chat-main")).toEqual([
+      { ...original, chatId: "chat-main" },
+    ]);
+    expect(await loadChatMessages("chat-branch")).toEqual([]);
   });
 
   it("pages records when legacy messages do not have createdAt", async () => {

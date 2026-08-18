@@ -5,6 +5,7 @@ import { extractModeRequestReason, getPreviewText } from "@/utils/chatScreenHelp
 
 export function useChatMessageActions(context: {
   messages: Ref<Message[]>;
+  currentChatId: Ref<string | null>;
   chatFaceToFaceMode: Ref<boolean>;
   displayCharacterName: ComputedRef<string>;
   userName: ComputedRef<string> | Ref<string>;
@@ -105,7 +106,7 @@ export function useChatMessageActions(context: {
   async function handleMessageDelete(id: string) {
     if (!confirm("確定要刪除這條訊息嗎？")) return;
     context.messages.value = context.messages.value.filter((m) => m.id !== id);
-    await deleteMessage(id);
+    await deleteMessage(id, { chatId: context.currentChatId.value || undefined });
     await context.saveChatImmediate();
   }
 
