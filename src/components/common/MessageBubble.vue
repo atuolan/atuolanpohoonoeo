@@ -593,6 +593,7 @@ const emit = defineEmits<{
   (e: "delete", id: string): void;
   (e: "copy", id: string): void;
   (e: "regenerate", id: string): void;
+  (e: "regenerateVoice", id: string): void;
   (e: "regenerateImage", id: string): void;
   (e: "swipe", id: string, direction: "prev" | "next"): void;
   (e: "roundSwipe", id: string, direction: "prev" | "next"): void;
@@ -2489,6 +2490,12 @@ function handleRegenerate() {
   if (menuOpenedAt && Date.now() - menuOpenedAt < 800) return;
   showMenu.value = false;
   emit("regenerate", props.id);
+}
+
+function handleRegenerateVoice() {
+  if (menuOpenedAt && Date.now() - menuOpenedAt < 800) return;
+  showMenu.value = false;
+  emit("regenerateVoice", props.id);
 }
 
 function handleFavoriteAudio() {
@@ -4697,6 +4704,15 @@ const showTextVoiceTranscript = ref(true);
                   />
                 </svg>
                 <span>重新生成</span>
+              </button>
+              <div class="menu-divider"></div>
+              <button class="menu-item" @click="handleRegenerateVoice">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Zm-5 8a5 5 0 0 0 10 0h2a7 7 0 0 1-6 6.92V21h3v2H8v-2h3v-3.08A7 7 0 0 1 5 11h2Z"
+                  />
+                </svg>
+                <span>重新生成語音</span>
               </button>
             </template>
             <div class="menu-divider"></div>

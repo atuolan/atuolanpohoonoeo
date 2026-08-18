@@ -1885,6 +1885,23 @@ const onMessageCopy = (...args: any[]) => handleMessageCopy(args[0] as string);
 const onMessageRegenerate = (...args: any[]) => handleRegenerate(args[0] as string);
 const onMessageRegenerateImage = (...args: any[]) =>
   handleRegenerateImage(args[0] as string);
+const onMessageRegenerateVoice = async (...args: any[]) => {
+  const result = await regenerateMessageTTS(args[0] as string);
+  if (result.success) {
+    showToast("語音已重新生成");
+    return;
+  }
+  if (result.reason === "duplicate") return;
+  if (result.reason === "disabled") {
+    showToast("請先開啟 MiniMax 語音生成");
+    return;
+  }
+  if (result.reason === "missing-api-key") {
+    showToast("請先設定 MiniMax API Key");
+    return;
+  }
+  showToast("語音生成失敗，請重試");
+};
 const onMessageSwipe = (...args: any[]) =>
   handleMessageSwipe(args[0] as string, args[1] as "prev" | "next");
 const onMessageRoundSwipe = (...args: any[]) =>
@@ -2462,6 +2479,7 @@ const {
   closeMinimaxTTSSettings,
   saveMinimaxTTSSettings,
   processMessageTTS,
+  regenerateMessageTTS,
 } = useChatTTS({
   messages,
   chatMinimaxTTSEnabled,
@@ -9269,6 +9287,7 @@ useChatCleanup({
             @delete="onMessageDelete"
             @copy="onMessageCopy"
             @regenerate="onMessageRegenerate"
+            @regenerate-voice="onMessageRegenerateVoice"
             @regenerate-image="onMessageRegenerateImage"
             @swipe="onMessageSwipe"
             @round-swipe="onMessageRoundSwipe"
