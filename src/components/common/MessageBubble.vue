@@ -617,6 +617,7 @@ const emit = defineEmits<{
   (e: "acceptOnlineModeRequest", id: string): void;
   (e: "rejectOnlineModeRequest", id: string): void;
   (e: "claimRedpacket", id: string): void;
+  (e: "favorite-audio", id: string): void;
 }>();
 
 // 群聊記錄 Modal 狀態
@@ -2490,6 +2491,12 @@ function handleRegenerate() {
   emit("regenerate", props.id);
 }
 
+function handleFavoriteAudio() {
+  if (menuOpenedAt && Date.now() - menuOpenedAt < 800) return;
+  showMenu.value = false;
+  emit("favorite-audio", props.id);
+}
+
 function handleRegenerateImage() {
   emit("regenerateImage", props.id);
 }
@@ -2605,6 +2612,15 @@ function onBubbleTextClick(e: MouseEvent) {
 // ===== 音頻播放相關 =====
 
 const isAudioMessage = computed(() => props.messageType === "audio");
+
+// 檢查消息是否包含可收藏的音頻內容
+const hasAudioContent = computed(() => {
+  return !!(
+    props.audioBlobId || // 用戶錄音
+    props.ttsAudioUrl || // TTS 語音（舊版）
+    props.ttsSegments?.length // TTS 語音（新版分段）
+  );
+});
 
 // 當前消息是否正在播放
 const isThisPlaying = computed(
@@ -4649,6 +4665,18 @@ const showTextVoiceTranscript = ref(true);
               </svg>
               <span>截圖</span>
             </button>
+            <!-- 收藏語音 (只在有音頻內容時顯示) -->
+            <template v-if="hasAudioContent">
+              <div class="menu-divider"></div>
+              <button class="menu-item" @click="handleFavoriteAudio">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"
+                  />
+                </svg>
+                <span>收藏語音</span>
+              </button>
+            </template>
             <template v-if="isUser">
               <div class="menu-divider"></div>
               <button class="menu-item" @click="handleRecallToggle">

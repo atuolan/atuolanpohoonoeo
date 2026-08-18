@@ -60,6 +60,7 @@ import MultiCharSetupModal from "@/components/modals/MultiCharSetupModal.vue";
 import PhoneContactPickerModal from "@/components/modals/PhoneContactPickerModal.vue";
 import PomodoroCertModal from "@/components/modals/PomodoroCertModal.vue";
 import AnnouncementModal from "@/components/modals/AnnouncementModal.vue";
+import FavoriteAudioModal from "@/components/modals/FavoriteAudioModal.vue";
 import {
   loadPendingAnnouncements,
   acknowledgeAnnouncement,
@@ -887,6 +888,9 @@ const multiCharSetupCharacterId = ref("");
 // ===== 角色庫開聊天選擇彈窗 =====
 const showChatPickerModal = ref(false);
 const chatPickerCharacterId = ref("");
+
+// ===== 收藏語音管理彈窗 =====
+const showFavoriteAudioModal = ref(false);
 const chatPickerChats = ref<Chat[]>([]);
 const chatPickerGreetingIndex = ref(0);
 /** 角色庫聊天選擇：取得該角色所有開場白 */
@@ -3366,6 +3370,12 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
         <span class="gh-global-progress-text">{{ ghBackupDisplayText }}</span>
       </div>
     </Teleport>
+
+    <!-- 收藏語音管理彈窗 -->
+    <FavoriteAudioModal
+      :show="showFavoriteAudioModal"
+      @close="showFavoriteAudioModal = false"
+    />
   </div>
 </template>
 

@@ -757,3 +757,170 @@ export async function deleteAudioBlobsByRefs(refIds: string[]): Promise<void> {
   await Promise.all(refIds.map((id) => tx.store.delete(id)));
   await tx.done;
 }
+
+// ============================================================
+// 收藏語音操作
+// ============================================================
+
+/**
+ * 獲取所有收藏語音
+ */
+export async function getAllFavoriteAudios(): Promise<import("@/types/favoriteAudio").FavoriteAudio[]> {
+  const db = await getDatabase();
+  return db.getAll("favoriteAudios");
+}
+
+/**
+ * 根據 ID 獲取收藏語音
+ */
+export async function getFavoriteAudioById(
+  id: string,
+): Promise<import("@/types/favoriteAudio").FavoriteAudio | undefined> {
+  const db = await getDatabase();
+  return db.get("favoriteAudios", id);
+}
+
+/**
+ * 根據角色 ID 獲取收藏語音
+ */
+export async function getFavoriteAudiosByCharacter(
+  characterId: string,
+): Promise<import("@/types/favoriteAudio").FavoriteAudio[]> {
+  const db = await getDatabase();
+  return db.getAllFromIndex("favoriteAudios", "by-character", characterId);
+}
+
+/**
+ * 根據聊天 ID 獲取收藏語音
+ */
+export async function getFavoriteAudiosByChat(
+  chatId: string,
+): Promise<import("@/types/favoriteAudio").FavoriteAudio[]> {
+  const db = await getDatabase();
+  return db.getAllFromIndex("favoriteAudios", "by-chat", chatId);
+}
+
+/**
+ * 根據語音類型獲取收藏語音
+ */
+export async function getFavoriteAudiosByType(
+  audioType: "user" | "tts" | "phone",
+): Promise<import("@/types/favoriteAudio").FavoriteAudio[]> {
+  const db = await getDatabase();
+  return db.getAllFromIndex("favoriteAudios", "by-audioType", audioType);
+}
+
+/**
+ * 保存收藏語音
+ */
+export async function saveFavoriteAudio(
+  audio: import("@/types/favoriteAudio").FavoriteAudio,
+): Promise<void> {
+  const db = await getDatabase();
+  await db.put("favoriteAudios", audio);
+}
+
+/**
+ * 刪除收藏語音
+ */
+export async function deleteFavoriteAudio(id: string): Promise<void> {
+  const db = await getDatabase();
+  await db.delete("favoriteAudios", id);
+}
+
+/**
+ * 檢查消息是否已收藏
+ */
+export async function isFavoriteAudio(
+  chatId: string,
+  messageId: string,
+  segmentIndex?: number,
+): Promise<boolean> {
+  const db = await getDatabase();
+  const audios = await db.getAllFromIndex("favoriteAudios", "by-chat", chatId);
+  return audios.some(
+    (audio) =>
+      audio.messageId === messageId &&
+      (segmentIndex === undefined || audio.ttsSegmentIndex === segmentIndex),
+  );
+}
+
+/**
+ * 更新收藏語音播放統計
+ */
+export async function updateFavoriteAudioPlayStats(id: string): Promise<void> {
+  const db = await getDatabase();
+  const audio = await db.get("favoriteAudios", id);
+  if (audio) {
+    audio.playCount = (audio.playCount || 0) + 1;
+    audio.lastPlayedAt = Date.now();
+    await db.put("favoriteAudios", audio);
+  }
+}
+
+// ============================================================
+// 收藏語音分組操作
+// ============================================================
+
+/**
+ * 獲取所有收藏語音分組
+ */
+export async function getAllFavoriteAudioGroups(): Promise<import("@/types/favoriteAudio").FavoriteAudioGroup[]> {
+  const db = await getDatabase();
+  return db.getAll("favoriteAudioGroups");
+}
+
+/**
+ * 根據 ID 獲取收藏語音分組
+ */
+export async function getFavoriteAudioGroupById(
+  id: string,
+): Promise<import("@/types/favoriteAudio").FavoriteAudioGroup | undefined> {
+  const db = await getDatabase();
+  return db.get("favoriteAudioGroups", id);
+}
+
+/**
+ * 保存收藏語音分組
+ */
+export async function saveFavoriteAudioGroup(
+  group: import("@/types/favoriteAudio").FavoriteAudioGroup,
+): Promise<void> {
+  const db = await getDatabase();
+  group.updatedAt = Date.now();
+  await db.put("favoriteAudioGroups", group);
+}
+
+/**
+ * 刪除收藏語音分組
+ */
+export async function deleteFavoriteAudioGroup(id: string): Promise<void> {
+  const db = await getDatabase();
+  await db.delete("favoriteAudioGroups", id);
+}
+
+/**
+ * 添加語音到分組
+ */
+export async function addAudioToGroup(groupId: string, audioId: string): Promise<void> {
+  const db = await getDatabase();
+  const group = await db.get("favoriteAudioGroups", groupId);
+  if (group && !group.audioIds.includes(audioId)) {
+    group.audioIds.push(audioId);
+    group.updatedAt = Date.now();
+    await db.put("favoriteAudioGroups", group);
+  }
+}
+
+/**
+ * 從分組中移除語音
+ */
+export async function removeAudioFromGroup(groupId: string, audioId: string): Promise<void> {
+  const db = await getDatabase();
+  const group = await db.get("favoriteAudioGroups", groupId);
+  if (group) {
+    group.audioIds = group.audioIds.filter((id) => id !== audioId);
+    group.updatedAt = Date.now();
+    await db.put("favoriteAudioGroups", group);
+  }
+}

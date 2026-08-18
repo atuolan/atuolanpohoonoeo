@@ -45,6 +45,8 @@ export * from "./selfHostedSync";
 export * from "./pomodoro";
 // 封鎖系統類型
 export * from "./block";
+// 收藏語音類型
+export * from "./favoriteAudio";
 // ===== 小組件類型 =====
 export type WidgetType =
   | "clock"

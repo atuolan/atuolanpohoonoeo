@@ -20,6 +20,7 @@ import AISummaryPanel from "@/components/modals/AISummaryPanel.vue";
 import AffinityPanel from "@/components/modals/AffinityPanel.vue";
 import ChatInfoModal from "@/components/modals/ChatInfoModal.vue";
 import DiaryViewModal from "@/components/modals/DiaryViewModal.vue";
+import FavoriteAudioModal from "@/components/modals/FavoriteAudioModal.vue";
 import GameScorePickerModal from "@/components/modals/GameScorePickerModal.vue";
 import GroupCallModal from "@/components/modals/GroupCallModal.vue";
 import IncomingCallModal from "@/components/modals/IncomingCallModal.vue";
@@ -1091,6 +1092,9 @@ let isClosingChatDetails = false;
 // 顯示聊天變量設定面板
 const showChatVarsPanel = ref(false);
 
+// 顯示收藏語音管理面板
+const showFavoriteAudioModal = ref(false);
+
 // Rail 收合狀態（手機端頂欄按鈕收合）
 const showRail = ref(false);
 
@@ -1913,6 +1917,44 @@ const onMessageAcceptOnlineModeRequest = (...args: any[]) =>
   handleAcceptOnlineModeRequest(args[0] as string);
 const onMessageRejectOnlineModeRequest = (...args: any[]) =>
   handleRejectOnlineModeRequest(args[0] as string);
+
+// ===== 收藏語音處理 =====
+const onMessageFavoriteAudio = async (messageId: string) => {
+  const message = messages.value.find(m => m.id === messageId);
+  if (!message) return;
+
+  try {
+    const { useFavoriteAudio } = await import('@/composables/useFavoriteAudio');
+    const { favoriteUserAudio, favoriteTTSAudio } = useFavoriteAudio();
+
+    // 判斷語音類型並收藏
+    if (message.audioBlobId) {
+      // 用戶錄音
+      await favoriteUserAudio(
+        message,
+        currentChatId.value,
+        props.characterId,
+        props.characterName,
+        displayAvatar.value,
+      );
+    } else if (message.ttsSegments || message.ttsAudioUrl) {
+      // TTS 語音
+      await favoriteTTSAudio(
+        message,
+        currentChatId.value,
+        props.characterId,
+        props.characterName,
+        displayAvatar.value,
+      );
+    }
+
+    // 顯示成功提示
+    showToast('語音已收藏 ⭐', 'success');
+  } catch (error) {
+    console.error('收藏語音失敗:', error);
+    showToast('收藏失敗，請重試', 'error');
+  }
+};
 
 // ===== 紅包 composable =====
 const {
@@ -8759,6 +8801,7 @@ useChatCleanup({
           @clear-chat-history="clearChatHistory"
           @open-proactive-message-settings="showProactiveMessageSettings = true"
           @open-chat-vars="showChatVarsPanel = true"
+          @open-favorite-audio="showFavoriteAudioModal = true"
           @update-group-name="handleDetailsUpdateGroupName"
           @change-group-avatar="handleDetailsChangeGroupAvatar"
           @remove-group-avatar="handleDetailsRemoveGroupAvatar"
@@ -8785,6 +8828,18 @@ useChatCleanup({
           :is-multi-char-card="!!groupMetadata?.isMultiCharCard"
           :face-to-face-mode="chatFaceToFaceMode"
           @close="showChatVarsPanel = false"
+        />
+      </Transition>
+    </Teleport>
+
+    <!-- 收藏語音管理面板 -->
+    <Teleport to="body">
+      <Transition name="slide-up">
+        <FavoriteAudioModal
+          v-if="showFavoriteAudioModal"
+          :show="showFavoriteAudioModal"
+          :character-id="props.characterId"
+          @close="showFavoriteAudioModal = false"
         />
       </Transition>
     </Teleport>
@@ -9235,6 +9290,7 @@ useChatCleanup({
             @accept-online-mode-request="onMessageAcceptOnlineModeRequest"
             @reject-online-mode-request="onMessageRejectOnlineModeRequest"
             @claim-redpacket="onMessageClaimRedpacket"
+            @favorite-audio="onMessageFavoriteAudio"
           />
           <!-- 封鎖期間訊息的驚嘆號指示器（獨立行，在訊息下方顯示） -->
           <div

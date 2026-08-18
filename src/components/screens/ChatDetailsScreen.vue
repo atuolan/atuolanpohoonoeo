@@ -135,6 +135,7 @@ const emit = defineEmits<{
   "clear-chat-history": [];
   "open-proactive-message-settings": [];
   "open-chat-vars": [];
+  "open-favorite-audio": [];
   "update-group-name": [name: string];
   "change-group-avatar": [dataUrl: string];
   "remove-group-avatar": [];
@@ -467,6 +468,9 @@ function handleAction(action: string) {
     case "clear":
       emit("clear-chat-history");
       break;
+    case "favorite-audio":
+      emit("open-favorite-audio");
+      break;
   }
 }
 </script>
@@ -562,7 +566,7 @@ function handleAction(action: string) {
         </div>
         <p class="profile-subtitle">{{ totalMemberCount }} 位成員</p>
 
-        <!-- 快捷操作列：搜尋 / 加成員 / 清空 -->
+        <!-- 快捷操作列：搜尋 / 加成員 / 收藏語音 / 清空 -->
         <div class="quick-actions">
           <button class="quick-action" @click="handleAction('search')">
             <span class="quick-action-icon">
@@ -583,6 +587,17 @@ function handleAction(action: string) {
               </svg>
             </span>
             <span class="quick-action-label">{{ isMultiCharCard ? '子角色' : '加成員' }}</span>
+          </button>
+          <button class="quick-action quick-action--favorite" @click="handleAction('favorite-audio')" title="開啟收藏語音">
+            <span class="quick-action-icon quick-action-icon--favorite">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 13a8 8 0 0 1 16 0" />
+                <path d="M4 13v3a2 2 0 0 0 2 2h1v-6H6a2 2 0 0 0-2 2Z" />
+                <path d="M20 13v3a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 1Z" />
+                <path d="m16.5 4.5.6 1.2 1.3.2-.95.9.22 1.3-1.17-.62-1.17.62.22-1.3-.95-.9 1.3-.2Z" />
+              </svg>
+            </span>
+            <span class="quick-action-label">收藏語音</span>
           </button>
           <button class="quick-action quick-action--danger" @click="handleAction('clear')">
             <span class="quick-action-icon">
@@ -1080,6 +1095,17 @@ function handleAction(action: string) {
                 </svg>
               </div>
               <span class="quick-label">頭盔TA</span>
+            </button>
+            <button class="quick-item quick-item--favorite" @click="handleAction('favorite-audio')" title="開啟收藏語音">
+              <div class="quick-icon quick-icon--favorite">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 13a8 8 0 0 1 16 0" />
+                  <path d="M4 13v3a2 2 0 0 0 2 2h1v-6H6a2 2 0 0 0-2 2Z" />
+                  <path d="M20 13v3a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 1Z" />
+                  <path d="m16.5 4.5.6 1.2 1.3.2-.95.9.22 1.3-1.17-.62-1.17.62.22-1.3-.95-.9 1.3-.2Z" />
+                </svg>
+              </div>
+              <span class="quick-label">收藏語音</span>
             </button>
             <button class="quick-item" @click="handleAction('settings')">
               <div class="quick-icon">
@@ -1609,6 +1635,25 @@ function handleAction(action: string) {
     background: var(--color-error, #b3261e);
     color: #ffffff;
     box-shadow: 0 10px 22px color-mix(in srgb, var(--color-error, #b3261e) 28%, transparent);
+  }
+}
+
+.quick-action--favorite {
+  .quick-action-icon {
+    background: color-mix(in srgb, #e3a72f 16%, var(--color-surface));
+    color: #a86b00;
+    box-shadow: 0 4px 12px rgba(190, 125, 0, 0.18);
+  }
+
+  .quick-action-label {
+    color: #9a6200;
+    font-weight: 600;
+  }
+
+  &:hover .quick-action-icon {
+    background: #d99a1f;
+    color: #ffffff;
+    box-shadow: 0 10px 22px rgba(190, 125, 0, 0.38);
   }
 }
 
@@ -2268,7 +2313,7 @@ function handleAction(action: string) {
   color: var(--color-text-secondary);
 }
 
-/* === 快捷導航：3+2 錯位蜂窩（單人模式） === */
+/* === 快捷導航：3+3 兩排蜂窩（單人模式） === */
 .quick-honeycomb {
   position: relative;
   z-index: 1;
@@ -2319,9 +2364,10 @@ function handleAction(action: string) {
   &:hover .quick-icon {
     background: var(--color-primary, #00723a);
     color: var(--color-on-primary, #ffffff);
-    box-shadow:
-      0 10px 22px color-mix(in srgb, var(--color-primary, #00723a) 28%, transparent),
-      0 2px 6px rgba(0, 0, 0, 0.05);
+    filter: drop-shadow(
+      0 9px 16px
+      color-mix(in srgb, var(--color-primary, #00723a) 30%, transparent)
+    );
   }
 }
 
@@ -2335,12 +2381,12 @@ function handleAction(action: string) {
   clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
   background: color-mix(in srgb, var(--color-surface) 95%, transparent);
   color: var(--color-primary, #00723a);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.08));
   transition:
-    background-color 0.3s ease,
-    color 0.3s ease,
-    box-shadow 0.4s ease,
-    transform 0.45s cubic-bezier(0.34, 1.32, 0.64, 1);
+    background-color 0.25s ease,
+    color 0.25s ease,
+    filter 0.3s ease,
+    transform 0.3s ease;
 
   svg {
     width: 24px;
@@ -2376,6 +2422,26 @@ function handleAction(action: string) {
     width: 30px;
     height: 30px;
   }
+}
+
+.quick-item--favorite {
+  .quick-label {
+    color: #9a6200;
+    font-weight: 600;
+  }
+
+  &:hover .quick-icon {
+    background: #d99a1f;
+    color: #ffffff;
+    transform: translateY(-2px) scale(1.04);
+    filter: drop-shadow(0 11px 20px rgba(190, 125, 0, 0.38));
+  }
+}
+
+.quick-icon--favorite {
+  background: color-mix(in srgb, #e3a72f 16%, var(--color-surface));
+  color: #a86b00;
+  filter: drop-shadow(0 7px 13px rgba(190, 125, 0, 0.24));
 }
 
 .quick-label {

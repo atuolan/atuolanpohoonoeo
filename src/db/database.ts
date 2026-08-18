@@ -332,6 +332,24 @@ interface AguaphoneDB extends DBSchema {
     key: string; // scopeKey: char__${characterId} 或 group__${chatId}
     value: PromptOverrideRecord;
   };
+  // === v30 新增：收藏語音 ===
+  favoriteAudios: {
+    key: string;
+    value: import("@/types/favoriteAudio").FavoriteAudio;
+    indexes: {
+      "by-character": string;
+      "by-chat": string;
+      "by-created": number;
+      "by-audioType": string;
+    };
+  };
+  favoriteAudioGroups: {
+    key: string;
+    value: import("@/types/favoriteAudio").FavoriteAudioGroup;
+    indexes: {
+      "by-updated": number;
+    };
+  };
 }
 
 // ============================================================
@@ -339,9 +357,8 @@ interface AguaphoneDB extends DBSchema {
   // ============================================================
   
   const DB_NAME = "aguaphone-db";
-  // v29 repairs installations that reached v28 before the paging index was
-  // successfully created. The upgrade callback is intentionally idempotent.
-  const DB_VERSION = 29;
+  // v30 新增收藏語音功能
+  const DB_VERSION = 30;
   
   // Store 名稱常量
 export const DB_STORES = {
@@ -376,6 +393,8 @@ export const DB_STORES = {
   CHAT_MESSAGES: "chatMessages",
   ANNOUNCEMENT_ACKS: "announcementAcks",
   PROMPT_OVERRIDES: "promptOverrides",
+  FAVORITE_AUDIOS: "favoriteAudios",
+  FAVORITE_AUDIO_GROUPS: "favoriteAudioGroups",
 } as const;
 
 const SELF_HOSTED_SYNC_SNAPSHOT_STORES = new Set<string>([
@@ -907,6 +926,27 @@ export async function getDatabase(): Promise<IDBPDatabase<AguaphoneDB>> {
       // 建立 promptOverrides 表（提示詞覆蓋按角色卡 / 群聊作用域儲存）
       if (!db.objectStoreNames.contains("promptOverrides")) {
         db.createObjectStore("promptOverrides", { keyPath: "scopeKey" });
+      }
+
+      // === v30 新增：收藏語音 ===
+
+      // 建立 favoriteAudios 表
+      if (!db.objectStoreNames.contains("favoriteAudios")) {
+        const favoriteAudiosStore = db.createObjectStore("favoriteAudios", {
+          keyPath: "id",
+        });
+        favoriteAudiosStore.createIndex("by-character", "characterId");
+        favoriteAudiosStore.createIndex("by-chat", "chatId");
+        favoriteAudiosStore.createIndex("by-created", "createdAt");
+        favoriteAudiosStore.createIndex("by-audioType", "audioType");
+      }
+
+      // 建立 favoriteAudioGroups 表
+      if (!db.objectStoreNames.contains("favoriteAudioGroups")) {
+        const favoriteAudioGroupsStore = db.createObjectStore("favoriteAudioGroups", {
+          keyPath: "id",
+        });
+        favoriteAudioGroupsStore.createIndex("by-updated", "updatedAt");
       }
     },
     blocked() {
