@@ -117,6 +117,8 @@ export function useChatTTS(context: {
       text: s.text,
       clean: s.clean,
     }));
+    // 清除舊版單一音頻欄位，避免部分分段成功時殘留過期 URL。
+    context.messages.value[idx].ttsAudioUrl = undefined;
 
     // 異步逐句合成語音
     try {

@@ -108,4 +108,23 @@ describe("useChatTTS manual regeneration", () => {
       "data:audio/mp3;base64,old",
     );
   });
+
+  it("clears the legacy audio URL while synthesizing", async () => {
+    const message = {
+      ...aiMessage,
+      ttsAudioUrl: "data:audio/mp3;base64,old",
+    };
+    vi.mocked(synthesizeSpeech).mockImplementation(async () => {
+      expect(message.ttsAudioUrl).toBeUndefined();
+      return { success: false, error: "failed" };
+    });
+    const context = createContext([message]);
+    const { regenerateMessageTTS } = useChatTTS(context);
+
+    await expect(regenerateMessageTTS(message.id)).resolves.toEqual({
+      success: false,
+      reason: "synthesis-failed",
+    });
+    expect(message.ttsAudioUrl).toBe("data:audio/mp3;base64,old");
+  });
 });
