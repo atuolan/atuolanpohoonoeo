@@ -6,6 +6,10 @@ import {
   hasTTSTags,
   parseTTSSegments,
 } from "@/utils/ttsTagCleaner";
+import {
+  canRegenerateMessageTTS,
+  getMessageTTSSource,
+} from "@/utils/messageTTS";
 
 export interface ChatMinimaxTTSOverride {
   voiceId?: string;
@@ -13,6 +17,19 @@ export interface ChatMinimaxTTSOverride {
   pitch?: number;
   emotion?: string;
 }
+
+export type MessageTTSRegenerationResult =
+  | { success: true }
+  | {
+      success: false;
+      reason:
+        | "disabled"
+        | "missing-api-key"
+        | "not-found"
+        | "invalid-message"
+        | "duplicate"
+        | "synthesis-failed";
+    };
 
 export function useChatTTS(context: {
   messages: Ref<Message[]>;
@@ -23,6 +40,7 @@ export function useChatTTS(context: {
 }) {
   const chatMinimaxTTSOverride = ref<ChatMinimaxTTSOverride>({});
   const showMinimaxTTSSettingsModal = ref(false);
+  const regeneratingMessageIds = new Set<string>();
 
   async function toggleMinimaxTTS() {
     context.chatMinimaxTTSEnabled.value = !context.chatMinimaxTTSEnabled.value;
@@ -61,14 +79,14 @@ export function useChatTTS(context: {
     messageId: string,
     content: string,
     options?: { force?: boolean },
-  ) {
-    if (!context.chatMinimaxTTSEnabled.value) return;
-    if (!context.settingsStore.minimaxTTS.apiKey) return;
-    if (!options?.force && !hasTTSTags(content)) return;
+  ): Promise<boolean> {
+    if (!context.chatMinimaxTTSEnabled.value) return false;
+    if (!context.settingsStore.minimaxTTS.apiKey) return false;
+    if (!options?.force && !hasTTSTags(content)) return false;
 
     // 找到訊息並保存原始文字
     const idx = context.messages.value.findIndex((m) => m.id === messageId);
-    if (idx === -1) return;
+    if (idx === -1) return false;
 
     // 保存帶 TTS 標記的原始文字（renderedContent 會用來注入 🔊 按鈕）
     context.messages.value[idx].ttsRawContent = content;
@@ -90,7 +108,7 @@ export function useChatTTS(context: {
             },
           ]
       : parseTTSSegments(content);
-    if (segments.length === 0) return;
+    if (segments.length === 0) return false;
 
     // 寫入段落（先不帶 audioUrl）
     context.messages.value[idx].ttsSegments = segments.map((s) => ({
@@ -170,10 +188,63 @@ export function useChatTTS(context: {
       }
 
       if (anySuccess) {
-        context.saveChat();
+        await context.saveChat();
       }
+      return anySuccess;
     } catch (error) {
       console.error("[MiniMax TTS] 錯誤:", error);
+      return false;
+    }
+  }
+
+  async function regenerateMessageTTS(
+    messageId: string,
+  ): Promise<MessageTTSRegenerationResult> {
+    if (!context.chatMinimaxTTSEnabled.value) {
+      return { success: false, reason: "disabled" };
+    }
+    if (!context.settingsStore.minimaxTTS.apiKey) {
+      return { success: false, reason: "missing-api-key" };
+    }
+    if (regeneratingMessageIds.has(messageId)) {
+      return { success: false, reason: "duplicate" };
+    }
+
+    const message = context.messages.value.find((m) => m.id === messageId);
+    if (!message) {
+      return { success: false, reason: "not-found" };
+    }
+
+    const source = getMessageTTSSource(message);
+    if (
+      !canRegenerateMessageTTS({
+        role: message.role,
+        content: source,
+      })
+    ) {
+      return { success: false, reason: "invalid-message" };
+    }
+
+    const previousTTS = {
+      ttsRawContent: message.ttsRawContent,
+      ttsAudioUrl: message.ttsAudioUrl,
+      ttsSegments: message.ttsSegments?.map((segment) => ({ ...segment })),
+    };
+
+    regeneratingMessageIds.add(messageId);
+    try {
+      const success = await processMessageTTS(messageId, source, {
+        force: true,
+      });
+      if (!success) {
+        message.ttsRawContent = previousTTS.ttsRawContent;
+        message.ttsAudioUrl = previousTTS.ttsAudioUrl;
+        message.ttsSegments = previousTTS.ttsSegments;
+        return { success: false, reason: "synthesis-failed" };
+      }
+      return { success: true };
+    } finally {
+      regeneratingMessageIds.delete(messageId);
     }
   }
 
@@ -185,5 +256,6 @@ export function useChatTTS(context: {
     closeMinimaxTTSSettings,
     saveMinimaxTTSSettings,
     processMessageTTS,
+    regenerateMessageTTS,
   };
 }
