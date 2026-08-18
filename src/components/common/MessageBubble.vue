@@ -63,6 +63,7 @@ import { useSettingsStore, useStickerStore } from "@/stores";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
 import type { WaimaiOrderSnapshot } from "@/types/chat";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
+import { injectTTSInlineButtons } from "@/utils/ttsInlineButtons";
 import { marked } from "marked";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import GroupCallHistoryModal from "../modals/GroupCallHistoryModal.vue";
@@ -1406,18 +1407,7 @@ const renderedContent = computed(() => {
     );
 
     if (props.ttsSegments && props.ttsSegments.length > 0) {
-      // 統一單次替換：所有 [emotion=...] 按出現順序對應 ttsSegments
-      // 不論是引號內還是句末裸露，都一視同仁
-      let segIdx = 0;
-      html = html.replace(/\[emotion=[^\]]*\]/g, () => {
-        const seg = props.ttsSegments?.[segIdx];
-        // 只要有分段就顯示按鈕（有無 audioUrl 都先渲染，點擊時再判斷）
-        const btnHtml = seg
-          ? `<span class="tts-inline-btn" data-tts-idx="${segIdx}" title="${seg.emotion || ""}" role="button" aria-label="播放語音"${seg.audioUrl ? "" : ' style="opacity:0.3;cursor:default"'}><svg class="tts-inline-btn__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5.6v12.8c0 .7.8 1.1 1.4.7l9.2-6.4c.5-.3.5-1.1 0-1.4L9.4 4.9c-.6-.4-1.4 0-1.4.7Z" /></svg></span>`
-          : "";
-        segIdx++;
-        return btnHtml;
-      });
+      html = injectTTSInlineButtons(html, props.ttsSegments);
       // 清理其他殘留的 TTS 標記
       html = cleanTTSTags(html);
     } else {
@@ -2779,15 +2769,7 @@ const renderedVoiceTranscript = computed(() => {
   );
   if (!raw) return "";
   if (props.ttsSegments && props.ttsSegments.length > 0) {
-    let segIdx = 0;
-    let html = raw.replace(/\[emotion=[^\]]*\]/g, () => {
-      const seg = props.ttsSegments?.[segIdx];
-      const btnHtml = seg
-        ? `<span class="tts-inline-btn" data-tts-idx="${segIdx}" title="${seg.emotion || ""}" role="button" aria-label="播放語音"${seg.audioUrl ? "" : ' style="opacity:0.3;cursor:default"'}><svg class="tts-inline-btn__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5.6v12.8c0 .7.8 1.1 1.4.7l9.2-6.4c.5-.3.5-1.1 0-1.4L9.4 4.9c-.6-.4-1.4 0-1.4.7Z" /></svg></span>`
-        : "";
-      segIdx++;
-      return btnHtml;
-    });
+    let html = injectTTSInlineButtons(raw, props.ttsSegments);
     html = cleanTTSTags(html);
     return html;
   }
