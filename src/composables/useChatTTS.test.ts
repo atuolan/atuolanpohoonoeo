@@ -77,6 +77,74 @@ describe("useChatTTS manual regeneration", () => {
     );
   });
 
+  it("does not send stale extra words from a previous raw TTS source", async () => {
+    vi.mocked(synthesizeSpeech).mockResolvedValue({
+      success: true,
+      audioUrl: "data:audio/mp3;base64,new",
+    });
+    const message = {
+      ...aiMessage,
+      content: "目前氣泡內容",
+      ttsRawContent: "目前氣泡內容，聽懂了嗎？",
+    };
+    const context = createContext([message]);
+    const { regenerateMessageTTS } = useChatTTS(context);
+
+    await expect(regenerateMessageTTS(message.id)).resolves.toEqual({
+      success: true,
+    });
+    expect(synthesizeSpeech).toHaveBeenCalledWith(
+      "目前气泡内容",
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("removes the audio bubble prefix without dropping raw tone tags", async () => {
+    vi.mocked(synthesizeSpeech).mockResolvedValue({
+      success: true,
+      audioUrl: "data:audio/mp3;base64,new",
+    });
+    const message = {
+      ...aiMessage,
+      content: "[語音訊息] 你好",
+      ttsRawContent: "你好(laughs)",
+    };
+    const context = createContext([message]);
+    const { regenerateMessageTTS } = useChatTTS(context);
+
+    await expect(regenerateMessageTTS(message.id)).resolves.toEqual({
+      success: true,
+    });
+    expect(synthesizeSpeech).toHaveBeenCalledWith(
+      "你好(laughs)",
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("removes HTML and Chinese translation when regeneration selects foreign", async () => {
+    vi.mocked(synthesizeSpeech).mockResolvedValue({
+      success: true,
+      audioUrl: "data:audio/mp3;base64,new",
+    });
+    const message = {
+      ...aiMessage,
+      content: "How are you?<br>你最近好嗎？",
+    };
+    const context = createContext([message]);
+    const { regenerateMessageTTS } = useChatTTS(context);
+
+    await expect(regenerateMessageTTS(message.id, "foreign")).resolves.toEqual({
+      success: true,
+    });
+    expect(synthesizeSpeech).toHaveBeenCalledWith(
+      "How are you?",
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
   it("restores the previous audio when regeneration fails", async () => {
     const message = {
       ...aiMessage,

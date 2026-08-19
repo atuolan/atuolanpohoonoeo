@@ -207,6 +207,7 @@ import {
   shouldLoadOlderMessages,
 } from "@/utils/chatPaging";
 import { getTtsAudioRenderKey } from "@/utils/ttsRenderKey";
+import type { TTSLanguageMode } from "@/utils/ttsTextSelector";
 import {
   computed,
   nextTick,
@@ -1781,6 +1782,8 @@ const chatCharNarrativePerson = ref<"first" | "third">("first"); // {{char}} 敘
 const chatUserNarrativePerson = ref<"first" | "second" | "third">("second"); // {{user}} 敘事人稱
 const chatEnableRealTimeAwareness = ref(true); // 感知現實時間（默認開啟）
 const chatMinimaxTTSEnabled = ref(false); // 聊天專屬 MiniMax TTS（默認關閉）
+const showTTSRegenerationChoiceModal = ref(false);
+const pendingTTSRegenerationMessageId = ref<string | null>(null);
 const chatImageSearchEnabled = ref(true);
 const chatSpeakerMode = ref<"user" | "char" | "system">("user");
 const showSpeakerModePopover = ref(false);
@@ -1886,7 +1889,30 @@ const onMessageRegenerate = (...args: any[]) => handleRegenerate(args[0] as stri
 const onMessageRegenerateImage = (...args: any[]) =>
   handleRegenerateImage(args[0] as string);
 const onMessageRegenerateVoice = async (...args: any[]) => {
-  const result = await regenerateMessageTTS(args[0] as string);
+  const messageId = args[0] as string;
+  if (!chatMinimaxTTSEnabled.value) {
+    showToast("請先開啟 MiniMax 語音生成");
+    return;
+  }
+  if (!settingsStore.minimaxTTS.apiKey) {
+    showToast("請先設定 MiniMax API Key");
+    return;
+  }
+  pendingTTSRegenerationMessageId.value = messageId;
+  showTTSRegenerationChoiceModal.value = true;
+};
+
+const cancelTTSRegenerationChoice = () => {
+  showTTSRegenerationChoiceModal.value = false;
+  pendingTTSRegenerationMessageId.value = null;
+};
+
+const confirmTTSRegeneration = async (languageMode: TTSLanguageMode) => {
+  const messageId = pendingTTSRegenerationMessageId.value;
+  cancelTTSRegenerationChoice();
+  if (!messageId) return;
+
+  const result = await regenerateMessageTTS(messageId, languageMode);
   if (result.success) {
     showToast("語音已重新生成");
     return;
@@ -7386,9 +7412,6 @@ async function loadOrCreateChat(overrideChatId?: string) {
             : undefined,
         });
         messages.value = uiMessages;
-        // The init composable can run before the first paged render exists.
-        // Re-arm the sentinel after its v-if condition becomes reactive.
-        setupLoadMoreObserver();
         chatPerfMark("loadOrCreate:messagesAssigned", {
           count: messages.value.length,
         });
@@ -8557,6 +8580,7 @@ const { initializeChatScreen } = useChatInit({
   startPendingCallChecker,
   notificationStore,
   setupLoadMoreObserver,
+  scrollToBottom,
 });
 
 const cleanupBgGenerationPollerHandlers: Array<() => void> = [];
@@ -11482,6 +11506,47 @@ useChatCleanup({
       <!-- MiniMax TTS 語音設定 Modal -->
       <Transition name="fade">
         <div
+          v-if="showTTSRegenerationChoiceModal"
+          class="feature-modal-overlay"
+          @click="cancelTTSRegenerationChoice"
+        >
+          <div class="feature-modal choice-modal" @click.stop>
+            <h3 class="feature-modal-title">選擇重新生成語音方式</h3>
+            <p class="feature-modal-tip">只影響這次語音，不會修改聊天氣泡文字。</p>
+            <div class="choice-buttons">
+              <button class="choice-btn" @click="confirmTTSRegeneration('auto')">
+                <div class="choice-text">
+                  <span class="choice-label">自動判斷</span>
+                  <span class="choice-desc">自動略過 HTML 標籤與對應的中文翻譯</span>
+                </div>
+              </button>
+              <button class="choice-btn" @click="confirmTTSRegeneration('all')">
+                <div class="choice-text">
+                  <span class="choice-label">朗讀全部內容</span>
+                  <span class="choice-desc">保留中文、外文與其他文字</span>
+                </div>
+              </button>
+              <button class="choice-btn" @click="confirmTTSRegeneration('foreign')">
+                <div class="choice-text">
+                  <span class="choice-label">只朗讀外文</span>
+                  <span class="choice-desc">排除中文翻譯</span>
+                </div>
+              </button>
+              <button class="choice-btn" @click="confirmTTSRegeneration('chinese')">
+                <div class="choice-text">
+                  <span class="choice-label">只朗讀中文</span>
+                  <span class="choice-desc">排除外文內容</span>
+                </div>
+              </button>
+            </div>
+            <button class="modal-btn cancel full-width" @click="cancelTTSRegenerationChoice">取消</button>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- MiniMax TTS 語音設定 Modal -->
+      <Transition name="fade">
+        <div
           v-if="showMinimaxTTSSettingsModal"
           class="feature-modal-overlay"
           @click="closeMinimaxTTSSettings"
@@ -14088,7 +14153,11 @@ useChatCleanup({
   border-radius: 20px;
   width: 100%;
   max-width: 400px;
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
   padding: 24px;
+  box-sizing: border-box;
+  overflow-y: auto;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
 
   &.choice-modal {

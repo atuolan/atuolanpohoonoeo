@@ -30,6 +30,7 @@ export function useChatInit(context: {
     setActiveChatId: (chatId: string | null) => void;
   };
   setupLoadMoreObserver: () => void;
+  scrollToBottom: () => void;
 }) {
   async function initializeChatScreen() {
     // 通知主動發訊服務：用戶進入此角色的聊天頁面。
@@ -63,25 +64,24 @@ export function useChatInit(context: {
       });
     }
 
-    context.loadOrCreateChat().then(() => {
-      context.markInitialChatLoadDone();
+    await context.loadOrCreateChat();
+    context.markInitialChatLoadDone();
 
-      // 如果後台仍有生成任務在跑，標記最後一條 AI 訊息為 streaming。
-      // 這樣用戶回到聊天時能看到打字動畫而非空氣泡。
-      if (context.isChatGenerating()) {
-        const lastAI = [...context.messages.value]
-          .reverse()
-          .find((m) => m.role === "ai");
-        if (lastAI) {
-          lastAI.isStreaming = true;
-          // 如果全局 store 有累積內容，同步到訊息中。
-          const task = context.getChatGenerationTask();
-          if (task?.content && task.content.trim()) {
-            lastAI.content = task.content;
-          }
+    // 如果後台仍有生成任務在跑，標記最後一條 AI 訊息為 streaming。
+    // 這樣用戶回到聊天時能看到打字動畫而非空氣泡。
+    if (context.isChatGenerating()) {
+      const lastAI = [...context.messages.value]
+        .reverse()
+        .find((m) => m.role === "ai");
+      if (lastAI) {
+        lastAI.isStreaming = true;
+        // 如果全局 store 有累積內容，同步到訊息中。
+        const task = context.getChatGenerationTask();
+        if (task?.content && task.content.trim()) {
+          lastAI.content = task.content;
         }
       }
-    });
+    }
 
     // 啟動待處理來電檢查。
     context.startPendingCallChecker();
@@ -92,6 +92,7 @@ export function useChatInit(context: {
     // 設置「載入更多」哨兵的 IntersectionObserver。
     nextTick(() => {
       context.setupLoadMoreObserver();
+      context.scrollToBottom();
     });
   }
 

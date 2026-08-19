@@ -10,6 +10,10 @@ import {
   canRegenerateMessageTTS,
   getMessageTTSSource,
 } from "@/utils/messageTTS";
+import {
+  prepareTTSContent,
+  type TTSLanguageMode,
+} from "@/utils/ttsTextSelector";
 
 export interface ChatMinimaxTTSOverride {
   voiceId?: string;
@@ -78,7 +82,7 @@ export function useChatTTS(context: {
   async function processMessageTTS(
     messageId: string,
     content: string,
-    options?: { force?: boolean },
+    options?: { force?: boolean; languageMode?: TTSLanguageMode },
   ): Promise<boolean> {
     if (!context.chatMinimaxTTSEnabled.value) return false;
     if (!context.settingsStore.minimaxTTS.apiKey) return false;
@@ -94,8 +98,10 @@ export function useChatTTS(context: {
     // renderedContent computed 會用 ttsSegments 偵測到有分段時，
     // 自動把 [emotion=...] 替換成行內播放按鈕，最後 cleanTTSTags 兜底。
 
+    const ttsContent = prepareTTSContent(content, options?.languageMode ?? "auto");
+
     // 逐句解析對話段落
-    const forcedParsedSegments = options?.force ? parseTTSSegments(content) : [];
+    const forcedParsedSegments = options?.force ? parseTTSSegments(ttsContent) : [];
     const segments = options?.force
       ? forcedParsedSegments.length > 0
         ? forcedParsedSegments
@@ -103,11 +109,11 @@ export function useChatTTS(context: {
             {
               emotion: chatMinimaxTTSOverride.value.emotion || "neutral",
               speed: chatMinimaxTTSOverride.value.speed ?? 1,
-              text: content,
-              clean: cleanTTSTags(content),
+              text: ttsContent,
+              clean: cleanTTSTags(ttsContent),
             },
           ]
-      : parseTTSSegments(content);
+      : parseTTSSegments(ttsContent);
     if (segments.length === 0) return false;
 
     // 寫入段落（先不帶 audioUrl）
@@ -201,6 +207,7 @@ export function useChatTTS(context: {
 
   async function regenerateMessageTTS(
     messageId: string,
+    languageMode: TTSLanguageMode = "auto",
   ): Promise<MessageTTSRegenerationResult> {
     if (!context.chatMinimaxTTSEnabled.value) {
       return { success: false, reason: "disabled" };
@@ -237,6 +244,7 @@ export function useChatTTS(context: {
     try {
       const success = await processMessageTTS(messageId, source, {
         force: true,
+        languageMode,
       });
       if (!success) {
         message.ttsRawContent = previousTTS.ttsRawContent;
