@@ -615,6 +615,7 @@ ${recentMessagesText}
 
       const client = new OpenAICompatibleClient({
         ...taskConfig.api,
+        lastPromptRoleOverride: "none",
       });
 
       let diaryContent = "";
@@ -802,6 +803,7 @@ ${recentMessagesText}
 
       const client = new OpenAICompatibleClient({
         ...taskConfig.api,
+        lastPromptRoleOverride: "none",
       });
 
       let summaryContent = "";
@@ -997,6 +999,7 @@ ${recentMessagesText}
 
       const client = new OpenAICompatibleClient({
         ...taskConfig.api,
+        lastPromptRoleOverride: "none",
       });
 
       const userName = deps.effectivePersona.value?.name || "User";
@@ -1031,6 +1034,7 @@ ${recentMessagesText}
 
       const metaClient = new OpenAICompatibleClient({
         ...taskConfig.api,
+        lastPromptRoleOverride: "none",
       });
 
       const streamGenerator = metaClient.generateStream({
@@ -1211,6 +1215,7 @@ ${recentMessagesText}
 
       const client = new OpenAICompatibleClient({
         ...taskConfig.api,
+        lastPromptRoleOverride: "none",
       });
       let summaryContent = '';
 

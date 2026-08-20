@@ -147,6 +147,7 @@ export function useChatBlock(context: {
 
       const client = new OpenAICompatibleClient({
         ...chatTaskConfig.api,
+        lastPromptRoleOverride: "none",
       });
       const result = await client.generate({
         messages: [

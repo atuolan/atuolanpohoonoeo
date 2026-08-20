@@ -652,6 +652,7 @@ export class ProactiveMessageService {
       const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
       const client = new OpenAICompatibleClient({
         ...taskConfig.api,
+        lastPromptRoleOverride: "none",
       });
       const result = await client.generate({
         messages: promptData.messages,
@@ -1181,6 +1182,7 @@ export class ProactiveMessageService {
       const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
       const client = new OpenAICompatibleClient({
         ...taskConfig.api,
+        lastPromptRoleOverride: "none",
       });
 
       let aiContent = "";
