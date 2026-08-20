@@ -204,6 +204,7 @@ import {
 import { chatPerfEnabled, chatPerfMark } from "@/utils/chatPerformanceDebug";
 import {
   hasMoreHistoryFromMetadata,
+  prependUniqueMessages,
   shouldLoadOlderMessages,
 } from "@/utils/chatPaging";
 import { getTtsAudioRenderKey } from "@/utils/ttsRenderKey";
@@ -825,6 +826,7 @@ const loadMoreSentinelRef = ref<HTMLElement | null>(null); // 頂部哨兵元素
 let messagePageBefore: ChatMessageCursor | null = null;
 const hasMoreChatMessages = ref(false);
 let allMessagesLoaded = false;
+let pagingGeneration = 0;
 let fullHistoryMessages: Message[] | null = null;
 let fullHistoryLoadPromise: Promise<void> | null = null;
 
@@ -926,20 +928,14 @@ function getMessageHistory(): Message[] {
 const hasMoreMessages = computed(() => {
   if (isSearchContextMode.value) return false;
   if (allMessagesLoaded) return messages.value.length > visibleCount.value;
-
-  // Metadata is reactive and remains authoritative even if a legacy page
-  // result reports `hasMore: false` or the paging index is unavailable.
-  const metadataCount = Number(currentChatData.value?.messageCount);
-  return (
-    hasMoreChatMessages.value ||
-    (Number.isFinite(metadataCount) && metadataCount > messages.value.length)
-  );
+  return hasMoreChatMessages.value;
 });
 
 // 載入更多歷史訊息（向上滾動時觸發）
 async function loadMoreMessages() {
   if (isSearchContextMode.value || isLoadingMore.value || !hasMoreMessages.value) return;
   isLoadingMore.value = true;
+  const requestGeneration = pagingGeneration;
   chatPerfMark("loadMore:start", {
     visibleCount: visibleCount.value,
     loadedMessageCount: messages.value.length,
@@ -963,20 +959,28 @@ async function loadMoreMessages() {
         MESSAGE_PAGE_SIZE,
         messagePageBefore,
       );
+      if (requestGeneration !== pagingGeneration) {
+        isLoadingMore.value = false;
+        return;
+      }
       const chat = currentChatData.value;
+      let addedCount = 0;
       if (chat && page.messages.length > 0) {
         const olderMessages = page.messages.map((m) =>
           convertStoredMessageToUiMessage(m, chat),
         );
-        messages.value = [...olderMessages, ...messages.value];
+        const result = prependUniqueMessages(messages.value, olderMessages);
+        messages.value = result.messages;
+        addedCount = result.addedCount;
         visibleCount.value = Math.min(
-          visibleCount.value + olderMessages.length,
+          visibleCount.value + addedCount,
           messages.value.length,
         );
       }
-      messagePageBefore = page.before;
+      messagePageBefore = addedCount > 0 ? page.before : null;
       hasMoreChatMessages.value =
-        page.messages.length > 0 &&
+        addedCount > 0 &&
+        page.before !== null &&
         hasMoreHistoryFromMetadata({
           pageHasMore: page.hasMore,
           metadataCount: currentChatData.value?.messageCount,
@@ -984,6 +988,7 @@ async function loadMoreMessages() {
         });
       chatPerfMark("loadMore:pageReady", {
         pageCount: page.messages.length,
+        addedCount,
         loadedMessageCount: messages.value.length,
         pageHasMore: page.hasMore,
         hasMore: hasMoreChatMessages.value,
@@ -1001,6 +1006,10 @@ async function loadMoreMessages() {
 
   // 等待 DOM 更新後恢復滾動位置
   nextTick(() => {
+    if (requestGeneration !== pagingGeneration) {
+      isLoadingMore.value = false;
+      return;
+    }
     if (container) {
       const newScrollHeight = container.scrollHeight;
       container.scrollTop =
@@ -7322,6 +7331,9 @@ async function loadOrCreateChat(overrideChatId?: string) {
     pendingToolConfirmation.value = null;
   }
   isChatHydrated.value = false;
+  pagingGeneration += 1;
+  isLoadingMore.value = false;
+  cleanupLoadMoreObserver();
   await db.init();
   resetVisibleCount();
   messagePageBefore = null;
@@ -7872,7 +7884,19 @@ function resetSaveTrackingFromMessages() {
 
 function resetAfterChatCleared() {
   chatPersistence.resetAfterChatCleared();
+  messages.value = [];
+  pagingGeneration += 1;
   fullHistoryMessages = null;
+  fullHistoryLoadPromise = null;
+  messagePageBefore = null;
+  hasMoreChatMessages.value = false;
+  allMessagesLoaded = true;
+  isLoadingMore.value = false;
+  cleanupLoadMoreObserver();
+  if (currentChatData.value) {
+    currentChatData.value.messageCount = 0;
+    currentChatData.value.lastMessagePreview = "";
+  }
 }
 
 function cancelPendingSaveTimer() {
@@ -8579,8 +8603,6 @@ const { initializeChatScreen } = useChatInit({
   markInitialChatLoadDone,
   startPendingCallChecker,
   notificationStore,
-  setupLoadMoreObserver,
-  scrollToBottom,
 });
 
 const cleanupBgGenerationPollerHandlers: Array<() => void> = [];

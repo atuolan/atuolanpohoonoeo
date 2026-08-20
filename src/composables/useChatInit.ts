@@ -1,4 +1,4 @@
-import { nextTick, type Ref } from "vue";
+import { type Ref } from "vue";
 import { proactiveMessageService } from "@/services/ProactiveMessageService";
 import type { ChatScreenMessage as Message } from "@/types/chatScreen";
 
@@ -29,8 +29,6 @@ export function useChatInit(context: {
   notificationStore: {
     setActiveChatId: (chatId: string | null) => void;
   };
-  setupLoadMoreObserver: () => void;
-  scrollToBottom: () => void;
 }) {
   async function initializeChatScreen() {
     // 通知主動發訊服務：用戶進入此角色的聊天頁面。
@@ -89,11 +87,6 @@ export function useChatInit(context: {
     // 設置當前活躍聊天 ID（用於通知判斷）。
     context.notificationStore.setActiveChatId(context.currentChatId.value ?? null);
 
-    // 設置「載入更多」哨兵的 IntersectionObserver。
-    nextTick(() => {
-      context.setupLoadMoreObserver();
-      context.scrollToBottom();
-    });
   }
 
   return {

@@ -2,6 +2,7 @@
 
 import {
   hasMoreHistoryFromMetadata,
+  prependUniqueMessages,
   shouldLoadOlderMessages,
 } from "@/utils/chatPaging";
 
@@ -44,13 +45,24 @@ describe("chat paging scroll trigger", () => {
     ).toBe(false);
   });
 
-  it("keeps the paging control visible when metadata exceeds the first page", () => {
+  it("does not trust stale metadata after the database page is exhausted", () => {
     expect(
       hasMoreHistoryFromMetadata({
         pageHasMore: false,
         metadataCount: 8703,
         loadedCount: 50,
       }),
-    ).toBe(true);
+    ).toBe(false);
+  });
+
+  it("does not duplicate a message when a stale cursor returns the same page", () => {
+    const current = [{ id: "msg-1", content: "hello" }];
+    const result = prependUniqueMessages(current, [
+      { id: "msg-1", content: "hello" },
+      { id: "msg-1", content: "hello" },
+    ]);
+
+    expect(result.messages).toEqual(current);
+    expect(result.addedCount).toBe(0);
   });
 });

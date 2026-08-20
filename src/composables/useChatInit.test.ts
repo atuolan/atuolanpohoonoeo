@@ -3,7 +3,7 @@
 import { useChatInit } from "@/composables/useChatInit";
 
 describe("useChatInit", () => {
-  it("waits for chat loading before arming the older-message observer", async () => {
+  it("waits for chat loading before marking initialization complete", async () => {
     const events: string[] = [];
     let resolveLoad!: () => void;
     const loadPromise = new Promise<void>((resolve) => {
@@ -30,8 +30,6 @@ describe("useChatInit", () => {
       markInitialChatLoadDone: () => events.push("loaded:marked"),
       startPendingCallChecker: () => undefined,
       notificationStore: { setActiveChatId: () => undefined },
-      setupLoadMoreObserver: () => events.push("observer"),
-      scrollToBottom: () => events.push("scroll"),
     });
 
     const initialize = init.initializeChatScreen();
@@ -45,8 +43,6 @@ describe("useChatInit", () => {
       "load:start",
       "load:end",
       "loaded:marked",
-      "observer",
-      "scroll",
     ]);
   });
 });

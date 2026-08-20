@@ -14,10 +14,27 @@ export interface ChatPagingMetadataState {
 
 export function hasMoreHistoryFromMetadata({
   pageHasMore,
-  metadataCount,
-  loadedCount,
 }: ChatPagingMetadataState): boolean {
-  return pageHasMore || (metadataCount ?? 0) > loadedCount;
+  return pageHasMore;
+}
+
+export function prependUniqueMessages<T extends { id: string }>(
+  currentMessages: T[],
+  olderMessages: T[],
+): { messages: T[]; addedCount: number } {
+  const knownIds = new Set(currentMessages.map((message) => message.id));
+  const uniqueOlderMessages: T[] = [];
+
+  for (const message of olderMessages) {
+    if (knownIds.has(message.id)) continue;
+    knownIds.add(message.id);
+    uniqueOlderMessages.push(message);
+  }
+
+  return {
+    messages: [...uniqueOlderMessages, ...currentMessages],
+    addedCount: uniqueOlderMessages.length,
+  };
 }
 
 export function shouldLoadOlderMessages({
