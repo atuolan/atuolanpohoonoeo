@@ -202,6 +202,7 @@ import {
   repairSystemSenderRegressionIfNeeded,
 } from "@/utils/chatMessageLoading";
 import { chatPerfEnabled, chatPerfMark } from "@/utils/chatPerformanceDebug";
+import { shouldReloadAfterGeneration } from "@/utils/chatGenerationReload";
 import {
   hasMoreHistoryFromMetadata,
   prependUniqueMessages,
@@ -5690,9 +5691,22 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
             });
 
             // 移除原始的佔位訊息
+            chatPerfMark("generation:placeholderBeforeRemove", {
+              chatId: currentChatId.value,
+              placeholderId: aiMessage.id,
+              placeholderIndex: msgIndex,
+              messageCount: messages.value.length,
+              messageIds: messages.value.map((message) => message.id),
+            });
             if (msgIndex !== -1) {
               messages.value.splice(msgIndex, 1);
             }
+            chatPerfMark("generation:placeholderRemoved", {
+              chatId: currentChatId.value,
+              placeholderId: aiMessage.id,
+              messageCount: messages.value.length,
+              messageIds: messages.value.map((message) => message.id),
+            });
 
             // 為每個解析後的訊息創建獨立的聊天訊息（逐條顯示：多條訊息時每條間隔 800ms）
             let _firstNewAiMsgId: string | undefined;
@@ -5859,6 +5873,14 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 await _delay(_messageRenderDelay(_totalMsgs1));
               }
               _shownMsgs1++;
+              chatPerfMark("generation:messageReadyToPush", {
+                chatId: currentChatId.value,
+                messageId: newMessage.id,
+                messageIndex: i,
+                shownCount: _shownMsgs1,
+                parsedCount: _totalMsgs1,
+                messageCount: messages.value.length,
+              });
               if (parsedMsg.isCharRecall) {
                 // 先顯示原始訊息，3秒後原地替換為撤回狀態
                 const recallContent = parsedMsg.charRecallContent || "";
@@ -5894,6 +5916,13 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 }, 3000);
               } else {
                 messages.value.push(newMessage);
+                chatPerfMark("generation:messagePushed", {
+                  chatId: currentChatId.value,
+                  messageId: newMessage.id,
+                  messageIndex: i,
+                  messageCount: messages.value.length,
+                  messageIds: messages.value.map((message) => message.id),
+                });
                 scrollToBottom();
               }
 
@@ -6053,9 +6082,24 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     }
 
     // 完成全局生成狀態；HF 後台模式需保持生成鎖，直到輪詢取回並落地結果。
+    chatPerfMark("generation:beforeComplete", {
+      chatId: currentChatId.value,
+      generationTurnId: generationTurnId || null,
+      messageCount: messages.value.length,
+      messageIds: messages.value.map((message) => message.id),
+      remoteGenerationStarted,
+      finalContentLength: persistedGenerationContent?.length ?? 0,
+    });
     if (!remoteGenerationStarted) {
       completeChatGeneration(persistedGenerationContent || undefined);
     }
+    chatPerfMark("generation:afterComplete", {
+      chatId: currentChatId.value,
+      generationTurnId: generationTurnId || null,
+      messageCount: messages.value.length,
+      messageIds: messages.value.map((message) => message.id),
+      isGenerating: isChatGenerating(),
+    });
 
     // 安全網：無論走哪個分支（含 needsParsing=false 的純文字回覆），
     // 都要將流式窗口標記為完成，避免底部一直顯示「停止」按鈕。
@@ -6089,7 +6133,21 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     attachPendingRoundSwipes(generationTurnId || undefined);
 
     scrollToBottom();
+    chatPerfMark("generation:beforeSave", {
+      chatId: currentChatId.value,
+      generationTurnId: generationTurnId || null,
+      messageCount: messages.value.length,
+      lastMessageId: messages.value[messages.value.length - 1]?.id ?? null,
+      messageIds: messages.value.map((message) => message.id),
+    });
     await saveChatImmediate();
+    chatPerfMark("generation:afterSave", {
+      chatId: currentChatId.value,
+      generationTurnId: generationTurnId || null,
+      messageCount: messages.value.length,
+      lastMessageId: messages.value[messages.value.length - 1]?.id ?? null,
+      messageIds: messages.value.map((message) => message.id),
+    });
     // The cache represented the pre-generation history. Rebuild it from IDB
     // on the next generation/search after the newly persisted messages land.
     fullHistoryMessages = null;
@@ -8646,6 +8704,12 @@ watch(
   async (isGenerating, wasGenerating) => {
     // 生成剛完成（從 true 變 false），重新載入聊天記錄
     if (wasGenerating && !isGenerating && currentChatId.value) {
+      chatPerfMark("generationWatcher:triggered", {
+        chatId: currentChatId.value,
+        messageCount: messages.value.length,
+        lastMessageId: messages.value[messages.value.length - 1]?.id ?? null,
+        messageIds: messages.value.map((message) => message.id),
+      });
       // 等一小段時間確保 saveChat 已寫入 IDB
       await new Promise((r) => setTimeout(r, 300));
       try {
@@ -8661,14 +8725,28 @@ watch(
 
         // 條件：IDB 訊息更多、或本地有空佔位符、或（IDB 與本地筆數相同時）最後一條訊息不同
         // 注意：當本地筆數 > IDB（例如剛注入分享訊息、尚在寫入）時不能重載，否則會把本地新訊息覆蓋掉
-        const shouldReload =
-          dbMessageCount > localMessageCount ||
-          hasStreamingPlaceholder ||
-          (dbMessageCount === localMessageCount &&
-            dbMessageCount > 0 &&
-            dbMessages[dbMessages.length - 1]?.content !==
-              messages.value[messages.value.length - 1]?.content);
+        chatPerfMark("generationWatcher:dbSnapshot", {
+          chatId: currentChatId.value,
+          dbMessageCount,
+          dbLastMessageId: dbMessages[dbMessages.length - 1]?.id ?? null,
+          localMessageCount,
+          localLastMessageId: messages.value[messages.value.length - 1]?.id ?? null,
+          hasStreamingPlaceholder,
+        });
+        const shouldReload = shouldReloadAfterGeneration({
+          dbMessages,
+          localMessages: messages.value,
+          hasStreamingPlaceholder,
+        });
 
+        chatPerfMark("generationWatcher:reloadDecision", {
+          chatId: currentChatId.value,
+          shouldReload,
+          dbMessageCount,
+          localMessageCount,
+          dbLastMessageId: dbMessages[dbMessages.length - 1]?.id ?? null,
+          localLastMessageId: messages.value[messages.value.length - 1]?.id ?? null,
+        });
         if (shouldReload) {
           const prevRealTimeAwareness = chatEnableRealTimeAwareness.value;
           const prevDoNotDisturb = chatDoNotDisturb.value;
@@ -8691,6 +8769,12 @@ watch(
           chatSpeakerMode.value = prevSpeakerMode;
 
           scrollToBottom();
+          chatPerfMark("generationWatcher:afterReload", {
+            chatId: currentChatId.value,
+            messageCount: messages.value.length,
+            lastMessageId: messages.value[messages.value.length - 1]?.id ?? null,
+            messageIds: messages.value.map((message) => message.id),
+          });
           console.log(
             "[ChatScreen] 已重新載入，訊息數:",
             messages.value.length,
