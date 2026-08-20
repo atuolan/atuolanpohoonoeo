@@ -137,10 +137,7 @@ export const useOracleStore = defineStore('oracle', () => {
       }
 
       const { OpenAICompatibleClient } = await import('@/api/OpenAICompatible')
-      const client = new OpenAICompatibleClient({
-        ...apiSettings,
-        lastPromptRoleOverride: 'none',
-      })
+      const client = new OpenAICompatibleClient(apiSettings)
 
       const prompt = buildOracleInterpretationPrompt(
         question.value,

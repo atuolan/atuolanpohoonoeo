@@ -126,10 +126,7 @@ export const useAstroDiceStore = defineStore("astroDice", () => {
       }
 
       const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
-      const client = new OpenAICompatibleClient({
-        ...apiSettings,
-        lastPromptRoleOverride: "none",
-      });
+      const client = new OpenAICompatibleClient(apiSettings);
 
       const prompt = buildAstroDiceInterpretationPrompt(
         question.value,

@@ -4805,6 +4805,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
             messages: kept.map((item) => item.message) as APIMessage[],
             settings: probeSettings,
             apiSettings: chatTaskConfig.api,
+            lastPromptRoleOverride: chatTaskConfig.api.lastPromptRoleOverride ?? "none",
             signal: controller.signal,
             adjustLastMessageRole: true,
           });

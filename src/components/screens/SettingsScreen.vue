@@ -1593,10 +1593,7 @@ async function testConnection() {
   connectionStatus.value = "none";
 
   try {
-    const client = new OpenAICompatibleClient({
-      ...settingsStore.api,
-      lastPromptRoleOverride: "none", // API 測試不使用角色覆蓋
-    });
+    const client = new OpenAICompatibleClient(settingsStore.api);
     const result = await client.testConnection();
 
     if (result.success) {

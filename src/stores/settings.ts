@@ -791,7 +791,7 @@ export const useSettingsStore = defineStore("settings", () => {
       api.promptPostProcessing = profile.api.promptPostProcessing ?? "none";
       api.toolProtocol = profile.api.toolProtocol ?? "auto";
       api.toolsEnabled = profile.api.toolsEnabled ?? false;
-      api.lastPromptRoleOverride = profile.api.lastPromptRoleOverride ?? "system";
+      api.lastPromptRoleOverride = profile.api.lastPromptRoleOverride ?? "none";
       Object.assign(generation, profile.generation);
       generation.maxContextLength = globalMaxContextLength;
     }

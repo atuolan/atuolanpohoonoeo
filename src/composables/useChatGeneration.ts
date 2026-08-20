@@ -91,10 +91,8 @@ export async function runChatGenerationRequest(
         const request = {
           messages,
           settings: context.settings,
-          apiSettings: {
-            ...context.apiSettings,
-            lastPromptRoleOverride: context.apiSettings.lastPromptRoleOverride ?? "none",
-          },
+          apiSettings: context.apiSettings,
+          lastPromptRoleOverride: context.apiSettings.lastPromptRoleOverride ?? "none",
           signal: context.signal,
           adjustLastMessageRole: true,
           tools: registry.toOpenAITools() as any,
@@ -150,10 +148,8 @@ export async function runChatGenerationRequest(
     const streamGenerator = context.client.generateStream({
       messages: context.messages,
       settings: context.settings,
-      apiSettings: {
-        ...context.apiSettings,
-        lastPromptRoleOverride: context.apiSettings.lastPromptRoleOverride ?? "none",
-      },
+      apiSettings: context.apiSettings,
+      lastPromptRoleOverride: context.apiSettings.lastPromptRoleOverride ?? "none",
       signal: context.signal,
       adjustLastMessageRole: true,
     });
@@ -187,10 +183,8 @@ export async function runChatGenerationRequest(
     const result = await context.client.generate({
       messages: context.messages,
       settings: context.settings,
-      apiSettings: {
-        ...context.apiSettings,
-        lastPromptRoleOverride: context.apiSettings.lastPromptRoleOverride ?? "none",
-      },
+      apiSettings: context.apiSettings,
+      lastPromptRoleOverride: context.apiSettings.lastPromptRoleOverride ?? "none",
       signal: context.signal,
       adjustLastMessageRole: true,
     });

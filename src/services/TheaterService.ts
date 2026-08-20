@@ -226,10 +226,7 @@ export async function generateTheater(params: {
     minTokens,
   });
 
-  const client = new OpenAICompatibleClient({
-    ...taskConfig.api,
-    lastPromptRoleOverride: "none",
-  });
+  const client = new OpenAICompatibleClient(taskConfig.api);
   const messages: APIMessage[] = [{ role: "user", content: prompt }];
 
   let fullContent = "";
@@ -407,10 +404,7 @@ export async function continueTheater(
     isContinuation: true,
   });
 
-  const client = new OpenAICompatibleClient({
-    ...taskConfig.api,
-    lastPromptRoleOverride: "none",
-  });
+  const client = new OpenAICompatibleClient(taskConfig.api);
   const messages: APIMessage[] = [{ role: "user", content: prompt }];
 
   const useStreaming = settingsStore.generation.streamingEnabled;
@@ -534,10 +528,7 @@ export async function generateCharComment(params: {
     userName: post.cast.userName,
   });
 
-  const client = new OpenAICompatibleClient({
-    ...taskConfig.api,
-    lastPromptRoleOverride: "none",
-  });
+  const client = new OpenAICompatibleClient(taskConfig.api);
 
   try {
     const result = await client.generate({

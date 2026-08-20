@@ -613,10 +613,7 @@ ${recentMessagesText}
         );
       }
 
-      const client = new OpenAICompatibleClient({
-        ...taskConfig.api,
-        lastPromptRoleOverride: "none",
-      });
+      const client = new OpenAICompatibleClient(taskConfig.api);
 
       let diaryContent = "";
       const isStreamingEnabled = taskConfig.generation.streamingEnabled;
@@ -801,10 +798,7 @@ ${recentMessagesText}
         }
       }
 
-      const client = new OpenAICompatibleClient({
-        ...taskConfig.api,
-        lastPromptRoleOverride: "none",
-      });
+      const client = new OpenAICompatibleClient(taskConfig.api);
 
       let summaryContent = "";
       const isStreamingEnabled = taskConfig.generation.streamingEnabled;
@@ -997,10 +991,7 @@ ${recentMessagesText}
         throw new Error("請先在設定中配置 API");
       }
 
-      const client = new OpenAICompatibleClient({
-        ...taskConfig.api,
-        lastPromptRoleOverride: "none",
-      });
+      const client = new OpenAICompatibleClient(taskConfig.api);
 
       const userName = deps.effectivePersona.value?.name || "User";
       const metaPrompt = isGroupSummaryMode()
@@ -1032,10 +1023,7 @@ ${recentMessagesText}
         deps.streamingWindow.show(taskConfig.api.model || "AI");
       }
 
-      const metaClient = new OpenAICompatibleClient({
-        ...taskConfig.api,
-        lastPromptRoleOverride: "none",
-      });
+      const metaClient = new OpenAICompatibleClient(taskConfig.api);
 
       const streamGenerator = metaClient.generateStream({
         messages: metaPrompt,
@@ -1213,10 +1201,7 @@ ${recentMessagesText}
         );
       }
 
-      const client = new OpenAICompatibleClient({
-        ...taskConfig.api,
-        lastPromptRoleOverride: "none",
-      });
+      const client = new OpenAICompatibleClient(taskConfig.api);
       let summaryContent = '';
 
       const streamGenerator = client.generateStream({

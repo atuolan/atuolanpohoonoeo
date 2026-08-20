@@ -297,10 +297,7 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
 
     try {
       const settingsStore = useSettingsStore()
-      const client = new OpenAICompatibleClient({
-        ...settingsStore.api,
-        lastPromptRoleOverride: "none",
-      })
+      const client = new OpenAICompatibleClient(settingsStore.api)
 
       const result = await client.generate({
         messages,

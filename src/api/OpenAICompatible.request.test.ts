@@ -167,4 +167,51 @@ describe("OpenAICompatible request integration", () => {
     })).rejects.toThrow(/400/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("does not apply the constructor-level role preference when the request omits an override", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      expect(body.messages.at(-1)).toEqual({ role: "user", content: "Keep this role" });
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new OpenAICompatibleClient(api({ lastPromptRoleOverride: "assistant" })).generate({
+      messages: [{ role: "user", content: "Keep this role" }],
+      settings,
+      apiSettings: api({ lastPromptRoleOverride: "assistant" }),
+    });
+  });
+
+  it("applies lastPromptRoleOverride only when supplied on the request", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      expect(body.messages.at(-1)).toEqual({ role: "assistant", content: "Override this role" });
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new OpenAICompatibleClient(api()).generate({
+      messages: [{ role: "user", content: "Override this role" }],
+      settings,
+      apiSettings: api(),
+      lastPromptRoleOverride: "assistant",
+    });
+  });
+
+  it("treats a request-level none override as no role change", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      expect(body.messages.at(-1)).toEqual({ role: "user", content: "Keep this role" });
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new OpenAICompatibleClient(api({ lastPromptRoleOverride: "assistant" })).generate({
+      messages: [{ role: "user", content: "Keep this role" }],
+      settings,
+      apiSettings: api({ lastPromptRoleOverride: "assistant" }),
+      lastPromptRoleOverride: "none",
+    });
+  });
 });

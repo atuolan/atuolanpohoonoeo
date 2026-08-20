@@ -3941,10 +3941,7 @@ ${charPersonality ? `角色性格：${charPersonality}` : ""}`,
     : null;
 
   try {
-    const client = new OpenAICompatibleClient({
-      ...apiConfig,
-      lastPromptRoleOverride: "none", // 噗浪生成不使用角色覆蓋
-    });
+    const client = new OpenAICompatibleClient(apiConfig);
     const generationSettings = {
       maxContextLength: genConfig.maxContextLength || 128000,
       maxResponseLength: genConfig.maxTokens || 8192,

@@ -263,6 +263,8 @@ export interface GenerationParams {
   /** 是否對最後一條訊息執行模型特定的 role 轉換（Gemini→assistant / Claude→user）。
    *  僅聊天 API 調用應設為 true，其他場景（來電決策、主動消息等）預設 false 不轉換。 */
   adjustLastMessageRole?: boolean;
+  /** 只對這一次請求覆蓋最後一條提示詞的 role；未指定時不覆蓋。 */
+  lastPromptRoleOverride?: "none" | "system" | "user" | "assistant";
   /** Tool definitions and transport options for this request. */
   tools?: OpenAIToolDefinition[];
   toolProtocol?: ToolProtocol;
@@ -275,7 +277,10 @@ interface BuiltRequest {
   diagnostics: GenerationDiagnostics;
 }
 
-type RequestToolOptions = Pick<GenerationParams, "tools" | "toolProtocol" | "promptPostProcessing" | "toolContext">;
+type RequestToolOptions = Pick<
+  GenerationParams,
+  "tools" | "toolProtocol" | "promptPostProcessing" | "toolContext" | "lastPromptRoleOverride"
+>;
 
 function getToolCompatiblePromptMode(
   requestedMode: PromptPostProcessingType,
@@ -759,8 +764,8 @@ export class OpenAICompatibleClient {
       }
     }
 
-    // 應用最後提示詞角色覆蓋（在模型特殊處理之後執行，優先級最高）
-    const roleOverride = this.apiSettings.lastPromptRoleOverride;
+    // 只使用當次 request 的覆蓋值；未傳入時，非聊天功能天然不會套用設定頁偏好。
+    const roleOverride = options.lastPromptRoleOverride;
     if (roleOverride && roleOverride !== "none" && processedMessages.length > 0) {
       const lastIdx = processedMessages.length - 1;
       const before = processedMessages[lastIdx].role;
@@ -957,6 +962,24 @@ export class OpenAICompatibleClient {
           reason: "claude-last-message-role",
           before,
           after: "user",
+        });
+      }
+    }
+
+    // request-level override is intentionally applied after provider normalization.
+    const roleOverride = options.lastPromptRoleOverride;
+    if (roleOverride && roleOverride !== "none" && processedMessages.length > 0) {
+      const lastIdx = processedMessages.length - 1;
+      const before = processedMessages[lastIdx].role;
+      if (before !== roleOverride) {
+        processedMessages[lastIdx] = {
+          ...processedMessages[lastIdx],
+          role: roleOverride as "system" | "user" | "assistant",
+        };
+        roleAdjustments.push({
+          reason: "last-prompt-role-override",
+          before,
+          after: roleOverride as "system" | "user" | "assistant",
         });
       }
     }

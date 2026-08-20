@@ -276,10 +276,7 @@ export async function generateGroup(
 
   // 呼叫 API（優先使用備用 API）
   const taskConfig = settingsStore.getAPIForTask("peekPhone");
-  const client = new OpenAICompatibleClient({
-    ...taskConfig.api,
-    lastPromptRoleOverride: "none",
-  });
+  const client = new OpenAICompatibleClient(taskConfig.api);
   const messages: APIMessage[] = [{ role: "user", content: prompt }];
 
   // 讀取全局串流設定
@@ -496,10 +493,7 @@ async function callAPIForPhase(
 ): Promise<string> {
   const settingsStore = useSettingsStore();
   const taskConfig = settingsStore.getAPIForTask("peekPhone");
-  const client = new OpenAICompatibleClient({
-    ...taskConfig.api,
-    lastPromptRoleOverride: "none",
-  });
+  const client = new OpenAICompatibleClient(taskConfig.api);
   const jailbreakMessages = await buildJailbreakMessages(macroContext);
   const messages: APIMessage[] = [
     ...jailbreakMessages,
@@ -676,10 +670,7 @@ export async function generateCombined(
   );
 
   const taskConfig = settingsStore.getAPIForTask("peekPhone");
-  const client = new OpenAICompatibleClient({
-    ...taskConfig.api,
-    lastPromptRoleOverride: "none",
-  });
+  const client = new OpenAICompatibleClient(taskConfig.api);
   const jailbreakMessages = await buildJailbreakMessages({
     charName,
     userName,

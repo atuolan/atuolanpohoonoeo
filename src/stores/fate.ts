@@ -149,10 +149,7 @@ export const useFateStore = defineStore("fate", () => {
       }
 
       const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
-      const client = new OpenAICompatibleClient({
-        ...apiSettings,
-        lastPromptRoleOverride: "none",
-      });
+      const client = new OpenAICompatibleClient(apiSettings);
 
       const prompt = buildFateInterpretationPrompt(
         question.value,

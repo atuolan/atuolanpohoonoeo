@@ -140,10 +140,7 @@ export const useLenormandStore = defineStore("lenormand", () => {
       }
 
       const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
-      const client = new OpenAICompatibleClient({
-        ...apiSettings,
-        lastPromptRoleOverride: "none",
-      });
+      const client = new OpenAICompatibleClient(apiSettings);
 
       const prompt = buildLenormandInterpretationPrompt(
         question.value,
