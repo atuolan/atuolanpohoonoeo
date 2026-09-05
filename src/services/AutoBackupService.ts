@@ -765,18 +765,26 @@ async function cleanOldBackups(maxBackups: number): Promise<void> {
 }
 
 /**
- * iOS 分享：先把 ZIP 落到 OPFS 暫存檔，再從 OPFS 取 File 交給 navigator.share，
- * 讓 ZIP 內容不必以 Blob 形式停留在 JS heap。
- * 回傳 false 表示 OPFS 不可用，呼叫端改走 Blob 路徑。
+ * 開啟 OPFS 暫存檔的 sink，供「下載」路徑在打包時就把 ZIP 落到磁碟。
+ *
+ * 這樣整份 ZIP 不必先在 JS heap 組成 Uint8Array 再包 Blob——
+ * 資料量大的使用者在那一步會直接 OOM 閃退（症狀：進度跑完、按下載就閃退）。
+ * 落地後用 `getFile()` 取回由磁碟撐著的 File，交給 share / <a download>。
+ *
+ * 回傳 null 表示 OPFS 不可用（例如 iOS Safari 沒有主線程 createWritable），
+ * 呼叫端需 fallback 到記憶體路徑。
  */
-async function shareViaOPFS(
-  zipData: Uint8Array,
-  filename: string,
-): Promise<boolean> {
+async function openOPFSTempSink(filename: string): Promise<{
+  sink: BackupOutputSink;
+  /** 打包完成後取回落地的檔案 */
+  getFile: () => Promise<File>;
+  /** 刪除暫存檔（成功或失敗都要呼叫） */
+  cleanup: () => Promise<void>;
+} | null> {
   const storage = (navigator as any).storage;
-  if (!storage?.getDirectory) return false;
+  if (!storage?.getDirectory) return null;
 
-  const tmpName = `__share_${filename}`;
+  const tmpName = `__tmp_${filename}`;
   let root: any;
   try {
     root = await storage.getDirectory();
@@ -784,47 +792,56 @@ async function shareViaOPFS(
     // iOS Safari 的 OPFS 沒有 createWritable（僅 Worker 內的 SyncAccessHandle）
     if (typeof fileHandle.createWritable !== "function") {
       await root.removeEntry(tmpName).catch(() => {});
-      return false;
+      return null;
     }
     const writable = await fileHandle.createWritable();
-    await writable.write(zipData as BlobPart);
-    await writable.close();
 
-    const file = await fileHandle.getFile();
-    await navigator.share({
-      files: [new File([file], filename, { type: "application/zip" })],
-    });
-    return true;
-  } catch (err: any) {
-    if (err?.name === "AbortError") return true; // 使用者取消，不再 fallback
-    console.warn("[AutoBackup] OPFS 分享失敗:", err);
-    return false;
-  } finally {
+    return {
+      sink: {
+        async write(chunk: Uint8Array) {
+          await writable.write(chunk);
+        },
+        async close() {
+          await writable.close();
+        },
+      },
+      getFile: async () => {
+        const file = await fileHandle.getFile();
+        return new File([file], filename, { type: "application/zip" });
+      },
+      cleanup: async () => {
+        try {
+          await writable.abort?.();
+        } catch {
+          /* 已關閉或不支援 abort */
+        }
+        try {
+          await root.removeEntry(tmpName);
+        } catch {
+          /* 暫存檔可能不存在 */
+        }
+      },
+    };
+  } catch (err) {
+    console.warn("[AutoBackup] OPFS 暫存檔開啟失敗:", err);
     try {
       await root?.removeEntry(tmpName);
     } catch {
-      /* 暫存檔可能不存在 */
+      /* ignore */
     }
+    return null;
   }
 }
 
 /**
- * Fallback：觸發瀏覽器下載
+ * 把已落地的 File 交給使用者：iOS 走 Web Share，其餘走 <a download>。
+ * File 由磁碟撐著，不佔 JS heap。
  */
-async function downloadBackup(
-  zipData: Uint8Array,
-  filename: string,
-): Promise<void> {
+async function deliverBackupFile(file: File, filename: string): Promise<void> {
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
-  // iOS Safari: 使用 Web Share API（<a download> 在 iOS 上不可靠）
   if (navigator.share && isIOS) {
-    if (await shareViaOPFS(zipData, filename)) return;
-
     try {
-      const file = new File([zipData as BlobPart], filename, {
-        type: "application/zip",
-      });
       await navigator.share({ files: [file] });
       return;
     } catch (shareErr: any) {
@@ -833,9 +850,12 @@ async function downloadBackup(
     }
   }
 
-  // 標準 <a> 下載（含 iOS fallback）
-  const blob = new Blob([zipData as BlobPart], { type: "application/zip" });
-  const url = URL.createObjectURL(blob);
+  triggerAnchorDownload(file, filename);
+}
+
+/** 用 <a download> 觸發下載，3 秒後回收 object URL */
+function triggerAnchorDownload(data: Blob, filename: string): void {
+  const url = URL.createObjectURL(data);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
@@ -846,6 +866,44 @@ async function downloadBackup(
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }, 3000);
+}
+
+/**
+ * 清理上次下載留下的 OPFS 暫存檔。
+ *
+ * 下載成功時不能立刻刪（瀏覽器還在非同步讀取那個 File），
+ * 所以改成在下一次備份開頭清掉，避免 OPFS 無限膨脹。
+ */
+async function cleanStaleOPFSTemps(): Promise<void> {
+  const storage = (navigator as any).storage;
+  if (!storage?.getDirectory) return;
+  try {
+    const root: any = await storage.getDirectory();
+    if (typeof root.entries !== "function") return;
+    for await (const [name, handle] of root.entries()) {
+      if (handle.kind !== "file") continue;
+      if (name.startsWith("__tmp_") || name.startsWith("__share_")) {
+        await root.removeEntry(name).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.warn("[AutoBackup] 清理 OPFS 暫存檔失敗:", err);
+  }
+}
+
+/**
+ * 最後手段：ZIP 已在記憶體中，直接包 Blob 交出去。
+ * 只在 OPFS 不可用時走到（例如 iOS Safari）。
+ */
+async function downloadBackup(
+  zipData: Uint8Array,
+  filename: string,
+): Promise<void> {
+  const blob = new Blob([zipData as BlobPart], { type: "application/zip" });
+  await deliverBackupFile(
+    new File([blob], filename, { type: "application/zip" }),
+    filename,
+  );
 }
 
 // ============================================================
@@ -871,6 +929,7 @@ export async function performBackup(
 ): Promise<BackupResult> {
   try {
     console.log("[AutoBackup] 開始備份...");
+    await cleanStaleOPFSTemps();
     const settings = await loadBackupSettings();
     const filename = generateBackupFilename();
 
@@ -912,10 +971,28 @@ export async function performBackup(
       return { success: true, message: msg, filename, method: "fs" };
     }
 
-    // Fallback: 下載（無法預開 writable，ZIP 需在記憶體組裝）
-    const zipData = await buildBackupZipStreaming(onProgress, options);
-    onProgress?.({ phase: "寫入檔案..." });
-    await downloadBackup(zipData, filename);
+    // 下載路徑：優先把 ZIP 串流落到 OPFS 暫存檔，再取回 File 交給下載／分享。
+    // 直接在記憶體組整份 ZIP 再包 Blob，資料量大時會 OOM 閃退。
+    const tmp = await openOPFSTempSink(filename);
+    if (tmp) {
+      try {
+        await buildBackupZipStreaming(onProgress, options, tmp.sink);
+      } catch (e) {
+        await tmp.cleanup();
+        throw e;
+      }
+      onProgress?.({ phase: "寫入檔案..." });
+      // 注意：不在這裡刪暫存檔——瀏覽器下載／分享是非同步的，
+      // 這時刪掉會讓正在讀取的 File 失效。殘留檔由下次備份開頭清理。
+      const file = await tmp.getFile();
+      await deliverBackupFile(file, filename);
+    } else {
+      // OPFS 不可用（例如 iOS Safari）：只能在記憶體組裝
+      const zipData = await buildBackupZipStreaming(onProgress, options);
+      onProgress?.({ phase: "寫入檔案..." });
+      await downloadBackup(zipData, filename);
+    }
+
     const msg = `已下載備份: ${filename}`;
     settings.lastBackupAt = Date.now();
     settings.lastBackupMessage = msg;
