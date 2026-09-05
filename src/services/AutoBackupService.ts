@@ -974,20 +974,81 @@ async function openOPFSTempSink(
  * 把已落地的 File 交給使用者：iOS 走 Web Share，其餘走 <a download>。
  * File 由磁碟撐著，不佔 JS heap。
  */
-async function deliverBackupFile(file: File, filename: string): Promise<void> {
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+async function deliverBackupFile(
+  file: File,
+  filename: string,
+): Promise<string> {
+  // 交付順序刻意避開 blob: URL 下載。
+  //
+  // Android WebView 的 blob: URL 下載會經由 JavaBridge 交給原生下載管理員，
+  // 而它會把整個 blob 讀進 Java 層——那裡的記憶體上限與 JS heap 無關，
+  // 所以檔案大時會在原生層炸掉（症狀：toast「Exception Happend
+  // Thread[JavaBridge,...]」後閃退，JS 這邊完全沒有錯誤）。
+  //
+  // 1. showSaveFilePicker：串流寫入使用者選的位置，記憶體中不留整份檔案
+  // 2. Web Share：直接把 File 交給 OS，不經下載管理員
+  // 3. <a download>：最後手段，就是會炸的那條路
+  const nav = navigator as any;
+  const win = window as any;
 
-  if (navigator.share && isIOS) {
+  if (typeof win.showSaveFilePicker === "function") {
     try {
-      await navigator.share({ files: [file] });
-      return;
-    } catch (shareErr: any) {
-      if (shareErr?.name === "AbortError") return; // 使用者取消
-      console.warn("[AutoBackup] Web Share 失敗，嘗試 <a> 下載:", shareErr);
+      const handle = await win.showSaveFilePicker({
+        suggestedName: filename,
+        types: [
+          {
+            description: "備份檔",
+            accept: { "application/zip": [".zip"] },
+          },
+        ],
+      });
+      const writable = await handle.createWritable();
+      // 用 stream 而非整份 blob，避免再複製一次
+      if (typeof file.stream === "function" && typeof writable.write === "function") {
+        await file.stream().pipeTo(writable);
+      } else {
+        await writable.write(file);
+        await writable.close();
+      }
+      console.log("[AutoBackup] 交付方式: showSaveFilePicker（串流寫入）");
+      return "save-picker";
+    } catch (pickErr: any) {
+      if (pickErr?.name === "AbortError") return "cancelled"; // 使用者取消
+      console.warn(
+        "[AutoBackup] showSaveFilePicker 失敗，改試 Web Share:",
+        pickErr,
+      );
     }
   }
 
+  if (typeof nav.share === "function") {
+    let shareable = true;
+    try {
+      // canShare 不存在時（舊版）就直接試，失敗再 fallback
+      if (typeof nav.canShare === "function") {
+        shareable = nav.canShare({ files: [file] });
+      }
+    } catch {
+      shareable = false;
+    }
+
+    if (shareable) {
+      try {
+        await nav.share({ files: [file] });
+        console.log("[AutoBackup] 交付方式: Web Share");
+        return "share";
+      } catch (shareErr: any) {
+        if (shareErr?.name === "AbortError") return "cancelled"; // 使用者取消
+        console.warn("[AutoBackup] Web Share 失敗，改用 <a> 下載:", shareErr);
+      }
+    }
+  }
+
+  console.warn(
+    "[AutoBackup] 交付方式: <a download>（經過原生下載管理員，檔案大時可能閃退）",
+  );
   triggerAnchorDownload(file, filename);
+  return "blob-download";
 }
 
 /** 用 <a download> 觸發下載，3 秒後回收 object URL */
@@ -1035,9 +1096,9 @@ async function cleanStaleOPFSTemps(): Promise<void> {
 async function downloadBackup(
   zipData: Uint8Array,
   filename: string,
-): Promise<void> {
+): Promise<string> {
   const blob = new Blob([zipData as BlobPart], { type: "application/zip" });
-  await deliverBackupFile(
+  return deliverBackupFile(
     new File([blob], filename, { type: "application/zip" }),
     filename,
   );
@@ -1113,6 +1174,7 @@ export async function performBackup(
     const opfsDiag: { reason?: string } = {};
     const tmp = await openOPFSTempSink(filename, opfsDiag);
     let outputMode: "opfs" | "memory";
+    let deliverVia = "unknown";
     if (tmp) {
       outputMode = "opfs";
       console.log("[AutoBackup] 輸出模式: opfs（ZIP 直接落地，不進 heap）");
@@ -1123,11 +1185,11 @@ export async function performBackup(
         await tmp.cleanup();
         throw e;
       }
-      onProgress?.({ phase: "寫入檔案..." });
+      onProgress?.({ phase: "交付檔案..." });
       // 注意：不在這裡刪暫存檔——瀏覽器下載／分享是非同步的，
       // 這時刪掉會讓正在讀取的 File 失效。殘留檔由下次備份開頭清理。
       const file = await tmp.getFile();
-      await deliverBackupFile(file, filename);
+      deliverVia = await deliverBackupFile(file, filename);
     } else {
       // OPFS 不可用（例如 iOS Safari）：只能在記憶體組裝，資料量大時可能閃退
       outputMode = "memory";
@@ -1136,14 +1198,16 @@ export async function performBackup(
       );
       onProgress?.({ phase: `打包中（記憶體模式：${opfsDiag.reason}）...` });
       const zipData = await buildBackupZipStreaming(onProgress, options);
-      onProgress?.({ phase: "寫入檔案..." });
-      await downloadBackup(zipData, filename);
+      onProgress?.({ phase: "交付檔案..." });
+      deliverVia = await downloadBackup(zipData, filename);
     }
 
+    // 交付方式寫進訊息：blob-download 就是會在 Android 原生層炸掉的那條路，
+    // 使用者回報閃退時這行是唯一能分辨的線索
     const msg =
       outputMode === "opfs"
-        ? `已下載備份: ${filename}`
-        : `已下載備份: ${filename}（記憶體模式：${opfsDiag.reason}）`;
+        ? `已備份: ${filename}（${deliverVia}）`
+        : `已備份: ${filename}（記憶體模式：${opfsDiag.reason} / ${deliverVia}）`;
     settings.lastBackupAt = Date.now();
     settings.lastBackupMessage = msg;
     await saveBackupSettings(settings);
