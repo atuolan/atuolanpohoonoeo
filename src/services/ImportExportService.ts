@@ -1080,7 +1080,7 @@ export class ImportExportService {
     const chatForExport = JSON.parse(JSON.stringify(chat)) as Chat;
     await normalizeChatBackupMediaSources(chatForExport);
     const extractor = new BackupMediaExtractor();
-    extractMediaFromChatBackupData(chatForExport, extractor);
+    await extractMediaFromChatBackupData(chatForExport, extractor);
     const extracted = extractor.getResult();
     const mediaFiles: Record<string, Uint8Array> = {};
 

@@ -1324,13 +1324,18 @@ async function loadAppData() {
     notificationStore.init(),
   ]);
 
-  // 自動備份：載入成功後備份關鍵資料到 localStorage
-  import("@/services/autoBackup")
-    .then(({ performBackup }) => {
-      // 延遲 5 秒執行，避免影響啟動速度
-      setTimeout(() => performBackup().catch(() => {}), 5000);
-    })
-    .catch(() => {});
+  // 自動備份：暫時停用啟動時的 OPFS 全量備份
+  // 原因：performBackup() 會在主線程把 7 個 store 全量讀出後 JSON.stringify()
+  // 成單一巨大字串，資料量大的使用者峰值記憶體是資料本身的兩倍以上，
+  // 在手機/PWA 上會直接 OOM 閃退（症狀：開啟約 5 秒後閃退）。
+  // 恢復功能（checkAndRestore）不受影響，仍保留在上方。
+  // TODO: 改成節流（例如一天最多一次）+ 分批 yield + 串流寫入後再開啟。
+  // import("@/services/autoBackup")
+  //   .then(({ performBackup }) => {
+  //     // 延遲 5 秒執行，避免影響啟動速度
+  //     setTimeout(() => performBackup().catch(() => {}), 5000);
+  //   })
+  //   .catch(() => {});
 
   // characters 已載入，立即啟動主動發訊息服務
   proactiveMessageService.start();

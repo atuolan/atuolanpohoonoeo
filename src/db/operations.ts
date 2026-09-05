@@ -5,6 +5,7 @@ import type {
 } from "@/schemas/affinity";
 import type { ChatMessage } from "@/types/chat";
 import type { AudioBlobRecord } from "./database";
+import type { BackupMediaExtractor } from "@/utils/backupMediaExtractor";
 import { closeDatabase, getDatabase } from "./database";
 
 // ============================================================
@@ -568,6 +569,67 @@ export async function restoreImagesToMessages(
     }
     return newMsg;
   });
+}
+
+/**
+ * 匯出用：直接把訊息中的圖片引用轉成備份媒體檔案。
+ *
+ * 與 restoreImagesToMessages() 的差別是不會把整批 base64 還原到記憶體，
+ * 而是逐筆從 imageCache 讀出 → 交給 extractor（通常帶 sink 即時寫入 ZIP）
+ * → 訊息欄位直接改成 `media/...` 路徑，處理完一筆就釋放。
+ *
+ * 會就地修改傳入的訊息物件。
+ */
+export async function exportChatImageMediaDirect(
+  messages: ChatMessage[],
+  extractor: BackupMediaExtractor,
+): Promise<void> {
+  if (!messages?.length) return;
+
+  // 同一個 ref 可能被多筆訊息共用，記住已轉出的路徑避免重複讀 IDB
+  const resolved = new Map<string, string | null>();
+
+  const toMediaPath = async (
+    ref: string,
+    prefix: string,
+    mimeType?: string,
+  ): Promise<string | null> => {
+    if (resolved.has(ref)) return resolved.get(ref)!;
+
+    let path: string | null = null;
+    try {
+      const base64 = await getChatImage(ref);
+      if (base64) {
+        path = base64.startsWith("data:")
+          ? await extractor.extract(base64, prefix)
+          : await extractor.extractRawImageBase64(base64, prefix, mimeType);
+      }
+    } catch (err) {
+      console.warn(`[operations] 匯出圖片 "${ref}" 失敗:`, err);
+    }
+
+    resolved.set(ref, path);
+    return path;
+  };
+
+  for (const msg of messages) {
+    const urlRef = isChatImageRef(msg.imageUrl) ? msg.imageUrl! : null;
+    const dataRef = isChatImageRef(msg.imageData) ? msg.imageData! : null;
+    if (!urlRef && !dataRef) continue;
+
+    if (urlRef) {
+      const path = await toMediaPath(urlRef, "chat", msg.imageMimeType);
+      if (path) msg.imageUrl = path;
+    }
+    if (dataRef) {
+      // imageData 與 imageUrl 共用同一個 ref 時指向同一份媒體
+      const path =
+        dataRef === urlRef
+          ? resolved.get(dataRef) ?? null
+          : await toMediaPath(dataRef, "chat_data", msg.imageMimeType);
+      if (path) msg.imageData = path;
+    }
+  }
 }
 
 /**

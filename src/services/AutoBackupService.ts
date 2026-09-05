@@ -8,7 +8,7 @@
  */
 
 import { db, DB_STORES } from "@/db/database";
-import { restoreImagesToMessages } from "@/db/operations";
+import { exportChatImageMediaDirect } from "@/db/operations";
 import { loadMessages } from "@/storage/chatMessageStorage";
 import {
   BackupMediaExtractor,
@@ -383,6 +383,9 @@ async function getAllChatKeys(): Promise<string[]> {
   });
 }
 
+/** sink 未寫完的積壓上限，超過就暫停餵資料（背壓） */
+const SINK_BACKPRESSURE_BYTES = 8 * 1024 * 1024;
+
 /**
  * 讓出主線程，避免長時間阻塞導致瀏覽器殺掉頁面
  */
@@ -391,8 +394,10 @@ function yieldToMain(): Promise<void> {
 }
 
 /**
- * 將一個 Uint8Array 推入 fflate Zip 流（使用 AsyncZipDeflate 壓縮）
- * 回傳 Promise，在該檔案完全寫入後 resolve
+ * 將一個 Uint8Array 推入 fflate Zip 流。
+ *
+ * 回傳的 Promise 在該檔案的壓縮輸出全部交給 Zip（final chunk 已送出）後才 resolve，
+ * 形成天然的背壓：呼叫端 await 之後才會讀下一份資料，pending 的壓縮量最多一個檔案。
  */
 function pushFileToZip(
   zipper: FflateZip,
@@ -407,13 +412,24 @@ function pushFileToZip(
       if (isMedia) {
         const passThrough = new ZipPassThrough(filename);
         zipper.add(passThrough);
+        // ZipPassThrough 是同步的，push 回傳時資料已全部交給 zipper
         passThrough.push(data, true);
         resolve();
       } else {
+        // AsyncZipDeflate 在 worker 中壓縮，等 final chunk 回來才算寫完
         const deflater = new AsyncZipDeflate(filename, { level });
+        // 必須先 add：Zip.add() 會覆寫 file.ondata，之後才能包裝它
         zipper.add(deflater);
+        const zipOndata = deflater.ondata;
+        deflater.ondata = (err, chunk, final) => {
+          zipOndata.call(deflater, err, chunk, final);
+          if (err) {
+            reject(err instanceof Error ? err : new Error(String(err)));
+          } else if (final) {
+            resolve();
+          }
+        };
         deflater.push(data, true);
-        resolve();
       }
     } catch (err) {
       reject(err);
@@ -422,10 +438,23 @@ function pushFileToZip(
 }
 
 /**
+ * ZIP 輸出接收端。提供時 ZIP chunks 直接寫出（例如寫入檔案系統），
+ * 不在記憶體累積整份 ZIP。
+ */
+export type BackupOutputSink = {
+  write(chunk: Uint8Array): Promise<void>;
+  close(): Promise<void>;
+};
+
+/**
  * 構建備份 ZIP — 真正的流式構建
  *
- * 使用 fflate 的 Zip streaming API，逐個檔案寫入 zip 流，
- * 每個聊天處理完後立即釋放，記憶體峰值 ≈ 單個最大聊天的大小。
+ * 使用 fflate 的 Zip streaming API，逐個檔案寫入 zip 流。
+ * 聊天圖片與其他媒體都是「讀一份 → 立刻寫入 zip → 釋放」，
+ * 記憶體峰值 ≈ 單個最大檔案，而非整份備份。
+ *
+ * 傳入 `sink` 時 ZIP chunks 直接寫出、不回傳資料；
+ * 不傳時在記憶體累積並回傳完整 Uint8Array（相容 GitHub 備份等路徑）。
  *
  * ZIP 結構：
  *   backup.json          — 輕量數據（不含聊天）
@@ -435,33 +464,74 @@ function pushFileToZip(
 export async function buildBackupZipStreaming(
   onProgress?: BackupProgressCallback,
   options?: { excludeChatImages?: boolean },
-): Promise<Uint8Array> {
+): Promise<Uint8Array>;
+export async function buildBackupZipStreaming(
+  onProgress: BackupProgressCallback | undefined,
+  options: { excludeChatImages?: boolean } | undefined,
+  sink: BackupOutputSink,
+): Promise<void>;
+export async function buildBackupZipStreaming(
+  onProgress?: BackupProgressCallback,
+  options?: { excludeChatImages?: boolean },
+  sink?: BackupOutputSink,
+): Promise<Uint8Array | void> {
   const excludeChatImages = options?.excludeChatImages ?? false;
   // 1. 收集輕量數據
   onProgress?.({ phase: "收集基礎數據..." });
   await yieldToMain();
   const lightData = await collectLightData();
 
-  // 建立共用的媒體提取器（跨聊天去重）
-  const extractor = new BackupMediaExtractor();
-
-  // 2. 先提取輕量數據中的媒體（角色頭像、主題桌布等）
-  extractAllMediaFromBackupData(lightData, extractor);
-
-  // 3. 建立 fflate Zip 流，收集輸出 chunks
+  // 2. 建立 fflate Zip 流
+  //    有 sink 時 chunk 直接寫出；否則在記憶體累積（向後相容）
   const outputChunks: Uint8Array[] = [];
   let totalOutputSize = 0;
   let zipResolve: () => void;
-  let zipReject: (err: Error) => void;
+  let zipRejectRaw: (err: Error) => void;
   const zipDone = new Promise<void>((resolve, reject) => {
     zipResolve = resolve;
-    zipReject = reject;
+    zipRejectRaw = reject;
   });
+  // ZIP/sink 一旦壞掉就是致命錯誤：不能被單一聊天的 try/catch 吞掉，
+  // 否則會產出被截斷的備份檔
+  let zipError: Error | null = null;
+  const zipReject = (err: Error) => {
+    zipError ??= err;
+    zipRejectRaw(err);
+  };
+  // 未被 await 時避免 unhandled rejection
+  zipDone.catch(() => {});
+
+  // sink.write 是 async，用一條串接的 promise 保證 chunk 順序寫出。
+  // pendingBytes 追蹤「已交給 sink 但還沒寫完」的量，用於背壓。
+  let writeChain: Promise<void> = Promise.resolve();
+  let pendingBytes = 0;
+  let drainNotify: (() => void) | null = null;
 
   const zipper = new FflateZip((err, chunk, final) => {
     if (err) {
       console.error("[AutoBackup] ZIP 流錯誤:", err);
       zipReject(err instanceof Error ? err : new Error(String(err)));
+      return;
+    }
+    if (sink) {
+      const size = chunk.length;
+      pendingBytes += size;
+      writeChain = writeChain.then(async () => {
+        await sink.write(chunk);
+        pendingBytes -= size;
+        drainNotify?.();
+      });
+      writeChain.catch((writeErr) => {
+        console.error("[AutoBackup] ZIP 寫出失敗:", writeErr);
+        pendingBytes = 0;
+        drainNotify?.();
+        zipReject(
+          writeErr instanceof Error ? writeErr : new Error(String(writeErr)),
+        );
+      });
+      if (final) {
+        writeChain.then(() => zipResolve()).catch(() => {});
+      }
       return;
     }
     outputChunks.push(chunk);
@@ -471,13 +541,44 @@ export async function buildBackupZipStreaming(
     }
   });
 
-  // 4. 寫入輕量數據（不含聊天）
+  /** 等待 sink 積壓降到閾值以下，避免壓縮速度超過磁碟寫入速度 */
+  const waitForDrain = async (): Promise<void> => {
+    while (sink && pendingBytes > SINK_BACKPRESSURE_BYTES) {
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          drainNotify = resolve;
+        }),
+        zipDone, // 出錯時直接拋出，不會卡死
+      ]);
+      drainNotify = null;
+    }
+  };
+
+  /** 寫入一個 ZIP 檔案項目，並在必要時等待 sink 消化積壓 */
+  const writeEntry = async (filename: string, data: Uint8Array) => {
+    // 與 zipDone 競賽：ZIP/sink 出錯時立即拋出，避免永遠等不到 final chunk
+    await Promise.race([pushFileToZip(zipper, filename, data), zipDone]);
+    await waitForDrain();
+  };
+
+  // 3. 建立共用的媒體提取器（跨聊天去重）
+  //    媒體一產生就寫入 zip 流，不在記憶體累積
+  let mediaCount = 0;
+  const extractor = new BackupMediaExtractor(async (filename, data) => {
+    mediaCount++;
+    await writeEntry(filename, data);
+  });
+
+  // 4. 提取輕量數據中的媒體（角色頭像、主題桌布等）
+  await extractAllMediaFromBackupData(lightData, extractor);
+
+  // 5. 寫入輕量數據（不含聊天）
   onProgress?.({ phase: "寫入基礎數據..." });
   await yieldToMain();
   const lightJsonBytes = strToU8(JSON.stringify(lightData));
-  await pushFileToZip(zipper, "backup.json", lightJsonBytes);
+  await writeEntry("backup.json", lightJsonBytes);
 
-  // 5. 逐個處理聊天 — 讀取 → 提取媒體 → 寫入 zip → 釋放
+  // 6. 逐個處理聊天 — 讀取 → 媒體即時寫入 zip → 寫入聊天 JSON → 釋放
   const chatKeys = await getAllChatKeys();
   const totalChats = chatKeys.length;
 
@@ -496,9 +597,12 @@ export async function buildBackupZipStreaming(
 
       if (chat.messages?.length > 0 && !excludeChatImages) {
         try {
-          chat.messages = await restoreImagesToMessages(chat.messages);
+          // 逐筆從 imageCache 讀出 → 寫入 zip → 欄位改成 media/ 路徑
+          // 不用 restoreImagesToMessages()，避免整批 base64 進記憶體
+          await exportChatImageMediaDirect(chat.messages, extractor);
         } catch (imgErr) {
-          console.warn(`[AutoBackup] 聊天 "${chat.id}" 圖片還原失敗:`, imgErr);
+          if (zipError) throw zipError;
+          console.warn(`[AutoBackup] 聊天 "${chat.id}" 圖片匯出失敗:`, imgErr);
         }
       }
 
@@ -511,14 +615,16 @@ export async function buildBackupZipStreaming(
 
       await normalizeChatBackupMediaSources(chat);
 
-      extractMediaFromChatBackupData(chat, extractor)
+      await extractMediaFromChatBackupData(chat, extractor);
 
       // 將聊天序列化後立即寫入 zip 流，然後釋放
       const chatJsonBytes = strToU8(JSON.stringify(chat));
       const safeId = String(chat.id || chatKeys[i]).replace(/[^a-zA-Z0-9_-]/g, "_");
-      await pushFileToZip(zipper, `chats/${safeId}.json`, chatJsonBytes);
+      await writeEntry(`chats/${safeId}.json`, chatJsonBytes);
       // chat 物件在此作用域結束後即可被 GC 回收
     } catch (chatErr) {
+      // ZIP 流本身壞了就沒必要繼續，往上拋讓呼叫端刪掉半成品
+      if (zipError) throw zipError;
       console.warn(
         `[AutoBackup] 聊天 "${chatKeys[i]}" 讀取失敗，跳過:`,
         chatErr,
@@ -526,22 +632,10 @@ export async function buildBackupZipStreaming(
     }
   }
 
-  // 6. 寫入媒體檔案
   const mediaResult = extractor.getResult();
   console.log(
     `[AutoBackup] 媒體提取完成: ${mediaResult.totalExtracted} 個 base64，去重 ${mediaResult.dedupeHits} 個`,
   );
-
-  onProgress?.({ phase: "寫入媒體檔案..." });
-  const mediaEntries = Object.entries(mediaResult.files);
-  for (let i = 0; i < mediaEntries.length; i++) {
-    if (i % 10 === 0) {
-      onProgress?.({ phase: "寫入媒體", current: i + 1, total: mediaEntries.length });
-      await yieldToMain();
-    }
-    const [filename, data] = mediaEntries[i];
-    await pushFileToZip(zipper, filename, data);
-  }
 
   // 7. 寫入 metadata.json（聊天數量等統計資訊）
   const metadataBytes = strToU8(JSON.stringify({
@@ -549,9 +643,9 @@ export async function buildBackupZipStreaming(
     format: "aguaphone-streaming-backup",
     exportedAt: lightData.exportedAt,
     chatCount: totalChats,
-    mediaCount: mediaEntries.length,
+    mediaCount,
   }));
-  await pushFileToZip(zipper, "metadata.json", metadataBytes);
+  await writeEntry("metadata.json", metadataBytes);
 
   // 8. 結束 zip 流，等待中央目錄寫入完成
   onProgress?.({ phase: "完成壓縮..." });
@@ -559,7 +653,13 @@ export async function buildBackupZipStreaming(
   zipper.end();
   await zipDone;
 
-  // 9. 合併所有 chunks 為最終 Uint8Array
+  // 9a. sink 路徑：資料已全部寫出，關閉後結束
+  if (sink) {
+    await sink.close();
+    return;
+  }
+
+  // 9b. 記憶體路徑：合併所有 chunks 為最終 Uint8Array
   const result = new Uint8Array(totalOutputSize);
   let offset = 0;
   for (const chunk of outputChunks) {
@@ -585,13 +685,14 @@ function generateBackupFilename(): string {
 }
 
 /**
- * 使用 File System Access API 寫入備份
+ * 開啟備份檔案的 writable，包成 BackupOutputSink。
+ *
+ * 在打包「之前」就開好檔案，讓 ZIP chunks 邊產生邊落地，
+ * 整份 ZIP 不會停留在 JS heap。
  */
-async function writeBackupToFS(
-  zipData: Uint8Array,
+async function openBackupFileSink(
   filename: string,
-  settings: AutoBackupSettings,
-): Promise<void> {
+): Promise<{ sink: BackupOutputSink; abort: () => Promise<void> }> {
   if (!_dirHandle) throw new Error("未選擇備份資料夾");
 
   // 檢查權限
@@ -602,13 +703,30 @@ async function writeBackupToFS(
 
   const fileHandle = await _dirHandle.getFileHandle(filename, { create: true });
   const writable = await (fileHandle as any).createWritable();
-  await writable.write(zipData);
-  await writable.close();
 
-  // 清理舊備份
-  if (settings.maxBackups > 0) {
-    await cleanOldBackups(settings.maxBackups);
-  }
+  return {
+    sink: {
+      async write(chunk: Uint8Array) {
+        await writable.write(chunk);
+      },
+      async close() {
+        await writable.close();
+      },
+    },
+    abort: async () => {
+      // 寫入中途失敗：中止 writable 並刪掉半成品檔案
+      try {
+        await writable.abort?.();
+      } catch {
+        /* 已關閉或不支援 abort */
+      }
+      try {
+        await _dirHandle?.removeEntry(filename);
+      } catch {
+        /* 檔案可能還沒建立 */
+      }
+    },
+  };
 }
 
 /**
@@ -647,21 +765,66 @@ async function cleanOldBackups(maxBackups: number): Promise<void> {
 }
 
 /**
+ * iOS 分享：先把 ZIP 落到 OPFS 暫存檔，再從 OPFS 取 File 交給 navigator.share，
+ * 讓 ZIP 內容不必以 Blob 形式停留在 JS heap。
+ * 回傳 false 表示 OPFS 不可用，呼叫端改走 Blob 路徑。
+ */
+async function shareViaOPFS(
+  zipData: Uint8Array,
+  filename: string,
+): Promise<boolean> {
+  const storage = (navigator as any).storage;
+  if (!storage?.getDirectory) return false;
+
+  const tmpName = `__share_${filename}`;
+  let root: any;
+  try {
+    root = await storage.getDirectory();
+    const fileHandle = await root.getFileHandle(tmpName, { create: true });
+    // iOS Safari 的 OPFS 沒有 createWritable（僅 Worker 內的 SyncAccessHandle）
+    if (typeof fileHandle.createWritable !== "function") {
+      await root.removeEntry(tmpName).catch(() => {});
+      return false;
+    }
+    const writable = await fileHandle.createWritable();
+    await writable.write(zipData as BlobPart);
+    await writable.close();
+
+    const file = await fileHandle.getFile();
+    await navigator.share({
+      files: [new File([file], filename, { type: "application/zip" })],
+    });
+    return true;
+  } catch (err: any) {
+    if (err?.name === "AbortError") return true; // 使用者取消，不再 fallback
+    console.warn("[AutoBackup] OPFS 分享失敗:", err);
+    return false;
+  } finally {
+    try {
+      await root?.removeEntry(tmpName);
+    } catch {
+      /* 暫存檔可能不存在 */
+    }
+  }
+}
+
+/**
  * Fallback：觸發瀏覽器下載
  */
 async function downloadBackup(
   zipData: Uint8Array,
   filename: string,
 ): Promise<void> {
-  const blob = new Blob([zipData as BlobPart], { type: "application/zip" });
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
   // iOS Safari: 使用 Web Share API（<a download> 在 iOS 上不可靠）
-  if (
-    navigator.share &&
-    /iPad|iPhone|iPod/.test(navigator.userAgent)
-  ) {
+  if (navigator.share && isIOS) {
+    if (await shareViaOPFS(zipData, filename)) return;
+
     try {
-      const file = new File([blob], filename, { type: "application/zip" });
+      const file = new File([zipData as BlobPart], filename, {
+        type: "application/zip",
+      });
       await navigator.share({ files: [file] });
       return;
     } catch (shareErr: any) {
@@ -671,6 +834,7 @@ async function downloadBackup(
   }
 
   // 標準 <a> 下載（含 iOS fallback）
+  const blob = new Blob([zipData as BlobPart], { type: "application/zip" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -710,23 +874,11 @@ export async function performBackup(
     const settings = await loadBackupSettings();
     const filename = generateBackupFilename();
 
-    // 使用流式備份，降低記憶體峰值
-    const zipData = await buildBackupZipStreaming(onProgress, options);
-
-    onProgress?.({ phase: "寫入檔案..." });
-
+    // FS 路徑：先開好檔案，ZIP 邊打包邊寫入磁碟，整份 ZIP 不進 JS heap
     if (!forceDownload && isFileSystemAccessSupported() && _dirHandle) {
+      let fileSink: { sink: BackupOutputSink; abort: () => Promise<void> };
       try {
-        await writeBackupToFS(zipData, filename, settings);
-        const msg = `備份成功: ${filename}`;
-        console.log(`[AutoBackup] ${msg}`);
-
-        // 更新設定
-        settings.lastBackupAt = Date.now();
-        settings.lastBackupMessage = msg;
-        await saveBackupSettings(settings);
-
-        return { success: true, message: msg, filename, method: "fs" };
+        fileSink = await openBackupFileSink(filename);
       } catch (e: any) {
         if (e.message === "PERMISSION_NEEDED") {
           return {
@@ -736,9 +888,33 @@ export async function performBackup(
         }
         throw e;
       }
+
+      try {
+        await buildBackupZipStreaming(onProgress, options, fileSink.sink);
+      } catch (e) {
+        await fileSink.abort();
+        throw e;
+      }
+
+      onProgress?.({ phase: "寫入檔案..." });
+      if (settings.maxBackups > 0) {
+        await cleanOldBackups(settings.maxBackups);
+      }
+
+      const msg = `備份成功: ${filename}`;
+      console.log(`[AutoBackup] ${msg}`);
+
+      // 更新設定
+      settings.lastBackupAt = Date.now();
+      settings.lastBackupMessage = msg;
+      await saveBackupSettings(settings);
+
+      return { success: true, message: msg, filename, method: "fs" };
     }
 
-    // Fallback: 下載
+    // Fallback: 下載（無法預開 writable，ZIP 需在記憶體組裝）
+    const zipData = await buildBackupZipStreaming(onProgress, options);
+    onProgress?.({ phase: "寫入檔案..." });
     await downloadBackup(zipData, filename);
     const msg = `已下載備份: ${filename}`;
     settings.lastBackupAt = Date.now();
