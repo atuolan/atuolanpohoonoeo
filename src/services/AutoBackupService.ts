@@ -437,6 +437,125 @@ function pushFileToZip(
   });
 }
 
+/** 單一 ZIP entry 的輸入積壓上限，超過就等 worker 消化 */
+const ZIP_ENTRY_INFLIGHT_BYTES = 2 * 1024 * 1024;
+
+/**
+ * 把 `backup.json` 的一個 top-level key 推入 entry。
+ *
+ * 陣列型 store（characters、vectorEmbeddings 等）逐筆序列化後推出，
+ * 避免單一 store 整包 `JSON.stringify()` 產生巨大字串——vectorEmbeddings
+ * 把 Float32Array 展成 JS number 陣列後，每個浮點數約 20 個字元，
+ * 整包序列化足以單獨吃掉數十 MB。
+ *
+ * 輸出位元組與 `JSON.stringify(整包)` 對該 key 的輸出逐字相同。
+ * 回傳 false 表示該 key 被省略（值為 undefined／函式／symbol）。
+ */
+async function pushLightValue(
+  entry: { push: (data: Uint8Array) => void; inflight: () => number; drain: () => Promise<void> },
+  key: string,
+  value: unknown,
+  isFirst: boolean,
+): Promise<boolean> {
+  const prefix = `${isFirst ? "" : ","}${JSON.stringify(key)}:`;
+
+  if (Array.isArray(value)) {
+    entry.push(strToU8(`${prefix}[`));
+    for (let i = 0; i < value.length; i++) {
+      // 陣列中的 undefined／函式／symbol 序列化為 null（與 JSON.stringify 一致）
+      const itemJson = JSON.stringify(value[i]) ?? "null";
+      entry.push(strToU8(i === 0 ? itemJson : `,${itemJson}`));
+      if (entry.inflight() > ZIP_ENTRY_INFLIGHT_BYTES) {
+        await entry.drain();
+      }
+    }
+    entry.push(strToU8("]"));
+    return true;
+  }
+
+  const json = JSON.stringify(value);
+  // 與 JSON.stringify(整包) 一致：undefined 值的 key 會被省略
+  if (json === undefined) return false;
+  entry.push(strToU8(`${prefix}${json}`));
+  return true;
+}
+
+/**
+ * 開啟一個可分段寫入的 ZIP 檔案項目。
+ *
+ * 與 `pushFileToZip` 的差別：資料可以分多次餵進去，讓呼叫端不必先在
+ * 記憶體組出完整內容。用於 `backup.json`——那包資料有 26 個 store，
+ * 整包 `JSON.stringify()` 會產生單一巨大字串，峰值是資料本身的數倍。
+ */
+function openZipEntry(
+  zipper: FflateZip,
+  filename: string,
+  level: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 = 6,
+): {
+  push: (data: Uint8Array) => void;
+  /** 已餵給 worker 但還沒回吐輸出的位元組數 */
+  inflight: () => number;
+  /** 等到 worker 有輸出（或已無積壓）為止 */
+  drain: () => Promise<void>;
+  end: () => Promise<void>;
+} {
+  const deflater = new AsyncZipDeflate(filename, { level });
+  // 必須先 add：Zip.add() 會覆寫 file.ondata，之後才能包裝它
+  zipper.add(deflater);
+  const zipOndata = deflater.ondata;
+
+  let resolveEnd: () => void;
+  let rejectEnd: (err: Error) => void;
+  const done = new Promise<void>((resolve, reject) => {
+    resolveEnd = resolve;
+    rejectEnd = reject;
+  });
+
+  // waitForDrain() 只看 sink 的輸出積壓，看不到「已 push 進 worker 但還沒
+  // 壓縮完」的輸入積壓。連續 push 時 worker 可以排上數 MB 而輸出 callback
+  // 一次都還沒觸發，所以輸入端要自己計量。
+  let pushedBytes = 0;
+  let outputSeen = 0;
+  let notify: (() => void) | null = null;
+
+  deflater.ondata = (err, chunk, final) => {
+    zipOndata.call(deflater, err, chunk, final);
+    outputSeen++;
+    pushedBytes = 0; // worker 已吐出資料，視為輸入端已消化
+    notify?.();
+    if (err) {
+      rejectEnd(err instanceof Error ? err : new Error(String(err)));
+    } else if (final) {
+      resolveEnd();
+    }
+  };
+
+  return {
+    push: (data: Uint8Array) => {
+      pushedBytes += data.length;
+      deflater.push(data, false);
+    },
+    inflight: () => pushedBytes,
+    drain: async () => {
+      const before = outputSeen;
+      // 讓出主線程給 worker 回呼的機會；worker 有輸出或積壓清空就結束等待
+      for (let i = 0; i < 50 && pushedBytes > 0 && outputSeen === before; i++) {
+        await Promise.race([
+          new Promise<void>((resolve) => {
+            notify = resolve;
+          }),
+          new Promise<void>((resolve) => setTimeout(resolve, 4)),
+        ]);
+        notify = null;
+      }
+    },
+    end: () => {
+      deflater.push(new Uint8Array(0), true);
+      return done;
+    },
+  };
+}
+
 /**
  * ZIP 輸出接收端。提供時 ZIP chunks 直接寫出（例如寫入檔案系統），
  * 不在記憶體累積整份 ZIP。
@@ -573,10 +692,37 @@ export async function buildBackupZipStreaming(
   await extractAllMediaFromBackupData(lightData, extractor);
 
   // 5. 寫入輕量數據（不含聊天）
+  //    逐個 top-level key 序列化後推入同一個 ZIP entry，並即時釋放。
+  //    不整包 JSON.stringify()——那會產生單一巨大字串再被 strToU8 複製一份，
+  //    峰值是資料本身的三倍，資料量大的使用者會在這裡 OOM 閃退。
+  //    產出的 backup.json 內容與舊版逐字相同，格式沒有改變。
   onProgress?.({ phase: "寫入基礎數據..." });
   await yieldToMain();
-  const lightJsonBytes = strToU8(JSON.stringify(lightData));
-  await writeEntry("backup.json", lightJsonBytes);
+  // metadata.json 之後要用，必須在逐 key 釋放前先存下來
+  const exportedAt = lightData.exportedAt;
+  const lightEntry = openZipEntry(zipper, "backup.json");
+  try {
+    lightEntry.push(strToU8("{"));
+    let first = true;
+    for (const key of Object.keys(lightData)) {
+      const value = lightData[key];
+      const written = await pushLightValue(lightEntry, key, value, first);
+      if (written) first = false;
+      // 已序列化的 store 立刻釋放，讓 GC 在迴圈中就能回收
+      delete lightData[key];
+      // 兩端都要等：sink 的輸出積壓，以及 worker 的輸入積壓
+      await waitForDrain();
+      if (lightEntry.inflight() > ZIP_ENTRY_INFLIGHT_BYTES) {
+        await lightEntry.drain();
+      }
+    }
+    lightEntry.push(strToU8("}"));
+    await Promise.race([lightEntry.end(), zipDone]);
+    await waitForDrain();
+  } catch (e) {
+    if (zipError) throw zipError;
+    throw e;
+  }
 
   // 6. 逐個處理聊天 — 讀取 → 媒體即時寫入 zip → 寫入聊天 JSON → 釋放
   const chatKeys = await getAllChatKeys();
@@ -584,7 +730,9 @@ export async function buildBackupZipStreaming(
 
   for (let i = 0; i < chatKeys.length; i++) {
     if (i % 3 === 0) {
-      onProgress?.({ phase: "處理聊天", current: i + 1, total: totalChats });
+      // 報告「已完成 i 筆」而非 i+1——否則顯示 N/N 時最後一筆還在打包，
+      // 使用者會以為卡在收尾，實際是還沒開始處理。
+      onProgress?.({ phase: "處理聊天", current: i, total: totalChats });
       await yieldToMain();
     }
 
@@ -632,6 +780,9 @@ export async function buildBackupZipStreaming(
     }
   }
 
+  // 迴圈真的跑完了，補報一次滿格
+  onProgress?.({ phase: "處理聊天", current: totalChats, total: totalChats });
+
   const mediaResult = extractor.getResult();
   console.log(
     `[AutoBackup] 媒體提取完成: ${mediaResult.totalExtracted} 個 base64，去重 ${mediaResult.dedupeHits} 個`,
@@ -641,7 +792,7 @@ export async function buildBackupZipStreaming(
   const metadataBytes = strToU8(JSON.stringify({
     version: "2.0",
     format: "aguaphone-streaming-backup",
-    exportedAt: lightData.exportedAt,
+    exportedAt,
     chatCount: totalChats,
     mediaCount,
   }));
@@ -772,9 +923,13 @@ async function cleanOldBackups(maxBackups: number): Promise<void> {
  * 落地後用 `getFile()` 取回由磁碟撐著的 File，交給 share / <a download>。
  *
  * 回傳 null 表示 OPFS 不可用（例如 iOS Safari 沒有主線程 createWritable），
- * 呼叫端需 fallback 到記憶體路徑。
+ * 呼叫端需 fallback 到記憶體路徑。`diag.reason` 會填入不可用的原因，
+ * 讓使用者在畫面上就能看出跑的是哪條路徑——閃退時這是唯一的線索。
  */
-async function openOPFSTempSink(filename: string): Promise<{
+async function openOPFSTempSink(
+  filename: string,
+  diag: { reason?: string } = {},
+): Promise<{
   sink: BackupOutputSink;
   /** 打包完成後取回落地的檔案 */
   getFile: () => Promise<File>;
@@ -782,7 +937,10 @@ async function openOPFSTempSink(filename: string): Promise<{
   cleanup: () => Promise<void>;
 } | null> {
   const storage = (navigator as any).storage;
-  if (!storage?.getDirectory) return null;
+  if (!storage?.getDirectory) {
+    diag.reason = "no-getDirectory";
+    return null;
+  }
 
   const tmpName = `__tmp_${filename}`;
   let root: any;
@@ -791,6 +949,7 @@ async function openOPFSTempSink(filename: string): Promise<{
     const fileHandle = await root.getFileHandle(tmpName, { create: true });
     // iOS Safari 的 OPFS 沒有 createWritable（僅 Worker 內的 SyncAccessHandle）
     if (typeof fileHandle.createWritable !== "function") {
+      diag.reason = "no-createWritable";
       await root.removeEntry(tmpName).catch(() => {});
       return null;
     }
@@ -824,6 +983,7 @@ async function openOPFSTempSink(filename: string): Promise<{
     };
   } catch (err) {
     console.warn("[AutoBackup] OPFS 暫存檔開啟失敗:", err);
+    diag.reason = `open-failed: ${(err as any)?.name || err}`;
     try {
       await root?.removeEntry(tmpName);
     } catch {
@@ -973,8 +1133,13 @@ export async function performBackup(
 
     // 下載路徑：優先把 ZIP 串流落到 OPFS 暫存檔，再取回 File 交給下載／分享。
     // 直接在記憶體組整份 ZIP 再包 Blob，資料量大時會 OOM 閃退。
-    const tmp = await openOPFSTempSink(filename);
+    const opfsDiag: { reason?: string } = {};
+    const tmp = await openOPFSTempSink(filename, opfsDiag);
+    let outputMode: "opfs" | "memory";
     if (tmp) {
+      outputMode = "opfs";
+      console.log("[AutoBackup] 輸出模式: opfs（ZIP 直接落地，不進 heap）");
+      onProgress?.({ phase: "打包中（磁碟串流）..." });
       try {
         await buildBackupZipStreaming(onProgress, options, tmp.sink);
       } catch (e) {
@@ -987,13 +1152,21 @@ export async function performBackup(
       const file = await tmp.getFile();
       await deliverBackupFile(file, filename);
     } else {
-      // OPFS 不可用（例如 iOS Safari）：只能在記憶體組裝
+      // OPFS 不可用（例如 iOS Safari）：只能在記憶體組裝，資料量大時可能閃退
+      outputMode = "memory";
+      console.warn(
+        `[AutoBackup] 輸出模式: memory（OPFS 不可用：${opfsDiag.reason}），資料量大可能閃退`,
+      );
+      onProgress?.({ phase: `打包中（記憶體模式：${opfsDiag.reason}）...` });
       const zipData = await buildBackupZipStreaming(onProgress, options);
       onProgress?.({ phase: "寫入檔案..." });
       await downloadBackup(zipData, filename);
     }
 
-    const msg = `已下載備份: ${filename}`;
+    const msg =
+      outputMode === "opfs"
+        ? `已下載備份: ${filename}`
+        : `已下載備份: ${filename}（記憶體模式：${opfsDiag.reason}）`;
     settings.lastBackupAt = Date.now();
     settings.lastBackupMessage = msg;
     await saveBackupSettings(settings);

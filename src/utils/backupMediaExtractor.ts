@@ -75,11 +75,45 @@ function getImageExtensionFromMimeType(mimeType?: string): string {
   return subtype === 'jpeg' ? 'jpg' : subtype
 }
 
-/** 簡易 hash（用前後各 1000 字元 + 長度），足以區分不同圖片 */
-function quickHash(str: string): string {
-  const prefix = str.substring(0, 1000)
-  const suffix = str.substring(str.length - 1000)
-  return `${str.length}_${prefix}_${suffix}`
+/**
+ * 對已解碼的二進位內容算固定長度摘要，作為去重 key。
+ *
+ * 不可以用 base64 字串的切片當 key：V8 的 `substring()` 會產生
+ * SlicedString，抓住整個母字串不放，於是每張圖片的完整 base64 都被
+ * 去重快取留在 heap 裡（實測 64 MiB 圖片殘留約 86.7 MiB），媒體已經
+ * 寫出也不會釋放。改成數值摘要後快取只留固定長度的字串。
+ */
+async function hashBytes(ext: string, data: Uint8Array): Promise<string> {
+  const subtle = globalThis.crypto?.subtle
+  if (subtle) {
+    try {
+      // 複製一份：部分實作會 detach 傳入的 buffer
+      const digest = await subtle.digest('SHA-256', data.slice().buffer)
+      const view = new Uint8Array(digest)
+      let hex = ''
+      for (let i = 0; i < view.length; i++) {
+        hex += view[i].toString(16).padStart(2, '0')
+      }
+      return `${ext}:${data.length}:${hex}`
+    } catch {
+      // 落到下方 FNV
+    }
+  }
+
+  // Fallback：FNV-1a ×4（不同 offset basis）湊成 128 bit
+  let h0 = 0x811c9dc5
+  let h1 = 0x01000193
+  let h2 = 0x811c9dc5 ^ 0x5bf03635
+  let h3 = 0x01000193 ^ 0x9e3779b9
+  for (let i = 0; i < data.length; i++) {
+    const b = data[i]
+    h0 = Math.imul(h0 ^ b, 0x01000193)
+    h1 = Math.imul(h1 ^ b, 0x85ebca6b)
+    h2 = Math.imul(h2 ^ b, 0xc2b2ae35)
+    h3 = Math.imul(h3 ^ b, 0x27d4eb2f)
+  }
+  const part = (n: number) => (n >>> 0).toString(16).padStart(8, '0')
+  return `${ext}:${data.length}:${part(h0)}${part(h1)}${part(h2)}${part(h3)}`
 }
 
 function isRawBase64ImageData(str: string | undefined): boolean {
@@ -148,7 +182,7 @@ export class BackupMediaExtractor {
     const parsed = parseDataUrl(dataUrl)
     if (!parsed) return null
 
-    const hash = quickHash(`${parsed.ext}:${dataUrl.substring(dataUrl.indexOf(',') + 1)}`)
+    const hash = await hashBytes(parsed.ext, parsed.data)
     const filename = `media/${prefix}_${this.index++}.${parsed.ext}`
     return this.storeParsedMedia(hash, filename, parsed.data)
   }
@@ -160,7 +194,7 @@ export class BackupMediaExtractor {
     try {
       const ext = getImageExtensionFromMimeType(mimeType)
       const data = base64ToUint8Array(normalized)
-      const hash = quickHash(`${ext}:${normalized}`)
+      const hash = await hashBytes(ext, data)
       const filename = `media/${prefix}_${this.index++}.${ext}`
       return this.storeParsedMedia(hash, filename, data)
     } catch {
@@ -177,7 +211,7 @@ export class BackupMediaExtractor {
     const parsed = parseDataUrl(dataUrl)
     if (!parsed) return null
 
-    const hash = quickHash(`${parsed.ext}:${dataUrl.substring(dataUrl.indexOf(',') + 1)}`)
+    const hash = await hashBytes(parsed.ext, parsed.data)
     const filename = `media/avatar_${id}.${parsed.ext}`
     return this.storeParsedMedia(hash, filename, parsed.data)
   }

@@ -1287,7 +1287,9 @@ async function handleBackupNow() {
   isBackingUp.value = true;
   backupProgress.value = "準備中...";
   try {
-    const result = await performBackup(false, onBackupProgress);
+    const result = await performBackup(false, onBackupProgress, {
+      excludeChatImages: excludeChatImages.value,
+    });
     autoBackupSettings.lastBackupAt = Date.now();
     autoBackupSettings.lastBackupMessage = result.message;
     if (result.success) {
@@ -1305,7 +1307,9 @@ async function handleDownloadBackup() {
   isBackingUp.value = true;
   backupProgress.value = "準備中...";
   try {
-    const result = await performBackup(true, onBackupProgress);
+    const result = await performBackup(true, onBackupProgress, {
+      excludeChatImages: excludeChatImages.value,
+    });
     autoBackupSettings.lastBackupAt = Date.now();
     autoBackupSettings.lastBackupMessage = result.message;
   } finally {
@@ -6461,6 +6465,28 @@ function useClonedVoice(voiceId: string) {
               {{ isBackingUp ? "備份中..." : "下載備份檔案" }}
             </button>
           </div>
+
+          <!-- 與上方「數據備份」共用同一個開關：資料量大時可砍掉最大的一塊 -->
+          <label
+            class="backup-option"
+            style="
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              padding: 8px 0 0;
+              font-size: 13px;
+              color: var(--color-text-secondary, #9ca3af);
+              cursor: pointer;
+              user-select: none;
+            "
+          >
+            <input
+              type="checkbox"
+              v-model="excludeChatImages"
+              style="accent-color: var(--color-primary, #7dd3a8)"
+            />
+            不含聊天圖片（備份閃退時勾選此項）
+          </label>
 
           <!-- 備份進度 -->
           <div

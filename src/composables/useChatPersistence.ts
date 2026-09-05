@@ -135,13 +135,20 @@ export function useChatPersistence(deps: UseChatPersistenceDeps) {
           : "";
 
       let plainChat: any;
+      // 訊息已由獨立的 chatMessages store 保存；metadata clone 不需再深拷貝整份歷史。
+      // 保留空的 messages 欄位，讓後續 saveChatMetadata 明確只寫入聊天 metadata。
+      const chatMetadataSnapshot = {
+        ...toRaw(chat),
+        messages: [],
+      };
       try {
-        plainChat = structuredClone(toRaw(chat));
+        plainChat = structuredClone(chatMetadataSnapshot);
       } catch {
-        plainChat = JSON.parse(JSON.stringify(toRaw(chat)));
+        plainChat = JSON.parse(JSON.stringify(chatMetadataSnapshot));
       }
 
-      const plainMessages = plainChat.messages || [];
+      // 實際訊息快照與 metadata clone 分離；訊息仍必須完整交給 message store。
+      const plainMessages = messagesForStorage;
       const localCount = plainMessages.length;
 
       let latestFromDb: any = null;
