@@ -201,22 +201,126 @@ describe("backup.json 逐筆陣列序列化", () => {
   });
 });
 
-describe("metadata.json 的 exportedAt", () => {
-  it("逐 key 釋放前必須先存下 exportedAt", () => {
-    // 迴歸測試：逐 key delete 會把 exportedAt 一起刪掉，
-    // 之後 metadata.json 讀 lightData.exportedAt 就變成 undefined
-    const lightData: Record<string, unknown> = {
-      exportedAt: "2026-09-05T00:00:00.000Z",
-      characters: [],
-    };
-    const exportedAt = lightData.exportedAt; // 必須在迴圈前取
+/**
+ * 模擬新版步驟 4-5：固定前綴 + 逐個 loader 載入後序列化。
+ * 每個 store 獨立載入、寫出、釋放，全程沒有「全部 store 同時在記憶體」的時刻。
+ */
+async function serializePerStore(
+  prefix: Array<[string, unknown]>,
+  loaders: Array<{ key: string; load: () => Promise<unknown> }>,
+): Promise<string> {
+  const parts: string[] = ["{"];
+  let first = true;
+  const push = (key: string, value: unknown): boolean => {
+    const p = `${first ? "" : ","}${JSON.stringify(key)}:`;
+    if (Array.isArray(value)) {
+      parts.push(`${p}[`);
+      for (let i = 0; i < value.length; i++) {
+        const j = JSON.stringify(value[i]) ?? "null";
+        parts.push(i === 0 ? j : `,${j}`);
+      }
+      parts.push("]");
+      return true;
+    }
+    const json = JSON.stringify(value);
+    if (json === undefined) return false;
+    parts.push(`${p}${json}`);
+    return true;
+  };
 
+  for (const [key, value] of prefix) {
+    push(key, value);
+    first = false;
+  }
+  for (const { key, load } of loaders) {
+    const wrapper: Record<string, unknown> = { [key]: await load() };
+    if (push(key, wrapper[key])) first = false;
+    delete wrapper[key];
+  }
+  parts.push("}");
+  return parts.join("");
+}
+
+describe("backup.json 逐 store 載入序列化", () => {
+  it("與舊版一次全載後整包 stringify 逐字元相同", async () => {
+    const stores: Record<string, unknown> = {
+      characters: [{ id: "c1", name: "小明", avatar: "media/avatar_c1.png" }],
+      lorebooks: [],
+      settings: { theme: "neon" },
+      userData: null,
+      themes: [{ id: "t1", wallpaperStyle: { type: "color", value: "#000" } }],
+      qzonePosts: [{ id: "p1", images: ["media/qzone_0_1.png"] }],
+      gameStates: [{ key: "g1", value: { score: 10 } }],
+      vectorEmbeddings: Array.from({ length: 50 }, (_, i) => ({
+        id: `v${i}`,
+        vector: [i, i + 1],
+      })),
+      canvasLayout: { widgets: [] },
+    };
+
+    // 舊版行為：全部載入成一個物件後整包 stringify
+    const legacy = JSON.stringify({
+      version: 1,
+      type: "aguaphone-auto-backup",
+      exportedAt: "2026-09-05T00:00:00.000Z",
+      ...stores,
+    });
+
+    const actual = await serializePerStore(
+      [
+        ["version", 1],
+        ["type", "aguaphone-auto-backup"],
+        ["exportedAt", "2026-09-05T00:00:00.000Z"],
+      ],
+      Object.keys(stores).map((key) => ({
+        key,
+        load: async () => stores[key],
+      })),
+    );
+
+    expect(actual).toBe(legacy);
+  });
+
+  it("loader 回傳 undefined 的 store 被省略，不留多餘逗號", async () => {
+    const actual = await serializePerStore(
+      [["version", 1]],
+      [
+        { key: "a", load: async () => undefined },
+        { key: "b", load: async () => [1, 2] },
+      ],
+    );
+    expect(actual).toBe(JSON.stringify({ version: 1, b: [1, 2] }));
+    expect(JSON.parse(actual)).toEqual({ version: 1, b: [1, 2] });
+  });
+
+  it("全部 store 都空時仍是合法 JSON", async () => {
+    const actual = await serializePerStore(
+      [["version", 1]],
+      [
+        { key: "a", load: async () => [] },
+        { key: "b", load: async () => undefined },
+      ],
+    );
+    expect(JSON.parse(actual)).toEqual({ version: 1, a: [] });
+  });
+});
+
+describe("metadata.json 的 exportedAt", () => {
+  it("exportedAt 獨立產生，不依賴會被釋放的資料物件", () => {
+    // 迴歸測試：舊版從 lightData.exportedAt 讀取，而逐 key delete 會把它
+    // 一起刪掉，metadata.json 就寫進 undefined。現在改成在打包開始時
+    // 獨立產生一份，backup.json 與 metadata.json 共用同一個值。
+    const exportedAt = new Date("2026-09-05T00:00:00.000Z").toISOString();
+
+    const lightData: Record<string, unknown> = { characters: [] };
     for (const key of Object.keys(lightData)) {
       delete lightData[key];
     }
 
+    // 資料物件被清空後 exportedAt 仍然有效
+    expect(Object.keys(lightData)).toHaveLength(0);
     expect(exportedAt).toBe("2026-09-05T00:00:00.000Z");
-    expect(lightData.exportedAt).toBeUndefined();
+
     const metadata = { version: "2.0", exportedAt, chatCount: 0 };
     expect(JSON.parse(JSON.stringify(metadata)).exportedAt).toBe(
       "2026-09-05T00:00:00.000Z",

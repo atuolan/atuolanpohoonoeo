@@ -199,158 +199,114 @@ export type BackupProgressCallback = (info: {
 /**
  * 收集非聊天的輕量數據（通常 < 5 MB）
  */
-async function collectLightData(): Promise<Record<string, unknown>> {
-  await db.init();
-
-  const characters = await db.getAll(DB_STORES.CHARACTERS);
-  const lorebooks = await db.getAll(DB_STORES.LOREBOOKS);
-  const themes = await db.getAll(DB_STORES.THEMES);
-  const layouts = await db.getAll(DB_STORES.LAYOUTS);
-  const characterAffections = await db.getAll(DB_STORES.CHARACTER_AFFECTIONS);
-  const settings = await db.get(DB_STORES.APP_SETTINGS, "main-settings");
-  const userData = await db.get(DB_STORES.APP_SETTINGS, "user-data");
-  const qzonePosts = await db.getAll(DB_STORES.QZONE_POSTS);
-  const summaries = await db.getAll(DB_STORES.SUMMARIES);
-  const diaries = await db.getAll(DB_STORES.DIARIES);
-  const pendingCalls = await db.getAll(DB_STORES.PENDING_CALLS);
-  const callHistory = await db.getAll(DB_STORES.CALL_HISTORY);
-  const holidayRecords = await db.getAll(DB_STORES.HOLIDAY_RECORDS);
-  const calendarEvents = await db.getAll(DB_STORES.CALENDAR_EVENTS);
-  const importantEvents = await db.getAll(DB_STORES.IMPORTANT_EVENTS);
-  const books = await db.getAll(DB_STORES.BOOKS);
-  const stickers = await db.getAll(DB_STORES.STICKERS);
-  // gameStates 沒有 keyPath，需要手動取 key-value 對（類似 promptLibrary）
-  const gameStates = await (async () => {
-    try {
-      if (!db._instance) await db.init();
-      if (!db._instance) return [];
-      const tx = db._instance.transaction("gameStates", "readonly");
-      const store = tx.objectStore("gameStates");
-      const keys = await store.getAllKeys();
-      const values = await store.getAll();
-      return keys.map((key: IDBValidKey, i: number) => ({
-        key: String(key),
-        value: values[i],
-      }));
-    } catch {
-      return [];
-    }
-  })();
-  const rendererRules = await db.getAll(DB_STORES.RENDERER_RULES);
-  const bookProgress = await db.getAll(DB_STORES.BOOK_PROGRESS);
-  const chatAffinityStates = await db.getAll(DB_STORES.CHAT_AFFINITY_STATES);
-
-  // 向量嵌入（Float32Array → 普通陣列，以便 JSON 序列化）
-  const vectorEmbeddings = await (async () => {
-    try {
-      const all = await db.getAll(DB_STORES.VECTOR_EMBEDDINGS);
-      return all.map((rec: any) => ({
-        ...rec,
-        vector: rec.vector ? Array.from(rec.vector as Float32Array) : null,
-      }));
-    } catch {
-      return [];
-    }
-  })();
-
-  // promptLibrary（使用者自訂提示詞庫，不受 reset-all 影響）
-  const promptLibrary = await (async () => {
-    try {
-      if (!db._instance) await db.init();
-      if (!db._instance) return [];
-      const tx = db._instance.transaction("promptLibrary", "readonly");
-      const store = tx.objectStore("promptLibrary");
-      const keys = await store.getAllKeys();
-      const values = await store.getAll();
-      return keys.map((key: IDBValidKey, i: number) => ({
-        key: String(key),
-        value: values[i],
-      }));
-    } catch {
-      return [];
-    }
-  })();
-
-  // oldSettings（settings store 的 key-value 對：劇場貼文、提示詞管理器、健身設定等）
-  const oldSettings = await (async () => {
-    try {
-      if (!db._instance) await db.init();
-      if (!db._instance) return [];
-      const tx = db._instance.transaction("settings", "readonly");
-      const store = tx.objectStore("settings");
-      const keys = await store.getAllKeys();
-      const values = await store.getAll();
-      return keys.map((key: IDBValidKey, i: number) => ({
-        key: String(key),
-        value: values[i],
-      }));
-    } catch {
-      return [];
-    }
-  })();
-
-  // canvas layout（widget 佈局、app 圖標、日曆顏色等）存在獨立的 Aguaphone_V2 IDB
-  const canvasLayout = await (async () => {
-    try {
-      return await new Promise<any>((resolve) => {
-        const req = indexedDB.open("Aguaphone_V2");
-        req.onsuccess = (e) => {
-          const idb = (e.target as IDBOpenDBRequest).result;
-          if (!idb.objectStoreNames.contains("canvas_layout")) {
-            idb.close();
-            resolve(null);
-            return;
-          }
-          const tx = idb.transaction(["canvas_layout"], "readonly");
-          const store = tx.objectStore("canvas_layout");
-          const getReq = store.get("main_layout");
-          getReq.onsuccess = () => {
-            idb.close();
-            resolve(getReq.result || null);
-          };
-          getReq.onerror = () => {
-            idb.close();
-            resolve(null);
-          };
-        };
-        req.onerror = () => resolve(null);
-      });
-    } catch {
-      return null;
-    }
-  })();
-
-  return {
-    version: 1,
-    type: "aguaphone-auto-backup",
-    exportedAt: new Date().toISOString(),
-    characters,
-    lorebooks,
-    settings,
-    userData,
-    themes,
-    layouts,
-    characterAffections,
-    qzonePosts,
-    summaries,
-    diaries,
-    pendingCalls,
-    callHistory,
-    holidayRecords,
-    calendarEvents,
-    importantEvents,
-    books,
-    stickers,
-    gameStates,
-    rendererRules,
-    bookProgress,
-    chatAffinityStates,
-    vectorEmbeddings,
-    promptLibrary,
-    oldSettings,
-    canvasLayout,
-  };
+/** 手動取 key-value 對的 store（沒有 keyPath，例如 gameStates / settings） */
+async function loadKeyValueStore(
+  storeName: "gameStates" | "promptLibrary" | "settings",
+): Promise<Array<{ key: string; value: unknown }>> {
+  try {
+    if (!db._instance) await db.init();
+    if (!db._instance) return [];
+    const tx = db._instance.transaction(storeName, "readonly");
+    const store = tx.objectStore(storeName);
+    const keys = await store.getAllKeys();
+    const values = await store.getAll();
+    return keys.map((key: IDBValidKey, i: number) => ({
+      key: String(key),
+      value: values[i],
+    }));
+  } catch {
+    return [];
+  }
 }
+
+/** 向量嵌入（Float32Array → 普通陣列，以便 JSON 序列化） */
+async function loadVectorEmbeddings(): Promise<unknown[]> {
+  try {
+    const all = await db.getAll(DB_STORES.VECTOR_EMBEDDINGS);
+    return all.map((rec: any) => ({
+      ...rec,
+      vector: rec.vector ? Array.from(rec.vector as Float32Array) : null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** canvas layout（widget 佈局、app 圖標、日曆顏色等）存在獨立的 Aguaphone_V2 IDB */
+async function loadCanvasLayout(): Promise<any> {
+  try {
+    return await new Promise<any>((resolve) => {
+      const req = indexedDB.open("Aguaphone_V2");
+      req.onsuccess = (e) => {
+        const idb = (e.target as IDBOpenDBRequest).result;
+        if (!idb.objectStoreNames.contains("canvas_layout")) {
+          idb.close();
+          resolve(null);
+          return;
+        }
+        const tx = idb.transaction(["canvas_layout"], "readonly");
+        const store = tx.objectStore("canvas_layout");
+        const getReq = store.get("main_layout");
+        getReq.onsuccess = () => {
+          idb.close();
+          resolve(getReq.result || null);
+        };
+        getReq.onerror = () => {
+          idb.close();
+          resolve(null);
+        };
+      };
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 輕量資料的逐個載入器。
+ *
+ * 不可以一次把全部 store 讀進記憶體再處理——「輕量」是誤稱：
+ * themes（桌布）、qzonePosts、stickers、oldSettings（劇場貼文）、canvasLayout
+ * 裡面都塞著 base64 圖片。全部同時載入的峰值發生在第一個進度回報之前，
+ * 資料量大的使用者會在畫面還沒出現時就閃退（症狀：什麼都沒彈出來）。
+ *
+ * 改成逐個載入 → 立刻抽出 base64 到 media/ → 只留下被路徑取代後的小物件，
+ * 峰值就變成「單一 store + 全部已抽乾的 store」。
+ */
+const LIGHT_LOADERS: Array<{ key: string; load: () => Promise<unknown> }> = [
+  { key: "characters", load: () => db.getAll(DB_STORES.CHARACTERS) },
+  { key: "lorebooks", load: () => db.getAll(DB_STORES.LOREBOOKS) },
+  { key: "settings", load: () => db.get(DB_STORES.APP_SETTINGS, "main-settings") },
+  { key: "userData", load: () => db.get(DB_STORES.APP_SETTINGS, "user-data") },
+  { key: "themes", load: () => db.getAll(DB_STORES.THEMES) },
+  { key: "layouts", load: () => db.getAll(DB_STORES.LAYOUTS) },
+  {
+    key: "characterAffections",
+    load: () => db.getAll(DB_STORES.CHARACTER_AFFECTIONS),
+  },
+  { key: "qzonePosts", load: () => db.getAll(DB_STORES.QZONE_POSTS) },
+  { key: "summaries", load: () => db.getAll(DB_STORES.SUMMARIES) },
+  { key: "diaries", load: () => db.getAll(DB_STORES.DIARIES) },
+  { key: "pendingCalls", load: () => db.getAll(DB_STORES.PENDING_CALLS) },
+  { key: "callHistory", load: () => db.getAll(DB_STORES.CALL_HISTORY) },
+  { key: "holidayRecords", load: () => db.getAll(DB_STORES.HOLIDAY_RECORDS) },
+  { key: "calendarEvents", load: () => db.getAll(DB_STORES.CALENDAR_EVENTS) },
+  { key: "importantEvents", load: () => db.getAll(DB_STORES.IMPORTANT_EVENTS) },
+  { key: "books", load: () => db.getAll(DB_STORES.BOOKS) },
+  { key: "stickers", load: () => db.getAll(DB_STORES.STICKERS) },
+  { key: "gameStates", load: () => loadKeyValueStore("gameStates") },
+  { key: "rendererRules", load: () => db.getAll(DB_STORES.RENDERER_RULES) },
+  { key: "bookProgress", load: () => db.getAll(DB_STORES.BOOK_PROGRESS) },
+  {
+    key: "chatAffinityStates",
+    load: () => db.getAll(DB_STORES.CHAT_AFFINITY_STATES),
+  },
+  { key: "vectorEmbeddings", load: loadVectorEmbeddings },
+  { key: "promptLibrary", load: () => loadKeyValueStore("promptLibrary") },
+  { key: "oldSettings", load: () => loadKeyValueStore("settings") },
+  { key: "canvasLayout", load: loadCanvasLayout },
+];
 
 /**
  * 取得所有聊天的 key 列表（不載入完整數據）
@@ -595,10 +551,12 @@ export async function buildBackupZipStreaming(
   sink?: BackupOutputSink,
 ): Promise<Uint8Array | void> {
   const excludeChatImages = options?.excludeChatImages ?? false;
-  // 1. 收集輕量數據
+  // 1. 不預先載入輕量數據——每個 store 在步驟 5 才逐個載入、抽媒體、寫出、釋放。
+  //    一次全載的峰值發生在第一個進度畫面之前，使用者會看到「什麼都沒彈出就閃退」。
   onProgress?.({ phase: "收集基礎數據..." });
   await yieldToMain();
-  const lightData = await collectLightData();
+  await db.init();
+  const exportedAt = new Date().toISOString();
 
   // 2. 建立 fflate Zip 流
   //    有 sink 時 chunk 直接寫出；否則在記憶體累積（向後相容）
@@ -688,34 +646,53 @@ export async function buildBackupZipStreaming(
     await writeEntry(filename, data);
   });
 
-  // 4. 提取輕量數據中的媒體（角色頭像、主題桌布等）
-  await extractAllMediaFromBackupData(lightData, extractor);
-
-  // 5. 寫入輕量數據（不含聊天）
-  //    逐個 top-level key 序列化後推入同一個 ZIP entry，並即時釋放。
-  //    不整包 JSON.stringify()——那會產生單一巨大字串再被 strToU8 複製一份，
-  //    峰值是資料本身的三倍，資料量大的使用者會在這裡 OOM 閃退。
+  // 4-5. 逐個載入輕量 store → 抽出媒體 → 序列化推入 backup.json → 釋放
+  //    絕對不能先把全部 store 讀進一個大物件：「輕量」是誤稱，themes（桌布）、
+  //    qzonePosts、stickers、oldSettings（劇場貼文）、canvasLayout 都塞著 base64。
+  //    逐個處理後峰值只有「單一 store + 已抽乾的殘骸」。
   //    產出的 backup.json 內容與舊版逐字相同，格式沒有改變。
   onProgress?.({ phase: "寫入基礎數據..." });
   await yieldToMain();
-  // metadata.json 之後要用，必須在逐 key 釋放前先存下來
-  const exportedAt = lightData.exportedAt;
   const lightEntry = openZipEntry(zipper, "backup.json");
   try {
     lightEntry.push(strToU8("{"));
     let first = true;
-    for (const key of Object.keys(lightData)) {
-      const value = lightData[key];
-      const written = await pushLightValue(lightEntry, key, value, first);
+    // 固定前綴（順序必須與舊版 collectLightData 的回傳一致）
+    for (const [key, value] of [
+      ["version", 1],
+      ["type", "aguaphone-auto-backup"],
+      ["exportedAt", exportedAt],
+    ] as Array<[string, unknown]>) {
+      await pushLightValue(lightEntry, key, value, first);
+      first = false;
+    }
+
+    for (let li = 0; li < LIGHT_LOADERS.length; li++) {
+      const { key, load } = LIGHT_LOADERS[li];
+      onProgress?.({
+        phase: "寫入基礎數據",
+        current: li,
+        total: LIGHT_LOADERS.length,
+      });
+      await yieldToMain();
+
+      // 單 key 包裝物件：直接複用既有的 per-key 媒體抽取邏輯，
+      // 且共用同一個 extractor，去重快取跨 store 仍有效
+      const wrapper: Record<string, unknown> = { [key]: await load() };
+      await extractAllMediaFromBackupData(wrapper, extractor);
+
+      const written = await pushLightValue(lightEntry, key, wrapper[key], first);
       if (written) first = false;
-      // 已序列化的 store 立刻釋放，讓 GC 在迴圈中就能回收
-      delete lightData[key];
+      // 已序列化就釋放，讓 GC 在迴圈中就能回收
+      delete wrapper[key];
       // 兩端都要等：sink 的輸出積壓，以及 worker 的輸入積壓
       await waitForDrain();
       if (lightEntry.inflight() > ZIP_ENTRY_INFLIGHT_BYTES) {
         await lightEntry.drain();
       }
+      if (zipError) throw zipError;
     }
+
     lightEntry.push(strToU8("}"));
     await Promise.race([lightEntry.end(), zipDone]);
     await waitForDrain();
