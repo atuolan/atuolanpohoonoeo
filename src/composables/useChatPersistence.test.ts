@@ -80,7 +80,7 @@ describe("useChatPersistence", () => {
     vi.restoreAllMocks();
   });
 
-  it("clones chat metadata without deep-cloning the full message history", async () => {
+  it("clones metadata without deep-cloning history while persisting messages", async () => {
     const message = createMessage("msg-1");
     const storedMessage = createStoredMessage("msg-1");
     loadMessages.mockResolvedValue([storedMessage]);

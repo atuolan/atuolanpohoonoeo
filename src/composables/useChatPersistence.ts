@@ -135,8 +135,8 @@ export function useChatPersistence(deps: UseChatPersistenceDeps) {
           : "";
 
       let plainChat: any;
-      // 訊息已由獨立的 chatMessages store 保存；metadata clone 不需再深拷貝整份歷史。
-      // 保留空的 messages 欄位，讓後續 saveChatMetadata 明確只寫入聊天 metadata。
+      // chatMessages store 才是訊息的唯一來源；metadata 不需要攜帶整份歷史。
+      // 重要：下方 plainMessages 一律使用 messagesForStorage，不能從這個空欄位取回訊息。
       const chatMetadataSnapshot = {
         ...toRaw(chat),
         messages: [],
@@ -147,7 +147,8 @@ export function useChatPersistence(deps: UseChatPersistenceDeps) {
         plainChat = JSON.parse(JSON.stringify(chatMetadataSnapshot));
       }
 
-      // 實際訊息快照與 metadata clone 分離；訊息仍必須完整交給 message store。
+      // 訊息寫入使用媒體抽取後的獨立快照，不依賴 metadata clone 的 messages 欄位。
+      // 這可避免 clone/fallback 過程遺失新訊息欄位，並確保 save/upsert 使用同一份快照。
       const plainMessages = messagesForStorage;
       const localCount = plainMessages.length;
 
