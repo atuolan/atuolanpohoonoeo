@@ -7389,6 +7389,12 @@ async function loadOrCreateChat(overrideChatId?: string) {
     activeToolDecision = null;
     pendingToolConfirmation.value = null;
   }
+  // 此函式結尾會用 IDB 讀回的內容整份取代 messages。若還有 debounce 中的儲存
+  // 尚未寫入（addUserMessage 走的是 400ms debounce），必須先落地，否則剛送出的
+  // 訊息會在重新載入時從畫面與記憶體一起消失。
+  if (!overrideChatId) {
+    await flushPendingSave();
+  }
   isChatHydrated.value = false;
   pagingGeneration += 1;
   isLoadingMore.value = false;
@@ -7964,6 +7970,11 @@ function cancelPendingSaveTimer() {
 
 function hasPendingSave() {
   return chatPersistence.hasPendingSave();
+}
+
+/** 落地尚未觸發的 debounce 儲存（重新載入前必須呼叫，避免遺失新訊息）。 */
+async function flushPendingSave() {
+  await chatPersistence.flushPendingSave();
 }
 
 async function _saveChatImpl() {
@@ -8724,8 +8735,9 @@ watch(
           (m) => m.isStreaming && m.role === "ai",
         );
 
-        // 條件：IDB 訊息更多、或本地有空佔位符、或（IDB 與本地筆數相同時）最後一條訊息不同
-        // 注意：當本地筆數 > IDB（例如剛注入分享訊息、尚在寫入）時不能重載，否則會把本地新訊息覆蓋掉
+        // 條件以訊息 ID 比對，不比長度：分頁後 IDB 是全量歷史、messages 只是最新一頁，
+        // 長度天生不相等。只要本地有尚未落地 IDB 的訊息（串流佔位符除外）就不重載，
+        // 否則會把還在 debounce 儲存佇列中的新訊息覆蓋掉。
         chatPerfMark("generationWatcher:dbSnapshot", {
           chatId: currentChatId.value,
           dbMessageCount,

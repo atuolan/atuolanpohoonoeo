@@ -71,6 +71,36 @@ function createStoredMessage(id: string): ChatMessage {
   };
 }
 
+function createPersistence({
+  message,
+  storedMessage,
+}: {
+  message: ChatScreenMessage;
+  storedMessage: ChatMessage;
+}) {
+  return useChatPersistence({
+    messages: ref([message]),
+    currentChatId: ref("chat-1"),
+    currentChatData: ref<Chat | null>(null),
+    getCharName: () => "Assistant",
+    getDirectCharacterId: () => "",
+    convertToStorableMessage: () => storedMessage,
+    buildChatMetadata: (messages) =>
+      ({
+        id: "chat-1",
+        name: "Chat",
+        characterId: "character-1",
+        messages,
+        metadata: {},
+        createdAt: 1,
+        updatedAt: 1,
+      }) as Chat,
+    initChatVariables: vi.fn(),
+    refreshBlockStateFromStorage: vi.fn().mockResolvedValue(undefined),
+    isMessagesComplete: () => true,
+  });
+}
+
 describe("useChatPersistence", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -115,5 +145,40 @@ describe("useChatPersistence", () => {
     const clonedChat = structuredCloneSpy.mock.calls[0][0] as Chat;
     expect(clonedChat.messages).toEqual([]);
 
+  });
+
+  it("flushPendingSave persists a debounced save before it fires", async () => {
+    vi.useFakeTimers();
+    const message = createMessage("msg-1");
+    const storedMessage = createStoredMessage("msg-1");
+    loadMessages.mockResolvedValue([storedMessage]);
+
+    const persistence = createPersistence({ message, storedMessage });
+
+    // saveChat only arms a 400ms timer; nothing has reached storage yet.
+    persistence.saveChat();
+    expect(saveMessages).not.toHaveBeenCalled();
+    expect(persistence.hasPendingSave()).toBe(true);
+
+    await persistence.flushPendingSave();
+
+    expect(saveMessages).toHaveBeenCalledWith("chat-1", [storedMessage], undefined);
+    expect(persistence.hasPendingSave()).toBe(false);
+
+    // The cancelled timer must not trigger a second write.
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(saveMessages).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("flushPendingSave is a no-op when nothing is pending", async () => {
+    const persistence = createPersistence({
+      message: createMessage("msg-1"),
+      storedMessage: createStoredMessage("msg-1"),
+    });
+
+    await persistence.flushPendingSave();
+
+    expect(saveMessages).not.toHaveBeenCalled();
   });
 });

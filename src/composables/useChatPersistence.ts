@@ -302,12 +302,24 @@ export function useChatPersistence(deps: UseChatPersistenceDeps) {
     await deps.refreshBlockStateFromStorage();
   }
 
+  /**
+   * Persist a debounced save that has not fired yet. Callers that are about to
+   * replace `messages` from IndexedDB must await this first, otherwise the
+   * queued messages are dropped before they ever reach the DB.
+   */
+  async function flushPendingSave() {
+    if (!saveChatPending) return;
+    cancelPendingSaveTimer();
+    await runSaveNow();
+  }
+
   return {
     markMessagesLoaded,
     resetSaveTrackingFromMessages,
     resetAfterChatCleared,
     cancelPendingSaveTimer,
     hasPendingSave,
+    flushPendingSave,
     runSaveNow,
     saveChat,
     saveChatImmediate,
