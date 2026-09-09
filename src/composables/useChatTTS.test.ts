@@ -177,6 +177,61 @@ describe("useChatTTS manual regeneration", () => {
     );
   });
 
+  it.each([
+    [undefined, "Chinese", "时间"],
+    ["Japanese", "Japanese", "時間"],
+    ["auto", "auto", "时间"],
+    ["", "", "时间"],
+  ])("applies the per-chat language override %s during regeneration", async (override, expected, text) => {
+    vi.mocked(synthesizeSpeech).mockResolvedValue({ success: false, error: "test" });
+    const context = createContext([{ ...aiMessage, content: "時間" }]);
+    context.settingsStore.minimaxTTS.languageBoost = "Chinese";
+    const tts = useChatTTS(context);
+    tts.chatMinimaxTTSOverride.value = { languageBoost: override };
+
+    await tts.regenerateMessageTTS(aiMessage.id, "all");
+
+    expect(synthesizeSpeech).toHaveBeenCalledWith(
+      text, expect.objectContaining({ languageBoost: expected }), expect.anything(),
+    );
+    expect(context.settingsStore.minimaxTTS.languageBoost).toBe("Chinese");
+  });
+
+  it("uses the override for automatic speech without leaking to another chat or reset", async () => {
+    vi.mocked(synthesizeSpeech).mockResolvedValue({ success: false, error: "test" });
+    const context = createContext();
+    context.settingsStore.minimaxTTS.languageBoost = "Chinese";
+    const first = useChatTTS(context);
+    const second = useChatTTS({ ...context, messages: ref([{ ...aiMessage }]) });
+    first.chatMinimaxTTSOverride.value = { languageBoost: "Japanese" };
+
+    await first.processMessageTTS(aiMessage.id, "時間[emotion=happy]");
+    await second.processMessageTTS(aiMessage.id, "時間[emotion=happy]");
+    first.chatMinimaxTTSOverride.value = {};
+    await first.processMessageTTS(aiMessage.id, "時間[emotion=happy]");
+
+    expect(vi.mocked(synthesizeSpeech).mock.calls.map(([text, settings]) => [text, settings.languageBoost]))
+      .toEqual([["時間", "Japanese"], ["时间", "Chinese"], ["时间", "Chinese"]]);
+    expect(context.settingsStore.minimaxTTS.languageBoost).toBe("Chinese");
+  });
+
+  it.each([
+    ["時間、大丈夫ですか？", "all", "", "時間、大丈夫ですか？"],
+    ["時間はﾀﾞｲｼﾞｮｳﾌﾞ？", "all", "", "時間はﾀﾞｲｼﾞｮｳﾌﾞ？"],
+    ["時間", "all", "Japanese", "時間"],
+    ["時間、大丈夫ですか？（時間方便嗎？）", "foreign", "auto", "時間、大丈夫ですか？"],
+  ] as const)("preserves Japanese when synthesizing %s", async (content, mode, boost, expected) => {
+    vi.mocked(synthesizeSpeech).mockResolvedValue({ success: false, error: "test" });
+    const message = { ...aiMessage, content };
+    const context = createContext([message]);
+    context.settingsStore.minimaxTTS.languageBoost = boost;
+    const { regenerateMessageTTS } = useChatTTS(context);
+
+    await regenerateMessageTTS(message.id, mode);
+
+    expect(synthesizeSpeech).toHaveBeenCalledWith(expected, expect.anything(), expect.anything());
+  });
+
   it("clears the legacy audio URL while synthesizing", async () => {
     const message = {
       ...aiMessage,

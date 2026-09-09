@@ -971,6 +971,8 @@ export interface Chat {
     speed?: number;
     pitch?: number;
     emotion?: string;
+    /** 未設定則跟隨全域，空字串則不傳送語言增強。 */
+    languageBoost?: string;
   };
 
   /** 是否為分支聊天（不顯示在主列表，只在角色卡聊天檔案中顯示） */

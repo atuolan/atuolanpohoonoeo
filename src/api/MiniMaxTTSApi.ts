@@ -117,8 +117,8 @@ export function getVoiceDisplayName(voiceId: string): string {
 }
 
 export const MINIMAX_LANGUAGES = [
-  { value: '', label: '無（預設）' },
-  { value: 'auto', label: '自動判斷' },
+  { value: '', label: '無' },
+  { value: 'auto', label: '自動判斷（預設）' },
   // ── 常用語言 ──
   { value: 'Chinese', label: '中文（普通話）' },
   { value: 'Chinese,Yue', label: '中文（粵語）' },
@@ -175,7 +175,7 @@ export function createDefaultMiniMaxTTSSettings(): MiniMaxTTSSettings {
     speed: 1.0,
     volume: 1.0,
     pitch: 0,
-    languageBoost: '',
+    languageBoost: 'auto',
     format: 'mp3',
     sampleRate: 32000,
     timberWeights: [],

@@ -1,9 +1,19 @@
+import { traditionalToSimplified } from "@/data/zhConversionMap";
+import { cleanTTSTags } from "./ttsTagCleaner";
+
 export type TTSLanguageMode = "auto" | "all" | "foreign" | "chinese";
 
 const CJK_RE = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u;
 const LETTER_RE = /\p{L}/u;
+const KANA_RE = /[\p{Script=Hiragana}\p{Script=Katakana}]/u;
 const HTML_TAG_RE = /<\/?[a-z][^>]*>/gi;
 const HTML_BREAK_RE = /<\s*br\s*\/?>/gi;
+
+export function convertTTSContentToSimplified(text: string, languageBoost = ""): string {
+  // Kanji alone is ambiguous; an explicit Japanese setting also protects it.
+  if (languageBoost === "Japanese" || KANA_RE.test(text)) return text;
+  return [...text].map((char) => traditionalToSimplified[char] || char).join("");
+}
 
 function stripHtmlForTTS(text: string): string {
   return text
@@ -32,16 +42,34 @@ function splitLines(text: string): string[] {
 }
 
 function selectPairedLanguageLines(lines: string[], language: "foreign" | "chinese"): string[] {
-  const foreignLines = lines.filter((line) => hasForeignLetters(line) && !hasChinese(line));
-  const chineseLines = lines.filter((line) => hasChinese(line) && !hasForeignLetters(line));
+  const foreignLines = lines.filter((line) => {
+    const content = cleanTTSTags(line);
+    return KANA_RE.test(content) || (hasForeignLetters(content) && !hasChinese(content));
+  });
+  const chineseLines = lines.filter((line) => {
+    const content = cleanTTSTags(line);
+    return hasChinese(content) && !hasForeignLetters(content);
+  });
   if (foreignLines.length > 0 && chineseLines.length > 0) {
     return language === "foreign" ? foreignLines : chineseLines;
   }
   return [];
 }
 
+function removeJapaneseTranslation(text: string): string {
+  if (!KANA_RE.test(text)) return text;
+  // Treat Han-only brackets as translations; unmarked Japanese asides are ambiguous.
+  return text.replace(/\([^()]*\)|（[^（）]*）|\[[^\[\]]*\]|【[^【】]*】/gu, (part) => {
+    const content = cleanTTSTags(part);
+    return hasChinese(content) && !hasForeignLetters(content) ? "" : part;
+  });
+}
+
 function removeChineseRuns(text: string): string {
-  return text.replace(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+/gu, "").replace(/\s{2,}/g, " ").trim();
+  return text.split("\n").map((line) => {
+    if (KANA_RE.test(line)) return removeJapaneseTranslation(line).trim();
+    return line.replace(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+/gu, "");
+  }).join("\n").replace(/\s{2,}/g, " ").trim();
 }
 
 function removeForeignRuns(text: string): string {
@@ -66,7 +94,9 @@ export function prepareTTSContent(text: string, mode: TTSLanguageMode = "auto"):
 
   const lines = splitLines(cleaned);
   const paired = selectPairedLanguageLines(lines, mode === "chinese" ? "chinese" : "foreign");
-  if (paired.length > 0) return paired.join("\n");
+  if (paired.length > 0) {
+    return (mode === "foreign" ? paired.map(removeJapaneseTranslation) : paired).join("\n").trim();
+  }
   if (mode === "foreign") return removeChineseRuns(cleaned);
   if (mode === "chinese") return removeForeignRuns(cleaned);
 

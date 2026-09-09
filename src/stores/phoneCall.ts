@@ -11,7 +11,7 @@ import { parseAffinityUpdateTags } from "@/services/ResponseParser";
 import { loadChatById, refreshChatDerivedMetadata } from "@/storage/chatStorage";
 import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
-import { traditionalToSimplified } from "@/data/zhConversionMap";
+import { convertTTSContentToSimplified } from "@/utils/ttsTextSelector";
 import { computeChatNow } from "@/utils/fakeTime";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 import { defineStore } from "pinia";
@@ -98,7 +98,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   /** 該聊天是否開啟 MiniMax（決定喇叭按鈕是否可用，作為自動語音開關前提） */
   const ttsAvailable = ref(false);
   /** 聊天專屬 MiniMax 音色覆蓋（不設則用全域設定） */
-  const ttsOverride = ref<{ voiceId?: string; speed?: number; pitch?: number; emotion?: string }>({});
+  const ttsOverride = ref<{ voiceId?: string; speed?: number; pitch?: number; emotion?: string; languageBoost?: string }>({});
   /** 最近一次 TTS 合成/播放錯誤訊息（供 UI 顯示，null = 無錯誤） */
   const ttsError = ref<string | null>(null);
   /** 目前正在播放的訊息 id，供 UI 標示播放狀態（null = 無） */
@@ -110,14 +110,6 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   let unlockedAudio: HTMLAudioElement | null = null;
   let audioUnlocked = false;
   let playbackToken = 0;
-
-  /** 繁→簡轉換（MiniMax 對簡體發音較準，比照聊天路徑） */
-  function convertTTSContentToSimplified(text: string): string {
-    return text
-      .split("")
-      .map((char) => traditionalToSimplified[char] || char)
-      .join("");
-  }
 
   /**
    * MiniMax emotion 僅接受特定英文列舉值，傳中文語氣描述（如「慵懶、帶笑」）
@@ -300,6 +292,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       ...(override.voiceId && { voiceId: override.voiceId }),
       ...(override.pitch !== undefined && { pitch: override.pitch }),
       ...(override.speed !== undefined && { speed: override.speed }),
+      ...(override.languageBoost !== undefined && { languageBoost: override.languageBoost }),
     };
   }
 
@@ -402,8 +395,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       // （例如「慵懶、帶笑」「調侃」），直接傳會被 API 拒絕（invalid params）導致合成失敗、沒有聲音。
       // 因此僅在值屬於合法列舉時才傳，中文語氣描述僅供 UI 顯示、不送 API。
       const emotion = toValidEmotion(msg.tone) || toValidEmotion(ttsOverride.value.emotion);
-      // 比照聊天路徑做繁→簡轉換，MiniMax 對簡體發音較準
-      const ttsText = convertTTSContentToSimplified(text);
+      // 與聊天共用轉換規則，保留日文漢字。
+      const ttsText = convertTTSContentToSimplified(text, mergedSettings.languageBoost);
       let result = await synthesizeSpeech(
         ttsText,
         mergedSettings,

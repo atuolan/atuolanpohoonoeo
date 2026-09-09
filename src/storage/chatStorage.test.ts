@@ -22,7 +22,7 @@ vi.mock("@/services/selfHostedSyncState", () => ({
   scheduleSelfHostedAutoSync,
 }));
 
-import { saveChatMetadata } from "@/storage/chatStorage";
+import { loadChatById, saveChatMetadata } from "@/storage/chatStorage";
 
 function createChat(appearance?: ChatAppearance): Chat {
   return {
@@ -82,5 +82,24 @@ describe("saveChatMetadata 外觀競態防護", () => {
 
     expect(dbPut).toHaveBeenCalledTimes(1);
     expect(dbPut.mock.calls[0][1].appearance).toEqual(disabledAppearance);
+  });
+});
+
+describe("chat TTS language persistence", () => {
+  it.each(["Japanese", "auto", "", undefined])("round-trips language override %s per chat", async (languageBoost) => {
+    const records = new Map<string, Chat>();
+    dbGet.mockImplementation(async (_store, id) => records.get(id));
+    dbPut.mockImplementation(async (_store, chat) => { records.set(chat.id, chat); });
+    const first: Chat = { ...createChat(), id: "chat-japanese", minimaxTTSOverride: { languageBoost } };
+    const second = { ...createChat(), id: "chat-global" };
+
+    await saveChatMetadata(first);
+    await saveChatMetadata(second);
+
+    expect((await loadChatById(first.id))?.minimaxTTSOverride?.languageBoost).toBe(languageBoost);
+    expect((await loadChatById(second.id))?.minimaxTTSOverride).toBeUndefined();
+    first.minimaxTTSOverride = {};
+    await saveChatMetadata(first);
+    expect((await loadChatById(first.id))?.minimaxTTSOverride?.languageBoost).toBeUndefined();
   });
 });

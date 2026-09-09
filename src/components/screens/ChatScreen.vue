@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { MINIMAX_LANGUAGES } from "@/api/MiniMaxTTSApi";
 import {
   AVAILABLE_SAMPLERS as novelAISamplers,
   PRESET_SIZES as novelAISizePresets,
@@ -11708,6 +11709,29 @@ useChatCleanup({
                 <span class="setting-hint"
                   >留空使用全域：{{ settingsStore.minimaxTTS.voiceId }}</span
                 >
+              </div>
+
+              <div class="setting-group">
+                <label class="setting-label" for="chat-tts-language">語言增強</label>
+                <select
+                  id="chat-tts-language"
+                  class="setting-select"
+                  :value="chatMinimaxTTSOverride.languageBoost ?? '__inherit__'"
+                  @change="
+                    ($event.target as HTMLSelectElement).value === '__inherit__'
+                      ? delete chatMinimaxTTSOverride.languageBoost
+                      : (chatMinimaxTTSOverride.languageBoost = ($event.target as HTMLSelectElement).value)
+                  "
+                >
+                  <option value="__inherit__">跟隨全域（預設）</option>
+                  <option
+                    v-for="language in MINIMAX_LANGUAGES"
+                    :key="language.value"
+                    :value="language.value"
+                  >
+                    {{ language.value === 'auto' ? '自動判斷' : language.label }}
+                  </option>
+                </select>
               </div>
 
               <!-- 語速 -->

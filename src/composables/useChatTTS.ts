@@ -1,6 +1,5 @@
 import { ref, type Ref } from "vue";
 import type { ChatScreenMessage as Message } from "@/types/chatScreen";
-import { traditionalToSimplified } from "@/data/zhConversionMap";
 import {
   cleanTTSTags,
   hasTTSTags,
@@ -11,6 +10,7 @@ import {
   getMessageTTSSource,
 } from "@/utils/messageTTS";
 import {
+  convertTTSContentToSimplified,
   prepareTTSContent,
   type TTSLanguageMode,
 } from "@/utils/ttsTextSelector";
@@ -20,6 +20,8 @@ export interface ChatMinimaxTTSOverride {
   speed?: number;
   pitch?: number;
   emotion?: string;
+  /** undefined follows global settings; an empty string disables the language hint. */
+  languageBoost?: string;
 }
 
 export type MessageTTSRegenerationResult =
@@ -64,13 +66,6 @@ export function useChatTTS(context: {
   async function saveMinimaxTTSSettings() {
     await context.saveChat();
     showMinimaxTTSSettingsModal.value = false;
-  }
-
-  function convertTTSContentToSimplified(text: string): string {
-    return text
-      .split("")
-      .map((char) => traditionalToSimplified[char] || char)
-      .join("");
   }
 
   /**
@@ -134,6 +129,7 @@ export function useChatTTS(context: {
         ...context.settingsStore.minimaxTTS,
         ...(override.voiceId && { voiceId: override.voiceId }),
         ...(override.pitch !== undefined && { pitch: override.pitch }),
+        ...(override.languageBoost !== undefined && { languageBoost: override.languageBoost }),
       };
 
       let anySuccess = false;
@@ -144,7 +140,7 @@ export function useChatTTS(context: {
           ...baseSettings,
           speed: seg.speed,
         };
-        const ttsText = convertTTSContentToSimplified(seg.text);
+        const ttsText = convertTTSContentToSimplified(seg.text, mergedSettings.languageBoost);
 
         const result = await synthesizeSpeech(ttsText, mergedSettings, {
           emotion: seg.emotion !== "neutral" ? seg.emotion : override.emotion,
