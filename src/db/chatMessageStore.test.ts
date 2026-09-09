@@ -11,6 +11,7 @@ import {
   getChatMessageStats,
   loadChatMessages,
   loadChatMessagesPage,
+  saveChatMessages,
   upsertChatMessages,
 } from "@/db/chatMessageStore";
 
@@ -174,5 +175,57 @@ describe("chat message paging", () => {
       .objectStore("chatMessages").indexNames;
 
     expect(indexes.contains("by-chat-createdAt-id")).toBe(true);
+  });
+});
+
+describe("unclonable message fields", () => {
+  beforeEach(async () => {
+    closeDatabase();
+    await deleteDB("aguaphone-db");
+  });
+
+  afterEach(() => {
+    closeDatabase();
+  });
+
+  it("persists a voice message whose ttsSegments is a reactive proxy", async () => {
+    // Reproduces the reported bug: a TTS message reached storage carrying Vue
+    // proxies, so `put` rejected and every message in the batch was lost.
+    const { reactive } = await import("vue");
+    const voice = reactive({
+      ...message(1),
+      id: "msg-voice",
+      messageType: "audio" as const,
+      ttsSegments: [
+        { emotion: "neutral", speed: 1, text: "hi", clean: "hi" },
+      ],
+    });
+
+    await saveChatMessages("chat-voice", [message(0), voice as ChatMessage]);
+
+    const stored = await loadChatMessages("chat-voice");
+    expect(stored.map((item) => item.id)).toEqual(["msg-000", "msg-voice"]);
+    expect(stored[1].ttsSegments?.[0]?.clean).toBe("hi");
+  });
+
+  it("does not lose sibling messages when one carries an unclonable value", async () => {
+    const poisoned = {
+      ...message(3),
+      id: "msg-poisoned",
+      // A function survives neither structuredClone nor JSON, so the field is
+      // dropped while the message itself must still be written.
+      onDone: () => "nope",
+    } as unknown as ChatMessage;
+
+    await upsertChatMessages("chat-mixed", [message(0), poisoned, message(2)]);
+
+    const stored = await loadChatMessages("chat-mixed");
+    expect(stored.map((item) => item.id)).toEqual([
+      "msg-000",
+      "msg-002",
+      "msg-poisoned",
+    ]);
+    expect((stored[2] as any).onDone).toBeUndefined();
+    expect(stored[2].content).toBe("message 3");
   });
 });

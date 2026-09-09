@@ -364,7 +364,11 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     _audioBlob: m._audioBlob,
     ttsRawContent: m.ttsRawContent,
     ttsAudioUrl: m.ttsAudioUrl,
-    ttsSegments: m.ttsSegments,
+    // 必須逐段複製：ttsSegments 來自 messages.value，元素是 Vue 的 reactive Proxy，
+    // 直接交給 IndexedDB 會讓整筆 put 拋 DataCloneError，導致整批訊息儲存失敗。
+    ttsSegments: m.ttsSegments
+      ? m.ttsSegments.map((segment: any) => ({ ...segment }))
+      : undefined,
     isHtmlBlock: m.isHtmlBlock,
     htmlContent: m.htmlContent,
     isShadowSegment: m.isShadowSegment,

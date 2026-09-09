@@ -37,6 +37,40 @@ export interface ChatMessageStats {
   memberMessageCounts: Record<string, number>;
 }
 
+/**
+ * Strip anything IndexedDB's structured-clone algorithm cannot serialize.
+ *
+ * Messages come from Vue's reactive graph, so a nested field that was passed by
+ * reference instead of copied is still a Proxy. `put` then rejects the whole
+ * transaction, silently losing every message in the batch — not just the bad
+ * one. Falling back to a JSON round-trip keeps the record writable.
+ */
+function toStorableRecord(record: StoredChatMessage): StoredChatMessage {
+  try {
+    structuredClone(record);
+    return record;
+  } catch {
+    try {
+      return JSON.parse(JSON.stringify(record)) as StoredChatMessage;
+    } catch (jsonError) {
+      console.error(
+        "[chatMessageStore] message is not serializable; writing without unclonable fields",
+        { messageId: record.id, error: jsonError },
+      );
+      const safe: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(record)) {
+        try {
+          structuredClone(value);
+          safe[key] = value;
+        } catch {
+          // Drop only the offending field so the message itself survives.
+        }
+      }
+      return safe as unknown as StoredChatMessage;
+    }
+  }
+}
+
 function messageSortKey(message: Pick<ChatMessage, "createdAt" | "id">): [number, string] {
   const createdAt = Number(message.createdAt);
   return [Number.isFinite(createdAt) ? createdAt : 0, message.id];
@@ -302,7 +336,7 @@ export async function saveChatMessages(
       });
       continue;
     }
-    await store.put({ ...msg, chatId } as StoredChatMessage);
+    await store.put(toStorableRecord({ ...msg, chatId } as StoredChatMessage));
   }
 
   await tx.done;
@@ -331,7 +365,7 @@ export async function upsertChatMessages(
       });
       continue;
     }
-    await store.put({ ...msg, chatId } as StoredChatMessage);
+    await store.put(toStorableRecord({ ...msg, chatId } as StoredChatMessage));
   }
   await tx.done;
 }
@@ -360,7 +394,7 @@ export async function appendChatMessages(
       });
       continue;
     }
-    await store.put({ ...msg, chatId } as StoredChatMessage);
+    await store.put(toStorableRecord({ ...msg, chatId } as StoredChatMessage));
   }
 
   await tx.done;
