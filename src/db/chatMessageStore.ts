@@ -47,8 +47,7 @@ export interface ChatMessageStats {
  */
 function toStorableRecord(record: StoredChatMessage): StoredChatMessage {
   try {
-    structuredClone(record);
-    return record;
+    return structuredClone(record);
   } catch {
     try {
       return JSON.parse(JSON.stringify(record)) as StoredChatMessage;
@@ -60,10 +59,13 @@ function toStorableRecord(record: StoredChatMessage): StoredChatMessage {
       const safe: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(record)) {
         try {
-          structuredClone(value);
-          safe[key] = value;
+          safe[key] = structuredClone(value);
         } catch {
-          // Drop only the offending field so the message itself survives.
+          try {
+            safe[key] = JSON.parse(JSON.stringify(value));
+          } catch {
+            // Drop only the offending field so the message itself survives.
+          }
         }
       }
       return safe as unknown as StoredChatMessage;

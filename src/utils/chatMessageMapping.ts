@@ -45,7 +45,14 @@ function normalizeSwipeList(value: unknown): string[] | undefined {
 
 function normalizeRoundSwipes(value: unknown): ChatScreenMessage[][] | undefined {
   if (!Array.isArray(value)) return undefined;
-  const rounds = value
+  let plain: unknown;
+  try {
+    plain = JSON.parse(JSON.stringify(value));
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(plain)) return undefined;
+  const rounds = plain
     .map((round) => {
       if (!Array.isArray(round)) return [];
       return round
