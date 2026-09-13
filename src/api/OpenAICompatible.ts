@@ -1972,12 +1972,27 @@ export class OpenAICompatibleClient {
       // 某些推理模型（如本次的 deepseek-v4-pro）會把全部內容輸出在 reasoning_content，
       // 而正文 content 始終為 null。此時把推理內容當作正文，避免誤判為「空回應」。
       // 必須在後續所有「空回應」診斷分支之前生效。
+      //
+      // 是否回退只有在串流結束、確認 fullContent 為空後才能判斷，所以推理內容
+      // 必須先緩衝。但這裡刻意分塊 yield 而非整段一次吐出：
+      // 整段當成單一 token 會讓下游的 tokenCount 只加 1（tokens/秒 失真），
+      // 串流視窗也會在一瞬間刷出一整塊文字而非逐步顯示。
       if (!fullContent && fullReasoning) {
         console.warn(
           `[API Stream] 正文為空但收到推理內容（reasoning_content），回退為正文。長度: ${fullReasoning.length}`,
         );
         fullContent = fullReasoning;
-        yield { type: "token", token: fullReasoning };
+        const REASONING_FLUSH_CHUNK_SIZE = 24;
+        for (
+          let i = 0;
+          i < fullReasoning.length;
+          i += REASONING_FLUSH_CHUNK_SIZE
+        ) {
+          yield {
+            type: "token",
+            token: fullReasoning.slice(i, i + REASONING_FLUSH_CHUNK_SIZE),
+          };
+        }
       }
 
       const totalTime = Date.now() - streamStartTime;

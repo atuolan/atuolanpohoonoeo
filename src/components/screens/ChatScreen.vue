@@ -3387,6 +3387,13 @@ async function handleRegenerateImage(id: string) {
 let _theaterPhoneScriptForCurrentGeneration = false;
 
 /**
+ * 本輪生成對串流視窗的擁有權 ID，供 handleStreamingClose 判斷視窗內容歸屬。
+ * 關閉事件是廣播給所有已註冊的 ChatScreen 監聽者的，若不比對擁有權，
+ * 非擁有者的實例會把別人的緩衝區內容寫進自己的訊息。
+ */
+let _streamingWindowOwnerIdForCurrentGeneration: string | null = null;
+
+/**
  * 小劇場「小手機劇本格式」前綴檢測：
  * 支援的前綴（不分大小寫，半形/全形冒號皆可，前後空格容錯）：
  *   - 字面：user / char / 使用者 / 用戶 / 用户 / 角色
@@ -3568,6 +3575,11 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
   let latestFinalContent = "";
   let usedStreamingWindowForCurrentGeneration = false;
   let remoteGenerationStarted = false;
+  // 本輪生成對串流視窗的擁有權 ID。串流視窗是模組級單例，但 aiGeneration store
+  // 允許最多 3 個聊天並發生成；沒有這個標記時，兩輪生成會交錯寫進同一個緩衝區，
+  // 下方的安全網再把混合內容當成自己的結果收下（不同聊天出現一樣的回覆）。
+  const streamingWindowOwnerId = `${currentChatId.value}:${generationTurnId || "noturn"}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+  _streamingWindowOwnerIdForCurrentGeneration = streamingWindowOwnerId;
   // 把本輪是否為小劇場小手機劇本格式存到模組變數，handleStreamingClose 可以讀
   _theaterPhoneScriptForCurrentGeneration = !!options?.theaterPhoneScript;
 
@@ -4581,11 +4593,17 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     usedStreamingWindowForCurrentGeneration = useWindow;
 
     if (useWindow) {
-      // 顯示流式輸出窗口
-      streamingWindow.show(chatTaskConfig.api.model);
+      // 顯示流式輸出窗口（帶本輪擁有權，隔離並發生成）
+      streamingWindow.show(
+        chatTaskConfig.api.model,
+        true,
+        streamingWindowOwnerId,
+        currentChatId.value || undefined,
+      );
       // 傳入提示詞內容（用於調試面板查看/隱藏）
       streamingWindow.setPromptContent(
         promptDebugMessages,
+        streamingWindowOwnerId,
       );
     }
 
@@ -4682,7 +4700,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       },
     };
     if (useWindow) {
-      streamingWindow.setDiagnostics(generationDiagnostics);
+      streamingWindow.setDiagnostics(generationDiagnostics, streamingWindowOwnerId);
     }
 
     const runContaminationDiagnostics = async (triggerReason: string) => {
@@ -4780,7 +4798,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         contaminationProbeEndpointHost: apiEndpointHost,
         contaminationProbeModel: chatTaskConfig.api.model,
       };
-      if (useWindow) streamingWindow.setDiagnostics(generationDiagnostics);
+      if (useWindow) streamingWindow.setDiagnostics(generationDiagnostics, streamingWindowOwnerId);
 
       for (const variant of variants) {
         if (controller.signal.aborted) break;
@@ -4797,7 +4815,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         };
         if (baseResult.status === "skipped") {
           generationDiagnostics.contaminationDiagnostics.results.push(baseResult);
-          if (useWindow) streamingWindow.setDiagnostics(generationDiagnostics);
+          if (useWindow) streamingWindow.setDiagnostics(generationDiagnostics, streamingWindowOwnerId);
           continue;
         }
         const probeStartedAt = Date.now();
@@ -4842,12 +4860,12 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
             error: error instanceof Error ? error.message : String(error),
           });
         }
-        if (useWindow) streamingWindow.setDiagnostics(generationDiagnostics);
+        if (useWindow) streamingWindow.setDiagnostics(generationDiagnostics, streamingWindowOwnerId);
       }
 
       generationDiagnostics.contaminationDiagnostics.completedAt = Date.now();
       console.warn("[ChatScreen] 污染定位診斷", generationDiagnostics.contaminationDiagnostics);
-      if (useWindow) streamingWindow.setDiagnostics(generationDiagnostics);
+      if (useWindow) streamingWindow.setDiagnostics(generationDiagnostics, streamingWindowOwnerId);
     };
 
     let fullContent = "";
@@ -4914,7 +4932,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         onContentUpdate: updateChatGenerationContent,
         onToken: (token, tokenFullContent) => {
           if (useWindow) {
-            streamingWindow.appendToken(token);
+            streamingWindow.appendToken(token, streamingWindowOwnerId);
             return;
           }
           const msgIndex = messages.value.findIndex(
@@ -4962,7 +4980,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       generationDiagnostics = resolvedGenerationResult.diagnostics;
 
       if (useWindow && resolvedGenerationResult.tokenUsage) {
-        streamingWindow.setUsage(resolvedGenerationResult.tokenUsage);
+        streamingWindow.setUsage(resolvedGenerationResult.tokenUsage, streamingWindowOwnerId);
       }
 
       // 串流本身已結束（所有 token 已收到），立刻把窗口標為完成，
@@ -4970,16 +4988,19 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       // 是純 UX 修飾、與 API 生成無關，不應該繼續顯示 streaming 狀態。
       // setComplete 冪等，後面失敗/正常路徑仍會再呼叫一次（無副作用）。
       if (useWindow) {
-        streamingWindow.setComplete();
+        streamingWindow.setComplete(streamingWindowOwnerId);
       }
       console.log("[ChatScreen][render] stream 結束，setComplete 已呼叫，準備進入訊息解析/渲染");
 
       // 直接處理完整回覆（套用角色 regex_scripts AI_OUTPUT）
+      // 只有在視窗緩衝區仍屬於本輪生成時才拿它補內容；否則它可能裝著
+      // 另一個並發聊天的 token，會造成兩個聊天出現一樣的回覆。
+      const ownedWindowContent = useWindow
+        ? streamingWindow.getOwnedContent(streamingWindowOwnerId)
+        : "";
       const rawFullContent =
-        useWindow &&
-        streamingWindow.content.value &&
-        streamingWindow.content.value.length > fullContent.length
-          ? streamingWindow.content.value
+        ownedWindowContent && ownedWindowContent.length > fullContent.length
+          ? ownedWindowContent
           : fullContent;
       fullContent = rawFullContent;
       const finalContent = processAiOutputTemplate(applyAIOutputRegex(fullContent));
@@ -4991,7 +5012,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         afterTemplateLength: finalContent.length,
         isEmpty: !finalContent || !finalContent.trim(),
       };
-      if (useWindow) streamingWindow.setDiagnostics(generationDiagnostics);
+      if (useWindow) streamingWindow.setDiagnostics(generationDiagnostics, streamingWindowOwnerId);
       const msgIndex = messages.value.findIndex((m) => m.id === aiMessage.id);
 
       // 空回應檢測：若是使用者主動停止，直接移除佔位氣泡
@@ -5001,7 +5022,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
             messages.value.splice(msgIndex, 1);
           }
           if (useWindow) {
-            streamingWindow.setComplete();
+            streamingWindow.setComplete(streamingWindowOwnerId);
           }
           await saveChatImmediate();
           return;
@@ -6014,7 +6035,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 });
               }
             }
-            streamingWindow.setComplete();
+            streamingWindow.setComplete(streamingWindowOwnerId);
           }
         }
       }
@@ -6025,8 +6046,12 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       const lastMsg = getActiveStreamingAIMessage();
       if (lastMsg && lastMsg.isStreaming) {
         lastMsg.isStreaming = false;
-        if (useStreamingWindowEnabled.value && streamingWindow.content.value) {
-          lastMsg.content = streamingWindow.content.value;
+        // 只採用仍屬於本輪的緩衝區內容，避免把別的聊天的 token 寫進這條訊息
+        const abortedOwnContent = useStreamingWindowEnabled.value
+          ? streamingWindow.getOwnedContent(streamingWindowOwnerId)
+          : "";
+        if (abortedOwnContent) {
+          lastMsg.content = abortedOwnContent;
         }
 
         if (!lastMsg.content || !lastMsg.content.trim()) {
@@ -6039,7 +6064,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       }
 
       if (useStreamingWindowEnabled.value) {
-        streamingWindow.setComplete();
+        streamingWindow.setComplete(streamingWindowOwnerId);
       }
       return;
     }
@@ -6062,24 +6087,24 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
     // 設置流式窗口錯誤狀態
     if (useStreamingWindowEnabled.value) {
-      streamingWindow.setError(errorMsg);
+      streamingWindow.setError(errorMsg, streamingWindowOwnerId);
     }
 
     // 設置全局狀態錯誤
     setChatGenerationError(errorMsg);
   } finally {
     let persistedGenerationContent = latestFinalContent;
-    if (
-      !persistedGenerationContent &&
-      usedStreamingWindowForCurrentGeneration &&
-      streamingWindow.content.value
-    ) {
+    // 同上：緩衝區必須仍屬於本輪，否則不能當成本輪的生成結果落地
+    const finallyOwnContent = usedStreamingWindowForCurrentGeneration
+      ? streamingWindow.getOwnedContent(streamingWindowOwnerId)
+      : "";
+    if (!persistedGenerationContent && finallyOwnContent) {
       try {
         persistedGenerationContent = processAiOutputTemplate(
-          applyAIOutputRegex(streamingWindow.content.value),
+          applyAIOutputRegex(finallyOwnContent),
         );
       } catch {
-        persistedGenerationContent = streamingWindow.content.value;
+        persistedGenerationContent = finallyOwnContent;
       }
     }
 
@@ -6107,19 +6132,20 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     // 都要將流式窗口標記為完成，避免底部一直顯示「停止」按鈕。
     // setComplete 是冪等的，重複調用無副作用。
     if (useStreamingWindowEnabled.value) {
-      streamingWindow.setComplete();
+      streamingWindow.setComplete(streamingWindowOwnerId);
     }
 
     // 安全網：非主動中止時，如果流式窗口已有內容，確保最後一條 AI 訊息也有內容
+    // （同樣只信本輪擁有的緩衝區，否則會把並發聊天的內容補進這裡）
     if (
       useStreamingWindowEnabled.value &&
-      streamingWindow.content.value &&
+      finallyOwnContent &&
       !controller.signal.aborted
     ) {
       const lastAI = [...messages.value].reverse().find((m) => m.role === "ai");
       if (lastAI && lastAI.isStreaming && !lastAI.content) {
         const windowContent = processAiOutputTemplate(
-          applyAIOutputRegex(streamingWindow.content.value),
+          applyAIOutputRegex(finallyOwnContent),
         );
         if (windowContent) {
           console.warn(
@@ -6179,6 +6205,14 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     // 檢查是否需要觸發總結或日記生成（重新生成時跳過）
     if (!options?.skipAutoTrigger) {
       checkAndTriggerSummaryOrDiary();
+    }
+
+    // 釋放串流視窗擁有權。先前只有 handleStreamingClose 會 reset()，正常完成的
+    // 生成把內容留在視窗裡，下一輪的安全網就可能把殘留文字當成新結果收下。
+    // 內容本身不清（視窗可能還開著給用戶看），但已無人能認領。
+    // 擁有權已被其他並發生成接手時，releaseOwnership 不會動到對方的狀態。
+    if (usedStreamingWindowForCurrentGeneration) {
+      streamingWindow.releaseOwnership(streamingWindowOwnerId);
     }
   }
 }
@@ -6285,11 +6319,19 @@ async function handleStreamingClose() {
   // 注意：如果流式已經完成（done 事件已處理），訊息已經被解析並添加了
   // 此時只需要隱藏窗口，不需要再次處理訊息
 
+  // 關閉事件是廣播給所有 ChatScreen 監聽者的。視窗緩衝區若不屬於本實例
+  // 目前這輪生成，就不能拿它的內容寫訊息（否則會落地別的聊天的回覆）。
+  // 本實例從未發起過生成時（ownerId 為 null）一律視為不屬於自己 —— 不能用
+  // undefined 去查，那會走「舊呼叫端不受限」的寬鬆分支而撿到別人的內容。
+  const ownedCloseContent = _streamingWindowOwnerIdForCurrentGeneration
+    ? streamingWindow.getOwnedContent(_streamingWindowOwnerIdForCurrentGeneration)
+    : "";
+
   // 取得目前仍在流式中的 AI 訊息，避免被隱藏的 [繼續] 提示干擾
   const lastMsg = getActiveStreamingAIMessage();
   const closeTurnId = lastMsg?.turnId || currentTurnId.value || "";
   const windowContent = processAiOutputTemplate(
-    applyAIOutputRegex(streamingWindow.content.value),
+    applyAIOutputRegex(ownedCloseContent),
   );
 
   // 只有當最後一條訊息還在流式狀態時，才需要處理

@@ -714,10 +714,17 @@ function handleGlobalStreamingClose() {
 }
 
 function handleGlobalStreamingStop() {
-  // 中止所有正在進行的 AI 生成任務
-  const aiGenerationStore = useAIGenerationStore();
-  for (const task of aiGenerationStore.activeTasks) {
-    aiGenerationStore.abortGeneration(task.chatId, task.taskType);
+  // 只中止「擁有這個視窗」的那個生成任務。視窗一次只顯示一輪生成，但
+  // aiGeneration store 允許最多 3 個聊天並發；先前這裡遍歷 activeTasks 中止全部，
+  // 按一次停止會把其他聊天正在跑的生成一起砍掉。
+  //
+  // 沒有擁有者（ownerChatId 為 null）時什麼都不動：視窗屬於不帶 ownerId 的舊路徑
+  // （小劇場、偷看手機、通話、噗浪空間、主動發訊），它們靠 bindAbortController
+  // 監聽下面的 "stop" 事件自行中止。
+  const ownerChatId = streamingWindow.activeOwnerChatId.value;
+  if (ownerChatId) {
+    const aiGenerationStore = useAIGenerationStore();
+    aiGenerationStore.abortGeneration(ownerChatId, "chat");
   }
   streamingWindow.emit("stop");
 }
