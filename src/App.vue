@@ -1100,6 +1100,7 @@ async function handleIncomingCallAccept() {
     currentChatCharacterId.value = pendingCall.characterId;
     currentChatId.value = pendingCall.chatId || null;
     pendingIncomingCallReason.value = pendingCall.reason;
+    navigationHistory.value.push(currentPage.value);
     navigateToPage("chat");
   }
 
@@ -1824,6 +1825,7 @@ async function startChat(characterId: string) {
     chatCharacterAvatar.value = character.avatar || "";
     currentChatCharacterId.value = characterId;
     currentChatId.value = preferredChat?.id || existingChats[0].id;
+    navigationHistory.value.push(currentPage.value);
     navigateToPage("chat");
     return;
   }
@@ -1835,6 +1837,7 @@ async function startChat(characterId: string) {
     chatCharacterAvatar.value = character.avatar || "";
     currentChatCharacterId.value = characterId;
     currentChatId.value = null;
+    navigationHistory.value.push(currentPage.value);
     navigateToPage("chat");
     return;
   }
@@ -1858,6 +1861,7 @@ function chatPickerOpenExisting(chatId: string) {
   chatCharacterAvatar.value = character.avatar || "";
   currentChatCharacterId.value = chatPickerCharacterId.value;
   currentChatId.value = chatId;
+  navigationHistory.value.push(currentPage.value);
   navigateToPage("chat");
 }
 
@@ -1909,6 +1913,7 @@ async function chatPickerCreateNew(withGreeting: boolean) {
   await createChatRecord(newChat, newMessages);
 
   currentChatId.value = newChat.id;
+  navigationHistory.value.push(currentPage.value);
   navigateToPage("chat");
 }
 
@@ -1976,6 +1981,7 @@ async function handleMultiCharConfirm(
   chatCharacterAvatar.value = character.avatar || "";
   currentChatCharacterId.value = characterId;
   currentChatId.value = chat.id;
+  navigationHistory.value.push(currentPage.value);
   navigateToPage("chat");
 }
 
@@ -2001,6 +2007,7 @@ async function startPhoneCall(characterId: string) {
     }
 
     startPhoneCallFlag.value = true;
+    navigationHistory.value.push(currentPage.value);
     navigateToPage("chat");
   }
 }
@@ -2080,6 +2087,7 @@ function openExistingChat(chatId: string, characterId: string) {
   }
   currentChatId.value = chatId;
   currentChatCharacterId.value = characterId;
+  navigationHistory.value.push(currentPage.value);
   navigateToPage("chat");
 }
 
@@ -2166,6 +2174,7 @@ async function handleGameShareToChat(characterId: string, message: string) {
     currentChatCharacterId.value = characterId;
     currentChatId.value = await resolvePreferredChatId(characterId);
     pendingChatMessage.value = message;
+    navigationHistory.value.push(currentPage.value);
     navigateToPage("chat");
   }
 }
@@ -2202,6 +2211,7 @@ async function handleMusicShareToChat(payload: {
       lyrics,
     },
   };
+  navigationHistory.value.push(currentPage.value);
   navigateToPage("chat");
 }
 
@@ -2220,6 +2230,7 @@ async function handleDeliveryMallSendToChat(payload: {
     currentChatCharacterId.value = payload.characterId;
     currentChatId.value = await resolvePreferredChatId(payload.characterId);
     pendingChatMessage.value = payload.message;
+    navigationHistory.value.push(currentPage.value);
     navigateToPage("chat");
   }
 }
@@ -2578,6 +2589,7 @@ async function restoreChatContextFromNotification(data?: Record<string, any>) {
   chatCharacterAvatar.value = character.avatar || "";
   currentChatCharacterId.value = resolvedCharacterId;
   currentChatId.value = resolvedChat?.id || data.chatId;
+  navigationHistory.value.push(currentPage.value);
   navigateToPage("chat");
   return true;
 }
