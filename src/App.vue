@@ -1623,33 +1623,43 @@ const themeStyle = computed(() => ({
 // 處理導航（支援 Dock 和 Widget 點擊）
 function handleNavigate(page: string) {
   if (page === "character" || page === "worldbook" || page === "settings") {
+    navigationHistory.value.push(currentPage.value);
     navigateToPage(page as PageType);
   } else if (page === "book") {
     // 世界書的 id 是 'book'
+    navigationHistory.value.push(currentPage.value);
     navigateToPage("worldbook");
   } else if (page === "message" || page === "chat") {
     // 訊息進入聊天列表
+    navigationHistory.value.push(currentPage.value);
     navigateToPage("chat-list");
   } else if (page === "music") {
     // 音樂 App
+    navigationHistory.value.push(currentPage.value);
     navigateToPage("music");
   } else if (page === "qzone" || page === "plurk" || page === "space") {
     // 噗浪空間（space 是 Dock 中的 id）
+    navigationHistory.value.push(currentPage.value);
     navigateToPage("qzone");
   } else if (page === "user" || page === "使用者") {
     // 使用者設定
+    navigationHistory.value.push(currentPage.value);
     navigateToPage("user");
   } else if (page === "weather" || page === "天氣") {
     // 天氣設定
+    navigationHistory.value.push(currentPage.value);
     navigateToPage("weather");
   } else if (page === "shop" || page === "購物" || page === "商城") {
     // 商城
+    navigationHistory.value.push(currentPage.value);
     navigateToPage("shop");
   } else if (page === "game-center" || page === "遊戲" || page === "game") {
     // 遊戲中心
+    navigationHistory.value.push(currentPage.value);
     navigateToPage("game-center");
   } else if (page === "delivery" || page === "外賣" || page === "外送") {
     // 外賣商城
+    navigationHistory.value.push(currentPage.value);
     navigateToPage("delivery-mall");
   } else if (page === "theater" || page === "小劇場") {
     // 小劇場（記錄來源頁面）
