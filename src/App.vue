@@ -1793,9 +1793,17 @@ function goBackFromLorebookEdit() {
 
 // 返回聊天列表
 function goToChatList() {
-  resetToPage("chat-list");
-  currentChatId.value = null;
-  currentChatCharacterId.value = null;
+  if (navigationHistory.value.length > 0) {
+    navigateBackWithFallback(() => {
+      resetToPage("chat-list");
+      currentChatId.value = null;
+      currentChatCharacterId.value = null;
+    });
+  } else {
+    resetToPage("chat-list");
+    currentChatId.value = null;
+    currentChatCharacterId.value = null;
+  }
 }
 
 // 開始聊天（從角色列表）
