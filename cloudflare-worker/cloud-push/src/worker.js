@@ -13,6 +13,7 @@ import { handleDiscordCallback } from './discord-oauth.js';
 const ALLOWED_ORIGINS = [
   'https://203aguaphone.aguacloud.uk',
   'http://203aguaphone.aguacloud.uk',
+  'https://aguaphone.aguacloud.uk',
   'http://localhost:5173',
   'http://localhost:3002',
 ];

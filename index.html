@@ -23,9 +23,11 @@
     <!-- 預載字體 -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <!-- 音樂 API -->
-    <script src="https://drive.baibai.cv/f/ZKEBuW/Music.js"></script>
+    <!-- 非阻塞載入：Google Fonts 在大陸被牆，阻塞式 stylesheet 會讓整頁白屏直到超時 -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet"></noscript>
+    <!-- 音樂 API（async：外部腳本連不上時不阻塞頁面，MusicApi 於執行時才檢查 window.Music） -->
+    <script src="https://drive.baibai.cv/f/ZKEBuW/Music.js" async></script>
   </head>
   <body>
     <div id="app"></div>
