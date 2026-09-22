@@ -75,6 +75,7 @@ import GroupChatHistoryCard from "./GroupChatHistoryCard.vue";
 import MusicShareCard from "./MusicShareCard.vue";
 import PixelGiftChest from "./PixelGiftChest.vue";
 import PixelTransferCard from "./PixelTransferCard.vue";
+import { stripRabbitThinking } from "@/services/ResponseParser";
 
 // 配置 marked
 marked.setOptions({
@@ -1513,7 +1514,7 @@ const renderedContent = computed(() => {
     // 必須在所有媒體標籤匹配（showPicMatch 等）之前執行，
     // 否則 showPicMatch 會在含 <content> 包裹的原始文字上匹配並提前 return，丟失前後文字。
     {
-      html = html
+      html = stripRabbitThinking(html, true)
         .replace(/<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, "")
         .replace(/^[\s\S]*?<\/think(?:ing)?>/gis, "");
       const _cm = html.match(/<content>\s*([\s\S]*?)\s*<\/content>/i);
@@ -1683,7 +1684,7 @@ const renderedContent = computed(() => {
     // 串流中佔位氣泡會先拿到原始模型輸出；此處只做顯示層清理，避免把
     // <thinking>/<UpdateVariable>/<horae> 等控制區塊或「結果:」鏡像內容渲染給用戶。
     // 先剝離 <think>/<thinking> 區塊，再提取 <content>，避免 thinking 內的 <content> 被誤捕
-    processedContent = processedContent
+    processedContent = stripRabbitThinking(processedContent, true)
       .replace(/<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, "")
       .replace(/^[\s\S]*?<\/think(?:ing)?>/gis, "");
     const firstContentMatch = processedContent.match(/<content>\s*([\s\S]*?)\s*<\/content>/i);

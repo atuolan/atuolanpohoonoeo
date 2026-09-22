@@ -40,6 +40,21 @@ import { computed, ref } from "vue";
 
 const STORAGE_KEY = "promptManagerConfig";
 const PROMPT_MANAGER_CONFIG_VERSION = 4;
+/**
+ * 面對面提示詞強制重置版本。
+ * 面對面提示詞有重大更新、舊設定無法沿用時 +1，
+ * 所有已存過設定的用戶啟動時都會被引導重置面對面提示詞。
+ * 1：改用兔子空間大爆走預設（<|Rabbit_Thinking|> 思考格式）
+ */
+export const FACE_TO_FACE_PROMPT_RESET_VERSION = 1;
+
+/** 新建的配置已是最新面對面提示詞，不需要再引導重置 */
+function createFreshPromptManagerConfig(): PromptManagerConfig {
+  return {
+    ...createDefaultPromptManagerConfig(),
+    faceToFacePromptResetVersion: FACE_TO_FACE_PROMPT_RESET_VERSION,
+  };
+}
 
 function dedupeById<T extends { identifier: string }>(items: T[]): T[] {
   const seen = new Set<string>();
@@ -59,6 +74,57 @@ function dedupeOrderInPlace<T extends { identifier: string }>(
   const deduped = dedupeById(arr);
   if (deduped.length !== arr.length) {
     arr.splice(0, arr.length, ...deduped);
+  }
+}
+
+/**
+ * 系統必要條目（locked）不允許被刪除：從刪除記錄中移除，讓合併邏輯把定義與順序補回來。
+ */
+function restoreLockedPromptIds(
+  deletedIds: string[],
+  defaults: PromptDefinition[] | undefined | null,
+): void {
+  const lockedIds = new Set(
+    (defaults ?? []).filter((p) => p.locked).map((p) => p.identifier),
+  );
+  const kept = deletedIds.filter((id) => !lockedIds.has(id));
+  if (kept.length !== deletedIds.length) {
+    deletedIds.splice(0, deletedIds.length, ...kept);
+  }
+}
+
+/**
+ * 同步系統必要條目的鎖定屬性與作用說明（從默認值更新到已存儲的提示詞）
+ */
+function syncLockedPromptFlags(
+  storedPrompt: PromptDefinition,
+  defaultPrompt: PromptDefinition,
+): void {
+  storedPrompt.locked = defaultPrompt.locked;
+  if (defaultPrompt.locked) {
+    storedPrompt.marker = defaultPrompt.marker;
+    storedPrompt.isEditable = defaultPrompt.isEditable;
+    storedPrompt.description = defaultPrompt.description;
+  }
+}
+
+/**
+ * 修正已存儲系統必要條目中的錯誤標籤（這些條目一般用戶無法自行修改）
+ */
+const LOCKED_PROMPT_CONTENT_FIXES: Record<string, Array<[string, string]>> = {
+  // 多餘的 </example_script>（無對應開頭標籤）
+  custom_1776010669277: [["<food-record>\n</example_script>", "<food-record>"]],
+  // 結尾標籤錯字
+  f2fCoreUnderstanding: [["</Online invitationg>", "</Online invitation>"]],
+};
+
+function fixLockedPromptContent(prompts: PromptDefinition[] | undefined): void {
+  for (const prompt of prompts ?? []) {
+    const fixes = LOCKED_PROMPT_CONTENT_FIXES[prompt.identifier];
+    if (!fixes || typeof prompt.content !== "string") continue;
+    for (const [from, to] of fixes) {
+      prompt.content = prompt.content.split(from).join(to);
+    }
   }
 }
 
@@ -185,7 +251,7 @@ function migrateGroupChatPromptOrder(
 
 export const usePromptManagerStore = defineStore("promptManager", () => {
   // ===== State =====
-  const config = ref<PromptManagerConfig>(createDefaultPromptManagerConfig());
+  const config = ref<PromptManagerConfig>(createFreshPromptManagerConfig());
   const isLoading = ref(false);
   const currentCharacterId = ref<string | null>(null);
 
@@ -319,6 +385,13 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     () => config.value.groupChatPrompts ?? GROUP_CHAT_PROMPT_DEFINITIONS,
   );
 
+  /** 面對面提示詞是否停留在舊版、需要強制引導重置 */
+  const needsFaceToFacePromptReset = computed(
+    () =>
+      (config.value.faceToFacePromptResetVersion ?? 0) <
+      FACE_TO_FACE_PROMPT_RESET_VERSION,
+  );
+
   // ===== Actions =====
 
   /**
@@ -340,11 +413,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
           await saveConfig();
         }
       } else {
-        config.value = createDefaultPromptManagerConfig();
+        config.value = createFreshPromptManagerConfig();
       }
     } catch (e) {
       console.error("[PromptManagerStore] Failed to load config:", e);
-      config.value = createDefaultPromptManagerConfig();
+      config.value = createFreshPromptManagerConfig();
     } finally {
       isLoading.value = false;
     }
@@ -386,6 +459,17 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     if (!stored.deletedPlurkCommentPromptIds)
       stored.deletedPlurkCommentPromptIds = [];
 
+    // 系統必要條目（locked）不允許被刪除：清除刪除記錄，讓下方邏輯補回定義與順序
+    restoreLockedPromptIds(stored.deletedDefaultPromptIds, defaults.prompts);
+    restoreLockedPromptIds(
+      stored.deletedFaceToFacePromptIds,
+      defaults.faceToFacePrompts,
+    );
+    restoreLockedPromptIds(
+      stored.deletedGroupChatPromptIds,
+      defaults.groupChatPrompts,
+    );
+
     // 確保所有默認提示詞都存在（跳過用戶主動刪除的）
     for (const defaultPrompt of defaults.prompts) {
       if (stored.deletedDefaultPromptIds.includes(defaultPrompt.identifier)) {
@@ -408,6 +492,8 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
         storedPrompt.adminOnly = defaultPrompt.adminOnly;
         // 同步 isDeletable 屬性
         storedPrompt.isDeletable = defaultPrompt.isDeletable;
+        // 同步系統必要條目的鎖定屬性與作用說明
+        syncLockedPromptFlags(storedPrompt, defaultPrompt);
       }
     }
 
@@ -740,9 +826,14 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
         if (defaultPrompt) {
           storedPrompt.adminOnly = defaultPrompt.adminOnly;
           storedPrompt.isDeletable = defaultPrompt.isDeletable;
+          syncLockedPromptFlags(storedPrompt, defaultPrompt);
         }
       }
     }
+
+    // 修正已存儲系統必要條目中的錯誤標籤
+    fixLockedPromptContent(stored.prompts);
+    fixLockedPromptContent(stored.faceToFacePrompts);
 
     // 確保面對面模式順序存在
     if (!stored.faceToFacePromptOrder) {
@@ -781,6 +872,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
         if (defaultPrompt) {
           storedPrompt.adminOnly = defaultPrompt.adminOnly;
           storedPrompt.isDeletable = defaultPrompt.isDeletable;
+          syncLockedPromptFlags(storedPrompt, defaultPrompt);
         }
       }
     }
@@ -1207,6 +1299,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
       DEFAULT_FACE_TO_FACE_PROMPT_ORDER,
     );
     config.value.deletedFaceToFacePromptIds = [];
+    config.value.faceToFacePromptResetVersion = FACE_TO_FACE_PROMPT_RESET_VERSION;
     // 群聊
     config.value.groupChatPrompts = structuredClone(
       GROUP_CHAT_PROMPT_DEFINITIONS,
@@ -1835,6 +1928,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
       DEFAULT_FACE_TO_FACE_PROMPT_ORDER,
     );
     config.value.deletedFaceToFacePromptIds = [];
+    config.value.faceToFacePromptResetVersion = FACE_TO_FACE_PROMPT_RESET_VERSION;
     await saveConfig();
   }
 
@@ -1941,6 +2035,12 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
    * 刪除群聊模式提示詞（管理員模式，可刪除任何提示詞）
    */
   async function deleteGroupChatPrompt(identifier: string): Promise<boolean> {
+    // 系統必要條目不可刪除
+    const target = (
+      config.value.groupChatPrompts ?? GROUP_CHAT_PROMPT_DEFINITIONS
+    ).find((p) => p.identifier === identifier);
+    if (target && !isPromptDeletable(target)) return false;
+
     if (!config.value.groupChatPrompts) {
       config.value.groupChatPrompts = structuredClone(
         GROUP_CHAT_PROMPT_DEFINITIONS,
@@ -2402,6 +2502,13 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
   ): Promise<boolean> {
     switch (mode) {
       case "faceToFace":
+        // 系統必要條目不可刪除
+        {
+          const target = (
+            config.value.faceToFacePrompts ?? FACE_TO_FACE_PROMPT_DEFINITIONS
+          ).find((p) => p.identifier === identifier);
+          if (target && !isPromptDeletable(target)) return false;
+        }
         trackDeletedForMode(
           identifier,
           FACE_TO_FACE_PROMPT_DEFINITIONS,
@@ -2893,6 +3000,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     faceToFacePrompts,
     groupChatPromptOrder,
     groupChatPrompts,
+    needsFaceToFacePromptReset,
     // Actions
     loadConfig,
     saveConfig,

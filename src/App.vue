@@ -60,6 +60,8 @@ import MultiCharSetupModal from "@/components/modals/MultiCharSetupModal.vue";
 import PhoneContactPickerModal from "@/components/modals/PhoneContactPickerModal.vue";
 import PomodoroCertModal from "@/components/modals/PomodoroCertModal.vue";
 import AnnouncementModal from "@/components/modals/AnnouncementModal.vue";
+import FaceToFacePromptResetModal from "@/components/modals/FaceToFacePromptResetModal.vue";
+import { usePromptManagerStore } from "@/stores/promptManager";
 import FavoriteAudioModal from "@/components/modals/FavoriteAudioModal.vue";
 import {
   loadPendingAnnouncements,
@@ -865,6 +867,18 @@ async function handleAnnouncementAck(id: string) {
   await acknowledgeAnnouncement(id);
   currentAnnouncementIndex.value += 1;
 }
+// 面對面提示詞重大更新：舊設定用戶必須完成重置（彈窗無法關閉）
+const showFaceToFacePromptReset = ref(false);
+async function checkFaceToFacePromptReset() {
+  try {
+    const promptManagerStore = usePromptManagerStore();
+    await promptManagerStore.loadConfig();
+    showFaceToFacePromptReset.value = promptManagerStore.needsFaceToFacePromptReset;
+  } catch (error) {
+    console.warn("[App] 檢查面對面提示詞版本失敗:", error);
+  }
+}
+
 async function loadAuthorAnnouncements() {
   try {
     const pending = await loadPendingAnnouncements();
@@ -1308,6 +1322,8 @@ async function loadAppData() {
   } catch (error) {
     console.error("[App] 數據遷移失敗:", error);
   }
+
+  void checkFaceToFacePromptReset();
 
   themeStore.loadFromStorage();
 
@@ -2999,6 +3015,12 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       :index="currentAnnouncementIndex + 1"
       :total="announcementQueue.length"
       @ack="handleAnnouncementAck"
+    />
+
+    <!-- 面對面提示詞強制重置引導（作者公告看完後才顯示） -->
+    <FaceToFacePromptResetModal
+      v-if="showFaceToFacePromptReset && !currentAnnouncement"
+      @done="showFaceToFacePromptReset = false"
     />
 
     <!-- 多人卡模式設定彈窗 -->

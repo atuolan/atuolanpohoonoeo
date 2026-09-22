@@ -1033,7 +1033,11 @@ async function onDropFiltered(event: DragEvent, filteredToIndex: number) {
 // 編輯提示詞
 function editPrompt(identifier: string) {
   const def = getPromptDef(identifier);
-  if (def && (isGroupChatMode.value || isPromptEditable(def))) {
+  if (
+    def &&
+    ((isGroupChatMode.value && !def.locked) ||
+      isPromptEditable(def, adminStore.isAdmin))
+  ) {
     editingPrompt.value = def;
     editingName.value = def.name;
     // adminOnly 模塊：非管理員看不到內容
@@ -1627,6 +1631,9 @@ function buildPromptDefinitionsBlock(
     lines.push(`    isDeletable: ${prompt.isDeletable},`);
     if (typeof prompt.adminOnly === "boolean") {
       lines.push(`    adminOnly: ${prompt.adminOnly},`);
+    }
+    if (prompt.locked) {
+      lines.push(`    locked: true,`);
     }
     lines.push("  },");
   }
@@ -2924,8 +2931,22 @@ watch(newPromptInsertMode, (mode) => {
             <!-- 名稱 -->
             <span class="prompt-name">{{ getPromptName(entry.identifier) }}</span>
 
+            <!-- 系統必要條目的作用說明 -->
+            <span
+              v-if="getPromptDef(entry.identifier)?.locked && getPromptDef(entry.identifier)?.description"
+              class="prompt-desc"
+            >
+              {{ getPromptDef(entry.identifier)!.description }}
+            </span>
+
             <!-- 標籤列表 -->
             <div class="prompt-tags">
+              <span
+                v-if="getPromptDef(entry.identifier)?.locked"
+                class="prompt-tag locked"
+                title="系統必要條目：不可刪除，內容僅管理員可修改"
+                >必要</span
+              >
               <span
                 v-if="getPromptDef(entry.identifier)?.marker"
                 class="prompt-tag marker"
@@ -2977,8 +2998,8 @@ watch(newPromptInsertMode, (mode) => {
             <button
               v-if="
                 getPromptDef(entry.identifier) &&
-                (isGroupChatMode ||
-                  isPromptEditable(getPromptDef(entry.identifier)!))
+                ((isGroupChatMode && !getPromptDef(entry.identifier)!.locked) ||
+                  isPromptEditable(getPromptDef(entry.identifier)!, adminStore.isAdmin))
               "
               class="action-btn edit"
               title="編輯"
@@ -5017,6 +5038,13 @@ watch(newPromptInsertMode, (mode) => {
   line-height: 1.3;
 }
 
+.prompt-desc {
+  font-size: 11px;
+  color: var(--color-text-secondary, #888);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
 .prompt-tags {
   display: flex;
   flex-wrap: wrap;
@@ -5044,6 +5072,11 @@ watch(newPromptInsertMode, (mode) => {
   &.custom {
     background: #e8f5e9;
     color: #388e3c;
+  }
+
+  &.locked {
+    background: #ffebee;
+    color: #c62828;
   }
 
   &.role-user {

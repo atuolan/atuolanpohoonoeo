@@ -1,4 +1,4 @@
-import { needsParsing, parseAIResponse } from "@/services/ResponseParser";
+import { needsParsing, parseAIResponse, stripRabbitThinking } from "@/services/ResponseParser";
 import type { Chat, ChatMessage } from "@/types/chat";
 import type { ChatScreenMessage } from "@/types/chatScreen";
 
@@ -260,7 +260,7 @@ export function sanitizeStreamingContentForStorage(content: string): string {
     console.warn("[ChatScreen] 清理流式內容供持久化時解析失敗，改用正則回退:", error);
   }
 
-  return trimmed
+  return stripRabbitThinking(trimmed, true)
     .replace(/<think(?:ing)?>[\s\S]*?(<\/think(?:ing)?>|$)/gi, "")
     .replace(/<\/?content>/gi, "")
     .replace(/<\/?msg>/gi, "")

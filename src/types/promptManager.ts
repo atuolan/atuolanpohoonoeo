@@ -178,6 +178,8 @@ export interface PromptDefinition {
   dependencies?: string[];
   /** 是否僅管理員可見/可編輯 */
   adminOnly?: boolean;
+  /** 系統必要條目：不可刪除，一般用戶不可修改內容（僅管理員可改），作用說明寫在 description */
+  locked?: boolean;
 }
 
 // ===== 角色提示詞配置 =====
@@ -232,6 +234,8 @@ export interface PromptManagerConfig {
   faceToFacePrompts?: PromptDefinition[];
   /** 面對面模式提示詞順序 */
   faceToFacePromptOrder?: PromptOrderEntry[];
+  /** 已套用的面對面提示詞強制重置版本（低於 FACE_TO_FACE_PROMPT_RESET_VERSION 時需引導重置） */
+  faceToFacePromptResetVersion?: number;
   /** 群聊模式提示詞定義 */
   groupChatPrompts?: PromptDefinition[];
   /** 群聊模式提示詞順序 */
@@ -416,7 +420,12 @@ const TEMPLATE_EDITABLE_MARKERS = new Set([
 ]);
 
 // ===== 檢查是否可編輯 =====
-export function isPromptEditable(prompt: PromptDefinition): boolean {
+export function isPromptEditable(
+  prompt: PromptDefinition,
+  isAdmin = false,
+): boolean {
+  // 系統必要條目：只有管理員可以修改
+  if (prompt.locked) return isAdmin;
   // 特定 marker 條目允許編輯 content（作為包裝模板，可用 {{charDescription}} 等宏）
   if (prompt.marker && TEMPLATE_EDITABLE_MARKERS.has(prompt.identifier)) {
     return true;
@@ -427,6 +436,8 @@ export function isPromptEditable(prompt: PromptDefinition): boolean {
 
 // ===== 檢查是否可刪除 =====
 export function isPromptDeletable(prompt: PromptDefinition): boolean {
+  // 系統必要條目不可刪除
+  if (prompt.locked) return false;
   // chatHistory 是系統必要佔位符，不可刪除
   const undeletableIdentifiers = ["chatHistory"];
   return !undeletableIdentifiers.includes(prompt.identifier);

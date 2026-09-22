@@ -956,6 +956,25 @@ function splitHtmlBlocks(content: string): ParsedMessage[] | null {
 }
 
 /**
+ * 兔子預設的 <|Rabbit_Thinking|>...</|Rabbit_Thinking|> 思考區塊
+ * （對應酒館正則「隱藏思考」）
+ */
+const RABBIT_THINKING_REGEX =
+  /<[^<>]*Rabbit_Thinking[^<>]*>([\s\S]*?)<[^<>]*Rabbit_Thinking[^<>]*>/gis;
+
+/**
+ * 移除 <|Rabbit_Thinking|> 思考區塊。
+ * allowUnclosed：串流中尚未閉合時，把開頭標籤之後的內容一併隱藏。
+ */
+export function stripRabbitThinking(content: string, allowUnclosed = false): string {
+  let stripped = content.replace(RABBIT_THINKING_REGEX, "");
+  if (allowUnclosed) {
+    stripped = stripped.replace(/<[^<>]*Rabbit_Thinking[^<>]*>[\s\S]*$/i, "");
+  }
+  return stripped;
+}
+
+/**
  * 解析 AI 回覆
  */
 export function parseAIResponse(rawResponse: string): ParsedResponse {
@@ -965,10 +984,17 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     rawOutput: "",
   };
 
+  // 0. 提取並移除 <|Rabbit_Thinking|> 區塊（兔子預設的思考格式）
+  const rabbitMatch = [...rawResponse.matchAll(RABBIT_THINKING_REGEX)];
+  if (rabbitMatch.length > 0) {
+    result.thinking = rabbitMatch.map((m) => m[1].trim()).join("\n\n");
+    rawResponse = stripRabbitThinking(rawResponse);
+  }
+
   // 1. 提取 <think> 內容
   const thinkMatch = rawResponse.match(/<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/i);
   if (thinkMatch) {
-    result.thinking = thinkMatch[1].trim();
+    result.thinking = [thinkMatch[1].trim(), result.thinking].filter(Boolean).join("\n\n");
   }
 
   // 2. 正常聊天訊息只解析 <content>...</content> 內部；content 外的控制標籤會在後續步驟另行處理。
@@ -2234,7 +2260,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|Rabbit_Thinking|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }

@@ -2211,6 +2211,11 @@ export class PromptBuilder {
       case "stickerSystem":
       case "f2fStickerSystem":
       case "gcStickerSystem":
+        // 系統必要條目（表情包使用指南）：注入 content
+        if (promptDef?.locked && promptDef.content) {
+          const content = await this.macroEngine.substitute(promptDef.content);
+          return content ? { role: getRole(), content, identifier } : null;
+        }
         // 表情包列表（marker，由外部填充）
         // TODO: 從 context 獲取表情包列表
         return null;
@@ -2433,7 +2438,12 @@ ${negativeExample}
 
       default:
         // 自定義提示詞 - 使用 promptDef.role
-        if (promptDef && promptDef.content && !promptDef.marker) {
+        // locked 的系統必要條目雖標為 marker，內容仍需注入
+        if (
+          promptDef &&
+          promptDef.content &&
+          (!promptDef.marker || promptDef.locked)
+        ) {
           const content = await this.macroEngine.substitute(promptDef.content);
           return content ? { role: getRole(), content, identifier } : null;
         }

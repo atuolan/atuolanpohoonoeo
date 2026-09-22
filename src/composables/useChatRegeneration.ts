@@ -433,12 +433,22 @@ export function useChatRegeneration(context: {
       return clone;
     });
 
-    context.messages.value.splice(startIdx, endIdx - startIdx, ...newMessages);
+    const removedMessages = context.messages.value.splice(
+      startIdx,
+      endIdx - startIdx,
+      ...newMessages,
+    );
 
     const restoredTurnId = newMessages.find((m) => m.turnId)?.turnId;
     context.currentTurnId.value = restoredTurnId || "";
 
-    void context.saveChat();
+    // 被換下的候選必須從 IDB 刪除：saveChat 會保留「載入後才建立」的訊息（視為背景追加），
+    // 分頁模式下也只做 upsert，若不刪除，重新載入後各候選會同時出現、分散成多組訊息。
+    const newIds = new Set(newMessages.map((m) => m.id));
+    const staleIds = removedMessages.map((m) => m.id).filter((id) => !newIds.has(id));
+    void Promise.all(staleIds.map((id) => context.deleteMessage(id)))
+      .catch((error) => console.warn("[useChatRegeneration] 刪除舊候選訊息失敗:", error))
+      .finally(() => void context.saveChat());
   }
 
   function clearRoundSwipes() {
