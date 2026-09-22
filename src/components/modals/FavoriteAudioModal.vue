@@ -166,7 +166,7 @@ const editForm = ref({
 });
 const tagsInput = ref('');
 
-const filters = [
+const filters: Array<{ label: string; value: typeof currentFilter.value }> = [
   { label: '全部', value: 'all' },
   { label: '我的錄音', value: 'user' },
   { label: 'AI 語音', value: 'tts' },

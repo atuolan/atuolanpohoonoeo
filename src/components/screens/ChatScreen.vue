@@ -1973,9 +1973,11 @@ const onMessageRejectOnlineModeRequest = (...args: any[]) =>
   handleRejectOnlineModeRequest(args[0] as string);
 
 // ===== 收藏語音處理 =====
-const onMessageFavoriteAudio = async (messageId: string) => {
+const onMessageFavoriteAudio = async (...args: any[]) => {
+  const messageId = args[0] as string;
   const message = messages.value.find(m => m.id === messageId);
-  if (!message) return;
+  const chatId = currentChatId.value;
+  if (!message || !chatId) return;
 
   try {
     const { useFavoriteAudio } = await import('@/composables/useFavoriteAudio');
@@ -1986,7 +1988,7 @@ const onMessageFavoriteAudio = async (messageId: string) => {
       // 用戶錄音
       await favoriteUserAudio(
         message,
-        currentChatId.value,
+        chatId,
         props.characterId,
         props.characterName,
         displayAvatar.value,
@@ -1995,7 +1997,7 @@ const onMessageFavoriteAudio = async (messageId: string) => {
       // TTS 語音
       await favoriteTTSAudio(
         message,
-        currentChatId.value,
+        chatId,
         props.characterId,
         props.characterName,
         displayAvatar.value,
@@ -2003,10 +2005,10 @@ const onMessageFavoriteAudio = async (messageId: string) => {
     }
 
     // 顯示成功提示
-    showToast('語音已收藏 ⭐', 'success');
+    showToast('語音已收藏 ⭐');
   } catch (error) {
     console.error('收藏語音失敗:', error);
-    showToast('收藏失敗，請重試', 'error');
+    showToast('收藏失敗，請重試');
   }
 };
 
