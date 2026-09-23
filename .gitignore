@@ -90,3 +90,6 @@ Untitled-1.xml
 # 獨立的雲端備份模板 repo
 aguaphone-cloud-backup/
 vite.config.ts.timestamp-*.mjs
+
+# 個人的 Claude Code 本機設定（可能含伺服器位址等私人資訊）
+.claude/settings.local.json
