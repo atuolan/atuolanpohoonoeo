@@ -14,6 +14,8 @@ import {
   getBackupGroupFilename,
   getBackupPartFilename,
   getBackupPartIndexFromFilename,
+  getPartBudgetBytes,
+  isMobileDevice,
   type ClosedBackupPart,
 } from "@/services/AutoBackupService";
 
@@ -229,5 +231,29 @@ describe("分包檔名", () => {
     expect(getBackupGroupFilename(base)).toBe(base);
     expect(getBackupPartIndexFromFilename(part3)).toBe(2);
     expect(getBackupPartIndexFromFilename(base)).toBe(0);
+  });
+});
+
+describe("分包預算", () => {
+  const MB = 1024 * 1024;
+
+  it("辨識手機（含偽裝成 Mac 的 iPadOS）", () => {
+    const iphone =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15";
+    const android = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36";
+    const mac = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15";
+    const windows = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+    expect(isMobileDevice(iphone, 5)).toBe(true);
+    expect(isMobileDevice(android, 5)).toBe(true);
+    expect(isMobileDevice(mac, 5)).toBe(true); // iPadOS
+    expect(isMobileDevice(mac, 0)).toBe(false);
+    expect(isMobileDevice(windows, 0)).toBe(false);
+  });
+
+  it("手機與記憶體模式 300MB，電腦 1GB", () => {
+    expect(getPartBudgetBytes("disk", true)).toBe(300 * MB);
+    expect(getPartBudgetBytes("memory", true)).toBe(300 * MB);
+    expect(getPartBudgetBytes("memory", false)).toBe(300 * MB);
+    expect(getPartBudgetBytes("disk", false)).toBe(1024 * MB);
   });
 });

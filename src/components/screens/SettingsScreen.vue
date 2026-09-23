@@ -24,8 +24,8 @@ import {
   getBackupGroupFilename,
   getBackupPartIndexFromFilename,
   type AutoBackupSettings,
-  type BackupPartReady,
-  type BackupPartReadyHandler,
+  type BackupBatchReady,
+  type BackupBatchReadyHandler,
   type BackupProgressCallback,
 } from "@/services/AutoBackupService";
 import { getLegacyBackupService } from "@/services/LegacyBackupService";
@@ -1239,74 +1239,128 @@ const isBackingUp = ref(false);
 const backupProgress = ref("");
 const fsaaSupported = isFileSystemAccessSupported();
 
-// ===== 備份分包逐包交付 =====
+// ===== 備份交付 =====
 // 打包動輒數分鐘，點「導出」時的使用者手勢早就過期，share／存檔面板會被瀏覽器拒絕。
-// 所以每包打包完都停下來，等使用者再點一次「儲存」，在那次點擊裡交付。
-const pendingBackupPart = ref<BackupPartReady | null>(null);
-const pendingPartDelivering = ref(false);
-const pendingPartMessage = ref("");
-let pendingPartSettle: {
+// 所以打包完先停下來，等使用者再點一次「儲存」，在那次點擊裡交付。
+// 分包通常全部打包完才交付一次；手機空間不夠時才會分幾批。
+const pendingBackupBatch = ref<BackupBatchReady | null>(null);
+const pendingBatchDelivering = ref(false);
+const pendingBatchMessage = ref("");
+/** 一次交付整批不支援或失敗時，改成逐個儲存 */
+const pendingBatchOneByOne = ref(false);
+const pendingBatchSaved = ref<boolean[]>([]);
+let pendingBatchSettle: {
   resolve: () => void;
   reject: (err: Error) => void;
 } | null = null;
 
-function isSinglePartBackup(part: BackupPartReady): boolean {
-  return part.index === 0 && part.isLast;
+/** 整份備份只有一個檔案 */
+function isSingleFileBackup(batch: BackupBatchReady): boolean {
+  return batch.isLast && batch.parts.length === 1 && batch.parts[0].index === 0;
 }
 
-const onBackupPartReady: BackupPartReadyHandler = (part) => {
-  // 只有一包且點擊時效還在（資料量小、幾秒就打包完）：直接交付，不多問一次
+/** 這一批就是整份備份（全部分包一次交付） */
+function isWholeBackupBatch(batch: BackupBatchReady): boolean {
+  return batch.isLast && batch.parts[0].index === 0;
+}
+
+function describeBackupBatch(batch: BackupBatchReady): string {
+  if (isSingleFileBackup(batch)) return "備份已準備好";
+  if (isWholeBackupBatch(batch)) return `備份已準備好（共 ${batch.parts.length} 個檔案）`;
+  const first = batch.parts[0].index + 1;
+  const last = batch.parts[batch.parts.length - 1].index + 1;
+  return first === last ? `第 ${first} 部分已準備好` : `第 ${first}–${last} 部分已準備好`;
+}
+
+function backupBatchBytes(batch: BackupBatchReady): number {
+  return batch.parts.reduce((sum, part) => sum + part.bytes, 0);
+}
+
+const onBackupBatchReady: BackupBatchReadyHandler = (batch) => {
+  // 只有一個檔案且點擊時效還在（資料量小、幾秒就打包完）：直接交付，不多問一次
   if (
-    isSinglePartBackup(part) &&
+    isSingleFileBackup(batch) &&
     (navigator as any).userActivation?.isActive
   ) {
-    return part.deliver().then(() => undefined);
+    return batch.deliverOne(0).then(() => undefined);
   }
   return new Promise<void>((resolve, reject) => {
-    pendingPartMessage.value = "";
-    pendingBackupPart.value = part;
-    pendingPartSettle = { resolve, reject };
+    pendingBatchMessage.value = "";
+    pendingBatchOneByOne.value = false;
+    pendingBatchSaved.value = batch.parts.map(() => false);
+    pendingBackupBatch.value = batch;
+    pendingBatchSettle = { resolve, reject };
   });
 };
 
-async function deliverPendingBackupPart() {
-  const part = pendingBackupPart.value;
-  if (!part || pendingPartDelivering.value) return;
-  pendingPartDelivering.value = true;
+function settlePendingBatch(err?: Error) {
+  pendingBackupBatch.value = null;
+  const settle = pendingBatchSettle;
+  pendingBatchSettle = null;
+  if (err) settle?.reject(err);
+  else settle?.resolve();
+}
+
+async function deliverPendingBatch() {
+  const batch = pendingBackupBatch.value;
+  if (!batch || pendingBatchDelivering.value) return;
+  pendingBatchDelivering.value = true;
   try {
     // 必須是這個 click handler 裡的第一個 await，手勢才有效
-    const via = await part.deliver();
+    const via = await batch.deliverAll();
     if (via === "cancelled") {
-      pendingPartMessage.value = "已取消儲存，可以再按一次重試";
+      pendingBatchMessage.value = "已取消儲存，可以再按一次重試";
       return;
     }
-    pendingBackupPart.value = null;
-    const settle = pendingPartSettle;
-    pendingPartSettle = null;
-    settle?.resolve();
+    if (via === "unsupported") {
+      pendingBatchOneByOne.value = true;
+      pendingBatchMessage.value = "這個瀏覽器無法一次儲存多個檔案，請逐一儲存";
+      return;
+    }
+    settlePendingBatch();
   } catch (e) {
-    pendingPartMessage.value = `儲存失敗：${
+    pendingBatchMessage.value = `儲存失敗：${
       e instanceof Error ? e.message : String(e)
     }，可以再試一次`;
   } finally {
-    pendingPartDelivering.value = false;
+    pendingBatchDelivering.value = false;
+  }
+}
+
+async function deliverPendingBatchFile(i: number) {
+  const batch = pendingBackupBatch.value;
+  if (!batch || pendingBatchDelivering.value) return;
+  pendingBatchDelivering.value = true;
+  try {
+    // 必須是這個 click handler 裡的第一個 await，手勢才有效
+    const via = await batch.deliverOne(i);
+    if (via === "cancelled") {
+      pendingBatchMessage.value = "已取消儲存，可以再按一次重試";
+      return;
+    }
+    pendingBatchMessage.value = "";
+    pendingBatchSaved.value[i] = true;
+    if (pendingBatchSaved.value.every(Boolean)) settlePendingBatch();
+  } catch (e) {
+    pendingBatchMessage.value = `儲存失敗：${
+      e instanceof Error ? e.message : String(e)
+    }，可以再試一次`;
+  } finally {
+    pendingBatchDelivering.value = false;
   }
 }
 
 function cancelPendingBackup(skipConfirm = false) {
-  const part = pendingBackupPart.value;
-  if (!part) return;
+  const batch = pendingBackupBatch.value;
+  if (!batch) return;
   if (
     !skipConfirm &&
-    !isSinglePartBackup(part) &&
-    !confirm("取消後這份備份會缺少後面的部分，無法完整還原。確定取消？")
+    !isSingleFileBackup(batch) &&
+    !confirm("取消後這份備份會缺少部分檔案，無法完整還原。確定取消？")
   ) {
     return;
   }
-  pendingBackupPart.value = null;
-  const settle = pendingPartSettle;
-  pendingPartSettle = null;
-  settle?.reject(new BackupCancelledError());
+  settlePendingBatch(new BackupCancelledError());
 }
 
 async function refreshAutoBackupState() {
@@ -1366,7 +1420,7 @@ async function handleBackupNow() {
   try {
     const result = await performBackup(false, onBackupProgress, {
       excludeChatImages: excludeChatImages.value,
-      onPartReady: onBackupPartReady,
+      onBatchReady: onBackupBatchReady,
     });
     autoBackupSettings.lastBackupAt = Date.now();
     autoBackupSettings.lastBackupMessage = result.message;
@@ -1387,7 +1441,7 @@ async function handleDownloadBackup() {
   try {
     const result = await performBackup(true, onBackupProgress, {
       excludeChatImages: excludeChatImages.value,
-      onPartReady: onBackupPartReady,
+      onBatchReady: onBackupBatchReady,
     });
     autoBackupSettings.lastBackupAt = Date.now();
     autoBackupSettings.lastBackupMessage = result.message;
@@ -2435,7 +2489,7 @@ async function exportData() {
       },
       {
         excludeChatImages: excludeChatImages.value,
-        onPartReady: onBackupPartReady,
+        onBatchReady: onBackupBatchReady,
       },
     );
     if (!result.success && result.message !== "已取消備份") {
@@ -7389,53 +7443,75 @@ function useClonedVoice(voiceId: string) {
       </div>
     </Teleport>
 
-    <!-- 備份分包：逐包儲存（share／存檔面板必須由這一下點擊觸發） -->
+    <!-- 備份交付（share／存檔面板必須由這一下點擊觸發） -->
     <Teleport to="body">
-      <div v-if="pendingBackupPart" class="modal-overlay">
+      <div v-if="pendingBackupBatch" class="modal-overlay">
         <div class="profile-modal confirm-modal" @click.stop>
           <div class="confirm-icon">
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
             </svg>
           </div>
-          <h3>
-            {{
-              isSinglePartBackup(pendingBackupPart)
-                ? "備份已準備好"
-                : `第 ${pendingBackupPart.index + 1} 部分已準備好`
-            }}
-          </h3>
+          <h3>{{ describeBackupBatch(pendingBackupBatch) }}</h3>
           <p class="confirm-desc backup-part-file">
-            {{ pendingBackupPart.filename }}<br />
-            {{ formatSize(pendingBackupPart.bytes) }}
+            <template v-if="isSingleFileBackup(pendingBackupBatch)">
+              {{ pendingBackupBatch.parts[0].filename }}<br />
+            </template>
+            {{ formatSize(backupBatchBytes(pendingBackupBatch)) }}
           </p>
           <p
-            v-if="!isSinglePartBackup(pendingBackupPart)"
+            v-if="!isSingleFileBackup(pendingBackupBatch)"
             class="confirm-desc"
           >
-            資料量較大，備份分成多個檔案。請逐一儲存
-            {{ pendingBackupPart.isLast ? "" : "，儲存後會繼續打包下一部分" }}。<br />
-            導入時請一次選取所有部分。
+            資料量較大，備份分成多個檔案。
+            <template v-if="!pendingBackupBatch.isLast">
+              手機空間不足以一次暫存全部，請先儲存這些檔案，之後會繼續打包剩下的部分。
+            </template>
+            <br />導入時請一次選取所有部分。
           </p>
-          <p v-if="pendingPartMessage" class="confirm-desc backup-part-warning">
-            {{ pendingPartMessage }}
+          <p v-if="pendingBatchMessage" class="confirm-desc backup-part-warning">
+            {{ pendingBatchMessage }}
           </p>
-          <div class="modal-actions modal-actions-stack">
+          <div
+            v-if="!pendingBatchOneByOne"
+            class="modal-actions modal-actions-stack"
+          >
             <button
               class="modal-btn confirm"
-              :disabled="pendingPartDelivering"
-              @click="deliverPendingBackupPart"
+              :disabled="pendingBatchDelivering"
+              @click="deliverPendingBatch"
             >
               {{
-                isSinglePartBackup(pendingBackupPart)
+                pendingBackupBatch.parts.length === 1
                   ? "儲存備份"
-                  : `儲存第 ${pendingBackupPart.index + 1} 部分`
+                  : `儲存全部（${pendingBackupBatch.parts.length} 個檔案）`
               }}
             </button>
           </div>
+          <div v-else class="modal-actions modal-actions-stack">
+            <button
+              v-for="(part, i) in pendingBackupBatch.parts"
+              :key="part.index"
+              class="modal-btn"
+              :class="pendingBatchSaved[i] ? 'cancel' : 'confirm'"
+              :disabled="pendingBatchDelivering || pendingBatchSaved[i]"
+              @click="deliverPendingBatchFile(i)"
+            >
+              {{ pendingBatchSaved[i] ? "✓ 已儲存" : "儲存" }}第
+              {{ part.index + 1 }} 部分（{{ formatSize(part.bytes) }}）
+            </button>
+          </div>
+          <button
+            v-if="!pendingBatchOneByOne && pendingBackupBatch.parts.length > 1"
+            class="modal-btn-text"
+            :disabled="pendingBatchDelivering"
+            @click="pendingBatchOneByOne = true"
+          >
+            一次儲存失敗？改為逐一儲存
+          </button>
           <button
             class="modal-btn-text"
-            :disabled="pendingPartDelivering"
+            :disabled="pendingBatchDelivering"
             @click="cancelPendingBackup()"
           >
             取消備份

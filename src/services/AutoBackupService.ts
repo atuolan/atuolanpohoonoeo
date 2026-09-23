@@ -1062,12 +1062,56 @@ export function getBackupPartIndexFromFilename(filename: string): number {
   return m ? Math.max(0, Number(m[1]) - 1) : 0;
 }
 
+const MB = 1024 * 1024;
+
 /**
- * 單一分包的大小預算。導入端要把整包讀進記憶體再解壓，iOS 上每包
- * 必須夠小才導得回去；記憶體模式下打包本身也吃這個量。
+ * 手機（以及記憶體模式）的分包預算。導入端要把整包讀進記憶體再解壓，
+ * 打包的記憶體模式也吃這個量。iOS 使用者實測 300MB 的備份可以正常導出。
  */
-const PART_BUDGET_BYTES = 150 * 1024 * 1024;
-const PART_BUDGET_BYTES_MEMORY = 80 * 1024 * 1024;
+const PART_BUDGET_MOBILE = 300 * MB;
+/**
+ * 電腦的分包預算：記憶體寬裕，資料量一般的使用者就只會有一個檔案。
+ * 不能再大：fflate 不寫 ZIP64，單一 ZIP 超過 4GB 會損壞，導入時也要整包進記憶體。
+ */
+const PART_BUDGET_DESKTOP = 1024 * MB;
+
+/** iPhone／iPad（含偽裝成 Mac 的 iPadOS）或 Android */
+export function isMobileDevice(
+  userAgent: string = typeof navigator !== "undefined" ? navigator.userAgent : "",
+  maxTouchPoints: number = typeof navigator !== "undefined"
+    ? navigator.maxTouchPoints ?? 0
+    : 0,
+): boolean {
+  if (/iPhone|iPad|iPod|Android/i.test(userAgent)) return true;
+  // iPadOS 13+ 預設回報桌面版 Safari 的 UA
+  return /Macintosh/i.test(userAgent) && maxTouchPoints > 1;
+}
+
+/** 單一分包的未壓縮位元組預算 */
+export function getPartBudgetBytes(
+  mode: "disk" | "memory",
+  mobile: boolean = isMobileDevice(),
+): number {
+  if (mobile || mode === "memory") return PART_BUDGET_MOBILE;
+  return PART_BUDGET_DESKTOP;
+}
+
+/**
+ * OPFS 剩餘空間是否還放得下再一包。
+ *
+ * 分包預設全部打包完才一次交付，暫存會疊到跟整份備份一樣大；
+ * 空間不夠時就先把已完成的分包交出去、刪掉暫存，再繼續打包。
+ * 查不到配額時保守回傳 false（逐包交付，行為與舊版相同）。
+ */
+async function hasRoomForAnotherPart(budget: number): Promise<boolean> {
+  try {
+    const est = await (navigator as any).storage?.estimate?.();
+    if (!est?.quota || typeof est.usage !== "number") return false;
+    return est.quota - est.usage > budget * 1.5 + 64 * MB;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * 開啟備份檔案的 writable，包成 BackupOutputSink。
@@ -1442,6 +1486,71 @@ async function deliverBackupFile(
   return "blob-download";
 }
 
+/**
+ * 一次交付多個已落地的檔案，使用者只需要點一次。
+ *
+ * 1. showDirectoryPicker（電腦版 Chrome／Edge）：選一個資料夾，全部串流寫進去
+ * 2. Web Share（iOS、Android）：分享面板一次帶走全部檔案，「儲存到檔案」可以一起存
+ *
+ * 只有一個檔案時等同 deliverBackupFile()。回傳 "unsupported" 表示這個
+ * 瀏覽器沒辦法一次交付多個檔案，呼叫端要改成逐個交付。
+ */
+async function deliverBackupFiles(files: File[]): Promise<string> {
+  if (files.length === 1) return deliverBackupFile(files[0], files[0].name);
+
+  const nav = navigator as any;
+  const win = window as any;
+
+  if (typeof win.showDirectoryPicker === "function") {
+    let dir: any = null;
+    const created: string[] = [];
+    try {
+      dir = await win.showDirectoryPicker({ mode: "readwrite" });
+      for (const file of files) {
+        const handle = await dir.getFileHandle(file.name, { create: true });
+        created.push(file.name);
+        const writable = await handle.createWritable();
+        await file.stream().pipeTo(writable);
+      }
+      console.log(`[AutoBackup] 交付方式: showDirectoryPicker（${files.length} 個檔案）`);
+      return "directory-picker";
+    } catch (dirErr: any) {
+      // 寫到一半失敗：不在使用者的資料夾留下殘缺的備份
+      for (const name of created) {
+        await dir?.removeEntry(name).catch(() => {});
+      }
+      if (dirErr?.name === "AbortError") return "cancelled";
+      console.warn("[AutoBackup] showDirectoryPicker 失敗，改試 Web Share:", dirErr);
+    }
+  }
+
+  if (typeof nav.share === "function") {
+    let shareable = true;
+    try {
+      if (typeof nav.canShare === "function") {
+        shareable = nav.canShare({ files });
+      }
+    } catch {
+      shareable = false;
+    }
+    if (shareable) {
+      try {
+        await nav.share({ files });
+        console.log(`[AutoBackup] 交付方式: Web Share（${files.length} 個檔案）`);
+        return "share";
+      } catch (shareErr: any) {
+        if (shareErr?.name === "AbortError") return "cancelled";
+        console.warn("[AutoBackup] 一次分享多個檔案失敗，改為逐個交付:", shareErr);
+      }
+    }
+  }
+
+  return "unsupported";
+}
+
+/** 交付完成、瀏覽器已讀完檔案，可以立刻刪暫存的交付方式 */
+const DELIVERED_SYNCHRONOUSLY = new Set(["save-picker", "share", "directory-picker"]);
+
 /** 用 <a download> 觸發下載，3 秒後回收 object URL */
 function triggerAnchorDownload(data: Blob, filename: string): void {
   const url = URL.createObjectURL(data);
@@ -1493,28 +1602,43 @@ export type BackupResult = {
   partCount?: number;
 };
 
-/** 一個已打包好、等待交付的分包 */
-export interface BackupPartReady {
+/** 一個已打包好的分包 */
+export interface BackupPartFile {
   /** 0 起算 */
   index: number;
-  isLast: boolean;
   filename: string;
   bytes: number;
-  /**
-   * 交付這一包（存檔面板／系統分享／下載）。
-   *
-   * 必須在使用者點擊的 handler 裡直接呼叫：share 與存檔面板都要求
-   * 「剛點過」，而打包動輒數分鐘，點「導出」時的那一下早就過期了。
-   * 回傳交付方式；"cancelled" 表示使用者取消，可以再呼叫一次重試。
-   */
-  deliver: () => Promise<string>;
 }
 
 /**
- * 分包就緒時的處理者（通常是 UI：顯示「儲存第 k 部分」按鈕）。
- * resolve 後才會開始打包下一包；reject（例如 BackupCancelledError）會中止整份備份。
+ * 一批已打包好、等待交付的分包。
+ *
+ * 通常整份備份打包完才交付一次（一批就是全部）；手機空間不夠同時暫存
+ * 全部分包時，會分成幾批交付。
  */
-export type BackupPartReadyHandler = (part: BackupPartReady) => Promise<void>;
+export interface BackupBatchReady {
+  parts: BackupPartFile[];
+  /** 這一批含最後一包：交付完備份就結束了 */
+  isLast: boolean;
+  /**
+   * 一次交付整批（存檔面板／資料夾／系統分享）。
+   *
+   * 必須在使用者點擊的 handler 裡直接呼叫：share 與存檔面板都要求
+   * 「剛點過」，而打包動輒數分鐘，點「導出」時的那一下早就過期了。
+   * 回傳交付方式；"cancelled" 表示使用者取消，可以重試；
+   * "unsupported" 表示無法一次交付多個檔案，要改用 deliverOne()。
+   */
+  deliverAll: () => Promise<string>;
+  /** 逐個交付第 i 個檔案（i 是 parts 陣列裡的位置）。同樣要在點擊 handler 裡呼叫 */
+  deliverOne: (i: number) => Promise<string>;
+}
+
+/**
+ * 一批分包就緒時的處理者（通常是 UI：顯示「儲存」按鈕）。
+ * resolve 表示這批已交付完畢，才會繼續打包；reject（例如
+ * BackupCancelledError）會中止整份備份。
+ */
+export type BackupBatchReadyHandler = (batch: BackupBatchReady) => Promise<void>;
 
 /** 使用者在逐包交付時取消整份備份 */
 export class BackupCancelledError extends Error {
@@ -1565,7 +1689,7 @@ async function performFolderBackup(
     await buildSplitBackup({
       onProgress,
       excludeChatImages,
-      partBudgetBytes: PART_BUDGET_BYTES,
+      partBudgetBytes: getPartBudgetBytes("disk"),
       openPart: async (index) => {
         const name = getBackupPartFilename(filename, index);
         current = await openBackupFileSink(name);
@@ -1608,14 +1732,15 @@ async function performFolderBackup(
 }
 
 /**
- * 下載路徑：每包先串流落到 OPFS 暫存檔（iOS 走 Worker），再取回 File 交付。
- * 兩種 OPFS 都不可用時才在記憶體組裝，此時分包預算更小。
+ * 下載路徑：每包先串流落到 OPFS 暫存檔（iOS 走 Worker），全部打包完再一次交付。
+ * 手機空間不夠同時暫存全部分包時，改成分批交付。
+ * 兩種 OPFS 都不可用時才在記憶體組裝，此時每包打包完就得立刻交付。
  */
 async function performDownloadBackup(
   filename: string,
   onProgress: BackupProgressCallback | undefined,
   excludeChatImages: boolean,
-  onPartReady: BackupPartReadyHandler | undefined,
+  onBatchReady: BackupBatchReadyHandler | undefined,
 ): Promise<BackupResult> {
   const diag: { reason?: string } = {};
 
@@ -1638,10 +1763,11 @@ async function performDownloadBackup(
   const first = await openTemp(getBackupPartFilename(filename, 0), undefined);
   const mode: "opfs" | "opfs-worker" | "memory" = first?.mode ?? "memory";
   let tmp: OPFSTempSink | null = first?.tmp ?? null;
+  const budget = getPartBudgetBytes(mode === "memory" ? "memory" : "disk");
 
   if (mode === "memory") {
     console.warn(
-      `[AutoBackup] 輸出模式: memory（OPFS 不可用：${diag.reason}），分包縮小以降低峰值`,
+      `[AutoBackup] 輸出模式: memory（OPFS 不可用：${diag.reason}），每包打包完就得交付`,
     );
   } else {
     console.log(`[AutoBackup] 輸出模式: ${mode}（ZIP 直接落地，不進 heap）`);
@@ -1656,15 +1782,80 @@ async function performDownloadBackup(
     mode === "memory" ? `記憶體模式：${diag.reason}` : mode,
   );
 
+  /** 已打包完、還沒交付的分包 */
+  type ReadyPart = BackupPartFile & {
+    file: File;
+    tmp: OPFSTempSink | null;
+    via: string;
+  };
+  let pending: ReadyPart[] = [];
   const deliveredVia: string[] = [];
   let partCount = 0;
+  let batchCount = 0;
+
+  const cleanupPending = async () => {
+    for (const part of pending) await part.tmp?.cleanup();
+    pending = [];
+  };
+
+  /** 把累積的分包交給使用者，交付完刪掉暫存 */
+  const flush = async (isLast: boolean) => {
+    const batch = pending;
+    batchCount++;
+
+    const deliverOne = async (i: number) => {
+      const part = batch[i];
+      part.via = await deliverBackupFile(part.file, part.filename);
+      return part.via;
+    };
+    const deliverAll = async () => {
+      const via = await deliverBackupFiles(batch.map((part) => part.file));
+      if (via !== "cancelled" && via !== "unsupported") {
+        for (const part of batch) part.via = via;
+      }
+      return via;
+    };
+
+    const first = batch[0].index + 1;
+    const last = batch[batch.length - 1].index + 1;
+    if (onBatchReady) {
+      onProgress?.({
+        phase:
+          first === last
+            ? `第 ${first} 部分已打包完成，等待儲存...`
+            : `第 ${first}–${last} 部分已打包完成，等待儲存...`,
+      });
+      await onBatchReady({
+        parts: batch.map(({ index, filename, bytes }) => ({ index, filename, bytes })),
+        isLast,
+        deliverAll,
+        deliverOne,
+      });
+    } else {
+      // 沒有 UI 可以等點擊：能一次交就一次交，不行就逐個交
+      onProgress?.({ phase: "交付檔案..." });
+      if ((await deliverAll()) === "unsupported") {
+        for (let i = 0; i < batch.length; i++) await deliverOne(i);
+      }
+    }
+
+    for (const part of batch) {
+      deliveredVia.push(part.via);
+      // 存檔面板／資料夾／分享完成時檔案已被讀完，立刻刪掉暫存檔：
+      // 2G 的資料再疊一份 2G 暫存很容易撞上 iOS 的儲存配額。
+      // <a download> 是非同步讀取，只能留給下次備份開頭清理。
+      if (part.tmp && DELIVERED_SYNCHRONOUSLY.has(part.via)) {
+        await part.tmp.cleanup();
+      }
+    }
+    pending = [];
+  };
 
   try {
     await buildSplitBackup({
       onProgress,
       excludeChatImages,
-      partBudgetBytes:
-        mode === "memory" ? PART_BUDGET_BYTES_MEMORY : PART_BUDGET_BYTES,
+      partBudgetBytes: budget,
       openPart: async (index) => {
         if (mode === "memory") return undefined;
         if (index === 0) return tmp!.sink;
@@ -1683,48 +1874,41 @@ async function performDownloadBackup(
         partCount++;
         const name = getBackupPartFilename(filename, part.index);
         const partTmp = tmp;
+        tmp = null;
         const file = partTmp
           ? await partTmp.getFile()
           : new File([part.data as BlobPart], name, { type: "application/zip" });
+        pending.push({
+          index: part.index,
+          filename: name,
+          bytes: part.bytes,
+          file,
+          tmp: partTmp,
+          via: "not-delivered",
+        });
 
-        let via = "not-delivered";
-        const deliver = async () => {
-          via = await deliverBackupFile(file, name);
-          return via;
-        };
-
-        if (onPartReady) {
-          onProgress?.({ phase: `第 ${part.index + 1} 部分已打包完成，等待儲存...` });
-          await onPartReady({
-            index: part.index,
-            isLast: part.isLast,
-            filename: name,
-            bytes: part.bytes,
-            deliver,
-          });
-        } else {
-          onProgress?.({ phase: "交付檔案..." });
-          await deliver();
+        // 記憶體模式的分包佔著 heap，不能累積；磁碟模式在空間不夠時提早交付
+        if (
+          part.isLast ||
+          mode === "memory" ||
+          !(await hasRoomForAnotherPart(budget))
+        ) {
+          await flush(part.isLast);
         }
-        deliveredVia.push(via);
-
-        // 存檔面板／分享完成時檔案已被讀完，立刻刪掉暫存檔：
-        // 2G 的資料再疊一份 2G 暫存很容易撞上 iOS 的儲存配額。
-        // <a download> 是非同步讀取，只能留給下次備份開頭清理。
-        if (partTmp && (via === "save-picker" || via === "share")) {
-          await partTmp.cleanup();
-        }
-        tmp = null;
       },
     });
   } catch (e) {
     await tmp?.cleanup();
+    await cleanupPending();
     throw e;
   }
 
   // 交付方式寫進訊息：blob-download 就是會在 Android 原生層炸掉的那條路，
   // 使用者回報閃退時這行是唯一能分辨的線索
-  const parts = partCount > 1 ? `，共 ${partCount} 個分包` : "";
+  const parts =
+    partCount > 1
+      ? `，共 ${partCount} 個分包${batchCount > 1 ? `／分 ${batchCount} 批儲存` : ""}`
+      : "";
   const vias = [...new Set(deliveredVia)].join("/");
   const msg =
     mode === "memory"
@@ -1738,14 +1922,14 @@ async function performDownloadBackup(
  * 執行一次備份
  * @param forceDownload 強制使用下載方式
  * @param onProgress 進度回調（可選）
- * @param options.onPartReady 下載路徑的逐包交付處理者；不提供時每包打包完直接交付
+ * @param options.onBatchReady 下載路徑的交付處理者（等使用者點擊）；不提供時打包完直接交付
  */
 export async function performBackup(
   forceDownload = false,
   onProgress?: BackupProgressCallback,
   options?: {
     excludeChatImages?: boolean;
-    onPartReady?: BackupPartReadyHandler;
+    onBatchReady?: BackupBatchReadyHandler;
   },
 ): Promise<BackupResult> {
   try {
@@ -1762,7 +1946,7 @@ export async function performBackup(
       filename,
       onProgress,
       excludeChatImages,
-      options?.onPartReady,
+      options?.onBatchReady,
     );
   } catch (e: any) {
     const msg =
