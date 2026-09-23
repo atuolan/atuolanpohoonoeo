@@ -522,139 +522,298 @@ export type BackupOutputSink = {
 };
 
 /**
- * 構建備份 ZIP — 真正的流式構建
+ * 單包 ZIP 項目數上限。fflate 不寫 ZIP64，超過 65535 個項目的 ZIP 會損壞；
+ * 圖片多的使用者單靠大小預算可能先撞到這條線。
+ */
+const MAX_ZIP_ENTRIES_PER_PART = 60000;
+
+/** 巨大聊天每批處理的訊息數；分包只會切在批次之間 */
+const CHAT_MESSAGE_BATCH = 100;
+
+/**
+ * 一個分包的 ZIP 寫出器：fflate Zip 流 + sink 背壓 + 錯誤傳遞。
  *
- * 使用 fflate 的 Zip streaming API，逐個檔案寫入 zip 流。
- * 聊天圖片與其他媒體都是「讀一份 → 立刻寫入 zip → 釋放」，
- * 記憶體峰值 ≈ 單個最大檔案，而非整份備份。
+ * 有 sink 時 chunk 直接寫出；否則在記憶體累積，`finish()` 回傳完整 ZIP。
+ */
+class ZipPartWriter {
+  private readonly zipper: FflateZip;
+  private readonly outputChunks: Uint8Array[] = [];
+  /** zipper 已吐出的位元組數（兩種模式都計），即最後的檔案大小 */
+  outputBytes = 0;
+  /**
+   * 已餵進本包的未壓縮位元組數，用來判斷何時切包。
+   *
+   * 不能看 outputBytes：分段寫入的項目要等 worker 壓完才吐輸出，
+   * 一個巨大聊天寫到一半時輸出幾乎不動，就永遠切不下去。
+   * 而且導入端會把整包解壓進記憶體，真正要控制的本來就是解壓後的大小。
+   */
+  inputBytes = 0;
+  entryCount = 0;
+  /** ZIP/sink 一旦壞掉就是致命錯誤：不能被單一聊天的 try/catch 吞掉 */
+  error: Error | null = null;
+  readonly done: Promise<void>;
+
+  private resolveDone!: () => void;
+  private rejectDone!: (err: Error) => void;
+  // sink.write 是 async，用一條串接的 promise 保證 chunk 順序寫出。
+  // pendingBytes 追蹤「已交給 sink 但還沒寫完」的量，用於背壓。
+  private writeChain: Promise<void> = Promise.resolve();
+  private pendingBytes = 0;
+  private drainNotify: (() => void) | null = null;
+
+  constructor(private readonly sink?: BackupOutputSink) {
+    this.done = new Promise<void>((resolve, reject) => {
+      this.resolveDone = resolve;
+      this.rejectDone = reject;
+    });
+    // 未被 await 時避免 unhandled rejection
+    this.done.catch(() => {});
+
+    this.zipper = new FflateZip((err, chunk, final) => {
+      if (err) {
+        console.error("[AutoBackup] ZIP 流錯誤:", err);
+        this.fail(err instanceof Error ? err : new Error(String(err)));
+        return;
+      }
+      this.outputBytes += chunk.length;
+      if (sink) {
+        const size = chunk.length;
+        this.pendingBytes += size;
+        this.writeChain = this.writeChain.then(async () => {
+          await sink.write(chunk);
+          this.pendingBytes -= size;
+          this.drainNotify?.();
+        });
+        this.writeChain.catch((writeErr) => {
+          console.error("[AutoBackup] ZIP 寫出失敗:", writeErr);
+          this.pendingBytes = 0;
+          this.drainNotify?.();
+          this.fail(
+            writeErr instanceof Error ? writeErr : new Error(String(writeErr)),
+          );
+        });
+        if (final) {
+          this.writeChain.then(() => this.resolveDone()).catch(() => {});
+        }
+        return;
+      }
+      this.outputChunks.push(chunk);
+      if (final) this.resolveDone();
+    });
+  }
+
+  private fail(err: Error) {
+    this.error ??= err;
+    this.rejectDone(err);
+  }
+
+  /** 等待 sink 積壓降到閾值以下，避免壓縮速度超過磁碟寫入速度 */
+  async waitForDrain(): Promise<void> {
+    while (this.sink && this.pendingBytes > SINK_BACKPRESSURE_BYTES) {
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          this.drainNotify = resolve;
+        }),
+        this.done, // 出錯時直接拋出，不會卡死
+      ]);
+      this.drainNotify = null;
+    }
+  }
+
+  /** 寫入一個完整的 ZIP 檔案項目，並在必要時等待 sink 消化積壓 */
+  async writeEntry(filename: string, data: Uint8Array): Promise<void> {
+    this.entryCount++;
+    this.inputBytes += data.length;
+    // 與 done 競賽：ZIP/sink 出錯時立即拋出，避免永遠等不到 final chunk
+    await Promise.race([pushFileToZip(this.zipper, filename, data), this.done]);
+    await this.waitForDrain();
+  }
+
+  /** 開啟一個可分段寫入的項目 */
+  openEntry(filename: string): ReturnType<typeof openZipEntry> {
+    this.entryCount++;
+    const entry = openZipEntry(this.zipper, filename);
+    return {
+      ...entry,
+      push: (data: Uint8Array) => {
+        this.inputBytes += data.length;
+        entry.push(data);
+      },
+    };
+  }
+
+  /** 結束 zip 流、等中央目錄寫完；記憶體模式回傳完整 ZIP */
+  async finish(): Promise<Uint8Array | undefined> {
+    this.zipper.end();
+    await this.done;
+    if (this.sink) {
+      await this.sink.close();
+      return undefined;
+    }
+    const result = new Uint8Array(this.outputBytes);
+    let offset = 0;
+    for (const chunk of this.outputChunks) {
+      result.set(chunk, offset);
+      offset += chunk.length;
+    }
+    this.outputChunks.length = 0;
+    return result;
+  }
+}
+
+/** 已寫完（sink 已 close）的分包 */
+export interface ClosedBackupPart {
+  /** 0 起算 */
+  index: number;
+  isLast: boolean;
+  bytes: number;
+  /** 記憶體模式（openPart 未回傳 sink）時的完整 ZIP */
+  data?: Uint8Array;
+}
+
+export interface BuildSplitBackupOptions {
+  onProgress?: BackupProgressCallback;
+  excludeChatImages?: boolean;
+  /**
+   * 單一分包的未壓縮位元組預算。達到後在下一個安全點（聊天之間，或巨大聊天的
+   * 訊息批次之間）切包。Infinity = 不分包。
+   */
+  partBudgetBytes?: number;
+  /** 開啟第 index 個分包的輸出；回傳 undefined 表示該包在記憶體組裝 */
+  openPart: (index: number) => Promise<BackupOutputSink | undefined>;
+  /** 分包寫完。回呼結束前不會開始下一包，可用來等待使用者交付 */
+  onPartClosed: (part: ClosedBackupPart) => Promise<void>;
+  /** 寫到一半失敗時清理該分包的輸出 */
+  abortPart?: (index: number) => Promise<void>;
+}
+
+/** 安全序列化單筆訊息；無法序列化就跳過該筆，不拖垮整個聊天 */
+function stringifyMessage(msg: unknown, chatId: string): string | null {
+  try {
+    return JSON.stringify(msg) ?? null;
+  } catch (err) {
+    console.warn(
+      `[AutoBackup] 聊天 "${chatId}" 有一筆訊息無法序列化，已跳過:`,
+      err,
+    );
+    return null;
+  }
+}
+
+/**
+ * 分包構建備份 ZIP — 真正的流式構建
  *
- * 傳入 `sink` 時 ZIP chunks 直接寫出、不回傳資料；
- * 不傳時在記憶體累積並回傳完整 Uint8Array（相容 GitHub 備份等路徑）。
+ * 讀一份 → 立刻寫入 zip → 釋放，記憶體峰值 ≈ 單個最大檔案。
+ * 每個分包都自成一體（媒體在包內去重），可以單獨導入。
  *
- * ZIP 結構：
+ * 第 1 包結構與舊版單檔備份相同：
  *   backup.json          — 輕量數據（不含聊天）
  *   chats/<chatId>.json  — 每個聊天獨立一個檔案
  *   media/*              — 提取的媒體檔案
+ *   metadata.json        — 統計與分包資訊
+ * 後續分包沒有 backup.json，另外可能有：
+ *   chat-segments/<chatId>.<n>.json — 被切開的巨大聊天的後續訊息
+ *     （放在 chats/ 之外：舊版導入器看不到它，就不會用它整個覆蓋掉聊天）
  */
-export async function buildBackupZipStreaming(
-  onProgress?: BackupProgressCallback,
-  options?: { excludeChatImages?: boolean },
-): Promise<Uint8Array>;
-export async function buildBackupZipStreaming(
-  onProgress: BackupProgressCallback | undefined,
-  options: { excludeChatImages?: boolean } | undefined,
-  sink: BackupOutputSink,
-): Promise<void>;
-export async function buildBackupZipStreaming(
-  onProgress?: BackupProgressCallback,
-  options?: { excludeChatImages?: boolean },
-  sink?: BackupOutputSink,
-): Promise<Uint8Array | void> {
-  const excludeChatImages = options?.excludeChatImages ?? false;
-  // 1. 不預先載入輕量數據——每個 store 在步驟 5 才逐個載入、抽媒體、寫出、釋放。
+export async function buildSplitBackup(
+  opts: BuildSplitBackupOptions,
+): Promise<void> {
+  const { onProgress } = opts;
+  const excludeChatImages = opts.excludeChatImages ?? false;
+  const budget = opts.partBudgetBytes ?? Infinity;
+  // 不分包時（例如 GitHub 備份）只能產出單一 ZIP，項目數上限也跟著不適用
+  const entryCap = Number.isFinite(budget) ? MAX_ZIP_ENTRIES_PER_PART : Infinity;
+
+  // 1. 不預先載入輕量數據——每個 store 在步驟 4 才逐個載入、抽媒體、寫出、釋放。
   //    一次全載的峰值發生在第一個進度畫面之前，使用者會看到「什麼都沒彈出就閃退」。
   onProgress?.({ phase: "收集基礎數據..." });
   await yieldToMain();
   await db.init();
   const exportedAt = new Date().toISOString();
+  const backupId =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-  // 2. 建立 fflate Zip 流
-  //    有 sink 時 chunk 直接寫出；否則在記憶體累積（向後相容）
-  const outputChunks: Uint8Array[] = [];
-  let totalOutputSize = 0;
-  let zipResolve: () => void;
-  let zipRejectRaw: (err: Error) => void;
-  const zipDone = new Promise<void>((resolve, reject) => {
-    zipResolve = resolve;
-    zipRejectRaw = reject;
-  });
-  // ZIP/sink 一旦壞掉就是致命錯誤：不能被單一聊天的 try/catch 吞掉，
-  // 否則會產出被截斷的備份檔
-  let zipError: Error | null = null;
-  const zipReject = (err: Error) => {
-    zipError ??= err;
-    zipRejectRaw(err);
+  const chatKeys = await getAllChatKeys();
+  const totalChats = chatKeys.length;
+
+  let partIndex = 0;
+  let part!: ZipPartWriter;
+  let partOpen = false;
+  let extractor!: BackupMediaExtractor;
+  let partMediaCount = 0;
+  let partChatCount = 0;
+
+  const partLabel = () => (partIndex > 0 ? `（第 ${partIndex + 1} 部分）` : "");
+
+  // 2. 每個分包一個 Zip 流、一個媒體提取器（包內去重，分包才能單獨導入）
+  const startPart = async () => {
+    const sink = await opts.openPart(partIndex);
+    part = new ZipPartWriter(sink);
+    partOpen = true;
+    partMediaCount = 0;
+    partChatCount = 0;
+    extractor = new BackupMediaExtractor(async (filename, data) => {
+      partMediaCount++;
+      await part.writeEntry(filename, data);
+    });
   };
-  // 未被 await 時避免 unhandled rejection
-  zipDone.catch(() => {});
 
-  // sink.write 是 async，用一條串接的 promise 保證 chunk 順序寫出。
-  // pendingBytes 追蹤「已交給 sink 但還沒寫完」的量，用於背壓。
-  let writeChain: Promise<void> = Promise.resolve();
-  let pendingBytes = 0;
-  let drainNotify: (() => void) | null = null;
-
-  const zipper = new FflateZip((err, chunk, final) => {
-    if (err) {
-      console.error("[AutoBackup] ZIP 流錯誤:", err);
-      zipReject(err instanceof Error ? err : new Error(String(err)));
-      return;
-    }
-    if (sink) {
-      const size = chunk.length;
-      pendingBytes += size;
-      writeChain = writeChain.then(async () => {
-        await sink.write(chunk);
-        pendingBytes -= size;
-        drainNotify?.();
-      });
-      writeChain.catch((writeErr) => {
-        console.error("[AutoBackup] ZIP 寫出失敗:", writeErr);
-        pendingBytes = 0;
-        drainNotify?.();
-        zipReject(
-          writeErr instanceof Error ? writeErr : new Error(String(writeErr)),
-        );
-      });
-      if (final) {
-        writeChain.then(() => zipResolve()).catch(() => {});
-      }
-      return;
-    }
-    outputChunks.push(chunk);
-    totalOutputSize += chunk.length;
-    if (final) {
-      zipResolve();
-    }
-  });
-
-  /** 等待 sink 積壓降到閾值以下，避免壓縮速度超過磁碟寫入速度 */
-  const waitForDrain = async (): Promise<void> => {
-    while (sink && pendingBytes > SINK_BACKPRESSURE_BYTES) {
-      await Promise.race([
-        new Promise<void>((resolve) => {
-          drainNotify = resolve;
+  const closePart = async (isLast: boolean) => {
+    const mediaResult = extractor.getResult();
+    console.log(
+      `[AutoBackup] 分包 ${partIndex + 1} 媒體提取完成: ${mediaResult.totalExtracted} 個 base64，去重 ${mediaResult.dedupeHits} 個`,
+    );
+    await part.writeEntry(
+      "metadata.json",
+      strToU8(
+        JSON.stringify({
+          version: "2.0",
+          format: "aguaphone-streaming-backup",
+          exportedAt,
+          chatCount: totalChats,
+          mediaCount: partMediaCount,
+          backupId,
+          partIndex,
+          partChatCount,
+          isLastPart: isLast,
+          ...(isLast ? { totalParts: partIndex + 1 } : {}),
         }),
-        zipDone, // 出錯時直接拋出，不會卡死
-      ]);
-      drainNotify = null;
-    }
+      ),
+    );
+    onProgress?.({ phase: `完成壓縮${partLabel()}...` });
+    await yieldToMain();
+    const data = await part.finish();
+    partOpen = false;
+    await opts.onPartClosed({
+      index: partIndex,
+      isLast,
+      bytes: part.outputBytes,
+      data,
+    });
   };
 
-  /** 寫入一個 ZIP 檔案項目，並在必要時等待 sink 消化積壓 */
-  const writeEntry = async (filename: string, data: Uint8Array) => {
-    // 與 zipDone 競賽：ZIP/sink 出錯時立即拋出，避免永遠等不到 final chunk
-    await Promise.race([pushFileToZip(zipper, filename, data), zipDone]);
-    await waitForDrain();
+  const shouldRotate = () =>
+    part.inputBytes >= budget || part.entryCount >= entryCap;
+
+  const rotate = async () => {
+    await closePart(false);
+    partIndex++;
+    await startPart();
   };
 
-  // 3. 建立共用的媒體提取器（跨聊天去重）
-  //    媒體一產生就寫入 zip 流，不在記憶體累積
-  let mediaCount = 0;
-  const extractor = new BackupMediaExtractor(async (filename, data) => {
-    mediaCount++;
-    await writeEntry(filename, data);
-  });
-
-  // 4-5. 逐個載入輕量 store → 抽出媒體 → 序列化推入 backup.json → 釋放
-  //    絕對不能先把全部 store 讀進一個大物件：「輕量」是誤稱，themes（桌布）、
-  //    qzonePosts、stickers、oldSettings（劇場貼文）、canvasLayout 都塞著 base64。
-  //    逐個處理後峰值只有「單一 store + 已抽乾的殘骸」。
-  //    產出的 backup.json 內容與舊版逐字相同，格式沒有改變。
-  onProgress?.({ phase: "寫入基礎數據..." });
-  await yieldToMain();
-  const lightEntry = openZipEntry(zipper, "backup.json");
   try {
+    await startPart();
+
+    // 3. 逐個載入輕量 store → 抽出媒體 → 序列化推入 backup.json → 釋放
+    //    絕對不能先把全部 store 讀進一個大物件：「輕量」是誤稱，themes（桌布）、
+    //    qzonePosts、stickers、oldSettings（劇場貼文）、canvasLayout 都塞著 base64。
+    //    逐個處理後峰值只有「單一 store + 已抽乾的殘骸」。
+    //    產出的 backup.json 內容與舊版逐字相同，格式沒有改變。
+    onProgress?.({ phase: "寫入基礎數據..." });
+    await yieldToMain();
+    const lightEntry = part.openEntry("backup.json");
     lightEntry.push(strToU8("{"));
     let first = true;
     // 固定前綴（順序必須與舊版 collectLightData 的回傳一致）
@@ -686,118 +845,189 @@ export async function buildBackupZipStreaming(
       // 已序列化就釋放，讓 GC 在迴圈中就能回收
       delete wrapper[key];
       // 兩端都要等：sink 的輸出積壓，以及 worker 的輸入積壓
-      await waitForDrain();
+      await part.waitForDrain();
       if (lightEntry.inflight() > ZIP_ENTRY_INFLIGHT_BYTES) {
         await lightEntry.drain();
       }
-      if (zipError) throw zipError;
+      if (part.error) throw part.error;
     }
 
     lightEntry.push(strToU8("}"));
-    await Promise.race([lightEntry.end(), zipDone]);
-    await waitForDrain();
+    await Promise.race([lightEntry.end(), part.done]);
+    await part.waitForDrain();
+
+    // 4. 逐個處理聊天 — 讀取 → 媒體即時寫入 zip → 分批寫入聊天 JSON → 釋放
+    for (let i = 0; i < chatKeys.length; i++) {
+      if (i % 3 === 0) {
+        // 報告「已完成 i 筆」而非 i+1——否則顯示 N/N 時最後一筆還在打包，
+        // 使用者會以為卡在收尾，實際是還沒開始處理。
+        onProgress?.({
+          phase: `處理聊天${partLabel()}`,
+          current: i,
+          total: totalChats,
+        });
+        await yieldToMain();
+      }
+
+      // 切包只發生在聊天之間或訊息批次之間，永遠不會切斷一個 JSON 項目
+      if (shouldRotate()) {
+        await rotate();
+      }
+
+      let chat: any;
+      let messages: any[];
+      try {
+        chat = await db.get<any>(DB_STORES.CHATS, chatKeys[i]);
+        if (!chat) continue;
+        // v24：從 chatMessages 表載入訊息（只有紀錄本身，圖片在 imageCache）
+        messages = await loadMessages(chat.id);
+        chat.messages = [];
+        // 聊天本身的媒體（桌布、頭像覆寫）：此時 messages 為空，只處理表頭
+        await normalizeChatBackupMediaSources(chat);
+        await extractMediaFromChatBackupData(chat, extractor);
+      } catch (chatErr) {
+        // ZIP 流本身壞了就沒必要繼續，往上拋讓呼叫端刪掉半成品
+        if (part.error) throw part.error;
+        console.warn(
+          `[AutoBackup] 聊天 "${chatKeys[i]}" 讀取失敗，跳過:`,
+          chatErr,
+        );
+        continue;
+      }
+
+      const chatId = String(chat.id || chatKeys[i]);
+      const safeId = chatId.replace(/[^a-zA-Z0-9_-]/g, "_");
+
+      // 表頭 JSON：把 messages 移到最後，後面接著分批推入的訊息陣列
+      const { messages: _omit, ...header } = chat;
+      const headerJson = JSON.stringify({ ...header, messages: [] });
+      const openTail = '"messages":[]}';
+      if (!headerJson.endsWith(openTail)) {
+        throw new Error(`聊天 "${chatId}" 表頭序列化結果不符預期`);
+      }
+
+      let segment = 0;
+      let entry = part.openEntry(`chats/${safeId}.json`);
+      entry.push(strToU8(headerJson.slice(0, -2)));
+      let firstInEntry = true;
+      partChatCount++;
+
+      for (let b = 0; b < messages.length; b += CHAT_MESSAGE_BATCH) {
+        // 巨大聊天：本包滿了就收尾，後續訊息寫到下一包的 chat-segments/
+        if (b > 0 && shouldRotate()) {
+          entry.push(strToU8("]}"));
+          await Promise.race([entry.end(), part.done]);
+          await rotate();
+          segment++;
+          entry = part.openEntry(`chat-segments/${safeId}.${segment}.json`);
+          entry.push(
+            strToU8(
+              `{"id":${JSON.stringify(chatId)},"_segment":${segment},"messages":[`,
+            ),
+          );
+          firstInEntry = true;
+          partChatCount++;
+        }
+
+        const batch = messages.slice(b, b + CHAT_MESSAGE_BATCH);
+        if (!excludeChatImages) {
+          try {
+            // 逐筆從 imageCache 讀出 → 寫入 zip → 欄位改成 media/ 路徑
+            // 不用 restoreImagesToMessages()，避免整批 base64 進記憶體
+            await exportChatImageMediaDirect(batch, extractor);
+          } catch (imgErr) {
+            if (part.error) throw part.error;
+            console.warn(`[AutoBackup] 聊天 "${chatId}" 圖片匯出失敗:`, imgErr);
+          }
+        } else {
+          for (const msg of batch) {
+            if (msg.imageUrl) msg.imageUrl = "";
+            if (msg.imageData) msg.imageData = "";
+          }
+        }
+        try {
+          // 舊資料可能把 base64 直接存在訊息欄位裡
+          await extractMediaFromChatBackupData({ messages: batch }, extractor);
+        } catch (mediaErr) {
+          if (part.error) throw part.error;
+          console.warn(`[AutoBackup] 聊天 "${chatId}" 內嵌媒體抽取失敗:`, mediaErr);
+        }
+
+        for (const msg of batch) {
+          const json = stringifyMessage(msg, chatId);
+          if (json === null) continue;
+          entry.push(strToU8(firstInEntry ? json : `,${json}`));
+          firstInEntry = false;
+        }
+        // 已序列化的訊息立刻放掉，巨大聊天才不會整份留在記憶體
+        for (let k = b; k < b + batch.length; k++) messages[k] = undefined;
+
+        if (entry.inflight() > ZIP_ENTRY_INFLIGHT_BYTES) {
+          await entry.drain();
+        }
+        await part.waitForDrain();
+        if (part.error) throw part.error;
+        if (b % (CHAT_MESSAGE_BATCH * 10) === 0) await yieldToMain();
+      }
+
+      entry.push(strToU8("]}"));
+      await Promise.race([entry.end(), part.done]);
+      await part.waitForDrain();
+      if (part.error) throw part.error;
+    }
+
+    // 迴圈真的跑完了，補報一次滿格
+    onProgress?.({
+      phase: `處理聊天${partLabel()}`,
+      current: totalChats,
+      total: totalChats,
+    });
+
+    // 5. 最後一包：寫入 metadata、結束 zip 流
+    await closePart(true);
   } catch (e) {
-    if (zipError) throw zipError;
+    if (partOpen) {
+      await opts.abortPart?.(partIndex).catch(() => {});
+    }
+    if (partOpen && part.error) throw part.error;
     throw e;
   }
+}
 
-  // 6. 逐個處理聊天 — 讀取 → 媒體即時寫入 zip → 寫入聊天 JSON → 釋放
-  const chatKeys = await getAllChatKeys();
-  const totalChats = chatKeys.length;
-
-  for (let i = 0; i < chatKeys.length; i++) {
-    if (i % 3 === 0) {
-      // 報告「已完成 i 筆」而非 i+1——否則顯示 N/N 時最後一筆還在打包，
-      // 使用者會以為卡在收尾，實際是還沒開始處理。
-      onProgress?.({ phase: "處理聊天", current: i, total: totalChats });
-      await yieldToMain();
-    }
-
-    try {
-      const chat = await db.get<any>(DB_STORES.CHATS, chatKeys[i]);
-      if (!chat) continue;
-
-      // v24：從 chatMessages 表載入訊息
-      chat.messages = await loadMessages(chat.id);
-
-      if (chat.messages?.length > 0 && !excludeChatImages) {
-        try {
-          // 逐筆從 imageCache 讀出 → 寫入 zip → 欄位改成 media/ 路徑
-          // 不用 restoreImagesToMessages()，避免整批 base64 進記憶體
-          await exportChatImageMediaDirect(chat.messages, extractor);
-        } catch (imgErr) {
-          if (zipError) throw zipError;
-          console.warn(`[AutoBackup] 聊天 "${chat.id}" 圖片匯出失敗:`, imgErr);
-        }
-      }
-
-      if (excludeChatImages && chat.messages?.length > 0) {
-        for (const msg of chat.messages) {
-          if (msg.imageUrl) msg.imageUrl = "";
-          if (msg.imageData) msg.imageData = "";
-        }
-      }
-
-      await normalizeChatBackupMediaSources(chat);
-
-      await extractMediaFromChatBackupData(chat, extractor);
-
-      // 將聊天序列化後立即寫入 zip 流，然後釋放
-      const chatJsonBytes = strToU8(JSON.stringify(chat));
-      const safeId = String(chat.id || chatKeys[i]).replace(/[^a-zA-Z0-9_-]/g, "_");
-      await writeEntry(`chats/${safeId}.json`, chatJsonBytes);
-      // chat 物件在此作用域結束後即可被 GC 回收
-    } catch (chatErr) {
-      // ZIP 流本身壞了就沒必要繼續，往上拋讓呼叫端刪掉半成品
-      if (zipError) throw zipError;
-      console.warn(
-        `[AutoBackup] 聊天 "${chatKeys[i]}" 讀取失敗，跳過:`,
-        chatErr,
-      );
-    }
-  }
-
-  // 迴圈真的跑完了，補報一次滿格
-  onProgress?.({ phase: "處理聊天", current: totalChats, total: totalChats });
-
-  const mediaResult = extractor.getResult();
-  console.log(
-    `[AutoBackup] 媒體提取完成: ${mediaResult.totalExtracted} 個 base64，去重 ${mediaResult.dedupeHits} 個`,
-  );
-
-  // 7. 寫入 metadata.json（聊天數量等統計資訊）
-  const metadataBytes = strToU8(JSON.stringify({
-    version: "2.0",
-    format: "aguaphone-streaming-backup",
-    exportedAt,
-    chatCount: totalChats,
-    mediaCount,
-  }));
-  await writeEntry("metadata.json", metadataBytes);
-
-  // 8. 結束 zip 流，等待中央目錄寫入完成
-  onProgress?.({ phase: "完成壓縮..." });
-  await yieldToMain();
-  zipper.end();
-  await zipDone;
-
-  // 9a. sink 路徑：資料已全部寫出，關閉後結束
-  if (sink) {
-    await sink.close();
-    return;
-  }
-
-  // 9b. 記憶體路徑：合併所有 chunks 為最終 Uint8Array
-  const result = new Uint8Array(totalOutputSize);
-  let offset = 0;
-  for (const chunk of outputChunks) {
-    result.set(chunk, offset);
-    offset += chunk.length;
-  }
-  // 釋放 chunks 陣列
-  outputChunks.length = 0;
-
-  return result;
+/**
+ * 構建單一備份 ZIP（不分包）。
+ *
+ * 傳入 `sink` 時 ZIP chunks 直接寫出、不回傳資料；
+ * 不傳時在記憶體累積並回傳完整 Uint8Array（相容 GitHub 備份等路徑）。
+ */
+export async function buildBackupZipStreaming(
+  onProgress?: BackupProgressCallback,
+  options?: { excludeChatImages?: boolean },
+): Promise<Uint8Array>;
+export async function buildBackupZipStreaming(
+  onProgress: BackupProgressCallback | undefined,
+  options: { excludeChatImages?: boolean } | undefined,
+  sink: BackupOutputSink,
+): Promise<void>;
+export async function buildBackupZipStreaming(
+  onProgress?: BackupProgressCallback,
+  options?: { excludeChatImages?: boolean },
+  sink?: BackupOutputSink,
+): Promise<Uint8Array | void> {
+  let result: Uint8Array | undefined;
+  await buildSplitBackup({
+    onProgress,
+    excludeChatImages: options?.excludeChatImages,
+    partBudgetBytes: Infinity,
+    openPart: async () => sink,
+    onPartClosed: async (p) => {
+      // 預算是 Infinity，不應該切包；真的切了就是 bug，寧可失敗也不要默默丟掉前面的包
+      if (p.index > 0) throw new Error("單檔備份意外被分包");
+      result = p.data;
+    },
+  });
+  if (sink) return;
+  return result!;
 }
 
 // ============================================================
@@ -811,6 +1041,33 @@ function generateBackupFilename(): string {
   const time = `${pad(now.getHours())}h${pad(now.getMinutes())}m${pad(now.getSeconds())}s`;
   return `aguaphone-backup-${date}_${time}.zip`;
 }
+
+/**
+ * 分包檔名：第 1 包沿用原檔名（資料量小、只有一包的使用者看不出差異），
+ * 之後依序加上 -part2、-part3…
+ */
+export function getBackupPartFilename(baseFilename: string, index: number): string {
+  if (index === 0) return baseFilename;
+  return baseFilename.replace(/\.zip$/i, `-part${index + 1}.zip`);
+}
+
+/** 分包檔名 → 所屬備份的第 1 包檔名（用來把同一份備份的分包歸成一組） */
+export function getBackupGroupFilename(filename: string): string {
+  return filename.replace(/-part\d+\.zip$/i, ".zip");
+}
+
+/** 分包序號（0 起算）；不是分包檔名時回傳 0 */
+export function getBackupPartIndexFromFilename(filename: string): number {
+  const m = /-part(\d+)\.zip$/i.exec(filename);
+  return m ? Math.max(0, Number(m[1]) - 1) : 0;
+}
+
+/**
+ * 單一分包的大小預算。導入端要把整包讀進記憶體再解壓，iOS 上每包
+ * 必須夠小才導得回去；記憶體模式下打包本身也吃這個量。
+ */
+const PART_BUDGET_BYTES = 150 * 1024 * 1024;
+const PART_BUDGET_BYTES_MEMORY = 80 * 1024 * 1024;
 
 /**
  * 開啟備份檔案的 writable，包成 BackupOutputSink。
@@ -863,7 +1120,9 @@ async function openBackupFileSink(
 async function cleanOldBackups(maxBackups: number): Promise<void> {
   if (!_dirHandle) return;
 
-  const backupFiles: { name: string; handle: FileSystemFileHandle }[] = [];
+  // 同一份備份的分包歸成一組，按「份」計算保留數量，
+  // 否則一份 10 包的備份就會把自己的前幾包當成舊備份刪掉
+  const groups = new Map<string, string[]>();
 
   for await (const [name, handle] of (_dirHandle as any).entries()) {
     if (
@@ -871,22 +1130,25 @@ async function cleanOldBackups(maxBackups: number): Promise<void> {
       name.startsWith("aguaphone-backup-") &&
       name.endsWith(".zip")
     ) {
-      backupFiles.push({ name, handle });
+      const group = getBackupGroupFilename(name);
+      const names = groups.get(group) ?? [];
+      names.push(name);
+      groups.set(group, names);
     }
   }
 
   // 按檔名排序（檔名包含時間戳，字母序 = 時間序）
-  backupFiles.sort((a, b) => a.name.localeCompare(b.name));
+  const groupNames = [...groups.keys()].sort((a, b) => a.localeCompare(b));
 
-  // 刪除超出限制的舊檔案
-  const toDelete = backupFiles.length - maxBackups;
-  if (toDelete > 0) {
-    for (let i = 0; i < toDelete; i++) {
+  // 刪除超出限制的舊備份（整組刪）
+  const toDelete = groupNames.length - maxBackups;
+  for (let i = 0; i < toDelete; i++) {
+    for (const name of groups.get(groupNames[i])!) {
       try {
-        await _dirHandle.removeEntry(backupFiles[i].name);
-        console.log(`[AutoBackup] 已刪除舊備份: ${backupFiles[i].name}`);
+        await _dirHandle.removeEntry(name);
+        console.log(`[AutoBackup] 已刪除舊備份: ${name}`);
       } catch (e) {
-        console.warn(`[AutoBackup] 刪除舊備份失敗: ${backupFiles[i].name}`, e);
+        console.warn(`[AutoBackup] 刪除舊備份失敗: ${name}`, e);
       }
     }
   }
@@ -968,6 +1230,135 @@ async function openOPFSTempSink(
     }
     return null;
   }
+}
+
+type OPFSTempSink = NonNullable<Awaited<ReturnType<typeof openOPFSTempSink>>>;
+
+/** Worker 開檔的等待上限：Worker 載入失敗時不一定會觸發 onerror */
+const OPFS_WORKER_OPEN_TIMEOUT_MS = 10_000;
+
+/**
+ * iOS 用的 OPFS 暫存檔 sink：主線程沒有 `createWritable()`，
+ * 改由 Worker 以 `createSyncAccessHandle()` 寫入。
+ *
+ * 介面與 `openOPFSTempSink` 相同。回傳 null 表示這條路也不可用，
+ * 呼叫端只能退回記憶體模式。
+ */
+async function openOPFSWorkerSink(
+  filename: string,
+  diag: { reason?: string } = {},
+): Promise<OPFSTempSink | null> {
+  const storage = (navigator as any).storage;
+  if (!storage?.getDirectory || typeof Worker === "undefined") {
+    diag.reason = `${diag.reason ?? ""}; worker: unsupported`;
+    return null;
+  }
+
+  const tmpName = `__tmp_${filename}`;
+  let worker: Worker;
+  try {
+    worker = new Worker(
+      new URL("../workers/opfsWriterWorker.ts", import.meta.url),
+      { type: "module" },
+    );
+  } catch (err) {
+    diag.reason = `${diag.reason ?? ""}; worker: ${(err as any)?.name || err}`;
+    return null;
+  }
+
+  let seq = 0;
+  let terminated = false;
+  const pending = new Map<
+    number,
+    { resolve: () => void; reject: (err: Error) => void }
+  >();
+  const rejectAll = (err: Error) => {
+    for (const p of pending.values()) p.reject(err);
+    pending.clear();
+  };
+  const terminate = () => {
+    if (terminated) return;
+    terminated = true;
+    worker.terminate();
+    rejectAll(new Error("OPFS Worker 已終止"));
+  };
+  worker.onmessage = (e: MessageEvent) => {
+    const { id, ok, error } = e.data ?? {};
+    const p = pending.get(id);
+    if (!p) return;
+    pending.delete(id);
+    if (ok) p.resolve();
+    else p.reject(new Error(error || "OPFS Worker 錯誤"));
+  };
+  worker.onerror = (e: ErrorEvent) => {
+    e.preventDefault?.();
+    rejectAll(new Error(`OPFS Worker 錯誤: ${e.message || "載入失敗"}`));
+  };
+  const call = (msg: Record<string, unknown>, transfer: Transferable[] = []) =>
+    new Promise<void>((resolve, reject) => {
+      if (terminated) {
+        reject(new Error("OPFS Worker 已終止"));
+        return;
+      }
+      const id = ++seq;
+      pending.set(id, { resolve, reject });
+      worker.postMessage({ ...msg, id }, transfer);
+    });
+
+  try {
+    await Promise.race([
+      call({ type: "open", name: tmpName }),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("timeout")),
+          OPFS_WORKER_OPEN_TIMEOUT_MS,
+        ),
+      ),
+    ]);
+  } catch (err) {
+    console.warn("[AutoBackup] OPFS Worker 開檔失敗:", err);
+    diag.reason = `${diag.reason ?? ""}; worker: ${(err as any)?.message || err}`;
+    terminate();
+    return null;
+  }
+
+  const removeTemp = async () => {
+    try {
+      const root: any = await storage.getDirectory();
+      await root.removeEntry(tmpName);
+    } catch {
+      /* 暫存檔可能不存在 */
+    }
+  };
+
+  return {
+    sink: {
+      async write(chunk: Uint8Array) {
+        // 複製一份再 transfer：fflate 的 chunk 可能是共用 buffer 的 view，
+        // 直接 transfer 會把還在用的 buffer 一起搬走
+        const copy = chunk.slice();
+        await call({ type: "write", chunk: copy }, [copy.buffer]);
+      },
+      async close() {
+        await call({ type: "close" });
+        terminate();
+      },
+    },
+    getFile: async () => {
+      const root: any = await storage.getDirectory();
+      const fileHandle = await root.getFileHandle(tmpName);
+      const file = await fileHandle.getFile();
+      return new File([file], filename, { type: "application/zip" });
+    },
+    cleanup: async () => {
+      if (!terminated) {
+        // Worker 還握著 SyncAccessHandle：由它關閉並刪檔
+        await call({ type: "abort" }).catch(() => {});
+        terminate();
+      }
+      await removeTemp();
+    },
+  };
 }
 
 /**
@@ -1089,21 +1480,6 @@ async function cleanStaleOPFSTemps(): Promise<void> {
   }
 }
 
-/**
- * 最後手段：ZIP 已在記憶體中，直接包 Blob 交出去。
- * 只在 OPFS 不可用時走到（例如 iOS Safari）。
- */
-async function downloadBackup(
-  zipData: Uint8Array,
-  filename: string,
-): Promise<string> {
-  const blob = new Blob([zipData as BlobPart], { type: "application/zip" });
-  return deliverBackupFile(
-    new File([blob], filename, { type: "application/zip" }),
-    filename,
-  );
-}
-
 // ============================================================
 // 執行備份
 // ============================================================
@@ -1113,109 +1489,292 @@ export type BackupResult = {
   message: string;
   filename?: string;
   method?: "fs" | "download";
+  /** 分包數量（1 = 沒有分包） */
+  partCount?: number;
 };
+
+/** 一個已打包好、等待交付的分包 */
+export interface BackupPartReady {
+  /** 0 起算 */
+  index: number;
+  isLast: boolean;
+  filename: string;
+  bytes: number;
+  /**
+   * 交付這一包（存檔面板／系統分享／下載）。
+   *
+   * 必須在使用者點擊的 handler 裡直接呼叫：share 與存檔面板都要求
+   * 「剛點過」，而打包動輒數分鐘，點「導出」時的那一下早就過期了。
+   * 回傳交付方式；"cancelled" 表示使用者取消，可以再呼叫一次重試。
+   */
+  deliver: () => Promise<string>;
+}
+
+/**
+ * 分包就緒時的處理者（通常是 UI：顯示「儲存第 k 部分」按鈕）。
+ * resolve 後才會開始打包下一包；reject（例如 BackupCancelledError）會中止整份備份。
+ */
+export type BackupPartReadyHandler = (part: BackupPartReady) => Promise<void>;
+
+/** 使用者在逐包交付時取消整份備份 */
+export class BackupCancelledError extends Error {
+  constructor() {
+    super("已取消備份");
+    this.name = "BackupCancelledError";
+  }
+}
+
+/**
+ * 備份開始時先留下「未完成」紀錄。
+ *
+ * 記憶體不足時頁面是被系統直接殺掉的，JS 來不及寫任何東西——
+ * 之前使用者回報閃退時「上次備份」一片空白，完全看不出走的是哪條路徑。
+ * 成功或失敗時這筆紀錄會被覆寫；還留著就代表備份途中閃退。
+ */
+async function markBackupInProgress(mode: string): Promise<void> {
+  try {
+    const settings = await loadBackupSettings();
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    settings.lastBackupMessage = `備份未完成：${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} 開始（${mode}），途中中斷，可能是記憶體不足閃退`;
+    await saveBackupSettings(settings);
+  } catch {
+    /* 只是診斷用，失敗不影響備份 */
+  }
+}
+
+async function saveBackupMessage(message: string, success: boolean): Promise<void> {
+  const settings = await loadBackupSettings();
+  if (success) settings.lastBackupAt = Date.now();
+  settings.lastBackupMessage = message;
+  await saveBackupSettings(settings);
+}
+
+/** 備份資料夾路徑：每包直接寫進使用者選的資料夾 */
+async function performFolderBackup(
+  filename: string,
+  onProgress: BackupProgressCallback | undefined,
+  excludeChatImages: boolean,
+): Promise<BackupResult> {
+  const written: string[] = [];
+  let current: { sink: BackupOutputSink; abort: () => Promise<void> } | null =
+    null;
+
+  try {
+    await markBackupInProgress("資料夾");
+    await buildSplitBackup({
+      onProgress,
+      excludeChatImages,
+      partBudgetBytes: PART_BUDGET_BYTES,
+      openPart: async (index) => {
+        const name = getBackupPartFilename(filename, index);
+        current = await openBackupFileSink(name);
+        written.push(name);
+        return current.sink;
+      },
+      onPartClosed: async () => {
+        current = null;
+      },
+      abortPart: async () => {
+        await current?.abort();
+        current = null;
+      },
+    });
+  } catch (e: any) {
+    if (e?.message === "PERMISSION_NEEDED") {
+      return { success: false, message: "需要重新授權備份資料夾的寫入權限" };
+    }
+    // 缺包的備份沒有意義：已寫完的分包一起刪掉
+    for (const name of written) {
+      await _dirHandle?.removeEntry(name).catch(() => {});
+    }
+    throw e;
+  }
+
+  onProgress?.({ phase: "寫入檔案..." });
+  const settings = await loadBackupSettings();
+  if (settings.maxBackups > 0) {
+    await cleanOldBackups(settings.maxBackups);
+  }
+
+  const partCount = written.length;
+  const msg =
+    partCount > 1
+      ? `備份成功: ${filename}（共 ${partCount} 個分包）`
+      : `備份成功: ${filename}`;
+  console.log(`[AutoBackup] ${msg}`);
+  await saveBackupMessage(msg, true);
+  return { success: true, message: msg, filename, method: "fs", partCount };
+}
+
+/**
+ * 下載路徑：每包先串流落到 OPFS 暫存檔（iOS 走 Worker），再取回 File 交付。
+ * 兩種 OPFS 都不可用時才在記憶體組裝，此時分包預算更小。
+ */
+async function performDownloadBackup(
+  filename: string,
+  onProgress: BackupProgressCallback | undefined,
+  excludeChatImages: boolean,
+  onPartReady: BackupPartReadyHandler | undefined,
+): Promise<BackupResult> {
+  const diag: { reason?: string } = {};
+
+  const openTemp = async (
+    name: string,
+    mode: "opfs" | "opfs-worker" | undefined,
+  ): Promise<{ tmp: OPFSTempSink; mode: "opfs" | "opfs-worker" } | null> => {
+    if (mode !== "opfs-worker") {
+      const tmp = await openOPFSTempSink(name, diag);
+      if (tmp) return { tmp, mode: "opfs" };
+    }
+    if (mode !== "opfs") {
+      const tmp = await openOPFSWorkerSink(name, diag);
+      if (tmp) return { tmp, mode: "opfs-worker" };
+    }
+    return null;
+  };
+
+  // 先開第 1 包：輸出模式決定分包預算，必須在開始打包前就知道
+  const first = await openTemp(getBackupPartFilename(filename, 0), undefined);
+  const mode: "opfs" | "opfs-worker" | "memory" = first?.mode ?? "memory";
+  let tmp: OPFSTempSink | null = first?.tmp ?? null;
+
+  if (mode === "memory") {
+    console.warn(
+      `[AutoBackup] 輸出模式: memory（OPFS 不可用：${diag.reason}），分包縮小以降低峰值`,
+    );
+  } else {
+    console.log(`[AutoBackup] 輸出模式: ${mode}（ZIP 直接落地，不進 heap）`);
+  }
+  onProgress?.({
+    phase:
+      mode === "memory"
+        ? `打包中（記憶體模式：${diag.reason}）...`
+        : "打包中（磁碟串流）...",
+  });
+  await markBackupInProgress(
+    mode === "memory" ? `記憶體模式：${diag.reason}` : mode,
+  );
+
+  const deliveredVia: string[] = [];
+  let partCount = 0;
+
+  try {
+    await buildSplitBackup({
+      onProgress,
+      excludeChatImages,
+      partBudgetBytes:
+        mode === "memory" ? PART_BUDGET_BYTES_MEMORY : PART_BUDGET_BYTES,
+      openPart: async (index) => {
+        if (mode === "memory") return undefined;
+        if (index === 0) return tmp!.sink;
+        const opened = await openTemp(getBackupPartFilename(filename, index), mode);
+        if (!opened) {
+          throw new Error(`第 ${index + 1} 部分無法開啟暫存檔（${diag.reason}）`);
+        }
+        tmp = opened.tmp;
+        return tmp.sink;
+      },
+      abortPart: async () => {
+        await tmp?.cleanup();
+        tmp = null;
+      },
+      onPartClosed: async (part) => {
+        partCount++;
+        const name = getBackupPartFilename(filename, part.index);
+        const partTmp = tmp;
+        const file = partTmp
+          ? await partTmp.getFile()
+          : new File([part.data as BlobPart], name, { type: "application/zip" });
+
+        let via = "not-delivered";
+        const deliver = async () => {
+          via = await deliverBackupFile(file, name);
+          return via;
+        };
+
+        if (onPartReady) {
+          onProgress?.({ phase: `第 ${part.index + 1} 部分已打包完成，等待儲存...` });
+          await onPartReady({
+            index: part.index,
+            isLast: part.isLast,
+            filename: name,
+            bytes: part.bytes,
+            deliver,
+          });
+        } else {
+          onProgress?.({ phase: "交付檔案..." });
+          await deliver();
+        }
+        deliveredVia.push(via);
+
+        // 存檔面板／分享完成時檔案已被讀完，立刻刪掉暫存檔：
+        // 2G 的資料再疊一份 2G 暫存很容易撞上 iOS 的儲存配額。
+        // <a download> 是非同步讀取，只能留給下次備份開頭清理。
+        if (partTmp && (via === "save-picker" || via === "share")) {
+          await partTmp.cleanup();
+        }
+        tmp = null;
+      },
+    });
+  } catch (e) {
+    await tmp?.cleanup();
+    throw e;
+  }
+
+  // 交付方式寫進訊息：blob-download 就是會在 Android 原生層炸掉的那條路，
+  // 使用者回報閃退時這行是唯一能分辨的線索
+  const parts = partCount > 1 ? `，共 ${partCount} 個分包` : "";
+  const vias = [...new Set(deliveredVia)].join("/");
+  const msg =
+    mode === "memory"
+      ? `已備份: ${filename}（記憶體模式：${diag.reason} / ${vias}${parts}）`
+      : `已備份: ${filename}（${mode} / ${vias}${parts}）`;
+  await saveBackupMessage(msg, true);
+  return { success: true, message: msg, filename, method: "download", partCount };
+}
 
 /**
  * 執行一次備份
  * @param forceDownload 強制使用下載方式
  * @param onProgress 進度回調（可選）
+ * @param options.onPartReady 下載路徑的逐包交付處理者；不提供時每包打包完直接交付
  */
 export async function performBackup(
   forceDownload = false,
   onProgress?: BackupProgressCallback,
-  options?: { excludeChatImages?: boolean },
+  options?: {
+    excludeChatImages?: boolean;
+    onPartReady?: BackupPartReadyHandler;
+  },
 ): Promise<BackupResult> {
   try {
     console.log("[AutoBackup] 開始備份...");
     await cleanStaleOPFSTemps();
-    const settings = await loadBackupSettings();
     const filename = generateBackupFilename();
+    const excludeChatImages = options?.excludeChatImages ?? false;
 
     // FS 路徑：先開好檔案，ZIP 邊打包邊寫入磁碟，整份 ZIP 不進 JS heap
     if (!forceDownload && isFileSystemAccessSupported() && _dirHandle) {
-      let fileSink: { sink: BackupOutputSink; abort: () => Promise<void> };
-      try {
-        fileSink = await openBackupFileSink(filename);
-      } catch (e: any) {
-        if (e.message === "PERMISSION_NEEDED") {
-          return {
-            success: false,
-            message: "需要重新授權備份資料夾的寫入權限",
-          };
-        }
-        throw e;
-      }
-
-      try {
-        await buildBackupZipStreaming(onProgress, options, fileSink.sink);
-      } catch (e) {
-        await fileSink.abort();
-        throw e;
-      }
-
-      onProgress?.({ phase: "寫入檔案..." });
-      if (settings.maxBackups > 0) {
-        await cleanOldBackups(settings.maxBackups);
-      }
-
-      const msg = `備份成功: ${filename}`;
-      console.log(`[AutoBackup] ${msg}`);
-
-      // 更新設定
-      settings.lastBackupAt = Date.now();
-      settings.lastBackupMessage = msg;
-      await saveBackupSettings(settings);
-
-      return { success: true, message: msg, filename, method: "fs" };
+      return await performFolderBackup(filename, onProgress, excludeChatImages);
     }
-
-    // 下載路徑：優先把 ZIP 串流落到 OPFS 暫存檔，再取回 File 交給下載／分享。
-    // 直接在記憶體組整份 ZIP 再包 Blob，資料量大時會 OOM 閃退。
-    const opfsDiag: { reason?: string } = {};
-    const tmp = await openOPFSTempSink(filename, opfsDiag);
-    let outputMode: "opfs" | "memory";
-    let deliverVia = "unknown";
-    if (tmp) {
-      outputMode = "opfs";
-      console.log("[AutoBackup] 輸出模式: opfs（ZIP 直接落地，不進 heap）");
-      onProgress?.({ phase: "打包中（磁碟串流）..." });
-      try {
-        await buildBackupZipStreaming(onProgress, options, tmp.sink);
-      } catch (e) {
-        await tmp.cleanup();
-        throw e;
-      }
-      onProgress?.({ phase: "交付檔案..." });
-      // 注意：不在這裡刪暫存檔——瀏覽器下載／分享是非同步的，
-      // 這時刪掉會讓正在讀取的 File 失效。殘留檔由下次備份開頭清理。
-      const file = await tmp.getFile();
-      deliverVia = await deliverBackupFile(file, filename);
-    } else {
-      // OPFS 不可用（例如 iOS Safari）：只能在記憶體組裝，資料量大時可能閃退
-      outputMode = "memory";
-      console.warn(
-        `[AutoBackup] 輸出模式: memory（OPFS 不可用：${opfsDiag.reason}），資料量大可能閃退`,
-      );
-      onProgress?.({ phase: `打包中（記憶體模式：${opfsDiag.reason}）...` });
-      const zipData = await buildBackupZipStreaming(onProgress, options);
-      onProgress?.({ phase: "交付檔案..." });
-      deliverVia = await downloadBackup(zipData, filename);
-    }
-
-    // 交付方式寫進訊息：blob-download 就是會在 Android 原生層炸掉的那條路，
-    // 使用者回報閃退時這行是唯一能分辨的線索
-    const msg =
-      outputMode === "opfs"
-        ? `已備份: ${filename}（${deliverVia}）`
-        : `已備份: ${filename}（記憶體模式：${opfsDiag.reason} / ${deliverVia}）`;
-    settings.lastBackupAt = Date.now();
-    settings.lastBackupMessage = msg;
-    await saveBackupSettings(settings);
-
-    return { success: true, message: msg, filename, method: "download" };
+    return await performDownloadBackup(
+      filename,
+      onProgress,
+      excludeChatImages,
+      options?.onPartReady,
+    );
   } catch (e: any) {
-    const msg = `備份失敗: ${e.message || e}`;
+    const msg =
+      e instanceof BackupCancelledError
+        ? "已取消備份"
+        : `備份失敗: ${e.message || e}`;
     console.error("[AutoBackup]", msg);
+    try {
+      await saveBackupMessage(msg, false);
+    } catch {
+      /* 設定寫不進去也要把結果回報給呼叫端 */
+    }
     return { success: false, message: msg };
   }
 }
