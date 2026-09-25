@@ -1,0 +1,108 @@
+// 聊天外觀設定（ThemeSettingsModal 及 modals/theme-settings/* 子組件）共用樣式
+// Vue scoped 樣式不會穿透到子組件內部元素，共用的控制項樣式需在各組件 @use 引用。
+
+.color-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--color-background);
+  border-radius: var(--radius-md);
+  min-width: 0;
+
+  input[type="color"] {
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    padding: 0;
+    overflow: hidden;
+    background: transparent;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+
+    &::-webkit-color-swatch-wrapper {
+      padding: 0;
+    }
+
+    &::-webkit-color-swatch {
+      border-radius: 50%;
+      border: 2px solid var(--color-surface);
+    }
+
+    &::-moz-color-swatch {
+      border-radius: 50%;
+      border: 2px solid var(--color-surface);
+    }
+  }
+
+  span {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.slider-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 2px;
+
+  input[type="range"] {
+    flex: 1;
+    min-width: 0;
+    height: 4px;
+    background: var(--color-border);
+    border-radius: 999px;
+    appearance: none;
+    cursor: pointer;
+
+    &::-webkit-slider-thumb {
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      background: #fff;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow:
+        0 0 0 2px var(--color-primary),
+        0 4px 10px rgba(0, 0, 0, 0.15);
+    }
+
+    &::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      background: #fff;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow:
+        0 0 0 2px var(--color-primary),
+        0 4px 10px rgba(0, 0, 0, 0.15);
+    }
+  }
+
+  .slider-label {
+    flex-shrink: 0;
+    min-width: 48px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+  }
+
+  .slider-value {
+    min-width: 52px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    text-align: center;
+    flex-shrink: 0;
+    background: var(--color-background);
+    border-radius: 12px;
+  }
+}

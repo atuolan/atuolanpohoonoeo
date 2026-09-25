@@ -1,5 +1,27 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  AudioLines,
+  BellOff,
+  CalendarClock,
+  Check,
+  Clock,
+  Dices,
+  Drama,
+  Fish,
+  Flower2,
+  ImagePlus,
+  Moon,
+  Pencil,
+  PhoneIncoming,
+  ScanSearch,
+  Settings,
+  Tag,
+  User,
+  UserRound,
+  Users,
+  Utensils,
+} from "lucide-vue-next";
 import { useThemeStore } from "@/stores/theme";
 import { isCssColorDark } from "@/utils/wallpaperLuminance";
 
@@ -158,7 +180,30 @@ function detectChatBackgroundDark() {
 
 let observer: MutationObserver | null = null;
 
+// ===== 下拉選單：Esc 關閉並把焦點還給觸發按鈕 =====
+const personaBtnRef = ref<HTMLButtonElement | null>(null);
+const gameBtnRef = ref<HTMLButtonElement | null>(null);
+const chatSettingsBtnRef = ref<HTMLButtonElement | null>(null);
+
+function onMenuKeydown(event: KeyboardEvent) {
+  if (event.key !== "Escape") return;
+  if (props.showPersonaSelector) {
+    emit("toggle-persona-selector");
+    personaBtnRef.value?.focus();
+  } else if (props.showGameMenu) {
+    emit("toggle-game-menu");
+    gameBtnRef.value?.focus();
+  } else if (props.showChatSettingsMenu) {
+    emit("toggle-chat-settings-menu");
+    chatSettingsBtnRef.value?.focus();
+  } else {
+    return;
+  }
+  event.preventDefault();
+}
+
 onMounted(() => {
+  document.addEventListener("keydown", onMenuKeydown);
   detectChatBackgroundDark();
   const el = headerEl.value?.closest(".chat-screen") as HTMLElement | null;
   if (el) {
@@ -171,6 +216,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  document.removeEventListener("keydown", onMenuKeydown);
   observer?.disconnect();
   observer = null;
 });
@@ -264,7 +310,15 @@ const isDarkBackground = computed(() =>
 
     <div class="header-actions" :class="{ 'rail-open': showRail }">
       <div class="persona-dropdown" @click.stop>
-        <button class="header-btn persona-btn" title="切換使用者" @click.stop="emit('toggle-persona-selector')">
+        <button
+          ref="personaBtnRef"
+          class="header-btn persona-btn"
+          :class="{ active: showPersonaSelector }"
+          title="切換使用者"
+          aria-haspopup="menu"
+          :aria-expanded="showPersonaSelector"
+          @click.stop="emit('toggle-persona-selector')"
+        >
           <div v-if="currentUserAvatar" class="persona-avatar-mini">
             <img :src="currentUserAvatar" :alt="currentUserName" />
           </div>
@@ -275,24 +329,21 @@ const isDarkBackground = computed(() =>
         </button>
 
         <Transition name="dropdown">
-          <div v-if="showPersonaSelector" class="persona-selector">
-            <div class="persona-selector-header">
-              <span>選擇使用者</span>
-            </div>
+          <div v-if="showPersonaSelector" class="dropdown-menu persona-menu" role="menu">
+            <div class="dropdown-section-title">選擇使用者</div>
             <div class="persona-list">
               <button
                 v-for="persona in personas"
                 :key="persona.id"
                 class="persona-item"
                 :class="{ active: persona.id === currentPersonaId }"
+                role="menuitemradio"
+                :aria-checked="persona.id === currentPersonaId"
                 @click="emit('select-persona', persona.id)"
               >
                 <div class="persona-item-avatar">
                   <img v-if="persona.avatar" :src="persona.avatar" :alt="persona.name" />
-                  <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="8" r="4" />
-                    <path d="M5 20v-1a7 7 0 0 1 14 0v1" />
-                  </svg>
+                  <UserRound v-else :size="20" :stroke-width="1.75" />
                 </div>
                 <div class="persona-item-info">
                   <span class="persona-item-name">{{ persona.name }}</span>
@@ -300,26 +351,28 @@ const isDarkBackground = computed(() =>
                     {{ persona.description.substring(0, 30) }}{{ persona.description.length > 30 ? '...' : '' }}
                   </span>
                 </div>
-                <svg v-if="persona.id === currentPersonaId" class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M20 6 9 17l-5-5" />
-                </svg>
+                <Check v-if="persona.id === currentPersonaId" class="check-icon" :size="18" :stroke-width="2.2" />
               </button>
             </div>
-            <div class="persona-selector-footer">
-              <button class="edit-persona-btn" @click="emit('open-persona-edit')">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 20h9" />
-                  <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
-                </svg>
-                <span>編輯設定</span>
-              </button>
-            </div>
+            <div class="dropdown-divider"></div>
+            <button class="dropdown-item" role="menuitem" @click="emit('open-persona-edit')">
+              <Pencil :size="20" :stroke-width="1.75" />
+              <span>編輯使用者設定</span>
+            </button>
           </div>
         </Transition>
       </div>
 
       <div class="game-dropdown" @click.stop>
-        <button class="header-btn" :class="{ active: showGameMenu }" title="小遊戲" @click.stop="emit('toggle-game-menu')">
+        <button
+          ref="gameBtnRef"
+          class="header-btn"
+          :class="{ active: showGameMenu }"
+          title="小遊戲"
+          aria-haspopup="menu"
+          :aria-expanded="showGameMenu"
+          @click.stop="emit('toggle-game-menu')"
+        >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
             <line x1="6" y1="12" x2="10" y2="12" />
             <line x1="8" y1="10" x2="8" y2="14" />
@@ -330,44 +383,22 @@ const isDarkBackground = computed(() =>
         </button>
 
         <Transition name="dropdown">
-          <div v-if="showGameMenu" class="dropdown-menu game-menu">
+          <div v-if="showGameMenu" class="dropdown-menu game-menu" role="menu">
             <div class="dropdown-section-title">小遊戲</div>
             <button class="dropdown-item" @click="emit('open-game', 'dishwashing')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <ellipse cx="12" cy="5" rx="9" ry="3" />
-                <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5" />
-                <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3" />
-              </svg>
+              <Utensils :size="20" :stroke-width="1.75" />
               <span>刷盤子</span>
             </button>
             <button class="dropdown-item" @click="emit('open-game', 'fishing')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 4a3 3 0 0 0-3 3v4a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3z" />
-                <path d="M18 11v9" />
-                <path d="M18 20l-3-3" />
-                <path d="M18 20l3-3" />
-                <circle cx="6" cy="12" r="4" />
-                <path d="M10 12h4" />
-              </svg>
+              <Fish :size="20" :stroke-width="1.75" />
               <span>釣魚</span>
             </button>
             <button class="dropdown-item" @click="emit('open-game', 'gambling')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="2" width="20" height="20" rx="2" />
-                <circle cx="8" cy="8" r="1.5" fill="currentColor" />
-                <circle cx="16" cy="8" r="1.5" fill="currentColor" />
-                <circle cx="8" cy="16" r="1.5" fill="currentColor" />
-                <circle cx="16" cy="16" r="1.5" fill="currentColor" />
-                <circle cx="12" cy="12" r="1.5" fill="currentColor" />
-              </svg>
+              <Dices :size="20" :stroke-width="1.75" />
               <span>猜大小</span>
             </button>
             <button class="dropdown-item" @click="emit('open-game', 'merit')">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <ellipse cx="12" cy="14" rx="9" ry="7" />
-                <ellipse cx="12" cy="8" rx="3" ry="2" />
-                <circle cx="12" cy="6" r="1.5" />
-              </svg>
+              <Flower2 :size="20" :stroke-width="1.75" />
               <span>修行</span>
             </button>
           </div>
@@ -391,7 +422,15 @@ const isDarkBackground = computed(() =>
       </button>
 
       <div class="chat-settings-dropdown" @click.stop>
-        <button class="header-btn" :class="{ active: showChatSettingsMenu }" title="聊天設定" @click.stop="emit('toggle-chat-settings-menu')">
+        <button
+          ref="chatSettingsBtnRef"
+          class="header-btn"
+          :class="{ active: showChatSettingsMenu }"
+          title="聊天設定"
+          aria-haspopup="menu"
+          :aria-expanded="showChatSettingsMenu"
+          @click.stop="emit('toggle-chat-settings-menu')"
+        >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
             <line x1="4" y1="6" x2="10" y2="6" />
             <line x1="14" y1="6" x2="20" y2="6" />
@@ -410,22 +449,18 @@ const isDarkBackground = computed(() =>
             <div class="dropdown-section-title">顯示模式</div>
             <div class="dropdown-toggle-item">
               <div class="toggle-item-info">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
-                </svg>
+                <Users :size="20" :stroke-width="1.75" />
                 <span>面對面模式</span>
               </div>
               <label class="toggle-switch-mini">
-                <input type="checkbox" :checked="chatFaceToFaceMode" @change="emit('toggle-face-to-face-mode')" />
+                <input type="checkbox" aria-label="面對面模式" :checked="chatFaceToFaceMode" @change="emit('toggle-face-to-face-mode')" />
                 <span class="toggle-slider-mini"></span>
               </label>
             </div>
             <div v-if="chatFaceToFaceMode" class="narrative-person-panel">
               <div class="narrative-person-row">
                 <div class="toggle-item-info narrative-person-label">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                  </svg>
+                  <Drama :size="20" :stroke-width="1.75" />
                   <span>角色人稱</span>
                 </div>
                 <div class="fake-time-mode-selector narrative-person-selector">
@@ -435,9 +470,7 @@ const isDarkBackground = computed(() =>
               </div>
               <div class="narrative-person-row">
                 <div class="toggle-item-info narrative-person-label">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
-                  </svg>
+                  <User :size="20" :stroke-width="1.75" />
                   <span>用戶人稱</span>
                 </div>
                 <div class="fake-time-mode-selector narrative-person-selector">
@@ -449,33 +482,27 @@ const isDarkBackground = computed(() =>
             </div>
             <div class="dropdown-toggle-item">
               <div class="toggle-item-info">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M9 2c-1.05 0-2.05.16-3 .46 4.06 1.27 7 5.06 7 9.54 0 4.48-2.94 8.27-7 9.54.95.3 1.95.46 3 .46 5.52 0 10-4.48 10-10S14.52 2 9 2z" />
-                </svg>
+                <Moon :size="20" :stroke-width="1.75" />
                 <span>夜晚模式</span>
               </div>
               <label class="toggle-switch-mini">
-                <input type="checkbox" :checked="nightMode" @change="emit('toggle-night-mode')" />
+                <input type="checkbox" aria-label="夜晚模式" :checked="nightMode" @change="emit('toggle-night-mode')" />
                 <span class="toggle-slider-mini"></span>
               </label>
             </div>
             <div class="dropdown-toggle-item">
               <div class="toggle-item-info">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
-                </svg>
+                <Clock :size="20" :stroke-width="1.75" />
                 <span>感知現實時間</span>
               </div>
               <label class="toggle-switch-mini">
-                <input type="checkbox" :checked="chatEnableRealTimeAwareness" @change="emit('toggle-real-time-awareness')" />
+                <input type="checkbox" aria-label="感知現實時間" :checked="chatEnableRealTimeAwareness" @change="emit('toggle-real-time-awareness')" />
                 <span class="toggle-slider-mini"></span>
               </label>
             </div>
             <div v-if="chatEnableRealTimeAwareness" class="dropdown-toggle-item" style="cursor: pointer" @click="emit('toggle-fake-time-panel')">
               <div class="toggle-item-info">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM9 10H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z" />
-                </svg>
+                <CalendarClock :size="20" :stroke-width="1.75" />
                 <span>時間模式</span>
               </div>
               <span style="font-size: 11px; opacity: 0.7">
@@ -515,25 +542,21 @@ const isDarkBackground = computed(() =>
             <div class="dropdown-section-title">電話設定</div>
             <div class="dropdown-toggle-item">
               <div class="toggle-item-info">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9L16.9 18.31C15.55 19.37 13.85 20 12 20zm6.31-3.1L7.1 5.69C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z" />
-                </svg>
+                <BellOff :size="20" :stroke-width="1.75" />
                 <span>勿擾模式</span>
               </div>
               <label class="toggle-switch-mini">
-                <input type="checkbox" :checked="chatDoNotDisturb" @change="emit('toggle-chat-do-not-disturb')" />
+                <input type="checkbox" aria-label="勿擾模式" :checked="chatDoNotDisturb" @change="emit('toggle-chat-do-not-disturb')" />
                 <span class="toggle-slider-mini"></span>
               </label>
             </div>
             <div class="dropdown-toggle-item">
               <div class="toggle-item-info">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z" />
-                </svg>
+                <PhoneIncoming :size="20" :stroke-width="1.75" />
                 <span>角色決定接電話</span>
               </div>
               <label class="toggle-switch-mini">
-                <input type="checkbox" :checked="enablePhoneDecision" @change="emit('toggle-phone-decision')" />
+                <input type="checkbox" aria-label="角色決定接電話" :checked="enablePhoneDecision" @change="emit('toggle-phone-decision')" />
                 <span class="toggle-slider-mini"></span>
               </label>
             </div>
@@ -541,64 +564,52 @@ const isDarkBackground = computed(() =>
             <div class="dropdown-section-title">AI 繪圖</div>
             <div class="dropdown-toggle-item">
               <div class="toggle-item-info">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" />
-                </svg>
+                <ImagePlus :size="20" :stroke-width="1.75" />
                 <span>啟用文生圖</span>
               </div>
               <label class="toggle-switch-mini">
-                <input type="checkbox" :checked="novelAIEnabled" @change="emit('toggle-novel-ai-image')" />
+                <input type="checkbox" aria-label="啟用文生圖" :checked="novelAIEnabled" @change="emit('toggle-novel-ai-image')" />
                 <span class="toggle-slider-mini"></span>
               </label>
             </div>
             <div class="dropdown-toggle-item">
               <div class="toggle-item-info">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                </svg>
+                <Tag :size="20" :stroke-width="1.75" />
                 <span>使用 User Tag</span>
               </div>
               <label class="toggle-switch-mini">
-                <input type="checkbox" :checked="novelAIUseUserTag" @change="emit('toggle-novel-ai-use-user-tag')" />
+                <input type="checkbox" aria-label="使用 User Tag" :checked="novelAIUseUserTag" @change="emit('toggle-novel-ai-use-user-tag')" />
                 <span class="toggle-slider-mini"></span>
               </label>
             </div>
             <div class="dropdown-toggle-item">
               <div class="toggle-item-info">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M9.5 3C5.91 3 3 5.91 3 9.5S5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57L19.29 20 20.7 18.59l-5.56-5.56A6.47 6.47 0 0 0 16 9.5C16 5.91 13.09 3 9.5 3zm0 2C11.99 5 14 7.01 14 9.5S11.99 14 9.5 14 5 11.99 5 9.5 7.01 5 9.5 5z" />
-                </svg>
+                <ScanSearch :size="20" :stroke-width="1.75" />
                 <span>使用搜圖</span>
               </div>
               <label class="toggle-switch-mini">
-                <input type="checkbox" :checked="chatImageSearchEnabled" @change="emit('toggle-chat-image-search')" />
+                <input type="checkbox" aria-label="使用搜圖" :checked="chatImageSearchEnabled" @change="emit('toggle-chat-image-search')" />
                 <span class="toggle-slider-mini"></span>
               </label>
             </div>
             <button class="dropdown-item" @click="emit('open-novel-ai-settings')">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
-              </svg>
+              <Settings :size="20" :stroke-width="1.75" />
               <span>文生圖設定</span>
             </button>
             <div class="dropdown-divider"></div>
             <div class="dropdown-section-title">AI 語音</div>
             <div class="dropdown-toggle-item">
               <div class="toggle-item-info">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z" />
-                </svg>
+                <AudioLines :size="20" :stroke-width="1.75" />
                 <span>MiniMax 語音合成</span>
               </div>
               <label class="toggle-switch-mini">
-                <input type="checkbox" :checked="chatMinimaxTTSEnabled" @change="emit('toggle-minimax-tts')" />
+                <input type="checkbox" aria-label="MiniMax 語音合成" :checked="chatMinimaxTTSEnabled" @change="emit('toggle-minimax-tts')" />
                 <span class="toggle-slider-mini"></span>
               </label>
             </div>
             <button class="dropdown-item" @click="emit('open-minimax-tts-settings')">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
-              </svg>
+              <Settings :size="20" :stroke-width="1.75" />
               <span>語音設定</span>
             </button>
           </div>
@@ -1027,6 +1038,29 @@ const isDarkBackground = computed(() =>
   }
 }
 
+// 鍵盤操作時的焦點外框改用主題色；滑鼠點擊不顯示瀏覽器預設黑框
+.header-back,
+.header-btn,
+.rail-toggle-btn,
+.dropdown-item,
+.persona-item,
+.fake-time-mode-btn,
+.fake-time-jump-btn {
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+.dropdown-item:focus-visible,
+.persona-item:focus-visible {
+  outline-offset: -2px;
+}
+
 .more-dropdown,
 .game-dropdown,
 .persona-dropdown,
@@ -1056,26 +1090,9 @@ const isDarkBackground = computed(() =>
   }
 }
 
-.persona-selector {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--chat-header-surface, var(--color-surface));
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
-  min-width: 220px;
-  max-width: min(280px, calc(100vw - 40px));
-  z-index: 500;
-}
-
-.persona-selector-header {
-  padding: 12px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  border-bottom: 1px solid var(--color-border);
+// 外框、位置、動畫沿用共用的 .dropdown-menu，這裡只定義使用者清單本身
+.persona-menu {
+  width: 260px;
 }
 
 .persona-list {
@@ -1088,7 +1105,7 @@ const isDarkBackground = computed(() =>
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 12px 16px;
+  padding: 10px 18px;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -1099,14 +1116,20 @@ const isDarkBackground = computed(() =>
     background: var(--color-background);
   }
 
+  // 與其他選單一致：淡底 + 打勾，不用整塊主色，避免說明文字看不清
   &.active {
-    background: var(--color-primary-light);
+    background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+
+    .persona-item-name {
+      font-weight: 600;
+      color: var(--color-primary);
+    }
   }
 }
 
 .persona-item-avatar {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   overflow: hidden;
   background: var(--color-background);
@@ -1160,37 +1183,6 @@ const isDarkBackground = computed(() =>
   flex-shrink: 0;
 }
 
-.persona-selector-footer {
-  padding: 8px 12px;
-  border-top: 1px solid var(--color-border);
-}
-
-.edit-persona-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  padding: 10px 12px;
-  background: var(--color-background);
-  border: none;
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  transition: all var(--transition-fast);
-
-  svg {
-    width: 16px;
-    height: 16px;
-  }
-
-  &:hover {
-    background: var(--color-primary-light);
-    color: var(--color-primary);
-  }
-}
-
 .dropdown-menu {
   position: absolute;
   top: calc(100% + 8px);
@@ -1239,10 +1231,11 @@ const isDarkBackground = computed(() =>
   min-width: 0;
   gap: 12px;
   width: 100%;
-  padding: 14px 18px;
+  padding: 12px 18px;
   background: transparent;
   border: none;
-  font-size: 15px;
+  font-size: 14px;
+  text-align: left;
   color: var(--color-text);
   cursor: pointer;
   transition: background var(--transition-fast);
@@ -1354,10 +1347,18 @@ const isDarkBackground = computed(() =>
   height: 22px;
   flex-shrink: 0;
 
+  // 隱藏原生 checkbox 但保留可聚焦；Tab 到開關時在滑軌上顯示焦點外框
   input {
+    position: absolute;
     opacity: 0;
     width: 0;
     height: 0;
+    margin: 0;
+
+    &:focus-visible + .toggle-slider-mini {
+      outline: 2px solid var(--color-primary);
+      outline-offset: 2px;
+    }
 
     &:checked + .toggle-slider-mini {
       background: var(--color-primary);
@@ -1586,19 +1587,6 @@ const isDarkBackground = computed(() =>
       /* In mobile, the dropdown is positioned under the floating header-actions */
       max-height: calc(100svh - 220px);
       z-index: 130;
-    }
-
-    .persona-selector {
-      position: absolute;
-      top: calc(100% + 8px);
-      bottom: auto;
-      left: 50%;
-      right: auto;
-      transform: translateX(-50%);
-      width: auto;
-      min-width: 220px;
-      max-width: min(280px, calc(100vw - 32px));
-      z-index: 1000;
     }
 
     .persona-dropdown,

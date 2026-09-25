@@ -131,7 +131,8 @@ export interface ChatAppearance {
   };
   /** 字體設定 */
   font?: {
-    size: "small" | "medium" | "large";
+    /** 新格式存 "16px"；舊資料為 small / medium / large */
+    size: "small" | "medium" | "large" | `${number}px`;
     family: "system" | "rounded" | "serif" | "mono";
     lineHeight: number; // 行高 (1.0 - 2.5)
     letterSpacing: number; // 字間距 (-2 - 5)

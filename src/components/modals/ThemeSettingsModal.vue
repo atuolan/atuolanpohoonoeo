@@ -8,826 +8,468 @@ import {
   isAvatarFrameSvg,
 } from "@/data/avatarFrames";
 import { getShopItemById } from "@/data/shopItems";
-import type { AvatarStyle, BubbleStyle, WallpaperStyle } from "@/stores";
-import { useThemeStore } from "@/stores";
+import type { AvatarStyle, BubbleStyle } from "@/stores";
+import { themePresets, useSettingsStore, useThemeStore } from "@/stores";
 import { useGameEconomyStore } from "@/stores/gameEconomy";
 import type { ChatAppearance } from "@/types/chat";
+import {
+  CHAT_FONT_SIZE_DEFAULT,
+  CHAT_FONT_SIZE_MAX,
+  CHAT_FONT_SIZE_MIN,
+  CHAT_FONT_STACKS,
+  isFollowingGlobalWallpaper,
+  resolveChatFontSizePx,
+} from "@/utils/chatAppearanceVars";
+import { toPickerHex } from "@/utils/simpleGradient";
 import { deriveColorsFromPrimary, normalizeHex } from "@/utils/wallpaperLuminance";
 import { computed, ref, watch } from "vue";
+import ChatAppearancePreview from "./theme-settings/ChatAppearancePreview.vue";
+import GradientColorField from "./theme-settings/GradientColorField.vue";
+import type {
+  ChatColors,
+  ChatFontStyle,
+  ChatWallpaperStyle,
+  ColorFocusTarget,
+  PreviewState,
+  PreviewTarget,
+} from "./theme-settings/types";
 
-type ChatWallpaperStyle = NonNullable<ChatAppearance["wallpaper"]>;
-
-// Props
+// 此彈窗只從聊天頁開啟，編輯的一律是「目前聊天」的專屬外觀
 interface Props {
   visible: boolean;
-  /** 聊天專屬外觀（傳入時為聊天專屬模式） */
   chatAppearance?: ChatAppearance;
-  /** 聊天 ID（用於獲取遊戲裝飾品） */
+  /** 聊天 ID（有值才顯示裝飾分頁） */
   chatId?: string;
 }
 
 const props = defineProps<Props>();
 
-// Emits
 const emit = defineEmits<{
   (e: "close"): void;
   (e: "saveChatAppearance", appearance: ChatAppearance): void;
 }>();
 
-// Store
 const themeStore = useThemeStore();
+const settingsStore = useSettingsStore();
 const gameEconomyStore = useGameEconomyStore();
 
-// 全局錢包 ID
 const GLOBAL_WALLET_ID = "global";
 
-// 是否為聊天專屬模式（只有當 chatAppearance 是有效對象時才為 true）
-const isChatMode = computed(() => {
-  // 檢查 chatAppearance 是否存在（包括空對象 { useCustom: false }）
-  // undefined 或 null 表示非聊天模式
-  if (props.chatAppearance === undefined || props.chatAppearance === null) {
-    return false;
+// ===== 分頁 =====
+type Tab = "colors" | "layout" | "wallpaper" | "font" | "decorations";
+
+const TABS: { id: Tab; label: string; icon: string }[] = [
+  {
+    id: "colors",
+    label: "配色",
+    icon: "M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8z",
+  },
+  { id: "layout", label: "版面", icon: "M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z" },
+  {
+    id: "wallpaper",
+    label: "背景",
+    icon: "M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z",
+  },
+  {
+    id: "font",
+    label: "字體",
+    icon: "M9.93 13.5h4.14L12 7.98 9.93 13.5zM20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-4.05 16.5l-1.14-3H9.17l-1.12 3H5.96l5.11-13h1.86l5.11 13h-2.09z",
+  },
+  {
+    id: "decorations",
+    label: "裝飾",
+    icon: "M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z",
+  },
+];
+
+const activeTab = ref<Tab>("colors");
+const colorFocus = ref<ColorFocusTarget | null>(null);
+const contentRef = ref<HTMLElement | null>(null);
+
+const visibleTabs = computed(() => TABS.filter((tab) => tab.id !== "decorations" || !!props.chatId));
+const showPreview = computed(() => ["colors", "layout", "wallpaper"].includes(activeTab.value));
+
+function selectTab(tab: Tab) {
+  activeTab.value = tab;
+  colorFocus.value = null;
+  contentRef.value?.scrollTo({ top: 0 });
+}
+
+function handleTabsWheel(event: WheelEvent) {
+  (event.currentTarget as HTMLElement).scrollLeft += event.deltaY;
+}
+
+// 預覽點擊：背景 → 背景分頁；其他 → 配色分頁並開啟對應設定
+function onPreviewSelect(target: PreviewTarget) {
+  if (target === "wallpaper") {
+    selectTab("wallpaper");
+    return;
   }
-  // 只要傳入了 chatAppearance 對象（即使是 { useCustom: false }），就是聊天模式
-  return true;
-});
-
-// 是否使用聊天專屬外觀（預設 ON，僅在之前明確關過時才為 false）
-const useCustomAppearance = ref(true);
-
-// 當前分頁
-const activeTab = ref<
-  "colors" | "font" | "decorations"
->("colors");
-
-// 預覽焦點：點擊預覽元素時聚焦，顯示聚合設定
-const previewFocus = ref<
-  "ai" | "user" | "header" | "wallpaper" | "surface" | "surfaceHover" | "status" | null
->(null);
-
-// 可套用漸層的氣泡顏色欄位（key → 對應純色/漸層欄位）
-type GradientKey =
-  | "aiBg"
-  | "userBg"
-  | "aiText"
-  | "aiContent"
-  | "userText"
-  | "thoughtBg"
-  | "thoughtText";
-
-// 僅字串型欄位（純色與漸層都是 string）
-type BubbleStringKey = {
-  [K in keyof BubbleStyle]: BubbleStyle[K] extends string ? K : never;
-}[keyof BubbleStyle];
-
-const GRADIENT_FIELD_MAP: Record<
-  GradientKey,
-  { color: BubbleStringKey; gradient: BubbleStringKey; defaultBase: string }
-> = {
-  aiBg: { color: "aiBgColor", gradient: "aiBgGradient", defaultBase: "#ffffff" },
-  userBg: { color: "userBgColor", gradient: "userBgGradient", defaultBase: "#FF85A2" },
-  aiText: { color: "aiTextColor", gradient: "aiTextGradient", defaultBase: "#4A4A6A" },
-  aiContent: { color: "aiContentColor", gradient: "aiContentGradient", defaultBase: "#4A4A6A" },
-  userText: { color: "userTextColor", gradient: "userTextGradient", defaultBase: "#FFFFFF" },
-  thoughtBg: { color: "thoughtBgColor", gradient: "thoughtBgGradient", defaultBase: "#ADD8E6" },
-  thoughtText: { color: "thoughtTextColor", gradient: "thoughtTextGradient", defaultBase: "#4a6572" },
-};
-
-// 漸層設定面板展開狀態（點擊色卡才展開）
-const gradientPanelOpen = ref<Record<GradientKey, boolean>>({
-  aiBg: false,
-  userBg: false,
-  aiText: false,
-  aiContent: false,
-  userText: false,
-  thoughtBg: false,
-  thoughtText: false,
-});
-
-function toggleGradientPanel(key: GradientKey) {
-  gradientPanelOpen.value[key] = !gradientPanelOpen.value[key];
+  if (activeTab.value !== "colors") {
+    activeTab.value = "colors";
+    colorFocus.value = target;
+    return;
+  }
+  colorFocus.value = colorFocus.value === target ? null : target;
 }
 
-function togglePreviewFocus(
-  target: "ai" | "user" | "header" | "wallpaper" | "surface" | "surfaceHover" | "status",
-) {
-  previewFocus.value = previewFocus.value === target ? null : target;
-}
+// ===== 選項常數 =====
+const PRESETS = [
+  { id: "soft-pink", name: "粉紅" },
+  { id: "soft-purple", name: "紫羅蘭" },
+  { id: "soft-mint", name: "薄荷" },
+  { id: "soft-mint-green", name: "薄荷綠" },
+  { id: "soft-peach", name: "蜜桃" },
+  { id: "soft-blue", name: "天藍" },
+].map((preset) => ({ ...preset, color: themePresets[preset.id]?.primary ?? "#FF85A2" }));
 
-// 預設主題列表
-const presetList = computed(() => [
-  { id: "soft-pink", name: "粉紅", color: "#FF85A2" },
-  { id: "soft-purple", name: "紫羅蘭", color: "#B388FF" },
-  { id: "soft-mint", name: "薄荷", color: "#5DD3B3" },
-  { id: "soft-mint-green", name: "薄荷綠", color: "#7DD3A8" },
-  { id: "soft-peach", name: "蜜桃", color: "#FFAB91" },
-  { id: "soft-blue", name: "天藍", color: "#64B5F6" },
-]);
-
-// 頭像形狀選項
-const avatarShapes = [
+const AVATAR_SHAPES = [
   { id: "circle", name: "圓形", icon: "○" },
   { id: "rounded", name: "圓角", icon: "▢" },
   { id: "square", name: "方形", icon: "□" },
-];
+] as const;
 
-// 頭像大小選項
-const avatarSizes = [
-  { id: "small", name: "小", size: "36px" },
-  { id: "medium", name: "中", size: "48px" },
-  { id: "large", name: "大", size: "64px" },
-];
+const AVATAR_SIZES = [
+  { id: "small", name: "小" },
+  { id: "medium", name: "中" },
+  { id: "large", name: "大" },
+] as const;
 
-// 桌布預設
-const wallpaperPresets = [
+const FONT_FAMILIES = [
+  { id: "system", name: "系統預設" },
+  { id: "rounded", name: "圓體" },
+  { id: "serif", name: "襯線體" },
+  { id: "mono", name: "等寬字體" },
+] as const;
+
+const MARKDOWN_COLOR_FIELDS = [
+  { key: "italic", label: "斜體文字" },
+  { key: "bold", label: "粗體文字" },
+  { key: "underline", label: "底線文字" },
+  { key: "strikethrough", label: "刪除線" },
+  { key: "highlight", label: "高亮背景" },
+  { key: "quote", label: "引用文字" },
+  { key: "code", label: "行內代碼" },
+  { key: "heading", label: "標題文字" },
+] as const;
+
+const WALLPAPER_PRESETS = [
+  { id: "follow", name: "跟隨全域", type: "global-image", value: "" },
   { id: "time-theme", name: "跟隨時間", type: "time-theme", value: "" },
   { id: "none", name: "無", type: "color", value: "var(--color-background)" },
-  {
-    id: "gradient1",
-    name: "夢幻粉",
-    type: "gradient",
-    value: "linear-gradient(135deg, #FFE6F0 0%, #E6F0FF 100%)",
-  },
-  {
-    id: "gradient2",
-    name: "薰衣草",
-    type: "gradient",
-    value: "linear-gradient(135deg, #E6E6FA 0%, #FFF0F5 100%)",
-  },
-  {
-    id: "gradient3",
-    name: "清新綠",
-    type: "gradient",
-    value: "linear-gradient(135deg, #E8F5E9 0%, #E3F2FD 100%)",
-  },
-  {
-    id: "gradient4",
-    name: "暖陽橙",
-    type: "gradient",
-    value: "linear-gradient(135deg, #FFF3E0 0%, #FFECB3 100%)",
-  },
-];
+  { id: "gradient1", name: "夢幻粉", type: "gradient", value: "linear-gradient(135deg, #FFE6F0 0%, #E6F0FF 100%)" },
+  { id: "gradient2", name: "薰衣草", type: "gradient", value: "linear-gradient(135deg, #E6E6FA 0%, #FFF0F5 100%)" },
+  { id: "gradient3", name: "清新綠", type: "gradient", value: "linear-gradient(135deg, #E8F5E9 0%, #E3F2FD 100%)" },
+  { id: "gradient4", name: "暖陽橙", type: "gradient", value: "linear-gradient(135deg, #FFF3E0 0%, #FFECB3 100%)" },
+] as const;
 
-// ===== 遊戲裝飾品 =====
+type WallpaperPreset = (typeof WALLPAPER_PRESETS)[number];
 
-// 解析商品 ID（支援變體格式 baseId_variantId）
-function resolveShopItem(itemId: string) {
-  // 先直接查找
-  const direct = getShopItemById(itemId);
-  if (direct) return { item: direct, variantName: null as string | null };
+const WALLPAPER_FITS = [
+  { id: "cover", name: "填滿" },
+  { id: "contain", name: "完整" },
+  { id: "fill", name: "拉伸" },
+  { id: "repeat", name: "平鋪" },
+] as const;
 
-  // 嘗試解析變體 ID
-  const lastUnderscore = itemId.lastIndexOf("_");
-  if (lastUnderscore === -1) return null;
+const AI_BUBBLE_FIELDS = [
+  { label: "AI 訊息背景", color: "aiBgColor", gradient: "aiBgGradient", fallback: "#ffffff" },
+  { label: "AI 訊息文字", color: "aiContentColor", gradient: "aiContentGradient", fallback: "#4a4a6a" },
+  { label: "AI 名稱／時間", color: "aiTextColor", gradient: "aiTextGradient", fallback: "#4a4a6a" },
+  { label: "想法氣泡背景", color: "thoughtBgColor", gradient: "thoughtBgGradient", fallback: "#ADD8E6" },
+  { label: "想法氣泡文字", color: "thoughtTextColor", gradient: "thoughtTextGradient", fallback: "#4a6572" },
+] as const;
 
-  const baseId = itemId.substring(0, lastUnderscore);
-  const variantId = itemId.substring(lastUnderscore + 1);
-  const baseItem = getShopItemById(baseId);
-  if (!baseItem?.variants) return null;
+const USER_BUBBLE_FIELDS = [
+  { label: "我的訊息背景", color: "userBgColor", gradient: "userBgGradient", fallback: "#FF85A2" },
+  { label: "我的文字／時間", color: "userTextColor", gradient: "userTextGradient", fallback: "#FFFFFF" },
+] as const;
 
-  const variant = baseItem.variants.find((v) => v.variantId === variantId);
-  if (!variant) return null;
+const COLOR_FOCUS_TITLES: Record<ColorFocusTarget, string> = {
+  ai: "AI 氣泡顏色",
+  user: "我的氣泡顏色",
+  header: "頂欄顏色",
+  surface: "卡片與主要文字",
+  surfaceHover: "滑過背景與輔助色",
+  status: "狀態提示色",
+};
 
-  return { item: baseItem, variantName: variant.name };
+// 頂欄與卡片共用 surface / text 等變數，因此會有重複欄位
+const PLAIN_COLOR_FIELDS: Record<
+  Exclude<ColorFocusTarget, "ai" | "user">,
+  { key: keyof ChatColors; label: string }[]
+> = {
+  header: [
+    { key: "surface", label: "頂欄背景" },
+    { key: "text", label: "標題文字" },
+    { key: "textSecondary", label: "次要文字" },
+  ],
+  surface: [
+    { key: "surface", label: "卡片背景" },
+    { key: "text", label: "主要文字" },
+    { key: "textMuted", label: "提示文字" },
+    { key: "border", label: "邊框線" },
+  ],
+  surfaceHover: [
+    { key: "surfaceHover", label: "滑過背景" },
+    { key: "secondary", label: "輔助色" },
+    { key: "textSecondary", label: "次要文字" },
+  ],
+  status: [
+    { key: "success", label: "成功提示" },
+    { key: "error", label: "錯誤提示" },
+    { key: "warning", label: "警告提示" },
+  ],
+};
+
+const COLOR_KEYS = [
+  "primary",
+  "primaryLight",
+  "secondary",
+  "background",
+  "surface",
+  "surfaceHover",
+  "text",
+  "textSecondary",
+  "textMuted",
+  "border",
+  "shadow",
+  "success",
+  "error",
+  "warning",
+] as const satisfies readonly (keyof ChatColors)[];
+
+// ===== 預設值（皆取自全域設定） =====
+function globalColors(): ChatColors {
+  return Object.fromEntries(COLOR_KEYS.map((key) => [key, themeStore.colors[key]])) as ChatColors;
 }
 
-// 已購買的頭像框
-const ownedFrames = computed(() => {
-  const decorations = gameEconomyStore.getDecorations(GLOBAL_WALLET_ID);
-  return (decorations?.ownedFrames || [])
-    .map((frameId) => {
-      const resolved = resolveShopItem(frameId);
-      if (!resolved) return null;
-      const { item, variantName } = resolved;
-      return {
-        id: frameId,
-        name: variantName ? `${item.name} - ${variantName}` : item.name,
-        description: item.description,
-        rarity: item.rarity,
-      };
-    })
-    .filter(Boolean) as {
-    id: string;
-    name: string;
-    description: string;
-    rarity: string;
-  }[];
-});
+function defaultFont(): ChatFontStyle {
+  return {
+    family: "system",
+    lineHeight: 1.6,
+    letterSpacing: 0,
+    markdownColors: {
+      text: "#4a4a6a",
+      italic: "#8b7355",
+      bold: "#4a4a6a",
+      underline: "#8b2942",
+      strikethrough: "#999999",
+      highlight: "#fff3cd",
+      quote: "#8b5a2b",
+      code: "#e83e8c",
+      heading: "#4a4a6a",
+    },
+  };
+}
 
-// 已購買的聊天氣泡
-const ownedBubbles = computed(() => {
-  const decorations = gameEconomyStore.getDecorations(GLOBAL_WALLET_ID);
-  return (decorations?.ownedBubbles || [])
-    .map((bubbleId) => {
-      const resolved = resolveShopItem(bubbleId);
-      if (!resolved) return null;
-      const { item, variantName } = resolved;
-      return {
-        id: bubbleId,
-        name: variantName ? `${item.name} - ${variantName}` : item.name,
-        description: item.description,
-        rarity: item.rarity,
-      };
-    })
-    .filter(Boolean) as {
-    id: string;
-    name: string;
-    description: string;
-    rarity: string;
-  }[];
-});
+function followGlobalWallpaper(): ChatWallpaperStyle {
+  const g = themeStore.wallpaperStyle;
+  return {
+    type: "global-image",
+    value: "",
+    blur: g.blur ?? 0,
+    opacity: g.opacity ?? 100,
+    overlay: g.overlay ?? "",
+    fit: g.fit || "cover",
+  };
+}
 
-// 當前裝備的頭像框
-const equippedFrameId = computed(() => {
-  return (
-    gameEconomyStore.getDecorations(GLOBAL_WALLET_ID)?.equippedFrameId ?? null
-  );
-});
+/** 舊版會複製全域桌布圖片（含會失效的 blob: 網址），載入時一律改回「跟隨全域」 */
+function normalizeWallpaper(wallpaper?: ChatWallpaperStyle): ChatWallpaperStyle {
+  if (!wallpaper) return followGlobalWallpaper();
+  const g = themeStore.wallpaperStyle;
+  const isGlobalCopy = wallpaper.type === "image" && g.type === "image" && wallpaper.value === g.value;
+  if (isFollowingGlobalWallpaper(wallpaper) || isGlobalCopy) {
+    return { ...wallpaper, type: "global-image", value: "" };
+  }
+  return { ...wallpaper };
+}
 
-// 當前裝備的聊天氣泡
-const equippedBubbleId = computed(() => {
-  return (
-    gameEconomyStore.getDecorations(GLOBAL_WALLET_ID)?.equippedBubbleId ?? null
-  );
-});
+/** IndexedDB 會保留值為 undefined 的欄位，展開覆蓋預設值前先濾掉 */
+function definedOnly<T extends object>(obj: T | undefined): Partial<T> {
+  if (!obj) return {};
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+  ) as Partial<T>;
+}
 
-// ===== 聊天專屬頭像框 =====
-// 臨時頭像框設定（聊天專屬模式用）
-const tempAvatarFrames = ref<{
-  userFrameId: string | null;
-  charFrameId: string | null;
-}>({
+// ===== 編輯中的暫存值 =====
+const useCustomAppearance = ref(false);
+const unifiedColors = ref(true);
+const customHexInput = ref("");
+const tempColors = ref<ChatColors>(globalColors());
+const tempAvatarStyle = ref<AvatarStyle>({ ...themeStore.avatarStyle });
+const tempBubbleStyle = ref<BubbleStyle>({ ...themeStore.bubbleStyle });
+const tempWallpaperStyle = ref<ChatWallpaperStyle>(followGlobalWallpaper());
+const tempFontStyle = ref<ChatFontStyle>(defaultFont());
+const tempFontSizeValue = ref(CHAT_FONT_SIZE_DEFAULT);
+const tempAvatarFrames = ref<{ userFrameId: string | null; charFrameId: string | null }>({
   userFrameId: null,
   charFrameId: null,
 });
 
-// 設定用戶頭像框
-function setUserFrame(frameId: string | null) {
-  tempAvatarFrames.value.userFrameId = frameId;
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  }
-}
-
-// 設定角色頭像框
-function setCharFrame(frameId: string | null) {
-  tempAvatarFrames.value.charFrameId = frameId;
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  }
-}
-
-// 裝備頭像框（全局模式）
-async function equipFrame(frameId: string | null) {
-  gameEconomyStore.equipFrame(GLOBAL_WALLET_ID, frameId);
-  await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
-}
-
-// 裝備聊天氣泡
-async function equipBubble(bubbleId: string | null) {
-  gameEconomyStore.equipBubble(GLOBAL_WALLET_ID, bubbleId);
-  await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
-}
-
-// 臨時值（用於預覽）
-const tempAvatarStyle = ref<AvatarStyle>({ ...themeStore.avatarStyle });
-const tempBubbleStyle = ref<BubbleStyle>({ ...themeStore.bubbleStyle });
-const tempWallpaperStyle = ref<ChatWallpaperStyle>({
-  ...themeStore.wallpaperStyle,
-});
-// 臨時字體樣式（聊天專屬模式用）
-const tempFontStyle = ref<{
-  size: "small" | "medium" | "large";
-  family: "system" | "rounded" | "serif" | "mono";
-  lineHeight: number;
-  letterSpacing: number;
-  markdownColors: {
-    text: string;
-    italic: string;
-    bold: string;
-    underline: string;
-    strikethrough: string;
-    highlight: string;
-    quote: string;
-    code: string;
-    heading: string;
-  };
-}>({
-  size: "medium",
-  family: "system",
-  lineHeight: 1.6,
-  letterSpacing: 0,
-  markdownColors: {
-    text: "#4a4a6a",
-    italic: "#8b7355",
-    bold: "#4a4a6a",
-    underline: "#8b2942",
-    strikethrough: "#999999",
-    highlight: "#fff3cd",
-    quote: "#8b5a2b",
-    code: "#e83e8c",
-    heading: "#4a4a6a",
+// 任何外觀變動都自動啟用聊天專屬外觀（載入資料時除外）
+let hydrating = false;
+watch(
+  [tempColors, tempAvatarStyle, tempBubbleStyle, tempWallpaperStyle, tempFontStyle, tempFontSizeValue, tempAvatarFrames],
+  () => {
+    if (!hydrating) useCustomAppearance.value = true;
   },
-});
-// 臨時顏色預設（聊天專屬模式用）
-const tempColorPreset = ref<string>(themeStore.currentPreset);
-const tempColors = ref({
-  primary: themeStore.colors.primary,
-  primaryLight: themeStore.colors.primaryLight,
-  secondary: themeStore.colors.secondary,
-  background: themeStore.colors.background,
-  surface: themeStore.colors.surface,
-  surfaceHover: themeStore.colors.surfaceHover,
-  text: themeStore.colors.text,
-  textSecondary: themeStore.colors.textSecondary,
-  textMuted: themeStore.colors.textMuted,
-  border: themeStore.colors.border,
-  shadow: themeStore.colors.shadow,
-  success: themeStore.colors.success,
-  error: themeStore.colors.error,
-  warning: themeStore.colors.warning,
-});
+  { deep: true, flush: "sync" },
+);
 
-// 字體大小選項（改為滑块范围）
-const fontSizeMin = 12;
-const fontSizeMax = 20;
-const fontSizeDefault = 15;
-
-// 臨時字體大小（用於滑块）
-const tempFontSizeValue = ref(fontSizeDefault);
-
-// 字體樣式選項
-const fontFamilies = [
-  { id: "system", name: "系統預設", preview: "Aa" },
-  { id: "rounded", name: "圓體", preview: "Aa" },
-  { id: "serif", name: "襯線體", preview: "Aa" },
-  { id: "mono", name: "等寬字體", preview: "Aa" },
-];
-
-// 當前顯示的顏色（聊天專屬模式用臨時值，全局模式用 themeStore）
-const displayColors = computed(() => {
-  if (isChatMode.value) {
-    return tempColors.value;
-  }
-  return themeStore.colors;
-});
-
-// 當前選中的預設
-const currentPreset = computed(() => {
-  if (isChatMode.value) {
-    return tempColorPreset.value;
-  }
-  return themeStore.currentPreset;
-});
-
-// 是否正在使用自訂主題色
-const isCustomColor = computed(() => {
-  if (isChatMode.value) {
-    return !presetList.value.some((p) => p.color.toLowerCase() === tempColors.value.primary.toLowerCase());
-  }
-  const hasCustom = themeStore.customColors && Object.keys(themeStore.customColors).length > 0;
-  return hasCustom;
-});
-
-// 統一配色開關
-const unifiedColors = ref(true);
-
-// 自訂主題色 HEX 文字輸入
-const customHexInput = ref(themeStore.colors.primary);
-
-// 處理自訂色盤變更
-function setCustomPrimaryFromPicker(value: string) {
-  const hex = normalizeHex(value);
-  if (!hex) return;
-  customHexInput.value = hex;
-  applyCustomPrimary(hex);
-}
-
-// 處理 HEX 文字輸入
-function setCustomPrimaryFromHex(raw: string) {
-  const hex = normalizeHex(raw);
-  if (!hex) return; // 無效不套用
-  customHexInput.value = raw;
-  applyCustomPrimary(hex);
-}
-
-// 套用自訂主色
-function applyCustomPrimary(hex: string) {
-  if (unifiedColors.value) {
-    // 統一模式：自動推導所有顏色
-    const derived = deriveColorsFromPrimary(hex);
-    if (isChatMode.value) {
-      Object.assign(tempColors.value, derived);
-      tempBubbleStyle.value.userBgColor = hex;
-      tempBubbleStyle.value.userBgGradient = `linear-gradient(135deg, ${hex}, ${derived.primaryLight})`;
-      useCustomAppearance.value = true;
-    } else {
-      for (const [key, value] of Object.entries(derived)) {
-        if (key !== "background") {
-          themeStore.setCustomColor(key as keyof import("@/stores/theme").ThemeColors, value);
-        }
-      }
-      themeStore.updateBubbleStyle({
-        userBgColor: hex,
-        userBgGradient: `linear-gradient(135deg, ${hex}, ${derived.primaryLight})`,
-      });
-    }
-  } else {
-    // 非統一模式：只改 primary + primaryLight
-    const primaryLight = deriveColorsFromPrimary(hex).primaryLight;
-    if (isChatMode.value) {
-      tempColors.value.primary = hex;
-      tempColors.value.primaryLight = primaryLight;
-      tempBubbleStyle.value.userBgColor = hex;
-      tempBubbleStyle.value.userBgGradient = `linear-gradient(135deg, ${hex}, ${primaryLight})`;
-      useCustomAppearance.value = true;
-    } else {
-      themeStore.setCustomColor("primary", hex);
-      themeStore.setCustomColor("primaryLight", primaryLight);
-      themeStore.updateBubbleStyle({
-        userBgColor: hex,
-        userBgGradient: `linear-gradient(135deg, ${hex}, ${primaryLight})`,
-      });
-    }
+function hydrate(apply: () => void) {
+  hydrating = true;
+  try {
+    apply();
+  } finally {
+    hydrating = false;
   }
 }
 
-// 設定單一自訂顏色（非統一模式用）
-function setIndividualColor(key: string, value: string) {
-  if (isChatMode.value) {
-    (tempColors.value as any)[key] = value;
-    useCustomAppearance.value = true;
-  } else {
-    themeStore.setCustomColor(key as keyof import("@/stores/theme").ThemeColors, value);
-  }
+function loadAppearance(appearance: ChatAppearance | undefined) {
+  hydrate(() => {
+    useCustomAppearance.value = !!appearance && appearance.useCustom !== false;
+    const { unified, ...savedColors } = appearance?.colors ?? {};
+    tempColors.value = { ...globalColors(), ...definedOnly(savedColors) };
+    unifiedColors.value = unified !== false;
+    customHexInput.value = tempColors.value.primary;
+    tempAvatarStyle.value = { ...themeStore.avatarStyle, ...definedOnly(appearance?.avatar) };
+    tempBubbleStyle.value = { ...themeStore.bubbleStyle, ...definedOnly(appearance?.bubble) };
+    tempWallpaperStyle.value = normalizeWallpaper(appearance?.wallpaper);
+
+    const font = appearance?.font;
+    const fallbackFont = defaultFont();
+    tempFontStyle.value = {
+      family: font?.family ?? fallbackFont.family,
+      lineHeight: font?.lineHeight ?? fallbackFont.lineHeight,
+      letterSpacing: font?.letterSpacing ?? fallbackFont.letterSpacing,
+      markdownColors: { ...fallbackFont.markdownColors, ...definedOnly(font?.markdownColors) },
+    };
+    tempFontSizeValue.value = resolveChatFontSizePx(font?.size);
+
+    tempAvatarFrames.value = {
+      userFrameId: appearance?.avatarFrames?.userFrameId ?? null,
+      charFrameId: appearance?.avatarFrames?.charFrameId ?? null,
+    };
+  });
 }
 
-// 處理預設主題選擇
-function selectPreset(presetId: string) {
-  console.log(
-    "[ThemeSettingsModal] selectPreset called:",
-    presetId,
-    "isChatMode:",
-    isChatMode.value,
-  );
-  if (isChatMode.value) {
-    // 聊天專屬模式：只更新臨時值，自動啟用專屬外觀
-    console.log("[ThemeSettingsModal] Chat mode - updating temp values only");
-    useCustomAppearance.value = true;
-    tempColorPreset.value = presetId;
-    import("@/stores/theme").then(({ themePresets }) => {
-      const colors = themePresets[presetId];
-      if (colors) {
-        tempColors.value = {
-          ...tempColors.value,
-          primary: colors.primary,
-          primaryLight: colors.primaryLight,
-          secondary: colors.secondary || themeStore.colors.secondary,
-          surface: colors.surface || themeStore.colors.surface,
-          surfaceHover: colors.surfaceHover || themeStore.colors.surfaceHover,
-          text: colors.text || themeStore.colors.text,
-          textSecondary: colors.textSecondary || themeStore.colors.textSecondary,
-          textMuted: colors.textMuted || themeStore.colors.textMuted,
-          border: colors.border || themeStore.colors.border,
-          shadow: colors.shadow || themeStore.colors.shadow,
-          success: colors.success || themeStore.colors.success,
-          error: colors.error || themeStore.colors.error,
-          warning: colors.warning || themeStore.colors.warning,
-        };
-        // 同步更新氣泡顏色
-        tempBubbleStyle.value.userBgColor = colors.primary;
-        tempBubbleStyle.value.userBgGradient = `linear-gradient(135deg, ${colors.primary}, ${colors.primaryLight})`;
-        customHexInput.value = colors.primary;
-        unifiedColors.value = true;
-      }
-    });
-  } else {
-    // 全局模式：更新 themeStore
-    console.log("[ThemeSettingsModal] Global mode - updating themeStore");
-    themeStore.setPreset(presetId);
-    customHexInput.value = themeStore.colors.primary;
-    unifiedColors.value = true;
-  }
-}
+watch(
+  () => props.visible,
+  async (isVisible) => {
+    if (!isVisible) return;
+    activeTab.value = "colors";
+    colorFocus.value = null;
+    loadAppearance(props.chatAppearance);
+    await gameEconomyStore.loadState(GLOBAL_WALLET_ID);
+  },
+);
 
-// 處理頭像形狀變更
-function setAvatarShape(shape: "circle" | "square" | "rounded") {
-  tempAvatarStyle.value.shape = shape;
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  } else {
-    themeStore.updateAvatarStyle({ shape });
-  }
-}
-
-// 處理頭像大小變更
-function setAvatarSize(size: "small" | "medium" | "large") {
-  tempAvatarStyle.value.size = size;
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  } else {
-    themeStore.updateAvatarStyle({ size });
-  }
-}
-
-// 處理頭像邊框寬度變更
-function setAvatarBorderWidth(width: number) {
-  tempAvatarStyle.value.borderWidth = width;
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  } else {
-    themeStore.updateAvatarStyle({ borderWidth: width });
-  }
-}
-
-// 處理氣泡顏色變更
-function setBubbleColor(
-  key: "aiBgColor" | "aiTextColor" | "aiContentColor" | "userBgColor" | "userTextColor" | "thoughtBgColor" | "thoughtTextColor" | "thoughtGlowColor",
-  value: string,
-) {
-  tempBubbleStyle.value[key] = value;
-  // 純色變更時清除對應漸層（改用純色）
-  const COLOR_TO_GRADIENT: Partial<Record<typeof key, keyof BubbleStyle>> = {
-    userBgColor: "userBgGradient",
-    aiBgColor: "aiBgGradient",
-    userTextColor: "userTextGradient",
-    aiTextColor: "aiTextGradient",
-    aiContentColor: "aiContentGradient",
-    thoughtBgColor: "thoughtBgGradient",
-    thoughtTextColor: "thoughtTextGradient",
-  };
-  const gradientKey = COLOR_TO_GRADIENT[key];
-  if (gradientKey) {
-    (tempBubbleStyle.value[gradientKey] as string) = "";
-  }
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  } else {
-    themeStore.updateBubbleStyle({ [key]: value });
-  }
-}
-
-// 處理氣泡圓角變更
-function setBubbleRadius(radius: number) {
-  tempBubbleStyle.value.borderRadius = radius;
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  } else {
-    themeStore.updateBubbleStyle({ borderRadius: radius });
-  }
-}
-
-// 處理氣泡最大寬度變更
-function setBubbleMaxWidth(width: number) {
-  tempBubbleStyle.value.maxWidth = width;
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  } else {
-    themeStore.updateBubbleStyle({ maxWidth: width });
-  }
-}
-
-// ===== 漸層編輯器輔助 =====
-function extractGradientColor(gradient: string, index: number): string {
-  const matches = gradient.match(/#[0-9a-fA-F]{6}/g);
-  if (matches && matches[index]) return matches[index];
-  return index === 0 ? "#ffffff" : "#cccccc";
-}
-
-function extractGradientAngle(gradient: string): number {
-  const match = gradient.match(/(\d+)deg/);
-  return match ? parseInt(match[1]) : 135;
-}
-
-function buildGradient(angle: number, color1: string, color2: string): string {
-  return `linear-gradient(${angle}deg, ${color1}, ${color2})`;
-}
-
-function toggleBubbleGradient(key: GradientKey, enabled: boolean) {
-  const { color, gradient, defaultBase } = GRADIENT_FIELD_MAP[key];
-  if (enabled) {
-    const base = (tempBubbleStyle.value[color] as string) || defaultBase;
-    // 自動生成比基色略淡的結束色
-    tempBubbleStyle.value[gradient] = buildGradient(135, base, lightenHex(base, 30));
-  } else {
-    tempBubbleStyle.value[gradient] = "";
-  }
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  } else {
-    themeStore.updateBubbleStyle({ [gradient]: tempBubbleStyle.value[gradient] });
-  }
-}
-
-function updateGradientColor(key: GradientKey, index: number, color: string) {
-  const { gradient } = GRADIENT_FIELD_MAP[key];
-  const current = tempBubbleStyle.value[gradient] as string;
-  const angle = extractGradientAngle(current);
-  const colors = [extractGradientColor(current, 0), extractGradientColor(current, 1)];
-  colors[index] = color;
-  tempBubbleStyle.value[gradient] = buildGradient(angle, colors[0], colors[1]);
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  } else {
-    themeStore.updateBubbleStyle({ [gradient]: tempBubbleStyle.value[gradient] });
-  }
-}
-
-function updateGradientAngle(key: GradientKey, angle: number) {
-  const { gradient } = GRADIENT_FIELD_MAP[key];
-  const current = tempBubbleStyle.value[gradient] as string;
-  const c1 = extractGradientColor(current, 0);
-  const c2 = extractGradientColor(current, 1);
-  tempBubbleStyle.value[gradient] = buildGradient(angle, c1, c2);
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  } else {
-    themeStore.updateBubbleStyle({ [gradient]: tempBubbleStyle.value[gradient] });
-  }
-}
-
-/** 將 hex 顏色變亮 amount (0-100) */
-function lightenHex(hex: string, amount: number): string {
-  const h = hex.replace("#", "");
-  const r = Math.min(255, parseInt(h.substring(0, 2), 16) + Math.round(255 * amount / 100));
-  const g = Math.min(255, parseInt(h.substring(2, 4), 16) + Math.round(255 * amount / 100));
-  const b = Math.min(255, parseInt(h.substring(4, 6), 16) + Math.round(255 * amount / 100));
-  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
-}
-
-const hasGlobalCustomImage = computed(() => {
-  return themeStore.wallpaperStyle.type === "image" && !!themeStore.wallpaperStyle.value;
-});
-
-const isUsingGlobalImageWallpaper = computed(() => {
-  return tempWallpaperStyle.value.type === "global-image";
-});
-
-const globalWallpaperPreviewStyle = computed(() => ({
-  backgroundImage: hasGlobalCustomImage.value
-    ? `url(${themeStore.wallpaperStyle.value})`
-    : undefined,
-  backgroundSize: "cover",
-  backgroundPosition: "center",
+const previewState = computed<PreviewState>(() => ({
+  colors: tempColors.value,
+  bubble: tempBubbleStyle.value,
+  avatar: tempAvatarStyle.value,
+  wallpaper: tempWallpaperStyle.value,
+  font: tempFontStyle.value,
+  fontSizePx: tempFontSizeValue.value,
 }));
 
-const previewWallpaperStyle = computed(() => {
-  const wallpaper = tempWallpaperStyle.value;
-  const fallbackBackground = tempColors.value.background || themeStore.colors.background;
+// ===== 配色 =====
+const activePresetId = computed(
+  () => PRESETS.find((preset) => preset.color.toLowerCase() === tempColors.value.primary.toLowerCase())?.id ?? null,
+);
 
-  if (wallpaper.type === "gradient" || wallpaper.type === "color") {
-    return { background: wallpaper.value || fallbackBackground };
-  }
+function syncUserBubbleWithPrimary(primary: string, primaryLight: string) {
+  tempBubbleStyle.value.userBgColor = primary;
+  tempBubbleStyle.value.userBgGradient = `linear-gradient(135deg, ${primary}, ${primaryLight})`;
+  customHexInput.value = primary;
+}
 
-  if (wallpaper.type === "image" && wallpaper.value) {
-    return {
-      backgroundColor: fallbackBackground,
-      backgroundImage: `linear-gradient(${wallpaper.overlay || "transparent"}, ${wallpaper.overlay || "transparent"}), url(${wallpaper.value})`,
-      backgroundSize: wallpaper.fit === "repeat" ? "auto" : wallpaper.fit || "cover",
-      backgroundRepeat: wallpaper.fit === "repeat" ? "repeat" : "no-repeat",
-      backgroundPosition: "center",
-    };
-  }
+function selectPreset(presetId: string) {
+  const preset = themePresets[presetId];
+  if (!preset) return;
+  const { background: _keepBackground, ...presetColors } = preset;
+  tempColors.value = { ...tempColors.value, ...definedOnly(presetColors) };
+  syncUserBubbleWithPrimary(preset.primary, preset.primaryLight);
+  unifiedColors.value = true;
+}
 
-  if (wallpaper.type === "global-image" && hasGlobalCustomImage.value) {
-    return {
-      backgroundColor: fallbackBackground,
-      backgroundImage: `linear-gradient(${wallpaper.overlay || "transparent"}, ${wallpaper.overlay || "transparent"}), url(${themeStore.wallpaperStyle.value})`,
-      backgroundSize: wallpaper.fit === "repeat" ? "auto" : wallpaper.fit || "cover",
-      backgroundRepeat: wallpaper.fit === "repeat" ? "repeat" : "no-repeat",
-      backgroundPosition: "center",
-    };
-  }
-
-  if (wallpaper.type === "time-theme") {
-    return {
-      background:
-        "linear-gradient(135deg, #fff8f0 0%, #f8fafc 35%, #fef3e2 70%, #e0f2fe 100%)",
-    };
-  }
-
-  return { background: fallbackBackground };
-});
-
-// 處理桌布選擇
-function selectWallpaper(preset: (typeof wallpaperPresets)[0]) {
-  console.log("[ThemeSettingsModal] selectWallpaper:", preset);
-  tempWallpaperStyle.value.type = preset.type as WallpaperStyle["type"];
-  tempWallpaperStyle.value.value = preset.value;
-  console.log(
-    "[ThemeSettingsModal] tempWallpaperStyle after:",
-    JSON.stringify(tempWallpaperStyle.value, null, 2),
-  );
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
+function applyCustomPrimary(hex: string) {
+  const derived = deriveColorsFromPrimary(hex);
+  if (unifiedColors.value) {
+    tempColors.value = { ...tempColors.value, ...derived };
   } else {
-    themeStore.updateWallpaperStyle({
-      type: preset.type as WallpaperStyle["type"],
-      value: preset.value,
-    });
+    tempColors.value = { ...tempColors.value, primary: hex, primaryLight: derived.primaryLight };
   }
+  syncUserBubbleWithPrimary(hex, derived.primaryLight);
 }
 
-function copyGlobalWallpaperToChat() {
-  if (!hasGlobalCustomImage.value) return;
-  tempWallpaperStyle.value = {
-    ...tempWallpaperStyle.value,
-    type: "image",
-    value: themeStore.wallpaperStyle.value,
-    blur: themeStore.wallpaperStyle.blur,
-    opacity: themeStore.wallpaperStyle.opacity,
-    overlay: themeStore.wallpaperStyle.overlay,
-    fit: themeStore.wallpaperStyle.fit || "cover",
-  };
-  useCustomAppearance.value = true;
-}
-
-function followGlobalWallpaperImage() {
-  if (!hasGlobalCustomImage.value) return;
-  tempWallpaperStyle.value = {
-    ...tempWallpaperStyle.value,
-    type: "global-image",
-    value: "",
-    blur: tempWallpaperStyle.value.blur ?? themeStore.wallpaperStyle.blur,
-    opacity: tempWallpaperStyle.value.opacity ?? themeStore.wallpaperStyle.opacity,
-    overlay: tempWallpaperStyle.value.overlay ?? themeStore.wallpaperStyle.overlay,
-    fit: tempWallpaperStyle.value.fit || themeStore.wallpaperStyle.fit || "cover",
-  };
-  useCustomAppearance.value = true;
-}
-
-// 處理桌布模糊度變更
-function setWallpaperBlur(blur: number) {
-  tempWallpaperStyle.value.blur = blur;
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  } else {
-    themeStore.updateWallpaperStyle({ blur });
+function onCustomHexCommit(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const hex = normalizeHex(input.value);
+  if (!hex) {
+    // 無效色碼：還原成目前主色
+    input.value = tempColors.value.primary;
+    customHexInput.value = tempColors.value.primary;
+    return;
   }
+  if (hex !== normalizeHex(tempColors.value.primary)) applyCustomPrimary(hex);
+  customHexInput.value = hex;
 }
 
-// 處理桌布透明度變更
-function setWallpaperOpacity(opacity: number) {
-  tempWallpaperStyle.value.opacity = opacity;
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  } else {
-    themeStore.updateWallpaperStyle({ opacity });
+function setColor(key: keyof ChatColors, value: string) {
+  tempColors.value[key] = value;
+}
+
+// ===== 背景 =====
+const globalWallpaperIsImage = computed(
+  () => themeStore.wallpaperStyle.type === "image" && !!themeStore.wallpaperStyle.value,
+);
+
+const usesImageWallpaper = computed(
+  () =>
+    (tempWallpaperStyle.value.type === "image" && !!tempWallpaperStyle.value.value) ||
+    (isFollowingGlobalWallpaper(tempWallpaperStyle.value) && globalWallpaperIsImage.value),
+);
+
+const hasCustomImage = computed(
+  () => tempWallpaperStyle.value.type === "image" && !isFollowingGlobalWallpaper(tempWallpaperStyle.value),
+);
+
+const solidWallpaperColor = computed(() =>
+  tempWallpaperStyle.value.type === "color" ? normalizeHex(tempWallpaperStyle.value.value) : null,
+);
+
+function isWallpaperPresetActive(preset: WallpaperPreset): boolean {
+  const w = tempWallpaperStyle.value;
+  if (preset.type === "global-image") return isFollowingGlobalWallpaper(w);
+  if (preset.type === "time-theme") return w.type === "time-theme";
+  return w.type === preset.type && w.value === preset.value;
+}
+
+function wallpaperPresetStyle(preset: WallpaperPreset) {
+  if (preset.type === "global-image") {
+    return { background: "var(--wallpaper-value, var(--color-background))", backgroundSize: "cover", backgroundPosition: "center" };
   }
+  if (preset.type === "time-theme") return {};
+  return { background: preset.value };
 }
 
-// 處理桌布顯示方式變更
-function setWallpaperFit(fit: "cover" | "contain" | "fill" | "repeat") {
-  tempWallpaperStyle.value.fit = fit;
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  } else {
-    themeStore.updateWallpaperStyle({ fit });
+function selectWallpaperPreset(preset: WallpaperPreset) {
+  if (preset.type === "global-image") {
+    tempWallpaperStyle.value = followGlobalWallpaper();
+    return;
   }
+  tempWallpaperStyle.value = { ...tempWallpaperStyle.value, type: preset.type, value: preset.value };
 }
 
-// 字體大小 px → 名稱映射（用於向後兼容）
-const fontSizeToName: Record<number, "small" | "medium" | "large"> = {
-  14: "small",
-  15: "medium",
-  17: "large",
-};
-
-// 字體大小名稱 → px 映射
-const fontNameToSize: Record<string, number> = {
-  small: 14,
-  medium: 15,
-  large: 17,
-};
-
-// 處理字體大小變更（滑块）
-function setFontSizeValue(size: number) {
-  tempFontSizeValue.value = size;
-  // 轉換為名稱（向後兼容）
-  const sizeName = fontSizeToName[size] || "medium";
-  tempFontStyle.value.size = sizeName;
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  }
+function setSolidWallpaper(hex: string) {
+  tempWallpaperStyle.value = { ...tempWallpaperStyle.value, type: "color", value: hex };
+  tempColors.value.background = hex;
 }
 
-// 字體樣式名稱 → 全局 fontFamily 映射
-const fontFamilyMap: Record<string, string> = {
-  system: "",
-  rounded: "Nunito",
-  serif: "Georgia",
-  mono: "monospace",
-};
-
-// 處理字體樣式變更
-function setFontFamily(family: "system" | "rounded" | "serif" | "mono") {
-  tempFontStyle.value.family = family;
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  }
-}
-
-// 處理圖片上傳
 const showCropper = ref(false);
 const cropperImageSrc = ref("");
 
@@ -835,11 +477,9 @@ function handleImageUpload(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
-
   const reader = new FileReader();
   reader.onload = (e) => {
-    const dataUrl = e.target?.result as string;
-    cropperImageSrc.value = dataUrl;
+    cropperImageSrc.value = e.target?.result as string;
     showCropper.value = true;
   };
   reader.readAsDataURL(file);
@@ -849,17 +489,7 @@ function handleImageUpload(event: Event) {
 
 function onCropComplete(dataUrl: string) {
   showCropper.value = false;
-  tempWallpaperStyle.value.type = "image";
-  tempWallpaperStyle.value.value = dataUrl;
-  tempWallpaperStyle.value.fit = "cover";
-  if (isChatMode.value) {
-    useCustomAppearance.value = true;
-  } else {
-    themeStore.updateWallpaperStyle({
-      type: "image",
-      value: dataUrl,
-    });
-  }
+  tempWallpaperStyle.value = { ...tempWallpaperStyle.value, type: "image", value: dataUrl, fit: "cover" };
 }
 
 function onCropClose() {
@@ -867,247 +497,94 @@ function onCropClose() {
   cropperImageSrc.value = "";
 }
 
-// 處理分頁標籤滾輪事件（將垂直滾動轉換為水平滾動）
-function handleTabsWheel(event: WheelEvent) {
-  const container = event.currentTarget as HTMLElement;
-  if (container) {
-    container.scrollLeft += event.deltaY;
-  }
+// ===== 裝飾品 =====
+// 解析商品 ID（支援變體格式 baseId_variantId）
+function resolveShopItem(itemId: string) {
+  const direct = getShopItemById(itemId);
+  if (direct) return { item: direct, variantName: null as string | null };
+
+  const lastUnderscore = itemId.lastIndexOf("_");
+  if (lastUnderscore === -1) return null;
+  const baseItem = getShopItemById(itemId.substring(0, lastUnderscore));
+  const variant = baseItem?.variants?.find((v) => v.variantId === itemId.substring(lastUnderscore + 1));
+  if (!baseItem || !variant) return null;
+  return { item: baseItem, variantName: variant.name };
 }
 
-// 重置為預設
+function toOwnedItems(ids: string[] | undefined) {
+  return (ids || []).flatMap((id) => {
+    const resolved = resolveShopItem(id);
+    if (!resolved) return [];
+    const { item, variantName } = resolved;
+    return [{ id, name: variantName ? `${item.name} - ${variantName}` : item.name, rarity: item.rarity }];
+  });
+}
+
+const decorations = computed(() => gameEconomyStore.getDecorations(GLOBAL_WALLET_ID));
+const ownedFrames = computed(() => toOwnedItems(decorations.value?.ownedFrames));
+const ownedBubbles = computed(() => toOwnedItems(decorations.value?.ownedBubbles));
+const equippedBubbleId = computed(() => decorations.value?.equippedBubbleId ?? null);
+
+const FRAME_TARGETS = [
+  { key: "userFrameId", title: "我的頭像框", hint: "只套用在這個聊天" },
+  { key: "charFrameId", title: "角色頭像框", hint: "只套用在這個聊天" },
+] as const;
+
+// 聊天氣泡是全域裝備，會立即生效到所有聊天
+async function equipBubble(bubbleId: string | null) {
+  gameEconomyStore.equipBubble(GLOBAL_WALLET_ID, bubbleId);
+  await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
+}
+
+// ===== 重置 / 儲存 =====
 function resetToDefault() {
-  if (isChatMode.value) {
-    if (!confirm("確定要將此聊天的外觀重置為預設值嗎？")) return;
-    // 聊天專屬模式：重置為全局預設值，但保持聊天專屬外觀開啟
-    useCustomAppearance.value = true;
-    tempAvatarStyle.value = { ...themeStore.avatarStyle };
-    tempBubbleStyle.value = { ...themeStore.bubbleStyle };
-    tempWallpaperStyle.value = { ...themeStore.wallpaperStyle };
-    tempFontStyle.value = {
-      size: "medium",
-      family: "system",
-      lineHeight: 1.6,
-      letterSpacing: 0,
-      markdownColors: {
-        text: "#4a4a6a",
-        italic: "#8b7355",
-        bold: "#4a4a6a",
-        underline: "#8b2942",
-        strikethrough: "#999999",
-        highlight: "#fff3cd",
-        quote: "#8b5a2b",
-        code: "#e83e8c",
-        heading: "#4a4a6a",
-      },
-    };
-  } else {
-    if (confirm("確定要重置所有設定嗎？")) {
-      themeStore.resetToDefault();
-      tempAvatarStyle.value = { ...themeStore.avatarStyle };
-      tempBubbleStyle.value = { ...themeStore.bubbleStyle };
-      tempWallpaperStyle.value = { ...themeStore.wallpaperStyle };
-    }
-  }
+  if (!confirm("確定要把這個聊天的外觀恢復成全域預設嗎？（頭像框不受影響）")) return;
+  tempColors.value = globalColors();
+  tempAvatarStyle.value = { ...themeStore.avatarStyle };
+  tempBubbleStyle.value = { ...themeStore.bubbleStyle };
+  tempWallpaperStyle.value = followGlobalWallpaper();
+  tempFontStyle.value = defaultFont();
+  tempFontSizeValue.value = CHAT_FONT_SIZE_DEFAULT;
+  unifiedColors.value = true;
+  customHexInput.value = tempColors.value.primary;
+  colorFocus.value = null;
 }
 
-// 關閉彈窗
-function handleClose() {
-  previewFocus.value = null;
-  if (isChatMode.value) {
-    // 聊天專屬模式：保存外觀設定
-    const appearance: ChatAppearance = {
-      useCustom: useCustomAppearance.value,
-      colors: useCustomAppearance.value
-        ? {
-            primary: tempColors.value.primary,
-            primaryLight: tempColors.value.primaryLight,
-            secondary: tempColors.value.secondary,
-            background: tempColors.value.background,
-            surface: tempColors.value.surface,
-            surfaceHover: tempColors.value.surfaceHover,
-            text: tempColors.value.text,
-            textSecondary: tempColors.value.textSecondary,
-            textMuted: tempColors.value.textMuted,
-            border: tempColors.value.border,
-            shadow: tempColors.value.shadow,
-            success: tempColors.value.success,
-            error: tempColors.value.error,
-            warning: tempColors.value.warning,
-            unified: unifiedColors.value,
-          }
-        : undefined,
-      avatar: useCustomAppearance.value
-        ? { ...tempAvatarStyle.value }
-        : undefined,
-      // 頭像框設定（即使 useCustom 為 false 也保存，因為頭像框是獨立設定）
-      avatarFrames: {
-        userFrameId: tempAvatarFrames.value.userFrameId,
-        charFrameId: tempAvatarFrames.value.charFrameId,
-      },
-      bubble: useCustomAppearance.value
-        ? { ...tempBubbleStyle.value }
-        : undefined,
-      wallpaper: useCustomAppearance.value
-        ? { ...tempWallpaperStyle.value }
-        : undefined,
-      font: useCustomAppearance.value
-        ? {
-            ...tempFontStyle.value,
-            // 保存實際的 px 值而不是名稱
-            size: `${tempFontSizeValue.value}px` as any,
-          }
-        : undefined,
-    };
-    emit("saveChatAppearance", appearance);
-  }
+// 關閉專屬外觀時仍保留設定內容，之後重新開啟不必重設
+function buildAppearance(): ChatAppearance {
+  return {
+    useCustom: useCustomAppearance.value,
+    colors: { ...tempColors.value, unified: unifiedColors.value },
+    avatar: { ...tempAvatarStyle.value },
+    avatarFrames: { ...tempAvatarFrames.value },
+    bubble: { ...tempBubbleStyle.value },
+    wallpaper: { ...tempWallpaperStyle.value },
+    font: {
+      ...tempFontStyle.value,
+      markdownColors: { ...tempFontStyle.value.markdownColors },
+      size: `${tempFontSizeValue.value}px`,
+    },
+  };
+}
+
+function saveAndClose() {
+  emit("saveChatAppearance", buildAppearance());
   emit("close");
 }
 
-// 監聽 visible 變化，初始化聊天專屬外觀
-watch(
-  () => props.visible,
-  async (newVal) => {
-    if (newVal && isChatMode.value) {
-      // 載入聊天專屬外觀：僅在之前顯式關閉（false）時才為 false，其餘情況一律預設 ON
-      useCustomAppearance.value = props.chatAppearance?.useCustom !== false;
-
-      // 先設定預設值
-      const defaultColors = {
-        primary: themeStore.colors.primary,
-        primaryLight: themeStore.colors.primaryLight,
-        secondary: themeStore.colors.secondary,
-        background: themeStore.colors.background,
-        surface: themeStore.colors.surface,
-        surfaceHover: themeStore.colors.surfaceHover,
-        text: themeStore.colors.text,
-        textSecondary: themeStore.colors.textSecondary,
-        textMuted: themeStore.colors.textMuted,
-        border: themeStore.colors.border,
-        shadow: themeStore.colors.shadow,
-        success: themeStore.colors.success,
-        error: themeStore.colors.error,
-        warning: themeStore.colors.warning,
-      };
-      customHexInput.value = defaultColors.primary;
-      unifiedColors.value = props.chatAppearance?.colors?.unified !== false;
-      const defaultAvatar = { ...themeStore.avatarStyle };
-      const defaultBubble = { ...themeStore.bubbleStyle };
-      const defaultWallpaper = { ...themeStore.wallpaperStyle };
-      const defaultFont = {
-        size: "medium" as const,
-        family: "system" as const,
-        lineHeight: 1.6,
-        letterSpacing: 0,
-        markdownColors: {
-          text: "#4a4a6a",
-          italic: "#8b7355",
-          bold: "#4a4a6a",
-          underline: "#8b2942",
-          strikethrough: "#999999",
-          highlight: "#fff3cd",
-          quote: "#8b5a2b",
-          code: "#e83e8c",
-          heading: "#4a4a6a",
-        },
-      };
-
-      if (props.chatAppearance?.useCustom) {
-        // 載入聊天專屬設定，沒有的用全局預設
-        tempColors.value = props.chatAppearance.colors
-          ? {
-              ...defaultColors,
-              primary: props.chatAppearance.colors.primary,
-              primaryLight: props.chatAppearance.colors.primaryLight,
-              ...(props.chatAppearance.colors.background ? { background: props.chatAppearance.colors.background } : {}),
-              ...(props.chatAppearance.colors.surface ? { surface: props.chatAppearance.colors.surface } : {}),
-              ...(props.chatAppearance.colors.surfaceHover ? { surfaceHover: props.chatAppearance.colors.surfaceHover } : {}),
-              ...(props.chatAppearance.colors.text ? { text: props.chatAppearance.colors.text } : {}),
-              ...(props.chatAppearance.colors.textSecondary ? { textSecondary: props.chatAppearance.colors.textSecondary } : {}),
-              ...(props.chatAppearance.colors.textMuted ? { textMuted: props.chatAppearance.colors.textMuted } : {}),
-              ...(props.chatAppearance.colors.secondary ? { secondary: props.chatAppearance.colors.secondary } : {}),
-              ...(props.chatAppearance.colors.border ? { border: props.chatAppearance.colors.border } : {}),
-              ...(props.chatAppearance.colors.shadow ? { shadow: props.chatAppearance.colors.shadow } : {}),
-              ...(props.chatAppearance.colors.success ? { success: props.chatAppearance.colors.success } : {}),
-              ...(props.chatAppearance.colors.error ? { error: props.chatAppearance.colors.error } : {}),
-              ...(props.chatAppearance.colors.warning ? { warning: props.chatAppearance.colors.warning } : {}),
-            }
-          : defaultColors;
-        tempAvatarStyle.value = props.chatAppearance.avatar
-          ? { ...props.chatAppearance.avatar }
-          : defaultAvatar;
-        tempBubbleStyle.value = props.chatAppearance.bubble
-          ? { ...defaultBubble, ...props.chatAppearance.bubble }
-          : defaultBubble;
-        tempWallpaperStyle.value = props.chatAppearance.wallpaper
-          ? { ...props.chatAppearance.wallpaper }
-          : defaultWallpaper;
-        tempFontStyle.value = props.chatAppearance.font
-          ? {
-              ...defaultFont,
-              ...props.chatAppearance.font,
-              markdownColors: {
-                ...defaultFont.markdownColors,
-                ...props.chatAppearance.font.markdownColors,
-              },
-            }
-          : defaultFont;
-
-        // 初始化字體大小滑块值（支持新舊格式）
-        if (props.chatAppearance.font?.size) {
-          const sizeValue = props.chatAppearance.font.size;
-          if (typeof sizeValue === "string" && sizeValue.endsWith("px")) {
-            // 新格式：直接解析 px 值
-            tempFontSizeValue.value = parseInt(sizeValue);
-          } else {
-            // 舊格式：從名稱轉換
-            tempFontSizeValue.value =
-              fontNameToSize[sizeValue as string] || fontSizeDefault;
-          }
-        } else {
-          tempFontSizeValue.value = fontSizeDefault;
-        }
-      } else {
-        // 使用全局設定作為預設
-        tempColors.value = defaultColors;
-        tempAvatarStyle.value = defaultAvatar;
-        tempBubbleStyle.value = defaultBubble;
-        tempWallpaperStyle.value = defaultWallpaper;
-        tempFontStyle.value = defaultFont;
-        tempFontSizeValue.value = fontSizeDefault;
-      }
-
-      // 載入頭像框設定（獨立於 useCustom）
-      tempAvatarFrames.value = {
-        userFrameId: props.chatAppearance?.avatarFrames?.userFrameId ?? null,
-        charFrameId: props.chatAppearance?.avatarFrames?.charFrameId ?? null,
-      };
-
-      // 載入遊戲經濟狀態（用於裝飾品）
-      await gameEconomyStore.loadState(GLOBAL_WALLET_ID);
-    } else if (newVal && !isChatMode.value) {
-      // 全局模式不使用此面板的字體設置
-      tempFontStyle.value.size = "medium";
-      tempFontStyle.value.family = "system";
-      tempFontStyle.value.lineHeight = 1.6;
-      tempFontStyle.value.letterSpacing = 0;
-      tempFontSizeValue.value = fontSizeDefault;
-    }
-  },
-);
+function cancel() {
+  emit("close");
+}
 </script>
 
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div v-if="visible" class="soft-modal-overlay" @click.self="handleClose">
+      <div v-if="visible" class="soft-modal-overlay" @click.self="saveAndClose">
         <div class="soft-modal theme-settings-modal">
-          <!-- 標題 -->
           <div class="modal-header">
-            <h2 class="modal-title">
-              {{ isChatMode ? "聊天外觀設定" : "外觀設定" }}
-            </h2>
-            <button class="modal-close" @click="handleClose">
+            <h2 class="modal-title">聊天外觀設定</h2>
+            <button class="modal-close" title="儲存並關閉" aria-label="儲存並關閉" @click="saveAndClose">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path
                   d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
@@ -1116,94 +593,147 @@ watch(
             </button>
           </div>
 
-          <!-- 聊天專屬模式開關 -->
-          <label
-            v-if="isChatMode"
-            class="chat-mode-toggle"
-            :class="{ active: useCustomAppearance }"
-          >
-            <div class="toggle-info">
+          <label class="toggle-card chat-mode-toggle" :class="{ active: useCustomAppearance }">
+            <span class="toggle-info">
               <span class="toggle-title">使用此聊天專屬外觀</span>
-              <span class="toggle-sub">關閉則套用全局外觀設定</span>
-            </div>
+              <span class="toggle-sub">關閉時套用全域外觀，這裡的設定會保留</span>
+            </span>
             <span class="toggle-switch">
-              <input type="checkbox" v-model="useCustomAppearance" />
+              <input v-model="useCustomAppearance" type="checkbox" />
               <span class="switch-track"><span class="switch-thumb"></span></span>
             </span>
           </label>
 
-          <!-- 分頁標籤 -->
           <div class="tabs-container" @wheel.prevent="handleTabsWheel">
-            <div class="soft-tabs">
+            <div class="soft-tabs" role="tablist">
               <button
+                v-for="tab in visibleTabs"
+                :key="tab.id"
                 class="tab-item"
-                :class="{ active: activeTab === 'colors' }"
-                @click="activeTab = 'colors'; previewFocus = null"
+                :class="{ active: activeTab === tab.id }"
+                role="tab"
+                :aria-selected="activeTab === tab.id"
+                @click="selectTab(tab.id)"
               >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8z"
-                  />
-                </svg>
-                顏色
-              </button>
-              <button
-                class="tab-item"
-                :class="{ active: activeTab === 'font' }"
-                @click="activeTab = 'font'"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M9.93 13.5h4.14L12 7.98 9.93 13.5zM20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-4.05 16.5l-1.14-3H9.17l-1.12 3H5.96l5.11-13h1.86l5.11 13h-2.09z"
-                  />
-                </svg>
-                字體
-              </button>
-              <button
-                v-if="isChatMode && props.chatId"
-                class="tab-item"
-                :class="{ active: activeTab === 'decorations' }"
-                @click="activeTab = 'decorations'"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
-                  />
-                </svg>
-                裝飾
+                <svg viewBox="0 0 24 24" fill="currentColor"><path :d="tab.icon" /></svg>
+                {{ tab.label }}
               </button>
             </div>
           </div>
 
-          <!-- 內容區 -->
-          <div class="modal-content">
-            <!-- 顏色設定 -->
+          <div ref="contentRef" class="modal-content">
+            <p v-if="settingsStore.nightMode && activeTab !== 'decorations'" class="night-hint">
+              🌙 夜間模式中，聊天頁的顏色與背景會改用夜間配色；字體與版面設定照常套用。
+            </p>
+
+            <ChatAppearancePreview
+              v-if="showPreview"
+              class="preview-block"
+              :state="previewState"
+              :focus="activeTab === 'colors' ? colorFocus : null"
+              @select="onPreviewSelect"
+            />
+
+            <!-- ===== 配色 ===== -->
             <div v-if="activeTab === 'colors'" class="settings-section">
+              <div v-if="colorFocus" class="focus-settings-panel">
+                <div class="focus-settings-header">
+                  <span class="focus-settings-title">{{ COLOR_FOCUS_TITLES[colorFocus] }}</span>
+                  <button class="focus-close-btn" aria-label="收合" @click="colorFocus = null">✕</button>
+                </div>
+
+                <template v-if="colorFocus === 'ai'">
+                  <div class="individual-colors">
+                    <GradientColorField
+                      v-for="field in AI_BUBBLE_FIELDS"
+                      :key="field.color"
+                      :label="field.label"
+                      :color="tempBubbleStyle[field.color]"
+                      :gradient="tempBubbleStyle[field.gradient]"
+                      :fallback-color="field.fallback"
+                      @update:color="tempBubbleStyle[field.color] = $event"
+                      @update:gradient="tempBubbleStyle[field.gradient] = $event"
+                    />
+                    <div class="color-item">
+                      <input
+                        type="color"
+                        aria-label="想法氣泡光暈"
+                        :value="toPickerHex(tempBubbleStyle.thoughtGlowColor, '#ADD8E6')"
+                        @input="tempBubbleStyle.thoughtGlowColor = ($event.target as HTMLInputElement).value"
+                      />
+                      <span>想法氣泡光暈</span>
+                    </div>
+                  </div>
+                  <div class="slider-control">
+                    <span class="slider-label">光暈強度</span>
+                    <input
+                      v-model.number="tempBubbleStyle.thoughtGlowOpacity"
+                      type="range"
+                      min="0.1"
+                      max="1"
+                      step="0.1"
+                      aria-label="想法氣泡光暈強度"
+                    />
+                    <span class="slider-value">{{ Math.round((tempBubbleStyle.thoughtGlowOpacity ?? 0.6) * 100) }}%</span>
+                  </div>
+                </template>
+
+                <div v-else-if="colorFocus === 'user'" class="individual-colors">
+                  <GradientColorField
+                    v-for="field in USER_BUBBLE_FIELDS"
+                    :key="field.color"
+                    :label="field.label"
+                    :color="tempBubbleStyle[field.color]"
+                    :gradient="tempBubbleStyle[field.gradient]"
+                    :fallback-color="field.fallback"
+                    @update:color="tempBubbleStyle[field.color] = $event"
+                    @update:gradient="tempBubbleStyle[field.gradient] = $event"
+                  />
+                </div>
+
+                <div v-else class="individual-colors">
+                  <div v-for="field in PLAIN_COLOR_FIELDS[colorFocus]" :key="field.key" class="color-item">
+                    <input
+                      type="color"
+                      :aria-label="field.label"
+                      :value="toPickerHex(tempColors[field.key], '#ffffff')"
+                      @input="setColor(field.key, ($event.target as HTMLInputElement).value)"
+                    />
+                    <span>{{ field.label }}</span>
+                  </div>
+                </div>
+
+                <button
+                  v-if="colorFocus === 'ai' || colorFocus === 'user'"
+                  class="link-btn"
+                  @click="selectTab('layout')"
+                >
+                  圓角、寬度與頭像 → 版面
+                </button>
+              </div>
+
               <h3 class="section-title">主題配色</h3>
               <div class="preset-grid">
                 <button
-                  v-for="preset in presetList"
+                  v-for="preset in PRESETS"
                   :key="preset.id"
                   class="preset-item"
-                  :class="{ active: !isCustomColor && currentPreset === preset.id }"
+                  :class="{ active: activePresetId === preset.id }"
                   @click="selectPreset(preset.id)"
                 >
-                  <div
-                    class="preset-color"
-                    :style="{ background: preset.color }"
-                  ></div>
+                  <span class="preset-color" :style="{ background: preset.color }"></span>
                   <span class="preset-name">{{ preset.name }}</span>
                 </button>
               </div>
 
-              <!-- 自訂主題色 -->
               <h3 class="section-title">自訂主題色</h3>
               <div class="custom-color-row">
                 <input
                   type="color"
                   class="custom-color-picker"
-                  :value="displayColors.primary"
-                  @input="setCustomPrimaryFromPicker(($event.target as HTMLInputElement).value)"
+                  aria-label="自訂主題色"
+                  :value="toPickerHex(tempColors.primary, '#FF85A2')"
+                  @input="applyCustomPrimary(($event.target as HTMLInputElement).value)"
                 />
                 <input
                   type="text"
@@ -1212,1169 +742,342 @@ watch(
                   placeholder="#FF85A2"
                   spellcheck="false"
                   maxlength="7"
-                  @change="setCustomPrimaryFromHex(($event.target as HTMLInputElement).value)"
-                  @blur="setCustomPrimaryFromHex(($event.target as HTMLInputElement).value)"
+                  aria-label="主題色色碼"
+                  @change="onCustomHexCommit"
                 />
-                <span class="custom-color-hint">色碼或選色</span>
+                <span class="custom-color-hint">輸入色碼或選色</span>
               </div>
 
-              <!-- 統一配色開關 -->
-              <div class="unified-toggle" @click="unifiedColors = !unifiedColors">
-                <div class="toggle-info">
+              <label class="toggle-card" :class="{ active: unifiedColors }">
+                <span class="toggle-info">
                   <span class="toggle-title">統一配色</span>
-                  <span class="toggle-sub">{{ unifiedColors ? '改主色自動推導其他色' : '各顏色獨立調整' }}</span>
-                </div>
-                <div class="toggle-switch">
-                  <input type="checkbox" v-model="unifiedColors" />
-                  <div class="switch-track" :class="{ active: unifiedColors }">
-                    <div class="switch-thumb" :class="{ active: unifiedColors }"></div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="color-preview">
-                <div class="preview-label">預覽效果 <span class="preview-hint">（點擊可快速調整）</span></div>
-                <div class="preview-card">
-                  <div
-                    class="preview-header preview-clickable"
-                    :class="{ 'preview-focused': previewFocus === 'header' }"
-                    :style="{ background: tempColors.surface || displayColors.surface }"
-                    tabindex="0"
-                    role="button"
-                    aria-label="調整頂欄設定"
-                    @click="togglePreviewFocus('header')"
-                    @keydown.enter="togglePreviewFocus('header')"
-                  >
-                    <button
-                      class="preview-header-btn"
-                      :style="{ color: tempColors.text || displayColors.text }"
-                      aria-hidden="true"
-                      tabindex="-1"
-                    >
-                      ‹
-                    </button>
-                    <div
-                      class="preview-header-avatar"
-                      :style="{
-                        borderRadius:
-                          tempAvatarStyle.shape === 'circle'
-                            ? '50%'
-                            : tempAvatarStyle.shape === 'rounded'
-                              ? '14px'
-                              : '8px',
-                        border: `${tempAvatarStyle.borderWidth}px solid ${tempAvatarStyle.borderColor || '#ffffff'}`,
-                      }"
-                    >
-                      <span>🐾</span>
-                      <i></i>
-                    </div>
-                    <div class="preview-header-title">
-                      <span :style="{ color: tempColors.text || displayColors.text }">AI 角色</span>
-                      <small :style="{ color: tempColors.textSecondary || displayColors.textSecondary }">✎</small>
-                    </div>
-                    <button
-                      class="preview-header-btn"
-                      :style="{ color: tempColors.text || displayColors.text }"
-                      aria-hidden="true"
-                      tabindex="-1"
-                    >
-                      ⌄
-                    </button>
-                    <span v-if="previewFocus === 'header'" class="focus-badge">頂欄設定</span>
-                  </div>
-                  <div
-                    class="preview-body preview-clickable"
-                    :class="{ 'preview-focused': previewFocus === 'wallpaper' }"
-                    :style="previewWallpaperStyle"
-                    tabindex="0"
-                    role="button"
-                    aria-label="調整背景設定"
-                    @click="togglePreviewFocus('wallpaper')"
-                    @keydown.enter="togglePreviewFocus('wallpaper')"
-                  >
-                    <span v-if="previewFocus === 'wallpaper'" class="focus-badge wallpaper-badge">背景設定</span>
-                    <!-- AI 訊息列：頭像（左） + 角色名 + 氣泡 + 時間 -->
-                    <div class="preview-message-row ai">
-                      <div
-                        class="preview-row-avatar"
-                        :class="['size-' + tempAvatarStyle.size]"
-                        :style="{
-                          borderRadius:
-                            tempAvatarStyle.shape === 'circle'
-                              ? '50%'
-                              : tempAvatarStyle.shape === 'rounded'
-                                ? '10px'
-                                : '6px',
-                          border: `${tempAvatarStyle.borderWidth}px solid ${tempAvatarStyle.borderColor || '#ffffff'}`,
-                        }"
-                        aria-hidden="true"
-                      >
-                        <span>🐾</span>
-                      </div>
-                      <div class="preview-message-content">
-                        <div
-                          class="preview-sender-name"
-                          :style="{ color: tempColors.textSecondary || displayColors.textSecondary }"
-                        >
-                          AI 角色
-                        </div>
-                        <div
-                          class="preview-bubble ai"
-                          :class="{ 'preview-focused': previewFocus === 'ai' }"
-                          :style="{
-                            borderRadius: `${tempBubbleStyle.borderRadius}px`,
-                            borderBottomLeftRadius: '6px',
-                            maxWidth: `${tempBubbleStyle.maxWidth}%`,
-                            background: tempBubbleStyle.aiBgGradient || tempBubbleStyle.aiBgColor,
-                            color: tempBubbleStyle.aiContentColor,
-                          }"
-                          tabindex="0"
-                          role="button"
-                          aria-label="調整 AI 氣泡設定"
-                          @click.stop="togglePreviewFocus('ai')"
-                          @keydown.enter="togglePreviewFocus('ai')"
-                        >
-                          這是 AI 的訊息氣泡
-                          <span v-if="previewFocus === 'ai'" class="focus-badge">AI 氣泡設定</span>
-                        </div>
-                        <div class="preview-time" :style="{ color: tempColors.textMuted || displayColors.textMuted }">12:00</div>
-                      </div>
-                    </div>
-
-                    <!-- 用戶訊息列：氣泡 + 時間 + 頭像（右），用戶側不顯示角色名（與真實聊天一致） -->
-                    <div class="preview-message-row user">
-                      <div class="preview-message-content">
-                        <div
-                          class="preview-bubble user"
-                          :class="{ 'preview-focused': previewFocus === 'user' }"
-                          :style="{
-                            borderRadius: `${tempBubbleStyle.borderRadius}px`,
-                            borderBottomRightRadius: '6px',
-                            maxWidth: `${tempBubbleStyle.maxWidth}%`,
-                            background: tempBubbleStyle.userBgGradient || tempBubbleStyle.userBgColor,
-                            color: tempBubbleStyle.userTextColor,
-                          }"
-                          tabindex="0"
-                          role="button"
-                          aria-label="調整我的氣泡設定"
-                          @click.stop="togglePreviewFocus('user')"
-                          @keydown.enter="togglePreviewFocus('user')"
-                        >
-                          這是用戶的訊息氣泡
-                          <span v-if="previewFocus === 'user'" class="focus-badge">我的氣泡設定</span>
-                        </div>
-                        <div class="preview-time" :style="{ color: tempColors.textMuted || displayColors.textMuted }">12:01</div>
-                      </div>
-                      <div
-                        class="preview-row-avatar user-side"
-                        :class="['size-' + tempAvatarStyle.size]"
-                        :style="{
-                          borderRadius:
-                            tempAvatarStyle.shape === 'circle'
-                              ? '50%'
-                              : tempAvatarStyle.shape === 'rounded'
-                                ? '10px'
-                                : '6px',
-                          border: `${tempAvatarStyle.borderWidth}px solid ${tempAvatarStyle.borderColor || '#ffffff'}`,
-                        }"
-                        aria-hidden="true"
-                      >
-                        <span>🙂</span>
-                      </div>
-                    </div>
-                    <div class="preview-ui-samples">
-                      <div
-                        class="preview-ui-card preview-clickable"
-                        :class="{ 'preview-focused': previewFocus === 'surface' }"
-                        :style="{
-                          background: displayColors.surface,
-                          borderColor: displayColors.border,
-                          color: displayColors.text,
-                        }"
-                        tabindex="0"
-                        role="button"
-                        aria-label="調整卡片背景與主要文字"
-                        @click.stop="togglePreviewFocus('surface')"
-                        @keydown.enter="togglePreviewFocus('surface')"
-                      >
-                        <span class="preview-ui-title">卡片背景 / 主要文字</span>
-                        <span :style="{ color: displayColors.textMuted }">提示文字範例</span>
-                        <span v-if="previewFocus === 'surface'" class="focus-badge">卡片設定</span>
-                      </div>
-                      <div
-                        class="preview-ui-card preview-clickable"
-                        :class="{ 'preview-focused': previewFocus === 'surfaceHover' }"
-                        :style="{
-                          background: displayColors.surfaceHover,
-                          borderColor: displayColors.secondary,
-                          color: displayColors.textSecondary,
-                        }"
-                        tabindex="0"
-                        role="button"
-                        aria-label="調整滑過背景與輔助色"
-                        @click.stop="togglePreviewFocus('surfaceHover')"
-                        @keydown.enter="togglePreviewFocus('surfaceHover')"
-                      >
-                        <span class="preview-ui-title">滑過背景 / 輔助色</span>
-                        <span>次要文字範例</span>
-                      </div>
-                      <div
-                        class="preview-status-row preview-clickable"
-                        :class="{ 'preview-focused': previewFocus === 'status' }"
-                        tabindex="0"
-                        role="button"
-                        aria-label="調整狀態提示顏色"
-                        @click.stop="togglePreviewFocus('status')"
-                        @keydown.enter="togglePreviewFocus('status')"
-                      >
-                        <span :style="{ background: displayColors.success }">成功</span>
-                        <span :style="{ background: displayColors.error }">錯誤</span>
-                        <span :style="{ background: displayColors.warning }">警告</span>
-                        <span v-if="previewFocus === 'status'" class="focus-badge">狀態色</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 聚焦設定面板：根據預覽焦點動態顯示相關設定 -->
-              <div v-if="previewFocus" class="focus-settings-panel">
-                <div class="focus-settings-header">
-                  <span class="focus-settings-title">
-                    {{
-                      previewFocus === 'ai'
-                        ? 'AI 氣泡相關設定'
-                        : previewFocus === 'user'
-                          ? '我的氣泡相關設定'
-                          : previewFocus === 'header'
-                            ? '頂欄相關設定'
-                            : previewFocus === 'surface'
-                              ? '卡片與主要文字設定'
-                              : previewFocus === 'surfaceHover'
-                                ? '滑過背景與輔助色設定'
-                                : previewFocus === 'status'
-                                  ? '狀態提示色設定'
-                                  : '背景相關設定'
-                    }}
-                  </span>
-                  <button class="focus-close-btn" @click="previewFocus = null" aria-label="關閉聚焦設定">✕</button>
-                </div>
-
-                <!-- AI 氣泡聚焦 -->
-                <template v-if="previewFocus === 'ai'">
-                  <div class="focus-section">
-                    <h4 class="focus-subtitle">顏色</h4>
-                    <div class="individual-colors compact">
-                      <!-- 訊息背景：附帶可展開的漸層設定 -->
-                      <!-- AI 訊息背景 -->
-                      <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.aiBg }" @click="toggleGradientPanel('aiBg')">
-                        <div class="color-item-head">
-                          <span class="bg-swatch" :class="{ 'has-gradient': tempBubbleStyle.aiBgGradient }" :style="tempBubbleStyle.aiBgGradient ? { backgroundImage: tempBubbleStyle.aiBgGradient } : {}">
-                            <input type="color" :value="tempBubbleStyle.aiBgColor" @click.stop @input="setBubbleColor('aiBgColor', ($event.target as HTMLInputElement).value)" />
-                          </span>
-                          <span>AI 訊息背景</span>
-                          <span class="gradient-chevron">{{ gradientPanelOpen.aiBg ? '▾' : '▸' }}</span>
-                        </div>
-                        <div v-if="gradientPanelOpen.aiBg" class="gradient-detail" @click.stop>
-                          <label class="gradient-switch">
-                            <input type="checkbox" :checked="!!tempBubbleStyle.aiBgGradient" @change="toggleBubbleGradient('aiBg', ($event.target as HTMLInputElement).checked)" />
-                            <span>啟用漸層</span>
-                          </label>
-                          <template v-if="tempBubbleStyle.aiBgGradient">
-                            <div class="gradient-colors">
-                              <div class="color-item mini">
-                                <input type="color" :value="extractGradientColor(tempBubbleStyle.aiBgGradient, 0)" @input="updateGradientColor('aiBg', 0, ($event.target as HTMLInputElement).value)" />
-                                <span>起始</span>
-                              </div>
-                              <div class="color-item mini">
-                                <input type="color" :value="extractGradientColor(tempBubbleStyle.aiBgGradient, 1)" @input="updateGradientColor('aiBg', 1, ($event.target as HTMLInputElement).value)" />
-                                <span>結束</span>
-                              </div>
-                            </div>
-                            <div class="slider-control compact">
-                              <input type="range" min="0" max="360" step="15" :value="extractGradientAngle(tempBubbleStyle.aiBgGradient)" @input="updateGradientAngle('aiBg', Number(($event.target as HTMLInputElement).value))" />
-                              <span class="slider-value">角度 {{ extractGradientAngle(tempBubbleStyle.aiBgGradient) }}°</span>
-                            </div>
-                          </template>
-                        </div>
-                      </div>
-                      <!-- AI 文字/時間 -->
-                      <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.aiText }" @click="toggleGradientPanel('aiText')">
-                        <div class="color-item-head">
-                          <span class="bg-swatch" :class="{ 'has-gradient': tempBubbleStyle.aiTextGradient }" :style="tempBubbleStyle.aiTextGradient ? { backgroundImage: tempBubbleStyle.aiTextGradient } : {}">
-                            <input type="color" :value="tempBubbleStyle.aiTextColor" @click.stop @input="setBubbleColor('aiTextColor', ($event.target as HTMLInputElement).value)" />
-                          </span>
-                          <span>AI 文字/時間</span>
-                          <span class="gradient-chevron">{{ gradientPanelOpen.aiText ? '▾' : '▸' }}</span>
-                        </div>
-                        <div v-if="gradientPanelOpen.aiText" class="gradient-detail" @click.stop>
-                          <label class="gradient-switch">
-                            <input type="checkbox" :checked="!!tempBubbleStyle.aiTextGradient" @change="toggleBubbleGradient('aiText', ($event.target as HTMLInputElement).checked)" />
-                            <span>啟用漸層</span>
-                          </label>
-                          <template v-if="tempBubbleStyle.aiTextGradient">
-                            <div class="gradient-colors">
-                              <div class="color-item mini">
-                                <input type="color" :value="extractGradientColor(tempBubbleStyle.aiTextGradient, 0)" @input="updateGradientColor('aiText', 0, ($event.target as HTMLInputElement).value)" />
-                                <span>起始</span>
-                              </div>
-                              <div class="color-item mini">
-                                <input type="color" :value="extractGradientColor(tempBubbleStyle.aiTextGradient, 1)" @input="updateGradientColor('aiText', 1, ($event.target as HTMLInputElement).value)" />
-                                <span>結束</span>
-                              </div>
-                            </div>
-                            <div class="slider-control compact">
-                              <input type="range" min="0" max="360" step="15" :value="extractGradientAngle(tempBubbleStyle.aiTextGradient)" @input="updateGradientAngle('aiText', Number(($event.target as HTMLInputElement).value))" />
-                              <span class="slider-value">角度 {{ extractGradientAngle(tempBubbleStyle.aiTextGradient) }}°</span>
-                            </div>
-                          </template>
-                        </div>
-                      </div>
-                      <!-- AI 氣泡內主要顏色 -->
-                      <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.aiContent }" @click="toggleGradientPanel('aiContent')">
-                        <div class="color-item-head">
-                          <span class="bg-swatch" :class="{ 'has-gradient': tempBubbleStyle.aiContentGradient }" :style="tempBubbleStyle.aiContentGradient ? { backgroundImage: tempBubbleStyle.aiContentGradient } : {}">
-                            <input type="color" :value="tempBubbleStyle.aiContentColor" @click.stop @input="setBubbleColor('aiContentColor', ($event.target as HTMLInputElement).value)" />
-                          </span>
-                          <span>AI 氣泡內主要顏色</span>
-                          <span class="gradient-chevron">{{ gradientPanelOpen.aiContent ? '▾' : '▸' }}</span>
-                        </div>
-                        <div v-if="gradientPanelOpen.aiContent" class="gradient-detail" @click.stop>
-                          <label class="gradient-switch">
-                            <input type="checkbox" :checked="!!tempBubbleStyle.aiContentGradient" @change="toggleBubbleGradient('aiContent', ($event.target as HTMLInputElement).checked)" />
-                            <span>啟用漸層</span>
-                          </label>
-                          <template v-if="tempBubbleStyle.aiContentGradient">
-                            <div class="gradient-colors">
-                              <div class="color-item mini">
-                                <input type="color" :value="extractGradientColor(tempBubbleStyle.aiContentGradient, 0)" @input="updateGradientColor('aiContent', 0, ($event.target as HTMLInputElement).value)" />
-                                <span>起始</span>
-                              </div>
-                              <div class="color-item mini">
-                                <input type="color" :value="extractGradientColor(tempBubbleStyle.aiContentGradient, 1)" @input="updateGradientColor('aiContent', 1, ($event.target as HTMLInputElement).value)" />
-                                <span>結束</span>
-                              </div>
-                            </div>
-                            <div class="slider-control compact">
-                              <input type="range" min="0" max="360" step="15" :value="extractGradientAngle(tempBubbleStyle.aiContentGradient)" @input="updateGradientAngle('aiContent', Number(($event.target as HTMLInputElement).value))" />
-                              <span class="slider-value">角度 {{ extractGradientAngle(tempBubbleStyle.aiContentGradient) }}°</span>
-                            </div>
-                          </template>
-                        </div>
-                      </div>
-                      <!-- 想法氣泡背景 -->
-                      <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.thoughtBg }" @click="toggleGradientPanel('thoughtBg')">
-                        <div class="color-item-head">
-                          <span class="bg-swatch" :class="{ 'has-gradient': tempBubbleStyle.thoughtBgGradient }" :style="tempBubbleStyle.thoughtBgGradient ? { backgroundImage: tempBubbleStyle.thoughtBgGradient } : {}">
-                            <input type="color" :value="tempBubbleStyle.thoughtBgColor" @click.stop @input="setBubbleColor('thoughtBgColor', ($event.target as HTMLInputElement).value)" />
-                          </span>
-                          <span>想法氣泡背景</span>
-                          <span class="gradient-chevron">{{ gradientPanelOpen.thoughtBg ? '▾' : '▸' }}</span>
-                        </div>
-                        <div v-if="gradientPanelOpen.thoughtBg" class="gradient-detail" @click.stop>
-                          <label class="gradient-switch">
-                            <input type="checkbox" :checked="!!tempBubbleStyle.thoughtBgGradient" @change="toggleBubbleGradient('thoughtBg', ($event.target as HTMLInputElement).checked)" />
-                            <span>啟用漸層</span>
-                          </label>
-                          <template v-if="tempBubbleStyle.thoughtBgGradient">
-                            <div class="gradient-colors">
-                              <div class="color-item mini">
-                                <input type="color" :value="extractGradientColor(tempBubbleStyle.thoughtBgGradient, 0)" @input="updateGradientColor('thoughtBg', 0, ($event.target as HTMLInputElement).value)" />
-                                <span>起始</span>
-                              </div>
-                              <div class="color-item mini">
-                                <input type="color" :value="extractGradientColor(tempBubbleStyle.thoughtBgGradient, 1)" @input="updateGradientColor('thoughtBg', 1, ($event.target as HTMLInputElement).value)" />
-                                <span>結束</span>
-                              </div>
-                            </div>
-                            <div class="slider-control compact">
-                              <input type="range" min="0" max="360" step="15" :value="extractGradientAngle(tempBubbleStyle.thoughtBgGradient)" @input="updateGradientAngle('thoughtBg', Number(($event.target as HTMLInputElement).value))" />
-                              <span class="slider-value">角度 {{ extractGradientAngle(tempBubbleStyle.thoughtBgGradient) }}°</span>
-                            </div>
-                          </template>
-                        </div>
-                      </div>
-                      <!-- 想法氣泡文字 -->
-                      <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.thoughtText }" @click="toggleGradientPanel('thoughtText')">
-                        <div class="color-item-head">
-                          <span class="bg-swatch" :class="{ 'has-gradient': tempBubbleStyle.thoughtTextGradient }" :style="tempBubbleStyle.thoughtTextGradient ? { backgroundImage: tempBubbleStyle.thoughtTextGradient } : {}">
-                            <input type="color" :value="tempBubbleStyle.thoughtTextColor" @click.stop @input="setBubbleColor('thoughtTextColor', ($event.target as HTMLInputElement).value)" />
-                          </span>
-                          <span>想法氣泡文字</span>
-                          <span class="gradient-chevron">{{ gradientPanelOpen.thoughtText ? '▾' : '▸' }}</span>
-                        </div>
-                        <div v-if="gradientPanelOpen.thoughtText" class="gradient-detail" @click.stop>
-                          <label class="gradient-switch">
-                            <input type="checkbox" :checked="!!tempBubbleStyle.thoughtTextGradient" @change="toggleBubbleGradient('thoughtText', ($event.target as HTMLInputElement).checked)" />
-                            <span>啟用漸層</span>
-                          </label>
-                          <template v-if="tempBubbleStyle.thoughtTextGradient">
-                            <div class="gradient-colors">
-                              <div class="color-item mini">
-                                <input type="color" :value="extractGradientColor(tempBubbleStyle.thoughtTextGradient, 0)" @input="updateGradientColor('thoughtText', 0, ($event.target as HTMLInputElement).value)" />
-                                <span>起始</span>
-                              </div>
-                              <div class="color-item mini">
-                                <input type="color" :value="extractGradientColor(tempBubbleStyle.thoughtTextGradient, 1)" @input="updateGradientColor('thoughtText', 1, ($event.target as HTMLInputElement).value)" />
-                                <span>結束</span>
-                              </div>
-                            </div>
-                            <div class="slider-control compact">
-                              <input type="range" min="0" max="360" step="15" :value="extractGradientAngle(tempBubbleStyle.thoughtTextGradient)" @input="updateGradientAngle('thoughtText', Number(($event.target as HTMLInputElement).value))" />
-                              <span class="slider-value">角度 {{ extractGradientAngle(tempBubbleStyle.thoughtTextGradient) }}°</span>
-                            </div>
-                          </template>
-                        </div>
-                      </div>
-                      <!-- 想法氣泡光暈（僅純色 + 強度） -->
-                      <div class="color-item">
-                        <input type="color" :value="tempBubbleStyle.thoughtGlowColor" @input="setBubbleColor('thoughtGlowColor', ($event.target as HTMLInputElement).value)" />
-                        <span>想法氣泡光暈</span>
-                      </div>
-                    </div>
-                    <div class="slider-control" style="margin-top: 6px">
-                      <input type="range" min="0.1" max="1" step="0.1" :value="tempBubbleStyle.thoughtGlowOpacity" @input="tempBubbleStyle.thoughtGlowOpacity = Number(($event.target as HTMLInputElement).value); useCustomAppearance = true" />
-                      <span class="slider-value">光暈強度 {{ Math.round(tempBubbleStyle.thoughtGlowOpacity * 100) }}%</span>
-                    </div>
-                  </div>
-                  <div class="focus-section">
-                    <h4 class="focus-subtitle">氣泡版面</h4>
-                    <div class="slider-control">
-                      <input type="range" min="8" max="32" step="2" :value="tempBubbleStyle.borderRadius" @input="setBubbleRadius(Number(($event.target as HTMLInputElement).value))" />
-                      <span class="slider-value">圓角 {{ tempBubbleStyle.borderRadius }}px</span>
-                    </div>
-                    <div class="slider-control">
-                      <input type="range" min="50" max="90" step="5" :value="tempBubbleStyle.maxWidth" @input="setBubbleMaxWidth(Number(($event.target as HTMLInputElement).value))" />
-                      <span class="slider-value">寬度 {{ tempBubbleStyle.maxWidth }}%</span>
-                    </div>
-                  </div>
-                  <div class="focus-section">
-                    <h4 class="focus-subtitle">頭像</h4>
-                    <div class="option-grid compact">
-                      <button v-for="shape in avatarShapes" :key="shape.id" class="option-item small" :class="{ active: tempAvatarStyle.shape === shape.id }" @click="setAvatarShape(shape.id as any)">
-                        <span class="option-icon">{{ shape.icon }}</span>
-                        <span class="option-name">{{ shape.name }}</span>
-                      </button>
-                    </div>
-                    <div class="option-grid compact" style="margin-top: 8px">
-                      <button v-for="size in avatarSizes" :key="size.id" class="option-item small" :class="{ active: tempAvatarStyle.size === size.id }" @click="setAvatarSize(size.id as any)">
-                        <span class="option-name">{{ size.name }}</span>
-                      </button>
-                    </div>
-                    <div class="slider-control" style="margin-top: 8px">
-                      <input type="range" min="0" max="4" step="1" :value="tempAvatarStyle.borderWidth" @input="setAvatarBorderWidth(Number(($event.target as HTMLInputElement).value))" />
-                      <span class="slider-value">邊框 {{ tempAvatarStyle.borderWidth }}px</span>
-                    </div>
-                  </div>
-                  <div v-if="isChatMode" class="focus-section">
-                    <h4 class="focus-subtitle">字體</h4>
-                    <div class="slider-control">
-                      <input type="range" :min="fontSizeMin" :max="fontSizeMax" step="1" :value="tempFontSizeValue" @input="setFontSizeValue(Number(($event.target as HTMLInputElement).value))" />
-                      <span class="slider-value">{{ tempFontSizeValue }}px</span>
-                    </div>
-                    <div class="individual-colors compact">
-                      <div class="color-item">
-                        <input type="color" :value="tempFontStyle.markdownColors.italic" @input="tempFontStyle.markdownColors.italic = ($event.target as HTMLInputElement).value; useCustomAppearance = true" />
-                        <span>斜體</span>
-                      </div>
-                      <div class="color-item">
-                        <input type="color" :value="tempFontStyle.markdownColors.bold" @input="tempFontStyle.markdownColors.bold = ($event.target as HTMLInputElement).value; useCustomAppearance = true" />
-                        <span>粗體</span>
-                      </div>
-                      <div class="color-item">
-                        <input type="color" :value="tempFontStyle.markdownColors.code" @input="tempFontStyle.markdownColors.code = ($event.target as HTMLInputElement).value; useCustomAppearance = true" />
-                        <span>代碼</span>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-
-                <!-- 用戶氣泡聚焦 -->
-                <template v-if="previewFocus === 'user'">
-                  <div class="focus-section">
-                    <h4 class="focus-subtitle">顏色</h4>
-                    <div class="individual-colors compact">
-                      <!-- 訊息背景：附帶可展開的漸層設定 -->
-                      <!-- 我的訊息背景 -->
-                      <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.userBg }" @click="toggleGradientPanel('userBg')">
-                        <div class="color-item-head">
-                          <span class="bg-swatch" :class="{ 'has-gradient': tempBubbleStyle.userBgGradient }" :style="tempBubbleStyle.userBgGradient ? { backgroundImage: tempBubbleStyle.userBgGradient } : {}">
-                            <input type="color" :value="tempBubbleStyle.userBgColor" @click.stop @input="setBubbleColor('userBgColor', ($event.target as HTMLInputElement).value)" />
-                          </span>
-                          <span>我的訊息背景</span>
-                          <span class="gradient-chevron">{{ gradientPanelOpen.userBg ? '▾' : '▸' }}</span>
-                        </div>
-                        <div v-if="gradientPanelOpen.userBg" class="gradient-detail" @click.stop>
-                          <label class="gradient-switch">
-                            <input type="checkbox" :checked="!!tempBubbleStyle.userBgGradient" @change="toggleBubbleGradient('userBg', ($event.target as HTMLInputElement).checked)" />
-                            <span>啟用漸層</span>
-                          </label>
-                          <template v-if="tempBubbleStyle.userBgGradient">
-                            <div class="gradient-colors">
-                              <div class="color-item mini">
-                                <input type="color" :value="extractGradientColor(tempBubbleStyle.userBgGradient, 0)" @input="updateGradientColor('userBg', 0, ($event.target as HTMLInputElement).value)" />
-                                <span>起始</span>
-                              </div>
-                              <div class="color-item mini">
-                                <input type="color" :value="extractGradientColor(tempBubbleStyle.userBgGradient, 1)" @input="updateGradientColor('userBg', 1, ($event.target as HTMLInputElement).value)" />
-                                <span>結束</span>
-                              </div>
-                            </div>
-                            <div class="slider-control compact">
-                              <input type="range" min="0" max="360" step="15" :value="extractGradientAngle(tempBubbleStyle.userBgGradient)" @input="updateGradientAngle('userBg', Number(($event.target as HTMLInputElement).value))" />
-                              <span class="slider-value">角度 {{ extractGradientAngle(tempBubbleStyle.userBgGradient) }}°</span>
-                            </div>
-                          </template>
-                        </div>
-                      </div>
-                      <!-- 我的文字/時間（含氣泡內文字，共用 userText） -->
-                      <div class="color-item bg-with-gradient" :class="{ 'gradient-on': gradientPanelOpen.userText }" @click="toggleGradientPanel('userText')">
-                        <div class="color-item-head">
-                          <span class="bg-swatch" :class="{ 'has-gradient': tempBubbleStyle.userTextGradient }" :style="tempBubbleStyle.userTextGradient ? { backgroundImage: tempBubbleStyle.userTextGradient } : {}">
-                            <input type="color" :value="tempBubbleStyle.userTextColor" @click.stop @input="setBubbleColor('userTextColor', ($event.target as HTMLInputElement).value)" />
-                          </span>
-                          <span>我的文字/時間</span>
-                          <span class="gradient-chevron">{{ gradientPanelOpen.userText ? '▾' : '▸' }}</span>
-                        </div>
-                        <div v-if="gradientPanelOpen.userText" class="gradient-detail" @click.stop>
-                          <label class="gradient-switch">
-                            <input type="checkbox" :checked="!!tempBubbleStyle.userTextGradient" @change="toggleBubbleGradient('userText', ($event.target as HTMLInputElement).checked)" />
-                            <span>啟用漸層</span>
-                          </label>
-                          <template v-if="tempBubbleStyle.userTextGradient">
-                            <div class="gradient-colors">
-                              <div class="color-item mini">
-                                <input type="color" :value="extractGradientColor(tempBubbleStyle.userTextGradient, 0)" @input="updateGradientColor('userText', 0, ($event.target as HTMLInputElement).value)" />
-                                <span>起始</span>
-                              </div>
-                              <div class="color-item mini">
-                                <input type="color" :value="extractGradientColor(tempBubbleStyle.userTextGradient, 1)" @input="updateGradientColor('userText', 1, ($event.target as HTMLInputElement).value)" />
-                                <span>結束</span>
-                              </div>
-                            </div>
-                            <div class="slider-control compact">
-                              <input type="range" min="0" max="360" step="15" :value="extractGradientAngle(tempBubbleStyle.userTextGradient)" @input="updateGradientAngle('userText', Number(($event.target as HTMLInputElement).value))" />
-                              <span class="slider-value">角度 {{ extractGradientAngle(tempBubbleStyle.userTextGradient) }}°</span>
-                            </div>
-                          </template>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="focus-section">
-                    <h4 class="focus-subtitle">氣泡版面</h4>
-                    <div class="slider-control">
-                      <input type="range" min="8" max="32" step="2" :value="tempBubbleStyle.borderRadius" @input="setBubbleRadius(Number(($event.target as HTMLInputElement).value))" />
-                      <span class="slider-value">圓角 {{ tempBubbleStyle.borderRadius }}px</span>
-                    </div>
-                    <div class="slider-control">
-                      <input type="range" min="50" max="90" step="5" :value="tempBubbleStyle.maxWidth" @input="setBubbleMaxWidth(Number(($event.target as HTMLInputElement).value))" />
-                      <span class="slider-value">寬度 {{ tempBubbleStyle.maxWidth }}%</span>
-                    </div>
-                  </div>
-                  <div class="focus-section">
-                    <h4 class="focus-subtitle">頭像</h4>
-                    <div class="option-grid compact">
-                      <button v-for="shape in avatarShapes" :key="shape.id" class="option-item small" :class="{ active: tempAvatarStyle.shape === shape.id }" @click="setAvatarShape(shape.id as any)">
-                        <span class="option-icon">{{ shape.icon }}</span>
-                        <span class="option-name">{{ shape.name }}</span>
-                      </button>
-                    </div>
-                    <div class="option-grid compact" style="margin-top: 8px">
-                      <button v-for="size in avatarSizes" :key="size.id" class="option-item small" :class="{ active: tempAvatarStyle.size === size.id }" @click="setAvatarSize(size.id as any)">
-                        <span class="option-name">{{ size.name }}</span>
-                      </button>
-                    </div>
-                    <div class="slider-control" style="margin-top: 8px">
-                      <input type="range" min="0" max="4" step="1" :value="tempAvatarStyle.borderWidth" @input="setAvatarBorderWidth(Number(($event.target as HTMLInputElement).value))" />
-                      <span class="slider-value">邊框 {{ tempAvatarStyle.borderWidth }}px</span>
-                    </div>
-                  </div>
-                  <div v-if="isChatMode" class="focus-section">
-                    <h4 class="focus-subtitle">字體</h4>
-                    <div class="slider-control">
-                      <input type="range" :min="fontSizeMin" :max="fontSizeMax" step="1" :value="tempFontSizeValue" @input="setFontSizeValue(Number(($event.target as HTMLInputElement).value))" />
-                      <span class="slider-value">{{ tempFontSizeValue }}px</span>
-                    </div>
-                  </div>
-                </template>
-
-                <!-- 頂欄聚焦 -->
-                <template v-if="previewFocus === 'header'">
-                  <div class="focus-section">
-                    <h4 class="focus-subtitle">顏色</h4>
-                    <div class="individual-colors compact">
-                      <div v-if="isChatMode" class="color-item">
-                        <input type="color" :value="tempColors.surface || themeStore.colors.surface" @input="tempColors.surface = ($event.target as HTMLInputElement).value; useCustomAppearance = true" />
-                        <span>表面色</span>
-                      </div>
-                      <div v-if="isChatMode" class="color-item">
-                        <input type="color" :value="tempColors.text || themeStore.colors.text" @input="tempColors.text = ($event.target as HTMLInputElement).value; useCustomAppearance = true" />
-                        <span>文字色</span>
-                      </div>
-                      <div v-if="isChatMode" class="color-item">
-                        <input type="color" :value="tempColors.textSecondary || themeStore.colors.textSecondary" @input="tempColors.textSecondary = ($event.target as HTMLInputElement).value; useCustomAppearance = true" />
-                        <span>次要文字色</span>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-
-                <!-- 卡片背景 / 主要文字聚焦 -->
-                <template v-if="previewFocus === 'surface'">
-                  <div class="focus-section">
-                    <h4 class="focus-subtitle">卡片與文字</h4>
-                    <div class="individual-colors compact">
-                      <div class="color-item">
-                        <input type="color" :value="displayColors.surface" @input="setIndividualColor('surface', ($event.target as HTMLInputElement).value)" />
-                        <span>卡片背景</span>
-                      </div>
-                      <div class="color-item">
-                        <input type="color" :value="displayColors.text" @input="setIndividualColor('text', ($event.target as HTMLInputElement).value)" />
-                        <span>主要文字</span>
-                      </div>
-                      <div class="color-item">
-                        <input type="color" :value="displayColors.textMuted" @input="setIndividualColor('textMuted', ($event.target as HTMLInputElement).value)" />
-                        <span>提示文字</span>
-                      </div>
-                      <div class="color-item">
-                        <input type="color" :value="displayColors.border" @input="setIndividualColor('border', ($event.target as HTMLInputElement).value)" />
-                        <span>邊框線</span>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-
-                <!-- 滑過背景 / 輔助色聚焦 -->
-                <template v-if="previewFocus === 'surfaceHover'">
-                  <div class="focus-section">
-                    <h4 class="focus-subtitle">滑過與輔助色</h4>
-                    <div class="individual-colors compact">
-                      <div class="color-item">
-                        <input type="color" :value="displayColors.surfaceHover" @input="setIndividualColor('surfaceHover', ($event.target as HTMLInputElement).value)" />
-                        <span>滑過背景</span>
-                      </div>
-                      <div class="color-item">
-                        <input type="color" :value="displayColors.secondary" @input="setIndividualColor('secondary', ($event.target as HTMLInputElement).value)" />
-                        <span>輔助色</span>
-                      </div>
-                      <div class="color-item">
-                        <input type="color" :value="displayColors.textSecondary" @input="setIndividualColor('textSecondary', ($event.target as HTMLInputElement).value)" />
-                        <span>次要文字</span>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-
-                <!-- 狀態提示色聚焦 -->
-                <template v-if="previewFocus === 'status'">
-                  <div class="focus-section">
-                    <h4 class="focus-subtitle">狀態提示</h4>
-                    <div class="individual-colors compact">
-                      <div class="color-item">
-                        <input type="color" :value="displayColors.success" @input="setIndividualColor('success', ($event.target as HTMLInputElement).value)" />
-                        <span>成功提示</span>
-                      </div>
-                      <div class="color-item">
-                        <input type="color" :value="displayColors.error" @input="setIndividualColor('error', ($event.target as HTMLInputElement).value)" />
-                        <span>錯誤提示</span>
-                      </div>
-                      <div class="color-item">
-                        <input type="color" :value="displayColors.warning" @input="setIndividualColor('warning', ($event.target as HTMLInputElement).value)" />
-                        <span>警告提示</span>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-
-                <!-- 背景聚焦 -->
-                <template v-if="previewFocus === 'wallpaper'">
-                  <div class="focus-section">
-                    <h4 class="focus-subtitle">背景色</h4>
-                    <div class="individual-colors compact">
-                      <div class="color-item">
-                        <input
-                          type="color"
-                          :value="tempColors.background || themeStore.colors.background"
-                          @input="
-                            tempColors.background = ($event.target as HTMLInputElement).value;
-                            tempWallpaperStyle.type = 'color';
-                            tempWallpaperStyle.value = tempColors.background;
-                            useCustomAppearance = true;
-                          "
-                        />
-                        <span>背景色</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="focus-section">
-                    <h4 class="focus-subtitle">背景樣式</h4>
-                    <div class="wallpaper-grid compact">
-                      <button
-                        v-for="preset in wallpaperPresets"
-                        :key="preset.id"
-                        class="wallpaper-item small"
-                        :class="{
-                          active:
-                            tempWallpaperStyle.type === preset.type &&
-                            (preset.type === 'time-theme' ||
-                              tempWallpaperStyle.value === preset.value),
-                        }"
-                        @click="selectWallpaper(preset)"
-                      >
-                        <div
-                          class="wallpaper-preview"
-                          :class="{ 'time-theme-preview': preset.type === 'time-theme' }"
-                          :style="preset.type !== 'time-theme' ? { background: preset.value } : {}"
-                        ></div>
-                        <span class="wallpaper-name">{{ preset.name }}</span>
-                      </button>
-                      <label class="wallpaper-item upload small">
-                        <input type="file" accept="image/*" @change="handleImageUpload" />
-                        <div class="wallpaper-preview">
-                          <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                          </svg>
-                        </div>
-                        <span class="wallpaper-name">上傳</span>
-                      </label>
-                    </div>
-                  </div>
-                  <div v-if="tempWallpaperStyle.type === 'image' || tempWallpaperStyle.type === 'global-image'" class="focus-section">
-                    <h4 class="focus-subtitle">模糊度 / 透明度</h4>
-                    <div class="slider-control">
-                      <input type="range" min="0" max="20" step="1" :value="tempWallpaperStyle.blur" @input="setWallpaperBlur(Number(($event.target as HTMLInputElement).value))" />
-                      <span class="slider-value">{{ tempWallpaperStyle.blur }}px</span>
-                    </div>
-                    <div class="slider-control">
-                      <input type="range" min="20" max="100" step="5" :value="tempWallpaperStyle.opacity" @input="setWallpaperOpacity(Number(($event.target as HTMLInputElement).value))" />
-                      <span class="slider-value">{{ tempWallpaperStyle.opacity }}%</span>
-                    </div>
-                  </div>
-                </template>
-              </div>
-
-
+                  <span class="toggle-sub">{{ unifiedColors ? "改主色時自動推導其他顏色" : "只改主色，其他顏色各自調整" }}</span>
+                </span>
+                <span class="toggle-switch">
+                  <input v-model="unifiedColors" type="checkbox" />
+                  <span class="switch-track"><span class="switch-thumb"></span></span>
+                </span>
+              </label>
             </div>
 
-            <!-- 字體設定 -->
+            <!-- ===== 版面 ===== -->
+            <div v-if="activeTab === 'layout'" class="settings-section">
+              <h3 class="section-title">氣泡</h3>
+              <div class="slider-control">
+                <span class="slider-label">圓角</span>
+                <input v-model.number="tempBubbleStyle.borderRadius" type="range" min="8" max="32" step="2" aria-label="氣泡圓角" />
+                <span class="slider-value">{{ tempBubbleStyle.borderRadius }}px</span>
+              </div>
+              <div class="slider-control">
+                <span class="slider-label">最大寬度</span>
+                <input v-model.number="tempBubbleStyle.maxWidth" type="range" min="50" max="90" step="5" aria-label="氣泡最大寬度" />
+                <span class="slider-value">{{ tempBubbleStyle.maxWidth }}%</span>
+              </div>
+
+              <h3 class="section-title">頭像形狀</h3>
+              <div class="option-grid">
+                <button
+                  v-for="shape in AVATAR_SHAPES"
+                  :key="shape.id"
+                  class="option-item"
+                  :class="{ active: tempAvatarStyle.shape === shape.id }"
+                  @click="tempAvatarStyle.shape = shape.id"
+                >
+                  <span class="option-icon">{{ shape.icon }}</span>
+                  <span class="option-name">{{ shape.name }}</span>
+                </button>
+              </div>
+
+              <h3 class="section-title">頭像大小</h3>
+              <div class="option-grid">
+                <button
+                  v-for="size in AVATAR_SIZES"
+                  :key="size.id"
+                  class="option-item"
+                  :class="{ active: tempAvatarStyle.size === size.id }"
+                  @click="tempAvatarStyle.size = size.id"
+                >
+                  <span class="option-name">{{ size.name }}</span>
+                </button>
+              </div>
+
+              <h3 class="section-title">頭像邊框</h3>
+              <div class="slider-control">
+                <span class="slider-label">粗細</span>
+                <input v-model.number="tempAvatarStyle.borderWidth" type="range" min="0" max="4" step="1" aria-label="頭像邊框粗細" />
+                <span class="slider-value">{{ tempAvatarStyle.borderWidth }}px</span>
+              </div>
+              <div class="individual-colors">
+                <div class="color-item">
+                  <input
+                    type="color"
+                    aria-label="頭像邊框顏色"
+                    :value="toPickerHex(tempAvatarStyle.borderColor, '#ffffff')"
+                    @input="tempAvatarStyle.borderColor = ($event.target as HTMLInputElement).value"
+                  />
+                  <span>邊框顏色</span>
+                </div>
+              </div>
+              <label class="toggle-card" :class="{ active: tempAvatarStyle.shadowEnabled }">
+                <span class="toggle-info">
+                  <span class="toggle-title">頭像陰影</span>
+                  <span class="toggle-sub">讓頭像稍微浮起來</span>
+                </span>
+                <span class="toggle-switch">
+                  <input v-model="tempAvatarStyle.shadowEnabled" type="checkbox" />
+                  <span class="switch-track"><span class="switch-thumb"></span></span>
+                </span>
+              </label>
+            </div>
+
+            <!-- ===== 背景 ===== -->
+            <div v-if="activeTab === 'wallpaper'" class="settings-section">
+              <h3 class="section-title">背景樣式</h3>
+              <div class="wallpaper-grid">
+                <button
+                  v-for="preset in WALLPAPER_PRESETS"
+                  :key="preset.id"
+                  class="wallpaper-item"
+                  :class="{ active: isWallpaperPresetActive(preset) }"
+                  @click="selectWallpaperPreset(preset)"
+                >
+                  <span
+                    class="wallpaper-preview"
+                    :class="{ 'time-theme-preview': preset.type === 'time-theme' }"
+                    :style="wallpaperPresetStyle(preset)"
+                  ></span>
+                  <span class="wallpaper-name">{{ preset.name }}</span>
+                </button>
+                <button v-if="hasCustomImage" class="wallpaper-item active" disabled>
+                  <span
+                    class="wallpaper-preview"
+                    :style="{ backgroundImage: `url(&quot;${tempWallpaperStyle.value}&quot;)` }"
+                  ></span>
+                  <span class="wallpaper-name">自訂圖片</span>
+                </button>
+                <label class="wallpaper-item upload">
+                  <input type="file" accept="image/*" @change="handleImageUpload" />
+                  <span class="wallpaper-preview">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
+                  </span>
+                  <span class="wallpaper-name">上傳圖片</span>
+                </label>
+              </div>
+
+              <div class="individual-colors">
+                <div class="color-item" :class="{ selected: !!solidWallpaperColor }">
+                  <input
+                    type="color"
+                    aria-label="純色背景"
+                    :value="solidWallpaperColor ?? toPickerHex(tempColors.background, '#ffffff')"
+                    @input="setSolidWallpaper(($event.target as HTMLInputElement).value)"
+                  />
+                  <span>純色背景</span>
+                </div>
+              </div>
+
+              <template v-if="usesImageWallpaper">
+                <h3 class="section-title">圖片顯示方式</h3>
+                <div class="chip-row">
+                  <button
+                    v-for="fit in WALLPAPER_FITS"
+                    :key="fit.id"
+                    class="chip"
+                    :class="{ active: (tempWallpaperStyle.fit || 'cover') === fit.id }"
+                    @click="tempWallpaperStyle.fit = fit.id"
+                  >
+                    {{ fit.name }}
+                  </button>
+                </div>
+              </template>
+
+              <template v-if="tempWallpaperStyle.type === 'image' || tempWallpaperStyle.type === 'global-image'">
+                <h3 class="section-title">模糊度 / 透明度</h3>
+                <div class="slider-control">
+                  <span class="slider-label">模糊</span>
+                  <input v-model.number="tempWallpaperStyle.blur" type="range" min="0" max="20" step="1" aria-label="背景模糊度" />
+                  <span class="slider-value">{{ tempWallpaperStyle.blur }}px</span>
+                </div>
+                <div class="slider-control">
+                  <span class="slider-label">不透明度</span>
+                  <input
+                    v-model.number="tempWallpaperStyle.opacity"
+                    type="range"
+                    min="20"
+                    max="100"
+                    step="5"
+                    aria-label="背景不透明度"
+                  />
+                  <span class="slider-value">{{ tempWallpaperStyle.opacity }}%</span>
+                </div>
+              </template>
+            </div>
+
+            <!-- ===== 字體 ===== -->
             <div v-if="activeTab === 'font'" class="settings-section">
+              <h3 class="section-title">字體大小</h3>
+              <div class="slider-control">
+                <input
+                  v-model.number="tempFontSizeValue"
+                  type="range"
+                  :min="CHAT_FONT_SIZE_MIN"
+                  :max="CHAT_FONT_SIZE_MAX"
+                  step="1"
+                  aria-label="字體大小"
+                />
+                <span class="slider-value">{{ tempFontSizeValue }}px</span>
+              </div>
+
               <h3 class="section-title">字體樣式</h3>
               <div class="font-family-grid">
                 <button
-                  v-for="font in fontFamilies"
+                  v-for="font in FONT_FAMILIES"
                   :key="font.id"
                   class="font-family-item"
                   :class="{ active: tempFontStyle.family === font.id }"
-                  @click="setFontFamily(font.id as any)"
+                  @click="tempFontStyle.family = font.id"
                 >
-                  <span
-                    class="font-preview"
-                    :style="{
-                      fontFamily:
-                        font.id === 'system'
-                          ? '-apple-system, BlinkMacSystemFont, sans-serif'
-                          : font.id === 'rounded'
-                            ? 'Nunito, sans-serif'
-                            : font.id === 'serif'
-                              ? 'Georgia, serif'
-                              : 'monospace',
-                    }"
-                    >{{ font.preview }}</span
-                  >
+                  <span class="font-preview" :style="{ fontFamily: CHAT_FONT_STACKS[font.id] }">字 Aa</span>
                   <span class="font-name">{{ font.name }}</span>
                 </button>
               </div>
 
-              <h3 class="section-title">行高</h3>
+              <h3 class="section-title">行高與字距</h3>
               <div class="slider-control">
-                <input
-                  type="range"
-                  min="1.0"
-                  max="2.5"
-                  step="0.1"
-                  :value="tempFontStyle.lineHeight"
-                  @input="
-                    tempFontStyle.lineHeight = Number(
-                      ($event.target as HTMLInputElement).value,
-                    );
-                    if (isChatMode) {
-                      useCustomAppearance = true;
-                    } else {
-                      themeStore.updateGlobalFont({
-                        lineHeight: tempFontStyle.lineHeight,
-                      });
-                    }
-                  "
-                />
-                <span class="slider-value">{{
-                  tempFontStyle.lineHeight.toFixed(1)
-                }}</span>
+                <span class="slider-label">行高</span>
+                <input v-model.number="tempFontStyle.lineHeight" type="range" min="1" max="2.5" step="0.1" aria-label="行高" />
+                <span class="slider-value">{{ tempFontStyle.lineHeight.toFixed(1) }}</span>
               </div>
-
-              <h3 class="section-title">字間距</h3>
               <div class="slider-control">
-                <input
-                  type="range"
-                  min="-2"
-                  max="5"
-                  step="0.5"
-                  :value="tempFontStyle.letterSpacing"
-                  @input="
-                    tempFontStyle.letterSpacing = Number(
-                      ($event.target as HTMLInputElement).value,
-                    );
-                    if (isChatMode) {
-                      useCustomAppearance = true;
-                    } else {
-                      themeStore.updateGlobalFont({
-                        letterSpacing: tempFontStyle.letterSpacing,
-                      });
-                    }
-                  "
-                />
-                <span class="slider-value"
-                  >{{ tempFontStyle.letterSpacing }}px</span
-                >
+                <span class="slider-label">字距</span>
+                <input v-model.number="tempFontStyle.letterSpacing" type="range" min="-2" max="5" step="0.5" aria-label="字距" />
+                <span class="slider-value">{{ tempFontStyle.letterSpacing }}px</span>
               </div>
 
-              <h3 v-if="isChatMode" class="section-title">Markdown 樣式顏色</h3>
-              <div v-if="isChatMode" class="markdown-colors-grid">
-                <div class="color-item">
+              <h3 class="section-title">Markdown 樣式顏色</h3>
+              <div class="individual-colors">
+                <div v-for="field in MARKDOWN_COLOR_FIELDS" :key="field.key" class="color-item">
                   <input
                     type="color"
-                    :value="tempFontStyle.markdownColors.italic"
-                    @input="
-                      tempFontStyle.markdownColors.italic = (
-                        $event.target as HTMLInputElement
-                      ).value;
-                      useCustomAppearance = true;
-                    "
+                    :aria-label="field.label"
+                    :value="toPickerHex(tempFontStyle.markdownColors[field.key], '#4a4a6a')"
+                    @input="tempFontStyle.markdownColors[field.key] = ($event.target as HTMLInputElement).value"
                   />
-                  <span>斜體文字</span>
-                </div>
-                <div class="color-item">
-                  <input
-                    type="color"
-                    :value="tempFontStyle.markdownColors.bold"
-                    @input="
-                      tempFontStyle.markdownColors.bold = (
-                        $event.target as HTMLInputElement
-                      ).value;
-                      useCustomAppearance = true;
-                    "
-                  />
-                  <span>粗體文字</span>
-                </div>
-                <div class="color-item">
-                  <input
-                    type="color"
-                    :value="tempFontStyle.markdownColors.underline"
-                    @input="
-                      tempFontStyle.markdownColors.underline = (
-                        $event.target as HTMLInputElement
-                      ).value;
-                      useCustomAppearance = true;
-                    "
-                  />
-                  <span>底線文字</span>
-                </div>
-                <div class="color-item">
-                  <input
-                    type="color"
-                    :value="tempFontStyle.markdownColors.strikethrough"
-                    @input="
-                      tempFontStyle.markdownColors.strikethrough = (
-                        $event.target as HTMLInputElement
-                      ).value;
-                      useCustomAppearance = true;
-                    "
-                  />
-                  <span>刪除線</span>
-                </div>
-                <div class="color-item">
-                  <input
-                    type="color"
-                    :value="tempFontStyle.markdownColors.highlight"
-                    @input="
-                      tempFontStyle.markdownColors.highlight = (
-                        $event.target as HTMLInputElement
-                      ).value;
-                      useCustomAppearance = true;
-                    "
-                  />
-                  <span>高亮背景</span>
-                </div>
-                <div class="color-item">
-                  <input
-                    type="color"
-                    :value="tempFontStyle.markdownColors.quote"
-                    @input="
-                      tempFontStyle.markdownColors.quote = (
-                        $event.target as HTMLInputElement
-                      ).value;
-                      useCustomAppearance = true;
-                    "
-                  />
-                  <span>引用文字</span>
-                </div>
-                <div class="color-item">
-                  <input
-                    type="color"
-                    :value="tempFontStyle.markdownColors.code"
-                    @input="
-                      tempFontStyle.markdownColors.code = (
-                        $event.target as HTMLInputElement
-                      ).value;
-                      useCustomAppearance = true;
-                    "
-                  />
-                  <span>行內代碼</span>
-                </div>
-                <div class="color-item">
-                  <input
-                    type="color"
-                    :value="tempFontStyle.markdownColors.heading"
-                    @input="
-                      tempFontStyle.markdownColors.heading = (
-                        $event.target as HTMLInputElement
-                      ).value;
-                      useCustomAppearance = true;
-                    "
-                  />
-                  <span>標題文字</span>
+                  <span>{{ field.label }}</span>
                 </div>
               </div>
 
-              <div class="font-preview-section">
-                <div class="preview-label">預覽效果</div>
+              <div>
+                <div class="preview-label">預覽</div>
                 <div
-                  class="font-preview-text markdown-preview"
+                  class="font-preview-text"
                   :style="{
-                    fontSize:
-                      tempFontStyle.size === 'small'
-                        ? '14px'
-                        : tempFontStyle.size === 'medium'
-                          ? '15px'
-                          : '17px',
-                    fontFamily:
-                      tempFontStyle.family === 'system'
-                        ? '-apple-system, BlinkMacSystemFont, sans-serif'
-                        : tempFontStyle.family === 'rounded'
-                          ? 'Nunito, sans-serif'
-                          : tempFontStyle.family === 'serif'
-                            ? 'Georgia, serif'
-                            : 'monospace',
+                    fontSize: `${tempFontSizeValue}px`,
+                    fontFamily: CHAT_FONT_STACKS[tempFontStyle.family],
                     lineHeight: tempFontStyle.lineHeight,
                     letterSpacing: `${tempFontStyle.letterSpacing}px`,
+                    background: tempBubbleStyle.aiBgGradient || tempBubbleStyle.aiBgColor,
+                    color: tempBubbleStyle.aiContentColor,
                   }"
                 >
-                  <span>這是一段預覽文字</span><br />
-                  <em :style="{ color: tempFontStyle.markdownColors.italic }"
-                    >斜體文字 *italic*</em
-                  ><br />
-                  <strong :style="{ color: tempFontStyle.markdownColors.bold }"
-                    >粗體文字 **bold**</strong
-                  ><br />
-                  <u :style="{ color: tempFontStyle.markdownColors.underline }"
-                    >底線文字</u
-                  ><br />
-                  <del
-                    :style="{
-                      color: tempFontStyle.markdownColors.strikethrough,
-                    }"
-                    >刪除線 ~~text~~</del
-                  ><br />
-                  <mark
-                    :style="{
-                      backgroundColor: tempFontStyle.markdownColors.highlight,
-                    }"
-                    >高亮文字</mark
-                  ><br />
+                  <strong class="md-heading" :style="{ color: tempFontStyle.markdownColors.heading }">標題文字</strong>
+                  <span>這是一段預覽文字，</span>
+                  <em :style="{ color: tempFontStyle.markdownColors.italic }">斜體文字</em>、
+                  <strong :style="{ color: tempFontStyle.markdownColors.bold }">粗體文字</strong>、
+                  <u :style="{ color: tempFontStyle.markdownColors.underline }">底線文字</u>、
+                  <del :style="{ color: tempFontStyle.markdownColors.strikethrough }">刪除線</del>、
+                  <mark :style="{ backgroundColor: tempFontStyle.markdownColors.highlight }">高亮文字</mark>
                   <span
                     class="quote-preview"
-                    :style="{
-                      color: tempFontStyle.markdownColors.quote,
-                      borderLeftColor: tempFontStyle.markdownColors.quote,
-                    }"
-                    >引用文字</span
-                  ><br />
-                  <code :style="{ color: tempFontStyle.markdownColors.code }"
-                    >行內代碼</code
+                    :style="{ color: tempFontStyle.markdownColors.quote, borderLeftColor: tempFontStyle.markdownColors.quote }"
                   >
+                    引用文字
+                  </span>
+                  <code :style="{ color: tempFontStyle.markdownColors.code }">行內代碼</code>
                 </div>
               </div>
             </div>
 
-            <!-- 裝飾品設定（僅聊天專屬模式且有 chatId） -->
-            <div
-              v-if="activeTab === 'decorations' && isChatMode && props.chatId"
-              class="settings-section"
-            >
-              <h3 class="section-title">我的頭像框</h3>
-              <p class="section-hint">選擇你在此聊天中使用的頭像框</p>
-              <div v-if="ownedFrames.length > 0" class="decoration-grid">
-                <button
-                  class="decoration-item"
-                  :class="{ active: tempAvatarFrames.userFrameId === null }"
-                  @click="setUserFrame(null)"
-                >
-                  <div class="decoration-icon none">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path
-                        d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                      />
-                    </svg>
-                  </div>
-                  <span class="decoration-name">無</span>
-                </button>
-                <button
-                  v-for="frame in ownedFrames"
-                  :key="'user-' + frame.id"
-                  class="decoration-item"
-                  :class="{ active: tempAvatarFrames.userFrameId === frame.id }"
-                  @click="setUserFrame(frame.id)"
-                >
-                  <div
-                    v-if="isAvatarFrameSvg(frame.id)"
-                    class="decoration-icon svg-frame"
-                    :class="frame.rarity"
-                    v-html="getAvatarFrameSvg(frame.id, 'circle')"
-                  ></div>
-                  <div
-                    v-else-if="isAvatarFrameImage(frame.id)"
-                    class="decoration-icon image-frame"
-                    :class="frame.rarity"
+            <!-- ===== 裝飾 ===== -->
+            <div v-if="activeTab === 'decorations' && chatId" class="settings-section">
+              <template v-for="target in FRAME_TARGETS" :key="target.key">
+                <h3 class="section-title">{{ target.title }}</h3>
+                <p class="section-hint">{{ target.hint }}</p>
+                <div v-if="ownedFrames.length > 0" class="decoration-grid">
+                  <button
+                    class="decoration-item"
+                    :class="{ active: tempAvatarFrames[target.key] === null }"
+                    @click="tempAvatarFrames[target.key] = null"
                   >
-                    <img
-                      v-if="getAvatarFrameLayers(frame.id)?.background"
-                      class="frame-layer-bg"
-                      :src="
-                        getLayerSrc(getAvatarFrameLayers(frame.id)?.background)
-                      "
-                      alt=""
-                    />
-                    <img
-                      v-if="getAvatarFrameLayers(frame.id)?.overlay"
-                      class="frame-layer-overlay"
-                      :src="
-                        getLayerSrc(getAvatarFrameLayers(frame.id)?.overlay)
-                      "
-                      alt=""
-                    />
-                    <img
-                      v-if="getAvatarFrameLayers(frame.id)?.decoration"
-                      class="frame-layer-decoration"
-                      :src="
-                        getLayerSrc(getAvatarFrameLayers(frame.id)?.decoration)
-                      "
-                      alt=""
-                    />
-                  </div>
-                  <div v-else class="decoration-icon" :class="frame.rarity">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path
-                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3z"
-                      />
-                    </svg>
-                  </div>
-                  <span class="decoration-name">{{ frame.name }}</span>
-                </button>
-              </div>
-              <div v-else class="empty-decorations">
-                <p>還沒有購買頭像框</p>
-                <p class="hint">前往商城購買裝飾品</p>
-              </div>
-
-              <h3 class="section-title">角色頭像框</h3>
-              <p class="section-hint">選擇角色在此聊天中使用的頭像框</p>
-              <div v-if="ownedFrames.length > 0" class="decoration-grid">
-                <button
-                  class="decoration-item"
-                  :class="{ active: tempAvatarFrames.charFrameId === null }"
-                  @click="setCharFrame(null)"
-                >
-                  <div class="decoration-icon none">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path
-                        d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                      />
-                    </svg>
-                  </div>
-                  <span class="decoration-name">無</span>
-                </button>
-                <button
-                  v-for="frame in ownedFrames"
-                  :key="'char-' + frame.id"
-                  class="decoration-item"
-                  :class="{ active: tempAvatarFrames.charFrameId === frame.id }"
-                  @click="setCharFrame(frame.id)"
-                >
-                  <div
-                    v-if="isAvatarFrameSvg(frame.id)"
-                    class="decoration-icon svg-frame"
-                    :class="frame.rarity"
-                    v-html="getAvatarFrameSvg(frame.id, 'circle')"
-                  ></div>
-                  <div
-                    v-else-if="isAvatarFrameImage(frame.id)"
-                    class="decoration-icon image-frame"
-                    :class="frame.rarity"
+                    <span class="decoration-icon none">
+                      <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path
+                          d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                        />
+                      </svg>
+                    </span>
+                    <span class="decoration-name">無</span>
+                  </button>
+                  <button
+                    v-for="frame in ownedFrames"
+                    :key="`${target.key}-${frame.id}`"
+                    class="decoration-item"
+                    :class="{ active: tempAvatarFrames[target.key] === frame.id }"
+                    @click="tempAvatarFrames[target.key] = frame.id"
                   >
-                    <img
-                      v-if="getAvatarFrameLayers(frame.id)?.background"
-                      class="frame-layer-bg"
-                      :src="
-                        getLayerSrc(getAvatarFrameLayers(frame.id)?.background)
-                      "
-                      alt=""
-                    />
-                    <img
-                      v-if="getAvatarFrameLayers(frame.id)?.overlay"
-                      class="frame-layer-overlay"
-                      :src="
-                        getLayerSrc(getAvatarFrameLayers(frame.id)?.overlay)
-                      "
-                      alt=""
-                    />
-                    <img
-                      v-if="getAvatarFrameLayers(frame.id)?.decoration"
-                      class="frame-layer-decoration"
-                      :src="
-                        getLayerSrc(getAvatarFrameLayers(frame.id)?.decoration)
-                      "
-                      alt=""
-                    />
-                  </div>
-                  <div v-else class="decoration-icon" :class="frame.rarity">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path
-                        d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"
+                    <span
+                      v-if="isAvatarFrameSvg(frame.id)"
+                      class="decoration-icon svg-frame"
+                      :class="frame.rarity"
+                      v-html="getAvatarFrameSvg(frame.id, 'circle')"
+                    ></span>
+                    <span v-else-if="isAvatarFrameImage(frame.id)" class="decoration-icon image-frame" :class="frame.rarity">
+                      <img
+                        v-if="getAvatarFrameLayers(frame.id)?.background"
+                        class="frame-layer-bg"
+                        :src="getLayerSrc(getAvatarFrameLayers(frame.id)?.background)"
+                        alt=""
                       />
-                    </svg>
-                  </div>
-                  <span class="decoration-name">{{ frame.name }}</span>
-                </button>
-              </div>
-              <div v-else class="empty-decorations">
-                <p>還沒有購買頭像框</p>
-                <p class="hint">前往商城購買裝飾品</p>
-              </div>
+                      <img
+                        v-if="getAvatarFrameLayers(frame.id)?.overlay"
+                        class="frame-layer-overlay"
+                        :src="getLayerSrc(getAvatarFrameLayers(frame.id)?.overlay)"
+                        alt=""
+                      />
+                      <img
+                        v-if="getAvatarFrameLayers(frame.id)?.decoration"
+                        class="frame-layer-decoration"
+                        :src="getLayerSrc(getAvatarFrameLayers(frame.id)?.decoration)"
+                        alt=""
+                      />
+                    </span>
+                    <span v-else class="decoration-icon" :class="frame.rarity">
+                      <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path
+                          d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3z"
+                        />
+                      </svg>
+                    </span>
+                    <span class="decoration-name">{{ frame.name }}</span>
+                  </button>
+                </div>
+                <div v-else class="empty-decorations">
+                  <p>還沒有購買頭像框</p>
+                  <p class="hint">前往商城購買裝飾品</p>
+                </div>
+              </template>
 
               <h3 class="section-title">聊天氣泡</h3>
+              <p class="section-hint">全域裝備：會立即套用到所有聊天</p>
               <div v-if="ownedBubbles.length > 0" class="decoration-grid">
-                <button
-                  class="decoration-item"
-                  :class="{ active: equippedBubbleId === null }"
-                  @click="equipBubble(null)"
-                >
-                  <div class="decoration-icon none">
+                <button class="decoration-item" :class="{ active: equippedBubbleId === null }" @click="equipBubble(null)">
+                  <span class="decoration-icon none">
                     <svg viewBox="0 0 24 24" fill="currentColor">
                       <path
                         d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
                       />
                     </svg>
-                  </div>
+                  </span>
                   <span class="decoration-name">無</span>
                 </button>
                 <button
@@ -2384,13 +1087,11 @@ watch(
                   :class="{ active: equippedBubbleId === bubble.id }"
                   @click="equipBubble(bubble.id)"
                 >
-                  <div class="decoration-icon" :class="bubble.rarity">
+                  <span class="decoration-icon" :class="bubble.rarity">
                     <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path
-                        d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"
-                      />
+                      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
                     </svg>
-                  </div>
+                  </span>
                   <span class="decoration-name">{{ bubble.name }}</span>
                 </button>
               </div>
@@ -2401,18 +1102,15 @@ watch(
             </div>
           </div>
 
-          <!-- 底部按鈕 -->
           <div class="modal-footer">
-            <button class="soft-btn secondary" @click="resetToDefault">
-              恢復預設
-            </button>
-            <button class="soft-btn primary" @click="handleClose">完成</button>
+            <button class="soft-btn secondary" @click="resetToDefault">恢復預設</button>
+            <button class="soft-btn secondary" @click="cancel">取消</button>
+            <button class="soft-btn primary" @click="saveAndClose">完成</button>
           </div>
         </div>
       </div>
     </Transition>
 
-    <!-- 圖片裁切器 -->
     <ImageCropper
       :visible="showCropper"
       :image-src="cropperImageSrc"
@@ -2425,6 +1123,8 @@ watch(
 </template>
 
 <style lang="scss" scoped>
+@use "../../styles/theme-settings-shared";
+
 .theme-settings-modal {
   width: 100%;
   max-width: 500px;
@@ -2432,8 +1132,7 @@ watch(
   max-height: calc(100dvh - 40px);
   border-radius: 24px;
 
-  // 小螢幕保持柔和大圓角，避免直角觀感
-  @media (max-height: 600px) {
+  @media (max-height: 600px), (max-width: 520px) {
     height: calc(100dvh - 24px);
     max-height: calc(100dvh - 24px);
     border-radius: 22px;
@@ -2441,24 +1140,20 @@ watch(
 
   @media (max-width: 520px) {
     max-width: calc(100vw - 24px);
-    height: calc(100dvh - 24px);
-    max-height: calc(100dvh - 24px);
-    border-radius: 22px;
   }
 }
 
-// 聊天專屬模式開關（卡片化）
-.chat-mode-toggle {
+// ===== 開關卡片（專屬外觀、統一配色、頭像陰影共用） =====
+.toggle-card {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 14px 20px 0;
-  padding: 14px 16px;
+  padding: 12px 16px;
   border-radius: 18px;
   background: var(--color-background);
   cursor: pointer;
-  transition: background var(--transition-fast);
   user-select: none;
+  transition: background var(--transition-fast);
 
   &.active {
     background: var(--color-primary-light);
@@ -2482,52 +1177,65 @@ watch(
     font-size: 12px;
     color: var(--color-text-muted);
   }
+}
 
-  .toggle-switch {
-    position: relative;
-    width: 46px;
-    height: 28px;
-    flex-shrink: 0;
+.chat-mode-toggle {
+  margin: 14px 20px 0;
+  padding: 14px 16px;
+}
 
-    input {
-      position: absolute;
-      inset: 0;
-      opacity: 0;
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      cursor: pointer;
-    }
+.toggle-switch {
+  position: relative;
+  width: 46px;
+  height: 28px;
+  flex-shrink: 0;
 
-    .switch-track {
-      position: absolute;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.18);
-      border-radius: 999px;
-      transition: background 0.2s ease;
-    }
+  input {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    cursor: pointer;
+  }
 
-    .switch-thumb {
-      position: absolute;
-      top: 3px;
-      left: 3px;
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      background: #fff;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
-      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
-    }
+  .switch-track {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.18);
+    border-radius: 999px;
+    transition: background 0.2s ease;
+  }
 
-    input:checked + .switch-track {
-      background: var(--color-primary);
-    }
-    input:checked + .switch-track .switch-thumb {
-      transform: translateX(18px);
-    }
+  .switch-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+    transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  input:checked + .switch-track {
+    background: var(--color-primary);
+  }
+
+  input:checked + .switch-track .switch-thumb {
+    transform: translateX(18px);
+  }
+
+  input:focus-visible + .switch-track {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
   }
 }
 
+// ===== 分頁 =====
 .tabs-container {
   position: relative;
   z-index: 1;
@@ -2551,8 +1259,6 @@ watch(
   flex-wrap: nowrap;
   gap: 6px;
   min-width: max-content;
-  background: transparent;
-  padding: 0;
 
   .tab-item {
     display: flex;
@@ -2571,13 +1277,11 @@ watch(
     scroll-snap-align: start;
     transition:
       background 0.18s ease,
-      color 0.18s ease,
-      transform 0.18s ease;
+      color 0.18s ease;
 
     svg {
       width: 16px;
       height: 16px;
-      color: currentColor;
       opacity: 0.75;
     }
 
@@ -2589,8 +1293,6 @@ watch(
       background: var(--color-primary-light);
       color: var(--color-primary);
       font-weight: 600;
-      box-shadow: none;
-      transform: scale(1.02);
 
       svg {
         opacity: 1;
@@ -2599,10 +1301,25 @@ watch(
   }
 }
 
+// ===== 內容區 =====
+.night-hint {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  background: var(--color-background);
+}
+
+.preview-block {
+  margin-bottom: 16px;
+}
+
 .settings-section {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .section-title {
@@ -2610,7 +1327,7 @@ watch(
   font-weight: 600;
   color: var(--color-text-secondary);
   margin: 0;
-  padding-top: 8px;
+  padding-top: 6px;
 
   &:first-child {
     padding-top: 0;
@@ -2620,20 +1337,47 @@ watch(
 .section-hint {
   font-size: 12px;
   color: var(--color-text-muted);
-  margin: -8px 0 8px 0;
+  margin: -8px 0 0;
 }
 
-// 預設主題網格
+.preview-label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+
+.individual-colors {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+  width: 100%;
+
+  .color-item.selected {
+    box-shadow: inset 0 0 0 2px var(--color-primary);
+  }
+}
+
+.link-btn {
+  align-self: flex-start;
+  margin-top: 12px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+  cursor: pointer;
+}
+
+// ===== 配色 =====
 .preset-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 10px;
-  width: 100%;
 }
 
 .preset-item {
   display: flex;
-  flex-direction: row;
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
@@ -2662,15 +1406,15 @@ watch(
         0 0 0 3px var(--color-surface),
         0 0 0 5px var(--color-primary),
         0 4px 12px rgba(0, 0, 0, 0.18);
-    }
 
-    .preset-color::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'><path d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/></svg>")
-        center / 18px no-repeat;
-      filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+      &::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'><path d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/></svg>")
+          center / 18px no-repeat;
+        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+      }
     }
   }
 }
@@ -2696,7 +1440,6 @@ watch(
   white-space: nowrap;
 }
 
-// 自訂主題色
 .custom-color-row {
   display: flex;
   align-items: center;
@@ -2747,568 +1490,11 @@ watch(
   white-space: nowrap;
 }
 
-// 統一配色開關
-.unified-toggle {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: var(--radius-lg);
-  background: var(--color-background);
-  cursor: pointer;
-  transition: background var(--transition-fast);
-  user-select: none;
-
-  &.active {
-    background: var(--color-primary-light);
-  }
-
-  .toggle-info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .toggle-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--color-text);
-  }
-
-  .toggle-sub {
-    font-size: 12px;
-    color: var(--color-text-muted);
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 46px;
-    height: 28px;
-    flex-shrink: 0;
-
-    input {
-      position: absolute;
-      inset: 0;
-      opacity: 0;
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      cursor: pointer;
-    }
-
-    .switch-track {
-      position: absolute;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.18);
-      border-radius: 999px;
-      transition: background 0.2s ease;
-
-      &.active {
-        background: var(--color-primary);
-      }
-    }
-
-    .switch-thumb {
-      position: absolute;
-      top: 3px;
-      left: 3px;
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      background: #fff;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
-      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
-
-      &.active {
-        transform: translateX(18px);
-      }
-    }
-  }
-}
-
-// 各顏色獨立調整
-.individual-colors {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 10px;
-  width: 100%;
-
-  .color-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    background: var(--color-background);
-    border-radius: var(--radius-md);
-    min-width: 0;
-
-    input[type="color"] {
-      width: 32px;
-      height: 32px;
-      border: none;
-      border-radius: 50%;
-      cursor: pointer;
-      padding: 0;
-      overflow: hidden;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
-
-      &::-webkit-color-swatch-wrapper {
-        padding: 0;
-      }
-
-      &::-webkit-color-swatch {
-        border-radius: 50%;
-        border: 2px solid var(--color-surface);
-      }
-    }
-
-    span {
-      font-size: 12px;
-      color: var(--color-text-secondary);
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-  }
-}
-
-// 選項網格
-.option-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-  gap: 12px;
-}
-
-.option-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 16px 12px;
-  background: var(--color-background);
-  border: none;
-  border-radius: 18px;
-  cursor: pointer;
-  transition:
-    background var(--transition-fast),
-    box-shadow 0.18s ease,
-    transform 0.18s ease;
-
-  &:hover {
-    background: var(--color-surface-hover);
-  }
-
-  &:active {
-    transform: scale(0.97);
-  }
-
-  &.active {
-    background: var(--color-primary-light);
-    box-shadow: inset 0 0 0 2px var(--color-primary);
-    color: var(--color-primary);
-  }
-}
-
-.option-icon {
-  font-size: 24px;
-  color: var(--color-text);
-}
-
-.option-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-text);
-}
-
-.option-hint {
-  font-size: 11px;
-  color: var(--color-text-muted);
-}
-
-// 滑動條
-.slider-control {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 4px 2px;
-
-  input[type="range"] {
-    flex: 1;
-    height: 4px;
-    background: var(--color-border);
-    border-radius: 999px;
-    appearance: none;
-    cursor: pointer;
-
-    &::-webkit-slider-thumb {
-      appearance: none;
-      width: 18px;
-      height: 18px;
-      background: #fff;
-      border-radius: 50%;
-      cursor: pointer;
-      box-shadow:
-        0 0 0 2px var(--color-primary),
-        0 4px 10px rgba(0, 0, 0, 0.15);
-      transition: box-shadow 0.15s ease;
-    }
-
-    &::-moz-range-thumb {
-      width: 18px;
-      height: 18px;
-      background: #fff;
-      border: none;
-      border-radius: 50%;
-      cursor: pointer;
-      box-shadow:
-        0 0 0 2px var(--color-primary),
-        0 4px 10px rgba(0, 0, 0, 0.15);
-    }
-  }
-}
-
-// 字體大小快捷按鈕
-.size-preset-btn {
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  background: var(--color-surface);
-  border: 1.5px solid var(--color-border);
-  cursor: pointer;
-  transition: all 0.2s;
-  flex-shrink: 0;
-
-  &:hover {
-    background: var(--color-surface-hover);
-    border-color: var(--color-primary);
-  }
-
-  &:active {
-    transform: scale(0.95);
-  }
-}
-
-.slider-value {
-  min-width: 56px;
-  padding: 4px 10px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  text-align: center;
-  flex-shrink: 0;
-  background: var(--color-background);
-  border-radius: 12px;
-}
-
-// 桌布顯示方式
-.fit-options {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.fit-btn {
-  padding: 6px 14px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  background: var(--color-background);
-  border: none;
-  transition: all 0.2s;
-
-  &:hover {
-    background: var(--color-surface-hover);
-  }
-
-  &.active {
-    background: var(--color-primary-light);
-    color: var(--color-primary);
-    font-weight: 600;
-  }
-}
-
-// 預覽區域
-.preview-label {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  margin-bottom: 8px;
-}
-
-.color-preview {
-  margin-top: 8px;
-}
-
-.preview-card {
-  border-radius: 20px;
-  overflow: hidden;
-  box-shadow:
-    0 10px 28px rgba(0, 0, 0, 0.1),
-    0 2px 6px rgba(0, 0, 0, 0.05);
-
-  .preview-header {
-    margin: 12px 12px 0;
-    padding: 10px 12px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-height: 52px;
-    border-radius: 22px;
-    font-size: 14px;
-    font-weight: 500;
-    position: relative;
-    z-index: 1;
-    box-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.45),
-      0 6px 16px rgba(0, 0, 0, 0.06);
-
-    &.preview-focused {
-      background: var(--color-surface) !important;
-      z-index: 3;
-      box-shadow:
-        inset 0 0 0 1px rgba(255, 255, 255, 0.65),
-        0 0 0 2.5px var(--color-primary),
-        0 8px 20px rgba(0, 0, 0, 0.12);
-    }
-  }
-
-  .preview-header-btn {
-    width: 34px;
-    height: 34px;
-    border: none;
-    border-radius: 14px;
-    background: rgba(255, 255, 255, 0.45);
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    line-height: 1;
-    pointer-events: none;
-  }
-
-  .preview-header-avatar {
-    position: relative;
-    width: 42px;
-    height: 42px;
-    min-width: 42px;
-    background: linear-gradient(135deg, #1f2937, #020617);
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: var(--shadow-sm);
-
-    span {
-      font-size: 20px;
-      filter: saturate(0.7);
-    }
-
-    i {
-      position: absolute;
-      right: 0;
-      bottom: 0;
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #9dd9b5;
-      border: 2px solid #fff;
-    }
-  }
-
-  .preview-header-title {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-
-    span {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-weight: 700;
-    }
-
-    small {
-      font-size: 13px;
-      opacity: 0.75;
-    }
-  }
-
-  .preview-body {
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-}
-
-// 訊息列：頭像（側） + 訊息內容（角色名 / 氣泡 / 時間）
-.preview-message-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  width: 100%;
-
-  &.ai {
-    justify-content: flex-start;
-  }
-
-  &.user {
-    justify-content: flex-end;
-  }
-}
-
-.preview-row-avatar {
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  background: linear-gradient(135deg, #cbd5f5, #a5b4fc);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
-  font-size: 18px;
-
-  &.size-small {
-    width: 30px;
-    height: 30px;
-    font-size: 15px;
-  }
-
-  &.size-medium {
-    width: 36px;
-    height: 36px;
-    font-size: 18px;
-  }
-
-  &.size-large {
-    width: 44px;
-    height: 44px;
-    font-size: 22px;
-  }
-
-  &.user-side {
-    background: linear-gradient(135deg, #fbcfe8, #f9a8d4);
-  }
-}
-
-.preview-message-content {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  max-width: calc(100% - 44px);
-
-  .preview-message-row.user & {
-    align-items: flex-end;
-  }
-
-  .preview-sender-name {
-    font-size: 12px;
-    font-weight: 500;
-    margin-bottom: 4px;
-    padding-left: 4px;
-    opacity: 0.9;
-  }
-
-  .preview-time {
-    font-size: 11px;
-    margin-top: 4px;
-    padding: 0 4px;
-    opacity: 0.85;
-  }
-}
-
-.preview-bubble {
-  padding: 10px 14px;
-  border-radius: 16px;
-  font-size: 13px;
-  position: relative;
-  cursor: pointer;
-  transition: box-shadow 0.2s ease, transform 0.15s ease;
-  width: fit-content;
-  max-width: 100%;
-  word-break: break-word;
-
-  &:hover {
-    box-shadow: 0 0 0 2px var(--color-primary), 0 4px 12px rgba(0, 0, 0, 0.1);
-  }
-
-  &.preview-focused {
-    box-shadow: 0 0 0 2.5px var(--color-primary), 0 0 12px rgba(0, 0, 0, 0.15);
-    transform: scale(1.02);
-  }
-
-  &.ai {
-    box-shadow: var(--shadow-sm);
-  }
-}
-
-// 可點擊預覽元素
-.preview-clickable {
-  cursor: pointer;
-  transition: box-shadow 0.2s ease;
-  position: relative;
-
-  &:hover {
-    box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb, 255, 133, 162), 0.5);
-  }
-
-  &.preview-focused:not(.preview-header) {
-    box-shadow: 0 0 0 2.5px var(--color-primary), 0 0 12px rgba(0, 0, 0, 0.12);
-  }
-}
-
-// 焦點標籤
-.focus-badge {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  background: var(--color-primary);
-  color: white;
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 999px;
-  white-space: nowrap;
-  z-index: 2;
-  animation: focus-badge-in 0.2s ease;
-
-  &.wallpaper-badge {
-    top: 8px;
-    left: 50%;
-    transform: translateX(-50%);
-    right: auto;
-  }
-}
-
-@keyframes focus-badge-in {
-  from {
-    opacity: 0;
-    transform: scale(0.8);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.preview-hint {
-  font-size: 11px;
-  color: var(--color-text-muted);
-  font-weight: 400;
-}
-
-// 聚焦設定面板
+// 點預覽後展開的顏色設定
 .focus-settings-panel {
-  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   padding: 14px;
   background: var(--color-surface);
   border-radius: 18px;
@@ -3332,7 +1518,6 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
 }
 
 .focus-settings-title {
@@ -3353,7 +1538,6 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s ease, color 0.15s ease;
 
   &:hover {
     background: var(--color-surface-hover);
@@ -3361,362 +1545,31 @@ watch(
   }
 }
 
-.focus-section {
-  margin-bottom: 12px;
-
-  &:last-child {
-    margin-bottom: 0;
-  }
-}
-
-.focus-subtitle {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-// 緊湊模式
-.individual-colors.compact {
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-  gap: 8px;
-
-  .color-item {
-    padding: 6px 8px;
-
-    input[type="color"] {
-      width: 28px;
-      height: 28px;
-    }
-
-    span {
-      font-size: 11px;
-    }
-  }
-}
-
-// 訊息背景色卡：整張可點擊展開，漸層選項顯示於下方
-.color-item.bg-with-gradient {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0;
-  cursor: pointer;
-
-  // 展開漸層後跨整列，避免被擠在網格單格內
-  &.gradient-on {
-    grid-column: 1 / -1;
-  }
-
-  .color-item-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-
-    input[type="color"] {
-      width: 28px;
-      height: 28px;
-      flex-shrink: 0;
-      cursor: pointer;
-    }
-
-    // 漸層預覽外框：保持圓形，啟用漸層時顯示漸層色
-    .bg-swatch {
-      position: relative;
-      display: block;
-      flex: 0 0 28px;
-      width: 28px;
-      height: 28px;
-      min-width: 28px;
-      max-width: 28px;
-      border-radius: 50%;
-      overflow: hidden;
-      background-size: cover;
-      background-position: center;
-
-      input[type="color"] {
-        width: 100%;
-        height: 100%;
-        border: none;
-        border-radius: 50%;
-        padding: 0;
-        background: transparent;
-        cursor: pointer;
-      }
-
-      &.has-gradient {
-        // 漸層顯示於外框背景，輸入框透明讓漸層透出
-        input[type="color"] {
-          opacity: 0;
-        }
-      }
-    }
-
-    > span {
-      font-size: 11px;
-      flex: 1;
-    }
-
-    // 展開指示箭頭
-    .gradient-chevron {
-      flex: 0 0 auto;
-      font-size: 11px;
-      line-height: 1;
-      color: var(--color-text-secondary, var(--color-text));
-      opacity: 0.7;
-    }
-  }
-
-  &.gradient-on .gradient-chevron {
-    color: var(--color-primary);
-    opacity: 1;
-  }
-
-  .gradient-detail {
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px dashed var(--color-border, rgba(0, 0, 0, 0.1));
-    cursor: default;
-
-    .gradient-switch {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      cursor: pointer;
-      font-size: 11px;
-      white-space: nowrap;
-
-      input[type="checkbox"] {
-        width: 14px;
-        height: 14px;
-        accent-color: var(--color-primary);
-        cursor: pointer;
-      }
-    }
-  }
-}
-
-.gradient-colors {
-  display: flex;
-  gap: 10px;
-  margin-top: 8px;
-
-  .color-item.mini {
-    flex: 1;
-    padding: 6px 8px;
-
-    input[type="color"] {
-      width: 26px;
-      height: 26px;
-    }
-
-    span {
-      font-size: 11px;
-    }
-  }
-}
-
-.slider-control.compact {
-  margin-top: 8px;
-
-  input[type="range"] {
-    height: 4px;
-  }
-
-  .slider-value {
-    font-size: 11px;
-    min-width: 56px;
-  }
-}
-
-.focus-hint {
-  margin: 8px 0 0;
-  font-size: 11px;
-  color: var(--color-text-muted);
-  opacity: 0.85;
-}
-
-.option-grid.compact {
-  gap: 8px;
-}
-
-.option-item.small {
-  padding: 10px 8px;
-  border-radius: 14px;
-
-  .option-icon {
-    font-size: 18px;
-  }
-
-  .option-name {
-    font-size: 12px;
-  }
-}
-
-.wallpaper-grid.compact {
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-}
-
-.wallpaper-item.small {
-  padding: 6px;
-  border-radius: 14px;
-
-  .wallpaper-preview {
-    border-radius: 12px;
-  }
-
-  .wallpaper-name {
-    font-size: 10px;
-  }
-}
-
-.preview-ui-samples {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.preview-ui-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
-  border: 1px solid;
-  border-radius: var(--radius-md);
-  font-size: 11px;
-  min-width: 0;
-  position: relative;
-}
-
-.preview-ui-title {
-  font-size: 12px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.preview-status-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  position: relative;
-  min-height: 28px;
-  padding: 4px;
-  border-radius: var(--radius-md);
-
-  > span:not(.focus-badge) {
-    padding: 5px 8px;
-    border-radius: 999px;
-    color: #fff;
-    font-size: 11px;
-    font-weight: 600;
-    line-height: 1;
-  }
-}
-
-.avatar-preview {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-top: 16px;
-}
-
-.preview-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-background);
-
-  svg {
-    width: 60%;
-    height: 60%;
-    color: var(--color-text-muted);
-  }
-}
-
-.bubble-preview {
-  margin-top: 16px;
-}
-
-.preview-bubbles {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  background: var(--color-background);
-  border-radius: var(--radius-lg);
-}
-
-// 桌布網格
-.wallpaper-grid {
+// ===== 版面 =====
+.option-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  gap: 10px;
 }
 
-.global-wallpaper-card {
-  display: flex;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 18px;
-  background: var(--color-background);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
-}
-
-.global-wallpaper-preview {
-  width: 96px;
-  min-width: 96px;
-  aspect-ratio: 9 / 16;
-  border-radius: 14px;
-  background-size: cover;
-  background-position: center;
-  box-shadow: var(--shadow-sm);
-}
-
-.global-wallpaper-content {
-  flex: 1;
-  min-width: 0;
+.option-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-
-.global-wallpaper-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--color-text);
-}
-
-.global-wallpaper-desc {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--color-text-muted);
-}
-
-.global-wallpaper-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.soft-mini-btn {
-  padding: 8px 10px;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  background: var(--color-background);
   border: none;
-  border-radius: 999px;
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-weight: 600;
+  border-radius: 16px;
   cursor: pointer;
   transition:
-    background 0.18s ease,
-    color 0.18s ease,
+    background var(--transition-fast),
+    box-shadow 0.18s ease,
     transform 0.18s ease;
+
+  &:hover {
+    background: var(--color-surface-hover);
+  }
 
   &:active {
     transform: scale(0.97);
@@ -3724,20 +1577,37 @@ watch(
 
   &.active {
     background: var(--color-primary-light);
-    color: var(--color-primary);
-    box-shadow: inset 0 0 0 1px var(--color-primary);
+    box-shadow: inset 0 0 0 2px var(--color-primary);
   }
+}
+
+.option-icon {
+  font-size: 20px;
+  color: var(--color-text);
+}
+
+.option-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+// ===== 背景 =====
+.wallpaper-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
 }
 
 .wallpaper-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 8px;
+  gap: 6px;
+  padding: 6px;
   background: transparent;
   border: none;
-  border-radius: 18px;
+  border-radius: 16px;
   cursor: pointer;
   transition:
     background var(--transition-fast),
@@ -3747,8 +1617,12 @@ watch(
     background: var(--color-background);
   }
 
-  &:active {
+  &:active:not(:disabled) {
     transform: scale(0.97);
+  }
+
+  &:disabled {
+    cursor: default;
   }
 
   &.active {
@@ -3783,48 +1657,69 @@ watch(
 }
 
 .wallpaper-preview {
+  display: block;
   width: 100%;
   aspect-ratio: 16 / 9;
-  border-radius: 16px;
+  border-radius: 12px;
   background-size: cover;
   background-position: center;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
   transition: box-shadow 0.18s ease;
 
-  // 跟隨時間主題的預覽樣式
   &.time-theme-preview {
-    background: linear-gradient(
-      135deg,
-      #fff8f0 0%,
-      #f8fafc 20%,
-      #fafafa 40%,
-      #fef3e2 60%,
-      #1e293b 80%,
-      #0f172a 100%
-    );
+    background: linear-gradient(135deg, #fff8f0 0%, #f8fafc 20%, #fafafa 40%, #fef3e2 60%, #1e293b 80%, #0f172a 100%);
   }
 }
 
 .wallpaper-name {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--color-text-secondary);
 }
 
-// 字體樣式網格
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: var(--color-background);
+  cursor: pointer;
+  transition: background 0.18s ease;
+
+  &:hover {
+    background: var(--color-surface-hover);
+  }
+
+  &.active {
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+    font-weight: 600;
+  }
+}
+
+// ===== 字體 =====
 .font-family-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  gap: 10px;
 }
 
 .font-family-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 16px 12px;
+  gap: 6px;
+  padding: 14px 12px;
   background: var(--color-background);
   border: none;
-  border-radius: 20px;
+  border-radius: 18px;
   cursor: pointer;
   transition:
     background var(--transition-fast),
@@ -3846,8 +1741,7 @@ watch(
 }
 
 .font-preview {
-  font-size: 28px;
-  font-weight: 500;
+  font-size: 24px;
   color: var(--color-text);
 }
 
@@ -3856,125 +1750,47 @@ watch(
   color: var(--color-text-secondary);
 }
 
-.font-preview-section {
-  margin-top: 16px;
-}
-
 .font-preview-text {
-  padding: 16px;
-  background: var(--color-background);
-  border-radius: var(--radius-lg);
-  color: var(--color-text);
-  line-height: 1.6;
+  padding: 14px 16px;
+  border-radius: 18px;
+  box-shadow: var(--shadow-sm);
+  word-break: break-word;
 
-  &.markdown-preview {
-    .quote-preview {
-      display: inline-block;
-      padding-left: 8px;
-      border-left: 3px solid;
-      font-style: italic;
-    }
+  .md-heading {
+    display: block;
+    font-size: 1.15em;
+    margin-bottom: 4px;
+  }
 
-    code {
-      padding: 2px 6px;
-      background: rgba(0, 0, 0, 0.05);
-      border-radius: 4px;
-      font-family: monospace;
-    }
+  .quote-preview {
+    display: block;
+    margin: 6px 0;
+    padding-left: 8px;
+    border-left: 3px solid;
+    font-style: italic;
+  }
 
-    mark {
-      padding: 2px 4px;
-      border-radius: 2px;
-    }
+  code {
+    padding: 2px 6px;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 4px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+  }
+
+  mark {
+    padding: 0 4px;
+    border-radius: 2px;
   }
 }
 
-// Markdown 顏色設定網格
-.markdown-colors-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-
-  .color-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    background: var(--color-background);
-    border-radius: 14px;
-
-    input[type="color"] {
-      width: 32px;
-      height: 32px;
-      border: none;
-      border-radius: 50%;
-      cursor: pointer;
-      padding: 0;
-      overflow: hidden;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
-
-      &::-webkit-color-swatch-wrapper {
-        padding: 0;
-      }
-
-      &::-webkit-color-swatch {
-        border-radius: 50%;
-        border: 2px solid var(--color-surface);
-      }
-    }
-
-    span {
-      font-size: 12px;
-      color: var(--color-text-secondary);
-      white-space: nowrap;
-    }
-  }
+// 三顆按鈕平分寬度，窄螢幕避免「恢復預設」折行
+.modal-footer .soft-btn {
+  white-space: nowrap;
+  padding-left: 8px;
+  padding-right: 8px;
 }
 
-.bubble-color-row {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-
-  .color-item {
-    flex: 1;
-    min-width: 140px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 12px;
-    background: var(--color-background);
-    border-radius: 14px;
-
-    input[type="color"] {
-      width: 32px;
-      height: 32px;
-      border: none;
-      border-radius: 50%;
-      cursor: pointer;
-      padding: 0;
-      overflow: hidden;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
-
-      &::-webkit-color-swatch-wrapper {
-        padding: 0;
-      }
-
-      &::-webkit-color-swatch {
-        border-radius: 50%;
-        border: 2px solid var(--color-surface);
-      }
-    }
-
-    span {
-      font-size: 12px;
-      color: var(--color-text-secondary);
-      white-space: nowrap;
-    }
-  }
-}
-
-// ===== 裝飾品設定 =====
+// ===== 裝飾品 =====
 .decoration-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -4047,10 +1863,8 @@ watch(
       background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
     }
 
-    // SVG 頭像框預覽
     &.svg-frame {
       background: transparent;
-      padding: 0;
       overflow: visible;
 
       :deep(svg) {
@@ -4059,17 +1873,14 @@ watch(
       }
     }
 
-    // 圖片圖層頭像框預覽
     &.image-frame {
       background: transparent;
-      padding: 0;
       position: relative;
       overflow: visible;
 
       img {
         position: absolute;
-        top: 0;
-        left: 0;
+        inset: 0;
         width: 100%;
         height: 100%;
         object-fit: contain;
