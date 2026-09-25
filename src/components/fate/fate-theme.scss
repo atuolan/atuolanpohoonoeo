@@ -1,0 +1,172 @@
+// ============================================================
+// 占卜區日夜主題
+// 夜間：夜空金線　日間：羊皮紙復古
+// 掛在 FateScreen 根元素上，子元件一律用這些 CSS 變數
+// ============================================================
+
+.fate-theme--night {
+  --f-bg:
+    radial-gradient(1px 1px at 18% 22%, rgba(255, 255, 255, 0.55), transparent),
+    radial-gradient(1px 1px at 72% 12%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 86% 58%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1px 1px at 34% 84%, rgba(255, 255, 255, 0.35), transparent),
+    radial-gradient(1.5px 1.5px at 56% 40%, rgba(255, 255, 255, 0.3), transparent),
+    radial-gradient(ellipse at 50% -10%, #232849 0%, #0b0d18 65%);
+  --f-bg-flat: #0b0d18;
+  --f-ink: #efe6d2;
+  --f-ink-2: #a39b8a;
+  --f-accent: #d8b46a;
+  --f-accent-ink: #1a1508;
+  --f-accent-soft: rgba(216, 180, 106, 0.12);
+  --f-line: rgba(216, 180, 106, 0.28);
+  --f-line-strong: rgba(216, 180, 106, 0.6);
+  --f-panel: rgba(255, 255, 255, 0.03);
+  --f-panel-solid: rgba(14, 16, 30, 0.97);
+  --f-scrim: rgba(0, 0, 0, 0.55);
+  --f-card-shadow: 0 0 0 1px rgba(216, 180, 106, 0.45), 0 6px 14px rgba(0, 0, 0, 0.5);
+  --f-card-glow: 0 0 0 2px #d8b46a, 0 0 20px rgba(216, 180, 106, 0.45);
+  --f-card-back-filter: none;
+  --f-radius: 3px;
+  --f-danger: #e07a6a;
+  --f-upright: #d8b46a;
+  --f-reversed: #e07a6a;
+  --f-font-head: "Noto Serif TC", "Songti TC", serif;
+  --f-font-body: "Noto Sans TC", "PingFang TC", sans-serif;
+  color-scheme: dark;
+}
+
+.fate-theme--day {
+  --f-bg: radial-gradient(ellipse at 50% 40%, #f6eedb 0%, #e9dcbf 80%, #dccaa3 100%);
+  --f-bg-flat: #ece1c8;
+  --f-ink: #3a2c1e;
+  --f-ink-2: #7a6650;
+  --f-accent: #8e3b2e;
+  --f-accent-ink: #f6eedb;
+  --f-accent-soft: rgba(142, 59, 46, 0.1);
+  --f-line: rgba(58, 44, 30, 0.28);
+  --f-line-strong: rgba(58, 44, 30, 0.5);
+  --f-panel: rgba(255, 250, 238, 0.5);
+  --f-panel-solid: #f4ead4;
+  --f-scrim: rgba(58, 44, 30, 0.35);
+  --f-card-shadow: 0 0 0 1px rgba(58, 44, 30, 0.35), 3px 4px 0 rgba(58, 44, 30, 0.12);
+  --f-card-glow: 0 0 0 2px #8e3b2e, 3px 4px 0 rgba(142, 59, 46, 0.25);
+  --f-card-back-filter: sepia(0.55) saturate(0.85) brightness(1.05);
+  --f-radius: 2px;
+  --f-danger: #a8322a;
+  --f-upright: #3f5e46;
+  --f-reversed: #8e3b2e;
+  --f-font-head: "Noto Serif TC", "Songti TC", serif;
+  --f-font-body: "Noto Sans TC", "PingFang TC", sans-serif;
+  color-scheme: light;
+}
+
+// 解讀文字（AI markdown），抽屜與歷史詳情共用
+.fate-markdown {
+  color: var(--f-ink);
+  font-size: 15px;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--f-font-head);
+    color: var(--f-accent);
+    line-height: 1.5;
+  }
+
+  h1,
+  h2 {
+    font-size: 17px;
+    margin: 22px 0 8px;
+  }
+
+  h3,
+  h4 {
+    font-size: 15px;
+    margin: 18px 0 6px;
+  }
+
+  > :first-child {
+    margin-top: 0;
+  }
+
+  p {
+    margin: 0 0 12px;
+  }
+
+  strong {
+    color: var(--f-accent);
+    font-weight: 600;
+  }
+
+  ul,
+  ol {
+    padding-left: 20px;
+    margin: 0 0 12px;
+  }
+
+  li {
+    margin-bottom: 4px;
+  }
+
+  blockquote {
+    margin: 14px 0;
+    padding: 10px 14px;
+    border-left: 2px solid var(--f-accent);
+    background: var(--f-accent-soft);
+    color: var(--f-ink-2);
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--f-line);
+    margin: 18px 0;
+  }
+}
+
+// 共用按鈕
+.fate-btn {
+  flex: 1;
+  padding: 11px 16px;
+  font-family: var(--f-font-head);
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  color: var(--f-accent);
+  background: none;
+  border: 1px solid var(--f-line-strong);
+  border-radius: var(--f-radius);
+  cursor: pointer;
+  transition:
+    opacity 0.2s,
+    background 0.2s;
+
+  &--primary {
+    color: var(--f-accent-ink);
+    background: var(--f-accent);
+    border-color: var(--f-accent);
+    font-weight: 700;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+// 文字型小按鈕（↻ 洗牌、⌨ 報數字、清空…）
+.fate-link {
+  padding: 4px 2px;
+  font-size: 12px;
+  color: var(--f-ink);
+  opacity: 0.8;
+  background: none;
+  border: none;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+}

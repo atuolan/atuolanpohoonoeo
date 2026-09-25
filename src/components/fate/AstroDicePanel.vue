@@ -301,15 +301,16 @@ onMounted(() => {
 </template>
 
 <style scoped lang="scss">
-$surface: rgba(22, 24, 38, 0.6);
-$surface-h: rgba(30, 34, 54, 0.8);
-$border-m: rgba(255, 255, 255, 0.15);
-$text-1: #e2e4f0;
-$text-2: #b0b5cc;
-$text-3: #7b82a3;
-$text-m: #4e5573;
-$accent: #f28b82;
-$accent-l: #ffdfa3;
+// 顏色跟著占卜區日夜主題（fate-theme.scss）
+$surface: var(--f-panel);
+$surface-h: var(--f-accent-soft);
+$border-m: var(--f-line-strong);
+$text-1: var(--f-ink);
+$text-2: var(--f-ink);
+$text-3: var(--f-ink-2);
+$text-m: var(--f-ink-2);
+$accent: var(--f-accent);
+$accent-l: var(--f-accent);
 $r-md: 12px;
 $r-lg: 16px;
 
@@ -365,7 +366,7 @@ $r-lg: 16px;
   padding: 12px 28px; border-radius: $r-md; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: none;
   &--sm { padding: 10px 20px; font-size: 14px; }
   &--primary {
-    background: linear-gradient(135deg, $accent, #c084fc); color: #fff;
+    background: $accent; color: var(--f-accent-ink);
     &:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(242,139,130,0.4); }
     &:disabled { opacity: 0.5; cursor: not-allowed; }
   }

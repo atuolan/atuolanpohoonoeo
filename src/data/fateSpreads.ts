@@ -5,26 +5,18 @@ import type { FateSpread } from "@/types/fate";
 
 export const fateSpreads: FateSpread[] = [
   {
-    id: "starcat-1",
-    name: "一张無牌阵占卜法",
-    nameCn: "一张無牌阵占卜法",
-    description: "适合于解答任何事件的核心问题，简单直接地向求问者作出启示",
+    id: "tarot-flexible",
+    name: "萬能牌陣",
+    nameCn: "萬能牌陣",
+    description: "不限框架，自己決定要抽幾張牌（1～10 張），每張牌都依你的提問自由解讀。最考驗直覺，也最自由。",
     layoutType: "free",
-    positions: [
-      {
-        id: "pos-1",
-        name: "Position 1",
-        nameCn: "第1張牌",
-        description: "位置 1 的解讀",
-        coords: { x: 50, y: 50 },
-      },
-    ],
+    positions: [],
   },
   {
-    id: "starcat-33",
-    name: "魔镜",
-    nameCn: "魔镜",
-    description: "“魔镜魔镜边个最靓”不知道用什么牌阵？问魔镜吧！这是一个占星猫特别为广大用户设计的特殊万能牌阵，提问者可以因应自己问题的点在相应位置上摆放塔罗牌进行有针对性的占卜。1～11张牌随意增减完全自由完全人性化！",
+    id: "starcat-1",
+    name: "一張無牌陣占卜法",
+    nameCn: "一張無牌陣占卜法",
+    description: "適合於解答任何事件的核心問題，簡單直接地向求問者作出啟示",
     layoutType: "free",
     positions: [
       {
@@ -38,9 +30,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-3",
-    name: "时间之箭",
-    nameCn: "时间之箭",
-    description: "适合用于提问一件事或一个方向的发展性问题，如：健康状况、感情进展、职位升迁等",
+    name: "時間之箭",
+    nameCn: "時間之箭",
+    description: "適合用於提問一件事或一個方向的發展性問題，如：健康狀況、感情進展、職位升遷等",
     layoutType: "free",
     positions: [
       {
@@ -68,9 +60,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-4",
-    name: "圣三角",
-    nameCn: "圣三角",
-    description: "适合用于提问一些行动性质的假设问题，如：可不可以、会不会、要不要等",
+    name: "聖三角",
+    nameCn: "聖三角",
+    description: "適合用於提問一些行動性質的假設問題，如：可不可以、會不會、要不要等",
     layoutType: "free",
     positions: [
       {
@@ -98,9 +90,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-5",
-    name: "身心灵",
-    nameCn: "身心灵",
-    description: "用于分析当下事情的情况，分析感情或某件事对当事人的影响，也可用于每日运势占卜能够及时反映当日的一些情况而成为使用最频繁的牌阵之一",
+    name: "身心靈",
+    nameCn: "身心靈",
+    description: "用於分析當下事情的情況，分析感情或某件事對當事人的影響，也可用於每日運勢占卜能夠及時反映當日的一些情況而成為使用最頻繁的牌陣之一",
     layoutType: "free",
     positions: [
       {
@@ -128,9 +120,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-26",
-    name: "恋爱圣三角",
-    nameCn: "恋爱圣三角",
-    description: "你有一个喜欢对象但不知道你们将会如何靠近？想知道与你喜欢的对象约会将会怎样？与你的恋人发生矛盾不知道如何处理？恋爱中的各种小鹿乱撞恋爱圣三角能够帮到你！",
+    name: "戀愛聖三角",
+    nameCn: "戀愛聖三角",
+    description: "你有一個喜歡對象但不知道你們將會如何靠近？想知道與你喜歡的對象約會將會怎樣？與你的戀人發生矛盾不知道如何處理？戀愛中的各種小鹿亂撞戀愛聖三角能夠幫到你！",
     layoutType: "free",
     positions: [
       {
@@ -164,47 +156,10 @@ export const fateSpreads: FateSpread[] = [
     ],
   },
   {
-    id: "starcat-27",
-    name: "万能無牌阵",
-    nameCn: "万能無牌阵",
-    description: "正所谓无招胜有招，無牌阵是最基本的牌阵也是专业塔罗师们最常用的牌阵之一。但是由于没有任何框架虽然是最基本也是最考验塔罗师能力的。它就像宇宙的奇点蕴含着无限信息及可能！",
-    layoutType: "free",
-    positions: [
-      {
-        id: "pos-1",
-        name: "Card 1",
-        nameCn: "第一張牌",
-        description: "由塔羅師靈活詮釋的第一個面向",
-        coords: { x: 20, y: 50 },
-      },
-      {
-        id: "pos-2",
-        name: "Card 2",
-        nameCn: "第二張牌",
-        description: "由塔羅師靈活詮釋的第二個面向",
-        coords: { x: 40, y: 50 },
-      },
-      {
-        id: "pos-3",
-        name: "Card 3",
-        nameCn: "第三張牌",
-        description: "由塔羅師靈活詮釋的第三個面向",
-        coords: { x: 60, y: 50 },
-      },
-      {
-        id: "pos-4",
-        name: "Card 4",
-        nameCn: "第四張牌",
-        description: "由塔羅師靈活詮釋的第四個面向",
-        coords: { x: 80, y: 50 },
-      },
-    ],
-  },
-  {
     id: "starcat-6",
-    name: "四元素牌阵",
-    nameCn: "四元素牌阵",
-    description: "四元素牌阵是用于引导求问者解决问题的牌阵，求问者先想清楚和描述目前面临的困难及想得到的结果，让四元素为你引路",
+    name: "四元素牌陣",
+    nameCn: "四元素牌陣",
+    description: "四元素牌陣是用於引導求問者解決問題的牌陣，求問者先想清楚和描述目前面臨的困難及想得到的結果，讓四元素為你引路",
     layoutType: "free",
     positions: [
       {
@@ -241,7 +196,7 @@ export const fateSpreads: FateSpread[] = [
     id: "starcat-9",
     name: "大十字",
     nameCn: "大十字",
-    description: "适合爱情、事业、友情、学业等事情占卜，如果你想要知道问题的前因后果及有没有贵人相助的话这个阵非常适合。大十字占卜法用22张大阿尔卡纳为你简单有趣地分析出事情的主要阻碍、问题成因、结果及解决方法。",
+    description: "適合愛情、事業、友情、學業等事情占卜，如果你想要知道問題的前因後果及有沒有貴人相助的話這個陣非常適合。大十字占卜法用22張大阿爾卡納為你簡單有趣地分析出事情的主要阻礙、問題成因、結果及解決方法。",
     layoutType: "free",
     positions: [
       {
@@ -285,7 +240,7 @@ export const fateSpreads: FateSpread[] = [
     id: "starcat-10",
     name: "正五芒星",
     nameCn: "正五芒星",
-    description: "五芒星是奥数瓦多.魏尔.德秘法里的一种，跟一般算法不同，使用此阵需在半夜时分，五芒星会为你揭示事件的真相及召唤精灵给你祝福及指引！第五张牌需让塔罗师来判断，如果结论为第五张牌与前四张牌其中一张相同则未能的到精灵的祝福，如连续两次出现同样情况则今日不能再使用此阵！现在教大家如何判断第五张牌（精灵牌）是什么，首先我们把前四张牌翻开把这四张牌上的代表数字加起来的和是22以内如19，那么你召唤出的是大阿尔卡纳中第19张牌-太阳为你的精灵祝福牌也是你的指引牌。如果加起来的和超出22如33那么把个位和十位上的数相加得出6，那么你召唤出的是大阿尔卡纳中的第6张牌-恋人为你祝福。如果前四张牌中有某些牌是没有数字的如宝剑女王、圣杯国王、权杖骑士等都视为0，所有Ace牌都视为1。",
+    description: "五芒星是奧數瓦多.魏爾.德秘法裡的一種，跟一般算法不同，使用此陣需在半夜時分，五芒星會為你揭示事件的真相及召喚精靈給你祝福及指引！第五張牌需讓塔羅師來判斷，如果結論為第五張牌與前四張牌其中一張相同則未能的到精靈的祝福，如連續兩次出現同樣情況則今日不能再使用此陣！現在教大家如何判斷第五張牌（精靈牌）是什麼，首先我們把前四張牌翻開把這四張牌上的代表數字加起來的和是22以內如19，那麼你召喚出的是大阿爾卡納中第19張牌-太陽為你的精靈祝福牌也是你的指引牌。如果加起來的和超出22如33那麼把個位和十位上的數相加得出6，那麼你召喚出的是大阿爾卡納中的第6張牌-戀人為你祝福。如果前四張牌中有某些牌是沒有數字的如寶劍女王、聖盃國王、權杖騎士等都視為0，所有Ace牌都視為1。",
     layoutType: "free",
     positions: [
       {
@@ -327,9 +282,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-11",
-    name: "四季牌阵",
-    nameCn: "四季牌阵",
-    description: "四季牌阵，一年中只有在春分、夏至、秋分和冬至这四天可以抽取。传说中的二分二至这四天季节开始转换，因而是能量很强的四天。你可以通过四季牌阵，查看自己的运势以及需要注意的地方，在塔罗的指引下轻松度过这个季度。",
+    name: "四季牌陣",
+    nameCn: "四季牌陣",
+    description: "四季牌陣，一年中只有在春分、夏至、秋分和冬至這四天可以抽取。傳說中的二分二至這四天季節開始轉換，因而是能量很強的四天。你可以通過四季牌陣，查看自己的運勢以及需要注意的地方，在塔羅的指引下輕鬆度過這個季度。",
     layoutType: "free",
     positions: [
       {
@@ -371,9 +326,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-12",
-    name: "二择一",
-    nameCn: "二择一",
-    description: "正如其名，专门指引两难或选择问题，在此阵可以指引出分别不同两种选择的发展趋势。",
+    name: "二擇一",
+    nameCn: "二擇一",
+    description: "正如其名，專門指引兩難或選擇問題，在此陣可以指引出分別不同兩種選擇的發展趨勢。",
     layoutType: "free",
     positions: [
       {
@@ -415,9 +370,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-8",
-    name: "爱情十字",
-    nameCn: "爱情十字",
-    description: "用于现有恋情发生的问题，了解双方内心想法从而获得启发的牌阵",
+    name: "愛情十字",
+    nameCn: "愛情十字",
+    description: "用於現有戀情發生的問題，瞭解雙方內心想法從而獲得啟發的牌陣",
     layoutType: "free",
     positions: [
       {
@@ -459,9 +414,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-32",
-    name: "未来恋人",
-    nameCn: "未来恋人",
-    description: "想知道接下来的恋人是什么类型？是否已经出现？在哪里遇见他／她？未来恋人一次过满足你多个愿望。",
+    name: "未來戀人",
+    nameCn: "未來戀人",
+    description: "想知道接下來的戀人是什麼類型？是否已經出現？在哪裡遇見他／她？未來戀人一次過滿足你多個願望。",
     layoutType: "free",
     positions: [
       {
@@ -503,9 +458,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-7",
-    name: "爱情之树",
-    nameCn: "爱情之树",
-    description: "使用22张大阿尔卡纳占卜你最近的桃花运或在恋爱中遇到的问题，了解潜在因素对未来发展的影响。",
+    name: "愛情之樹",
+    nameCn: "愛情之樹",
+    description: "使用22張大阿爾卡納占卜你最近的桃花運或在戀愛中遇到的問題，瞭解潛在因素對未來發展的影響。",
     layoutType: "free",
     positions: [
       {
@@ -547,9 +502,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-13",
-    name: "圣花猫",
-    nameCn: "圣花猫",
-    description: "尤其适合涉及两个人的发展性问题能揭示双方的态度及发展趋势",
+    name: "聖花貓",
+    nameCn: "聖花貓",
+    description: "尤其適合涉及兩個人的發展性問題能揭示雙方的態度及發展趨勢",
     layoutType: "free",
     positions: [
       {
@@ -598,9 +553,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-14",
-    name: "灵感对应",
-    nameCn: "灵感对应",
-    description: "灵感对应主要针对双方的感受与想法及关系发展的期望",
+    name: "靈感對應",
+    nameCn: "靈感對應",
+    description: "靈感對應主要針對雙方的感受與想法及關係發展的期望",
     layoutType: "free",
     positions: [
       {
@@ -649,9 +604,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-15",
-    name: "未来发展阵",
-    nameCn: "未来发展阵",
-    description: "未来发展阵将会一次过预测出你未来爱情、事业、财富、成就给你的未来作出简要的指引，让你不再迷茫",
+    name: "未來發展陣",
+    nameCn: "未來發展陣",
+    description: "未來發展陣將會一次過預測出你未來愛情、事業、財富、成就給你的未來作出簡要的指引，讓你不再迷茫",
     layoutType: "free",
     positions: [
       {
@@ -700,9 +655,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-30",
-    name: "工作发展牌阵",
-    nameCn: "工作发展牌阵",
-    description: "简单，粗暴，直接！工作就是要这么高效！塔罗师pinKing独家提供！想知道在新公司怎么样？想知道近期的工作有什么进展？这个牌阵无疑是你的首选！",
+    name: "工作發展牌陣",
+    nameCn: "工作發展牌陣",
+    description: "簡單，粗暴，直接！工作就是要這麼高效！塔羅師pinKing獨家提供！想知道在新公司怎麼樣？想知道近期的工作有什麼進展？這個牌陣無疑是你的首選！",
     layoutType: "free",
     positions: [
       {
@@ -751,9 +706,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-31",
-    name: "三选一",
-    nameCn: "三选一",
-    description: "选择困难的救星三选一牌阵！如果二选一已经满足不了你，请果断使用三选一吧！我们还为你增加了指引指示牌，让你选择无鸭梨！",
+    name: "三選一",
+    nameCn: "三選一",
+    description: "選擇困難的救星三選一牌陣！如果二選一已經滿足不了你，請果斷使用三選一吧！我們還為你增加了指引指示牌，讓你選擇無鴨梨！",
     layoutType: "free",
     positions: [
       {
@@ -811,7 +766,7 @@ export const fateSpreads: FateSpread[] = [
     id: "starcat-19",
     name: "六芒星",
     nameCn: "六芒星",
-    description: "六芒星占卜法是塔罗牌中非常具有代表性的占卜法，它源自犹太教六芒星符号。如果你想知道问题发生的前因后果，及周遭环境对这件事的助益或阻碍之处，把事情的来龙去脉了解清楚，在此基础上选择出一个好的解决方法。六芒星牌阵满足你，占卜工作学业及理财投资方面问题效果更佳。",
+    description: "六芒星占卜法是塔羅牌中非常具有代表性的占卜法，它源自猶太教六芒星符號。如果你想知道問題發生的前因後果，及周遭環境對這件事的助益或阻礙之處，把事情的來龍去脈瞭解清楚，在此基礎上選擇出一個好的解決方法。六芒星牌陣滿足你，占卜工作學業及理財投資方面問題效果更佳。",
     layoutType: "free",
     positions: [
       {
@@ -867,9 +822,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-21",
-    name: "周运占卜法",
-    nameCn: "周运占卜法",
-    description: "顾名思义预测你一周的具体运势，为你催吉避凶。",
+    name: "周運占卜法",
+    nameCn: "周運占卜法",
+    description: "顧名思義預測你一週的具體運勢，為你催吉避兇。",
     layoutType: "free",
     positions: [
       {
@@ -927,7 +882,7 @@ export const fateSpreads: FateSpread[] = [
     id: "starcat-18",
     name: "酒杯",
     nameCn: "酒杯",
-    description: "此阵用于分析问题以及预测可能发生的事情，给你指引躲开麻烦或把握关键。",
+    description: "此陣用於分析問題以及預測可能發生的事情，給你指引躲開麻煩或把握關鍵。",
     layoutType: "free",
     positions: [
       {
@@ -983,9 +938,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-17",
-    name: "卡尔米克",
-    nameCn: "卡尔米克",
-    description: "当你感到迷茫甚至怀疑人生时，古老的卡尔米克可以让你更好了解自己给予你命运中的启示。",
+    name: "卡爾米克",
+    nameCn: "卡爾米克",
+    description: "當你感到迷茫甚至懷疑人生時，古老的卡爾米克可以讓你更好了解自己給予你命運中的啟示。",
     layoutType: "free",
     positions: [
       {
@@ -1041,9 +996,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-16",
-    name: "满月之旅",
-    nameCn: "满月之旅",
-    description: "能否复合？继续挽回还是潇洒离开？对方心中隐藏着什么？你们两人需要的是什么？这些问题满月之旅能够代表月亮占卜你～><！",
+    name: "滿月之旅",
+    nameCn: "滿月之旅",
+    description: "能否複合？繼續挽回還是瀟灑離開？對方心中隱藏著什麼？你們兩人需要的是什麼？這些問題滿月之旅能夠代表月亮占卜你～><！",
     layoutType: "free",
     positions: [
       {
@@ -1099,9 +1054,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-20",
-    name: "维纳斯之爱",
-    nameCn: "维纳斯之爱",
-    description: "维纳斯之爱既可以分析恋人双方的内在情况又可以对恋人双方未来可能出现的变化进行预测，对这段恋情作出一个细致的分析，相当耗费Mp，必须感谢为你解答的塔罗师。",
+    name: "維納斯之愛",
+    nameCn: "維納斯之愛",
+    description: "維納斯之愛既可以分析戀人雙方的內在情況又可以對戀人雙方未來可能出現的變化進行預測，對這段戀情作出一個細緻的分析，相當耗費Mp，必須感謝為你解答的塔羅師。",
     layoutType: "free",
     positions: [
       {
@@ -1164,9 +1119,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-34",
-    name: "脱单项链&沙漏",
-    nameCn: "脱单项链&沙漏",
-    description: "吃狗粮吃到吐？想把狗粮塞回去？那就使用我把！单身狗的逆袭全程干货指引你如何快速脱单，让你清晰知道问题关键暴击单身狗！最终形态脱单沙漏，脱单指日可待！",
+    name: "脫單項鍊&沙漏",
+    nameCn: "脫單項鍊&沙漏",
+    description: "吃狗糧吃到吐？想把狗糧塞回去？那就使用我把！單身狗的逆襲全程乾貨指引你如何快速脫單，讓你清晰知道問題關鍵暴擊單身狗！最終形態脫單沙漏，脫單指日可待！",
     layoutType: "free",
     positions: [
       {
@@ -1231,7 +1186,7 @@ export const fateSpreads: FateSpread[] = [
     id: "starcat-22",
     name: "向日葵",
     nameCn: "向日葵",
-    description: "如果你内心有种说不清的疑惑，又找不到一个具体的问题的话，这个独特的牌阵能够指引你让更加清晰地找到问题所在。Mp消耗大～",
+    description: "如果你內心有種說不清的疑惑，又找不到一個具體的問題的話，這個獨特的牌陣能夠指引你讓更加清晰地找到問題所在。Mp消耗大～",
     layoutType: "free",
     positions: [
       {
@@ -1301,9 +1256,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-28",
-    name: "X复合阵",
-    nameCn: "X复合阵",
-    description: "不用多说！只要想复合请选这个阵！",
+    name: "X複合陣",
+    nameCn: "X複合陣",
+    description: "不用多說！只要想複合請選這個陣！",
     layoutType: "free",
     positions: [
       {
@@ -1373,9 +1328,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-35",
-    name: "丛辰",
-    nameCn: "丛辰",
-    description: "你们闹矛盾了吗？两人相处小不免有摩擦，丛辰能够指引你解决问题。\n丛为聚集的意思，辰则是天上的星星和时间。丛辰能聚集天上的星星祝福你们能度过在一起的好时光。本牌阵是占星猫第一款叠式牌阵，多线程立体的解读能够清晰地指引出解决问题的方法和方向。同时也适用于对立问题的解决。",
+    name: "叢辰",
+    nameCn: "叢辰",
+    description: "你們鬧矛盾了嗎？兩人相處小不免有摩擦，叢辰能夠指引你解決問題。\n叢為聚集的意思，辰則是天上的星星和時間。叢辰能聚集天上的星星祝福你們能度過在一起的好時光。本牌陣是占星貓第一款疊式牌陣，多線程立體的解讀能夠清晰地指引出解決問題的方法和方向。同時也適用於對立問題的解決。",
     layoutType: "free",
     positions: [
       {
@@ -1445,9 +1400,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-23",
-    name: "凯尔特十字",
-    nameCn: "凯尔特十字",
-    description: "这是一个几乎所有塔罗书籍上都会提及而且推荐的经典牌阵，能针对某一件事或问题的各个层面去判断分析，能解读出过去，现在和未来事情的发展。特别是在预测学业和事业的问题上威力巨大！能娴熟地精准解读这个牌阵的塔罗师相信都是大法师级别！～记得自备血包><",
+    name: "凱爾特十字",
+    nameCn: "凱爾特十字",
+    description: "這是一個幾乎所有塔羅書籍上都會提及而且推薦的經典牌陣，能針對某一件事或問題的各個層面去判斷分析，能解讀出過去，現在和未來事情的發展。特別是在預測學業和事業的問題上威力巨大！能嫻熟地精準解讀這個牌陣的塔羅師相信都是大法師級別！～記得自備血包><",
     layoutType: "free",
     positions: [
       {
@@ -1524,9 +1479,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-24",
-    name: "生命之树",
-    nameCn: "生命之树",
-    description: "当我们不满足对于事物的表面解释希望能有更深入的探索时，你需要生命之树的力量，但并不是所有人都能理解生命之树的引导，不单对塔罗师的级别要求非常高还需要有丰富的人生沉淀。去寻找一位贤者为你解读吧少年～！",
+    name: "生命之樹",
+    nameCn: "生命之樹",
+    description: "當我們不滿足對於事物的表面解釋希望能有更深入的探索時，你需要生命之樹的力量，但並不是所有人都能理解生命之樹的引導，不單對塔羅師的級別要求非常高還需要有豐富的人生沉澱。去尋找一位賢者為你解讀吧少年～！",
     layoutType: "free",
     positions: [
       {
@@ -1610,9 +1565,9 @@ export const fateSpreads: FateSpread[] = [
   },
   {
     id: "starcat-29",
-    name: "破镜重圆",
-    nameCn: "破镜重圆",
-    description: "已经分手了怎么换回？情敌那边什么情况？他（她）又是怎么想的？我该如何做？这种夹杂着第三者的复杂复合问题破镜重圆是你的绝佳选择！",
+    name: "破鏡重圓",
+    nameCn: "破鏡重圓",
+    description: "已經分手了怎麼換回？情敵那邊什麼情況？他（她）又是怎麼想的？我該如何做？這種夾雜著第三者的複雜複合問題破鏡重圓是你的絕佳選擇！",
     layoutType: "free",
     positions: [
       {
@@ -1698,7 +1653,7 @@ export const fateSpreads: FateSpread[] = [
     id: "starcat-25",
     name: "十二星座",
     nameCn: "十二星座",
-    description: "要启动这个巨无霸简直贤者和大法师合力都会虚脱><!这是一个塔罗与占星术结合而创造出来的「炼成阵」！十二张牌结应着十二星座和宫位，可以针对某件事某个人的细致分析，也可以对自己的运势进行预测，如爱情运、事业运、健康运等等。",
+    description: "要啟動這個巨無霸簡直賢者和大法師合力都會虛脫><!這是一個塔羅與占星術結合而創造出來的「煉成陣」！十二張牌結應著十二星座和宮位，可以針對某件事某個人的細緻分析，也可以對自己的運勢進行預測，如愛情運、事業運、健康運等等。",
     layoutType: "free",
     positions: [
       {
