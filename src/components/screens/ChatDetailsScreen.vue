@@ -477,9 +477,6 @@ function handleAction(action: string) {
 
 <template>
   <div class="chat-details-screen">
-    <!-- 環境裝飾光暈 -->
-    <div class="ambient-glow ambient-glow--top"></div>
-    <div class="ambient-glow ambient-glow--bottom"></div>
 
     <!-- 浮動頂部標題列 -->
     <header class="float-header">
@@ -615,8 +612,7 @@ function handleAction(action: string) {
       <!-- 內容流 -->
       <div class="content-flow">
         <!-- 成員區：直接顯示成員 + 內聯管理 -->
-        <section class="glass-panel rounded-soft">
-          <div class="panel-deco panel-deco--bl"></div>
+        <section class="panel">
           <div class="panel-head">
             <h3 class="panel-title">成員 · {{ totalMemberCount }}</h3>
             <button class="panel-head-action" @click="onAddMemberQuick">
@@ -914,8 +910,7 @@ function handleAction(action: string) {
         </section>
 
         <!-- 綁定世界書（多人卡不顯示，因角色卡本身可綁定世界書） -->
-        <section v-if="!isMultiCharCard" class="glass-panel organic-shape-2">
-          <div class="panel-deco panel-deco--right"></div>
+        <section v-if="!isMultiCharCard" class="panel">
           <h3 class="panel-title">綁定世界書（僅此群組生效）</h3>
           <div v-if="lorebooks.length === 0" class="empty-hint">
             尚無世界書，請先建立世界書
@@ -942,7 +937,7 @@ function handleAction(action: string) {
         </section>
 
         <!-- 群組功能 -->
-        <section class="glass-panel rounded-soft">
+        <section class="panel">
           <h3 class="panel-title">群組功能</h3>
           <div class="list-group">
             <button class="list-item" @click="handleAction('chat-vars')">
@@ -987,7 +982,7 @@ function handleAction(action: string) {
         </section>
 
         <!-- 資料管理 -->
-        <section class="glass-panel rounded-soft">
+        <section class="panel">
           <h3 class="panel-title">資料管理</h3>
           <div class="list-group">
             <button class="list-item" @click="handleAction('export')">
@@ -1038,7 +1033,6 @@ function handleAction(action: string) {
       <!-- 個人資料 -->
       <section class="profile-section">
         <div class="avatar-container">
-          <div class="avatar-glow"></div>
           <div class="avatar-frame">
             <img v-if="displayAvatar" :src="displayAvatar" :alt="characterName" />
             <div v-else class="avatar-placeholder">
@@ -1052,79 +1046,74 @@ function handleAction(action: string) {
         <h2 class="profile-name">{{ displayName }}</h2>
         <p v-if="nickname" class="profile-subtitle">{{ nickname }}</p>
 
-        <!-- 快捷導航：直接置於名稱下方，無面板包裹 -->
-        <div class="quick-honeycomb">
-          <div class="hex-row hex-row--top">
-            <button class="quick-item" @click="handleAction('character')">
-              <div class="quick-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="8" r="4" />
-                  <path d="M5 21v-2a7 7 0 0 1 14 0v2" />
-                </svg>
-              </div>
-              <span class="quick-label">角色卡</span>
-            </button>
-            <button class="quick-item quick-item--hero" @click="handleAction('chat-vars')">
-              <div class="quick-icon quick-icon--hero">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M4 7h16" />
-                  <path d="M4 17h16" />
-                  <circle cx="8" cy="7" r="2" />
-                  <circle cx="16" cy="17" r="2" />
-                </svg>
-              </div>
-              <span class="quick-label">專屬預設</span>
-            </button>
-            <button class="quick-item" @click="handleAction('worldbook')">
-              <div class="quick-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M2 12h20" />
-                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                </svg>
-              </div>
-              <span class="quick-label">世界書</span>
-            </button>
-          </div>
-          <div class="hex-row hex-row--bottom">
-            <button class="quick-item" @click="handleAction('peek-phone')">
-              <div class="quick-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z" />
-                  <circle cx="12" cy="9" r="2.5" />
-                </svg>
-              </div>
-              <span class="quick-label">頭盔TA</span>
-            </button>
-            <button class="quick-item quick-item--favorite" @click="handleAction('favorite-audio')" title="開啟收藏語音">
-              <div class="quick-icon quick-icon--favorite">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M4 13a8 8 0 0 1 16 0" />
-                  <path d="M4 13v3a2 2 0 0 0 2 2h1v-6H6a2 2 0 0 0-2 2Z" />
-                  <path d="M20 13v3a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 1Z" />
-                  <path d="m16.5 4.5.6 1.2 1.3.2-.95.9.22 1.3-1.17-.62-1.17.62.22-1.3-.95-.9 1.3-.2Z" />
-                </svg>
-              </div>
-              <span class="quick-label">收藏語音</span>
-            </button>
-            <button class="quick-item" @click="handleAction('settings')">
-              <div class="quick-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                </svg>
-              </div>
-              <span class="quick-label">設置</span>
-            </button>
-          </div>
+        <!-- 快捷導航：名稱下方 3×2 格 -->
+        <div class="quick-grid">
+          <button class="quick-item" @click="handleAction('character')">
+            <div class="quick-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="8" r="4" />
+                <path d="M5 21v-2a7 7 0 0 1 14 0v2" />
+              </svg>
+            </div>
+            <span class="quick-label">角色卡</span>
+          </button>
+          <button class="quick-item" @click="handleAction('chat-vars')">
+            <div class="quick-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 7h16" />
+                <path d="M4 17h16" />
+                <circle cx="8" cy="7" r="2" />
+                <circle cx="16" cy="17" r="2" />
+              </svg>
+            </div>
+            <span class="quick-label">專屬預設</span>
+          </button>
+          <button class="quick-item" @click="handleAction('worldbook')">
+            <div class="quick-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M2 12h20" />
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+              </svg>
+            </div>
+            <span class="quick-label">世界書</span>
+          </button>
+          <button class="quick-item" @click="handleAction('peek-phone')">
+            <div class="quick-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z" />
+                <circle cx="12" cy="9" r="2.5" />
+              </svg>
+            </div>
+            <span class="quick-label">頭盔TA</span>
+          </button>
+          <button class="quick-item quick-item--favorite" @click="handleAction('favorite-audio')" title="開啟收藏語音">
+            <div class="quick-icon quick-icon--favorite">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 13a8 8 0 0 1 16 0" />
+                <path d="M4 13v3a2 2 0 0 0 2 2h1v-6H6a2 2 0 0 0-2 2Z" />
+                <path d="M20 13v3a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 1Z" />
+                <path d="m16.5 4.5.6 1.2 1.3.2-.95.9.22 1.3-1.17-.62-1.17.62.22-1.3-.95-.9 1.3-.2Z" />
+              </svg>
+            </div>
+            <span class="quick-label">收藏語音</span>
+          </button>
+          <button class="quick-item" @click="handleAction('settings')">
+            <div class="quick-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </div>
+            <span class="quick-label">設置</span>
+          </button>
         </div>
       </section>
 
       <!-- 內容流 -->
       <div class="content-flow">
         <!-- 聊天管理 -->
-        <section class="glass-panel rounded-soft">
-          <div class="panel-deco panel-deco--bl"></div>
+        <section class="panel">
           <h3 class="panel-title">聊天管理</h3>
           <div class="list-group">
             <button class="list-item" @click="emit('open-proactive-message-settings')">
@@ -1179,8 +1168,7 @@ function handleAction(action: string) {
         </section>
 
         <!-- 資料管理 -->
-        <section class="glass-panel organic-shape-2">
-          <div class="panel-deco panel-deco--right"></div>
+        <section class="panel">
           <h3 class="panel-title">資料管理</h3>
           <div class="list-group">
             <button class="list-item" @click="handleAction('export')">
@@ -1225,7 +1213,7 @@ function handleAction(action: string) {
         </section>
 
         <!-- 危險操作 -->
-        <section class="glass-panel rounded-soft">
+        <section class="panel">
           <h3 class="panel-title">危險操作</h3>
           <div class="list-group">
             <button class="list-item danger" @click="handleAction('block')">
@@ -1263,80 +1251,75 @@ function handleAction(action: string) {
 </template>
 
 <style lang="scss" scoped>
+/* ============================================================
+ * 聊天詳情頁
+ * 設計：卡片式分組列表，色彩全部取自主題變數，寬螢幕置中限寬
+ * ============================================================ */
 .chat-details-screen {
+  --cd-accent: var(--color-primary, #00723a);
+  --cd-danger: var(--color-error, #b3261e);
+  --cd-card: var(--color-surface, #ffffff);
+  --cd-line: var(--color-border, rgba(0, 0, 0, 0.08));
+  --cd-hover: var(--color-surface-hover, color-mix(in srgb, var(--color-text, #000) 5%, var(--cd-card)));
+  --cd-accent-soft: color-mix(in srgb, var(--cd-accent) 12%, var(--cd-card));
+  --cd-danger-soft: color-mix(in srgb, var(--cd-danger) 10%, var(--cd-card));
+  --cd-favorite: #c98a12;
+  --cd-favorite-soft: color-mix(in srgb, #e3a72f 16%, var(--cd-card));
+  --cd-radius: 20px;
+  --cd-header-h: 52px;
+  --cd-max-w: 560px;
+
   position: fixed;
   inset: 0;
   z-index: 1000;
   overflow: hidden;
   background:
-    radial-gradient(circle at 50% -10%,
-      color-mix(in srgb, var(--color-primary, #00723a) 8%, var(--color-background)) 0%,
-      var(--color-background) 60%);
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--cd-accent) 7%, var(--color-background)) 0,
+      var(--color-background) 360px);
   color: var(--color-text);
   font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 }
 
-/* === 環境光暈 === */
-.ambient-glow {
-  position: absolute;
-  border-radius: 9999px;
-  filter: blur(80px);
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.3;
-}
-
-.ambient-glow--top {
-  top: 80px;
-  left: -10%;
-  width: 260px;
-  height: 260px;
-  background: color-mix(in srgb, var(--color-primary, #00723a) 35%, transparent);
-}
-
-.ambient-glow--bottom {
-  bottom: 160px;
-  right: -10%;
-  width: 320px;
-  height: 320px;
-  background: color-mix(in srgb, var(--color-primary, #00723a) 18%, transparent);
-}
-
-/* === 浮動標題列 === */
+/* === 標題列 === */
 .float-header {
-  position: fixed;
-  top: max(16px, calc(var(--safe-top, 0px) + 16px));
-  left: 16px;
-  right: 16px;
-  height: 56px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  box-sizing: content-box;
+  height: var(--cd-header-h);
+  padding: var(--safe-top, 0px) max(8px, calc((100% - var(--cd-max-w)) / 2)) 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 8px 0 6px;
-  border-radius: 9999px;
-  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
-  backdrop-filter: blur(20px) saturate(140%);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
-  border: 1px solid color-mix(in srgb, var(--color-surface) 80%, transparent);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
-  z-index: 50;
+  background: color-mix(in srgb, var(--color-background) 72%, transparent);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+}
+
+.header-btn,
+.header-btn-placeholder {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
 }
 
 .header-btn {
-  width: 40px;
-  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9999px;
+  padding: 0;
+  border-radius: 12px;
   background: transparent;
   border: none;
-  color: var(--color-primary, #00723a);
+  color: var(--color-text);
   cursor: pointer;
   transition: background-color 0.2s, transform 0.15s;
 
   &:hover {
-    background: color-mix(in srgb, var(--color-primary, #00723a) 12%, transparent);
+    background: var(--cd-hover);
   }
 
   &:active {
@@ -1349,16 +1332,11 @@ function handleAction(action: string) {
   }
 }
 
-.header-btn-placeholder {
-  width: 40px;
-  height: 40px;
-}
-
 .header-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--color-primary, #00723a);
   margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--color-text);
   letter-spacing: 0.2px;
 }
 
@@ -1367,14 +1345,24 @@ function handleAction(action: string) {
   position: relative;
   z-index: 10;
   height: 100%;
+  width: 100%;
+  box-sizing: border-box;
   overflow-y: auto;
   overflow-x: hidden;
-  box-sizing: border-box;
-  width: 100%;
   padding:
-    calc(max(16px, calc(var(--safe-top, 0px) + 16px)) + 56px + 24px)
-    20px
-    calc(24px + max(0px, var(--safe-bottom, 0px)));
+    calc(var(--safe-top, 0px) + var(--cd-header-h) + 16px)
+    16px
+    calc(32px + var(--safe-bottom, 0px));
+
+  > * {
+    max-width: var(--cd-max-w);
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+.hidden-file-input {
+  display: none;
 }
 
 /* === 個人資料 === */
@@ -1382,17 +1370,52 @@ function handleAction(action: string) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 28px;
 }
 
 .avatar-container {
   position: relative;
-  width: 128px;
-  height: 128px;
-  margin-bottom: 16px;
+  width: 104px;
+  height: 104px;
+  margin-bottom: 14px;
 }
 
-/* 群聊：可點擊編輯的頭像 */
+.avatar-frame {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  overflow: hidden;
+  background: var(--cd-accent-soft);
+  box-shadow:
+    0 0 0 4px var(--cd-card),
+    0 0 0 5px var(--cd-line),
+    0 10px 28px color-mix(in srgb, var(--cd-accent) 16%, transparent);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    // 圖片載入失敗時隱藏 alt 文字
+    color: transparent;
+    font-size: 0;
+  }
+
+  .avatar-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--cd-accent);
+
+    svg {
+      width: 44px;
+      height: 44px;
+    }
+  }
+}
+
+/* 群聊：可點擊更換的頭像 */
 .avatar-container--editable {
   padding: 0;
   border: none;
@@ -1407,95 +1430,51 @@ function handleAction(action: string) {
 
 .avatar-edit-badge {
   position: absolute;
-  right: 2px;
-  bottom: 2px;
-  width: 36px;
-  height: 36px;
+  right: -2px;
+  bottom: -2px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
-  background: var(--color-primary, #00723a);
+  background: var(--cd-accent);
   color: var(--color-on-primary, #ffffff);
-  border: 3px solid var(--color-surface);
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary, #00723a) 30%, transparent);
+  border: 3px solid var(--color-background);
 
   svg {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
   }
 }
 
 .avatar-remove-btn {
-  margin: -4px 0 12px;
-  padding: 5px 14px;
+  margin: 0 0 12px;
+  padding: 4px 12px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-error, #b3261e);
-  background: color-mix(in srgb, var(--color-error, #b3261e) 8%, transparent);
+  color: var(--cd-danger);
+  background: var(--cd-danger-soft);
   border: none;
   border-radius: 9999px;
   cursor: pointer;
-  transition: background-color 0.2s;
-
-  &:hover {
-    background: color-mix(in srgb, var(--color-error, #b3261e) 14%, transparent);
-  }
-}
-
-.hidden-file-input {
-  display: none;
-}
-
-.avatar-glow {
-  display: none;
-}
-
-.avatar-frame {
-  position: absolute;
-  inset: 0;
-  border-radius: 9999px;
-  overflow: hidden;
-  border: 3px solid var(--color-surface);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--color-primary, #00723a) 18%, transparent),
-    0 12px 28px color-mix(in srgb, var(--color-primary, #00723a) 18%, transparent);
-  background: var(--color-surface);
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .avatar-placeholder {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--color-text-muted);
-
-    svg {
-      width: 56px;
-      height: 56px;
-    }
-  }
 }
 
 .profile-name {
+  margin: 0;
+  max-width: 100%;
   font-size: 22px;
   font-weight: 700;
+  line-height: 1.3;
   color: var(--color-text);
-  margin: 0 0 4px;
   text-align: center;
-  letter-spacing: -0.2px;
+  overflow-wrap: anywhere;
 }
 
 .profile-subtitle {
-  font-size: 14px;
+  margin: 4px 0 0;
+  font-size: 13px;
   color: var(--color-text-secondary);
-  margin: 0;
   text-align: center;
 }
 
@@ -1505,32 +1484,21 @@ function handleAction(action: string) {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  margin-bottom: 4px;
   max-width: 100%;
-
-  .profile-name {
-    margin: 0;
-  }
 }
 
-.name-edit-btn {
+.name-edit-btn,
+.name-edit-confirm {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  border-radius: 9999px;
-  background: transparent;
+  padding: 0;
   border: none;
-  color: var(--color-text-secondary);
+  border-radius: 9999px;
   cursor: pointer;
-  transition: background-color 0.2s, color 0.2s;
-
-  &:hover {
-    background: color-mix(in srgb, var(--color-primary, #00723a) 12%, transparent);
-    color: var(--color-primary, #00723a);
-  }
 
   svg {
     width: 15px;
@@ -1538,278 +1506,324 @@ function handleAction(action: string) {
   }
 }
 
-.name-edit-input {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--color-text);
-  text-align: center;
-  background: color-mix(in srgb, var(--color-surface) 85%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-primary, #00723a) 35%, transparent);
-  border-radius: 12px;
-  padding: 4px 12px;
-  max-width: 220px;
-  outline: none;
+.name-edit-btn {
+  background: transparent;
+  color: var(--color-text-secondary);
+  transition: background-color 0.2s, color 0.2s;
 
-  &:focus {
-    border-color: var(--color-primary, #00723a);
+  &:hover {
+    background: var(--cd-accent-soft);
+    color: var(--cd-accent);
   }
 }
 
 .name-edit-confirm {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  border-radius: 9999px;
-  background: var(--color-primary, #00723a);
+  background: var(--cd-accent);
   color: var(--color-on-primary, #ffffff);
-  border: none;
-  cursor: pointer;
+}
 
-  svg {
-    width: 16px;
-    height: 16px;
+.name-edit-input {
+  max-width: 220px;
+  padding: 4px 12px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text);
+  text-align: center;
+  background: var(--cd-card);
+  border: 1px solid var(--cd-line);
+  border-radius: 12px;
+  outline: none;
+
+  &:focus {
+    border-color: var(--cd-accent);
   }
 }
 
-/* === 群聊：快捷操作列 === */
+/* === 快捷入口（單人 3×2 格 / 群聊 4 格）=== */
+.quick-grid,
 .quick-actions {
-  display: flex;
-  justify-content: center;
-  gap: 28px;
-  margin-top: 22px;
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  margin-top: 24px;
 }
 
+.quick-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.quick-actions {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.quick-item,
 .quick-action {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 0;
-  background: transparent;
-  border: none;
+  min-width: 0;
+  padding: 14px 6px 12px;
+  background: var(--cd-card);
+  border: 1px solid var(--cd-line);
+  border-radius: 18px;
   cursor: pointer;
-  transition: transform 0.18s cubic-bezier(0.34, 1.32, 0.64, 1);
+  transition: background-color 0.2s, transform 0.15s, box-shadow 0.2s;
 
-  &:active {
-    transform: translateY(-1px) scale(0.95);
+  &:hover {
+    background: var(--cd-hover);
   }
 
-  &:hover .quick-action-icon {
-    background: var(--color-primary, #00723a);
-    color: var(--color-on-primary, #ffffff);
-    box-shadow: 0 10px 22px color-mix(in srgb, var(--color-primary, #00723a) 28%, transparent);
+  &:active {
+    transform: scale(0.96);
   }
 }
 
+.quick-icon,
 .quick-action-icon {
-  width: 54px;
-  height: 54px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9999px;
-  background: color-mix(in srgb, var(--color-surface) 95%, transparent);
-  color: var(--color-primary, #00723a);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  transition: background-color 0.25s, color 0.25s, box-shadow 0.3s;
+  border-radius: 12px;
+  background: var(--cd-accent-soft);
+  color: var(--cd-accent);
 
   svg {
-    width: 22px;
-    height: 22px;
+    width: 21px;
+    height: 21px;
+  }
+}
+
+.quick-label,
+.quick-action-label {
+  max-width: 100%;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quick-item--favorite,
+.quick-action--favorite {
+  .quick-icon,
+  .quick-action-icon {
+    background: var(--cd-favorite-soft);
+    color: var(--cd-favorite);
   }
 }
 
 .quick-action--danger {
   .quick-action-icon {
-    color: var(--color-error, #b3261e);
+    background: var(--cd-danger-soft);
+    color: var(--cd-danger);
   }
 
   .quick-action-label {
-    color: var(--color-error, #b3261e);
-  }
-
-  &:hover .quick-action-icon {
-    background: var(--color-error, #b3261e);
-    color: #ffffff;
-    box-shadow: 0 10px 22px color-mix(in srgb, var(--color-error, #b3261e) 28%, transparent);
+    color: var(--cd-danger);
   }
 }
 
-.quick-action--favorite {
-  .quick-action-icon {
-    background: color-mix(in srgb, #e3a72f 16%, var(--color-surface));
-    color: #a86b00;
-    box-shadow: 0 4px 12px rgba(190, 125, 0, 0.18);
-  }
-
-  .quick-action-label {
-    color: #9a6200;
-    font-weight: 600;
-  }
-
-  &:hover .quick-action-icon {
-    background: #d99a1f;
-    color: #ffffff;
-    box-shadow: 0 10px 22px rgba(190, 125, 0, 0.38);
-  }
-}
-
-.quick-action-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  letter-spacing: 0.3px;
-}
-
-/* === 內容流 === */
+/* === 內容流與卡片 === */
 .content-flow {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  width: 100%;
+}
+
+.panel {
+  padding: 6px;
+  background: var(--cd-card);
+  border: 1px solid var(--cd-line);
+  border-radius: var(--cd-radius);
   box-sizing: border-box;
-}
-
-/* === 玻璃面板 === */
-.glass-panel {
-  position: relative;
-  padding: 22px 22px;
-  background: color-mix(in srgb, var(--color-surface) 55%, transparent);
-  backdrop-filter: blur(20px) saturate(140%);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
-  border: 1px solid color-mix(in srgb, var(--color-surface) 75%, transparent);
-  overflow: hidden;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.rounded-soft {
-  border-radius: 28px;
-}
-
-.organic-shape-2 {
-  border-radius: 28px;
-}
-
-.panel-deco {
-  position: absolute;
-  border-radius: 9999px;
-  filter: blur(40px);
-  pointer-events: none;
-  z-index: 0;
-
-  &--bl {
-    bottom: 0;
-    left: 0;
-    width: 160px;
-    height: 160px;
-    background: color-mix(in srgb, var(--color-primary, #00723a) 14%, transparent);
-    opacity: 0.4;
-    transform: translate(-30%, 50%);
-  }
-
-  &--right {
-    top: 50%;
-    right: 0;
-    width: 100px;
-    height: 100px;
-    background: color-mix(in srgb, var(--color-primary, #00723a) 20%, transparent);
-    opacity: 0.25;
-    transform: translate(40%, -50%);
-  }
 }
 
 .panel-title {
-  position: relative;
-  z-index: 1;
-  font-size: 11px;
+  margin: 0;
+  padding: 10px 10px 6px;
+  font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.6px;
   color: var(--color-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 1.6px;
-  margin: 0 0 16px;
 }
 
-/* === 群聊：面板標題列（標題 + 動作） === */
 .panel-head {
-  position: relative;
-  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
-
-  .panel-title {
-    margin: 0;
-  }
+  padding-right: 4px;
 }
 
 .panel-head-action {
+  padding: 4px 10px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-primary, #00723a);
+  color: var(--cd-accent);
   background: transparent;
   border: none;
-  cursor: pointer;
-  padding: 4px 8px;
   border-radius: 9999px;
+  cursor: pointer;
   transition: background-color 0.2s;
 
   &:hover {
-    background: color-mix(in srgb, var(--color-primary, #00723a) 12%, transparent);
+    background: var(--cd-accent-soft);
   }
 }
 
-/* === 群聊：成員列表（行式） === */
-.member-list {
-  position: relative;
-  z-index: 1;
+.empty-hint {
+  padding: 14px 10px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+/* === 列表項 === */
+.list-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+}
+
+.list-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px;
+  background: transparent;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.15s;
+
+  // 分隔線：從圖示右側開始
+  & + &::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 56px;
+    right: 10px;
+    height: 1px;
+    background: var(--cd-line);
+  }
+
+  &:hover {
+    background: var(--cd-hover);
+  }
+
+  &:hover::before,
+  &:hover + &::before {
+    opacity: 0;
+  }
+
+  &:active {
+    transform: scale(0.99);
+  }
+
+  &.danger {
+    .list-icon {
+      background: var(--cd-danger-soft);
+      color: var(--cd-danger);
+    }
+
+    .list-label {
+      color: var(--cd-danger);
+    }
+  }
+}
+
+.list-icon {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--cd-accent-soft);
+  color: var(--cd-accent);
+
+  svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+.list-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text);
+  text-align: left;
+}
+
+.chevron {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--color-text-muted, var(--color-text-secondary));
+}
+
+/* === 群聊：成員列表 === */
+.member-list {
+  display: flex;
+  flex-direction: column;
 }
 
 .member-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 6px;
-  border-radius: 16px;
+  padding: 8px 10px;
+  border-radius: 14px;
   transition: background-color 0.2s;
 
   &:hover {
-    background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+    background: var(--cd-hover);
   }
 }
 
-.member-row-avatar {
-  width: 44px;
-  height: 44px;
+.member-row-avatar,
+.picker-avatar {
   flex-shrink: 0;
   border-radius: 9999px;
   overflow: hidden;
-  background: var(--color-surface);
+  background: var(--cd-accent-soft);
 
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    color: transparent;
+    font-size: 0;
   }
 }
 
-.member-row-placeholder {
+.member-row-avatar {
+  width: 42px;
+  height: 42px;
+}
+
+.picker-avatar {
+  width: 38px;
+  height: 38px;
+}
+
+.member-row-placeholder,
+.picker-placeholder {
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--color-primary, #00723a) 14%, var(--color-surface));
-  color: var(--color-primary, #00723a);
-  font-size: 18px;
+  color: var(--cd-accent);
+  font-size: 16px;
   font-weight: 600;
 }
 
@@ -1825,62 +1839,39 @@ function handleAction(action: string) {
   font-size: 15px;
   font-weight: 500;
   color: var(--color-text);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .member-row-badges {
   display: flex;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .badge {
+  --badge-c: var(--color-text-secondary);
+  padding: 1px 7px;
   font-size: 10px;
   font-weight: 600;
-  padding: 1px 7px;
+  line-height: 16px;
   border-radius: 9999px;
+  color: var(--badge-c);
+  background: color-mix(in srgb, var(--badge-c) 13%, transparent);
 
-  &--admin {
-    color: var(--color-primary, #00723a);
-    background: color-mix(in srgb, var(--color-primary, #00723a) 14%, transparent);
-  }
-
-  &--muted {
-    color: var(--color-error, #b3261e);
-    background: color-mix(in srgb, var(--color-error, #b3261e) 12%, transparent);
-  }
-
-  &--self {
-    color: var(--color-primary, #00723a);
-    background: color-mix(in srgb, var(--color-primary, #00723a) 18%, transparent);
-  }
-
-  &--persona {
-    color: #7c3aed;
-    background: color-mix(in srgb, #7c3aed 14%, transparent);
-  }
-
-  &--source {
-    color: var(--color-text-secondary);
-    background: color-mix(in srgb, var(--color-text-secondary) 14%, transparent);
-  }
-
-  &--bound {
-    color: #d946a6;
-    background: color-mix(in srgb, #d946a6 14%, transparent);
-  }
-
-  &--affinity {
-    color: #d97706;
-    background: color-mix(in srgb, #d97706 14%, transparent);
-  }
+  &--self,
+  &--admin { --badge-c: var(--cd-accent); }
+  &--muted { --badge-c: var(--cd-danger); }
+  &--persona { --badge-c: #7c3aed; }
+  &--bound { --badge-c: #d946a6; }
+  &--affinity { --badge-c: #d97706; }
 }
 
 .member-row-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   flex-shrink: 0;
 }
 
@@ -1890,25 +1881,27 @@ function handleAction(action: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9999px;
-  background: transparent;
+  padding: 0;
   border: none;
-  color: var(--color-text-secondary);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-muted, var(--color-text-secondary));
   cursor: pointer;
   transition: background-color 0.2s, color 0.2s;
 
   &:hover {
-    background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+    background: var(--cd-hover);
+    color: var(--color-text);
   }
 
   &.active {
-    color: var(--color-primary, #00723a);
-    background: color-mix(in srgb, var(--color-primary, #00723a) 14%, transparent);
+    background: var(--cd-accent-soft);
+    color: var(--cd-accent);
   }
 
   &--danger:hover {
-    color: var(--color-error, #b3261e);
-    background: color-mix(in srgb, var(--color-error, #b3261e) 12%, transparent);
+    background: var(--cd-danger-soft);
+    color: var(--cd-danger);
   }
 
   svg {
@@ -1918,51 +1911,47 @@ function handleAction(action: string) {
 }
 
 .member-show-all {
-  position: relative;
-  z-index: 1;
   display: block;
-  width: 100%;
-  margin-top: 12px;
+  width: calc(100% - 8px);
+  margin: 6px 4px 4px;
   padding: 10px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-primary, #00723a);
-  background: color-mix(in srgb, var(--color-primary, #00723a) 8%, transparent);
+  color: var(--cd-accent);
+  background: var(--cd-accent-soft);
   border: none;
-  border-radius: 14px;
+  border-radius: 12px;
   cursor: pointer;
-  transition: background-color 0.2s;
-
-  &:hover {
-    background: color-mix(in srgb, var(--color-primary, #00723a) 14%, transparent);
-  }
 }
 
-/* === 群聊：加成員角色挑選 === */
-.member-picker {
-  position: relative;
-  z-index: 1;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid color-mix(in srgb, var(--color-text-secondary) 14%, transparent);
+/* === 群聊：加成員角色挑選 / 子角色表單 === */
+.member-picker,
+.subchar-form {
+  margin: 8px 4px 4px;
+  padding: 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-text, #000) 3%, var(--cd-card));
+  border: 1px solid var(--cd-line);
 }
 
 .member-picker-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
-.member-picker-title {
-  font-size: 13px;
+.member-picker-title,
+.subchar-binding-head {
+  font-size: 12px;
   font-weight: 600;
   color: var(--color-text-secondary);
 }
 
 .member-picker-close {
+  padding: 0;
   font-size: 12px;
-  color: var(--color-primary, #00723a);
+  color: var(--cd-accent);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -1971,7 +1960,7 @@ function handleAction(action: string) {
 .picker-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   max-height: 260px;
   overflow-y: auto;
 }
@@ -1980,93 +1969,65 @@ function handleAction(action: string) {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 6px;
-  border-radius: 14px;
+  padding: 6px;
   background: transparent;
   border: none;
+  border-radius: 12px;
   cursor: pointer;
   transition: background-color 0.2s;
 
   &:hover {
-    background: color-mix(in srgb, var(--color-primary, #00723a) 8%, transparent);
+    background: var(--cd-hover);
   }
-}
-
-.picker-avatar {
-  width: 40px;
-  height: 40px;
-  flex-shrink: 0;
-  border-radius: 9999px;
-  overflow: hidden;
-  background: var(--color-surface);
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-}
-
-.picker-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, var(--color-primary, #00723a) 14%, var(--color-surface));
-  color: var(--color-primary, #00723a);
-  font-size: 16px;
-  font-weight: 600;
 }
 
 .picker-name {
   flex: 1;
   min-width: 0;
-  text-align: left;
   font-size: 15px;
   color: var(--color-text);
+  text-align: left;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .picker-add {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
-  color: var(--color-primary, #00723a);
+  color: var(--cd-accent);
 }
 
-/* === 多人卡：加子角色內聯表單 === */
 .subchar-form {
-  position: relative;
-  z-index: 1;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid color-mix(in srgb, var(--color-text-secondary) 14%, transparent);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .subchar-row {
   display: flex;
   align-items: center;
   gap: 10px;
+
+  .subchar-input {
+    flex: 1;
+  }
 }
 
 .subchar-avatar {
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   flex-shrink: 0;
-  border-radius: 9999px;
-  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--color-primary, #00723a) 10%, var(--color-surface));
-  color: var(--color-primary, #00723a);
-  border: 1px dashed color-mix(in srgb, var(--color-primary, #00723a) 35%, transparent);
+  padding: 0;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--cd-accent-soft);
+  color: var(--cd-accent);
+  border: 1px dashed color-mix(in srgb, var(--cd-accent) 40%, transparent);
   cursor: pointer;
 
   img {
@@ -2081,24 +2042,97 @@ function handleAction(action: string) {
   }
 }
 
-.subchar-input {
+.subchar-input,
+.subchar-select {
   width: 100%;
   box-sizing: border-box;
+  padding: 9px 12px;
   font-size: 14px;
   color: var(--color-text);
-  background: color-mix(in srgb, var(--color-surface) 85%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-text-secondary) 20%, transparent);
-  border-radius: 12px;
-  padding: 9px 12px;
+  background: var(--cd-card);
+  border: 1px solid var(--cd-line);
+  border-radius: 10px;
   outline: none;
 
   &:focus {
-    border-color: var(--color-primary, #00723a);
+    border-color: var(--cd-accent);
   }
 }
 
-.subchar-row .subchar-input {
-  flex: 1;
+.subchar-select {
+  cursor: pointer;
+}
+
+.subchar-source-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--cd-hover);
+}
+
+.source-tab {
+  flex: 1 1 auto;
+  min-width: 64px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+
+  &.active {
+    color: var(--color-text);
+    background: var(--cd-card);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+}
+
+.subchar-toggle,
+.subchar-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text);
+  cursor: pointer;
+
+  input {
+    accent-color: var(--cd-accent);
+    cursor: pointer;
+  }
+}
+
+.subchar-toggle input {
+  width: 16px;
+  height: 16px;
+}
+
+.subchar-hint-mini {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.subchar-binding {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--cd-card);
+  border: 1px solid var(--cd-line);
+}
+
+.subchar-bind-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .subchar-actions {
@@ -2109,22 +2143,22 @@ function handleAction(action: string) {
 
 .subchar-cancel,
 .subchar-confirm {
+  padding: 7px 16px;
   font-size: 13px;
   font-weight: 600;
-  padding: 7px 16px;
-  border-radius: 9999px;
   border: none;
+  border-radius: 9999px;
   cursor: pointer;
 }
 
 .subchar-cancel {
   color: var(--color-text-secondary);
-  background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+  background: var(--cd-hover);
 }
 
 .subchar-confirm {
   color: var(--color-on-primary, #ffffff);
-  background: var(--color-primary, #00723a);
+  background: var(--cd-accent);
 
   &:disabled {
     opacity: 0.5;
@@ -2132,140 +2166,30 @@ function handleAction(action: string) {
   }
 }
 
-/* === 多人卡：加子角色來源選擇器 === */
-.subchar-source-tabs {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.source-tab {
-  flex: 1 1 auto;
-  min-width: 64px;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 6px 10px;
-  border-radius: 9999px;
-  border: 1px solid color-mix(in srgb, var(--color-text-secondary) 20%, transparent);
-  background: color-mix(in srgb, var(--color-surface) 85%, transparent);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
-
-  &.active {
-    color: var(--color-on-primary, #ffffff);
-    background: var(--color-primary, #00723a);
-    border-color: var(--color-primary, #00723a);
-  }
-}
-
-.subchar-select {
-  width: 100%;
-  box-sizing: border-box;
-  font-size: 14px;
-  color: var(--color-text);
-  background: color-mix(in srgb, var(--color-surface) 85%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-text-secondary) 20%, transparent);
-  border-radius: 12px;
-  padding: 9px 12px;
-  outline: none;
-  cursor: pointer;
-
-  &:focus {
-    border-color: var(--color-primary, #00723a);
-  }
-}
-
-.subchar-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--color-text);
-  cursor: pointer;
-
-  input {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--color-primary, #00723a);
-    cursor: pointer;
-  }
-}
-
-.subchar-hint-mini {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  line-height: 1.5;
-}
-
-.subchar-binding {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--color-text-secondary) 6%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-text-secondary) 12%, transparent);
-}
-
-.subchar-binding-head {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-.subchar-bind-modes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.subchar-radio {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--color-text);
-  cursor: pointer;
-
-  input {
-    accent-color: var(--color-primary, #00723a);
-    cursor: pointer;
-  }
-}
-
-/* === 世界書綁定 === */
-.empty-hint {
-  position: relative;
-  z-index: 1;
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  text-align: center;
-  padding: 12px;
-}
-
+/* === 群聊：世界書綁定 === */
 .lorebook-list {
-  position: relative;
-  z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 
 .lorebook-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 10px;
+  background: transparent;
+  border: none;
   border-radius: 14px;
-  background: color-mix(in srgb, var(--color-surface) 50%, transparent);
-  border: 1px solid transparent;
   cursor: pointer;
-  transition: background-color 0.2s, border-color 0.2s;
+  transition: background-color 0.2s;
+
+  &:hover {
+    background: var(--cd-hover);
+  }
 
   &.active {
-    border-color: color-mix(in srgb, var(--color-primary, #00723a) 40%, transparent);
-    background: color-mix(in srgb, var(--color-primary, #00723a) 8%, transparent);
+    background: var(--cd-accent-soft);
   }
 }
 
@@ -2276,13 +2200,15 @@ function handleAction(action: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
-  border: 2px solid color-mix(in srgb, var(--color-text-secondary) 40%, transparent);
+  box-sizing: border-box;
+  border-radius: 7px;
+  border: 2px solid var(--cd-line);
   color: var(--color-on-primary, #ffffff);
+  transition: background-color 0.2s, border-color 0.2s;
 
   .lorebook-item.active & {
-    background: var(--color-primary, #00723a);
-    border-color: var(--color-primary, #00723a);
+    background: var(--cd-accent);
+    border-color: var(--cd-accent);
   }
 
   svg {
@@ -2297,15 +2223,16 @@ function handleAction(action: string) {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  text-align: left;
 }
 
 .lorebook-name {
   font-size: 14px;
   font-weight: 500;
   color: var(--color-text);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .lorebook-count {
@@ -2313,225 +2240,19 @@ function handleAction(action: string) {
   color: var(--color-text-secondary);
 }
 
-/* === 快捷導航：3+3 兩排蜂窩（單人模式） === */
-.quick-honeycomb {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 2px 4px;
-  margin-top: 18px;
-  width: 100%;
-}
-
-.hex-row {
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-}
-
-.hex-row--top {
-  gap: 14px;
-}
-
-.hex-row--bottom {
-  gap: 14px;
-  margin-top: -10px;
-  transform: translateX(0);
-}
-
-.quick-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: transform 0.32s cubic-bezier(0.34, 1.32, 0.64, 1);
-
-  &:hover {
-    transform: translateY(-3px);
+/* === 窄螢幕 === */
+@media (max-width: 360px) {
+  .quick-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  &:active {
-    transform: translateY(-1px) scale(0.96);
-  }
-
-  &:hover .quick-icon {
-    background: var(--color-primary, #00723a);
-    color: var(--color-on-primary, #ffffff);
-    filter: drop-shadow(
-      0 9px 16px
-      color-mix(in srgb, var(--color-primary, #00723a) 30%, transparent)
-    );
-  }
-}
-
-.quick-icon {
-  position: relative;
-  width: 56px;
-  height: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-  background: color-mix(in srgb, var(--color-surface) 95%, transparent);
-  color: var(--color-primary, #00723a);
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.08));
-  transition:
-    background-color 0.25s ease,
-    color 0.25s ease,
-    filter 0.3s ease,
-    transform 0.3s ease;
-
-  svg {
-    width: 24px;
-    height: 24px;
-  }
-}
-
-.quick-item--hero {
-  position: relative;
-
-  .quick-label {
-    color: var(--color-primary, #00723a);
-    font-weight: 600;
-  }
-}
-
-.quick-icon--hero {
-  width: 68px;
-  height: 78px;
-  background: color-mix(in srgb, var(--color-primary, #00723a) 14%, var(--color-surface));
-  color: var(--color-primary, #00723a);
-
-  &::before {
-    content: "";
-    position: absolute;
-    inset: -2px;
-    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-    background: color-mix(in srgb, var(--color-primary, #00723a) 32%, transparent);
-    z-index: -1;
-  }
-
-  svg {
-    width: 30px;
-    height: 30px;
-  }
-}
-
-.quick-item--favorite {
-  .quick-label {
-    color: #9a6200;
-    font-weight: 600;
-  }
-
-  &:hover .quick-icon {
-    background: #d99a1f;
-    color: #ffffff;
-    transform: translateY(-2px) scale(1.04);
-    filter: drop-shadow(0 11px 20px rgba(190, 125, 0, 0.38));
-  }
-}
-
-.quick-icon--favorite {
-  background: color-mix(in srgb, #e3a72f 16%, var(--color-surface));
-  color: #a86b00;
-  filter: drop-shadow(0 7px 13px rgba(190, 125, 0, 0.24));
-}
-
-.quick-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  letter-spacing: 0.3px;
-  text-align: center;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .quick-item,
-  .quick-icon,
-  .quick-action {
+  .quick-action,
+  .list-item,
+  .header-btn {
     transition: none !important;
-    animation: none !important;
   }
-}
-
-/* === 列表群組 === */
-.list-group {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.list-item {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  width: 100%;
-  padding: 10px;
-  border-radius: 18px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: background-color 0.2s, transform 0.15s;
-
-  &:hover {
-    background: color-mix(in srgb, var(--color-surface) 70%, transparent);
-  }
-
-  &:active {
-    transform: scale(0.985);
-  }
-
-  &.danger {
-    .list-icon {
-      color: var(--color-error, #b3261e);
-    }
-
-    .list-label {
-      color: var(--color-error, #b3261e);
-    }
-  }
-}
-
-.list-icon {
-  width: 40px;
-  height: 40px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9999px;
-  background: var(--color-surface);
-  color: var(--color-primary, #00723a);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-
-  svg {
-    width: 20px;
-    height: 20px;
-  }
-}
-
-.list-label {
-  flex: 1;
-  text-align: left;
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--color-text);
-  letter-spacing: 0.1px;
-}
-
-.chevron {
-  width: 18px;
-  height: 18px;
-  color: color-mix(in srgb, var(--color-text-secondary) 70%, transparent);
-  flex-shrink: 0;
 }
 </style>
