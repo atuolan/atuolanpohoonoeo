@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { ChatAppearance } from "@/types/chat";
 import {
   ALL_CHAT_APPEARANCE_PROPS,
+  buildBarBackground,
   buildChatAppearanceVars,
   isFollowingGlobalWallpaper,
+  resolveBarStyle,
   resolveChatFontSizePx,
+  withOpacity,
 } from "@/utils/chatAppearanceVars";
 
 const fullAppearance: ChatAppearance = {
@@ -66,12 +69,24 @@ const fullAppearance: ChatAppearance = {
 const day = { nightMode: false, globalWallpaper: { type: "color", value: "#ffffff" } };
 const night = { ...day, nightMode: true };
 
+const withEffects: ChatAppearance = {
+  ...fullAppearance,
+  bars: {
+    header: { opacity: 60, blur: 12, docked: true },
+    input: { opacity: 100, blur: 0, docked: false },
+  },
+  bubbleEffects: { opacity: 50, blur: 8, shadow: "strong", borderWidth: 2, borderColor: "#123456" },
+  messageSpacing: "compact",
+};
+
 describe("buildChatAppearanceVars", () => {
   it("只輸出清除清單裡有的變數（清除與套用對稱）", () => {
     const allowed = new Set<string>(ALL_CHAT_APPEARANCE_PROPS);
     for (const options of [day, night]) {
-      for (const key of Object.keys(buildChatAppearanceVars(fullAppearance, options))) {
-        expect(allowed.has(key), key).toBe(true);
+      for (const appearance of [fullAppearance, withEffects]) {
+        for (const key of Object.keys(buildChatAppearanceVars(appearance, options))) {
+          expect(allowed.has(key), key).toBe(true);
+        }
       }
     }
   });
@@ -140,6 +155,75 @@ describe("buildChatAppearanceVars", () => {
     expect(buildChatAppearanceVars(appearance, day)["--chat-wallpaper"]).toBe(
       "var(--wallpaper-value, var(--color-background))",
     );
+  });
+});
+
+describe("頂欄、輸入欄與氣泡質感", () => {
+  it("沒設定時不輸出任何質感變數，維持元件內建樣式", () => {
+    const vars = buildChatAppearanceVars(fullAppearance, day);
+    for (const key of ["--chat-header-bg", "--chat-input-bg", "--chat-header-backdrop", "--bubble-shadow", "--bubble-outline", "--bubble-backdrop", "--chat-message-gap"]) {
+      expect(vars[key], key).toBeUndefined();
+    }
+    expect(vars["--bubble-user-bg"]).toBe("linear-gradient(135deg, #ff85a2, #ffb6c8)");
+  });
+
+  it("頂欄與輸入欄分開套用", () => {
+    const vars = buildChatAppearanceVars(withEffects, day);
+    expect(vars["--chat-header-bg"]).toContain("60%");
+    expect(vars["--chat-header-bg-dark"]).toBeDefined();
+    expect(vars["--chat-header-backdrop"]).toBe("blur(12px) saturate(180%)");
+    // 輸入欄不透明度 100 時沿用內建背景，模糊 0 時關閉毛玻璃
+    expect(vars["--chat-input-bg"]).toBeUndefined();
+    expect(vars["--chat-input-backdrop"]).toBe("none");
+  });
+
+  it("不透明度 100 時背景與元件內建樣式相同", () => {
+    expect(buildBarBackground("header", 100)).toBe(
+      "linear-gradient(135deg, color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 94%, transparent) 0%, " +
+        "color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 78%, transparent) 100%), " +
+        "color-mix(in srgb, var(--color-background, #1a1a2e) 100%, transparent)",
+    );
+    // 不透明度 0：每個顏色層都是 0%
+    expect(buildBarBackground("input", 0)).not.toMatch(/ [1-9][\d.]*%, transparent/);
+  });
+
+  it("氣泡不透明度套用到純色與漸層裡的每個顏色", () => {
+    const vars = buildChatAppearanceVars(withEffects, day);
+    expect(vars["--bubble-user-bg"]).toBe(
+      "linear-gradient(135deg, color-mix(in srgb, #ff85a2 50%, transparent), color-mix(in srgb, #ffb6c8 50%, transparent))",
+    );
+    expect(vars["--bubble-ai-bg"]).toBe("color-mix(in srgb, #ffffff 50%, transparent)");
+    expect(vars["--bubble-backdrop"]).toBe("blur(8px) saturate(160%)");
+    expect(vars["--bubble-outline"]).toBe("2px solid #123456");
+    expect(vars["--bubble-outline-offset"]).toBe("-2px");
+    expect(vars["--chat-message-gap"]).toBe("6px");
+  });
+
+  it("夜間模式也套用質感設定，透明度作用在夜間氣泡色上", () => {
+    const vars = buildChatAppearanceVars(withEffects, night);
+    expect(vars["--bubble-ai-bg"]).toBe("color-mix(in srgb, #1e2a40 50%, transparent)");
+    expect(vars["--chat-header-bg"]).toBeDefined();
+    expect(vars["--chat-message-gap"]).toBe("6px");
+  });
+
+  it("邊框顏色留空時使用邊框色", () => {
+    const vars = buildChatAppearanceVars(
+      { ...withEffects, bubbleEffects: { ...withEffects.bubbleEffects!, borderColor: "" } },
+      day,
+    );
+    expect(vars["--bubble-outline"]).toBe("2px solid var(--color-border)");
+  });
+
+  it("withOpacity 處理 rgb() 與 var()", () => {
+    expect(withOpacity("rgba(0, 0, 0, 0.5)", 40)).toBe("color-mix(in srgb, rgba(0, 0, 0, 0.5) 40%, transparent)");
+    expect(withOpacity("var(--x)", 40)).toBe("color-mix(in srgb, var(--x) 40%, transparent)");
+    expect(withOpacity("#fff", 100)).toBe("#fff");
+  });
+
+  it("未啟用專屬外觀時頂欄維持預設", () => {
+    expect(resolveBarStyle({ ...withEffects, useCustom: false }, "header").docked).toBe(false);
+    expect(resolveBarStyle(withEffects, "header").docked).toBe(true);
+    expect(resolveBarStyle(fullAppearance, "input")).toEqual({ opacity: 100, blur: 30, docked: false });
   });
 });
 

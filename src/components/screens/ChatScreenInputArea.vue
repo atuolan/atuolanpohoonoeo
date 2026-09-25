@@ -17,6 +17,8 @@ interface QuickAction {
 }
 
 const props = defineProps<{
+  /** 貼齊螢幕邊緣（聊天外觀設定） */
+  docked?: boolean;
   // 封鎖相關
   isBlockedByChar: boolean;
   // 回覆相關
@@ -298,7 +300,7 @@ const isDarkBackground = computed(() =>
 
 <template>
   <!-- 輸入區 -->
-  <footer ref="inputAreaRef" class="input-area">
+  <footer ref="inputAreaRef" class="input-area" :class="{ docked }">
     <!-- 被角色封鎖提示列 -->
     <div v-if="isBlockedByChar" class="blocked-by-char-bar">
       <svg
@@ -1146,15 +1148,18 @@ const isDarkBackground = computed(() =>
   padding: 6px 10px;
   border-radius: 22px;
   // 半透明色票（如 pearl 主題 surface 只有 12% alpha）疊在不透明底色上，避免聊天內容透出輸入區。
-  background:
+  // --chat-input-bg / --chat-input-backdrop 來自聊天外觀設定（不透明度、毛玻璃）
+  background: var(
+    --chat-input-bg,
     linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 94%, transparent) 0%,
-      color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 78%, transparent) 100%
-    ),
-    var(--color-background, #1a1a2e);
-  backdrop-filter: blur(30px) saturate(180%);
-  -webkit-backdrop-filter: blur(30px) saturate(180%);
+        135deg,
+        color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 94%, transparent) 0%,
+        color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 78%, transparent) 100%
+      ),
+      var(--color-background, #1a1a2e)
+  );
+  backdrop-filter: var(--chat-input-backdrop, blur(30px) saturate(180%));
+  -webkit-backdrop-filter: var(--chat-input-backdrop, blur(30px) saturate(180%));
   border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
   box-shadow:
     0 12px 34px rgba(0, 0, 0, 0.16),
@@ -1162,10 +1167,9 @@ const isDarkBackground = computed(() =>
 
   // 深色背景：將輸入區的文字、placeholder、按鈕色調切換為亮色
   &.dark-bg {
-    background: linear-gradient(
-      135deg,
-      rgba(255, 255, 255, 0.3) 0%,
-      rgba(255, 255, 255, 0.18) 100%
+    background: var(
+      --chat-input-bg-dark,
+      linear-gradient(135deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.18) 100%)
     );
     border-color: rgba(255, 255, 255, 0.36);
     box-shadow:
@@ -1201,6 +1205,21 @@ const isDarkBackground = computed(() =>
 }
 
 
+// 貼齊螢幕邊緣：輸入框撐滿寬度並延伸進底部安全區
+.input-area.docked {
+  padding-bottom: 0;
+
+  .input-container {
+    width: auto;
+    max-width: none;
+    margin: 0 calc(-12px - var(--safe-right, 0px)) 0 calc(-12px - var(--safe-left, 0px));
+    padding: 6px calc(10px + var(--safe-right, 0px)) calc(6px + var(--safe-bottom, 0px))
+      calc(10px + var(--safe-left, 0px));
+    border-radius: 0;
+    border-width: 1px 0 0;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+  }
+}
 .left-buttons,
 .right-buttons {
   display: flex;

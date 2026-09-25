@@ -1,23 +1,34 @@
 <script setup lang="ts">
-import { CHAT_FONT_STACKS, isFollowingGlobalWallpaper } from "@/utils/chatAppearanceVars";
+import {
+  BUBBLE_SHADOWS,
+  CHAT_FONT_STACKS,
+  MESSAGE_GAP_PX,
+  buildBarBackdrop,
+  buildBarBackground,
+  isFollowingGlobalWallpaper,
+  withOpacity,
+} from "@/utils/chatAppearanceVars";
 import { hexToRgba } from "@/utils/chatScreenHelpers";
 import { toPickerHex } from "@/utils/simpleGradient";
 import { computed } from "vue";
-import type { ColorFocusTarget, PreviewState, PreviewTarget } from "./types";
+import type { PreviewElement, PreviewState, PreviewTarget } from "./types";
 
 const props = defineProps<{
   state: PreviewState;
-  focus: ColorFocusTarget | null;
+  focus: PreviewElement | null;
 }>();
 
 const emit = defineEmits<{
   (e: "select", target: PreviewTarget): void;
 }>();
 
-const FOCUS_LABELS: Record<ColorFocusTarget, string> = {
+const FOCUS_LABELS: Record<PreviewElement, string> = {
   ai: "AI 氣泡",
   user: "我的氣泡",
+  thought: "想法氣泡",
+  avatar: "頭像",
   header: "頂欄",
+  input: "輸入欄",
   surface: "卡片",
   surfaceHover: "輔助色",
   status: "狀態色",
@@ -89,6 +100,42 @@ const thoughtStyle = computed<StyleMap>(() => {
   };
 });
 
+/** 頂欄／輸入欄：與聊天頁相同的背景層與毛玻璃 */
+function barStyle(kind: "header" | "input"): StyleMap {
+  const bar = props.state.bars[kind];
+  const backdrop = buildBarBackdrop(bar.blur);
+  return {
+    background: buildBarBackground(kind, bar.opacity, {
+      surface: colors.value.surface,
+      background: colors.value.background,
+    }),
+    backdropFilter: backdrop,
+    WebkitBackdropFilter: backdrop,
+  };
+}
+
+/** 氣泡底色與質感；陰影走 CSS 變數，才不會蓋掉預覽的聚焦外框 */
+function bubbleSurface(side: "ai" | "user"): StyleMap {
+  const b = bubble.value;
+  const fx = props.state.bubbleEffects;
+  const bg = side === "ai" ? b.aiBgGradient || b.aiBgColor : b.userBgGradient || b.userBgColor;
+  const style: StyleMap = { background: withOpacity(bg, fx.opacity) };
+  if (fx.blur > 0) {
+    style.backdropFilter = `blur(${fx.blur}px) saturate(160%)`;
+    style.WebkitBackdropFilter = style.backdropFilter;
+  }
+  if (fx.shadow !== "theme") style["--pv-bubble-shadow"] = BUBBLE_SHADOWS[fx.shadow];
+  if (fx.borderWidth > 0) {
+    style.outline = `${fx.borderWidth}px solid ${fx.borderColor || colors.value.border}`;
+    style.outlineOffset = `-${fx.borderWidth}px`;
+  }
+  return style;
+}
+
+const bodyStyle = computed<StyleMap>(() => ({
+  gap: `${MESSAGE_GAP_PX[props.state.messageSpacing] ?? MESSAGE_GAP_PX.normal}px`,
+}));
+
 function onKey(target: PreviewTarget) {
   emit("select", target);
 }
@@ -97,14 +144,14 @@ function onKey(target: PreviewTarget) {
 <template>
   <div class="chat-preview">
     <div class="preview-label">預覽 <span class="preview-hint">點擊畫面中的元素即可調整</span></div>
-    <div class="preview-card">
+    <div class="preview-card" :style="wallpaperStyle">
       <div
         class="preview-header preview-clickable"
-        :class="{ 'preview-focused': focus === 'header' }"
-        :style="{ background: colors.surface }"
+        :class="{ 'preview-focused': focus === 'header', docked: state.bars.header.docked }"
+        :style="barStyle('header')"
         tabindex="0"
         role="button"
-        aria-label="調整頂欄顏色"
+        aria-label="調整頂欄"
         @click="emit('select', 'header')"
         @keydown.enter="onKey('header')"
       >
@@ -122,7 +169,7 @@ function onKey(target: PreviewTarget) {
 
       <div
         class="preview-body"
-        :style="wallpaperStyle"
+        :style="bodyStyle"
         tabindex="0"
         role="button"
         aria-label="調整背景"
@@ -130,8 +177,17 @@ function onKey(target: PreviewTarget) {
         @keydown.enter.self="onKey('wallpaper')"
       >
         <div class="preview-message-row ai">
-          <div class="preview-row-avatar" :class="'size-' + state.avatar.size" :style="avatarStyle" aria-hidden="true">
-            <span>🐾</span>
+          <div
+            class="preview-row-avatar"
+            :class="['size-' + state.avatar.size, { 'preview-focused': focus === 'avatar' }]"
+            :style="avatarStyle"
+            tabindex="0"
+            role="button"
+            aria-label="調整頭像"
+            @click.stop="emit('select', 'avatar')"
+            @keydown.enter.stop="onKey('avatar')"
+          >
+            <span aria-hidden="true">🐾</span>
           </div>
           <div class="preview-message-content">
             <div class="preview-sender-name">
@@ -144,12 +200,12 @@ function onKey(target: PreviewTarget) {
                 borderRadius: `${bubble.borderRadius}px`,
                 borderBottomLeftRadius: '6px',
                 maxWidth: `${bubble.maxWidth}%`,
-                background: bubble.aiBgGradient || bubble.aiBgColor,
+                ...bubbleSurface('ai'),
                 ...fontStyle,
               }"
               tabindex="0"
               role="button"
-              aria-label="調整 AI 氣泡顏色"
+              aria-label="調整 AI 氣泡"
               @click.stop="emit('select', 'ai')"
               @keydown.enter.stop="onKey('ai')"
             >
@@ -159,14 +215,16 @@ function onKey(target: PreviewTarget) {
             </div>
             <div
               class="preview-thought"
+              :class="{ 'preview-focused': focus === 'thought' }"
               :style="thoughtStyle"
               tabindex="0"
               role="button"
-              aria-label="調整想法氣泡顏色"
-              @click.stop="emit('select', 'ai')"
-              @keydown.enter.stop="onKey('ai')"
+              aria-label="調整想法氣泡"
+              @click.stop="emit('select', 'thought')"
+              @keydown.enter.stop="onKey('thought')"
             >
               <span :style="textStyle(bubble.thoughtTextColor, bubble.thoughtTextGradient)">💭 角色的內心想法</span>
+              <span v-if="focus === 'thought'" class="focus-badge">{{ FOCUS_LABELS.thought }}</span>
             </div>
           </div>
         </div>
@@ -180,12 +238,12 @@ function onKey(target: PreviewTarget) {
                 borderRadius: `${bubble.borderRadius}px`,
                 borderBottomRightRadius: '6px',
                 maxWidth: `${bubble.maxWidth}%`,
-                background: bubble.userBgGradient || bubble.userBgColor,
+                ...bubbleSurface('user'),
                 ...fontStyle,
               }"
               tabindex="0"
               role="button"
-              aria-label="調整我的氣泡顏色"
+              aria-label="調整我的氣泡"
               @click.stop="emit('select', 'user')"
               @keydown.enter.stop="onKey('user')"
             >
@@ -196,11 +254,15 @@ function onKey(target: PreviewTarget) {
           </div>
           <div
             class="preview-row-avatar user-side"
-            :class="'size-' + state.avatar.size"
+            :class="['size-' + state.avatar.size, { 'preview-focused': focus === 'avatar' }]"
             :style="avatarStyle"
-            aria-hidden="true"
+            tabindex="0"
+            role="button"
+            aria-label="調整頭像"
+            @click.stop="emit('select', 'avatar')"
+            @keydown.enter.stop="onKey('avatar')"
           >
-            <span>🙂</span>
+            <span aria-hidden="true">🙂</span>
           </div>
         </div>
 
@@ -249,6 +311,22 @@ function onKey(target: PreviewTarget) {
           </div>
         </div>
       </div>
+
+      <div
+        class="preview-input preview-clickable"
+        :class="{ 'preview-focused': focus === 'input', docked: state.bars.input.docked }"
+        :style="{ ...barStyle('input'), color: colors.textMuted }"
+        tabindex="0"
+        role="button"
+        aria-label="調整輸入欄"
+        @click="emit('select', 'input')"
+        @keydown.enter="onKey('input')"
+      >
+        <span class="preview-input-btn" aria-hidden="true">＋</span>
+        <span class="preview-input-field" aria-hidden="true">輸入訊息…</span>
+        <span class="preview-input-send" :style="{ background: colors.primary }" aria-hidden="true">➤</span>
+        <span v-if="focus === 'input'" class="focus-badge">{{ FOCUS_LABELS.input }}</span>
+      </div>
     </div>
   </div>
 </template>
@@ -276,6 +354,7 @@ function onKey(target: PreviewTarget) {
 
 .preview-header {
   margin: 12px 12px 0;
+  border: 1px solid transparent;
   padding: 10px 12px;
   display: flex;
   align-items: center;
@@ -289,6 +368,54 @@ function onKey(target: PreviewTarget) {
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.45),
     0 6px 16px rgba(0, 0, 0, 0.06);
+
+  &.docked {
+    margin: 0;
+    border-radius: 0;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  }
+}
+
+.preview-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 12px;
+  padding: 6px 8px;
+  border-radius: 22px;
+  font-size: 13px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.45),
+    0 6px 16px rgba(0, 0, 0, 0.06);
+
+  &.docked {
+    margin: 0;
+    border-radius: 0;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+  }
+}
+
+.preview-input-btn {
+  width: 28px;
+  text-align: center;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.preview-input-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.preview-input-send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 12px;
 }
 
 .preview-header-btn {
@@ -344,7 +471,6 @@ function onKey(target: PreviewTarget) {
   padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
   cursor: pointer;
 }
 
@@ -430,7 +556,11 @@ function onKey(target: PreviewTarget) {
   word-break: break-word;
 
   &.ai {
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--pv-bubble-shadow, var(--shadow-sm));
+  }
+
+  &.user {
+    box-shadow: var(--pv-bubble-shadow, none);
   }
 
   &:hover {
@@ -447,7 +577,24 @@ function onKey(target: PreviewTarget) {
   }
 }
 
+.preview-row-avatar,
 .preview-thought {
+  cursor: pointer;
+  transition: outline-color 0.2s ease;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+
+  &:hover {
+    outline-color: var(--color-primary-light);
+  }
+
+  &.preview-focused {
+    outline: 2.5px solid var(--color-primary);
+  }
+}
+
+.preview-thought {
+  position: relative;
   margin-top: 6px;
   padding: 6px 12px;
   border-radius: 14px;

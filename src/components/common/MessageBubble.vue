@@ -5308,6 +5308,11 @@ const showTextVoiceTranscript = ref(true);
   max-width: 100%;
   min-width: 0;
   transition: all 0.3s ease;
+  // 聊天外觀的氣泡質感（未設定時維持原樣）；用 outline 畫邊框，不影響氣泡尺寸
+  outline: var(--bubble-outline, none);
+  outline-offset: var(--bubble-outline-offset, 0px);
+  backdrop-filter: var(--bubble-backdrop, none);
+  -webkit-backdrop-filter: var(--bubble-backdrop, none);
 
   // 菜單開啟時氣泡高亮
   &.menu-active {
@@ -5425,6 +5430,7 @@ const showTextVoiceTranscript = ref(true);
     );
     color: var(--bubble-user-text, white);
     border-bottom-right-radius: 6px;
+    box-shadow: var(--bubble-shadow, none);
 
     .bubble-text {
       background-image: var(--bubble-user-text-gradient, none);
@@ -5446,7 +5452,7 @@ const showTextVoiceTranscript = ref(true);
     background: var(--bubble-ai-bg, white);
     color: var(--bubble-ai-content, #4a4a6a);
     border-bottom-left-radius: 6px;
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--bubble-shadow, var(--shadow-sm));
 
     .bubble-text {
       background-image: var(--bubble-ai-content-gradient, none);
@@ -5480,9 +5486,29 @@ const showTextVoiceTranscript = ref(true);
 
       // 展開後停止發光
       &.thought-expanded {
-        box-shadow: var(--shadow-sm);
+        box-shadow: var(--bubble-shadow, var(--shadow-sm));
       }
     }
+  }
+
+  // 無氣泡底色的卡片型訊息不套用氣泡陰影、邊框與毛玻璃。
+  // 需放在 .user / .ai 之後：權重相同時靠順序蓋過
+  &.transparent-bubble,
+  &.transfer-card-only,
+  &:has(.media-description),
+  &:has(.polaroid-photo-container),
+  &:has(.pixel-gift-wrapper),
+  &:has(.waimai-message-wrapper),
+  &:has(.show-media-container),
+  &:has(> .pixel-transfer-wrapper),
+  &:has(> .redpacket-wrapper),
+  &:has(.transfer-message-wrapper):not(:has(.transfer-message-wrapper .bubble-text)):not(
+      :has(.transfer-message-wrapper .message-mixed)
+    ) {
+    box-shadow: none;
+    outline: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 }
 
