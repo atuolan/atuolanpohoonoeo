@@ -204,6 +204,7 @@ import {
 } from "@/utils/chatMessageLoading";
 import { chatPerfEnabled, chatPerfMark } from "@/utils/chatPerformanceDebug";
 import { shouldReloadAfterGeneration } from "@/utils/chatGenerationReload";
+import { resolveBarStyle } from "@/utils/chatAppearanceVars";
 import {
   hasMoreHistoryFromMetadata,
   prependUniqueMessages,
@@ -2657,6 +2658,8 @@ const { chatAppearance, saveAppearance, applyChatAppearance } = useChatAppearanc
   getPendingAppearance: () => props.pendingAppearance,
   onAppearanceApplied: () => emit("appearanceApplied"),
 });
+const headerBarStyle = computed(() => resolveBarStyle(chatAppearance.value, "header"));
+const inputBarStyle = computed(() => resolveBarStyle(chatAppearance.value, "input"));
 
 // ===== 流式輸出窗口 =====
 const streamingWindow = useStreamingWindow();
@@ -8913,6 +8916,7 @@ useChatCleanup({
   >
     <!-- 標題欄 -->
     <ChatScreenHeader
+      :docked="headerBarStyle.docked"
       :display-avatar="displayAvatar"
       :character-name="props.characterName"
       :is-group-chat="isGroupChat"
@@ -9602,6 +9606,7 @@ useChatCleanup({
 
     <ChatScreenInputArea
       ref="inputAreaRef"
+      :docked="inputBarStyle.docked"
       :is-blocked-by-char="isBlockedByChar"
       :replying-to="replyingTo"
       :character-name="characterName"
@@ -12819,7 +12824,7 @@ useChatCleanup({
   padding-right: calc(16px + var(--safe-right));
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--chat-message-gap, 12px);
   min-height: 100%;
   min-width: 0;
 }

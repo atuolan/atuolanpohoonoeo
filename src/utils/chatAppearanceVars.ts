@@ -1,4 +1,4 @@
-import type { ChatAppearance } from "@/types/chat";
+import type { ChatAppearance, ChatBarStyle, ChatBubbleEffects, ChatMessageSpacing } from "@/types/chat";
 import { hexToRgba } from "@/utils/chatScreenHelpers";
 
 type ChatWallpaper = NonNullable<ChatAppearance["wallpaper"]>;
@@ -46,6 +46,101 @@ export function isFollowingGlobalWallpaper(wallpaper?: Pick<ChatWallpaper, "type
   if (!wallpaper) return false;
   if (wallpaper.type === "global-image") return true;
   return wallpaper.type === "image" && (!wallpaper.value || wallpaper.value.startsWith("blob:"));
+}
+
+export const DEFAULT_BAR_STYLE: ChatBarStyle = { opacity: 100, blur: 30, docked: false };
+
+export const DEFAULT_BUBBLE_EFFECTS: ChatBubbleEffects = {
+  opacity: 100,
+  blur: 0,
+  shadow: "theme",
+  borderWidth: 0,
+  borderColor: "",
+};
+
+export const MESSAGE_GAP_PX: Record<ChatMessageSpacing, number> = { compact: 6, normal: 12, relaxed: 20 };
+
+export const BUBBLE_SHADOWS: Record<Exclude<ChatBubbleEffects["shadow"], "theme">, string> = {
+  none: "none",
+  soft: "0 2px 8px rgba(0, 0, 0, 0.08)",
+  strong: "0 6px 18px rgba(0, 0, 0, 0.18)",
+};
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
+/** 把背景值（純色或漸層）裡的每個顏色乘上不透明度；opacity 為 0-100 */
+export function withOpacity(value: string, opacity: number): string {
+  if (opacity >= 100) return value;
+  const mix = (color: string) => `color-mix(in srgb, ${color} ${round1(Math.max(opacity, 0))}%, transparent)`;
+  if (!value.includes("gradient(")) return mix(value.trim());
+  return value.replace(/#[0-9a-fA-F]{3,8}\b|(?:rgb|hsl)a?\([^)]*\)/g, mix);
+}
+
+type BarKind = "header" | "input";
+type GlassStop = readonly [color: string, alphaPct: number];
+
+const BAR_SURFACE = "var(--chat-header-surface, var(--color-surface))";
+
+/**
+ * 頂欄與輸入欄的背景層，數值與 ChatScreenHeader / ChatScreenInputArea 內建樣式相同。
+ * light：一般背景（漸層疊在不透明底色上）；dark：偵測到深色桌布時的半透明玻璃。
+ */
+const BAR_LAYERS: Record<BarKind, { light: GlassStop[]; dark: GlassStop[] }> = {
+  header: {
+    light: [
+      [BAR_SURFACE, 94],
+      [BAR_SURFACE, 78],
+    ],
+    dark: [
+      ["var(--chat-header-surface, rgba(255, 255, 255, 0.3))", 92],
+      ["var(--chat-header-surface, rgba(255, 255, 255, 0.18))", 76],
+    ],
+  },
+  input: {
+    light: [
+      [BAR_SURFACE, 94],
+      [BAR_SURFACE, 78],
+    ],
+    dark: [
+      ["rgba(255, 255, 255, 0.3)", 100],
+      ["rgba(255, 255, 255, 0.18)", 100],
+    ],
+  },
+};
+
+function glassGradient(stops: GlassStop[], opacity: number): string {
+  const k = Math.min(Math.max(opacity, 0), 100) / 100;
+  const [start, end] = stops.map(
+    ([color, alpha]) => `color-mix(in srgb, ${color} ${round1(alpha * k)}%, transparent)`,
+  );
+  return `linear-gradient(135deg, ${start} 0%, ${end} 100%)`;
+}
+
+/**
+ * 頂欄／輸入欄背景。opacity = 100 時與元件內建樣式相同；
+ * 調低時漸層與底色一起變透明，才看得到後面的桌布與毛玻璃。
+ */
+export function buildBarBackground(
+  kind: BarKind,
+  opacity: number,
+  options: { dark?: boolean; surface?: string; background?: string } = {},
+): string {
+  const layers = BAR_LAYERS[kind];
+  if (options.dark) return glassGradient(layers.dark, opacity);
+  const surface = options.surface ?? BAR_SURFACE;
+  const stops = layers.light.map(([, alpha]) => [surface, alpha] as const);
+  const base = options.background ?? "var(--color-background, #1a1a2e)";
+  const k = Math.min(Math.max(opacity, 0), 100);
+  return `${glassGradient(stops, opacity)}, color-mix(in srgb, ${base} ${round1(k)}%, transparent)`;
+}
+
+export function buildBarBackdrop(blur: number): string {
+  return blur > 0 ? `blur(${blur}px) saturate(180%)` : "none";
+}
+
+export function resolveBarStyle(appearance: ChatAppearance | undefined, kind: BarKind): ChatBarStyle {
+  if (!appearance?.useCustom) return DEFAULT_BAR_STYLE;
+  return { ...DEFAULT_BAR_STYLE, ...appearance.bars?.[kind] };
 }
 
 const NIGHT_BUBBLE_VARS: Record<string, string> = {
@@ -125,6 +220,17 @@ export const ALL_CHAT_APPEARANCE_PROPS = [
   "--chat-md-quote",
   "--chat-md-code",
   "--chat-md-heading",
+  "--chat-header-bg",
+  "--chat-header-bg-dark",
+  "--chat-header-backdrop",
+  "--chat-input-bg",
+  "--chat-input-bg-dark",
+  "--chat-input-backdrop",
+  "--bubble-backdrop",
+  "--bubble-shadow",
+  "--bubble-outline",
+  "--bubble-outline-offset",
+  "--chat-message-gap",
 ] as const;
 
 export interface GlobalWallpaperInfo {
@@ -154,7 +260,8 @@ function resolveWallpaperValue(wallpaper: ChatWallpaper, globalWallpaper: Global
 
 /**
  * 把聊天外觀轉成要寫到聊天容器上的 CSS 變數。
- * 夜間模式只保留版面類設定（字體、圓角、寬度、頭像），顏色與桌布交給夜間配色。
+ * 夜間模式只保留版面與質感設定（字體、圓角、寬度、頭像、頂欄／輸入欄、氣泡質感、間距），
+ * 顏色與桌布交給夜間配色。
  */
 export function buildChatAppearanceVars(
   appearance: ChatAppearance | undefined,
@@ -163,7 +270,7 @@ export function buildChatAppearanceVars(
   const vars: Record<string, string> = options.nightMode ? { ...NIGHT_BUBBLE_VARS } : {};
   if (!appearance?.useCustom) return vars;
 
-  const { avatar, bubble, font, colors, wallpaper } = appearance;
+  const { avatar, bubble, font } = appearance;
 
   if (avatar) {
     vars["--avatar-border-radius"] = resolveAvatarRadius(avatar.shape);
@@ -185,7 +292,14 @@ export function buildChatAppearanceVars(
     vars["--chat-letter-spacing"] = `${font.letterSpacing ?? 0}px`;
   }
 
-  if (options.nightMode) return vars;
+  if (!options.nightMode) applyColorVars(vars, appearance, options.globalWallpaper);
+  applyEffectVars(vars, appearance);
+  return vars;
+}
+
+/** 顏色、桌布與 Markdown 顏色（夜間模式不套用） */
+function applyColorVars(vars: Record<string, string>, appearance: ChatAppearance, globalWallpaper: GlobalWallpaperInfo) {
+  const { bubble, font, colors, wallpaper } = appearance;
 
   if (colors) {
     vars["--color-primary"] = colors.primary;
@@ -236,7 +350,7 @@ export function buildChatAppearanceVars(
 
   if (wallpaper) {
     const fit = wallpaper.fit || "cover";
-    vars["--chat-wallpaper"] = resolveWallpaperValue(wallpaper, options.globalWallpaper);
+    vars["--chat-wallpaper"] = resolveWallpaperValue(wallpaper, globalWallpaper);
     vars["--chat-wallpaper-blur"] = `${wallpaper.blur ?? 0}px`;
     vars["--chat-wallpaper-opacity"] = `${(wallpaper.opacity ?? 100) / 100}`;
     vars["--chat-wallpaper-fit"] = fit === "repeat" ? "auto" : fit === "fill" ? "100% 100%" : fit;
@@ -254,6 +368,33 @@ export function buildChatAppearanceVars(
     vars["--chat-md-code"] = mc.code || "#e83e8c";
     vars["--chat-md-heading"] = mc.heading || "#4a4a6a";
   }
+}
 
-  return vars;
+/** 頂欄／輸入欄、氣泡質感與訊息間距（夜間模式照常套用） */
+function applyEffectVars(vars: Record<string, string>, appearance: ChatAppearance) {
+  for (const kind of ["header", "input"] as const) {
+    const bar = resolveBarStyle(appearance, kind);
+    if (bar.opacity < 100) {
+      vars[`--chat-${kind}-bg`] = buildBarBackground(kind, bar.opacity);
+      vars[`--chat-${kind}-bg-dark`] = buildBarBackground(kind, bar.opacity, { dark: true });
+    }
+    if (bar.blur !== DEFAULT_BAR_STYLE.blur) vars[`--chat-${kind}-backdrop`] = buildBarBackdrop(bar.blur);
+  }
+
+  const fx = { ...DEFAULT_BUBBLE_EFFECTS, ...appearance.bubbleEffects };
+  if (fx.opacity < 100) {
+    for (const key of ["--bubble-user-bg", "--bubble-ai-bg"]) {
+      if (vars[key]) vars[key] = withOpacity(vars[key], fx.opacity);
+    }
+  }
+  if (fx.blur > 0) vars["--bubble-backdrop"] = `blur(${fx.blur}px) saturate(160%)`;
+  if (fx.shadow !== "theme") vars["--bubble-shadow"] = BUBBLE_SHADOWS[fx.shadow];
+  if (fx.borderWidth > 0) {
+    vars["--bubble-outline"] = `${fx.borderWidth}px solid ${fx.borderColor || "var(--color-border)"}`;
+    vars["--bubble-outline-offset"] = `-${fx.borderWidth}px`;
+  }
+
+  if (appearance.messageSpacing) {
+    vars["--chat-message-gap"] = `${MESSAGE_GAP_PX[appearance.messageSpacing] ?? MESSAGE_GAP_PX.normal}px`;
+  }
 }

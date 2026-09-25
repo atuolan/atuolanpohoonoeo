@@ -11,8 +11,10 @@ import { getShopItemById } from "@/data/shopItems";
 import type { AvatarStyle, BubbleStyle } from "@/stores";
 import { themePresets, useSettingsStore, useThemeStore } from "@/stores";
 import { useGameEconomyStore } from "@/stores/gameEconomy";
-import type { ChatAppearance } from "@/types/chat";
+import type { ChatAppearance, ChatBarStyle, ChatBubbleEffects, ChatMessageSpacing } from "@/types/chat";
 import {
+  DEFAULT_BAR_STYLE,
+  DEFAULT_BUBBLE_EFFECTS,
   CHAT_FONT_SIZE_DEFAULT,
   CHAT_FONT_SIZE_MAX,
   CHAT_FONT_SIZE_MIN,
@@ -22,14 +24,16 @@ import {
 } from "@/utils/chatAppearanceVars";
 import { toPickerHex } from "@/utils/simpleGradient";
 import { deriveColorsFromPrimary, normalizeHex } from "@/utils/wallpaperLuminance";
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import ChatAppearancePreview from "./theme-settings/ChatAppearancePreview.vue";
+import BarStyleFields from "./theme-settings/BarStyleFields.vue";
+import BubbleEffectsFields from "./theme-settings/BubbleEffectsFields.vue";
 import GradientColorField from "./theme-settings/GradientColorField.vue";
 import type {
   ChatColors,
   ChatFontStyle,
   ChatWallpaperStyle,
-  ColorFocusTarget,
+  PreviewElement,
   PreviewState,
   PreviewTarget,
 } from "./theme-settings/types";
@@ -56,7 +60,7 @@ const gameEconomyStore = useGameEconomyStore();
 const GLOBAL_WALLET_ID = "global";
 
 // ===== 分頁 =====
-type Tab = "colors" | "layout" | "wallpaper" | "font" | "decorations";
+type Tab = "colors" | "bubbles" | "wallpaper" | "font" | "decorations";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   {
@@ -64,7 +68,11 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
     label: "配色",
     icon: "M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8z",
   },
-  { id: "layout", label: "版面", icon: "M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z" },
+  {
+    id: "bubbles",
+    label: "氣泡",
+    icon: "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z",
+  },
   {
     id: "wallpaper",
     label: "背景",
@@ -83,15 +91,72 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 ];
 
 const activeTab = ref<Tab>("colors");
-const colorFocus = ref<ColorFocusTarget | null>(null);
+/** 在預覽中點選的元素；有值時設定區只顯示該元素的完整設定 */
+const previewFocus = ref<PreviewElement | null>(null);
 const contentRef = ref<HTMLElement | null>(null);
+const sectionsRef = ref<HTMLElement | null>(null);
 
 const visibleTabs = computed(() => TABS.filter((tab) => tab.id !== "decorations" || !!props.chatId));
-const showPreview = computed(() => ["colors", "layout", "wallpaper"].includes(activeTab.value));
+const showPreview = computed(() => activeTab.value in TAB_SECTIONS);
+
+type Section =
+  | "theme"
+  | "cardColors"
+  | "accentColors"
+  | "statusColors"
+  | "userBubble"
+  | "aiBubble"
+  | "thought"
+  | "bubbleShape"
+  | "bubbleTexture"
+  | "avatar"
+  | "wallpaper"
+  | "header"
+  | "input";
+
+/** 每個分頁列出的設定區（依範本順序顯示） */
+const TAB_SECTIONS: Partial<Record<Tab, Section[]>> = {
+  colors: ["theme", "cardColors", "accentColors", "statusColors"],
+  bubbles: ["userBubble", "aiBubble", "thought", "bubbleShape", "bubbleTexture", "avatar"],
+  wallpaper: ["wallpaper", "header", "input"],
+};
+
+/** 點選預覽元素時，顯示與該元素相關的所有設定 */
+const ELEMENT_SECTIONS: Record<PreviewElement, Section[]> = {
+  ai: ["aiBubble", "bubbleShape", "bubbleTexture"],
+  user: ["userBubble", "bubbleShape", "bubbleTexture"],
+  thought: ["thought"],
+  avatar: ["avatar"],
+  header: ["header"],
+  input: ["input"],
+  surface: ["cardColors"],
+  surfaceHover: ["accentColors"],
+  status: ["statusColors"],
+};
+
+const FOCUS_TITLES: Record<PreviewElement, string> = {
+  ai: "AI 氣泡",
+  user: "我的氣泡",
+  thought: "想法氣泡",
+  avatar: "頭像",
+  header: "頂欄",
+  input: "輸入欄",
+  surface: "卡片與主要文字",
+  surfaceHover: "滑過背景與輔助色",
+  status: "狀態提示色",
+};
+
+const visibleSections = computed(
+  () => new Set(previewFocus.value ? ELEMENT_SECTIONS[previewFocus.value] : (TAB_SECTIONS[activeTab.value] ?? [])),
+);
+
+function showSection(section: Section) {
+  return visibleSections.value.has(section);
+}
 
 function selectTab(tab: Tab) {
   activeTab.value = tab;
-  colorFocus.value = null;
+  previewFocus.value = null;
   contentRef.value?.scrollTo({ top: 0 });
 }
 
@@ -99,18 +164,22 @@ function handleTabsWheel(event: WheelEvent) {
   (event.currentTarget as HTMLElement).scrollLeft += event.deltaY;
 }
 
-// 預覽點擊：背景 → 背景分頁；其他 → 配色分頁並開啟對應設定
-function onPreviewSelect(target: PreviewTarget) {
+// 預覽點擊：背景 → 背景分頁；其他元素 → 原地切換成該元素的設定，再點一次返回
+async function onPreviewSelect(target: PreviewTarget) {
   if (target === "wallpaper") {
     selectTab("wallpaper");
     return;
   }
-  if (activeTab.value !== "colors") {
-    activeTab.value = "colors";
-    colorFocus.value = target;
-    return;
-  }
-  colorFocus.value = colorFocus.value === target ? null : target;
+  previewFocus.value = previewFocus.value === target ? null : target;
+  if (!previewFocus.value) return;
+  // 讓設定面板的開頭進入可視範圍，同時保留部分預覽
+  await nextTick();
+  const content = contentRef.value;
+  const panel = sectionsRef.value;
+  if (!content || !panel) return;
+  const panelTop = panel.getBoundingClientRect().top - content.getBoundingClientRect().top + content.scrollTop;
+  const target_ = panelTop - content.clientHeight * 0.45;
+  if (target_ > content.scrollTop) content.scrollTo({ top: target_, behavior: "smooth" });
 }
 
 // ===== 選項常數 =====
@@ -134,6 +203,12 @@ const AVATAR_SIZES = [
   { id: "medium", name: "中" },
   { id: "large", name: "大" },
 ] as const;
+
+const MESSAGE_SPACINGS = [
+  { id: "compact", name: "緊湊" },
+  { id: "normal", name: "標準" },
+  { id: "relaxed", name: "寬鬆" },
+] as const satisfies readonly { id: ChatMessageSpacing; name: string }[];
 
 const FONT_FAMILIES = [
   { id: "system", name: "系統預設" },
@@ -173,54 +248,66 @@ const WALLPAPER_FITS = [
 ] as const;
 
 const AI_BUBBLE_FIELDS = [
-  { label: "AI 訊息背景", color: "aiBgColor", gradient: "aiBgGradient", fallback: "#ffffff" },
-  { label: "AI 訊息文字", color: "aiContentColor", gradient: "aiContentGradient", fallback: "#4a4a6a" },
-  { label: "AI 名稱／時間", color: "aiTextColor", gradient: "aiTextGradient", fallback: "#4a4a6a" },
-  { label: "想法氣泡背景", color: "thoughtBgColor", gradient: "thoughtBgGradient", fallback: "#ADD8E6" },
-  { label: "想法氣泡文字", color: "thoughtTextColor", gradient: "thoughtTextGradient", fallback: "#4a6572" },
+  { label: "背景", color: "aiBgColor", gradient: "aiBgGradient", fallback: "#ffffff" },
+  { label: "訊息文字", color: "aiContentColor", gradient: "aiContentGradient", fallback: "#4a4a6a" },
+  { label: "名稱／時間", color: "aiTextColor", gradient: "aiTextGradient", fallback: "#4a4a6a" },
+] as const;
+
+const THOUGHT_BUBBLE_FIELDS = [
+  { label: "背景", color: "thoughtBgColor", gradient: "thoughtBgGradient", fallback: "#ADD8E6" },
+  { label: "文字", color: "thoughtTextColor", gradient: "thoughtTextGradient", fallback: "#4a6572" },
 ] as const;
 
 const USER_BUBBLE_FIELDS = [
-  { label: "我的訊息背景", color: "userBgColor", gradient: "userBgGradient", fallback: "#FF85A2" },
-  { label: "我的文字／時間", color: "userTextColor", gradient: "userTextGradient", fallback: "#FFFFFF" },
+  { label: "背景", color: "userBgColor", gradient: "userBgGradient", fallback: "#FF85A2" },
+  { label: "文字／時間", color: "userTextColor", gradient: "userTextGradient", fallback: "#FFFFFF" },
 ] as const;
 
-const COLOR_FOCUS_TITLES: Record<ColorFocusTarget, string> = {
-  ai: "AI 氣泡顏色",
-  user: "我的氣泡顏色",
-  header: "頂欄顏色",
-  surface: "卡片與主要文字",
-  surfaceHover: "滑過背景與輔助色",
-  status: "狀態提示色",
-};
+type ColorField = { key: keyof ChatColors; label: string };
 
-// 頂欄與卡片共用 surface / text 等變數，因此會有重複欄位
-const PLAIN_COLOR_FIELDS: Record<
-  Exclude<ColorFocusTarget, "ai" | "user">,
-  { key: keyof ChatColors; label: string }[]
-> = {
-  header: [
-    { key: "surface", label: "頂欄背景" },
-    { key: "text", label: "標題文字" },
-    { key: "textSecondary", label: "次要文字" },
-  ],
-  surface: [
-    { key: "surface", label: "卡片背景" },
-    { key: "text", label: "主要文字" },
-    { key: "textMuted", label: "提示文字" },
-    { key: "border", label: "邊框線" },
-  ],
-  surfaceHover: [
-    { key: "surfaceHover", label: "滑過背景" },
-    { key: "secondary", label: "輔助色" },
-    { key: "textSecondary", label: "次要文字" },
-  ],
-  status: [
-    { key: "success", label: "成功提示" },
-    { key: "error", label: "錯誤提示" },
-    { key: "warning", label: "警告提示" },
-  ],
-};
+const PALETTE_GROUPS: { id: "cardColors" | "accentColors" | "statusColors"; title: string; fields: ColorField[] }[] = [
+  {
+    id: "cardColors",
+    title: "卡片與主要文字",
+    fields: [
+      { key: "surface", label: "卡片背景" },
+      { key: "text", label: "主要文字" },
+      { key: "textMuted", label: "提示文字" },
+    ],
+  },
+  {
+    id: "accentColors",
+    title: "滑過背景與輔助色",
+    fields: [
+      { key: "surfaceHover", label: "滑過背景" },
+      { key: "secondary", label: "輔助色" },
+      { key: "textSecondary", label: "次要文字" },
+    ],
+  },
+  {
+    id: "statusColors",
+    title: "狀態提示色",
+    fields: [
+      { key: "success", label: "成功提示" },
+      { key: "error", label: "錯誤提示" },
+      { key: "warning", label: "警告提示" },
+    ],
+  },
+];
+
+// 頂欄與輸入欄的背景都讀 surface（與卡片背景相同）
+const BARS: { id: "header" | "input"; name: string; colorFields: ColorField[] }[] = [
+  {
+    id: "header",
+    name: "頂欄",
+    colorFields: [
+      { key: "surface", label: "背景" },
+      { key: "text", label: "標題文字" },
+      { key: "textSecondary", label: "次要文字" },
+    ],
+  },
+  { id: "input", name: "輸入欄", colorFields: [{ key: "surface", label: "背景" }] },
+];
 
 const COLOR_KEYS = [
   "primary",
@@ -261,6 +348,10 @@ function defaultFont(): ChatFontStyle {
       heading: "#4a4a6a",
     },
   };
+}
+
+function defaultBars(): Record<"header" | "input", ChatBarStyle> {
+  return { header: { ...DEFAULT_BAR_STYLE }, input: { ...DEFAULT_BAR_STYLE } };
 }
 
 function followGlobalWallpaper(): ChatWallpaperStyle {
@@ -308,11 +399,25 @@ const tempAvatarFrames = ref<{ userFrameId: string | null; charFrameId: string |
   userFrameId: null,
   charFrameId: null,
 });
+const tempBars = ref(defaultBars());
+const tempBubbleEffects = ref<ChatBubbleEffects>({ ...DEFAULT_BUBBLE_EFFECTS });
+const tempMessageSpacing = ref<ChatMessageSpacing>("normal");
 
 // 任何外觀變動都自動啟用聊天專屬外觀（載入資料時除外）
 let hydrating = false;
 watch(
-  [tempColors, tempAvatarStyle, tempBubbleStyle, tempWallpaperStyle, tempFontStyle, tempFontSizeValue, tempAvatarFrames],
+  [
+    tempColors,
+    tempAvatarStyle,
+    tempBubbleStyle,
+    tempWallpaperStyle,
+    tempFontStyle,
+    tempFontSizeValue,
+    tempAvatarFrames,
+    tempBars,
+    tempBubbleEffects,
+    tempMessageSpacing,
+  ],
   () => {
     if (!hydrating) useCustomAppearance.value = true;
   },
@@ -353,6 +458,13 @@ function loadAppearance(appearance: ChatAppearance | undefined) {
       userFrameId: appearance?.avatarFrames?.userFrameId ?? null,
       charFrameId: appearance?.avatarFrames?.charFrameId ?? null,
     };
+
+    tempBars.value = {
+      header: { ...DEFAULT_BAR_STYLE, ...definedOnly(appearance?.bars?.header) },
+      input: { ...DEFAULT_BAR_STYLE, ...definedOnly(appearance?.bars?.input) },
+    };
+    tempBubbleEffects.value = { ...DEFAULT_BUBBLE_EFFECTS, ...definedOnly(appearance?.bubbleEffects) };
+    tempMessageSpacing.value = appearance?.messageSpacing ?? "normal";
   });
 }
 
@@ -361,7 +473,7 @@ watch(
   async (isVisible) => {
     if (!isVisible) return;
     activeTab.value = "colors";
-    colorFocus.value = null;
+    previewFocus.value = null;
     loadAppearance(props.chatAppearance);
     await gameEconomyStore.loadState(GLOBAL_WALLET_ID);
   },
@@ -374,6 +486,9 @@ const previewState = computed<PreviewState>(() => ({
   wallpaper: tempWallpaperStyle.value,
   font: tempFontStyle.value,
   fontSizePx: tempFontSizeValue.value,
+  bars: tempBars.value,
+  bubbleEffects: tempBubbleEffects.value,
+  messageSpacing: tempMessageSpacing.value,
 }));
 
 // ===== 配色 =====
@@ -545,9 +660,12 @@ function resetToDefault() {
   tempWallpaperStyle.value = followGlobalWallpaper();
   tempFontStyle.value = defaultFont();
   tempFontSizeValue.value = CHAT_FONT_SIZE_DEFAULT;
+  tempBars.value = defaultBars();
+  tempBubbleEffects.value = { ...DEFAULT_BUBBLE_EFFECTS };
+  tempMessageSpacing.value = "normal";
   unifiedColors.value = true;
   customHexInput.value = tempColors.value.primary;
-  colorFocus.value = null;
+  previewFocus.value = null;
 }
 
 // 關閉專屬外觀時仍保留設定內容，之後重新開啟不必重設
@@ -564,6 +682,9 @@ function buildAppearance(): ChatAppearance {
       markdownColors: { ...tempFontStyle.value.markdownColors },
       size: `${tempFontSizeValue.value}px`,
     },
+    bars: { header: { ...tempBars.value.header }, input: { ...tempBars.value.input } },
+    bubbleEffects: { ...tempBubbleEffects.value },
+    messageSpacing: tempMessageSpacing.value,
   };
 }
 
@@ -623,62 +744,103 @@ function cancel() {
 
           <div ref="contentRef" class="modal-content">
             <p v-if="settingsStore.nightMode && activeTab !== 'decorations'" class="night-hint">
-              🌙 夜間模式中，聊天頁的顏色與背景會改用夜間配色；字體與版面設定照常套用。
+              🌙 夜間模式中，聊天頁的顏色與背景會改用夜間配色；字體、形狀、透明度等設定照常套用。
             </p>
 
             <ChatAppearancePreview
               v-if="showPreview"
               class="preview-block"
               :state="previewState"
-              :focus="activeTab === 'colors' ? colorFocus : null"
+              :focus="previewFocus"
               @select="onPreviewSelect"
             />
 
-            <!-- ===== 配色 ===== -->
-            <div v-if="activeTab === 'colors'" class="settings-section">
-              <div v-if="colorFocus" class="focus-settings-panel">
-                <div class="focus-settings-header">
-                  <span class="focus-settings-title">{{ COLOR_FOCUS_TITLES[colorFocus] }}</span>
-                  <button class="focus-close-btn" aria-label="收合" @click="colorFocus = null">✕</button>
+            <!-- ===== 配色／氣泡／背景：依分頁顯示；點預覽元素時只顯示該元素的完整設定 ===== -->
+            <div
+              v-if="showPreview"
+              ref="sectionsRef"
+              class="settings-section"
+              :class="{ 'focus-settings-panel': !!previewFocus }"
+            >
+              <div v-if="previewFocus" class="focus-settings-header">
+                <span class="focus-settings-title">{{ FOCUS_TITLES[previewFocus] }}</span>
+                <button class="focus-close-btn" title="返回全部設定" aria-label="返回全部設定" @click="previewFocus = null">
+                  ✕
+                </button>
+              </div>
+
+              <!-- 主題配色 -->
+              <template v-if="showSection('theme')">
+                <h3 class="section-title">主題配色</h3>
+                <div class="preset-grid">
+                  <button
+                    v-for="preset in PRESETS"
+                    :key="preset.id"
+                    class="preset-item"
+                    :class="{ active: activePresetId === preset.id }"
+                    @click="selectPreset(preset.id)"
+                  >
+                    <span class="preset-color" :style="{ background: preset.color }"></span>
+                    <span class="preset-name">{{ preset.name }}</span>
+                  </button>
                 </div>
 
-                <template v-if="colorFocus === 'ai'">
+                <h3 class="section-title">自訂主題色</h3>
+                <div class="custom-color-row">
+                  <input
+                    type="color"
+                    class="custom-color-picker"
+                    aria-label="自訂主題色"
+                    :value="toPickerHex(tempColors.primary, '#FF85A2')"
+                    @input="applyCustomPrimary(($event.target as HTMLInputElement).value)"
+                  />
+                  <input
+                    type="text"
+                    class="custom-hex-input"
+                    :value="customHexInput"
+                    placeholder="#FF85A2"
+                    spellcheck="false"
+                    maxlength="7"
+                    aria-label="主題色色碼"
+                    @change="onCustomHexCommit"
+                  />
+                  <span class="custom-color-hint">輸入色碼或選色</span>
+                </div>
+
+                <label class="toggle-card" :class="{ active: unifiedColors }">
+                  <span class="toggle-info">
+                    <span class="toggle-title">統一配色</span>
+                    <span class="toggle-sub">{{ unifiedColors ? "改主色時自動推導其他顏色" : "只改主色，其他顏色各自調整" }}</span>
+                  </span>
+                  <span class="toggle-switch">
+                    <input v-model="unifiedColors" type="checkbox" />
+                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                  </span>
+                </label>
+              </template>
+
+              <!-- 介面顏色 -->
+              <template v-for="group in PALETTE_GROUPS" :key="group.id">
+                <template v-if="showSection(group.id)">
+                  <h3 v-if="!previewFocus" class="section-title">{{ group.title }}</h3>
                   <div class="individual-colors">
-                    <GradientColorField
-                      v-for="field in AI_BUBBLE_FIELDS"
-                      :key="field.color"
-                      :label="field.label"
-                      :color="tempBubbleStyle[field.color]"
-                      :gradient="tempBubbleStyle[field.gradient]"
-                      :fallback-color="field.fallback"
-                      @update:color="tempBubbleStyle[field.color] = $event"
-                      @update:gradient="tempBubbleStyle[field.gradient] = $event"
-                    />
-                    <div class="color-item">
+                    <div v-for="field in group.fields" :key="field.key" class="color-item">
                       <input
                         type="color"
-                        aria-label="想法氣泡光暈"
-                        :value="toPickerHex(tempBubbleStyle.thoughtGlowColor, '#ADD8E6')"
-                        @input="tempBubbleStyle.thoughtGlowColor = ($event.target as HTMLInputElement).value"
+                        :aria-label="field.label"
+                        :value="toPickerHex(tempColors[field.key], '#ffffff')"
+                        @input="setColor(field.key, ($event.target as HTMLInputElement).value)"
                       />
-                      <span>想法氣泡光暈</span>
+                      <span>{{ field.label }}</span>
                     </div>
                   </div>
-                  <div class="slider-control">
-                    <span class="slider-label">光暈強度</span>
-                    <input
-                      v-model.number="tempBubbleStyle.thoughtGlowOpacity"
-                      type="range"
-                      min="0.1"
-                      max="1"
-                      step="0.1"
-                      aria-label="想法氣泡光暈強度"
-                    />
-                    <span class="slider-value">{{ Math.round((tempBubbleStyle.thoughtGlowOpacity ?? 0.6) * 100) }}%</span>
-                  </div>
                 </template>
+              </template>
 
-                <div v-else-if="colorFocus === 'user'" class="individual-colors">
+              <!-- 我的氣泡 -->
+              <template v-if="showSection('userBubble')">
+                <h3 v-if="!previewFocus" class="section-title">我的氣泡</h3>
+                <div class="individual-colors">
                   <GradientColorField
                     v-for="field in USER_BUBBLE_FIELDS"
                     :key="field.color"
@@ -690,227 +852,261 @@ function cancel() {
                     @update:gradient="tempBubbleStyle[field.gradient] = $event"
                   />
                 </div>
+              </template>
 
-                <div v-else class="individual-colors">
-                  <div v-for="field in PLAIN_COLOR_FIELDS[colorFocus]" :key="field.key" class="color-item">
+              <!-- AI 氣泡 -->
+              <template v-if="showSection('aiBubble')">
+                <h3 v-if="!previewFocus" class="section-title">AI 氣泡</h3>
+                <div class="individual-colors">
+                  <GradientColorField
+                    v-for="field in AI_BUBBLE_FIELDS"
+                    :key="field.color"
+                    :label="field.label"
+                    :color="tempBubbleStyle[field.color]"
+                    :gradient="tempBubbleStyle[field.gradient]"
+                    :fallback-color="field.fallback"
+                    @update:color="tempBubbleStyle[field.color] = $event"
+                    @update:gradient="tempBubbleStyle[field.gradient] = $event"
+                  />
+                </div>
+              </template>
+
+              <!-- 想法氣泡 -->
+              <template v-if="showSection('thought')">
+                <h3 v-if="!previewFocus" class="section-title">想法氣泡</h3>
+                <div class="individual-colors">
+                  <GradientColorField
+                    v-for="field in THOUGHT_BUBBLE_FIELDS"
+                    :key="field.color"
+                    :label="field.label"
+                    :color="tempBubbleStyle[field.color]"
+                    :gradient="tempBubbleStyle[field.gradient]"
+                    :fallback-color="field.fallback"
+                    @update:color="tempBubbleStyle[field.color] = $event"
+                    @update:gradient="tempBubbleStyle[field.gradient] = $event"
+                  />
+                  <div class="color-item">
                     <input
                       type="color"
-                      :aria-label="field.label"
-                      :value="toPickerHex(tempColors[field.key], '#ffffff')"
-                      @input="setColor(field.key, ($event.target as HTMLInputElement).value)"
+                      aria-label="光暈顏色"
+                      :value="toPickerHex(tempBubbleStyle.thoughtGlowColor, '#ADD8E6')"
+                      @input="tempBubbleStyle.thoughtGlowColor = ($event.target as HTMLInputElement).value"
                     />
-                    <span>{{ field.label }}</span>
+                    <span>光暈顏色</span>
+                  </div>
+                </div>
+                <div class="slider-control">
+                  <span class="slider-label">光暈強度</span>
+                  <input
+                    v-model.number="tempBubbleStyle.thoughtGlowOpacity"
+                    type="range"
+                    min="0.1"
+                    max="1"
+                    step="0.1"
+                    aria-label="想法氣泡光暈強度"
+                  />
+                  <span class="slider-value">{{ Math.round((tempBubbleStyle.thoughtGlowOpacity ?? 0.6) * 100) }}%</span>
+                </div>
+              </template>
+
+              <!-- 形狀與間距 -->
+              <template v-if="showSection('bubbleShape')">
+                <h3 class="section-title">形狀與間距</h3>
+                <div class="slider-control">
+                  <span class="slider-label">圓角</span>
+                  <input v-model.number="tempBubbleStyle.borderRadius" type="range" min="8" max="32" step="2" aria-label="氣泡圓角" />
+                  <span class="slider-value">{{ tempBubbleStyle.borderRadius }}px</span>
+                </div>
+                <div class="slider-control">
+                  <span class="slider-label">最大寬度</span>
+                  <input v-model.number="tempBubbleStyle.maxWidth" type="range" min="50" max="90" step="5" aria-label="氣泡最大寬度" />
+                  <span class="slider-value">{{ tempBubbleStyle.maxWidth }}%</span>
+                </div>
+                <div class="slider-control">
+                  <span class="slider-label">訊息間距</span>
+                  <div class="chip-row">
+                    <button
+                      v-for="spacing in MESSAGE_SPACINGS"
+                      :key="spacing.id"
+                      class="chip"
+                      :class="{ active: tempMessageSpacing === spacing.id }"
+                      @click="tempMessageSpacing = spacing.id"
+                    >
+                      {{ spacing.name }}
+                    </button>
+                  </div>
+                </div>
+              </template>
+
+              <!-- 質感 -->
+              <template v-if="showSection('bubbleTexture')">
+                <h3 class="section-title">質感 <small class="section-note">AI 與我的氣泡共用</small></h3>
+                <BubbleEffectsFields v-model="tempBubbleEffects" :fallback-border-color="tempColors.border" />
+              </template>
+
+              <!-- 頭像 -->
+              <template v-if="showSection('avatar')">
+                <h3 class="section-title">頭像形狀</h3>
+                <div class="option-grid">
+                  <button
+                    v-for="shape in AVATAR_SHAPES"
+                    :key="shape.id"
+                    class="option-item"
+                    :class="{ active: tempAvatarStyle.shape === shape.id }"
+                    @click="tempAvatarStyle.shape = shape.id"
+                  >
+                    <span class="option-icon">{{ shape.icon }}</span>
+                    <span class="option-name">{{ shape.name }}</span>
+                  </button>
+                </div>
+
+                <h3 class="section-title">頭像大小</h3>
+                <div class="option-grid">
+                  <button
+                    v-for="size in AVATAR_SIZES"
+                    :key="size.id"
+                    class="option-item"
+                    :class="{ active: tempAvatarStyle.size === size.id }"
+                    @click="tempAvatarStyle.size = size.id"
+                  >
+                    <span class="option-name">{{ size.name }}</span>
+                  </button>
+                </div>
+
+                <h3 class="section-title">頭像邊框</h3>
+                <div class="slider-control">
+                  <span class="slider-label">粗細</span>
+                  <input v-model.number="tempAvatarStyle.borderWidth" type="range" min="0" max="4" step="1" aria-label="頭像邊框粗細" />
+                  <span class="slider-value">{{ tempAvatarStyle.borderWidth }}px</span>
+                </div>
+                <div class="individual-colors">
+                  <div class="color-item">
+                    <input
+                      type="color"
+                      aria-label="頭像邊框顏色"
+                      :value="toPickerHex(tempAvatarStyle.borderColor, '#ffffff')"
+                      @input="tempAvatarStyle.borderColor = ($event.target as HTMLInputElement).value"
+                    />
+                    <span>邊框顏色</span>
+                  </div>
+                </div>
+                <label class="toggle-card" :class="{ active: tempAvatarStyle.shadowEnabled }">
+                  <span class="toggle-info">
+                    <span class="toggle-title">頭像陰影</span>
+                    <span class="toggle-sub">讓頭像稍微浮起來</span>
+                  </span>
+                  <span class="toggle-switch">
+                    <input v-model="tempAvatarStyle.shadowEnabled" type="checkbox" />
+                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                  </span>
+                </label>
+              </template>
+
+              <!-- 聊天背景 -->
+              <template v-if="showSection('wallpaper')">
+                <h3 class="section-title">聊天背景</h3>
+                <div class="wallpaper-grid">
+                  <button
+                    v-for="preset in WALLPAPER_PRESETS"
+                    :key="preset.id"
+                    class="wallpaper-item"
+                    :class="{ active: isWallpaperPresetActive(preset) }"
+                    @click="selectWallpaperPreset(preset)"
+                  >
+                    <span
+                      class="wallpaper-preview"
+                      :class="{ 'time-theme-preview': preset.type === 'time-theme' }"
+                      :style="wallpaperPresetStyle(preset)"
+                    ></span>
+                    <span class="wallpaper-name">{{ preset.name }}</span>
+                  </button>
+                  <button v-if="hasCustomImage" class="wallpaper-item active" disabled>
+                    <span
+                      class="wallpaper-preview"
+                      :style="{ backgroundImage: `url(&quot;${tempWallpaperStyle.value}&quot;)` }"
+                    ></span>
+                    <span class="wallpaper-name">自訂圖片</span>
+                  </button>
+                  <label class="wallpaper-item upload">
+                    <input type="file" accept="image/*" @change="handleImageUpload" />
+                    <span class="wallpaper-preview">
+                      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
+                    </span>
+                    <span class="wallpaper-name">上傳圖片</span>
+                  </label>
+                </div>
+
+                <div class="individual-colors">
+                  <div class="color-item" :class="{ selected: !!solidWallpaperColor }">
+                    <input
+                      type="color"
+                      aria-label="純色背景"
+                      :value="solidWallpaperColor ?? toPickerHex(tempColors.background, '#ffffff')"
+                      @input="setSolidWallpaper(($event.target as HTMLInputElement).value)"
+                    />
+                    <span>純色背景</span>
                   </div>
                 </div>
 
-                <button
-                  v-if="colorFocus === 'ai' || colorFocus === 'user'"
-                  class="link-btn"
-                  @click="selectTab('layout')"
-                >
-                  圓角、寬度與頭像 → 版面
-                </button>
-              </div>
+                <template v-if="usesImageWallpaper">
+                  <div class="slider-control">
+                    <span class="slider-label">顯示方式</span>
+                    <div class="chip-row">
+                      <button
+                        v-for="fit in WALLPAPER_FITS"
+                        :key="fit.id"
+                        class="chip"
+                        :class="{ active: (tempWallpaperStyle.fit || 'cover') === fit.id }"
+                        @click="tempWallpaperStyle.fit = fit.id"
+                      >
+                        {{ fit.name }}
+                      </button>
+                    </div>
+                  </div>
+                </template>
 
-              <h3 class="section-title">主題配色</h3>
-              <div class="preset-grid">
-                <button
-                  v-for="preset in PRESETS"
-                  :key="preset.id"
-                  class="preset-item"
-                  :class="{ active: activePresetId === preset.id }"
-                  @click="selectPreset(preset.id)"
-                >
-                  <span class="preset-color" :style="{ background: preset.color }"></span>
-                  <span class="preset-name">{{ preset.name }}</span>
-                </button>
-              </div>
-
-              <h3 class="section-title">自訂主題色</h3>
-              <div class="custom-color-row">
-                <input
-                  type="color"
-                  class="custom-color-picker"
-                  aria-label="自訂主題色"
-                  :value="toPickerHex(tempColors.primary, '#FF85A2')"
-                  @input="applyCustomPrimary(($event.target as HTMLInputElement).value)"
-                />
-                <input
-                  type="text"
-                  class="custom-hex-input"
-                  :value="customHexInput"
-                  placeholder="#FF85A2"
-                  spellcheck="false"
-                  maxlength="7"
-                  aria-label="主題色色碼"
-                  @change="onCustomHexCommit"
-                />
-                <span class="custom-color-hint">輸入色碼或選色</span>
-              </div>
-
-              <label class="toggle-card" :class="{ active: unifiedColors }">
-                <span class="toggle-info">
-                  <span class="toggle-title">統一配色</span>
-                  <span class="toggle-sub">{{ unifiedColors ? "改主色時自動推導其他顏色" : "只改主色，其他顏色各自調整" }}</span>
-                </span>
-                <span class="toggle-switch">
-                  <input v-model="unifiedColors" type="checkbox" />
-                  <span class="switch-track"><span class="switch-thumb"></span></span>
-                </span>
-              </label>
-            </div>
-
-            <!-- ===== 版面 ===== -->
-            <div v-if="activeTab === 'layout'" class="settings-section">
-              <h3 class="section-title">氣泡</h3>
-              <div class="slider-control">
-                <span class="slider-label">圓角</span>
-                <input v-model.number="tempBubbleStyle.borderRadius" type="range" min="8" max="32" step="2" aria-label="氣泡圓角" />
-                <span class="slider-value">{{ tempBubbleStyle.borderRadius }}px</span>
-              </div>
-              <div class="slider-control">
-                <span class="slider-label">最大寬度</span>
-                <input v-model.number="tempBubbleStyle.maxWidth" type="range" min="50" max="90" step="5" aria-label="氣泡最大寬度" />
-                <span class="slider-value">{{ tempBubbleStyle.maxWidth }}%</span>
-              </div>
-
-              <h3 class="section-title">頭像形狀</h3>
-              <div class="option-grid">
-                <button
-                  v-for="shape in AVATAR_SHAPES"
-                  :key="shape.id"
-                  class="option-item"
-                  :class="{ active: tempAvatarStyle.shape === shape.id }"
-                  @click="tempAvatarStyle.shape = shape.id"
-                >
-                  <span class="option-icon">{{ shape.icon }}</span>
-                  <span class="option-name">{{ shape.name }}</span>
-                </button>
-              </div>
-
-              <h3 class="section-title">頭像大小</h3>
-              <div class="option-grid">
-                <button
-                  v-for="size in AVATAR_SIZES"
-                  :key="size.id"
-                  class="option-item"
-                  :class="{ active: tempAvatarStyle.size === size.id }"
-                  @click="tempAvatarStyle.size = size.id"
-                >
-                  <span class="option-name">{{ size.name }}</span>
-                </button>
-              </div>
-
-              <h3 class="section-title">頭像邊框</h3>
-              <div class="slider-control">
-                <span class="slider-label">粗細</span>
-                <input v-model.number="tempAvatarStyle.borderWidth" type="range" min="0" max="4" step="1" aria-label="頭像邊框粗細" />
-                <span class="slider-value">{{ tempAvatarStyle.borderWidth }}px</span>
-              </div>
-              <div class="individual-colors">
-                <div class="color-item">
-                  <input
-                    type="color"
-                    aria-label="頭像邊框顏色"
-                    :value="toPickerHex(tempAvatarStyle.borderColor, '#ffffff')"
-                    @input="tempAvatarStyle.borderColor = ($event.target as HTMLInputElement).value"
-                  />
-                  <span>邊框顏色</span>
-                </div>
-              </div>
-              <label class="toggle-card" :class="{ active: tempAvatarStyle.shadowEnabled }">
-                <span class="toggle-info">
-                  <span class="toggle-title">頭像陰影</span>
-                  <span class="toggle-sub">讓頭像稍微浮起來</span>
-                </span>
-                <span class="toggle-switch">
-                  <input v-model="tempAvatarStyle.shadowEnabled" type="checkbox" />
-                  <span class="switch-track"><span class="switch-thumb"></span></span>
-                </span>
-              </label>
-            </div>
-
-            <!-- ===== 背景 ===== -->
-            <div v-if="activeTab === 'wallpaper'" class="settings-section">
-              <h3 class="section-title">背景樣式</h3>
-              <div class="wallpaper-grid">
-                <button
-                  v-for="preset in WALLPAPER_PRESETS"
-                  :key="preset.id"
-                  class="wallpaper-item"
-                  :class="{ active: isWallpaperPresetActive(preset) }"
-                  @click="selectWallpaperPreset(preset)"
-                >
-                  <span
-                    class="wallpaper-preview"
-                    :class="{ 'time-theme-preview': preset.type === 'time-theme' }"
-                    :style="wallpaperPresetStyle(preset)"
-                  ></span>
-                  <span class="wallpaper-name">{{ preset.name }}</span>
-                </button>
-                <button v-if="hasCustomImage" class="wallpaper-item active" disabled>
-                  <span
-                    class="wallpaper-preview"
-                    :style="{ backgroundImage: `url(&quot;${tempWallpaperStyle.value}&quot;)` }"
-                  ></span>
-                  <span class="wallpaper-name">自訂圖片</span>
-                </button>
-                <label class="wallpaper-item upload">
-                  <input type="file" accept="image/*" @change="handleImageUpload" />
-                  <span class="wallpaper-preview">
-                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
-                  </span>
-                  <span class="wallpaper-name">上傳圖片</span>
-                </label>
-              </div>
-
-              <div class="individual-colors">
-                <div class="color-item" :class="{ selected: !!solidWallpaperColor }">
-                  <input
-                    type="color"
-                    aria-label="純色背景"
-                    :value="solidWallpaperColor ?? toPickerHex(tempColors.background, '#ffffff')"
-                    @input="setSolidWallpaper(($event.target as HTMLInputElement).value)"
-                  />
-                  <span>純色背景</span>
-                </div>
-              </div>
-
-              <template v-if="usesImageWallpaper">
-                <h3 class="section-title">圖片顯示方式</h3>
-                <div class="chip-row">
-                  <button
-                    v-for="fit in WALLPAPER_FITS"
-                    :key="fit.id"
-                    class="chip"
-                    :class="{ active: (tempWallpaperStyle.fit || 'cover') === fit.id }"
-                    @click="tempWallpaperStyle.fit = fit.id"
-                  >
-                    {{ fit.name }}
-                  </button>
-                </div>
+                <template v-if="tempWallpaperStyle.type === 'image' || tempWallpaperStyle.type === 'global-image'">
+                  <div class="slider-control">
+                    <span class="slider-label">模糊</span>
+                    <input v-model.number="tempWallpaperStyle.blur" type="range" min="0" max="20" step="1" aria-label="背景模糊度" />
+                    <span class="slider-value">{{ tempWallpaperStyle.blur }}px</span>
+                  </div>
+                  <div class="slider-control">
+                    <span class="slider-label">不透明度</span>
+                    <input
+                      v-model.number="tempWallpaperStyle.opacity"
+                      type="range"
+                      min="20"
+                      max="100"
+                      step="5"
+                      aria-label="背景不透明度"
+                    />
+                    <span class="slider-value">{{ tempWallpaperStyle.opacity }}%</span>
+                  </div>
+                </template>
               </template>
 
-              <template v-if="tempWallpaperStyle.type === 'image' || tempWallpaperStyle.type === 'global-image'">
-                <h3 class="section-title">模糊度 / 透明度</h3>
-                <div class="slider-control">
-                  <span class="slider-label">模糊</span>
-                  <input v-model.number="tempWallpaperStyle.blur" type="range" min="0" max="20" step="1" aria-label="背景模糊度" />
-                  <span class="slider-value">{{ tempWallpaperStyle.blur }}px</span>
-                </div>
-                <div class="slider-control">
-                  <span class="slider-label">不透明度</span>
-                  <input
-                    v-model.number="tempWallpaperStyle.opacity"
-                    type="range"
-                    min="20"
-                    max="100"
-                    step="5"
-                    aria-label="背景不透明度"
-                  />
-                  <span class="slider-value">{{ tempWallpaperStyle.opacity }}%</span>
-                </div>
+              <!-- 頂欄與輸入欄 -->
+              <template v-for="bar in BARS" :key="bar.id">
+                <template v-if="showSection(bar.id)">
+                  <h3 v-if="!previewFocus" class="section-title">{{ bar.name }}</h3>
+                  <div class="individual-colors">
+                    <div v-for="field in bar.colorFields" :key="field.key" class="color-item">
+                      <input
+                        type="color"
+                        :aria-label="field.label"
+                        :value="toPickerHex(tempColors[field.key], '#ffffff')"
+                        @input="setColor(field.key, ($event.target as HTMLInputElement).value)"
+                      />
+                      <span>{{ field.label }}</span>
+                    </div>
+                  </div>
+                  <BarStyleFields v-model="tempBars[bar.id]" :name="bar.name" />
+                </template>
               </template>
+              <p v-if="showSection('header') || showSection('input')" class="section-hint bars-hint">
+                頂欄與輸入欄共用同一個背景色。不透明度調低後，才看得到後面的背景與毛玻璃效果。
+              </p>
             </div>
 
             <!-- ===== 字體 ===== -->
@@ -1322,6 +1518,13 @@ function cancel() {
   gap: 14px;
 }
 
+.section-note {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
 .section-title {
   font-size: 14px;
   font-weight: 600;
@@ -1338,6 +1541,11 @@ function cancel() {
   font-size: 12px;
   color: var(--color-text-muted);
   margin: -8px 0 0;
+
+  &.bars-hint {
+    margin-top: 0;
+    line-height: 1.5;
+  }
 }
 
 .preview-label {
@@ -1355,18 +1563,6 @@ function cancel() {
   .color-item.selected {
     box-shadow: inset 0 0 0 2px var(--color-primary);
   }
-}
-
-.link-btn {
-  align-self: flex-start;
-  margin-top: 12px;
-  padding: 0;
-  border: none;
-  background: none;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-primary);
-  cursor: pointer;
 }
 
 // ===== 配色 =====
@@ -1674,34 +1870,6 @@ function cancel() {
 .wallpaper-name {
   font-size: 11px;
   color: var(--color-text-secondary);
-}
-
-.chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.chip {
-  padding: 6px 14px;
-  border: none;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  background: var(--color-background);
-  cursor: pointer;
-  transition: background 0.18s ease;
-
-  &:hover {
-    background: var(--color-surface-hover);
-  }
-
-  &.active {
-    background: var(--color-primary-light);
-    color: var(--color-primary);
-    font-weight: 600;
-  }
 }
 
 // ===== 字體 =====

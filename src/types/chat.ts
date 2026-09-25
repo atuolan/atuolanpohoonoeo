@@ -43,6 +43,32 @@ export interface ChatLocationOverride {
 }
 
 // ===== 聊天外觀設定 =====
+/** 頂欄或輸入欄的外觀 */
+export interface ChatBarStyle {
+  /** 背景不透明度 0-100（100 = 完全不透明） */
+  opacity: number;
+  /** 毛玻璃模糊 px */
+  blur: number;
+  /** true = 貼齊螢幕邊緣；false = 浮動圓角卡片 */
+  docked: boolean;
+}
+
+/** 氣泡質感 */
+export interface ChatBubbleEffects {
+  /** 氣泡背景不透明度 0-100 */
+  opacity: number;
+  /** 毛玻璃模糊 px */
+  blur: number;
+  /** theme = 沿用主題預設 */
+  shadow: "theme" | "none" | "soft" | "strong";
+  /** 邊框粗細 px（0 = 無邊框） */
+  borderWidth: number;
+  /** 邊框顏色（空字串 = 使用邊框色） */
+  borderColor: string;
+}
+
+export type ChatMessageSpacing = "compact" | "normal" | "relaxed";
+
 export interface ChatAppearance {
   /** 是否使用自定義外觀（false 則使用全局設定） */
   useCustom: boolean;
@@ -149,6 +175,15 @@ export interface ChatAppearance {
       heading: string; // 標題 # text
     };
   };
+  /** 頂欄與輸入欄外觀（分開設定） */
+  bars?: {
+    header?: ChatBarStyle;
+    input?: ChatBarStyle;
+  };
+  /** 氣泡質感（透明度、毛玻璃、陰影、邊框） */
+  bubbleEffects?: ChatBubbleEffects;
+  /** 訊息間距 */
+  messageSpacing?: ChatMessageSpacing;
 }
 
 // ===== 消息發送者 =====

@@ -33,6 +33,8 @@ interface PersonaOption {
 }
 
 const props = defineProps<{
+  /** 貼齊螢幕邊緣（聊天外觀設定） */
+  docked?: boolean;
   displayAvatar: string;
   characterName: string;
   isGroupChat: boolean;
@@ -238,7 +240,7 @@ const isDarkBackground = computed(() =>
 </script>
 
 <template>
-  <header ref="headerEl" class="chat-header" :class="{ 'dark-bg': isDarkBackground }">
+  <header ref="headerEl" class="chat-header" :class="{ 'dark-bg': isDarkBackground, docked }">
     <button class="header-back" @click="emit('back')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
         <path d="M19 12H5" />
@@ -648,9 +650,10 @@ const isDarkBackground = computed(() =>
   padding: 8px 12px !important;
   box-sizing: border-box;
   border-radius: 20px;
-  background: var(--chat-header-panel-bg);
-  backdrop-filter: blur(30px) saturate(180%);
-  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  // --chat-header-bg / --chat-header-backdrop 來自聊天外觀設定（不透明度、毛玻璃）
+  background: var(--chat-header-bg, var(--chat-header-panel-bg));
+  backdrop-filter: var(--chat-header-backdrop, blur(30px) saturate(180%));
+  -webkit-backdrop-filter: var(--chat-header-backdrop, blur(30px) saturate(180%));
   border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
   box-shadow:
     0 12px 34px rgba(0, 0, 0, 0.16),
@@ -665,6 +668,17 @@ const isDarkBackground = computed(() =>
     z-index: 120;
   }
 
+  // 貼齊螢幕邊緣：取消外距與圓角，安全區改由內距讓出
+  &.docked {
+    margin: 0;
+    padding-top: calc(8px + var(--safe-top, 0px)) !important;
+    padding-left: calc(12px + var(--safe-left, 0px)) !important;
+    padding-right: calc(12px + var(--safe-right, 0px)) !important;
+    border-radius: 0;
+    border-width: 0 0 1px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  }
+
   // 深色背景：將標題與按鈕色調切換為亮色，提高對比
   &.dark-bg {
     --chat-header-panel-bg: linear-gradient(
@@ -672,7 +686,7 @@ const isDarkBackground = computed(() =>
       color-mix(in srgb, var(--chat-header-surface, rgba(255, 255, 255, 0.3)) 92%, transparent) 0%,
       color-mix(in srgb, var(--chat-header-surface, rgba(255, 255, 255, 0.18)) 76%, transparent) 100%
     );
-    background: var(--chat-header-panel-bg);
+    background: var(--chat-header-bg-dark, var(--chat-header-panel-bg));
     border-color: rgba(255, 255, 255, 0.36);
     box-shadow:
       0 12px 34px rgba(0, 0, 0, 0.34),
