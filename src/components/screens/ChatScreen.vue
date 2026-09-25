@@ -926,6 +926,36 @@ function getMessageHistory(): Message[] {
   return fullHistoryMessages || messages.value;
 }
 
+/** 讀取完整歷史但不寫入 fullHistoryMessages，供總結/日記等背景流程使用。
+ * 快取只應存活於單次生成/搜尋期間；背景流程若留下快取，下一輪生成
+ * 的 ensureAllMessagesLoaded 會直接沿用，讀到不含新訊息的過期歷史。
+ */
+async function loadCompleteMessagesSnapshot(): Promise<Message[]> {
+  const chat = currentChatData.value;
+  let history: Message[];
+  if (fullHistoryMessages) {
+    // 快取建立後才加入視窗的訊息（如搜尋期間的新回覆）不在快取內，下方會補上
+    history = fullHistoryMessages;
+  } else if (!chat || allMessagesLoaded || !hasMoreChatMessages.value) {
+    // 已載入的視窗已涵蓋全部訊息時不必再讀 IDB
+    return messages.value;
+  } else {
+    const rawMessages = await loadAndRepairChatMessages(chat);
+    history = rawMessages.map((m) => convertStoredMessageToUiMessage(m, chat));
+  }
+  const historyById = new Map<string, Message>();
+  for (const uiMessage of history) {
+    historyById.set(uiMessage.id, uiMessage);
+  }
+  for (const uiMessage of messages.value) {
+    historyById.set(uiMessage.id, uiMessage);
+  }
+  return [...historyById.values()].sort(
+    (a, b) =>
+      (a.timestamp || 0) - (b.timestamp || 0) || a.id.localeCompare(b.id),
+  );
+}
+
 // 是否還有更早的訊息可以載入
 const hasMoreMessages = computed(() => {
   if (isSearchContextMode.value) return false;
@@ -2703,6 +2733,7 @@ const {
   chatId: props.chatId,
   saveChat,
   triggerAutoEventsExtraction,
+  loadCompleteMessages: loadCompleteMessagesSnapshot,
 });
 
 // 是否有 AI 訊息（用於顯示重新生成按鈕）

@@ -6,7 +6,7 @@ import {
   recordDeletedEntity,
   scheduleSelfHostedAutoSync,
 } from "@/services/selfHostedSyncState";
-import type { SummarySettings } from "@/types/chat";
+import type { StreamingEvent, SummarySettings } from "@/types/chat";
 import {
   useAIGenerationStore,
   usePromptManagerStore,
@@ -120,6 +120,11 @@ export function useChatSummaryDiary(deps: {
   chatId: string;
   saveChat: () => void;
   triggerAutoEventsExtraction: (recentMessages?: Message[]) => Promise<void>;
+  /**
+   * 讀取完整聊天歷史。聊天畫面是分頁載入的，deps.messages 只含已載入的視窗，
+   * 用它算間隔或裁切總結內容會漏掉未載入的舊訊息。
+   */
+  loadCompleteMessages?: () => Promise<Message[]>;
 }) {
   const aiGenerationStore = useAIGenerationStore();
   const settingsStore = useSettingsStore();
@@ -219,6 +224,50 @@ ${sourceText}
   // 生成鎖定
   const summaryGeneratingLock = ref(false);
   const diaryGeneratingLock = ref(false);
+
+  function isValidChatMessage(m: Message): boolean {
+    return m.role === "user" || m.role === "ai";
+  }
+
+  /** 取得完整歷史中的 user/ai 訊息；載入失敗時退回已載入的視窗 */
+  async function loadValidMessages(): Promise<Message[]> {
+    let all = deps.messages.value;
+    if (deps.loadCompleteMessages) {
+      try {
+        all = await deps.loadCompleteMessages();
+      } catch (e) {
+        console.warn("[SummaryDiary] 載入完整歷史失敗，改用已載入的訊息:", e);
+      }
+    }
+    return all.filter(isValidChatMessage);
+  }
+
+  /**
+   * 讀取串流結果。串流錯誤、中斷或空內容都視為失敗並拋出，
+   * 避免把殘缺或空白的內容存成總結/日記。
+   */
+  async function collectStreamContent(
+    streamGenerator: AsyncIterable<StreamingEvent>,
+    signal: AbortSignal | undefined,
+    onToken: (content: string, token: string) => void,
+  ): Promise<string> {
+    let content = "";
+    for await (const event of streamGenerator) {
+      if (event.type === "token" && event.token) {
+        content += event.token;
+        onToken(content, event.token);
+      } else if (event.type === "done") {
+        if (event.content && event.content.length > content.length) {
+          content = event.content;
+        }
+      } else if (event.type === "error") {
+        throw new Error(String(event.error || "串流錯誤"));
+      }
+    }
+    if (signal?.aborted) throw new Error("已中斷");
+    if (!stripOutputTags(content)) throw new Error("AI 回傳空內容");
+    return content;
+  }
 
   // 清理 AI 生成內容中的 <content>/<think> 標籤
   function stripOutputTags(text: string): string {
@@ -360,16 +409,23 @@ ${sourceText}
     };
   }
 
+  // 自動總結失敗後的冷卻截止時間，避免 API 持續故障時每輪都重試
+  let summaryRetryNotBefore = 0;
+  const SUMMARY_RETRY_COOLDOWN_MS = 3 * 60 * 1000;
+
   // 檢查並觸發總結或日記生成
-  function checkAndTriggerSummaryOrDiary() {
-    if (!deps.currentChatId.value || deps.messages.value.length === 0) return;
+  async function checkAndTriggerSummaryOrDiary() {
+    const chatId = deps.currentChatId.value;
+    if (!chatId || deps.messages.value.length === 0) return;
+    if (summaryGeneratingLock.value && diaryGeneratingLock.value) return;
+
+    // 必須用完整歷史計算進度：已載入的視窗只有最近一頁，
+    // 間隔大於視窗時會永遠數不到門檻（進聊天後有沒有往上滑會影響結果）
+    const validMessages = await loadValidMessages();
+    if (deps.currentChatId.value !== chatId || validMessages.length === 0) return;
 
     const settings = deps.chatSummarySettings.value;
     const intervalMode = settings.intervalMode;
-
-    const validMessages = deps.messages.value.filter(
-      (m) => m.role === "user" || m.role === "ai",
-    );
 
     const messagesSinceLastSummary = deps.lastSummaryTime.value
       ? validMessages.filter((m) => m.timestamp > deps.lastSummaryTime.value)
@@ -396,10 +452,14 @@ ${sourceText}
       diaryInterval = settings.diaryIntervalMessage;
     }
 
-    if (summaryProgress >= summaryInterval && !summaryGeneratingLock.value) {
+    if (
+      summaryProgress >= summaryInterval &&
+      !summaryGeneratingLock.value &&
+      Date.now() >= summaryRetryNotBefore
+    ) {
       summaryGeneratingLock.value = true;
       setTimeout(() => {
-        triggerAutoSummary();
+        triggerAutoSummary(chatId);
       }, 2000);
     }
 
@@ -410,7 +470,7 @@ ${sourceText}
         messages: [...validMessages],
         settings: { ...deps.chatSummarySettings.value },
         capturedAt: Date.now(),
-        chatId: deps.currentChatId.value,
+        chatId,
       };
       setTimeout(() => {
         triggerAutoDiary(snapshot);
@@ -419,18 +479,43 @@ ${sourceText}
   }
 
   // 自動觸發總結生成
-  async function triggerAutoSummary() {
-    if (deps.isGeneratingSummary.value || !deps.currentChatId.value) {
+  async function triggerAutoSummary(chatId: string) {
+    if (deps.currentChatId.value !== chatId) {
       summaryGeneratingLock.value = false;
       return;
     }
 
+    // 主聊天或其他總結仍在生成時稍後再試，不要直接放棄這次觸發
+    if (deps.isGenerating.value || deps.isGeneratingSummary.value) {
+      console.log("📝 其他生成進行中，延遲自動總結");
+      setTimeout(() => triggerAutoSummary(chatId), 5000);
+      return;
+    }
+
     try {
-      await handleTriggerManualSummary(
+      const result = await generateSummary(
         resolveSummaryActualReadSettings(deps.chatSummarySettings.value),
       );
 
-      deps.lastSummaryTime.value = Date.now();
+      if (!result.success) {
+        // 失敗時不推進 lastSummaryTime，冷卻後的下一輪回覆會重試
+        summaryRetryNotBefore = Date.now() + SUMMARY_RETRY_COOLDOWN_MS;
+        console.error("📝 自動總結生成失敗:", result.error);
+        if (result.error && result.error !== "已中斷") {
+          notificationStore.notifySystem(
+            "自動總結失敗",
+            `${result.error}\n將在下次回覆後自動重試。`,
+          );
+        }
+        return;
+      }
+
+      summaryRetryNotBefore = 0;
+      // 以本次實際讀到的最後一則訊息為界，生成期間新進的訊息留給下一次總結計算
+      deps.lastSummaryTime.value = Math.max(
+        deps.lastSummaryTime.value,
+        result.coveredUntil,
+      );
       console.log("📝 自動總結生成完成");
 
       const char = deps.currentCharacter.value;
@@ -441,8 +526,6 @@ ${sourceText}
           char.id,
         );
       }
-    } catch (e) {
-      console.error("📝 自動總結生成失敗:", e);
     } finally {
       summaryGeneratingLock.value = false;
     }
@@ -497,10 +580,8 @@ ${sourceText}
 
       await promptManagerStore.loadConfig();
 
-      // 優先使用快照，否則即時讀取
-      const validMessages = snapshot?.messages ?? deps.messages.value.filter(
-        (m) => m.role === "user" || m.role === "ai",
-      );
+      // 優先使用快照，否則即時讀取完整歷史
+      const validMessages = snapshot?.messages ?? (await loadValidMessages());
 
       if (validMessages.length === 0) {
         console.warn("📔 無法生成日記：沒有可用的對話訊息");
@@ -642,25 +723,23 @@ ${recentMessagesText}
         signal: result.controller?.signal,
       });
 
-      for await (const event of streamGenerator) {
-        if (event.type === "token" && event.token) {
-          diaryContent += event.token;
-          if (useWindow) {
-            deps.streamingWindow.appendToken(event.token);
-          }
-          if (isStreamingEnabled) {
-            aiGenerationStore.updateContent(chatId, diaryContent, "diary");
-          }
-        } else if (event.type === "done") {
-          if (event.content && event.content.length > diaryContent.length) {
-            diaryContent = event.content;
-          }
-        } else if (event.type === "error") {
-          console.error("[Diary] Error:", event.error);
+      try {
+        diaryContent = await collectStreamContent(
+          streamGenerator,
+          result.controller?.signal,
+          (content, token) => {
+            if (useWindow) {
+              deps.streamingWindow.appendToken(token);
+            }
+            if (isStreamingEnabled) {
+              aiGenerationStore.updateContent(chatId, content, "diary");
+            }
+          },
+        );
+      } finally {
+        if (useWindow) {
+          deps.streamingWindow.setComplete();
         }
-      }
-      if (useWindow) {
-        deps.streamingWindow.setComplete();
       }
       if (!isStreamingEnabled) {
         aiGenerationStore.updateContent(chatId, diaryContent, "diary");
@@ -708,10 +787,33 @@ ${recentMessagesText}
 
   // 手動觸發 AI 生成總結
   async function handleTriggerManualSummary(settings?: ActualReadSettings) {
-    if (deps.isGeneratingSummary.value || deps.messages.value.length === 0) return;
+    const result = await generateSummary(settings, { isManual: true });
+    if (!result.success && result.error && result.error !== "已中斷") {
+      alert("生成總結失敗: " + result.error);
+    }
+  }
+
+  type SummaryGenerationResult =
+    | { success: true; coveredUntil: number }
+    | { success: false; error?: string };
+
+  /**
+   * 生成一次總結。失敗時回傳錯誤而非自行彈窗，
+   * 讓自動觸發能判斷成敗（失敗時不應推進 lastSummaryTime）。
+   */
+  async function generateSummary(
+    settings?: ActualReadSettings,
+    options: { isManual?: boolean } = {},
+  ): Promise<SummaryGenerationResult> {
+    if (deps.isGeneratingSummary.value) {
+      return { success: false, error: "已有總結正在生成中" };
+    }
+    if (deps.messages.value.length === 0) {
+      return { success: false, error: "沒有可總結的對話訊息" };
+    }
 
     const chatId = deps.currentChatId.value;
-    if (!chatId) return;
+    if (!chatId) return { success: false, error: "無聊天 ID" };
 
     const char = deps.currentCharacter.value;
     const result = aiGenerationStore.startGeneration(chatId, "summary", {
@@ -720,8 +822,7 @@ ${recentMessagesText}
     });
 
     if (!result.success) {
-      alert(result.error || "無法開始生成");
-      return;
+      return { success: false, error: result.error || "無法開始生成" };
     }
 
     deps.isGeneratingSummary.value = true;
@@ -749,15 +850,16 @@ ${recentMessagesText}
       const actualCount = actualReadSettings.actualMessageCount;
       const actualMode = actualReadSettings.actualMessageMode;
 
-      // 過濾 user/ai 消息後用統一算法裁切（與 ChatScreen / 日記一致）
-      const validMsgs = deps.messages.value.filter(
-        (m) => m.role === "user" || m.role === "ai",
-      );
+      // 從完整歷史過濾 user/ai 消息後用統一算法裁切（與 ChatScreen / 日記一致）
+      const validMsgs = await loadValidMessages();
       const messagesToRead = sliceMessagesBySettings(
         validMsgs,
         actualCount,
         actualMode,
       );
+      if (messagesToRead.length === 0) {
+        throw new Error("沒有可總結的對話訊息");
+      }
 
       const userName = deps.effectivePersona.value?.name || "User";
       const recentMessages = formatMessagesWithDates(
@@ -798,6 +900,20 @@ ${recentMessagesText}
         }
       }
 
+      // 提示詞被全部停用或刪除時，改用內建提示，避免送出空請求
+      if (summaryPrompts.length === 0) {
+        summaryPrompts.push(
+          {
+            role: "system",
+            content: `你是 ${char.data.name}。請以第一人稱（「我」）總結以下與 ${userName} 的對話，保留關鍵事件、情感變化和重要信息，字數 100-300 字。對話中的 [YYYY/MM/DD] 為真實日期，請使用具體日期。直接輸出總結內容，不要有前言。`,
+          },
+          {
+            role: "user",
+            content: `以下是需要總結的對話：\n\n${recentMessages}\n\n請生成總結。`,
+          },
+        );
+      }
+
       const client = new OpenAICompatibleClient(taskConfig.api);
 
       let summaryContent = "";
@@ -827,25 +943,23 @@ ${recentMessagesText}
         signal: result.controller?.signal,
       });
 
-      for await (const event of streamGenerator) {
-        if (event.type === "token" && event.token) {
-          summaryContent += event.token;
-          if (useWindow) {
-            deps.streamingWindow.appendToken(event.token);
-          }
-          if (isStreamingEnabled) {
-            aiGenerationStore.updateContent(chatId, summaryContent, "summary");
-          }
-        } else if (event.type === "done") {
-          if (event.content && event.content.length > summaryContent.length) {
-            summaryContent = event.content;
-          }
-        } else if (event.type === "error") {
-          console.error("[Summary] Error:", event.error);
+      try {
+        summaryContent = await collectStreamContent(
+          streamGenerator,
+          result.controller?.signal,
+          (content, token) => {
+            if (useWindow) {
+              deps.streamingWindow.appendToken(token);
+            }
+            if (isStreamingEnabled) {
+              aiGenerationStore.updateContent(chatId, content, "summary");
+            }
+          },
+        );
+      } finally {
+        if (useWindow) {
+          deps.streamingWindow.setComplete();
         }
-      }
-      if (useWindow) {
-        deps.streamingWindow.setComplete();
       }
       if (!isStreamingEnabled) {
         aiGenerationStore.updateContent(chatId, summaryContent, "summary");
@@ -855,16 +969,16 @@ ${recentMessagesText}
         id: `summary_${Date.now()}`,
         content: stripOutputTags(summaryContent),
         createdAt: Date.now(),
-        messageCount: deps.messages.value.length,
+        messageCount: validMsgs.length,
         isImportant: false,
-        isManual: true,
+        isManual: options.isManual === true,
         isMeta: false,
         keywords: extractSummaryKeywords(stripOutputTags(summaryContent)),
       };
 
       deps.chatSummaries.value.push(newSummary);
       await saveSummary(newSummary);
-      console.log("[SummaryDiary] 手動總結生成完成:", newSummary);
+      console.log("[SummaryDiary] 總結生成完成:", newSummary);
 
       // 向量記憶：自動嵌入
       if (isVectorMemoryEnabled()) {
@@ -877,13 +991,16 @@ ${recentMessagesText}
       }
 
       aiGenerationStore.completeGeneration(chatId, "summary", summaryContent);
+      return {
+        success: true,
+        coveredUntil:
+          messagesToRead[messagesToRead.length - 1]?.timestamp || Date.now(),
+      };
     } catch (e) {
       console.error("生成總結失敗:", e);
       const errorMsg = e instanceof Error ? e.message : "未知錯誤";
       aiGenerationStore.setError(chatId, errorMsg, "summary");
-      if (errorMsg !== "已中斷") {
-        alert("生成總結失敗: " + errorMsg);
-      }
+      return { success: false, error: errorMsg };
     } finally {
       deps.isGeneratingSummary.value = false;
     }
@@ -1288,13 +1405,11 @@ ${recentMessagesText}
   }
 
   // 手動觸發日記（暴露給外部，可傳入覆蓋設定）
-  function handleTriggerManualDiary(overrideSettings?: ActualReadSettings) {
+  async function handleTriggerManualDiary(overrideSettings?: ActualReadSettings) {
     if (diaryGeneratingLock.value) return;
     diaryGeneratingLock.value = true;
-    // 快照當前消息，使用覆蓋設定或已保存設定
-    const validMessages = deps.messages.value.filter(
-      (m) => m.role === "user" || m.role === "ai",
-    );
+    // 快照完整歷史，使用覆蓋設定或已保存設定
+    const validMessages = await loadValidMessages();
     const settings = overrideSettings
       ? {
           ...deps.chatSummarySettings.value,
