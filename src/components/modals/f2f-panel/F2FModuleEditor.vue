@@ -42,6 +42,13 @@ function isPickDisabled(identifier: string): boolean {
   return option?.entries.includes(identifier) ?? true;
 }
 
+/** 這個選項還有沒有可以連動的條目（沒被其他模塊佔用、也還不在此選項中） */
+function canLink(optionEntries: string[]): boolean {
+  return pickableEntries.value.some(
+    (entry) => !otherOwnerTitle(entry.identifier) && !optionEntries.includes(entry.identifier),
+  );
+}
+
 function openPicker(mode: PickerMode) {
   picker.value = mode;
   picked.value = [];
@@ -203,7 +210,13 @@ function save() {
               ×
             </button>
           </span>
-          <button type="button" class="f2f-chip" @click="openPicker({ kind: 'link', optionId: option.id })">
+          <button
+            type="button"
+            class="f2f-chip"
+            :disabled="!canLink(option.entries)"
+            :title="canLink(option.entries) ? undefined : '沒有可連動的條目'"
+            @click="openPicker({ kind: 'link', optionId: option.id })"
+          >
             ＋連動
           </button>
         </div>

@@ -193,7 +193,7 @@ onUnmounted(() => {
     }
 
     &:disabled {
-      opacity: 0.45;
+      opacity: 0.5;
       cursor: default;
     }
   }
