@@ -70,6 +70,7 @@ import { createStTemplateContext } from "@/services/StTemplateContextService";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { resolveStoryTime } from "@/utils/fakeTime";
 import { getMacroEngine } from "../macros/MacroEngine";
+import { resolveDeferredVariables } from "./deferredVariables";
 import { WorldInfoScanner } from "../worldinfo/WorldInfoScanner";
 
 /**
@@ -1339,6 +1340,11 @@ export class PromptBuilder {
     }
     builtMessages.push(...postHistoryMessages);
 
+    // 6.5 所有條目的 setvar 都已執行，替換 {{延後讀取::變量名}}
+    const resolvedMessages = await resolveDeferredVariables(builtMessages, (name) =>
+      this.readDeferredVariable(name),
+    );
+
     // 🐛 調試：檢查各部分的消息數量
     console.group("📦 [PromptBuilder] 最終組裝調試");
     console.log("preHistoryMessages:", preHistoryMessages.length);
@@ -1349,7 +1355,7 @@ export class PromptBuilder {
     console.groupEnd();
 
     // 7. 合併連續相同 role 的訊息
-    const mergedMessages = this.mergeConsecutiveMessages(builtMessages);
+    const mergedMessages = this.mergeConsecutiveMessages(resolvedMessages);
 
     return {
       messages: mergedMessages,
@@ -1498,6 +1504,14 @@ export class PromptBuilder {
    * 根據標識符構建提示詞內容
    * 現在會正確使用 promptDef.role 來設定消息角色
    */
+  /**
+   * 讀取延後讀取的聊天變量；變量值裡的宏（{{user}} 等）會再展開一次，與 getvar 取值後的行為一致
+   */
+  private async readDeferredVariable(name: string): Promise<string> {
+    const value = await this.macroEngine.substitute(`{{getvar::${name}}}`);
+    return value ? this.macroEngine.substitute(value) : "";
+  }
+
   private async buildPromptContent(
     identifier: string,
     wiResult: WIActivatedResult,
