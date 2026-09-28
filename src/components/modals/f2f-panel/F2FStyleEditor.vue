@@ -18,12 +18,7 @@ const { layout, selections } = useF2FPanel();
 
 function initialSelections(): Record<string, string[]> {
   if (props.styleDef) return clonePlain(props.styleDef.selections);
-  const result: Record<string, string[]> = {};
-  for (const module of layout.value.modules) {
-    const selection = selections.value.get(module.id);
-    if (selection?.status === "matched") result[module.id] = [...selection.optionIds];
-  }
-  return result;
+  return {};
 }
 
 const name = ref(props.styleDef?.name ?? "");
@@ -36,7 +31,8 @@ function isIncluded(module: F2FPanelModule): boolean {
 
 function toggleIncluded(module: F2FPanelModule, event: Event) {
   if ((event.target as HTMLInputElement).checked) {
-    draftSelections.value[module.id] = [];
+    const selection = selections.value.get(module.id);
+    draftSelections.value[module.id] = selection?.status === "matched" ? [...selection.optionIds] : [];
   } else {
     delete draftSelections.value[module.id];
   }
@@ -74,7 +70,7 @@ function save() {
     <label class="f2f-field-label" for="f2f-style-desc">說明（選填）</label>
     <input id="f2f-style-desc" v-model="desc" class="f2f-input" />
 
-    <p class="f2f-field-label">勾選這個風格要控制的模塊；沒勾的模塊套用時保持不變。</p>
+    <p class="f2f-field-label">勾選這個風格要控制的模塊（會帶入目前的選擇）；沒勾的模塊套用時保持不變。</p>
     <div v-for="module in layout.modules" :key="module.id" :class="['f2f-card', { active: isIncluded(module) }]">
       <label class="f2f-check">
         <input type="checkbox" :checked="isIncluded(module)" @change="toggleIncluded(module, $event)" />
