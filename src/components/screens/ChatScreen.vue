@@ -56,6 +56,7 @@ import { useChatAvatarChange } from "@/composables/useChatAvatarChange";
 import { useChatEventsExtraction } from "@/composables/useChatEventsExtraction";
 import { useChatExport } from "@/composables/useChatExport";
 import { useChatFakeTime } from "@/composables/useChatFakeTime";
+import { resolveStoryTime, stampStoryTimes } from "@/utils/fakeTime";
 import { useChatFiles } from "@/composables/useChatFiles";
 import {
   enterGameScreen,
@@ -140,6 +141,8 @@ import {
   parseAIResponse,
   parseCalendarEventTags,
   parseFoodRecordTags,
+  parseTimeAdvanceTag,
+  parseTimeJumpTag,
   parseGroupChatResponse,
 } from "@/services/ResponseParser";
 import { createStTemplateContext } from "@/services/StTemplateContextService";
@@ -258,11 +261,13 @@ const onHeaderSelectPersona = (...args: any[]) => selectPersona(args[0] as strin
 const onHeaderOpenGame = (...args: any[]) =>
   openGame(args[0] as "dishwashing" | "fishing" | "gambling" | "merit");
 const onHeaderSetFakeTimeMode = (...args: any[]) =>
-  setFakeTimeMode(args[0] as "real" | "loop" | "offset");
+  setFakeTimeMode(args[0] as "real" | "loop" | "offset" | "story");
 const onHeaderUpdateFakeTimeLoopStart = (...args: any[]) =>
   updateFakeTimeLoopStart(args[0] as string);
 const onHeaderUpdateFakeTimeLoopEnd = (...args: any[]) =>
   updateFakeTimeLoopEnd(args[0] as string);
+const onHeaderAdvanceStoryTime = (...args: any[]) =>
+  advanceStoryTime(Number(args[0]));
 const onHeaderUpdateOffsetStartDateTime = (...args: any[]) =>
   updateOffsetStartDateTime(args[0] as string);
 const onHeaderNavigate = (...args: any[]) =>
@@ -1166,7 +1171,87 @@ function closeNicknameEdit() {
   showNicknameEdit.value = false;
 }
 
-async function setFakeTimeMode(mode: "real" | "loop" | "offset") {
+function toggleFakeTimePanel() {
+  showFakeTimePanel.value = !showFakeTimePanel.value;
+  if (showFakeTimePanel.value) fakeTime.refreshDisplay();
+}
+
+/**
+ * AI 回覆結束後處理劇情時間（由模型自己判斷要不要推進）：
+ * - <time-jump>：跳到指定時間（偏移／劇情時鐘）
+ * - <time-advance>：往後推進指定分鐘
+ * 面對面開場那一輪，模型會依前文決定見面時間；若跳轉，進入面對面後的訊息都改成見面時間。
+ * 一般的跳轉則把這一輪 AI 的回覆改成跳轉後的時間（回覆描寫的是跳轉後的場景）。
+ * 重新生成只套用絕對的 time-jump，避免同一輪被推進兩次。
+ * 回傳是否有改動（需要存檔）。
+ */
+function applyTimeAfterReply(
+  content: string,
+  isRegeneration: boolean,
+  turnId?: string,
+): boolean {
+  if (!chatEnableRealTimeAwareness.value) return false;
+  const mode = fakeTime.fakeTimeMode.value;
+  if (mode !== "offset" && mode !== "story") return false;
+
+  const openingSince = isRegeneration ? null : fakeTime.consumeStoryOpening();
+  const openingConsumed = openingSince !== null;
+
+  const jumpTarget = content ? parseTimeJumpTag(content) : null;
+  if (jumpTarget) {
+    if (fakeTime.jumpToTime(jumpTarget) !== true) return openingConsumed;
+    restampStoryTime(openingSince, turnId);
+    return true;
+  }
+  if (isRegeneration) return false;
+
+  const minutes = content ? parseTimeAdvanceTag(content) : null;
+  return (minutes ? fakeTime.advanceBy(minutes) : false) || openingConsumed;
+}
+
+/**
+ * 把訊息的劇情時間改成目前的聊天時間：
+ * - sinceRealMs：這個現實時間之後的所有對話（面對面開場）
+ * - turnId：這一輪 AI 的回覆
+ */
+function restampStoryTime(sinceRealMs: number | null, turnId?: string) {
+  const now = fakeTime.getChatNow().getTime();
+  for (const m of messages.value) {
+    if (m.role !== "user" && m.role !== "ai") continue;
+    const inOpening = sinceRealMs !== null && m.timestamp >= sinceRealMs;
+    const inTurn = !!turnId && m.role === "ai" && m.turnId === turnId;
+    if (inOpening || inTurn) m.storyTime = now;
+  }
+}
+
+async function advanceStoryTime(minutes: number) {
+  if (fakeTime.advanceBy(minutes)) await saveChat();
+}
+
+/** 劇情時間拉回最後一則訊息的時間 */
+async function resumeStoryFromLastMessage() {
+  if (fakeTime.resumeFromLastMessage()) {
+    showToast("已接續最後一則訊息的時間");
+    await saveChat();
+  } else {
+    showToast("還沒有可以接續的訊息");
+  }
+}
+
+/** 劇情時間跳到隔天早上 8 點 */
+async function jumpStoryToNextMorning() {
+  const next = new Date(fakeTime.getChatNow());
+  next.setDate(next.getDate() + 1);
+  next.setHours(8, 0, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const target = `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}T08:00`;
+  if (fakeTime.jumpToTime(target) === true) {
+    showToast("已跳到隔天早上");
+    await saveChat();
+  }
+}
+
+async function setFakeTimeMode(mode: "real" | "loop" | "offset" | "story") {
   fakeTime.setMode(mode);
   await saveChat();
 }
@@ -1556,7 +1641,34 @@ const {
 });
 
 // ===== 假時間 composable =====
-const fakeTime = useChatFakeTime();
+const fakeTime = useChatFakeTime({ getLastMessageStoryTime });
+
+/** 最後一則對話訊息（user/ai）的劇情時間，劇情時鐘進入面對面時從這裡接續 */
+function getLastMessageStoryTime(): number | null {
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const m = messages.value[i];
+    if (m.role !== "user" && m.role !== "ai") continue;
+    if (typeof m.timestamp !== "number") continue;
+    return resolveStoryTime(m, fakeTime.getLegacyOffsetMs());
+  }
+  return null;
+}
+
+/** 畫面上顯示的訊息時間：使用假時間時顯示劇情時間，跟 AI 看到的一致 */
+function getMessageDisplayTime(m: { timestamp: number; storyTime?: number }): number {
+  if (!chatEnableRealTimeAwareness.value || fakeTime.fakeTimeMode.value === "real") {
+    return m.timestamp;
+  }
+  return resolveStoryTime(m, fakeTime.getLegacyOffsetMs());
+}
+
+// 新訊息建立時就記下劇情時間（storyTime），之後切換模式或跳轉都不會改動已發生訊息的時間。
+// 用 sync flush 讓 AI 回覆裡的 <time-jump> 生效前，同一輪的訊息已先標記好。
+watch(
+  () => messages.value.length,
+  () => stampStoryTimes(messages.value, fakeTime.getChatNow),
+  { flush: "sync" },
+);
 
 // ===== 遊戲成績 + 話題引導 + 位置分享 + 天氣分享 composable =====
 const {
@@ -1820,6 +1932,11 @@ const timeJumpInput = ref("");
 const enablePhoneDecision = ref(true); // 默認開啟角色決定接電話
 const chatDoNotDisturb = ref(false); // 聊天專屬勿擾模式
 const chatFaceToFaceMode = ref(false); // 聊天專屬面對面模式
+// 劇情時鐘：進入面對面就暫停、切回線上從最後的劇情時間繼續走。
+// sync flush：切換當下緊接著送出的訊息就能拿到新的時間狀態。
+watch(chatFaceToFaceMode, (enabled) => fakeTime.syncFaceToFace(enabled), {
+  flush: "sync",
+});
 const chatCharNarrativePerson = ref<"first" | "third">("first"); // {{char}} 敘事人稱
 const chatUserNarrativePerson = ref<"first" | "second" | "third">("second"); // {{user}} 敘事人稱
 const chatEnableRealTimeAwareness = ref(true); // 感知現實時間（默認開啟）
@@ -2737,6 +2854,9 @@ const {
   saveChat,
   triggerAutoEventsExtraction,
   loadCompleteMessages: loadCompleteMessagesSnapshot,
+  getRealTimeAwareness: () => chatEnableRealTimeAwareness.value,
+  getChatNow: fakeTime.getChatNow,
+  getLegacyOffsetMs: fakeTime.getLegacyOffsetMs,
 });
 
 // 是否有 AI 訊息（用於顯示重新生成按鈕）
@@ -3094,15 +3214,18 @@ function shouldShowDateSeparator(index: number): boolean {
   const currentMsg = visibleMessages.value[index];
   const prevMsg = visibleMessages.value[index - 1];
   if (!currentMsg || !prevMsg) return false;
-  const currentDate = new Date(currentMsg.timestamp).toDateString();
-  const prevDate = new Date(prevMsg.timestamp).toDateString();
+  const currentDate = new Date(getMessageDisplayTime(currentMsg)).toDateString();
+  const prevDate = new Date(getMessageDisplayTime(prevMsg)).toDateString();
   return currentDate !== prevDate;
 }
 
-// 日期分隔符：格式化日期文字
+// 日期分隔符：格式化日期文字（「今天／昨天」以聊天的劇情時間為準）
 function getDateSeparatorText(timestamp: number): string {
   const date = new Date(timestamp);
-  const today = new Date();
+  const today =
+    chatEnableRealTimeAwareness.value && fakeTime.fakeTimeMode.value !== "real"
+      ? fakeTime.getChatNow()
+      : new Date();
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
@@ -3824,6 +3947,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       status: "sent" as const,
       createdAt: m.timestamp,
       updatedAt: m.timestamp,
+      storyTime: m.storyTime,
       // 圖片相關欄位
       messageType: m.messageType,
       imageUrl: m.imageUrl,
@@ -4257,6 +4381,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           : undefined,
       // 傳入假時間模式（用於決定是否注入 time-jump 提示詞）
       fakeTimeMode: fakeTime.fakeTimeMode.value,
+      storyClockPaused: fakeTime.isStoryClockPaused.value,
+      storyClockOpening: fakeTime.isStoryOpeningPending.value,
       // 傳入 MiniMax TTS 語音合成狀態
       minimaxTTSEnabled: chatMinimaxTTSEnabled.value,
       // 傳入群聊模式狀態（多人卡 + 面對面 = 不使用群聯模式）
@@ -5660,17 +5786,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               for (const r of parsed.foodRecords) await handleFoodRecord(r);
             }
 
-            // 處理時間跳轉標籤（偏移時間模式）
-            if (
-              parsed.hasTimeJump &&
-              parsed.timeJumpTarget &&
-              fakeTime.fakeTimeMode.value === "offset"
-            ) {
-              console.log("[ChatScreen][render] fakeTime.jumpToTime");
-              fakeTime.jumpToTime(parsed.timeJumpTarget);
-              console.log("[ChatScreen][render] fakeTime.jumpToTime 完成");
-              await saveChat();
-            }
+            // 時間跳轉／推進標籤統一在回覆結束後由 applyTimeAfterReply 處理
 
             // 處理噗浪發文
             if (parsed.hasPlurkPost && parsed.plurkContent) {
@@ -6233,6 +6349,19 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           charId,
           charAvatar,
         );
+      }
+    }
+
+    // 劇情時間推進（模型輸出的 time-jump / time-advance）
+    if (!remoteGenerationStarted && persistedGenerationContent) {
+      if (
+        applyTimeAfterReply(
+          persistedGenerationContent,
+          !!options?.skipAutoTrigger,
+          generationTurnId || undefined,
+        )
+      ) {
+        saveChat();
       }
     }
 
@@ -7268,10 +7397,13 @@ async function handleTimeJump() {
   const input = timeJumpInput.value.trim();
   if (!input) return;
   // datetime-local 的值已經是 ISO 格式，直接傳給 jumpToTime
-  const ok = fakeTime.jumpToTime(input);
-  if (ok) {
+  const result = fakeTime.jumpToTime(input);
+  if (result === true) {
     timeJumpInput.value = "";
+    showToast("已跳轉時間");
     await saveChat();
+  } else {
+    showToast(result);
   }
 }
 
@@ -8584,6 +8716,7 @@ function toStoredRemoteMessage(message: Message, fallbackName: string): ChatMess
     status: "sent",
     createdAt: message.timestamp,
     updatedAt: message.timestamp,
+    storyTime: message.storyTime,
     thought: message.thought,
     isTimetravel: message.isTimetravel,
     timetravelContent: message.timetravelContent,
@@ -8687,6 +8820,7 @@ async function landRemoteGenerationTask(task: BgGenerationTaskView): Promise<voi
     await applyRemoteParsedMessageSideEffects(remoteMessages);
     completeChatGeneration(finalContent);
     scrollToBottom();
+    applyTimeAfterReply(finalContent, false);
     await saveChatImmediate();
     await processGiftReceived();
     checkAndTriggerSummaryOrDiary();
@@ -8946,6 +9080,8 @@ useChatCleanup({
       :fake-time-loop-end="fakeTime.fakeTimeLoop.value.endDateTime"
       :offset-start-date-time="fakeTime.offsetStartDateTime.value"
       :formatted-fake-time="fakeTime.formattedFakeTime.value"
+      :story-clock-paused="fakeTime.isStoryClockPaused.value"
+      :story-opening-pending="fakeTime.isStoryOpeningPending.value"
       :time-jump-input="timeJumpInput"
       :chat-do-not-disturb="chatDoNotDisturb"
       :enable-phone-decision="enablePhoneDecision"
@@ -8976,13 +9112,16 @@ useChatCleanup({
       @set-user-narrative-person="onHeaderSetUserNarrativePerson"
       @toggle-night-mode="toggleNightMode"
       @toggle-real-time-awareness="toggleRealTimeAwareness"
-      @toggle-fake-time-panel="showFakeTimePanel = !showFakeTimePanel"
+      @toggle-fake-time-panel="toggleFakeTimePanel"
       @set-fake-time-mode="onHeaderSetFakeTimeMode"
       @update-fake-time-loop-start="onHeaderUpdateFakeTimeLoopStart"
       @update-fake-time-loop-end="onHeaderUpdateFakeTimeLoopEnd"
       @update-offset-start-datetime="onHeaderUpdateOffsetStartDateTime"
       @update-time-jump-input="timeJumpInput = $event"
       @handle-time-jump="handleTimeJump"
+      @advance-story-time="onHeaderAdvanceStoryTime"
+      @story-next-morning="jumpStoryToNextMorning"
+      @resume-story-from-last="resumeStoryFromLastMessage"
       @toggle-chat-do-not-disturb="toggleChatDoNotDisturb"
       @toggle-phone-decision="togglePhoneDecisionFromMenu"
       @toggle-novel-ai-image="toggleNovelAIImage"
@@ -9290,7 +9429,7 @@ useChatCleanup({
           <div v-if="shouldShowDateSeparator(index)" class="date-separator">
             <div class="separator-line"></div>
             <span class="separator-text">{{
-              getDateSeparatorText(message.timestamp)
+              getDateSeparatorText(getMessageDisplayTime(message))
             }}</span>
             <div class="separator-line"></div>
           </div>
@@ -9372,7 +9511,7 @@ useChatCleanup({
                   : characterName
                 : ''
             "
-            :timestamp="message.timestamp"
+            :timestamp="getMessageDisplayTime(message)"
             :char-frame-id="chatAppearance?.avatarFrames?.charFrameId ?? null"
             :user-frame-id="chatAppearance?.avatarFrames?.userFrameId ?? null"
             :avatar-shape="(chatAppearance?.useCustom && chatAppearance.avatar?.shape) || themeStore.avatarStyle.shape"

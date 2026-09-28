@@ -1239,11 +1239,12 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
   // <content> 外的文字不會進入 outputContent，因此這類系統控制標籤需要從 rawResponse 額外轉成卡片訊息。
   appendTopLevelModeRequestMessages(result.messages, rawResponse);
 
-  // 從所有訊息中移除 char-location 標籤
+  // 從所有訊息中移除 char-location 與時間控制標籤（模型偶爾會寫在 <content> 裡）
   for (const msg of result.messages) {
     if (msg.content) {
       msg.content = msg.content
         .replace(/<char-location\s+[^>]*?\s*\/?>(?:<\/char-location>)?/gi, "")
+        .replace(/<time-(?:jump|advance)\s+[^>]*?\s*\/?>(?:<\/time-(?:jump|advance)>)?/gi, "")
         .trim();
     }
   }
@@ -2334,6 +2335,31 @@ export function parseTimeJumpTag(rawResponse: string): string | null {
   }
 
   return datetime;
+}
+
+/**
+ * 解析 time-advance 標籤（劇情時間往後推進）
+ * 支援格式：<time-advance minutes="20" reason="吃完午餐"/>、<time-advance hours="2"/>
+ * minutes 與 hours 可同時使用；單次最多推進 7 天，更長的時間請用 time-jump
+ *
+ * @returns 推進的分鐘數，或 null（未找到或格式無效）
+ */
+export function parseTimeAdvanceTag(rawResponse: string): number | null {
+  const tagMatch = rawResponse.match(
+    /<time-advance\s+([^>]*?)\s*\/?>(?:<\/time-advance>)?/i,
+  );
+  if (!tagMatch) return null;
+
+  const attrs = tagMatch[1];
+  const minutes = Number(extractAttr(attrs, "minutes") ?? 0);
+  const hours = Number(extractAttr(attrs, "hours") ?? 0);
+  if (!Number.isFinite(minutes) || !Number.isFinite(hours)) {
+    console.warn("[ResponseParser] time-advance 數值無效:", attrs);
+    return null;
+  }
+  const total = minutes + hours * 60;
+  if (total <= 0) return null;
+  return Math.min(total, 7 * 24 * 60);
 }
 
 /**

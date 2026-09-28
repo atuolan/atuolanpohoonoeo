@@ -286,6 +286,7 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     status: "sent" as const,
     createdAt: m.timestamp ?? m.createdAt ?? Date.now(),
     updatedAt: m.timestamp ?? m.updatedAt ?? m.createdAt ?? Date.now(),
+    storyTime: typeof m.storyTime === "number" ? m.storyTime : undefined,
     swipes: normalizeSwipeList(m.swipes),
     swipeId: m.swipeId,
     roundSwipes: normalizeRoundSwipes(m.roundSwipes),
