@@ -21,6 +21,7 @@ import AISummaryPanel from "@/components/modals/AISummaryPanel.vue";
 import AffinityPanel from "@/components/modals/AffinityPanel.vue";
 import ChatInfoModal from "@/components/modals/ChatInfoModal.vue";
 import DiaryViewModal from "@/components/modals/DiaryViewModal.vue";
+import FaceToFacePanel from "@/components/modals/f2f-panel/FaceToFacePanel.vue";
 import FavoriteAudioModal from "@/components/modals/FavoriteAudioModal.vue";
 import GameScorePickerModal from "@/components/modals/GameScorePickerModal.vue";
 import GroupCallModal from "@/components/modals/GroupCallModal.vue";
@@ -7359,29 +7360,12 @@ async function toggleFaceToFaceMode() {
   await saveChat();
 }
 
-// 設定 {{char}} 敘事人稱（聊天專屬，面對面模式下）
-async function setCharNarrativePerson(value: "first" | "third") {
-  chatCharNarrativePerson.value = value;
-  if (value === "first" && chatUserNarrativePerson.value === "first") {
-    chatUserNarrativePerson.value = "second";
-  }
-  await saveChat();
+// 面對面設定面板（全域面對面提示詞開關）
+const showF2FPanel = ref(false);
+function openF2FPanel() {
+  showChatSettingsMenu.value = false;
+  showF2FPanel.value = true;
 }
-
-// 設定 {{user}} 敘事人稱（聊天專屬，面對面模式下）
-async function setUserNarrativePerson(value: "first" | "second" | "third") {
-  if (chatCharNarrativePerson.value === "first" && value === "first") {
-    chatUserNarrativePerson.value = "second";
-  } else {
-    chatUserNarrativePerson.value = value;
-  }
-  await saveChat();
-}
-
-const onHeaderSetCharNarrativePerson = (...args: any[]) =>
-  setCharNarrativePerson(args[0] as "first" | "third");
-const onHeaderSetUserNarrativePerson = (...args: any[]) =>
-  setUserNarrativePerson(args[0] as "first" | "second" | "third");
 
 // 切換夜晚模式
 async function toggleNightMode() {
@@ -9043,8 +9027,6 @@ useChatCleanup({
       :show-game-menu="showGameMenu"
       :show-chat-settings-menu="showChatSettingsMenu"
       :chat-face-to-face-mode="chatFaceToFaceMode"
-      :chat-char-narrative-person="chatCharNarrativePerson"
-      :chat-user-narrative-person="chatUserNarrativePerson"
       :night-mode="settingsStore.nightMode"
       :chat-enable-real-time-awareness="chatEnableRealTimeAwareness"
       :show-fake-time-panel="showFakeTimePanel"
@@ -9081,8 +9063,7 @@ useChatCleanup({
       @open-proactive-message-settings="showProactiveMessageSettings = true"
       @toggle-chat-settings-menu="toggleChatSettingsMenu"
       @toggle-face-to-face-mode="toggleFaceToFaceMode"
-      @set-char-narrative-person="onHeaderSetCharNarrativePerson"
-      @set-user-narrative-person="onHeaderSetUserNarrativePerson"
+      @open-f2f-panel="openF2FPanel"
       @toggle-night-mode="toggleNightMode"
       @toggle-real-time-awareness="toggleRealTimeAwareness"
       @toggle-fake-time-panel="toggleFakeTimePanel"
@@ -9115,6 +9096,11 @@ useChatCleanup({
       @toggle-block-character="toggleBlockCharacter"
       @clear-chat-history="clearChatHistory"
     />
+    <Teleport to="body">
+      <Transition name="f2f-sheet">
+        <FaceToFacePanel v-if="showF2FPanel" @close="showF2FPanel = false" />
+      </Transition>
+    </Teleport>
 
     <!-- 聊天詳情頁 -->
     <Teleport to="body">

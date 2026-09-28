@@ -1187,7 +1187,11 @@ async function resetCurrentToDefault() {
       await promptManagerStore.resetToDefault();
     }
   } else if (selectedMode.value === "faceToFace") {
-    if (confirm("確定要重置「面對面模式」的提示詞為預設嗎？\n（不會影響其他模式）")) {
+    if (
+      confirm(
+        "確定要重置「面對面模式」的提示詞為預設嗎？\n（不會影響其他模式；面對面設定面板的模塊與風格也會還原）",
+      )
+    ) {
       await promptManagerStore.resetFaceToFaceToDefault();
     }
   } else if (selectedMode.value === "groupChat") {
@@ -2076,7 +2080,11 @@ function doExport() {
       return;
     }
 
-    const stData = buildSillyTavernExport(payload.prompts, payload.order);
+    const stData: Record<string, unknown> = buildSillyTavernExport(payload.prompts, payload.order);
+    // 面對面模塊附上面板配置；SillyTavern 會忽略這個欄位，匯回本 App 時會被採用
+    if (payload.label === EXPORT_MODE_META.faceToFace.label) {
+      stData.aguaphone_panel = promptManagerStore.faceToFacePanelLayout;
+    }
     const json = JSON.stringify(stData, null, 4);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -2165,6 +2173,7 @@ function doExport() {
     const faceToFaceExport = getFaceToFaceExportPayload();
     exportData.faceToFacePrompts = faceToFaceExport.prompts;
     exportData.faceToFacePromptOrder = faceToFaceExport.order;
+    exportData.faceToFacePanelLayout = promptManagerStore.faceToFacePanelLayout;
   }
   if (exportOptions.value.diary) {
     const diaryExport = getDiaryExportPayload();

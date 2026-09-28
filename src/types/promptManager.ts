@@ -236,6 +236,8 @@ export interface PromptManagerConfig {
   faceToFacePromptOrder?: PromptOrderEntry[];
   /** 已套用的面對面提示詞強制重置版本（低於 FACE_TO_FACE_PROMPT_RESET_VERSION 時需引導重置） */
   faceToFacePromptResetVersion?: number;
+  /** 面對面設定面板配置（只存結構，以 identifier 引用條目） */
+  faceToFacePanelLayout?: F2FPanelLayout;
   /** 群聊模式提示詞定義 */
   groupChatPrompts?: PromptDefinition[];
   /** 群聊模式提示詞順序 */
@@ -261,6 +263,8 @@ export interface PromptManagerConfig {
 // ===== 默認提示詞定義 =====
 // 注意：完整的默認提示詞定義已移至 @/data/defaultPrompts.ts
 // 這裡僅保留導入和重新導出
+import type { F2FPanelLayout } from "@/types/f2fPanel";
+import { DEFAULT_F2F_PANEL_LAYOUT } from "@/data/faceToFacePanelLayout";
 import {
   BATCH_COMMENTS_PROMPT_DEFINITIONS as IMPORTED_BATCH_COMMENTS_DEFINITIONS,
   DEFAULT_BATCH_COMMENTS_PROMPT_ORDER as IMPORTED_BATCH_COMMENTS_ORDER,
@@ -351,6 +355,7 @@ export function createDefaultPromptManagerConfig(): PromptManagerConfig {
     ),
     faceToFacePrompts: structuredClone(FACE_TO_FACE_PROMPT_DEFINITIONS),
     faceToFacePromptOrder: structuredClone(DEFAULT_FACE_TO_FACE_PROMPT_ORDER),
+    faceToFacePanelLayout: structuredClone(DEFAULT_F2F_PANEL_LAYOUT),
     groupChatPrompts: structuredClone(GROUP_CHAT_PROMPT_DEFINITIONS),
     groupChatPromptOrder: structuredClone(DEFAULT_GROUP_CHAT_PROMPT_ORDER),
     deletedDefaultPromptIds: [],
