@@ -2076,7 +2076,11 @@ function doExport() {
       return;
     }
 
-    const stData = buildSillyTavernExport(payload.prompts, payload.order);
+    const stData: Record<string, unknown> = buildSillyTavernExport(payload.prompts, payload.order);
+    // 面對面模塊附上面板配置；SillyTavern 會忽略這個欄位，匯回本 App 時會被採用
+    if (payload.label === EXPORT_MODE_META.faceToFace.label) {
+      stData.aguaphone_panel = promptManagerStore.faceToFacePanelLayout;
+    }
     const json = JSON.stringify(stData, null, 4);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -2165,6 +2169,7 @@ function doExport() {
     const faceToFaceExport = getFaceToFaceExportPayload();
     exportData.faceToFacePrompts = faceToFaceExport.prompts;
     exportData.faceToFacePromptOrder = faceToFaceExport.order;
+    exportData.faceToFacePanelLayout = promptManagerStore.faceToFacePanelLayout;
   }
   if (exportOptions.value.diary) {
     const diaryExport = getDiaryExportPayload();
