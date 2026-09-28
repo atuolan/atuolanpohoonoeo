@@ -46,7 +46,8 @@ function onKeydown(event: KeyboardEvent) {
 
 onMounted(() => {
   window.addEventListener("keydown", onKeydown);
-  closeBtn.value?.focus();
+  // 面板還在滑入動畫的畫面外位置，不阻止捲動的話瀏覽器會捲動頁面去找按鈕，造成背景閃動
+  closeBtn.value?.focus({ preventScroll: true });
 });
 
 onUnmounted(() => {
