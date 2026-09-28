@@ -4,7 +4,7 @@
  * 面對面設定面板：風格 / 模塊 / 條目 三頁
  * 作用於全域的面對面提示詞開關
  */
-import { ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { X } from "lucide-vue-next";
 import { useF2FPanel } from "@/composables/useF2FPanel";
 import F2FEntriesTab from "./F2FEntriesTab.vue";
@@ -22,14 +22,33 @@ const TABS: { key: Tab; label: string }[] = [
 
 const tab = ref<Tab>("styles");
 const { staleCount } = useF2FPanel();
+
+const closeBtn = ref<HTMLButtonElement | null>(null);
+
+function onOverlayClick() {
+  emit("close");
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape") emit("close");
+}
+
+onMounted(() => {
+  window.addEventListener("keydown", onKeydown);
+  closeBtn.value?.focus();
+});
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", onKeydown);
+});
 </script>
 
 <template>
-  <div class="f2f-panel-overlay" @click.self="emit('close')">
+  <div class="f2f-panel-overlay" @click.self="onOverlayClick">
     <section class="f2f-panel" role="dialog" aria-modal="true" aria-labelledby="f2f-panel-title">
       <header class="f2f-panel-header">
         <h2 id="f2f-panel-title">面對面設定</h2>
-        <button type="button" class="f2f-icon-btn" aria-label="關閉" @click="emit('close')">
+        <button ref="closeBtn" type="button" class="f2f-icon-btn" aria-label="關閉" @click="emit('close')">
           <X :size="20" />
         </button>
       </header>
@@ -73,7 +92,8 @@ const { staleCount } = useF2FPanel();
 .f2f-panel {
   width: 100%;
   max-width: 520px;
-  max-height: 85vh;
+  max-height: 90vh;
+  max-height: min(90vh, calc(100dvh - env(safe-area-inset-top, 0px) - 24px));
   display: flex;
   flex-direction: column;
   background: var(--color-surface, #fff);
@@ -83,6 +103,7 @@ const { staleCount } = useF2FPanel();
   padding-bottom: env(safe-area-inset-bottom);
 
   .f2f-panel-header {
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -105,6 +126,7 @@ const { staleCount } = useF2FPanel();
   }
 
   .f2f-tabs {
+    flex-shrink: 0;
     display: flex;
     gap: 6px;
     padding: 0 18px 10px;
@@ -165,6 +187,7 @@ const { staleCount } = useF2FPanel();
 
   .f2f-panel-body {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 12px 18px 18px;
   }

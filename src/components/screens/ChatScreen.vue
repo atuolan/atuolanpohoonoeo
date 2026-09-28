@@ -9096,7 +9096,11 @@ useChatCleanup({
       @toggle-block-character="toggleBlockCharacter"
       @clear-chat-history="clearChatHistory"
     />
-    <FaceToFacePanel v-if="showF2FPanel" @close="showF2FPanel = false" />
+    <Teleport to="body">
+      <Transition name="slide-up">
+        <FaceToFacePanel v-if="showF2FPanel" @close="showF2FPanel = false" />
+      </Transition>
+    </Teleport>
 
     <!-- 聊天詳情頁 -->
     <Teleport to="body">
