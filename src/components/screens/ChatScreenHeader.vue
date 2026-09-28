@@ -5,9 +5,9 @@ import {
   BellOff,
   CalendarClock,
   Check,
+  ChevronRight,
   Clock,
   Dices,
-  Drama,
   Fish,
   Flower2,
   ImagePlus,
@@ -17,8 +17,8 @@ import {
   PhoneIncoming,
   ScanSearch,
   Settings,
+  SlidersHorizontal,
   Tag,
-  User,
   UserRound,
   Users,
   Utensils,
@@ -55,8 +55,6 @@ const props = defineProps<{
   showGameMenu: boolean;
   showChatSettingsMenu: boolean;
   chatFaceToFaceMode: boolean;
-  chatCharNarrativePerson: "first" | "third";
-  chatUserNarrativePerson: "first" | "second" | "third";
   nightMode: boolean;
   chatEnableRealTimeAwareness: boolean;
   showFakeTimePanel: boolean;
@@ -96,8 +94,7 @@ const emit = defineEmits<{
   (e: "open-proactive-message-settings"): void;
   (e: "toggle-chat-settings-menu"): void;
   (e: "toggle-face-to-face-mode"): void;
-  (e: "set-char-narrative-person", value: "first" | "third"): void;
-  (e: "set-user-narrative-person", value: "first" | "second" | "third"): void;
+  (e: "open-f2f-panel"): void;
   (e: "toggle-night-mode"): void;
   (e: "toggle-real-time-awareness"): void;
   (e: "toggle-fake-time-panel"): void;
@@ -495,29 +492,18 @@ const isDarkBackground = computed(() =>
                 <span class="toggle-slider-mini"></span>
               </label>
             </div>
-            <div v-if="chatFaceToFaceMode" class="narrative-person-panel">
-              <div class="narrative-person-row">
-                <div class="toggle-item-info narrative-person-label">
-                  <Drama :size="20" :stroke-width="1.75" />
-                  <span>角色人稱</span>
-                </div>
-                <div class="fake-time-mode-selector narrative-person-selector">
-                  <button :class="['fake-time-mode-btn', { active: chatCharNarrativePerson === 'third' }]" @click="emit('set-char-narrative-person', 'third')">第三人稱</button>
-                  <button :class="['fake-time-mode-btn', { active: chatCharNarrativePerson === 'first' }]" @click="emit('set-char-narrative-person', 'first')">我</button>
-                </div>
+            <button
+              v-if="chatFaceToFaceMode"
+              type="button"
+              class="dropdown-toggle-item f2f-panel-entry"
+              @click="emit('open-f2f-panel')"
+            >
+              <div class="toggle-item-info">
+                <SlidersHorizontal :size="20" :stroke-width="1.75" />
+                <span>面對面設定</span>
               </div>
-              <div class="narrative-person-row">
-                <div class="toggle-item-info narrative-person-label">
-                  <User :size="20" :stroke-width="1.75" />
-                  <span>用戶人稱</span>
-                </div>
-                <div class="fake-time-mode-selector narrative-person-selector">
-                  <button :class="['fake-time-mode-btn', { active: chatUserNarrativePerson === 'third' }]" @click="emit('set-user-narrative-person', 'third')">第三人稱</button>
-                  <button :class="['fake-time-mode-btn', { active: chatUserNarrativePerson === 'second' }]" @click="emit('set-user-narrative-person', 'second')">你</button>
-                  <button v-if="chatCharNarrativePerson !== 'first'" :class="['fake-time-mode-btn', { active: chatUserNarrativePerson === 'first' }]" @click="emit('set-user-narrative-person', 'first')">我</button>
-                </div>
-              </div>
-            </div>
+              <ChevronRight :size="18" :stroke-width="1.75" />
+            </button>
             <div class="dropdown-toggle-item">
               <div class="toggle-item-info">
                 <Moon :size="20" :stroke-width="1.75" />
@@ -1491,28 +1477,14 @@ const isDarkBackground = computed(() =>
   border-top: 1px solid var(--color-border);
 }
 
-.narrative-person-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 18px;
-}
-
-.narrative-person-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.narrative-person-label {
-  flex: 0 0 auto;
-}
-
-.narrative-person-selector {
-  flex: 1;
-  min-width: 132px;
-  margin-bottom: 0;
+.f2f-panel-entry {
+  width: 100%;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
 }
 
 .fake-time-mode-selector {
