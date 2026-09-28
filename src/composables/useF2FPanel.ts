@@ -17,6 +17,9 @@ import {
   reconcileLayout,
 } from "@/utils/f2fPanelEngine";
 
+/** 已由「視角」模塊取代的舊條目，不在面板中顯示 */
+const HIDDEN_ENTRY_IDS = new Set(["f2fNarrativePerson"]);
+
 export interface F2FPanelEntry {
   identifier: string;
   name: string;
@@ -43,6 +46,7 @@ export function useF2FPanel() {
 
   const entries = computed<F2FPanelEntry[]>(() =>
     store.faceToFacePromptOrder.flatMap((entry) => {
+      if (HIDDEN_ENTRY_IDS.has(entry.identifier)) return [];
       const prompt = promptById.value.get(entry.identifier);
       if (!prompt) return [];
       return [
