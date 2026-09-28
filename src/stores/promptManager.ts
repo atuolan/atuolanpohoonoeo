@@ -36,6 +36,9 @@ import {
   SUMMARY_PROMPT_DEFINITIONS,
 } from "@/types/promptManager";
 import { RETIRED_PLURK_COMMENT_PROMPT_IDS } from "@/data/defaultPrompts/plurk";
+import { DEFAULT_F2F_PANEL_LAYOUT } from "@/data/faceToFacePanelLayout";
+import { parseF2FPanelLayout, type F2FPanelLayout } from "@/types/f2fPanel";
+import { clonePlain, reconcileLayout } from "@/utils/f2fPanelEngine";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
@@ -287,6 +290,27 @@ function migrateGroupChatPromptOrder(
   movePromptOrderEntryAfter(order, "gcConfirmLastOutput", "gcFinalInstructions");
 }
 
+/**
+ * 匯入面對面提示詞時決定面板配置：
+ * 檔案帶有面板配置就用它；沒有的話保留內建配置中仍對得上的模塊
+ */
+function resolveImportedF2FPanelLayout(
+  jsonData: Record<string, unknown>,
+  order: PromptOrderEntry[],
+): F2FPanelLayout {
+  const existingIds = new Set(order.map((entry) => entry.identifier));
+  const embedded = parseF2FPanelLayout(
+    jsonData.aguaphone_panel ?? jsonData.faceToFacePanelLayout,
+  );
+  if (embedded) return reconcileLayout(embedded, existingIds).layout;
+
+  const fallback = reconcileLayout(DEFAULT_F2F_PANEL_LAYOUT, existingIds).layout;
+  return {
+    ...fallback,
+    modules: fallback.modules.filter((module) => module.options.length > 0),
+  };
+}
+
 export const usePromptManagerStore = defineStore("promptManager", () => {
   // ===== State =====
   const config = ref<PromptManagerConfig>(createFreshPromptManagerConfig());
@@ -411,6 +435,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
   /** 面對面模式提示詞定義 */
   const faceToFacePrompts = computed(
     () => config.value.faceToFacePrompts ?? FACE_TO_FACE_PROMPT_DEFINITIONS,
+  );
+
+  /** 面對面設定面板配置 */
+  const faceToFacePanelLayout = computed(
+    () => config.value.faceToFacePanelLayout ?? DEFAULT_F2F_PANEL_LAYOUT,
   );
 
   /** 群聊模式提示詞順序 */
@@ -900,6 +929,20 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     removeRetiredPrompts(stored.faceToFacePrompts, RETIRED_FACE_TO_FACE_PROMPT_IDS);
     removeRetiredPrompts(stored.faceToFacePromptOrder, RETIRED_FACE_TO_FACE_PROMPT_IDS);
 
+    // 面對面設定面板：舊設定沒有面板配置時補上內建配置；
+    // 人稱改由「視角」模塊控制，這時一次性關閉舊的人稱 marker，避免重複注入
+    if (stored.faceToFacePanelLayout === undefined) {
+      stored.faceToFacePanelLayout = structuredClone(DEFAULT_F2F_PANEL_LAYOUT);
+      const narrativePerson = stored.faceToFacePromptOrder?.find(
+        (entry) => entry.identifier === "f2fNarrativePerson",
+      );
+      if (narrativePerson) narrativePerson.enabled = false;
+    } else {
+      stored.faceToFacePanelLayout =
+        parseF2FPanelLayout(stored.faceToFacePanelLayout) ??
+        structuredClone(DEFAULT_F2F_PANEL_LAYOUT);
+    }
+
     // 確保群聊模式提示詞存在
     if (!stored.groupChatPrompts) {
       stored.groupChatPrompts = defaults.groupChatPrompts;
@@ -1362,6 +1405,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     );
     config.value.deletedFaceToFacePromptIds = [];
     config.value.faceToFacePromptResetVersion = FACE_TO_FACE_PROMPT_RESET_VERSION;
+    config.value.faceToFacePanelLayout = structuredClone(DEFAULT_F2F_PANEL_LAYOUT);
     // 群聊
     config.value.groupChatPrompts = structuredClone(
       GROUP_CHAT_PROMPT_DEFINITIONS,
@@ -1933,6 +1977,41 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
   }
 
   /**
+   * 批次設定面對面條目開關（面板套用模塊選擇或風格時使用），只存檔一次
+   */
+  async function setFaceToFacePromptStates(
+    changes: Record<string, boolean>,
+  ): Promise<void> {
+    if (!config.value.faceToFacePromptOrder) {
+      config.value.faceToFacePromptOrder = structuredClone(
+        DEFAULT_FACE_TO_FACE_PROMPT_ORDER,
+      );
+    }
+    let changed = false;
+    for (const entry of config.value.faceToFacePromptOrder) {
+      if (!Object.prototype.hasOwnProperty.call(changes, entry.identifier)) continue;
+      const prompt = getFaceToFacePrompt(entry.identifier);
+      if (!prompt || !isPromptToggleable(prompt)) continue;
+      const target = changes[entry.identifier];
+      if (entry.enabled !== target) {
+        entry.enabled = target;
+        changed = true;
+      }
+    }
+    if (changed) await saveConfig();
+  }
+
+  /**
+   * 儲存面對面設定面板配置
+   */
+  async function saveFaceToFacePanelLayout(
+    layout: F2FPanelLayout,
+  ): Promise<void> {
+    config.value.faceToFacePanelLayout = clonePlain(layout);
+    await saveConfig();
+  }
+
+  /**
    * 移動面對面模式提示詞位置
    */
   async function moveFaceToFacePrompt(
@@ -1991,6 +2070,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     );
     config.value.deletedFaceToFacePromptIds = [];
     config.value.faceToFacePromptResetVersion = FACE_TO_FACE_PROMPT_RESET_VERSION;
+    config.value.faceToFacePanelLayout = structuredClone(DEFAULT_F2F_PANEL_LAYOUT);
     await saveConfig();
   }
 
@@ -3019,6 +3099,13 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
       dedupeOrderInPlace(targetPrompts);
       dedupeOrderInPlace(targetOrder);
 
+      if (mode === "faceToFace") {
+        config.value.faceToFacePanelLayout = resolveImportedF2FPanelLayout(
+          jsonData,
+          targetOrder,
+        );
+      }
+
       await saveConfig();
       result.success = true;
     } catch (error) {
@@ -3108,6 +3195,9 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     resetPlurkCommentToDefault,
     getFaceToFacePrompt,
     toggleFaceToFacePrompt,
+    faceToFacePanelLayout,
+    setFaceToFacePromptStates,
+    saveFaceToFacePanelLayout,
     moveFaceToFacePrompt,
     updateFaceToFacePrompt,
     resetFaceToFaceToDefault,
