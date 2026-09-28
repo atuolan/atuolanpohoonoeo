@@ -1094,9 +1094,17 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
    */
   async function addCustomPrompt(
     prompt: Partial<PromptDefinition>,
+  // 連續新增時 Date.now() 可能相同，確保時間戳遞增以免 identifier 重複
+  let lastCustomIdTimestamp = 0;
+  function createCustomIdentifier(prefix: string): string {
+    const now = Date.now();
+    lastCustomIdTimestamp = now > lastCustomIdTimestamp ? now : lastCustomIdTimestamp + 1;
+    return `${prefix}_${lastCustomIdTimestamp}`;
+  }
+
     options?: PromptInsertOptions,
   ): Promise<PromptDefinition> {
-    const identifier = `custom_${Date.now()}`;
+    const identifier = createCustomIdentifier("custom");
     const newPrompt = createCustomPromptDefinition(
       identifier,
       prompt,
@@ -2098,7 +2106,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
       );
     }
 
-    const identifier = `f2f_custom_${Date.now()}`;
+    const identifier = createCustomIdentifier("f2f_custom");
     const newPrompt = createCustomPromptDefinition(
       identifier,
       prompt,
@@ -2137,7 +2145,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
       );
     }
 
-    const identifier = `gc_custom_${Date.now()}`;
+    const identifier = createCustomIdentifier("gc_custom");
     const newPrompt = createCustomPromptDefinition(
       identifier,
       prompt,
@@ -2230,7 +2238,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     if (!mapping) return addCustomPrompt(prompt, options); // fallback
 
     const prefix = prefixMap[mode] || "custom";
-    const identifier = `${prefix}_${Date.now()}`;
+    const identifier = createCustomIdentifier(prefix);
     const newPrompt = createCustomPromptDefinition(
       identifier,
       prompt,
