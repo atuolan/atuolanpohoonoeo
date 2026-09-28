@@ -14,6 +14,7 @@ import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { convertTTSContentToSimplified } from "@/utils/ttsTextSelector";
 import { computeChatNow } from "@/utils/fakeTime";
 import { pickGenerationToggles } from "@/utils/generationToggles";
+import { PLURK_BLOCK_STRIP_PATTERN } from "@/utils/plurkFormat";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
@@ -1114,7 +1115,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       // 剝離 affinity-update 標籤
       .replace(/<affinity-update\s+[^>]*?\s*\/?>/gi, "")
       // 剝離噗浪發文標籤
-      .replace(/<plurk>[\s\S]*?<\/plurk>/gi, "")
+      .replace(PLURK_BLOCK_STRIP_PATTERN, "")
       .trim();
     // 來電 assistant prefill 會導致 AI 回覆缺少開頭的 [，自動補齊
     if (cleaned.startsWith("{") && !cleaned.startsWith("[")) {

@@ -111,6 +111,7 @@ export const DYNAMIC_PROMPT_IDENTIFIERS: readonly string[] = [
   "timeJump",
   "f2fTimeJump",
   "gcTimeJump",
+  "f2fStoryClock",
   "weatherInfo",
   "f2fWeatherInfo",
   "gcWeatherInfo",
@@ -283,6 +284,8 @@ export interface PromptBuilderOptions {
     artist: string;
     lyrics?: string;
   };
+  /** 角色最近的噗文（用於 {{socialPosts}} 宏） */
+  socialPosts?: string;
   /** 飲食記錄（用於 {{foodLogs}} 宏） */
   foodLogs?: string;
   /** 書影記錄（用於 {{mediaLogs}} 宏） */
@@ -587,6 +590,7 @@ export class PromptBuilder {
         lastMessage: lastMsg,
         lastUserMessage: lastUserMsg,
         lastCharMessage: lastCharMsg,
+        socialPosts: options.socialPosts || "（最近沒有動態）",
         foodLogs: options.foodLogs || "",
         mediaLogs: options.mediaLogs || "",
         companionReadingLogs: options.companionReadingLogs || "",
@@ -732,6 +736,7 @@ export class PromptBuilder {
         lastMessage: lastMsg,
         lastUserMessage: lastUserMsg,
         lastCharMessage: lastCharMsg,
+        socialPosts: options.socialPosts || "（最近沒有動態）",
         foodLogs: options.foodLogs || "",
         mediaLogs: options.mediaLogs || "",
         companionReadingLogs: options.companionReadingLogs || "",
@@ -1936,25 +1941,25 @@ export class PromptBuilder {
         ) {
           return null;
         }
+        // 劇情時鐘暫停中（面對面）：時間指令改由獨立的 f2fStoryClock 模組注入，避免埋在時間模組裡被忽略。
+        // 線上聊天／群聊沒有這個模組，仍在這裡給出劇情時鐘說明。
+        if (this.options.storyClockPaused) {
+          if (identifier === "f2fTimeJump") return null;
+          const content = this.buildStoryClockPrompt();
+          return content ? { role: getRole(), content, identifier } : null;
+        }
         {
-          const now = this.options.fakeTimeOverride ?? new Date();
-          const y = now.getFullYear();
-          const mon = (now.getMonth() + 1).toString().padStart(2, "0");
-          const day = now.getDate().toString().padStart(2, "0");
-          const h = now.getHours().toString().padStart(2, "0");
-          const m = now.getMinutes().toString().padStart(2, "0");
-          const currentDatetime = `${y}-${mon}-${day}T${h}:${m}`;
+          const { currentDatetime } = this.getStoryNowParts();
           const jumpLine = `<time-jump datetime="YYYY-MM-DDTHH:mm" reason="跳轉原因"/>\n例如：<time-jump datetime="${currentDatetime}" reason="當前時間點"/>`;
-          const advanceLine = `<time-advance minutes="經過的分鐘數" reason="原因"/>（也可用 hours="小時數"）`;
-          const nowText = `${y}/${mon}/${day} ${h}:${m}`;
-          const openingText = this.options.storyClockOpening
-            ? `\n\n【剛從線上進入面對面】前一則訊息的時間是 ${nowText}。見面不一定緊接在那一刻，請依前文內容判斷這次面對面發生在什麼時候：\n- 前文約好了時間或日子（例如「明天下午三點見」「週末去海邊」）→ 用 time-jump 跳到那個時間\n- 需要一段時間才見得到面（例如「我現在過去找你」）→ 用 time-advance 推進路程時間\n- 就是接續剛才的當下 → 不用輸出\n這一輪的描寫請符合你決定的時間。`
-            : "";
-          const content = this.options.storyClockPaused
-            ? `[劇情時間]\n現在是面對面相處，劇情時間由你依故事推進，現實時間的流逝不算數；訊息上的時間就是劇情時間，你不推進它就會一直停在原地。\n每次回覆時請判斷這段劇情實際經過了多久：\n- 經過了一段時間（例如聊了一陣子、吃完一頓飯、散步到海邊），在 </content> 之後輸出：\n${advanceLine}\n  分鐘數依你描寫的內容合理估計，幾句對話約 1～5 分鐘，一頓飯約 30～60 分鐘。\n- 大幅跳轉（例如「隔天早上」「兩個月後」），在 </content> 之後輸出：\n${jumpLine}\n- 幾乎沒有經過時間（同一個當下的對話）就不用輸出。\n不要自行假設過了很久，也不要讓時間跳得比劇情描寫更快。${openingText}`
-            : `[時間跳轉]\n當故事需要時間跳轉時（如「兩個月後」「三天後」），在 </content> 之後輸出：\n${jumpLine}\n若只是往後經過一段時間（如「兩小時後」），可改用：\n${advanceLine}\n這些標籤會自動更新故事時間軸，之後的時間感知都會以新時間為基準。`;
+          const content = `[時間跳轉]\n當故事需要時間跳轉時（如「兩個月後」「三天後」），在 </content> 之後輸出：\n${jumpLine}\n若只是往後經過一段時間（如「兩小時後」），可改用：\n${PromptBuilder.TIME_ADVANCE_LINE}\n這些標籤會自動更新故事時間軸，之後的時間感知都會以新時間為基準。`;
           return { role: getRole(), content, identifier };
         }
+
+      // ===== 劇情時鐘（面對面暫停時的時間推進指令）=====
+      case "f2fStoryClock": {
+        const content = this.buildStoryClockPrompt();
+        return content ? { role: getRole(), content, identifier } : null;
+      }
 
       case "weatherInfo":
       case "f2fWeatherInfo":
@@ -2236,10 +2241,6 @@ export class PromptBuilder {
         return { role: getRole(), content: parts.join("\n\n"), identifier };
       }
 
-      case "socialPosts":
-        // 社交媒體動態（marker，由外部填充）
-        // TODO: 從 context 獲取社交動態
-        return null;
 
       case "stickerSystem":
       case "f2fStickerSystem":
@@ -2482,6 +2483,59 @@ ${negativeExample}
         }
         return null;
     }
+  }
+
+  private static readonly TIME_ADVANCE_LINE =
+    `<time-advance minutes="經過的分鐘數" reason="原因"/>（也可用 hours="小時數"）`;
+
+  /** 目前劇情時間的各種格式 */
+  private getStoryNowParts() {
+    const now = this.options.fakeTimeOverride ?? new Date();
+    const y = now.getFullYear();
+    const mon = (now.getMonth() + 1).toString().padStart(2, "0");
+    const day = now.getDate().toString().padStart(2, "0");
+    const h = now.getHours().toString().padStart(2, "0");
+    const m = now.getMinutes().toString().padStart(2, "0");
+    const weekDay = ["日", "一", "二", "三", "四", "五", "六"][now.getDay()];
+    return {
+      currentDatetime: `${y}-${mon}-${day}T${h}:${m}`,
+      nowText: `${y}/${mon}/${day}（${weekDay}）${h}:${m}`,
+    };
+  }
+
+  /**
+   * 劇情時鐘暫停中（面對面）的時間推進指令。
+   * 條件不符（未開感知現實時間、不是劇情時鐘、沒有暫停）時回傳 null。
+   */
+  private buildStoryClockPrompt(): string | null {
+    if (
+      this.options.enableRealTimeAwareness === false ||
+      this.options.fakeTimeMode !== "story" ||
+      !this.options.storyClockPaused
+    ) {
+      return null;
+    }
+    const { nowText } = this.getStoryNowParts();
+    const lines = [
+      `[劇情時鐘] 目前劇情時間：${nowText}`,
+      "現在是面對面相處，劇情時間由你依故事推進，現實時間的流逝不算數；訊息上的時間就是劇情時間，你不推進它就會一直停在原地。",
+      "每次回覆時請判斷這段劇情實際經過了多久：",
+      `- 經過了一段時間（例如聊了一陣子、吃完一頓飯、散步到海邊），在 </content> 之後輸出：\n${PromptBuilder.TIME_ADVANCE_LINE}\n  分鐘數依你描寫的內容合理估計，幾句對話約 1～5 分鐘，一頓飯約 30～60 分鐘。`,
+      `- 大幅跳轉（例如「隔天早上」「兩個月後」），在 </content> 之後輸出：\n<time-jump datetime="YYYY-MM-DDTHH:mm" reason="跳轉原因"/>`,
+      "- 幾乎沒有經過時間（同一個當下的對話）就不用輸出。",
+      "不要自行假設過了很久，也不要讓時間跳得比劇情描寫更快。",
+    ];
+    if (this.options.storyClockOpening) {
+      lines.push(
+        "",
+        `【剛從線上進入面對面】前一則訊息的時間是 ${nowText}。見面不一定緊接在那一刻，請依前文內容判斷這次面對面發生在什麼時候：`,
+        "- 前文約好了時間或日子（例如「明天下午三點見」「週末去海邊」）→ 用 time-jump 跳到那個時間",
+        "- 需要一段時間才見得到面（例如「我現在過去找你」）→ 用 time-advance 推進路程時間",
+        "- 就是接續剛才的當下 → 不用輸出",
+        "這一輪的描寫請符合你決定的時間。",
+      );
+    }
+    return lines.join("\n");
   }
 
   /**

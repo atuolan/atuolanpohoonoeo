@@ -1,5 +1,6 @@
 /**
  * 噗浪相關提示詞定義（發文 + 評論）
+ * 噗文格式的解析見 src/utils/plurkFormat.ts
  */
 
 import type { PromptDefinition, PromptOrderEntry } from "./types";
@@ -24,11 +25,9 @@ export const PLURK_POST_PROMPT_DEFINITIONS: PromptDefinition[] = [
 6. 使用繁體中文
 
 輸出格式：
-<plurk>
-  <post>發文內容</post>
-  <image>中文描述｜英文提示詞</image>（有配圖時加，否則省略）
-  <reactions>❤️:12,👍:8</reactions>（必填，1-4個表情，數量1-99，👍❤️😂😮😢😠🎉👏🤔😊）
-</plurk>`,
+<plurk>發文內容</plurk>
+完整寫法：<plurk qualifier="覺得" reactions="❤️12 😂5">發文內容<image>配圖描述</image></plurk>
+（qualifier 是噗浪限定詞：說／想／愛／覺得／希望／喜歡；reactions 是 1-4 種表情和數量；配圖用 <image> 寫在內文裡。三者都可省略）`,
     system_prompt: true,
     marker: false,
     injection_position: INJECTION_RELATIVE,
@@ -117,20 +116,20 @@ export const DEFAULT_PLURK_POST_PROMPT_ORDER: PromptOrderEntry[] = [
 ];
 
 // ===== 噗浪評論提示詞定義 =====
+// 批量評論（src/services/AIService.ts）會把啟用中、非 marker 的 system 條目附加為評論風格要求；
+// 角色資訊、貼文內容與 JSON 輸出格式由系統自動提供。
 export const PLURK_COMMENT_PROMPT_DEFINITIONS: PromptDefinition[] = [
   {
     identifier: "plurkCommentSystemPrompt",
-    name: "噗浪評論系統提示",
-    description: "噗浪評論的系統指令",
+    name: "噗浪評論風格",
+    description: "批量生成評論時附加的風格要求",
     category: "system",
     role: "system",
-    content: `你是 {{char}}，正在回覆噗浪上的評論。
-
-回覆要求：
-1. 完全以 {{char}} 的身份和語氣回覆
-2. 回覆要自然、有互動感
+    content: `評論風格要求：
+1. 每個角色都用自己的身份和語氣留言，像真的在滑噗浪
+2. 回覆要自然、有互動感，可以接話、吐槽、玩梗
 3. 可以使用表情符號
-4. 長度適中
+4. 長度適中，不要每則都一樣長
 5. 使用繁體中文
 6. 如果使用非中文，請在後面用括號附上中文翻譯`,
     system_prompt: true,
@@ -145,77 +144,16 @@ export const PLURK_COMMENT_PROMPT_DEFINITIONS: PromptDefinition[] = [
     isDeletable: true,
     adminOnly: true,
   },
-  {
-    identifier: "plurkCommentCharacterInfo",
-    name: "噗浪評論角色信息",
-    description: "角色的基本信息",
-    category: "character",
-    role: "system",
-    content: `角色信息：
-{{charDescription}}
+];
 
-性格特點：
-{{charPersonality}}`,
-    system_prompt: true,
-    marker: true,
-    injection_position: INJECTION_RELATIVE,
-    injection_depth: 0,
-    injection_order: 2,
-    forbid_overrides: false,
-    extension: false,
-    injection_trigger: [],
-    isEditable: false,
-    isDeletable: true,
-    adminOnly: true,
-  },
-  {
-    identifier: "plurkCommentContext",
-    name: "噗浪評論上下文",
-    description: "原文和評論內容",
-    category: "context",
-    role: "system",
-    content: `原噗浪內容：
-{{originalPost}}
-
-需要回覆的評論：
-{{commentToReply}}`,
-    system_prompt: true,
-    marker: true,
-    injection_position: INJECTION_RELATIVE,
-    injection_depth: 0,
-    injection_order: 3,
-    forbid_overrides: false,
-    extension: false,
-    injection_trigger: [],
-    isEditable: false,
-    isDeletable: true,
-    adminOnly: true,
-  },
-  {
-    identifier: "plurkCommentInstruction",
-    name: "噗浪評論指令",
-    description: "最終回覆指令",
-    category: "director",
-    role: "user",
-    content: `請以 {{char}} 的身份回覆這則評論。直接輸出回覆內容，不要加任何前綴。`,
-    system_prompt: true,
-    marker: false,
-    injection_position: INJECTION_RELATIVE,
-    injection_depth: 0,
-    injection_order: 100,
-    forbid_overrides: false,
-    extension: false,
-    injection_trigger: [],
-    isEditable: true,
-    isDeletable: true,
-    adminOnly: true,
-  },
+/** 已停用的噗浪評論條目（舊版逐則回覆流程，從未被批量評論使用），載入時移除 */
+export const RETIRED_PLURK_COMMENT_PROMPT_IDS = [
+  "plurkCommentCharacterInfo",
+  "plurkCommentContext",
+  "plurkCommentInstruction",
 ];
 
 // ===== 噗浪評論提示詞順序 =====
 export const DEFAULT_PLURK_COMMENT_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "plurkCommentSystemPrompt", enabled: true },
-  { identifier: "plurkCommentCharacterInfo", enabled: true },
-  { identifier: "plurkCommentContext", enabled: true },
-  { identifier: "plurkCommentInstruction", enabled: true },
 ];

@@ -40,6 +40,7 @@ const ANTHROPIC_DYNAMIC_IDENTIFIERS: ReadonlySet<string> = new Set([
   "timeJump",
   "f2fTimeJump",
   "gcTimeJump",
+  "f2fStoryClock",
   "weatherInfo",
   "f2fWeatherInfo",
   "gcWeatherInfo",

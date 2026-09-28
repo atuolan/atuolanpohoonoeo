@@ -117,3 +117,46 @@ describe("已停用的面對面必要條目", () => {
     expect(orderIds).toHaveLength(DEFAULT_FACE_TO_FACE_PROMPT_ORDER.length);
   });
 });
+
+describe("面對面提示詞不再出現基拉祈/雪拉比", () => {
+  beforeEach(() => {
+    storage.clear();
+    setActivePinia(createPinia());
+  });
+
+  it("預設條目不含舊說書人", () => {
+    for (const prompt of FACE_TO_FACE_PROMPT_DEFINITIONS) {
+      expect(prompt.content).not.toMatch(/基拉[祈奇]|雪拉比/);
+    }
+  });
+
+  it("已存的舊內容載入時改為涅芙，並修正結尾標籤", async () => {
+    const config = createDefaultPromptManagerConfig();
+    config.faceToFacePromptResetVersion = FACE_TO_FACE_PROMPT_RESET_VERSION;
+    config.faceToFacePrompts = structuredClone(FACE_TO_FACE_PROMPT_DEFINITIONS).map((p) => {
+      if (p.identifier === "f2fPowerDynamic") {
+        return {
+          ...p,
+          content: p.content
+            .replace("\n涅芙：不會的", "\n基拉祈：不會的")
+            .replace("\n涅芙：他不會", "\n雪拉比：他不會")
+            .replace("</power_dynamic>", "</character_settings>"),
+        };
+      }
+      if (p.identifier === "f2fSocialMedia") {
+        return { ...p, content: p.content.replace("\n涅芙：这是", "\n基拉祈：这是") };
+      }
+      return p;
+    });
+    storage.set("promptManagerConfig", config);
+
+    const store = usePromptManagerStore();
+    await store.loadConfig();
+
+    for (const id of ["f2fPowerDynamic", "f2fSocialMedia"]) {
+      const stored = store.config.faceToFacePrompts!.find((p) => p.identifier === id)!;
+      const expected = FACE_TO_FACE_PROMPT_DEFINITIONS.find((p) => p.identifier === id)!;
+      expect(stored.content).toBe(expected.content);
+    }
+  });
+});

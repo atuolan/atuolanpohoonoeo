@@ -13,7 +13,7 @@ src/data/
     ├── diary.ts               # ✅ 日記系統（5個定義）
     ├── summary.ts             # ✅ 總結系統（5個定義）
     ├── events.ts              # ✅ 事件提取（3個定義）
-    ├── plurk.ts               # ✅ 噗浪相關（8個定義）
+    ├── plurk.ts               # ✅ 噗浪相關（5個定義）
     ├── phoneCall.ts           # ✅ 電話通話（10個定義）
     ├── batchComments.ts       # ✅ 批量評論（5個定義）
     └── defaultPrompts.ts      # 原始檔案（包含所有內容）
@@ -27,7 +27,7 @@ src/data/
 2. **diary.ts** ✅ - 日記系統（5 個定義）
 3. **summary.ts** ✅ - 總結系統（5 個定義）
 4. **events.ts** ✅ - 事件提取（3 個定義）
-5. **plurk.ts** ✅ - 噗浪相關（發文 + 評論，8 個定義）
+5. **plurk.ts** ✅ - 噗浪相關（發文 + 評論風格，5 個定義）
 6. **phoneCall.ts** ✅ - 電話通話（10 個定義）
 7. **batchComments.ts** ✅ - 批量評論（5 個定義）
 8. **faceToFacePrompts.ts** ✅ - 面對面模式
@@ -129,9 +129,10 @@ npm run dev
 - 約 80 行
 
 ### plurk.ts（噗浪）
-- `plurkPostSystemPrompt` ~ `plurkCommentInstruction`
-- 共 8 個 identifier（發文 4 個 + 評論 4 個）
-- 約 210 行
+- `plurkPostSystemPrompt` ~ `plurkCommentSystemPrompt`
+- 共 5 個 identifier（發文 4 個 + 批量評論風格 1 個）
+- 約 160 行
+- 噗文格式解析見 `src/utils/plurkFormat.ts`
 
 ### phoneCall.ts（電話通話）
 - `phoneCallSystemPrompt` ~ `incomingCallContext`
@@ -152,7 +153,7 @@ npm run dev
 - ✅ diary.ts - 5 個日記提示詞
 - ✅ summary.ts - 5 個總結提示詞
 - ✅ events.ts - 3 個事件提取提示詞
-- ✅ plurk.ts - 8 個噗浪提示詞
+- ✅ plurk.ts - 5 個噗浪提示詞
 - ✅ phoneCall.ts - 10 個電話通話提示詞
 - ✅ batchComments.ts - 5 個批量評論提示詞
 - ✅ faceToFacePrompts.ts - 面對面模式

@@ -5,6 +5,7 @@
 
 import type { CalendarEventData } from "@/types/calendar";
 import type { ScheduleCallData } from "@/types/incomingCall";
+import { PLURK_BLOCK_PATTERN, PLURK_BLOCK_STRIP_PATTERN } from "@/utils/plurkFormat";
 import { repairXmlTags } from "./XmlFuzzyRepair";
 
 export type { CalendarEventData, ScheduleCallData };
@@ -283,7 +284,7 @@ function splitBySpecialTags(content: string): ParsedMessage[] {
   // 輔助函數：處理文字區塊，檢查是否包含 HTML 區塊需要進一步拆分
   function pushTextChunk(text: string) {
     const clean = text
-      .replace(/<plurk>[\s\S]*?<\/plurk>/gi, "")
+      .replace(PLURK_BLOCK_STRIP_PATTERN, "")
       .trim();
     if (!clean) return;
     // 檢查是否包含完整 HTML 文件需要拆分
@@ -333,7 +334,7 @@ function parseTextOnlyContent(content: string): ParsedMessage {
 
   // 移除 <plurk> 標籤
   result.content = result.content
-    .replace(/<plurk>[\s\S]*?<\/plurk>/gi, "")
+    .replace(PLURK_BLOCK_STRIP_PATTERN, "")
     .trim();
 
   // 提取 ˇ想法ˇ
@@ -541,7 +542,7 @@ function parseMessageContentWithoutTimetravel(content: string): ParsedMessage {
 
   // 移除 <plurk> 標籤（噗浪發文，不應顯示在聊天氣泡中）
   result.content = result.content
-    .replace(/<plurk>[\s\S]*?<\/plurk>/gi, "")
+    .replace(PLURK_BLOCK_STRIP_PATTERN, "")
     .trim();
 
   // 提取 ˇ想法ˇ （新格式，使用注音符號）
@@ -1146,10 +1147,10 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
   }
 
   // 5. 檢查噗浪發文
-  const plurkMatch = rawResponse.match(/<plurk>([\s\S]*?)<\/plurk>/i);
+  const plurkMatch = rawResponse.match(PLURK_BLOCK_PATTERN);
   if (plurkMatch) {
     result.hasPlurkPost = true;
-    result.plurkContent = plurkMatch[1].trim();
+    result.plurkContent = plurkMatch[0].trim();
   }
 
   // 6. 檢查來電預約標籤
@@ -1386,7 +1387,7 @@ function parseMessageContent(content: string): ParsedMessage {
 
   // 移除 <plurk> 標籤（已在上層處理發文）
   result.content = result.content
-    .replace(/<plurk>[\s\S]*?<\/plurk>/gi, "")
+    .replace(PLURK_BLOCK_STRIP_PATTERN, "")
     .trim();
 
   // 移除 <affinity-update> 標籤（已在上層 parseAIResponse 處理）
@@ -2261,7 +2262,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<plurk[\s>]|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }

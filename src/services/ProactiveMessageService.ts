@@ -14,6 +14,10 @@ import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
 import { useCharactersStore } from "@/stores/characters";
 import { useChatStore } from "@/stores/chat";
 import { pushNotificationService } from "./PushNotificationService";
+import {
+  getSocialPostsForPrompt,
+  publishCharacterPlurk,
+} from "./PlurkPostService";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 import { computeChatNow } from "@/utils/fakeTime";
 
@@ -646,6 +650,9 @@ export class ProactiveMessageService {
         groupChatMode: true,
         groupMembers,
         groupName: groupMetadata.groupName,
+        socialPosts: await getSocialPostsForPrompt(
+          groupMembers ? groupMembers.map((m) => m.characterId) : [leadCharacter.id],
+        ),
         isMultiCharCard: !!groupMetadata.isMultiCharCard,
         multiCharMembers: groupMetadata.isMultiCharCard
           ? groupMetadata.multiCharMembers
@@ -919,7 +926,7 @@ export class ProactiveMessageService {
       // 使用話題引導功能，讓角色主動發起對話
       const topicInstruction =
         options?.customTopicInstruction ||
-        `<request>【話題引導】請主動向用戶發起對話。根據你們之前的對話歷史（如果有的話），用自然、符合你性格的方式提起一個話題，就像是你自己想到的一樣。如果沒有對話歷史，可以問候用戶或分享你最近的想法，如果在深夜可以預設用戶已經入睡了，但你想分享事情。</request>`;
+        `<request>【話題引導】請主動向用戶發起對話。根據你們之前的對話歷史（如果有的話），用自然、符合你性格的方式提起一個話題，就像是你自己想到的一樣。如果沒有對話歷史，可以問候用戶或分享你最近的想法，如果在深夜可以預設用戶已經入睡了，但你想分享事情。如果此刻比起直接傳訊息，更像是會發一則噗浪的心情（自言自語、分享日常、想讓用戶看到卻不想直說），也可以順手發噗，甚至只發噗不傳訊息。</request>`;
 
       // 添加話題引導訊息（臨時，用於生成後會移除）
       const topicMessage = {
@@ -1185,6 +1192,7 @@ export class ProactiveMessageService {
         fakeTimeMode: chat.fakeTimeMode ?? "real",
         ongoingCallContext,
         gamePlayingContext: options?.gamePlayingContext,
+        socialPosts: await getSocialPostsForPrompt([character.id]),
       });
 
       const promptData = await promptBuilder.build();
@@ -1371,6 +1379,9 @@ export class ProactiveMessageService {
             console.log(
               `[ProactiveMessage] Parsed ${parsedResponse.messages.length} messages from AI response`,
             );
+          } else if (parsedResponse.hasPlurkPost) {
+            // 這次只發了噗浪，沒有聊天訊息
+            console.log("[ProactiveMessage] 只發噗浪，不新增聊天訊息");
           } else {
             // 沒有解析出訊息，使用原始內容作為單條訊息
             const aiMessage = {
@@ -1387,6 +1398,15 @@ export class ProactiveMessageService {
             console.log(
               `[ProactiveMessage] No parsed messages, using raw content`,
             );
+          }
+
+          // 處理噗浪發文
+          if (parsedResponse.hasPlurkPost && parsedResponse.plurkContent) {
+            try {
+              await publishCharacterPlurk(character, parsedResponse.plurkContent);
+            } catch (error) {
+              console.error("[ProactiveMessage] 噗浪發文失敗:", error);
+            }
           }
 
           // 處理來電預約標籤
@@ -1553,7 +1573,8 @@ export class ProactiveMessageService {
           aiGenerationStore.completeGeneration(chat.id, "chat", aiContent);
 
           // 透過 notification store 發送應用內通知（Toast + 推播）
-          if (settings.showNotification) {
+          // 只發噗浪時沒有聊天訊息，噗浪空間已另外通知
+          if (settings.showNotification && newMessages.length > 0) {
             try {
               const { useNotificationStore } =
                 await import("@/stores/notification");

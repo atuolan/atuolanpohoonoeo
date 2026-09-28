@@ -345,9 +345,11 @@ const notificationStore = useNotificationStore();
 // 全局錢包 ID
 const GLOBAL_WALLET_ID = "global";
 
-// QZone Store（噗浪發文用）
-import { useQzoneStore } from "@/stores/qzone";
-const qzoneStore = useQzoneStore();
+// 噗浪發文
+import {
+  getSocialPostsForPrompt,
+  publishCharacterPlurk,
+} from "@/services/PlurkPostService";
 
 // 使用者 Store
 import {
@@ -4299,6 +4301,13 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       resolvedGroupMembers = refreshedGroup;
     }
 
+    // 社交動態（{{socialPosts}}）：群聊時列出各成員的噗文
+    const socialPosts = await getSocialPostsForPrompt(
+      resolvedGroupMembers
+        ? resolvedGroupMembers.filter((m) => !m.isVirtual).map((m) => m.characterId)
+        : [char.id],
+    );
+
     const builder = new PromptBuilder({
       character: char,
       lorebooks: linkedLorebooks,
@@ -4438,6 +4447,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           })
         : undefined,
       groupName: isGroupChat.value ? groupMetadata.value?.groupName : undefined,
+      socialPosts,
       // 傳入飲食記錄
       foodLogs: fitnessStore.mealLogs.length > 0
         ? formatFoodLogsForPrompt(fitnessStore.mealLogs, 3)
@@ -8430,55 +8440,18 @@ async function handlePlurkPost(rawContent: string) {
     return;
   }
 
-  if (!qzoneStore.isLoaded) {
-    await qzoneStore.loadPosts();
-  }
-
-  const authorName = char.nickname || char.data.name || props.characterName;
-  const authorAvatar = char.avatar || props.characterAvatar;
-
   try {
-    // 解析 <reactions> 標籤
-    const reactionsMatch = rawContent.match(/<reactions>([\s\S]*?)<\/reactions>/i);
-    const emoticons: Record<string, number> = {};
-    if (reactionsMatch) {
-      for (const pair of reactionsMatch[1].trim().split(/[,，]/)) {
-        const [emoji, count] = pair.split(':').map(s => s.trim());
-        const num = parseInt(count);
-        if (emoji && !isNaN(num) && num > 0) emoticons[emoji] = num;
-      }
+    const newPost = await publishCharacterPlurk(char, rawContent, {
+      name: props.characterName,
+      avatar: props.characterAvatar,
+    });
+    if (newPost) {
+      console.log("[ChatScreen] 噗浪發文成功:", {
+        postId: newPost.id,
+        author: newPost.username,
+        emoticons: newPost.emoticons,
+      });
     }
-
-    // 解析 <image> 標籤
-    const imageMatch = rawContent.match(/<image>([^|]+)\|[\s\S]*?<\/image>/i);
-    const imageDescription = imageMatch ? imageMatch[1].trim() : undefined;
-
-    // 從 <post> 取內容，移除其他子標籤
-    const postMatch = rawContent.match(/<post>([\s\S]*?)<\/post>/i);
-    let content = postMatch
-      ? postMatch[1].trim()
-      : rawContent.replace(/<image>[\s\S]*?<\/image>/gi, '').replace(/<reactions>[\s\S]*?<\/reactions>/gi, '').trim();
-
-    const newPost = await qzoneStore.addPost({
-      authorId: char.id,
-      username: authorName,
-      avatar: authorAvatar,
-      content,
-      imageDescription,
-      type: "shuoshuo",
-      visibility: "public",
-      authorType: "ai",
-      emoticons,
-      views: Math.floor(Math.random() * 50) + 10,
-      repostCount: 0,
-    });
-
-    console.log("[ChatScreen] 噗浪發文成功:", {
-      postId: newPost.id,
-      author: authorName,
-      emoticons,
-      views: newPost.views,
-    });
   } catch (error) {
     console.error("[ChatScreen] 噗浪發文失敗:", error);
   }

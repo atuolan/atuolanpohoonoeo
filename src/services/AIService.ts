@@ -262,6 +262,25 @@ export async function generateBatchComments(
 /**
  * 構建批量評論 prompt
  */
+/**
+ * 提示詞管理「噗浪評論」中啟用、非 marker 的條目，作為評論風格要求附加到批量評論提示詞
+ */
+function buildCommentStyleSection(
+  promptManagerStore: ReturnType<typeof usePromptManagerStore>,
+): string {
+  const texts = promptManagerStore.plurkCommentPromptOrder
+    .filter((entry) => entry.enabled)
+    .map((entry) =>
+      promptManagerStore.plurkCommentPrompts.find(
+        (p) => p.identifier === entry.identifier,
+      ),
+    )
+    .filter((p) => p && !p.marker && p.content)
+    .map((p) => p!.content.replace(/\{\{char\}\}/gi, "各角色").trim())
+    .filter(Boolean);
+  return texts.length > 0 ? `\n# 評論風格\n${texts.join("\n\n")}\n` : "";
+}
+
 function buildBatchCommentsPrompt(params: {
   characters: Array<{
     id: string;
@@ -288,7 +307,17 @@ function buildBatchCommentsPrompt(params: {
     passerbyOnly = false,
     chatContext = {},
     replyToCharacterId,
+    promptManagerStore,
   } = params;
+
+  // 使用者在提示詞管理「噗浪評論」設定的評論風格
+  const styleSection = buildCommentStyleSection(promptManagerStore);
+
+  // 角色噗文的配圖以 <image>描述</image> 寫在內文中
+  const postContent = (post.content || "").replace(
+    /<image>([\s\S]*?)<\/image>/gi,
+    (_, desc: string) => `[配圖：${desc.split(/[|｜]/)[0].trim()}]`,
+  );
 
   // 構建角色列表（如果是路人模式則為空）
   const charactersPrompt = passerbyOnly
@@ -340,7 +369,7 @@ function buildBatchCommentsPrompt(params: {
 2. 路人之間可以互相回覆，形成對話串
 3. 評論必須是純文字，禁止任何動作描述（如「（微笑）」「*轉筆*」）
 4. 使用繁體中文，口語化表達
-
+${styleSection}
 # 路人評論者規則
 - characterId 使用 "passerby-1", "passerby-2", "passerby-3" 等格式
 - characterName 使用真實、多樣化的網路暱稱，例如：
@@ -355,7 +384,7 @@ function buildBatchCommentsPrompt(params: {
 作者：${post.username || "匿名"}（${post.authorType === "user" ? "真實用戶" : "AI 角色/路人"}）
 時間：${postTime}
 內容：
-${post.content || ""}${imageNote}
+${postContent}${imageNote}
 
 # 已有評論
 
@@ -426,7 +455,7 @@ ${existingCommentsPrompt}
 4. 使用繁體中文，口語化表達
 5. 如果角色使用外語，只在外語部分後加括號翻譯
 6. 噗浪作者、已有評論作者、被回覆者、路人、以及各角色私聊中的 {{user}} 是不同身份欄位；不得因為看到「用戶／玩家」就自動合併。
-${replyPrioritySection}
+${replyPrioritySection}${styleSection}
 # 評論區角色
 
 ${charactersPrompt}
@@ -446,7 +475,7 @@ ${chatContextSection}
 作者：${post.username || "匿名"}（${post.authorType === "user" ? "真實用戶" : postAuthorIsCharacter ? "AI 角色" : "路人"}）
 時間：${postTime}
 內容：
-${post.content || ""}${imageNote}
+${postContent}${imageNote}
 ${postAuthorIdentityNote}
 
 # 已有評論

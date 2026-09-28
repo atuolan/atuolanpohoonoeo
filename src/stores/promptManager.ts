@@ -35,6 +35,7 @@ import {
   PLURK_POST_PROMPT_DEFINITIONS,
   SUMMARY_PROMPT_DEFINITIONS,
 } from "@/types/promptManager";
+import { RETIRED_PLURK_COMMENT_PROMPT_IDS } from "@/data/defaultPrompts/plurk";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
@@ -44,8 +45,7 @@ const PROMPT_MANAGER_CONFIG_VERSION = 4;
  * 面對面提示詞強制重置版本。
  * 面對面提示詞有重大更新、舊設定無法沿用時 +1，
  * 所有已存過設定的用戶啟動時都會被引導重置面對面提示詞。
- * 1：改用兔子空間大爆走預設（<|Rabbit_Thinking|> 思考格式）
- * 2：改用篝火預設（<|state|> 思考格式、{{延後讀取::}} 變量），移除舊的必要條目
+ * 1：改用篝火預設（<|state|> 思考格式、{{延後讀取::}} 變量），移除舊的必要條目
  */
 export const FACE_TO_FACE_PROMPT_RESET_VERSION = 2;
 
@@ -110,13 +110,27 @@ function syncLockedPromptFlags(
 }
 
 /**
- * 修正已存儲系統必要條目中的錯誤標籤（這些條目一般用戶無法自行修改）
+ * 修正已存儲條目中過時的預設內容：系統必要條目（用戶無法自行修改）的錯誤標籤，
+ * 以及噗浪格式改版（只替換舊預設原文，用戶改過的部分不受影響）
  */
 const LOCKED_PROMPT_CONTENT_FIXES: Record<string, Array<[string, string]>> = {
   // 多餘的 </example_script>（無對應開頭標籤）
   custom_1776010669277: [["<food-record>\n</example_script>", "<food-record>"]],
   // 結尾標籤錯字
   f2fCoreUnderstanding: [["</Online invitationg>", "</Online invitation>"]],
+  // 篝火預設的說書人是涅芙，換掉舊的基拉祈/雪拉比；結尾標籤與開頭 <power_dynamic> 不符
+  f2fPowerDynamic: [
+    ["\n基拉祈：", "\n涅芙："],
+    ["\n雪拉比：", "\n涅芙："],
+    ["</character_settings>", "</power_dynamic>"],
+  ],
+  f2fSocialMedia: [["\n基拉祈：这是 {{char}}", "\n涅芙：这是 {{char}}"]],
+  // 噗浪簡化格式：reactions 選填、<image> 寫在內文、可帶限定詞，並說明何時適合發噗
+  onlineModeFeatures: [["【噗浪】放在 <content> 內：\n<plurk>\n  <post>發文內容</post>\n  <image>中文描述｜英文提示詞</image>（可選，有配圖時加）\n  <reactions>❤️:12,👍:8,😊:5</reactions>（必填，1-4個表情，數量1-99正整數，👍❤️😂😮😢😠🎉👏🤔😊）\n</plurk>\n", "【噗浪】想發動態時放在 <content> 內，一次最多一則：\n<plurk>發文內容</plurk>\n完整寫法：<plurk qualifier=\"覺得\" reactions=\"❤️12 😂5\">發文內容<image>配圖描述</image></plurk>\n（qualifier 是噗浪限定詞：說／想／愛／覺得／希望／喜歡；reactions 是 1-4 種表情和數量；<image> 是配圖。三者都可省略）\n適合發噗的時候：心情有起伏、剛發生值得分享的事、有些話想讓 {{user}} 看到卻不想當面說（暗示、炫耀、抱怨、曬日常）。不必每輪都發，也別重複最近發過的內容。\n"]],
+  f2fFormatRules: [["- 噗浪格式：\n  <plurk>\n    <post>發文內容</post>\n    <image>中文描述｜英文提示詞</image>（可選）\n    <reactions>❤️:12,👍:8,😊:5</reactions>（必填，1-4個，數量1-99，👍❤️😂😮😢😠🎉👏🤔😊）\n  </plurk>\n", "- 噗浪（想發動態時，一次最多一則）：<plurk>發文內容</plurk>\n  完整寫法：<plurk qualifier=\"覺得\" reactions=\"❤️12 😂5\">發文內容<image>配圖描述</image></plurk>，qualifier（噗浪限定詞）、reactions（1-4 種表情和數量）、<image>（配圖）都可省略\n  適合發噗的時候：心情有起伏、剛發生值得分享的事、有些話想讓 {{user}} 看到卻不想當面說。不必每輪都發，也別重複最近發過的內容\n"]],
+  plurkPostSystemPrompt: [["輸出格式：\n<plurk>\n  <post>發文內容</post>\n  <image>中文描述｜英文提示詞</image>（有配圖時加，否則省略）\n  <reactions>❤️:12,👍:8</reactions>（必填，1-4個表情，數量1-99，👍❤️😂😮😢😠🎉👏🤔😊）\n</plurk>", "輸出格式：\n<plurk>發文內容</plurk>\n完整寫法：<plurk qualifier=\"覺得\" reactions=\"❤️12 😂5\">發文內容<image>配圖描述</image></plurk>\n（qualifier 是噗浪限定詞：說／想／愛／覺得／希望／喜歡；reactions 是 1-4 種表情和數量；配圖用 <image> 寫在內文裡。三者都可省略）"]],
+  // 噗浪評論改為批量評論的風格要求（多角色同時留言）
+  plurkCommentSystemPrompt: [["你是 {{char}}，正在回覆噗浪上的評論。\n\n回覆要求：\n1. 完全以 {{char}} 的身份和語氣回覆", "評論風格要求：\n1. 每個角色都用自己的身份和語氣留言，像真的在滑噗浪"]],
 };
 
 function fixLockedPromptContent(prompts: PromptDefinition[] | undefined): void {
@@ -138,6 +152,8 @@ const RETIRED_FACE_TO_FACE_PROMPT_IDS = new Set([
   "f2f_custom_1772288204573", // 開始（預填 <thinking>）
   "f2fCharacterSettings", // 角色設定（面對面角色設定框架）
 ]);
+
+const RETIRED_PLURK_COMMENT_IDS = new Set(RETIRED_PLURK_COMMENT_PROMPT_IDS);
 
 function removeRetiredPrompts<T extends { identifier: string }>(
   items: T[] | undefined | null,
@@ -856,6 +872,19 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     // 修正已存儲系統必要條目中的錯誤標籤
     fixLockedPromptContent(stored.prompts);
     fixLockedPromptContent(stored.faceToFacePrompts);
+    fixLockedPromptContent(stored.plurkPostPrompts);
+    fixLockedPromptContent(stored.plurkCommentPrompts);
+
+    // 噗浪評論：移除舊版逐則回覆的條目，舊預設名稱改成新名稱
+    removeRetiredPrompts(stored.plurkCommentPrompts, RETIRED_PLURK_COMMENT_IDS);
+    removeRetiredPrompts(stored.plurkCommentPromptOrder, RETIRED_PLURK_COMMENT_IDS);
+    const plurkCommentStyle = stored.plurkCommentPrompts?.find(
+      (p) => p.identifier === "plurkCommentSystemPrompt",
+    );
+    if (plurkCommentStyle?.name === "噗浪評論系統提示") {
+      plurkCommentStyle.name = "噗浪評論風格";
+      plurkCommentStyle.description = "批量生成評論時附加的風格要求";
+    }
 
     // 確保面對面模式順序存在
     if (!stored.faceToFacePromptOrder) {

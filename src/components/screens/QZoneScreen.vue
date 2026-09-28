@@ -2129,7 +2129,6 @@ import { getDatabase } from "@/db/database";
 import { useBatchComments } from "@/composables/useBatchComments";
 import { loadMessages } from "@/storage/chatMessageStorage";
 import { useCharactersStore } from "@/stores/characters";
-import { useChatStore } from "@/stores/chat";
 import { usePromptManagerStore } from "@/stores/promptManager";
 import { useQzoneStore } from "@/stores/qzone";
 import { useSettingsStore } from "@/stores/settings";
@@ -2147,6 +2146,8 @@ import type {
 import { DEFAULT_AUTO_INTERACTION_CONFIG } from "@/types/qzone";
 import { compressImage, compressionPresets } from "@/utils/imageCompression";
 import { shouldHideFromQZone } from "@/services/BlockService";
+import { publishCharacterPlurk } from "@/services/PlurkPostService";
+import { buildSocialPostsText } from "@/utils/plurkFormat";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 // ============================================================
@@ -2166,7 +2167,6 @@ const qzoneStore = useQzoneStore();
 const charactersStore = useCharactersStore();
 const settingsStore = useSettingsStore();
 const stickerStore = useStickerStore();
-const chatStore = useChatStore();
 const promptManagerStore = usePromptManagerStore();
 const userStore = useUserStore();
 const aiGenerationStore = useAIGenerationStore();
@@ -2491,22 +2491,6 @@ function getEligibleCharactersForPost(post: QZonePost): StoredCharacter[] {
   }
 
   return eligible;
-}
-
-// 獲取與指定 Persona 列表相關的所有角色 ID（用於角色發文時的可見性）
-function getRelatedCharacterIds(personaIds: string[]): string[] {
-  const characterIds = new Set<string>();
-
-  for (const personaId of personaIds) {
-    const persona = userStore.personas.find((p) => p.id === personaId);
-    if (persona?.boundCharacterIds) {
-      for (const charId of persona.boundCharacterIds) {
-        characterIds.add(charId);
-      }
-    }
-  }
-
-  return Array.from(characterIds);
 }
 
 // @ 提及建議列表
@@ -3383,63 +3367,6 @@ function showMentionPicker() {
 // AI 掃描相關
 // ============================================================
 
-// 解析 AI 發文輸出格式
-function parseAIPostOutput(rawOutput: string): {
-  qualifier: string;
-  content: string;
-  reactions: Record<string, number>;
-  images: string[];
-} {
-  const result = {
-    qualifier: "說",
-    content: "",
-    reactions: {} as Record<string, number>,
-    images: [] as string[],
-  };
-
-  // 解析 QUALIFIER
-  const qualifierMatch = rawOutput.match(/\[QUALIFIER\](.*?)\[\/QUALIFIER\]/i);
-  if (qualifierMatch) {
-    result.qualifier = qualifierMatch[1].trim();
-  }
-
-  // 解析 <plurk> XML 格式
-  const plurkMatch = rawOutput.match(/<plurk>([\s\S]*?)<\/plurk>/i);
-  if (plurkMatch) {
-    const inner = plurkMatch[1];
-
-    // 解析 <post>
-    const postMatch = inner.match(/<post>([\s\S]*?)<\/post>/i);
-    result.content = postMatch ? postMatch[1].trim() : "";
-
-    // 解析 <image>
-    for (const m of inner.matchAll(/<image>([\s\S]*?)<\/image>/gi)) {
-      result.images.push(m[1]);
-    }
-
-    // 解析 <reactions>
-    const reactionsMatch = inner.match(/<reactions>([\s\S]*?)<\/reactions>/i);
-    if (reactionsMatch) {
-      for (const pair of reactionsMatch[1].trim().split(/[,|，]/)) {
-        const [emoji, countStr] = pair.split(":");
-        const count = parseInt((countStr || "").trim(), 10);
-        if (emoji && !isNaN(count) && count > 0) {
-          result.reactions[emoji.trim()] = count;
-        }
-      }
-    }
-  } else {
-    // 如果沒有標籤，嘗試清理原始輸出
-    result.content = rawOutput
-      .replace(/\[QUALIFIER\].*?\[\/QUALIFIER\]/gi, "")
-      .replace(/`/g, "")
-      .replace(/<content>|<\/content>/gi, "")
-      .trim();
-  }
-
-  return result;
-}
-
 // AI 發布動態
 async function handleAIPost() {
   if (isAIScanning.value) return;
@@ -3480,54 +3407,16 @@ async function executeAIPost(characterId: string) {
   isAIScanning.value = true;
 
   try {
-    const rawContent = await generateAIContent(character, "post");
-    console.log("[QZone AI Post] rawContent:", rawContent, "length:", rawContent?.length);
-
+    const rawContent = await generateAIPostContent(character);
     if (rawContent) {
-      // 解析 AI 輸出
-      const parsed = parseAIPostOutput(rawContent);
-
-      console.log("[QZone AI Post] 原始輸出:", rawContent);
-      console.log("[QZone AI Post] 解析結果:", parsed);
-      console.log("[QZone AI Post] 表情:", parsed.reactions);
-
-      // 如果解析後內容為空，使用原始輸出作為內容
-      const finalContent = parsed.content || rawContent.replace(/\[.*?\].*?\[\/.*?\]/gi, '').trim() || rawContent;
-      console.log("[QZone AI Post] 最終內容:", finalContent);
-
-      // 獲取綁定了此角色的所有用戶 Persona ID
-      const boundPersonaIds =
-        userStore.getPersonasByBoundCharacter(characterId);
-
-      // 角色發文：所有綁定該角色的用戶都能看見
-      // 如果沒有任何用戶綁定此角色，則設為公開
-      const isGroupPost = boundPersonaIds.length > 0;
-
-      const newPost = await qzoneStore.addPost({
-        authorId: character.id,
-        username: character.nickname || character.data?.name,
-        avatar: character.avatar || getDefaultAvatar(character.id),
-        type: "shuoshuo",
-        content: finalContent,
-        qualifier:
-          parsed.qualifier ||
-          qualifiers[Math.floor(Math.random() * qualifiers.length)],
-        visibility: "public",
-        authorType: "ai",
-        emoticons: parsed.reactions,
-        // 角色發文的可見性：綁定該角色的用戶可見
-        visibilityMode: isGroupPost ? "group-only" : "public",
-        groupName: isGroupPost
-          ? `${character.nickname || character.data?.name} 的粉絲`
-          : undefined,
-        // 記錄可以看見此貼文的角色 ID（包含發文角色本身，以及同群組的其他角色）
-        groupMemberIds: isGroupPost
-          ? getRelatedCharacterIds(boundPersonaIds)
-          : undefined,
-      });
-      console.log("[QZone AI Post] 發文成功:", newPost.id, "目前動態數:", qzoneStore.posts.length);
+      const newPost = await publishCharacterPlurk(character, rawContent);
+      if (newPost) {
+        console.log("[QZone AI Post] 發文成功:", newPost.id, "目前動態數:", qzoneStore.posts.length);
+      } else {
+        console.warn("[QZone AI Post] 解析後內容為空，未發文:", rawContent);
+      }
     } else {
-      console.warn("[QZone AI Post] generateAIContent 返回空內容，未發文");
+      console.warn("[QZone AI Post] generateAIPostContent 返回空內容，未發文");
     }
   } catch (error) {
     console.error("AI 發布動態失敗:", error);
@@ -3755,15 +3644,11 @@ async function regenerateAllAIComments(postId: string) {
   }
 }
 
-// 生成 AI 內容
-async function generateAIContent(
+// 生成 AI 發文內容
+async function generateAIPostContent(
   character: StoredCharacter,
-  type: "post" | "comment",
-  targetPost?: QZonePost,
 ): Promise<string | null> {
-  // 根據類型選擇備用 API 任務
-  const taskType = type === "post" ? "plurkPost" : "plurkComment";
-  const taskConfig = settingsStore.getAPIForTask(taskType);
+  const taskConfig = settingsStore.getAPIForTask("plurkPost");
 
   if (
     !taskConfig.api.endpoint ||
@@ -3778,35 +3663,23 @@ async function generateAIContent(
   const charPersonality = character.data?.personality || "";
   const charDescription = character.data?.description || "";
 
-  // 獲取對話上下文
-  let chatContextStr = "";
-  const activeChatId = chatStore.currentChat?.id;
-  if (enableChatContext.value) {
-    let recentMessages = chatStore.messages.slice(-chatContextCount.value);
-
-    if (recentMessages.length === 0 && activeChatId) {
-      try {
-        recentMessages = (await loadMessages(activeChatId)).slice(
-          -chatContextCount.value,
-        );
-      } catch (error) {
-        console.warn("[QZone] 載入 chatMessages 失敗:", error);
-      }
-    }
-
-    if (recentMessages.length > 0) {
-      chatContextStr = recentMessages
-        .map((msg) => {
-          const role = msg.sender === "user" ? userName.value : charName;
-          return `${role}: ${msg.content}`;
-        })
-        .join("\n");
-
-      if (chatContextStr) {
-        chatContextStr = `\n\n以下是你與用戶最近的對話記錄，可以參考但不必完全依賴：\n${chatContextStr}`;
-      }
-    }
+  // 該角色最近的私聊內容
+  let recentMessages = "";
+  const chatContext = (await buildChatContextForComments([character.id]))[character.id];
+  if (chatContext) {
+    recentMessages = chatContext.split("【最近私聊內容】\n")[1] ?? chatContext;
   }
+  const recentPosts = buildSocialPostsText(qzoneStore.posts, [character.id]);
+
+  const macros: Record<string, string> = {
+    char: charName,
+    user: userName.value,
+    charDescription: charDescription || "（無）",
+    charPersonality: charPersonality || "（無）",
+    recentMessages: recentMessages || "（無）",
+    recentPosts,
+  };
+  const usedMacros = new Set<string>();
 
   const rawMessages: APIMessage[] = [];
   const promptDebugMessages: PromptDebugMessage[] = [];
@@ -3820,99 +3693,68 @@ async function generateAIContent(
     promptDebugMessages.push({ role, content, name, identifier });
   };
 
-  // 角色資訊作為第一個 system message
-  if (charDescription || charPersonality) {
+  // 按順序組裝啟用的噗浪發文提示詞
+  let hasUserInstruction = false;
+  for (const orderEntry of promptManagerStore.plurkPostPromptOrder) {
+    if (!orderEntry.enabled) continue;
+    const prompt = promptManagerStore.plurkPostPrompts.find(
+      (p) => p.identifier === orderEntry.identifier,
+    );
+    if (!prompt?.content) continue;
+    const content = prompt.content.replace(
+      /\{\{(\w+)\}\}/g,
+      (match, name: string) => {
+        const key = Object.keys(macros).find(
+          (k) => k.toLowerCase() === name.toLowerCase(),
+        );
+        if (!key) return match;
+        usedMacros.add(key);
+        return macros[key];
+      },
+    );
+    const role = prompt.role === "user" ? "user" : "system";
+    if (role === "user") hasUserInstruction = true;
+    addMessage(role, content, prompt.name, prompt.identifier);
+  }
+
+  // 使用者刪掉或停用了對應條目時，補上必要的上下文
+  if (!usedMacros.has("charDescription") && !usedMacros.has("charPersonality")) {
     addMessage(
       "system",
-      `【角色資訊】
-角色名稱：${charName}
-${charDescription ? `角色描述：${charDescription}` : ""}
-${charPersonality ? `角色性格：${charPersonality}` : ""}`,
+      [
+        "【角色資訊】",
+        `角色名稱：${charName}`,
+        charDescription && `角色描述：${charDescription}`,
+        charPersonality && `角色性格：${charPersonality}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
       "噗浪角色資訊",
       "qzoneCharacterInfo",
     );
   }
-
-  if (type === "post") {
-    // 使用 promptManagerStore 的噗浪發文提示詞
-    const plurkPostPrompts = promptManagerStore.plurkPostPrompts;
-    const plurkPostPromptOrder = promptManagerStore.plurkPostPromptOrder;
-
-    // 按順序組裝啟用的提示詞，根據 role 分組
-    for (const orderEntry of plurkPostPromptOrder) {
-      if (!orderEntry.enabled) continue;
-      const prompt = plurkPostPrompts.find(
-        (p) => p.identifier === orderEntry.identifier,
-      );
-      if (prompt && prompt.content) {
-        const content = prompt.content
-          .replace(/\{\{char\}\}/gi, charName)
-          .replace(/\{\{user\}\}/gi, userName.value);
-
-        const role = prompt.role === "user" ? "user" : "system";
-        addMessage(role, content, prompt.name, prompt.identifier);
-      }
-    }
-
-    // 加入對話上下文
-    if (chatContextStr) {
-      addMessage("system", chatContextStr, "噗浪對話上下文", "qzoneChatContext");
-    }
-
-    // 獲取最近的動態作為參考（避免重複）
-    const recentPosts = qzoneStore.sortedPosts.slice(0, 5);
-    if (recentPosts.length > 0) {
-      const recentPostsStr = recentPosts
-        .map((p) => `- ${p.username}: ${p.content}`)
-        .join("\n");
-      addMessage(
-        "system",
-        `【最近動態（請勿重複類似內容）】\n${recentPostsStr}`,
-        "噗浪最近動態",
-        "qzoneRecentPosts",
-      );
-    }
-
-    // 最後的 user prompt
+  if (!usedMacros.has("recentMessages") && recentMessages) {
+    addMessage(
+      "system",
+      `以下是你與用戶最近的對話記錄，可以參考但不必完全依賴：\n${recentMessages}`,
+      "噗浪對話上下文",
+      "qzoneChatContext",
+    );
+  }
+  if (!usedMacros.has("recentPosts")) {
+    addMessage(
+      "system",
+      `【你最近的噗文（請勿重複類似內容）】\n${recentPosts}`,
+      "噗浪最近動態",
+      "qzoneRecentPosts",
+    );
+  }
+  if (!hasUserInstruction) {
     addMessage(
       "user",
-      `請以 ${charName} 的身份發一條動態，分享你的想法、心情或日常。`,
+      `請以 ${charName} 的身份發一則噗浪，分享你的想法、心情或日常。`,
       "噗浪發文最終指令",
       "qzoneFinalPostInstruction",
-    );
-  } else if (type === "comment" && targetPost) {
-    // 使用 promptManagerStore 的噗浪評論提示詞
-    const plurkCommentPrompts = promptManagerStore.plurkCommentPrompts;
-    const plurkCommentPromptOrder = promptManagerStore.plurkCommentPromptOrder;
-
-    // 按順序組裝啟用的提示詞
-    for (const orderEntry of plurkCommentPromptOrder) {
-      if (!orderEntry.enabled) continue;
-      const prompt = plurkCommentPrompts.find(
-        (p) => p.identifier === orderEntry.identifier,
-      );
-      if (prompt && prompt.content) {
-        const content = prompt.content
-          .replace(/\{\{char\}\}/gi, charName)
-          .replace(/\{\{user\}\}/gi, userName.value);
-
-        const role = prompt.role === "user" ? "user" : "system";
-        addMessage(role, content, prompt.name, prompt.identifier);
-      }
-    }
-
-    if (chatContextStr) {
-      addMessage("system", chatContextStr, "噗浪對話上下文", "qzoneChatContext");
-    }
-
-    const postAuthor = targetPost.username || "某人";
-    const postContent = targetPost.content || "";
-    addMessage(
-      "user",
-      `${postAuthor} 發了一條動態：「${postContent}」
-請以 ${charName} 的身份回覆這條動態。只輸出評論內容，不要包含任何格式標籤。`,
-      "噗浪回覆最終指令",
-      "qzoneFinalCommentInstruction",
     );
   }
 
