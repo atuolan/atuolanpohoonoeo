@@ -5,6 +5,7 @@
  * 只編輯草稿，不會改動目前的條目開關
  */
 import { computed, ref } from "vue";
+import { ChevronLeft } from "lucide-vue-next";
 import { useF2FPanel } from "@/composables/useF2FPanel";
 import type { F2FPanelModule, F2FPanelStyle } from "@/types/f2fPanel";
 import { clonePlain, createPanelId, nextSelection } from "@/utils/f2fPanelEngine";
@@ -45,6 +46,8 @@ function clickOption(module: F2FPanelModule, optionId: string) {
   draftSelections.value[module.id] = nextSelection(module, draftSelections.value[module.id] ?? [], optionId);
 }
 
+const editorTitle = computed(() => (props.styleDef ? "編輯風格" : "新增風格"));
+
 const canSave = computed(() => name.value.trim() !== "" && Object.keys(draftSelections.value).length > 0);
 
 function save() {
@@ -60,6 +63,12 @@ function save() {
 
 <template>
   <div class="f2f-tab">
+    <div class="f2f-editor-head">
+      <button type="button" class="f2f-icon-btn" aria-label="返回" @click="emit('cancel')">
+        <ChevronLeft :size="20" />
+      </button>
+      <span>{{ editorTitle }}</span>
+    </div>
     <label class="f2f-field-label" for="f2f-style-name">風格名稱</label>
     <input id="f2f-style-name" v-model="name" class="f2f-input" placeholder="例如：溫柔日常" />
     <label class="f2f-field-label" for="f2f-style-desc">說明（選填）</label>
@@ -86,7 +95,7 @@ function save() {
       </div>
     </div>
 
-    <div class="f2f-row">
+    <div class="f2f-editor-footer">
       <button type="button" class="f2f-btn" @click="emit('cancel')">取消</button>
       <button type="button" class="f2f-btn primary" :disabled="!canSave" @click="save">儲存風格</button>
     </div>

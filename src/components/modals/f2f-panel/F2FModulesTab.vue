@@ -4,17 +4,22 @@
  * 面對面設定面板 第二頁：模塊
  * 平常為使用模式（點選項切換條目），按「編輯」才能新增/修改模塊
  */
-import { ref } from "vue";
+import { onBeforeUnmount, ref, watch } from "vue";
 import { useF2FPanel } from "@/composables/useF2FPanel";
 import type { F2FPanelModule } from "@/types/f2fPanel";
 import { clonePlain } from "@/utils/f2fPanelEngine";
 import F2FModuleEditor from "./F2FModuleEditor.vue";
+
+const emit = defineEmits<{ editing: [value: boolean] }>();
 
 const { layout, selections, currentOptionIds, selectOption, selectNone, saveLayout } = useF2FPanel();
 
 const editing = ref(false);
 /** undefined：未開啟編輯器；null：新增模塊 */
 const editorTarget = ref<F2FPanelModule | null | undefined>(undefined);
+
+watch(editorTarget, (value) => emit("editing", value !== undefined));
+onBeforeUnmount(() => emit("editing", false));
 
 function isManual(module: F2FPanelModule): boolean {
   return selections.value.get(module.id)?.status === "manual";

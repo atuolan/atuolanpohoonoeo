@@ -24,13 +24,24 @@ const tab = ref<Tab>("styles");
 const { staleCount } = useF2FPanel();
 
 const closeBtn = ref<HTMLButtonElement | null>(null);
+/** 編輯器（新增/編輯模塊或風格）開啟時，忽略遮罩點擊與 Escape，避免誤觸丟失草稿 */
+const editing = ref(false);
 
 function onOverlayClick() {
+  if (editing.value) return;
+  emit("close");
+}
+
+function onCloseClick() {
+  if (editing.value) {
+    if (!confirm("放棄未儲存的變更？")) return;
+  }
   emit("close");
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (event.key === "Escape") emit("close");
+  if (event.key !== "Escape" || editing.value) return;
+  emit("close");
 }
 
 onMounted(() => {
@@ -48,11 +59,11 @@ onUnmounted(() => {
     <section class="f2f-panel" role="dialog" aria-modal="true" aria-labelledby="f2f-panel-title">
       <header class="f2f-panel-header">
         <h2 id="f2f-panel-title">面對面設定</h2>
-        <button ref="closeBtn" type="button" class="f2f-icon-btn" aria-label="關閉" @click="emit('close')">
+        <button ref="closeBtn" type="button" class="f2f-icon-btn" aria-label="關閉" @click="onCloseClick">
           <X :size="20" />
         </button>
       </header>
-      <nav class="f2f-tabs" role="tablist">
+      <nav v-if="!editing" class="f2f-tabs" role="tablist">
         <button
           v-for="item in TABS"
           :key="item.key"
@@ -69,8 +80,8 @@ onUnmounted(() => {
         有 {{ staleCount }} 個模塊條目已不存在，已自動略過；下次儲存模塊時會一併清除。
       </p>
       <div class="f2f-panel-body">
-        <F2FStylesTab v-if="tab === 'styles'" />
-        <F2FModulesTab v-else-if="tab === 'modules'" />
+        <F2FStylesTab v-if="tab === 'styles'" @editing="editing = $event" />
+        <F2FModulesTab v-else-if="tab === 'modules'" @editing="editing = $event" />
         <F2FEntriesTab v-else />
       </div>
     </section>
@@ -363,6 +374,33 @@ onUnmounted(() => {
   .f2f-field-label {
     font-size: 12px;
     color: var(--color-text-secondary, #666);
+  }
+
+  .f2f-editor-head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+
+    span {
+      font-weight: 700;
+      font-size: 15px;
+    }
+  }
+
+  .f2f-editor-footer {
+    position: sticky;
+    bottom: -18px;
+    margin: 0 -18px -18px;
+    padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
+    background: var(--color-surface, #fff);
+    border-top: 1px solid var(--color-border, #eee);
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .f2f-check input {
+    accent-color: var(--color-primary, #ff7eb3);
   }
 }
 </style>

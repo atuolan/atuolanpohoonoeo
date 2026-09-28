@@ -4,17 +4,22 @@
  * 面對面設定面板 第一頁：風格
  * 風格只改它包含的模塊；其他模塊（例如視角、語言）保持不動
  */
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useF2FPanel } from "@/composables/useF2FPanel";
 import type { F2FPanelStyle } from "@/types/f2fPanel";
 import { clonePlain } from "@/utils/f2fPanelEngine";
 import F2FStyleEditor from "./F2FStyleEditor.vue";
+
+const emit = defineEmits<{ editing: [value: boolean] }>();
 
 const { layout, activeStyleId, applyStyleById, saveLayout } = useF2FPanel();
 
 const editing = ref(false);
 /** undefined：未開啟編輯器；null：新增風格 */
 const editorTarget = ref<F2FPanelStyle | null | undefined>(undefined);
+
+watch(editorTarget, (value) => emit("editing", value !== undefined));
+onBeforeUnmount(() => emit("editing", false));
 
 const moduleTitles = computed(() => new Map(layout.value.modules.map((m) => [m.id, m.title])));
 const activeStyleName = computed(
