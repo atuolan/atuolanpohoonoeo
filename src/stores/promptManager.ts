@@ -304,11 +304,11 @@ function resolveImportedF2FPanelLayout(
   );
   if (embedded) return reconcileLayout(embedded, existingIds).layout;
 
-  const fallback = reconcileLayout(DEFAULT_F2F_PANEL_LAYOUT, existingIds).layout;
-  return {
-    ...fallback,
-    modules: fallback.modules.filter((module) => module.options.length > 0),
-  };
+  // 沒有內嵌面板配置時直接採用內建配置，不預先裁剪：
+  // 裁剪後的配置會存進 config，PromptManagerScreen 重新載入時 mergeWithDefaults
+  // 會把內建的篝火條目補回 faceToFacePromptOrder，導致面板配置與條目對不上。
+  // 檢視時的 reconcileLayout（useF2FPanel）已經會隱藏對不上的項目，交給它處理即可。
+  return structuredClone(DEFAULT_F2F_PANEL_LAYOUT);
 }
 
 export const usePromptManagerStore = defineStore("promptManager", () => {

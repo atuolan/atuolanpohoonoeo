@@ -16,6 +16,7 @@ vi.mock("@/db/database", () => ({
 
 import { DEFAULT_F2F_PANEL_LAYOUT } from "@/data/faceToFacePanelLayout";
 import { createDefaultPromptManagerConfig, DEFAULT_FACE_TO_FACE_PROMPT_ORDER } from "@/types/promptManager";
+import { reconcileLayout } from "@/utils/f2fPanelEngine";
 import { FACE_TO_FACE_PROMPT_RESET_VERSION, usePromptManagerStore } from "./promptManager";
 
 const STYLE_ADAPTIVE = "f2f_custom_1790012658550";
@@ -147,16 +148,21 @@ describe("面對面設定面板：匯入", () => {
     expect(store.faceToFacePanelLayout.modules[0].allowNone).toBe(false);
   });
 
-  it("匯入不帶面板配置的 JSON 時，只保留內建配置中仍對得上的模塊", async () => {
+  it("匯入不帶面板配置的 JSON 時採用內建配置，重新載入後模塊仍對得上", async () => {
     const store = await loadedStore();
 
     await store.importPromptsForModeFromJson("faceToFace", {
       prompts: [prompt(STYLE_ADAPTIVE), prompt(STYLE_PLAIN), prompt("other")],
     });
+    await store.loadConfig();
 
-    const layout = store.faceToFacePanelLayout;
-    expect(layout.modules.map((m) => m.id)).toEqual(["style"]);
-    expect(layout.modules[0].options.map((o) => o.id)).toEqual(["adaptive", "plain"]);
+    expect(store.faceToFacePanelLayout).toEqual(DEFAULT_F2F_PANEL_LAYOUT);
+    const existingIds = new Set(store.faceToFacePromptOrder.map((e) => e.identifier));
+    expect(
+      reconcileLayout(store.faceToFacePanelLayout, existingIds).layout.modules.every(
+        (m) => m.options.length > 0,
+      ),
+    ).toBe(true);
   });
 
   it("匯入其他模式時不動面板配置", async () => {
