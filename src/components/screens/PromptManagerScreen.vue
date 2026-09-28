@@ -1187,7 +1187,11 @@ async function resetCurrentToDefault() {
       await promptManagerStore.resetToDefault();
     }
   } else if (selectedMode.value === "faceToFace") {
-    if (confirm("確定要重置「面對面模式」的提示詞為預設嗎？\n（不會影響其他模式）")) {
+    if (
+      confirm(
+        "確定要重置「面對面模式」的提示詞為預設嗎？\n（不會影響其他模式；面對面設定面板的模塊與風格也會還原）",
+      )
+    ) {
       await promptManagerStore.resetFaceToFaceToDefault();
     }
   } else if (selectedMode.value === "groupChat") {

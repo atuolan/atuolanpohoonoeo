@@ -93,6 +93,9 @@ function save() {
   const result = clonePlain(draft.value);
   result.title = result.title.trim();
   if (result.mode === "multi") result.allowNone = false;
+  for (const option of result.options) {
+    if (option.label.trim() === "") option.label = entryName(option.entries[0]);
+  }
   emit("save", result);
 }
 </script>

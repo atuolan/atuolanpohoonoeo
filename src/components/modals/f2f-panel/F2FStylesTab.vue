@@ -85,6 +85,7 @@ function onCardClick(style: F2FPanelStyle) {
       :tabindex="editing ? undefined : 0"
       @click="onCardClick(style)"
       @keydown.enter="onCardClick(style)"
+      @keydown.space.prevent="onCardClick(style)"
     >
       <div class="f2f-row spread">
         <span class="f2f-card-title">{{ style.name }}</span>
