@@ -1645,7 +1645,7 @@ function getFaceToFaceExportPayload(): {
   return getPromptExportPayload(
     promptManagerStore.faceToFacePrompts,
     promptManagerStore.faceToFacePromptOrder,
-    ["f2fCharacterSettings", "f2fBlockMemory", "minimaxTTS"],
+    ["f2fBlockMemory", "minimaxTTS"],
   );
 }
 

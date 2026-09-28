@@ -39,6 +39,15 @@ describe("面對面提示詞強制重置引導", () => {
     setActivePinia(createPinia());
   });
 
+  it("已完成上一版重置的用戶，在新版本仍需要重置", async () => {
+    const config = createDefaultPromptManagerConfig();
+    config.faceToFacePromptResetVersion = FACE_TO_FACE_PROMPT_RESET_VERSION - 1;
+    storage.set("promptManagerConfig", config);
+    const store = usePromptManagerStore();
+    await store.loadConfig();
+    expect(store.needsFaceToFacePromptReset).toBe(true);
+  });
+
   it("新用戶不需要重置", async () => {
     const store = usePromptManagerStore();
     await store.loadConfig();
@@ -68,5 +77,43 @@ describe("面對面提示詞強制重置引導", () => {
     await reloaded.loadConfig();
     expect(reloaded.needsFaceToFacePromptReset).toBe(false);
     expect(reloaded.config.faceToFacePrompts).toEqual(FACE_TO_FACE_PROMPT_DEFINITIONS);
+  });
+});
+
+describe("已停用的面對面必要條目", () => {
+  beforeEach(() => {
+    storage.clear();
+    setActivePinia(createPinia());
+  });
+
+  it("載入舊設定時移除「奇蹟實現的步驟」、「開始」與「角色設定」，其他條目保留", async () => {
+    const retiredIds = ["f2fExampleScript", "f2f_custom_1772288204573", "f2fCharacterSettings"];
+    const config = createDefaultPromptManagerConfig();
+    config.faceToFacePrompts = [
+      ...structuredClone(FACE_TO_FACE_PROMPT_DEFINITIONS),
+      ...retiredIds.map((identifier) => ({
+        ...FACE_TO_FACE_PROMPT_DEFINITIONS[0],
+        identifier,
+        locked: true,
+        isDeletable: false,
+      })),
+    ];
+    config.faceToFacePromptOrder = [
+      ...structuredClone(DEFAULT_FACE_TO_FACE_PROMPT_ORDER),
+      ...retiredIds.map((identifier) => ({ identifier, enabled: true })),
+    ];
+    storage.set("promptManagerConfig", config);
+
+    const store = usePromptManagerStore();
+    await store.loadConfig();
+
+    const promptIds = store.config.faceToFacePrompts!.map((p) => p.identifier);
+    const orderIds = store.config.faceToFacePromptOrder!.map((e) => e.identifier);
+    for (const id of retiredIds) {
+      expect(promptIds).not.toContain(id);
+      expect(orderIds).not.toContain(id);
+    }
+    expect(promptIds).toHaveLength(FACE_TO_FACE_PROMPT_DEFINITIONS.length);
+    expect(orderIds).toHaveLength(DEFAULT_FACE_TO_FACE_PROMPT_ORDER.length);
   });
 });
