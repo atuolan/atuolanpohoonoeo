@@ -17,27 +17,71 @@ import { MemoryRetrieverService } from "@/services/memoryRetriever";
 import { deleteVectorEmbedding, markVectorStale } from "@/db/vectorStore";
 import { extractSummaryKeywords } from "@/utils/summaryKeywordExtractor";
 import { sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
+import { resolveStoryTime } from "@/utils/fakeTime";
+
+/** 總結/日記要用的時間脈絡，跟著聊天的「感知現實時間」與時間模式走 */
+interface SummaryTimeContext {
+  /** 感知現實時間是否開啟；關閉時不附日期，改由 AI 依劇情判斷 */
+  aware: boolean;
+  /** 舊訊息沒有 storyTime 時套用的偏移（目前聊天時間 - 真實時間） */
+  fallbackOffsetMs: number;
+}
+
+const DEFAULT_TIME_CONTEXT: SummaryTimeContext = { aware: true, fallbackOffsetMs: 0 };
+
+function formatTimetravelLine(m: Message): string {
+  const dest = (m.timetravelContent || m.content || '').trim()
+  return dest ? `[場景與時間切換到：${dest}]` : ''
+}
+
+/** 同一天內，劇情時間推進超過這個間隔才插入新的時間標記 */
+export const SUMMARY_TIME_MARKER_GAP_MS = 30 * 60 * 1000
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
 
 /**
- * 將消息列表格式化為帶日期標記的文本
- * 當日期變化時插入 [YYYY/MM/DD] 標記，讓 AI 知道時間脈絡
+ * 將消息列表格式化為帶時間標記的文本
+ * - 開啟感知現實時間：日期變化時插入 [YYYY/MM/DD HH:mm]；同一天內劇情時間推進超過 30 分鐘時插入 [HH:mm]
+ *   （都是劇情時間，假時間／劇情時鐘模式下不是現實時間）
+ * - 關閉感知現實時間：不插入時間，只保留時空跳轉標記，由 AI 依劇情判斷時間
+ * 時空跳轉訊息一律轉成 [場景與時間切換到：…]，讓總結知道劇情時間的推進
  */
-function formatMessagesWithDates(
+export function formatMessagesWithDates(
   messages: Message[],
   getUserName: () => string,
   getCharName: () => string,
+  time: SummaryTimeContext = DEFAULT_TIME_CONTEXT,
 ): string {
   let lastDateStr = ''
+  let lastMarkerMs: number | null = null
   const lines: string[] = []
 
   for (const m of messages) {
-    const d = new Date(m.timestamp)
-    const dateStr = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
+    if (m.isTimetravel) {
+      const line = formatTimetravelLine(m)
+      if (line) lines.push(line)
+      // 場景切換後的下一則訊息重新標上時間
+      lastMarkerMs = null
+      continue
+    }
 
-    // 日期變化時插入日期標記
-    if (dateStr !== lastDateStr) {
-      lines.push(`[${dateStr}]`)
-      lastDateStr = dateStr
+    if (time.aware) {
+      const ms = resolveStoryTime(m, time.fallbackOffsetMs)
+      const d = new Date(ms)
+      const dateStr = `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}`
+      const timeStr = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+
+      if (dateStr !== lastDateStr) {
+        lines.push(`[${dateStr} ${timeStr}]`)
+        lastDateStr = dateStr
+        lastMarkerMs = ms
+      } else if (
+        lastMarkerMs === null ||
+        Math.abs(ms - lastMarkerMs) >= SUMMARY_TIME_MARKER_GAP_MS
+      ) {
+        lines.push(`[${timeStr}]`)
+        lastMarkerMs = ms
+      }
     }
 
     const speaker = m.role === 'user' ? getUserName() : getCharName()
@@ -47,11 +91,38 @@ function formatMessagesWithDates(
   return lines.join('\n\n')
 }
 
+/**
+ * 放在對話內容最前面的時間說明。
+ * 寫在內容裡而不是提示詞裡，這樣用戶保存過舊版總結提示詞也一樣生效。
+ */
+export function buildTimeNote(
+  time: SummaryTimeContext,
+  priorScene: string,
+  previousSummary: string,
+): string {
+  const lines: string[] = []
+  if (time.aware) {
+    lines.push('（時間說明：[YYYY/MM/DD HH:mm] 與 [HH:mm] 是這段對話在劇情中發生的日期與時間。請在內容中寫出具體日期，例如「3月21日」，不要只寫「今天」「昨天」；同一天內的事件可依時間標記寫出早上、中午、晚上等先後順序。）')
+  } else {
+    lines.push('（時間說明：這個聊天沒有開啟「感知現實時間」，訊息不附現實日期，劇情時間由故事自己推進。請依對話內容與 [場景與時間切換到：…] 標記判斷劇情中的時間，寫出能確定的日期或時間點，例如「7月3日晚上」「隔天早上」；無法確定的不要編造，也不要使用現實日期。）')
+    if (previousSummary) {
+      lines.push(`（上一篇總結的開頭，供判斷劇情時間的延續：「${previousSummary}」）`)
+    }
+  }
+  if (priorScene) {
+    lines.push(`（這段對話開始前，最近一次的場景與時間切換：${priorScene}）`)
+  }
+  return lines.join('\n')
+}
+
 interface Message {
   id: string;
   role: "user" | "ai" | "system";
   content: string;
   timestamp: number;
+  storyTime?: number;
+  isTimetravel?: boolean;
+  timetravelContent?: string;
   [key: string]: any;
 }
 
@@ -90,6 +161,8 @@ type ActualReadSettings = {
 /** 日記觸發時的消息快照，避免延遲執行時讀到過期資料 */
 interface DiarySnapshot {
   messages: Message[];
+  /** 未過濾的完整歷史，用來補上時空跳轉標記 */
+  allMessages?: Message[];
   settings: SummarySettings;
   capturedAt: number;
   chatId: string;
@@ -125,6 +198,12 @@ export function useChatSummaryDiary(deps: {
    * 用它算間隔或裁切總結內容會漏掉未載入的舊訊息。
    */
   loadCompleteMessages?: () => Promise<Message[]>;
+  /** 感知現實時間是否開啟（預設開啟） */
+  getRealTimeAwareness?: () => boolean;
+  /** 聊天目前的有效時間（假時間模式），用於日記的「今天」與舊訊息的日期換算 */
+  getChatNow?: () => Date;
+  /** 舊訊息（沒有 storyTime）換算劇情時間的偏移；未提供時用「聊天時間 - 現實時間」 */
+  getLegacyOffsetMs?: () => number;
 }) {
   const aiGenerationStore = useAIGenerationStore();
   const settingsStore = useSettingsStore();
@@ -229,17 +308,81 @@ ${sourceText}
     return m.role === "user" || m.role === "ai";
   }
 
-  /** 取得完整歷史中的 user/ai 訊息；載入失敗時退回已載入的視窗 */
-  async function loadValidMessages(): Promise<Message[]> {
-    let all = deps.messages.value;
+  /** 取得完整歷史（未過濾）；載入失敗時退回已載入的視窗 */
+  async function loadAllMessages(): Promise<Message[]> {
     if (deps.loadCompleteMessages) {
       try {
-        all = await deps.loadCompleteMessages();
+        return await deps.loadCompleteMessages();
       } catch (e) {
         console.warn("[SummaryDiary] 載入完整歷史失敗，改用已載入的訊息:", e);
       }
     }
-    return all.filter(isValidChatMessage);
+    return deps.messages.value;
+  }
+
+  function getTimeContext(): SummaryTimeContext {
+    const aware = deps.getRealTimeAwareness ? deps.getRealTimeAwareness() : true;
+    if (deps.getLegacyOffsetMs) {
+      return { aware, fallbackOffsetMs: deps.getLegacyOffsetMs() };
+    }
+    const chatNow = deps.getChatNow ? deps.getChatNow().getTime() : Date.now();
+    return { aware, fallbackOffsetMs: chatNow - Date.now() };
+  }
+
+  /**
+   * 把裁切後的 user/ai 訊息放回完整歷史中，補上區間內的時空跳轉訊息，
+   * 並找出區間開始前最近一次的時空跳轉（作為這段劇情的時間起點）。
+   */
+  function withTimetravelContext(
+    all: Message[],
+    selected: Message[],
+  ): { messages: Message[]; priorScene: string } {
+    if (selected.length === 0) return { messages: selected, priorScene: "" };
+    const firstIdx = all.findIndex((m) => m.id === selected[0].id);
+    const lastIdx = all.findIndex((m) => m.id === selected[selected.length - 1].id);
+    if (firstIdx === -1 || lastIdx === -1 || lastIdx < firstIdx) {
+      return { messages: selected, priorScene: "" };
+    }
+    const messages = all
+      .slice(firstIdx, lastIdx + 1)
+      .filter((m) => isValidChatMessage(m) || m.isTimetravel);
+    let priorScene = "";
+    for (let i = firstIdx - 1; i >= 0; i--) {
+      if (all[i].isTimetravel) {
+        priorScene = (all[i].timetravelContent || all[i].content || "").trim();
+        break;
+      }
+    }
+    return { messages, priorScene };
+  }
+
+  /** 最近一篇一般總結的開頭，關閉感知現實時間時讓 AI 延續劇情時間 */
+  function getPreviousSummaryExcerpt(): string {
+    const last = [...deps.chatSummaries.value]
+      .filter((s) => !s.isMeta && s.content)
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .pop();
+    if (!last) return "";
+    const text = last.content.replace(/\s+/g, " ").trim();
+    return text.length > 150 ? `${text.slice(0, 150)}…` : text;
+  }
+
+  /** 組出送給 AI 的對話文字（含時間說明與時空跳轉標記） */
+  function buildSourceText(
+    all: Message[],
+    selected: Message[],
+    userName: string,
+    charName: string,
+  ): string {
+    const time = getTimeContext();
+    const { messages, priorScene } = withTimetravelContext(all, selected);
+    const body = formatMessagesWithDates(messages, () => userName, () => charName, time);
+    const note = buildTimeNote(
+      time,
+      priorScene,
+      time.aware ? "" : getPreviousSummaryExcerpt(),
+    );
+    return `${note}\n\n${body}`;
   }
 
   /**
@@ -421,7 +564,8 @@ ${sourceText}
 
     // 必須用完整歷史計算進度：已載入的視窗只有最近一頁，
     // 間隔大於視窗時會永遠數不到門檻（進聊天後有沒有往上滑會影響結果）
-    const validMessages = await loadValidMessages();
+    const allMessages = await loadAllMessages();
+    const validMessages = allMessages.filter(isValidChatMessage);
     if (deps.currentChatId.value !== chatId || validMessages.length === 0) return;
 
     const settings = deps.chatSummarySettings.value;
@@ -468,6 +612,7 @@ ${sourceText}
       // 快照當前消息與設定，避免 4 秒後執行時讀到過期資料
       const snapshot: DiarySnapshot = {
         messages: [...validMessages],
+        allMessages: [...allMessages],
         settings: { ...deps.chatSummarySettings.value },
         capturedAt: Date.now(),
         chatId,
@@ -581,7 +726,9 @@ ${sourceText}
       await promptManagerStore.loadConfig();
 
       // 優先使用快照，否則即時讀取完整歷史
-      const validMessages = snapshot?.messages ?? (await loadValidMessages());
+      const allMessages = snapshot?.allMessages ?? (await loadAllMessages());
+      const validMessages =
+        snapshot?.messages ?? allMessages.filter(isValidChatMessage);
 
       if (validMessages.length === 0) {
         console.warn("📔 無法生成日記：沒有可用的對話訊息");
@@ -618,15 +765,20 @@ ${sourceText}
         currentChatId: chatId,
       });
 
-      const now = new Date();
+      // 日記的「今天」跟著聊天時間走：假時間模式用劇情時間，關閉感知現實時間則交給 AI 從劇情判斷
+      const timeAware = getTimeContext().aware;
+      const now = deps.getChatNow ? deps.getChatNow() : new Date();
       const currentDateTime = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
       const weekDays = ["日", "一", "二", "三", "四", "五", "六"];
-      const currentDateTimeFull = `${currentDateTime} 星期${weekDays[now.getDay()]}`;
+      const currentDateTimeFull = timeAware
+        ? `${currentDateTime} 星期${weekDays[now.getDay()]}`
+        : "以劇情中的日期為準（請依對話內容與場景切換標記判斷，不要使用現實日期）";
 
-      const recentMessagesText = formatMessagesWithDates(
+      const recentMessagesText = buildSourceText(
+        allMessages,
         messagesToUse,
-        () => deps.effectivePersona.value?.name || "User",
-        () => char.data.name,
+        deps.effectivePersona.value?.name || "User",
+        char.data.name,
       );
 
       const diaryPromptDefs = promptManagerStore.diaryPrompts;
@@ -673,10 +825,10 @@ ${sourceText}
         diaryPrompts.push(
           {
             role: "system",
-            content: `你是 ${char.data.name}，正在寫一篇私人日記。現在的真實時間是 ${currentDateTimeFull}。請用第一人稱，以 ${char.data.name} 的視角和語氣，記錄你對最近與 ${deps.effectivePersona.value?.name || "User"} 互動的感受和想法。
+            content: `你是 ${char.data.name}，正在寫一篇私人日記。現在的時間是 ${currentDateTimeFull}。請用第一人稱，以 ${char.data.name} 的視角和語氣，記錄你對最近與 ${deps.effectivePersona.value?.name || "User"} 互動的感受和想法。
 
 日記應該：
-- 使用今天的真實日期（${currentDateTimeFull}）
+- 日記日期：${currentDateTimeFull}
 - 反映 ${char.data.name} 的性格特點
 - 嚴格基於以下對話內容，不要編造沒有發生過的事
 - 包含對互動的真實感受
@@ -851,7 +1003,8 @@ ${recentMessagesText}
       const actualMode = actualReadSettings.actualMessageMode;
 
       // 從完整歷史過濾 user/ai 消息後用統一算法裁切（與 ChatScreen / 日記一致）
-      const validMsgs = await loadValidMessages();
+      const allMsgs = await loadAllMessages();
+      const validMsgs = allMsgs.filter(isValidChatMessage);
       const messagesToRead = sliceMessagesBySettings(
         validMsgs,
         actualCount,
@@ -862,10 +1015,11 @@ ${recentMessagesText}
       }
 
       const userName = deps.effectivePersona.value?.name || "User";
-      const recentMessages = formatMessagesWithDates(
+      const recentMessages = buildSourceText(
+        allMsgs,
         messagesToRead,
-        () => userName,
-        () => char.data.name,
+        userName,
+        char.data.name,
       );
 
       const summaryPrompts: Array<{
@@ -905,7 +1059,7 @@ ${recentMessagesText}
         summaryPrompts.push(
           {
             role: "system",
-            content: `你是 ${char.data.name}。請以第一人稱（「我」）總結以下與 ${userName} 的對話，保留關鍵事件、情感變化和重要信息，字數 100-300 字。對話中的 [YYYY/MM/DD] 為真實日期，請使用具體日期。直接輸出總結內容，不要有前言。`,
+            content: `你是 ${char.data.name}。請以第一人稱（「我」）總結以下與 ${userName} 的對話，保留關鍵事件、情感變化和重要信息，字數 100-300 字。請依對話開頭的時間說明寫出具體日期或時間點。直接輸出總結內容，不要有前言。`,
           },
           {
             role: "user",
@@ -1409,7 +1563,8 @@ ${recentMessagesText}
     if (diaryGeneratingLock.value) return;
     diaryGeneratingLock.value = true;
     // 快照完整歷史，使用覆蓋設定或已保存設定
-    const validMessages = await loadValidMessages();
+    const allMessages = await loadAllMessages();
+    const validMessages = allMessages.filter(isValidChatMessage);
     const settings = overrideSettings
       ? {
           ...deps.chatSummarySettings.value,
@@ -1420,6 +1575,7 @@ ${recentMessagesText}
       : { ...deps.chatSummarySettings.value };
     const snapshot: DiarySnapshot = {
       messages: [...validMessages],
+      allMessages: [...allMessages],
       settings,
       capturedAt: Date.now(),
       chatId: deps.currentChatId.value || deps.chatId,

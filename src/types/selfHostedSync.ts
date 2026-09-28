@@ -378,6 +378,8 @@ export type SyncChatRecordPayload = Pick<
   | "fakeTimeMode"
   | "fakeTimeLoop"
   | "fakeTimeOffset"
+  | "storyClockPausedAt"
+  | "storyClockOpeningSince"
   | "minimaxTTSEnabled"
   | "imageSearchEnabled"
   | "speakerMode"

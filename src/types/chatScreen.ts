@@ -19,6 +19,8 @@ export interface ChatScreenMessage {
   role: "user" | "ai" | "system";
   content: string;
   timestamp: number;
+  /** 劇情時間：建立當下的聊天有效時間（假時間模式下與 timestamp 不同） */
+  storyTime?: number;
   turnId?: string;
   swipes?: string[];
   swipeId?: number;

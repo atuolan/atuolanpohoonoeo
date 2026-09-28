@@ -1,4 +1,4 @@
-import { needsParsing, parseAIResponse, stripRabbitThinking } from "@/services/ResponseParser";
+import { needsParsing, parseAIResponse, stripStateThinking } from "@/services/ResponseParser";
 import type { Chat, ChatMessage } from "@/types/chat";
 import type { ChatScreenMessage } from "@/types/chatScreen";
 
@@ -260,7 +260,7 @@ export function sanitizeStreamingContentForStorage(content: string): string {
     console.warn("[ChatScreen] 清理流式內容供持久化時解析失敗，改用正則回退:", error);
   }
 
-  return stripRabbitThinking(trimmed, true)
+  return stripStateThinking(trimmed, true)
     .replace(/<think(?:ing)?>[\s\S]*?(<\/think(?:ing)?>|$)/gi, "")
     .replace(/<\/?content>/gi, "")
     .replace(/<\/?msg>/gi, "")
@@ -286,6 +286,7 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     status: "sent" as const,
     createdAt: m.timestamp ?? m.createdAt ?? Date.now(),
     updatedAt: m.timestamp ?? m.updatedAt ?? m.createdAt ?? Date.now(),
+    storyTime: typeof m.storyTime === "number" ? m.storyTime : undefined,
     swipes: normalizeSwipeList(m.swipes),
     swipeId: m.swipeId,
     roundSwipes: normalizeRoundSwipes(m.roundSwipes),

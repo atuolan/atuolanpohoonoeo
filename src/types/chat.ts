@@ -257,6 +257,8 @@ export interface ChatMessage {
   createdAt: number;
   /** 更新時間 */
   updatedAt: number;
+  /** 劇情時間：建立當下的聊天有效時間（假時間模式下與 createdAt 不同；舊訊息沒有此欄位） */
+  storyTime?: number;
 
   // --- 滑動功能 ---
   /** 滑動消息列表（多個回覆選項） */
@@ -983,8 +985,8 @@ export interface Chat {
   /** 感知現實時間（關閉後不注入時間標籤和時間提示詞，讓用戶可以自由使用時間跳轉魔法） */
   enableRealTimeAwareness?: boolean;
 
-  /** 假時間模式：real=真實時間, loop=輪迴時間, offset=偏移時間 */
-  fakeTimeMode?: "real" | "loop" | "offset";
+  /** 假時間模式：real=真實時間, loop=輪迴時間, offset=偏移時間, story=劇情時鐘（面對面時暫停） */
+  fakeTimeMode?: "real" | "loop" | "offset" | "story";
   /** 輪迴時間設定（fakeTimeMode = 'loop' 時使用） */
   fakeTimeLoop?: {
     /** 輪迴起始日期時間 ISO string, e.g. "2024-01-01T00:00:00" */
@@ -992,8 +994,12 @@ export interface Chat {
     /** 輪迴結束日期時間 ISO string, e.g. "2024-01-07T23:59:59" */
     endDateTime: string;
   };
-  /** 時間偏移量（fakeTimeMode = 'offset' 時使用，毫秒） */
+  /** 時間偏移量（offset / loop / story 模式使用，毫秒） */
   fakeTimeOffset?: number;
+  /** 劇情時鐘：面對面期間暫停在這個劇情時間（毫秒）；未暫停時為 undefined */
+  storyClockPausedAt?: number;
+  /** 劇情時鐘：面對面開場尚未由 AI 決定見面時間時，記錄進入面對面的現實時間（毫秒） */
+  storyClockOpeningSince?: number;
 
   /** 是否啟用 MiniMax TTS 語音合成（單聊天存取，默認關閉） */
   minimaxTTSEnabled?: boolean;

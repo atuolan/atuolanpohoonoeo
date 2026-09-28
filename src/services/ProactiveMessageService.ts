@@ -15,6 +15,7 @@ import { useCharactersStore } from "@/stores/characters";
 import { useChatStore } from "@/stores/chat";
 import { pushNotificationService } from "./PushNotificationService";
 import { pickGenerationToggles } from "@/utils/generationToggles";
+import { computeChatNow } from "@/utils/fakeTime";
 
 export interface ProactiveMessageSettings {
   enabled: boolean;
@@ -637,6 +638,11 @@ export class ProactiveMessageService {
         chatPromptToggles: groupChatOverrides.chatPromptToggles,
         chatLocalPrompts: groupChatOverrides.chatLocalPrompts,
         enableRealTimeAwareness: groupChat.enableRealTimeAwareness !== false,
+        fakeTimeOverride:
+          (groupChat.fakeTimeMode ?? "real") !== "real"
+            ? computeChatNow(groupChat)
+            : undefined,
+        fakeTimeMode: groupChat.fakeTimeMode ?? "real",
         groupChatMode: true,
         groupMembers,
         groupName: groupMetadata.groupName,
@@ -766,6 +772,9 @@ export class ProactiveMessageService {
         return;
       }
 
+      for (const m of newMessages) {
+        m.storyTime = computeChatNow(groupChat, new Date(m.createdAt)).getTime();
+      }
       await appendMessages(groupChat.id, newMessages);
       await refreshChatDerivedMetadata(groupChat.id);
       await incrementLocalChatUnreadCount(groupChat.id, newMessages.length);
@@ -1169,6 +1178,11 @@ export class ProactiveMessageService {
         chatLocalPrompts: proactiveOverrides.chatLocalPrompts,
         // 從聊天記錄載入感知現實時間設定（默認開啟）
         enableRealTimeAwareness: chat.enableRealTimeAwareness !== false,
+        fakeTimeOverride:
+          (chat.fakeTimeMode ?? "real") !== "real"
+            ? computeChatNow(chat)
+            : undefined,
+        fakeTimeMode: chat.fakeTimeMode ?? "real",
         ongoingCallContext,
         gamePlayingContext: options?.gamePlayingContext,
       });
@@ -1513,6 +1527,9 @@ export class ProactiveMessageService {
             : aiContent.slice(0, 80);
 
           // v24：用 appendChatMessages 追加新訊息（無競態風險，不需讀取-修改-寫回）
+          for (const m of newMessages) {
+            m.storyTime = computeChatNow(chat, new Date(m.createdAt)).getTime();
+          }
           await appendMessages(chat.id, newMessages);
           this._emitChatUpdated(chat.id);
 

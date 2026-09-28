@@ -45,8 +45,9 @@ const PROMPT_MANAGER_CONFIG_VERSION = 4;
  * 面對面提示詞有重大更新、舊設定無法沿用時 +1，
  * 所有已存過設定的用戶啟動時都會被引導重置面對面提示詞。
  * 1：改用兔子空間大爆走預設（<|Rabbit_Thinking|> 思考格式）
+ * 2：改用篝火預設（<|state|> 思考格式、{{延後讀取::}} 變量），移除舊的必要條目
  */
-export const FACE_TO_FACE_PROMPT_RESET_VERSION = 1;
+export const FACE_TO_FACE_PROMPT_RESET_VERSION = 2;
 
 /** 新建的配置已是最新面對面提示詞，不需要再引導重置 */
 function createFreshPromptManagerConfig(): PromptManagerConfig {
@@ -125,6 +126,27 @@ function fixLockedPromptContent(prompts: PromptDefinition[] | undefined): void {
     for (const [from, to] of fixes) {
       prompt.content = prompt.content.split(from).join(to);
     }
+  }
+}
+
+/**
+ * 已停用的面對面系統條目：載入時從已存儲的提示詞與順序中移除
+ * （這些條目曾是鎖定的必要條目，用戶無法自行刪除）
+ */
+const RETIRED_FACE_TO_FACE_PROMPT_IDS = new Set([
+  "f2fExampleScript", // 奇蹟實現的步驟（<|Rabbit_Thinking|> 思考流程）
+  "f2f_custom_1772288204573", // 開始（預填 <thinking>）
+  "f2fCharacterSettings", // 角色設定（面對面角色設定框架）
+]);
+
+function removeRetiredPrompts<T extends { identifier: string }>(
+  items: T[] | undefined | null,
+  retiredIds: Set<string>,
+): void {
+  if (!items) return;
+  const kept = items.filter((item) => !retiredIds.has(item.identifier));
+  if (kept.length !== items.length) {
+    items.splice(0, items.length, ...kept);
   }
 }
 
@@ -846,6 +868,9 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
       );
     }
 
+    removeRetiredPrompts(stored.faceToFacePrompts, RETIRED_FACE_TO_FACE_PROMPT_IDS);
+    removeRetiredPrompts(stored.faceToFacePromptOrder, RETIRED_FACE_TO_FACE_PROMPT_IDS);
+
     // 確保群聊模式提示詞存在
     if (!stored.groupChatPrompts) {
       stored.groupChatPrompts = defaults.groupChatPrompts;
@@ -1069,6 +1094,14 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     };
   }
 
+  // 連續新增時 Date.now() 可能相同，確保時間戳遞增以免 identifier 重複
+  let lastCustomIdTimestamp = 0;
+  function createCustomIdentifier(prefix: string): string {
+    const now = Date.now();
+    lastCustomIdTimestamp = now > lastCustomIdTimestamp ? now : lastCustomIdTimestamp + 1;
+    return `${prefix}_${lastCustomIdTimestamp}`;
+  }
+
   function insertOrderEntryAt(
     order: PromptOrderEntry[],
     entry: PromptOrderEntry,
@@ -1096,7 +1129,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     prompt: Partial<PromptDefinition>,
     options?: PromptInsertOptions,
   ): Promise<PromptDefinition> {
-    const identifier = `custom_${Date.now()}`;
+    const identifier = createCustomIdentifier("custom");
     const newPrompt = createCustomPromptDefinition(
       identifier,
       prompt,
@@ -2098,7 +2131,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
       );
     }
 
-    const identifier = `f2f_custom_${Date.now()}`;
+    const identifier = createCustomIdentifier("f2f_custom");
     const newPrompt = createCustomPromptDefinition(
       identifier,
       prompt,
@@ -2137,7 +2170,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
       );
     }
 
-    const identifier = `gc_custom_${Date.now()}`;
+    const identifier = createCustomIdentifier("gc_custom");
     const newPrompt = createCustomPromptDefinition(
       identifier,
       prompt,
@@ -2230,7 +2263,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     if (!mapping) return addCustomPrompt(prompt, options); // fallback
 
     const prefix = prefixMap[mode] || "custom";
-    const identifier = `${prefix}_${Date.now()}`;
+    const identifier = createCustomIdentifier(prefix);
     const newPrompt = createCustomPromptDefinition(
       identifier,
       prompt,

@@ -68,7 +68,9 @@ import ejs from "ejs";
 import _ from "lodash";
 import { createStTemplateContext } from "@/services/StTemplateContextService";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
+import { resolveStoryTime } from "@/utils/fakeTime";
 import { getMacroEngine } from "../macros/MacroEngine";
+import { resolveDeferredVariables } from "./deferredVariables";
 import { WorldInfoScanner } from "../worldinfo/WorldInfoScanner";
 
 /**
@@ -347,7 +349,11 @@ export interface PromptBuilderOptions {
   /** 假時間覆蓋（由 useChatFakeTime 計算後傳入，替代 new Date()） */
   fakeTimeOverride?: Date;
   /** 假時間模式（用於決定是否注入 time-jump 提示詞） */
-  fakeTimeMode?: "real" | "loop" | "offset";
+  fakeTimeMode?: "real" | "loop" | "offset" | "story";
+  /** 劇情時鐘是否暫停中（面對面時，現實時間流逝不會推進劇情時間） */
+  storyClockPaused?: boolean;
+  /** 劇情時鐘剛進入面對面、尚未決定見面時間（由 AI 依前文判斷） */
+  storyClockOpening?: boolean;
   /** 健身資訊（由外部傳入） */
   fitnessInfo?: {
     todayWorkout?: string;
@@ -545,7 +551,7 @@ export class PromptBuilder {
             }
           }
           if (options.enableRealTimeAwareness !== false && m.createdAt) {
-            return `${this.formatMsgTimeTag(m.createdAt)} ${content}`;
+            return `${this.formatMsgTimeTag(m)} ${content}`;
           }
           return content;
         })
@@ -691,7 +697,7 @@ export class PromptBuilder {
             }
           }
           if (options.enableRealTimeAwareness !== false && m.createdAt) {
-            return `${this.formatMsgTimeTag(m.createdAt)} ${content}`;
+            return `${this.formatMsgTimeTag(m)} ${content}`;
           }
           return content;
         })
@@ -735,14 +741,16 @@ export class PromptBuilder {
   }
 
   /**
-   * 格式化消息時間戳標籤（考慮假時間偏移）
+   * 格式化消息時間戳標籤
+   * 優先使用訊息建立時記下的劇情時間；舊訊息沒有 storyTime 時才套用目前的假時間偏移
    */
-  private formatMsgTimeTag(createdAt: number): string {
-    let d = new Date(createdAt);
-    if (this.options.fakeTimeOverride) {
-      const offset = this.options.fakeTimeOverride.getTime() - Date.now();
-      d = new Date(createdAt + offset);
-    }
+  private formatMsgTimeTag(msg: { createdAt: number; storyTime?: number }): string {
+    // 劇情時鐘的舊訊息是在現實時間發生的，不套用暫停點的偏移
+    const fallbackOffset =
+      this.options.fakeTimeOverride && this.options.fakeTimeMode !== "story"
+        ? this.options.fakeTimeOverride.getTime() - Date.now()
+        : 0;
+    const d = new Date(resolveStoryTime(msg, fallbackOffset));
     const y = d.getFullYear();
     const mon = (d.getMonth() + 1).toString().padStart(2, "0");
     const day = d.getDate().toString().padStart(2, "0");
@@ -811,7 +819,7 @@ export class PromptBuilder {
       !isSystemMsg &&
       m.createdAt
     ) {
-      return `${this.formatMsgTimeTag(m.createdAt)} ${finalContent}`;
+      return `${this.formatMsgTimeTag(m)} ${finalContent}`;
     }
     return finalContent;
   }
@@ -1332,6 +1340,11 @@ export class PromptBuilder {
     }
     builtMessages.push(...postHistoryMessages);
 
+    // 6.5 所有條目的 setvar 都已執行，替換 {{延後讀取::變量名}}
+    const resolvedMessages = await resolveDeferredVariables(builtMessages, (name) =>
+      this.readDeferredVariable(name),
+    );
+
     // 🐛 調試：檢查各部分的消息數量
     console.group("📦 [PromptBuilder] 最終組裝調試");
     console.log("preHistoryMessages:", preHistoryMessages.length);
@@ -1342,7 +1355,7 @@ export class PromptBuilder {
     console.groupEnd();
 
     // 7. 合併連續相同 role 的訊息
-    const mergedMessages = this.mergeConsecutiveMessages(builtMessages);
+    const mergedMessages = this.mergeConsecutiveMessages(resolvedMessages);
 
     return {
       messages: mergedMessages,
@@ -1491,6 +1504,14 @@ export class PromptBuilder {
    * 根據標識符構建提示詞內容
    * 現在會正確使用 promptDef.role 來設定消息角色
    */
+  /**
+   * 讀取延後讀取的聊天變量；變量值裡的宏（{{user}} 等）會再展開一次，與 getvar 取值後的行為一致
+   */
+  private async readDeferredVariable(name: string): Promise<string> {
+    const value = await this.macroEngine.substitute(`{{getvar::${name}}}`);
+    return value ? this.macroEngine.substitute(value) : "";
+  }
+
   private async buildPromptContent(
     identifier: string,
     wiResult: WIActivatedResult,
@@ -1831,7 +1852,7 @@ export class PromptBuilder {
           }
 
           if (this.options.enableRealTimeAwareness !== false && msg.createdAt) {
-            msgContent = `${this.formatMsgTimeTag(msg.createdAt)} ${msgContent}`;
+            msgContent = `${this.formatMsgTimeTag(msg)} ${msgContent}`;
           }
 
           builtMessages.push({
@@ -1907,8 +1928,12 @@ export class PromptBuilder {
       case "timeJump":
       case "f2fTimeJump":
       case "gcTimeJump":
-        // 只有偏移時間模式才注入 time-jump 說明
-        if (this.options.fakeTimeMode !== "offset") {
+        // 只有偏移時間／劇情時鐘模式、且開啟感知現實時間時才注入時間控制說明
+        if (
+          (this.options.fakeTimeMode !== "offset" &&
+            this.options.fakeTimeMode !== "story") ||
+          this.options.enableRealTimeAwareness === false
+        ) {
           return null;
         }
         {
@@ -1919,7 +1944,15 @@ export class PromptBuilder {
           const h = now.getHours().toString().padStart(2, "0");
           const m = now.getMinutes().toString().padStart(2, "0");
           const currentDatetime = `${y}-${mon}-${day}T${h}:${m}`;
-          const content = `[時間跳轉]\n當故事需要時間跳轉時（如「兩個月後」「三天後」），在 </content> 之後輸出：\n<time-jump datetime="YYYY-MM-DDTHH:mm" reason="跳轉原因"/>\n例如：<time-jump datetime="${currentDatetime}" reason="當前時間點"/>\n此標籤會自動更新故事時間軸，之後的時間感知都會以新時間為基準。`;
+          const jumpLine = `<time-jump datetime="YYYY-MM-DDTHH:mm" reason="跳轉原因"/>\n例如：<time-jump datetime="${currentDatetime}" reason="當前時間點"/>`;
+          const advanceLine = `<time-advance minutes="經過的分鐘數" reason="原因"/>（也可用 hours="小時數"）`;
+          const nowText = `${y}/${mon}/${day} ${h}:${m}`;
+          const openingText = this.options.storyClockOpening
+            ? `\n\n【剛從線上進入面對面】前一則訊息的時間是 ${nowText}。見面不一定緊接在那一刻，請依前文內容判斷這次面對面發生在什麼時候：\n- 前文約好了時間或日子（例如「明天下午三點見」「週末去海邊」）→ 用 time-jump 跳到那個時間\n- 需要一段時間才見得到面（例如「我現在過去找你」）→ 用 time-advance 推進路程時間\n- 就是接續剛才的當下 → 不用輸出\n這一輪的描寫請符合你決定的時間。`
+            : "";
+          const content = this.options.storyClockPaused
+            ? `[劇情時間]\n現在是面對面相處，劇情時間由你依故事推進，現實時間的流逝不算數；訊息上的時間就是劇情時間，你不推進它就會一直停在原地。\n每次回覆時請判斷這段劇情實際經過了多久：\n- 經過了一段時間（例如聊了一陣子、吃完一頓飯、散步到海邊），在 </content> 之後輸出：\n${advanceLine}\n  分鐘數依你描寫的內容合理估計，幾句對話約 1～5 分鐘，一頓飯約 30～60 分鐘。\n- 大幅跳轉（例如「隔天早上」「兩個月後」），在 </content> 之後輸出：\n${jumpLine}\n- 幾乎沒有經過時間（同一個當下的對話）就不用輸出。\n不要自行假設過了很久，也不要讓時間跳得比劇情描寫更快。${openingText}`
+            : `[時間跳轉]\n當故事需要時間跳轉時（如「兩個月後」「三天後」），在 </content> 之後輸出：\n${jumpLine}\n若只是往後經過一段時間（如「兩小時後」），可改用：\n${advanceLine}\n這些標籤會自動更新故事時間軸，之後的時間感知都會以新時間為基準。`;
           return { role: getRole(), content, identifier };
         }
 
@@ -3259,9 +3292,9 @@ speed：0.5~2.0，正常時省略
       ) {
         // 面對面模式使用不易被模型模仿的格式，避免模型把 [time:...] 輸出到正文
         if (this.options.faceToFaceMode) {
-          msgContent = `<!--t:${this.formatMsgTimeTag(msg.createdAt)}-->${msgContent}`;
+          msgContent = `<!--t:${this.formatMsgTimeTag(msg)}-->${msgContent}`;
         } else {
-          msgContent = `${this.formatMsgTimeTag(msg.createdAt)} ${msgContent}`;
+          msgContent = `${this.formatMsgTimeTag(msg)} ${msgContent}`;
         }
       }
 

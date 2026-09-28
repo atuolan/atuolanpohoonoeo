@@ -11,6 +11,7 @@ import {
   Fish,
   Flower2,
   ImagePlus,
+  Info,
   Moon,
   Pencil,
   PhoneIncoming,
@@ -59,11 +60,13 @@ const props = defineProps<{
   nightMode: boolean;
   chatEnableRealTimeAwareness: boolean;
   showFakeTimePanel: boolean;
-  fakeTimeMode: "real" | "loop" | "offset";
+  fakeTimeMode: "real" | "loop" | "offset" | "story";
   fakeTimeLoopStart: string;
   fakeTimeLoopEnd: string;
   offsetStartDateTime: string;
   formattedFakeTime: string;
+  storyClockPaused: boolean;
+  storyOpeningPending: boolean;
   timeJumpInput: string;
   chatDoNotDisturb: boolean;
   enablePhoneDecision: boolean;
@@ -98,12 +101,15 @@ const emit = defineEmits<{
   (e: "toggle-night-mode"): void;
   (e: "toggle-real-time-awareness"): void;
   (e: "toggle-fake-time-panel"): void;
-  (e: "set-fake-time-mode", mode: "real" | "loop" | "offset"): void;
+  (e: "set-fake-time-mode", mode: "real" | "loop" | "offset" | "story"): void;
   (e: "update-fake-time-loop-start", value: string): void;
   (e: "update-fake-time-loop-end", value: string): void;
   (e: "update-offset-start-datetime", value: string): void;
   (e: "update-time-jump-input", value: string): void;
   (e: "handle-time-jump"): void;
+  (e: "advance-story-time", minutes: number): void;
+  (e: "story-next-morning"): void;
+  (e: "resume-story-from-last"): void;
   (e: "toggle-chat-do-not-disturb"): void;
   (e: "toggle-phone-decision"): void;
   (e: "toggle-novel-ai-image"): void;
@@ -142,11 +148,41 @@ function onOffsetStartDateTimeChange(event: Event) {
   emit("update-offset-start-datetime", (event.target as HTMLInputElement).value);
 }
 
+const STORY_ADVANCE_OPTIONS = [
+  { label: "+10 分", minutes: 10 },
+  { label: "+30 分", minutes: 30 },
+  { label: "+1 小時", minutes: 60 },
+];
+
+const FAKE_TIME_MODE_LABELS: Record<"real" | "loop" | "offset" | "story", { short: string; full: string }> = {
+  real: { short: "真實", full: "真實時間" },
+  loop: { short: "輪迴", full: "輪迴時間" },
+  offset: { short: "偏移", full: "偏移時間" },
+  story: { short: "劇情", full: "劇情時鐘" },
+};
+
 function onTimeJumpInput(event: Event) {
   emit("update-time-jump-input", (event.target as HTMLInputElement).value);
 }
 
 const themeStore = useThemeStore();
+
+// 時間設定說明（感知現實時間關閉時也能打開）
+const showTimeHelp = ref(false);
+
+const FAKE_TIME_MODE_HINTS: Record<"real" | "loop" | "offset" | "story", string> = {
+  real: "AI 看到的就是你手機的現在時間。",
+  loop: "在起始與結束之間循環：設定後從起始時間開始走，走到結束就回到起始，適合「重複同一天／同一週」的劇情。",
+  offset: "設定劇情裡的「現在」，之後跟著現實一起流動（現實過 1 小時，劇情也過 1 小時）。AI 也能用時間跳轉把劇情往後推。",
+  story: "線上聊天時跟著現實流動；進入面對面時由 AI 依前文決定見面時間（約好的時間、路程，或接續當下），之後只隨劇情推進（AI 依劇情自己判斷經過多久，或你手動調整）。切回線上會從最後的劇情時間繼續走。",
+};
+
+const loopRangeInvalid = computed(() => {
+  if (!props.fakeTimeLoopStart || !props.fakeTimeLoopEnd) return false;
+  const start = new Date(props.fakeTimeLoopStart).getTime();
+  const end = new Date(props.fakeTimeLoopEnd).getTime();
+  return !isNaN(start) && !isNaN(end) && end <= start;
+});
 
 // 偵測 chat-screen 實際渲染的桌布是否為深色（包含每個聊天的自訂桌布）
 const headerEl = ref<HTMLElement | null>(null);
@@ -496,11 +532,31 @@ const isDarkBackground = computed(() =>
               <div class="toggle-item-info">
                 <Clock :size="20" :stroke-width="1.75" />
                 <span>感知現實時間</span>
+                <button
+                  type="button"
+                  :class="['time-help-btn', { active: showTimeHelp }]"
+                  aria-label="時間設定說明"
+                  title="時間設定說明"
+                  @click.stop="showTimeHelp = !showTimeHelp"
+                >
+                  <Info :size="15" :stroke-width="2" />
+                </button>
               </div>
               <label class="toggle-switch-mini">
                 <input type="checkbox" aria-label="感知現實時間" :checked="chatEnableRealTimeAwareness" @change="emit('toggle-real-time-awareness')" />
                 <span class="toggle-slider-mini"></span>
               </label>
+            </div>
+            <div v-if="showTimeHelp" class="time-help-panel">
+              <p class="time-help-title">感知現實時間</p>
+              <p><b>開啟</b>：每則訊息會附上時間，AI 知道現在幾點、隔了多久沒聊。總結和日記會寫上具體日期。</p>
+              <p><b>關閉</b>：不附任何時間，劇情時間完全由故事推進（適合慢節奏 RP）。總結會依劇情內容和「時空跳轉」判斷時間，並參考上一篇總結延續日期，不會寫入現實日期。</p>
+              <p class="time-help-title">時間模式（開啟時可選）</p>
+              <p><b>真實時間</b>：{{ FAKE_TIME_MODE_HINTS.real }}</p>
+              <p><b>輪迴時間</b>：{{ FAKE_TIME_MODE_HINTS.loop }}</p>
+              <p><b>偏移時間</b>：{{ FAKE_TIME_MODE_HINTS.offset }}</p>
+              <p><b>劇情時鐘</b>：{{ FAKE_TIME_MODE_HINTS.story }}適合面對面劇情：現實隔了半天回來，故事裡還是剛才那一刻。</p>
+              <p class="time-help-note">每則訊息會記下發送當下的劇情時間，之後切換模式或跳轉，舊訊息的時間也不會跟著變。總結使用的也是劇情時間。</p>
             </div>
             <div v-if="chatEnableRealTimeAwareness" class="dropdown-toggle-item" style="cursor: pointer" @click="emit('toggle-fake-time-panel')">
               <div class="toggle-item-info">
@@ -508,15 +564,16 @@ const isDarkBackground = computed(() =>
                 <span>時間模式</span>
               </div>
               <span style="font-size: 11px; opacity: 0.7">
-                {{ fakeTimeMode === 'real' ? '真實' : fakeTimeMode === 'loop' ? '輪迴' : '偏移' }}
+                {{ FAKE_TIME_MODE_LABELS[fakeTimeMode].short }}{{ fakeTimeMode === 'story' && storyClockPaused ? '・暫停中' : '' }}
               </span>
             </div>
             <div v-if="showFakeTimePanel && chatEnableRealTimeAwareness" class="fake-time-panel">
               <div class="fake-time-mode-selector">
-                <button v-for="m in ['real', 'loop', 'offset'] as const" :key="m" :class="['fake-time-mode-btn', { active: fakeTimeMode === m }]" @click="emit('set-fake-time-mode', m)">
-                  {{ m === 'real' ? '真實時間' : m === 'loop' ? '輪迴時間' : '偏移時間' }}
+                <button v-for="m in ['real', 'loop', 'offset', 'story'] as const" :key="m" :class="['fake-time-mode-btn', { active: fakeTimeMode === m }]" @click="emit('set-fake-time-mode', m)">
+                  {{ FAKE_TIME_MODE_LABELS[m].full }}
                 </button>
               </div>
+              <p class="fake-time-hint">{{ FAKE_TIME_MODE_HINTS[fakeTimeMode] }}</p>
               <div v-if="fakeTimeMode === 'loop'" class="fake-time-config">
                 <label class="fake-time-label">
                   起始
@@ -526,15 +583,35 @@ const isDarkBackground = computed(() =>
                   結束
                   <input type="datetime-local" :value="fakeTimeLoopEnd" class="fake-time-input" @change="onFakeTimeLoopEndChange" />
                 </label>
+                <p v-if="loopRangeInvalid" class="fake-time-warning">結束時間要晚於起始時間，目前先使用真實時間。</p>
+                <p v-else-if="!fakeTimeLoopStart || !fakeTimeLoopEnd" class="fake-time-warning">請設定起始和結束時間，設定完成前使用真實時間。</p>
               </div>
-              <div v-if="fakeTimeMode === 'offset'" class="fake-time-config">
+              <div v-if="fakeTimeMode === 'story'" :class="['story-clock-status', { paused: storyClockPaused }]">
+                {{
+                  !storyClockPaused
+                    ? '線上聊天：時間跟著現實流動，進入面對面會自動暫停'
+                    : storyOpeningPending
+                      ? '剛進入面對面：下一輪由 AI 依前文決定見面時間（約好的時間、路程，或接續當下）'
+                      : '面對面中：時間暫停，只隨劇情推進'
+                }}
+              </div>
+              <div v-if="fakeTimeMode === 'offset' || fakeTimeMode === 'story'" class="fake-time-config">
                 <label class="fake-time-label">
-                  設定現在時間
+                  劇情現在時間
                   <input type="datetime-local" :value="offsetStartDateTime" class="fake-time-input" @change="onOffsetStartDateTimeChange" />
                 </label>
               </div>
               <div v-if="fakeTimeMode !== 'real'" class="fake-time-preview">AI 感知時間：{{ formattedFakeTime }}</div>
-              <div v-if="fakeTimeMode !== 'real'" class="fake-time-jump">
+              <div v-if="fakeTimeMode === 'offset' || fakeTimeMode === 'story'" class="story-advance-row">
+                <button v-for="opt in STORY_ADVANCE_OPTIONS" :key="opt.minutes" type="button" class="story-advance-btn" @click="emit('advance-story-time', opt.minutes)">
+                  {{ opt.label }}
+                </button>
+                <button type="button" class="story-advance-btn" @click="emit('story-next-morning')">隔天早上</button>
+              </div>
+              <button v-if="fakeTimeMode === 'story'" type="button" class="story-resume-btn" @click="emit('resume-story-from-last')">
+                接續最後一則訊息的時間
+              </button>
+              <div v-if="fakeTimeMode === 'loop'" class="fake-time-jump">
                 <span style="font-size: 12px; color: var(--color-text-secondary); flex-shrink: 0">跳轉到</span>
                 <input :value="timeJumpInput" type="datetime-local" class="fake-time-input" style="max-width: none; flex: 1" @input="onTimeJumpInput" />
                 <button class="fake-time-jump-btn" @click="emit('handle-time-jump')">跳轉</button>
@@ -1493,6 +1570,148 @@ const isDarkBackground = computed(() =>
   background: var(--color-background);
   color: var(--color-text);
   max-width: 180px;
+}
+
+.time-help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: -6px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: opacity 0.2s, color 0.2s;
+
+  .toggle-item-info & svg {
+    width: 15px;
+    height: 15px;
+    color: currentColor;
+  }
+
+  &:hover,
+  &.active {
+    opacity: 1;
+    color: var(--color-primary);
+  }
+}
+
+.time-help-panel {
+  margin: 0 18px 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  background: var(--color-background);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+
+  p {
+    margin: 0 0 6px;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  b {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+}
+
+.time-help-title {
+  font-weight: 600;
+  color: var(--color-text);
+
+  &:not(:first-child) {
+    margin-top: 10px !important;
+  }
+}
+
+.time-help-note {
+  margin-top: 8px !important;
+  opacity: 0.85;
+}
+
+.fake-time-hint {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.fake-time-warning {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-error, #e5484d);
+}
+
+.story-clock-status {
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+  background: var(--color-background);
+  overflow-wrap: anywhere;
+
+  &.paused {
+    color: var(--color-primary);
+    background: var(--color-primary-light, rgba(var(--color-primary-rgb, 99, 102, 241), 0.1));
+  }
+}
+
+.story-advance-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.story-advance-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 5px 4px;
+  font-size: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:active {
+    background: var(--color-primary);
+    color: white;
+    border-color: var(--color-primary);
+  }
+}
+
+.story-resume-btn {
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+
+  &:active {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+  }
 }
 
 .fake-time-preview {
