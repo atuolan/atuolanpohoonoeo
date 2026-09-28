@@ -101,6 +101,35 @@ onUnmounted(() => {
   background: rgba(0, 0, 0, 0.4);
 }
 
+// 開關動畫（<Transition name="f2f-sheet">）：遮罩原地淡入淡出，只有面板從下方滑動。
+// Vue 只量根元素的 transition 時間，所以遮罩與面板必須用相同的時長
+.f2f-sheet-enter-active,
+.f2f-sheet-leave-active {
+  transition: opacity 0.3s ease;
+
+  .f2f-panel {
+    transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+.f2f-sheet-enter-from,
+.f2f-sheet-leave-to {
+  opacity: 0;
+
+  .f2f-panel {
+    transform: translateY(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .f2f-sheet-enter-active,
+  .f2f-sheet-leave-active,
+  .f2f-sheet-enter-active .f2f-panel,
+  .f2f-sheet-leave-active .f2f-panel {
+    transition: none;
+  }
+}
+
 .f2f-panel {
   width: 100%;
   max-width: 520px;

@@ -9097,7 +9097,7 @@ useChatCleanup({
       @clear-chat-history="clearChatHistory"
     />
     <Teleport to="body">
-      <Transition name="slide-up">
+      <Transition name="f2f-sheet">
         <FaceToFacePanel v-if="showF2FPanel" @close="showF2FPanel = false" />
       </Transition>
     </Teleport>
