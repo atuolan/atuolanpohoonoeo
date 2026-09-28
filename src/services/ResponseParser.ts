@@ -956,20 +956,20 @@ function splitHtmlBlocks(content: string): ParsedMessage[] | null {
 }
 
 /**
- * 兔子預設的 <|Rabbit_Thinking|>...</|Rabbit_Thinking|> 思考區塊
+ * <|state|>...</|state|> 思考區塊
  * （對應酒館正則「隱藏思考」）
  */
-const RABBIT_THINKING_REGEX =
-  /<[^<>]*Rabbit_Thinking[^<>]*>([\s\S]*?)<[^<>]*Rabbit_Thinking[^<>]*>/gis;
+const STATE_THINKING_REGEX =
+  /<[^<>]*state[^<>]*>([\s\S]*?)<[^<>]*state[^<>]*>/gis;
 
 /**
- * 移除 <|Rabbit_Thinking|> 思考區塊。
+ * 移除 <|state|> 思考區塊。
  * allowUnclosed：串流中尚未閉合時，把開頭標籤之後的內容一併隱藏。
  */
-export function stripRabbitThinking(content: string, allowUnclosed = false): string {
-  let stripped = content.replace(RABBIT_THINKING_REGEX, "");
+export function stripStateThinking(content: string, allowUnclosed = false): string {
+  let stripped = content.replace(STATE_THINKING_REGEX, "");
   if (allowUnclosed) {
-    stripped = stripped.replace(/<[^<>]*Rabbit_Thinking[^<>]*>[\s\S]*$/i, "");
+    stripped = stripped.replace(/<[^<>]*state[^<>]*>[\s\S]*$/i, "");
   }
   return stripped;
 }
@@ -984,11 +984,11 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     rawOutput: "",
   };
 
-  // 0. 提取並移除 <|Rabbit_Thinking|> 區塊（兔子預設的思考格式）
-  const rabbitMatch = [...rawResponse.matchAll(RABBIT_THINKING_REGEX)];
-  if (rabbitMatch.length > 0) {
-    result.thinking = rabbitMatch.map((m) => m[1].trim()).join("\n\n");
-    rawResponse = stripRabbitThinking(rawResponse);
+  // 0. 提取並移除 <|state|> 思考區塊
+  const stateMatch = [...rawResponse.matchAll(STATE_THINKING_REGEX)];
+  if (stateMatch.length > 0) {
+    result.thinking = stateMatch.map((m) => m[1].trim()).join("\n\n");
+    rawResponse = stripStateThinking(rawResponse);
   }
 
   // 1. 提取 <think> 內容
@@ -2261,7 +2261,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|Rabbit_Thinking|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }
