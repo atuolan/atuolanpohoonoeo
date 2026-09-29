@@ -67,23 +67,36 @@ export function nextSelection(module: F2FPanelModule, current: string[], optionI
  * 選項的第一個條目是主條目：主條目不存在時整個選項移除；
  * 只有連動條目不存在時保留選項、移除該連動條目。
  * （否則「日文＋外語必開」的日文被刪後，會剩下只含「外語必開」的選項，和其他外語選項互相衝突）
+ *
+ * 一個條目只屬於一個模塊：已被前面模塊使用的條目，在後面的模塊中視同不存在
+ * （匯入的配置可能違反這條規則；同一模塊內的選項仍可共用條目）
  */
 export function reconcileLayout(
   layout: F2FPanelLayout,
   existingIds: Set<string>,
 ): { layout: F2FPanelLayout; staleCount: number } {
   let staleCount = 0;
+  const claimedBy = new Map<string, string>();
   const modules = layout.modules.map((module) => {
+    const usable = (id: string) => existingIds.has(id) && (claimedBy.get(id) ?? module.id) === module.id;
     const options = module.options.flatMap((option) => {
-      const entries = option.entries.filter((id) => existingIds.has(id));
+      const entries = option.entries.filter(usable);
       staleCount += option.entries.length - entries.length;
-      return existingIds.has(option.entries[0]) ? [{ ...option, entries }] : [];
+      return usable(option.entries[0]) ? [{ ...option, entries }] : [];
     });
+    for (const option of options) {
+      for (const id of option.entries) claimedBy.set(id, module.id);
+    }
     return { ...module, options };
   });
 
+  return { layout: { ...layout, modules, styles: pruneStyles(modules, layout.styles) }, staleCount };
+}
+
+/** 移除風格中已不存在的模塊或選項；某模塊的選擇全部失效時移除該模塊，風格變空時移除風格 */
+export function pruneStyles(modules: F2FPanelModule[], styles: F2FPanelStyle[]): F2FPanelStyle[] {
   const optionIdsByModule = new Map(modules.map((module) => [module.id, new Set(module.options.map((o) => o.id))]));
-  const styles = layout.styles.flatMap((style) => {
+  return styles.flatMap((style) => {
     const selections: Record<string, string[]> = {};
     for (const [moduleId, optionIds] of Object.entries(style.selections)) {
       const validIds = optionIdsByModule.get(moduleId);
@@ -95,8 +108,22 @@ export function reconcileLayout(
     }
     return Object.keys(selections).length > 0 ? [{ ...style, selections }] : [];
   });
+}
 
-  return { layout: { ...layout, modules, styles }, staleCount };
+/** 比較清理前後的風格：選擇被刪減的（changed）與整個被移除的（removed），回傳風格名稱 */
+export function describeStyleImpact(
+  before: F2FPanelStyle[],
+  after: F2FPanelStyle[],
+): { changed: string[]; removed: string[] } {
+  const afterById = new Map(after.map((style) => [style.id, style]));
+  const changed: string[] = [];
+  const removed: string[] = [];
+  for (const style of before) {
+    const next = afterById.get(style.id);
+    if (!next) removed.push(style.name);
+    else if (JSON.stringify(next.selections) !== JSON.stringify(style.selections)) changed.push(style.name);
+  }
+  return { changed, removed };
 }
 
 export function applyStyle(layout: F2FPanelLayout, style: F2FPanelStyle): StateChanges {

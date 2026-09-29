@@ -78,7 +78,7 @@ onUnmounted(() => {
         </button>
       </nav>
       <p v-if="staleCount > 0" class="f2f-notice">
-        有 {{ staleCount }} 個模塊條目已不存在，已自動略過；下次儲存模塊時會一併清除。
+        有 {{ staleCount }} 個模塊條目已不存在或和其他模塊重複，已自動略過；下次儲存模塊時會一併清除。
       </p>
       <div class="f2f-panel-body">
         <F2FStylesTab v-if="tab === 'styles'" @editing="editing = $event" />
@@ -141,7 +141,6 @@ onUnmounted(() => {
   color: var(--color-text, #333);
   border-radius: 20px 20px 0 0;
   box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.18);
-  padding-bottom: env(safe-area-inset-bottom);
 
   .f2f-panel-header {
     flex-shrink: 0;
@@ -230,7 +229,8 @@ onUnmounted(() => {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 12px 18px 18px;
+    // 底部安全區只留在這裡一次；.f2f-editor-footer 的負邊距要和這個值對應
+    padding: 12px 18px calc(18px + env(safe-area-inset-bottom, 0px));
   }
 
   .f2f-tab {
@@ -419,8 +419,9 @@ onUnmounted(() => {
 
   .f2f-editor-footer {
     position: sticky;
-    bottom: -18px;
-    margin: 0 -18px -18px;
+    // 抵銷 .f2f-panel-body 的底部內距（含安全區），讓按鈕列貼齊面板底部
+    bottom: calc(-18px - env(safe-area-inset-bottom, 0px));
+    margin: 0 -18px calc(-18px - env(safe-area-inset-bottom, 0px));
     padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
     background: var(--color-surface, #fff);
     border-top: 1px solid var(--color-border, #eee);
