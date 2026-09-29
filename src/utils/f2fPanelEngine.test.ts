@@ -6,9 +6,11 @@ import {
   applyStyle,
   buildEnabledMap,
   deriveModuleSelection,
+  describeStyleImpact,
   entryOwners,
   findActiveStyleId,
   nextSelection,
+  pruneStyles,
   reconcileLayout,
   styleMatches,
 } from "./f2fPanelEngine";
@@ -201,5 +203,60 @@ describe("entryOwners", () => {
     expect(owners.get("e2")).toBe("style");
     expect(owners.get("need")).toBe("dialogue");
     expect(owners.has("unknown")).toBe(false);
+  });
+});
+
+describe("reconcileLayout：一個條目只屬於一個模塊", () => {
+  it("後面模塊中已被前面模塊佔用的條目會被移除；主條目被佔用時移除整個選項", () => {
+    const duplicated: F2FPanelLayout = {
+      version: 1,
+      modules: [
+        { id: "m1", title: "一", mode: "single", allowNone: false, options: [{ id: "a", label: "A", entries: ["e1"] }] },
+        {
+          id: "m2",
+          title: "二",
+          mode: "single",
+          allowNone: false,
+          options: [
+            { id: "b", label: "B", entries: ["e1"] },
+            { id: "c", label: "C", entries: ["e2", "e1"] },
+          ],
+        },
+      ],
+      styles: [],
+    };
+    const { layout: result, staleCount } = reconcileLayout(duplicated, new Set(["e1", "e2"]));
+    expect(result.modules[0].options).toEqual([{ id: "a", label: "A", entries: ["e1"] }]);
+    expect(result.modules[1].options).toEqual([{ id: "c", label: "C", entries: ["e2"] }]);
+    expect(staleCount).toBe(2);
+  });
+
+  it("同一模塊內的選項仍可共用條目", () => {
+    const { layout: result, staleCount } = reconcileLayout(layout, new Set(ALL_IDS));
+    expect(result.modules[2].options).toEqual(linked.options);
+    expect(staleCount).toBe(0);
+  });
+});
+
+describe("pruneStyles / describeStyleImpact", () => {
+  it("模塊移除選項後，列出選擇被刪減的風格", () => {
+    const edited: F2FPanelModule = { ...single, options: [single.options[0]] }; // 移除 b
+    const pruned = pruneStyles([edited, multi, linked], layout.styles);
+    expect(pruned.find((s) => s.id === "s1")!.selections).toEqual({ tone: ["x", "y"] });
+    expect(pruned.find((s) => s.id === "s2")!.selections).toEqual({ style: ["a"] });
+    expect(describeStyleImpact(layout.styles, pruned)).toEqual({ changed: ["風格一"], removed: [] });
+  });
+
+  it("模塊被刪除後，只控制該模塊的風格會被移除", () => {
+    const pruned = pruneStyles([multi, linked], layout.styles);
+    expect(pruned.map((s) => s.id)).toEqual(["s1"]);
+    expect(describeStyleImpact(layout.styles, pruned)).toEqual({ changed: ["風格一"], removed: ["風格二"] });
+  });
+
+  it("沒有變化時回報空清單", () => {
+    expect(describeStyleImpact(layout.styles, pruneStyles(layout.modules, layout.styles))).toEqual({
+      changed: [],
+      removed: [],
+    });
   });
 });

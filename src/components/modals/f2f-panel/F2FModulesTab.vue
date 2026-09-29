@@ -7,7 +7,7 @@
 import { onBeforeUnmount, ref, watch } from "vue";
 import { useF2FPanel } from "@/composables/useF2FPanel";
 import type { F2FPanelModule } from "@/types/f2fPanel";
-import { clonePlain } from "@/utils/f2fPanelEngine";
+import { clonePlain, describeStyleImpact, pruneStyles } from "@/utils/f2fPanelEngine";
 import F2FModuleEditor from "./F2FModuleEditor.vue";
 
 const emit = defineEmits<{ editing: [value: boolean] }>();
@@ -25,23 +25,37 @@ function isManual(module: F2FPanelModule): boolean {
   return selections.value.get(module.id)?.status === "manual";
 }
 
+/** 列出風格會受什麼影響；沒有影響時回傳空字串 */
+function styleImpactText(impact: { changed: string[]; removed: string[] }): string {
+  const lines: string[] = [];
+  if (impact.changed.length > 0) lines.push(`這些風格會刪去對應的選擇：${impact.changed.join("、")}`);
+  if (impact.removed.length > 0) lines.push(`這些風格會因此沒有任何選擇而被刪除：${impact.removed.join("、")}`);
+  return lines.join("\n");
+}
+
 async function saveModule(module: F2FPanelModule) {
   const next = clonePlain(layout.value);
   const index = next.modules.findIndex((m) => m.id === module.id);
   if (index >= 0) next.modules[index] = module;
   else next.modules.push(module);
+
+  const styles = pruneStyles(next.modules, next.styles);
+  const impact = styleImpactText(describeStyleImpact(next.styles, styles));
+  if (impact && !confirm(`你移除的選項還有風格在使用。\n\n${impact}\n\n確定儲存？`)) return;
+  next.styles = styles;
+
   await saveLayout(next);
   editorTarget.value = undefined;
 }
 
 async function removeModule(module: F2FPanelModule) {
-  if (!confirm(`確定刪除模塊「${module.title}」？\n條目本身不會被刪除，風格中對此模塊的選擇會一併移除。`)) return;
   const next = clonePlain(layout.value);
   next.modules = next.modules.filter((m) => m.id !== module.id);
-  next.styles = next.styles.flatMap((style) => {
-    const { [module.id]: _removed, ...rest } = style.selections;
-    return Object.keys(rest).length > 0 ? [{ ...style, selections: rest }] : [];
-  });
+  const styles = pruneStyles(next.modules, next.styles);
+  const impact = styleImpactText(describeStyleImpact(next.styles, styles));
+  const message = `確定刪除模塊「${module.title}」？\n條目本身不會被刪除。${impact ? `\n\n${impact}` : ""}`;
+  if (!confirm(message)) return;
+  next.styles = styles;
   await saveLayout(next);
 }
 
