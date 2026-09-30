@@ -621,14 +621,8 @@ export class ProactiveMessageService {
       };
 
       const { PromptBuilder } = await import("@/engine/prompt/PromptBuilder");
-      const { loadPromptOverrideForChat } = await import("@/utils/promptOverrideScope");
-      const groupChatOverrides = await loadPromptOverrideForChat({
-        id: groupChat.id,
-        characterId: groupChat.characterId,
-        isGroupChat: groupChat.isGroupChat,
-        groupMetadata: groupChat.groupMetadata,
-        chatVariables: groupChat.chatVariables,
-      });
+      const { useChatVariablesStore } = await import("@/stores/chatVariables");
+      const groupChatOverrides = useChatVariablesStore().presetForChat(groupChat.id, groupChat);
       const promptBuilder = new PromptBuilder({
         character: leadCharacter,
         lorebooks: characterLorebooks,
@@ -1160,14 +1154,8 @@ export class ProactiveMessageService {
         // 忽略
       }
 
-      const { loadPromptOverrideForChat: loadPromptOverrideForChat1v1 } = await import("@/utils/promptOverrideScope");
-      const proactiveOverrides = await loadPromptOverrideForChat1v1({
-        id: chat.id,
-        characterId: chat.characterId,
-        isGroupChat: chat.isGroupChat,
-        groupMetadata: chat.groupMetadata,
-        chatVariables: chat.chatVariables,
-      });
+      const { useChatVariablesStore: useChatVariablesStore1v1 } = await import("@/stores/chatVariables");
+      const proactiveOverrides = useChatVariablesStore1v1().presetForChat(chat.id, chat);
       const promptBuilder = new PromptBuilder({
         character,
         lorebooks: characterLorebooks,

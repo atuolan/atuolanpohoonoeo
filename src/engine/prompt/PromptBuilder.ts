@@ -35,6 +35,7 @@ import type {
 import type {
   ChatLocalPrompt,
   ChatMessage,
+  ChatPromptMode,
   ChatSettings,
   MultiCharMember,
   SubCharSource,
@@ -67,6 +68,7 @@ import { WIAnchorPosition as AnchorPos } from "@/types/worldinfo";
 import ejs from "ejs";
 import _ from "lodash";
 import { createStTemplateContext } from "@/services/StTemplateContextService";
+import { applyChatPromptPreset } from "@/utils/chatPromptPreset";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { resolveStoryTime } from "@/utils/fakeTime";
 import { getMacroEngine } from "../macros/MacroEngine";
@@ -182,9 +184,9 @@ export interface PromptBuilderOptions {
   promptManagerConfig?: PromptManagerConfig;
   /** 提示詞順序（可選，優先於 promptManagerConfig） */
   promptOrder?: PromptOrderEntry[];
-  /** 聊天專屬提示詞開關覆蓋（稀疏：只包含與默認不同的狀態） */
+  /** 專屬預設：這個聊天強制開 / 關的提示詞（沒列出的跟隨全域預設） */
   chatPromptToggles?: Record<string, boolean>;
-  /** 聊天專屬提示詞條目 */
+  /** 專屬預設：只屬於這個聊天的提示詞條目 */
   chatLocalPrompts?: ChatLocalPrompt[];
   /** 對話歷史總結 */
   summaries?: Array<{
@@ -1044,22 +1046,23 @@ export class PromptBuilder {
     return this.applyChatPromptOverrides(DEFAULT_PROMPT_ORDER);
   }
 
+  /** 這次組裝屬於專屬預設的哪個模式（決定哪些專屬條目會被帶上） */
+  private getChatPromptMode(): ChatPromptMode {
+    if (this.options.phoneCallMode || this.options.groupCallMode) return "call";
+    if (this.options.groupChatMode) return "gc";
+    if (this.options.faceToFaceMode) return "f2f";
+    return "online";
+  }
+
   private applyChatPromptOverrides(order: PromptOrderEntry[]): PromptOrderEntry[] {
-    const toggles = this.options.chatPromptToggles ?? {};
-    const overridden = order.map((entry) =>
-      Object.prototype.hasOwnProperty.call(toggles, entry.identifier)
-        ? { ...entry, enabled: toggles[entry.identifier] }
-        : { ...entry },
+    return applyChatPromptPreset(
+      order,
+      {
+        toggles: this.options.chatPromptToggles,
+        prompts: this.options.chatLocalPrompts,
+      },
+      this.getChatPromptMode(),
     );
-
-    const existingIds = new Set(overridden.map((entry) => entry.identifier));
-    for (const prompt of this.options.chatLocalPrompts ?? []) {
-      if (existingIds.has(prompt.id)) continue;
-      overridden.push({ identifier: prompt.id, enabled: prompt.enabled });
-      existingIds.add(prompt.id);
-    }
-
-    return overridden;
   }
 
   /**
@@ -1076,15 +1079,18 @@ export class PromptBuilder {
       return {
         identifier: chatPrompt.id,
         name: chatPrompt.name,
-        description: "聊天專屬提示詞",
+        description: "專屬預設條目",
         category: "custom",
         role: chatPrompt.role,
         content: chatPrompt.content,
         system_prompt: false,
         marker: false,
-        injection_position: chatPrompt.injection_position,
-        injection_depth: chatPrompt.injection_depth,
-        injection_order: chatPrompt.injection_order,
+        injection_position:
+          chatPrompt.placement === "depth"
+            ? PromptInjectionPosition.ABSOLUTE
+            : PromptInjectionPosition.RELATIVE,
+        injection_depth: chatPrompt.depth,
+        injection_order: 100,
         forbid_overrides: true,
         extension: false,
         injection_trigger: ["normal"],

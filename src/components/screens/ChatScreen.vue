@@ -12,7 +12,7 @@ import {
 import { MessageBubble } from "@/components/common";
 import ChatScreenHeader from "@/components/screens/ChatScreenHeader.vue";
 import ChatDetailsScreen from "@/components/screens/ChatDetailsScreen.vue";
-import ChatVarsPanel from "@/components/screens/ChatVarsPanel.vue";
+import ChatPresetPanel from "@/components/modals/chat-preset/ChatPresetPanel.vue";
 import ChatScreenInputArea from "@/components/screens/ChatScreenInputArea.vue";
 import ChatGameModals from "@/components/screens/ChatGameModals.vue";
 import GiftDrawer from "@/components/common/GiftDrawer.vue";
@@ -1140,8 +1140,8 @@ const showChatDetails = ref(false);
 // 關閉詳情會非同步等待 popstate；期間忽略重複點擊，避免一次跨越多筆 history。
 let isClosingChatDetails = false;
 
-// 顯示聊天變量設定面板
-const showChatVarsPanel = ref(false);
+// 顯示專屬預設面板
+const showChatPresetPanel = ref(false);
 
 // 顯示收藏語音管理面板
 const showFavoriteAudioModal = ref(false);
@@ -1366,6 +1366,7 @@ const {
   renamingChatName,
   showNewChatConfirm,
   newChatPinToList,
+  newChatInheritPreset,
   selectedGreetingIndex,
   availableGreetings,
   isSelectingChats,
@@ -4334,9 +4335,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       authorsNote: waimaiAuthorsNote,
       // 傳入提示詞管理器配置，使用用戶自定義的角色和位置設定
       promptManagerConfig: promptManagerStore.config,
-      // 傳入聊天/角色作用域的提示詞覆蓋（從 chatVariablesStore，已綁定到正確 scope）
-      chatPromptToggles: { ...chatVariablesStore.promptToggles },
-      chatLocalPrompts: chatVariablesStore.chatPrompts.map((p) => ({ ...p })),
+      // 傳入這個聊天的專屬預設（強制開關 + 專屬條目）
+      ...chatVariablesStore.presetForChat(currentChatId.value ?? "", currentChatData.value),
       // 傳入總結和重要事件
       summaries: summariesToSend,
       importantEvents: eventsToSend,
@@ -6430,6 +6430,7 @@ const newConvMode = ref<"new" | "clear">("new");
 function onStartNewConversation() {
   newConvMode.value = "new";
   newChatPinToList.value = false;
+  newChatInheritPreset.value = true;
   startNewConversation();
 }
 
@@ -7845,6 +7846,12 @@ async function loadOrCreateChat(overrideChatId?: string) {
   } else {
     // 新聊天沒有既有 metadata 可被覆蓋，可直接開放保存。
     isChatHydrated.value = true;
+    // 還沒有記錄的新聊天：清掉上一個聊天留下的變量與專屬預設
+    if (currentChatId.value) {
+      chatVariablesStore.initForChat(currentChatId.value);
+    } else {
+      chatVariablesStore.resetForNewChat();
+    }
     // 新聊天（沒有 chatId）：嘗試透過角色綁定或預設 persona 自動切換
     const charId = props.characterId;
     if (charId) {
@@ -8108,13 +8115,13 @@ function buildChatMetadata(
         : undefined,
     appearance: chatAppearance.value,
     summarySettings: toRaw(chatSummarySettings.value),
-    chatVariables: currentChatId.value
-      ? {
-          version: 1,
-          localVars: { ...chatVariablesStore.localVars },
-          updatedAt: currentChatData.value?.chatVariables?.updatedAt ?? Date.now(),
-        }
-      : currentChatData.value?.chatVariables,
+    // 變量與專屬預設以 store 為準；store 綁的不是這個聊天時沿用記錄裡的，避免寫進別的聊天的內容
+    chatVariables:
+      currentChatId.value && chatVariablesStore.isBoundTo(currentChatId.value)
+        ? chatVariablesStore.snapshotChatVariables(
+            currentChatData.value?.chatVariables?.updatedAt,
+          )
+        : currentChatData.value?.chatVariables,
     locationOverride: chatLocationOverride.value,
     charAvatarOverride: charAvatarOverride.value,
     userAvatarOverride: userAvatarOverride.value,
@@ -8133,7 +8140,7 @@ const chatPersistence = useChatPersistence({
   convertToStorableMessage,
   buildChatMetadata,
   initChatVariables: (chatId: string) => {
-    chatVariablesStore.initForChat(chatId);
+    chatVariablesStore.adoptNewChat(chatId);
     getMacroEngine().registerVarMacros(chatVariablesStore, () =>
       isGroupChat.value ? "gc" : chatFaceToFaceMode.value ? "f2f" : "online",
     );
@@ -9137,7 +9144,8 @@ useChatCleanup({
           @toggle-block-character="toggleBlockCharacter"
           @clear-chat-history="clearChatHistory"
           @open-proactive-message-settings="showProactiveMessageSettings = true"
-          @open-chat-vars="showChatVarsPanel = true"
+          :preset-count="chatVariablesStore.presetCount"
+          @open-chat-preset="showChatPresetPanel = true"
           @open-favorite-audio="showFavoriteAudioModal = true"
           @update-group-name="handleDetailsUpdateGroupName"
           @change-group-avatar="handleDetailsChangeGroupAvatar"
@@ -9154,17 +9162,17 @@ useChatCleanup({
       </Transition>
     </Teleport>
 
-    <!-- 聊天變量設定面板 -->
+    <!-- 專屬預設面板 -->
     <Teleport to="body">
-      <Transition name="slide-up">
-        <ChatVarsPanel
-          v-if="showChatVarsPanel"
+      <Transition name="preset-sheet">
+        <ChatPresetPanel
+          v-if="showChatPresetPanel"
           :chat-id="activeChatId"
+          :chat-name="isGroupChat ? groupDisplayName : displayCharacterName"
           :character-id="props.characterId || currentCharacter?.id || ''"
           :is-group-chat="isGroupChat"
-          :is-multi-char-card="!!groupMetadata?.isMultiCharCard"
           :face-to-face-mode="chatFaceToFaceMode"
-          @close="showChatVarsPanel = false"
+          @close="showChatPresetPanel = false"
         />
       </Transition>
     </Teleport>
@@ -12036,7 +12044,7 @@ useChatCleanup({
                 <button class="chat-files-action-btn" @click="enterSelectMode">多選</button>
                 <button
                   class="chat-files-new-btn"
-                  @click="selectedGreetingIndex = 0; showNewChatConfirm = true;"
+                  @click="selectedGreetingIndex = 0; newChatInheritPreset = true; showNewChatConfirm = true;"
                 >
                   <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
                     <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
@@ -12280,6 +12288,10 @@ useChatCleanup({
               <input v-model="newChatPinToList" type="checkbox" />
               <span>聊天置頂（可同時與同一角色開多個聊天）</span>
             </label>
+            <label v-if="chatVariablesStore.presetCount > 0" class="branch-memory-option">
+              <input v-model="newChatInheritPreset" type="checkbox" />
+              <span>沿用目前的專屬預設（已調整 {{ chatVariablesStore.presetCount }} 項，之後各自獨立）</span>
+            </label>
             <div class="new-chat-confirm-actions">
               <button class="btn-cancel" @click="showNewChatConfirm = false">
                 取消
@@ -12388,6 +12400,13 @@ useChatCleanup({
             >
               <input v-model="newChatPinToList" type="checkbox" />
               <span>聊天置頂（可同時與同一角色開多個聊天）</span>
+            </label>
+            <label
+              v-if="newConvMode === 'new' && chatVariablesStore.presetCount > 0"
+              class="branch-memory-option"
+            >
+              <input v-model="newChatInheritPreset" type="checkbox" />
+              <span>沿用目前的專屬預設（已調整 {{ chatVariablesStore.presetCount }} 項，之後各自獨立）</span>
             </label>
 
             <div class="new-chat-confirm-actions">

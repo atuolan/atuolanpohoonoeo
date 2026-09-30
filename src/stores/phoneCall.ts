@@ -16,6 +16,7 @@ import { computeChatNow } from "@/utils/fakeTime";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 import { PLURK_BLOCK_STRIP_PATTERN } from "@/utils/plurkFormat";
 import { defineStore } from "pinia";
+import { useChatVariablesStore } from "./chatVariables";
 import { computed, ref } from "vue";
 
 export interface CallMessage {
@@ -907,20 +908,10 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       // 依聊天的假時間設定計算有效時間（輪迴／偏移模式沿用聊天設定，real 模式即真實時間）
       const now = computeChatNow(chatRecord);
 
-      let chatPromptToggles: Record<string, boolean> | undefined;
-      let chatLocalPrompts: import("@/types/chat").ChatLocalPrompt[] | undefined;
-      if (chatRecord) {
-        const { loadPromptOverrideForChat } = await import("@/utils/promptOverrideScope");
-        const overrides = await loadPromptOverrideForChat({
-          id: chatRecord.id,
-          characterId: chatRecord.characterId,
-          isGroupChat: chatRecord.isGroupChat,
-          groupMetadata: chatRecord.groupMetadata,
-          chatVariables: chatRecord.chatVariables,
-        });
-        chatPromptToggles = overrides.chatPromptToggles;
-        chatLocalPrompts = overrides.chatLocalPrompts;
-      }
+      // 專屬預設：聊天正開著就用記憶體裡的最新狀態，否則讀聊天記錄
+      const { chatPromptToggles, chatLocalPrompts } = chatRecord
+        ? useChatVariablesStore().presetForChat(chatRecord.id, chatRecord)
+        : { chatPromptToggles: undefined, chatLocalPrompts: undefined };
 
       // 向量記憶檢索（使用全域開關）
       let vectorMemories: import('@/services/memoryRetriever').RetrievedMemory[] | undefined;

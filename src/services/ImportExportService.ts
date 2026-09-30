@@ -39,6 +39,10 @@ import {
   normalizeChatBackupMediaSources,
 } from "../utils/backupMediaExtractor";
 import {
+  sanitizeChatPrompts,
+  sanitizePromptToggles,
+} from "../utils/chatPromptPreset";
+import {
   createDefaultWorldInfoEntry,
   WorldInfoLogic,
   WorldInfoPosition,
@@ -1676,6 +1680,19 @@ export class ImportExportService {
     }
     return messages;
   }
+
+  /** 還原匯出檔裡的聊天變量與專屬預設（內容來自外部檔案，逐項檢查後才收） */
+  private _importChatVariables(source: any): NonNullable<Chat["chatVariables"]> {
+    const promptToggles = sanitizePromptToggles(source?.promptToggles);
+    const chatPrompts = sanitizeChatPrompts(source?.chatPrompts);
+    return {
+      version: 1,
+      localVars: { ...(source?.localVars ?? {}) },
+      ...(Object.keys(promptToggles).length > 0 && { promptToggles }),
+      ...(chatPrompts.length > 0 && { chatPrompts }),
+      updatedAt: Date.now(),
+    };
+  }
   // ──────────────────────────────────────────────────────────────────────────
 
   async importChatFromJsonl(
@@ -1899,11 +1916,7 @@ export class ImportExportService {
         chat.metadata.variables = { ...metadata.chat_metadata.variables };
       }
       if (metadata.chat_metadata?.chatVariables) {
-        chat.chatVariables = {
-          version: 1,
-          localVars: { ...(metadata.chat_metadata.chatVariables.localVars ?? {}) },
-          updatedAt: Date.now(),
-        };
+        chat.chatVariables = this._importChatVariables(metadata.chat_metadata.chatVariables);
       }
 
       // 保存（圖片分離後寫入 chatMessages 表）
@@ -1978,11 +1991,7 @@ export class ImportExportService {
         chat.metadata.variables = { ...metadata.chat_metadata.variables };
       }
       if (metadata.chat_metadata?.chatVariables) {
-        chat.chatVariables = {
-          version: 1,
-          localVars: { ...(metadata.chat_metadata.chatVariables.localVars ?? {}) },
-          updatedAt: Date.now(),
-        };
+        chat.chatVariables = this._importChatVariables(metadata.chat_metadata.chatVariables);
       }
 
       // v24：訊息分離儲存

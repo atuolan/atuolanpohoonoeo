@@ -328,6 +328,7 @@ interface AguaphoneDB extends DBSchema {
     value: { id: string; ackedAt: number };
   };
   // === v27 新增：提示詞覆蓋（按角色卡 / 群聊作用域） ===
+  // 已停用：專屬預設改存在各聊天的 chatVariables，此表不再讀寫
   promptOverrides: {
     key: string; // scopeKey: char__${characterId} 或 group__${chatId}
     value: PromptOverrideRecord;
