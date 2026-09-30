@@ -44,7 +44,7 @@ import {
   rejectPeerApply,
   formatEntityTypeLabel,
 } from "@/composables/usePeerApplyGate";
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 // 頁面組件
 import {
   AICharacterModal,
@@ -166,9 +166,17 @@ const notificationStore = useNotificationStore();
 // 驗證 store
 const authStore = useAuthStore();
 const selfHostedSyncStore = useSelfHostedSyncStore();
+// 剛通過驗證時驗證頁先留著（isEnteringApp）：主畫面在它底下掛載、載入，就緒後才淡出
 const shouldShowAuthScreen = computed(
-  () => authStore.hasResolvedAuthState && !authStore.isAuthenticated,
+  () =>
+    authStore.hasResolvedAuthState &&
+    (!authStore.isAuthenticated || authStore.isEnteringApp),
 );
+/** 驗證頁還在畫面上（含淡出中）。首次使用的引導彈窗等它完全離開才出現，不和淡出搶畫面 */
+const authScreenOnStage = ref(shouldShowAuthScreen.value);
+watch(shouldShowAuthScreen, (shown) => {
+  if (shown) authScreenOnStage.value = true;
+});
 
 // GitHub 雲端備份全局狀態
 const _ghBackupStore = useGitHubBackupStore();
@@ -1306,6 +1314,57 @@ watch(
   },
 );
 
+// 主畫面第一次繪製需要的資料（角色、設定、主題、夜晚模式）載入完成時 resolve；
+// loadAppData 後半的節日、雲端推送等不影響畫面，不必等
+let resolveAppCoreReady: () => void = () => {};
+const appCoreReady = new Promise<void>((resolve) => {
+  resolveAppCoreReady = resolve;
+});
+
+/** 驗證頁最多再留多久：資料遲遲沒好也要放行，不能把人卡在驗證頁 */
+const APP_ENTRY_MAX_WAIT_MS = 6000;
+/** 主畫面掛載後最多再等多久讓它靜止下來 */
+const HOME_SETTLE_MAX_WAIT_MS = 1200;
+
+function waitAtMost(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** 等主畫面在驗證頁底下排好版面、播完進場動畫，揭開時看到的是靜止的畫面 */
+async function waitForHomeToSettle() {
+  // 畫布的排版資料（小組件配置）讀完才會有內容
+  if (!canvasStore.isLoaded) {
+    await new Promise<void>((resolve) => {
+      const stop = watch(
+        () => canvasStore.isLoaded,
+        (loaded) => {
+          if (!loaded) return;
+          stop();
+          resolve();
+        },
+      );
+    });
+  }
+  await nextTick();
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  const home = document.querySelector(".home-screen-wrapper");
+  const animations = home?.getAnimations?.() ?? [];
+  await Promise.allSettled(animations.map((animation) => animation.finished));
+  // 再讓出一幀，確保最後一次繪製已經送出
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+/** 在驗證頁通過驗證後：等主畫面資料就緒並靜止（或載入結束／逾時）才收起驗證頁 */
+async function revealAppWhenReady(loading: Promise<void>) {
+  await Promise.race([
+    appCoreReady,
+    loading.catch(() => undefined),
+    waitAtMost(APP_ENTRY_MAX_WAIT_MS),
+  ]);
+  await Promise.race([waitForHomeToSettle(), waitAtMost(HOME_SETTLE_MAX_WAIT_MS)]);
+  authStore.finishEnteringApp();
+}
+
 // 已驗證後載入所有應用資料（可被 onMounted 和 watch 共用）
 let appDataLoaded = false;
 async function loadAppData() {
@@ -1421,6 +1480,8 @@ async function loadAppData() {
   // 初始化夜晚模式狀態
   themeStore.setNightMode(settingsStore.nightMode);
 
+  resolveAppCoreReady();
+
   // 初始化全局繁簡轉換（需在 settings 載入後）
   try {
     const globalLanguage = useGlobalLanguage();
@@ -1523,9 +1584,10 @@ watch(
   () => authStore.isAuthenticated,
   (authenticated) => {
     if (authenticated) {
-      void loadAppData();
+      const loading = loadAppData();
       initializeBrowserHistory();
       void ensureSelfHostedSyncSocketConnected();
+      void revealAppWhenReady(loading);
     } else {
       closeSelfHostedSyncSocket();
     }
@@ -2711,8 +2773,8 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
 <template>
   <div class="app-container" :class="{ 'is-dark': isDark }" :style="themeStyle">
     <Transition name="page">
-      <!-- 驗證頁面：初始化狀態未知時先不渲染，避免已驗證用戶首幀閃出驗證頁 -->
-      <AuthScreen v-if="shouldShowAuthScreen" />
+      <!-- 未驗證：不渲染任何頁面（驗證頁是獨立的覆蓋層，在這個 Transition 後面） -->
+      <div v-if="!authStore.isAuthenticated" class="auth-gate" aria-hidden="true"></div>
 
       <!-- 主頁：橫向白板畫布 -->
       <div v-else-if="authStore.isAuthenticated && currentPage === 'home'" class="home-screen-wrapper screen-container">
@@ -2929,6 +2991,12 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     />
     </Transition>
 
+    <!-- 驗證頁：蓋在頁面之上的覆蓋層。初始化狀態未知時先不渲染，避免已驗證用戶首幀閃出驗證頁；
+         通過驗證後主畫面先在它底下掛載、載入，就緒後它才淡出 -->
+    <Transition name="auth-exit" @after-leave="authScreenOnStage = false">
+      <AuthScreen v-if="shouldShowAuthScreen" />
+    </Transition>
+
     <!-- 主題設定彈窗 -->
     <ThemeSettingsModal
       :visible="showThemeSettings"
@@ -2943,7 +3011,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
 
     <!-- 首頁全局設定教學：引導長按核心按鈕 -->
     <HomeGlobalThemeTutorialOverlay
-      v-if="currentPage === 'home' && authStore.isAuthenticated"
+      v-if="currentPage === 'home' && authStore.isAuthenticated && !authScreenOnStage"
       :global-theme-open="showGlobalTheme"
     />
 
@@ -3019,7 +3087,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
 
     <!-- 面對面提示詞強制重置引導（作者公告看完後才顯示） -->
     <FaceToFacePromptResetModal
-      v-if="showFaceToFacePromptReset && !currentAnnouncement"
+      v-if="showFaceToFacePromptReset && !currentAnnouncement && !authScreenOnStage"
       @done="showFaceToFacePromptReset = false"
     />
 
@@ -3245,7 +3313,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <!-- 向量記憶模型下載提示 -->
     <!-- 向量記憶設定引導彈窗 -->
     <Teleport to="body">
-      <div v-if="showEmbeddingModelPrompt" class="embedding-prompt-overlay">
+      <div v-if="showEmbeddingModelPrompt && !authScreenOnStage" class="embedding-prompt-overlay">
         <div class="embedding-prompt-dialog">
           <div class="embedding-prompt-icon">🧠</div>
           <div class="embedding-prompt-title">向量記憶已啟用</div>
@@ -3468,6 +3536,11 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
   width: 100%;
   height: 100%;
   overflow: hidden;
+}
+
+// 未驗證時佔住頁面位置的空節點，本身不顯示
+.auth-gate {
+  display: none;
 }
 
 .resume-call-overlay {
