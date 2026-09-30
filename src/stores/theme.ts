@@ -7,6 +7,7 @@ import {
   DEFAULT_SKIN_ID,
 } from "@/styles/skin-presets";
 import type { ThemePack } from "@/styles/theme-packs";
+import { boostCSSSpecificity } from "@/utils/cssScoping";
 
 /**
  * 從 CSS 顏色字串解析 RGB 值
@@ -749,141 +750,8 @@ export const useThemeStore = defineStore("theme", () => {
       document.body.appendChild(styleEl);
     }
 
-    // 自動提升特異性以穿透 Vue scoped
-    const boosted = boostCSSSpecificity(customCSS.value);
-    styleEl.textContent = boosted;
-  }
-
-  /**
-   * 提升 CSS 特異性：在非全局選擇器前加 #app
-   * 處理：註解跳過、@media 巢狀、:root/html/body 保留、逗號分隔選擇器
-   */
-  function boostCSSSpecificity(css: string): string {
-    // 先移除註解，記錄位置以便還原
-    // 用佔位符替換註解，避免註解內的 {} 干擾分塊
-    const comments: string[] = [];
-    const stripped = css.replace(/\/\*[\s\S]*?\*\//g, (match) => {
-      const idx = comments.length;
-      comments.push(match);
-      return `/*__COMMENT_${idx}__*/`;
-    });
-
-    const boosted = boostBlocks(stripped);
-
-    // 還原註解
-    return boosted.replace(/\/\*__COMMENT_(\d+)__\*\//g, (_, idx) => {
-      return comments[parseInt(idx)];
-    });
-  }
-
-  /** 對頂層 CSS 區塊進行特異性提升 */
-  function boostBlocks(css: string): string {
-    const blocks = splitTopLevelBlocks(css);
-    const result: string[] = [];
-
-    for (const block of blocks) {
-      const trimmed = block.trimStart();
-      if (!trimmed) continue;
-
-      // 純註解佔位符，直接保留
-      if (/^\/\*__COMMENT_\d+__\*\/\s*$/.test(trimmed)) {
-        result.push(block);
-        continue;
-      }
-
-      // @media / @supports：保留 at-rule 本身，但提升內部規則
-      if (/^@media\b|^@supports\b/.test(trimmed)) {
-        const firstBrace = trimmed.indexOf("{");
-        if (firstBrace === -1) {
-          result.push(block);
-          continue;
-        }
-        const atSelector = trimmed.substring(0, firstBrace + 1);
-        const inner = extractInnerContent(trimmed, firstBrace);
-        const boostedInner = boostBlocks(inner);
-        result.push(`${atSelector}\n${boostedInner}\n}`);
-        continue;
-      }
-
-      // @keyframes / @font-face / @import / @layer：完全保留
-      if (/^@/.test(trimmed)) {
-        result.push(block);
-        continue;
-      }
-
-      // :root / html / body 開頭的選擇器：保留不動
-      if (/^(:root|html|body)\b/.test(trimmed)) {
-        result.push(block);
-        continue;
-      }
-
-      // 一般規則：提升選擇器特異性
-      const firstBrace = trimmed.indexOf("{");
-      if (firstBrace === -1) {
-        result.push(block);
-        continue;
-      }
-
-      const selector = trimmed.substring(0, firstBrace).trim();
-      const body = trimmed.substring(firstBrace);
-
-      // 逗號分隔的多選擇器
-      const boostedSelectors = selector.split(",").map((s) => {
-        const sel = s.trim();
-        if (!sel) return sel;
-        // 已有 #app 前綴就不重複加
-        if (sel.startsWith("#app")) return sel;
-        // :root / html / body 開頭的子選擇器也保留
-        if (/^(:root|html|body)\b/.test(sel)) return sel;
-        return `#app ${sel}`;
-      });
-
-      result.push(`${boostedSelectors.join(",\n")} ${body}`);
-    }
-
-    return result.join("\n\n");
-  }
-
-  /** 按頂層大括號分割 CSS 區塊（已去除註解） */
-  function splitTopLevelBlocks(css: string): string[] {
-    const blocks: string[] = [];
-    let braceCount = 0;
-    let blockStart = 0;
-
-    for (let i = 0; i < css.length; i++) {
-      const ch = css[i];
-      if (ch === "{") {
-        braceCount++;
-      } else if (ch === "}") {
-        braceCount--;
-        if (braceCount === 0) {
-          blocks.push(css.substring(blockStart, i + 1).trim());
-          blockStart = i + 1;
-        }
-      }
-    }
-    // 尾部剩餘（可能是註解或空白）
-    const tail = css.substring(blockStart).trim();
-    if (tail) blocks.push(tail);
-    return blocks;
-  }
-
-  /** 提取 @media { ... } 內部內容（不含最外層大括號） */
-  function extractInnerContent(block: string, openBraceIdx: number): string {
-    // 找到對應的最後一個 }
-    let depth = 0;
-    let endIdx = block.length - 1;
-    for (let i = openBraceIdx; i < block.length; i++) {
-      if (block[i] === "{") depth++;
-      else if (block[i] === "}") {
-        depth--;
-        if (depth === 0) {
-          endIdx = i;
-          break;
-        }
-      }
-    }
-    return block.substring(openBraceIdx + 1, endIdx).trim();
+    // 自動提升特異性以穿透 Vue scoped，並涵蓋 Teleport 到 body 的彈窗
+    styleEl.textContent = boostCSSSpecificity(customCSS.value);
   }
 
   // 應用全局字體覆蓋
