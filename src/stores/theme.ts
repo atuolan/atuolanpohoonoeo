@@ -1034,10 +1034,12 @@ export const useThemeStore = defineStore("theme", () => {
     } else {
       delete surfaceCustomCSS.value[surfaceId];
     }
+    saveToStorage();
   }
 
   function clearSurfaceCSS(surfaceId: string) {
     delete surfaceCustomCSS.value[surfaceId];
+    saveToStorage();
   }
 
   function resetToDefault() {
