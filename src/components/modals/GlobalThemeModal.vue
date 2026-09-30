@@ -2,6 +2,7 @@
 import { ImageCropper } from "@/components/common";
 import AIThemeChatModal from "@/components/modals/AIThemeChatModal.vue";
 import ThemePackIcon from "@/components/common/ThemePackIcon.vue";
+import { useGlobalThemeDraft } from "@/composables/useGlobalThemeDraft";
 import { useLanguage } from "@/composables/useLanguage";
 import { useCanvasStore } from "@/stores/canvas";
 import { useSettingsStore } from "@/stores/settings";
@@ -389,11 +390,18 @@ const tempWallpaperStyle = ref<WallpaperStyle>({
   ...themeStore.wallpaperStyle,
 });
 
-// 臨時自訂 CSS
-const tempCustomCSS = ref<string>(themeStore.customCSS);
-
-// 臨時全局字體設定
-const tempGlobalFont = ref<GlobalFontOverride>({ ...themeStore.globalFont });
+// 自訂 CSS 與全局字體的草稿。store 被別處改動（AI 美化助手、套用主題包、恢復預設）時
+// 草稿會自動跟上，關閉彈窗時只寫回使用者自己改過的部分（見 useGlobalThemeDraft）。
+// 別名沿用原本的函式名，template 不必跟著改。
+const {
+  tempCustomCSS,
+  tempGlobalFont,
+  syncFromStore: syncDraftFromStore,
+  normalizeFontUrl: normalizeTempFontUrl,
+  applyCSS: applyCustomCSS,
+  applyFont: applyGlobalFont,
+  commit: commitDraft,
+} = useGlobalThemeDraft();
 
 // 彈窗動畫選項
 const enterAnimations = [
@@ -677,11 +685,6 @@ function handleCSSChange(event: Event) {
   tempCustomCSS.value = textarea.value;
 }
 
-// 應用自訂 CSS
-function applyCustomCSS() {
-  themeStore.updateCustomCSS(tempCustomCSS.value);
-}
-
 // 清空自訂 CSS
 function clearCustomCSS() {
   tempCustomCSS.value = "";
@@ -741,29 +744,6 @@ function handleFontUrlInput(event: Event) {
   }
 }
 
-function normalizeTempFontUrl() {
-  // 自動解析 @import 語句中的 URL
-  let importUrl = tempGlobalFont.value.importUrl.trim();
-  // 如果用戶貼了完整的 @import url("..."); 語句，提取 URL
-  const importMatch = importUrl.match(/@import\s+url\(["']?([^"')]+)["']?\)/);
-  if (importMatch) {
-    importUrl = importMatch[1];
-    tempGlobalFont.value.importUrl = importUrl;
-  }
-  return importUrl;
-}
-
-// 套用全局字體
-function applyGlobalFont() {
-  const importUrl = normalizeTempFontUrl();
-
-  themeStore.updateGlobalFont({
-    ...tempGlobalFont.value,
-    enabled: true,
-    importUrl,
-  });
-}
-
 function saveCurrentFontPreset() {
   const importUrl = normalizeTempFontUrl();
   const fontSnapshot: GlobalFontOverride = {
@@ -816,29 +796,26 @@ function resetToDefault() {
   if (confirm("確定要重置所有全局設定嗎？")) {
     themeStore.resetToDefault();
     tempWallpaperStyle.value = { ...themeStore.wallpaperStyle };
-    tempCustomCSS.value = "";
+    // 連同還沒套用的 CSS / 字體草稿一起丟掉，否則關閉彈窗時會把舊草稿寫回去
+    syncDraftFromStore();
+    customHexInput.value = themeStore.colors.primary;
   }
 }
 
 // AI 美化助手關閉後：重新同步暫存值
-// （AI 可能已改動 store 的 customCSS / 桌布 / 字體 / 配色，
-//   不重新同步的話 textarea 會顯示舊值，且 handleClose 會用舊值覆寫回 store）
+// （CSS / 字體草稿平時就會跟著 store 更新；這裡再同步一次，
+//   順便把 AI 可能改過的桌布、主色顯示值也對齊）
 function onAIChatClose() {
   showAIChat.value = false;
   tempWallpaperStyle.value = { ...themeStore.wallpaperStyle };
-  tempCustomCSS.value = themeStore.customCSS;
-  tempGlobalFont.value = { ...themeStore.globalFont };
+  syncDraftFromStore();
   customHexInput.value = themeStore.colors.primary;
 }
 
 // 關閉彈窗
 function handleClose() {
-  // 關閉前自動保存自訂 CSS
-  if (tempCustomCSS.value !== themeStore.customCSS) {
-    themeStore.updateCustomCSS(tempCustomCSS.value);
-  }
-  // 關閉前自動套用字體設定
-  applyGlobalFont();
+  // 關閉前把還沒套用的 CSS / 字體草稿寫回；沒改過就不動 store
+  commitDraft();
   // 保存語言設定
   settingsStore.saveSettings();
   emit("close");
@@ -850,8 +827,7 @@ watch(
   (newVal) => {
     if (newVal) {
       tempWallpaperStyle.value = { ...themeStore.wallpaperStyle };
-      tempCustomCSS.value = themeStore.customCSS;
-      tempGlobalFont.value = { ...themeStore.globalFont };
+      syncDraftFromStore();
       customHexInput.value = themeStore.colors.primary;
       unifiedColors.value = true;
       fontPresetName.value = "";
