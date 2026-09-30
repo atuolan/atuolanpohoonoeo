@@ -706,13 +706,6 @@ export const useThemeStore = defineStore("theme", () => {
     const root = document.documentElement;
     const vars = cssVariables.value;
 
-    // Debug: 輸出桌布變數
-    console.log("[Theme] Applying wallpaper:", {
-      type: wallpaperStyle.value.type,
-      value: wallpaperStyle.value.value,
-      cssVar: vars["--wallpaper-value"],
-    });
-
     Object.entries(vars).forEach(([key, value]) => {
       root.style.setProperty(key, value);
     });
@@ -1100,47 +1093,11 @@ export const useThemeStore = defineStore("theme", () => {
     saveToStorage();
   }
 
-  // 背景圖 Base64 分離儲存的 key 前綴
-  const WALLPAPER_IMAGE_CACHE_KEY = "wallpaper-image-v1";
-  // Base64 超過此大小時，改存入 imageCache table（避免 IndexedDB 單條記錄超限）
-  const WALLPAPER_BASE64_INLINE_LIMIT = 512 * 1024; // 512 KB
-
   // 保存到 IndexedDB
   async function saveToStorage() {
     try {
       const { db } = await import("@/db/database");
       await db.init();
-
-      // 處理背景圖：大 Base64 分離存入 imageCache，settings 只存引用 ID
-      const wallpaperSnapshot = JSON.parse(
-        JSON.stringify(wallpaperStyle.value),
-      ) as WallpaperStyle;
-      if (
-        wallpaperSnapshot.type === "image" &&
-        wallpaperSnapshot.value.startsWith("data:") &&
-        wallpaperSnapshot.value.length > WALLPAPER_BASE64_INLINE_LIMIT
-      ) {
-        // 將 Base64 轉為 Blob 存入 imageCache
-        try {
-          const res = await fetch(wallpaperSnapshot.value);
-          const blob = await res.blob();
-          await db.put(
-            "imageCache",
-            {
-              id: WALLPAPER_IMAGE_CACHE_KEY,
-              blob,
-              mimeType: blob.type || "image/webp",
-              createdAt: Date.now(),
-            },
-            WALLPAPER_IMAGE_CACHE_KEY,
-          );
-          // settings 中只存引用 ID，不存完整 Base64
-          wallpaperSnapshot.value = `imageCache:${WALLPAPER_IMAGE_CACHE_KEY}`;
-        } catch (cacheErr) {
-          console.warn("[Theme] 背景圖分離儲存失敗，改用內嵌方式:", cacheErr);
-          // 回退：仍嘗試直接儲存完整 Base64
-        }
-      }
 
       // 將響應式對象轉換為純 JavaScript 對象（IndexedDB 無法克隆 Vue Proxy）
       const data = JSON.parse(
@@ -1151,7 +1108,7 @@ export const useThemeStore = defineStore("theme", () => {
           customColors: customColors.value,
           avatarStyle: avatarStyle.value,
           bubbleStyle: bubbleStyle.value,
-          wallpaperStyle: wallpaperSnapshot,
+          wallpaperStyle: wallpaperStyle.value,
           modalAnimation: modalAnimation.value,
           customCSS: customCSS.value,
           surfaceCustomCSS: surfaceCustomCSS.value,
@@ -1184,39 +1141,10 @@ export const useThemeStore = defineStore("theme", () => {
         avatarStyle.value = { ...defaultAvatarStyle, ...data.avatarStyle };
         bubbleStyle.value = { ...defaultBubbleStyle, ...data.bubbleStyle };
 
-        // 處理背景圖引用 ID：從 imageCache 還原 Base64
-        const storedWallpaper = {
+        wallpaperStyle.value = {
           ...defaultWallpaperStyle,
           ...data.wallpaperStyle,
-        } as WallpaperStyle;
-        if (
-          storedWallpaper.type === "image" &&
-          typeof storedWallpaper.value === "string" &&
-          storedWallpaper.value.startsWith("imageCache:")
-        ) {
-          const cacheKey = storedWallpaper.value.replace("imageCache:", "");
-          try {
-            const record = await db.get<{ id: string; blob: Blob }>(
-              "imageCache",
-              cacheKey,
-            );
-            if (record?.blob) {
-              // 將 Blob 轉為 Object URL（比 Base64 更省記憶體）
-              const objectUrl = URL.createObjectURL(record.blob);
-              storedWallpaper.value = objectUrl;
-            } else {
-              // 快取遺失，回退到 time-theme
-              console.warn("[Theme] 背景圖快取遺失，重置為時間主題");
-              storedWallpaper.type = "time-theme";
-              storedWallpaper.value = "";
-            }
-          } catch (cacheErr) {
-            console.warn("[Theme] 讀取背景圖快取失敗:", cacheErr);
-            storedWallpaper.type = "time-theme";
-            storedWallpaper.value = "";
-          }
-        }
-        wallpaperStyle.value = storedWallpaper;
+        };
 
         modalAnimation.value = { ...defaultModalAnimation, ...data.modalAnimation };
         customCSS.value = data.customCSS || "";

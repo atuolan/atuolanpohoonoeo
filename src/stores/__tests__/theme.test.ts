@@ -67,4 +67,42 @@ describe("useThemeStore", () => {
       });
     });
   });
+
+  describe("桌布圖片存檔", () => {
+    // 超過舊版 512KB 分離門檻的 data URL
+    const bigImage = "data:image/jpeg;base64," + "A".repeat(600 * 1024);
+
+    it("大圖直接內嵌存進設定，不再寫 imageCache", async () => {
+      const putSpy = vi.spyOn(db, "put");
+      const theme = useThemeStore();
+      theme.wallpaperStyle = {
+        ...theme.wallpaperStyle,
+        type: "image",
+        value: bigImage,
+      };
+
+      await theme.saveToStorage();
+
+      const stores = putSpy.mock.calls.map(([storeName]) => storeName);
+      expect(stores).toEqual(["settings"]);
+      expect((await readSavedTheme())?.wallpaperStyle.value).toBe(bigImage);
+    });
+
+    it("重新載入後桌布仍是同一張圖", async () => {
+      const theme = useThemeStore();
+      theme.wallpaperStyle = {
+        ...theme.wallpaperStyle,
+        type: "image",
+        value: bigImage,
+      };
+      await theme.saveToStorage();
+
+      setActivePinia(createPinia());
+      const reloaded = useThemeStore();
+      await reloaded.loadFromStorage();
+
+      expect(reloaded.wallpaperStyle.type).toBe("image");
+      expect(reloaded.wallpaperStyle.value).toBe(bigImage);
+    });
+  });
 });
