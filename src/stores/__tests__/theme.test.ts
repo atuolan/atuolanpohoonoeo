@@ -56,6 +56,11 @@ describe("useThemeStore", () => {
     it("clearSurfaceCSS 會把清除結果寫進 IndexedDB", async () => {
       const theme = useThemeStore();
       theme.updateSurfaceCSS("global-theme-modal", ".modal-header { color: red; }");
+      await vi.waitFor(async () => {
+        expect((await readSavedTheme())?.surfaceCustomCSS).toEqual({
+          "global-theme-modal": ".modal-header { color: red; }",
+        });
+      });
       theme.clearSurfaceCSS("global-theme-modal");
       await vi.waitFor(async () => {
         expect((await readSavedTheme())?.surfaceCustomCSS).toEqual({});
