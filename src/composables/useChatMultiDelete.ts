@@ -4,6 +4,7 @@ import { createChatRecord } from "@/storage/chatStorage";
 import { deleteMessage } from "@/storage/chatMessageStorage";
 import type { Chat, ChatMessage } from "@/types/chat";
 import { useAffinityStore } from "@/stores/affinity";
+import { useChatVariablesStore } from "@/stores/chatVariables";
 import {
   applyGreetingInitToAffinity,
   resetAffinityToCharacterDefaults,
@@ -126,8 +127,14 @@ export function useChatMultiDelete(deps: {
 
     const now = Date.now();
     const lastMsg = branchedMessages[branchedMessages.length - 1];
+    // chatData 上的變量與專屬預設是載入當下的內容；開著的聊天以 store 裡的最新狀態為準
+    const chatVariablesStore = useChatVariablesStore();
+    const branchChatVariables = chatVariablesStore.isBoundTo(chatData.id)
+      ? chatVariablesStore.snapshotChatVariables(now)
+      : chatData.chatVariables;
     const branchChat: Chat = {
       ...JSON.parse(JSON.stringify(chatData)),
+      chatVariables: branchChatVariables,
       id: `chat_${now}`,
       name: `${chatData.name} [分支]`,
       messages: [],

@@ -2,20 +2,21 @@
  * 聊天變量存儲
  * 對應 SillyTavern 的 {{getvar}} / {{setvar}} 局部（per-chat）及全局變量系統
  *
- * 提示詞覆蓋（promptToggles / chatPrompts）改為依「角色卡 / 真群聊」作用域
- * 儲存於 PROMPT_OVERRIDES，scope 規則見 src/utils/promptOverrideScope.ts。
+ * 同時保管「專屬預設」（promptToggles / chatPrompts）：每個聊天各自獨立，
+ * 和局部變量一起存在聊天記錄的 chatVariables 上。
  */
 import { defineStore } from "pinia";
 import { db, DB_STORES } from "@/db/database";
-import type { Chat, ChatLocalPrompt, PromptOverrideRecord } from "@/types/chat";
+import type { Chat, ChatLocalPrompt, ChatVariablesState } from "@/types/chat";
 import {
-  getPromptOverrideScopeKey,
-  type PromptOverrideScopeInput,
-} from "@/utils/promptOverrideScope";
+  readChatPromptPreset,
+  sanitizeChatPrompts,
+  sanitizePromptToggles,
+  type ChatPromptPreset,
+} from "@/utils/chatPromptPreset";
 
 const LS_GLOBAL_KEY = "aguaphone_global_vars";
 const CHAT_VARIABLES_SAVE_DELAY_MS = 500;
-const PROMPT_OVERRIDE_SAVE_DELAY_MS = 500;
 
 function localKey(chatId: string) {
   return `aguaphone_chat_vars_${chatId}`;
@@ -29,30 +30,8 @@ function toStringRecord(value: unknown): Record<string, string> {
   );
 }
 
-function toBooleanRecord(value: unknown): Record<string, boolean> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).filter(([, val]) => typeof val === "boolean"),
-  ) as Record<string, boolean>;
-}
-
-function toChatPrompts(value: unknown): ChatLocalPrompt[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is ChatLocalPrompt => {
-    if (!item || typeof item !== "object") return false;
-    const prompt = item as Partial<ChatLocalPrompt>;
-    return (
-      typeof prompt.id === "string" &&
-      typeof prompt.name === "string" &&
-      typeof prompt.role === "string" &&
-      typeof prompt.content === "string" &&
-      typeof prompt.injection_position === "number" &&
-      typeof prompt.injection_depth === "number" &&
-      typeof prompt.injection_order === "number" &&
-      typeof prompt.enabled === "boolean"
-    );
-  });
+function clonePrompts(prompts: ChatLocalPrompt[]): ChatLocalPrompt[] {
+  return prompts.map((prompt) => ({ ...prompt, modes: [...prompt.modes] }));
 }
 
 export const useChatVariablesStore = defineStore("chatVariables", {
@@ -61,93 +40,117 @@ export const useChatVariablesStore = defineStore("chatVariables", {
     promptToggles: {} as Record<string, boolean>,
     chatPrompts: [] as ChatLocalPrompt[],
     globalVars: {} as Record<string, string>,
+    /** 目前綁定的聊天；空字串代表還沒建立記錄的新聊天（內容先留在記憶體） */
     _currentChatId: "",
-    _currentScopeKey: "",
-    _localRevision: 0,
-    _scopeRevision: 0,
-    _saveLocalTimer: undefined as ReturnType<typeof setTimeout> | undefined,
-    _saveScopeTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+    _revision: 0,
+    _saveTimer: undefined as ReturnType<typeof setTimeout> | undefined,
   }),
 
+  getters: {
+    /** 專屬預設總共調整了幾項（強制開關 + 專屬條目） */
+    presetCount: (state): number =>
+      Object.keys(state.promptToggles).length + state.chatPrompts.length,
+  },
+
   actions: {
-    /** 切換 / 初始化到指定聊天，先載入舊 localStorage，再用 IDB 聊天記錄覆蓋並遷移
-     *
-     * 注意：此方法只負責 localVars。提示詞開關 / 聊天專屬提示詞請改用 initForScope() 或
-     * initForChatFromRecord()（後者會同時處理 scope）。
-     */
+    /** 切換 / 初始化到指定聊天，先載入舊 localStorage，再用 IDB 聊天記錄覆蓋 */
     initForChat(chatId: string) {
       if (this._currentChatId === chatId) {
         this._loadGlobal();
         return;
       }
-
-      const legacyVars = this._loadLegacyLocalVars(chatId);
-      this._setCurrentChatVars(chatId, legacyVars);
-      this._loadGlobal();
-      void this._loadLocalFromIdb(chatId, legacyVars, this._localRevision);
-    },
-
-    /** 已經拿到 Chat 記錄時同步初始化，避免生成前還在等 IDB 背景讀取
-     *
-     * 同時會初始化 prompt override scope（按角色卡 / 真群聊作用域）。
-     */
-    initForChatFromRecord(chat: Chat) {
-      const idbVars = chat.chatVariables?.localVars;
-      const nextVars = idbVars && typeof idbVars === "object"
-        ? toStringRecord(idbVars)
-        : this._loadLegacyLocalVars(chat.id);
-
-      // 計算 scope 並使用 chat 上的舊字段作為同步 fallback（之後會被 IDB 覆蓋）
-      const scopeKey = getPromptOverrideScopeKey({
-        id: chat.id,
-        characterId: chat.characterId,
-        isGroupChat: chat.isGroupChat,
-        groupMetadata: chat.groupMetadata,
-      });
-      const fallbackToggles = toBooleanRecord(chat.chatVariables?.promptToggles);
-      const fallbackPrompts = toChatPrompts(chat.chatVariables?.chatPrompts);
-
-      this._setCurrentChatState(
-        chat.id,
-        nextVars,
-        scopeKey,
-        fallbackToggles,
-        fallbackPrompts,
-      );
-      this._loadGlobal();
-
-      if (!idbVars && Object.keys(nextVars).length > 0) {
-        this._scheduleSaveLocalToIdb();
-      }
-
-      // 異步從 PROMPT_OVERRIDES 載入該 scope 的權威數據（會覆蓋 fallback）
-      void this._loadScopeFromIdb(scopeKey, this._scopeRevision, chat);
-    },
-
-    /** 切換 / 初始化到指定 scope（提示詞覆蓋作用域）
-     *
-     * 使用場景：ChatVarsPanel 切換時、或外部需要確保 scope 已載入時。
-     */
-    async initForScope(input: PromptOverrideScopeInput, chatRecordForMigration?: Chat | null): Promise<void> {
-      const scopeKey = getPromptOverrideScopeKey(input);
-      if (this._currentScopeKey === scopeKey) {
+      if (!chatId) {
+        this.resetForNewChat();
         return;
       }
 
-      if (this._saveScopeTimer) {
-        clearTimeout(this._saveScopeTimer);
-        this._saveScopeTimer = undefined;
+      const legacyVars = this._loadLegacyLocalVars(chatId);
+      this._bind(chatId, legacyVars, {}, []);
+      this._loadGlobal();
+      void this._loadFromIdb(chatId, legacyVars, this._revision);
+    },
+
+    /** 已經拿到 Chat 記錄時同步初始化，避免生成前還在等 IDB 背景讀取 */
+    initForChatFromRecord(chat: Chat) {
+      // 同一個聊天還有尚未寫入的修改：記憶體裡的比這份記錄新，不要蓋掉
+      if (this._currentChatId === chat.id && this._saveTimer) {
+        this._loadGlobal();
+        return;
       }
 
-      // 先用 fallback 同步切換，避免顯示舊 scope 內容
-      const fallbackToggles = toBooleanRecord(chatRecordForMigration?.chatVariables?.promptToggles);
-      const fallbackPrompts = toChatPrompts(chatRecordForMigration?.chatVariables?.chatPrompts);
-      this._currentScopeKey = scopeKey;
-      this._scopeRevision += 1;
-      this.promptToggles = fallbackToggles;
-      this.chatPrompts = fallbackPrompts;
+      const idbVars = chat.chatVariables?.localVars;
+      const hasIdbVars = !!idbVars && typeof idbVars === "object";
+      const nextVars = hasIdbVars
+        ? toStringRecord(idbVars)
+        : this._loadLegacyLocalVars(chat.id);
 
-      await this._loadScopeFromIdb(scopeKey, this._scopeRevision, chatRecordForMigration ?? null);
+      this._bind(
+        chat.id,
+        nextVars,
+        sanitizePromptToggles(chat.chatVariables?.promptToggles),
+        sanitizeChatPrompts(chat.chatVariables?.chatPrompts),
+      );
+      this._loadGlobal();
+
+      if (!hasIdbVars && Object.keys(nextVars).length > 0) {
+        this._scheduleSave();
+      }
+    },
+
+    /** 開啟一個還沒有記錄的新聊天：清空狀態，之後的修改先留在記憶體 */
+    resetForNewChat() {
+      this._bind("", {}, {}, []);
+      this._loadGlobal();
+    },
+
+    /**
+     * 新聊天第一次取得 ID 時呼叫：把記憶體裡的內容歸給這個聊天。
+     * 聊天記錄由 ChatScreen 的保存流程建立，內容會一併寫入。
+     */
+    adoptNewChat(chatId: string) {
+      if (this._currentChatId !== "") {
+        this.initForChat(chatId);
+        return;
+      }
+      this._currentChatId = chatId;
+      this._revision += 1;
+      this._loadGlobal();
+      if (Object.keys(this.localVars).length > 0) this._saveLocal();
+    },
+
+    isBoundTo(chatId: string): boolean {
+      return this._currentChatId === chatId;
+    },
+
+    /** 目前狀態的快照，供寫入聊天記錄 */
+    snapshotChatVariables(updatedAt: number = Date.now()): ChatVariablesState {
+      const snapshot: ChatVariablesState = {
+        version: 1,
+        localVars: { ...this.localVars },
+        updatedAt,
+      };
+      if (Object.keys(this.promptToggles).length > 0) {
+        snapshot.promptToggles = { ...this.promptToggles };
+      }
+      if (this.chatPrompts.length > 0) {
+        snapshot.chatPrompts = clonePrompts(this.chatPrompts);
+      }
+      return snapshot;
+    },
+
+    /**
+     * 取得某個聊天的專屬預設。
+     * 該聊天正開著就用記憶體裡的（可能有還沒寫入的修改），否則讀聊天記錄。
+     */
+    presetForChat(
+      chatId: string,
+      record?: { chatVariables?: Chat["chatVariables"] | null } | null,
+    ): ChatPromptPreset {
+      if (this._currentChatId !== chatId) return readChatPromptPreset(record);
+      return {
+        chatPromptToggles: { ...this.promptToggles },
+        chatLocalPrompts: clonePrompts(this.chatPrompts),
+      };
     },
 
     // ── 局部變量 ──────────────────────────────────────────────
@@ -157,7 +160,7 @@ export const useChatVariablesStore = defineStore("chatVariables", {
 
     setLocal(name: string, value: string): void {
       this.localVars[name] = value;
-      this._localRevision += 1;
+      this._revision += 1;
       this._saveLocal();
     },
 
@@ -170,14 +173,14 @@ export const useChatVariablesStore = defineStore("chatVariables", {
       } else {
         this.localVars[name] = cur + increment;
       }
-      this._localRevision += 1;
+      this._revision += 1;
       this._saveLocal();
     },
 
     incLocal(name: string): string {
       const cur = parseFloat(this.localVars[name] ?? "0") || 0;
       this.localVars[name] = String(cur + 1);
-      this._localRevision += 1;
+      this._revision += 1;
       this._saveLocal();
       return this.localVars[name];
     },
@@ -185,63 +188,70 @@ export const useChatVariablesStore = defineStore("chatVariables", {
     decLocal(name: string): string {
       const cur = parseFloat(this.localVars[name] ?? "0") || 0;
       this.localVars[name] = String(cur - 1);
-      this._localRevision += 1;
+      this._revision += 1;
       this._saveLocal();
       return this.localVars[name];
     },
 
     clearLocal(): void {
       this.localVars = {};
-      this._localRevision += 1;
+      this._revision += 1;
       if (this._currentChatId) {
         localStorage.removeItem(localKey(this._currentChatId));
-        this._scheduleSaveLocalToIdb();
+        this._scheduleSave();
       }
     },
 
-    // ── 聊天專屬提示詞開關 ────────────────────────────────────
-    getPromptToggle(identifier: string, defaultEnabled: boolean): boolean {
-      if (Object.prototype.hasOwnProperty.call(this.promptToggles, identifier)) {
-        return this.promptToggles[identifier];
-      }
-      return defaultEnabled;
+    // ── 專屬預設：開關調整 ────────────────────────────────────
+    /** 這個聊天對某個提示詞的強制值；null = 跟隨全域預設 */
+    getPromptOverride(identifier: string): boolean | null {
+      return Object.prototype.hasOwnProperty.call(this.promptToggles, identifier)
+        ? this.promptToggles[identifier]
+        : null;
     },
 
-    setPromptToggle(identifier: string, enabled: boolean, defaultEnabled: boolean): void {
+    /** 設定強制開 / 強制關；傳 null 改回跟隨全域預設 */
+    setPromptOverride(identifier: string, value: boolean | null): void {
       const next = { ...this.promptToggles };
-      if (enabled === defaultEnabled) {
+      if (value === null) {
+        if (!Object.prototype.hasOwnProperty.call(next, identifier)) return;
         delete next[identifier];
       } else {
-        next[identifier] = enabled;
+        if (next[identifier] === value) return;
+        next[identifier] = value;
       }
       this.promptToggles = next;
-      this._scopeRevision += 1;
-      this._scheduleSaveScopeToIdb();
+      this._revision += 1;
+      this._scheduleSave();
     },
 
-    prunePromptToggles(validIds: string[]): void {
-      const valid = new Set(validIds);
-      const next = Object.fromEntries(
-        Object.entries(this.promptToggles).filter(([key]) => valid.has(key)),
-      ) as Record<string, boolean>;
+    /** 把指定條目改回跟隨全域預設；不傳則全部改回 */
+    resetPromptOverrides(identifiers?: string[]): void {
+      const drop = identifiers ? new Set(identifiers) : null;
+      const next = drop
+        ? (Object.fromEntries(
+            Object.entries(this.promptToggles).filter(([key]) => !drop.has(key)),
+          ) as Record<string, boolean>)
+        : {};
       if (Object.keys(next).length === Object.keys(this.promptToggles).length) return;
       this.promptToggles = next;
-      this._scopeRevision += 1;
-      this._scheduleSaveScopeToIdb();
+      this._revision += 1;
+      this._scheduleSave();
     },
 
-    // ── 聊天專屬提示詞 ────────────────────────────────────────
-    addChatPrompt(prompt: Omit<ChatLocalPrompt, "id" | "createdAt" | "updatedAt"> & { id?: string }): ChatLocalPrompt {
+    // ── 專屬預設：專屬條目 ────────────────────────────────────
+    addChatPrompt(prompt: Omit<ChatLocalPrompt, "id" | "createdAt" | "updatedAt">): ChatLocalPrompt {
       const now = Date.now();
       const created: ChatLocalPrompt = {
         ...prompt,
-        id: prompt.id || `chat__${now}_${Math.random().toString(36).slice(2, 10)}`,
+        modes: [...prompt.modes],
+        id: `chat__${now}_${Math.random().toString(36).slice(2, 10)}`,
         createdAt: now,
         updatedAt: now,
       };
       this.chatPrompts = [...this.chatPrompts, created];
-      this._scopeRevision += 1;
-      this._scheduleSaveScopeToIdb();
+      this._revision += 1;
+      this._scheduleSave();
       return created;
     },
 
@@ -250,19 +260,16 @@ export const useChatVariablesStore = defineStore("chatVariables", {
       this.chatPrompts = this.chatPrompts.map((prompt) =>
         prompt.id === id ? { ...prompt, ...patch, updatedAt: now } : prompt,
       );
-      this._scopeRevision += 1;
-      this._scheduleSaveScopeToIdb();
+      this._revision += 1;
+      this._scheduleSave();
     },
 
     deleteChatPrompt(id: string): void {
       const before = this.chatPrompts.length;
       this.chatPrompts = this.chatPrompts.filter((prompt) => prompt.id !== id);
       if (this.chatPrompts.length === before) return;
-      const nextToggles = { ...this.promptToggles };
-      delete nextToggles[id];
-      this.promptToggles = nextToggles;
-      this._scopeRevision += 1;
-      this._scheduleSaveScopeToIdb();
+      this._revision += 1;
+      this._scheduleSave();
     },
 
     // ── 全局變量 ──────────────────────────────────────────────
@@ -311,37 +318,16 @@ export const useChatVariablesStore = defineStore("chatVariables", {
       }
     },
 
-    _setCurrentChatVars(chatId: string, vars: Record<string, string>): void {
-      // 不變更 scope；只切換 chat + localVars
-      if (this._saveLocalTimer) {
-        clearTimeout(this._saveLocalTimer);
-        this._saveLocalTimer = undefined;
-      }
-      this._currentChatId = chatId;
-      this._localRevision += 1;
-      this.localVars = vars;
-    },
-
-    _setCurrentChatState(
+    /** 換綁到另一個聊天；上一個聊天還沒寫入的修改先落地，不能丟 */
+    _bind(
       chatId: string,
       vars: Record<string, string>,
-      scopeKey: string,
       promptToggles: Record<string, boolean>,
       chatPrompts: ChatLocalPrompt[],
     ): void {
-      if (this._saveLocalTimer) {
-        clearTimeout(this._saveLocalTimer);
-        this._saveLocalTimer = undefined;
-      }
-      // scope 切換時，取消舊 scope 的待寫入
-      if (this._currentScopeKey !== scopeKey && this._saveScopeTimer) {
-        clearTimeout(this._saveScopeTimer);
-        this._saveScopeTimer = undefined;
-      }
+      this._flushSave();
       this._currentChatId = chatId;
-      this._currentScopeKey = scopeKey;
-      this._localRevision += 1;
-      this._scopeRevision += 1;
+      this._revision += 1;
       this.localVars = vars;
       this.promptToggles = promptToggles;
       this.chatPrompts = chatPrompts;
@@ -354,192 +340,66 @@ export const useChatVariablesStore = defineStore("chatVariables", {
       } catch {
         // storage quota exceeded — 靜默忽略
       }
-      this._scheduleSaveLocalToIdb();
+      this._scheduleSave();
     },
 
-    async _loadLocalFromIdb(
+    async _loadFromIdb(
       chatId: string,
       legacyVars: Record<string, string>,
       loadRevision: number,
     ): Promise<void> {
       try {
         const chat = await db.get<Chat>(DB_STORES.CHATS, chatId);
-        if (this._currentChatId !== chatId) return;
+        // 已換到別的聊天，或讀取期間本地有新的修改 → 不覆蓋
+        if (this._currentChatId !== chatId || this._revision !== loadRevision) return;
+
+        this.promptToggles = sanitizePromptToggles(chat?.chatVariables?.promptToggles);
+        this.chatPrompts = sanitizeChatPrompts(chat?.chatVariables?.chatPrompts);
 
         const idbVars = chat?.chatVariables?.localVars;
         if (idbVars && typeof idbVars === "object") {
           const nextVars = toStringRecord(idbVars);
-          if (this._localRevision === loadRevision) {
-            this.localVars = nextVars;
-            try {
-              localStorage.setItem(localKey(chatId), JSON.stringify(nextVars));
-            } catch {
-              // storage quota exceeded — 靜默忽略
-            }
+          this.localVars = nextVars;
+          try {
+            localStorage.setItem(localKey(chatId), JSON.stringify(nextVars));
+          } catch {
+            // storage quota exceeded — 靜默忽略
           }
           return;
         }
 
-        if (Object.keys(legacyVars).length > 0 && this._localRevision === loadRevision) {
-          this._scheduleSaveLocalToIdb();
+        if (Object.keys(legacyVars).length > 0) {
+          this._scheduleSave();
         }
       } catch (error) {
         console.warn("[chatVariables] 從 IDB 載入聊天變量失敗:", error);
       }
     },
 
-    _scheduleSaveLocalToIdb(): void {
+    _scheduleSave(): void {
       if (!this._currentChatId) return;
-      if (this._saveLocalTimer) clearTimeout(this._saveLocalTimer);
-
-      const chatId = this._currentChatId;
-      const varsSnapshot = { ...this.localVars };
-      this._saveLocalTimer = setTimeout(() => {
-        void this._saveLocalToIdb(chatId, varsSnapshot);
-      }, CHAT_VARIABLES_SAVE_DELAY_MS);
+      if (this._saveTimer) clearTimeout(this._saveTimer);
+      this._saveTimer = setTimeout(() => this._flushSave(), CHAT_VARIABLES_SAVE_DELAY_MS);
     },
 
-    async _saveLocalToIdb(
-      chatId: string,
-      snapshot: Record<string, string>,
-    ): Promise<void> {
+    /** 把排程中的保存立刻寫入（沒有排程就什麼都不做） */
+    _flushSave(): void {
+      if (!this._saveTimer) return;
+      clearTimeout(this._saveTimer);
+      this._saveTimer = undefined;
+      if (!this._currentChatId) return;
+      void this._saveToIdb(this._currentChatId, this.snapshotChatVariables());
+    },
+
+    async _saveToIdb(chatId: string, snapshot: ChatVariablesState): Promise<void> {
       try {
         const chat = await db.get<Chat>(DB_STORES.CHATS, chatId);
         if (!chat) return;
 
-        // 注意：保存時會清除舊版的 promptToggles / chatPrompts（已遷移到 PROMPT_OVERRIDES）
-        chat.chatVariables = {
-          version: 1,
-          localVars: snapshot,
-          promptToggles: undefined,
-          chatPrompts: undefined,
-          updatedAt: Date.now(),
-        };
-
+        chat.chatVariables = snapshot;
         await db.put(DB_STORES.CHATS, chat);
       } catch (error) {
         console.warn("[chatVariables] 保存聊天變量到 IDB 失敗:", error);
-      }
-    },
-
-    /** 從 PROMPT_OVERRIDES 載入指定 scope 的提示詞覆蓋
-     *
-     * 若該 scope 尚無記錄而 chatRecord.chatVariables 有舊資料，會執行一次性遷移：
-     * 1. 把 chat 上的 promptToggles / chatPrompts 寫入 PROMPT_OVERRIDES
-     * 2. 後續對該 chat 的保存會把舊字段刷成 undefined
-     */
-    async _loadScopeFromIdb(
-      scopeKey: string,
-      loadRevision: number,
-      chatRecordForMigration: Chat | null,
-    ): Promise<void> {
-      try {
-        const record = await db.get<PromptOverrideRecord>(
-          DB_STORES.PROMPT_OVERRIDES,
-          scopeKey,
-        );
-
-        // 切換到別的 scope 或本地有更新的修改 → 不覆蓋
-        if (this._currentScopeKey !== scopeKey) return;
-        if (this._scopeRevision !== loadRevision) return;
-
-        if (record) {
-          this.promptToggles = toBooleanRecord(record.promptToggles);
-          this.chatPrompts = toChatPrompts(record.chatPrompts);
-          // 如該 chat 上仍有舊字段，調度清理（透過下次 localVars 保存帶走）
-          if (
-            chatRecordForMigration &&
-            (chatRecordForMigration.chatVariables?.promptToggles ||
-              chatRecordForMigration.chatVariables?.chatPrompts)
-          ) {
-            this._scheduleSaveLocalToIdb();
-          }
-          return;
-        }
-
-        // 該 scope 尚無 PROMPT_OVERRIDES 記錄；嘗試從 chat 舊字段遷移
-        if (!chatRecordForMigration) return;
-        const legacyToggles = toBooleanRecord(
-          chatRecordForMigration.chatVariables?.promptToggles,
-        );
-        const legacyPrompts = toChatPrompts(
-          chatRecordForMigration.chatVariables?.chatPrompts,
-        );
-
-        if (Object.keys(legacyToggles).length === 0 && legacyPrompts.length === 0) {
-          // 無資料可遷移；保持空白狀態
-          return;
-        }
-
-        const newRec: PromptOverrideRecord = {
-          scopeKey,
-          version: 1,
-          promptToggles:
-            Object.keys(legacyToggles).length > 0 ? legacyToggles : undefined,
-          chatPrompts: legacyPrompts.length > 0 ? legacyPrompts : undefined,
-          updatedAt: Date.now(),
-          migratedFromChatIds: [chatRecordForMigration.id],
-        };
-        await db.put(DB_STORES.PROMPT_OVERRIDES, newRec);
-
-        // 寫入後若 scope 仍是當前，且未被改動，將狀態同步到 store
-        if (
-          this._currentScopeKey === scopeKey &&
-          this._scopeRevision === loadRevision
-        ) {
-          this.promptToggles = legacyToggles;
-          this.chatPrompts = legacyPrompts;
-        }
-
-        // 排清舊 chat 上的 promptToggles / chatPrompts
-        this._scheduleSaveLocalToIdb();
-      } catch (error) {
-        console.warn("[chatVariables] 從 IDB 載入 PROMPT_OVERRIDES 失敗:", error);
-      }
-    },
-
-    _scheduleSaveScopeToIdb(): void {
-      if (!this._currentScopeKey) return;
-      if (this._saveScopeTimer) clearTimeout(this._saveScopeTimer);
-
-      const scopeKey = this._currentScopeKey;
-      const toggleSnapshot = { ...this.promptToggles };
-      const promptsSnapshot = this.chatPrompts.map((prompt) => ({ ...prompt }));
-      this._saveScopeTimer = setTimeout(() => {
-        void this._saveScopeToIdb(scopeKey, toggleSnapshot, promptsSnapshot);
-      }, PROMPT_OVERRIDE_SAVE_DELAY_MS);
-    },
-
-    async _saveScopeToIdb(
-      scopeKey: string,
-      promptToggles: Record<string, boolean>,
-      chatPrompts: ChatLocalPrompt[],
-    ): Promise<void> {
-      try {
-        const hasToggles = Object.keys(promptToggles).length > 0;
-        const hasPrompts = chatPrompts.length > 0;
-
-        if (!hasToggles && !hasPrompts) {
-          // 空狀態：刪除 PROMPT_OVERRIDES 記錄以保持稀疏
-          await db.delete(DB_STORES.PROMPT_OVERRIDES, scopeKey);
-          return;
-        }
-
-        const existing = await db.get<PromptOverrideRecord>(
-          DB_STORES.PROMPT_OVERRIDES,
-          scopeKey,
-        );
-        const next: PromptOverrideRecord = {
-          scopeKey,
-          version: 1,
-          promptToggles: hasToggles ? promptToggles : undefined,
-          chatPrompts: hasPrompts ? chatPrompts : undefined,
-          updatedAt: Date.now(),
-          migratedFromChatIds: existing?.migratedFromChatIds,
-        };
-        await db.put(DB_STORES.PROMPT_OVERRIDES, next);
-      } catch (error) {
-        console.warn("[chatVariables] 保存 PROMPT_OVERRIDES 失敗:", error);
       }
     },
 

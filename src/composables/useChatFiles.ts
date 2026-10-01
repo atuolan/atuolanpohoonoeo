@@ -9,6 +9,8 @@ import {
 } from "@/storage/chatStorage";
 import type { Chat, ChatMessage } from "@/types/chat";
 import { useAffinityStore } from "@/stores/affinity";
+import { useChatVariablesStore } from "@/stores/chatVariables";
+import { inheritChatPromptPreset } from "@/utils/chatPromptPreset";
 import { applyGreetingInitToAffinity } from "@/services/AffinityGreetingInit";
 
 /** 聊天分類 */
@@ -38,6 +40,8 @@ export function useChatFiles(deps: {
   const renamingChatName = ref("");
   const showNewChatConfirm = ref(false);
   const newChatPinToList = ref(false);
+  /** 新聊天是否沿用目前聊天的專屬預設（預設沿用） */
+  const newChatInheritPreset = ref(true);
   const selectedGreetingIndex = ref(0);
 
   // ── 多選狀態 ──
@@ -118,10 +122,22 @@ export function useChatFiles(deps: {
   async function createNewChatFile(withGreeting: boolean) {
     const pinToList = newChatPinToList.value;
     const greetingIdx = selectedGreetingIndex.value;
+    const inheritPreset = newChatInheritPreset.value;
     showNewChatConfirm.value = false;
     newChatPinToList.value = false;
+    newChatInheritPreset.value = true;
     selectedGreetingIndex.value = 0;
     await deps.saveChatImmediate();
+
+    // 沿用專屬預設：複製一份給新聊天，之後兩邊各自獨立
+    const inheritedChatVariables = inheritPreset
+      ? inheritChatPromptPreset(
+          useChatVariablesStore().presetForChat(
+            deps.currentChatId.value ?? "",
+            deps.currentChatData.value,
+          ),
+        )
+      : undefined;
 
     const charId = deps.characterId || deps.currentCharacter.value?.id || "";
     const charName =
@@ -164,6 +180,7 @@ export function useChatFiles(deps: {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       pinnedToList: pinToList || undefined,
+      chatVariables: inheritedChatVariables,
       messageCount: newMessages.length,
       lastMessagePreview:
         newMessages[newMessages.length - 1]?.content?.slice(0, 100) || "",
@@ -377,6 +394,7 @@ export function useChatFiles(deps: {
     renamingChatName,
     showNewChatConfirm,
     newChatPinToList,
+    newChatInheritPreset,
     selectedGreetingIndex,
     availableGreetings,
     // 多選

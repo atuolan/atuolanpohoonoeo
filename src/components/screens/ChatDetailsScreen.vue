@@ -120,6 +120,8 @@ const props = defineProps<{
   multiCharSources?: MultiCharSourceItem[];
   personaSources?: PersonaSourceItem[];
   bindablePersonas?: BindablePersona[];
+  /** 這個聊天的專屬預設調整了幾項（強制開關 + 專屬條目） */
+  presetCount?: number;
 }>();
 
 const emit = defineEmits<{
@@ -134,7 +136,7 @@ const emit = defineEmits<{
   "toggle-block-character": [];
   "clear-chat-history": [];
   "open-proactive-message-settings": [];
-  "open-chat-vars": [];
+  "open-chat-preset": [];
   "open-favorite-audio": [];
   "update-group-name": [name: string];
   "change-group-avatar": [dataUrl: string];
@@ -446,8 +448,8 @@ function handleAction(action: string) {
     case "chat-info":
       emit("open-chat-info");
       break;
-    case "chat-vars":
-      emit("open-chat-vars");
+    case "chat-preset":
+      emit("open-chat-preset");
       break;
     case "chat-files":
       emit("close");
@@ -940,7 +942,7 @@ function handleAction(action: string) {
         <section class="panel">
           <h3 class="panel-title">群組功能</h3>
           <div class="list-group">
-            <button class="list-item" @click="handleAction('chat-vars')">
+            <button class="list-item" @click="handleAction('chat-preset')">
               <div class="list-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M4 7h16" />
@@ -950,6 +952,7 @@ function handleAction(action: string) {
                 </svg>
               </div>
               <span class="list-label">專屬預設</span>
+              <span v-if="presetCount" class="list-status">已調整 {{ presetCount }} 項</span>
               <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m9 18 6-6-6-6" />
               </svg>
@@ -1057,7 +1060,11 @@ function handleAction(action: string) {
             </div>
             <span class="quick-label">角色卡</span>
           </button>
-          <button class="quick-item" @click="handleAction('chat-vars')">
+          <button
+            class="quick-item"
+            :title="presetCount ? `專屬預設：已調整 ${presetCount} 項` : undefined"
+            @click="handleAction('chat-preset')"
+          >
             <div class="quick-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M4 7h16" />
@@ -1065,6 +1072,7 @@ function handleAction(action: string) {
                 <circle cx="8" cy="7" r="2" />
                 <circle cx="16" cy="17" r="2" />
               </svg>
+              <span v-if="presetCount" class="quick-count" aria-hidden="true">{{ presetCount }}</span>
             </div>
             <span class="quick-label">專屬預設</span>
           </button>
@@ -1581,6 +1589,7 @@ function handleAction(action: string) {
 
 .quick-icon,
 .quick-action-icon {
+  position: relative;
   width: 40px;
   height: 40px;
   display: flex;
@@ -1594,6 +1603,27 @@ function handleAction(action: string) {
     width: 21px;
     height: 21px;
   }
+}
+
+// 專屬預設已調整的項數
+.quick-count {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--cd-accent);
+  color: var(--color-on-primary, #ffffff);
+  border: 2px solid var(--cd-card);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .quick-label,
@@ -1761,6 +1791,13 @@ function handleAction(action: string) {
   font-weight: 500;
   color: var(--color-text);
   text-align: left;
+}
+
+.list-status {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--cd-accent);
 }
 
 .chevron {

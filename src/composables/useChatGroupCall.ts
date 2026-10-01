@@ -12,6 +12,7 @@ import {
   usePromptManagerStore,
   useSettingsStore,
 } from "@/stores";
+import { useChatVariablesStore } from "@/stores/chatVariables";
 import { useUserStore } from "@/stores/user";
 
 interface Message {
@@ -386,22 +387,12 @@ export function useChatGroupCall(deps: {
         userName: userStore.currentPersona?.name || "User",
         userPersona: deps.effectivePersona.value?.description,
         promptManagerConfig: promptManagerStore.config,
-        ...(await (async () => {
-          const chat = deps.currentChatData.value;
-          if (!chat) return {};
-          const { loadPromptOverrideForChat } = await import("@/utils/promptOverrideScope");
-          const o = await loadPromptOverrideForChat({
-            id: chat.id,
-            characterId: chat.characterId,
-            isGroupChat: chat.isGroupChat,
-            groupMetadata: chat.groupMetadata,
-            chatVariables: chat.chatVariables,
-          });
-          return {
-            chatPromptToggles: o.chatPromptToggles,
-            chatLocalPrompts: o.chatLocalPrompts,
-          };
-        })()),
+        ...(deps.currentChatData.value
+          ? useChatVariablesStore().presetForChat(
+              deps.currentChatData.value.id,
+              deps.currentChatData.value,
+            )
+          : {}),
         groupChatMode: true,
         groupMembers: groupMembersData,
         groupName: deps.groupMetadata.value.groupName,

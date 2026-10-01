@@ -12,9 +12,33 @@ export const useAuthStore = defineStore('auth', () => {
   const initError = ref<string | null>(null)
   const isInitializing = ref(false)
   const isInitialized = ref(false)
+  // 剛在驗證頁通過驗證、主畫面資料還在準備：這段期間驗證頁留在畫面上，
+  // 資料就緒後由 App 呼叫 finishEnteringApp() 一次切換，不重新整理頁面
+  const isEnteringApp = ref(false)
 
   async function sleep(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  const SIGN_IN_NOT_SAVED = {
+    success: false,
+    message: '驗證通過，但登入狀態沒有保存成功，請再試一次',
+  }
+
+  // 驗證通過並存好狀態後，把它套用到畫面上；回傳是否真的進入已驗證狀態
+  async function applySignedInState(): Promise<boolean> {
+    isEnteringApp.value = true
+    authState.value = await AuthService.getAuthState()
+    const signedIn = authState.value?.isAuthenticated === true
+    // 狀態沒讀回來就不會切到主畫面，不能讓驗證頁停在「正在進入」
+    if (!signedIn) {
+      isEnteringApp.value = false
+    }
+    return signedIn
+  }
+
+  function finishEnteringApp() {
+    isEnteringApp.value = false
   }
 
   // 初始化：從 IndexedDB 恢復狀態（含重試，改善行動端暫時性存儲失效）
@@ -112,7 +136,7 @@ export const useAuthStore = defineStore('auth', () => {
         result.username,
         result.displayName || result.username
       )
-      authState.value = await AuthService.getAuthState()
+      if (!(await applySignedInState())) return SIGN_IN_NOT_SAVED
       verificationAttempts.value = 0
 
       // 添加水印
@@ -147,7 +171,7 @@ export const useAuthStore = defineStore('auth', () => {
         result.username,
         result.displayName || result.username,
       );
-      authState.value = await AuthService.getAuthState();
+      if (!(await applySignedInState())) return SIGN_IN_NOT_SAVED;
 
       if (authState.value?.discordDisplayName) {
         CodeProtection.addWatermark(authState.value.discordDisplayName);
@@ -183,7 +207,7 @@ export const useAuthStore = defineStore('auth', () => {
       return { success: false, message: '' }
     }
     await AuthService.saveAuthState('friend', 'friend', '好友')
-    authState.value = await AuthService.getAuthState()
+    if (!(await applySignedInState())) return SIGN_IN_NOT_SAVED
     verificationAttempts.value = 0
     CodeProtection.addWatermark('好友')
     return { success: true, message: '好友驗證成功' }
@@ -201,7 +225,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     // 管理員驗證成功，直接保存 auth 狀態
     await AuthService.saveAuthState('admin', 'admin', '管理員')
-    authState.value = await AuthService.getAuthState()
+    if (!(await applySignedInState())) return SIGN_IN_NOT_SAVED
     verificationAttempts.value = 0
 
     CodeProtection.addWatermark('管理員')
@@ -236,7 +260,9 @@ export const useAuthStore = defineStore('auth', () => {
     initError,
     isInitializing,
     isInitialized,
+    isEnteringApp,
     hasResolvedAuthState,
+    finishEnteringApp,
     initialize,
     retryInitialize: initialize,
     verifyCode,

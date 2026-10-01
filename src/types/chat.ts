@@ -5,7 +5,7 @@
 
 import type { BlockState } from "@/types/block";
 import type { AuthorsNoteMetadata } from "./prompt";
-import type { PromptInjectionPosition, PromptRoleType } from "./promptManager";
+import type { PromptRoleType } from "./promptManager";
 import type {
   WaimaiDestinationSnapshot,
   WaimaiEtaSnapshot,
@@ -874,9 +874,23 @@ export const createDefaultSummarySettings = (): SummarySettings => ({
   summaryReadCount: 5,
 });
 
-// ===== 聊天會話 =====
+// ===== 專屬預設（每個聊天各自獨立） =====
+/**
+ * 提示詞的生成模式：線上 / 面對面 / 群聊 / 通話（單人電話與群通話）
+ */
+export type ChatPromptMode = "online" | "f2f" | "gc" | "call";
+
+/**
+ * 專屬條目放在提示詞的哪裡：
+ * - top：所有提示詞之前
+ * - beforeHistory：緊接在聊天記錄之前
+ * - end：所有提示詞之後
+ * - depth：插入聊天記錄中，位置由 depth 決定
+ */
+export type ChatPromptPlacement = "top" | "beforeHistory" | "end" | "depth";
+
 export interface ChatLocalPrompt {
-  /** 聊天專屬提示詞 ID（例如 chat__uuid） */
+  /** 專屬條目 ID（例如 chat__uuid） */
   id: string;
   /** 顯示名稱 */
   name: string;
@@ -884,12 +898,12 @@ export interface ChatLocalPrompt {
   role: PromptRoleType;
   /** 提示詞內容 */
   content: string;
-  /** 注入位置類型 */
-  injection_position: PromptInjectionPosition;
-  /** 注入深度（僅 ABSOLUTE 位置有效） */
-  injection_depth: number;
-  /** 注入順序（同深度時的排序） */
-  injection_order: number;
+  /** 放置位置 */
+  placement: ChatPromptPlacement;
+  /** 插入深度（僅 placement 為 depth 時有效；0 = 最新一則訊息之後） */
+  depth: number;
+  /** 適用的生成模式；不在清單內的模式不會帶上這個條目 */
+  modes: ChatPromptMode[];
   /** 是否啟用 */
   enabled: boolean;
   /** 創建時間 */
@@ -902,38 +916,25 @@ export interface ChatVariablesState {
   version: 1;
   localVars: Record<string, string>;
   /**
-   * @deprecated 自 v27 起改存於 PROMPT_OVERRIDES（按角色/群聊作用域）。
-   * 仍保留欄位以便讀取舊資料並執行一次性遷移。
+   * 專屬預設：強制開 / 強制關的提示詞條目。
+   * 沒列在這裡的條目跟隨全域預設。
    */
   promptToggles?: Record<string, boolean>;
-  /**
-   * @deprecated 自 v27 起改存於 PROMPT_OVERRIDES（按角色/群聊作用域）。
-   * 仍保留欄位以便讀取舊資料並執行一次性遷移。
-   */
+  /** 專屬預設：只屬於這個聊天的提示詞條目 */
   chatPrompts?: ChatLocalPrompt[];
   updatedAt: number;
 }
 
 /**
- * 提示詞覆蓋紀錄
- * 以「角色卡」或「群聊」為單位儲存提示詞開關覆蓋與聊天專屬提示詞條目。
- *
- * scopeKey 規則：
- * - `char__${characterId}`：1v1 聊天 與 多人卡（同一角色卡的多形態）共享
- * - `group__${chatId}`：真正的群聊（多張卡合併）獨立
+ * 已停用：專屬預設曾以「角色卡 / 群聊」為單位存在 promptOverrides 表，
+ * 現在改存在各聊天的 chatVariables。此型別只為了保留資料表的 schema 定義。
  */
 export interface PromptOverrideRecord {
-  /** 作用域鍵（主鍵） */
   scopeKey: string;
-  /** 結構版本 */
   version: 1;
-  /** 提示詞開關覆蓋（稀疏存儲：只保存與默認值不同的狀態） */
   promptToggles?: Record<string, boolean>;
-  /** 聊天專屬提示詞條目 */
-  chatPrompts?: ChatLocalPrompt[];
-  /** 更新時間 */
+  chatPrompts?: unknown[];
   updatedAt: number;
-  /** 來自哪些舊 chat 記錄遷移而來（除錯用） */
   migratedFromChatIds?: string[];
 }
 
