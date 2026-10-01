@@ -4,7 +4,7 @@
  */
 
 import {
-    getAPIClient,
+    OpenAICompatibleClient,
     type APIMessage,
     type ImageContent,
     type TextContent,
@@ -120,7 +120,9 @@ export async function generateBatchComments(
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     // 調用 API
-    const client = getAPIClient(apiSettings);
+    // 每次都用當下的設定建立 client。共用的 getAPIClient() 只在第一次建立時讀設定，
+    // 之後傳入的設定會被忽略，使用者換了 API 也會一直打舊的端點與模型。
+    const client = new OpenAICompatibleClient(apiSettings);
 
     // 如果貼文有圖片，用 vision content array 格式讓模型識圖
     const postImages = post.images?.filter(Boolean) ?? [];

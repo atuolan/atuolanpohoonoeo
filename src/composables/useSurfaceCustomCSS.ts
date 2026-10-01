@@ -5,17 +5,17 @@
  * surfaceId 為鍵存進 theme store 的 `surfaceCustomCSS`。本 composable 負責：
  *   1. 蒐集所有帶 CSS 的表面
  *   2. 依該表面在 uiSurfaceRegistry 的 rootSelector，把每條規則自動加上
- *      作用域前綴 `#app <rootSelector> ...`（`:scope` 換成表面根本身）
+ *      作用域前綴 `:is(#app, body) <rootSelector> ...`（`:scope` 換成表面根本身）
  *   3. 合併注入單一 <style id="aguaphone-surface-css"> 標籤
  *
  * 作用域包裝邏輯與 useWidgetCustomCSS 共用 cssScoping.ts，差別只在前綴來源
- * 改為表面的 rootSelector。`#app` 前綴用來壓過 Vue scoped 的 [data-v-xxx]
- * 特異性，讓全域注入的 CSS 能穿透 modal / screen 元件而不需改動原始碼。
+ * 改為表面的 rootSelector。前綴用 GLOBAL_SCOPE_PREFIX：特異性壓得過 Vue scoped 的
+ * [data-v-xxx]，又能對到 Teleport 到 body 的彈窗。
  */
 import { watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useThemeStore } from "@/stores/theme";
-import { scopeCSS } from "@/utils/cssScoping";
+import { GLOBAL_SCOPE_PREFIX, scopeCSS } from "@/utils/cssScoping";
 import { getSurface } from "@/services/themeAssistant/uiSurfaceRegistry";
 
 const STYLE_ID = "aguaphone-surface-css";
@@ -26,8 +26,9 @@ export function scopeSurfaceCSS(surfaceId: string, rawCSS: string): string {
   const surface = getSurface(surfaceId);
   if (!surface) return "";
 
-  // #app 前綴壓過 Vue scoped [data-v-xxx] 特異性，確保能穿透元件樣式
-  const prefix = `#app ${surface.rootSelector}`;
+  // 前綴壓過 Vue scoped [data-v-xxx] 特異性；登記的表面多半是 Teleport 到 body 的彈窗，
+  // 不在 #app 底下，所以不能只寫 #app
+  const prefix = `${GLOBAL_SCOPE_PREFIX} ${surface.rootSelector}`;
   return scopeCSS(rawCSS, {
     scopeRoots: [prefix],
     descendantPrefix: prefix,
