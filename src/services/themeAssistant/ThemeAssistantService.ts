@@ -11,7 +11,7 @@
  * AI 永遠只輸出「工具名 + 參數」，本服務不讓 AI 直接寫 CSS 選擇器或改檔案。
  */
 import {
-  getAPIClient,
+  OpenAICompatibleClient,
   type APIMessage,
   type TextContent,
   type ImageContent,
@@ -271,7 +271,9 @@ export async function runThemeAssistant(
   // 之後重複呼叫直接回短提示，避免 AI 反覆查同一區塊把 context 撐爆（token 防爆第 5 層）。
   const seenQueries = new Set<string>();
 
-  const client = getAPIClient(apiSettings);
+  // 每次都用當下的設定建立 client。共用的 getAPIClient() 只在第一次建立時讀設定，
+  // 之後傳入的設定會被忽略，使用者換了 API 也會一直打舊的端點與模型。
+  const client = new OpenAICompatibleClient(apiSettings);
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     options.onProgress?.({ round, phase: "requesting" });
