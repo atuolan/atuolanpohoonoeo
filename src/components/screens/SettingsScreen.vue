@@ -53,7 +53,15 @@ import {
   initDebugOverlay,
   isDebugOverlayActive,
 } from "@/utils/debugOverlay";
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from "vue";
 import { fetchModelIds } from "@/utils/modelListFetcher";
 
 interface RingtoneOption {
@@ -916,8 +924,42 @@ const copiedProfileId = ref<string | null>(null);
 const pendingSwitchProfileId = ref<string | null>(null);
 const showSwitchConfirm = ref(false);
 
-// 配置卡片的「複製」彈出選單
-const copyMenuProfileId = ref<string | null>(null);
+// 配置卡片的彈出選單（「複製」或「更多」）
+const openProfileMenu = ref<{ id: string; kind: "copy" | "more" } | null>(
+  null,
+);
+
+// 配置列表操作的底部提示（複製結果、刪除復原等）
+const profileToast = ref<{
+  text: string;
+  type: "success" | "error";
+  action?: { label: string; run: () => void };
+} | null>(null);
+let profileToastTimer: ReturnType<typeof setTimeout> | null = null;
+function showProfileToast(
+  text: string,
+  options: {
+    type?: "success" | "error";
+    action?: { label: string; run: () => void };
+    duration?: number;
+  } = {},
+) {
+  profileToast.value = {
+    text,
+    type: options.type ?? "success",
+    action: options.action,
+  };
+  if (profileToastTimer) clearTimeout(profileToastTimer);
+  profileToastTimer = setTimeout(() => {
+    profileToast.value = null;
+  }, options.duration ?? 2000);
+}
+function runProfileToastAction() {
+  const action = profileToast.value?.action;
+  profileToast.value = null;
+  if (profileToastTimer) clearTimeout(profileToastTimer);
+  action?.run();
+}
 
 // 剪貼簿匯入結果提示
 const clipboardImportHint = ref<{ type: "success" | "error"; text: string } | null>(
@@ -932,21 +974,35 @@ function showClipboardImportHint(type: "success" | "error", text: string) {
   }, 2500);
 }
 
-function startRenameProfile(profileId: string) {
+async function startRenameProfile(profileId: string) {
   const profile = settingsStore.profiles.find((p) => p.id === profileId);
   if (!profile) return;
+  closeProfileMenu();
   editingProfileId.value = profileId;
   editingProfileName.value = profile.name;
+  await nextTick();
+  const input = document.querySelector<HTMLInputElement>(
+    `[data-profile-rename="${profileId}"]`,
+  );
+  input?.focus();
+  input?.select();
+  input?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 async function confirmRenameProfile() {
-  if (editingProfileId.value && editingProfileName.value.trim()) {
-    settingsStore.renameProfile(
-      editingProfileId.value,
-      editingProfileName.value.trim(),
-    );
-    await doSave();
-  }
+  // Enter 之後輸入框消失還會觸發 blur，先清掉狀態避免重複執行
+  const profileId = editingProfileId.value;
+  const name = editingProfileName.value.trim();
+  editingProfileId.value = null;
+  editingProfileName.value = "";
+  if (!profileId || !name) return;
+  const profile = settingsStore.profiles.find((p) => p.id === profileId);
+  if (!profile || profile.name === name) return;
+  settingsStore.renameProfile(profileId, name);
+  await persistProfileList();
+}
+
+function cancelRenameProfile() {
   editingProfileId.value = null;
   editingProfileName.value = "";
 }
@@ -1795,120 +1851,125 @@ async function fetchModels() {
 // 保存成功通知
 const showSaveSuccess = ref(false);
 
-// 保存設定
+// 一般保存（其他設定的自動保存用）：不會把主 API 表單寫進配置文件
 async function saveSettings() {
-  // 檢查是否需要處理配置文件
-  const currentEndpoint = settingsStore.api.endpoint?.trim();
-  const currentApiKey = settingsStore.api.apiKey?.trim();
-
-  // 如果沒有填寫 API 資訊，直接保存
-  if (!currentEndpoint || !currentApiKey) {
-    await doSave();
-    return;
-  }
-
-  // 如果已經有選中的配置文件，檢查 endpoint 是否有變動
-  if (settingsStore.currentProfileId) {
-    const currentExists = settingsStore.profiles?.find(
-      (p) => p.id === settingsStore.currentProfileId,
-    );
-    if (currentExists) {
-      const savedEndpoint = currentExists.api.endpoint?.trim();
-      // endpoint 沒變，直接保存
-      if (savedEndpoint === currentEndpoint) {
-        await doSave();
-        return;
-      }
-      // endpoint 改變了，檢查是否已有其他配置使用新的 endpoint
-      const matchingProfile = settingsStore.profiles?.find(
-        (p) =>
-          p.id !== settingsStore.currentProfileId &&
-          p.api.endpoint?.trim() === currentEndpoint,
-      );
-      if (matchingProfile) {
-        // 切換到已有的配置
-        settingsStore.currentProfileId = matchingProfile.id;
-        await doSave();
-        return;
-      }
-      // 新的 endpoint 沒有對應配置，詢問是否建立新配置
-      newProfileName.value = getProfileNameSuggestion();
-      showNewProfileConfirm.value = true;
-      return;
-    }
-  }
-
-  // 沒有選中的配置文件時，嘗試按 endpoint 匹配現有配置
-  const existingProfile = settingsStore.profiles?.find(
-    (p) => p.api.endpoint?.trim() === currentEndpoint,
-  );
-
-  if (existingProfile) {
-    // 地址相同，更新到該配置文件（不要用 switchProfile，否則會覆蓋當前設定）
-    settingsStore.currentProfileId = existingProfile.id;
-    await doSave();
-  } else if (settingsStore.profiles?.length > 0) {
-    // 地址不同且已有其他配置，詢問是否創建新配置
-    newProfileName.value = getProfileNameSuggestion();
-    showNewProfileConfirm.value = true;
-  } else {
-    // 沒有任何配置文件，自動創建第一個
-    const name = getProfileNameSuggestion();
-    settingsStore.createProfile(name);
-    await doSave();
-  }
+  await doSave();
 }
 
-// 根據 API 資訊生成配置文件名稱建議
-function getProfileNameSuggestion(): string {
-  const endpoint = settingsStore.api.endpoint || "";
-  const provider = settingsStore.api.provider || "custom";
+// 右上角 ✓ / 「更新當前配置」：保存全部，並把主 API 表單寫回當前配置
+async function saveToCurrentProfile() {
+  // 還沒有任何配置文件時，自動用目前表單建立第一個
+  if (
+    settingsStore.profiles.length === 0 &&
+    settingsStore.api.endpoint?.trim() &&
+    settingsStore.api.apiKey?.trim()
+  ) {
+    settingsStore.createProfile(getProfileNameSuggestion());
+  }
+  await doSave({ syncProfile: true });
+}
 
-  // 嘗試從 endpoint 提取名稱
-  if (endpoint.includes("openai.com")) return "OpenAI";
-  if (endpoint.includes("anthropic.com")) return "Claude";
-  if (endpoint.includes("googleapis.com")) return "Gemini";
-  if (endpoint.includes("openrouter.ai")) return "OpenRouter";
+const KNOWN_ENDPOINT_NAMES: [string, string][] = [
+  ["api.openai.com", "OpenAI"],
+  ["anthropic.com", "Claude"],
+  ["googleapis.com", "Gemini"],
+  ["openrouter.ai", "OpenRouter"],
+];
+// 這些子網域前綴沒有辨識度，取名時跳過
+const GENERIC_HOST_LABELS = new Set([
+  "api",
+  "www",
+  "oneapi",
+  "newapi",
+  "gateway",
+  "proxy",
+  "openai",
+  "v1",
+]);
 
-  // 使用 provider 名稱
-  const providerNames: Record<string, string> = {
-    openai: "OpenAI",
-    claude: "Claude",
-    gemini: "Gemini",
-    openrouter: "OpenRouter",
-    custom: "自定義 API",
-  };
-
+// 從端點取出一個好認的短名稱，例如 oneapi.hakoyu.com → hakoyu
+function getEndpointShortName(endpoint: string): string {
+  if (!endpoint) return "";
+  for (const [needle, name] of KNOWN_ENDPOINT_NAMES) {
+    if (endpoint.includes(needle)) return name;
+  }
+  let hostname = "";
+  try {
+    hostname = new URL(endpoint).hostname;
+  } catch {
+    return "";
+  }
+  if (/^[\d.]+$/.test(hostname) || hostname === "localhost") return hostname;
+  const labels = hostname.split(".");
+  // 去掉頂級網域（.com / .xyz …）
+  const candidates = labels.length > 1 ? labels.slice(0, -1) : labels;
   return (
-    providerNames[provider] ||
-    `配置 ${(settingsStore.profiles?.length || 0) + 1}`
+    candidates.find((label) => !GENERIC_HOST_LABELS.has(label)) ||
+    candidates[candidates.length - 1] ||
+    hostname
   );
 }
 
-// 確認創建新配置文件並保存
+// 名稱重複時自動加上 (2)、(3)…
+function makeUniqueProfileName(base: string, excludeId?: string): string {
+  const taken = new Set(
+    settingsStore.profiles
+      .filter((p) => p.id !== excludeId)
+      .map((p) => p.name),
+  );
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base} (${n})`)) n++;
+  return `${base} (${n})`;
+}
+
+// 根據 API 資訊生成配置文件名稱建議：「主機名 · 模型」
+function getProfileNameSuggestion(): string {
+  const host =
+    getEndpointShortName(settingsStore.api.endpoint?.trim() || "") ||
+    getProviderLabel(settingsStore.api.provider);
+  const model = (settingsStore.api.model || "").trim();
+  const shortModel = model.length > 32 ? model.slice(0, 32) + "…" : model;
+  const base = [host, shortModel].filter(Boolean).join(" · ");
+  return makeUniqueProfileName(
+    base || `配置 ${settingsStore.profiles.length + 1}`,
+  );
+}
+
+// 「另存為新配置」：用目前表單建立新配置並切換過去，原配置不受影響
 async function confirmCreateProfileAndSave() {
-  const name = newProfileName.value.trim() || getProfileNameSuggestion();
+  const name = makeUniqueProfileName(
+    newProfileName.value.trim() || getProfileNameSuggestion(),
+  );
   settingsStore.createProfile(name);
   showNewProfileConfirm.value = false;
-  await doSave();
-}
-
-// 不創建新配置，直接保存（覆蓋當前配置）
-async function saveWithoutNewProfile() {
-  showNewProfileConfirm.value = false;
-  await doSave();
+  newProfileName.value = "";
+  await doSave({ syncProfile: true });
 }
 
 async function handleSaveButton() {
-  await saveSettings();
+  await saveToCurrentProfile();
+}
+
+// 只保存配置列表的變動（新建、刪除、改名、切換…），不碰表單內容
+async function persistProfileList() {
+  try {
+    await settingsStore.saveSettings();
+  } catch (e) {
+    console.error("保存配置列表失敗:", e);
+    showProfileToast(
+      "保存失敗：" + (e instanceof Error ? e.message : String(e)),
+      { type: "error", duration: 4000 },
+    );
+  }
 }
 
 // 實際執行保存
-async function doSave() {
+async function doSave(options: { syncProfile?: boolean } = {}) {
   commitMinimaxApiKeyDraft();
   isSaving.value = true;
   try {
-    await settingsStore.saveSettings();
+    await settingsStore.saveSettings(options);
     // 顯示成功通知
     showSaveSuccess.value = true;
     setTimeout(() => {
@@ -1931,19 +1992,25 @@ function openNewProfileModal() {
 }
 
 // 新建空白配置（除了名稱以外其他欄位全部留空，建完自動切換）
-function createProfileEmpty() {
-  const name =
-    newProfileName.value.trim() || `配置 ${settingsStore.profiles.length + 1}`;
+async function createProfileEmpty() {
+  const name = makeUniqueProfileName(
+    newProfileName.value.trim() || `配置 ${settingsStore.profiles.length + 1}`,
+  );
 
   // 先重置主 API 表單為預設空值
+  delete settingsStore.api.customHeaders;
+  delete settingsStore.api.proxy;
   Object.assign(settingsStore.api, {
     provider: "custom",
     endpoint: "",
     apiKey: "",
     model: "",
+    directConnect: false,
+    useClaudeNativeCache: false,
     promptPostProcessing: "none",
     toolProtocol: "auto",
     toolsEnabled: false,
+    lastPromptRoleOverride: "none",
   });
 
   settingsStore.createProfile(name);
@@ -1951,34 +2018,59 @@ function createProfileEmpty() {
   showProfileModal.value = false;
   clearFetchedModels();
   connectionStatus.value = "none";
+  await persistProfileList();
 }
 
 // 用當前主 API 表單內容創建新配置
-function createProfileFromCurrent() {
-  const name = newProfileName.value.trim() || getProfileNameSuggestion();
+async function createProfileFromCurrent() {
+  const name = makeUniqueProfileName(
+    newProfileName.value.trim() || getProfileNameSuggestion(),
+  );
   settingsStore.createProfile(name);
   newProfileName.value = "";
   showProfileModal.value = false;
+  await persistProfileList();
 }
 
-// 刪除配置文件
-function confirmDeleteProfile(profileId: string) {
-  const profile = settingsStore.profiles.find((p) => p.id === profileId);
-  if (!profile) return;
-
-  if (confirm(`確定要刪除配置「${profile.name}」嗎？`)) {
-    settingsStore.deleteProfile(profileId);
+// 刪除配置文件（不跳確認框，改為底部提示可復原）
+async function deleteProfileWithUndo(profileId: string) {
+  closeProfileMenu();
+  const prevEndpoint = settingsStore.api.endpoint;
+  const deleted = settingsStore.deleteProfile(profileId);
+  if (!deleted) return;
+  if (deleted.wasCurrent) {
+    if (prevEndpoint !== settingsStore.api.endpoint) clearFetchedModels();
+    connectionStatus.value = "none";
   }
+  await persistProfileList();
+  showProfileToast(`已刪除「${deleted.profile.name}」`, {
+    duration: 5000,
+    action: {
+      label: "復原",
+      run: async () => {
+        settingsStore.restoreProfile(deleted);
+        if (deleted.wasCurrent) {
+          clearFetchedModels();
+          connectionStatus.value = "none";
+        }
+        await persistProfileList();
+      },
+    },
+  });
 }
 
-// 複製一份指定配置（同名 + 副本）
-function duplicateProfileHandler(profileId: string) {
-  const created = settingsStore.duplicateProfile(profileId);
-  if (created) {
-    // 立即進入重命名模式，方便使用者改名
-    editingProfileId.value = created.id;
-    editingProfileName.value = created.name;
-  }
+// 複製一份指定配置：放在原配置下方，並直接進入改名
+async function duplicateProfileHandler(profileId: string) {
+  closeProfileMenu();
+  const source = settingsStore.profiles.find((p) => p.id === profileId);
+  if (!source) return;
+  const created = settingsStore.duplicateProfile(
+    profileId,
+    makeUniqueProfileName(`${source.name} 副本`),
+  );
+  if (!created) return;
+  await persistProfileList();
+  await startRenameProfile(created.id);
 }
 
 // ===== Provider / endpoint / 密鑰 顯示輔助 =====
@@ -2017,38 +2109,77 @@ function getMaskedApiKey(key: string | undefined): string {
   return key.slice(0, 4) + "…" + key.slice(-4);
 }
 
-// ===== 配置切換 dirty check =====
+// ===== 配置 dirty check =====
 
-function isCurrentFormDirty(): boolean {
+// 舊配置可能缺少這些可選欄位，比較時以預設值代入
+const API_FIELD_DEFAULTS: Record<string, unknown> = {
+  promptPostProcessing: "none",
+  toolProtocol: "auto",
+  toolsEnabled: false,
+  lastPromptRoleOverride: "none",
+  directConnect: false,
+  useClaudeNativeCache: false,
+};
+
+function sameFields(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+  defaults: Record<string, unknown> = {},
+  ignore: string[] = [],
+): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) {
+    if (ignore.includes(key)) continue;
+    const va = a[key] ?? defaults[key];
+    const vb = b[key] ?? defaults[key];
+    if (va === vb) continue;
+    if (
+      typeof va === "object" &&
+      typeof vb === "object" &&
+      JSON.stringify(va) === JSON.stringify(vb)
+    ) {
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+// 主表單（API + 生成參數）是否和當前配置已保存的內容不同
+const isFormDirty = computed(() => {
   const cur = settingsStore.currentProfileId;
   if (!cur) return false;
   const profile = settingsStore.profiles.find((p) => p.id === cur);
   if (!profile) return false;
-  return (
-    profile.api.endpoint !== settingsStore.api.endpoint ||
-    profile.api.apiKey !== settingsStore.api.apiKey ||
-    profile.api.model !== settingsStore.api.model ||
-    profile.api.provider !== settingsStore.api.provider ||
-    (profile.api.promptPostProcessing ?? "none") !==
-      (settingsStore.api.promptPostProcessing ?? "none") ||
-    (profile.api.toolProtocol ?? "auto") !==
-      (settingsStore.api.toolProtocol ?? "auto") ||
-    (profile.api.toolsEnabled ?? false) !==
-      (settingsStore.api.toolsEnabled ?? false)
+  return !(
+    sameFields(
+      profile.api as unknown as Record<string, unknown>,
+      settingsStore.api as unknown as Record<string, unknown>,
+      API_FIELD_DEFAULTS,
+    ) &&
+    sameFields(
+      profile.generation as unknown as Record<string, unknown>,
+      settingsStore.generation as unknown as Record<string, unknown>,
+      {},
+      // 上下文長度是全域設定，不跟配置走
+      ["maxContextLength"],
+    )
   );
-}
+});
 
 function requestSwitchProfile(profileId: string) {
+  closeProfileMenu();
   if (profileId === settingsStore.currentProfileId) return;
-  if (isCurrentFormDirty()) {
+  if (editingProfileId.value) return;
+  if (isFormDirty.value) {
     pendingSwitchProfileId.value = profileId;
     showSwitchConfirm.value = true;
     return;
   }
-  performSwitchProfile(profileId);
+  void performSwitchProfile(profileId);
 }
 
-function performSwitchProfile(profileId: string) {
+async function performSwitchProfile(profileId: string) {
   const prevEndpoint = settingsStore.api.endpoint;
   settingsStore.switchProfile(profileId);
   if (prevEndpoint !== settingsStore.api.endpoint) {
@@ -2057,26 +2188,21 @@ function performSwitchProfile(profileId: string) {
   connectionStatus.value = "none";
   pendingSwitchProfileId.value = null;
   showSwitchConfirm.value = false;
+  await persistProfileList();
 }
 
 async function switchConfirmSaveAndGo() {
   // 先把當前表單寫回當前配置，再切換
-  if (settingsStore.currentProfileId) {
-    settingsStore.updateProfile(
-      settingsStore.currentProfileId,
-      { ...settingsStore.api },
-      { ...settingsStore.generation },
-    );
-    await settingsStore.saveSettings();
-  }
-  if (pendingSwitchProfileId.value) {
-    performSwitchProfile(pendingSwitchProfileId.value);
+  const targetId = pendingSwitchProfileId.value;
+  await doSave({ syncProfile: true });
+  if (targetId) {
+    await performSwitchProfile(targetId);
   }
 }
 
-function switchConfirmDiscardAndGo() {
+async function switchConfirmDiscardAndGo() {
   if (pendingSwitchProfileId.value) {
-    performSwitchProfile(pendingSwitchProfileId.value);
+    await performSwitchProfile(pendingSwitchProfileId.value);
   }
 }
 
@@ -2089,12 +2215,7 @@ function switchConfirmCancel() {
 
 async function updateCurrentProfileAndSave() {
   if (!settingsStore.currentProfileId) return;
-  settingsStore.updateProfile(
-    settingsStore.currentProfileId,
-    { ...settingsStore.api },
-    { ...settingsStore.generation },
-  );
-  await doSave();
+  await saveToCurrentProfile();
 }
 
 function openSaveAsNewProfile() {
@@ -2102,9 +2223,9 @@ function openSaveAsNewProfile() {
   showNewProfileConfirm.value = true;
 }
 
-// ===== 配置卡片：分項複製 =====
+// ===== 配置卡片：選單與分項複製 =====
 
-async function copyTextWithFallback(text: string) {
+async function copyTextWithFallback(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
     return true;
@@ -2113,37 +2234,66 @@ async function copyTextWithFallback(text: string) {
     el.value = text;
     document.body.appendChild(el);
     el.select();
-    document.execCommand("copy");
+    const ok = document.execCommand("copy");
     document.body.removeChild(el);
-    return true;
+    return ok;
   }
 }
 
-function toggleCopyMenu(profileId: string) {
-  copyMenuProfileId.value =
-    copyMenuProfileId.value === profileId ? null : profileId;
+function toggleProfileMenu(profileId: string, kind: "copy" | "more") {
+  const open = openProfileMenu.value;
+  openProfileMenu.value =
+    open?.id === profileId && open.kind === kind
+      ? null
+      : { id: profileId, kind };
 }
 
-function closeCopyMenu() {
-  copyMenuProfileId.value = null;
+function closeProfileMenu() {
+  openProfileMenu.value = null;
 }
 
-async function copyProfileEndpoint(profileId: string) {
+function isProfileMenuOpen(profileId: string, kind: "copy" | "more") {
+  const open = openProfileMenu.value;
+  return open?.id === profileId && open.kind === kind;
+}
+
+async function copyProfileField(
+  profileId: string,
+  field: "endpoint" | "apiKey" | "both",
+) {
+  closeProfileMenu();
   const profile = settingsStore.profiles.find((p) => p.id === profileId);
   if (!profile) return;
-  await copyTextWithFallback(profile.api.endpoint || "");
-  copiedProfileId.value = profileId;
-  setTimeout(() => (copiedProfileId.value = null), 1500);
-  closeCopyMenu();
-}
+  const endpoint = profile.api.endpoint?.trim() || "";
+  const apiKey = profile.api.apiKey?.trim() || "";
 
-async function copyProfileApiKey(profileId: string) {
-  const profile = settingsStore.profiles.find((p) => p.id === profileId);
-  if (!profile) return;
-  await copyTextWithFallback(profile.api.apiKey || "");
+  let text = "";
+  let label = "";
+  if (field === "endpoint") {
+    if (!endpoint) return showProfileToast("此配置沒有端點", { type: "error" });
+    text = endpoint;
+    label = "端點";
+  } else if (field === "apiKey") {
+    if (!apiKey) return showProfileToast("此配置沒有密鑰", { type: "error" });
+    text = apiKey;
+    label = "密鑰";
+  } else {
+    if (!endpoint && !apiKey) {
+      return showProfileToast("此配置沒有端點和密鑰", { type: "error" });
+    }
+    text = `端點：${endpoint}\n密鑰：${apiKey}`;
+    label = "端點 + 密鑰";
+  }
+
+  if (!(await copyTextWithFallback(text))) {
+    showProfileToast("複製失敗，請手動複製", { type: "error" });
+    return;
+  }
   copiedProfileId.value = profileId;
-  setTimeout(() => (copiedProfileId.value = null), 1500);
-  closeCopyMenu();
+  setTimeout(() => {
+    if (copiedProfileId.value === profileId) copiedProfileId.value = null;
+  }, 1500);
+  showProfileToast(`已複製${label}`);
 }
 
 // ===== 從剪貼簿匯入端點 + 金鑰 =====
@@ -2211,28 +2361,6 @@ async function pasteCredentialsFromClipboard() {
   if (parsed.endpoint) filled.push("端點");
   if (parsed.apiKey) filled.push("密鑰");
   showClipboardImportHint("success", `已填入${filled.join("、")}`);
-}
-
-// 複製 API 端點和密鑰到剪貼板（保留作為「全部複製」入口）
-async function copyProfileCredentials(profileId: string) {
-  const profile = settingsStore.profiles?.find((p) => p.id === profileId);
-  if (!profile) return;
-  const text = `端點：${profile.api.endpoint || ""}\n密鑰：${profile.api.apiKey || ""}`;
-  try {
-    await navigator.clipboard.writeText(text);
-    copiedProfileId.value = profileId;
-    setTimeout(() => (copiedProfileId.value = null), 2000);
-  } catch {
-    // fallback
-    const el = document.createElement("textarea");
-    el.value = text;
-    document.body.appendChild(el);
-    el.select();
-    document.execCommand("copy");
-    document.body.removeChild(el);
-    copiedProfileId.value = profileId;
-    setTimeout(() => (copiedProfileId.value = null), 2000);
-  }
 }
 
 // ===== API 配置文件導出/導入 =====
@@ -2365,16 +2493,12 @@ async function handleImportAPIProfiles(event: Event) {
           ? ""
           : profile.api.apiKey || "";
 
-      // 創建新配置文件
-      const newProfile = settingsStore.createProfile(
+      // 加入列表但不切換當前配置，避免保存時被目前表單覆蓋
+      settingsStore.addProfile(
         profile.name || `導入配置 ${added + 1}`,
+        { ...profile.api, apiKey },
+        profile.generation || {},
       );
-      // 更新配置內容
-      Object.assign(newProfile.api, {
-        ...profile.api,
-        apiKey,
-      });
-      Object.assign(newProfile.generation, profile.generation || {});
     }
 
     added = importedProfiles.length - skipped;
@@ -3837,7 +3961,7 @@ function useClonedVoice(voiceId: string) {
         </button>
 
         <!-- 配置文件列表 -->
-        <div class="profiles-section" @click="closeCopyMenu">
+        <div class="profiles-section" @click="closeProfileMenu">
           <div class="profiles-header">
             <span class="profiles-title">API 配置文件</span>
             <button class="add-profile-btn" @click.stop="openNewProfileModal">
@@ -3857,7 +3981,10 @@ function useClonedVoice(voiceId: string) {
               :key="profile.id"
               class="profile-item"
               :class="{ active: settingsStore.currentProfileId === profile.id }"
-              :style="{ zIndex: copyMenuProfileId === profile.id ? 20 : 1, position: 'relative' }"
+              :style="{
+                zIndex: openProfileMenu?.id === profile.id ? 20 : 1,
+                position: 'relative',
+              }"
               @click="requestSwitchProfile(profile.id)"
             >
               <div class="profile-info">
@@ -3866,18 +3993,35 @@ function useClonedVoice(voiceId: string) {
                     v-model="editingProfileName"
                     type="text"
                     class="profile-rename-input"
+                    :data-profile-rename="profile.id"
                     @click.stop
                     @keyup.enter="confirmRenameProfile"
+                    @keyup.esc="cancelRenameProfile"
                     @blur="confirmRenameProfile"
                   />
                 </template>
                 <template v-else>
                   <div class="profile-name-row">
-                    <span class="profile-name">{{ profile.name }}</span>
                     <span
-                      v-if="settingsStore.currentProfileId === profile.id"
+                      class="profile-name"
+                      title="雙擊重命名"
+                      @dblclick.stop="startRenameProfile(profile.id)"
+                      >{{ profile.name }}</span
+                    >
+                    <span
+                      v-if="
+                        settingsStore.currentProfileId === profile.id &&
+                        isFormDirty
+                      "
+                      class="profile-dirty-badge"
+                      title="表單內容與此配置不同，按「更新當前配置」保存"
+                      >● 未保存</span
+                    >
+                    <span
+                      v-else-if="settingsStore.currentProfileId === profile.id"
                       class="profile-active-badge"
-                    >使用中</span>
+                      >使用中</span
+                    >
                     <span class="profile-provider-tag">{{
                       getProviderLabel(profile.api.provider)
                     }}</span>
@@ -3897,35 +4041,17 @@ function useClonedVoice(voiceId: string) {
                 </template>
               </div>
               <div class="profile-actions" @click.stop>
-                <button
-                  class="profile-action-btn rename"
-                  title="重命名"
-                  @click.stop="startRenameProfile(profile.id)"
-                >
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-                    />
-                  </svg>
-                </button>
-                <button
-                  class="profile-action-btn"
-                  title="複製一份配置"
-                  @click.stop="duplicateProfileHandler(profile.id)"
-                >
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z" />
-                  </svg>
-                </button>
-                <div class="profile-copy-wrapper">
+                <!-- 複製選單 -->
+                <div class="profile-menu-wrapper">
                   <button
                     class="profile-action-btn"
+                    :class="{ copied: copiedProfileId === profile.id }"
                     :title="
                       copiedProfileId === profile.id
                         ? '已複製！'
                         : '複製端點 / 密鑰'
                     "
-                    @click.stop="toggleCopyMenu(profile.id)"
+                    @click.stop="toggleProfileMenu(profile.id, 'copy')"
                   >
                     <svg
                       v-if="copiedProfileId !== profile.id"
@@ -3943,32 +4069,71 @@ function useClonedVoice(voiceId: string) {
                     </svg>
                   </button>
                   <div
-                    v-if="copyMenuProfileId === profile.id"
-                    class="copy-menu"
+                    v-if="isProfileMenuOpen(profile.id, 'copy')"
+                    class="profile-menu"
                     @click.stop
                   >
-                    <button class="copy-menu-item" @click="copyProfileEndpoint(profile.id)">
+                    <button
+                      class="profile-menu-item"
+                      :disabled="!profile.api.endpoint"
+                      @click="copyProfileField(profile.id, 'endpoint')"
+                    >
                       複製端點
                     </button>
-                    <button class="copy-menu-item" @click="copyProfileApiKey(profile.id)">
+                    <button
+                      class="profile-menu-item"
+                      :disabled="!profile.api.apiKey"
+                      @click="copyProfileField(profile.id, 'apiKey')"
+                    >
                       複製密鑰
                     </button>
-                    <button class="copy-menu-item" @click="copyProfileCredentials(profile.id); closeCopyMenu()">
+                    <button
+                      class="profile-menu-item"
+                      :disabled="!profile.api.endpoint && !profile.api.apiKey"
+                      @click="copyProfileField(profile.id, 'both')"
+                    >
                       端點 + 密鑰
                     </button>
                   </div>
                 </div>
-                <button
-                  class="profile-action-btn delete"
-                  title="刪除"
-                  @click.stop="confirmDeleteProfile(profile.id)"
-                >
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
-                    />
-                  </svg>
-                </button>
+                <!-- 更多選單 -->
+                <div class="profile-menu-wrapper">
+                  <button
+                    class="profile-action-btn"
+                    title="更多"
+                    @click.stop="toggleProfileMenu(profile.id, 'more')"
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path
+                        d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"
+                      />
+                    </svg>
+                  </button>
+                  <div
+                    v-if="isProfileMenuOpen(profile.id, 'more')"
+                    class="profile-menu"
+                    @click.stop
+                  >
+                    <button
+                      class="profile-menu-item"
+                      @click="startRenameProfile(profile.id)"
+                    >
+                      重命名
+                    </button>
+                    <button
+                      class="profile-menu-item"
+                      @click="duplicateProfileHandler(profile.id)"
+                    >
+                      建立副本
+                    </button>
+                    <button
+                      class="profile-menu-item danger"
+                      @click="deleteProfileWithUndo(profile.id)"
+                    >
+                      刪除
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -3983,13 +4148,19 @@ function useClonedVoice(voiceId: string) {
           >
             <button
               class="profile-save-btn primary"
-              :disabled="!settingsStore.currentProfileId || isSaving"
+              :disabled="
+                !settingsStore.currentProfileId || !isFormDirty || isSaving
+              "
               @click.stop="updateCurrentProfileAndSave"
             >
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" />
               </svg>
-              更新當前配置
+              {{
+                settingsStore.currentProfileId && !isFormDirty
+                  ? "已是最新"
+                  : "更新當前配置"
+              }}
             </button>
             <button
               class="profile-save-btn secondary"
@@ -7329,6 +7500,9 @@ function useClonedVoice(voiceId: string) {
           <p class="confirm-desc">
             請輸入配置名稱，並選擇要建空白、還是複製現在主 API 表單的內容。
           </p>
+          <p v-if="isFormDirty" class="confirm-desc profile-dirty-hint">
+            目前表單有未保存的改動：「建空白配置」會丟掉它們，「複製當前設定」會帶進新配置。
+          </p>
           <input
             v-model="newProfileName"
             type="text"
@@ -7463,7 +7637,7 @@ function useClonedVoice(voiceId: string) {
       </div>
     </Teleport>
 
-    <!-- 保存時詢問是否創建新配置 -->
+    <!-- 另存為新配置 -->
     <Teleport to="body">
       <div
         v-if="showNewProfileConfirm"
@@ -7476,10 +7650,10 @@ function useClonedVoice(voiceId: string) {
               <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
             </svg>
           </div>
-          <h3>發現新的 API 設定</h3>
+          <h3>另存為新配置</h3>
           <p class="confirm-desc">
-            這個 API 地址與現有配置不同，<br />
-            要保存為新的配置文件嗎？
+            用目前表單的內容建立新配置並切換過去，<br />
+            原本的配置不會被改動。
           </p>
           <input
             v-model="newProfileName"
@@ -7489,8 +7663,11 @@ function useClonedVoice(voiceId: string) {
             @keyup.enter="confirmCreateProfileAndSave"
           />
           <div class="modal-actions">
-            <button class="modal-btn cancel" @click="saveWithoutNewProfile">
-              不保存配置
+            <button
+              class="modal-btn cancel"
+              @click="showNewProfileConfirm = false"
+            >
+              取消
             </button>
             <button
               class="modal-btn confirm"
@@ -7505,6 +7682,24 @@ function useClonedVoice(voiceId: string) {
         </div>
       </div>
     </Teleport>
+
+    <!-- 配置列表操作提示（複製結果、刪除復原） -->
+    <Transition name="toast">
+      <div
+        v-if="profileToast"
+        class="profile-toast"
+        :class="profileToast.type"
+      >
+        <span>{{ profileToast.text }}</span>
+        <button
+          v-if="profileToast.action"
+          class="profile-toast-action"
+          @click="runProfileToastAction"
+        >
+          {{ profileToast.action.label }}
+        </button>
+      </div>
+    </Transition>
 
     <!-- 保存成功通知 -->
     <Transition name="toast">
@@ -8982,11 +9177,11 @@ function useClonedVoice(voiceId: string) {
   flex-shrink: 0;
 }
 
-.profile-copy-wrapper {
+.profile-menu-wrapper {
   position: relative;
 }
 
-.copy-menu {
+.profile-menu {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
@@ -9001,7 +9196,7 @@ function useClonedVoice(voiceId: string) {
   z-index: 10;
 }
 
-.copy-menu-item {
+.profile-menu-item {
   padding: 8px 10px;
   background: transparent;
   border: none;
@@ -9011,10 +9206,38 @@ function useClonedVoice(voiceId: string) {
   color: var(--color-text, #333);
   cursor: pointer;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: rgba(125, 211, 168, 0.12);
     color: var(--color-primary, #5fbc8a);
   }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  &.danger {
+    color: #e53e3e;
+
+    &:hover {
+      background: rgba(229, 62, 62, 0.1);
+      color: #e53e3e;
+    }
+  }
+}
+
+.profile-dirty-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #d97706;
+  background: rgba(245, 158, 11, 0.14);
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.5px;
+}
+
+.profile-dirty-hint {
+  color: #d97706;
 }
 
 .profile-save-actions {
@@ -9466,6 +9689,50 @@ function useClonedVoice(voiceId: string) {
   svg {
     width: 20px;
     height: 20px;
+  }
+}
+
+.profile-toast {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 18px;
+  background: rgba(40, 44, 52, 0.92);
+  color: white;
+  border-radius: 30px;
+  font-size: 13px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &.error {
+    background: rgba(197, 48, 48, 0.92);
+  }
+}
+
+.profile-toast-action {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 999px;
+  color: #a8e6cf;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
   }
 }
 

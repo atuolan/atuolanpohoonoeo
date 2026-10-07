@@ -11,6 +11,7 @@
     "build:fast": "vite build",
     "build:fast-inline": "vite build --mode inline",
     "preview": "vite preview",
+    "deploy:hk": "node scripts/deploy-hk.mjs",
     "type-check": "vue-tsc --noEmit",
     "test": "vitest --run",
     "test:watch": "vitest"

@@ -650,16 +650,22 @@ export const useSettingsStore = defineStore("settings", () => {
 
   /**
    * 保存設定到 IDB
+   *
+   * 主 API 表單（api / generation）預設不會寫回當前配置文件，
+   * 避免其他設定的自動保存把使用者還沒確認的表單改動一併寫進配置。
+   * 只有明確的「保存到當前配置」動作才傳 `syncProfile: true`。
    */
-  async function saveSettings(): Promise<void> {
+  async function saveSettings(
+    options: { syncProfile?: boolean } = {},
+  ): Promise<void> {
     // 防止在 loadSettings 完成前保存，避免用空預設值覆蓋 IDB 中的資料
     if (!isLoaded.value) {
       console.warn("[SettingsStore] 設定尚未載入完成，跳過保存");
       return;
     }
     try {
-      // 如果有當前配置文件，更新它
-      if (currentProfileId.value) {
+      // 明確要求時才把主表單寫回當前配置文件
+      if (options.syncProfile && currentProfileId.value) {
         const index = profiles.value.findIndex(
           (p) => p.id === currentProfileId.value,
         );
@@ -756,15 +762,23 @@ export const useSettingsStore = defineStore("settings", () => {
     }
   }
 
+  function generateProfileId(): string {
+    const random =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    return "profile-" + random;
+  }
+
   /**
-   * 創建新配置文件
+   * 創建新配置文件（以當前主表單內容建立，並切換過去）
    */
   function createProfile(name: string): APIProfile {
     const profile: APIProfile = {
-      id: "profile-" + Date.now(),
+      id: generateProfileId(),
       name,
-      api: { ...api },
-      generation: { ...generation },
+      api: { ...toRaw(api) },
+      generation: { ...toRaw(generation) },
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -772,6 +786,26 @@ export const useSettingsStore = defineStore("settings", () => {
     profiles.value.push(profile);
     currentProfileId.value = profile.id;
 
+    return profile;
+  }
+
+  /**
+   * 加入一個外部來源的配置文件（例如導入），不切換當前配置
+   */
+  function addProfile(
+    name: string,
+    apiData: APISettings,
+    genData: Partial<GenerationParams>,
+  ): APIProfile {
+    const profile: APIProfile = {
+      id: generateProfileId(),
+      name,
+      api: { ...apiData },
+      generation: { ...toRaw(generation), ...genData },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    profiles.value.push(profile);
     return profile;
   }
 
@@ -786,6 +820,10 @@ export const useSettingsStore = defineStore("settings", () => {
       );
       currentProfileId.value = profileId;
       profile.lastUsedAt = Date.now();
+      // 目標 profile 沒有的可選欄位（customHeaders、proxy…）要清掉，不可沿用上一個 profile 的值
+      for (const key of Object.keys(api) as (keyof APISettings)[]) {
+        if (!(key in profile.api)) delete (api as Partial<APISettings>)[key];
+      }
       Object.assign(api, profile.api);
       // 舊 profile 可能沒有新加入的可選 API 欄位，切換時不可沿用上一個 profile 的值。
       api.promptPostProcessing = profile.api.promptPostProcessing ?? "none";
@@ -798,22 +836,40 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   /**
-   * 刪除配置文件
+   * 刪除配置文件；回傳被刪除的配置與原位置，供「復原」使用
    */
-  function deleteProfile(profileId: string): void {
+  function deleteProfile(
+    profileId: string,
+  ): { profile: APIProfile; index: number; wasCurrent: boolean } | null {
     const index = profiles.value.findIndex((p) => p.id === profileId);
-    if (index !== -1) {
-      profiles.value.splice(index, 1);
+    if (index === -1) return null;
 
-      // 如果刪除的是當前配置，切換到第一個
-      if (currentProfileId.value === profileId) {
-        if (profiles.value.length > 0) {
-          switchProfile(profiles.value[0].id);
-        } else {
-          currentProfileId.value = null;
-        }
+    const [profile] = profiles.value.splice(index, 1);
+    const wasCurrent = currentProfileId.value === profileId;
+
+    // 如果刪除的是當前配置，切換到第一個
+    if (wasCurrent) {
+      if (profiles.value.length > 0) {
+        switchProfile(profiles.value[0].id);
+      } else {
+        currentProfileId.value = null;
       }
     }
+    return { profile, index, wasCurrent };
+  }
+
+  /**
+   * 復原被刪除的配置文件（放回原位置，原本是當前配置則切回去）
+   */
+  function restoreProfile(deleted: {
+    profile: APIProfile;
+    index: number;
+    wasCurrent: boolean;
+  }): void {
+    if (profiles.value.some((p) => p.id === deleted.profile.id)) return;
+    const index = Math.min(deleted.index, profiles.value.length);
+    profiles.value.splice(index, 0, deleted.profile);
+    if (deleted.wasCurrent) switchProfile(deleted.profile.id);
   }
 
   /**
@@ -828,23 +884,24 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   /**
-   * 複製一份配置文件為新的配置（不切換當前）
+   * 複製一份配置文件為新的配置，插在來源正下方（不切換當前）
    */
   function duplicateProfile(
     profileId: string,
     newName?: string,
   ): APIProfile | null {
-    const source = profiles.value.find((p) => p.id === profileId);
-    if (!source) return null;
+    const sourceIndex = profiles.value.findIndex((p) => p.id === profileId);
+    if (sourceIndex === -1) return null;
+    const source = profiles.value[sourceIndex];
     const profile: APIProfile = {
-      id: "profile-" + Date.now(),
+      id: generateProfileId(),
       name: newName?.trim() || `${source.name} (副本)`,
       api: { ...toRaw(source.api) },
       generation: { ...toRaw(source.generation) },
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    profiles.value.push(profile);
+    profiles.value.splice(sourceIndex + 1, 0, profile);
     return profile;
   }
 
@@ -1226,8 +1283,10 @@ export const useSettingsStore = defineStore("settings", () => {
     loadSettings,
     saveSettings,
     createProfile,
+    addProfile,
     switchProfile,
     deleteProfile,
+    restoreProfile,
     renameProfile,
     duplicateProfile,
     updateProfile,

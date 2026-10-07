@@ -8,6 +8,7 @@ node_modules/
 # 構建產物
 dist/
 dist.tar.gz
+dist-deploy.tgz
 
 # 環境與編輯器
 .vscode/
