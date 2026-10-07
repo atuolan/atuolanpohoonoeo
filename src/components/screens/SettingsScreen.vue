@@ -54,6 +54,7 @@ import {
   isDebugOverlayActive,
 } from "@/utils/debugOverlay";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { fetchModelIds } from "@/utils/modelListFetcher";
 
 interface RingtoneOption {
   id: string;
@@ -1103,34 +1104,8 @@ async function fetchEmbeddingModels() {
   embeddingModelFetchError.value = "";
 
   try {
-    const modelsUrl = toEmbeddingProxyUrl(`${endpoint}/models`);
-    const response = await fetch(modelsUrl, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-
-    // 解析模型列表（OpenAI 格式）
-    let allModels: string[] = [];
-    if (data.data && Array.isArray(data.data)) {
-      allModels = data.data
-        .map((m: { id?: string }) => m.id || "")
-        .filter((id: string) => id);
-    } else if (Array.isArray(data)) {
-      allModels = data
-        .map((m: string | { id?: string }) =>
-          typeof m === "string" ? m : m.id || "",
-        )
-        .filter((id: string) => id);
-    }
+    // 支援 OpenAI 格式，404 時改試 Gemini 原生格式
+    const allModels = await fetchModelIds(endpoint, apiKey, toEmbeddingProxyUrl);
 
     // 過濾出 embedding 相關模型（關鍵詞匹配）
     const embeddingKeywords = [
@@ -1784,55 +1759,23 @@ async function fetchModels() {
   modelFetchError.value = "";
 
   try {
-    const modelsUrl = toProxyUrl(`${currentEndpoint}/models`);
-    const response = await fetch(modelsUrl, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${settingsStore.api.apiKey}`,
-        "Content-Type": "application/json",
-      },
-    });
+    // 支援 OpenAI 格式，404 時改試 Gemini 原生格式
+    const models = await fetchModelIds(
+      currentEndpoint,
+      settingsStore.api.apiKey,
+      toProxyUrl,
+    );
+    fetchedModels.value = models.sort((a, b) => a.localeCompare(b));
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-
-    // 解析模型列表（OpenAI 格式）
-    if (data.data && Array.isArray(data.data)) {
-      fetchedModels.value = data.data
-        .map((m: { id?: string }) => m.id || "")
-        .filter((id: string) => id)
-        .sort((a: string, b: string) => a.localeCompare(b));
-
-      if (fetchedModels.value.length > 0) {
-        modelFetchError.value = "";
-        lastFetchedEndpoint.value = currentEndpoint; // 記錄成功拉取的端點
-        // 如果當前模型不在拉取的列表中，自動選擇第一個
-        if (!fetchedModels.value.includes(settingsStore.api.model)) {
-          settingsStore.api.model = fetchedModels.value[0];
-        }
-      } else {
-        modelFetchError.value = "未找到可用模型";
-      }
-    } else if (Array.isArray(data)) {
-      // 某些 API 直接返回數組
-      fetchedModels.value = data
-        .map((m: string | { id?: string }) =>
-          typeof m === "string" ? m : m.id || "",
-        )
-        .filter((id: string) => id);
+    if (fetchedModels.value.length > 0) {
+      modelFetchError.value = "";
       lastFetchedEndpoint.value = currentEndpoint; // 記錄成功拉取的端點
       // 如果當前模型不在拉取的列表中，自動選擇第一個
-      if (
-        fetchedModels.value.length > 0 &&
-        !fetchedModels.value.includes(settingsStore.api.model)
-      ) {
+      if (!fetchedModels.value.includes(settingsStore.api.model)) {
         settingsStore.api.model = fetchedModels.value[0];
       }
     } else {
-      modelFetchError.value = "無法解析模型列表";
+      modelFetchError.value = "未找到可用模型";
     }
   } catch (e) {
     console.error("拉取模型失敗:", e);

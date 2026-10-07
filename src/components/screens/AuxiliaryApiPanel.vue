@@ -10,6 +10,7 @@ import {
 } from "@/stores";
 import type { RoutableTaskType } from "@/stores/settings";
 import { computed, ref } from "vue";
+import { fetchModelIds } from "@/utils/modelListFetcher";
 
 // ===== Store =====
 const settingsStore = useSettingsStore();
@@ -471,21 +472,8 @@ async function fetchModelsFromApi() {
   fetchedModels.value = [];
 
   try {
-    const url = toProxyUrl(`${ep}/models`);
-    const res = await fetch(url, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-
-    const data = await res.json();
-    let models: string[] = [];
-
-    if (data.data && Array.isArray(data.data)) {
-      models = data.data.map((m: { id?: string }) => m.id || "").filter(Boolean).sort();
-    } else if (Array.isArray(data)) {
-      models = data.map((m: string | { id?: string }) => typeof m === "string" ? m : m.id || "").filter(Boolean);
-    }
+    // 支援 OpenAI 格式，404 時改試 Gemini 原生格式
+    const models = (await fetchModelIds(ep, key, toProxyUrl)).sort();
 
     if (models.length > 0) {
       fetchedModels.value = models;
