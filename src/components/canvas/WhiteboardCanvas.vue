@@ -358,6 +358,17 @@ function handleWidgetNavigate(page: string) {
   emit("navigate", page);
 }
 
+// 重置佈局會清掉所有組件（含待辦、拍立得照片、心情、語錄等內容），先確認
+function confirmResetLayout() {
+  if (
+    !confirm(
+      "要把桌面換成預設佈局嗎？\n目前所有組件的位置、樣式和內容（待辦、拍立得照片、心情、語錄等）都會清除，無法復原。",
+    )
+  )
+    return;
+  canvasStore.resetLayout();
+}
+
 // 初始化預設組件
 onMounted(async () => {
   // 加載數據
@@ -1033,7 +1044,7 @@ onUnmounted(() => {
       <div class="toolbar-row">
         <button
           class="toolbar-btn reset-btn"
-          @click="canvasStore.resetLayout()"
+          @click="confirmResetLayout"
         >
           <RotateCcw :size="18" :stroke-width="2" />
           重置
