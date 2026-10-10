@@ -114,14 +114,18 @@ const displayColor = computed(() => {
     :class="{ 'has-custom-bg': hasCustomBackground }"
     :style="{ '--theme-color': displayColor, ...containerStyle }"
   >
-    <!-- 編輯模式 -->
-    <div v-if="isEditing" class="edit-overlay" @click.self="isEditing = false">
-      <div class="edit-form">
-        <input v-model="title" placeholder="標題" class="edit-input" />
-        <input type="date" v-model="targetDate" class="edit-input" />
-        <button @click="isEditing = false" class="save-btn">確定</button>
+    <!-- 編輯視窗：移到 body 置中顯示。
+         原本疊在組件內，矮的組件會被裁掉；輸入框在畫布裡聚焦時，
+         iOS 會把畫布容器捲上去且不會復原，整個桌面卡在偏移的位置 -->
+    <Teleport to="body">
+      <div v-if="isEditing" class="countdown-edit-overlay" @click.self="isEditing = false">
+        <div class="edit-form" :style="{ '--theme-color': displayColor }">
+          <input v-model="title" placeholder="標題" class="edit-input" />
+          <input type="date" v-model="targetDate" class="edit-input" />
+          <button @click="isEditing = false" class="save-btn">確定</button>
+        </div>
       </div>
-    </div>
+    </Teleport>
 
     <!-- 顯示模式 -->
     <div class="content" @dblclick="isEditing = true">
@@ -216,6 +220,13 @@ const displayColor = computed(() => {
 
 .countdown-sticky:hover .edit-trigger {
   opacity: 1;
+}
+
+// 觸控裝置沒有 hover：按鈕原本隱形但點得到，會莫名跳出編輯視窗
+@media (hover: none) {
+  .header .edit-trigger {
+    opacity: 0.6;
+  }
 }
 
 .counter-body {
@@ -315,32 +326,39 @@ const displayColor = computed(() => {
   }
 }
 
-// 編輯表單
-.edit-overlay {
-  position: absolute;
+// 編輯視窗（Teleport 到 body）
+.countdown-edit-overlay {
+  position: fixed;
   inset: 0;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(5px);
-  z-index: 10;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 200;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px;
+  padding: 16px;
 }
 
 .edit-form {
   width: 100%;
-  max-width: 90%;
+  max-width: 320px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding: 16px;
+  background: #fffdf9;
+  border-radius: 16px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
 
   .edit-input {
     width: 100%;
+    box-sizing: border-box;
     padding: 10px;
     border: 1.5px solid #e5e7eb;
     border-radius: 8px;
-    font-size: 13px;
+    background: #fff;
+    color: #374151;
+    // 小於 16px 時 iOS 聚焦會自動放大頁面
+    font-size: 16px;
     transition: border-color 0.2s;
 
     &:focus {
@@ -350,11 +368,11 @@ const displayColor = computed(() => {
   }
 
   .save-btn {
-    padding: 8px;
+    padding: 10px;
     background: var(--theme-color);
     color: white;
     border-radius: 8px;
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 600;
     transition: opacity 0.2s;
 

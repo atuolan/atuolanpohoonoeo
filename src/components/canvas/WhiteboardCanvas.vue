@@ -351,6 +351,23 @@ function handleWidgetClick(widget: { type: string; data?: any }) {
   }
 }
 
+// 畫布左右滑動是用 transform 做的，容器本身不該有原生捲動位移。
+// 但組件裡的輸入框聚焦時，iOS（以及 main.ts 的 scrollIntoView）會把 overflow:hidden 的
+// 外層容器捲上去，收起鍵盤後不會復原，整個桌面卡在偏移位置、下方露出一塊白。
+// 輸入框失焦後把這些位移歸零（從組件外框往上，組件內部可捲動的清單不動）。
+function resetNativeScrollOffsets(e: FocusEvent) {
+  const target = e.target as HTMLElement | null;
+  const start = target?.closest<HTMLElement>(".widget-wrapper") ?? target;
+  window.setTimeout(() => {
+    let el: HTMLElement | null = start;
+    while (el) {
+      if (el.scrollTop !== 0) el.scrollTop = 0;
+      if (el.scrollLeft !== 0) el.scrollLeft = 0;
+      el = el.parentElement;
+    }
+  }, 300);
+}
+
 // 處理 widget 內部的導航事件
 // 角色類組件（最近聊天、寵物等）傳的是 { type, characterId, chatId }，
 // 原本直接當字串往上丟，App 對不到任何頁面，點了沒反應
@@ -965,6 +982,7 @@ onUnmounted(() => {
     class="whiteboard-viewport"
     :class="{ 'is-scrolling': isDraggingActive || isMomentumAnimating }"
     :style="viewportStyle"
+    @focusout="resetNativeScrollOffsets"
   >
     <!-- 桌布背景層 -->
     <div class="wallpaper-layer"></div>
