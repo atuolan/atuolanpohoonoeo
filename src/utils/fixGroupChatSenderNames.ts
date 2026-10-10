@@ -3,7 +3,7 @@
  * 根據群成員列表更新消息中的 senderCharacterName 欄位
  */
 
-import { openDB } from "@/storage/db";
+import { getDatabase } from "@/db/database";
 import type { Chat } from "@/types/chat";
 
 interface GroupMember {
@@ -105,12 +105,12 @@ export async function fixGroupChatSenderNames(): Promise<{
   fixed: number;
   total: number;
 }> {
-  const db = await openDB();
+  const db = await getDatabase();
 
   try {
     // 1. 載入所有角色卡
     const characters = await db.getAll("characters");
-    const charactersMap = new Map(characters.map((c) => [c.id, c]));
+    const charactersMap = new Map<string, any>(characters.map((c) => [c.id, c]));
 
     // 2. 找出所有群聊
     const chats: Chat[] = await db.getAll("chats");
@@ -124,8 +124,8 @@ export async function fixGroupChatSenderNames(): Promise<{
 
       // 3. 載入該群聊的所有 AI 消息
       const allMessages = await db.getAllFromIndex(
-        "chat_messages",
-        "by-chat",
+        "chatMessages",
+        "by-chatId",
         chat.id
       );
 
@@ -170,7 +170,7 @@ export async function fixGroupChatSenderNames(): Promise<{
         }
 
         if (needsUpdate) {
-          await db.put("chat_messages", msg);
+          await db.put("chatMessages", msg);
           fixedMessages++;
         }
       }

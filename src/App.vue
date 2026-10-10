@@ -395,6 +395,11 @@ async function ensureSelfHostedSyncSocketConnected() {
 
   if (!authStore.isAuthenticated || !selfHostedSyncStore.enabled || !selfHostedSyncStore.accessToken) {
     closeSelfHostedSyncSocket();
+    updateRuntimeSessionStage("selfHostedSync:websocket skipped (not enabled)", {
+      authenticated: authStore.isAuthenticated,
+      enabled: selfHostedSyncStore.enabled,
+      hasAccessToken: !!selfHostedSyncStore.accessToken,
+    });
     return;
   }
 
@@ -404,6 +409,9 @@ async function ensureSelfHostedSyncSocketConnected() {
     selfHostedSyncSocket.readyState !== WebSocket.CLOSED &&
     selfHostedSyncSocketToken === selfHostedSyncStore.accessToken
   ) {
+    updateRuntimeSessionStage("selfHostedSync:websocket already connected", {
+      readyState: selfHostedSyncSocket.readyState,
+    });
     return;
   }
 
@@ -423,9 +431,11 @@ async function ensureSelfHostedSyncSocketConnected() {
     ) {
       console.log("[App] 開 WS 前先刷新 access token");
       lastSessionRefreshAt = now;
+      updateRuntimeSessionStage("selfHostedSync:websocket refreshing session");
       await selfHostedSyncStore.refreshSession();
       // 把刷新後得到的新 token 記下來，避免 watcher 二次觸發時再刷一次
       lastRefreshedAccessToken = selfHostedSyncStore.accessToken;
+      updateRuntimeSessionStage("selfHostedSync:websocket session refreshed");
     } else if (!alreadyRefreshedThisToken && currentToken) {
       // token 還在冷卻內但之前沒記過 → 先標記成已知，防止 watcher 亂觸發
       lastRefreshedAccessToken = currentToken;
@@ -434,11 +444,13 @@ async function ensureSelfHostedSyncSocketConnected() {
     console.warn("[App] 刷新 session 失敗，嘗試用現有 token 開 WS", error);
     // Refresh token 本身已失效（401）→ 繼續重連毫無意義，直接登出並通知用戶
     const errMsg = error instanceof Error ? error.message : String(error);
+    updateRuntimeSessionStage("selfHostedSync:websocket session refresh failed", { error: errMsg });
     if (errMsg.includes("401") || errMsg.toLowerCase().includes("invalid or expired")) {
       // 有儲存密碼 → 嘗試自動重新登入，成功後重建 WS
       if (selfHostedSyncStore.savedPassword && selfHostedSyncStore.username) {
         try {
           console.log("[App] Refresh token 失效，嘗試用儲存密碼自動重新登入");
+          updateRuntimeSessionStage("selfHostedSync:websocket auto re-login");
           await selfHostedSyncStore.login(selfHostedSyncStore.savedPassword);
           console.log("[App] 自動重新登入成功，重建 WS");
           // 重置 token 快取讓後續呼叫用新 token
@@ -453,6 +465,7 @@ async function ensureSelfHostedSyncSocketConnected() {
             "同步登入已過期",
             "請重新登入自架同步伺服器以繼續使用同步功能。",
           );
+          updateRuntimeSessionStage("selfHostedSync:websocket logged out (auto re-login failed)");
           return;
         }
       } else {
@@ -463,6 +476,7 @@ async function ensureSelfHostedSyncSocketConnected() {
           "同步登入已過期",
           "請重新登入自架同步伺服器以繼續使用同步功能。",
         );
+        updateRuntimeSessionStage("selfHostedSync:websocket logged out (refresh token expired)");
         return;
       }
     }
@@ -474,6 +488,9 @@ async function ensureSelfHostedSyncSocketConnected() {
     selfHostedSyncSocket.readyState !== WebSocket.CLOSED &&
     selfHostedSyncSocketToken === selfHostedSyncStore.accessToken
   ) {
+    updateRuntimeSessionStage("selfHostedSync:websocket already connected (after refresh)", {
+      readyState: selfHostedSyncSocket.readyState,
+    });
     return;
   }
 

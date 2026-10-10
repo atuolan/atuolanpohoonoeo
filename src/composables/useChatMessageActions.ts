@@ -19,7 +19,8 @@ export function useChatMessageActions(context: {
   const editingThought = ref("");
   const editContentTextareaRef = ref<HTMLTextAreaElement | null>(null);
   const editThoughtTextareaRef = ref<HTMLTextAreaElement | null>(null);
-  const replyingTo = ref<Message | null>(null);
+  // senderName：群聊中實際發送者的名稱（給回覆預覽列顯示用）
+  const replyingTo = ref<(Message & { senderName?: string }) | null>(null);
 
   function handleMessageClick(id: string) {
     console.log("Message clicked:", id);

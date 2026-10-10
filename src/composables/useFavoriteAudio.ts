@@ -7,6 +7,22 @@ import {
   isFavoriteAudio,
 } from '@/db/operations';
 
+/** 收藏只用到這些欄位；ChatMessage 與 ChatScreenMessage 都符合 */
+type FavoriteAudioSourceMessage = Pick<
+  ChatMessage,
+  | 'id'
+  | 'content'
+  | 'audioBlobId'
+  | 'audioDuration'
+  | 'audioMimeType'
+  | 'audioWaveform'
+  | 'audioTranscript'
+  | 'ttsSegments'
+  | 'ttsAudioUrl'
+  | 'ttsRawContent'
+  | 'phoneCallHistoryData'
+>;
+
 export function useFavoriteAudio() {
   const isFavoriting = ref(false);
 
@@ -14,7 +30,7 @@ export function useFavoriteAudio() {
    * 收藏用戶錄音消息
    */
   async function favoriteUserAudio(
-    message: ChatMessage,
+    message: FavoriteAudioSourceMessage,
     chatId: string,
     characterId: string,
     characterName: string,
@@ -48,7 +64,7 @@ export function useFavoriteAudio() {
    * 收藏 TTS 語音消息
    */
   async function favoriteTTSAudio(
-    message: ChatMessage,
+    message: FavoriteAudioSourceMessage,
     chatId: string,
     characterId: string,
     characterName: string,
@@ -95,7 +111,7 @@ export function useFavoriteAudio() {
    * 收藏通話錄音
    */
   async function favoritePhoneAudio(
-    message: ChatMessage,
+    message: FavoriteAudioSourceMessage,
     chatId: string,
     characterId: string,
     characterName: string,
