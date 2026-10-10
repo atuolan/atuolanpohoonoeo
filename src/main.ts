@@ -50,6 +50,7 @@ import {
 } from "./utils/runtimeDiagnostics";
 import { CodeProtection } from "./utils/codeProtection";
 import { autoFixStickerUrls } from "./utils/fixStickerUrls";
+import { initStatusBarTint } from "./utils/statusBarTint";
 import { initStorageProtection } from "./utils/storagePersistence";
 
 // ===== 視口高度修正（iOS / Android / 瀏覽器通用）=====
@@ -481,6 +482,9 @@ updateRuntimeSessionStage("app mounted");
 
 // Vue 掛載後再次更新高度（確保 #app DOM 已存在）
 updateAppHeight();
+
+// iOS 26+/27 PWA：頂部放實心取色條，避免系統在狀態列疊白霧
+initStatusBarTint();
 
 // 應用掛載後註冊 Service Worker 並請求持久化存儲
 updateRuntimeSessionStage("storage protection init start");
