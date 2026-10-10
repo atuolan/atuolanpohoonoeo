@@ -257,6 +257,41 @@ function elementLayers(el: Element, topPx: number, onReady: () => void): Rgba[] 
   return layers;
 }
 
+const CHILD_SCAN_LIMIT = 40;
+const CHILD_SCAN_DEPTH = 3;
+
+/**
+ * elementsFromPoint 會略過 pointer-events: none 的元素，
+ * 但桌布、聊天背景這類背景層常設成 pointer-events: none（如 .wallpaper-layer）。
+ * 這裡補抓 el 底下蓋住取樣點的 pointer-events: none 子孫，
+ * 視為畫在 el 背景之上、可點擊內容之下（後面的兄弟元素在上）。
+ */
+function pointerlessChildLayers(
+  el: Element,
+  x: number,
+  y: number,
+  strip: Element,
+  topPx: number,
+  onReady: () => void,
+  depth = 0,
+): Rgba[] {
+  if (depth >= CHILD_SCAN_DEPTH) return [];
+  const layers: Rgba[] = [];
+  const children = Array.from(el.children).slice(0, CHILD_SCAN_LIMIT).reverse();
+  for (const child of children) {
+    if (child === strip) continue;
+    const cs = getComputedStyle(child);
+    if (cs.pointerEvents !== "none" || cs.visibility === "hidden" || cs.display === "none") {
+      continue;
+    }
+    const rect = child.getBoundingClientRect();
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) continue;
+    layers.push(...pointerlessChildLayers(child, x, y, strip, topPx, onReady, depth + 1));
+    layers.push(...elementLayers(child, topPx, onReady));
+  }
+  return layers;
+}
+
 export function sampleTopColor(strip: Element, topPx: number, onReady: () => void): string {
   const x = window.innerWidth / 2;
   const y = Math.max(1, Math.min(topPx - 1, 2));
@@ -264,7 +299,10 @@ export function sampleTopColor(strip: Element, topPx: number, onReady: () => voi
 
   const layers: Rgba[] = [];
   for (const el of stack) {
-    const ls = elementLayers(el, topPx, onReady);
+    const ls = [
+      ...pointerlessChildLayers(el, x, y, strip, topPx, onReady),
+      ...elementLayers(el, topPx, onReady),
+    ];
     layers.push(...ls);
     if (ls.some((l) => l.a >= OPAQUE)) break;
   }
