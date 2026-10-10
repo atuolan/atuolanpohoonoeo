@@ -49,9 +49,7 @@ import {
   updateRuntimeSessionStage,
 } from "./utils/runtimeDiagnostics";
 import { CodeProtection } from "./utils/codeProtection";
-import { autoFixStickerUrls } from "./utils/fixStickerUrls";
-import { initStatusBarTint } from "./utils/statusBarTint";
-import { initStorageProtection } from "./utils/storagePersistence";
+import { autoFixStickerUrls } from "./utils/fixStickerUrls";import { initStorageProtection } from "./utils/storagePersistence";
 
 // ===== 視口高度修正（iOS / Android / 瀏覽器通用）=====
 // 問題：不同裝置的 screen.height、innerHeight、visualViewport.height 關係不一致
@@ -64,6 +62,16 @@ function measureActualViewportHeight(): number {
   const h = probe.getBoundingClientRect().height;
   document.body.removeChild(probe);
   return h;
+}
+
+// index.html 的 status-bar-style 是否為 black-translucent（內容畫到狀態列底下）
+// iOS 26+/27 在 translucent 模式會於狀態列疊白霧，目前改用 default（不透明狀態列），
+// 此時 web view 從狀態列下方開始：safe-area-top 本來就是 0，可用高度也不含狀態列
+function isTranslucentStatusBar(): boolean {
+  const meta = document.querySelector<HTMLMetaElement>(
+    'meta[name="apple-mobile-web-app-status-bar-style"]',
+  );
+  return meta?.content === "black-translucent";
 }
 
 // 記錄「無鍵盤時」的基準高度，用於 standalone 模式偵測鍵盤彈出
@@ -87,7 +95,7 @@ function updateAppHeight(): void {
   const probeH = measureActualViewportHeight();
 
   let appHeight: number;
-  if (isStandalone && isIOS) {
+  if (isStandalone && isIOS && isTranslucentStatusBar()) {
     // iOS standalone：用 probe 測量值和 screen.height 取較大值
     // probe 測量的是 position:fixed top:0 bottom:0 的實際高度，
     // 這是瀏覽器認為的可用區域，比 innerHeight 更準確
@@ -100,7 +108,8 @@ function updateAppHeight(): void {
       appHeight = safeMax;
     }
   } else if (isStandalone) {
-    // Android standalone：probe 測量最準確
+    // Android standalone / iOS 不透明狀態列：probe 測量最準確
+    // （iOS 不可用 screen.height，會多出狀態列高度把底部輸入列推出畫面）
     appHeight = Math.max(probeH, innerH);
   } else {
     // 普通瀏覽器：用 visualViewport（會跟隨鍵盤縮放），fallback 到 probe
@@ -179,9 +188,11 @@ function detectAndFixSafeArea(): void {
     const isIOS =
       /iPad|iPhone|iPod/.test(navigator.userAgent) ||
       (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    // 不透明狀態列時 safe-area-top = 0 是正確值，不可補償，否則頂部多一條空白
     if (
       isStandalone &&
       isIOS &&
+      isTranslucentStatusBar() &&
       safeTop === 0 &&
       window.screen.height >= 800 &&
       window.devicePixelRatio >= 2
@@ -482,10 +493,6 @@ updateRuntimeSessionStage("app mounted");
 
 // Vue 掛載後再次更新高度（確保 #app DOM 已存在）
 updateAppHeight();
-
-// iOS 26+/27 PWA：頂部放實心取色條，避免系統在狀態列疊白霧
-initStatusBarTint();
-
 // 應用掛載後註冊 Service Worker 並請求持久化存儲
 updateRuntimeSessionStage("storage protection init start");
 initStorageProtection();
