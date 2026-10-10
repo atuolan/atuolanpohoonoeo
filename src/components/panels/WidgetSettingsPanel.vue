@@ -8,6 +8,7 @@ import {
     Shapes,
     X,
 } from "lucide-vue-next";
+import { onMounted, ref } from "vue";
 import IconPickerPanel from "./IconPickerPanel.vue";
 import CalendarColorSettings from "./widget-settings/CalendarColorSettings.vue";
 import CharacterBindSettings from "./widget-settings/CharacterBindSettings.vue";
@@ -77,6 +78,7 @@ const {
   resetStyle,
   saveAndClose,
   // 預覽 computed
+  previewData,
   previewStyle,
   previewContentStyle,
   iconPreviewBlobStyle,
@@ -87,10 +89,19 @@ const {
   resetIconScale,
 } = useWidgetSettings(props.widget, () => emit("close"));
 
+// 寬螢幕時面板放在組件的另一側，調整時能直接看到畫布上的即時效果
+const dockSide = ref<"left" | "right">("right");
+onMounted(() => {
+  const el = document.querySelector(`[data-widget-id="${props.widget.id}"]`);
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  dockSide.value = rect.left + rect.width / 2 > window.innerWidth / 2 ? "left" : "right";
+});
+
 </script>
 
 <template>
-  <div class="widget-settings-panel" @touchmove.prevent>
+  <div class="widget-settings-panel" :class="`dock-${dockSide}`" @touchmove.prevent>
     <div class="panel-backdrop" @click="emit('close')" @touchmove.prevent></div>
 
     <div class="panel-content" @touchmove.stop>
@@ -105,6 +116,8 @@ const {
       <!-- 預覽區域 -->
       <WidgetPreview
         :show-icon-settings="showIconSettings"
+        :widget="widget"
+        :preview-data="previewData"
         :local-style="localStyle"
         :label="widget.data?.label"
         :icon-preview-blob-style="iconPreviewBlobStyle"
@@ -311,13 +324,27 @@ const {
   display: flex;
   align-items: flex-end;
   justify-content: center;
+
+  // 寬螢幕：面板靠邊、垂直置中，不擋住正在調整的組件
+  @media (min-width: 768px) {
+    align-items: center;
+    padding: 16px 24px;
+
+    &.dock-right {
+      justify-content: flex-end;
+    }
+
+    &.dock-left {
+      justify-content: flex-start;
+    }
+  }
 }
 
+// 背景只淡淡壓暗、不模糊，才看得到畫布上的即時預覽
 .panel-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.12);
   animation: fadeIn 0.2s ease;
 }
 
@@ -330,21 +357,32 @@ const {
   }
 }
 
+// 標題 / 預覽 / 分頁 / 底部按鈕固定，只有中間設定區捲動；
+// 用 dvh 避免手機瀏覽器網址列或工作列把底部的保存鍵擋住
 .panel-content {
   position: relative;
   width: 100%;
   max-width: 500px;
-  max-height: 90vh;
+  max-height: 85vh;
+  max-height: 85dvh;
+  display: flex;
+  flex-direction: column;
   background: #ffffff;
   border-radius: 24px 24px 0 0;
-  padding: 20px;
-  padding-bottom: max(20px, var(--safe-bottom, 0px));
+  padding: 20px 20px 0;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.12);
   animation: slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
+  overflow: hidden;
   transform: translateZ(0);
   will-change: transform;
+
+  @media (min-width: 768px) {
+    width: 420px;
+    max-height: calc(100dvh - 32px);
+    border-radius: 24px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+    animation: fadeIn 0.2s ease;
+  }
 }
 
 @keyframes slideUp {
@@ -360,7 +398,8 @@ const {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
 
   h3 {
     font-size: 18px;
@@ -389,6 +428,7 @@ const {
 // 標籤頁
 .tabs {
   display: flex;
+  flex-shrink: 0;
   gap: 8px;
   margin-bottom: 16px;
   background: #f3f4f6;
@@ -415,32 +455,27 @@ const {
 
   &.active {
     background: white;
-    color: #4f46e5;
+    color: #c2603f;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   }
 }
 
 // 設定區塊
 .settings-section {
-  max-height: 40vh;
-  min-height: 150px;
+  flex: 1 1 auto;
+  min-height: 120px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   padding-right: 4px;
-
-  // PC 端給更多空間
-  @media (min-width: 768px) {
-    max-height: 45vh;
-  }
 }
 
 // 底部按鈕
 .panel-footer {
   display: flex;
+  flex-shrink: 0;
   gap: 12px;
-  margin-top: 20px;
-  padding-top: 16px;
+  padding: 12px 0 max(16px, var(--safe-bottom, 0px));
   border-top: 1px solid #e5e7eb;
 }
 

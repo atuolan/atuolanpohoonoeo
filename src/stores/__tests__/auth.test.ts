@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 
-const { getAuthState, saveAuthState, verifyTOTP } = vi.hoisted(() => ({
+const { getAuthState, saveAuthState, verifyTOTP, takePendingDiscordOAuthResult } = vi.hoisted(() => ({
   getAuthState: vi.fn(),
   saveAuthState: vi.fn().mockResolvedValue(undefined),
   verifyTOTP: vi.fn(),
+  takePendingDiscordOAuthResult: vi.fn(),
 }));
 
 vi.mock("@/services/AuthService", () => ({
@@ -13,6 +14,7 @@ vi.mock("@/services/AuthService", () => ({
     getAuthState,
     saveAuthState,
     verifyTOTP,
+    takePendingDiscordOAuthResult,
     clearAuth: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -88,5 +90,49 @@ describe("auth store：驗證通過後進入 App", () => {
     expect(result).toEqual({ success: false, message: "驗證碼錯誤" });
     expect(store.isEnteringApp).toBe(false);
     await expect(store.friendBypass("wrong")).resolves.toEqual({ success: false, message: "" });
+  });
+});
+
+describe("auth store：補接脫離追蹤的 Discord 授權結果", () => {
+  beforeEach(() => {
+    getAuthState.mockReset();
+    saveAuthState.mockClear();
+    takePendingDiscordOAuthResult.mockReset();
+    setActivePinia(createPinia());
+  });
+
+  it("沒有待處理結果時不做任何事", async () => {
+    takePendingDiscordOAuthResult.mockReturnValue(null);
+    const store = useAuthStore();
+
+    await expect(store.completePendingDiscordOAuth()).resolves.toBeNull();
+    expect(saveAuthState).not.toHaveBeenCalled();
+  });
+
+  it("稍後寫入的成功結果會完成登入", async () => {
+    takePendingDiscordOAuthResult.mockReturnValue({
+      success: true,
+      message: "驗證通過",
+      userId: "1",
+      username: "user",
+      displayName: "使用者",
+    });
+    getAuthState.mockResolvedValue(SIGNED_IN);
+    const store = useAuthStore();
+
+    const result = await store.completePendingDiscordOAuth();
+
+    expect(result?.success).toBe(true);
+    expect(saveAuthState).toHaveBeenCalledWith("1", "user", "使用者");
+    expect(store.isAuthenticated).toBe(true);
+  });
+
+  it("已登入時不會取走待處理結果", async () => {
+    getAuthState.mockResolvedValue(SIGNED_IN);
+    const store = useAuthStore();
+    await store.friendBypass("friendUSED");
+
+    await expect(store.completePendingDiscordOAuth()).resolves.toBeNull();
+    expect(takePendingDiscordOAuthResult).not.toHaveBeenCalled();
   });
 });

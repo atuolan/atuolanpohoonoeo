@@ -24,7 +24,9 @@ const SINGLE_SCREEN_GRIDS = 22;
 const SINGLE_SCREEN_WIDTH = SINGLE_SCREEN_GRIDS * BASE_GRID_SIZE; // 352px
 
 const MIN_SCALE = 0.5; // 最小縮放比例
-const MAX_SCALE = 1.5; // 最大縮放比例（允許適當放大）
+// 最大縮放比例：大螢幕（2K / 4K）也要能放大到填滿高度；
+// 原本 1.5 在 1920×1080 以上就封頂，畫布只佔上半部、下方大片留白
+const MAX_SCALE = 3;
 
 // 計算畫布縮放比例
 function calculateCanvasScale(): number {
@@ -151,14 +153,23 @@ export const useCanvasStore = defineStore("canvas", () => {
 
   // 處理視窗大小變化
   let resizeTimeout: number | null = null;
+  // 上一次的視窗寬度：resize 時用來算出舊畫面的中心點
+  let lastViewportWidth = window.innerWidth;
   function handleResize() {
     // 防抖處理
     if (resizeTimeout) {
       clearTimeout(resizeTimeout);
     }
     resizeTimeout = window.setTimeout(() => {
+      // 縮放改變後保持畫面中心在同一個畫布位置，避免視窗縮放時內容跑掉
+      const oldVisibleWidth = lastViewportWidth / canvasScale.value;
+      lastViewportWidth = window.innerWidth;
+      const centerX = scrollX.value + oldVisibleWidth / 2;
       canvasScale.value = calculateCanvasScale();
       // 畫布寬度固定，不再根據螢幕寬度變化
+      const visibleWidth = window.innerWidth / canvasScale.value;
+      const maxScroll = Math.max(0, FIXED_CANVAS_WIDTH - visibleWidth);
+      scrollX.value = Math.max(0, Math.min(maxScroll, centerX - visibleWidth / 2));
     }, 100);
   }
 
@@ -290,6 +301,14 @@ export const useCanvasStore = defineStore("canvas", () => {
       };
       // 立即保存以確保自定義樣式持久化
       saveData();
+    }
+  }
+
+  // 即時預覽：只替換畫面上的組件資料、不寫入儲存（設定面板調整中使用）
+  function previewWidgetData(id: string, data: WidgetData) {
+    const index = widgets.value.findIndex((w) => w.id === id);
+    if (index !== -1) {
+      widgets.value[index] = { ...widgets.value[index], data };
     }
   }
 
@@ -618,6 +637,7 @@ export const useCanvasStore = defineStore("canvas", () => {
     updateWidgetPosition,
     updateWidgetSize,
     updateWidgetData,
+    previewWidgetData,
     updateWidgetCustomStyle,
     getWidget,
     bringToFront,

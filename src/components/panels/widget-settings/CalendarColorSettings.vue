@@ -9,7 +9,7 @@ const calendarColors = defineModel<CalendarColors>("calendarColors", {
 });
 
 const items: { key: CalendarColorKey; label: string; default: string }[] = [
-  { key: "today", label: "今日高亮", default: "#6366f1" },
+  { key: "today", label: "今日高亮", default: "#f0866b" },
   { key: "holiday", label: "節假日", default: "#f59e0b" },
   { key: "weekday", label: "一般日期", default: "#374151" },
 ];
@@ -166,7 +166,7 @@ function toHexColor(color: string | undefined, fallback: string): string {
   }
 
   &.active {
-    outline-color: #6366f1;
+    outline-color: #e07a5f;
   }
 
   .swatch-auto {

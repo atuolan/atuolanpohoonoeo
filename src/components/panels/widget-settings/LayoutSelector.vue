@@ -54,11 +54,11 @@ function select(id: string) {
   }
 
   &.active {
-    background: #e0e7ff;
-    border-color: #6366f1;
+    background: #fdebe4;
+    border-color: #e07a5f;
 
     .layout-name {
-      color: #4f46e5;
+      color: #c2603f;
     }
   }
 

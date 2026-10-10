@@ -30,6 +30,20 @@ const AUTH_ENCRYPTION_KEY = "aguaphone_secret_key_2026";
 const DISCORD_CLIENT_ID = "1454468726899609761";
 const DISCORD_OAUTH_CALLBACK = "https://push.aguacloud.uk/discord/callback";
 const DISCORD_OAUTH_TIMEOUT = 120000; // 2分鐘超時
+// discord-callback.html / main.ts 把 OAuth 回傳參數寫在這裡給驗證頁讀取
+const DISCORD_OAUTH_RESULT_KEY = "discord_oauth_result";
+const DISCORD_OAUTH_RESULT_TTL = 5 * 60 * 1000;
+
+export interface DiscordOAuthOutcome {
+  success: boolean;
+  message: string;
+  // 授權視窗已脫離本頁追蹤，結果可能稍後才寫入 localStorage
+  pending?: boolean;
+  userId?: string;
+  username?: string;
+  displayName?: string;
+  oauthResult?: DiscordOAuthResult;
+}
 
 type AuthRecord = AuthState & { id: string };
 
@@ -82,14 +96,7 @@ export class AuthService {
   // 透過 Discord OAuth2 驗證（跨社群身分組檢查）
   // 開啟 popup 視窗進行 Discord OAuth2 授權，Worker callback 會查跨社群身分組
   // 輪詢 popup URL 直到授權完成或逾時
-  static async verifyByDiscordOAuth(): Promise<{
-    success: boolean;
-    message: string;
-    userId?: string;
-    username?: string;
-    displayName?: string;
-    oauthResult?: DiscordOAuthResult;
-  }> {
+  static async verifyByDiscordOAuth(): Promise<DiscordOAuthOutcome> {
     if (typeof window === "undefined") {
       return { success: false, message: "此驗證方式僅支援瀏覽器環境" };
     }
@@ -124,83 +131,33 @@ export class AuthService {
       }
 
       // 清除舊的 localStorage 結果
-      localStorage.removeItem("discord_oauth_result");
+      localStorage.removeItem(DISCORD_OAUTH_RESULT_KEY);
 
       const pollTimer = setInterval(() => {
         try {
           // 檢查 localStorage 是否有結果
-          const resultStr = localStorage.getItem("discord_oauth_result");
-          if (resultStr) {
-            const resultData = JSON.parse(resultStr);
-            // 確保是最近 5 分鐘內的結果
-            if (Date.now() - resultData.timestamp < 5 * 60 * 1000) {
-              clearInterval(pollTimer);
-              pollResolved = true;
-              localStorage.removeItem("discord_oauth_result");
-              
-              const popupParams = new URLSearchParams(resultData.search);
-              const userId = popupParams.get("discord_user_id");
-              const username = popupParams.get("discord_username");
-              const displayName = popupParams.get("discord_display_name");
-              const error = popupParams.get("discord_error");
-              const authResultRaw = popupParams.get("auth_result");
-
-              if (!popup.closed) popup.close();
-
-              if (error) {
-                resolve({
-                  success: false,
-                  message: decodeURIComponent(error),
-                });
-                return;
-              }
-
-              if (authResultRaw) {
-                try {
-                  const authResult: DiscordOAuthResult = JSON.parse(
-                    decodeURIComponent(authResultRaw),
-                  );
-                  if (authResult.success) {
-                    resolve({
-                      success: true,
-                      message: "驗證通過",
-                      userId: userId || undefined,
-                      username: username || undefined,
-                      displayName: displayName || undefined,
-                      oauthResult: authResult,
-                    });
-                  } else {
-                    resolve({
-                      success: false,
-                      message:
-                        authResult.message || "不符合驗證條件",
-                      oauthResult: authResult,
-                    });
-                  }
-                } catch {
-                  resolve({
-                    success: false,
-                    message: "驗證結果解析失敗",
-                  });
-                }
-                return;
-              }
-
-              // 無 auth_result = 非 auth 用途的 callback（不應發生在 purpose=auth）
-              resolve({
-                success: false,
-                message: "未收到驗證結果，請確認 Discord App OAuth2 scope 已設定 guilds + guilds.members.read",
-              });
-              return;
-            }
+          const outcome = AuthService.takePendingDiscordOAuthResult();
+          if (outcome) {
+            clearInterval(pollTimer);
+            pollResolved = true;
+            if (!popup.closed) popup.close();
+            resolve(outcome);
+            return;
           }
 
           if (popup.closed) {
             clearInterval(pollTimer);
-            // popup 被關閉但未收到結果 = 使用者取消
+            // popup.closed 不一定代表使用者取消：未登入 Discord 時彈窗會經過
+            // discord.com/login，該頁的 COOP 標頭會切斷與本頁的連結，使 closed 變成 true，
+            // 但使用者仍可能在彈窗內完成授權。結果寫入 localStorage 後由
+            // takePendingDiscordOAuthResult() 在驗證頁補接
             if (!pollResolved) {
               pollResolved = true;
-              resolve({ success: false, message: "授權已取消" });
+              resolve({
+                success: false,
+                pending: true,
+                message: "若已在 Discord 完成授權，回到此頁後會自動登入",
+              });
             }
             return;
           }
@@ -221,6 +178,75 @@ export class AuthService {
         resolve({ success: false, message: "授權逾時，請重試" });
       }, DISCORD_OAUTH_TIMEOUT);
     });
+  }
+
+  // 取出 localStorage 中尚未處理的 OAuth 結果（取出即刪除，避免重複處理）
+  // 5 分鐘內的結果才算數；沒有結果回傳 null
+  static takePendingDiscordOAuthResult(): DiscordOAuthOutcome | null {
+    if (typeof window === "undefined") return null;
+
+    const resultStr = localStorage.getItem(DISCORD_OAUTH_RESULT_KEY);
+    if (!resultStr) return null;
+    localStorage.removeItem(DISCORD_OAUTH_RESULT_KEY);
+
+    let resultData: { search?: string; timestamp?: number };
+    try {
+      resultData = JSON.parse(resultStr);
+    } catch {
+      return null;
+    }
+    if (
+      typeof resultData.timestamp !== "number" ||
+      Date.now() - resultData.timestamp >= DISCORD_OAUTH_RESULT_TTL
+    ) {
+      return null;
+    }
+
+    return AuthService.parseDiscordOAuthSearch(resultData.search ?? "");
+  }
+
+  private static parseDiscordOAuthSearch(search: string): DiscordOAuthOutcome {
+    const popupParams = new URLSearchParams(search);
+    const userId = popupParams.get("discord_user_id");
+    const username = popupParams.get("discord_username");
+    const displayName = popupParams.get("discord_display_name");
+    const error = popupParams.get("discord_error");
+    const authResultRaw = popupParams.get("auth_result");
+
+    if (error) {
+      return { success: false, message: decodeURIComponent(error) };
+    }
+
+    if (authResultRaw) {
+      try {
+        const authResult: DiscordOAuthResult = JSON.parse(
+          decodeURIComponent(authResultRaw),
+        );
+        if (authResult.success) {
+          return {
+            success: true,
+            message: "驗證通過",
+            userId: userId || undefined,
+            username: username || undefined,
+            displayName: displayName || undefined,
+            oauthResult: authResult,
+          };
+        }
+        return {
+          success: false,
+          message: authResult.message || "不符合驗證條件",
+          oauthResult: authResult,
+        };
+      } catch {
+        return { success: false, message: "驗證結果解析失敗" };
+      }
+    }
+
+    // 無 auth_result = 非 auth 用途的 callback（不應發生在 purpose=auth）
+    return {
+      success: false,
+      message: "未收到驗證結果，請確認 Discord App OAuth2 scope 已設定 guilds + guilds.members.read",
+    };
   }
 
   // 保存驗證狀態到 IndexedDB + localStorage 備援

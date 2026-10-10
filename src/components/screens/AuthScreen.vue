@@ -115,6 +115,7 @@
             <span v-else>驗證中...</span>
           </button>
 
+          <p v-if="oauthHint" class="oauth-desc oauth-hint">{{ oauthHint }}</p>
           <p class="oauth-desc">
             授權後自動檢查你在夜宵攤與游鹿小島的社群身分組權限
           </p>
@@ -157,8 +158,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useAuthStore } from '@/stores/auth'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useAuthStore, type DiscordVerifyResult } from '@/stores/auth'
 import type { GuildCheckResult } from '@/types/auth'
 
 const authStore = useAuthStore()
@@ -168,6 +169,7 @@ const isVerifying = ref(false)
 const errorMessage = ref('')
 const isVerifyingByOAuth = ref(false)
 const oauthChecks = ref<GuildCheckResult[] | null>(null)
+const oauthHint = ref('')
 
 const remainingAttempts = computed(() => authStore.remainingAttempts)
 const initErrorMessage = computed(() => authStore.initError)
@@ -216,22 +218,25 @@ async function handleVerify() {
   }
 }
 
+function showDiscordResult(result: DiscordVerifyResult) {
+  oauthHint.value = result.pending ? result.message : ''
+  if (result.success || result.pending) {
+    errorMessage.value = ''
+    oauthChecks.value = null
+    return
+  }
+  errorMessage.value = result.message
+  oauthChecks.value = result.oauthResult?.checks ?? null
+}
+
 async function handleDiscordOAuth() {
   isVerifyingByOAuth.value = true
   errorMessage.value = ''
+  oauthHint.value = ''
   oauthChecks.value = null
 
   try {
-    const result = await authStore.verifyByDiscord()
-    if (result.success) {
-      errorMessage.value = ''
-      oauthChecks.value = null
-    } else {
-      errorMessage.value = result.message
-      if (result.oauthResult?.checks) {
-        oauthChecks.value = result.oauthResult.checks
-      }
-    }
+    showDiscordResult(await authStore.verifyByDiscord())
   } catch (e) {
     errorMessage.value = 'Discord 驗證過程發生錯誤，請重試'
     console.error('[AuthScreen] Discord OAuth 錯誤:', e)
@@ -239,6 +244,45 @@ async function handleDiscordOAuth() {
     isVerifyingByOAuth.value = false
   }
 }
+
+// 授權視窗脫離追蹤後（見 AuthService.verifyByDiscordOAuth），
+// 結果寫入 localStorage 或使用者切回此頁時補接
+let isCheckingPendingOAuth = false
+
+async function checkPendingDiscordOAuth() {
+  if (isCheckingPendingOAuth || isVerifyingByOAuth.value || isEntering.value) return
+  isCheckingPendingOAuth = true
+  try {
+    const result = await authStore.completePendingDiscordOAuth()
+    if (result) showDiscordResult(result)
+  } catch (e) {
+    errorMessage.value = 'Discord 驗證過程發生錯誤，請重試'
+    console.error('[AuthScreen] Discord OAuth 補接錯誤:', e)
+  } finally {
+    isCheckingPendingOAuth = false
+  }
+}
+
+function handleStorage(e: StorageEvent) {
+  if (e.key === 'discord_oauth_result' && e.newValue) checkPendingDiscordOAuth()
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible') checkPendingDiscordOAuth()
+}
+
+onMounted(() => {
+  window.addEventListener('storage', handleStorage)
+  window.addEventListener('focus', checkPendingDiscordOAuth)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  checkPendingDiscordOAuth()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('storage', handleStorage)
+  window.removeEventListener('focus', checkPendingDiscordOAuth)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
 
 async function handleRetryInit() {
   isVerifying.value = true
@@ -696,6 +740,11 @@ async function handleRetryInit() {
   margin: 0;
   font-weight: 400;
   line-height: 1.5;
+}
+
+.oauth-hint {
+  color: #5865f2;
+  margin-bottom: 4px;
 }
 
 .oauth-checks-detail {

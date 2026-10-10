@@ -75,8 +75,9 @@ function onDragStart(e: MouseEvent | TouchEvent) {
   // 只有編輯模式才能拖拽
   if (!canvasStore.isEditMode) return;
 
-  // 如果點擊的是調整大小手柄，則不處理拖拽
-  if ((e.target as HTMLElement).closest(".resize-handle")) return;
+  // 如果點擊的是調整大小手柄或設定/刪除按鈕，則不處理拖拽
+  // （拖拽會 bringToFront 讓 DOM 重新排序，按下中的按鈕被移動後瀏覽器就不會觸發 click）
+  if ((e.target as HTMLElement).closest(".resize-handle, .settings-btn, .delete-btn")) return;
 
   e.preventDefault();
   e.stopPropagation();

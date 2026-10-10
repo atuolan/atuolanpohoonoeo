@@ -966,8 +966,8 @@ onUnmounted(() => {
   transition: all 0.2s;
 
   &:hover {
-    background: linear-gradient(135deg, #e0e7ff 0%, #ddd6fe 100%);
-    color: #4f46e5;
+    background: linear-gradient(135deg, #fdebe4 0%, #fbe0d4 100%);
+    color: #c2603f;
     transform: scale(1.05);
   }
 

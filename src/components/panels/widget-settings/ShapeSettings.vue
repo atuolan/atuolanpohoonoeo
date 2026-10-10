@@ -58,14 +58,14 @@ defineProps<{ localStyle: WidgetCustomStyle }>();
 
   &:hover {
     background: #f1f5f9;
-    color: #4f46e5;
+    color: #c2603f;
     transform: translateY(-2px);
   }
 
   &.active {
-    background: #e0e7ff;
-    border-color: #6366f1;
-    color: #4f46e5;
+    background: #fdebe4;
+    border-color: #e07a5f;
+    color: #c2603f;
   }
 
   .shape-preview {

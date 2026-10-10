@@ -55,7 +55,7 @@ function handleClick() {
 
 // 使用自定義樣式 composable
 const { containerStyle, contentStyle, hasCustomBackground, hasCustomIcon } =
-  useWidgetStyle(props.data?.customStyle);
+  useWidgetStyle(() => props.data?.customStyle);
 
 // 從主題 store 獲取桌布亮度判斷（根據實際桌布顏色而非僅時間）
 const isDark = computed(() => themeStore.isWallpaperDark);
@@ -189,13 +189,15 @@ const displayLabel = computed(() => {
 const labelStyle = computed(() => {
   const style: Record<string, string> = {};
 
+  // 標籤畫在桌布上而非圖標底色上：沒有指定 textColor 時先跟隨桌布明暗，
+  // 避免圖標色（foregroundColor）是深色時，標籤在深色桌布上看不見
   if (props.data?.customStyle?.textColor) {
     style.color = props.data.customStyle.textColor;
-  } else if (props.data?.customStyle?.foregroundColor) {
-    style.color = props.data.customStyle.foregroundColor;
   } else if (isDark.value) {
     // 深色模式（晚上/深夜）時使用白色
     style.color = "#ffffff";
+  } else if (props.data?.customStyle?.foregroundColor) {
+    style.color = props.data.customStyle.foregroundColor;
   }
 
   return style;

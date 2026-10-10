@@ -171,6 +171,8 @@ const currentLayout = computed(() => {
     background-color: #fef3c7;
     background-image: linear-gradient(145deg, #fef3c7 0%, #fde68a 100%);
     border-radius: var(--radius-lg, 16px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
     padding: 16px;
 
     .mode-indicator {

@@ -97,7 +97,7 @@ const boundCharacterId = defineModel<string>("boundCharacterId", {
 
   &:focus {
     outline: none;
-    border-color: #6366f1;
+    border-color: #e07a5f;
   }
 }
 
@@ -121,7 +121,7 @@ const boundCharacterId = defineModel<string>("boundCharacterId", {
 .toggle-checkbox {
   width: 20px;
   height: 20px;
-  accent-color: #6366f1;
+  accent-color: #e07a5f;
   cursor: pointer;
 }
 
@@ -140,13 +140,13 @@ const boundCharacterId = defineModel<string>("boundCharacterId", {
 
 .opacity-slider {
   flex: 1;
-  accent-color: #6366f1;
+  accent-color: #e07a5f;
   cursor: pointer;
 }
 
 .opacity-value {
   font-size: 13px;
-  color: #6366f1;
+  color: #e07a5f;
   font-weight: 600;
   min-width: 38px;
   text-align: right;

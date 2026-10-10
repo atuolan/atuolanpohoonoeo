@@ -1,9 +1,16 @@
 // 驗證狀態管理
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { AuthService } from '@/services/AuthService'
+import { AuthService, type DiscordOAuthOutcome } from '@/services/AuthService'
 import { CodeProtection } from '@/utils/codeProtection'
 import type { AuthState, DiscordOAuthResult } from '@/types/auth'
+
+export interface DiscordVerifyResult {
+  success: boolean
+  message: string
+  pending?: boolean
+  oauthResult?: DiscordOAuthResult
+}
 
 export const useAuthStore = defineStore('auth', () => {
   const authState = ref<AuthState | null>(AuthService.getCachedAuthStateSync())
@@ -157,14 +164,23 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   // 透過 Discord OAuth2 驗證（跨社群身分組檢查）
-  async function verifyByDiscord(): Promise<{
-    success: boolean;
-    message: string;
-    oauthResult?: DiscordOAuthResult;
-  }> {
+  async function verifyByDiscord(): Promise<DiscordVerifyResult> {
     initError.value = null;
-    const result = await AuthService.verifyByDiscordOAuth();
+    return applyDiscordOAuthOutcome(await AuthService.verifyByDiscordOAuth());
+  }
 
+  // 補接授權視窗脫離追蹤後才寫入的 OAuth 結果；沒有待處理結果回傳 null
+  async function completePendingDiscordOAuth(): Promise<DiscordVerifyResult | null> {
+    if (isAuthenticated.value) return null;
+    const outcome = AuthService.takePendingDiscordOAuthResult();
+    if (!outcome) return null;
+    initError.value = null;
+    return applyDiscordOAuthOutcome(outcome);
+  }
+
+  async function applyDiscordOAuthOutcome(
+    result: DiscordOAuthOutcome,
+  ): Promise<DiscordVerifyResult> {
     if (result.success && result.userId && result.username) {
       await AuthService.saveAuthState(
         result.userId,
@@ -186,6 +202,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     return {
       success: false,
+      pending: result.pending,
       message: result.message || "驗證失敗",
       oauthResult: result.oauthResult,
     };
@@ -267,6 +284,7 @@ export const useAuthStore = defineStore('auth', () => {
     retryInitialize: initialize,
     verifyCode,
     verifyByDiscord,
+    completePendingDiscordOAuth,
     adminBypass,
     friendBypass,
     logout,

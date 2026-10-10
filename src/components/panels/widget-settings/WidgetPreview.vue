@@ -1,9 +1,20 @@
 <script setup lang="ts">
-import type { WidgetCustomStyle } from "@/types";
-import type { Component, StyleValue } from "vue";
+import { widgetComponents } from "@/components/widgets/widgetComponents";
+import { useCanvasStore } from "@/stores";
+import type { WidgetCustomStyle, WidgetData, WidgetInstance } from "@/types";
+import {
+  computed,
+  onMounted,
+  onUnmounted,
+  ref,
+  type Component,
+  type StyleValue,
+} from "vue";
 
-defineProps<{
+const props = defineProps<{
   showIconSettings: boolean;
+  widget: WidgetInstance;
+  previewData: WidgetData;
   localStyle: WidgetCustomStyle;
   label?: string;
   iconPreviewBlobStyle: StyleValue;
@@ -13,6 +24,55 @@ defineProps<{
   previewStyle: StyleValue;
   previewContentStyle: StyleValue;
 }>();
+
+const canvasStore = useCanvasStore();
+
+// 真實組件預覽：用目前設定渲染同一個組件，等比縮小塞進預覽框
+const PREVIEW_MAX_HEIGHT = 180;
+const STAGE_PADDING = 12;
+const liveComponent = computed(() => widgetComponents[props.widget.type]);
+const widgetPxWidth = computed(() => props.widget.width * canvasStore.gridSize);
+const widgetPxHeight = computed(() => props.widget.height * canvasStore.gridSize);
+
+const stageRef = ref<HTMLElement | null>(null);
+const stageWidth = ref(0);
+let resizeObserver: ResizeObserver | null = null;
+
+onMounted(() => {
+  if (!stageRef.value) return;
+  stageWidth.value = stageRef.value.clientWidth;
+  resizeObserver = new ResizeObserver(([entry]) => {
+    stageWidth.value = entry.contentRect.width;
+  });
+  resizeObserver.observe(stageRef.value);
+});
+
+onUnmounted(() => resizeObserver?.disconnect());
+
+const previewScale = computed(() => {
+  if (!stageWidth.value) return 1;
+  return Math.min(
+    1,
+    (stageWidth.value - STAGE_PADDING * 2) / widgetPxWidth.value,
+    (PREVIEW_MAX_HEIGHT - STAGE_PADDING * 2) / widgetPxHeight.value,
+  );
+});
+
+const stageStyle = computed(() => ({
+  height: `${Math.round(widgetPxHeight.value * previewScale.value) + STAGE_PADDING * 2}px`,
+}));
+
+// 外框佔縮放後的大小，內層用原尺寸渲染再 scale，組件內的 container query 才會跟畫布上一致
+const frameStyle = computed(() => ({
+  width: `${widgetPxWidth.value * previewScale.value}px`,
+  height: `${widgetPxHeight.value * previewScale.value}px`,
+}));
+
+const innerStyle = computed(() => ({
+  width: `${widgetPxWidth.value}px`,
+  height: `${widgetPxHeight.value}px`,
+  transform: `scale(${previewScale.value})`,
+}));
 </script>
 
 <template>
@@ -46,7 +106,15 @@ defineProps<{
         </span>
       </div>
     </div>
-    <!-- 其他 widget：保留原有色塊文字預覽 -->
+    <!-- 其他 widget：直接渲染真實組件，改什麼就即時看到什麼 -->
+    <div v-else-if="liveComponent" ref="stageRef" class="preview-stage" :style="stageStyle">
+      <div class="preview-frame" :style="frameStyle">
+        <div class="preview-inner" :style="innerStyle" inert>
+          <component :is="liveComponent" :widget-id="widget.id" :data="previewData" />
+        </div>
+      </div>
+    </div>
+    <!-- 找不到對應組件時的後備色塊預覽 -->
     <div v-else class="preview-box" :style="previewStyle">
       <span class="preview-text" :style="previewContentStyle">
         {{ label || "預覽" }}
@@ -58,7 +126,8 @@ defineProps<{
 <style lang="scss" scoped>
 // 預覽區域
 .preview-section {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
 }
 
 .preview-label {
@@ -69,7 +138,7 @@ defineProps<{
 }
 
 .preview-box {
-  height: 80px;
+  height: 64px;
   border-radius: 16px;
   background: #f8fafc;
   border: 2px solid #e5e7eb;
@@ -77,6 +146,32 @@ defineProps<{
   align-items: center;
   justify-content: center;
   transition: all 0.3s;
+}
+
+// 真實組件預覽舞台：鋪上目前的桌布，看起來和畫布上一樣
+.preview-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  border: 2px solid #e5e7eb;
+  background: var(--wallpaper-value, var(--color-background, #f8fafc));
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+}
+
+.preview-frame {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.preview-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+  pointer-events: none;
 }
 
 .preview-text {

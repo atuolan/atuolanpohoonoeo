@@ -1,36 +1,11 @@
 <script setup lang="ts">
 import AddWidgetPanel from "@/components/panels/AddWidgetPanel.vue";
 import BatchStylePanel from "@/components/panels/BatchStylePanel.vue";
-import AffinityMeterWidget from "@/components/widgets/AffinityMeterWidget.vue";
-import BatteryRingWidget from "@/components/widgets/BatteryRingWidget.vue";
-import BookmarkSticky from "@/components/widgets/BookmarkSticky.vue";
-import CalendarWidget from "@/components/widgets/CalendarWidget.vue";
-import CharPhoneWidget from "@/components/widgets/CharPhoneWidget.vue";
-import CharStatusWidget from "@/components/widgets/CharStatusWidget.vue";
-import ClockWidget from "@/components/widgets/ClockWidget.vue";
-import ColorBlockWidget from "@/components/widgets/ColorBlockWidget.vue";
-import CompanionPetWidget from "@/components/widgets/CompanionPetWidget.vue";
-import CountdownSticky from "@/components/widgets/CountdownSticky.vue";
-import FluidButtonWidget from "@/components/widgets/FluidButtonWidget.vue";
-import FocusTimerWidget from "@/components/widgets/FocusTimerWidget.vue";
-import HabitTrackerWidget from "@/components/widgets/HabitTrackerWidget.vue";
-import MoodDiarySticky from "@/components/widgets/MoodDiarySticky.vue";
-import MusicPlayerWidget from "@/components/widgets/MusicPlayerWidget.vue";
-import PhotoFrameWidget from "@/components/widgets/PhotoFrameWidget.vue";
-import PolaroidSticky from "@/components/widgets/PolaroidSticky.vue";
-import ProgressRingWidget from "@/components/widgets/ProgressRingWidget.vue";
-import QuoteSticky from "@/components/widgets/QuoteSticky.vue";
-import RecentChatWidget from "@/components/widgets/RecentChatWidget.vue";
-import RelationshipCounterWidget from "@/components/widgets/RelationshipCounterWidget.vue";
-import StickerWidget from "@/components/widgets/StickerWidget.vue";
-import TextBannerWidget from "@/components/widgets/TextBannerWidget.vue";
-import TodoSticky from "@/components/widgets/TodoSticky.vue";
-import WashiTapeWidget from "@/components/widgets/WashiTapeWidget.vue";
-import WeatherWidget from "@/components/widgets/WeatherWidget.vue";
 import WidgetWrapper from "@/components/widgets/WidgetWrapper.vue";
-import WorldBookWidget from "@/components/widgets/WorldBookWidget.vue";
+import { widgetComponents } from "@/components/widgets/widgetComponents";
 import { useTimeTheme } from "@/composables/useTimeTheme";
 import { useCanvasStore, useThemeStore } from "@/stores";
+import type { WidgetCustomStyle } from "@/types";
 import {
     AlignCenter,
     Check,
@@ -50,7 +25,7 @@ const canvasStore = useCanvasStore();
 const themeStore = useThemeStore();
 
 // 時間主題（用於動態背景）
-const { backgroundColor: timeThemeBg } = useTimeTheme();
+const { backgroundGradient: timeThemeBg } = useTimeTheme();
 
 // 動態設置時間主題背景 CSS 變數
 watchEffect(() => {
@@ -383,293 +358,75 @@ function handleWidgetNavigate(page: string) {
   emit("navigate", page);
 }
 
-// 組件類型映射
-const widgetComponents: Record<string, any> = {
-  clock: ClockWidget,
-  weather: WeatherWidget,
-  calendar: CalendarWidget,
-  "mood-diary": MoodDiarySticky,
-  polaroid: PolaroidSticky,
-  todo: TodoSticky,
-  quote: QuoteSticky,
-  countdown: CountdownSticky,
-  bookmark: BookmarkSticky,
-  "fluid-button": FluidButtonWidget,
-  music: MusicPlayerWidget,
-  "habit-tracker": HabitTrackerWidget,
-  "focus-timer": FocusTimerWidget,
-  "world-book": WorldBookWidget,
-  "char-phone": CharPhoneWidget,
-  "progress-ring": ProgressRingWidget,
-  "washi-tape": WashiTapeWidget,
-  "photo-frame": PhotoFrameWidget,
-  sticker: StickerWidget,
-  "battery-ring": BatteryRingWidget,
-  "color-block": ColorBlockWidget,
-  "text-banner": TextBannerWidget,
-  "relationship-counter": RelationshipCounterWidget,
-  "affinity-meter": AffinityMeterWidget,
-  "recent-chat": RecentChatWidget,
-  "char-status": CharStatusWidget,
-  "companion-pet": CompanionPetWidget,
-};
-
 // 初始化預設組件
 onMounted(async () => {
   // 加載數據
   await canvasStore.initData();
 
-  // 如果沒有組件，添加精美預設佈局
-  // 畫布 90 格，中心在 45 格
+  // 如果沒有組件，添加預設佈局
+  // 畫布 90 格，每屏約 22 格：左屏 x13–34、中屏 x35–56、右屏 x57–78
+  // 所有卡片統一奶油底 + 咖啡字，與 App 圖標同一套白卡質感；格線以 1 格為間距對齊
   if (canvasStore.widgets.length === 0) {
-    // ===== 第一屏（左側）：效率 =====
-    canvasStore.addWidget({
-      type: "focus-timer",
-      x: 8,
-      y: 3,
-      width: 12,
-      height: 18,
-      data: {},
+    const card = (): WidgetCustomStyle => ({
+      backgroundColor: "#FFFDF9",
+      foregroundColor: "#5B4636",
+      borderColor: "transparent",
     });
-
-    canvasStore.addWidget({
-      type: "todo",
-      x: 10,
-      y: 23,
-      width: 9,
-      height: 11,
-      data: {
-        customStyle: { foregroundColor: "#3b82f6", borderColor: "#fef08a" },
-      },
-    });
-
-    canvasStore.addWidget({
-      type: "mood-diary",
-      x: 21,
-      y: 3,
-      width: 12,
-      height: 11,
-      data: {
-        customStyle: {
-          backgroundGradient:
-            "linear-gradient(135deg, #ffecd2 0%, #fcb69f 50%, #ffecd2 100%)",
-          foregroundColor: "#374151",
-          borderColor: "transparent",
+    // App 圖標同樣用奶油底 + 咖啡色圖標，夜間深色桌布時才不會變成灰色玻璃而和卡片脫節
+    const app = (x: number, y: number, label: string, extra: { type?: string; iconName?: string } = {}) => {
+      const { type, iconName } = extra;
+      canvasStore.addWidget({
+        type: "fluid-button",
+        x,
+        y,
+        width: 5,
+        height: 5,
+        data: {
+          label,
+          ...(type ? { type } : {}),
+          customStyle: { backgroundColor: "#FFFDF9", foregroundColor: "#5B4636", ...(iconName ? { iconName } : {}) },
         },
-      },
-    });
+      });
+    };
 
-    canvasStore.addWidget({
-      type: "fluid-button",
-      x: 21,
-      y: 16,
-      width: 5,
-      height: 5,
-      data: { type: "5", label: "書架" },
-    });
-
-    canvasStore.addWidget({
-      type: "fluid-button",
-      x: 27,
-      y: 16,
-      width: 5,
-      height: 5,
-      data: { label: "閱讀" },
-    });
-
-    canvasStore.addWidget({
-      type: "quote",
-      x: 21,
-      y: 23,
-      width: 12,
-      height: 10,
-      data: { customStyle: { backgroundColor: "#bae6fd" } },
-    });
+    // ===== 第一屏（左側）：效率 =====
+    canvasStore.addWidget({ type: "focus-timer", x: 13, y: 2, width: 10, height: 18, data: { customStyle: card() } });
+    canvasStore.addWidget({ type: "todo", x: 13, y: 21, width: 10, height: 10, data: { customStyle: card() } });
+    canvasStore.addWidget({ type: "mood-diary", x: 24, y: 2, width: 10, height: 12, data: { customStyle: card() } });
+    app(24, 15, "書架", { type: "5" });
+    app(29, 15, "閱讀");
+    canvasStore.addWidget({ type: "quote", x: 24, y: 21, width: 10, height: 10, data: { customStyle: card() } });
 
     // ===== 第二屏（中間）：主頁 =====
-    canvasStore.addWidget({
-      type: "clock",
-      x: 35,
-      y: 2,
-      width: 21,
-      height: 7,
-      data: {},
-    });
-
-    canvasStore.addWidget({
-      type: "polaroid",
-      x: 35,
-      y: 11,
-      width: 10,
-      height: 11,
-      data: {},
-    });
-
+    canvasStore.addWidget({ type: "clock", x: 35, y: 2, width: 21, height: 7, data: { customStyle: card() } });
+    canvasStore.addWidget({ type: "polaroid", x: 35, y: 10, width: 10, height: 10, data: { customStyle: card() } });
+    app(46, 10, "訊息");
+    app(51, 10, "角色");
+    app(46, 15, "設置");
+    app(51, 15, "使用者");
     canvasStore.addWidget({
       type: "music",
       x: 35,
-      y: 23,
+      y: 21,
       width: 10,
       height: 10,
-      data: {
-        customStyle: {
-          borderColor: "rgba(255, 255, 255, 0.1)",
-          borderWidth: 1,
-          layout: "vinyl",
-        },
-      },
+      data: { customStyle: { ...card(), layout: "compact" } },
     });
-
-    canvasStore.addWidget({
-      type: "fluid-button",
-      x: 46,
-      y: 12,
-      width: 5,
-      height: 5,
-      data: { label: "訊息" },
-    });
-
-    canvasStore.addWidget({
-      type: "fluid-button",
-      x: 51,
-      y: 12,
-      width: 5,
-      height: 5,
-      data: { label: "角色" },
-    });
-
-    canvasStore.addWidget({
-      type: "fluid-button",
-      x: 46,
-      y: 17,
-      width: 5,
-      height: 5,
-      data: { label: "設置" },
-    });
-
-    canvasStore.addWidget({
-      type: "fluid-button",
-      x: 51,
-      y: 17,
-      width: 5,
-      height: 5,
-      data: { label: "使用者" },
-    });
-
-    canvasStore.addWidget({
-      type: "fluid-button",
-      x: 46,
-      y: 23,
-      width: 5,
-      height: 5,
-      data: { type: "1", label: "占卜" },
-    });
-
-    canvasStore.addWidget({
-      type: "fluid-button",
-      x: 51,
-      y: 23,
-      width: 5,
-      height: 5,
-      data: { label: "遊戲" },
-    });
-
-    canvasStore.addWidget({
-      type: "fluid-button",
-      x: 46,
-      y: 28,
-      width: 5,
-      height: 5,
-      data: { label: "音樂" },
-    });
-
-    canvasStore.addWidget({
-      type: "fluid-button",
-      x: 51,
-      y: 28,
-      width: 5,
-      height: 5,
-      data: { label: "空間" },
-    });
+    app(46, 21, "占卜", { type: "1", iconName: "Moon" });
+    app(51, 21, "遊戲");
+    app(46, 26, "音樂");
+    app(51, 26, "空間");
 
     // ===== 第三屏（右側）：生活 =====
-    canvasStore.addWidget({
-      type: "calendar",
-      x: 58,
-      y: 2,
-      width: 14,
-      height: 16,
-      data: {
-        customStyle: {
-          backgroundColor: "#ffffff",
-          foregroundColor: "#374151",
-          borderColor: "rgba(0, 0, 0, 0.1)",
-        },
-      },
-    });
-
-    canvasStore.addWidget({
-      type: "fluid-button",
-      x: 57,
-      y: 19,
-      width: 5,
-      height: 5,
-      data: { label: "購物" },
-    });
-
-    canvasStore.addWidget({
-      type: "fluid-button",
-      x: 63,
-      y: 19,
-      width: 5,
-      height: 5,
-      data: { label: "頭盔TA" },
-    });
-
-    canvasStore.addWidget({
-      type: "fluid-button",
-      x: 69,
-      y: 19,
-      width: 5,
-      height: 5,
-      data: { label: "錢包" },
-    });
-
-    canvasStore.addWidget({
-      type: "fluid-button",
-      x: 57,
-      y: 24,
-      width: 5,
-      height: 5,
-      data: { label: "外賣" },
-    });
-
-    canvasStore.addWidget({
-      type: "weather",
-      x: 73,
-      y: 2,
-      width: 10,
-      height: 8,
-      data: {},
-    });
-
-    canvasStore.addWidget({
-      type: "fluid-button",
-      x: 57,
-      y: 30,
-      width: 5,
-      height: 5,
-      data: { label: "健身" },
-    });
-
-    canvasStore.addWidget({
-      type: "world-book",
-      x: 63,
-      y: 25,
-      width: 14,
-      height: 8,
-      data: {},
-    });
+    canvasStore.addWidget({ type: "calendar", x: 57, y: 2, width: 14, height: 16, data: { customStyle: card() } });
+    app(73, 2, "購物");
+    app(73, 7, "外賣");
+    app(73, 12, "錢包");
+    canvasStore.addWidget({ type: "weather", x: 57, y: 19, width: 10, height: 10, data: { customStyle: card() } });
+    app(68, 19, "頭盔TA");
+    app(73, 19, "健身");
+    app(68, 24, "世界書", { iconName: "Globe" });
+    app(73, 24, "小劇場", { iconName: "Film" });
   }
 });
 

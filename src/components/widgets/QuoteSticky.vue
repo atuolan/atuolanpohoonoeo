@@ -155,9 +155,9 @@ const currentLayout = computed(() => {
   // Classic 傳統樣式
   &.classic {
     padding: 16px;
-    background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+    background: linear-gradient(135deg, #fff1e6 0%, #ffe0cc 100%);
     border-radius: var(--radius-lg);
-    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.15);
+    box-shadow: 0 4px 16px rgba(234, 140, 90, 0.15);
 
     .quote-icon {
       color: rgba(255, 255, 255, 0.8);
@@ -197,7 +197,7 @@ const currentLayout = computed(() => {
       justify-content: flex-end;
 
       .dash {
-        color: #4f46e5;
+        color: #c2703d;
         font-weight: 500;
         font-size: 14px;
       }
@@ -208,7 +208,7 @@ const currentLayout = computed(() => {
         border: none;
         background: transparent;
         font-size: clamp(10px, 2.5vw, 12px);
-        color: #4f46e5;
+        color: #c2703d;
         text-align: right;
         overflow: hidden;
         text-overflow: ellipsis;

@@ -344,7 +344,7 @@ function toHexColor(color: string | undefined, fallback: string): string {
   }
 
   &.active {
-    background: #4f46e5;
+    background: #c2603f;
     color: white;
   }
 }
@@ -362,16 +362,18 @@ function toHexColor(color: string | undefined, fallback: string): string {
   border: 3px solid transparent;
   transition: all 0.2s;
   position: relative;
+  // 淡淡的內框，白色 / 很淺的色票在白底面板上才看得到
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
 
   &:hover {
     transform: scale(1.1);
   }
 
   &.active {
-    border-color: #4f46e5;
+    border-color: #c2603f;
     box-shadow:
       0 0 0 2px white,
-      0 0 0 4px #4f46e5;
+      0 0 0 4px #c2603f;
   }
 
   &.border-color {
@@ -408,10 +410,10 @@ function toHexColor(color: string | undefined, fallback: string): string {
 
   &.active {
     border-style: solid;
-    border-color: #4f46e5;
+    border-color: #c2603f;
     box-shadow:
       0 0 0 2px white,
-      0 0 0 4px #4f46e5;
+      0 0 0 4px #c2603f;
     color: white;
   }
 }
@@ -446,10 +448,10 @@ function toHexColor(color: string | undefined, fallback: string): string {
   }
 
   &.active {
-    border-color: #4f46e5;
+    border-color: #c2603f;
     box-shadow:
       0 0 0 2px white,
-      0 0 0 4px #4f46e5;
+      0 0 0 4px #c2603f;
   }
 
   .gradient-name {

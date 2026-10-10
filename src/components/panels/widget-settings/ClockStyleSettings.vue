@@ -149,11 +149,11 @@ function toHexColor(color: string | undefined, fallback: string): string {
   }
 
   &.active {
-    background: linear-gradient(135deg, #e0e7ff 0%, #ddd6fe 100%);
-    border-color: #6366f1;
+    background: linear-gradient(135deg, #fdebe4 0%, #fbe0d4 100%);
+    border-color: #e07a5f;
 
     .style-name {
-      color: #4f46e5;
+      color: #c2603f;
     }
   }
 
@@ -224,7 +224,7 @@ function toHexColor(color: string | undefined, fallback: string): string {
   outline-offset: 2px;
 
   &.active {
-    outline-color: #6366f1;
+    outline-color: #e07a5f;
   }
 
   &:first-child {
@@ -256,7 +256,7 @@ function toHexColor(color: string | undefined, fallback: string): string {
   input[type="checkbox"] {
     width: 18px;
     height: 18px;
-    accent-color: #6366f1;
+    accent-color: #e07a5f;
     cursor: pointer;
   }
 

@@ -1863,7 +1863,7 @@ function cancel() {
   transition: box-shadow 0.18s ease;
 
   &.time-theme-preview {
-    background: linear-gradient(135deg, #fff8f0 0%, #f8fafc 20%, #fafafa 40%, #fef3e2 60%, #1e293b 80%, #0f172a 100%);
+    background: linear-gradient(135deg, #fff8f0 0%, #f8fafc 20%, #fafafa 40%, #fef3e2 60%, #1f1a17 80%, #131110 100%);
   }
 }
 

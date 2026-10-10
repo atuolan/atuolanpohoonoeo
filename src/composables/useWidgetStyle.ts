@@ -14,10 +14,14 @@ interface WidgetStyleResult {
  * 用於計算組件的容器、內容和圖標樣式
  */
 export function useWidgetStyle(
-  customStyle?: WidgetCustomStyle,
+  source?: WidgetCustomStyle | (() => WidgetCustomStyle | undefined),
 ): WidgetStyleResult {
+  // 傳 getter 才能在設定面板保存後跟著更新；直接傳物件只會讀到建立當下的值
+  const read = typeof source === "function" ? source : () => source;
+
   // 容器樣式（背景、邊框）
   const containerStyle = computed(() => {
+    const customStyle = read();
     if (!customStyle) return {};
 
     const style: Record<string, string | undefined> = {};
@@ -44,6 +48,7 @@ export function useWidgetStyle(
 
   // 內容樣式（文字顏色）- 優先使用 textColor，回退到 foregroundColor
   const contentStyle = computed(() => {
+    const customStyle = read();
     if (!customStyle) return {};
 
     const style: Record<string, string | undefined> = {};
@@ -59,6 +64,7 @@ export function useWidgetStyle(
 
   // 圖標樣式
   const iconStyle = computed(() => {
+    const customStyle = read();
     if (!customStyle) return {};
 
     const style: Record<string, string | undefined> = {};
@@ -72,11 +78,13 @@ export function useWidgetStyle(
 
   // 是否有自定義背景
   const hasCustomBackground = computed(() => {
+    const customStyle = read();
     return !!(customStyle?.backgroundColor || customStyle?.backgroundGradient);
   });
 
   // 是否有自定義圖標
   const hasCustomIcon = computed(() => {
+    const customStyle = read();
     return !!(customStyle?.iconName || customStyle?.customIconUrl);
   });
 

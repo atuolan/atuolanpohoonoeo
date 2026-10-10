@@ -329,7 +329,7 @@ const currentLayout = computed(() => {
         }
 
         &.today {
-          background: #6366f1;
+          background: #f0866b;
           color: white;
           font-weight: 600;
         }

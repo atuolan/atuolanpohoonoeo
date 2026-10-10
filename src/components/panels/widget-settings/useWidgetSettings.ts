@@ -15,7 +15,7 @@ import {
 import { getShapeStyle, shapePresets } from "@/styles/shape-presets";
 import type { ClockStyle, WidgetCustomStyle, WidgetInstance } from "@/types";
 import { resolveWidgetIcon } from "@/utils/widgetIconMap";
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   characterLayoutMap,
   characterWidgetTypes,
@@ -158,28 +158,24 @@ export function useWidgetSettings(
     return widget.type === "fluid-button";
   });
 
-  // 當前選中的背景類型
-  const backgroundType = computed({
-    get: () => (localStyle.value.backgroundGradient ? "gradient" : "solid"),
-    set: (val) => {
-      if (val === "solid") {
-        localStyle.value.backgroundGradient = undefined;
-      } else {
-        localStyle.value.backgroundColor = undefined;
-      }
-    },
-  });
+  // 當前選中的背景類型（只切換顯示的色票，真正選了顏色/漸變才改樣式）
+  // 原本由「有沒有漸變值」推導，切到漸變時因為還沒選任何漸變又被算回純色，分頁切不過去
+  const backgroundType = ref<"solid" | "gradient">(
+    localStyle.value.backgroundGradient ? "gradient" : "solid",
+  );
 
   // 選擇純色背景
   function selectBackgroundColor(color: string) {
     localStyle.value.backgroundColor = color;
     localStyle.value.backgroundGradient = undefined;
+    backgroundType.value = "solid";
   }
 
   // 選擇漸變背景
   function selectGradient(gradient: string) {
     localStyle.value.backgroundGradient = gradient;
     localStyle.value.backgroundColor = undefined;
+    backgroundType.value = "gradient";
   }
 
   // 選擇前景色（圖標）
@@ -201,6 +197,7 @@ export function useWidgetSettings(
   function applyTheme(theme: (typeof colorThemes)[0]) {
     localStyle.value.backgroundColor = theme.backgroundColor;
     localStyle.value.backgroundGradient = theme.backgroundGradient;
+    backgroundType.value = theme.backgroundGradient ? "gradient" : "solid";
     localStyle.value.foregroundColor = theme.foregroundColor;
     localStyle.value.textColor = undefined;
     localStyle.value.borderColor = theme.borderColor;
@@ -243,6 +240,8 @@ export function useWidgetSettings(
       characterBgOpacity: undefined,
       shape: undefined,
     };
+    backgroundType.value = "solid";
+    currentVinylStyle.value = "classic";
 
     if (widget.type === "world-book") {
       currentLayout.value = "shelf";
@@ -284,8 +283,8 @@ export function useWidgetSettings(
     }
   }
 
-  // 保存並關閉
-  function saveAndClose() {
+  // 依目前設定組出要寫回組件的 data（保存與即時預覽共用）
+  function buildUpdateData(): Record<string, any> {
     // 過濾掉 undefined 值
     const cleanStyle: WidgetCustomStyle = {};
 
@@ -374,8 +373,35 @@ export function useWidgetSettings(
       }
     }
 
-    canvasStore.updateWidgetData(widget.id, updateData);
+    return updateData;
+  }
 
+  // 即時預覽：調整時直接套用到畫布上的組件（不寫入儲存），沒按保存就還原
+  const originalData = widget.data;
+  let saved = false;
+
+  watch(
+    [
+      localStyle,
+      clockStyleValue,
+      showSecondsValue,
+      showDateValue,
+      clockColorValue,
+      calendarColors,
+      boundCharacterId,
+      characterLayout,
+    ],
+    () => canvasStore.previewWidgetData(widget.id, buildUpdateData()),
+    { deep: true },
+  );
+
+  // 預覽框用：目前設定套用後的完整組件 data
+  const previewData = computed(() => buildUpdateData());
+
+  // 保存並關閉
+  function saveAndClose() {
+    saved = true;
+    canvasStore.updateWidgetData(widget.id, buildUpdateData());
     onClose();
   }
 
@@ -482,6 +508,8 @@ export function useWidgetSettings(
   onUnmounted(() => {
     document.body.style.overflow = "";
     document.body.style.touchAction = "";
+    // 關閉（X / 點背景 / 離開編輯模式）但沒保存：把即時預覽還原
+    if (!saved) canvasStore.previewWidgetData(widget.id, originalData);
   });
 
   // === 圖標即時容器預覽 ===
@@ -616,6 +644,7 @@ export function useWidgetSettings(
     resetStyle,
     saveAndClose,
     // 預覽 computed
+    previewData,
     previewStyle,
     previewContentStyle,
     iconPreviewBlobStyle,

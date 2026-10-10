@@ -103,21 +103,22 @@ const minimalClockColor = computed(
 );
 
 // 三色時鐘顏色
+// 暖色系：時 = 圖標色（未設定時用奶油金）、分 = 杏橘、秒 = 玫瑰
 const triColorHour = computed(
-  () => props.data?.customStyle?.foregroundColor || "#3b82f6",
+  () => props.data?.customStyle?.foregroundColor || "#f6c177",
 );
-const triColorMinute = computed(() => "#a855f7");
-const triColorSecond = computed(() => "#f472b6");
+const triColorMinute = computed(() => "#f08a5d");
+const triColorSecond = computed(() => "#e86a7a");
 
 // 軌道時鐘：計算行星在 SVG 座標系中的位置（viewBox 0 0 200 200，中心 100,100）
 function orbitPos(angleDeg: number, radius: number) {
   const rad = ((angleDeg - 90) * Math.PI) / 180;
   return { x: 100 + radius * Math.cos(rad), y: 100 + radius * Math.sin(rad) };
 }
-const orbitHourPos = computed(() => orbitPos(((hours.value % 12) / 12) * 360, 35));
-const orbitMinutePos = computed(() => orbitPos((minutes.value / 60) * 360, 55));
+const orbitHourPos = computed(() => orbitPos(((hours.value % 12) / 12) * 360, 38));
+const orbitMinutePos = computed(() => orbitPos((minutes.value / 60) * 360, 62));
 const orbitSecondPos = computed(() =>
-  showSeconds.value ? orbitPos((seconds.value / 60) * 360, 75) : orbitPos(0, 75),
+  showSeconds.value ? orbitPos((seconds.value / 60) * 360, 86) : orbitPos(0, 86),
 );
 function getMarkerStyle(i: number) {
   const angle = (i * 30 - 90) * (Math.PI / 180);
@@ -616,6 +617,12 @@ const hasCustomBackground = computed(() => {
             </div>
           </div>
         </div>
+        <div class="progress-info">
+        <!-- 寬扁容器時改在右側顯示大字時間，環中心留空 -->
+        <div class="progress-time-side">
+          {{ hoursStr }}:{{ minutesStr
+          }}<span v-if="showSeconds" class="progress-seconds-side">{{ secondsStr }}</span>
+        </div>
         <div class="progress-legend">
           <div class="legend-item">
             <div class="legend-dot" :style="{ background: triColorHour }"></div>
@@ -637,6 +644,7 @@ const hasCustomBackground = computed(() => {
           </div>
         </div>
         <div v-if="showDate" class="progress-date">{{ formattedDate }}</div>
+        </div>
       </div>
     </template>
 
@@ -753,7 +761,7 @@ const hasCustomBackground = computed(() => {
                     on
                       ? {
                           background: triColorHour,
-                          boxShadow: `0 0 6px ${triColorHour}`,
+                          boxShadow: `0 0 4px ${triColorHour}55`,
                         }
                       : {}
                   "
@@ -775,7 +783,7 @@ const hasCustomBackground = computed(() => {
                     on
                       ? {
                           background: triColorHour,
-                          boxShadow: `0 0 6px ${triColorHour}`,
+                          boxShadow: `0 0 4px ${triColorHour}55`,
                         }
                       : {}
                   "
@@ -801,7 +809,7 @@ const hasCustomBackground = computed(() => {
                     on
                       ? {
                           background: triColorMinute,
-                          boxShadow: `0 0 6px ${triColorMinute}`,
+                          boxShadow: `0 0 4px ${triColorMinute}55`,
                         }
                       : {}
                   "
@@ -823,7 +831,7 @@ const hasCustomBackground = computed(() => {
                     on
                       ? {
                           background: triColorMinute,
-                          boxShadow: `0 0 6px ${triColorMinute}`,
+                          boxShadow: `0 0 4px ${triColorMinute}55`,
                         }
                       : {}
                   "
@@ -850,7 +858,7 @@ const hasCustomBackground = computed(() => {
                       on
                         ? {
                             background: triColorSecond,
-                            boxShadow: `0 0 6px ${triColorSecond}`,
+                            boxShadow: `0 0 4px ${triColorSecond}55`,
                           }
                         : {}
                     "
@@ -872,7 +880,7 @@ const hasCustomBackground = computed(() => {
                       on
                         ? {
                             background: triColorSecond,
-                            boxShadow: `0 0 6px ${triColorSecond}`,
+                            boxShadow: `0 0 4px ${triColorSecond}55`,
                           }
                         : {}
                     "
@@ -892,12 +900,12 @@ const hasCustomBackground = computed(() => {
         <!-- 純 SVG 軌道，天然跟容器縮放 -->
         <svg class="orbit-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
           <!-- 軌道圓圈 -->
-          <circle cx="100" cy="100" r="35" :stroke="triColorHour + '4d'" stroke-width="1.5" fill="none" stroke-dasharray="4 4" />
-          <circle cx="100" cy="100" r="55" :stroke="triColorMinute + '4d'" stroke-width="1.5" fill="none" stroke-dasharray="4 4" />
-          <circle v-if="showSeconds" cx="100" cy="100" r="75" :stroke="triColorSecond + '4d'" stroke-width="1.5" fill="none" stroke-dasharray="4 4" />
+          <circle cx="100" cy="100" r="38" :stroke="triColorHour + '66'" stroke-width="2" fill="none" stroke-dasharray="3 5" stroke-linecap="round" />
+          <circle cx="100" cy="100" r="62" :stroke="triColorMinute + '66'" stroke-width="2" fill="none" stroke-dasharray="3 5" stroke-linecap="round" />
+          <circle v-if="showSeconds" cx="100" cy="100" r="86" :stroke="triColorSecond + '66'" stroke-width="2" fill="none" stroke-dasharray="3 5" stroke-linecap="round" />
           <!-- 太陽 -->
-          <circle cx="100" cy="100" r="8" fill="url(#sunGrad)" />
-          <circle cx="100" cy="100" r="12" :fill="'rgba(251,191,36,0.25)'" />
+          <circle cx="100" cy="100" r="20" :fill="'rgba(251,191,36,0.18)'" />
+          <circle cx="100" cy="100" r="13" fill="url(#sunGrad)" />
           <defs>
             <radialGradient id="sunGrad">
               <stop offset="0%" stop-color="#fcd34d" />
@@ -906,28 +914,29 @@ const hasCustomBackground = computed(() => {
           </defs>
           <!-- 行星 -->
           <circle
-            :cx="orbitHourPos.x" :cy="orbitHourPos.y" r="5"
+            :cx="orbitHourPos.x" :cy="orbitHourPos.y" r="9"
             :fill="triColorHour"
           >
             <animate attributeName="opacity" values="0.8;1;0.8" dur="2s" repeatCount="indefinite" />
           </circle>
           <circle
-            :cx="orbitMinutePos.x" :cy="orbitMinutePos.y" r="4"
+            :cx="orbitMinutePos.x" :cy="orbitMinutePos.y" r="7"
             :fill="triColorMinute"
           >
             <animate attributeName="opacity" values="0.8;1;0.8" dur="2s" begin="0.3s" repeatCount="indefinite" />
           </circle>
           <circle
             v-if="showSeconds"
-            :cx="orbitSecondPos.x" :cy="orbitSecondPos.y" r="3"
+            :cx="orbitSecondPos.x" :cy="orbitSecondPos.y" r="5"
             :fill="triColorSecond"
           >
             <animate attributeName="opacity" values="0.8;1;0.8" dur="1s" repeatCount="indefinite" />
           </circle>
         </svg>
+        <div class="orbit-info">
         <div class="orbit-time">
           {{ hoursStr }}:{{ minutesStr
-          }}<span v-if="showSeconds">:{{ secondsStr }}</span>
+          }}<span v-if="showSeconds" class="orbit-seconds">:{{ secondsStr }}</span>
         </div>
         <div class="orbit-legend">
           <div class="legend-item">
@@ -938,12 +947,13 @@ const hasCustomBackground = computed(() => {
             <div class="legend-dot" :style="{ background: triColorMinute }"></div>
             <span>分</span>
           </div>
-          <div class="legend-item">
+          <div v-if="showSeconds" class="legend-item">
             <div class="legend-dot" :style="{ background: triColorSecond }"></div>
             <span>秒</span>
           </div>
         </div>
         <div v-if="showDate" class="orbit-date">{{ formattedDate }}</div>
+        </div>
       </div>
     </template>
 
@@ -981,20 +991,29 @@ const hasCustomBackground = computed(() => {
   transition: all 0.3s ease;
   overflow: hidden;
   container-type: size;
+  // 進度環 / 點陣 / 軌道的文字與底色（軌道線、未亮的點）都從這個顏色混出來，
+  // 深色或淺色卡片底都能自動有對比
+  --clk-fg: #1f2937;
 
   &.has-custom-bg {
     border: none;
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
   }
 
-  // 深色樣式（霓虹、二進制、點陣、軌道）
+  // 深色樣式（霓虹、二進制、點陣、軌道）：暖可可色底
   &.style-neon,
   &.style-binary,
   &.style-dotmatrix,
   &.style-orbit,
   &.style-progress {
-    background: rgba(15, 23, 42, 0.85);
+    background: rgba(38, 30, 26, 0.88);
     border: 1px solid rgba(255, 255, 255, 0.1);
+    --clk-fg: #fff8f0;
+  }
+
+  // 有設定前景色時跟著文字色走
+  &.has-custom-color {
+    --clk-fg: currentColor;
   }
 }
 
@@ -1457,21 +1476,24 @@ const hasCustomBackground = computed(() => {
 }
 
 /* ===== 進度環時鐘 (Progress) ===== */
+/* 方形：三環同心、時間在環中心，圖例與日期在下方
+   寬扁：環在左（環心留空，像活動圓環），大字時間 + 圖例 + 日期在右 */
 .progress-clock {
+  --ring: min(66cqh, 86cqw);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   width: 100%;
   height: 100%;
+  color: var(--clk-fg);
 
   .progress-rings {
     position: relative;
-    width: min(160px, 70cqmin);
-    height: min(160px, 70cqmin);
-    max-width: 100%;
-    max-height: 100%;
-    aspect-ratio: 1;
+    width: var(--ring);
+    height: var(--ring);
+    flex-shrink: 0;
   }
 
   .ring {
@@ -1480,23 +1502,21 @@ const hasCustomBackground = computed(() => {
     transform: rotate(-90deg);
 
     &.minutes-ring {
-      transform: rotate(-90deg) scale(0.75);
+      transform: rotate(-90deg) scale(0.82);
     }
 
     &.hours-ring {
-      transform: rotate(-90deg) scale(0.5);
+      transform: rotate(-90deg) scale(0.64);
     }
   }
 
   .ring-bg {
     fill: none;
-    stroke: rgba(255, 255, 255, 0.1);
-    stroke-width: 8;
+    stroke: color-mix(in srgb, var(--clk-fg) 12%, transparent);
   }
 
   .ring-progress {
     fill: none;
-    stroke-width: 8;
     stroke-linecap: round;
     transition: stroke-dashoffset 1s linear;
 
@@ -1505,14 +1525,17 @@ const hasCustomBackground = computed(() => {
     }
   }
 
-  .minutes-ring .ring-bg,
-  .minutes-ring .ring-progress {
-    stroke-width: 12;
+  // 內圈縮小時加粗，讓三圈視覺粗細一致
+  .seconds-ring circle {
+    stroke-width: 16;
   }
 
-  .hours-ring .ring-bg,
-  .hours-ring .ring-progress {
-    stroke-width: 16;
+  .minutes-ring circle {
+    stroke-width: 19.5;
+  }
+
+  .hours-ring circle {
+    stroke-width: 25;
   }
 
   .progress-center {
@@ -1525,22 +1548,34 @@ const hasCustomBackground = computed(() => {
   }
 
   .progress-time {
-    font-size: clamp(14px, 7cqw, 28px);
-    color: white;
+    font-size: calc(var(--ring) * 0.19);
+    font-weight: 500;
+    line-height: 1;
+    color: var(--clk-fg);
     font-variant-numeric: tabular-nums;
   }
 
   .progress-seconds {
-    font-size: clamp(8px, 3cqw, 12px);
-    color: rgba(255, 255, 255, 0.6);
+    font-size: calc(var(--ring) * 0.08);
+    color: color-mix(in srgb, var(--clk-fg) 60%, transparent);
     font-variant-numeric: tabular-nums;
     margin-top: 2px;
+  }
+
+  .progress-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .progress-time-side {
+    display: none;
   }
 
   .progress-legend {
     display: flex;
     gap: 10px;
-    margin-top: 8px;
   }
 
   .legend-item {
@@ -1549,22 +1584,53 @@ const hasCustomBackground = computed(() => {
     gap: 4px;
 
     span {
-      font-size: clamp(7px, 2cqw, 10px);
-      color: rgba(255, 255, 255, 0.7);
+      font-size: clamp(9px, 3cqmin, 11px);
+      color: color-mix(in srgb, var(--clk-fg) 70%, transparent);
     }
   }
 
   .legend-dot {
-    width: 6px;
-    height: 6px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
   }
 
   .progress-date {
-    margin-top: 6px;
-    font-size: clamp(8px, 3cqw, 12px);
-    color: rgba(255, 255, 255, 0.7);
+    font-size: clamp(9px, 3.5cqmin, 13px);
+    color: color-mix(in srgb, var(--clk-fg) 70%, transparent);
     letter-spacing: 1px;
+  }
+}
+
+@container (min-aspect-ratio: 7 / 5) {
+  .progress-clock {
+    --ring: 92cqh;
+    flex-direction: row;
+    gap: 7cqh;
+
+    .progress-center {
+      display: none;
+    }
+
+    .progress-info {
+      align-items: flex-start;
+      gap: 3cqh;
+    }
+
+    .progress-time-side {
+      display: block;
+      font-size: clamp(20px, 34cqh, 56px);
+      font-weight: 300;
+      line-height: 1;
+      letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .progress-seconds-side {
+      font-size: 0.45em;
+      margin-left: 4px;
+      color: color-mix(in srgb, var(--clk-fg) 55%, transparent);
+    }
   }
 }
 
@@ -1646,105 +1712,128 @@ const hasCustomBackground = computed(() => {
 }
 
 /* ===== 點陣時鐘 (Dot Matrix) ===== */
+/* 點的大小跟容器走；未亮的點與面板都由 --clk-fg 混出淡色，淺色底也不會變成一塊灰 */
 .dotmatrix-clock {
+  --dot: clamp(3px, min(2.8cqw, 6.5cqh), 11px);
+  --dot-gap: calc(var(--dot) * 0.35);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   width: 100%;
   height: 100%;
+  color: var(--clk-fg);
 
   .dotmatrix-label {
-    font-size: clamp(7px, 2cqw, 10px);
+    font-size: clamp(8px, 3cqmin, 10px);
     text-transform: uppercase;
     letter-spacing: 2px;
-    color: rgba(255, 255, 255, 0.5);
-    margin-bottom: 10px;
+    color: color-mix(in srgb, var(--clk-fg) 50%, transparent);
   }
 
   .dotmatrix-display {
-    background: rgba(0, 0, 0, 0.5);
-    border-radius: 12px;
-    padding: 12px 16px;
-    border: 2px solid #374151;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    background: color-mix(in srgb, var(--clk-fg) 6%, transparent);
+    border: 1px solid color-mix(in srgb, var(--clk-fg) 12%, transparent);
+    border-radius: calc(var(--dot) * 2);
+    padding: calc(var(--dot) * 1.6) calc(var(--dot) * 2.2);
   }
 
   .dotmatrix-digits {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: calc(var(--dot) * 0.9);
   }
 
   .dotmatrix-digit {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--dot-gap);
   }
 
   .dot-row {
     display: flex;
-    gap: 2px;
+    gap: var(--dot-gap);
   }
 
   .dot {
-    width: 5px;
-    height: 5px;
+    width: var(--dot);
+    height: var(--dot);
     border-radius: 50%;
-    background: #1f2937;
+    background: color-mix(in srgb, var(--clk-fg) 6%, transparent);
     transition: all 0.2s;
   }
 
   .dotmatrix-colon {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 0 4px;
+    gap: calc(var(--dot) * 1.6);
+    padding: 0 calc(var(--dot) * 0.4);
 
     .colon-dot {
-      width: 5px;
-      height: 5px;
+      width: var(--dot);
+      height: var(--dot);
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.7);
-      box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+      background: color-mix(in srgb, var(--clk-fg) 55%, transparent);
+      animation: pulse 2s ease-in-out infinite;
     }
   }
 
   .dotmatrix-date {
-    margin-top: 10px;
-    font-size: clamp(8px, 3cqw, 12px);
-    color: rgba(255, 255, 255, 0.7);
+    font-size: clamp(9px, 3.5cqmin, 13px);
+    color: color-mix(in srgb, var(--clk-fg) 70%, transparent);
     letter-spacing: 1px;
   }
 }
 
+/* 矮的容器（例如橫幅）不放「點陣顯示器」標題，把高度留給數字 */
+@container (max-height: 160px) {
+  .dotmatrix-clock .dotmatrix-label {
+    display: none;
+  }
+}
+
 /* ===== 軌道時鐘 (Orbit) ===== */
+/* 方形：軌道在上、時間資訊在下；寬扁：軌道在左吃滿高度、時間資訊在右 */
 .orbit-clock {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   width: 100%;
   height: 100%;
+  color: var(--clk-fg);
 
   .orbit-svg {
-    width: min(100%, 100cqh);
-    flex: 1;
-    min-height: 0;
+    width: min(100%, 64cqh);
+    height: min(100%, 64cqh);
+    flex-shrink: 0;
     overflow: visible;
   }
 
+  .orbit-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+  }
+
   .orbit-time {
-    margin-top: 4px;
-    font-size: clamp(12px, 6cqw, 24px);
-    color: white;
+    font-size: clamp(14px, 9cqmin, 28px);
+    font-weight: 400;
+    line-height: 1;
+    color: var(--clk-fg);
     font-variant-numeric: tabular-nums;
+  }
+
+  .orbit-seconds {
+    color: color-mix(in srgb, var(--clk-fg) 55%, transparent);
   }
 
   .orbit-legend {
     display: flex;
-    gap: 12px;
-    margin-top: 4px;
+    gap: 10px;
   }
 
   .legend-item {
@@ -1753,22 +1842,43 @@ const hasCustomBackground = computed(() => {
     gap: 4px;
 
     span {
-      font-size: clamp(7px, 2cqw, 10px);
-      color: rgba(255, 255, 255, 0.7);
+      font-size: clamp(9px, 3cqmin, 11px);
+      color: color-mix(in srgb, var(--clk-fg) 70%, transparent);
     }
   }
 
   .legend-dot {
-    width: 6px;
-    height: 6px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
   }
 
   .orbit-date {
-    margin-top: 4px;
-    font-size: clamp(8px, 3cqw, 12px);
-    color: rgba(255, 255, 255, 0.7);
+    font-size: clamp(9px, 3.5cqmin, 13px);
+    color: color-mix(in srgb, var(--clk-fg) 70%, transparent);
     letter-spacing: 1px;
+  }
+}
+
+@container (min-aspect-ratio: 7 / 5) {
+  .orbit-clock {
+    flex-direction: row;
+    gap: 7cqh;
+
+    .orbit-svg {
+      width: 96cqh;
+      height: 96cqh;
+    }
+
+    .orbit-info {
+      align-items: flex-start;
+      gap: 3cqh;
+    }
+
+    .orbit-time {
+      font-size: clamp(20px, 30cqh, 52px);
+      font-weight: 300;
+    }
   }
 }
 

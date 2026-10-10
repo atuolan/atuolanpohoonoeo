@@ -166,8 +166,8 @@ const emit = defineEmits<{
   }
 
   &.preset {
-    background: linear-gradient(135deg, #e0e7ff 0%, #ddd6fe 100%);
-    color: #4f46e5;
+    background: linear-gradient(135deg, #fdebe4 0%, #fbe0d4 100%);
+    color: #c2603f;
   }
 
   &.default {
@@ -215,9 +215,9 @@ const emit = defineEmits<{
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #6366f1;
+    background: #e07a5f;
     cursor: pointer;
-    box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 2px 6px rgba(224, 122, 95, 0.3);
   }
 }
 

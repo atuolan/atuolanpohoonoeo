@@ -190,7 +190,7 @@ const currentLayout = computed(() => {
     border: none;
 
     .photo-area {
-      background: #1f2937;
+      background: #f1e7dc;
       border-radius: 2px;
       border: none;
       box-shadow: none;
@@ -205,7 +205,7 @@ const currentLayout = computed(() => {
         flex-direction: column;
         align-items: center;
         gap: 8px;
-        color: #6b7280;
+        color: #a48b76;
         transition: color 0.2s;
 
         span {
@@ -214,7 +214,7 @@ const currentLayout = computed(() => {
         }
 
         &:hover {
-          color: #9ca3af;
+          color: #8a6f5a;
           transform: none;
         }
       }

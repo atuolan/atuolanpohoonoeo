@@ -460,13 +460,13 @@ onUnmounted(() => {
     height: 100%;
     max-width: 80px;
     max-height: 80px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #fdba74 0%, #f0866b 100%);
     border-radius: min(12px, 15%);
     display: flex;
     align-items: center;
     justify-content: center;
     color: white;
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    box-shadow: 0 4px 12px rgba(240, 134, 107, 0.3);
     position: relative;
 
     svg {
@@ -697,7 +697,7 @@ onUnmounted(() => {
     .play-btn.big {
       width: clamp(40px, 14cqh, 64px);
       height: clamp(40px, 14cqh, 64px);
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #fdba74 0%, #f0866b 100%);
 
       svg {
         width: 50%;
@@ -706,7 +706,7 @@ onUnmounted(() => {
 
       &:hover {
         transform: scale(1.05);
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        box-shadow: 0 6px 20px rgba(240, 134, 107, 0.4);
       }
     }
   }
