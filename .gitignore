@@ -1,5 +1,6 @@
 node_modules
 .worktrees/
+.claude/worktrees/
 self-hosted-sync-server/data/
 self-hosted-sync-server/.env
 # 依賴
