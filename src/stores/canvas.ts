@@ -229,15 +229,13 @@ export const useCanvasStore = defineStore("canvas", () => {
   }
 
   // 重置佈局
-  function resetLayout() {
+  // 清空後重新整理，WhiteboardCanvas 會在 widgets 為空時自動生成預設佈局。
+  // 必須等清空真的寫進 IndexedDB 才重新整理：原本固定 100ms 後就 reload，
+  // 手機上寫入較慢時會先 reload，讀回舊佈局，看起來像「重置沒效果」
+  async function resetLayout() {
     widgets.value = [];
-    saveData();
-    // 這裡只需要清空，WhiteboardCanvas 會在 widgets 為空時自動重新生成預設佈局
-    // 我們可以通過重新加載頁面來觸發，或者手動調用生成邏輯
-    // 為了簡單，我們這裡只清空，讓 UI 組件決定如何填充
-    setTimeout(() => {
-      window.location.reload();
-    }, 100);
+    await saveData();
+    window.location.reload();
   }
 
   // 添加組件

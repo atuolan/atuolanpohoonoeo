@@ -86,10 +86,12 @@ export const storageService = {
         updatedAt: Date.now()
       }
 
-      const request = store.put(data)
+      store.put(data)
 
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject('Save failed')
+      // 等整個交易提交完成才算存好（request.onsuccess 時資料可能還沒落地）
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject('Save failed')
+      transaction.onabort = () => reject('Save aborted')
     })
   },
 

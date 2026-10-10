@@ -2,10 +2,10 @@
 import AddWidgetPanel from "@/components/panels/AddWidgetPanel.vue";
 import BatchStylePanel from "@/components/panels/BatchStylePanel.vue";
 import WidgetWrapper from "@/components/widgets/WidgetWrapper.vue";
+import { getDefaultWidgetStyle } from "@/components/widgets/defaultWidgetStyle";
 import { widgetComponents } from "@/components/widgets/widgetComponents";
 import { useTimeTheme } from "@/composables/useTimeTheme";
 import { useCanvasStore, useThemeStore } from "@/stores";
-import type { WidgetCustomStyle } from "@/types";
 import {
     AlignCenter,
     Check,
@@ -365,16 +365,10 @@ onMounted(async () => {
 
   // 如果沒有組件，添加預設佈局
   // 畫布 90 格，每屏約 22 格：左屏 x13–34、中屏 x35–56、右屏 x57–78
-  // 所有卡片統一奶油底 + 咖啡字，與 App 圖標同一套白卡質感；格線以 1 格為間距對齊
+  // 外觀統一由 getDefaultWidgetStyle 提供（與新增組件、重置共用）；格線以 1 格為間距對齊
   if (canvasStore.widgets.length === 0) {
-    const card = (): WidgetCustomStyle => ({
-      backgroundColor: "#FFFDF9",
-      foregroundColor: "#5B4636",
-      borderColor: "transparent",
-    });
-    // App 圖標同樣用奶油底 + 咖啡色圖標，夜間深色桌布時才不會變成灰色玻璃而和卡片脫節
-    const app = (x: number, y: number, label: string, extra: { type?: string; iconName?: string } = {}) => {
-      const { type, iconName } = extra;
+    const card = (type: string) => getDefaultWidgetStyle(type);
+    const app = (x: number, y: number, label: string, type?: string) => {
       canvasStore.addWidget({
         type: "fluid-button",
         x,
@@ -384,49 +378,42 @@ onMounted(async () => {
         data: {
           label,
           ...(type ? { type } : {}),
-          customStyle: { backgroundColor: "#FFFDF9", foregroundColor: "#5B4636", ...(iconName ? { iconName } : {}) },
+          customStyle: getDefaultWidgetStyle("fluid-button", label),
         },
       });
     };
 
     // ===== 第一屏（左側）：效率 =====
-    canvasStore.addWidget({ type: "focus-timer", x: 13, y: 2, width: 10, height: 18, data: { customStyle: card() } });
-    canvasStore.addWidget({ type: "todo", x: 13, y: 21, width: 10, height: 10, data: { customStyle: card() } });
-    canvasStore.addWidget({ type: "mood-diary", x: 24, y: 2, width: 10, height: 12, data: { customStyle: card() } });
-    app(24, 15, "書架", { type: "5" });
+    canvasStore.addWidget({ type: "focus-timer", x: 13, y: 2, width: 10, height: 18, data: { customStyle: card("focus-timer") } });
+    canvasStore.addWidget({ type: "todo", x: 13, y: 21, width: 10, height: 10, data: { customStyle: card("todo") } });
+    canvasStore.addWidget({ type: "mood-diary", x: 24, y: 2, width: 10, height: 12, data: { customStyle: card("mood-diary") } });
+    app(24, 15, "書架", "5");
     app(29, 15, "閱讀");
-    canvasStore.addWidget({ type: "quote", x: 24, y: 21, width: 10, height: 10, data: { customStyle: card() } });
+    canvasStore.addWidget({ type: "quote", x: 24, y: 21, width: 10, height: 10, data: { customStyle: card("quote") } });
 
     // ===== 第二屏（中間）：主頁 =====
-    canvasStore.addWidget({ type: "clock", x: 35, y: 2, width: 21, height: 7, data: { customStyle: card() } });
-    canvasStore.addWidget({ type: "polaroid", x: 35, y: 10, width: 10, height: 10, data: { customStyle: card() } });
+    canvasStore.addWidget({ type: "clock", x: 35, y: 2, width: 21, height: 7, data: { customStyle: card("clock") } });
+    canvasStore.addWidget({ type: "polaroid", x: 35, y: 10, width: 10, height: 10, data: { customStyle: card("polaroid") } });
     app(46, 10, "訊息");
     app(51, 10, "角色");
     app(46, 15, "設置");
     app(51, 15, "使用者");
-    canvasStore.addWidget({
-      type: "music",
-      x: 35,
-      y: 21,
-      width: 10,
-      height: 10,
-      data: { customStyle: { ...card(), layout: "compact" } },
-    });
-    app(46, 21, "占卜", { type: "1", iconName: "Moon" });
+    canvasStore.addWidget({ type: "music", x: 35, y: 21, width: 10, height: 10, data: { customStyle: card("music") } });
+    app(46, 21, "占卜", "1");
     app(51, 21, "遊戲");
     app(46, 26, "音樂");
     app(51, 26, "空間");
 
     // ===== 第三屏（右側）：生活 =====
-    canvasStore.addWidget({ type: "calendar", x: 57, y: 2, width: 14, height: 16, data: { customStyle: card() } });
+    canvasStore.addWidget({ type: "calendar", x: 57, y: 2, width: 14, height: 16, data: { customStyle: card("calendar") } });
     app(73, 2, "購物");
     app(73, 7, "外賣");
     app(73, 12, "錢包");
-    canvasStore.addWidget({ type: "weather", x: 57, y: 19, width: 10, height: 10, data: { customStyle: card() } });
+    canvasStore.addWidget({ type: "weather", x: 57, y: 19, width: 10, height: 10, data: { customStyle: card("weather") } });
     app(68, 19, "頭盔TA");
     app(73, 19, "健身");
-    app(68, 24, "世界書", { iconName: "Globe" });
-    app(73, 24, "小劇場", { iconName: "Film" });
+    app(68, 24, "世界書");
+    app(73, 24, "小劇場");
   }
 });
 

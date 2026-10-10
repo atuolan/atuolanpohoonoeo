@@ -12,6 +12,7 @@ import {
   foregroundColors,
   gradientPresets,
 } from "@/styles/color-presets";
+import { getDefaultWidgetStyle } from "@/components/widgets/defaultWidgetStyle";
 import { getShapeStyle, shapePresets } from "@/styles/shape-presets";
 import type { ClockStyle, WidgetCustomStyle, WidgetInstance } from "@/types";
 import { resolveWidgetIcon } from "@/utils/widgetIconMap";
@@ -239,11 +240,15 @@ export function useWidgetSettings(
       useCharacterBg: undefined,
       characterBgOpacity: undefined,
       shape: undefined,
+      // 重置回統一的預設外觀（和預設佈局、新增組件一樣），不是清空成組件內建的舊配色
+      ...getDefaultWidgetStyle(widget.type, widget.data?.label),
     };
     backgroundType.value = "solid";
     currentVinylStyle.value = "classic";
 
-    if (widget.type === "world-book") {
+    if (localStyle.value.layout) {
+      currentLayout.value = localStyle.value.layout;
+    } else if (widget.type === "world-book") {
       currentLayout.value = "shelf";
     } else if (widget.type === "char-phone") {
       currentLayout.value = "phone";

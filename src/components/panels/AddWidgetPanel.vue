@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { getDefaultWidgetStyle } from "@/components/widgets/defaultWidgetStyle";
 import { useCanvasStore } from "@/stores";
 import type { WidgetType } from "@/types";
 import {
@@ -597,6 +598,16 @@ const notAddedFilteredWidgets = computed(() =>
   filteredWidgets.value.filter((w) => !isWidgetAdded(w)),
 );
 
+// 新增的組件沒有自帶樣式時套用統一的預設外觀（與預設佈局、重置一致）
+function withDefaultStyle(def: WidgetDef): Record<string, any> {
+  const data = { ...(def.data || {}) };
+  if (!data.customStyle) {
+    const style = getDefaultWidgetStyle(def.type, data.label);
+    if (style) data.customStyle = style;
+  }
+  return data;
+}
+
 // 添加組件
 function addWidget(def: WidgetDef) {
   // 計算新組件位置（在當前視窗中心）
@@ -614,7 +625,7 @@ function addWidget(def: WidgetDef) {
     y: Math.max(0, y),
     width: def.defaultWidth,
     height: def.defaultHeight,
-    data: def.data || {},
+    data: withDefaultStyle(def),
   });
 
   emit("close");
