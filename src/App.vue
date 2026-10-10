@@ -2795,7 +2795,8 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
 
       <!-- 主頁：橫向白板畫布 -->
       <div v-else-if="authStore.isAuthenticated && currentPage === 'home'" class="home-screen-wrapper screen-container">
-        <WhiteboardCanvas @navigate="handleNavigate" />
+        <!-- 最近聊天組件會帶 chatId，走跟通知相同的導航才能直接開該聊天 -->
+        <WhiteboardCanvas @navigate="handleNotificationNavigate" />
         <NeonWheelDock
           @navigate="handleNavigate"
           @open-global-theme="showGlobalTheme = true"

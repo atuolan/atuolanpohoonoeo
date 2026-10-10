@@ -19,8 +19,9 @@ const emit = defineEmits<{
 
 const canvasStore = useCanvasStore();
 const dataRef = computed(() => props.data);
+// 沒綁角色時顯示最近一次聊天，預設佈局放的組件才不會是一塊空白
 const { character, displayName, avatar, preferredChat, chatId } =
-  useWidgetCharacter(dataRef);
+  useWidgetCharacter(dataRef, { fallbackToRecent: true });
 
 const layout = computed(() => props.data?.layout || "bubble");
 const isEditMode = computed(() => canvasStore.isEditMode);
@@ -51,7 +52,9 @@ const containerStyle = computed(() => {
   const cs = props.data?.customStyle;
   if (cs?.backgroundGradient) style.background = cs.backgroundGradient;
   else if (cs?.backgroundColor) style.background = cs.backgroundColor;
-  if (cs?.textColor) style.color = cs.textColor;
+  // 預設奶油卡片只給 foregroundColor
+  const color = cs?.textColor || cs?.foregroundColor;
+  if (color) style.color = color;
   return style;
 });
 
@@ -78,6 +81,9 @@ function handleClick() {
       characterId: character.value.id,
       chatId: chatId.value || undefined,
     });
+  } else {
+    // 還沒有任何聊天：帶去訊息 App 找角色
+    emit("navigate", { type: "chat" });
   }
 }
 </script>
@@ -94,7 +100,7 @@ function handleClick() {
     <template v-if="!character">
       <div class="empty-hint">
         <span class="emoji">💬</span>
-        <span class="hint-text" v-if="!isEditMode">長按進入編輯模式</span>
+        <span class="hint-text" v-if="!isEditMode">還沒有聊天，去找角色聊聊吧</span>
         <span class="hint-text" v-else>點擊齒輪圖示綁定角色</span>
       </div>
     </template>
@@ -202,7 +208,7 @@ function handleClick() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.25);
+  background: color-mix(in srgb, currentColor 18%, transparent);
   font-size: 16px;
   font-weight: 700;
 }
@@ -247,7 +253,8 @@ function handleClick() {
 
 .bubble {
   flex: 1;
-  background: rgba(255, 255, 255, 0.15);
+  // 跟著文字色調整，深色漸層與奶油卡片底都看得到
+  background: color-mix(in srgb, currentColor 10%, transparent);
   border-radius: 12px;
   border-top-left-radius: 2px;
   padding: 8px 10px;

@@ -610,6 +610,14 @@ export const useCanvasStore = defineStore("canvas", () => {
     scrollX.value = Math.max(0, Math.min(value, maxScroll));
   }
 
+  // 目前螢幕實際看得到幾格高（扣掉 dock）
+  // 直式長螢幕被寬度限制縮放時，會比預設佈局的 35 格多出不少
+  function getVisibleGridRows() {
+    return Math.floor(
+      (window.innerHeight - DOCK_HEIGHT) / (BASE_GRID_SIZE * canvasScale.value),
+    );
+  }
+
   return {
     // 狀態
     widgets,
@@ -642,6 +650,7 @@ export const useCanvasStore = defineStore("canvas", () => {
     toggleEditMode,
     setEditMode,
     setScrollX,
+    getVisibleGridRows,
     toggleSelectMode,
     // 多選方法
     selectWidget,

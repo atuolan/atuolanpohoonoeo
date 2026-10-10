@@ -21,8 +21,9 @@ const emit = defineEmits<{
 
 const canvasStore = useCanvasStore();
 const dataRef = computed(() => props.data);
+// 沒綁角色時跟最近聊天的角色，預設佈局放的組件才不會是一塊空白
 const { character, displayName, avatar, metrics, knownDays } =
-  useWidgetCharacter(dataRef);
+  useWidgetCharacter(dataRef, { fallbackToRecent: true });
 
 const layout = computed(() => props.data?.layout || "pet");
 const isEditMode = computed(() => canvasStore.isEditMode);
@@ -54,7 +55,9 @@ const containerStyle = computed(() => {
   const cs = props.data?.customStyle;
   if (cs?.backgroundGradient) style.background = cs.backgroundGradient;
   else if (cs?.backgroundColor) style.background = cs.backgroundColor;
-  if (cs?.textColor) style.color = cs.textColor;
+  // 預設奶油卡片只給 foregroundColor
+  const color = cs?.textColor || cs?.foregroundColor;
+  if (color) style.color = color;
   return style;
 });
 
@@ -229,7 +232,8 @@ function handleClick() {
   width: 90%;
   height: 8px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.55);
+  // 跟著文字色，漸層底與奶油卡片底都看得到
+  background: color-mix(in srgb, currentColor 15%, transparent);
   overflow: hidden;
 }
 

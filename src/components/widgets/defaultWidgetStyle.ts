@@ -18,6 +18,9 @@ const CARD_WIDGET_TYPES = new Set([
   "calendar",
   "weather",
   "music",
+  "countdown",
+  "recent-chat",
+  "companion-pet",
 ]);
 
 // 預設圖標與其他 App 重複或沒有對應圖標的標籤，改用專屬圖標

@@ -6,7 +6,7 @@
 import { computed, ref, watch, type Ref } from "vue";
 import { useCharactersStore } from "@/stores/characters";
 import { useAffinityStore } from "@/stores/affinity";
-import { resolvePreferredDirectChat } from "@/storage/chatStorage";
+import { loadAllChats, resolvePreferredDirectChat } from "@/storage/chatStorage";
 import type { StoredCharacter } from "@/types/character";
 import type { Chat } from "@/types/chat";
 
@@ -14,11 +14,19 @@ export interface WidgetCharacterData {
   characterId?: string;
 }
 
+export interface UseWidgetCharacterOptions {
+  /** 未綁定角色時，改用最近一次單人聊天的角色（預設佈局放的組件不會綁角色，否則只會顯示空白提示） */
+  fallbackToRecent?: boolean;
+}
+
 /**
  * 解析 widget 綁定的角色，並提供常用衍生資料。
  * @param dataRef 反應式的 widget data（需含 characterId）
  */
-export function useWidgetCharacter(dataRef: Ref<WidgetCharacterData | undefined>) {
+export function useWidgetCharacter(
+  dataRef: Ref<WidgetCharacterData | undefined>,
+  options: UseWidgetCharacterOptions = {},
+) {
   const charactersStore = useCharactersStore();
   const affinityStore = useAffinityStore();
 
@@ -27,7 +35,32 @@ export function useWidgetCharacter(dataRef: Ref<WidgetCharacterData | undefined>
     void charactersStore.loadCharacters();
   }
 
-  const characterId = computed(() => dataRef.value?.characterId || null);
+  // 最近聊過的角色 id（新到舊），只在 fallbackToRecent 時載入
+  const recentCharacterIds = ref<string[]>([]);
+  if (options.fallbackToRecent) {
+    void loadAllChats()
+      .then((chats) => {
+        recentCharacterIds.value = chats
+          .filter((chat) => !chat.isGroupChat && chat.characterId)
+          .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+          .map((chat) => chat.characterId);
+      })
+      .catch((e) => {
+        console.error("[useWidgetCharacter] load recent chats failed:", e);
+      });
+  }
+
+  const characterId = computed(() => {
+    const bound = dataRef.value?.characterId;
+    if (bound) return bound;
+    if (!options.fallbackToRecent) return null;
+    // 跳過已刪除的角色，取第一個還存在的
+    return (
+      recentCharacterIds.value.find((id) =>
+        charactersStore.characters.some((c) => c.id === id),
+      ) ?? null
+    );
+  });
 
   const character = computed<StoredCharacter | null>(() => {
     if (!characterId.value) return null;

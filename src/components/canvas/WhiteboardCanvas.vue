@@ -159,7 +159,7 @@ const selectionBoxStyle = computed(() => {
 
 // Emits - 導航事件
 const emit = defineEmits<{
-  (e: "navigate", page: string): void;
+  (e: "navigate", page: string, data?: Record<string, any>): void;
 }>();
 
 // 標籤到頁面的映射
@@ -352,10 +352,19 @@ function handleWidgetClick(widget: { type: string; data?: any }) {
 }
 
 // 處理 widget 內部的導航事件
-function handleWidgetNavigate(page: string) {
+// 角色類組件（最近聊天、寵物等）傳的是 { type, characterId, chatId }，
+// 原本直接當字串往上丟，App 對不到任何頁面，點了沒反應
+function handleWidgetNavigate(
+  payload: string | { type: string; characterId?: string; chatId?: string },
+) {
   // 編輯模式下不導航
   if (canvasStore.isEditMode) return;
-  emit("navigate", page);
+  if (typeof payload === "string") {
+    emit("navigate", payload);
+  } else {
+    const { type, ...data } = payload;
+    emit("navigate", type, data);
+  }
 }
 
 // 重置佈局會清掉所有組件（含待辦、拍立得照片、心情、語錄等內容），先確認
@@ -425,6 +434,17 @@ onMounted(async () => {
     app(73, 19, "健身");
     app(68, 24, "世界書");
     app(73, 24, "小劇場");
+
+    // ===== 直式長螢幕補一排 =====
+    // 縮放被寬度限制時（多數手機），畫面比 35 格高很多，下方會空一大塊；
+    // 有空間才補，iPhone SE、桌機（約 35 格）維持原樣
+    const EXTRA_ROW_Y = 32;
+    const EXTRA_ROW_H = 8;
+    if (canvasStore.getVisibleGridRows() >= EXTRA_ROW_Y + EXTRA_ROW_H + 1) {
+      canvasStore.addWidget({ type: "countdown", x: 13, y: EXTRA_ROW_Y, width: 21, height: EXTRA_ROW_H, data: { customStyle: card("countdown") } });
+      canvasStore.addWidget({ type: "recent-chat", x: 35, y: EXTRA_ROW_Y, width: 21, height: EXTRA_ROW_H, data: { layout: "bubble", customStyle: card("recent-chat") } });
+      canvasStore.addWidget({ type: "companion-pet", x: 57, y: EXTRA_ROW_Y, width: 21, height: EXTRA_ROW_H, data: { layout: "pet", customStyle: card("companion-pet") } });
+    }
   }
 });
 
