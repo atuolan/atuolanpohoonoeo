@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useThemeStore } from "@/stores";
 import type { WidgetCustomStyle } from "@/types";
+import { isCssColorDark } from "@/utils/wallpaperLuminance";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
 // 時鐘樣式類型
@@ -120,6 +121,24 @@ const orbitMinutePos = computed(() => orbitPos((minutes.value / 60) * 360, 62));
 const orbitSecondPos = computed(() =>
   showSeconds.value ? orbitPos((seconds.value / 60) * 360, 86) : orbitPos(0, 86),
 );
+// 指針錶面深淺：有自訂卡片底色時看底色，否則看桌布
+// （原本只看桌布，夜間時奶油色卡片上會出現一顆深色錶面）
+const isAnalogDark = computed(() => {
+  const cs = props.data?.customStyle;
+  const bg = cs?.backgroundGradient || cs?.backgroundColor;
+  if (bg && bg !== "transparent") {
+    const dark = isCssColorDark(bg);
+    if (dark !== null) return dark;
+  }
+  return themeStore.isWallpaperDark;
+});
+
+// 指針元素預設指向 3 點鐘方向（水平向右），角度以 12 點為 0 度，所以要減 90 度
+// （原本沒減，時間整個偏了 90 度：9:25 會顯示成指向 8 點和 1 點）
+function handStyle(angleDeg: number) {
+  return { transform: `rotate(${angleDeg - 90}deg)` };
+}
+
 function getMarkerStyle(i: number) {
   const angle = (i * 30 - 90) * (Math.PI / 180);
   const x = 50 + 40 * Math.cos(angle);
@@ -339,7 +358,10 @@ const textStyle = computed(() => {
   
   if (customStyle?.layout === "pearl" || customStyle?.layout === "lineart") return style;
 
-  if (customStyle?.textColor) {
+  // 「時鐘顏色」優先：原本只有極簡樣式讀這個設定，數字 / 翻頁 / 指針選了顏色沒有效果
+  if (props.data?.clockColor) {
+    style.color = props.data.clockColor;
+  } else if (customStyle?.textColor) {
     style.color = customStyle.textColor;
   } else if (customStyle?.foregroundColor) {
     style.color = customStyle.foregroundColor;
@@ -368,7 +390,7 @@ const hasCustomBackground = computed(() => {
       `style-${clockStyle}`,
       {
         'has-custom-bg': hasCustomBackground,
-        'has-custom-color': !!data?.customStyle?.foregroundColor,
+        'has-custom-color': !!data?.customStyle?.foregroundColor || !!data?.clockColor,
       },
     ]"
     :style="{ ...containerStyle, ...textStyle }"
@@ -438,7 +460,7 @@ const hasCustomBackground = computed(() => {
     <template v-else-if="clockStyle === 'analog'">
       <div
         class="analog-clock"
-        :class="{ 'analog-dark': themeStore.isWallpaperDark }"
+        :class="{ 'analog-dark': isAnalogDark }"
         :style="textStyle"
       >
         <div class="clock-face">
@@ -451,16 +473,16 @@ const hasCustomBackground = computed(() => {
           />
           <div
             class="hand hour-hand"
-            :style="{ transform: `rotate(${hoursAngle}deg)` }"
+            :style="handStyle(hoursAngle)"
           ></div>
           <div
             class="hand minute-hand"
-            :style="{ transform: `rotate(${minutesAngle}deg)` }"
+            :style="handStyle(minutesAngle)"
           ></div>
           <div
             v-if="showSeconds"
             class="hand second-hand"
-            :style="{ transform: `rotate(${secondsAngle}deg)` }"
+            :style="handStyle(secondsAngle)"
           ></div>
           <div class="center-dot"></div>
         </div>
@@ -1148,27 +1170,27 @@ const hasCustomBackground = computed(() => {
   height: 100%;
   gap: 4cqmin;
 
-  /* 柔和擬物（neumorphism）配色 — 淺色預設 */
-  --clock-face: #eaecf3;
+  /* 柔和擬物（neumorphism）配色 — 淺色預設，暖奶茶錶面 + 珊瑚秒針 */
+  --clock-face: #f3ede6;
   --clock-shadow-light: rgba(255, 255, 255, 0.95);
-  --clock-shadow-dark: rgba(166, 166, 166, 0.45);
-  --hand-color: #000000;
-  --accent-color: #3f3db6;
-  --marker-color: #9e9fa6;
+  --clock-shadow-dark: rgba(150, 120, 95, 0.32);
+  --hand-color: #3b2f28;
+  --accent-color: #e07a5f;
+  --marker-color: #b8a99c;
   --center-ring: #ffffff;
-  --analog-text: #000000;
-  --analog-date-color: #605e65;
+  --analog-text: #3b2f28;
+  --analog-date-color: #8a7566;
 
   &.analog-dark {
-    --clock-face: #2d3038;
+    --clock-face: #352c26;
     --clock-shadow-light: rgba(255, 255, 255, 0.06);
     --clock-shadow-dark: rgba(0, 0, 0, 0.5);
-    --hand-color: #f1f3f7;
-    --accent-color: #8f8df5;
-    --marker-color: #565b69;
-    --center-ring: #2d3038;
-    --analog-text: #f1f3f7;
-    --analog-date-color: #888d9b;
+    --hand-color: #f6efe8;
+    --accent-color: #f0866b;
+    --marker-color: #6e6158;
+    --center-ring: #352c26;
+    --analog-text: #f6efe8;
+    --analog-date-color: #a8988c;
   }
 
   .clock-face {
@@ -1208,7 +1230,7 @@ const hasCustomBackground = computed(() => {
     width: 26%;
     height: 4px;
     background: var(--hand-color);
-    transform: translate(0, -2px);
+    margin-top: -2px;
     border-radius: 4px;
     z-index: 12;
   }
@@ -1217,7 +1239,7 @@ const hasCustomBackground = computed(() => {
     width: 37%;
     height: 3px;
     background: var(--hand-color);
-    transform: translate(0, -1.5px);
+    margin-top: -1.5px;
     border-radius: 3px;
     z-index: 13;
   }
@@ -1226,7 +1248,7 @@ const hasCustomBackground = computed(() => {
     width: 40%;
     height: 2px;
     background: var(--accent-color);
-    transform: translate(0, -1px);
+    margin-top: -1px;
     border-radius: 2px;
     z-index: 14;
 
@@ -1261,7 +1283,7 @@ const hasCustomBackground = computed(() => {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1.5cqmin;
+    gap: clamp(4px, 3cqmin, 10px);
     min-width: 0;
   }
 
@@ -1304,12 +1326,13 @@ const hasCustomBackground = computed(() => {
 @container (min-aspect-ratio: 7 / 5) {
   .analog-clock {
     flex-direction: row;
-    gap: 6cqmin;
+    /* 錶面與數字之間留足呼吸空間（原本 6cqmin 在橫幅只有約 6px，看起來黏在一起） */
+    gap: clamp(20px, 22cqh, 56px);
 
     .clock-face {
-      /* 寬扁時 cqmin = 高度，讓錶面吃滿約 90% 可用高度 */
-      width: min(220px, 90cqmin);
-      height: min(220px, 90cqmin);
+      /* 寬扁時 cqmin = 高度，錶面吃約 84% 高度，留出陰影空間 */
+      width: min(220px, 84cqmin);
+      height: min(220px, 84cqmin);
     }
 
     .analog-info {
@@ -2090,6 +2113,7 @@ const hasCustomBackground = computed(() => {
 
 /* 自定義文字顏色覆蓋：當用戶設定了前景色時，所有子元素繼承該顏色 */
 .clock-widget.has-custom-color {
+  .analog-digital,
   .flip-digit,
   .flip-separator,
   .flip-label,

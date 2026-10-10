@@ -18,9 +18,9 @@ const presetSwatches = [
   "#ffffff",
   "#7dd3a8",
   "#f5a9b8",
-  "#89CFF0",
+  "#5B4636",
   "#FFB347",
-  "#a78bfa",
+  "#e07a5f",
   "#fb7185",
 ];
 
@@ -185,10 +185,12 @@ function toHexColor(color: string | undefined, fallback: string): string {
 }
 
 // 時鐘顏色列
+// 標題在上、色票在下換行排列，避免最後一顆自訂色被單獨擠到第二行
 .clock-color-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
   margin-top: 10px;
   padding: 10px 12px;
   background: #f8fafc;
@@ -222,6 +224,9 @@ function toHexColor(color: string | undefined, fallback: string): string {
   flex-shrink: 0;
   outline: 2px solid transparent;
   outline-offset: 2px;
+
+  // 淡內框：白色色票在淺底上才看得到
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
 
   &.active {
     outline-color: #e07a5f;
