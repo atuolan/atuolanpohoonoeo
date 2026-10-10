@@ -735,9 +735,9 @@ function addWidget(def: WidgetDef) {
 .panel-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(4px);
-  animation: fadeIn 0.2s ease;
+  // 不用 backdrop-filter：背後畫布組件多，模糊整個畫面再做淡入動畫會掉幀
+  background: rgba(0, 0, 0, 0.35);
+  animation: fadeIn 0.25s ease;
 }
 
 @keyframes fadeIn {
@@ -754,12 +754,13 @@ function addWidget(def: WidgetDef) {
   width: 100%;
   max-width: 500px;
   max-height: 80vh;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(20px);
+  // 移動中的元素帶 backdrop-filter 每幀都要重新取樣模糊，改用接近不透明的底色
+  background: rgba(255, 255, 255, 0.98);
   border-radius: 24px 24px 0 0;
   padding: 20px;
   padding-bottom: max(20px, var(--safe-bottom, 0px));
-  animation: slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  animation: slideUp 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -767,10 +768,10 @@ function addWidget(def: WidgetDef) {
 
 @keyframes slideUp {
   from {
-    transform: translateY(100%);
+    transform: translate3d(0, 100%, 0);
   }
   to {
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
 }
 
@@ -886,7 +887,7 @@ function addWidget(def: WidgetDef) {
   padding: 12px;
   border-radius: 16px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, transform 0.2s, opacity 0.2s;
 
   &:hover {
     background: rgba(99, 102, 241, 0.05);
