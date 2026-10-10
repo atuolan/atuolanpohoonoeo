@@ -21,6 +21,8 @@ const CARD_WIDGET_TYPES = new Set([
   "countdown",
   "recent-chat",
   "companion-pet",
+  "relationship-counter",
+  "char-journal",
 ]);
 
 // 預設圖標與其他 App 重複或沒有對應圖標的標籤，改用專屬圖標

@@ -78,7 +78,8 @@ export type WidgetType =
   | "affinity-meter" // 好感度儀表
   | "recent-chat" // 最近聊天預覽
   | "char-status" // 角色狀態卡
-  | "companion-pet"; // 養成寵物 / 水族箱
+  | "companion-pet" // 養成寵物 / 水族箱
+  | "char-journal"; // TA 的手帳（頭盔TA日記 / 聊天日記）
 
 // ===== 時鐘樣式類型 =====
 export type ClockStyle =

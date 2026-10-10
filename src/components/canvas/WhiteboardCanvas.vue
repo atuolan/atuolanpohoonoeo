@@ -458,9 +458,9 @@ onMounted(async () => {
     const EXTRA_ROW_Y = 32;
     const EXTRA_ROW_H = 8;
     if (canvasStore.getVisibleGridRows() >= EXTRA_ROW_Y + EXTRA_ROW_H + 1) {
-      canvasStore.addWidget({ type: "countdown", x: 13, y: EXTRA_ROW_Y, width: 21, height: EXTRA_ROW_H, data: { customStyle: card("countdown") } });
+      canvasStore.addWidget({ type: "relationship-counter", x: 13, y: EXTRA_ROW_Y, width: 21, height: EXTRA_ROW_H, data: { layout: "milestone", customStyle: card("relationship-counter") } });
       canvasStore.addWidget({ type: "recent-chat", x: 35, y: EXTRA_ROW_Y, width: 21, height: EXTRA_ROW_H, data: { layout: "bubble", customStyle: card("recent-chat") } });
-      canvasStore.addWidget({ type: "companion-pet", x: 57, y: EXTRA_ROW_Y, width: 21, height: EXTRA_ROW_H, data: { layout: "pet", customStyle: card("companion-pet") } });
+      canvasStore.addWidget({ type: "char-journal", x: 57, y: EXTRA_ROW_Y, width: 21, height: EXTRA_ROW_H, data: { layout: "journal", customStyle: card("char-journal") } });
     }
   }
 });

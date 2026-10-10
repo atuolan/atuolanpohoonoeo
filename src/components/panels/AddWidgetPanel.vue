@@ -28,6 +28,7 @@ import {
     ListTodo,
     MessageCircle,
     Music,
+    NotebookPen,
     PawPrint,
     Quote,
     Scissors,
@@ -566,6 +567,17 @@ const widgetDefs: WidgetDef[] = [
     defaultHeight: 12,
     gradient: "linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)",
     data: { layout: "pet" },
+  },
+  {
+    id: "character-char-journal",
+    type: "char-journal",
+    name: "TA 的手帳",
+    icon: NotebookPen,
+    category: "character",
+    defaultWidth: 14,
+    defaultHeight: 8,
+    gradient: "linear-gradient(135deg, #fdf6ec 0%, #f3d9c4 100%)",
+    data: { layout: "journal" },
   },
 ];
 

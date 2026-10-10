@@ -89,6 +89,7 @@ export const characterWidgetTypes = [
   "recent-chat",
   "char-status",
   "companion-pet",
+  "char-journal",
 ];
 
 // 各角色組件的佈局選項
@@ -96,6 +97,7 @@ export const characterLayoutMap: Record<string, LayoutOption[]> = {
   "relationship-counter": [
     { id: "days", name: "天數", desc: "大字認識天數" },
     { id: "card", name: "卡片", desc: "頭像 + 紀念日卡" },
+    { id: "milestone", name: "紀念日", desc: "天數 + 里程碑 + 約定" },
   ],
   "affinity-meter": [
     { id: "ring", name: "圓環", desc: "環形好感度" },
@@ -113,5 +115,8 @@ export const characterLayoutMap: Record<string, LayoutOption[]> = {
   "companion-pet": [
     { id: "pet", name: "寵物", desc: "養成寵物動畫" },
     { id: "aquarium", name: "水族箱", desc: "水族箱氣泡" },
+  ],
+  "char-journal": [
+    { id: "journal", name: "手帳", desc: "日記心情 + 行程" },
   ],
 };

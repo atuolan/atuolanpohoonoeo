@@ -2,6 +2,10 @@
 import { computed } from "vue";
 import { useCanvasStore } from "@/stores/canvas";
 import { useWidgetCharacter } from "@/composables/useWidgetCharacter";
+import {
+  getNextMilestone,
+  useLatestPromise,
+} from "@/composables/useRelationshipMilestone";
 import type { WidgetCustomStyle } from "@/types";
 
 const props = defineProps<{
@@ -9,7 +13,7 @@ const props = defineProps<{
   data?: {
     characterId?: string;
     title?: string;
-    layout?: string; // "days" | "card"
+    layout?: string; // "days" | "card" | "milestone"
     customStyle?: WidgetCustomStyle;
   };
 }>();
@@ -20,14 +24,27 @@ const emit = defineEmits<{
 
 const canvasStore = useCanvasStore();
 const dataRef = computed(() => props.data);
-const { character, displayName, avatar, knownDays } = useWidgetCharacter(dataRef);
+// 沒綁角色時跟最近聊天的角色，預設佈局放的組件才不會是一塊空白
+const { character, characterId, chatId, displayName, avatar, knownDays } =
+  useWidgetCharacter(dataRef, { fallbackToRecent: true });
 
 const layout = computed(() => props.data?.layout || "days");
 const title = computed(() => props.data?.title || "我們認識了");
 const isEditMode = computed(() => canvasStore.isEditMode);
 
+const milestone = computed(() => getNextMilestone(knownDays.value));
+// 只有紀念日佈局需要讀約定
+const promiseCharacterId = computed(() =>
+  layout.value === "milestone" ? characterId.value : null,
+);
+const { promise } = useLatestPromise(promiseCharacterId, chatId);
+
+// 預設奶油卡片只給 foregroundColor
 const textColor = computed(
-  () => props.data?.customStyle?.textColor || "#fff",
+  () =>
+    props.data?.customStyle?.textColor ||
+    props.data?.customStyle?.foregroundColor ||
+    "#fff",
 );
 
 const containerStyle = computed(() => {
@@ -77,6 +94,32 @@ function handleClick() {
         <span class="hint-text" v-if="!isEditMode">長按進入編輯模式</span>
         <span class="hint-text" v-else>點擊齒輪圖示綁定角色</span>
       </div>
+    </template>
+
+    <template v-else-if="layout === 'milestone'">
+      <div class="milestone-layout">
+        <div class="known">
+          <span class="with">和 {{ displayName }}</span>
+          <div class="days-row">
+            <span class="days-prefix">認識</span>
+            <span class="days-num">{{ knownDays }}</span>
+            <span class="days-unit">天</span>
+          </div>
+        </div>
+        <div class="next">
+          <template v-if="milestone.daysLeft === 0">
+            <span class="next-label">今天是</span>
+            <span class="next-value">{{ milestone.label }} 🎉</span>
+          </template>
+          <template v-else>
+            <span class="next-label">距離{{ milestone.label }}</span>
+            <span class="next-value">還有 <b>{{ milestone.daysLeft }}</b> 天</span>
+          </template>
+        </div>
+      </div>
+      <p v-if="promise" class="promise">
+        <span class="promise-tag">約定</span>{{ promise.content }}
+      </p>
     </template>
 
     <template v-else-if="layout === 'card'">
@@ -195,6 +238,94 @@ function handleClick() {
 .name {
   font-size: 12px;
   opacity: 0.8;
+}
+
+/* 紀念日佈局：左邊認識天數、右邊下一個里程碑，底下一行最近的約定 */
+.layout-milestone {
+  align-items: stretch;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  text-align: left;
+}
+
+.milestone-layout {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  .known {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .with {
+    font-size: 12px;
+    opacity: 0.7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .days-row {
+    margin: 0;
+
+    .days-prefix {
+      font-size: 13px;
+      opacity: 0.75;
+      margin-right: 2px;
+    }
+
+    .days-num {
+      font-size: 34px;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  .next {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    padding-left: 12px;
+    border-left: 1px dashed color-mix(in srgb, currentColor 25%, transparent);
+
+    .next-label {
+      font-size: 11px;
+      opacity: 0.65;
+    }
+
+    .next-value {
+      font-size: 13px;
+
+      b {
+        font-size: 18px;
+        font-weight: 800;
+      }
+    }
+  }
+}
+
+.promise {
+  margin: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.85;
+
+  .promise-tag {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 0 6px;
+    border-radius: 8px;
+    font-size: 10.5px;
+    line-height: 17px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+  }
 }
 
 /* 卡片佈局 */

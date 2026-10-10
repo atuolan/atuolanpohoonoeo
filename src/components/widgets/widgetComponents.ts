@@ -4,6 +4,7 @@ import AffinityMeterWidget from "@/components/widgets/AffinityMeterWidget.vue";
 import BatteryRingWidget from "@/components/widgets/BatteryRingWidget.vue";
 import BookmarkSticky from "@/components/widgets/BookmarkSticky.vue";
 import CalendarWidget from "@/components/widgets/CalendarWidget.vue";
+import CharJournalWidget from "@/components/widgets/CharJournalWidget.vue";
 import CharPhoneWidget from "@/components/widgets/CharPhoneWidget.vue";
 import CharStatusWidget from "@/components/widgets/CharStatusWidget.vue";
 import ClockWidget from "@/components/widgets/ClockWidget.vue";
@@ -57,4 +58,5 @@ export const widgetComponents: Record<string, Component> = {
   "recent-chat": RecentChatWidget,
   "char-status": CharStatusWidget,
   "companion-pet": CompanionPetWidget,
+  "char-journal": CharJournalWidget,
 };
