@@ -12,7 +12,7 @@
 //    - habitLayout：習慣追蹤（list/ring/heatmap/streak）
 
 import type { ThemeColors } from "@/stores/theme";
-import type { WidgetInstance } from "@/types";
+import type { WidgetCustomStyle, WidgetInstance } from "@/types";
 
 // 各組件預設風格
 export interface ThemePackWidgetStyles {
@@ -28,6 +28,48 @@ export interface ThemePackWidgetStyles {
   // 世界書佈局（layout）：shelf / featured / icon / pearl / lineart
   // 未指定時不覆寫使用者既有設定
   worldBookLayout?: string;
+  // 拍立得專屬版型，覆寫 standardLayout（例如手帳拼貼的 scrapbook）
+  polaroidLayout?: string;
+  // 音樂播放器版型：compact / classic / vinyl / ticket；指定時優先於 vinylStyle
+  musicLayout?: string;
+  // 最近聊天版型（寫在 data.layout）：bubble / card / sticky
+  recentChatLayout?: string;
+  // 依組件類型覆寫 customStyle（底色、文字色等），讓版型在主題包配色下成立
+  styleOverrides?: Partial<Record<string, Partial<WidgetCustomStyle>>>;
+  // App 圖標（fluid-button）配色：底色依標籤指定，沒指定的標籤依序循環 palette
+  appIcons?: ThemePackAppIconStyle;
+}
+
+export interface ThemePackAppIconStyle {
+  // App 圖標的主題版型（themed/registry 的 themedAppLayouts）；未指定時用內建圓角圖標
+  layout?: string;
+  palette: string[];
+  colorsByLabel?: Record<string, string>;
+  foregroundColor: string;
+  textColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+}
+
+// 主頁擺位：套用主題包時可選擇把中間主頁的組件排成主題包設計的位置
+// 以 type（+ fluid-button 的 label）對應使用者現有的組件，找不到的就略過
+export interface ThemePackArrangementItem {
+  type: string;
+  label?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  // 這個主題用不到的組件（例如 Y2K 把音樂併進 MP3 時鐘）：暫時隱藏，不刪除；換主題包時自動恢復
+  hidden?: boolean;
+  // 一併寫進組件 data 的設定（例如目錄式 App 的編號 indexNo）
+  dataPatch?: Record<string, unknown>;
+}
+
+export interface ThemePackHomeArrangement {
+  // 這個擺法需要的最少可見格數（矮螢幕放不下就不排）
+  minVisibleRows: number;
+  items: ThemePackArrangementItem[];
 }
 
 // 主題包桌布
@@ -55,7 +97,9 @@ export type ThemePackIconId =
   | "ocean"
   | "forest"
   | "sakura"
-  | "lineart";
+  | "lineart"
+  | "scrapbook"
+  | "frost";
 
 // 主題包
 export interface ThemePack {
@@ -76,6 +120,8 @@ export interface ThemePack {
   // 自訂主題包選用：完整桌面組件佈局快照（位置 / 大小 / 內容 / 樣式）
   // 匯出 / 匯入時用來還原使用者首頁，預設主題包不攜帶
   layoutSnapshot?: WidgetInstance[];
+  // 選用：中間主頁的建議擺位（套用時會先詢問）
+  homeArrangement?: ThemePackHomeArrangement;
   // 自訂主題包選用：全域自訂 CSS（對應 theme store 的 customCSS）
   // 讓 AI／使用者寫在「全局美化」框的 CSS 也能隨主題包分享出去，預設主題包不攜帶
   customCSS?: string;
@@ -85,356 +131,365 @@ export interface ThemePack {
   createdAt?: number;
 }
 
-// ===== 奶油風 =====
-// 設計意圖：法式焦糖布丁的層次感。
-// 用 plump 圓潤皮搭配 squircle 超橢圓圖示，呼應「奶油裝在圓罐子裡」的觸感；
-// standardLayout 改用 illustration（90 年代復古視窗），更接近食譜手帳的塗鴉風格；
-// clockStyle 用 analog 傳統錶盤搭配奶油色針面，比 minimal 純數字更有手作溫度；
-// habitLayout 用 streak 火焰大字，每天累積的奶油泡芙象徵滿足感。
+// ===== 主題版型共用 =====
+// 交給 themed/ 版型元件的組件，要清掉前一個主題留下的底色 / 文字色，
+// 否則版型會收到舊主題的 color 而蓋掉自己的配色
+const THEMED_STYLE_RESET: Partial<WidgetCustomStyle> = {
+  backgroundColor: undefined,
+  backgroundGradient: undefined,
+  foregroundColor: undefined,
+  textColor: undefined,
+  borderColor: undefined,
+  borderWidth: undefined,
+};
+
+const themedStyleResets = {
+  clock: THEMED_STYLE_RESET,
+  polaroid: THEMED_STYLE_RESET,
+  music: THEMED_STYLE_RESET,
+  "recent-chat": THEMED_STYLE_RESET,
+};
+
+// 中間主頁常用的擺位片段：拍立得 / 音樂右邊的 2×2 App
+const appGrid2x2 = (top: number): ThemePackArrangementItem[] => [
+  { type: "fluid-button", label: "訊息", x: 46, y: top, width: 5, height: 5 },
+  { type: "fluid-button", label: "角色", x: 51, y: top, width: 5, height: 5 },
+  { type: "fluid-button", label: "設置", x: 46, y: top + 5, width: 5, height: 5 },
+  { type: "fluid-button", label: "使用者", x: 51, y: top + 5, width: 5, height: 5 },
+];
+
+// 一排 4 個 5 格寬的 App，用半格位移和 21 格寬的組件置中對齊
+const appRow = (labels: string[], y: number): ThemePackArrangementItem[] =>
+  labels.map((label, i) => ({ type: "fluid-button", label, x: 35.5 + i * 5, y, width: 5, height: 5 }));
+
+// ===== 奶油風・甜點櫃 =====
+// 設計意圖：把桌面做成甜點店的玻璃櫃——所有東西都是圓的。
+// 圓形錶盤時鐘卡、圓形照片、膠囊播放條、馬卡龍色圓 App；焦糖色只當重點色。
 const creamPack: ThemePack = {
   id: "cream",
   name: "奶油風",
   icon: "cream",
-  description: "法式焦糖布丁、暖陽奶霜、舒芙蕾般的鬆軟質感。",
-  preview: "linear-gradient(135deg, #FFF8EC 0%, #F5D9A8 45%, #C99060 100%)",
+  description: "甜點櫃裡的圓形錶盤、膠囊播放條與馬卡龍色 App。",
+  preview: "linear-gradient(135deg, #FBF3E4 0%, #F6DDB4 50%, #C98A55 100%)",
   colors: {
-    primary: "#D4A574",         // 焦糖布丁
-    primaryLight: "#F2D9B0",    // 打發鮮奶油
-    secondary: "#B5835A",        // 烤布蕾糖殼
-    background: "#FFF8EC",       // 牛奶白
-    surface: "#FFFDF7",          // 奶油底
-    surfaceHover: "#FAF0DC",
-    text: "#4A3528",             // 深焙咖啡豆
-    textSecondary: "#8A6B52",    // 拿鐵奶泡邊緣
-    textMuted: "#C2A98E",
-    border: "#F0E0C8",
-    shadow: "rgba(180, 130, 80, 0.20)",
-    success: "#A8B585",          // 抹茶醬
-    error: "#D67760",            // 焦糖醬燒過頭
-    warning: "#E8A857",          // 焦糖
+    primary: "#C98A55",          // 焦糖
+    primaryLight: "#E3B07F",
+    secondary: "#9DB48A",        // 開心果
+    background: "#FBF3E4",       // 牛奶白
+    surface: "#FFFCF6",
+    surfaceHover: "#F7EBD6",
+    text: "#4A3528",             // 深焙咖啡
+    textSecondary: "#7E6250",
+    textMuted: "#B49C86",
+    border: "#EEDCC3",
+    shadow: "rgba(150, 100, 60, 0.22)",
+    success: "#9DB48A",
+    error: "#D67760",
+    warning: "#E8A857",
   },
   skin: "plump",
-  shape: "squircle",
+  shape: "circle",
   wallpaper: {
     type: "gradient",
-    // 三段漸層：上方淡牛奶白 → 中段奶油黃 → 底部焦糖 — 像一杯倒映陽光的拿鐵
     value:
-      "linear-gradient(165deg, #FFF8EC 0%, #FBEDD1 40%, #F2D9B0 75%, #E8C496 100%)",
+      "radial-gradient(70% 40% at 100% 0%, #F6DDB4 0%, #F6DDB400 70%), " +
+      "radial-gradient(70% 35% at 0% 100%, #F3D3C2 0%, #F3D3C200 70%), #FBF3E4",
     blur: 0,
     opacity: 100,
     overlay: "transparent",
   },
   widgets: {
     standardLayout: "illustration",
-    clockStyle: "analog",
+    clockStyle: "pastry",
     habitLayout: "streak",
-    // 黑膠唱片同步復古插圖皮膚，世界書用精選大封面呼應食譜手帳
-    vinylStyle: "illustration",
     worldBookLayout: "featured",
+    polaroidLayout: "round",
+    musicLayout: "capsule",
+    recentChatLayout: "speech",
+    styleOverrides: themedStyleResets,
+    appIcons: {
+      layout: "macaron",
+      palette: ["#F6D9C9", "#DCE5CF", "#F3E3B5", "#E7D9EF"],
+      colorsByLabel: {
+        訊息: "#F6D9C9", 角色: "#DCE5CF", 設置: "#F3E3B5", 使用者: "#E7D9EF",
+        占卜: "#E7D9EF", 遊戲: "#F6D9C9", 音樂: "#F3E3B5", 空間: "#DCE5CF",
+      },
+      foregroundColor: "#4A3528",
+      textColor: "#4A3528",
+    },
+  },
+  homeArrangement: {
+    minVisibleRows: 41,
+    items: [
+      { type: "clock", x: 35, y: 2, width: 21, height: 7 },
+      { type: "polaroid", x: 35, y: 10, width: 10, height: 10 },
+      ...appGrid2x2(10),
+      { type: "music", x: 35, y: 21, width: 21, height: 4 },
+      { type: "recent-chat", x: 35, y: 26, width: 21, height: 8 },
+      ...appRow(["占卜", "遊戲", "音樂", "空間"], 35),
+    ],
   },
 };
 
-// ===== Y2K 復古 =====
-// 設計意圖：千禧年的塑膠透明感與全像光譜。
-// glass 玻璃皮搭配 blob 流體形狀，重現 iMac G3 / iPod 半透明殼的果凍感；
-// standardLayout 用 pop（新粗野派立體互動），對應 Y2K 鮮豔粗體 UI；
-// clockStyle 改用 dotmatrix（LED 點陣），比 flip 更貼近 Tamagotchi / MP3 顯示螢幕；
-// habitLayout 用 ring 圓環，呼應千禧年圓潤撞色光碟封面。
+// ===== Y2K 復古・千禧桌面 =====
+// 設計意圖：千禧年的電腦桌面。時鐘與音樂合成一台 MP3（液晶螢幕 + 觸控轉盤），
+// 訊息是 MSN 對話視窗、照片是「我的相片」視窗、App 是果凍泡泡按鈕。
+// 音樂 widget 併進 MP3 時鐘，所以擺位時把它暫時隱藏（換主題包會自動恢復）。
 const y2kPack: ThemePack = {
   id: "y2k",
   name: "Y2K 復古",
   icon: "y2k",
-  description: "全像光譜、果凍透明殼、千禧年泡泡電子夢。",
-  preview: "linear-gradient(135deg, #C2A8FF 0%, #5BE9F2 50%, #FFA8D8 100%)",
+  description: "MP3 液晶時鐘、MSN 對話視窗、果凍泡泡按鈕的千禧桌面。",
+  preview: "linear-gradient(135deg, #CDB8FF 0%, #A8E6F5 50%, #FFC4E4 100%)",
   colors: {
-    primary: "#9D7BFF",          // 薰衣草紫（更飽和、更 Y2K）
-    primaryLight: "#C8B3FF",
-    secondary: "#3DD9E8",        // 電子青
-    background: "#F5EDFF",       // 淡紫白
-    surface: "rgba(255, 255, 255, 0.78)", // 半透明配玻璃皮
-    surfaceHover: "rgba(245, 235, 255, 0.85)",
-    text: "#2D1B4E",             // 葡萄夜深紫
-    textSecondary: "#6A4DA8",
-    textMuted: "#A88FCC",
-    border: "rgba(180, 150, 240, 0.4)",
-    shadow: "rgba(157, 123, 255, 0.32)",
-    success: "#3DE8A8",
-    error: "#FF5BA8",
-    warning: "#FFCB3D",
+    primary: "#8B67F0",          // 葡萄果凍
+    primaryLight: "#C2A8FF",
+    secondary: "#3FB4E0",        // 水藍果凍
+    background: "#EFE6FF",
+    surface: "rgba(255, 255, 255, 0.68)",
+    surfaceHover: "rgba(255, 255, 255, 0.82)",
+    text: "#2D1B4E",
+    textSecondary: "#5E4D86",
+    textMuted: "#8A7FA8",
+    border: "#FFFFFF",
+    shadow: "rgba(60, 40, 120, 0.25)",
+    success: "#6FC03A",
+    error: "#F06AAE",
+    warning: "#F2AE22",
   },
   skin: "glass",
-  shape: "blob",
+  shape: "circle",
   wallpaper: {
     type: "gradient",
-    // 對角放射狀 + 三色霓虹，模擬 CD 光碟反光的全像彩虹
     value:
-      "linear-gradient(135deg, #C2A8FF 0%, #9D7BFF 25%, #5BE9F2 55%, #FFA8D8 85%, #FFCB3D 100%)",
+      "radial-gradient(60% 30% at 15% 8%, #FFFFFFA0 0%, #FFFFFF00 70%), " +
+      "radial-gradient(50% 25% at 90% 60%, #FFFFFF66 0%, #FFFFFF00 70%), " +
+      "linear-gradient(160deg, #CDB8FF 0%, #A8E6F5 48%, #FFC4E4 100%)",
     blur: 0,
     opacity: 100,
     overlay: "transparent",
   },
   widgets: {
     standardLayout: "pop",
-    clockStyle: "dotmatrix",
+    clockStyle: "mp3",
     habitLayout: "ring",
-    // 黑膠同步普普風撞色，世界書用精選大封面呼應千禧電子介面
+    // 沒有接受擺位、音樂 widget 仍顯示時，用普普風黑膠
     vinylStyle: "pop",
-    worldBookLayout: "featured",
+    polaroidLayout: "window",
+    recentChatLayout: "msn",
+    styleOverrides: themedStyleResets,
+    appIcons: {
+      layout: "jelly",
+      palette: ["#3FB4E0", "#F06AAE", "#8B67F0", "#6FC03A", "#F2AE22"],
+      colorsByLabel: {
+        訊息: "#3FB4E0", 角色: "#F06AAE", 設置: "#8B67F0", 使用者: "#6FC03A",
+        占卜: "#8B67F0", 遊戲: "#F2AE22", 音樂: "#F06AAE", 空間: "#3FB4E0",
+      },
+      foregroundColor: "#FFFFFF",
+      textColor: "#2D1B4E",
+    },
+  },
+  homeArrangement: {
+    minVisibleRows: 41,
+    items: [
+      { type: "clock", x: 35, y: 2, width: 21, height: 9 },
+      { type: "polaroid", x: 35, y: 12, width: 10, height: 10 },
+      ...appGrid2x2(12),
+      { type: "recent-chat", x: 35, y: 23, width: 21, height: 12 },
+      ...appRow(["占卜", "遊戲", "音樂", "空間"], 35),
+      { type: "music", hidden: true },
+    ],
   },
 };
 
-// ===== 賽博霓虹 =====
-// 設計意圖：雨夜霓虹招牌反射在濕地面的賽博朋克 — 黑色金屬機殼上的青紫電弧。
-//
-// 組件選擇邏輯（避開所有動畫，符合「不要呼吸燈」的要求）：
-// - skin: glass — 暗玻璃帶霓虹折射，比 flat 更有「夜店玻璃幕牆」層次。
-// - shape: squircle — iOS 風超橢圓，讓圖示像發光螢幕的圓角。
-// - standardLayout: pop — 唯一暗底 layout（黑底 + 厚黑邊框 + 撞色按鈕），
-//   新粗野派的「邊框 + 投影偏移」剛好呼應賽博朋克的硬派工業感；
-//   其他四個 layout（classic 純白、flat 粉紅、illustration 米黃、pixel 粉格紋）
-//   都是亮底，套在暗黑霓虹背景上會嚴重撞調（vaporwave 少女味）。
-// - clockStyle: binary — 二進制矩陣點陣，完全靜態（無任何 keyframes 動畫），
-//   呼應賽博朋克 The Matrix / 駭客終端機的核心 DNA；
-//   排除：neon（3 處 pulse 呼吸燈）、digital（separator dot pulse）、
-//        orbit（行星旋轉）、minimal（分隔符 blink）、dotmatrix（已給 Y2K，避免重複）。
-// - habitLayout: heatmap — GitHub 貢獻圖方格，呼應駭客終端機的資料視覺化；
-//   不選 streak（火焰 emoji 大字在暗黑背景太萌、不賽博）。
-const cyberPack: ThemePack = {
-  id: "cyber",
-  name: "賽博霓虹",
-  icon: "cyber",
-  description: "雨夜全息招牌、黑色機殼、量子青與離子紫的電弧共振。",
-  preview: "linear-gradient(135deg, #08081A 0%, #00F5D4 45%, #FF2E9A 100%)",
-  colors: {
-    primary: "#00F5D4",          // 量子青（比純青更帶綠調，更賽博）
-    primaryLight: "#5CFFE8",
-    secondary: "#FF2E9A",        // 離子洋紅
-    background: "#08081A",       // 深空藍黑
-    surface: "rgba(22, 22, 48, 0.72)", // 半透夜玻璃
-    surfaceHover: "rgba(30, 30, 64, 0.82)",
-    text: "#F0F5FF",
-    textSecondary: "#A0B0D8",
-    textMuted: "#6B7AA0",
-    border: "rgba(0, 245, 212, 0.28)",
-    shadow: "rgba(0, 245, 212, 0.45)",
-    success: "#39FF88",          // 駭客終端機綠
-    error: "#FF3D7F",
-    warning: "#FFD93D",
-  },
-  skin: "glass",
-  shape: "squircle",
-  wallpaper: {
-    type: "gradient",
-    // 徑向漸層仿廣告招牌：左上量子青光暈 + 右下離子粉光暈，底層暗夜藍
-    value:
-      "radial-gradient(ellipse at 25% 20%, rgba(0,245,212,0.35) 0%, transparent 45%), radial-gradient(ellipse at 80% 85%, rgba(255,46,154,0.32) 0%, transparent 50%), linear-gradient(160deg, #08081A 0%, #14143A 50%, #1A0D2E 100%)",
-    blur: 0,
-    opacity: 100,
-    overlay: "transparent",
-  },
-  widgets: {
-    standardLayout: "pop",
-    clockStyle: "binary",
-    habitLayout: "heatmap",
-    // 黑膠用 classic 暗黑漸層唱機，呼應賽博機殼；世界書用 icon 終端機式圖標
-    vinylStyle: "classic",
-    worldBookLayout: "shelf",
-  },
-};
+// ===== 極簡黑白・雜誌目錄 =====
+// 設計意圖：一頁雜誌。沒有卡片、沒有圖示框，只有細線分隔與大號襯線數字；
+// 訊息是引言、照片與音樂並排，App 是編號目錄（01 訊息、02 角色…）。
+const monoIndex = (label: string, no: string, x: number, y: number): ThemePackArrangementItem => ({
+  type: "fluid-button",
+  label,
+  x,
+  y,
+  width: 10,
+  height: 3,
+  dataPatch: { indexNo: no },
+});
 
-// ===== 可愛手帳 =====
-// 設計意圖：少女房間裡的拼貼手帳本，貼滿馬卡龍貼紙與奶霜便利貼。
-// shape 從 heart 改成 petal（花瓣 50% 0% 不對稱圓角），既保留可愛又避免愛心過載；
-// standardLayout 用 illustration（復古視窗），呼應 90 年代手帳貼紙風；
-// clockStyle 用 analog 傳統錶盤（女孩房裡的粉紅小鬧鐘）；
-// habitLayout: ring 圓環，像每日完成一片馬卡龍。
-const journalPack: ThemePack = {
-  id: "journal",
-  name: "可愛手帳",
-  icon: "journal",
-  description: "馬卡龍貼紙、奶霜便利貼、少女房手作拼貼本。",
-  preview: "linear-gradient(135deg, #FFF0F5 0%, #FFB3C8 50%, #B8E0D2 100%)",
-  colors: {
-    primary: "#FF85A8",          // 草莓奶霜（比 #FF9EB5 更飽和、更顯色）
-    primaryLight: "#FFB8CE",
-    secondary: "#7DD3B8",        // 開心果抹茶
-    background: "#FFF6FA",
-    surface: "#FFFFFF",
-    surfaceHover: "#FFECF3",
-    text: "#5C3B48",             // 深玫瑰木
-    textSecondary: "#9A6B7A",
-    textMuted: "#CFA3B2",
-    border: "#FFD6E3",
-    shadow: "rgba(255, 133, 168, 0.22)",
-    success: "#7DD3B8",
-    error: "#FF7A85",
-    warning: "#FFC857",          // 蜂蜜檸檬糖
-  },
-  skin: "plump",
-  shape: "petal",
-  wallpaper: {
-    type: "gradient",
-    // 仿水彩拼貼：左上奶霜粉 → 中段薰衣草 → 右下抹茶，三色斜向暈染
-    value:
-      "linear-gradient(135deg, #FFF0F5 0%, #FFD6E3 30%, #EBDAFB 60%, #D4ECDF 100%)",
-    blur: 0,
-    opacity: 100,
-    overlay: "transparent",
-  },
-  widgets: {
-    standardLayout: "illustration",
-    clockStyle: "analog",
-    habitLayout: "ring",
-    // 黑膠同步復古插圖皮膚，世界書用書架呼應手帳本的拼貼收藏感
-    vinylStyle: "illustration",
-    worldBookLayout: "shelf",
-  },
-};
-
-// ===== 極簡黑白 =====
-// 設計意圖：MUJI / Kinfolk 雜誌封面般克制的留白。
-// skin: flat 保持極簡，但 shape 改 rounded-square（22% 圓角），比純 square 多一點呼吸；
-// standardLayout 改 classic（傳統簡約留白），比 flat 更符合「雜誌排版」的調性；
-// clockStyle: minimal 是唯一正解；
-// habitLayout: heatmap 方格熱力圖，呼應雜誌資訊圖表美學；
-// 背景從死白 #FAFAFA 改成微暖灰白漸層，避免在大螢幕上像未上色的稿紙。
 const monoPack: ThemePack = {
   id: "mono",
   name: "極簡黑白",
   icon: "mono",
-  description: "MUJI 文具櫃、Kinfolk 雜誌封面、克制留白的灰階詩。",
-  preview: "linear-gradient(135deg, #FAFAF7 0%, #C4C4C0 50%, #1F1F1D 100%)",
+  description: "雜誌排版：大號襯線時間、引言式訊息、編號目錄 App。",
+  preview: "linear-gradient(135deg, #F6F5F1 0%, #D8D6D0 55%, #1C1C1A 100%)",
   colors: {
-    primary: "#1F1F1D",          // 鉛筆芯黑（帶微綠調，比純黑更柔）
-    primaryLight: "#4A4A47",
-    secondary: "#8A8A85",        // 牛皮紙灰
-    background: "#F8F7F3",       // 米白棉紙
+    primary: "#1C1C1A",          // 油墨黑
+    primaryLight: "#3A3A37",
+    secondary: "#6B6A65",
+    background: "#F6F5F1",       // 雜誌內頁紙
     surface: "#FFFFFF",
-    surfaceHover: "#F0EFEA",
-    text: "#1F1F1D",
-    textSecondary: "#5C5C57",
-    textMuted: "#A8A8A2",
-    border: "#E4E2DC",           // 淡牛皮邊
-    shadow: "rgba(31, 31, 29, 0.10)",
-    success: "#3A3A36",
-    error: "#5C5C57",
-    warning: "#7A7A74",
+    surfaceHover: "#EEEDE8",
+    text: "#1C1C1A",
+    textSecondary: "#5E5D58",
+    textMuted: "#9A9893",
+    border: "#DAD8D2",
+    shadow: "rgba(0, 0, 0, 0.06)",
+    success: "#4A5D45",
+    error: "#A23B2A",
+    warning: "#8A6D2B",
   },
   skin: "flat",
-  shape: "rounded-square",
+  shape: "square",
   wallpaper: {
-    type: "gradient",
-    // 從米白棉紙到淡灰，斜向極淡漸層，避免大面積純色的視覺空洞
-    value: "linear-gradient(160deg, #FAFAF7 0%, #F2F1EC 60%, #E8E7E2 100%)",
+    type: "color",
+    value: "#F6F5F1",
     blur: 0,
     opacity: 100,
     overlay: "transparent",
   },
   widgets: {
     standardLayout: "classic",
-    clockStyle: "minimal",
+    clockStyle: "masthead",
     habitLayout: "heatmap",
-    // 黑膠用 classic 極簡唱機，世界書用 icon 仿 App 的克制圖標排版
-    vinylStyle: "classic",
-    worldBookLayout: "shelf",
+    polaroidLayout: "plain",
+    musicLayout: "editorial",
+    recentChatLayout: "quote",
+    styleOverrides: themedStyleResets,
+    appIcons: {
+      layout: "index",
+      palette: ["#F6F5F1"],
+      foregroundColor: "#1C1C1A",
+      textColor: "#1C1C1A",
+    },
+  },
+  homeArrangement: {
+    minVisibleRows: 41,
+    items: [
+      { type: "clock", x: 35, y: 2, width: 21, height: 8 },
+      { type: "recent-chat", x: 35, y: 10, width: 21, height: 9 },
+      { type: "polaroid", x: 35, y: 19, width: 8, height: 8 },
+      { type: "music", x: 44, y: 19, width: 12, height: 8 },
+      monoIndex("訊息", "01", 35, 28),
+      monoIndex("角色", "02", 46, 28),
+      monoIndex("設置", "03", 35, 31),
+      monoIndex("使用者", "04", 46, 31),
+      monoIndex("占卜", "05", 35, 34),
+      monoIndex("遊戲", "06", 46, 34),
+      monoIndex("音樂", "07", 35, 37),
+      monoIndex("空間", "08", 46, 37),
+      // 右屏：日曆維持原尺寸（拉寬會讓格子變高、最後一週被切掉），
+      // 目錄延續編號排在日曆右側與天氣右側，手帳維持在最下方整排
+      { type: "calendar", x: 57, y: 2, width: 14, height: 16 },
+      { type: "weather", x: 57, y: 19, width: 10, height: 10 },
+      { type: "char-journal", x: 57, y: 32, width: 21, height: 8 },
+      { ...monoIndex("購物", "09", 71, 2), width: 7 },
+      { ...monoIndex("外賣", "10", 71, 5), width: 7 },
+      { ...monoIndex("錢包", "11", 71, 8), width: 7 },
+      monoIndex("頭盔TA", "12", 68, 19),
+      monoIndex("健身", "13", 68, 22),
+      monoIndex("世界書", "14", 68, 25),
+      monoIndex("小劇場", "15", 68, 28),
+      // 左屏：心情日記下方原本兩個圖標的位置改成兩列目錄
+      monoIndex("書架", "16", 24, 15),
+      monoIndex("閱讀", "17", 24, 18),
+    ],
   },
 };
 
-// ===== 珍珠畫廊 =====
-// 設計意圖：《戴珍珠耳環的少女》幾何插畫版 — 美術館拼貼式藝術氛圍。
-// 色彩來源：深紫夜空 #332D4B、芥末黃頭巾 #FFCE05、藍色衣領 #4783DE、
-//          橘色衣服 #CE8221、暖膚色 #FFC6AE、發光星星點綴。
-// 美學方向：不直接放入畫作本身（避免喧賓奪主），而是提取配色做成
-//          「深紫 + 多色幾何色塊 + 發光星星」的抽象幾何桌布，
-//          搭配適合藝術拼貼氛圍的組件風格。
+// ===== 珍珠畫廊・夜間美術館 =====
+// 設計意圖：每個組件都是掛在美術館牆上的展品——
+// 黃銅名牌時鐘、金框照片、訊息是展品說明牌、音樂是語音導覽、App 是一顆顆珍珠。
 const pearlPack: ThemePack = {
   id: "pearl",
   name: "珍珠畫廊",
   icon: "pearl",
-  description: "維梅爾筆下的夜空拼貼、幾何色塊、珍珠低吟的美術館靜謐。",
-  preview: "linear-gradient(135deg, #332D4B 0%, #4783DE 40%, #FFCE05 70%, #CE8221 100%)",
+  description: "夜間美術館：黃銅名牌時鐘、金框照片、說明牌與語音導覽。",
+  preview: "linear-gradient(135deg, #2B2840 0%, #3E6FB8 45%, #C9A45C 75%, #E9C46A 100%)",
   colors: {
-    primary: "#4783DE",          // 藍色衣領（主色）
-    primaryLight: "#7BADEE",
-    secondary: "#FFCE05",        // 芥末黃頭巾
-    background: "#332D4B",       // 深紫夜空背景
-    surface: "rgba(71, 131, 222, 0.12)",  // 半透藍紫色表面
-    surfaceHover: "rgba(71, 131, 222, 0.20)",
-    text: "#F8F6F0",             // 畫布白
-    textSecondary: "#D4C8B0",    // 溫暖中性
-    textMuted: "#9B8E7A",
-    border: "rgba(255, 206, 5, 0.25)",  // 芥末黃邊框
-    shadow: "rgba(206, 130, 33, 0.35)",
-    success: "#7BADEE",
-    error: "#FF8E6E",
-    warning: "#FFCE05",
+    primary: "#3E6FB8",          // 維梅爾藍
+    primaryLight: "#6E95D0",
+    secondary: "#C9A45C",        // 畫框金
+    background: "#2B2840",       // 展廳夜牆
+    surface: "rgba(243, 238, 226, 0.08)",
+    surfaceHover: "rgba(243, 238, 226, 0.14)",
+    text: "#F3EEE2",             // 畫布白
+    textSecondary: "#B9B2CC",
+    textMuted: "#8A84A0",
+    border: "rgba(201, 164, 92, 0.35)",
+    shadow: "rgba(0, 0, 0, 0.5)",
+    success: "#8FB98B",
+    error: "#E07A6A",
+    warning: "#E9C46A",
   },
   skin: "glass",
-  shape: "diamond",
+  shape: "circle",
   wallpaper: {
     type: "gradient",
-    // 徑向漸層 + 幾何色塊：左上芥末黃星光 + 右上藍色色塊 + 右下橘色暈染，
-    // 底層深紫夜空，仿拼貼畫的多層次幾何構成
+    // 第一個色碼要是深色，桌布明暗判斷才會認成深色
     value:
-      "radial-gradient(circle at 15% 18%, rgba(255,206,5,0.28) 0%, transparent 25%), radial-gradient(circle at 75% 25%, rgba(71,131,222,0.32) 0%, transparent 35%), radial-gradient(circle at 85% 75%, rgba(206,130,33,0.25) 0%, transparent 30%), radial-gradient(circle at 25% 70%, rgba(255,198,174,0.18) 0%, transparent 20%), linear-gradient(150deg, #332D4B 0%, #3E3A58 45%, #4A425F 100%)",
+      "radial-gradient(80% 30% at 50% 0%, #3A3655 0%, #3A365500 70%), " +
+      "repeating-linear-gradient(90deg, #2B2840 0px, #2B2840 26px, #2E2B44 26px, #2E2B44 52px)",
     blur: 0,
     opacity: 100,
     overlay: "transparent",
   },
   widgets: {
-    // pearl：珍珠畫廊風格，深紫+芥末黃+靜態星光的美術館氛圍
     standardLayout: "pearl",
-    // pearl：讓時鐘也有一致的風格
-    clockStyle: "pearl",
-    // ring：圓環進度，像珍珠項鍊的圓潤迴圈
+    clockStyle: "plaque",
     habitLayout: "ring",
-    // 音樂播放器與世界書同步珍珠風
-    vinylStyle: "pearl",
     worldBookLayout: "pearl",
+    polaroidLayout: "gilded",
+    musicLayout: "audioguide",
+    recentChatLayout: "placard",
+    styleOverrides: themedStyleResets,
+    appIcons: {
+      layout: "pearl-orb",
+      palette: ["#F4F0E6"],
+      foregroundColor: "#2B2840",
+      textColor: "#F3EEE2",
+    },
+  },
+  homeArrangement: {
+    minVisibleRows: 41,
+    items: [
+      { type: "clock", x: 39, y: 2, width: 14, height: 6 },
+      { type: "polaroid", x: 35, y: 9, width: 12, height: 15 },
+      { type: "recent-chat", x: 48, y: 11, width: 8, height: 13 },
+      { type: "music", x: 35, y: 25, width: 21, height: 4 },
+      ...appRow(["訊息", "角色", "設置", "使用者"], 30),
+      ...appRow(["占卜", "遊戲", "音樂", "空間"], 35),
+    ],
   },
 };
 
-// ===== 線描插畫 =====
-// 設計意圖：Streamline 風格的純黑白手繪線稿 — 速寫本上的細線塗鴉，大片留白。
-//
-// 與「極簡黑白（mono）」的區別：
-// - mono 是 MUJI / Kinfolk 的「灰階雜誌」調性，帶米白暖灰、有灰色中間調。
-// - lineart 是「純黑線 + 純白底」的速寫本，零彩色、零中間灰，只有黑與白，
-//   像參考圖那種 1,600 minimal illustrations 的細線手繪插畫。
-//
-// 組件選擇邏輯（全部追求乾淨線稿、零裝飾）：
-// - skin: flat — 無陰影、無玻璃折射，最貼近紙上線稿的扁平乾淨。
-// - shape: rounded-square — 微圓角方形，像速寫本邊框，比純 square 柔一點。
-// - standardLayout: lineart — 純白底＋黑細線速寫皮膚，最貼近參考線稿。
-// - clockStyle: lineart — 純白底黑細線時鐘，呼應手繪線條的纖細。
-// - habitLayout: heatmap — 黑白方格，像速寫本上的網格筆記。
+// ===== 線描插畫・速寫本 =====
+// 設計意圖：純黑細線畫在白紙上。邊框故意畫得有點歪，像手繪的；
+// 手繪錶盤時鐘、山與太陽塗鴉的相框、波形線播放器、有尾巴的對話泡泡。
 const lineartPack: ThemePack = {
   id: "lineart",
   name: "線描插畫",
   icon: "lineart",
-  description: "純黑細線手繪、大片留白、速寫本上的極簡塗鴉。",
+  description: "速寫本：純黑細線、手繪感歪框、山與太陽的塗鴉。",
   preview: "linear-gradient(135deg, #FFFFFF 0%, #FFFFFF 55%, #1A1A1A 100%)",
   colors: {
     primary: "#1A1A1A",          // 純黑墨線
-    primaryLight: "#3D3D3D",     // 淡墨（hover）
-    secondary: "#1A1A1A",        // 次要也用黑，維持純粹黑白
+    primaryLight: "#3D3D3D",
+    secondary: "#1A1A1A",
     background: "#FFFFFF",       // 純白紙
-    surface: "#FFFFFF",          // 純白卡片
-    surfaceHover: "#F5F5F5",     // 極淡灰（僅互動回饋）
-    text: "#1A1A1A",             // 黑墨字
+    surface: "#FFFFFF",
+    surfaceHover: "#F5F5F5",
+    text: "#1A1A1A",
     textSecondary: "#4A4A4A",
     textMuted: "#9A9A9A",
-    border: "#1A1A1A",           // 黑線邊框（呼應線稿描邊）
+    border: "#1A1A1A",
     shadow: "rgba(0, 0, 0, 0.08)",
     success: "#1A1A1A",
     error: "#1A1A1A",
     warning: "#1A1A1A",
   },
   skin: "flat",
-  shape: "rounded-square",
+  shape: "circle",
   wallpaper: {
     type: "color",
-    // 純白紙底，讓黑色線稿組件像畫在速寫本上
     value: "#FFFFFF",
     blur: 0,
     opacity: 100,
@@ -442,12 +497,241 @@ const lineartPack: ThemePack = {
   },
   widgets: {
     standardLayout: "lineart",
-    clockStyle: "lineart",
+    clockStyle: "sketch",
     habitLayout: "heatmap",
-    // 音樂播放器：黑膠唱片改用線描黑白皮膚
-    vinylStyle: "lineart",
-    // 世界書：線描黑白書架
     worldBookLayout: "lineart",
+    polaroidLayout: "sketch",
+    musicLayout: "sketch",
+    recentChatLayout: "sketch",
+    styleOverrides: themedStyleResets,
+    appIcons: {
+      layout: "sketch",
+      palette: ["#FFFFFF"],
+      foregroundColor: "#1A1A1A",
+      textColor: "#1A1A1A",
+    },
+  },
+  homeArrangement: {
+    minVisibleRows: 41,
+    items: [
+      { type: "clock", x: 35, y: 2, width: 21, height: 7 },
+      { type: "polaroid", x: 35, y: 10, width: 10, height: 10 },
+      ...appGrid2x2(10),
+      { type: "music", x: 35, y: 21, width: 21, height: 4 },
+      { type: "recent-chat", x: 35, y: 26, width: 21, height: 8 },
+      ...appRow(["占卜", "遊戲", "音樂", "空間"], 35),
+    ],
+  },
+};
+
+// ===== 手帳拼貼 =====
+// 設計意圖：把桌面當成一頁手帳，東西是「貼」上去的，不是排進格子裡。
+// - 桌布：米色方格紙；組件不用卡片底，直接拼貼在紙上
+// - 時鐘：手寫大字時間 + 撕頁日曆（clockStyle: scrapbook）
+// - 拍立得：傾斜擺放 + 紙膠帶 + 下緣手寫標題（polaroidLayout: scrapbook）
+// - 最近聊天：黃色便條紙，貼圖變成印章（recentChatLayout: sticky）
+// - 音樂：撕線票根（musicLayout: ticket）
+// - App：粉彩貼紙底 + 墨色細框，每個 App 一個顏色
+// 墨色 #3A302A 與紙色 #F3ECDF 對比約 11:1，字色選擇都過 4.5:1。
+const SCRAPBOOK_INK = "#3A302A";
+const SCRAPBOOK_PAPER = "#F3ECDF";
+const SCRAPBOOK_GRID = "#6E5A4626";
+
+const scrapbookPack: ThemePack = {
+  id: "scrapbook",
+  name: "手帳拼貼",
+  icon: "scrapbook",
+  description: "方格紙、紙膠帶、便條紙與票根，把桌面貼成一頁手帳。",
+  preview: "linear-gradient(135deg, #F3ECDF 0%, #F4E2A0 55%, #E2A89E 100%)",
+  colors: {
+    primary: "#B5604A",          // 印章紅
+    primaryLight: "#E2A89E",     // 粉紅紙膠帶
+    secondary: "#8BA27A",        // 鼠尾草綠紙膠帶
+    background: SCRAPBOOK_PAPER, // 方格紙
+    surface: "#FFFDF8",          // 拍立得白
+    surfaceHover: "#F7EFDF",
+    text: SCRAPBOOK_INK,         // 鋼筆墨水
+    textSecondary: "#6E6055",
+    textMuted: "#A89A8C",
+    border: "#E2D6C3",
+    shadow: "rgba(70, 50, 30, 0.18)",
+    success: "#8BA27A",
+    error: "#C0634F",
+    warning: "#D9A752",
+  },
+  skin: "flat",
+  shape: "rounded-square",
+  wallpaper: {
+    type: "gradient",
+    // 方格紙：兩組重複細線疊在紙色上。第一個色碼必須是紙色，桌布明暗判斷才會認成淺色
+    value:
+      `repeating-linear-gradient(0deg, ${SCRAPBOOK_PAPER}00 0 21px, ${SCRAPBOOK_GRID} 21px 22px), ` +
+      `repeating-linear-gradient(90deg, ${SCRAPBOOK_PAPER}00 0 21px, ${SCRAPBOOK_GRID} 21px 22px), ` +
+      SCRAPBOOK_PAPER,
+    blur: 0,
+    opacity: 100,
+    overlay: "transparent",
+  },
+  widgets: {
+    standardLayout: "classic",
+    clockStyle: "scrapbook",
+    habitLayout: "list",
+    polaroidLayout: "scrapbook",
+    musicLayout: "ticket",
+    recentChatLayout: "sticky",
+    styleOverrides: {
+      clock: { backgroundColor: "transparent", foregroundColor: SCRAPBOOK_INK, textColor: SCRAPBOOK_INK, borderColor: undefined },
+      polaroid: { backgroundColor: "#FFFDF8", foregroundColor: SCRAPBOOK_INK, borderColor: undefined },
+      music: { backgroundColor: "#FFFDF8", foregroundColor: SCRAPBOOK_INK, borderColor: undefined },
+      "recent-chat": { backgroundColor: "#F4E2A0", foregroundColor: SCRAPBOOK_INK, borderColor: undefined },
+    },
+    appIcons: {
+      palette: ["#F2CFC6", "#D7E1C8", "#EADFCC", "#F2E1AE", "#D9D4EA"],
+      colorsByLabel: {
+        訊息: "#F2CFC6",
+        角色: "#D7E1C8",
+        設置: "#EADFCC",
+        使用者: "#F2E1AE",
+        占卜: "#D9D4EA",
+        遊戲: "#F2CFC6",
+        音樂: "#F2E1AE",
+        空間: "#D7E1C8",
+        書架: "#D9D4EA",
+        閱讀: "#F2E1AE",
+        購物: "#F2CFC6",
+        外賣: "#EADFCC",
+        錢包: "#D7E1C8",
+        頭盔TA: "#D9D4EA",
+        健身: "#D7E1C8",
+        世界書: "#F2E1AE",
+        小劇場: "#F2CFC6",
+      },
+      foregroundColor: SCRAPBOOK_INK,
+      textColor: SCRAPBOOK_INK,
+      borderColor: SCRAPBOOK_INK,
+      borderWidth: 1.5,
+    },
+  },
+  // 中間主頁（x 35–56）：時鐘 → 拍立得 + 便條紙 → 票根 → 兩排 App
+  // App 用半格位移，讓 4 個 5 格寬的圖標和上方 21 格寬的組件置中對齊
+  homeArrangement: {
+    minVisibleRows: 41,
+    items: [
+      { type: "clock", x: 35, y: 2, width: 21, height: 7 },
+      { type: "polaroid", x: 35, y: 10, width: 10, height: 13 },
+      { type: "recent-chat", x: 46, y: 10, width: 10, height: 13 },
+      { type: "music", x: 35, y: 24, width: 21, height: 5 },
+      { type: "fluid-button", label: "訊息", x: 35.5, y: 30, width: 5, height: 5 },
+      { type: "fluid-button", label: "角色", x: 40.5, y: 30, width: 5, height: 5 },
+      { type: "fluid-button", label: "設置", x: 45.5, y: 30, width: 5, height: 5 },
+      { type: "fluid-button", label: "使用者", x: 50.5, y: 30, width: 5, height: 5 },
+      { type: "fluid-button", label: "占卜", x: 35.5, y: 35, width: 5, height: 5 },
+      { type: "fluid-button", label: "遊戲", x: 40.5, y: 35, width: 5, height: 5 },
+      { type: "fluid-button", label: "音樂", x: 45.5, y: 35, width: 5, height: 5 },
+      { type: "fluid-button", label: "空間", x: 50.5, y: 35, width: 5, height: 5 },
+    ],
+  },
+};
+
+// ===== 毛玻璃 =====
+// 設計意圖：保留原本主頁的結構，只把質感整理乾淨——
+// 實心奶油卡換成半透明暖白玻璃，時鐘拿掉外框直接疊在深色桌布上，
+// 所有東西用同一種玻璃底與同一種奶白字，整頁只有一個層次。
+// - 時鐘：日期在上、細體大字（clockStyle: headline）
+// - 拍立得：照片填滿圓角卡片（polaroidLayout: frame）
+// - 音樂：正方形三段式（musicLayout: stack），不再中間空一大塊
+// - 最近聊天：氣泡版型，貼圖顯示成小標籤
+// 玻璃底只靠半透明色、不做背景模糊，換成照片桌布也一樣成立。
+// 奶白字 #F4EEE4 疊在玻璃與 #1A1816 桌布上對比約 13:1。
+const FROST_TEXT = "#F4EEE4";
+const FROST_GLASS = "rgba(255, 248, 236, 0.10)";
+const FROST_GLASS_STRONG = "rgba(255, 248, 236, 0.15)";
+const FROST_EDGE = "rgba(255, 255, 255, 0.14)";
+
+const frostCard: Partial<WidgetCustomStyle> = {
+  backgroundColor: FROST_GLASS,
+  backgroundGradient: undefined,
+  foregroundColor: FROST_TEXT,
+  textColor: FROST_TEXT,
+  borderColor: FROST_EDGE,
+  borderWidth: 1,
+};
+
+const frostPack: ThemePack = {
+  id: "frost",
+  name: "毛玻璃",
+  icon: "frost",
+  description: "深色桌布上的半透明暖白玻璃，細體大字時鐘，乾淨整齊。",
+  preview: "linear-gradient(135deg, #1A1816 0%, #5C6246 55%, #968A7C 100%)",
+  colors: {
+    primary: "#9C6E48",          // 焦糖（白字疊上去仍有 4.5:1）
+    primaryLight: "#C89B72",
+    secondary: "#9AA584",        // 苔綠，呼應桌布右下的光
+    background: "#1A1816",
+    surface: "rgba(255, 248, 236, 0.10)",
+    surfaceHover: "rgba(255, 248, 236, 0.16)",
+    text: FROST_TEXT,
+    textSecondary: "#C9C0B4",
+    textMuted: "#8F877E",
+    border: "rgba(255, 255, 255, 0.14)",
+    shadow: "rgba(0, 0, 0, 0.35)",
+    success: "#9AA584",
+    error: "#E08A76",
+    warning: "#E2B266",
+  },
+  skin: "glass",
+  shape: "squircle",
+  wallpaper: {
+    type: "gradient",
+    // 深暖灰底，右下一抹苔綠、左上一抹暖灰光。第一個色碼要是深色，桌布明暗判斷才會認成深色
+    value:
+      "radial-gradient(90% 45% at 88% 96%, #5C62468C 0%, #5C624600 70%), " +
+      "radial-gradient(120% 40% at 30% 0%, #968A7C80 0%, #968A7C00 70%), " +
+      "#1A1816",
+    blur: 0,
+    opacity: 100,
+    overlay: "transparent",
+  },
+  widgets: {
+    standardLayout: "classic",
+    clockStyle: "headline",
+    habitLayout: "list",
+    polaroidLayout: "frame",
+    musicLayout: "stack",
+    recentChatLayout: "bubble",
+    styleOverrides: {
+      clock: { backgroundColor: "transparent", backgroundGradient: undefined, foregroundColor: FROST_TEXT, textColor: FROST_TEXT, borderColor: undefined },
+      polaroid: frostCard,
+      music: frostCard,
+      "recent-chat": frostCard,
+      "relationship-counter": frostCard,
+      "char-journal": frostCard,
+    },
+    appIcons: {
+      palette: [FROST_GLASS_STRONG],
+      foregroundColor: FROST_TEXT,
+      textColor: FROST_TEXT,
+      borderColor: FROST_EDGE,
+      borderWidth: 1,
+    },
+  },
+  // 原本的主頁結構：時鐘、拍立得 + 四個 App、音樂 + 四個 App、最近聊天
+  homeArrangement: {
+    minVisibleRows: 41,
+    items: [
+      { type: "clock", x: 35, y: 2, width: 21, height: 7 },
+      { type: "polaroid", x: 35, y: 10, width: 10, height: 10 },
+      { type: "fluid-button", label: "訊息", x: 46, y: 10, width: 5, height: 5 },
+      { type: "fluid-button", label: "角色", x: 51, y: 10, width: 5, height: 5 },
+      { type: "fluid-button", label: "設置", x: 46, y: 15, width: 5, height: 5 },
+      { type: "fluid-button", label: "使用者", x: 51, y: 15, width: 5, height: 5 },
+      { type: "music", x: 35, y: 21, width: 10, height: 10 },
+      { type: "fluid-button", label: "占卜", x: 46, y: 21, width: 5, height: 5 },
+      { type: "fluid-button", label: "遊戲", x: 51, y: 21, width: 5, height: 5 },
+      { type: "fluid-button", label: "音樂", x: 46, y: 26, width: 5, height: 5 },
+      { type: "fluid-button", label: "空間", x: 51, y: 26, width: 5, height: 5 },
+      { type: "recent-chat", x: 35, y: 32, width: 21, height: 8 },
+    ],
   },
 };
 
@@ -455,11 +739,11 @@ const lineartPack: ThemePack = {
 export const themePacks: ThemePack[] = [
   creamPack,
   y2kPack,
-  cyberPack,
-  journalPack,
   monoPack,
   pearlPack,
   lineartPack,
+  scrapbookPack,
+  frostPack,
 ];
 
 /**
@@ -474,6 +758,9 @@ export const STANDARD_LAYOUT_WIDGET_TYPES: readonly string[] = [
   "weather",
   "calendar",
 ];
+
+// 預設主題包：新使用者、重置主題、預設佈局與新增組件的外觀都以它為準
+export const DEFAULT_THEME_PACK: ThemePack = scrapbookPack;
 
 /**
  * 取得指定主題包（找不到時回傳 undefined）。

@@ -6,11 +6,14 @@ import { getSkin } from "@/styles/skin-presets";
 import type { WidgetCustomStyle } from "@/types";
 import { resolveWidgetIcon } from "@/utils/widgetIconMap";
 import { computed } from "vue";
+import { themedAppLayouts } from "./themed/registry";
 
 const props = defineProps<{
   data?: {
     type?: string;
     label?: string;
+    // 目錄式主題版型用的編號，由主題包擺位寫入
+    indexNo?: string;
     customStyle?: WidgetCustomStyle;
   };
 }>();
@@ -177,6 +180,12 @@ const iconStyle = computed(() => {
   return style;
 });
 
+// 主題版型：交給 themed/ 底下的元件渲染，點擊導航仍由這裡處理
+const themedApp = computed(() => {
+  const layout = props.data?.customStyle?.layout;
+  return layout ? (themedAppLayouts[layout] ?? null) : null;
+});
+
 // 顯示名稱映射（向後兼容舊數據）
 const displayLabelMap: Record<string, string> = {
   偷窺TA: "頭盔TA",
@@ -205,7 +214,18 @@ const labelStyle = computed(() => {
 </script>
 
 <template>
-  <div class="fluid-button" @click="handleClick">
+  <div class="fluid-button" :class="{ themed: !!themedApp }" @click="handleClick">
+    <component
+      v-if="themedApp"
+      :is="themedApp"
+      :label="displayLabel"
+      :icon="iconComponent"
+      :custom-image-url="useCustomImage ? customImageUrl : undefined"
+      :accent="data?.customStyle?.backgroundColor"
+      :color="data?.customStyle?.textColor || data?.customStyle?.foregroundColor"
+      :index-no="data?.indexNo"
+    />
+    <template v-else>
     <div
       class="blob-shape"
       :class="{ 'has-background': hasCustomBackground }"
@@ -224,6 +244,7 @@ const labelStyle = computed(() => {
     <span class="label" v-if="data?.label" :style="labelStyle">{{
       displayLabel
     }}</span>
+    </template>
   </div>
 </template>
 
@@ -231,6 +252,7 @@ const labelStyle = computed(() => {
 .fluid-button {
   width: 100%;
   height: 100%;
+
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -239,6 +261,12 @@ const labelStyle = computed(() => {
   cursor: pointer;
   padding: 4px;
   box-sizing: border-box;
+
+  // 主題版型自己決定排版，宿主只提供尺寸與點擊
+  &.themed {
+    padding: 0;
+    gap: 0;
+  }
 }
 
 .blob-shape {

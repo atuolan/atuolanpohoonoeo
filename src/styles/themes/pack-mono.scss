@@ -1,0 +1,14 @@
+// ===== 極簡黑白主題包：整頁雜誌排版 =====
+// 中間主頁的組件用 themed/mono 版型；兩側的其他組件（日曆、天氣、待辦、語錄…）
+// 沒有專屬版型，在這裡統一拿掉卡片底色、圓角與陰影，只留上緣一條油墨細線，
+// 讓整頁都像同一本雜誌。主題版型（.themed / .style-themed）與 App 圖標不受影響。
+[data-theme-pack="mono"] .widget-content > :not(.themed):not(.style-themed):not(.fluid-button) {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  border-top: 1px solid #1c1c1a !important;
+  border-radius: 0 !important;
+  transform: none !important;
+}

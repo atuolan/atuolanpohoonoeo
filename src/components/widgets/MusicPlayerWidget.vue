@@ -10,6 +10,8 @@ import {
     SkipBack,
     SkipForward,
 } from "lucide-vue-next";
+import { useScrapbookFont } from "@/composables/useOnDemandFont";
+import { themedMusicLayouts } from "./themed/registry";
 import { computed, onUnmounted, ref } from "vue";
 
 const props = defineProps<{
@@ -80,6 +82,17 @@ const progress = computed(() => {
 // 獲取當前佈局風格
 const currentLayout = computed(
   () => props.data?.customStyle?.layout || "compact",
+);
+
+useScrapbookFont(computed(() => currentLayout.value === "ticket"));
+
+// 主題版型：交給 themed/ 底下的元件渲染，播放控制仍由這裡處理
+const themedMusic = computed(() => themedMusicLayouts[currentLayout.value] ?? null);
+const userTextColor = computed(
+  () =>
+    props.data?.customStyle?.textColor ||
+    props.data?.customStyle?.foregroundColor ||
+    undefined,
 );
 
 // 獲取黑膠唱片子風格
@@ -179,8 +192,8 @@ onUnmounted(() => {
 <template>
   <div
     class="music-player-container"
-    :style="containerStyle"
-    :class="currentLayout"
+    :style="themedMusic ? {} : containerStyle"
+    :class="[currentLayout, { themed: !!themedMusic }]"
   >
     <!-- 播放錯誤通知 -->
     <Transition name="widget-toast">
@@ -198,8 +211,25 @@ onUnmounted(() => {
       </div>
     </Transition>
 
+    <!-- 主題版型 -->
+    <component
+      v-if="themedMusic"
+      :is="themedMusic"
+      :title="currentSong.title"
+      :artist="currentSong.artist"
+      :duration="currentSong.duration"
+      :current-time="currentTime"
+      :progress="progress"
+      :is-playing="isPlaying"
+      :color="userTextColor"
+      @toggle="togglePlay"
+      @prev="prevSong"
+      @next="nextSong"
+      @open="openMusicApp"
+    />
+
     <!-- 風格 1: Compact (橫條簡約) -->
-    <template v-if="currentLayout === 'compact'">
+    <template v-else-if="currentLayout === 'compact'">
       <div class="album-art">
         <div class="album-cover" :class="{ spinning: isPlaying }">
           <Music :size="20" />
@@ -353,6 +383,73 @@ onUnmounted(() => {
         <div class="tap-hint">點擊進入音樂 App</div>
       </div>
     </template>
+
+    <!-- 風格 5: Stack (方塊)：給正方形格子用，封面 + 歌名、進度、控制鈕上下三段 -->
+    <div v-else-if="currentLayout === 'stack'" class="stack-layout" :style="textStyle">
+      <div class="stack-head">
+        <button class="stack-art" aria-label="打開音樂 App" @click="openMusicApp">
+          <Music :size="20" />
+        </button>
+        <div class="stack-info">
+          <div class="stack-title">{{ currentSong.title }}</div>
+          <div class="stack-artist">{{ currentSong.artist }}</div>
+        </div>
+      </div>
+      <div class="stack-progress">
+        <div class="stack-bar">
+          <div class="stack-fill" :style="{ width: `${progress}%` }"></div>
+        </div>
+        <div class="stack-times">
+          <span>{{ formatTime(currentTime) }}</span>
+          <span>{{ formatTime(currentSong.duration) }}</span>
+        </div>
+      </div>
+      <div class="stack-controls">
+        <button class="stack-btn" aria-label="上一首" @click="prevSong">
+          <SkipBack :size="18" />
+        </button>
+        <button class="stack-play" :aria-label="isPlaying ? '暫停' : '播放'" @click="togglePlay">
+          <Pause v-if="isPlaying" :size="17" fill="currentColor" />
+          <Play v-else :size="17" fill="currentColor" style="margin-left: 2px" />
+        </button>
+        <button class="stack-btn" aria-label="下一首" @click="nextSong">
+          <SkipForward :size="18" />
+        </button>
+      </div>
+    </div>
+
+    <!-- 風格 4: Ticket (手帳拼貼票根) - 點唱片進入音樂 App -->
+    <div v-else-if="currentLayout === 'ticket'" class="ticket-layout">
+      <button class="ticket-stub" aria-label="打開音樂 App" @click="openMusicApp">
+        <span class="ticket-disc" :class="{ spinning: isPlaying }"></span>
+      </button>
+      <div class="ticket-body">
+        <span class="ticket-label">正在播放</span>
+        <div class="ticket-song">
+          <span class="ticket-title" :style="textStyle">{{ currentSong.title }}</span>
+          <span class="ticket-artist">{{ currentSong.artist }}</span>
+        </div>
+        <div class="ticket-progress">
+          <div class="ticket-bar">
+            <div class="ticket-fill" :style="{ width: `${progress}%` }"></div>
+          </div>
+          <span class="ticket-time"
+            >{{ formatTime(currentTime) }} / {{ formatTime(currentSong.duration) }}</span
+          >
+        </div>
+      </div>
+      <div class="ticket-actions">
+        <button class="ticket-play" :aria-label="isPlaying ? '暫停' : '播放'" @click="togglePlay">
+          <Pause v-if="isPlaying" :size="16" fill="currentColor" />
+          <Play v-else :size="16" fill="currentColor" style="margin-left: 2px" />
+        </button>
+        <button class="ticket-next" aria-label="下一首" @click="nextSong">
+          <SkipForward :size="16" />
+        </button>
+      </div>
+      <span class="ticket-notch top" aria-hidden="true"></span>
+      <span class="ticket-notch bottom" aria-hidden="true"></span>
+    </div>
   </div>
 </template>
 
@@ -389,6 +486,322 @@ onUnmounted(() => {
 
   &.vinyl {
     transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  &.stack {
+    padding: 0;
+  }
+
+  // 主題版型自己畫外框與底色，宿主只提供尺寸
+  &.themed {
+    padding: 0;
+    background: transparent;
+    backdrop-filter: none;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  // 手帳拼貼票根：左側唱片存根 + 虛線撕線 + 兩個半圓缺口
+  &.ticket {
+    background-color: #fffdf8;
+    backdrop-filter: none;
+    border-radius: 12px;
+    color: #3a302a;
+    transform: rotate(-1deg);
+    box-shadow: 0 10px 18px -12px rgba(70, 50, 30, 0.45);
+    // 缺口要壓在卡片邊緣上
+    overflow: visible;
+    font-family: "LXGW WenKai TC", "Huninn", "Noto Sans TC", sans-serif;
+  }
+}
+
+.stack-layout {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 14px 12px 8px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.stack-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.stack-art {
+  flex-shrink: 0;
+  width: 46px;
+  height: 46px;
+  border: none;
+  padding: 0;
+  border-radius: 12px;
+  background: linear-gradient(150deg, #f2b880 0%, #de8466 100%);
+  color: rgba(255, 255, 255, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.stack-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stack-title {
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stack-artist {
+  font-size: 12px;
+  opacity: 0.65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stack-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 2px;
+}
+
+.stack-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  overflow: hidden;
+}
+
+.stack-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.stack-times {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}
+
+.stack-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stack-btn,
+.stack-play {
+  width: 44px;
+  height: 44px;
+  border: none;
+  padding: 0;
+  border-radius: 50%;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.stack-btn {
+  background: none;
+  opacity: 0.85;
+}
+
+.stack-play {
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.ticket-layout {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+}
+
+.ticket-stub {
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  width: 78px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1.5px dashed #cdbfae;
+  background: none;
+  cursor: pointer;
+}
+
+.ticket-disc {
+  display: block;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    #e9a57a 0,
+    #e9a57a 8px,
+    #2f2925 8.5px,
+    #3a332e 16px,
+    #2f2925 17px
+  );
+
+  &.spinning {
+    animation: spin 4s linear infinite;
+  }
+}
+
+.ticket-body {
+  flex: 1;
+  min-width: 0;
+  padding: 0 8px 0 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+
+.ticket-label {
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  color: #b5604a;
+}
+
+.ticket-song {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.ticket-title {
+  font-size: 17px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ticket-artist {
+  font-size: 13px;
+  opacity: 0.72;
+}
+
+.ticket-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.ticket-bar {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  overflow: hidden;
+}
+
+.ticket-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.ticket-time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ticket-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 8px;
+}
+
+.ticket-play {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #3a302a;
+  color: #fffdf8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ticket-next {
+  width: 36px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+}
+
+.ticket-notch {
+  position: absolute;
+  left: 69px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  // 缺口顏色要跟桌布紙色一致
+  background: var(--color-background, #f3ecdf);
+
+  &.top {
+    top: -9px;
+  }
+
+  &.bottom {
+    bottom: -9px;
+  }
+}
+
+// 窄版（放在 10×10 方格時）：拿掉存根，改成上下堆疊
+@container (max-width: 260px) {
+  .ticket-stub,
+  .ticket-notch {
+    display: none;
+  }
+
+  .ticket-layout {
+    flex-direction: column;
+    box-sizing: border-box;
+    padding: 14px;
+  }
+
+  .ticket-body {
+    padding: 0;
+    gap: 6px;
+  }
+
+  .ticket-song {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  .ticket-actions {
+    justify-content: center;
+    padding: 6px 0 0;
   }
 }
 

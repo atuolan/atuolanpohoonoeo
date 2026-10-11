@@ -16,7 +16,19 @@ import { themePresets } from "@/stores/theme";
 import { skinPresets } from "@/styles/skin-presets";
 import { themePacks } from "@/styles/theme-packs";
 import { shapePresets } from "@/styles/shape-presets";
-import { styleLayouts } from "@/components/panels/widget-settings/widgetSettingsOptions";
+import {
+  appLayouts,
+  characterLayoutMap,
+  charPhoneLayouts,
+  clockStyles,
+  habitLayouts,
+  musicLayouts,
+  polaroidLayouts,
+  styleLayouts,
+  worldBookLayouts,
+  type LayoutOption,
+} from "@/components/panels/widget-settings/widgetSettingsOptions";
+import { STANDARD_LAYOUT_WIDGET_TYPES } from "@/styles/theme-packs";
 import { formatWidgetStyleDetail } from "./widgetStyleHints";
 import {
   listSurfacesBrief,
@@ -87,17 +99,9 @@ const COLOR_KEYS: (keyof ThemeColors)[] = [
   "error",
   "warning",
 ];
-const CLOCK_STYLE_VALUES = [
-  "minimal",
-  "digital",
-  "analog",
-  "flip",
-  "neon",
-  "progress",
-  "binary",
-  "dotmatrix",
-  "orbit",
-];
+// 時鐘樣式直接取設定面板的清單，新增樣式時 AI 自動認得
+const CLOCK_STYLE_VALUES = clockStyles.map((s) => s.id as string);
+const CLOCK_STYLE_LABELS = clockStyles.map((s) => `${s.id}（${s.name}：${s.desc}）`).join("、");
 const WALLPAPER_TYPE_VALUES = [
   "color",
   "gradient",
@@ -109,11 +113,52 @@ const AVATAR_SHAPE_VALUES = ["circle", "square", "rounded"];
 const AVATAR_SIZE_VALUES = ["small", "medium", "large"];
 const SHAPE_VALUES = shapePresets.map((s) => s.id);
 const SHAPE_LABELS = shapePresets.map((s) => `${s.id}（${s.name}）`).join("、");
-// 共用 7 皮膚的佈局風格（拍立得 / 日曆 / 天氣 / 待辦 / 語錄 / 心情 / 專注計時器共用）
-const STYLE_LAYOUT_VALUES = styleLayouts.map((l) => l.id);
-const STYLE_LAYOUT_LABELS = styleLayouts
-  .map((l) => `${l.id}（${l.name}：${l.desc}）`)
-  .join("、");
+// 各組件可切換的佈局，與設定面板共用同一份清單（永遠同步）。
+// 角色綁定組件（最近聊天等）的佈局寫在 data.layout，其餘寫在 customStyle.layout。
+interface WidgetLayoutOptions {
+  options: LayoutOption[];
+  target: "customStyle" | "data";
+}
+
+export function getWidgetLayoutOptions(type: string): WidgetLayoutOptions | null {
+  if (type === "polaroid") return { options: polaroidLayouts, target: "customStyle" };
+  if (STANDARD_LAYOUT_WIDGET_TYPES.includes(type)) return { options: styleLayouts, target: "customStyle" };
+  if (type === "music") return { options: musicLayouts, target: "customStyle" };
+  if (type === "world-book") return { options: worldBookLayouts, target: "customStyle" };
+  if (type === "char-phone") return { options: charPhoneLayouts, target: "customStyle" };
+  if (type === "habit-tracker") return { options: habitLayouts, target: "customStyle" };
+  if (type === "fluid-button") return { options: appLayouts, target: "customStyle" };
+  if (characterLayoutMap[type]) return { options: characterLayoutMap[type], target: "data" };
+  return null;
+}
+
+const formatLayoutOptions = (options: LayoutOption[]) =>
+  options.map((l) => `${l.id}（${l.name}：${l.desc}）`).join("、");
+
+// 佈局參數的合法值：所有組件佈局的聯集；組件與佈局是否相容在 execute 再檢查
+const LAYOUT_VALUES = [
+  ...new Set(
+    [
+      polaroidLayouts,
+      styleLayouts,
+      musicLayouts,
+      worldBookLayouts,
+      charPhoneLayouts,
+      habitLayouts,
+      appLayouts,
+      ...Object.values(characterLayoutMap),
+    ].flatMap((list) => list.map((l) => l.id)),
+  ),
+];
+const LAYOUT_LABELS_BY_WIDGET = [
+  `拍立得：${formatLayoutOptions(polaroidLayouts)}`,
+  `日曆 / 天氣 / 待辦 / 語錄 / 心情日記 / 專注計時器：${formatLayoutOptions(styleLayouts)}`,
+  `音樂播放器：${formatLayoutOptions(musicLayouts)}`,
+  `App 圖標（fluid-button）：${formatLayoutOptions(appLayouts)}`,
+  ...Object.entries(characterLayoutMap).map(([type, list]) => `${type}：${formatLayoutOptions(list)}`),
+  `世界書：${formatLayoutOptions(worldBookLayouts)}`,
+  `習慣追蹤：${formatLayoutOptions(habitLayouts)}`,
+].join("\n");
 
 // ===== 工具清單 =====
 
@@ -359,7 +404,7 @@ export const THEME_TOOLS: ThemeTool[] = [
   },
   {
     name: "設定時鐘樣式",
-    description: "把某個時鐘組件換成指定樣式。需要 widgetId（由聊天上下文提供）。",
+    description: `把某個時鐘組件換成指定樣式。可選 ${CLOCK_STYLE_LABELS}。需要 widgetId（由聊天上下文提供）。`,
     params: [
       { name: "widgetId", type: "string", description: "目標時鐘組件 ID" },
       {
@@ -408,20 +453,45 @@ export const THEME_TOOLS: ThemeTool[] = [
   {
     name: "設定組件佈局",
     description:
-      `切換組件的整體顯示風格（佈局皮膚）。適用於拍立得 / 日曆 / 天氣 / 待辦 / 語錄 / 心情日記 / 專注計時器這類共用 7 皮膚的組件。可選 ${STYLE_LAYOUT_LABELS}。需要 widgetId。使用者說「把日曆換成像素風 / 復古風 / 線描風…」時用這個，不要硬寫 CSS。`,
+      `切換組件的整體顯示風格（佈局 / 版型）。每種組件可用的佈局不同：
+${LAYOUT_LABELS_BY_WIDGET}
+` +
+      "需要 widgetId。使用者說「把日曆換成像素風」「音樂換成票根」「聊天變便條紙」「App 換成果凍泡泡」時用這個，不要硬寫 CSS。時鐘請改用「設定時鐘樣式」。",
     params: [
       { name: "widgetId", type: "string", description: "目標組件 ID" },
       {
         name: "layout",
         type: "enum",
-        values: STYLE_LAYOUT_VALUES,
-        description: "佈局風格 ID",
+        values: LAYOUT_VALUES,
+        description: "佈局 ID（必須是該組件支援的佈局）",
       },
     ],
     execute(args, ctx) {
-      ctx.canvas.updateWidgetCustomStyle(args.widgetId as string, {
-        layout: args.layout as string,
-      });
+      const id = args.widgetId as string;
+      const layout = args.layout as string;
+      const widget = ctx.canvas.widgets.find((w) => w.id === id);
+      if (!widget) throw new Error(`找不到 widgetId="${id}"`);
+      const available = getWidgetLayoutOptions(widget.type);
+      if (!available) {
+        throw new Error(
+          widget.type === "clock"
+            ? "時鐘請用「設定時鐘樣式」切換"
+            : `「${widget.type}」沒有可切換的佈局`,
+        );
+      }
+      if (!available.options.some((o) => o.id === layout)) {
+        throw new Error(
+          `「${widget.type}」不支援佈局「${layout}」，可用：${available.options.map((o) => o.id).join(" / ")}`,
+        );
+      }
+      if (available.target === "data") {
+        ctx.canvas.updateWidgetData(id, { layout });
+      } else {
+        // App 圖標的 default 代表回到內建圓角圖標
+        ctx.canvas.updateWidgetCustomStyle(id, {
+          layout: widget.type === "fluid-button" && layout === "default" ? undefined : layout,
+        });
+      }
     },
   },
   {
@@ -582,7 +652,10 @@ export const THEME_TOOLS: ThemeTool[] = [
       const customStyle = (data.customStyle ?? {}) as Record<string, unknown>;
       // 原始 layout 值（用來比對 per-layout 結構；找不到時為空字串）
       const rawLayout =
-        (customStyle.layout as string) || (data.clockStyle as string) || "";
+        (w.type === "clock" ? (data.clockStyle as string) : "") ||
+        (getWidgetLayoutOptions(w.type)?.target === "data" ? (data.layout as string) : "") ||
+        (customStyle.layout as string) ||
+        "";
       const layout = rawLayout || "（預設）";
       const customCSS = (data.customCSS as string) || "";
       const lines: string[] = [

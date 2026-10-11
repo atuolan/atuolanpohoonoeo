@@ -6,7 +6,7 @@ import {
   resolveShadow,
   DEFAULT_SKIN_ID,
 } from "@/styles/skin-presets";
-import type { ThemePack } from "@/styles/theme-packs";
+import { DEFAULT_THEME_PACK, type ThemePack } from "@/styles/theme-packs";
 import { boostCSSSpecificity } from "@/utils/cssScoping";
 
 /**
@@ -328,9 +328,10 @@ const defaultAvatarStyle: AvatarStyle = {
 };
 
 // ===== 預設氣泡樣式 =====
+// 使用者氣泡跟著預設主題包主色（與 applyThemePack 的同步規則一致）
 const defaultBubbleStyle: BubbleStyle = {
-  userBgColor: "#FF85A2",
-  userBgGradient: "linear-gradient(135deg, #FF85A2, #FFB6C8)",
+  userBgColor: DEFAULT_THEME_PACK.colors.primary,
+  userBgGradient: `linear-gradient(135deg, ${DEFAULT_THEME_PACK.colors.primary}, ${DEFAULT_THEME_PACK.colors.primaryLight})`,
   userTextColor: "#FFFFFF",
   userTextGradient: "",
   aiBgColor: "#FFFFFF",
@@ -381,12 +382,13 @@ const defaultGlobalFont: GlobalFontOverride = {
 };
 
 // ===== 預設桌布樣式 =====
+// 預設桌布 = 預設主題包（手帳拼貼）的方格紙
 const defaultWallpaperStyle: WallpaperStyle = {
-  type: "time-theme",
-  value: "",
-  blur: 0,
-  opacity: 100,
-  overlay: "transparent",
+  type: DEFAULT_THEME_PACK.wallpaper.type,
+  value: DEFAULT_THEME_PACK.wallpaper.value,
+  blur: DEFAULT_THEME_PACK.wallpaper.blur ?? 0,
+  opacity: DEFAULT_THEME_PACK.wallpaper.opacity ?? 100,
+  overlay: DEFAULT_THEME_PACK.wallpaper.overlay ?? "transparent",
 };
 
 // ===== 預設彈窗動畫 =====
@@ -422,13 +424,14 @@ export const useThemeStore = defineStore("theme", () => {
   const currentPreset = ref<string>("soft-pink");
 
   // 自定義顏色（覆蓋預設）
-  const customColors = ref<Partial<ThemeColors>>({});
+  // 新使用者預設套用手帳拼貼主題包的完整配色
+  const customColors = ref<Partial<ThemeColors>>({ ...DEFAULT_THEME_PACK.colors });
 
   // 當前皮（形態：圓角/陰影/模糊/互動/圖標質感）
-  const currentSkin = ref<string>(DEFAULT_SKIN_ID);
+  const currentSkin = ref<string>(DEFAULT_THEME_PACK.skin);
 
   // 當前套用的主題包 id（用於設定面板高亮，未套用時為空字串）
-  const currentThemePack = ref<string>("");
+  const currentThemePack = ref<string>(DEFAULT_THEME_PACK.id);
 
   // 使用者自訂的主題包列表（從匯出 / 儲存當前設定建立）
   const customThemePacks = ref<ThemePack[]>([]);
@@ -715,6 +718,8 @@ export const useThemeStore = defineStore("theme", () => {
 
     // 同步當前皮到 root，讓 SCSS 可基於 [data-skin] 做形態微調
     root.setAttribute("data-skin", currentSkin.value);
+    // 同步目前套用的主題包，讓個別主題包能整頁調整（例如極簡黑白把兩側組件也排成雜誌樣式）
+    root.setAttribute("data-theme-pack", currentThemePack.value || "");
 
     // 應用自訂 CSS
     applyCustomCSS();
@@ -1037,8 +1042,9 @@ export const useThemeStore = defineStore("theme", () => {
 
   function resetToDefault() {
     currentPreset.value = "soft-pink";
-    currentSkin.value = DEFAULT_SKIN_ID;
-    customColors.value = {};
+    // 重置 = 回到預設主題包（手帳拼貼）
+    currentSkin.value = DEFAULT_THEME_PACK.skin;
+    customColors.value = { ...DEFAULT_THEME_PACK.colors };
     avatarStyle.value = { ...defaultAvatarStyle };
     bubbleStyle.value = { ...defaultBubbleStyle };
     wallpaperStyle.value = { ...defaultWallpaperStyle };
@@ -1046,7 +1052,7 @@ export const useThemeStore = defineStore("theme", () => {
     customCSS.value = "";
     surfaceCustomCSS.value = {};
     globalFont.value = { ...defaultGlobalFont };
-    currentThemePack.value = "";
+    currentThemePack.value = DEFAULT_THEME_PACK.id;
     applyTheme();
     saveToStorage();
   }

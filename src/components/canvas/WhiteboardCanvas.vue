@@ -2,7 +2,12 @@
 import AddWidgetPanel from "@/components/panels/AddWidgetPanel.vue";
 import BatchStylePanel from "@/components/panels/BatchStylePanel.vue";
 import WidgetWrapper from "@/components/widgets/WidgetWrapper.vue";
-import { getDefaultWidgetStyle } from "@/components/widgets/defaultWidgetStyle";
+import {
+  getDefaultWidgetData,
+  getDefaultWidgetStyle,
+} from "@/components/widgets/defaultWidgetStyle";
+import { DEFAULT_THEME_PACK } from "@/styles/theme-packs";
+import type { WidgetType } from "@/types";
 import { widgetComponents } from "@/components/widgets/widgetComponents";
 import { useTimeTheme } from "@/composables/useTimeTheme";
 import { useCanvasStore, useThemeStore } from "@/stores";
@@ -429,17 +434,44 @@ onMounted(async () => {
     canvasStore.addWidget({ type: "quote", x: 24, y: 21, width: 10, height: 10, data: { customStyle: card("quote") } });
 
     // ===== 第二屏（中間）：主頁 =====
-    canvasStore.addWidget({ type: "clock", x: 35, y: 2, width: 21, height: 7, data: { customStyle: card("clock") } });
-    canvasStore.addWidget({ type: "polaroid", x: 35, y: 10, width: 10, height: 10, data: { customStyle: card("polaroid") } });
-    app(46, 10, "訊息");
-    app(51, 10, "角色");
-    app(46, 15, "設置");
-    app(51, 15, "使用者");
-    canvasStore.addWidget({ type: "music", x: 35, y: 21, width: 10, height: 10, data: { customStyle: card("music") } });
-    app(46, 21, "占卜", "1");
-    app(51, 21, "遊戲");
-    app(46, 26, "音樂");
-    app(51, 26, "空間");
+    // 直式長螢幕：照預設主題包（手帳拼貼）的擺法——時鐘、拍立得 + 便條紙、票根、兩排 App
+    // 矮螢幕放不下就維持原本的方格擺法，外觀一樣是手帳拼貼
+    const EXTRA_ROW_Y = 32;
+    const EXTRA_ROW_H = 8;
+    const isTallScreen = canvasStore.getVisibleGridRows() >= EXTRA_ROW_Y + EXTRA_ROW_H + 1;
+    const homeArrangement = DEFAULT_THEME_PACK.homeArrangement;
+    const useHomeArrangement =
+      !!homeArrangement && canvasStore.getVisibleGridRows() >= homeArrangement.minVisibleRows;
+    const widgetData = (type: string) => ({ ...getDefaultWidgetData(type), customStyle: card(type) });
+
+    if (useHomeArrangement && homeArrangement) {
+      for (const item of homeArrangement.items) {
+        if (item.type === "fluid-button") {
+          app(item.x ?? 35, item.y ?? 2, item.label ?? "", item.label === "占卜" ? "1" : undefined);
+        } else {
+          canvasStore.addWidget({
+            type: item.type as WidgetType,
+            x: item.x ?? 35,
+            y: item.y ?? 2,
+            width: item.width ?? 10,
+            height: item.height ?? 10,
+            data: widgetData(item.type),
+          });
+        }
+      }
+    } else {
+      canvasStore.addWidget({ type: "clock", x: 35, y: 2, width: 21, height: 7, data: widgetData("clock") });
+      canvasStore.addWidget({ type: "polaroid", x: 35, y: 10, width: 10, height: 10, data: widgetData("polaroid") });
+      app(46, 10, "訊息");
+      app(51, 10, "角色");
+      app(46, 15, "設置");
+      app(51, 15, "使用者");
+      canvasStore.addWidget({ type: "music", x: 35, y: 21, width: 10, height: 10, data: widgetData("music") });
+      app(46, 21, "占卜", "1");
+      app(51, 21, "遊戲");
+      app(46, 26, "音樂");
+      app(51, 26, "空間");
+    }
 
     // ===== 第三屏（右側）：生活 =====
     canvasStore.addWidget({ type: "calendar", x: 57, y: 2, width: 14, height: 16, data: { customStyle: card("calendar") } });
@@ -454,16 +486,22 @@ onMounted(async () => {
 
     // ===== 直式長螢幕補一排 =====
     // 縮放被寬度限制時（多數手機），畫面比 35 格高很多，下方會空一大塊；
-    // 有空間才補，iPhone SE、桌機（約 35 格）維持原樣
-    const EXTRA_ROW_Y = 32;
-    const EXTRA_ROW_H = 8;
-    if (canvasStore.getVisibleGridRows() >= EXTRA_ROW_Y + EXTRA_ROW_H + 1) {
+    // 有空間才補，iPhone SE、桌機（約 35 格）維持原樣。
+    // 中間主頁用手帳拼貼擺法時，最近聊天已經是便條紙，不再另外補
+    if (isTallScreen) {
       canvasStore.addWidget({ type: "relationship-counter", x: 13, y: EXTRA_ROW_Y, width: 21, height: EXTRA_ROW_H, data: { layout: "milestone", customStyle: card("relationship-counter") } });
-      canvasStore.addWidget({ type: "recent-chat", x: 35, y: EXTRA_ROW_Y, width: 21, height: EXTRA_ROW_H, data: { layout: "bubble", customStyle: card("recent-chat") } });
+      if (!useHomeArrangement) {
+        canvasStore.addWidget({ type: "recent-chat", x: 35, y: EXTRA_ROW_Y, width: 21, height: EXTRA_ROW_H, data: widgetData("recent-chat") });
+      }
       canvasStore.addWidget({ type: "char-journal", x: 57, y: EXTRA_ROW_Y, width: 21, height: EXTRA_ROW_H, data: { layout: "journal", customStyle: card("char-journal") } });
     }
   }
 });
+
+// 主題包擺位暫時隱藏的組件（例如 Y2K 把音樂併進 MP3 時鐘）不渲染；換主題包時會恢復
+const visibleWidgets = computed(() =>
+  canvasStore.sortedWidgets.filter((w) => !w.data?.hiddenByTheme),
+);
 
 // ===== 滾動狀態 =====
 const containerRef = ref<HTMLElement | null>(null);
@@ -1029,7 +1067,7 @@ onUnmounted(() => {
         <div class="widgets-container">
           <!-- 渲染所有小組件 -->
           <WidgetWrapper
-            v-for="widget in canvasStore.sortedWidgets"
+            v-for="widget in visibleWidgets"
             :key="widget.id"
             :widget="widget"
             @click.stop="handleWidgetClick(widget)"

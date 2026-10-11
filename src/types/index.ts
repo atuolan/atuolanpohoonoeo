@@ -91,7 +91,15 @@ export type ClockStyle =
   | "progress" // 進度環時鐘
   | "binary" // 二進制時鐘
   | "dotmatrix" // 點陣時鐘
-  | "orbit"; // 軌道時鐘
+  | "orbit" // 軌道時鐘
+  | "scrapbook" // 手帳拼貼（手寫時間 + 撕頁日曆）
+  | "headline" // 大字（日期在上、細體大字時間靠左）
+  // ===== 主題版型（themed/registry）=====
+  | "pastry" // 奶油風：圓形錶盤卡
+  | "mp3" // Y2K：MP3 液晶 + 觸控轉盤
+  | "masthead" // 極簡黑白：雜誌刊頭
+  | "plaque" // 珍珠畫廊：黃銅名牌
+  | "sketch"; // 線描：手繪錶盤
 
 // ===== 組件自定義樣式 =====
 export interface WidgetCustomStyle {

@@ -19,6 +19,7 @@ import LayoutSelector from "./widget-settings/LayoutSelector.vue";
 import ShapeSettings from "./widget-settings/ShapeSettings.vue";
 import WidgetPreview from "./widget-settings/WidgetPreview.vue";
 import { useWidgetSettings } from "./widget-settings/useWidgetSettings";
+import { polaroidLayouts } from "./widget-settings/widgetSettingsOptions";
 
 const props = defineProps<{
   widget: WidgetInstance;
@@ -230,7 +231,7 @@ onMounted(() => {
         >
           <div class="group-label">顯示風格</div>
           <LayoutSelector
-            :layouts="styleLayouts"
+            :layouts="widget.type === 'polaroid' ? polaroidLayouts : styleLayouts"
             :model-value="currentLayout"
             @update:model-value="selectLayout"
           />

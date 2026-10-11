@@ -29,6 +29,13 @@ export const clockStyles: {
   { id: "orbit", name: "軌道", desc: "行星系統", icon: "🌍" },
   { id: "pearl", name: "珍珠", desc: "維梅爾畫廊靜謐", icon: "✨" },
   { id: "lineart", name: "線描", desc: "純白底黑細線速寫", icon: "✏️" },
+  { id: "scrapbook", name: "手帳", desc: "手寫時間 + 撕頁日曆", icon: "📔" },
+  { id: "headline", name: "大字", desc: "日期在上、細體大字", icon: "🔠" },
+  { id: "pastry", name: "甜點櫃", desc: "圓形錶盤卡（奶油風）", icon: "🧁" },
+  { id: "mp3", name: "MP3", desc: "液晶螢幕 + 觸控轉盤（Y2K）", icon: "💿" },
+  { id: "masthead", name: "刊頭", desc: "雜誌刊頭大字（極簡黑白）", icon: "📰" },
+  { id: "plaque", name: "名牌", desc: "黃銅名牌（珍珠畫廊）", icon: "🏛️" },
+  { id: "sketch", name: "速寫", desc: "手繪錶盤（線描）", icon: "✏️" },
 ] as any; // 繞過 TypeScript 檢查，新增 pearl / lineart
 
 // 音樂播放器佈局選項
@@ -36,6 +43,12 @@ export const musicLayouts: LayoutOption[] = [
   { id: "compact", name: "橫條簡約", desc: "節省空間的橫向佈局" },
   { id: "classic", name: "經典卡片", desc: "展示大封面藝術" },
   { id: "vinyl", name: "黑膠唱片", desc: "復古旋轉唱片風格" },
+  { id: "ticket", name: "手帳票根", desc: "撕線票根拼貼風" },
+  { id: "stack", name: "方塊", desc: "正方形格子用的三段式" },
+  { id: "capsule", name: "膠囊", desc: "圓潤播放條（奶油風）" },
+  { id: "editorial", name: "雜誌", desc: "細線與襯線字（極簡黑白）" },
+  { id: "audioguide", name: "語音導覽", desc: "美術館導覽機（珍珠畫廊）" },
+  { id: "sketch", name: "速寫", desc: "手繪波形線（線描）" },
 ];
 
 // 世界書佈局選項
@@ -69,6 +82,28 @@ export const styleLayouts: LayoutOption[] = [
   { id: "pixel", name: "像素", desc: "點陣微復古網格" },
   { id: "pearl", name: "珍珠", desc: "維梅爾畫廊靜謐" },
   { id: "lineart", name: "線描", desc: "純白底黑細線速寫" },
+];
+
+// 拍立得額外多一個手帳拼貼樣式（其他共用皮膚的組件沒有這個版型）
+export const polaroidLayouts: LayoutOption[] = [
+  ...styleLayouts,
+  { id: "scrapbook", name: "拼貼", desc: "紙膠帶 + 手寫標題" },
+  { id: "frame", name: "滿版", desc: "照片填滿圓角卡片" },
+  { id: "round", name: "圓形", desc: "圓形照片（奶油風）" },
+  { id: "window", name: "視窗", desc: "我的相片視窗（Y2K）" },
+  { id: "plain", name: "素面", desc: "灰底方形（極簡黑白）" },
+  { id: "gilded", name: "金框", desc: "金框油畫（珍珠畫廊）" },
+  { id: "sketch", name: "速寫", desc: "手繪相框（線描）" },
+];
+
+// App 圖標（fluid-button）的主題版型；default 代表內建圓角圖標（清掉 customStyle.layout）
+export const appLayouts: LayoutOption[] = [
+  { id: "default", name: "預設", desc: "內建圓角圖標" },
+  { id: "macaron", name: "馬卡龍", desc: "圓形粉彩馬卡龍（奶油風）" },
+  { id: "jelly", name: "果凍", desc: "亮面果凍泡泡（Y2K）" },
+  { id: "index", name: "目錄", desc: "編號文字目錄列（極簡黑白，適合 10×3 長條格）" },
+  { id: "pearl-orb", name: "珍珠", desc: "金線環珍珠（珍珠畫廊）" },
+  { id: "sketch", name: "速寫", desc: "手繪歪圓框（線描）" },
 ];
 
 // 黑膠唱片子風格選項（與 styleLayouts 一致）
@@ -107,6 +142,12 @@ export const characterLayoutMap: Record<string, LayoutOption[]> = {
   "recent-chat": [
     { id: "bubble", name: "氣泡", desc: "對話氣泡預覽" },
     { id: "card", name: "卡片", desc: "頭像 + 訊息卡" },
+    { id: "sticky", name: "便條紙", desc: "手帳拼貼便利貼" },
+    { id: "speech", name: "對話泡泡", desc: "圓潤泡泡（奶油風）" },
+    { id: "msn", name: "MSN", desc: "千禧對話視窗（Y2K）" },
+    { id: "quote", name: "引言", desc: "雜誌引言（極簡黑白）" },
+    { id: "placard", name: "說明牌", desc: "展品說明牌（珍珠畫廊）" },
+    { id: "sketch", name: "速寫", desc: "手繪對話泡泡（線描）" },
   ],
   "char-status": [
     { id: "card", name: "卡片", desc: "完整狀態卡" },

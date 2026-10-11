@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useScrapbookFont } from "@/composables/useOnDemandFont";
+import { themedPolaroidLayouts } from "./themed/registry";
 import { useCanvasStore } from "@/stores/canvas";
 import type { WidgetCustomStyle } from "@/types";
 import { ImagePlus, RotateCcw } from "lucide-vue-next";
@@ -117,13 +119,24 @@ const hasCustomBackground = computed(() => {
 const currentLayout = computed(() => {
   return props.data?.customStyle?.layout || "classic";
 });
+
+useScrapbookFont(computed(() => currentLayout.value === "scrapbook"));
+
+// 主題版型：交給 themed/ 底下的元件渲染，上傳 / 清除 / 標題仍由這裡處理
+const themedPolaroid = computed(() => themedPolaroidLayouts[currentLayout.value] ?? null);
+const userTextColor = computed(
+  () =>
+    props.data?.customStyle?.textColor ||
+    props.data?.customStyle?.foregroundColor ||
+    undefined,
+);
 </script>
 
 <template>
   <div
     class="polaroid-sticky"
-    :class="[currentLayout, { 'has-custom-bg': hasCustomBackground }]"
-    :style="containerStyle"
+    :class="[currentLayout, { 'has-custom-bg': hasCustomBackground, themed: !!themedPolaroid }]"
+    :style="themedPolaroid ? {} : currentLayout === 'frame' ? { ...containerStyle, ...textStyle } : containerStyle"
   >
     <!-- 隱藏的文件輸入 -->
     <input
@@ -134,8 +147,20 @@ const currentLayout = computed(() => {
       @change="handleFileSelect"
     />
 
+    <!-- 主題版型 -->
+    <component
+      v-if="themedPolaroid"
+      :is="themedPolaroid"
+      :image-url="imageUrl"
+      :caption="caption"
+      :color="userTextColor"
+      @pick="triggerFileSelect"
+      @clear="clearImage"
+      @update:caption="caption = $event"
+    />
+
     <!-- 照片區域 -->
-    <div class="photo-area" @click="triggerFileSelect">
+    <div v-else class="photo-area" @click="triggerFileSelect">
       <img v-if="imageUrl" :src="imageUrl" alt="Polaroid" class="photo" />
       <div v-else class="placeholder">
         <ImagePlus :size="32" :stroke-width="1.5" />
@@ -148,6 +173,20 @@ const currentLayout = computed(() => {
       </button>
     </div>
 
+    <!-- 手帳拼貼：紙膠帶 + 拍立得下緣手寫一句話 -->
+    <template v-if="!themedPolaroid && currentLayout === 'scrapbook'">
+      <span class="sb-tape" aria-hidden="true"></span>
+      <div class="caption-area">
+        <input
+          v-model="caption"
+          class="caption-input"
+          placeholder="寫一句話…"
+          maxlength="20"
+          aria-label="拍立得標題"
+          @click.stop
+        />
+      </div>
+    </template>
   </div>
 </template>
 
@@ -720,6 +759,146 @@ const currentLayout = computed(() => {
         color: #1a1a1a;
         border-radius: 4px;
       }
+    }
+  }
+
+  // 主題版型自己畫外框與底色，宿主只提供尺寸
+  &.themed {
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    transform: none;
+  }
+
+  // 滿版：照片直接填滿圓角卡片，沒有相紙白框；佔位字跟著前景色，深淺底都可用
+  &.frame {
+    padding: 0;
+    border-radius: var(--radius-lg, 26px);
+    overflow: hidden;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+
+    .photo-area {
+      background: transparent;
+
+      &:hover .change-btn {
+        opacity: 1;
+      }
+
+      .placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        opacity: 0.72;
+
+        span {
+          font-size: 13px;
+          letter-spacing: 0.08em;
+        }
+      }
+
+      .change-btn {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.45);
+        color: #ffffff;
+        border: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+    }
+  }
+
+  // 手帳拼貼：傾斜的拍立得 + 頂端紙膠帶 + 下緣手寫標題
+  &.scrapbook {
+    position: relative;
+    padding: 9px 9px 0;
+    background: #fffdf8;
+    border-radius: 2px;
+    transform: rotate(-4deg);
+    box-shadow: 0 12px 22px -12px rgba(70, 50, 30, 0.5);
+    font-family: "LXGW WenKai TC", "Huninn", "Noto Sans TC", sans-serif;
+
+    .photo-area {
+      background: #e7ddce;
+
+      &:hover .change-btn {
+        opacity: 1;
+      }
+
+      .placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        color: #8a7b6e;
+
+        span {
+          font-size: 12px;
+        }
+      }
+
+      .change-btn {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: rgba(58, 48, 42, 0.7);
+        color: #fffdf8;
+        border: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+    }
+
+    .caption-area {
+      flex-shrink: 0;
+      height: 38px;
+      display: flex;
+      align-items: center;
+
+      .caption-input {
+        width: 100%;
+        border: none;
+        background: transparent;
+        font-family: inherit;
+        font-size: 14px;
+        color: #3a302a;
+        text-align: center;
+
+        &::placeholder {
+          color: #a89a8c;
+        }
+
+        &:focus {
+          outline: none;
+        }
+      }
+    }
+
+    .sb-tape {
+      position: absolute;
+      top: -10px;
+      left: 50%;
+      width: 46%;
+      height: 22px;
+      background: rgba(226, 168, 158, 0.75);
+      transform: translateX(-50%) rotate(5deg);
+      pointer-events: none;
+      z-index: 2;
     }
   }
 }

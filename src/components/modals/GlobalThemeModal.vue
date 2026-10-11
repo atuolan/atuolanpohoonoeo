@@ -60,6 +60,21 @@ function applyThemePack(pack: ThemePack) {
       return;
     }
   }
+
+  // 主題包附有主頁建議擺位：只動中間主頁的組件位置，詢問後才排
+  if (pack.homeArrangement) {
+    const arrange = window.confirm(
+      `「${pack.name}」有搭配的主頁擺法。\n要把中間主頁的組件排成這個樣子嗎？\n（只移動位置，內容不會清除；取消就維持現在的位置）`,
+    );
+    if (arrange) {
+      const moved = canvasStore.applyHomeArrangement(pack.homeArrangement);
+      applyThemePackStatus.value =
+        moved < 0
+          ? `已套用「${pack.name}」，但螢幕高度不夠放這個擺法，位置維持不變`
+          : `已套用「${pack.name}」並重新排好主頁（${moved} 個組件）`;
+      return;
+    }
+  }
   applyThemePackStatus.value = `已套用「${pack.name}」主題包`;
 }
 
@@ -91,6 +106,8 @@ const iconChoices: ThemePackIconId[] = [
   "forest",
   "sakura",
   "lineart",
+  "scrapbook",
+  "frost",
 ];
 
 // 把 blob: URL / Object URL 轉成 Base64（用於匯出時嵌入背景圖）

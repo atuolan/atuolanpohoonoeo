@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useHeadlineFont, useScrapbookFont } from "@/composables/useOnDemandFont";
+import { themedClockLayouts } from "./themed/registry";
 import { useThemeStore } from "@/stores";
 import type { WidgetCustomStyle } from "@/types";
 import { isCssColorDark } from "@/utils/wallpaperLuminance";
@@ -14,7 +16,14 @@ type ClockStyle =
   | "progress"
   | "binary"
   | "dotmatrix"
-  | "orbit";
+  | "orbit"
+  | "scrapbook"
+  | "headline"
+  | "pastry"
+  | "mp3"
+  | "masthead"
+  | "plaque"
+  | "sketch";
 
 const props = defineProps<{
   data?: {
@@ -66,8 +75,33 @@ const formattedDate = computed(() => {
   return `${month}月${day}日 ${weekdays[now.value.getDay()]}`;
 });
 
+// 手帳拼貼：撕頁日曆的月份 / 日 / 星期
+const scrapbookMonth = computed(
+  () =>
+    ["一月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "十一月", "十二月"][
+      now.value.getMonth()
+    ],
+);
+const scrapbookDay = computed(() => now.value.getDate());
+const scrapbookWeekday = computed(
+  () => ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"][now.value.getDay()],
+);
+
 // 設定
 const clockStyle = computed(() => props.data?.clockStyle || "minimal");
+useScrapbookFont(computed(() => clockStyle.value === "scrapbook"));
+useHeadlineFont(computed(() => clockStyle.value === "headline"));
+
+// 主題版型（奶油風 / Y2K / 極簡黑白 / 珍珠畫廊 / 線描）：交給 themed/ 底下的元件渲染
+const themedClock = computed(() => themedClockLayouts[clockStyle.value] ?? null);
+// 只傳使用者明確設定的文字色，沒設定就讓版型用自己的配色
+const userTextColor = computed(
+  () =>
+    props.data?.clockColor ||
+    props.data?.customStyle?.textColor ||
+    props.data?.customStyle?.foregroundColor ||
+    undefined,
+);
 const showSeconds = computed(() => props.data?.showSeconds ?? true);
 const showDate = computed(() => props.data?.showDate ?? true);
 
@@ -388,15 +422,26 @@ const hasCustomBackground = computed(() => {
     class="clock-widget"
     :class="[
       `style-${clockStyle}`,
+      { 'style-themed': !!themedClock },
       {
         'has-custom-bg': hasCustomBackground,
         'has-custom-color': !!data?.customStyle?.foregroundColor || !!data?.clockColor,
       },
     ]"
-    :style="{ ...containerStyle, ...textStyle }"
+    :style="themedClock ? {} : { ...containerStyle, ...textStyle }"
   >
+    <!-- ===== 主題版型 ===== -->
+    <component
+      v-if="themedClock"
+      :is="themedClock"
+      :now="now"
+      :show-date="showDate"
+      :show-seconds="showSeconds"
+      :color="userTextColor"
+    />
+
     <!-- ===== 極簡時鐘 (Minimal) ===== -->
-    <template v-if="clockStyle === 'minimal'">
+    <template v-else-if="clockStyle === 'minimal'">
       <div class="minimal-clock">
         <div class="time-display" :style="minimalClockColor ? { color: minimalClockColor } : textStyle">
           <span class="hours">{{ hoursStr }}</span>
@@ -979,6 +1024,26 @@ const hasCustomBackground = computed(() => {
       </div>
     </template>
 
+    <!-- ===== 手帳拼貼 (Scrapbook)：手寫大字時間 + 撕頁日曆 ===== -->
+    <template v-else-if="clockStyle === 'scrapbook'">
+      <div class="scrapbook-clock">
+        <div class="sb-time" :style="textStyle">{{ hoursStr }}:{{ minutesStr }}</div>
+        <div v-if="showDate" class="sb-calendar">
+          <div class="sb-cal-month">{{ scrapbookMonth }}</div>
+          <div class="sb-cal-day">{{ scrapbookDay }}</div>
+          <div class="sb-cal-weekday">{{ scrapbookWeekday }}</div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ===== 大字 (Headline)：日期在上、細體大字時間靠左，不要卡片底 ===== -->
+    <template v-else-if="clockStyle === 'headline'">
+      <div class="headline-clock" :style="textStyle">
+        <div v-if="showDate" class="hl-date">{{ formattedDate }}</div>
+        <div class="hl-time">{{ hoursStr }}:{{ minutesStr }}</div>
+      </div>
+    </template>
+
     <!-- ===== 默認：極簡時鐘 ===== -->
     <template v-else>
       <div class="minimal-clock">
@@ -1036,6 +1101,124 @@ const hasCustomBackground = computed(() => {
   // 有設定前景色時跟著文字色走
   &.has-custom-color {
     --clk-fg: currentColor;
+  }
+
+  // 主題版型自己畫外框與底色，宿主只提供尺寸
+  &.style-themed {
+    padding: 0;
+    overflow: visible;
+    align-items: stretch;
+    background: transparent;
+    backdrop-filter: none;
+    border: none;
+    box-shadow: none;
+  }
+
+  // 大字：直接疊在桌布上，不要卡片底
+  &.style-headline {
+    align-items: stretch;
+    padding: 0 4px;
+
+    &:not(.has-custom-bg) {
+      background: transparent;
+      backdrop-filter: none;
+      border: none;
+      box-shadow: none;
+    }
+  }
+
+  // 手帳拼貼：直接寫在紙上，不要卡片底；日曆傾斜時需要溢出空間
+  &.style-scrapbook {
+    padding: 4px 6px 4px 4px;
+    overflow: visible;
+
+    &:not(.has-custom-bg) {
+      background: transparent;
+      backdrop-filter: none;
+      border: none;
+      box-shadow: none;
+    }
+  }
+}
+
+/* ===== 大字 (Headline) ===== */
+.headline-clock {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+
+  .hl-date {
+    font-size: clamp(10px, 13cqh, 15px);
+    letter-spacing: 0.14em;
+    opacity: 0.72;
+    white-space: nowrap;
+  }
+
+  .hl-time {
+    font-family: "Sora", "Noto Sans TC", system-ui, sans-serif;
+    font-weight: 200;
+    font-size: clamp(32px, 64cqh, 92px);
+    line-height: 1.02;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+}
+
+/* ===== 手帳拼貼 (Scrapbook) ===== */
+.scrapbook-clock {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: "LXGW WenKai TC", "Huninn", "Noto Sans TC", sans-serif;
+
+  .sb-time {
+    font-size: clamp(28px, 70cqh, 84px);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .sb-calendar {
+    flex-shrink: 0;
+    width: clamp(60px, 84cqh, 100px);
+    background: #fffdf8;
+    color: #3a302a;
+    border-radius: 8px;
+    overflow: hidden;
+    text-align: center;
+    transform: rotate(3deg);
+    box-shadow: 0 8px 16px -8px rgba(70, 50, 30, 0.4);
+  }
+
+  .sb-cal-month {
+    background: #b5604a;
+    color: #fffdf8;
+    font-size: clamp(10px, 12cqh, 14px);
+    letter-spacing: 0.3em;
+    padding: 4px 0 3px 0.3em;
+  }
+
+  .sb-cal-day {
+    font-size: clamp(22px, 40cqh, 46px);
+    font-weight: 700;
+    line-height: 1.1;
+    padding-top: 2px;
+  }
+
+  .sb-cal-weekday {
+    font-size: clamp(9px, 11cqh, 13px);
+    color: #6e6055;
+    letter-spacing: 0.2em;
+    padding: 0 0 6px 0.2em;
   }
 }
 

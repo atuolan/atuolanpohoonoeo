@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
+import { Sticker } from "lucide-vue-next";
 import { useCanvasStore } from "@/stores/canvas";
+import { useStickerStore } from "@/stores/sticker";
 import { useWidgetCharacter } from "@/composables/useWidgetCharacter";
+import { useScrapbookFont } from "@/composables/useOnDemandFont";
+import { themedChatLayouts } from "./themed/registry";
 import type { WidgetCustomStyle } from "@/types";
 
 const props = defineProps<{
   widgetId: string;
   data?: {
     characterId?: string;
-    layout?: string; // "bubble" | "card"
+    layout?: string; // "bubble" | "card" | "sticky"
     customStyle?: WidgetCustomStyle;
   };
 }>();
@@ -23,14 +27,64 @@ const dataRef = computed(() => props.data);
 const { character, displayName, avatar, preferredChat, chatId } =
   useWidgetCharacter(dataRef, { fallbackToRecent: true });
 
+const stickerStore = useStickerStore();
+
 const layout = computed(() => props.data?.layout || "bubble");
 const isEditMode = computed(() => canvasStore.isEditMode);
+useScrapbookFont(computed(() => layout.value === "sticky"));
 
-const preview = computed(() => {
+// 主題版型：交給 themed/ 底下的元件渲染，點擊導航仍由這裡處理
+const themedChat = computed(() => themedChatLayouts[layout.value] ?? null);
+const userTextColor = computed(
+  () =>
+    props.data?.customStyle?.textColor ||
+    props.data?.customStyle?.foregroundColor ||
+    undefined,
+);
+
+const rawPreview = computed(() => {
   const chat = preferredChat.value;
   if (!chat) return "";
   return chat.lastMessagePreview || "尚無訊息";
 });
+
+// 預覽存的是訊息原文，[sticker:名稱] / [img:...] 標籤要拆出來，不能原樣顯示
+const STICKER_TAG = /\[sticker:([^\]]+)\]/g;
+
+const stickerName = computed(() => {
+  const match = /\[sticker:([^\]]+)\]/.exec(rawPreview.value);
+  if (!match) return "";
+  // 格式可能是 [sticker:名稱|網址]
+  return match[1].split("|")[0].trim();
+});
+
+const stickerUrl = computed(() => {
+  const match = /\[sticker:([^\]]+)\]/.exec(rawPreview.value);
+  if (!match) return "";
+  const [name, providedUrl] = match[1].split("|");
+  if (providedUrl?.trim()) return providedUrl.trim();
+  const cleanName = name.trim();
+  for (const category of stickerStore.allCategories) {
+    const sticker = category.stickers.find((s) => s.name === cleanName && s.url);
+    if (sticker) return sticker.url;
+  }
+  return "";
+});
+
+// 貼圖載入失敗時退回文字標籤
+const stickerFailed = ref(false);
+watch(stickerUrl, () => {
+  stickerFailed.value = false;
+});
+
+const previewText = computed(() =>
+  rawPreview.value
+    .replace(STICKER_TAG, "")
+    // 預覽被截斷在標籤中間時，殘留的半截標籤也要拿掉
+    .replace(/\[sticker:[^\]]*$/, "")
+    .replace(/\[img:[^\]]*\]?/g, "[圖片]")
+    .trim(),
+);
 
 const unreadCount = computed(() => preferredChat.value?.unreadCount || 0);
 
@@ -91,17 +145,57 @@ function handleClick() {
 <template>
   <div
     class="recent-chat-widget"
-    :class="`layout-${layout}`"
-    :style="containerStyle"
+    :class="[`layout-${layout}`, { themed: !!themedChat }]"
+    :style="themedChat ? {} : containerStyle"
     @click="handleClick"
   >
     <div v-if="showCharacterBg" class="bg-image" :style="bgImageStyle"></div>
 
-    <template v-if="!character">
+    <!-- 主題版型 -->
+    <component
+      v-if="themedChat"
+      :is="themedChat"
+      :has-character="!!character"
+      :is-edit-mode="isEditMode"
+      :display-name="displayName"
+      :avatar="avatar || ''"
+      :time-text="timeText"
+      :unread-count="unreadCount"
+      :preview-text="previewText"
+      :sticker-name="stickerName"
+      :sticker-url="stickerFailed ? '' : stickerUrl"
+      :color="userTextColor"
+    />
+
+    <template v-else-if="!character">
       <div class="empty-hint">
         <span class="emoji">💬</span>
         <span class="hint-text" v-if="!isEditMode">還沒有聊天，去找角色聊聊吧</span>
         <span class="hint-text" v-else>點擊齒輪圖示綁定角色</span>
+      </div>
+    </template>
+
+    <!-- 手帳拼貼：便條紙 + 紙膠帶，貼圖變成印章 -->
+    <template v-else-if="layout === 'sticky'">
+      <span class="sticky-tape" aria-hidden="true"></span>
+      <div class="sticky-header">
+        <span class="name">{{ displayName }}</span>
+        <span v-if="unreadCount > 0" class="unread-dot" :aria-label="`${unreadCount} 則未讀`"></span>
+        <span class="time" v-if="timeText">{{ timeText }}</span>
+      </div>
+      <p class="sticky-text" :class="{ 'has-sticker': !!stickerName }">
+        {{ previewText || (stickerName ? "" : "點開聊聊吧～") }}
+      </p>
+      <img
+        v-if="stickerName && stickerUrl && !stickerFailed"
+        :src="stickerUrl"
+        :alt="stickerName"
+        class="sticky-sticker"
+        @error="stickerFailed = true"
+      />
+      <div v-else-if="stickerName" class="sticky-stamp">
+        <Sticker :size="18" :stroke-width="1.8" />
+        <span>{{ stickerName }}</span>
       </div>
     </template>
 
@@ -118,7 +212,18 @@ function handleClick() {
         </div>
       </div>
       <div class="bubble">
-        <p class="preview">{{ preview || "點開聊聊吧～" }}</p>
+        <p v-if="previewText || !stickerName" class="preview">{{ previewText || "點開聊聊吧～" }}</p>
+        <span v-if="stickerName" class="sticker-chip">
+          <img
+            v-if="stickerUrl && !stickerFailed"
+            :src="stickerUrl"
+            alt=""
+            class="sticker-chip-img"
+            @error="stickerFailed = true"
+          />
+          <Sticker v-else :size="13" :stroke-width="1.8" />
+          <span>{{ stickerName }}</span>
+        </span>
       </div>
     </template>
   </div>
@@ -260,7 +365,153 @@ function handleClick() {
   padding: 8px 10px;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.sticker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 9px 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-size: 11px;
+  opacity: 0.9;
+  flex-shrink: 0;
+
+  span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.sticker-chip-img {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
+/* 主題版型自己畫外框與底色，宿主只提供尺寸與點擊 */
+.recent-chat-widget.themed {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+/* ===== 手帳拼貼：便條紙 ===== */
+.recent-chat-widget.layout-sticky {
+  gap: 6px;
+  padding: 16px 14px 12px;
+  border-radius: 2px;
+  background: #f4e2a0;
+  color: #3a302a;
+  transform: rotate(3deg);
+  box-shadow: 0 12px 20px -12px rgba(70, 50, 30, 0.5);
+  // 紙膠帶要超出便條紙邊緣
+  overflow: visible;
+  font-family: "LXGW WenKai TC", "Huninn", "Noto Sans TC", sans-serif;
+}
+
+.recent-chat-widget.layout-sticky .sticky-tape {
+  position: absolute;
+  top: -8px;
+  left: -14px;
+  width: 64px;
+  height: 22px;
+  background: rgba(168, 190, 148, 0.8);
+  transform: rotate(-30deg);
+  pointer-events: none;
+}
+
+.sticky-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+
+  .name {
+    font-size: 17px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .unread-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #b5604a;
+    flex-shrink: 0;
+    align-self: center;
+  }
+
+  .time {
+    margin-left: auto;
+    font-size: 11px;
+    opacity: 0.72;
+    white-space: nowrap;
+  }
+}
+
+.sticky-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+
+  // 右下角留給印章 / 貼圖
+  &.has-sticker {
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+  }
+}
+
+.recent-chat-widget.layout-sticky .sticky-sticker {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  transform: rotate(-8deg);
+  filter: drop-shadow(0 2px 3px rgba(70, 50, 30, 0.3));
+}
+
+.recent-chat-widget.layout-sticky .sticky-stamp {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 54px;
+  height: 54px;
+  box-sizing: border-box;
+  padding: 0 4px;
+  border-radius: 50%;
+  border: 1.5px dashed #b5604a;
+  color: #b5604a;
+  transform: rotate(-12deg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  span {
+    max-width: 100%;
+    font-size: 9px;
+    line-height: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 .preview {

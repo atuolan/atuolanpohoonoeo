@@ -224,10 +224,56 @@ withDefaults(defineProps<Props>(), {
       />
     </g>
 
+    <!-- 手帳拼貼：傾斜便條紙 + 紙膠帶 -->
+    <g v-if="icon === 'scrapbook'">
+      <!-- 便條紙 -->
+      <rect
+        x="8"
+        y="9"
+        width="17"
+        height="17"
+        rx="1.5"
+        transform="rotate(6 16.5 17.5)"
+        stroke="currentColor"
+        stroke-width="1.6"
+        fill="currentColor"
+        fill-opacity="0.18"
+      />
+      <!-- 手寫字 -->
+      <path d="M12 16 H20 M12 19.5 H18" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" transform="rotate(6 16.5 17.5)" />
+      <!-- 紙膠帶 -->
+      <rect
+        x="11"
+        y="5"
+        width="10"
+        height="5"
+        transform="rotate(-12 16 7.5)"
+        fill="currentColor"
+        opacity="0.55"
+      />
+    </g>
+
+    <!-- 毛玻璃：兩片錯疊的半透明玻璃 -->
+    <g v-if="icon === 'frost'">
+      <rect x="6" y="6" width="14" height="14" rx="4" fill="currentColor" opacity="0.35" />
+      <rect
+        x="12"
+        y="12"
+        width="14"
+        height="14"
+        rx="4"
+        stroke="currentColor"
+        stroke-width="1.6"
+        fill="currentColor"
+        fill-opacity="0.18"
+      />
+      <path d="M15.5 16.5 L19 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.7" />
+    </g>
+
     <!-- 兜底：圓圈 -->
     <circle
       v-if="
-        !['cream', 'y2k', 'cyber', 'journal', 'mono', 'pearl', 'custom', 'sunset', 'ocean', 'forest', 'sakura', 'lineart'].includes(
+        !['cream', 'y2k', 'cyber', 'journal', 'mono', 'pearl', 'custom', 'sunset', 'ocean', 'forest', 'sakura', 'lineart', 'scrapbook', 'frost'].includes(
           icon,
         )
       "

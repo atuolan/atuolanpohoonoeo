@@ -21,6 +21,14 @@
  * 未列出的型別回退到 GENERIC_HINT（根 / 標題 / 內容區的通用結構）。
  */
 import type { WidgetType } from "@/types";
+import {
+  APP_ICON_VARIANTS,
+  EXTRA_CLOCK_VARIANTS,
+  EXTRA_MUSIC_VARIANTS,
+  EXTRA_POLAROID_VARIANTS,
+  RECENT_CHAT_VARIANTS,
+  THEMED_LAYOUT_TIP,
+} from "./themedLayoutHints";
 
 /** 佈局變體：同一組件可切換的外觀風格，各自內部細節可能不同 */
 export interface WidgetLayoutVariant {
@@ -113,7 +121,7 @@ export const WIDGET_STYLE_HINTS: Partial<Record<WidgetType, WidgetStyleHint>> = 
   clock: {
     label: "時鐘",
     summary:
-      "時鐘組件，支援多種樣式（minimal / digital / analog / flip / neon / progress / binary / dotmatrix / orbit），不同樣式內部結構完全不同。",
+      "時鐘組件，支援多種樣式（minimal / digital / analog / flip / neon / progress / binary / dotmatrix / orbit / scrapbook / headline，以及主題版型 pastry / mp3 / masthead / plaque / sketch），不同樣式內部結構完全不同。",
     classes: [
       { selector: ":scope", usage: "時鐘根容器（.clock-widget），根據樣式套 .style-XXX" },
     ],
@@ -236,11 +244,13 @@ export const WIDGET_STYLE_HINTS: Partial<Record<WidgetType, WidgetStyleHint>> = 
           { selector: ".orbit-date", usage: "底部日期" },
         ],
       },
+      ...EXTRA_CLOCK_VARIANTS,
     ],
     tips: [
       "時鐘樣式（minimal/neon...）請用「設定時鐘樣式」工具切換，不要用 CSS 硬改。",
       "想改字色 / 字體 / 發光，針對當前樣式對應的容器（如 .neon-digit）寫規則。",
       "SVG 類樣式（progress / orbit）改顏色要針對 stroke / fill，不是 color。",
+      THEMED_LAYOUT_TIP,
     ],
   },
 
@@ -296,7 +306,7 @@ export const WIDGET_STYLE_HINTS: Partial<Record<WidgetType, WidgetStyleHint>> = 
 
   polaroid: {
     label: "拍立得",
-    summary: "拍立得照片貼紙，含照片區與底部留白；有 7 種佈局風格（共用 7 皮膚）。",
+    summary: "拍立得照片貼紙，含照片區與底部留白；有共用 7 皮膚，另有 scrapbook / frame 與主題版型 round / window / plain / gilded / sketch。",
     classes: [
       { selector: ":scope", usage: "拍立得根容器（.polaroid-sticky，白邊 / 陰影）" },
       { selector: ".photo-area", usage: "照片區域" },
@@ -304,10 +314,11 @@ export const WIDGET_STYLE_HINTS: Partial<Record<WidgetType, WidgetStyleHint>> = 
       { selector: ".placeholder", usage: "未選照片時的佔位區" },
       { selector: ".change-btn", usage: "重新選擇按鈕" },
     ],
-    layouts: skin7Layouts(),
+    layouts: [...skin7Layouts(), ...EXTRA_POLAROID_VARIANTS],
     tips: [
       "想做舊照氛圍，對 .photo 加 filter: sepia() 或降飽和。",
       "佈局風格由 customStyle.layout 控制，請用「設定組件佈局」切換。",
+      THEMED_LAYOUT_TIP,
     ],
   },
 
@@ -459,7 +470,7 @@ export const WIDGET_STYLE_HINTS: Partial<Record<WidgetType, WidgetStyleHint>> = 
   music: {
     label: "音樂播放器",
     summary:
-      "音樂播放器，獨立佈局體系：compact 橫條 / classic 經典卡片 / vinyl 黑膠唱片；vinyl 另有多種子風格底色。",
+      "音樂播放器，獨立佈局體系：compact 橫條 / classic 經典卡片 / vinyl 黑膠唱片 / ticket 票根 / stack 方塊，以及主題版型 capsule / editorial / audioguide / sketch；vinyl 另有多種子風格底色。",
     classes: [
       { selector: ":scope", usage: "音樂根容器（.music-player-container）" },
       { selector: ".widget-error-toast / .error-text", usage: "播放錯誤提示" },
@@ -510,10 +521,39 @@ export const WIDGET_STYLE_HINTS: Partial<Record<WidgetType, WidgetStyleHint>> = 
           { selector: ".tap-hint", usage: "「點擊進入音樂 App」提示" },
         ],
       },
+      ...EXTRA_MUSIC_VARIANTS,
     ],
     tips: [
       "佈局由 customStyle.layout 控制（compact/classic/vinyl），請用「設定組件佈局」切換。",
       "vinyl 的子風格底色由額外 class 套在 .vinyl-layout 上；想改唱片質感針對 .vinyl-record / .vinyl-grooves。",
+      THEMED_LAYOUT_TIP,
+    ],
+  },
+  "recent-chat": {
+    label: "最近聊天",
+    summary: "顯示最近一則聊天的預覽（頭像、名字、時間、訊息、貼圖），版型寫在 data.layout。",
+    classes: [
+      { selector: ":scope", usage: "最近聊天根容器（.recent-chat-widget）" },
+      { selector: ".header / .avatar / .name / .time", usage: "內建版型的標頭 / 頭像 / 名字 / 時間" },
+      { selector: ".bubble / .preview / .sticker-chip", usage: "內建版型的氣泡 / 訊息 / 貼圖標籤" },
+    ],
+    layouts: RECENT_CHAT_VARIANTS,
+    tips: [
+      "版型請用「設定組件佈局」切換（bubble / card / sticky / speech / msn / quote / placard / sketch）。",
+      THEMED_LAYOUT_TIP,
+    ],
+  },
+  "fluid-button": {
+    label: "App 圖標",
+    summary: "桌面上的 App 按鈕（圖標 + 名稱），可切換主題版型（macaron / jelly / index / pearl-orb / sketch）。",
+    classes: [
+      { selector: ":scope", usage: "App 圖標根容器（.fluid-button）" },
+    ],
+    layouts: APP_ICON_VARIANTS,
+    tips: [
+      "版型請用「設定組件佈局」切換；default 代表內建圓角圖標。",
+      "index 目錄版型適合 10×3 的長條格；放在正方形格子會自動改成圖示在上、名稱在下。",
+      THEMED_LAYOUT_TIP,
     ],
   },
 

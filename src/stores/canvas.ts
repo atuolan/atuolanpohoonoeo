@@ -3,6 +3,7 @@ import type { WidgetCustomStyle, WidgetData, WidgetInstance } from "@/types";
 import {
   STANDARD_LAYOUT_WIDGET_TYPES,
   type ThemePack,
+  type ThemePackHomeArrangement,
 } from "@/styles/theme-packs";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
@@ -546,6 +547,8 @@ export const useCanvasStore = defineStore("canvas", () => {
   // 只覆寫風格相關欄位，保留各組件的內容資料與使用者自訂顏色。
   function applyThemePackLayouts(pack: ThemePack) {
     let changed = false;
+    // 沒有指定顏色的 App 依出現順序循環 palette
+    let appIconIndex = 0;
 
     for (let i = 0; i < widgets.value.length; i++) {
       const widget = widgets.value[i];
@@ -564,16 +567,56 @@ export const useCanvasStore = defineStore("canvas", () => {
         // 時鐘讀 data.clockStyle，需另外寫入
         dataPatch.clockStyle = pack.widgets.clockStyle;
       } else if (widget.type === "music") {
-        // 音樂播放器：主題包指定 vinylStyle 時，切到黑膠佈局並套用子風格
-        if (pack.widgets.vinylStyle) {
+        // 音樂播放器：明確指定版型優先；否則主題包指定 vinylStyle 時切到黑膠佈局並套用子風格
+        if (pack.widgets.musicLayout) {
+          patch.layout = pack.widgets.musicLayout;
+        } else if (pack.widgets.vinylStyle) {
           patch.layout = "vinyl";
           patch.vinylStyle = pack.widgets.vinylStyle;
         }
+      } else if (widget.type === "recent-chat") {
+        // 角色組件的版型寫在 data.layout
+        if (pack.widgets.recentChatLayout) {
+          dataPatch.layout = pack.widgets.recentChatLayout;
+        }
+      } else if (widget.type === "fluid-button" && !pack.widgets.appIcons) {
+        // 主題包沒指定 App 樣式：至少清掉前一個主題包留下的主題版型
+        patch.layout = undefined;
+      } else if (widget.type === "fluid-button" && pack.widgets.appIcons) {
+        const icons = pack.widgets.appIcons;
+        patch.layout = icons.layout;
+        const label = widget.data?.label as string | undefined;
+        const background =
+          (label && icons.colorsByLabel?.[label]) ||
+          icons.palette[appIconIndex % icons.palette.length];
+        appIconIndex++;
+        patch.backgroundColor = background;
+        patch.backgroundGradient = undefined;
+        patch.foregroundColor = icons.foregroundColor;
+        patch.textColor = icons.textColor;
+        patch.borderColor = icons.borderColor;
+        patch.borderWidth = icons.borderWidth;
       } else if (widget.type === "world-book") {
         // 世界書：主題包指定 worldBookLayout 時覆寫佈局
         if (pack.widgets.worldBookLayout) {
           patch.layout = pack.widgets.worldBookLayout;
         }
+      }
+
+      // 拍立得可以有專屬版型（其他共用皮膚的組件沒有）
+      if (widget.type === "polaroid" && pack.widgets.polaroidLayout) {
+        patch.layout = pack.widgets.polaroidLayout;
+      }
+
+      // 主題包指定的配色覆寫（讓版型在這套配色下成立）
+      const styleOverride = pack.widgets.styleOverrides?.[widget.type];
+      if (styleOverride) {
+        Object.assign(patch, styleOverride);
+      }
+
+      // 前一個主題包因擺位隱藏的組件，換主題包時一律恢復顯示
+      if (widget.data?.hiddenByTheme) {
+        dataPatch.hiddenByTheme = undefined;
       }
 
       const nextData: WidgetData = {
@@ -592,6 +635,47 @@ export const useCanvasStore = defineStore("canvas", () => {
     if (changed) {
       saveData();
     }
+  }
+
+  // 主題包建議擺位：每個項目只移動「同一屏」上對得到的組件（目標 x 決定是哪一屏，
+  // 沒給 x 的項目視為中間主頁），不會把別屏的組件拉過來；內容都不動。
+  // 回傳實際移動的組件數；螢幕太矮放不下時回傳 -1
+  function applyHomeArrangement(arrangement: ThemePackHomeArrangement): number {
+    if (getVisibleGridRows() < arrangement.minVisibleRows) return -1;
+
+    // 畫布 90 格，每屏約 22 格：左屏 x13–34、中屏 x35–56、右屏 x57–78
+    const screenOf = (x: number) => (x < 35 ? "left" : x < 57 ? "middle" : "right");
+    const used = new Set<string>();
+    let moved = 0;
+
+    for (const item of arrangement.items) {
+      const screen = item.x === undefined ? "middle" : screenOf(item.x);
+      const target = widgets.value.find(
+        (w) =>
+          !used.has(w.id) &&
+          w.type === item.type &&
+          (item.label === undefined || w.data?.label === item.label) &&
+          screenOf(w.x) === screen,
+      );
+      if (!target) continue;
+      used.add(target.id);
+      if (item.hidden) {
+        target.data = { ...target.data, hiddenByTheme: true };
+      } else {
+        if (item.x !== undefined) target.x = item.x;
+        if (item.y !== undefined) target.y = item.y;
+        if (item.width !== undefined) target.width = item.width;
+        if (item.height !== undefined) target.height = item.height;
+        target.data = { ...target.data, ...item.dataPatch, hiddenByTheme: undefined };
+      }
+      moved++;
+    }
+
+    if (moved > 0) {
+      widgets.value = [...widgets.value];
+      saveData();
+    }
+    return moved;
   }
 
   // 主題包還原首頁佈局：完全取代當前 widgets
@@ -664,6 +748,7 @@ export const useCanvasStore = defineStore("canvas", () => {
     resizeSelectedWidgets,
     getSelectedWidgets,
     applyThemePackLayouts,
+    applyHomeArrangement,
     replaceLayout,
   };
 });

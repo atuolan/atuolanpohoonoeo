@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { getDefaultWidgetStyle } from "@/components/widgets/defaultWidgetStyle";
+import {
+  getDefaultWidgetData,
+  getDefaultWidgetStyle,
+} from "@/components/widgets/defaultWidgetStyle";
 import { useCanvasStore } from "@/stores";
 import type { WidgetType } from "@/types";
 import {
@@ -612,7 +615,8 @@ const notAddedFilteredWidgets = computed(() =>
 
 // 新增的組件沒有自帶樣式時套用統一的預設外觀（與預設佈局、重置一致）
 function withDefaultStyle(def: WidgetDef): Record<string, any> {
-  const data = { ...(def.data || {}) };
+  // 預設主題包指定的時鐘樣式 / 角色組件版型；組件定義自帶的設定優先
+  const data = { ...getDefaultWidgetData(def.type), ...(def.data || {}) };
   if (!data.customStyle) {
     const style = getDefaultWidgetStyle(def.type, data.label);
     if (style) data.customStyle = style;
