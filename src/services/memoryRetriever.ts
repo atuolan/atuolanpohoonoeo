@@ -23,6 +23,7 @@ import { buildIntentQuery } from '@/utils/intentQueryBuilder'
 import { buildVectorDocument } from '@/utils/vectorDocumentBuilder'
 import { extractSummaryKeywords } from '@/utils/summaryKeywordExtractor'
 import type { ChatMessage } from '@/types/chat'
+import { isActiveSummary, summaryTimelineKey } from '@/utils/summarySelection'
 
 // ─── 介面定義 ───────────────────────────────────────────────
 
@@ -580,8 +581,8 @@ export class MemoryRetrieverService {
 
     // 只排除最近 N 筆總結的 ID（日記不參與向量化，無需排除）
     const allEntries = summaries
-      .map((s) => ({ id: s.id, createdAt: s.createdAt }))
-      .sort((a, b) => b.createdAt - a.createdAt)
+      .filter(isActiveSummary)
+      .sort((a, b) => summaryTimelineKey(b) - summaryTimelineKey(a))
 
     const recentIds = new Set(allEntries.slice(0, count).map((e) => e.id))
 
@@ -609,7 +610,9 @@ export class MemoryRetrieverService {
     try {
       if (sourceType === 'summary') {
         const summary = await db.get(DB_STORES.SUMMARIES as 'summaries', sourceId)
-        return summary?.content ?? null
+        // 已合併進元總結的不再當作獨立記憶，避免和元總結重複
+        if (!summary || !isActiveSummary(summary)) return null
+        return summary.content ?? null
       } else if (sourceType === 'diary') {
         const diary = await db.get(DB_STORES.DIARIES as 'diaries', sourceId)
         return diary?.content ?? null

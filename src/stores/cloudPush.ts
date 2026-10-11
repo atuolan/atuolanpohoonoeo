@@ -21,6 +21,7 @@ import type {
 } from "@/types/cloudPush";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
+import { selectSummariesForPrompt } from "@/utils/summarySelection";
 
 const SETTINGS_KEY = "cloud-push-settings";
 
@@ -159,12 +160,11 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
               }));
             }
 
-            // 取最近 5 條總結
-            const charSummaries = allSummaries
-              .filter((s: any) => s.characterId === c.id)
-              .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))
-              .slice(0, 5)
-              .map((s: any) => s.content as string);
+            // 取最近 5 條總結（加上釘選的，排除已合併的）
+            const charSummaries = selectSummariesForPrompt(
+              allSummaries.filter((s: any) => s.characterId === c.id),
+              5,
+            ).map((s: any) => s.content as string);
 
             return {
               id: c.id,

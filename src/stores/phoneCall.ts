@@ -18,6 +18,7 @@ import { PLURK_BLOCK_STRIP_PATTERN } from "@/utils/plurkFormat";
 import { defineStore } from "pinia";
 import { useChatVariablesStore } from "./chatVariables";
 import { computed, ref } from "vue";
+import { selectSummariesForPrompt } from "@/utils/summarySelection";
 
 export interface CallMessage {
   id: string;
@@ -39,6 +40,7 @@ interface Summary {
   id: string;
   content: string;
   createdAt: number;
+  coveredUntil?: number;
   isImportant?: boolean;
 }
 
@@ -1303,10 +1305,10 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
   async function loadSummariesAndEvents(info: ActiveCallInfo) {
     try {
       const allSummaries = await db.getAll<any>(DB_STORES.SUMMARIES);
-      summaries.value = allSummaries
-        .filter((s: any) => s.chatId === info.chatId || s.characterId === info.characterId)
-        .map((s: any) => ({ id: s.id, content: s.content, createdAt: s.createdAt, isImportant: s.isImportant }))
-        .sort((a: any, b: any) => b.createdAt - a.createdAt).slice(0, 5);
+      summaries.value = selectSummariesForPrompt(
+        allSummaries.filter((s: any) => s.chatId === info.chatId || s.characterId === info.characterId),
+        5,
+      ).map((s: any) => ({ id: s.id, content: s.content, createdAt: s.createdAt, coveredUntil: s.coveredUntil, isImportant: s.isImportant }));
 
       const allEvents = await db.getAll<any>(DB_STORES.IMPORTANT_EVENTS);
       importantEvents.value = allEvents

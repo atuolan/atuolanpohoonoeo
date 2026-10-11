@@ -1,6 +1,6 @@
 <template>
   <div class="modal-overlay" @click="$emit('close')">
-    <div class="modal-content" @click.stop>
+    <div class="modal-content" @click.stop="closeMenus">
       <!-- 頭部 -->
       <div class="modal-header">
         <h3>
@@ -33,8 +33,8 @@
             />
           </svg>
           總結內容
-          <span v-if="summaries.length > 0" class="badge">{{
-            summaries.length
+          <span v-if="activeSummaries.length > 0" class="badge">{{
+            activeSummaries.length
           }}</span>
         </button>
         <button
@@ -85,12 +85,6 @@
       <div class="modal-body">
         <!-- 總結內容 Tab -->
         <div v-show="activeTab === 'history'" class="tab-content history-tab">
-          <!-- AI 生成總結中的提示 -->
-          <div v-if="isGeneratingSummary" class="generating-summary">
-            <div class="loading-spinner"></div>
-            <span>AI 正在生成總結...</span>
-          </div>
-
           <input
             ref="importFileInput"
             type="file"
@@ -98,6 +92,17 @@
             style="display: none"
             @change="handleImportFile"
           />
+
+          <!-- AI 生成總結中的提示 -->
+          <div v-if="isGeneratingSummary" class="generating-summary">
+            <div class="loading-spinner"></div>
+            <span>AI 正在生成總結...</span>
+          </div>
+
+          <!-- 讀取狀態：AI 現在記得哪些總結 -->
+          <div v-if="activeSummaries.length > 0" class="read-status">
+            {{ readStatusText }}
+          </div>
 
           <div
             v-if="summaries.length === 0 && !isGeneratingSummary"
@@ -113,143 +118,180 @@
           </div>
 
           <div v-else-if="summaries.length > 0" class="summaries-list">
-            <div
-              v-for="(summary, index) in sortedSummaries"
-              :key="summary.id"
-              class="summary-card"
-              :class="{
-                important: summary.isImportant,
-                selected: selectedSummaryIds.includes(summary.id),
-              }"
-            >
-              <div class="summary-header">
-                <label class="summary-checkbox" @click.stop>
-                  <input
-                    type="checkbox"
-                    :checked="selectedSummaryIds.includes(summary.id)"
-                    @change="toggleSummarySelection(summary.id)"
-                  />
-                </label>
-                <span class="summary-number"
-                  >#{{ sortedSummaries.length - index }}</span
-                >
-                <span class="summary-date">{{
-                  formatDate(summary.createdAt)
-                }}</span>
-                <span class="summary-count"
-                  >{{ summary.messageCount || 0 }} 條對話</span
-                >
-                <span v-if="summary.isManual" class="summary-tag manual"
-                  >手動</span
-                >
-                <span v-if="summary.isMeta" class="summary-tag meta"
-                  >元總結</span
-                >
-                <div class="summary-actions-inline">
-                  <button
-                    class="icon-btn"
-                    :class="{ active: summary.isImportant }"
-                    :title="summary.isImportant ? '取消重要' : '標記重要'"
-                    @click="toggleImportant(summary.id)"
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      :fill="summary.isImportant ? 'currentColor' : 'none'"
-                      :stroke="summary.isImportant ? 'none' : 'currentColor'"
-                      stroke-width="2"
-                    >
-                      <path
-                        d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
-                      />
-                    </svg>
-                  </button>
-                  <button
-                    class="icon-btn"
-                    title="關鍵詞"
-                    @click="openKeywordsPopup(summary)"
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                    >
-                      <path d="M7 7h10M7 12h4m1 8l-4-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-3l-4 4z" />
-                    </svg>
-                  </button>
-                  <button
-                    class="icon-btn"
-                    title="編輯"
-                    @click="startEditSummary(summary.id, summary.content)"
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                    >
-                      <path
-                        d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"
-                      />
-                      <path
-                        d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
-                      />
-                    </svg>
-                  </button>
-                  <button
-                    class="icon-btn delete"
-                    title="刪除"
-                    @click="deleteSummary(summary.id)"
-                  >
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path
-                        d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
-                      />
-                    </svg>
-                  </button>
-                </div>
+            <template v-for="(summary, index) in sortedSummaries" :key="summary.id">
+              <!-- 讀取分界：以下較舊的總結 AI 目前不會讀到 -->
+              <div v-if="index === readCutoffIndex" class="read-divider">
+                <span>{{ readDividerText }}</span>
               </div>
-              <!-- 編輯模式 -->
               <div
-                v-if="editingSummaryId === summary.id"
-                class="edit-content-wrapper"
+                class="summary-card"
+                :class="{
+                  pinned: summary.isImportant,
+                  selected: selectedSummaryIds.includes(summary.id),
+                  unread: !savedReadIds.has(summary.id),
+                }"
               >
-                <textarea
-                  v-model="editingSummaryContent"
-                  class="edit-textarea"
-                  rows="5"
-                ></textarea>
-                <div class="edit-actions">
-                  <button class="btn-edit-cancel" @click="cancelEditSummary">
-                    取消
-                  </button>
-                  <button
-                    class="btn-edit-save"
-                    @click="saveEditSummary(summary.id)"
+                <div class="summary-header">
+                  <label class="summary-checkbox" @click.stop>
+                    <input
+                      type="checkbox"
+                      :checked="selectedSummaryIds.includes(summary.id)"
+                      @change="toggleSummarySelection(summary.id)"
+                    />
+                  </label>
+                  <span class="summary-number"
+                    >#{{ sortedSummaries.length - index }}</span
                   >
-                    保存
+                  <div class="summary-meta">
+                    <span
+                      class="summary-range"
+                      :title="`建立於 ${formatFullDate(summary.createdAt)}`"
+                      >{{ formatSummaryRange(summary) }}</span
+                    >
+                    <span v-if="summaryScopeText(summary)" class="summary-scope">{{
+                      summaryScopeText(summary)
+                    }}</span>
+                    <span
+                      v-for="tag in summaryTags(summary)"
+                      :key="tag.label"
+                      class="summary-tag"
+                      :class="tag.kind"
+                      >{{ tag.label }}</span
+                    >
+                  </div>
+                  <div class="summary-actions-inline">
+                    <button
+                      class="icon-btn"
+                      :class="{ active: summary.isImportant }"
+                      :title="summary.isImportant ? '取消釘選' : '釘選：不論讀取幾條，AI 都會記得這條'"
+                      @click="toggleImportant(summary.id)"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        :fill="summary.isImportant ? 'currentColor' : 'none'"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M12 17v5" />
+                        <path
+                          d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      class="icon-btn"
+                      title="編輯"
+                      @click="startEditSummary(summary.id, summary.content)"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <path
+                          d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"
+                        />
+                        <path
+                          d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
+                        />
+                      </svg>
+                    </button>
+                    <div class="menu-anchor">
+                      <button
+                        class="icon-btn"
+                        :class="{ open: openCardMenuId === summary.id }"
+                        title="更多"
+                        @click.stop="toggleCardMenu(summary.id)"
+                      >
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                          <circle cx="5" cy="12" r="2" />
+                          <circle cx="12" cy="12" r="2" />
+                          <circle cx="19" cy="12" r="2" />
+                        </svg>
+                      </button>
+                      <div
+                        v-if="openCardMenuId === summary.id"
+                        class="popup-menu"
+                        @click.stop
+                      >
+                        <button @click="closeMenus(); openKeywordsPopup(summary)">
+                          檢索關鍵詞{{ summary.keywords?.length ? `（${summary.keywords.length}）` : '' }}
+                        </button>
+                        <button
+                          @click="closeMenus(); toggleVectorDocPreview(summary.id, summary.content, summary.keywords)"
+                        >
+                          {{ vectorDocPreviews.has(summary.id) ? '收起向量文件' : '向量文件預覽' }}
+                        </button>
+                        <button class="danger" @click="closeMenus(); deleteSummary(summary.id)">
+                          刪除
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <!-- 編輯模式 -->
+                <div
+                  v-if="editingSummaryId === summary.id"
+                  class="edit-content-wrapper"
+                >
+                  <textarea
+                    v-model="editingSummaryContent"
+                    class="edit-textarea"
+                    rows="5"
+                  ></textarea>
+                  <div class="edit-actions">
+                    <button class="btn-edit-cancel" @click="cancelEditSummary">
+                      取消
+                    </button>
+                    <button
+                      class="btn-edit-save"
+                      @click="saveEditSummary(summary.id)"
+                    >
+                      保存
+                    </button>
+                  </div>
+                </div>
+                <!-- 顯示模式：長內容預設收合 -->
+                <template v-else>
+                  <div
+                    class="summary-content"
+                    :class="{ collapsed: isLongContent(summary.content) && !expandedContentIds.has(summary.id) }"
+                  >{{ summary.content }}</div>
+                  <button
+                    v-if="isLongContent(summary.content)"
+                    class="text-toggle"
+                    @click="toggleContentExpanded(summary.id)"
+                  >
+                    {{ expandedContentIds.has(summary.id) ? '收起' : '展開全文' }}
                   </button>
+                </template>
+                <!-- 元總結：被合併的原總結（不再送給 AI） -->
+                <template v-if="summary.isMeta && mergedSourcesOf(summary.id).length > 0">
+                  <button class="text-toggle" @click="toggleMergedSources(summary.id)">
+                    {{ expandedMetaIds.has(summary.id) ? '▼' : '▶' }}
+                    合併自 {{ mergedSourcesOf(summary.id).length }} 條原總結
+                  </button>
+                  <div v-if="expandedMetaIds.has(summary.id)" class="merged-sources">
+                    <p class="merged-hint">這些原總結已收起，AI 不會再讀到。刪除這條元總結就會恢復它們。</p>
+                    <div
+                      v-for="source in mergedSourcesOf(summary.id)"
+                      :key="source.id"
+                      class="merged-source"
+                    >
+                      <span class="merged-source-date">{{ formatSummaryRange(source) }}</span>
+                      {{ source.content }}
+                    </div>
+                  </div>
+                </template>
+                <!-- 向量文件預覽（從「更多」選單開啟） -->
+                <div v-if="vectorDocPreviews.has(summary.id)" class="vector-doc-preview">
+                  {{ vectorDocPreviews.get(summary.id) }}
                 </div>
               </div>
-              <!-- 顯示模式 -->
-              <div v-else class="summary-content">{{ summary.content }}</div>
-              <!-- 關鍵詞標籤預覽 -->
-              <div v-if="summary.keywords && summary.keywords.length > 0" class="keywords-preview">
-                <span
-                  v-for="kw in summary.keywords.slice(0, 6)"
-                  :key="kw"
-                  class="keyword-tag-mini"
-                >{{ kw }}</span>
-                <span v-if="summary.keywords.length > 6" class="keyword-more">+{{ summary.keywords.length - 6 }}</span>
-              </div>
-              <!-- 向量文件預覽 -->
-              <button class="vector-doc-toggle" @click="toggleVectorDocPreview(summary.id, summary.content, summary.keywords)">
-                {{ vectorDocPreviews.has(summary.id) ? '▼ 收起向量文件' : '▶ 向量文件預覽' }}
-              </button>
-              <div v-if="vectorDocPreviews.has(summary.id)" class="vector-doc-preview">
-                {{ vectorDocPreviews.get(summary.id) }}
-              </div>
-            </div>
+            </template>
           </div>
         </div>
 
@@ -650,26 +692,21 @@
               <div class="info-grid">
                 <div class="info-item">
                   <span class="info-label">總結數量</span>
-                  <span class="info-value">{{ summaries.length }} 條</span>
+                  <span class="info-value">{{ activeSummaries.length }} 條</span>
                 </div>
                 <div class="info-item">
                   <span class="info-label">將讀取</span>
                   <span class="info-value highlight"
-                    >{{
-                      localSettings.summaryReadMode === "all"
-                        ? summaries.length
-                        : Math.min(
-                            localSettings.summaryReadCount,
-                            summaries.length,
-                          )
-                    }}
-                    條</span
+                    >{{ readPreviewCount }} 條</span
                   >
                 </div>
                 <div class="info-item">
                   <span class="info-label">預估 tokens</span>
                   <span class="info-value">{{ estimatedTokens }} tokens</span>
                 </div>
+              </div>
+              <div v-if="pinnedCount > 0" class="count-hint">
+                含 {{ pinnedCount }} 條釘選總結，不論讀取幾條都會送給 AI
               </div>
             </div>
           </div>
@@ -1278,94 +1315,79 @@
         </div>
       </div>
 
-      <!-- 底部按鈕 - 總結內容 Tab -->
+      <!-- 底部按鈕 - 總結內容 Tab：依是否有勾選切換 -->
       <div v-if="activeTab === 'history'" class="modal-footer summary-footer">
-        <button class="btn-cancel" @click="$emit('close')">關閉</button>
-        <button
-          class="action-btn select"
-          :class="{ active: isSelectAll }"
-          @click="toggleSelectAll"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-            <path v-if="isSelectAll" d="M9 12l2 2 4-4" />
-          </svg>
-          全選
-        </button>
-        <button
-          class="action-btn manual"
-          :disabled="isGeneratingSummary"
-          @click="triggerManualSummary"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          手動總結
-        </button>
-        <button
-          class="action-btn meta"
-          :disabled="selectedSummaryIds.length === 0"
-          @click="generateMetaSummary"
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path
-              d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"
-            />
-          </svg>
-          元總結
-        </button>
-        <button
-          class="action-btn delete-selected"
-          :disabled="selectedSummaryIds.length === 0"
-          @click="deleteSelected"
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path
-              d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
-            />
-          </svg>
-          刪除選取{{ selectedSummaryIds.length > 0 ? ` (${selectedSummaryIds.length})` : '' }}
-        </button>
-        <button class="action-btn import" @click="triggerImport">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path
-              d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"
-            />
-          </svg>
-          導入
-        </button>
-        <button
-          class="action-btn export"
-          :disabled="summaries.length === 0"
-          @click="exportAllSummaries"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path
-              d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"
-            />
-          </svg>
-          導出全部
-        </button>
+        <template v-if="selectedSummaryIds.length === 0">
+          <p v-if="manualPlanText" class="footer-hint">{{ manualPlanText }}</p>
+          <div class="footer-row">
+            <button
+              class="action-btn primary grow"
+              :disabled="isGeneratingSummary || manualPlan?.count === 0"
+              @click="triggerManualSummary"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              手動總結
+            </button>
+            <div class="menu-anchor">
+              <button
+                class="action-btn"
+                :class="{ open: footerMenuOpen }"
+                @click.stop="toggleFooterMenu"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="5" cy="12" r="2" />
+                  <circle cx="12" cy="12" r="2" />
+                  <circle cx="19" cy="12" r="2" />
+                </svg>
+                更多
+              </button>
+              <div v-if="footerMenuOpen" class="popup-menu upward" @click.stop>
+                <button
+                  :disabled="activeSummaries.length === 0"
+                  @click="closeMenus(); toggleSelectAll()"
+                >
+                  選取全部
+                </button>
+                <button @click="closeMenus(); triggerImport()">導入總結</button>
+                <button
+                  :disabled="summaries.length === 0"
+                  @click="closeMenus(); exportAllSummaries()"
+                >
+                  導出全部
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
+        <template v-else>
+          <p class="footer-hint">
+            已選 {{ selectedSummaryIds.length }} 條{{
+              selectedSummaryIds.length === 1 ? '，再選一條就可以合併成元總結' : ''
+            }}
+          </p>
+          <div class="footer-row">
+            <button class="action-btn" @click="toggleSelectAll">
+              {{ isSelectAll ? '取消全選' : '全選' }}
+            </button>
+            <button
+              class="action-btn primary grow"
+              :disabled="selectedSummaryIds.length < 2 || isGeneratingSummary"
+              title="合併成一條元總結，原總結會收起不再送給 AI"
+              @click="generateMetaSummary"
+            >
+              合併成元總結
+            </button>
+            <button class="action-btn danger" @click="deleteSelected">刪除</button>
+            <button class="action-btn" @click="clearSelection">取消</button>
+          </div>
+        </template>
       </div>
 
       <!-- 底部按鈕 - 日記 Tab -->
@@ -1499,6 +1521,12 @@ import {
     createDefaultImportantEventsLog,
     createImportantEvent,
 } from "@/types/importantEvents";
+import {
+    isActiveSummary,
+    resolveSummaryReadCount,
+    selectSummariesForPrompt,
+    summaryTimelineKey,
+} from "@/utils/summarySelection";
 import { computed, onMounted, ref, watch } from "vue";
 
 interface ConversationSummary {
@@ -1509,7 +1537,20 @@ interface ConversationSummary {
   isImportant?: boolean;
   isManual?: boolean;
   isMeta?: boolean;
+  isImported?: boolean;
+  mergedInto?: string;
   keywords?: string[];
+  coveredFrom?: number;
+  coveredUntil?: number;
+  sourceCount?: number;
+}
+
+interface ManualSummaryPlan {
+  count: number;
+  from?: number;
+  until?: number;
+  /** 尚未總結的訊息數；0 代表全部總結過，按下會重新總結最近的 */
+  unsummarizedCount: number;
 }
 
 interface BatchMessage {
@@ -1531,6 +1572,11 @@ const props = defineProps<{
   initialSettings?: SummarySettings;
   /** 單批總結函數（由 composable 提供） */
   summarizeBatchFn?: (messages: BatchMessage[], charName: string, userName: string, signal?: AbortSignal) => Promise<{ success: boolean; error?: string }>;
+  /** 預覽手動總結會讀哪一段（由 composable 提供） */
+  previewManualSummaryFn?: (settings: {
+    actualMessageCount: number;
+    actualMessageMode: "message" | "turn";
+  }) => Promise<ManualSummaryPlan>;
 }>();
 
 const emit = defineEmits<{
@@ -1539,6 +1585,7 @@ const emit = defineEmits<{
   "toggle-important": [id: string];
   "delete-summary": [id: string];
   "edit-summary": [id: string, content: string];
+  "update-keywords": [id: string, keywords: string[]];
   "view-diary": [diary: DiaryData];
   "toggle-diary-favorite": [id: string];
   "delete-diary": [id: string];
@@ -1599,20 +1646,11 @@ function cancelEditSummary() {
   editingSummaryContent.value = "";
 }
 
-async function saveEditSummary(id: string) {
-  if (!editingSummaryContent.value.trim()) return;
-  try {
-    // 從 IndexedDB 讀取現有總結
-    const existing = await db.get<ConversationSummary>(DB_STORES.SUMMARIES, id);
-    if (existing) {
-      existing.content = editingSummaryContent.value.trim();
-      await db.put(DB_STORES.SUMMARIES, JSON.parse(JSON.stringify(existing)));
-      // 通知父組件刷新數據
-      emit("edit-summary", id, editingSummaryContent.value.trim());
-    }
-  } catch (e) {
-    console.error("保存總結失敗:", e);
-  }
+function saveEditSummary(id: string) {
+  const content = editingSummaryContent.value.trim();
+  if (!content) return;
+  // 由父組件寫入 IDB、更新關鍵詞與向量並排程同步
+  emit("edit-summary", id, content);
   cancelEditSummary();
 }
 
@@ -1657,38 +1695,25 @@ function addKeyword() {
   newKeywordInput.value = '';
 }
 
-async function saveKeywords() {
+function saveKeywords() {
   const id = keywordsSummaryId.value;
   if (!id) return;
-  try {
-    const existing = await db.get<ConversationSummary>(DB_STORES.SUMMARIES, id);
-    if (existing) {
-      existing.keywords = [...keywordsEditing.value];
-      await db.put(DB_STORES.SUMMARIES, JSON.parse(JSON.stringify(existing)));
-    }
-    // 同步更新 props 中的資料（透過父組件的 ref）
-    const summary = summaries.value.find(s => s.id === id);
-    if (summary) {
-      (summary as any).keywords = [...keywordsEditing.value];
-    }
-    console.log(`[AISummaryPanel] 關鍵詞已保存: ${id}，共 ${keywordsEditing.value.length} 個`);
-  } catch (e) {
-    console.error('保存關鍵詞失敗:', e);
-  }
+  // 由父組件寫入 IDB、重建向量並排程同步
+  emit("update-keywords", id, [...keywordsEditing.value]);
   closeKeywordsPopup();
 }
 
 const isSelectAll = computed(
   () =>
-    summaries.value.length > 0 &&
-    selectedSummaryIds.value.length === summaries.value.length,
+    activeSummaries.value.length > 0 &&
+    selectedSummaryIds.value.length === activeSummaries.value.length,
 );
 
 function toggleSelectAll() {
   if (isSelectAll.value) {
     selectedSummaryIds.value = [];
   } else {
-    selectedSummaryIds.value = summaries.value.map((s) => s.id);
+    selectedSummaryIds.value = activeSummaries.value.map((s) => s.id);
   }
 }
 
@@ -1718,14 +1743,21 @@ function triggerManualDiary() {
 }
 
 function generateMetaSummary() {
-  if (selectedSummaryIds.value.length === 0) return;
+  if (selectedSummaryIds.value.length < 2) return;
   emit("generate-meta-summary", [...selectedSummaryIds.value]);
   selectedSummaryIds.value = [];
 }
 
 function deleteSelected() {
   if (selectedSummaryIds.value.length === 0) return;
-  if (!confirm(`確定要刪除選取的 ${selectedSummaryIds.value.length} 條總結嗎？`)) return;
+  const restoreCount = selectedSummaryIds.value.reduce(
+    (n, id) => n + mergedSourcesOf(id).length,
+    0,
+  );
+  const restoreHint = restoreCount > 0
+    ? `\n其中的元總結刪除後，被它合併的 ${restoreCount} 條原總結會恢復。`
+    : "";
+  if (!confirm(`確定要刪除選取的 ${selectedSummaryIds.value.length} 條總結嗎？${restoreHint}`)) return;
   emit("delete-selected", [...selectedSummaryIds.value]);
   selectedSummaryIds.value = [];
 }
@@ -1747,6 +1779,8 @@ function handleImportFile(event: Event) {
         emit("import-summaries", data);
       } else if (data.summaries && Array.isArray(data.summaries)) {
         emit("import-summaries", data.summaries);
+      } else {
+        alert("導入失敗：檔案中找不到總結資料");
       }
     } catch (err) {
       console.error("導入失敗:", err);
@@ -1778,9 +1812,192 @@ function exportAllSummaries() {
 
 // ===== 總結數據 =====
 const summaries = computed(() => props.summaries || []);
+/** 未被合併的總結；已合併的收在各自的元總結底下 */
+const activeSummaries = computed(() => summaries.value.filter(isActiveSummary));
+// 依涵蓋的劇情時間排，新的在上（元總結排在原總結的位置，不會因為剛生成就跑到最上面）
 const sortedSummaries = computed(() =>
-  [...summaries.value].sort((a, b) => b.createdAt - a.createdAt),
+  [...activeSummaries.value].sort(
+    (a, b) => summaryTimelineKey(b) - summaryTimelineKey(a),
+  ),
 );
+
+function mergedSourcesOf(metaId: string) {
+  return summaries.value
+    .filter((s) => s.mergedInto === metaId)
+    .sort((a, b) => summaryTimelineKey(a) - summaryTimelineKey(b));
+}
+
+// ===== AI 讀取狀態（依已保存的設定，而不是設定頁尚未保存的草稿） =====
+const savedReadCount = computed(() =>
+  resolveSummaryReadCount(mergeSummarySettings(props.initialSettings)),
+);
+const savedReadIds = computed(
+  () =>
+    new Set(
+      selectSummariesForPrompt(summaries.value, savedReadCount.value).map((s) => s.id),
+    ),
+);
+/** 列表由新到舊，第 N 張之後就是「最近 N 條」以外的總結 */
+const readCutoffIndex = computed(() =>
+  savedReadCount.value < sortedSummaries.value.length ? savedReadCount.value : -1,
+);
+const olderPinnedCount = computed(() =>
+  readCutoffIndex.value < 0
+    ? 0
+    : sortedSummaries.value
+        .slice(readCutoffIndex.value)
+        .filter((s) => s.isImportant).length,
+);
+const readStatusText = computed(() => {
+  const total = activeSummaries.value.length;
+  if (readCutoffIndex.value < 0) return `AI 每次回覆會讀取全部 ${total} 條總結`;
+  const pinned = olderPinnedCount.value;
+  return `AI 每次回覆會讀取最近 ${savedReadCount.value} 條總結${
+    pinned > 0 ? `，另加 ${pinned} 條較早的釘選` : ""
+  }`;
+});
+const readDividerText = computed(() => {
+  let text = "以下較舊的總結 AI 目前不會讀到";
+  if (olderPinnedCount.value > 0) text += "（釘選的除外）";
+  if (settingsStore.vectorMemoryEnabled) text += "，向量記憶會依話題挑出相關的";
+  return text;
+});
+
+// ===== 卡片顯示 =====
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+function formatDay(ts: number) {
+  const d = new Date(ts);
+  const prefix = d.getFullYear() === new Date().getFullYear() ? "" : `${d.getFullYear()}/`;
+  return `${prefix}${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function formatClock(ts: number) {
+  const d = new Date(ts);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+function formatFullDate(ts: number) {
+  return `${formatDay(ts)} ${formatClock(ts)}`;
+}
+
+/** 這條總結涵蓋的對話時間；舊資料沒有範圍時顯示建立時間 */
+function formatSummaryRange(s: ConversationSummary) {
+  const { coveredFrom: from, coveredUntil: until } = s;
+  if (!from || !until) return formatDate(s.createdAt);
+  if (formatDay(from) === formatDay(until)) {
+    return `${formatDay(from)} ${formatClock(from)}–${formatClock(until)}`;
+  }
+  return `${formatDay(from)} – ${formatDay(until)}`;
+}
+
+function isBatchSummary(s: ConversationSummary) {
+  return s.id.startsWith("summary_batch_");
+}
+
+/** 這條總結讀了多少內容（舊資料的 messageCount 是當時整個聊天的總數，不顯示） */
+function summaryScopeText(s: ConversationSummary) {
+  if (s.isMeta) {
+    const n = mergedSourcesOf(s.id).length;
+    return n > 0 ? `合併 ${n} 條` : "";
+  }
+  if (s.sourceCount) return `${s.sourceCount} 則訊息`;
+  if (isBatchSummary(s) && s.messageCount) return `${s.messageCount} 則訊息`;
+  return "";
+}
+
+function summaryTags(s: ConversationSummary) {
+  const tags: Array<{ label: string; kind: string }> = [];
+  if (s.isImportant) tags.push({ label: "釘選", kind: "pinned" });
+  if (s.isMeta) tags.push({ label: "元總結", kind: "meta" });
+  if (isBatchSummary(s)) tags.push({ label: "批量", kind: "source" });
+  else if (s.isManual) tags.push({ label: "手動", kind: "source" });
+  if (s.isImported) tags.push({ label: "導入", kind: "source" });
+  return tags;
+}
+
+const expandedContentIds = ref<Set<string>>(new Set());
+function isLongContent(content: string) {
+  return content.length > 140 || content.split("\n").length > 4;
+}
+function toggleContentExpanded(id: string) {
+  const next = new Set(expandedContentIds.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  expandedContentIds.value = next;
+}
+
+// ===== 彈出選單 =====
+const openCardMenuId = ref<string | null>(null);
+const footerMenuOpen = ref(false);
+function toggleCardMenu(id: string) {
+  footerMenuOpen.value = false;
+  openCardMenuId.value = openCardMenuId.value === id ? null : id;
+}
+function toggleFooterMenu() {
+  openCardMenuId.value = null;
+  footerMenuOpen.value = !footerMenuOpen.value;
+}
+function closeMenus() {
+  openCardMenuId.value = null;
+  footerMenuOpen.value = false;
+}
+
+function clearSelection() {
+  selectedSummaryIds.value = [];
+}
+
+// ===== 手動總結預覽 =====
+const manualPlan = ref<ManualSummaryPlan | null>(null);
+let manualPlanRequest = 0;
+
+async function refreshManualPlan() {
+  if (!props.previewManualSummaryFn) return;
+  const request = ++manualPlanRequest;
+  try {
+    const plan = await props.previewManualSummaryFn({
+      actualMessageCount: normalizeActualMessageCount(currentSummaryActualMessageCount.value),
+      actualMessageMode: currentSummaryActualMessageMode.value,
+    });
+    if (request === manualPlanRequest) manualPlan.value = plan;
+  } catch (e) {
+    console.warn("[AISummaryPanel] 手動總結預覽失敗:", e);
+  }
+}
+
+const manualPlanText = computed(() => {
+  const plan = manualPlan.value;
+  if (!plan) return "";
+  if (plan.count === 0) return "目前沒有可總結的對話";
+  const range =
+    plan.from && plan.until
+      ? formatSummaryRange({ id: "", content: "", createdAt: 0, messageCount: 0, coveredFrom: plan.from, coveredUntil: plan.until })
+      : "";
+  const where = range ? `（${range}）` : "";
+  if (plan.unsummarizedCount === 0) {
+    return `對話都已總結過，按下會重新總結最近 ${plan.count} 則訊息${where}`;
+  }
+  if (plan.unsummarizedCount > plan.count) {
+    return `將總結最早未總結的 ${plan.count} 則訊息${where}，之後還有 ${plan.unsummarizedCount - plan.count} 則`;
+  }
+  return `將總結尚未總結的 ${plan.count} 則訊息${where}`;
+});
+
+const expandedMetaIds = ref<Set<string>>(new Set());
+function toggleMergedSources(metaId: string) {
+  const next = new Set(expandedMetaIds.value);
+  if (next.has(metaId)) next.delete(metaId);
+  else next.add(metaId);
+  expandedMetaIds.value = next;
+}
+
+// 總結被刪除或合併後，從勾選清單移除已不在列表上的 id
+watch(activeSummaries, (list) => {
+  const ids = new Set(list.map((s) => s.id));
+  if (selectedSummaryIds.value.some((id) => !ids.has(id))) {
+    selectedSummaryIds.value = selectedSummaryIds.value.filter((id) => ids.has(id));
+  }
+});
 
 // ===== 日記數據 =====
 const diaries = computed(() => props.diaries || []);
@@ -1902,13 +2119,18 @@ const currentDiaryActualMessageMode = computed({
   },
 });
 
-const estimatedTokens = computed(() => {
-  const count =
-    localSettings.value.summaryReadMode === "all"
-      ? summaries.value.length
-      : Math.min(localSettings.value.summaryReadCount, summaries.value.length);
-  return count * 150;
-});
+/** 依目前（尚未保存的）讀取設定，實際會送給 AI 的總結數（含釘選、排除已合併） */
+const readPreviewCount = computed(
+  () =>
+    selectSummariesForPrompt(
+      summaries.value,
+      resolveSummaryReadCount(localSettings.value),
+    ).length,
+);
+const pinnedCount = computed(
+  () => activeSummaries.value.filter((s) => s.isImportant).length,
+);
+const estimatedTokens = computed(() => readPreviewCount.value * 150);
 
 // ===== 向量記憶設定 =====
 const vectorTopK = computed({
@@ -2102,7 +2324,11 @@ function toggleImportant(id: string) {
   emit("toggle-important", id);
 }
 function deleteSummary(id: string) {
-  if (confirm("確定要刪除這條總結嗎？")) emit("delete-summary", id);
+  const restoreCount = mergedSourcesOf(id).length;
+  const message = restoreCount > 0
+    ? `確定要刪除這條元總結嗎？\n被它合併的 ${restoreCount} 條原總結會恢復，AI 會重新讀到它們。`
+    : "確定要刪除這條總結嗎？";
+  if (confirm(message)) emit("delete-summary", id);
 }
 
 // ===== 日記操作 =====
@@ -2128,32 +2354,30 @@ function getCategoryName(category?: string) {
   return names[category || "custom"] || "其他";
 }
 
+/** 相差幾個日曆天（昨晚的東西今天早上看是 1，而不是 0） */
+function calendarDaysAgo(timestamp: number) {
+  const startOfDay = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  return Math.round(
+    (startOfDay(new Date()) - startOfDay(new Date(timestamp))) / (1000 * 60 * 60 * 24),
+  );
+}
+
 function formatTime(timestamp: number) {
-  const days = Math.floor((Date.now() - timestamp) / (1000 * 60 * 60 * 24));
+  const days = calendarDaysAgo(timestamp);
   if (days === 0) return "今天";
   if (days === 1) return "昨天";
   if (days < 7) return `${days} 天前`;
-  return new Date(timestamp).toLocaleDateString("zh-TW", {
-    month: "2-digit",
-    day: "2-digit",
-  });
+  return formatDay(timestamp);
 }
 
+// 日期一律用 M/D、時間用 24 小時制，和卡片上的涵蓋範圍格式一致
 function formatDate(timestamp: number) {
-  const date = new Date(timestamp);
-  const days = Math.floor((Date.now() - timestamp) / (1000 * 60 * 60 * 24));
-  if (days === 0)
-    return (
-      "今天 " +
-      date.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })
-    );
-  if (days === 1)
-    return (
-      "昨天 " +
-      date.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })
-    );
+  const days = calendarDaysAgo(timestamp);
+  if (days === 0) return `今天 ${formatClock(timestamp)}`;
+  if (days === 1) return `昨天 ${formatClock(timestamp)}`;
   if (days < 7) return `${days} 天前`;
-  return date.toLocaleDateString("zh-TW", { month: "2-digit", day: "2-digit" });
+  return formatDay(timestamp);
 }
 
 function saveAll() {
@@ -2487,7 +2711,19 @@ watch(
   { deep: true, immediate: true },
 );
 
+// 總結增減、生成結束、讀取設定變動時更新手動總結預覽
+watch(
+  () => [
+    summaries.value.length,
+    isGeneratingSummary.value,
+    currentSummaryActualMessageCount.value,
+    currentSummaryActualMessageMode.value,
+  ],
+  () => refreshManualPlan(),
+);
+
 onMounted(async () => {
+  refreshManualPlan();
   await loadEventsLog();
   backfillKeywords(); // 背景回填，不阻塞
   loadVectorStats();
@@ -2879,7 +3115,36 @@ onMounted(async () => {
   gap: 10px;
 }
 
+// AI 讀取狀態
+.read-status {
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.read-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  font-size: 11px;
+  color: var(--color-text-muted, #9ca3af);
+
+  &::before,
+  &::after {
+    content: "";
+    flex: 1;
+    border-top: 1px dashed var(--color-border, #e5e7eb);
+  }
+
+  span {
+    max-width: 75%;
+    text-align: center;
+  }
+}
+
 .summary-card {
+  position: relative;
   background: var(--color-surface, white);
   border: 1px solid var(--color-border, #e5e7eb);
   border-radius: 12px;
@@ -2889,18 +3154,22 @@ onMounted(async () => {
   &:hover {
     border-color: var(--color-primary, #7dd3a8);
   }
-  &.important {
-    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-    border-color: #fcd34d;
+  // 釘選：左側色條，不換整張卡的底色，主題切換時才不會突兀
+  &.pinned {
+    box-shadow: inset 3px 0 0 var(--color-primary, #7dd3a8);
   }
   &.selected {
-    border-color: #0284c7;
-    background: #f0f9ff;
+    border-color: var(--color-primary, #7dd3a8);
+    background: var(--color-primary-light, var(--color-surface, white));
+  }
+  // AI 目前讀不到的總結稍微淡一點
+  &.unread:not(.selected) .summary-content {
+    color: var(--color-text-secondary, #6b7280);
   }
 
   .summary-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
     margin-bottom: 8px;
     font-size: 12px;
@@ -2909,44 +3178,97 @@ onMounted(async () => {
     .summary-checkbox {
       display: flex;
       align-items: center;
+      height: 20px;
       cursor: pointer;
       input {
         width: 16px;
         height: 16px;
-        accent-color: #0284c7;
+        accent-color: var(--color-primary, #7dd3a8);
         cursor: pointer;
       }
     }
 
     .summary-number {
+      line-height: 20px;
       font-weight: 600;
       color: var(--color-primary, #7dd3a8);
     }
-    .summary-count {
-      margin-left: auto;
+
+    .summary-meta {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px 8px;
+      line-height: 20px;
+    }
+
+    .summary-range {
+      color: var(--color-text, #374151);
+      font-weight: 500;
     }
 
     .summary-tag {
-      padding: 2px 6px;
+      padding: 0 6px;
       border-radius: 4px;
       font-size: 10px;
       font-weight: 600;
+      line-height: 18px;
+      background: var(--color-background, #f3f4f6);
+      color: var(--color-text-secondary, #6b7280);
 
-      &.manual {
-        background: #d1fae5;
-        color: #059669;
-      }
+      &.pinned,
       &.meta {
-        background: #e0e7ff;
-        color: #4f46e5;
+        background: var(--color-primary-light, var(--color-background, #f3f4f6));
+        color: var(--color-primary, #7dd3a8);
       }
+    }
+  }
+
+  .text-toggle {
+    display: block;
+    margin-top: 6px;
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: 12px;
+    color: var(--color-primary, #7dd3a8);
+    cursor: pointer;
+  }
+
+  .merged-sources {
+    margin-top: 6px;
+    padding-left: 10px;
+    border-left: 2px solid var(--color-border, #e5e7eb);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    .merged-hint {
+      margin: 0;
+      font-size: 11px;
+      color: var(--color-text-secondary, #6b7280);
+    }
+
+    .merged-source {
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--color-text-secondary, #6b7280);
+      white-space: pre-wrap;
+    }
+
+    .merged-source-date {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 2px;
     }
   }
 
   .summary-actions-inline {
     display: flex;
     gap: 4px;
-    margin-left: 8px;
+    flex-shrink: 0;
   }
 
   .summary-content {
@@ -2954,6 +3276,13 @@ onMounted(async () => {
     line-height: 1.5;
     color: var(--color-text, #374151);
     white-space: pre-wrap;
+
+    &.collapsed {
+      display: -webkit-box;
+      -webkit-line-clamp: 4;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
   }
 
   .edit-content-wrapper {
@@ -3040,8 +3369,11 @@ onMounted(async () => {
     background: rgba(0, 0, 0, 0.08);
   }
   &.active {
-    background: #fcd34d;
+    background: var(--color-primary, #7dd3a8);
     color: white;
+  }
+  &.open {
+    background: rgba(0, 0, 0, 0.08);
   }
   &.delete:hover {
     background: rgba(239, 68, 68, 0.1);
@@ -3945,36 +4277,48 @@ onMounted(async () => {
   }
 
   &.summary-footer {
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    gap: 6px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
     padding: 10px 12px;
 
-    .btn-cancel {
-      padding: 6px 12px;
+    .footer-hint {
+      margin: 0;
       font-size: 12px;
+      line-height: 1.4;
+      color: var(--color-text-secondary, #6b7280);
+    }
+
+    .footer-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
     .action-btn {
       display: flex;
       align-items: center;
+      justify-content: center;
       gap: 4px;
-      padding: 6px 10px;
-      font-size: 11px;
+      padding: 8px 12px;
+      font-size: 13px;
       font-weight: 500;
-      border-radius: 6px;
+      border-radius: 8px;
       background: var(--color-background, #f3f4f6);
       color: var(--color-text, #374151);
-      border: none;
-      cursor: pointer;
-      transition: all 0.2s;
+      white-space: nowrap;
 
       svg {
         width: 14px;
         height: 14px;
       }
 
-      &:hover:not(:disabled) {
+      &.grow {
+        flex: 1;
+      }
+
+      &:hover:not(:disabled),
+      &.open {
         background: var(--color-border, #e5e7eb);
       }
 
@@ -3983,35 +4327,77 @@ onMounted(async () => {
         cursor: not-allowed;
       }
 
-      &.select.active {
+      &.primary {
         background: var(--color-primary, #7dd3a8);
         color: white;
+
+        &:hover:not(:disabled) {
+          background: var(--color-primary, #7dd3a8);
+          filter: brightness(0.95);
+        }
       }
 
-      &.manual {
-        background: var(--color-primary, #7dd3a8);
-        color: white;
-      }
+      &.danger {
+        background: transparent;
+        color: var(--color-error, #e53e3e);
+        border: 1px solid var(--color-error, #e53e3e);
 
-      &.meta {
-        background: #8b5cf6;
-        color: white;
+        &:hover:not(:disabled) {
+          background: var(--color-error, #e53e3e);
+          color: white;
+        }
       }
+    }
+  }
+}
 
-      &.import {
-        background: #3b82f6;
-        color: white;
-      }
+// 彈出選單（卡片的「更多」、底部的「更多」）
+.menu-anchor {
+  position: relative;
+}
 
-      &.export {
-        background: #f59e0b;
-        color: white;
-      }
+.popup-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 140px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface, white);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px var(--color-shadow, rgba(0, 0, 0, 0.12));
 
-      &.delete-selected {
-        background: #e53e3e;
-        color: white;
-      }
+  &.upward {
+    top: auto;
+    bottom: calc(100% + 4px);
+  }
+
+  button {
+    padding: 8px 10px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    text-align: left;
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--color-text, #374151);
+    white-space: nowrap;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: var(--color-background, #f3f4f6);
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    &.danger {
+      color: var(--color-error, #e53e3e);
     }
   }
 }

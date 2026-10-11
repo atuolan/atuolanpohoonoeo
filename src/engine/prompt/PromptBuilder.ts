@@ -27,6 +27,7 @@ import { ChatGameState } from "@/schemas/gameEconomy";
 import { affinityTemplateService } from "@/services/AffinityTemplateService";
 import { promptTemplateService } from "@/services/PromptTemplateService";
 import type { NearbyPlace } from "@/services/WeatherService";
+import { summaryTimelineKey } from "@/utils/summarySelection";
 import type { BlockState } from "@/types/block";
 import type {
   CharacterWorldSettings,
@@ -193,6 +194,8 @@ export interface PromptBuilderOptions {
     id: string;
     content: string;
     createdAt: number;
+    /** 涵蓋到的最後一則訊息時間，排序用（元總結的建立時間不代表劇情位置） */
+    coveredUntil?: number;
     isImportant?: boolean;
   }>;
   /** 重要事件 */
@@ -2234,8 +2237,8 @@ export class PromptBuilder {
 
         // 2. 時間排序的總結（最近的基礎記憶，放在下面更接近當前對話）
         if (this.options.summaries && this.options.summaries.length > 0) {
-          const summaries = this.options.summaries
-            .sort((a, b) => a.createdAt - b.createdAt)
+          const summaries = [...this.options.summaries]
+            .sort((a, b) => summaryTimelineKey(a) - summaryTimelineKey(b))
             .map((s, i) => `【總結 ${i + 1}】\n${s.content}`)
             .join("\n\n");
           parts.push(

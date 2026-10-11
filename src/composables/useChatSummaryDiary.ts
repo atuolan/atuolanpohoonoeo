@@ -18,6 +18,7 @@ import { deleteVectorEmbedding, markVectorStale } from "@/db/vectorStore";
 import { extractSummaryKeywords } from "@/utils/summaryKeywordExtractor";
 import { sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
 import { resolveStoryTime } from "@/utils/fakeTime";
+import { isActiveSummary, summaryTimelineKey } from "@/utils/summarySelection";
 
 /** 總結/日記要用的時間脈絡，跟著聊天的「感知現實時間」與時間模式走 */
 interface SummaryTimeContext {
@@ -134,8 +135,34 @@ type SummaryItem = {
   isImportant?: boolean;
   isManual?: boolean;
   isMeta?: boolean;
+  /** 從檔案導入（可能來自其他聊天），不影響自動總結進度 */
+  isImported?: boolean;
+  /** 已被合併進哪一條元總結；合併後不再送給 AI，刪除該元總結時恢復 */
+  mergedInto?: string;
   keywords?: string[];
+  /** 這條總結涵蓋的第一則 / 最後一則訊息時間 */
+  coveredFrom?: number;
+  coveredUntil?: number;
+  /** 實際送去總結的訊息數 */
+  sourceCount?: number;
 };
+
+/**
+ * 從現有總結推算自動總結的進度起點。
+ * 只看由本聊天訊息生成的總結：元總結、批量總結（外部 JSONL）、導入的總結
+ * 都不代表本聊天的某段訊息已被總結，不能拿來推進進度。
+ * 舊資料沒有 coveredUntil 時退回 createdAt。
+ */
+export function resolveLastSummaryTime(
+  summaries: Array<Pick<SummaryItem, "id" | "createdAt" | "isMeta" | "isImported" | "coveredUntil">>,
+): number {
+  let last = 0;
+  for (const s of summaries) {
+    if (s.isMeta || s.isImported || s.id.startsWith("summary_batch_")) continue;
+    last = Math.max(last, s.coveredUntil ?? s.createdAt ?? 0);
+  }
+  return last;
+}
 
 type DiaryItem = {
   id: string;
@@ -938,9 +965,76 @@ ${recentMessagesText}
   }
 
   // 手動觸發 AI 生成總結
+  /** 從頭取前 n 輪（一輪＝使用者發言＋之後的 AI 回覆，開頭若是 AI 回覆併入第一輪） */
+  function takeFirstTurns(msgs: Message[], n: number): Message[] {
+    let turns = 0;
+    let prevRole: string | null = null;
+    let i = 0;
+    for (; i < msgs.length; i++) {
+      const startsTurn = msgs[i].role === "user" && prevRole !== "user";
+      if (startsTurn || i === 0) {
+        if (turns === n) break;
+        turns++;
+      }
+      prevRole = msgs[i].role;
+    }
+    return msgs.slice(0, i);
+  }
+
+  /**
+   * 手動總結要讀哪些訊息：
+   * - 有尚未總結的訊息 → 從最早未總結的開始取一段（最多讀取設定的數量），
+   *   不跳過任何一段；剩下的再按一次會接著總結
+   * - 全部都總結過了 → 重新總結最近 N 條
+   */
+  function planManualSummary(validMsgs: Message[], settings: ActualReadSettings) {
+    const since = deps.lastSummaryTime.value;
+    const unsummarized = since
+      ? validMsgs.filter((m) => m.timestamp > since)
+      : validMsgs;
+    if (unsummarized.length === 0) {
+      return {
+        messages: sliceMessagesBySettings(
+          validMsgs,
+          settings.actualMessageCount,
+          settings.actualMessageMode,
+        ),
+        unsummarizedCount: 0,
+      };
+    }
+    const messages =
+      settings.actualMessageMode === "turn"
+        ? takeFirstTurns(unsummarized, settings.actualMessageCount)
+        : unsummarized.slice(0, settings.actualMessageCount);
+    return { messages, unsummarizedCount: unsummarized.length };
+  }
+
+  /** 給面板預覽「按下手動總結會總結哪一段」 */
+  async function previewManualSummary(settings?: ActualReadSettings) {
+    const resolved =
+      settings ?? resolveSummaryActualReadSettings(deps.chatSummarySettings.value);
+    const valid = (await loadAllMessages()).filter(isValidChatMessage);
+    const { messages, unsummarizedCount } = planManualSummary(valid, resolved);
+    return {
+      count: messages.length,
+      from: messages[0]?.timestamp,
+      until: messages[messages.length - 1]?.timestamp,
+      unsummarizedCount,
+    };
+  }
+
   async function handleTriggerManualSummary(settings?: ActualReadSettings) {
-    const result = await generateSummary(settings, { isManual: true });
-    if (!result.success && result.error && result.error !== "已中斷") {
+    const result = await generateSummary(settings, {
+      isManual: true,
+      pickMessages: (valid, resolved) => planManualSummary(valid, resolved).messages,
+    });
+    if (result.success) {
+      // 手動總結過的訊息不必再讓自動總結重複一次
+      deps.lastSummaryTime.value = Math.max(
+        deps.lastSummaryTime.value,
+        result.coveredUntil,
+      );
+    } else if (result.error && result.error !== "已中斷") {
       alert("生成總結失敗: " + result.error);
     }
   }
@@ -955,7 +1049,11 @@ ${recentMessagesText}
    */
   async function generateSummary(
     settings?: ActualReadSettings,
-    options: { isManual?: boolean } = {},
+    options: {
+      isManual?: boolean;
+      /** 自訂要總結的訊息；預設取最近 N 條 */
+      pickMessages?: (validMsgs: Message[], settings: ActualReadSettings) => Message[];
+    } = {},
   ): Promise<SummaryGenerationResult> {
     if (deps.isGeneratingSummary.value) {
       return { success: false, error: "已有總結正在生成中" };
@@ -1005,11 +1103,9 @@ ${recentMessagesText}
       // 從完整歷史過濾 user/ai 消息後用統一算法裁切（與 ChatScreen / 日記一致）
       const allMsgs = await loadAllMessages();
       const validMsgs = allMsgs.filter(isValidChatMessage);
-      const messagesToRead = sliceMessagesBySettings(
-        validMsgs,
-        actualCount,
-        actualMode,
-      );
+      const messagesToRead = options.pickMessages
+        ? options.pickMessages(validMsgs, actualReadSettings)
+        : sliceMessagesBySettings(validMsgs, actualCount, actualMode);
       if (messagesToRead.length === 0) {
         throw new Error("沒有可總結的對話訊息");
       }
@@ -1119,6 +1215,8 @@ ${recentMessagesText}
         aiGenerationStore.updateContent(chatId, summaryContent, "summary");
       }
 
+      const coveredUntil =
+        messagesToRead[messagesToRead.length - 1]?.timestamp || Date.now();
       const newSummary: SummaryItem = {
         id: `summary_${Date.now()}`,
         content: stripOutputTags(summaryContent),
@@ -1128,6 +1226,9 @@ ${recentMessagesText}
         isManual: options.isManual === true,
         isMeta: false,
         keywords: extractSummaryKeywords(stripOutputTags(summaryContent)),
+        coveredFrom: messagesToRead[0]?.timestamp,
+        coveredUntil,
+        sourceCount: messagesToRead.length,
       };
 
       deps.chatSummaries.value.push(newSummary);
@@ -1145,11 +1246,7 @@ ${recentMessagesText}
       }
 
       aiGenerationStore.completeGeneration(chatId, "summary", summaryContent);
-      return {
-        success: true,
-        coveredUntil:
-          messagesToRead[messagesToRead.length - 1]?.timestamp || Date.now(),
-      };
+      return { success: true, coveredUntil };
     } catch (e) {
       console.error("生成總結失敗:", e);
       const errorMsg = e instanceof Error ? e.message : "未知錯誤";
@@ -1188,8 +1285,20 @@ ${recentMessagesText}
   }
 
   // 刪除總結
+  /** 刪除元總結時，把被它合併的原總結恢復成一般總結，避免那段記憶整個消失 */
+  async function restoreMergedSources(deletedIds: string[]) {
+    const deleted = new Set(deletedIds);
+    for (const s of deps.chatSummaries.value) {
+      if (s.mergedInto && deleted.has(s.mergedInto) && !deleted.has(s.id)) {
+        s.mergedInto = undefined;
+        await saveSummary(s);
+      }
+    }
+  }
+
   async function handleDeleteSummary(id: string) {
     await deleteSummaryFromDB(id);
+    await restoreMergedSources([id]);
     deps.chatSummaries.value = deps.chatSummaries.value.filter((s) => s.id !== id);
     // 向量記憶：刪除對應向量
     deleteVectorEmbedding(`vec_${id}`).catch(err => console.error('[向量記憶] 刪除向量失敗:', err))
@@ -1204,6 +1313,7 @@ ${recentMessagesText}
     for (const id of ids) {
       await deleteSummaryFromDB(id);
     }
+    await restoreMergedSources(ids);
     deps.chatSummaries.value = deps.chatSummaries.value.filter(
       (s) => !ids.includes(s.id),
     );
@@ -1211,20 +1321,65 @@ ${recentMessagesText}
     await Promise.all(ids.map(id => deleteVectorEmbedding(`vec_${id}`).catch(err => console.error('[向量記憶] 刪除向量失敗:', err))));
   }
 
+  /** 內容或關鍵詞變動後重建該條總結的向量；失敗時標記 stale 等待手動重建 */
+  function refreshSummaryEmbedding(summary: SummaryItem) {
+    if (!isVectorMemoryEnabled()) {
+      markVectorStale(summary.id).catch(err => console.error('[向量記憶] 標記 stale 失敗:', err))
+      return
+    }
+    const ctx = getChatContext()
+    new MemoryRetrieverService()
+      .generateAndStoreEmbedding(
+        summary.id, 'summary', summary.content, ctx.chatId, ctx.characterId,
+        summary.keywords, [deps.characterName],
+      )
+      .catch(err => {
+        console.error('[向量記憶] 更新總結嵌入失敗:', err)
+        markVectorStale(summary.id).catch(() => {})
+      })
+  }
+
   // 編輯總結
   async function handleEditSummary(id: string, newContent: string) {
     const summary = deps.chatSummaries.value.find((s) => s.id === id);
     if (summary) {
+      // 重新抽取關鍵詞，但保留使用者自己加的（舊關鍵詞中不是由舊內容自動抽出的部分）
+      const oldAuto = new Set(extractSummaryKeywords(summary.content));
+      const userAdded = (summary.keywords ?? []).filter((k) => !oldAuto.has(k));
       summary.content = newContent;
+      summary.keywords = [...new Set([...extractSummaryKeywords(newContent), ...userAdded])];
       await saveSummary(summary);
-      // 向量記憶：標記向量為 stale
-      markVectorStale(id).catch(err => console.error('[向量記憶] 標記 stale 失敗:', err))
+      refreshSummaryEmbedding(summary);
     }
+  }
+
+  // 更新總結關鍵詞
+  async function handleUpdateSummaryKeywords(id: string, keywords: string[]) {
+    const summary = deps.chatSummaries.value.find((s) => s.id === id);
+    if (summary) {
+      summary.keywords = [...keywords];
+      await saveSummary(summary);
+      refreshSummaryEmbedding(summary);
+    }
+  }
+
+  /**
+   * 元總結的涵蓋範圍＝來源總結範圍的聯集。
+   * 結束點一定要有（舊資料退回建立時間），元總結才會排在原總結的位置，而不是被當成最新的一條。
+   */
+  function metaCoverage(sources: SummaryItem[]): Pick<SummaryItem, "coveredFrom" | "coveredUntil"> {
+    const froms = sources.map((s) => s.coveredFrom).filter((t): t is number => !!t);
+    const untils = sources.map(summaryTimelineKey).filter((t) => t > 0);
+    return {
+      coveredFrom: froms.length ? Math.min(...froms) : undefined,
+      coveredUntil: untils.length ? Math.max(...untils) : undefined,
+    };
   }
 
   // 生成元總結
   async function handleGenerateMetaSummary(summaryIds: string[]) {
-    if (deps.isGeneratingSummary.value || summaryIds.length === 0) return;
+    // 合併至少要兩條
+    if (deps.isGeneratingSummary.value || summaryIds.length < 2) return;
 
     const chatId = deps.currentChatId.value;
     if (!chatId) return;
@@ -1243,9 +1398,10 @@ ${recentMessagesText}
     deps.isGeneratingSummary.value = true;
 
     try {
-      const selectedSummaries = deps.chatSummaries.value.filter((s) =>
-        summaryIds.includes(s.id),
-      );
+      // 依劇情時間排好再交給 AI，合併出來的敘事順序才會正確
+      const selectedSummaries = deps.chatSummaries.value
+        .filter((s) => summaryIds.includes(s.id) && isActiveSummary(s))
+        .sort((a, b) => summaryTimelineKey(a) - summaryTimelineKey(b));
       const combinedContent = selectedSummaries
         .map((s) => s.content)
         .join("\n\n---\n\n");
@@ -1315,21 +1471,23 @@ ${recentMessagesText}
         signal: result.controller?.signal,
       });
 
-      for await (const event of streamGenerator) {
-        if (event.type === "token" && event.token) {
-          metaContent += event.token;
-          if (useWindow) {
-            deps.streamingWindow.appendToken(event.token);
-          }
-          if (isStreamingEnabled) {
-            aiGenerationStore.updateContent(chatId, metaContent, "meta-summary");
-          }
-        } else if (event.type === "done" && event.content) {
-          metaContent = event.content;
+      try {
+        metaContent = await collectStreamContent(
+          streamGenerator,
+          result.controller?.signal,
+          (content, token) => {
+            if (useWindow) {
+              deps.streamingWindow.appendToken(token);
+            }
+            if (isStreamingEnabled) {
+              aiGenerationStore.updateContent(chatId, content, "meta-summary");
+            }
+          },
+        );
+      } finally {
+        if (useWindow) {
+          deps.streamingWindow.setComplete();
         }
-      }
-      if (useWindow) {
-        deps.streamingWindow.setComplete();
       }
       if (!isStreamingEnabled) {
         aiGenerationStore.updateContent(chatId, metaContent, "meta-summary");
@@ -1343,14 +1501,21 @@ ${recentMessagesText}
           (sum, s) => sum + s.messageCount,
           0,
         ),
-        isImportant: true,
+        // 不自動釘選：元總結取代原總結在時間軸上的位置，要不要永遠記得由使用者決定
+        isImportant: false,
         isManual: false,
         isMeta: true,
         keywords: extractSummaryKeywords(stripOutputTags(metaContent)),
+        ...metaCoverage(selectedSummaries),
       };
 
       deps.chatSummaries.value.push(metaSummary);
       await saveSummary(metaSummary);
+      // 原總結的內容已在元總結裡，收起來不再送給 AI（刪除元總結時會恢復）
+      for (const s of selectedSummaries) {
+        s.mergedInto = metaSummary.id;
+        await saveSummary(s);
+      }
       console.log("[SummaryDiary] 元總結生成完成:", metaSummary);
 
       // 向量記憶：自動嵌入
@@ -1378,23 +1543,71 @@ ${recentMessagesText}
 
   // 導入總結
   async function handleImportSummaries(summaries: any[]) {
-    const imported = summaries.map((s) => ({
-      id:
-        s.id ||
-        `summary_import_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      content: s.content,
-      createdAt: s.createdAt || Date.now(),
-      messageCount: s.messageCount || 0,
-      isImportant: s.isImportant || false,
-      isManual: s.isManual || false,
-      isMeta: s.isMeta || false,
-      keywords: s.keywords || extractSummaryKeywords(s.content),
-    }));
+    const chatId = deps.currentChatId.value || deps.chatId || "";
+    const existingIds = new Set(deps.chatSummaries.value.map((s) => s.id));
+    const existingContents = new Set(
+      deps.chatSummaries.value.map((s) => s.content.trim()),
+    );
+    const newId = () =>
+      `summary_import_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+
+    const imported: SummaryItem[] = [];
+    /** 檔案裡的 id → 實際存入的 id，用來修正 mergedInto 的指向 */
+    const idMap = new Map<string, string>();
+    let skipped = 0;
+    for (const s of summaries) {
+      const content = typeof s?.content === "string" ? s.content.trim() : "";
+      // 空內容、或本聊天已有相同 id / 相同內容 → 視為重複略過
+      if (!content || existingContents.has(content) || (s.id && existingIds.has(s.id))) {
+        skipped++;
+        continue;
+      }
+      // 同 id 已屬於其他聊天時必須換新 id，否則 put 會把那條總結搬到本聊天
+      let id: string = typeof s.id === "string" && s.id ? s.id : newId();
+      const stored = await db.get<{ chatId?: string }>(DB_STORES.SUMMARIES, id);
+      if (stored && stored.chatId !== chatId) id = newId();
+
+      if (typeof s.id === "string" && s.id) idMap.set(s.id, id);
+      existingIds.add(id);
+      existingContents.add(content);
+      imported.push({
+        id,
+        content,
+        createdAt: s.createdAt || Date.now(),
+        messageCount: s.messageCount || 0,
+        isImportant: s.isImportant || false,
+        isManual: s.isManual || false,
+        isMeta: s.isMeta || false,
+        isImported: true,
+        mergedInto: typeof s.mergedInto === "string" ? s.mergedInto : undefined,
+        keywords: Array.isArray(s.keywords) ? s.keywords : extractSummaryKeywords(content),
+        coveredFrom: s.coveredFrom,
+        coveredUntil: s.coveredUntil,
+        sourceCount: s.sourceCount,
+      });
+    }
+
+    // 指向的元總結換了 id 就跟著換；找不到元總結時解除合併，否則這條會永遠被藏起來
+    for (const summary of imported) {
+      if (!summary.mergedInto) continue;
+      const target = idMap.get(summary.mergedInto) ?? summary.mergedInto;
+      summary.mergedInto =
+        imported.some((s) => s.id === target) ||
+        deps.chatSummaries.value.some((s) => s.id === target && s.isMeta)
+          ? target
+          : undefined;
+    }
+
     deps.chatSummaries.value.push(...imported);
     for (const summary of imported) {
       await saveSummary(summary);
     }
-    console.log("[SummaryDiary] 導入總結:", imported.length, "條");
+    console.log("[SummaryDiary] 導入總結:", imported.length, "條，略過", skipped, "條");
+    alert(
+      skipped > 0
+        ? `已導入 ${imported.length} 條總結，略過 ${skipped} 條重複或空白的總結`
+        : `已導入 ${imported.length} 條總結`,
+    );
 
     // 向量記憶：批量嵌入導入的總結
     if (isVectorMemoryEnabled() && imported.length > 0) {
@@ -1593,11 +1806,13 @@ ${recentMessagesText}
     deleteDiaryFromDB,
     checkAndTriggerSummaryOrDiary,
     handleTriggerManualSummary,
+    previewManualSummary,
     handleSummarySettingsSave,
     handleToggleSummaryImportant,
     handleDeleteSummary,
     handleDeleteSelected,
     handleEditSummary,
+    handleUpdateSummaryKeywords,
     handleGenerateMetaSummary,
     handleImportSummaries,
     handleToggleDiaryFavorite,

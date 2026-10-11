@@ -20,6 +20,7 @@ import {
 } from "./PlurkPostService";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 import { computeChatNow } from "@/utils/fakeTime";
+import { resolveSummaryReadCount, selectSummariesForPrompt } from "@/utils/summarySelection";
 
 export interface ProactiveMessageSettings {
   enabled: boolean;
@@ -1044,6 +1045,7 @@ export class ProactiveMessageService {
         id: string;
         content: string;
         createdAt: number;
+        coveredUntil?: number;
         isImportant?: boolean;
       }> = [];
       try {
@@ -1057,26 +1059,22 @@ export class ProactiveMessageService {
           isImportant?: boolean;
           isManual?: boolean;
           isMeta?: boolean;
+          mergedInto?: string;
+          coveredUntil?: number;
         }>(DB_STORES.SUMMARIES);
 
-        const chatSummaries = allSummaries
-          .filter((s) => s.chatId === chat.id)
-          .map((s) => ({
-            id: s.id,
-            content: s.content,
-            createdAt: s.createdAt,
-            isImportant: s.isImportant,
-          }));
+        const chatSummaries = allSummaries.filter((s) => s.chatId === chat.id);
 
-        if (chatSummaries.length > 0) {
-          const summaryReadCount =
-            summarySettings.summaryReadMode === "all"
-              ? chatSummaries.length
-              : summarySettings.summaryReadCount;
-          summariesToSend = chatSummaries
-            .sort((a, b) => b.createdAt - a.createdAt)
-            .slice(0, summaryReadCount);
-        }
+        summariesToSend = selectSummariesForPrompt(
+          chatSummaries,
+          resolveSummaryReadCount(summarySettings),
+        ).map((s) => ({
+          id: s.id,
+          content: s.content,
+          createdAt: s.createdAt,
+          coveredUntil: s.coveredUntil,
+          isImportant: s.isImportant,
+        }));
         console.log(
           `[ProactiveMessage] Summaries: total=${chatSummaries.length}, sending=${summariesToSend.length}`,
         );

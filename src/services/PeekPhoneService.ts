@@ -40,6 +40,7 @@ import {
   parseGroupC,
   parseGroupD,
 } from "./PeekPhoneYAMLParser";
+import { summaryTimelineKey } from "@/utils/summarySelection";
 
 /** 模塊組類型 */
 export type ModuleGroup = "A" | "B" | "C" | "D";
@@ -146,9 +147,12 @@ export async function extractSummariesAndEvents(
   try {
     // 讀取總結
     const allSummaries = await db.getAll(DB_STORES.SUMMARIES);
-    const summaries = allSummaries.filter(
-      (s: any) => s.chatId === chatId && s.characterId === characterId,
-    );
+    const summaries = allSummaries
+      .filter(
+        (s: any) =>
+          s.chatId === chatId && s.characterId === characterId && !s.mergedInto,
+      )
+      .sort((a: any, b: any) => summaryTimelineKey(a) - summaryTimelineKey(b));
 
     if (summaries.length > 0) {
       lines.push("【對話總結】");

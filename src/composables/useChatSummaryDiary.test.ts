@@ -7,13 +7,14 @@ import {
 } from "@/data/defaultPrompts/summary";
 
 const dbPut = vi.fn();
+const dbGet = vi.fn();
 const notifySystem = vi.fn();
 const notifyChatSummary = vi.fn();
 let streamEvents: StreamingEvent[] = [];
 let lastRequestMessages: Array<{ role: string; content: string }> = [];
 
 vi.mock("@/db/database", () => ({
-  db: { put: (...args: unknown[]) => dbPut(...args), get: vi.fn(), delete: vi.fn() },
+  db: { put: (...args: unknown[]) => dbPut(...args), get: (...args: unknown[]) => dbGet(...args), delete: vi.fn() },
   DB_STORES: { SUMMARIES: "summaries", DIARIES: "diaries" },
 }));
 vi.mock("@/api/OpenAICompatible", () => ({
@@ -31,10 +32,10 @@ vi.mock("@/services/selfHostedSyncState", () => ({
 }));
 vi.mock("@/services/memoryRetriever", () => ({ MemoryRetrieverService: class {} }));
 vi.mock("@/db/vectorStore", () => ({
-  deleteVectorEmbedding: vi.fn(),
-  markVectorStale: vi.fn(),
+  deleteVectorEmbedding: vi.fn(async () => {}),
+  markVectorStale: vi.fn(async () => {}),
 }));
-vi.mock("@/utils/summaryKeywordExtractor", () => ({ extractSummaryKeywords: () => [] }));
+vi.mock("@/utils/summaryKeywordExtractor", () => ({ extractSummaryKeywords: vi.fn(() => []) }));
 vi.mock("@/stores/notification", () => ({
   useNotificationStore: () => ({ notifySystem, notifyChatSummary, notifyDiaryEntry: vi.fn() }),
 }));
@@ -61,7 +62,7 @@ vi.mock("@/stores", () => ({
   }),
 }));
 
-const { useChatSummaryDiary } = await import("./useChatSummaryDiary");
+const { useChatSummaryDiary, resolveLastSummaryTime } = await import("./useChatSummaryDiary");
 
 type Msg = {
   id: string;
@@ -302,5 +303,224 @@ describe("formatMessagesWithDates 時間標記", () => {
       "[2024/07/04 08:00]",
       "用戶: 隔天",
     ]);
+  });
+});
+
+describe("總結進度與涵蓋範圍", () => {
+  it("手動總結會記錄涵蓋範圍並推進進度，之後的自動總結不再重複同一段", async () => {
+    const history = makeTurns(30);
+    const { api, lastSummaryTime, chatSummaries } = setup(history, 60);
+    streamEvents = [{ type: "done", content: "手動" } as StreamingEvent];
+
+    // 還沒有任何總結 → 從最早的訊息開始總結 10 輪
+    await api.handleTriggerManualSummary({ actualMessageCount: 10, actualMessageMode: "turn" });
+
+    const end = history[19].timestamp;
+    expect(chatSummaries.value[0]).toMatchObject({
+      isManual: true,
+      coveredFrom: history[0].timestamp,
+      coveredUntil: end,
+      sourceCount: 20,
+    });
+    expect(lastSummaryTime.value).toBe(end);
+
+    await runAutoTrigger(api);
+    expect(chatSummaries.value).toHaveLength(1);
+  });
+
+  it("重新載入時只用本聊天生成的總結推算進度", () => {
+    expect(
+      resolveLastSummaryTime([
+        { id: "summary_1", createdAt: 500, coveredUntil: 400 },
+        { id: "summary_2", createdAt: 300 }, // 舊資料沒有涵蓋範圍，退回 createdAt
+        { id: "summary_meta_1", createdAt: 900, isMeta: true },
+        { id: "summary_batch_1", createdAt: 950 },
+        { id: "x", createdAt: 990, isImported: true },
+      ]),
+    ).toBe(400);
+    expect(resolveLastSummaryTime([])).toBe(0);
+  });
+});
+
+describe("元總結", () => {
+  it("串流錯誤時不存成空白元總結", async () => {
+    const { api, chatSummaries } = setup(makeTurns(2), 10, {
+      summaries: [
+        { id: "s1", content: "一", createdAt: 1, messageCount: 2 },
+        { id: "s2", content: "二", createdAt: 2, messageCount: 2 },
+      ],
+    });
+    streamEvents = [{ type: "error", error: "500" } as StreamingEvent];
+
+    await api.handleGenerateMetaSummary(["s1", "s2"]);
+
+    expect(chatSummaries.value).toHaveLength(2);
+    expect(dbPut).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledWith(expect.stringContaining("500"));
+  });
+
+  it("涵蓋範圍取來源總結的聯集", async () => {
+    const { api, chatSummaries } = setup(makeTurns(2), 10, {
+      summaries: [
+        { id: "s1", content: "一", createdAt: 1, messageCount: 2, coveredFrom: 100, coveredUntil: 200 },
+        { id: "s2", content: "二", createdAt: 2, messageCount: 2, coveredFrom: 300, coveredUntil: 400 },
+      ],
+    });
+    streamEvents = [{ type: "done", content: "合併" } as StreamingEvent];
+
+    await api.handleGenerateMetaSummary(["s1", "s2"]);
+
+    expect(chatSummaries.value[2]).toMatchObject({ isMeta: true, coveredFrom: 100, coveredUntil: 400 });
+  });
+});
+
+describe("導入總結", () => {
+  it("id 屬於其他聊天時換新 id，不會把原本那條搬過來", async () => {
+    dbGet.mockResolvedValue({ id: "s_other", chatId: "chat-2" });
+    const { api, chatSummaries } = setup([], 10);
+
+    await api.handleImportSummaries([{ id: "s_other", content: "別的聊天", createdAt: 5 }]);
+
+    expect(chatSummaries.value).toHaveLength(1);
+    expect(chatSummaries.value[0].id).not.toBe("s_other");
+    expect(chatSummaries.value[0].isImported).toBe(true);
+    expect(dbPut).toHaveBeenCalledWith(
+      "summaries",
+      expect.objectContaining({ id: chatSummaries.value[0].id, chatId: "chat-1" }),
+    );
+  });
+
+  it("略過重複與空白的總結", async () => {
+    dbGet.mockResolvedValue(undefined);
+    const { api, chatSummaries } = setup([], 10, {
+      summaries: [{ id: "s1", content: "已存在", createdAt: 1, messageCount: 0 }],
+    });
+
+    await api.handleImportSummaries([
+      { id: "s1", content: "同 id" },
+      { id: "s9", content: " 已存在 " },
+      { content: "" },
+      { content: "新的" },
+      { content: "新的" },
+    ]);
+
+    expect(chatSummaries.value.map((s) => s.content)).toEqual(["已存在", "新的"]);
+    expect(alert).toHaveBeenCalledWith("已導入 1 條總結，略過 4 條重複或空白的總結");
+  });
+});
+
+describe("編輯總結", () => {
+  it("重新抽取關鍵詞時保留使用者自己加的關鍵詞", async () => {
+    const { extractSummaryKeywords } = await import("@/utils/summaryKeywordExtractor");
+    vi.mocked(extractSummaryKeywords).mockImplementation((text: string) =>
+      text.includes("海邊") ? ["海邊"] : ["山上"],
+    );
+    const { api, chatSummaries } = setup([], 10, {
+      summaries: [{ id: "s1", content: "去海邊", createdAt: 1, messageCount: 0, keywords: ["海邊", "約會"] }],
+    });
+
+    await api.handleEditSummary("s1", "去山上");
+
+    expect(chatSummaries.value[0].keywords).toEqual(["山上", "約會"]);
+    expect(dbPut).toHaveBeenCalledOnce();
+    vi.mocked(extractSummaryKeywords).mockImplementation(() => []);
+  });
+});
+
+describe("合併與恢復", () => {
+  function setupMerge() {
+    return setup(makeTurns(2), 10, {
+      summaries: [
+        { id: "s1", content: "一", createdAt: 10, messageCount: 2, coveredUntil: 10 },
+        { id: "s2", content: "二", createdAt: 20, messageCount: 2, coveredUntil: 20 },
+        { id: "s3", content: "三", createdAt: 30, messageCount: 2, coveredUntil: 30 },
+      ],
+    });
+  }
+
+  it("少於 2 條不合併", async () => {
+    const { api, chatSummaries } = setupMerge();
+    await api.handleGenerateMetaSummary(["s1"]);
+    expect(chatSummaries.value).toHaveLength(3);
+  });
+
+  it("合併後原總結收起、元總結不自動釘選且排在原位置，送給 AI 的內容依時間排序", async () => {
+    const { api, chatSummaries } = setupMerge();
+    streamEvents = [{ type: "done", content: "合併" } as StreamingEvent];
+
+    await api.handleGenerateMetaSummary(["s2", "s1"]);
+
+    const meta = chatSummaries.value.find((x) => x.isMeta)!;
+    expect(meta).toMatchObject({ isImportant: false, coveredUntil: 20 });
+    expect(chatSummaries.value.find((x) => x.id === "s1")!.mergedInto).toBe(meta.id);
+    expect(chatSummaries.value.find((x) => x.id === "s2")!.mergedInto).toBe(meta.id);
+    expect(chatSummaries.value.find((x) => x.id === "s3")!.mergedInto).toBeUndefined();
+    const sent = lastRequestMessages.map((m) => m.content).join("\n");
+    expect(sent.indexOf("一")).toBeLessThan(sent.indexOf("二"));
+  });
+
+  it("刪除元總結時恢復被合併的原總結", async () => {
+    const { api, chatSummaries } = setupMerge();
+    streamEvents = [{ type: "done", content: "合併" } as StreamingEvent];
+    await api.handleGenerateMetaSummary(["s1", "s2"]);
+    const meta = chatSummaries.value.find((x) => x.isMeta)!;
+
+    await api.handleDeleteSummary(meta.id);
+
+    expect(chatSummaries.value.map((x) => x.id)).toEqual(["s1", "s2", "s3"]);
+    expect(chatSummaries.value.every((x) => !x.mergedInto)).toBe(true);
+  });
+
+  it("導入時找不到指向的元總結就解除合併", async () => {
+    dbGet.mockResolvedValue(undefined);
+    const { api, chatSummaries } = setup([], 10);
+
+    await api.handleImportSummaries([
+      { id: "m1", content: "元", isMeta: true },
+      { id: "x1", content: "被 m1 合併", mergedInto: "m1" },
+      { id: "x2", content: "元總結不在檔案裡", mergedInto: "missing" },
+    ]);
+
+    expect(chatSummaries.value.find((x) => x.id === "x1")!.mergedInto).toBe("m1");
+    expect(chatSummaries.value.find((x) => x.id === "x2")!.mergedInto).toBeUndefined();
+  });
+});
+
+describe("手動總結接續上次", () => {
+  it("從最早未總結的訊息開始取一段，不跳過任何訊息", async () => {
+    const history = makeTurns(30);
+    const { api, lastSummaryTime, chatSummaries } = setup(history, 60);
+    lastSummaryTime.value = history[19].timestamp; // 前 10 輪已總結
+    streamEvents = [{ type: "done", content: "接續" } as StreamingEvent];
+
+    const preview = await api.previewManualSummary({ actualMessageCount: 5, actualMessageMode: "turn" });
+    expect(preview).toMatchObject({
+      count: 10,
+      from: history[20].timestamp,
+      until: history[29].timestamp,
+      unsummarizedCount: 40,
+    });
+
+    await api.handleTriggerManualSummary({ actualMessageCount: 5, actualMessageMode: "turn" });
+
+    expect(chatSummaries.value[0]).toMatchObject({
+      coveredFrom: history[20].timestamp,
+      coveredUntil: history[29].timestamp,
+    });
+    expect(lastSummaryTime.value).toBe(history[29].timestamp);
+  });
+
+  it("全部總結過時改為重新總結最近 N 條", async () => {
+    const history = makeTurns(10);
+    const { api, lastSummaryTime } = setup(history, 60);
+    lastSummaryTime.value = history[history.length - 1].timestamp;
+
+    const preview = await api.previewManualSummary({ actualMessageCount: 4, actualMessageMode: "message" });
+
+    expect(preview).toMatchObject({
+      count: 4,
+      from: history[16].timestamp,
+      unsummarizedCount: 0,
+    });
   });
 });

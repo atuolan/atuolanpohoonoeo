@@ -46,8 +46,17 @@ export interface ConversationSummary {
   isImportant?: boolean;
   isManual?: boolean;
   isMeta?: boolean;
+  /** 從檔案導入（可能來自其他聊天），不影響自動總結進度 */
+  isImported?: boolean;
+  /** 已被合併進哪一條元總結；合併後不再送給 AI，刪除該元總結時恢復 */
+  mergedInto?: string;
   /** 用戶可編輯的關鍵詞列表，用於向量記憶檢索匹配 */
   keywords?: string[];
+  /** 這條總結涵蓋的第一則 / 最後一則訊息時間 */
+  coveredFrom?: number;
+  coveredUntil?: number;
+  /** 實際送去總結的訊息數 */
+  sourceCount?: number;
 }
 
 export interface DiaryEntry {

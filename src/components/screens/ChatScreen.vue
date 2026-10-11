@@ -91,7 +91,11 @@ import { useChatPersistence } from "@/composables/useChatPersistence";
 import { useChatPlusMenuRouter } from "@/composables/useChatPlusMenuRouter";
 import { useChatScreenshot } from "@/composables/useChatScreenshot";
 import { useChatSearch } from "@/composables/useChatSearch";
-import { useChatSummaryDiary } from "@/composables/useChatSummaryDiary";
+import { resolveLastSummaryTime, useChatSummaryDiary } from "@/composables/useChatSummaryDiary";
+import {
+  resolveSummaryReadCount,
+  selectSummariesForPrompt,
+} from "@/utils/summarySelection";
 import { useChatTheater } from "@/composables/useChatTheater";
 import { useHolidayTrigger } from "@/composables/useHolidayTrigger";
 import {
@@ -1326,7 +1330,12 @@ const chatSummaries = ref<
     isImportant?: boolean;
     isManual?: boolean;
     isMeta?: boolean;
+    isImported?: boolean;
+    mergedInto?: string;
     keywords?: string[];
+    coveredFrom?: number;
+    coveredUntil?: number;
+    sourceCount?: number;
   }>
 >([]);
 const chatDiaries = ref<
@@ -2827,11 +2836,13 @@ const {
   deleteDiaryFromDB,
   checkAndTriggerSummaryOrDiary,
   handleTriggerManualSummary,
+  previewManualSummary,
   handleSummarySettingsSave,
   handleToggleSummaryImportant,
   handleDeleteSummary,
   handleDeleteSelected,
   handleEditSummary,
+  handleUpdateSummaryKeywords,
   handleGenerateMetaSummary,
   handleImportSummaries,
   handleToggleDiaryFavorite,
@@ -4044,22 +4055,18 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     await promptManagerStore.loadConfig();
 
     // 準備總結數據（根據設定決定讀取數量）
-    const summaryReadCount =
-      chatSummarySettings.value.summaryReadMode === "all"
-        ? chatSummaries.value.length
-        : chatSummarySettings.value.summaryReadCount;
-    const summariesToSend =
-      chatSummaries.value.length > 0
-        ? chatSummaries.value
-            .sort((a, b) => b.createdAt - a.createdAt) // 最新的在前
-            .slice(0, summaryReadCount)
-            .map((s) => ({
-              id: s.id,
-              content: s.content,
-              createdAt: s.createdAt,
-              isImportant: s.isImportant,
-            }))
-        : [];
+    // 已合併的不送、釘選的一定送、其餘依時間軸取最新 N 條
+    const summaryReadCount = resolveSummaryReadCount(chatSummarySettings.value);
+    const summariesToSend = selectSummariesForPrompt(
+      chatSummaries.value,
+      summaryReadCount,
+    ).map((s) => ({
+      id: s.id,
+      content: s.content,
+      createdAt: s.createdAt,
+      coveredUntil: s.coveredUntil,
+      isImportant: s.isImportant,
+    }));
     console.log(
       `[ChatScreen] 📋 總結讀取診斷: summaryReadMode=${chatSummarySettings.value.summaryReadMode}, ` +
       `summaryReadCount設定=${chatSummarySettings.value.summaryReadCount}, ` +
@@ -8023,7 +8030,12 @@ async function loadSummariesAndDiaries() {
       isImportant?: boolean;
       isManual?: boolean;
       isMeta?: boolean;
+      isImported?: boolean;
+      mergedInto?: string;
       keywords?: string[];
+      coveredFrom?: number;
+      coveredUntil?: number;
+      sourceCount?: number;
     }>(DB_STORES.SUMMARIES);
 
     chatSummaries.value = allSummaries
@@ -8043,7 +8055,12 @@ async function loadSummariesAndDiaries() {
         isImportant: s.isImportant,
         isManual: s.isManual,
         isMeta: s.isMeta,
+        isImported: s.isImported,
+        mergedInto: s.mergedInto,
         keywords: s.keywords,
+        coveredFrom: s.coveredFrom,
+        coveredUntil: s.coveredUntil,
+        sourceCount: s.sourceCount,
       }));
 
     // 載入日記 — 同時按 chatId 和 characterId 過濾
@@ -8079,12 +8096,7 @@ async function loadSummariesAndDiaries() {
       }));
 
     // 初始化上次總結/日記時間（用於觸發檢查）
-    if (chatSummaries.value.length > 0) {
-      const latestSummary = chatSummaries.value.reduce((a, b) =>
-        a.createdAt > b.createdAt ? a : b,
-      );
-      lastSummaryTime.value = latestSummary.createdAt;
-    }
+    lastSummaryTime.value = resolveLastSummaryTime(chatSummaries.value);
 
     if (chatDiaries.value.length > 0) {
       const latestDiary = chatDiaries.value.reduce((a, b) =>
@@ -9912,6 +9924,7 @@ useChatCleanup({
         @toggle-important="handleToggleSummaryImportant"
         @delete-summary="handleDeleteSummary"
         @edit-summary="handleEditSummary"
+        @update-keywords="handleUpdateSummaryKeywords"
         @trigger-manual-summary="handleTriggerManualSummary"
         @generate-meta-summary="handleGenerateMetaSummary"
         @import-summaries="handleImportSummaries"
@@ -9923,6 +9936,7 @@ useChatCleanup({
         @delete-selected="handleDeleteSelected"
         @refresh-summaries="loadSummariesAndDiaries"
         :summarize-batch-fn="summarizeSingleBatch"
+        :preview-manual-summary-fn="previewManualSummary"
       />
 
       <!-- 日記查看模態框 -->

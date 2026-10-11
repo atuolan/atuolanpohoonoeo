@@ -6,6 +6,7 @@
 
 import { getDatabase, DB_STORES } from '@/db/database'
 import type { RetrievedMemory } from '@/services/memoryRetriever'
+import { isActiveSummary } from '@/utils/summarySelection'
 
 // ─── 介面定義 ───────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ export async function expandContextWindow(
 
   // 2. 合併為統一格式並按 createdAt 排序
   const allEntries: SourceEntry[] = [
-    ...summaries.map((s) => ({
+    ...summaries.filter(isActiveSummary).map((s) => ({
       id: s.id,
       content: s.content,
       createdAt: s.createdAt,
