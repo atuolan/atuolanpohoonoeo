@@ -2102,11 +2102,13 @@ body {
   }
 }
 
+// 高度交給 .soft-modal 的 flex 版面：螢幕多高就用多少，超出才捲動
 .modal-content {
   padding: 20px;
-  max-height: 60vh;
+  min-height: 0;
   overflow-y: auto;
 }
+
 
 .settings-section {
   display: flex;
@@ -3669,7 +3671,8 @@ body {
 .modal-footer {
   display: flex;
   gap: 12px;
-  padding: 16px 20px;
+  // 彈窗置中、不貼螢幕底部，蓋過 .soft-modal 為 home indicator 預留的底部空白
+  padding: 16px 20px !important;
   border-top: 1px solid var(--color-border);
 }
 
