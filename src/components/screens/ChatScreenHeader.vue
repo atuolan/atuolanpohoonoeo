@@ -45,6 +45,8 @@ const props = defineProps<{
   showNicknameEdit: boolean;
   nicknameEditValue: string;
   isGenerating: boolean;
+  /** 預留：角色此刻在做什麼（例如「在看窗外的雨」），空字串時不顯示 */
+  characterStatus?: string;
   groupMemberCount: number;
   showRail: boolean;
   currentUserAvatar: string;
@@ -330,8 +332,9 @@ const isDarkBackground = computed(() =>
           </svg>
         </button>
       </div>
-      <p v-if="isGroupChat && !isGenerating" class="chat-status">{{ groupMemberCount }} 位成員</p>
-      <p v-else-if="isGenerating" class="chat-status">正在輸入...</p>
+      <p v-if="isGenerating" class="chat-status">正在輸入...</p>
+      <p v-else-if="isGroupChat" class="chat-status">{{ groupMemberCount }} 位成員</p>
+      <p v-else-if="characterStatus" class="chat-status">{{ characterStatus }}</p>
     </div>
 
     <button class="rail-toggle-btn" :class="{ active: showRail }" @click.stop="emit('toggle-rail')">

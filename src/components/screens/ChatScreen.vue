@@ -3244,6 +3244,73 @@ function getDateSeparatorText(timestamp: number): string {
   }
 }
 
+// 時間分隔：換日，或與上一則相隔超過 30 分鐘時，插入一條置中的時間（取代每則泡泡下的時間）
+const TIME_SEPARATOR_GAP_MS = 30 * 60 * 1000;
+
+function shouldShowTimeSeparator(index: number): boolean {
+  if (shouldShowDateSeparator(index)) return true;
+  const currentMsg = visibleMessages.value[index];
+  const prevMsg = visibleMessages.value[index - 1];
+  if (!currentMsg || !prevMsg) return false;
+  return (
+    getMessageDisplayTime(currentMsg) - getMessageDisplayTime(prevMsg) >=
+    TIME_SEPARATOR_GAP_MS
+  );
+}
+
+function getTimeSeparatorText(index: number): string {
+  const msg = visibleMessages.value[index];
+  if (!msg) return "";
+  const ts = getMessageDisplayTime(msg);
+  const date = new Date(ts);
+  const hhmm = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return shouldShowDateSeparator(index)
+    ? `${getDateSeparatorText(ts)} ${hhmm}`
+    : hhmm;
+}
+
+// 連續訊息成組：同一位發送者、中間沒有時間分隔時視為同一組，頭像只顯示在每組最後一則
+type MessageGroupPosition = "single" | "first" | "middle" | "last";
+
+function isGroupableMessage(
+  m: (typeof visibleMessages.value)[number] | undefined,
+): boolean {
+  if (!m || (m.role !== "user" && m.role !== "ai")) return false;
+  return !(
+    m.isSystemNotification ||
+    m.isTransactionClaimNotice ||
+    m.isUserRecalled ||
+    m.isRecall ||
+    m.isGroupAction
+  );
+}
+
+function getSenderKey(m: (typeof visibleMessages.value)[number]): string {
+  if (m.role === "user") return "user";
+  return `ai:${m.senderCharacterId || m.senderCharacterName || ""}`;
+}
+
+// index 這一則是否接續上一則（同組）
+function continuesGroup(index: number): boolean {
+  const currentMsg = visibleMessages.value[index];
+  const prevMsg = visibleMessages.value[index - 1];
+  if (!isGroupableMessage(currentMsg) || !isGroupableMessage(prevMsg)) return false;
+  if (shouldShowTimeSeparator(index)) return false;
+  // 上一則下方有封鎖提示時不併組，避免收緊間距後重疊
+  if (shouldShowBlockedIndicator(prevMsg)) return false;
+  return getSenderKey(currentMsg!) === getSenderKey(prevMsg!);
+}
+
+function getGroupPosition(index: number): MessageGroupPosition {
+  const withPrev = index > 0 && continuesGroup(index);
+  const withNext =
+    index < visibleMessages.value.length - 1 && continuesGroup(index + 1);
+  if (withPrev && withNext) return "middle";
+  if (withPrev) return "last";
+  if (withNext) return "first";
+  return "single";
+}
+
 // ===== 截圖 composable =====
 const {
   screenshotPreviewUrl,
@@ -9391,16 +9458,14 @@ useChatCleanup({
             message.isCharRecall,
             message.isTransactionClaimNotice,
             groupMemberAvatarVersion,
+            getGroupPosition(index),
+            shouldShowTimeSeparator(index) && getTimeSeparatorText(index),
           ]"
           class="message-memo-wrapper"
         >
-          <!-- 日期分隔符 -->
-          <div v-if="shouldShowDateSeparator(index)" class="date-separator">
-            <div class="separator-line"></div>
-            <span class="separator-text">{{
-              getDateSeparatorText(getMessageDisplayTime(message))
-            }}</span>
-            <div class="separator-line"></div>
+          <!-- 時間分隔（換日或相隔 30 分鐘以上） -->
+          <div v-if="shouldShowTimeSeparator(index)" class="date-separator">
+            <span class="separator-text">{{ getTimeSeparatorText(index) }}</span>
           </div>
 
           <!-- 系統通知（封鎖/解封等）；交易領取通知資料上仍算 user role，但畫面使用系統通知樣式 -->
@@ -9481,6 +9546,8 @@ useChatCleanup({
                 : ''
             "
             :timestamp="getMessageDisplayTime(message)"
+            :show-time="false"
+            :group-position="getGroupPosition(index)"
             :char-frame-id="chatAppearance?.avatarFrames?.charFrameId ?? null"
             :user-frame-id="chatAppearance?.avatarFrames?.userFrameId ?? null"
             :avatar-shape="(chatAppearance?.useCustom && chatAppearance.avatar?.shape) || themeStore.avatarStyle.shape"
@@ -13309,24 +13376,19 @@ useChatCleanup({
 // 日期分隔符
 .date-separator {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 0;
-  margin: 8px 0;
-}
-
-.separator-line {
-  flex: 1;
-  height: 1px;
-  background: var(--color-border, #e2e8f0);
+  justify-content: center;
+  padding: 8px 0 4px;
 }
 
 .separator-text {
   font-size: 12px;
+  line-height: 18px;
   color: var(--color-text-muted, #999);
-  padding: 4px 12px;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 10px;
+  // 保留淡底，避免在自訂桌布上看不清楚
   background: var(--color-surface, #fff);
-  border-radius: 12px;
+  border-radius: 999px;
 }
 
 .system-notification {

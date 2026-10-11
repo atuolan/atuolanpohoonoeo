@@ -95,6 +95,25 @@ defineExpose({
   expandedTextareaRef,
 });
 
+// ===== 發言身份 =====
+// 非「我」時在輸入框前顯示標籤；模式會保留，直到點標籤或從「＋」選單切回
+const speakerChipLabel = computed(() =>
+  props.speakerMode === "char" ? props.characterName || "角色" : "系統",
+);
+
+const inputPlaceholder = computed(() => {
+  if (props.speakerMode === "char") return "以角色身份說…";
+  if (props.speakerMode === "system") return "輸入系統訊息…";
+  return "輸入消息...";
+});
+
+// 「＋」選單最上方的身份切換
+const speakerOptions = [
+  { value: "user", label: "你" },
+  { value: "char", label: "角色" },
+  { value: "system", label: "系統" },
+] as const;
+
 // ===== 底線指示器 =====
 const inputContainerRef = ref<HTMLElement | null>(null);
 const underlineTrackRef = ref<HTMLElement | null>(null);
@@ -393,83 +412,38 @@ const isDarkBackground = computed(() =>
           ref="plusBtnRef"
           class="input-btn plus-btn"
           :class="{ active: showMoreFeatures }"
+          aria-label="更多功能"
           @click="emit('toggleMoreFeatures')"
         >
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
           </svg>
         </button>
-
-        <!-- 發言模式切換按鈕（取代原圖片按鈕位置） -->
-        <div class="speaker-mode-wrapper">
-          <button
-            class="input-btn speaker-mode-btn"
-            :class="['mode-' + speakerMode, { active: showSpeakerModePopover }]"
-            :title="speakerMode === 'user' ? '發言模式：我' : speakerMode === 'char' ? '發言模式：角色' : '發言模式：系統'"
-            @click.stop="emit('update:showSpeakerModePopover', !showSpeakerModePopover)"
-          >
-            <!-- user：人像 -->
-            <svg v-if="speakerMode === 'user'" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-            </svg>
-            <!-- char：對話氣泡 -->
-            <svg v-else-if="speakerMode === 'char'" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z" />
-            </svg>
-            <!-- system：齒輪 -->
-            <svg v-else viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
-            </svg>
-          </button>
-
-          <Transition name="fade">
-            <div
-              v-if="showSpeakerModePopover"
-              class="speaker-mode-popover"
-              @click.stop
-            >
-              <button
-                class="speaker-mode-option"
-                :class="{ selected: speakerMode === 'user' }"
-                @click="emit('setSpeakerMode', 'user')"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                </svg>
-                <span>我（user）</span>
-              </button>
-              <button
-                class="speaker-mode-option"
-                :class="{ selected: speakerMode === 'char' }"
-                @click="emit('setSpeakerMode', 'char')"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z" />
-                </svg>
-                <span>角色（char）</span>
-              </button>
-              <button
-                class="speaker-mode-option"
-                :class="{ selected: speakerMode === 'system' }"
-                @click="emit('setSpeakerMode', 'system')"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
-                </svg>
-                <span>系統（system）</span>
-              </button>
-            </div>
-          </Transition>
-        </div>
       </div>
 
       <!-- 輸入框容器（包含表情按鈕） -->
       <div class="input-wrapper" ref="inputWrapperRef" @click.stop>
+        <!-- 發言身份標籤：非「我」時顯示在輸入框最前面，點一下改回以自己發言 -->
+        <button
+          v-if="speakerMode !== 'user'"
+          type="button"
+          class="speaker-chip"
+          :class="'mode-' + speakerMode"
+          :aria-label="`目前以${speakerChipLabel}身份發言，點擊改回以自己發言`"
+          :title="`以${speakerChipLabel}身份發言中，點擊改回自己`"
+          @click="emit('setSpeakerMode', 'user')"
+        >
+          <span class="speaker-chip-label">{{ speakerChipLabel }}</span>
+          <svg class="speaker-chip-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+          </svg>
+        </button>
         <textarea
           ref="messageTextareaRef"
           :value="inputText"
           class="message-input"
-          placeholder="輸入消息..."
+          :placeholder="inputPlaceholder"
           rows="1"
           autocomplete="off"
           autocorrect="off"
@@ -716,6 +690,24 @@ const isDarkBackground = computed(() =>
     <!-- 更多功能面板 -->
     <Transition name="slide-up">
       <div v-if="showMoreFeatures" class="more-features-panel" @click.stop>
+        <!-- 發言身份切換：你／角色／系統 -->
+        <div class="speaker-switch">
+          <span class="speaker-switch-title">發言身份</span>
+          <div class="speaker-switch-track" role="radiogroup" aria-label="發言身份">
+            <button
+              v-for="opt in speakerOptions"
+              :key="opt.value"
+              type="button"
+              role="radio"
+              class="speaker-switch-btn"
+              :class="['mode-' + opt.value, { active: speakerMode === opt.value }]"
+              :aria-checked="speakerMode === opt.value"
+              @click="emit('setSpeakerMode', opt.value)"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+        </div>
         <div class="features-grid">
           <button
             class="feature-item"
@@ -1146,7 +1138,7 @@ const isDarkBackground = computed(() =>
   margin: 0 auto;
   box-sizing: border-box;
   padding: 6px 10px;
-  border-radius: 22px;
+  border-radius: 28px;
   // 半透明色票（如 pearl 主題 surface 只有 12% alpha）疊在不透明底色上，避免聊天內容透出輸入區。
   // --chat-input-bg / --chat-input-backdrop 來自聊天外觀設定（不透明度、毛玻璃）
   background: var(
@@ -1188,12 +1180,6 @@ const isDarkBackground = computed(() =>
       &:hover { color: #ffffff; }
       &.active { color: #ffffff; }
       svg { color: inherit; }
-    }
-
-    // 發言模式按鈕（user / system 兩種非 primary 顏色變亮，char 維持主題色）
-    .input-btn {
-      &.mode-user { color: rgba(255, 255, 255, 0.9); }
-      &.mode-system { color: #fbbf24; }
     }
 
     // 表情按鈕等通用 input-btn 預設色
@@ -1268,80 +1254,71 @@ const isDarkBackground = computed(() =>
   }
 }
 
-// 發言模式切換按鈕
-.speaker-mode-wrapper {
-  position: relative;
-  display: flex;
+// 發言身份標籤（非「我」時顯示在輸入框最前面）
+.speaker-chip {
+  flex-shrink: 0;
+  display: inline-flex;
   align-items: center;
-}
-
-.speaker-mode-btn {
-  color: #888;
-  transition: color var(--transition-fast), background var(--transition-fast);
-
-  &.mode-user {
-    color: #888;
-  }
-  &.mode-char {
-    color: var(--color-primary, #7dd3a8);
-  }
-  &.mode-system {
-    color: #f59e0b;
-  }
-  &.active {
-    background: rgba(125, 211, 168, 0.12);
-  }
-}
-
-.speaker-mode-popover {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  z-index: 30;
-  background: var(--chat-header-surface, var(--color-surface, #fff));
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-  border-radius: 12px;
-  padding: 6px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
-  min-width: 148px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.speaker-mode-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: transparent;
+  gap: 4px;
+  max-width: 40%;
+  height: 26px;
+  margin-left: 2px;
+  padding: 0 8px 0 10px;
   border: none;
-  border-radius: 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
-  font-size: 13px;
-  color: var(--chat-header-text, var(--color-text, #222));
-  text-align: left;
-  width: 100%;
+  color: color-mix(in srgb, var(--color-primary, #7dd3a8) 75%, #000);
+  background: color-mix(in srgb, var(--color-primary, #7dd3a8) 18%, transparent);
+  transition: background var(--transition-fast);
 
-  svg {
-    width: 18px;
-    height: 18px;
-    color: #888;
-    flex-shrink: 0;
+  &.mode-system {
+    color: color-mix(in srgb, var(--color-warning, #f59e0b) 60%, #000);
+    background: color-mix(in srgb, var(--color-warning, #f59e0b) 20%, transparent);
   }
 
   &:hover {
-    background: rgba(0, 0, 0, 0.04);
+    background: color-mix(in srgb, var(--color-primary, #7dd3a8) 28%, transparent);
   }
 
-  &.selected {
-    background: rgba(125, 211, 168, 0.16);
-    color: var(--color-primary, #5cb88a);
-
-    svg {
-      color: var(--color-primary, #5cb88a);
-    }
+  &.mode-system:hover {
+    background: color-mix(in srgb, var(--color-warning, #f59e0b) 30%, transparent);
   }
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+}
+
+// 深色背景：標籤改白字＋較濃的底色
+.input-container.dark-bg .speaker-chip {
+  color: #fff;
+  background: color-mix(in srgb, var(--color-primary, #7dd3a8) 45%, transparent);
+
+  &.mode-system {
+    color: #fff;
+    background: color-mix(in srgb, var(--color-warning, #f59e0b) 50%, transparent);
+  }
+}
+
+.speaker-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.speaker-chip-close {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  opacity: 0.75;
 }
 
 .gift-feature-icon {
@@ -1565,6 +1542,63 @@ const isDarkBackground = computed(() =>
   font-size: 12px;
   color: var(--chat-header-text-secondary, var(--color-text-secondary));
   text-align: center;
+}
+
+// 發言身份切換（「＋」選單最上方）
+.speaker-switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.speaker-switch-title {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--chat-header-text-secondary, var(--color-text-secondary));
+}
+
+.speaker-switch-track {
+  flex: 1;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+}
+
+.speaker-switch-btn {
+  flex: 1;
+  height: 34px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--chat-header-text-secondary, var(--color-text-secondary));
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+
+  &.active {
+    background: var(--color-primary, #7dd3a8);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  // 系統用警示色，跟輸入框裡的標籤一致
+  &.mode-system.active {
+    background: var(--color-warning, #f59e0b);
+  }
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
 }
 
 // 展開輸入框覆蓋層

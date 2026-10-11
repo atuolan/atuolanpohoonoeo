@@ -270,6 +270,10 @@ interface MessageBubbleProps {
   isEditing?: boolean;
   isSelected?: boolean;
   showAvatar?: boolean;
+  /** 是否在泡泡下方顯示時間（聊天頁改用置中的時間分隔，傳 false） */
+  showTime?: boolean;
+  /** 連續訊息成組的位置：頭像只在最後一則、名字只在第一則 */
+  groupPosition?: "single" | "first" | "middle" | "last";
   // 頭像框
   charFrameId?: string | null; // 角色頭像框 ID
   userFrameId?: string | null; // 用戶頭像框 ID
@@ -494,6 +498,8 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   isEditing: false,
   isSelected: false,
   showAvatar: true,
+  showTime: true,
+  groupPosition: "single",
   charFrameId: null,
   userFrameId: null,
   avatarShape: "circle",
@@ -3135,6 +3141,7 @@ const showTextVoiceTranscript = ref(true);
       'current-search': isCurrentSearch,
       'group-chat': isGroupChat,
       'html-only': isHtmlOnlyBubble,
+      [`seq-${groupPosition}`]: !isSystem,
     }"
     :data-message-id="id"
     @click="handleClick"
@@ -3518,12 +3525,18 @@ const showTextVoiceTranscript = ref(true);
 
       <!-- 訊息內容區 -->
       <div class="message-content">
-        <!-- 發送者名稱（群聊模式顯示發送者角色名） -->
+        <!-- 發送者名稱：只在群聊、每組第一則顯示（一對一聊天頂部已有名字） -->
         <div
-          v-if="!isUser && !isHtmlOnlyBubble && (isGroupChat ? senderCharacterName : senderName)"
+          v-if="
+            !isUser &&
+            !isHtmlOnlyBubble &&
+            isGroupChat &&
+            senderCharacterName &&
+            (groupPosition === 'single' || groupPosition === 'first')
+          "
           class="sender-name"
         >
-          {{ isGroupChat ? senderCharacterName : senderName }}
+          {{ senderCharacterName }}
         </div>
 
         <!-- 回覆引用 (移至氣泡外) -->
@@ -4482,7 +4495,7 @@ const showTextVoiceTranscript = ref(true);
         </div>
 
         <!-- 時間戳 -->
-        <div v-if="timestamp && !isHtmlOnlyBubble" class="message-time">
+        <div v-if="showTime && timestamp && !isHtmlOnlyBubble" class="message-time">
           {{ formattedTime }}
         </div>
       </div>
@@ -4881,6 +4894,36 @@ const showTextVoiceTranscript = ref(true);
     .bubble {
       box-shadow: 0 0 0 3px var(--color-primary);
       animation: search-pulse 1s ease-in-out;
+    }
+  }
+}
+
+// ===== 連續訊息成組 =====
+// 同組之間收緊間距；頭像只在每組最後一則顯示（其餘保留寬度讓泡泡對齊）
+.message-wrapper {
+  &.ai > .avatar-container,
+  &.user > .avatar-container {
+    align-self: flex-end;
+  }
+
+  &.seq-middle,
+  &.seq-last {
+    margin-top: calc(-1 * var(--chat-message-gap, 12px) - 4px);
+
+    .bubble.ai {
+      border-top-left-radius: 6px;
+    }
+
+    .bubble.user {
+      border-top-right-radius: 6px;
+    }
+  }
+
+  &.seq-first,
+  &.seq-middle {
+    > .avatar-container {
+      visibility: hidden;
+      height: 0;
     }
   }
 }
@@ -6083,10 +6126,7 @@ const showTextVoiceTranscript = ref(true);
   cursor: pointer;
   font-size: 13px;
   color: var(--thought-text, #4a6572);
-  background-image: var(--thought-text-gradient, none);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: var(--thought-text-fill, var(--thought-text, #4a6572));
+  // 不套文字漸層的 background-clip: text，否則卡片底色會被裁成只剩 emoji 形狀而看起來全透明
   font-style: italic;
   box-shadow: 0 0 8px var(--thought-glow-1, rgba(173, 216, 230, 0.6));
   transition: box-shadow 0.2s;
