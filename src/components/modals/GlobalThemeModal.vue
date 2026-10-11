@@ -9,6 +9,7 @@ import { useSettingsStore } from "@/stores/settings";
 import type { GlobalFontOverride, GlobalFontPreset, WallpaperStyle } from "@/stores/theme";
 import { useThemeStore } from "@/stores/theme";
 import {
+  DEFAULT_THEME_PACK,
   STANDARD_LAYOUT_WIDGET_TYPES,
   themePacks,
   type ThemePack,
@@ -61,21 +62,23 @@ function applyThemePack(pack: ThemePack) {
     }
   }
 
-  // 主題包附有主頁建議擺位：只動中間主頁的組件位置，詢問後才排
-  if (pack.homeArrangement) {
-    const arrange = window.confirm(
-      `「${pack.name}」有搭配的主頁擺法。\n要把中間主頁的組件排成這個樣子嗎？\n（只移動位置，內容不會清除；取消就維持現在的位置）`,
-    );
-    if (arrange) {
-      const moved = canvasStore.applyHomeArrangement(pack.homeArrangement);
-      applyThemePackStatus.value =
-        moved < 0
-          ? `已套用「${pack.name}」，但螢幕高度不夠放這個擺法，位置維持不變`
-          : `已套用「${pack.name}」並重新排好主頁（${moved} 個組件）`;
-      return;
-    }
-  }
+  if (offerHomeArrangement(pack)) return;
   applyThemePackStatus.value = `已套用「${pack.name}」主題包`;
+}
+
+// 主題包附有主頁建議擺位：詢問後才排（只移動位置）。有排就寫好狀態並回傳 true
+function offerHomeArrangement(pack: ThemePack): boolean {
+  if (!pack.homeArrangement) return false;
+  const arrange = window.confirm(
+    `「${pack.name}」有搭配的主頁擺法。\n要把主頁的組件排成這個樣子嗎？\n（只移動位置，內容不會清除；取消就維持現在的位置）`,
+  );
+  if (!arrange) return false;
+  const moved = canvasStore.applyHomeArrangement(pack.homeArrangement);
+  applyThemePackStatus.value =
+    moved < 0
+      ? `已套用「${pack.name}」，但螢幕高度不夠放這個擺法，位置維持不變`
+      : `已套用「${pack.name}」並重新排好主頁（${moved} 個組件）`;
+  return true;
 }
 
 // ===== 主題包匯出 / 匯入 / 自訂儲存 =====
@@ -812,6 +815,9 @@ function clearGlobalFont() {
 function resetToDefault() {
   if (confirm("確定要重置所有全局設定嗎？")) {
     themeStore.resetToDefault();
+    // 預設就是預設主題包：組件版型（時鐘樣式、App 圖標等）也要一起回到它，否則只有配色變回來
+    canvasStore.applyThemePackLayouts(DEFAULT_THEME_PACK);
+    offerHomeArrangement(DEFAULT_THEME_PACK);
     tempWallpaperStyle.value = { ...themeStore.wallpaperStyle };
     // 連同還沒套用的 CSS / 字體草稿一起丟掉，否則關閉彈窗時會把舊草稿寫回去
     syncDraftFromStore();

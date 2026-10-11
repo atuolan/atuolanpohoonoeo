@@ -24,6 +24,20 @@ const FIXED_CANVAS_WIDTH = FIXED_CANVAS_GRIDS * BASE_GRID_SIZE; // 1440px
 const SINGLE_SCREEN_GRIDS = 22;
 const SINGLE_SCREEN_WIDTH = SINGLE_SCREEN_GRIDS * BASE_GRID_SIZE; // 352px
 
+// 兩側 App 的預設位置（與 WhiteboardCanvas 的預設佈局一致），
+// 用來把極簡黑白排成目錄列的兩側 App 搬回原位
+const DEFAULT_SIDE_APP_POSITIONS: Record<string, { x: number; y: number }> = {
+  書架: { x: 24, y: 15 },
+  閱讀: { x: 29, y: 15 },
+  購物: { x: 73, y: 2 },
+  外賣: { x: 73, y: 7 },
+  錢包: { x: 73, y: 12 },
+  頭盔TA: { x: 68, y: 19 },
+  健身: { x: 73, y: 19 },
+  世界書: { x: 68, y: 24 },
+  小劇場: { x: 73, y: 24 },
+};
+
 const MIN_SCALE = 0.5; // 最小縮放比例
 // 最大縮放比例：大螢幕（2K / 4K）也要能放大到填滿高度；
 // 原本 1.5 在 1920×1080 以上就封頂，畫布只佔上半部、下方大片留白
@@ -666,8 +680,23 @@ export const useCanvasStore = defineStore("canvas", () => {
         if (item.y !== undefined) target.y = item.y;
         if (item.width !== undefined) target.width = item.width;
         if (item.height !== undefined) target.height = item.height;
-        target.data = { ...target.data, ...item.dataPatch, hiddenByTheme: undefined };
+        // 目錄編號只屬於給了 indexNo 的擺法，其他擺法清掉
+        target.data = { ...target.data, indexNo: undefined, ...item.dataPatch, hiddenByTheme: undefined };
       }
+      moved++;
+    }
+
+    // 前一個主題（極簡黑白）把兩側 App 排成目錄列；這次的擺法沒有安排它們時，搬回預設位置。
+    // 只動帶有目錄編號的 App，使用者自己排過的兩側不受影響
+    for (const w of widgets.value) {
+      if (used.has(w.id) || w.type !== "fluid-button" || !w.data?.indexNo) continue;
+      const home = DEFAULT_SIDE_APP_POSITIONS[w.data.label as string];
+      if (!home) continue;
+      w.x = home.x;
+      w.y = home.y;
+      w.width = 5;
+      w.height = 5;
+      w.data = { ...w.data, indexNo: undefined };
       moved++;
     }
 

@@ -28,7 +28,7 @@ import {
   worldBookLayouts,
   type LayoutOption,
 } from "@/components/panels/widget-settings/widgetSettingsOptions";
-import { STANDARD_LAYOUT_WIDGET_TYPES } from "@/styles/theme-packs";
+import { DEFAULT_THEME_PACK, STANDARD_LAYOUT_WIDGET_TYPES } from "@/styles/theme-packs";
 import { formatWidgetStyleDetail } from "./widgetStyleHints";
 import {
   listSurfacesBrief,
@@ -232,6 +232,8 @@ export const THEME_TOOLS: ThemeTool[] = [
     params: [],
     execute(_args, ctx) {
       ctx.theme.resetToDefault();
+      // 組件版型也回到預設主題包（擺位不動，AI 無法替使用者確認要不要搬位置）
+      ctx.canvas.applyThemePackLayouts(DEFAULT_THEME_PACK);
     },
   },
 
