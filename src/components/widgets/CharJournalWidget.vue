@@ -50,6 +50,10 @@ const containerStyle = computed(() => {
   else if (cs?.backgroundColor) style.background = cs.backgroundColor;
   const color = cs?.textColor || cs?.foregroundColor;
   if (color) style.color = color;
+  // 主題包給的外框（線描的黑框等）；透明框不畫，免得內容平白少 4px
+  if (cs?.borderColor && cs.borderColor !== "transparent") {
+    style.border = `${cs.borderWidth || 2}px solid ${cs.borderColor}`;
+  }
   return style;
 });
 

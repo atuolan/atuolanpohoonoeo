@@ -53,6 +53,10 @@ const containerStyle = computed(() => {
   if (cs?.backgroundGradient) style.background = cs.backgroundGradient;
   else if (cs?.backgroundColor) style.background = cs.backgroundColor;
   style.color = textColor.value;
+  // 主題包給的外框（線描的黑框等）；透明框不畫，免得內容平白少 4px
+  if (cs?.borderColor && cs.borderColor !== "transparent") {
+    style.border = `${cs.borderWidth || 2}px solid ${cs.borderColor}`;
+  }
   return style;
 });
 

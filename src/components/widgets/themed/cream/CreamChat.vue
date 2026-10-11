@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 奶油風最近聊天：對話泡泡卡（左下角尖），標頭是頭像與名字，貼圖用草莓色膠囊標籤
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { Cat } from "lucide-vue-next";
+import { useFitLineCount } from "@/composables/useFitLineCount";
 import { useOnDemandFont } from "@/composables/useOnDemandFont";
 import type { ThemedChatProps } from "../types";
 
@@ -18,7 +19,10 @@ const initial = computed(() => Array.from(props.displayName || "")[0] ?? "");
 
 const hasSticker = computed(() => !!(props.stickerUrl || props.stickerName));
 
-// 有貼圖標籤時卡片高度不夠，訊息文字就只留一行
+// 訊息最多兩行；有貼圖標籤或格子矮時，依實際剩下的高度少顯示幾行
+const textRef = ref<HTMLElement | null>(null);
+const textLines = useFitLineCount(textRef, 2);
+
 const emptyText = computed(() => (props.isEditMode ? "點擊齒輪圖示綁定角色" : "還沒有聊天，去找角色聊聊吧"));
 
 const vars = computed(() => ({
@@ -48,11 +52,10 @@ const vars = computed(() => ({
           <span class="cream-chat__time">{{ timeText }}</span>
         </div>
 
-        <p
-          v-if="previewText"
-          class="cream-chat__text"
-          :class="{ 'is-clamp-1': hasSticker }"
-        >{{ previewText }}</p>
+        <!-- 外層吃掉剩餘高度、量可用空間；內層照字數自然長高，line-clamp 才不會多露出半行 -->
+        <div v-if="previewText" ref="textRef" class="cream-chat__text-box">
+          <p class="cream-chat__text" :style="{ '--cream-lines': textLines }">{{ previewText }}</p>
+        </div>
 
         <span v-if="hasSticker" class="cream-chat__sticker">
           <img v-if="stickerUrl" :src="stickerUrl" alt="" class="cream-chat__sticker-img" />
@@ -150,24 +153,23 @@ $soft-default: #7e6250;
     white-space: nowrap;
   }
 
-  // 訊息文字，超過行數用 line-clamp 截斷
-  &__text {
-    flex: 1 1 auto;
+  // 訊息文字：最多兩行，格子矮時依高度（--cream-lines）少顯示幾行
+  &__text-box {
+    flex: 1 1 0;
     min-height: 0;
-    margin: 0;
+    overflow: hidden;
     font-size: clamp(12px, 11.5cqh, 15px);
     line-height: 1.65;
+  }
+
+  &__text {
+    margin: 0;
     color: var(--cream-ink, #{$brown});
     overflow: hidden;
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-
-    &.is-clamp-1 {
-      -webkit-line-clamp: 1;
-      line-clamp: 1;
-    }
+    -webkit-line-clamp: var(--cream-lines, 2);
+    line-clamp: var(--cream-lines, 2);
   }
 
   // 草莓色膠囊貼圖標籤
@@ -184,6 +186,13 @@ $soft-default: #7e6250;
     color: var(--cream-ink, #{$brown});
     font-size: clamp(11px, 9.4cqh, 12px);
     line-height: 1.4;
+  }
+
+  // 格子太矮（不到 8 格）連一行訊息都放不下時，貼圖標籤讓位給文字
+  @container (max-height: 120px) {
+    &__sticker {
+      display: none;
+    }
   }
 
   &__sticker-img {

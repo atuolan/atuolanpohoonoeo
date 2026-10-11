@@ -150,6 +150,27 @@ const themedStyleResets = {
   "recent-chat": THEMED_STYLE_RESET,
 };
 
+// 兩側的角色組件（紀念日、TA 的手帳）沒有主題版型，只吃 customStyle 的底色、字色與框線。
+// 每個主題包都要給一組完整的值：沒給就會沿用前一個主題（或預設手帳拼貼）的米白卡，
+// 在白色桌布上整塊看不見。欄位全部寫出來，換主題時才會把前一個主題的框線清掉。
+const sideCard = (
+  backgroundColor: string,
+  textColor: string,
+  border?: { color: string; width: number },
+): Partial<WidgetCustomStyle> => ({
+  backgroundColor,
+  backgroundGradient: undefined,
+  foregroundColor: textColor,
+  textColor,
+  borderColor: border?.color,
+  borderWidth: border?.width,
+});
+
+const sideCardStyles = (card: Partial<WidgetCustomStyle>) => ({
+  "relationship-counter": card,
+  "char-journal": card,
+});
+
 // 中間主頁常用的擺位片段：拍立得 / 音樂右邊的 2×2 App
 const appGrid2x2 = (top: number): ThemePackArrangementItem[] => [
   { type: "fluid-button", label: "訊息", x: 46, y: top, width: 5, height: 5 },
@@ -206,7 +227,11 @@ const creamPack: ThemePack = {
     polaroidLayout: "round",
     musicLayout: "capsule",
     recentChatLayout: "speech",
-    styleOverrides: themedStyleResets,
+    styleOverrides: {
+      ...themedStyleResets,
+      // 奶油卡紙；牛奶白桌布和卡片顏色太接近，加一圈焦糖淺色框
+      ...sideCardStyles(sideCard("#FFFCF6", "#4A3528", { color: "#E3C9A6", width: 1.5 })),
+    },
     appIcons: {
       layout: "macaron",
       palette: ["#F6D9C9", "#DCE5CF", "#F3E3B5", "#E7D9EF"],
@@ -277,7 +302,11 @@ const y2kPack: ThemePack = {
     vinylStyle: "pop",
     polaroidLayout: "window",
     recentChatLayout: "msn",
-    styleOverrides: themedStyleResets,
+    styleOverrides: {
+      ...themedStyleResets,
+      // 半透明白玻璃 + 白框，和桌面其他視窗一致
+      ...sideCardStyles(sideCard("rgba(255, 255, 255, 0.68)", "#2D1B4E", { color: "#FFFFFF", width: 1.5 })),
+    },
     appIcons: {
       layout: "jelly",
       palette: ["#3FB4E0", "#F06AAE", "#8B67F0", "#6FC03A", "#F2AE22"],
@@ -353,7 +382,11 @@ const monoPack: ThemePack = {
     polaroidLayout: "plain",
     musicLayout: "editorial",
     recentChatLayout: "quote",
-    styleOverrides: themedStyleResets,
+    styleOverrides: {
+      ...themedStyleResets,
+      // 兩側組件由 pack-mono.scss 拿掉底色、只留上緣細線，這裡只要給油墨黑字
+      ...sideCardStyles(sideCard("transparent", "#1C1C1A")),
+    },
     appIcons: {
       layout: "index",
       palette: ["#F6F5F1"],
@@ -440,7 +473,11 @@ const pearlPack: ThemePack = {
     polaroidLayout: "gilded",
     musicLayout: "audioguide",
     recentChatLayout: "placard",
-    styleOverrides: themedStyleResets,
+    styleOverrides: {
+      ...themedStyleResets,
+      // 和最近聊天的展品說明牌同一種米白卡紙，掛在深色展牆上
+      ...sideCardStyles(sideCard("#F3EEE2", "#2B2840")),
+    },
     appIcons: {
       layout: "pearl-orb",
       palette: ["#F4F0E6"],
@@ -503,7 +540,11 @@ const lineartPack: ThemePack = {
     polaroidLayout: "sketch",
     musicLayout: "sketch",
     recentChatLayout: "sketch",
-    styleOverrides: themedStyleResets,
+    styleOverrides: {
+      ...themedStyleResets,
+      // 白紙黑框，和語錄、待辦等組件的線描外框一致
+      ...sideCardStyles(sideCard("#FFFFFF", "#1A1A1A", { color: "#1A1A1A", width: 1.5 })),
+    },
     appIcons: {
       layout: "sketch",
       palette: ["#FFFFFF"],
@@ -584,6 +625,8 @@ const scrapbookPack: ThemePack = {
       polaroid: { backgroundColor: "#FFFDF8", foregroundColor: SCRAPBOOK_INK, borderColor: undefined },
       music: { backgroundColor: "#FFFDF8", foregroundColor: SCRAPBOOK_INK, borderColor: undefined },
       "recent-chat": { backgroundColor: "#F4E2A0", foregroundColor: SCRAPBOOK_INK, borderColor: undefined },
+      // 和組件預設外觀一樣的紙白卡；寫出來是為了從其他主題換回來時清掉框線與字色
+      ...sideCardStyles(sideCard("#FFFDF8", SCRAPBOOK_INK)),
     },
     appIcons: {
       palette: ["#F2CFC6", "#D7E1C8", "#EADFCC", "#F2E1AE", "#D9D4EA"],

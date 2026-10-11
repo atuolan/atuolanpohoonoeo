@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 極簡黑白・引言：最新一則來信印成雜誌引言，上方一條黑線，開頭是大號襯線左引號。
-// 引文最多三行（line-clamp），署名單行截斷，整塊點擊由宿主處理。
-import { computed } from "vue";
+// 引文最多三行（line-clamp，格子矮時依高度少顯示幾行），署名單行截斷，整塊點擊由宿主處理。
+import { computed, ref } from "vue";
+import { useFitLineCount } from "@/composables/useFitLineCount";
 import { useOnDemandFont } from "@/composables/useOnDemandFont";
 import type { ThemedChatProps } from "../types";
 
@@ -18,6 +19,9 @@ const quoteText = computed(() => {
   if (props.previewText) return props.previewText;
   return props.stickerName ? "（傳來一張貼圖）" : "（尚無內容）";
 });
+
+const quoteRef = ref<HTMLElement | null>(null);
+const quoteLines = useFitLineCount(quoteRef, 3);
 </script>
 
 <template>
@@ -29,9 +33,16 @@ const quoteText = computed(() => {
           <span v-if="unreadCount > 0" class="mono-chat__unread">・{{ unreadCount }} 則未讀</span>
         </div>
 
-        <p class="mono-chat__quote" :class="{ 'mono-chat__quote--muted': !previewText }">
-          <span v-if="previewText" class="mono-chat__mark">“</span>{{ quoteText }}
-        </p>
+        <!-- 外層吃掉剩餘高度、量可用空間；內層照字數自然長高，line-clamp 才不會多露出半行 -->
+        <div ref="quoteRef" class="mono-chat__quote-box">
+          <p
+            class="mono-chat__quote"
+            :class="{ 'mono-chat__quote--muted': !previewText }"
+            :style="{ '--mono-lines': quoteLines }"
+          >
+            <span v-if="previewText" class="mono-chat__mark">“</span>{{ quoteText }}
+          </p>
+        </div>
 
         <div class="mono-chat__sign">
           <img v-if="stickerUrl" class="mono-chat__sticker" :src="stickerUrl" alt="" />
@@ -87,17 +98,22 @@ const quoteText = computed(() => {
     letter-spacing: 0.08em;
   }
 
-  // 引文區吃掉剩餘高度，超過三行就用省略號截斷
-  &__quote {
+  // 引文區吃掉剩餘高度，超過三行（或格子放不下的行數）就用省略號截斷
+  &__quote-box {
     flex: 1;
     min-height: 0;
-    margin: 0;
+    overflow: hidden;
     font-family: "Noto Serif TC", serif;
     font-size: clamp(12px, 12.5cqh, 18px);
     line-height: 1.6;
+  }
+
+  &__quote {
+    margin: 0;
     text-indent: -0.5em;
     display: -webkit-box;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: var(--mono-lines, 3);
+    line-clamp: var(--mono-lines, 3);
     -webkit-box-orient: vertical;
     overflow: hidden;
     color: currentColor;

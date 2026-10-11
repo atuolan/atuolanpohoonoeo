@@ -1,13 +1,17 @@
 <script setup lang="ts">
 // 線描版型最近聊天：歪框對話泡泡，左下手繪尾巴（尾巴在泡泡外，根元素底部留空）
-// 標頭歪圓頭像、名字、時間；訊息兩行截斷；貼圖有圖畫圖，沒圖畫 Cat 線條圖示 + 名稱
-import { computed } from "vue";
+// 標頭歪圓頭像、名字、時間；訊息最多兩行，格子矮時依高度少顯示幾行；貼圖有圖畫圖，沒圖畫 Cat 線條圖示 + 名稱
+import { computed, ref } from "vue";
 import { Cat } from "lucide-vue-next";
+import { useFitLineCount } from "@/composables/useFitLineCount";
 import type { ThemedChatProps } from "../types";
 
 const props = defineProps<ThemedChatProps>();
 
 const initial = computed(() => props.displayName.charAt(0));
+
+const msgRef = ref<HTMLElement | null>(null);
+const msgLines = useFitLineCount(msgRef, 2);
 </script>
 
 <template>
@@ -24,7 +28,10 @@ const initial = computed(() => props.displayName.charAt(0));
           <span class="sk-chat__time">{{ timeText }}</span>
         </div>
 
-        <p v-if="previewText" class="sk-chat__msg">{{ previewText }}</p>
+        <!-- 外層吃掉剩餘高度、量可用空間；內層照字數自然長高，line-clamp 才不會多露出半行 -->
+        <div v-if="previewText" ref="msgRef" class="sk-chat__msg-box">
+          <p class="sk-chat__msg" :style="{ '--sk-lines': msgLines }">{{ previewText }}</p>
+        </div>
 
         <span v-if="stickerUrl || stickerName" class="sk-chat__sticker">
           <img v-if="stickerUrl" :src="stickerUrl" :alt="stickerName" class="sk-chat__sticker-img" />
@@ -76,7 +83,7 @@ $circle-radius: 50% 46% 52% 48% / 48% 52% 46% 50%;
     height: 100%;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: clamp(4px, 4cqh, 6px);
     padding: clamp(8px, 8cqh, 14px) clamp(12px, 5cqw, 18px) clamp(10px, 9cqh, 16px) 12px;
     border: 1.6px solid $ink;
     border-radius: $bubble-radius;
@@ -142,19 +149,23 @@ $circle-radius: 50% 46% 52% 48% / 48% 52% 46% 50%;
     color: $sub;
   }
 
-  // 訊息：最多兩行，超出截斷；彈性高度，格子矮時自動收縮
-  &__msg {
+  // 訊息：最多兩行，超出截斷；彈性高度，格子矮時由 --sk-lines 減少行數，不切半行
+  &__msg-box {
     flex: 1 1 0;
     min-height: 0;
+    overflow: hidden;
+    font-size: clamp(11px, 10.5cqh, 14.5px);
+    line-height: 1.6;
+  }
+
+  &__msg {
     margin: 0;
     overflow: hidden;
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
+    -webkit-line-clamp: var(--sk-lines, 2);
+    line-clamp: var(--sk-lines, 2);
     word-break: break-word;
-    font-size: clamp(11px, 10.5cqh, 14.5px);
-    line-height: 1.6;
     color: var(--sk-fg, #{$ink});
   }
 
@@ -168,11 +179,20 @@ $circle-radius: 50% 46% 52% 48% / 48% 52% 46% 50%;
     color: $sub;
   }
 
+  // 預設 21×8 格時縮到約 18px，讓訊息放得下兩行
   &__sticker-img {
     flex-shrink: 0;
-    width: clamp(20px, 18cqh, 24px);
-    height: clamp(20px, 18cqh, 24px);
+    width: clamp(16px, 14cqh, 24px);
+    height: clamp(16px, 14cqh, 24px);
     object-fit: contain;
+  }
+
+  // 格子太矮（不到 7 格）連一行訊息都放不下時，貼圖讓位給文字
+  // （容器查詢量的是內容高度，已扣掉底部留給尾巴的 16px）
+  @container (max-height: 88px) {
+    &__sticker {
+      display: none;
+    }
   }
 
   &__cat {

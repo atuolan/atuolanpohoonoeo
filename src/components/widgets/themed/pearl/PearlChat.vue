@@ -1,34 +1,14 @@
 <script setup lang="ts">
 // 珍珠畫廊的最近聊天：窄而高的展品說明牌。訊息依格子高度決定顯示幾行
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
+import { useFitLineCount } from "@/composables/useFitLineCount";
 import type { ThemedChatProps } from "../types";
 
 const props = defineProps<ThemedChatProps>();
 
 const messageRef = ref<HTMLElement | null>(null);
 // 訊息區能放幾行，由實際高度換算
-const lineCount = ref(3);
-
-function measure() {
-  const el = messageRef.value;
-  if (!el) return;
-  const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20.6;
-  lineCount.value = Math.max(1, Math.floor(el.clientHeight / lineHeight));
-}
-
-// 訊息區出現時（含空狀態切換回來）開始量高度，離開時停止觀察
-watch(
-  messageRef,
-  (el, _prev, onCleanup) => {
-    if (!el) return;
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    onCleanup(() => observer.disconnect());
-  },
-  { flush: "post" },
-);
+const lineCount = useFitLineCount(messageRef);
 
 const metaLabel = computed(() =>
   props.unreadCount > 0 ? "新留言" : "留言",
@@ -67,13 +47,15 @@ const avatarInitial = computed(() => props.displayName.charAt(0));
       <!-- 名字下方的小字與細分隔線 -->
       <div class="pearl-chat__meta">{{ metaLabel }}・{{ props.timeText }}</div>
 
-      <p
-        ref="messageRef"
-        class="pearl-chat__message"
-        :style="{ '--pearl-chat-lines': lineCount, color: props.color || undefined }"
-      >
-        {{ props.previewText || (props.stickerName ? "" : "……") }}
-      </p>
+      <!-- 外層吃掉剩餘高度、量可用空間；內層照字數自然長高，line-clamp 才不會多露出半行 -->
+      <div ref="messageRef" class="pearl-chat__message-box">
+        <p
+          class="pearl-chat__message"
+          :style="{ '--pearl-chat-lines': lineCount, color: props.color || undefined }"
+        >
+          {{ props.previewText || (props.stickerName ? "" : "……") }}
+        </p>
+      </div>
 
       <div v-if="props.stickerName" class="pearl-chat__foot">
         <img
@@ -193,12 +175,16 @@ const avatarInitial = computed(() => props.displayName.charAt(0));
   }
 
   // 訊息：行數由 JS 依高度算出的 --pearl-chat-lines 決定
-  &__message {
+  &__message-box {
     flex: 1;
     min-height: 0;
-    margin: 0;
+    overflow: hidden;
     font-size: 12.5px;
     line-height: 1.65;
+  }
+
+  &__message {
+    margin: 0;
     overflow: hidden;
     display: -webkit-box;
     -webkit-box-orient: vertical;
