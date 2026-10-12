@@ -274,6 +274,8 @@ interface MessageBubbleProps {
   showTime?: boolean;
   /** 連續訊息成組的位置：頭像只在最後一則、名字只在第一則 */
   groupPosition?: "single" | "first" | "middle" | "last";
+  /** 訊息排版：classic = 每則都有頭像（靠上）與名字，一對一聊天也顯示角色名 */
+  layout?: "grouped" | "classic";
   // 頭像框
   charFrameId?: string | null; // 角色頭像框 ID
   userFrameId?: string | null; // 用戶頭像框 ID
@@ -500,6 +502,7 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   showAvatar: true,
   showTime: true,
   groupPosition: "single",
+  layout: "grouped",
   charFrameId: null,
   userFrameId: null,
   avatarShape: "circle",
@@ -3142,6 +3145,7 @@ const showTextVoiceTranscript = ref(true);
       'group-chat': isGroupChat,
       'html-only': isHtmlOnlyBubble,
       [`seq-${groupPosition}`]: !isSystem,
+      'layout-classic': layout === 'classic',
     }"
     :data-message-id="id"
     @click="handleClick"
@@ -3525,18 +3529,24 @@ const showTextVoiceTranscript = ref(true);
 
       <!-- 訊息內容區 -->
       <div class="message-content">
-        <!-- 發送者名稱：只在群聊、每組第一則顯示（一對一聊天頂部已有名字） -->
+        <!-- 發送者名稱 -->
+        <!-- 經典排版：每則都顯示（一對一顯示角色名，群聊顯示發送者） -->
+        <!-- 成組排版：只在群聊、每組第一則顯示（一對一聊天頂部已有名字） -->
         <div
           v-if="
             !isUser &&
             !isHtmlOnlyBubble &&
-            isGroupChat &&
-            senderCharacterName &&
-            (groupPosition === 'single' || groupPosition === 'first')
+            (layout === 'classic'
+              ? isGroupChat
+                ? senderCharacterName
+                : senderName
+              : isGroupChat &&
+                senderCharacterName &&
+                (groupPosition === 'single' || groupPosition === 'first'))
           "
           class="sender-name"
         >
-          {{ senderCharacterName }}
+          {{ isGroupChat ? senderCharacterName : senderName }}
         </div>
 
         <!-- 回覆引用 (移至氣泡外) -->
@@ -4900,7 +4910,8 @@ const showTextVoiceTranscript = ref(true);
 
 // ===== 連續訊息成組 =====
 // 同組之間收緊間距；頭像只在每組最後一則顯示（其餘保留寬度讓泡泡對齊）
-.message-wrapper {
+.message-wrapper:not(.layout-classic) {
+  // 經典排版維持舊版：頭像對齊泡泡頂端
   &.ai > .avatar-container,
   &.user > .avatar-container {
     align-self: flex-end;
@@ -4908,7 +4919,8 @@ const showTextVoiceTranscript = ref(true);
 
   &.seq-middle,
   &.seq-last {
-    margin-top: calc(-1 * var(--chat-message-gap, 12px) - 4px);
+    // 抵銷列表 gap 與上下 4px padding，同組實際間距 = --chat-message-group-gap
+    margin-top: calc(var(--chat-message-group-gap, 4px) - var(--chat-message-gap, 12px) - 8px);
 
     .bubble.ai {
       border-top-left-radius: 6px;

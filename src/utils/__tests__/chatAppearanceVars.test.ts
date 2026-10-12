@@ -161,7 +161,7 @@ describe("buildChatAppearanceVars", () => {
 describe("頂欄、輸入欄與氣泡質感", () => {
   it("沒設定時不輸出任何質感變數，維持元件內建樣式", () => {
     const vars = buildChatAppearanceVars(fullAppearance, day);
-    for (const key of ["--chat-header-bg", "--chat-input-bg", "--chat-header-backdrop", "--bubble-shadow", "--bubble-outline", "--bubble-backdrop", "--chat-message-gap"]) {
+    for (const key of ["--chat-header-bg", "--chat-input-bg", "--chat-header-backdrop", "--bubble-shadow", "--bubble-outline", "--bubble-backdrop", "--chat-message-gap", "--chat-message-group-gap"]) {
       expect(vars[key], key).toBeUndefined();
     }
     expect(vars["--bubble-user-bg"]).toBe("linear-gradient(135deg, #ff85a2, #ffb6c8)");
@@ -197,6 +197,7 @@ describe("頂欄、輸入欄與氣泡質感", () => {
     expect(vars["--bubble-outline"]).toBe("2px solid #123456");
     expect(vars["--bubble-outline-offset"]).toBe("-2px");
     expect(vars["--chat-message-gap"]).toBe("6px");
+    expect(vars["--chat-message-group-gap"]).toBe("2px");
   });
 
   it("夜間模式也套用質感設定，透明度作用在夜間氣泡色上", () => {

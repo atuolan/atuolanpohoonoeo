@@ -158,6 +158,9 @@ export interface BubbleStyle {
   showAvatar: boolean; // 是否顯示頭像
 }
 
+/** 聊天訊息排版：grouped = 連續訊息成組；classic = 每則都有頭像、名字與時間 */
+export type ChatMessageLayout = "grouped" | "classic";
+
 export interface WallpaperStyle {
   type: "color" | "gradient" | "image" | "pattern" | "time-theme";
   value: string; // 顏色值/漸層/圖片URL（time-theme 時忽略）
@@ -450,6 +453,9 @@ export const useThemeStore = defineStore("theme", () => {
 
   // 彈窗動畫
   const modalAnimation = ref<ModalAnimation>({ ...defaultModalAnimation });
+
+  // 聊天訊息排版（全域）：grouped = 連續訊息成組；classic = 每則都有頭像、名字與時間
+  const chatMessageLayout = ref<ChatMessageLayout>("grouped");
 
   // 自訂 CSS
   const customCSS = ref<string>("");
@@ -871,6 +877,12 @@ export const useThemeStore = defineStore("theme", () => {
     styleEl.textContent = css;
   }
 
+  // 切換聊天訊息排版（全域，立即生效）
+  function setChatMessageLayout(layout: ChatMessageLayout) {
+    chatMessageLayout.value = layout;
+    saveToStorage();
+  }
+
   // 更新自訂 CSS
   function updateCustomCSS(css: string) {
     customCSS.value = css;
@@ -1116,6 +1128,7 @@ export const useThemeStore = defineStore("theme", () => {
           bubbleStyle: bubbleStyle.value,
           wallpaperStyle: wallpaperStyle.value,
           modalAnimation: modalAnimation.value,
+          chatMessageLayout: chatMessageLayout.value,
           customCSS: customCSS.value,
           surfaceCustomCSS: surfaceCustomCSS.value,
           globalFont: globalFont.value,
@@ -1153,6 +1166,8 @@ export const useThemeStore = defineStore("theme", () => {
         };
 
         modalAnimation.value = { ...defaultModalAnimation, ...data.modalAnimation };
+        chatMessageLayout.value =
+          data.chatMessageLayout === "classic" ? "classic" : "grouped";
         customCSS.value = data.customCSS || "";
         surfaceCustomCSS.value =
           data.surfaceCustomCSS && typeof data.surfaceCustomCSS === "object"
@@ -1189,6 +1204,7 @@ export const useThemeStore = defineStore("theme", () => {
     bubbleStyle,
     wallpaperStyle,
     modalAnimation,
+    chatMessageLayout,
     customCSS,
     surfaceCustomCSS,
     globalFont,
@@ -1200,6 +1216,7 @@ export const useThemeStore = defineStore("theme", () => {
     // 方法
     applyTheme,
     applyCustomCSS,
+    setChatMessageLayout,
     setPreset,
     setSkin,
     setCustomColor,

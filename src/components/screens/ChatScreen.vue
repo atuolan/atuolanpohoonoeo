@@ -3255,11 +3255,17 @@ function getDateSeparatorText(timestamp: number): string {
   }
 }
 
+// 訊息排版（全域設定）：經典模式 = 每則都有頭像、名字與時間，只在換日時顯示日期分隔
+const isClassicMessageLayout = computed(
+  () => themeStore.chatMessageLayout === "classic",
+);
+
 // 時間分隔：換日，或與上一則相隔超過 30 分鐘時，插入一條置中的時間（取代每則泡泡下的時間）
 const TIME_SEPARATOR_GAP_MS = 30 * 60 * 1000;
 
 function shouldShowTimeSeparator(index: number): boolean {
   if (shouldShowDateSeparator(index)) return true;
+  if (isClassicMessageLayout.value) return false;
   const currentMsg = visibleMessages.value[index];
   const prevMsg = visibleMessages.value[index - 1];
   if (!currentMsg || !prevMsg) return false;
@@ -3273,6 +3279,7 @@ function getTimeSeparatorText(index: number): string {
   const msg = visibleMessages.value[index];
   if (!msg) return "";
   const ts = getMessageDisplayTime(msg);
+  if (isClassicMessageLayout.value) return getDateSeparatorText(ts);
   const date = new Date(ts);
   const hhmm = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
   return shouldShowDateSeparator(index)
@@ -3313,6 +3320,7 @@ function continuesGroup(index: number): boolean {
 }
 
 function getGroupPosition(index: number): MessageGroupPosition {
+  if (isClassicMessageLayout.value) return "single";
   const withPrev = index > 0 && continuesGroup(index);
   const withNext =
     index < visibleMessages.value.length - 1 && continuesGroup(index + 1);
@@ -9472,12 +9480,19 @@ useChatCleanup({
             groupMemberAvatarVersion,
             getGroupPosition(index),
             shouldShowTimeSeparator(index) && getTimeSeparatorText(index),
+            isClassicMessageLayout,
           ]"
           class="message-memo-wrapper"
         >
-          <!-- 時間分隔（換日或相隔 30 分鐘以上） -->
-          <div v-if="shouldShowTimeSeparator(index)" class="date-separator">
+          <!-- 時間分隔：成組排版 = 換日或相隔 30 分鐘以上；經典排版 = 只在換日時，兩側有橫線 -->
+          <div
+            v-if="shouldShowTimeSeparator(index)"
+            class="date-separator"
+            :class="{ classic: isClassicMessageLayout }"
+          >
+            <div v-if="isClassicMessageLayout" class="separator-line"></div>
             <span class="separator-text">{{ getTimeSeparatorText(index) }}</span>
+            <div v-if="isClassicMessageLayout" class="separator-line"></div>
           </div>
 
           <!-- 系統通知（封鎖/解封等）；交易領取通知資料上仍算 user role，但畫面使用系統通知樣式 -->
@@ -9558,8 +9573,9 @@ useChatCleanup({
                 : ''
             "
             :timestamp="getMessageDisplayTime(message)"
-            :show-time="false"
+            :show-time="isClassicMessageLayout"
             :group-position="getGroupPosition(index)"
+            :layout="themeStore.chatMessageLayout"
             :char-frame-id="chatAppearance?.avatarFrames?.charFrameId ?? null"
             :user-frame-id="chatAppearance?.avatarFrames?.userFrameId ?? null"
             :avatar-shape="(chatAppearance?.useCustom && chatAppearance.avatar?.shape) || themeStore.avatarStyle.shape"
@@ -13392,6 +13408,26 @@ useChatCleanup({
   display: flex;
   justify-content: center;
   padding: 8px 0 4px;
+
+  // 經典排版：舊版的「── 今天 ──」樣式
+  &.classic {
+    align-items: center;
+    gap: 12px;
+    padding: 16px 0;
+    margin: 8px 0;
+
+    .separator-text {
+      line-height: normal;
+      padding: 4px 12px;
+      border-radius: 12px;
+    }
+  }
+}
+
+.separator-line {
+  flex: 1;
+  height: 1px;
+  background: var(--color-border, #e2e8f0);
 }
 
 .separator-text {

@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import type { ChatMessageLayout } from "@/stores/theme";
 import {
   BUBBLE_SHADOWS,
   CHAT_FONT_STACKS,
   MESSAGE_GAP_PX,
+  MESSAGE_GROUP_GAP_PX,
   buildBarBackdrop,
   buildBarBackground,
   isFollowingGlobalWallpaper,
@@ -11,12 +13,38 @@ import {
 import { hexToRgba } from "@/utils/chatScreenHelpers";
 import { toPickerHex } from "@/utils/simpleGradient";
 import { computed } from "vue";
-import type { PreviewElement, PreviewState, PreviewTarget } from "./types";
+import type { PeekScene, PreviewElement, PreviewState, PreviewTarget } from "./types";
 
-const props = defineProps<{
-  state: PreviewState;
-  focus: PreviewElement | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    state: PreviewState;
+    focus: PreviewElement | null;
+    /** 訊息排版（全域設定）：成組 / 經典 */
+    layout?: ChatMessageLayout;
+    /** 精簡版（浮出預覽用）：只畫 scene 需要的部分 */
+    compact?: boolean;
+    scene?: PeekScene;
+  }>(),
+  { layout: "grouped", compact: false, scene: "pair" },
+);
+
+type PreviewPart = "header" | "body" | "separator" | "firstAi" | "thought" | "user" | "samples" | "input";
+
+/** 精簡版各情境要畫的部分（完整版全部顯示） */
+const SCENE_PARTS: Record<PeekScene, PreviewPart[]> = {
+  pair: ["body", "user"],
+  thought: ["body", "thought"],
+  conversation: ["body", "separator", "firstAi", "user"],
+  colors: ["body", "user", "samples"],
+  header: ["header"],
+  input: ["input"],
+};
+
+function showPart(part: PreviewPart) {
+  return !props.compact || SCENE_PARTS[props.scene].includes(part);
+}
+
+const isClassic = computed(() => props.layout === "classic");
 
 const emit = defineEmits<{
   (e: "select", target: PreviewTarget): void;
@@ -136,16 +164,38 @@ const bodyStyle = computed<StyleMap>(() => ({
   gap: `${MESSAGE_GAP_PX[props.state.messageSpacing] ?? MESSAGE_GAP_PX.normal}px`,
 }));
 
+/** 角色連續兩則：成組時用同組間距，經典時與一般訊息間距相同 */
+const aiGroupStyle = computed<StyleMap>(() => ({
+  gap: isClassic.value
+    ? bodyStyle.value.gap
+    : `${MESSAGE_GROUP_GAP_PX[props.state.messageSpacing] ?? MESSAGE_GROUP_GAP_PX.normal}px`,
+}));
+
+/** AI 氣泡：成組的第二則上方靠頭像的角也收小，與聊天頁一致 */
+function aiBubbleStyle(position: "first" | "last"): StyleMap {
+  const style: StyleMap = {
+    borderRadius: `${bubble.value.borderRadius}px`,
+    borderBottomLeftRadius: "6px",
+    maxWidth: `${bubble.value.maxWidth}%`,
+    ...bubbleSurface("ai"),
+    ...fontStyle.value,
+  };
+  // 只有前面真的有同組第一則時，才算「最後一則」收小上角
+  if (!isClassic.value && position === "last" && showPart("firstAi")) style.borderTopLeftRadius = "6px";
+  return style;
+}
+
 function onKey(target: PreviewTarget) {
   emit("select", target);
 }
 </script>
 
 <template>
-  <div class="chat-preview">
-    <div class="preview-label">預覽 <span class="preview-hint">點擊畫面中的元素即可調整</span></div>
+  <div class="chat-preview" :class="{ compact }">
+    <div v-if="!compact" class="preview-label">預覽 <span class="preview-hint">點擊畫面中的元素即可調整</span></div>
     <div class="preview-card" :style="wallpaperStyle">
       <div
+        v-if="showPart('header')"
         class="preview-header preview-clickable"
         :class="{ 'preview-focused': focus === 'header', docked: state.bars.header.docked }"
         :style="barStyle('header')"
@@ -168,6 +218,7 @@ function onKey(target: PreviewTarget) {
       </div>
 
       <div
+        v-if="showPart('body')"
         class="preview-body"
         :style="bodyStyle"
         tabindex="0"
@@ -176,45 +227,84 @@ function onKey(target: PreviewTarget) {
         @click="emit('select', 'wallpaper')"
         @keydown.enter.self="onKey('wallpaper')"
       >
-        <div class="preview-message-row ai">
-          <div
-            class="preview-row-avatar"
-            :class="['size-' + state.avatar.size, { 'preview-focused': focus === 'avatar' }]"
-            :style="avatarStyle"
-            tabindex="0"
-            role="button"
-            aria-label="調整頭像"
-            @click.stop="emit('select', 'avatar')"
-            @keydown.enter.stop="onKey('avatar')"
-          >
-            <span aria-hidden="true">🐾</span>
-          </div>
-          <div class="preview-message-content">
-            <div class="preview-sender-name">
-              <span :style="textStyle(bubble.aiTextColor, bubble.aiTextGradient)">AI 角色</span>
-            </div>
+        <!-- 時間分隔：經典 = 換日時的「── 今天 ──」；成組 = 置中時間 -->
+        <div v-if="showPart('separator')" class="preview-separator" :class="{ classic: isClassic }" aria-hidden="true">
+          <i v-if="isClassic"></i>
+          <span :style="{ background: colors.surface, color: colors.textMuted }">{{ isClassic ? "今天" : "12:00" }}</span>
+          <i v-if="isClassic"></i>
+        </div>
+
+        <!-- 角色連續兩則：成組時頭像只在最後一則、不顯示名字與每則時間 -->
+        <div class="preview-ai-group" :style="aiGroupStyle">
+          <div v-if="showPart('firstAi')" class="preview-message-row ai" :class="{ grouped: !isClassic }">
             <div
-              class="preview-bubble ai"
-              :class="{ 'preview-focused': focus === 'ai' }"
-              :style="{
-                borderRadius: `${bubble.borderRadius}px`,
-                borderBottomLeftRadius: '6px',
-                maxWidth: `${bubble.maxWidth}%`,
-                ...bubbleSurface('ai'),
-                ...fontStyle,
-              }"
+              class="preview-row-avatar"
+              :class="['size-' + state.avatar.size, { 'preview-focused': focus === 'avatar', 'avatar-hidden': !isClassic }]"
+              :style="avatarStyle"
+              :tabindex="isClassic ? 0 : -1"
+              role="button"
+              aria-label="調整頭像"
+              @click.stop="emit('select', 'avatar')"
+              @keydown.enter.stop="onKey('avatar')"
+            >
+              <span aria-hidden="true">🐾</span>
+            </div>
+            <div class="preview-message-content">
+              <div v-if="isClassic" class="preview-sender-name">
+                <span :style="textStyle(bubble.aiTextColor, bubble.aiTextGradient)">AI 角色</span>
+              </div>
+              <div
+                class="preview-bubble ai"
+                :class="{ 'preview-focused': focus === 'ai' }"
+                :style="aiBubbleStyle('first')"
+                tabindex="0"
+                role="button"
+                aria-label="調整 AI 氣泡"
+                @click.stop="emit('select', 'ai')"
+                @keydown.enter.stop="onKey('ai')"
+              >
+                <span :style="textStyle(bubble.aiContentColor, bubble.aiContentGradient)">這是 AI 的訊息氣泡</span>
+                <span v-if="isClassic" class="preview-time" :style="textStyle(bubble.aiTextColor, bubble.aiTextGradient)">12:00</span>
+                <span v-if="focus === 'ai'" class="focus-badge">{{ FOCUS_LABELS.ai }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="preview-message-row ai" :class="{ grouped: !isClassic }">
+            <div
+              class="preview-row-avatar"
+              :class="['size-' + state.avatar.size, { 'preview-focused': focus === 'avatar' }]"
+              :style="avatarStyle"
               tabindex="0"
               role="button"
-              aria-label="調整 AI 氣泡"
-              @click.stop="emit('select', 'ai')"
-              @keydown.enter.stop="onKey('ai')"
+              aria-label="調整頭像"
+              @click.stop="emit('select', 'avatar')"
+              @keydown.enter.stop="onKey('avatar')"
             >
-              <span :style="textStyle(bubble.aiContentColor, bubble.aiContentGradient)">這是 AI 的訊息氣泡</span>
-              <span class="preview-time" :style="textStyle(bubble.aiTextColor, bubble.aiTextGradient)">12:00</span>
-              <span v-if="focus === 'ai'" class="focus-badge">{{ FOCUS_LABELS.ai }}</span>
+              <span aria-hidden="true">🐾</span>
             </div>
-            <div
-              class="preview-thought"
+            <div class="preview-message-content">
+              <div v-if="isClassic" class="preview-sender-name">
+                <span :style="textStyle(bubble.aiTextColor, bubble.aiTextGradient)">AI 角色</span>
+              </div>
+              <div
+                class="preview-bubble ai"
+                :class="{ 'preview-focused': focus === 'ai' }"
+                :style="aiBubbleStyle('last')"
+                tabindex="0"
+                role="button"
+                aria-label="調整 AI 氣泡"
+                @click.stop="emit('select', 'ai')"
+                @keydown.enter.stop="onKey('ai')"
+              >
+                <span :style="textStyle(bubble.aiContentColor, bubble.aiContentGradient)">{{
+                  showPart("firstAi") ? "連續傳的第二則" : "這是 AI 的訊息氣泡"
+                }}</span>
+                <span v-if="isClassic" class="preview-time" :style="textStyle(bubble.aiTextColor, bubble.aiTextGradient)">12:00</span>
+              </div>
+              <div
+                v-if="showPart('thought')"
+                class="preview-thought"
               :class="{ 'preview-focused': focus === 'thought' }"
               :style="thoughtStyle"
               tabindex="0"
@@ -225,11 +315,12 @@ function onKey(target: PreviewTarget) {
             >
               <span :style="textStyle(bubble.thoughtTextColor, bubble.thoughtTextGradient)">💭 角色的內心想法</span>
               <span v-if="focus === 'thought'" class="focus-badge">{{ FOCUS_LABELS.thought }}</span>
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="preview-message-row user">
+        <div v-if="showPart('user')" class="preview-message-row user" :class="{ grouped: !isClassic }">
           <div class="preview-message-content">
             <div
               class="preview-bubble user"
@@ -248,7 +339,7 @@ function onKey(target: PreviewTarget) {
               @keydown.enter.stop="onKey('user')"
             >
               <span :style="textStyle(bubble.userTextColor, bubble.userTextGradient)">這是我的訊息氣泡</span>
-              <span class="preview-time" :style="textStyle(bubble.userTextColor, bubble.userTextGradient)">12:01</span>
+              <span v-if="isClassic" class="preview-time" :style="textStyle(bubble.userTextColor, bubble.userTextGradient)">12:01</span>
               <span v-if="focus === 'user'" class="focus-badge">{{ FOCUS_LABELS.user }}</span>
             </div>
           </div>
@@ -266,7 +357,7 @@ function onKey(target: PreviewTarget) {
           </div>
         </div>
 
-        <div class="preview-ui-samples">
+        <div v-if="showPart('samples')" class="preview-ui-samples">
           <div
             class="preview-ui-card preview-clickable"
             :class="{ 'preview-focused': focus === 'surface' }"
@@ -313,6 +404,7 @@ function onKey(target: PreviewTarget) {
       </div>
 
       <div
+        v-if="showPart('input')"
         class="preview-input preview-clickable"
         :class="{ 'preview-focused': focus === 'input', docked: state.bars.input.docked }"
         :style="{ ...barStyle('input'), color: colors.textMuted }"
@@ -482,6 +574,61 @@ function onKey(target: PreviewTarget) {
 
   &.user {
     justify-content: flex-end;
+  }
+
+  // 成組排版：頭像對齊泡泡底部，與聊天頁一致
+  &.grouped {
+    align-items: flex-end;
+  }
+}
+
+.preview-ai-group {
+  display: flex;
+  flex-direction: column;
+}
+
+// 成組時同組前面幾則不顯示頭像，但保留寬度讓泡泡對齊
+.preview-row-avatar.avatar-hidden {
+  visibility: hidden;
+  height: 0;
+}
+
+.preview-separator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 11px;
+
+  span {
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  // 經典排版：兩側有橫線
+  i {
+    flex: 1;
+    height: 1px;
+    background: var(--color-border, #e2e8f0);
+  }
+}
+
+// 精簡版（浮出預覽）：縮小內距，整塊不可點
+.chat-preview.compact {
+  pointer-events: none;
+
+  .preview-body {
+    padding: 12px;
+  }
+
+  // 只畫頂欄或輸入欄時，上下留出背景
+  .preview-header:not(.docked):last-child {
+    margin-bottom: 12px;
+  }
+
+  .preview-input:not(.docked):first-child {
+    margin-top: 12px;
   }
 }
 

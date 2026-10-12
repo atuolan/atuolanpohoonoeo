@@ -18,6 +18,13 @@ export type PreviewElement =
   | "surface"
   | "surfaceHover"
   | "status";
+/**
+ * 浮出預覽的情境：依正在調整的設定區，只畫相關的部分
+ * pair = AI 一則＋我一則；thought = AI 一則＋想法；conversation = 角色連續兩則＋我一則（看排版與間距）；
+ * colors = 一組對話＋色卡；header / input = 只畫頂欄 / 輸入欄
+ */
+export type PeekScene = "pair" | "thought" | "conversation" | "colors" | "header" | "input";
+
 /** 預覽點擊目標：元素，或背景（切到背景分頁） */
 export type PreviewTarget = PreviewElement | "wallpaper";
 

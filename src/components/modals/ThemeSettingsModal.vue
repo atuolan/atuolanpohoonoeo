@@ -12,6 +12,7 @@ import type { AvatarStyle, BubbleStyle } from "@/stores";
 import { themePresets, useSettingsStore, useThemeStore } from "@/stores";
 import { useGameEconomyStore } from "@/stores/gameEconomy";
 import type { ChatAppearance, ChatBarStyle, ChatBubbleEffects, ChatMessageSpacing } from "@/types/chat";
+import type { ChatMessageLayout } from "@/stores/theme";
 import {
   DEFAULT_BAR_STYLE,
   DEFAULT_BUBBLE_EFFECTS,
@@ -24,7 +25,7 @@ import {
 } from "@/utils/chatAppearanceVars";
 import { toPickerHex } from "@/utils/simpleGradient";
 import { deriveColorsFromPrimary, normalizeHex } from "@/utils/wallpaperLuminance";
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import ChatAppearancePreview from "./theme-settings/ChatAppearancePreview.vue";
 import BarStyleFields from "./theme-settings/BarStyleFields.vue";
 import BubbleEffectsFields from "./theme-settings/BubbleEffectsFields.vue";
@@ -33,6 +34,7 @@ import type {
   ChatColors,
   ChatFontStyle,
   ChatWallpaperStyle,
+  PeekScene,
   PreviewElement,
   PreviewState,
   PreviewTarget,
@@ -98,6 +100,8 @@ const sectionsRef = ref<HTMLElement | null>(null);
 
 const visibleTabs = computed(() => TABS.filter((tab) => tab.id !== "decorations" || !!props.chatId));
 const showPreview = computed(() => activeTab.value in TAB_SECTIONS);
+/** 氣泡分頁不放上方預覽，設定直接置頂，改由浮出預覽顯示效果 */
+const showInlinePreview = computed(() => showPreview.value && activeTab.value !== "bubbles");
 
 type Section =
   | "theme"
@@ -157,8 +161,211 @@ function showSection(section: Section) {
 function selectTab(tab: Tab) {
   activeTab.value = tab;
   previewFocus.value = null;
+  hidePeek();
   contentRef.value?.scrollTo({ top: 0 });
 }
+
+// ===== 浮出預覽 =====
+// 上方預覽看不到時（捲走了，或氣泡分頁本來就沒有），調整設定會淡入一個精簡預覽；持續調整就一直顯示，停手 1 秒後淡出。
+// 框固定出現在視窗頂部（標題、專屬外觀開關、分頁列）：調整設定時這塊是閒置的，不會擋到正在操作的控制項。
+// 內容依正在調的設定區只畫相關部分，手機上大多能原寸顯示；框本身不接收點擊。
+const PEEK_HIDE_DELAY_MS = 1000;
+const PEEK_GAP_PX = 8;
+const PEEK_SIDE_PX = 16;
+/** 最多縮到 75%，再小就看不清楚；仍放不下時從下方裁切 */
+const PEEK_MIN_SCALE = 0.75;
+const modalRef = ref<HTMLElement | null>(null);
+const inlinePreviewRef = ref<InstanceType<typeof ChatAppearancePreview> | null>(null);
+const peekVisible = ref(false);
+/** 量好原寸高度之前先不顯示，避免以錯誤尺寸閃一下 */
+const peekReady = ref(false);
+const peekInnerRef = ref<HTMLElement | null>(null);
+const peekScene = ref<PeekScene>("pair");
+const peekAvailableHeight = ref(0);
+const peekNaturalWidth = ref(0);
+const peekNaturalHeight = ref(0);
+const peekScale = computed(() => {
+  const natural = peekNaturalHeight.value;
+  if (natural <= 0) return 1;
+  return Math.min(1, Math.max(PEEK_MIN_SCALE, peekAvailableHeight.value / natural));
+});
+/** 外框跟著縮放後的尺寸，水平置中 */
+const peekBoxStyle = computed<Record<string, string>>(() => {
+  const scale = peekScale.value;
+  const w = peekNaturalWidth.value * scale;
+  const h = Math.min(peekNaturalHeight.value * scale, peekAvailableHeight.value);
+  return {
+    top: `${PEEK_GAP_PX}px`,
+    width: `${w}px`,
+    left: `calc(50% - ${w / 2}px)`,
+    borderRadius: `${20 * scale}px`,
+    ...(h > 0 ? { height: `${h}px` } : {}),
+    ...(peekReady.value ? {} : { visibility: "hidden" }),
+  };
+});
+let peekHideTimer: ReturnType<typeof setTimeout> | null = null;
+let peekHolding = false;
+
+/** 設定區 → 浮出預覽要畫的情境 */
+const SECTION_PEEK_SCENES: Record<Section, PeekScene> = {
+  theme: "colors",
+  cardColors: "colors",
+  accentColors: "colors",
+  statusColors: "colors",
+  userBubble: "pair",
+  aiBubble: "pair",
+  bubbleTexture: "pair",
+  avatar: "pair",
+  wallpaper: "pair",
+  thought: "thought",
+  bubbleShape: "conversation",
+  header: "header",
+  input: "input",
+};
+
+/** 控制項屬於哪個設定區：取它前面最近的 .peek-marker */
+function sectionOf(control: Element): Section | null {
+  const root = sectionsRef.value;
+  if (!root) return null;
+  let found: Section | null = null;
+  for (const marker of root.querySelectorAll<HTMLElement>(".peek-marker")) {
+    if (!(marker.compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING)) break;
+    found = marker.dataset.peek as Section;
+  }
+  return found;
+}
+
+/** 原本的預覽還有一半以上（或至少 160px）在畫面內時，就不需要浮出 */
+function isInlinePreviewVisible(): boolean {
+  const el = inlinePreviewRef.value?.$el as HTMLElement | undefined;
+  const content = contentRef.value;
+  if (!el || !content) return false;
+  const p = el.getBoundingClientRect();
+  const c = content.getBoundingClientRect();
+  const visible = Math.min(p.bottom, c.bottom) - Math.max(p.top, c.top);
+  return visible >= Math.min(p.height * 0.5, 160);
+}
+
+/** 可用高度：視窗頂部到內容區上緣（閒置區）；控制項在更下面時，最多延伸到控制項上方 */
+function measurePeekSpace(control: Element) {
+  const content = contentRef.value;
+  const modal = modalRef.value;
+  if (!content || !modal) return;
+  const m = modal.getBoundingClientRect();
+  const c = content.getBoundingClientRect();
+  const t = control.getBoundingClientRect();
+  const idleBottom = c.top - m.top;
+  const aboveControl = Math.min(t.top, c.bottom) - m.top;
+  peekAvailableHeight.value = Math.max(idleBottom, aboveControl) - PEEK_GAP_PX * 2;
+  peekNaturalWidth.value = Math.max(m.width - PEEK_SIDE_PX * 2, 0);
+}
+
+/** 量預覽原寸高度（transform 不影響 offsetHeight）；內容、情境或排版改變後重新量 */
+function measurePeek() {
+  nextTick(() => {
+    const inner = peekInnerRef.value;
+    if (!inner) return;
+    peekNaturalHeight.value = inner.offsetHeight;
+    peekReady.value = true;
+  });
+}
+
+function clearPeekTimer() {
+  if (peekHideTimer) {
+    clearTimeout(peekHideTimer);
+    peekHideTimer = null;
+  }
+}
+
+function hidePeek() {
+  clearPeekTimer();
+  peekHolding = false;
+  peekVisible.value = false;
+}
+
+function schedulePeekHide() {
+  clearPeekTimer();
+  if (peekHolding) return;
+  peekHideTimer = setTimeout(() => {
+    peekVisible.value = false;
+    peekHideTimer = null;
+  }, PEEK_HIDE_DELAY_MS);
+}
+
+function pokePeek(control: Element) {
+  if (!showPreview.value || isInlinePreviewVisible()) {
+    hidePeek();
+    return;
+  }
+  const section = sectionOf(control);
+  const scene = section ? SECTION_PEEK_SCENES[section] : peekScene.value;
+  if (!peekVisible.value || scene !== peekScene.value) peekReady.value = false;
+  peekScene.value = scene;
+  measurePeekSpace(control);
+  peekVisible.value = true;
+  measurePeek();
+  schedulePeekHide();
+}
+
+function releasePeekHold() {
+  peekHolding = false;
+  schedulePeekHide();
+}
+
+/** 按住滑桿時保持顯示，放開後才開始倒數 */
+function onSettingsPointerDown(event: PointerEvent) {
+  const slider = (event.target as Element | null)?.closest('input[type="range"]');
+  if (!slider) return;
+  peekHolding = true;
+  pokePeek(slider);
+  window.addEventListener("pointerup", releasePeekHold, { once: true });
+  window.addEventListener("pointercancel", releasePeekHold, { once: true });
+}
+
+/** 滑桿拖曳、顏色、輸入框等的連續變更 */
+function onSettingsInput(event: Event) {
+  const control = event.target as Element | null;
+  if (control) pokePeek(control);
+}
+
+/** 選項按鈕（色票、chip、形狀等）；「返回全部設定」不算 */
+function onSettingsClick(event: MouseEvent) {
+  const control = (event.target as Element | null)?.closest("button, label, [role='button']");
+  if (!control || control.closest(".focus-settings-header")) return;
+  pokePeek(control);
+}
+
+// 使用者自己捲動設定時（不是正在拖滑桿）浮出框立刻收起，避免擋住正在找的設定。
+// 不能聽 scroll 事件：調間距或排版會讓上方預覽變高，瀏覽器的捲動錨定會自動調整捲動位置並觸發 scroll，
+// 框就會一出現就被收掉。所以只認滾輪與手指滑動。
+const PEEK_TOUCH_SCROLL_PX = 10;
+let peekTouchStartY = 0;
+
+function hidePeekOnUserScroll() {
+  if (peekVisible.value && !peekHolding) hidePeek();
+}
+
+function onContentTouchStart(event: TouchEvent) {
+  peekTouchStartY = event.touches[0]?.clientY ?? 0;
+}
+
+function onContentTouchMove(event: TouchEvent) {
+  const y = event.touches[0]?.clientY ?? peekTouchStartY;
+  if (Math.abs(y - peekTouchStartY) > PEEK_TOUCH_SCROLL_PX) hidePeekOnUserScroll();
+}
+
+watch(
+  () => props.visible,
+  (open) => {
+    if (!open) hidePeek();
+  },
+);
+
+onBeforeUnmount(() => {
+  clearPeekTimer();
+  window.removeEventListener("pointerup", releasePeekHold);
+  window.removeEventListener("pointercancel", releasePeekHold);
+});
 
 function handleTabsWheel(event: WheelEvent) {
   (event.currentTarget as HTMLElement).scrollLeft += event.deltaY;
@@ -209,6 +416,12 @@ const MESSAGE_SPACINGS = [
   { id: "normal", name: "標準" },
   { id: "relaxed", name: "寬鬆" },
 ] as const satisfies readonly { id: ChatMessageSpacing; name: string }[];
+
+// 訊息排版（全域設定，點了立即套用到所有聊天，不跟著本視窗的「套用」）
+const MESSAGE_LAYOUTS = [
+  { id: "grouped", name: "成組" },
+  { id: "classic", name: "經典" },
+] as const satisfies readonly { id: ChatMessageLayout; name: string }[];
 
 const FONT_FAMILIES = [
   { id: "system", name: "系統預設" },
@@ -702,7 +915,7 @@ function cancel() {
   <Teleport to="body">
     <Transition name="fade">
       <div v-if="visible" class="soft-modal-overlay" @click.self="saveAndClose">
-        <div class="soft-modal theme-settings-modal">
+        <div ref="modalRef" class="soft-modal theme-settings-modal">
           <div class="modal-header">
             <h2 class="modal-title">聊天外觀設定</h2>
             <button class="modal-close" title="儲存並關閉" aria-label="儲存並關閉" @click="saveAndClose">
@@ -742,16 +955,24 @@ function cancel() {
             </div>
           </div>
 
-          <div ref="contentRef" class="modal-content">
+          <div
+            ref="contentRef"
+            class="modal-content"
+            @wheel.passive="hidePeekOnUserScroll"
+            @touchstart.passive="onContentTouchStart"
+            @touchmove.passive="onContentTouchMove"
+          >
             <p v-if="settingsStore.nightMode && activeTab !== 'decorations'" class="night-hint">
               🌙 夜間模式中，聊天頁的顏色與背景會改用夜間配色；字體、形狀、透明度等設定照常套用。
             </p>
 
             <ChatAppearancePreview
-              v-if="showPreview"
+              v-if="showInlinePreview"
+              ref="inlinePreviewRef"
               class="preview-block"
               :state="previewState"
               :focus="previewFocus"
+              :layout="themeStore.chatMessageLayout"
               @select="onPreviewSelect"
             />
 
@@ -761,6 +982,9 @@ function cancel() {
               ref="sectionsRef"
               class="settings-section"
               :class="{ 'focus-settings-panel': !!previewFocus }"
+              @pointerdown="onSettingsPointerDown"
+              @input="onSettingsInput"
+              @click="onSettingsClick"
             >
               <div v-if="previewFocus" class="focus-settings-header">
                 <span class="focus-settings-title">{{ FOCUS_TITLES[previewFocus] }}</span>
@@ -771,6 +995,7 @@ function cancel() {
 
               <!-- 主題配色 -->
               <template v-if="showSection('theme')">
+                <span class="peek-marker" data-peek="theme" hidden></span>
                 <h3 class="section-title">主題配色</h3>
                 <div class="preset-grid">
                   <button
@@ -822,6 +1047,7 @@ function cancel() {
               <!-- 介面顏色 -->
               <template v-for="group in PALETTE_GROUPS" :key="group.id">
                 <template v-if="showSection(group.id)">
+                  <span class="peek-marker" :data-peek="group.id" hidden></span>
                   <h3 v-if="!previewFocus" class="section-title">{{ group.title }}</h3>
                   <div class="individual-colors">
                     <div v-for="field in group.fields" :key="field.key" class="color-item">
@@ -839,6 +1065,7 @@ function cancel() {
 
               <!-- 我的氣泡 -->
               <template v-if="showSection('userBubble')">
+                <span class="peek-marker" data-peek="userBubble" hidden></span>
                 <h3 v-if="!previewFocus" class="section-title">我的氣泡</h3>
                 <div class="individual-colors">
                   <GradientColorField
@@ -856,6 +1083,7 @@ function cancel() {
 
               <!-- AI 氣泡 -->
               <template v-if="showSection('aiBubble')">
+                <span class="peek-marker" data-peek="aiBubble" hidden></span>
                 <h3 v-if="!previewFocus" class="section-title">AI 氣泡</h3>
                 <div class="individual-colors">
                   <GradientColorField
@@ -873,6 +1101,7 @@ function cancel() {
 
               <!-- 想法氣泡 -->
               <template v-if="showSection('thought')">
+                <span class="peek-marker" data-peek="thought" hidden></span>
                 <h3 v-if="!previewFocus" class="section-title">想法氣泡</h3>
                 <div class="individual-colors">
                   <GradientColorField
@@ -911,6 +1140,7 @@ function cancel() {
 
               <!-- 形狀與間距 -->
               <template v-if="showSection('bubbleShape')">
+                <span class="peek-marker" data-peek="bubbleShape" hidden></span>
                 <h3 class="section-title">形狀與間距</h3>
                 <div class="slider-control">
                   <span class="slider-label">圓角</span>
@@ -936,16 +1166,41 @@ function cancel() {
                     </button>
                   </div>
                 </div>
+                <div class="slider-control">
+                  <span class="slider-label">訊息排版</span>
+                  <div class="chip-row">
+                    <button
+                      v-for="layout in MESSAGE_LAYOUTS"
+                      :key="layout.id"
+                      class="chip"
+                      :class="{ active: themeStore.chatMessageLayout === layout.id }"
+                      :aria-pressed="themeStore.chatMessageLayout === layout.id"
+                      @click="themeStore.setChatMessageLayout(layout.id)"
+                    >
+                      {{ layout.name }}
+                    </button>
+                  </div>
+                </div>
+                <p class="section-hint bars-hint">
+                  {{
+                    themeStore.chatMessageLayout === "classic"
+                      ? "經典：每則訊息都有頭像、名字和時間。"
+                      : "成組：同一人連續的訊息合成一組，時間改為置中分隔。"
+                  }}
+                  所有聊天共用，點了立即生效。
+                </p>
               </template>
 
               <!-- 質感 -->
               <template v-if="showSection('bubbleTexture')">
+                <span class="peek-marker" data-peek="bubbleTexture" hidden></span>
                 <h3 class="section-title">質感 <small class="section-note">AI 與我的氣泡共用</small></h3>
                 <BubbleEffectsFields v-model="tempBubbleEffects" :fallback-border-color="tempColors.border" />
               </template>
 
               <!-- 頭像 -->
               <template v-if="showSection('avatar')">
+                <span class="peek-marker" data-peek="avatar" hidden></span>
                 <h3 class="section-title">頭像形狀</h3>
                 <div class="option-grid">
                   <button
@@ -1004,6 +1259,7 @@ function cancel() {
 
               <!-- 聊天背景 -->
               <template v-if="showSection('wallpaper')">
+                <span class="peek-marker" data-peek="wallpaper" hidden></span>
                 <h3 class="section-title">聊天背景</h3>
                 <div class="wallpaper-grid">
                   <button
@@ -1089,6 +1345,7 @@ function cancel() {
               <!-- 頂欄與輸入欄 -->
               <template v-for="bar in BARS" :key="bar.id">
                 <template v-if="showSection(bar.id)">
+                  <span class="peek-marker" :data-peek="bar.id" hidden></span>
                   <h3 v-if="!previewFocus" class="section-title">{{ bar.name }}</h3>
                   <div class="individual-colors">
                     <div v-for="field in bar.colorFields" :key="field.key" class="color-item">
@@ -1298,6 +1555,25 @@ function cancel() {
             </div>
           </div>
 
+          <!-- 浮出預覽：預覽捲出畫面後，調整設定時淡入，停手 1 秒淡出 -->
+          <Transition name="preview-peek">
+            <div v-if="peekVisible && showPreview" class="preview-peek" :style="peekBoxStyle" aria-hidden="true">
+              <div
+                ref="peekInnerRef"
+                class="preview-peek-inner"
+                :style="{ width: `${peekNaturalWidth}px`, transform: `scale(${peekScale})` }"
+              >
+                <ChatAppearancePreview
+                  compact
+                  :scene="peekScene"
+                  :state="previewState"
+                  :focus="null"
+                  :layout="themeStore.chatMessageLayout"
+                />
+              </div>
+            </div>
+          </Transition>
+
           <div class="modal-footer">
             <button class="soft-btn secondary" @click="resetToDefault">恢復預設</button>
             <button class="soft-btn secondary" @click="cancel">取消</button>
@@ -1322,6 +1598,8 @@ function cancel() {
 @use "../../styles/theme-settings-shared";
 
 .theme-settings-modal {
+  // 浮出預覽以視窗為定位基準
+  position: relative;
   width: 100%;
   max-width: 500px;
   height: calc(100dvh - 40px);
@@ -1512,6 +1790,48 @@ function cancel() {
   margin-bottom: 16px;
 }
 
+// 浮出預覽（固定在視窗頂部；尺寸由 peekBoxStyle 決定）
+.preview-peek {
+  position: absolute;
+  z-index: 5;
+  overflow: hidden;
+  border-radius: 20px;
+  pointer-events: none;
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.22),
+    0 3px 10px rgba(0, 0, 0, 0.08);
+}
+
+// 以原寸排版後整體縮放，放不下時等比例縮小而不是裁切
+.preview-peek-inner {
+  transform-origin: top left;
+}
+
+.preview-peek-enter-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.preview-peek-leave-active {
+  transition:
+    opacity 0.35s ease,
+    transform 0.35s ease;
+}
+
+.preview-peek-enter-from,
+.preview-peek-leave-to {
+  opacity: 0;
+  transform: translateY(6px) scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-peek-enter-active,
+  .preview-peek-leave-active {
+    transition: none;
+  }
+}
+
 .settings-section {
   display: flex;
   flex-direction: column;
@@ -1532,7 +1852,9 @@ function cancel() {
   margin: 0;
   padding-top: 6px;
 
-  &:first-child {
+  // 第一個標題不留上距（前面的 .peek-marker 是隱藏的區段標記，不算數）
+  &:first-child,
+  .peek-marker:first-child + & {
     padding-top: 0;
   }
 }

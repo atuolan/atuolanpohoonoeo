@@ -59,6 +59,8 @@ export const DEFAULT_BUBBLE_EFFECTS: ChatBubbleEffects = {
 };
 
 export const MESSAGE_GAP_PX: Record<ChatMessageSpacing, number> = { compact: 6, normal: 12, relaxed: 20 };
+/** 同一人連續訊息（同組）之間的間距 */
+export const MESSAGE_GROUP_GAP_PX: Record<ChatMessageSpacing, number> = { compact: 2, normal: 4, relaxed: 8 };
 
 export const BUBBLE_SHADOWS: Record<Exclude<ChatBubbleEffects["shadow"], "theme">, string> = {
   none: "none",
@@ -231,6 +233,7 @@ export const ALL_CHAT_APPEARANCE_PROPS = [
   "--bubble-outline",
   "--bubble-outline-offset",
   "--chat-message-gap",
+  "--chat-message-group-gap",
 ] as const;
 
 export interface GlobalWallpaperInfo {
@@ -396,5 +399,6 @@ function applyEffectVars(vars: Record<string, string>, appearance: ChatAppearanc
 
   if (appearance.messageSpacing) {
     vars["--chat-message-gap"] = `${MESSAGE_GAP_PX[appearance.messageSpacing] ?? MESSAGE_GAP_PX.normal}px`;
+    vars["--chat-message-group-gap"] = `${MESSAGE_GROUP_GAP_PX[appearance.messageSpacing] ?? MESSAGE_GROUP_GAP_PX.normal}px`;
   }
 }
