@@ -28,6 +28,8 @@ const props = defineProps<Props>();
 // Emits
 const emit = defineEmits<{
   (e: "close"): void;
+  /** 打開聊天外觀設定（只編輯全域外觀） */
+  (e: "openChatAppearance"): void;
 }>();
 
 // Store
@@ -971,6 +973,15 @@ watch(
           <div class="modal-content">
             <!-- 顏色設定 -->
             <div v-if="activeTab === 'colors'" class="settings-section">
+              <!-- 全域聊天外觀入口：氣泡、頭像、聊天背景等聊天頁專用的全域設定 -->
+              <button class="chat-appearance-entry" @click="emit('openChatAppearance')">
+                <span class="chat-appearance-entry-text">
+                  <span class="chat-appearance-entry-title">聊天外觀</span>
+                  <span class="chat-appearance-entry-sub">氣泡、頭像、聊天背景與字體，套用到所有使用全域外觀的聊天</span>
+                </span>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+              </button>
+
               <!-- 主題包一鍵套用 -->
               <div class="theme-pack-section-header">
                 <h3 class="section-title">主題包（一鍵套用）</h3>
@@ -2177,6 +2188,58 @@ body {
 }
 
 // ===== 主題包區塊 =====
+// 全域聊天外觀入口
+.chat-appearance-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 16px;
+  background: var(--color-primary-light);
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    fill: none;
+    stroke: var(--color-primary);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+}
+
+.chat-appearance-entry-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-appearance-entry-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.chat-appearance-entry-sub {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+}
+
 .theme-pack-section-header {
   display: flex;
   align-items: baseline;

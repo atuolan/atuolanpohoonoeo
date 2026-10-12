@@ -186,6 +186,15 @@ export interface ChatAppearance {
   messageSpacing?: ChatMessageSpacing;
 }
 
+/**
+ * 全域聊天外觀：沒有專屬外觀的聊天使用。
+ * 只放主題本身沒有的部分；配色、氣泡顏色與形狀、頭像直接用主題的全域設定（與全局美化共用）。
+ */
+export type GlobalChatAppearance = Pick<
+  ChatAppearance,
+  "wallpaper" | "font" | "bars" | "bubbleEffects" | "messageSpacing"
+>;
+
 // ===== 消息發送者 =====
 export type MessageSender = "user" | "assistant" | "system" | "narrator";
 

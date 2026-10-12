@@ -2512,6 +2512,13 @@ function openThemeSettings() {
   showThemeSettings.value = true;
 }
 
+// 從全局美化打開聊天外觀：沒有 chatAppearance → 只編輯全域外觀
+function openGlobalChatAppearance() {
+  showGlobalTheme.value = false;
+  currentChatAppearance.value = undefined;
+  showThemeSettings.value = true;
+}
+
 // 保存聊天專屬外觀
 function handleSaveChatAppearance(appearance: ChatAppearance) {
   console.log("[App] handleSaveChatAppearance called:", appearance);
@@ -3037,6 +3044,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <GlobalThemeModal
       :visible="showGlobalTheme"
       @close="showGlobalTheme = false"
+      @open-chat-appearance="openGlobalChatAppearance"
     />
 
     <!-- 導入彈窗 -->

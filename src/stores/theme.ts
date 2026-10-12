@@ -8,6 +8,7 @@ import {
 } from "@/styles/skin-presets";
 import { DEFAULT_THEME_PACK, type ThemePack } from "@/styles/theme-packs";
 import { boostCSSSpecificity } from "@/utils/cssScoping";
+import type { GlobalChatAppearance } from "@/types/chat";
 
 /**
  * 從 CSS 顏色字串解析 RGB 值
@@ -457,6 +458,9 @@ export const useThemeStore = defineStore("theme", () => {
   // 聊天訊息排版（全域）：grouped = 連續訊息成組；classic = 每則都有頭像、名字與時間
   const chatMessageLayout = ref<ChatMessageLayout>("grouped");
 
+  // 全域聊天外觀（背景、字體、頂欄／輸入欄、質感、間距）；null = 從未設定，沿用內建預設
+  const globalChatAppearance = ref<GlobalChatAppearance | null>(null);
+
   // 自訂 CSS
   const customCSS = ref<string>("");
 
@@ -579,7 +583,11 @@ export const useThemeStore = defineStore("theme", () => {
       return { ...nightModeColors };
     }
 
-    // 否則使用正常主題配色
+    return dayColors.value;
+  });
+
+  /** 白天配色（不受夜晚模式影響）；編輯全域外觀時以此為準，避免把夜晚配色存成自訂顏色 */
+  const dayColors = computed<ThemeColors>(() => {
     const preset = themePresets[currentPreset.value] || softPinkTheme;
     return { ...preset, ...customColors.value };
   });
@@ -883,6 +891,37 @@ export const useThemeStore = defineStore("theme", () => {
     saveToStorage();
   }
 
+  /**
+   * 一次套用全域聊天外觀（聊天外觀設定的「全域外觀」按完成時呼叫）。
+   * 配色只寫入與目前白天配色不同的鍵，沒改的顏色仍跟著主題預設走。
+   */
+  function applyGlobalChatAppearance(payload: {
+    colors: Partial<ThemeColors>;
+    bubble: BubbleStyle;
+    avatar: AvatarStyle;
+    chat: GlobalChatAppearance;
+  }) {
+    const day = dayColors.value;
+    const changedColors = Object.fromEntries(
+      Object.entries(payload.colors).filter(
+        ([key, value]) => value && value !== day[key as keyof ThemeColors],
+      ),
+    ) as Partial<ThemeColors>;
+    if (Object.keys(changedColors).length > 0) {
+      customColors.value = { ...customColors.value, ...changedColors };
+    }
+    bubbleStyle.value = { ...payload.bubble };
+    avatarStyle.value = { ...payload.avatar };
+    globalChatAppearance.value = JSON.parse(JSON.stringify(payload.chat));
+    applyTheme();
+    saveToStorage();
+  }
+
+  /** 全域外觀的內建預設值（聊天外觀設定「恢復預設」用） */
+  function getDefaultChatStyles() {
+    return { bubble: { ...defaultBubbleStyle }, avatar: { ...defaultAvatarStyle } };
+  }
+
   // 更新自訂 CSS
   function updateCustomCSS(css: string) {
     customCSS.value = css;
@@ -1065,6 +1104,7 @@ export const useThemeStore = defineStore("theme", () => {
     surfaceCustomCSS.value = {};
     globalFont.value = { ...defaultGlobalFont };
     currentThemePack.value = DEFAULT_THEME_PACK.id;
+    globalChatAppearance.value = null;
     applyTheme();
     saveToStorage();
   }
@@ -1129,6 +1169,7 @@ export const useThemeStore = defineStore("theme", () => {
           wallpaperStyle: wallpaperStyle.value,
           modalAnimation: modalAnimation.value,
           chatMessageLayout: chatMessageLayout.value,
+          globalChatAppearance: globalChatAppearance.value,
           customCSS: customCSS.value,
           surfaceCustomCSS: surfaceCustomCSS.value,
           globalFont: globalFont.value,
@@ -1168,6 +1209,10 @@ export const useThemeStore = defineStore("theme", () => {
         modalAnimation.value = { ...defaultModalAnimation, ...data.modalAnimation };
         chatMessageLayout.value =
           data.chatMessageLayout === "classic" ? "classic" : "grouped";
+        globalChatAppearance.value =
+          data.globalChatAppearance && typeof data.globalChatAppearance === "object"
+            ? data.globalChatAppearance
+            : null;
         customCSS.value = data.customCSS || "";
         surfaceCustomCSS.value =
           data.surfaceCustomCSS && typeof data.surfaceCustomCSS === "object"
@@ -1205,6 +1250,8 @@ export const useThemeStore = defineStore("theme", () => {
     wallpaperStyle,
     modalAnimation,
     chatMessageLayout,
+    globalChatAppearance,
+    dayColors,
     customCSS,
     surfaceCustomCSS,
     globalFont,
@@ -1217,6 +1264,8 @@ export const useThemeStore = defineStore("theme", () => {
     applyTheme,
     applyCustomCSS,
     setChatMessageLayout,
+    applyGlobalChatAppearance,
+    getDefaultChatStyles,
     setPreset,
     setSkin,
     setCustomColor,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ChatAppearance } from "@/types/chat";
+import type { ChatAppearance, GlobalChatAppearance } from "@/types/chat";
 import {
   ALL_CHAT_APPEARANCE_PROPS,
   buildBarBackground,
@@ -225,6 +225,46 @@ describe("頂欄、輸入欄與氣泡質感", () => {
     expect(resolveBarStyle({ ...withEffects, useCustom: false }, "header").docked).toBe(false);
     expect(resolveBarStyle(withEffects, "header").docked).toBe(true);
     expect(resolveBarStyle(fullAppearance, "input")).toEqual({ opacity: 100, blur: 30, docked: false });
+  });
+});
+
+describe("全域聊天外觀", () => {
+  const globalChat: GlobalChatAppearance = {
+    font: { size: "17px", family: "serif", lineHeight: 1.8, letterSpacing: 1 },
+    bars: { header: { opacity: 60, blur: 12, docked: true } },
+    bubbleEffects: { opacity: 50, blur: 0, shadow: "theme", borderWidth: 0, borderColor: "" },
+    messageSpacing: "relaxed",
+  };
+  const globalBubble = { userBgColor: "#ff0000", userBgGradient: "", aiBgColor: "#00ff00", aiBgGradient: "" };
+
+  it("沒設定過全域聊天外觀時，沒有專屬外觀的聊天維持原狀", () => {
+    expect(buildChatAppearanceVars(undefined, { ...day, globalChat: null })).toEqual({});
+    expect(resolveBarStyle(undefined, "header", null)).toEqual({ opacity: 100, blur: 30, docked: false });
+  });
+
+  it("沒有專屬外觀的聊天套用全域的字體、頂欄、質感與間距", () => {
+    const vars = buildChatAppearanceVars({ useCustom: false }, { ...day, globalChat, globalBubble });
+    expect(vars["--chat-font-size"]).toBe("17px");
+    expect(vars["--chat-line-height"]).toBe("1.8");
+    expect(vars["--chat-header-bg"]).toContain("60%");
+    expect(vars["--chat-message-gap"]).toBe("20px");
+    // 透明度作用在主題的全域氣泡底色上
+    expect(vars["--bubble-ai-bg"]).toBe("color-mix(in srgb, #00ff00 50%, transparent)");
+    expect(resolveBarStyle({ useCustom: false }, "header", globalChat).docked).toBe(true);
+  });
+
+  it("配色、氣泡與頭像留給主題的全域變數，不寫到聊天容器上", () => {
+    const vars = buildChatAppearanceVars(undefined, { ...day, globalChat: { messageSpacing: "compact" } });
+    for (const key of ["--color-primary", "--bubble-user-bg", "--bubble-radius", "--avatar-size"]) {
+      expect(vars[key], key).toBeUndefined();
+    }
+  });
+
+  it("有專屬外觀的聊天不受全域聊天外觀影響", () => {
+    const vars = buildChatAppearanceVars(fullAppearance, { ...day, globalChat });
+    expect(vars["--chat-font-size"]).toBe("18px");
+    expect(vars["--chat-message-gap"]).toBeUndefined();
+    expect(resolveBarStyle(fullAppearance, "header", globalChat).docked).toBe(false);
   });
 });
 

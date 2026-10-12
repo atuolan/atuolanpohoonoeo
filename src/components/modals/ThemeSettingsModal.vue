@@ -34,13 +34,14 @@ import type {
   ChatColors,
   ChatFontStyle,
   ChatWallpaperStyle,
-  PeekScene,
   PreviewElement,
+  PreviewScene,
   PreviewState,
   PreviewTarget,
 } from "./theme-settings/types";
 
-// 此彈窗只從聊天頁開啟，編輯的一律是「目前聊天」的專屬外觀
+// 從聊天頁開啟：可在「全域外觀」與「這個聊天專屬」之間切換；
+// 從聊天以外開啟（沒有 chatAppearance）：只編輯全域外觀
 interface Props {
   visible: boolean;
   chatAppearance?: ChatAppearance;
@@ -61,47 +62,17 @@ const gameEconomyStore = useGameEconomyStore();
 
 const GLOBAL_WALLET_ID = "global";
 
-// ===== 分頁 =====
-type Tab = "colors" | "bubbles" | "wallpaper" | "font" | "decorations";
+// ===== 分頁：照「看到的東西」分 =====
+type Tab = "overall" | "messages" | "avatar" | "wallpaper" | "font" | "decorations";
 
-const TABS: { id: Tab; label: string; icon: string }[] = [
-  {
-    id: "colors",
-    label: "配色",
-    icon: "M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8z",
-  },
-  {
-    id: "bubbles",
-    label: "氣泡",
-    icon: "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z",
-  },
-  {
-    id: "wallpaper",
-    label: "背景",
-    icon: "M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z",
-  },
-  {
-    id: "font",
-    label: "字體",
-    icon: "M9.93 13.5h4.14L12 7.98 9.93 13.5zM20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-4.05 16.5l-1.14-3H9.17l-1.12 3H5.96l5.11-13h1.86l5.11 13h-2.09z",
-  },
-  {
-    id: "decorations",
-    label: "裝飾",
-    icon: "M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z",
-  },
+const TABS: { id: Tab; label: string }[] = [
+  { id: "overall", label: "整體" },
+  { id: "messages", label: "訊息" },
+  { id: "avatar", label: "頭像" },
+  { id: "wallpaper", label: "背景" },
+  { id: "font", label: "文字" },
+  { id: "decorations", label: "裝飾" },
 ];
-
-const activeTab = ref<Tab>("colors");
-/** 在預覽中點選的元素；有值時設定區只顯示該元素的完整設定 */
-const previewFocus = ref<PreviewElement | null>(null);
-const contentRef = ref<HTMLElement | null>(null);
-const sectionsRef = ref<HTMLElement | null>(null);
-
-const visibleTabs = computed(() => TABS.filter((tab) => tab.id !== "decorations" || !!props.chatId));
-const showPreview = computed(() => activeTab.value in TAB_SECTIONS);
-/** 氣泡分頁不放上方預覽，設定直接置頂，改由浮出預覽顯示效果 */
-const showInlinePreview = computed(() => showPreview.value && activeTab.value !== "bubbles");
 
 type Section =
   | "theme"
@@ -116,279 +87,283 @@ type Section =
   | "avatar"
   | "wallpaper"
   | "header"
-  | "input";
+  | "input"
+  | "fontBasics"
+  | "fontSpacing"
+  | "markdown"
+  | "userFrame"
+  | "charFrame"
+  | "bubbleDeco";
 
-/** 每個分頁列出的設定區（依範本順序顯示） */
-const TAB_SECTIONS: Partial<Record<Tab, Section[]>> = {
-  colors: ["theme", "cardColors", "accentColors", "statusColors"],
-  bubbles: ["userBubble", "aiBubble", "thought", "bubbleShape", "bubbleTexture", "avatar"],
-  wallpaper: ["wallpaper", "header", "input"],
-};
-
-/** 點選預覽元素時，顯示與該元素相關的所有設定 */
-const ELEMENT_SECTIONS: Record<PreviewElement, Section[]> = {
-  ai: ["aiBubble", "bubbleShape", "bubbleTexture"],
-  user: ["userBubble", "bubbleShape", "bubbleTexture"],
-  thought: ["thought"],
+/** 每個分頁列出的設定卡（依範本順序顯示） */
+const TAB_SECTIONS: Record<Tab, Section[]> = {
+  overall: ["theme", "cardColors", "accentColors", "statusColors"],
+  messages: ["userBubble", "aiBubble", "thought", "bubbleShape", "bubbleTexture"],
   avatar: ["avatar"],
-  header: ["header"],
-  input: ["input"],
-  surface: ["cardColors"],
-  surfaceHover: ["accentColors"],
-  status: ["statusColors"],
+  wallpaper: ["wallpaper", "header", "input"],
+  font: ["fontBasics", "fontSpacing", "markdown"],
+  decorations: ["userFrame", "charFrame", "bubbleDeco"],
 };
 
-const FOCUS_TITLES: Record<PreviewElement, string> = {
-  ai: "AI 氣泡",
-  user: "我的氣泡",
-  thought: "想法氣泡",
-  avatar: "頭像",
-  header: "頂欄",
-  input: "輸入欄",
-  surface: "卡片與主要文字",
-  surfaceHover: "滑過背景與輔助色",
-  status: "狀態提示色",
+/** 設定卡對應預覽中亮起的元素（沒有對應元素的卡不亮預覽） */
+const SECTION_FOCUS: Partial<Record<Section, PreviewElement>> = {
+  cardColors: "surface",
+  accentColors: "surfaceHover",
+  statusColors: "status",
+  userBubble: "user",
+  aiBubble: "ai",
+  thought: "thought",
+  avatar: "avatar",
+  header: "header",
+  input: "input",
 };
 
-const visibleSections = computed(
-  () => new Set(previewFocus.value ? ELEMENT_SECTIONS[previewFocus.value] : (TAB_SECTIONS[activeTab.value] ?? [])),
+/** 點預覽元素 → 跳到對應的設定卡 */
+const ELEMENT_SECTION: Record<PreviewTarget, Section> = {
+  ai: "aiBubble",
+  user: "userBubble",
+  thought: "thought",
+  avatar: "avatar",
+  header: "header",
+  input: "input",
+  surface: "cardColors",
+  surfaceHover: "accentColors",
+  status: "statusColors",
+  wallpaper: "wallpaper",
+};
+
+const activeTab = ref<Tab>("overall");
+/** 目前預覽對應的設定卡：跟著捲動位置、點選的卡或預覽點擊變動 */
+const activeSection = ref<Section>("theme");
+const contentRef = ref<HTMLElement | null>(null);
+
+// 裝飾（頭像框）只屬於單一聊天；只編輯全域時不顯示
+const visibleTabs = computed(() =>
+  TABS.filter((tab) => tab.id !== "decorations" || (!!props.chatId && !isGlobalOnly.value)),
 );
+const previewFocusElement = computed(() => SECTION_FOCUS[activeSection.value] ?? null);
 
 function showSection(section: Section) {
-  return visibleSections.value.has(section);
+  return TAB_SECTIONS[activeTab.value].includes(section);
+}
+
+function tabOfSection(section: Section): Tab {
+  return (Object.keys(TAB_SECTIONS) as Tab[]).find((tab) => TAB_SECTIONS[tab].includes(section)) ?? "overall";
 }
 
 function selectTab(tab: Tab) {
   activeTab.value = tab;
-  previewFocus.value = null;
-  hidePeek();
+  activeSection.value = TAB_SECTIONS[tab][0];
   contentRef.value?.scrollTo({ top: 0 });
 }
 
-// ===== 浮出預覽 =====
-// 上方預覽看不到時（捲走了，或氣泡分頁本來就沒有），調整設定會淡入一個精簡預覽；持續調整就一直顯示，停手 1 秒後淡出。
-// 框固定出現在視窗頂部（標題、專屬外觀開關、分頁列）：調整設定時這塊是閒置的，不會擋到正在操作的控制項。
-// 內容依正在調的設定區只畫相關部分，手機上大多能原寸顯示；框本身不接收點擊。
-const PEEK_HIDE_DELAY_MS = 1000;
-const PEEK_GAP_PX = 8;
-const PEEK_SIDE_PX = 16;
-/** 最多縮到 75%，再小就看不清楚；仍放不下時從下方裁切 */
-const PEEK_MIN_SCALE = 0.75;
-const modalRef = ref<HTMLElement | null>(null);
-const inlinePreviewRef = ref<InstanceType<typeof ChatAppearancePreview> | null>(null);
-const peekVisible = ref(false);
-/** 量好原寸高度之前先不顯示，避免以錯誤尺寸閃一下 */
-const peekReady = ref(false);
-const peekInnerRef = ref<HTMLElement | null>(null);
-const peekScene = ref<PeekScene>("pair");
-const peekAvailableHeight = ref(0);
-const peekNaturalWidth = ref(0);
-const peekNaturalHeight = ref(0);
-const peekScale = computed(() => {
-  const natural = peekNaturalHeight.value;
-  if (natural <= 0) return 1;
-  return Math.min(1, Math.max(PEEK_MIN_SCALE, peekAvailableHeight.value / natural));
-});
-/** 外框跟著縮放後的尺寸，水平置中 */
-const peekBoxStyle = computed<Record<string, string>>(() => {
-  const scale = peekScale.value;
-  const w = peekNaturalWidth.value * scale;
-  const h = Math.min(peekNaturalHeight.value * scale, peekAvailableHeight.value);
-  return {
-    top: `${PEEK_GAP_PX}px`,
-    width: `${w}px`,
-    left: `calc(50% - ${w / 2}px)`,
-    borderRadius: `${20 * scale}px`,
-    ...(h > 0 ? { height: `${h}px` } : {}),
-    ...(peekReady.value ? {} : { visibility: "hidden" }),
-  };
-});
-let peekHideTimer: ReturnType<typeof setTimeout> | null = null;
-let peekHolding = false;
+function handleTabsWheel(event: WheelEvent) {
+  (event.currentTarget as HTMLElement).scrollLeft += event.deltaY;
+}
 
-/** 設定區 → 浮出預覽要畫的情境 */
-const SECTION_PEEK_SCENES: Record<Section, PeekScene> = {
+// ===== 版面：寬螢幕左右並排／一般手機／小螢幕 =====
+// 由 JS 判斷後加在視窗的 class 上，CSS 只認這個 class，兩邊不會不同步。
+function useMediaQuery(query: string) {
+  const matches = ref(false);
+  if (typeof window === "undefined" || !window.matchMedia) return matches;
+  const mql = window.matchMedia(query);
+  const update = () => {
+    matches.value = mql.matches;
+  };
+  update();
+  mql.addEventListener("change", update);
+  onBeforeUnmount(() => mql.removeEventListener("change", update));
+  return matches;
+}
+
+/** 寬螢幕，或橫拿手機（矮但夠寬）→ 預覽放左欄 */
+const isWideViewport = useMediaQuery(
+  "(min-width: 760px) and (min-height: 520px), (min-width: 560px) and (max-height: 500px)",
+);
+/** 可視高度不足（例：iPhone SE 用 Safari）→ 套用範圍收進頂列、預覽只畫正在調的東西 */
+const isShortViewport = useMediaQuery("(max-height: 720px)");
+const layoutMode = computed<"wide" | "phone" | "compact">(() =>
+  isWideViewport.value ? "wide" : isShortViewport.value ? "compact" : "phone",
+);
+
+// ===== 套用範圍：這個聊天用哪一套，調整的就是那一套 =====
+/** 從聊天以外的地方打開（例如全局美化）：只編輯全域外觀 */
+const isGlobalOnly = computed(() => !props.chatAppearance);
+const modalTitle = computed(() => (isGlobalOnly.value ? "全域聊天外觀" : "聊天外觀"));
+const scopeLabel = computed(() => (useCustomAppearance.value ? "這個聊天專屬" : "全域外觀"));
+const scopeHint = computed(() =>
+  useCustomAppearance.value
+    ? "只套用在這個聊天；切回全域外觀時，這裡的設定會保留"
+    : "調整會套用到所有使用全域外觀的聊天；整體配色和全局美化共用",
+);
+
+// ===== 固定預覽 =====
+// 手機與小螢幕：預覽框高度固定（捲動時設定區不會跳動），內容依目前的設定卡只畫相關部分，放不下就等比例縮小。
+// 寬螢幕：左欄畫完整預覽。
+const PREVIEW_BOX_HEIGHT = { phone: 220, compact: 120, compactFull: 300 } as const;
+/** 再小就看不清楚；仍放不下時從下方裁切 */
+const PREVIEW_MIN_SCALE = 0.6;
+
+/** 一般手機：預覽框高度夠，畫整段對話 */
+const PHONE_SCENES: Record<Section, PreviewScene> = {
+  theme: "colors",
+  cardColors: "colors",
+  accentColors: "colors",
+  statusColors: "colors",
+  userBubble: "messages",
+  aiBubble: "messages",
+  thought: "messages",
+  bubbleShape: "messages",
+  bubbleTexture: "messages",
+  avatar: "messages",
+  wallpaper: "messages",
+  header: "headerPair",
+  input: "pairInput",
+  fontBasics: "messages",
+  fontSpacing: "messages",
+  markdown: "messages",
+  userFrame: "messages",
+  charFrame: "messages",
+  bubbleDeco: "messages",
+};
+
+/** 小螢幕：只畫正在調的東西 */
+const COMPACT_SCENES: Record<Section, PreviewScene> = {
   theme: "colors",
   cardColors: "colors",
   accentColors: "colors",
   statusColors: "colors",
   userBubble: "pair",
   aiBubble: "pair",
+  thought: "thought",
+  bubbleShape: "conversation",
   bubbleTexture: "pair",
   avatar: "pair",
   wallpaper: "pair",
-  thought: "thought",
-  bubbleShape: "conversation",
   header: "header",
   input: "input",
+  fontBasics: "pair",
+  fontSpacing: "pair",
+  markdown: "pair",
+  userFrame: "pair",
+  charFrame: "pair",
+  bubbleDeco: "pair",
 };
 
-/** 控制項屬於哪個設定區：取它前面最近的 .peek-marker */
-function sectionOf(control: Element): Section | null {
-  const root = sectionsRef.value;
-  if (!root) return null;
-  let found: Section | null = null;
-  for (const marker of root.querySelectorAll<HTMLElement>(".peek-marker")) {
-    if (!(marker.compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING)) break;
-    found = marker.dataset.peek as Section;
+/** 一般手機可把預覽收成一條；小螢幕可切換成完整預覽 */
+const previewCollapsed = ref(false);
+const previewFull = ref(false);
+
+const previewScene = computed<PreviewScene>(() => {
+  if (layoutMode.value === "compact") return previewFull.value ? "full" : COMPACT_SCENES[activeSection.value];
+  return PHONE_SCENES[activeSection.value];
+});
+
+const previewBoxHeight = computed(() => {
+  if (layoutMode.value === "compact") {
+    return previewFull.value ? PREVIEW_BOX_HEIGHT.compactFull : PREVIEW_BOX_HEIGHT.compact;
   }
-  return found;
+  return PREVIEW_BOX_HEIGHT.phone;
+});
+
+const previewBoxRef = ref<HTMLElement | null>(null);
+const previewInnerRef = ref<HTMLElement | null>(null);
+const previewBoxWidth = ref(0);
+const previewNaturalHeight = ref(0);
+
+const previewScale = computed(() => {
+  const natural = previewNaturalHeight.value;
+  if (natural <= 0) return 1;
+  return Math.min(1, Math.max(PREVIEW_MIN_SCALE, previewBoxHeight.value / natural));
+});
+
+/** 以框寬原寸排版後整體縮放，垂直置中 */
+const previewInnerStyle = computed<Record<string, string>>(() => {
+  const scale = previewScale.value;
+  const natural = previewNaturalHeight.value;
+  // 還沒量到原寸高度前不置中，避免第一格畫面被往下推
+  const offset = natural > 0 ? Math.max(0, (previewBoxHeight.value - natural * scale) / 2) : 0;
+  return {
+    width: previewBoxWidth.value > 0 ? `${previewBoxWidth.value}px` : "100%",
+    transform: `translateY(${offset}px) scale(${scale})`,
+  };
+});
+
+// transform 不影響 offsetHeight，量到的是原寸高度；內容或框寬改變時重新量
+let previewResizeObserver: ResizeObserver | null = null;
+watch([previewBoxRef, previewInnerRef], ([box, inner]) => {
+  previewResizeObserver?.disconnect();
+  previewResizeObserver = null;
+  if (!box || !inner || typeof ResizeObserver === "undefined") return;
+  previewResizeObserver = new ResizeObserver(() => {
+    previewBoxWidth.value = box.clientWidth;
+    previewNaturalHeight.value = inner.offsetHeight;
+  });
+  previewResizeObserver.observe(box);
+  previewResizeObserver.observe(inner);
+});
+
+function togglePreviewSize() {
+  if (layoutMode.value === "compact") previewFull.value = !previewFull.value;
+  else previewCollapsed.value = !previewCollapsed.value;
 }
 
-/** 原本的預覽還有一半以上（或至少 160px）在畫面內時，就不需要浮出 */
-function isInlinePreviewVisible(): boolean {
-  const el = inlinePreviewRef.value?.$el as HTMLElement | undefined;
-  const content = contentRef.value;
-  if (!el || !content) return false;
-  const p = el.getBoundingClientRect();
-  const c = content.getBoundingClientRect();
-  const visible = Math.min(p.bottom, c.bottom) - Math.max(p.top, c.top);
-  return visible >= Math.min(p.height * 0.5, 160);
-}
+// ===== 捲動連動：捲到哪張卡，預覽就亮哪個元素 =====
+/** 卡片頂端越過內容區上方這條線，就算「目前的卡」 */
+const ACTIVE_LINE_RATIO = 0.35;
+const ACTIVE_LINE_MAX_PX = 160;
+/** 點預覽跳轉時的平滑捲動期間，不讓捲動事件改掉目標卡 */
+const SCROLL_SYNC_LOCK_MS = 700;
+let scrollSyncLockUntil = 0;
+let scrollSyncFrame = 0;
 
-/** 可用高度：視窗頂部到內容區上緣（閒置區）；控制項在更下面時，最多延伸到控制項上方 */
-function measurePeekSpace(control: Element) {
-  const content = contentRef.value;
-  const modal = modalRef.value;
-  if (!content || !modal) return;
-  const m = modal.getBoundingClientRect();
-  const c = content.getBoundingClientRect();
-  const t = control.getBoundingClientRect();
-  const idleBottom = c.top - m.top;
-  const aboveControl = Math.min(t.top, c.bottom) - m.top;
-  peekAvailableHeight.value = Math.max(idleBottom, aboveControl) - PEEK_GAP_PX * 2;
-  peekNaturalWidth.value = Math.max(m.width - PEEK_SIDE_PX * 2, 0);
-}
-
-/** 量預覽原寸高度（transform 不影響 offsetHeight）；內容、情境或排版改變後重新量 */
-function measurePeek() {
-  nextTick(() => {
-    const inner = peekInnerRef.value;
-    if (!inner) return;
-    peekNaturalHeight.value = inner.offsetHeight;
-    peekReady.value = true;
+function syncActiveSectionFromScroll() {
+  if (Date.now() < scrollSyncLockUntil) return;
+  cancelAnimationFrame(scrollSyncFrame);
+  scrollSyncFrame = requestAnimationFrame(() => {
+    const content = contentRef.value;
+    if (!content) return;
+    const cards = Array.from(content.querySelectorAll<HTMLElement>(".settings-card[data-section]"));
+    if (cards.length === 0) return;
+    const c = content.getBoundingClientRect();
+    const line = c.top + Math.min(c.height * ACTIVE_LINE_RATIO, ACTIVE_LINE_MAX_PX);
+    let current = cards[0];
+    for (const card of cards) {
+      if (card.getBoundingClientRect().top > line) break;
+      current = card;
+    }
+    // 捲到底時，最後幾張短卡碰不到判斷線，直接算最後一張
+    if (content.scrollTop + content.clientHeight >= content.scrollHeight - 4) current = cards[cards.length - 1];
+    activeSection.value = current.dataset.section as Section;
   });
 }
 
-function clearPeekTimer() {
-  if (peekHideTimer) {
-    clearTimeout(peekHideTimer);
-    peekHideTimer = null;
+/** 碰到卡片裡的控制項，就以那張卡為準（捲不到判斷線的卡也能被選到） */
+function activateSection(section: Section) {
+  activeSection.value = section;
+}
+
+/** 點預覽元素：切到對應分頁、捲到那張卡並亮起 */
+async function onPreviewSelect(target: PreviewTarget) {
+  const section = ELEMENT_SECTION[target];
+  const tab = tabOfSection(section);
+  if (activeTab.value !== tab) {
+    activeTab.value = tab;
+    await nextTick();
   }
+  activeSection.value = section;
+  const content = contentRef.value;
+  const card = content?.querySelector<HTMLElement>(`.settings-card[data-section="${section}"]`);
+  if (!content || !card) return;
+  scrollSyncLockUntil = Date.now() + SCROLL_SYNC_LOCK_MS;
+  const top = card.getBoundingClientRect().top - content.getBoundingClientRect().top + content.scrollTop - 8;
+  content.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
 }
-
-function hidePeek() {
-  clearPeekTimer();
-  peekHolding = false;
-  peekVisible.value = false;
-}
-
-function schedulePeekHide() {
-  clearPeekTimer();
-  if (peekHolding) return;
-  peekHideTimer = setTimeout(() => {
-    peekVisible.value = false;
-    peekHideTimer = null;
-  }, PEEK_HIDE_DELAY_MS);
-}
-
-function pokePeek(control: Element) {
-  if (!showPreview.value || isInlinePreviewVisible()) {
-    hidePeek();
-    return;
-  }
-  const section = sectionOf(control);
-  const scene = section ? SECTION_PEEK_SCENES[section] : peekScene.value;
-  if (!peekVisible.value || scene !== peekScene.value) peekReady.value = false;
-  peekScene.value = scene;
-  measurePeekSpace(control);
-  peekVisible.value = true;
-  measurePeek();
-  schedulePeekHide();
-}
-
-function releasePeekHold() {
-  peekHolding = false;
-  schedulePeekHide();
-}
-
-/** 按住滑桿時保持顯示，放開後才開始倒數 */
-function onSettingsPointerDown(event: PointerEvent) {
-  const slider = (event.target as Element | null)?.closest('input[type="range"]');
-  if (!slider) return;
-  peekHolding = true;
-  pokePeek(slider);
-  window.addEventListener("pointerup", releasePeekHold, { once: true });
-  window.addEventListener("pointercancel", releasePeekHold, { once: true });
-}
-
-/** 滑桿拖曳、顏色、輸入框等的連續變更 */
-function onSettingsInput(event: Event) {
-  const control = event.target as Element | null;
-  if (control) pokePeek(control);
-}
-
-/** 選項按鈕（色票、chip、形狀等）；「返回全部設定」不算 */
-function onSettingsClick(event: MouseEvent) {
-  const control = (event.target as Element | null)?.closest("button, label, [role='button']");
-  if (!control || control.closest(".focus-settings-header")) return;
-  pokePeek(control);
-}
-
-// 使用者自己捲動設定時（不是正在拖滑桿）浮出框立刻收起，避免擋住正在找的設定。
-// 不能聽 scroll 事件：調間距或排版會讓上方預覽變高，瀏覽器的捲動錨定會自動調整捲動位置並觸發 scroll，
-// 框就會一出現就被收掉。所以只認滾輪與手指滑動。
-const PEEK_TOUCH_SCROLL_PX = 10;
-let peekTouchStartY = 0;
-
-function hidePeekOnUserScroll() {
-  if (peekVisible.value && !peekHolding) hidePeek();
-}
-
-function onContentTouchStart(event: TouchEvent) {
-  peekTouchStartY = event.touches[0]?.clientY ?? 0;
-}
-
-function onContentTouchMove(event: TouchEvent) {
-  const y = event.touches[0]?.clientY ?? peekTouchStartY;
-  if (Math.abs(y - peekTouchStartY) > PEEK_TOUCH_SCROLL_PX) hidePeekOnUserScroll();
-}
-
-watch(
-  () => props.visible,
-  (open) => {
-    if (!open) hidePeek();
-  },
-);
 
 onBeforeUnmount(() => {
-  clearPeekTimer();
-  window.removeEventListener("pointerup", releasePeekHold);
-  window.removeEventListener("pointercancel", releasePeekHold);
+  previewResizeObserver?.disconnect();
+  cancelAnimationFrame(scrollSyncFrame);
 });
-
-function handleTabsWheel(event: WheelEvent) {
-  (event.currentTarget as HTMLElement).scrollLeft += event.deltaY;
-}
-
-// 預覽點擊：背景 → 背景分頁；其他元素 → 原地切換成該元素的設定，再點一次返回
-async function onPreviewSelect(target: PreviewTarget) {
-  if (target === "wallpaper") {
-    selectTab("wallpaper");
-    return;
-  }
-  previewFocus.value = previewFocus.value === target ? null : target;
-  if (!previewFocus.value) return;
-  // 讓設定面板的開頭進入可視範圍，同時保留部分預覽
-  await nextTick();
-  const content = contentRef.value;
-  const panel = sectionsRef.value;
-  if (!content || !panel) return;
-  const panelTop = panel.getBoundingClientRect().top - content.getBoundingClientRect().top + content.scrollTop;
-  const target_ = panelTop - content.clientHeight * 0.45;
-  if (target_ > content.scrollTop) content.scrollTo({ top: target_, behavior: "smooth" });
-}
-
 // ===== 選項常數 =====
 const PRESETS = [
   { id: "soft-pink", name: "粉紅" },
@@ -539,9 +514,10 @@ const COLOR_KEYS = [
   "warning",
 ] as const satisfies readonly (keyof ChatColors)[];
 
-// ===== 預設值（皆取自全域設定） =====
+// ===== 預設值 =====
+/** 全域配色一律讀白天配色：夜晚模式時 themeStore.colors 是夜晚配色，不能拿來當預設或存回去 */
 function globalColors(): ChatColors {
-  return Object.fromEntries(COLOR_KEYS.map((key) => [key, themeStore.colors[key]])) as ChatColors;
+  return Object.fromEntries(COLOR_KEYS.map((key) => [key, themeStore.dayColors[key]])) as ChatColors;
 }
 
 function defaultFont(): ChatFontStyle {
@@ -598,7 +574,91 @@ function definedOnly<T extends object>(obj: T | undefined): Partial<T> {
   ) as Partial<T>;
 }
 
-// ===== 編輯中的暫存值 =====
+// ===== 兩份草稿：全域外觀、這個聊天的專屬外觀 =====
+// 畫面上的控制項綁的是「目前這一套」的暫存值；切換套用範圍時，先把暫存值存回原本那份草稿，再載入另一份。
+interface AppearanceDraft {
+  colors: ChatColors;
+  unified: boolean;
+  avatar: AvatarStyle;
+  bubble: BubbleStyle;
+  wallpaper: ChatWallpaperStyle;
+  font: ChatFontStyle;
+  fontSize: number;
+  bars: Record<"header" | "input", ChatBarStyle>;
+  effects: ChatBubbleEffects;
+  spacing: ChatMessageSpacing;
+}
+
+function cloneDraft(draft: AppearanceDraft): AppearanceDraft {
+  return JSON.parse(JSON.stringify(draft));
+}
+
+/** 字體欄位：存檔值優先，沒有就用 base */
+function mergeFont(font: ChatAppearance["font"] | undefined, base: ChatFontStyle): ChatFontStyle {
+  return {
+    family: font?.family ?? base.family,
+    lineHeight: font?.lineHeight ?? base.lineHeight,
+    letterSpacing: font?.letterSpacing ?? base.letterSpacing,
+    markdownColors: { ...base.markdownColors, ...definedOnly(font?.markdownColors) },
+  };
+}
+
+/** 全域草稿：配色、氣泡、頭像來自主題的全域設定；其餘來自全域聊天外觀（沒設定過就用內建預設） */
+function globalDraftFromStore(): AppearanceDraft {
+  const g = themeStore.globalChatAppearance;
+  return {
+    colors: globalColors(),
+    unified: true,
+    avatar: { ...themeStore.avatarStyle },
+    bubble: { ...themeStore.bubbleStyle },
+    wallpaper: normalizeWallpaper(g?.wallpaper),
+    font: mergeFont(g?.font, defaultFont()),
+    fontSize: g?.font ? resolveChatFontSizePx(g.font.size) : CHAT_FONT_SIZE_DEFAULT,
+    bars: {
+      header: { ...DEFAULT_BAR_STYLE, ...definedOnly(g?.bars?.header) },
+      input: { ...DEFAULT_BAR_STYLE, ...definedOnly(g?.bars?.input) },
+    },
+    effects: { ...DEFAULT_BUBBLE_EFFECTS, ...definedOnly(g?.bubbleEffects) },
+    spacing: g?.messageSpacing ?? "normal",
+  };
+}
+
+/** 這個聊天存過專屬外觀內容（就算目前切回全域，內容也保留著） */
+function hasSavedCustomContent(appearance: ChatAppearance): boolean {
+  return !!(
+    appearance.colors ||
+    appearance.bubble ||
+    appearance.avatar ||
+    appearance.wallpaper ||
+    appearance.font ||
+    appearance.bars ||
+    appearance.bubbleEffects ||
+    appearance.messageSpacing
+  );
+}
+
+/** 專屬草稿：存檔值蓋在全域草稿上，缺的欄位跟全域一樣 */
+function chatDraftFromAppearance(appearance: ChatAppearance, base: AppearanceDraft): AppearanceDraft {
+  const { unified, ...savedColors } = appearance.colors ?? {};
+  return {
+    colors: { ...base.colors, ...definedOnly(savedColors) },
+    unified: unified !== false,
+    avatar: { ...base.avatar, ...definedOnly(appearance.avatar) },
+    bubble: { ...base.bubble, ...definedOnly(appearance.bubble) },
+    wallpaper: appearance.wallpaper ? normalizeWallpaper(appearance.wallpaper) : { ...base.wallpaper },
+    font: mergeFont(appearance.font, base.font),
+    fontSize: appearance.font ? resolveChatFontSizePx(appearance.font.size) : base.fontSize,
+    bars: {
+      header: { ...base.bars.header, ...definedOnly(appearance.bars?.header) },
+      input: { ...base.bars.input, ...definedOnly(appearance.bars?.input) },
+    },
+    effects: { ...base.effects, ...definedOnly(appearance.bubbleEffects) },
+    spacing: appearance.messageSpacing ?? base.spacing,
+  };
+}
+
+// ===== 編輯中的暫存值（目前這一套） =====
+/** 這個聊天是否使用專屬外觀；同時決定畫面上編輯的是哪一套 */
 const useCustomAppearance = ref(false);
 const unifiedColors = ref(true);
 const customHexInput = ref("");
@@ -608,6 +668,7 @@ const tempBubbleStyle = ref<BubbleStyle>({ ...themeStore.bubbleStyle });
 const tempWallpaperStyle = ref<ChatWallpaperStyle>(followGlobalWallpaper());
 const tempFontStyle = ref<ChatFontStyle>(defaultFont());
 const tempFontSizeValue = ref(CHAT_FONT_SIZE_DEFAULT);
+/** 頭像框只屬於這個聊天，不跟著套用範圍切換 */
 const tempAvatarFrames = ref<{ userFrameId: string | null; charFrameId: string | null }>({
   userFrameId: null,
   charFrameId: null,
@@ -616,77 +677,79 @@ const tempBars = ref(defaultBars());
 const tempBubbleEffects = ref<ChatBubbleEffects>({ ...DEFAULT_BUBBLE_EFFECTS });
 const tempMessageSpacing = ref<ChatMessageSpacing>("normal");
 
-// 任何外觀變動都自動啟用聊天專屬外觀（載入資料時除外）
-let hydrating = false;
-watch(
-  [
-    tempColors,
-    tempAvatarStyle,
-    tempBubbleStyle,
-    tempWallpaperStyle,
-    tempFontStyle,
-    tempFontSizeValue,
-    tempAvatarFrames,
-    tempBars,
-    tempBubbleEffects,
-    tempMessageSpacing,
-  ],
-  () => {
-    if (!hydrating) useCustomAppearance.value = true;
-  },
-  { deep: true, flush: "sync" },
-);
+let globalDraft: AppearanceDraft = globalDraftFromStore();
+let chatDraft: AppearanceDraft | null = null;
+/** 打開時的全域草稿，按完成時比對，沒改就不寫入主題 */
+let initialGlobalDraftJson = "";
 
-function hydrate(apply: () => void) {
-  hydrating = true;
-  try {
-    apply();
-  } finally {
-    hydrating = false;
-  }
+function snapshotDraft(): AppearanceDraft {
+  return cloneDraft({
+    colors: tempColors.value,
+    unified: unifiedColors.value,
+    avatar: tempAvatarStyle.value,
+    bubble: tempBubbleStyle.value,
+    wallpaper: tempWallpaperStyle.value,
+    font: tempFontStyle.value,
+    fontSize: tempFontSizeValue.value,
+    bars: tempBars.value,
+    effects: tempBubbleEffects.value,
+    spacing: tempMessageSpacing.value,
+  });
+}
+
+function applyDraft(draft: AppearanceDraft) {
+  const d = cloneDraft(draft);
+  tempColors.value = d.colors;
+  unifiedColors.value = d.unified;
+  customHexInput.value = d.colors.primary;
+  tempAvatarStyle.value = d.avatar;
+  tempBubbleStyle.value = d.bubble;
+  tempWallpaperStyle.value = d.wallpaper;
+  tempFontStyle.value = d.font;
+  tempFontSizeValue.value = d.fontSize;
+  tempBars.value = d.bars;
+  tempBubbleEffects.value = d.effects;
+  tempMessageSpacing.value = d.spacing;
+}
+
+/** 把目前畫面上的值存回所屬的那份草稿 */
+function storeCurrentDraft() {
+  const draft = snapshotDraft();
+  if (useCustomAppearance.value) chatDraft = draft;
+  else globalDraft = draft;
+}
+
+/** 切換套用範圍：這個聊天改用另一套，畫面也換成編輯那一套 */
+function setScope(custom: boolean) {
+  if (isGlobalOnly.value || custom === useCustomAppearance.value) return;
+  storeCurrentDraft();
+  useCustomAppearance.value = custom;
+  // 第一次改成專屬：從目前的全域外觀開始，不會突然跳成別的樣子
+  if (custom && !chatDraft) chatDraft = cloneDraft(globalDraft);
+  applyDraft(custom ? chatDraft! : globalDraft);
 }
 
 function loadAppearance(appearance: ChatAppearance | undefined) {
-  hydrate(() => {
-    useCustomAppearance.value = !!appearance && appearance.useCustom !== false;
-    const { unified, ...savedColors } = appearance?.colors ?? {};
-    tempColors.value = { ...globalColors(), ...definedOnly(savedColors) };
-    unifiedColors.value = unified !== false;
-    customHexInput.value = tempColors.value.primary;
-    tempAvatarStyle.value = { ...themeStore.avatarStyle, ...definedOnly(appearance?.avatar) };
-    tempBubbleStyle.value = { ...themeStore.bubbleStyle, ...definedOnly(appearance?.bubble) };
-    tempWallpaperStyle.value = normalizeWallpaper(appearance?.wallpaper);
-
-    const font = appearance?.font;
-    const fallbackFont = defaultFont();
-    tempFontStyle.value = {
-      family: font?.family ?? fallbackFont.family,
-      lineHeight: font?.lineHeight ?? fallbackFont.lineHeight,
-      letterSpacing: font?.letterSpacing ?? fallbackFont.letterSpacing,
-      markdownColors: { ...fallbackFont.markdownColors, ...definedOnly(font?.markdownColors) },
-    };
-    tempFontSizeValue.value = resolveChatFontSizePx(font?.size);
-
-    tempAvatarFrames.value = {
-      userFrameId: appearance?.avatarFrames?.userFrameId ?? null,
-      charFrameId: appearance?.avatarFrames?.charFrameId ?? null,
-    };
-
-    tempBars.value = {
-      header: { ...DEFAULT_BAR_STYLE, ...definedOnly(appearance?.bars?.header) },
-      input: { ...DEFAULT_BAR_STYLE, ...definedOnly(appearance?.bars?.input) },
-    };
-    tempBubbleEffects.value = { ...DEFAULT_BUBBLE_EFFECTS, ...definedOnly(appearance?.bubbleEffects) };
-    tempMessageSpacing.value = appearance?.messageSpacing ?? "normal";
-  });
+  globalDraft = globalDraftFromStore();
+  initialGlobalDraftJson = JSON.stringify(globalDraft);
+  chatDraft = appearance && hasSavedCustomContent(appearance) ? chatDraftFromAppearance(appearance, globalDraft) : null;
+  useCustomAppearance.value = !!appearance && appearance.useCustom !== false;
+  if (useCustomAppearance.value && !chatDraft) chatDraft = cloneDraft(globalDraft);
+  applyDraft(useCustomAppearance.value ? chatDraft! : globalDraft);
+  tempAvatarFrames.value = {
+    userFrameId: appearance?.avatarFrames?.userFrameId ?? null,
+    charFrameId: appearance?.avatarFrames?.charFrameId ?? null,
+  };
 }
 
 watch(
   () => props.visible,
   async (isVisible) => {
     if (!isVisible) return;
-    activeTab.value = "colors";
-    previewFocus.value = null;
+    activeTab.value = "overall";
+    activeSection.value = TAB_SECTIONS.overall[0];
+    previewCollapsed.value = false;
+    previewFull.value = false;
     loadAppearance(props.chatAppearance);
     await gameEconomyStore.loadState(GLOBAL_WALLET_ID);
   },
@@ -854,8 +917,8 @@ const ownedBubbles = computed(() => toOwnedItems(decorations.value?.ownedBubbles
 const equippedBubbleId = computed(() => decorations.value?.equippedBubbleId ?? null);
 
 const FRAME_TARGETS = [
-  { key: "userFrameId", title: "我的頭像框", hint: "只套用在這個聊天" },
-  { key: "charFrameId", title: "角色頭像框", hint: "只套用在這個聊天" },
+  { key: "userFrameId", section: "userFrame", title: "我的頭像框", hint: "只套用在這個聊天" },
+  { key: "charFrameId", section: "charFrame", title: "角色頭像框", hint: "只套用在這個聊天" },
 ] as const;
 
 // 聊天氣泡是全域裝備，會立即生效到所有聊天
@@ -865,44 +928,74 @@ async function equipBubble(bubbleId: string | null) {
 }
 
 // ===== 重置 / 儲存 =====
+const resetLabel = computed(() => (useCustomAppearance.value ? "恢復成和全域外觀一樣…" : "全域外觀恢復預設…"));
+
+/** 專屬外觀 → 變回和全域一樣；全域外觀 → 回到內建預設（整體配色不動，那是全局美化的設定） */
 function resetToDefault() {
-  if (!confirm("確定要把這個聊天的外觀恢復成全域預設嗎？（頭像框不受影響）")) return;
-  tempColors.value = globalColors();
-  tempAvatarStyle.value = { ...themeStore.avatarStyle };
-  tempBubbleStyle.value = { ...themeStore.bubbleStyle };
-  tempWallpaperStyle.value = followGlobalWallpaper();
-  tempFontStyle.value = defaultFont();
-  tempFontSizeValue.value = CHAT_FONT_SIZE_DEFAULT;
-  tempBars.value = defaultBars();
-  tempBubbleEffects.value = { ...DEFAULT_BUBBLE_EFFECTS };
-  tempMessageSpacing.value = "normal";
-  unifiedColors.value = true;
-  customHexInput.value = tempColors.value.primary;
-  previewFocus.value = null;
+  if (useCustomAppearance.value) {
+    if (!confirm("確定要把這個聊天的外觀恢復成和全域外觀一樣嗎？（頭像框不受影響）")) return;
+    applyDraft(globalDraft);
+    return;
+  }
+  if (!confirm("確定要把全域聊天外觀恢復成內建預設嗎？會影響所有使用全域外觀的聊天。（整體配色不變，請到全局美化調整）")) {
+    return;
+  }
+  const defaults = themeStore.getDefaultChatStyles();
+  applyDraft({
+    ...snapshotDraft(),
+    avatar: defaults.avatar,
+    bubble: defaults.bubble,
+    wallpaper: followGlobalWallpaper(),
+    font: defaultFont(),
+    fontSize: CHAT_FONT_SIZE_DEFAULT,
+    bars: defaultBars(),
+    effects: { ...DEFAULT_BUBBLE_EFFECTS },
+    spacing: "normal",
+  });
 }
 
-// 關閉專屬外觀時仍保留設定內容，之後重新開啟不必重設
+/** 草稿 → 存檔格式的外觀欄位 */
+function draftToAppearanceFields(draft: AppearanceDraft) {
+  return {
+    wallpaper: { ...draft.wallpaper },
+    font: {
+      ...draft.font,
+      markdownColors: { ...draft.font.markdownColors },
+      size: `${draft.fontSize}px` as const,
+    },
+    bars: { header: { ...draft.bars.header }, input: { ...draft.bars.input } },
+    bubbleEffects: { ...draft.effects },
+    messageSpacing: draft.spacing,
+  };
+}
+
+// 切回全域外觀時仍保留專屬內容，之後再切回專屬不必重設
 function buildAppearance(): ChatAppearance {
+  if (!chatDraft) {
+    return { useCustom: false, avatarFrames: { ...tempAvatarFrames.value } };
+  }
   return {
     useCustom: useCustomAppearance.value,
-    colors: { ...tempColors.value, unified: unifiedColors.value },
-    avatar: { ...tempAvatarStyle.value },
+    colors: { ...chatDraft.colors, unified: chatDraft.unified },
+    avatar: { ...chatDraft.avatar },
     avatarFrames: { ...tempAvatarFrames.value },
-    bubble: { ...tempBubbleStyle.value },
-    wallpaper: { ...tempWallpaperStyle.value },
-    font: {
-      ...tempFontStyle.value,
-      markdownColors: { ...tempFontStyle.value.markdownColors },
-      size: `${tempFontSizeValue.value}px`,
-    },
-    bars: { header: { ...tempBars.value.header }, input: { ...tempBars.value.input } },
-    bubbleEffects: { ...tempBubbleEffects.value },
-    messageSpacing: tempMessageSpacing.value,
+    bubble: { ...chatDraft.bubble },
+    ...draftToAppearanceFields(chatDraft),
   };
 }
 
 function saveAndClose() {
-  emit("saveChatAppearance", buildAppearance());
+  storeCurrentDraft();
+  // 全域外觀有改才寫入主題（配色、氣泡、頭像寫進主題本身；其餘寫進全域聊天外觀）
+  if (JSON.stringify(globalDraft) !== initialGlobalDraftJson) {
+    themeStore.applyGlobalChatAppearance({
+      colors: globalDraft.colors,
+      bubble: globalDraft.bubble,
+      avatar: globalDraft.avatar,
+      chat: draftToAppearanceFields(globalDraft),
+    });
+  }
+  if (!isGlobalOnly.value) emit("saveChatAppearance", buildAppearance());
   emit("close");
 }
 
@@ -915,397 +1008,503 @@ function cancel() {
   <Teleport to="body">
     <Transition name="fade">
       <div v-if="visible" class="soft-modal-overlay" @click.self="saveAndClose">
-        <div ref="modalRef" class="soft-modal theme-settings-modal">
-          <div class="modal-header">
-            <h2 class="modal-title">聊天外觀設定</h2>
-            <button class="modal-close" title="儲存並關閉" aria-label="儲存並關閉" @click="saveAndClose">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                />
-              </svg>
-            </button>
-          </div>
-
-          <label class="toggle-card chat-mode-toggle" :class="{ active: useCustomAppearance }">
-            <span class="toggle-info">
-              <span class="toggle-title">使用此聊天專屬外觀</span>
-              <span class="toggle-sub">關閉時套用全域外觀，這裡的設定會保留</span>
-            </span>
-            <span class="toggle-switch">
-              <input v-model="useCustomAppearance" type="checkbox" />
-              <span class="switch-track"><span class="switch-thumb"></span></span>
-            </span>
-          </label>
-
-          <div class="tabs-container" @wheel.prevent="handleTabsWheel">
-            <div class="soft-tabs" role="tablist">
+        <div class="soft-modal theme-settings-modal" :class="`layout-${layoutMode}`">
+          <!-- 頂列：取消／標題／完成（小螢幕時套用範圍收成標題下的小標籤） -->
+          <div class="ts-topbar">
+            <button class="ts-topbar-btn" @click="cancel">取消</button>
+            <div class="ts-topbar-title">
+              <h2 class="ts-title">{{ modalTitle }}</h2>
               <button
-                v-for="tab in visibleTabs"
-                :key="tab.id"
-                class="tab-item"
-                :class="{ active: activeTab === tab.id }"
-                role="tab"
-                :aria-selected="activeTab === tab.id"
-                @click="selectTab(tab.id)"
+                v-if="layoutMode === 'compact' && !isGlobalOnly"
+                class="ts-scope-chip"
+                :aria-label="`套用範圍：${scopeLabel}，點擊切換`"
+                @click="setScope(!useCustomAppearance)"
               >
-                <svg viewBox="0 0 24 24" fill="currentColor"><path :d="tab.icon" /></svg>
-                {{ tab.label }}
+                {{ scopeLabel }}
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m7 15 5 5 5-5" />
+                  <path d="m7 9 5-5 5 5" />
+                </svg>
               </button>
             </div>
+            <button class="ts-done-btn" @click="saveAndClose">完成</button>
           </div>
 
-          <div
-            ref="contentRef"
-            class="modal-content"
-            @wheel.passive="hidePeekOnUserScroll"
-            @touchstart.passive="onContentTouchStart"
-            @touchmove.passive="onContentTouchMove"
-          >
-            <p v-if="settingsStore.nightMode && activeTab !== 'decorations'" class="night-hint">
-              🌙 夜間模式中，聊天頁的顏色與背景會改用夜間配色；字體、形狀、透明度等設定照常套用。
-            </p>
-
-            <ChatAppearancePreview
-              v-if="showInlinePreview"
-              ref="inlinePreviewRef"
-              class="preview-block"
-              :state="previewState"
-              :focus="previewFocus"
-              :layout="themeStore.chatMessageLayout"
-              @select="onPreviewSelect"
-            />
-
-            <!-- ===== 配色／氣泡／背景：依分頁顯示；點預覽元素時只顯示該元素的完整設定 ===== -->
-            <div
-              v-if="showPreview"
-              ref="sectionsRef"
-              class="settings-section"
-              :class="{ 'focus-settings-panel': !!previewFocus }"
-              @pointerdown="onSettingsPointerDown"
-              @input="onSettingsInput"
-              @click="onSettingsClick"
-            >
-              <div v-if="previewFocus" class="focus-settings-header">
-                <span class="focus-settings-title">{{ FOCUS_TITLES[previewFocus] }}</span>
-                <button class="focus-close-btn" title="返回全部設定" aria-label="返回全部設定" @click="previewFocus = null">
-                  ✕
+          <!-- 套用範圍 -->
+          <div v-if="isGlobalOnly" class="ts-scope">
+            <p class="ts-scope-hint">會套用到所有使用全域外觀的聊天；整體配色和全局美化共用</p>
+          </div>
+          <div v-else-if="layoutMode !== 'compact'" class="ts-scope">
+            <div class="ts-scope-row">
+              <span class="ts-scope-label">這個聊天使用</span>
+              <div class="ts-seg" role="radiogroup" aria-label="這個聊天使用的外觀">
+                <button
+                  role="radio"
+                  :aria-checked="!useCustomAppearance"
+                  :class="{ active: !useCustomAppearance }"
+                  @click="setScope(false)"
+                >
+                  全域外觀
+                </button>
+                <button
+                  role="radio"
+                  :aria-checked="useCustomAppearance"
+                  :class="{ active: useCustomAppearance }"
+                  @click="setScope(true)"
+                >
+                  這個聊天專屬
                 </button>
               </div>
+            </div>
+            <p class="ts-scope-hint">{{ scopeHint }}</p>
+          </div>
 
-              <!-- 主題配色 -->
-              <template v-if="showSection('theme')">
-                <span class="peek-marker" data-peek="theme" hidden></span>
-                <h3 class="section-title">主題配色</h3>
-                <div class="preset-grid">
+          <div class="ts-body">
+            <!-- 固定預覽：不隨設定捲走；點裡面的東西會跳到對應設定卡 -->
+            <div class="ts-preview-pane">
+              <ChatAppearancePreview
+                v-if="layoutMode === 'wide'"
+                :state="previewState"
+                :focus="previewFocusElement"
+                :layout="themeStore.chatMessageLayout"
+                @select="onPreviewSelect"
+              />
+              <button
+                v-else-if="layoutMode === 'phone' && previewCollapsed"
+                class="ts-preview-collapsed"
+                @click="previewCollapsed = false"
+              >
+                顯示預覽
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+              <div v-else ref="previewBoxRef" class="ts-preview-box" :style="{ height: `${previewBoxHeight}px` }">
+                <div ref="previewInnerRef" class="ts-preview-inner" :style="previewInnerStyle">
+                  <ChatAppearancePreview
+                    compact
+                    :scene="previewScene"
+                    :state="previewState"
+                    :focus="previewFocusElement"
+                    :layout="themeStore.chatMessageLayout"
+                    @select="onPreviewSelect"
+                  />
+                </div>
+                <button
+                  class="ts-preview-toggle"
+                  :aria-label="
+                    layoutMode === 'compact' ? (previewFull ? '只看正在調的部分' : '展開完整預覽') : '收起預覽'
+                  "
+                  @click="togglePreviewSize"
+                >
+                  <svg v-if="layoutMode === 'compact' && !previewFull" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                  <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
+                  {{ layoutMode === "compact" ? (previewFull ? "精簡" : "完整") : "收起" }}
+                </button>
+              </div>
+            </div>
+
+            <div class="ts-settings-pane">
+              <div class="tabs-container" @wheel.prevent="handleTabsWheel">
+                <div class="soft-tabs" role="tablist" aria-label="設定分類">
                   <button
-                    v-for="preset in PRESETS"
-                    :key="preset.id"
-                    class="preset-item"
-                    :class="{ active: activePresetId === preset.id }"
-                    @click="selectPreset(preset.id)"
+                    v-for="tab in visibleTabs"
+                    :key="tab.id"
+                    class="tab-item"
+                    :class="{ active: activeTab === tab.id }"
+                    role="tab"
+                    :aria-selected="activeTab === tab.id"
+                    @click="selectTab(tab.id)"
                   >
-                    <span class="preset-color" :style="{ background: preset.color }"></span>
-                    <span class="preset-name">{{ preset.name }}</span>
+                    {{ tab.label }}
                   </button>
                 </div>
+              </div>
 
-                <h3 class="section-title">自訂主題色</h3>
-                <div class="custom-color-row">
-                  <input
-                    type="color"
-                    class="custom-color-picker"
-                    aria-label="自訂主題色"
-                    :value="toPickerHex(tempColors.primary, '#FF85A2')"
-                    @input="applyCustomPrimary(($event.target as HTMLInputElement).value)"
-                  />
-                  <input
-                    type="text"
-                    class="custom-hex-input"
-                    :value="customHexInput"
-                    placeholder="#FF85A2"
-                    spellcheck="false"
-                    maxlength="7"
-                    aria-label="主題色色碼"
-                    @change="onCustomHexCommit"
-                  />
-                  <span class="custom-color-hint">輸入色碼或選色</span>
-                </div>
+              <div ref="contentRef" class="modal-content ts-content" @scroll.passive="syncActiveSectionFromScroll">
+                <p v-if="settingsStore.nightMode && activeTab !== 'decorations'" class="night-hint">
+                  🌙 夜間模式中，聊天頁的顏色與背景會改用夜間配色；字體、形狀、透明度等設定照常套用。
+                </p>
 
-                <label class="toggle-card" :class="{ active: unifiedColors }">
-                  <span class="toggle-info">
-                    <span class="toggle-title">統一配色</span>
-                    <span class="toggle-sub">{{ unifiedColors ? "改主色時自動推導其他顏色" : "只改主色，其他顏色各自調整" }}</span>
-                  </span>
-                  <span class="toggle-switch">
-                    <input v-model="unifiedColors" type="checkbox" />
-                    <span class="switch-track"><span class="switch-thumb"></span></span>
-                  </span>
-                </label>
-              </template>
+                <!-- ===== 整體 ===== -->
+                <section
+                  v-if="showSection('theme')"
+                  class="settings-card"
+                  :class="{ active: activeSection === 'theme' }"
+                  data-section="theme"
+                  @pointerdown="activateSection('theme')"
+                >
+                  <div class="card-head">
+                    <h3 class="section-title">主題配色</h3>
+                    <span v-if="activeSection === 'theme'" class="card-badge">預覽中</span>
+                  </div>
+                  <div class="preset-grid">
+                    <button
+                      v-for="preset in PRESETS"
+                      :key="preset.id"
+                      class="preset-item"
+                      :class="{ active: activePresetId === preset.id }"
+                      @click="selectPreset(preset.id)"
+                    >
+                      <span class="preset-color" :style="{ background: preset.color }"></span>
+                      <span class="preset-name">{{ preset.name }}</span>
+                    </button>
+                  </div>
 
-              <!-- 介面顏色 -->
-              <template v-for="group in PALETTE_GROUPS" :key="group.id">
-                <template v-if="showSection(group.id)">
-                  <span class="peek-marker" :data-peek="group.id" hidden></span>
-                  <h3 v-if="!previewFocus" class="section-title">{{ group.title }}</h3>
+                  <h4 class="card-subtitle">自訂主題色</h4>
+                  <div class="custom-color-row">
+                    <input
+                      type="color"
+                      class="custom-color-picker"
+                      aria-label="自訂主題色"
+                      :value="toPickerHex(tempColors.primary, '#FF85A2')"
+                      @input="applyCustomPrimary(($event.target as HTMLInputElement).value)"
+                    />
+                    <input
+                      type="text"
+                      class="custom-hex-input"
+                      :value="customHexInput"
+                      placeholder="#FF85A2"
+                      spellcheck="false"
+                      maxlength="7"
+                      aria-label="主題色色碼"
+                      @change="onCustomHexCommit"
+                    />
+                    <span class="custom-color-hint">輸入色碼或選色</span>
+                  </div>
+
+                  <label class="toggle-card" :class="{ active: unifiedColors }">
+                    <span class="toggle-info">
+                      <span class="toggle-title">統一配色</span>
+                      <span class="toggle-sub">{{ unifiedColors ? "改主色時自動推導其他顏色" : "只改主色，其他顏色各自調整" }}</span>
+                    </span>
+                    <span class="toggle-switch">
+                      <input v-model="unifiedColors" type="checkbox" />
+                      <span class="switch-track"><span class="switch-thumb"></span></span>
+                    </span>
+                  </label>
+                </section>
+
+                <template v-for="group in PALETTE_GROUPS" :key="group.id">
+                  <section
+                    v-if="showSection(group.id)"
+                    class="settings-card"
+                    :class="{ active: activeSection === group.id }"
+                    :data-section="group.id"
+                    @pointerdown="activateSection(group.id)"
+                  >
+                    <div class="card-head">
+                      <h3 class="section-title">{{ group.title }}</h3>
+                      <span v-if="activeSection === group.id" class="card-badge">預覽中</span>
+                    </div>
+                    <div class="individual-colors">
+                      <div v-for="field in group.fields" :key="field.key" class="color-item">
+                        <input
+                          type="color"
+                          :aria-label="field.label"
+                          :value="toPickerHex(tempColors[field.key], '#ffffff')"
+                          @input="setColor(field.key, ($event.target as HTMLInputElement).value)"
+                        />
+                        <span>{{ field.label }}</span>
+                      </div>
+                    </div>
+                  </section>
+                </template>
+
+                <!-- ===== 訊息 ===== -->
+                <section
+                  v-if="showSection('userBubble')"
+                  class="settings-card"
+                  :class="{ active: activeSection === 'userBubble' }"
+                  data-section="userBubble"
+                  @pointerdown="activateSection('userBubble')"
+                >
+                  <div class="card-head">
+                    <h3 class="section-title">我的氣泡</h3>
+                    <span v-if="activeSection === 'userBubble'" class="card-badge">預覽中</span>
+                  </div>
                   <div class="individual-colors">
-                    <div v-for="field in group.fields" :key="field.key" class="color-item">
+                    <GradientColorField
+                      v-for="field in USER_BUBBLE_FIELDS"
+                      :key="field.color"
+                      :label="field.label"
+                      :color="tempBubbleStyle[field.color]"
+                      :gradient="tempBubbleStyle[field.gradient]"
+                      :fallback-color="field.fallback"
+                      @update:color="tempBubbleStyle[field.color] = $event"
+                      @update:gradient="tempBubbleStyle[field.gradient] = $event"
+                    />
+                  </div>
+                </section>
+
+                <section
+                  v-if="showSection('aiBubble')"
+                  class="settings-card"
+                  :class="{ active: activeSection === 'aiBubble' }"
+                  data-section="aiBubble"
+                  @pointerdown="activateSection('aiBubble')"
+                >
+                  <div class="card-head">
+                    <h3 class="section-title">AI 氣泡</h3>
+                    <span v-if="activeSection === 'aiBubble'" class="card-badge">預覽中</span>
+                  </div>
+                  <div class="individual-colors">
+                    <GradientColorField
+                      v-for="field in AI_BUBBLE_FIELDS"
+                      :key="field.color"
+                      :label="field.label"
+                      :color="tempBubbleStyle[field.color]"
+                      :gradient="tempBubbleStyle[field.gradient]"
+                      :fallback-color="field.fallback"
+                      @update:color="tempBubbleStyle[field.color] = $event"
+                      @update:gradient="tempBubbleStyle[field.gradient] = $event"
+                    />
+                  </div>
+                </section>
+
+                <section
+                  v-if="showSection('thought')"
+                  class="settings-card"
+                  :class="{ active: activeSection === 'thought' }"
+                  data-section="thought"
+                  @pointerdown="activateSection('thought')"
+                >
+                  <div class="card-head">
+                    <h3 class="section-title">想法氣泡</h3>
+                    <span v-if="activeSection === 'thought'" class="card-badge">預覽中</span>
+                  </div>
+                  <div class="individual-colors">
+                    <GradientColorField
+                      v-for="field in THOUGHT_BUBBLE_FIELDS"
+                      :key="field.color"
+                      :label="field.label"
+                      :color="tempBubbleStyle[field.color]"
+                      :gradient="tempBubbleStyle[field.gradient]"
+                      :fallback-color="field.fallback"
+                      @update:color="tempBubbleStyle[field.color] = $event"
+                      @update:gradient="tempBubbleStyle[field.gradient] = $event"
+                    />
+                    <div class="color-item">
                       <input
                         type="color"
-                        :aria-label="field.label"
-                        :value="toPickerHex(tempColors[field.key], '#ffffff')"
-                        @input="setColor(field.key, ($event.target as HTMLInputElement).value)"
+                        aria-label="光暈顏色"
+                        :value="toPickerHex(tempBubbleStyle.thoughtGlowColor, '#ADD8E6')"
+                        @input="tempBubbleStyle.thoughtGlowColor = ($event.target as HTMLInputElement).value"
                       />
-                      <span>{{ field.label }}</span>
+                      <span>光暈顏色</span>
                     </div>
                   </div>
-                </template>
-              </template>
-
-              <!-- 我的氣泡 -->
-              <template v-if="showSection('userBubble')">
-                <span class="peek-marker" data-peek="userBubble" hidden></span>
-                <h3 v-if="!previewFocus" class="section-title">我的氣泡</h3>
-                <div class="individual-colors">
-                  <GradientColorField
-                    v-for="field in USER_BUBBLE_FIELDS"
-                    :key="field.color"
-                    :label="field.label"
-                    :color="tempBubbleStyle[field.color]"
-                    :gradient="tempBubbleStyle[field.gradient]"
-                    :fallback-color="field.fallback"
-                    @update:color="tempBubbleStyle[field.color] = $event"
-                    @update:gradient="tempBubbleStyle[field.gradient] = $event"
-                  />
-                </div>
-              </template>
-
-              <!-- AI 氣泡 -->
-              <template v-if="showSection('aiBubble')">
-                <span class="peek-marker" data-peek="aiBubble" hidden></span>
-                <h3 v-if="!previewFocus" class="section-title">AI 氣泡</h3>
-                <div class="individual-colors">
-                  <GradientColorField
-                    v-for="field in AI_BUBBLE_FIELDS"
-                    :key="field.color"
-                    :label="field.label"
-                    :color="tempBubbleStyle[field.color]"
-                    :gradient="tempBubbleStyle[field.gradient]"
-                    :fallback-color="field.fallback"
-                    @update:color="tempBubbleStyle[field.color] = $event"
-                    @update:gradient="tempBubbleStyle[field.gradient] = $event"
-                  />
-                </div>
-              </template>
-
-              <!-- 想法氣泡 -->
-              <template v-if="showSection('thought')">
-                <span class="peek-marker" data-peek="thought" hidden></span>
-                <h3 v-if="!previewFocus" class="section-title">想法氣泡</h3>
-                <div class="individual-colors">
-                  <GradientColorField
-                    v-for="field in THOUGHT_BUBBLE_FIELDS"
-                    :key="field.color"
-                    :label="field.label"
-                    :color="tempBubbleStyle[field.color]"
-                    :gradient="tempBubbleStyle[field.gradient]"
-                    :fallback-color="field.fallback"
-                    @update:color="tempBubbleStyle[field.color] = $event"
-                    @update:gradient="tempBubbleStyle[field.gradient] = $event"
-                  />
-                  <div class="color-item">
-                    <input
-                      type="color"
-                      aria-label="光暈顏色"
-                      :value="toPickerHex(tempBubbleStyle.thoughtGlowColor, '#ADD8E6')"
-                      @input="tempBubbleStyle.thoughtGlowColor = ($event.target as HTMLInputElement).value"
-                    />
-                    <span>光暈顏色</span>
-                  </div>
-                </div>
-                <div class="slider-control">
-                  <span class="slider-label">光暈強度</span>
-                  <input
-                    v-model.number="tempBubbleStyle.thoughtGlowOpacity"
-                    type="range"
-                    min="0.1"
-                    max="1"
-                    step="0.1"
-                    aria-label="想法氣泡光暈強度"
-                  />
-                  <span class="slider-value">{{ Math.round((tempBubbleStyle.thoughtGlowOpacity ?? 0.6) * 100) }}%</span>
-                </div>
-              </template>
-
-              <!-- 形狀與間距 -->
-              <template v-if="showSection('bubbleShape')">
-                <span class="peek-marker" data-peek="bubbleShape" hidden></span>
-                <h3 class="section-title">形狀與間距</h3>
-                <div class="slider-control">
-                  <span class="slider-label">圓角</span>
-                  <input v-model.number="tempBubbleStyle.borderRadius" type="range" min="8" max="32" step="2" aria-label="氣泡圓角" />
-                  <span class="slider-value">{{ tempBubbleStyle.borderRadius }}px</span>
-                </div>
-                <div class="slider-control">
-                  <span class="slider-label">最大寬度</span>
-                  <input v-model.number="tempBubbleStyle.maxWidth" type="range" min="50" max="90" step="5" aria-label="氣泡最大寬度" />
-                  <span class="slider-value">{{ tempBubbleStyle.maxWidth }}%</span>
-                </div>
-                <div class="slider-control">
-                  <span class="slider-label">訊息間距</span>
-                  <div class="chip-row">
-                    <button
-                      v-for="spacing in MESSAGE_SPACINGS"
-                      :key="spacing.id"
-                      class="chip"
-                      :class="{ active: tempMessageSpacing === spacing.id }"
-                      @click="tempMessageSpacing = spacing.id"
-                    >
-                      {{ spacing.name }}
-                    </button>
-                  </div>
-                </div>
-                <div class="slider-control">
-                  <span class="slider-label">訊息排版</span>
-                  <div class="chip-row">
-                    <button
-                      v-for="layout in MESSAGE_LAYOUTS"
-                      :key="layout.id"
-                      class="chip"
-                      :class="{ active: themeStore.chatMessageLayout === layout.id }"
-                      :aria-pressed="themeStore.chatMessageLayout === layout.id"
-                      @click="themeStore.setChatMessageLayout(layout.id)"
-                    >
-                      {{ layout.name }}
-                    </button>
-                  </div>
-                </div>
-                <p class="section-hint bars-hint">
-                  {{
-                    themeStore.chatMessageLayout === "classic"
-                      ? "經典：每則訊息都有頭像、名字和時間。"
-                      : "成組：同一人連續的訊息合成一組，時間改為置中分隔。"
-                  }}
-                  所有聊天共用，點了立即生效。
-                </p>
-              </template>
-
-              <!-- 質感 -->
-              <template v-if="showSection('bubbleTexture')">
-                <span class="peek-marker" data-peek="bubbleTexture" hidden></span>
-                <h3 class="section-title">質感 <small class="section-note">AI 與我的氣泡共用</small></h3>
-                <BubbleEffectsFields v-model="tempBubbleEffects" :fallback-border-color="tempColors.border" />
-              </template>
-
-              <!-- 頭像 -->
-              <template v-if="showSection('avatar')">
-                <span class="peek-marker" data-peek="avatar" hidden></span>
-                <h3 class="section-title">頭像形狀</h3>
-                <div class="option-grid">
-                  <button
-                    v-for="shape in AVATAR_SHAPES"
-                    :key="shape.id"
-                    class="option-item"
-                    :class="{ active: tempAvatarStyle.shape === shape.id }"
-                    @click="tempAvatarStyle.shape = shape.id"
-                  >
-                    <span class="option-icon">{{ shape.icon }}</span>
-                    <span class="option-name">{{ shape.name }}</span>
-                  </button>
-                </div>
-
-                <h3 class="section-title">頭像大小</h3>
-                <div class="option-grid">
-                  <button
-                    v-for="size in AVATAR_SIZES"
-                    :key="size.id"
-                    class="option-item"
-                    :class="{ active: tempAvatarStyle.size === size.id }"
-                    @click="tempAvatarStyle.size = size.id"
-                  >
-                    <span class="option-name">{{ size.name }}</span>
-                  </button>
-                </div>
-
-                <h3 class="section-title">頭像邊框</h3>
-                <div class="slider-control">
-                  <span class="slider-label">粗細</span>
-                  <input v-model.number="tempAvatarStyle.borderWidth" type="range" min="0" max="4" step="1" aria-label="頭像邊框粗細" />
-                  <span class="slider-value">{{ tempAvatarStyle.borderWidth }}px</span>
-                </div>
-                <div class="individual-colors">
-                  <div class="color-item">
-                    <input
-                      type="color"
-                      aria-label="頭像邊框顏色"
-                      :value="toPickerHex(tempAvatarStyle.borderColor, '#ffffff')"
-                      @input="tempAvatarStyle.borderColor = ($event.target as HTMLInputElement).value"
-                    />
-                    <span>邊框顏色</span>
-                  </div>
-                </div>
-                <label class="toggle-card" :class="{ active: tempAvatarStyle.shadowEnabled }">
-                  <span class="toggle-info">
-                    <span class="toggle-title">頭像陰影</span>
-                    <span class="toggle-sub">讓頭像稍微浮起來</span>
-                  </span>
-                  <span class="toggle-switch">
-                    <input v-model="tempAvatarStyle.shadowEnabled" type="checkbox" />
-                    <span class="switch-track"><span class="switch-thumb"></span></span>
-                  </span>
-                </label>
-              </template>
-
-              <!-- 聊天背景 -->
-              <template v-if="showSection('wallpaper')">
-                <span class="peek-marker" data-peek="wallpaper" hidden></span>
-                <h3 class="section-title">聊天背景</h3>
-                <div class="wallpaper-grid">
-                  <button
-                    v-for="preset in WALLPAPER_PRESETS"
-                    :key="preset.id"
-                    class="wallpaper-item"
-                    :class="{ active: isWallpaperPresetActive(preset) }"
-                    @click="selectWallpaperPreset(preset)"
-                  >
-                    <span
-                      class="wallpaper-preview"
-                      :class="{ 'time-theme-preview': preset.type === 'time-theme' }"
-                      :style="wallpaperPresetStyle(preset)"
-                    ></span>
-                    <span class="wallpaper-name">{{ preset.name }}</span>
-                  </button>
-                  <button v-if="hasCustomImage" class="wallpaper-item active" disabled>
-                    <span
-                      class="wallpaper-preview"
-                      :style="{ backgroundImage: `url(&quot;${tempWallpaperStyle.value}&quot;)` }"
-                    ></span>
-                    <span class="wallpaper-name">自訂圖片</span>
-                  </button>
-                  <label class="wallpaper-item upload">
-                    <input type="file" accept="image/*" @change="handleImageUpload" />
-                    <span class="wallpaper-preview">
-                      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
-                    </span>
-                    <span class="wallpaper-name">上傳圖片</span>
-                  </label>
-                </div>
-
-                <div class="individual-colors">
-                  <div class="color-item" :class="{ selected: !!solidWallpaperColor }">
-                    <input
-                      type="color"
-                      aria-label="純色背景"
-                      :value="solidWallpaperColor ?? toPickerHex(tempColors.background, '#ffffff')"
-                      @input="setSolidWallpaper(($event.target as HTMLInputElement).value)"
-                    />
-                    <span>純色背景</span>
-                  </div>
-                </div>
-
-                <template v-if="usesImageWallpaper">
                   <div class="slider-control">
+                    <span class="slider-label">光暈強度</span>
+                    <input
+                      v-model.number="tempBubbleStyle.thoughtGlowOpacity"
+                      type="range"
+                      min="0.1"
+                      max="1"
+                      step="0.1"
+                      aria-label="想法氣泡光暈強度"
+                    />
+                    <span class="slider-value">{{ Math.round((tempBubbleStyle.thoughtGlowOpacity ?? 0.6) * 100) }}%</span>
+                  </div>
+                </section>
+
+                <section
+                  v-if="showSection('bubbleShape')"
+                  class="settings-card"
+                  :class="{ active: activeSection === 'bubbleShape' }"
+                  data-section="bubbleShape"
+                  @pointerdown="activateSection('bubbleShape')"
+                >
+                  <div class="card-head">
+                    <h3 class="section-title">形狀與排版</h3>
+                    <span v-if="activeSection === 'bubbleShape'" class="card-badge">預覽中</span>
+                  </div>
+                  <div class="slider-control">
+                    <span class="slider-label">圓角</span>
+                    <input v-model.number="tempBubbleStyle.borderRadius" type="range" min="8" max="32" step="2" aria-label="氣泡圓角" />
+                    <span class="slider-value">{{ tempBubbleStyle.borderRadius }}px</span>
+                  </div>
+                  <div class="slider-control">
+                    <span class="slider-label">最大寬度</span>
+                    <input v-model.number="tempBubbleStyle.maxWidth" type="range" min="50" max="90" step="5" aria-label="氣泡最大寬度" />
+                    <span class="slider-value">{{ tempBubbleStyle.maxWidth }}%</span>
+                  </div>
+                  <div class="slider-control">
+                    <span class="slider-label">訊息間距</span>
+                    <div class="chip-row">
+                      <button
+                        v-for="spacing in MESSAGE_SPACINGS"
+                        :key="spacing.id"
+                        class="chip"
+                        :class="{ active: tempMessageSpacing === spacing.id }"
+                        @click="tempMessageSpacing = spacing.id"
+                      >
+                        {{ spacing.name }}
+                      </button>
+                    </div>
+                  </div>
+                  <div class="slider-control">
+                    <span class="slider-label">訊息排版</span>
+                    <div class="chip-row">
+                      <button
+                        v-for="layout in MESSAGE_LAYOUTS"
+                        :key="layout.id"
+                        class="chip"
+                        :class="{ active: themeStore.chatMessageLayout === layout.id }"
+                        :aria-pressed="themeStore.chatMessageLayout === layout.id"
+                        @click="themeStore.setChatMessageLayout(layout.id)"
+                      >
+                        {{ layout.name }}
+                      </button>
+                    </div>
+                  </div>
+                  <p class="section-hint bars-hint">
+                    {{
+                      themeStore.chatMessageLayout === "classic"
+                        ? "經典：每則訊息都有頭像、名字和時間。"
+                        : "成組：同一人連續的訊息合成一組，時間改為置中分隔。"
+                    }}
+                    訊息排版所有聊天共用，點了立即生效。
+                  </p>
+                </section>
+
+                <section
+                  v-if="showSection('bubbleTexture')"
+                  class="settings-card"
+                  :class="{ active: activeSection === 'bubbleTexture' }"
+                  data-section="bubbleTexture"
+                  @pointerdown="activateSection('bubbleTexture')"
+                >
+                  <div class="card-head">
+                    <h3 class="section-title">質感 <small class="section-note">AI 與我的氣泡共用</small></h3>
+                    <span v-if="activeSection === 'bubbleTexture'" class="card-badge">預覽中</span>
+                  </div>
+                  <BubbleEffectsFields v-model="tempBubbleEffects" :fallback-border-color="tempColors.border" />
+                </section>
+
+                <!-- ===== 頭像 ===== -->
+                <section
+                  v-if="showSection('avatar')"
+                  class="settings-card"
+                  :class="{ active: activeSection === 'avatar' }"
+                  data-section="avatar"
+                  @pointerdown="activateSection('avatar')"
+                >
+                  <div class="card-head">
+                    <h3 class="section-title">頭像形狀</h3>
+                    <span v-if="activeSection === 'avatar'" class="card-badge">預覽中</span>
+                  </div>
+                  <div class="option-grid">
+                    <button
+                      v-for="shape in AVATAR_SHAPES"
+                      :key="shape.id"
+                      class="option-item"
+                      :class="{ active: tempAvatarStyle.shape === shape.id }"
+                      @click="tempAvatarStyle.shape = shape.id"
+                    >
+                      <span class="option-icon">{{ shape.icon }}</span>
+                      <span class="option-name">{{ shape.name }}</span>
+                    </button>
+                  </div>
+
+                  <h4 class="card-subtitle">頭像大小</h4>
+                  <div class="option-grid">
+                    <button
+                      v-for="size in AVATAR_SIZES"
+                      :key="size.id"
+                      class="option-item"
+                      :class="{ active: tempAvatarStyle.size === size.id }"
+                      @click="tempAvatarStyle.size = size.id"
+                    >
+                      <span class="option-name">{{ size.name }}</span>
+                    </button>
+                  </div>
+
+                  <h4 class="card-subtitle">頭像邊框</h4>
+                  <div class="slider-control">
+                    <span class="slider-label">粗細</span>
+                    <input v-model.number="tempAvatarStyle.borderWidth" type="range" min="0" max="4" step="1" aria-label="頭像邊框粗細" />
+                    <span class="slider-value">{{ tempAvatarStyle.borderWidth }}px</span>
+                  </div>
+                  <div class="individual-colors">
+                    <div class="color-item">
+                      <input
+                        type="color"
+                        aria-label="頭像邊框顏色"
+                        :value="toPickerHex(tempAvatarStyle.borderColor, '#ffffff')"
+                        @input="tempAvatarStyle.borderColor = ($event.target as HTMLInputElement).value"
+                      />
+                      <span>邊框顏色</span>
+                    </div>
+                  </div>
+                  <label class="toggle-card" :class="{ active: tempAvatarStyle.shadowEnabled }">
+                    <span class="toggle-info">
+                      <span class="toggle-title">頭像陰影</span>
+                      <span class="toggle-sub">讓頭像稍微浮起來</span>
+                    </span>
+                    <span class="toggle-switch">
+                      <input v-model="tempAvatarStyle.shadowEnabled" type="checkbox" />
+                      <span class="switch-track"><span class="switch-thumb"></span></span>
+                    </span>
+                  </label>
+                </section>
+
+                <!-- ===== 背景 ===== -->
+                <section
+                  v-if="showSection('wallpaper')"
+                  class="settings-card"
+                  :class="{ active: activeSection === 'wallpaper' }"
+                  data-section="wallpaper"
+                  @pointerdown="activateSection('wallpaper')"
+                >
+                  <div class="card-head">
+                    <h3 class="section-title">聊天背景</h3>
+                    <span v-if="activeSection === 'wallpaper'" class="card-badge">預覽中</span>
+                  </div>
+                  <div class="wallpaper-grid">
+                    <button
+                      v-for="preset in WALLPAPER_PRESETS"
+                      :key="preset.id"
+                      class="wallpaper-item"
+                      :class="{ active: isWallpaperPresetActive(preset) }"
+                      @click="selectWallpaperPreset(preset)"
+                    >
+                      <span
+                        class="wallpaper-preview"
+                        :class="{ 'time-theme-preview': preset.type === 'time-theme' }"
+                        :style="wallpaperPresetStyle(preset)"
+                      ></span>
+                      <span class="wallpaper-name">{{ preset.name }}</span>
+                    </button>
+                    <button v-if="hasCustomImage" class="wallpaper-item active" disabled>
+                      <span
+                        class="wallpaper-preview"
+                        :style="{ backgroundImage: `url(&quot;${tempWallpaperStyle.value}&quot;)` }"
+                      ></span>
+                      <span class="wallpaper-name">自訂圖片</span>
+                    </button>
+                    <label class="wallpaper-item upload">
+                      <input type="file" accept="image/*" @change="handleImageUpload" />
+                      <span class="wallpaper-preview">
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
+                      </span>
+                      <span class="wallpaper-name">上傳圖片</span>
+                    </label>
+                  </div>
+
+                  <div class="individual-colors">
+                    <div class="color-item" :class="{ selected: !!solidWallpaperColor }">
+                      <input
+                        type="color"
+                        aria-label="純色背景"
+                        :value="solidWallpaperColor ?? toPickerHex(tempColors.background, '#ffffff')"
+                        @input="setSolidWallpaper(($event.target as HTMLInputElement).value)"
+                      />
+                      <span>純色背景</span>
+                    </div>
+                  </div>
+
+                  <div v-if="usesImageWallpaper" class="slider-control">
                     <span class="slider-label">顯示方式</span>
                     <div class="chip-row">
                       <button
@@ -1319,265 +1518,297 @@ function cancel() {
                       </button>
                     </div>
                   </div>
-                </template>
 
-                <template v-if="tempWallpaperStyle.type === 'image' || tempWallpaperStyle.type === 'global-image'">
-                  <div class="slider-control">
-                    <span class="slider-label">模糊</span>
-                    <input v-model.number="tempWallpaperStyle.blur" type="range" min="0" max="20" step="1" aria-label="背景模糊度" />
-                    <span class="slider-value">{{ tempWallpaperStyle.blur }}px</span>
+                  <template v-if="tempWallpaperStyle.type === 'image' || tempWallpaperStyle.type === 'global-image'">
+                    <div class="slider-control">
+                      <span class="slider-label">模糊</span>
+                      <input v-model.number="tempWallpaperStyle.blur" type="range" min="0" max="20" step="1" aria-label="背景模糊度" />
+                      <span class="slider-value">{{ tempWallpaperStyle.blur }}px</span>
+                    </div>
+                    <div class="slider-control">
+                      <span class="slider-label">不透明度</span>
+                      <input
+                        v-model.number="tempWallpaperStyle.opacity"
+                        type="range"
+                        min="20"
+                        max="100"
+                        step="5"
+                        aria-label="背景不透明度"
+                      />
+                      <span class="slider-value">{{ tempWallpaperStyle.opacity }}%</span>
+                    </div>
+                  </template>
+                </section>
+
+                <template v-for="bar in BARS" :key="bar.id">
+                  <section
+                    v-if="showSection(bar.id)"
+                    class="settings-card"
+                    :class="{ active: activeSection === bar.id }"
+                    :data-section="bar.id"
+                    @pointerdown="activateSection(bar.id)"
+                  >
+                    <div class="card-head">
+                      <h3 class="section-title">{{ bar.name }}</h3>
+                      <span v-if="activeSection === bar.id" class="card-badge">預覽中</span>
+                    </div>
+                    <div class="individual-colors">
+                      <div v-for="field in bar.colorFields" :key="field.key" class="color-item">
+                        <input
+                          type="color"
+                          :aria-label="field.label"
+                          :value="toPickerHex(tempColors[field.key], '#ffffff')"
+                          @input="setColor(field.key, ($event.target as HTMLInputElement).value)"
+                        />
+                        <span>{{ field.label }}</span>
+                      </div>
+                    </div>
+                    <BarStyleFields v-model="tempBars[bar.id]" :name="bar.name" />
+                  </section>
+                </template>
+                <p v-if="activeTab === 'wallpaper'" class="section-hint bars-hint">
+                  頂欄與輸入欄共用同一個背景色。不透明度調低後，才看得到後面的背景與毛玻璃效果。
+                </p>
+
+                <!-- ===== 文字 ===== -->
+                <section
+                  v-if="showSection('fontBasics')"
+                  class="settings-card"
+                  :class="{ active: activeSection === 'fontBasics' }"
+                  data-section="fontBasics"
+                  @pointerdown="activateSection('fontBasics')"
+                >
+                  <div class="card-head">
+                    <h3 class="section-title">字體大小</h3>
+                    <span v-if="activeSection === 'fontBasics'" class="card-badge">預覽中</span>
                   </div>
                   <div class="slider-control">
-                    <span class="slider-label">不透明度</span>
                     <input
-                      v-model.number="tempWallpaperStyle.opacity"
+                      v-model.number="tempFontSizeValue"
                       type="range"
-                      min="20"
-                      max="100"
-                      step="5"
-                      aria-label="背景不透明度"
+                      :min="CHAT_FONT_SIZE_MIN"
+                      :max="CHAT_FONT_SIZE_MAX"
+                      step="1"
+                      aria-label="字體大小"
                     />
-                    <span class="slider-value">{{ tempWallpaperStyle.opacity }}%</span>
+                    <span class="slider-value">{{ tempFontSizeValue }}px</span>
                   </div>
-                </template>
-              </template>
 
-              <!-- 頂欄與輸入欄 -->
-              <template v-for="bar in BARS" :key="bar.id">
-                <template v-if="showSection(bar.id)">
-                  <span class="peek-marker" :data-peek="bar.id" hidden></span>
-                  <h3 v-if="!previewFocus" class="section-title">{{ bar.name }}</h3>
+                  <h4 class="card-subtitle">字體樣式</h4>
+                  <div class="font-family-grid">
+                    <button
+                      v-for="font in FONT_FAMILIES"
+                      :key="font.id"
+                      class="font-family-item"
+                      :class="{ active: tempFontStyle.family === font.id }"
+                      @click="tempFontStyle.family = font.id"
+                    >
+                      <span class="font-preview" :style="{ fontFamily: CHAT_FONT_STACKS[font.id] }">字 Aa</span>
+                      <span class="font-name">{{ font.name }}</span>
+                    </button>
+                  </div>
+                </section>
+
+                <section
+                  v-if="showSection('fontSpacing')"
+                  class="settings-card"
+                  :class="{ active: activeSection === 'fontSpacing' }"
+                  data-section="fontSpacing"
+                  @pointerdown="activateSection('fontSpacing')"
+                >
+                  <div class="card-head">
+                    <h3 class="section-title">行高與字距</h3>
+                    <span v-if="activeSection === 'fontSpacing'" class="card-badge">預覽中</span>
+                  </div>
+                  <div class="slider-control">
+                    <span class="slider-label">行高</span>
+                    <input v-model.number="tempFontStyle.lineHeight" type="range" min="1" max="2.5" step="0.1" aria-label="行高" />
+                    <span class="slider-value">{{ tempFontStyle.lineHeight.toFixed(1) }}</span>
+                  </div>
+                  <div class="slider-control">
+                    <span class="slider-label">字距</span>
+                    <input v-model.number="tempFontStyle.letterSpacing" type="range" min="-2" max="5" step="0.5" aria-label="字距" />
+                    <span class="slider-value">{{ tempFontStyle.letterSpacing }}px</span>
+                  </div>
+                </section>
+
+                <section
+                  v-if="showSection('markdown')"
+                  class="settings-card"
+                  :class="{ active: activeSection === 'markdown' }"
+                  data-section="markdown"
+                  @pointerdown="activateSection('markdown')"
+                >
+                  <div class="card-head">
+                    <h3 class="section-title">Markdown 樣式顏色</h3>
+                  </div>
                   <div class="individual-colors">
-                    <div v-for="field in bar.colorFields" :key="field.key" class="color-item">
+                    <div v-for="field in MARKDOWN_COLOR_FIELDS" :key="field.key" class="color-item">
                       <input
                         type="color"
                         :aria-label="field.label"
-                        :value="toPickerHex(tempColors[field.key], '#ffffff')"
-                        @input="setColor(field.key, ($event.target as HTMLInputElement).value)"
+                        :value="toPickerHex(tempFontStyle.markdownColors[field.key], '#4a4a6a')"
+                        @input="tempFontStyle.markdownColors[field.key] = ($event.target as HTMLInputElement).value"
                       />
                       <span>{{ field.label }}</span>
                     </div>
                   </div>
-                  <BarStyleFields v-model="tempBars[bar.id]" :name="bar.name" />
-                </template>
-              </template>
-              <p v-if="showSection('header') || showSection('input')" class="section-hint bars-hint">
-                頂欄與輸入欄共用同一個背景色。不透明度調低後，才看得到後面的背景與毛玻璃效果。
-              </p>
-            </div>
-
-            <!-- ===== 字體 ===== -->
-            <div v-if="activeTab === 'font'" class="settings-section">
-              <h3 class="section-title">字體大小</h3>
-              <div class="slider-control">
-                <input
-                  v-model.number="tempFontSizeValue"
-                  type="range"
-                  :min="CHAT_FONT_SIZE_MIN"
-                  :max="CHAT_FONT_SIZE_MAX"
-                  step="1"
-                  aria-label="字體大小"
-                />
-                <span class="slider-value">{{ tempFontSizeValue }}px</span>
-              </div>
-
-              <h3 class="section-title">字體樣式</h3>
-              <div class="font-family-grid">
-                <button
-                  v-for="font in FONT_FAMILIES"
-                  :key="font.id"
-                  class="font-family-item"
-                  :class="{ active: tempFontStyle.family === font.id }"
-                  @click="tempFontStyle.family = font.id"
-                >
-                  <span class="font-preview" :style="{ fontFamily: CHAT_FONT_STACKS[font.id] }">字 Aa</span>
-                  <span class="font-name">{{ font.name }}</span>
-                </button>
-              </div>
-
-              <h3 class="section-title">行高與字距</h3>
-              <div class="slider-control">
-                <span class="slider-label">行高</span>
-                <input v-model.number="tempFontStyle.lineHeight" type="range" min="1" max="2.5" step="0.1" aria-label="行高" />
-                <span class="slider-value">{{ tempFontStyle.lineHeight.toFixed(1) }}</span>
-              </div>
-              <div class="slider-control">
-                <span class="slider-label">字距</span>
-                <input v-model.number="tempFontStyle.letterSpacing" type="range" min="-2" max="5" step="0.5" aria-label="字距" />
-                <span class="slider-value">{{ tempFontStyle.letterSpacing }}px</span>
-              </div>
-
-              <h3 class="section-title">Markdown 樣式顏色</h3>
-              <div class="individual-colors">
-                <div v-for="field in MARKDOWN_COLOR_FIELDS" :key="field.key" class="color-item">
-                  <input
-                    type="color"
-                    :aria-label="field.label"
-                    :value="toPickerHex(tempFontStyle.markdownColors[field.key], '#4a4a6a')"
-                    @input="tempFontStyle.markdownColors[field.key] = ($event.target as HTMLInputElement).value"
-                  />
-                  <span>{{ field.label }}</span>
-                </div>
-              </div>
-
-              <div>
-                <div class="preview-label">預覽</div>
-                <div
-                  class="font-preview-text"
-                  :style="{
-                    fontSize: `${tempFontSizeValue}px`,
-                    fontFamily: CHAT_FONT_STACKS[tempFontStyle.family],
-                    lineHeight: tempFontStyle.lineHeight,
-                    letterSpacing: `${tempFontStyle.letterSpacing}px`,
-                    background: tempBubbleStyle.aiBgGradient || tempBubbleStyle.aiBgColor,
-                    color: tempBubbleStyle.aiContentColor,
-                  }"
-                >
-                  <strong class="md-heading" :style="{ color: tempFontStyle.markdownColors.heading }">標題文字</strong>
-                  <span>這是一段預覽文字，</span>
-                  <em :style="{ color: tempFontStyle.markdownColors.italic }">斜體文字</em>、
-                  <strong :style="{ color: tempFontStyle.markdownColors.bold }">粗體文字</strong>、
-                  <u :style="{ color: tempFontStyle.markdownColors.underline }">底線文字</u>、
-                  <del :style="{ color: tempFontStyle.markdownColors.strikethrough }">刪除線</del>、
-                  <mark :style="{ backgroundColor: tempFontStyle.markdownColors.highlight }">高亮文字</mark>
-                  <span
-                    class="quote-preview"
-                    :style="{ color: tempFontStyle.markdownColors.quote, borderLeftColor: tempFontStyle.markdownColors.quote }"
+                  <!-- 上方預覽不畫 Markdown，這裡保留專用的文字預覽 -->
+                  <div
+                    class="font-preview-text"
+                    :style="{
+                      fontSize: `${tempFontSizeValue}px`,
+                      fontFamily: CHAT_FONT_STACKS[tempFontStyle.family],
+                      lineHeight: tempFontStyle.lineHeight,
+                      letterSpacing: `${tempFontStyle.letterSpacing}px`,
+                      background: tempBubbleStyle.aiBgGradient || tempBubbleStyle.aiBgColor,
+                      color: tempBubbleStyle.aiContentColor,
+                    }"
                   >
-                    引用文字
-                  </span>
-                  <code :style="{ color: tempFontStyle.markdownColors.code }">行內代碼</code>
-                </div>
-              </div>
-            </div>
-
-            <!-- ===== 裝飾 ===== -->
-            <div v-if="activeTab === 'decorations' && chatId" class="settings-section">
-              <template v-for="target in FRAME_TARGETS" :key="target.key">
-                <h3 class="section-title">{{ target.title }}</h3>
-                <p class="section-hint">{{ target.hint }}</p>
-                <div v-if="ownedFrames.length > 0" class="decoration-grid">
-                  <button
-                    class="decoration-item"
-                    :class="{ active: tempAvatarFrames[target.key] === null }"
-                    @click="tempAvatarFrames[target.key] = null"
-                  >
-                    <span class="decoration-icon none">
-                      <svg viewBox="0 0 24 24" fill="currentColor">
-                        <path
-                          d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                        />
-                      </svg>
-                    </span>
-                    <span class="decoration-name">無</span>
-                  </button>
-                  <button
-                    v-for="frame in ownedFrames"
-                    :key="`${target.key}-${frame.id}`"
-                    class="decoration-item"
-                    :class="{ active: tempAvatarFrames[target.key] === frame.id }"
-                    @click="tempAvatarFrames[target.key] = frame.id"
-                  >
+                    <strong class="md-heading" :style="{ color: tempFontStyle.markdownColors.heading }">標題文字</strong>
+                    <span>這是一段預覽文字，</span>
+                    <em :style="{ color: tempFontStyle.markdownColors.italic }">斜體文字</em>、
+                    <strong :style="{ color: tempFontStyle.markdownColors.bold }">粗體文字</strong>、
+                    <u :style="{ color: tempFontStyle.markdownColors.underline }">底線文字</u>、
+                    <del :style="{ color: tempFontStyle.markdownColors.strikethrough }">刪除線</del>、
+                    <mark :style="{ backgroundColor: tempFontStyle.markdownColors.highlight }">高亮文字</mark>
                     <span
-                      v-if="isAvatarFrameSvg(frame.id)"
-                      class="decoration-icon svg-frame"
-                      :class="frame.rarity"
-                      v-html="getAvatarFrameSvg(frame.id, 'circle')"
-                    ></span>
-                    <span v-else-if="isAvatarFrameImage(frame.id)" class="decoration-icon image-frame" :class="frame.rarity">
-                      <img
-                        v-if="getAvatarFrameLayers(frame.id)?.background"
-                        class="frame-layer-bg"
-                        :src="getLayerSrc(getAvatarFrameLayers(frame.id)?.background)"
-                        alt=""
-                      />
-                      <img
-                        v-if="getAvatarFrameLayers(frame.id)?.overlay"
-                        class="frame-layer-overlay"
-                        :src="getLayerSrc(getAvatarFrameLayers(frame.id)?.overlay)"
-                        alt=""
-                      />
-                      <img
-                        v-if="getAvatarFrameLayers(frame.id)?.decoration"
-                        class="frame-layer-decoration"
-                        :src="getLayerSrc(getAvatarFrameLayers(frame.id)?.decoration)"
-                        alt=""
-                      />
+                      class="quote-preview"
+                      :style="{ color: tempFontStyle.markdownColors.quote, borderLeftColor: tempFontStyle.markdownColors.quote }"
+                    >
+                      引用文字
                     </span>
-                    <span v-else class="decoration-icon" :class="frame.rarity">
-                      <svg viewBox="0 0 24 24" fill="currentColor">
-                        <path
-                          d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3z"
-                        />
-                      </svg>
-                    </span>
-                    <span class="decoration-name">{{ frame.name }}</span>
-                  </button>
-                </div>
-                <div v-else class="empty-decorations">
-                  <p>還沒有購買頭像框</p>
-                  <p class="hint">前往商城購買裝飾品</p>
-                </div>
-              </template>
+                    <code :style="{ color: tempFontStyle.markdownColors.code }">行內代碼</code>
+                  </div>
+                </section>
 
-              <h3 class="section-title">聊天氣泡</h3>
-              <p class="section-hint">全域裝備：會立即套用到所有聊天</p>
-              <div v-if="ownedBubbles.length > 0" class="decoration-grid">
-                <button class="decoration-item" :class="{ active: equippedBubbleId === null }" @click="equipBubble(null)">
-                  <span class="decoration-icon none">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path
-                        d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                      />
-                    </svg>
-                  </span>
-                  <span class="decoration-name">無</span>
+                <!-- ===== 裝飾 ===== -->
+                <template v-if="activeTab === 'decorations' && chatId">
+                  <section
+                    v-for="target in FRAME_TARGETS"
+                    :key="target.key"
+                    class="settings-card"
+                    :class="{ active: activeSection === target.section }"
+                    :data-section="target.section"
+                    @pointerdown="activateSection(target.section)"
+                  >
+                    <div class="card-head">
+                      <h3 class="section-title">{{ target.title }}</h3>
+                    </div>
+                    <p class="section-hint">{{ target.hint }}</p>
+                    <div v-if="ownedFrames.length > 0" class="decoration-grid">
+                      <button
+                        class="decoration-item"
+                        :class="{ active: tempAvatarFrames[target.key] === null }"
+                        @click="tempAvatarFrames[target.key] = null"
+                      >
+                        <span class="decoration-icon none">
+                          <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path
+                              d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                            />
+                          </svg>
+                        </span>
+                        <span class="decoration-name">無</span>
+                      </button>
+                      <button
+                        v-for="frame in ownedFrames"
+                        :key="`${target.key}-${frame.id}`"
+                        class="decoration-item"
+                        :class="{ active: tempAvatarFrames[target.key] === frame.id }"
+                        @click="tempAvatarFrames[target.key] = frame.id"
+                      >
+                        <span
+                          v-if="isAvatarFrameSvg(frame.id)"
+                          class="decoration-icon svg-frame"
+                          :class="frame.rarity"
+                          v-html="getAvatarFrameSvg(frame.id, 'circle')"
+                        ></span>
+                        <span v-else-if="isAvatarFrameImage(frame.id)" class="decoration-icon image-frame" :class="frame.rarity">
+                          <img
+                            v-if="getAvatarFrameLayers(frame.id)?.background"
+                            class="frame-layer-bg"
+                            :src="getLayerSrc(getAvatarFrameLayers(frame.id)?.background)"
+                            alt=""
+                          />
+                          <img
+                            v-if="getAvatarFrameLayers(frame.id)?.overlay"
+                            class="frame-layer-overlay"
+                            :src="getLayerSrc(getAvatarFrameLayers(frame.id)?.overlay)"
+                            alt=""
+                          />
+                          <img
+                            v-if="getAvatarFrameLayers(frame.id)?.decoration"
+                            class="frame-layer-decoration"
+                            :src="getLayerSrc(getAvatarFrameLayers(frame.id)?.decoration)"
+                            alt=""
+                          />
+                        </span>
+                        <span v-else class="decoration-icon" :class="frame.rarity">
+                          <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path
+                              d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3z"
+                            />
+                          </svg>
+                        </span>
+                        <span class="decoration-name">{{ frame.name }}</span>
+                      </button>
+                    </div>
+                    <div v-else class="empty-decorations">
+                      <p>還沒有購買頭像框</p>
+                      <p class="hint">前往商城購買裝飾品</p>
+                    </div>
+                  </section>
+
+                  <section
+                    class="settings-card"
+                    :class="{ active: activeSection === 'bubbleDeco' }"
+                    data-section="bubbleDeco"
+                    @pointerdown="activateSection('bubbleDeco')"
+                  >
+                    <div class="card-head">
+                      <h3 class="section-title">聊天氣泡</h3>
+                    </div>
+                    <p class="section-hint">全域裝備：會立即套用到所有聊天</p>
+                    <div v-if="ownedBubbles.length > 0" class="decoration-grid">
+                      <button class="decoration-item" :class="{ active: equippedBubbleId === null }" @click="equipBubble(null)">
+                        <span class="decoration-icon none">
+                          <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path
+                              d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                            />
+                          </svg>
+                        </span>
+                        <span class="decoration-name">無</span>
+                      </button>
+                      <button
+                        v-for="bubble in ownedBubbles"
+                        :key="bubble.id"
+                        class="decoration-item"
+                        :class="{ active: equippedBubbleId === bubble.id }"
+                        @click="equipBubble(bubble.id)"
+                      >
+                        <span class="decoration-icon" :class="bubble.rarity">
+                          <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
+                          </svg>
+                        </span>
+                        <span class="decoration-name">{{ bubble.name }}</span>
+                      </button>
+                    </div>
+                    <div v-else class="empty-decorations">
+                      <p>還沒有購買聊天氣泡</p>
+                      <p class="hint">前往商城購買裝飾品</p>
+                    </div>
+                  </section>
+                </template>
+
+                <!-- 恢復預設：放在最底下，不跟「完成」擠在一起 -->
+                <button v-if="activeTab !== 'decorations'" class="ts-reset-btn" @click="resetToDefault">
+                  {{ resetLabel }}
                 </button>
-                <button
-                  v-for="bubble in ownedBubbles"
-                  :key="bubble.id"
-                  class="decoration-item"
-                  :class="{ active: equippedBubbleId === bubble.id }"
-                  @click="equipBubble(bubble.id)"
-                >
-                  <span class="decoration-icon" :class="bubble.rarity">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
-                    </svg>
-                  </span>
-                  <span class="decoration-name">{{ bubble.name }}</span>
-                </button>
-              </div>
-              <div v-else class="empty-decorations">
-                <p>還沒有購買聊天氣泡</p>
-                <p class="hint">前往商城購買裝飾品</p>
               </div>
             </div>
-          </div>
-
-          <!-- 浮出預覽：預覽捲出畫面後，調整設定時淡入，停手 1 秒淡出 -->
-          <Transition name="preview-peek">
-            <div v-if="peekVisible && showPreview" class="preview-peek" :style="peekBoxStyle" aria-hidden="true">
-              <div
-                ref="peekInnerRef"
-                class="preview-peek-inner"
-                :style="{ width: `${peekNaturalWidth}px`, transform: `scale(${peekScale})` }"
-              >
-                <ChatAppearancePreview
-                  compact
-                  :scene="peekScene"
-                  :state="previewState"
-                  :focus="null"
-                  :layout="themeStore.chatMessageLayout"
-                />
-              </div>
-            </div>
-          </Transition>
-
-          <div class="modal-footer">
-            <button class="soft-btn secondary" @click="resetToDefault">恢復預設</button>
-            <button class="soft-btn secondary" @click="cancel">取消</button>
-            <button class="soft-btn primary" @click="saveAndClose">完成</button>
           </div>
         </div>
       </div>
@@ -1598,13 +1829,13 @@ function cancel() {
 @use "../../styles/theme-settings-shared";
 
 .theme-settings-modal {
-  // 浮出預覽以視窗為定位基準
-  position: relative;
   width: 100%;
   max-width: 500px;
   height: calc(100dvh - 40px);
   max-height: calc(100dvh - 40px);
   border-radius: 24px;
+  display: flex;
+  flex-direction: column;
 
   @media (max-height: 600px), (max-width: 520px) {
     height: calc(100dvh - 24px);
@@ -1614,6 +1845,347 @@ function cancel() {
 
   @media (max-width: 520px) {
     max-width: calc(100vw - 24px);
+  }
+
+  // 寬螢幕／橫拿手機：預覽放左欄，視窗加寬
+  &.layout-wide {
+    max-width: min(920px, calc(100vw - 48px));
+    max-height: min(calc(100dvh - 24px), 820px);
+  }
+}
+
+// ===== 頂列：取消／標題／完成 =====
+.ts-topbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 56px;
+  box-sizing: border-box;
+  padding: 6px 12px 6px 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ts-topbar-btn {
+  height: 44px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 12px;
+  background: none;
+  font-size: 15px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-text);
+  }
+}
+
+.ts-topbar-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.ts-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.ts-done-btn {
+  height: 36px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 18px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 30%, transparent);
+
+  &:active {
+    transform: scale(0.97);
+  }
+}
+
+// 小螢幕：套用範圍收成標題下的小標籤，點一下切換
+.ts-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  padding: 0 8px 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+
+  svg {
+    width: 12px;
+    height: 12px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+}
+
+// ===== 套用範圍 =====
+.ts-scope {
+  flex-shrink: 0;
+  padding: 10px 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ts-scope-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ts-scope-label {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.ts-seg {
+  flex: 1;
+  max-width: 320px;
+  display: flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--color-background);
+
+  button {
+    flex: 1;
+    height: 32px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition:
+      background 0.18s ease,
+      color 0.18s ease;
+
+    &.active {
+      background: var(--color-surface);
+      color: var(--color-primary);
+      font-weight: 700;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    }
+  }
+}
+
+.ts-scope-hint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+// ===== 主體：預覽＋設定 =====
+.ts-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ts-preview-pane {
+  flex-shrink: 0;
+  padding: 10px 16px 0;
+}
+
+// 高度固定的預覽框；內容以原寸排版後整體縮放（previewInnerStyle）
+.ts-preview-box {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+}
+
+.ts-preview-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top center;
+}
+
+.ts-preview-toggle {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  color: var(--color-text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+
+  svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+}
+
+.ts-preview-collapsed {
+  width: 100%;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12.5px;
+  cursor: pointer;
+
+  svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+}
+
+.ts-settings-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+// 提高權重，蓋過 soft 主題 .soft-modal .modal-content 的內距
+.theme-settings-modal .ts-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+// 寬螢幕：預覽左欄、設定右欄
+.layout-wide {
+  .ts-body {
+    flex-direction: row;
+  }
+
+  .ts-preview-pane {
+    width: 360px;
+    box-sizing: border-box;
+    padding: 16px;
+    border-right: 1px solid var(--color-border);
+    overflow-y: auto;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  .ts-scope {
+    padding: 12px 20px 0;
+  }
+}
+
+// ===== 設定卡：目前預覽對應的那張會亮起 =====
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 14px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--color-background) 55%, var(--color-surface));
+  box-shadow: inset 0 0 0 1.5px transparent;
+  transition:
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+
+  &.active {
+    background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--color-primary) 45%, transparent);
+  }
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .section-title {
+    padding-top: 0;
+  }
+}
+
+.card-badge {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.card-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+// 恢復預設：放在設定最底下，不和「完成」擠在一起
+.ts-reset-btn {
+  align-self: center;
+  flex-shrink: 0;
+  margin-top: 4px;
+  height: 40px;
+  padding: 0 16px;
+  border: none;
+  background: none;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-error);
   }
 }
 
@@ -1651,11 +2223,6 @@ function cancel() {
     font-size: 12px;
     color: var(--color-text-muted);
   }
-}
-
-.chat-mode-toggle {
-  margin: 14px 20px 0;
-  padding: 14px 16px;
 }
 
 .toggle-switch {
@@ -1777,65 +2344,14 @@ function cancel() {
 
 // ===== 內容區 =====
 .night-hint {
-  margin: 0 0 12px;
+  flex-shrink: 0;
+  margin: 0;
   padding: 10px 12px;
   border-radius: 14px;
   font-size: 12px;
   line-height: 1.5;
   color: var(--color-text-secondary);
   background: var(--color-background);
-}
-
-.preview-block {
-  margin-bottom: 16px;
-}
-
-// 浮出預覽（固定在視窗頂部；尺寸由 peekBoxStyle 決定）
-.preview-peek {
-  position: absolute;
-  z-index: 5;
-  overflow: hidden;
-  border-radius: 20px;
-  pointer-events: none;
-  box-shadow:
-    0 18px 44px rgba(0, 0, 0, 0.22),
-    0 3px 10px rgba(0, 0, 0, 0.08);
-}
-
-// 以原寸排版後整體縮放，放不下時等比例縮小而不是裁切
-.preview-peek-inner {
-  transform-origin: top left;
-}
-
-.preview-peek-enter-active {
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
-}
-
-.preview-peek-leave-active {
-  transition:
-    opacity 0.35s ease,
-    transform 0.35s ease;
-}
-
-.preview-peek-enter-from,
-.preview-peek-leave-to {
-  opacity: 0;
-  transform: translateY(6px) scale(0.98);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .preview-peek-enter-active,
-  .preview-peek-leave-active {
-    transition: none;
-  }
-}
-
-.settings-section {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
 }
 
 .section-note {
@@ -1852,9 +2368,7 @@ function cancel() {
   margin: 0;
   padding-top: 6px;
 
-  // 第一個標題不留上距（前面的 .peek-marker 是隱藏的區段標記，不算數）
-  &:first-child,
-  .peek-marker:first-child + & {
+  &:first-child {
     padding-top: 0;
   }
 }
@@ -2006,61 +2520,6 @@ function cancel() {
   font-size: 12px;
   color: var(--color-text-muted);
   white-space: nowrap;
-}
-
-// 點預覽後展開的顏色設定
-.focus-settings-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  background: var(--color-surface);
-  border-radius: 18px;
-  border: 1.5px solid var(--color-primary-light);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
-  animation: focus-panel-in 0.25s ease;
-}
-
-@keyframes focus-panel-in {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.focus-settings-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.focus-settings-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--color-primary);
-}
-
-.focus-close-btn {
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 50%;
-  background: var(--color-background);
-  color: var(--color-text-muted);
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  &:hover {
-    background: var(--color-surface-hover);
-    color: var(--color-text);
-  }
 }
 
 // ===== 版面 =====
@@ -2271,13 +2730,6 @@ function cancel() {
     padding: 0 4px;
     border-radius: 2px;
   }
-}
-
-// 三顆按鈕平分寬度，窄螢幕避免「恢復預設」折行
-.modal-footer .soft-btn {
-  white-space: nowrap;
-  padding-left: 8px;
-  padding-right: 8px;
 }
 
 // ===== 裝飾品 =====

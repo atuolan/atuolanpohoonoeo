@@ -1,4 +1,10 @@
-import type { ChatAppearance, ChatBarStyle, ChatBubbleEffects, ChatMessageSpacing } from "@/types/chat";
+import type {
+  ChatAppearance,
+  ChatBarStyle,
+  ChatBubbleEffects,
+  ChatMessageSpacing,
+  GlobalChatAppearance,
+} from "@/types/chat";
 import { hexToRgba } from "@/utils/chatScreenHelpers";
 
 type ChatWallpaper = NonNullable<ChatAppearance["wallpaper"]>;
@@ -140,9 +146,14 @@ export function buildBarBackdrop(blur: number): string {
   return blur > 0 ? `blur(${blur}px) saturate(180%)` : "none";
 }
 
-export function resolveBarStyle(appearance: ChatAppearance | undefined, kind: BarKind): ChatBarStyle {
-  if (!appearance?.useCustom) return DEFAULT_BAR_STYLE;
-  return { ...DEFAULT_BAR_STYLE, ...appearance.bars?.[kind] };
+/** 沒有專屬外觀的聊天改用全域聊天外觀（未設定過全域時沿用內建預設） */
+export function resolveBarStyle(
+  appearance: ChatAppearance | undefined,
+  kind: BarKind,
+  globalChat?: GlobalChatAppearance | null,
+): ChatBarStyle {
+  const bars = appearance?.useCustom ? appearance.bars : globalChat?.bars;
+  return { ...DEFAULT_BAR_STYLE, ...bars?.[kind] };
 }
 
 const NIGHT_BUBBLE_VARS: Record<string, string> = {
@@ -261,18 +272,57 @@ function resolveWallpaperValue(wallpaper: ChatWallpaper, globalWallpaper: Global
   return wallpaper.value || "var(--wallpaper-value, var(--color-background))";
 }
 
+/** 全域氣泡底色（主題的全域氣泡設定），全域外觀調低氣泡透明度時要用 */
+export interface GlobalBubbleInfo {
+  userBgColor: string;
+  userBgGradient?: string;
+  aiBgColor: string;
+  aiBgGradient?: string;
+}
+
 /**
  * 把聊天外觀轉成要寫到聊天容器上的 CSS 變數。
  * 夜間模式只保留版面與質感設定（字體、圓角、寬度、頭像、頂欄／輸入欄、氣泡質感、間距），
  * 顏色與桌布交給夜間配色。
+ *
+ * 沒有專屬外觀的聊天：配色、氣泡、頭像由主題寫在 :root 的全域變數提供；
+ * 有設定過全域聊天外觀時，再補上背景、字體、頂欄／輸入欄、質感與間距。
  */
 export function buildChatAppearanceVars(
   appearance: ChatAppearance | undefined,
-  options: { nightMode: boolean; globalWallpaper: GlobalWallpaperInfo },
+  options: {
+    nightMode: boolean;
+    globalWallpaper: GlobalWallpaperInfo;
+    globalChat?: GlobalChatAppearance | null;
+    globalBubble?: GlobalBubbleInfo;
+  },
 ): Record<string, string> {
   const vars: Record<string, string> = options.nightMode ? { ...NIGHT_BUBBLE_VARS } : {};
-  if (!appearance?.useCustom) return vars;
+  if (appearance?.useCustom) return applyAppearanceVars(vars, appearance, options);
 
+  const globalChat = options.globalChat;
+  if (!globalChat) return vars;
+  // 氣泡透明度要作用在氣泡底色上；白天的全域底色在 :root，這裡先補到容器上
+  const fxOpacity = globalChat.bubbleEffects?.opacity ?? DEFAULT_BUBBLE_EFFECTS.opacity;
+  if (!options.nightMode && options.globalBubble && fxOpacity < 100) {
+    const b = options.globalBubble;
+    vars["--bubble-user-bg"] = b.userBgGradient || b.userBgColor;
+    vars["--bubble-ai-bg"] = b.aiBgGradient || b.aiBgColor;
+  }
+  // 只取全域聊天外觀負責的欄位；配色、氣泡、頭像留給 :root
+  const { wallpaper, font, bars, bubbleEffects, messageSpacing } = globalChat;
+  return applyAppearanceVars(
+    vars,
+    { useCustom: true, wallpaper, font, bars, bubbleEffects, messageSpacing },
+    options,
+  );
+}
+
+function applyAppearanceVars(
+  vars: Record<string, string>,
+  appearance: ChatAppearance,
+  options: { nightMode: boolean; globalWallpaper: GlobalWallpaperInfo },
+): Record<string, string> {
   const { avatar, bubble, font } = appearance;
 
   if (avatar) {

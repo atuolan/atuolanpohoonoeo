@@ -1,8 +1,9 @@
 import { nextTick, ref, watch, type Ref } from "vue";
-import type { ChatAppearance } from "@/types/chat";
+import type { ChatAppearance, GlobalChatAppearance } from "@/types/chat";
 import {
   ALL_CHAT_APPEARANCE_PROPS,
   buildChatAppearanceVars,
+  type GlobalBubbleInfo,
   type GlobalWallpaperInfo,
 } from "@/utils/chatAppearanceVars";
 
@@ -13,6 +14,9 @@ interface ChatAppearanceContext {
   };
   themeStore: {
     wallpaperStyle: GlobalWallpaperInfo;
+    /** 沒有專屬外觀的聊天使用的全域聊天外觀 */
+    globalChatAppearance?: GlobalChatAppearance | null;
+    bubbleStyle?: GlobalBubbleInfo;
   };
   chatStore: {
     updateAppearance: (appearance: ChatAppearance) => void;
@@ -49,6 +53,8 @@ export function useChatAppearance(context: ChatAppearanceContext) {
     const vars = buildChatAppearanceVars(appearance, {
       nightMode: context.settingsStore.nightMode,
       globalWallpaper: context.themeStore.wallpaperStyle,
+      globalChat: context.themeStore.globalChatAppearance,
+      globalBubble: context.themeStore.bubbleStyle,
     });
     for (const [property, value] of Object.entries(vars)) {
       container.style.setProperty(property, value);
@@ -62,9 +68,13 @@ export function useChatAppearance(context: ChatAppearanceContext) {
     },
   );
 
-  // 跟隨全域桌布的聊天，要在全域桌布變動時同步更新
+  // 跟隨全域桌布／全域聊天外觀的聊天，要在全域設定變動時同步更新
   watch(
-    () => context.themeStore.wallpaperStyle,
+    () => [
+      context.themeStore.wallpaperStyle,
+      context.themeStore.globalChatAppearance,
+      context.themeStore.bubbleStyle,
+    ],
     () => {
       nextTick(() => applyChatAppearance(chatAppearance.value));
     },

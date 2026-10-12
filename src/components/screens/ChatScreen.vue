@@ -2790,8 +2790,12 @@ const { chatAppearance, saveAppearance, applyChatAppearance } = useChatAppearanc
   getPendingAppearance: () => props.pendingAppearance,
   onAppearanceApplied: () => emit("appearanceApplied"),
 });
-const headerBarStyle = computed(() => resolveBarStyle(chatAppearance.value, "header"));
-const inputBarStyle = computed(() => resolveBarStyle(chatAppearance.value, "input"));
+const headerBarStyle = computed(() =>
+  resolveBarStyle(chatAppearance.value, "header", themeStore.globalChatAppearance),
+);
+const inputBarStyle = computed(() =>
+  resolveBarStyle(chatAppearance.value, "input", themeStore.globalChatAppearance),
+);
 
 // ===== 流式輸出窗口 =====
 const streamingWindow = useStreamingWindow();

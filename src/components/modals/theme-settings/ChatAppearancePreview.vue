@@ -13,7 +13,7 @@ import {
 import { hexToRgba } from "@/utils/chatScreenHelpers";
 import { toPickerHex } from "@/utils/simpleGradient";
 import { computed } from "vue";
-import type { PeekScene, PreviewElement, PreviewState, PreviewTarget } from "./types";
+import type { PreviewElement, PreviewScene, PreviewState, PreviewTarget } from "./types";
 
 const props = withDefaults(
   defineProps<{
@@ -21,9 +21,9 @@ const props = withDefaults(
     focus: PreviewElement | null;
     /** 訊息排版（全域設定）：成組 / 經典 */
     layout?: ChatMessageLayout;
-    /** 精簡版（浮出預覽用）：只畫 scene 需要的部分 */
+    /** 精簡版（設定視窗固定預覽用）：只畫 scene 需要的部分 */
     compact?: boolean;
-    scene?: PeekScene;
+    scene?: PreviewScene;
   }>(),
   { layout: "grouped", compact: false, scene: "pair" },
 );
@@ -31,13 +31,17 @@ const props = withDefaults(
 type PreviewPart = "header" | "body" | "separator" | "firstAi" | "thought" | "user" | "samples" | "input";
 
 /** 精簡版各情境要畫的部分（完整版全部顯示） */
-const SCENE_PARTS: Record<PeekScene, PreviewPart[]> = {
+const SCENE_PARTS: Record<PreviewScene, PreviewPart[]> = {
   pair: ["body", "user"],
   thought: ["body", "thought"],
   conversation: ["body", "separator", "firstAi", "user"],
+  messages: ["body", "separator", "firstAi", "thought", "user"],
   colors: ["body", "user", "samples"],
   header: ["header"],
   input: ["input"],
+  headerPair: ["header", "body", "user"],
+  pairInput: ["body", "user", "input"],
+  full: ["header", "body", "separator", "firstAi", "thought", "user", "samples", "input"],
 };
 
 function showPart(part: PreviewPart) {
@@ -614,10 +618,8 @@ function onKey(target: PreviewTarget) {
   }
 }
 
-// 精簡版（浮出預覽）：縮小內距，整塊不可點
+// 精簡版（設定視窗固定預覽）：縮小內距
 .chat-preview.compact {
-  pointer-events: none;
-
   .preview-body {
     padding: 12px;
   }
