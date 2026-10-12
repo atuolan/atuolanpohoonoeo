@@ -6,8 +6,9 @@ import { ref, type Ref } from "vue";
  */
 export function useChatScreenshot(deps: {
   messages: Ref<{ id: string }[]>;
-  isSelectingForScreenshot: Ref<boolean>;
-  screenshotSelectedIds: Ref<string[]>;
+  /** 與多選模式共用的選取狀態 */
+  isSelecting: Ref<boolean>;
+  selectedIds: Ref<string[]>;
 }) {
   const screenshotPreviewUrl = ref<string | null>(null);
   const screenshotTargetId = ref<string | null>(null);
@@ -67,45 +68,15 @@ export function useChatScreenshot(deps: {
     }
   }
 
-  function startScreenshotSelectMode(messageId?: string) {
-    deps.isSelectingForScreenshot.value = true;
-    deps.screenshotSelectedIds.value = messageId ? [messageId] : [];
-  }
-
-  function toggleScreenshotSelection(messageId: string) {
-    const index = deps.screenshotSelectedIds.value.indexOf(messageId);
-    if (index > -1) {
-      deps.screenshotSelectedIds.value.splice(index, 1);
-      return;
-    }
-    deps.screenshotSelectedIds.value.push(messageId);
-
-    // 智能範圍選擇
-    if (deps.screenshotSelectedIds.value.length >= 2) {
-      const allIds = deps.messages.value.map((m) => m.id);
-      const indices = deps.screenshotSelectedIds.value
-        .map((id) => allIds.indexOf(id))
-        .filter((i) => i >= 0);
-      if (indices.length >= 2) {
-        const min = Math.min(...indices);
-        const max = Math.max(...indices);
-        const rangeIds = allIds.slice(min, max + 1);
-        deps.screenshotSelectedIds.value = [
-          ...new Set([...deps.screenshotSelectedIds.value, ...rangeIds]),
-        ];
-      }
-    }
-  }
-
   async function executeBatchScreenshot() {
-    if (deps.screenshotSelectedIds.value.length === 0) return;
+    if (deps.selectedIds.value.length === 0) return;
     const chatArea = document.querySelector(
       ".messages-container",
     ) as HTMLElement;
     if (!chatArea) return;
 
     const selectedElements: HTMLElement[] = [];
-    for (const msgId of deps.screenshotSelectedIds.value) {
+    for (const msgId of deps.selectedIds.value) {
       const el = chatArea.querySelector(
         `[data-message-id="${msgId}"]`,
       ) as HTMLElement;
@@ -119,7 +90,7 @@ export function useChatScreenshot(deps: {
       const mod = await import("@/composables/useScreenshot");
       const { captureMessages } = mod.useScreenshot();
       const allIds = deps.messages.value.map((m) => m.id);
-      const sortedIds = deps.screenshotSelectedIds.value
+      const sortedIds = deps.selectedIds.value
         .slice()
         .sort((a, b) => allIds.indexOf(a) - allIds.indexOf(b));
       const dataUrl = await captureMessages(sortedIds, chatArea, {
@@ -136,8 +107,8 @@ export function useChatScreenshot(deps: {
   }
 
   function cancelScreenshotSelect() {
-    deps.isSelectingForScreenshot.value = false;
-    deps.screenshotSelectedIds.value = [];
+    deps.isSelecting.value = false;
+    deps.selectedIds.value = [];
   }
 
   return {
@@ -145,8 +116,6 @@ export function useChatScreenshot(deps: {
     screenshotTargetId,
     handleMessageScreenshot,
     handleScreenshotRetake,
-    startScreenshotSelectMode,
-    toggleScreenshotSelection,
     executeBatchScreenshot,
     cancelScreenshotSelect,
   };

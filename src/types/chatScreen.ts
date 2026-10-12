@@ -1,4 +1,9 @@
-import type { ChatAppearance, WaimaiOrderSnapshot } from "@/types/chat";
+import type {
+  ChatAppearance,
+  ChatHistoryRecordData,
+  ForwardedFrom,
+  WaimaiOrderSnapshot,
+} from "@/types/chat";
 
 export type ChatScreenMediaType =
   | "descriptive-image"
@@ -110,15 +115,8 @@ export interface ChatScreenMessage {
   groupActionTarget?: string;
   groupActionValue?: string;
   isGroupChatHistory?: boolean;
-  groupChatHistoryData?: {
-    groupName: string;
-    messages: Array<{
-      senderName: string;
-      content: string;
-      timestamp: number;
-      isUser: boolean;
-    }>;
-  };
+  forwardedFrom?: ForwardedFrom;
+  groupChatHistoryData?: ChatHistoryRecordData;
   isGroupCallHistory?: boolean;
   groupCallHistoryData?: {
     groupName: string;

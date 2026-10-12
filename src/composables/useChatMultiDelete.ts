@@ -301,22 +301,26 @@ export function useChatMultiDelete(deps: {
     }
 
     deps.selectedMessageIds.value.push(messageId);
+  }
 
-    if (deps.selectedMessageIds.value.length >= 2) {
-      const allMessageIds = deps.messages.value.map((m: any) => m.id);
-      const selectedIndices = deps.selectedMessageIds.value
-        .map((id) => allMessageIds.indexOf(id))
-        .filter((i: number) => i >= 0);
+  /**
+   * 「選擇到這裡」：從指定訊息選到已選訊息的另一端（全部選取範圍內的訊息）。
+   * 還沒選任何訊息時，從指定訊息一路選到最新一條。
+   */
+  function selectRangeTo(messageId: string) {
+    const allMessageIds = deps.messages.value.map((m: any) => m.id as string);
+    const targetIndex = allMessageIds.indexOf(messageId);
+    if (targetIndex === -1) return;
 
-      if (selectedIndices.length >= 2) {
-        const minIndex = Math.min(...selectedIndices);
-        const maxIndex = Math.max(...selectedIndices);
-        const rangeIds = allMessageIds.slice(minIndex, maxIndex + 1);
-        deps.selectedMessageIds.value = [
-          ...new Set([...deps.selectedMessageIds.value, ...rangeIds]),
-        ];
-      }
-    }
+    const selectedIndices = deps.selectedMessageIds.value
+      .map((id) => allMessageIds.indexOf(id))
+      .filter((i: number) => i >= 0);
+    const minIndex = Math.min(targetIndex, ...selectedIndices);
+    const maxIndex =
+      selectedIndices.length > 0
+        ? Math.max(targetIndex, ...selectedIndices)
+        : allMessageIds.length - 1;
+    deps.selectedMessageIds.value = allMessageIds.slice(minIndex, maxIndex + 1);
   }
 
   async function deleteSelectedMessages() {
@@ -372,6 +376,7 @@ export function useChatMultiDelete(deps: {
     handleBranchFromMessage,
     confirmBranch,
     toggleMessageSelection,
+    selectRangeTo,
     deleteSelectedMessages,
     cancelSelection,
   };

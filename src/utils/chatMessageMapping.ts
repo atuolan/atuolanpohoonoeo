@@ -349,6 +349,7 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     groupActionTarget: m.groupActionTarget,
     groupActionValue: m.groupActionValue,
     isGroupChatHistory: m.isGroupChatHistory,
+    forwardedFrom: m.forwardedFrom ? { ...m.forwardedFrom } : undefined,
     groupChatHistoryData: m.groupChatHistoryData
       ? JSON.parse(JSON.stringify(m.groupChatHistoryData))
       : undefined,

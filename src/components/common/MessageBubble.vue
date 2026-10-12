@@ -61,7 +61,7 @@ import { formatTime } from "@/services/AudioRecorder";
 import { getRegexedString, regex_placement } from "@/services/RegexEngine";
 import { useSettingsStore, useStickerStore } from "@/stores";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
-import type { WaimaiOrderSnapshot } from "@/types/chat";
+import type { ChatHistoryRecordData, WaimaiOrderSnapshot } from "@/types/chat";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { injectTTSInlineButtons } from "@/utils/ttsInlineButtons";
 import { marked } from "marked";
@@ -396,15 +396,7 @@ interface MessageBubbleProps {
   groupActionValue?: string;
   // 群聊記錄卡片
   isGroupChatHistory?: boolean;
-  groupChatHistoryData?: {
-    groupName: string;
-    messages: Array<{
-      senderName: string;
-      content: string;
-      timestamp: number;
-      isUser: boolean;
-    }>;
-  };
+  groupChatHistoryData?: ChatHistoryRecordData;
   // 群通話記錄卡片
   isGroupCallHistory?: boolean;
   groupCallHistoryData?: {
@@ -617,6 +609,7 @@ const emit = defineEmits<{
   (e: "updateTranscript", id: string, transcript: string): void;
   (e: "screenshot", id: string): void;
   (e: "batchScreenshot", id: string): void;
+  (e: "forward", id: string): void;
   (
     e: "splitRegexSegments",
     id: string,
@@ -2537,6 +2530,12 @@ function handleBatchScreenshot() {
   emit("batchScreenshot", props.id);
 }
 
+function handleForward() {
+  if (menuOpenedAt && Date.now() - menuOpenedAt < 800) return;
+  showMenu.value = false;
+  emit("forward", props.id);
+}
+
 function handleRecallToggle() {
   if (menuOpenedAt && Date.now() - menuOpenedAt < 800) return;
   showMenu.value = false;
@@ -3210,8 +3209,7 @@ const showTextVoiceTranscript = ref(true);
         class="group-chat-history-system-message"
       >
         <GroupChatHistoryCard
-          :group-name="groupChatHistoryData.groupName"
-          :messages="groupChatHistoryData.messages"
+          :record="groupChatHistoryData"
           @view="showGroupChatHistoryModal = true"
         />
       </div>
@@ -3929,8 +3927,7 @@ const showTextVoiceTranscript = ref(true);
             class="group-chat-history-wrapper"
           >
             <GroupChatHistoryCard
-              :group-name="groupChatHistoryData.groupName"
-              :messages="groupChatHistoryData.messages"
+              :record="groupChatHistoryData"
               @view="showGroupChatHistoryModal = true"
             />
           </div>
@@ -4661,6 +4658,13 @@ const showTextVoiceTranscript = ref(true);
               <span>複製</span>
             </button>
             <div class="menu-divider"></div>
+            <button class="menu-item" @click="handleForward">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z" />
+              </svg>
+              <span>轉發</span>
+            </button>
+            <div class="menu-divider"></div>
             <button class="menu-item" @click="handleEdit">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path
@@ -4739,7 +4743,7 @@ const showTextVoiceTranscript = ref(true);
                   d="M3 5h2V3c-1.1 0-2 .9-2 2zm0 8h2v-2H3v2zm4 8h2v-2H7v2zM3 9h2V7H3v2zm10-6h-2v2h2V3zm6 0v2h2c0-1.1-.9-2-2-2zM5 21v-2H3c0 1.1.9 2 2 2zm-2-4h2v-2H3v2zM9 3H7v2h2V3zm2 18h2v-2h-2v2zm8-8h2v-2h-2v2zm0 8c1.1 0 2-.9 2-2h-2v2zm0-12h2V7h-2v2zm0 8h2v-2h-2v2zm-4 4h2v-2h-2v2zm0-16h2V3h-2v2zM7 17h10V7H7v10zm2-8h6v6H9V9z"
                 />
               </svg>
-              <span>批量刪除</span>
+              <span>多選</span>
             </button>
             <div class="menu-divider"></div>
             <button class="menu-item danger" @click="handleDelete">
@@ -4759,8 +4763,7 @@ const showTextVoiceTranscript = ref(true);
   <!-- 群聊記錄查看 Modal -->
   <GroupChatHistoryModal
     v-if="showGroupChatHistoryModal && groupChatHistoryData"
-    :group-name="groupChatHistoryData.groupName"
-    :messages="groupChatHistoryData.messages"
+    :record="groupChatHistoryData"
     @close="showGroupChatHistoryModal = false"
   />
 
@@ -5418,6 +5421,14 @@ const showTextVoiceTranscript = ref(true);
     border-radius: 0;
   }
 
+  // 聊天記錄卡片自帶外觀，移除氣泡背景
+  &:has(> .group-chat-history-wrapper) {
+    background: transparent !important;
+    padding: 0;
+    box-shadow: none;
+    border-radius: 0;
+  }
+
   // 如果只有紅包包裹，也移除氣泡背景
   &:has(> .redpacket-wrapper) {
     background: transparent !important;
@@ -5557,6 +5568,7 @@ const showTextVoiceTranscript = ref(true);
   &:has(.show-media-container),
   &:has(> .pixel-transfer-wrapper),
   &:has(> .redpacket-wrapper),
+  &:has(> .group-chat-history-wrapper),
   &:has(.transfer-message-wrapper):not(:has(.transfer-message-wrapper .bubble-text)):not(
       :has(.transfer-message-wrapper .message-mixed)
     ) {

@@ -31,6 +31,7 @@ import PhoneCallModal from "@/components/modals/PhoneCallModal.vue";
 import ProactiveMessageSettingsModal from "@/components/modals/ProactiveMessageSettingsModal.vue";
 import RedPacketVoiceClaimModal from "@/components/modals/RedPacketVoiceClaimModal.vue";
 import ScreenshotPreviewModal from "@/components/modals/ScreenshotPreviewModal.vue";
+import ForwardTargetPickerModal from "@/components/modals/ForwardTargetPickerModal.vue";
 import VideoCallModal from "@/components/modals/VideoCallModal.vue";
 import ToolConfirmationModal from "@/components/modals/ToolConfirmationModal.vue";
 import ImageSearchPanel from "@/components/panels/ImageSearchPanel.vue";
@@ -84,12 +85,14 @@ import { WORLD_CITIES, type CityEntry } from "@/data/worldCities";
 import PvButton from "primevue/button";
 import PvSelect from "primevue/select";
 import PvTag from "primevue/tag";
-import { CloudSun, User, Bot, X, MapPin, Wifi, ChevronRight, ChevronDown, ChevronUp, RefreshCcw, ArrowLeft, Search, Clock } from "lucide-vue-next";
+import { CloudSun, User, Bot, X, MapPin, Wifi, ChevronRight, ChevronDown, ChevronUp, RefreshCcw, ArrowLeft, Search, Clock, Forward, MessagesSquare, Camera, Trash2, ArrowUpToLine } from "lucide-vue-next";
 import { useChatMultiDelete } from "@/composables/useChatMultiDelete";
 import { useChatPersona } from "@/composables/useChatPersona";
 import { useChatPersistence } from "@/composables/useChatPersistence";
 import { useChatPlusMenuRouter } from "@/composables/useChatPlusMenuRouter";
 import { useChatScreenshot } from "@/composables/useChatScreenshot";
+import { useChatForward } from "@/composables/useChatForward";
+import { formatForwardedForPrompt } from "@/utils/chatForward";
 import { useChatSearch } from "@/composables/useChatSearch";
 import { resolveLastSummaryTime, useChatSummaryDiary } from "@/composables/useChatSummaryDiary";
 import {
@@ -177,6 +180,7 @@ import type {
   ChatAppearance,
   ChatLocationOverride,
   ChatMessage,
+  ForwardedFrom,
   GenerationDiagnostics,
   GenerationContaminationProbeResult,
   SubCharSource,
@@ -1357,8 +1361,8 @@ function handleViewDiary(diary: any) {
   viewingDiary.value = diary;
 }
 
-// ===== 多訊息刪除功能 =====
-const isSelectingForDelete = ref(false);
+// ===== 訊息多選（刪除 / 截圖 / 轉發共用） =====
+const isSelectingMessages = ref(false);
 const selectedMessageIds = ref<string[]>([]);
 
 // ===== 加號選單功能 =====
@@ -1437,6 +1441,7 @@ const {
   handleBranchFromMessage,
   confirmBranch,
   toggleMessageSelection,
+  selectRangeTo,
   deleteSelectedMessages,
   cancelSelection,
 } = useChatMultiDelete({
@@ -1447,7 +1452,7 @@ const {
   characterId: props.characterId,
   characterName: props.characterName,
   showMoreMenu,
-  isSelectingForDelete,
+  isSelectingForDelete: isSelectingMessages,
   selectedMessageIds,
   saveChatImmediate,
   convertToStorableMessage,
@@ -1462,10 +1467,6 @@ const {
 async function deleteCurrentChatMessage(messageId: string): Promise<void> {
   await deleteMessage(messageId, { chatId: currentChatId.value || undefined });
 }
-
-// ===== 批量截圖功能 =====
-const isSelectingForScreenshot = ref(false);
-const screenshotSelectedIds = ref<string[]>([]);
 
 // ===== Persona composable 初始化 =====
 const {
@@ -2114,7 +2115,8 @@ const onMessageUpdateTranscript = (...args: any[]) =>
   handleUpdateTranscript(args[0] as string, args[1] as string);
 const onMessageScreenshot = (...args: any[]) => handleMessageScreenshot(args[0] as string);
 const onMessageBatchScreenshot = (...args: any[]) =>
-  startScreenshotSelectMode(args[0] as string | undefined);
+  handleMultiDeleteFromMessage(args[0] as string);
+const onMessageForward = (...args: any[]) => openForwardForMessage(args[0] as string);
 const onMessageAvatarClick = (...args: any[]) => handleAvatarClick(args[0] as string);
 const onMessageSplitRegexSegments = (...args: any[]) =>
   handleSplitRegexSegments(
@@ -3340,14 +3342,81 @@ const {
   screenshotTargetId,
   handleMessageScreenshot,
   handleScreenshotRetake,
-  startScreenshotSelectMode,
-  toggleScreenshotSelection,
   executeBatchScreenshot,
-  cancelScreenshotSelect,
 } = useChatScreenshot({
   messages,
-  isSelectingForScreenshot,
-  screenshotSelectedIds,
+  isSelecting: isSelectingMessages,
+  selectedIds: selectedMessageIds,
+});
+
+/** 「選擇到這裡」：找出訊息列表可視範圍最上方的訊息，選到它為止 */
+function selectToVisibleTop() {
+  const container = messagesContainer.value;
+  if (!container) return;
+  const viewTop = container.getBoundingClientRect().top;
+  const els = container.querySelectorAll<HTMLElement>("[data-message-id]");
+  for (const el of els) {
+    if (el.getBoundingClientRect().bottom > viewTop + 4) {
+      if (el.dataset.messageId) selectRangeTo(el.dataset.messageId);
+      return;
+    }
+  }
+}
+
+// ===== 訊息轉發 composable =====
+function getForwardedLabel(from: ForwardedFrom): string {
+  return from.senderName === from.chatName
+    ? `轉發自 ${from.chatName}`
+    : `轉發自 ${from.chatName}・${from.senderName}`;
+}
+const forwardUserName = computed(
+  () => effectivePersona.value?.name || userStore.currentPersona?.name || "我",
+);
+const forwardSourceChatName = computed(() =>
+  isGroupChat.value ? groupDisplayName.value : displayCharacterName.value,
+);
+const forwardRecordTitle = computed(() =>
+  isGroupChat.value
+    ? groupDisplayName.value
+    : `${forwardUserName.value}和${displayCharacterName.value}`,
+);
+const {
+  showForwardPicker,
+  forwardMode,
+  forwardMessageIds,
+  isForwarding,
+  openForward,
+  openForwardForMessage,
+  closeForwardPicker,
+  confirmForward,
+} = useChatForward({
+  messages,
+  currentChatId,
+  selectedMessageIds,
+  getSourceChatName: () => forwardSourceChatName.value,
+  getRecordTitle: () => forwardRecordTitle.value,
+  getSenderName: (m) =>
+    m.role === "user"
+      ? forwardUserName.value
+      : isGroupChat.value
+        ? m.senderCharacterName || displayCharacterName.value
+        : displayCharacterName.value,
+  // 與訊息列表的頭像來源一致
+  getSenderAvatar: (m) => {
+    if (m.role === "user") return displayUserAvatar.value || "";
+    if (!isGroupChat.value) return displayAvatar.value || "";
+    if (groupMetadata.value?.isMultiCharCard && m.senderCharacterName) {
+      return getGroupMemberAvatar(m.senderCharacterName);
+    }
+    return m.senderCharacterId
+      ? getCharacterAvatar(m.senderCharacterId)
+      : m.senderCharacterAvatar || "";
+  },
+  resolveStickerUrl: (name) => stickerStore.findStickerByName(name)?.url,
+  saveChatImmediate,
+  scrollToBottom,
+  cancelSelection,
+  showToast,
 });
 
 // ===== 媒體發送 composable =====
@@ -4038,7 +4107,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           : m.role === "system"
             ? "system"
             : m.senderCharacterName || char.data.name,
-      content: m.content,
+      content: m.forwardedFrom
+        ? formatForwardedForPrompt(m.content, m.forwardedFrom)
+        : m.content,
       is_user: m.role === "user",
       status: "sent" as const,
       createdAt: m.timestamp,
@@ -9434,6 +9505,13 @@ useChatCleanup({
       @scroll="handleMessagesScroll"
       @click="showRail && closeRail()"
     >
+      <!-- 多選時左上角的「選擇到這裡」：把畫面最上方那條到已選訊息之間全部選起來 -->
+      <div v-if="isSelectingMessages" class="select-to-here-anchor">
+        <button class="select-to-here-btn" @click.stop="selectToVisibleTop">
+          <ArrowUpToLine :size="14" :stroke-width="2" />
+          選擇到這裡
+        </button>
+      </div>
       <div class="messages-list">
         <!-- 載入更多哨兵 -->
         <div
@@ -9468,9 +9546,7 @@ useChatCleanup({
             message.transferStatus,
             message.faceToFaceRequestStatus,
             message.onlineModeRequestStatus,
-            isSelectingForDelete && selectedMessageIds.includes(message.id),
-            isSelectingForScreenshot &&
-              screenshotSelectedIds.includes(message.id),
+            isSelectingMessages && selectedMessageIds.includes(message.id),
             searchResults.includes(message.id),
             searchResults[currentSearchIndex] === message.id,
             searchContextTargetId === message.id,
@@ -9499,23 +9575,25 @@ useChatCleanup({
             <div v-if="isClassicMessageLayout" class="separator-line"></div>
           </div>
 
+          <!-- 逐條轉發的來源標示 -->
+          <div
+            v-if="message.forwardedFrom && !message.isUserRecalled"
+            class="forwarded-from-label"
+            :class="message.role"
+          >
+            {{ getForwardedLabel(message.forwardedFrom) }}
+          </div>
+
           <!-- 系統通知（封鎖/解封等）；交易領取通知資料上仍算 user role，但畫面使用系統通知樣式 -->
           <div
             v-if="message.isSystemNotification || message.isTransactionClaimNotice"
             class="system-notification"
             :class="{
               'is-selected':
-                (isSelectingForDelete &&
-                  selectedMessageIds.includes(message.id)) ||
-                (isSelectingForScreenshot &&
-                  screenshotSelectedIds.includes(message.id)),
+                isSelectingMessages && selectedMessageIds.includes(message.id),
             }"
             @click="
-              isSelectingForScreenshot
-                ? toggleScreenshotSelection(message.id)
-                : isSelectingForDelete
-                  ? toggleMessageSelection(message.id)
-                  : undefined
+              isSelectingMessages ? toggleMessageSelection(message.id) : undefined
             "
             @contextmenu.prevent="handleMessageDelete(message.id)"
           >
@@ -9528,17 +9606,10 @@ useChatCleanup({
             class="system-notification user-recalled-notification"
             :class="{
               'is-selected':
-                (isSelectingForDelete &&
-                  selectedMessageIds.includes(message.id)) ||
-                (isSelectingForScreenshot &&
-                  screenshotSelectedIds.includes(message.id)),
+                isSelectingMessages && selectedMessageIds.includes(message.id),
             }"
             @click="
-              isSelectingForScreenshot
-                ? toggleScreenshotSelection(message.id)
-                : isSelectingForDelete
-                  ? toggleMessageSelection(message.id)
-                  : undefined
+              isSelectingMessages ? toggleMessageSelection(message.id) : undefined
             "
             @contextmenu.prevent="handleMessageDelete(message.id)"
           >
@@ -9694,10 +9765,7 @@ useChatCleanup({
             :friend-request-data="message.friendRequestData"
             :friend-request-result="message.friendRequestResult"
             :is-selected="
-              (isSelectingForDelete &&
-                selectedMessageIds.includes(message.id)) ||
-              (isSelectingForScreenshot &&
-                screenshotSelectedIds.includes(message.id))
+              isSelectingMessages && selectedMessageIds.includes(message.id)
             "
             :is-search-highlight="searchResults.includes(message.id)"
             :is-current-search="
@@ -9705,11 +9773,9 @@ useChatCleanup({
               searchContextTargetId === message.id
             "
             @click="
-              isSelectingForScreenshot
-                ? toggleScreenshotSelection(message.id)
-                : isSelectingForDelete
-                  ? toggleMessageSelection(message.id)
-                  : handleMessageClick(message.id)
+              isSelectingMessages
+                ? toggleMessageSelection(message.id)
+                : handleMessageClick(message.id)
             "
             @edit="onMessageEdit"
             @delete="onMessageDelete"
@@ -9728,6 +9794,7 @@ useChatCleanup({
             @update-transcript="onMessageUpdateTranscript"
             @screenshot="onMessageScreenshot"
             @batch-screenshot="onMessageBatchScreenshot"
+            @forward="onMessageForward"
             @avatar-click="onMessageAvatarClick"
             @split-regex-segments="onMessageSplitRegexSegments"
             @recall="onMessageRecall"
@@ -9772,47 +9839,67 @@ useChatCleanup({
       </div>
     </main>
 
-    <!-- 刪除模式工具欄 -->
+    <!-- 多選模式頂欄 -->
     <Transition name="slide-down">
-      <div v-if="isSelectingForDelete" class="delete-toolbar">
+      <div v-if="isSelectingMessages" class="delete-toolbar">
         <button class="cancel-select-btn" @click="cancelSelection">取消</button>
         <span class="select-count"
           >已選擇 {{ selectedMessageIds.length }} 條消息</span
         >
-        <button
-          class="delete-selected-btn"
-          :disabled="selectedMessageIds.length === 0"
-          @click="deleteSelectedMessages"
-        >
-          刪除
-        </button>
+        <span class="select-count-spacer"></span>
       </div>
     </Transition>
 
-    <!-- 批量截圖選擇工具列 -->
-    <Transition name="slide-down">
-      <div
-        v-if="isSelectingForScreenshot"
-        class="delete-toolbar screenshot-toolbar"
+    <!-- 多選模式動作列（取代輸入框） -->
+    <div v-if="isSelectingMessages" class="selection-action-bar">
+      <button
+        class="selection-action"
+        :disabled="selectedMessageIds.length === 0"
+        @click="openForward('single')"
       >
-        <button class="cancel-select-btn" @click="cancelScreenshotSelect">
-          取消
-        </button>
-        <span class="select-count"
-          >已選擇 {{ screenshotSelectedIds.length }} 條消息</span
-        >
-        <button
-          class="delete-selected-btn screenshot-confirm-btn"
-          :disabled="screenshotSelectedIds.length === 0"
-          @click="executeBatchScreenshot"
-        >
-          截圖
-        </button>
-      </div>
-    </Transition>
+        <span class="selection-action-icon"><Forward :size="20" :stroke-width="1.8" /></span>
+        <span>逐條轉發</span>
+      </button>
+      <button
+        class="selection-action"
+        :disabled="selectedMessageIds.length === 0"
+        @click="openForward('merge')"
+      >
+        <span class="selection-action-icon"><MessagesSquare :size="20" :stroke-width="1.8" /></span>
+        <span>合併轉發</span>
+      </button>
+      <button
+        class="selection-action"
+        :disabled="selectedMessageIds.length === 0"
+        @click="executeBatchScreenshot"
+      >
+        <span class="selection-action-icon"><Camera :size="20" :stroke-width="1.8" /></span>
+        <span>截圖</span>
+      </button>
+      <button
+        class="selection-action danger"
+        :disabled="selectedMessageIds.length === 0"
+        @click="deleteSelectedMessages"
+      >
+        <span class="selection-action-icon"><Trash2 :size="20" :stroke-width="1.8" /></span>
+        <span>刪除</span>
+      </button>
+    </div>
+
+    <ForwardTargetPickerModal
+      v-if="showForwardPicker"
+      :current-chat-id="currentChatId"
+      :mode="forwardMode"
+      :message-count="forwardMessageIds.length"
+      :record-title="forwardRecordTitle"
+      :is-forwarding="isForwarding"
+      @close="closeForwardPicker"
+      @confirm="confirmForward"
+    />
 
     <ChatScreenInputArea
       ref="inputAreaRef"
+      :hidden="isSelectingMessages"
       :docked="inputBarStyle.docked"
       :is-blocked-by-char="isBlockedByChar"
       :replying-to="replyingTo"
@@ -13519,6 +13606,18 @@ useChatCleanup({
 .message-memo-wrapper {
 }
 
+// 逐條轉發的來源標示（貼在訊息上方，靠訊息那一側）
+.forwarded-from-label {
+  padding: 4px 56px 0;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  opacity: 0.8;
+
+  &.user {
+    text-align: right;
+  }
+}
+
 // 編輯模態框
 .edit-modal-overlay {
   position: fixed;
@@ -13760,14 +13859,86 @@ useChatCleanup({
       opacity: 0.5;
       cursor: not-allowed;
     }
+  }
 
-    &.screenshot-confirm-btn {
-      background: var(--color-primary, #667eea);
+  // 與左側「取消」等寬，讓計數置中
+  .select-count-spacer {
+    width: 64px;
+  }
+}
 
-      &:hover:not(:disabled) {
-        background: #5a6fd6;
-      }
+// 「選擇到這裡」：黏在訊息列表左上角，不佔版面
+.select-to-here-anchor {
+  position: sticky;
+  top: 0;
+  height: 0;
+  z-index: 5;
+}
+
+.select-to-here-btn {
+  position: absolute;
+  top: 8px;
+  left: calc(12px + var(--safe-left));
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+
+  &:active {
+    transform: scale(0.96);
+  }
+}
+
+// 多選模式動作列
+.selection-action-bar {
+  display: flex;
+  justify-content: space-around;
+  flex-shrink: 0;
+  padding: 10px 12px calc(10px + var(--safe-bottom, 0px));
+  padding-left: calc(12px + var(--safe-left));
+  padding-right: calc(12px + var(--safe-right));
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+
+  .selection-action {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-width: 56px;
+    font-size: 12px;
+    color: var(--color-text);
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
     }
+
+    &.danger .selection-action-icon {
+      color: var(--color-error, #e53e3e);
+    }
+  }
+
+  .selection-action-icon {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--color-background);
+    transition: transform 0.15s;
+  }
+
+  .selection-action:active:not(:disabled) .selection-action-icon {
+    transform: scale(0.92);
   }
 }
 

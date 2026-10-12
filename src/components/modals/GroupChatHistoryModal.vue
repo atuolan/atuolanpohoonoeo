@@ -1,140 +1,114 @@
 <script setup lang="ts">
-interface GroupChatHistoryMessage {
-  senderName: string;
-  content: string;
-  timestamp: number;
-  isUser: boolean;
-}
+import { computed, onBeforeUnmount, onMounted } from "vue";
+import { ChevronLeft } from "lucide-vue-next";
+import type { ChatHistoryRecordData, ChatHistoryRecordItem } from "@/types/chat";
 
-interface Props {
-  groupName: string;
-  messages: GroupChatHistoryMessage[];
-}
-
-const props = defineProps<Props>();
+const props = defineProps<{
+  record: ChatHistoryRecordData;
+}>();
 
 const emit = defineEmits<{
   (e: "close"): void;
 }>();
 
-// 格式化時間
-function formatTime(timestamp: number): string {
-  const date = new Date(timestamp);
-  const hours = date.getHours().toString().padStart(2, "0");
-  const minutes = date.getMinutes().toString().padStart(2, "0");
-  return `${hours}:${minutes}`;
+function dayKey(timestamp: number): string {
+  const d = new Date(timestamp);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
+
+function formatDay(timestamp: number): string {
+  const d = new Date(timestamp);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return sameYear
+    ? `${d.getMonth() + 1}月${d.getDate()}日`
+    : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+function formatTime(timestamp: number): string {
+  const d = new Date(timestamp);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** 只有貼圖、沒有文字的訊息不畫氣泡底色 */
+function isMediaOnly(msg: ChatHistoryRecordItem): boolean {
+  return !!msg.parts?.length && msg.parts.every((p) => p.type !== "text");
+}
+
+// 依日期分隔，同一人連續發言時只在第一條顯示頭像與名字
+const rows = computed(() =>
+  props.record.messages.map((msg, idx) => {
+    const prev = props.record.messages[idx - 1];
+    const showDate = !prev || dayKey(prev.timestamp) !== dayKey(msg.timestamp);
+    return {
+      msg,
+      showDate,
+      showSender: showDate || !prev || prev.senderName !== msg.senderName,
+      avatar: props.record.senderAvatars?.[msg.senderName] || "",
+    };
+  }),
+);
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape") emit("close");
+}
+onMounted(() => window.addEventListener("keydown", onKeydown));
+onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 </script>
 
 <template>
   <Teleport to="body">
-    <div class="gchat-history-modal-overlay" @click.self="emit('close')">
-      <div class="gchat-history-modal-content">
-        <!-- Status Bar (Decorational) -->
-        <div class="gchat-history-status-bar">
-          <span class="status-time">9:41</span>
-          <div class="status-icons">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
-            </svg>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <line x1="12" y1="20" x2="12" y2="4"></line>
-              <line x1="6" y1="20" x2="6" y2="14"></line>
-              <line x1="18" y1="20" x2="18" y2="10"></line>
-            </svg>
-            <svg
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <rect x="1" y="6" width="18" height="12" rx="2" ry="2"></rect>
-              <line x1="23" y1="13" x2="23" y2="11"></line>
-            </svg>
-          </div>
-        </div>
-
-        <!-- Header -->
-        <div class="gchat-history-modal-header">
-          <button class="gchat-history-close-btn" @click="emit('close')">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M19 12H5M12 19l-7-7 7-7" />
-            </svg>
+    <div class="record-viewer-overlay" @click.self="emit('close')">
+      <div class="record-viewer">
+        <header class="viewer-header">
+          <button class="back-btn" aria-label="返回" @click="emit('close')">
+            <ChevronLeft :size="22" :stroke-width="2" />
           </button>
-          <div class="gchat-history-title-group">
-            <h2 class="gchat-history-modal-title">HISTORY</h2>
-            <span class="gchat-history-modal-subtitle">{{ groupName }}</span>
+          <div class="viewer-title">
+            <span class="title-text">{{ record.groupName }}的聊天記錄</span>
+            <span class="title-sub">{{ record.messages.length }} 條訊息</span>
           </div>
-          <button class="gchat-history-share-btn">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <circle cx="18" cy="5" r="3"></circle>
-              <circle cx="6" cy="12" r="3"></circle>
-              <circle cx="18" cy="19" r="3"></circle>
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
-              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
-            </svg>
-          </button>
-        </div>
+        </header>
 
-        <!-- Card Wrapper -->
-        <div class="gchat-history-card-wrapper">
-          <div class="gchat-history-date-pill">
-            <span class="dot"></span>
-            <span>MESSAGES</span>
-          </div>
-
-          <div class="gchat-history-messages-container">
-            <div v-if="messages.length === 0" class="gchat-history-empty">
-              沒有聊天記錄
+        <div class="viewer-body">
+          <div v-if="record.messages.length === 0" class="viewer-empty">沒有聊天記錄</div>
+          <template v-for="(row, idx) in rows" :key="idx">
+            <div v-if="row.showDate" class="date-divider">
+              <span>{{ formatDay(row.msg.timestamp) }}</span>
             </div>
             <div
-              v-else
-              v-for="(msg, idx) in messages"
-              :key="idx"
-              class="gchat-history-message"
-              :class="{ 'is-user': msg.isUser }"
+              class="record-row"
+              :class="{ 'is-user': row.msg.isUser, continued: !row.showSender }"
             >
-              <div class="gchat-history-message-header">
-                <span class="gchat-history-message-sender">{{
-                  msg.senderName
-                }}</span>
-                <span class="gchat-history-message-time">{{
-                  formatTime(msg.timestamp)
-                }}</span>
+              <div class="row-avatar">
+                <template v-if="row.showSender">
+                  <img v-if="row.avatar" :src="row.avatar" :alt="row.msg.senderName" />
+                  <span v-else>{{ row.msg.senderName.charAt(0) }}</span>
+                </template>
               </div>
-              <div class="gchat-history-message-content">{{ msg.content }}</div>
+              <div class="row-main">
+                <div v-if="row.showSender" class="row-meta">
+                  <span class="row-name">{{ row.msg.senderName }}</span>
+                  <span class="row-time">{{ formatTime(row.msg.timestamp) }}</span>
+                </div>
+                <div class="row-bubble" :class="{ 'media-only': isMediaOnly(row.msg) }">
+                  <template v-if="row.msg.parts?.length">
+                    <template v-for="(part, pIdx) in row.msg.parts" :key="pIdx">
+                      <span v-if="part.type === 'text'" class="part-text">{{ part.text }}</span>
+                      <img
+                        v-else-if="part.url"
+                        :src="part.url"
+                        :alt="part.name || (part.type === 'sticker' ? '貼圖' : '圖片')"
+                        :class="part.type === 'sticker' ? 'part-sticker' : 'part-image'"
+                        loading="lazy"
+                      />
+                      <span v-else class="part-text">[{{ part.name || "貼圖" }}]</span>
+                    </template>
+                  </template>
+                  <span v-else class="part-text">{{ row.msg.content }}</span>
+                </div>
+              </div>
             </div>
-          </div>
+          </template>
         </div>
       </div>
     </div>
@@ -142,284 +116,213 @@ function formatTime(timestamp: number): string {
 </template>
 
 <style scoped lang="scss">
-@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap");
-
-.gchat-history-modal-overlay {
+.record-viewer-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 100dvh;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(8px);
+  inset: 0;
+  z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9999;
-  padding: env(safe-area-inset-top, 24px) 16px var(--safe-bottom, 24px);
-  font-family: "Outfit", sans-serif;
-  box-sizing: border-box;
+  padding: calc(12px + var(--safe-top, 0px)) 12px 12px;
+  background: rgba(0, 0, 0, 0.45);
 }
 
-.gchat-history-modal-content {
-  background: #cbb5e2; /* Lavender from image */
-  border: 2px solid #2d2d2d;
-  border-radius: 32px;
-  width: 100%;
-  max-width: 420px;
-  height: 100%;
-  max-height: 100%;
+.record-viewer {
+  width: min(440px, 100%);
+  height: min(86dvh, 760px);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
   overflow: hidden;
-  position: relative;
+  background: var(--color-background, #f6f6f6);
+  color: var(--color-text, #333);
+  border-radius: 18px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
 }
 
-.gchat-history-status-bar {
+.viewer-header {
   display: flex;
-  justify-content: space-between;
-  padding: 16px 28px 8px;
-  font-weight: 700;
-  font-size: 14px;
-  color: #2d2d2d;
   align-items: center;
+  gap: 4px;
+  padding: 10px 14px 10px 6px;
+  background: var(--color-surface, #fff);
+  border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  flex-shrink: 0;
 
-  .status-icons {
+  .back-btn {
     display: flex;
-    align-items: center;
-    gap: 6px;
+    padding: 6px;
+    border-radius: 10px;
+    color: var(--color-text, #333);
 
-    svg {
-      width: 18px;
-      height: 18px;
+    &:hover {
+      background: var(--color-background, #f2f2f2);
     }
   }
 }
 
-.gchat-history-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 24px 24px;
-  flex-shrink: 0;
-  color: #2d2d2d;
-}
-
-.gchat-history-close-btn {
-  background: #ffd166;
-  border: 2px solid #2d2d2d;
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  color: #2d2d2d;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
-  padding: 0;
-  box-shadow: 2px 2px 0 #2d2d2d;
-
-  svg {
-    width: 22px;
-    height: 22px;
-  }
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 3px 3px 0 #2d2d2d;
-  }
-  &:active {
-    transform: translateY(0);
-    box-shadow: 0 0 0 #2d2d2d;
-  }
-}
-
-.gchat-history-title-group {
-  text-align: center;
+.viewer-title {
   display: flex;
   flex-direction: column;
-  align-items: center;
-}
+  min-width: 0;
 
-.gchat-history-modal-title {
-  font-size: 20px;
-  font-weight: 800;
-  margin: 0;
-  letter-spacing: 0.5px;
-  color: #2d2d2d;
-  text-transform: uppercase;
-}
-.gchat-history-modal-subtitle {
-  font-size: 12px;
-  font-weight: 700;
-  opacity: 0.8;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-top: 2px;
-}
-
-.gchat-history-share-btn {
-  background: transparent;
-  border: none;
-  color: #2d2d2d;
-  cursor: pointer;
-  padding: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: opacity 0.2s;
-
-  svg {
-    width: 26px;
-    height: 26px;
+  .title-text {
+    font-size: 15px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  &:hover {
-    opacity: 0.6;
+  .title-sub {
+    font-size: 12px;
+    color: var(--color-text-secondary, #888);
   }
 }
 
-.gchat-history-card-wrapper {
-  flex: 1;
-  background: #fffbf1; /* Cream white */
-  border-top: 2px solid #2d2d2d;
-  border-radius: 36px 36px 0 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  position: relative;
-}
-
-.gchat-history-date-pill {
-  align-self: center;
-  background: #ffffff;
-  border: 2px solid #2d2d2d;
-  border-radius: 20px;
-  padding: 6px 16px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #2d2d2d;
-  margin-top: 20px;
-  margin-bottom: 4px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  letter-spacing: 0.5px;
-  box-shadow: 2px 2px 0 rgba(45, 45, 45, 0.1);
-
-  .dot {
-    width: 10px;
-    height: 10px;
-    background: #cbb5e2;
-    border-radius: 50%;
-    border: 2px solid #2d2d2d;
-  }
-}
-
-.gchat-history-messages-container {
+.viewer-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 24px 24px;
+  padding: 8px 14px 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 
-/* Custom Scrollbar */
-.gchat-history-messages-container::-webkit-scrollbar {
-  width: 6px;
-}
-.gchat-history-messages-container::-webkit-scrollbar-track {
-  background: transparent;
-}
-.gchat-history-messages-container::-webkit-scrollbar-thumb {
-  background: rgba(45, 45, 45, 0.2);
-  border-radius: 10px;
+.viewer-empty {
+  margin: auto;
+  font-size: 13px;
+  color: var(--color-text-secondary, #888);
 }
 
-.gchat-history-empty {
-  text-align: center;
-  color: #2d2d2d;
-  opacity: 0.6;
-  font-weight: 600;
-  margin-top: 40px;
-}
-
-.gchat-history-message {
+.date-divider {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 18px;
-  background: #ffffff;
-  border: 2px solid #2d2d2d;
-  border-radius: 24px;
-  position: relative;
-  box-shadow: 2px 2px 0 rgba(45, 45, 45, 0.05); /* Subtle depth */
+  justify-content: center;
+  margin: 14px 0 6px;
 
-  &::before {
-    content: "";
-    position: absolute;
-    top: 18px;
-    left: 18px;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #a8d5ba; /* Mint green dot */
-    border: 2px solid #2d2d2d;
+  span {
+    padding: 3px 10px;
+    font-size: 11px;
+    border-radius: 999px;
+    color: var(--color-text-secondary, #888);
+    background: var(--color-surface, #fff);
+  }
+}
+
+.record-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+
+  &.continued {
+    margin-top: 4px;
   }
 
   &.is-user {
-    background: #f4a698; /* Salmon pink back */
-    &::before {
-      background: #ffffff; /* White dot inside pink */
+    flex-direction: row-reverse;
+
+    .row-main {
+      align-items: flex-end;
+    }
+
+    .row-meta {
+      flex-direction: row-reverse;
+    }
+
+    .row-bubble {
+      background: var(--bubble-user-bg, var(--color-primary, #ff85a2));
+      color: var(--bubble-user-text, #fff);
+      border-radius: 16px 16px 6px 16px;
     }
   }
 }
 
-.gchat-history-message-header {
+.row-avatar {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+
+  img,
+  span {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+  }
+
+  img {
+    object-fit: cover;
+    display: block;
+  }
+
+  span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+    background: var(--color-primary-light, #eee);
+    color: var(--color-primary, #888);
+  }
+}
+
+.row-main {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 2px dashed rgba(45, 45, 45, 0.2);
-  padding-bottom: 12px;
-  padding-left: 20px; /* Space for the dot */
-}
-.gchat-history-message.is-user .gchat-history-message-header {
-  border-bottom-color: rgba(45, 45, 45, 0.4);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+  max-width: calc(100% - 84px);
 }
 
-.gchat-history-message-sender {
-  font-size: 15px;
-  font-weight: 800;
-  color: #2d2d2d;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.row-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 4px;
+
+  .row-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-secondary, #666);
+  }
+
+  .row-time {
+    font-size: 10.5px;
+    color: var(--color-text-secondary, #999);
+    opacity: 0.8;
+  }
 }
 
-.gchat-history-message-time {
-  font-size: 13px;
-  font-weight: 700;
-  color: #2d2d2d;
-  opacity: 0.6;
-}
-.gchat-history-message.is-user .gchat-history-message-time {
-  opacity: 0.8;
+.row-bubble {
+  padding: 8px 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--bubble-ai-bg, var(--color-surface, #fff));
+  color: var(--bubble-ai-content, var(--color-text, #333));
+  border-radius: 16px 16px 16px 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+
+  &.media-only {
+    padding: 0;
+    background: transparent !important;
+    box-shadow: none;
+  }
 }
 
-.gchat-history-message-content {
-  font-size: 16px;
-  font-weight: 600;
-  color: #2d2d2d;
-  line-height: 1.5;
-  word-wrap: break-word;
-  padding-top: 4px;
+.part-sticker {
+  display: block;
+  max-width: 120px;
+  max-height: 120px;
+  object-fit: contain;
 }
 
-/* Removed nav pill styles */
+.part-image {
+  display: block;
+  max-width: 200px;
+  max-height: 240px;
+  border-radius: 10px;
+  object-fit: cover;
+}
 </style>

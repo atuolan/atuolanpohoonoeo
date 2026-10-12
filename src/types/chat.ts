@@ -248,6 +248,38 @@ export interface WaimaiOrderSnapshot {
   eta?: WaimaiEtaSnapshot;
 }
 
+/** 聊天記錄卡片裡一條訊息的片段（文字、貼圖或圖片），讓查看頁能畫出貼圖 */
+export type ChatHistoryRecordPart =
+  | { type: "text"; text: string }
+  | { type: "sticker" | "image"; url: string; name?: string };
+
+/** 聊天記錄卡片裡的一條訊息 */
+export interface ChatHistoryRecordItem {
+  senderName: string;
+  /** 純文字摘要（貼圖寫成 [貼圖]），給卡片預覽與 prompt 使用 */
+  content: string;
+  timestamp: number;
+  isUser: boolean;
+  /** 含貼圖或圖片時才有，查看頁優先用它顯示 */
+  parts?: ChatHistoryRecordPart[];
+}
+
+/** 聊天記錄卡片資料（群聊私信、共讀同步、合併轉發共用） */
+export interface ChatHistoryRecordData {
+  groupName: string;
+  messages: ChatHistoryRecordItem[];
+  /** 發送者名稱 → 頭像，每人只存一份 */
+  senderAvatars?: Record<string, string>;
+}
+
+/** 逐條轉發的來源資訊 */
+export interface ForwardedFrom {
+  /** 來源聊天名稱（角色名或群名） */
+  chatName: string;
+  /** 原發送者名稱 */
+  senderName: string;
+}
+
 // ===== 單條消息 =====
 export interface ChatMessage {
   /** 唯一識別碼 */
@@ -458,16 +490,10 @@ export interface ChatMessage {
   groupActionValue?: string;
   /** 是否為群聊記錄卡片（用於私信中附帶的群聊記錄） */
   isGroupChatHistory?: boolean;
+  /** 逐條轉發：訊息原本的來源（聊天名稱與原發送者） */
+  forwardedFrom?: ForwardedFrom;
   /** 群聊記錄數據 */
-  groupChatHistoryData?: {
-    groupName: string;
-    messages: Array<{
-      senderName: string;
-      content: string;
-      timestamp: number;
-      isUser: boolean;
-    }>;
-  };
+  groupChatHistoryData?: ChatHistoryRecordData;
 
   // --- 群通話相關 ---
   /** 是否為群通話請求 */

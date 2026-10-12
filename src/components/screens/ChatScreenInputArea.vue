@@ -17,6 +17,8 @@ interface QuickAction {
 }
 
 const props = defineProps<{
+  /** 多選訊息時由動作列取代，整個輸入區隱藏 */
+  hidden?: boolean;
   /** 貼齊螢幕邊緣（聊天外觀設定） */
   docked?: boolean;
   // 封鎖相關
@@ -319,7 +321,7 @@ const isDarkBackground = computed(() =>
 
 <template>
   <!-- 輸入區 -->
-  <footer ref="inputAreaRef" class="input-area" :class="{ docked }">
+  <footer v-show="!hidden" ref="inputAreaRef" class="input-area" :class="{ docked }">
     <!-- 被角色封鎖提示列 -->
     <div v-if="isBlockedByChar" class="blocked-by-char-bar">
       <svg
