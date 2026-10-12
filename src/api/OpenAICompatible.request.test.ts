@@ -199,6 +199,65 @@ describe("OpenAICompatible request integration", () => {
     });
   });
 
+  it("keeps the user's last turn as user for Gemini chat requests", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      expect(body.messages.at(-1)).toEqual({ role: "user", content: "现在，在办公室里…。\n\n</Chat history>" });
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await new OpenAICompatibleClient(api({ model: "gemini-2.5-pro" })).generate({
+      messages: [
+        { role: "system", content: "Rules" },
+        { role: "user", content: "现在，在办公室里…。\n\n</Chat history>" },
+      ],
+      settings,
+      apiSettings: api({ model: "gemini-2.5-pro" }),
+      adjustLastMessageRole: true,
+    });
+    expect(result.diagnostics?.roleAdjustments ?? []).toEqual([]);
+  });
+
+  it("normalizes a trailing system prompt to user for Gemini chat requests", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      expect(body.messages.at(-1)).toEqual({ role: "user", content: "Format rules" });
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new OpenAICompatibleClient(api({ provider: "gemini", model: "fixture-model" })).generate({
+      messages: [
+        { role: "user", content: "Hello" },
+        { role: "system", content: "Format rules" },
+      ],
+      settings,
+      apiSettings: api({ provider: "gemini", model: "fixture-model" }),
+      adjustLastMessageRole: true,
+    });
+  });
+
+  it("still honours an explicit assistant override for Gemini", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      expect(body.messages.at(-1)).toEqual({ role: "assistant", content: "<think>" });
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new OpenAICompatibleClient(api({ model: "gemini-2.5-pro" })).generate({
+      messages: [
+        { role: "user", content: "Hello" },
+        { role: "user", content: "<think>" },
+      ],
+      settings,
+      apiSettings: api({ model: "gemini-2.5-pro" }),
+      adjustLastMessageRole: true,
+      lastPromptRoleOverride: "assistant",
+    });
+  });
+
   it("treats a request-level none override as no role change", async () => {
     const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));

@@ -740,16 +740,19 @@ export class OpenAICompatibleClient {
     if (adjustLastMessageRole && processedMessages.length > 0) {
       const lastMsg = processedMessages[processedMessages.length - 1];
 
-      if (this.isGeminiModel() && lastMsg.role !== "assistant") {
+      // Gemini：結尾的 system 轉成 user，讓對話以用戶回合結束。
+      // 不可把 user 轉成 assistant——用戶發言（常與聊天歷史合併）會被當成模型已說過的話，
+      // 導致模型原樣複述提示詞尾段而不是真正回覆。需要預填請用「最後提示詞角色」明確指定。
+      if (this.isGeminiModel() && lastMsg.role === "system") {
         const before = lastMsg.role;
         console.log(
-          `[API] Gemini 模型：最後訊息角色 "${lastMsg.role}" → "assistant"`,
+          `[API] Gemini 模型：最後訊息角色 "${lastMsg.role}" → "user"`,
         );
-        lastMsg.role = "assistant";
+        lastMsg.role = "user";
         roleAdjustments.push({
           reason: "gemini-last-message-role",
           before,
-          after: "assistant",
+          after: "user",
         });
       } else if (this.isClaudeModel() && lastMsg.role !== "user") {
         const before = lastMsg.role;

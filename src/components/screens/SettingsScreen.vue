@@ -4358,6 +4358,7 @@ function useClonedVoice(voiceId: string) {
               v-model="settingsStore.api.lastPromptRoleOverride"
               class="soft-select"
             >
+              <option value="none">不覆蓋（預設）</option>
               <option value="system">system</option>
               <option value="user">user</option>
               <option value="assistant">assistant</option>

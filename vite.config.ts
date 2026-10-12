@@ -182,6 +182,11 @@ export default defineConfig(({ mode }) => ({
     // 只在 inline 模式下啟用單文件打包
     mode === "inline" ? viteSingleFile() : null,
   ].filter(Boolean),
+  // 依賴預掃描只從 App 入口開始；預設會掃專案內所有 .html，
+  // 會誤掃到 過往紀錄檔/ 等存檔資料夾裡引用不存在腳本的舊頁面。
+  optimizeDeps: {
+    entries: ["index.html"],
+  },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
