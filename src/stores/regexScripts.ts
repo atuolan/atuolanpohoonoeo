@@ -57,6 +57,22 @@ const BUILTIN_SCRIPTS: RegexScript[] = [
     minDepth: -1,
     maxDepth: -1,
   },
+  {
+    // 只在氣泡顯示時隱藏；原始訊息保留 <NSFW>，下一輪照常發給 AI 接續色色階段
+    id: "__builtin_hide_nsfw_judgement",
+    scriptName: "[內置] 隱藏 <NSFW> 色色判定（仍發送給 AI）",
+    findRegex: "/\\s*<NSFW>[\\s\\S]*?(?:<\\/NSFW>|$)/gi",
+    replaceString: "",
+    trimStrings: [],
+    placement: [2],
+    disabled: false,
+    markdownOnly: true,
+    promptOnly: false,
+    runOnEdit: true,
+    substituteRegex: 0,
+    minDepth: -1,
+    maxDepth: -1,
+  },
 ];
 
 const STORAGE_KEY = "global-regex-scripts";
