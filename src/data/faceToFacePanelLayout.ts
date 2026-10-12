@@ -6,7 +6,7 @@
  */
 import type { F2FPanelLayout } from "@/types/f2fPanel";
 
-const FOREIGN_REQUIRED = "f2f_custom_1790597154035"; // 【對白萬國語言】（外語必開）
+const FOREIGN_REQUIRED = "f2f_custom_1791806559915"; // 【對白萬國語言】（外語必開）
 
 export const DEFAULT_F2F_PANEL_LAYOUT: F2FPanelLayout = {
   version: 1,
@@ -48,6 +48,20 @@ export const DEFAULT_F2F_PANEL_LAYOUT: F2FPanelLayout = {
         { id: "daily", label: "日常調調", entries: ["f2f_custom_1790012658352"] },
         { id: "bitter", label: "酸澀調調", entries: ["f2f_custom_1790012658390"] },
         { id: "sweet", label: "甜寵調調", entries: ["f2f_custom_1790012658430"] },
+        { id: "suspense", label: "懸疑調調", entries: ["f2f_custom_1791806174471"] },
+        { id: "passion", label: "熱血調調", entries: ["f2f_custom_1791806174520"] },
+        { id: "comedy", label: "喜劇調調", entries: ["f2f_custom_1791806174566"] },
+        { id: "angst", label: "虐心調調", entries: ["f2f_custom_1791806174629"] },
+        { id: "healing", label: "治癒調調", entries: ["f2f_custom_1791806174673"] },
+        { id: "eerie", label: "詭譎調調", entries: ["f2f_custom_1791806174717"] },
+        { id: "intrigue", label: "權謀調調", entries: ["f2f_custom_1791806174760"] },
+        { id: "epic", label: "史詩調調", entries: ["f2f_custom_1791806174806"] },
+        { id: "thrill", label: "驚險調調", entries: ["f2f_custom_1791806174851"] },
+        { id: "fantasy", label: "奇幻驚奇調調", entries: ["f2f_custom_1791806174896"] },
+        { id: "youth", label: "青春調調", entries: ["f2f_custom_1791806174941"] },
+        { id: "nostalgia", label: "懷舊調調", entries: ["f2f_custom_1791806174988"] },
+        { id: "lonely", label: "孤寂調調", entries: ["f2f_custom_1791806175034"] },
+        { id: "redemption", label: "救贖調調", entries: ["f2f_custom_1791806175083"] },
       ],
     },
     {
@@ -112,10 +126,18 @@ export const DEFAULT_F2F_PANEL_LAYOUT: F2FPanelLayout = {
       mode: "single",
       allowNone: true,
       options: [
-        { id: "english", label: "英文", entries: ["f2f_custom_1790597153852", FOREIGN_REQUIRED] },
-        { id: "japanese", label: "日文", entries: ["f2f_custom_1790597153918", FOREIGN_REQUIRED] },
-        { id: "korean", label: "韓文", entries: ["f2f_custom_1790597153976", FOREIGN_REQUIRED] },
+        { id: "english", label: "英文", entries: ["f2f_custom_1791806559715", FOREIGN_REQUIRED] },
+        { id: "japanese", label: "日文", entries: ["f2f_custom_1791806559768", FOREIGN_REQUIRED] },
+        { id: "korean", label: "韓文", entries: ["f2f_custom_1791806559815", FOREIGN_REQUIRED] },
+        { id: "cantonese", label: "粵語", entries: ["f2f_custom_1791806559865", FOREIGN_REQUIRED] },
       ],
+    },
+    {
+      id: "length",
+      title: "篇幅",
+      mode: "multi",
+      allowNone: false,
+      options: [{ id: "shorter", label: "字數更少(表現更好)", entries: ["f2f_custom_1791806559984"] }],
     },
   ],
   styles: [
