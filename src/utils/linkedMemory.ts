@@ -166,3 +166,98 @@ export function formatMessageLines(
     return `${name}：${content}`;
   });
 }
+
+// ===== prompt 文字 =====
+
+/** 一個私聊帶進群聊的內容 */
+export interface PrivateMemoryBlock {
+  /** 成員在群裡顯示的名字 */
+  ownerName: string;
+  /** 依時間軸由舊到新的總結內容 */
+  summaries: string[];
+  /** 「名字：內容」 */
+  lines: string[];
+}
+
+/** 一個群聊帶進私聊的內容 */
+export interface GroupMemoryBlock {
+  groupName: string;
+  /** 群成員名字（含使用者） */
+  memberNames: string[];
+  /** {{char}} 在這個群裡顯示的名字 */
+  charNameInGroup: string;
+  /** 依時間軸由舊到新的總結內容 */
+  summaries: string[];
+  /** 「名字：內容」 */
+  lines: string[];
+}
+
+/** 標籤屬性值不能有雙引號 */
+function attr(value: string): string {
+  return value.replace(/"/g, "'");
+}
+
+function numberedSummaries(summaries: readonly string[]): string[] {
+  return summaries.map((s, i) => `【總結 ${i + 1}】\n${s}`);
+}
+
+function hasContent(block: { summaries: string[]; lines: string[] }): boolean {
+  return block.summaries.length > 0 || block.lines.length > 0;
+}
+
+/** 群聊 prompt 用：成員的私聊記憶，每段只有標籤上的成員知道 */
+export function buildPrivateMemoriesText(
+  blocks: readonly PrivateMemoryBlock[],
+  userName: string,
+): string | undefined {
+  const sections = blocks.filter(hasContent).map((b) => {
+    const parts = [`<private_memory owner="${attr(b.ownerName)}">`];
+    if (b.summaries.length > 0) {
+      parts.push(
+        `【私聊總結】（${b.ownerName}的第一人稱：「我」是${b.ownerName}，「你」是 ${userName}）`,
+        ...numberedSummaries(b.summaries),
+      );
+    }
+    if (b.lines.length > 0) {
+      parts.push("【最近的私聊】", ...b.lines);
+    }
+    parts.push("</private_memory>");
+    return parts.join("\n");
+  });
+  if (sections.length === 0) return undefined;
+  return [
+    `[成員的私聊記憶]\n以下是部分成員和 ${userName} 私下的聊天。每段只有標籤上的那位成員知道，其他成員不知道，演出時不能表現出知道。記憶的主人可以自己決定要不要在群裡說出來；在群裡說出來之後，大家就都知道了。`,
+    ...sections,
+  ].join("\n\n");
+}
+
+/** 私聊 prompt 用：{{char}} 所在的群聊 */
+export function buildGroupMemoriesText(
+  blocks: readonly GroupMemoryBlock[],
+  charName: string,
+): string | undefined {
+  const sections = blocks.filter(hasContent).map((b) => {
+    const parts = [
+      `<group_memory group="${attr(b.groupName)}" members="${attr(b.memberNames.join("、"))}">`,
+    ];
+    if (b.charNameInGroup !== charName) {
+      parts.push(`${charName} 在這個群裡的名字是「${b.charNameInGroup}」。`);
+    }
+    if (b.summaries.length > 0) {
+      parts.push(
+        "【群聊總結】（每條開頭是執筆成員的名字）",
+        ...numberedSummaries(b.summaries),
+      );
+    }
+    if (b.lines.length > 0) {
+      parts.push("【最近的群聊】", ...b.lines);
+    }
+    parts.push("</group_memory>");
+    return parts.join("\n");
+  });
+  if (sections.length === 0) return undefined;
+  return [
+    `[${charName} 所在的群聊]\n${charName} 也在以下群聊裡，群裡的對話 ${charName} 都看得到。`,
+    ...sections,
+  ].join("\n\n");
+}

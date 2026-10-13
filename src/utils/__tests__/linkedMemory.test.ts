@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Chat, GroupMember } from "@/types/chat";
 import type { ChatScreenMessage } from "@/types/chatScreen";
 import {
+  buildGroupMemoriesText,
+  buildPrivateMemoriesText,
   canMemberLink,
   clampMaxRawTurns,
   findGroupsLinkedToChat,
@@ -250,5 +252,80 @@ describe("formatMessageLines", () => {
       "小明：[語音] 在嗎",
       `二哥：${"字".repeat(600)}…`,
     ]);
+  });
+});
+
+describe("buildPrivateMemoriesText", () => {
+  it("每位成員一段，用 owner 標籤包起來，並說明其他人不知道", () => {
+    const text = buildPrivateMemoriesText(
+      [
+        {
+          ownerName: "二哥",
+          summaries: ["我和你聊了很久"],
+          lines: ["小明：你是處男嗎", "二哥：才不是"],
+        },
+      ],
+      "小明",
+    )!;
+    expect(text).toContain("[成員的私聊記憶]\n以下是部分成員和 小明 私下的聊天。");
+    expect(text).toContain("每段只有標籤上的那位成員知道");
+    expect(text).toContain("在群裡說出來之後，大家就都知道了。");
+    expect(text).toContain(
+      '<private_memory owner="二哥">\n【私聊總結】（二哥的第一人稱：「我」是二哥，「你」是 小明）\n【總結 1】\n我和你聊了很久',
+    );
+    expect(text).toContain("【最近的私聊】\n小明：你是處男嗎\n二哥：才不是\n</private_memory>");
+  });
+
+  it("沒有總結就省略總結段，什麼都沒有的區塊不輸出", () => {
+    const text = buildPrivateMemoriesText(
+      [
+        { ownerName: "二哥", summaries: [], lines: ["二哥：嗨"] },
+        { ownerName: "大哥", summaries: [], lines: [] },
+      ],
+      "小明",
+    )!;
+    expect(text).not.toContain("【私聊總結】");
+    expect(text).not.toContain('owner="大哥"');
+    expect(
+      buildPrivateMemoriesText([{ ownerName: "大哥", summaries: [], lines: [] }], "小明"),
+    ).toBeUndefined();
+    expect(buildPrivateMemoriesText([], "小明")).toBeUndefined();
+  });
+});
+
+describe("buildGroupMemoriesText", () => {
+  const block = {
+    groupName: "兄弟群",
+    memberNames: ["大哥", "二哥", "小明"],
+    charNameInGroup: "二哥",
+    summaries: ["大哥：今天群裡很熱鬧"],
+    lines: ["小明：大哥！", "大哥：怎麼了"],
+  };
+
+  it("用 group 標籤包起來，列出成員、總結和最近的群聊", () => {
+    const text = buildGroupMemoriesText([block], "二哥")!;
+    expect(text).toContain("[二哥 所在的群聊]\n二哥 也在以下群聊裡，群裡的對話 二哥 都看得到。");
+    expect(text).toContain('<group_memory group="兄弟群" members="大哥、二哥、小明">');
+    expect(text).toContain(
+      "【群聊總結】（每條開頭是執筆成員的名字）\n【總結 1】\n大哥：今天群裡很熱鬧",
+    );
+    expect(text).toContain("【最近的群聊】\n小明：大哥！\n大哥：怎麼了\n</group_memory>");
+    expect(text).not.toContain("在這個群裡的名字是");
+  });
+
+  it("群裡的名字和角色名不同時才加說明", () => {
+    const text = buildGroupMemoriesText([block], "李二")!;
+    expect(text).toContain("李二 在這個群裡的名字是「二哥」。");
+  });
+
+  it("屬性值裡的雙引號換成單引號", () => {
+    const text = buildGroupMemoriesText([{ ...block, groupName: '"兄弟"群' }], "二哥")!;
+    expect(text).toContain(`group="'兄弟'群"`);
+  });
+
+  it("沒有內容時不輸出", () => {
+    expect(
+      buildGroupMemoriesText([{ ...block, summaries: [], lines: [] }], "二哥"),
+    ).toBeUndefined();
   });
 });
