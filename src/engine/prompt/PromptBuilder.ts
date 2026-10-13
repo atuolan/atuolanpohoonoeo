@@ -198,6 +198,8 @@ export interface PromptBuilderOptions {
     coveredUntil?: number;
     isImportant?: boolean;
   }>;
+  /** 記憶互通：已組好的私聊／群聊記憶文字（linkedMemoryLoader 產生），接在總結條目最後 */
+  linkedMemories?: string;
   /** 重要事件 */
   importantEvents?: Array<{
     id: string;
@@ -2244,6 +2246,11 @@ export class PromptBuilder {
           parts.push(
             `[對話歷史總結]\n以下是之前對話的總結，請參考這些內容保持對話的連貫性：\n\n${summaries}`,
           );
+        }
+
+        // 3. 記憶互通（連結的私聊／群聊），放最後，最接近對話記錄
+        if (this.options.linkedMemories) {
+          parts.push(this.options.linkedMemories);
         }
 
         if (parts.length === 0) return null;
