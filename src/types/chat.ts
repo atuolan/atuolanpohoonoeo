@@ -654,6 +654,23 @@ export interface ChatMessage {
   extra?: Record<string, unknown>;
 }
 
+// ===== 記憶互通 =====
+/** 群成員連結到哪個私聊 */
+export interface MemoryLink {
+  /** auto：生成時解析；chat：固定指定；none：不連結 */
+  mode: "auto" | "chat" | "none";
+  /** mode 為 chat 時指定的私聊 chatId */
+  chatId?: string;
+}
+
+/** 群聊的記憶互通設定 */
+export interface MemorySharingSettings {
+  /** 總開關 */
+  enabled: boolean;
+  /** 每個連結的聊天最多帶幾輪未總結的原文；0 = 只帶總結 */
+  maxRawTurns: number;
+}
+
 // ===== 群聊成員 =====
 export interface GroupMember {
   /**
@@ -699,6 +716,8 @@ export interface GroupMember {
   userBinding?: SubCharUserBinding;
   /** 引入的好感度（唯讀，群聊不增減/不寫回） */
   affinity?: SubCharAffinitySnapshot;
+  /** 記憶互通：連結到哪個私聊（未設定視為 auto） */
+  memoryLink?: MemoryLink;
 }
 
 // ===== 群通話參與者 =====
@@ -816,6 +835,8 @@ export interface GroupChatMetadata {
   isMultiCharCard?: boolean;
   /** 多人卡子角色列表（僅多人卡模式使用） */
   multiCharMembers?: MultiCharMember[];
+  /** 記憶互通設定（未設定視為關閉） */
+  memorySharing?: MemorySharingSettings;
 }
 
 // ===== 群聊日記條目 =====
