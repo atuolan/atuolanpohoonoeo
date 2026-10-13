@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { Chat, GroupMember } from "@/types/chat";
+import type { ChatScreenMessage } from "@/types/chatScreen";
 import {
   canMemberLink,
   clampMaxRawTurns,
   findGroupsLinkedToChat,
+  formatMessageLines,
   getMemberDisplayName,
   getPrivateChatCandidates,
+  getSummaryBoundary,
+  isLinkableMessage,
   isMemorySharingGroup,
+  pickRecentMessages,
   resolveMemberLinkChatId,
 } from "@/utils/linkedMemory";
+import type { BoundarySummary } from "@/utils/linkedMemory";
 
 function member(characterId: string, extra: Partial<GroupMember> = {}): GroupMember {
   return { characterId, isAdmin: false, isMuted: false, joinedAt: 0, ...extra };
@@ -151,5 +157,98 @@ describe("isMemorySharingGroup / findGroupsLinkedToChat", () => {
     const theater = privateChat("t", "c1", 9, { isTheater: true });
     expect(findGroupsLinkedToChat(g, [g])).toEqual([]);
     expect(findGroupsLinkedToChat(theater, [theater, g])).toEqual([]);
+  });
+});
+
+function ui(
+  id: string,
+  role: "user" | "ai" | "system",
+  content: string,
+  timestamp: number,
+  extra: Partial<ChatScreenMessage> = {},
+): ChatScreenMessage {
+  return { id, role, content, timestamp, ...extra };
+}
+
+describe("getSummaryBoundary", () => {
+  it("取非匯入總結的 coveredUntil ?? createdAt 最大值，已合併的也算", () => {
+    expect(getSummaryBoundary([])).toBe(0);
+    const merged = { createdAt: 300, coveredUntil: 250, mergedInto: "meta" } as BoundarySummary;
+    expect(
+      getSummaryBoundary([
+        { createdAt: 100, coveredUntil: 80 },
+        { createdAt: 90 },
+        merged,
+        { createdAt: 500, coveredUntil: 400, isImported: true },
+      ]),
+    ).toBe(250);
+  });
+});
+
+describe("isLinkableMessage", () => {
+  it("排除系統訊息、群內私信、撤回、群管理動作、聊天記錄卡片", () => {
+    expect(isLinkableMessage(ui("a", "user", "嗨", 1))).toBe(true);
+    expect(isLinkableMessage(ui("b", "ai", "嗨", 1))).toBe(true);
+    expect(isLinkableMessage(ui("c", "system", "通知", 1))).toBe(false);
+    expect(isLinkableMessage(ui("d", "ai", "私信", 1, { isPrivateMessage: true }))).toBe(false);
+    expect(isLinkableMessage(ui("e", "ai", "撤回", 1, { isRecall: true }))).toBe(false);
+    expect(isLinkableMessage(ui("f", "ai", "改群名", 1, { isGroupAction: true }))).toBe(false);
+    expect(isLinkableMessage(ui("g", "user", "", 1, { isGroupChatHistory: true }))).toBe(false);
+  });
+});
+
+describe("pickRecentMessages", () => {
+  const messages = [
+    ui("u1", "user", "第一輪", 10),
+    ui("a1", "ai", "回 1", 11),
+    ui("u2", "user", "第二輪", 20),
+    ui("a2", "ai", "回 2", 21),
+    ui("a2b", "ai", "回 2 續", 22),
+    ui("u3", "user", "第三輪", 30),
+    ui("a3", "ai", "回 3", 31),
+  ];
+
+  it("只取邊界之後的訊息", () => {
+    expect(pickRecentMessages(messages, 21, 10).map((m) => m.id)).toEqual(["a2b", "u3", "a3"]);
+  });
+
+  it("最多 N 輪，一輪是使用者一句加角色整段回覆", () => {
+    expect(pickRecentMessages(messages, 0, 2).map((m) => m.id)).toEqual([
+      "u2",
+      "a2",
+      "a2b",
+      "u3",
+      "a3",
+    ]);
+  });
+
+  it("N 為 0 時沒有原文", () => {
+    expect(pickRecentMessages(messages, 0, 0)).toEqual([]);
+  });
+
+  it("過濾掉不能帶入的訊息", () => {
+    const withDm = [...messages, ui("dm", "ai", "私信", 40, { isPrivateMessage: true })];
+    expect(pickRecentMessages(withDm, 30, 5).map((m) => m.id)).toEqual(["a3"]);
+  });
+});
+
+describe("formatMessageLines", () => {
+  it("轉成「名字：內容」，卡片轉文字，超過 600 字截斷", () => {
+    const lines = formatMessageLines(
+      [
+        ui("u", "user", "你好", 1),
+        ui("a", "ai", "[sticker:開心]", 2, { senderCharacterName: "大哥" }),
+        ui("v", "user", "", 3, { messageType: "audio", audioTranscript: "在嗎" }),
+        ui("long", "ai", "字".repeat(700), 4),
+      ],
+      "小明",
+      (m) => m.senderCharacterName || "二哥",
+    );
+    expect(lines).toEqual([
+      "小明：你好",
+      "大哥：[貼圖]",
+      "小明：[語音] 在嗎",
+      `二哥：${"字".repeat(600)}…`,
+    ]);
   });
 });

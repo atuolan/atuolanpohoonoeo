@@ -7,7 +7,7 @@ import type {
 import type { ChatScreenMessage } from "@/types/chatScreen";
 
 /** 合併轉發時每條訊息的文字上限，避免長篇回覆把 prompt 撐爆 */
-const RECORD_ITEM_MAX_CHARS = 600;
+export const RECORD_ITEM_MAX_CHARS = 600;
 
 /** 能被選進轉發的訊息：一般的使用者或角色訊息（系統通知、撤回提示、生成中的不算） */
 export function isForwardSelectable(m: ChatScreenMessage): boolean {

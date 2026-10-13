@@ -5,6 +5,13 @@
  */
 
 import type { Chat, GroupMember, MemoryLink } from "@/types/chat";
+import type { ChatScreenMessage } from "@/types/chatScreen";
+import {
+  isForwardSelectable,
+  RECORD_ITEM_MAX_CHARS,
+  summarizeForwardContent,
+} from "@/utils/chatForward";
+import { sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
 
 /** 第一次開啟互通時的原文輪數上限 */
 export const DEFAULT_MAX_RAW_TURNS = 15;
@@ -95,4 +102,67 @@ export function findGroupsLinkedToChat(
           resolveMemberLinkChatId(m, candidates, lastActiveChatId) === privateChat.id,
       ),
   );
+}
+
+// ===== 原文挑選 =====
+
+/** 計算總結邊界需要的欄位 */
+export interface BoundarySummary {
+  createdAt: number;
+  coveredUntil?: number;
+  isImported?: boolean;
+}
+
+/** 總結涵蓋到的最後時間：非匯入總結的 coveredUntil ?? createdAt 最大值（已合併的也算）；沒有總結時為 0 */
+export function getSummaryBoundary(summaries: readonly BoundarySummary[]): number {
+  let boundary = 0;
+  for (const s of summaries) {
+    if (s.isImported) continue;
+    boundary = Math.max(boundary, s.coveredUntil ?? s.createdAt ?? 0);
+  }
+  return boundary;
+}
+
+/** 能帶進互通原文的訊息：一般的使用者／角色訊息，排除群內私信、撤回、群管理動作、聊天記錄卡片 */
+export function isLinkableMessage(m: ChatScreenMessage): boolean {
+  return (
+    isForwardSelectable(m) &&
+    !m.isPrivateMessage &&
+    !m.isRecall &&
+    !m.isGroupAction &&
+    !m.isGroupChatHistory
+  );
+}
+
+/** 總結邊界之後、最多 maxTurns 輪的原文（時間順序，舊→新） */
+export function pickRecentMessages(
+  messages: readonly ChatScreenMessage[],
+  boundary: number,
+  maxTurns: number,
+): ChatScreenMessage[] {
+  if (maxTurns <= 0) return [];
+  const eligible = messages.filter(
+    (m) => m.timestamp > boundary && isLinkableMessage(m),
+  );
+  return sliceMessagesByTurns(eligible, maxTurns);
+}
+
+/**
+ * 轉成「名字：內容」；內容沿用合併轉發的轉換，超過上限截斷。
+ * @param getAiName 角色訊息要顯示的名字
+ */
+export function formatMessageLines(
+  messages: readonly ChatScreenMessage[],
+  userName: string,
+  getAiName: (m: ChatScreenMessage) => string,
+): string[] {
+  return messages.map((m) => {
+    const text = summarizeForwardContent(m);
+    const content =
+      text.length > RECORD_ITEM_MAX_CHARS
+        ? `${text.slice(0, RECORD_ITEM_MAX_CHARS)}…`
+        : text;
+    const name = m.role === "user" ? userName : getAiName(m);
+    return `${name}：${content}`;
+  });
 }
