@@ -142,6 +142,7 @@ import {
   hasRenderableHtmlBlock,
 } from "@/services/HtmlTemplateEngine";
 import { proactiveMessageService } from "@/services/ProactiveMessageService";
+import { loadLinkedMemories } from "@/services/linkedMemoryLoader";
 import { getRegexedString, regex_placement } from "@/services/RegexEngine";
 import {
   needsParsing,
@@ -821,6 +822,12 @@ const displayCharacterName = computed(() => {
   const char = currentCharacter.value;
   return char?.nickname || char?.data?.name || props.characterName;
 });
+
+/** 角色顯示名稱（暱稱優先），與群聊 prompt 的成員名一致；記憶互通用 */
+function getCharacterDisplayName(characterId: string): string | undefined {
+  const char = charactersStore.characters.find((c) => c.id === characterId);
+  return char?.nickname || char?.data?.name;
+}
 
 // 根據 characterId 獲取角色頭像
 function getCharacterAvatar(characterId: string): string {
@@ -4469,6 +4476,25 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         : [char.id],
     );
 
+    // 記憶互通：連結的私聊／群聊記憶，接在總結條目最後（讀取失敗不擋生成）
+    let linkedMemories: string | undefined;
+    if (currentChatData.value) {
+      try {
+        linkedMemories = await loadLinkedMemories({
+          chat: currentChatData.value,
+          userName: effectivePersona.value?.name || "User",
+          charName: char.data.name,
+          getCharacterName: getCharacterDisplayName,
+          toUiMessage: convertStoredMessageToUiMessage,
+        });
+        if (linkedMemories) {
+          console.log(`[記憶互通] 帶入 ${linkedMemories.length} 字`);
+        }
+      } catch (err) {
+        console.warn("[記憶互通] 讀取失敗，這次不帶互通記憶", err);
+      }
+    }
+
     const builder = new PromptBuilder({
       character: char,
       lorebooks: linkedLorebooks,
@@ -4499,6 +4525,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       // 傳入總結和重要事件
       summaries: summariesToSend,
       importantEvents: eventsToSend,
+      // 記憶互通（連結的私聊／群聊）
+      linkedMemories,
       // 向量記憶檢索結果（啟用時優先使用語義檢索）
       vectorMemories,
       // 傳入天氣數據（用戶 + 角色）
