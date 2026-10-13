@@ -23,6 +23,21 @@ interface GroupMemberInfo {
   affinityEnabled?: boolean;
 }
 
+/** 記憶互通：成員連到哪個私聊 */
+interface MemoryLinkInfo {
+  mode: "auto" | "chat" | "none";
+  chatId?: string;
+}
+
+/** 記憶互通：一位成員的連結選項 */
+interface MemberLinkOptionInfo {
+  characterId: string;
+  name: string;
+  status: "linkable" | "virtual" | "no-chat";
+  chats: Array<{ id: string; label: string }>;
+  link: MemoryLinkInfo;
+}
+
 interface SelectableCharacter {
   id: string;
   name: string;
@@ -122,6 +137,12 @@ const props = defineProps<{
   bindablePersonas?: BindablePersona[];
   /** 這個聊天的專屬預設調整了幾項（強制開關 + 專屬條目） */
   presetCount?: number;
+  /** 記憶互通設定（普通群聊） */
+  memorySharing?: { enabled: boolean; maxRawTurns: number };
+  /** 記憶互通：每位成員的連結選項 */
+  memberLinkOptions?: MemberLinkOptionInfo[];
+  /** 記憶互通：連到這個私聊的群名（私聊） */
+  linkedGroupNames?: string[];
 }>();
 
 const emit = defineEmits<{
@@ -150,6 +171,10 @@ const emit = defineEmits<{
   "remove-multichar-member": [id: string];
   /** 普通群聊：新增成員（多來源 + 關係綁定 + 好感度，與多人卡同 payload） */
   "add-group-member-rich": [payload: AddSubCharEmitPayload];
+  /** 記憶互通：修改開關或輪數 */
+  "update-memory-sharing": [patch: { enabled?: boolean; maxRawTurns?: number }];
+  /** 記憶互通：修改成員連結 */
+  "update-member-memory-link": [characterId: string, link: MemoryLinkInfo];
 }>();
 
 const displayName = computed(() => props.isGroupChat ? props.groupDisplayName : props.displayCharacterName);
@@ -431,6 +456,32 @@ const lorebooks = computed<LorebookInfo[]>(() => props.availableLorebooks || [])
 const boundLorebookIds = computed<string[]>(() => props.groupLorebookIds || []);
 function isLorebookBound(id: string) {
   return boundLorebookIds.value.includes(id);
+}
+
+// ===== 記憶互通 =====
+/** 下拉選單的值：auto / none / chat:<chatId> */
+function memoryLinkValue(opt: MemberLinkOptionInfo): string {
+  return opt.link.mode === "chat" ? `chat:${opt.link.chatId}` : opt.link.mode;
+}
+
+function onMemorySharingToggle(event: Event) {
+  emit("update-memory-sharing", {
+    enabled: (event.target as HTMLInputElement).checked,
+  });
+}
+
+function onMaxRawTurnsChange(event: Event) {
+  const raw = (event.target as HTMLInputElement).value;
+  if (raw === "") return;
+  emit("update-memory-sharing", { maxRawTurns: Number(raw) });
+}
+
+function onMemoryLinkChange(characterId: string, event: Event) {
+  const value = (event.target as HTMLSelectElement).value;
+  const link: MemoryLinkInfo = value.startsWith("chat:")
+    ? { mode: "chat", chatId: value.slice("chat:".length) }
+    : { mode: value === "none" ? "none" : "auto" };
+  emit("update-member-memory-link", characterId, link);
 }
 
 function handleAction(action: string) {
@@ -938,6 +989,62 @@ function handleAction(action: string) {
           </div>
         </section>
 
+        <!-- 記憶互通（多人卡不支援） -->
+        <section v-if="!isMultiCharCard && memorySharing" class="panel">
+          <h3 class="panel-title">記憶互通</h3>
+          <div class="memory-sharing">
+            <label class="subchar-toggle">
+              <input
+                type="checkbox"
+                :checked="memorySharing.enabled"
+                @change="onMemorySharingToggle"
+              />
+              <span>成員記得各自的私聊，私聊裡的角色也記得這個群</span>
+            </label>
+            <template v-if="memorySharing.enabled">
+              <label class="memory-sharing-turns">
+                <span>每個聊天最多帶</span>
+                <input
+                  type="number"
+                  class="subchar-input memory-sharing-turns-input"
+                  min="0"
+                  max="30"
+                  :value="memorySharing.maxRawTurns"
+                  @change="onMaxRawTurnsChange"
+                />
+                <span>輪原文</span>
+              </label>
+              <p class="subchar-hint-mini">
+                0 = 只帶總結。成員和輪數越多，每次對話用的 token 越多。
+              </p>
+              <div class="memory-link-list">
+                <div
+                  v-for="opt in memberLinkOptions || []"
+                  :key="opt.characterId"
+                  class="memory-link-row"
+                >
+                  <span class="memory-link-name">{{ opt.name }}</span>
+                  <select
+                    v-if="opt.status === 'linkable'"
+                    class="subchar-select memory-link-select"
+                    :value="memoryLinkValue(opt)"
+                    @change="onMemoryLinkChange(opt.characterId, $event)"
+                  >
+                    <option value="auto">自動：最近的私聊</option>
+                    <option v-for="c in opt.chats" :key="c.id" :value="`chat:${c.id}`">
+                      {{ c.label }}
+                    </option>
+                    <option value="none">不連結</option>
+                  </select>
+                  <span v-else class="subchar-hint-mini">
+                    {{ opt.status === "virtual" ? "虛擬成員，沒有私聊" : "還沒有私聊" }}
+                  </span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </section>
+
         <!-- 群組功能 -->
         <section class="panel">
           <h3 class="panel-title">群組功能</h3>
@@ -1124,6 +1231,19 @@ function handleAction(action: string) {
         <section class="panel">
           <h3 class="panel-title">聊天管理</h3>
           <div class="list-group">
+            <div
+              v-if="linkedGroupNames && linkedGroupNames.length > 0"
+              class="list-item list-item--static"
+            >
+              <div class="list-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                </svg>
+              </div>
+              <span class="list-label">記憶互通</span>
+              <span class="list-status memory-linked-groups">{{ linkedGroupNames.join("、") }}</span>
+            </div>
             <button class="list-item" @click="emit('open-proactive-message-settings')">
               <div class="list-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
@@ -2281,6 +2401,73 @@ function handleAction(action: string) {
 @media (max-width: 360px) {
   .quick-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* === 記憶互通 === */
+.memory-sharing {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 10px 10px;
+}
+
+.memory-sharing-turns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.memory-sharing-turns-input {
+  width: 72px;
+  text-align: center;
+}
+
+.memory-link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.memory-link-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.memory-link-name {
+  flex: 0 0 auto;
+  max-width: 40%;
+  overflow: hidden;
+  font-size: 14px;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-link-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.memory-linked-groups {
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-item--static {
+  cursor: default;
+
+  &:hover {
+    background: transparent;
+  }
+
+  &:active {
+    transform: none;
   }
 }
 

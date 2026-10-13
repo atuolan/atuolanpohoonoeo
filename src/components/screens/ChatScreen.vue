@@ -66,6 +66,7 @@ import {
 } from "@/composables/useGamePlayingDetector";
 import { useChatGroupCall } from "@/composables/useChatGroupCall";
 import { useChatGroupSettings } from "@/composables/useChatGroupSettings";
+import { useChatMemorySharing } from "@/composables/useChatMemorySharing";
 import { useChatIncomingCalls } from "@/composables/useChatIncomingCalls";
 import { useChatInputHelper } from "@/composables/useChatInputHelper";
 import { useChatMedia } from "@/composables/useChatMedia";
@@ -2401,6 +2402,28 @@ async function handleDetailsToggleLorebook(lorebookId: string) {
   }
   await saveChatImmediate();
 }
+
+// 記憶互通設定（群組詳情的面板、私聊詳情的唯讀說明）
+const {
+  memorySharing: detailsMemorySharing,
+  memberLinkOptions: detailsMemberLinkOptions,
+  linkedGroupNames: detailsLinkedGroupNames,
+  refreshMemorySharing,
+  updateMemorySharing: handleDetailsUpdateMemorySharing,
+  updateMemberMemoryLink: handleDetailsUpdateMemberMemoryLink,
+} = useChatMemorySharing({
+  currentChat: currentChatData,
+  getCharacterName: getCharacterDisplayName,
+  saveChatImmediate,
+});
+
+// 開啟詳情頁或成員變動時，重新讀取記憶互通的面板資料
+watch(
+  () => [showChatDetails.value, groupMetadata.value?.members?.length] as const,
+  ([open]) => {
+    if (open) void refreshMemorySharing();
+  },
+);
 
 // 加子角色 emit payload（與 ChatDetailsScreen / useMultiCharMembers 對齊）
 interface AddSubCharEmitPayload {
@@ -9350,6 +9373,11 @@ useChatCleanup({
           @add-multichar-member="handleDetailsAddSubchar"
           @remove-multichar-member="handleDetailsRemoveSubchar"
           @add-group-member-rich="handleDetailsAddGroupMemberRich"
+          :memory-sharing="detailsMemorySharing"
+          :member-link-options="detailsMemberLinkOptions"
+          :linked-group-names="detailsLinkedGroupNames"
+          @update-memory-sharing="handleDetailsUpdateMemorySharing"
+          @update-member-memory-link="handleDetailsUpdateMemberMemoryLink"
         />
       </Transition>
     </Teleport>
