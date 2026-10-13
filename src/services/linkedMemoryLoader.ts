@@ -3,13 +3,14 @@
  * 每次生成時呼叫，不快取。規則見 docs/superpowers/specs/2026-10-14-cross-chat-memory-design.md。
  */
 
+import dayjs from "dayjs";
 import type { ChatMessageCursor } from "@/db/chatMessageStore";
 import { DB_STORES, getDatabase } from "@/db/database";
 import type { ConversationSummary } from "@/db/database";
 import { loadMessagePage } from "@/storage/chatMessageStorage";
 import { getLastActiveChatId, loadAllChats } from "@/storage/chatStorage";
 import { createDefaultSummarySettings } from "@/types/chat";
-import type { Chat, ChatMessage } from "@/types/chat";
+import type { Chat, ChatMessage, MemoryLink } from "@/types/chat";
 import type { ChatScreenMessage } from "@/types/chatScreen";
 import { countTurns } from "@/utils/chatScreenHelpers";
 import {
@@ -183,4 +184,63 @@ export async function loadLinkedMemories(
     return isMemorySharingGroup(ctx.chat) ? loadPrivateMemoriesForGroup(ctx) : undefined;
   }
   return loadGroupMemoriesForPrivate(ctx);
+}
+
+// ===== 設定面板 =====
+
+/** 設定畫面：一位成員的連結選項 */
+export interface MemberLinkOption {
+  characterId: string;
+  /** 成員在群裡顯示的名字 */
+  name: string;
+  /** linkable：可連結；virtual：虛擬或代演成員；no-chat：還沒有私聊 */
+  status: "linkable" | "virtual" | "no-chat";
+  /** 可選的私聊（status 為 linkable 時才有） */
+  chats: Array<{ id: string; label: string }>;
+  /** 目前的連結；指定的私聊已不在候選中時顯示為不連結 */
+  link: MemoryLink;
+}
+
+/** 私聊選項的文字：聊天名稱（分支加註）· 最後更新日期 */
+function chatOptionLabel(chat: Chat): string {
+  const name = chat.name || "未命名對話";
+  const branch = chat.isBranch ? "（分支）" : "";
+  return `${name}${branch} · ${dayjs(chat.updatedAt).format("MM/DD")}`;
+}
+
+/** 群組詳情的記憶互通面板：每位成員的連結選項 */
+export async function loadMemberLinkOptions(
+  group: Chat,
+  getCharacterName: (characterId: string) => string | undefined,
+): Promise<MemberLinkOption[]> {
+  const allChats = await loadAllChats();
+  return (group.groupMetadata?.members ?? []).map((member): MemberLinkOption => {
+    const characterId = member.characterId;
+    const name = getMemberDisplayName(member, getCharacterName);
+    if (!canMemberLink(member)) {
+      return { characterId, name, status: "virtual", chats: [], link: { mode: "none" } };
+    }
+    const candidates = getPrivateChatCandidates(allChats, characterId);
+    if (candidates.length === 0) {
+      return { characterId, name, status: "no-chat", chats: [], link: { mode: "none" } };
+    }
+    const link: MemoryLink = member.memoryLink ?? { mode: "auto" };
+    const stale = link.mode === "chat" && !candidates.some((c) => c.id === link.chatId);
+    return {
+      characterId,
+      name,
+      status: "linkable",
+      chats: candidates.map((c) => ({ id: c.id, label: chatOptionLabel(c) })),
+      link: stale ? { mode: "none" } : link,
+    };
+  });
+}
+
+/** 私聊詳情的唯讀說明：連到這個私聊的群名 */
+export async function loadLinkedGroupNames(privateChat: Chat): Promise<string[]> {
+  const allChats = await loadAllChats();
+  const lastActive = await getLastActiveChatId(privateChat.characterId);
+  return findGroupsLinkedToChat(privateChat, allChats, lastActive).map(
+    (g) => g.groupMetadata?.groupName || g.name,
+  );
 }

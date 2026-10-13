@@ -31,7 +31,11 @@ vi.mock("@/db/database", () => ({
   })),
 }));
 
-import { loadLinkedMemories } from "@/services/linkedMemoryLoader";
+import {
+  loadLinkedGroupNames,
+  loadLinkedMemories,
+  loadMemberLinkOptions,
+} from "@/services/linkedMemoryLoader";
 
 function member(characterId: string, extra: Partial<GroupMember> = {}): GroupMember {
   return { characterId, isAdmin: false, isMuted: false, joinedAt: 0, ...extra };
@@ -214,5 +218,36 @@ describe("loadLinkedMemories：私聊（群 → 私）", () => {
     store.lastActive = { c1: "p1" };
     store.messages = { g: [stored("g1", "user", "嗨", 1), stored("g2", "assistant", "嗨", 2)] };
     expect(await loadLinkedMemories(ctx(p2))).toBeUndefined();
+  });
+});
+
+describe("設定面板資料", () => {
+  it("loadMemberLinkOptions：列出私聊選項，標示虛擬成員與沒有私聊的成員", async () => {
+    store.chats = [
+      privateChat("p1", "c1", new Date(2026, 9, 14, 12).getTime(), { name: "主線" }),
+      privateChat("b1", "c1", new Date(2026, 9, 10, 12).getTime(), {
+        name: "如果線",
+        isBranch: true,
+      }),
+    ];
+    const group = groupChat("g", [
+      member("c1", { memoryLink: { mode: "chat", chatId: "deleted" } }),
+      member("gm_1", { isVirtual: true, name: "小美" }),
+      member("c3"),
+    ]);
+    const options = await loadMemberLinkOptions(group, (id) => names[id]);
+    expect(options[0]).toMatchObject({ name: "二哥", status: "linkable", link: { mode: "none" } });
+    expect(options[0].chats.map((c) => c.label)).toEqual([
+      "主線 · 10/14",
+      "如果線（分支） · 10/10",
+    ]);
+    expect(options[1]).toMatchObject({ name: "小美", status: "virtual", chats: [] });
+    expect(options[2]).toMatchObject({ name: "c3", status: "no-chat", chats: [] });
+  });
+
+  it("loadLinkedGroupNames：回傳連到這個私聊的群名", async () => {
+    const p1 = privateChat("p1", "c1", 5);
+    store.chats = [p1, groupChat("g", [member("c1")])];
+    expect(await loadLinkedGroupNames(p1)).toEqual(["兄弟群"]);
   });
 });
