@@ -22,6 +22,8 @@ export interface ChatMinimaxTTSOverride {
   emotion?: string;
   /** undefined follows global settings; an empty string disables the language hint. */
   languageBoost?: string;
+  /** 通話雙語字幕：角色說外語時語音念原文、畫面以中文字幕為主 */
+  callBilingual?: boolean;
 }
 
 export type MessageTTSRegenerationResult =

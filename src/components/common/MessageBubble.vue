@@ -438,6 +438,8 @@ interface MessageBubbleProps {
       tone?: string;
       audioUrl?: string;
       timestamp: number;
+      /** 中文字幕（通話雙語字幕） */
+      translation?: string;
     }>;
   };
   // 行事曆事件

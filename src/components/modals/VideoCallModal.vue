@@ -132,8 +132,14 @@
                 <svg v-if="msg.viaVoice" class="voice-icon" viewBox="0 0 24 24" fill="currentColor" aria-label="語音輸入">
                   <path :d="MIC_PATH" />
                 </svg>
-                <span>{{ msg.content || (msg.isStreaming ? "正在思考..." : "") }}</span>
-                <span v-if="msg.isStreaming" class="stream-caret">▌</span>
+                <template v-if="msg.isStreaming">
+                  <span>正在思考...</span>
+                  <span class="stream-caret">▌</span>
+                </template>
+                <template v-else>
+                  <span class="line-main">{{ lineOf(msg).main }}</span>
+                  <span v-if="lineOf(msg).sub" class="line-original">{{ lineOf(msg).sub }}</span>
+                </template>
               </template>
             </div>
           </template>
@@ -252,10 +258,14 @@
 import CallVoiceNotice from "@/components/common/CallVoiceNotice.vue";
 import { MIC_PATH } from "@/components/common/callMicIcons";
 import { useCallVoiceUi } from "@/composables/useCallVoiceUi";
-import { usePhoneCallStore } from "@/stores/phoneCall";
+import { usePhoneCallStore, type CallMessage } from "@/stores/phoneCall";
+import { getCallLineDisplay } from "@/utils/callLines";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 const phoneCallStore = usePhoneCallStore();
+
+/** 泡泡文字：清掉語音標記、<br> 換行；有雙語字幕時中文為主、原文在下 */
+const lineOf = (msg: CallMessage) => getCallLineDisplay(msg);
 
 // 語音輸入（免持通話）
 const {
@@ -928,6 +938,19 @@ onUnmounted(() => {
     width: fit-content;
     max-width: 80%;
     background: rgba(255, 255, 255, 0.16);
+  }
+
+  .line-main {
+    white-space: pre-line;
+  }
+
+  // 雙語字幕：原文放在中文下面
+  .line-original {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    opacity: 0.7;
+    white-space: pre-line;
   }
 }
 

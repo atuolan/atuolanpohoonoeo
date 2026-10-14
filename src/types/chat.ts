@@ -550,6 +550,8 @@ export interface ChatMessage {
       timestamp: number;
       /** 使用者用說的（語音辨識） */
       viaVoice?: boolean;
+      /** 中文字幕（通話雙語字幕） */
+      translation?: string;
     }>;
   };
 
@@ -1087,6 +1089,8 @@ export interface Chat {
     emotion?: string;
     /** 未設定則跟隨全域，空字串則不傳送語言增強。 */
     languageBoost?: string;
+    /** 通話雙語字幕：角色說外語時語音念原文、畫面以中文字幕為主 */
+    callBilingual?: boolean;
   };
 
   /** 是否為分支聊天（不顯示在主列表，只在角色卡聊天檔案中顯示） */

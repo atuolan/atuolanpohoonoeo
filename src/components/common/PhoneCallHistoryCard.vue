@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { getCallLineDisplay } from "@/utils/callLines";
 import { computed, onUnmounted, ref, watch } from "vue";
 
 interface PhoneCallMessage {
@@ -7,6 +8,8 @@ interface PhoneCallMessage {
   tone?: string;
   audioUrl?: string;
   timestamp: number;
+  /** 中文字幕（通話雙語字幕） */
+  translation?: string;
 }
 
 interface Props {
@@ -28,6 +31,9 @@ const duration = computed(() => {
   const remainingSeconds = seconds % 60;
   return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
 });
+
+// 每句的顯示文字（有字幕時中文為主、原文在下）
+const displayLines = computed(() => props.messages.map(getCallLineDisplay));
 
 // 是否有任何語音可回放
 const hasVoice = computed(() => props.messages.some((m) => !!m.audioUrl));
@@ -187,7 +193,12 @@ onUnmounted(() => {
 
               <div class="bubble-wrap">
                 <div class="bubble">
-                  <span class="bubble-content">{{ msg.content }}</span>
+                  <span class="bubble-content"
+                    >{{ displayLines[idx].main
+                    }}<span v-if="displayLines[idx].sub" class="bubble-original">{{
+                      displayLines[idx].sub
+                    }}</span></span
+                  >
                   <button
                     v-if="msg.audioUrl"
                     class="voice-btn"
@@ -504,6 +515,14 @@ onUnmounted(() => {
   min-width: 0;
   word-break: break-word;
   white-space: pre-wrap;
+}
+
+// 雙語字幕：原文放在中文下面
+.bubble-original {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.7;
 }
 
 .voice-btn {

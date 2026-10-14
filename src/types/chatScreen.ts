@@ -149,6 +149,8 @@ export interface ChatScreenMessage {
       timestamp: number;
       /** 使用者用說的（語音辨識） */
       viaVoice?: boolean;
+      /** 中文字幕（通話雙語字幕） */
+      translation?: string;
     }>;
   };
   isCalendarEvent?: boolean;

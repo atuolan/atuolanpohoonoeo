@@ -11995,6 +11995,29 @@ useChatCleanup({
                 </select>
               </div>
 
+              <!-- 通話雙語字幕 -->
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>通話雙語字幕</span>
+                  <span class="setting-hint"
+                    >角色說外語時，語音念原文，畫面以中文字幕為主、原文放在下面。語音與視訊通話都適用，下一通電話生效。</span
+                  >
+                </div>
+                <label class="toggle-switch">
+                  <input
+                    type="checkbox"
+                    aria-label="通話雙語字幕"
+                    :checked="!!chatMinimaxTTSOverride.callBilingual"
+                    @change="
+                      ($event.target as HTMLInputElement).checked
+                        ? (chatMinimaxTTSOverride.callBilingual = true)
+                        : delete chatMinimaxTTSOverride.callBilingual
+                    "
+                  />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+
               <!-- 語速 -->
               <div class="setting-group">
                 <label class="setting-label"
@@ -12075,7 +12098,11 @@ useChatCleanup({
               <button
                 class="btn-cancel"
                 style="margin-top: 8px; font-size: 12px"
-                @click="chatMinimaxTTSOverride = {}"
+                @click="
+                  chatMinimaxTTSOverride = chatMinimaxTTSOverride.callBilingual
+                    ? { callBilingual: true }
+                    : {}
+                "
               >
                 重置為全域預設
               </button>

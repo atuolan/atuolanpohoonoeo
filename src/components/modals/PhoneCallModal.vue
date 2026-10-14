@@ -127,7 +127,7 @@
                     <svg v-if="msg.viaVoice" class="voice-icon" viewBox="0 0 24 24" fill="currentColor" aria-label="語音輸入">
                       <path :d="MIC_PATH" />
                     </svg>
-                    <span>{{ displayContent(msg.content) }}</span>
+                    <span class="line-main">{{ lineOf(msg).main }}</span>
                     <span
                       v-if="msg.role === 'ai' && ttsAvailable"
                       class="play-icon"
@@ -173,6 +173,9 @@
                         <path d="M8 5v14l11-7z" />
                       </svg>
                     </span>
+                    <span v-if="lineOf(msg).sub" class="line-original">{{
+                      lineOf(msg).sub
+                    }}</span>
                   </template>
                 </div>
               </div>
@@ -321,8 +324,8 @@
 import CallVoiceNotice from "@/components/common/CallVoiceNotice.vue";
 import { MIC_OFF_PATH, MIC_PATH } from "@/components/common/callMicIcons";
 import { useCallVoiceUi } from "@/composables/useCallVoiceUi";
-import { usePhoneCallStore } from "@/stores/phoneCall";
-import { cleanTTSTags } from "@/utils/ttsTagCleaner";
+import { usePhoneCallStore, type CallMessage } from "@/stores/phoneCall";
+import { getCallLineDisplay } from "@/utils/callLines";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 const phoneCallStore = usePhoneCallStore();
@@ -341,10 +344,8 @@ const {
 } = useCallVoiceUi();
 let unregisterVoiceExtra: (() => void) | null = null;
 
-/** 顯示用：清除 TTS 標記（(chuckle)、<#0.5#>、[emotion=...] 等），避免原始標記外露 */
-function displayContent(content: string): string {
-  return cleanTTSTags(content || "");
-}
+/** 泡泡文字：清掉語音標記、<br> 換行；有雙語字幕時中文為主、原文在下 */
+const lineOf = (msg: CallMessage) => getCallLineDisplay(msg);
 
 // 本地 UI 狀態
 const inputText = ref("");
@@ -832,6 +833,20 @@ async function handleRegenerate() {
     font-size: 15px;
     line-height: 1.5;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .line-main {
+    white-space: pre-line;
+  }
+
+  // 雙語字幕：原文放在中文下面
+  .line-original {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.45;
+    opacity: 0.68;
+    white-space: pre-line;
   }
 
   .message-tone {
