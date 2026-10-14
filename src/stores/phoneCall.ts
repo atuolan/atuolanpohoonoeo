@@ -11,11 +11,17 @@ import { parseAffinityUpdateTags } from "@/services/ResponseParser";
 import { primeCallAudioContext } from "@/services/voiceInput/audioContextPrimer";
 import { loadChatById, refreshChatDerivedMetadata } from "@/storage/chatStorage";
 import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
-import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { convertTTSContentToSimplified } from "@/utils/ttsTextSelector";
+import {
+  formatCallLineForRecord,
+  normalizeCallLine,
+  parsePhoneCallOutput,
+  toCallSpeechText,
+  toTraditionalCallLines,
+  type CallLine,
+} from "@/utils/callLines";
 import { computeChatNow } from "@/utils/fakeTime";
 import { pickGenerationToggles } from "@/utils/generationToggles";
-import { PLURK_BLOCK_STRIP_PATTERN } from "@/utils/plurkFormat";
 import { defineStore } from "pinia";
 import { useChatVariablesStore } from "./chatVariables";
 import { computed, ref } from "vue";
@@ -37,6 +43,10 @@ export interface CallMessage {
   viaVoice?: boolean;
   /** 語音辨識中／失敗的暫時狀態：不送進提示詞、快照與通話紀錄 */
   voiceStatus?: "pending" | "failed";
+  /** 中文字幕（通話雙語字幕開啟、原文不是中文時才有） */
+  translation?: string;
+  /** 這句的語言（MiniMax 語言增強名稱），雙語通話時用來念 */
+  lang?: string;
 }
 
 /** 語音訊息的附加欄位（畫面提供的語氣、視訊畫面） */
@@ -86,7 +96,7 @@ interface PhoneAnswerDecision {
   shouldAnswer: boolean;
   reason?: string;
   opening?: string;
-  openingMessages?: { text: string; tone?: string }[];
+  openingMessages?: CallLine[];
 }
 
 interface VideoCallConfig {
@@ -114,7 +124,16 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   /** 該聊天是否開啟 MiniMax（決定喇叭按鈕是否可用，作為自動語音開關前提） */
   const ttsAvailable = ref(false);
   /** 聊天專屬 MiniMax 音色覆蓋（不設則用全域設定） */
-  const ttsOverride = ref<{ voiceId?: string; speed?: number; pitch?: number; emotion?: string; languageBoost?: string }>({});
+  const ttsOverride = ref<{
+    voiceId?: string;
+    speed?: number;
+    pitch?: number;
+    emotion?: string;
+    languageBoost?: string;
+    callBilingual?: boolean;
+  }>({});
+  /** 這個聊天開了通話雙語字幕（開始通話時從 MiniMax 設定讀取） */
+  const callBilingual = computed(() => !!ttsOverride.value.callBilingual);
   /** 最近一次 TTS 合成/播放錯誤訊息（供 UI 顯示，null = 無錯誤） */
   const ttsError = ref<string | null>(null);
   /** 目前正在播放的訊息 id，供 UI 標示播放狀態（null = 無） */
@@ -215,7 +234,12 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   }): string {
     const startedAt = options.startedAt ?? Math.max(options.endedAt - options.durationSeconds * 1000, 0);
     const callLines = options.messages
-      .map((m) => `${m.role === "user" ? "你" : options.characterName}: ${m.content}`)
+      .map(
+        (m) =>
+          `${m.role === "user" ? "你" : options.characterName}: ${
+            m.role === "ai" ? formatCallLineForRecord(m) : m.content
+          }`,
+      )
       .join("\n");
 
     return `<phone_call>\n${options.title || "📞 通話結束"}\n開始時間：${formatCallDateTime(startedAt)}\n結束時間：${formatCallDateTime(options.endedAt)}\n時長：${formatDurationText(options.durationSeconds)}\n\n電話內容：\n${callLines}\n</phone_call>`;
@@ -241,6 +265,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
         audioUrl: m.audioUrl,
         timestamp: m.timestamp,
         viaVoice: m.viaVoice || undefined,
+        translation: m.translation || undefined,
       })),
     };
   }
@@ -421,7 +446,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   /** 合成單條通話訊息語音，下載轉 base64 存入該訊息 audioUrl；回傳 url（失敗回傳 null） */
   async function synthesizeCallMessage(msg: CallMessage): Promise<string | null> {
     if (msg.audioUrl) return msg.audioUrl;
-    const text = cleanTTSTags(msg.content || "").trim();
+    const text = toCallSpeechText(msg.content || "");
     if (!text) return null;
     try {
       const { useSettingsStore } = await import("@/stores");
@@ -432,6 +457,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       }
       const { synthesizeSpeech } = await import("@/api/MiniMaxTTSApi");
       const mergedSettings = getMergedTTSSettings(settingsStore);
+      // 雙語通話：每句用 AI 標的語言念（全漢字的日文也不會被當成中文）
+      if (callBilingual.value && msg.lang) mergedSettings.languageBoost = msg.lang;
       // MiniMax 的 emotion 只接受特定英文列舉值；AI 產生的 msg.tone 多為中文語氣描述
       // （例如「慵懶、帶笑」「調侃」），直接傳會被 API 拒絕（invalid params）導致合成失敗、沒有聲音。
       // 因此僅在值屬於合法列舉時才傳，中文語氣描述僅供 UI 顯示、不送 API。
@@ -671,7 +698,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   }
 
   // ===== 接聽 =====
-  async function handleAnswer(openingMessages?: { text: string; tone?: string }[]) {
+  async function handleAnswer(openingMessages?: CallLine[]) {
     callState.value = "connected";
     callStartedAt.value = Date.now();
     durationTimer = setInterval(() => { callDuration.value++; }, 1000);
@@ -704,6 +731,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
             timestamp: Date.now(),
             isStreaming: false,
             tone: message.tone?.trim() || undefined,
+            translation: message.translation,
+            lang: message.lang,
           });
         }
         // 開場白自動語音
@@ -1105,6 +1134,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
         minimaxTTSEnabled: ttsAvailable.value,
         // 這通電話有用語音說過話：注入語音辨識說明（同音錯字、括號是聽到的聲音）
         voiceInputUsed: callMessages.value.some((m) => m.viaVoice && !m.voiceStatus),
+        // 通話雙語字幕：注入原文／字幕分欄規則
+        callBilingual: callBilingual.value,
         incomingCallMode: info.isIncoming && isIncomingFirstMessage,
         callReason: info.callReason,
         summaries: summaries.value,
@@ -1191,16 +1222,19 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
           const finalContent = event.content || fullContent;
           if (useWindow) streamingWindow.setComplete();
           aiGenerationStore.completeGeneration(phoneTaskId, "chat", finalContent);
+          // 先解析（含字幕轉繁體）再換掉佔位，避免中間有一瞬間沒有泡泡
+          const parsed = parsePhoneCallOutput(finalContent, { bilingual: callBilingual.value });
+          const lines = await toTraditionalCallLines(parsed.messages);
           callMessages.value = callMessages.value.filter((m) => m.id !== aiMsg.id);
-          const parsed = parsePhoneJsonOutput(finalContent);
           const newAiMessageIds: string[] = [];
-          for (const p of parsed.messages) {
+          for (const p of lines) {
             const id = `call_msg_ai_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
             newAiMessageIds.push(id);
             callMessages.value.push({
               id,
               role: "ai", content: p.text, timestamp: Date.now(),
               isStreaming: false, tone: p.tone,
+              translation: p.translation, lang: p.lang,
             });
           }
 
@@ -1215,7 +1249,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
             console.log("[phoneCall] AI 主動掛斷", parsed.hangup.reason || "");
             const delay = Math.min(
               4000,
-              1500 + Math.max(0, parsed.messages.length - 1) * 800,
+              1500 + Math.max(0, lines.length - 1) * 800,
             );
             // 掛斷前不再開麥克風
             hangupPending.value = true;
@@ -1235,74 +1269,6 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       isGenerating.value = false;
       abortController = null;
     }
-  }
-
-  // ===== 解析 JSON 輸出 =====
-  function parsePhoneJsonOutput(content: string): {
-    messages: { text: string; tone?: string }[];
-    hangup?: { reason?: string };
-  } {
-    if (!content?.trim()) return { messages: [{ text: "..." }] };
-    let cleaned = content.replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "")
-      .replace(/```json\s*/gi, "").replace(/```\s*/g, "")
-      // 剝離 MVU 變量更新標籤（卡內帶 MVU 時 AI 會輸出這些）
-      .replace(/<UpdateVariable>[\s\S]*?<\/UpdateVariable>/gi, "")
-      .replace(/<update>[\s\S]*?<\/update>/gi, "")
-      .replace(/<Analysis>[\s\S]*?<\/Analysis>/gi, "")
-      // 剝離 affinity-update 標籤
-      .replace(/<affinity-update\s+[^>]*?\s*\/?>/gi, "")
-      // 剝離噗浪發文標籤
-      .replace(PLURK_BLOCK_STRIP_PATTERN, "")
-      .trim();
-    // 來電 assistant prefill 會導致 AI 回覆缺少開頭的 [，自動補齊
-    if (cleaned.startsWith("{") && !cleaned.startsWith("[")) {
-      cleaned = "[" + cleaned;
-    }
-    const jsonMatch = cleaned.match(/\[\s*\{[\s\S]*\}\s*\]/);
-    if (jsonMatch) {
-      try {
-        const s = jsonMatch[0].replace(/[\u201c\u201d]/g, '"').replace(/[\u2018\u2019]/g, "'");
-        const parsed = JSON.parse(s);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const messages: { text: string; tone?: string }[] = [];
-          let hangup: { reason?: string } | undefined;
-          for (const item of parsed) {
-            if (!item || typeof item !== "object") continue;
-            const action = typeof item.action === "string" ? item.action.toLowerCase() : "";
-            const isHangup =
-              action === "hangup" ||
-              action === "hang_up" ||
-              action === "endcall" ||
-              action === "end_call" ||
-              item.endCall === true ||
-              item.hangup === true;
-            if (isHangup) {
-              hangup = { reason: typeof item.reason === "string" ? item.reason : undefined };
-              // 動作項目仍可能附帶最後一句話
-              const rawText = item.text ?? item.content;
-              const text = rawText !== undefined && rawText !== null ? String(rawText).trim() : "";
-              if (text) {
-                messages.push({ text, tone: item.tone || item.emotion });
-              }
-              continue;
-            }
-            const rawText = item.text ?? item.content;
-            if (rawText === undefined || rawText === null) continue;
-            const text = String(rawText).trim();
-            if (!text) continue;
-            messages.push({ text, tone: item.tone || item.emotion });
-          }
-          if (messages.length === 0 && !hangup) {
-            messages.push({ text: "..." });
-          }
-          return { messages, hangup };
-        }
-      } catch { /* fall through */ }
-    }
-    const voiceMatch = cleaned.match(/<voice>([\s\S]*?)<\/voice>/i);
-    if (voiceMatch) return { messages: [{ text: voiceMatch[1].trim() || "..." }] };
-    cleaned = cleaned.replace(/<\/?(?:voice|content|msg)>/gi, "").trim();
-    return { messages: cleaned ? [{ text: cleaned }] : [{ text: "..." }] };
   }
 
   // ===== 從 AI 回覆中提取並套用 MVU 變量更新 =====
@@ -1364,6 +1330,10 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       const now = new Date();
       const lastChatTime = info.lastMessageTime ? formatTimeSince(info.lastMessageTime) : "未知";
       const callAttemptInfo = currentMissedCount > 0 ? `\n⚠️ 這是第 ${currentMissedCount + 1} 次來電` : "";
+      const bilingual = callBilingual.value;
+      const bilingualRule = bilingual
+        ? `\n7. 雙語通話：text 用 ${char.data.name} 平常說的語言（依角色國籍、背景與最近聊天紀錄判斷；中文母語就說中文），只放原文，不要夾翻譯或 <br>。text 不是中文時加 "zh"（繁體中文翻譯）；每句都加 "lang"（語言英文名稱，例如 Japanese、English、Chinese）。例如 {"text": "もしもし？", "zh": "喂？", "lang": "Japanese", "tone": "溫柔"}`
+        : "";
 
       const decisionPrompt = `你是 ${char.data.name}，${userName} 正在打電話給你。
 角色性格：${char.data.personality || "無特別設定"}
@@ -1382,7 +1352,7 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
 3. 每條都要是角色接起 ${userName} 的電話後立刻說出口的自然台詞，可依節奏拆成短句，並為每條提供 tone。
 4. 不要寫旁白、動作描述、說明、引號或 JSON 以外內容。
 5. 只輸出一個 JSON 物件，不要加任何額外文字。
-6. 為了相容舊格式，你也可以額外附帶 opening 字串，但以 openingMessages 為主。`;
+6. 為了相容舊格式，你也可以額外附帶 opening 字串，但以 openingMessages 為主。${bilingualRule}`;
 
       const settingsStore = useSettingsStore();
       const phoneCallDecisionConfig = settingsStore.getAPIForTask("phoneCall");
@@ -1408,17 +1378,13 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
       const jsonMatch = response.content.trim().match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        const openingMessages = Array.isArray(parsed.openingMessages)
+        const openingMessages: CallLine[] = Array.isArray(parsed.openingMessages)
           ? parsed.openingMessages
-            .map((item: any) => ({
-              text: String(item?.text || item?.content || "").trim(),
-              tone: typeof item?.tone === "string"
-                ? item.tone.trim()
-                : typeof item?.emotion === "string"
-                  ? item.emotion.trim()
-                  : undefined,
-            }))
-            .filter((item: { text: string; tone?: string }) => item.text)
+            .map((item: unknown) =>
+              item && typeof item === "object"
+                ? normalizeCallLine(item as Record<string, unknown>, bilingual)
+                : null)
+            .filter((item: CallLine | null): item is CallLine => !!item)
             .slice(0, 3)
           : [];
         const legacyOpening = typeof parsed.opening === "string"
@@ -1430,15 +1396,16 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
               : typeof parsed.message === "string"
                 ? parsed.message
                 : "";
+        const legacyLine = legacyOpening.trim()
+          ? normalizeCallLine({ text: legacyOpening.trim() }, bilingual)
+          : null;
         return {
           shouldAnswer: parsed.answer !== false,
           reason: parsed.reason || "",
           opening: legacyOpening,
-          openingMessages: openingMessages.length > 0
-            ? openingMessages
-            : legacyOpening.trim()
-              ? [{ text: legacyOpening.trim() }]
-              : [],
+          openingMessages: await toTraditionalCallLines(
+            openingMessages.length > 0 ? openingMessages : legacyLine ? [legacyLine] : [],
+          ),
         };
       }
     } catch { /* 默認接聽 */ }
@@ -1597,6 +1564,8 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
 
     // 載入輔助資料
     await loadSummariesAndEvents(snapshot.activeCall);
+    // 重新讀取語音設定（喇叭鍵、自動語音、雙語字幕），重新整理頁面後才不會遺失
+    await loadTTSConfig(snapshot.activeCall);
   }
 
   /** 把快照中的通話記錄存進 IDB 後清除（選擇掛掉時） */
