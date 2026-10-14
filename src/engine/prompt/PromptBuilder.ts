@@ -380,6 +380,8 @@ export interface PromptBuilderOptions {
   };
   /** 是否啟用 MiniMax TTS 語音合成（啟用時注入語氣標籤提示詞） */
   minimaxTTSEnabled?: boolean;
+  /** 電話中使用者有用語音說話（啟用時注入語音辨識說明） */
+  voiceInputUsed?: boolean;
   /** 好感度配置（per-character） */
   affinityConfig?: CharacterAffinityConfig;
   /** 好感度狀態（per-chat） */
@@ -898,6 +900,13 @@ export class PromptBuilder {
       if (!this.options.minimaxTTSEnabled) {
         baseOrder = baseOrder.filter(
           (e) => e.identifier !== "phoneCallMinimaxTTS",
+        );
+      }
+
+      // 沒有用語音說話：移除語音輸入說明
+      if (!this.options.voiceInputUsed) {
+        baseOrder = baseOrder.filter(
+          (e) => e.identifier !== "phoneCallVoiceInput",
         );
       }
 

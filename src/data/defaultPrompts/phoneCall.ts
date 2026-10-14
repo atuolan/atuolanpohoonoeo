@@ -553,6 +553,29 @@ JSON 輸出範例（語音標記寫在 text 內、情緒走 tone）：
     isDeletable: true,
     adminOnly: true,
   },
+  {
+    identifier: "phoneCallVoiceInput",
+    name: "電話語音輸入說明",
+    description: "使用者在通話中用語音說話時注入：語音辨識可能有同音錯字，括號內容是聽到的聲音",
+    category: "context",
+    role: "system",
+    content: `【語音通話說明】
+{{user}} 是直接開口跟你講電話，說的話經過語音辨識轉成文字。
+- 可能有同音錯字、漏字或標點不準。請依上下文理解原意，不要指出或糾正錯字。
+- 「（咳嗽）」「（笑）」「（哭）」這類括號內容，是你在電話裡聽到的聲音。可以像真人一樣自然反應，但不必每次都提。
+- 真的聽不懂時，可以像講電話一樣問「你剛說什麼？」「訊號不太好，再說一次？」`,
+    system_prompt: true,
+    marker: false,
+    injection_position: INJECTION_RELATIVE,
+    injection_depth: 0,
+    injection_order: 10,
+    forbid_overrides: false,
+    extension: false,
+    injection_trigger: [],
+    isEditable: true,
+    isDeletable: true,
+    adminOnly: true,
+  },
 ];
 
 // ===== 電話通話提示詞順序 =====
@@ -572,6 +595,7 @@ export const DEFAULT_PHONE_CALL_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "phoneCallProgressionAndPlayful", enabled: true },
   { identifier: "phoneCallExample", enabled: true },
   { identifier: "phoneCallMinimaxTTS", enabled: true },
+  { identifier: "phoneCallVoiceInput", enabled: true },
   { identifier: "chatHistory", enabled: true },
   { identifier: "phoneCallConfirmLastOutput", enabled: true },
 ];
