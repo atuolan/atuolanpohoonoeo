@@ -13,7 +13,6 @@ describe("useChatInit", () => {
     const init = useChatInit({
       characterId: undefined,
       regexScriptsStore: { init: () => undefined },
-      loadAudioSettings: () => undefined,
       registerStreamingHandlers: () => undefined,
       userStore: { isLoaded: true, loadUserData: async () => undefined },
       stickerStore: { initialized: true, init: async () => undefined },

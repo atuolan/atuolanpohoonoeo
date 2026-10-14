@@ -1826,7 +1826,6 @@ const {
   showTextVoiceModal,
   textVoiceInput,
   sendTextAsVoice,
-  loadAudioSettings,
   onMicDown,
   onMicUp,
   startRecording,
@@ -9326,7 +9325,6 @@ async function handleRemoteGenerationError(
 const { initializeChatScreen } = useChatInit({
   characterId: props.characterId,
   regexScriptsStore,
-  loadAudioSettings,
   registerStreamingHandlers,
   userStore,
   stickerStore,

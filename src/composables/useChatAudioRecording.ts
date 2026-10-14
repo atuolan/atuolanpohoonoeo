@@ -1,19 +1,17 @@
-import { nextTick, ref, type Ref, type ComputedRef } from "vue";
+import { computed, ref, type Ref, type ComputedRef } from "vue";
 import {
   AudioRecorder,
   formatTime as formatAudioTime,
   isDurationValid,
 } from "@/services/AudioRecorder";
-import { transcribeAudio } from "@/services/SpeechToText";
+import { transcribeWithQwen } from "@/services/asr/qwenAsr";
 import { ensureApiSafeAudio } from "@/utils/audioConverter";
+import { toTraditional } from "@/utils/toTraditional";
 import {
   createAudioMessage,
   createAudioMessageNative,
 } from "@/api/OpenAICompatible";
 import { saveAudioBlob } from "@/db/operations";
-import { db, DB_STORES } from "@/db/database";
-import type { AudioSettings } from "@/types/settings";
-import { createDefaultAudioSettings } from "@/types/settings";
 import { useSettingsStore } from "@/stores";
 
 interface Message {
@@ -57,7 +55,8 @@ export function useChatAudioRecording(deps: {
     typeof MediaRecorder !== "undefined" &&
       typeof navigator?.mediaDevices?.getUserMedia === "function",
   );
-  const audioSettings = ref<AudioSettings>(createDefaultAudioSettings());
+  // 直接讀設定頁存的值（settingsStore.audio），設定改了立即生效
+  const audioSettings = computed(() => settingsStore.audio);
 
   // ===== 文字輸入語音 =====
   const showTextVoiceModal = ref(false);
@@ -86,17 +85,6 @@ export function useChatAudioRecording(deps: {
     deps.scrollToBottom();
     await deps.saveChatImmediate();
     await deps.triggerAIResponse();
-  }
-
-  async function loadAudioSettings() {
-    try {
-      const saved = await db.get(DB_STORES.APP_SETTINGS, "audio-settings");
-      if (saved) {
-        audioSettings.value = { ...createDefaultAudioSettings(), ...saved };
-      }
-    } catch (e) {
-      console.warn("[ChatScreen] 載入音頻設定失敗:", e);
-    }
   }
 
   // 長按/短按判定
@@ -254,22 +242,18 @@ export function useChatAudioRecording(deps: {
     deps.messages.value.push(userMessage);
     deps.scrollToBottom();
 
-    if (
-      audioSettings.value.sttEnabled &&
-      settingsStore.api.endpoint &&
-      settingsStore.api.apiKey
-    ) {
-      transcribeAudio(result.blob, result.mimeType, {
-        endpoint: settingsStore.api.endpoint,
-        apiKey: settingsStore.api.apiKey,
-        language: "zh",
-      })
-        .then((transcript) => {
-          if (transcript) {
-            userMessage.audioTranscript = transcript;
-            userMessage.content = transcript;
-            deps.saveChatImmediate();
-          }
+    // 錄音後自動轉文字：和泡泡的「轉文字」用同一個免 key 服務，結果轉繁體
+    if (audioSettings.value.sttEnabled) {
+      transcribeWithQwen(result.blob, { timeoutMs: 60000 })
+        .then(async ({ text }) => {
+          if (!text) return;
+          const transcript = await toTraditional(text);
+          // 改畫面上（響應式）的那則訊息，畫面才會跟著更新
+          const target = deps.messages.value.find((m) => m.id === userMessage.id);
+          if (!target) return;
+          target.audioTranscript = transcript;
+          target.content = transcript;
+          await deps.saveChatImmediate();
         })
         .catch((err) => {
           console.warn("[STT] 語音轉文字失敗:", err);
@@ -334,7 +318,6 @@ export function useChatAudioRecording(deps: {
     textVoiceInput,
     // Functions
     sendTextAsVoice,
-    loadAudioSettings,
     onMicDown,
     onMicUp,
     startRecording,

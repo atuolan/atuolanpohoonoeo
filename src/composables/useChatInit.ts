@@ -5,7 +5,6 @@ import type { ChatScreenMessage as Message } from "@/types/chatScreen";
 export function useChatInit(context: {
   characterId: string | undefined;
   regexScriptsStore: { init: () => void };
-  loadAudioSettings: () => void | Promise<void>;
   registerStreamingHandlers: () => void;
   userStore: {
     isLoaded: boolean;
@@ -38,9 +37,6 @@ export function useChatInit(context: {
 
     // 初始化全域 regex 腳本。
     context.regexScriptsStore.init();
-
-    // 載入音頻設定。
-    await context.loadAudioSettings();
 
     // 註冊流式窗口全局事件監聽。
     context.registerStreamingHandlers();
