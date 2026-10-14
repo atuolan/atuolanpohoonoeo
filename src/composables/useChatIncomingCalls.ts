@@ -164,6 +164,8 @@ export function useChatIncomingCalls(deps: {
   /** 處理接聽來電 */
   async function handleIncomingCallAccept() {
     if (!currentPendingCall.value) return;
+    // 趁點擊當下解鎖語音播放並預熱收音（iOS 限制；後面有 await）
+    phoneCallStore.primeCallAudio();
 
     const pendingCall = currentPendingCall.value;
 

@@ -107,6 +107,7 @@ import {
 } from "@/storage/chatStorage";
 import { useUserStore } from "@/stores";
 import { usePhoneCallStore } from "@/stores/phoneCall";
+import { useCallVoiceInputStore } from "@/stores/callVoiceInput";
 import type { CharacterImportResult } from "@/types/character";
 import type { Chat, MultiCharMember, WaimaiOrderSnapshot } from "@/types/chat";
 import {
@@ -700,6 +701,8 @@ function handleSelfHostedSyncForegroundResume() {
 
 // ===== 全局電話通話 =====
 const phoneCallStore = usePhoneCallStore();
+// 通話語音輸入：提早建立，讓縮小或切頁時也持續監看通話狀態
+useCallVoiceInputStore();
 
 // ===== 通話恢復彈窗 =====
 const showResumeCallDialog = ref(false);
@@ -1109,6 +1112,8 @@ async function checkPendingCallsAtAppLevel() {
 // 處理接聽來電（App 級別）
 async function handleIncomingCallAccept() {
   if (!currentPendingCall.value) return;
+  // 趁點擊當下解鎖語音播放並預熱收音（iOS 限制；後面有 await）
+  phoneCallStore.primeCallAudio();
 
   const pendingCall = currentPendingCall.value;
 
@@ -2100,6 +2105,8 @@ async function handleMultiCharConfirm(
 
 // 從電話聯絡人選擇器撥打電話
 async function startPhoneCall(characterId: string) {
+  // 趁點擊當下解鎖語音播放並預熱收音（iOS 限制；後面有 await）
+  phoneCallStore.primeCallAudio();
   showPhoneContactPicker.value = false;
   const character = charactersStore.characters.find(
     (c) => c.id === characterId,
