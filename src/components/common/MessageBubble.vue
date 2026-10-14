@@ -80,6 +80,8 @@ import MusicShareCard from "./MusicShareCard.vue";
 import PixelGiftChest from "./PixelGiftChest.vue";
 import PixelTransferCard from "./PixelTransferCard.vue";
 import { stripStateThinking } from "@/services/ResponseParser";
+import { transcribeWithQwen } from "@/services/asr/qwenAsr";
+import { toTraditional } from "@/utils/toTraditional";
 
 // 配置 marked
 marked.setOptions({
@@ -3025,10 +3027,7 @@ const isTranscribing = ref(false);
 const showTranscript = ref(false);
 const localTranscript = ref("");
 
-// Qwen3-ASR Gradio 服務器地址
-const QWEN_ASR_SERVER = "https://qwen-qwen3-asr-demo.ms.show";
-
-/** 使用 Qwen3-ASR Gradio API 進行語音轉文字 */
+/** 使用 Qwen3-ASR 公開 Demo 進行語音轉文字（結果轉繁體） */
 async function transcribeWithQwenASR() {
   const blob = await getAvailableAudioBlob();
   if (!blob || isTranscribing.value) return;
@@ -3043,82 +3042,12 @@ async function transcribeWithQwenASR() {
   showTranscript.value = true;
 
   try {
-    // Step 1: 上傳音頻到 Gradio 服務器
-    const uploadUrl = `${QWEN_ASR_SERVER}/gradio_api/upload`;
-    const formData = new FormData();
-    const audioFile = new File([blob], `voice_${Date.now()}.webm`, {
-      type: blob.type || "audio/webm",
-    });
-    formData.append("files", audioFile);
-
-    const uploadResp = await fetch(uploadUrl, {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!uploadResp.ok) throw new Error(`上傳失敗 (${uploadResp.status})`);
-
-    const uploadResult = await uploadResp.json();
-    if (!uploadResult || uploadResult.length === 0) {
-      throw new Error("服務器未返回上傳路徑");
-    }
-    const uploadedPath = uploadResult[0];
-
-    // Step 2: 調用 ASR 推理接口
-    const submitUrl = `${QWEN_ASR_SERVER}/gradio_api/call/asr_inference`;
-    const postBody = {
-      data: [
-        {
-          path: uploadedPath,
-          orig_name: audioFile.name,
-          size: audioFile.size,
-          mime_type: audioFile.type || "audio/webm",
-          meta: { _type: "gradio.FileData" },
-        },
-        "", // context
-        "auto", // language
-        false, // ITN
-      ],
-    };
-
-    const postResp = await fetch(submitUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(postBody),
-    });
-
-    if (!postResp.ok) throw new Error(`API 調用失敗 (${postResp.status})`);
-
-    const postData = await postResp.json();
-    const eventId = postData.event_id;
-    if (!eventId) throw new Error("未返回 event_id");
-
-    // Step 3: 獲取 SSE 結果
-    const resultUrl = `${submitUrl}/${eventId}`;
-    const getResp = await fetch(resultUrl);
-    if (!getResp.ok) throw new Error(`獲取結果失敗 (${getResp.status})`);
-
-    const responseText = await getResp.text();
-    const lines = responseText.split("\n");
-    let recognizedText: string | null = null;
-
-    for (const line of lines) {
-      if (line.startsWith("data:")) {
-        try {
-          const jsonStr = line.substring(5).trim();
-          const data = JSON.parse(jsonStr);
-          if (Array.isArray(data) && data.length >= 1) {
-            recognizedText = data[0];
-          }
-        } catch {
-          // 忽略非 JSON 行
-        }
-      }
-    }
-
-    if (recognizedText) {
-      localTranscript.value = recognizedText;
-      emit("updateTranscript", props.id, recognizedText);
+    // 聊天錄音最長 5 分鐘，時限放寬
+    const { text } = await transcribeWithQwen(blob, { timeoutMs: 60000 });
+    if (text) {
+      const traditional = await toTraditional(text);
+      localTranscript.value = traditional;
+      emit("updateTranscript", props.id, traditional);
     } else {
       localTranscript.value = "（未識別到語音內容）";
     }
