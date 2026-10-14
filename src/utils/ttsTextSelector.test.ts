@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { convertTTSContentToSimplified, prepareTTSContent } from "./ttsTextSelector";
+import {
+  convertTTSContentToSimplified,
+  prepareTTSContent,
+  splitEmbeddedTranslation,
+} from "./ttsTextSelector";
 
 describe("convertTTSContentToSimplified", () => {
   it.each([
@@ -77,5 +81,28 @@ describe("prepareTTSContent", () => {
     expect(
       prepareTTSContent("你好(laughs) Hello [emotion=calm]", "chinese"),
     ).toBe("你好(laughs) [emotion=calm]");
+  });
+});
+
+describe("splitEmbeddedTranslation", () => {
+  it.each([
+    ["もしもし、はるちゃん？<br>（喂，春酱？）", "もしもし、はるちゃん？", "喂，春酱？"],
+    ["Hey, you up?<br>嘿，你醒著嗎？", "Hey, you up?", "嘿，你醒著嗎？"],
+    ["もう(laughs)、ばかね<#0.5#><br>（真是的，笨蛋）", "もう(laughs)、ばかね<#0.5#>", "真是的，笨蛋"],
+    ["大丈夫だよ（沒關係喔）", "大丈夫だよ", "沒關係喔"],
+    ["Hello (你好)", "Hello", "你好"],
+  ])("splits %s", (text, original, translation) => {
+    expect(splitEmbeddedTranslation(text)).toEqual({ original, translation });
+  });
+
+  it.each([
+    "大丈夫。<br>（沒事的。）",
+    "大丈夫（沒關係）",
+    "我在路上（其實還沒出門）",
+    "時間（じかん）ですよ(laughs)",
+    "もしもし？",
+    "……<br>（嗯）",
+  ])("leaves %s alone", (text) => {
+    expect(splitEmbeddedTranslation(text)).toBeNull();
   });
 });

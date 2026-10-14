@@ -88,6 +88,60 @@ function removeForeignRuns(text: string): string {
   return stripped.replace(/\uE000(\d+)\uE001/g, (_, index: string) => markers[Number(index)] || "");
 }
 
+const TRANSLATION_BRACKET_RE = /\([^()]*\)|（[^（）]*）|\[[^\[\]]*\]|【[^【】]*】/gu;
+const WRAPPED_RE = /^(?:\(([\s\S]*)\)|（([\s\S]*)）|\[([\s\S]*)\]|【([\s\S]*)】)$/u;
+
+/** 外語：有假名，或有拼音字母且沒有漢字 */
+function isForeignText(text: string): boolean {
+  const content = cleanTTSTags(text);
+  return KANA_RE.test(content) || (hasForeignLetters(content) && !hasChinese(content));
+}
+
+/** 中文：有漢字，沒有假名或拼音字母 */
+function isChineseText(text: string): boolean {
+  const content = cleanTTSTags(text);
+  return hasChinese(content) && !hasForeignLetters(content);
+}
+
+function unwrapBrackets(text: string): string {
+  const match = text.trim().match(WRAPPED_RE);
+  return (match ? match[1] ?? match[2] ?? match[3] ?? match[4] : text).trim();
+}
+
+/**
+ * 把擠在同一句的「原文＋中文翻譯」拆開。
+ * 只在能確定哪段是外語時才拆（全漢字的日文分不出來），拆不出回傳 null，不刪任何字。
+ */
+export function splitEmbeddedTranslation(
+  text: string,
+): { original: string; translation: string } | null {
+  const cleaned = stripHtmlForTTS(text);
+  const lines = splitLines(cleaned);
+  if (lines.length > 1) {
+    const foreign = lines.filter(isForeignText);
+    const chinese = lines.filter((line) => !isForeignText(line) && isChineseText(line));
+    if (!foreign.length || !chinese.length || foreign.length + chinese.length !== lines.length) {
+      return null;
+    }
+    return {
+      original: foreign.join("\n"),
+      translation: chinese.map(unwrapBrackets).join("\n"),
+    };
+  }
+
+  const translations: string[] = [];
+  const original = cleaned
+    .replace(TRANSLATION_BRACKET_RE, (part) => {
+      if (!isChineseText(part)) return part;
+      translations.push(unwrapBrackets(part));
+      return "";
+    })
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+  if (!translations.length || !original || !isForeignText(original)) return null;
+  return { original, translation: translations.join(" ") };
+}
+
 export function prepareTTSContent(text: string, mode: TTSLanguageMode = "auto"): string {
   const cleaned = stripHtmlForTTS(text);
   if (!cleaned || mode === "all") return cleaned;
