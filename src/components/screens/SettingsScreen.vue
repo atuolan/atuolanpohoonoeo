@@ -36,6 +36,7 @@ import {
   useSettingsStore,
   useUserStore,
 } from "@/stores";
+import { useCallVoiceTest } from "@/composables/useCallVoiceTest";
 import { useCloudPushStore } from "@/stores/cloudPush";
 import { useSelfHostedSyncStore } from "@/stores/selfHostedSync";
 import { useThemeStore } from "@/stores/theme";
@@ -3744,7 +3745,18 @@ function selectMinimaxVoice(voiceId: string) {
 }
 
 // ===== MiniMax TTS 分頁 =====
-const audioPage = ref<"recording" | "minimax">("recording");
+const audioPage = ref<"recording" | "minimax" | "callVoice">("recording");
+
+// 通話語音：測試收音
+const {
+  statusText: voiceTestStatusText,
+  level: voiceTestLevel,
+  resultText: voiceTestResult,
+  resultTone: voiceTestTone,
+  running: voiceTestRunning,
+  disabled: voiceTestDisabled,
+  toggle: toggleVoiceTest,
+} = useCallVoiceTest();
 const minimaxTab = ref<"basic" | "timberMix" | "voiceClone">("basic");
 
 function addTimberWeight() {
@@ -5427,6 +5439,30 @@ function useClonedVoice(voiceId: string) {
           >
             🔊 MiniMax TTS
           </button>
+          <button
+            style="
+              flex: 1;
+              padding: 8px 0;
+              font-size: 13px;
+              border: none;
+              cursor: pointer;
+              transition: all 0.25s;
+              border-radius: 8px;
+            "
+            :style="{
+              background: audioPage === 'callVoice' ? 'white' : 'transparent',
+              color:
+                audioPage === 'callVoice' ? 'var(--primary, #5b7a5e)' : '#999',
+              fontWeight: audioPage === 'callVoice' ? '600' : '400',
+              boxShadow:
+                audioPage === 'callVoice'
+                  ? '0 1px 4px rgba(0,0,0,0.08)'
+                  : 'none',
+            }"
+            @click="audioPage = 'callVoice'"
+          >
+            📞 通話語音
+          </button>
         </div>
 
         <!-- ===== 錄音訊息頁面 ===== -->
@@ -6202,6 +6238,92 @@ function useClonedVoice(voiceId: string) {
               尚未有複刻音色，上傳音頻開始你的第一次複刻吧
             </div>
           </template>
+        </template>
+
+        <!-- ===== 通話語音輸入頁面 ===== -->
+        <template v-if="audioPage === 'callVoice'">
+          <h3 class="section-title">通話語音輸入</h3>
+          <p
+            class="section-desc"
+            style="font-size: 12px; color: #888; margin-bottom: 12px"
+          >
+            在電話與視訊通話中直接開口說話，講完停頓一下就會送出；角色說話時會暫停收音。
+            語音會上傳到阿里 ModelScope
+            的公開辨識服務（伺服器位於中國大陸）轉成文字，聊天室的「轉文字」也使用同一個服務。這是公開試用服務，可能偶爾連不上。
+          </p>
+
+          <!-- 停頓秒數 -->
+          <div class="setting-group">
+            <label class="setting-label">停頓多久算講完</label>
+            <select
+              v-model.number="settingsStore.callVoiceInput.endSilenceMs"
+              class="soft-select"
+              @change="saveSettings"
+            >
+              <option :value="800">0.8 秒</option>
+              <option :value="1200">1.2 秒（預設）</option>
+              <option :value="1600">1.6 秒</option>
+              <option :value="2000">2 秒</option>
+              <option :value="3000">3 秒</option>
+            </select>
+          </div>
+
+          <!-- 收音靈敏度 -->
+          <div class="setting-group">
+            <label class="setting-label">收音靈敏度</label>
+            <select
+              v-model="settingsStore.callVoiceInput.sensitivity"
+              class="soft-select"
+              @change="saveSettings"
+            >
+              <option value="low">低（吵雜環境）</option>
+              <option value="medium">中（預設）</option>
+              <option value="high">高（小聲說話）</option>
+            </select>
+          </div>
+
+          <!-- 自動判斷語氣 -->
+          <label class="toggle-item">
+            <div class="toggle-content">
+              <span class="toggle-label">自動判斷語氣</span>
+              <span class="toggle-desc"
+                >依說話情緒自動填入語氣（可能不準）；咳嗽、笑聲照樣會辨識</span
+              >
+            </div>
+            <input
+              type="checkbox"
+              v-model="settingsStore.callVoiceInput.autoTone"
+              class="toggle-input"
+              @change="saveSettings"
+            />
+            <span class="toggle-switch"></span>
+          </label>
+
+          <!-- 測試收音 -->
+          <div class="setting-group">
+            <label class="setting-label">測試收音</label>
+            <div class="call-voice-test">
+              <div class="call-voice-meter">
+                <div
+                  class="call-voice-meter-bar"
+                  :style="{ width: `${Math.round(voiceTestLevel * 100)}%` }"
+                ></div>
+              </div>
+              <p class="call-voice-test-status">{{ voiceTestStatusText }}</p>
+              <p v-if="voiceTestResult" class="call-voice-test-result">
+                <span v-if="voiceTestTone" class="call-voice-test-tone"
+                  >（{{ voiceTestTone }}）</span
+                >{{ voiceTestResult }}
+              </p>
+              <button
+                class="test-btn"
+                :disabled="voiceTestDisabled && !voiceTestRunning"
+                @click="toggleVoiceTest"
+              >
+                {{ voiceTestRunning ? "停止" : "開始測試" }}
+              </button>
+            </div>
+          </div>
         </template>
       </div>
 
@@ -8110,6 +8232,48 @@ function useClonedVoice(voiceId: string) {
   padding: 8px 12px;
   background: var(--color-background, #f5f5f5);
   border-radius: 8px;
+}
+
+// 通話語音：測試收音
+.call-voice-test {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.call-voice-meter {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-background, #f0f0f0);
+  overflow: hidden;
+}
+
+.call-voice-meter-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #a8e6cf, #7dd3a8);
+  transition: width 0.08s linear;
+}
+
+.call-voice-test-status {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-secondary, #666);
+}
+
+.call-voice-test-result {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(125, 211, 168, 0.12);
+  font-size: 14px;
+  color: var(--color-text, #333);
+}
+
+.call-voice-test-tone {
+  color: var(--color-text-secondary, #888);
+  font-size: 12px;
+  margin-right: 4px;
 }
 
 .test-btn {
