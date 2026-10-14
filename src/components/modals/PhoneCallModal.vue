@@ -1224,6 +1224,19 @@ async function handleRegenerate() {
   }
 }
 
+// 錯誤提示（MiniMax 語音、語音辨識共用）
+.tts-error-banner {
+  align-self: center;
+  margin: 0 24px 8px;
+  padding: 6px 14px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.75);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+}
+
 // 角色回合時麥克風鍵角落的暫停小標
 .mic-pause-badge {
   position: absolute;

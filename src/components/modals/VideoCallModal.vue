@@ -1058,6 +1058,28 @@ onUnmounted(() => {
   }
 }
 
+// 手機寬度：六顆按鈕原本會超出螢幕（麥克風鍵被切掉），縮小並在放不下時可左右滑動
+@media (max-width: 480px) {
+  .controls-dock {
+    gap: 6px;
+    max-width: calc(100vw - 24px);
+    overflow-x: auto;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  .control-btn {
+    flex-shrink: 0;
+    min-width: 56px;
+    height: 36px;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+}
+
 // 「角色說話中 · 點此打斷」
 .voice-status.interruptible {
   text-decoration: underline;
