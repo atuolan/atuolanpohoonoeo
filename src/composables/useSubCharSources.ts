@@ -1,8 +1,9 @@
-import { computed } from "vue";
-import { useChatStore } from "@/stores/chat";
+import { computed, ref } from "vue";
+import { loadAllChats } from "@/storage/chatStorage";
 import { useCharactersStore } from "@/stores/characters";
 import { useUserStore } from "@/stores/user";
-import type { MultiCharMember } from "@/types/chat";
+import type { Chat, MultiCharMember } from "@/types/chat";
+import { getPrivateChatCandidates } from "@/utils/linkedMemory";
 
 /**
  * 子角色匯入來源清單 composable（步驟2）
@@ -51,25 +52,28 @@ export function useSubCharSources(options?: {
   /** 當前所在群聊/多人卡的 chatId，用於從多人卡來源中排除自身 */
   currentChatId?: () => string | undefined;
 }) {
-  const chatStore = useChatStore();
   const charactersStore = useCharactersStore();
   const userStore = useUserStore();
+
+  /** 所有聊天（從 IndexedDB 讀；開啟加成員表單前呼叫 refresh） */
+  const allChats = ref<Chat[]>([]);
+
+  async function refresh() {
+    try {
+      allChats.value = await loadAllChats();
+    } catch (err) {
+      console.warn("[子角色來源] 讀取聊天清單失敗", err);
+    }
+  }
 
   /**
    * 找出某 characterId 最新的私聊（非群聊、非分支、非小劇場），用於好感度唯讀來源。
    * 取 updatedAt 最大者。
    */
   function findPrivateChatId(characterId: string): string | undefined {
-    const candidates = chatStore.chatHistory
-      .filter(
-        (c) =>
-          !c.isGroupChat &&
-          !c.isBranch &&
-          !c.isTheater &&
-          c.characterId === characterId,
-      )
-      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-    return candidates[0]?.id;
+    return getPrivateChatCandidates(allChats.value, characterId).find(
+      (c) => !c.isBranch,
+    )?.id;
   }
 
   /** 1. 角色卡來源 */
@@ -89,7 +93,7 @@ export function useSubCharSources(options?: {
   const multiCharSources = computed<MultiCharSourceItem[]>(() => {
     const currentId = options?.currentChatId?.();
     const result: MultiCharSourceItem[] = [];
-    for (const chat of chatStore.chatHistory) {
+    for (const chat of allChats.value) {
       if (!chat.isGroupChat) continue;
       if (!chat.groupMetadata?.isMultiCharCard) continue;
       if (chat.id === currentId) continue;
@@ -127,5 +131,6 @@ export function useSubCharSources(options?: {
     personaSources,
     bindablePersonas,
     findPrivateChatId,
+    refresh,
   };
 }

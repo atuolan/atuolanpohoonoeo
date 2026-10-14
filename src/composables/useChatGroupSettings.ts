@@ -1,136 +1,41 @@
-import { ref, type Ref, type ComputedRef } from "vue";
+import type { ComputedRef } from "vue";
+import type { GroupChatMetadata } from "@/types/chat";
 
 /**
- * 群聊設定管理功能
- * 從 ChatScreen.vue 抽取的獨立 composable
+ * 群聊成員管理（管理員、禁言、移除）
+ * 群名、頭像、加成員等都在群組詳情頁（ChatDetailsScreen）即時修改
  */
 export function useChatGroupSettings(deps: {
-  isGroupChat: ComputedRef<boolean>;
-  groupMetadata: ComputedRef<any>;
-  showChatInfoModal: Ref<boolean>;
-  saveChatImmediate: () => Promise<void>;
-  resetMultiCharForm: () => void;
+  groupMetadata: ComputedRef<GroupChatMetadata | undefined>;
 }) {
-  const showGroupSettingsModal = ref(false);
-  const editGroupName = ref("");
-  const editGroupLorebookIds = ref<string[]>([]);
-  const groupAvatarInput = ref<HTMLInputElement | null>(null);
-
-  function handleOpenGroupSettings() {
-    if (!deps.isGroupChat.value || !deps.groupMetadata.value) return;
-    deps.showChatInfoModal.value = false;
-    editGroupName.value = deps.groupMetadata.value.groupName;
-    editGroupLorebookIds.value = [
-      ...(deps.groupMetadata.value.lorebookIds || []),
-    ];
-    showGroupSettingsModal.value = true;
-  }
-
-  function closeGroupSettings() {
-    showGroupSettingsModal.value = false;
-    deps.resetMultiCharForm();
-  }
-
-  function toggleGroupLorebook(lorebookId: string) {
-    const idx = editGroupLorebookIds.value.indexOf(lorebookId);
-    if (idx === -1) {
-      editGroupLorebookIds.value.push(lorebookId);
-    } else {
-      editGroupLorebookIds.value.splice(idx, 1);
-    }
-  }
-
-  function triggerGroupAvatarUpload() {
-    groupAvatarInput.value?.click();
-  }
-
-  function handleGroupAvatarChange(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file || !deps.groupMetadata.value) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      if (deps.groupMetadata.value) {
-        deps.groupMetadata.value.groupAvatar = e.target?.result as string;
-      }
-    };
-    reader.readAsDataURL(file);
-    input.value = "";
-  }
-
-  function removeGroupAvatar() {
-    if (deps.groupMetadata.value) {
-      deps.groupMetadata.value.groupAvatar = undefined;
-    }
-  }
-
-  async function saveGroupSettings() {
-    if (!deps.groupMetadata.value) return;
-    deps.groupMetadata.value.groupName =
-      editGroupName.value.trim() || deps.groupMetadata.value.groupName;
-    deps.groupMetadata.value.lorebookIds = [...editGroupLorebookIds.value];
-    await deps.saveChatImmediate();
-    closeGroupSettings();
-  }
-
   function toggleGroupMemberAdmin(characterId: string) {
-    if (!deps.groupMetadata.value) return;
-    const member = deps.groupMetadata.value.members.find(
-      (m: any) => m.characterId === characterId,
+    const member = deps.groupMetadata.value?.members.find(
+      (m) => m.characterId === characterId,
     );
     if (member) member.isAdmin = !member.isAdmin;
   }
 
   function toggleGroupMemberMute(characterId: string) {
-    if (!deps.groupMetadata.value) return;
-    const member = deps.groupMetadata.value.members.find(
-      (m: any) => m.characterId === characterId,
+    const member = deps.groupMetadata.value?.members.find(
+      (m) => m.characterId === characterId,
     );
     if (member) member.isMuted = !member.isMuted;
   }
 
+  /** 移除成員；群裡至少要留 2 位 */
   function removeGroupMember(characterId: string) {
-    if (!deps.groupMetadata.value) return;
-    const members = deps.groupMetadata.value.members;
-    if (members.length <= 2) {
+    const meta = deps.groupMetadata.value;
+    if (!meta) return;
+    if (meta.members.length <= 2) {
       alert("群聊至少需要 2 位成員");
       return;
     }
-    deps.groupMetadata.value.members = members.filter(
-      (m: any) => m.characterId !== characterId,
-    );
-  }
-
-  function addMemberToGroup(characterId: string) {
-    if (!deps.groupMetadata.value) return;
-    const exists = deps.groupMetadata.value.members.some(
-      (m: any) => m.characterId === characterId,
-    );
-    if (exists) return;
-    deps.groupMetadata.value.members.push({
-      characterId,
-      isAdmin: false,
-      isMuted: false,
-      joinedAt: Date.now(),
-    });
+    meta.members = meta.members.filter((m) => m.characterId !== characterId);
   }
 
   return {
-    showGroupSettingsModal,
-    editGroupName,
-    editGroupLorebookIds,
-    groupAvatarInput,
-    handleOpenGroupSettings,
-    closeGroupSettings,
-    toggleGroupLorebook,
-    triggerGroupAvatarUpload,
-    handleGroupAvatarChange,
-    removeGroupAvatar,
-    saveGroupSettings,
     toggleGroupMemberAdmin,
     toggleGroupMemberMute,
     removeGroupMember,
-    addMemberToGroup,
   };
 }

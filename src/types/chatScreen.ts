@@ -2,6 +2,7 @@ import type {
   ChatAppearance,
   ChatHistoryRecordData,
   ForwardedFrom,
+  GroupActionType,
   WaimaiOrderSnapshot,
 } from "@/types/chat";
 
@@ -110,7 +111,7 @@ export interface ChatScreenMessage {
   recallContent?: string;
   isPrivateMessage?: boolean;
   isGroupAction?: boolean;
-  groupActionType?: "rename" | "kick" | "mute" | "unmute";
+  groupActionType?: GroupActionType;
   groupActionActor?: string;
   groupActionTarget?: string;
   groupActionValue?: string;

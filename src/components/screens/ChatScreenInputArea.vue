@@ -28,6 +28,10 @@ const props = defineProps<{
   characterName: string;
   // 面對面模式
   chatFaceToFaceMode: boolean;
+  /** 群聊：電話改成群通話，沒有視訊 */
+  isGroupChat?: boolean;
+  /** 群聊打 @ 時可以點名的成員 */
+  mentionCandidates?: Array<{ id: string; name: string; avatar: string }>;
   isInputFocused: boolean;
   quickActions: QuickAction[];
   // 輸入框
@@ -106,8 +110,70 @@ const speakerChipLabel = computed(() =>
 const inputPlaceholder = computed(() => {
   if (props.speakerMode === "char") return "以角色身份說…";
   if (props.speakerMode === "system") return "輸入系統訊息…";
+  if (props.isGroupChat && props.mentionCandidates?.length) return "輸入消息，打 @ 可以點名";
   return "輸入消息...";
 });
+
+// ===== 群聊 @點名 =====
+// 游標前面是「@」或「@部分名字」時，在輸入框上方列出成員；點一下換成「@完整名字 」
+const mentionQuery = ref<string | null>(null);
+const mentionStart = ref(0);
+
+const mentionOptions = computed(() => {
+  if (mentionQuery.value === null) return [];
+  const query = mentionQuery.value.toLowerCase();
+  return (props.mentionCandidates || []).filter((c) =>
+    c.name.toLowerCase().includes(query),
+  );
+});
+
+function updateMentionQuery(el: HTMLTextAreaElement) {
+  if (!props.isGroupChat || !props.mentionCandidates?.length || props.speakerMode !== "user") {
+    mentionQuery.value = null;
+    return;
+  }
+  const caret = el.selectionStart ?? el.value.length;
+  const match = el.value.slice(0, caret).match(/[@＠]([^\s@＠]{0,16})$/);
+  if (!match) {
+    mentionQuery.value = null;
+    return;
+  }
+  mentionStart.value = caret - match[0].length;
+  mentionQuery.value = match[1];
+}
+
+// 送出或外部改了輸入框（例如點頭像插入 @）時，原本那個 @ 已經不在就收起清單
+watch(
+  () => props.inputText,
+  (text) => {
+    if (mentionQuery.value === null) return;
+    const ch = text.charAt(mentionStart.value);
+    if (ch !== "@" && ch !== "＠") mentionQuery.value = null;
+  },
+);
+
+function onMessageInput(event: Event) {
+  const el = event.target as HTMLTextAreaElement;
+  emit("update:inputText", el.value);
+  emit("autoResizeInput");
+  updateMentionQuery(el);
+}
+
+function pickMention(name: string) {
+  const el = messageTextareaRef.value;
+  const text = props.inputText;
+  const end = el?.selectionStart ?? text.length;
+  const next = `${text.slice(0, mentionStart.value)}@${name} ${text.slice(end)}`;
+  const caret = mentionStart.value + name.length + 2;
+  mentionQuery.value = null;
+  emit("update:inputText", next);
+  nextTick(() => {
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(caret, caret);
+    emit("autoResizeInput");
+  });
+}
 
 // 「＋」選單最上方的身份切換
 const speakerOptions = [
@@ -406,6 +472,28 @@ const isDarkBackground = computed(() =>
       </div>
     </Transition>
 
+    <!-- 群聊 @點名：游標前面是 @ 時列出成員，點一下補上完整名字 -->
+    <div
+      v-if="mentionOptions.length"
+      class="mention-bar"
+      role="listbox"
+      aria-label="選擇要點名的成員"
+    >
+      <button
+        v-for="c in mentionOptions"
+        :key="c.id"
+        class="mention-chip"
+        role="option"
+        @mousedown.prevent="pickMention(c.name)"
+      >
+        <span class="mention-avatar">
+          <img v-if="c.avatar" :src="c.avatar" alt="" />
+          <span v-else>{{ c.name.charAt(0) }}</span>
+        </span>
+        {{ c.name }}
+      </button>
+    </div>
+
     <div class="input-container" :class="{ 'dark-bg': isDarkBackground }" ref="inputContainerRef">
       <!-- 左側按鈕組 -->
       <div class="left-buttons" @click.stop>
@@ -451,10 +539,10 @@ const isDarkBackground = computed(() =>
           autocorrect="off"
           autocapitalize="off"
           spellcheck="false"
-          @input="emit('update:inputText', ($event.target as HTMLTextAreaElement).value); emit('autoResizeInput')"
+          @input="onMessageInput"
           @keydown="emit('handleKeydown', $event)"
           @focus="emit('handleInputFocusWithScroll')"
-          @blur="emit('onInputBlur')"
+          @blur="mentionQuery = null; emit('onInputBlur')"
         ></textarea>
 
         <!-- 表情按鈕（在輸入框內右側） -->
@@ -735,9 +823,13 @@ const isDarkBackground = computed(() =>
                 />
               </svg>
             </div>
-            <span class="feature-label">電話</span>
+            <span class="feature-label">{{ isGroupChat ? "群通話" : "電話" }}</span>
           </button>
-          <button class="feature-item" @click="emit('handleFeatureClick', 'video')">
+          <button
+            v-if="!isGroupChat"
+            class="feature-item"
+            @click="emit('handleFeatureClick', 'video')"
+          >
             <div class="feature-icon">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path
@@ -1055,6 +1147,60 @@ const isDarkBackground = computed(() =>
 }
 
 // 快速輸入助手欄（面對面模式）
+.mention-bar {
+  display: flex;
+  gap: 6px;
+  max-width: 800px;
+  margin: 0 auto 8px;
+  padding: 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.mention-chip {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 4px 4px;
+  background: var(--color-background, #f5f5f5);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 9999px;
+  font-size: 13px;
+  color: var(--color-text, #333);
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:active {
+    transform: scale(0.96);
+  }
+}
+
+.mention-avatar {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--color-primary-light, rgba(125, 211, 168, 0.15));
+  color: var(--color-primary, #7dd3a8);
+  font-size: 12px;
+  font-weight: 600;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
 .quick-input-bar {
   display: flex;
   align-items: center;

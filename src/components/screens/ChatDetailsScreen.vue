@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, nextTick } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { proxyImageUrl } from "@/composables/useProxyImage";
 
 interface GroupMemberInfo {
   characterId: string;
@@ -10,6 +11,8 @@ interface GroupMemberInfo {
   isMuted: boolean;
   /** 是否為用戶本人（置頂、不可移除） */
   isSelf?: boolean;
+  /** 普通群聊的虛擬成員（手動 / 使用者角色 / 引入），名字與頭像存在成員身上 */
+  isVirtual?: boolean;
   // === 多人卡子角色徽章資訊 ===
   /** 子角色來源類型：inline/character/multichar/persona */
   subCharSource?: "inline" | "character" | "multichar" | "persona";
@@ -21,6 +24,14 @@ interface GroupMemberInfo {
   relationLabel?: string;
   /** 是否引入好感度 */
   affinityEnabled?: boolean;
+}
+
+/** 被移出群聊的成員 */
+interface RemovedMemberInfo {
+  characterId: string;
+  name: string;
+  avatar: string;
+  removedBy?: string;
 }
 
 /** 記憶互通：成員連到哪個私聊 */
@@ -36,12 +47,6 @@ interface MemberLinkOptionInfo {
   status: "linkable" | "virtual" | "no-chat";
   chats: Array<{ id: string; label: string }>;
   link: MemoryLinkInfo;
-}
-
-interface SelectableCharacter {
-  id: string;
-  name: string;
-  avatar: string;
 }
 
 // === 子角色匯入來源（多人卡）===
@@ -80,7 +85,7 @@ interface BindablePersona {
   name: string;
 }
 
-/** 加子角色 emit payload（與 useMultiCharMembers.AddSubCharPayload 對齊） */
+/** 加子角色 emit payload（與 ChatScreen 的 AddSubCharEmitPayload 對齊） */
 interface AddSubCharEmitPayload {
   name: string;
   avatar?: string;
@@ -127,7 +132,6 @@ const props = defineProps<{
   currentUserAvatar?: string;
   isMultiCharCard?: boolean;
   groupAvatar?: string;
-  availableCharacters?: SelectableCharacter[];
   groupLorebookIds?: string[];
   availableLorebooks?: LorebookInfo[];
   // === 子角色匯入來源（多人卡）===
@@ -143,6 +147,8 @@ const props = defineProps<{
   memberLinkOptions?: MemberLinkOptionInfo[];
   /** 記憶互通：連到這個私聊的群名（私聊） */
   linkedGroupNames?: string[];
+  /** 被 AI 移出群聊的成員（資料保留，可以拉回） */
+  removedMembers?: RemovedMemberInfo[];
 }>();
 
 const emit = defineEmits<{
@@ -162,8 +168,12 @@ const emit = defineEmits<{
   "update-group-name": [name: string];
   "change-group-avatar": [dataUrl: string];
   "remove-group-avatar": [];
-  "add-group-member": [characterId: string];
   "remove-group-member": [characterId: string];
+  /** 改成員：角色卡成員改群暱稱；虛擬成員、子角色改名字與頭像 */
+  "update-member": [
+    characterId: string,
+    patch: { nickname?: string; name?: string; avatar?: string },
+  ];
   "toggle-member-admin": [characterId: string];
   "toggle-member-mute": [characterId: string];
   "toggle-lorebook": [lorebookId: string];
@@ -175,6 +185,12 @@ const emit = defineEmits<{
   "update-memory-sharing": [patch: { enabled?: boolean; maxRawTurns?: number }];
   /** 記憶互通：修改成員連結 */
   "update-member-memory-link": [characterId: string, link: MemoryLinkInfo];
+  /** 把被移出的成員拉回群裡 */
+  "restore-member": [characterId: string];
+  /** 刪掉被移出成員的紀錄（之後就不能拉回） */
+  "forget-removed-member": [characterId: string];
+  /** 在聊天裡 @ 這位成員（關掉詳情頁、輸入框補上 @名字） */
+  "mention-member": [name: string];
 }>();
 
 const displayName = computed(() => props.isGroupChat ? props.groupDisplayName : props.displayCharacterName);
@@ -261,15 +277,156 @@ function onAvatarFileChange(event: Event) {
   input.value = "";
 }
 
-// === 加成員（普通群聊）===
-const showMemberPicker = ref(false);
-const addableCharacters = computed<SelectableCharacter[]>(() => props.availableCharacters || []);
-function pickMember(characterId: string) {
-  emit("add-group-member", characterId);
+// === 頭像載入：先用原網址，失敗改走圖片代理，再失敗就顯示名字首字（不出現破圖） ===
+const avatarStages = ref(new Map<string, "proxy" | "failed">());
+
+function avatarSrc(url?: string): string {
+  if (!url) return "";
+  const stage = avatarStages.value.get(url);
+  if (stage === "failed") return "";
+  return stage === "proxy" ? proxyImageUrl(url) : url;
+}
+
+function onAvatarError(url?: string) {
+  if (!url) return;
+  const canProxy = proxyImageUrl(url) !== url;
+  const tried = avatarStages.value.get(url);
+  avatarStages.value.set(url, !tried && canProxy ? "proxy" : "failed");
+}
+
+// === 成員卡片：點成員從下方滑出，暱稱／名字頭像、管理員、禁言、@他、移出都在這裡 ===
+const sheetMemberId = ref<string | null>(null);
+const sheetMember = computed<GroupMemberInfo | null>(
+  () => allMembers.value.find((m) => m.characterId === sheetMemberId.value) || null,
+);
+const memberNameDraft = ref("");
+const memberNicknameDraft = ref("");
+const memberAvatarDraft = ref("");
+const memberAvatarInputRef = ref<HTMLInputElement | null>(null);
+/** 剛儲存完，按鈕顯示「已儲存」 */
+const memberSaved = ref(false);
+let memberSavedTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 名字、頭像存在成員自己身上的（子角色、虛擬成員）才能改；角色卡成員的名字頭像跟著角色卡 */
+function canEditIdentity(member: GroupMemberInfo): boolean {
+  return !!props.isMultiCharCard || !!member.isVirtual;
+}
+
+function openMemberSheet(member: GroupMemberInfo) {
+  if (member.isSelf) return;
+  sheetMemberId.value = member.characterId;
+  memberNameDraft.value = member.name;
+  memberNicknameDraft.value = member.nickname || "";
+  memberAvatarDraft.value = member.avatar || "";
+  memberSaved.value = false;
+}
+
+function closeMemberSheet() {
+  sheetMemberId.value = null;
+}
+
+/** 卡片裡的欄位有沒有改過（沒改過「儲存」不能按） */
+const memberEditDirty = computed(() => {
+  const member = sheetMember.value;
+  if (!member) return false;
+  if (canEditIdentity(member)) {
+    return (
+      memberNameDraft.value.trim() !== member.name ||
+      memberAvatarDraft.value.trim() !== (member.avatar || "")
+    );
+  }
+  return memberNicknameDraft.value.trim() !== (member.nickname || "");
+});
+
+// 在聊天裡 @他：關掉詳情頁，輸入框補上「@名字 」
+function mentionSheetMember() {
+  const member = sheetMember.value;
+  if (!member) return;
+  closeMemberSheet();
+  emit("mention-member", member.nickname || member.name);
+}
+
+function onSheetKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape" && sheetMemberId.value) closeMemberSheet();
+}
+onMounted(() => window.addEventListener("keydown", onSheetKeydown));
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onSheetKeydown);
+  if (memberSavedTimer) clearTimeout(memberSavedTimer);
+});
+
+function triggerMemberAvatarUpload() {
+  memberAvatarInputRef.value?.click();
+}
+
+function onMemberAvatarFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    memberAvatarDraft.value = (e.target?.result as string) || "";
+  };
+  reader.readAsDataURL(file);
+  input.value = "";
+}
+
+function saveMemberEdit(member: GroupMemberInfo) {
+  if (editNameTaken.value || !memberEditDirty.value) return;
+  if (canEditIdentity(member)) {
+    const name = memberNameDraft.value.trim();
+    if (!name) return;
+    emit("update-member", member.characterId, {
+      name,
+      avatar: memberAvatarDraft.value.trim(),
+    });
+  } else {
+    emit("update-member", member.characterId, {
+      nickname: memberNicknameDraft.value.trim(),
+    });
+  }
+  // 卡片不關，讓人接著設管理員、禁言；按鈕短暫顯示「已儲存」
+  memberSaved.value = true;
+  if (memberSavedTimer) clearTimeout(memberSavedTimer);
+  memberSavedTimer = setTimeout(() => {
+    memberSaved.value = false;
+  }, 1500);
+}
+
+// === 被移出的成員：可以拉回，也可以刪掉紀錄 ===
+const removedList = computed<RemovedMemberInfo[]>(() => props.removedMembers || []);
+const showRemoved = ref(false);
+
+function forgetRemovedMember(member: RemovedMemberInfo) {
+  if (!confirm(`刪掉「${member.name}」的紀錄嗎？\n刪掉後就不能再拉回群裡。`)) return;
+  emit("forget-removed-member", member.characterId);
+}
+
+// === 移除成員：群裡至少留 2 位（與建群、建多人卡的規則一致），移除前先確認 ===
+const canRemoveMember = computed(() => allMembers.value.length > 2);
+
+function confirmRemoveMember(member: GroupMemberInfo) {
+  if (!canRemoveMember.value) return;
+  const name = member.nickname || member.name;
+  const message = props.isMultiCharCard
+    ? `確定要移除子角色「${name}」嗎？`
+    : member.isVirtual
+      ? `確定要把「${name}」移出群聊嗎？\n這位成員是在群裡建立的，移出後設定不會保留。`
+      : `確定要把「${name}」移出群聊嗎？`;
+  if (!confirm(message)) return;
+  if (sheetMemberId.value === member.characterId) closeMemberSheet();
+  if (props.isMultiCharCard) {
+    emit("remove-multichar-member", member.characterId);
+  } else {
+    emit("remove-group-member", member.characterId);
+  }
 }
 
 // === 子角色（多人卡）內聯新增 ===
 const showSubcharForm = ref(false);
+const subcharFormRef = ref<HTMLElement | null>(null);
+/** 這次打開表單後加入的成員（顯示「已加入」並讓人可以繼續加） */
+const addedNames = ref<string[]>([]);
 const subcharName = ref("");
 const subcharAvatar = ref("");
 const subcharAvatarInputRef = ref<HTMLInputElement | null>(null);
@@ -312,6 +469,36 @@ const selectedCharacterSource = computed<CharacterSourceItem | null>(() => {
 const affinityAvailable = computed(
   () => !!selectedCharacterSource.value?.privateChatId,
 );
+
+/** 角色卡 / 其他多人卡 / 使用者角色：帶頭像的挑選清單 */
+interface SourceOption {
+  key: string;
+  name: string;
+  avatar: string;
+  note?: string;
+}
+const sourceOptions = computed<SourceOption[]>(() => {
+  switch (subcharSourceType.value) {
+    case "character":
+      return charSources.value.map((c) => ({ key: c.id, name: c.name, avatar: c.avatar }));
+    case "multichar":
+      return mcSources.value.map((m) => ({
+        key: `${m.sourceChatId}::${m.member.id}`,
+        name: m.member.name,
+        avatar: m.member.avatar,
+        note: `來自 ${m.cardName}`,
+      }));
+    case "persona":
+      return personaSrc.value.map((p) => ({ key: p.id, name: p.name, avatar: p.avatar }));
+    default:
+      return [];
+  }
+});
+const sourceEmptyText = computed(() => {
+  if (subcharSourceType.value === "character") return "角色卡都已經在群裡了";
+  if (subcharSourceType.value === "multichar") return "沒有其他多人卡的子角色可以引入";
+  return "沒有可以加入的使用者角色";
+});
 
 function triggerSubcharAvatarUpload() {
   subcharAvatarInputRef.value?.click();
@@ -421,34 +608,81 @@ function confirmAddSubchar() {
   } else {
     emit("add-group-member-rich", payload);
   }
-  resetSubcharForm();
+  // 表單保持打開、來源不變，方便連續加好幾位
+  addedNames.value.push(payload.name);
+  clearSubcharSelection();
 }
 
-function resetSubcharForm() {
+/** 清掉這一位的輸入（來源分頁不變） */
+function clearSubcharSelection() {
   subcharName.value = "";
   subcharAvatar.value = "";
-  subcharSourceType.value = "inline";
   subcharSelectedSourceKey.value = "";
   subcharAffinityEnabled.value = false;
   subcharBindMode.value = "none";
   subcharBoundPersonaId.value = "";
   subcharRelationLabel.value = "";
   subcharFlaunt.value = false;
+}
+
+function resetSubcharForm() {
+  clearSubcharSelection();
+  subcharSourceType.value = "inline";
+  addedNames.value = [];
   showSubcharForm.value = false;
 }
 function cancelAddSubchar() {
   resetSubcharForm();
 }
 
-// 確認按鈕是否可用
+// === 名字不能撞：AI 靠名字分辨是誰在說話 ===
+/** 群裡已在用的名字（本名與群暱稱），可排除正在編輯的那位 */
+function namesInUse(exceptId?: string): Set<string> {
+  const names = new Set<string>();
+  for (const m of allMembers.value) {
+    if (m.characterId === exceptId) continue;
+    if (m.name) names.add(m.name.trim());
+    if (m.nickname) names.add(m.nickname.trim());
+  }
+  return names;
+}
+
+const pendingSubcharName = computed(() =>
+  subcharSourceType.value === "inline"
+    ? subcharName.value.trim()
+    : sourceOptions.value.find((o) => o.key === subcharSelectedSourceKey.value)?.name.trim() || "",
+);
+const subcharNameTaken = computed(
+  () => !!pendingSubcharName.value && namesInUse().has(pendingSubcharName.value),
+);
+
+/** 編輯中的名字（或群暱稱）是否和別人撞名 */
+const editNameTaken = computed(() => {
+  const member = sheetMember.value;
+  if (!member) return false;
+  const draft = (canEditIdentity(member) ? memberNameDraft.value : memberNicknameDraft.value).trim();
+  return !!draft && namesInUse(member.characterId).has(draft);
+});
+
+// 確認按鈕是否可用（手動輸入撞名時擋下；從其他來源引入只提醒，加入後可以改群暱稱或名字）
 const canConfirmSubchar = computed(() => {
-  if (subcharSourceType.value === "inline") return !!subcharName.value.trim();
+  if (subcharSourceType.value === "inline") {
+    return !!subcharName.value.trim() && !subcharNameTaken.value;
+  }
   return !!subcharSelectedSourceKey.value;
 });
 
 // 快捷操作/面板「加成員」：統一展開多來源子角色表單（普通群聊與多人卡共用）
-function onAddMemberQuick() {
-  showSubcharForm.value = true;
+// 普通群最常做的是拉角色卡進來，預設停在「角色卡」；多人卡預設手動輸入。
+// 表單在成員列表下方，從頂部快捷鍵點進來時要捲到眼前，不然看起來像沒反應
+async function onAddMemberQuick() {
+  if (!showSubcharForm.value) {
+    subcharSourceType.value = props.isMultiCharCard ? "inline" : "character";
+    addedNames.value = [];
+    showSubcharForm.value = true;
+  }
+  await nextTick();
+  subcharFormRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 // === 世界書 ===
@@ -457,6 +691,11 @@ const boundLorebookIds = computed<string[]>(() => props.groupLorebookIds || []);
 function isLorebookBound(id: string) {
   return boundLorebookIds.value.includes(id);
 }
+// 世界書清單預設收起，只顯示綁了幾本；書多時不會把下面的設定推得很遠
+const showLorebooks = ref(false);
+const boundLorebookCount = computed(
+  () => lorebooks.value.filter((lb) => isLorebookBound(lb.id)).length,
+);
 
 // ===== 記憶互通 =====
 /** 下拉選單的值：auto / none / chat:<chatId> */
@@ -553,7 +792,12 @@ function handleAction(action: string) {
           @click="triggerAvatarUpload"
         >
           <div class="avatar-frame">
-            <img v-if="displayAvatar" :src="displayAvatar" :alt="displayName" />
+            <img
+              v-if="avatarSrc(displayAvatar)"
+              :src="avatarSrc(displayAvatar)"
+              :alt="displayName"
+              @error="onAvatarError(displayAvatar)"
+            />
             <div v-else class="avatar-placeholder">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="9" cy="9" r="3" />
@@ -585,11 +829,18 @@ function handleAction(action: string) {
           移除頭像
         </button>
 
-        <!-- 群名稱：內聯編輯（鉛筆） -->
+        <!-- 群名稱：點名字或鉛筆都能改；名字長時最多顯示兩行 -->
         <div class="name-edit-row">
           <template v-if="!editingName">
-            <h2 class="profile-name">{{ displayName }}</h2>
-            <button class="name-edit-btn" :title="'編輯群名稱'" @click="startEditName">
+            <h2
+              class="profile-name profile-name--group"
+              role="button"
+              tabindex="0"
+              :title="displayName"
+              @click="startEditName"
+              @keydown.enter="startEditName"
+            >{{ displayName }}</h2>
+            <button class="name-edit-btn" :title="'編輯群名稱'" :aria-label="'編輯群名稱'" @click="startEditName">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 20h9" />
                 <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
@@ -616,48 +867,71 @@ function handleAction(action: string) {
         </div>
         <p class="profile-subtitle">{{ totalMemberCount }} 位成員</p>
 
-        <!-- 快捷操作列：搜尋 / 加成員 / 收藏語音 / 清空 -->
-        <div class="quick-actions">
-          <button class="quick-action" @click="handleAction('search')">
-            <span class="quick-action-icon">
+        <!-- 快捷導航：3×2 格（與單人詳情同一套）；清空聊天移到最下面的危險操作 -->
+        <div class="quick-grid">
+          <button class="quick-item" @click="handleAction('search')">
+            <div class="quick-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="11" cy="11" r="7" />
                 <path d="m21 21-4.3-4.3" />
               </svg>
-            </span>
-            <span class="quick-action-label">搜尋</span>
+            </div>
+            <span class="quick-label">搜尋</span>
           </button>
-          <button class="quick-action" @click="onAddMemberQuick">
-            <span class="quick-action-icon">
+          <button class="quick-item" @click="onAddMemberQuick">
+            <div class="quick-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
                 <circle cx="9" cy="7" r="4" />
                 <path d="M19 8v6" />
                 <path d="M22 11h-6" />
               </svg>
-            </span>
-            <span class="quick-action-label">{{ isMultiCharCard ? '子角色' : '加成員' }}</span>
+            </div>
+            <span class="quick-label">{{ isMultiCharCard ? '加子角色' : '加成員' }}</span>
           </button>
-          <button class="quick-action quick-action--favorite" @click="handleAction('favorite-audio')" title="開啟收藏語音">
-            <span class="quick-action-icon quick-action-icon--favorite">
+          <button
+            class="quick-item"
+            :title="presetCount ? `專屬預設：已調整 ${presetCount} 項` : undefined"
+            @click="handleAction('chat-preset')"
+          >
+            <div class="quick-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 7h16" />
+                <path d="M4 17h16" />
+                <circle cx="8" cy="7" r="2" />
+                <circle cx="16" cy="17" r="2" />
+              </svg>
+              <span v-if="presetCount" class="quick-count" aria-hidden="true">{{ presetCount }}</span>
+            </div>
+            <span class="quick-label">專屬預設</span>
+          </button>
+          <button class="quick-item quick-item--favorite" @click="handleAction('favorite-audio')" title="開啟收藏語音">
+            <div class="quick-icon quick-icon--favorite">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M4 13a8 8 0 0 1 16 0" />
                 <path d="M4 13v3a2 2 0 0 0 2 2h1v-6H6a2 2 0 0 0-2 2Z" />
                 <path d="M20 13v3a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 1Z" />
                 <path d="m16.5 4.5.6 1.2 1.3.2-.95.9.22 1.3-1.17-.62-1.17.62.22-1.3-.95-.9 1.3-.2Z" />
               </svg>
-            </span>
-            <span class="quick-action-label">收藏語音</span>
+            </div>
+            <span class="quick-label">收藏語音</span>
           </button>
-          <button class="quick-action quick-action--danger" @click="handleAction('clear')">
-            <span class="quick-action-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 6h18" />
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          <button class="quick-item" @click="handleAction('chat-files')">
+            <div class="quick-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z" />
               </svg>
-            </span>
-            <span class="quick-action-label">清空</span>
+            </div>
+            <span class="quick-label">聊天檔案</span>
+          </button>
+          <button class="quick-item" @click="handleAction('settings')">
+            <div class="quick-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </div>
+            <span class="quick-label">設置</span>
           </button>
         </div>
       </section>
@@ -673,18 +947,37 @@ function handleAction(action: string) {
             </button>
           </div>
 
+          <p class="panel-hint">
+            {{ isMultiCharCard ? '點子角色可以改名字、頭像，或 @他' : '點成員可以設群暱稱、管理員、禁言，或 @他' }}
+          </p>
+
           <div class="member-list">
-            <div
+            <component
+              :is="member.isSelf ? 'div' : 'button'"
               v-for="member in visibleMembers"
               :key="member.characterId"
               class="member-row"
+              :class="{ 'member-row--tappable': !member.isSelf }"
+              :aria-label="member.isSelf ? undefined : `${member.nickname || member.name} 的設定`"
+              @click="openMemberSheet(member)"
             >
               <div class="member-row-avatar">
-                <img v-if="member.avatar" :src="member.avatar" :alt="member.name" />
-                <div v-else class="member-row-placeholder">{{ member.name.charAt(0) }}</div>
+                <img
+                  v-if="avatarSrc(member.avatar)"
+                  :src="avatarSrc(member.avatar)"
+                  :alt="member.name"
+                  @error="onAvatarError(member.avatar)"
+                />
+                <div v-else class="member-row-placeholder">{{ (member.nickname || member.name).charAt(0) }}</div>
               </div>
               <div class="member-row-info">
-                <span class="member-row-name">{{ member.name }}</span>
+                <span class="member-row-name">
+                  {{ member.nickname || member.name }}
+                  <span
+                    v-if="member.nickname && member.nickname !== member.name"
+                    class="member-row-realname"
+                  >{{ member.name }}</span>
+                </span>
                 <div class="member-row-badges">
                   <span v-if="member.isSelf" class="badge badge--self">我</span>
                   <span v-if="member.isAdmin" class="badge badge--admin">管理員</span>
@@ -699,56 +992,28 @@ function handleAction(action: string) {
                   <span v-if="member.affinityEnabled" class="badge badge--affinity">好感度</span>
                 </div>
               </div>
-              <!-- 用戶本人：不可操作 -->
-              <div v-if="member.isSelf" class="member-row-actions"></div>
-              <!-- 普通群聊：管理員 / 禁言 / 移除 -->
-              <div v-else-if="!isMultiCharCard" class="member-row-actions">
-                <button
-                  class="member-op"
-                  :class="{ active: member.isAdmin }"
-                  :title="'管理員'"
-                  @click="emit('toggle-member-admin', member.characterId)"
-                >
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" />
-                  </svg>
-                </button>
-                <button
-                  class="member-op"
-                  :class="{ active: member.isMuted }"
-                  :title="'禁言'"
-                  @click="emit('toggle-member-mute', member.characterId)"
-                >
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73 4.27 3z" />
-                  </svg>
-                </button>
-                <button
-                  class="member-op member-op--danger"
-                  :title="'移除'"
-                  @click="emit('remove-group-member', member.characterId)"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M18 6 6 18" />
-                    <path d="m6 6 12 12" />
-                  </svg>
-                </button>
-              </div>
-              <!-- 多人卡：移除子角色 -->
-              <div v-else class="member-row-actions">
-                <button
-                  class="member-op member-op--danger"
-                  :title="'移除'"
-                  @click="emit('remove-multichar-member', member.characterId)"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M18 6 6 18" />
-                    <path d="m6 6 12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
+              <!-- 用戶本人不能點；其他人右邊一個箭頭，點整列打開成員卡片 -->
+              <svg
+                v-if="!member.isSelf"
+                class="chevron"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </component>
           </div>
+          <input
+            ref="memberAvatarInputRef"
+            type="file"
+            accept="image/*"
+            class="hidden-file-input"
+            @change="onMemberAvatarFileChange"
+          />
 
           <button
             v-if="membersWithSelf.length > 8"
@@ -758,37 +1023,63 @@ function handleAction(action: string) {
             {{ showAllMembers ? '收起' : `顯示全部 ${totalMemberCount} 位成員` }}
           </button>
 
-          <!-- 加成員：普通群聊角色挑選（內聯） -->
-          <div v-if="!isMultiCharCard && showMemberPicker" class="member-picker">
-            <div class="member-picker-head">
-              <span class="member-picker-title">選擇要加入的角色</span>
-              <button class="member-picker-close" @click="showMemberPicker = false">收起</button>
-            </div>
-            <div v-if="addableCharacters.length === 0" class="empty-hint">
-              沒有可加入的角色
-            </div>
-            <div v-else class="picker-list">
-              <button
-                v-for="char in addableCharacters"
-                :key="char.id"
-                class="picker-item"
-                @click="pickMember(char.id)"
+          <!-- 被移出的成員：資料還在，可以拉回 -->
+          <div v-if="!isMultiCharCard && removedList.length" class="removed-members">
+            <button
+              class="removed-toggle"
+              :aria-expanded="showRemoved"
+              @click="showRemoved = !showRemoved"
+            >
+              已移出的成員 · {{ removedList.length }}
+              <span class="removed-toggle-hint">{{ showRemoved ? '收起' : '查看' }}</span>
+            </button>
+            <template v-if="showRemoved">
+              <div
+                v-for="member in removedList"
+                :key="member.characterId"
+                class="member-row member-row--removed"
               >
-                <div class="picker-avatar">
-                  <img v-if="char.avatar" :src="char.avatar" :alt="char.name" />
-                  <div v-else class="picker-placeholder">{{ char.name.charAt(0) }}</div>
+                <div class="member-row-avatar">
+                  <img
+                    v-if="avatarSrc(member.avatar)"
+                    :src="avatarSrc(member.avatar)"
+                    :alt="member.name"
+                    @error="onAvatarError(member.avatar)"
+                  />
+                  <div v-else class="member-row-placeholder">{{ member.name.charAt(0) }}</div>
                 </div>
-                <span class="picker-name">{{ char.name }}</span>
-                <svg class="picker-add" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 5v14" />
-                  <path d="M5 12h14" />
-                </svg>
-              </button>
-            </div>
+                <div class="member-row-info">
+                  <span class="member-row-name">{{ member.name }}</span>
+                  <div class="member-row-badges">
+                    <span class="badge badge--removed">已移出</span>
+                    <span v-if="member.removedBy" class="subchar-hint-mini">被 {{ member.removedBy }} 移出</span>
+                  </div>
+                </div>
+                <div class="member-row-actions">
+                  <button class="removed-restore" @click="emit('restore-member', member.characterId)">
+                    拉回
+                  </button>
+                  <button
+                    class="member-op member-op--danger"
+                    :title="'刪除紀錄'"
+                    :aria-label="`刪除${member.name}的紀錄`"
+                    @click="forgetRemovedMember(member)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M18 6 6 18" />
+                      <path d="m6 6 12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </template>
           </div>
 
           <!-- 加成員/子角色：多來源內聯表單（普通群聊與多人卡共用，含關係綁定 + 好感度） -->
-          <div v-if="showSubcharForm" class="subchar-form">
+          <div v-if="showSubcharForm" ref="subcharFormRef" class="subchar-form">
+            <p v-if="addedNames.length" class="subchar-added" role="status">
+              已加入：{{ addedNames.join("、") }}，可以繼續加
+            </p>
             <!-- 來源類型選擇 -->
             <div class="subchar-source-tabs">
               <button
@@ -825,7 +1116,12 @@ function handleAction(action: string) {
             <template v-if="subcharSourceType === 'inline'">
               <div class="subchar-row">
                 <button class="subchar-avatar" @click="triggerSubcharAvatarUpload">
-                  <img v-if="subcharAvatar" :src="subcharAvatar" alt="頭像預覽" />
+                  <img
+                    v-if="avatarSrc(subcharAvatar)"
+                    :src="avatarSrc(subcharAvatar)"
+                    alt="頭像預覽"
+                    @error="onAvatarError(subcharAvatar)"
+                  />
                   <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M12 5v14" />
                     <path d="M5 12h14" />
@@ -854,62 +1150,62 @@ function handleAction(action: string) {
               />
             </template>
 
-            <!-- 角色卡來源 -->
-            <template v-else-if="subcharSourceType === 'character'">
-              <div v-if="charSources.length === 0" class="empty-hint">
-                尚無角色卡
+            <!-- 角色卡 / 其他多人卡 / 使用者角色：點頭像挑一位 -->
+            <template v-else>
+              <div v-if="sourceOptions.length === 0" class="empty-hint">
+                {{ sourceEmptyText }}
               </div>
-              <select v-else v-model="subcharSelectedSourceKey" class="subchar-select">
-                <option value="" disabled>選擇要引入的角色卡</option>
-                <option v-for="c in charSources" :key="c.id" :value="c.id">
-                  {{ c.name }}
-                </option>
-              </select>
-              <!-- 好感度引入開關 -->
-              <label
-                v-if="affinityAvailable"
-                class="subchar-toggle"
-              >
-                <input type="checkbox" v-model="subcharAffinityEnabled" />
-                <span>引入私聊好感度（唯讀，群聊不增減）</span>
-              </label>
-              <p
-                v-else-if="subcharSelectedSourceKey"
-                class="subchar-hint-mini"
-              >
-                此角色無私聊紀錄，無法引入好感度
-              </p>
-            </template>
-
-            <!-- 其他多人卡子角色來源 -->
-            <template v-else-if="subcharSourceType === 'multichar'">
-              <div v-if="mcSources.length === 0" class="empty-hint">
-                尚無其他多人卡子角色
-              </div>
-              <select v-else v-model="subcharSelectedSourceKey" class="subchar-select">
-                <option value="" disabled>選擇要引入的子角色</option>
-                <option
-                  v-for="m in mcSources"
-                  :key="`${m.sourceChatId}::${m.member.id}`"
-                  :value="`${m.sourceChatId}::${m.member.id}`"
+              <div v-else class="picker-list" role="listbox">
+                <button
+                  v-for="opt in sourceOptions"
+                  :key="opt.key"
+                  class="picker-item"
+                  :class="{ selected: subcharSelectedSourceKey === opt.key }"
+                  role="option"
+                  :aria-selected="subcharSelectedSourceKey === opt.key"
+                  @click="subcharSelectedSourceKey = opt.key; subcharAffinityEnabled = false"
                 >
-                  {{ m.member.name }}（來自 {{ m.cardName }}）
-                </option>
-              </select>
-            </template>
-
-            <!-- 使用者角色來源 -->
-            <template v-else-if="subcharSourceType === 'persona'">
-              <div v-if="personaSrc.length === 0" class="empty-hint">
-                尚無使用者角色
+                  <div class="picker-avatar">
+                    <img
+                      v-if="avatarSrc(opt.avatar)"
+                      :src="avatarSrc(opt.avatar)"
+                      :alt="opt.name"
+                      @error="onAvatarError(opt.avatar)"
+                    />
+                    <div v-else class="picker-placeholder">{{ opt.name.charAt(0) }}</div>
+                  </div>
+                  <span class="picker-text">
+                    <span class="picker-name">{{ opt.name }}</span>
+                    <span v-if="opt.note" class="picker-note">{{ opt.note }}</span>
+                  </span>
+                  <svg
+                    v-if="subcharSelectedSourceKey === opt.key"
+                    class="picker-add"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                </button>
               </div>
-              <select v-else v-model="subcharSelectedSourceKey" class="subchar-select">
-                <option value="" disabled>選擇要引入的使用者角色</option>
-                <option v-for="p in personaSrc" :key="p.id" :value="p.id">
-                  {{ p.name }}
-                </option>
-              </select>
-              <p class="subchar-hint-mini">此使用者角色將由 AI 代演</p>
+
+              <!-- 角色卡：好感度引入開關 -->
+              <template v-if="subcharSourceType === 'character' && subcharSelectedSourceKey">
+                <label v-if="affinityAvailable" class="subchar-toggle">
+                  <input type="checkbox" v-model="subcharAffinityEnabled" />
+                  <span>引入私聊好感度（唯讀，群聊不增減）</span>
+                </label>
+                <p v-else class="subchar-hint-mini">
+                  這個角色還沒有私聊，沒有好感度可以引入
+                </p>
+              </template>
+              <p v-if="subcharSourceType === 'persona'" class="subchar-hint-mini">
+                此使用者角色將由 AI 代演
+              </p>
             </template>
 
             <!-- 關係綁定（所有來源皆可設定，persona 來源除外的角色才有意義，但統一提供） -->
@@ -949,22 +1245,50 @@ function handleAction(action: string) {
               </template>
             </div>
 
+            <p v-if="subcharNameTaken" class="subchar-hint-mini subchar-hint-warn">
+              群裡已經有叫「{{ pendingSubcharName }}」的成員，名字一樣 AI 會分不清楚是誰{{
+                subcharSourceType === "inline" ? "，請換個名字" : "，加入後可以幫他改名或設群暱稱"
+              }}
+            </p>
             <div class="subchar-actions">
-              <button class="subchar-cancel" @click="cancelAddSubchar">取消</button>
+              <button class="subchar-cancel" @click="cancelAddSubchar">
+                {{ addedNames.length ? "完成" : "取消" }}
+              </button>
               <button
                 class="subchar-confirm"
                 :disabled="!canConfirmSubchar"
                 @click="confirmAddSubchar"
               >
-                新增
+                加入
               </button>
             </div>
           </div>
         </section>
 
-        <!-- 綁定世界書（多人卡不顯示，因角色卡本身可綁定世界書） -->
+        <!-- 綁定世界書（多人卡不顯示，因角色卡本身可綁定世界書）：預設收起，只顯示綁了幾本 -->
         <section v-if="!isMultiCharCard" class="panel">
-          <h3 class="panel-title">綁定世界書（僅此群組生效）</h3>
+          <button
+            class="list-item"
+            :aria-expanded="showLorebooks"
+            @click="showLorebooks = !showLorebooks"
+          >
+            <div class="list-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M2 12h20" />
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+              </svg>
+            </div>
+            <span class="list-label">群組世界書</span>
+            <span class="list-status" :class="{ 'list-status--muted': !boundLorebookCount }">
+              {{ boundLorebookCount ? `已綁 ${boundLorebookCount} 本` : '未綁定' }}
+            </span>
+            <svg class="chevron chevron--toggle" :class="{ open: showLorebooks }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m9 18 6-6-6-6" />
+            </svg>
+          </button>
+          <p class="panel-hint">成員角色卡自己綁的世界書會自動帶上；這裡另外綁的只在這個群生效。</p>
+          <template v-if="showLorebooks">
           <div v-if="lorebooks.length === 0" class="empty-hint">
             尚無世界書，請先建立世界書
           </div>
@@ -987,19 +1311,25 @@ function handleAction(action: string) {
               </span>
             </button>
           </div>
+          </template>
         </section>
 
         <!-- 記憶互通（多人卡不支援） -->
         <section v-if="!isMultiCharCard && memorySharing" class="panel">
           <h3 class="panel-title">記憶互通</h3>
           <div class="memory-sharing">
-            <label class="subchar-toggle">
+            <label class="member-switch">
+              <span class="member-switch-text">
+                <span class="member-switch-title">開啟記憶互通</span>
+                <span class="subchar-hint-mini">成員記得各自的私聊，私聊裡的角色也記得這個群</span>
+              </span>
               <input
                 type="checkbox"
+                role="switch"
+                class="switch-input"
                 :checked="memorySharing.enabled"
                 @change="onMemorySharingToggle"
               />
-              <span>成員記得各自的私聊，私聊裡的角色也記得這個群</span>
             </label>
             <template v-if="memorySharing.enabled">
               <label class="memory-sharing-turns">
@@ -1045,25 +1375,10 @@ function handleAction(action: string) {
           </div>
         </section>
 
-        <!-- 群組功能 -->
+        <!-- 聊天管理 -->
         <section class="panel">
-          <h3 class="panel-title">群組功能</h3>
+          <h3 class="panel-title">聊天管理</h3>
           <div class="list-group">
-            <button class="list-item" @click="handleAction('chat-preset')">
-              <div class="list-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M4 7h16" />
-                  <path d="M4 17h16" />
-                  <circle cx="8" cy="7" r="2" />
-                  <circle cx="16" cy="17" r="2" />
-                </svg>
-              </div>
-              <span class="list-label">專屬預設</span>
-              <span v-if="presetCount" class="list-status">已調整 {{ presetCount }} 項</span>
-              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m9 18 6-6-6-6" />
-              </svg>
-            </button>
             <button class="list-item" @click="handleAction('chat-info')">
               <div class="list-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
@@ -1077,13 +1392,14 @@ function handleAction(action: string) {
                 <path d="m9 18 6-6-6-6" />
               </svg>
             </button>
-            <button class="list-item" @click="handleAction('chat-files')">
+            <button class="list-item" @click="handleAction('new-conversation')">
               <div class="list-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z" />
+                  <path d="M3 12a9 9 0 1 0 9-9" />
+                  <path d="M3 4v5h5" />
                 </svg>
               </div>
-              <span class="list-label">聊天檔案</span>
+              <span class="list-label">開啟新對話</span>
               <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m9 18 6-6-6-6" />
               </svg>
@@ -1121,14 +1437,24 @@ function handleAction(action: string) {
                 <path d="m9 18 6-6-6-6" />
               </svg>
             </button>
-            <button class="list-item" @click="handleAction('new-conversation')">
+          </div>
+        </section>
+
+        <!-- 危險操作：放最下面，避免誤觸 -->
+        <section class="panel">
+          <h3 class="panel-title">危險操作</h3>
+          <div class="list-group">
+            <button class="list-item danger" @click="handleAction('clear')">
               <div class="list-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M3 12a9 9 0 1 0 9-9" />
-                  <path d="M3 4v5h5" />
+                  <path d="M3 6h18" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  <line x1="10" y1="11" x2="10" y2="17" />
+                  <line x1="14" y1="11" x2="14" y2="17" />
                 </svg>
               </div>
-              <span class="list-label">開啟新對話</span>
+              <span class="list-label">清空聊天</span>
               <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m9 18 6-6-6-6" />
               </svg>
@@ -1375,6 +1701,186 @@ function handleAction(action: string) {
         </section>
       </div>
     </main>
+
+    <!-- ============ 群聊：成員卡片（點成員從下方滑出） ============ -->
+    <Transition name="member-sheet">
+      <div
+        v-if="isGroupChat && sheetMember"
+        class="member-sheet-backdrop"
+        @click.self="closeMemberSheet"
+      >
+        <div
+          class="member-sheet"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="`${sheetMember.nickname || sheetMember.name} 的設定`"
+        >
+          <div class="member-sheet-handle" aria-hidden="true"></div>
+
+          <!-- 誰：頭像、名字、身分徽章 -->
+          <header class="member-sheet-head">
+            <div class="member-row-avatar member-sheet-avatar">
+              <img
+                v-if="avatarSrc(sheetMember.avatar)"
+                :src="avatarSrc(sheetMember.avatar)"
+                :alt="sheetMember.name"
+                @error="onAvatarError(sheetMember.avatar)"
+              />
+              <div v-else class="member-row-placeholder">
+                {{ (sheetMember.nickname || sheetMember.name).charAt(0) }}
+              </div>
+            </div>
+            <div class="member-sheet-who">
+              <span class="member-sheet-name">{{ sheetMember.nickname || sheetMember.name }}</span>
+              <span
+                v-if="sheetMember.nickname && sheetMember.nickname !== sheetMember.name"
+                class="member-sheet-realname"
+              >本名 {{ sheetMember.name }}</span>
+              <div class="member-row-badges">
+                <span v-if="sheetMember.isAdmin" class="badge badge--admin">管理員</span>
+                <span v-if="sheetMember.isMuted" class="badge badge--muted">已禁言</span>
+                <span v-if="sheetMember.isPersonaMember" class="badge badge--persona">使用者角色·代演</span>
+                <span v-else-if="sheetMember.subCharSource === 'character'" class="badge badge--source">角色卡</span>
+                <span v-else-if="sheetMember.subCharSource === 'multichar'" class="badge badge--source">多人卡</span>
+                <span v-else-if="sheetMember.isVirtual" class="badge badge--source">自訂成員</span>
+              </div>
+            </div>
+            <button class="header-btn member-sheet-close" :aria-label="'關閉'" @click="closeMemberSheet">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+              </svg>
+            </button>
+          </header>
+
+          <div class="member-sheet-body">
+            <!-- 名字：角色卡成員設群暱稱；自訂成員與子角色改名字和頭像 -->
+            <div class="member-sheet-section">
+              <span class="member-sheet-label">
+                {{ canEditIdentity(sheetMember) ? '名字與頭像' : '群暱稱' }}
+              </span>
+              <template v-if="canEditIdentity(sheetMember)">
+                <div class="subchar-row">
+                  <button class="subchar-avatar" :title="'上傳頭像'" :aria-label="'上傳頭像'" @click="triggerMemberAvatarUpload">
+                    <img
+                      v-if="avatarSrc(memberAvatarDraft)"
+                      :src="avatarSrc(memberAvatarDraft)"
+                      alt="頭像預覽"
+                      @error="onAvatarError(memberAvatarDraft)"
+                    />
+                    <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 5v14" />
+                      <path d="M5 12h14" />
+                    </svg>
+                  </button>
+                  <input
+                    v-model="memberNameDraft"
+                    class="subchar-input"
+                    type="text"
+                    placeholder="名字"
+                    @keydown.enter="saveMemberEdit(sheetMember)"
+                  />
+                </div>
+                <input
+                  v-model="memberAvatarDraft"
+                  class="subchar-input"
+                  type="text"
+                  placeholder="頭像連結（或點左邊上傳圖片）"
+                />
+                <p
+                  v-if="isMultiCharCard && (!sheetMember.subCharSource || sheetMember.subCharSource === 'inline')"
+                  class="subchar-hint-mini"
+                >
+                  名字要和角色卡描述裡的角色名一致，AI 才認得出是誰。
+                </p>
+              </template>
+              <template v-else>
+                <input
+                  v-model="memberNicknameDraft"
+                  class="subchar-input"
+                  type="text"
+                  :placeholder="`留空就用「${sheetMember.name}」`"
+                  @keydown.enter="saveMemberEdit(sheetMember)"
+                />
+                <p class="subchar-hint-mini">
+                  只在這個群裡使用，AI 也會用這個名字稱呼他。本名和頭像要到角色卡改。
+                </p>
+              </template>
+              <p v-if="editNameTaken" class="subchar-hint-mini subchar-hint-warn">
+                群裡已經有人叫這個名字，AI 會分不清楚是誰
+              </p>
+              <div class="subchar-actions">
+                <button
+                  class="subchar-confirm"
+                  :disabled="!memberEditDirty || editNameTaken || (canEditIdentity(sheetMember) && !memberNameDraft.trim())"
+                  @click="saveMemberEdit(sheetMember)"
+                >
+                  {{ memberSaved ? '已儲存' : '儲存' }}
+                </button>
+              </div>
+            </div>
+
+            <!-- 普通群聊：管理員、禁言（切換馬上生效） -->
+            <div v-if="!isMultiCharCard" class="member-sheet-section member-sheet-switches">
+              <label class="member-switch">
+                <span class="member-switch-text">
+                  <span class="member-switch-title">管理員</span>
+                  <span class="subchar-hint-mini">可以改群名、禁言或移出別人</span>
+                </span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  class="switch-input"
+                  :checked="sheetMember.isAdmin"
+                  @change="emit('toggle-member-admin', sheetMember.characterId)"
+                />
+              </label>
+              <label class="member-switch">
+                <span class="member-switch-text">
+                  <span class="member-switch-title">禁言</span>
+                  <span class="subchar-hint-mini">禁言後不能在群裡發言，直到解除</span>
+                </span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  class="switch-input"
+                  :checked="sheetMember.isMuted"
+                  @change="emit('toggle-member-mute', sheetMember.characterId)"
+                />
+              </label>
+            </div>
+
+            <!-- 動作 -->
+            <div class="list-group member-sheet-actions">
+              <button v-if="!sheetMember.isMuted" class="list-item" @click="mentionSheetMember">
+                <div class="list-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="4" />
+                    <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
+                  </svg>
+                </div>
+                <span class="list-label">在聊天裡 @他</span>
+              </button>
+              <button
+                class="list-item danger"
+                :disabled="!canRemoveMember"
+                @click="confirmRemoveMember(sheetMember)"
+              >
+                <div class="list-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <path d="M17 11h6" />
+                  </svg>
+                </div>
+                <span class="list-label">{{ isMultiCharCard ? '移除子角色' : '移出群聊' }}</span>
+                <span v-if="!canRemoveMember" class="list-status list-status--muted">至少要留 2 位</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -1606,6 +2112,15 @@ function handleAction(action: string) {
   text-align: center;
 }
 
+/* 群名：點一下就能改；名字長時最多兩行 */
+.profile-name--group {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  cursor: text;
+}
+
 /* === 群名稱：內聯編輯 === */
 .name-edit-row {
   display: flex;
@@ -1667,25 +2182,16 @@ function handleAction(action: string) {
   }
 }
 
-/* === 快捷入口（單人 3×2 格 / 群聊 4 格）=== */
-.quick-grid,
-.quick-actions {
+/* === 快捷入口（單人、群聊都是 3×2 格）=== */
+.quick-grid {
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   width: 100%;
   margin-top: 24px;
 }
 
-.quick-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.quick-actions {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.quick-item,
-.quick-action {
+.quick-item {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1707,8 +2213,7 @@ function handleAction(action: string) {
   }
 }
 
-.quick-icon,
-.quick-action-icon {
+.quick-icon {
   position: relative;
   width: 40px;
   height: 40px;
@@ -1746,8 +2251,7 @@ function handleAction(action: string) {
   line-height: 1;
 }
 
-.quick-label,
-.quick-action-label {
+.quick-label {
   max-width: 100%;
   font-size: 13px;
   font-weight: 500;
@@ -1758,23 +2262,10 @@ function handleAction(action: string) {
   text-overflow: ellipsis;
 }
 
-.quick-item--favorite,
-.quick-action--favorite {
-  .quick-icon,
-  .quick-action-icon {
+.quick-item--favorite {
+  .quick-icon {
     background: var(--cd-favorite-soft);
     color: var(--cd-favorite);
-  }
-}
-
-.quick-action--danger {
-  .quick-action-icon {
-    background: var(--cd-danger-soft);
-    color: var(--cd-danger);
-  }
-
-  .quick-action-label {
-    color: var(--cd-danger);
   }
 }
 
@@ -1918,6 +2409,25 @@ function handleAction(action: string) {
   font-size: 12px;
   font-weight: 600;
   color: var(--cd-accent);
+
+  &--muted {
+    font-weight: 500;
+    color: var(--color-text-secondary);
+  }
+}
+
+.list-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.panel-hint {
+  margin: 0;
+  padding: 0 10px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
 }
 
 .chevron {
@@ -1925,6 +2435,15 @@ function handleAction(action: string) {
   height: 18px;
   flex-shrink: 0;
   color: var(--color-text-muted, var(--color-text-secondary));
+}
+
+/* 可收合區塊的箭頭：打開時轉向下 */
+.chevron--toggle {
+  transition: transform 0.2s;
+
+  &.open {
+    transform: rotate(90deg);
+  }
 }
 
 /* === 群聊：成員列表 === */
@@ -1943,6 +2462,21 @@ function handleAction(action: string) {
 
   &:hover {
     background: var(--cd-hover);
+  }
+}
+
+/* 整列是按鈕：點開成員卡片 */
+.member-row--tappable {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+
+  &:active {
+    transform: scale(0.99);
   }
 }
 
@@ -2001,6 +2535,14 @@ function handleAction(action: string) {
   text-overflow: ellipsis;
 }
 
+/* 有群暱稱時，在後面小字顯示本名 */
+.member-row-realname {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-secondary);
+}
+
 .member-row-badges {
   display: flex;
   flex-wrap: wrap;
@@ -2020,6 +2562,7 @@ function handleAction(action: string) {
   &--self,
   &--admin { --badge-c: var(--cd-accent); }
   &--muted { --badge-c: var(--cd-danger); }
+  &--removed { --badge-c: var(--color-text-secondary); }
   &--persona { --badge-c: #7c3aed; }
   &--bound { --badge-c: #d946a6; }
   &--affinity { --badge-c: #d97706; }
@@ -2061,6 +2604,13 @@ function handleAction(action: string) {
     color: var(--cd-danger);
   }
 
+  &:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    background: transparent;
+    color: var(--color-text-muted, var(--color-text-secondary));
+  }
+
   svg {
     width: 16px;
     height: 16px;
@@ -2081,8 +2631,238 @@ function handleAction(action: string) {
   cursor: pointer;
 }
 
-/* === 群聊：加成員角色挑選 / 子角色表單 === */
-.member-picker,
+/* === 群聊：成員卡片（從下方滑出）=== */
+.member-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.member-sheet {
+  width: min(100%, var(--cd-max-w));
+  max-height: min(88%, 680px);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background: var(--cd-card);
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.18);
+  padding-bottom: var(--safe-bottom, 0px);
+}
+
+.member-sheet-handle {
+  width: 36px;
+  height: 4px;
+  margin: 8px auto 2px;
+  border-radius: 9999px;
+  background: var(--cd-line);
+  flex-shrink: 0;
+}
+
+.member-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px 12px 18px;
+  border-bottom: 1px solid var(--cd-line);
+  flex-shrink: 0;
+}
+
+.member-sheet-avatar {
+  width: 52px;
+  height: 52px;
+}
+
+.member-sheet-who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.member-sheet-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.member-sheet-realname {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.member-sheet-close {
+  align-self: flex-start;
+}
+
+.member-sheet-body {
+  overflow-y: auto;
+  padding: 12px 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.member-sheet-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid var(--cd-line);
+}
+
+.member-sheet-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: var(--color-text-secondary);
+}
+
+.member-sheet-switches {
+  gap: 0;
+  padding: 4px 12px;
+}
+
+.member-switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  cursor: pointer;
+
+  & + & {
+    border-top: 1px solid var(--cd-line);
+  }
+}
+
+.member-switch-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.member-switch-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+/* 開關：原生 checkbox 換成滑動開關的外觀 */
+.switch-input {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 26px;
+  margin: 0;
+  border-radius: 9999px;
+  background: var(--cd-line);
+  cursor: pointer;
+  transition: background-color 0.2s;
+
+  &::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    transition: transform 0.2s;
+  }
+
+  &:checked {
+    background: var(--cd-accent);
+
+    &::after {
+      transform: translateX(18px);
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--cd-accent);
+    outline-offset: 2px;
+  }
+}
+
+.member-sheet-actions {
+  padding: 0 2px;
+}
+
+.member-sheet-enter-active,
+.member-sheet-leave-active {
+  // 外層和內層動畫時間一致：Vue 只看外層的 transition 決定何時移除元素
+  transition: opacity 0.26s ease;
+
+  .member-sheet {
+    transition: transform 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+}
+
+.member-sheet-enter-from,
+.member-sheet-leave-to {
+  opacity: 0;
+
+  .member-sheet {
+    transform: translateY(100%);
+  }
+}
+
+/* === 群聊：被移出的成員 === */
+.removed-members {
+  margin: 6px 4px 0;
+}
+
+.removed-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--cd-line);
+  cursor: pointer;
+}
+
+.removed-toggle-hint {
+  font-weight: 500;
+  color: var(--cd-accent);
+}
+
+.member-row--removed .member-row-avatar {
+  opacity: 0.55;
+}
+
+.removed-restore {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--cd-accent);
+  background: var(--cd-accent-soft);
+  border: none;
+  border-radius: 9999px;
+  cursor: pointer;
+}
+
+/* === 群聊：加成員 / 成員編輯表單 === */
 .subchar-form {
   margin: 8px 4px 4px;
   padding: 12px;
@@ -2091,27 +2871,20 @@ function handleAction(action: string) {
   border: 1px solid var(--cd-line);
 }
 
-.member-picker-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.member-picker-title,
 .subchar-binding-head {
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text-secondary);
 }
 
-.member-picker-close {
-  padding: 0;
+.subchar-added {
+  margin: 0;
+  padding: 8px 10px;
   font-size: 12px;
+  line-height: 1.5;
   color: var(--cd-accent);
-  background: transparent;
-  border: none;
-  cursor: pointer;
+  background: var(--cd-accent-soft);
+  border-radius: 10px;
 }
 
 .picker-list {
@@ -2136,14 +2909,32 @@ function handleAction(action: string) {
   &:hover {
     background: var(--cd-hover);
   }
+
+  &.selected {
+    background: var(--cd-accent-soft);
+  }
+}
+
+.picker-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
 }
 
 .picker-name {
-  flex: 1;
-  min-width: 0;
   font-size: 15px;
   color: var(--color-text);
-  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.picker-note {
+  font-size: 12px;
+  color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2276,6 +3067,10 @@ function handleAction(action: string) {
   color: var(--color-text-secondary);
 }
 
+.subchar-hint-warn {
+  color: var(--cd-danger);
+}
+
 .subchar-binding {
   display: flex;
   flex-direction: column;
@@ -2397,13 +3192,6 @@ function handleAction(action: string) {
   color: var(--color-text-secondary);
 }
 
-/* === 窄螢幕 === */
-@media (max-width: 360px) {
-  .quick-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 /* === 記憶互通 === */
 .memory-sharing {
   display: flex;
@@ -2473,9 +3261,12 @@ function handleAction(action: string) {
 
 @media (prefers-reduced-motion: reduce) {
   .quick-item,
-  .quick-action,
   .list-item,
-  .header-btn {
+  .header-btn,
+  .member-sheet,
+  .member-sheet-backdrop,
+  .switch-input,
+  .switch-input::after {
     transition: none !important;
   }
 }

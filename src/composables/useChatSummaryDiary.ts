@@ -6,12 +6,19 @@ import {
   recordDeletedEntity,
   scheduleSelfHostedAutoSync,
 } from "@/services/selfHostedSyncState";
-import type { StreamingEvent, SummarySettings } from "@/types/chat";
+import type {
+  GroupMember,
+  MultiCharMember,
+  StreamingEvent,
+  SummarySettings,
+} from "@/types/chat";
 import {
   useAIGenerationStore,
+  useCharactersStore,
   usePromptManagerStore,
   useSettingsStore,
 } from "@/stores";
+import { getGroupMemberDisplayName } from "@/utils/groupMembers";
 import { useNotificationStore } from "@/stores/notification";
 import { MemoryRetrieverService } from "@/services/memoryRetriever";
 import { deleteVectorEmbedding, markVectorStale } from "@/db/vectorStore";
@@ -257,9 +264,12 @@ export function useChatSummaryDiary(deps: {
     const chatData = deps.currentChatData.value;
     const groupName =
       chatData?.groupMetadata?.groupName || chatData?.name || "這個群聊";
+    const characters = useCharactersStore().characters;
     const memberNames = [
-      ...(chatData?.groupMetadata?.members?.map((m: any) => m.nickname || m.characterId) || []),
-      ...(chatData?.groupMetadata?.multiCharMembers?.map((m: any) => m.name) || []),
+      ...(chatData?.groupMetadata?.members?.map((m: GroupMember) =>
+        getGroupMemberDisplayName(m, characters),
+      ) || []),
+      ...(chatData?.groupMetadata?.multiCharMembers?.map((m: MultiCharMember) => m.name) || []),
     ].filter(Boolean);
 
     return {

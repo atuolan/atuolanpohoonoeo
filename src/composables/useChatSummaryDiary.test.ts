@@ -46,6 +46,7 @@ vi.mock("@/stores", () => ({
     completeGeneration: vi.fn(),
     setError: vi.fn(),
   }),
+  useCharactersStore: () => ({ characters: [] }),
   usePromptManagerStore: () => ({
     loadConfig: vi.fn(),
     summaryPrompts: SUMMARY_PROMPT_DEFINITIONS,

@@ -36,10 +36,51 @@ const useGreeting = ref(true);
 const isDetecting = ref(false);
 const detectError = ref("");
 
+// 名字重複時 AI 的發言對不到是哪一位，不能建立
+const duplicateNames = computed(() => {
+  const seen = new Set<string>();
+  const dup = new Set<string>();
+  for (const m of members.value) {
+    const name = m.name.trim();
+    if (!name) continue;
+    if (seen.has(name)) dup.add(name);
+    seen.add(name);
+  }
+  return [...dup];
+});
+
 const canConfirm = computed(() => {
   const validMembers = members.value.filter((m) => m.name.trim());
-  return validMembers.length >= 2;
+  return validMembers.length >= 2 && duplicateNames.value.length === 0;
 });
+
+// === 頭像上傳（共用一個隱藏的檔案輸入）===
+const avatarFileInput = ref<HTMLInputElement | null>(null);
+const uploadingIndex = ref<number | null>(null);
+
+function pickAvatar(index: number) {
+  uploadingIndex.value = index;
+  avatarFileInput.value?.click();
+}
+
+function onAvatarFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  const index = uploadingIndex.value;
+  input.value = "";
+  if (!file || index === null) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const member = members.value[index];
+    if (member) member.avatar = (e.target?.result as string) || "";
+  };
+  reader.readAsDataURL(file);
+}
+
+/** 上傳的圖片是 data URL，不放進網址欄 */
+function isUploaded(avatar: string) {
+  return avatar.startsWith("data:");
+}
 
 function addMember() {
   members.value.push({ name: "", avatar: "" });
@@ -173,18 +214,28 @@ function confirm() {
             :key="index"
             class="member-row"
           >
-            <span class="member-index">{{ index + 1 }}</span>
+            <button
+              class="member-avatar-btn"
+              :title="'上傳頭像'"
+              :aria-label="`上傳第 ${index + 1} 位的頭像`"
+              @click="pickAvatar(index)"
+            >
+              <img v-if="member.avatar" :src="member.avatar" alt="" />
+              <span v-else>{{ index + 1 }}</span>
+            </button>
             <input
               v-model="member.name"
               type="text"
               class="input-name"
+              :class="{ invalid: duplicateNames.includes(member.name.trim()) }"
               placeholder="角色名字（必填）"
             />
             <input
-              v-model="member.avatar"
+              :value="isUploaded(member.avatar) ? '' : member.avatar"
               type="text"
               class="input-avatar"
-              placeholder="頭像 URL（選填）"
+              :placeholder="isUploaded(member.avatar) ? '已上傳圖片' : '頭像 URL（或點左邊上傳）'"
+              @input="member.avatar = ($event.target as HTMLInputElement).value"
             />
             <button
               class="btn-remove"
@@ -195,6 +246,17 @@ function confirm() {
             </button>
           </div>
         </div>
+
+        <p v-if="duplicateNames.length" class="detect-error duplicate-hint">
+          「{{ duplicateNames.join("、") }}」重複了，每位子角色的名字要不一樣
+        </p>
+        <input
+          ref="avatarFileInput"
+          type="file"
+          accept="image/*"
+          style="display: none"
+          @change="onAvatarFileChange"
+        />
 
         <button class="btn-add" @click="addMember">
           <Plus :size="16" />
@@ -332,6 +394,10 @@ function confirm() {
   margin: -6px 0 10px;
 }
 
+.duplicate-hint {
+  margin: 8px 0 0;
+}
+
 .member-list {
   display: flex;
   flex-direction: column;
@@ -343,12 +409,31 @@ function confirm() {
   align-items: center;
   gap: 6px;
 
-  .member-index {
-    font-size: 12px;
-    color: var(--color-text-secondary, #999);
-    width: 18px;
-    text-align: center;
+  .member-avatar-btn {
+    width: 32px;
+    height: 32px;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    overflow: hidden;
+    border: 1px dashed var(--color-border, #ccc);
+    border-radius: 50%;
+    background: var(--color-input-bg, #fafafa);
+    color: var(--color-text-secondary, #999);
+    font-size: 12px;
+    cursor: pointer;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  }
+
+  .input-name.invalid {
+    border-color: #e53e3e;
   }
 
   .input-name {

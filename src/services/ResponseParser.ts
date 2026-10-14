@@ -4,6 +4,7 @@
  */
 
 import type { CalendarEventData } from "@/types/calendar";
+import type { GroupActionType } from "@/types/chat";
 import type { ScheduleCallData } from "@/types/incomingCall";
 import { PLURK_BLOCK_PATTERN, PLURK_BLOCK_STRIP_PATTERN } from "@/utils/plurkFormat";
 import { repairXmlTags } from "./XmlFuzzyRepair";
@@ -36,7 +37,10 @@ export interface ParsedMessage {
   isLocation?: boolean;
   locationContent?: string;
   isReplyTo?: boolean;
+  /** 模型抄的被引用訊息片段（通常只有開頭幾個字），ChatScreen 會再找出原訊息 */
   replyToContent?: string;
+  /** 模型標註的被引用者名字（可省略） */
+  replyToName?: string;
   isGift?: boolean;
   giftName?: string;
   // 轉帳相關
@@ -360,14 +364,7 @@ function parseTextOnlyContent(content: string): ParsedMessage {
   }
 
   // 檢查回覆引用
-  const replyMatch = result.content.match(/<reply-to>([\s\S]*?)<\/reply-to>/i);
-  if (replyMatch) {
-    result.isReplyTo = true;
-    result.replyToContent = replyMatch[1].trim();
-    result.content = result.content
-      .replace(/<reply-to>[\s\S]*?<\/reply-to>/i, "")
-      .trim();
-  }
+  extractReplyQuote(result);
 
   // 檢查送禮物
   const giftMatch = result.content.match(/<送禮物>([\s\S]*?)<\/送禮物>/i);
@@ -603,14 +600,7 @@ function parseMessageContentWithoutTimetravel(content: string): ParsedMessage {
   }
 
   // 檢查回覆引用
-  const replyMatch = result.content.match(/<reply-to>([\s\S]*?)<\/reply-to>/i);
-  if (replyMatch) {
-    result.isReplyTo = true;
-    result.replyToContent = replyMatch[1].trim();
-    result.content = result.content
-      .replace(/<reply-to>[\s\S]*?<\/reply-to>/i, "")
-      .trim();
-  }
+  extractReplyQuote(result);
 
   // 檢查送禮物
   const giftMatch = result.content.match(/<送禮物>([\s\S]*?)<\/送禮物>/i);
@@ -1479,14 +1469,7 @@ function parseMessageContent(content: string): ParsedMessage {
   }
 
   // 檢查回覆引用
-  const replyMatch = result.content.match(/<reply-to>([\s\S]*?)<\/reply-to>/i);
-  if (replyMatch) {
-    result.isReplyTo = true;
-    result.replyToContent = replyMatch[1].trim();
-    // 移除 reply-to 標籤，保留剩餘內容
-    result.content = result.content
-      .replace(/<reply-to>[\s\S]*?<\/reply-to>/i, "")
-      .trim();
+  if (extractReplyQuote(result)) {
     // 再次處理想法
     const thoughtMatch2 = result.content.match(/~\(([^)]+)\)~/);
     if (thoughtMatch2) {
@@ -1711,6 +1694,35 @@ function parseMessageContent(content: string): ParsedMessage {
 function extractAttr(attrs: string, name: string): string | undefined {
   const match = attrs.match(new RegExp(`${name}=["']([^"']+)["']`, "i"));
   return match ? match[1] : undefined;
+}
+
+/**
+ * 取出引用回覆，寫進 replyToContent / replyToName 並從內容移除。
+ * 認得 <reply-to>片段</reply-to>（可帶 name 屬性），
+ * 以及模型模仿歷史紀錄寫在開頭的 [回覆 名字：「片段」]
+ */
+function extractReplyQuote(result: ParsedMessage): boolean {
+  const tagMatch = result.content.match(/<reply-to(\s[^>]*)?>([\s\S]*?)<\/reply-to>/i);
+  if (tagMatch) {
+    result.isReplyTo = true;
+    result.replyToContent = tagMatch[2].trim();
+    const name = tagMatch[1] ? extractAttr(tagMatch[1], "name") : undefined;
+    if (name) result.replyToName = name.trim();
+    result.content = result.content.replace(tagMatch[0], "").trim();
+    return true;
+  }
+
+  const prefixMatch = result.content.match(
+    /^\s*\[回覆\s*([^：:\]\n]*)[：:]\s*「([^」\n]*)」\]\s*/,
+  );
+  if (prefixMatch) {
+    result.isReplyTo = true;
+    result.replyToContent = prefixMatch[2].trim();
+    if (prefixMatch[1].trim()) result.replyToName = prefixMatch[1].trim();
+    result.content = result.content.slice(prefixMatch[0].length).trim();
+    return true;
+  }
+  return false;
 }
 
 // ===== 情頭標籤解析 =====
@@ -2561,7 +2573,7 @@ export interface ParsedGroupMessage extends ParsedMessage {
   isPrivateMessage?: boolean;
   /** 是否為群管理動作 */
   isGroupAction?: boolean;
-  groupActionType?: "rename" | "kick" | "mute" | "unmute";
+  groupActionType?: GroupActionType;
   groupActionActor?: string;
   groupActionTarget?: string;
   groupActionValue?: string;
@@ -2744,12 +2756,7 @@ export function parseGroupChatResponse(
     } else if (match[8] !== undefined) {
       // <group-action> tag
       const attrs = match[8];
-      const actionType = extractAttr(attrs, "type") as
-        | "rename"
-        | "kick"
-        | "mute"
-        | "unmute"
-        | undefined;
+      const actionType = extractAttr(attrs, "type") as GroupActionType | undefined;
       const actor = extractAttr(attrs, "actor") || "";
       const target = extractAttr(attrs, "target");
       const value = extractAttr(attrs, "value");
@@ -2874,7 +2881,8 @@ function rebuildMessageContent(msg: ParsedGroupMessage): string {
   const segments: string[] = [];
 
   if (msg.isReplyTo && msg.replyToContent) {
-    segments.push(`<reply-to>${msg.replyToContent}</reply-to>`);
+    const nameAttr = msg.replyToName ? ` name="${msg.replyToName}"` : "";
+    segments.push(`<reply-to${nameAttr}>${msg.replyToContent}</reply-to>`);
   }
   if (msg.isRedpacket && msg.redpacketData) {
     let attrs = `amount="${msg.redpacketData.amount}" blessing="${msg.redpacketData.blessing}"`;

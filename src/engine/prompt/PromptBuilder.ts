@@ -315,6 +315,8 @@ export interface PromptBuilderOptions {
     // ===== 多來源 / 關係綁定擴展（皆為可選，向後相容） =====
     /** 來源類型（inline/character/multichar/persona） */
     source?: SubCharSource;
+    /** 來源實體 ID（persona 成員為 personaId，互相認知用） */
+    sourceId?: string;
     /** 是否為使用者角色型成員（由 AI 代演） */
     isPersonaMember?: boolean;
     /** 人設快照（虛擬成員或引入來源失效時的 fallback） */
@@ -330,6 +332,8 @@ export interface PromptBuilderOptions {
   }>;
   /** 群名稱 */
   groupName?: string;
+  /** 被移出群聊的成員（不在群裡、不能發言，可以用 invite 拉回） */
+  removedGroupMembers?: Array<{ name: string; removedBy?: string }>;
   /** 群聊長期記憶 */
   groupLongTermMemory?: string[];
   /** 群聊世界觀 */
@@ -796,36 +800,42 @@ export class PromptBuilder {
     return m.content || "";
   }
 
+  /**
+   * 引用回覆的前綴 [回覆 名字：「原文」]，讓 AI 知道這則訊息在回誰。
+   * 原訊息不在這段歷史裡時，改用訊息上存的引用文字（沒有名字）
+   */
+  private formatReplyPrefix(m: ChatMessage, messages: ChatMessage[] | undefined): string {
+    if (m.sender === "system" || m.sender === "narrator") return "";
+    const repliedMsg = m.replyTo ? messages?.find((r) => r.id === m.replyTo) : undefined;
+    const source = repliedMsg ? repliedMsg.content : m.replyToContent;
+    if (!source) return "";
+
+    const preview = source
+      .replace(/\[img:.*?\]/g, "[圖片]")
+      .replace(/\[sticker:.*?\]/g, "[表情包]");
+    const truncated = preview.length > 60 ? preview.substring(0, 60) + "…" : preview;
+    if (!repliedMsg) return `[回覆：「${truncated}」]\n`;
+
+    // 在群聊中，需要特別處理發送者名稱
+    let senderName: string;
+    if (repliedMsg.is_user) {
+      senderName = this.options.userName || "{{user}}";
+    } else if (repliedMsg.senderCharacterName) {
+      // 群聊中使用 senderCharacterName
+      senderName = repliedMsg.senderCharacterName;
+    } else {
+      senderName = repliedMsg.name || this.options.character?.data.name || "角色";
+    }
+    return `[回覆 ${senderName}：「${truncated}」]\n`;
+  }
+
   private formatMessageContentForMacro(m: ChatMessage): string {
     const content = PromptBuilder.formatMessageContentForMacro(m);
     const isSystemMsg = m.sender === "system" || m.sender === "narrator";
-    
+
     // 處理回覆引用
-    let finalContent = content;
-    if (m.replyTo && !isSystemMsg && this.options?.messages) {
-      const repliedMsg = this.options.messages.find((r) => r.id === m.replyTo);
-      if (repliedMsg) {
-        const preview = repliedMsg.content
-          .replace(/\[img:.*?\]/g, "[圖片]")
-          .replace(/\[sticker:.*?\]/g, "[表情包]");
-        const truncated =
-          preview.length > 60 ? preview.substring(0, 60) + "…" : preview;
-        
-        // 在群聊中，需要特別處理發送者名稱
-        let senderName: string;
-        if (repliedMsg.is_user) {
-          senderName = this.options.userName || "{{user}}";
-        } else if (repliedMsg.senderCharacterName) {
-          // 群聊中使用 senderCharacterName
-          senderName = repliedMsg.senderCharacterName;
-        } else {
-          senderName = repliedMsg.name || this.options.character?.data.name || "角色";
-        }
-        
-        finalContent = `[回覆 ${senderName}：「${truncated}」]\n${content}`;
-      }
-    }
-    
+    const finalContent = `${this.formatReplyPrefix(m, this.options?.messages)}${content}`;
+
     if (
       this.options.enableRealTimeAwareness !== false &&
       !isSystemMsg &&
@@ -1049,6 +1059,11 @@ export class PromptBuilder {
     }
     // 默認順序
     return this.applyChatPromptOverrides(DEFAULT_PROMPT_ORDER);
+  }
+
+  /** 普通群聊（不是多人卡）：成員各自的人設都在成員列表裡 */
+  private isPlainGroupChat(): boolean {
+    return !!this.options.groupChatMode && !this.options.isMultiCharCard;
   }
 
   /** 這次組裝屬於專屬預設的哪個模式（決定哪些專屬條目會被帶上） */
@@ -1651,6 +1666,9 @@ export class PromptBuilder {
       case "charDescription":
       case "f2fCharDescription":
       case "gcCharDescription": {
+        // 普通群聊每位成員的人設已在成員列表；這裡的 character 只是組 prompt 用的其中一位成員，
+        // 再注入一次會讓那位成員的份量特別重（多人卡的人設寫在卡上，照常注入）
+        if (this.isPlainGroupChat()) return null;
         const rawDesc = character.data.description || '';
         if (!rawDesc) return null;
         // 若 promptDef.content 有自訂模板（含 {{charDescription}} 等宏），優先使用
@@ -1665,6 +1683,7 @@ export class PromptBuilder {
       case "charPersonality":
       case "f2fCharPersonality":
       case "gcCharPersonality": {
+        if (this.isPlainGroupChat()) return null;
         const rawPersonality = character.data.personality || '';
         if (!rawPersonality) return null;
         // 若 promptDef.content 有自訂模板，優先使用；否則用預設格式
@@ -1678,6 +1697,7 @@ export class PromptBuilder {
       case "scenario":
       case "f2fScenario":
       case "gcScenario": {
+        if (this.isPlainGroupChat()) return null;
         const rawScenario = character.data.scenario || '';
         if (!rawScenario) return null;
         // 若 promptDef.content 有自訂模板，優先使用；否則用預設格式
@@ -2664,17 +2684,12 @@ ${negativeExample}
     if (!groupMembers || groupMembers.length === 0) return null;
 
     // 預先收集「在場的被代演使用者角色」(persona 成員) 的 personaId → 名字，供互相認知使用
+    // persona 成員的 personaId 存在 sourceId（與多人卡同一套）
     const presentPersonaById = new Map<string, string>();
     for (const m of groupMembers) {
       const isPersona = m.isPersonaMember ?? m.source === "persona";
-      if (isPersona) {
-        const pid =
-          (m.userBinding?.mode === "bound" && m.userBinding.boundPersonaId) ||
-          undefined;
-        // persona 成員自身的識別名
-        const selfName = (m.nickname || m.name || "").trim();
-        if (selfName) presentPersonaById.set(selfName, selfName);
-        if (pid) presentPersonaById.set(pid, selfName);
+      if (isPersona && m.sourceId) {
+        presentPersonaById.set(m.sourceId, (m.nickname || m.name || "").trim());
       }
     }
 
@@ -2776,8 +2791,21 @@ ${negativeExample}
       parts.push("");
     }
 
+    // 被移出的成員：保留名字，讓 AI 知道他們不在群裡；要拉回時 target 照抄這裡的名字
+    const removed = this.options.removedGroupMembers ?? [];
+    if (removed.length > 0) {
+      parts.push(`🚪 已被移出群聊的成員（不在群裡，不能發言，也不會看到群裡的新訊息）：`);
+      for (const r of removed) {
+        parts.push(`- ${r.name}${r.removedBy ? `（被 ${r.removedBy} 移出）` : ""}`);
+      }
+      parts.push(
+        `若有人要把他們拉回群裡，輸出 <group-action type="invite" actor="邀請者" target="上面的名字"/>，target 必須與上面的名字完全一致；不在這份名單上的人不能用 invite。`,
+      );
+      parts.push("");
+    }
+
     parts.push(
-      `⚠️ 在所有 <msg name="...">、<recall name="...">、<dm name="...">、<group-action actor="..." target="..."> 等輸出欄位中，只能使用上方【】內的名字，必須完全一致。`,
+      `⚠️ 在所有 <msg name="...">、<recall name="...">、<dm name="...">、<group-action actor="..." target="..."> 等輸出欄位中，只能使用上方【】內的名字，必須完全一致${removed.length > 0 ? "（唯一例外：invite 的 target 用🚪名單上的名字）" : ""}。`,
     );
     parts.push(
       `⚠️ 禁止把名字改回角色本名，禁止為名字追加年齡、括號、前後綴、暱稱說明或任何自創變體。`,
@@ -2820,19 +2848,31 @@ ${negativeExample}
     // 普通群聊模式
     if (!groupMembers || groupMembers.length === 0) return null;
 
-    const names = groupMembers.map((m) => (m.nickname || m.name || "").trim());
+    const nameOf = (m: (typeof groupMembers)[number]) =>
+      (m.nickname || m.name || "").trim();
+    const names = groupMembers.map(nameOf);
+    const mutedNames = groupMembers.filter((m) => m.isMuted).map(nameOf);
+    const speakableCount = names.length - mutedNames.length;
     // 被代演的使用者角色（persona 成員）
     const personaNames = groupMembers
       .filter((m) => m.isPersonaMember ?? m.source === "persona")
-      .map((m) => (m.nickname || m.name || "").trim());
+      .map(nameOf);
     const personaLine =
       personaNames.length > 0
         ? `\n🧑 其中「${personaNames.join("、")}」是使用者角色，除真實使用者本人外，這些角色一律由你（AI）代為扮演發言與行動。`
         : "";
+    const mutedLine =
+      mutedNames.length > 0
+        ? `\n🔇「${mutedNames.join("、")}」目前被禁言，不能發送任何 <msg>，直到被解除禁言為止。`
+        : "";
+    const speakLine =
+      mutedNames.length > 0
+        ? `⚠️ 你必須扮演以上所有角色，未被禁言的 ${speakableCount} 位角色都必須有機會發言，不能遺漏任何一位！`
+        : `⚠️ 你必須扮演以上所有角色，每個角色都必須有機會發言，不能遺漏任何一位！`;
     const content = `<group_character_names>
 🎭 本次群聊共有 ${names.length} 位角色：${names.join("、")}
-⚠️ 你必須扮演以上所有角色，每個角色都必須有機會發言，不能遺漏任何一位！
-⚠️ 所有輸出標籤中的 name / actor / target 只能使用以上名字，禁止擅自改名或追加年齡等描述！${personaLine}
+${speakLine}
+⚠️ 所有輸出標籤中的 name / actor / target 只能使用以上名字，禁止擅自改名或追加年齡等描述！${personaLine}${mutedLine}
 </group_character_names>`;
 
     return {
@@ -3374,20 +3414,7 @@ speed：0.5~2.0，正常時省略
       }
 
       // 如果這條訊息有引用回覆，在內容前加上引用標記讓 AI 知道
-      if (msg.replyTo && !isSystemMsg) {
-        const repliedMsg = messages.find((m) => m.id === msg.replyTo);
-        if (repliedMsg) {
-          const preview = repliedMsg.content
-            .replace(/\[img:.*?\]/g, "[圖片]")
-            .replace(/\[sticker:.*?\]/g, "[表情包]");
-          const truncated =
-            preview.length > 60 ? preview.substring(0, 60) + "…" : preview;
-          const senderName = repliedMsg.is_user
-            ? this.options.userName
-            : repliedMsg.name || character.data.name;
-          msgContent = `[回覆 ${senderName}：「${truncated}」]\n${msgContent}`;
-        }
-      }
+      msgContent = `${this.formatReplyPrefix(msg, messages)}${msgContent}`;
 
       tempMessages.unshift({
         role: msgRole,

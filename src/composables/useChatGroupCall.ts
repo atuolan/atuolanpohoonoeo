@@ -3,8 +3,14 @@ import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import { parseGroupChatResponse } from "@/services/ResponseParser";
-import type { ChatMessage } from "@/types/chat";
+import type { ChatMessage, GroupMember, MultiCharMember } from "@/types/chat";
 import type { Lorebook } from "@/types/worldinfo";
+import {
+  getGroupMemberAvatarUrl,
+  getGroupMemberDisplayName,
+  toPromptGroupMember,
+  withLiveSubCharSnapshot,
+} from "@/utils/groupMembers";
 import {
   useAIGenerationStore,
   useCharactersStore,
@@ -71,6 +77,26 @@ export function useChatGroupCall(deps: {
   const groupCallParticipants = ref<GroupCallParticipant[]>([]);
   const groupCallMessages = ref<GroupCallMessage[]>([]);
 
+  /** 群裡可以進通話的成員：普通群看成員（含虛擬成員），多人卡看子角色 */
+  function listCallMembers(): GroupCallParticipant[] {
+    const meta = deps.groupMetadata.value;
+    if (!meta) return [];
+    if (meta.isMultiCharCard) {
+      return (meta.multiCharMembers || []).map((m: MultiCharMember) => ({
+        characterId: m.id,
+        name: m.name,
+        avatar: m.avatar || "",
+        isSpeaking: false,
+      }));
+    }
+    return (meta.members || []).map((m: GroupMember) => ({
+      characterId: m.characterId,
+      name: getGroupMemberDisplayName(m, charactersStore.characters),
+      avatar: getGroupMemberAvatarUrl(m, charactersStore.characters),
+      isSpeaking: false,
+    }));
+  }
+
   /** 發起群通話 */
   function startGroupCall() {
     if (!deps.isGroupChat.value || !deps.groupMetadata.value) return;
@@ -80,19 +106,7 @@ export function useChatGroupCall(deps: {
     groupCallStartedAt.value = Date.now();
     groupCallMessages.value = [];
 
-    groupCallParticipants.value = deps.groupMetadata.value.members.map(
-      (member: any) => {
-        const char = charactersStore.characters.find(
-          (c) => c.id === member.characterId,
-        );
-        return {
-          characterId: member.characterId,
-          name: char?.nickname || char?.data?.name || "未知角色",
-          avatar: char?.avatar || "",
-          isSpeaking: false,
-        };
-      },
-    );
+    groupCallParticipants.value = listCallMembers();
 
     groupCallMessages.value.push({
       type: "system",
@@ -105,8 +119,8 @@ export function useChatGroupCall(deps: {
         isActive: true,
         initiatorCharacterId: null,
         startedAt: groupCallStartedAt.value,
-        participants: deps.groupMetadata.value.members.map((m: any) => ({
-          characterId: m.characterId,
+        participants: groupCallParticipants.value.map((p) => ({
+          characterId: p.characterId,
           joinedAt: Date.now(),
         })),
       };
@@ -170,11 +184,11 @@ export function useChatGroupCall(deps: {
     );
     if (existing) return;
 
-    const char = charactersStore.characters.find((c) => c.id === characterId);
+    const member = listCallMembers().find((p) => p.characterId === characterId);
     groupCallParticipants.value.push({
       characterId,
       name: characterName,
-      avatar: char?.avatar || "",
+      avatar: member?.avatar || "",
       isSpeaking: false,
     });
 
@@ -303,14 +317,28 @@ export function useChatGroupCall(deps: {
           updatedAt: m.timestamp,
         }));
 
-      const memberCharacters = deps.groupMetadata.value.members
-        .map((m: any) =>
-          charactersStore.characters.find((c) => c.id === m.characterId),
-        )
-        .filter((c: any): c is NonNullable<typeof c> => c !== undefined);
+      const meta = deps.groupMetadata.value;
+      const isMultiCharCard = !!meta.isMultiCharCard;
+
+      // 有角色卡的成員（世界書從這些卡讀）。多人卡只有卡本身；普通群是還在群裡、角色卡還在的成員
+      const memberCharacters = isMultiCharCard
+        ? charactersStore.characters.filter(
+            (c) => c.id === deps.currentChatData.value?.characterId,
+          )
+        : (meta.members as GroupMember[])
+            .filter((m) => !m.isVirtual)
+            .map((m) =>
+              charactersStore.characters.find((c) => c.id === m.characterId),
+            )
+            .filter((c): c is NonNullable<typeof c> => c !== undefined);
 
       if (memberCharacters.length === 0) {
         console.error("[GroupCall] 找不到任何群成員角色");
+        groupCallMessages.value.push({
+          type: "system",
+          content: "找不到可用的角色卡，這通電話沒辦法回覆",
+          timestamp: Date.now(),
+        });
         return;
       }
 
@@ -349,22 +377,16 @@ export function useChatGroupCall(deps: {
 
       await promptManagerStore.loadConfig();
 
-      const groupMembersData = deps.groupMetadata.value.members.map(
-        (m: any) => {
-          const char = memberCharacters.find((c: any) => c.id === m.characterId);
-          return {
-            characterId: m.characterId,
-            name: char?.nickname || char?.data?.name || m.characterId,
-            nickname: m.nickname,
-            originalName: char?.data?.name || m.characterId,
-            personality: char?.data?.personality || "",
-            description: char?.data?.description || "",
-            avatar: char?.avatar || "",
-            isAdmin: m.isAdmin,
-            isMuted: m.isMuted,
-          };
-        },
-      );
+      const groupMembersData = isMultiCharCard
+        ? undefined
+        : (meta.members as GroupMember[]).map((m) =>
+            toPromptGroupMember(m, charactersStore.characters),
+          );
+      const multiCharMembers = isMultiCharCard
+        ? (meta.multiCharMembers || []).map((m: MultiCharMember) =>
+            withLiveSubCharSnapshot(m, charactersStore.characters),
+          )
+        : undefined;
 
       const builder = new PromptBuilder({
         character: memberCharacters[0],
@@ -395,7 +417,9 @@ export function useChatGroupCall(deps: {
           : {}),
         groupChatMode: true,
         groupMembers: groupMembersData,
-        groupName: deps.groupMetadata.value.groupName,
+        isMultiCharCard,
+        multiCharMembers,
+        groupName: meta.groupName,
         groupCallMode: true,
         enableRealTimeAwareness: deps.chatEnableRealTimeAwareness.value,
         fakeTimeOverride: deps.getChatNow ? deps.getChatNow() : undefined,
@@ -503,6 +527,11 @@ export function useChatGroupCall(deps: {
       }
     } catch (error) {
       console.error("[GroupCall] AI 回覆失敗:", error);
+      groupCallMessages.value.push({
+        type: "system",
+        content: `回覆失敗：${error instanceof Error ? error.message : String(error)}`,
+        timestamp: Date.now(),
+      });
     } finally {
       aiGenerationStore.completeGeneration(deps.currentChatId.value!, "chat");
     }

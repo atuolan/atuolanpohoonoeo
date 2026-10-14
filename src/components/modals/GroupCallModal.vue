@@ -1,7 +1,8 @@
 <template>
   <Teleport to="body">
     <Transition name="call-fade">
-      <div v-if="visible" class="group-call-overlay" @click.self="hangUp">
+      <!-- 點背景不掛斷：高螢幕的手機上下會露出背景，誤觸就斷線；掛斷用下方的紅色按鈕 -->
+      <div v-if="visible" class="group-call-overlay">
         <div class="group-call-container" :class="{ connected: true }">
           <!-- 背景模糊效果 -->
           <div class="call-background">

@@ -35,7 +35,8 @@ import ForwardTargetPickerModal from "@/components/modals/ForwardTargetPickerMod
 import VideoCallModal from "@/components/modals/VideoCallModal.vue";
 import ToolConfirmationModal from "@/components/modals/ToolConfirmationModal.vue";
 import ImageSearchPanel from "@/components/panels/ImageSearchPanel.vue";
-import { _delay, _escapeRegex, _messageRenderDelay, countTurns, formatClaimAmount, hashString, isShadowBubbleOf, sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
+import { _delay, _escapeRegex, _messageRenderDelay, countTurns, formatClaimAmount, getPreviewText, hashString, isShadowBubbleOf, sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
+import { findQuotedMessage } from "@/utils/replyQuote";
 import { setDebugInfoLine } from "@/utils/debugOverlay";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 import { useChatAffinity } from "@/composables/useChatAffinity";
@@ -72,7 +73,6 @@ import { useChatInputHelper } from "@/composables/useChatInputHelper";
 import { useChatMedia } from "@/composables/useChatMedia";
 import { useChatMiniFeatures } from "@/composables/useChatMiniFeatures";
 import { useChatMessageActions } from "@/composables/useChatMessageActions";
-import { useMultiCharMembers } from "@/composables/useMultiCharMembers";
 import { useChatTTS } from "@/composables/useChatTTS";
 import { useChatSideEffects } from "@/composables/useChatSideEffects";
 import { useChatInit } from "@/composables/useChatInit";
@@ -94,6 +94,17 @@ import { useChatPlusMenuRouter } from "@/composables/useChatPlusMenuRouter";
 import { useChatScreenshot } from "@/composables/useChatScreenshot";
 import { useChatForward } from "@/composables/useChatForward";
 import { formatForwardedForPrompt } from "@/utils/chatForward";
+import {
+  buildMentionInstruction,
+  describeGroupAction,
+  findMentionedNames,
+  findRemovedMemberByName,
+  getGroupMemberAvatarUrl,
+  getGroupMemberBaseName,
+  getGroupMemberDisplayName,
+  toPromptGroupMember,
+  withLiveSubCharSnapshot,
+} from "@/utils/groupMembers";
 import { useChatSearch } from "@/composables/useChatSearch";
 import { resolveLastSummaryTime, useChatSummaryDiary } from "@/composables/useChatSummaryDiary";
 import {
@@ -154,6 +165,7 @@ import {
   parseTimeAdvanceTag,
   parseTimeJumpTag,
   parseGroupChatResponse,
+  type ParsedGroupMessage,
 } from "@/services/ResponseParser";
 import { createStTemplateContext } from "@/services/StTemplateContextService";
 import {
@@ -515,11 +527,21 @@ const groupMemberCount = computed(() => {
 
 // 群聊成員頭像版本鍵（用於 v-memo，當頭像變更時觸發重新渲染）
 const groupMemberAvatarVersion = computed(() => {
-  if (!groupMetadata.value?.multiCharMembers) return '';
-  return groupMetadata.value.multiCharMembers
-    .map((m: any) => `${m.id}:${(m.avatar || '').slice(-16)}`)
-    .join(',');
+  const meta = groupMetadata.value;
+  if (!meta) return '';
+  const subs = (meta.multiCharMembers || []).map(
+    (m) => `${m.id}:${m.name}:${(m.avatar || '').slice(-16)}`,
+  );
+  const virtuals = (meta.members || [])
+    .filter((m) => m.isVirtual)
+    .map((m) => `${m.characterId}:${(m.avatar || '').slice(-16)}`);
+  return [...subs, ...virtuals].join(',');
 });
+
+// 被移出成員的版本鍵（v-memo 用）：拉回後「拉回群裡」按鈕要消失
+const removedMembersVersion = computed(() =>
+  (groupMetadata.value?.removedMembers ?? []).map((m) => m.characterId).join(','),
+);
 
 // 群聊成員資訊（用於 ChatInfoModal）
 const groupMembersForInfo = computed(() => {
@@ -551,53 +573,60 @@ const groupMembersForInfo = computed(() => {
     }));
   }
 
-  return groupMetadata.value.members.map((member) => {
-    // 虛擬成員（手動 / persona / 引入無真實卡）：人設由 member 自身承載
-    if (member.isVirtual) {
-      return {
-        characterId: member.characterId,
-        name: member.name || "未命名成員",
-        nickname: member.nickname,
-        avatar: member.avatar || "",
-        isAdmin: member.isAdmin,
-        isMuted: member.isMuted,
-        subCharSource: member.source,
-        isPersonaMember: member.isPersonaMember,
-        boundPersonaName:
-          member.userBinding?.mode === "bound"
-            ? member.userBinding.boundPersonaName
-            : undefined,
-        relationLabel:
-          member.userBinding?.mode === "bound"
-            ? member.userBinding.relationLabel
-            : undefined,
-        affinityEnabled: member.affinity?.enabled,
-      };
-    }
-    // 一般角色卡成員
-    const char = charactersStore.characters.find(
-      (c) => c.id === member.characterId,
-    );
-    return {
-      characterId: member.characterId,
-      name: char?.data?.name || "未知角色",
-      nickname: member.nickname,
-      avatar: char?.avatar || "",
-      isAdmin: member.isAdmin,
-      isMuted: member.isMuted,
-      subCharSource: member.source,
-      boundPersonaName:
-        member.userBinding?.mode === "bound"
-          ? member.userBinding.boundPersonaName
-          : undefined,
-      relationLabel:
-        member.userBinding?.mode === "bound"
-          ? member.userBinding.relationLabel
-          : undefined,
-      affinityEnabled: member.affinity?.enabled,
-    };
-  });
+  // 普通群聊：角色卡成員的名字、頭像看角色卡；虛擬成員（手動 / persona / 引入）看成員自己
+  return groupMetadata.value.members.map((member) => ({
+    characterId: member.characterId,
+    name: getGroupMemberBaseName(member, charactersStore.characters),
+    nickname: member.nickname,
+    avatar: getGroupMemberAvatarUrl(member, charactersStore.characters),
+    isAdmin: member.isAdmin,
+    isMuted: member.isMuted,
+    isVirtual: !!member.isVirtual,
+    subCharSource: member.source,
+    isPersonaMember: member.isPersonaMember,
+    boundPersonaName:
+      member.userBinding?.mode === "bound"
+        ? member.userBinding.boundPersonaName
+        : undefined,
+    relationLabel:
+      member.userBinding?.mode === "bound"
+        ? member.userBinding.relationLabel
+        : undefined,
+    affinityEnabled: member.affinity?.enabled,
+  }));
 });
+
+// @點名的對象：群裡能發言的成員（被禁言的不列；多人卡是子角色）
+const mentionCandidates = computed(() =>
+  groupMembersForInfo.value
+    .filter((m) => !m.isMuted)
+    .map((m) => ({
+      id: m.characterId,
+      name: (m.nickname || m.name || "").trim(),
+      avatar: m.avatar || "",
+    }))
+    .filter((m) => m.name),
+);
+
+// 在輸入框最後插入「@名字 」並把焦點放回輸入框
+function insertMention(name: string) {
+  const text = inputText.value;
+  const needsSpace = text.length > 0 && !/\s$/.test(text);
+  inputText.value = `${text}${needsSpace ? " " : ""}@${name} `;
+  nextTick(() => {
+    const el = messageInputRef.value;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    autoResizeInput();
+  });
+}
+
+// 群組詳情成員卡片的「在聊天裡 @他」：關掉詳情頁，輸入框補上 @名字
+function handleMentionFromDetails(name: string) {
+  closeChatDetails();
+  insertMention(name);
+}
 
 // 訊息資訊（用於 ChatInfoModal，包含 senderCharacterId）
 const messagesForInfo = computed(() => {
@@ -611,7 +640,10 @@ const messagesForInfo = computed(() => {
   }));
 });
 
-function resolveGroupMemberByName(senderName: string): {
+function resolveGroupMemberByName(
+  senderName: string,
+  exactOnly = false,
+): {
   characterId?: string;
   avatar: string;
   canonicalName: string;
@@ -695,6 +727,10 @@ function resolveGroupMemberByName(senderName: string): {
 
   // 第二輪：部分匹配（當 AI 使用複合名稱中的單一名稱時）
   // 例如：AI 輸出 "雪拉比" 應該匹配到群組成員 "基拉祈和雪拉比"
+  // 踢人、禁言這類會改資料的動作不走部分匹配，避免對錯人
+  if (exactOnly) {
+    return { characterId: undefined, avatar: "", canonicalName: rawName };
+  }
   for (const candidate of candidateNames) {
     // 候選名稱至少要有 2 個字元才進行部分匹配，避免誤匹配
     if (candidate.length < 2) continue;
@@ -752,6 +788,181 @@ function getGroupMemberAvatar(senderName: string): string {
 // 群聊輔助：根據角色名稱取得角色 ID
 function getGroupMemberIdByName(senderName: string): string | undefined {
   return resolveGroupMemberByName(senderName).characterId;
+}
+
+/** 群管理動作的結果：applied 生效、blocked 被規則擋下、not-found 對不到人、ignored 不改資料 */
+type GroupActionResult = "applied" | "blocked" | "not-found" | "ignored";
+
+// 套用 AI 輸出的群管理動作（改群名、移出、拉回、禁言）。
+// 移出與禁言只認完全相同的名字；移出的成員資料保留在 removedMembers，之後可以拉回；
+// 群裡至少留 2 位成員。多人卡的子角色是卡的一部分，移出／禁言只當劇情，不改資料
+function applyGroupActionToMetadata(parsedMsg: ParsedGroupMessage): GroupActionResult {
+  const meta = currentChatData.value?.groupMetadata;
+  if (!meta) return "ignored";
+  const type = parsedMsg.groupActionType;
+  if (type === "rename") {
+    const newName = parsedMsg.groupActionValue?.trim();
+    if (newName) meta.groupName = newName;
+    return "applied";
+  }
+  if (meta.isMultiCharCard || !parsedMsg.groupActionTarget) return "ignored";
+
+  if (type === "invite") {
+    const removed = findRemovedMemberByName(
+      meta.removedMembers ?? [],
+      parsedMsg.groupActionTarget,
+      charactersStore.characters,
+    );
+    if (!removed) return "not-found";
+    restoreRemovedMember(removed.characterId);
+    return "applied";
+  }
+
+  const targetId = resolveGroupMemberByName(parsedMsg.groupActionTarget, true).characterId;
+  const member = targetId
+    ? meta.members.find((m) => m.characterId === targetId)
+    : undefined;
+  if (!member) return "not-found";
+  if (type === "kick") {
+    if (meta.members.length <= 2) return "blocked";
+    meta.members = meta.members.filter((m) => m.characterId !== member.characterId);
+    meta.removedMembers = [
+      ...(meta.removedMembers ?? []).filter((m) => m.characterId !== member.characterId),
+      { ...member, removedAt: Date.now(), removedBy: parsedMsg.groupActionActor || undefined },
+    ];
+    return "applied";
+  }
+  if (type === "mute" || type === "unmute") {
+    member.isMuted = type === "mute";
+    return "applied";
+  }
+  return "ignored";
+}
+
+// 群管理動作要顯示的訊息。移出被規則擋下時改成說明；
+// 移出、拉回對不到人時不顯示，畫面不能說有人進出群卻沒有發生
+function buildGroupActionMessage(
+  parsedMsg: ParsedGroupMessage,
+  index: number,
+  result: GroupActionResult,
+): Message | null {
+  const type = parsedMsg.groupActionType;
+  const base = { id: `msg_${Date.now()}_${index}`, role: "system" as const, timestamp: Date.now() + index };
+  if ((type === "kick" || type === "invite") && result === "not-found") {
+    console.log(`[ChatScreen] 群管理 ${type} 對不到成員「${parsedMsg.groupActionTarget}」，略過`);
+    return null;
+  }
+  if (result === "blocked") {
+    return {
+      ...base,
+      content: `${parsedMsg.groupActionActor || "有人"} 想把 ${parsedMsg.groupActionTarget} 移出群聊，但群裡至少要留 2 位成員`,
+    };
+  }
+  return {
+    ...base,
+    content: "",
+    isGroupAction: true,
+    groupActionType: type,
+    groupActionActor: parsedMsg.groupActionActor,
+    groupActionTarget: parsedMsg.groupActionTarget ?? undefined,
+    groupActionValue: parsedMsg.groupActionValue ?? undefined,
+  };
+}
+
+// 把被移出的成員拉回群裡：重新入群，管理員與禁言都重設
+function restoreRemovedMember(characterId: string): boolean {
+  const meta = currentChatData.value?.groupMetadata;
+  const removed = meta?.removedMembers?.find((m) => m.characterId === characterId);
+  if (!meta || !removed) return false;
+  const { removedAt: _removedAt, removedBy: _removedBy, ...member } = removed;
+  meta.removedMembers = meta.removedMembers!.filter((m) => m.characterId !== characterId);
+  if (!meta.members.some((m) => m.characterId === characterId)) {
+    meta.members.push({ ...member, isAdmin: false, isMuted: false, joinedAt: Date.now() });
+  }
+  return true;
+}
+
+// 使用者自己把人拉回來（聊天裡的按鈕、群組詳情）：留一則群管理訊息，AI 才知道他回來了
+async function restoreRemovedMemberByUser(characterId: string) {
+  const meta = currentChatData.value?.groupMetadata;
+  const removed = meta?.removedMembers?.find((m) => m.characterId === characterId);
+  if (!removed || !restoreRemovedMember(characterId)) return;
+  messages.value.push({
+    id: `msg_${Date.now()}_invite`,
+    role: "system",
+    content: "",
+    timestamp: Date.now(),
+    isGroupAction: true,
+    groupActionType: "invite",
+    groupActionActor: effectivePersona.value?.name || userStore.currentName || "我",
+    groupActionTarget: getGroupMemberDisplayName(removed, charactersStore.characters),
+  });
+  scrollToBottom();
+  await saveChatImmediate();
+}
+
+// 聊天裡「移出群聊」訊息上的「拉回群裡」（參數是被移出者的名字）
+function onRestoreGroupMemberFromMessage(...args: any[]) {
+  const removed = findRemovedMemberByName(
+    groupMetadata.value?.removedMembers ?? [],
+    String(args[0] ?? ""),
+    charactersStore.characters,
+  );
+  if (removed) void restoreRemovedMemberByUser(removed.characterId);
+}
+
+// 這個名字是不是已被移出、還沒拉回的成員
+function isRemovedMemberName(name?: string): boolean {
+  if (!name) return false;
+  return !!findRemovedMemberByName(
+    groupMetadata.value?.removedMembers ?? [],
+    name,
+    charactersStore.characters,
+  );
+}
+
+// 被禁言或已被移出的成員不能在群裡發一般訊息（多人卡沒有禁言和移出）
+function isSilencedGroupSender(senderCharId: string | undefined, rawName: string): boolean {
+  if (groupMetadata.value?.isMultiCharCard) return false;
+  if (senderCharId) {
+    return !!groupMetadata.value?.members.find((m) => m.characterId === senderCharId)?.isMuted;
+  }
+  return isRemovedMemberName(rawName);
+}
+
+// 私信要送進哪個角色的私聊：只有真的角色卡才有私聊；
+// 多人卡裡引入自角色卡的子角色，送進那張卡的私聊；其他（虛擬成員、本卡子角色）只留在群裡
+function resolveDmCharacterId(senderCharId?: string): string | undefined {
+  if (!senderCharId) return undefined;
+  const exists = (id: string) => charactersStore.characters.some((c) => c.id === id);
+  if (exists(senderCharId)) return senderCharId;
+  const sub = groupMetadata.value?.multiCharMembers?.find((m) => m.id === senderCharId);
+  if (sub?.source === "character" && sub.sourceId && exists(sub.sourceId)) {
+    return sub.sourceId;
+  }
+  return undefined;
+}
+
+// 群聊訊息的發送者頭像：先用 ID 找成員（子角色、虛擬成員的頭像存在成員身上），
+// 再用名字找，最後才用訊息當時存下的頭像
+function getGroupSenderAvatar(message: Message): string {
+  const meta = groupMetadata.value;
+  const id = message.senderCharacterId;
+  if (meta?.isMultiCharCard) {
+    const sub = id ? meta.multiCharMembers?.find((m) => m.id === id) : undefined;
+    if (sub) return sub.avatar || "";
+    const byName = message.senderCharacterName
+      ? getGroupMemberAvatar(message.senderCharacterName)
+      : "";
+    return byName || message.senderCharacterAvatar || "";
+  }
+  if (id) {
+    const member = meta?.members.find((m) => m.characterId === id);
+    if (member?.isVirtual) return member.avatar || message.senderCharacterAvatar || "";
+    const avatar = getCharacterAvatar(id);
+    if (avatar) return avatar;
+  }
+  return message.senderCharacterAvatar || "";
 }
 
 /**
@@ -816,6 +1027,27 @@ const currentCharacter = computed(() => {
     (c) =>
       c.nickname === props.characterName || c.data.name === props.characterName,
   );
+});
+
+// 普通群聊組 prompt 用的主角色卡：建群時的第一位成員可能已被移出、角色卡也可能被刪，
+// 改用目前還在群裡、角色卡還在的成員（原本那位還在就照用）
+const groupPromptHostCharacter = computed(() => {
+  const meta = currentChatData.value?.groupMetadata;
+  if (!currentChatData.value?.isGroupChat || !meta || meta.isMultiCharCard) {
+    return currentCharacter.value;
+  }
+  const memberIds = meta.members
+    .filter((m) => !m.isVirtual)
+    .map((m) => m.characterId);
+  const ordered =
+    props.characterId && memberIds.includes(props.characterId)
+      ? [props.characterId, ...memberIds]
+      : memberIds;
+  for (const id of ordered) {
+    const found = charactersStore.characters.find((c) => c.id === id);
+    if (found) return found;
+  }
+  return currentCharacter.value;
 });
 
 // 頂欄顯示名稱（即時從 store 讀取，暱稱優先）
@@ -2125,7 +2357,21 @@ const onMessageScreenshot = (...args: any[]) => handleMessageScreenshot(args[0] 
 const onMessageBatchScreenshot = (...args: any[]) =>
   handleMultiDeleteFromMessage(args[0] as string);
 const onMessageForward = (...args: any[]) => openForwardForMessage(args[0] as string);
-const onMessageAvatarClick = (...args: any[]) => handleAvatarClick(args[0] as string);
+// 群聊點成員頭像 = @他；私聊照舊開好感度面板
+const onMessageAvatarClick = (...args: any[]) => {
+  const messageId = args[0] as string;
+  if (isGroupChat.value) {
+    const msg = messages.value.find((m) => m.id === messageId);
+    const target =
+      mentionCandidates.value.find((c) => c.id === msg?.senderCharacterId) ||
+      mentionCandidates.value.find((c) => c.name === msg?.senderCharacterName?.trim());
+    if (target) {
+      insertMention(target.name);
+      return;
+    }
+  }
+  handleAvatarClick(messageId);
+};
 const onMessageSplitRegexSegments = (...args: any[]) =>
   handleSplitRegexSegments(
     args[0] as string,
@@ -2266,70 +2512,42 @@ const {
   getGroupMemberIdByName,
 });
 
-// ===== 多人卡子角色管理 =====
+// ===== 群聊成員管理 composable =====
 const {
-  showAddMultiCharMember,
-  newMultiCharName,
-  newMultiCharAvatar,
-  multiCharAvatarInput,
-  editingMultiCharId,
-  failedMultiCharAvatars,
-  getProxiedUrl,
-  triggerMultiCharAvatarUpload,
-  handleMultiCharAvatarChange,
-  addMultiCharMember,
-  editMultiCharMember,
-  removeMultiCharMember,
-  resetMultiCharForm,
-} = useMultiCharMembers({
-  groupMetadata,
-});
-
-// ===== 群聊設定 composable =====
-const {
-  showGroupSettingsModal,
-  editGroupName,
-  editGroupLorebookIds,
-  groupAvatarInput,
-  handleOpenGroupSettings,
-  closeGroupSettings,
-  toggleGroupLorebook,
-  triggerGroupAvatarUpload,
-  handleGroupAvatarChange,
-  removeGroupAvatar,
-  saveGroupSettings,
   toggleGroupMemberAdmin,
   toggleGroupMemberMute,
   removeGroupMember,
-  addMemberToGroup,
 } = useChatGroupSettings({
-  isGroupChat,
   groupMetadata,
-  showChatInfoModal,
-  saveChatImmediate,
-  resetMultiCharForm,
 });
+
+// 聊天資訊的齒輪：回到群組詳情（成員、群名、世界書都在那裡改）
+function openGroupDetailsFromInfo() {
+  showChatInfoModal.value = false;
+  if (!showChatDetails.value) openChatDetails();
+}
 
 // ===== ChatDetailsScreen 群聊內聯編輯：傳入資料與處理函式 =====
 // 群頭像（自訂群頭像，與顯示用 displayAvatar 區分）
 const detailsGroupAvatar = computed(() => groupMetadata.value?.groupAvatar || "");
 
-// 可加入群聊的角色（尚未在群內）
-const detailsAvailableCharacters = computed(() => {
-  if (!groupMetadata.value || groupMetadata.value.isMultiCharCard) return [];
-  return charactersStore.characters
-    .filter(
-      (c) =>
-        !groupMetadata.value?.members?.some(
-          (m: any) => m.characterId === c.id,
-        ),
-    )
-    .map((c) => ({
-      id: c.id,
-      name: c.data?.name || c.nickname || "未命名",
-      avatar: c.avatar || "",
-    }));
-});
+// 被移出的成員（群組詳情顯示，可以拉回）
+const detailsRemovedMembers = computed(() =>
+  (groupMetadata.value?.removedMembers ?? []).map((m) => ({
+    characterId: m.characterId,
+    name: getGroupMemberDisplayName(m, charactersStore.characters),
+    avatar: getGroupMemberAvatarUrl(m, charactersStore.characters),
+    removedBy: m.removedBy,
+  })),
+);
+
+// 刪掉被移出成員的紀錄（即時儲存）
+async function handleForgetRemovedMember(characterId: string) {
+  const meta = groupMetadata.value;
+  if (!meta?.removedMembers) return;
+  meta.removedMembers = meta.removedMembers.filter((m) => m.characterId !== characterId);
+  await saveChatImmediate();
+}
 
 // 群組綁定世界書 id 清單
 const detailsGroupLorebookIds = computed(
@@ -2366,9 +2584,35 @@ async function handleDetailsRemoveGroupAvatar() {
   await saveChatImmediate();
 }
 
-// 加成員（即時儲存）
-async function handleDetailsAddMember(characterId: string) {
-  addMemberToGroup(characterId);
+// 改成員（即時儲存）：角色卡成員改群暱稱；虛擬成員、多人卡子角色改名字與頭像。
+// 已載入的訊息一起換成新名字，畫面和送給 AI 的歷史才不會出現舊名字
+async function handleDetailsUpdateMember(
+  characterId: string,
+  patch: { nickname?: string; name?: string; avatar?: string },
+) {
+  const meta = groupMetadata.value;
+  if (!meta) return;
+  let displayName: string | undefined;
+  if (meta.isMultiCharCard) {
+    const sub = meta.multiCharMembers?.find((m) => m.id === characterId);
+    if (!sub) return;
+    if (patch.name) sub.name = patch.name;
+    if (patch.avatar !== undefined) sub.avatar = patch.avatar;
+    displayName = sub.name;
+  } else {
+    const member = meta.members.find((m) => m.characterId === characterId);
+    if (!member) return;
+    if (member.isVirtual) {
+      if (patch.name) member.name = patch.name;
+      if (patch.avatar !== undefined) member.avatar = patch.avatar;
+    } else if (patch.nickname !== undefined) {
+      member.nickname = patch.nickname || undefined;
+    }
+    displayName = getGroupMemberDisplayName(member, charactersStore.characters);
+  }
+  for (const m of messages.value) {
+    if (m.senderCharacterId === characterId) m.senderCharacterName = displayName;
+  }
   await saveChatImmediate();
 }
 
@@ -2425,7 +2669,12 @@ watch(
   },
 );
 
-// 加子角色 emit payload（與 ChatDetailsScreen / useMultiCharMembers 對齊）
+// 開啟群組詳情時，重新讀取加成員用的聊天清單（其他多人卡、私聊好感度）
+watch(showChatDetails, (open) => {
+  if (open && isGroupChat.value) void refreshSubcharSources();
+});
+
+// 加子角色 emit payload（與 ChatDetailsScreen 對齊）
 interface AddSubCharEmitPayload {
   name: string;
   avatar?: string;
@@ -2453,13 +2702,40 @@ interface AddSubCharEmitPayload {
 
 // 子角色匯入來源清單（角色卡 / 其他多人卡子角色 / persona）
 const {
-  characterSources: subcharCharacterSources,
-  multiCharSources: subcharMultiCharSources,
-  personaSources: subcharPersonaSources,
+  characterSources: allSubcharCharacterSources,
+  multiCharSources: allSubcharMultiCharSources,
+  personaSources: allSubcharPersonaSources,
   bindablePersonas: subcharBindablePersonas,
+  refresh: refreshSubcharSources,
 } = useSubCharSources({
   currentChatId: () => currentChatId.value ?? undefined,
 });
+
+// 已經在群裡的來源不再列出，避免同一個人加兩次
+// 普通群：角色卡成員看 characterId，引入的成員看 sourceId；多人卡：子角色看 sourceId
+const groupSourceIds = computed(() => {
+  const meta = groupMetadata.value;
+  const ids = new Set<string>();
+  if (!meta) return ids;
+  const entries: Array<{ id: string; sourceId?: string; isCard: boolean }> =
+    meta.isMultiCharCard
+      ? (meta.multiCharMembers || []).map((m) => ({ id: m.id, sourceId: m.sourceId, isCard: false }))
+      : meta.members.map((m) => ({ id: m.characterId, sourceId: m.sourceId, isCard: !m.isVirtual }));
+  for (const e of entries) {
+    if (e.isCard) ids.add(e.id);
+    if (e.sourceId) ids.add(e.sourceId);
+  }
+  return ids;
+});
+const subcharCharacterSources = computed(() =>
+  allSubcharCharacterSources.value.filter((c) => !groupSourceIds.value.has(c.id)),
+);
+const subcharMultiCharSources = computed(() =>
+  allSubcharMultiCharSources.value.filter((s) => !groupSourceIds.value.has(s.member.id)),
+);
+const subcharPersonaSources = computed(() =>
+  allSubcharPersonaSources.value.filter((p) => !groupSourceIds.value.has(p.id)),
+);
 
 // 新增子角色（多人卡，即時儲存，支援多來源 + 關係綁定 + 好感度唯讀引入）
 async function handleDetailsAddSubchar(payload: AddSubCharEmitPayload) {
@@ -2527,7 +2803,9 @@ async function handleDetailsAddSubchar(payload: AddSubCharEmitPayload) {
 
 // 移除子角色（多人卡，即時儲存）
 async function handleDetailsRemoveSubchar(id: string) {
-  removeMultiCharMember(id);
+  const meta = groupMetadata.value;
+  if (!meta?.multiCharMembers) return;
+  meta.multiCharMembers = meta.multiCharMembers.filter((m) => m.id !== id);
   await saveChatImmediate();
 }
 
@@ -2612,6 +2890,12 @@ async function handleDetailsAddGroupMemberRich(payload: AddSubCharEmitPayload) {
     userBinding,
     affinity,
   });
+  // 重新加入之前被移出的同一位：已移出名單裡的舊紀錄一併清掉
+  if (groupMetadata.value.removedMembers?.length) {
+    groupMetadata.value.removedMembers = groupMetadata.value.removedMembers.filter(
+      (m) => m.characterId !== memberId && (!payload.sourceId || m.sourceId !== payload.sourceId),
+    );
+  }
   await saveChatImmediate();
 }
 
@@ -2802,6 +3086,28 @@ const {
     textarea.setSelectionRange(cursorPosition, cursorPosition);
   },
 });
+
+/**
+ * AI 的 <reply-to> 只寫了原訊息的一小段：找出原訊息接上 ID（引用框顯示名字、點了能跳回原訊息），
+ * 並把引用文字換成原訊息全文；找不到就照舊顯示模型寫的字
+ * @param history 用來找原訊息的訊息（舊到新），要包含同一輪已經出現的訊息
+ */
+function resolveAiReplyQuote(
+  parsedMsg: { replyToContent?: string; replyToName?: string },
+  history: Message[] = messages.value,
+): Pick<Message, "replyTo" | "replyToContent"> {
+  const quote = parsedMsg.replyToContent;
+  if (!quote) return {};
+  const target = findQuotedMessage(quote, history, {
+    senderName: parsedMsg.replyToName,
+    senderNameOf: (m) =>
+      m.role === "user"
+        ? effectivePersona.value?.name || userStore.currentName
+        : m.senderCharacterName || currentCharacter.value?.data?.name,
+  });
+  if (!target) return { replyToContent: quote };
+  return { replyTo: target.id, replyToContent: getPreviewText(target.content) };
+}
 
 // 快速輸入助手橫向捲動
 function handleQuickInputWheel(e: WheelEvent) {
@@ -3946,7 +4252,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       throw new Error("請先在設定中配置 API");
     }
 
-    const char = currentCharacter.value;
+    const char = groupPromptHostCharacter.value;
     if (!char) {
       console.warn(
         "[ChatScreen] 未找到角色資料! characterId:",
@@ -3998,83 +4304,94 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       return 0;
     };
 
-    // 1. 角色卡內嵌的世界書
-    if (char.data.character_book) {
-      linkedLorebooks.push({
-        id: `embedded_${char.id}`,
-        name: `${char.data.name}_embedded`,
-        description: "角色卡內嵌世界書",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        entries: (char.data.character_book.entries || []).map(
-          (e: any, idx: number) => ({
-            uid: e.id || idx,
-            key: Array.isArray(e.keys) ? e.keys : e.key ? [e.key] : [],
-            keysecondary: Array.isArray(e.secondary_keys)
-              ? e.secondary_keys
-              : [],
-            comment: e.comment || e.name || "",
-            content: e.content || "",
-            constant: e.constant || false,
-            disable: e.enabled === false || e.disable === true,
-            selective: e.selective || false,
-            selectiveLogic:
-              e.selectiveLogic ?? e.extensions?.selectiveLogic ?? 0,
-            order: e.insertion_order ?? e.order ?? 100,
-            position: normalizePosition(e),
-            depth: e.extensions?.depth ?? e.depth ?? 4,
-            role: e.extensions?.role ?? e.role ?? 0,
-            useProbability: e.extensions?.useProbability ?? false,
-            probability: e.extensions?.probability ?? 100,
-            preventRecursion: e.extensions?.prevent_recursion ?? false,
-            excludeRecursion: e.extensions?.exclude_recursion ?? false,
-            delayUntilRecursion: 0,
-            sticky: 0,
-            cooldown: 0,
-            delay: 0,
-            scanDepth: e.extensions?.scan_depth ?? null,
-            caseSensitive: e.extensions?.case_sensitive ?? null,
-            matchWholeWords: e.extensions?.match_whole_words ?? null,
-            useGroupScoring: e.extensions?.use_group_scoring ?? null,
-            automationId: e.extensions?.automation_id ?? null,
-            vectorized: e.extensions?.vectorized ?? false,
-            groupOverride: e.extensions?.group_override ?? false,
-            groupWeight: e.extensions?.group_weight ?? 100,
-            group: e.extensions?.group ?? "",
-            ignoreBudget: false,
-            matchPersonaDescription: false,
-            matchCharacterDescription: false,
-            matchCharacterPersonality: false,
-            matchCharacterDepthPrompt: false,
-            matchScenario: false,
-            matchCreatorNotes: false,
-            triggers: [],
-            outletName: e.extensions?.outletName ?? "",
-            addMemo: false,
-          }),
-        ),
-        recursiveScanning: false,
-        scanDepth: 2,
-        caseSensitive: false,
-        matchWholeWords: false,
-      });
-    }
+    // 普通群聊：每位成員的角色卡世界書都要帶；私聊、多人卡：只有這張卡
+    const lorebookSourceCharacters =
+      isGroupChat.value && groupMetadata.value && !groupMetadata.value.isMultiCharCard
+        ? groupMetadata.value.members
+            .filter((m) => !m.isVirtual)
+            .map((m) => charactersStore.characters.find((c) => c.id === m.characterId))
+            .filter((c): c is NonNullable<typeof c> => !!c)
+        : [char];
 
-    // 2. 角色關聯的世界書
-    if (char.lorebookIds && char.lorebookIds.length > 0) {
-      for (const lorebookId of char.lorebookIds) {
-        const lorebook = lorebooksStore.lorebooks.find(
-          (lb) => lb.id === lorebookId,
-        );
-        if (lorebook) {
-          linkedLorebooks.push(lorebook);
+    for (const sourceChar of lorebookSourceCharacters) {
+      // 1. 角色卡內嵌的世界書
+      if (sourceChar.data.character_book) {
+        linkedLorebooks.push({
+          id: `embedded_${sourceChar.id}`,
+          name: `${sourceChar.data.name}_embedded`,
+          description: "角色卡內嵌世界書",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          entries: (sourceChar.data.character_book.entries || []).map(
+            (e: any, idx: number) => ({
+              uid: e.id || idx,
+              key: Array.isArray(e.keys) ? e.keys : e.key ? [e.key] : [],
+              keysecondary: Array.isArray(e.secondary_keys)
+                ? e.secondary_keys
+                : [],
+              comment: e.comment || e.name || "",
+              content: e.content || "",
+              constant: e.constant || false,
+              disable: e.enabled === false || e.disable === true,
+              selective: e.selective || false,
+              selectiveLogic:
+                e.selectiveLogic ?? e.extensions?.selectiveLogic ?? 0,
+              order: e.insertion_order ?? e.order ?? 100,
+              position: normalizePosition(e),
+              depth: e.extensions?.depth ?? e.depth ?? 4,
+              role: e.extensions?.role ?? e.role ?? 0,
+              useProbability: e.extensions?.useProbability ?? false,
+              probability: e.extensions?.probability ?? 100,
+              preventRecursion: e.extensions?.prevent_recursion ?? false,
+              excludeRecursion: e.extensions?.exclude_recursion ?? false,
+              delayUntilRecursion: 0,
+              sticky: 0,
+              cooldown: 0,
+              delay: 0,
+              scanDepth: e.extensions?.scan_depth ?? null,
+              caseSensitive: e.extensions?.case_sensitive ?? null,
+              matchWholeWords: e.extensions?.match_whole_words ?? null,
+              useGroupScoring: e.extensions?.use_group_scoring ?? null,
+              automationId: e.extensions?.automation_id ?? null,
+              vectorized: e.extensions?.vectorized ?? false,
+              groupOverride: e.extensions?.group_override ?? false,
+              groupWeight: e.extensions?.group_weight ?? 100,
+              group: e.extensions?.group ?? "",
+              ignoreBudget: false,
+              matchPersonaDescription: false,
+              matchCharacterDescription: false,
+              matchCharacterPersonality: false,
+              matchCharacterDepthPrompt: false,
+              matchScenario: false,
+              matchCreatorNotes: false,
+              triggers: [],
+              outletName: e.extensions?.outletName ?? "",
+              addMemo: false,
+            }),
+          ),
+          recursiveScanning: false,
+          scanDepth: 2,
+          caseSensitive: false,
+          matchWholeWords: false,
+        });
+      }
+
+      // 2. 角色關聯的世界書（群裡多位成員綁同一本時只帶一次）
+      if (sourceChar.lorebookIds && sourceChar.lorebookIds.length > 0) {
+        for (const lorebookId of sourceChar.lorebookIds) {
+          const lorebook = lorebooksStore.lorebooks.find(
+            (lb) => lb.id === lorebookId,
+          );
+          if (lorebook && !linkedLorebooks.some((lb) => lb.id === lorebook.id)) {
+            linkedLorebooks.push(lorebook);
+          }
         }
       }
     }
 
     // 3. 全局世界書
     const globalLorebooks = lorebooksStore.lorebooks.filter(
-      (lb) => lb.isGlobal,
+      (lb) => lb.isGlobal && !linkedLorebooks.some((linked) => linked.id === lb.id),
     );
     linkedLorebooks.push(...globalLorebooks);
 
@@ -4137,9 +4454,12 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           : m.role === "system"
             ? "system"
             : m.senderCharacterName || char.data.name,
-      content: m.forwardedFrom
-        ? formatForwardedForPrompt(m.content, m.forwardedFrom)
-        : m.content,
+      // 群管理訊息畫面上有文字，資料裡 content 是空的；寫成一句話 AI 才知道誰被移出、禁言
+      content: m.isGroupAction
+        ? describeGroupAction(m)
+        : m.forwardedFrom
+          ? formatForwardedForPrompt(m.content, m.forwardedFrom)
+          : m.content,
       is_user: m.role === "user",
       status: "sent" as const,
       createdAt: m.timestamp,
@@ -4413,8 +4733,11 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
     // 多人卡子角色：好感度「即時讀取為主、快照 fallback」
     // 對啟用好感度引入的成員，從來源私聊重新讀取現值，刷新 metricsSnapshot（唯讀，不寫回私聊）
+    // 引入自角色卡的子角色，人設以角色卡現況為準
     let resolvedMultiCharMembers = groupMetadata.value?.isMultiCharCard
-      ? groupMetadata.value.multiCharMembers
+      ? groupMetadata.value.multiCharMembers?.map((m) =>
+          withLiveSubCharSnapshot(m, charactersStore.characters),
+        )
       : undefined;
     if (resolvedMultiCharMembers && resolvedMultiCharMembers.length > 0) {
       const refreshed = await Promise.all(
@@ -4614,50 +4937,17 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       multiCharMembers: resolvedMultiCharMembers,
       // 普通群聊成員（多人卡模式不需要）
       groupMembers: resolvedGroupMembers
-        ? resolvedGroupMembers.map((m) => {
-            // 虛擬成員（手動 / persona / 引入無真實卡）：人設由 member 自身承載
-            if (m.isVirtual) {
-              const vName = m.name || m.characterId;
-              return {
-                characterId: m.characterId,
-                name: m.nickname || vName,
-                nickname: m.nickname,
-                originalName: vName,
-                personality: m.personaSnapshot?.personality || "",
-                description: m.personaSnapshot?.description || "",
-                avatar: m.avatar || "",
-                isAdmin: m.isAdmin,
-                isMuted: m.isMuted,
-                source: m.source,
-                isPersonaMember: m.isPersonaMember,
-                personaSnapshot: m.personaSnapshot,
-                userBinding: m.userBinding,
-                affinity: m.affinity,
-              };
-            }
-            // 一般角色卡成員
-            const char = charactersStore.characters.find(
-              (c) => c.id === m.characterId,
-            );
-            return {
-              characterId: m.characterId,
-              name: char?.nickname || char?.data?.name || m.characterId,
-              nickname: m.nickname,
-              originalName: char?.data?.name || m.characterId,
-              personality: char?.data?.personality || "",
-              description: char?.data?.description || "",
-              avatar: char?.avatar || "",
-              isAdmin: m.isAdmin,
-              isMuted: m.isMuted,
-              source: m.source,
-              isPersonaMember: m.isPersonaMember,
-              personaSnapshot: m.personaSnapshot,
-              userBinding: m.userBinding,
-              affinity: m.affinity,
-            };
-          })
+        ? resolvedGroupMembers.map((m) =>
+            toPromptGroupMember(m, charactersStore.characters),
+          )
         : undefined,
       groupName: isGroupChat.value ? groupMetadata.value?.groupName : undefined,
+      removedGroupMembers: resolvedGroupMembers
+        ? (groupMetadata.value?.removedMembers ?? []).map((m) => ({
+            name: getGroupMemberDisplayName(m, charactersStore.characters),
+            removedBy: m.removedBy,
+          }))
+        : undefined,
       socialPosts,
       // 傳入飲食記錄
       foodLogs: fitnessStore.mealLogs.length > 0
@@ -4896,6 +5186,25 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     // 📞 如果是來電後反應，附加 postCallPrompt（不存入聊天記錄）
     if (options?.postCallPrompt) {
       appendedUserPrompts.push(options.postCallPrompt);
+    }
+
+    // 👉 群聊點名：這一輪使用者訊息 @ 了誰，就要求被 @ 的角色先回覆（不存入聊天記錄）
+    if (isGroupChat.value) {
+      const turnTexts: string[] = [];
+      for (let i = messagesToUse.length - 1; i >= 0; i--) {
+        const m = messagesToUse[i];
+        if (m.role === "ai") break;
+        if (m.role === "user") turnTexts.unshift(m.content);
+      }
+      const mentioned = findMentionedNames(
+        turnTexts.join("\n"),
+        mentionCandidates.value.map((c) => c.name),
+      );
+      if (mentioned.length > 0) {
+        appendedUserPrompts.push(
+          buildMentionInstruction(mentioned, activeUserName, !useGroupChatMode.value),
+        );
+      }
     }
 
     // 🎭 當小劇場指令是最後一條時，補一條隱藏催促消息
@@ -5482,63 +5791,15 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
             // 處理群管理動作
             if (parsedMsg.isGroupAction && parsedMsg.groupActionType) {
-              // 更新 groupMetadata
-              if (
-                parsedMsg.groupActionType === "rename" &&
-                parsedMsg.groupActionValue &&
-                currentChatData.value?.groupMetadata
-              ) {
-                currentChatData.value.groupMetadata.groupName =
-                  parsedMsg.groupActionValue;
+              const actionMsg = buildGroupActionMessage(
+                parsedMsg,
+                i,
+                applyGroupActionToMetadata(parsedMsg),
+              );
+              if (actionMsg) {
+                await _gcDelayIfNeeded();
+                messages.value.push(actionMsg);
               }
-              if (
-                parsedMsg.groupActionType === "kick" &&
-                parsedMsg.groupActionTarget &&
-                currentChatData.value?.groupMetadata
-              ) {
-                const targetId = getGroupMemberIdByName(
-                  parsedMsg.groupActionTarget,
-                );
-                if (targetId) {
-                  currentChatData.value.groupMetadata.members =
-                    currentChatData.value.groupMetadata.members.filter(
-                      (m) => m.characterId !== targetId,
-                    );
-                }
-              }
-              if (
-                (parsedMsg.groupActionType === "mute" ||
-                  parsedMsg.groupActionType === "unmute") &&
-                parsedMsg.groupActionTarget &&
-                currentChatData.value?.groupMetadata
-              ) {
-                const targetId = getGroupMemberIdByName(
-                  parsedMsg.groupActionTarget,
-                );
-                if (targetId) {
-                  const member =
-                    currentChatData.value.groupMetadata.members.find(
-                      (m) => m.characterId === targetId,
-                    );
-                  if (member) {
-                    member.isMuted = parsedMsg.groupActionType === "mute";
-                  }
-                }
-              }
-
-              const actionMsg: Message = {
-                id: `msg_${Date.now()}_${i}`,
-                role: "system",
-                content: "",
-                timestamp: Date.now() + i,
-                isGroupAction: true,
-                groupActionType: parsedMsg.groupActionType,
-                groupActionActor: parsedMsg.groupActionActor,
-                groupActionTarget: parsedMsg.groupActionTarget ?? undefined,
-                groupActionValue: parsedMsg.groupActionValue ?? undefined,
-              };
-              await _gcDelayIfNeeded();
-              messages.value.push(actionMsg);
               continue;
             }
 
@@ -5577,13 +5838,14 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               messages.value.push(dmNotice);
 
               // 嘗試找到對應角色的 1v1 聊天並插入訊息，找不到則自動建立
-              if (senderCharId) {
+              const dmCharId = resolveDmCharacterId(senderCharId);
+              if (dmCharId) {
                 try {
-                  const existingChat = await resolvePreferredDirectChat(senderCharId);
+                  const existingChat = await resolvePreferredDirectChat(dmCharId);
 
                   // 如果沒有 1v1 聊天，自動建立一個
                   const targetChat: Chat =
-                    existingChat || createDefaultChat(senderCharId, senderName);
+                    existingChat || createDefaultChat(dmCharId, senderName);
 
                   // 構建群聊記錄數據（最近 15 輪）
                   const groupChatHistoryData = buildGroupChatHistoryData(
@@ -5665,7 +5927,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                   groupCallParticipants.value.push({
                     characterId: senderCharId,
                     name: senderName,
-                    avatar: initiatorChar?.avatar || "",
+                    avatar: initiatorChar?.avatar || senderAvatar || "",
                     isSpeaking: false,
                   });
                 }
@@ -5813,6 +6075,10 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               !parsedMsg.isTransfer
             )
               continue;
+            if (isSilencedGroupSender(senderCharId, parsedMsg.senderName || "")) {
+              console.log(`[ChatScreen] ${senderName} 已被禁言或移出，略過這則訊息`);
+              continue;
+            }
 
             // 表情包：將 stickerMeaning 轉為 MessageBubble 可識別的 [sticker:名稱] 格式
             let msgContent = parsedMsg.content;
@@ -5861,7 +6127,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               redpacketData: parsedMsg.redpacketData,
               isLocation: parsedMsg.isLocation,
               locationContent: parsedMsg.locationContent,
-              replyToContent: parsedMsg.replyToContent,
+              ...resolveAiReplyQuote(parsedMsg),
               isGift: parsedMsg.isGift,
               giftName: parsedMsg.giftName,
               isTransfer: parsedMsg.isTransfer,
@@ -6205,7 +6471,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 redpacketData: parsedMsg.redpacketData,
                 isLocation: parsedMsg.isLocation,
                 locationContent: parsedMsg.locationContent,
-                replyToContent: parsedMsg.replyToContent,
+                ...resolveAiReplyQuote(parsedMsg),
                 isGift: parsedMsg.isGift,
                 giftName: parsedMsg.giftName,
                 isTransfer: parsedMsg.isTransfer,
@@ -6748,17 +7014,12 @@ async function handleStreamingClose() {
           const senderAvatar = senderInfo.avatar;
 
           if (parsedMsg.isGroupAction) {
-            messages.value.push({
-              id: `msg_${Date.now()}_${i}`,
-              role: "system",
-              content: "",
-              timestamp: Date.now() + i,
-              isGroupAction: true,
-              groupActionType: parsedMsg.groupActionType,
-              groupActionActor: parsedMsg.groupActionActor,
-              groupActionTarget: parsedMsg.groupActionTarget ?? undefined,
-              groupActionValue: parsedMsg.groupActionValue ?? undefined,
-            });
+            const actionMsg = buildGroupActionMessage(
+              parsedMsg,
+              i,
+              applyGroupActionToMetadata(parsedMsg),
+            );
+            if (actionMsg) messages.value.push(actionMsg);
             continue;
           }
           if (parsedMsg.isRecall) {
@@ -6811,7 +7072,7 @@ async function handleStreamingClose() {
                 groupCallParticipants.value.push({
                   characterId: senderCharId,
                   name: senderName,
-                  avatar: initiatorChar?.avatar || "",
+                  avatar: initiatorChar?.avatar || senderAvatar || "",
                   isSpeaking: false,
                 });
               }
@@ -6909,6 +7170,10 @@ async function handleStreamingClose() {
             !parsedMsg.isShowVid
           )
             continue;
+          if (isSilencedGroupSender(senderCharId, parsedMsg.senderName || "")) {
+            console.log(`[ChatScreen] ${senderName} 已被禁言或移出，略過這則訊息`);
+            continue;
+          }
 
           // 表情包：將 stickerMeaning 轉為 MessageBubble 可識別的 [sticker:名稱] 格式
           let windowMsgContent = parsedMsg.content;
@@ -6957,7 +7222,7 @@ async function handleStreamingClose() {
             redpacketData: parsedMsg.redpacketData,
             isLocation: parsedMsg.isLocation,
             locationContent: parsedMsg.locationContent,
-            replyToContent: parsedMsg.replyToContent,
+            ...resolveAiReplyQuote(parsedMsg),
             isGift: parsedMsg.isGift,
             giftName: parsedMsg.giftName,
             isTransfer: parsedMsg.isTransfer,
@@ -7110,7 +7375,7 @@ async function handleStreamingClose() {
               redpacketData: parsedMsg.redpacketData,
               isLocation: parsedMsg.isLocation,
               locationContent: parsedMsg.locationContent,
-              replyToContent: parsedMsg.replyToContent,
+              ...resolveAiReplyQuote(parsedMsg),
               isGift: parsedMsg.isGift,
               giftName: parsedMsg.giftName,
               // 轉帳相關
@@ -8663,11 +8928,15 @@ async function handlePlurkPost(rawContent: string) {
   }
 }
 
+/**
+ * @param replyHistory 找引用原訊息用的歷史；回覆要寫進別的聊天時傳空陣列，只在這一批裡找
+ */
 function buildRemoteParsedMessages(
   finalContent: string,
   baseTimestamp: number,
   baseId: string,
   turnId?: string,
+  replyHistory: Message[] = [],
 ): Message[] {
   if (!needsParsing(finalContent)) {
     return [
@@ -8743,7 +9012,7 @@ function buildRemoteParsedMessages(
         redpacketData: parsedMsg.redpacketData,
         isLocation: parsedMsg.isLocation,
         locationContent: parsedMsg.locationContent,
-        replyToContent: parsedMsg.replyToContent,
+        ...resolveAiReplyQuote(parsedMsg, [...replyHistory, ...parsedMessages]),
         isGift: parsedMsg.isGift,
         giftName: parsedMsg.giftName,
         isTransfer: parsedMsg.isTransfer,
@@ -8905,6 +9174,7 @@ function toStoredRemoteMessage(message: Message, fallbackName: string): ChatMess
     isLocation: message.isLocation,
     locationContent: message.locationContent,
     replyToContent: message.replyToContent,
+    replyTo: message.replyTo,
     isGift: message.isGift,
     giftName: message.giftName,
     isTransfer: message.isTransfer,
@@ -8943,7 +9213,13 @@ async function landRemoteGenerationTask(task: BgGenerationTaskView): Promise<voi
   const baseId = `msg_${landedAt}_${task.taskId}`;
   const characterName = currentCharacter.value?.data?.name || props.characterName || "角色";
   const turnId = currentTurnId.value || undefined;
-  const remoteMessages = buildRemoteParsedMessages(finalContent, landedAt, baseId, turnId);
+  const remoteMessages = buildRemoteParsedMessages(
+    finalContent,
+    landedAt,
+    baseId,
+    turnId,
+    task.chatId === currentChatId.value ? messages.value : [],
+  );
 
   if (!finalContent.trim()) {
     await handleRemoteGenerationError(task, "HF 後台生成返回空內容");
@@ -9341,7 +9617,6 @@ useChatCleanup({
           :current-user-avatar="displayUserAvatar"
           :is-multi-char-card="!!groupMetadata?.isMultiCharCard"
           :group-avatar="detailsGroupAvatar"
-          :available-characters="detailsAvailableCharacters"
           :group-lorebook-ids="detailsGroupLorebookIds"
           :available-lorebooks="detailsAvailableLorebooks"
           :character-sources="subcharCharacterSources"
@@ -9365,7 +9640,7 @@ useChatCleanup({
           @update-group-name="handleDetailsUpdateGroupName"
           @change-group-avatar="handleDetailsChangeGroupAvatar"
           @remove-group-avatar="handleDetailsRemoveGroupAvatar"
-          @add-group-member="handleDetailsAddMember"
+          @update-member="handleDetailsUpdateMember"
           @remove-group-member="handleDetailsRemoveMember"
           @toggle-member-admin="handleDetailsToggleAdmin"
           @toggle-member-mute="handleDetailsToggleMute"
@@ -9378,6 +9653,10 @@ useChatCleanup({
           :linked-group-names="detailsLinkedGroupNames"
           @update-memory-sharing="handleDetailsUpdateMemorySharing"
           @update-member-memory-link="handleDetailsUpdateMemberMemoryLink"
+          :removed-members="detailsRemovedMembers"
+          @restore-member="restoreRemovedMemberByUser"
+          @forget-removed-member="handleForgetRemovedMember"
+          @mention-member="handleMentionFromDetails"
         />
       </Transition>
     </Teleport>
@@ -9614,6 +9893,7 @@ useChatCleanup({
             message.isCharRecall,
             message.isTransactionClaimNotice,
             groupMemberAvatarVersion,
+            removedMembersVersion,
             getGroupPosition(index),
             shouldShowTimeSeparator(index) && getTimeSeparatorText(index),
             isClassicMessageLayout,
@@ -9684,12 +9964,7 @@ useChatCleanup({
             :avatar="
               message.role === 'ai'
                 ? isGroupChat
-                  ? groupMetadata?.isMultiCharCard &&
-                    message.senderCharacterName
-                    ? getGroupMemberAvatar(message.senderCharacterName)
-                    : message.senderCharacterId
-                      ? getCharacterAvatar(message.senderCharacterId)
-                      : message.senderCharacterAvatar || ''
+                  ? getGroupSenderAvatar(message)
                   : displayAvatar
                 : ''
             "
@@ -9728,7 +10003,7 @@ useChatCleanup({
             :location-content="message.locationContent"
             :reply-to-content="
               message.replyTo
-                ? getReplyToContent(message.replyTo)
+                ? getReplyToContent(message.replyTo) || message.replyToContent
                 : message.replyToContent
             "
             :reply-to="message.replyTo"
@@ -9762,13 +10037,9 @@ useChatCleanup({
             :avatar-change-mood="message.avatarChangeMood"
             :is-group-chat="isGroupChat"
             :sender-character-avatar="
-              isGroupChat &&
-              groupMetadata?.isMultiCharCard &&
-              message.senderCharacterName
-                ? getGroupMemberAvatar(message.senderCharacterName)
-                : isGroupChat && message.senderCharacterId
-                  ? getCharacterAvatar(message.senderCharacterId)
-                  : message.senderCharacterAvatar || ''
+              isGroupChat
+                ? getGroupSenderAvatar(message)
+                : message.senderCharacterAvatar || ''
             "
             :sender-character-name="message.senderCharacterName || ''"
             :is-recall="message.isRecall"
@@ -9779,6 +10050,11 @@ useChatCleanup({
             :group-action-actor="message.groupActionActor"
             :group-action-target="message.groupActionTarget"
             :group-action-value="message.groupActionValue"
+            :group-action-restorable="
+              message.groupActionType === 'kick' &&
+              isRemovedMemberName(message.groupActionTarget)
+            "
+            @restore-group-member="onRestoreGroupMemberFromMessage"
             :is-group-chat-history="message.isGroupChatHistory"
             :group-chat-history-data="message.groupChatHistoryData"
             :is-group-call-history="message.isGroupCallHistory"
@@ -9961,6 +10237,8 @@ useChatCleanup({
       :replying-to="replyingTo"
       :character-name="characterName"
       :chat-face-to-face-mode="chatFaceToFaceMode"
+      :is-group-chat="isGroupChat"
+      :mention-candidates="mentionCandidates"
       :is-input-focused="isInputFocused"
       :quick-actions="quickActions"
       :input-text="inputText"
@@ -10211,453 +10489,8 @@ useChatCleanup({
         :stats="chatInfoStats"
         :created-at="currentChatData?.createdAt || messages[0]?.timestamp"
         @close="showChatInfoModal = false"
-        @open-settings="handleOpenGroupSettings"
+        @open-settings="openGroupDetailsFromInfo"
       />
-
-      <!-- 群聊設定彈窗 -->
-      <Teleport to="body">
-        <Transition name="fade">
-          <div
-            v-if="showGroupSettingsModal && groupMetadata"
-            class="group-settings-overlay"
-            @click.self="closeGroupSettings"
-          >
-            <div class="group-settings-modal">
-              <header class="modal-header">
-                <h2>群聊設定</h2>
-                <button class="close-btn" @click="closeGroupSettings">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                    />
-                  </svg>
-                </button>
-              </header>
-
-              <div class="modal-content">
-                <!-- 群頭像 -->
-                <div class="form-group">
-                  <label>群頭像</label>
-                  <div class="group-avatar-editor">
-                    <div
-                      class="group-avatar-preview"
-                      @click="triggerGroupAvatarUpload"
-                    >
-                      <img
-                        v-if="groupMetadata.groupAvatar"
-                        :src="groupMetadata.groupAvatar"
-                        alt="群頭像"
-                      />
-                      <div v-else class="avatar-placeholder">
-                        <svg viewBox="0 0 24 24" fill="currentColor">
-                          <path
-                            d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"
-                          />
-                        </svg>
-                      </div>
-                    </div>
-                    <button
-                      v-if="groupMetadata.groupAvatar"
-                      class="remove-avatar-btn"
-                      @click="removeGroupAvatar"
-                    >
-                      移除
-                    </button>
-                  </div>
-                  <input
-                    ref="groupAvatarInput"
-                    type="file"
-                    accept="image/*"
-                    style="display: none"
-                    @change="handleGroupAvatarChange"
-                  />
-                </div>
-
-                <!-- 群名稱 -->
-                <div class="form-group">
-                  <label>群名稱</label>
-                  <input
-                    v-model="editGroupName"
-                    type="text"
-                    class="form-input"
-                    placeholder="輸入群名稱"
-                  />
-                </div>
-
-                <!-- 多人卡子角色管理 -->
-                <div v-if="groupMetadata.isMultiCharCard" class="form-group">
-                  <label
-                    >子角色 ({{
-                      groupMetadata.multiCharMembers?.length || 0
-                    }}
-                    位)</label
-                  >
-                  <div class="members-list">
-                    <template
-                      v-for="member in groupMetadata.multiCharMembers || []"
-                      :key="member.id"
-                    >
-                      <div class="member-item">
-                        <div class="member-avatar">
-                          <img
-                            v-if="
-                              member.avatar &&
-                              !failedMultiCharAvatars.has(member.avatar)
-                            "
-                            :src="getProxiedUrl(member.avatar)"
-                            :alt="member.name"
-                            @error="failedMultiCharAvatars.add(member.avatar)"
-                          />
-                          <div
-                            class="avatar-placeholder small"
-                            v-if="
-                              !member.avatar ||
-                              failedMultiCharAvatars.has(member.avatar)
-                            "
-                          >
-                            {{ member.name.charAt(0) }}
-                          </div>
-                        </div>
-                        <div class="member-info">
-                          <span class="member-name">{{ member.name }}</span>
-                        </div>
-                        <div class="member-actions">
-                          <button
-                            class="action-btn"
-                            @click="editMultiCharMember(member)"
-                            title="編輯"
-                          >
-                            <svg viewBox="0 0 24 24" fill="currentColor">
-                              <path
-                                d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-                              />
-                            </svg>
-                          </button>
-                          <button
-                            class="action-btn delete"
-                            @click="removeMultiCharMember(member.id)"
-                            title="移除"
-                          >
-                            <svg viewBox="0 0 24 24" fill="currentColor">
-                              <path
-                                d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                              />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                      <!-- 編輯表單：顯示在被編輯的角色下方 -->
-                      <div
-                        v-if="
-                          showAddMultiCharMember &&
-                          editingMultiCharId === member.id
-                        "
-                        class="multi-char-form"
-                      >
-                        <div class="multi-char-avatar-row">
-                          <div
-                            class="member-avatar clickable"
-                            @click="triggerMultiCharAvatarUpload"
-                          >
-                            <img
-                              v-if="newMultiCharAvatar"
-                              :src="getProxiedUrl(newMultiCharAvatar)"
-                              alt="頭像預覽"
-                            />
-                            <div v-else class="avatar-placeholder small">
-                              <svg viewBox="0 0 24 24" fill="currentColor">
-                                <path
-                                  d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
-                                />
-                              </svg>
-                            </div>
-                          </div>
-                          <input
-                            v-model="newMultiCharName"
-                            type="text"
-                            class="form-input"
-                            placeholder="角色名稱"
-                            @keydown.enter="addMultiCharMember"
-                          />
-                        </div>
-                        <input
-                          v-model="newMultiCharAvatar"
-                          type="text"
-                          class="form-input"
-                          placeholder="頭像連結（或點擊左側上傳圖片）"
-                          style="margin-top: 6px"
-                        />
-                        <input
-                          ref="multiCharAvatarInput"
-                          type="file"
-                          accept="image/*"
-                          style="display: none"
-                          @change="handleMultiCharAvatarChange"
-                        />
-                        <div class="multi-char-form-actions">
-                          <button
-                            class="btn-cancel small"
-                            @click="resetMultiCharForm"
-                          >
-                            取消
-                          </button>
-                          <button
-                            class="btn-confirm small"
-                            @click="addMultiCharMember"
-                            :disabled="!newMultiCharName.trim()"
-                          >
-                            更新
-                          </button>
-                        </div>
-                      </div>
-                    </template>
-                  </div>
-
-                  <!-- 新增子角色表單（不是編輯模式時顯示在列表底部） -->
-                  <div
-                    v-if="showAddMultiCharMember && !editingMultiCharId"
-                    class="multi-char-form"
-                  >
-                    <div class="multi-char-avatar-row">
-                      <div
-                        class="member-avatar clickable"
-                        @click="triggerMultiCharAvatarUpload"
-                      >
-                        <img
-                          v-if="newMultiCharAvatar"
-                          :src="getProxiedUrl(newMultiCharAvatar)"
-                          alt="頭像預覽"
-                        />
-                        <div v-else class="avatar-placeholder small">
-                          <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path
-                              d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
-                            />
-                          </svg>
-                        </div>
-                      </div>
-                      <input
-                        v-model="newMultiCharName"
-                        type="text"
-                        class="form-input"
-                        placeholder="角色名稱"
-                        @keydown.enter="addMultiCharMember"
-                      />
-                    </div>
-                    <input
-                      v-model="newMultiCharAvatar"
-                      type="text"
-                      class="form-input"
-                      placeholder="頭像連結（或點擊左側上傳圖片）"
-                      style="margin-top: 6px"
-                    />
-                    <input
-                      ref="multiCharAvatarInput"
-                      type="file"
-                      accept="image/*"
-                      style="display: none"
-                      @change="handleMultiCharAvatarChange"
-                    />
-                    <div class="multi-char-form-actions">
-                      <button
-                        class="btn-cancel small"
-                        @click="resetMultiCharForm"
-                      >
-                        取消
-                      </button>
-                      <button
-                        class="btn-confirm small"
-                        @click="addMultiCharMember"
-                        :disabled="!newMultiCharName.trim()"
-                      >
-                        新增
-                      </button>
-                    </div>
-                  </div>
-
-                  <button
-                    v-if="!showAddMultiCharMember"
-                    class="add-multi-char-btn"
-                    @click="showAddMultiCharMember = true"
-                  >
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                    </svg>
-                    新增子角色
-                  </button>
-                </div>
-
-                <!-- 普通群聊成員管理 -->
-                <template v-else>
-                  <div class="form-group">
-                    <label
-                      >成員管理 ({{ groupMetadata.members.length }} 人)</label
-                    >
-                    <div class="members-list">
-                      <div
-                        v-for="member in groupMetadata.members"
-                        :key="member.characterId"
-                        class="member-item"
-                      >
-                        <div class="member-avatar">
-                          <img
-                            v-if="getCharacterAvatar(member.characterId)"
-                            :src="getCharacterAvatar(member.characterId)"
-                            :alt="getCharacterNameById(member.characterId)"
-                          />
-                          <div v-else class="avatar-placeholder small">
-                            <svg viewBox="0 0 24 24" fill="currentColor">
-                              <path
-                                d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-                              />
-                            </svg>
-                          </div>
-                        </div>
-                        <div class="member-info">
-                          <span class="member-name">{{
-                            getCharacterNameById(member.characterId)
-                          }}</span>
-                          <div class="member-badges">
-                            <span v-if="member.isAdmin" class="badge admin"
-                              >管理員</span
-                            >
-                            <span v-if="member.isMuted" class="badge muted"
-                              >已禁言</span
-                            >
-                          </div>
-                        </div>
-                        <div class="member-actions">
-                          <button
-                            class="action-btn"
-                            :class="{ active: member.isAdmin }"
-                            @click="toggleGroupMemberAdmin(member.characterId)"
-                            title="管理員"
-                          >
-                            <svg viewBox="0 0 24 24" fill="currentColor">
-                              <path
-                                d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"
-                              />
-                            </svg>
-                          </button>
-                          <button
-                            class="action-btn"
-                            :class="{ active: member.isMuted }"
-                            @click="toggleGroupMemberMute(member.characterId)"
-                            title="禁言"
-                          >
-                            <svg viewBox="0 0 24 24" fill="currentColor">
-                              <path
-                                d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"
-                              />
-                            </svg>
-                          </button>
-                          <button
-                            class="action-btn delete"
-                            @click="removeGroupMember(member.characterId)"
-                            title="移除"
-                          >
-                            <svg viewBox="0 0 24 24" fill="currentColor">
-                              <path
-                                d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                              />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- 添加成員 -->
-                  <div class="form-group">
-                    <label>添加成員</label>
-                    <div class="add-member-list">
-                      <div
-                        v-for="char in charactersStore.characters.filter(
-                          (c) =>
-                            !groupMetadata?.members.some(
-                              (m) => m.characterId === c.id,
-                            ),
-                        )"
-                        :key="char.id"
-                        class="add-member-item"
-                        @click="addMemberToGroup(char.id)"
-                      >
-                        <div class="member-avatar">
-                          <img
-                            v-if="char.avatar"
-                            :src="char.avatar"
-                            :alt="char.data?.name || char.nickname"
-                          />
-                          <div v-else class="avatar-placeholder small">
-                            {{ (char.data?.name || char.nickname).charAt(0) }}
-                          </div>
-                        </div>
-                        <span class="member-name">{{
-                          char.data?.name || char.nickname
-                        }}</span>
-                        <svg
-                          class="add-icon"
-                          viewBox="0 0 24 24"
-                          fill="currentColor"
-                        >
-                          <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-
-                <!-- 綁定世界書（多人卡不顯示，因為角色卡本身可綁定世界書） -->
-                <div v-if="!groupMetadata.isMultiCharCard" class="form-group">
-                  <label>綁定世界書（僅此群組生效）</label>
-                  <div
-                    v-if="lorebooksStore.lorebooks.length === 0"
-                    class="empty-hint"
-                  >
-                    尚無世界書，請先建立世界書
-                  </div>
-                  <div v-else class="lorebook-bind-list">
-                    <div
-                      v-for="lb in lorebooksStore.lorebooks"
-                      :key="lb.id"
-                      class="lorebook-bind-item"
-                      :class="{ active: editGroupLorebookIds.includes(lb.id) }"
-                      @click="toggleGroupLorebook(lb.id)"
-                    >
-                      <div class="lorebook-check">
-                        <svg
-                          v-if="editGroupLorebookIds.includes(lb.id)"
-                          viewBox="0 0 24 24"
-                          fill="currentColor"
-                        >
-                          <path
-                            d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-                          />
-                        </svg>
-                      </div>
-                      <div class="lorebook-info">
-                        <span class="lorebook-name">{{ lb.name }}</span>
-                        <span class="lorebook-count"
-                          >{{ lb.entries.length }} 條目</span
-                        >
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <footer class="modal-footer">
-                <button class="btn-cancel" @click="closeGroupSettings">
-                  取消
-                </button>
-                <button class="btn-confirm" @click="saveGroupSettings">
-                  儲存
-                </button>
-              </footer>
-            </div>
-          </div>
-        </Transition>
-      </Teleport>
 
       <!-- Persona 編輯面板 -->
       <PersonaEditPanel
@@ -15495,509 +15328,6 @@ body.is-night-mode {
 
   &::placeholder {
     color: var(--color-text-secondary, #707080);
-  }
-}
-
-// ===== 群聊設定彈窗 =====
-.group-settings-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2100;
-  padding: 20px;
-}
-
-.group-settings-modal {
-  background: var(--color-surface, #fff);
-  border-radius: 16px;
-  width: 100%;
-  max-width: 420px;
-  max-height: 85vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-
-  .modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
-
-    h2 {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 600;
-      color: var(--color-text, #333);
-    }
-
-    .close-btn {
-      width: 32px;
-      height: 32px;
-      border: none;
-      background: transparent;
-      border-radius: 8px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--color-text-secondary, #666);
-
-      &:hover {
-        background: var(--color-hover, rgba(0, 0, 0, 0.05));
-      }
-
-      svg {
-        width: 20px;
-        height: 20px;
-      }
-    }
-  }
-
-  .modal-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 16px 20px;
-  }
-
-  .modal-footer {
-    display: flex;
-    gap: 12px;
-    padding: 16px 20px;
-    border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
-
-    .btn-cancel,
-    .btn-confirm {
-      flex: 1;
-      padding: 12px;
-      border: none;
-      border-radius: 10px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .btn-cancel {
-      background: var(--color-background, #f5f5f5);
-      color: var(--color-text-secondary, #666);
-
-      &:hover {
-        background: var(--color-border, #e0e0e0);
-      }
-    }
-
-    .btn-confirm {
-      background: var(--color-primary, #7dd3a8);
-      color: #fff;
-
-      &:hover {
-        filter: brightness(1.1);
-      }
-    }
-  }
-
-  .form-group {
-    margin-bottom: 20px;
-
-    label {
-      display: block;
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--color-text-secondary, #666);
-      margin-bottom: 8px;
-    }
-  }
-
-  .form-input {
-    width: 100%;
-    padding: 12px;
-    border: 1px solid var(--color-border, #ddd);
-    border-radius: 10px;
-    font-size: 14px;
-    background: var(--color-background, #f9f9f9);
-    color: var(--color-text, #333);
-
-    &:focus {
-      outline: none;
-      border-color: var(--color-primary, #7dd3a8);
-    }
-  }
-
-  .group-avatar-editor {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .group-avatar-preview {
-    width: 64px;
-    height: 64px;
-    border-radius: 16px;
-    overflow: hidden;
-    background: var(--color-background, #f5f5f5);
-    cursor: pointer;
-    transition: transform 0.2s;
-
-    &:hover {
-      transform: scale(1.05);
-    }
-
-    img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    .avatar-placeholder {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--color-text-secondary, #999);
-
-      svg {
-        width: 32px;
-        height: 32px;
-      }
-    }
-  }
-
-  .remove-avatar-btn {
-    padding: 8px 16px;
-    border: none;
-    border-radius: 8px;
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
-    font-size: 13px;
-    cursor: pointer;
-
-    &:hover {
-      background: rgba(239, 68, 68, 0.2);
-    }
-  }
-
-  .members-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    max-height: 200px;
-    overflow-y: auto;
-  }
-
-  .member-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    background: var(--color-background, #f5f5f5);
-    border-radius: 10px;
-  }
-
-  .member-avatar {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    overflow: hidden;
-    flex-shrink: 0;
-
-    img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    .avatar-placeholder.small {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: var(--color-surface, #fff);
-      color: var(--color-text-secondary, #999);
-
-      svg {
-        width: 18px;
-        height: 18px;
-      }
-    }
-  }
-
-  .member-info {
-    flex: 1;
-    min-width: 0;
-
-    .member-name {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--color-text, #333);
-    }
-
-    .member-badges {
-      display: flex;
-      gap: 4px;
-      margin-top: 2px;
-
-      .badge {
-        font-size: 10px;
-        padding: 2px 6px;
-        border-radius: 4px;
-
-        &.admin {
-          background: rgba(125, 211, 168, 0.2);
-          color: var(--color-primary, #7dd3a8);
-        }
-
-        &.muted {
-          background: rgba(239, 68, 68, 0.1);
-          color: #ef4444;
-        }
-      }
-    }
-  }
-
-  .member-actions {
-    display: flex;
-    gap: 4px;
-
-    .action-btn {
-      width: 28px;
-      height: 28px;
-      border: none;
-      border-radius: 6px;
-      background: transparent;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--color-text-secondary, #999);
-      transition: all 0.2s;
-
-      svg {
-        width: 14px;
-        height: 14px;
-      }
-
-      &:hover {
-        background: var(--color-surface, #fff);
-      }
-
-      &.active {
-        background: var(--color-primary-light, rgba(125, 211, 168, 0.2));
-        color: var(--color-primary, #7dd3a8);
-      }
-
-      &.delete:hover {
-        background: rgba(239, 68, 68, 0.1);
-        color: #ef4444;
-      }
-    }
-  }
-
-  .add-member-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    max-height: 150px;
-    overflow-y: auto;
-  }
-
-  .add-member-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 12px;
-    background: var(--color-background, #f5f5f5);
-    border-radius: 10px;
-    cursor: pointer;
-    transition: background 0.2s;
-
-    &:hover {
-      background: var(--color-primary-light, rgba(125, 211, 168, 0.15));
-    }
-
-    .member-name {
-      flex: 1;
-      font-size: 14px;
-      color: var(--color-text, #333);
-    }
-
-    .add-icon {
-      width: 18px;
-      height: 18px;
-      color: var(--color-primary, #7dd3a8);
-    }
-  }
-
-  .empty-hint {
-    font-size: 13px;
-    color: var(--color-text-secondary, #999);
-    padding: 12px;
-    text-align: center;
-  }
-
-  // 多人卡子角色管理
-  .multi-char-form {
-    margin-top: 10px;
-    padding: 12px;
-    background: var(--color-background, #f5f5f5);
-    border-radius: 10px;
-
-    .multi-char-avatar-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-
-      .member-avatar.clickable {
-        cursor: pointer;
-        flex-shrink: 0;
-
-        &:hover {
-          opacity: 0.8;
-        }
-      }
-
-      .form-input {
-        flex: 1;
-      }
-    }
-
-    .multi-char-form-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-      margin-top: 10px;
-
-      .btn-cancel.small,
-      .btn-confirm.small {
-        padding: 5px 14px;
-        font-size: 13px;
-        border-radius: 8px;
-        border: none;
-        cursor: pointer;
-      }
-
-      .btn-cancel.small {
-        background: var(--color-background, #eee);
-        color: var(--color-text, #333);
-      }
-
-      .btn-confirm.small {
-        background: var(--color-primary, #7dd3a8);
-        color: #fff;
-
-        &:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-      }
-    }
-  }
-
-  .add-multi-char-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    width: 100%;
-    margin-top: 10px;
-    padding: 10px;
-    background: var(--color-background, #f5f5f5);
-    border: 1px dashed var(--color-primary, #7dd3a8);
-    border-radius: 10px;
-    color: var(--color-primary, #7dd3a8);
-    font-size: 14px;
-    cursor: pointer;
-    transition: background 0.2s;
-
-    &:hover {
-      background: var(--color-primary-light, rgba(125, 211, 168, 0.1));
-    }
-
-    svg {
-      width: 18px;
-      height: 18px;
-    }
-  }
-
-  .lorebook-bind-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    max-height: 200px;
-    overflow-y: auto;
-  }
-
-  .lorebook-bind-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    background: var(--color-background, #f5f5f5);
-    border-radius: 10px;
-    cursor: pointer;
-    transition: background 0.2s;
-
-    &:hover {
-      background: var(--color-primary-light, rgba(125, 211, 168, 0.15));
-    }
-
-    &.active {
-      background: var(--color-primary-light, rgba(125, 211, 168, 0.15));
-      border: 1px solid var(--color-primary, #7dd3a8);
-    }
-
-    .lorebook-check {
-      width: 20px;
-      height: 20px;
-      border: 2px solid var(--color-border, #ddd);
-      border-radius: 4px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-
-      svg {
-        width: 16px;
-        height: 16px;
-        color: var(--color-primary, #7dd3a8);
-      }
-    }
-
-    &.active .lorebook-check {
-      border-color: var(--color-primary, #7dd3a8);
-      background: var(--color-primary, #7dd3a8);
-
-      svg {
-        color: #fff;
-      }
-    }
-
-    .lorebook-info {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-
-      .lorebook-name {
-        font-size: 14px;
-        font-weight: 500;
-        color: var(--color-text, #333);
-      }
-
-      .lorebook-count {
-        font-size: 12px;
-        color: var(--color-text-secondary, #999);
-      }
-    }
   }
 }
 

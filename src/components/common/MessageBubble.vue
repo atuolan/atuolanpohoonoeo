@@ -61,7 +61,11 @@ import { formatTime } from "@/services/AudioRecorder";
 import { getRegexedString, regex_placement } from "@/services/RegexEngine";
 import { useSettingsStore, useStickerStore } from "@/stores";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
-import type { ChatHistoryRecordData, WaimaiOrderSnapshot } from "@/types/chat";
+import type {
+  ChatHistoryRecordData,
+  GroupActionType,
+  WaimaiOrderSnapshot,
+} from "@/types/chat";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { injectTTSInlineButtons } from "@/utils/ttsInlineButtons";
 import { marked } from "marked";
@@ -390,7 +394,9 @@ interface MessageBubbleProps {
   recallContent?: string;
   isPrivateMessage?: boolean;
   isGroupAction?: boolean;
-  groupActionType?: "rename" | "kick" | "mute" | "unmute";
+  groupActionType?: GroupActionType;
+  /** 這則「移出群聊」的成員還沒被拉回來，可以按「拉回群裡」 */
+  groupActionRestorable?: boolean;
   groupActionActor?: string;
   groupActionTarget?: string;
   groupActionValue?: string;
@@ -554,6 +560,7 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   isPrivateMessage: false,
   isGroupAction: false,
   groupActionType: undefined,
+  groupActionRestorable: false,
   groupActionActor: "",
   groupActionTarget: "",
   groupActionValue: "",
@@ -592,6 +599,8 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
 const emit = defineEmits<{
   (e: "click", id: string): void;
   (e: "avatarClick", id: string): void;
+  /** 把被移出的成員拉回群裡（帶被移出者的名字） */
+  (e: "restoreGroupMember", targetName: string): void;
   (e: "edit", id: string): void;
   (e: "delete", id: string): void;
   (e: "copy", id: string): void;
@@ -3360,6 +3369,9 @@ const showTextVoiceTranscript = ref(true);
         <span v-else-if="groupActionType === 'kick'"
           >{{ groupActionActor }} 將 {{ groupActionTarget }} 移出了群聊</span
         >
+        <span v-else-if="groupActionType === 'invite'"
+          >{{ groupActionActor }} 把 {{ groupActionTarget }} 拉回了群聊</span
+        >
         <span v-else-if="groupActionType === 'mute'"
           >{{ groupActionActor }} 禁言了 {{ groupActionTarget }}</span
         >
@@ -3367,6 +3379,14 @@ const showTextVoiceTranscript = ref(true);
           >{{ groupActionActor }} 解除了 {{ groupActionTarget }} 的禁言</span
         >
         <span v-else>{{ content }}</span>
+        <button
+          v-if="groupActionType === 'kick' && groupActionRestorable && groupActionTarget"
+          type="button"
+          class="group-action-restore"
+          @click.stop="emit('restoreGroupMember', groupActionTarget)"
+        >
+          拉回群裡
+        </button>
       </div>
 
       <!-- 普通系統消息 -->
@@ -8311,6 +8331,19 @@ const showTextVoiceTranscript = ref(true);
 // 群管理動作
 .group-action-message {
   font-style: italic;
+}
+
+.group-action-restore {
+  margin-left: 8px;
+  padding: 1px 10px;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 20px;
+  color: var(--color-primary, #7dd3a8);
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-full, 9999px);
+  cursor: pointer;
 }
 
 // 私信指示器

@@ -60,11 +60,12 @@
                   <div class="group-name">{{ groupName }}</div>
                   <div class="member-count">{{ memberCount }} 位成員</div>
                 </div>
-                <!-- 群聊設定按鈕 -->
+                <!-- 群聊設定按鈕：回到群組詳情 -->
                 <button
                   class="settings-btn"
                   @click="openSettings"
-                  title="群聊設定"
+                  title="群組設定"
+                  aria-label="群組設定"
                 >
                   <svg viewBox="0 0 24 24" fill="currentColor">
                     <path
@@ -238,8 +239,8 @@ const createdAtFormatted = computed(() => {
   return `${date.getMonth() + 1}/${date.getDate()}`;
 });
 
-// 群聊成員數
-const memberCount = computed(() => props.groupMembers?.length || 0);
+// 群聊成員數（含自己，與頂欄、群組詳情一致）
+const memberCount = computed(() => (props.groupMembers?.length || 0) + 1);
 
 // 群聊成員統計
 const groupMembersWithStats = computed(() => {

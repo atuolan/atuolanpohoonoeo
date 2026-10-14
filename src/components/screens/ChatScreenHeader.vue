@@ -333,7 +333,8 @@ const isDarkBackground = computed(() =>
         </button>
       </div>
       <p v-if="isGenerating" class="chat-status">正在輸入...</p>
-      <p v-else-if="isGroupChat" class="chat-status">{{ groupMemberCount }} 位成員</p>
+      <!-- 人數含自己，與群組詳情一致 -->
+      <p v-else-if="isGroupChat" class="chat-status">{{ groupMemberCount + 1 }} 位成員</p>
       <p v-else-if="characterStatus" class="chat-status">{{ characterStatus }}</p>
     </div>
 

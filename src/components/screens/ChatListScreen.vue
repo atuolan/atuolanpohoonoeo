@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { db, DB_STORES } from "@/db/database";
 import { deleteChatCascade } from "@/storage/chatStorage";
-import { useCharactersStore, useLorebooksStore } from "@/stores";
+import { useCharactersStore } from "@/stores";
 import type { Chat } from "@/types/chat";
 import { createDefaultGroupChat } from "@/types/chat";
 import { computed, onMounted, ref } from "vue";
@@ -26,7 +26,6 @@ const emit = defineEmits<{
 
 // Stores
 const charactersStore = useCharactersStore();
-const lorebooksStore = useLorebooksStore();
 
 // 狀態
 const currentTab = ref<"chats" | "contacts">("chats");
@@ -225,12 +224,36 @@ async function deleteChat(chatId: string) {
 const showGroupChatCreation = ref(false);
 const groupChatName = ref("");
 const selectedCharacterIds = ref<string[]>([]);
+const memberSearch = ref("");
 
 function openGroupChatCreation() {
   showGroupChatCreation.value = true;
   groupChatName.value = "";
   selectedCharacterIds.value = [];
+  memberSearch.value = "";
 }
+
+function characterDisplayName(characterId: string): string {
+  const char = charactersStore.characters.find((c) => c.id === characterId);
+  return char?.nickname || char?.data?.name || "角色";
+}
+
+// 沒填群名時，用前三位成員的名字組一個
+const autoGroupName = computed(() => {
+  const names = selectedCharacterIds.value.map(characterDisplayName);
+  if (names.length === 0) return "";
+  const head = names.slice(0, 3).join("、");
+  return names.length > 3 ? `${head}等 ${names.length} 人` : head;
+});
+
+// 選成員的清單：角色多時可以搜尋
+const selectableCharacters = computed(() => {
+  const query = memberSearch.value.trim().toLowerCase();
+  if (!query) return charactersStore.characters;
+  return charactersStore.characters.filter((c) =>
+    (c.nickname || c.data?.name || "").toLowerCase().includes(query),
+  );
+});
 
 function closeGroupChatCreation() {
   showGroupChatCreation.value = false;
@@ -245,15 +268,13 @@ function toggleCharacterSelection(characterId: string) {
   }
 }
 
-const canCreateGroupChat = computed(
-  () => selectedCharacterIds.value.length >= 2 && groupChatName.value.trim(),
-);
+const canCreateGroupChat = computed(() => selectedCharacterIds.value.length >= 2);
 
 async function createGroupChat() {
   if (!canCreateGroupChat.value) return;
   try {
     const chat = createDefaultGroupChat(
-      groupChatName.value.trim(),
+      groupChatName.value.trim() || autoGroupName.value,
       selectedCharacterIds.value,
     );
     await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
@@ -264,134 +285,6 @@ async function createGroupChat() {
     console.error("建立群聊失敗:", e);
     alert("建立群聊失敗");
   }
-}
-
-// ===== 群聊設定 =====
-const showGroupChatSettings = ref(false);
-const editingGroupChat = ref<Chat | null>(null);
-const editGroupName = ref("");
-const groupAvatarInput = ref<HTMLInputElement | null>(null);
-const editGroupLorebookIds = ref<string[]>([]);
-
-function openGroupChatSettings(chat: Chat) {
-  editingGroupChat.value = chat;
-  editGroupName.value = chat.groupMetadata?.groupName || "";
-  editGroupLorebookIds.value = [...(chat.groupMetadata?.lorebookIds || [])];
-  // 確保世界書列表已載入
-  if (lorebooksStore.lorebooks.length === 0) {
-    lorebooksStore.loadLorebooks();
-  }
-  showGroupChatSettings.value = true;
-}
-
-function closeGroupChatSettings() {
-  showGroupChatSettings.value = false;
-  editingGroupChat.value = null;
-}
-
-function triggerGroupAvatarUpload() {
-  groupAvatarInput.value?.click();
-}
-
-function handleGroupAvatarChange(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file || !editingGroupChat.value?.groupMetadata) return;
-
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    if (editingGroupChat.value?.groupMetadata) {
-      editingGroupChat.value.groupMetadata.groupAvatar = e.target
-        ?.result as string;
-    }
-  };
-  reader.readAsDataURL(file);
-  input.value = "";
-}
-
-function removeGroupAvatar() {
-  if (editingGroupChat.value?.groupMetadata) {
-    editingGroupChat.value.groupMetadata.groupAvatar = undefined;
-  }
-}
-
-async function saveGroupChatSettings() {
-  if (!editingGroupChat.value?.groupMetadata) return;
-  editingGroupChat.value.groupMetadata.groupName =
-    editGroupName.value.trim() ||
-    editingGroupChat.value.groupMetadata.groupName;
-  editingGroupChat.value.groupMetadata.lorebookIds = [
-    ...editGroupLorebookIds.value,
-  ];
-  editingGroupChat.value.name = editingGroupChat.value.groupMetadata.groupName;
-  editingGroupChat.value.updatedAt = Date.now();
-  await db.put(
-    DB_STORES.CHATS,
-    JSON.parse(JSON.stringify(editingGroupChat.value)),
-  );
-  await loadChats();
-  closeGroupChatSettings();
-}
-
-function toggleGroupMemberAdmin(characterId: string) {
-  if (!editingGroupChat.value?.groupMetadata) return;
-  const member = editingGroupChat.value.groupMetadata.members.find(
-    (m) => m.characterId === characterId,
-  );
-  if (member) member.isAdmin = !member.isAdmin;
-}
-
-function toggleGroupMemberMute(characterId: string) {
-  if (!editingGroupChat.value?.groupMetadata) return;
-  const member = editingGroupChat.value.groupMetadata.members.find(
-    (m) => m.characterId === characterId,
-  );
-  if (member) member.isMuted = !member.isMuted;
-}
-
-function removeGroupMember(characterId: string) {
-  if (!editingGroupChat.value?.groupMetadata) return;
-  const members = editingGroupChat.value.groupMetadata.members;
-  if (members.length <= 2) {
-    alert("群聊至少需要 2 位成員");
-    return;
-  }
-  editingGroupChat.value.groupMetadata.members = members.filter(
-    (m) => m.characterId !== characterId,
-  );
-}
-
-function addMemberToGroup(characterId: string) {
-  if (!editingGroupChat.value?.groupMetadata) return;
-  const exists = editingGroupChat.value.groupMetadata.members.some(
-    (m) => m.characterId === characterId,
-  );
-  if (exists) return;
-  editingGroupChat.value.groupMetadata.members.push({
-    characterId,
-    isAdmin: false,
-    isMuted: false,
-    joinedAt: Date.now(),
-  });
-}
-
-function toggleGroupLorebook(lorebookId: string) {
-  const idx = editGroupLorebookIds.value.indexOf(lorebookId);
-  if (idx === -1) {
-    editGroupLorebookIds.value.push(lorebookId);
-  } else {
-    editGroupLorebookIds.value.splice(idx, 1);
-  }
-}
-
-function getCharName(characterId: string): string {
-  const char = charactersStore.characters.find((c) => c.id === characterId);
-  return char?.nickname || char?.data?.name || "未知";
-}
-
-function getCharAvatar(characterId: string): string {
-  const char = charactersStore.characters.find((c) => c.id === characterId);
-  return char?.avatar || "";
 }
 
 // ===== 長按刪除功能 =====
@@ -673,16 +566,27 @@ async function toggleLockChat() {
             <input
               v-model="groupChatName"
               type="text"
-              placeholder="輸入群聊名稱..."
+              :placeholder="autoGroupName ? `留空就叫「${autoGroupName}」` : '輸入群聊名稱（可留空）'"
               class="form-input"
             />
           </div>
 
           <div class="form-group">
-            <label>選擇成員（至少 2 位）</label>
+            <label>選擇成員（至少 2 位，已選 {{ selectedCharacterIds.length }} 位）</label>
+            <input
+              v-if="charactersStore.characters.length > 8"
+              v-model="memberSearch"
+              type="search"
+              placeholder="搜尋角色"
+              aria-label="搜尋角色"
+              class="form-input member-search"
+            />
             <div class="character-select-list">
+              <p v-if="selectableCharacters.length === 0" class="select-empty">
+                {{ memberSearch ? "找不到符合的角色" : "還沒有角色，請先到角色庫新增" }}
+              </p>
               <div
-                v-for="character in charactersStore.characters"
+                v-for="character in selectableCharacters"
                 :key="character.id"
                 class="character-select-item"
                 :class="{
@@ -734,216 +638,6 @@ async function toggleLockChat() {
               @click="createGroupChat"
             >
               建立（{{ selectedCharacterIds.length }} 位成員）
-            </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- 群聊設定彈窗 -->
-    <Transition name="fade">
-      <div
-        v-if="showGroupChatSettings && editingGroupChat"
-        class="modal-overlay"
-        @click.self="closeGroupChatSettings"
-      >
-        <div class="modal-content group-settings-modal">
-          <h2 class="modal-title">群聊設定</h2>
-
-          <!-- 群頭像 -->
-          <div class="form-group group-avatar-section">
-            <label>群頭像</label>
-            <div class="group-avatar-editor">
-              <div
-                class="group-avatar-preview"
-                @click="triggerGroupAvatarUpload"
-              >
-                <img
-                  v-if="editingGroupChat.groupMetadata?.groupAvatar"
-                  :src="editingGroupChat.groupMetadata.groupAvatar"
-                  alt="群頭像"
-                />
-                <div v-else class="group-avatar-placeholder">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"
-                    />
-                  </svg>
-                </div>
-                <div class="avatar-edit-overlay">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-                    />
-                  </svg>
-                </div>
-              </div>
-              <button
-                v-if="editingGroupChat.groupMetadata?.groupAvatar"
-                class="btn-remove-avatar"
-                @click="removeGroupAvatar"
-              >
-                移除頭像
-              </button>
-            </div>
-            <input
-              ref="groupAvatarInput"
-              type="file"
-              accept="image/*"
-              style="display: none"
-              @change="handleGroupAvatarChange"
-            />
-          </div>
-
-          <div class="form-group">
-            <label>群名稱</label>
-            <input v-model="editGroupName" type="text" class="form-input" />
-          </div>
-
-          <div class="form-group">
-            <label>成員管理</label>
-            <div class="member-list">
-              <div
-                v-for="member in editingGroupChat.groupMetadata?.members"
-                :key="member.characterId"
-                class="member-item"
-              >
-                <div class="member-avatar">
-                  <img
-                    v-if="getCharAvatar(member.characterId)"
-                    :src="getCharAvatar(member.characterId)"
-                  />
-                  <div v-else class="avatar-placeholder small">
-                    {{ getCharName(member.characterId).charAt(0) }}
-                  </div>
-                </div>
-                <span class="member-name">{{
-                  getCharName(member.characterId)
-                }}</span>
-                <div class="member-badges">
-                  <span v-if="member.isAdmin" class="badge admin">管理員</span>
-                  <span v-if="member.isMuted" class="badge muted">已禁言</span>
-                </div>
-                <div class="member-actions">
-                  <button
-                    class="action-btn"
-                    @click="toggleGroupMemberAdmin(member.characterId)"
-                    :title="member.isAdmin ? '取消管理員' : '設為管理員'"
-                  >
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path
-                        d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"
-                      />
-                    </svg>
-                  </button>
-                  <button
-                    class="action-btn"
-                    @click="toggleGroupMemberMute(member.characterId)"
-                    :title="member.isMuted ? '解除禁言' : '禁言'"
-                  >
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path
-                        d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"
-                      />
-                    </svg>
-                  </button>
-                  <button
-                    class="action-btn danger"
-                    @click="removeGroupMember(member.characterId)"
-                    title="移除"
-                  >
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path
-                        d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                      />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 新增成員 -->
-          <div class="form-group">
-            <label>新增成員</label>
-            <div class="add-member-list">
-              <div
-                v-for="character in charactersStore.characters.filter(
-                  (c) =>
-                    !editingGroupChat?.groupMetadata?.members.some(
-                      (m) => m.characterId === c.id,
-                    ),
-                )"
-                :key="character.id"
-                class="character-select-item compact"
-                @click="addMemberToGroup(character.id)"
-              >
-                <div class="select-avatar">
-                  <img v-if="character.avatar" :src="character.avatar" />
-                  <div v-else class="avatar-placeholder small">
-                    {{
-                      (
-                        character.nickname ||
-                        character.data?.name ||
-                        "?"
-                      ).charAt(0)
-                    }}
-                  </div>
-                </div>
-                <span class="select-name">{{
-                  character.nickname || character.data?.name
-                }}</span>
-                <svg viewBox="0 0 24 24" fill="currentColor" class="add-icon">
-                  <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          <!-- 綁定世界書 -->
-          <div class="form-group">
-            <label>綁定世界書（僅此群組生效）</label>
-            <div
-              v-if="lorebooksStore.lorebooks.length === 0"
-              class="empty-hint"
-            >
-              尚無世界書，請先建立世界書
-            </div>
-            <div v-else class="lorebook-bind-list">
-              <div
-                v-for="lb in lorebooksStore.lorebooks"
-                :key="lb.id"
-                class="lorebook-bind-item"
-                :class="{ active: editGroupLorebookIds.includes(lb.id) }"
-                @click="toggleGroupLorebook(lb.id)"
-              >
-                <div class="lorebook-check">
-                  <svg
-                    v-if="editGroupLorebookIds.includes(lb.id)"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <path
-                      d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-                    />
-                  </svg>
-                </div>
-                <div class="lorebook-info">
-                  <span class="lorebook-name">{{ lb.name }}</span>
-                  <span class="lorebook-count"
-                    >{{ lb.entries.length }} 條目</span
-                  >
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="modal-actions">
-            <button class="btn-cancel" @click="closeGroupChatSettings">
-              取消
-            </button>
-            <button class="btn-confirm" @click="saveGroupChatSettings">
-              儲存
             </button>
           </div>
         </div>
@@ -1582,6 +1276,18 @@ async function toggleLockChat() {
   overflow-y: auto;
 }
 
+.member-search {
+  margin-bottom: 8px;
+}
+
+.select-empty {
+  margin: 0;
+  padding: 16px 8px;
+  font-size: 13px;
+  text-align: center;
+  color: var(--color-text-secondary, #999);
+}
+
 .character-select-item {
   display: flex;
   align-items: center;
@@ -1633,12 +1339,6 @@ async function toggleLockChat() {
   }
 }
 
-.add-icon {
-  width: 20px;
-  height: 20px;
-  color: var(--color-primary, #7dd3a8);
-}
-
 .modal-actions {
   display: flex;
   gap: 10px;
@@ -1671,100 +1371,6 @@ async function toggleLockChat() {
   }
 }
 
-// 成員管理
-.member-list {
-  max-height: 250px;
-  overflow-y: auto;
-}
-
-.member-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  border-radius: 8px;
-
-  &:hover {
-    background: var(--color-primary-light, #f0f0f0);
-  }
-}
-
-.member-avatar {
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-
-  img {
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    object-fit: cover;
-  }
-}
-
-.member-name {
-  flex: 1;
-  font-size: 14px;
-}
-
-.member-badges {
-  display: flex;
-  gap: 4px;
-}
-
-.badge {
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 10px;
-
-  &.admin {
-    background: var(--color-primary-light, #e8f5e9);
-    color: var(--color-primary, #7dd3a8);
-  }
-
-  &.muted {
-    background: #fff3e0;
-    color: #e65100;
-  }
-}
-
-.member-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.action-btn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  cursor: pointer;
-  color: var(--color-text-secondary, #666);
-
-  svg {
-    width: 16px;
-    height: 16px;
-  }
-
-  &:hover {
-    background: var(--color-primary-light, #f0f0f0);
-  }
-
-  &.danger:hover {
-    background: #ffebee;
-    color: #e53e3e;
-  }
-}
-
-.add-member-list {
-  max-height: 150px;
-  overflow-y: auto;
-}
-
 .avatar-placeholder.small {
   width: 100%;
   height: 100%;
@@ -1786,86 +1392,6 @@ async function toggleLockChat() {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-}
-
-// 群頭像編輯
-.group-avatar-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.group-avatar-editor {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.group-avatar-preview {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  overflow: hidden;
-  cursor: pointer;
-  position: relative;
-  border: 2px solid var(--color-border, #ddd);
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .group-avatar-placeholder {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--color-primary-light, #e8f5e9);
-
-    svg {
-      width: 50%;
-      height: 50%;
-      color: var(--color-primary, #7dd3a8);
-    }
-  }
-
-  .avatar-edit-overlay {
-    position: absolute;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    transition: opacity 0.2s;
-
-    svg {
-      width: 24px;
-      height: 24px;
-      color: #fff;
-    }
-  }
-
-  &:hover .avatar-edit-overlay {
-    opacity: 1;
-  }
-}
-
-.btn-remove-avatar {
-  background: none;
-  border: none;
-  color: var(--color-error, #e53e3e);
-  font-size: 12px;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-
-  &:hover {
-    background: rgba(229, 62, 62, 0.1);
-  }
 }
 
 // ===== 長按刪除彈窗 =====
@@ -1963,83 +1489,4 @@ async function toggleLockChat() {
   }
 }
 
-.empty-hint {
-  font-size: 13px;
-  color: var(--color-text-secondary, #999);
-  padding: 12px;
-  text-align: center;
-}
-
-.lorebook-bind-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.lorebook-bind-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  background: var(--color-background, #f5f5f5);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: background 0.2s;
-
-  &:hover {
-    background: var(--color-primary-light, rgba(125, 211, 168, 0.15));
-  }
-
-  &.active {
-    background: var(--color-primary-light, rgba(125, 211, 168, 0.15));
-    border: 1px solid var(--color-primary, #7dd3a8);
-  }
-
-  .lorebook-check {
-    width: 20px;
-    height: 20px;
-    border: 2px solid var(--color-border, #ddd);
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-
-    svg {
-      width: 16px;
-      height: 16px;
-      color: var(--color-primary, #7dd3a8);
-    }
-  }
-
-  &.active .lorebook-check {
-    border-color: var(--color-primary, #7dd3a8);
-    background: var(--color-primary, #7dd3a8);
-
-    svg {
-      color: #fff;
-    }
-  }
-
-  .lorebook-info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-
-    .lorebook-name {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--color-text, #333);
-    }
-
-    .lorebook-count {
-      font-size: 12px;
-      color: var(--color-text-secondary, #999);
-    }
-  }
-}
 </style>

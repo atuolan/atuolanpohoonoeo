@@ -480,8 +480,8 @@ export interface ChatMessage {
   isPrivateMessage?: boolean;
   /** 是否為群管理動作 */
   isGroupAction?: boolean;
-  /** 群管理動作類型 */
-  groupActionType?: "rename" | "kick" | "mute" | "unmute";
+  /** 群管理動作類型（invite = 把被移出的成員拉回群裡） */
+  groupActionType?: GroupActionType;
   /** 群管理動作執行者 */
   groupActionActor?: string;
   /** 群管理動作目標 */
@@ -720,6 +720,17 @@ export interface GroupMember {
   memoryLink?: MemoryLink;
 }
 
+/** 群管理動作：改群名、移出、禁言、解禁、拉回被移出的成員 */
+export type GroupActionType = "rename" | "kick" | "mute" | "unmute" | "invite";
+
+/** 被 AI 移出群聊的成員：資料保留，標註已移出，之後可以拉回來 */
+export interface RemovedGroupMember extends GroupMember {
+  /** 移出時間 */
+  removedAt: number;
+  /** 誰移出的（群管理動作的 actor） */
+  removedBy?: string;
+}
+
 // ===== 群通話參與者 =====
 export interface GroupCallParticipant {
   /** 角色 ID */
@@ -817,6 +828,8 @@ export interface GroupChatMetadata {
   groupName: string;
   /** 群成員列表 */
   members: GroupMember[];
+  /** 被移出群聊的成員（保留資料，可以拉回來；不算在 members 裡） */
+  removedMembers?: RemovedGroupMember[];
   /** 群頭像（可選） */
   groupAvatar?: string;
   /** 長期記憶（群聊專屬） */

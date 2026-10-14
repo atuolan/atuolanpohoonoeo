@@ -20,6 +20,8 @@ import {
 } from "./PlurkPostService";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 import { computeChatNow } from "@/utils/fakeTime";
+import { toPromptGroupMember, withLiveSubCharSnapshot } from "@/utils/groupMembers";
+import type { GroupMember, MultiCharMember } from "@/types/chat";
 import { resolveSummaryReadCount, selectSummariesForPrompt } from "@/utils/summarySelection";
 
 export interface ProactiveMessageSettings {
@@ -526,38 +528,24 @@ export class ProactiveMessageService {
         }
         groupMembers = undefined; // 多人卡走 multiCharMembers 路徑
       } else {
-        groupMembers = groupMetadata.members
-          .map((m: any) => {
-            const ch = characterStore.characters.find(
-              (c) => c.id === m.characterId,
-            );
-            if (!ch) return null;
-            return {
-              characterId: m.characterId,
-              name: ch.nickname || ch.data?.name || m.characterId,
-              nickname: m.nickname,
-              originalName: ch.data?.name || m.characterId,
-              personality: ch.data?.personality || "",
-              description: ch.data?.description || "",
-              avatar: ch.avatar || "",
-              isAdmin: !!m.isAdmin,
-              isMuted: !!m.isMuted,
-            };
-          })
-          .filter(Boolean) as any[];
-
-        if (groupMembers.length === 0) {
-          console.warn(
-            "[ProactiveMessage] _sendGroupChatGamePlayingMessage: 群聊成員都查無資料，跳過",
-          );
-          return;
-        }
-
-        const leadMember =
-          groupMembers.find((m) => !m.isMuted) || groupMembers[0];
-        leadCharacter = characterStore.characters.find(
-          (c) => c.id === leadMember.characterId,
+        // 虛擬成員（手動 / persona / 引入）也是群成員，人設存在成員身上
+        groupMembers = (groupMetadata.members as GroupMember[]).map((m) =>
+          toPromptGroupMember(m, characterStore.characters),
         );
+
+        // 組 prompt 用的角色卡：優先挑沒被禁言、角色卡還在的成員
+        const realMembers = (groupMetadata.members as GroupMember[]).filter(
+          (m) =>
+            !m.isVirtual &&
+            characterStore.characters.some((c) => c.id === m.characterId),
+        );
+        const leadMember =
+          realMembers.find((m) => !m.isMuted) || realMembers[0];
+        leadCharacter = leadMember
+          ? characterStore.characters.find(
+              (c) => c.id === leadMember.characterId,
+            )
+          : undefined;
         if (!leadCharacter) {
           console.warn(
             "[ProactiveMessage] _sendGroupChatGamePlayingMessage: 找不到 leadCharacter",
@@ -650,7 +638,9 @@ export class ProactiveMessageService {
         ),
         isMultiCharCard: !!groupMetadata.isMultiCharCard,
         multiCharMembers: groupMetadata.isMultiCharCard
-          ? groupMetadata.multiCharMembers
+          ? (groupMetadata.multiCharMembers as MultiCharMember[]).map((m) =>
+              withLiveSubCharSnapshot(m, characterStore.characters),
+            )
           : undefined,
         gamePlayingContext: { gameName },
       });
@@ -733,6 +723,14 @@ export class ProactiveMessageService {
         const { characterId: senderCharId, canonicalName } = resolveSenderId(
           pm.senderName || "",
         );
+        // 被禁言的成員不能發言
+        if (
+          senderCharId &&
+          groupMembers?.some((m) => m.characterId === senderCharId && m.isMuted)
+        ) {
+          skipCount++;
+          continue;
+        }
         const baseMsg: any = {
           id: crypto.randomUUID(),
           sender: "assistant" as const,
