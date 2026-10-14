@@ -69,8 +69,14 @@ export function eventsToLabel(events: readonly VoiceEvent[]): string {
   return events.map((e) => `（${EVENT_LABELS[e]}）`).join("");
 }
 
+/** 只有狀聲字（咳、哈、嗚…）沒有實際內容的文字 */
+const SOUND_WORDS_ONLY = /^[咳嗽哈呵嘿嘻嗯啊呃哼嗚呜唔\s，。！？、,.!?~～…-]+$/u;
+
+/** 有聲音事件、而且沒講話（或只剩狀聲字）：只用事件標籤 */
 function isPureSound(result: SenseVoiceResult): boolean {
-  return !result.text && result.events.length > 0;
+  return (
+    result.events.length > 0 && (!result.text || SOUND_WORDS_ONLY.test(result.text))
+  );
 }
 
 export function mergeRecognition(

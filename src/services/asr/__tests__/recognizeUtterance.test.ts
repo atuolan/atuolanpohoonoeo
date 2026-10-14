@@ -32,6 +32,9 @@ describe("mergeRecognition", () => {
     ["SenseVoice 失敗、Qwen 把咳嗽寫成英文", fail, qwen("Cough cough cough.", "英文 / English"), { kind: "result", text: "（咳嗽）", events: ["cough"], emotion: null, convert: false }],
     ["SenseVoice 失敗、Qwen 把笑聲寫成英文", fail, qwen("Ha ha ha ha", "英文 / English"), { kind: "result", text: "（笑）", events: ["laugh"], emotion: null, convert: false }],
     ["兩邊都失敗", fail, fail, { kind: "failed" }],
+    ["有咳嗽事件、文字只剩狀聲字：視為純聲音", sense("咳。", ["cough"]), qwen("咳。"), { kind: "result", text: "（咳嗽）", events: ["cough"], emotion: null, convert: false }],
+    ["有笑聲事件、文字只剩哈哈：視為純聲音", sense("哈哈哈", ["laugh"], "happy"), qwen("哈哈哈哈"), { kind: "result", text: "（笑）", events: ["laugh"], emotion: null, convert: false }],
+    ["有笑聲事件、但有講話：保留文字", sense("哈哈你好", ["laugh"]), qwen("哈哈你好"), { kind: "result", text: "（笑）哈哈你好", events: ["laugh"], emotion: null, convert: true }],
   ] as const)("%s", (_name, s, q, expected) => {
     expect(mergeRecognition(s, q)).toEqual(expected);
   });
