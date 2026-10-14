@@ -84,18 +84,57 @@
 
       <div class="status-bar">
         <h3 class="name">{{ characterName || "角色" }}</h3>
-        <p class="status">{{ statusText }}</p>
+        <p class="status">
+          {{ statusText
+          }}<template v-if="callState === 'connected'">
+            ·
+            <span
+              class="voice-status"
+              :class="{ interruptible: canInterrupt }"
+              @click="onStatusClick"
+              >{{ voiceStatusText }}</span
+            >
+          </template>
+        </p>
         <p v-if="callState === 'connected'" class="duration">{{ formattedDuration }}</p>
       </div>
 
       <div v-if="callState === 'connected'" class="message-panel">
+        <!-- 首次使用語音輸入的說明（含隱私提示） -->
+        <CallVoiceNotice
+          v-if="voice.phase === 'notice'"
+          class="video-voice-notice"
+          :character-name="characterName"
+          @confirm="voice.acknowledgeNotice()"
+          @decline="voice.declineNotice()"
+        />
+        <div v-if="voice.showFailureBanner" class="voice-banner">語音辨識連不上，可以先打字</div>
         <div class="message-list" ref="messagesContainer">
           <template v-for="msg in callMessages" :key="msg.id">
             <div v-if="msg.role === 'system'" class="msg system">{{ msg.content }}</div>
             <div v-else class="msg" :class="msg.role">
-              <span v-if="msg.tone" class="tone">（{{ msg.tone }}）</span>
-              <span>{{ msg.content || (msg.isStreaming ? "正在思考..." : "") }}</span>
-              <span v-if="msg.isStreaming" class="stream-caret">▌</span>
+              <template v-if="msg.voiceStatus === 'pending'">
+                <svg class="voice-icon" viewBox="0 0 24 24" fill="currentColor" aria-label="語音辨識中">
+                  <path :d="MIC_PATH" />
+                </svg>
+                <span>辨識中…</span>
+              </template>
+              <template v-else-if="msg.voiceStatus === 'failed'">
+                <svg class="voice-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path :d="MIC_PATH" />
+                </svg>
+                <span>沒聽清楚</span>
+                <button class="voice-action" @click.stop="voice.retryFailed(msg.id)">重送</button>
+                <button class="voice-action" title="刪除這句" @click.stop="voice.discardFailed(msg.id)">✕</button>
+              </template>
+              <template v-else>
+                <span v-if="msg.tone" class="tone">（{{ msg.tone }}）</span>
+                <svg v-if="msg.viaVoice" class="voice-icon" viewBox="0 0 24 24" fill="currentColor" aria-label="語音輸入">
+                  <path :d="MIC_PATH" />
+                </svg>
+                <span>{{ msg.content || (msg.isStreaming ? "正在思考..." : "") }}</span>
+                <span v-if="msg.isStreaming" class="stream-caret">▌</span>
+              </template>
             </div>
           </template>
         </div>
@@ -113,7 +152,11 @@
               v-model="inputText"
               class="message-input"
               type="text"
-              placeholder="輸入訊息（Enter 只發送文字，空白 Enter 觸發回覆）"
+              :placeholder="
+                inputListening
+                  ? '直接說話，或在這裡打字…'
+                  : '輸入訊息（Enter 只發送文字，空白 Enter 觸發回覆）'
+              "
               :disabled="isGenerating"
               @keydown.enter="handleEnterSubmit"
             />
@@ -131,11 +174,22 @@
       <div class="controls-dock" v-if="callState === 'connected' || callState === 'ringing'">
         <button
           v-if="callState === 'connected'"
-          class="control-btn mute"
-          :class="{ active: isMuted }"
-          @click="toggleMute"
+          class="control-btn mic"
+          :class="[
+            `state-${micButtonState}`,
+            { active: micButtonState === 'listening' || micButtonState === 'speaking' },
+          ]"
+          :style="micLevelStyle"
+          :title="micTitle"
+          @click="onMicButton"
         >
-          靜音
+          {{
+            micButtonState === "muted"
+              ? "已靜音"
+              : micButtonState === "attention"
+                ? "點我開麥"
+                : "麥克風"
+          }}
         </button>
 
         <button
@@ -195,10 +249,27 @@
 </template>
 
 <script setup lang="ts">
+import CallVoiceNotice from "@/components/common/CallVoiceNotice.vue";
+import { MIC_PATH } from "@/components/common/callMicIcons";
+import { useCallVoiceUi } from "@/composables/useCallVoiceUi";
 import { usePhoneCallStore } from "@/stores/phoneCall";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 const phoneCallStore = usePhoneCallStore();
+
+// 語音輸入（免持通話）
+const {
+  voice,
+  statusText: voiceStatusText,
+  canInterrupt,
+  micButtonState,
+  micTitle,
+  micLevelStyle,
+  inputListening,
+  onMicButton,
+  onStatusClick,
+} = useCallVoiceUi();
+let unregisterVoiceExtra: (() => void) | null = null;
 
 const inputText = ref("");
 const toneText = ref("");
@@ -230,7 +301,6 @@ const supportsScreenShare = computed(() => {
 const callState = computed(() => phoneCallStore.callState);
 const callMessages = computed(() => phoneCallStore.callMessages);
 const isGenerating = computed(() => phoneCallStore.isGenerating);
-const isMuted = computed(() => false);
 const isSpeaker = computed(() => phoneCallStore.isSpeaker);
 const ttsAvailable = computed(() => phoneCallStore.ttsAvailable);
 const formattedDuration = computed(() => phoneCallStore.formattedDuration);
@@ -459,7 +529,8 @@ function stopAutoCapture() {
 
 async function performAutoCapture() {
   if (!screenShareEnabled.value || !screenShareVideoEl.value) return;
-  if (isGenerating.value) return; // AI 正在生成中，跳過這次
+  // AI 生成中，或使用者正在講話／還有句子在辨識，跳過這次
+  if (isGenerating.value || voice.isUserBusy) return;
 
   const snapshot = captureVideoElement(
     screenShareVideoEl.value,
@@ -566,9 +637,6 @@ function handleHangup() {
   phoneCallStore.endCall();
 }
 
-function toggleMute() {
-  // Task 13 改為語音輸入的麥克風開關
-}
 
 function toggleSpeaker() {
   phoneCallStore.toggleSpeakerState();
@@ -595,11 +663,17 @@ function onLeavePiP() { pipActive.value = false; }
 
 onMounted(() => {
   startLocalCamera();
+  // 語音訊息帶上語氣欄與當下畫面（和打字送出時一致）
+  unregisterVoiceExtra = voice.registerExtraProvider(() => ({
+    tone: toneText.value.trim() || undefined,
+    ...(captureLocalFrame() || {}),
+  }));
   document.addEventListener("enterpictureinpicture", onEnterPiP);
   document.addEventListener("leavepictureinpicture", onLeavePiP);
 });
 
 onUnmounted(() => {
+  unregisterVoiceExtra?.();
   exitPiP();
   stopScreenShare();
   stopLocalCamera();
@@ -964,6 +1038,64 @@ onUnmounted(() => {
 
   &.hangup {
     background: #e53935;
+  }
+
+  // 麥克風鍵：光暈隨音量變化
+  &.mic {
+    box-shadow: 0 0 0 calc(var(--mic-level, 0) * 10px) rgba(76, 175, 80, 0.35);
+    transition:
+      box-shadow 0.08s linear,
+      opacity 0.2s ease;
+
+    &.state-paused,
+    &.state-error {
+      opacity: 0.55;
+    }
+
+    &.state-attention {
+      background: #ff9800;
+    }
+  }
+}
+
+// 「角色說話中 · 點此打斷」
+.voice-status.interruptible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.voice-banner {
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.75);
+  color: #fff;
+  font-size: 12px;
+}
+
+.video-voice-notice {
+  margin: 0;
+}
+
+// 語音泡泡標示
+.msg {
+  .voice-icon {
+    width: 12px;
+    height: 12px;
+    margin-right: 4px;
+    vertical-align: -2px;
+    opacity: 0.75;
+  }
+
+  .voice-action {
+    border: none;
+    border-radius: 999px;
+    padding: 1px 8px;
+    margin-left: 6px;
+    font-size: 12px;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.22);
+    cursor: pointer;
   }
 }
 </style>

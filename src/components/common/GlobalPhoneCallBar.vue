@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { MIC_OFF_PATH, MIC_PATH } from "@/components/common/callMicIcons";
+import { useCallVoiceUi } from "@/composables/useCallVoiceUi";
 import { usePhoneCallStore } from "@/stores/phoneCall";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
 const phoneCallStore = usePhoneCallStore();
+// 縮小時也能看到收音狀態、直接切換靜音
+const { micButtonState, micTitle, onMicButton } = useCallVoiceUi();
 
 const show = computed(() => phoneCallStore.isActive && !phoneCallStore.isExpanded);
 
@@ -171,6 +175,26 @@ onUnmounted(() => {
           <Transition name="dot">
             <div v-if="hasUnread" class="unread-dot"></div>
           </Transition>
+          <!-- 麥克風標示：點擊切換靜音，不展開通話 -->
+          <button
+            v-if="phoneCallStore.callState === 'connected'"
+            class="widget-mic"
+            :class="`state-${micButtonState}`"
+            :title="micTitle"
+            @mousedown.stop
+            @touchstart.stop
+            @click.stop="onMicButton"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path
+                :d="
+                  micButtonState === 'muted' || micButtonState === 'error'
+                    ? MIC_OFF_PATH
+                    : MIC_PATH
+                "
+              />
+            </svg>
+          </button>
         </div>
 
         <!-- 時長 -->
@@ -251,6 +275,55 @@ onUnmounted(() => {
   background: #ef4444;
   border: 2px solid #1a1a1a;
   box-shadow: 0 0 6px rgba(239, 68, 68, 0.7);
+}
+
+// 頭像左上角的麥克風標示
+.widget-mic {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1.5px solid #1a1a1a;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #4ade80;
+  color: #0b2e17;
+  cursor: pointer;
+
+  svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  &.state-speaking {
+    animation: widgetMicPulse 0.9s ease-in-out infinite;
+  }
+
+  &.state-muted,
+  &.state-paused,
+  &.state-error {
+    background: #6b7280;
+    color: #f3f4f6;
+  }
+
+  &.state-attention {
+    background: #f59e0b;
+    color: #1f1300;
+  }
+}
+
+@keyframes widgetMicPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
 }
 
 .dot-enter-active { transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s; }
