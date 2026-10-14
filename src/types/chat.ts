@@ -548,6 +548,8 @@ export interface ChatMessage {
       tone?: string;
       audioUrl?: string;
       timestamp: number;
+      /** 使用者用說的（語音辨識） */
+      viaVoice?: boolean;
     }>;
   };
 

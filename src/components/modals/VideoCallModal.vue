@@ -230,7 +230,7 @@ const supportsScreenShare = computed(() => {
 const callState = computed(() => phoneCallStore.callState);
 const callMessages = computed(() => phoneCallStore.callMessages);
 const isGenerating = computed(() => phoneCallStore.isGenerating);
-const isMuted = computed(() => phoneCallStore.isMuted);
+const isMuted = computed(() => false);
 const isSpeaker = computed(() => phoneCallStore.isSpeaker);
 const ttsAvailable = computed(() => phoneCallStore.ttsAvailable);
 const formattedDuration = computed(() => phoneCallStore.formattedDuration);
@@ -567,7 +567,7 @@ function handleHangup() {
 }
 
 function toggleMute() {
-  phoneCallStore.toggleMuteState();
+  // Task 13 改為語音輸入的麥克風開關
 }
 
 function toggleSpeaker() {

@@ -310,7 +310,7 @@ onUnmounted(() => {
 const callState = computed(() => phoneCallStore.callState);
 const callMessages = computed(() => phoneCallStore.callMessages);
 const isGenerating = computed(() => phoneCallStore.isGenerating);
-const isMuted = computed(() => phoneCallStore.isMuted);
+const isMuted = computed(() => false);
 const isSpeaker = computed(() => phoneCallStore.isSpeaker);
 const ttsAvailable = computed(() => phoneCallStore.ttsAvailable);
 const ttsError = computed(() => phoneCallStore.ttsError);
@@ -402,7 +402,7 @@ async function handleEnterSubmit() {
 }
 
 function toggleMute() {
-  phoneCallStore.toggleMuteState();
+  // Task 12 改為語音輸入的麥克風開關
 }
 function toggleSpeaker() {
   phoneCallStore.toggleSpeakerState();
