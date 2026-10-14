@@ -13,6 +13,7 @@ const {
   refreshChatDerivedMetadata,
   saveMessages,
   upsertMessages,
+  deleteMessage,
 } = vi.hoisted(() => ({
   extractAudioFromMessages: vi.fn(async (messages: ChatMessage[]) => messages),
   extractImagesFromMessages: vi.fn(async (messages: ChatMessage[]) => messages),
@@ -22,6 +23,7 @@ const {
   refreshChatDerivedMetadata: vi.fn().mockResolvedValue(undefined),
   saveMessages: vi.fn().mockResolvedValue(undefined),
   upsertMessages: vi.fn().mockResolvedValue(undefined),
+  deleteMessage: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/db/operations", () => ({
@@ -37,6 +39,7 @@ vi.mock("@/storage/chatStorage", () => ({
 }));
 
 vi.mock("@/storage/chatMessageStorage", () => ({
+  deleteMessage,
   getMessageCount: vi.fn().mockResolvedValue(0),
   loadMessages,
   saveMessages,
@@ -180,5 +183,53 @@ describe("useChatPersistence", () => {
     await persistence.flushPendingSave();
 
     expect(saveMessages).not.toHaveBeenCalled();
+  });
+});
+
+describe("生成中的佔位氣泡", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    loadMessages.mockResolvedValue([]);
+  });
+
+  function setup(isComplete: boolean) {
+    const messages = ref<ChatScreenMessage[]>([
+      { id: "old", role: "user", content: "舊訊息", timestamp: 100 } as ChatScreenMessage,
+    ]);
+    const persistence = useChatPersistence({
+      messages,
+      currentChatId: ref("chat-1"),
+      currentChatData: ref<Chat | null>(null),
+      getCharName: () => "Assistant",
+      getDirectCharacterId: () => "",
+      convertToStorableMessage: (m) => ({ ...createStoredMessage(m.id), content: m.content, createdAt: m.timestamp }),
+      buildChatMetadata: (stored) =>
+        ({ id: "chat-1", name: "Chat", characterId: "c", messages: stored, metadata: {}, createdAt: 1, updatedAt: 1 }) as Chat,
+      initChatVariables: vi.fn(),
+      refreshBlockStateFromStorage: vi.fn().mockResolvedValue(undefined),
+      isMessagesComplete: () => isComplete,
+    });
+    persistence.markMessagesLoaded(1000);
+    return { messages, persistence };
+  }
+
+  it.each([true, false])("存過又從畫面拿掉的新訊息會從資料庫刪掉（完整載入=%s）", async (isComplete) => {
+    const { messages, persistence } = setup(isComplete);
+    messages.value.push({ id: "placeholder", role: "ai", content: "", timestamp: 2000, isStreaming: true });
+    await persistence.saveChatImmediate();
+    expect(deleteMessage).not.toHaveBeenCalled();
+
+    messages.value.splice(1, 1, { id: "reply_0", role: "ai", content: "回覆", timestamp: 2001 } as ChatScreenMessage);
+    await persistence.saveChatImmediate();
+    expect(deleteMessage).toHaveBeenCalledTimes(1);
+    expect(deleteMessage).toHaveBeenCalledWith("placeholder", { chatId: "chat-1" });
+  });
+
+  it("載入前就有的訊息不在這裡刪（交給全量保存或手動刪除）", async () => {
+    const { messages, persistence } = setup(false);
+    await persistence.saveChatImmediate();
+    messages.value.splice(0, 1);
+    await persistence.saveChatImmediate();
+    expect(deleteMessage).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 import { toRaw, type Ref } from "vue";
 import { extractAudioFromMessages, extractImagesFromMessages } from "@/db/operations";
 import {
+  deleteMessage,
   getMessageCount,
   loadMessages,
   saveMessages,
@@ -35,12 +36,19 @@ export function useChatPersistence(deps: UseChatPersistenceDeps) {
   let lastSavedLastMessageId = "";
   let lastSavedMessageIds: string[] = [];
   let messagesLoadedAt = 0;
+  /**
+   * 這個畫面自己存過、建立時間晚於載入時間的訊息。
+   * 儲存時晚於載入時間的訊息會被當成背景服務追加的而保留，
+   * 所以這些訊息從畫面上拿掉（例如生成中的佔位氣泡）時要自己從資料庫刪掉，否則重開聊天會冒出空白訊息
+   */
+  let ownSavedRecentIds = new Set<string>();
   let saveChatTimer: ReturnType<typeof setTimeout> | null = null;
   let saveChatPending = false;
   let saveChatLock: Promise<void> | null = null;
 
   function markMessagesLoaded(timestamp = Date.now()) {
     messagesLoadedAt = timestamp;
+    ownSavedRecentIds = new Set();
   }
 
   function resetSaveTrackingFromMessages() {
@@ -70,6 +78,7 @@ export function useChatPersistence(deps: UseChatPersistenceDeps) {
     lastSavedLastMessageId = "";
     lastSavedMessageIds = [];
     messagesLoadedAt = Date.now();
+    ownSavedRecentIds = new Set();
   }
 
   async function saveChatImplInner() {
@@ -194,10 +203,21 @@ export function useChatPersistence(deps: UseChatPersistenceDeps) {
         plainChat.blockState = latestFromDb.blockState;
       }
 
+      const incomingIds = new Set(plainMessages.map((m) => m.id));
+      const droppedOwnIds = [...ownSavedRecentIds].filter((id) => !incomingIds.has(id));
       if (messagesAreComplete) {
         await saveMessages(plainChat.id, plainMessages, messagesLoadedAt || undefined);
       } else {
         await upsertMessages(plainChat.id, plainMessages);
+      }
+      for (const id of droppedOwnIds) {
+        await deleteMessage(id, { chatId: plainChat.id });
+        ownSavedRecentIds.delete(id);
+      }
+      for (const m of plainMessages) {
+        if (m.id && (m.createdAt || 0) > messagesLoadedAt) ownSavedRecentIds.add(m.id);
+      }
+      if (!messagesAreComplete) {
         existingDbCount = await getMessageCount(plainChat.id);
         plainChat.messageCount = existingDbCount;
       }
