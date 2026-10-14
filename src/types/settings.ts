@@ -179,6 +179,16 @@ export interface AudioSettings {
   transmissionFormat: "image_url" | "input_audio";
 }
 
+// ===== 通話語音輸入設定 =====
+export interface CallVoiceInputSettings {
+  /** 停頓多久算講完（毫秒） */
+  endSilenceMs: 800 | 1200 | 1600 | 2000 | 3000;
+  /** 收音靈敏度 */
+  sensitivity: "low" | "medium" | "high";
+  /** 依說話情緒自動填語氣 */
+  autoTone: boolean;
+}
+
 // ===== 自動繼續設定 =====
 export interface AutoContinueSettings {
   /** 是否啟用 */
@@ -303,6 +313,31 @@ export const createDefaultAudioSettings = (): AudioSettings => ({
   sttEnabled: false,
   transmissionFormat: "image_url",
 });
+
+// ===== 創建默認通話語音輸入設定 =====
+export const createDefaultCallVoiceInputSettings = (): CallVoiceInputSettings => ({
+  endSilenceMs: 1200,
+  sensitivity: "medium",
+  autoTone: true,
+});
+
+const END_SILENCE_OPTIONS: CallVoiceInputSettings["endSilenceMs"][] = [
+  800, 1200, 1600, 2000, 3000,
+];
+const SENSITIVITY_OPTIONS: CallVoiceInputSettings["sensitivity"][] = ["low", "medium", "high"];
+
+/** 讀取已存的設定，缺漏或不合法的欄位回到預設 */
+export function normalizeCallVoiceInputSettings(raw: unknown): CallVoiceInputSettings {
+  const defaults = createDefaultCallVoiceInputSettings();
+  const value = (raw ?? {}) as Partial<Record<keyof CallVoiceInputSettings, unknown>>;
+  const endSilenceMs = value.endSilenceMs as CallVoiceInputSettings["endSilenceMs"];
+  const sensitivity = value.sensitivity as CallVoiceInputSettings["sensitivity"];
+  return {
+    endSilenceMs: END_SILENCE_OPTIONS.includes(endSilenceMs) ? endSilenceMs : defaults.endSilenceMs,
+    sensitivity: SENSITIVITY_OPTIONS.includes(sensitivity) ? sensitivity : defaults.sensitivity,
+    autoTone: typeof value.autoTone === "boolean" ? value.autoTone : defaults.autoTone,
+  };
+}
 
 // ===== 創建默認用戶角色 =====
 export const createDefaultUserPersona = (): UserPersona => ({

@@ -11,10 +11,16 @@ import {
   loadSettingsData,
   saveSettingsData,
 } from "@/storage/settingsStorage";
-import type { APISettings, AudioSettings } from "@/types/settings";
+import type {
+  APISettings,
+  AudioSettings,
+  CallVoiceInputSettings,
+} from "@/types/settings";
 import {
   createDefaultAPISettings,
   createDefaultAudioSettings,
+  createDefaultCallVoiceInputSettings,
+  normalizeCallVoiceInputSettings,
 } from "@/types/settings";
 import { defineStore } from "pinia";
 import { computed, reactive, ref, toRaw } from "vue";
@@ -149,6 +155,7 @@ export interface SettingsData {
   backgroundAudioEnabled: boolean;
   keepAliveMode: "audio";
   audio: AudioSettings;
+  callVoiceInput?: CallVoiceInputSettings;
   incomingCallRingtone: IncomingCallRingtoneSettings;
   embeddingAPI?: EmbeddingAPIConfig;
   embeddingMode?: "local" | "api";
@@ -327,6 +334,11 @@ export const useSettingsStore = defineStore("settings", () => {
 
   // 語音訊息設定
   const audio = reactive<AudioSettings>(createDefaultAudioSettings());
+
+  // 通話語音輸入設定
+  const callVoiceInput = reactive<CallVoiceInputSettings>(
+    createDefaultCallVoiceInputSettings(),
+  );
 
   // 來電鈴聲設定
   const incomingCallRingtone = reactive<IncomingCallRingtoneSettings>(
@@ -579,6 +591,12 @@ export const useSettingsStore = defineStore("settings", () => {
             Object.assign(audio, saved.audio);
           }
 
+          // 載入通話語音輸入設定（舊資料沒有這欄時用預設值）
+          Object.assign(
+            callVoiceInput,
+            normalizeCallVoiceInputSettings(saved.callVoiceInput),
+          );
+
           if (saved.incomingCallRingtone) {
             Object.assign(incomingCallRingtone, saved.incomingCallRingtone);
           }
@@ -745,6 +763,7 @@ export const useSettingsStore = defineStore("settings", () => {
         backgroundAudioEnabled: backgroundAudioEnabled.value,
         keepAliveMode: keepAliveMode.value,
         audio: { ...toRaw(audio) },
+        callVoiceInput: { ...toRaw(callVoiceInput) },
         incomingCallRingtone: { ...toRaw(incomingCallRingtone) },
         embeddingAPI: { ...toRaw(embeddingAPI) },
         embeddingMode: embeddingMode.value,
@@ -1266,6 +1285,7 @@ export const useSettingsStore = defineStore("settings", () => {
     backgroundAudioEnabled,
     keepAliveMode,
     audio,
+    callVoiceInput,
     incomingCallRingtone,
     embeddingAPI,
     embeddingMode,
