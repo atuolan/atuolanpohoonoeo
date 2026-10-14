@@ -6,7 +6,7 @@
  * - SenseVoice 判定「只有聲音、沒講話」時直接完成，不等 Qwen。
  */
 import { toTraditional } from "@/utils/toTraditional";
-import { GradioError } from "./gradio";
+import { audioFileName, GradioError } from "./gradio";
 import { transcribeWithQwen, type QwenAsrResult } from "./qwenAsr";
 import {
   transcribeWithSenseVoice,
@@ -50,6 +50,14 @@ export interface RecognitionResult {
   /** 依情緒判斷的語氣（中文），沒有就 undefined */
   tone?: string;
   events: VoiceEvent[];
+}
+
+/**
+ * 沒有獨立語氣欄位的地方（聊天錄音）用的文字：語氣寫在開頭，
+ * 格式「（語氣：開心）」，與聲音事件的「（咳嗽）」區分
+ */
+export function formatRecognitionText(result: RecognitionResult, includeTone: boolean): string {
+  return includeTone && result.tone ? `（語氣：${result.tone}）${result.text}` : result.text;
 }
 
 export class RecognitionFailedError extends Error {
@@ -161,7 +169,8 @@ async function recognizeOnce(wav: Blob, options: RecognizeOptions): Promise<Merg
   const qwenFn = options.engines?.qwen ?? transcribeWithQwen;
   const senseFn = options.engines?.sense ?? transcribeWithSenseVoice;
   const timeoutMs = options.timeoutMs ?? 10000;
-  const fileName = `voice_${Date.now()}.wav`;
+  // 依實際格式命名（通話是 wav，聊天錄音是 webm／mp4）
+  const fileName = audioFileName(wav);
   const qwenController = new AbortController();
   const abortQwen = () => qwenController.abort();
   if (options.signal?.aborted) abortQwen();

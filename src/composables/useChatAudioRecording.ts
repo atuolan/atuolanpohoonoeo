@@ -4,9 +4,11 @@ import {
   formatTime as formatAudioTime,
   isDurationValid,
 } from "@/services/AudioRecorder";
-import { transcribeWithQwen } from "@/services/asr/qwenAsr";
+import {
+  formatRecognitionText,
+  recognizeUtterance,
+} from "@/services/asr/recognizeUtterance";
 import { ensureApiSafeAudio } from "@/utils/audioConverter";
-import { toTraditional } from "@/utils/toTraditional";
 import {
   createAudioMessage,
   createAudioMessageNative,
@@ -242,12 +244,16 @@ export function useChatAudioRecording(deps: {
     deps.messages.value.push(userMessage);
     deps.scrollToBottom();
 
-    // 錄音後自動轉文字：和泡泡的「轉文字」用同一個免 key 服務，結果轉繁體
+    // 錄音後自動轉文字：和通話同一套免 key 辨識（含咳嗽、笑聲與語氣），結果為繁體
     if (audioSettings.value.sttEnabled) {
-      transcribeWithQwen(result.blob, { timeoutMs: 60000 })
-        .then(async ({ text }) => {
-          if (!text) return;
-          const transcript = await toTraditional(text);
+      // 聊天錄音最長 5 分鐘，時限放寬
+      recognizeUtterance(result.blob, { timeoutMs: 60000 })
+        .then(async (recognized) => {
+          if (!recognized) return;
+          const transcript = formatRecognitionText(
+            recognized,
+            settingsStore.callVoiceInput.autoTone,
+          );
           // 改畫面上（響應式）的那則訊息，畫面才會跟著更新
           const target = deps.messages.value.find((m) => m.id === userMessage.id);
           if (!target) return;

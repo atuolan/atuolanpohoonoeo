@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { GradioError } from "@/services/asr/gradio";
 import {
   type EngineOutcome,
+  formatRecognitionText,
   mergeRecognition,
   RecognitionFailedError,
   recognizeUtterance,
@@ -128,5 +129,39 @@ describe("recognizeUtterance", () => {
       recognizeUtterance(wav, { engines, signal: controller.signal }),
     ).rejects.toMatchObject({ kind: "aborted" });
     expect(engines.sense).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("formatRecognitionText", () => {
+  it("語氣寫在文字開頭，與聲音事件的括號區分", () => {
+    expect(formatRecognitionText({ text: "我剛下班", tone: "開心", events: [] }, true)).toBe(
+      "（語氣：開心）我剛下班",
+    );
+  });
+
+  it("關閉自動語氣或沒有語氣時只留文字", () => {
+    expect(formatRecognitionText({ text: "我剛下班", tone: "開心", events: [] }, false)).toBe(
+      "我剛下班",
+    );
+    expect(formatRecognitionText({ text: "（咳嗽）", events: ["cough"] }, true)).toBe("（咳嗽）");
+  });
+});
+
+describe("recognizeUtterance 檔名", () => {
+  it("依音檔格式命名（聊天錄音是 webm）", async () => {
+    const engines = {
+      sense: vi.fn(async (_wav: Blob, _o?: { fileName?: string }) => ({
+        text: "你好",
+        events: [],
+        emotion: null,
+      })),
+      qwen: vi.fn(async (_wav: Blob, _o?: { fileName?: string }) => ({
+        text: "你好",
+        language: "中文 / Chinese",
+      })),
+    };
+    await recognizeUtterance(new Blob(["x"], { type: "audio/webm;codecs=opus" }), { engines });
+    expect(engines.sense.mock.calls[0][1]?.fileName).toMatch(/\.webm$/);
+    expect(engines.qwen.mock.calls[0][1]?.fileName).toMatch(/\.webm$/);
   });
 });

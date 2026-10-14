@@ -5502,7 +5502,9 @@ function useClonedVoice(voiceId: string) {
           <label class="toggle-item">
             <div class="toggle-content">
               <span class="toggle-label">語音轉文字 (STT)</span>
-              <span class="toggle-desc">錄音後自動將語音轉為文字</span>
+              <span class="toggle-desc"
+                >錄音後自動將語音轉為文字（含咳嗽、笑聲等聲音）</span
+              >
             </div>
             <input
               type="checkbox"
@@ -6287,7 +6289,7 @@ function useClonedVoice(voiceId: string) {
             <div class="toggle-content">
               <span class="toggle-label">自動判斷語氣</span>
               <span class="toggle-desc"
-                >依說話情緒自動填入語氣（可能不準）；咳嗽、笑聲照樣會辨識</span
+                >依說話情緒自動填入語氣（可能不準），聊天室的錄音轉文字也適用；咳嗽、笑聲照樣會辨識</span
               >
             </div>
             <input

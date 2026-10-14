@@ -80,8 +80,10 @@ import MusicShareCard from "./MusicShareCard.vue";
 import PixelGiftChest from "./PixelGiftChest.vue";
 import PixelTransferCard from "./PixelTransferCard.vue";
 import { stripStateThinking } from "@/services/ResponseParser";
-import { transcribeWithQwen } from "@/services/asr/qwenAsr";
-import { toTraditional } from "@/utils/toTraditional";
+import {
+  formatRecognitionText,
+  recognizeUtterance,
+} from "@/services/asr/recognizeUtterance";
 
 // 配置 marked
 marked.setOptions({
@@ -3027,7 +3029,7 @@ const isTranscribing = ref(false);
 const showTranscript = ref(false);
 const localTranscript = ref("");
 
-/** 使用 Qwen3-ASR 公開 Demo 進行語音轉文字（結果轉繁體） */
+/** 語音轉文字：和通話同一套免 key 辨識（含咳嗽、笑聲與語氣），結果為繁體 */
 async function transcribeWithQwenASR() {
   const blob = await getAvailableAudioBlob();
   if (!blob || isTranscribing.value) return;
@@ -3043,11 +3045,14 @@ async function transcribeWithQwenASR() {
 
   try {
     // 聊天錄音最長 5 分鐘，時限放寬
-    const { text } = await transcribeWithQwen(blob, { timeoutMs: 60000 });
-    if (text) {
-      const traditional = await toTraditional(text);
-      localTranscript.value = traditional;
-      emit("updateTranscript", props.id, traditional);
+    const recognized = await recognizeUtterance(blob, { timeoutMs: 60000 });
+    if (recognized) {
+      const transcript = formatRecognitionText(
+        recognized,
+        settingsStore.callVoiceInput.autoTone,
+      );
+      localTranscript.value = transcript;
+      emit("updateTranscript", props.id, transcript);
     } else {
       localTranscript.value = "（未識別到語音內容）";
     }
