@@ -519,6 +519,43 @@ JSON 輸出範例（語音標記寫在 text 內、情緒走 tone）：
     adminOnly: true,
   },
   {
+    identifier: "phoneCallBilingual",
+    name: "電話雙語字幕",
+    description: "通話雙語字幕：原文拿去念、繁中字幕顯示（僅在該聊天開啟通話雙語字幕時注入）",
+    category: "context",
+    role: "system",
+    content: `【雙語通話】
+{{char}} 用自己平常說的語言講電話：依 {{char}} 的國籍、背景與角色設定決定（日本人說日文、英國人說英文、韓國人說韓文，以此類推）；中文母語的角色就說中文。語言確定後整通電話維持同一種，除非劇情有理由切換。
+
+JSON 每句的欄位：
+- text：{{char}} 實際說出口的原文，會直接拿去念。只放原文，不要夾中文翻譯、括號翻譯或 <br>。語氣標籤、停頓等語音標記只能寫在這裡。
+- zh：text 的繁體中文翻譯，會顯示成字幕。text 不是中文時必填；text 是中文時省略。只放翻譯，不放語音標記；翻譯要自然口語，不要翻譯腔。
+- lang：text 的語言，每句都要填，用英文名稱：Japanese、English、Korean、French、German、Spanish、Russian、Italian、Portuguese、Thai、Vietnamese、Indonesian、Chinese；粵語填 Chinese,Yue。
+- tone：用中文描述語氣。
+
+寫法示範（三句只是示範三種語言，實際通話只用 {{char}} 自己的語言）：
+\`\`\`json
+[
+  {"text": "Hey, you still up?", "zh": "嘿，你還沒睡啊？", "lang": "English", "tone": "輕快"},
+  {"text": "大丈夫だよ、気にしないで。", "zh": "沒事的，別在意。", "lang": "Japanese", "tone": "溫柔"},
+  {"text": "嗯，我在聽。", "lang": "Chinese", "tone": "溫柔"}
+]
+\`\`\`
+
+前面聊天紀錄裡「原文<br>翻譯」「原文（翻譯）」的寫法是舊格式，不要模仿；一律把原文放 text、翻譯放 zh。`,
+    system_prompt: true,
+    marker: false,
+    injection_position: INJECTION_RELATIVE,
+    injection_depth: 0,
+    injection_order: 10,
+    forbid_overrides: false,
+    extension: false,
+    injection_trigger: [],
+    isEditable: true,
+    isDeletable: true,
+    adminOnly: true,
+  },
+  {
     identifier: "incomingCallContext",
     name: "來電上下文",
     description: "角色主動來電時的上下文提示",
@@ -595,7 +632,12 @@ export const DEFAULT_PHONE_CALL_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "phoneCallProgressionAndPlayful", enabled: true },
   { identifier: "phoneCallExample", enabled: true },
   { identifier: "phoneCallMinimaxTTS", enabled: true },
+  { identifier: "phoneCallBilingual", enabled: true },
   { identifier: "phoneCallVoiceInput", enabled: true },
   { identifier: "chatHistory", enabled: true },
   { identifier: "phoneCallConfirmLastOutput", enabled: true },
 ];
+
+/** 雙語通話時接在最後一則指令後面的提醒（巨集替換前接上） */
+export const PHONE_CALL_BILINGUAL_REMINDER =
+  "- 雙語通話：text 只放 {{char}} 說出口的原文；不是中文時附上 zh（繁體中文字幕）；每句都填 lang";

@@ -50,6 +50,7 @@ import type {
   PromptManagerConfig,
   PromptOrderEntry,
 } from "@/types/promptManager";
+import { PHONE_CALL_BILINGUAL_REMINDER } from "@/data/defaultPrompts/phoneCall";
 import {
   DEFAULT_GROUP_CHAT_PROMPT_ORDER,
   DEFAULT_PHONE_CALL_PROMPT_ORDER,
@@ -382,6 +383,8 @@ export interface PromptBuilderOptions {
   minimaxTTSEnabled?: boolean;
   /** 電話中使用者有用語音說話（啟用時注入語音辨識說明） */
   voiceInputUsed?: boolean;
+  /** 通話雙語字幕（啟用時注入雙語規則與最後一則指令的提醒） */
+  callBilingual?: boolean;
   /** 好感度配置（per-character） */
   affinityConfig?: CharacterAffinityConfig;
   /** 好感度狀態（per-chat） */
@@ -907,6 +910,13 @@ export class PromptBuilder {
       if (!this.options.voiceInputUsed) {
         baseOrder = baseOrder.filter(
           (e) => e.identifier !== "phoneCallVoiceInput",
+        );
+      }
+
+      // 沒開通話雙語字幕：移除雙語規則
+      if (!this.options.callBilingual) {
+        baseOrder = baseOrder.filter(
+          (e) => e.identifier !== "phoneCallBilingual",
         );
       }
 
@@ -1857,7 +1867,9 @@ export class PromptBuilder {
         // 這樣用戶在編輯器中設定的 content 和 role 都會生效
         if (promptDef?.content && lastUserTurnMsgs.length > 0) {
           const substituted = await this.macroEngine.substitute(
-            promptDef.content,
+            identifier === "phoneCallConfirmLastOutput"
+              ? this.withBilingualReminder(promptDef.content)
+              : promptDef.content,
           );
           if (substituted) {
             // 檢查是否有圖片需要附帶
@@ -1913,6 +1925,16 @@ export class PromptBuilder {
 
         return builtMessages.length === 1 ? builtMessages[0] : builtMessages;
       }
+
+      // ===== 來電首句觸發（雙語通話時帶提醒） =====
+      case "phoneCallIncomingTrigger":
+        if (promptDef?.content) {
+          const content = await this.macroEngine.substitute(
+            this.withBilingualReminder(promptDef.content),
+          );
+          return content ? { role: getRole(), content, identifier } : null;
+        }
+        return null;
 
       case "gcGroupXmlFormat":
       case "gcGroupInteractionRules":
@@ -2528,6 +2550,14 @@ ${negativeExample}
         }
         return null;
     }
+  }
+
+  /** 雙語通話時在最後一則指令模板後面接上提醒 */
+  private withBilingualReminder(template: string): string {
+    return this.options.callBilingual
+      ? `${template}
+${PHONE_CALL_BILINGUAL_REMINDER}`
+      : template;
   }
 
   private static readonly TIME_ADVANCE_LINE =
