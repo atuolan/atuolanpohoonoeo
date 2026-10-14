@@ -47,7 +47,18 @@
               </div>
             </div>
             <h2 class="character-name">{{ characterName }}</h2>
-            <p class="call-status">{{ statusText }}</p>
+            <p class="call-status">
+              {{ statusText
+              }}<template v-if="callState === 'connected'">
+                ·
+                <span
+                  class="voice-status"
+                  :class="{ interruptible: canInterrupt }"
+                  @click="onStatusClick"
+                  >{{ voiceStatusText }}</span
+                >
+              </template>
+            </p>
             <!-- 拒接原因 -->
             <div v-if="callState === 'rejected'" class="reject-reason">
               「{{ rejectReason }}」
@@ -91,10 +102,31 @@
                     <span class="dot"></span>
                     <span class="dot"></span>
                   </span>
+                  <template v-else-if="msg.voiceStatus === 'pending'">
+                    <svg class="voice-icon" viewBox="0 0 24 24" fill="currentColor" aria-label="語音辨識中">
+                      <path :d="MIC_PATH" />
+                    </svg>
+                    <span class="streaming-indicator">
+                      <span class="dot"></span>
+                      <span class="dot"></span>
+                      <span class="dot"></span>
+                    </span>
+                  </template>
+                  <template v-else-if="msg.voiceStatus === 'failed'">
+                    <svg class="voice-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path :d="MIC_PATH" />
+                    </svg>
+                    <span class="voice-failed-text">沒聽清楚</span>
+                    <button class="voice-action" @click.stop="voice.retryFailed(msg.id)">重送</button>
+                    <button class="voice-action" title="刪除這句" @click.stop="voice.discardFailed(msg.id)">✕</button>
+                  </template>
                   <template v-else>
                     <span v-if="msg.tone" class="message-tone"
                       >（{{ msg.tone }}）</span
                     >
+                    <svg v-if="msg.viaVoice" class="voice-icon" viewBox="0 0 24 24" fill="currentColor" aria-label="語音輸入">
+                      <path :d="MIC_PATH" />
+                    </svg>
                     <span>{{ displayContent(msg.content) }}</span>
                     <span
                       v-if="msg.role === 'ai' && ttsAvailable"
@@ -152,6 +184,19 @@
             {{ ttsError }}
           </div>
 
+          <!-- 語音辨識連續失敗提示 -->
+          <div v-if="voice.showFailureBanner" class="tts-error-banner">
+            語音辨識連不上，可以先打字
+          </div>
+
+          <!-- 首次使用語音輸入的說明（含隱私提示） -->
+          <CallVoiceNotice
+            v-if="voice.phase === 'notice'"
+            :character-name="characterName"
+            @confirm="voice.acknowledgeNotice()"
+            @decline="voice.declineNotice()"
+          />
+
           <!-- 語音輸入區域 -->
           <div class="voice-input-section">
             <div class="input-capsule">
@@ -167,7 +212,11 @@
                   v-model="inputText"
                   type="text"
                   class="voice-input"
-                  placeholder="說些什麼...（Enter 只發送文字，空白 Enter 觸發回覆）"
+                  :placeholder="
+                    inputListening
+                      ? '直接說話，或在這裡打字…'
+                      : '說些什麼...（Enter 只發送文字，空白 Enter 觸發回覆）'
+                  "
                   @keydown.enter="handleEnterSubmit"
                   :disabled="isGenerating"
                 />
@@ -204,23 +253,25 @@
             </button>
           </template>
 
-          <!-- 通話中：靜音/掛斷 -->
+          <!-- 通話中：麥克風/重生/掛斷 -->
           <template v-else-if="callState === 'connected'">
             <button
-              class="control-btn mute"
-              :class="{ active: isMuted }"
-              @click="toggleMute"
+              class="control-btn mic"
+              :class="`state-${micButtonState}`"
+              :style="micLevelStyle"
+              :title="micTitle"
+              @click="onMicButton"
             >
-              <svg v-if="isMuted" viewBox="0 0 24 24" fill="currentColor">
+              <svg viewBox="0 0 24 24" fill="currentColor">
                 <path
-                  d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"
+                  :d="
+                    micButtonState === 'muted' || micButtonState === 'error'
+                      ? MIC_OFF_PATH
+                      : MIC_PATH
+                  "
                 />
               </svg>
-              <svg v-else viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"
-                />
-              </svg>
+              <span v-if="micButtonState === 'paused'" class="mic-pause-badge"></span>
             </button>
             <button
               class="control-btn regen"
@@ -267,11 +318,28 @@
 </template>
 
 <script setup lang="ts">
+import CallVoiceNotice from "@/components/common/CallVoiceNotice.vue";
+import { MIC_OFF_PATH, MIC_PATH } from "@/components/common/callMicIcons";
+import { useCallVoiceUi } from "@/composables/useCallVoiceUi";
 import { usePhoneCallStore } from "@/stores/phoneCall";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 const phoneCallStore = usePhoneCallStore();
+
+// 語音輸入（免持通話）
+const {
+  voice,
+  statusText: voiceStatusText,
+  canInterrupt,
+  micButtonState,
+  micTitle,
+  micLevelStyle,
+  inputListening,
+  onMicButton,
+  onStatusClick,
+} = useCallVoiceUi();
+let unregisterVoiceExtra: (() => void) | null = null;
 
 /** 顯示用：清除 TTS 標記（(chuckle)、<#0.5#>、[emotion=...] 等），避免原始標記外露 */
 function displayContent(content: string): string {
@@ -300,17 +368,21 @@ function handleViewportResize() {
 
 onMounted(() => {
   window.visualViewport?.addEventListener('resize', handleViewportResize);
+  // 語音訊息帶上語氣欄的值（手動語氣優先於自動判斷）
+  unregisterVoiceExtra = voice.registerExtraProvider(() => ({
+    tone: toneText.value.trim() || undefined,
+  }));
 });
 
 onUnmounted(() => {
   window.visualViewport?.removeEventListener('resize', handleViewportResize);
+  unregisterVoiceExtra?.();
 });
 
 // 從 store 讀取狀態
 const callState = computed(() => phoneCallStore.callState);
 const callMessages = computed(() => phoneCallStore.callMessages);
 const isGenerating = computed(() => phoneCallStore.isGenerating);
-const isMuted = computed(() => false);
 const isSpeaker = computed(() => phoneCallStore.isSpeaker);
 const ttsAvailable = computed(() => phoneCallStore.ttsAvailable);
 const ttsError = computed(() => phoneCallStore.ttsError);
@@ -401,9 +473,6 @@ async function handleEnterSubmit() {
   addUserMessageOnly();
 }
 
-function toggleMute() {
-  // Task 12 改為語音輸入的麥克風開關
-}
 function toggleSpeaker() {
   phoneCallStore.toggleSpeakerState();
 }
@@ -1090,10 +1159,36 @@ async function handleRegenerate() {
   }
 
   // 靜音與擴音激活狀態
-  &.mute.active {
-    background: white;
-    color: #ef4444;
-    box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+  // 麥克風鍵：光暈隨音量變化
+  &.mic {
+    position: relative;
+    box-shadow: 0 0 0 calc(var(--mic-level, 0) * 12px) rgba(255, 255, 255, 0.22);
+    transition:
+      box-shadow 0.08s linear,
+      background 0.2s ease,
+      opacity 0.2s ease,
+      transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+    &.state-speaking {
+      background: var(--color-primary, #7dd3a8);
+    }
+
+    &.state-paused {
+      opacity: 0.55;
+    }
+
+    &.state-muted {
+      background: white;
+      color: #ef4444;
+    }
+
+    &.state-error {
+      opacity: 0.45;
+    }
+
+    &.state-attention {
+      animation: micAttention 1.6s ease-in-out infinite;
+    }
   }
 
   &.speaker.active {
@@ -1126,6 +1221,61 @@ async function handleRegenerate() {
   svg {
     width: 20px;
     height: 20px;
+  }
+}
+
+// 角色回合時麥克風鍵角落的暫停小標
+.mic-pause-badge {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #fff 0 35%, transparent 35% 65%, #fff 65% 100%);
+}
+
+@keyframes micAttention {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(255, 255, 255, 0);
+  }
+}
+
+// 「角色說話中 · 點此打斷」
+.voice-status.interruptible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+// 語音泡泡標示
+.call-message {
+  .voice-icon {
+    width: 13px;
+    height: 13px;
+    margin-right: 4px;
+    vertical-align: -2px;
+    opacity: 0.75;
+  }
+
+  .voice-failed-text {
+    opacity: 0.85;
+    margin-right: 8px;
+  }
+
+  .voice-action {
+    border: none;
+    border-radius: 999px;
+    padding: 2px 10px;
+    margin-left: 4px;
+    font-size: 12px;
+    color: inherit;
+    background: rgba(255, 255, 255, 0.22);
+    cursor: pointer;
   }
 }
 
