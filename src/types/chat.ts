@@ -6,6 +6,7 @@
 import type { BlockState } from "@/types/block";
 import type { AuthorsNoteMetadata } from "./prompt";
 import type { PromptRoleType } from "./promptManager";
+import type { ToolActivityRecord } from "./toolActivity";
 import type {
   WaimaiDestinationSnapshot,
   WaimaiEtaSnapshot,
@@ -642,6 +643,8 @@ export interface ChatMessage {
   onlineModeRequestReason?: string;
   /** 線上模式切換請求狀態 */
   onlineModeRequestStatus?: "pending" | "accepted" | "rejected";
+  /** 這一輪角色用過的工具（只掛在該輪第一則角色訊息上） */
+  toolActivity?: ToolActivityRecord[];
   /** 是否為道歉外賣送達卡片 */
   isApologyFood?: boolean;
   /** 道歉外賣資料 */

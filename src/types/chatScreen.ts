@@ -5,6 +5,7 @@ import type {
   GroupActionType,
   WaimaiOrderSnapshot,
 } from "@/types/chat";
+import type { ToolActivityRecord } from "@/types/toolActivity";
 
 export type ChatScreenMediaType =
   | "descriptive-image"
@@ -200,6 +201,8 @@ export interface ChatScreenMessage {
   isOnlineModeRequest?: boolean;
   onlineModeRequestReason?: string;
   onlineModeRequestStatus?: "pending" | "accepted" | "rejected";
+  /** 這一輪角色用過的工具（只掛在該輪第一則角色訊息上） */
+  toolActivity?: ToolActivityRecord[];
   sentWhileBlocked?: boolean;
   isSystemNotification?: boolean;
   isTransactionClaimNotice?: boolean;
