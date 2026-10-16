@@ -1,5 +1,5 @@
 import { fileURLToPath, URL } from "node:url";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
@@ -10,5 +10,7 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
+    // git worktree 是其他分支的副本，不跟主目錄一起跑
+    exclude: [...configDefaults.exclude, ".worktrees/**", ".claude/**"],
   },
 });
