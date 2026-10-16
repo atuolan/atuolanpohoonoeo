@@ -273,4 +273,61 @@ describe("OpenAICompatible request integration", () => {
       lastPromptRoleOverride: "none",
     });
   });
+
+  it("describes tools and flattens tool history for the text protocol", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      expect(body.tools).toBeUndefined();
+      expect(body.messages.map((m: any) => m.role)).not.toContain("tool");
+      expect(body.messages[0]).toEqual({ role: "system", content: "Rules" });
+      expect(body.messages[1].role).toBe("system");
+      expect(body.messages[1].content).toContain("<tools>");
+      expect(body.messages[1].content).toContain("get_time");
+      expect(body.messages.some((m: any) => m.role === "assistant" && String(m.content).includes("```tool_calls"))).toBe(true);
+      expect(body.messages.some((m: any) => m.role === "user" && m.content === "工具結果（get_time，c1）：12:00")).toBe(true);
+      return jsonResponse({ choices: [{ message: { content: "It is noon." } }] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await new OpenAICompatibleClient(api()).generate({
+      messages: [
+        { role: "system", content: "Rules" },
+        { role: "user", content: "time?" },
+        { role: "assistant", content: "", tool_calls: [{ id: "c1", type: "function", function: { name: "get_time", arguments: "{}" } }] },
+        { role: "tool", content: "12:00", tool_call_id: "c1" },
+      ],
+      settings, apiSettings: api(),
+      tools: [{ name: "get_time", description: "time", parameters: { type: "object" } }],
+      toolProtocol: "text",
+    });
+    expect(result.content).toBe("It is noon.");
+  });
+
+  it("adds the tool description after falling back from native to text", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      if (fetchMock.mock.calls.length === 1) {
+        expect(JSON.stringify(body.messages)).not.toContain("<tools>");
+        return { ok: false, status: 400, text: async () => "unknown field tools" } as Response;
+      }
+      expect(body.messages[0].role).toBe("system");
+      expect(body.messages[0].content).toContain("<tools>");
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await new OpenAICompatibleClient(api()).generate({
+      messages: [{ role: "user", content: "time?" }], settings, apiSettings: api(),
+      tools: [{ name: "get_time", description: "time", parameters: { type: "object" } }], toolProtocol: "auto",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns empty text and the parsed call when a text-protocol reply is only a tool_calls block", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ choices: [{ message: { content: '```tool_calls\n[{"id":"c9","name":"get_time","arguments":{}}]\n```' } }] })));
+    const result = await new OpenAICompatibleClient(api()).generate({
+      messages: [{ role: "user", content: "time?" }], settings, apiSettings: api(),
+      tools: [{ name: "get_time", description: "time", parameters: { type: "object" } }], toolProtocol: "text",
+    });
+    expect(result.content).toBe("");
+    expect(result.toolCalls).toEqual([{ id: "c9", name: "get_time", arguments: {} }]);
+  });
 });

@@ -13,6 +13,7 @@ import type {
 } from "@/types/chat";
 import type { APISettings } from "@/types/settings";
 import { postProcessPrompt, type PromptPostProcessingType } from "@/utils/promptPostProcessor";
+import { applyTextToolProtocol } from "@/services/toolCalling/textToolPrompt";
 import {
   createToolProtocolAdapter,
   isExplicitUnsupportedToolsError,
@@ -714,7 +715,10 @@ export class OpenAICompatibleClient {
     const promptMode = options.tools?.length && (protocol === "native" || protocol === "auto")
       ? getToolCompatiblePromptMode(requestedMode)
       : requestedMode;
-    let processedMessages = postProcessPrompt(messages, promptMode);
+    // 文字協定：模型不支援原生工具，要在提示詞裡說明工具並把工具往返改成純文字
+    const textToolMode = this.apiSettings.toolsEnabled !== false && protocol === "text" && Boolean(options.tools?.length);
+    const sourceMessages = textToolMode ? applyTextToolProtocol(messages, options.tools ?? []) : messages;
+    let processedMessages = postProcessPrompt(sourceMessages, promptMode);
     const roleAdjustments: NonNullable<GenerationDiagnostics["roleAdjustments"]> = [];
 
     // 確保 messages 中至少有一條 user 訊息
@@ -953,7 +957,9 @@ export class OpenAICompatibleClient {
     const promptMode = options.tools?.length && (protocol === "native" || protocol === "auto")
       ? getToolCompatiblePromptMode(requestedMode)
       : requestedMode;
-    const processedMessages = postProcessPrompt(messages, promptMode);
+    const textToolMode = this.apiSettings.toolsEnabled !== false && protocol === "text" && Boolean(options.tools?.length);
+    const sourceMessages = textToolMode ? applyTextToolProtocol(messages, options.tools ?? []) : messages;
+    const processedMessages = postProcessPrompt(sourceMessages, promptMode);
     const roleAdjustments: NonNullable<GenerationDiagnostics["roleAdjustments"]> = [];
 
     // Claude 要求最後一條訊息為 user（與 OpenAI 路徑一致的調整）
@@ -1408,7 +1414,9 @@ export class OpenAICompatibleClient {
     // DeepSeek-R 系列等思維鏈），回退使用推理內容，避免「明明有內容卻空回」。
     const adapter = createToolProtocolAdapter(params.toolProtocol ?? this.apiSettings.toolProtocol ?? "auto", false);
     const parsed = adapter.parseGeneration(data);
-    const rawContent = parsed.content || choice?.message?.content;
+    // 文字協定時 parsed.content 已去掉 tool_calls 區塊；即使是空字串也不能退回原文
+    const textProtocol = (params.toolProtocol ?? this.apiSettings.toolProtocol ?? "auto") === "text";
+    const rawContent = textProtocol ? parsed.content : parsed.content || choice?.message?.content;
     const reasoningContent =
       choice?.message?.reasoning_content ?? choice?.message?.reasoning;
     const content =
@@ -1608,7 +1616,7 @@ export class OpenAICompatibleClient {
 
       yield {
         type: "done",
-        content: fullContent,
+        content: (params.toolProtocol ?? this.apiSettings.toolProtocol ?? "auto") === "text" ? parsedAnthropic.content : fullContent,
         toolCalls: parsedAnthropic.toolCalls.length ? parsedAnthropic.toolCalls : undefined,
         usage,
         finishReason: stopReason,
