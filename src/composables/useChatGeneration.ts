@@ -10,7 +10,7 @@ import { useAIGenerationStore } from "@/stores";
 import { ToolExecutionEngine, type ToolExecutionOutcome, type ToolExecutionRequestContext } from "@/services/toolCalling/toolExecutionEngine";
 import { ToolRegistry } from "@/services/toolCalling/toolRegistry";
 import type { ChatToolDefinition, PendingToolConfirmation, ToolResult } from "@/services/toolCalling/types";
-import { filterToolsForCharacter } from "@/services/toolCalling/permissions";
+import { isToolAllowed } from "@/services/toolCalling/permissions";
 import type { ToolProtocol } from "@/services/toolCalling/protocolAdapters";
 import type { CharacterToolPermissions } from "@/types/character";
 
@@ -81,9 +81,13 @@ function normalizeGenerationError(error: unknown): string {
 export async function runChatGenerationRequest(
   context: ChatGenerationRequestRunnerContext,
 ): Promise<ChatGenerationRequestRunnerResult> {
-  const toolDefinitions = context.tools ?? [];
   const effectiveToolProtocol = context.toolProtocol ?? context.apiSettings.toolProtocol ?? "auto";
-  if (toolDefinitions.length > 0 && context.globalToolsEnabled !== false && effectiveToolProtocol !== "disabled") {
+  const globalToolsEnabled = context.globalToolsEnabled ?? context.apiSettings.toolsEnabled !== false;
+  // 角色不能用的工具不送給模型，省 token，也避免角色呼叫後才被擋
+  const toolDefinitions = globalToolsEnabled
+    ? (context.tools ?? []).filter((tool) => isToolAllowed(tool, true, context.toolPermissions))
+    : [];
+  if (toolDefinitions.length > 0 && effectiveToolProtocol !== "disabled") {
     const registry = new ToolRegistry(toolDefinitions);
     const engine = new ToolExecutionEngine({
       registry,
@@ -95,7 +99,7 @@ export async function runChatGenerationRequest(
           lastPromptRoleOverride: context.apiSettings.lastPromptRoleOverride ?? "none",
           signal: context.signal,
           adjustLastMessageRole: true,
-          tools: registry.toOpenAITools() as any,
+          tools: registry.toRequestTools(),
           toolProtocol: context.toolProtocol,
           promptPostProcessing: context.promptPostProcessing as any,
           toolContext: requestContext,
@@ -123,7 +127,7 @@ export async function runChatGenerationRequest(
       ...(context.toolContext ?? {}),
       chatId: context.chatId,
       characterId: context.characterId,
-      globalEnabled: context.globalToolsEnabled ?? context.apiSettings.toolsEnabled !== false,
+      globalEnabled: globalToolsEnabled,
       permissions: context.toolPermissions,
       signal: context.signal,
     };

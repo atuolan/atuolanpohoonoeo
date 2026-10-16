@@ -1,4 +1,5 @@
 import type { JsonSchema } from "./jsonSchema";
+import type { OpenAIToolDefinition as RequestToolDefinition } from "./protocolAdapters";
 import type { ChatToolDefinition } from "./types";
 
 export interface OpenAIToolDefinition {
@@ -46,6 +47,15 @@ export class ToolRegistry {
         description: tool.description,
         parameters: tool.parameters,
       },
+    }));
+  }
+
+  /** 交給 API 層的工具定義；各家格式由 protocol adapter 包裝，這裡不能先包。 */
+  toRequestTools(): RequestToolDefinition[] {
+    return this.list().map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters as unknown as Record<string, unknown>,
     }));
   }
 }

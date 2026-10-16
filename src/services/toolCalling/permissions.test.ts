@@ -40,4 +40,11 @@ describe("tool permissions and registry", () => {
     registry.register(tool());
     expect(registry.toOpenAITools()).toEqual([{ type: "function", function: { name: "get_time", description: "time", parameters: { type: "object", properties: {}, additionalProperties: false } } }]);
   });
+
+  it("emits plain request tool definitions for the API layer", () => {
+    const registry = new ToolRegistry([tool()]);
+    expect(registry.toRequestTools()).toEqual([
+      { name: "get_time", description: "time", parameters: { type: "object", properties: {}, additionalProperties: false } },
+    ]);
+  });
 });

@@ -53,4 +53,25 @@ describe("runChatGenerationRequest tool integration", () => {
     expect(result.content).toBe("No tools.");
     expect(generate).toHaveBeenCalledTimes(1);
   });
+
+  it("sends plain tool definitions instead of double-wrapped ones", async () => {
+    const generate = vi.fn().mockResolvedValue({ content: "ok", tokenCount: { prompt: 1, completion: 1, total: 2 } });
+    await runChatGenerationRequest({ client: { generate, generateStream: vi.fn() }, messages: [], settings, apiSettings, signal: new AbortController().signal, streaming: false, initialDiagnostics: {}, tools: [tool()] });
+    expect(generate.mock.calls[0][0].tools).toEqual([
+      { name: "get_current_time", description: "fixture", parameters: { type: "object", properties: {}, additionalProperties: false } },
+    ]);
+  });
+
+  it("drops tools the character may not use before sending", async () => {
+    const generate = vi.fn().mockResolvedValue({ content: "ok", tokenCount: { prompt: 1, completion: 1, total: 2 } });
+    await runChatGenerationRequest({ client: { generate, generateStream: vi.fn() }, messages: [], settings, apiSettings, signal: new AbortController().signal, streaming: false, initialDiagnostics: {}, tools: [tool(), tool("high")], toolPermissions: { enabled: true, categories: { phone: false }, tools: {} } });
+    expect(generate.mock.calls[0][0].tools.map((entry: { name: string }) => entry.name)).toEqual(["get_current_time"]);
+  });
+
+  it("skips the tool loop when the character may not use any tool", async () => {
+    const generate = vi.fn().mockResolvedValue({ content: "plain", tokenCount: { prompt: 1, completion: 1, total: 2 } });
+    const result = await runChatGenerationRequest({ client: { generate, generateStream: vi.fn() }, messages: [], settings, apiSettings, signal: new AbortController().signal, streaming: false, initialDiagnostics: {}, tools: [tool()], toolPermissions: { enabled: false, categories: {}, tools: {} } });
+    expect(generate.mock.calls[0][0].tools).toBeUndefined();
+    expect(result.content).toBe("plain");
+  });
 });
