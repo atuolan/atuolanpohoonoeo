@@ -66,6 +66,24 @@ const PATH_SCORE_MULTIPLIERS = {
 
 const RERANK_CANDIDATE_LIMIT = 12
 
+/**
+ * 文字搜尋用的查詢詞：先依空白、標點切開；超過兩個字的中文再切成兩字一組，
+ * 這樣「上次吵架的原因」也能對到寫著「吵架」「原因」的總結。
+ */
+export function buildTextSearchTerms(queryText: string): string[] {
+  const terms = new Set<string>()
+  const tokens = queryText.toLowerCase().split(/[\s,，、。．.!！?？;；:：「」『』"'()（）]+/)
+  for (const token of tokens) {
+    if (token.length < 2) continue
+    if (/^[一-鿿]+$/.test(token) && token.length > 2) {
+      for (let i = 0; i < token.length - 1; i++) terms.add(token.slice(i, i + 2))
+    } else {
+      terms.add(token)
+    }
+  }
+  return [...terms]
+}
+
 // ─── 服務實作 ───────────────────────────────────────────────
 
 export class MemoryRetrieverService {
@@ -187,6 +205,42 @@ export class MemoryRetrieverService {
       console.error('[向量記憶] ❌ 檢索失敗，返回空陣列:', error)
       return []
     }
+  }
+
+  /**
+   * 不用向量，直接比對文字找這個聊天的總結和重要事件。
+   * 給角色工具「查記憶」用：向量記憶沒開、或這個聊天還沒有向量時的備援。
+   * 分數 = 查詢詞命中的比例；同分時新的在前。
+   */
+  async searchByText(queryText: string, chatId: string, topK: number): Promise<RetrievedMemory[]> {
+    const terms = buildTextSearchTerms(queryText)
+    if (terms.length === 0) return []
+
+    const db = await getDatabase()
+    const candidates: RetrievedMemory[] = []
+
+    const summaries = await db.getAllFromIndex(DB_STORES.SUMMARIES as 'summaries', 'by-chat', chatId)
+    for (const s of summaries) {
+      if (!isActiveSummary(s) || !s.content) continue
+      candidates.push({ sourceId: s.id, sourceType: 'summary', content: s.content, score: 0, createdAt: s.createdAt ?? 0 })
+    }
+
+    const allLogs = await db.getAll(DB_STORES.IMPORTANT_EVENTS as 'importantEvents')
+    const chatLog = allLogs.find((log: any) => log.chatId === chatId || log.id === chatId)
+    for (const event of chatLog?.events ?? []) {
+      if (!event.content) continue
+      candidates.push({ sourceId: event.id, sourceType: 'event', content: event.content, score: 0, createdAt: event.timestamp ?? 0 })
+    }
+
+    return candidates
+      .map((candidate) => {
+        const text = candidate.content.toLowerCase()
+        const hits = terms.filter((term) => text.includes(term)).length
+        return { ...candidate, score: hits / terms.length }
+      })
+      .filter((candidate) => candidate.score > 0)
+      .sort((a, b) => b.score - a.score || b.createdAt - a.createdAt)
+      .slice(0, topK)
   }
 
   /**

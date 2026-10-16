@@ -300,13 +300,16 @@ async function fetchWeather(
 
 /**
  * 瀏覽器地理定位
+ * @param options 覆蓋預設的定位選項（例如只要大概位置時關掉高精確度，比較快）
  */
-export async function getBrowserLocation(): Promise<{
+export async function getBrowserLocation(options: PositionOptions = {}): Promise<{
   lat: number;
   lon: number;
+  /** 誤差（公尺） */
+  accuracy: number;
 }> {
   return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
       reject(new Error("您的瀏覽器不支持地理定位"));
       return;
     }
@@ -316,6 +319,7 @@ export async function getBrowserLocation(): Promise<{
         resolve({
           lat: position.coords.latitude,
           lon: position.coords.longitude,
+          accuracy: position.coords.accuracy,
         });
       },
       (error) => {
@@ -337,9 +341,34 @@ export async function getBrowserLocation(): Promise<{
         enableHighAccuracy: true,
         timeout: 10000,
         maximumAge: 300000,
+        ...options,
       },
     );
   });
+}
+
+/**
+ * 座標轉成大概的地名（區、市、國家），不含路名門牌。
+ * 查不到時回傳空字串。
+ */
+export async function reverseGeocode(lat: number, lon: number): Promise<string> {
+  try {
+    // zoom=14 大約是「區」的層級
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=14&addressdetails=1&accept-language=zh-TW`;
+    const res = await fetch(url);
+    if (!res.ok) return "";
+    const data = (await res.json()) as { address?: Record<string, string> };
+    const a = data.address ?? {};
+    const parts = [
+      a.suburb || a.city_district || a.district || a.town || a.village || a.neighbourhood,
+      a.city || a.county || a.state,
+      a.country,
+    ].filter((part): part is string => !!part);
+    return [...new Set(parts)].join("，");
+  } catch (e) {
+    console.warn("[WeatherService] 座標轉地名失敗", e);
+    return "";
+  }
 }
 
 /**

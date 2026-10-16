@@ -73,6 +73,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import GroupCallHistoryModal from "../modals/GroupCallHistoryModal.vue";
 import GroupChatHistoryModal from "../modals/GroupChatHistoryModal.vue";
 import PhotoPreviewModal from "../modals/PhotoPreviewModal.vue";
+import CalendarEventCard from "./CalendarEventCard.vue";
 import GroupCallHistoryCard from "./GroupCallHistoryCard.vue";
 import PhoneCallHistoryCard from "./PhoneCallHistoryCard.vue";
 import GroupChatHistoryCard from "./GroupChatHistoryCard.vue";
@@ -449,6 +450,11 @@ interface MessageBubbleProps {
     title: string;
     date: string;
     description?: string;
+    /** 開始時間 HH:MM（沒有就是整天） */
+    startTime?: string;
+    endTime?: string;
+    /** 跨天行程的結束日期 */
+    endDate?: string;
   };
   // 通話通知卡片
   isCallNotification?: boolean;
@@ -3325,6 +3331,14 @@ const showTextVoiceTranscript = ref(true);
         </button>
       </div>
 
+      <!-- 行事曆卡片（可以加到手機日曆） -->
+      <div
+        v-else-if="isCalendarEvent && calendarEventData"
+        class="calendar-event-system-message"
+      >
+        <CalendarEventCard :data="calendarEventData" />
+      </div>
+
       <!-- 普通系統消息 -->
       <div v-else class="system-message">
         <span>{{ content }}</span>
@@ -4984,6 +4998,14 @@ const showTextVoiceTranscript = ref(true);
   display: flex;
   justify-content: center;
   padding: 8px 16px;
+}
+
+.calendar-event-system-message {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 8px 16px;
+  box-sizing: border-box;
 }
 
 // 電話通話紀錄卡片

@@ -1,0 +1,34 @@
+/*
+ * 203 Phone「加到手機日曆」捷徑的原始碼（Cherri 語言，https://cherrilang.org）
+ * App 用網址把行程交過來（JSON：title、start、end、allDay、notes），這個捷徑把它加進手機內建的行事曆。
+ * 欄位要和 src/services/phoneCalendar.ts 的 buildShortcutPayload 一致。
+ *
+ * 改完要重新產生 public/shortcuts/203 Phone Calendar.shortcut：
+ * 到 https://playground.cherrilang.org 貼上 → Compile → Sign Shortcut → 下載，換掉舊檔。
+ * 名稱一定要是英數字：Playground 遇到中文名稱會產生沒有檔名的檔案；
+ * 匯入後捷徑的名稱就是檔名，要和 phoneCalendar.ts 的 DEFAULT_SHORTCUT_NAME 一樣。
+ */
+#define name 203 Phone Calendar
+#define color pink
+#define inputs text
+#define noinput stopwith "請從 203 Phone 的行程卡片按「加到手機日曆」"
+
+// Cherri 沒有內建「加入新行程」，照 Shortcuts 的參數名稱自己定義
+action 'addnewevent' addNewEvent(
+    text title: 'WFCalendarItemTitle',
+    text start: 'WFCalendarItemStartDate',
+    text end: 'WFCalendarItemEndDate',
+    variable allDay: 'WFCalendarItemAllDay',
+    text notes: 'WFCalendarItemNotes'
+) {
+    "WFCalendarItemDates": true
+}
+
+const event = getDictionary(ShortcutInput)
+const title = getValue(event, "title")
+const start = getValue(event, "start")
+const end = getValue(event, "end")
+const allDay = getValue(event, "allDay")
+const notes = getValue(event, "notes")
+
+addNewEvent("{title}", "{start}", "{end}", allDay, "{notes}")

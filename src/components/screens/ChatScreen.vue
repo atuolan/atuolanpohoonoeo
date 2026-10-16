@@ -189,6 +189,9 @@ import ToolActivityRow from "@/components/common/ToolActivityRow.vue";
 import type { LiveToolActivity } from "@/types/toolActivity";
 import { finalizeLiveActivity, summarizeToolResult, upsertLiveActivity } from "@/utils/toolActivity";
 import type { PendingToolConfirmation } from "@/services/toolCalling/types";
+import { getToolHandledActions } from "@/services/toolCalling/tagOverlap";
+import { createAppToolServices } from "@/services/toolCalling/appToolServices";
+import { saveCalendarEvent } from "@/services/calendarEvents";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
 import { useUserStore } from "@/stores/user";
 import { useFitnessStore } from "@/stores/fitness";
@@ -392,7 +395,7 @@ import {
   fuzzyVoiceMatch,
 } from "@/services/RedPacketService";
 import { useWeatherStore } from "@/stores/weather";
-import type { CalendarEvent, CalendarEventData } from "@/types/calendar";
+import type { CalendarEventData } from "@/types/calendar";
 import type { Holiday } from "@/types/holiday";
 import type { PendingCall } from "@/types/incomingCall";
 import {
@@ -5655,13 +5658,27 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         globalToolsEnabled: chatTaskConfig.api.toolsEnabled,
         toolContext: {
           locationCity: char.worldSettings?.location,
+          userCity: weatherStore.locationName || undefined,
           timezone: char.worldSettings?.timezone,
           characterName: char.nickname || char.data.name || props.characterName,
           characterAvatar: char.avatar,
-          weatherService: weatherStore,
-          music: musicStore,
-          theme: themeStore,
-          incomingCallScheduler: getIncomingCallScheduler(),
+          // 內建工具用的服務：行事曆、記憶、音樂、桌布、天氣、來電（型別見 toolServices.ts）
+          ...createAppToolServices({
+            chatId: toolActivityChatId || props.chatId || "",
+            characterId: char.id,
+            vectorMemoryEnabled: settingsStore.vectorMemoryEnabled,
+            vectorThreshold: chatSummarySettings.value.vectorThreshold ?? 0.3,
+            musicStore,
+            themeStore,
+            onCalendarEventCreated: (data) =>
+              announceCalendarEvent(
+                data,
+                char.nickname || char.data.name || props.characterName || "角色",
+                currentChatId.value === toolActivityChatId,
+              ),
+            isInCallWithCharacter: () =>
+              phoneCallStore.isActive && phoneCallStore.activeCall?.characterId === char.id,
+          }),
         },
         onToolCallStart: (call, tool) => {
           updateToolActivity({ id: call.id, toolName: call.name, label: tool.displayName ?? call.name, status: "running", at: Date.now() });
@@ -6268,11 +6285,18 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           }
 
           if (parsed) {
+            // 這一輪已經用工具預約來電／新增行程的，同類標籤不再執行，免得重複
+            const toolHandled = getToolHandledActions(resolvedGenerationResult.toolResults);
+
             // 處理來電預約標籤
             if (parsed.hasScheduleCall && parsed.scheduleCallData) {
-              console.log("[ChatScreen][render] await handleScheduleCall");
-              await handleScheduleCall(parsed.scheduleCallData);
-              console.log("[ChatScreen][render] handleScheduleCall 完成");
+              if (toolHandled.scheduleCall) {
+                console.log("[ChatScreen] 這一輪已用工具處理過預約來電，略過 <schedule-call> 標籤");
+              } else {
+                console.log("[ChatScreen][render] await handleScheduleCall");
+                await handleScheduleCall(parsed.scheduleCallData);
+                console.log("[ChatScreen][render] handleScheduleCall 完成");
+              }
             }
 
             // 處理角色位置推測標籤
@@ -6282,9 +6306,13 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               console.log("[ChatScreen][render] handleCharLocationUpdate 完成");
             }
 
-            // 處理行事曆事件標籤
+            // 處理行事曆事件標籤（經期紀錄工具做不到，照常執行）
             if (parsed.hasCalendarEvent && parsed.calendarEvents) {
               for (const calEvent of parsed.calendarEvents) {
+                if (toolHandled.calendarEvent && calEvent.type === "user") {
+                  console.log("[ChatScreen] 這一輪已用工具處理過新增行程，略過 <calendar-event>：", calEvent.title);
+                  continue;
+                }
                 await handleCalendarEvent(calEvent);
               }
             }
@@ -8854,23 +8882,12 @@ async function handleCharLocationUpdate(location: string) {
 
 // ===== 行事曆事件處理 =====
 
-async function handleCalendarEvent(data: CalendarEventData): Promise<void> {
-  try {
-    const char = currentCharacter.value;
-    const event: CalendarEvent = {
-      id: `cal_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      type: data.type,
-      title: data.title,
-      date: data.date,
-      description: data.description,
-      sourceCharacterId: char?.id,
-      sourceChatId: currentChatId.value || props.chatId || undefined,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    await db.put(DB_STORES.CALENDAR_EVENTS, JSON.parse(JSON.stringify(event)));
-
-    // 插入系統訊息到聊天中，讓 AI 下一輪能看到已建立的事件
+/**
+ * 行事曆事件寫入後：在聊天裡插一則系統訊息（AI 下一輪看得到）並通知使用者。
+ * inChat=false 時只通知（例如角色工具執行途中使用者已經切到別的聊天）。
+ */
+function announceCalendarEvent(data: CalendarEventData, charName: string, inChat = true): void {
+  if (inChat) {
     const calendarMessage: Message = {
       id: `msg_cal_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       role: "system",
@@ -8882,15 +8899,30 @@ async function handleCalendarEvent(data: CalendarEventData): Promise<void> {
         title: data.title,
         date: data.date,
         description: data.description,
+        startTime: data.startTime,
+        endTime: data.endTime,
+        endDate: data.endDate,
       },
     };
     messages.value.push(calendarMessage);
+  }
 
-    const charName =
-      char?.nickname || char?.data?.name || props.characterName || "角色";
-    notificationStore.notifySystem(
-      "行事曆已更新",
-      `${charName} 幫你記錄了「${data.title}」（${data.date}）`,
+  notificationStore.notifySystem(
+    "行事曆已更新",
+    `${charName} 幫你記錄了「${data.title}」（${data.date}）`,
+  );
+}
+
+async function handleCalendarEvent(data: CalendarEventData): Promise<void> {
+  try {
+    const char = currentCharacter.value;
+    await saveCalendarEvent(data, {
+      characterId: char?.id,
+      chatId: currentChatId.value || props.chatId || undefined,
+    });
+    announceCalendarEvent(
+      data,
+      char?.nickname || char?.data?.name || props.characterName || "角色",
     );
     console.log("[ChatScreen] 行事曆事件已建立:", data);
   } catch (e) {
@@ -10109,6 +10141,8 @@ useChatCleanup({
             :phone-call-history-data="message.phoneCallHistoryData"
             :is-call-notification="message.isCallNotification"
             :call-notification-type="message.callNotificationType"
+            :is-calendar-event="message.isCalendarEvent"
+            :calendar-event-data="message.calendarEventData"
             :call-reason="message.callReason"
             :is-html-block="message.isHtmlBlock"
             :html-content="message.htmlContent"
