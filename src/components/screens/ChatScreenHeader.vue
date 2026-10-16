@@ -17,6 +17,7 @@ import {
   PhoneIncoming,
   ScanSearch,
   Settings,
+  ShieldCheck,
   SlidersHorizontal,
   Tag,
   UserRound,
@@ -58,6 +59,7 @@ const props = defineProps<{
   showChatSettingsMenu: boolean;
   chatFaceToFaceMode: boolean;
   nightMode: boolean;
+  antiTruncation: boolean;
   chatEnableRealTimeAwareness: boolean;
   showFakeTimePanel: boolean;
   fakeTimeMode: "real" | "loop" | "offset" | "story";
@@ -98,6 +100,7 @@ const emit = defineEmits<{
   (e: "toggle-face-to-face-mode"): void;
   (e: "open-f2f-panel"): void;
   (e: "toggle-night-mode"): void;
+  (e: "toggle-anti-truncation"): void;
   (e: "toggle-real-time-awareness"): void;
   (e: "toggle-fake-time-panel"): void;
   (e: "set-fake-time-mode", mode: "real" | "loop" | "offset" | "story"): void;
@@ -168,6 +171,9 @@ const themeStore = useThemeStore();
 
 // 時間設定說明（感知現實時間關閉時也能打開）
 const showTimeHelp = ref(false);
+
+// 防截斷說明
+const showAntiTruncationHelp = ref(false);
 
 const FAKE_TIME_MODE_HINTS: Record<"real" | "loop" | "offset" | "story", string> = {
   real: "AI 看到的就是你手機的現在時間。",
@@ -606,6 +612,34 @@ const isDarkBackground = computed(() =>
                 <input :value="timeJumpInput" type="datetime-local" class="fake-time-input" style="max-width: none; flex: 1" @input="onTimeJumpInput" />
                 <button class="fake-time-jump-btn" @click="emit('handle-time-jump')">跳轉</button>
               </div>
+            </div>
+            <div class="dropdown-divider"></div>
+            <div class="dropdown-section-title">AI 回覆</div>
+            <div class="dropdown-toggle-item">
+              <div class="toggle-item-info">
+                <ShieldCheck :size="20" :stroke-width="1.75" />
+                <span>防截斷</span>
+                <button
+                  type="button"
+                  :class="['time-help-btn', { active: showAntiTruncationHelp }]"
+                  aria-label="防截斷說明"
+                  title="防截斷說明"
+                  @click.stop="showAntiTruncationHelp = !showAntiTruncationHelp"
+                >
+                  <Info :size="15" :stroke-width="2" />
+                </button>
+              </div>
+              <label class="toggle-switch-mini">
+                <input type="checkbox" aria-label="防截斷" :checked="antiTruncation" @change="emit('toggle-anti-truncation')" />
+                <span class="toggle-slider-mini"></span>
+              </label>
+            </div>
+            <div v-if="showAntiTruncationHelp" class="time-help-panel">
+              <p>回覆寫到一半被切掉時開啟。AI 會改用工具呼叫把整段回覆送回來，比較不容易被上游截斷。</p>
+              <p>所有聊天共用這個設定，只影響聊天回覆，總結、日記等不受影響。</p>
+              <p>Gemini 開啟後，回覆會在最後整段出現，不會逐字打出來。</p>
+              <p>渠道必須支援工具呼叫（function calling），不支援時會自動改用一般方式送出。Claude 快取模式下不會生效。</p>
+              <p class="time-help-note">只能解決「上游把內容切掉」；回應長度上限、網路中斷造成的截斷沒有幫助。</p>
             </div>
             <div class="dropdown-divider"></div>
             <div class="dropdown-section-title">電話設定</div>

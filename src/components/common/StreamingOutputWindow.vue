@@ -5,6 +5,7 @@
  * Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.2, 3.1, 3.2, 3.4
  */
 
+import { describeAntiTruncation } from "@/services/antiTruncation";
 import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import { marked } from "marked";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -112,6 +113,10 @@ const diagnosticRows = computed(() => {
       value: d.rawFinishReason || d.finishReason || "-",
       warning: !!d.finishReason && d.finishReason !== "stop",
     });
+  }
+  if (d.antiTruncation) {
+    const { value, warning } = describeAntiTruncation(d.antiTruncation);
+    rows.push({ label: "防截斷", value, warning });
   }
   if (typeof d.apiContentLength === "number") rows.push({ label: "API 原始長度", value: String(d.apiContentLength) });
   if (typeof d.finalContentLength === "number") rows.push({ label: "前端處理後長度", value: String(d.finalContentLength), warning: d.apiContentLength !== undefined && d.apiContentLength > 0 && d.finalContentLength === 0 });

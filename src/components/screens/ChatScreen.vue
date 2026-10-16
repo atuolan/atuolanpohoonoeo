@@ -5656,6 +5656,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         chatId: currentChatId.value || undefined,
         toolPermissions: char.toolPermissions,
         globalToolsEnabled: chatTaskConfig.api.toolsEnabled,
+        antiTruncation: settingsStore.antiTruncation ? { onWarning: (message: string) => showToast(message) } : undefined,
         toolContext: {
           locationCity: char.worldSettings?.location,
           userCity: weatherStore.locationName || undefined,
@@ -7913,6 +7914,12 @@ async function toggleNightMode() {
   // watch 會自動同步到 theme store
 }
 
+// 切換防截斷（全域設定）
+async function toggleAntiTruncation() {
+  settingsStore.toggleAntiTruncation();
+  await settingsStore.saveSettings();
+}
+
 // 切換聊天勿擾模式（從選單）
 async function toggleChatDoNotDisturb() {
   chatDoNotDisturb.value = !chatDoNotDisturb.value;
@@ -9597,6 +9604,7 @@ useChatCleanup({
       :show-chat-settings-menu="showChatSettingsMenu"
       :chat-face-to-face-mode="chatFaceToFaceMode"
       :night-mode="settingsStore.nightMode"
+      :anti-truncation="settingsStore.antiTruncation"
       :chat-enable-real-time-awareness="chatEnableRealTimeAwareness"
       :show-fake-time-panel="showFakeTimePanel"
       :fake-time-mode="fakeTime.fakeTimeMode.value"
@@ -9634,6 +9642,7 @@ useChatCleanup({
       @toggle-face-to-face-mode="toggleFaceToFaceMode"
       @open-f2f-panel="openF2FPanel"
       @toggle-night-mode="toggleNightMode"
+      @toggle-anti-truncation="toggleAntiTruncation"
       @toggle-real-time-awareness="toggleRealTimeAwareness"
       @toggle-fake-time-panel="toggleFakeTimePanel"
       @set-fake-time-mode="onHeaderSetFakeTimeMode"
