@@ -151,6 +151,8 @@ export interface SettingsData {
   doNotDisturb: boolean;
   faceToFaceMode: boolean;
   nightMode: boolean;
+  /** 防截斷（主聊天回覆改走假工具，對付上游截斷） */
+  antiTruncation?: boolean;
   customQuickActions: QuickActionItem[];
   backgroundGenerationEnabled: boolean;
   backgroundAudioEnabled: boolean;
@@ -321,6 +323,9 @@ export const useSettingsStore = defineStore("settings", () => {
 
   // 夜晚模式（深色主題）
   const nightMode = ref(false);
+
+  // 防截斷（全域，所有聊天共用）
+  const antiTruncation = ref(false);
 
   // 自定義快速輸入按鈕
   const customQuickActions = ref<QuickActionItem[]>([]);
@@ -571,6 +576,11 @@ export const useSettingsStore = defineStore("settings", () => {
             nightMode.value = saved.nightMode;
           }
 
+          // 載入防截斷設定
+          if (saved.antiTruncation !== undefined) {
+            antiTruncation.value = saved.antiTruncation;
+          }
+
           // 載入自定義快速輸入按鈕
           if (
             saved.customQuickActions &&
@@ -764,6 +774,7 @@ export const useSettingsStore = defineStore("settings", () => {
         doNotDisturb: doNotDisturb.value,
         faceToFaceMode: faceToFaceMode.value,
         nightMode: nightMode.value,
+        antiTruncation: antiTruncation.value,
         customQuickActions: customQuickActions.value.map((a) => ({
           ...toRaw(a),
         })),
@@ -1218,6 +1229,13 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   /**
+   * 切換防截斷
+   */
+  function toggleAntiTruncation(): void {
+    antiTruncation.value = !antiTruncation.value;
+  }
+
+  /**
    * 添加自定義快速輸入按鈕
    */
   function addCustomQuickAction(action: QuickActionItem): void {
@@ -1289,6 +1307,7 @@ export const useSettingsStore = defineStore("settings", () => {
     doNotDisturb,
     faceToFaceMode,
     nightMode,
+    antiTruncation,
     language,
     customQuickActions,
     backgroundGenerationEnabled,
@@ -1339,6 +1358,7 @@ export const useSettingsStore = defineStore("settings", () => {
     toggleFaceToFaceMode,
     setNightMode,
     toggleNightMode,
+    toggleAntiTruncation,
     addCustomQuickAction,
     updateCustomQuickAction,
     removeCustomQuickAction,
