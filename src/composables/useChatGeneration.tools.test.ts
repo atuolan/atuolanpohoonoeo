@@ -85,4 +85,28 @@ describe("runChatGenerationRequest tool integration", () => {
     expect(onToolCallStart.mock.calls[0][0]).toMatchObject({ id: "c1", name: "get_current_time" });
     expect(onToolCallEnd.mock.calls[0][2]).toMatchObject({ ok: true, content: "tool-result" });
   });
+  it("passes anti-truncation to every tool-loop request and keeps its diagnostics", async () => {
+    const antiTruncation = { onWarning: vi.fn() };
+    const generate = vi.fn()
+      .mockResolvedValueOnce({ content: "", tokenCount: { prompt: 1, completion: 1, total: 2 }, toolCalls: [{ id: "c1", name: "get_current_time", arguments: {} }] })
+      .mockResolvedValueOnce({ content: "Noon.", tokenCount: { prompt: 1, completion: 1, total: 2 }, diagnostics: { antiTruncation: { result: "tool" } } });
+    const result = await runChatGenerationRequest({ client: { generate, generateStream: vi.fn() }, messages: [], settings, apiSettings, signal: new AbortController().signal, streaming: false, initialDiagnostics: {}, tools: [tool()], antiTruncation });
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(generate.mock.calls.every(([request]) => request.antiTruncation === antiTruncation)).toBe(true);
+    expect(result.diagnostics.antiTruncation).toEqual({ result: "tool" });
+  });
+
+  it("passes anti-truncation on the plain streaming and non-streaming paths", async () => {
+    const antiTruncation = {};
+    const generateStream = vi.fn(async function* (_request: any) {
+      yield { type: "done" as const, content: "Hi", diagnostics: { antiTruncation: { result: "tool" as const } } };
+    });
+    const streamed = await runChatGenerationRequest({ client: { generate: vi.fn(), generateStream }, messages: [], settings, apiSettings, signal: new AbortController().signal, streaming: true, initialDiagnostics: {}, antiTruncation });
+    expect(generateStream.mock.calls[0][0].antiTruncation).toBe(antiTruncation);
+    expect(streamed.diagnostics.antiTruncation).toEqual({ result: "tool" });
+
+    const generate = vi.fn().mockResolvedValue({ content: "Hi", tokenCount: { prompt: 1, completion: 1, total: 2 } });
+    await runChatGenerationRequest({ client: { generate, generateStream: vi.fn() }, messages: [], settings, apiSettings, signal: new AbortController().signal, streaming: false, initialDiagnostics: {}, antiTruncation });
+    expect(generate.mock.calls[0][0].antiTruncation).toBe(antiTruncation);
+  });
 });

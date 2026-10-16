@@ -1,6 +1,7 @@
 import { computed, type ComputedRef, type Ref } from "vue";
 import type { OpenAICompatibleClient, APIMessage } from "@/api/OpenAICompatible";
 import type {
+  AntiTruncationDiagnostics,
   ChatSettings,
   GenerationDiagnostics,
   StreamingEvent,
@@ -13,6 +14,7 @@ import type { ChatToolDefinition, PendingToolConfirmation, ToolCall, ToolResult 
 import { isToolAllowed } from "@/services/toolCalling/permissions";
 import type { ToolProtocol } from "@/services/toolCalling/protocolAdapters";
 import type { CharacterToolPermissions } from "@/types/character";
+import type { AntiTruncationOptions } from "@/services/antiTruncation";
 
 export interface ChatGenerationStartMeta {
   characterName?: string;
@@ -58,6 +60,8 @@ export interface ChatGenerationRequestRunnerContext {
   toolPermissions?: CharacterToolPermissions | null;
   globalToolsEnabled?: boolean;
   toolContext?: Record<string, unknown>;
+  /** 防截斷（全域開關開著時由 ChatScreen 傳入） */
+  antiTruncation?: AntiTruncationOptions;
   /** 工具開始執行（或開始等確認）時呼叫 */
   onToolCallStart?: (call: ToolCall, tool: ChatToolDefinition) => void;
   /** 工具有結果時呼叫（含失敗與拒絕） */
@@ -93,6 +97,8 @@ export async function runChatGenerationRequest(
     : [];
   if (toolDefinitions.length > 0 && effectiveToolProtocol !== "disabled") {
     const registry = new ToolRegistry(toolDefinitions);
+    // 工具迴圈最後一輪的防截斷結果（其他診斷這條路徑本來就不保留）
+    let lastAntiTruncation: AntiTruncationDiagnostics | undefined;
     const engine = new ToolExecutionEngine({
       registry,
       onCallStart: context.onToolCallStart,
@@ -109,6 +115,7 @@ export async function runChatGenerationRequest(
           toolProtocol: context.toolProtocol,
           promptPostProcessing: context.promptPostProcessing as any,
           toolContext: requestContext,
+          antiTruncation: context.antiTruncation,
         };
         context.onToolEvent?.({ type: "started" });
         if (context.streaming) {
@@ -123,9 +130,11 @@ export async function runChatGenerationRequest(
             if (event.type === "done") terminal = event;
             if (event.type === "error") throw new Error(normalizeGenerationError(event.error));
           }
+          lastAntiTruncation = terminal?.diagnostics?.antiTruncation ?? lastAntiTruncation;
           return { content: terminal?.content ?? content, toolCalls: terminal?.toolCalls };
         }
         const result = await context.client.generate(request);
+        lastAntiTruncation = result.diagnostics?.antiTruncation ?? lastAntiTruncation;
         return { content: result.content, toolCalls: result.toolCalls };
       },
     });
@@ -137,15 +146,19 @@ export async function runChatGenerationRequest(
       permissions: context.toolPermissions,
       signal: context.signal,
     };
+    const toolDiagnostics = (): GenerationDiagnostics => ({
+      ...context.initialDiagnostics,
+      ...(lastAntiTruncation ? { antiTruncation: lastAntiTruncation } : {}),
+    });
     const finish = (outcome: ToolExecutionOutcome): ChatGenerationRequestRunnerResult => {
       if (outcome.status === "confirmation_required") {
         const resolve = async (decision: "approve" | "reject") => finish(await engine.resolveToolConfirmation(outcome.pending.id, decision));
         context.onConfirmationRequired?.(outcome.pending, resolve);
         context.onToolEvent?.({ type: "confirmation_required", pending: outcome.pending });
-        return { content: "", diagnostics: { ...context.initialDiagnostics }, confirmationRequired: outcome.pending, resolveToolConfirmation: resolve };
+        return { content: "", diagnostics: toolDiagnostics(), confirmationRequired: outcome.pending, resolveToolConfirmation: resolve };
       }
       for (const result of outcome.toolResults) context.onToolEvent?.({ type: "completed", tool: result.name, result });
-      return { content: outcome.content, diagnostics: { ...context.initialDiagnostics }, toolResults: outcome.toolResults };
+      return { content: outcome.content, diagnostics: toolDiagnostics(), toolResults: outcome.toolResults };
     };
     return finish(await engine.run(context.messages, requestContext));
   }
@@ -162,6 +175,7 @@ export async function runChatGenerationRequest(
       lastPromptRoleOverride: context.apiSettings.lastPromptRoleOverride ?? "none",
       signal: context.signal,
       adjustLastMessageRole: true,
+      antiTruncation: context.antiTruncation,
     });
 
     for await (const event of streamGenerator) {
@@ -197,6 +211,7 @@ export async function runChatGenerationRequest(
       lastPromptRoleOverride: context.apiSettings.lastPromptRoleOverride ?? "none",
       signal: context.signal,
       adjustLastMessageRole: true,
+      antiTruncation: context.antiTruncation,
     });
     fullContent = result.content;
     if (result.tokenCount) {
