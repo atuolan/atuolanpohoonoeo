@@ -22,6 +22,7 @@ import {
   createDefaultCallVoiceInputSettings,
   normalizeCallVoiceInputSettings,
 } from "@/types/settings";
+import { createDefaultMcpSettings, normalizeMcpSettings, type McpSettings } from "@/types/mcp";
 import { defineStore } from "pinia";
 import { computed, reactive, ref, toRaw } from "vue";
 
@@ -156,6 +157,7 @@ export interface SettingsData {
   keepAliveMode: "audio";
   audio: AudioSettings;
   callVoiceInput?: CallVoiceInputSettings;
+  mcp?: McpSettings;
   incomingCallRingtone: IncomingCallRingtoneSettings;
   embeddingAPI?: EmbeddingAPIConfig;
   embeddingMode?: "local" | "api";
@@ -339,6 +341,9 @@ export const useSettingsStore = defineStore("settings", () => {
   const callVoiceInput = reactive<CallVoiceInputSettings>(
     createDefaultCallVoiceInputSettings(),
   );
+
+  // MCP 伺服器（角色可以使用的外部工具）
+  const mcp = reactive<McpSettings>(createDefaultMcpSettings());
 
   // 來電鈴聲設定
   const incomingCallRingtone = reactive<IncomingCallRingtoneSettings>(
@@ -597,6 +602,9 @@ export const useSettingsStore = defineStore("settings", () => {
             normalizeCallVoiceInputSettings(saved.callVoiceInput),
           );
 
+          // 載入 MCP 伺服器（舊資料沒有這欄時是空清單）
+          mcp.servers = normalizeMcpSettings(saved.mcp).servers;
+
           if (saved.incomingCallRingtone) {
             Object.assign(incomingCallRingtone, saved.incomingCallRingtone);
           }
@@ -764,6 +772,8 @@ export const useSettingsStore = defineStore("settings", () => {
         keepAliveMode: keepAliveMode.value,
         audio: { ...toRaw(audio) },
         callVoiceInput: { ...toRaw(callVoiceInput) },
+        // 巢狀陣列要整個複製成純物件，否則 IndexedDB 會丟 DataCloneError
+        mcp: JSON.parse(JSON.stringify(toRaw(mcp))) as McpSettings,
         incomingCallRingtone: { ...toRaw(incomingCallRingtone) },
         embeddingAPI: { ...toRaw(embeddingAPI) },
         embeddingMode: embeddingMode.value,
@@ -1286,6 +1296,7 @@ export const useSettingsStore = defineStore("settings", () => {
     keepAliveMode,
     audio,
     callVoiceInput,
+    mcp,
     incomingCallRingtone,
     embeddingAPI,
     embeddingMode,

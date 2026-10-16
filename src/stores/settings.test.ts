@@ -167,3 +167,31 @@ describe("settings profile management", () => {
     expect(store.api.directConnect).toBeUndefined();
   });
 });
+
+describe("settings MCP servers", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.mocked(saveSettingsData).mockClear();
+  });
+
+  it("loads legacy data as an empty list and saves plain MCP data", async () => {
+    vi.mocked(loadSettingsData).mockResolvedValueOnce({ id: "main-settings", profiles: [], currentProfileId: null } as never);
+    const store = useSettingsStore();
+    await store.loadSettings();
+    expect(store.mcp.servers).toEqual([]);
+    store.mcp.servers.push({ id: "s1", name: "鎖手機", description: "", url: "https://lock.example.com/mcp", enabled: true, headers: [], tools: [], createdAt: 1, updatedAt: 1 });
+    await store.saveSettings();
+    const calls = vi.mocked(saveSettingsData).mock.calls;
+    const saved = calls[calls.length - 1]?.[0];
+    expect(saved?.mcp?.servers[0]).toMatchObject({ id: "s1", name: "鎖手機" });
+    expect(() => structuredClone(saved?.mcp)).not.toThrow();
+  });
+
+  it("normalizes saved MCP servers on load", async () => {
+    vi.mocked(loadSettingsData).mockResolvedValueOnce({ id: "main-settings", profiles: [], currentProfileId: null, mcp: { servers: [{ id: "s1", url: "https://a.example.com/mcp", tools: [{ name: "t" }] }, { url: "" }] } } as never);
+    const store = useSettingsStore();
+    await store.loadSettings();
+    expect(store.mcp.servers).toHaveLength(1);
+    expect(store.mcp.servers[0]).toMatchObject({ name: "a.example.com", enabled: true, headers: [], tools: [{ name: "t", enabled: true, requireConfirm: false }] });
+  });
+});
