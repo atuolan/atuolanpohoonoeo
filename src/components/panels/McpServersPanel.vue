@@ -108,7 +108,8 @@ function toggleTools(id: string): void {
 }
 
 function addServer(): void {
-  editing.value = createMcpServerConfig("");
+  // 名稱先留空顯示提示文字；存檔時還是空的就用網址的主機名稱
+  editing.value = { ...createMcpServerConfig(""), name: "" };
   isNew.value = true;
 }
 
@@ -211,9 +212,15 @@ async function enableTools(): Promise<void> {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    padding: 12px 16px calc(env(safe-area-inset-bottom) + 24px);
+    padding: 12px 16px 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+
+    /* 用撐開的空白代替底部內距：內距會讓 sticky 的儲存列停在離底邊一段距離，下面露出內容 */
+    &::after {
+      content: "";
+      flex: 0 0 calc(env(safe-area-inset-bottom) + 12px);
+    }
   }
 
   .mcp-intro,
@@ -411,8 +418,9 @@ async function enableTools(): Promise<void> {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-    padding-top: 8px;
+    padding: 8px 0 calc(env(safe-area-inset-bottom) + 8px);
     background: var(--color-background, #f7f7f9);
+    border-top: 1px solid var(--color-border, #e2e8f0);
   }
 }
 </style>
