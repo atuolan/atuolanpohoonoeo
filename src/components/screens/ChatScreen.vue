@@ -8079,7 +8079,8 @@ function closeMenus() {
   showGameMenu.value = false;
   showChatFilesPanel.value = false;
   showStickerPanel.value = false;
-  showChatDetails.value = false;
+  // 走 closeChatDetails 才會一併退掉詳情的歷史條目
+  if (showChatDetails.value) closeChatDetails();
 }
 
 // ===== AI 記憶管理 =====
@@ -9388,16 +9389,17 @@ onMounted(async () => {
     bgGenerationPoller.onError((task) => handleRemoteGenerationError(task)),
   );
 
+  // 監聽返回鍵，讓詳情頁開啟時返回鍵先關閉詳情頁。
+  // 要在 await 之前掛：聊天載入期間就開關詳情的話，popstate 沒人接，詳情會關不掉
+  if (typeof window !== "undefined") {
+    window.addEventListener("popstate", handleChatDetailsPopState);
+  }
+
   await initializeChatScreen();
 
   bgGenerationPoller
     .recoverActiveTasks()
     .catch((error) => console.warn("[ChatScreen] 恢復 HF 後台生成任務失敗", error));
-
-  // 監聽返回鍵，讓詳情頁開啟時返回鍵先關閉詳情頁
-  if (typeof window !== "undefined") {
-    window.addEventListener("popstate", handleChatDetailsPopState);
-  }
 });
 
 onUnmounted(() => {

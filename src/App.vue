@@ -969,6 +969,13 @@ const peekPhoneCharacterId = ref<string | null>(null);
 const peekPhoneChatId = ref<string | null>(null);
 
 let isApplyingPopState = false;
+// 詳情頁開著時要改寫聊天條目：先退回詳情底下那一筆，等 popstate 到了再改寫
+let pendingChatEntryReplace = false;
+
+// ChatScreen 開聊天詳情時會多推一筆 { __chatDetails: true }，代表「詳情疊在聊天上」
+function isOnChatDetailsEntry() {
+  return typeof window !== "undefined" && !!window.history.state?.__chatDetails;
+}
 
 function buildHistoryState(page: PageType = currentPage.value): AppHistoryState {
   return {
@@ -1005,7 +1012,9 @@ function syncBrowserHistory(mode: "push" | "replace" = "push", page: PageType = 
   }
 
   const state = buildHistoryState(page);
-  if (mode === "replace") {
+  // 從詳情頁跳去別頁：直接蓋掉詳情的條目。留著的話回到聊天後它還在，
+  // 第一次按返回只會退到同一個聊天，看起來沒反應
+  if (mode === "replace" || isOnChatDetailsEntry()) {
     window.history.replaceState(state, "");
   } else {
     window.history.pushState(state, "");
@@ -1022,8 +1031,29 @@ function navigateToPage(
   if (options.historyStack) {
     navigationHistory.value = [...options.historyStack];
   }
+  // 已在聊天頁又開聊天（通知、來電、分享…）：換掉目前的聊天條目，不疊第二層。
+  // 疊了的話返回會先退到上一個聊天，同一個聊天時就像按了沒反應
+  if ((options.mode ?? "push") === "push" && page === "chat" && currentPage.value === "chat") {
+    if (navigationHistory.value[navigationHistory.value.length - 1] === "chat") {
+      navigationHistory.value.pop();
+    }
+    currentPage.value = page;
+    replaceChatEntry();
+    return;
+  }
   currentPage.value = page;
   syncBrowserHistory(options.mode ?? "push", page);
+}
+
+// 改寫目前的聊天條目。詳情頁開著時目前是詳情的條目，底下那筆還是舊聊天，
+// 要先退回去再改寫，不然返回會回到舊聊天（或同一個聊天而看似沒反應）
+function replaceChatEntry() {
+  if (isOnChatDetailsEntry() && !isApplyingPopState && authStore.isAuthenticated) {
+    pendingChatEntryReplace = true;
+    window.history.back();
+    return;
+  }
+  syncBrowserHistory("replace");
 }
 
 function resetToPage(page: PageType) {
@@ -1040,8 +1070,21 @@ function navigateBackWithFallback(fallback: () => void) {
 }
 
 function handleBrowserPopState(event: PopStateEvent) {
+  if (pendingChatEntryReplace) {
+    pendingChatEntryReplace = false;
+    // 退回的是舊聊天的條目，畫面維持現在的聊天，只把條目改寫掉
+    syncBrowserHistory("replace");
+    return;
+  }
+
   const state = event.state as AppHistoryState | null;
   if (!state?.__aguaphone) {
+    return;
+  }
+
+  // 退到詳情的條目時詳情早已不在（ChatScreen 重建過），這筆只會讓返回原地不動，直接跳過
+  if ((state as { __chatDetails?: boolean }).__chatDetails) {
+    window.history.back();
     return;
   }
 
@@ -2216,7 +2259,7 @@ async function onChatSwitched(chatId: string) {
   currentChatId.value = chatId;
   // ChatScreen 內部切換聊天檔案不會重新進入 navigateToPage，需同步替換當前瀏覽器歷史狀態。
   // 否則從設定等頁面返回時，popstate 會恢復到切換前的舊 chatId。
-  syncBrowserHistory("replace");
+  replaceChatEntry();
 
   const characterId = currentChatCharacterId.value;
   if (characterId) {
