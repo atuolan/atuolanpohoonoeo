@@ -74,4 +74,15 @@ describe("runChatGenerationRequest tool integration", () => {
     expect(generate.mock.calls[0][0].tools).toBeUndefined();
     expect(result.content).toBe("plain");
   });
+
+  it("forwards tool call hooks to the engine", async () => {
+    const generate = vi.fn()
+      .mockResolvedValueOnce({ content: "", tokenCount: { prompt: 1, completion: 1, total: 2 }, toolCalls: [{ id: "c1", name: "get_current_time", arguments: {} }] })
+      .mockResolvedValueOnce({ content: "Noon.", tokenCount: { prompt: 1, completion: 1, total: 2 } });
+    const onToolCallStart = vi.fn();
+    const onToolCallEnd = vi.fn();
+    await runChatGenerationRequest({ client: { generate, generateStream: vi.fn() }, messages: [], settings, apiSettings, signal: new AbortController().signal, streaming: false, initialDiagnostics: {}, tools: [tool()], onToolCallStart, onToolCallEnd });
+    expect(onToolCallStart.mock.calls[0][0]).toMatchObject({ id: "c1", name: "get_current_time" });
+    expect(onToolCallEnd.mock.calls[0][2]).toMatchObject({ ok: true, content: "tool-result" });
+  });
 });

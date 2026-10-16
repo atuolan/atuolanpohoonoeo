@@ -33,5 +33,19 @@ describe("chat tools", () => {
     expect(validateJsonSchema(tool.parameters, {}).ok).toBe(false);
     expect(validateJsonSchema(tool.parameters, { query: "x", limit: 100 }).ok).toBe(false);
   });
+
+  it("gives every built-in tool a Chinese display name", () => {
+    expect(CHAT_TOOLS.map((tool) => [tool.name, tool.displayName])).toEqual([
+      ["get_current_time", "查時間"],
+      ["get_weather", "查天氣"],
+      ["list_calendar_events", "看行程"],
+      ["search_music", "搜尋音樂"],
+      ["play_music", "播放音樂"],
+      ["set_wallpaper", "換桌布"],
+      ["search_memory", "查記憶"],
+      ["create_calendar_event", "新增行程"],
+      ["schedule_call", "預約來電"],
+    ]);
+  });
 });
 

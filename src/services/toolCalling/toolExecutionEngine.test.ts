@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { APIMessage } from "@/api/OpenAICompatible";
 import { ToolExecutionEngine, type ToolExecutionRequestContext } from "./toolExecutionEngine";
 import { ToolRegistry } from "./toolRegistry";
 import type { ChatToolDefinition } from "./types";
@@ -58,7 +59,7 @@ describe("ToolExecutionEngine", () => {
     if (pending.status !== "confirmation_required") throw new Error("expected pending confirmation");
     const resumed = await engine.resolveToolConfirmation(pending.pending.id, "reject");
     expect(resumed.status).toBe("completed");
-    if (resumed.status === "completed") expect(resumed.toolResults[0]).toMatchObject({ ok: false, error: "Tool call rejected by user" });
+    if (resumed.status === "completed") expect(resumed.toolResults[0]).toMatchObject({ ok: false, error: "Tool call rejected by user", rejected: true });
   });
 
   it("rejects unknown, denied, invalid-args, and tool-error calls without executing", async () => {
@@ -120,5 +121,88 @@ describe("ToolExecutionEngine", () => {
     expect(pending.status).toBe("confirmation_required");
     engine.cancel("chat-1");
     if (pending.status === "confirmation_required") await expect(engine.resolveToolConfirmation(pending.pending.id, "approve")).rejects.toThrow(/expired|cancel/i);
+  });
+
+  it("reports call start and end through hooks", async () => {
+    const onCallStart = vi.fn();
+    const onCallEnd = vi.fn();
+    const generate = generator([{ content: "", toolCalls: [{ id: "c1", name: "get_time", arguments: {} }, { id: "c2", name: "missing", arguments: {} }] }, { content: "done", toolCalls: [] }]);
+    const engine = new ToolExecutionEngine({ registry: new ToolRegistry([definition()]), generate, onCallStart, onCallEnd });
+    await engine.run([], context());
+    expect(onCallStart).toHaveBeenCalledTimes(1);
+    expect(onCallStart.mock.calls[0][0]).toMatchObject({ id: "c1" });
+    expect(onCallEnd.mock.calls.map(([call, , result]) => [call.id, result.ok])).toEqual([["c1", true], ["c2", false]]);
+  });
+
+  it("registers tools returned by loadTools for the following rounds", async () => {
+    const loaded = definition({ name: "lock_phone", execute: vi.fn(() => "locked") });
+    const loader = definition({ name: "load_mcp_tools", execute: () => ({ summary: "loaded", loadTools: [loaded] }) });
+    const registry = new ToolRegistry([loader]);
+    const generate = generator([
+      { content: "", toolCalls: [{ id: "c1", name: "load_mcp_tools", arguments: {} }] },
+      { content: "", toolCalls: [{ id: "c2", name: "lock_phone", arguments: {} }] },
+      { content: "Locked.", toolCalls: [] },
+    ]);
+    const engine = new ToolExecutionEngine({ registry, generate });
+    const result = await engine.run([], context());
+    expect(registry.get("lock_phone")).toBeDefined();
+    if (result.status !== "completed") throw new Error("expected completion");
+    expect(result.toolResults.map((entry) => [entry.name, entry.ok, entry.content])).toEqual([["load_mcp_tools", true, "loaded"], ["lock_phone", true, "locked"]]);
+    expect(result.content).toBe("Locked.");
+  });
+
+  it("uses a tool's own timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const generate = generator([{ content: "", toolCalls: [{ id: "s", name: "slow", arguments: {} }] }, { content: "done", toolCalls: [] }]);
+      const engine = new ToolExecutionEngine({ registry: new ToolRegistry([definition({ name: "slow", timeoutMs: 30_000, execute: () => new Promise(() => {}) })]), generate });
+      const promise = engine.run([], context());
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(generate).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(15_000);
+      const result = await promise;
+      if (result.status !== "completed") throw new Error("expected completion");
+      expect(result.toolResults[0].error).toMatch(/timed out/i);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("sends tool images to the model as one user message after the tool results", async () => {
+    const snapshots: APIMessage[][] = [];
+    const responses = [{ content: "", toolCalls: [{ id: "c1", name: "shot", arguments: {} }] }, { content: "I see it.", toolCalls: [] }];
+    const generate = vi.fn(async (messages: APIMessage[]) => { snapshots.push(structuredClone(messages)); return responses[snapshots.length - 1]; });
+    const engine = new ToolExecutionEngine({ registry: new ToolRegistry([definition({ name: "shot", execute: () => ({ summary: "截圖完成", images: [{ mimeType: "image/png", data: "AAAA" }] }) })]), generate });
+    const result = await engine.run([{ role: "user", content: "看一下" }], context());
+    expect(snapshots[1].map((message) => message.role)).toEqual(["user", "assistant", "tool", "user"]);
+    expect(snapshots[1][3].content).toEqual([
+      { type: "text", text: "以下是工具回傳的圖片：" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+    ]);
+    if (result.status !== "completed") throw new Error("expected completion");
+    expect(result.toolResults[0]).toMatchObject({ content: "截圖完成", ok: true, images: [{ mimeType: "image/png", data: "AAAA" }] });
+  });
+
+  it("retries once without images when the request with images fails", async () => {
+    const snapshots: APIMessage[][] = [];
+    const generate = vi.fn(async (messages: APIMessage[]) => {
+      snapshots.push(structuredClone(messages));
+      if (snapshots.length === 1) return { content: "", toolCalls: [{ id: "c1", name: "shot", arguments: {} }] };
+      if (snapshots.length === 2) throw new Error("API error: 400 - image input is not supported");
+      return { content: "I cannot see images.", toolCalls: [] };
+    });
+    const engine = new ToolExecutionEngine({ registry: new ToolRegistry([definition({ name: "shot", execute: () => ({ summary: "截圖完成", images: [{ mimeType: "image/png", data: "AAAA" }] }) })]), generate });
+    const result = await engine.run([], context());
+    expect(generate).toHaveBeenCalledTimes(3);
+    expect(snapshots[2][snapshots[2].length - 1]).toEqual({ role: "user", content: "（工具回傳了 1 張圖片，但目前的模型無法看圖）" });
+    if (result.status !== "completed") throw new Error("expected completion");
+    expect(result.content).toBe("I cannot see images.");
+  });
+
+  it("keeps the last non-empty reply when the final round is empty", async () => {
+    const generate = generator([{ content: "好，這就幫你鎖上～", toolCalls: [{ id: "c1", name: "get_time", arguments: {} }] }, { content: "", toolCalls: [] }]);
+    const engine = new ToolExecutionEngine({ registry: new ToolRegistry([definition()]), generate });
+    const result = await engine.run([], context());
+    if (result.status !== "completed") throw new Error("expected completion");
+    expect(result.content).toBe("好，這就幫你鎖上～");
+    expect(generate).toHaveBeenCalledTimes(2);
   });
 });

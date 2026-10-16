@@ -9,7 +9,7 @@ import type { APISettings } from "@/types/settings";
 import { useAIGenerationStore } from "@/stores";
 import { ToolExecutionEngine, type ToolExecutionOutcome, type ToolExecutionRequestContext } from "@/services/toolCalling/toolExecutionEngine";
 import { ToolRegistry } from "@/services/toolCalling/toolRegistry";
-import type { ChatToolDefinition, PendingToolConfirmation, ToolResult } from "@/services/toolCalling/types";
+import type { ChatToolDefinition, PendingToolConfirmation, ToolCall, ToolResult } from "@/services/toolCalling/types";
 import { isToolAllowed } from "@/services/toolCalling/permissions";
 import type { ToolProtocol } from "@/services/toolCalling/protocolAdapters";
 import type { CharacterToolPermissions } from "@/types/character";
@@ -58,7 +58,11 @@ export interface ChatGenerationRequestRunnerContext {
   toolPermissions?: CharacterToolPermissions | null;
   globalToolsEnabled?: boolean;
   toolContext?: Record<string, unknown>;
-  onToolEvent?: (event: { type: "started" | "completed" | "confirmation_required"; tool?: string; result?: ToolResult; pending?: PendingToolConfirmation }) => void;
+  /** 工具開始執行（或開始等確認）時呼叫 */
+  onToolCallStart?: (call: ToolCall, tool: ChatToolDefinition) => void;
+  /** 工具有結果時呼叫（含失敗與拒絕） */
+  onToolCallEnd?: (call: ToolCall, tool: ChatToolDefinition | undefined, result: ToolResult) => void;
+  onToolEvent?:(event: { type: "started" | "completed" | "confirmation_required"; tool?: string; result?: ToolResult; pending?: PendingToolConfirmation }) => void;
   onConfirmationRequired?: (pending: PendingToolConfirmation, resolve: (decision: "approve" | "reject") => Promise<ChatGenerationRequestRunnerResult>) => void;
 }
 
@@ -91,6 +95,8 @@ export async function runChatGenerationRequest(
     const registry = new ToolRegistry(toolDefinitions);
     const engine = new ToolExecutionEngine({
       registry,
+      onCallStart: context.onToolCallStart,
+      onCallEnd: context.onToolCallEnd,
       generate: async (messages, requestContext) => {
         const request = {
           messages,

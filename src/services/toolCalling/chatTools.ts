@@ -28,6 +28,7 @@ function service<T>(context: ChatToolContext, key: string): T | undefined {
 export const CHAT_TOOLS: ChatToolDefinition[] = [
   {
     name: "get_current_time",
+    displayName: "查時間",
     description: "取得目前時間；可使用聊天上下文指定的時區。",
     category: "time",
     risk: "low",
@@ -42,6 +43,7 @@ export const CHAT_TOOLS: ChatToolDefinition[] = [
   },
   {
     name: "get_weather",
+    displayName: "查天氣",
     description: "取得聊天角色所在城市的目前天氣。不得提供 URL。",
     category: "weather",
     risk: "low",
@@ -57,6 +59,7 @@ export const CHAT_TOOLS: ChatToolDefinition[] = [
   },
   {
     name: "list_calendar_events",
+    displayName: "看行程",
     description: "列出聊天角色的行程摘要。",
     category: "calendar",
     risk: "low",
@@ -69,6 +72,7 @@ export const CHAT_TOOLS: ChatToolDefinition[] = [
   },
   {
     name: "search_music",
+    displayName: "搜尋音樂",
     description: "搜尋音樂並回傳有限筆數的曲目摘要。",
     category: "music",
     risk: "low",
@@ -83,6 +87,7 @@ export const CHAT_TOOLS: ChatToolDefinition[] = [
   },
   {
     name: "play_music",
+    displayName: "播放音樂",
     description: "播放已搜尋到的曲目；只接受曲目識別碼或搜尋結果索引，不接受 URL。",
     category: "music",
     risk: "low",
@@ -97,6 +102,7 @@ export const CHAT_TOOLS: ChatToolDefinition[] = [
   },
   {
     name: "set_wallpaper",
+    displayName: "換桌布",
     description: "設定既有桌布預設或純色值；不接受外部圖片、URL、JavaScript 或檔案路徑。",
     category: "media",
     risk: "low",
@@ -112,6 +118,7 @@ export const CHAT_TOOLS: ChatToolDefinition[] = [
   },
   {
     name: "search_memory",
+    displayName: "查記憶",
     description: "搜尋目前聊天的記憶摘要。",
     category: "memory",
     risk: "low",
@@ -125,6 +132,7 @@ export const CHAT_TOOLS: ChatToolDefinition[] = [
   },
   {
     name: "create_calendar_event",
+    displayName: "新增行程",
     description: "建立行程，需要使用者確認。",
     category: "calendar",
     risk: "high",
@@ -136,6 +144,7 @@ export const CHAT_TOOLS: ChatToolDefinition[] = [
   },
   {
     name: "schedule_call",
+    displayName: "預約來電",
     description: "排程來電，需要使用者確認。",
     category: "phone",
     risk: "high",
