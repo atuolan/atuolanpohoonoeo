@@ -1,0 +1,13 @@
+{
+  // 部署：cd cloudflare-worker/mcp-proxy && npx wrangler deploy（要先取得使用者同意）
+  // 網址：https://aguaphone-mcp-proxy.a23971123.workers.dev/（前端常數 MCP_PROXY_BASE）
+  "name": "aguaphone-mcp-proxy",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-02-24",
+  "vars": {
+    // 允許呼叫代理的網站，逗號分隔；支援 https://*.example.com
+    "ALLOWED_ORIGINS": "https://aguaphone.aguacloud.uk,https://203aguaphone.aguacloud.uk,http://localhost:5173"
+  },
+  // 目標網址可能帶金鑰，不開請求紀錄
+  "observability": { "enabled": false }
+}

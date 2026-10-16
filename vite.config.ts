@@ -5,6 +5,7 @@ import { fileURLToPath, URL } from "node:url";
 import type { Plugin } from "vite";
 import { defineConfig } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
+import { buildForwardHeaders, checkTarget, PROXY_ERROR_HEADER, proxyErrorBody, type ProxyErrorCode } from "./cloudflare-worker/mcp-proxy/src/guard";
 
 const IMAGE_PROXY_UAS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -165,6 +166,57 @@ function aiProxyPlugin(): Plugin {
   };
 }
 
+// MCP 開發代理：行為同 cloudflare-worker/mcp-proxy，但允許 localhost（本機測試 MCP 伺服器用）
+function mcpDevProxyPlugin(): Plugin {
+  return {
+    name: "mcp-dev-proxy",
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        if (!req.url?.startsWith("/mcp-proxy")) return next();
+        const sendError = (status: number, code: ProxyErrorCode, detail?: string) => {
+          res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", [PROXY_ERROR_HEADER]: code });
+          res.end(proxyErrorBody(code, detail));
+        };
+        const target = checkTarget(new URL(req.url, "http://localhost").searchParams.get("target"), { allowPrivate: true });
+        if (!target.ok) return sendError(400, target.code);
+        const incoming = new Headers();
+        for (const [key, value] of Object.entries(req.headers)) {
+          if (typeof value === "string") incoming.set(key, value);
+          else if (Array.isArray(value)) incoming.set(key, value.join(", "));
+        }
+        const method = req.method ?? "GET";
+        const chunks: Buffer[] = [];
+        if (method === "POST") {
+          for await (const chunk of req) chunks.push(chunk as Buffer);
+        }
+        const controller = new AbortController();
+        res.on("close", () => controller.abort());
+        try {
+          const upstream = await fetch(target.url, {
+            method,
+            headers: buildForwardHeaders(incoming),
+            body: method === "POST" ? Buffer.concat(chunks) : undefined,
+            signal: controller.signal,
+          });
+          const headers: Record<string, string> = {};
+          upstream.headers.forEach((value, key) => {
+            if (!["content-encoding", "content-length", "set-cookie"].includes(key)) headers[key] = value;
+          });
+          res.writeHead(upstream.status, headers);
+          if (upstream.body) {
+            for await (const chunk of upstream.body as unknown as AsyncIterable<Uint8Array>) res.write(chunk);
+          }
+          res.end();
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          if (!res.headersSent) sendError(502, "upstream_unreachable", error instanceof Error ? error.message : String(error));
+          else res.end();
+        }
+      });
+    },
+  };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   base: "/",
@@ -179,6 +231,7 @@ export default defineConfig(({ mode }) => ({
       },
     }),
     aiProxyPlugin(),
+    mcpDevProxyPlugin(),
     // 只在 inline 模式下啟用單文件打包
     mode === "inline" ? viteSingleFile() : null,
   ].filter(Boolean),
