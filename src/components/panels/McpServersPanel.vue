@@ -11,7 +11,7 @@
           <template v-else>
             <p class="mcp-intro">讓角色使用外部工具，例如幫你鎖 App、陪你玩電腦遊戲。工具由你加入的 MCP 伺服器提供。</p>
             <div v-if="toolsDisabled" class="mcp-banner">
-              <span>角色工具目前關閉，這些工具不會生效。</span>
+              <span>目前的 API 配置沒有開「允許工具呼叫」，這些工具不會生效。</span>
               <button type="button" class="mcp-btn primary" @click="enableTools">開啟</button>
             </div>
             <p v-if="saveError" class="mcp-error" role="alert">{{ saveError }}</p>

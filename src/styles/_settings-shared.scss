@@ -1,5 +1,5 @@
 // 設定頁面共用樣式
-// 由 SettingsScreen 和 AuxiliaryApiPanel 共同使用
+// 原本由 SettingsScreen 和 AuxiliaryApiPanel 使用；改版後設定頁不用了，但其他畫面還在用這些全域 class，所以由 SettingsScreen 照舊全域載入
 
 .settings-section {
   display: flex;

@@ -2659,6 +2659,13 @@ function handleChatNavigate(
   navigateToPage(page);
 }
 
+// 設定頁有自己的子頁：右滑返回時先回設定首頁
+const settingsScreenRef = ref<InstanceType<typeof SettingsScreen> | null>(null);
+function goBackFromSettings() {
+  if (settingsScreenRef.value) settingsScreenRef.value.handleBack();
+  else goBackFromQuickNav();
+}
+
 // 從快捷導航返回（優先返回歷史頁面）
 function goBackFromQuickNav() {
   if (navigationHistory.value.length > 0) {
@@ -2765,7 +2772,7 @@ function handleGlobalSwipeBack() {
     "worldbook-edit": goToLorebookList,
     "chat-list": goHome,
     chat: goToChatList,
-    settings: goBackFromQuickNav,
+    settings: goBackFromSettings,
     "prompt-manager": goBackToSettingsSubpage,
     "regex-scripts": goBackToSettingsSubpage,
     bookshelf: () => {
@@ -2896,6 +2903,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <!-- 設定頁 -->
     <SettingsScreen
       v-else-if="currentPage === 'settings'"
+      ref="settingsScreenRef"
       @back="goBackFromQuickNav"
       @open-prompt-manager="openPromptManager"
       @open-regex-scripts="openRegexScripts"
