@@ -51,8 +51,9 @@ const PROMPT_MANAGER_CONFIG_VERSION = 4;
  * 1：改用篝火預設（<|state|> 思考格式、{{延後讀取::}} 變量），移除舊的必要條目
  * 2：篝火預設移除「奇蹟實現的步驟」「開始」「角色設定」
  * 3：新增 14 種文學主調、粵語對白、字數更少；外語條目換新 identifier，改寫故事推進與文風
+ * 4：篝火預設改寫開場手札與涅芙設定、說書順序加入角色自帶思維鏈、結尾條目加上收尾句
  */
-export const FACE_TO_FACE_PROMPT_RESET_VERSION = 3;
+export const FACE_TO_FACE_PROMPT_RESET_VERSION = 4;
 
 /** 新建的配置已是最新面對面提示詞，不需要再引導重置 */
 function createFreshPromptManagerConfig(): PromptManagerConfig {
