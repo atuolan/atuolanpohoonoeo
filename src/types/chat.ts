@@ -1272,6 +1272,14 @@ export interface GenerationContaminationDiagnostics {
   results: GenerationContaminationProbeResult[];
 }
 
+/** 防截斷這次的結果（串流視窗診斷列顯示） */
+export interface AntiTruncationDiagnostics {
+  /** tool：內容來自假工具；plain-won：兩邊都有、一般正文較長；missed：模型沒用假工具 */
+  result: "tool" | "plain-won" | "missed";
+  /** 渠道拒絕後改用一般方式重送 */
+  fellBack?: boolean;
+}
+
 export interface GenerationDiagnostics {
   model?: string;
   stream?: boolean;
@@ -1308,6 +1316,8 @@ export interface GenerationDiagnostics {
   chatDiagnostics?: unknown;
   parsingDiagnostics?: unknown;
   contaminationDiagnostics?: GenerationContaminationDiagnostics;
+  /** 防截斷結果（只有開啟防截斷的主聊天請求才有） */
+  antiTruncation?: AntiTruncationDiagnostics;
 }
 
 // ===== 生成結果 =====
