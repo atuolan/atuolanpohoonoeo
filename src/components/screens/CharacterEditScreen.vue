@@ -16,6 +16,7 @@ import { useFitnessStore } from "@/stores/fitness";
 import { createDefaultCharacterToolPermissions, type CharacterToolPermissions, type CharacterWorldSettings, type RegexScript } from "@/types/character";
 import CharacterToolPermissionsPanel from "@/components/panels/CharacterToolPermissionsPanel.vue";
 import { CHAT_TOOLS } from "@/services/toolCalling/chatTools";
+import { useSettingsStore } from "@/stores/settings";
 import type { CharacterFitnessConfig } from "@/types/fitness";
 import { computed, onMounted, ref } from "vue";
 
@@ -95,6 +96,9 @@ const toolPermissions = computed<CharacterToolPermissions>({
   get: () => formData.value.toolPermissions ?? createDefaultCharacterToolPermissions(),
   set: (value) => { formData.value.toolPermissions = value; },
 });
+// 角色工具權限裡可個別關閉的 MCP 伺服器
+const settingsStore = useSettingsStore();
+const mcpServerOptions = computed(() => settingsStore.mcp.servers.map((server) => ({ id: server.id, name: server.name })));
 
 // 新標籤輸入
 const newTag = ref("");
@@ -2266,6 +2270,7 @@ async function submitPasteRegex() {
       <CharacterToolPermissionsPanel
         v-model="toolPermissions"
         :tools="CHAT_TOOLS"
+        :mcp-servers="mcpServerOptions"
       />
 
       <!-- ===== 危險區域 ===== -->
