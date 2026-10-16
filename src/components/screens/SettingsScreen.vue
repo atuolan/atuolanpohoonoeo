@@ -56,6 +56,7 @@ import {
 } from "@/utils/debugOverlay";
 import {
   computed,
+  defineAsyncComponent,
   nextTick,
   onMounted,
   onUnmounted,
@@ -218,6 +219,13 @@ const directConnectHintOpen = ref(false);
 const claudeCacheHintOpen = ref(false);
 // 工具呼叫說明的伸縮顯示（「這是什麼？」）
 const toolCallingHintOpen = ref(false);
+// MCP 伺服器面板：用到才載入
+const McpServersPanel = defineAsyncComponent(() => import("@/components/panels/McpServersPanel.vue"));
+const showMcpPanel = ref(false);
+const mcpServerSummary = computed(() => {
+  const count = settingsStore.mcp.servers.length;
+  return count ? `${count} 台` : "未設定";
+});
 
 type PromptPostProcessingOption = {
   value: PromptPostProcessingType;
@@ -4475,6 +4483,10 @@ function useClonedVoice(voiceId: string) {
               API 呼叫次數、輸入 token、工具結果 token
               與整體成本。低風險工具會直接執行；高風險工具會先要求你確認。關閉後不會把工具定義送給模型，也不會執行工具。
             </p>
+            <button type="button" class="mcp-entry-row" @click="showMcpPanel = true">
+              <span>MCP 伺服器</span>
+              <span class="mcp-entry-value">{{ mcpServerSummary }} ›</span>
+            </button>
           </div>
         </div>
 
@@ -7613,6 +7625,8 @@ function useClonedVoice(voiceId: string) {
       </div>
     </main>
 
+    <McpServersPanel v-if="showMcpPanel" @close="showMcpPanel = false" />
+
     <!-- 新建配置文件彈窗 -->
     <Teleport to="body">
       <div
@@ -8388,6 +8402,26 @@ function useClonedVoice(voiceId: string) {
     border: none;
     cursor: pointer;
   }
+}
+
+.mcp-entry-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 8px;
+  padding: 14px 16px;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 12px;
+  color: var(--color-text, #333);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.mcp-entry-value {
+  color: var(--color-text-secondary, #666);
+  font-size: 14px;
 }
 
 .toggle-item {
