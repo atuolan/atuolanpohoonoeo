@@ -2,6 +2,7 @@
   <div v-if="pending" class="tool-confirmation-backdrop" role="dialog" aria-modal="true">
     <section class="tool-confirmation-modal">
       <h2>確認工具操作</h2>
+      <p class="tool-confirmation-label">{{ pending.tool.displayName ?? pending.toolCall.name }}</p>
       <p class="tool-confirmation-name">{{ pending.tool.description }}</p>
       <pre>{{ maskedArgs }}</pre>
       <div class="tool-confirmation-actions">
@@ -28,6 +29,7 @@ const maskedArgs = computed(() => JSON.stringify(props.pending?.toolCall.argumen
 <style scoped>
 .tool-confirmation-backdrop { position: fixed; inset: 0; z-index: 3000; display: grid; place-items: center; background: rgba(0,0,0,.45); }
 .tool-confirmation-modal { width: min(92vw, 30rem); max-width: 30rem; padding: 1.25rem; background: var(--surface-card, #fff); color: var(--text-color, #222); border-radius: 8px; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+.tool-confirmation-label { margin: 0 0 .25rem; font-weight: 600; }
 .tool-confirmation-name { white-space: pre-wrap; }
 .tool-confirmation-modal pre { max-height: 14rem; overflow: auto; padding: .75rem; background: rgba(127,127,127,.12); border-radius: 4px; }
 .tool-confirmation-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }

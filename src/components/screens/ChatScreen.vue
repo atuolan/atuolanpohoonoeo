@@ -184,7 +184,10 @@ import {
   useThemeStore,
 } from "@/stores";
 import { usePhoneCallStore } from "@/stores/phoneCall";
-import { CHAT_TOOLS } from "@/services/toolCalling/chatTools";
+import { useMcpChatTools } from "@/composables/useMcpChatTools";
+import ToolActivityRow from "@/components/common/ToolActivityRow.vue";
+import type { LiveToolActivity } from "@/types/toolActivity";
+import { finalizeLiveActivity, summarizeToolResult, upsertLiveActivity } from "@/utils/toolActivity";
 import type { PendingToolConfirmation } from "@/services/toolCalling/types";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
 import { useUserStore } from "@/stores/user";
@@ -413,6 +416,9 @@ const promptManagerStore = usePromptManagerStore();
 // 當前聊天 ID
 const currentChatId = ref<string | null>(null);
 const pendingToolConfirmation = ref<PendingToolConfirmation | null>(null);
+/** 本輪的工具狀態：生成中即時顯示；角色訊息出現後改存到該輪第一則角色訊息 */
+const liveToolActivity = ref<LiveToolActivity[]>([]);
+const { buildChatTools } = useMcpChatTools();
 let activeToolDecision: ((decision: "approve" | "reject" | null) => void) | null = null;
 const activeChatId = computed(() => currentChatId.value ?? "");
 // 現有聊天的完整資料（包含外觀）尚未從 IDB 還原前，不得用初始空狀態回寫 metadata。
@@ -5610,6 +5616,14 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       // ===== 取得完整回覆（流式 / 非流式皆支援，解析邏輯統一在拿到完整內容後執行） =====
       let toolDecisionWaiter: Promise<"approve" | "reject" | null> | null = null;
       let resolveToolDecision: ((decision: "approve" | "reject" | null) => void) | null = null;
+      // 這一輪的工具：內建＋角色可用的 MCP；工具狀態列從這一輪重新開始
+      liveToolActivity.value = [];
+      const toolActivityChatId = currentChatId.value;
+      const chatTools = !isGroupChat.value ? await buildChatTools(char.toolPermissions) : undefined;
+      const updateToolActivity = (entry: LiveToolActivity) => {
+        if (currentChatId.value !== toolActivityChatId) return;
+        liveToolActivity.value = upsertLiveActivity(liveToolActivity.value, entry);
+      };
       const generationResult = await runChatGenerationRequest({
         client,
         messages: apiMessages,
@@ -5632,7 +5646,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           }
           scrollToBottom();
         },
-        tools: !isGroupChat.value ? CHAT_TOOLS : undefined,
+        tools: chatTools,
         toolProtocol: chatTaskConfig.api.toolProtocol,
         promptPostProcessing: chatTaskConfig.api.promptPostProcessing,
         characterId: char.id,
@@ -5649,7 +5663,15 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           theme: themeStore,
           incomingCallScheduler: getIncomingCallScheduler(),
         },
+        onToolCallStart: (call, tool) => {
+          updateToolActivity({ id: call.id, toolName: call.name, label: tool.displayName ?? call.name, status: "running", at: Date.now() });
+          scrollToBottom();
+        },
+        onToolCallEnd: (call, tool, result) => {
+          updateToolActivity({ id: call.id, toolName: call.name, label: tool?.displayName ?? call.name, at: Date.now(), ...summarizeToolResult(result) });
+        },
         onConfirmationRequired: (pending) => {
+          updateToolActivity({ id: pending.toolCall.id, toolName: pending.toolCall.name, label: pending.tool.displayName ?? pending.toolCall.name, status: "awaiting_confirmation", at: Date.now() });
           pendingToolConfirmation.value = pending;
           toolDecisionWaiter = new Promise((resolve) => { resolveToolDecision = resolve; });
           activeToolDecision = resolveToolDecision;
@@ -6648,6 +6670,16 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               }
             }
 
+            // 本輪用過的工具記到第一條 AI 訊息上（只存名稱、狀態、摘要）
+            if (liveToolActivity.value.length && _firstNewAiMsgId) {
+              const toolTarget = messages.value.find((m) => m.id === _firstNewAiMsgId);
+              if (toolTarget) {
+                toolTarget.toolActivity = finalizeLiveActivity(liveToolActivity.value);
+                liveToolActivity.value = [];
+                saveChat();
+              }
+            }
+
             if (_pendingAffinityUpdates?.length) {
               _handleAffinityUpdates(_pendingAffinityUpdates, _firstNewAiMsgId);
             }
@@ -6860,6 +6892,10 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     // 生成把內容留在視窗裡，下一輪的安全網就可能把殘留文字當成新結果收下。
     // 內容本身不清（視窗可能還開著給用戶看），但已無人能認領。
     // 擁有權已被其他並發生成接手時，releaseOwnership 不會動到對方的狀態。
+    // 本輪沒有產生角色訊息（取消或失敗）時，工具狀態列留到下一次送出；沒做完的標成已取消
+    if (liveToolActivity.value.length) {
+      liveToolActivity.value = finalizeLiveActivity(liveToolActivity.value);
+    }
     if (usedStreamingWindowForCurrentGeneration) {
       streamingWindow.releaseOwnership(streamingWindowOwnerId);
     }
@@ -8066,6 +8102,9 @@ async function loadOrCreateChat(overrideChatId?: string) {
     activeToolDecision?.(null);
     activeToolDecision = null;
     pendingToolConfirmation.value = null;
+  }
+  if (overrideChatId && overrideChatId !== currentChatId.value) {
+    liveToolActivity.value = [];
   }
   // 此函式結尾會用 IDB 讀回的內容整份取代 messages。若還有 debounce 中的儲存
   // 尚未寫入（addUserMessage 走的是 400ms debounce），必須先落地，否則剛送出的
@@ -9879,6 +9918,7 @@ useChatCleanup({
             message.transferStatus,
             message.faceToFaceRequestStatus,
             message.onlineModeRequestStatus,
+            message.toolActivity?.length,
             isSelectingMessages && selectedMessageIds.includes(message.id),
             searchResults.includes(message.id),
             searchResults[currentSearchIndex] === message.id,
@@ -9917,6 +9957,12 @@ useChatCleanup({
           >
             {{ getForwardedLabel(message.forwardedFrom) }}
           </div>
+
+          <!-- 本輪角色用過的工具 -->
+          <ToolActivityRow
+            v-if="message.role === 'ai' && message.toolActivity?.length"
+            :entries="message.toolActivity"
+          />
 
           <!-- 系統通知（封鎖/解封等）；交易領取通知資料上仍算 user role，但畫面使用系統通知樣式 -->
           <div
@@ -10147,6 +10193,14 @@ useChatCleanup({
             }}</span>
           </div>
         </div>
+
+        <!-- 工具即時狀態（生成中；沒有產生角色訊息時保留到下一次送出） -->
+        <ToolActivityRow
+          v-if="liveToolActivity.length"
+          live
+          :entries="liveToolActivity"
+          :actor-name="characterName"
+        />
 
         <!-- 正在生成提示（僅在非流式時顯示） -->
         <div
