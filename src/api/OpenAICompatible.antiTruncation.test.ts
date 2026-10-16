@@ -215,3 +215,74 @@ describe("OpenAICompatible 防截斷", () => {
     expect(done?.diagnostics?.antiTruncation).toEqual({ result: "missed", fellBack: true });
   });
 });
+
+describe("OpenAICompatible 接收逾時", () => {
+  const fakeTimers = () => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  const textChunk = (content: string, extra: Record<string, unknown> = {}) =>
+    `data: ${JSON.stringify({ choices: [{ delta: { content }, ...extra }] })}`;
+
+  it("stops reading at [DONE] even if the connection stays open", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => sseResponse([textChunk("Hi"), "data: [DONE]"], { keepOpen: true })));
+    const { done } = await collect();
+    expect(done?.content).toBe("Hi");
+  });
+
+  it("ends normally 15 seconds after a finish reason when the connection stays open", async () => {
+    fakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn(async () => sseResponse([textChunk("Hi", { finish_reason: "stop" })], { keepOpen: true })));
+    let finished = false;
+    const pending = collect().then((result) => {
+      finished = true;
+      return result;
+    });
+    await vi.advanceTimersByTimeAsync(14_000);
+    expect(finished).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_000);
+    const { done, error } = await pending;
+    expect(error).toBeUndefined();
+    expect(done?.content).toBe("Hi");
+    expect(warn.mock.calls.some(([message]) => String(message).includes("視為串流截斷"))).toBe(false);
+  });
+
+  it("waits 180 seconds of silence mid-stream before giving up", async () => {
+    fakeTimers();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn(async () => sseResponse([textChunk("Hi")], { keepOpen: true })));
+    let finished = false;
+    const pending = collect().then((result) => {
+      finished = true;
+      return result;
+    });
+    await vi.advanceTimersByTimeAsync(179_000);
+    expect(finished).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect((await pending).done?.content).toBe("Hi");
+  });
+
+  it("waits 240 seconds for the first chunk", async () => {
+    fakeTimers();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn(async () => sseResponse([], { keepOpen: true })));
+    let finished = false;
+    const pending = collect().then((result) => {
+      finished = true;
+      return result;
+    });
+    await vi.advanceTimersByTimeAsync(239_000);
+    expect(finished).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect((await pending).error).toContain("240 秒");
+  });
+
+  it("waits 240 seconds for a non-stream response", async () => {
+    fakeTimers();
+    vi.stubGlobal("fetch", vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    })));
+    const pending = new OpenAICompatibleClient(api()).generate({ messages: chat(), settings, apiSettings: api() });
+    const assertion = expect(pending).rejects.toThrow("240 秒");
+    await vi.advanceTimersByTimeAsync(240_000);
+    await assertion;
+  });
+});

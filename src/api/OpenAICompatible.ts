@@ -328,6 +328,8 @@ interface StreamLineResult {
   promptFeedback?: unknown;
   safetyRatings?: unknown;
   rawResponseMeta?: unknown;
+  /** 讀到 data: [DONE]，串流已結束 */
+  streamDone?: boolean;
 }
 
 /**
@@ -1390,7 +1392,8 @@ export class OpenAICompatibleClient {
     // fetch 會永遠 pending：手機端會出現「空白氣泡、轉圈、完全沒有錯誤」。
     // 因此這裡用內部 timeout 的 AbortController 與呼叫方傳入的 signal 合併，
     // 超時就主動中止並丟出可見的錯誤。
-    const NON_STREAM_TIMEOUT_MS = 90000;
+    // 上游慢、卡住一陣子不該被當成失敗；防截斷開著時 Gemini 也要寫完整段才回
+    const NON_STREAM_TIMEOUT_MS = 240000;
     const timeoutController = new AbortController();
     let timedOut = false;
     const timeoutId = setTimeout(() => {
@@ -1804,21 +1807,26 @@ export class OpenAICompatibleClient {
     // 這是診斷「手機端空回」的最後手段——當所有結構化擷取都失敗時，
     // 直接把上游真正回傳的位元組攤開，才能看清 gemini 等模型實際回了什麼。
     let rawStreamPreview = "";
-    // 兩段式超時：
-    // - 首個 chunk 到達前允許較長等待。大型「小劇場」提示詞的首字延遲可能很長，
-    //   行動網路上傳大提示詞 + 上游模型推理時間容易超過 30s；若沿用 30s 會在
-    //   首字到達前就誤判為截斷並「靜默回空」，這正是手機端空回、電腦端正常的主因。
-    // - 開始串流之後，chunk 之間的閒置才用較短的 30s 判定截斷。
-    const FIRST_CHUNK_TIMEOUT_MS = 90000;
-    const IDLE_TIMEOUT_MS = 30000;
+    // 三段式超時：
+    // - 首個 chunk 到達前等最久。大型「小劇場」提示詞的首字延遲可能很長，
+    //   行動網路上傳大提示詞 + 上游模型推理時間容易超過 30s；防截斷開著時，
+    //   Gemini 還要等整段寫完才一次送出工具參數。
+    // - 開始串流之後的閒置：上游慢或卡住一陣子不該被當成截斷。
+    // - 已收到結束原因後：只再等一下可能跟在後面的用量資訊，逾時算正常結束。
+    const FIRST_CHUNK_TIMEOUT_MS = 240000;
+    const IDLE_TIMEOUT_MS = 180000;
+    const AFTER_FINISH_IDLE_MS = 15000;
     let idleTimedOut = false;
+    let sawDone = false;
     // 是否曾收到真正的串流增量（delta.content）。用來避免在「先串流 delta、
     // 最後一個 chunk 又夾帶完整 message.content」的上游行為下重複累加內容。
     let sawStreamingDelta = false;
 
     const processLine = (line: string): StreamLineResult => {
       const trimmed = line.trim();
-      if (!trimmed || trimmed === "data: [DONE]") return { delta: null };
+      if (!trimmed) return { delta: null };
+      // OpenAI SSE 的結束標記：讀到就結束，不等上游關連線
+      if (trimmed === "data: [DONE]" || trimmed === "data:[DONE]") return { delta: null, streamDone: true };
       // SSE 註解行（含防截斷的心跳）
       if (trimmed.startsWith(":")) return { delta: null };
       if (!trimmed.startsWith("data: ")) {
@@ -1959,29 +1967,31 @@ export class OpenAICompatibleClient {
 
     try {
       while (true) {
-        // 兩段式超時：首個 chunk 到達前用較長的 FIRST_CHUNK_TIMEOUT_MS，
-        // 之後 chunk 之間的閒置才用較短的 IDLE_TIMEOUT_MS。
+        const afterFinish = rawFinishReason !== undefined;
         const currentTimeout =
-          chunkCount === 0 ? FIRST_CHUNK_TIMEOUT_MS : IDLE_TIMEOUT_MS;
+          chunkCount === 0 ? FIRST_CHUNK_TIMEOUT_MS : afterFinish ? AFTER_FINISH_IDLE_MS : IDLE_TIMEOUT_MS;
+        let timedOut = false;
         let timeoutId: ReturnType<typeof setTimeout> | null = null;
         const readResult = await Promise.race<{ done: boolean; value?: Uint8Array }>([
           reader.read() as Promise<{ done: boolean; value?: Uint8Array }>,
           new Promise<{ done: true; value: undefined }>((resolve) => {
             timeoutId = setTimeout(() => {
-              idleTimedOut = true;
+              timedOut = true;
               resolve({ done: true, value: undefined });
             }, currentTimeout);
           }),
         ]);
         if (timeoutId !== null) clearTimeout(timeoutId);
 
-        if (idleTimedOut) {
+        if (timedOut) {
           // 主動取消底層 stream，避免 reader 留著等
           try {
             await reader.cancel();
           } catch {
             // ignore
           }
+          // 已經收到結束原因：只是上游沒關連線，當作正常結束
+          if (!afterFinish) idleTimedOut = true;
           break;
         }
 
@@ -1999,6 +2009,10 @@ export class OpenAICompatibleClient {
 
         for (const line of lines) {
           const result = processLine(line);
+          if (result.streamDone) {
+            sawDone = true;
+            break;
+          }
           captureLineDiagnostics(result);
           if (result.usage) streamUsage = result.usage;
           if (result.reasoningDelta) fullReasoning += result.reasoningDelta;
@@ -2009,6 +2023,16 @@ export class OpenAICompatibleClient {
           if ((result as StreamLineResult & { toolCallDelta?: StreamingEvent["toolCallDelta"] }).toolCallDelta) {
             yield { type: "token", toolCallDelta: (result as StreamLineResult & { toolCallDelta?: StreamingEvent["toolCallDelta"] }).toolCallDelta };
           }
+        }
+        // 讀到 [DONE] 就結束，不等上游關連線
+        if (sawDone) {
+          buffer = "";
+          try {
+            await reader.cancel();
+          } catch {
+            // ignore
+          }
+          break;
         }
       }
 
