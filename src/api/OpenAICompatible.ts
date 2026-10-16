@@ -22,6 +22,16 @@ import {
   type ToolCallAccumulator,
 } from "@/services/toolCalling/protocolAdapters";
 import type { ChatToolContext, ToolCall } from "@/services/toolCalling/types";
+import {
+  FALLBACK_STATUSES,
+  fallbackWarning,
+  injectAntiTruncation,
+  restoreJsonPayload,
+  restoreStreamBody,
+  settleAntiTruncation,
+  type AntiTruncationOptions,
+  type RestoreContext,
+} from "@/services/antiTruncation";
 
 /** 預設 Cloudflare Worker 代理地址（僅 NovelAI 使用） */
 // const CF_WORKER_BASE = "https://nai-proxy.aguacloud.uk";
@@ -272,16 +282,20 @@ export interface GenerationParams {
   toolProtocol?: ToolProtocol;
   promptPostProcessing?: PromptPostProcessingType;
   toolContext?: ChatToolContext;
+  /** 防截斷：正文改由假工具參數傳回再還原。只有主聊天會傳；Claude 快取模式不支援。 */
+  antiTruncation?: AntiTruncationOptions;
 }
 
 interface BuiltRequest {
   body: Record<string, unknown>;
   diagnostics: GenerationDiagnostics;
+  /** 有開防截斷時，回應端還原需要的工具名資訊 */
+  antiTruncation?: RestoreContext;
 }
 
 type RequestToolOptions = Pick<
   GenerationParams,
-  "tools" | "toolProtocol" | "promptPostProcessing" | "toolContext" | "lastPromptRoleOverride"
+  "tools" | "toolProtocol" | "promptPostProcessing" | "toolContext" | "lastPromptRoleOverride" | "antiTruncation"
 >;
 
 function getToolCompatiblePromptMode(
@@ -717,7 +731,12 @@ export class OpenAICompatibleClient {
       : requestedMode;
     // 文字協定：模型不支援原生工具，要在提示詞裡說明工具並把工具往返改成純文字
     const textToolMode = this.apiSettings.toolsEnabled !== false && protocol === "text" && Boolean(options.tools?.length);
-    const sourceMessages = textToolMode ? applyTextToolProtocol(messages, options.tools ?? []) : messages;
+    // 防截斷：在所有角色調整之前插入控制提示，原本「最後一條訊息」的處理才會照舊
+    const antiTruncation = options.antiTruncation
+      ? injectAntiTruncation(messages, (options.tools ?? []).map((tool) => tool.name))
+      : undefined;
+    const baseMessages = antiTruncation?.messages ?? messages;
+    const sourceMessages = textToolMode ? applyTextToolProtocol(baseMessages, options.tools ?? []) : baseMessages;
     let processedMessages = postProcessPrompt(sourceMessages, promptMode);
     const roleAdjustments: NonNullable<GenerationDiagnostics["roleAdjustments"]> = [];
 
@@ -810,6 +829,11 @@ export class OpenAICompatibleClient {
       ? adapter.buildRequestTools(options.tools)
       : undefined;
     if (requestTools?.length) body.tools = requestTools;
+    // 假工具一律用原生格式，跟角色工具用哪種協定無關
+    if (antiTruncation) {
+      body.tools = [...(requestTools ?? []), antiTruncation.tool];
+      body.tool_choice = "auto";
+    }
     // maxResponseLength > 0 才帶 max_tokens；送 0（或未設）代表「不設人工上限」，
     // 直接省略此欄位，交由模型用自身的輸出上限（OpenAI 相容端點允許省略）。
     if (settings.maxResponseLength && settings.maxResponseLength > 0) {
@@ -910,7 +934,14 @@ export class OpenAICompatibleClient {
       roleAdjustments,
     };
 
-    return { body, diagnostics };
+    return {
+      body,
+      diagnostics,
+      antiTruncation: antiTruncation && {
+        toolName: antiTruncation.toolName,
+        clientToolNames: antiTruncation.clientToolNames,
+      },
+    };
   }
 
   /**
@@ -1398,6 +1429,11 @@ export class OpenAICompatibleClient {
 
     if (!response.ok) {
       const error = await response.text();
+      if (params.antiTruncation && FALLBACK_STATUSES.has(response.status)) {
+        params.antiTruncation.onWarning?.(fallbackWarning(response.status));
+        const retried = await this.generate({ ...params, antiTruncation: undefined });
+        return { ...retried, diagnostics: { ...retried.diagnostics, antiTruncation: { result: "missed", fellBack: true } } };
+      }
       const requestedProtocol = params.toolProtocol ?? this.apiSettings.toolProtocol ?? "auto";
       if (requestedProtocol === "auto" && params.tools?.length && isExplicitUnsupportedToolsError({ status: response.status, message: error })) {
         return this.generate({ ...params, toolProtocol: "text" });
@@ -1406,6 +1442,8 @@ export class OpenAICompatibleClient {
     }
 
     const data = await response.json();
+    // 防截斷：先把假工具參數放回正文，下面的解析就跟平常一樣
+    const antiTruncationStats = request.antiTruncation ? restoreJsonPayload(data, request.antiTruncation) : undefined;
     const generationTime = Date.now() - startTime;
 
     // 解析回應
@@ -1432,6 +1470,9 @@ export class OpenAICompatibleClient {
       content.length,
     );
     const stopReason = diagnostics.finishReason ?? "stop";
+    if (params.antiTruncation && content) {
+      diagnostics.antiTruncation = settleAntiTruncation(antiTruncationStats, params.antiTruncation);
+    }
 
     return {
       content,
@@ -1677,6 +1718,15 @@ export class OpenAICompatibleClient {
 
     if (!response.ok) {
       const error = await response.text();
+      if (params.antiTruncation && FALLBACK_STATUSES.has(response.status)) {
+        params.antiTruncation.onWarning?.(fallbackWarning(response.status));
+        for await (const event of this._generateStreamInternal({ ...params, antiTruncation: undefined })) {
+          yield event.type === "done"
+            ? { ...event, diagnostics: { ...event.diagnostics, antiTruncation: { result: "missed", fellBack: true } } }
+            : event;
+        }
+        return;
+      }
       const requestedProtocol = params.toolProtocol ?? this.apiSettings.toolProtocol ?? "auto";
       if (
         requestedProtocol === "auto" &&
@@ -1717,7 +1767,11 @@ export class OpenAICompatibleClient {
       return;
     }
 
-    const reader = response.body?.getReader();
+    // 防截斷：先把假工具參數還原成一般正文，下面的解析就跟平常一樣
+    const restored = request.antiTruncation && response.body
+      ? restoreStreamBody(response.body, request.antiTruncation)
+      : undefined;
+    const reader = (restored?.body ?? response.body)?.getReader();
     if (!reader) {
       yield { type: "error", error: "No response body（回應體為空，可能是網路中斷）" };
       return;
@@ -1765,6 +1819,8 @@ export class OpenAICompatibleClient {
     const processLine = (line: string): StreamLineResult => {
       const trimmed = line.trim();
       if (!trimmed || trimmed === "data: [DONE]") return { delta: null };
+      // SSE 註解行（含防截斷的心跳）
+      if (trimmed.startsWith(":")) return { delta: null };
       if (!trimmed.startsWith("data: ")) {
         // 記錄非 SSE 格式的行，幫助診斷
         if (trimmed.length > 0 && nonSSELines.length < 5) {
@@ -2007,6 +2063,12 @@ export class OpenAICompatibleClient {
         }
       }
 
+      // 防截斷：結算這次請求（記進連續計數，必要時提示）
+      const antiTruncationDiagnostics =
+        params.antiTruncation && fullContent
+          ? settleAntiTruncation(restored?.readStats(), params.antiTruncation)
+          : undefined;
+
       const totalTime = Date.now() - streamStartTime;
       const buildDoneDiagnostics = (): GenerationDiagnostics => ({
         ...request.diagnostics,
@@ -2022,6 +2084,7 @@ export class OpenAICompatibleClient {
         promptFeedback,
         safetyRatings,
         rawResponseMeta,
+        antiTruncation: antiTruncationDiagnostics,
       });
 
       // 超時處理：
