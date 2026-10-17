@@ -2,17 +2,19 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   addDailySeconds,
+  addHighlight,
   bookPercent,
   dateKey,
   mergeDailySeconds,
   readingStreak,
   offsetForPage,
   pageForOffset,
+  paragraphSegments,
   remainingMinutes,
   splitParagraphs,
   type PageProbe,
 } from "@/utils/bookReading";
-import type { BookChapter } from "@/types/book";
+import type { BookChapter, BookHighlight } from "@/types/book";
 
 function chapter(content: string): BookChapter {
   return { id: content.slice(0, 4), title: "章", content, order: 0 };
@@ -34,6 +36,39 @@ describe("bookPercent", () => {
     expect(bookPercent(chapters, 1, 0)).toBe(25);
     expect(bookPercent(chapters, 1, 300)).toBe(100);
     expect(bookPercent([], 0, 0)).toBe(0);
+  });
+});
+
+describe("劃線", () => {
+  const content = "北冥有魚，其名為鯤。鯤之大，不知其幾千里也。";
+  const slice = (s: number, e: number) => content.slice(s, e);
+  const hl = (id: string, start: number, end: number, note?: string, chapterId = "c1"): BookHighlight => ({
+    id, chapterId, chapterIndex: 0, start, end, text: slice(start, end), note, createdAt: Number(id.slice(1)), updatedAt: 0,
+  });
+
+  it("不重疊就直接加", () => {
+    const list = addHighlight([hl("h1", 0, 4)], hl("h2", 10, 14), slice);
+    expect(list.map((h) => h.id)).toEqual(["h1", "h2"]);
+  });
+
+  it("重疊或相接的併成一筆，筆記接起來", () => {
+    const list = addHighlight([hl("h1", 0, 4, "魚"), hl("h3", 6, 9, "鯤")], hl("h5", 3, 6, "新"), slice);
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ id: "h1", start: 0, end: 9, text: slice(0, 9), note: "魚\n鯤\n新" });
+  });
+
+  it("不同章不合併", () => {
+    expect(addHighlight([hl("h1", 0, 4)], hl("h2", 2, 6, undefined, "c2"), slice)).toHaveLength(2);
+  });
+
+  it("段落切塊", () => {
+    // 段落從 10 開始、長 12；劃線 [8,13) 與 [15,30)
+    expect(paragraphSegments(10, 12, [{ id: "b", start: 15, end: 30 }, { id: "a", start: 8, end: 13 }])).toEqual([
+      { from: 0, to: 3, highlightId: "a" },
+      { from: 3, to: 5 },
+      { from: 5, to: 12, highlightId: "b" },
+    ]);
+    expect(paragraphSegments(0, 5, [])).toEqual([{ from: 0, to: 5 }]);
   });
 });
 

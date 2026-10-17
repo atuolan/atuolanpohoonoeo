@@ -3,7 +3,7 @@
  * 進度以「章內字元位置」保存，換字級、換螢幕後仍能翻回同一段
  */
 
-import type { BookChapter, BookMeta, StoredBook } from "@/types/book";
+import type { BookChapter, BookHighlight, BookMeta, StoredBook } from "@/types/book";
 
 export interface ParagraphSpan {
   /** 在章節 content 中的起始字元位置 */
@@ -52,6 +52,69 @@ export function bookPercentFromLengths(
   const current = lengths[chapterIndex] ?? 0;
   const read = before + Math.min(Math.max(charOffset, 0), current);
   return Math.min(100, Math.max(0, Math.round((read / total) * 100)));
+}
+
+// ===== 劃線 =====
+
+/**
+ * 加一筆劃線：同一章裡跟它重疊或相接的舊劃線併成一筆（範圍取聯集、筆記接在一起）
+ * @param text 依新範圍從章節內文取文字
+ */
+export function addHighlight(
+  list: BookHighlight[],
+  incoming: BookHighlight,
+  text: (start: number, end: number) => string,
+): BookHighlight[] {
+  const overlapping = list.filter(
+    (h) => h.chapterId === incoming.chapterId && h.start <= incoming.end && h.end >= incoming.start,
+  );
+  if (overlapping.length === 0) return [...list, incoming];
+
+  const start = Math.min(incoming.start, ...overlapping.map((h) => h.start));
+  const end = Math.max(incoming.end, ...overlapping.map((h) => h.end));
+  const notes = [...overlapping.map((h) => h.note), incoming.note].filter((n): n is string => !!n?.trim());
+  const first = overlapping.reduce((a, b) => (a.createdAt <= b.createdAt ? a : b));
+  const merged: BookHighlight = {
+    ...first,
+    start,
+    end,
+    text: text(start, end),
+    note: notes.length ? notes.join("\n") : undefined,
+    updatedAt: incoming.updatedAt,
+  };
+  return [...list.filter((h) => !overlapping.includes(h)), merged];
+}
+
+export interface TextSegment {
+  /** 段落內的相對位置 [from, to) */
+  from: number;
+  to: number;
+  highlightId?: string;
+}
+
+/** 把一段文字依劃線切成幾塊，給畫面用 <mark> 包起來 */
+export function paragraphSegments(
+  paraStart: number,
+  paraLength: number,
+  highlights: Array<Pick<BookHighlight, "id" | "start" | "end">>,
+): TextSegment[] {
+  const paraEnd = paraStart + paraLength;
+  const hits = highlights
+    .filter((h) => h.start < paraEnd && h.end > paraStart)
+    .map((h) => ({ id: h.id, from: Math.max(h.start, paraStart) - paraStart, to: Math.min(h.end, paraEnd) - paraStart }))
+    .sort((a, b) => a.from - b.from);
+
+  const segments: TextSegment[] = [];
+  let cursor = 0;
+  for (const h of hits) {
+    const from = Math.max(h.from, cursor);
+    if (from >= h.to) continue;
+    if (from > cursor) segments.push({ from: cursor, to: from });
+    segments.push({ from, to: h.to, highlightId: h.id });
+    cursor = h.to;
+  }
+  if (cursor < paraLength) segments.push({ from: cursor, to: paraLength });
+  return segments;
 }
 
 // ===== 閱讀時數 =====

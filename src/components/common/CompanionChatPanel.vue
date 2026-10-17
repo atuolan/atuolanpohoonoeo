@@ -15,6 +15,8 @@ interface Props {
   messages: CompanionMessage[];
   isGenerating: boolean;
   triggerFrequency: number;
+  /** 預先放進輸入框的文字（從劃線「問角色」帶過來的引文） */
+  draft?: string;
 }
 
 const props = defineProps<Props>();
@@ -90,8 +92,22 @@ function scrollToBottom() {
   });
 }
 
+const inputEl = ref<HTMLInputElement | null>(null);
+
 watch(() => bubbles.value.length, scrollToBottom);
 watch(() => props.isGenerating, scrollToBottom);
+watch(
+  () => props.draft,
+  (draft) => {
+    if (!draft) return;
+    inputText.value = draft;
+    nextTick(() => {
+      inputEl.value?.focus();
+      inputEl.value?.setSelectionRange(draft.length, draft.length);
+    });
+  },
+  { immediate: true },
+);
 onMounted(scrollToBottom);
 </script>
 
@@ -178,6 +194,7 @@ onMounted(scrollToBottom);
       <label for="cc-input-field" class="sr-only">對{{ characterName }}說</label>
       <input
         id="cc-input-field"
+        ref="inputEl"
         v-model="inputText"
         type="text"
         :placeholder="`問${characterName}這一段…`"

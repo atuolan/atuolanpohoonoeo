@@ -45,6 +45,22 @@ export interface BookReadingProgress {
   lastReadAt: number;
   /** 每天在這本書上讀了幾秒：YYYY-MM-DD → 秒 */
   dailySeconds?: Record<string, number>;
+  /** 劃線與筆記 */
+  highlights?: BookHighlight[];
+}
+
+export interface BookHighlight {
+  id: string;
+  chapterId: string;
+  /** 建立時的章節位置（章節 id 找不到時用） */
+  chapterIndex: number;
+  /** 章內字元位置 [start, end) */
+  start: number;
+  end: number;
+  text: string;
+  note?: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export type ReaderBackground = "sepia" | "white" | "night" | "green";

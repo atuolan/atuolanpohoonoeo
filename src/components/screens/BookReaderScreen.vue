@@ -5,18 +5,32 @@ import { useBooksStore } from "@/stores/books";
 import { useCharactersStore } from "@/stores/characters";
 import { useLorebooksStore } from "@/stores/lorebooks";
 import { useUserStore } from "@/stores/user";
-import type { ReaderBackground, ReaderPrefs, StoredBook } from "@/types/book";
+import type { BookHighlight, ReaderBackground, ReaderPrefs, StoredBook } from "@/types/book";
 import {
   addDailySeconds,
+  addHighlight,
   bookPercent,
   dateKey,
   offsetForPage,
   pageForOffset,
+  paragraphSegments,
   remainingMinutes,
   splitParagraphs,
   type PageProbe,
 } from "@/utils/bookReading";
-import { ArrowLeft, List, Minus, Plus, Users, X } from "lucide-vue-next";
+import {
+  ArrowLeft,
+  Copy,
+  Highlighter,
+  List,
+  MessageCircle,
+  Minus,
+  NotebookPen,
+  Plus,
+  Trash2,
+  Users,
+  X,
+} from "lucide-vue-next";
 import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch } from "vue";
 
 const props = defineProps<{
@@ -255,6 +269,8 @@ let swipeStartY = 0;
 let swipeDeltaX = 0;
 let isSwiping = false;
 let suppressClick = false;
+/** 這次手勢是在拖選取範圍的把手，不要當成翻頁 */
+let isAdjustingSelection = false;
 
 function onTouchStart(e: TouchEvent) {
   const touch = e.touches[0];
@@ -262,9 +278,11 @@ function onTouchStart(e: TouchEvent) {
   swipeStartY = touch.clientY;
   swipeDeltaX = 0;
   isSwiping = false;
+  isAdjustingSelection = !!selection.value || window.getSelection()?.isCollapsed === false;
 }
 
 function onTouchMove(e: TouchEvent) {
+  if (isAdjustingSelection) return;
   const touch = e.touches[0];
   const dx = touch.clientX - swipeStartX;
   const dy = touch.clientY - swipeStartY;
@@ -318,20 +336,22 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 // ===== 抽屜 =====
-type SheetKind = "toc" | "settings" | "companion" | "picker";
+type SheetKind = "toc" | "settings" | "companion" | "picker" | "highlight";
 const sheet = ref<SheetKind | null>(null);
 const tocListEl = ref<HTMLElement | null>(null);
+const tocTab = ref<"chapters" | "notes">("chapters");
 
 const SHEET_LABELS: Record<SheetKind, string> = {
-  toc: "目錄",
+  toc: "目錄與筆記",
   settings: "排版設定",
   companion: "伴讀聊天",
   picker: "選擇伴讀角色",
+  highlight: "劃線與筆記",
 };
 
 function openSheet(kind: SheetKind) {
   sheet.value = kind;
-  if (kind === "toc") {
+  if (kind === "toc" && tocTab.value === "chapters") {
     nextTick(() => {
       tocListEl.value
         ?.querySelector<HTMLElement>(".rd-toc-item.active")
@@ -342,6 +362,16 @@ function openSheet(kind: SheetKind) {
 
 function closeSheet() {
   sheet.value = null;
+  companionDraft.value = "";
+}
+
+// ===== 小提示 =====
+const toast = ref("");
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+function showToast(message: string) {
+  toast.value = message;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (toast.value = ""), 1600);
 }
 
 // ===== 伴讀 =====
@@ -407,6 +437,190 @@ watch(sheet, (kind) => {
   if (companion.isActive.value) companion.setPanelExpanded(kind === "companion");
 });
 
+/** 從劃線「問角色」時預先放進輸入框的引文 */
+const companionDraft = ref("");
+
+function askCompanionAbout(text: string) {
+  const quote = text.length > 120 ? `${text.slice(0, 120)}…` : text;
+  companionDraft.value = `「${quote}」`;
+  openCompanion();
+}
+
+// ===== 劃線與筆記 =====
+const highlights = computed(() => booksStore.progressByBook[props.book.id]?.highlights ?? []);
+const chapterHighlights = computed(() => {
+  const id = currentChapter.value?.id;
+  return highlights.value.filter((h) => h.chapterId === id);
+});
+const segmentsByPara = computed(() =>
+  paragraphs.value.map((p) => paragraphSegments(p.start, p.length, chapterHighlights.value)),
+);
+const notedIds = computed(
+  () => new Set(chapterHighlights.value.filter((h) => h.note?.trim()).map((h) => h.id)),
+);
+
+function chapterIndexOf(h: BookHighlight): number {
+  const i = props.book.chapters.findIndex((c) => c.id === h.chapterId);
+  return i >= 0 ? i : Math.min(h.chapterIndex, lastChapterIndex.value);
+}
+
+/** 筆記列表：依章節、位置排序 */
+const sortedHighlights = computed(() =>
+  highlights.value
+    .map((h) => ({ h, chapter: chapterIndexOf(h) }))
+    .sort((a, b) => a.chapter - b.chapter || a.h.start - b.h.start),
+);
+
+interface SelectionInfo {
+  start: number;
+  end: number;
+  text: string;
+}
+const selection = ref<SelectionInfo | null>(null);
+
+/** 選取端點換算成章內字元位置；不在段落裡回傳 null */
+function chapterOffsetAt(node: Node, offset: number): number | null {
+  const host = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+  const el = host?.closest<HTMLElement>(".rd-para");
+  if (!el || !contentEl.value?.contains(el)) return null;
+  const para = paragraphs.value[Number(el.dataset.i)];
+  if (!para) return null;
+  const range = document.createRange();
+  range.setStart(el, 0);
+  range.setEnd(node, offset);
+  return para.start + Math.min(range.toString().length, para.length);
+}
+
+function readSelection() {
+  const sel = window.getSelection();
+  const chapter = currentChapter.value;
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !contentEl.value || !chapter) {
+    selection.value = null;
+    return;
+  }
+  const range = sel.getRangeAt(0);
+  if (!contentEl.value.contains(range.commonAncestorContainer)) {
+    selection.value = null;
+    return;
+  }
+  // 從章名開始選時，起點算第一段開頭
+  const start = chapterOffsetAt(range.startContainer, range.startOffset) ?? paragraphs.value[0]?.start;
+  const end = chapterOffsetAt(range.endContainer, range.endOffset);
+  if (start === undefined || end === null || end <= start) {
+    selection.value = null;
+    return;
+  }
+  const text = chapter.content.slice(start, end).trim();
+  selection.value = text ? { start, end, text } : null;
+}
+
+let selectionFrame = 0;
+function onSelectionChange() {
+  cancelAnimationFrame(selectionFrame);
+  selectionFrame = requestAnimationFrame(readSelection);
+}
+
+function clearSelection() {
+  window.getSelection()?.removeAllRanges();
+  selection.value = null;
+}
+
+/** 把目前選取存成劃線，回傳（可能和舊劃線合併後的）劃線 id */
+async function saveSelectionAsHighlight(): Promise<string | null> {
+  const sel = selection.value;
+  const chapter = currentChapter.value;
+  if (!sel || !chapter) return null;
+  const now = Date.now();
+  const incoming: BookHighlight = {
+    id: crypto.randomUUID(),
+    chapterId: chapter.id,
+    chapterIndex: chapterIndex.value,
+    start: sel.start,
+    end: sel.end,
+    text: sel.text,
+    createdAt: now,
+    updatedAt: now,
+  };
+  let resultId = incoming.id;
+  clearSelection();
+  await booksStore.patchProgress(props.book.id, (current) => {
+    const next = addHighlight(current?.highlights ?? [], incoming, (s, e) =>
+      chapter.content.slice(s, e).trim(),
+    );
+    resultId =
+      next.find((h) => h.chapterId === chapter.id && h.start <= sel.start && h.end >= sel.end)?.id ??
+      incoming.id;
+    return { highlights: next };
+  });
+  return resultId;
+}
+
+async function actHighlight() {
+  if (await saveSelectionAsHighlight()) showToast("已劃線");
+}
+
+async function actNote() {
+  const id = await saveSelectionAsHighlight();
+  if (id) openHighlight(id);
+}
+
+function actAsk() {
+  const text = selection.value?.text;
+  clearSelection();
+  if (text) askCompanionAbout(text);
+}
+
+async function actCopy() {
+  const text = selection.value?.text;
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("已複製");
+  } catch {
+    showToast("這個瀏覽器不讓複製");
+  }
+  clearSelection();
+}
+
+// 點劃線打開它的筆記
+const activeHighlightId = ref<string | null>(null);
+const activeHighlight = computed(() =>
+  highlights.value.find((h) => h.id === activeHighlightId.value),
+);
+const noteDraft = ref("");
+
+function openHighlight(id: string) {
+  activeHighlightId.value = id;
+  noteDraft.value = highlights.value.find((h) => h.id === id)?.note ?? "";
+  openSheet("highlight");
+}
+
+async function saveNote() {
+  const id = activeHighlightId.value;
+  const note = noteDraft.value.trim();
+  closeSheet();
+  await booksStore.patchProgress(props.book.id, (current) => ({
+    highlights: (current?.highlights ?? []).map((h) =>
+      h.id === id ? { ...h, note: note || undefined, updatedAt: Date.now() } : h,
+    ),
+  }));
+  showToast(note ? "筆記已儲存" : "已儲存");
+}
+
+async function deleteActiveHighlight() {
+  const id = activeHighlightId.value;
+  closeSheet();
+  await booksStore.patchProgress(props.book.id, (current) => ({
+    highlights: (current?.highlights ?? []).filter((h) => h.id !== id),
+  }));
+  showToast("已刪除劃線");
+}
+
+function jumpToHighlight(h: BookHighlight) {
+  closeSheet();
+  run(() => openChapter(chapterIndexOf(h), { offset: h.start }));
+}
+
 // ===== 閱讀時數 =====
 // 畫面看得到、而且最近 3 分鐘內有翻頁或碰螢幕才算在讀，避免開著書走開也一直計時
 const ACTIVE_WINDOW_MS = 3 * 60_000;
@@ -450,6 +664,7 @@ onMounted(async () => {
   window.addEventListener("pointerdown", markActive, { passive: true });
   window.addEventListener("keydown", markActive);
   document.addEventListener("visibilitychange", handleVisibilityChange);
+  document.addEventListener("selectionchange", onSelectionChange);
   tickTimer = setInterval(tickReadingTime, TICK_MS);
 
   await Promise.all([
@@ -495,6 +710,9 @@ onUnmounted(() => {
   window.removeEventListener("pointerdown", markActive);
   window.removeEventListener("keydown", markActive);
   document.removeEventListener("visibilitychange", handleVisibilityChange);
+  document.removeEventListener("selectionchange", onSelectionChange);
+  cancelAnimationFrame(selectionFrame);
+  if (toastTimer) clearTimeout(toastTimer);
   if (tickTimer) clearInterval(tickTimer);
   flushReadingTime();
   if (isReady.value) saveNow();
@@ -551,11 +769,13 @@ watch(
         }"
       >
         <h2 class="rd-chapter-heading">{{ currentChapter?.title }}</h2>
+        <!-- 段落內不能有空白文字節點，否則選取換算的字元位置會偏掉 -->
         <p
           v-for="(para, i) in paragraphs"
           :key="`${chapterIndex}-${i}`"
           class="rd-para"
-        >{{ para.text }}<span class="rd-end" /></p>
+          :data-i="i"
+        ><template v-for="seg in segmentsByPara[i]" :key="seg.from"><mark v-if="seg.highlightId" class="rd-hl" :class="{ noted: notedIds.has(seg.highlightId) }" @click.stop="openHighlight(seg.highlightId)">{{ para.text.slice(seg.from, seg.to) }}</mark><template v-else>{{ para.text.slice(seg.from, seg.to) }}</template></template><span class="rd-end" /></p>
       </div>
     </div>
 
@@ -567,7 +787,22 @@ watch(
         </div>
         <span>{{ page + 1 }} / {{ totalPages }}</span>
       </div>
-      <button class="rd-ai-bar" @click="openCompanion">
+      <!-- 選取文字時，底部膠囊換成選取動作（不跟手機原生的選取選單搶位置） -->
+      <div v-if="selection && !sheet" class="rd-select-bar" role="toolbar" aria-label="選取的文字">
+        <button @mousedown.prevent @click="actHighlight">
+          <Highlighter :size="18" /><span>劃線</span>
+        </button>
+        <button @mousedown.prevent @click="actNote">
+          <NotebookPen :size="18" /><span>筆記</span>
+        </button>
+        <button @mousedown.prevent @click="actAsk">
+          <MessageCircle :size="18" /><span>問角色</span>
+        </button>
+        <button @mousedown.prevent @click="actCopy">
+          <Copy :size="18" /><span>複製</span>
+        </button>
+      </div>
+      <button v-else class="rd-ai-bar" @click="openCompanion">
         <span
           class="rd-ai-avatar"
           :class="{ thinking: companion.isGenerating.value }"
@@ -598,13 +833,44 @@ watch(
         <!-- 目錄 -->
         <template v-if="sheet === 'toc'">
           <div class="rd-sheet-head">
-            <h3>目錄</h3>
-            <span class="rd-sheet-meta">共 {{ book.chapters.length }} 章</span>
+            <div class="rd-tabs" role="tablist">
+              <button
+                role="tab"
+                :aria-selected="tocTab === 'chapters'"
+                :class="{ active: tocTab === 'chapters' }"
+                @click="tocTab = 'chapters'"
+              >
+                目錄<span>{{ book.chapters.length }}</span>
+              </button>
+              <button
+                role="tab"
+                :aria-selected="tocTab === 'notes'"
+                :class="{ active: tocTab === 'notes' }"
+                @click="tocTab = 'notes'"
+              >
+                筆記<span>{{ highlights.length }}</span>
+              </button>
+            </div>
             <button class="rd-icon-btn" aria-label="關閉" @click="closeSheet">
               <X :size="20" />
             </button>
           </div>
-          <div ref="tocListEl" class="rd-toc">
+          <div v-if="tocTab === 'notes'" class="rd-toc">
+            <p v-if="sortedHighlights.length === 0" class="rd-picker-empty">
+              選一段文字就能劃線或寫筆記
+            </p>
+            <button
+              v-for="{ h, chapter } in sortedHighlights"
+              :key="h.id"
+              class="rd-note-item"
+              @click="jumpToHighlight(h)"
+            >
+              <span class="rd-note-chapter">{{ book.chapters[chapter]?.title }}</span>
+              <span class="rd-note-quote">{{ h.text }}</span>
+              <span v-if="h.note" class="rd-note-text">{{ h.note }}</span>
+            </button>
+          </div>
+          <div v-else ref="tocListEl" class="rd-toc">
             <button
               v-for="(ch, i) in book.chapters"
               :key="ch.id"
@@ -707,6 +973,7 @@ watch(
           :messages="companion.messages.value"
           :is-generating="companion.isGenerating.value"
           :trigger-frequency="companion.triggerFrequency.value"
+          :draft="companionDraft"
           @close="closeSheet"
           @stop="stopCompanion"
           @send="companion.sendMessage"
@@ -743,7 +1010,41 @@ watch(
             </button>
           </div>
         </template>
+
+        <!-- 劃線與筆記 -->
+        <template v-else-if="sheet === 'highlight' && activeHighlight">
+          <div class="rd-sheet-head">
+            <h3>劃線</h3>
+            <button class="rd-icon-btn" aria-label="關閉" @click="closeSheet">
+              <X :size="20" />
+            </button>
+          </div>
+          <div class="rd-hl-sheet">
+            <blockquote class="rd-hl-quote">{{ activeHighlight.text }}</blockquote>
+            <label for="rd-note-field" class="rd-setting-label">筆記</label>
+            <textarea
+              id="rd-note-field"
+              v-model="noteDraft"
+              class="rd-note-field"
+              rows="4"
+              placeholder="寫下你的想法…"
+            />
+            <div class="rd-hl-actions">
+              <button class="rd-ghost-btn danger" @click="deleteActiveHighlight">
+                <Trash2 :size="16" />刪除劃線
+              </button>
+              <button class="rd-ghost-btn" @click="askCompanionAbout(activeHighlight.text)">
+                <MessageCircle :size="16" />問角色
+              </button>
+              <button class="rd-solid-btn" @click="saveNote">儲存</button>
+            </div>
+          </div>
+        </template>
       </section>
+    </Transition>
+
+    <Transition name="rd-fade">
+      <div v-if="toast" class="rd-toast" role="status">{{ toast }}</div>
     </Transition>
   </div>
 </template>
@@ -1390,5 +1691,229 @@ button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+// ===== 劃線 =====
+.rd-hl {
+  color: inherit;
+  background: linear-gradient(
+    transparent 55%,
+    color-mix(in srgb, var(--rd-accent) 45%, transparent) 55%
+  );
+  border-radius: 2px;
+  cursor: pointer;
+
+  // 有筆記的劃線在開頭左上標一個點；絕對定位，不佔寬度、不影響分頁
+  &.noted {
+    position: relative;
+  }
+
+  &.noted::after {
+    content: "";
+    position: absolute;
+    left: -0.2em;
+    top: -0.05em;
+    width: 0.32em;
+    height: 0.32em;
+    border-radius: 50%;
+    background: var(--rd-accent);
+    pointer-events: none;
+  }
+}
+
+.rd-select-bar {
+  display: flex;
+  align-items: center;
+  height: 56px;
+  padding: 0 6px;
+  border-radius: 28px;
+  background: var(--rd-pill-bg);
+  color: var(--rd-pill-text);
+  box-shadow: 0 10px 24px color-mix(in srgb, #000 16%, transparent);
+
+  button {
+    flex: 1;
+    height: 48px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    border: none;
+    border-radius: 24px;
+    background: transparent;
+    color: inherit;
+    font-size: 11px;
+    cursor: pointer;
+
+    &:hover {
+      background: color-mix(in srgb, var(--rd-pill-text) 12%, transparent);
+    }
+  }
+}
+
+.rd-tabs {
+  flex: 1;
+  display: flex;
+  gap: 4px;
+
+  button {
+    height: 40px;
+    padding: 0 14px;
+    border: none;
+    border-radius: 20px;
+    background: transparent;
+    color: var(--rd-sub);
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+
+    span {
+      margin-left: 6px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    &.active {
+      background: var(--rd-raise);
+      color: var(--rd-text);
+    }
+  }
+}
+
+.rd-sheet-head .rd-tabs {
+  margin-left: -12px;
+}
+
+.rd-note-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-bottom: 1px solid var(--rd-line);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--rd-raise);
+  }
+}
+
+.rd-note-chapter {
+  font-size: 12px;
+  color: var(--rd-sub);
+}
+
+.rd-note-quote {
+  padding-left: 10px;
+  border-left: 3px solid var(--rd-accent);
+  font-family: "Noto Serif TC", serif;
+  font-size: 15px;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.rd-note-text {
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.rd-hl-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 20px 4px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.rd-hl-quote {
+  margin: 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--rd-accent);
+  font-family: "Noto Serif TC", serif;
+  font-size: 16px;
+  line-height: 1.7;
+  max-height: 9em;
+  overflow-y: auto;
+}
+
+.rd-note-field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid var(--rd-line);
+  border-radius: 16px;
+  background: var(--rd-bg);
+  color: var(--rd-text);
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+
+  &:focus {
+    border-color: var(--rd-accent);
+  }
+}
+
+.rd-hl-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rd-ghost-btn,
+.rd-solid-btn {
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px;
+  border-radius: 22px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.rd-ghost-btn {
+  border: 1px solid var(--rd-line);
+  background: transparent;
+  color: var(--rd-text);
+
+  &.danger {
+    color: var(--color-error, #e53e3e);
+  }
+}
+
+.rd-solid-btn {
+  margin-left: auto;
+  border: none;
+  background: var(--rd-accent);
+  color: var(--rd-on-accent);
+  font-weight: 700;
+}
+
+.rd-toast {
+  // 放在頂欄下方：抽屜最高只到這裡，不會被蓋住也不會擋到抽屜內容
+  position: absolute;
+  left: 50%;
+  top: calc(60px + var(--safe-top, 0px));
+  transform: translateX(-50%);
+  z-index: 30;
+  padding: 10px 18px;
+  border-radius: 20px;
+  background: var(--rd-pill-bg);
+  color: var(--rd-pill-text);
+  font-size: 14px;
+  pointer-events: none;
 }
 </style>
