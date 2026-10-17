@@ -895,14 +895,15 @@ async function handleAnnouncementAck(id: string) {
   await acknowledgeAnnouncement(id);
   currentAnnouncementIndex.value += 1;
 }
-// 線上／面對面提示詞重大更新：舊設定用戶必須完成重置（彈窗無法關閉），一次一個，線上先
-const pendingPromptResets = ref<Array<"online" | "faceToFace">>([]);
+// 線上／群聊／面對面提示詞重大更新：舊設定用戶必須完成重置（彈窗無法關閉），一次一個
+const pendingPromptResets = ref<Array<"online" | "groupChat" | "faceToFace">>([]);
 async function checkPromptResets() {
   try {
     const promptManagerStore = usePromptManagerStore();
     await promptManagerStore.loadConfig();
     pendingPromptResets.value = [
       ...(promptManagerStore.needsOnlinePromptReset ? (["online"] as const) : []),
+      ...(promptManagerStore.needsGroupChatPromptReset ? (["groupChat"] as const) : []),
       ...(promptManagerStore.needsFaceToFacePromptReset ? (["faceToFace"] as const) : []),
     ];
   } catch (error) {

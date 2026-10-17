@@ -238,6 +238,8 @@ export interface PromptManagerConfig {
   faceToFacePromptResetVersion?: number;
   /** 已套用的線上模式提示詞強制重置版本（低於 ONLINE_PROMPT_RESET_VERSION 時需引導重置） */
   onlinePromptResetVersion?: number;
+  /** 已套用的群聊模式提示詞強制重置版本（低於 GROUP_CHAT_PROMPT_RESET_VERSION 時需引導重置） */
+  groupChatPromptResetVersion?: number;
   /** 面對面設定面板配置（只存結構，以 identifier 引用條目） */
   faceToFacePanelLayout?: F2FPanelLayout;
   /** 群聊模式提示詞定義 */

@@ -2081,8 +2081,9 @@ export class PromptBuilder {
           sections.push(this.formatWeatherBlock(`${charName} 所在地天氣`, this.options.charWeatherInfo));
         }
         // 角色無所在地時，提示 AI 推測並輸出 char-location 標籤。
-        // 電話模式嚴格要求 JSON 陣列輸出，不能混入 </content> 或 <char-location> 類標籤指令。
-        if (!isPhoneCallWeather) {
+        // 電話模式嚴格要求 JSON 陣列輸出，不能混入 </content> 或 <char-location> 類標籤指令；
+        // 群聊（含多人卡）不處理 char-location 標籤，也不給這段說明。
+        if (!isPhoneCallWeather && !this.options.groupChatMode) {
           if (!hasCharLocation) {
             sections.push(
               `[${charName} 所在地未知]\n` +
@@ -2102,6 +2103,7 @@ export class PromptBuilder {
             );
           }
         }
+        if (sections.length === 0) return null;
         const weatherContent = sections.join("\n\n");
         if (promptDef?.content) {
           const content = await this.macroEngine.substitute(
