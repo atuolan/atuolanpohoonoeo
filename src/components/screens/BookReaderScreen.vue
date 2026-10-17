@@ -9,6 +9,7 @@ import CompanionChatPanel from "@/components/common/CompanionChatPanel.vue";
 import { companionStreamOwnerPrefix, useCompanionChat } from "@/composables/useCompanionChat";
 import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import { anchorAt, useReadingCircle, type CircleAnchor } from "@/composables/useReadingCircle";
+import { AIStoppedError } from "@/services/BookAIService";
 import { notedParagraphs, paraKey } from "@/services/bookCircle";
 import { useBooksStore } from "@/stores/books";
 import { useCharactersStore } from "@/stores/characters";
@@ -981,6 +982,13 @@ async function runAutoSummary(
     await runSummary(from, to, true, opts.maxCalls ?? AUTO_SUMMARY_MAX_CALLS);
     showToast(opts.doneText ?? "已總結到這裡");
   } catch (e) {
+    // 在串流視窗按了停止：不算失敗，這輪也不馬上重來，從頭數頁
+    if (e instanceof AIStoppedError) {
+      pagesSinceSummary.value = 0;
+      await booksStore.patchProgress(props.book.id, { pagesSinceSummary: 0 });
+      showToast("已停止這次自動摘要");
+      return;
+    }
     // 計數不歸零，下次翻頁再試
     const next = failures + 1;
     await booksStore.patchProgress(props.book.id, { autoSummaryFailures: next });
@@ -1836,6 +1844,7 @@ watch(
           :trigger-frequency="companion.triggerFrequency.value"
           :draft="companionDraft"
           :error="companion.errorMessage.value"
+          :streamable="companion.streamInWindow.value"
           @close="closeSheet"
           @stop="stopCompanion"
           @add="companion.addUserMessage"

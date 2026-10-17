@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ref } from "vue";
 
 /** 每次 generateStream 都回一個等外面放行的串流 */
-const { streams } = vi.hoisted(() => ({
+const { streams, generation } = vi.hoisted(() => ({
   streams: [] as Array<{ resolve: (text: string) => void; reject: (e: Error) => void }>,
+  generation: {} as { streamingEnabled?: boolean; useStreamingWindow?: boolean },
 }));
 
 vi.mock("@/db/database", () => ({
@@ -23,7 +24,7 @@ vi.mock("@/stores/lorebooks", () => ({ useLorebooksStore: () => ({ lorebooks: []
 vi.mock("@/stores/user", () => ({ useUserStore: () => ({ currentName: "我", currentPersona: null }) }));
 vi.mock("@/stores/settings", () => ({
   useSettingsStore: () => ({
-    getAPIForTask: () => ({ api: { endpoint: "http://x", apiKey: "k", model: "m" }, generation: {} }),
+    getAPIForTask: () => ({ api: { endpoint: "http://x", apiKey: "k", model: "m" }, generation: { ...generation } }),
   }),
 }));
 vi.mock("@/engine/prompt/PromptBuilder", () => ({
@@ -35,8 +36,12 @@ vi.mock("@/engine/prompt/PromptBuilder", () => ({
 }));
 vi.mock("@/api/OpenAICompatible", () => ({
   OpenAICompatibleClient: class {
-    async *generateStream() {
-      const text = await new Promise<string>((resolve, reject) => streams.push({ resolve, reject }));
+    async *generateStream(params: { signal?: AbortSignal }) {
+      const text = await new Promise<string>((resolve, reject) => {
+        streams.push({ resolve, reject });
+        // 跟真的 client 一樣：被中止時帶著半截內容正常結束
+        params.signal?.addEventListener("abort", () => resolve("半截"));
+      });
       yield { type: "token", token: text };
       yield { type: "done", content: text };
     }
@@ -44,6 +49,7 @@ vi.mock("@/api/OpenAICompatible", () => ({
 }));
 
 import { useCompanionChat } from "@/composables/useCompanionChat";
+import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import type { StoredBook } from "@/types/book";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -143,6 +149,37 @@ describe("伴讀：生成中翻頁", () => {
     streams[0].resolve("回覆");
     for (let i = 0; i < 10; i++) await flush();
     expect(c.messages.value.map((m) => m.role)).toEqual(["user", "user", "assistant"]);
+  });
+
+  it("在串流視窗按停止：寫到哪留到哪，但生成中翻夠的頁不接著補講", async () => {
+    generation.streamingEnabled = true;
+    generation.useStreamingWindow = true;
+    try {
+      const { c, turn } = setup();
+      turn(3);
+      await waitForStreams(1);
+      expect(c.streamInWindow.value).toBe(true);
+      turn(3);
+      useStreamingWindow().emit("stop");
+      for (let i = 0; i < 10; i++) await flush();
+      expect(streams).toHaveLength(1);
+      expect(c.messages.value.map((m) => m.content)).toEqual(["半截"]);
+      expect(c.pageTurnCounter.value).toBe(3);
+    } finally {
+      delete generation.streamingEnabled;
+      delete generation.useStreamingWindow;
+      useStreamingWindow().reset();
+    }
+  });
+
+  it("設定關掉串流視窗時不寫進視窗", async () => {
+    const { c, turn } = setup();
+    turn(3);
+    await waitForStreams(1);
+    expect(c.streamInWindow.value).toBe(false);
+    expect(useStreamingWindow().windowState.value).toBe("hidden");
+    expect(c.openStream()).toBe(false);
+    streams[0].resolve("回覆");
   });
 
   it("自己問的問題回完後，生成中翻夠的頁也會接著講", async () => {

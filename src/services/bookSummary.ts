@@ -281,7 +281,7 @@ export async function summarizeRange(input: {
     const text = textBetween(input.chapters, part.from, part.to);
     const reply = await askAI(
       buildSummaryPrompt({ bookTitle: input.bookTitle, author: input.author, text, previous }),
-      { task: "summary", temperature: 0.3 },
+      { task: "summary", temperature: 0.3, background: input.auto },
     );
     const parsed = parseSummary(reply);
     if (!parsed) throw new Error("AI 回的摘要格式不對");

@@ -4,6 +4,7 @@
  */
 
 import type { APIMessage } from "@/api/OpenAICompatible";
+import type { PromptDebugMessage } from "@/composables/useStreamingWindow";
 import type { BookChapter } from "@/types/book";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 
@@ -62,50 +63,114 @@ export function parseRecapLines(text: string): string[] {
     .slice(0, 3);
 }
 
+/** 使用者在串流視窗按了停止 */
+export class AIStoppedError extends Error {
+  constructor() {
+    super("已停止");
+    this.name = "AIStoppedError";
+  }
+}
+
+export interface AskAIOptions {
+  /** 用哪個任務的 API 設定（有設定備用 API 時會走備用） */
+  task?: "summary" | "chat";
+  temperature?: number;
+  /** 背景自己跑的（自動摘要、同步讀）：串流視窗正被別的生成用著就不搶，安靜地跑 */
+  background?: boolean;
+}
+
+let askSeq = 0;
+
+function toDebugMessage(m: APIMessage): PromptDebugMessage {
+  const content =
+    typeof m.content === "string"
+      ? m.content
+      : m.content.map((part) => (part.type === "text" ? part.text : "[圖片]")).join("\n");
+  return { role: m.role, content };
+}
+
 /**
- * 呼叫 AI 拿回一段文字（串流收完再回傳），去掉思考標籤
- * @param task 用哪個任務的 API 設定（有設定備用 API 時會走備用）
+ * 呼叫 AI 拿回一段文字（串流收完再回傳），去掉思考標籤。
+ * 設定裡開著串流視窗時，邊生成邊寫進視窗（縮小開著，點貼邊按鈕看），視窗的停止鍵可以中止
  */
-export async function askAI(
-  messages: APIMessage[],
-  options: { task?: "summary" | "chat"; temperature?: number } = {},
-): Promise<string> {
+export async function askAI(messages: APIMessage[], options: AskAIOptions = {}): Promise<string> {
   const { useSettingsStore } = await import("@/stores/settings");
   const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
+  const { useStreamingWindow } = await import("@/composables/useStreamingWindow");
   const taskConfig = useSettingsStore().getAPIForTask(options.task ?? "summary");
   if (!taskConfig.api.endpoint || !taskConfig.api.apiKey || !taskConfig.api.model) {
     throw new Error("請先在設定中配置 API");
   }
 
-  const client = new OpenAICompatibleClient({ ...taskConfig.api });
-  const stream = client.generateStream({
-    messages,
-    settings: {
-      maxContextLength: taskConfig.generation.maxContextLength || 200000,
-      maxResponseLength: taskConfig.generation.maxTokens || 8192,
-      temperature: options.temperature ?? 0.7,
-      topP: 0.9,
-      frequencyPenalty: 0,
-      presencePenalty: 0,
-      repetitionPenalty: 1,
-      stopSequences: [],
-      streaming: true,
-      useStreamingWindow: false,
-      ...pickGenerationToggles(taskConfig.generation),
-    },
-    apiSettings: taskConfig.api,
-    adjustLastMessageRole: true,
-  });
-
-  let content = "";
-  for await (const event of stream) {
-    if (event.type === "token" && event.token) content += event.token;
-    else if (event.type === "done") content = event.content || content;
-    else if (event.type === "error") throw new Error(String(event.error || "AI 沒有回應"));
+  const generation = taskConfig.generation;
+  const streamingWindow = useStreamingWindow();
+  const useWindow =
+    !!generation.streamingEnabled &&
+    !!generation.useStreamingWindow &&
+    !(options.background && streamingWindow.isStreaming.value);
+  const ownerId = `book:${Date.now()}:${++askSeq}`;
+  const abort = new AbortController();
+  let unbindAbort: (() => void) | null = null;
+  if (useWindow) {
+    // 使用者正開著視窗看（例如分段摘要一段接一段）就保持展開
+    streamingWindow.show(taskConfig.api.model || "AI", !streamingWindow.isVisible.value, ownerId);
+    streamingWindow.setPromptContent(messages.map(toDebugMessage), ownerId);
+    unbindAbort = streamingWindow.bindAbortController(abort);
   }
-  content = content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-  if (!content) throw new Error("AI 沒有回應");
-  return content;
+
+  try {
+    const client = new OpenAICompatibleClient({ ...taskConfig.api });
+    const stream = client.generateStream({
+      messages,
+      settings: {
+        maxContextLength: generation.maxContextLength || 200000,
+        maxResponseLength: generation.maxTokens || 8192,
+        temperature: options.temperature ?? 0.7,
+        topP: 0.9,
+        frequencyPenalty: 0,
+        presencePenalty: 0,
+        repetitionPenalty: 1,
+        stopSequences: [],
+        streaming: true,
+        useStreamingWindow: false,
+        ...pickGenerationToggles(generation),
+      },
+      apiSettings: taskConfig.api,
+      adjustLastMessageRole: true,
+      signal: abort.signal,
+    });
+
+    let content = "";
+    for await (const event of stream) {
+      if (event.type === "token" && event.token) {
+        content += event.token;
+        if (useWindow) streamingWindow.appendToken(event.token, ownerId);
+      } else if (event.type === "done") {
+        content = event.content || content;
+        if (useWindow && event.usage) streamingWindow.setUsage(event.usage, ownerId);
+        if (useWindow && event.diagnostics) streamingWindow.setDiagnostics(event.diagnostics, ownerId);
+      } else if (event.type === "error") {
+        if (useWindow && event.diagnostics) streamingWindow.setDiagnostics(event.diagnostics, ownerId);
+        throw new Error(String(event.error || "AI 沒有回應"));
+      }
+    }
+    // 停止時串流會帶著半截內容正常結束，不能當成完整的回覆
+    if (abort.signal.aborted) throw new AIStoppedError();
+    content = content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+    if (!content) throw new Error("AI 沒有回應");
+    if (useWindow) streamingWindow.setComplete(ownerId);
+    return content;
+  } catch (e) {
+    if (abort.signal.aborted) {
+      if (useWindow) streamingWindow.setComplete(ownerId);
+      throw e instanceof AIStoppedError ? e : new AIStoppedError();
+    }
+    if (useWindow) streamingWindow.setError(e instanceof Error ? e.message : String(e), ownerId);
+    throw e;
+  } finally {
+    unbindAbort?.();
+    if (useWindow) streamingWindow.releaseOwnership(ownerId);
+  }
 }
 
 /** 從模型輸出撈出 JSON（容許前後有說明文字或 ```json 圍欄） */

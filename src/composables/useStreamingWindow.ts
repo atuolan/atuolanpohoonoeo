@@ -581,22 +581,20 @@ export function useStreamingWindow() {
   /**
    * 將當前 streaming-window 的 stop 動作綁定到指定 AbortController
    * 綁定新 controller 時會自動清除上一個綁定
-   * @returns 解除綁定函數
+   * @returns 解除綁定函數：只解除自己這個綁定。視窗已經被別的生成接手、換了綁定時，
+   *          先結束的那一輪不能把後來那一輪的停止鍵一起拆掉
    */
   function bindAbortController(controller: AbortController): () => void {
     stopAbortCleanup?.();
     const unsubscribe = on("stop", () => {
       controller.abort();
     });
-    stopAbortCleanup = () => {
+    const cleanup = () => {
       unsubscribe();
-      if (stopAbortCleanup) {
-        stopAbortCleanup = null;
-      }
+      if (stopAbortCleanup === cleanup) stopAbortCleanup = null;
     };
-    return () => {
-      stopAbortCleanup?.();
-    };
+    stopAbortCleanup = cleanup;
+    return cleanup;
   }
 
   /**

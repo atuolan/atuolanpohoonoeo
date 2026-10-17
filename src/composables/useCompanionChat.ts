@@ -378,6 +378,8 @@ export interface UseCompanionChatReturn {
   accumulatedChapters: Ref<number[]>;
   messages: Ref<CompanionMessage[]>;
   isGenerating: Ref<boolean>;
+  /** 這輪生成有寫進串流視窗（設定裡關掉串流視窗就沒有） */
+  streamInWindow: Ref<boolean>;
   errorMessage: Ref<string>;
   isPanelExpanded: Ref<boolean>;
   hasUnread: Ref<boolean>;
@@ -416,6 +418,7 @@ export function useCompanionChat(
   const accumulatedChapters = ref<number[]>([]);
   const messages = ref<CompanionMessage[]>([]);
   const isGenerating = ref(false);
+  const streamInWindow = ref(false);
   /** 上一次叫角色回話失敗的原因（成功或重試時清空） */
   const errorMessage = ref("");
   const isPanelExpanded = ref(true);
@@ -512,14 +515,20 @@ export function useCompanionChat(
       syncFromCore();
     }
     let succeeded = false;
-    // 串流視窗：縮小開著，點打字泡泡才展開；閱讀器開著時貼邊按鈕不浮出來（見 coverOwner）
+    // 串流視窗（設定裡有開才用）：縮小開著，點打字泡泡才展開；閱讀器開著時貼邊按鈕不浮出來（見 coverOwner）
     const ownerId = `${companionStreamOwnerPrefix(options.book.value.id)}${Date.now()}`;
-    streamOwnerId = ownerId;
     const abort = new AbortController();
     const settingsStore = useSettingsStore();
     const chatTaskConfig = settingsStore.getAPIForTask("chat");
-    streamingWindow.show(chatTaskConfig.api.model, true, ownerId);
-    const unbindAbort = streamingWindow.bindAbortController(abort);
+    const useWindow = !!chatTaskConfig.generation.streamingEnabled && !!chatTaskConfig.generation.useStreamingWindow;
+    streamOwnerId = useWindow ? ownerId : null;
+    streamInWindow.value = useWindow;
+    let unbindAbort = () => {};
+    if (useWindow) {
+      // 正開著視窗在看（例如回完接著補講）就保持展開
+      streamingWindow.show(chatTaskConfig.api.model, !streamingWindow.isVisible.value, ownerId);
+      unbindAbort = streamingWindow.bindAbortController(abort);
+    }
     try {
       if (!chatTaskConfig.api.endpoint || !chatTaskConfig.api.apiKey || !chatTaskConfig.api.model) {
         throw new Error("請先在設定中配置 API");
@@ -581,6 +590,8 @@ export function useCompanionChat(
           fullContent = event.content || fullContent;
         }
       }
+      // 按了停止：串流帶著半截內容正常結束。寫到哪留到哪，但不接著補講
+      const stopped = abort.signal.aborted;
 
       fullContent = fullContent.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
       if (!fullContent) throw new Error("AI 沒有回應");
@@ -599,7 +610,7 @@ export function useCompanionChat(
       await saveState();
       streamingWindow.setComplete(ownerId);
       options.onReplied?.();
-      succeeded = true;
+      succeeded = !stopped;
     } catch (e: any) {
       if (abort.signal.aborted) {
         errorMessage.value = "已停止";
@@ -824,6 +835,7 @@ export function useCompanionChat(
     accumulatedChapters,
     messages,
     isGenerating,
+    streamInWindow,
     errorMessage,
     isPanelExpanded,
     hasUnread,

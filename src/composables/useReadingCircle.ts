@@ -184,7 +184,8 @@ export function useReadingCircle(options: {
       const existing = notesAt(anchor);
       const reply = await askAI(
         buildRepliesPrompt({ info: infoFor(anchor), paragraph: anchor.quote, members, existing, userName: userName.value, trigger }),
-        { task: "chat", temperature: 0.8 },
+        // 同步讀是翻頁時在背景寫的，不搶正在用的串流視窗
+        { task: "chat", temperature: 0.8, background: trigger.kind === "sync" },
       );
       const max = trigger.kind === "sync" ? 1 : 2;
       let parsed = parseCircleReplies(reply, members, existing.map((n) => n.id), max);
@@ -192,7 +193,7 @@ export function useReadingCircle(options: {
       if (parsed.length === 0) throw new Error("角色們沒有回應，再試一次");
       await saveReplies(anchor, parsed, parentId);
     });
-    await maybeRefreshSummary();
+    await maybeRefreshSummary(trigger.kind === "sync");
   }
 
   /** 你留一則邊註，角色接著回 */
@@ -241,7 +242,7 @@ export function useReadingCircle(options: {
     });
   }
 
-  async function refreshSummary() {
+  async function refreshSummary(background = false) {
     const c = circle.value;
     if (!c || c.notes.length === 0) return;
     await run(`${HOST_NAME} 正在整理…`, async () => {
@@ -253,7 +254,7 @@ export function useReadingCircle(options: {
           members,
           userName: userName.value,
         }),
-        { task: "summary", temperature: 0.3 },
+        { task: "summary", temperature: 0.3, background },
       );
       const parsed = parseCircleSummary(reply, [USER_ID, ...members.map((m) => m.id)]);
       if (!parsed) throw new Error("主持整理不出來，再試一次");
@@ -262,9 +263,9 @@ export function useReadingCircle(options: {
   }
 
   /** 新留言夠多才重算（不在背景偷打：只有在共讀圈有動作時才會走到這裡） */
-  async function maybeRefreshSummary() {
+  async function maybeRefreshSummary(background: boolean) {
     const c = circle.value;
-    if (c && shouldRefreshSummary(c)) await refreshSummary();
+    if (c && shouldRefreshSummary(c)) await refreshSummary(background);
   }
 
   /** 主持在這段開一個新串，挑 1–2 個角色接著回 */

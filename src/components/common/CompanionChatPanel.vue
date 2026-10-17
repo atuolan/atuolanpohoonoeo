@@ -19,6 +19,8 @@ interface Props {
   draft?: string;
   /** 上一次沒回應的原因 */
   error?: string;
+  /** 這輪有寫進串流視窗：打字泡泡可以點開看即時輸出 */
+  streamable?: boolean;
 }
 
 const props = defineProps<Props>();
@@ -202,10 +204,19 @@ onMounted(scrollToBottom);
           <img v-if="characterAvatar" :src="characterAvatar" alt="" />
           <span v-else>{{ avatarInitial }}</span>
         </span>
-        <button type="button" class="cc-bubble cc-typing" aria-label="正在輸入，點一下看即時輸出" @click="emit('open-stream')">
+        <button
+          v-if="streamable"
+          type="button"
+          class="cc-bubble cc-typing"
+          aria-label="正在輸入，點一下看即時輸出"
+          @click="emit('open-stream')"
+        >
           <span class="cc-dots" aria-hidden="true"><i /><i /><i /></span>
           <span class="cc-typing-hint">點我看即時輸出</span>
         </button>
+        <div v-else class="cc-bubble cc-typing is-static" role="status" aria-label="正在輸入">
+          <span class="cc-dots" aria-hidden="true"><i /><i /><i /></span>
+        </div>
       </div>
 
       <p v-if="error && !isGenerating" class="cc-error" role="alert">
@@ -503,6 +514,10 @@ onMounted(scrollToBottom);
   &:hover .cc-typing-hint {
     text-decoration: underline;
     text-underline-offset: 3px;
+  }
+
+  &.is-static {
+    cursor: default;
   }
 }
 

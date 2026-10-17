@@ -142,3 +142,23 @@ describe("useStreamingWindow 並發擁有權隔離", () => {
     expect(win.activeOwnerChatId.value).toBeNull();
   });
 });
+
+describe("useStreamingWindow 停止鍵綁定", () => {
+  beforeEach(() => {
+    useStreamingWindow().reset();
+  });
+
+  it("先結束的那一輪解除綁定時，不會把後來那一輪的停止鍵拆掉", () => {
+    const win = useStreamingWindow();
+    const first = new AbortController();
+    const second = new AbortController();
+    const unbindFirst = win.bindAbortController(first);
+    win.bindAbortController(second);
+
+    unbindFirst();
+    win.emit("stop");
+
+    expect(first.signal.aborted).toBe(false);
+    expect(second.signal.aborted).toBe(true);
+  });
+});
