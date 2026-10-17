@@ -14,6 +14,7 @@ import {
   resolvePreferredDirectChat,
 } from "@/storage/chatStorage";
 import { appendMessages } from "@/storage/chatMessageStorage";
+import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import type {
   BookChapter,
   CompanionChatState,
@@ -360,6 +361,13 @@ export interface UseCompanionChatOptions {
   getReadingWindow?: () => string;
   /** 目前位置之前最近幾則分段摘要（排版好的文字） */
   getReadingSummaries?: () => string;
+  /** 角色成功回完一次（閱讀器用來記下「已經聊到哪」） */
+  onReplied?: () => void;
+}
+
+/** 伴讀串流視窗擁有者 id 的前綴；閱讀器開著時用它標記「畫面上看得到」 */
+export function companionStreamOwnerPrefix(bookId: string): string {
+  return `companion:${bookId}:`;
 }
 
 export interface UseCompanionChatReturn {
@@ -384,6 +392,8 @@ export interface UseCompanionChatReturn {
   updateBubblePosition(x: number, y: number): void;
   sendMessage(content: string): Promise<void>;
   triggerAutoResponse(): Promise<void>;
+  /** 展開這次伴讀的串流視窗；串流已經不在視窗裡時回傳 false */
+  openStream(): boolean;
   syncToMainChat(): Promise<void>;
   saveState(): Promise<void>;
   restoreState(): Promise<void>;
@@ -408,6 +418,9 @@ export function useCompanionChat(
   const isPanelExpanded = ref(true);
   const hasUnread = ref(false);
   const bubblePosition = ref({ x: 20, y: 200 });
+  const streamingWindow = useStreamingWindow();
+  /** 最近一輪生成的串流視窗擁有者 */
+  let streamOwnerId: string | null = null;
 
   function syncFromCore() {
     isActive.value = core.isActive;
@@ -490,9 +503,21 @@ export function useCompanionChat(
 
     isGenerating.value = true;
     errorMessage.value = "";
+    if (autoTrigger) {
+      // 觸發的當下就重新計數：生成中翻的頁算進下一輪，回完再一次講完
+      core.resetAfterTrigger();
+      syncFromCore();
+    }
+    let succeeded = false;
+    // 串流視窗：縮小開著，點打字泡泡才展開；閱讀器開著時貼邊按鈕不浮出來（見 coverOwner）
+    const ownerId = `${companionStreamOwnerPrefix(options.book.value.id)}${Date.now()}`;
+    streamOwnerId = ownerId;
+    const abort = new AbortController();
+    const settingsStore = useSettingsStore();
+    const chatTaskConfig = settingsStore.getAPIForTask("chat");
+    streamingWindow.show(chatTaskConfig.api.model, true, ownerId);
+    const unbindAbort = streamingWindow.bindAbortController(abort);
     try {
-      const settingsStore = useSettingsStore();
-      const chatTaskConfig = settingsStore.getAPIForTask("chat");
       if (!chatTaskConfig.api.endpoint || !chatTaskConfig.api.apiKey || !chatTaskConfig.api.model) {
         throw new Error("請先在設定中配置 API");
       }
@@ -539,12 +564,14 @@ export function useCompanionChat(
         settings,
         apiSettings: chatTaskConfig.api,
         adjustLastMessageRole: true,
+        signal: abort.signal,
       });
 
       let fullContent = "";
       for await (const event of streamGen) {
         if (event.type === "token" && event.token) {
           fullContent += event.token;
+          streamingWindow.appendToken(event.token, ownerId);
         } else if (event.type === "error") {
           throw new Error(String(event.error || "AI 沒有回應"));
         } else if (event.type === "done") {
@@ -567,17 +594,34 @@ export function useCompanionChat(
 
       // 先存起來，離開閱讀器時再一次貼到正式聊天
       await saveState();
+      streamingWindow.setComplete(ownerId);
+      options.onReplied?.();
+      succeeded = true;
     } catch (e: any) {
-      console.error("[CompanionChat] 生成失敗:", e);
-      errorMessage.value = e?.message || "角色沒有回應";
-    } finally {
-      if (autoTrigger) {
-        // 不論成功與否都重新計數，失敗時不會每翻一頁就再打一次 API
-        core.resetAfterTrigger();
-        syncFromCore();
+      if (abort.signal.aborted) {
+        errorMessage.value = "已停止";
+        streamingWindow.setComplete(ownerId);
+      } else {
+        console.error("[CompanionChat] 生成失敗:", e);
+        errorMessage.value = e?.message || "角色沒有回應";
+        streamingWindow.setError(errorMessage.value, ownerId);
       }
+    } finally {
+      unbindAbort();
+      streamingWindow.releaseOwnership(ownerId);
       isGenerating.value = false;
     }
+    // 生成中又翻夠了頁：只再生成一次，把這段期間讀的一起講（失敗就不接著打，免得一直重試）
+    if (succeeded && core.isActive && core.pageTurnCounter >= core.triggerFrequency) {
+      await triggerAutoResponse();
+    }
+  }
+
+  /** 這次伴讀的串流還在視窗裡：展開視窗 */
+  function openStream(): boolean {
+    if (!streamOwnerId || !streamingWindow.isOwnedBy(streamOwnerId)) return false;
+    streamingWindow.restore();
+    return true;
   }
 
   /**
@@ -776,6 +820,7 @@ export function useCompanionChat(
     updateBubblePosition,
     sendMessage,
     triggerAutoResponse,
+    openStream,
     syncToMainChat,
     saveState,
     restoreState,
