@@ -12,7 +12,7 @@ import {
   readingStreak,
 } from "@/utils/bookReading";
 import { generateRecap } from "@/services/BookAIService";
-import { recapSource } from "@/services/bookSummary";
+import { recapSource, summariesBefore } from "@/services/bookSummary";
 import { ArrowLeft, BookOpen, ChevronDown, Plus, Trash2, User, X } from "lucide-vue-next";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
@@ -133,6 +133,14 @@ watch(
 const heroCompanionName = computed(
   () => heroCompanion.value?.nickname || heroCompanion.value?.data.name || "",
 );
+
+/** 讀到的位置之前最近一則摘要的標題（頁頂之後一點點也算，那是這頁上看得到的字） */
+const heroSummaryTitle = computed(() => {
+  const p = heroBook.value ? booksStore.progressByBook[heroBook.value.id] : undefined;
+  if (!p?.summaries?.length) return "";
+  const pos = { chapterIndex: p.chapterIndex, charOffset: (p.charOffset ?? 0) + 1500 };
+  return summariesBefore(p.summaries, pos, 1)[0]?.title ?? "";
+});
 
 // ===== 三句接上 =====
 const isRecapping = ref(false);
@@ -382,7 +390,7 @@ function handleSelectPersona(personaId: string) {
             </div>
           </div>
 
-          <div v-if="heroChapterTitle || heroCompanion" class="bs-hero-note">
+          <div v-if="heroChapterTitle || heroCompanion || heroSummaryTitle" class="bs-hero-note">
             <span class="bs-note-avatar" aria-hidden="true">
               <img v-if="heroCompanion?.avatar" :src="heroCompanion.avatar" alt="" />
               <template v-else-if="heroCompanion">{{ heroCompanionName.slice(0, 1) }}</template>
@@ -394,6 +402,7 @@ function handleSelectPersona(personaId: string) {
               </ol>
               <p v-else>
                 <template v-if="heroChapterTitle">上次停在「{{ heroChapterTitle }}」。</template>
+                <template v-if="heroSummaryTitle">剛讀完的是「{{ heroSummaryTitle }}」。</template>
                 <template v-if="heroCompanion">{{ heroCompanionName }} 還在陪你讀這本。</template>
                 <template v-if="!heroCompanion">要我用三句話幫你接上思路嗎？</template>
               </p>
