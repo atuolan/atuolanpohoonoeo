@@ -17,6 +17,8 @@ interface Props {
   triggerFrequency: number;
   /** 預先放進輸入框的文字（從劃線「問角色」帶過來的引文） */
   draft?: string;
+  /** 上一次沒回應的原因 */
+  error?: string;
 }
 
 const props = defineProps<Props>();
@@ -188,6 +190,10 @@ onMounted(scrollToBottom);
           <i /><i /><i />
         </div>
       </div>
+
+      <p v-if="error && !isGenerating" class="cc-error" role="alert">
+        {{ characterName }} 沒有回應：{{ error }}
+      </p>
     </div>
 
     <div class="cc-input">
@@ -495,6 +501,17 @@ onMounted(scrollToBottom);
     opacity: 1;
     transform: translateY(-3px);
   }
+}
+
+.cc-error {
+  margin: 10px auto 0;
+  padding: 8px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-error, #e53e3e) 12%, transparent);
+  color: var(--color-error, #e53e3e);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
 }
 
 // ===== 輸入 =====

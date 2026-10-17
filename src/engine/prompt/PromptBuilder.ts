@@ -52,6 +52,10 @@ import type {
 } from "@/types/promptManager";
 import { PHONE_CALL_BILINGUAL_REMINDER } from "@/data/defaultPrompts/phoneCall";
 import {
+  COMPANION_READING_PROMPT_DEFINITIONS,
+  DEFAULT_COMPANION_READING_PROMPT_ORDER,
+} from "@/data/defaultPrompts/companionReading";
+import {
   DEFAULT_GROUP_CHAT_PROMPT_ORDER,
   DEFAULT_PHONE_CALL_PROMPT_ORDER,
   DEFAULT_PROMPT_DEFINITIONS,
@@ -229,6 +233,13 @@ export interface PromptBuilderOptions {
     windSpeed?: number;
     windDir?: string;
     uv?: number;
+  };
+  /** 伴讀模式：角色陪使用者讀書（記憶沿用 summaries／importantEvents／recentChatHistory） */
+  companionReadingMode?: boolean;
+  /** 伴讀模式的書名與使用者讀到這裡為止的內文 */
+  companionReading?: {
+    bookTitle: string;
+    readingWindow: string;
   };
   /** 電話通話模式 */
   phoneCallMode?: boolean;
@@ -610,6 +621,8 @@ export class PromptBuilder {
         foodLogs: options.foodLogs || "",
         mediaLogs: options.mediaLogs || "",
         companionReadingLogs: options.companionReadingLogs || "",
+        readingBookTitle: options.companionReading?.bookTitle || "",
+        readingWindow: options.companionReading?.readingWindow || "（還沒開始讀）",
         ...phoneContextVars,
       },
     });
@@ -756,6 +769,8 @@ export class PromptBuilder {
         foodLogs: options.foodLogs || "",
         mediaLogs: options.mediaLogs || "",
         companionReadingLogs: options.companionReadingLogs || "",
+        readingBookTitle: options.companionReading?.bookTitle || "",
+        readingWindow: options.companionReading?.readingWindow || "（還沒開始讀）",
         ...phoneContextVars,
       },
     });
@@ -888,6 +903,11 @@ export class PromptBuilder {
    * 獲取有效的提示詞順序
    */
   private getEffectivePromptOrder(): PromptOrderEntry[] {
+    // 伴讀模式使用專屬提示詞順序
+    if (this.options.companionReadingMode) {
+      return [...DEFAULT_COMPANION_READING_PROMPT_ORDER];
+    }
+
     // 電話模式使用專屬提示詞順序
     if (this.options.phoneCallMode) {
       let baseOrder = [...DEFAULT_PHONE_CALL_PROMPT_ORDER];
@@ -1136,6 +1156,14 @@ export class PromptBuilder {
         isEditable: true,
         isDeletable: true,
       };
+    }
+
+    // 伴讀模式從伴讀提示詞定義中查找
+    if (this.options.companionReadingMode) {
+      const readingPrompt = COMPANION_READING_PROMPT_DEFINITIONS.find(
+        (p) => p.identifier === identifier,
+      );
+      if (readingPrompt) return readingPrompt;
     }
 
     // 電話模式優先從電話提示詞定義中查找（電話模式沒有用戶自定義配置）
@@ -3360,7 +3388,8 @@ speed：0.5~2.0，正常時省略
       messages.length === 0 &&
       character.data.first_mes &&
       !this.options.groupChatMode &&
-      !this.options.phoneCallMode
+      !this.options.phoneCallMode &&
+      !this.options.companionReadingMode
     ) {
       const firstMes = await this.macroEngine.substitute(
         character.data.first_mes,

@@ -4,6 +4,8 @@
  */
 
 import type { APIMessage } from "@/api/OpenAICompatible";
+import type { PromptBuilderOptions } from "@/engine/prompt/PromptBuilder";
+import type { Lorebook } from "@/types/worldinfo";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 import { useCharactersStore } from "@/stores/characters";
 import {
@@ -20,8 +22,7 @@ import type {
 } from "@/types/book";
 import type { Chat, ChatMessage } from "@/types/chat";
 import type { StoredCharacter } from "@/types/character";
-import { isWorldInfoEntryEnabled } from "@/utils/worldInfoEntryState";
-import { computed, ref, type ComputedRef, type Ref } from "vue";
+import { ref, type Ref } from "vue";
 
 // ===== 純函式：可獨立測試的核心邏輯 =====
 
@@ -186,77 +187,39 @@ export function buildSyncData(
 }
 
 /**
- * 構建伴讀聊天的 AI prompt
- * 純函式，不依賴 Vue reactivity
- *
- * @param character 角色資料
- * @param bookTitle 書名
- * @param readingContent 累積的閱讀內容
- * @param chatHistory 聊天歷史
- * @param userMessage 使用者手動輸入的訊息（undefined 表示自動觸發）
- * @param worldInfoText 世界書注入文字（角色綁定 + 全域世界書）
- * @param userName 使用者名稱（persona 名稱）
+ * 伴讀對話轉成 PromptBuilder 用的聊天訊息（最近 maxCount 則）
+ * 自動觸發時在最後補一句「翻了幾頁」的提示，讓角色主動開口
  */
-export function buildCompanionPrompt(
-  character: StoredCharacter,
-  bookTitle: string,
-  readingContent: string,
-  chatHistory: CompanionMessage[],
-  userMessage?: string,
-  worldInfoText?: string,
-  userName?: string,
-): APIMessage[] {
-  const displayUserName = userName || "用戶";
-  const systemPrompt = `你是 ${character.data.name}，正在和${displayUserName}一起閱讀《${bookTitle}》。
-${character.data.description || ""}
-${character.data.personality || ""}
-
-你的任務是作為伴讀夥伴，對${displayUserName}正在閱讀的內容發表評論、提出見解或與${displayUserName}討論。
-請保持角色性格，用自然的語氣交流。
-
-【回覆格式要求】
-你的回覆必須像線上聊天一樣，分成多段訊息，每段之間用換行分隔。
-- 總共 8 到 12 段
-- 每段最多 50 個字
-- 像在傳訊息一樣，一段一段地說
-- 不要用一大段文字回覆`;
-
-  const messages: APIMessage[] = [{ role: "system", content: systemPrompt }];
-
-  // 注入世界書設定
-  if (worldInfoText) {
-    messages.push({
-      role: "system",
-      content: `【世界觀設定】\n${worldInfoText}`,
-    });
+export function toCompanionChatMessages(
+  history: CompanionMessage[],
+  userName: string,
+  charName: string,
+  autoTrigger: boolean,
+  maxCount = 20,
+): ChatMessage[] {
+  const toChat = (m: CompanionMessage): ChatMessage => ({
+    id: m.id,
+    sender: m.role === "user" ? "user" : "assistant",
+    name: m.role === "user" ? userName : charName,
+    is_user: m.role === "user",
+    content: m.content,
+    status: "sent",
+    createdAt: m.timestamp,
+    updatedAt: m.timestamp,
+  });
+  const messages = history.slice(-maxCount).map(toChat);
+  if (autoTrigger) {
+    const now = Date.now();
+    messages.push(
+      toChat({
+        id: `comp_${now}_nudge`,
+        role: "user",
+        content: `（${userName}又翻了幾頁，讀到了上面那段。聊聊你讀到這裡的感想吧）`,
+        timestamp: now,
+        senderName: userName,
+      }),
+    );
   }
-
-  if (readingContent) {
-    messages.push({
-      role: "system",
-      content: `【${displayUserName}正在閱讀的內容（讀到這裡為止，後面的情節${displayUserName}還沒讀，不要提前透露）】\n${readingContent}`,
-    });
-  }
-
-  // 加入聊天歷史（最近 10 條）
-  const recentHistory = chatHistory.slice(-10);
-  for (const msg of recentHistory) {
-    messages.push({
-      role: msg.role === "user" ? "user" : "assistant",
-      content: msg.content,
-    });
-  }
-
-  // 自動觸發（無 userMessage）vs 手動訊息
-  if (userMessage === undefined) {
-    messages.push({
-      role: "user",
-      content: `（${displayUserName}翻了幾頁，請對上面的閱讀內容發表你的看法或評論）`,
-    });
-  } else {
-    messages.push({ role: "user", content: userMessage });
-  }
-
   return messages;
 }
 
@@ -319,44 +282,73 @@ export function deserializeCompanionState(
   };
 }
 
-// ===== 世界書收集輔助函式 =====
+// ===== 伴讀時要帶的私聊記憶 =====
 
-/**
- * 收集角色綁定的世界書 + 全域世界書的啟用條目文字
- * 跟隨 phoneCall store 的相同模式
- */
-function collectWorldInfo(
-  character: StoredCharacter,
-  lorebooksStore: ReturnType<typeof import("@/stores/lorebooks").useLorebooksStore>,
-): string {
-  const linkedLorebooks = [];
+interface CompanionContext {
+  lorebooks: Lorebook[];
+  summaries: NonNullable<PromptBuilderOptions["summaries"]>;
+  importantEvents: NonNullable<PromptBuilderOptions["importantEvents"]>;
+  recentChatHistory: NonNullable<PromptBuilderOptions["recentChatHistory"]>;
+}
 
-  // 角色綁定的世界書
-  if (character.lorebookIds?.length) {
-    for (const id of character.lorebookIds) {
-      const lb = lorebooksStore.lorebooks.find((l) => l.id === id);
-      if (lb) linkedLorebooks.push(lb);
+/** 角色綁定＋全域世界書、私聊的總結／重要事件／最近 15 則對話（跟電話模式同樣的取法） */
+async function loadCompanionContext(character: StoredCharacter): Promise<CompanionContext> {
+  const { useLorebooksStore } = await import("@/stores/lorebooks");
+  const { db, DB_STORES } = await import("@/db/database");
+  const { loadMessages } = await import("@/storage/chatMessageStorage");
+  const { selectSummariesForPrompt } = await import("@/utils/summarySelection");
+
+  const lorebooksStore = useLorebooksStore();
+  const linked = (character.lorebookIds ?? [])
+    .map((id) => lorebooksStore.lorebooks.find((l) => l.id === id))
+    .filter((l): l is Lorebook => !!l);
+  const lorebooks = [
+    ...linked,
+    ...lorebooksStore.lorebooks.filter((l) => l.isGlobal && !linked.includes(l)),
+  ];
+
+  const context: CompanionContext = {
+    lorebooks,
+    summaries: [],
+    importantEvents: [],
+    recentChatHistory: [],
+  };
+
+  try {
+    const chat = await resolvePreferredDirectChat(character.id);
+    const allSummaries = await db.getAll<any>(DB_STORES.SUMMARIES);
+    context.summaries = selectSummariesForPrompt(
+      allSummaries.filter((s: any) => (chat && s.chatId === chat.id) || s.characterId === character.id),
+      5,
+    ).map((s: any) => ({
+      id: s.id,
+      content: s.content,
+      createdAt: s.createdAt,
+      coveredUntil: s.coveredUntil,
+      isImportant: s.isImportant,
+    }));
+
+    const allEvents = await db.getAll<any>(DB_STORES.IMPORTANT_EVENTS);
+    context.importantEvents = allEvents
+      .filter((e: any) => e.characterId === character.id)
+      .map((e: any) => ({ id: e.id, content: e.content, category: e.category, priority: e.priority }));
+
+    if (chat) {
+      // 只取一般對話；共讀卡本身就是伴讀紀錄，不重複放
+      context.recentChatHistory = (await loadMessages(chat.id))
+        .filter((m) => (m.sender === "user" || m.sender === "assistant") && !m.isGroupChatHistory)
+        .slice(-15)
+        .map((m) => ({
+          role: (m.is_user ? "user" : "assistant") as "user" | "assistant",
+          name: m.name,
+          content: m.content,
+          createdAt: m.createdAt,
+        }));
     }
+  } catch (e) {
+    console.warn("[CompanionChat] 讀取私聊記憶失敗:", e);
   }
-
-  // 全域世界書
-  linkedLorebooks.push(
-    ...lorebooksStore.lorebooks.filter((lb) => lb.isGlobal),
-  );
-
-  if (linkedLorebooks.length === 0) return "";
-
-  const lines: string[] = [];
-  for (const lb of linkedLorebooks) {
-    const enabledEntries = lb.entries.filter(isWorldInfoEntryEnabled);
-    if (enabledEntries.length === 0) continue;
-    lines.push(`[${lb.name}]`);
-    for (const entry of enabledEntries) {
-      lines.push(entry.content);
-    }
-  }
-
-  return lines.join("\n");
+  return context;
 }
 
 // ===== Vue Composable =====
@@ -376,6 +368,7 @@ export interface UseCompanionChatReturn {
   accumulatedChapters: Ref<number[]>;
   messages: Ref<CompanionMessage[]>;
   isGenerating: Ref<boolean>;
+  errorMessage: Ref<string>;
   isPanelExpanded: Ref<boolean>;
   hasUnread: Ref<boolean>;
   bubblePosition: Ref<{ x: number; y: number }>;
@@ -408,6 +401,8 @@ export function useCompanionChat(
   const accumulatedChapters = ref<number[]>([]);
   const messages = ref<CompanionMessage[]>([]);
   const isGenerating = ref(false);
+  /** 上一次叫角色回話失敗的原因（成功或重試時清空） */
+  const errorMessage = ref("");
   const isPanelExpanded = ref(true);
   const hasUnread = ref(false);
   const bubblePosition = ref({ x: 20, y: 200 });
@@ -474,77 +469,71 @@ export function useCompanionChat(
   }
 
   /**
-   * 發送使用者訊息並取得 AI 回覆
+   * 叫角色回一次話：走 PromptBuilder 的伴讀模式，
+   * 角色資料、人設、世界書（照關鍵字觸發）、私聊記憶都跟聊天一致
    */
-  async function sendMessage(content: string): Promise<void> {
-    if (!selectedCharacterId.value || !core.isActive) return;
-    if (isGenerating.value) return;
-
-    // 取得角色和設定
-    const { useCharactersStore } = await import("@/stores/characters");
+  async function generateReply(autoTrigger: boolean): Promise<void> {
     const { useSettingsStore } = await import("@/stores/settings");
-    const { useLorebooksStore } = await import("@/stores/lorebooks");
-    const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
     const { useUserStore } = await import("@/stores/user");
+    const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
+    const { PromptBuilder } = await import("@/engine/prompt/PromptBuilder");
 
-    const charsStore = useCharactersStore();
-    const settingsStore = useSettingsStore();
-    const lorebooksStore = useLorebooksStore();
-    const userStore = useUserStore();
-    const character = charsStore.characters.find(
+    const character = useCharactersStore().characters.find(
       (c: StoredCharacter) => c.id === selectedCharacterId.value,
     );
     if (!character) return;
-
+    const userStore = useUserStore();
     const userName = userStore.currentName || "我";
+    const charName = character.data.name;
 
-    // 收集世界書內容
-    const worldInfoText = collectWorldInfo(character, lorebooksStore);
-
-    // 加入使用者訊息
-    const userMsg: CompanionMessage = {
-      id: `comp_${Date.now()}_user`,
-      role: "user",
-      content,
-      timestamp: Date.now(),
-      senderName: userName,
-    };
-    core.messages.push(userMsg);
-    syncFromCore();
-
-    // 構建 prompt 並呼叫 AI
     isGenerating.value = true;
+    errorMessage.value = "";
     try {
-      const readingContent = getAccumulatedContentText();
-      const prompt = buildCompanionPrompt(
-        character,
-        options.book.value.title,
-        readingContent,
-        core.messages,
-        content,
-        worldInfoText,
-        userName,
-      );
+      const settingsStore = useSettingsStore();
       const chatTaskConfig = settingsStore.getAPIForTask("chat");
+      if (!chatTaskConfig.api.endpoint || !chatTaskConfig.api.apiKey || !chatTaskConfig.api.model) {
+        throw new Error("請先在設定中配置 API");
+      }
 
-      const client = new OpenAICompatibleClient({
-        ...chatTaskConfig.api,
+      const context = await loadCompanionContext(character);
+      const settings = {
+        maxContextLength: chatTaskConfig.generation.maxContextLength || 200000,
+        maxResponseLength: chatTaskConfig.generation.maxTokens || 8190,
+        temperature: chatTaskConfig.generation.temperature ?? 0.7,
+        topP: chatTaskConfig.generation.topP ?? 1,
+        frequencyPenalty: 0,
+        presencePenalty: 0,
+        repetitionPenalty: 1,
+        stopSequences: [],
+        streaming: true,
+        useStreamingWindow: false,
+        ...pickGenerationToggles(chatTaskConfig.generation),
+      };
+
+      const builder = new PromptBuilder({
+        character,
+        lorebooks: context.lorebooks,
+        messages: toCompanionChatMessages(core.messages, userName, charName, autoTrigger),
+        settings,
+        userName,
+        userPersona: userStore.currentPersona?.description,
+        companionReadingMode: true,
+        companionReading: {
+          bookTitle: options.book.value.title,
+          readingWindow: getAccumulatedContentText(),
+        },
+        summaries: context.summaries,
+        importantEvents: context.importantEvents,
+        recentChatHistory: context.recentChatHistory,
+        enableRealTimeAwareness: false,
       });
+      const built = await builder.build();
+      const prompt: APIMessage[] = built.messages.map((m) => ({ role: m.role, content: m.content }));
+
+      const client = new OpenAICompatibleClient({ ...chatTaskConfig.api });
       const streamGen = client.generateStream({
         messages: prompt,
-        settings: {
-          maxContextLength: chatTaskConfig.generation.maxContextLength || 200000,
-          maxResponseLength: chatTaskConfig.generation.maxTokens || 8190,
-          temperature: chatTaskConfig.generation.temperature ?? 0.7,
-          topP: chatTaskConfig.generation.topP ?? 1,
-          frequencyPenalty: 0,
-          presencePenalty: 0,
-          repetitionPenalty: 1,
-          stopSequences: [],
-          streaming: true,
-          useStreamingWindow: false,
-          ...pickGenerationToggles(chatTaskConfig.generation),
-        },
+        settings,
         apiSettings: chatTaskConfig.api,
         adjustLastMessageRole: true,
       });
@@ -554,33 +543,57 @@ export function useCompanionChat(
         if (event.type === "token" && event.token) {
           fullContent += event.token;
         } else if (event.type === "error") {
-          console.error("[CompanionChat] AI 生成錯誤:", event.error);
-          break;
+          throw new Error(String(event.error || "AI 沒有回應"));
         } else if (event.type === "done") {
           fullContent = event.content || fullContent;
         }
       }
 
-      if (fullContent) {
-        const aiMsg: CompanionMessage = {
-          id: `comp_${Date.now()}_ai`,
-          role: "assistant",
-          content: fullContent,
-          timestamp: Date.now(),
-          senderName: character.data.name,
-        };
-        core.messages.push(aiMsg);
-        core.onNewAssistantMessage();
-        syncFromCore();
+      fullContent = fullContent.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+      if (!fullContent) throw new Error("AI 沒有回應");
 
-        // 先存起來，離開閱讀器時再一次貼到正式聊天
-        await saveState();
-      }
-    } catch (e) {
-      console.error("[CompanionChat] sendMessage 失敗:", e);
+      core.messages.push({
+        id: `comp_${Date.now()}_ai`,
+        role: "assistant",
+        content: fullContent,
+        timestamp: Date.now(),
+        senderName: charName,
+      });
+      core.onNewAssistantMessage();
+      syncFromCore();
+
+      // 先存起來，離開閱讀器時再一次貼到正式聊天
+      await saveState();
+    } catch (e: any) {
+      console.error("[CompanionChat] 生成失敗:", e);
+      errorMessage.value = e?.message || "角色沒有回應";
     } finally {
+      if (autoTrigger) {
+        // 不論成功與否都重新計數，失敗時不會每翻一頁就再打一次 API
+        core.resetAfterTrigger();
+        syncFromCore();
+      }
       isGenerating.value = false;
     }
+  }
+
+  /**
+   * 發送使用者訊息並取得 AI 回覆
+   */
+  async function sendMessage(content: string): Promise<void> {
+    if (!selectedCharacterId.value || !core.isActive) return;
+    if (isGenerating.value) return;
+
+    const { useUserStore } = await import("@/stores/user");
+    core.messages.push({
+      id: `comp_${Date.now()}_user`,
+      role: "user",
+      content,
+      timestamp: Date.now(),
+      senderName: useUserStore().currentName || "我",
+    });
+    syncFromCore();
+    await generateReply(false);
   }
 
   /**
@@ -589,100 +602,7 @@ export function useCompanionChat(
   async function triggerAutoResponse(): Promise<void> {
     if (!selectedCharacterId.value || !core.isActive) return;
     if (isGenerating.value) return;
-
-    const { useCharactersStore } = await import("@/stores/characters");
-    const { useSettingsStore } = await import("@/stores/settings");
-    const { useLorebooksStore } = await import("@/stores/lorebooks");
-    const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
-    const { useUserStore } = await import("@/stores/user");
-
-    const charsStore = useCharactersStore();
-    const settingsStore = useSettingsStore();
-    const lorebooksStore = useLorebooksStore();
-    const userStore = useUserStore();
-    const character = charsStore.characters.find(
-      (c: StoredCharacter) => c.id === selectedCharacterId.value,
-    );
-    if (!character) return;
-
-    const userName = userStore.currentName || "我";
-
-    // 收集世界書內容
-    const worldInfoText = collectWorldInfo(character, lorebooksStore);
-
-    isGenerating.value = true;
-    try {
-      const readingContent = getAccumulatedContentText();
-      const prompt = buildCompanionPrompt(
-        character,
-        options.book.value.title,
-        readingContent,
-        core.messages,
-        // no userMessage → auto-trigger
-        undefined,
-        worldInfoText,
-        userName,
-      );
-      const chatTaskConfig = settingsStore.getAPIForTask("chat");
-
-      const client = new OpenAICompatibleClient({
-        ...chatTaskConfig.api,
-      });
-      const streamGen = client.generateStream({
-        messages: prompt,
-        settings: {
-          maxContextLength: chatTaskConfig.generation.maxContextLength || 200000,
-          maxResponseLength: chatTaskConfig.generation.maxTokens || 8190,
-          temperature: chatTaskConfig.generation.temperature ?? 0.7,
-          topP: chatTaskConfig.generation.topP ?? 1,
-          frequencyPenalty: 0,
-          presencePenalty: 0,
-          repetitionPenalty: 1,
-          stopSequences: [],
-          streaming: true,
-          useStreamingWindow: false,
-          ...pickGenerationToggles(chatTaskConfig.generation),
-        },
-        apiSettings: chatTaskConfig.api,
-        adjustLastMessageRole: true,
-      });
-
-      let fullContent = "";
-      for await (const event of streamGen) {
-        if (event.type === "token" && event.token) {
-          fullContent += event.token;
-        } else if (event.type === "error") {
-          console.error("[CompanionChat] AI 自動觸發錯誤:", event.error);
-          break;
-        } else if (event.type === "done") {
-          fullContent = event.content || fullContent;
-        }
-      }
-
-      if (fullContent) {
-        const aiMsg: CompanionMessage = {
-          id: `comp_${Date.now()}_ai`,
-          role: "assistant",
-          content: fullContent,
-          timestamp: Date.now(),
-          senderName: character.data.name,
-        };
-        core.messages.push(aiMsg);
-        core.onNewAssistantMessage();
-        syncFromCore();
-
-        // 重置觸發計數
-        core.resetAfterTrigger();
-        syncFromCore();
-
-        // 先存起來，離開閱讀器時再一次貼到正式聊天
-        await saveState();
-      }
-    } catch (e) {
-      console.error("[CompanionChat] triggerAutoResponse 失敗:", e);
-    } finally {
-      isGenerating.value = false;
-    }
+    await generateReply(true);
   }
 
   // 同步排隊執行，避免離開閱讀器與停止伴讀同時觸發時重複貼卡
@@ -839,6 +759,7 @@ export function useCompanionChat(
     accumulatedChapters,
     messages,
     isGenerating,
+    errorMessage,
     isPanelExpanded,
     hasUnread,
     bubblePosition,

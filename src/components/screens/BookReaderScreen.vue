@@ -974,6 +974,7 @@ watch(
           :is-generating="companion.isGenerating.value"
           :trigger-frequency="companion.triggerFrequency.value"
           :draft="companionDraft"
+          :error="companion.errorMessage.value"
           @close="closeSheet"
           @stop="stopCompanion"
           @send="companion.sendMessage"

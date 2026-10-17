@@ -111,3 +111,25 @@ describe("伴讀同步到主聊天", () => {
     expect(store.has(KEY)).toBe(false);
   });
 });
+
+describe("伴讀對話轉聊天訊息", () => {
+  it("名字、身分正確；自動觸發時補一句提示", async () => {
+    const { toCompanionChatMessages } = await import("@/composables/useCompanionChat");
+    const history = [msg(0, "user"), msg(1, "assistant")];
+    const plain = toCompanionChatMessages(history, "小林", "小鯤", false);
+    expect(plain.map((m) => [m.name, m.is_user, m.sender])).toEqual([
+      ["小林", true, "user"],
+      ["小鯤", false, "assistant"],
+    ]);
+    const auto = toCompanionChatMessages(history, "小林", "小鯤", true);
+    expect(auto).toHaveLength(3);
+    expect(auto[2].is_user).toBe(true);
+    expect(auto[2].content).toContain("翻了幾頁");
+  });
+
+  it("只帶最近幾則", async () => {
+    const { toCompanionChatMessages } = await import("@/composables/useCompanionChat");
+    const history = Array.from({ length: 30 }, (_, i) => msg(i, i % 2 ? "assistant" : "user"));
+    expect(toCompanionChatMessages(history, "a", "b", false, 20)).toHaveLength(20);
+  });
+});
