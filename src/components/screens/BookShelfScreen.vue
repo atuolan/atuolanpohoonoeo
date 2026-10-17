@@ -376,7 +376,7 @@ function handleSelectPersona(personaId: string) {
   --bs-sub: var(--color-text-secondary, #6b7280);
   --bs-line: color-mix(in srgb, var(--color-border, #e5e7eb) 80%, transparent);
   --bs-accent: var(--color-primary, #7dd3a8);
-  --bs-on-accent: color-mix(in srgb, var(--bs-accent) 22%, #0b1f16);
+  --bs-on-accent: var(--color-on-primary-contrast, color-mix(in srgb, var(--bs-accent) 22%, #0b1f16));
   --bs-hero: color-mix(in srgb, var(--bs-accent) 16%, var(--bs-card));
   --bs-raise: color-mix(in srgb, var(--bs-text) 5%, var(--bs-card));
 

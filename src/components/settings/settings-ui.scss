@@ -16,7 +16,8 @@
   --st-accent-ink: color-mix(in srgb, var(--st-accent) 50%, var(--st-text));
   --st-accent-strong: color-mix(in srgb, var(--st-accent) 78%, var(--st-text));
   --st-accent-soft: color-mix(in srgb, var(--st-accent) 16%, var(--st-card));
-  --st-on-accent: color-mix(in srgb, var(--st-accent) 22%, #0b1f16);
+  // 主題 store 依主色亮度算好：深主色（極簡黑白、線描）配白字
+  --st-on-accent: var(--color-on-primary-contrast, color-mix(in srgb, var(--st-accent) 22%, #0b1f16));
   --st-field: color-mix(in srgb, var(--st-text) 4%, var(--st-card));
   --st-danger: var(--color-error, #c2413b);
   --st-warn: color-mix(in srgb, var(--color-warning, #d69e2e) 70%, var(--st-text));

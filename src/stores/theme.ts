@@ -60,6 +60,26 @@ function getLuminance(r: number, g: number, b: number): number {
 }
 
 /**
+ * 疊在主色上的文字色：比較白字與深字的 WCAG 對比，取讀得清楚的那個。
+ * 深字沿用設定頁原本的「主色混深綠」，所以淺主色看起來和以前一樣；
+ * 極簡黑白、線描這種黑色主色則改成白字。
+ */
+function getOnPrimaryColor(
+  primary: string,
+  darkInk = `color-mix(in srgb, ${primary} 22%, #0b1f16)`,
+): string {
+  const rgb = parseColorToRgb(primary);
+  if (!rgb) return darkInk;
+  const lin = (v: number) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  const L = 0.2126 * lin(rgb.r) + 0.7152 * lin(rgb.g) + 0.0722 * lin(rgb.b);
+  // 白字對比 1.05/(L+0.05)；深字（亮度約 0.01）對比 (L+0.05)/0.06
+  return 1.05 / (L + 0.05) >= (L + 0.05) / 0.06 ? "#FFFFFF" : darkInk;
+}
+
+/**
  * 從漸層字串中提取第一個顏色
  */
 function extractFirstColorFromGradient(gradient: string): string | null {
@@ -604,6 +624,9 @@ export const useThemeStore = defineStore("theme", () => {
       // 顏色變數
       "--color-primary": c.primary,
       "--color-primary-light": c.primaryLight,
+      "--color-on-primary-contrast": getOnPrimaryColor(c.primary),
+      // 疊在 primary-light 上的字：淺色時維持主色字，深色（極簡黑白、線描的深灰）改白字
+      "--color-on-primary-light-contrast": getOnPrimaryColor(c.primaryLight, c.primary),
       "--color-secondary": c.secondary,
       "--color-background": c.background,
       "--color-surface": c.surface,

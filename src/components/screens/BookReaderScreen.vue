@@ -706,7 +706,7 @@ watch(
 <style scoped lang="scss">
 .reader-screen {
   --rd-accent: var(--color-primary, #7dd3a8);
-  --rd-on-accent: color-mix(in srgb, var(--rd-accent) 22%, #0b1f16);
+  --rd-on-accent: var(--color-on-primary-contrast, color-mix(in srgb, var(--rd-accent) 22%, #0b1f16));
   --rd-accent-soft: color-mix(in srgb, var(--rd-accent) 24%, var(--rd-bg));
 
   display: flex;
