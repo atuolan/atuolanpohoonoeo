@@ -30,8 +30,18 @@ import {
   dueCards,
   generateChapterCards,
   hasCardMaterial,
+  newCard,
   type ReviewItem,
 } from "@/services/bookReview";
+import {
+  askLens,
+  lensById,
+  lensContext,
+  LENSES,
+  type LensId,
+  type LensInput,
+  type LensTurn,
+} from "@/services/bookLens";
 import type {
   BookHighlight,
   BookPosition,
@@ -65,7 +75,9 @@ import {
   Pencil,
   Plus,
   ScrollText,
+  Send,
   Sparkles,
+  Telescope,
   Swords,
   Trash2,
   Users,
@@ -394,7 +406,7 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 // ===== 抽屜 =====
-type SheetKind = "toc" | "settings" | "companion" | "picker" | "highlight" | "play" | "summary";
+type SheetKind = "toc" | "settings" | "companion" | "picker" | "highlight" | "play" | "summary" | "lens";
 const sheet = ref<SheetKind | null>(null);
 const tocListEl = ref<HTMLElement | null>(null);
 const tocTab = ref<"chapters" | "notes" | "summaries">("chapters");
@@ -407,6 +419,7 @@ const SHEET_LABELS: Record<SheetKind, string> = {
   highlight: "劃線與筆記",
   play: "好玩模式",
   summary: "總結這幾頁",
+  lens: "換個鏡頭看",
 };
 
 // ===== 好玩模式 =====
@@ -449,6 +462,9 @@ function closeSheet() {
   sheet.value = null;
   companionDraft.value = "";
   editingSummaryId.value = null;
+  // 觀點鏡頭的問答只留在這次打開期間
+  lensQuote.value = null;
+  lensTurns.value = {};
 }
 
 // ===== 小提示 =====
@@ -1045,6 +1061,185 @@ function reviewBookCards() {
   }
 }
 
+// ===== 觀點鏡頭 =====
+interface LensQuote {
+  chapterIndex: number;
+  start: number;
+  end: number;
+  text: string;
+  /** 第幾段（1 起算） */
+  paraNo: number;
+  /** 從已有的劃線打開時的劃線 id */
+  highlightId?: string;
+}
+const lensQuote = ref<LensQuote | null>(null);
+const activeLens = ref<LensId | null>(null);
+/** 這次打開抽屜期間，每個鏡頭的問答（關掉就丟） */
+const lensTurns = ref<Partial<Record<LensId, LensTurn[]>>>({});
+/** 正在等回答的鏡頭（換鏡頭不用等上一個） */
+const lensLoadingSet = ref<Set<LensId>>(new Set());
+const lensLoading = computed(() => !!activeLens.value && lensLoadingSet.value.has(activeLens.value));
+const lensError = ref("");
+const lensDraft = ref("");
+const lensListEl = ref<HTMLElement | null>(null);
+
+const currentLensTurns = computed(() => (activeLens.value ? lensTurns.value[activeLens.value] ?? [] : []));
+const lastLensTurn = computed(() => currentLensTurns.value[currentLensTurns.value.length - 1]);
+
+function paraNumberAt(index: number, offset: number): number {
+  const paras = index === chapterIndex.value ? paragraphs.value : splitParagraphs(props.book.chapters[index]?.content ?? "");
+  let n = 0;
+  for (let i = 0; i < paras.length && paras[i].start <= offset; i++) n = i + 1;
+  return Math.max(n, 1);
+}
+
+function openLens(quote: Omit<LensQuote, "paraNo">) {
+  lensQuote.value = { ...quote, paraNo: paraNumberAt(quote.chapterIndex, quote.start) };
+  activeLens.value = null;
+  lensTurns.value = {};
+  lensError.value = "";
+  lensDraft.value = "";
+  openSheet("lens");
+}
+
+function actLens() {
+  const sel = selection.value;
+  if (!sel) return;
+  clearSelection();
+  openLens({ chapterIndex: chapterIndex.value, start: sel.start, end: sel.end, text: sel.text });
+}
+
+function lensFromHighlight(h: BookHighlight) {
+  openLens({ chapterIndex: chapterIndexOf(h), start: h.start, end: h.end, text: h.text, highlightId: h.id });
+}
+
+function lensInput(lens: LensId): LensInput | null {
+  const q = lensQuote.value;
+  const chapter = q ? props.book.chapters[q.chapterIndex] : undefined;
+  if (!q || !chapter) return null;
+  // 引文在目前這章就只給到這頁結尾；在讀過的前幾章就給到章尾
+  const readEnd = q.chapterIndex === chapterIndex.value ? Math.max(pageEndOffset(), q.end) : chapter.content.length;
+  return {
+    bookTitle: props.book.title,
+    author: props.book.author,
+    chapterTitle: chapter.title,
+    quote: q.text,
+    ...lensContext(chapter.content, q.start, q.end, readEnd),
+    summaries: readingSummariesText(props.book.chapters, summaries.value, { chapterIndex: q.chapterIndex, charOffset: readEnd }, 3),
+    lens,
+  };
+}
+
+function scrollLensToEnd() {
+  nextTick(() => lensListEl.value?.scrollTo({ top: lensListEl.value.scrollHeight, behavior: "smooth" }));
+}
+
+/** 換鏡頭：同一個鏡頭這次打開時問過就直接顯示，不重打 */
+async function pickLens(lens: LensId) {
+  activeLens.value = lens;
+  lensError.value = "";
+  if (lensTurns.value[lens]?.length) return;
+  await askCurrentLens();
+}
+
+function setLensLoading(lens: LensId, on: boolean) {
+  const next = new Set(lensLoadingSet.value);
+  if (on) next.add(lens);
+  else next.delete(lens);
+  lensLoadingSet.value = next;
+}
+
+async function askCurrentLens(question?: string) {
+  const lens = activeLens.value;
+  const quote = lensQuote.value;
+  const input = lens ? lensInput(lens) : null;
+  if (!lens || !input || lensLoadingSet.value.has(lens)) return;
+  setLensLoading(lens, true);
+  lensError.value = "";
+  if (question) lensDraft.value = "";
+  scrollLensToEnd();
+  try {
+    const turn = await askLens(input, lensTurns.value[lens] ?? [], question);
+    // 等回答時抽屜已經關掉或換了引文，就丟掉
+    if (lensQuote.value !== quote) return;
+    lensTurns.value = { ...lensTurns.value, [lens]: [...(lensTurns.value[lens] ?? []), turn] };
+    if (activeLens.value === lens) scrollLensToEnd();
+  } catch (e) {
+    if (lensQuote.value !== quote || activeLens.value !== lens) return;
+    if (question) lensDraft.value = question;
+    lensError.value = e instanceof Error ? e.message : "沒有回應，再試一次";
+  } finally {
+    setLensLoading(lens, false);
+  }
+}
+
+function sendLensDraft() {
+  const q = lensDraft.value.trim();
+  if (q) askCurrentLens(q);
+}
+
+function askCompanionLens() {
+  const text = lensQuote.value?.text;
+  if (text) askCompanionAbout(text);
+}
+
+/** 存成記憶卡，三天後考 */
+async function saveLensCard() {
+  const q = lensQuote.value;
+  const turn = lastLensTurn.value;
+  if (!q || !turn || !activeLens.value) return;
+  const quote = q.text.length > 40 ? `${q.text.slice(0, 40)}…` : q.text;
+  const card = newCard(
+    {
+      source: "lens",
+      highlightId: q.highlightId,
+      chapterIndex: q.chapterIndex,
+      charOffset: q.start,
+      question: `「${quote}」${turn.question ?? lensById(activeLens.value).cardQuestion}`,
+      answer: turn.answer,
+    },
+    Date.now(),
+    3,
+  );
+  await booksStore.patchProgress(props.book.id, (current) => ({ cards: [...(current?.cards ?? []), card] }));
+  showToast("存好了，三天後考你");
+}
+
+/** 把目前的回答接到這段的劃線筆記（沒有劃線就先劃） */
+async function saveLensNote() {
+  const q = lensQuote.value;
+  const turn = lastLensTurn.value;
+  const chapter = q ? props.book.chapters[q.chapterIndex] : undefined;
+  if (!q || !turn || !chapter || !activeLens.value) return;
+  const line = `【${lensById(activeLens.value).label}】${turn.answer}`;
+  const now = Date.now();
+  await booksStore.patchProgress(props.book.id, (current) => {
+    const existing = current?.highlights ?? [];
+    const target = existing.find((h) => h.id === q.highlightId) ??
+      existing.find((h) => h.chapterId === chapter.id && h.start <= q.start && h.end >= q.end);
+    if (target) {
+      return {
+        highlights: existing.map((h) =>
+          h.id === target.id ? { ...h, note: h.note?.trim() ? `${h.note}\n${line}` : line, updatedAt: now } : h,
+        ),
+      };
+    }
+    const incoming: BookHighlight = {
+      id: crypto.randomUUID(),
+      chapterId: chapter.id,
+      chapterIndex: q.chapterIndex,
+      start: q.start,
+      end: q.end,
+      text: q.text,
+      note: line,
+      createdAt: now,
+      updatedAt: now,
+    };
+    return { highlights: addHighlight(existing, incoming, (s, e) => chapter.content.slice(s, e).trim()) };
+  });
+  showToast("已存進筆記");
+}
+
 // ===== 閱讀時數 =====
 // 畫面看得到、而且最近 3 分鐘內有翻頁或碰螢幕才算在讀，避免開著書走開也一直計時
 const ACTIVE_WINDOW_MS = 3 * 60_000;
@@ -1237,6 +1432,9 @@ watch(
         </button>
         <button @mousedown.prevent @click="actNote">
           <NotebookPen :size="18" /><span>筆記</span>
+        </button>
+        <button @mousedown.prevent @click="actLens">
+          <Telescope :size="18" /><span>看法</span>
         </button>
         <button @mousedown.prevent @click="actAsk">
           <MessageCircle :size="18" /><span>問角色</span>
@@ -1637,6 +1835,73 @@ watch(
           </div>
         </template>
 
+        <!-- 觀點鏡頭 -->
+        <template v-else-if="sheet === 'lens' && lensQuote">
+          <div class="rd-sheet-head">
+            <h3>換個鏡頭看</h3>
+            <button class="rd-icon-btn" aria-label="關閉" @click="closeSheet">
+              <X :size="20" />
+            </button>
+          </div>
+          <div ref="lensListEl" class="rd-lens-body">
+            <blockquote class="rd-hl-quote">{{ lensQuote.text }}</blockquote>
+            <div class="rd-lens-chips" role="group" aria-label="鏡頭">
+              <button
+                v-for="l in LENSES"
+                :key="l.id"
+                class="rd-lens-chip"
+                :aria-pressed="activeLens === l.id"
+                :class="{ active: activeLens === l.id }"
+                @click="pickLens(l.id)"
+              >
+                {{ l.label }}
+              </button>
+              <button v-if="companion.isActive.value" class="rd-lens-chip" @click="askCompanionLens">
+                <span v-if="companionAvatar" class="rd-lens-chip-avatar"><img :src="companionAvatar" alt="" /></span>
+                {{ companionName }} 怎麼看
+              </button>
+            </div>
+
+            <p v-if="!activeLens" class="rd-sheet-hint rd-lens-empty">選一個鏡頭，用不同角度讀這段。</p>
+            <template v-else>
+              <section v-for="(turn, i) in currentLensTurns" :key="i" class="rd-lens-turn">
+                <p v-if="turn.question" class="rd-lens-question">{{ turn.question }}</p>
+                <h4 v-else class="rd-lens-title">{{ lensById(activeLens).label }}</h4>
+                <p class="rd-lens-answer">{{ turn.answer }}</p>
+              </section>
+              <p v-if="lensLoading" class="rd-lens-loading">想一想…</p>
+              <p v-if="lensError" class="rd-lens-error">
+                {{ lensError }}
+                <button class="rd-link-btn" @click="askCurrentLens()">再試一次</button>
+              </p>
+              <span v-if="lastLensTurn" class="rd-lens-pos">{{ book.chapters[lensQuote.chapterIndex]?.title }} · 第 {{ lensQuote.paraNo }} 段</span>
+              <div v-if="lastLensTurn && !lensLoading" class="rd-lens-suggest">
+                <button v-if="lastLensTurn.followUp" class="rd-lens-suggest-btn" @click="askCurrentLens(lastLensTurn.followUp)">
+                  {{ lastLensTurn.followUp }}
+                </button>
+                <button class="rd-lens-suggest-btn" @click="saveLensCard">
+                  <Layers :size="15" />存成記憶卡，三天後考我
+                </button>
+                <button class="rd-lens-suggest-btn" @click="saveLensNote">
+                  <NotebookPen :size="15" />存進筆記
+                </button>
+              </div>
+            </template>
+          </div>
+          <form v-if="activeLens && lastLensTurn" class="rd-lens-input" @submit.prevent="sendLensDraft">
+            <input
+              v-model="lensDraft"
+              class="rd-lens-field"
+              :placeholder="`接著問「${lensById(activeLens).label}」…`"
+              aria-label="追問"
+              enterkeyhint="send"
+            />
+            <button class="rd-lens-send" type="submit" :disabled="!lensDraft.trim() || lensLoading" aria-label="送出">
+              <Send :size="18" />
+            </button>
+          </form>
+        </template>
+
         <!-- 劃線與筆記 -->
         <template v-else-if="sheet === 'highlight' && activeHighlight">
           <div class="rd-sheet-head">
@@ -1658,6 +1923,9 @@ watch(
             <div class="rd-hl-actions">
               <button class="rd-ghost-btn danger" @click="deleteActiveHighlight">
                 <Trash2 :size="16" />刪除劃線
+              </button>
+              <button class="rd-ghost-btn" @click="lensFromHighlight(activeHighlight)">
+                <Telescope :size="16" />看法
               </button>
               <button class="rd-ghost-btn" @click="askCompanionAbout(activeHighlight.text)">
                 <MessageCircle :size="16" />問角色
@@ -2887,6 +3155,225 @@ button {
 .rd-card-count {
   background: var(--rd-raise);
   color: var(--rd-sub);
+}
+
+// ===== 觀點鏡頭 =====
+.rd-sheet.is-lens {
+  height: 78%;
+}
+
+.rd-lens-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 20px 8px;
+
+  .rd-hl-quote {
+    flex-shrink: 0;
+    max-height: 6.8em;
+  }
+}
+
+.rd-lens-chips {
+  // 追問多了往下捲時，鏡頭按鈕留在上面，隨時可以換
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 -20px;
+  padding: 4px 20px 8px;
+  background: var(--rd-sheet);
+}
+
+.rd-lens-chip {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px;
+  border: 1px solid var(--rd-line);
+  border-radius: 20px;
+  background: transparent;
+  color: var(--rd-text);
+  font-size: 14px;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--rd-raise);
+  }
+
+  &.active {
+    border-color: transparent;
+    background: var(--rd-text);
+    color: var(--rd-bg);
+    font-weight: 700;
+  }
+}
+
+.rd-lens-chip-avatar {
+  width: 22px;
+  height: 22px;
+  margin-left: -8px;
+  border-radius: 50%;
+  overflow: hidden;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.rd-lens-empty {
+  margin: 8px 0 0;
+}
+
+.rd-lens-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rd-lens-title {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--rd-sub);
+  letter-spacing: 0.06em;
+}
+
+.rd-lens-question {
+  align-self: flex-end;
+  max-width: 85%;
+  margin: 4px 0 0;
+  padding: 8px 14px;
+  border-radius: 18px 18px 4px 18px;
+  background: var(--rd-accent-soft);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.rd-lens-answer {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+.rd-lens-loading {
+  margin: 0;
+  font-size: 14px;
+  color: var(--rd-sub);
+  animation: rd-blink 1.2s ease-in-out infinite;
+}
+
+@keyframes rd-blink {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.rd-lens-error {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-error, #e53e3e);
+}
+
+.rd-link-btn {
+  margin-left: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--rd-text);
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.rd-lens-pos {
+  align-self: flex-start;
+  padding: 2px 10px;
+  border-radius: 10px;
+  background: var(--rd-raise);
+  font-size: 12px;
+  color: var(--rd-sub);
+}
+
+.rd-lens-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rd-lens-suggest-btn {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px dashed var(--rd-line);
+  border-radius: 20px;
+  background: transparent;
+  color: var(--rd-text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--rd-raise);
+  }
+}
+
+.rd-lens-input {
+  flex-shrink: 0;
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px 0;
+  border-top: 1px solid var(--rd-line);
+}
+
+.rd-lens-field {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--rd-line);
+  border-radius: 22px;
+  background: var(--rd-bg);
+  color: var(--rd-text);
+  font-family: inherit;
+  font-size: 16px;
+  outline: none;
+
+  &:focus {
+    border-color: var(--rd-accent);
+  }
+}
+
+.rd-lens-send {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 22px;
+  background: var(--rd-accent);
+  color: var(--rd-on-accent);
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
 }
 
 // ===== 好玩模式清單 =====
