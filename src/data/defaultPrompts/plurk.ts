@@ -131,7 +131,7 @@ export const PLURK_COMMENT_PROMPT_DEFINITIONS: PromptDefinition[] = [
 3. 可以使用表情符號
 4. 長度適中，不要每則都一樣長
 5. 使用繁體中文
-6. 如果使用非中文，請在後面用括號附上中文翻譯`,
+6. 如果使用非中文，在後面附上中文翻譯，格式是「外語<br>中文翻譯」`,
     system_prompt: true,
     marker: false,
     injection_position: INJECTION_RELATIVE,
