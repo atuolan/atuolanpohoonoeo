@@ -1801,6 +1801,7 @@ watch(
           :error="companion.errorMessage.value"
           @close="closeSheet"
           @stop="stopCompanion"
+          @add="companion.addUserMessage"
           @send="companion.sendMessage"
           @update:trigger-frequency="companion.setTriggerFrequency"
           @open-stream="openCompanionStream"

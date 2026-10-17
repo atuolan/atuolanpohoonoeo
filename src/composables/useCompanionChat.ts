@@ -390,7 +390,10 @@ export interface UseCompanionChatReturn {
   togglePanel(): void;
   setPanelExpanded(expanded: boolean): void;
   updateBubblePosition(x: number, y: number): void;
-  sendMessage(content: string): Promise<void>;
+  /** 只加使用者訊息，不叫角色回 */
+  addUserMessage(content: string): Promise<void>;
+  /** 叫角色回話；有內容就先加進對話 */
+  sendMessage(content?: string): Promise<void>;
   triggerAutoResponse(): Promise<void>;
   /** 展開這次伴讀的串流視窗；串流已經不在視窗裡時回傳 false */
   openStream(): boolean;
@@ -624,22 +627,37 @@ export function useCompanionChat(
     return true;
   }
 
-  /**
-   * 發送使用者訊息並取得 AI 回覆
-   */
-  async function sendMessage(content: string): Promise<void> {
-    if (!selectedCharacterId.value || !core.isActive) return;
-    if (isGenerating.value) return;
-
+  async function pushUserMessage(content: string): Promise<void> {
     const { useUserStore } = await import("@/stores/user");
     core.messages.push({
-      id: `comp_${Date.now()}_user`,
+      id: `comp_${Date.now()}_${core.messages.length}_user`,
       role: "user",
       content,
       timestamp: Date.now(),
       senderName: useUserStore().currentName || "我",
     });
     syncFromCore();
+  }
+
+  /**
+   * 只加使用者訊息、不叫角色回（跟聊天一樣：Enter 先打好幾則，再按送出一起回）
+   */
+  async function addUserMessage(content: string): Promise<void> {
+    const text = content.trim();
+    if (!text || !selectedCharacterId.value || !core.isActive) return;
+    if (isGenerating.value) return;
+    await pushUserMessage(text);
+    await saveState();
+  }
+
+  /**
+   * 叫角色回話；有內容就先加進對話。空的就直接回前面打好的那幾則
+   */
+  async function sendMessage(content = ""): Promise<void> {
+    if (!selectedCharacterId.value || !core.isActive) return;
+    if (isGenerating.value) return;
+    const text = content.trim();
+    if (text) await pushUserMessage(text);
     await generateReply(false);
   }
 
@@ -818,6 +836,7 @@ export function useCompanionChat(
     togglePanel,
     setPanelExpanded,
     updateBubblePosition,
+    addUserMessage,
     sendMessage,
     triggerAutoResponse,
     openStream,

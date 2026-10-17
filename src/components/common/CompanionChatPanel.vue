@@ -26,7 +26,10 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   (e: "close"): void;
   (e: "stop"): void;
+  /** 叫角色回話；content 有字就先加進對話 */
   (e: "send", content: string): void;
+  /** 只加使用者訊息，不叫角色回 */
+  (e: "add", content: string): void;
   (e: "update:triggerFrequency", value: number): void;
   /** 點打字泡泡：打開串流視窗 */
   (e: "open-stream"): void;
@@ -70,18 +73,29 @@ const bubbles = computed<Bubble[]>(() =>
 
 const avatarInitial = computed(() => props.characterName.slice(0, 1) || "書");
 
+/** 打好了還沒讓角色回的訊息：輸入框空著也能按送出 */
+const awaitingReply = computed(() => props.messages[props.messages.length - 1]?.role === "user");
+const canSend = computed(() => !props.isGenerating && (!!inputText.value.trim() || awaitingReply.value));
+
+// 跟聊天一樣：送出鍵＝叫角色回（有字就先加進去）
 function handleSend() {
-  const text = inputText.value.trim();
-  if (!text || props.isGenerating) return;
-  emit("send", text);
+  if (!canSend.value) return;
+  emit("send", inputText.value.trim());
   inputText.value = "";
 }
 
+// Enter 有字只加訊息、可以連打好幾則；空的 Enter 等於按送出
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-    e.preventDefault();
+  if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+  e.preventDefault();
+  const text = inputText.value.trim();
+  if (!text) {
     handleSend();
+    return;
   }
+  if (props.isGenerating) return;
+  emit("add", text);
+  inputText.value = "";
 }
 
 function selectFrequency(n: number) {
@@ -199,6 +213,10 @@ onMounted(scrollToBottom);
       </p>
     </div>
 
+    <p v-if="awaitingReply && !isGenerating" class="cc-pending-hint">
+      還可以繼續打，按 ↑ 讓{{ characterName }}一起回
+    </p>
+
     <div class="cc-input">
       <label for="cc-input-field" class="sr-only">對{{ characterName }}說</label>
       <input
@@ -213,8 +231,8 @@ onMounted(scrollToBottom);
       />
       <button
         class="cc-send"
-        aria-label="送出"
-        :disabled="!inputText.trim() || isGenerating"
+        :aria-label="`送出，讓${characterName}回`"
+        :disabled="!canSend"
         @click="handleSend"
       >
         <ArrowUp :size="18" />
@@ -538,6 +556,14 @@ onMounted(scrollToBottom);
 }
 
 // ===== 輸入 =====
+.cc-pending-hint {
+  margin: 0 16px 2px;
+  font-size: 12px;
+  color: var(--cc-sub);
+  text-align: right;
+  flex-shrink: 0;
+}
+
 .cc-input {
   display: flex;
   align-items: center;

@@ -130,6 +130,21 @@ describe("伴讀：生成中翻頁", () => {
     expect(replied).not.toHaveBeenCalled();
   });
 
+  it("Enter 先打好幾則不會叫角色回，按送出才一起回", async () => {
+    const { c } = setup();
+    await c.addUserMessage("等等");
+    await c.addUserMessage("這個女皇好狠");
+    await flush();
+    expect(streams).toHaveLength(0);
+    expect(c.messages.value.map((m) => m.content)).toEqual(["等等", "這個女皇好狠"]);
+
+    c.sendMessage("");
+    await waitForStreams(1);
+    streams[0].resolve("回覆");
+    for (let i = 0; i < 10; i++) await flush();
+    expect(c.messages.value.map((m) => m.role)).toEqual(["user", "user", "assistant"]);
+  });
+
   it("自己問的問題回完後，生成中翻夠的頁也會接著講", async () => {
     const { c, turn } = setup();
     c.sendMessage("這段在說什麼？");
