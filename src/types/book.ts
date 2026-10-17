@@ -76,6 +76,10 @@ export interface BookReadingProgress {
   pagesSinceSummary?: number;
   /** 自動摘要連續失敗幾次（到 3 次就暫停，手動總結一次後歸零） */
   autoSummaryFailures?: number;
+  /** 回顧卡 */
+  cards?: BookReviewCard[];
+  /** 已經出過卡的章節，避免每次翻過章尾都問 */
+  cardedChapters?: number[];
   /** 上一次「三句接上」的結果（位置沒變就直接沿用） */
   lastRecap?: {
     chapterIndex: number;
@@ -116,6 +120,25 @@ export interface BookSummary {
   auto: boolean;
   createdAt: number;
   updatedAt: number;
+}
+
+export type ReviewGrade = "fuzzy" | "remember" | "easy";
+
+/** 一張回顧卡（間隔重複） */
+export interface BookReviewCard {
+  id: string;
+  source: "highlight" | "summary" | "lens";
+  highlightId?: string;
+  chapterIndex: number;
+  /** 出題位置，跳回原文用 */
+  charOffset: number;
+  question: string;
+  answer: string;
+  createdAt: number;
+  dueAt: number;
+  intervalDays: number;
+  reviews: number;
+  lastGrade?: ReviewGrade;
 }
 
 export type ReaderBackground = "sepia" | "white" | "night" | "green";
