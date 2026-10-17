@@ -9,7 +9,28 @@ import { useBooksStore } from "@/stores/books";
 import { useCharactersStore } from "@/stores/characters";
 import { useLorebooksStore } from "@/stores/lorebooks";
 import { useUserStore } from "@/stores/user";
-import type { BookHighlight, ReaderBackground, ReaderPrefs, StoredBook } from "@/types/book";
+import {
+  AUTO_SUMMARY_MAX_CALLS,
+  AUTO_SUMMARY_MAX_FAILURES,
+  charsBetween,
+  comparePos,
+  fromGlobal,
+  lastSummaryEnd,
+  rangeLabel,
+  shouldAutoSummarize,
+  sortSummaries,
+  splitRange,
+  summarizeRange,
+  toGlobal,
+} from "@/services/bookSummary";
+import type {
+  BookHighlight,
+  BookPosition,
+  BookSummary,
+  ReaderBackground,
+  ReaderPrefs,
+  StoredBook,
+} from "@/types/book";
 import {
   addDailySeconds,
   addHighlight,
@@ -30,7 +51,9 @@ import {
   MessageCircle,
   Minus,
   NotebookPen,
+  Pencil,
   Plus,
+  ScrollText,
   Sparkles,
   Swords,
   Trash2,
@@ -228,6 +251,7 @@ function turnBy(delta: 1 | -1) {
       if (chapterIndex.value === 0) return applyPageOffset(true);
       await openChapter(chapterIndex.value - 1, "end");
     } else if (target >= totalPages.value) {
+      // 已經是全書最後一頁：沒翻動，不算頁
       if (chapterIndex.value >= lastChapterIndex.value) return applyPageOffset(true);
       await openChapter(chapterIndex.value + 1, "start");
     } else {
@@ -235,6 +259,7 @@ function turnBy(delta: 1 | -1) {
       applyPageOffset(true);
       updateAnchor();
     }
+    if (delta === 1) onForwardPage();
     notifyCompanionPageTurn();
   });
 }
@@ -261,6 +286,7 @@ function saveNow() {
     scrollPosition: page.value,
     charOffset: anchorOffset.value,
     percent: percent.value,
+    pagesSinceSummary: pagesSinceSummary.value,
     lastReadAt: Date.now(),
   });
 }
@@ -348,10 +374,10 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 // ===== 抽屜 =====
-type SheetKind = "toc" | "settings" | "companion" | "picker" | "highlight" | "play";
+type SheetKind = "toc" | "settings" | "companion" | "picker" | "highlight" | "play" | "summary";
 const sheet = ref<SheetKind | null>(null);
 const tocListEl = ref<HTMLElement | null>(null);
-const tocTab = ref<"chapters" | "notes">("chapters");
+const tocTab = ref<"chapters" | "notes" | "summaries">("chapters");
 
 const SHEET_LABELS: Record<SheetKind, string> = {
   toc: "目錄與筆記",
@@ -360,6 +386,7 @@ const SHEET_LABELS: Record<SheetKind, string> = {
   picker: "選擇伴讀角色",
   highlight: "劃線與筆記",
   play: "好玩模式",
+  summary: "總結這幾頁",
 };
 
 // ===== 好玩模式 =====
@@ -401,6 +428,7 @@ function openSheet(kind: SheetKind) {
 function closeSheet() {
   sheet.value = null;
   companionDraft.value = "";
+  editingSummaryId.value = null;
 }
 
 // ===== 小提示 =====
@@ -409,19 +437,26 @@ let toastTimer: ReturnType<typeof setTimeout> | null = null;
 function showToast(message: string) {
   toast.value = message;
   if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (toast.value = ""), 1600);
+  // 長的提示（錯誤原因）多留一下
+  toastTimer = setTimeout(() => (toast.value = ""), message.length > 14 ? 3200 : 1600);
 }
 
 // ===== 伴讀 =====
+/** 目前這頁結尾的章內字元位置（已讀與未讀的分界） */
+function pageEndOffset(): number {
+  const chapter = currentChapter.value;
+  if (!chapter) return 0;
+  const probe = makeProbe();
+  return probe && page.value + 1 < totalPages.value
+    ? offsetForPage(paragraphs.value, page.value + 1, probe)
+    : chapter.content.length;
+}
+
 /** 給伴讀角色看的內容：本章讀到目前這頁結尾為止的最後一段，不含還沒讀的部分 */
 function readingWindow(): string {
   const chapter = currentChapter.value;
   if (!chapter) return "";
-  const probe = makeProbe();
-  const end =
-    probe && page.value + 1 < totalPages.value
-      ? offsetForPage(paragraphs.value, page.value + 1, probe)
-      : chapter.content.length;
+  const end = pageEndOffset();
   const start = Math.max(0, end - 3000);
   const text = chapter.content.slice(start, end).trim();
   return `【${chapter.title}】\n${start > 0 ? "……" : ""}${text}`;
@@ -659,6 +694,204 @@ function jumpToHighlight(h: BookHighlight) {
   run(() => openChapter(chapterIndexOf(h), { offset: h.start }));
 }
 
+// ===== 分段摘要 =====
+const summaries = computed(() => booksStore.progressByBook[props.book.id]?.summaries ?? []);
+const sortedSummaryList = computed(() => sortSummaries(summaries.value));
+const autoSummaryPaused = computed(
+  () => (booksStore.progressByBook[props.book.id]?.autoSummaryFailures ?? 0) >= AUTO_SUMMARY_MAX_FAILURES,
+);
+/** 上次摘要後往後翻了幾頁（存檔時一起存） */
+const pagesSinceSummary = ref(0);
+const summaryRunning = ref(false);
+const summaryProgress = ref({ done: 0, total: 0 });
+
+type SummaryRangeKind = "sinceLast" | "chapter" | "recent";
+const summaryRangeKind = ref<SummaryRangeKind>("sinceLast");
+const summaryRecentPages = ref(10);
+/** 打開範圍抽屜時目前這頁的結尾（範圍一律到這裡為止，不能選還沒讀的地方） */
+const summaryEnd = ref<BookPosition>({ chapterIndex: 0, charOffset: 0 });
+/** 打開抽屜時量好的本章每頁開頭，給「最近 N 頁」用 */
+const summaryPages = ref({ page: 0, pageTops: [] as number[], charsPerPage: 1 });
+
+function currentEnd(): BookPosition {
+  return { chapterIndex: chapterIndex.value, charOffset: pageEndOffset() };
+}
+
+/** 從上次摘要結尾接著總結；沒有摘要（或摘要都在後面）就從本章開頭 */
+function defaultSummaryStart(end: BookPosition): BookPosition {
+  const last = lastSummaryEnd(summaries.value);
+  if (last && comparePos(last, end) < 0) return last;
+  return { chapterIndex: end.chapterIndex, charOffset: 0 };
+}
+
+const hasEarlierSummary = computed(() => {
+  const last = lastSummaryEnd(summaries.value);
+  return !!last && comparePos(last, summaryEnd.value) < 0;
+});
+
+const summaryFrom = computed<BookPosition>(() => {
+  const end = summaryEnd.value;
+  if (summaryRangeKind.value === "chapter") return { chapterIndex: end.chapterIndex, charOffset: 0 };
+  if (summaryRangeKind.value === "recent") {
+    // 本章裡的頁用量到的位置；往前超出本章時用本章每頁平均字數估
+    const { page: p, pageTops, charsPerPage } = summaryPages.value;
+    const first = p - summaryRecentPages.value + 1;
+    if (first >= 0) return { chapterIndex: end.chapterIndex, charOffset: pageTops[first] ?? 0 };
+    const chapterStart = toGlobal(props.book.chapters, { chapterIndex: end.chapterIndex, charOffset: 0 });
+    return fromGlobal(props.book.chapters, Math.max(0, chapterStart + first * charsPerPage));
+  }
+  return defaultSummaryStart(end);
+});
+
+const summaryChars = computed(() => charsBetween(props.book.chapters, summaryFrom.value, summaryEnd.value));
+const summaryCalls = computed(
+  () => splitRange(props.book.chapters, summaryFrom.value, summaryEnd.value).length,
+);
+const summaryRangeText = computed(() =>
+  rangeLabel({ from: summaryFrom.value, to: summaryEnd.value }, props.book.chapters),
+);
+
+function openSummaryRange() {
+  const probe = makeProbe();
+  summaryEnd.value = currentEnd();
+  summaryPages.value = {
+    page: page.value,
+    pageTops: Array.from({ length: page.value + 1 }, (_, i) =>
+      probe ? offsetForPage(paragraphs.value, i, probe) : 0,
+    ),
+    charsPerPage: Math.max(1, Math.round((currentChapter.value?.content.length ?? 0) / totalPages.value)),
+  };
+  summaryRangeKind.value = "sinceLast";
+  openSheet("summary");
+}
+
+const SUMMARY_EVERY_OPTIONS: ReaderPrefs["summaryEveryPages"][] = [0, 10, 20, 50];
+
+const summaryButtonText = computed(() => {
+  if (summaryRunning.value) {
+    const { done, total } = summaryProgress.value;
+    return total > 1 ? `總結中 ${done + 1}/${total}…` : "總結中…";
+  }
+  if (summaryChars.value <= 0) return "這段已經總結過了";
+  return summaryCalls.value > 1 ? `總結（分 ${summaryCalls.value} 次）` : "總結";
+});
+
+function changeRecentPages(delta: number) {
+  summaryRecentPages.value = Math.min(200, Math.max(5, summaryRecentPages.value + delta));
+}
+
+/** 總結一段範圍，每完成一則就存起來；回傳做好幾則 */
+async function runSummary(from: BookPosition, to: BookPosition, auto: boolean): Promise<number> {
+  summaryRunning.value = true;
+  summaryProgress.value = { done: 0, total: splitRange(props.book.chapters, from, to).length };
+  try {
+    const made = await summarizeRange({
+      bookTitle: props.book.title,
+      author: props.book.author,
+      chapters: props.book.chapters,
+      from,
+      to,
+      existing: summaries.value,
+      auto,
+      maxCalls: auto ? AUTO_SUMMARY_MAX_CALLS : undefined,
+      onEach: async (summary, done, total) => {
+        summaryProgress.value = { done, total };
+        await booksStore.patchProgress(props.book.id, (current) => ({
+          summaries: [...(current?.summaries ?? []), summary],
+        }));
+      },
+    });
+    pagesSinceSummary.value = 0;
+    await booksStore.patchProgress(props.book.id, { pagesSinceSummary: 0, autoSummaryFailures: 0 });
+    return made.length;
+  } finally {
+    summaryRunning.value = false;
+  }
+}
+
+async function startManualSummary() {
+  if (summaryRunning.value || summaryChars.value <= 0) return;
+  const from = summaryFrom.value;
+  const to = summaryEnd.value;
+  closeSheet();
+  showToast("開始總結…");
+  try {
+    const count = await runSummary(from, to, false);
+    showToast(count > 1 ? `總結好了，存成 ${count} 則` : "總結好了");
+  } catch (e) {
+    showToast(e instanceof Error ? e.message : "總結失敗");
+  }
+}
+
+/** 往後翻了一頁：自動摘要計數，到了就在背景總結 */
+function onForwardPage() {
+  const every = prefs.value.summaryEveryPages;
+  if (!every) return;
+  pagesSinceSummary.value++;
+  const failures = booksStore.progressByBook[props.book.id]?.autoSummaryFailures ?? 0;
+  if (summaryRunning.value || !shouldAutoSummarize(pagesSinceSummary.value, every, failures)) return;
+  const to = currentEnd();
+  const from = defaultSummaryStart(to);
+  if (charsBetween(props.book.chapters, from, to) <= 0) {
+    pagesSinceSummary.value = 0;
+    return;
+  }
+  runAutoSummary(from, to, failures);
+}
+
+async function runAutoSummary(from: BookPosition, to: BookPosition, failures: number) {
+  try {
+    await runSummary(from, to, true);
+    showToast("已總結到這裡");
+  } catch (e) {
+    // 計數不歸零，下次翻頁再試
+    const next = failures + 1;
+    await booksStore.patchProgress(props.book.id, { autoSummaryFailures: next });
+    const reason = e instanceof Error ? e.message : "";
+    showToast(
+      next >= AUTO_SUMMARY_MAX_FAILURES
+        ? "自動摘要連續失敗，先暫停；手動總結一次就會恢復"
+        : `自動摘要失敗${reason ? `：${reason}` : ""}，下一頁再試`,
+    );
+  }
+}
+
+// 摘要列表：跳回、編輯、刪除
+const editingSummaryId = ref<string | null>(null);
+const summaryDraft = ref({ title: "", content: "" });
+
+function jumpToSummary(s: BookSummary) {
+  closeSheet();
+  run(() => openChapter(s.from.chapterIndex, { offset: s.from.charOffset }));
+}
+
+function editSummary(s: BookSummary) {
+  editingSummaryId.value = s.id;
+  summaryDraft.value = { title: s.title, content: s.content };
+}
+
+async function saveSummaryEdit() {
+  const id = editingSummaryId.value;
+  const title = summaryDraft.value.title.trim();
+  const content = summaryDraft.value.content.trim();
+  editingSummaryId.value = null;
+  if (!id || !content) return;
+  await booksStore.patchProgress(props.book.id, (current) => ({
+    summaries: (current?.summaries ?? []).map((s) =>
+      s.id === id ? { ...s, title: title || s.title, content, updatedAt: Date.now() } : s,
+    ),
+  }));
+  showToast("摘要已儲存");
+}
+
+async function deleteSummary(s: BookSummary) {
+  if (!window.confirm(`刪除「${s.title}」這則摘要？`)) return;
+  await booksStore.patchProgress(props.book.id, (current) => ({
+    summaries: (current?.summaries ?? []).filter((x) => x.id !== s.id),
+  }));
+  showToast("已刪除摘要");
+}
+
 // ===== 閱讀時數 =====
 // 畫面看得到、而且最近 3 分鐘內有翻頁或碰螢幕才算在讀，避免開著書走開也一直計時
 const ACTIVE_WINDOW_MS = 3 * 60_000;
@@ -713,6 +946,7 @@ onMounted(async () => {
   ]);
 
   const saved = await booksStore.getProgress(props.book.id);
+  pagesSinceSummary.value = saved?.pagesSinceSummary ?? 0;
   await run(async () => {
     const index = Math.min(saved?.chapterIndex ?? 0, lastChapterIndex.value);
     if (saved?.charOffset !== undefined) {
@@ -891,6 +1125,14 @@ watch(
               >
                 筆記<span>{{ highlights.length }}</span>
               </button>
+              <button
+                role="tab"
+                :aria-selected="tocTab === 'summaries'"
+                :class="{ active: tocTab === 'summaries' }"
+                @click="tocTab = 'summaries'"
+              >
+                摘要<span>{{ summaries.length }}</span>
+              </button>
             </div>
             <button class="rd-icon-btn" aria-label="關閉" @click="closeSheet">
               <X :size="20" />
@@ -910,6 +1152,41 @@ watch(
               <span class="rd-note-quote">{{ h.text }}</span>
               <span v-if="h.note" class="rd-note-text">{{ h.note }}</span>
             </button>
+          </div>
+          <div v-else-if="tocTab === 'summaries'" class="rd-toc">
+            <button class="rd-sum-new" :disabled="summaryRunning" @click="openSummaryRange">
+              <ScrollText :size="18" />{{ summaryRunning ? "總結中…" : "總結這幾頁" }}
+            </button>
+            <p v-if="sortedSummaryList.length === 0" class="rd-picker-empty">
+              還沒有摘要。讀一段之後按上面的按鈕，<br />或在排版設定開「自動摘要」。
+            </p>
+            <article v-for="s in sortedSummaryList" :key="s.id" class="rd-sum-item">
+              <template v-if="editingSummaryId === s.id">
+                <input v-model="summaryDraft.title" class="rd-sum-title-field" aria-label="摘要標題" />
+                <textarea v-model="summaryDraft.content" class="rd-note-field" rows="6" aria-label="摘要內容" />
+                <div class="rd-hl-actions">
+                  <button class="rd-ghost-btn" @click="editingSummaryId = null">取消</button>
+                  <button class="rd-solid-btn" :disabled="!summaryDraft.content.trim()" @click="saveSummaryEdit">
+                    儲存
+                  </button>
+                </div>
+              </template>
+              <template v-else>
+                <div class="rd-sum-head">
+                  <button class="rd-sum-title" @click="jumpToSummary(s)">{{ s.title }}</button>
+                  <button class="rd-icon-btn" aria-label="編輯摘要" @click="editSummary(s)">
+                    <Pencil :size="16" />
+                  </button>
+                  <button class="rd-icon-btn" aria-label="刪除摘要" @click="deleteSummary(s)">
+                    <Trash2 :size="16" />
+                  </button>
+                </div>
+                <span class="rd-note-chapter">
+                  {{ rangeLabel(s, book.chapters) }}<template v-if="s.auto"> · 自動</template>
+                </span>
+                <p class="rd-sum-content">{{ s.content }}</p>
+              </template>
+            </article>
           </div>
           <div v-else ref="tocListEl" class="rd-toc">
             <button
@@ -1002,6 +1279,28 @@ watch(
                 </button>
               </div>
             </div>
+            <div class="rd-setting stacked">
+              <span class="rd-setting-label">自動摘要</span>
+              <div class="rd-segment fill" role="radiogroup" aria-label="每讀幾頁自動總結一次">
+                <button
+                  v-for="n in SUMMARY_EVERY_OPTIONS"
+                  :key="n"
+                  role="radio"
+                  :aria-checked="prefs.summaryEveryPages === n"
+                  :class="{ active: prefs.summaryEveryPages === n }"
+                  @click="booksStore.setReaderPrefs({ summaryEveryPages: n })"
+                >
+                  {{ n ? `${n} 頁` : "關" }}
+                </button>
+              </div>
+              <span class="rd-setting-note" :class="{ warn: autoSummaryPaused && prefs.summaryEveryPages }">
+                {{
+                  autoSummaryPaused && prefs.summaryEveryPages
+                    ? "連續失敗 3 次，先暫停了；手動總結一次就會恢復。"
+                    : "每往後讀幾頁，就在背景總結一次，會用到「總結」的 API。"
+                }}
+              </span>
+            </div>
           </div>
         </template>
 
@@ -1063,6 +1362,13 @@ watch(
           </div>
           <p class="rd-sheet-hint">都只會用到你讀到這裡為止的內容，不會劇透。</p>
           <div class="rd-play-list">
+            <button class="rd-play-item" @click="openSummaryRange">
+              <span class="rd-play-icon" aria-hidden="true"><ScrollText :size="20" /></span>
+              <span class="rd-play-text">
+                <span class="rd-play-title">總結這幾頁</span>
+                <span class="rd-play-desc">選一段讀過的範圍，AI 幫你整理重點，存在目錄的「摘要」</span>
+              </span>
+            </button>
             <button v-for="m in PLAY_MODES" :key="m.id" class="rd-play-item" @click="openPlay(m.id)">
               <span class="rd-play-icon" aria-hidden="true">
                 <MessageCircle v-if="m.id === 'summon'" :size="20" />
@@ -1074,6 +1380,81 @@ watch(
                 <span class="rd-play-title">{{ m.title }}</span>
                 <span class="rd-play-desc">{{ m.desc }}</span>
               </span>
+            </button>
+          </div>
+        </template>
+
+        <!-- 總結範圍 -->
+        <template v-else-if="sheet === 'summary'">
+          <div class="rd-sheet-head">
+            <h3>總結這幾頁</h3>
+            <button class="rd-icon-btn" aria-label="關閉" @click="closeSheet">
+              <X :size="20" />
+            </button>
+          </div>
+          <p class="rd-sheet-hint">範圍一律到你現在這頁為止。會把範圍裡的原文完整送給 AI，不裁切。</p>
+          <div class="rd-sum-range" role="radiogroup" aria-label="總結範圍">
+            <button
+              role="radio"
+              class="rd-sum-option"
+              :aria-checked="summaryRangeKind === 'sinceLast'"
+              :class="{ active: summaryRangeKind === 'sinceLast' }"
+              @click="summaryRangeKind = 'sinceLast'"
+            >
+              <span class="rd-sum-dot" aria-hidden="true" />
+              {{ hasEarlierSummary ? "從上次摘要到這裡" : "從本章開頭到這裡" }}
+            </button>
+            <button
+              v-if="hasEarlierSummary"
+              role="radio"
+              class="rd-sum-option"
+              :aria-checked="summaryRangeKind === 'chapter'"
+              :class="{ active: summaryRangeKind === 'chapter' }"
+              @click="summaryRangeKind = 'chapter'"
+            >
+              <span class="rd-sum-dot" aria-hidden="true" />本章開頭到這裡
+            </button>
+            <div class="rd-sum-option-row" :class="{ active: summaryRangeKind === 'recent' }">
+              <button
+                role="radio"
+                class="rd-sum-option"
+                :aria-checked="summaryRangeKind === 'recent'"
+                :class="{ active: summaryRangeKind === 'recent' }"
+                @click="summaryRangeKind = 'recent'"
+              >
+                <span class="rd-sum-dot" aria-hidden="true" />最近 {{ summaryRecentPages }} 頁
+              </button>
+              <div class="rd-stepper">
+                <button
+                  aria-label="少 5 頁"
+                  :disabled="summaryRecentPages <= 5"
+                  @click="summaryRangeKind = 'recent'; changeRecentPages(-5)"
+                >
+                  <Minus :size="16" />
+                </button>
+                <button
+                  aria-label="多 5 頁"
+                  :disabled="summaryRecentPages >= 200"
+                  @click="summaryRangeKind = 'recent'; changeRecentPages(5)"
+                >
+                  <Plus :size="16" />
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="rd-sum-meta" aria-live="polite">
+            <span>{{ summaryRangeText }}</span>
+            <span>
+              會送 {{ summaryChars.toLocaleString() }} 字<template v-if="summaryCalls > 1">，每 2 萬字一次，分成 {{ summaryCalls }} 次</template>
+            </span>
+          </div>
+          <div class="rd-hl-actions rd-sum-actions">
+            <button
+              class="rd-solid-btn"
+              :disabled="summaryRunning || summaryChars <= 0"
+              @click="startManualSummary"
+            >
+              {{ summaryButtonText }}
             </button>
           </div>
         </template>
@@ -1566,6 +1947,19 @@ button {
   flex-direction: column;
   gap: 6px;
   padding: 4px 20px 6px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.rd-setting-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--rd-sub);
+
+  &.warn {
+    color: var(--color-error, #e53e3e);
+  }
 }
 
 .rd-setting {
@@ -1657,6 +2051,11 @@ button {
       color: var(--rd-bg);
       font-weight: 700;
     }
+  }
+
+  &.fill button {
+    flex: 1;
+    min-width: 0;
   }
 }
 
@@ -2010,13 +2409,209 @@ button {
   pointer-events: none;
 }
 
+// ===== 分段摘要 =====
+.rd-sum-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 48px;
+  margin: 2px 0 8px;
+  border: 1px dashed var(--rd-line);
+  border-radius: 16px;
+  background: transparent;
+  color: var(--rd-text);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--rd-raise);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.rd-sum-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 4px 12px 12px;
+  border-bottom: 1px solid var(--rd-line);
+}
+
+.rd-sum-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+
+  .rd-icon-btn {
+    width: 40px;
+    height: 40px;
+    color: var(--rd-sub);
+  }
+}
+
+.rd-sum-title {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: "Noto Serif TC", serif;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+.rd-sum-content {
+  margin: 4px 8px 0 0;
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.rd-sum-title-field {
+  width: 100%;
+  height: 44px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  border: 1px solid var(--rd-line);
+  border-radius: 14px;
+  background: var(--rd-bg);
+  color: var(--rd-text);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  outline: none;
+
+  &:focus {
+    border-color: var(--rd-accent);
+  }
+}
+
+.rd-sum-item .rd-note-field {
+  margin-top: 4px;
+}
+
+.rd-sum-item .rd-hl-actions {
+  margin: 6px 8px 0 0;
+}
+
+.rd-sum-range {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 16px;
+}
+
+.rd-sum-option-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 16px;
+  background: var(--rd-raise);
+
+  &.active {
+    background: var(--rd-accent-soft);
+  }
+
+  .rd-sum-option,
+  .rd-sum-option.active {
+    flex: 1;
+    background: transparent;
+  }
+
+  .rd-stepper {
+    margin-right: 6px;
+    background: var(--rd-sheet);
+  }
+}
+
+.rd-sum-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 16px;
+  background: var(--rd-raise);
+  color: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+
+  &.active {
+    background: var(--rd-accent-soft);
+    font-weight: 700;
+  }
+}
+
+.rd-sum-dot {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  border: 2px solid var(--rd-sub);
+  border-radius: 50%;
+
+  .active > & {
+    border: 6px solid var(--rd-accent);
+  }
+}
+
+.rd-sum-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 14px 20px 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--rd-sub);
+
+  span:first-child {
+    color: var(--rd-text);
+    font-weight: 600;
+  }
+}
+
+.rd-sum-actions {
+  padding: 12px 20px 4px;
+
+  .rd-solid-btn {
+    flex: 1;
+    justify-content: center;
+    margin-left: 0;
+  }
+}
+
+.rd-solid-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 // ===== 好玩模式清單 =====
 .rd-play-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 0 16px 4px;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .rd-play-item {
