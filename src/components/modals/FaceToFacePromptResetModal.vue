@@ -51,7 +51,7 @@ async function handleReset() {
       </header>
 
       <div v-if="step === 'intro'" class="f2f-reset-body">
-        <p>面對面模式的預設提示詞有<strong>重要更新</strong>：篝火預設改寫了開場手札和涅芙的角色設定，說書順序加入「角色自帶思維鏈」的位置，結尾條目也一併更新。</p>
+        <p>面對面模式的預設提示詞有<strong>重要更新</strong>：篝火預設的開場手札和涅芙角色設定重新改寫，說書改以「溫養靈魂、深層共鳴」為核心。</p>
         <p>已經存過的面對面提示詞會一直沿用舊內容，所以每個人都必須重置一次才會換成新版。</p>
         <div class="f2f-reset-note">
           <strong>重置只影響面對面模式</strong>
