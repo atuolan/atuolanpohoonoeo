@@ -436,7 +436,7 @@ onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown);
   if (saveTimer) clearTimeout(saveTimer);
   if (resizeObserver) resizeObserver.disconnect();
-  companion.saveState();
+  companion.endSession();
 });
 
 // 章節切換或字體變更時重新計算頁數

@@ -34,6 +34,8 @@ export class CompanionChatCore {
   triggerFrequency: number = 3;
   accumulatedChapterIndices: number[] = [];
   messages: CompanionMessage[] = [];
+  /** messages 中已同步到主聊天的前幾則 */
+  syncedCount: number = 0;
   isActive: boolean = false;
   isPanelExpanded: boolean = true;
   hasUnread: boolean = false;
@@ -88,6 +90,7 @@ export class CompanionChatCore {
     this.pageTurnCounter = 0;
     this.accumulatedChapterIndices = [];
     this.messages = [];
+    this.syncedCount = 0;
     this.isPanelExpanded = true;
     this.hasUnread = false;
   }
@@ -262,6 +265,7 @@ export function serializeCompanionState(
   pageTurnCounter: number,
   bubblePosition: { x: number; y: number },
   messages: CompanionMessage[],
+  syncedCount: number = messages.length,
 ): CompanionChatState {
   return {
     bookId,
@@ -276,16 +280,23 @@ export function serializeCompanionState(
       timestamp: m.timestamp,
       senderName: m.senderName,
     })),
+    syncedCount,
   };
 }
 
 /**
  * 從 CompanionChatState 反序列化，回傳與輸入等價的物件
+ * 舊存檔沒有 syncedCount：當時每輪都整段貼過，視為全部已同步
  */
 export function deserializeCompanionState(
   state: CompanionChatState,
 ): CompanionChatState {
+  const syncedCount = Math.min(
+    Math.max(state.syncedCount ?? state.messages.length, 0),
+    state.messages.length,
+  );
   return {
+    syncedCount,
     bookId: state.bookId,
     characterId: state.characterId,
     triggerFrequency: state.triggerFrequency,
@@ -371,6 +382,8 @@ export interface UseCompanionChatReturn {
   syncToMainChat(): Promise<void>;
   saveState(): Promise<void>;
   restoreState(): Promise<void>;
+  /** 離開閱讀器時呼叫：把這次的新對話貼成一張共讀卡，並保存狀態 */
+  endSession(): Promise<void>;
 }
 
 export function useCompanionChat(
@@ -407,10 +420,10 @@ export function useCompanionChat(
   }
 
   async function stopCompanion() {
-    // Auto-save before stopping
-    await saveState();
-    // 關閉時將伴讀對話同步到主聊天
+    // 關閉時把還沒同步的對話貼到主聊天
     await syncToMainChat();
+    // 刪掉存檔，下次打開這本書不會自動恢復伴讀
+    await clearSavedState();
     core.stop();
     selectedCharacterId.value = null;
     syncFromCore();
@@ -544,8 +557,8 @@ export function useCompanionChat(
         core.onNewAssistantMessage();
         syncFromCore();
 
-        // 同步到正式聊天
-        await syncToMainChat();
+        // 先存起來，離開閱讀器時再一次貼到正式聊天
+        await saveState();
       }
     } catch (e) {
       console.error("[CompanionChat] sendMessage 失敗:", e);
@@ -646,8 +659,8 @@ export function useCompanionChat(
         core.resetAfterTrigger();
         syncFromCore();
 
-        // 同步到正式聊天
-        await syncToMainChat();
+        // 先存起來，離開閱讀器時再一次貼到正式聊天
+        await saveState();
       }
     } catch (e) {
       console.error("[CompanionChat] triggerAutoResponse 失敗:", e);
@@ -656,16 +669,28 @@ export function useCompanionChat(
     }
   }
 
+  // 同步排隊執行，避免離開閱讀器與停止伴讀同時觸發時重複貼卡
+  let syncQueue: Promise<void> = Promise.resolve();
+
   /**
-   * 將最近一輪對話同步到正式聊天（GroupChatHistoryCard）
+   * 將還沒同步的對話貼到正式聊天（一張 GroupChatHistoryCard）
+   * 只貼 syncedCount 之後的新訊息，貼過的不會再貼
    */
-  async function syncToMainChat(): Promise<void> {
-    if (!selectedCharacterId.value || core.messages.length === 0) return;
+  function syncToMainChat(): Promise<void> {
+    syncQueue = syncQueue.then(syncPendingMessages);
+    return syncQueue;
+  }
+
+  async function syncPendingMessages(): Promise<void> {
+    if (!selectedCharacterId.value) return;
+    const upTo = core.messages.length;
+    const pending = core.messages.slice(core.syncedCount, upTo);
+    if (pending.length === 0) return;
 
     try {
       const characterId = selectedCharacterId.value;
       const bookTitle = options.book.value.title;
-      const historyData = buildSyncData(bookTitle, core.messages);
+      const historyData = buildSyncData(bookTitle, pending);
 
       let targetChat: Chat | undefined = await resolvePreferredDirectChat(characterId);
 
@@ -702,6 +727,7 @@ export function useCompanionChat(
       };
 
       await appendMessages(targetChat.id, [syncMessage]);
+      core.syncedCount = upTo;
       await refreshChatDerivedMetadata(targetChat.id);
     } catch (e) {
       console.warn("[CompanionChat] syncToMainChat 失敗:", e);
@@ -725,6 +751,7 @@ export function useCompanionChat(
         core.pageTurnCounter,
         core.bubblePosition,
         core.messages,
+        core.syncedCount,
       );
       await db.put(DB_STORES.APP_SETTINGS, {
         ...state,
@@ -758,13 +785,33 @@ export function useCompanionChat(
       core.pageTurnCounter = state.pageTurnCounter;
       core.bubblePosition = { ...state.bubblePosition };
       core.messages = [...state.messages];
+      core.syncedCount = state.syncedCount ?? state.messages.length;
       core.isActive = true;
       core.isPanelExpanded = true;
       core.hasUnread = false;
 
       syncFromCore();
+
+      // 上次沒正常離開（例如 App 被關掉）留下的對話，現在補貼
+      if (core.syncedCount < core.messages.length) {
+        await endSession();
+      }
     } catch (e) {
       console.warn("[CompanionChat] restoreState 失敗:", e);
+    }
+  }
+
+  async function endSession(): Promise<void> {
+    await syncToMainChat();
+    await saveState();
+  }
+
+  async function clearSavedState(): Promise<void> {
+    try {
+      const { db, DB_STORES } = await import("@/db/database");
+      await db.delete(DB_STORES.APP_SETTINGS, `companion-chat-${options.book.value.id}`);
+    } catch (e) {
+      console.warn("[CompanionChat] clearSavedState 失敗:", e);
     }
   }
 
@@ -791,5 +838,6 @@ export function useCompanionChat(
     syncToMainChat,
     saveState,
     restoreState,
+    endSession,
   };
 }

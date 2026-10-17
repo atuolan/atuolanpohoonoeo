@@ -43,4 +43,6 @@ export interface CompanionChatState {
   pageTurnCounter: number;
   bubblePosition: { x: number; y: number };
   messages: CompanionMessage[];
+  /** 已同步到主聊天的訊息數（舊存檔沒有此欄位，視為全部已同步） */
+  syncedCount?: number;
 }
