@@ -1,13 +1,13 @@
 <script setup lang="ts">
 /**
- * 提示詞強制重置引導（線上模式／面對面模式）
+ * 提示詞強制重置引導（線上模式／群聊／面對面模式）
  * 提示詞重大更新後，舊設定無法沿用；此彈窗無法關閉，必須完成重置才會消失。
  */
 import { usePromptManagerStore } from "@/stores/promptManager";
 import { AlertTriangle, CheckCircle2, RotateCcw } from "lucide-vue-next";
 import { computed, ref } from "vue";
 
-type PromptResetGuideMode = "online" | "faceToFace";
+type PromptResetGuideMode = "online" | "groupChat" | "faceToFace";
 
 const props = defineProps<{
   mode: PromptResetGuideMode;
@@ -31,6 +31,13 @@ const COPY: Record<
     extraNote: "角色獨立設定的提示詞順序會換成新的排列，原本條目的開關照舊",
     tab: "線上模式",
   },
+  groupChat: {
+    label: "群聊",
+    changes:
+      "改用線上模式現在的分區寫法和思考框架，群聊專屬的功能（紅包、群管理、群通話、私信等）都保留。",
+    others: "一般聊天、面對面、日記等其他提示詞不受影響",
+    tab: "群聊",
+  },
   faceToFace: {
     label: "面對面",
     changes: "篝火預設的開場手札和涅芙角色設定重新改寫，說書改以「溫養靈魂、深層共鳴」為核心。",
@@ -53,6 +60,8 @@ async function handleReset() {
   try {
     if (props.mode === "online") {
       await promptManagerStore.resetOnlineForUpdate();
+    } else if (props.mode === "groupChat") {
+      await promptManagerStore.resetGroupChatToDefault();
     } else {
       await promptManagerStore.resetFaceToFaceToDefault();
     }

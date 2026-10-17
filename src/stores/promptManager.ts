@@ -62,12 +62,19 @@ export const FACE_TO_FACE_PROMPT_RESET_VERSION = 5;
  */
 export const ONLINE_PROMPT_RESET_VERSION = 1;
 
+/**
+ * 群聊模式提示詞強制重置版本（規則同面對面）。
+ * 1：改用線上模式的分區寫法與思考框架，保留群聊專屬格式（紅包、群管理、群通話、私信等）
+ */
+export const GROUP_CHAT_PROMPT_RESET_VERSION = 1;
+
 /** 新建的配置已是最新提示詞，不需要再引導重置 */
 function createFreshPromptManagerConfig(): PromptManagerConfig {
   return {
     ...createDefaultPromptManagerConfig(),
     faceToFacePromptResetVersion: FACE_TO_FACE_PROMPT_RESET_VERSION,
     onlinePromptResetVersion: ONLINE_PROMPT_RESET_VERSION,
+    groupChatPromptResetVersion: GROUP_CHAT_PROMPT_RESET_VERSION,
   };
 }
 
@@ -487,6 +494,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
   /** 線上模式提示詞是否停留在舊版、需要強制引導重置 */
   const needsOnlinePromptReset = computed(
     () => (config.value.onlinePromptResetVersion ?? 0) < ONLINE_PROMPT_RESET_VERSION,
+  );
+
+  /** 群聊模式提示詞是否停留在舊版、需要強制引導重置 */
+  const needsGroupChatPromptReset = computed(
+    () => (config.value.groupChatPromptResetVersion ?? 0) < GROUP_CHAT_PROMPT_RESET_VERSION,
   );
 
   // ===== Actions =====
@@ -1475,6 +1487,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
       DEFAULT_GROUP_CHAT_PROMPT_ORDER,
     );
     config.value.deletedGroupChatPromptIds = [];
+    config.value.groupChatPromptResetVersion = GROUP_CHAT_PROMPT_RESET_VERSION;
     // 日記
     config.value.diaryPrompts = structuredClone(DIARY_PROMPT_DEFINITIONS);
     config.value.diaryPromptOrder = structuredClone(DEFAULT_DIARY_PROMPT_ORDER);
@@ -2231,6 +2244,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
       DEFAULT_GROUP_CHAT_PROMPT_ORDER,
     );
     config.value.deletedGroupChatPromptIds = [];
+    config.value.groupChatPromptResetVersion = GROUP_CHAT_PROMPT_RESET_VERSION;
     await saveConfig();
   }
 
@@ -3212,6 +3226,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     groupChatPrompts,
     needsFaceToFacePromptReset,
     needsOnlinePromptReset,
+    needsGroupChatPromptReset,
     // Actions
     loadConfig,
     saveConfig,
