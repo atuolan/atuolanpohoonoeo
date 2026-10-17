@@ -3,9 +3,12 @@ import BookPlayDuel from "@/components/books/BookPlayDuel.vue";
 import BookPlayPet from "@/components/books/BookPlayPet.vue";
 import BookPlaySummon from "@/components/books/BookPlaySummon.vue";
 import BookPlayWhatIf from "@/components/books/BookPlayWhatIf.vue";
+import BookCircle from "@/components/books/BookCircle.vue";
 import BookReviewCards from "@/components/books/BookReviewCards.vue";
 import CompanionChatPanel from "@/components/common/CompanionChatPanel.vue";
 import { useCompanionChat } from "@/composables/useCompanionChat";
+import { anchorAt, useReadingCircle, type CircleAnchor } from "@/composables/useReadingCircle";
+import { notedParagraphs, paraKey } from "@/services/bookCircle";
 import { useBooksStore } from "@/stores/books";
 import { useCharactersStore } from "@/stores/characters";
 import { useLorebooksStore } from "@/stores/lorebooks";
@@ -78,6 +81,7 @@ import {
   Send,
   Sparkles,
   Telescope,
+  UsersRound,
   Swords,
   Trash2,
   Users,
@@ -270,6 +274,8 @@ async function relayoutKeepingPosition() {
 function turnBy(delta: 1 | -1) {
   return run(async () => {
     const target = page.value + delta;
+    // 同步讀：翻走前記下剛讀完的那段，角色在那裡留言
+    const justRead = delta === 1 && circleApi.circle.value?.syncReading ? pageLastAnchor() : null;
     if (target < 0) {
       if (chapterIndex.value === 0) return applyPageOffset(true);
       await openChapter(chapterIndex.value - 1, "end");
@@ -287,7 +293,10 @@ function turnBy(delta: 1 | -1) {
       applyPageOffset(true);
       updateAnchor();
     }
-    if (delta === 1) onForwardPage();
+    if (delta === 1) {
+      onForwardPage();
+      if (justRead) circleApi.onSyncPage(justRead);
+    }
     notifyCompanionPageTurn();
   });
 }
@@ -382,6 +391,10 @@ function handleTapNavigation(e: MouseEvent) {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  if (circleOpen.value) {
+    if (e.key === "Escape") closeCircle();
+    return;
+  }
   if (reviewItems.value) {
     if (e.key === "Escape") closeReview();
     return;
@@ -702,18 +715,30 @@ const noteDraft = ref("");
 function openHighlight(id: string) {
   activeHighlightId.value = id;
   noteDraft.value = highlights.value.find((h) => h.id === id)?.note ?? "";
+  alsoPostToCircle.value = false;
   openSheet("highlight");
 }
 
 async function saveNote() {
   const id = activeHighlightId.value;
   const note = noteDraft.value.trim();
+  const h = activeHighlight.value;
+  const postToCircle = alsoPostToCircle.value && !!note && !!h && !!circleApi.circle.value;
   closeSheet();
   await booksStore.patchProgress(props.book.id, (current) => ({
     highlights: (current?.highlights ?? []).map((h) =>
       h.id === id ? { ...h, note: note || undefined, updatedAt: Date.now() } : h,
     ),
   }));
+  if (postToCircle && h) {
+    const anchor = circleAnchorAt(chapterIndexOf(h), h.start);
+    if (anchor) {
+      showToast("已貼到共讀圈，角色們在看…");
+      await circleApi.postUserNote(anchor, note);
+      showToast(circleApi.error.value || "共讀圈有人回你了");
+      return;
+    }
+  }
   showToast(note ? "筆記已儲存" : "已儲存");
 }
 
@@ -1240,6 +1265,53 @@ async function saveLensNote() {
   showToast("已存進筆記");
 }
 
+// ===== 共讀圈 =====
+const circleApi = useReadingCircle({
+  book: toRef(props, "book"),
+  getSummaries: (index, offset) =>
+    readingSummariesText(props.book.chapters, summaries.value, { chapterIndex: index, charOffset: offset }, 3),
+});
+const circleOpen = ref(false);
+const circleAnchor = ref<CircleAnchor | null>(null);
+const circleFocusKey = ref<string | undefined>();
+/** 本章有共讀圈留言的段落 → 留言的人 */
+const circleDots = computed(() => notedParagraphs(circleApi.circle.value?.notes, chapterIndex.value));
+/** 筆記抽屜的「也貼到共讀圈」 */
+const alsoPostToCircle = ref(false);
+
+/** 某個位置所在段落當錨點；在目前這章時只取到這頁結尾 */
+function circleAnchorAt(index: number, offset: number): CircleAnchor | null {
+  const readEnd = index === chapterIndex.value ? pageEndOffset() : Infinity;
+  return anchorAt(props.book, index, offset, readEnd);
+}
+
+/** 目前這頁最後一段（讀到的最後一段） */
+function pageLastAnchor(): CircleAnchor | null {
+  return circleAnchorAt(chapterIndex.value, Math.max(pageEndOffset() - 1, 0));
+}
+
+function openCircle(focus?: { chapterIndex: number; paraStart: number }) {
+  closeSheet();
+  circleAnchor.value = focus ? circleAnchorAt(focus.chapterIndex, focus.paraStart) : pageLastAnchor();
+  circleFocusKey.value = focus ? paraKey(focus.chapterIndex, focus.paraStart) : undefined;
+  circleOpen.value = true;
+}
+
+function closeCircle() {
+  circleOpen.value = false;
+}
+
+function jumpFromCircle(index: number, offset: number) {
+  closeCircle();
+  run(() => openChapter(index, { offset }));
+}
+
+function circleDotAvatar(id: string): string {
+  if (id === "user") return userStore.currentAvatar;
+  if (id === "host") return "";
+  return charsStore.getCharacterById(id)?.avatar ?? "";
+}
+
 // ===== 閱讀時數 =====
 // 畫面看得到、而且最近 3 分鐘內有翻頁或碰螢幕才算在讀，避免開著書走開也一直計時
 const ACTIVE_WINDOW_MS = 3 * 60_000;
@@ -1360,6 +1432,10 @@ watch(
           <span class="rd-remaining">· {{ remainingText }}</span>
         </span>
       </div>
+      <button class="rd-icon-btn rd-circle-btn" aria-label="共讀圈" @click="openCircle()">
+        <UsersRound :size="21" />
+        <span v-if="circleApi.circle.value?.syncReading" class="rd-circle-live" aria-hidden="true" />
+      </button>
       <button class="rd-icon-btn" aria-label="好玩模式" @click="openSheet('play')">
         <Sparkles :size="21" />
       </button>
@@ -1413,7 +1489,7 @@ watch(
           :key="`${chapterIndex}-${i}`"
           class="rd-para"
           :data-i="i"
-        ><template v-for="seg in segmentsByPara[i]" :key="seg.from"><mark v-if="seg.highlightId" class="rd-hl" :class="{ noted: notedIds.has(seg.highlightId) }" @click.stop="openHighlight(seg.highlightId)">{{ para.text.slice(seg.from, seg.to) }}</mark><template v-else>{{ para.text.slice(seg.from, seg.to) }}</template></template><span class="rd-end" /></p>
+        ><span v-if="circleDots.has(para.start)" class="rd-circle-dots" role="button" tabindex="0" :aria-label="`這段有 ${circleDots.get(para.start)!.length} 人留言，打開共讀圈`" @click.stop="openCircle({ chapterIndex, paraStart: para.start })" @keydown.enter.stop="openCircle({ chapterIndex, paraStart: para.start })"><span v-for="who in circleDots.get(para.start)!.slice(0, 2)" :key="who" class="rd-circle-dot" :class="{ host: who === 'host' }" :style="circleDotAvatar(who) ? { backgroundImage: `url(${circleDotAvatar(who)})` } : undefined" /></span><template v-for="seg in segmentsByPara[i]" :key="seg.from"><mark v-if="seg.highlightId" class="rd-hl" :class="{ noted: notedIds.has(seg.highlightId) }" @click.stop="openHighlight(seg.highlightId)">{{ para.text.slice(seg.from, seg.to) }}</mark><template v-else>{{ para.text.slice(seg.from, seg.to) }}</template></template><span class="rd-end" /></p>
       </div>
     </div>
 
@@ -1920,6 +1996,10 @@ watch(
               rows="4"
               placeholder="寫下你的想法…"
             />
+            <label v-if="circleApi.circle.value" class="rd-check">
+              <input v-model="alsoPostToCircle" type="checkbox" />
+              也貼到共讀圈「{{ circleApi.circle.value.name }}」
+            </label>
             <div class="rd-hl-actions">
               <button class="rd-ghost-btn danger" @click="deleteActiveHighlight">
                 <Trash2 :size="16" />刪除劃線
@@ -1939,6 +2019,18 @@ watch(
 
     <Transition name="rd-fade">
       <div v-if="toast" class="rd-toast" role="status">{{ toast }}</div>
+    </Transition>
+
+    <Transition name="rd-fade">
+      <BookCircle
+        v-if="circleOpen"
+        :book="book"
+        :api="circleApi"
+        :anchor="circleAnchor"
+        :focus-key="circleFocusKey"
+        @close="closeCircle"
+        @jump="jumpFromCircle"
+      />
     </Transition>
 
     <Transition name="rd-fade">
@@ -3059,6 +3151,72 @@ button {
 .rd-solid-btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+// ===== 共讀圈 =====
+.rd-circle-btn {
+  position: relative;
+}
+
+.rd-circle-live {
+  position: absolute;
+  top: 10px;
+  right: 9px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--rd-accent);
+  box-shadow: 0 0 0 2px var(--rd-bg);
+}
+
+// 段落頁邊的頭像點：絕對定位、沒有文字，不影響分頁與選取的字元位置
+.rd-para {
+  position: relative;
+}
+
+.rd-circle-dots {
+  position: absolute;
+  left: -24px;
+  top: 0.35em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 20px;
+  min-height: 24px;
+  text-indent: 0;
+  user-select: none;
+  cursor: pointer;
+}
+
+.rd-circle-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--rd-bg);
+  background: var(--rd-accent) center / cover no-repeat;
+
+  & + & {
+    margin-top: -6px;
+  }
+
+  &.host {
+    background-color: var(--rd-text);
+  }
+}
+
+.rd-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  font-size: 14px;
+  cursor: pointer;
+
+  input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--rd-accent);
+  }
 }
 
 // ===== 回顧卡 =====
