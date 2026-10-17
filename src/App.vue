@@ -60,7 +60,7 @@ import MultiCharSetupModal from "@/components/modals/MultiCharSetupModal.vue";
 import PhoneContactPickerModal from "@/components/modals/PhoneContactPickerModal.vue";
 import PomodoroCertModal from "@/components/modals/PomodoroCertModal.vue";
 import AnnouncementModal from "@/components/modals/AnnouncementModal.vue";
-import FaceToFacePromptResetModal from "@/components/modals/FaceToFacePromptResetModal.vue";
+import PromptResetGuideModal from "@/components/modals/PromptResetGuideModal.vue";
 import { usePromptManagerStore } from "@/stores/promptManager";
 import FavoriteAudioModal from "@/components/modals/FavoriteAudioModal.vue";
 import {
@@ -895,15 +895,18 @@ async function handleAnnouncementAck(id: string) {
   await acknowledgeAnnouncement(id);
   currentAnnouncementIndex.value += 1;
 }
-// 面對面提示詞重大更新：舊設定用戶必須完成重置（彈窗無法關閉）
-const showFaceToFacePromptReset = ref(false);
-async function checkFaceToFacePromptReset() {
+// 線上／面對面提示詞重大更新：舊設定用戶必須完成重置（彈窗無法關閉），一次一個，線上先
+const pendingPromptResets = ref<Array<"online" | "faceToFace">>([]);
+async function checkPromptResets() {
   try {
     const promptManagerStore = usePromptManagerStore();
     await promptManagerStore.loadConfig();
-    showFaceToFacePromptReset.value = promptManagerStore.needsFaceToFacePromptReset;
+    pendingPromptResets.value = [
+      ...(promptManagerStore.needsOnlinePromptReset ? (["online"] as const) : []),
+      ...(promptManagerStore.needsFaceToFacePromptReset ? (["faceToFace"] as const) : []),
+    ];
   } catch (error) {
-    console.warn("[App] 檢查面對面提示詞版本失敗:", error);
+    console.warn("[App] 檢查提示詞版本失敗:", error);
   }
 }
 
@@ -1454,7 +1457,7 @@ async function loadAppData() {
     console.error("[App] 數據遷移失敗:", error);
   }
 
-  void checkFaceToFacePromptReset();
+  void checkPromptResets();
 
   themeStore.loadFromStorage();
 
@@ -3179,10 +3182,12 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       @ack="handleAnnouncementAck"
     />
 
-    <!-- 面對面提示詞強制重置引導（作者公告看完後才顯示） -->
-    <FaceToFacePromptResetModal
-      v-if="showFaceToFacePromptReset && !currentAnnouncement && !authScreenOnStage"
-      @done="showFaceToFacePromptReset = false"
+    <!-- 提示詞強制重置引導（作者公告看完後才顯示） -->
+    <PromptResetGuideModal
+      v-if="pendingPromptResets.length > 0 && !currentAnnouncement && !authScreenOnStage"
+      :key="pendingPromptResets[0]"
+      :mode="pendingPromptResets[0]"
+      @done="pendingPromptResets = pendingPromptResets.slice(1)"
     />
 
     <!-- 多人卡模式設定彈窗 -->

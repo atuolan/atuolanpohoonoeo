@@ -56,11 +56,18 @@ const PROMPT_MANAGER_CONFIG_VERSION = 4;
  */
 export const FACE_TO_FACE_PROMPT_RESET_VERSION = 5;
 
-/** 新建的配置已是最新面對面提示詞，不需要再引導重置 */
+/**
+ * 線上模式提示詞強制重置版本（規則同面對面）。
+ * 1：照面對面預設分區整理，刪除星核與從未生效的權力關係條目，功能標籤格式各只寫在一處
+ */
+export const ONLINE_PROMPT_RESET_VERSION = 1;
+
+/** 新建的配置已是最新提示詞，不需要再引導重置 */
 function createFreshPromptManagerConfig(): PromptManagerConfig {
   return {
     ...createDefaultPromptManagerConfig(),
     faceToFacePromptResetVersion: FACE_TO_FACE_PROMPT_RESET_VERSION,
+    onlinePromptResetVersion: ONLINE_PROMPT_RESET_VERSION,
   };
 }
 
@@ -116,6 +123,12 @@ function syncLockedPromptFlags(
   }
 }
 
+/** 噗浪的翻譯提示改成跟聊天訊息一樣的「外語<br>中文翻譯」 */
+const PLURK_TRANSLATION_HINT_FIX: [string, string] = [
+  "💡 翻譯提示：如果你在回覆噗浪評論時使用非中文，請在後面用括號附上中文翻譯。\n例如：「Good morning! (早安！)」、「I love you (我愛你)」",
+  "💡 翻譯提示：噗浪內容用到非中文時，跟聊天訊息一樣在後面附上中文翻譯，格式是「外語<br>中文翻譯」。\n例如：Good morning!<br>早安！、I love you<br>我愛你",
+];
+
 /**
  * 修正已存儲條目中過時的預設內容：系統必要條目（用戶無法自行修改）的錯誤標籤，
  * 以及噗浪格式改版（只替換舊預設原文，用戶改過的部分不受影響）
@@ -131,15 +144,20 @@ const LOCKED_PROMPT_CONTENT_FIXES: Record<string, Array<[string, string]>> = {
     ["\n雪拉比：", "\n涅芙："],
     ["</character_settings>", "</power_dynamic>"],
   ],
-  f2fSocialMedia: [["\n基拉祈：这是 {{char}}", "\n涅芙：这是 {{char}}"]],
+  f2fSocialMedia: [["\n基拉祈：这是 {{char}}", "\n涅芙：这是 {{char}}"], PLURK_TRANSLATION_HINT_FIX],
+  socialMedia: [PLURK_TRANSLATION_HINT_FIX],
   // 引用回覆只抄原訊息開頭幾個字，由程式找出原訊息（整句照抄費字又容易抄錯）
   gcGroupXmlFormat: [["<reply-to>被引用的原文</reply-to>回覆內容</msg>", "<reply-to>原訊息開頭幾個字</reply-to>回覆內容</msg>　// reply-to 只照抄原訊息開頭 5～15 個字，不用抄整句"]],
   // 噗浪簡化格式：reactions 選填、<image> 寫在內文、可帶限定詞，並說明何時適合發噗
   onlineModeFeatures: [["【噗浪】放在 <content> 內：\n<plurk>\n  <post>發文內容</post>\n  <image>中文描述｜英文提示詞</image>（可選，有配圖時加）\n  <reactions>❤️:12,👍:8,😊:5</reactions>（必填，1-4個表情，數量1-99正整數，👍❤️😂😮😢😠🎉👏🤔😊）\n</plurk>\n", "【噗浪】想發動態時放在 <content> 內，一次最多一則：\n<plurk>發文內容</plurk>\n完整寫法：<plurk qualifier=\"覺得\" reactions=\"❤️12 😂5\">發文內容<image>配圖描述</image></plurk>\n（qualifier 是噗浪限定詞：說／想／愛／覺得／希望／喜歡；reactions 是 1-4 種表情和數量；<image> 是配圖。三者都可省略）\n適合發噗的時候：心情有起伏、剛發生值得分享的事、有些話想讓 {{user}} 看到卻不想當面說（暗示、炫耀、抱怨、曬日常）。不必每輪都發，也別重複最近發過的內容。\n"], ["<reply-to>引用內容</reply-to>回覆內容", "<reply-to>原訊息開頭幾個字</reply-to>回覆內容（只照抄原訊息開頭 5～15 個字，不用抄整句）"]],
   f2fFormatRules: [["- 噗浪格式：\n  <plurk>\n    <post>發文內容</post>\n    <image>中文描述｜英文提示詞</image>（可選）\n    <reactions>❤️:12,👍:8,😊:5</reactions>（必填，1-4個，數量1-99，👍❤️😂😮😢😠🎉👏🤔😊）\n  </plurk>\n", "- 噗浪（想發動態時，一次最多一則）：<plurk>發文內容</plurk>\n  完整寫法：<plurk qualifier=\"覺得\" reactions=\"❤️12 😂5\">發文內容<image>配圖描述</image></plurk>，qualifier（噗浪限定詞）、reactions（1-4 種表情和數量）、<image>（配圖）都可省略\n  適合發噗的時候：心情有起伏、剛發生值得分享的事、有些話想讓 {{user}} 看到卻不想當面說。不必每輪都發，也別重複最近發過的內容\n"]],
   plurkPostSystemPrompt: [["輸出格式：\n<plurk>\n  <post>發文內容</post>\n  <image>中文描述｜英文提示詞</image>（有配圖時加，否則省略）\n  <reactions>❤️:12,👍:8</reactions>（必填，1-4個表情，數量1-99，👍❤️😂😮😢😠🎉👏🤔😊）\n</plurk>", "輸出格式：\n<plurk>發文內容</plurk>\n完整寫法：<plurk qualifier=\"覺得\" reactions=\"❤️12 😂5\">發文內容<image>配圖描述</image></plurk>\n（qualifier 是噗浪限定詞：說／想／愛／覺得／希望／喜歡；reactions 是 1-4 種表情和數量；配圖用 <image> 寫在內文裡。三者都可省略）"]],
-  // 噗浪評論改為批量評論的風格要求（多角色同時留言）
-  plurkCommentSystemPrompt: [["你是 {{char}}，正在回覆噗浪上的評論。\n\n回覆要求：\n1. 完全以 {{char}} 的身份和語氣回覆", "評論風格要求：\n1. 每個角色都用自己的身份和語氣留言，像真的在滑噗浪"]],
+  // 噗浪評論改為批量評論的風格要求（多角色同時留言）；翻譯格式統一成聊天用的「外語<br>中文翻譯」
+  plurkCommentSystemPrompt: [
+    ["你是 {{char}}，正在回覆噗浪上的評論。\n\n回覆要求：\n1. 完全以 {{char}} 的身份和語氣回覆", "評論風格要求：\n1. 每個角色都用自己的身份和語氣留言，像真的在滑噗浪"],
+    ["6. 如果使用非中文，請在後面用括號附上中文翻譯", "6. 如果使用非中文，在後面附上中文翻譯，格式是「外語<br>中文翻譯」"],
+  ],
+  batchCommentsSystemPrompt: [["5. 如果角色使用外語，只在外語部分後加括號翻譯", "5. 如果角色使用外語，只在外語部分後面附上中文翻譯，格式是「外語<br>中文翻譯」"]],
 };
 
 function fixLockedPromptContent(prompts: PromptDefinition[] | undefined): void {
@@ -160,6 +178,7 @@ const RETIRED_FACE_TO_FACE_PROMPT_IDS = new Set([
   "f2fExampleScript", // 奇蹟實現的步驟（<|Rabbit_Thinking|> 思考流程）
   "f2f_custom_1772288204573", // 開始（預填 <thinking>）
   "f2fCharacterSettings", // 角色設定（面對面角色設定框架）
+  "f2fCharacterCorePersonality", // {{char}}與{{user}}的權力關係（{{relationshipStatus}} 從來沒有程式提供）
 ]);
 
 const RETIRED_PLURK_COMMENT_IDS = new Set(RETIRED_PLURK_COMMENT_PROMPT_IDS);
@@ -463,6 +482,11 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     () =>
       (config.value.faceToFacePromptResetVersion ?? 0) <
       FACE_TO_FACE_PROMPT_RESET_VERSION,
+  );
+
+  /** 線上模式提示詞是否停留在舊版、需要強制引導重置 */
+  const needsOnlinePromptReset = computed(
+    () => (config.value.onlinePromptResetVersion ?? 0) < ONLINE_PROMPT_RESET_VERSION,
   );
 
   // ===== Actions =====
@@ -919,6 +943,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     fixLockedPromptContent(stored.faceToFacePrompts);
     fixLockedPromptContent(stored.plurkPostPrompts);
     fixLockedPromptContent(stored.plurkCommentPrompts);
+    fixLockedPromptContent(stored.batchCommentsPrompts);
 
     // 噗浪評論：移除舊版逐則回覆的條目，舊預設名稱改成新名稱
     removeRetiredPrompts(stored.plurkCommentPrompts, RETIRED_PLURK_COMMENT_IDS);
@@ -1400,8 +1425,26 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
       config.value.prompts = structuredClone(defaults.prompts);
       config.value.globalPromptOrder = structuredClone(DEFAULT_PROMPT_ORDER);
       config.value.deletedDefaultPromptIds = [];
+      config.value.onlinePromptResetVersion = ONLINE_PROMPT_RESET_VERSION;
     }
     await saveConfig();
+  }
+
+  /**
+   * 線上提示詞強制重置引導：重置線上模式提示詞；
+   * 角色獨立的順序改用新的預設順序，原本有的條目保留開關（已不存在的條目一併移除）
+   */
+  async function resetOnlineForUpdate(): Promise<void> {
+    for (const charConfig of Object.values(config.value.characterConfigs)) {
+      if (charConfig.promptOrder.length === 0) continue;
+      const enabledById = new Map(charConfig.promptOrder.map((entry) => [entry.identifier, entry.enabled]));
+      charConfig.promptOrder = DEFAULT_PROMPT_ORDER.map((entry) => ({
+        identifier: entry.identifier,
+        enabled: enabledById.get(entry.identifier) ?? entry.enabled,
+      }));
+      charConfig.updatedAt = Date.now();
+    }
+    await resetToDefault();
   }
 
   /**
@@ -1413,6 +1456,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     config.value.prompts = structuredClone(defaults.prompts);
     config.value.globalPromptOrder = structuredClone(DEFAULT_PROMPT_ORDER);
     config.value.deletedDefaultPromptIds = [];
+    config.value.onlinePromptResetVersion = ONLINE_PROMPT_RESET_VERSION;
     // 面對面
     config.value.faceToFacePrompts = structuredClone(
       FACE_TO_FACE_PROMPT_DEFINITIONS,
@@ -3167,6 +3211,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     groupChatPromptOrder,
     groupChatPrompts,
     needsFaceToFacePromptReset,
+    needsOnlinePromptReset,
     // Actions
     loadConfig,
     saveConfig,
@@ -3182,6 +3227,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     createCharacterConfig,
     deleteCharacterConfig,
     resetToDefault,
+    resetOnlineForUpdate,
     resetAllToDefault,
     resetSinglePrompt,
     getPrompt,

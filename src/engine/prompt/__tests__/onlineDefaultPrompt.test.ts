@@ -38,7 +38,7 @@ function msg(id: string, isUser: boolean, content: string) {
   };
 }
 
-async function build(disabledIds: string[] = []) {
+async function build(disabledIds: string[] = [], extra: Record<string, unknown> = {}) {
   const config = createDefaultPromptManagerConfig();
   config.globalPromptOrder = config.globalPromptOrder.map((entry) =>
     disabledIds.includes(entry.identifier) ? { ...entry, enabled: false } : entry,
@@ -51,8 +51,13 @@ async function build(disabledIds: string[] = []) {
     userName: "小林",
     userPersona: "上班族",
     promptManagerConfig: config,
+    ...extra,
   } as any).build();
   return result.messages as Array<{ role: string; content: string }>;
+}
+
+function between(text: string, open: string, close: string): string {
+  return text.slice(text.indexOf(open), text.indexOf(close) + close.length);
 }
 
 function nameOf(identifier: string): string {
@@ -92,10 +97,24 @@ describe("線上模式預設提示詞分區", () => {
     expect(positions.every((p) => p >= 0), JSON.stringify(positions)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
 
-    // 「{{char}} 與{{user}}的權力關係」用的 {{relationshipStatus}} 從來沒有程式提供，是否保留待討論
-    const leftovers = text.match(/.{0,20}(\{\{|\}\}).{0,20}/g) ?? [];
-    expect(leftovers.filter((s) => !s.includes("{{relationshipStatus}}"))).toEqual([]);
+    expect(text.match(/.{0,20}(\{\{|\}\}).{0,20}/g)).toBeNull();
     expect(messages[messages.length - 1]).toMatchObject({ role: "assistant", content: "<thinking>" });
+  });
+
+  it("功能標籤的格式各只寫在一處：來電預約只在來電決策，勿擾時整份都不出現", async () => {
+    let text = (await build()).map((m) => m.content).join("\n");
+    const callDecision = between(text, "<call_decision>", "</call_decision>");
+    expect(callDecision).toContain("<schedule-call");
+    expect(text.replace(callDecision, "")).not.toContain("schedule-call");
+
+    // 還沒有飲食記錄時也看得到 food-record 的規則與範例
+    const features = between(text, "<online_mode_features>", "</online_mode_features>");
+    expect(features).toContain('<food-record meal="餐別"');
+    expect(features).toContain('例如：<food-record meal="snack"');
+    expect(text.split("<food-record meal=").length - 1).toBe(2);
+
+    text = (await build([], { doNotDisturb: true })).map((m) => m.content).join("\n");
+    expect(text).not.toContain("schedule-call");
   });
 
   it("思考框架讀出字數與語言；關掉模塊後不留上一輪的值", async () => {

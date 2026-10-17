@@ -86,8 +86,8 @@ describe("已停用的面對面必要條目", () => {
     setActivePinia(createPinia());
   });
 
-  it("載入舊設定時移除「奇蹟實現的步驟」、「開始」與「角色設定」，其他條目保留", async () => {
-    const retiredIds = ["f2fExampleScript", "f2f_custom_1772288204573", "f2fCharacterSettings"];
+  it("載入舊設定時移除「奇蹟實現的步驟」、「開始」、「角色設定」與「權力關係」，其他條目保留", async () => {
+    const retiredIds = ["f2fExampleScript", "f2f_custom_1772288204573", "f2fCharacterSettings", "f2fCharacterCorePersonality"];
     const config = createDefaultPromptManagerConfig();
     config.faceToFacePrompts = [
       ...structuredClone(FACE_TO_FACE_PROMPT_DEFINITIONS),
