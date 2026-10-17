@@ -124,6 +124,29 @@ export function lastSummaryEnd(summaries: BookSummary[] | undefined): BookPositi
   return last;
 }
 
+/** 這章剩一點點沒總結就不另外做一則 */
+const CHAPTER_REMAINDER_MIN_CHARS = 200;
+
+/**
+ * 讀完一章要總結的範圍：這章開頭已經總結過的部分接著做；整章都做過了回傳 null
+ */
+export function chapterSummaryRange(
+  chapters: BookChapter[],
+  summaries: BookSummary[] | undefined,
+  chapterIndex: number,
+): { from: BookPosition; to: BookPosition } | null {
+  const length = chapters[chapterIndex]?.content.length ?? 0;
+  if (length <= 0) return null;
+  const to: BookPosition = { chapterIndex, charOffset: length };
+  let from: BookPosition = { chapterIndex, charOffset: 0 };
+  for (const s of sortSummaries(summaries)) {
+    if (comparePos(s.from, from) <= 0 && comparePos(s.to, from) > 0) from = s.to;
+  }
+  if (comparePos(from, to) >= 0) return null;
+  if (from.charOffset > 0 && length - from.charOffset < CHAPTER_REMAINDER_MIN_CHARS) return null;
+  return { from, to };
+}
+
 /** 依開頭位置排序（摘要列表用） */
 export function sortSummaries(summaries: BookSummary[] | undefined): BookSummary[] {
   return [...(summaries ?? [])].sort((x, y) => comparePos(x.from, y.from) || comparePos(x.to, y.to));

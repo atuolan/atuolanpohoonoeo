@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
   buildSummaryPrompt,
+  chapterSummaryRange,
   charsBetween,
   fromGlobal,
   lastSummaryEnd,
@@ -128,6 +129,29 @@ describe("summariesBefore / lastSummaryEnd", () => {
   it("最後的結尾", () => {
     expect(lastSummaryEnd(list)).toEqual(pos(3, 500));
     expect(lastSummaryEnd([])).toBeUndefined();
+  });
+});
+
+describe("讀完一章的總結範圍", () => {
+  const chapters = [ch("一", "甲".repeat(1000)), ch("二", "乙".repeat(1000)), ch("空", "")];
+
+  it("沒總結過就整章", () => {
+    expect(chapterSummaryRange(chapters, [], 1)).toEqual({ from: pos(1, 0), to: pos(1, 1000) });
+  });
+
+  it("這章前面已經總結過，就接著做剩下的", () => {
+    const done = [summary([0, 500], [1, 300]), summary([1, 300], [1, 600])];
+    expect(chapterSummaryRange(chapters, done, 1)).toEqual({ from: pos(1, 600), to: pos(1, 1000) });
+  });
+
+  it("整章做過、只剩一點點、空章都不做", () => {
+    expect(chapterSummaryRange(chapters, [summary([0, 0], [2, 0])], 1)).toBeNull();
+    expect(chapterSummaryRange(chapters, [summary([1, 0], [1, 900])], 1)).toBeNull();
+    expect(chapterSummaryRange(chapters, [], 2)).toBeNull();
+  });
+
+  it("只總結了這章中間一段，開頭沒做過就從開頭做", () => {
+    expect(chapterSummaryRange(chapters, [summary([1, 400], [1, 700])], 1)).toEqual({ from: pos(1, 0), to: pos(1, 1000) });
   });
 });
 

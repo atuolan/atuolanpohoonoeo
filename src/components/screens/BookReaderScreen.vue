@@ -20,6 +20,7 @@ import {
   charsBetween,
   comparePos,
   fromGlobal,
+  chapterSummaryRange,
   lastSummaryEnd,
   rangeLabel,
   readingSummariesText,
@@ -284,11 +285,13 @@ function turnBy(delta: 1 | -1) {
     } else if (target >= totalPages.value) {
       // 已經是全書最後一頁：沒翻動，不算頁
       if (chapterIndex.value >= lastChapterIndex.value) {
+        onChapterFinished(chapterIndex.value);
         promptChapterCards(chapterIndex.value);
         return applyPageOffset(true);
       }
       const finished = chapterIndex.value;
       await openChapter(finished + 1, "start");
+      onChapterFinished(finished);
       promptChapterCards(finished);
     } else {
       page.value = target;
@@ -863,7 +866,7 @@ function openSummaryRange() {
   openSheet("summary");
 }
 
-const SUMMARY_EVERY_OPTIONS: ReaderPrefs["summaryEveryPages"][] = [0, 10, 20, 50];
+const SUMMARY_EVERY_OPTIONS: ReaderPrefs["summaryEveryPages"][] = [0, "chapter", 10, 20, 50];
 
 const summaryButtonText = computed(() => {
   if (summaryRunning.value) {
@@ -879,7 +882,12 @@ function changeRecentPages(delta: number) {
 }
 
 /** 總結一段範圍，每完成一則就存起來；回傳做好幾則 */
-async function runSummary(from: BookPosition, to: BookPosition, auto: boolean): Promise<number> {
+async function runSummary(
+  from: BookPosition,
+  to: BookPosition,
+  auto: boolean,
+  maxCalls = auto ? AUTO_SUMMARY_MAX_CALLS : undefined,
+): Promise<number> {
   summaryRunning.value = true;
   summaryProgress.value = { done: 0, total: splitRange(props.book.chapters, from, to).length };
   try {
@@ -891,7 +899,7 @@ async function runSummary(from: BookPosition, to: BookPosition, auto: boolean): 
       to,
       existing: summaries.value,
       auto,
-      maxCalls: auto ? AUTO_SUMMARY_MAX_CALLS : undefined,
+      maxCalls,
       onEach: async (summary, done, total) => {
         summaryProgress.value = { done, total };
         await booksStore.patchProgress(props.book.id, (current) => ({
@@ -936,7 +944,7 @@ function autoSummaryStart(to: BookPosition): BookPosition {
 /** 往後翻了一頁：自動摘要計數，到了就在背景總結 */
 function onForwardPage() {
   const every = prefs.value.summaryEveryPages;
-  if (!every) return;
+  if (typeof every !== "number" || !every) return;
   pagesSinceSummary.value++;
   const failures = booksStore.progressByBook[props.book.id]?.autoSummaryFailures ?? 0;
   if (summaryRunning.value || !shouldAutoSummarize(pagesSinceSummary.value, every, failures)) return;
@@ -949,10 +957,29 @@ function onForwardPage() {
   runAutoSummary(from, to, failures);
 }
 
-async function runAutoSummary(from: BookPosition, to: BookPosition, failures: number) {
+/** 讀完一章：設成「每章」就在背景總結那一章（整章做完，不受一輪次數限制） */
+function onChapterFinished(index: number) {
+  if (prefs.value.summaryEveryPages !== "chapter" || summaryRunning.value) return;
+  const failures = booksStore.progressByBook[props.book.id]?.autoSummaryFailures ?? 0;
+  if (failures >= AUTO_SUMMARY_MAX_FAILURES) return;
+  const range = chapterSummaryRange(props.book.chapters, summaries.value, index);
+  if (!range) return;
+  const title = props.book.chapters[index]?.title;
+  runAutoSummary(range.from, range.to, failures, {
+    maxCalls: Infinity,
+    doneText: title ? `已總結「${title}」` : "已總結這一章",
+  });
+}
+
+async function runAutoSummary(
+  from: BookPosition,
+  to: BookPosition,
+  failures: number,
+  opts: { maxCalls?: number; doneText?: string } = {},
+) {
   try {
-    await runSummary(from, to, true);
-    showToast("已總結到這裡");
+    await runSummary(from, to, true, opts.maxCalls ?? AUTO_SUMMARY_MAX_CALLS);
+    showToast(opts.doneText ?? "已總結到這裡");
   } catch (e) {
     // 計數不歸零，下次翻頁再試
     const next = failures + 1;
@@ -1773,7 +1800,7 @@ watch(
             </div>
             <div class="rd-setting stacked">
               <span class="rd-setting-label">自動摘要</span>
-              <div class="rd-segment fill" role="radiogroup" aria-label="每讀幾頁自動總結一次">
+              <div class="rd-segment fill" role="radiogroup" aria-label="什麼時候自動總結">
                 <button
                   v-for="n in SUMMARY_EVERY_OPTIONS"
                   :key="n"
@@ -1782,14 +1809,16 @@ watch(
                   :class="{ active: prefs.summaryEveryPages === n }"
                   @click="booksStore.setReaderPrefs({ summaryEveryPages: n })"
                 >
-                  {{ n ? `${n} 頁` : "關" }}
+                  {{ n === "chapter" ? "每章" : n ? `${n} 頁` : "關" }}
                 </button>
               </div>
               <span class="rd-setting-note" :class="{ warn: autoSummaryPaused && prefs.summaryEveryPages }">
                 {{
                   autoSummaryPaused && prefs.summaryEveryPages
                     ? "連續失敗 3 次，先暫停了；手動總結一次就會恢復。"
-                    : "每往後讀幾頁，就在背景總結一次，會用到「總結」的 API。"
+                    : prefs.summaryEveryPages === "chapter"
+                      ? "翻過一章的最後一頁，就在背景總結那一章（長的章會分成幾則），會用到「總結」的 API。"
+                      : "每往後讀幾頁，就在背景總結一次，會用到「總結」的 API。"
                 }}
               </span>
             </div>

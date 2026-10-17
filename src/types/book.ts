@@ -190,8 +190,8 @@ export interface ReaderPrefs {
   background: ReaderBackground;
   /** 每日閱讀目標（分鐘） */
   dailyGoalMinutes: number;
-  /** 每讀幾頁自動總結一次，0 是關 */
-  summaryEveryPages: 0 | 10 | 20 | 50;
+  /** 每讀幾頁自動總結一次，0 是關；"chapter" 是讀完一章就總結那一章 */
+  summaryEveryPages: 0 | 10 | 20 | 50 | "chapter";
 }
 
 // ===== 伴讀聊天類型 =====
