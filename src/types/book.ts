@@ -47,6 +47,13 @@ export interface BookReadingProgress {
   dailySeconds?: Record<string, number>;
   /** 劃線與筆記 */
   highlights?: BookHighlight[];
+  /** 上一次「三句接上」的結果（位置沒變就直接沿用） */
+  lastRecap?: {
+    chapterIndex: number;
+    charOffset: number;
+    lines: string[];
+    createdAt: number;
+  };
 }
 
 export interface BookHighlight {

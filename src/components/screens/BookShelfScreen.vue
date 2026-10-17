@@ -11,6 +11,7 @@ import {
   mergeDailySeconds,
   readingStreak,
 } from "@/utils/bookReading";
+import { generateRecap } from "@/services/BookAIService";
 import { ArrowLeft, BookOpen, ChevronDown, Plus, Trash2, User, X } from "lucide-vue-next";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
@@ -130,6 +131,46 @@ watch(
 );
 const heroCompanionName = computed(
   () => heroCompanion.value?.nickname || heroCompanion.value?.data.name || "",
+);
+
+// ===== 三句接上 =====
+const isRecapping = ref(false);
+const recapError = ref("");
+
+/** 位置沒變時沿用上次的結果 */
+const heroRecap = computed(() => {
+  const book = heroBook.value;
+  const p = book ? booksStore.progressByBook[book.id] : undefined;
+  const r = p?.lastRecap;
+  if (!p || !r) return null;
+  return r.chapterIndex === p.chapterIndex && r.charOffset === (p.charOffset ?? 0) ? r.lines : null;
+});
+
+async function recapHero() {
+  const meta = heroBook.value;
+  if (!meta || isRecapping.value) return;
+  const progress = booksStore.progressByBook[meta.id];
+  isRecapping.value = true;
+  recapError.value = "";
+  try {
+    const book = await booksStore.loadBook(meta.id);
+    if (!book) throw new Error("找不到這本書");
+    const chapterIndex = progress?.chapterIndex ?? 0;
+    const charOffset = progress?.charOffset ?? 0;
+    const lines = await generateRecap(book.title, book.chapters, chapterIndex, charOffset);
+    await booksStore.patchProgress(meta.id, {
+      lastRecap: { chapterIndex, charOffset, lines, createdAt: Date.now() },
+    });
+  } catch (e: any) {
+    recapError.value = e?.message || "沒接上，再試一次";
+  } finally {
+    isRecapping.value = false;
+  }
+}
+
+watch(
+  () => heroBook.value?.id,
+  () => (recapError.value = ""),
 );
 
 // ===== 沒有封面時的書脊 =====
@@ -344,13 +385,31 @@ function handleSelectPersona(personaId: string) {
               <img v-if="heroCompanion?.avatar" :src="heroCompanion.avatar" alt="" />
               <template v-else-if="heroCompanion">{{ heroCompanionName.slice(0, 1) }}</template>
             </span>
-            <p>
-              <template v-if="heroChapterTitle">上次停在「{{ heroChapterTitle }}」。</template>
-              <template v-if="heroCompanion">{{ heroCompanionName }} 還在陪你讀這本。</template>
-            </p>
+            <div class="bs-note-body" aria-live="polite">
+              <p v-if="isRecapping" class="bs-note-muted">正在幫你回想剛剛讀到哪…</p>
+              <ol v-else-if="heroRecap" class="bs-recap">
+                <li v-for="(line, i) in heroRecap" :key="i">{{ line }}</li>
+              </ol>
+              <p v-else>
+                <template v-if="heroChapterTitle">上次停在「{{ heroChapterTitle }}」。</template>
+                <template v-if="heroCompanion">{{ heroCompanionName }} 還在陪你讀這本。</template>
+                <template v-if="!heroCompanion">要我用三句話幫你接上思路嗎？</template>
+              </p>
+              <p v-if="recapError" class="bs-note-error">{{ recapError }}</p>
+            </div>
           </div>
 
-          <button class="bs-primary" @click="emit('openBook', heroBook)">繼續閱讀</button>
+          <div class="bs-hero-actions">
+            <button class="bs-primary" @click="emit('openBook', heroBook)">繼續閱讀</button>
+            <button
+              v-if="!heroRecap"
+              class="bs-secondary"
+              :disabled="isRecapping"
+              @click="recapHero"
+            >
+              {{ isRecapping ? "回想中…" : "三句接上" }}
+            </button>
+          </div>
         </section>
 
         <!-- 空書架 -->
@@ -853,6 +912,64 @@ button {
     margin: 0;
     font-size: 14px;
     line-height: 1.6;
+  }
+}
+
+.bs-note-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bs-note-muted {
+  color: var(--bs-sub);
+}
+
+.bs-note-error {
+  color: var(--color-error, #e53e3e);
+  font-size: 13px !important;
+}
+
+.bs-recap {
+  margin: 0;
+  padding-left: 1.3em;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  line-height: 1.6;
+
+  li::marker {
+    color: var(--bs-sub);
+    font-size: 12px;
+  }
+}
+
+.bs-hero-actions {
+  display: flex;
+  gap: 10px;
+
+  .bs-primary {
+    flex: 1;
+  }
+}
+
+.bs-secondary {
+  height: 50px;
+  padding: 0 18px;
+  border: 1px solid color-mix(in srgb, var(--bs-text) 22%, transparent);
+  border-radius: 25px;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: default;
   }
 }
 
