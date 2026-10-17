@@ -574,6 +574,16 @@ function definedOnly<T extends object>(obj: T | undefined): Partial<T> {
   ) as Partial<T>;
 }
 
+/** 氣泡欄位：漸層存成空字串代表「改用純色」，要保留，不然重新打開會被全域的漸層蓋回去 */
+function savedBubbleFields(bubble: ChatAppearance["bubble"]): Partial<BubbleStyle> {
+  if (!bubble) return {};
+  return Object.fromEntries(
+    Object.entries(bubble).filter(
+      ([key, value]) => value !== undefined && value !== null && (value !== "" || key.endsWith("Gradient")),
+    ),
+  ) as Partial<BubbleStyle>;
+}
+
 // ===== 兩份草稿：全域外觀、這個聊天的專屬外觀 =====
 // 畫面上的控制項綁的是「目前這一套」的暫存值；切換套用範圍時，先把暫存值存回原本那份草稿，再載入另一份。
 interface AppearanceDraft {
@@ -644,7 +654,7 @@ function chatDraftFromAppearance(appearance: ChatAppearance, base: AppearanceDra
     colors: { ...base.colors, ...definedOnly(savedColors) },
     unified: unified !== false,
     avatar: { ...base.avatar, ...definedOnly(appearance.avatar) },
-    bubble: { ...base.bubble, ...definedOnly(appearance.bubble) },
+    bubble: { ...base.bubble, ...savedBubbleFields(appearance.bubble) },
     wallpaper: appearance.wallpaper ? normalizeWallpaper(appearance.wallpaper) : { ...base.wallpaper },
     font: mergeFont(appearance.font, base.font),
     fontSize: appearance.font ? resolveChatFontSizePx(appearance.font.size) : base.fontSize,
