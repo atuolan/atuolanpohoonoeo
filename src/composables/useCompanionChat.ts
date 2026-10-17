@@ -105,6 +105,13 @@ export class CompanionChatCore {
     }
   }
 
+  setPanelExpanded(expanded: boolean): void {
+    this.isPanelExpanded = expanded;
+    if (expanded) {
+      this.hasUnread = false;
+    }
+  }
+
   /**
    * 新增助手訊息時更新未讀狀態
    */
@@ -376,6 +383,7 @@ export interface UseCompanionChatReturn {
   setTriggerFrequency(n: number): void;
   getAccumulatedContentText(): string;
   togglePanel(): void;
+  setPanelExpanded(expanded: boolean): void;
   updateBubblePosition(x: number, y: number): void;
   sendMessage(content: string): Promise<void>;
   triggerAutoResponse(): Promise<void>;
@@ -449,6 +457,11 @@ export function useCompanionChat(
 
   function togglePanel() {
     core.togglePanel();
+    syncFromCore();
+  }
+
+  function setPanelExpanded(expanded: boolean) {
+    core.setPanelExpanded(expanded);
     syncFromCore();
   }
 
@@ -832,6 +845,7 @@ export function useCompanionChat(
     setTriggerFrequency,
     getAccumulatedContentText,
     togglePanel,
+    setPanelExpanded,
     updateBubblePosition,
     sendMessage,
     triggerAutoResponse,

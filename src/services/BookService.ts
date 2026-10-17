@@ -349,4 +349,8 @@ export const BookService = {
   async getProgress(bookId: string): Promise<BookReadingProgress | undefined> {
     return db.get<BookReadingProgress>(DB_STORES.BOOK_PROGRESS, bookId);
   },
+
+  async getAllProgress(): Promise<BookReadingProgress[]> {
+    return db.getAll<BookReadingProgress>(DB_STORES.BOOK_PROGRESS);
+  },
 };

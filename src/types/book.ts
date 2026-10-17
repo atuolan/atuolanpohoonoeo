@@ -22,8 +22,22 @@ export interface StoredBook {
 export interface BookReadingProgress {
   bookId: string;
   chapterIndex: number;
+  /** 章內頁碼（舊版只存這個，換字級後會對不上） */
   scrollPosition: number;
+  /** 章內字元位置 */
+  charOffset?: number;
+  /** 全書百分比 0–100 */
+  percent?: number;
   lastReadAt: number;
+}
+
+export type ReaderBackground = "sepia" | "white" | "night" | "green";
+
+export interface ReaderPrefs {
+  fontSize: number;
+  lineHeight: number;
+  fontFamily: "serif" | "sans";
+  background: ReaderBackground;
 }
 
 // ===== 伴讀聊天類型 =====

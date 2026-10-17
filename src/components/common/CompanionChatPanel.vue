@@ -1,51 +1,69 @@
 <script setup lang="ts">
 /**
- * 伴讀聊天面板組件
- * 浮動聊天視窗，包含訊息列表、輸入框、觸發頻率設定
- * Requirements: 4.1, 5.1, 5.2, 5.3, 2.1
+ * 伴讀聊天面板
+ * 放在閱讀器的底部抽屜裡，顏色跟著閱讀背景（--rd-*）走
  */
 
 import type { CompanionMessage } from "@/types/book";
-import { Loader2, Minus, Send, Settings2 } from "lucide-vue-next";
-import { computed, nextTick, ref, watch } from "vue";
+import { ArrowUp, ChevronDown, Settings2 } from "lucide-vue-next";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 
 interface Props {
-  /** 角色名稱 */
   characterName: string;
-  /** 書名 */
+  characterAvatar?: string;
   bookTitle: string;
-  /** 訊息列表 */
   messages: CompanionMessage[];
-  /** AI 是否正在生成 */
   isGenerating: boolean;
-  /** 當前觸發頻率 */
   triggerFrequency: number;
 }
 
 const props = defineProps<Props>();
 
 const emit = defineEmits<{
-  (e: "minimize"): void;
+  (e: "close"): void;
+  (e: "stop"): void;
   (e: "send", content: string): void;
   (e: "update:triggerFrequency", value: number): void;
 }>();
 
-// 輸入框內容
 const inputText = ref("");
-// 設定 popover 顯示狀態
 const showSettings = ref(false);
-// 訊息列表容器 ref
 const messageListRef = ref<HTMLElement | null>(null);
 
 const FREQUENCY_OPTIONS = [1, 3, 5, 10];
 
-// 格式化時間戳
-function formatTime(ts: number): string {
-  const d = new Date(ts);
-  return d.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" });
+interface Bubble {
+  key: string;
+  role: "user" | "assistant";
+  text: string;
+  /** 同一則訊息的第一個氣泡才顯示頭像與時間 */
+  first: boolean;
+  time: string;
 }
 
-// 發送訊息
+function formatTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" });
+}
+
+// 角色回覆是一行一句的聊天格式，拆成一個個氣泡
+const bubbles = computed<Bubble[]>(() =>
+  props.messages.flatMap((m) => {
+    const lines =
+      m.role === "assistant"
+        ? m.content.split("\n").map((l) => l.trim()).filter(Boolean)
+        : [m.content];
+    return lines.map((text, i) => ({
+      key: `${m.id}-${i}`,
+      role: m.role,
+      text,
+      first: i === 0,
+      time: formatTime(m.timestamp),
+    }));
+  }),
+);
+
+const avatarInitial = computed(() => props.characterName.slice(0, 1) || "書");
+
 function handleSend() {
   const text = inputText.value.trim();
   if (!text || props.isGenerating) return;
@@ -53,21 +71,17 @@ function handleSend() {
   inputText.value = "";
 }
 
-// 鍵盤 Enter 發送
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key === "Enter" && !e.shiftKey) {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     handleSend();
   }
 }
 
-// 設定觸發頻率
 function selectFrequency(n: number) {
   emit("update:triggerFrequency", n);
-  showSettings.value = false;
 }
 
-// 自動捲動到底部
 function scrollToBottom() {
   nextTick(() => {
     if (messageListRef.value) {
@@ -76,430 +90,449 @@ function scrollToBottom() {
   });
 }
 
-// 監聽訊息變化，自動捲動
-watch(
-  () => props.messages.length,
-  () => scrollToBottom(),
-);
-
-// 監聽 isGenerating 變化（串流輸出時也捲動）
-watch(
-  () => props.isGenerating,
-  () => scrollToBottom(),
-);
-
-const isEmpty = computed(() => props.messages.length === 0);
+watch(() => bubbles.value.length, scrollToBottom);
+watch(() => props.isGenerating, scrollToBottom);
+onMounted(scrollToBottom);
 </script>
 
 <template>
-  <Teleport to="body">
-    <div class="companion-panel">
-      <!-- 頂欄 -->
-      <div class="panel-header">
-        <div class="header-info">
-          <span class="header-name">{{ characterName }}</span>
-          <span class="header-book">{{ bookTitle }}</span>
-        </div>
-        <div class="header-actions">
-          <div class="settings-wrapper">
+  <div class="cc-panel">
+    <header class="cc-header">
+      <span class="cc-avatar" aria-hidden="true">
+        <img v-if="characterAvatar" :src="characterAvatar" alt="" />
+        <span v-else>{{ avatarInitial }}</span>
+      </span>
+      <div class="cc-title">
+        <span class="cc-name">{{ characterName }}</span>
+        <span class="cc-book">陪你讀《{{ bookTitle }}》</span>
+      </div>
+      <button
+        class="cc-icon-btn"
+        :class="{ on: showSettings }"
+        aria-label="伴讀設定"
+        :aria-expanded="showSettings"
+        @click="showSettings = !showSettings"
+      >
+        <Settings2 :size="18" />
+      </button>
+      <button class="cc-icon-btn" aria-label="收起伴讀" @click="emit('close')">
+        <ChevronDown :size="20" />
+      </button>
+    </header>
+
+    <Transition name="cc-fold">
+      <div v-if="showSettings" class="cc-settings">
+        <div class="cc-setting-row">
+          <span class="cc-setting-label">翻幾頁說一次話</span>
+          <div class="cc-segment" role="radiogroup" aria-label="翻頁觸發頻率">
             <button
-              class="header-btn"
-              :title="`觸發頻率：每 ${triggerFrequency} 頁`"
-              @click.stop="showSettings = !showSettings"
+              v-for="n in FREQUENCY_OPTIONS"
+              :key="n"
+              role="radio"
+              :aria-checked="triggerFrequency === n"
+              :class="{ active: triggerFrequency === n }"
+              @click="selectFrequency(n)"
             >
-              <Settings2 :size="16" />
+              {{ n }}
             </button>
-            <!-- 觸發頻率設定 popover -->
-            <Transition name="fade">
-              <div v-if="showSettings" class="freq-popover">
-                <p class="freq-label">翻頁觸發頻率</p>
-                <div class="freq-options">
-                  <button
-                    v-for="n in FREQUENCY_OPTIONS"
-                    :key="n"
-                    class="freq-btn"
-                    :class="{ active: triggerFrequency === n }"
-                    @click="selectFrequency(n)"
-                  >
-                    {{ n }} 頁
-                  </button>
-                </div>
-              </div>
-            </Transition>
-          </div>
-          <button class="header-btn" title="縮小" @click="emit('minimize')">
-            <Minus :size="16" />
-          </button>
-        </div>
-      </div>
-
-      <!-- 訊息列表 -->
-      <div ref="messageListRef" class="message-list">
-        <div v-if="isEmpty" class="empty-hint">
-          <p>📖 伴讀聊天已開始</p>
-          <p class="sub">
-            翻頁後{{ characterName }}會自動發表評論，你也可以直接輸入訊息
-          </p>
-        </div>
-        <div
-          v-for="msg in messages"
-          :key="msg.id"
-          class="msg-item"
-          :class="{
-            'msg-user': msg.role === 'user',
-            'msg-ai': msg.role === 'assistant',
-          }"
-        >
-          <span class="msg-sender">{{ msg.senderName }}</span>
-          <div class="msg-bubble">{{ msg.content }}</div>
-          <span class="msg-time">{{ formatTime(msg.timestamp) }}</span>
-        </div>
-
-        <!-- 生成中指示器 (Requirement 5.3) -->
-        <div v-if="isGenerating" class="msg-item msg-ai generating">
-          <span class="msg-sender">{{ characterName }}</span>
-          <div class="msg-bubble loading-bubble">
-            <Loader2 :size="16" class="spin" />
-            <span>思考中…</span>
           </div>
         </div>
+        <button class="cc-stop" @click="emit('stop')">結束伴讀</button>
+        <p class="cc-setting-hint">結束後，這次的對話會存成一張共讀卡放進你們的私聊。</p>
+      </div>
+    </Transition>
+
+    <div ref="messageListRef" class="cc-list">
+      <div v-if="bubbles.length === 0 && !isGenerating" class="cc-empty">
+        <p>{{ characterName }} 已經坐到你旁邊了</p>
+        <p class="sub">每翻 {{ triggerFrequency }} 頁會聊聊剛讀到的內容，也可以直接問</p>
       </div>
 
-      <!-- 輸入區 (Requirement 5.1) -->
-      <div class="input-area">
-        <input
-          v-model="inputText"
-          class="msg-input"
-          type="text"
-          placeholder="輸入訊息…"
-          :disabled="isGenerating"
-          @keydown="handleKeydown"
-        />
-        <button
-          class="send-btn"
-          :disabled="!inputText.trim() || isGenerating"
-          @click="handleSend"
-        >
-          <Send :size="16" />
-        </button>
-      </div>
-
-      <!-- 點擊外部關閉設定 -->
       <div
-        v-if="showSettings"
-        class="settings-backdrop"
-        @click="showSettings = false"
-      />
+        v-for="b in bubbles"
+        :key="b.key"
+        class="cc-row"
+        :class="[b.role === 'user' ? 'is-user' : 'is-ai', { 'is-first': b.first }]"
+      >
+        <span v-if="b.role === 'assistant'" class="cc-row-avatar" aria-hidden="true">
+          <template v-if="b.first">
+            <img v-if="characterAvatar" :src="characterAvatar" alt="" />
+            <span v-else>{{ avatarInitial }}</span>
+          </template>
+        </span>
+        <div class="cc-bubble">{{ b.text }}</div>
+      </div>
+
+      <div v-if="isGenerating" class="cc-row is-ai is-first">
+        <span class="cc-row-avatar" aria-hidden="true">
+          <img v-if="characterAvatar" :src="characterAvatar" alt="" />
+          <span v-else>{{ avatarInitial }}</span>
+        </span>
+        <div class="cc-bubble cc-typing" aria-label="正在輸入">
+          <i /><i /><i />
+        </div>
+      </div>
     </div>
-  </Teleport>
+
+    <div class="cc-input">
+      <label for="cc-input-field" class="sr-only">對{{ characterName }}說</label>
+      <input
+        id="cc-input-field"
+        v-model="inputText"
+        type="text"
+        :placeholder="`問${characterName}這一段…`"
+        :disabled="isGenerating"
+        enterkeyhint="send"
+        @keydown="handleKeydown"
+      />
+      <button
+        class="cc-send"
+        aria-label="送出"
+        :disabled="!inputText.trim() || isGenerating"
+        @click="handleSend"
+      >
+        <ArrowUp :size="18" />
+      </button>
+    </div>
+  </div>
 </template>
 
 <style scoped lang="scss">
-.companion-panel {
-  position: fixed;
-  left: 12px;
-  top: 60px;
-  width: min(320px, 85vw);
-  height: 420px;
-  z-index: 9999;
+.cc-panel {
+  --cc-text: var(--rd-text, var(--color-text, #2d3748));
+  --cc-sub: var(--rd-sub, var(--color-text-secondary, #6b7280));
+  --cc-raise: var(--rd-raise, var(--color-surface-hover, #f3f4f6));
+  --cc-line: var(--rd-line, var(--color-border, #e5e7eb));
+  --cc-accent: var(--rd-accent, var(--color-primary, #7dd3a8));
+  --cc-on-accent: var(--rd-on-accent, #0b1f16);
+  --cc-accent-soft: var(--rd-accent-soft, rgba(125, 211, 168, 0.2));
+
   display: flex;
   flex-direction: column;
-  background: var(--color-surface, #1e1e2e);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 14px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
-  overflow: hidden;
+  height: 100%;
+  min-height: 0;
+  color: var(--cc-text);
 }
 
-// ===== 頂欄 =====
-.panel-header {
+.cc-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 10px 16px;
+  flex-shrink: 0;
+}
+
+.cc-avatar,
+.cc-row-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  font-weight: 700;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.cc-avatar {
+  width: 36px;
+  height: 36px;
+  background: var(--cc-accent);
+  color: var(--cc-on-accent);
+  font-size: 14px;
+}
+
+.cc-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cc-name {
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cc-book {
+  font-size: 12px;
+  color: var(--cc-sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cc-icon-btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 22px;
+  background: transparent;
+  color: var(--cc-sub);
+  cursor: pointer;
+
+  &.on,
+  &:hover {
+    background: var(--cc-raise);
+    color: var(--cc-text);
+  }
+}
+
+// ===== 設定 =====
+.cc-settings {
+  margin: 0 16px 10px;
+  padding: 14px;
+  border-radius: 18px;
+  background: var(--cc-raise);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.cc-setting-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.03);
+  gap: 12px;
 }
 
-.header-info {
+.cc-setting-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.cc-segment {
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-width: 0;
+  padding: 3px;
+  border-radius: 18px;
+  background: var(--cc-line);
+
+  button {
+    min-width: 40px;
+    height: 32px;
+    border: none;
+    border-radius: 16px;
+    background: transparent;
+    color: var(--cc-sub);
+    font-size: 13px;
+    cursor: pointer;
+
+    &.active {
+      background: var(--cc-accent);
+      color: var(--cc-on-accent);
+      font-weight: 700;
+    }
+  }
 }
 
-.header-name {
+.cc-stop {
+  height: 40px;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--color-error, #c2413b) 45%, transparent);
+  background: transparent;
+  color: var(--color-error, #c2413b);
   font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text, #e0e0e0);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.header-book {
-  font-size: 11px;
-  opacity: 0.5;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.header-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--color-text, #e0e0e0);
+  font-weight: 500;
   cursor: pointer;
-  opacity: 0.65;
+}
+
+.cc-setting-hint {
+  margin: -4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--cc-sub);
+}
+
+.cc-fold-enter-active,
+.cc-fold-leave-active {
   transition:
-    opacity 0.15s,
-    background 0.15s;
-
-  &:hover {
-    opacity: 1;
-    background: rgba(255, 255, 255, 0.08);
-  }
+    opacity 0.18s,
+    transform 0.18s;
+}
+.cc-fold-enter-from,
+.cc-fold-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 
-// ===== 觸發頻率設定 popover =====
-.settings-wrapper {
-  position: relative;
-}
-
-.freq-popover {
-  position: absolute;
-  top: 36px;
-  right: 0;
-  background: var(--color-surface-variant, #2a2a3e);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 10px 12px;
-  z-index: 10;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  min-width: 160px;
-}
-
-.freq-label {
-  font-size: 12px;
-  opacity: 0.6;
-  margin: 0 0 8px;
-}
-
-.freq-options {
-  display: flex;
-  gap: 6px;
-}
-
-.freq-btn {
-  flex: 1;
-  padding: 5px 0;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-text, #e0e0e0);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.06);
-  }
-
-  &.active {
-    background: var(--color-primary, #7dd3a8);
-    color: #1a1a2e;
-    border-color: var(--color-primary, #7dd3a8);
-    font-weight: 600;
-  }
-}
-
-// ===== 訊息列表 =====
-.message-list {
+// ===== 訊息 =====
+.cc-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 12px;
+  padding: 4px 16px 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 4px;
+  overscroll-behavior: contain;
 }
 
-.empty-hint {
+.cc-empty {
+  margin: auto;
   text-align: center;
-  padding: 32px 16px;
-  opacity: 0.5;
-  font-size: 14px;
+  padding: 24px 12px;
+
+  p {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 500;
+  }
 
   .sub {
-    font-size: 12px;
     margin-top: 6px;
-    opacity: 0.7;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.6;
+    color: var(--cc-sub);
   }
 }
 
-.msg-item {
+.cc-row {
   display: flex;
-  flex-direction: column;
-  max-width: 85%;
+  align-items: flex-end;
+  gap: 8px;
 
-  &.msg-user {
-    align-self: flex-end;
-    align-items: flex-end;
-
-    .msg-bubble {
-      background: var(--color-primary, #7dd3a8);
-      color: #1a1a2e;
-      border-radius: 12px 12px 4px 12px;
-    }
+  &.is-first {
+    margin-top: 8px;
   }
 
-  &.msg-ai {
-    align-self: flex-start;
-    align-items: flex-start;
-
-    .msg-bubble {
-      background: rgba(255, 255, 255, 0.08);
-      border-radius: 12px 12px 12px 4px;
-    }
+  &.is-user {
+    justify-content: flex-end;
   }
 }
 
-.msg-sender {
-  font-size: 11px;
-  opacity: 0.5;
-  margin-bottom: 3px;
-  padding: 0 4px;
+.cc-row-avatar {
+  width: 28px;
+  height: 28px;
+  align-self: flex-start;
+  font-size: 12px;
+
+  &:not(:empty) {
+    background: var(--cc-accent);
+    color: var(--cc-on-accent);
+  }
 }
 
-.msg-bubble {
-  padding: 8px 12px;
-  font-size: 13px;
-  line-height: 1.5;
-  word-break: break-word;
+.cc-bubble {
+  max-width: 78%;
+  padding: 9px 13px;
+  border-radius: 18px;
+  font-size: 15px;
+  line-height: 1.55;
   white-space: pre-wrap;
+  word-break: break-word;
+
+  .is-ai & {
+    background: var(--cc-raise);
+    border-top-left-radius: 6px;
+  }
+
+  .is-user & {
+    background: var(--cc-accent-soft);
+    border-top-right-radius: 6px;
+  }
 }
 
-.msg-time {
-  font-size: 10px;
-  opacity: 0.35;
-  margin-top: 2px;
-  padding: 0 4px;
-}
-
-// 生成中指示器
-.loading-bubble {
+.cc-typing {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  opacity: 0.7;
-}
+  gap: 4px;
+  padding: 14px 16px;
 
-.spin {
-  animation: spin 1s linear infinite;
-}
+  i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--cc-sub);
+    animation: cc-dot 1.2s infinite ease-in-out;
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
+    &:nth-child(2) {
+      animation-delay: 0.15s;
+    }
+    &:nth-child(3) {
+      animation-delay: 0.3s;
+    }
   }
-  to {
-    transform: rotate(360deg);
+}
+
+@keyframes cc-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
   }
 }
 
-// ===== 輸入區 =====
-.input-area {
+// ===== 輸入 =====
+.cc-input {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 6px 12px 0;
+  padding: 5px 5px 5px 18px;
+  border-radius: 27px;
+  background: var(--cc-raise);
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.02);
-}
 
-.msg-input {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--color-text, #e0e0e0);
-  font-size: 13px;
-  outline: none;
-  transition: border-color 0.15s;
+  input {
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    border: none;
+    background: transparent;
+    color: var(--cc-text);
+    font-family: inherit;
+    font-size: 16px;
+    outline: none;
 
-  &::placeholder {
-    opacity: 0.4;
-  }
-
-  &:focus {
-    border-color: var(--color-primary, #7dd3a8);
-  }
-
-  &:disabled {
-    opacity: 0.5;
+    &::placeholder {
+      color: var(--cc-sub);
+    }
   }
 }
 
-.send-btn {
+.cc-send {
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: none;
-  border-radius: 50%;
-  background: var(--color-primary, #7dd3a8);
-  color: #1a1a2e;
+  background: var(--cc-accent);
+  color: var(--cc-on-accent);
   cursor: pointer;
   flex-shrink: 0;
-  transition:
-    opacity 0.15s,
-    transform 0.1s;
-
-  &:hover:not(:disabled) {
-    transform: scale(1.05);
-  }
-
-  &:active:not(:disabled) {
-    transform: scale(0.95);
-  }
 
   &:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
+    opacity: 0.4;
+    cursor: default;
   }
 }
 
-// 設定背景遮罩
-.settings-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-}
-
-// 動畫
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.15s;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 </style>

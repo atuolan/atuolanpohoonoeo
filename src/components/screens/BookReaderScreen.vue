@@ -1,31 +1,21 @@
 <script setup lang="ts">
 import CompanionChatPanel from "@/components/common/CompanionChatPanel.vue";
-import FloatingBubble from "@/components/common/FloatingBubble.vue";
 import { useCompanionChat } from "@/composables/useCompanionChat";
 import { useBooksStore } from "@/stores/books";
 import { useCharactersStore } from "@/stores/characters";
 import { useLorebooksStore } from "@/stores/lorebooks";
 import { useUserStore } from "@/stores/user";
-import type { StoredBook } from "@/types/book";
+import type { ReaderBackground, ReaderPrefs, StoredBook } from "@/types/book";
 import {
-    ArrowLeft,
-    BookOpen,
-    ChevronLeft,
-    ChevronRight,
-    List,
-    Settings2,
-    Users,
-    X,
-} from "lucide-vue-next";
-import {
-    computed,
-    nextTick,
-    onMounted,
-    onUnmounted,
-    ref,
-    toRef,
-    watch,
-} from "vue";
+  bookPercent,
+  offsetForPage,
+  pageForOffset,
+  remainingMinutes,
+  splitParagraphs,
+  type PageProbe,
+} from "@/utils/bookReading";
+import { ArrowLeft, List, Minus, Plus, Users, X } from "lucide-vue-next";
+import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch } from "vue";
 
 const props = defineProps<{
   book: StoredBook;
@@ -40,1149 +30,1305 @@ const charsStore = useCharactersStore();
 const lorebooksStore = useLorebooksStore();
 const userStore = useUserStore();
 
-// 閱讀狀態
-const currentChapterIndex = ref(0);
-const contentEl = ref<HTMLElement | null>(null);
-const containerEl = ref<HTMLElement | null>(null);
-const showToc = ref(false);
-const showSettings = ref(false);
+const COLUMN_GAP = 48;
+const SWIPE_THRESHOLD = 50;
 
-// 分頁狀態
-const currentPage = ref(0);
-const totalPages = ref(1);
-const containerWidth = ref(0);
-let resizeObserver: ResizeObserver | null = null;
+const BACKGROUNDS: Record<
+  ReaderBackground,
+  { bg: string; text: string; label: string; dark?: boolean }
+> = {
+  sepia: { bg: "#fdf6e3", text: "#3c3836", label: "護眼" },
+  white: { bg: "#ffffff", text: "#222222", label: "白底" },
+  night: { bg: "#1a1a2e", text: "#e0e0e0", label: "夜間", dark: true },
+  green: { bg: "#e8f5e9", text: "#2e4a2e", label: "綠底" },
+};
+const BACKGROUND_KEYS = Object.keys(BACKGROUNDS) as ReaderBackground[];
 
-// 角色選擇 modal
-const showCharacterPicker = ref(false);
+const FONT_FAMILIES: Record<ReaderPrefs["fontFamily"], string> = {
+  serif: "'Noto Serif TC', 'Source Han Serif TC', 'Songti TC', serif",
+  sans: "'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif",
+};
 
-// 伴讀聊天
-const companion = useCompanionChat({
-  book: toRef(props, "book"),
-  currentChapterIndex,
+// ===== 閱讀設定 =====
+const prefs = computed(() => booksStore.readerPrefs);
+const palette = computed(() => BACKGROUNDS[prefs.value.background] ?? BACKGROUNDS.sepia);
+
+const paletteVars = computed(() => {
+  const { bg, text, dark } = palette.value;
+  return {
+    "--rd-bg": bg,
+    "--rd-text": text,
+    "--rd-sub": `color-mix(in srgb, ${text} 58%, ${bg})`,
+    "--rd-line": `color-mix(in srgb, ${text} 12%, ${bg})`,
+    "--rd-raise": `color-mix(in srgb, ${text} 6%, ${bg})`,
+    "--rd-sheet": `color-mix(in srgb, ${text} 3%, ${bg})`,
+    // 亮底用深色膠囊；夜間改用稍亮的暗色，避免一條刺眼的白條
+    "--rd-pill-bg": dark ? `color-mix(in srgb, ${text} 14%, ${bg})` : text,
+    "--rd-pill-text": dark ? text : bg,
+  };
 });
 
-// 閱讀設定
-const fontSize = ref(17);
-const lineHeight = ref(1.9);
-const bgColor = ref("#fdf6e3");
-const textColor = ref("#3c3836");
+function changeFontSize(delta: number) {
+  const next = Math.min(28, Math.max(12, prefs.value.fontSize + delta));
+  booksStore.setReaderPrefs({ fontSize: next });
+}
 
-const BG_PRESETS = [
-  { bg: "#fdf6e3", text: "#3c3836", label: "護眼" },
-  { bg: "#ffffff", text: "#222222", label: "白底" },
-  { bg: "#1a1a2e", text: "#e0e0e0", label: "夜間" },
-  { bg: "#e8f5e9", text: "#2e4a2e", label: "綠底" },
-];
+function changeLineHeight(delta: number) {
+  const next = Math.min(2.6, Math.max(1.4, +(prefs.value.lineHeight + delta).toFixed(1)));
+  booksStore.setReaderPrefs({ lineHeight: next });
+}
 
-const currentChapter = computed(
-  () => props.book.chapters[currentChapterIndex.value],
+// ===== 閱讀位置 =====
+const chapterIndex = ref(0);
+const page = ref(0);
+const totalPages = ref(1);
+/** 目前這一頁頂端的章內字元位置（存檔與換字級時用它對位） */
+const anchorOffset = ref(0);
+const innerWidth = ref(0);
+const isReady = ref(false);
+
+const containerEl = ref<HTMLElement | null>(null);
+const contentEl = ref<HTMLElement | null>(null);
+
+const pageWidth = computed(() => innerWidth.value + COLUMN_GAP);
+const lastChapterIndex = computed(() => props.book.chapters.length - 1);
+const currentChapter = computed(() => props.book.chapters[chapterIndex.value]);
+const paragraphs = computed(() => splitParagraphs(currentChapter.value?.content ?? ""));
+
+const percent = computed(() =>
+  bookPercent(props.book.chapters, chapterIndex.value, anchorOffset.value),
 );
 
-const progress = computed(() => {
-  if (props.book.chapters.length <= 1 && totalPages.value <= 1) return 100;
-  // 綜合進度：章節進度 + 頁內進度
-  const chapterWeight =
-    currentChapterIndex.value / Math.max(props.book.chapters.length - 1, 1);
-  const pageWeight =
-    totalPages.value > 1 ? currentPage.value / (totalPages.value - 1) : 1;
-  const perChapter = 1 / props.book.chapters.length;
-  return Math.round((chapterWeight + pageWeight * perChapter) * 100);
+const remainingText = computed(() => {
+  const minutes = remainingMinutes(currentChapter.value?.content.length ?? 0, anchorOffset.value);
+  return minutes <= 0 ? "本章讀完了" : `剩 ${minutes} 分鐘`;
 });
 
-// 計算總頁數
-function recalcPages() {
-  nextTick(() => {
-    nextTick(() => {
-      if (!containerEl.value || !contentEl.value) return;
-      // clientWidth 包含 padding，我們需要內容區寬度
-      const style = getComputedStyle(containerEl.value);
-      const pl = parseFloat(style.paddingLeft) || 0;
-      const pr = parseFloat(style.paddingRight) || 0;
-      const innerWidth = containerEl.value.clientWidth - pl - pr;
-      containerWidth.value = innerWidth;
+const isFirstPage = computed(() => chapterIndex.value === 0 && page.value === 0);
+const isLastPage = computed(
+  () => chapterIndex.value >= lastChapterIndex.value && page.value >= totalPages.value - 1,
+);
 
-      // column 佈局後，scrollWidth 會是所有 column 的總寬度
-      const scrollW = contentEl.value.scrollWidth;
-      if (innerWidth <= 0) return;
-      // 每個 column 寬度 = innerWidth，column-gap = 48px
-      // 所以每頁佔 innerWidth + 48px（最後一頁不加 gap）
-      const pageWidth = innerWidth + 48; // column-gap
-      totalPages.value = Math.max(1, Math.round(scrollW / pageWidth));
-      // 確保 currentPage 不超出範圍
-      if (currentPage.value >= totalPages.value) {
-        currentPage.value = totalPages.value - 1;
-      }
-      // 套用當前頁的偏移
-      applyPageOffset();
-    });
+// 版面計算排隊執行，避免翻章、換字級、視窗縮放同時量測
+let layoutQueue: Promise<void> = Promise.resolve();
+function run(task: () => Promise<void> | void): Promise<void> {
+  layoutQueue = layoutQueue.then(task).catch((e) => console.warn("[Reader] 版面計算失敗:", e));
+  return layoutQueue;
+}
+
+/** 量測每段開頭／結尾落在第幾頁 */
+function makeProbe(): PageProbe | null {
+  const content = contentEl.value;
+  if (!content || pageWidth.value <= COLUMN_GAP) return null;
+  const paraEls = content.querySelectorAll<HTMLElement>(".rd-para");
+  const originX = content.getBoundingClientRect().left;
+  const pw = pageWidth.value;
+  const pageAt = (x: number) => Math.max(0, Math.floor((x - originX + 1) / pw));
+  return {
+    startPage: (i) => pageAt(paraEls[i].getBoundingClientRect().left),
+    endPage: (i) => {
+      const end = paraEls[i].querySelector(".rd-end");
+      return pageAt((end ?? paraEls[i]).getBoundingClientRect().left);
+    },
+  };
+}
+
+async function layout() {
+  await nextTick();
+  const container = containerEl.value;
+  const content = contentEl.value;
+  if (!container || !content) return;
+  const style = getComputedStyle(container);
+  const width =
+    container.clientWidth -
+    (parseFloat(style.paddingLeft) || 0) -
+    (parseFloat(style.paddingRight) || 0);
+  if (width <= 0) return;
+  if (width !== innerWidth.value) {
+    innerWidth.value = width;
+    await nextTick();
+  }
+  totalPages.value = Math.max(
+    1,
+    Math.round((content.scrollWidth + COLUMN_GAP) / pageWidth.value),
+  );
+}
+
+function clampPage(p: number) {
+  return Math.min(Math.max(p, 0), totalPages.value - 1);
+}
+
+function applyPageOffset(animate: boolean) {
+  const content = contentEl.value;
+  if (!content) return;
+  content.style.transition = animate ? "transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1)" : "none";
+  content.style.transform = `translateX(-${page.value * pageWidth.value}px)`;
+}
+
+function updateAnchor() {
+  const probe = makeProbe();
+  anchorOffset.value = probe ? offsetForPage(paragraphs.value, page.value, probe) : 0;
+  scheduleSave();
+}
+
+type ChapterTarget = "start" | "end" | { offset: number };
+
+async function openChapter(index: number, target: ChapterTarget) {
+  chapterIndex.value = Math.min(Math.max(index, 0), lastChapterIndex.value);
+  await layout();
+  let p = 0;
+  if (target === "end") {
+    p = totalPages.value - 1;
+  } else if (typeof target === "object") {
+    const probe = makeProbe();
+    p = probe ? pageForOffset(paragraphs.value, target.offset, probe) : 0;
+  }
+  page.value = clampPage(p);
+  applyPageOffset(false);
+  updateAnchor();
+}
+
+/** 換字級、縮放視窗後重新排版，停在原本讀到的那一段 */
+async function relayoutKeepingPosition() {
+  const keep = anchorOffset.value;
+  await layout();
+  const probe = makeProbe();
+  page.value = clampPage(probe ? pageForOffset(paragraphs.value, keep, probe) : 0);
+  applyPageOffset(false);
+}
+
+function turnBy(delta: 1 | -1) {
+  return run(async () => {
+    const target = page.value + delta;
+    if (target < 0) {
+      if (chapterIndex.value === 0) return applyPageOffset(true);
+      await openChapter(chapterIndex.value - 1, "end");
+    } else if (target >= totalPages.value) {
+      if (chapterIndex.value >= lastChapterIndex.value) return applyPageOffset(true);
+      await openChapter(chapterIndex.value + 1, "start");
+    } else {
+      page.value = target;
+      applyPageOffset(true);
+      updateAnchor();
+    }
+    notifyCompanionPageTurn();
   });
 }
 
-function applyPageOffset(animate = false) {
-  if (!contentEl.value) return;
-  const pageWidth = containerWidth.value + 48; // column-gap
-  const offset = currentPage.value * pageWidth;
-  if (animate) {
-    contentEl.value.style.transition = "transform 0.25s ease-out";
-  } else {
-    contentEl.value.style.transition = "none";
-  }
-  contentEl.value.style.transform = `translateX(-${offset}px)`;
+function jumpToChapter(index: number) {
+  closeSheet();
+  run(async () => {
+    await openChapter(index, "start");
+    notifyCompanionPageTurn();
+  });
 }
 
-// 儲存進度（防抖）
+// ===== 存進度 =====
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function saveNow() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  booksStore.saveProgress({
+    bookId: props.book.id,
+    chapterIndex: chapterIndex.value,
+    scrollPosition: page.value,
+    charOffset: anchorOffset.value,
+    percent: percent.value,
+    lastReadAt: Date.now(),
+  });
+}
+
 function scheduleSave() {
+  if (!isReady.value) return;
   if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    booksStore.saveProgress({
-      bookId: props.book.id,
-      chapterIndex: currentChapterIndex.value,
-      scrollPosition: currentPage.value,
-      lastReadAt: Date.now(),
-    });
-  }, 1000);
+  saveTimer = setTimeout(saveNow, 800);
 }
 
-function goToChapter(index: number) {
-  if (index < 0 || index >= props.book.chapters.length) return;
-  currentChapterIndex.value = index;
-  currentPage.value = 0;
-  showToc.value = false;
-  nextTick(() => recalcPages());
-  scheduleSave();
-
-  // 伴讀：翻頁觸發
-  if (companion.isActive.value) {
-    const triggered = companion.onPageTurn(index);
-    if (triggered) {
-      companion.triggerAutoResponse();
-    }
-  }
-}
-
-function goToPage(page: number) {
-  if (page < 0) {
-    // 翻到上一章最後一頁
-    if (currentChapterIndex.value > 0) {
-      currentChapterIndex.value--;
-      currentPage.value = 0;
-      nextTick(() => {
-        recalcPages();
-        nextTick(() => {
-          currentPage.value = totalPages.value - 1;
-          scheduleSave();
-        });
-      });
-      // 伴讀觸發
-      if (companion.isActive.value) {
-        const triggered = companion.onPageTurn(currentChapterIndex.value);
-        if (triggered) companion.triggerAutoResponse();
-      }
-    }
-    return;
-  }
-  if (page >= totalPages.value) {
-    // 翻到下一章第一頁
-    if (currentChapterIndex.value < props.book.chapters.length - 1) {
-      currentChapterIndex.value++;
-      currentPage.value = 0;
-      nextTick(() => recalcPages());
-      scheduleSave();
-      // 伴讀觸發
-      if (companion.isActive.value) {
-        const triggered = companion.onPageTurn(currentChapterIndex.value);
-        if (triggered) companion.triggerAutoResponse();
-      }
-    }
-    return;
-  }
-  currentPage.value = page;
-  applyPageOffset(true);
-  scheduleSave();
-
-  // 伴讀：每翻一頁都計數
-  if (companion.isActive.value) {
-    const triggered = companion.onPageTurn(currentChapterIndex.value);
-    if (triggered) {
-      companion.triggerAutoResponse();
-    }
-  }
-}
-
-function prevPage() {
-  goToPage(currentPage.value - 1);
-}
-
-function nextPage() {
-  goToPage(currentPage.value + 1);
-}
-
-// ===== 水平滑動翻頁 =====
-const swipeStartX = ref(0);
-const swipeStartY = ref(0);
-const swipeDeltaX = ref(0);
-const isSwiping = ref(false);
-const isAnimating = ref(false);
-const SWIPE_THRESHOLD = 50;
+// ===== 手勢與按鍵 =====
+let swipeStartX = 0;
+let swipeStartY = 0;
+let swipeDeltaX = 0;
+let isSwiping = false;
+let suppressClick = false;
 
 function onTouchStart(e: TouchEvent) {
-  if (isAnimating.value) return;
   const touch = e.touches[0];
-  swipeStartX.value = touch.clientX;
-  swipeStartY.value = touch.clientY;
-  swipeDeltaX.value = 0;
-  isSwiping.value = false;
+  swipeStartX = touch.clientX;
+  swipeStartY = touch.clientY;
+  swipeDeltaX = 0;
+  isSwiping = false;
 }
 
 function onTouchMove(e: TouchEvent) {
-  if (isAnimating.value) return;
   const touch = e.touches[0];
-  const dx = touch.clientX - swipeStartX.value;
-  const dy = touch.clientY - swipeStartY.value;
-
-  if (!isSwiping.value && Math.abs(dx) > 8) {
-    if (Math.abs(dx) > Math.abs(dy)) {
-      isSwiping.value = true;
-    }
+  const dx = touch.clientX - swipeStartX;
+  const dy = touch.clientY - swipeStartY;
+  if (!isSwiping && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) {
+    isSwiping = true;
   }
-
-  if (isSwiping.value) {
-    e.preventDefault();
-    swipeDeltaX.value = dx;
-    // 即時拖曳回饋
-    if (contentEl.value) {
-      const pageWidth = containerWidth.value + 48;
-      const baseOffset = currentPage.value * pageWidth;
-      contentEl.value.style.transition = "none";
-      contentEl.value.style.transform = `translateX(-${baseOffset - dx * 0.4}px)`;
-    }
-  }
+  if (!isSwiping || !contentEl.value) return;
+  e.preventDefault();
+  swipeDeltaX = dx;
+  // 頭尾兩頁拉不動，給一點阻力
+  const atEdge = (dx > 0 && isFirstPage.value) || (dx < 0 && isLastPage.value);
+  const follow = atEdge ? dx * 0.2 : dx;
+  contentEl.value.style.transition = "none";
+  contentEl.value.style.transform = `translateX(${-page.value * pageWidth.value + follow}px)`;
 }
 
 function onTouchEnd() {
-  if (isAnimating.value) return;
-  if (!isSwiping.value) {
-    swipeDeltaX.value = 0;
-    return;
-  }
-
-  const canGoNext =
-    currentPage.value < totalPages.value - 1 ||
-    currentChapterIndex.value < props.book.chapters.length - 1;
-  const canGoPrev = currentPage.value > 0 || currentChapterIndex.value > 0;
-
-  if (swipeDeltaX.value < -SWIPE_THRESHOLD && canGoNext) {
-    animateSlide("left", () => nextPage());
-  } else if (swipeDeltaX.value > SWIPE_THRESHOLD && canGoPrev) {
-    animateSlide("right", () => prevPage());
-  } else {
-    // 回彈到當前頁
-    swipeDeltaX.value = 0;
-    if (contentEl.value) {
-      contentEl.value.style.transition = "transform 0.2s ease-out";
-      applyPageOffset(true);
-    }
-  }
-  isSwiping.value = false;
+  if (!isSwiping) return;
+  isSwiping = false;
+  suppressClick = true;
+  setTimeout(() => (suppressClick = false), 350);
+  if (swipeDeltaX < -SWIPE_THRESHOLD) turnBy(1);
+  else if (swipeDeltaX > SWIPE_THRESHOLD) turnBy(-1);
+  else applyPageOffset(true);
 }
 
-function animateSlide(dir: "left" | "right", callback: () => void) {
-  if (!contentEl.value) {
-    callback();
-    return;
-  }
-  isAnimating.value = true;
-  swipeDeltaX.value = 0;
-
-  // 先做一個小位移動畫暗示方向
-  const nudge = dir === "left" ? -30 : 30;
-  const pageWidth = containerWidth.value + 48;
-  const baseOffset = currentPage.value * pageWidth;
-  contentEl.value.style.transition = "transform 0.2s ease-out";
-  contentEl.value.style.transform = `translateX(-${baseOffset - nudge}px)`;
-
-  setTimeout(() => {
-    if (contentEl.value) {
-      contentEl.value.style.transition = "none";
-    }
-    isAnimating.value = false;
-    callback();
-    // callback 裡的 goToPage 會呼叫 applyPageOffset
-  }, 200);
-}
-
-// 鍵盤快捷鍵
-function handleKeydown(e: KeyboardEvent) {
-  if (e.key === "ArrowLeft") prevPage();
-  else if (e.key === "ArrowRight") nextPage();
-  else if (e.key === "Escape") {
-    if (showCharacterPicker.value) showCharacterPicker.value = false;
-    else if (showToc.value) showToc.value = false;
-    else if (showSettings.value) showSettings.value = false;
-  }
-}
-
-// 點擊左右區域翻頁
+// 點左三分之一上一頁、右三分之一下一頁
 function handleTapNavigation(e: MouseEvent) {
-  if (isSwiping.value || isAnimating.value) return;
-  if (!containerEl.value) return;
+  if (suppressClick || !containerEl.value) return;
+  if (window.getSelection()?.toString()) return;
   const rect = containerEl.value.getBoundingClientRect();
   const x = e.clientX - rect.left;
-  const third = rect.width / 3;
-  if (x < third) {
-    prevPage();
-  } else if (x > third * 2) {
-    nextPage();
+  if (x < rect.width / 3) turnBy(-1);
+  else if (x > (rect.width * 2) / 3) turnBy(1);
+}
+
+function handleKeydown(e: KeyboardEvent) {
+  if (sheet.value) {
+    if (e.key === "Escape") closeSheet();
+    return;
+  }
+  const target = e.target as HTMLElement | null;
+  if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+    return;
+  }
+  if (e.key === "ArrowLeft" || e.key === "PageUp") turnBy(-1);
+  else if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") {
+    e.preventDefault();
+    turnBy(1);
   }
 }
 
-// 伴讀：選擇角色
+// ===== 抽屜 =====
+type SheetKind = "toc" | "settings" | "companion" | "picker";
+const sheet = ref<SheetKind | null>(null);
+const tocListEl = ref<HTMLElement | null>(null);
+
+const SHEET_LABELS: Record<SheetKind, string> = {
+  toc: "目錄",
+  settings: "排版設定",
+  companion: "伴讀聊天",
+  picker: "選擇伴讀角色",
+};
+
+function openSheet(kind: SheetKind) {
+  sheet.value = kind;
+  if (kind === "toc") {
+    nextTick(() => {
+      tocListEl.value
+        ?.querySelector<HTMLElement>(".rd-toc-item.active")
+        ?.scrollIntoView({ block: "center" });
+    });
+  }
+}
+
+function closeSheet() {
+  sheet.value = null;
+}
+
+// ===== 伴讀 =====
+const companion = useCompanionChat({
+  book: toRef(props, "book"),
+  currentChapterIndex: chapterIndex,
+});
+
+const companionCharacter = computed(() =>
+  companion.selectedCharacterId.value
+    ? charsStore.getCharacterById(companion.selectedCharacterId.value)
+    : undefined,
+);
+const companionName = computed(
+  () => companionCharacter.value?.nickname || companionCharacter.value?.data.name || "",
+);
+const companionAvatar = computed(() => companionCharacter.value?.avatar || "");
+
+const aiBarText = computed(() => {
+  if (!companion.isActive.value) return "找個角色陪你讀…";
+  if (companion.isGenerating.value) return `${companionName.value} 正在想…`;
+  if (companion.hasUnread.value) return `${companionName.value} 跟你說了話`;
+  return `問${companionName.value}這一頁…`;
+});
+
+function openCompanion() {
+  openSheet(companion.isActive.value ? "companion" : "picker");
+}
+
+function notifyCompanionPageTurn() {
+  if (companion.isActive.value && companion.onPageTurn(chapterIndex.value)) {
+    companion.triggerAutoResponse();
+  }
+}
+
 function selectCompanionCharacter(characterId: string) {
   companion.startCompanion(characterId);
-  showCharacterPicker.value = false;
+  openSheet("companion");
 }
 
-// 伴讀：停止
-function stopCompanion() {
-  companion.stopCompanion();
+async function stopCompanion() {
+  closeSheet();
+  await companion.stopCompanion();
 }
 
-// 伴讀：發送訊息
-function handleCompanionSend(content: string) {
-  companion.sendMessage(content);
-}
-
-// 伴讀：設定觸發頻率
-function handleFrequencyChange(n: number) {
-  companion.setTriggerFrequency(n);
-}
-
-// 伴讀：縮小面板
-function handleMinimize() {
-  companion.togglePanel();
-}
-
-// 伴讀：展開面板
-function handleExpand() {
-  companion.togglePanel();
-}
-
-// 伴讀：更新氣泡位置
-function handleBubblePositionUpdate(pos: { x: number; y: number }) {
-  companion.updateBubblePosition(pos.x, pos.y);
-}
-
-// 取得角色頭像
-const companionAvatarSrc = computed(() => {
-  if (!companion.selectedCharacterId.value) return "";
-  const char = charsStore.getCharacterById(companion.selectedCharacterId.value);
-  return char?.avatar || "";
+// 抽屜開關＝伴讀面板展開狀態（決定新訊息算不算未讀）
+watch(sheet, (kind) => {
+  if (companion.isActive.value) companion.setPanelExpanded(kind === "companion");
 });
 
-// 取得角色名稱
-const companionCharacterName = computed(() => {
-  if (!companion.selectedCharacterId.value) return "";
-  const char = charsStore.getCharacterById(companion.selectedCharacterId.value);
-  return char?.nickname || char?.data.name || "";
-});
+// ===== 生命週期 =====
+let resizeObserver: ResizeObserver | null = null;
+let resizeFrame = 0;
 
 onMounted(async () => {
   window.addEventListener("keydown", handleKeydown);
 
-  // 監聽容器大小變化，重新計算頁數
+  await Promise.all([
+    booksStore.loadReaderPrefs(),
+    charsStore.characters.length === 0 ? charsStore.loadCharacters() : null,
+    lorebooksStore.lorebooks.length === 0 ? lorebooksStore.loadLorebooks() : null,
+    userStore.isLoaded ? null : userStore.loadUserData(),
+  ]);
+
+  const saved = await booksStore.getProgress(props.book.id);
+  await run(async () => {
+    const index = Math.min(saved?.chapterIndex ?? 0, lastChapterIndex.value);
+    if (saved?.charOffset !== undefined) {
+      await openChapter(index, { offset: saved.charOffset });
+    } else {
+      await openChapter(index, "start");
+      // 舊進度只存了頁碼
+      if (saved?.scrollPosition) {
+        page.value = clampPage(saved.scrollPosition);
+        applyPageOffset(false);
+        updateAnchor();
+      }
+    }
+    isReady.value = true;
+  });
+
   if (containerEl.value) {
-    resizeObserver = new ResizeObserver(() => recalcPages());
+    resizeObserver = new ResizeObserver(() => {
+      cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => run(relayoutKeepingPosition));
+    });
     resizeObserver.observe(containerEl.value);
   }
+  // 網路字型載入後字寬會變
+  document.fonts?.ready.then(() => run(relayoutKeepingPosition));
 
-  // 載入角色列表
-  if (charsStore.characters.length === 0) {
-    await charsStore.loadCharacters();
-  }
-
-  // 載入世界書
-  if (lorebooksStore.lorebooks.length === 0) {
-    await lorebooksStore.loadLorebooks();
-  }
-
-  // 載入使用者資料
-  if (!userStore.isLoaded) {
-    await userStore.loadUserData();
-  }
-
-  // 恢復上次進度
-  const savedProgress = await booksStore.getProgress(props.book.id);
-  if (savedProgress) {
-    currentChapterIndex.value = savedProgress.chapterIndex;
-    await nextTick();
-    recalcPages();
-    await nextTick();
-    currentPage.value = Math.min(
-      savedProgress.scrollPosition || 0,
-      totalPages.value - 1,
-    );
-  } else {
-    await nextTick();
-    recalcPages();
-  }
-
-  // 恢復伴讀狀態
   await companion.restoreState();
+  if (companion.isActive.value) companion.setPanelExpanded(false);
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown);
-  if (saveTimer) clearTimeout(saveTimer);
-  if (resizeObserver) resizeObserver.disconnect();
+  if (isReady.value) saveNow();
+  resizeObserver?.disconnect();
+  cancelAnimationFrame(resizeFrame);
   companion.endSession();
 });
 
-// 章節切換或字體變更時重新計算頁數
-watch([currentChapterIndex, fontSize, lineHeight], () => {
-  nextTick(() => recalcPages());
-});
-
-function applyPreset(preset: (typeof BG_PRESETS)[0]) {
-  bgColor.value = preset.bg;
-  textColor.value = preset.text;
-}
+watch(
+  () => [prefs.value.fontSize, prefs.value.lineHeight, prefs.value.fontFamily],
+  () => run(relayoutKeepingPosition),
+);
 </script>
 
 <template>
-  <div class="reader-screen" :style="{ background: bgColor, color: textColor }">
-    <!-- 頂欄 -->
-    <div class="reader-header">
-      <button class="icon-btn" @click="emit('back')">
-        <ArrowLeft :size="20" />
+  <div class="reader-screen" :style="paletteVars">
+    <header class="rd-header">
+      <button class="rd-icon-btn" aria-label="返回書架" @click="emit('back')">
+        <ArrowLeft :size="22" />
       </button>
-      <div class="header-center">
-        <p class="book-title-small">{{ book.title }}</p>
-        <p class="chapter-title-small">{{ currentChapter?.title }}</p>
+      <div class="rd-heading">
+        <span class="rd-book-title">{{ book.title }}</span>
+        <span class="rd-chapter-line">
+          <span class="rd-chapter-name">{{ currentChapter?.title }}</span>
+          <span class="rd-remaining">· {{ remainingText }}</span>
+        </span>
       </div>
-      <button class="icon-btn" @click="showSettings = !showSettings">
-        <Settings2 :size="20" />
+      <button class="rd-icon-btn rd-aa" aria-label="排版設定" @click="openSheet('settings')">
+        Aa
       </button>
-      <button
-        class="icon-btn"
-        :class="{ active: companion.isActive.value }"
-        :title="companion.isActive.value ? '伴讀中' : '開啟伴讀'"
-        @click="
-          companion.isActive.value
-            ? stopCompanion()
-            : (showCharacterPicker = true)
-        "
-      >
-        <Users :size="20" />
+      <button class="rd-icon-btn" aria-label="目錄" @click="openSheet('toc')">
+        <List :size="22" />
       </button>
-      <button class="icon-btn" @click="showToc = !showToc">
-        <List :size="20" />
-      </button>
-    </div>
+    </header>
 
-    <!-- 閱讀內容（水平分頁） -->
     <div
       ref="containerEl"
-      class="reader-page-container"
-      @touchstart="onTouchStart"
+      class="rd-page"
+      :class="{ ready: isReady }"
+      @touchstart.passive="onTouchStart"
       @touchmove="onTouchMove"
       @touchend="onTouchEnd"
+      @touchcancel="onTouchEnd"
       @click="handleTapNavigation"
     >
       <div
         ref="contentEl"
-        class="reader-columns"
+        class="rd-columns"
         :style="{
-          fontSize: `${fontSize}px`,
-          lineHeight,
-          columnWidth: containerWidth > 0 ? `${containerWidth}px` : undefined,
+          fontSize: `${prefs.fontSize}px`,
+          lineHeight: prefs.lineHeight,
+          fontFamily: FONT_FAMILIES[prefs.fontFamily],
+          columnWidth: innerWidth > 0 ? `${innerWidth}px` : undefined,
         }"
       >
-        <h2 class="chapter-heading">
-          {{ currentChapter?.title }}
-        </h2>
-        <div class="chapter-body">
-          <p
-            v-for="(para, i) in currentChapter?.content
-              .split('\n')
-              .filter((l) => l.trim())"
-            :key="i"
-            class="paragraph"
-          >
-            {{ para }}
-          </p>
-        </div>
+        <h2 class="rd-chapter-heading">{{ currentChapter?.title }}</h2>
+        <p
+          v-for="(para, i) in paragraphs"
+          :key="`${chapterIndex}-${i}`"
+          class="rd-para"
+        >{{ para.text }}<span class="rd-end" /></p>
       </div>
     </div>
 
-    <!-- 底部導航 -->
-    <div class="reader-footer">
-      <button
-        class="nav-btn"
-        :disabled="currentChapterIndex === 0 && currentPage === 0"
-        @click="prevPage"
-      >
-        <ChevronLeft :size="18" />
-        上一頁
-      </button>
-
-      <div class="progress-info">
-        <div class="progress-bar">
-          <div class="progress-fill" :style="{ width: `${progress}%` }" />
+    <footer class="rd-footer">
+      <div class="rd-progress" aria-label="閱讀進度">
+        <span>{{ percent }}%</span>
+        <div class="rd-track">
+          <div class="rd-fill" :style="{ width: `${percent}%` }" />
         </div>
-        <span class="progress-text">
-          第 {{ currentChapterIndex + 1 }} 章 · {{ currentPage + 1 }}/{{
-            totalPages
-          }}
-          頁
-        </span>
+        <span>{{ page + 1 }} / {{ totalPages }}</span>
       </div>
-
-      <button
-        class="nav-btn"
-        :disabled="
-          currentChapterIndex === book.chapters.length - 1 &&
-          currentPage >= totalPages - 1
-        "
-        @click="nextPage"
-      >
-        下一頁
-        <ChevronRight :size="18" />
-      </button>
-    </div>
-
-    <!-- 目錄側欄 -->
-    <Transition name="slide-right">
-      <div v-if="showToc" class="toc-panel">
-        <div class="toc-header">
-          <BookOpen :size="16" />
-          <span>目錄</span>
-          <button class="icon-btn small" @click="showToc = false">
-            <ChevronRight :size="16" />
-          </button>
-        </div>
-        <div class="toc-list">
-          <button
-            v-for="(chapter, i) in book.chapters"
-            :key="chapter.id"
-            class="toc-item"
-            :class="{ active: i === currentChapterIndex }"
-            @click="goToChapter(i)"
-          >
-            {{ chapter.title }}
-          </button>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- 設定面板 -->
-    <Transition name="slide-up">
-      <div v-if="showSettings" class="settings-panel">
-        <div class="settings-row">
-          <span class="settings-label">字體大小</span>
-          <div class="settings-controls">
-            <button
-              class="ctrl-btn"
-              @click="fontSize = Math.max(12, fontSize - 1)"
-            >
-              A-
-            </button>
-            <span class="ctrl-value">{{ fontSize }}px</span>
-            <button
-              class="ctrl-btn"
-              @click="fontSize = Math.min(28, fontSize + 1)"
-            >
-              A+
-            </button>
-          </div>
-        </div>
-        <div class="settings-row">
-          <span class="settings-label">行距</span>
-          <div class="settings-controls">
-            <button
-              class="ctrl-btn"
-              @click="
-                lineHeight = Math.max(1.4, +(lineHeight - 0.1).toFixed(1))
-              "
-            >
-              -
-            </button>
-            <span class="ctrl-value">{{ lineHeight }}</span>
-            <button
-              class="ctrl-btn"
-              @click="
-                lineHeight = Math.min(3.0, +(lineHeight + 0.1).toFixed(1))
-              "
-            >
-              +
-            </button>
-          </div>
-        </div>
-        <div class="settings-row">
-          <span class="settings-label">背景</span>
-          <div class="bg-presets">
-            <button
-              v-for="preset in BG_PRESETS"
-              :key="preset.bg"
-              class="bg-preset-btn"
-              :style="{ background: preset.bg, color: preset.text }"
-              :class="{ active: bgColor === preset.bg }"
-              @click="applyPreset(preset)"
-            >
-              {{ preset.label }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- 遮罩 -->
-    <div
-      v-if="showToc || showSettings"
-      class="overlay"
-      @click="
-        showToc = false;
-        showSettings = false;
-      "
-    />
-
-    <!-- 伴讀聊天面板 -->
-    <CompanionChatPanel
-      v-if="companion.isActive.value && companion.isPanelExpanded.value"
-      :character-name="companionCharacterName"
-      :book-title="book.title"
-      :messages="companion.messages.value"
-      :is-generating="companion.isGenerating.value"
-      :trigger-frequency="companion.triggerFrequency.value"
-      @minimize="handleMinimize"
-      @send="handleCompanionSend"
-      @update:trigger-frequency="handleFrequencyChange"
-    />
-
-    <!-- 浮動氣泡 -->
-    <FloatingBubble
-      v-if="companion.isActive.value && !companion.isPanelExpanded.value"
-      :avatar-src="companionAvatarSrc"
-      :has-unread="companion.hasUnread.value"
-      :position="companion.bubblePosition.value"
-      @expand="handleExpand"
-      @update:position="handleBubblePositionUpdate"
-    />
-
-    <!-- 角色選擇 Modal -->
-    <Teleport to="body">
-      <Transition name="fade">
-        <div
-          v-if="showCharacterPicker"
-          class="char-picker-overlay"
-          @click.self="showCharacterPicker = false"
+      <button class="rd-ai-bar" @click="openCompanion">
+        <span
+          class="rd-ai-avatar"
+          :class="{ thinking: companion.isGenerating.value }"
+          aria-hidden="true"
         >
-          <div class="char-picker-modal">
-            <div class="char-picker-header">
-              <span>選擇伴讀角色</span>
-              <button
-                class="icon-btn small"
-                @click="showCharacterPicker = false"
-              >
-                <X :size="16" />
-              </button>
-            </div>
-            <div class="char-picker-list">
-              <div
-                v-if="charsStore.characters.length === 0"
-                class="char-picker-empty"
-              >
-                尚無角色，請先匯入角色卡
+          <img v-if="companionAvatar" :src="companionAvatar" alt="" />
+          <Users v-else :size="18" />
+          <span v-if="companion.hasUnread.value" class="rd-ai-unread" />
+        </span>
+        <span class="rd-ai-text">{{ aiBarText }}</span>
+      </button>
+    </footer>
+
+    <Transition name="rd-fade">
+      <div v-if="sheet" class="rd-backdrop" @click="closeSheet" />
+    </Transition>
+
+    <Transition name="rd-sheet">
+      <section
+        v-if="sheet"
+        class="rd-sheet"
+        :class="`is-${sheet}`"
+        role="dialog"
+        :aria-label="SHEET_LABELS[sheet]"
+      >
+        <div class="rd-grabber" aria-hidden="true" />
+
+        <!-- 目錄 -->
+        <template v-if="sheet === 'toc'">
+          <div class="rd-sheet-head">
+            <h3>目錄</h3>
+            <span class="rd-sheet-meta">共 {{ book.chapters.length }} 章</span>
+            <button class="rd-icon-btn" aria-label="關閉" @click="closeSheet">
+              <X :size="20" />
+            </button>
+          </div>
+          <div ref="tocListEl" class="rd-toc">
+            <button
+              v-for="(ch, i) in book.chapters"
+              :key="ch.id"
+              class="rd-toc-item"
+              :class="{ active: i === chapterIndex }"
+              :aria-current="i === chapterIndex ? 'true' : undefined"
+              @click="jumpToChapter(i)"
+            >
+              <span class="rd-toc-no">{{ i + 1 }}</span>
+              <span class="rd-toc-title">{{ ch.title }}</span>
+            </button>
+          </div>
+        </template>
+
+        <!-- 排版 -->
+        <template v-else-if="sheet === 'settings'">
+          <div class="rd-sheet-head">
+            <h3>排版</h3>
+            <button class="rd-icon-btn" aria-label="關閉" @click="closeSheet">
+              <X :size="20" />
+            </button>
+          </div>
+          <div class="rd-settings">
+            <div class="rd-setting">
+              <span class="rd-setting-label">字級</span>
+              <div class="rd-stepper">
+                <button aria-label="縮小字級" :disabled="prefs.fontSize <= 12" @click="changeFontSize(-1)">
+                  <span class="rd-step-a small">A</span>
+                </button>
+                <span class="rd-step-value">{{ prefs.fontSize }}</span>
+                <button aria-label="放大字級" :disabled="prefs.fontSize >= 28" @click="changeFontSize(1)">
+                  <span class="rd-step-a">A</span>
+                </button>
               </div>
-              <button
-                v-for="char in charsStore.characters"
-                :key="char.id"
-                class="char-picker-item"
-                @click="selectCompanionCharacter(char.id)"
-              >
-                <img
-                  v-if="char.avatar"
-                  :src="char.avatar"
-                  class="char-picker-avatar"
-                  alt=""
-                />
-                <span
-                  v-else
-                  class="char-picker-avatar char-picker-avatar--placeholder"
-                  >👤</span
+            </div>
+            <div class="rd-setting">
+              <span class="rd-setting-label">行距</span>
+              <div class="rd-stepper">
+                <button aria-label="縮小行距" :disabled="prefs.lineHeight <= 1.4" @click="changeLineHeight(-0.1)">
+                  <Minus :size="16" />
+                </button>
+                <span class="rd-step-value">{{ prefs.lineHeight.toFixed(1) }}</span>
+                <button aria-label="加大行距" :disabled="prefs.lineHeight >= 2.6" @click="changeLineHeight(0.1)">
+                  <Plus :size="16" />
+                </button>
+              </div>
+            </div>
+            <div class="rd-setting">
+              <span class="rd-setting-label">字體</span>
+              <div class="rd-segment" role="radiogroup" aria-label="字體">
+                <button
+                  role="radio"
+                  :aria-checked="prefs.fontFamily === 'serif'"
+                  :class="{ active: prefs.fontFamily === 'serif' }"
+                  :style="{ fontFamily: FONT_FAMILIES.serif }"
+                  @click="booksStore.setReaderPrefs({ fontFamily: 'serif' })"
                 >
-                <div class="char-picker-info">
-                  <span class="char-picker-name">{{
-                    char.nickname || char.data.name
-                  }}</span>
-                  <span v-if="char.data.description" class="char-picker-desc">{{
-                    char.data.description
-                  }}</span>
-                </div>
-              </button>
+                  明體
+                </button>
+                <button
+                  role="radio"
+                  :aria-checked="prefs.fontFamily === 'sans'"
+                  :class="{ active: prefs.fontFamily === 'sans' }"
+                  :style="{ fontFamily: FONT_FAMILIES.sans }"
+                  @click="booksStore.setReaderPrefs({ fontFamily: 'sans' })"
+                >
+                  黑體
+                </button>
+              </div>
+            </div>
+            <div class="rd-setting stacked">
+              <span class="rd-setting-label">背景</span>
+              <div class="rd-swatches" role="radiogroup" aria-label="背景">
+                <button
+                  v-for="key in BACKGROUND_KEYS"
+                  :key="key"
+                  role="radio"
+                  class="rd-swatch"
+                  :aria-checked="prefs.background === key"
+                  :class="{ active: prefs.background === key }"
+                  @click="booksStore.setReaderPrefs({ background: key })"
+                >
+                  <span
+                    class="rd-swatch-chip"
+                    :style="{ background: BACKGROUNDS[key].bg, color: BACKGROUNDS[key].text }"
+                  >文</span>
+                  <span class="rd-swatch-label">{{ BACKGROUNDS[key].label }}</span>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      </Transition>
-    </Teleport>
+        </template>
+
+        <!-- 伴讀聊天 -->
+        <CompanionChatPanel
+          v-else-if="sheet === 'companion'"
+          :character-name="companionName"
+          :character-avatar="companionAvatar"
+          :book-title="book.title"
+          :messages="companion.messages.value"
+          :is-generating="companion.isGenerating.value"
+          :trigger-frequency="companion.triggerFrequency.value"
+          @close="closeSheet"
+          @stop="stopCompanion"
+          @send="companion.sendMessage"
+          @update:trigger-frequency="companion.setTriggerFrequency"
+        />
+
+        <!-- 選伴讀角色 -->
+        <template v-else-if="sheet === 'picker'">
+          <div class="rd-sheet-head">
+            <h3>找個角色陪你讀</h3>
+            <button class="rd-icon-btn" aria-label="關閉" @click="closeSheet">
+              <X :size="20" />
+            </button>
+          </div>
+          <p class="rd-sheet-hint">角色會跟著你翻頁聊剛讀到的內容，結束後對話會存進你們的私聊。</p>
+          <div class="rd-picker">
+            <p v-if="charsStore.characters.length === 0" class="rd-picker-empty">
+              還沒有角色，先去匯入一張角色卡吧
+            </p>
+            <button
+              v-for="char in charsStore.characters"
+              :key="char.id"
+              class="rd-picker-item"
+              @click="selectCompanionCharacter(char.id)"
+            >
+              <span class="rd-picker-avatar">
+                <img v-if="char.avatar" :src="char.avatar" alt="" />
+                <span v-else>{{ (char.nickname || char.data.name).slice(0, 1) }}</span>
+              </span>
+              <span class="rd-picker-info">
+                <span class="rd-picker-name">{{ char.nickname || char.data.name }}</span>
+                <span v-if="char.data.description" class="rd-picker-desc">{{ char.data.description }}</span>
+              </span>
+            </button>
+          </div>
+        </template>
+      </section>
+    </Transition>
   </div>
 </template>
 
 <style scoped lang="scss">
 .reader-screen {
+  --rd-accent: var(--color-primary, #7dd3a8);
+  --rd-on-accent: color-mix(in srgb, var(--rd-accent) 22%, #0b1f16);
+  --rd-accent-soft: color-mix(in srgb, var(--rd-accent) 24%, var(--rd-bg));
+
   display: flex;
   flex-direction: column;
   height: 100%;
   position: relative;
   overflow: hidden;
+  background: var(--rd-bg);
+  color: var(--rd-text);
   transition:
     background 0.3s,
     color 0.3s;
 }
 
-.reader-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  padding-top: max(10px, var(--safe-top, 0px));
-  background: inherit;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
-  flex-shrink: 0;
-  z-index: 10;
-
-  .header-center {
-    flex: 1;
-    overflow: hidden;
-    text-align: center;
-  }
-
-  .book-title-small {
-    font-size: 12px;
-    opacity: 0.6;
-    margin: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-
-  .chapter-title-small {
-    font-size: 13px;
-    font-weight: 600;
-    margin: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
+button {
+  font-family: inherit;
 }
 
-.icon-btn {
+.rd-icon-btn {
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  flex-shrink: 0;
   border: none;
-  border-radius: 8px;
+  border-radius: 22px;
   background: transparent;
   color: inherit;
   cursor: pointer;
-  flex-shrink: 0;
-  opacity: 0.75;
-  transition:
-    opacity 0.2s,
-    background 0.2s;
 
   &:hover {
-    opacity: 1;
-    background: rgba(128, 128, 128, 0.12);
-  }
-
-  &.small {
-    width: 28px;
-    height: 28px;
-  }
-
-  &.active {
-    opacity: 1;
-    color: var(--color-primary, #7dd3a8);
+    background: var(--rd-raise);
   }
 }
 
-.reader-page-container {
-  flex: 1;
-  overflow: hidden;
-  position: relative;
-  padding: 20px 24px;
+// 大螢幕上限制一行的長度，太長的行很難讀
+.rd-header,
+.rd-page,
+.rd-footer {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
   box-sizing: border-box;
 }
 
-.reader-columns {
+// ===== 頂欄 =====
+.rd-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 6px 4px;
+  padding-top: max(6px, var(--safe-top, 0px));
+  flex-shrink: 0;
+  z-index: 2;
+}
+
+.rd-heading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 0 4px;
+}
+
+.rd-book-title {
+  max-width: 100%;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rd-chapter-line {
+  display: flex;
+  max-width: 100%;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--rd-sub);
+}
+
+.rd-chapter-name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rd-remaining {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.rd-aa {
+  font-family: "Noto Serif TC", serif;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+// ===== 內文 =====
+.rd-page {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  padding: 18px 28px 12px;
+  box-sizing: border-box;
+  opacity: 0;
+  transition: opacity 0.2s;
+
+  &.ready {
+    opacity: 1;
+  }
+}
+
+.rd-columns {
   height: 100%;
   box-sizing: border-box;
   column-fill: auto;
   column-gap: 48px;
-  max-width: none;
+  letter-spacing: 0.04em;
   will-change: transform;
-  overflow: visible;
 }
 
-.chapter-heading {
-  font-size: 1.2em;
+.rd-chapter-heading {
+  margin: 0.4em 0 1.4em;
+  font-size: 1.25em;
   font-weight: 700;
-  margin: 0 0 24px;
+  line-height: 1.5;
   text-align: center;
-  opacity: 0.9;
+  letter-spacing: 0.08em;
 }
 
-.chapter-body {
-  .paragraph {
-    margin: 0 0 1em;
-    text-indent: 2em;
-    word-break: break-all;
-    break-inside: avoid-column;
-  }
+.rd-para {
+  margin: 0 0 0.9em;
+  text-indent: 2em;
+  text-align: justify;
+  overflow-wrap: anywhere;
+  orphans: 2;
+  widows: 2;
 }
 
-.reader-footer {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  border-top: 1px solid rgba(128, 128, 128, 0.15);
+// ===== 底部 =====
+.rd-footer {
   flex-shrink: 0;
-  background: inherit;
-}
-
-.nav-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  border: 1px solid rgba(128, 128, 128, 0.25);
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.2s;
-  flex-shrink: 0;
-
-  &:hover:not(:disabled) {
-    background: rgba(128, 128, 128, 0.12);
-  }
-
-  &:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-  }
-}
-
-.progress-info {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
+  gap: 10px;
+  padding: 4px 16px 14px;
+  padding-bottom: max(14px, var(--safe-bottom, 0px));
 }
 
-.progress-bar {
-  width: 100%;
-  height: 3px;
-  background: rgba(128, 128, 128, 0.2);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  background: var(--color-primary, #7dd3a8);
-  border-radius: 2px;
-  transition: width 0.3s;
-}
-
-.progress-text {
-  font-size: 11px;
-  opacity: 0.55;
-}
-
-// 目錄側欄
-.toc-panel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 260px;
-  height: 100%;
-  background: var(--color-surface, #fff);
-  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  color: var(--color-text, #333);
-}
-
-.toc-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 16px;
-  font-weight: 600;
-  font-size: 14px;
-  border-bottom: 1px solid var(--color-border, #e0e0e0);
-
-  span {
-    flex: 1;
-  }
-}
-
-.toc-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px 0;
-}
-
-.toc-item {
-  display: block;
-  width: 100%;
-  padding: 10px 16px;
-  text-align: left;
-  background: transparent;
-  border: none;
-  font-size: 13px;
-  color: var(--color-text, #333);
-  cursor: pointer;
-  transition: background 0.15s;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-
-  &:hover {
-    background: var(--color-hover, rgba(0, 0, 0, 0.05));
-  }
-
-  &.active {
-    color: var(--color-primary, #7dd3a8);
-    font-weight: 600;
-    background: rgba(125, 211, 168, 0.1);
-  }
-}
-
-// 設定面板
-.settings-panel {
-  position: absolute;
-  bottom: 56px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(360px, 90vw);
-  background: var(--color-surface, #fff);
-  border-radius: 14px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18);
-  padding: 16px;
-  z-index: 20;
-  color: var(--color-text, #333);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.settings-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.settings-label {
-  font-size: 13px;
-  width: 60px;
-  flex-shrink: 0;
-  opacity: 0.7;
-}
-
-.settings-controls {
+.rd-progress {
   display: flex;
   align-items: center;
   gap: 10px;
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--rd-sub);
+  font-variant-numeric: tabular-nums;
 }
 
-.ctrl-btn {
-  padding: 4px 10px;
-  border: 1px solid var(--color-border, #ddd);
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font-size: 13px;
-  cursor: pointer;
-
-  &:hover {
-    background: var(--color-hover, rgba(0, 0, 0, 0.05));
-  }
+.rd-track {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--rd-line);
+  overflow: hidden;
 }
 
-.ctrl-value {
-  font-size: 13px;
-  min-width: 40px;
-  text-align: center;
+.rd-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--rd-text);
+  transition: width 0.3s;
 }
 
-.bg-presets {
+.rd-ai-bar {
   display: flex;
-  gap: 8px;
-}
-
-.bg-preset-btn {
-  padding: 5px 10px;
-  border-radius: 6px;
-  border: 2px solid transparent;
-  font-size: 12px;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  padding: 0 18px 0 6px;
+  border: none;
+  border-radius: 28px;
+  background: var(--rd-pill-bg);
+  color: var(--rd-pill-text);
+  text-align: left;
   cursor: pointer;
-  transition: border-color 0.2s;
-
-  &.active {
-    border-color: var(--color-primary, #7dd3a8);
-  }
+  box-shadow: 0 10px 24px color-mix(in srgb, #000 16%, transparent);
 }
 
-.overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 15;
-}
-
-// 動畫
-.slide-right-enter-active,
-.slide-right-leave-active {
-  transition: transform 0.25s ease;
-}
-.slide-right-enter-from,
-.slide-right-leave-to {
-  transform: translateX(100%);
-}
-
-.slide-up-enter-active,
-.slide-up-leave-active {
-  transition:
-    opacity 0.2s,
-    transform 0.2s;
-}
-.slide-up-enter-from,
-.slide-up-leave-to {
-  opacity: 0;
-  transform: translateX(-50%) translateY(10px);
-}
-
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
-// 角色選擇 Modal
-.char-picker-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 10000;
-  background: rgba(0, 0, 0, 0.5);
+.rd-ai-avatar {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 22px;
+  background: var(--rd-accent);
+  color: var(--rd-on-accent);
+
+  img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  &.thinking::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    border: 2px solid var(--rd-accent);
+    animation: rd-pulse 1.4s ease-out infinite;
+  }
 }
 
-.char-picker-modal {
-  width: min(340px, 90vw);
-  max-height: 70vh;
-  background: var(--color-surface, #1e1e2e);
-  border-radius: 14px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+.rd-ai-unread {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--color-error, #e53e3e);
+  box-shadow: 0 0 0 2px var(--rd-pill-bg);
+}
+
+@keyframes rd-pulse {
+  from {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+
+.rd-ai-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  opacity: 0.78;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// ===== 抽屜 =====
+.rd-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: color-mix(in srgb, #000 32%, transparent);
+}
+
+.rd-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 21;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  color: var(--color-text, #e0e0e0);
+  max-width: 640px;
+  margin: 0 auto;
+  max-height: calc(100% - 56px);
+  padding: 8px 0 max(14px, var(--safe-bottom, 0px));
+  border-radius: 28px 28px 0 0;
+  background: var(--rd-sheet);
+  color: var(--rd-text);
+  box-shadow: 0 -12px 32px color-mix(in srgb, #000 18%, transparent);
+  box-sizing: border-box;
+
+  &.is-companion {
+    height: 78%;
+  }
+
+  &.is-toc,
+  &.is-picker {
+    max-height: 70%;
+  }
 }
 
-.char-picker-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  font-weight: 600;
-  font-size: 15px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+.rd-grabber {
+  width: 40px;
+  height: 5px;
+  margin: 0 auto 8px;
+  border-radius: 3px;
+  background: var(--rd-line);
   flex-shrink: 0;
 }
 
-.char-picker-list {
+.rd-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 6px 20px;
+  flex-shrink: 0;
+
+  h3 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+  }
+}
+
+.rd-sheet-meta {
   flex: 1;
-  overflow-y: auto;
-  padding: 8px 0;
+  font-size: 12px;
+  color: var(--rd-sub);
 }
 
-.char-picker-empty {
-  text-align: center;
-  padding: 32px 16px;
-  opacity: 0.5;
+.rd-sheet-head h3 + .rd-icon-btn {
+  margin-left: auto;
+}
+
+.rd-sheet-hint {
+  margin: 0 20px 10px;
   font-size: 13px;
+  line-height: 1.6;
+  color: var(--rd-sub);
 }
 
-.char-picker-item {
+.rd-sheet-enter-active,
+.rd-sheet-leave-active {
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.rd-sheet-enter-from,
+.rd-sheet-leave-to {
+  transform: translateY(100%);
+}
+
+.rd-fade-enter-active,
+.rd-fade-leave-active {
+  transition: opacity 0.2s;
+}
+.rd-fade-enter-from,
+.rd-fade-leave-to {
+  opacity: 0;
+}
+
+// 目錄
+.rd-toc {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 12px;
+  overscroll-behavior: contain;
+}
+
+.rd-toc-item {
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 10px 16px;
+  min-height: 48px;
+  padding: 8px 12px;
   border: none;
+  border-radius: 14px;
   background: transparent;
   color: inherit;
-  cursor: pointer;
   text-align: left;
-  transition: background 0.15s;
+  cursor: pointer;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--rd-raise);
+  }
+
+  &.active {
+    background: var(--rd-accent-soft);
+    font-weight: 700;
+
+    .rd-toc-no {
+      background: var(--rd-accent);
+      color: var(--rd-on-accent);
+    }
   }
 }
 
-.char-picker-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  object-fit: cover;
+.rd-toc-no {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: var(--rd-raise);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
   flex-shrink: 0;
+}
 
-  &--placeholder {
+.rd-toc-title {
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+// 排版
+.rd-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 20px 6px;
+}
+
+.rd-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+
+  &.stacked {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding-top: 6px;
+  }
+}
+
+.rd-setting-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.rd-stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 24px;
+  background: var(--rd-raise);
+
+  button {
+    width: 44px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 18px;
-    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    border-radius: 20px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: var(--rd-line);
+    }
+
+    &:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
   }
 }
 
-.char-picker-info {
+.rd-step-a {
+  font-family: "Noto Serif TC", serif;
+  font-size: 19px;
+  font-weight: 700;
+
+  &.small {
+    font-size: 13px;
+  }
+}
+
+.rd-step-value {
+  min-width: 36px;
+  text-align: center;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rd-segment {
+  display: flex;
+  padding: 3px;
+  border-radius: 24px;
+  background: var(--rd-raise);
+
+  button {
+    min-width: 64px;
+    height: 40px;
+    border: none;
+    border-radius: 20px;
+    background: transparent;
+    color: var(--rd-sub);
+    font-size: 15px;
+    cursor: pointer;
+
+    &.active {
+      background: var(--rd-text);
+      color: var(--rd-bg);
+      font-weight: 700;
+    }
+  }
+}
+
+.rd-swatches {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rd-swatch {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  border: none;
+  border-radius: 16px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+
+  &.active .rd-swatch-chip {
+    box-shadow:
+      0 0 0 2px var(--rd-sheet),
+      0 0 0 4px var(--rd-accent);
+  }
 }
 
-.char-picker-name {
-  font-size: 14px;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.rd-swatch-chip {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 24px;
+  border: 1px solid var(--rd-line);
+  font-family: "Noto Serif TC", serif;
+  font-size: 17px;
+  font-weight: 700;
 }
 
-.char-picker-desc {
+.rd-swatch-label {
   font-size: 12px;
-  opacity: 0.5;
+  color: var(--rd-sub);
+
+  .active & {
+    color: var(--rd-text);
+    font-weight: 700;
+  }
+}
+
+// 選角色
+.rd-picker {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 12px;
+  overscroll-behavior: contain;
+}
+
+.rd-picker-empty {
+  margin: 32px 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--rd-sub);
+}
+
+.rd-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 16px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--rd-raise);
+  }
+}
+
+.rd-picker-avatar {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--rd-accent);
+  color: var(--rd-on-accent);
+  font-weight: 700;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.rd-picker-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rd-picker-name {
+  font-size: 15px;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-top: 2px;
+}
+
+.rd-picker-desc {
+  font-size: 12px;
+  color: var(--rd-sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>
