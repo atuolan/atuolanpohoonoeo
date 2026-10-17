@@ -43,6 +43,8 @@ export interface BookReadingProgress {
   /** 全書百分比 0–100 */
   percent?: number;
   lastReadAt: number;
+  /** 每天在這本書上讀了幾秒：YYYY-MM-DD → 秒 */
+  dailySeconds?: Record<string, number>;
 }
 
 export type ReaderBackground = "sepia" | "white" | "night" | "green";
@@ -52,6 +54,8 @@ export interface ReaderPrefs {
   lineHeight: number;
   fontFamily: "serif" | "sans";
   background: ReaderBackground;
+  /** 每日閱讀目標（分鐘） */
+  dailyGoalMinutes: number;
 }
 
 // ===== 伴讀聊天類型 =====

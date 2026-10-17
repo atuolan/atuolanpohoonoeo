@@ -7,7 +7,9 @@ import { useLorebooksStore } from "@/stores/lorebooks";
 import { useUserStore } from "@/stores/user";
 import type { ReaderBackground, ReaderPrefs, StoredBook } from "@/types/book";
 import {
+  addDailySeconds,
   bookPercent,
+  dateKey,
   offsetForPage,
   pageForOffset,
   remainingMinutes,
@@ -405,12 +407,50 @@ watch(sheet, (kind) => {
   if (companion.isActive.value) companion.setPanelExpanded(kind === "companion");
 });
 
+// ===== 閱讀時數 =====
+// 畫面看得到、而且最近 3 分鐘內有翻頁或碰螢幕才算在讀，避免開著書走開也一直計時
+const ACTIVE_WINDOW_MS = 3 * 60_000;
+const TICK_MS = 15_000;
+let lastActivityAt = Date.now();
+let pendingSeconds = 0;
+let tickTimer: ReturnType<typeof setInterval> | null = null;
+
+function markActive() {
+  lastActivityAt = Date.now();
+}
+
+function flushReadingTime() {
+  if (pendingSeconds <= 0) return;
+  const seconds = pendingSeconds;
+  pendingSeconds = 0;
+  const day = dateKey(Date.now());
+  booksStore.patchProgress(props.book.id, (current) => ({
+    dailySeconds: addDailySeconds(current?.dailySeconds, day, seconds),
+  }));
+}
+
+function tickReadingTime() {
+  if (!isReady.value || document.visibilityState !== "visible") return;
+  if (Date.now() - lastActivityAt > ACTIVE_WINDOW_MS) return;
+  pendingSeconds += TICK_MS / 1000;
+  if (pendingSeconds >= 60) flushReadingTime();
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === "hidden") flushReadingTime();
+  else markActive();
+}
+
 // ===== 生命週期 =====
 let resizeObserver: ResizeObserver | null = null;
 let resizeFrame = 0;
 
 onMounted(async () => {
   window.addEventListener("keydown", handleKeydown);
+  window.addEventListener("pointerdown", markActive, { passive: true });
+  window.addEventListener("keydown", markActive);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+  tickTimer = setInterval(tickReadingTime, TICK_MS);
 
   await Promise.all([
     booksStore.loadReaderPrefs(),
@@ -452,6 +492,11 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown);
+  window.removeEventListener("pointerdown", markActive);
+  window.removeEventListener("keydown", markActive);
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
+  if (tickTimer) clearInterval(tickTimer);
+  flushReadingTime();
   if (isReady.value) saveNow();
   resizeObserver?.disconnect();
   cancelAnimationFrame(resizeFrame);

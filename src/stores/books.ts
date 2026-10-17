@@ -12,6 +12,7 @@ export const DEFAULT_READER_PREFS: ReaderPrefs = {
   lineHeight: 1.9,
   fontFamily: "serif",
   background: "sepia",
+  dailyGoalMinutes: 15,
 };
 
 export const useBooksStore = defineStore("books", () => {

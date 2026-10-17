@@ -5,7 +5,12 @@ import { useCharactersStore } from "@/stores/characters";
 import { useUserStore } from "@/stores/user";
 import type { BookMeta, CompanionChatState } from "@/types/book";
 import type { StoredCharacter } from "@/types/character";
-import { bookPercentFromLengths } from "@/utils/bookReading";
+import {
+  bookPercentFromLengths,
+  dateKey,
+  mergeDailySeconds,
+  readingStreak,
+} from "@/utils/bookReading";
 import { ArrowLeft, BookOpen, ChevronDown, Plus, Trash2, User, X } from "lucide-vue-next";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
@@ -25,6 +30,7 @@ const isManaging = ref(false);
 onMounted(async () => {
   await Promise.all([
     booksStore.loadBooks(),
+    booksStore.loadReaderPrefs(),
     userStore.isLoaded ? null : userStore.loadUserData(),
     charsStore.characters.length === 0 ? charsStore.loadCharacters() : null,
   ]);
@@ -77,10 +83,28 @@ const heroChapterTitle = computed(() => {
   return book.chapterTitles[index] ?? "";
 });
 
+// ===== 今日閱讀 =====
+const today = dateKey(Date.now());
+const dailyTotals = computed(() =>
+  mergeDailySeconds(Object.values(booksStore.progressByBook).map((p) => p.dailySeconds)),
+);
+const todayMinutes = computed(() => Math.floor((dailyTotals.value[today] ?? 0) / 60));
+const goalMinutes = computed(() => booksStore.readerPrefs.dailyGoalMinutes);
+const streak = computed(() => readingStreak(dailyTotals.value, today));
+const goalRatio = computed(() => Math.min(todayMinutes.value / Math.max(goalMinutes.value, 1), 1));
+const showGoalPicker = ref(false);
+const GOAL_OPTIONS = [5, 10, 15, 30, 60];
+
+function setGoal(minutes: number) {
+  booksStore.setReaderPrefs({ dailyGoalMinutes: minutes });
+  showGoalPicker.value = false;
+}
+
 const subtitle = computed(() => {
-  if (heroBook.value) return `接著讀《${heroBook.value.title}》吧`;
-  if (booksStore.books.length > 0) return "今天想讀哪一本？";
-  return "先放一本書進來吧";
+  if (booksStore.books.length === 0) return "先放一本書進來吧";
+  if (todayMinutes.value >= goalMinutes.value) return "今天的目標達成了";
+  if (todayMinutes.value === 0) return `今天讀 ${goalMinutes.value} 分鐘就好`;
+  return `今天再讀 ${goalMinutes.value - todayMinutes.value} 分鐘就好`;
 });
 
 // 這本書有沒有角色在陪讀（伴讀存檔還在就是還沒結束）
@@ -247,6 +271,41 @@ function handleSelectPersona(personaId: string) {
         <div class="bs-greeting">
           <span class="bs-date">{{ dateLine }}</span>
           <h1>{{ greeting }}，<br />{{ subtitle }}</h1>
+          <div v-if="booksStore.books.length > 0" class="bs-stats">
+            <button
+              class="bs-goal-btn"
+              :aria-expanded="showGoalPicker"
+              :aria-label="`今天讀了 ${todayMinutes} 分鐘，目標 ${goalMinutes} 分鐘，點一下改目標`"
+              @click="showGoalPicker = !showGoalPicker"
+            >
+              <svg class="bs-ring" viewBox="0 0 36 36" aria-hidden="true">
+                <circle cx="18" cy="18" r="15" class="bs-ring-track" />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="15"
+                  class="bs-ring-fill"
+                  :stroke-dasharray="`${goalRatio * 94.25} 94.25`"
+                />
+              </svg>
+              <span>今天 {{ todayMinutes }} / {{ goalMinutes }} 分鐘</span>
+            </button>
+            <span v-if="streak > 0" class="bs-streak">連讀 {{ streak }} 天</span>
+          </div>
+          <div v-if="showGoalPicker" class="bs-goal-picker" role="radiogroup" aria-label="每日目標">
+            <span class="bs-goal-label">每天讀</span>
+            <button
+              v-for="m in GOAL_OPTIONS"
+              :key="m"
+              role="radio"
+              :aria-checked="goalMinutes === m"
+              :class="{ active: goalMinutes === m }"
+              @click="setGoal(m)"
+            >
+              {{ m }}
+            </button>
+            <span class="bs-goal-label">分鐘</span>
+          </div>
         </div>
 
         <Transition name="bs-fade">
@@ -566,6 +625,91 @@ button {
 .bs-date {
   font-size: 13px;
   letter-spacing: 0.04em;
+  color: var(--bs-sub);
+}
+
+.bs-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.bs-goal-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px 0 6px;
+  border: 1px solid var(--bs-line);
+  border-radius: 18px;
+  background: var(--bs-card);
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.bs-ring {
+  width: 26px;
+  height: 26px;
+  transform: rotate(-90deg);
+
+  circle {
+    fill: none;
+    stroke-width: 4;
+  }
+}
+
+.bs-ring-track {
+  stroke: color-mix(in srgb, var(--bs-text) 10%, transparent);
+}
+
+.bs-ring-fill {
+  stroke: var(--bs-accent);
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.4s;
+}
+
+.bs-streak {
+  height: 36px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 18px;
+  background: var(--bs-hero);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.bs-goal-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+
+  button {
+    min-width: 44px;
+    height: 36px;
+    border: 1px solid var(--bs-line);
+    border-radius: 18px;
+    background: var(--bs-card);
+    color: inherit;
+    font-size: 13px;
+    cursor: pointer;
+
+    &.active {
+      border-color: var(--bs-accent);
+      background: var(--bs-accent);
+      color: var(--bs-on-accent);
+      font-weight: 700;
+    }
+  }
+}
+
+.bs-goal-label {
+  font-size: 13px;
   color: var(--bs-sub);
 }
 

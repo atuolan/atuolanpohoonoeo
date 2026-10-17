@@ -1,7 +1,11 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
+  addDailySeconds,
   bookPercent,
+  dateKey,
+  mergeDailySeconds,
+  readingStreak,
   offsetForPage,
   pageForOffset,
   remainingMinutes,
@@ -30,6 +34,32 @@ describe("bookPercent", () => {
     expect(bookPercent(chapters, 1, 0)).toBe(25);
     expect(bookPercent(chapters, 1, 300)).toBe(100);
     expect(bookPercent([], 0, 0)).toBe(0);
+  });
+});
+
+describe("閱讀時數", () => {
+  it("dateKey 用本地日期", () => {
+    expect(dateKey(new Date(2026, 9, 7, 23, 59).getTime())).toBe("2026-10-07");
+  });
+
+  it("多本書加總", () => {
+    expect(mergeDailySeconds([{ "2026-10-17": 60 }, undefined, { "2026-10-17": 30, "2026-10-16": 5 }])).toEqual({
+      "2026-10-17": 90,
+      "2026-10-16": 5,
+    });
+  });
+
+  it("連讀天數：今天還沒讀不算斷，跨月也能數", () => {
+    const daily = { "2026-09-30": 120, "2026-10-01": 600, "2026-10-02": 61 };
+    expect(readingStreak(daily, "2026-10-02")).toBe(3);
+    expect(readingStreak(daily, "2026-10-03")).toBe(3);
+    expect(readingStreak(daily, "2026-10-04")).toBe(0);
+    expect(readingStreak({ ...daily, "2026-10-01": 10 }, "2026-10-02")).toBe(1);
+  });
+
+  it("累加並丟掉太舊的紀錄", () => {
+    const next = addDailySeconds({ "2024-01-01": 99, "2026-10-17": 60 }, "2026-10-17", 15);
+    expect(next).toEqual({ "2026-10-17": 75 });
   });
 });
 

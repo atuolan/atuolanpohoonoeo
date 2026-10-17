@@ -54,6 +54,63 @@ export function bookPercentFromLengths(
   return Math.min(100, Math.max(0, Math.round((read / total) * 100)));
 }
 
+// ===== 閱讀時數 =====
+
+/** 本地日期 YYYY-MM-DD */
+export function dateKey(ts: number): string {
+  const d = new Date(ts);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+function shiftDay(key: string, delta: number): string {
+  const [y, m, d] = key.split("-").map(Number);
+  return dateKey(new Date(y, m - 1, d + delta).getTime());
+}
+
+/** 把多本書的每日秒數加總 */
+export function mergeDailySeconds(
+  records: Array<Record<string, number> | undefined>,
+): Record<string, number> {
+  const total: Record<string, number> = {};
+  for (const rec of records) {
+    for (const [day, secs] of Object.entries(rec ?? {})) total[day] = (total[day] ?? 0) + secs;
+  }
+  return total;
+}
+
+/**
+ * 連讀天數：從今天往回數，每天至少讀 minSeconds 秒；
+ * 今天還沒讀夠時從昨天開始數（今天還有機會，不算斷）
+ */
+export function readingStreak(
+  daily: Record<string, number>,
+  today: string,
+  minSeconds = 60,
+): number {
+  let day = (daily[today] ?? 0) >= minSeconds ? today : shiftDay(today, -1);
+  let streak = 0;
+  while ((daily[day] ?? 0) >= minSeconds) {
+    streak++;
+    day = shiftDay(day, -1);
+  }
+  return streak;
+}
+
+/** 加上某天的秒數，順便丟掉一年多以前的紀錄 */
+export function addDailySeconds(
+  daily: Record<string, number> | undefined,
+  day: string,
+  seconds: number,
+): Record<string, number> {
+  const oldest = shiftDay(day, -400);
+  const next: Record<string, number> = {};
+  for (const [k, v] of Object.entries(daily ?? {})) if (k >= oldest) next[k] = v;
+  next[day] = (next[day] ?? 0) + seconds;
+  return next;
+}
+
 export function toBookMeta(book: StoredBook): BookMeta {
   return {
     id: book.id,
