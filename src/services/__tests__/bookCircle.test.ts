@@ -145,8 +145,9 @@ describe("主持", () => {
       note({ id: "3", paraStart: 9, quote: "熱門段", authorId: "c2", content: "不，被框住了" }),
     ]);
     const [, user] = buildCircleSummaryPrompt({ bookTitle: "莊子", groups, members, userName: "小林" });
-    expect(user.content.indexOf("熱門段")).toBeLessThan(user.content.indexOf("冷門段"));
-    expect(user.content).toContain("id: user｜小林");
+    const content = String(user.content);
+    expect(content.indexOf("熱門段")).toBeLessThan(content.indexOf("冷門段"));
+    expect(content).toContain("id: user｜小林");
     const parsed = parseCircleSummary(
       JSON.stringify({ quote: "蜩與學鳩", stances: [{ claim: "自在就是逍遙", memberIds: ["user", "ghost", "user"] }, { claim: "被小框住", memberIds: ["c2"] }, { claim: "第三派", memberIds: [] }] }),
       ["user", "c1", "c2"],

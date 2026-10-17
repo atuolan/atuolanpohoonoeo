@@ -332,8 +332,10 @@ export function parseCircleSummary(
   const stances = json.stances
     .map((s) => {
       const claim = typeof s?.claim === "string" ? s.claim.trim() : "";
-      const ids = Array.isArray(s?.memberIds) ? s.memberIds.filter((x: unknown): x is string => typeof x === "string") : [];
-      return { claim, memberIds: [...new Set(ids.filter((id: string) => validIds.includes(id)))] };
+      const ids: string[] = Array.isArray(s?.memberIds)
+        ? s.memberIds.filter((x: unknown): x is string => typeof x === "string")
+        : [];
+      return { claim, memberIds: [...new Set(ids.filter((id) => validIds.includes(id)))] };
     })
     .filter((s) => s.claim)
     .slice(0, 2);
