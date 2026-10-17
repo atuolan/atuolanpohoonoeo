@@ -39,6 +39,69 @@ export interface MacroContext {
   customVariables?: Record<string, string>
 }
 
+/** 從文字中讀出的一個宏 */
+interface ParsedMacro {
+  name: string
+  /** `::` 分隔的原始參數（尚未展開）；`{{name}}` 沒有參數時為 undefined */
+  args?: string[]
+  /** 宏的原文 */
+  raw: string
+  /** 宏結尾 `}}` 之後的位置 */
+  end: number
+}
+
+const MACRO_NAME_PATTERN = /[\p{L}_][\p{L}\p{N}_]*/uy
+
+/**
+ * 讀取 open 位置（指向 `{{`）開始的宏；不是合法宏或沒有收尾時回傳 null。
+ * 參數以巢狀深度配對大括號，所以參數裡可以再放 {{user}} 之類的宏。
+ */
+function readMacroAt(text: string, open: number): ParsedMacro | null {
+  MACRO_NAME_PATTERN.lastIndex = open + 2
+  const nameMatch = MACRO_NAME_PATTERN.exec(text)
+  if (!nameMatch) return null
+  const name = nameMatch[0]
+  let i = open + 2 + name.length
+
+  if (text.startsWith('}}', i)) {
+    return { name, raw: text.slice(open, i + 2), end: i + 2 }
+  }
+  if (!text.startsWith('::', i)) return null
+
+  const args: string[] = []
+  let depth = 0
+  i += 2
+  let argStart = i
+  while (i < text.length) {
+    if (text.startsWith('{{', i)) {
+      depth++
+      i += 2
+    } else if (text.startsWith('}}', i)) {
+      if (depth === 0) {
+        args.push(text.slice(argStart, i))
+        return { name, args, raw: text.slice(open, i + 2), end: i + 2 }
+      }
+      depth--
+      i += 2
+    } else if (depth === 0 && text.startsWith('::', i)) {
+      args.push(text.slice(argStart, i))
+      i += 2
+      argStart = i
+    } else {
+      i++
+    }
+  }
+  return null
+}
+
+function findKeyIgnoreCase(keys: Iterable<string>, name: string): string | undefined {
+  const lower = name.toLowerCase()
+  for (const key of keys) {
+    if (key.toLowerCase() === lower) return key
+  }
+  return undefined
+}
+
 /**
  * 宏引擎
  */
@@ -301,54 +364,7 @@ export class MacroEngine {
   async substitute(text: string): Promise<string> {
     if (!text) return ''
 
-    // 匹配 {{macroName}} 或 {{macroName::arg1::arg2}}
-    const macroPattern = /\{\{([\p{L}_][\p{L}\p{N}_]*)((?:::[^}]*)*)\}\}/gu
-
-    let result = text
-    let match: RegExpExecArray | null
-    const processedMacros: Array<{ match: string; replacement: string }> = []
-
-    // 先收集所有需要替換的宏
-    while ((match = macroPattern.exec(text)) !== null) {
-      const fullMatch = match[0]
-      const macroName = match[1]
-      const argsStr = match[2]
-
-      const macro = this.macros.get(macroName)
-      if (!macro) {
-        // 檢查自定義變量
-        if (this.context.customVariables && macroName in this.context.customVariables) {
-          processedMacros.push({
-            match: fullMatch,
-            replacement: this.context.customVariables[macroName],
-          })
-        }
-        continue
-      }
-
-      // 解析參數
-      let args: Record<string, string> | undefined
-      if (argsStr) {
-        args = {}
-        const argParts = argsStr.startsWith('::') ? argsStr.slice(2).split('::') : []
-        argParts.forEach((arg, index) => {
-          args![String(index)] = arg
-        })
-      }
-
-      try {
-        const replacement = await macro.handler(args)
-        processedMacros.push({ match: fullMatch, replacement })
-      } catch (e) {
-        console.warn(`Macro "${macroName}" threw an error:`, e)
-        processedMacros.push({ match: fullMatch, replacement: '' })
-      }
-    }
-
-    // 執行替換
-    for (const { match, replacement } of processedMacros) {
-      result = result.replace(match, replacement)
-    }
+    let result = await this.expandMacros(text)
 
     // 處理 {{trim}} 標記 - 移除多餘的空行
     if (result.includes('{{trim}}')) {
@@ -360,6 +376,66 @@ export class MacroEngine {
     }
 
     return result
+  }
+
+  /**
+   * 由左到右展開 {{macroName}} 或 {{macroName::arg1::arg2}}。
+   * 參數裡的巢狀宏（如 {{setvar::視角::以「我」指稱 {{user}}}}）會在外層宏執行前展開；
+   * 執行順序與文字順序一致，所以前面的 setvar 會先於後面的 getvar 生效。
+   * 不是宏的大括號、未註冊的宏都原樣保留。
+   */
+  private async expandMacros(text: string): Promise<string> {
+    let output = ''
+    let cursor = 0
+    while (cursor < text.length) {
+      const open = text.indexOf('{{', cursor)
+      if (open === -1) break
+      output += text.slice(cursor, open)
+
+      const macro = readMacroAt(text, open)
+      if (!macro) {
+        output += '{{'
+        cursor = open + 2
+        continue
+      }
+      output += await this.evaluateMacro(macro)
+      cursor = macro.end
+    }
+    return output + text.slice(cursor)
+  }
+
+  private async evaluateMacro(macro: ParsedMacro): Promise<string> {
+    const definition = this.findMacro(macro.name)
+    if (!definition) {
+      // 檢查自定義變量
+      const variables = this.context.customVariables
+      const key = variables ? findKeyIgnoreCase(Object.keys(variables), macro.name) : undefined
+      return key !== undefined ? variables![key] : macro.raw
+    }
+
+    // 解析參數
+    let args: Record<string, string> | undefined
+    if (macro.args) {
+      args = {}
+      for (const [index, arg] of macro.args.entries()) {
+        args[String(index)] = await this.expandMacros(arg)
+      }
+    }
+
+    try {
+      return await definition.handler(args)
+    } catch (e) {
+      console.warn(`Macro "${macro.name}" threw an error:`, e)
+      return ''
+    }
+  }
+
+  /** 宏名稱不分大小寫（與 SillyTavern 一致，例如 {{lastusermessage}}） */
+  private findMacro(name: string): MacroDefinition | undefined {
+    const exact = this.macros.get(name)
+    if (exact) return exact
+    const key = findKeyIgnoreCase(this.macros.keys(), name)
+    return key !== undefined ? this.macros.get(key) : undefined
   }
 
   /**
