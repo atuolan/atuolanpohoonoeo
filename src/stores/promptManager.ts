@@ -728,6 +728,18 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
             ? onlineContent.replace(anchor, () => `${anchor}\n${charStatusLine}`)
             : `${onlineContent}\n${charStatusLine}`;
         }
+
+        // 便利貼插在狀態更新後面（沒有狀態那行就接在角色位置更新後面）
+        const contentWithStatus = stored.prompts[onlineModeIndex].content;
+        const stickyNoteLine = defaultOnlineMode.content.match(/[^\n]*<sticky-note[^\n]*/)?.[0];
+        if (stickyNoteLine && !contentWithStatus.includes("<sticky-note")) {
+          const anchor =
+            contentWithStatus.match(/[^\n]*<char-status[^\n]*/)?.[0] ??
+            contentWithStatus.match(/[^\n]*<char-location[^\n]*/)?.[0];
+          stored.prompts[onlineModeIndex].content = anchor
+            ? contentWithStatus.replace(anchor, () => `${anchor}\n${stickyNoteLine}`)
+            : `${contentWithStatus}\n${stickyNoteLine}`;
+        }
       }
     }
 

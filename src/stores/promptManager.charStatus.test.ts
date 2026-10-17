@@ -24,6 +24,7 @@ function contentOf(defs: PromptDefinition[] | undefined, id: string) {
 
 const DEFAULT_CONTENT = contentOf(DEFAULT_PROMPT_DEFINITIONS, "onlineModeFeatures");
 const STATUS_LINE = DEFAULT_CONTENT.match(/[^\n]*<char-status[^\n]*/)![0];
+const STICKY_LINE = DEFAULT_CONTENT.match(/[^\n]*<sticky-note[^\n]*/)![0];
 
 /** 存一份線上模式功能被換成指定內容的設定，模擬舊用戶 */
 async function loadWithOnlineContent(content: string) {
@@ -57,8 +58,10 @@ describe("線上模式功能的角色狀態", () => {
 
   it("沒有角色位置更新那行時接在最後", async () => {
     const store = await loadWithOnlineContent("<online_mode_features>\n- 轉帳：<pay>金額</pay>");
-    // 其他缺少的功能也會被補在後面，這裡只看狀態那行
-    expect(contentOf(store.config.prompts, "onlineModeFeatures").endsWith(`\n${STATUS_LINE}`)).toBe(true);
+    // 其他缺少的功能也會被補在後面，這裡只看狀態那行（便利貼那行接在它後面）
+    expect(
+      contentOf(store.config.prompts, "onlineModeFeatures").endsWith(`\n${STATUS_LINE}\n${STICKY_LINE}`),
+    ).toBe(true);
   });
 
   it("重複載入不會一直疊加", async () => {

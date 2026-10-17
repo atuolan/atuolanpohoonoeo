@@ -274,6 +274,10 @@ export interface PromptBuilderOptions {
   doNotDisturb?: boolean;
   /** 角色目前的狀態文字（用於 {{charStatus}} 宏，顯示在聊天頂欄角色名字下方） */
   charStatus?: string;
+  /** 這個角色上一張便利貼（用於 {{charStickyNote}} 宏，例如「今天 14:20：記得帶傘」） */
+  charStickyNote?: string;
+  /** {{user}} 主畫面的心情便籤（用於 {{userMoodNote}} 宏；空的時候「心情便籤」條目不輸出） */
+  userMoodNote?: string;
   /** 表情包列表（用於 {{stickerList}} 宏） */
   stickerList?: string[];
   /** 面對面模式（開啟時使用面對面模式的提示詞） */
@@ -629,6 +633,8 @@ export class PromptBuilder {
         readingWindow: options.companionReading?.readingWindow || "（還沒開始讀）",
         readingSummaries: options.companionReading?.readingSummaries || "（還沒有摘要）",
         charStatus: options.charStatus || "還沒設定",
+        charStickyNote: options.charStickyNote || "還沒寫過",
+        userMoodNote: options.userMoodNote || "",
         ...phoneContextVars,
       },
     });
@@ -779,6 +785,8 @@ export class PromptBuilder {
         readingWindow: options.companionReading?.readingWindow || "（還沒開始讀）",
         readingSummaries: options.companionReading?.readingSummaries || "（還沒有摘要）",
         charStatus: options.charStatus || "還沒設定",
+        charStickyNote: options.charStickyNote || "還沒寫過",
+        userMoodNote: options.userMoodNote || "",
         ...phoneContextVars,
       },
     });
@@ -2235,6 +2243,15 @@ export class PromptBuilder {
       case "f2fFoodLogs":
       case "gcFoodLogs":
         if (!this.options.foodLogs) return null;
+        if (promptDef && promptDef.content) {
+          const content = await this.macroEngine.substitute(promptDef.content);
+          return content ? { role: getRole(), content, identifier } : null;
+        }
+        return null;
+
+      case "userMoodNote":
+        // 只有單人線上聊天帶：面對面、群聊、通話沒有便利貼可回
+        if (this.getChatPromptMode() !== "online" || !this.options.userMoodNote) return null;
         if (promptDef && promptDef.content) {
           const content = await this.macroEngine.substitute(promptDef.content);
           return content ? { role: getRole(), content, identifier } : null;
