@@ -76,6 +76,16 @@ export function newCard(
   };
 }
 
+/** 複習畫面的一張卡（帶書名、章名，方便跨書複習） */
+export interface ReviewItem {
+  bookId: string;
+  bookTitle: string;
+  chapterTitle: string;
+  card: BookReviewCard;
+  /** 卡片來自有筆記的劃線時，劃線時寫的筆記 */
+  note?: { text: string; at: number };
+}
+
 // ===== 出卡材料 =====
 
 export interface CardHighlightMaterial {
