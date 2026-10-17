@@ -80,6 +80,8 @@ export interface BookReadingProgress {
   cards?: BookReviewCard[];
   /** 已經出過卡的章節，避免每次翻過章尾都問 */
   cardedChapters?: number[];
+  /** 共讀圈 */
+  circle?: ReadingCircle;
   /** 上一次「三句接上」的結果（位置沒變就直接沿用） */
   lastRecap?: {
     chapterIndex: number;
@@ -139,6 +141,44 @@ export interface BookReviewCard {
   intervalDays: number;
   reviews: number;
   lastGrade?: ReviewGrade;
+}
+
+/** 共讀圈：使用者和 1–4 個聊天角色一起讀，在段落上留邊註 */
+export interface ReadingCircle {
+  name: string;
+  /** 聊天角色 id，1–4 個 */
+  memberIds: string[];
+  /** 開著時角色會隨你翻頁留言 */
+  syncReading: boolean;
+  /** 同步讀時每翻幾頁留一則：1／3／5／10 */
+  syncEvery: number;
+  /** 同步讀上次留言後翻了幾頁 */
+  pagesSinceSync?: number;
+  notes: CircleNote[];
+  summary?: {
+    quote: string;
+    stances: Array<{ claim: string; memberIds: string[] }>;
+    /** 算摘要時的留言數 */
+    noteCount: number;
+    createdAt: number;
+  };
+  createdAt: number;
+}
+
+export interface CircleNote {
+  id: string;
+  chapterIndex: number;
+  /** 掛在哪段：段落起點的章內字元位置 */
+  paraStart: number;
+  quote: string;
+  /** "user"、"host"，其他值是角色 id */
+  authorId: string;
+  authorName: string;
+  content: string;
+  parentId?: string;
+  /** 同意的人："user" 或角色 id */
+  agreeIds: string[];
+  createdAt: number;
 }
 
 export type ReaderBackground = "sepia" | "white" | "night" | "green";
