@@ -12,6 +12,9 @@ const notifySystem = vi.fn();
 const notifyChatSummary = vi.fn();
 let streamEvents: StreamingEvent[] = [];
 let lastRequestMessages: Array<{ role: string; content: string }> = [];
+let streamingEnabled = false;
+/** 串流吐完 token 後停住，等中止（跟真的 client 一樣：被中止時帶著半截內容正常結束） */
+let waitForAbort = false;
 
 vi.mock("@/db/database", () => ({
   db: { put: (...args: unknown[]) => dbPut(...args), get: (...args: unknown[]) => dbGet(...args), delete: vi.fn() },
@@ -19,9 +22,12 @@ vi.mock("@/db/database", () => ({
 }));
 vi.mock("@/api/OpenAICompatible", () => ({
   OpenAICompatibleClient: class {
-    async *generateStream(req: { messages: Array<{ role: string; content: string }> }) {
+    async *generateStream(req: { messages: Array<{ role: string; content: string }>; signal?: AbortSignal }) {
       lastRequestMessages = req.messages;
       for (const event of streamEvents) yield event;
+      if (waitForAbort && !req.signal?.aborted) {
+        await new Promise<void>((resolve) => req.signal?.addEventListener("abort", () => resolve()));
+      }
     }
   },
 }));
@@ -58,12 +64,13 @@ vi.mock("@/stores", () => ({
     vectorMemoryEnabled: false,
     getAPIForTask: () => ({
       api: { endpoint: "https://example.test", apiKey: "k", model: "m" },
-      generation: { streamingEnabled: false },
+      generation: { streamingEnabled },
     }),
   }),
 }));
 
 const { useChatSummaryDiary, resolveLastSummaryTime } = await import("./useChatSummaryDiary");
+const { useStreamingWindow } = await import("./useStreamingWindow");
 
 type Msg = {
   id: string;
@@ -104,6 +111,8 @@ function setup(
     getRealTimeAwareness?: () => boolean;
     getChatNow?: () => Date;
     summaries?: any[];
+    /** 傳入真的串流視窗並打開設定裡的串流視窗 */
+    streamingWindow?: ReturnType<typeof useStreamingWindow>;
   } = {},
 ) {
   const lastSummaryTime = ref(0);
@@ -121,8 +130,15 @@ function setup(
     chatDiaries: ref([]),
     lastSummaryTime,
     lastDiaryTime: ref(0),
-    streamingWindow: { show: vi.fn(), appendToken: vi.fn(), setComplete: vi.fn() },
-    useStreamingWindowEnabled: computed(() => false),
+    streamingWindow: extra.streamingWindow ?? {
+      show: vi.fn(),
+      appendToken: vi.fn(),
+      setComplete: vi.fn(),
+      setError: vi.fn(),
+      isVisible: { value: false },
+      bindAbortController: vi.fn(() => () => {}),
+    },
+    useStreamingWindowEnabled: computed(() => !!extra.streamingWindow),
     characterId: "char-1",
     characterName: "角色",
     characterAvatar: "",
@@ -150,6 +166,59 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+  streamingEnabled = false;
+  waitForAbort = false;
+  useStreamingWindow().reset();
+});
+
+describe("分批總結的串流視窗", () => {
+  function setupBatch() {
+    streamingEnabled = true;
+    const win = useStreamingWindow();
+    win.reset();
+    const { api, chatSummaries } = setup(makeTurns(3), 6, { streamingWindow: win });
+    return { api, chatSummaries, win, batch: makeTurns(3) as any[] };
+  }
+
+  it("設定開著串流視窗：邊生成邊寫進視窗，存成總結", async () => {
+    streamEvents = [
+      { type: "token", token: "前半" },
+      { type: "token", token: "後半" },
+      { type: "done", content: "前半後半" },
+    ];
+    const { api, chatSummaries, win, batch } = setupBatch();
+    await expect(api.summarizeSingleBatch(batch, "角色", "用戶")).resolves.toEqual({ success: true });
+    expect(win.content.value).toBe("前半後半");
+    expect(win.isComplete.value).toBe(true);
+    expect(win.hasError.value).toBe(false);
+    expect(chatSummaries.value.map((s) => s.content)).toEqual(["前半後半"]);
+  });
+
+  it("按視窗的停止：不把半截存成總結", async () => {
+    streamEvents = [{ type: "token", token: "半截" }];
+    waitForAbort = true;
+    const { api, chatSummaries, win, batch } = setupBatch();
+    const pending = api.summarizeSingleBatch(batch, "角色", "用戶");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(win.content.value).toBe("半截");
+    win.emit("stop");
+    await expect(pending).resolves.toEqual({ success: false, error: "已停止" });
+    expect(chatSummaries.value).toEqual([]);
+    expect(win.isComplete.value).toBe(true);
+    expect(win.hasError.value).toBe(false);
+  });
+
+  it("面板的停止也照樣中止", async () => {
+    streamEvents = [{ type: "token", token: "半截" }];
+    waitForAbort = true;
+    const { api, chatSummaries, batch } = setupBatch();
+    const panel = new AbortController();
+    const pending = api.summarizeSingleBatch(batch, "角色", "用戶", panel.signal);
+    await vi.advanceTimersByTimeAsync(0);
+    panel.abort();
+    await expect(pending).resolves.toEqual({ success: false, error: "已停止" });
+    expect(chatSummaries.value).toEqual([]);
+  });
 });
 
 describe("自動總結", () => {

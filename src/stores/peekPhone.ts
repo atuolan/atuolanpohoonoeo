@@ -298,10 +298,17 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     };
     appendMessageToThread(threadId, ownerMessage);
 
-    // 2. 呼叫 AI 取得聯絡人回覆
+    // 2. 呼叫 AI 取得聯絡人回覆（設定裡開著串流視窗就邊生成邊寫進視窗，視窗的停止鍵可以中止）
     const controller = new AbortController();
     replyAbortController.value = controller;
     replyingThreadId.value = threadId;
+    const replyTaskConfig = useSettingsStore().getAPIForTask("peekPhone");
+    const streamingWindow =
+      replyTaskConfig.generation.streamingEnabled && replyTaskConfig.generation.useStreamingWindow
+        ? useStreamingWindow()
+        : null;
+    streamingWindow?.show(replyTaskConfig.api.model || "AI");
+    const unbindAbort = streamingWindow ? streamingWindow.bindAbortController(controller) : null;
 
     try {
       const worldInfo = extractWorldInfo(character);
@@ -317,7 +324,11 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
           newMessage: content,
         },
         controller.signal,
+        streamingWindow ? (token) => streamingWindow.appendToken(token) : undefined,
       );
+      streamingWindow?.setComplete();
+      // 按了停止：串流會帶著半截內容正常結束，不貼半截回覆
+      if (controller.signal.aborted) return;
 
       // 3. 追加聯絡人回覆（isSelf=false）
       const contactMessage: PeekChatMessage = {
@@ -334,10 +345,12 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       storeCache(charId, cId, data.value);
       await saveToIDB(charId, cId, data.value);
     } catch (err: any) {
-      if (err?.name === "AbortError") {
+      if (err?.name === "AbortError" || controller.signal.aborted) {
+        streamingWindow?.setComplete();
         return;
       }
       const msg = err?.message ?? "聯絡人回覆失敗";
+      streamingWindow?.setError(msg);
       const notificationStore = useNotificationStore();
       notificationStore.addNotification({
         type: "system",
@@ -350,6 +363,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       });
       throw err;
     } finally {
+      unbindAbort?.();
       if (replyAbortController.value === controller) {
         replyAbortController.value = null;
       }

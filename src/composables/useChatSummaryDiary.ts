@@ -182,9 +182,12 @@ type DiaryItem = {
 };
 
 interface StreamingWindow {
-  show: (model: string) => void;
+  show: (model: string, startMinimized?: boolean) => void;
   appendToken: (token: string) => void;
   setComplete: () => void;
+  setError: (message: string) => void;
+  isVisible: { readonly value: boolean };
+  bindAbortController: (controller: AbortController) => () => void;
 }
 
 type ActualReadSettings = {
@@ -1698,40 +1701,68 @@ ${recentMessagesText}
       const client = new OpenAICompatibleClient(taskConfig.api);
       let summaryContent = '';
 
-      const streamGenerator = client.generateStream({
-        messages: summaryPrompts,
-        settings: {
-          maxContextLength: taskConfig.generation.maxContextLength || 200000,
-          maxResponseLength: taskConfig.generation.maxTokens || 8192,
-          temperature: 0.7,
-          topP: 0.9,
-          frequencyPenalty: 0,
-          presencePenalty: 0,
-          repetitionPenalty: 1,
-          stopSequences: [],
-          streaming: true,
-          useStreamingWindow: false,
-          ...pickGenerationToggles(taskConfig.generation),
-        },
-        apiSettings: taskConfig.api,
-        signal,
-      });
-
-      for await (const event of streamGenerator) {
-        if (event.type === 'token' && event.token) {
-          summaryContent += event.token;
-        } else if (event.type === 'done') {
-          if (event.content && event.content.length > summaryContent.length) {
-            summaryContent = event.content;
-          }
-        } else if (event.type === 'error') {
-          console.error('[BatchSummary] 單批錯誤:', event.error);
-          throw new Error(String(event.error));
-        }
+      // 串流視窗（設定裡有開才用）：面板的停止和視窗的停止鍵都能中止這一批
+      const useWindow = taskConfig.generation.streamingEnabled && deps.useStreamingWindowEnabled.value;
+      const abort = new AbortController();
+      const onPanelAbort = () => abort.abort();
+      if (signal?.aborted) abort.abort();
+      signal?.addEventListener('abort', onPanelAbort);
+      let unbindAbort: (() => void) | null = null;
+      if (useWindow) {
+        // 一批接一批：使用者正開著視窗看就保持展開
+        deps.streamingWindow.show(taskConfig.api.model || 'AI', !deps.streamingWindow.isVisible.value);
+        unbindAbort = deps.streamingWindow.bindAbortController(abort);
       }
 
-      if (!summaryContent.trim()) {
-        throw new Error('AI 回傳空內容');
+      try {
+        const streamGenerator = client.generateStream({
+          messages: summaryPrompts,
+          settings: {
+            maxContextLength: taskConfig.generation.maxContextLength || 200000,
+            maxResponseLength: taskConfig.generation.maxTokens || 8192,
+            temperature: 0.7,
+            topP: 0.9,
+            frequencyPenalty: 0,
+            presencePenalty: 0,
+            repetitionPenalty: 1,
+            stopSequences: [],
+            streaming: true,
+            useStreamingWindow: useWindow,
+            ...pickGenerationToggles(taskConfig.generation),
+          },
+          apiSettings: taskConfig.api,
+          signal: abort.signal,
+        });
+
+        for await (const event of streamGenerator) {
+          if (event.type === 'token' && event.token) {
+            summaryContent += event.token;
+            if (useWindow) deps.streamingWindow.appendToken(event.token);
+          } else if (event.type === 'done') {
+            if (event.content && event.content.length > summaryContent.length) {
+              summaryContent = event.content;
+            }
+          } else if (event.type === 'error') {
+            console.error('[BatchSummary] 單批錯誤:', event.error);
+            throw new Error(String(event.error));
+          }
+        }
+
+        // 停止時串流會帶著半截內容正常結束，不能存成總結
+        if (abort.signal.aborted) throw new Error('已停止');
+        if (!summaryContent.trim()) {
+          throw new Error('AI 回傳空內容');
+        }
+        if (useWindow) deps.streamingWindow.setComplete();
+      } catch (e) {
+        if (useWindow) {
+          if (abort.signal.aborted) deps.streamingWindow.setComplete();
+          else deps.streamingWindow.setError(e instanceof Error ? e.message : String(e));
+        }
+        throw e;
+      } finally {
+        unbindAbort?.();
+        signal?.removeEventListener('abort', onPanelAbort);
       }
 
       const newSummary: SummaryItem = {
