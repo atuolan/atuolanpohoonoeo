@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import WhiteboardCanvas from "@/components/canvas/WhiteboardCanvas.vue";
+import AiIndicatorTutorialOverlay from "@/components/common/AiIndicatorTutorialOverlay.vue";
 import GlobalGenerationIndicator from "@/components/common/GlobalGenerationIndicator.vue";
 import GlobalPhoneCallBar from "@/components/common/GlobalPhoneCallBar.vue";
-import MinimizedIndicator from "@/components/common/MinimizedIndicator.vue";
 import NotificationToast from "@/components/common/NotificationToast.vue";
 import StreamingOutputWindow from "@/components/common/StreamingOutputWindow.vue";
 import NeonWheelDock from "@/components/dock/NeonWheelDock.vue";
@@ -3092,6 +3092,13 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <!-- 主題教學引導（僅聊天頁面首次顯示，必須在 Modal 後面才能蓋住它） -->
     <ThemeTutorialOverlay v-if="currentPage === 'chat'" :theme-settings-open="showThemeSettings" />
 
+    <!-- AI 回覆提示搬家教學（聊天頁第一次有回覆時出現一次） -->
+    <AiIndicatorTutorialOverlay
+      v-if="currentPage === 'chat'"
+      :chat-id="currentChatId"
+      :streaming-window-enabled="settingsStore.generation.useStreamingWindow"
+    />
+
     <!-- 首頁全局設定教學：引導長按核心按鈕 -->
     <HomeGlobalThemeTutorialOverlay
       v-if="currentPage === 'home' && authStore.isAuthenticated && !authScreenOnStage"
@@ -3300,8 +3307,11 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       </Transition>
     </Teleport>
 
-    <!-- 全局 AI 生成狀態指示器 -->
-    <GlobalGenerationIndicator />
+    <!-- 全局 AI 生成提示（含串流視窗縮小後的入口）；在聊天頁時，這個聊天自己的回覆由頂欄顯示 -->
+    <GlobalGenerationIndicator
+      :covered-chat-id="currentPage === 'chat' ? currentChatId : null"
+      @open-stream="handleGlobalStreamingRestore"
+    />
 
     <!-- 全局流式輸出窗口 -->
     <StreamingOutputWindow
@@ -3310,14 +3320,6 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       @close="handleGlobalStreamingClose"
       @stop="handleGlobalStreamingStop"
       @minimize="handleGlobalStreamingMinimize"
-    />
-
-    <!-- 全局最小化指示器 -->
-    <MinimizedIndicator
-      :visible="streamingWindow.isMinimized.value"
-      :token-count="streamingWindow.tokenCount.value"
-      :is-streaming="streamingWindow.isStreaming.value"
-      @restore="handleGlobalStreamingRestore"
     />
 
     <!-- 全局電話通話浮動條（縮小時顯示） -->

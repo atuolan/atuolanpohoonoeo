@@ -16,6 +16,7 @@ import {
   Pencil,
   PhoneIncoming,
   ScanSearch,
+  ScrollText,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
@@ -24,6 +25,7 @@ import {
   Users,
   Utensils,
 } from "lucide-vue-next";
+import type { LastOutputState } from "@/composables/useStreamingWindow";
 import { useThemeStore } from "@/stores/theme";
 import { isCssColorDark } from "@/utils/wallpaperLuminance";
 
@@ -46,6 +48,10 @@ const props = defineProps<{
   showNicknameEdit: boolean;
   nicknameEditValue: string;
   isGenerating: boolean;
+  /** 這次回覆用串流視窗輸出：「正在輸入...」可以點開視窗 */
+  canOpenStreamingWindow: boolean;
+  /** 選單「查看上次輸出」的狀態；off＝沒開流式輸出窗口，不顯示 */
+  lastOutputState: LastOutputState | "off";
   /** 預留：角色此刻在做什麼（例如「在看窗外的雨」），空字串時不顯示 */
   characterStatus?: string;
   groupMemberCount: number;
@@ -101,6 +107,8 @@ const emit = defineEmits<{
   (e: "open-f2f-panel"): void;
   (e: "toggle-night-mode"): void;
   (e: "toggle-anti-truncation"): void;
+  (e: "open-streaming-window"): void;
+  (e: "open-last-output"): void;
   (e: "toggle-real-time-awareness"): void;
   (e: "toggle-fake-time-panel"): void;
   (e: "set-fake-time-mode", mode: "real" | "loop" | "offset" | "story"): void;
@@ -338,7 +346,17 @@ const isDarkBackground = computed(() =>
           </svg>
         </button>
       </div>
-      <p v-if="isGenerating" class="chat-status">正在輸入...</p>
+      <button
+        v-if="isGenerating && canOpenStreamingWindow"
+        type="button"
+        class="chat-status chat-status-btn"
+        title="查看 AI 正在寫的內容"
+        @click.stop="emit('open-streaming-window')"
+      >
+        <span>正在輸入...</span>
+        <ScrollText :size="12" :stroke-width="2" />
+      </button>
+      <p v-else-if="isGenerating" class="chat-status">正在輸入...</p>
       <!-- 人數含自己，與群組詳情一致 -->
       <p v-else-if="isGroupChat" class="chat-status">{{ groupMemberCount + 1 }} 位成員</p>
       <p v-else-if="characterStatus" class="chat-status">{{ characterStatus }}</p>
@@ -634,6 +652,21 @@ const isDarkBackground = computed(() =>
                 <span class="toggle-slider-mini"></span>
               </label>
             </div>
+            <button
+              v-if="lastOutputState !== 'off'"
+              type="button"
+              class="dropdown-toggle-item f2f-panel-entry"
+              :disabled="lastOutputState === 'none' || lastOutputState === 'busy'"
+              @click="emit('open-last-output')"
+            >
+              <div class="toggle-item-info">
+                <ScrollText :size="20" :stroke-width="1.75" />
+                <span>查看上次輸出</span>
+              </div>
+              <span v-if="lastOutputState === 'none'" class="last-output-hint">還沒有輸出</span>
+              <span v-else-if="lastOutputState === 'busy'" class="last-output-hint">其他任務使用中</span>
+              <ChevronRight v-else :size="18" :stroke-width="1.75" />
+            </button>
             <div v-if="showAntiTruncationHelp" class="time-help-panel">
               <p>回覆寫到一半被切掉時開啟。AI 會改用工具呼叫把整段回覆送回來，比較不容易被上游截斷。</p>
               <p>所有聊天共用這個設定，只影響聊天回覆，總結、日記等不受影響。</p>
@@ -1061,6 +1094,32 @@ const isDarkBackground = computed(() =>
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.chat-status-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  align-self: flex-start;
+  max-width: 100%;
+  // 字很小，往外撐出可點的範圍，不影響頂欄高度
+  padding: 4px 6px;
+  margin: -2px -6px -4px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  // 字級、行高沿用 .chat-status，只繼承字型
+  font-family: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+
+  svg {
+    flex-shrink: 0;
+  }
+
+  &:active {
+    background: color-mix(in srgb, currentColor 12%, transparent);
+  }
 }
 
 .chat-info {
@@ -1523,6 +1582,17 @@ const isDarkBackground = computed(() =>
   color: inherit;
   cursor: pointer;
   text-align: left;
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.55;
+  }
+}
+
+.last-output-hint {
+  flex-shrink: 0;
+  font-size: 11px;
+  opacity: 0.75;
 }
 
 .fake-time-mode-selector {

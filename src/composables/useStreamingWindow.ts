@@ -3,7 +3,7 @@
  * 管理流式輸出窗口的狀態和行為
  */
 
-import { computed, ref } from "vue";
+import { computed, markRaw, ref, shallowReactive } from "vue";
 import type { GenerationDiagnostics } from "@/types/chat";
 
 // ===== 窗口狀態類型 =====
@@ -83,6 +83,52 @@ const activeOwnerId = ref<string | null>(null);
  */
 const activeOwnerChatId = ref<string | null>(null);
 let stopAbortCleanup: (() => void) | null = null;
+
+/** 「查看上次輸出」的狀態：live 這個聊天正在用視窗、snapshot 有存下的回覆、busy 別的任務正在串流、none 沒有 */
+export type LastOutputState = "live" | "snapshot" | "busy" | "none";
+
+/** 聊天回覆結束時留下的整份視窗內容（含調試資訊） */
+interface LastChatOutput {
+  content: string;
+  metadata: GenerationMetadata | null;
+  tokenCount: number;
+  promptTokens: number;
+  completionTokens: number;
+  promptContent: PromptDebugMessage[];
+  diagnostics: GenerationDiagnostics | null;
+  hasError: boolean;
+  errorMessage: string | null;
+}
+
+/**
+ * 每個聊天上一則回覆的視窗內容。視窗是所有功能共用的，總結、日記一接手就會蓋掉，
+ * 所以聊天回覆結束（releaseOwnership）時另外留一份。只存在記憶體，重新整理就沒了。
+ */
+const lastChatOutputs = shallowReactive(new Map<string, LastChatOutput>());
+const MAX_LAST_CHAT_OUTPUTS = 10;
+
+function saveLastChatOutput(chatId: string) {
+  lastChatOutputs.delete(chatId);
+  lastChatOutputs.set(
+    chatId,
+    markRaw({
+      content: content.value,
+      metadata: metadata.value ? { ...metadata.value } : null,
+      tokenCount: tokenCount.value,
+      promptTokens: promptTokens.value,
+      completionTokens: completionTokens.value,
+      promptContent: promptContent.value,
+      diagnostics: diagnostics.value,
+      hasError: hasError.value,
+      errorMessage: errorMessage.value,
+    }),
+  );
+  while (lastChatOutputs.size > MAX_LAST_CHAT_OUTPUTS) {
+    const oldest = lastChatOutputs.keys().next().value;
+    if (oldest === undefined) break;
+    lastChatOutputs.delete(oldest);
+  }
+}
 
 // 事件回調註冊表（單例）
 const eventListeners = new Map<StreamingWindowEventType, Set<EventCallback>>();
@@ -192,8 +238,51 @@ export function useStreamingWindow() {
    */
   function releaseOwnership(ownerId?: string): void {
     if (!isOwnedBy(ownerId)) return;
+    if (activeOwnerChatId.value) saveLastChatOutput(activeOwnerChatId.value);
     activeOwnerId.value = null;
     activeOwnerChatId.value = null;
+  }
+
+  function getLastOutputState(chatId: string): LastOutputState {
+    const hasSession = windowState.value !== "hidden";
+    if (hasSession && activeOwnerChatId.value === chatId) return "live";
+    if (hasSession && !isComplete.value) return "busy";
+    return lastChatOutputs.has(chatId) ? "snapshot" : "none";
+  }
+
+  /**
+   * 打開這個聊天上一則回覆的視窗。正在生成就直接打開正在寫的視窗；
+   * 別的任務正在串流時不打開，免得蓋掉對方的內容。
+   */
+  function openLastChatOutput(chatId: string): boolean {
+    const state = getLastOutputState(chatId);
+    if (state === "live") {
+      windowState.value = "visible";
+      return true;
+    }
+    if (state !== "snapshot") return false;
+    const saved = lastChatOutputs.get(chatId)!;
+    // 快照沒有擁有者：任何生成都認領不到，晚到的寫入也進不來
+    activeOwnerId.value = null;
+    activeOwnerChatId.value = null;
+    content.value = saved.content;
+    metadata.value = saved.metadata ? { ...saved.metadata } : null;
+    tokenCount.value = saved.tokenCount;
+    promptTokens.value = saved.promptTokens;
+    completionTokens.value = saved.completionTokens;
+    promptContent.value = saved.promptContent;
+    diagnostics.value = saved.diagnostics;
+    hasError.value = saved.hasError;
+    errorMessage.value = saved.errorMessage;
+    isComplete.value = true;
+    showPrompt.value = false;
+    isAutoScrollEnabled.value = true;
+    windowState.value = "visible";
+    return true;
+  }
+
+  function clearLastChatOutputs() {
+    lastChatOutputs.clear();
   }
 
   /**
@@ -554,6 +643,11 @@ export function useStreamingWindow() {
     isOwnedBy,
     getOwnedContent,
     releaseOwnership,
+
+    // 查看上次輸出
+    getLastOutputState,
+    openLastChatOutput,
+    clearLastChatOutputs,
 
     // 事件系統
     on,

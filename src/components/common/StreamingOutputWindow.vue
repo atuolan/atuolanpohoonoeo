@@ -319,6 +319,8 @@ onUnmounted(() => {
 
       <!-- Content Area -->
       <div ref="scrollContainer" class="window-content" @scroll="handleScroll">
+        <!-- 還在準備提示詞、或在等第一個字（防截斷模式會在最後整段出現） -->
+        <p v-if="isStreaming && !content" class="content-waiting">等待 AI 開始回覆…</p>
         <div v-if="showRawMode" class="content-raw">{{ content }}</div>
         <div v-else class="content-markdown" v-html="renderedContent"></div>
         <!-- 流式游標 -->
@@ -1179,30 +1181,32 @@ onUnmounted(() => {
 // ===== Minimize Animation (Requirements: 6.2) =====
 .minimize-leave-active {
   transition:
-    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
-    opacity 0.35s ease,
-    border-radius 0.35s ease;
+    transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.3s ease;
 }
 
 .minimize-leave-to {
-  // 縮小並移動到右下角（指示器位置）
-  transform: scale(0.1) translate(calc(50vw - 60px), calc(50vh - 40px));
+  // 縮小時往下收（入口在聊天頂欄或貼邊的 AI 提示，不再飛到固定角落）
+  transform: translateY(100%);
   opacity: 0;
-  border-radius: 50%;
 }
 
-// Restore animation (from minimized indicator back to full window)
+// Restore animation
 .minimize-enter-active {
   transition:
-    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
-    opacity 0.35s ease,
-    border-radius 0.35s ease;
+    transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.3s ease;
 }
 
 .minimize-enter-from {
-  transform: scale(0.1) translate(calc(50vw - 60px), calc(50vh - 40px));
+  transform: translateY(100%);
   opacity: 0;
-  border-radius: 50%;
+}
+
+.content-waiting {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-text-secondary);
 }
 
 .diagnostic-warning {

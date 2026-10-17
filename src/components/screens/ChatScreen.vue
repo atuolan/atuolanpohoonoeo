@@ -4271,6 +4271,21 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       throw new Error("未找到角色資料");
     }
 
+    // 根據設定決定是否使用串流；只有在串流開啟時才可能使用流式輸出窗口
+    const isStreamingEnabled = chatTaskConfig.generation.streamingEnabled;
+    const useWindow = isStreamingEnabled && useStreamingWindowEnabled.value;
+    usedStreamingWindowForCurrentGeneration = useWindow;
+    if (useWindow) {
+      // 準備提示詞（向量記憶、天氣、地點…）可能要好幾秒，視窗先開好（縮小中），
+      // 頂欄「正在輸入...」一開始就能點開看進度；帶本輪擁有權，隔離並發生成
+      streamingWindow.show(
+        chatTaskConfig.api.model,
+        true,
+        streamingWindowOwnerId,
+        currentChatId.value || undefined,
+      );
+    }
+
     // 收集關聯的世界書
     const linkedLorebooks: Lorebook[] = [];
 
@@ -5284,20 +5299,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     messages.value.push(aiMessage);
     scrollToBottom();
 
-    // 根據設定決定是否使用串流
-    const isStreamingEnabled = chatTaskConfig.generation.streamingEnabled;
-    // 只有在串流開啟時才可能使用流式輸出窗口
-    const useWindow = isStreamingEnabled && useStreamingWindowEnabled.value;
-    usedStreamingWindowForCurrentGeneration = useWindow;
-
     if (useWindow) {
-      // 顯示流式輸出窗口（帶本輪擁有權，隔離並發生成）
-      streamingWindow.show(
-        chatTaskConfig.api.model,
-        true,
-        streamingWindowOwnerId,
-        currentChatId.value || undefined,
-      );
       // 傳入提示詞內容（用於調試面板查看/隱藏）
       streamingWindow.setPromptContent(
         promptDebugMessages,
@@ -7744,6 +7746,22 @@ function handleStreamingRestore() {
   streamingWindow.restore();
 }
 
+// 頂欄「正在輸入...」：這次回覆用串流視窗時可以點開
+const canOpenStreamingWindow = computed(
+  () => useStreamingWindowEnabled.value && streamingWindow.windowState.value !== "hidden",
+);
+
+// 聊天設定選單「查看上次輸出」：打開這個聊天上一則回覆的視窗（含調試資訊）
+const lastOutputState = computed(() => {
+  if (!useStreamingWindowEnabled.value || !currentChatId.value) return "off" as const;
+  return streamingWindow.getLastOutputState(currentChatId.value);
+});
+
+function openLastOutput() {
+  showChatSettingsMenu.value = false;
+  if (currentChatId.value) streamingWindow.openLastChatOutput(currentChatId.value);
+}
+
 // ===== 流式窗口事件註冊 composable =====
 const { registerStreamingHandlers, unregisterStreamingHandlers } =
   useChatStreamingHandlers({
@@ -9593,6 +9611,8 @@ useChatCleanup({
       :show-nickname-edit="showNicknameEdit"
       :nickname-edit-value="nicknameEditValue"
       :is-generating="isGenerating"
+      :can-open-streaming-window="canOpenStreamingWindow"
+      :last-output-state="lastOutputState"
       :group-member-count="groupMemberCount"
       :show-rail="showRail"
       :current-user-avatar="userStore.currentAvatar"
@@ -9643,6 +9663,8 @@ useChatCleanup({
       @open-f2f-panel="openF2FPanel"
       @toggle-night-mode="toggleNightMode"
       @toggle-anti-truncation="toggleAntiTruncation"
+      @open-streaming-window="handleStreamingRestore"
+      @open-last-output="openLastOutput"
       @toggle-real-time-awareness="toggleRealTimeAwareness"
       @toggle-fake-time-panel="toggleFakeTimePanel"
       @set-fake-time-mode="onHeaderSetFakeTimeMode"
