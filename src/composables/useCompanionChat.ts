@@ -234,7 +234,7 @@ ${character.data.personality || ""}
   if (readingContent) {
     messages.push({
       role: "system",
-      content: `【${displayUserName}正在閱讀的內容】\n${readingContent}`,
+      content: `【${displayUserName}正在閱讀的內容（讀到這裡為止，後面的情節${displayUserName}還沒讀，不要提前透露）】\n${readingContent}`,
     });
   }
 
@@ -364,6 +364,8 @@ function collectWorldInfo(
 export interface UseCompanionChatOptions {
   book: Ref<StoredBook>;
   currentChapterIndex: Ref<number>;
+  /** 使用者實際讀到的那幾頁（到目前這頁結尾為止）；有提供就不用整章內容 */
+  getReadingWindow?: () => string;
 }
 
 export interface UseCompanionChatReturn {
@@ -449,6 +451,7 @@ export function useCompanionChat(
   }
 
   function getAccumulatedContentText(): string {
+    if (options.getReadingWindow) return options.getReadingWindow();
     return getAccumulatedContent(
       options.book.value.chapters,
       core.accumulatedChapterIndices,

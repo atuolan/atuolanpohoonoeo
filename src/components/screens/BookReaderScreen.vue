@@ -343,9 +343,24 @@ function closeSheet() {
 }
 
 // ===== 伴讀 =====
+/** 給伴讀角色看的內容：本章讀到目前這頁結尾為止的最後一段，不含還沒讀的部分 */
+function readingWindow(): string {
+  const chapter = currentChapter.value;
+  if (!chapter) return "";
+  const probe = makeProbe();
+  const end =
+    probe && page.value + 1 < totalPages.value
+      ? offsetForPage(paragraphs.value, page.value + 1, probe)
+      : chapter.content.length;
+  const start = Math.max(0, end - 3000);
+  const text = chapter.content.slice(start, end).trim();
+  return `【${chapter.title}】\n${start > 0 ? "……" : ""}${text}`;
+}
+
 const companion = useCompanionChat({
   book: toRef(props, "book"),
   currentChapterIndex: chapterIndex,
+  getReadingWindow: readingWindow,
 });
 
 const companionCharacter = computed(() =>
