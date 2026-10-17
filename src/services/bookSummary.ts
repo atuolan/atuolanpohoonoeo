@@ -141,6 +141,16 @@ export function formatSummaries(summaries: BookSummary[], chapters: BookChapter[
     .join("\n\n");
 }
 
+/** 給角色看的前情提要：位置之前最近 n 則；沒有就回傳空字串 */
+export function readingSummariesText(
+  chapters: BookChapter[],
+  summaries: BookSummary[] | undefined,
+  pos: BookPosition,
+  n: number,
+): string {
+  return formatSummaries(summariesBefore(summaries, pos, n), chapters);
+}
+
 /** 「第 2 章 → 第 3 章」；同一章只寫一次 */
 export function rangeLabel(s: Pick<BookSummary, "from" | "to">, chapters: BookChapter[] | string[]): string {
   const title = (i: number) => {

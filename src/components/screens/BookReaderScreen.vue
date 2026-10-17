@@ -17,6 +17,7 @@ import {
   fromGlobal,
   lastSummaryEnd,
   rangeLabel,
+  readingSummariesText,
   shouldAutoSummarize,
   sortSummaries,
   splitRange,
@@ -466,6 +467,7 @@ const companion = useCompanionChat({
   book: toRef(props, "book"),
   currentChapterIndex: chapterIndex,
   getReadingWindow: readingWindow,
+  getReadingSummaries: () => readingSummariesText(props.book.chapters, summaries.value, currentEnd(), 5),
 });
 
 const companionCharacter = computed(() =>

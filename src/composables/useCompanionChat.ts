@@ -358,6 +358,8 @@ export interface UseCompanionChatOptions {
   currentChapterIndex: Ref<number>;
   /** 使用者實際讀到的那幾頁（到目前這頁結尾為止）；有提供就不用整章內容 */
   getReadingWindow?: () => string;
+  /** 目前位置之前最近幾則分段摘要（排版好的文字） */
+  getReadingSummaries?: () => string;
 }
 
 export interface UseCompanionChatReturn {
@@ -521,6 +523,7 @@ export function useCompanionChat(
         companionReading: {
           bookTitle: options.book.value.title,
           readingWindow: getAccumulatedContentText(),
+          readingSummaries: options.getReadingSummaries?.(),
         },
         summaries: context.summaries,
         importantEvents: context.importantEvents,

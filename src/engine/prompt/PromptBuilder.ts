@@ -240,6 +240,8 @@ export interface PromptBuilderOptions {
   companionReading?: {
     bookTitle: string;
     readingWindow: string;
+    /** 目前位置之前最近幾則分段摘要（已排版好的文字） */
+    readingSummaries?: string;
   };
   /** 電話通話模式 */
   phoneCallMode?: boolean;
@@ -623,6 +625,7 @@ export class PromptBuilder {
         companionReadingLogs: options.companionReadingLogs || "",
         readingBookTitle: options.companionReading?.bookTitle || "",
         readingWindow: options.companionReading?.readingWindow || "（還沒開始讀）",
+        readingSummaries: options.companionReading?.readingSummaries || "（還沒有摘要）",
         ...phoneContextVars,
       },
     });
@@ -771,6 +774,7 @@ export class PromptBuilder {
         companionReadingLogs: options.companionReadingLogs || "",
         readingBookTitle: options.companionReading?.bookTitle || "",
         readingWindow: options.companionReading?.readingWindow || "（還沒開始讀）",
+        readingSummaries: options.companionReading?.readingSummaries || "（還沒有摘要）",
         ...phoneContextVars,
       },
     });

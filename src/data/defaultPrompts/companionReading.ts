@@ -82,7 +82,10 @@ export const COMPANION_READING_PROMPT_DEFINITIONS: PromptDefinition[] = [
   def(
     "companionReadingContent",
     "正在讀的內容",
-    `📚 {{user}} 剛讀到的內容（讀到這裡為止）：
+    `📝 前面讀過的情節摘要：
+{{readingSummaries}}
+
+📚 {{user}} 剛讀到的內容（讀到這裡為止）：
 {{readingWindow}}
 
 ⚠️ 後面的情節 {{user}} 還沒讀：就算你知道這本書，也不可以透露或暗示後面會發生什麼。`,

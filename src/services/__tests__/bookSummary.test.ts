@@ -7,6 +7,7 @@ import {
   lastSummaryEnd,
   parseSummary,
   rangeLabel,
+  readingSummariesText,
   recapSource,
   shouldAutoSummarize,
   splitRange,
@@ -146,6 +147,23 @@ describe("rangeLabel", () => {
     expect(rangeLabel(summary([0, 5], [0, 90]), titles)).toBe("逍遙遊");
     expect(rangeLabel(summary([0, 5], [1, 0]), titles)).toBe("逍遙遊");
     expect(rangeLabel(summary([0, 5], [2, 10]), titles)).toBe("逍遙遊 → 養生主");
+  });
+});
+
+describe("給角色的前情提要", () => {
+  it("只含目前位置之前的摘要，最多 n 則", () => {
+    const chapters = [ch("逍遙遊", "字".repeat(100)), ch("齊物論", "字".repeat(100))];
+    const list = [
+      summary([0, 0], [0, 50], "鯤化為鵬"),
+      summary([0, 50], [1, 0], "蜩與學鳩"),
+      summary([1, 0], [1, 60], "後面才讀到"),
+    ];
+    const text = readingSummariesText(chapters, list, pos(1, 20), 5);
+    expect(text).toContain("【逍遙遊｜鯤化為鵬】");
+    expect(text).toContain("蜩與學鳩");
+    expect(text).not.toContain("後面才讀到");
+    expect(readingSummariesText(chapters, list, pos(1, 20), 1)).not.toContain("鯤化為鵬");
+    expect(readingSummariesText(chapters, [], pos(1, 20), 5)).toBe("");
   });
 });
 

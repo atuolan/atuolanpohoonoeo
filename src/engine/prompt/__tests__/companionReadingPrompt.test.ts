@@ -54,6 +54,19 @@ describe("伴讀模式提示詞", () => {
     expect(text).toContain("不可以透露");
   });
 
+  it("帶入前面的分段摘要；沒有摘要時寫明還沒有", async () => {
+    const text = await build({
+      companionReading: {
+        bookTitle: "莊子",
+        readingWindow: "【逍遙遊】\n北冥有魚，其名為鯤。",
+        readingSummaries: "【逍遙遊｜鯤化為鵬】\n- 北冥的大魚化成大鳥",
+      },
+    });
+    expect(text).toContain("鯤化為鵬");
+    expect(text.indexOf("鯤化為鵬")).toBeLessThan(text.indexOf("北冥有魚，其名為鯤。"));
+    expect(await build()).toContain("（還沒有摘要）");
+  });
+
   it("跟私聊共用記憶：總結、重要事件、最近對話", async () => {
     const text = await build();
     expect(text).toContain("上週一起去了海邊");
