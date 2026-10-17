@@ -144,6 +144,14 @@ const heroSummaryTitle = computed(() => {
   return summariesBefore(p.summaries, pos, 1)[0]?.title ?? "";
 });
 
+/** 這本書共讀圈的成員 */
+const heroCircleMembers = computed(() => {
+  const p = heroBook.value ? booksStore.progressByBook[heroBook.value.id] : undefined;
+  return (p?.circle?.memberIds ?? [])
+    .map((id) => charsStore.getCharacterById(id))
+    .filter((c): c is StoredCharacter => !!c);
+});
+
 // ===== 回顧卡（跨所有書） =====
 const reviewItems = ref<ReviewItem[] | null>(null);
 
@@ -410,7 +418,15 @@ function handleSelectPersona(personaId: string) {
               </span>
             </div>
             <div class="bs-hero-info">
-              <span class="bs-eyebrow">正在讀</span>
+              <span class="bs-eyebrow">
+                正在讀
+                <span v-if="heroCircleMembers.length" class="bs-circle" :aria-label="`共讀圈：${heroCircleMembers.map((c) => c.nickname || c.data.name).join('、')}`">
+                  <span v-for="c in heroCircleMembers" :key="c.id" class="bs-circle-avatar">
+                    <img v-if="c.avatar" :src="c.avatar" alt="" />
+                    <template v-else>{{ (c.nickname || c.data.name).slice(0, 1) }}</template>
+                  </span>
+                </span>
+              </span>
               <span class="bs-hero-title">{{ heroBook.title }}</span>
               <span v-if="heroBook.author" class="bs-hero-author">{{ heroBook.author }}</span>
               <div class="bs-hero-progress">
@@ -936,9 +952,42 @@ button {
 }
 
 .bs-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
   letter-spacing: 0.06em;
   color: var(--bs-sub);
+}
+
+.bs-circle {
+  display: inline-flex;
+}
+
+.bs-circle-avatar {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1.5px solid var(--bs-hero);
+  background: color-mix(in srgb, var(--bs-accent) 40%, var(--bs-card));
+  color: var(--bs-text);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  overflow: hidden;
+
+  & + & {
+    margin-left: -6px;
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
 }
 
 .bs-hero-title {
