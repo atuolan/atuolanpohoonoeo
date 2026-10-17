@@ -825,6 +825,18 @@ async function startManualSummary() {
   }
 }
 
+/**
+ * 自動摘要的起點：接著上次摘要；還沒有摘要時往回推「翻過的頁數」，
+ * 用本章每頁平均字數估（從上一章翻過來的也算進去）
+ */
+function autoSummaryStart(to: BookPosition): BookPosition {
+  const last = lastSummaryEnd(summaries.value);
+  if (last && comparePos(last, to) < 0) return last;
+  const charsPerPage = (currentChapter.value?.content.length ?? 0) / Math.max(totalPages.value, 1);
+  const back = Math.round(pagesSinceSummary.value * charsPerPage);
+  return fromGlobal(props.book.chapters, Math.max(0, toGlobal(props.book.chapters, to) - back));
+}
+
 /** 往後翻了一頁：自動摘要計數，到了就在背景總結 */
 function onForwardPage() {
   const every = prefs.value.summaryEveryPages;
@@ -833,7 +845,7 @@ function onForwardPage() {
   const failures = booksStore.progressByBook[props.book.id]?.autoSummaryFailures ?? 0;
   if (summaryRunning.value || !shouldAutoSummarize(pagesSinceSummary.value, every, failures)) return;
   const to = currentEnd();
-  const from = defaultSummaryStart(to);
+  const from = autoSummaryStart(to);
   if (charsBetween(props.book.chapters, from, to) <= 0) {
     pagesSinceSummary.value = 0;
     return;
