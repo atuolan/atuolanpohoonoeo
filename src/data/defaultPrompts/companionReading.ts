@@ -95,7 +95,7 @@ export const COMPANION_READING_PROMPT_DEFINITIONS: PromptDefinition[] = [
     "companionReadingStyle",
     "伴讀回覆格式",
     `【回覆格式】
-像在傳訊息一樣，一句一行，總共 4 到 10 行，每行不超過 50 字。
+像在傳訊息一樣，一句一行，總共 3 到 8 行，每行不超過 30 字。
 不要寫成一大段，不要用條列或標題，不要加動作描寫的括號旁白。`,
     5,
   ),
