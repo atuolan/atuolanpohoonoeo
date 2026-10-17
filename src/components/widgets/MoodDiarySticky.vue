@@ -10,6 +10,8 @@ const props = defineProps<{
     content?: string;
     mood?: "happy" | "sad" | "neutral" | "love" | "excited";
     color?: string;
+    updatedAt?: number; // user 最後一次改內容或點心情的時間（帶進線上聊天提示詞用）
+    moodChosen?: boolean; // user 點過心情按鈕（預設亮著的「開心」不算）
     customStyle?: WidgetCustomStyle;
   };
 }>();
@@ -28,20 +30,26 @@ const colors = [
 const content = ref(props.data?.content || "");
 const mood = ref(props.data?.mood || "happy");
 const selectedColor = ref(props.data?.color || colors[0]);
+const updatedAt = ref(props.data?.updatedAt);
+const moodChosen = ref(props.data?.moodChosen === true);
 
-// 監聽數據變化並保存到 store
-watch(
-  [content, mood, selectedColor],
-  () => {
-    canvasStore.updateWidgetData(props.widgetId, {
-      content: content.value,
-      mood: mood.value,
-      color: selectedColor.value,
-      customStyle: props.data?.customStyle,
-    });
-  },
-  { deep: true },
-);
+function persist() {
+  canvasStore.updateWidgetData(props.widgetId, {
+    content: content.value,
+    mood: mood.value,
+    color: selectedColor.value,
+    updatedAt: updatedAt.value,
+    moodChosen: moodChosen.value,
+    customStyle: props.data?.customStyle,
+  });
+}
+
+// 內容或心情變了才算「寫過」，換顏色不算
+watch([content, mood, moodChosen], () => {
+  updatedAt.value = Date.now();
+  persist();
+});
+watch(selectedColor, persist);
 
 const moodIcons = {
   happy: Smile,
@@ -50,6 +58,11 @@ const moodIcons = {
   love: Heart,
   excited: Sparkles,
 };
+
+function pickMood(key: keyof typeof moodIcons) {
+  mood.value = key;
+  moodChosen.value = true;
+}
 
 const currentMoodIcon = computed(() => moodIcons[mood.value]);
 
@@ -140,7 +153,7 @@ const currentLayout = computed(() => {
           v-for="(icon, key) in moodIcons"
           :key="key"
           :class="['mood-btn', { active: mood === key }]"
-          @click="mood = key as any"
+          @click="pickMood(key as keyof typeof moodIcons)"
         >
           <component :is="icon" :size="14" :stroke-width="2" />
         </button>
