@@ -58,7 +58,7 @@ export const FACE_TO_FACE_PROMPT_RESET_VERSION = 5;
 
 /**
  * 線上模式提示詞強制重置版本（規則同面對面）。
- * 1：照面對面預設分區整理，刪除星核與從未生效的權力關係條目，功能標籤格式各只寫在一處
+ * 1：照面對面預設分區整理，刪除星核、從未生效的權力關係條目與預填 <thinking>，功能標籤格式各只寫在一處
  */
 export const ONLINE_PROMPT_RESET_VERSION = 1;
 

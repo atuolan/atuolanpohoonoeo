@@ -9,7 +9,7 @@
  * - <此刻>／<生活紀錄>／<數值狀態>：時間天氣、生活紀錄、好感度等現況
  * - 對話推進、<線上功能>、<角色分寸>
  * - <語言與篇幅>：設定「字數」「語言」變量，由思考框架用 {{延後讀取::}} 讀出
- * - <輸出格式>：本輪輸入、思考框架、輸出範例，最後預填 <thinking>
+ * - <輸出格式>：本輪輸入、思考框架、輸出範例
  *
  * 只有 <USER>、<CHAR_Profile>、<前情提要> 的包裝條目會注入文字，其他分區條目只用來分組。
  */
@@ -1505,26 +1505,6 @@ export const DEFAULT_PROMPT_DEFINITIONS: PromptDefinition[] = [
     isDeletable: true,
     adminOnly: true,
   },
-  // ===== 預填：AI 從 <thinking> 開始回覆（必須是最後一條） =====
-  {
-    identifier: "custom_1772987632994",
-    name: "<think>(必開)",
-    description: "【必要·輸出格式】預填 <thinking>，讓 AI 從思考段開始回覆",
-    category: "custom",
-    role: "assistant",
-    content: "<thinking>",
-    system_prompt: false,
-    marker: true,
-    injection_position: INJECTION_RELATIVE,
-    injection_depth: 0,
-    injection_order: 100,
-    forbid_overrides: false,
-    extension: false,
-    injection_trigger: [],
-    isEditable: false,
-    isDeletable: false,
-    locked: true,
-  },
 ];
 
 // ===== 主要聊天提示詞順序 =====
@@ -1619,8 +1599,6 @@ export const DEFAULT_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "thinkingGuide", enabled: true },
   { identifier: "custom_1776010669277", enabled: true },
   { identifier: "custom_1792257530325", enabled: true },
-  // 預填：AI 從 <thinking> 開始回覆（必須是最後一條）
-  { identifier: "custom_1772987632994", enabled: true },
 ];
 
 // ===== 向後兼容別名 =====

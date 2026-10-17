@@ -5,7 +5,6 @@ import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import { createDefaultPromptManagerConfig } from "@/types/promptManager";
 
 const WORD_COUNT_ID = "custom_1780407815279";
-const PREFILL_ID = "custom_1772987632994";
 
 // 聊天變量跨輪保存，模擬 chatVariablesStore
 const local = new Map<string, string>();
@@ -65,7 +64,7 @@ function nameOf(identifier: string): string {
 }
 
 describe("線上模式預設提示詞分區", () => {
-  it("每個分區開頭後面都有對應的結尾，預填 <thinking> 是最後一條", () => {
+  it("每個分區開頭後面都有對應的結尾，沒有 assistant 預填", () => {
     const names = DEFAULT_PROMPT_ORDER.map((e) => nameOf(e.identifier));
     const openers = DEFAULT_PROMPT_DEFINITIONS.filter((d) => d.description?.startsWith("分區開頭"));
     expect(openers.length).toBeGreaterThan(0);
@@ -73,7 +72,7 @@ describe("線上模式預設提示詞分區", () => {
       const tag = opener.name.slice(1, -1);
       expect(names.indexOf(`</${tag}>`), tag).toBeGreaterThan(names.indexOf(opener.name));
     }
-    expect(DEFAULT_PROMPT_ORDER[DEFAULT_PROMPT_ORDER.length - 1].identifier).toBe(PREFILL_ID);
+    expect(DEFAULT_PROMPT_DEFINITIONS.some((d) => d.role === "assistant" && d.content.trim() === "<thinking>")).toBe(false);
   });
 
   it("組好的提示詞依分區排列，宏全部展開", async () => {
@@ -98,7 +97,9 @@ describe("線上模式預設提示詞分區", () => {
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
 
     expect(text.match(/.{0,20}(\{\{|\}\}).{0,20}/g)).toBeNull();
-    expect(messages[messages.length - 1]).toMatchObject({ role: "assistant", content: "<thinking>" });
+    const last = messages[messages.length - 1];
+    expect(last.role).not.toBe("assistant");
+    expect(last.content.trimEnd().endsWith("不需要就不放）")).toBe(true);
   });
 
   it("功能標籤的格式各只寫在一處：來電預約只在來電決策，勿擾時整份都不出現", async () => {
