@@ -6,7 +6,11 @@ import {
   resolveShadow,
   DEFAULT_SKIN_ID,
 } from "@/styles/skin-presets";
-import { DEFAULT_THEME_PACK, type ThemePack } from "@/styles/theme-packs";
+import {
+  DEFAULT_THEME_PACK,
+  LEGACY_PRIMARY_LIGHT_FIXES,
+  type ThemePack,
+} from "@/styles/theme-packs";
 import { boostCSSSpecificity } from "@/utils/cssScoping";
 import type { GlobalChatAppearance } from "@/types/chat";
 
@@ -1085,7 +1089,9 @@ export const useThemeStore = defineStore("theme", () => {
     };
     // 氣泡主色同步主題包主色
     bubbleStyle.value.userBgColor = pack.colors.primary;
-    bubbleStyle.value.userBgGradient = `linear-gradient(135deg, ${pack.colors.primary}, ${pack.colors.primaryLight})`;
+    bubbleStyle.value.userBgGradient =
+      pack.bubbleGradient ||
+      `linear-gradient(135deg, ${pack.colors.primary}, ${pack.colors.primaryLight})`;
     // 全域自訂 CSS：主題包若帶有 customCSS 則一併還原（可跨裝置分享 AI 寫入的全域樣式）
     // 未攜帶時（undefined）不動使用者現有的全域 CSS，避免套用預設主題包時清空
     if (typeof pack.customCSS === "string") {
@@ -1221,6 +1227,14 @@ export const useThemeStore = defineStore("theme", () => {
           ? data.currentSkin
           : DEFAULT_SKIN_ID;
         customColors.value = data.customColors || {};
+        const legacyFix = LEGACY_PRIMARY_LIGHT_FIXES.find(
+          (f) =>
+            customColors.value.primary?.toUpperCase() === f.primary &&
+            customColors.value.primaryLight?.toUpperCase() === f.from,
+        );
+        if (legacyFix) {
+          customColors.value = { ...customColors.value, primaryLight: legacyFix.to };
+        }
         avatarStyle.value = { ...defaultAvatarStyle, ...data.avatarStyle };
         bubbleStyle.value = { ...defaultBubbleStyle, ...data.bubbleStyle };
 

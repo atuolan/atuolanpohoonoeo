@@ -111,6 +111,8 @@ export interface ThemePack {
   // 預覽用的代表色（漸層字串或純色），用於設定面板色塊
   preview: string;
   colors: ThemeColors;
+  // 選用：使用者氣泡漸層；沒給就用 primary → primaryLight
+  bubbleGradient?: string;
   // 形態皮膚（skin-presets 的 id：soft / glass / flat / plump）
   skin: string;
   // 圖標形狀（shape-presets 的 id）
@@ -130,6 +132,13 @@ export interface ThemePack {
   // 建立時間（自訂主題包用）
   createdAt?: number;
 }
+
+// 舊版極簡黑白／線描把 primaryLight 設成深灰，選取底會變深灰底黑字。
+// 已套用過的人存的是舊色碼，載入時換成新的淺灰（只換主色也還是原值的，避免動到使用者自己調的色）。
+export const LEGACY_PRIMARY_LIGHT_FIXES: { primary: string; from: string; to: string }[] = [
+  { primary: "#1C1C1A", from: "#3A3A37", to: "#E6E4DE" },
+  { primary: "#1A1A1A", from: "#3D3D3D", to: "#EDEDED" },
+];
 
 // ===== 主題版型共用 =====
 // 交給 themed/ 版型元件的組件，要清掉前一個主題留下的底色 / 文字色，
@@ -352,7 +361,8 @@ const monoPack: ThemePack = {
   preview: "linear-gradient(135deg, #F6F5F1 0%, #D8D6D0 55%, #1C1C1A 100%)",
   colors: {
     primary: "#1C1C1A",          // 油墨黑
-    primaryLight: "#3A3A37",
+    // 全站把 primary-light 當淡色選取底、上面疊主色字，所以要是淺灰，不能是深灰
+    primaryLight: "#E6E4DE",
     secondary: "#6B6A65",
     background: "#F6F5F1",       // 雜誌內頁紙
     surface: "#FFFFFF",
@@ -366,6 +376,8 @@ const monoPack: ThemePack = {
     error: "#A23B2A",
     warning: "#8A6D2B",
   },
+  // 使用者氣泡維持油墨黑，不跟著淺灰 primaryLight 漸層
+  bubbleGradient: "linear-gradient(135deg, #1C1C1A, #3A3A37)",
   skin: "flat",
   shape: "square",
   wallpaper: {
@@ -509,7 +521,8 @@ const lineartPack: ThemePack = {
   preview: "linear-gradient(135deg, #FFFFFF 0%, #FFFFFF 55%, #1A1A1A 100%)",
   colors: {
     primary: "#1A1A1A",          // 純黑墨線
-    primaryLight: "#3D3D3D",
+    // 淡色選取底用淺灰（見極簡黑白）
+    primaryLight: "#EDEDED",
     secondary: "#1A1A1A",
     background: "#FFFFFF",       // 純白紙
     surface: "#FFFFFF",
@@ -523,6 +536,7 @@ const lineartPack: ThemePack = {
     error: "#1A1A1A",
     warning: "#1A1A1A",
   },
+  bubbleGradient: "linear-gradient(135deg, #1A1A1A, #3D3D3D)",
   skin: "flat",
   shape: "circle",
   wallpaper: {

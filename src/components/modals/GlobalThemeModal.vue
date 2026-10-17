@@ -2005,9 +2005,10 @@ body {
   font-size: 13px;
   font-weight: 600;
   color: #fff;
+  // 起點只往淺主色靠一點：淺主色本身可能很淡（極簡黑白是淺灰），整段當底會讀不到白字
   background: linear-gradient(
     135deg,
-    var(--color-primary-light),
+    color-mix(in srgb, var(--color-primary-light) 35%, var(--color-primary)),
     var(--color-primary)
   );
   border: none;

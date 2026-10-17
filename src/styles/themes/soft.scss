@@ -300,10 +300,11 @@
   }
 
   &.primary {
+    // 尾端只往淺主色靠一點，淺主色很淡時（極簡黑白、線描）白字才讀得到
     background: linear-gradient(
       135deg,
       var(--color-primary),
-      var(--color-primary-light)
+      color-mix(in srgb, var(--color-primary-light) 35%, var(--color-primary))
     );
     color: white;
     box-shadow: 0 4px 16px var(--color-shadow);
