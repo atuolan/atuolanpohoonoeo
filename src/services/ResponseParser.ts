@@ -132,6 +132,10 @@ export interface ParsedResponse {
   hasCharStatus?: boolean;
   /** 角色狀態更新資料 */
   charStatusData?: { text: string };
+  /** 是否有便利貼 */
+  hasStickyNote?: boolean;
+  /** 便利貼資料（顯示在主畫面的心情便籤上） */
+  stickyNoteData?: { text: string };
 }
 
 /**
@@ -1237,16 +1241,24 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     result.charStatusData = charStatusResult;
   }
 
+  // 11c. 檢查便利貼標籤
+  const stickyNoteResult = parseStickyNoteTag(rawResponse);
+  if (stickyNoteResult) {
+    result.hasStickyNote = true;
+    result.stickyNoteData = stickyNoteResult;
+  }
+
   // 12. 檢查放在 </content> 之後的模式切換請求標籤
   // <content> 外的文字不會進入 outputContent，因此這類系統控制標籤需要從 rawResponse 額外轉成卡片訊息。
   appendTopLevelModeRequestMessages(result.messages, rawResponse);
 
-  // 從所有訊息中移除 char-location、char-status 與時間控制標籤（模型偶爾會寫在 <content> 裡）
+  // 從所有訊息中移除 char-location、char-status、sticky-note 與時間控制標籤（模型偶爾會寫在 <content> 裡）
   for (const msg of result.messages) {
     if (msg.content) {
       msg.content = msg.content
         .replace(/<char-location\s+[^>]*?\s*\/?>(?:<\/char-location>)?/gi, "")
         .replace(CHAR_STATUS_TAG_REGEX, "")
+        .replace(STICKY_NOTE_TAG_REGEX, "")
         .replace(/<time-(?:jump|advance)\s+[^>]*?\s*\/?>(?:<\/time-(?:jump|advance)>)?/gi, "")
         .trim();
     }
@@ -1907,6 +1919,41 @@ export function parseCharStatusTag(
   return latest ? { text: latest } : null;
 }
 
+/** 便利貼最長字數；提示詞要求 50 字內，這裡只是保險 */
+export const STICKY_NOTE_MAX_LENGTH = 80;
+
+/**
+ * <sticky-note text="..."/>、<sticky-note text="..."></sticky-note>、<sticky-note>...</sticky-note>
+ * 屬性值用引號整段吃掉，值裡有 > 也不會斷；第 1 組是屬性，第 2 組是包起來的文字
+ */
+const STICKY_NOTE_TAG_REGEX =
+  /<sticky-note(\s(?:[^>"']|"[^"]*"|'[^']*')*?)?\s*(?:\/>|>([^<]*)<\/sticky-note>|>)/gi;
+
+/** 取出引號包住的屬性值；跟 extractAttr 不同，值裡可以有另一種引號 */
+function extractQuotedAttr(attrs: string, name: string): string | undefined {
+  const match = attrs.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i"));
+  return match ? (match[1] ?? match[2]) : undefined;
+}
+
+/**
+ * 解析 sticky-note 標籤（char 貼在主畫面心情便籤上的便利貼）
+ * 同一則回覆有多張時取最後一張
+ *
+ * @param rawResponse - 原始 AI 回覆
+ * @returns 解析後的便利貼，沒有有效標籤則返回 null
+ */
+export function parseStickyNoteTag(
+  rawResponse: string,
+): { text: string } | null {
+  let latest: string | null = null;
+  for (const match of rawResponse.matchAll(STICKY_NOTE_TAG_REGEX)) {
+    const raw = extractQuotedAttr(match[1] ?? "", "text") ?? match[2] ?? "";
+    const text = raw.replace(/\s+/g, " ").trim().slice(0, STICKY_NOTE_MAX_LENGTH);
+    if (text) latest = text;
+  }
+  return latest ? { text: latest } : null;
+}
+
 /**
  * 解析 calendar-event 標籤（支援多個）
  * 支援格式：<calendar-event type="user" date="2026-02-14" title="情人節約會" description="一起去吃飯"/>
@@ -2318,7 +2365,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<plurk[\s>]|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<sticky-note|<plurk[\s>]|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }
