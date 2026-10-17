@@ -47,7 +47,7 @@ export function buildRecapPrompt(bookTitle: string, source: string): APIMessage[
     },
     {
       role: "user",
-      content: `書名：《${bookTitle}》\n以下是讀者讀到這裡為止的最後一段：\n\n${source}`,
+      content: `書名：《${bookTitle}》\n以下是讀者讀到這裡為止的內容：\n\n${source}`,
     },
   ];
 }
@@ -129,13 +129,8 @@ export function extractJson<T = unknown>(text: string): T | null {
   return null;
 }
 
-export async function generateRecap(
-  bookTitle: string,
-  chapters: BookChapter[],
-  chapterIndex: number,
-  charOffset: number,
-): Promise<string[]> {
-  const source = recapSourceText(chapters, chapterIndex, charOffset);
+/** @param source 讀到這裡為止的內容（bookSummary.recapSource） */
+export async function generateRecap(bookTitle: string, source: string): Promise<string[]> {
   if (source.replace(/【[^】]*】/g, "").trim().length < 50) {
     throw new Error("還沒讀到夠多內容，先讀幾頁吧");
   }

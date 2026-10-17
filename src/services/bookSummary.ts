@@ -4,7 +4,7 @@
  */
 
 import type { APIMessage } from "@/api/OpenAICompatible";
-import { askAI, extractJson } from "@/services/BookAIService";
+import { askAI, extractJson, recapSourceText } from "@/services/BookAIService";
 import type { BookChapter, BookPosition, BookSummary } from "@/types/book";
 import { splitParagraphs } from "@/utils/bookReading";
 
@@ -150,6 +150,31 @@ export function rangeLabel(s: Pick<BookSummary, "from" | "to">, chapters: BookCh
   // 結尾剛好在下一章開頭時，其實只涵蓋到前一章
   const endIndex = s.to.charOffset === 0 && s.to.chapterIndex > s.from.chapterIndex ? s.to.chapterIndex - 1 : s.to.chapterIndex;
   return endIndex === s.from.chapterIndex ? title(endIndex) : `${title(s.from.chapterIndex)} → ${title(endIndex)}`;
+}
+
+/** 書架只知道頁頂位置；這頁上還看得到的字大概這麼多，結尾落在這裡面的摘要也算讀過 */
+const PAGE_SLACK_CHARS = 1500;
+
+/**
+ * 三句接上的材料：有摘要時送「最近 3 則摘要＋最後一則結尾到目前位置的原文（最多 3000 字）」；
+ * 沒有摘要時退回只送最後一段原文
+ */
+export function recapSource(
+  chapters: BookChapter[],
+  pos: BookPosition,
+  summaries: BookSummary[] | undefined,
+  maxChars = 3000,
+): string {
+  const reach = fromGlobal(chapters, toGlobal(chapters, pos) + PAGE_SLACK_CHARS);
+  const recent = summariesBefore(summaries, reach, 3);
+  if (recent.length === 0) return recapSourceText(chapters, pos.chapterIndex, pos.charOffset);
+
+  const lastEnd = recent[recent.length - 1].to;
+  const tailFrom = fromGlobal(chapters, Math.max(toGlobal(chapters, lastEnd), toGlobal(chapters, pos) - maxChars));
+  const tail = textBetween(chapters, tailFrom, pos);
+  return [`前情摘要（舊到新）：\n${formatSummaries(recent, chapters)}`, tail ? `最後讀到的一段：\n${tail}` : ""]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export function buildSummaryPrompt(input: {

@@ -12,6 +12,7 @@ import {
   readingStreak,
 } from "@/utils/bookReading";
 import { generateRecap } from "@/services/BookAIService";
+import { recapSource } from "@/services/bookSummary";
 import { ArrowLeft, BookOpen, ChevronDown, Plus, Trash2, User, X } from "lucide-vue-next";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
@@ -157,7 +158,8 @@ async function recapHero() {
     if (!book) throw new Error("找不到這本書");
     const chapterIndex = progress?.chapterIndex ?? 0;
     const charOffset = progress?.charOffset ?? 0;
-    const lines = await generateRecap(book.title, book.chapters, chapterIndex, charOffset);
+    const source = recapSource(book.chapters, { chapterIndex, charOffset }, progress?.summaries);
+    const lines = await generateRecap(book.title, source);
     await booksStore.patchProgress(meta.id, {
       lastRecap: { chapterIndex, charOffset, lines, createdAt: Date.now() },
     });

@@ -7,6 +7,7 @@ import {
   lastSummaryEnd,
   parseSummary,
   rangeLabel,
+  recapSource,
   shouldAutoSummarize,
   splitRange,
   summariesBefore,
@@ -145,6 +146,40 @@ describe("rangeLabel", () => {
     expect(rangeLabel(summary([0, 5], [0, 90]), titles)).toBe("逍遙遊");
     expect(rangeLabel(summary([0, 5], [1, 0]), titles)).toBe("逍遙遊");
     expect(rangeLabel(summary([0, 5], [2, 10]), titles)).toBe("逍遙遊 → 養生主");
+  });
+});
+
+describe("三句接上的材料", () => {
+  const chapters = [ch("一", "甲".repeat(5000)), ch("二", "乙".repeat(2000) + "丙".repeat(3000) + "丁".repeat(5000))];
+
+  it("沒有摘要時退回送最後一段原文", () => {
+    const text = recapSource(chapters, pos(1, 100), []);
+    expect(text).not.toContain("前情摘要");
+    expect(text).toContain("【二】");
+  });
+
+  it("有摘要時送最近 3 則＋摘要結尾到目前位置的原文，不含後面", () => {
+    const list = [
+      summary([0, 0], [0, 2000], "s1"),
+      summary([0, 2000], [0, 4000], "s2"),
+      summary([0, 4000], [1, 0], "s3"),
+      summary([1, 0], [1, 2000], "s4"),
+    ];
+    const text = recapSource(chapters, pos(1, 5000), list);
+    expect(text).toContain("前情摘要");
+    expect(text).not.toContain("s1");
+    expect(text).toContain("s4");
+    // 摘要結尾（第 2000 字）之後的原文，但最多 3000 字
+    expect(text).toContain("丙");
+    expect(text).not.toContain("乙");
+    expect(text).not.toContain("丁");
+  });
+
+  it("目前這頁上的摘要也算讀過，不會把讀過的位置之後的原文送出", () => {
+    const list = [summary([1, 0], [1, 5800], "這頁")];
+    const text = recapSource(chapters, pos(1, 5000), list);
+    expect(text).toContain("這頁");
+    expect(text).not.toContain("最後讀到的一段");
   });
 });
 
