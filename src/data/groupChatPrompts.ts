@@ -11,7 +11,6 @@
  * - <輸出格式>：本輪輸入、角色名單、思考框架
  *
  * 只有 <USER>、<CHAR_Profile>、<前情提要> 的包裝條目會注入文字，其他分區條目只用來分組。
- * gcBlockMemory、minimaxTTS 只有順序沒有定義，內容由 PromptBuilder 產生。
  */
 
 import type { PromptDefinition, PromptOrderEntry } from "@/types/promptManager";
@@ -523,6 +522,25 @@ const EXPORTED_GROUP_CHAT_CONFIG = {
       "isDeletable": false,
       "adminOnly": true,
       "locked": true
+    },
+    {
+      "identifier": "gcBlockMemory",
+      "name": "封鎖記憶",
+      "description": "有角色封鎖用戶時，放入封鎖經過與封鎖期間的訊息，群聊另外提醒該角色別主動互動（內容由程式產生）",
+      "category": "custom",
+      "role": "system",
+      "content": "",
+      "system_prompt": true,
+      "marker": true,
+      "injection_position": 0,
+      "injection_depth": 0,
+      "injection_order": 22,
+      "forbid_overrides": false,
+      "extension": false,
+      "injection_trigger": [],
+      "isEditable": true,
+      "isDeletable": true,
+      "adminOnly": true
     },
     {
       "identifier": "gcAuthorsNote",
@@ -1120,6 +1138,25 @@ const EXPORTED_GROUP_CHAT_CONFIG = {
       "isDeletable": false,
       "adminOnly": true,
       "locked": true
+    },
+    {
+      "identifier": "minimaxTTS",
+      "name": "MiniMax TTS",
+      "description": "",
+      "category": "custom",
+      "role": "system",
+      "content": "",
+      "system_prompt": true,
+      "marker": true,
+      "injection_position": 0,
+      "injection_depth": 0,
+      "injection_order": 19.8,
+      "forbid_overrides": false,
+      "extension": false,
+      "injection_trigger": [],
+      "isEditable": true,
+      "isDeletable": true,
+      "adminOnly": true
     },
     {
       "identifier": "gc_custom_1792300000629",

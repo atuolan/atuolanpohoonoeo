@@ -90,6 +90,11 @@ describe("群聊預設提示詞（照線上模式分區）", () => {
     );
   });
 
+  it("順序裡每一條都有定義（提示詞管理才不會顯示成 identifier 加「自訂」）", () => {
+    const ids = new Set(GROUP_CHAT_PROMPT_DEFINITIONS.map((d) => d.identifier));
+    expect(DEFAULT_GROUP_CHAT_PROMPT_ORDER.filter((e) => !ids.has(e.identifier))).toEqual([]);
+  });
+
   it("組好的提示詞依分區排列，宏全部展開，群聊不處理的標籤不出現", async () => {
     const messages = await build();
     const text = join(messages);
