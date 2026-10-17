@@ -19,7 +19,8 @@ import {
   resolveEpubPath,
   splitLongChapters,
 } from "@/services/bookParsing";
-import type { BookChapter, BookReadingProgress, StoredBook } from "@/types/book";
+import type { BookChapter, BookMeta, BookReadingProgress, StoredBook } from "@/types/book";
+import { toBookMeta } from "@/utils/bookReading";
 
 function totalCharsOf(chapters: BookChapter[]): number {
   return chapters.reduce((sum, c) => sum + c.content.length, 0);
@@ -243,6 +244,27 @@ async function importPdf(file: File): Promise<StoredBook> {
 }
 
 // ============================================================
+// 書架索引（appSettings 裡的快取，從 books 推算）
+// ============================================================
+
+const SHELF_INDEX_KEY = "book-shelf-index";
+
+interface ShelfIndex {
+  id: typeof SHELF_INDEX_KEY;
+  books: Record<string, BookMeta>;
+}
+
+async function readShelfIndex(): Promise<Record<string, BookMeta>> {
+  const saved = await db.get<ShelfIndex>(DB_STORES.APP_SETTINGS, SHELF_INDEX_KEY).catch(() => undefined);
+  return { ...(saved?.books ?? {}) };
+}
+
+async function writeShelfIndex(books: Record<string, BookMeta>): Promise<void> {
+  const record: ShelfIndex = { id: SHELF_INDEX_KEY, books };
+  await db.put(DB_STORES.APP_SETTINGS, JSON.parse(JSON.stringify(record)));
+}
+
+// ============================================================
 // 公開 API
 // ============================================================
 
@@ -264,9 +286,41 @@ export const BookService = {
       throw new Error(`不支援的格式：${ext}，請使用 TXT、EPUB 或 PDF`);
     }
 
-    // 存入 IndexedDB（不存 cover 以節省空間，cover 單獨存）
     await db.put(DB_STORES.BOOKS, JSON.parse(JSON.stringify(book)));
+    const index = await readShelfIndex();
+    index[book.id] = toBookMeta(book);
+    await writeShelfIndex(index);
     return book;
+  },
+
+  /**
+   * 書架清單：讀索引，跟 books 的 key 對帳（備份還原、舊資料會在這裡補齊）
+   */
+  async getShelf(): Promise<BookMeta[]> {
+    const [keys, index] = await Promise.all([
+      db.getAllKeys(DB_STORES.BOOKS),
+      readShelfIndex(),
+    ]);
+    const ids = new Set(keys.map(String));
+    let changed = false;
+
+    for (const id of Object.keys(index)) {
+      if (!ids.has(id)) {
+        delete index[id];
+        changed = true;
+      }
+    }
+    for (const id of ids) {
+      if (index[id]) continue;
+      const book = await db.get<StoredBook>(DB_STORES.BOOKS, id);
+      if (book) {
+        index[id] = toBookMeta(book);
+        changed = true;
+      }
+    }
+
+    if (changed) await writeShelfIndex(index);
+    return Object.values(index);
   },
 
   async getAllBooks(): Promise<StoredBook[]> {
@@ -280,6 +334,11 @@ export const BookService = {
   async deleteBook(id: string): Promise<void> {
     await db.delete(DB_STORES.BOOKS, id);
     await db.delete(DB_STORES.BOOK_PROGRESS, id).catch(() => {});
+    const index = await readShelfIndex();
+    if (index[id]) {
+      delete index[id];
+      await writeShelfIndex(index);
+    }
   },
 
   async saveProgress(progress: BookReadingProgress): Promise<void> {

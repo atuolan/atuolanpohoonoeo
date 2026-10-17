@@ -3,7 +3,7 @@
  * 進度以「章內字元位置」保存，換字級、換螢幕後仍能翻回同一段
  */
 
-import type { BookChapter } from "@/types/book";
+import type { BookChapter, BookMeta, StoredBook } from "@/types/book";
 
 export interface ParagraphSpan {
   /** 在章節 content 中的起始字元位置 */
@@ -29,16 +29,44 @@ export function splitParagraphs(content: string): ParagraphSpan[] {
 
 /** 全書百分比（0–100，四捨五入） */
 export function bookPercent(chapters: BookChapter[], chapterIndex: number, charOffset: number): number {
+  return bookPercentFromLengths(
+    chapters.map((c) => c.content.length),
+    chapterIndex,
+    charOffset,
+  );
+}
+
+/** 只有各章字數時的全書百分比 */
+export function bookPercentFromLengths(
+  lengths: number[],
+  chapterIndex: number,
+  charOffset: number,
+): number {
   let total = 0;
   let before = 0;
-  chapters.forEach((c, i) => {
-    total += c.content.length;
-    if (i < chapterIndex) before += c.content.length;
+  lengths.forEach((len, i) => {
+    total += len;
+    if (i < chapterIndex) before += len;
   });
   if (total === 0) return 0;
-  const current = chapters[chapterIndex]?.content.length ?? 0;
+  const current = lengths[chapterIndex] ?? 0;
   const read = before + Math.min(Math.max(charOffset, 0), current);
   return Math.min(100, Math.max(0, Math.round((read / total) * 100)));
+}
+
+export function toBookMeta(book: StoredBook): BookMeta {
+  return {
+    id: book.id,
+    title: book.title,
+    author: book.author,
+    cover: book.cover,
+    format: book.format,
+    chapterTitles: book.chapters.map((c) => c.title),
+    chapterLengths: book.chapters.map((c) => c.content.length),
+    totalChars: book.totalChars,
+    createdAt: book.createdAt,
+    updatedAt: book.updatedAt,
+  };
 }
 
 /** 本章剩餘閱讀分鐘數（中文約每分鐘 400 字） */

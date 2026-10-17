@@ -19,6 +19,20 @@ export interface StoredBook {
   updatedAt: number;
 }
 
+/** 書架用的書籍摘要（不含內文，避免打開書架就把每本書全文讀進記憶體） */
+export interface BookMeta {
+  id: string;
+  title: string;
+  author?: string;
+  cover?: string;
+  format: StoredBook["format"];
+  chapterTitles: string[];
+  chapterLengths: number[];
+  totalChars: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface BookReadingProgress {
   bookId: string;
   chapterIndex: number;

@@ -416,6 +416,8 @@ const SELF_HOSTED_SYNC_EXCLUDED_APP_SETTINGS_KEYS = new Set<string>([
   "self-hosted-sync-settings",
   "self-hosted-sync-deleted-entities",
   "main-settings",
+  // 書架索引是從 books 推算的快取
+  "book-shelf-index",
 ]);
 
 function shouldScheduleSelfHostedSyncForStore(storeName: string, key?: string): boolean {

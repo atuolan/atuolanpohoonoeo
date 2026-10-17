@@ -1,6 +1,7 @@
 import { db, DB_STORES } from "@/db/database";
 import { BookService } from "@/services/BookService";
-import type { BookReadingProgress, ReaderPrefs, StoredBook } from "@/types/book";
+import type { BookMeta, BookReadingProgress, ReaderPrefs, StoredBook } from "@/types/book";
+import { toBookMeta } from "@/utils/bookReading";
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
@@ -14,7 +15,8 @@ export const DEFAULT_READER_PREFS: ReaderPrefs = {
 };
 
 export const useBooksStore = defineStore("books", () => {
-  const books = ref<StoredBook[]>([]);
+  /** 書架只放摘要；要讀內文用 loadBook */
+  const books = ref<BookMeta[]>([]);
   const progressByBook = ref<Record<string, BookReadingProgress>>({});
   const readerPrefs = ref<ReaderPrefs>({ ...DEFAULT_READER_PREFS });
   const isLoading = ref(false);
@@ -22,12 +24,16 @@ export const useBooksStore = defineStore("books", () => {
   let prefsLoaded = false;
 
   async function loadBooks() {
-    const [all, progress] = await Promise.all([
-      BookService.getAllBooks(),
+    const [shelf, progress] = await Promise.all([
+      BookService.getShelf(),
       BookService.getAllProgress(),
     ]);
-    books.value = all;
+    books.value = shelf;
     progressByBook.value = Object.fromEntries(progress.map((p) => [p.bookId, p]));
+  }
+
+  async function loadBook(id: string): Promise<StoredBook | undefined> {
+    return BookService.getBook(id);
   }
 
   async function importFile(file: File): Promise<StoredBook | null> {
@@ -35,7 +41,7 @@ export const useBooksStore = defineStore("books", () => {
     importError.value = null;
     try {
       const book = await BookService.importFile(file);
-      books.value.unshift(book);
+      books.value.unshift(toBookMeta(book));
       return book;
     } catch (e: any) {
       importError.value = e.message || "導入失敗";
@@ -52,13 +58,40 @@ export const useBooksStore = defineStore("books", () => {
     progressByBook.value = rest;
   }
 
+  // 同一本書的紀錄可能同時被翻頁、計時、劃線寫入，排隊合併，避免互相蓋掉
+  let writeQueue: Promise<void> = Promise.resolve();
+
+  /** 合併更新一本書的閱讀紀錄（沒給的欄位保留原值） */
+  function patchProgress(
+    bookId: string,
+    patch: Partial<BookReadingProgress> | ((current: BookReadingProgress | undefined) => Partial<BookReadingProgress>),
+  ): Promise<void> {
+    writeQueue = writeQueue
+      .then(async () => {
+        const current = progressByBook.value[bookId] ?? (await BookService.getProgress(bookId));
+        const changes = typeof patch === "function" ? patch(current) : patch;
+        const base: BookReadingProgress = current ?? {
+          bookId,
+          chapterIndex: 0,
+          scrollPosition: 0,
+          lastReadAt: Date.now(),
+        };
+        const merged: BookReadingProgress = { ...base, ...changes, bookId };
+        progressByBook.value = { ...progressByBook.value, [bookId]: merged };
+        await BookService.saveProgress(merged);
+      })
+      .catch((e) => console.warn("[books] 儲存閱讀紀錄失敗:", e));
+    return writeQueue;
+  }
+
   async function saveProgress(progress: BookReadingProgress) {
-    progressByBook.value = { ...progressByBook.value, [progress.bookId]: progress };
-    await BookService.saveProgress(progress);
+    await patchProgress(progress.bookId, progress);
   }
 
   async function getProgress(bookId: string): Promise<BookReadingProgress | undefined> {
-    return BookService.getProgress(bookId);
+    const progress = await BookService.getProgress(bookId);
+    if (progress) progressByBook.value = { ...progressByBook.value, [bookId]: progress };
+    return progress;
   }
 
   async function loadReaderPrefs() {
@@ -94,8 +127,10 @@ export const useBooksStore = defineStore("books", () => {
     isLoading,
     importError,
     loadBooks,
+    loadBook,
     importFile,
     deleteBook,
+    patchProgress,
     saveProgress,
     getProgress,
     loadReaderPrefs,

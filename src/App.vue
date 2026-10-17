@@ -961,8 +961,15 @@ const chatPickerGreetings = computed(() => {
 });
 
 // 書架 / 閱讀器
-import type { StoredBook } from "@/types/book";
+import type { BookMeta, StoredBook } from "@/types/book";
+import { useBooksStore } from "@/stores/books";
 const currentBook = ref<StoredBook | null>(null);
+
+// 書架只有摘要，打開時才讀全文
+async function openBookFromShelf(meta: BookMeta) {
+  const book = await useBooksStore().loadBook(meta.id);
+  if (book) currentBook.value = book;
+}
 
 // ===== 頭盔TA手機 =====
 const peekPhoneCharacterId = ref<string | null>(null);
@@ -2968,11 +2975,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <BookShelfScreen
       v-else-if="currentPage === 'bookshelf' && !currentBook"
       @back="goHome"
-      @open-book="
-        (book) => {
-          currentBook = book;
-        }
-      "
+      @open-book="openBookFromShelf"
     />
 
     <!-- 閱讀器 -->

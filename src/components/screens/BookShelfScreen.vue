@@ -3,15 +3,15 @@ import { db, DB_STORES } from "@/db/database";
 import { useBooksStore } from "@/stores/books";
 import { useCharactersStore } from "@/stores/characters";
 import { useUserStore } from "@/stores/user";
-import type { CompanionChatState, StoredBook } from "@/types/book";
+import type { BookMeta, CompanionChatState } from "@/types/book";
 import type { StoredCharacter } from "@/types/character";
-import { bookPercent } from "@/utils/bookReading";
+import { bookPercentFromLengths } from "@/utils/bookReading";
 import { ArrowLeft, BookOpen, ChevronDown, Plus, Trash2, User, X } from "lucide-vue-next";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
 const emit = defineEmits<{
   back: [];
-  openBook: [book: StoredBook];
+  openBook: [book: BookMeta];
 }>();
 
 const booksStore = useBooksStore();
@@ -44,7 +44,7 @@ const greeting = (() => {
 })();
 
 // ===== 書與進度 =====
-function lastReadAt(book: StoredBook): number {
+function lastReadAt(book: BookMeta): number {
   return booksStore.progressByBook[book.id]?.lastReadAt ?? 0;
 }
 
@@ -55,13 +55,13 @@ const sortedBooks = computed(() =>
 );
 
 /** 沒讀過回傳 null */
-function percentOf(book: StoredBook): number | null {
+function percentOf(book: BookMeta): number | null {
   const p = booksStore.progressByBook[book.id];
   if (!p) return null;
-  return p.percent ?? bookPercent(book.chapters, p.chapterIndex, 0);
+  return p.percent ?? bookPercentFromLengths(book.chapterLengths, p.chapterIndex, p.charOffset ?? 0);
 }
 
-function progressLabel(book: StoredBook): string {
+function progressLabel(book: BookMeta): string {
   const pct = percentOf(book);
   if (pct === null) return "未開始";
   if (pct >= 100) return "讀完了";
@@ -74,7 +74,7 @@ const heroChapterTitle = computed(() => {
   const book = heroBook.value;
   if (!book) return "";
   const index = booksStore.progressByBook[book.id]?.chapterIndex ?? 0;
-  return book.chapters[index]?.title ?? "";
+  return book.chapterTitles[index] ?? "";
 });
 
 const subtitle = computed(() => {
@@ -115,7 +115,7 @@ function hashHue(text: string): number {
   return h;
 }
 
-function spineStyle(book: StoredBook) {
+function spineStyle(book: BookMeta) {
   const hue = hashHue(book.title);
   return {
     background: `hsl(${hue} 30% 80%)`,
@@ -170,7 +170,7 @@ onUnmounted(() => {
 });
 
 // ===== 書格點擊 =====
-async function handleTile(book: StoredBook) {
+async function handleTile(book: BookMeta) {
   if (!isManaging.value) {
     emit("openBook", book);
     return;
