@@ -80,3 +80,31 @@ describe("群聊提示詞強制重置引導", () => {
     expect(reloaded.needsGroupChatPromptReset).toBe(false);
   });
 });
+
+describe("已停用的群聊必要條目", () => {
+  beforeEach(() => {
+    storage.clear();
+    setActivePinia(createPinia());
+  });
+
+  it("載入舊設定時移除「角色設定」，其他條目保留", async () => {
+    const config = createDefaultPromptManagerConfig();
+    config.groupChatPrompts = [
+      ...config.groupChatPrompts!,
+      { ...GROUP_CHAT_PROMPT_DEFINITIONS[0], identifier: "gcCharacterSettings", name: "角色設定", locked: true, isDeletable: false },
+    ];
+    config.groupChatPromptOrder = [
+      ...config.groupChatPromptOrder!,
+      { identifier: "gcCharacterSettings", enabled: true },
+    ];
+    storage.set("promptManagerConfig", config);
+
+    const store = usePromptManagerStore();
+    await store.loadConfig();
+
+    expect(store.config.groupChatPrompts!.map((p) => p.identifier)).not.toContain("gcCharacterSettings");
+    expect(store.config.groupChatPromptOrder!.map((e) => e.identifier)).not.toContain("gcCharacterSettings");
+    expect(store.config.groupChatPrompts).toHaveLength(GROUP_CHAT_PROMPT_DEFINITIONS.length);
+    expect(store.config.groupChatPromptOrder).toHaveLength(DEFAULT_GROUP_CHAT_PROMPT_ORDER.length);
+  });
+});

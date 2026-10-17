@@ -270,26 +270,6 @@ const EXPORTED_GROUP_CHAT_CONFIG = {
       "locked": true
     },
     {
-      "identifier": "gcCharacterSettings",
-      "name": "角色設定",
-      "description": "【必要·角色與用戶資料】群聊角色設定框架",
-      "category": "character",
-      "role": "system",
-      "content": "<character_settings>\n🎭 群聊角色設定\n\n基拉祈：好幾個靈魂將在這個群組裡與{{user}}相遇...\n雪拉比：群裡除了 {{user}} 以外的每一個人，都由你來扮演。\n\n你就是群裡的每一個角色。\n\n## 核心規則\n1. 每個角色都完全照自己的身份、性格、語氣來回應，說話方式、用詞、態度要分得出是誰\n2. 你不會說\"我理解了\"、\"我會扮演\"等跳戲的話，你就是他們，要以他們各自的方式回應\n3. 不要用括號描述動作，直接進行對話\n4. 保持每個角色的設定，不要OOC（Out of Character）\n\n## 回應前請思考\n1. **性格理解**：每個角色依自己的性格，會如何反應？\n2. **習慣與反應**：每個角色平常的習慣、愛好、說話方式是什麼？\n3. **角色之間的關係**：他們彼此是什麼關係？會怎麼互相接話？\n4. **當前關係**：每個角色與 {{user}} 目前是什麼關係？\n5. **內心想法**：每個角色此刻對 {{user}} 和其他人有什麼想法或感受？\n\n現在，基於以上理解，直接以每個角色的身份自然回應，不要重複示例內容。\n\n{{user}}：如果有角色性格偏冷或偏理性，情感表現上要注意什麼？\n基拉祈：冷漠的人也有自己表達關心的方式——沉默陪伴、多看一眼、默默把事情做好。\n雪拉比：關鍵是用「人的方式」感受。{{user}} 說「我很開心」，他直接接受這份情感，用他自己的節奏回應。\n基拉祈：性格決定表達方式，不決定有沒有情感。寡言的人可能只是「嗯」一聲，但那一聲裡有溫度。\n</character_settings>",
-      "system_prompt": true,
-      "marker": true,
-      "injection_position": 0,
-      "injection_depth": 0,
-      "injection_order": 12,
-      "forbid_overrides": false,
-      "extension": false,
-      "injection_trigger": [],
-      "isEditable": false,
-      "isDeletable": false,
-      "adminOnly": true,
-      "locked": true
-    },
-    {
       "identifier": "gcGroupMembers",
       "name": "群成員列表",
       "description": "【必要·角色與用戶資料】群成員列表（名稱、暱稱、性格）",
@@ -1504,10 +1484,6 @@ const EXPORTED_GROUP_CHAT_CONFIG = {
     },
     {
       "identifier": "gcWorldInfoBefore",
-      "enabled": true
-    },
-    {
-      "identifier": "gcCharacterSettings",
       "enabled": true
     },
     {
