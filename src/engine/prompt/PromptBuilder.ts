@@ -272,6 +272,8 @@ export interface PromptBuilderOptions {
   }>;
   /** 聊天勿擾模式（開啟時會在提示詞中告知 AI 用戶很忙） */
   doNotDisturb?: boolean;
+  /** 角色目前的狀態文字（用於 {{charStatus}} 宏，顯示在聊天頂欄角色名字下方） */
+  charStatus?: string;
   /** 表情包列表（用於 {{stickerList}} 宏） */
   stickerList?: string[];
   /** 面對面模式（開啟時使用面對面模式的提示詞） */
@@ -626,6 +628,7 @@ export class PromptBuilder {
         readingBookTitle: options.companionReading?.bookTitle || "",
         readingWindow: options.companionReading?.readingWindow || "（還沒開始讀）",
         readingSummaries: options.companionReading?.readingSummaries || "（還沒有摘要）",
+        charStatus: options.charStatus || "還沒設定",
         ...phoneContextVars,
       },
     });
@@ -775,6 +778,7 @@ export class PromptBuilder {
         readingBookTitle: options.companionReading?.bookTitle || "",
         readingWindow: options.companionReading?.readingWindow || "（還沒開始讀）",
         readingSummaries: options.companionReading?.readingSummaries || "（還沒有摘要）",
+        charStatus: options.charStatus || "還沒設定",
         ...phoneContextVars,
       },
     });

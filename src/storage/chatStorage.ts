@@ -71,6 +71,13 @@ export async function saveChatMetadata(chat: Chat): Promise<void> {
   if (existing?.chatVariables && !nextChat.chatVariables) {
     nextChat.chatVariables = existing.chatVariables;
   }
+  // 角色狀態可能由主動訊息在背景寫入，畫面上較舊的快照不能蓋掉它
+  if (
+    existing?.charStatus &&
+    (existing.charStatus.updatedAt || 0) > (nextChat.charStatus?.updatedAt || 0)
+  ) {
+    nextChat.charStatus = existing.charStatus;
+  }
   await db.put(DB_STORES.CHATS, nextChat);
   scheduleSelfHostedAutoSync();
 }

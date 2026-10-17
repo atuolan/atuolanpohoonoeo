@@ -1151,6 +1151,15 @@ export interface Chat {
   coupleAvatarLibrary?: CoupleAvatarEntry[];
   /** 當前啟用的情頭 ID（null = 未啟用） */
   activeCoupleAvatarId?: string | null;
+
+  /** 角色狀態（AI 用 <char-status> 更新，顯示在聊天頂欄角色名字下方） */
+  charStatus?: CharStatus;
+}
+
+/** 角色狀態文字；updatedAt 用來在多處同時寫入時保留較新的一筆 */
+export interface CharStatus {
+  text: string;
+  updatedAt: number;
 }
 
 // ===== 聊天設定 =====

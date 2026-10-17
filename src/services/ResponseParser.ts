@@ -128,6 +128,10 @@ export interface ParsedResponse {
   hasCharLocation?: boolean;
   /** 角色位置推測資料 */
   charLocationData?: { location: string };
+  /** 是否有角色狀態更新 */
+  hasCharStatus?: boolean;
+  /** 角色狀態更新資料 */
+  charStatusData?: { text: string };
 }
 
 /**
@@ -1226,15 +1230,23 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     result.charLocationData = charLocationResult;
   }
 
+  // 11b. 檢查角色狀態標籤
+  const charStatusResult = parseCharStatusTag(rawResponse);
+  if (charStatusResult) {
+    result.hasCharStatus = true;
+    result.charStatusData = charStatusResult;
+  }
+
   // 12. 檢查放在 </content> 之後的模式切換請求標籤
   // <content> 外的文字不會進入 outputContent，因此這類系統控制標籤需要從 rawResponse 額外轉成卡片訊息。
   appendTopLevelModeRequestMessages(result.messages, rawResponse);
 
-  // 從所有訊息中移除 char-location 與時間控制標籤（模型偶爾會寫在 <content> 裡）
+  // 從所有訊息中移除 char-location、char-status 與時間控制標籤（模型偶爾會寫在 <content> 裡）
   for (const msg of result.messages) {
     if (msg.content) {
       msg.content = msg.content
         .replace(/<char-location\s+[^>]*?\s*\/?>(?:<\/char-location>)?/gi, "")
+        .replace(CHAR_STATUS_TAG_REGEX, "")
         .replace(/<time-(?:jump|advance)\s+[^>]*?\s*\/?>(?:<\/time-(?:jump|advance)>)?/gi, "")
         .trim();
     }
@@ -1863,6 +1875,38 @@ export function parseCharLocationTag(
   return { location: location.trim() };
 }
 
+/** 角色狀態最長字數；頂欄只有一行，太長的截掉 */
+export const CHAR_STATUS_MAX_LENGTH = 20;
+
+/**
+ * <char-status text="..."/>、<char-status text="..."></char-status>、<char-status>...</char-status>
+ * 第 1 組是屬性，第 2 組是包起來的文字
+ */
+const CHAR_STATUS_TAG_REGEX =
+  /<char-status(\s[^>]*?)?\s*(?:\/>|>([^<]*)<\/char-status>|>)/gi;
+
+/**
+ * 解析 char-status 標籤
+ * 支援格式：<char-status text="睡覺中"/>，也認得 status 屬性與包起來的文字
+ * 同一則回覆有多個時取最後一個
+ *
+ * @param rawResponse - 原始 AI 回覆
+ * @returns 解析後的狀態，沒有有效標籤則返回 null
+ */
+export function parseCharStatusTag(
+  rawResponse: string,
+): { text: string } | null {
+  let latest: string | null = null;
+  for (const match of rawResponse.matchAll(CHAR_STATUS_TAG_REGEX)) {
+    const attrs = match[1] ?? "";
+    const raw =
+      extractAttr(attrs, "text") ?? extractAttr(attrs, "status") ?? match[2] ?? "";
+    const text = raw.replace(/\s+/g, " ").trim().slice(0, CHAR_STATUS_MAX_LENGTH);
+    if (text) latest = text;
+  }
+  return latest ? { text: latest } : null;
+}
+
 /**
  * 解析 calendar-event 標籤（支援多個）
  * 支援格式：<calendar-event type="user" date="2026-02-14" title="情人節約會" description="一起去吃飯"/>
@@ -2274,7 +2318,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<plurk[\s>]|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<plurk[\s>]|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }

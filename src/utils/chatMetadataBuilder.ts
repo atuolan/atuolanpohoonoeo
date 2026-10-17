@@ -31,6 +31,7 @@ export interface BuildChatMetadataOptions {
   coupleAvatarLibrary: Chat["coupleAvatarLibrary"] | undefined;
   activeCoupleAvatarId: string | null;
   chatVariables: Chat["chatVariables"] | undefined;
+  charStatus: Chat["charStatus"] | undefined;
 }
 
 export function buildChatMetadataFromState(options: BuildChatMetadataOptions): Chat {
@@ -83,5 +84,6 @@ export function buildChatMetadataFromState(options: BuildChatMetadataOptions): C
     chatVariables: options.chatVariables
       ? JSON.parse(JSON.stringify(options.chatVariables))
       : undefined,
+    charStatus: options.charStatus ? { ...options.charStatus } : undefined,
   };
 }
