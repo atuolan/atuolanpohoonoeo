@@ -305,6 +305,7 @@ function turnBy(delta: 1 | -1) {
 
 function jumpToChapter(index: number) {
   closeSheet();
+  forgetCompanionPosition();
   run(async () => {
     await openChapter(index, "start");
     notifyCompanionPageTurn();
@@ -519,18 +520,21 @@ let companionSeenUpTo: number | null = null;
 let companionPendingUpTo: number | null = null;
 
 /**
- * 給伴讀角色的內容：從上次聊到的地方一直到這頁結尾，生成中多翻的頁下次一起講；
- * 至少帶最後 1500 字當上下文，最多 6000 字（太多就留後面，前面有分段摘要補）
+ * 給伴讀角色的內容：從上次聊到的地方一直到這頁結尾，翻了幾頁就送幾頁，不設上限；
+ * 生成中多翻的頁下次一起講。至少帶最後 1500 字當上下文，剛開始或跳轉後帶最後 3000 字
  */
 function companionWindow(): string {
   const chapters = props.book.chapters;
   const end = toGlobal(chapters, currentEnd());
-  let start = companionSeenUpTo === null ? end - 3000 : Math.min(companionSeenUpTo, end - 1500);
-  const clipped = start < end - 6000;
-  start = Math.max(0, start, end - 6000);
+  const start = Math.max(0, companionSeenUpTo === null ? end - 3000 : Math.min(companionSeenUpTo, end - 1500));
   companionPendingUpTo = end;
-  const text = textBetween(chapters, fromGlobal(chapters, start), fromGlobal(chapters, end));
-  return clipped ? `（中間略過一些，最後讀到的是這段）\n${text}` : text;
+  return textBetween(chapters, fromGlobal(chapters, start), fromGlobal(chapters, end));
+}
+
+/** 從目錄、劃線、摘要等跳過去：跳過的部分沒讀，不送給角色，從新位置重新算 */
+function forgetCompanionPosition() {
+  companionSeenUpTo = null;
+  companionPendingUpTo = null;
 }
 
 const companion = useCompanionChat({
@@ -784,6 +788,7 @@ async function deleteActiveHighlight() {
 
 function jumpToHighlight(h: BookHighlight) {
   closeSheet();
+  forgetCompanionPosition();
   run(() => openChapter(chapterIndexOf(h), { offset: h.start }));
 }
 
@@ -967,6 +972,7 @@ const summaryDraft = ref({ title: "", content: "" });
 
 function jumpToSummary(s: BookSummary) {
   closeSheet();
+  forgetCompanionPosition();
   run(() => openChapter(s.from.chapterIndex, { offset: s.from.charOffset }));
 }
 
@@ -1043,6 +1049,7 @@ function closeReview() {
 
 function jumpFromReview(item: ReviewItem) {
   closeReview();
+  forgetCompanionPosition();
   run(() => openChapter(item.card.chapterIndex, { offset: item.card.charOffset }));
 }
 
@@ -1334,6 +1341,7 @@ function closeCircle() {
 
 function jumpFromCircle(index: number, offset: number) {
   closeCircle();
+  forgetCompanionPosition();
   run(() => openChapter(index, { offset }));
 }
 
