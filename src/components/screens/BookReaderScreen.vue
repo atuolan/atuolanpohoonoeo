@@ -6,7 +6,8 @@ import BookPlayWhatIf from "@/components/books/BookPlayWhatIf.vue";
 import BookCircle from "@/components/books/BookCircle.vue";
 import BookReviewCards from "@/components/books/BookReviewCards.vue";
 import CompanionChatPanel from "@/components/common/CompanionChatPanel.vue";
-import { useCompanionChat } from "@/composables/useCompanionChat";
+import { companionStreamOwnerPrefix, useCompanionChat } from "@/composables/useCompanionChat";
+import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import { anchorAt, useReadingCircle, type CircleAnchor } from "@/composables/useReadingCircle";
 import { notedParagraphs, paraKey } from "@/services/bookCircle";
 import { useBooksStore } from "@/stores/books";
@@ -26,6 +27,7 @@ import {
   sortSummaries,
   splitRange,
   summarizeRange,
+  textBetween,
   toGlobal,
 } from "@/services/bookSummary";
 import {
@@ -511,12 +513,41 @@ function readingWindow(): string {
   return `【${chapter.title}】\n${start > 0 ? "……" : ""}${text}`;
 }
 
+/** 角色上次成功回話時讀到的位置（這次打開書期間有效） */
+let companionSeenUpTo: number | null = null;
+/** 這次生成送出去的內容讀到哪（回話成功才算數） */
+let companionPendingUpTo: number | null = null;
+
+/**
+ * 給伴讀角色的內容：從上次聊到的地方一直到這頁結尾，生成中多翻的頁下次一起講；
+ * 至少帶最後 1500 字當上下文，最多 6000 字（太多就留後面，前面有分段摘要補）
+ */
+function companionWindow(): string {
+  const chapters = props.book.chapters;
+  const end = toGlobal(chapters, currentEnd());
+  let start = companionSeenUpTo === null ? end - 3000 : Math.min(companionSeenUpTo, end - 1500);
+  const clipped = start < end - 6000;
+  start = Math.max(0, start, end - 6000);
+  companionPendingUpTo = end;
+  const text = textBetween(chapters, fromGlobal(chapters, start), fromGlobal(chapters, end));
+  return clipped ? `（中間略過一些，最後讀到的是這段）\n${text}` : text;
+}
+
 const companion = useCompanionChat({
   book: toRef(props, "book"),
   currentChapterIndex: chapterIndex,
-  getReadingWindow: readingWindow,
+  getReadingWindow: companionWindow,
   getReadingSummaries: () => readingSummariesText(props.book.chapters, summaries.value, currentEnd(), 5),
+  onReplied: () => {
+    if (companionPendingUpTo !== null) companionSeenUpTo = companionPendingUpTo;
+  },
 });
+// 閱讀器開著時，伴讀的串流由打字泡泡顯示，全局貼邊按鈕不用浮出來
+const uncoverCompanionStream = useStreamingWindow().coverOwner(companionStreamOwnerPrefix(props.book.id));
+
+function openCompanionStream() {
+  if (!companion.openStream()) showToast("這次的輸出已經不在視窗裡了");
+}
 
 const companionCharacter = computed(() =>
   companion.selectedCharacterId.value
@@ -1411,6 +1442,7 @@ onUnmounted(() => {
   resizeObserver?.disconnect();
   cancelAnimationFrame(resizeFrame);
   companion.endSession();
+  uncoverCompanionStream();
 });
 
 watch(
@@ -1771,6 +1803,7 @@ watch(
           @stop="stopCompanion"
           @send="companion.sendMessage"
           @update:trigger-frequency="companion.setTriggerFrequency"
+          @open-stream="openCompanionStream"
         />
 
         <!-- 選伴讀角色 -->

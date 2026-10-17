@@ -36,6 +36,7 @@ const view = computed(() =>
     callTaskId: callTaskId.value,
     overlayOpen: (phoneCallStore.isActive && phoneCallStore.isExpanded) || streamingWindow.isVisible.value,
     streamingInProgress: streamingWindow.isStreaming.value,
+    streamingCovered: streamingWindow.isOwnerCovered.value,
   }),
 );
 

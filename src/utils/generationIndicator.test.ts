@@ -71,4 +71,9 @@ describe("resolveGenerationIndicator", () => {
     });
     expect(view.visible).toBe(false);
   });
+
+  it("串流畫面上已經看得到（閱讀器裡的伴讀）就不浮出來；離開閱讀器才提示", () => {
+    expect(resolveGenerationIndicator({ ...base, streamingInProgress: true, streamingCovered: true }).visible).toBe(false);
+    expect(resolveGenerationIndicator({ ...base, streamingInProgress: true, streamingCovered: false }).visible).toBe(true);
+  });
 });

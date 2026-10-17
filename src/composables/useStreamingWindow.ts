@@ -83,6 +83,11 @@ const activeOwnerId = ref<string | null>(null);
  */
 const activeOwnerChatId = ref<string | null>(null);
 let stopAbortCleanup: (() => void) | null = null;
+/**
+ * 畫面上已經看得到狀態的擁有者前綴（例如閱讀器開著時的伴讀「companion:書id」）。
+ * 擁有者 id 以其中之一開頭時，全局貼邊按鈕不必再提示這輪串流。
+ */
+const coveredOwnerPrefixes = ref<string[]>([]);
 
 /** 「查看上次輸出」的狀態：live 這個聊天正在用視窗、snapshot 有存下的回覆、busy 別的任務正在串流、none 沒有 */
 export type LastOutputState = "live" | "snapshot" | "busy" | "none";
@@ -289,6 +294,20 @@ export function useStreamingWindow() {
    * 追加 token 到內容
    * @param ownerId 呼叫端的生成任務 ID；與當前擁有者不符時丟棄這個 token
    */
+  /** 標記某類擁有者的串流畫面上看得到（回傳取消標記的函式） */
+  function coverOwner(prefix: string): () => void {
+    coveredOwnerPrefixes.value = [...coveredOwnerPrefixes.value, prefix];
+    return () => {
+      const i = coveredOwnerPrefixes.value.indexOf(prefix);
+      if (i >= 0) coveredOwnerPrefixes.value = coveredOwnerPrefixes.value.filter((_, k) => k !== i);
+    };
+  }
+
+  const isOwnerCovered = computed(() => {
+    const owner = activeOwnerId.value;
+    return !!owner && coveredOwnerPrefixes.value.some((p) => owner.startsWith(p));
+  });
+
   function appendToken(token: string, ownerId?: string) {
     if (!isOwnedBy(ownerId)) return;
     tokenCount.value++;
@@ -643,6 +662,8 @@ export function useStreamingWindow() {
     isOwnedBy,
     getOwnedContent,
     releaseOwnership,
+    coverOwner,
+    isOwnerCovered,
 
     // 查看上次輸出
     getLastOutputState,

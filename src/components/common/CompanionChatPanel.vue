@@ -28,6 +28,8 @@ const emit = defineEmits<{
   (e: "stop"): void;
   (e: "send", content: string): void;
   (e: "update:triggerFrequency", value: number): void;
+  /** 點打字泡泡：打開串流視窗 */
+  (e: "open-stream"): void;
 }>();
 
 const inputText = ref("");
@@ -186,9 +188,10 @@ onMounted(scrollToBottom);
           <img v-if="characterAvatar" :src="characterAvatar" alt="" />
           <span v-else>{{ avatarInitial }}</span>
         </span>
-        <div class="cc-bubble cc-typing" aria-label="正在輸入">
-          <i /><i /><i />
-        </div>
+        <button type="button" class="cc-bubble cc-typing" aria-label="正在輸入，點一下看即時輸出" @click="emit('open-stream')">
+          <span class="cc-dots" aria-hidden="true"><i /><i /><i /></span>
+          <span class="cc-typing-hint">點我看即時輸出</span>
+        </button>
       </div>
 
       <p v-if="error && !isGenerating" class="cc-error" role="alert">
@@ -471,8 +474,28 @@ onMounted(scrollToBottom);
 
 .cc-typing {
   display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+
+  &:hover .cc-typing-hint {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+.cc-typing-hint {
+  font-size: 12px;
+  color: var(--cc-sub);
+}
+
+.cc-dots {
+  display: flex;
   gap: 4px;
-  padding: 14px 16px;
 
   i {
     width: 6px;

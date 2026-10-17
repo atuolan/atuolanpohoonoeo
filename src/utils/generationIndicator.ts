@@ -16,6 +16,8 @@ export interface GenerationIndicatorContext<T extends IndicatorTask> {
   overlayOpen: boolean;
   /** 串流視窗正在串流 */
   streamingInProgress: boolean;
+  /** 這輪串流的狀態畫面上已經看得到（例如閱讀器裡的伴讀打字泡泡） */
+  streamingCovered?: boolean;
 }
 
 export interface GenerationIndicatorView<T extends IndicatorTask> {
@@ -38,6 +40,6 @@ export function resolveGenerationIndicator<T extends IndicatorTask>(
 ): GenerationIndicatorView<T> {
   if (ctx.overlayOpen) return { visible: false, tasks: [] };
   const tasks = ctx.activeTasks.filter((task) => !isCovered(task, ctx));
-  const untrackedStreaming = ctx.streamingInProgress && ctx.activeTasks.length === 0;
+  const untrackedStreaming = ctx.streamingInProgress && !ctx.streamingCovered && ctx.activeTasks.length === 0;
   return { visible: tasks.length > 0 || untrackedStreaming, tasks };
 }
