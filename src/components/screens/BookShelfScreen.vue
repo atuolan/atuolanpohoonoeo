@@ -12,8 +12,10 @@ import {
   readingStreak,
 } from "@/utils/bookReading";
 import { generateRecap } from "@/services/BookAIService";
+import BookReviewCards from "@/components/books/BookReviewCards.vue";
+import { dueCards, type ReviewItem } from "@/services/bookReview";
 import { recapSource, summariesBefore } from "@/services/bookSummary";
-import { ArrowLeft, BookOpen, ChevronDown, Plus, Trash2, User, X } from "lucide-vue-next";
+import { ArrowLeft, BookOpen, ChevronDown, Layers, Plus, Trash2, User, X } from "lucide-vue-next";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
 const emit = defineEmits<{
@@ -141,6 +143,33 @@ const heroSummaryTitle = computed(() => {
   const pos = { chapterIndex: p.chapterIndex, charOffset: (p.charOffset ?? 0) + 1500 };
   return summariesBefore(p.summaries, pos, 1)[0]?.title ?? "";
 });
+
+// ===== 回顧卡（跨所有書） =====
+const reviewItems = ref<ReviewItem[] | null>(null);
+
+const dueItems = computed<ReviewItem[]>(() => {
+  const now = Date.now();
+  const items: ReviewItem[] = [];
+  for (const book of booksStore.books) {
+    const p = booksStore.progressByBook[book.id];
+    for (const card of dueCards(p?.cards, now)) {
+      const h = card.highlightId ? p?.highlights?.find((x) => x.id === card.highlightId) : undefined;
+      items.push({
+        bookId: book.id,
+        bookTitle: book.title,
+        chapterTitle: book.chapterTitles[card.chapterIndex] || `第 ${card.chapterIndex + 1} 章`,
+        card,
+        note: h?.note?.trim() ? { text: h.note.trim(), at: h.createdAt } : undefined,
+      });
+    }
+  }
+  return items.sort((a, b) => a.card.dueAt - b.card.dueAt);
+});
+
+/** 打開時拍下到期的卡，複習中自評寫回紀錄也不會讓清單變動 */
+function openDueReview() {
+  reviewItems.value = [...dueItems.value];
+}
 
 // ===== 三句接上 =====
 const isRecapping = ref(false);
@@ -342,6 +371,9 @@ function handleSelectPersona(personaId: string) {
               <span>今天 {{ todayMinutes }} / {{ goalMinutes }} 分鐘</span>
             </button>
             <span v-if="streak > 0" class="bs-streak">連讀 {{ streak }} 天</span>
+            <button v-if="dueItems.length > 0" class="bs-review-btn" @click="openDueReview">
+              <Layers :size="16" />今天要複習 {{ dueItems.length }} 張
+            </button>
           </div>
           <div v-if="showGoalPicker" class="bs-goal-picker" role="radiogroup" aria-label="每日目標">
             <span class="bs-goal-label">每天讀</span>
@@ -487,6 +519,17 @@ function handleSelectPersona(personaId: string) {
         </section>
       </div>
     </div>
+
+    <Transition name="bs-fade">
+      <BookReviewCards
+        v-if="reviewItems"
+        class="bs-review"
+        :items="reviewItems"
+        mode="review"
+        :heading="`今天要複習 ${reviewItems.length} 張`"
+        @close="reviewItems = null"
+      />
+    </Transition>
 
     <Transition name="bs-fade">
       <div v-if="isDragging" class="bs-drop" aria-hidden="true">
@@ -750,6 +793,36 @@ button {
   background: var(--bs-hero);
   font-size: 13px;
   font-weight: 700;
+}
+
+.bs-review-btn {
+  height: 36px;
+  padding: 0 14px 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: 18px;
+  background: var(--bs-accent);
+  color: var(--bs-on-accent);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+// 複習畫面沿用閱讀器的 --rd-* 變數；書房背景可能半透明，疊兩層讓下面的書架不透出來
+.bookshelf-screen .bs-review {
+  --rd-bg: var(--bs-bg);
+  --rd-text: var(--bs-text);
+  --rd-sub: var(--bs-sub);
+  --rd-line: var(--bs-line);
+  --rd-raise: var(--bs-raise);
+  --rd-accent: var(--bs-accent);
+  --rd-on-accent: var(--bs-on-accent);
+  z-index: 40;
+  background:
+    linear-gradient(var(--bs-bg), var(--bs-bg)),
+    linear-gradient(var(--bs-bg), var(--bs-bg));
 }
 
 .bs-goal-picker {
