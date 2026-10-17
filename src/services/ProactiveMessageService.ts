@@ -1177,6 +1177,7 @@ export class ProactiveMessageService {
         ongoingCallContext,
         gamePlayingContext: options?.gamePlayingContext,
         socialPosts: await getSocialPostsForPrompt([character.id]),
+        charStatus: chat.charStatus?.text,
       });
 
       const promptData = await promptBuilder.build();
@@ -1518,6 +1519,23 @@ export class ProactiveMessageService {
               }
             } catch (error) {
               console.error("[ProactiveMessage] 角色位置更新失敗:", error);
+            }
+          }
+
+          // 處理角色狀態標籤（要在追加訊息之前寫入，聊天頁收到追加事件重新載入時才讀得到）
+          if (
+            parsedResponse.hasCharStatus &&
+            parsedResponse.charStatusData &&
+            parsedResponse.charStatusData.text !== chat.charStatus?.text
+          ) {
+            try {
+              const { saveCharStatus } = await import("@/services/charStatus");
+              await saveCharStatus(chat.id, {
+                text: parsedResponse.charStatusData.text,
+                updatedAt: Date.now(),
+              });
+            } catch (error) {
+              console.error("[ProactiveMessage] 角色狀態更新失敗:", error);
             }
           }
 

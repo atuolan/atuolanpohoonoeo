@@ -103,3 +103,27 @@ describe("chat TTS language persistence", () => {
     expect((await loadChatById(first.id))?.minimaxTTSOverride?.languageBoost).toBeUndefined();
   });
 });
+
+describe("saveChatMetadata 角色狀態", () => {
+  beforeEach(() => {
+    dbGet.mockReset();
+    dbPut.mockReset();
+  });
+
+  it("資料庫裡的狀態比較新時保留資料庫的", async () => {
+    dbGet.mockResolvedValue({ ...createChat(), charStatus: { text: "睡覺中", updatedAt: 200 } });
+
+    await saveChatMetadata({ ...createChat(), charStatus: { text: "在線", updatedAt: 100 } });
+    expect(dbPut.mock.calls[0][1].charStatus).toEqual({ text: "睡覺中", updatedAt: 200 });
+
+    await saveChatMetadata(createChat());
+    expect(dbPut.mock.calls[1][1].charStatus).toEqual({ text: "睡覺中", updatedAt: 200 });
+  });
+
+  it("新的狀態會寫進去", async () => {
+    dbGet.mockResolvedValue({ ...createChat(), charStatus: { text: "睡覺中", updatedAt: 200 } });
+
+    await saveChatMetadata({ ...createChat(), charStatus: { text: "起床了", updatedAt: 300 } });
+    expect(dbPut.mock.calls[0][1].charStatus).toEqual({ text: "起床了", updatedAt: 300 });
+  });
+});

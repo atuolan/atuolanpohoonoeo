@@ -682,6 +682,16 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
             }
           }
         }
+
+        // 角色狀態插在角色位置更新後面，跟其他放在 </content> 之後的動作放一起
+        const onlineContent = stored.prompts[onlineModeIndex].content;
+        const charStatusLine = defaultOnlineMode.content.match(/[^\n]*<char-status[^\n]*/)?.[0];
+        if (charStatusLine && !onlineContent.includes("<char-status")) {
+          const anchor = onlineContent.match(/[^\n]*<char-location[^\n]*/)?.[0];
+          stored.prompts[onlineModeIndex].content = anchor
+            ? onlineContent.replace(anchor, () => `${anchor}\n${charStatusLine}`)
+            : `${onlineContent}\n${charStatusLine}`;
+        }
       }
     }
 

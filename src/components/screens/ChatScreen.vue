@@ -200,6 +200,7 @@ import type {
   ChatAppearance,
   ChatLocationOverride,
   ChatMessage,
+  CharStatus,
   ForwardedFrom,
   GenerationDiagnostics,
   GenerationContaminationProbeResult,
@@ -229,6 +230,7 @@ import {
   convertToStorableMessage as mapToStorableMessage,
 } from "@/utils/chatMessageMapping";
 import { buildChatMetadataFromState } from "@/utils/chatMetadataBuilder";
+import { saveCharStatus } from "@/services/charStatus";
 import { createGreetingMessages } from "@/utils/chatGreetingMessages";
 import {
   loadAndRepairChatMessages,
@@ -2056,6 +2058,9 @@ const userAvatarOverride = ref<string | undefined>(undefined);
 // ===== 情頭系統 =====
 const coupleAvatarLibrary = ref<import('@/types/chat').CoupleAvatarEntry[]>([]);
 const activeCoupleAvatarId = ref<string | null>(null);
+
+// ===== 角色狀態（AI 用 <char-status> 更新，顯示在頂欄名字下方） =====
+const charStatus = ref<CharStatus | null>(null);
 
 async function handleChangeChatUserAvatar(avatar: string | undefined) {
   userAvatarOverride.value = avatar;
@@ -4930,6 +4935,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       })(),
       // 傳入勿擾模式狀態
       doNotDisturb: chatDoNotDisturb.value,
+      // 傳入角色目前的狀態（{{charStatus}}）
+      charStatus: charStatus.value?.text,
       // 傳入表情包列表
       stickerList: stickerNames,
       // 傳入面對面模式狀態
@@ -6307,6 +6314,11 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               console.log("[ChatScreen][render] await handleCharLocationUpdate");
               await handleCharLocationUpdate(parsed.charLocationData.location);
               console.log("[ChatScreen][render] handleCharLocationUpdate 完成");
+            }
+
+            // 處理角色狀態標籤
+            if (parsed.hasCharStatus && parsed.charStatusData) {
+              await handleCharStatusUpdate(parsed.charStatusData.text);
             }
 
             // 處理行事曆事件標籤（經期紀錄工具做不到，照常執行）
@@ -8372,6 +8384,9 @@ async function loadOrCreateChat(overrideChatId?: string) {
         coupleAvatarLibrary.value = chat.coupleAvatarLibrary ?? [];
         activeCoupleAvatarId.value = chat.activeCoupleAvatarId ?? null;
 
+        // 載入角色狀態
+        charStatus.value = chat.charStatus ?? null;
+
         // 載入總結設定
         if (chat.summarySettings) {
           chatSummarySettings.value = { ...chat.summarySettings };
@@ -8700,6 +8715,7 @@ function buildChatMetadata(
     coupleAvatarLibrary:
       coupleAvatarLibrary.value.length > 0 ? coupleAvatarLibrary.value : undefined,
     activeCoupleAvatarId: activeCoupleAvatarId.value,
+    charStatus: charStatus.value ?? undefined,
   });
 }
 
@@ -8859,6 +8875,22 @@ async function handleScheduleCall(data: ScheduleCallData) {
       reason: data.reason,
       triggerTime: new Date(pendingCall.triggerTime).toLocaleString(),
     });
+  }
+}
+
+// ===== 角色狀態處理 =====
+
+async function handleCharStatusUpdate(text: string) {
+  const chatId = currentChatId.value;
+  if (!chatId || isGroupChat.value) return;
+  if (charStatus.value?.text === text) return;
+
+  const status: CharStatus = { text, updatedAt: Date.now() };
+  charStatus.value = status;
+  try {
+    await saveCharStatus(chatId, status);
+  } catch (error) {
+    console.error("[ChatScreen] 角色狀態儲存失敗:", error);
   }
 }
 
@@ -9614,6 +9646,7 @@ useChatCleanup({
       :can-open-streaming-window="canOpenStreamingWindow"
       :last-output-state="lastOutputState"
       :group-member-count="groupMemberCount"
+      :character-status="charStatus?.text"
       :show-rail="showRail"
       :current-user-avatar="userStore.currentAvatar"
       :current-user-name="userStore.currentName"

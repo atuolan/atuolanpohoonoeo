@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted, onUnmounted } from "vue";
 import { useCanvasStore } from "@/stores/canvas";
 import { useWidgetCharacter } from "@/composables/useWidgetCharacter";
+import {
+  CHAR_STATUS_CHANGED_EVENT,
+  type CharStatusChangedDetail,
+} from "@/services/charStatus";
 import type { WidgetCustomStyle } from "@/types";
 
 const props = defineProps<{
@@ -20,12 +24,31 @@ const emit = defineEmits<{
 
 const canvasStore = useCanvasStore();
 const dataRef = computed(() => props.data);
-const { character, displayName, avatar, description, tags, metrics } =
+const { character, displayName, avatar, description, tags, metrics, preferredChat } =
   useWidgetCharacter(dataRef);
 
 const layout = computed(() => props.data?.layout || "card");
 const isEditMode = computed(() => canvasStore.isEditMode);
-const statusText = computed(() => props.data?.statusText || "在線");
+// 優先顯示 AI 在聊天裡設的狀態，沒有才用組件設定的文字
+const statusText = computed(
+  () => preferredChat.value?.charStatus?.text || props.data?.statusText || "在線",
+);
+
+// 聊天裡狀態變了就即時更新（主畫面不會重新載入聊天）
+function handleCharStatusChanged(ev: Event) {
+  const { chatId, status } = (ev as CustomEvent<CharStatusChangedDetail>).detail;
+  const chat = preferredChat.value;
+  if (!chat || chat.id !== chatId) return;
+  preferredChat.value = { ...chat, charStatus: status };
+}
+
+onMounted(() => {
+  window.addEventListener(CHAR_STATUS_CHANGED_EVENT, handleCharStatusChanged);
+});
+
+onUnmounted(() => {
+  window.removeEventListener(CHAR_STATUS_CHANGED_EVENT, handleCharStatusChanged);
+});
 
 // 取前兩個指標做迷你顯示
 const miniMetrics = computed(() => metrics.value.slice(0, 2));
