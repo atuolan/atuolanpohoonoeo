@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import BookPlayDuel from "@/components/books/BookPlayDuel.vue";
+import BookPlayPet from "@/components/books/BookPlayPet.vue";
+import BookPlaySummon from "@/components/books/BookPlaySummon.vue";
+import BookPlayWhatIf from "@/components/books/BookPlayWhatIf.vue";
 import CompanionChatPanel from "@/components/common/CompanionChatPanel.vue";
 import { useCompanionChat } from "@/composables/useCompanionChat";
 import { useBooksStore } from "@/stores/books";
@@ -27,9 +31,13 @@ import {
   Minus,
   NotebookPen,
   Plus,
+  Sparkles,
+  Swords,
   Trash2,
   Users,
+  WandSparkles,
   X,
+  Egg,
 } from "lucide-vue-next";
 import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch } from "vue";
 
@@ -320,6 +328,10 @@ function handleTapNavigation(e: MouseEvent) {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  if (playMode.value) {
+    if (e.key === "Escape") closePlay();
+    return;
+  }
   if (sheet.value) {
     if (e.key === "Escape") closeSheet();
     return;
@@ -336,7 +348,7 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 // ===== 抽屜 =====
-type SheetKind = "toc" | "settings" | "companion" | "picker" | "highlight";
+type SheetKind = "toc" | "settings" | "companion" | "picker" | "highlight" | "play";
 const sheet = ref<SheetKind | null>(null);
 const tocListEl = ref<HTMLElement | null>(null);
 const tocTab = ref<"chapters" | "notes">("chapters");
@@ -347,7 +359,33 @@ const SHEET_LABELS: Record<SheetKind, string> = {
   companion: "伴讀聊天",
   picker: "選擇伴讀角色",
   highlight: "劃線與筆記",
+  play: "好玩模式",
 };
+
+// ===== 好玩模式 =====
+type PlayMode = "summon" | "pet" | "duel" | "whatif";
+const playMode = ref<PlayMode | null>(null);
+/** 打開時當下讀到的內容（給 AI 用，避免劇透） */
+const playReadingText = ref("");
+const playPosition = ref({ chapterIndex: 0, charOffset: 0 });
+
+const PLAY_MODES: Array<{ id: PlayMode; title: string; desc: string }> = [
+  { id: "summon", title: "召喚作者", desc: "請作者本人出來聊這本書，還能叫人來抬槓" },
+  { id: "pet", title: "讀書靈獸", desc: "讀越多牠長越大，從魚卵一路長成大鵬" },
+  { id: "duel", title: "擂台", desc: "跟你的角色比答題，只考讀過的部分" },
+  { id: "whatif", title: "平行宇宙", desc: "如果劇情換個方向？AI 用原著筆調寫下去" },
+];
+
+function openPlay(mode: PlayMode) {
+  playReadingText.value = readingWindow();
+  playPosition.value = { chapterIndex: chapterIndex.value, charOffset: anchorOffset.value };
+  closeSheet();
+  playMode.value = mode;
+}
+
+function closePlay() {
+  playMode.value = null;
+}
 
 function openSheet(kind: SheetKind) {
   sheet.value = kind;
@@ -740,6 +778,9 @@ watch(
           <span class="rd-remaining">· {{ remainingText }}</span>
         </span>
       </div>
+      <button class="rd-icon-btn" aria-label="好玩模式" @click="openSheet('play')">
+        <Sparkles :size="21" />
+      </button>
       <button class="rd-icon-btn rd-aa" aria-label="排版設定" @click="openSheet('settings')">
         Aa
       </button>
@@ -1012,6 +1053,31 @@ watch(
           </div>
         </template>
 
+        <!-- 好玩模式 -->
+        <template v-else-if="sheet === 'play'">
+          <div class="rd-sheet-head">
+            <h3>好玩模式</h3>
+            <button class="rd-icon-btn" aria-label="關閉" @click="closeSheet">
+              <X :size="20" />
+            </button>
+          </div>
+          <p class="rd-sheet-hint">都只會用到你讀到這裡為止的內容，不會劇透。</p>
+          <div class="rd-play-list">
+            <button v-for="m in PLAY_MODES" :key="m.id" class="rd-play-item" @click="openPlay(m.id)">
+              <span class="rd-play-icon" aria-hidden="true">
+                <MessageCircle v-if="m.id === 'summon'" :size="20" />
+                <Egg v-else-if="m.id === 'pet'" :size="20" />
+                <Swords v-else-if="m.id === 'duel'" :size="20" />
+                <WandSparkles v-else :size="20" />
+              </span>
+              <span class="rd-play-text">
+                <span class="rd-play-title">{{ m.title }}</span>
+                <span class="rd-play-desc">{{ m.desc }}</span>
+              </span>
+            </button>
+          </div>
+        </template>
+
         <!-- 劃線與筆記 -->
         <template v-else-if="sheet === 'highlight' && activeHighlight">
           <div class="rd-sheet-head">
@@ -1046,6 +1112,32 @@ watch(
 
     <Transition name="rd-fade">
       <div v-if="toast" class="rd-toast" role="status">{{ toast }}</div>
+    </Transition>
+
+    <Transition name="rd-fade">
+      <BookPlaySummon
+        v-if="playMode === 'summon'"
+        :book="book"
+        :reading-text="playReadingText"
+        :user-name="userStore.currentName || '我'"
+        @close="closePlay"
+      />
+      <BookPlayPet v-else-if="playMode === 'pet'" @close="closePlay" />
+      <BookPlayDuel
+        v-else-if="playMode === 'duel'"
+        :book="book"
+        :reading-text="playReadingText"
+        :user-name="userStore.currentName || '我'"
+        @close="closePlay"
+      />
+      <BookPlayWhatIf
+        v-else-if="playMode === 'whatif'"
+        :book="book"
+        :reading-text="playReadingText"
+        :chapter-index="playPosition.chapterIndex"
+        :char-offset="playPosition.charOffset"
+        @close="closePlay"
+      />
     </Transition>
   </div>
 </template>
@@ -1916,5 +2008,62 @@ button {
   color: var(--rd-pill-text);
   font-size: 14px;
   pointer-events: none;
+}
+
+// ===== 好玩模式清單 =====
+.rd-play-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 4px;
+  overflow-y: auto;
+}
+
+.rd-play-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 72px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 20px;
+  background: var(--rd-raise);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--rd-line);
+  }
+}
+
+.rd-play-icon {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 22px;
+  background: var(--rd-accent);
+  color: var(--rd-on-accent);
+}
+
+.rd-play-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rd-play-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.rd-play-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--rd-sub);
 }
 </style>

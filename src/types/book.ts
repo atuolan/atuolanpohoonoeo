@@ -47,6 +47,29 @@ export interface BookReadingProgress {
   dailySeconds?: Record<string, number>;
   /** 劃線與筆記 */
   highlights?: BookHighlight[];
+  /** 好玩模式的紀錄 */
+  play?: {
+    summon?: {
+      author: string;
+      style: "original" | "modern";
+      guest?: string;
+      messages: Array<{ role: "user" | "author" | "guest"; name: string; content: string; timestamp: number }>;
+    };
+    whatIf?: {
+      chapterIndex: number;
+      charOffset: number;
+      branches: string[];
+      picked?: number;
+      story?: string;
+    };
+    duels?: Array<{
+      characterId: string;
+      characterName: string;
+      myScore: number;
+      rivalScore: number;
+      at: number;
+    }>;
+  };
   /** 上一次「三句接上」的結果（位置沒變就直接沿用） */
   lastRecap?: {
     chapterIndex: number;

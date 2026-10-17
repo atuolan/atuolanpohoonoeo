@@ -62,31 +62,28 @@ export function parseRecapLines(text: string): string[] {
     .slice(0, 3);
 }
 
-export async function generateRecap(
-  bookTitle: string,
-  chapters: BookChapter[],
-  chapterIndex: number,
-  charOffset: number,
-): Promise<string[]> {
-  const source = recapSourceText(chapters, chapterIndex, charOffset);
-  if (source.replace(/【[^】]*】/g, "").trim().length < 50) {
-    throw new Error("還沒讀到夠多內容，先讀幾頁吧");
-  }
-
+/**
+ * 呼叫 AI 拿回一段文字（串流收完再回傳），去掉思考標籤
+ * @param task 用哪個任務的 API 設定（有設定備用 API 時會走備用）
+ */
+export async function askAI(
+  messages: APIMessage[],
+  options: { task?: "summary" | "chat"; temperature?: number } = {},
+): Promise<string> {
   const { useSettingsStore } = await import("@/stores/settings");
   const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
-  const taskConfig = useSettingsStore().getAPIForTask("summary");
+  const taskConfig = useSettingsStore().getAPIForTask(options.task ?? "summary");
   if (!taskConfig.api.endpoint || !taskConfig.api.apiKey || !taskConfig.api.model) {
     throw new Error("請先在設定中配置 API");
   }
 
   const client = new OpenAICompatibleClient({ ...taskConfig.api });
   const stream = client.generateStream({
-    messages: buildRecapPrompt(bookTitle, source),
+    messages,
     settings: {
       maxContextLength: taskConfig.generation.maxContextLength || 200000,
       maxResponseLength: taskConfig.generation.maxTokens || 8192,
-      temperature: 0.6,
+      temperature: options.temperature ?? 0.7,
       topP: 0.9,
       frequencyPenalty: 0,
       presencePenalty: 0,
@@ -97,6 +94,7 @@ export async function generateRecap(
       ...pickGenerationToggles(taskConfig.generation),
     },
     apiSettings: taskConfig.api,
+    adjustLastMessageRole: true,
   });
 
   let content = "";
@@ -105,7 +103,43 @@ export async function generateRecap(
     else if (event.type === "done") content = event.content || content;
     else if (event.type === "error") throw new Error(String(event.error || "AI 沒有回應"));
   }
+  content = content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  if (!content) throw new Error("AI 沒有回應");
+  return content;
+}
 
+/** 從模型輸出撈出 JSON（容許前後有說明文字或 ```json 圍欄） */
+export function extractJson<T = unknown>(text: string): T | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
+  const candidates = [fenced, text];
+  for (const c of candidates) {
+    if (!c) continue;
+    const start = c.search(/[[{]/);
+    if (start < 0) continue;
+    const open = c[start];
+    const close = open === "[" ? "]" : "}";
+    const end = c.lastIndexOf(close);
+    if (end <= start) continue;
+    try {
+      return JSON.parse(c.slice(start, end + 1)) as T;
+    } catch {
+      // 試下一個
+    }
+  }
+  return null;
+}
+
+export async function generateRecap(
+  bookTitle: string,
+  chapters: BookChapter[],
+  chapterIndex: number,
+  charOffset: number,
+): Promise<string[]> {
+  const source = recapSourceText(chapters, chapterIndex, charOffset);
+  if (source.replace(/【[^】]*】/g, "").trim().length < 50) {
+    throw new Error("還沒讀到夠多內容，先讀幾頁吧");
+  }
+  const content = await askAI(buildRecapPrompt(bookTitle, source), { temperature: 0.6 });
   const lines = parseRecapLines(content);
   if (lines.length === 0) throw new Error("AI 沒有回應");
   return lines;
