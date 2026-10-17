@@ -1,302 +1,242 @@
 /**
  * BookService - 書籍導入與解析服務
- * 支援格式：TXT、EPUB、PDF
+ * 支援格式：TXT、EPUB、PDF；解析細節在 bookParsing.ts
  */
 
 import { db, DB_STORES } from "@/db/database";
+import {
+  decodeEntities,
+  decodeTextBytes,
+  firstHeading,
+  htmlToText,
+  joinPdfTextItems,
+  parseAttributes,
+  parseNavDoc,
+  parseNcx,
+  parseOpf,
+  parseTxtChapters,
+  reflowPdfLines,
+  resolveEpubPath,
+  splitLongChapters,
+} from "@/services/bookParsing";
 import type { BookChapter, BookReadingProgress, StoredBook } from "@/types/book";
 
-// ============================================================
-// TXT 解析
-// ============================================================
-
-/**
- * 將 TXT 文本按章節分割
- * 識別常見章節標題模式：第X章、Chapter X、卷X 等
- */
-function parseTxtChapters(text: string): BookChapter[] {
-  const chapterRegex =
-    /^(第[零一二三四五六七八九十百千萬\d]+[章節卷回篇][\s\S]*?|Chapter\s+\d+[\s\S]*?|CHAPTER\s+\d+[\s\S]*?|[序前後終]章[\s\S]*?)$/m;
-
-  const lines = text.split("\n");
-  const chapters: BookChapter[] = [];
-  let currentTitle = "正文";
-  let currentContent: string[] = [];
-  let order = 0;
-
-  for (const line of lines) {
-    if (chapterRegex.test(line.trim()) && line.trim().length < 60) {
-      // 保存上一章
-      if (currentContent.join("").trim()) {
-        chapters.push({
-          id: crypto.randomUUID(),
-          title: currentTitle,
-          content: currentContent.join("\n").trim(),
-          order: order++,
-        });
-      }
-      currentTitle = line.trim();
-      currentContent = [];
-    } else {
-      currentContent.push(line);
-    }
-  }
-
-  // 最後一章
-  if (currentContent.join("").trim()) {
-    chapters.push({
-      id: crypto.randomUUID(),
-      title: currentTitle,
-      content: currentContent.join("\n").trim(),
-      order: order,
-    });
-  }
-
-  // 如果沒有識別到章節，整本作為一章
-  if (chapters.length === 0) {
-    chapters.push({
-      id: crypto.randomUUID(),
-      title: "全文",
-      content: text.trim(),
-      order: 0,
-    });
-  }
-
-  return chapters;
+function totalCharsOf(chapters: BookChapter[]): number {
+  return chapters.reduce((sum, c) => sum + c.content.length, 0);
 }
 
+/** 內文第一行跟章名一樣時拿掉，閱讀器已經會顯示章名 */
+function dropDuplicateHeading(title: string, content: string): string {
+  const [first, ...rest] = content.split("\n");
+  return first.trim() === title.trim() && rest.join("").trim() ? rest.join("\n").trim() : content;
+}
+
+// ============================================================
+// TXT
+// ============================================================
+
 async function importTxt(file: File): Promise<StoredBook> {
-  const text = await file.text();
-  const chapters = parseTxtChapters(text);
-  const title = file.name.replace(/\.txt$/i, "");
+  const text = decodeTextBytes(new Uint8Array(await file.arrayBuffer()));
+  const chapters = splitLongChapters(parseTxtChapters(text));
+  if (chapters.length === 0) throw new Error("這個 TXT 是空的");
 
   return {
     id: crypto.randomUUID(),
-    title,
+    title: file.name.replace(/\.txt$/i, ""),
     format: "txt",
     chapters,
-    totalChars: text.length,
+    totalChars: totalCharsOf(chapters),
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
 }
 
 // ============================================================
-// EPUB 解析（純手工解析 ZIP 結構，不依賴外部庫）
+// EPUB
 // ============================================================
 
+const IMAGE_MIME: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+};
+
+function dirOf(path: string): string {
+  return path.includes("/") ? path.slice(0, path.lastIndexOf("/") + 1) : "";
+}
+
 async function importEpub(file: File): Promise<StoredBook> {
-  // 動態載入 JSZip（如果沒有安裝則 fallback）
-  let JSZip: any;
-  try {
-    JSZip = (await import("jszip")).default;
-  } catch {
-    throw new Error("請先安裝 jszip：npm install jszip");
-  }
+  const JSZip = (await import("jszip")).default;
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
 
-  const arrayBuffer = await file.arrayBuffer();
-  const zip = await JSZip.loadAsync(arrayBuffer);
+  // 有些 EPUB 內部路徑大小寫跟 manifest 寫的不一樣
+  const lowerPaths = new Map(Object.keys(zip.files).map((p) => [p.toLowerCase(), p]));
+  const entry = (path: string) => zip.file(path) ?? zip.file(lowerPaths.get(path.toLowerCase()) ?? "");
+  const readText = async (path: string) => (await entry(path)?.async("text")) ?? undefined;
 
-  // 讀取 container.xml 找到 OPF 路徑
-  const containerXml = await zip.file("META-INF/container.xml")?.async("text");
+  const containerXml = await readText("META-INF/container.xml");
   if (!containerXml) throw new Error("無效的 EPUB 文件");
+  const rootfile = containerXml.match(/<rootfile\b[^>]*>/i)?.[0];
+  const opfPath = rootfile ? parseAttributes(rootfile)["full-path"] : undefined;
+  if (!opfPath) throw new Error("找不到 OPF 文件路徑");
 
-  const opfPathMatch = containerXml.match(/full-path="([^"]+)"/);
-  if (!opfPathMatch) throw new Error("找不到 OPF 文件路徑");
+  const opf = await readText(opfPath);
+  if (!opf) throw new Error("無法讀取 OPF 文件");
+  const opfDir = dirOf(opfPath);
+  const info = parseOpf(opf);
+  const bookTitle = info.title || file.name.replace(/\.epub$/i, "");
 
-  const opfPath = opfPathMatch[1];
-  const opfDir = opfPath.includes("/") ? opfPath.substring(0, opfPath.lastIndexOf("/") + 1) : "";
-
-  const opfContent = await zip.file(opfPath)?.async("text");
-  if (!opfContent) throw new Error("無法讀取 OPF 文件");
-
-  // 解析書名和作者
-  const titleMatch = opfContent.match(/<dc:title[^>]*>([^<]+)<\/dc:title>/);
-  const authorMatch = opfContent.match(/<dc:creator[^>]*>([^<]+)<\/dc:creator>/);
-  const title = titleMatch?.[1]?.trim() || file.name.replace(/\.epub$/i, "");
-  const author = authorMatch?.[1]?.trim();
-
-  // 解析封面圖片
-  let cover: string | undefined;
-  const coverIdMatch = opfContent.match(/name="cover"\s+content="([^"]+)"/);
-  if (coverIdMatch) {
-    const coverId = coverIdMatch[1];
-    const coverHrefMatch = opfContent.match(
-      new RegExp(`id="${coverId}"[^>]+href="([^"]+)"`)
-    );
-    if (coverHrefMatch) {
-      const coverFile = zip.file(opfDir + coverHrefMatch[1]);
-      if (coverFile) {
-        const coverData = await coverFile.async("base64");
-        const ext = coverHrefMatch[1].split(".").pop()?.toLowerCase() || "jpeg";
-        cover = `data:image/${ext};base64,${coverData}`;
-      }
+  // 目錄：章節檔案 → 標題（EPUB3 nav 優先，其次 NCX）
+  const tocLabels = new Map<string, string>();
+  const addToc = (docPath: string, entries: Array<{ href: string; label: string }>) => {
+    const base = dirOf(docPath);
+    for (const e of entries) {
+      const path = resolveEpubPath(base, e.href);
+      if (!tocLabels.has(path)) tocLabels.set(path, e.label);
     }
+  };
+  if (info.navHref) {
+    const navPath = resolveEpubPath(opfDir, info.navHref);
+    const nav = await readText(navPath);
+    if (nav) addToc(navPath, parseNavDoc(nav));
+  }
+  const ncxItem = info.ncxId ? info.manifest[info.ncxId] : undefined;
+  if (tocLabels.size === 0 && ncxItem) {
+    const ncxPath = resolveEpubPath(opfDir, ncxItem.href);
+    const ncx = await readText(ncxPath);
+    if (ncx) addToc(ncxPath, parseNcx(ncx));
   }
 
-  // 解析 spine 順序
-  const spineMatches = [...opfContent.matchAll(/idref="([^"]+)"/g)];
-  const spineIds = spineMatches.map((m) => m[1]);
-
-  // 建立 manifest id -> href 映射
-  const manifestMap: Record<string, string> = {};
-  const manifestMatches = [...opfContent.matchAll(/<item[^>]+id="([^"]+)"[^>]+href="([^"]+)"/g)];
-  for (const m of manifestMatches) {
-    manifestMap[m[1]] = m[2];
+  let cover: string | undefined;
+  if (info.coverHref) {
+    const coverPath = resolveEpubPath(opfDir, info.coverHref);
+    const data = await entry(coverPath)?.async("base64");
+    const ext = coverPath.split(".").pop()?.toLowerCase() ?? "";
+    if (data) cover = `data:${IMAGE_MIME[ext] ?? "image/jpeg"};base64,${data}`;
   }
 
-  // 按 spine 順序讀取章節
   const chapters: BookChapter[] = [];
-  let order = 0;
-  let totalChars = 0;
+  for (const idref of info.spine) {
+    const item = info.manifest[idref];
+    if (!item || (item.mediaType && !/html|xml/i.test(item.mediaType))) continue;
+    const path = resolveEpubPath(opfDir, item.href);
+    const html = await readText(path);
+    if (!html) continue;
 
-  for (const id of spineIds) {
-    const href = manifestMap[id];
-    if (!href) continue;
+    const text = htmlToText(html);
+    if (text.length < 10) continue; // 封面、空白頁
 
-    const filePath = opfDir + href.split("#")[0];
-    const htmlContent = await zip.file(filePath)?.async("text");
-    if (!htmlContent) continue;
+    const titleTag = decodeEntities(html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? "").trim();
+    const title =
+      tocLabels.get(path) ??
+      firstHeading(html) ??
+      (titleTag && titleTag !== bookTitle ? titleTag : `第 ${chapters.length + 1} 章`);
 
-    // 提取章節標題
-    const chapterTitleMatch = htmlContent.match(/<title[^>]*>([^<]+)<\/title>/i) ||
-      htmlContent.match(/<h[1-3][^>]*>([^<]+)<\/h[1-3]>/i);
-    const chapterTitle = chapterTitleMatch?.[1]?.trim() || `第 ${order + 1} 章`;
-
-    // 去除 HTML 標籤，保留段落換行
-    const text = htmlContent
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/p>/gi, "\n\n")
-      .replace(/<\/div>/gi, "\n")
-      .replace(/<[^>]+>/g, "")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&amp;/g, "&")
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .trim();
-
-    if (text.length < 10) continue; // 跳過空章節
-
-    totalChars += text.length;
     chapters.push({
       id: crypto.randomUUID(),
-      title: chapterTitle,
-      content: text,
-      order: order++,
+      title,
+      content: dropDuplicateHeading(title, text),
+      order: chapters.length,
     });
   }
 
   if (chapters.length === 0) throw new Error("EPUB 中沒有可讀取的章節");
+  const split = splitLongChapters(chapters);
 
   return {
     id: crypto.randomUUID(),
-    title,
-    author,
+    title: bookTitle,
+    author: info.author,
     cover,
     format: "epub",
-    chapters,
-    totalChars,
+    chapters: split,
+    totalChars: totalCharsOf(split),
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
 }
 
 // ============================================================
-// PDF 解析（使用 PDF.js）
+// PDF（PDF.js）
 // ============================================================
 
+/** 頁首頁尾常見的純頁碼行 */
+const PAGE_NUMBER_LINE = /^[\s\-–—]*(\d{1,4}|[ivxlcdm]{1,6})[\s\-–—]*$/i;
+
 async function importPdf(file: File): Promise<StoredBook> {
-  let pdfjsLib: any;
-  try {
-    pdfjsLib = await import("pdfjs-dist");
-    // 設置 worker
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-      "pdfjs-dist/build/pdf.worker.min.mjs",
-      import.meta.url
-    ).toString();
-  } catch {
-    throw new Error("請先安裝 pdfjs-dist：npm install pdfjs-dist");
+  const pdfjsLib = await import("pdfjs-dist");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    "pdfjs-dist/build/pdf.worker.min.mjs",
+    import.meta.url,
+  ).toString();
+
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const pageCount: number = pdf.numPages;
+
+  // 每頁的文字行
+  const pageLines: string[][] = [];
+  for (let i = 1; i <= pageCount; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const items = (content.items as Array<{ str?: string; hasEOL?: boolean }>)
+      .filter((it) => typeof it.str === "string")
+      .map((it) => ({ str: it.str as string, hasEOL: it.hasEOL }));
+    pageLines.push(joinPdfTextItems(items).filter((l) => !PAGE_NUMBER_LINE.test(l)));
+    page.cleanup();
   }
 
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const textOfPages = (from: number, to: number) =>
+    reflowPdfLines(pageLines.slice(from, to).flat()).join("\n");
 
-  const title = file.name.replace(/\.pdf$/i, "");
-  const chapters: BookChapter[] = [];
-  let totalChars = 0;
-
-  // 嘗試讀取書籤作為章節分割依據
+  // 書籤 → 起始頁（只取第一層）
+  const starts: Array<{ title: string; page: number }> = [];
   const outline = await pdf.getOutline().catch(() => null);
-
-  if (outline && outline.length > 0) {
-    // 有書籤：按書籤分章
-    // 先讀取所有頁面文字
-    const allPageTexts: string[] = [];
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items.map((item: any) => item.str).join(" ");
-      allPageTexts.push(pageText);
+  for (const item of outline ?? []) {
+    try {
+      const dest = typeof item.dest === "string" ? await pdf.getDestination(item.dest) : item.dest;
+      const ref = Array.isArray(dest) ? dest[0] : null;
+      if (ref == null) continue;
+      const page = typeof ref === "number" ? ref : await pdf.getPageIndex(ref);
+      if (page >= 0 && page < pageCount) starts.push({ title: item.title?.trim() || "", page });
+    } catch {
+      // 書籤指不到頁面就略過
     }
+  }
+  starts.sort((a, b) => a.page - b.page);
+  const uniqueStarts = starts.filter((s, i) => i === 0 || s.page !== starts[i - 1].page);
 
-    // 簡化：每個書籤對應一章（取前幾個書籤）
-    const maxChapters = Math.min(outline.length, 100);
-    for (let i = 0; i < maxChapters; i++) {
-      const item = outline[i];
-      const chapterTitle = item.title || `第 ${i + 1} 章`;
-      // 估算頁碼範圍（簡化處理）
-      const startPage = Math.floor((i / maxChapters) * pdf.numPages);
-      const endPage = Math.floor(((i + 1) / maxChapters) * pdf.numPages);
-      const content = allPageTexts.slice(startPage, endPage + 1).join("\n\n");
+  const chapters: BookChapter[] = [];
+  const push = (title: string, content: string) => {
+    if (content.trim().length < 10) return;
+    chapters.push({ id: crypto.randomUUID(), title, content: content.trim(), order: chapters.length });
+  };
 
-      if (content.trim().length < 10) continue;
-      totalChars += content.length;
-      chapters.push({
-        id: crypto.randomUUID(),
-        title: chapterTitle,
-        content: content.trim(),
-        order: i,
-      });
-    }
+  if (uniqueStarts.length > 0) {
+    if (uniqueStarts[0].page > 0) push("開頭", textOfPages(0, uniqueStarts[0].page));
+    uniqueStarts.forEach((s, i) => {
+      const end = uniqueStarts[i + 1]?.page ?? pageCount;
+      push(s.title || `第 ${i + 1} 章`, textOfPages(s.page, end));
+    });
   } else {
-    // 無書籤：每 10 頁一章
-    const pagesPerChapter = 10;
-    let order = 0;
-
-    for (let startPage = 1; startPage <= pdf.numPages; startPage += pagesPerChapter) {
-      const endPage = Math.min(startPage + pagesPerChapter - 1, pdf.numPages);
-      const pageTexts: string[] = [];
-
-      for (let p = startPage; p <= endPage; p++) {
-        const page = await pdf.getPage(p);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items.map((item: any) => item.str).join(" ");
-        pageTexts.push(pageText);
-      }
-
-      const content = pageTexts.join("\n\n").trim();
-      if (content.length < 10) continue;
-
-      totalChars += content.length;
-      chapters.push({
-        id: crypto.randomUUID(),
-        title: `第 ${order + 1} 部分（第 ${startPage}–${endPage} 頁）`,
-        content,
-        order: order++,
-      });
+    const perChapter = 10;
+    for (let start = 0; start < pageCount; start += perChapter) {
+      const end = Math.min(start + perChapter, pageCount);
+      push(`第 ${start + 1}–${end} 頁`, textOfPages(start, end));
     }
   }
 
-  if (chapters.length === 0) throw new Error("PDF 中沒有可提取的文字");
+  if (chapters.length === 0) throw new Error("PDF 中沒有可提取的文字（可能是掃描圖片）");
+  const split = splitLongChapters(chapters);
 
   return {
     id: crypto.randomUUID(),
-    title,
+    title: file.name.replace(/\.pdf$/i, ""),
     format: "pdf",
-    chapters,
-    totalChars,
+    chapters: split,
+    totalChars: totalCharsOf(split),
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
