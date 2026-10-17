@@ -3,6 +3,7 @@ import BookPlayDuel from "@/components/books/BookPlayDuel.vue";
 import BookPlayPet from "@/components/books/BookPlayPet.vue";
 import BookPlaySummon from "@/components/books/BookPlaySummon.vue";
 import BookPlayWhatIf from "@/components/books/BookPlayWhatIf.vue";
+import BookReviewCards from "@/components/books/BookReviewCards.vue";
 import CompanionChatPanel from "@/components/common/CompanionChatPanel.vue";
 import { useCompanionChat } from "@/composables/useCompanionChat";
 import { useBooksStore } from "@/stores/books";
@@ -24,9 +25,17 @@ import {
   summarizeRange,
   toGlobal,
 } from "@/services/bookSummary";
+import {
+  chapterCardMaterial,
+  dueCards,
+  generateChapterCards,
+  hasCardMaterial,
+  type ReviewItem,
+} from "@/services/bookReview";
 import type {
   BookHighlight,
   BookPosition,
+  BookReviewCard,
   BookSummary,
   ReaderBackground,
   ReaderPrefs,
@@ -48,6 +57,7 @@ import {
   ArrowLeft,
   Copy,
   Highlighter,
+  Layers,
   List,
   MessageCircle,
   Minus,
@@ -253,8 +263,13 @@ function turnBy(delta: 1 | -1) {
       await openChapter(chapterIndex.value - 1, "end");
     } else if (target >= totalPages.value) {
       // 已經是全書最後一頁：沒翻動，不算頁
-      if (chapterIndex.value >= lastChapterIndex.value) return applyPageOffset(true);
-      await openChapter(chapterIndex.value + 1, "start");
+      if (chapterIndex.value >= lastChapterIndex.value) {
+        promptChapterCards(chapterIndex.value);
+        return applyPageOffset(true);
+      }
+      const finished = chapterIndex.value;
+      await openChapter(finished + 1, "start");
+      promptChapterCards(finished);
     } else {
       page.value = target;
       applyPageOffset(true);
@@ -355,6 +370,10 @@ function handleTapNavigation(e: MouseEvent) {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  if (reviewItems.value) {
+    if (e.key === "Escape") closeReview();
+    return;
+  }
   if (playMode.value) {
     if (e.key === "Escape") closePlay();
     return;
@@ -906,6 +925,126 @@ async function deleteSummary(s: BookSummary) {
   showToast("已刪除摘要");
 }
 
+// ===== 回顧卡 =====
+const cards = computed(() => booksStore.progressByBook[props.book.id]?.cards ?? []);
+const dueCount = computed(() => dueCards(cards.value, Date.now()).length);
+const reviewItems = ref<ReviewItem[] | null>(null);
+const reviewMode = ref<"chapter" | "review">("chapter");
+const reviewHeading = ref("");
+/** 剛讀完、可以出卡的章 */
+const chapterEndPrompt = ref<number | null>(null);
+/** 這次打開書時按過「不用了」的章，不再問 */
+const dismissedChapterPrompts = new Set<number>();
+const cardBusy = ref(false);
+
+function chapterMaterial(index: number, readEnd?: number) {
+  const chapter = props.book.chapters[index];
+  const list = highlights.value.filter((h) => chapterIndexOf(h) === index);
+  return chapterCardMaterial(chapter, index, list, summaries.value, readEnd);
+}
+
+function chapterTitleText(index: number): string {
+  return props.book.chapters[index]?.title || `第 ${index + 1} 章`;
+}
+
+function toReviewItem(card: BookReviewCard): ReviewItem {
+  const h = card.highlightId ? highlights.value.find((x) => x.id === card.highlightId) : undefined;
+  return {
+    bookId: props.book.id,
+    bookTitle: props.book.title,
+    chapterTitle: chapterTitleText(card.chapterIndex),
+    card,
+    note: h?.note?.trim() ? { text: h.note.trim(), at: h.createdAt } : undefined,
+  };
+}
+
+function openReview(list: BookReviewCard[], mode: "chapter" | "review", heading: string) {
+  closeSheet();
+  reviewMode.value = mode;
+  reviewHeading.value = heading;
+  reviewItems.value = list.map(toReviewItem);
+}
+
+function closeReview() {
+  reviewItems.value = null;
+}
+
+function jumpFromReview(item: ReviewItem) {
+  closeReview();
+  run(() => openChapter(item.card.chapterIndex, { offset: item.card.charOffset }));
+}
+
+/** 翻過章尾：這章還沒出過卡、又有劃線或摘要，就在頂部問一聲 */
+function promptChapterCards(finished: number) {
+  const carded = booksStore.progressByBook[props.book.id]?.cardedChapters ?? [];
+  if (carded.includes(finished) || dismissedChapterPrompts.has(finished)) return;
+  if (!hasCardMaterial(chapterMaterial(finished))) return;
+  chapterEndPrompt.value = finished;
+}
+
+function dismissChapterPrompt() {
+  if (chapterEndPrompt.value !== null) dismissedChapterPrompts.add(chapterEndPrompt.value);
+  chapterEndPrompt.value = null;
+}
+
+// 跳到別的章就收起提示
+watch(chapterIndex, (i) => {
+  const p = chapterEndPrompt.value;
+  if (p !== null && i !== p && i !== p + 1) chapterEndPrompt.value = null;
+});
+
+/** 為一章出卡；這章還沒有材料時，先問要不要總結這章 */
+async function makeChapterCards(index: number) {
+  if (cardBusy.value) return;
+  const chapter = props.book.chapters[index];
+  if (!chapter) return;
+  const isCurrent = index === chapterIndex.value;
+  const readEnd = isCurrent ? pageEndOffset() : undefined;
+  const finishedChapter = readEnd === undefined || readEnd >= chapter.content.length;
+
+  cardBusy.value = true;
+  try {
+    let material = chapterMaterial(index, readEnd);
+    if (!hasCardMaterial(material)) {
+      if (!window.confirm("這章還沒有劃線或摘要，要先總結這章嗎？")) return;
+      showToast("先總結這章…");
+      const to = isCurrent ? currentEnd() : { chapterIndex: index, charOffset: chapter.content.length };
+      await runSummary({ chapterIndex: index, charOffset: 0 }, to, false);
+      material = chapterMaterial(index, readEnd);
+    }
+    showToast("出卡中…");
+    const made = await generateChapterCards({
+      bookTitle: props.book.title,
+      author: props.book.author,
+      chapterTitle: chapter.title,
+      chapterIndex: index,
+      material,
+    });
+    await booksStore.patchProgress(props.book.id, (current) => ({
+      cards: [...(current?.cards ?? []), ...made],
+      cardedChapters: [...new Set([...(current?.cardedChapters ?? []), index])],
+    }));
+    chapterEndPrompt.value = null;
+    toast.value = "";
+    openReview(made, "chapter", `「${chapter.title}」${finishedChapter ? "讀完了" : "讀到這裡"}`);
+  } catch (e) {
+    showToast(e instanceof Error ? e.message : "出卡失敗");
+  } finally {
+    cardBusy.value = false;
+  }
+}
+
+/** 複習這本書：先複習到期的；沒有到期的就全部再看一次 */
+function reviewBookCards() {
+  const due = dueCards(cards.value, Date.now());
+  if (due.length) {
+    openReview(due, "review", `今天要複習 ${due.length} 張`);
+  } else {
+    const all = [...cards.value].sort((a, b) => a.dueAt - b.dueAt);
+    openReview(all, "review", "沒有到期的卡，全部再看一次");
+  }
+}
+
 // ===== 閱讀時數 =====
 // 畫面看得到、而且最近 3 分鐘內有翻頁或碰螢幕才算在讀，避免開著書走開也一直計時
 const ACTIVE_WINDOW_MS = 3 * 60_000;
@@ -1037,6 +1176,21 @@ watch(
       </button>
     </header>
 
+    <Transition name="rd-fade">
+      <div v-if="chapterEndPrompt !== null" class="rd-chapter-prompt" role="status">
+        <span class="rd-chapter-prompt-text">
+          <span class="rd-chapter-prompt-title">「{{ chapterTitleText(chapterEndPrompt) }}」讀完了</span>
+          <span>做幾張卡，把這章留在腦裡？</span>
+        </span>
+        <button class="rd-chapter-prompt-go" :disabled="cardBusy" @click="makeChapterCards(chapterEndPrompt)">
+          {{ cardBusy ? "出卡中…" : "出卡" }}
+        </button>
+        <button class="rd-icon-btn" aria-label="不用了" @click="dismissChapterPrompt">
+          <X :size="18" />
+        </button>
+      </div>
+    </Transition>
+
     <div
       ref="containerEl"
       class="rd-page"
@@ -1153,6 +1307,16 @@ watch(
             </button>
           </div>
           <div v-if="tocTab === 'notes'" class="rd-toc">
+            <div class="rd-card-entry">
+              <button class="rd-sum-new" :disabled="cards.length === 0" @click="reviewBookCards">
+                <Layers :size="18" />複習這本書的卡
+                <span v-if="dueCount" class="rd-due-badge">{{ dueCount }} 張到期</span>
+                <span v-else-if="cards.length" class="rd-card-count">{{ cards.length }} 張</span>
+              </button>
+              <button class="rd-sum-new" :disabled="cardBusy" @click="makeChapterCards(chapterIndex)">
+                <WandSparkles :size="18" />{{ cardBusy ? "出卡中…" : "為這章出卡" }}
+              </button>
+            </div>
             <p v-if="sortedHighlights.length === 0" class="rd-picker-empty">
               選一段文字就能劃線或寫筆記
             </p>
@@ -1507,6 +1671,18 @@ watch(
 
     <Transition name="rd-fade">
       <div v-if="toast" class="rd-toast" role="status">{{ toast }}</div>
+    </Transition>
+
+    <Transition name="rd-fade">
+      <BookReviewCards
+        v-if="reviewItems"
+        :items="reviewItems"
+        :mode="reviewMode"
+        :heading="reviewHeading"
+        can-jump
+        @close="closeReview"
+        @jump="jumpFromReview"
+      />
     </Transition>
 
     <Transition name="rd-fade">
@@ -2615,6 +2791,102 @@ button {
 .rd-solid-btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+// ===== 回顧卡 =====
+.rd-chapter-prompt {
+  // 疊在內文上方，不改變內文高度（改了會重新分頁）
+  position: absolute;
+  left: 50%;
+  top: calc(58px + var(--safe-top, 0px));
+  transform: translateX(-50%);
+  z-index: 5;
+  width: calc(100% - 24px);
+  max-width: 520px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 4px 6px 16px;
+  border-radius: 24px;
+  background: var(--rd-pill-bg);
+  color: var(--rd-pill-text);
+  box-shadow: 0 8px 20px color-mix(in srgb, #000 16%, transparent);
+
+  .rd-icon-btn:hover {
+    background: color-mix(in srgb, var(--rd-pill-text) 12%, transparent);
+  }
+}
+
+.rd-chapter-prompt-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  line-height: 1.45;
+  opacity: 0.85;
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.rd-chapter-prompt-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.rd-chapter-prompt-go {
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 18px;
+  background: var(--rd-accent);
+  color: var(--rd-on-accent);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+
+.rd-card-entry {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+
+  .rd-sum-new {
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    height: auto;
+    min-height: 52px;
+    padding: 6px 8px;
+    font-size: 14px;
+  }
+}
+
+.rd-due-badge,
+.rd-card-count {
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.rd-due-badge {
+  background: var(--rd-accent);
+  color: var(--rd-on-accent);
+}
+
+.rd-card-count {
+  background: var(--rd-raise);
+  color: var(--rd-sub);
 }
 
 // ===== 好玩模式清單 =====
