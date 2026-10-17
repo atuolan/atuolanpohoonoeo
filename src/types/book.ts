@@ -70,6 +70,12 @@ export interface BookReadingProgress {
       at: number;
     }>;
   };
+  /** 分段摘要（依位置排序不保證，用的時候自己排） */
+  summaries?: BookSummary[];
+  /** 上次摘要後往後翻了幾頁（自動摘要用） */
+  pagesSinceSummary?: number;
+  /** 自動摘要連續失敗幾次（到 3 次就暫停，手動總結一次後歸零） */
+  autoSummaryFailures?: number;
   /** 上一次「三句接上」的結果（位置沒變就直接沿用） */
   lastRecap?: {
     chapterIndex: number;
@@ -93,6 +99,25 @@ export interface BookHighlight {
   updatedAt: number;
 }
 
+/** 書中的位置：第幾章、章內第幾個字 */
+export interface BookPosition {
+  chapterIndex: number;
+  charOffset: number;
+}
+
+/** 一則分段摘要，涵蓋 [from, to) */
+export interface BookSummary {
+  id: string;
+  from: BookPosition;
+  to: BookPosition;
+  title: string;
+  content: string;
+  /** 自動摘要產生的 */
+  auto: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export type ReaderBackground = "sepia" | "white" | "night" | "green";
 
 export interface ReaderPrefs {
@@ -102,6 +127,8 @@ export interface ReaderPrefs {
   background: ReaderBackground;
   /** 每日閱讀目標（分鐘） */
   dailyGoalMinutes: number;
+  /** 每讀幾頁自動總結一次，0 是關 */
+  summaryEveryPages: 0 | 10 | 20 | 50;
 }
 
 // ===== 伴讀聊天類型 =====

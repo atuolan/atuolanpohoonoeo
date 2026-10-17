@@ -13,6 +13,7 @@ export const DEFAULT_READER_PREFS: ReaderPrefs = {
   fontFamily: "serif",
   background: "sepia",
   dailyGoalMinutes: 15,
+  summaryEveryPages: 0,
 };
 
 export const useBooksStore = defineStore("books", () => {
