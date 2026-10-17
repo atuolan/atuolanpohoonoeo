@@ -12763,8 +12763,9 @@ useChatCleanup({
 
 <style lang="scss" scoped>
 .chat-screen {
-  // 強制覆蓋 .screen-container 的全局背景色，讓 ::before 偽元素的桌布可見
-  background: transparent !important;
+  // 底色跟 .app-container 一樣，平常看起來跟透明沒差；
+  // 但切頁時離場的聊天列表還疊在下面，透明的話桌布圖還沒解碼、或桌布透明度不到 100% 時會透出列表
+  background: var(--bg-color, var(--color-background)) !important;
   position: relative;
   overflow: hidden;
 
