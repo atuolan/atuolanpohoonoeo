@@ -3,6 +3,7 @@ import {
   parseGroupA,
   parseGroupD,
   parseLockScreen,
+  parseMessageTime,
   parseScreenTime,
 } from "./PeekPhoneYAMLParser";
 
@@ -142,5 +143,57 @@ chats:
 
   it("沒有螢幕使用時間就回傳 undefined", () => {
     expect(parseScreenTime(`gallery:\n  - description: x`)).toBeUndefined();
+  });
+
+  it("跟使用者的那串標 is_user", () => {
+    const [user, mom] = parseGroupA(`chats:
+  - contact: 栩
+    is_user: true
+    messages:
+      - from: 栩
+        text: 你睡了嗎
+        self: false
+        time: "10/18 01:45"
+  - contact: 媽
+    messages:
+      - from: 媽
+        text: 記得吃飯
+        self: false
+        time: "10/17 19:20"`);
+    expect(user.isUser).toBe(true);
+    expect(mom.isUser).toBeUndefined();
+    expect(user.messages[0].timestamp).toBeGreaterThan(0);
+  });
+});
+
+describe("parseMessageTime：訊息時間", () => {
+  const now = new Date(2026, 9, 18, 1, 47);
+
+  it("「月/日 時:分」用今年", () => {
+    expect(parseMessageTime("10/17 23:12", now)).toBe(new Date(2026, 9, 17, 23, 12).getTime());
+  });
+
+  it("沒寫年份、算出來在未來：當作去年（例如一月看到 12 月的訊息）", () => {
+    const jan = new Date(2026, 0, 2, 10, 0);
+    expect(parseMessageTime("12/31 23:00", jan)).toBe(new Date(2025, 11, 31, 23, 0).getTime());
+  });
+
+  it("寫了年份就照寫的", () => {
+    expect(parseMessageTime("2026-10-03 21:48", now)).toBe(new Date(2026, 9, 3, 21, 48).getTime());
+  });
+
+  it("只寫「時:分」：今天的；比現在晚就是昨天的", () => {
+    expect(parseMessageTime("01:30", now)).toBe(new Date(2026, 9, 18, 1, 30).getTime());
+    expect(parseMessageTime("23:12", now)).toBe(new Date(2026, 9, 17, 23, 12).getTime());
+  });
+
+  it("舊格式的時間戳數字照收", () => {
+    expect(parseMessageTime("1760000000", now)).toBe(1760000000);
+    expect(parseMessageTime("1760000000000", now)).toBe(1760000000000);
+  });
+
+  it("看不懂的（例如照抄說明文字）回傳 0", () => {
+    expect(parseMessageTime("時間戳數字", now)).toBe(0);
+    expect(parseMessageTime("", now)).toBe(0);
   });
 });

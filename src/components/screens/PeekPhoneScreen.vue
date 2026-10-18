@@ -488,6 +488,12 @@ async function loadAndGenerate() {
 
 async function retryGroup(group: "A" | "B" | "C" | "D") {
   if (!character.value || !chatRecord.value) return;
+  // 只有相簿組失敗（其他都好了）：只重生相簿組，不用整支手機重來
+  const s = groupStatus.value;
+  if (group === "D" && s.A === "done" && s.B === "done" && s.C === "done") {
+    await refreshPhase("D");
+    return;
+  }
   const chatWithMsgs = { ...chatRecord.value, messages: await loadMessages(props.chatId) };
   await peekPhoneStore.retryGroup(group, character.value, chatWithMsgs);
 }

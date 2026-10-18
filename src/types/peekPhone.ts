@@ -33,6 +33,8 @@ export interface PeekChatThread {
   messages: PeekChatMessage[];
   /** 最後更新 */
   updatedAt: number;
+  /** 這一串是跟使用者本人的對話 */
+  isUser?: boolean;
   /** 輸入框裡打了沒送出的話（秘密） */
   draft?: string;
   /** 草稿之前改過的版本，舊的在前 */

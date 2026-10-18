@@ -5,36 +5,21 @@
  */
 import { OpenAICompatibleClient, type APIMessage } from "@/api/OpenAICompatible";
 import { pickGenerationToggles } from "@/utils/generationToggles";
-import { getMacroEngine } from "@/engine/macros/MacroEngine";
+import { getMacroEngine, substituteParams } from "@/engine/macros/MacroEngine";
 import { loadMessages } from "@/storage/chatMessageStorage";
 import { usePromptManagerStore } from "@/stores/promptManager";
 import { useSettingsStore } from "@/stores/settings";
 import type { StoredCharacter } from "@/types/character";
 import type { Chat, ChatMessage } from "@/types/chat";
-import type {
-  PeekBrowserEntry,
-  PeekChatThread,
-  PeekDiaryEntry,
-  PeekGalleryItem,
-  PeekHiddenPhoto,
-  PeekMealRecord,
-  PeekMemo,
-  PeekNote,
-  PeekPhoneData,
-  PeekScheduleItem,
-  PeekTransaction,
-} from "@/types/peekPhone";
+import type { PeekChatThread, PeekPhoneData } from "@/types/peekPhone";
 import {
-  buildCombinedPrompt,
   buildContactReplyPrompt,
   buildGroupAPrompt,
   buildGroupBCPrompt,
-  buildGroupBPrompt,
-  buildGroupCPrompt,
   buildGroupDPrompt,
+  type PeekPromptContext,
 } from "./PeekPhonePromptBuilder";
 import {
-  parseFullData,
   parseGroupA,
   parseGroupB,
   parseGroupC,
@@ -44,34 +29,6 @@ import {
 } from "./PeekPhoneYAMLParser";
 import { summaryTimelineKey } from "@/utils/summarySelection";
 
-/** 模塊組類型 */
-export type ModuleGroup = "A" | "B" | "C" | "D";
-
-/** 各組的回傳型別 */
-export type GroupAResult = { chats: PeekChatThread[] };
-export type GroupBResult = {
-  schedule: PeekScheduleItem[];
-  meals: PeekMealRecord[];
-  memos: PeekMemo[];
-};
-export type GroupCResult = {
-  notes: PeekNote[];
-  diary: PeekDiaryEntry[];
-  balance: number;
-  transactions: PeekTransaction[];
-};
-export type GroupDResult = {
-  gallery: PeekGalleryItem[];
-  browserHistory: PeekBrowserEntry[];
-  hiddenPhotos: PeekHiddenPhoto[];
-};
-
-export type GroupResult =
-  | GroupAResult
-  | GroupBResult
-  | GroupCResult
-  | GroupDResult;
-
 /**
  * 從聊天紀錄提取上下文摘要
  * 取最近 maxTurns 輪對話（一輪 = 用戶訊息 + AI回覆）
@@ -79,6 +36,7 @@ export type GroupResult =
 export async function extractChatContext(
   chat: Chat,
   maxTurns: number = 30,
+  userName: string = "用戶",
 ): Promise<string> {
   let messages = chat.messages ?? [];
 
@@ -121,7 +79,8 @@ export async function extractChatContext(
 
   // 組合為簡要摘要格式
   const lines = recentMessages.map((msg: ChatMessage) => {
-    const sender = msg.is_user ? "用戶" : msg.name;
+    // 跟 prompt 裡的「用戶：XX」對得上，AI 才知道聊天裡的人就是 XX
+    const sender = msg.is_user ? userName : msg.name;
     // 截取前 150 字避免過長
     const content =
       msg.content.length > 150
@@ -198,170 +157,6 @@ export async function extractSummariesAndEvents(
   }
 
   return lines.length > 0 ? lines.join("\n") : "";
-}
-
-/**
- * 生成指定模塊組的內容
- * 建構 prompt → 呼叫 API → 解析 YAML 回應
- * 支援串流模式：由全局設定決定是否使用串流 API
- */
-export async function generateGroup(
-  group: ModuleGroup,
-  character: StoredCharacter,
-  chatContext: string,
-  userName: string,
-  userDescription: string,
-  worldInfo: string,
-  summariesAndEvents: string,
-  _chatId: string,
-  signal?: AbortSignal,
-  onToken?: (token: string) => void,
-): Promise<GroupResult> {
-  const settingsStore = useSettingsStore();
-  const charName = character.data.name || character.nickname;
-  const charDesc = character.data.description || "";
-  const personality = character.data.personality || "";
-  const scenario = character.data.scenario || "";
-
-  // 根據組別建構 prompt
-  let prompt: string;
-  switch (group) {
-    case "A":
-      prompt = buildGroupAPrompt(
-        charName,
-        charDesc,
-        personality,
-        scenario,
-        chatContext,
-        userName,
-        userDescription,
-        worldInfo,
-        summariesAndEvents,
-      );
-      break;
-    case "B":
-      prompt = buildGroupBPrompt(
-        charName,
-        charDesc,
-        personality,
-        scenario,
-        chatContext,
-        userName,
-        userDescription,
-        worldInfo,
-        summariesAndEvents,
-      );
-      break;
-    case "C":
-      prompt = buildGroupCPrompt(
-        charName,
-        charDesc,
-        personality,
-        scenario,
-        chatContext,
-        userName,
-        userDescription,
-        worldInfo,
-        summariesAndEvents,
-      );
-      break;
-    case "D":
-      prompt = buildGroupDPrompt(
-        charName,
-        charDesc,
-        personality,
-        scenario,
-        chatContext,
-        userName,
-        userDescription,
-        worldInfo,
-        summariesAndEvents,
-      );
-      break;
-  }
-
-  // 呼叫 API（優先使用備用 API）
-  const taskConfig = settingsStore.getAPIForTask("peekPhone");
-  const client = new OpenAICompatibleClient(taskConfig.api);
-  const messages: APIMessage[] = [{ role: "user", content: prompt }];
-
-  // 讀取全局串流設定
-  const isStreamingEnabled = taskConfig.generation.streamingEnabled;
-
-  let yamlContent: string;
-
-  if (isStreamingEnabled) {
-    // 串流模式：使用 generateStream
-    let fullContent = "";
-    const stream = client.generateStream({
-      messages,
-      settings: {
-        maxContextLength: taskConfig.generation.maxContextLength,
-        maxResponseLength: taskConfig.generation.maxTokens,
-        temperature: taskConfig.generation.temperature,
-        topP: taskConfig.generation.topP,
-        frequencyPenalty: taskConfig.generation.frequencyPenalty,
-        presencePenalty: taskConfig.generation.presencePenalty,
-        repetitionPenalty: 1,
-        stopSequences: [],
-        streaming: true,
-        useStreamingWindow: false,
-        ...pickGenerationToggles(taskConfig.generation),
-      },
-      apiSettings: taskConfig.api,
-      signal,
-    });
-
-    for await (const chunk of stream) {
-      if (chunk.type === "token" && chunk.token) {
-        fullContent += chunk.token;
-        onToken?.(chunk.token);
-      } else if (chunk.type === "done") {
-        // 使用 done 事件的完整內容作為 fallback
-        if (!fullContent && chunk.content) {
-          fullContent = chunk.content;
-        }
-      } else if (chunk.type === "error") {
-        throw new Error(chunk.error || `組 ${group} 串流生成失敗`);
-      }
-    }
-
-    yamlContent = fullContent;
-  } else {
-    // 非串流模式：使用 generate
-    const result = await client.generate({
-      messages,
-      settings: {
-        maxContextLength: taskConfig.generation.maxContextLength,
-        maxResponseLength: taskConfig.generation.maxTokens,
-        temperature: taskConfig.generation.temperature,
-        topP: taskConfig.generation.topP,
-        frequencyPenalty: taskConfig.generation.frequencyPenalty,
-        presencePenalty: taskConfig.generation.presencePenalty,
-        repetitionPenalty: 1,
-        stopSequences: [],
-        streaming: false,
-        useStreamingWindow: false,
-        ...pickGenerationToggles(taskConfig.generation),
-      },
-      apiSettings: taskConfig.api,
-      signal,
-    });
-
-    yamlContent = result.content;
-  }
-
-  // 解析 YAML 回應
-  switch (group) {
-    case "A":
-      return { chats: parseGroupA(yamlContent) };
-    case "B":
-      return parseGroupB(yamlContent);
-    case "C":
-      return parseGroupC(yamlContent);
-    case "D":
-      return parseGroupD(yamlContent);
-  }
 }
 
 /**
@@ -573,6 +368,35 @@ async function callAPIForPhase(
 }
 
 /**
+ * 組出 prompt 要的資料：角色卡欄位先跑過宏引擎，{{char}}／{{user}} 換成真名
+ */
+export async function buildPromptContext(
+  character: StoredCharacter,
+  chatContext: string,
+  userName: string,
+  userDescription: string,
+  worldInfo: string,
+  summariesAndEvents: string,
+): Promise<PeekPromptContext> {
+  const charName = character.data.name || character.nickname;
+  const now = new Date();
+  const macro = { charName, userName, currentDate: now };
+  const sub = async (text: string | undefined) => (text ? substituteParams(text, macro) : "");
+  return {
+    charName,
+    charDesc: await sub(character.data.description),
+    personality: await sub(character.data.personality),
+    scenario: await sub(character.data.scenario),
+    chatContext,
+    userName,
+    userDescription: await sub(userDescription),
+    worldInfo: await sub(worldInfo),
+    summariesAndEvents,
+    now,
+  };
+}
+
+/**
  * 順序生成模式：A → BC → D
  * 每階段將已生成結果序列化為上下文傳入下一階段
  * onPhaseComplete 在每階段完成後被呼叫，供 store 游淨杈案更新 groupStatus
@@ -592,18 +416,16 @@ export async function generateSequential(
   ) => void,
   onToken?: (phase: "A" | "BC" | "D", token: string) => void,
 ): Promise<PeekPhoneData> {
-  const charName = character.data.name || character.nickname;
-  const charDesc = character.data.description || "";
-  const personality = character.data.personality || "";
-  const scenario = character.data.scenario || "";
+  const ctx = await buildPromptContext(
+    character, chatContext, userName, userDescription, worldInfo, summariesAndEvents,
+  );
+  // 越獄／預設提示詞裡的 {{char}}／{{user}} 也要換成真名
+  const macroContext: PeekMacroContext = { charName: ctx.charName, userName };
 
   // === Phase A: 聊天紀錄 ===
-  const promptA = buildGroupAPrompt(
-    charName, charDesc, personality, scenario, chatContext,
-    userName, userDescription, worldInfo, summariesAndEvents,
-  );
+  const promptA = buildGroupAPrompt(ctx);
   const yamlA = await callAPIForPhase(promptA, 16000, signal,
-    onToken ? (t) => onToken("A", t) : undefined);
+    onToken ? (t) => onToken("A", t) : undefined, macroContext);
   const chats = parseGroupA(yamlA);
   const lockScreen = parseLockScreen(yamlA);
   const partialA: Partial<PeekPhoneData> = { chats, lockScreen };
@@ -611,12 +433,9 @@ export async function generateSequential(
 
   // === Phase BC: 行程+飲食+備忘+記事+日記+錢包 ===
   const aContext = serializeForContext(partialA);
-  const promptBC = buildGroupBCPrompt(
-    charName, charDesc, personality, scenario, chatContext,
-    userName, userDescription, worldInfo, summariesAndEvents, aContext,
-  );
+  const promptBC = buildGroupBCPrompt(ctx, aContext);
   const yamlBC = await callAPIForPhase(promptBC, 16000, signal,
-    onToken ? (t) => onToken("BC", t) : undefined);
+    onToken ? (t) => onToken("BC", t) : undefined, macroContext);
   const { schedule, meals, memos } = parseGroupB(yamlBC);
   const { notes, diary, balance, transactions } = parseGroupC(yamlBC);
   const partialBC: Partial<PeekPhoneData> = { schedule, meals, memos, notes, diary, balance, transactions };
@@ -624,12 +443,9 @@ export async function generateSequential(
 
   // === Phase D: 相冊+瀏覽紀錄+私密照片 ===
   const abcContext = serializeForContext({ ...partialA, ...partialBC });
-  const promptD = buildGroupDPrompt(
-    charName, charDesc, personality, scenario, chatContext,
-    userName, userDescription, worldInfo, summariesAndEvents, abcContext,
-  );
+  const promptD = buildGroupDPrompt(ctx, abcContext);
   const yamlD = await callAPIForPhase(promptD, 12000, signal,
-    onToken ? (t) => onToken("D", t) : undefined);
+    onToken ? (t) => onToken("D", t) : undefined, macroContext);
   const { gallery, browserHistory, hiddenPhotos } = parseGroupD(yamlD);
   const screenTime = parseScreenTime(yamlD);
 
@@ -652,117 +468,6 @@ export async function generateSequential(
 }
 
 /**
- * 一次生成所有模塊內容（合併模式）
- * 建構單一 prompt → 呼叫 API → 解析完整 YAML 回應
- * 所有模塊在同一次 AI 生成中完成，確保內容互相呼應一致
- */
-export async function generateCombined(
-  character: StoredCharacter,
-  chatContext: string,
-  userName: string,
-  userDescription: string,
-  worldInfo: string,
-  summariesAndEvents: string,
-  _chatId: string,
-  signal?: AbortSignal,
-  onToken?: (token: string) => void,
-): Promise<PeekPhoneData> {
-  const settingsStore = useSettingsStore();
-  const charName = character.data.name || character.nickname;
-  const charDesc = character.data.description || "";
-  const personality = character.data.personality || "";
-  const scenario = character.data.scenario || "";
-
-  const prompt = buildCombinedPrompt(
-    charName,
-    charDesc,
-    personality,
-    scenario,
-    chatContext,
-    userName,
-    userDescription,
-    worldInfo,
-    summariesAndEvents,
-  );
-
-  const taskConfig = settingsStore.getAPIForTask("peekPhone");
-  const client = new OpenAICompatibleClient(taskConfig.api);
-  const jailbreakMessages = await buildJailbreakMessages({
-    charName,
-    userName,
-  });
-  const messages: APIMessage[] = [
-    ...jailbreakMessages,
-    { role: "user", content: prompt },
-  ];
-  const isStreamingEnabled = taskConfig.generation.streamingEnabled;
-
-  let yamlContent: string;
-
-  if (isStreamingEnabled) {
-    let fullContent = "";
-    const stream = client.generateStream({
-      messages,
-      settings: {
-        maxContextLength: taskConfig.generation.maxContextLength,
-        maxResponseLength: taskConfig.generation.maxTokens,
-        temperature: taskConfig.generation.temperature,
-        topP: taskConfig.generation.topP,
-        frequencyPenalty: taskConfig.generation.frequencyPenalty,
-        presencePenalty: taskConfig.generation.presencePenalty,
-        repetitionPenalty: 1,
-        stopSequences: [],
-        streaming: true,
-        useStreamingWindow: false,
-        ...pickGenerationToggles(taskConfig.generation),
-      },
-      apiSettings: taskConfig.api,
-      signal,
-    });
-
-    for await (const chunk of stream) {
-      if (chunk.type === "token" && chunk.token) {
-        fullContent += chunk.token;
-        onToken?.(chunk.token);
-      } else if (chunk.type === "done") {
-        if (!fullContent && chunk.content) {
-          fullContent = chunk.content;
-        }
-      } else if (chunk.type === "error") {
-        throw new Error(chunk.error || "合併生成失敗");
-      }
-    }
-
-    yamlContent = fullContent;
-  } else {
-    const result = await client.generate({
-      messages,
-      settings: {
-        maxContextLength: taskConfig.generation.maxContextLength,
-        maxResponseLength: taskConfig.generation.maxTokens,
-        temperature: taskConfig.generation.temperature,
-        topP: taskConfig.generation.topP,
-        frequencyPenalty: taskConfig.generation.frequencyPenalty,
-        presencePenalty: taskConfig.generation.presencePenalty,
-        repetitionPenalty: 1,
-        stopSequences: [],
-        streaming: false,
-        useStreamingWindow: false,
-        ...pickGenerationToggles(taskConfig.generation),
-      },
-      apiSettings: taskConfig.api,
-      signal,
-    });
-
-    yamlContent = result.content;
-  }
-
-  const parsed = parseFullData(yamlContent);
-  parsed.characterId = character.id;
-  return parsed;
-}
-
-/**
  * 單獨重新生成某一個階段（A / BC / D），使用現有資料作為上下文
  * - A: 只重新生成聊天紀錄
  * - BC: 只重新生成行程+飲食+備忘+記事+日記+錢包
@@ -781,29 +486,23 @@ export async function generateSinglePhase(
   signal?: AbortSignal,
   onToken?: (token: string) => void,
 ): Promise<Partial<PeekPhoneData>> {
-  const charName = character.data.name || character.nickname;
-  const charDesc = character.data.description || "";
-  const personality = character.data.personality || "";
-  const scenario = character.data.scenario || "";
+  const ctx = await buildPromptContext(
+    character, chatContext, userName, userDescription, worldInfo, summariesAndEvents,
+  );
+  const macroContext: PeekMacroContext = { charName: ctx.charName, userName };
 
   switch (phase) {
     case "A": {
-      const prompt = buildGroupAPrompt(
-        charName, charDesc, personality, scenario, chatContext,
-        userName, userDescription, worldInfo, summariesAndEvents,
-      );
-      const yaml = await callAPIForPhase(prompt, 16000, signal, onToken);
+      const prompt = buildGroupAPrompt(ctx);
+      const yaml = await callAPIForPhase(prompt, 16000, signal, onToken, macroContext);
       const chats = parseGroupA(yaml);
       return { chats, lockScreen: parseLockScreen(yaml) };
     }
     case "BC": {
       // 使用現有 A 組資料作為上下文
       const aContext = serializeForContext({ chats: existingData.chats });
-      const prompt = buildGroupBCPrompt(
-        charName, charDesc, personality, scenario, chatContext,
-        userName, userDescription, worldInfo, summariesAndEvents, aContext,
-      );
-      const yaml = await callAPIForPhase(prompt, 16000, signal, onToken);
+      const prompt = buildGroupBCPrompt(ctx, aContext);
+      const yaml = await callAPIForPhase(prompt, 16000, signal, onToken, macroContext);
       const { schedule, meals, memos } = parseGroupB(yaml);
       const { notes, diary, balance, transactions } = parseGroupC(yaml);
       return { schedule, meals, memos, notes, diary, balance, transactions };
@@ -820,11 +519,8 @@ export async function generateSinglePhase(
         balance: existingData.balance,
         transactions: existingData.transactions,
       });
-      const prompt = buildGroupDPrompt(
-        charName, charDesc, personality, scenario, chatContext,
-        userName, userDescription, worldInfo, summariesAndEvents, abcContext,
-      );
-      const yaml = await callAPIForPhase(prompt, 12000, signal, onToken);
+      const prompt = buildGroupDPrompt(ctx, abcContext);
+      const yaml = await callAPIForPhase(prompt, 12000, signal, onToken, macroContext);
       const { gallery, browserHistory, hiddenPhotos } = parseGroupD(yaml);
       return { gallery, browserHistory, hiddenPhotos, screenTime: parseScreenTime(yaml) };
     }
@@ -887,6 +583,9 @@ export interface ContactReplyParams {
   worldInfo: string;
   /** 正在回覆的聯絡人名稱 */
   contactName: string;
+  /** 使用者（persona）的名字與描述：聯絡人就是使用者時帶入人設 */
+  userName: string;
+  userDescription: string;
   /** 該聯絡人的完整對話串 */
   thread: PeekChatThread;
   /** 手機主人剛剛送出的新訊息 */
@@ -903,16 +602,26 @@ export async function generateContactReply(
   onToken?: (token: string) => void,
 ): Promise<string> {
   const history = serializeThreadHistory(params.thread, params.ownerName);
-  const prompt = buildContactReplyPrompt(
-    params.ownerName,
-    params.ownerDesc,
-    params.ownerPersona,
-    params.scenario,
-    params.worldInfo,
-    params.contactName,
+  const now = new Date();
+  const macro = { charName: params.ownerName, userName: params.userName, currentDate: now };
+  const sub = async (text: string) => (text ? substituteParams(text, macro) : "");
+  const contactIsUser = params.thread.isUser || params.contactName === params.userName;
+  const prompt = buildContactReplyPrompt({
+    ownerName: params.ownerName,
+    ownerDesc: await sub(params.ownerDesc),
+    ownerPersona: await sub(params.ownerPersona),
+    scenario: await sub(params.scenario),
+    worldInfo: await sub(params.worldInfo),
+    contactName: params.contactName,
+    contactProfile: contactIsUser
+      ? [`你就是${params.userName}（${params.ownerName}手機裡存成「${params.contactName}」）。`, await sub(params.userDescription)]
+          .filter(Boolean)
+          .join("\n")
+      : undefined,
     history,
-    params.newMessage,
-  );
+    newMessage: params.newMessage,
+    now,
+  });
   const raw = await callAPIForPhase(prompt, 1500, signal, onToken, {
     charName: params.ownerName,
     userName: params.contactName,

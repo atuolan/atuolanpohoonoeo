@@ -360,8 +360,13 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
 
     try {
       const worldInfo = extractWorldInfo(character);
+      // 聯絡人可能就是使用者本人：帶入這段聊天用的 persona
+      const chatRecord = await db.get<Chat>(DB_STORES.CHATS, cId).catch(() => undefined);
+      const { userName, userDescription } = resolveUserInfo(chatRecord ?? ({} as Chat), charId);
       const reply = await generateContactReply(
         {
+          userName,
+          userDescription,
           ownerName,
           ownerDesc: character.data.description || "",
           ownerPersona: character.data.personality || "",
@@ -483,9 +488,9 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     groupStatus.value = { A: "loading", B: "idle", C: "idle", D: "idle" };
     groupErrors.value = { A: null, B: null, C: null, D: null };
 
-    const chatContext = await extractChatContext(chat, 15);
-    const summariesAndEvents = await extractSummariesAndEvents(cId, charId);
     const { userName, userDescription } = resolveUserInfo(chat, charId);
+    const chatContext = await extractChatContext(chat, 15, userName);
+    const summariesAndEvents = await extractSummariesAndEvents(cId, charId);
     const worldInfo = extractWorldInfo(character);
 
     const settingsStore = useSettingsStore();
@@ -560,8 +565,14 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
         return;
       }
       const msg = err?.message ?? "生成失敗";
-      groupStatus.value = { A: "error", B: "error", C: "error", D: "error" };
-      groupErrors.value = { A: msg, B: msg, C: msg, D: msg };
+      // 已經生成好的組留著，只把還沒完成的標成失敗
+      // （例如相簿組被模型拒絕，聊天、日記照樣看得到，之後只要重生相簿組）
+      for (const g of ["A", "B", "C", "D"] as const) {
+        if (groupStatus.value[g] !== "done") {
+          groupStatus.value[g] = "error";
+          groupErrors.value[g] = msg;
+        }
+      }
       if (streamingWindow) streamingWindow.setError(msg);
 
       const notificationStore = useNotificationStore();
@@ -642,9 +653,9 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       groupErrors.value.D = null;
     }
 
-    const chatContext = await extractChatContext(chat, 15);
-    const summariesAndEvents = await extractSummariesAndEvents(cId, charId);
     const { userName, userDescription } = resolveUserInfo(chat, charId);
+    const chatContext = await extractChatContext(chat, 15, userName);
+    const summariesAndEvents = await extractSummariesAndEvents(cId, charId);
     const worldInfo = extractWorldInfo(character);
 
     const settingsStore = useSettingsStore();

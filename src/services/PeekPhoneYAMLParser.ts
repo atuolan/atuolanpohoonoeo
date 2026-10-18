@@ -15,7 +15,6 @@ import type {
     PeekMealRecord,
     PeekMemo,
     PeekNote,
-    PeekPhoneData,
     PeekScheduleItem,
     PeekScreenTime,
     PeekTransaction,
@@ -52,6 +51,35 @@ function parseBool(raw: string): boolean {
 function parseNum(raw: string): number {
   const n = Number(raw.trim());
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * 訊息時間 → 毫秒時間戳。AI 寫的格式：
+ * 「10/17 23:12」「2026-10-17 23:12」「23:12」（今天），或舊格式的時間戳數字（秒或毫秒）
+ * 沒寫年份時用今年；算出來比現在晚超過一天，就當作去年
+ * 都對不上回傳 0（畫面上就不顯示時間）
+ */
+export function parseMessageTime(raw: string, now: Date = new Date()): number {
+  const text = raw.trim();
+  if (/^\d{9,13}$/.test(text)) return Number(text);
+
+  const full = text.match(/^(?:(\d{4})[-/.])?(\d{1,2})[-/.](\d{1,2})\s+(\d{1,2}):(\d{2})$/);
+  if (full) {
+    const year = full[1] ? Number(full[1]) : now.getFullYear();
+    const d = new Date(year, Number(full[2]) - 1, Number(full[3]), Number(full[4]), Number(full[5]));
+    if (!full[1] && d.getTime() > now.getTime() + 86_400_000) d.setFullYear(year - 1);
+    return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+  }
+
+  const clock = text.match(/^(\d{1,2}):(\d{2})$/);
+  if (clock) {
+    const d = new Date(now);
+    d.setHours(Number(clock[1]), Number(clock[2]), 0, 0);
+    // 只寫時間又比現在晚：是昨天的
+    if (d.getTime() > now.getTime()) d.setDate(d.getDate() - 1);
+    return d.getTime();
+  }
+  return 0;
 }
 
 /** 產生簡易 ID */
@@ -234,6 +262,11 @@ export function parseGroupA(yaml: string): PeekChatThread[] {
       }
       inDraftHistory = false;
 
+      if (currentThread && !token.isList && token.key === "is_user") {
+        if (parseBool(token.value)) currentThread.isUser = true;
+        continue;
+      }
+
       // 對話串層級的草稿（可能寫在 messages 前面或後面）
       if (currentThread && !token.isList && token.key === "draft") {
         if (token.value.trim()) currentThread.draft = token.value.trim();
@@ -270,7 +303,7 @@ export function parseGroupA(yaml: string): PeekChatThread[] {
         else if (token.key === "self")
           currentMsg.isSelf = parseBool(token.value);
         else if (token.key === "time")
-          currentMsg.timestamp = parseNum(token.value);
+          currentMsg.timestamp = parseMessageTime(token.value);
         else if (token.key === "recalled")
           currentMsg.recalled = parseBool(token.value) || undefined;
         else if (token.key === "recalled_after") {
@@ -565,46 +598,5 @@ export function parseScreenTime(yaml: string): PeekScreenTime | undefined {
   } catch {
     console.warn("[PeekPhoneYAMLParser] parseScreenTime failed");
     return undefined;
-  }
-}
-
-/** 解析完整 PeekPhoneData YAML */
-export function parseFullData(yaml: string): PeekPhoneData {
-  try {
-    const chats = parseGroupA(yaml);
-    const { schedule, meals, memos } = parseGroupB(yaml);
-    const { notes, diary, balance, transactions } = parseGroupC(yaml);
-    const { gallery, browserHistory, hiddenPhotos } = parseGroupD(yaml);
-
-    return {
-      characterId: "",
-      chats,
-      schedule,
-      meals,
-      balance,
-      transactions,
-      memos,
-      notes,
-      diary,
-      gallery,
-      browserHistory,
-      hiddenPhotos,
-    };
-  } catch {
-    console.warn("[PeekPhoneYAMLParser] parseFullData failed");
-    return {
-      characterId: "",
-      chats: [],
-      schedule: [],
-      meals: [],
-      balance: 0,
-      transactions: [],
-      memos: [],
-      notes: [],
-      diary: [],
-      gallery: [],
-      browserHistory: [],
-      hiddenPhotos: [],
-    };
   }
 }

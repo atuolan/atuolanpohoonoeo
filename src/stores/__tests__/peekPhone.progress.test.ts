@@ -45,6 +45,7 @@ vi.mock("@/stores/user", () => ({
 vi.mock("@/stores/lorebooks", () => ({ useLorebooksStore: () => ({}) }));
 vi.mock("@/stores/notification", () => ({ useNotificationStore: () => ({ addNotification: vi.fn() }) }));
 
+import { generateContactReply, generateSequential } from "@/services/PeekPhoneService";
 import { usePeekPhoneStore } from "@/stores/peekPhone";
 
 const character = { id: "c1", data: { name: "沈既白" } } as unknown as StoredCharacter;
@@ -156,5 +157,35 @@ describe("peekPhone store：偷看進度", () => {
     await store.sendMessageToContact("t1", "還沒", character);
 
     expect(store.data!.chats[0].draft).toBe("其實那天我不是剛好路過。");
+  });
+
+  it("相簿組失敗：聊天和行程組照樣留著，只有相簿組標失敗", async () => {
+    vi.mocked(generateSequential).mockImplementationOnce(async (...args: unknown[]) => {
+      const onPhaseComplete = args[8] as (phase: string, partial: Partial<PeekPhoneData>) => void;
+      onPhaseComplete("A", { chats: phoneData().chats });
+      onPhaseComplete("BC", { diary: [{ id: "d1", date: "2026-10-18", mood: "sad", content: "又沒睡" }] });
+      throw new Error("AI 回傳了空內容");
+    });
+    const store = usePeekPhoneStore();
+
+    await store.generateAll("c1", "chat-1", character, chat);
+
+    expect(store.groupStatus).toEqual({ A: "done", B: "done", C: "done", D: "error" });
+    expect(store.groupErrors.D).toBe("AI 回傳了空內容");
+    expect(store.groupErrors.A).toBeNull();
+    expect(store.data?.chats).toHaveLength(1);
+    expect(store.data?.diary).toHaveLength(1);
+  });
+
+  it("聯絡人回覆會帶上使用者的名字和人設", async () => {
+    const store = await readyStore();
+
+    await store.sendMessageToContact("t1", "還沒", character);
+
+    expect(vi.mocked(generateContactReply)).toHaveBeenCalledWith(
+      expect.objectContaining({ userName: "使用者", userDescription: "", contactName: "栩" }),
+      expect.anything(),
+      undefined,
+    );
   });
 });
