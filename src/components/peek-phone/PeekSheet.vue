@@ -5,6 +5,7 @@
  */
 import type { GroupStatus } from "@/stores/peekPhone";
 import type { PeekProgress } from "@/types/peekPhone";
+import type { PeekLinkSettings } from "@/utils/peekLinks";
 import {
   Calendar,
   Camera,
@@ -13,6 +14,7 @@ import {
   Globe,
   Hourglass,
   Image,
+  ListChecks,
   Loader2,
   Lock,
   MessageCircle,
@@ -32,6 +34,8 @@ const props = defineProps<{
   groupStatus: Record<"A" | "B" | "C" | "D", GroupStatus>;
   secrets: PeekSecret[];
   progress: PeekProgress;
+  /** 偷看的結果要不要回到聊天（這段聊天各自的開關） */
+  links: PeekLinkSettings;
 }>();
 
 const emit = defineEmits<{
@@ -41,7 +45,17 @@ const emit = defineEmits<{
   leave: [];
   /** 去秘密所在的地方 */
   goSecret: [secret: PeekSecret];
+  updateLinks: [links: PeekLinkSettings];
 }>();
+
+const linkOptions: { key: keyof PeekLinkSettings; label: string; note: string }[] = [
+  { key: "remember", label: "秘密記進記憶", note: "找到的秘密記成重要事件，之後他會記得你知道了" },
+  { key: "sendDraft", label: "可以幫他按送出", note: "跟你那串沒送出的草稿，可以替他送進聊天" },
+];
+
+function toggleLink(key: keyof PeekLinkSettings) {
+  emit("updateLinks", { ...props.links, [key]: !props.links[key] });
+}
 
 const PLACE_ICONS: Record<SecretPlace, typeof MessageCircle> = {
   lock: Lock,
@@ -49,6 +63,8 @@ const PLACE_ICONS: Record<SecretPlace, typeof MessageCircle> = {
   gallery: Image,
   browser: Globe,
   settings: Hourglass,
+  memo: ListChecks,
+  schedule: Calendar,
 };
 
 const found = computed(() => props.secrets.filter((s) => props.progress.revealed.includes(s.key)));
@@ -161,6 +177,28 @@ const subtitle = computed(() => {
         </div>
 
         <div class="peek-sheet-section">
+          <div class="peek-sheet-section-label">偷看之後</div>
+          <div class="peek-sheet-card">
+            <button
+              v-for="opt in linkOptions"
+              :key="opt.key"
+              type="button"
+              role="switch"
+              class="peek-sheet-row peek-sheet-link"
+              :aria-checked="props.links[opt.key] ? 'true' : 'false'"
+              @click="toggleLink(opt.key)"
+            >
+              <span class="peek-sheet-found-main">
+                <span class="peek-sheet-found-label">{{ opt.label }}</span>
+                <span class="peek-sheet-found-detail">{{ opt.note }}</span>
+              </span>
+              <span class="peek-sheet-switch" aria-hidden="true"><span class="peek-sheet-switch-knob" /></span>
+            </button>
+          </div>
+          <p class="peek-sheet-note">只影響這段聊天，預設都關。放下手機時會擲骰，看他有沒有發現</p>
+        </div>
+
+        <div class="peek-sheet-section">
           <div class="peek-sheet-section-label">重新生成</div>
           <div class="peek-sheet-card">
             <button
@@ -226,6 +264,36 @@ const subtitle = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.peek-sheet-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 26px;
+  border-radius: 13px;
+  background: #d8d7d2;
+  transition: background 0.2s;
+
+  .peek-sheet-link[aria-checked="true"] & {
+    background: var(--p-owner);
+  }
+}
+
+.peek-sheet-switch-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s;
+
+  .peek-sheet-link[aria-checked="true"] & {
+    transform: translateX(18px);
+  }
 }
 
 .peek-sheet-handle {

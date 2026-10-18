@@ -19,6 +19,7 @@ import {
   publishCharacterPlurk,
 } from "./PlurkPostService";
 import { pickGenerationToggles } from "@/utils/generationToggles";
+import { formatEventTime } from "@/utils/calendarEventFormat";
 import { computeChatNow } from "@/utils/fakeTime";
 import { toPromptGroupMember, withLiveSubCharSnapshot } from "@/utils/groupMembers";
 import type { GroupMember, MultiCharMember } from "@/types/chat";
@@ -1155,6 +1156,24 @@ export class ProactiveMessageService {
       // 便簽留言板：這個角色上一張紙條與 user 最新送出的心情；記下這輪帶的心情給 <mood-reply> 對應
       const { getNoteBoardPromptContext } = await import("@/services/noteBoardPrompt");
       const noteBoardContext = await getNoteBoardPromptContext(chat.id);
+      // 角色自己的待辦和行程（跟聊天頁帶的一樣）
+      const { loadCharPlanner } = await import("@/services/charPlanner");
+      const { buildPlannerPromptText, toDateString } = await import("@/utils/charPlanner");
+      const proactiveToday = toDateString(computeChatNow(chat));
+      const charPlannerText = buildPlannerPromptText(
+        (await loadCharPlanner(chat.id)) ?? { todos: [], plans: [] },
+        proactiveToday,
+        currentPersona?.name || "User",
+      );
+      // 使用者小手機行事曆上接下來 7 天的行程
+      const { listCalendarEvents } = await import("@/services/calendarEvents");
+      const { buildUserCalendarPromptText } = await import("@/utils/calendarEventFormat");
+      const { shiftDate } = await import("@/utils/charPlanner");
+      const userCalendarText =
+        buildUserCalendarPromptText(
+          await listCalendarEvents({ from: proactiveToday, to: shiftDate(proactiveToday, 6) }).catch(() => []),
+          { today: proactiveToday, chatId: chat.id, charName: character.data?.name || character.nickname || "角色" },
+        ) || undefined;
       const promptBuilder = new PromptBuilder({
         character,
         lorebooks: characterLorebooks,
@@ -1183,6 +1202,8 @@ export class ProactiveMessageService {
         charStatus: chat.charStatus?.text,
         charStickyNote: noteBoardContext.charStickyNote,
         userMoodNote: noteBoardContext.moodNote,
+        charPlanner: charPlannerText,
+        userCalendar: userCalendarText,
       });
 
       const promptData = await promptBuilder.build();
@@ -1450,28 +1471,18 @@ export class ProactiveMessageService {
             parsedResponse.calendarEvents
           ) {
             try {
+              // 跟聊天頁走同一個寫入，時間、跨天的結束日期才不會掉
+              const { saveCalendarEventOnce } = await import("@/services/calendarEvents");
               for (const calEvent of parsedResponse.calendarEvents) {
-                const event = {
-                  id: `cal_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-                  type: calEvent.type,
-                  title: calEvent.title,
-                  date: calEvent.date,
-                  description: calEvent.description,
-                  sourceCharacterId: character.id,
-                  sourceChatId: chat.id,
-                  createdAt: Date.now(),
-                  updatedAt: Date.now(),
-                };
-                await db.put(
-                  DB_STORES.CALENDAR_EVENTS,
-                  JSON.parse(JSON.stringify(event)),
-                );
+                const { created } = await saveCalendarEventOnce(calEvent, { characterId: character.id, chatId: chat.id });
+                // 行事曆裡本來就有：不再插卡片
+                if (!created) continue;
 
                 // 插入系統訊息到聊天中
                 const calendarMessage = {
                   id: `msg_cal_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
                   sender: "system" as const,
-                  content: `[行事曆] 已建立事件：${calEvent.title}（${calEvent.date}）${calEvent.description ? " - " + calEvent.description : ""}`,
+                  content: `[行事曆] 已建立事件：${calEvent.title}（${calEvent.date}${calEvent.startTime ? ` ${formatEventTime(calEvent)}` : ""}）${calEvent.description ? " - " + calEvent.description : ""}`,
                   is_user: false,
                   status: "sent" as const,
                   createdAt: Date.now(),
@@ -1482,6 +1493,9 @@ export class ProactiveMessageService {
                     title: calEvent.title,
                     date: calEvent.date,
                     description: calEvent.description,
+                    startTime: calEvent.startTime,
+                    endTime: calEvent.endTime,
+                    endDate: calEvent.endDate,
                   },
                 };
                 newMessages.push(calendarMessage);
@@ -1542,6 +1556,21 @@ export class ProactiveMessageService {
             } catch (error) {
               console.error("[ProactiveMessage] 角色狀態更新失敗:", error);
             }
+          }
+
+          // 處理角色待辦與行程標籤
+          try {
+            const { parseCharPlannerTags, toDateString } = await import("@/utils/charPlanner");
+            const plannerOps = parseCharPlannerTags(aiContent);
+            if (plannerOps.length > 0) {
+              const { applyCharPlannerOps } = await import("@/services/charPlanner");
+              await applyCharPlannerOps(chat.id, character.id, plannerOps, {
+                source: "chat",
+                today: toDateString(computeChatNow(chat)),
+              });
+            }
+          } catch (error) {
+            console.error("[ProactiveMessage] 角色待辦與行程更新失敗:", error);
           }
 
           // 處理便利貼與回覆心情標籤（釘上便簽留言板，主畫面的心情便籤會貼出小紙條）

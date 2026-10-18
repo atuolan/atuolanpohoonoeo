@@ -5,6 +5,8 @@ import {
 } from "@/db/operations";
 import { recordDeletedEntity, scheduleSelfHostedAutoSync } from "@/services/selfHostedSyncState";
 import { deleteVectorsByChatId } from "@/db/vectorStore";
+import { deleteCharPlanner } from "@/services/charPlanner";
+import { deletePeekLinks } from "@/services/PeekLinks";
 import {
   appendMessages,
   deleteMessagesForChat,
@@ -243,6 +245,12 @@ export async function deleteChatCascade(
 
   deleteVectorsByChatId(chatId).catch((err) =>
     console.error("[向量記憶] 刪除聊天向量失敗:", err),
+  );
+  deleteCharPlanner(chatId).catch((err) =>
+    console.error("[角色待辦] 刪除待辦與行程失敗:", err),
+  );
+  deletePeekLinks(chatId).catch((err) =>
+    console.error("[偷窺手機] 刪除連動開關失敗:", err),
   );
 
   if (!options?.suppressSyncDeletionRecord) {

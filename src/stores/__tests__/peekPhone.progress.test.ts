@@ -11,7 +11,7 @@ const { pending, puts } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/db/database", () => ({
-  DB_STORES: { PEEK_PHONE_DATA: "peekPhoneData" },
+  DB_STORES: { PEEK_PHONE_DATA: "peekPhoneData", CHATS: "chats" },
   db: {
     init: vi.fn(async () => {}),
     get: vi.fn(async () => undefined),
@@ -45,6 +45,7 @@ vi.mock("@/stores/user", () => ({
 vi.mock("@/stores/lorebooks", () => ({ useLorebooksStore: () => ({}) }));
 vi.mock("@/stores/notification", () => ({ useNotificationStore: () => ({ addNotification: vi.fn() }) }));
 
+import { db } from "@/db/database";
 import { generateContactReply, generateSequential } from "@/services/PeekPhoneService";
 import { usePeekPhoneStore } from "@/stores/peekPhone";
 
@@ -161,7 +162,7 @@ describe("peekPhone store：偷看進度", () => {
 
   it("相簿組失敗：聊天和行程組照樣留著，只有相簿組標失敗", async () => {
     vi.mocked(generateSequential).mockImplementationOnce(async (...args: unknown[]) => {
-      const onPhaseComplete = args[8] as (phase: string, partial: Partial<PeekPhoneData>) => void;
+      const onPhaseComplete = args[3] as (phase: string, partial: Partial<PeekPhoneData>) => void;
       onPhaseComplete("A", { chats: phoneData().chats });
       onPhaseComplete("BC", { diary: [{ id: "d1", date: "2026-10-18", mood: "sad", content: "又沒睡" }] });
       throw new Error("AI 回傳了空內容");
@@ -175,6 +176,23 @@ describe("peekPhone store：偷看進度", () => {
     expect(store.groupErrors.A).toBeNull();
     expect(store.data?.chats).toHaveLength(1);
     expect(store.data?.diary).toHaveLength(1);
+  });
+
+  it("手機上傳出、收到的訊息時間照這段聊天的假時間", async () => {
+    const store = await readyStore();
+    const offset = -365 * 86_400_000;
+    vi.mocked(db.get).mockImplementationOnce((async (storeName: string) =>
+      storeName === "chats" ? { id: "chat-1", fakeTimeMode: "offset", fakeTimeOffset: offset } : undefined) as never);
+
+    await store.sendMessageToContact("t1", "還沒", character);
+
+    const storyNow = Date.now() + offset;
+    const [sent, reply] = store.data!.chats[0].messages.slice(-2);
+    expect(Math.abs(sent.timestamp - storyNow)).toBeLessThan(5_000);
+    expect(Math.abs(reply.timestamp - storyNow)).toBeLessThan(5_000);
+    const calls = vi.mocked(generateContactReply).mock.calls;
+    const params = calls[calls.length - 1][0];
+    expect(Math.abs(params.now!.getTime() - storyNow)).toBeLessThan(5_000);
   });
 
   it("聯絡人回覆會帶上使用者的名字和人設", async () => {

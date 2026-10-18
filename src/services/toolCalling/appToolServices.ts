@@ -7,7 +7,7 @@
  */
 import { searchMusic, type MusicTrack } from "@/api/MusicApi";
 import { TOOL_WALLPAPER_PRESETS } from "@/data/wallpaperPresets";
-import { listCalendarEvents, saveCalendarEvent } from "@/services/calendarEvents";
+import { listCalendarEvents, saveCalendarEventOnce } from "@/services/calendarEvents";
 import { getIncomingCallScheduler } from "@/services/IncomingCallScheduler";
 import { getBrowserLocation, getNearbyPlaces, getWeatherByCity, reverseGeocode } from "@/services/WeatherService";
 import type { WallpaperStyle } from "@/stores/theme";
@@ -43,8 +43,8 @@ export interface AppToolServiceOptions {
   vectorThreshold: number;
   musicStore: MusicStoreLike;
   themeStore: ThemeStoreLike;
-  /** 新增行程寫入之後（插聊天卡片、通知） */
-  onCalendarEventCreated?: (data: CalendarEventData) => void;
+  /** 新增行程寫入之後（插聊天卡片、通知）；行事曆裡本來就有的不會呼叫 */
+  onCalendarEventCreated?: (data: CalendarEventData, eventId: string) => void;
   /** 角色正在跟使用者通話時，不另外排來電 */
   isInCallWithCharacter?: () => boolean;
 }
@@ -54,11 +54,23 @@ export function createAppToolServices(options: AppToolServiceOptions): Required<
     calendar: {
       async listEvents(range) {
         const events = await listCalendarEvents(range);
-        return events.map(({ date, title, description, type }) => ({ date, title, description, type }));
+        return events.map(({ date, title, description, type, startTime, endTime, endDate }) => ({
+          date,
+          title,
+          description,
+          type,
+          startTime,
+          endTime,
+          endDate,
+        }));
       },
       async createEvent(data) {
-        await saveCalendarEvent(data, { characterId: options.characterId, chatId: options.chatId });
-        options.onCalendarEventCreated?.(data);
+        const { event, created } = await saveCalendarEventOnce(data, {
+          characterId: options.characterId,
+          chatId: options.chatId,
+        });
+        if (created) options.onCalendarEventCreated?.(data, event.id);
+        return created;
       },
     },
     memory: createMemoryToolService(options),

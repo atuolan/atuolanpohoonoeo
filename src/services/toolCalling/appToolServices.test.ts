@@ -97,14 +97,17 @@ describe("行事曆", () => {
       context,
     );
     expect(created).toBe("已加入行事曆：看牙醫（2026-10-20，15:00–16:00，帶健保卡）");
-    expect(onCalendarEventCreated).toHaveBeenCalledWith({
-      type: "user",
-      title: "看牙醫",
-      date: "2026-10-20",
-      description: "15:00–16:00，帶健保卡",
-      startTime: "15:00",
-      endTime: "16:00",
-    });
+    expect(onCalendarEventCreated).toHaveBeenCalledWith(
+      {
+        type: "user",
+        title: "看牙醫",
+        date: "2026-10-20",
+        description: "15:00–16:00，帶健保卡",
+        startTime: "15:00",
+        endTime: "16:00",
+      },
+      expect.any(String),
+    );
 
     const stored = await db.getAll<CalendarEvent>(DB_STORES.CALENDAR_EVENTS);
     expect(stored).toHaveLength(1);
@@ -112,11 +115,30 @@ describe("行事曆", () => {
 
     await saveCalendarEvent({ type: "period", title: "經期", date: "2026-10-22" });
     await saveCalendarEvent({ type: "user", title: "早就過了", date: "2026-09-01" });
+    await saveCalendarEvent({ type: "user", title: "出差", date: "2026-10-17", endDate: "2026-10-21" });
 
     const listed = await tool("list_calendar_events").execute({ from: "2026-10-19", to: "2026-10-31" }, context);
-    expect(listed).toContain("2026-10-20：看牙醫（15:00–16:00，帶健保卡）");
+    // 時間另外寫在日期後面，說明裡重複的時間拿掉
+    expect(listed).toContain("2026-10-20 15:00–16:00：看牙醫（帶健保卡）");
     expect(listed).toContain("2026-10-22（經期紀錄）：經期");
+    // 還沒結束的跨天行程也列出來
+    expect(listed).toContain("2026-10-17 到 2026-10-21：出差");
     expect(listed).not.toContain("早就過了");
+  });
+
+  it("同一個行程再加一次不會重複，也不會再插卡片", async () => {
+    const onCalendarEventCreated = vi.fn();
+    const context = makeContext({ onCalendarEventCreated });
+
+    await tool("create_calendar_event").execute({ title: "看牙醫", start: "2026-10-20" }, context);
+    const again = await tool("create_calendar_event").execute({ title: "看 牙醫！", start: "2026-10-20 15:00" }, context);
+
+    expect(again).toContain("行事曆裡本來就有");
+    expect(onCalendarEventCreated).toHaveBeenCalledTimes(1);
+    const stored = await db.getAll<CalendarEvent>(DB_STORES.CALENDAR_EVENTS);
+    expect(stored).toHaveLength(1);
+    // 第二次多給的時間補進原本那筆
+    expect(stored[0].startTime).toBe("15:00");
   });
 
   it("日期看不懂時不寫入，直接報錯", async () => {

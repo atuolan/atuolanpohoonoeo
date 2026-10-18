@@ -15,13 +15,18 @@ export interface CalendarToolEvent {
   title: string;
   description?: string;
   type: "user" | "period" | "holiday";
+  /** HH:MM；整天的行程沒有 */
+  startTime?: string;
+  endTime?: string;
+  /** 跨天行程的結束日期 YYYY-MM-DD */
+  endDate?: string;
 }
 
 export interface CalendarToolService {
   /** 列出日期範圍內（含頭尾）的事件，依日期排序 */
   listEvents(range: { from: string; to?: string; limit: number }): Promise<CalendarToolEvent[]>;
-  /** 寫進行事曆；沒寫成要丟錯 */
-  createEvent(data: CalendarEventData): Promise<void>;
+  /** 寫進行事曆；沒寫成要丟錯。回傳 false 表示行事曆裡本來就有，沒有重複新增 */
+  createEvent(data: CalendarEventData): Promise<boolean>;
 }
 
 export interface MemoryToolEntry {

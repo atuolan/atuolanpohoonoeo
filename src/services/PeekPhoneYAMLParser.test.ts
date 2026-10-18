@@ -202,4 +202,18 @@ describe("parseMessageTime：訊息時間", () => {
     expect(parseMessageTime("時間戳數字", now)).toBe(0);
     expect(parseMessageTime("", now)).toBe(0);
   });
+
+  it("聊天訊息的年份跟著角色手機上的時間（假時間在別的年份）", () => {
+    const yaml = `chats:
+  - contact: 栩
+    messages:
+      - from: 栩
+        text: 睡了嗎
+        self: false
+        time: "7/1 23:40"`;
+
+    const [thread] = parseGroupA(yaml, new Date(2019, 6, 2, 21, 30));
+
+    expect(thread.messages[0].timestamp).toBe(new Date(2019, 6, 1, 23, 40).getTime());
+  });
 });

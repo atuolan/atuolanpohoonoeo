@@ -12,12 +12,16 @@ import {
   formatRelative,
   initialOf,
   latestNotifications,
+  memosFromPlanner,
   MOOD_LABELS,
   moodLine,
   nextScheduleItem,
   photoTone,
+  scheduleFromPlanner,
   toMillis,
   type HomeApp,
+  type PeekMemoView,
+  type PeekScheduleView,
 } from "@/components/peek-phone/peekPhoneView";
 import {
   homeTabOfView,
@@ -36,6 +40,35 @@ import { usePeekPhoneStore } from "@/stores/peekPhone";
 import type { StoredCharacter } from "@/types/character";
 import type { Chat } from "@/types/chat";
 import type { PeekChatMessage, PeekDiaryEntry, PeekPhoneTab } from "@/types/peekPhone";
+import { computeChatNow } from "@/utils/fakeTime";
+import {
+  CHAR_PLANNER_CHANGED_EVENT,
+  loadCharPlanner,
+  type CharPlannerChangedDetail,
+} from "@/services/charPlanner";
+import type { CharPlanner } from "@/types/charPlanner";
+import type { CalendarEvent } from "@/types/calendar";
+import { listCalendarEvents } from "@/services/calendarEvents";
+import { emptyPeekRealData, loadPeekRealData } from "@/services/PeekRealData";
+import { mergeRealUserThread, type PeekRealData } from "@/utils/peekRealData";
+import {
+  leavePeekNote,
+  loadPeekLinks,
+  rememberPeekSecret,
+  savePeekLinks,
+  sendDraftAsChar,
+} from "@/services/PeekLinks";
+import {
+  buildCaughtNote,
+  buildSuspiciousNote,
+  DEFAULT_PEEK_LINKS,
+  rollInterrupt,
+  rollStealth,
+  type PeekLinkSettings,
+  type StealthCheck,
+} from "@/utils/peekLinks";
+import { eventLastDate, formatEventTime } from "@/utils/calendarEventFormat";
+import { comparePlans, formatPlanTime, shiftDate, toDateString } from "@/utils/charPlanner";
 import {
   AlertTriangle,
   Angry,
@@ -69,7 +102,11 @@ import {
 } from "lucide-vue-next";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
-const emit = defineEmits<{ back: [] }>();
+const emit = defineEmits<{
+  back: [];
+  /** 偷看被他抓到：手機被拿走，回到你們的聊天 */
+  caught: [];
+}>();
 const props = defineProps<{ characterId: string; chatId: string }>();
 
 const charactersStore = useCharactersStore();
@@ -90,10 +127,10 @@ const currentView = ref<"lock" | "home" | PeekPhoneTab>("lock");
 // 窺視選單（點頂部膠囊）
 const showSheet = ref(false);
 
-// 時間顯示
+// 時間顯示：角色手機上的時間，聊天有假時間就照假時間走
 const now = ref(new Date());
 const timer = setInterval(() => {
-  now.value = new Date();
+  now.value = computeChatNow(chatRecord.value);
 }, 30000);
 onUnmounted(() => {
   clearInterval(timer);
@@ -140,23 +177,101 @@ const groupStatus = computed(() => peekPhoneStore.groupStatus);
 const groupErrors = computed(() => peekPhoneStore.groupErrors);
 
 // 各模塊的資料
-const chats = computed(() => storeData.value?.chats ?? []);
-const schedule = computed(() => storeData.value?.schedule ?? []);
-const meals = computed(() => storeData.value?.meals ?? []);
+// 真的聊天、交易、日記、外送：打開手機時現讀，蓋在 AI 生成的上面
+const realData = ref<PeekRealData>(emptyPeekRealData());
+const userNameForPhone = ref("");
+const chats = computed(() =>
+  mergeRealUserThread(storeData.value?.chats ?? [], realData.value.userThread, userNameForPhone.value),
+);
+/** 跟使用者那串顯示的是真的聊天：不能從這裡傳訊息 */
+function isRealUserThread(thread: { isUser?: boolean } | undefined): boolean {
+  return !!thread?.isUser && realData.value.userThread.length > 0;
+}
+// 行程和待辦跟聊天頁「他的今天」是同一份；還沒有（舊的偷窺內容）時用偷窺手機自己生成的
+const planner = ref<CharPlanner | null>(null);
+const phoneToday = computed(() => toDateString(now.value));
+const schedule = computed<PeekScheduleView[]>(() => {
+  const fromPlanner = scheduleFromPlanner(planner.value?.plans ?? [], phoneToday.value, now.value);
+  return fromPlanner.length > 0 ? fromPlanner : (storeData.value?.schedule ?? []);
+});
+/** 「接下來」左邊那欄窄，只寫 10/19 */
+function shortPlanDate(date: string): string {
+  const [, m, d] = date.split("-");
+  return `${Number(m)}/${Number(d)}`;
+}
+/** 行事曆 App 下面「接下來」：明天之後的行程 */
+const upcomingPlans = computed(() =>
+  (planner.value?.plans ?? []).filter((p) => p.date > phoneToday.value).sort(comparePlans).slice(0, 8),
+);
+const meals = computed(() => [...realData.value.meals, ...(storeData.value?.meals ?? [])]);
 const balance = computed(() => storeData.value?.balance ?? 0);
-const transactions = computed(() => storeData.value?.transactions ?? []);
-const memos = computed(() => storeData.value?.memos ?? []);
+const transactions = computed(() => [...realData.value.transactions, ...(storeData.value?.transactions ?? [])]);
+const memos = computed<PeekMemoView[]>(() => {
+  const todos = planner.value?.todos ?? [];
+  return todos.length > 0 ? memosFromPlanner(todos) : (storeData.value?.memos ?? []);
+});
+
+/** 他在這段聊天幫使用者記進行事曆的（接下來兩週） */
+const helpedEvents = ref<CalendarEvent[]>([]);
+
+async function loadPlanner() {
+  try {
+    planner.value = await loadCharPlanner(props.chatId);
+    const today = phoneToday.value;
+    helpedEvents.value = (await listCalendarEvents({ from: today, to: shiftDate(today, 13) })).filter(
+      (e) => e.sourceChatId === props.chatId,
+    );
+  } catch (err) {
+    console.warn("[PeekPhoneScreen] 讀取角色待辦與行程失敗:", err);
+  }
+}
+
+function helpedWhen(e: CalendarEvent): string {
+  const last = eventLastDate(e);
+  const days = last !== e.date ? `${shortPlanDate(e.date)}–${shortPlanDate(last)}` : shortPlanDate(e.date);
+  const time = formatEventTime(e);
+  return time ? `${days}　${time}` : days;
+}
+// 生成時寫回、聊天頁刪掉的，這裡跟著更新
+function onPlannerChanged(event: Event) {
+  const detail = (event as CustomEvent<CharPlannerChangedDetail>).detail;
+  if (detail?.chatId === props.chatId) planner.value = detail.planner;
+}
+onMounted(() => {
+  window.addEventListener(CHAR_PLANNER_CHANGED_EVENT, onPlannerChanged);
+  void loadPlanner();
+});
+onUnmounted(() => window.removeEventListener(CHAR_PLANNER_CHANGED_EVENT, onPlannerChanged));
 const notes = computed(() => storeData.value?.notes ?? []);
-const diary = computed(() => storeData.value?.diary ?? []);
+const diary = computed(() =>
+  [...realData.value.diary, ...(storeData.value?.diary ?? [])].sort((a, b) => b.date.localeCompare(a.date)),
+);
 const gallery = computed(() => storeData.value?.gallery ?? []);
+/** 他排好要打給使用者的電話：行事曆上變成提醒，原因是秘密 */
+const pendingCalls = computed(() => realData.value.pendingCalls);
+/** 他手機裡給使用者的備註名 */
+const userContactName = computed(
+  () => chats.value.find((c) => c.isUser)?.contactName || userNameForPhone.value || "你",
+);
 const browserHistory = computed(() => storeData.value?.browserHistory ?? []);
 const hiddenPhotos = computed(() => storeData.value?.hiddenPhotos ?? []);
 // 相簿分成一般的和「最近刪除」裡的
-const activePhotos = computed(() => gallery.value.filter((p) => !p.deletedDaysLeft));
+// 聊天裡真的傳過的照片排在一起，新的在前
+const activePhotos = computed(() =>
+  [...realData.value.photos, ...gallery.value.filter((p) => !p.deletedDaysLeft)].sort((a, b) =>
+    b.date.localeCompare(a.date),
+  ),
+);
 const deletedPhotos = computed(() => gallery.value.filter((p) => p.deletedDaysLeft));
 
 // ===== 秘密與偷看進度 =====
-const secrets = computed(() => listSecrets(storeData.value));
+const secrets = computed(() =>
+  listSecrets(
+    storeData.value ? { ...storeData.value, chats: chats.value } : null,
+    planner.value,
+    pendingCalls.value,
+  ),
+);
 const progress = computed(() => progressOf(storeData.value));
 const unfound = computed(() => unfoundByPlace(secrets.value, progress.value));
 
@@ -164,14 +279,174 @@ function isRevealed(key: string): boolean {
   return progress.value.revealed.includes(key);
 }
 function reveal(key: string): void {
+  if (!isRevealed(key)) {
+    foundThisTime.add(key);
+    if (links.value.remember) void rememberSecret(key);
+  }
   peekPhoneStore.markRevealed(key);
+}
+
+// ===== 偷看的結果回到聊天（窺視選單裡的開關，每個聊天各自存；會不會被發現放下手機時擲骰） =====
+const links = ref<PeekLinkSettings>({ ...DEFAULT_PEEK_LINKS });
+/** 這次拿起手機才找到的秘密：被發現時告訴他看到了什麼 */
+const foundThisTime = new Set<string>();
+/** 這次翻過的 App：翻越多越容易被發現 */
+const appsThisTime = new Set<PeekPhoneTab>();
+/** 這次有解鎖進到桌面：只看了鎖屏就放下不算偷看 */
+let openedThisTime = false;
+
+function peekNames() {
+  return { userName: userNameForPhone.value || "使用者", charName: charName.value };
+}
+
+async function rememberSecret(key: string) {
+  const secret = secrets.value.find((s) => s.key === key);
+  if (!secret || !character.value) return;
+  try {
+    await rememberPeekSecret(props.chatId, character.value.id, secret, peekNames());
+  } catch (err) {
+    console.warn("[PeekPhoneScreen] 秘密記進重要事件失敗:", err);
+  }
+}
+
+async function updateLinks(next: PeekLinkSettings) {
+  const turnedOnRemember = next.remember && !links.value.remember;
+  links.value = next;
+  try {
+    await savePeekLinks(props.chatId, next);
+  } catch (err) {
+    console.warn("[PeekPhoneScreen] 儲存連動開關失敗:", err);
+  }
+  // 剛打開「記進記憶」：之前找到的也補記
+  if (turnedOnRemember) {
+    for (const key of progress.value.revealed) await rememberSecret(key);
+  }
+}
+
+onMounted(async () => {
+  try {
+    links.value = await loadPeekLinks(props.chatId);
+  } catch (err) {
+    console.warn("[PeekPhoneScreen] 讀取連動開關失敗:", err);
+  }
+});
+
+// 放下手機：擲一次隱匿檢定，被發現或他起疑就在聊天裡留一筆
+const stealth = ref<StealthCheck | null>(null);
+/** 骰子轉動中顯示的點數；轉完等於 stealth.roll */
+const diceFace = ref(20);
+const diceRolling = ref(false);
+
+/** 擲骰結果定了：被發現或他起疑就在聊天裡留一筆；被抓到再請 AI 寫他的第一反應 */
+function settleStealth(check: StealthCheck) {
+  stealth.value = check;
+  const found = secrets.value.filter((s) => foundThisTime.has(s.key));
+  const when = check.interrupted ? "mid" : "end";
+  const { userName, charName: name } = peekNames();
+  const note =
+    check.outcome === "caught"
+      ? buildCaughtNote(found, userName, name, when)
+      : check.outcome === "suspicious"
+        ? buildSuspiciousNote(name)
+        : "";
+  if (!note) return;
+  const storyTime = now.value.getTime();
+  const char = character.value;
+  void leavePeekNote(props.chatId, note, storyTime)
+    .then(() => {
+      if (check.outcome === "caught" && char) {
+        return peekPhoneStore.reactToCaught(char, props.chatId, found, when, storyTime + 1);
+      }
+    })
+    .catch((err) => console.warn("[PeekPhoneScreen] 留下被發現的紀錄失敗:", err));
+}
+
+/** 擲骰：結果先定好，再播骰子轉動 */
+function showStealth(check: StealthCheck) {
+  showSheet.value = false;
+  settleStealth(check);
+  const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (reduceMotion) {
+    diceFace.value = check.roll;
+    return;
+  }
+  diceRolling.value = true;
+  let ticks = 0;
+  const timer = window.setInterval(() => {
+    ticks++;
+    diceFace.value = 1 + Math.floor(Math.random() * check.sides);
+    if (ticks >= 14) {
+      window.clearInterval(timer);
+      diceFace.value = check.roll;
+      diceRolling.value = false;
+    }
+  }, 60);
+}
+
+/** 想放下手機：偷看過又還沒擲骰就先擲，回傳 true 代表擋下來顯示結果 */
+function tryLeave(): boolean {
+  if (!openedThisTime || stealth.value) return false;
+  showStealth(rollStealth(foundThisTime.size));
+  return true;
+}
+
+/** 擲骰畫面的按鈕：被抓到回聊天，其他放下手機 */
+function closeStealth() {
+  if (stealth.value?.outcome === "caught") emit("caught");
+  else emit("back");
+}
+
+function leavePhone() {
+  if (!tryLeave()) emit("back");
+}
+
+const stealthTitle = computed(() => {
+  const check = stealth.value;
+  if (!check) return "";
+  if (check.interrupted) return "他回來了！手機被拿走了";
+  if (check.critical === "success") return "大成功！他完全沒發現";
+  if (check.critical === "fail") return "大失敗……被他當場抓到";
+  if (check.outcome === "safe") return "成功，他沒發現";
+  if (check.outcome === "suspicious") return "差一點……他覺得手機被動過";
+  return "失敗，被他發現了";
+});
+
+// 沒經過「放下手機」就離開（例如直接回主畫面）：背後擲骰
+onUnmounted(() => {
+  if (openedThisTime && !stealth.value) settleStealth(rollStealth(foundThisTime.size));
+});
+
+/** 幫他按送出：跟使用者那串的草稿以他的身分出現在聊天裡 */
+const sendingDraft = ref(false);
+const canSendDraft = computed(
+  () =>
+    links.value.sendDraft &&
+    !!selectedChat.value?.draft &&
+    !selectedChat.value.draftSentAt &&
+    isRealUserThread(selectedChat.value),
+);
+async function sendDraft() {
+  const thread = selectedChat.value;
+  if (!thread?.draft || sendingDraft.value) return;
+  if (!confirm(`幫${charName.value}把這句話送出去？\n\n「${thread.draft.trim()}」\n\n會以${charName.value}的身分出現在你們的聊天裡。`)) return;
+  sendingDraft.value = true;
+  try {
+    reveal(secretKeys.draft(thread.id));
+    await sendDraftAsChar(props.chatId, charName.value, thread.draft.trim(), now.value.getTime());
+    peekPhoneStore.markDraftSent(thread.id);
+    if (chatRecord.value) await loadRealData(chatRecord.value);
+  } catch (err) {
+    console.warn("[PeekPhoneScreen] 幫他送出草稿失敗:", err);
+  } finally {
+    sendingDraft.value = false;
+  }
 }
 
 // 膠囊上的字：主畫面說幾處有秘密，App 裡說這裡有幾個
 const capsuleLabel = computed(() => {
   const view = currentView.value;
   if (view === "home") {
-    const places = (["chat", "gallery", "browser", "settings"] as SecretPlace[]).filter(
+    const places = (["chat", "gallery", "browser", "settings", "memo", "schedule"] as SecretPlace[]).filter(
       (p) => unfound.value[p] > 0,
     ).length;
     return places > 0 ? `${places} 處有秘密` : undefined;
@@ -185,10 +460,24 @@ const capsuleLabel = computed(() => {
 const hasUnfound = computed(() => Object.values(unfound.value).some((n) => n > 0));
 
 // 打開過哪些 App；打開「已隱藏」就算找到那本相簿
-watch(currentView, (view) => {
+watch(currentView, (view, prev) => {
   if (view === "lock" || view === "home") return;
   peekPhoneStore.markViewed(homeTabOfView(view));
+  appsThisTime.add(homeTabOfView(view));
+  // 從桌面打開一個 App：擲一次突發事件，他可能剛好回來
+  if (prev === "home" && !stealth.value) {
+    const check = rollInterrupt();
+    if (check) showStealth(check);
+  }
   if (view === "hidden" && hiddenPhotos.value.length > 0) reveal(secretKeys.hidden);
+  // 打開備忘錄、行事曆就看到了聊天裡看不到的待辦和行程
+  if (view === "memo") {
+    for (const t of planner.value?.todos ?? []) if (t.secret) reveal(secretKeys.todo(t.id));
+  }
+  if (view === "schedule") {
+    for (const p of planner.value?.plans ?? []) if (p.secret) reveal(secretKeys.plan(p.id));
+    for (const c of pendingCalls.value) reveal(secretKeys.call(c.id));
+  }
 });
 
 // 鎖屏密碼：還沒解過（或從窺視選單說要再試一次）就要先猜
@@ -208,6 +497,7 @@ function onLockSkip() {
 }
 function onUnlock() {
   lockRetry.value = false;
+  openedThisTime = true;
   currentView.value = "home";
 }
 
@@ -231,6 +521,13 @@ const lockNotifications = computed(() => latestNotifications(chats.value, 3));
 const lockNextSchedule = computed(() => nextScheduleItem(schedule.value));
 const homeMoodLine = computed(() => moodLine(diary.value));
 const homePhoto = computed(() => activePhotos.value[0] ?? null);
+
+// 鎖屏：聊天頂欄那行狀態、他所在的城市和天氣（角色設定裡填的）
+const lockStatusText = computed(() => chatRecord.value?.charStatus?.text?.trim() || "");
+const lockPlaceText = computed(() => {
+  const world = character.value?.worldSettings;
+  return [world?.location?.trim(), world?.weatherOverride?.trim()].filter(Boolean).join(" · ");
+});
 
 // 聊天詳情
 const selectedChatId = ref<string | null>(null);
@@ -450,12 +747,18 @@ function goBackFromApp() {
 
 /** 右滑返回：先退手機裡的一層（面板、聊天、日記、App），退到主畫面或鎖屏才回 false，讓外面離開手機 */
 function handleBack(): boolean {
+  // 擲骰畫面開著：返回等於按下面的按鈕
+  if (stealth.value && !diceRolling.value) {
+    closeStealth();
+    return true;
+  }
+  if (stealth.value) return true;
   if (showSheet.value) {
     showSheet.value = false;
     return true;
   }
   const view = currentView.value;
-  if (view === "lock" || view === "home") return false;
+  if (view === "lock" || view === "home") return tryLeave();
   if (view === "chat" && showDraftHistory.value) {
     showDraftHistory.value = false;
   } else if (view === "chat" && selectedChatId.value) {
@@ -473,12 +776,16 @@ defineExpose({ handleBack });
 /** 點鎖屏通知：解鎖並直接打開那個聊天 */
 function openThreadFromLock(threadId: string) {
   lockRetry.value = false;
+  openedThisTime = true;
   selectedChatId.value = threadId;
   currentView.value = "chat";
 }
 
 // 載入聊天資料並觸發生成
 const chatRecord = ref<Chat | null>(null);
+watch(chatRecord, (chat) => {
+  now.value = computeChatNow(chat);
+});
 
 /** 僅載入聊天資料和快取（從記憶體或 IDB），不呼叫 API；回傳有沒有既有內容 */
 async function loadChatData(): Promise<boolean> {
@@ -488,11 +795,27 @@ async function loadChatData(): Promise<boolean> {
     const chat = await db.get<Chat>(DB_STORES.CHATS, props.chatId);
     if (!chat) return false;
     chatRecord.value = chat;
+    void loadRealData(chat);
     // 從記憶體快取 → IDB → 重置為 null，確保不會顯示其他聊天的內容
     return await peekPhoneStore.loadOrReset(props.characterId, props.chatId);
   } catch (err) {
     console.error("[PeekPhoneScreen] Failed to load chat data:", err);
     return false;
+  }
+}
+
+async function loadRealData(chat: Chat) {
+  if (!character.value) return;
+  const userName = peekPhoneStore.resolveUserName(chat, props.characterId);
+  userNameForPhone.value = userName;
+  try {
+    realData.value = await loadPeekRealData(chat, {
+      userName,
+      charName: character.value.data.name || character.value.nickname || "角色",
+      now: computeChatNow(chat),
+    });
+  } catch (err) {
+    console.warn("[PeekPhoneScreen] 讀取真的聊天資料失敗:", err);
   }
 }
 
@@ -675,6 +998,8 @@ const todayLabel = computed(
         :notifications="lockNotifications"
         :group-status="groupStatus"
         :lock-screen="storeData?.lockScreen"
+        :status-text="lockStatusText"
+        :place-text="lockPlaceText"
         :need-code="needCode"
         @unlock="onUnlock"
         @open-thread="openThreadFromLock"
@@ -810,6 +1135,20 @@ const todayLabel = computed(
                   </span>
                   <div class="chat-bubble">{{ item.msg.content }}</div>
                   <span v-if="item.msg.recalled" class="chat-recalled-meta">{{ recalledMeta(item.msg) }}</span>
+                  <!-- 沒接通的電話：偷看他打來想說什麼 -->
+                  <template v-if="item.msg.callReason">
+                    <span v-if="isRevealed(secretKeys.call(item.msg.id))" class="chat-recalled-meta">
+                      想說的是：{{ item.msg.callReason }}
+                    </span>
+                    <button
+                      v-else
+                      type="button"
+                      class="peek-chip"
+                      @click="reveal(secretKeys.call(item.msg.id))"
+                    >
+                      <Eye :size="14" aria-hidden="true" />偷看 TA 打來想說什麼
+                    </button>
+                  </template>
                 </div>
               </template>
               <!-- 對方輸入中提示 -->
@@ -849,8 +1188,23 @@ const todayLabel = computed(
               </button>
             </div>
 
+            <!-- 跟使用者那串是真的聊天：只看得到輸入框裡沒送出的字 -->
+            <div v-if="isRealUserThread(selectedChat)" class="chat-input-bar">
+              <div class="chat-input chat-input--readonly" role="note">
+                {{ (!selectedChat.draftSentAt && selectedChat.draft) || "輸入框是空的" }}
+              </div>
+              <button
+                v-if="canSendDraft"
+                type="button"
+                class="chat-send-draft"
+                :disabled="sendingDraft"
+                @click="sendDraft"
+              >
+                幫 TA 按送出
+              </button>
+            </div>
             <!-- 以手機主人身份回覆聯絡人的輸入列 -->
-            <div class="chat-input-bar">
+            <div v-else class="chat-input-bar">
               <input
                 v-model="replyInput"
                 class="chat-input"
@@ -894,16 +1248,64 @@ const todayLabel = computed(
               class="app-row sched-item"
               :class="{ done: item.done }"
             >
-              <span class="sched-time">{{ item.time }}</span>
+              <span class="sched-time">{{ item.time || "整天" }}</span>
               <span class="sched-dot" aria-hidden="true" />
               <span class="sched-main">
-                <span class="sched-title">{{ item.title }}</span>
+                <span class="sched-title">
+                  {{ item.title }}
+                  <span v-if="item.secret" class="secret-tag">沒讓你知道</span>
+                </span>
                 <span v-if="item.location" class="sched-loc">{{ item.location }}</span>
               </span>
               <Check v-if="item.done" :size="16" class="sched-check" aria-label="已完成" />
             </li>
           </ol>
           <div v-else class="app-empty">今天沒有行程</div>
+          <template v-if="upcomingPlans.length > 0">
+            <div class="app-section-label">接下來</div>
+            <ol class="app-card sched-list">
+              <li v-for="plan in upcomingPlans" :key="plan.id" class="app-row sched-item">
+                <span class="sched-time">{{ shortPlanDate(plan.date) }}</span>
+                <span class="sched-dot" aria-hidden="true" />
+                <span class="sched-main">
+                  <span class="sched-title">
+                    {{ plan.title }}
+                    <span v-if="plan.secret" class="secret-tag">沒讓你知道</span>
+                  </span>
+                  <span v-if="formatPlanTime(plan) || plan.place" class="sched-loc">
+                    {{ [formatPlanTime(plan), plan.place].filter(Boolean).join("　") }}
+                  </span>
+                </span>
+              </li>
+            </ol>
+          </template>
+          <template v-if="pendingCalls.length > 0">
+            <div class="app-section-label">提醒</div>
+            <ol class="app-card sched-list">
+              <li v-for="call in pendingCalls" :key="call.id" class="app-row sched-item">
+                <span class="sched-time">{{ call.time }}</span>
+                <span class="sched-dot" aria-hidden="true" />
+                <span class="sched-main">
+                  <span class="sched-title">
+                    打電話給{{ userContactName }}
+                    <span class="secret-tag">沒讓你知道</span>
+                  </span>
+                  <span class="sched-loc">想說：{{ call.reason }}</span>
+                </span>
+              </li>
+            </ol>
+          </template>
+          <template v-if="helpedEvents.length > 0">
+            <div class="app-section-label">幫你記進行事曆的</div>
+            <ul class="app-card">
+              <li v-for="e in helpedEvents" :key="e.id" class="app-row sched-item">
+                <span class="sched-main">
+                  <span class="sched-title">{{ e.title }}</span>
+                  <span class="sched-loc">{{ helpedWhen(e) }}</span>
+                </span>
+              </li>
+            </ul>
+          </template>
         </div>
 
         <!-- ===== 飲食記錄 ===== -->
@@ -963,7 +1365,10 @@ const todayLabel = computed(
               <span class="memo-check" :aria-label="memo.done ? '已完成' : '未完成'">
                 <Check v-if="memo.done" :size="14" :stroke-width="3" aria-hidden="true" />
               </span>
-              <span class="memo-text">{{ memo.content }}</span>
+              <span class="memo-text">
+                {{ memo.content }}
+                <span v-if="memo.secret" class="secret-tag">沒讓你知道</span>
+              </span>
             </li>
           </ul>
           <template v-if="notes.length > 0">
@@ -1066,7 +1471,8 @@ const todayLabel = computed(
                 :aria-pressed="selectedPhoto?.id === item.id"
                 @click="selectedPhotoId = item.id"
               >
-                <Camera v-if="item.source === 'selfie'" :size="22" aria-hidden="true" />
+                <img v-if="item.imageUrl" :src="item.imageUrl" alt="" class="photo-tile-img" loading="lazy" />
+                <Camera v-else-if="item.source === 'selfie'" :size="22" aria-hidden="true" />
                 <Image v-else-if="item.source === 'scene'" :size="22" aria-hidden="true" />
                 <MessageCircle v-else :size="22" aria-hidden="true" />
                 <span class="photo-tile-tag">{{ item.date.slice(5).replace("-", "/") }}</span>
@@ -1269,6 +1675,41 @@ const todayLabel = computed(
       :secret="hasUnfound"
       @open="showSheet = !showSheet"
     />
+    <!-- 隱匿檢定：放下手機時擲 d20 -->
+    <Transition name="stealth-fade">
+      <div v-if="stealth" class="stealth-layer" role="dialog" aria-modal="true" aria-label="隱匿檢定">
+        <div class="stealth-card" :class="!diceRolling && `is-${stealth.outcome}`">
+          <div class="stealth-label">{{ stealth.interrupted ? "突發事件" : "隱匿檢定" }}</div>
+          <div class="stealth-dc">
+            {{ stealth.interrupted ? `d100 擲到 ${stealth.dc} 以下他就回來了` : `d20 · 難度 DC ${stealth.dc}` }}
+          </div>
+          <div class="stealth-die" :class="{ rolling: diceRolling }" aria-live="polite">
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <polygon points="50,4 93,27 93,73 50,96 7,73 7,27" class="stealth-die-body" />
+              <polygon points="50,30 76,68 24,68" class="stealth-die-face" />
+              <path
+                d="M50,30 L50,4 M50,30 L93,27 M50,30 L7,27 M76,68 L93,27 M76,68 L93,73 M76,68 L50,96 M24,68 L7,27 M24,68 L7,73 M24,68 L50,96"
+                class="stealth-die-edge"
+              />
+            </svg>
+            <span class="stealth-die-num">{{ diceFace }}</span>
+          </div>
+          <template v-if="!diceRolling">
+            <div class="stealth-title">{{ stealthTitle }}</div>
+            <p class="stealth-sub">
+              <template v-if="foundThisTime.size">這次找到 {{ foundThisTime.size }} 個秘密<br /></template>
+              <template v-if="stealth.outcome === 'caught'">他正在傳訊息給你……</template>
+              <template v-else-if="stealth.outcome === 'suspicious'">聊天裡會留一筆，他下一則回覆會看到</template>
+              <template v-else-if="!foundThisTime.size">什麼都沒留下</template>
+            </p>
+            <button type="button" class="stealth-leave" @click="closeStealth">
+              {{ stealth.outcome === "caught" ? "回到聊天" : "放下手機" }}
+            </button>
+          </template>
+        </div>
+      </div>
+    </Transition>
+
     <PeekSheet
       :open="showSheet"
       :name="charName"
@@ -1276,11 +1717,13 @@ const todayLabel = computed(
       :group-status="groupStatus"
       :secrets="secrets"
       :progress="progress"
+      :links="links"
+      @update-links="updateLinks"
       @close="showSheet = false"
       @go-secret="goToSecret"
       @regenerate="refreshPhase"
       @regenerate-all="refreshAll"
-      @leave="emit('back')"
+      @leave="leavePhone"
     />
   </div>
 </template>
@@ -1290,6 +1733,141 @@ const todayLabel = computed(
 </style>
 
 <style lang="scss" scoped>
+.stealth-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(10, 10, 12, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.stealth-card {
+  width: min(320px, 100%);
+  padding: 28px 24px 22px;
+  border-radius: 28px;
+  background: #1b1c20;
+  color: #f2f1ed;
+  text-align: center;
+  box-sizing: border-box;
+  --stealth-tone: #c9b88a;
+
+  &.is-safe {
+    --stealth-tone: #7fc8a0;
+  }
+  &.is-suspicious {
+    --stealth-tone: #f0c05a;
+  }
+  &.is-caught {
+    --stealth-tone: #f07a6a;
+  }
+}
+
+.stealth-label {
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  color: rgba(242, 241, 237, 0.6);
+}
+
+.stealth-dc {
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.stealth-die {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin: 18px auto 14px;
+
+  svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  &.rolling svg {
+    animation: stealth-spin 0.42s linear infinite;
+  }
+}
+
+.stealth-die-body {
+  fill: #2a2c33;
+  stroke: var(--stealth-tone);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  transition: stroke 0.3s;
+}
+
+.stealth-die-face {
+  fill: #33363e;
+  stroke: var(--stealth-tone);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.stealth-die-edge {
+  fill: none;
+  stroke: var(--stealth-tone);
+  stroke-width: 1.5;
+  opacity: 0.55;
+}
+
+.stealth-die-num {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 44%;
+  font-size: 30px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--stealth-tone);
+}
+
+.stealth-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--stealth-tone);
+}
+
+.stealth-sub {
+  margin: 8px 0 18px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(242, 241, 237, 0.65);
+}
+
+.stealth-leave {
+  width: 100%;
+  height: 46px;
+  border: none;
+  border-radius: 23px;
+  background: #f2f1ed;
+  color: #111214;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@keyframes stealth-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.stealth-fade-enter-active,
+.stealth-fade-leave-active {
+  transition: opacity 0.2s;
+}
+.stealth-fade-enter-from,
+.stealth-fade-leave-to {
+  opacity: 0;
+}
+
 @import url("https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap");
 
 .peek-phone-screen {
@@ -1768,6 +2346,19 @@ const todayLabel = computed(
   text-decoration: line-through;
 }
 
+.secret-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: 1px;
+  color: var(--p-peek-ink-light);
+  background: var(--p-peek-soft-light);
+  border: 1px solid var(--p-peek-line-light);
+}
+
 .chat-draft-now {
   color: var(--a-ink);
 }
@@ -1865,6 +2456,32 @@ const todayLabel = computed(
   align-items: center;
   gap: 8px;
   padding: 8px 14px calc(var(--safe-bottom, 0px) + 24px);
+}
+
+.chat-send-draft {
+  flex-shrink: 0;
+  height: 38px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 19px;
+  background: var(--a-link);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.5;
+  }
+}
+
+.chat-input.chat-input--readonly {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--a-ink-3);
 }
 
 .chat-input {
@@ -2225,6 +2842,14 @@ const todayLabel = computed(
 
   &.is-hidden {
     background: #2b303a;
+  }
+
+  .photo-tile-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 
   &.is-selected {

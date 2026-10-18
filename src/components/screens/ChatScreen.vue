@@ -21,6 +21,7 @@ import AISummaryPanel from "@/components/modals/AISummaryPanel.vue";
 import AffinityPanel from "@/components/modals/AffinityPanel.vue";
 import ChatInfoModal from "@/components/modals/ChatInfoModal.vue";
 import DiaryViewModal from "@/components/modals/DiaryViewModal.vue";
+import CharPlannerSheet from "@/components/modals/CharPlannerSheet.vue";
 import FaceToFacePanel from "@/components/modals/f2f-panel/FaceToFacePanel.vue";
 import FavoriteAudioModal from "@/components/modals/FavoriteAudioModal.vue";
 import GameScorePickerModal from "@/components/modals/GameScorePickerModal.vue";
@@ -191,7 +192,9 @@ import { finalizeLiveActivity, summarizeToolResult, upsertLiveActivity } from "@
 import type { PendingToolConfirmation } from "@/services/toolCalling/types";
 import { getToolHandledActions } from "@/services/toolCalling/tagOverlap";
 import { createAppToolServices } from "@/services/toolCalling/appToolServices";
-import { saveCalendarEvent } from "@/services/calendarEvents";
+import { listCalendarEvents, saveCalendarEventOnce, withdrawCalendarEvent } from "@/services/calendarEvents";
+import { buildUserCalendarPromptText, formatEventTime } from "@/utils/calendarEventFormat";
+import type { CalendarEvent } from "@/types/calendar";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
 import { useUserStore } from "@/stores/user";
 import { useFitnessStore } from "@/stores/fitness";
@@ -231,6 +234,23 @@ import {
 } from "@/utils/chatMessageMapping";
 import { buildChatMetadataFromState } from "@/utils/chatMetadataBuilder";
 import { saveCharStatus } from "@/services/charStatus";
+import {
+  applyCharPlannerOps,
+  CHAR_PLANNER_CHANGED_EVENT,
+  loadCharPlanner,
+  markCharPlannerSeen,
+  replaceCharPlannerState,
+  replanCharPlannerForRound,
+  type CharPlannerChangedDetail,
+} from "@/services/charPlanner";
+import type { CharPlanner } from "@/types/charPlanner";
+import {
+  buildPlannerPromptText,
+  formatPlanTime,
+  parseCharPlannerTags,
+  shiftDate,
+  toDateString,
+} from "@/utils/charPlanner";
 import { addCharNote, markMoodReplied } from "@/services/noteBoard";
 import { getNoteBoardPromptContext } from "@/services/noteBoardPrompt";
 import { createGreetingMessages } from "@/utils/chatGreetingMessages";
@@ -1826,6 +1846,10 @@ const {
   saveChat,
   deleteMessage: deleteCurrentChatMessage,
   triggerAIResponse,
+  onRoundReplaced: async (removed, restored) => {
+    await syncRoundCalendarEvents(removed, restored);
+    await syncRoundPlanner(removed, restored);
+  },
 });
 
 // ===== 語音錄音 composable =====
@@ -2063,6 +2087,132 @@ const activeCoupleAvatarId = ref<string | null>(null);
 
 // ===== 角色狀態（AI 用 <char-status> 更新，顯示在頂欄名字下方） =====
 const charStatus = ref<CharStatus | null>(null);
+
+// ===== 角色待辦與行程（AI 用 <char-todo>／<char-plan> 更新，頂欄打開「他的今天」看） =====
+const charPlanner = ref<CharPlanner | null>(null);
+const showPlannerSheet = ref(false);
+// 有新的改動、使用者還沒打開看過：頂欄亮小點
+const plannerHasNews = computed(() => {
+  const p = charPlanner.value;
+  if (!p || p.updatedAt <= (p.seenAt ?? 0)) return false;
+  return p.todos.some((t) => !t.secret) || p.plans.some((pl) => !pl.secret);
+});
+
+async function loadPlannerForChat(chatId: string) {
+  charPlanner.value = null;
+  try {
+    const planner = await loadCharPlanner(chatId);
+    if (currentChatId.value === chatId) charPlanner.value = planner;
+  } catch (e) {
+    console.error("[ChatScreen] 載入角色待辦與行程失敗:", e);
+  }
+}
+
+// 主動訊息、偷窺手機在背景改了也要跟著更新
+function handleCharPlannerChanged(event: Event) {
+  const detail = (event as CustomEvent<CharPlannerChangedDetail>).detail;
+  if (detail?.chatId === currentChatId.value) charPlanner.value = detail.planner;
+}
+onMounted(() => window.addEventListener(CHAR_PLANNER_CHANGED_EVENT, handleCharPlannerChanged));
+onUnmounted(() => window.removeEventListener(CHAR_PLANNER_CHANGED_EVENT, handleCharPlannerChanged));
+
+/** 聊天的有效日期（有假時間就照假時間） */
+function chatToday(): string {
+  return toDateString(fakeTime.getChatNow());
+}
+
+/** 角色在這個聊天幫使用者記進行事曆的（接下來兩週），「他的今天」裡另外列 */
+const plannerHelpedEvents = ref<CalendarEvent[]>([]);
+
+async function openPlannerSheet() {
+  closeRail();
+  showPlannerSheet.value = true;
+  const today = chatToday();
+  plannerHelpedEvents.value = (await listCalendarEvents({ from: today, to: shiftDate(today, 13) }).catch(() => [])).filter(
+    (e) => e.sourceChatId && e.sourceChatId === currentChatId.value,
+  );
+  const chatId = currentChatId.value;
+  if (!chatId || !charPlanner.value) return;
+  charPlanner.value = { ...charPlanner.value, seenAt: Date.now() };
+  await markCharPlannerSeen(chatId).catch((e) => console.error("[ChatScreen] 記錄看過待辦失敗:", e));
+}
+
+/** 使用者在「他的今天」刪掉記錯的 */
+async function deletePlannerItem(kind: "todo" | "plan", id: string) {
+  const chatId = currentChatId.value;
+  const charId = props.characterId || currentCharacter.value?.id;
+  if (!chatId || !charId) return;
+  try {
+    const saved = await replaceCharPlannerState(chatId, charId, (state) =>
+      kind === "todo"
+        ? { ...state, todos: state.todos.filter((t) => t.id !== id) }
+        : { ...state, plans: state.plans.filter((p) => p.id !== id) },
+    );
+    // 自己刪的不算新消息
+    charPlanner.value = { ...saved, seenAt: Date.now() };
+    await markCharPlannerSeen(chatId);
+  } catch (e) {
+    console.error("[ChatScreen] 刪除待辦／行程失敗:", e);
+  }
+}
+
+/** 回覆裡的待辦、行程標籤（群聊不處理） */
+async function handleCharPlannerTags(raw: string, turnId?: string) {
+  if (isGroupChat.value) return;
+  const ops = parseCharPlannerTags(raw);
+  const chatId = currentChatId.value;
+  const charId = props.characterId || currentCharacter.value?.id;
+  if (ops.length === 0 || !chatId || !charId) return;
+  try {
+    const knownPlanIds = new Set((charPlanner.value?.plans ?? []).map((p) => p.id));
+    const saved = await applyCharPlannerOps(chatId, charId, ops, {
+      source: "chat",
+      today: chatToday(),
+      turnId: turnId || undefined,
+    });
+    if (!saved || currentChatId.value !== chatId) return;
+    charPlanner.value = saved;
+    // 新排的、跟使用者一起的行程：插一張卡片，使用者可以按「加到我的行事曆」（秘密的不插）
+    const charName = currentCharacter.value?.nickname || currentCharacter.value?.data?.name || props.characterName || "角色";
+    for (const plan of saved.plans) {
+      if (!plan.withUser || plan.secret || knownPlanIds.has(plan.id)) continue;
+      const time = formatPlanTime(plan);
+      messages.value.push({
+        id: `msg_plan_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        turnId: turnId || undefined,
+        role: "system",
+        content: `[行程] ${charName} 排了和 ${effectivePersona.value?.name || "User"} 一起的行程：${plan.title}（${plan.date}${time ? ` ${time}` : ""}）`,
+        timestamp: Date.now(),
+        isCalendarEvent: true,
+        calendarEventData: {
+          type: "user",
+          title: plan.title,
+          date: plan.date,
+          startTime: plan.time,
+          endTime: plan.end,
+          description: plan.place,
+          plan: { planId: plan.id, characterId: charId, chatId },
+        },
+      });
+    }
+  } catch (e) {
+    console.error("[ChatScreen] 更新角色待辦與行程失敗:", e);
+  }
+}
+
+/** 重新生成、換候選回覆：被換下那輪改的待辦、行程換回去，換回來的那輪再套回 */
+async function syncRoundPlanner(removed: Message[], restored: Message[]) {
+  const chatId = currentChatId.value;
+  const removedTurn = removed.find((m) => m.turnId)?.turnId;
+  const restoredTurn = restored.find((m) => m.turnId)?.turnId;
+  if (!chatId || (!removedTurn && !restoredTurn)) return;
+  try {
+    const saved = await replanCharPlannerForRound(chatId, removedTurn, restoredTurn);
+    if (saved && currentChatId.value === chatId) charPlanner.value = saved;
+  } catch (e) {
+    console.error("[ChatScreen] 換回角色待辦與行程失敗:", e);
+  }
+}
 
 async function handleChangeChatUserAvatar(avatar: string | undefined) {
   userAvatarOverride.value = avatar;
@@ -4879,6 +5029,21 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         ? { charStickyNote: "", moodNote: "", moodPostId: null }
         : await getNoteBoardPromptContext(stickyNoteChatId);
 
+    // 使用者小手機行事曆上接下來 7 天的行程（群聊不帶；日期照聊天的有效時間）
+    let userCalendarText: string | undefined;
+    if (!isGroupChat.value && currentChatId.value) {
+      const calendarToday = chatToday();
+      const upcoming = await listCalendarEvents({ from: calendarToday, to: shiftDate(calendarToday, 6) }).catch(
+        () => [] as CalendarEvent[],
+      );
+      userCalendarText =
+        buildUserCalendarPromptText(upcoming, {
+          today: calendarToday,
+          chatId: currentChatId.value,
+          charName: char.data?.name || props.characterName || "角色",
+        }) || undefined;
+    }
+
     const builder = new PromptBuilder({
       character: char,
       lorebooks: linkedLorebooks,
@@ -4950,6 +5115,16 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       // 傳入這個角色上一張紙條（{{charStickyNote}}）與 user 的心情（{{userMoodNote}}）
       charStickyNote: noteBoardContext.charStickyNote,
       userMoodNote: noteBoardContext.moodNote,
+      userCalendar: userCalendarText,
+      // 角色自己的待辦和行程（{{charPlanner}}；群聊不帶）
+      charPlanner:
+        isGroupChat.value || !currentChatId.value
+          ? undefined
+          : buildPlannerPromptText(
+              charPlanner.value ?? { todos: [], plans: [] },
+              chatToday(),
+              effectivePersona.value?.name || "User",
+            ),
       // 傳入表情包列表
       stickerList: stickerNames,
       // 傳入面對面模式狀態
@@ -5693,11 +5868,12 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
             vectorThreshold: chatSummarySettings.value.vectorThreshold ?? 0.3,
             musicStore,
             themeStore,
-            onCalendarEventCreated: (data) =>
+            onCalendarEventCreated: (data, eventId) =>
               announceCalendarEvent(
                 data,
                 char.nickname || char.data.name || props.characterName || "角色",
                 currentChatId.value === toolActivityChatId,
+                { eventId, turnId: generationTurnId },
               ),
             isInCallWithCharacter: () =>
               phoneCallStore.isActive && phoneCallStore.activeCall?.characterId === char.id,
@@ -6268,7 +6444,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           const gcCalendarEvents = parseCalendarEventTags(finalContent);
           if (gcCalendarEvents.length > 0) {
             for (const calEvent of gcCalendarEvents) {
-              await handleCalendarEvent(calEvent);
+              await handleCalendarEvent(calEvent, generationTurnId);
             }
           }
 
@@ -6334,6 +6510,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               await handleCharStatusUpdate(parsed.charStatusData.text);
             }
 
+            // 處理角色待辦與行程標籤
+            await handleCharPlannerTags(finalContent, generationTurnId);
+
             // 處理便利貼標籤
             if (parsed.hasStickyNote && parsed.stickyNoteData) {
               await handleStickyNote(parsed.stickyNoteData.text);
@@ -6351,7 +6530,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                   console.log("[ChatScreen] 這一輪已用工具處理過新增行程，略過 <calendar-event>：", calEvent.title);
                   continue;
                 }
-                await handleCalendarEvent(calEvent);
+                await handleCalendarEvent(calEvent, generationTurnId);
               }
             }
 
@@ -8409,6 +8588,8 @@ async function loadOrCreateChat(overrideChatId?: string) {
 
         // 載入角色狀態
         charStatus.value = chat.charStatus ?? null;
+        // 載入角色待辦與行程（另外存，不在聊天記錄上）
+        void loadPlannerForChat(chat.id);
 
         // 載入總結設定
         if (chat.summarySettings) {
@@ -9006,13 +9187,20 @@ async function handleCharLocationUpdate(location: string) {
 /**
  * 行事曆事件寫入後：在聊天裡插一則系統訊息（AI 下一輪看得到）並通知使用者。
  * inChat=false 時只通知（例如角色工具執行途中使用者已經切到別的聊天）。
+ * 卡片帶這一輪的 turnId 和事件 id：重新生成時跟著那一輪一起拿掉，加的行程也收回
  */
-function announceCalendarEvent(data: CalendarEventData, charName: string, inChat = true): void {
+function announceCalendarEvent(
+  data: CalendarEventData,
+  charName: string,
+  inChat = true,
+  link: { eventId?: string; turnId?: string } = {},
+): void {
   if (inChat) {
     const calendarMessage: Message = {
       id: `msg_cal_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      turnId: link.turnId || undefined,
       role: "system",
-      content: `[行事曆] 已建立事件：${data.title}（${data.date}）${data.description ? " - " + data.description : ""}`,
+      content: `[行事曆] 已建立事件：${data.title}（${data.date}${data.startTime ? ` ${formatEventTime(data)}` : ""}）${data.description ? " - " + data.description : ""}`,
       timestamp: Date.now(),
       isCalendarEvent: true,
       calendarEventData: {
@@ -9023,6 +9211,7 @@ function announceCalendarEvent(data: CalendarEventData, charName: string, inChat
         startTime: data.startTime,
         endTime: data.endTime,
         endDate: data.endDate,
+        eventId: link.eventId,
       },
     };
     messages.value.push(calendarMessage);
@@ -9034,16 +9223,51 @@ function announceCalendarEvent(data: CalendarEventData, charName: string, inChat
   );
 }
 
-async function handleCalendarEvent(data: CalendarEventData): Promise<void> {
+/**
+ * 重新生成、換候選回覆：被換下的那一輪加的行程收回（使用者改過的留著），
+ * 換回來的那一輪照原本的 id 加回去
+ */
+async function syncRoundCalendarEvents(removed: Message[], restored: Message[]): Promise<void> {
+  const restoredIds = new Set(restored.map((m) => m.id));
+  try {
+    for (const m of removed) {
+      const eventId = m.isCalendarEvent ? m.calendarEventData?.eventId : undefined;
+      if (eventId && !restoredIds.has(m.id)) await withdrawCalendarEvent(eventId);
+    }
+    for (const m of restored) {
+      if (!m.isCalendarEvent || !m.calendarEventData?.eventId) continue;
+      const { eventId, ...data } = m.calendarEventData;
+      await saveCalendarEventOnce(
+        data,
+        {
+          characterId: currentCharacter.value?.id,
+          chatId: currentChatId.value || props.chatId || undefined,
+        },
+        eventId,
+      );
+    }
+  } catch (e) {
+    console.error("[ChatScreen] 收回／加回行事曆事件失敗:", e);
+  }
+}
+
+async function handleCalendarEvent(data: CalendarEventData, turnId?: string): Promise<void> {
   try {
     const char = currentCharacter.value;
-    await saveCalendarEvent(data, {
+    const { event, created } = await saveCalendarEventOnce(data, {
       characterId: char?.id,
       chatId: currentChatId.value || props.chatId || undefined,
     });
+    // 行事曆裡本來就有（例如重新生成又寫了一次）：不再插卡片、不再通知
+    if (!created) {
+      console.log("[ChatScreen] 行事曆裡已經有這個行程，不重複新增:", data.title);
+      return;
+    }
     announceCalendarEvent(
       data,
       char?.nickname || char?.data?.name || props.characterName || "角色",
+      true,
+      { eventId: event.id, turnId },
     );
     console.log("[ChatScreen] 行事曆事件已建立:", data);
   } catch (e) {
@@ -9783,6 +10007,9 @@ useChatCleanup({
       @open-minimax-tts-settings="openMinimaxTTSSettings"
       @toggle-more-menu="toggleMoreMenu"
       @open-chat-details="openChatDetails"
+      :planner-available="!isGroupChat"
+      :planner-has-news="plannerHasNews"
+      @open-planner="openPlannerSheet"
       @navigate="onHeaderNavigate"
       @open-search-bar="openSearchBar"
       @open-chat-info="openChatInfo"
@@ -10594,6 +10821,18 @@ useChatCleanup({
         @refresh-summaries="loadSummariesAndDiaries"
         :summarize-batch-fn="summarizeSingleBatch"
         :preview-manual-summary-fn="previewManualSummary"
+      />
+
+      <!-- 角色的待辦和行程 -->
+      <CharPlannerSheet
+        v-if="showPlannerSheet"
+        :planner="charPlanner"
+        :char-name="displayCharacterName || characterName"
+        :today="chatToday()"
+        :helped-events="plannerHelpedEvents"
+        @close="showPlannerSheet = false"
+        @delete-todo="(id: string) => deletePlannerItem('todo', id)"
+        @delete-plan="(id: string) => deletePlannerItem('plan', id)"
       />
 
       <!-- 日記查看模態框 -->

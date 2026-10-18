@@ -100,3 +100,79 @@ describe("PeekPhonePromptBuilder", () => {
     expect(reply).toContain("（這是你們的第一次對話）");
   });
 });
+
+describe("行程、備忘錄組照角色已經記下的寫", () => {
+  it("有待辦和行程時放進 prompt，沒有時不放", async () => {
+    const { buildGroupBCPrompt } = await import("./PeekPhonePromptBuilder");
+    const base = {
+      charName: "沈既白",
+      charDesc: "",
+      personality: "",
+      scenario: "",
+      chatContext: "",
+      userName: "小栩",
+      userDescription: "",
+      worldInfo: "",
+      summariesAndEvents: "",
+      now: new Date(2026, 9, 18, 1, 47),
+    };
+    const withPlanner = buildGroupBCPrompt({ ...base, plannerText: "還沒做完的待辦：\n- 買草莓蛋糕" });
+    expect(withPlanner).toContain("沈既白已經記下的待辦和行程");
+    expect(withPlanner).toContain("- 買草莓蛋糕");
+    expect(buildGroupBCPrompt(base)).not.toContain("已經記下的待辦和行程");
+  });
+});
+
+describe("跟使用者那串是真的聊天時", () => {
+  const base = {
+    charName: "沈既白",
+    charDesc: "",
+    personality: "",
+    scenario: "",
+    chatContext: "",
+    userName: "小栩",
+    userDescription: "",
+    worldInfo: "",
+    summariesAndEvents: "",
+    now: new Date(2026, 9, 18, 1, 47),
+  };
+
+  it("聊天組只寫備註名和草稿，收回的訊息放到別人的對話", async () => {
+    const { buildGroupAPrompt } = await import("./PeekPhonePromptBuilder");
+    const prompt = buildGroupAPrompt({ ...base, realUserThread: true });
+    expect(prompt).toContain("messages 寫 [] 就好");
+    expect(prompt).toContain("放在其他聯絡人的對話裡");
+    expect(prompt).not.toContain("最好在跟「小栩」的對話裡");
+    expect(buildGroupAPrompt(base)).toContain("最好在跟「小栩」的對話裡");
+  });
+
+  it("行程組帶上真的交易，叫它不要重複", async () => {
+    const { buildGroupBCPrompt } = await import("./PeekPhonePromptBuilder");
+    const prompt = buildGroupBCPrompt({ ...base, realDataText: "- 10:00 收到小栩的轉帳 +520" });
+    expect(prompt).toContain("真的發生過的事");
+    expect(prompt).toContain("收到小栩的轉帳 +520");
+  });
+
+  it("相簿組帶上真的照片", async () => {
+    const { buildGroupDPrompt } = await import("./PeekPhonePromptBuilder");
+    expect(buildGroupDPrompt({ ...base, realPhotosText: "- 2026-10-18 窗外的雨" })).toContain("窗外的雨");
+    expect(buildGroupDPrompt(base)).not.toContain("真的發生過的事");
+  });
+
+  it("被抓到的反應：寫出場景和看到的秘密，只寫他傳的訊息", async () => {
+    const { buildCaughtReactionPrompt } = await import("./PeekPhonePromptBuilder");
+    const mid = buildCaughtReactionPrompt(base, [{ label: "沒送出的話", detail: "其實那天我不是剛好路過" }], "mid");
+    expect(mid).toContain("被沈既白當場撞見");
+    expect(mid).toContain("- 沒送出的話：其實那天我不是剛好路過");
+    expect(mid).toContain("1 到 4 則訊息，每則一行");
+    const end = buildCaughtReactionPrompt(base, [], "end");
+    expect(end).toContain("還是發現了");
+    expect(end).toContain("（還沒看到什麼特別的）");
+  });
+
+  it("鎖屏密碼可以參考第一次聊天的日期；沒有就不提", async () => {
+    const { buildGroupAPrompt } = await import("./PeekPhonePromptBuilder");
+    expect(buildGroupAPrompt({ ...base, firstChatDate: "2026-03-14" })).toContain("兩人第一次聊天是 2026-03-14");
+    expect(buildGroupAPrompt(base)).not.toContain("第一次聊天是");
+  });
+});

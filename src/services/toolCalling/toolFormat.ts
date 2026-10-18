@@ -3,6 +3,7 @@
  */
 import type { WeatherData } from "@/services/WeatherService";
 import type { CalendarEventData } from "@/types/calendar";
+import { eventNotes, formatEventTime } from "@/utils/calendarEventFormat";
 import type { CalendarToolEvent, MemoryToolEntry, MusicToolTrack } from "./toolServices";
 
 export function formatDate(date: Date): string {
@@ -125,10 +126,12 @@ export function describeEvents(events: CalendarToolEvent[], from: string, to?: s
   if (!events.length) return `${range}沒有行程`;
   return [
     `${range}的行程：`,
-    ...events.map(
-      (event) =>
-        `- ${event.date}${EVENT_TYPE_LABELS[event.type]}：${event.title}${event.description ? `（${event.description}）` : ""}`,
-    ),
+    ...events.map((event) => {
+      const days = event.endDate && event.endDate > event.date ? `${event.date} 到 ${event.endDate}` : event.date;
+      const time = formatEventTime(event);
+      const notes = eventNotes(event);
+      return `- ${days}${time ? ` ${time}` : ""}${EVENT_TYPE_LABELS[event.type]}：${event.title}${notes ? `（${notes}）` : ""}`;
+    }),
   ].join("\n");
 }
 

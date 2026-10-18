@@ -8,12 +8,21 @@ import { db, DB_STORES } from "@/db/database";
 import {
   extractChatContext,
   extractSummariesAndEvents,
+  generateCaughtReaction,
   generateContactReply,
   generateSequential,
   generateSinglePhase,
+  type PeekSources,
 } from "@/services/PeekPhoneService";
 import { useLorebooksStore } from "@/stores/lorebooks";
 import { useNotificationStore } from "@/stores/notification";
+import { loadCharPlanner, syncPeekIntoPlanner } from "@/services/charPlanner";
+import { loadPeekRealData } from "@/services/PeekRealData";
+import { sendCharMessages } from "@/services/PeekLinks";
+import type { CaughtFinding } from "@/services/PeekPhonePromptBuilder";
+import { describeRealDataForPrompt, describeRealPhotosForPrompt } from "@/utils/peekRealData";
+import { buildPlannerPromptText, toDateString } from "@/utils/charPlanner";
+import { computeChatNow } from "@/utils/fakeTime";
 import { isWorldInfoEntryEnabled } from "@/utils/worldInfoEntryState";
 import { useSettingsStore } from "@/stores/settings";
 import { useUserStore } from "@/stores/user";
@@ -260,6 +269,46 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     return lines.join("\n");
   }
 
+  /** 準備生成用的素材，時間照這段聊天的假時間 */
+  async function collectSources(
+    chat: Chat,
+    character: StoredCharacter,
+    charId: string,
+    cId: string,
+  ): Promise<PeekSources> {
+    const { userName, userDescription } = resolveUserInfo(chat, charId);
+    const now = computeChatNow(chat);
+    const planner = await loadCharPlanner(cId).catch(() => null);
+    const hasPlanner = !!planner && (planner.todos.some((t) => !t.done) || planner.plans.length > 0);
+    // 真的聊天、交易、日記：跟使用者那串直接顯示真的，交易和日記不要重複
+    const charName = character.data.name || character.nickname || "角色";
+    const real = await loadPeekRealData(chat, { userName, charName, now }).catch(() => null);
+    return {
+      chatContext: await extractChatContext(chat, 15, userName),
+      summariesAndEvents: await extractSummariesAndEvents(cId, charId),
+      worldInfo: extractWorldInfo(character),
+      userName,
+      userDescription,
+      now,
+      plannerText: hasPlanner ? buildPlannerPromptText(planner, toDateString(now), userName) : undefined,
+      realUserThread: !!real && real.userThread.length > 0,
+      realDataText: real ? describeRealDataForPrompt(real, userName) || undefined : undefined,
+      realPhotosText: real ? describeRealPhotosForPrompt(real) || undefined : undefined,
+      firstChatDate: real?.firstChatDate,
+    };
+  }
+
+  /** 行程、備忘錄組生成好了：寫回角色的待辦和行程，聊天頁和之後的聊天都照著走 */
+  function syncPlannerFromPeek(cId: string, charId: string, partial: Partial<PeekPhoneData>, now: Date): void {
+    if (!partial.schedule && !partial.memos) return;
+    void syncPeekIntoPlanner(
+      cId,
+      charId,
+      { schedule: partial.schedule, memos: partial.memos },
+      toDateString(now),
+    ).catch((e) => console.error("[PeekPhone] 寫回角色待辦與行程失敗:", e));
+  }
+
   // ===== 偷看進度（解鎖、找到的秘密、看過的 App） =====
 
   /**
@@ -279,6 +328,38 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
 
   function markRevealed(key: string): void {
     updateProgress((p) => (p.revealed.includes(key) ? p : { ...p, revealed: [...p.revealed, key] }));
+  }
+
+  /**
+   * 偷看被他抓到：請 AI 寫他的第一反應，以他的訊息加進聊天（手機可能已經被關掉，所以放在 store 裡跑）
+   * 失敗只記 log：聊天裡已經有「被發現」那筆，他下一則回覆還是會反應
+   */
+  async function reactToCaught(
+    character: StoredCharacter,
+    cId: string,
+    found: CaughtFinding[],
+    when: "mid" | "end",
+    storyTime: number,
+  ): Promise<void> {
+    try {
+      const chat = await db.get<Chat>(DB_STORES.CHATS, cId);
+      if (!chat) return;
+      const sources = await collectSources(chat, character, character.id, cId);
+      const lines = await generateCaughtReaction(character, sources, found, when);
+      const charName = character.data.name || character.nickname || "角色";
+      await sendCharMessages(cId, charName, lines, storyTime);
+    } catch (err) {
+      console.warn("[peekPhone] 被抓到的反應生成失敗:", err);
+    }
+  }
+
+  /** 草稿幫他送出了：記下來，輸入框不再顯示（草稿還算找到的秘密） */
+  function markDraftSent(threadId: string): void {
+    if (!data.value || !characterId.value || !chatId.value) return;
+    const chats = data.value.chats.map((t) => (t.id === threadId ? { ...t, draftSentAt: Date.now() } : t));
+    data.value = { ...data.value, chats };
+    storeCache(characterId.value, chatId.value, data.value);
+    saveToIDB(characterId.value, chatId.value, data.value);
   }
 
   function markViewed(tab: PeekPhoneTab): void {
@@ -326,6 +407,8 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     if (!thread) return;
 
     const ownerName = character.data.name || character.nickname || "我";
+    // 聯絡人可能就是使用者本人，要帶入這段聊天用的 persona；訊息時間也照這段聊天的假時間
+    const chatRecord = await db.get<Chat>(DB_STORES.CHATS, cId).catch(() => undefined);
 
     // 1. 追加手機主人送出的訊息（isSelf=true）
     const ownerMessage: PeekChatMessage = {
@@ -333,7 +416,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       senderName: ownerName,
       content,
       isSelf: true,
-      timestamp: Date.now(),
+      timestamp: computeChatNow(chatRecord).getTime(),
     };
     appendMessageToThread(threadId, ownerMessage);
     // 把輸入框裡的草稿原封不動送出去了：草稿就不在了
@@ -360,8 +443,6 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
 
     try {
       const worldInfo = extractWorldInfo(character);
-      // 聯絡人可能就是使用者本人：帶入這段聊天用的 persona
-      const chatRecord = await db.get<Chat>(DB_STORES.CHATS, cId).catch(() => undefined);
       const { userName, userDescription } = resolveUserInfo(chatRecord ?? ({} as Chat), charId);
       const reply = await generateContactReply(
         {
@@ -375,6 +456,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
           contactName: thread.contactName,
           thread,
           newMessage: content,
+          now: computeChatNow(chatRecord),
         },
         controller.signal,
         streamingWindow ? (token) => streamingWindow.appendToken(token) : undefined,
@@ -390,7 +472,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
         senderAvatar: thread.contactAvatar,
         content: reply,
         isSelf: false,
-        timestamp: Date.now(),
+        timestamp: computeChatNow(chatRecord).getTime(),
       };
       appendMessageToThread(threadId, contactMessage);
 
@@ -488,10 +570,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     groupStatus.value = { A: "loading", B: "idle", C: "idle", D: "idle" };
     groupErrors.value = { A: null, B: null, C: null, D: null };
 
-    const { userName, userDescription } = resolveUserInfo(chat, charId);
-    const chatContext = await extractChatContext(chat, 15, userName);
-    const summariesAndEvents = await extractSummariesAndEvents(cId, charId);
-    const worldInfo = extractWorldInfo(character);
+    const sources = await collectSources(chat, character, charId, cId);
 
     const settingsStore = useSettingsStore();
     const taskConfig = settingsStore.getAPIForTask("peekPhone");
@@ -512,12 +591,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     try {
       const result = await generateSequential(
         character,
-        chatContext,
-        userName,
-        userDescription,
-        worldInfo,
-        summariesAndEvents,
-        cId,
+        sources,
         controller.signal,
         (phase, partial) => {
           data.value = { ...data.value!, ...partial };
@@ -529,6 +603,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
             groupStatus.value.B = "done";
             groupStatus.value.C = "done";
             groupStatus.value.D = "loading";
+            syncPlannerFromPeek(cId, charId, partial, sources.now);
           }
         },
         streamingWindow
@@ -653,10 +728,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       groupErrors.value.D = null;
     }
 
-    const { userName, userDescription } = resolveUserInfo(chat, charId);
-    const chatContext = await extractChatContext(chat, 15, userName);
-    const summariesAndEvents = await extractSummariesAndEvents(cId, charId);
-    const worldInfo = extractWorldInfo(character);
+    const sources = await collectSources(chat, character, charId, cId);
 
     const settingsStore = useSettingsStore();
     const taskConfig = settingsStore.getAPIForTask("peekPhone");
@@ -678,13 +750,8 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       const partial = await generateSinglePhase(
         phase,
         character,
-        chatContext,
-        userName,
-        userDescription,
-        worldInfo,
-        summariesAndEvents,
+        sources,
         data.value,
-        cId,
         controller.signal,
         streamingWindow
           ? (token) => streamingWindow.appendToken(token)
@@ -700,6 +767,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       } else if (phase === "BC") {
         groupStatus.value.B = "done";
         groupStatus.value.C = "done";
+        syncPlannerFromPeek(cId, charId, partial, sources.now);
       } else if (phase === "D") {
         groupStatus.value.D = "done";
       }
@@ -780,6 +848,10 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     replyAbortController,
     sendMessageToContact,
     cancelContactReply,
+    // 這段聊天用的使用者名字（偷窺手機上顯示真的聊天時用）
+    resolveUserName: (chat: Chat, charId: string) => resolveUserInfo(chat, charId).userName,
+    markDraftSent,
+    reactToCaught,
     // Exposed for testing
     cache,
     abortController,

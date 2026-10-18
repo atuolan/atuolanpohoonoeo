@@ -22,6 +22,16 @@ export interface PeekPromptContext {
   summariesAndEvents: string;
   /** 現在時間：日期、行程、訊息時間都以它為準 */
   now: Date;
+  /** 角色自己已經記下的待辦和行程（聊天頁「他的今天」那份） */
+  plannerText?: string;
+  /** 跟使用者那串會直接顯示真的聊天紀錄：AI 不用編訊息，只寫草稿 */
+  realUserThread?: boolean;
+  /** 真的交易、外送、日記：已經會顯示在手機裡，AI 不要重複寫 */
+  realDataText?: string;
+  /** 聊天裡真的傳過的照片：已經會顯示在相簿，AI 不要重複寫 */
+  realPhotosText?: string;
+  /** 兩人第一次聊天的日期（YYYY-MM-DD），鎖屏密碼可以參考 */
+  firstChatDate?: string;
 }
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -90,14 +100,20 @@ function buildOutputRule(): string {
  * 聊天組要藏的秘密：鎖屏密碼、收回的訊息、沒送出的草稿
  * 偷看的人會在 App 裡一個個找出來，所以都要跟使用者有關
  */
-function buildSecretsRuleA(userName: string): string {
+function buildSecretsRuleA(userName: string, realUserThread = false, firstChatDate?: string): string {
+  const firstChat = firstChatDate
+    ? `\n   - 參考：兩人第一次聊天是 ${firstChatDate}（可以用，不一定要用）`
+    : "";
+  const recalledWhere = realUserThread
+    ? `放在其他聯絡人的對話裡（跟「${userName}」那串是真的聊天紀錄，不用寫）`
+    : `最好在跟「${userName}」的對話裡`;
   return `【秘密 —— 這支手機要藏幾個跟「${userName}」有關的秘密，偷看的人會一個個找出來】
-1. lock_screen 鎖屏密碼：4 位數字，跟「${userName}」有關（例如第一次見面的日期 MMDD、對方生日、只有兩人懂的數字）
+1. lock_screen 鎖屏密碼：4 位數字，跟「${userName}」有關（例如第一次見面的日期 MMDD、對方生日、只有兩人懂的數字）${firstChat}
    - passcode：4 位數字，一定要加引號
    - hint：給偷看的人的提示，不能直接寫出數字
    - reveal：解開後顯示的一句話，說明這組數字的意義
    - give_up：偷看的人連錯三次時，角色用自己的口吻說的一句話（例如「呀勒呀勒，真拿你沒辦法」），之後會直接顯示答案，所以這句不要寫出數字
-2. 至少 1 則「收回的訊息」：角色傳出去又馬上收回的一句話（最好在跟「${userName}」的對話裡），那則訊息加上 recalled: true 和 recalled_after: 收回前存在了幾秒
+2. 至少 1 則「收回的訊息」：角色傳出去又馬上收回的一句話（${recalledWhere}），那則訊息加上 recalled: true 和 recalled_after: 收回前存在了幾秒
 3. 至少 1 個「沒送出的草稿」：某個對話串加上 draft（輸入框裡打了但沒送出的話），和 draft_history（之前改過的 2 到 4 個版本，舊的在前）
 秘密要符合角色性格，寫出角色不敢說出口的心事，不要每個角色都一樣。`;
 }
@@ -106,32 +122,36 @@ function buildSecretsRuleA(userName: string): string {
  * 聊天組：2~5 個對話串（其中一串是跟使用者的）＋ 鎖屏密碼、收回的訊息、草稿
  */
 export function buildGroupAPrompt(ctx: PeekPromptContext): string {
-  const { charName, userName, now } = ctx;
-  return `你是角色扮演內容生成器。請根據以下資料，生成「${charName}」手機裡的聊天紀錄。
-
-${buildCharacterBlock(ctx)}
-
-【要生成的內容】
-- 2 到 5 個聊天對話串。其中一串一定是跟「${userName}」的對話，這一串加上 is_user: true，contact 寫${charName}手機裡給${userName}的備註名（可以是暱稱，不一定是本名）。
+  const { charName, userName, now, realUserThread } = ctx;
+  const userThreadRule = realUserThread
+    ? `- 2 到 5 個聊天對話串。其中一串是跟「${userName}」的對話：加上 is_user: true，contact 寫${charName}手機裡給${userName}的備註名（可以是暱稱，不一定是本名）。這一串會直接顯示你們真的聊天紀錄（就是上面最近的聊天），messages 寫 [] 就好，只要寫 draft 和 draft_history。
 - 其他聯絡人依角色的人際關係設定（家人、同事、朋友、群組……）。群組的 contact 寫群組名，from 寫實際說話的人。
-- 每串都要有角色自己傳的（self: true）和對方傳的（self: false），一串 3 到 12 則，依時間先後排列。
-- time 寫「月/日 時:分」，都要早於現在時間。
-- 內容要符合角色性格、跟${userName}的關係和最近的劇情。
-
-${buildSecretsRuleA(userName)}
-
-${buildLanguageRule()}
-
-${buildOutputRule()}
-
-lock_screen:
-  passcode: "0912"
-  hint: 第一次見到對方的那天（月月日日）
-  reveal: 0912，是你們第一次見面的那天
-  give_up: ……好啦，告訴你就是了
-
-chats:
-  - contact: ${userName}
+- 其他每串都要有角色自己傳的（self: true）和對方傳的（self: false），一串 3 到 12 則，依時間先後排列。`
+    : `- 2 到 5 個聊天對話串。其中一串一定是跟「${userName}」的對話，這一串加上 is_user: true，contact 寫${charName}手機裡給${userName}的備註名（可以是暱稱，不一定是本名）。
+- 其他聯絡人依角色的人際關係設定（家人、同事、朋友、群組……）。群組的 contact 寫群組名，from 寫實際說話的人。
+- 每串都要有角色自己傳的（self: true）和對方傳的（self: false），一串 3 到 12 則，依時間先後排列。`;
+  const userThreadExample = realUserThread
+    ? `  - contact: ${userName}
+    is_user: true
+    draft: |
+      其實那天我不是剛好路過。
+    draft_history:
+      - text: 那天的事
+      - text: 其實那天我
+    messages: []
+  - contact: 阿哲
+    messages:
+      - from: ${charName}
+        text: 如果想約一個人出來，要怎麼開口才不奇怪
+        self: true
+        time: "${minutesAgo(now, 50)}"
+        recalled: true
+        recalled_after: 6
+      - from: 阿哲
+        text: ？？你剛剛收回了什麼
+        self: false
+        time: "${minutesAgo(now, 49)}"`
+    : `  - contact: ${userName}
     is_user: true
     draft: |
       其實那天我不是剛好路過。
@@ -152,7 +172,30 @@ chats:
         self: true
         time: "${minutesAgo(now, 8)}"
         recalled: true
-        recalled_after: 11
+        recalled_after: 11`;
+  return `你是角色扮演內容生成器。請根據以下資料，生成「${charName}」手機裡的聊天紀錄。
+
+${buildCharacterBlock(ctx)}
+
+【要生成的內容】
+${userThreadRule}
+- time 寫「月/日 時:分」，都要早於現在時間。
+- 內容要符合角色性格、跟${userName}的關係和最近的劇情。
+
+${buildSecretsRuleA(userName, realUserThread, ctx.firstChatDate)}
+
+${buildLanguageRule()}
+
+${buildOutputRule()}
+
+lock_screen:
+  passcode: "0912"
+  hint: 第一次見到對方的那天（月月日日）
+  reveal: 0912，是你們第一次見面的那天
+  give_up: ……好啦，告訴你就是了
+
+chats:
+${userThreadExample}
   - contact: 媽
     messages:
       - from: 媽
@@ -174,10 +217,16 @@ export function buildGroupBCPrompt(ctx: PeekPromptContext, previousContext = "")
   const prevBlock = previousContext
     ? `\n\n【已生成的手機內容 —— 下面要生成的要跟這些一致、互相呼應】\n${previousContext}`
     : "";
+  const plannerBlock = ctx.plannerText
+    ? `\n\n【${charName}已經記下的待辦和行程 —— 是真的，schedule 要放進其中今天的行程、memos 要放進這些待辦（內容和時間照抄），再補上其他的】\n${ctx.plannerText}`
+    : "";
+  const realBlock = ctx.realDataText
+    ? `\n\n【真的發生過的事 —— 已經會顯示在手機裡，下面要生成的不要重複，也不能跟這些衝突】\n${ctx.realDataText}`
+    : "";
 
   return `你是角色扮演內容生成器。請根據以下資料，生成「${charName}」手機裡的行程、飲食、備忘錄、記事本、日記和錢包。
 
-${buildCharacterBlock(ctx)}${prevBlock}
+${buildCharacterBlock(ctx)}${prevBlock}${plannerBlock}${realBlock}
 
 【要生成的內容】
 - schedule 今天的行程 3 到 8 項：time（時:分）、title、location（沒有地點就不寫這行）、done（現在之前的寫 true，還沒到的寫 false）
@@ -251,10 +300,11 @@ export function buildGroupDPrompt(ctx: PeekPromptContext, previousContext = ""):
   const prevBlock = previousContext
     ? `\n\n【已生成的手機內容 —— 照片、瀏覽紀錄要跟這些互相呼應】\n${previousContext}`
     : "";
+  const realBlock = ctx.realPhotosText ? `\n\n【真的發生過的事】\n${ctx.realPhotosText}` : "";
 
   return `你是角色扮演內容生成器。請根據以下資料，生成「${charName}」手機裡的相簿、螢幕使用時間、瀏覽紀錄，以及藏在手機深處的照片。
 
-${buildCharacterBlock(ctx)}${prevBlock}
+${buildCharacterBlock(ctx)}${prevBlock}${realBlock}
 
 【gallery 相簿】3 到 6 張照片：
 - description：畫面描述，生動具體
@@ -397,4 +447,45 @@ export function buildContactReplyPrompt(p: ContactReplyPromptParams): string {
   lines.push(`3. 直接輸出訊息內容本身：不要加「${p.contactName}:」這種前綴，不要加引號，不要任何格式標記。`);
   lines.push("4. 跟歷史對話用同一種語言。說中文就只寫中文一次；說其他語言就先寫原文，換行再寫中文翻譯。");
   return lines.join("\n");
+}
+
+/** 偷看被抓到時，他看到了什麼 */
+export interface CaughtFinding {
+  label: string;
+  detail: string;
+}
+
+/**
+ * 偷看被抓到：他直接傳訊息給使用者的反應（純文字，一行一則）
+ * when：mid 偷看到一半被他撞見、手機被拿走；end 放下手機後他發現手機被動過
+ */
+export function buildCaughtReactionPrompt(
+  ctx: PeekPromptContext,
+  found: CaughtFinding[],
+  when: "mid" | "end",
+): string {
+  const { charName, userName } = ctx;
+  const scene =
+    when === "mid"
+      ? `${userName}正拿著${charName}的手機偷看，被${charName}當場撞見，手機被拿回去了。`
+      : `${userName}偷看完${charName}的手機放回去，${charName}還是發現了。`;
+  const seen = found.length
+    ? found.map((f) => `- ${f.label}${f.detail ? `：${f.detail}` : ""}`).join("\n")
+    : "（還沒看到什麼特別的）";
+  return `你在角色扮演聊天中扮演「${charName}」。
+
+${buildCharacterBlock(ctx)}
+
+【剛剛發生的事】
+${scene}
+${userName}看到了：
+${seen}
+
+【要寫的】
+${charName}現在傳給${userName}的訊息，就是他對「被偷看」的第一反應。
+- 完全照${charName}的性格和你們現在的關係反應：可能生氣、害羞、慌張、裝沒事、反過來調侃、冷處理……不要每個角色都一樣。
+- 被看到的秘密如果很私密，他的反應要跟那件事有關（例如被看到沒送出的草稿，他可能會很窘）。
+- 1 到 4 則訊息，每則一行，像真的在傳訊息：口語、可以很短。
+- 只寫${charName}傳的訊息內容：不要旁白、不要動作描寫、不要加「${charName}:」前綴、不要引號或任何格式標記。
+- 跟最近的聊天紀錄用同一種語言；說其他語言的角色，每則先寫原文，同一行用「／」接中文翻譯。`;
 }

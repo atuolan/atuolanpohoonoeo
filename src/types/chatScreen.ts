@@ -155,17 +155,7 @@ export interface ChatScreenMessage {
     }>;
   };
   isCalendarEvent?: boolean;
-  calendarEventData?: {
-    type: "user" | "period";
-    title: string;
-    date: string;
-    description?: string;
-    /** 開始時間 HH:MM（沒有就是整天） */
-    startTime?: string;
-    endTime?: string;
-    /** 跨天行程的結束日期 */
-    endDate?: string;
-  };
+  calendarEventData?: import("@/types/calendar").CalendarCardData;
   isCallNotification?: boolean;
   callNotificationType?: "declined" | "missed";
   callReason?: string;

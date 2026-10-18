@@ -224,8 +224,8 @@ function parseListItems(tokens: ParsedLine[]): Record<string, string>[] {
   return items;
 }
 
-/** 解析 Group A YAML → PeekChatThread[] */
-export function parseGroupA(yaml: string): PeekChatThread[] {
+/** 解析 Group A YAML → PeekChatThread[]；只寫月日的時間依 now（角色手機上的現在）補年份 */
+export function parseGroupA(yaml: string, now: Date = new Date()): PeekChatThread[] {
   try {
     const tokens = tokenize(yaml);
     const chatTokens = findSection(tokens, "chats");
@@ -303,7 +303,7 @@ export function parseGroupA(yaml: string): PeekChatThread[] {
         else if (token.key === "self")
           currentMsg.isSelf = parseBool(token.value);
         else if (token.key === "time")
-          currentMsg.timestamp = parseMessageTime(token.value);
+          currentMsg.timestamp = parseMessageTime(token.value, now);
         else if (token.key === "recalled")
           currentMsg.recalled = parseBool(token.value) || undefined;
         else if (token.key === "recalled_after") {
@@ -387,7 +387,7 @@ export function parseGroupB(yaml: string): {
 }
 
 /** 解析 Group C YAML → { notes, diary, balance, transactions } */
-export function parseGroupC(yaml: string): {
+export function parseGroupC(yaml: string, now: Date = new Date()): {
   notes: PeekNote[];
   diary: PeekDiaryEntry[];
   balance: number;
@@ -408,7 +408,7 @@ export function parseGroupC(yaml: string): {
       id: genId(),
       title: item.title ?? "",
       content: item.content ?? "",
-      updatedAt: Date.now(),
+      updatedAt: now.getTime(),
     }));
 
     // Parse diary

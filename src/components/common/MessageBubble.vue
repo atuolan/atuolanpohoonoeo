@@ -61,6 +61,7 @@ import { formatTime } from "@/services/AudioRecorder";
 import { getRegexedString, regex_placement } from "@/services/RegexEngine";
 import { useSettingsStore, useStickerStore } from "@/stores";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
+import type { CalendarCardData } from "@/types/calendar";
 import type {
   ChatHistoryRecordData,
   GroupActionType,
@@ -445,17 +446,7 @@ interface MessageBubbleProps {
   };
   // 行事曆事件
   isCalendarEvent?: boolean;
-  calendarEventData?: {
-    type: "user" | "period";
-    title: string;
-    date: string;
-    description?: string;
-    /** 開始時間 HH:MM（沒有就是整天） */
-    startTime?: string;
-    endTime?: string;
-    /** 跨天行程的結束日期 */
-    endDate?: string;
-  };
+  calendarEventData?: CalendarCardData;
   // 通話通知卡片
   isCallNotification?: boolean;
   callNotificationType?: "declined" | "missed";

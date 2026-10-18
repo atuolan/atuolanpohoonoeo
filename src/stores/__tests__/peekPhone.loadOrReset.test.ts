@@ -26,7 +26,7 @@ vi.mock("@/services/PeekPhoneService", () => ({
   generateSequential: vi.fn(
     (..._args: unknown[]) =>
       new Promise((_resolve, reject) => {
-        const signal = _args[7] as AbortSignal;
+        const signal = _args[2] as AbortSignal;
         pending.push({ signal });
         signal.addEventListener("abort", () =>
           reject(Object.assign(new Error("aborted"), { name: "AbortError" })),

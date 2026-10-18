@@ -13,6 +13,7 @@ import {
   Check,
   Flashlight,
   Loader2,
+  MapPin,
   MessageSquare,
 } from "lucide-vue-next";
 import { computed, ref } from "vue";
@@ -33,6 +34,10 @@ const props = defineProps<{
   notifications: PeekNotification[];
   groupStatus: Record<"A" | "B" | "C" | "D", GroupStatus>;
   lockScreen?: PeekLockScreen;
+  /** 聊天頂欄那行狀態 */
+  statusText?: string;
+  /** 所在城市、天氣 */
+  placeText?: string;
   /** 解鎖前要先猜密碼 */
   needCode: boolean;
 }>();
@@ -110,9 +115,14 @@ function onTouchEnd(e: TouchEvent) {
     <div class="peek-lock-body">
       <div class="peek-lock-date">{{ formatLockDate(props.now) }}</div>
       <div class="peek-lock-time">{{ formatClock(props.now) }}</div>
+      <div v-if="props.placeText" class="peek-lock-next">
+        <MapPin :size="14" aria-hidden="true" />
+        <span>{{ props.placeText }}</span>
+      </div>
+      <div v-if="props.statusText" class="peek-lock-mood">{{ props.statusText }}</div>
       <div v-if="props.nextSchedule" class="peek-lock-next">
         <Calendar :size="14" aria-hidden="true" />
-        <span>{{ props.nextSchedule.time }} · {{ props.nextSchedule.title }}</span>
+        <span>{{ props.nextSchedule.time || "整天" }} · {{ props.nextSchedule.title }}</span>
       </div>
 
       <div class="peek-lock-stack">
@@ -218,6 +228,21 @@ function onTouchEnd(e: TouchEvent) {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
+
+.peek-lock-mood {
+  margin-top: 10px;
+  max-width: 100%;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  font-size: 12px;
+  color: var(--p-on-wall);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .peek-lock-stack {

@@ -1421,10 +1421,16 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
         5,
       ).map((s: any) => ({ id: s.id, content: s.content, createdAt: s.createdAt, coveredUntil: s.coveredUntil, isImportant: s.isImportant }));
 
-      const allEvents = await db.getAll<any>(DB_STORES.IMPORTANT_EVENTS);
-      importantEvents.value = allEvents
-        .filter((e: any) => e.characterId === info.characterId)
-        .map((e: any) => ({ id: e.id, content: e.content, category: e.category, priority: e.priority }));
+      // 重要事件記錄本以 chatId 為 key，舊資料用 characterId；事件在記錄本的 events 裡，跟聊天一樣依優先級取
+      const eventsLog =
+        (info.chatId ? await db.get<any>(DB_STORES.IMPORTANT_EVENTS, info.chatId) : undefined) ??
+        (await db.get<any>(DB_STORES.IMPORTANT_EVENTS, info.characterId));
+      importantEvents.value = eventsLog?.settings?.enabled
+        ? [...(eventsLog.events ?? [])]
+            .sort((a: any, b: any) => (a.priority || 3) - (b.priority || 3))
+            .slice(0, eventsLog.settings.maxEvents ?? 50)
+            .map((e: any) => ({ id: e.id, content: e.content, category: e.category, priority: e.priority }))
+        : [];
 
       if (info.chatId) {
         // 包含普通聊天消息和通話記錄（sender === "system" 且含通話內容）
