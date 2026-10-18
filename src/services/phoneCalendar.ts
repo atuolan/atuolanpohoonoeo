@@ -2,7 +2,8 @@
  * 把行程加到手機內建的日曆。
  * 網頁沒辦法直接寫入手機日曆，每次都要使用者點一下：
  * - iPhone：捷徑 App（要先建好捷徑，最穩），或行事曆檔 .ics（不用設定，但主畫面 App 裡不一定跳得出來）
- * - Android：Google 日曆預填好的新增頁面，或行事曆檔
+ * - Android：行事曆檔（小米、華為等手機自己的日曆，大陸手機沒有 Google 服務就用這個），或 Google 日曆預填好的新增頁面；
+ *   哪一種要看手機，所以「自動」時第一次按會問
  * 一律用「點連結」的方式打開，不換掉 App 本身的頁面，失敗也不會把人踢出 App。
  */
 import type { CalendarEventData } from "@/types/calendar";
@@ -63,13 +64,30 @@ export function detectPlatform(
   return "other";
 }
 
-/** 「自動」：Android 用 Google 日曆，其他用行事曆檔 */
-export function resolvePhoneCalendarMethod(
-  method: PhoneCalendarMethod,
-  platform: DevicePlatform,
-): ResolvedPhoneCalendarMethod {
-  if (method !== "auto") return method;
-  return platform === "android" ? "google" : "ics";
+/** 「自動」：用行事曆檔（Android 會先問，見 needsMethodChoice；沒問就按的話也用行事曆檔） */
+export function resolvePhoneCalendarMethod(method: PhoneCalendarMethod): ResolvedPhoneCalendarMethod {
+  return method === "auto" ? "ics" : method;
+}
+
+/** Android 有沒有 Google 服務網頁看不出來，「自動」時第一次按要先問用手機日曆還是 Google 日曆 */
+export function needsMethodChoice(method: PhoneCalendarMethod, platform: DevicePlatform): boolean {
+  return method === "auto" && platform === "android";
+}
+
+/** 加入方式的名稱；Android 的行事曆檔是給手機自己的日曆用的，講白一點 */
+export function phoneCalendarMethodLabel(method: ResolvedPhoneCalendarMethod, platform: DevicePlatform): string {
+  if (method === "ics" && platform === "android") return "手機日曆（行事曆檔）";
+  return PHONE_CALENDAR_METHOD_LABELS[method];
+}
+
+/** 微信、QQ 裡的瀏覽器下載不了檔案，行事曆檔要換到一般瀏覽器 */
+export function detectInAppBrowser(
+  userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent,
+): "微信" | "QQ" | undefined {
+  if (/MicroMessenger/i.test(userAgent)) return "微信";
+  // QQ App 裡是「QQ/版本」；QQ 瀏覽器是「MQQBrowser」，可以下載
+  if (/\sQQ\//.test(userAgent)) return "QQ";
+  return undefined;
 }
 
 /** 要放進手機日曆的一筆行程 */
@@ -265,9 +283,8 @@ function safeFileName(title: string): string {
 export function addToPhoneCalendar(
   event: PhoneCalendarEvent,
   settings: PhoneCalendarSettings = loadPhoneCalendarSettings(),
-  platform: DevicePlatform = detectPlatform(),
 ): ResolvedPhoneCalendarMethod {
-  const method = resolvePhoneCalendarMethod(settings.method, platform);
+  const method = resolvePhoneCalendarMethod(settings.method);
   if (method === "shortcut") {
     const url = buildShortcutUrl(event, settings.shortcutName || DEFAULT_SHORTCUT_NAME);
     clickLink((link) => {
@@ -292,8 +309,18 @@ export function addToPhoneCalendar(
 }
 
 /** 按下去之後給使用者看的提示 */
-export function phoneCalendarHint(method: ResolvedPhoneCalendarMethod): string {
+export function phoneCalendarHint(
+  method: ResolvedPhoneCalendarMethod,
+  platform: DevicePlatform = detectPlatform(),
+  userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent,
+): string {
   if (method === "shortcut") return "已交給捷徑，加好後切回來就好";
   if (method === "google") return "已打開 Google 日曆，確認後按「儲存」";
+  const inApp = detectInAppBrowser(userAgent);
+  if (inApp) return `${inApp}裡下載不了行事曆檔：點右上角「···」選「在瀏覽器打開」，再按一次`;
+  // Android 下載完通常不會跳提示，要自己去點開
+  if (platform === "android") {
+    return "行事曆檔已下載：從通知列或「檔案管理 › 下載」點開，選手機的日曆匯入。點了沒反應的話，到日曆的設定找「日程导入」選這個檔案";
+  }
   return "已產生行事曆檔，照手機的提示加入日曆";
 }

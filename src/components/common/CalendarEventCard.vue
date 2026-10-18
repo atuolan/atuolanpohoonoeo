@@ -3,14 +3,20 @@
  * 聊天裡的行事曆卡片：角色幫你記的行程，按一下加到手機日曆。
  * 網頁版沒辦法自己寫進手機日曆，所以要你按；加入方式在「設定 › 日曆與定位」。
  * 角色排了跟你一起的行程（data.plan）時還沒進你的行事曆，先給「加到我的行事曆」
+ * Android 第一次按會先問用手機日曆還是 Google 日曆，選了就記住
  */
 import { findSameCalendarEvent, saveCalendarEventOnce } from "@/services/calendarEvents";
 import { replaceCharPlannerState } from "@/services/charPlanner";
 import { eventNotes } from "@/utils/calendarEventFormat";
 import {
   addToPhoneCalendar,
+  detectPlatform,
+  loadPhoneCalendarSettings,
+  needsMethodChoice,
   phoneCalendarHint,
+  savePhoneCalendarSettings,
   toPhoneCalendarEvent,
+  type PhoneCalendarSettings,
 } from "@/services/phoneCalendar";
 import type { CalendarCardData, CalendarEventData } from "@/types/calendar";
 import { CalendarDays, CalendarPlus, Users } from "lucide-vue-next";
@@ -72,12 +78,26 @@ function showHint(text: string) {
   }, 6000);
 }
 
-function addToPhone() {
+const choosing = ref(false);
+
+function addToPhone(settings: PhoneCalendarSettings = loadPhoneCalendarSettings()) {
+  if (needsMethodChoice(settings.method, detectPlatform())) {
+    choosing.value = true;
+    return;
+  }
   try {
-    showHint(phoneCalendarHint(addToPhoneCalendar(toPhoneCalendarEvent(eventData()))));
+    showHint(phoneCalendarHint(addToPhoneCalendar(toPhoneCalendarEvent(eventData()), settings)));
   } catch (e) {
     showHint(`加不進去：${e instanceof Error ? e.message : String(e)}`);
   }
+}
+
+// 選完直接加，這次點擊就是使用者的操作，瀏覽器不會擋
+function chooseMethod(method: "ics" | "google") {
+  const settings = { ...loadPhoneCalendarSettings(), method };
+  savePhoneCalendarSettings(settings);
+  choosing.value = false;
+  addToPhone(settings);
 }
 
 onUnmounted(() => clearTimeout(hintTimer));
@@ -102,7 +122,16 @@ onUnmounted(() => clearTimeout(hintTimer));
     >
       <CalendarPlus aria-hidden="true" />加到我的行事曆
     </button>
-    <button v-else type="button" class="calendar-card__add" @click.stop="addToPhone">
+    <div v-else-if="choosing" class="calendar-card__choose">
+      <p class="calendar-card__hint">要加到哪裡？選了會記住，之後可以到「設定 › 日曆與定位」改</p>
+      <button type="button" class="calendar-card__add" @click.stop="chooseMethod('ics')">
+        手機日曆<small>小米、華為等</small>
+      </button>
+      <button type="button" class="calendar-card__add" @click.stop="chooseMethod('google')">
+        Google 日曆<small>要有 Google 服務</small>
+      </button>
+    </div>
+    <button v-else type="button" class="calendar-card__add" @click.stop="addToPhone()">
       <CalendarPlus aria-hidden="true" />加到手機日曆
     </button>
     <p v-if="hint" class="calendar-card__hint" role="status">{{ hint }}</p>
@@ -182,6 +211,21 @@ onUnmounted(() => clearTimeout(hintTimer));
 
   &:active {
     background: color-mix(in srgb, var(--color-primary, #e8a0b4) 26%, var(--color-surface, #fff));
+  }
+}
+
+.calendar-card__choose {
+  display: flex;
+  flex-direction: column;
+
+  .calendar-card__add {
+    margin-top: 6px;
+  }
+
+  small {
+    font-size: 12px;
+    font-weight: 400;
+    opacity: 0.75;
   }
 }
 

@@ -5,8 +5,12 @@ import {
   buildIcs,
   buildShortcutUrl,
   DEFAULT_SHORTCUT_NAME,
+  detectInAppBrowser,
   detectPlatform,
   loadPhoneCalendarSettings,
+  needsMethodChoice,
+  phoneCalendarHint,
+  phoneCalendarMethodLabel,
   resolvePhoneCalendarMethod,
   resolveRange,
   savePhoneCalendarSettings,
@@ -35,10 +39,41 @@ describe("裝置與加入方式", () => {
     expect(detectPlatform(WINDOWS, 0)).toBe("other");
   });
 
-  it("自動：Android 用 Google 日曆，其他用行事曆檔；手動選的照選", () => {
-    expect(resolvePhoneCalendarMethod("auto", "android")).toBe("google");
-    expect(resolvePhoneCalendarMethod("auto", "ios")).toBe("ics");
-    expect(resolvePhoneCalendarMethod("shortcut", "android")).toBe("shortcut");
+  it("自動用行事曆檔；手動選的照選", () => {
+    expect(resolvePhoneCalendarMethod("auto")).toBe("ics");
+    expect(resolvePhoneCalendarMethod("shortcut")).toBe("shortcut");
+    expect(resolvePhoneCalendarMethod("google")).toBe("google");
+  });
+
+  it("Android 選「自動」時第一次要先問；選過、或不是 Android 就不問", () => {
+    expect(needsMethodChoice("auto", "android")).toBe(true);
+    expect(needsMethodChoice("ics", "android")).toBe(false);
+    expect(needsMethodChoice("google", "android")).toBe(false);
+    expect(needsMethodChoice("auto", "ios")).toBe(false);
+    expect(needsMethodChoice("auto", "other")).toBe(false);
+  });
+
+  it("Android 的行事曆檔叫「手機日曆」", () => {
+    expect(phoneCalendarMethodLabel("ics", "android")).toBe("手機日曆（行事曆檔）");
+    expect(phoneCalendarMethodLabel("ics", "ios")).toBe("行事曆檔");
+    expect(phoneCalendarMethodLabel("google", "android")).toBe("Google 日曆");
+  });
+
+  it("認得出微信、QQ 裡的瀏覽器，QQ 瀏覽器不算", () => {
+    const wechat = `${ANDROID} MicroMessenger/8.0.50.2700(0x28003252) WeChat/arm64 NetType/WIFI`;
+    const qq = `${ANDROID} V1_AND_SQ_9.0.0_6250_YYB_D QQ/9.0.0.14110 NetType/WIFI`;
+    const qqBrowser = "Mozilla/5.0 (Linux; U; Android 14; zh-cn; 23013RK75C) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/109.0 MQQBrowser/15.0 Mobile Safari/537.36";
+    expect(detectInAppBrowser(wechat)).toBe("微信");
+    expect(detectInAppBrowser(qq)).toBe("QQ");
+    expect(detectInAppBrowser(qqBrowser)).toBeUndefined();
+    expect(detectInAppBrowser(ANDROID)).toBeUndefined();
+  });
+
+  it("行事曆檔的提示：Android 要自己點開檔案，微信裡要換瀏覽器", () => {
+    expect(phoneCalendarHint("ics", "android", ANDROID)).toContain("檔案管理");
+    expect(phoneCalendarHint("ics", "ios", IPHONE)).toBe("已產生行事曆檔，照手機的提示加入日曆");
+    expect(phoneCalendarHint("ics", "android", `${ANDROID} MicroMessenger/8.0.50`)).toContain("在瀏覽器打開");
+    expect(phoneCalendarHint("google", "android", ANDROID)).toContain("Google 日曆");
   });
 });
 
@@ -178,9 +213,9 @@ describe("打開方式", () => {
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:fake");
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
 
-    expect(addToPhoneCalendar(DENTIST, { method: "shortcut", shortcutName: "加到手機日曆" }, "ios")).toBe("shortcut");
-    expect(addToPhoneCalendar(DENTIST, { method: "auto", shortcutName: "" }, "android")).toBe("google");
-    expect(addToPhoneCalendar(DENTIST, { method: "auto", shortcutName: "" }, "ios")).toBe("ics");
+    expect(addToPhoneCalendar(DENTIST, { method: "shortcut", shortcutName: "加到手機日曆" })).toBe("shortcut");
+    expect(addToPhoneCalendar(DENTIST, { method: "google", shortcutName: "" })).toBe("google");
+    expect(addToPhoneCalendar(DENTIST, { method: "auto", shortcutName: "" })).toBe("ics");
 
     expect(clicked[0].href.startsWith("shortcuts://run-shortcut")).toBe(true);
     expect(clicked[1]).toMatchObject({ target: "_blank" });

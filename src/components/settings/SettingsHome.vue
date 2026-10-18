@@ -4,7 +4,8 @@ import { loadBackupSettings } from "@/services/AutoBackupService";
 import {
   detectPlatform,
   loadPhoneCalendarSettings,
-  PHONE_CALENDAR_METHOD_LABELS,
+  needsMethodChoice,
+  phoneCalendarMethodLabel as getPhoneCalendarMethodLabel,
   resolvePhoneCalendarMethod,
 } from "@/services/phoneCalendar";
 import { AUXILIARY_TASKS, useNotificationStore, useSettingsStore } from "@/stores";
@@ -79,8 +80,11 @@ async function refreshSummaries() {
 // 加到手機日曆的方式存在這台裝置，回到首頁時重讀
 const phoneCalendarMethodLabel = ref("");
 function refreshPhoneCalendarMethod() {
-  const method = resolvePhoneCalendarMethod(loadPhoneCalendarSettings().method, detectPlatform());
-  phoneCalendarMethodLabel.value = PHONE_CALENDAR_METHOD_LABELS[method];
+  const { method } = loadPhoneCalendarSettings();
+  const platform = detectPlatform();
+  phoneCalendarMethodLabel.value = needsMethodChoice(method, platform)
+    ? "第一次按時問"
+    : getPhoneCalendarMethodLabel(resolvePhoneCalendarMethod(method), platform);
 }
 
 onMounted(refreshSummaries);

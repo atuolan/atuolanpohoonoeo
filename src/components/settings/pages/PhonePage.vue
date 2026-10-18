@@ -7,8 +7,9 @@ import {
   DEFAULT_SHORTCUT_NAME,
   detectPlatform,
   loadPhoneCalendarSettings,
-  PHONE_CALENDAR_METHOD_LABELS,
+  needsMethodChoice,
   phoneCalendarHint,
+  phoneCalendarMethodLabel,
   resolvePhoneCalendarMethod,
   savePhoneCalendarSettings,
   SHORTCUT_FILE_URL,
@@ -27,30 +28,36 @@ const platform = detectPlatform();
 const settings = reactive(loadPhoneCalendarSettings());
 watch(settings, () => savePhoneCalendarSettings({ ...settings }));
 
-const effectiveMethod = computed(() => resolvePhoneCalendarMethod(settings.method, platform));
+const effectiveMethod = computed(() => resolvePhoneCalendarMethod(settings.method));
+const label = (method: ReturnType<typeof resolvePhoneCalendarMethod>) => phoneCalendarMethodLabel(method, platform);
 
 const methodOptions = computed<Array<{ value: PhoneCalendarMethod; label: string }>>(() => [
-  { value: "auto", label: `自動（這台用${PHONE_CALENDAR_METHOD_LABELS[resolvePhoneCalendarMethod("auto", platform)]}）` },
-  { value: "shortcut", label: PHONE_CALENDAR_METHOD_LABELS.shortcut },
-  { value: "ics", label: PHONE_CALENDAR_METHOD_LABELS.ics },
-  { value: "google", label: PHONE_CALENDAR_METHOD_LABELS.google },
+  {
+    value: "auto",
+    label: needsMethodChoice("auto", platform) ? "自動（第一次按的時候問你）" : `自動（這台用${label(resolvePhoneCalendarMethod("auto"))}）`,
+  },
+  { value: "shortcut", label: label("shortcut") },
+  { value: "ics", label: label("ics") },
+  { value: "google", label: label("google") },
 ]);
 
 const METHOD_NOTES: Record<ReturnType<typeof resolvePhoneCalendarMethod>, string> = {
   shortcut: "按下去會跳到「捷徑」App 直接寫進日曆，加好後自己切回來。第一次用要先按下面的「安裝捷徑」。",
-  ics: "按下去會產生一個行事曆檔，照手機的提示加入日曆。從主畫面打開的 App 不一定跳得出提示，不行就改用「iPhone 捷徑」（可以一鍵安裝）。",
-  google: "按下去會打開填好內容的 Google 日曆，確認後按「儲存」。要登入 Google 帳號。",
+  ics:
+    platform === "android"
+      ? "按下去會下載一個行事曆檔，從通知列或檔案管理點開，選手機的日曆（小米、華為等）匯入。沒有 Google 服務的手機用這個。在微信、QQ 裡打開下載不了，要改用瀏覽器。"
+      : "按下去會產生一個行事曆檔，照手機的提示加入日曆。從主畫面打開的 App 不一定跳得出提示，不行就改用「iPhone 捷徑」（可以一鍵安裝）。",
+  google: "按下去會打開填好內容的 Google 日曆，確認後按「儲存」。要登入 Google 帳號，大陸手機沒有 Google 服務的話用「手機日曆」。",
 };
 
 // 列上只放短的值，說明才有地方寫
-const methodDisplay = computed(() =>
-  settings.method === "auto" ? "自動" : PHONE_CALENDAR_METHOD_LABELS[settings.method],
-);
-const methodNote = computed(
-  () =>
-    (settings.method === "auto" ? `這台會用「${PHONE_CALENDAR_METHOD_LABELS[effectiveMethod.value]}」。` : "") +
-    METHOD_NOTES[effectiveMethod.value],
-);
+const methodDisplay = computed(() => (settings.method === "auto" ? "自動" : label(settings.method)));
+const methodNote = computed(() => {
+  if (needsMethodChoice(settings.method, platform)) {
+    return "第一次在聊天裡按「加到手機日曆」時，會問你用手機日曆還是 Google 日曆，之後就照你選的。";
+  }
+  return (settings.method === "auto" ? `這台會用「${label(effectiveMethod.value)}」。` : "") + METHOD_NOTES[effectiveMethod.value];
+});
 
 const calendarHint = ref("");
 
@@ -65,9 +72,8 @@ function addTestEvent() {
       description: "確認「加到手機日曆」能用",
     },
     { ...settings },
-    platform,
   );
-  calendarHint.value = phoneCalendarHint(method);
+  calendarHint.value = phoneCalendarHint(method, platform);
 }
 
 const showShortcutGuide = ref(false);
