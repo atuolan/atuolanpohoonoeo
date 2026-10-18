@@ -318,9 +318,10 @@ export function phoneCalendarHint(
   if (method === "google") return "已打開 Google 日曆，確認後按「儲存」";
   const inApp = detectInAppBrowser(userAgent);
   if (inApp) return `${inApp}裡下載不了行事曆檔：點右上角「···」選「在瀏覽器打開」，再按一次`;
-  // Android 下載完通常不會跳提示，要自己去點開
+  // Android 下載完通常不會跳提示，要自己去點開；
+  // 從瀏覽器的下載通知點開，小米日曆收不到檔案（會說「没有可导入的日程文件」），從檔案管理點開才行
   if (platform === "android") {
-    return "行事曆檔已下載：從通知列或「檔案管理 › 下載」點開，選手機的日曆匯入。點了沒反應的話，到日曆的設定找「日程导入」選這個檔案";
+    return "行事曆檔已下載：打開手機的「文件管理」，到「下载」點這個檔案，選「日历」匯入。不要從瀏覽器的下載通知點，日曆會說找不到檔案";
   }
   return "已產生行事曆檔，照手機的提示加入日曆";
 }

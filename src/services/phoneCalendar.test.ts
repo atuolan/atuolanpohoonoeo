@@ -70,7 +70,8 @@ describe("裝置與加入方式", () => {
   });
 
   it("行事曆檔的提示：Android 要自己點開檔案，微信裡要換瀏覽器", () => {
-    expect(phoneCalendarHint("ics", "android", ANDROID)).toContain("檔案管理");
+    expect(phoneCalendarHint("ics", "android", ANDROID)).toContain("「文件管理」");
+    expect(phoneCalendarHint("ics", "android", ANDROID)).toContain("不要從瀏覽器的下載通知點");
     expect(phoneCalendarHint("ics", "ios", IPHONE)).toBe("已產生行事曆檔，照手機的提示加入日曆");
     expect(phoneCalendarHint("ics", "android", `${ANDROID} MicroMessenger/8.0.50`)).toContain("在瀏覽器打開");
     expect(phoneCalendarHint("google", "android", ANDROID)).toContain("Google 日曆");
