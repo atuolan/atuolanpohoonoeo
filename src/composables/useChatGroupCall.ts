@@ -20,6 +20,7 @@ import {
 } from "@/stores";
 import { useChatVariablesStore } from "@/stores/chatVariables";
 import { useUserStore } from "@/stores/user";
+import { convertToStorableMessage } from "@/utils/chatMessageMapping";
 
 interface Message {
   id: string;
@@ -41,7 +42,15 @@ interface GroupCallMessage {
   senderName?: string;
   content: string;
   timestamp: number;
+  /** 只給用戶看的提示（失敗、沒人接話），不帶進提示詞 */
+  localHint?: boolean;
 }
+
+/** 這一輪群通話回覆是怎麼觸發的 */
+type GroupCallTurn = "open" | "reply" | "autoTalk";
+
+/** 通話前帶進提示詞的群聊訊息數，讓角色記得剛剛在聊什麼 */
+const CALL_CONTEXT_MESSAGE_LIMIT = 20;
 
 /**
  * 群通話功能
@@ -127,6 +136,9 @@ export function useChatGroupCall(deps: {
     }
 
     showGroupCallModal.value = true;
+
+    // 角色們接起電話先開口，不然通話一開始是空的
+    void triggerGroupCallAIResponse("open");
   }
 
   /** 群通話掛斷 */
@@ -261,7 +273,7 @@ export function useChatGroupCall(deps: {
       timestamp: Date.now(),
     });
 
-    await triggerGroupCallAIResponse();
+    await triggerGroupCallAIResponse("reply");
   }
 
   /** 處理群通話自動對話 */
@@ -270,17 +282,122 @@ export function useChatGroupCall(deps: {
 
     console.log("[GroupCall] 群通話自動對話觸發");
 
-    groupCallMessages.value.push({
-      type: "system",
-      content: "角色們繼續聊天中...",
-      timestamp: Date.now(),
-    });
+    await triggerGroupCallAIResponse("autoTalk");
+  }
 
-    await triggerGroupCallAIResponse();
+  /** 通話開始前最近的群聊訊息（純文字對話），轉成提示詞歷史 */
+  function buildPreCallContext(): ChatMessage[] {
+    const startedAt = groupCallStartedAt.value || Date.now();
+    return deps.messages.value
+      .filter(
+        (m) =>
+          (m.role === "user" || m.role === "ai") &&
+          !m.isGroupCallHistory &&
+          !m.isStreaming &&
+          typeof m.content === "string" &&
+          m.content.trim() &&
+          m.timestamp <= startedAt,
+      )
+      .slice(-CALL_CONTEXT_MESSAGE_LIMIT)
+      .map((m) => ({
+        ...convertToStorableMessage(m, deps.characterName),
+        // 通話只需要文字脈絡，不重送歷史圖片
+        imageData: undefined,
+        imageMimeType: undefined,
+      }));
+  }
+
+  /** 每輪都放在歷史最後的通話狀態說明，提醒模型現在是在講電話、要接著往下聊 */
+  function buildCallStateNote(turn: GroupCallTurn, userName: string): string {
+    const inCall = groupCallParticipants.value.map((p) => p.name);
+    const notInCall = listCallMembers()
+      .map((p) => p.name)
+      .filter((name) => !inCall.includes(name));
+    const groupName = deps.groupMetadata.value?.groupName || "群組";
+
+    const turnHint =
+      turn === "open"
+        ? `${userName} 剛打了這通群通話，大家剛接起來：先打招呼，再接著剛才群裡的話題聊。`
+        : turn === "autoTalk"
+          ? `${userName} 有一陣子沒說話了：角色們自己接著聊下去，開新話題或追問 ${userName}，不要冷場。`
+          : `接著 ${userName} 剛剛說的話回應，再把話題往前推進。`;
+
+    return [
+      `【群通話進行中】這是「${groupName}」的語音群通話，大家是用嘴巴講話，不是打字。`,
+      `目前在通話裡：${inCall.length ? inCall.join("、") : "（沒有角色）"}，還有 ${userName}。`,
+      notInCall.length
+        ? `不在通話裡的成員：${notInCall.join("、")}。他們想中途加入就用 <msg name="角色名"><join-call/>加入時說的話</msg>。`
+        : "",
+      turnHint,
+      `- 每句話都用 <msg name="角色名">說的話</msg>，一句一條；口語、短句，角色之間可以互相接話、打斷、吐槽。`,
+      `- 只有在通話裡的角色能說話；想離開用 <msg name="角色名"><leave-call reason="原因"/>離開前說的話</msg>。`,
+      `- 不要重複前面已經講過的內容；不要再發 <group-call-request> 或 <call-response>，也不要用表情包、紅包、私信等打字功能。`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  /** 把一輪 AI 輸出放進通話：只保留說話、加入/離開通話，其他打字功能忽略 */
+  function applyGroupCallResponse(content: string) {
+    const parsed = parseGroupChatResponse(content);
+
+    for (const parsedMsg of parsed.messages) {
+      const senderName = parsedMsg.senderName || "";
+      const charId = senderName
+        ? deps.getGroupMemberIdByName(senderName)
+        : undefined;
+
+      if (parsedMsg.isGroupCallResponse) {
+        if (parsedMsg.groupCallResponseAction === "join") {
+          if (charId) handleGroupCallJoin(charId, senderName);
+        } else if (parsedMsg.groupCallResponseAction === "decline") {
+          groupCallMessages.value.push({
+            type: "system",
+            content: `${senderName} 拒絕加入通話${parsedMsg.groupCallDeclineReason ? `：${parsedMsg.groupCallDeclineReason}` : ""}`,
+            timestamp: Date.now(),
+          });
+        }
+        continue;
+      }
+      if (parsedMsg.isLeaveCall) {
+        if (parsedMsg.content) {
+          addGroupCallVoiceMessage(senderName, parsedMsg.content);
+        }
+        if (charId)
+          handleGroupCallLeave(charId, senderName, parsedMsg.leaveCallReason);
+        continue;
+      }
+      if (
+        parsedMsg.isGroupCallRequest ||
+        parsedMsg.isRecall ||
+        parsedMsg.isPrivateMessage ||
+        parsedMsg.isGroupAction ||
+        parsedMsg.isRedpacketClaim
+      ) {
+        continue;
+      }
+
+      const spoken =
+        parsedMsg.isVoice && parsedMsg.voiceContent
+          ? parsedMsg.voiceContent
+          : parsedMsg.isStickerMsg && parsedMsg.stickerMeaning
+            ? `[表情：${parsedMsg.stickerMeaning}]`
+            : parsedMsg.content;
+
+      // 有人開口就代表他在通話裡（含只寫 <join-call/> 的情況）
+      if (
+        charId &&
+        (spoken || parsedMsg.isJoinCall) &&
+        !groupCallParticipants.value.some((p) => p.characterId === charId)
+      ) {
+        handleGroupCallJoin(charId, senderName);
+      }
+      if (spoken) addGroupCallVoiceMessage(senderName, spoken);
+    }
   }
 
   /** 群通話專用的 AI 回覆函數 */
-  async function triggerGroupCallAIResponse() {
+  async function triggerGroupCallAIResponse(turn: GroupCallTurn) {
     if (
       !deps.currentChatId.value ||
       !deps.isGroupChat.value ||
@@ -295,27 +412,67 @@ export function useChatGroupCall(deps: {
     );
     if (!startResult.success) {
       console.warn("[GroupCall] 生成任務啟動失敗:", startResult.error);
+      groupCallMessages.value.push({
+        type: "system",
+        content: `沒辦法回覆：${startResult.error || "生成任務啟動失敗"}`,
+        localHint: true,
+        timestamp: Date.now(),
+      });
       return;
     }
 
     try {
-      const callHistory: ChatMessage[] = groupCallMessages.value
-        .filter((m) => m.type !== "system")
-        .map((m, idx) => ({
-          id: `call_${idx}`,
-          sender: (m.type === "user" ? "user" : "assistant") as
-            | "user"
-            | "assistant",
-          name:
-            m.type === "user"
-              ? userStore.currentPersona?.name || "User"
-              : m.senderName || "角色",
-          content: m.content,
-          is_user: m.type === "user",
-          status: "sent" as const,
-          createdAt: m.timestamp,
-          updatedAt: m.timestamp,
-        }));
+      const userName = userStore.currentPersona?.name || "User";
+      const systemEntry = (
+        id: string,
+        content: string,
+        at: number,
+      ): ChatMessage => ({
+        id,
+        sender: "system",
+        // 留空：PromptBuilder 只幫有名字的非用戶訊息加 [名字] 前綴
+        name: "",
+        content,
+        is_user: false,
+        status: "sent" as const,
+        createdAt: at,
+        updatedAt: at,
+      });
+
+      const callHistory: ChatMessage[] = [
+        ...buildPreCallContext(),
+        systemEntry(
+          "call_start",
+          "（以下是群通話中的語音對話）",
+          groupCallStartedAt.value || Date.now(),
+        ),
+        ...groupCallMessages.value
+          .filter((m) => !m.localHint)
+          .map((m, idx): ChatMessage => {
+            if (m.type === "system") {
+              return systemEntry(
+                `call_${idx}`,
+                `（通話：${m.content}）`,
+                m.timestamp,
+              );
+            }
+            return {
+              id: `call_${idx}`,
+              sender: m.type === "user" ? "user" : "assistant",
+              name: m.type === "user" ? userName : m.senderName || "角色",
+              content: m.content,
+              is_user: m.type === "user",
+              status: "sent" as const,
+              createdAt: m.timestamp,
+              updatedAt: m.timestamp,
+            };
+          }),
+        systemEntry(
+          "call_state",
+          buildCallStateNote(turn, userName),
+          Date.now(),
+        ),
+      ];
 
       const meta = deps.groupMetadata.value;
       const isMultiCharCard = !!meta.isMultiCharCard;
@@ -406,7 +563,7 @@ export function useChatGroupCall(deps: {
           useStreamingWindow: settingsStore.generation.useStreamingWindow,
           ...pickGenerationToggles(settingsStore.generation),
         },
-        userName: userStore.currentPersona?.name || "User",
+        userName,
         userPersona: deps.effectivePersona.value?.description,
         promptManagerConfig: promptManagerStore.config,
         ...(deps.currentChatData.value
@@ -478,58 +635,40 @@ export function useChatGroupCall(deps: {
       });
 
       let fullContent = "";
+      let doneContent: string | null = null;
 
       for await (const event of streamGenerator) {
         if (event.type === "token" && event.token) {
           fullContent += event.token;
         } else if (event.type === "done") {
-          const finalContent = deps.applyAIOutputRegex(
-            event.content || fullContent,
-          );
-
-          const parsed = parseGroupChatResponse(finalContent);
-
-          for (const parsedMsg of parsed.messages) {
-            const senderName = parsedMsg.senderName || "";
-
-            if (parsedMsg.isJoinCall) {
-              const charId = deps.getGroupMemberIdByName(senderName);
-              if (charId) handleGroupCallJoin(charId, senderName);
-              if (parsedMsg.content) {
-                addGroupCallVoiceMessage(senderName, parsedMsg.content);
-              }
-              continue;
-            }
-            if (parsedMsg.isLeaveCall) {
-              const charId = deps.getGroupMemberIdByName(senderName);
-              if (charId)
-                handleGroupCallLeave(
-                  charId,
-                  senderName,
-                  parsedMsg.leaveCallReason,
-                );
-              if (parsedMsg.content) {
-                addGroupCallVoiceMessage(senderName, parsedMsg.content);
-              }
-              continue;
-            }
-
-            if (parsedMsg.isVoice && parsedMsg.voiceContent) {
-              addGroupCallVoiceMessage(senderName, parsedMsg.voiceContent);
-              continue;
-            }
-
-            if (parsedMsg.content) {
-              addGroupCallVoiceMessage(senderName, parsedMsg.content);
-            }
-          }
+          doneContent = event.content || fullContent;
+        } else if (event.type === "error") {
+          // 串流錯誤是用事件回報、不會 throw，沒接住的話畫面上就只是「沒人回應」
+          throw new Error(event.error || "生成失敗");
         }
+      }
+
+      // 沒收到 done（串流被中斷）時，已收到的內容照樣拿來用
+      const rawContent = doneContent ?? fullContent;
+      const before = groupCallMessages.value.length;
+      if (rawContent.trim()) {
+        applyGroupCallResponse(deps.applyAIOutputRegex(rawContent));
+      }
+      if (groupCallMessages.value.length === before) {
+        console.warn("[GroupCall] 這輪沒有解析出任何語音:", rawContent);
+        groupCallMessages.value.push({
+          type: "system",
+          content: "這輪沒有人接話，可以再說一次試試",
+          localHint: true,
+          timestamp: Date.now(),
+        });
       }
     } catch (error) {
       console.error("[GroupCall] AI 回覆失敗:", error);
       groupCallMessages.value.push({
         type: "system",
         content: `回覆失敗：${error instanceof Error ? error.message : String(error)}`,
+        localHint: true,
         timestamp: Date.now(),
       });
     } finally {
