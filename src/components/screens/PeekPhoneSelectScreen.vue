@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PeekWallpaper from "@/components/peek-phone/PeekWallpaper.vue";
+import { useRootBackground } from "@/components/peek-phone/useRootBackground";
 import {
   batteryLevel,
   formatClock,
@@ -151,6 +152,9 @@ const selectedCharacter = computed(() =>
 const showChatSheet = computed(
   () => !!selectedCharacterId.value && (noChats.value || characterChats.value.length > 1),
 );
+
+// iOS 底部露出的那一截跟著畫面最底下的顏色
+useRootBackground(computed(() => (showChatSheet.value ? "#f6f5f2" : "#e6e5e2")));
 
 function pickActive() {
   if (activeCharacter.value && !isLoadingChats.value) onCharacterSelect(activeCharacter.value.id);

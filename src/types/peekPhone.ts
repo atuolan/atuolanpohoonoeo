@@ -164,6 +164,8 @@ export interface PeekLockScreen {
   hint: string;
   /** 解開後顯示這組數字的意義 */
   reveal: string;
+  /** 連錯三次時角色說的一句話（之後顯示答案）；舊資料沒有 */
+  giveUp?: string;
 }
 
 /** 螢幕使用時間（設定 App） */

@@ -46,6 +46,7 @@ describe("PeekPhonePromptBuilder", () => {
   it("聊天組：一定要有一串跟使用者的對話，標 is_user，時間用「月/日 時:分」", () => {
     expect(prompts.A).toContain("其中一串一定是跟「小栩」的對話，這一串加上 is_user: true");
     expect(prompts.A).toMatch(/time: "\d{1,2}\/\d{1,2} \d{2}:\d{2}"/);
+    expect(prompts.A).toContain("give_up：偷看的人連錯三次時");
   });
 
   it("行程組：日記和記事本要呼應使用者與秘密；日記範例用今天的日期", () => {
