@@ -24,6 +24,10 @@ export interface PeekPromptContext {
   now: Date;
   /** 角色自己已經記下的待辦和行程（聊天頁「他的今天」那份） */
   plannerText?: string;
+  /** 跟使用者那串會直接顯示真的聊天紀錄：AI 不用編訊息，只寫草稿 */
+  realUserThread?: boolean;
+  /** 真的交易、外送、日記：已經會顯示在手機裡，AI 不要重複寫 */
+  realDataText?: string;
 }
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -92,14 +96,17 @@ function buildOutputRule(): string {
  * 聊天組要藏的秘密：鎖屏密碼、收回的訊息、沒送出的草稿
  * 偷看的人會在 App 裡一個個找出來，所以都要跟使用者有關
  */
-function buildSecretsRuleA(userName: string): string {
+function buildSecretsRuleA(userName: string, realUserThread = false): string {
+  const recalledWhere = realUserThread
+    ? `放在其他聯絡人的對話裡（跟「${userName}」那串是真的聊天紀錄，不用寫）`
+    : `最好在跟「${userName}」的對話裡`;
   return `【秘密 —— 這支手機要藏幾個跟「${userName}」有關的秘密，偷看的人會一個個找出來】
 1. lock_screen 鎖屏密碼：4 位數字，跟「${userName}」有關（例如第一次見面的日期 MMDD、對方生日、只有兩人懂的數字）
    - passcode：4 位數字，一定要加引號
    - hint：給偷看的人的提示，不能直接寫出數字
    - reveal：解開後顯示的一句話，說明這組數字的意義
    - give_up：偷看的人連錯三次時，角色用自己的口吻說的一句話（例如「呀勒呀勒，真拿你沒辦法」），之後會直接顯示答案，所以這句不要寫出數字
-2. 至少 1 則「收回的訊息」：角色傳出去又馬上收回的一句話（最好在跟「${userName}」的對話裡），那則訊息加上 recalled: true 和 recalled_after: 收回前存在了幾秒
+2. 至少 1 則「收回的訊息」：角色傳出去又馬上收回的一句話（${recalledWhere}），那則訊息加上 recalled: true 和 recalled_after: 收回前存在了幾秒
 3. 至少 1 個「沒送出的草稿」：某個對話串加上 draft（輸入框裡打了但沒送出的話），和 draft_history（之前改過的 2 到 4 個版本，舊的在前）
 秘密要符合角色性格，寫出角色不敢說出口的心事，不要每個角色都一樣。`;
 }
@@ -108,32 +115,36 @@ function buildSecretsRuleA(userName: string): string {
  * 聊天組：2~5 個對話串（其中一串是跟使用者的）＋ 鎖屏密碼、收回的訊息、草稿
  */
 export function buildGroupAPrompt(ctx: PeekPromptContext): string {
-  const { charName, userName, now } = ctx;
-  return `你是角色扮演內容生成器。請根據以下資料，生成「${charName}」手機裡的聊天紀錄。
-
-${buildCharacterBlock(ctx)}
-
-【要生成的內容】
-- 2 到 5 個聊天對話串。其中一串一定是跟「${userName}」的對話，這一串加上 is_user: true，contact 寫${charName}手機裡給${userName}的備註名（可以是暱稱，不一定是本名）。
+  const { charName, userName, now, realUserThread } = ctx;
+  const userThreadRule = realUserThread
+    ? `- 2 到 5 個聊天對話串。其中一串是跟「${userName}」的對話：加上 is_user: true，contact 寫${charName}手機裡給${userName}的備註名（可以是暱稱，不一定是本名）。這一串會直接顯示你們真的聊天紀錄（就是上面最近的聊天），messages 寫 [] 就好，只要寫 draft 和 draft_history。
 - 其他聯絡人依角色的人際關係設定（家人、同事、朋友、群組……）。群組的 contact 寫群組名，from 寫實際說話的人。
-- 每串都要有角色自己傳的（self: true）和對方傳的（self: false），一串 3 到 12 則，依時間先後排列。
-- time 寫「月/日 時:分」，都要早於現在時間。
-- 內容要符合角色性格、跟${userName}的關係和最近的劇情。
-
-${buildSecretsRuleA(userName)}
-
-${buildLanguageRule()}
-
-${buildOutputRule()}
-
-lock_screen:
-  passcode: "0912"
-  hint: 第一次見到對方的那天（月月日日）
-  reveal: 0912，是你們第一次見面的那天
-  give_up: ……好啦，告訴你就是了
-
-chats:
-  - contact: ${userName}
+- 其他每串都要有角色自己傳的（self: true）和對方傳的（self: false），一串 3 到 12 則，依時間先後排列。`
+    : `- 2 到 5 個聊天對話串。其中一串一定是跟「${userName}」的對話，這一串加上 is_user: true，contact 寫${charName}手機裡給${userName}的備註名（可以是暱稱，不一定是本名）。
+- 其他聯絡人依角色的人際關係設定（家人、同事、朋友、群組……）。群組的 contact 寫群組名，from 寫實際說話的人。
+- 每串都要有角色自己傳的（self: true）和對方傳的（self: false），一串 3 到 12 則，依時間先後排列。`;
+  const userThreadExample = realUserThread
+    ? `  - contact: ${userName}
+    is_user: true
+    draft: |
+      其實那天我不是剛好路過。
+    draft_history:
+      - text: 那天的事
+      - text: 其實那天我
+    messages: []
+  - contact: 阿哲
+    messages:
+      - from: ${charName}
+        text: 如果想約一個人出來，要怎麼開口才不奇怪
+        self: true
+        time: "${minutesAgo(now, 50)}"
+        recalled: true
+        recalled_after: 6
+      - from: 阿哲
+        text: ？？你剛剛收回了什麼
+        self: false
+        time: "${minutesAgo(now, 49)}"`
+    : `  - contact: ${userName}
     is_user: true
     draft: |
       其實那天我不是剛好路過。
@@ -154,7 +165,30 @@ chats:
         self: true
         time: "${minutesAgo(now, 8)}"
         recalled: true
-        recalled_after: 11
+        recalled_after: 11`;
+  return `你是角色扮演內容生成器。請根據以下資料，生成「${charName}」手機裡的聊天紀錄。
+
+${buildCharacterBlock(ctx)}
+
+【要生成的內容】
+${userThreadRule}
+- time 寫「月/日 時:分」，都要早於現在時間。
+- 內容要符合角色性格、跟${userName}的關係和最近的劇情。
+
+${buildSecretsRuleA(userName, realUserThread)}
+
+${buildLanguageRule()}
+
+${buildOutputRule()}
+
+lock_screen:
+  passcode: "0912"
+  hint: 第一次見到對方的那天（月月日日）
+  reveal: 0912，是你們第一次見面的那天
+  give_up: ……好啦，告訴你就是了
+
+chats:
+${userThreadExample}
   - contact: 媽
     messages:
       - from: 媽
@@ -179,10 +213,13 @@ export function buildGroupBCPrompt(ctx: PeekPromptContext, previousContext = "")
   const plannerBlock = ctx.plannerText
     ? `\n\n【${charName}已經記下的待辦和行程 —— 是真的，schedule 要放進其中今天的行程、memos 要放進這些待辦（內容和時間照抄），再補上其他的】\n${ctx.plannerText}`
     : "";
+  const realBlock = ctx.realDataText
+    ? `\n\n【真的發生過的事 —— 已經會顯示在手機裡，下面要生成的不要重複，也不能跟這些衝突】\n${ctx.realDataText}`
+    : "";
 
   return `你是角色扮演內容生成器。請根據以下資料，生成「${charName}」手機裡的行程、飲食、備忘錄、記事本、日記和錢包。
 
-${buildCharacterBlock(ctx)}${prevBlock}${plannerBlock}
+${buildCharacterBlock(ctx)}${prevBlock}${plannerBlock}${realBlock}
 
 【要生成的內容】
 - schedule 今天的行程 3 到 8 項：time（時:分）、title、location（沒有地點就不寫這行）、done（現在之前的寫 true，還沒到的寫 false）

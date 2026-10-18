@@ -49,6 +49,8 @@ import {
 import type { CharPlanner } from "@/types/charPlanner";
 import type { CalendarEvent } from "@/types/calendar";
 import { listCalendarEvents } from "@/services/calendarEvents";
+import { emptyPeekRealData, loadPeekRealData } from "@/services/PeekRealData";
+import { mergeRealUserThread, type PeekRealData } from "@/utils/peekRealData";
 import { eventLastDate, formatEventTime } from "@/utils/calendarEventFormat";
 import { comparePlans, formatPlanTime, shiftDate, toDateString } from "@/utils/charPlanner";
 import {
@@ -155,7 +157,16 @@ const groupStatus = computed(() => peekPhoneStore.groupStatus);
 const groupErrors = computed(() => peekPhoneStore.groupErrors);
 
 // 各模塊的資料
-const chats = computed(() => storeData.value?.chats ?? []);
+// 真的聊天、交易、日記、外送：打開手機時現讀，蓋在 AI 生成的上面
+const realData = ref<PeekRealData>(emptyPeekRealData());
+const userNameForPhone = ref("");
+const chats = computed(() =>
+  mergeRealUserThread(storeData.value?.chats ?? [], realData.value.userThread, userNameForPhone.value),
+);
+/** 跟使用者那串顯示的是真的聊天：不能從這裡傳訊息 */
+function isRealUserThread(thread: { isUser?: boolean } | undefined): boolean {
+  return !!thread?.isUser && realData.value.userThread.length > 0;
+}
 // 行程和待辦跟聊天頁「他的今天」是同一份；還沒有（舊的偷窺內容）時用偷窺手機自己生成的
 const planner = ref<CharPlanner | null>(null);
 const phoneToday = computed(() => toDateString(now.value));
@@ -172,9 +183,9 @@ function shortPlanDate(date: string): string {
 const upcomingPlans = computed(() =>
   (planner.value?.plans ?? []).filter((p) => p.date > phoneToday.value).sort(comparePlans).slice(0, 8),
 );
-const meals = computed(() => storeData.value?.meals ?? []);
+const meals = computed(() => [...realData.value.meals, ...(storeData.value?.meals ?? [])]);
 const balance = computed(() => storeData.value?.balance ?? 0);
-const transactions = computed(() => storeData.value?.transactions ?? []);
+const transactions = computed(() => [...realData.value.transactions, ...(storeData.value?.transactions ?? [])]);
 const memos = computed<PeekMemoView[]>(() => {
   const todos = planner.value?.todos ?? [];
   return todos.length > 0 ? memosFromPlanner(todos) : (storeData.value?.memos ?? []);
@@ -212,7 +223,9 @@ onMounted(() => {
 });
 onUnmounted(() => window.removeEventListener(CHAR_PLANNER_CHANGED_EVENT, onPlannerChanged));
 const notes = computed(() => storeData.value?.notes ?? []);
-const diary = computed(() => storeData.value?.diary ?? []);
+const diary = computed(() =>
+  [...realData.value.diary, ...(storeData.value?.diary ?? [])].sort((a, b) => b.date.localeCompare(a.date)),
+);
 const gallery = computed(() => storeData.value?.gallery ?? []);
 const browserHistory = computed(() => storeData.value?.browserHistory ?? []);
 const hiddenPhotos = computed(() => storeData.value?.hiddenPhotos ?? []);
@@ -221,7 +234,9 @@ const activePhotos = computed(() => gallery.value.filter((p) => !p.deletedDaysLe
 const deletedPhotos = computed(() => gallery.value.filter((p) => p.deletedDaysLeft));
 
 // ===== 秘密與偷看進度 =====
-const secrets = computed(() => listSecrets(storeData.value, planner.value));
+const secrets = computed(() =>
+  listSecrets(storeData.value ? { ...storeData.value, chats: chats.value } : null, planner.value),
+);
 const progress = computed(() => progressOf(storeData.value));
 const unfound = computed(() => unfoundByPlace(secrets.value, progress.value));
 
@@ -563,11 +578,27 @@ async function loadChatData(): Promise<boolean> {
     const chat = await db.get<Chat>(DB_STORES.CHATS, props.chatId);
     if (!chat) return false;
     chatRecord.value = chat;
+    void loadRealData(chat);
     // 從記憶體快取 → IDB → 重置為 null，確保不會顯示其他聊天的內容
     return await peekPhoneStore.loadOrReset(props.characterId, props.chatId);
   } catch (err) {
     console.error("[PeekPhoneScreen] Failed to load chat data:", err);
     return false;
+  }
+}
+
+async function loadRealData(chat: Chat) {
+  if (!character.value) return;
+  const userName = peekPhoneStore.resolveUserName(chat, props.characterId);
+  userNameForPhone.value = userName;
+  try {
+    realData.value = await loadPeekRealData(chat, {
+      userName,
+      charName: character.value.data.name || character.value.nickname || "角色",
+      now: computeChatNow(chat),
+    });
+  } catch (err) {
+    console.warn("[PeekPhoneScreen] 讀取真的聊天資料失敗:", err);
   }
 }
 
@@ -924,8 +955,14 @@ const todayLabel = computed(
               </button>
             </div>
 
+            <!-- 跟使用者那串是真的聊天：只看得到輸入框裡沒送出的字 -->
+            <div v-if="isRealUserThread(selectedChat)" class="chat-input-bar">
+              <div class="chat-input chat-input--readonly" role="note">
+                {{ selectedChat.draft || "輸入框是空的" }}
+              </div>
+            </div>
             <!-- 以手機主人身份回覆聯絡人的輸入列 -->
-            <div class="chat-input-bar">
+            <div v-else class="chat-input-bar">
               <input
                 v-model="replyInput"
                 class="chat-input"
@@ -1988,6 +2025,15 @@ const todayLabel = computed(
   align-items: center;
   gap: 8px;
   padding: 8px 14px calc(var(--safe-bottom, 0px) + 24px);
+}
+
+.chat-input.chat-input--readonly {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--a-ink-3);
 }
 
 .chat-input {

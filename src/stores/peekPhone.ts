@@ -16,6 +16,8 @@ import {
 import { useLorebooksStore } from "@/stores/lorebooks";
 import { useNotificationStore } from "@/stores/notification";
 import { loadCharPlanner, syncPeekIntoPlanner } from "@/services/charPlanner";
+import { loadPeekRealData } from "@/services/PeekRealData";
+import { describeRealDataForPrompt } from "@/utils/peekRealData";
 import { buildPlannerPromptText, toDateString } from "@/utils/charPlanner";
 import { computeChatNow } from "@/utils/fakeTime";
 import { isWorldInfoEntryEnabled } from "@/utils/worldInfoEntryState";
@@ -275,6 +277,9 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     const now = computeChatNow(chat);
     const planner = await loadCharPlanner(cId).catch(() => null);
     const hasPlanner = !!planner && (planner.todos.some((t) => !t.done) || planner.plans.length > 0);
+    // 真的聊天、交易、日記：跟使用者那串直接顯示真的，交易和日記不要重複
+    const charName = character.data.name || character.nickname || "角色";
+    const real = await loadPeekRealData(chat, { userName, charName, now }).catch(() => null);
     return {
       chatContext: await extractChatContext(chat, 15, userName),
       summariesAndEvents: await extractSummariesAndEvents(cId, charId),
@@ -283,6 +288,8 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       userDescription,
       now,
       plannerText: hasPlanner ? buildPlannerPromptText(planner, toDateString(now), userName) : undefined,
+      realUserThread: !!real && real.userThread.length > 0,
+      realDataText: real ? describeRealDataForPrompt(real, userName) || undefined : undefined,
     };
   }
 
@@ -804,6 +811,8 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     replyAbortController,
     sendMessageToContact,
     cancelContactReply,
+    // 這段聊天用的使用者名字（偷窺手機上顯示真的聊天時用）
+    resolveUserName: (chat: Chat, charId: string) => resolveUserInfo(chat, charId).userName,
     // Exposed for testing
     cache,
     abortController,

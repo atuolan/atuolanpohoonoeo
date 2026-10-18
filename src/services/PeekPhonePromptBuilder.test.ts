@@ -122,3 +122,34 @@ describe("行程、備忘錄組照角色已經記下的寫", () => {
     expect(buildGroupBCPrompt(base)).not.toContain("已經記下的待辦和行程");
   });
 });
+
+describe("跟使用者那串是真的聊天時", () => {
+  const base = {
+    charName: "沈既白",
+    charDesc: "",
+    personality: "",
+    scenario: "",
+    chatContext: "",
+    userName: "小栩",
+    userDescription: "",
+    worldInfo: "",
+    summariesAndEvents: "",
+    now: new Date(2026, 9, 18, 1, 47),
+  };
+
+  it("聊天組只寫備註名和草稿，收回的訊息放到別人的對話", async () => {
+    const { buildGroupAPrompt } = await import("./PeekPhonePromptBuilder");
+    const prompt = buildGroupAPrompt({ ...base, realUserThread: true });
+    expect(prompt).toContain("messages 寫 [] 就好");
+    expect(prompt).toContain("放在其他聯絡人的對話裡");
+    expect(prompt).not.toContain("最好在跟「小栩」的對話裡");
+    expect(buildGroupAPrompt(base)).toContain("最好在跟「小栩」的對話裡");
+  });
+
+  it("行程組帶上真的交易，叫它不要重複", async () => {
+    const { buildGroupBCPrompt } = await import("./PeekPhonePromptBuilder");
+    const prompt = buildGroupBCPrompt({ ...base, realDataText: "- 10:00 收到小栩的轉帳 +520" });
+    expect(prompt).toContain("真的發生過的事");
+    expect(prompt).toContain("收到小栩的轉帳 +520");
+  });
+});

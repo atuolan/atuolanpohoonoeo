@@ -402,6 +402,10 @@ export interface PeekSources {
   now: Date;
   /** 角色自己已經記下的待辦和行程；行程、備忘錄組要照著寫 */
   plannerText?: string;
+  /** 跟使用者那串會顯示真的聊天紀錄 */
+  realUserThread?: boolean;
+  /** 真的交易、外送、日記（已經會顯示，AI 不要重複寫） */
+  realDataText?: string;
 }
 
 /**
@@ -427,6 +431,8 @@ export async function buildPromptContext(
     summariesAndEvents: sources.summariesAndEvents,
     now,
     plannerText: sources.plannerText,
+    realUserThread: sources.realUserThread,
+    realDataText: sources.realDataText,
   };
 }
 
