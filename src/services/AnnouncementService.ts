@@ -2,19 +2,28 @@
  * 作者公告系統
  *
  * 發布流程：
- * 1. 編輯 public/announcements.json，新增/修改一筆 item。
- * 2. 圖片可放在 public/announcements/，在 JSON 用 /announcements/xxx.png 引用。
+ * 1. 編輯 public/announcements.xml，新增/修改一筆 <announcement>。
+ * 2. 圖片可放在 public/announcements/，用 /announcements/xxx.png 引用。
  * 3. git push → Cloudflare Pages 自動部署，所有用戶下次開 App 就會看到。
  *
- * 顯示邏輯：
- * - App 啟動 Auth 通過後 fetch announcements.json。
- * - 過濾已在 IndexedDB announcementAcks 中的 id。
- * - 仍有未確認 → 顯示彈窗；點「我已知曉」寫入 DB，永不再彈。
+ * 顯示邏輯（明信片寄回 203 號房）：
+ * - App 啟動後 fetch announcements.xml，所有公告都收進「信箱」。
+ * - 開 App 時最多只跳一張：最新一則沒跳過的；其他沒看過的直接進信箱標「還沒拆」。
+ * - 每則只會跳一次；按「收下了」才算已讀，按「稍後再看」只是不再跳。
+ * - critical（電報）例外：沒按「收下了」之前每次開 App 都會跳。
+ * - 第一次使用（這台裝置沒有任何紀錄）：舊公告全部當成已讀，不補跳。
  * - 想再次提示同內容 → 換新 id。
  */
 import { getDatabase } from "@/db/database";
 
 export type AnnouncementLevel = "info" | "important" | "critical";
+
+export interface AnnouncementHighlight {
+  title: string;
+  detail?: string;
+  /** 圖示名稱，見 announcementUi.ts 的 ANNOUNCEMENT_ICONS */
+  icon?: string;
+}
 
 export interface Announcement {
   /** 唯一 id，已確認後永遠以此為準 */
@@ -23,15 +32,21 @@ export interface Announcement {
   /** ISO 日期或任意顯示字串 */
   date?: string;
   level?: AnnouncementLevel;
-  /** Markdown 內容；支援 GFM、換行、圖片語法 */
+  /** 完整內容（Markdown），顯示在「完整行程」頁；支援 GFM、換行、圖片語法 */
   body: string;
+  /** 可選：彈窗標題下的一句話 */
+  summary?: string;
+  /** 可選：彈窗裡的重點，最多顯示 3 個；沒寫就從 body 的小標題自動取 */
+  highlights?: AnnouncementHighlight[];
+  /** 可選：彈窗底部「怎麼用」提示 */
+  howto?: string;
   /** 可選：頂部封面圖 URL（建議放 /announcements/xxx.png） */
   imageUrl?: string;
-  /** 可選：底部動作按鈕標籤 */
+  /** 可選：動作按鈕標籤 */
   actionLabel?: string;
   /** 可選：動作按鈕點擊後開啟的 URL */
   actionUrl?: string;
-  /** 預設 true；若為 false 仍可關閉，但會強調樣式 */
+  /** 預設 true；false 時彈窗沒有「稍後再看」，必須按「收下了」 */
   dismissable?: boolean;
 }
 
@@ -40,12 +55,18 @@ export interface AnnouncementsFile {
   items: Announcement[];
 }
 
+/** read = 按過「收下了」；seen = 跳過或已放進信箱，但還沒拆 */
+export type AnnouncementStatus = "read" | "seen";
+
 export interface AnnouncementAckRecord {
   id: string;
   ackedAt: number;
+  /** 舊版紀錄沒有這個欄位，一律視為 read */
+  status?: AnnouncementStatus;
 }
 
 const STORE = "announcementAcks";
+const MAX_HIGHLIGHTS = 3;
 
 /**
  * 從 public/announcements.xml 取得公告清單；若 XML 不存在則 fallback 到 announcements.json。
@@ -90,6 +111,9 @@ async function fetchAnnouncements(): Promise<AnnouncementsFile | null> {
  * <announcements>
  *   <announcement id="xxx" level="info" date="2026-05-11">
  *     <title>標題</title>
+ *     <summary>標題下的一句話</summary>                     <!-- 可選 -->
+ *     <highlight icon="pin" title="重點">補充說明</highlight>  <!-- 可選，最多 3 個 -->
+ *     <howto>長按 → 全局美化 → 主題包</howto>               <!-- 可選 -->
  *     <image>/announcements/cover.png</image>            <!-- 可選 -->
  *     <action label="按鈕文字" url="https://..." />       <!-- 可選 -->
  *     <body><![CDATA[ Markdown 內容... ]]></body>
@@ -109,15 +133,16 @@ function parseAnnouncementsXml(xmlText: string): AnnouncementsFile | null {
 
     const nodes = Array.from(doc.getElementsByTagName("announcement"));
     const items: Announcement[] = [];
+    const text = (node: Element, tag: string) =>
+      node.getElementsByTagName(tag)[0]?.textContent?.trim() || undefined;
 
     for (const node of nodes) {
       const id = (node.getAttribute("id") || "").trim();
       if (!id) continue;
 
-      const titleEl = node.getElementsByTagName("title")[0];
-      const bodyEl = node.getElementsByTagName("body")[0];
-      const title = titleEl?.textContent?.trim() || "";
+      const title = text(node, "title") || "";
       // body 用 CDATA，用 textContent 就能直接拿到原文（含換行）
+      const bodyEl = node.getElementsByTagName("body")[0];
       const body = bodyEl?.textContent?.replace(/^\n+|\n+$/g, "") || "";
       if (!title || !body) continue;
 
@@ -127,8 +152,16 @@ function parseAnnouncementsXml(xmlText: string): AnnouncementsFile | null {
 
       const date = (node.getAttribute("date") || "").trim() || undefined;
 
-      const imageEl = node.getElementsByTagName("image")[0];
-      const imageUrl = imageEl?.textContent?.trim() || undefined;
+      const highlights: AnnouncementHighlight[] = [];
+      for (const el of Array.from(node.getElementsByTagName("highlight"))) {
+        const hlTitle = el.getAttribute("title")?.trim();
+        if (!hlTitle) continue;
+        highlights.push({
+          title: hlTitle,
+          detail: el.textContent?.trim() || undefined,
+          icon: el.getAttribute("icon")?.trim() || undefined,
+        });
+      }
 
       const actionEl = node.getElementsByTagName("action")[0];
       const actionLabel = actionEl?.getAttribute("label")?.trim() || undefined;
@@ -144,7 +177,10 @@ function parseAnnouncementsXml(xmlText: string): AnnouncementsFile | null {
         date,
         level,
         body,
-        imageUrl,
+        summary: text(node, "summary"),
+        highlights: highlights.length ? highlights : undefined,
+        howto: text(node, "howto"),
+        imageUrl: text(node, "image"),
         actionLabel,
         actionUrl: actionUrl && actionLabel ? actionUrl : undefined,
         dismissable,
@@ -158,45 +194,102 @@ function parseAnnouncementsXml(xmlText: string): AnnouncementsFile | null {
   }
 }
 
-async function getAckedIds(): Promise<Set<string>> {
-  try {
-    const db = await getDatabase();
-    const records = await db.getAll(STORE);
-    return new Set(records.map((r) => r.id));
-  } catch (error) {
-    console.warn("[Announcements] 讀取已確認紀錄失敗:", error);
-    return new Set();
-  }
-}
-
-/**
- * 取得當前用戶尚未確認的公告清單，依 JSON 順序回傳。
- */
-export async function loadPendingAnnouncements(): Promise<Announcement[]> {
+/** 取得所有公告（依檔案順序，最新的在最前面）；失敗回傳空陣列 */
+export async function loadAnnouncements(): Promise<Announcement[]> {
   const file = await fetchAnnouncements();
   if (!file) return [];
-  const acked = await getAckedIds();
-  const pending: Announcement[] = [];
-  for (const item of file.items) {
-    if (!item || typeof item.id !== "string" || !item.id) continue;
-    if (acked.has(item.id)) continue;
-    if (typeof item.title !== "string" || typeof item.body !== "string") continue;
-    pending.push(item);
-  }
-  return pending;
+  return file.items.filter(
+    (item) =>
+      !!item &&
+      typeof item.id === "string" &&
+      !!item.id &&
+      typeof item.title === "string" &&
+      typeof item.body === "string",
+  );
 }
 
-/**
- * 標記某則公告已確認，寫入 IndexedDB。
- */
-export async function acknowledgeAnnouncement(id: string): Promise<void> {
-  if (!id) return;
+/** 讀取這台裝置的公告紀錄；讀取失敗回傳 null（呼叫端不應據此判斷成新用戶） */
+export async function loadAnnouncementRecords(): Promise<Map<string, AnnouncementStatus> | null> {
   try {
     const db = await getDatabase();
-    await db.put(STORE, { id, ackedAt: Date.now() } satisfies AnnouncementAckRecord);
+    const records = (await db.getAll(STORE)) as AnnouncementAckRecord[];
+    return new Map(records.map((r) => [r.id, r.status ?? "read"]));
+  } catch (error) {
+    console.warn("[Announcements] 讀取已確認紀錄失敗:", error);
+    return null;
+  }
+}
+
+/** 寫入公告紀錄（seen 不會蓋掉既有的 read，由呼叫端保證） */
+export async function markAnnouncements(
+  ids: string[],
+  status: AnnouncementStatus,
+): Promise<void> {
+  if (ids.length === 0) return;
+  try {
+    const db = await getDatabase();
+    const tx = db.transaction(STORE, "readwrite");
+    const ackedAt = Date.now();
+    await Promise.all([
+      ...ids.map((id) => tx.store.put({ id, ackedAt, status } satisfies AnnouncementAckRecord)),
+      tx.done,
+    ]);
   } catch (error) {
     console.warn("[Announcements] 寫入已確認紀錄失敗:", error);
   }
+}
+
+export interface AnnouncementPlan {
+  /** 這次要跳的那一則 */
+  popupId: string | null;
+  /** 直接收進信箱、以後不再跳的 */
+  markSeen: string[];
+  /** 新用戶：舊公告全部當成已讀 */
+  markRead: string[];
+}
+
+/**
+ * 決定開 App 時要跳哪一則。items 依檔案順序，最新的在最前面。
+ */
+export function planAnnouncementPopup(
+  items: Announcement[],
+  records: Map<string, AnnouncementStatus>,
+): AnnouncementPlan {
+  if (records.size === 0) {
+    return { popupId: null, markSeen: [], markRead: items.map((i) => i.id) };
+  }
+  const critical = items.find((i) => i.level === "critical" && records.get(i.id) !== "read");
+  const fresh = items.filter((i) => !records.has(i.id));
+  const popup = critical ?? fresh[0] ?? null;
+  return {
+    popupId: popup?.id ?? null,
+    // critical 沒收下之前要一直跳，不標 seen
+    markSeen: fresh.filter((i) => i.level !== "critical").map((i) => i.id),
+    markRead: [],
+  };
+}
+
+/** 去掉標題開頭的 emoji（舊公告的小標題都以 emoji 開頭） */
+export function stripLeadingEmoji(text: string): string {
+  return text.replace(/^[\p{Extended_Pictographic}️‍\s]+/u, "").trim();
+}
+
+/** 彈窗的重點：作者有寫就用，沒寫就取 body 的前 3 個小標題 */
+export function getPopupHighlights(announcement: Announcement): AnnouncementHighlight[] {
+  if (announcement.highlights?.length) {
+    return announcement.highlights.slice(0, MAX_HIGHLIGHTS);
+  }
+  const headings = Array.from(announcement.body.matchAll(/^#{2,4}\s+(.+)$/gm))
+    .map((m) => stripLeadingEmoji(m[1]))
+    .filter(Boolean);
+  return headings.slice(0, MAX_HIGHLIGHTS).map((title) => ({ title }));
+}
+
+/** 「完整行程」有幾站：每個 ann-section 一站；沒有區塊就數小標題 */
+export function countAnnouncementStops(body: string): number {
+  const sections = body.match(/class="[^"]*\bann-(?:section|feature-box|bug-box)\b/g)?.length ?? 0;
+  if (sections > 0) return sections;
+  return body.match(/^#{2,4}\s+/gm)?.length ?? 0;
 }
 
 /**

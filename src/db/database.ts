@@ -334,7 +334,8 @@ interface AguaphoneDB extends DBSchema {
   // === v25 新增：作者公告已確認紀錄 ===
   announcementAcks: {
     key: string; // announcement id
-    value: { id: string; ackedAt: number };
+    // status：read = 收下了，seen = 跳過或收進信箱但還沒拆；舊紀錄沒有 status，視為 read
+    value: { id: string; ackedAt: number; status?: "read" | "seen" };
   };
   // === v27 新增：提示詞覆蓋（按角色卡 / 群聊作用域） ===
   // 已停用：專屬預設改存在各聊天的 chatVariables，此表不再讀寫

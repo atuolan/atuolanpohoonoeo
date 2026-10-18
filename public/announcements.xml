@@ -15,7 +15,23 @@
      B. 內文嵌圖：在 CDATA 裡面用 Markdown 圖片語法：
         ![說明文字](/announcements/檔名.png)
      圖檔記得實際丟到 public/announcements/ 資料夾，否則會顯示破圖。
-  5. git push 就會自動部署給所有用戶。
+  5. 彈窗（明信片）只顯示摘要，可以另外寫（都可省略）：
+       <summary>標題下的一句話</summary>
+       <highlight icon="pin" title="重點標題">一行補充</highlight>   最多 3 個
+       <howto>長按 → 全局美化 → 主題包</howto>                     怎麼用
+     沒寫 <highlight> 的話，會自動取 body 裡前 3 個 ### 小標題。
+     icon 可用：pin map brush palette suitcase plane ticket camera
+                home chat clock wrench bug gift star sparkle
+  6. <body> 是「完整行程」頁，每個 <section> 是路線上的一站：
+       class="ann-section feature"    新景點（新功能）
+       class="ann-section update"     整修完成（改版）
+       class="ann-section important"  出發前提醒（要注意的事）
+       class="ann-section bug"        修好了（修正）
+     小標題開頭的 emoji 會自動拿掉，不用刪。
+  7. git push 就會自動部署給所有用戶。
+
+  顯示規則：開 App 最多只跳一張（最新沒跳過的），其他收進「設定 → 信箱」。
+  每則只跳一次；新用戶不會補跳舊公告。level="critical" 沒按「收下了」前每次都跳。
 
   想撤回：直接刪掉那個 <announcement> 區塊。
   想重新提示相同內容：換一個新的 id 就行。
@@ -24,7 +40,12 @@
 <announcements>
 
   <announcement id="20261011-theme-packs-redesign" level="important" date="2026-10-11">
-    <title>主題包大改版：新增手帳拼貼、毛玻璃，五個主題全部重做</title>
+    <title>主題包大改版</title>
+    <summary>每個主題的時鐘、拍立得、音樂、App 圖標，都換上了自己專屬的造型。</summary>
+    <highlight icon="pin" title="兩個新主題">手帳拼貼（新的預設）、毛玻璃</highlight>
+    <highlight icon="brush" title="五個主題全部重做">奶油風、Y2K、極簡黑白、珍珠畫廊、線描插畫</highlight>
+    <highlight icon="suitcase" title="套用時可以重新擺位">只移動位置，照片、待辦、心情都不會清掉</highlight>
+    <howto>長按底部圓形核心按鈕 → 全局美化 → 主題包</howto>
     <body><![CDATA[
 
 主題包不再只是換顏色了——每個主題的時鐘、拍立得、音樂、最近聊天、App 圖標都有自己專屬的造型。
@@ -43,7 +64,7 @@
 
 </section>
 
-<section class="ann-section feature">
+<section class="ann-section update">
 
 ### 🎨 五個主題全部重做
 
@@ -298,6 +319,10 @@
 
   <announcement id="2026-??-??-填一個唯一名字" level="important" date="2026-??-??">
     <title>這裡寫標題</title>
+    <summary>標題下的一句話</summary>
+    <highlight icon="pin" title="重點一">一行補充</highlight>
+    <highlight icon="brush" title="重點二">一行補充</highlight>
+    <howto>在哪裡打開</howto>
     <image>/announcements/封面圖.png</image>
     <action label="按鈕文字" url="https://外部連結.com" />
     <body><![CDATA[
@@ -313,10 +338,10 @@
     ]]></body>
   </announcement>
 
-    level 可選三種（影響顏色）：
-      info       藍色  一般通知
-      important  黃色  重要公告
-      critical   紅色  緊急更新
+    level 可選三種：
+      info       明信片  一般通知，點外面就收進信箱
+      important  掛號信  重要公告，航空信封邊框，要按按鈕才關
+      critical   電報    必須處理，沒有「稍後再看」，沒收下前每次開 App 都跳
   -->
 
 </announcements>
