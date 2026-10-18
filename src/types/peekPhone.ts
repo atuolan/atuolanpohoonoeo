@@ -41,6 +41,8 @@ export interface PeekChatThread {
   draft?: string;
   /** 草稿之前改過的版本，舊的在前 */
   draftHistory?: string[];
+  /** 草稿已經幫他按送出了（真的出現在聊天裡） */
+  draftSentAt?: number;
 }
 
 /** 行程項目 */

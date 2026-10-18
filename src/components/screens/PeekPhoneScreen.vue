@@ -51,6 +51,14 @@ import type { CalendarEvent } from "@/types/calendar";
 import { listCalendarEvents } from "@/services/calendarEvents";
 import { emptyPeekRealData, loadPeekRealData } from "@/services/PeekRealData";
 import { mergeRealUserThread, type PeekRealData } from "@/utils/peekRealData";
+import {
+  leaveCaughtNote,
+  loadPeekLinks,
+  rememberPeekSecret,
+  savePeekLinks,
+  sendDraftAsChar,
+} from "@/services/PeekLinks";
+import { buildCaughtNote, DEFAULT_PEEK_LINKS, type PeekLinkSettings } from "@/utils/peekLinks";
 import { eventLastDate, formatEventTime } from "@/utils/calendarEventFormat";
 import { comparePlans, formatPlanTime, shiftDate, toDateString } from "@/utils/charPlanner";
 import {
@@ -259,7 +267,90 @@ function isRevealed(key: string): boolean {
   return progress.value.revealed.includes(key);
 }
 function reveal(key: string): void {
+  if (!isRevealed(key)) {
+    foundThisTime.add(key);
+    if (links.value.remember) void rememberSecret(key);
+  }
   peekPhoneStore.markRevealed(key);
+}
+
+// ===== 偷看的結果回到聊天（窺視選單裡的三個開關，每個聊天各自存） =====
+const links = ref<PeekLinkSettings>({ ...DEFAULT_PEEK_LINKS });
+/** 這次拿起手機才找到的秘密：被發現時告訴他看到了什麼 */
+const foundThisTime = new Set<string>();
+/** 這次有解鎖進到桌面：只看了鎖屏就放下不算偷看 */
+let openedThisTime = false;
+
+function peekNames() {
+  return { userName: userNameForPhone.value || "使用者", charName: charName.value };
+}
+
+async function rememberSecret(key: string) {
+  const secret = secrets.value.find((s) => s.key === key);
+  if (!secret || !character.value) return;
+  try {
+    await rememberPeekSecret(props.chatId, character.value.id, secret, peekNames());
+  } catch (err) {
+    console.warn("[PeekPhoneScreen] 秘密記進重要事件失敗:", err);
+  }
+}
+
+async function updateLinks(next: PeekLinkSettings) {
+  const turnedOnRemember = next.remember && !links.value.remember;
+  links.value = next;
+  try {
+    await savePeekLinks(props.chatId, next);
+  } catch (err) {
+    console.warn("[PeekPhoneScreen] 儲存連動開關失敗:", err);
+  }
+  // 剛打開「記進記憶」：之前找到的也補記
+  if (turnedOnRemember) {
+    for (const key of progress.value.revealed) await rememberSecret(key);
+  }
+}
+
+onMounted(async () => {
+  try {
+    links.value = await loadPeekLinks(props.chatId);
+  } catch (err) {
+    console.warn("[PeekPhoneScreen] 讀取連動開關失敗:", err);
+  }
+});
+
+// 放下手機：開了「被他發現」就在聊天裡留一筆
+onUnmounted(() => {
+  if (!links.value.caught || !openedThisTime) return;
+  const found = secrets.value.filter((s) => foundThisTime.has(s.key));
+  const { userName, charName: name } = peekNames();
+  void leaveCaughtNote(props.chatId, buildCaughtNote(found, userName, name), now.value.getTime()).catch((err) =>
+    console.warn("[PeekPhoneScreen] 留下被發現的紀錄失敗:", err),
+  );
+});
+
+/** 幫他按送出：跟使用者那串的草稿以他的身分出現在聊天裡 */
+const sendingDraft = ref(false);
+const canSendDraft = computed(
+  () =>
+    links.value.sendDraft &&
+    !!selectedChat.value?.draft &&
+    !selectedChat.value.draftSentAt &&
+    isRealUserThread(selectedChat.value),
+);
+async function sendDraft() {
+  const thread = selectedChat.value;
+  if (!thread?.draft || sendingDraft.value) return;
+  if (!confirm(`幫${charName.value}把這句話送出去？\n\n「${thread.draft.trim()}」\n\n會以${charName.value}的身分出現在你們的聊天裡。`)) return;
+  sendingDraft.value = true;
+  try {
+    reveal(secretKeys.draft(thread.id));
+    await sendDraftAsChar(props.chatId, charName.value, thread.draft.trim(), now.value.getTime());
+    peekPhoneStore.markDraftSent(thread.id);
+    if (chatRecord.value) await loadRealData(chatRecord.value);
+  } catch (err) {
+    console.warn("[PeekPhoneScreen] 幫他送出草稿失敗:", err);
+  } finally {
+    sendingDraft.value = false;
+  }
 }
 
 // 膠囊上的字：主畫面說幾處有秘密，App 裡說這裡有幾個
@@ -311,6 +402,7 @@ function onLockSkip() {
 }
 function onUnlock() {
   lockRetry.value = false;
+  openedThisTime = true;
   currentView.value = "home";
 }
 
@@ -583,6 +675,7 @@ defineExpose({ handleBack });
 /** 點鎖屏通知：解鎖並直接打開那個聊天 */
 function openThreadFromLock(threadId: string) {
   lockRetry.value = false;
+  openedThisTime = true;
   selectedChatId.value = threadId;
   currentView.value = "chat";
 }
@@ -997,8 +1090,17 @@ const todayLabel = computed(
             <!-- 跟使用者那串是真的聊天：只看得到輸入框裡沒送出的字 -->
             <div v-if="isRealUserThread(selectedChat)" class="chat-input-bar">
               <div class="chat-input chat-input--readonly" role="note">
-                {{ selectedChat.draft || "輸入框是空的" }}
+                {{ (!selectedChat.draftSentAt && selectedChat.draft) || "輸入框是空的" }}
               </div>
+              <button
+                v-if="canSendDraft"
+                type="button"
+                class="chat-send-draft"
+                :disabled="sendingDraft"
+                @click="sendDraft"
+              >
+                幫 TA 按送出
+              </button>
             </div>
             <!-- 以手機主人身份回覆聯絡人的輸入列 -->
             <div v-else class="chat-input-bar">
@@ -1479,6 +1581,8 @@ const todayLabel = computed(
       :group-status="groupStatus"
       :secrets="secrets"
       :progress="progress"
+      :links="links"
+      @update-links="updateLinks"
       @close="showSheet = false"
       @go-secret="goToSecret"
       @regenerate="refreshPhase"
@@ -2081,6 +2185,23 @@ const todayLabel = computed(
   align-items: center;
   gap: 8px;
   padding: 8px 14px calc(var(--safe-bottom, 0px) + 24px);
+}
+
+.chat-send-draft {
+  flex-shrink: 0;
+  height: 38px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 19px;
+  background: var(--a-link);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.5;
+  }
 }
 
 .chat-input.chat-input--readonly {

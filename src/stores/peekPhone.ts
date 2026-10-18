@@ -327,6 +327,15 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     updateProgress((p) => (p.revealed.includes(key) ? p : { ...p, revealed: [...p.revealed, key] }));
   }
 
+  /** 草稿幫他送出了：記下來，輸入框不再顯示（草稿還算找到的秘密） */
+  function markDraftSent(threadId: string): void {
+    if (!data.value || !characterId.value || !chatId.value) return;
+    const chats = data.value.chats.map((t) => (t.id === threadId ? { ...t, draftSentAt: Date.now() } : t));
+    data.value = { ...data.value, chats };
+    storeCache(characterId.value, chatId.value, data.value);
+    saveToIDB(characterId.value, chatId.value, data.value);
+  }
+
   function markViewed(tab: PeekPhoneTab): void {
     updateProgress((p) => (p.viewed.includes(tab) ? p : { ...p, viewed: [...p.viewed, tab] }));
   }
@@ -815,6 +824,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     cancelContactReply,
     // 這段聊天用的使用者名字（偷窺手機上顯示真的聊天時用）
     resolveUserName: (chat: Chat, charId: string) => resolveUserInfo(chat, charId).userName,
+    markDraftSent,
     // Exposed for testing
     cache,
     abortController,
