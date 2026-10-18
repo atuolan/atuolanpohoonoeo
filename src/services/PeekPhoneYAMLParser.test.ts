@@ -25,6 +25,12 @@ chats:
     });
   });
 
+  it("鎖屏密碼：連錯三次的那句話", () => {
+    const yaml = `lock_screen:\n  passcode: "0912"\n  hint: 初遇\n  reveal: 初遇那天\n  give_up: 呀勒呀勒，真拿你沒辦法`;
+    expect(parseLockScreen(yaml)?.giveUp).toBe("呀勒呀勒，真拿你沒辦法");
+    expect(parseLockScreen(`lock_screen:\n  passcode: "0912"`)?.giveUp).toBeUndefined();
+  });
+
   it("鎖屏密碼不是 4 位數字就當作沒有", () => {
     expect(parseLockScreen(`lock_screen:\n  passcode: "12345"\n  hint: x`)).toBeUndefined();
     expect(parseLockScreen(`chats:\n  - contact: 栩`)).toBeUndefined();

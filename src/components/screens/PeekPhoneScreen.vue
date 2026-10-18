@@ -4,6 +4,7 @@ import PeekHomeView from "@/components/peek-phone/PeekHomeView.vue";
 import PeekLockView from "@/components/peek-phone/PeekLockView.vue";
 import PeekScreenTime from "@/components/peek-phone/PeekScreenTime.vue";
 import PeekSheet from "@/components/peek-phone/PeekSheet.vue";
+import { useRootBackground } from "@/components/peek-phone/useRootBackground";
 import {
   avatarColor,
   batteryLevel,
@@ -122,6 +123,16 @@ const gridKeys: PeekPhoneTab[] = ["diary", "memo", "meals", "settings"];
 const dockKeys: PeekPhoneTab[] = ["chat", "gallery", "browser", "balance"];
 // 深色的 App，其他是淺色
 const darkTabs = new Set<PeekPhoneTab>(["chat", "balance", "browser", "settings"]);
+
+// iOS 底部露出的那一截跟著畫面最底下的顏色
+useRootBackground(
+  computed(() => {
+    if (showSheet.value) return "#f6f5f2";
+    const view = currentView.value;
+    if (view === "lock" || view === "home") return charAvatar.value ? "#151517" : "#352c27";
+    return darkTabs.has(view) ? "#0f1012" : "#f7f7f5";
+  }),
+);
 
 // 從 store 讀取資料
 const storeData = computed(() => peekPhoneStore.data);

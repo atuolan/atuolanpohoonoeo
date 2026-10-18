@@ -549,6 +549,7 @@ export function parseLockScreen(yaml: string): PeekLockScreen | undefined {
       passcode,
       hint: (fields.hint ?? "").trim(),
       reveal: (fields.reveal ?? "").trim(),
+      giveUp: fields.give_up?.trim() || undefined,
     };
   } catch {
     console.warn("[PeekPhoneYAMLParser] parseLockScreen failed");

@@ -22,6 +22,9 @@ const emit = defineEmits<{
 
 const code = ref("");
 const wrong = ref(false);
+// 連錯三次就給答案
+const wrongCount = ref(0);
+const showAnswer = computed(() => wrongCount.value >= 3);
 const solved = ref(false);
 
 const LETTERS = ["", "ABC", "DEF", "GHI", "JKL", "MNO", "PQRS", "TUV", "WXYZ"];
@@ -42,6 +45,7 @@ function press(digit: string) {
   } else {
     code.value = "";
     wrong.value = true;
+    wrongCount.value++;
   }
 }
 
@@ -68,6 +72,12 @@ const backLabel = computed(() => (code.value ? "刪除" : "取消"));
       <div v-if="props.lockScreen.hint" class="passcode-hint">
         <Eye :size="14" aria-hidden="true" />
         <span>提示：{{ props.lockScreen.hint }}</span>
+      </div>
+      <div v-if="showAnswer" class="passcode-hint passcode-answer" role="status">
+        <span>
+          {{ props.lockScreen.giveUp || "真拿你沒辦法……" }}
+          密碼是 <strong class="passcode-answer-code">{{ props.lockScreen.passcode }}</strong>
+        </span>
       </div>
 
       <div class="passcode-keys">
@@ -170,6 +180,17 @@ const backLabel = computed(() => (code.value ? "刪除" : "取消"));
   svg {
     flex-shrink: 0;
   }
+}
+
+.passcode-answer {
+  margin-top: 8px;
+  border-style: solid;
+}
+
+.passcode-answer-code {
+  font-family: var(--p-num);
+  font-size: 14px;
+  letter-spacing: 0.12em;
 }
 
 .passcode-keys {

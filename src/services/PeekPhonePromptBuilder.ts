@@ -96,6 +96,7 @@ function buildSecretsRuleA(userName: string): string {
    - passcode：4 位數字，一定要加引號
    - hint：給偷看的人的提示，不能直接寫出數字
    - reveal：解開後顯示的一句話，說明這組數字的意義
+   - give_up：偷看的人連錯三次時，角色用自己的口吻說的一句話（例如「呀勒呀勒，真拿你沒辦法」），之後會直接顯示答案，所以這句不要寫出數字
 2. 至少 1 則「收回的訊息」：角色傳出去又馬上收回的一句話（最好在跟「${userName}」的對話裡），那則訊息加上 recalled: true 和 recalled_after: 收回前存在了幾秒
 3. 至少 1 個「沒送出的草稿」：某個對話串加上 draft（輸入框裡打了但沒送出的話），和 draft_history（之前改過的 2 到 4 個版本，舊的在前）
 秘密要符合角色性格，寫出角色不敢說出口的心事，不要每個角色都一樣。`;
@@ -127,6 +128,7 @@ lock_screen:
   passcode: "0912"
   hint: 第一次見到對方的那天（月月日日）
   reveal: 0912，是你們第一次見面的那天
+  give_up: ……好啦，告訴你就是了
 
 chats:
   - contact: ${userName}
