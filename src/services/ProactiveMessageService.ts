@@ -1200,6 +1200,7 @@ export class ProactiveMessageService {
         gamePlayingContext: options?.gamePlayingContext,
         socialPosts: await getSocialPostsForPrompt([character.id]),
         charStatus: chat.charStatus?.text,
+        charStatusUpdatedAt: chat.charStatus?.updatedAt,
         charStickyNote: noteBoardContext.charStickyNote,
         userMoodNote: noteBoardContext.moodNote,
         charPlanner: charPlannerText,
