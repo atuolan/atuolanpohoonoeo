@@ -282,9 +282,7 @@ ${buildCharacterBlock(ctx)}${prevBlock}
 - date：今天或之前的 YYYY-MM-DD
 
 【成人內容】
-年齡只看角色卡明確寫出的歲數或「已成年」這類字，不要從年級、學校、外表、性格自己推測年紀（例如只寫「高三」、沒寫歲數，就當作成年人）。
-- 成年角色：browser_history 要有 2 到 3 筆 category: adult，url 用真實風格的成人網站網址（例如 pornhub.com/view_video.php?viewkey=…、xvideos.com/video…/…），title 寫具體的影片名或搜尋詞，要有角色自己的口味，不要千篇一律；hidden_photos 可以有私密自拍、情色截圖、偷偷存下的別人的色圖。
-- 角色卡明確寫了未滿 18 歲：browser_history 不要有 adult，hidden_photos 改放其他不想被看到的照片（偷拍的人、醜照、跟前任的合照……）。
+依角色的性格、慾望和設定，寫出這個角色私下會看的成人內容：browser_history 放 category: adult 的紀錄，url 用真實風格的成人網站網址（例如 pornhub.com/view_video.php?viewkey=…、xvideos.com/video…/…），title 寫具體的影片名或搜尋詞；hidden_photos 可以有私密自拍、情色截圖、偷偷存下的別人的色圖。要有角色自己的口味，不要千篇一律。
 
 ${buildLanguageRule()}
 

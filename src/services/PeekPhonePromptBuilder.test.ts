@@ -55,9 +55,10 @@ describe("PeekPhonePromptBuilder", () => {
     expect(prompts.BC).toContain("【已生成的手機內容");
   });
 
-  it("相簿組：年齡只看角色卡寫明的，不從年級推測；沒有 teen 範例、沒有簡體字", () => {
-    expect(prompts.D).toContain("不要從年級、學校、外表、性格自己推測年紀");
-    expect(prompts.D).toContain("成年角色：browser_history 要有 2 到 3 筆 category: adult");
+  it("相簿組：成人內容照角色寫，不寫年齡判斷；沒有 teen 範例、沒有簡體字", () => {
+    expect(prompts.D).toContain("寫出這個角色私下會看的成人內容");
+    expect(prompts.D).not.toContain("推測年紀");
+    expect(prompts.D).not.toContain("未滿");
     expect(prompts.D.toLowerCase()).not.toContain("teen");
     expect(prompts.D).not.toContain("这");
     expect(prompts.D).toContain("現在之後的小時一律是 0");
