@@ -5,7 +5,7 @@
         <ChevronLeft class="icon" />
       </button>
       <span class="header-title">轉轉飯堂</span>
-      <button class="round-btn" type="button" aria-label="編輯選項" @click="showSettings = true">
+      <button class="round-btn" type="button" aria-label="編輯選項" :disabled="isSpinning" @click="openSettings">
         <Pencil class="icon icon-sm" />
       </button>
     </header>
@@ -27,9 +27,9 @@
           :disabled="isSpinning"
           @click="pickBudget(budget.value)"
         >
-          {{ budget.short }}
+          {{ budget.label }}
         </button>
-        <button type="button" class="chip chip-ghost" :disabled="isSpinning" @click="showSettings = true">
+        <button type="button" class="chip chip-ghost" :disabled="isSpinning" @click="openSettings">
           {{ cuisineChipLabel }}
           <ChevronDown class="chip-icon" />
         </button>
@@ -43,11 +43,16 @@
         <div class="wheel-rim">
           <div
             class="wheel"
-            :style="{ transform: `rotate(${rotation}deg)`, background: wheelGradient }"
+            :style="{
+              transform: `rotate(${rotation}deg)`,
+              transitionDuration: `${SPIN_MS}ms`,
+              background: wheelGradient,
+            }"
+            @transitionend="onWheelTransitionEnd"
           >
             <span
-              v-for="(item, index) in currentItems"
-              :key="`${item.name}-${index}`"
+              v-for="(item, index) in wheelItems"
+              :key="itemKey(item)"
               class="slice-label"
               :style="{ transform: `rotate(${sliceAngle * index}deg)` }"
             >
@@ -64,15 +69,34 @@
           class="spin-btn"
           type="button"
           aria-label="轉動轉盤"
-          :disabled="isSpinning"
+          :disabled="isSpinning || wheelItems.length === 0"
           @click="spin"
         >
           轉
         </button>
+        <button
+          v-if="hasMoreThanWheel"
+          class="round-btn shuffle-btn"
+          type="button"
+          aria-label="換一批"
+          :disabled="isSpinning"
+          @click="reshuffle"
+        >
+          <Shuffle class="icon icon-sm" />
+        </button>
       </div>
 
       <!-- 結果 -->
-      <section class="result-card" aria-live="polite">
+      <section v-if="wheelItems.length === 0" class="result-card">
+        <span class="result-label">沒有符合的選項</span>
+        <span class="result-name">換個條件試試</span>
+        <span class="result-detail">目前的預算和菜系篩不出任何東西</span>
+        <div class="result-actions single">
+          <button class="btn btn-dark" type="button" @click="loosenFilters">放寬條件</button>
+        </div>
+      </section>
+
+      <section v-else class="result-card" aria-live="polite">
         <span class="result-label">
           <template v-if="isSpinning">轉呀轉……</template>
           <template v-else-if="showResult">今天就吃</template>
@@ -87,7 +111,10 @@
         <span class="result-detail">
           <template v-if="isSpinning">等它停下來</template>
           <template v-else-if="selectedItem">{{ describeItem(selectedItem) }}</template>
-          <template v-else>轉盤上有 {{ currentItems.length }} 個選項</template>
+          <template v-else-if="hasMoreThanWheel">
+            從 {{ currentItems.length }} 個選項裡挑了 {{ wheelItems.length }} 個，按右下角可以換一批
+          </template>
+          <template v-else>轉盤上有 {{ wheelItems.length }} 個選項</template>
         </span>
 
         <div v-if="showResult && !isSpinning" class="result-actions">
@@ -128,9 +155,9 @@
                   :key="budget.value"
                   type="button"
                   class="chip"
-                  :class="{ active: selectedBudget === budget.value }"
-                  :aria-pressed="selectedBudget === budget.value"
-                  @click="selectedBudget = budget.value"
+                  :class="{ active: draftBudget === budget.value }"
+                  :aria-pressed="draftBudget === budget.value"
+                  @click="draftBudget = budget.value"
                 >
                   {{ budget.label }}
                 </button>
@@ -144,8 +171,8 @@
                   :key="cuisine"
                   type="button"
                   class="chip"
-                  :class="{ active: selectedCuisines.includes(cuisine) }"
-                  :aria-pressed="selectedCuisines.includes(cuisine)"
+                  :class="{ active: draftCuisines.includes(cuisine) }"
+                  :aria-pressed="draftCuisines.includes(cuisine)"
                   @click="toggleCuisine(cuisine)"
                 >
                   {{ cuisine }}
@@ -154,6 +181,7 @@
             </div>
             <div class="setting-section">
               <h4>自己加</h4>
+              <p class="setting-hint">自己加的不分預算，歸在「自訂」菜系</p>
               <div class="custom-input">
                 <input
                   v-model="customInput"
@@ -178,7 +206,7 @@
           </div>
           <div class="sheet-footer">
             <button class="btn btn-outline" type="button" @click="resetSettings">
-              <RefreshCw class="icon icon-xs" /> 重置
+              <RefreshCw class="icon icon-xs" /> 還原預設
             </button>
             <button class="btn btn-dark" type="button" @click="saveSettings">
               <Check class="icon icon-xs" /> 保存
@@ -207,6 +235,9 @@
                 <span class="history-time">{{ formatTime(record.timestamp) }}</span>
               </li>
             </ul>
+            <button v-if="history.length > 0" class="clear-history" type="button" @click="clearHistory">
+              清除紀錄
+            </button>
           </div>
         </div>
       </div>
@@ -224,16 +255,22 @@ import {
     Pencil,
     Plus,
     RefreshCw,
+    Shuffle,
     X,
 } from "lucide-vue-next";
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 const emit = defineEmits<{ close: [] }>();
+
+type Budget = "cheap" | "medium" | "expensive";
+/** 自訂選項沒有預算，任何預算都會出現 */
+type ItemBudget = Budget | "any";
+type BudgetFilter = Budget | "all";
 
 interface FoodItem {
   name: string;
   cuisine: string;
-  budget: string;
+  budget: ItemBudget;
 }
 interface HistoryRecord {
   name: string;
@@ -246,70 +283,110 @@ interface SaveData {
   history: HistoryRecord[];
 }
 
+const STORAGE_KEY = "food-roulette-data";
+const CUSTOM_CUISINE = "自訂";
+
 const defaultFoodItems: FoodItem[] = [
-  { name: "川菜", cuisine: "中餐", budget: "medium" },
-  { name: "粤菜", cuisine: "中餐", budget: "medium" },
-  { name: "湘菜", cuisine: "中餐", budget: "medium" },
-  { name: "东北菜", cuisine: "中餐", budget: "medium" },
-  { name: "火锅", cuisine: "中餐", budget: "medium" },
-  { name: "牛排", cuisine: "西餐", budget: "expensive" },
-  { name: "意大利面", cuisine: "西餐", budget: "medium" },
-  { name: "汉堡", cuisine: "西餐", budget: "cheap" },
-  { name: "披萨", cuisine: "西餐", budget: "medium" },
-  { name: "寿司", cuisine: "日料", budget: "expensive" },
-  { name: "拉面", cuisine: "日料", budget: "medium" },
-  { name: "烤肉", cuisine: "日料", budget: "expensive" },
-  { name: "丼饭", cuisine: "日料", budget: "medium" },
-  { name: "韩式烤肉", cuisine: "韩餐", budget: "expensive" },
-  { name: "石锅拌饭", cuisine: "韩餐", budget: "medium" },
-  { name: "炸鸡", cuisine: "韩餐", budget: "cheap" },
-  { name: "部队锅", cuisine: "韩餐", budget: "medium" },
-  { name: "泰式料理", cuisine: "东南亚", budget: "medium" },
-  { name: "越南河粉", cuisine: "东南亚", budget: "cheap" },
-  { name: "麦当劳", cuisine: "快餐", budget: "cheap" },
-  { name: "肯德基", cuisine: "快餐", budget: "cheap" },
-  { name: "赛百味", cuisine: "快餐", budget: "cheap" },
-  { name: "煎饼果子", cuisine: "小吃", budget: "cheap" },
-  { name: "麻辣烫", cuisine: "小吃", budget: "cheap" },
-  { name: "烤串", cuisine: "小吃", budget: "cheap" },
+  { name: "滷肉飯", cuisine: "台式", budget: "cheap" },
+  { name: "牛肉麵", cuisine: "台式", budget: "medium" },
+  { name: "便當", cuisine: "台式", budget: "cheap" },
+  { name: "水餃", cuisine: "台式", budget: "cheap" },
+  { name: "鹹酥雞", cuisine: "台式", budget: "cheap" },
+  { name: "雞排", cuisine: "台式", budget: "cheap" },
+  { name: "蚵仔煎", cuisine: "台式", budget: "cheap" },
+  { name: "臭豆腐", cuisine: "台式", budget: "cheap" },
+  { name: "小火鍋", cuisine: "台式", budget: "medium" },
+  { name: "熱炒", cuisine: "台式", budget: "medium" },
+  { name: "川菜", cuisine: "中式", budget: "medium" },
+  { name: "港式燒臘", cuisine: "中式", budget: "medium" },
+  { name: "小籠包", cuisine: "中式", budget: "medium" },
+  { name: "麻辣燙", cuisine: "中式", budget: "cheap" },
+  { name: "酸菜魚", cuisine: "中式", budget: "medium" },
+  { name: "拉麵", cuisine: "日式", budget: "medium" },
+  { name: "丼飯", cuisine: "日式", budget: "medium" },
+  { name: "咖哩飯", cuisine: "日式", budget: "medium" },
+  { name: "壽司", cuisine: "日式", budget: "expensive" },
+  { name: "燒肉", cuisine: "日式", budget: "expensive" },
+  { name: "韓式炸雞", cuisine: "韓式", budget: "medium" },
+  { name: "石鍋拌飯", cuisine: "韓式", budget: "medium" },
+  { name: "部隊鍋", cuisine: "韓式", budget: "medium" },
+  { name: "韓式烤肉", cuisine: "韓式", budget: "expensive" },
+  { name: "義大利麵", cuisine: "西式", budget: "medium" },
+  { name: "披薩", cuisine: "西式", budget: "medium" },
+  { name: "早午餐", cuisine: "西式", budget: "medium" },
+  { name: "牛排", cuisine: "西式", budget: "expensive" },
+  { name: "泰式料理", cuisine: "東南亞", budget: "medium" },
+  { name: "越南河粉", cuisine: "東南亞", budget: "medium" },
+  { name: "印度咖哩", cuisine: "東南亞", budget: "medium" },
+  { name: "麥當勞", cuisine: "速食", budget: "cheap" },
+  { name: "肯德基", cuisine: "速食", budget: "cheap" },
+  { name: "摩斯漢堡", cuisine: "速食", budget: "cheap" },
+  { name: "潛艇堡", cuisine: "速食", budget: "cheap" },
 ];
 
-const budgetOptions = [
-  { label: "不限", short: "不限預算", value: "all" },
-  { label: "便宜 (<30元)", short: "便宜", value: "cheap" },
-  { label: "中等 (30-80元)", short: "中等", value: "medium" },
-  { label: "貴 (>80元)", short: "吃好一點", value: "expensive" },
+const budgetOptions: { label: string; value: BudgetFilter }[] = [
+  { label: "不限預算", value: "all" },
+  { label: "便宜", value: "cheap" },
+  { label: "中等", value: "medium" },
+  { label: "吃好一點", value: "expensive" },
 ];
 const cuisineOptions = [
-  "中餐",
-  "西餐",
-  "日料",
-  "韩餐",
-  "东南亚",
-  "快餐",
-  "小吃",
-  "自定义",
+  "台式",
+  "中式",
+  "日式",
+  "韓式",
+  "西式",
+  "東南亞",
+  "速食",
+  CUSTOM_CUISINE,
 ];
+
+/** 轉盤上最多放幾格，選項更多時每批抽這麼多 */
+const WHEEL_SIZE = 10;
+/** 幾天內吃過的，抽一批時排到後面 */
+const RECENT_DAYS = 3;
+/** 轉動時間（毫秒），CSS transition 也用這個值 */
+const SPIN_MS = 3200;
+const MAX_HISTORY = 100;
 
 const isSpinning = ref(false);
 const rotation = ref(0);
+/** 有結果但還沒按「就吃這個」 */
 const showResult = ref(false);
 const showSettings = ref(false);
 const showHistory = ref(false);
 const selectedItem = ref<FoodItem | null>(null);
-const selectedBudget = ref("all");
+const selectedBudget = ref<BudgetFilter>("all");
 const selectedCuisines = ref<string[]>([...cuisineOptions]);
 const customItems = ref<FoodItem[]>([]);
 const customInput = ref("");
 const history = ref<HistoryRecord[]>([]);
+/** 目前轉盤上的這一批 */
+const wheelItems = ref<FoodItem[]>([]);
 
-const currentItems = computed(() => {
-  let items = [...defaultFoodItems, ...customItems.value];
-  if (selectedBudget.value !== "all")
-    items = items.filter((i) => i.budget === selectedBudget.value);
-  items = items.filter((i) => selectedCuisines.value.includes(i.cuisine));
-  return items.length === 0 ? [defaultFoodItems[0]] : items;
-});
+// 設定面板裡的草稿，按「保存」才生效
+const draftBudget = ref<BudgetFilter>("all");
+const draftCuisines = ref<string[]>([]);
+
+let pendingIndex = -1;
+let spinFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 符合目前預算＋菜系的所有選項 */
+const currentItems = computed(() =>
+  [...defaultFoodItems, ...customItems.value].filter(
+    (i) =>
+      selectedCuisines.value.includes(i.cuisine) &&
+      (selectedBudget.value === "all" ||
+        i.budget === "any" ||
+        i.budget === selectedBudget.value),
+  ),
+);
+
+const itemKey = (i: FoodItem) => `${i.cuisine}:${i.name}`;
+
+const hasMoreThanWheel = computed(
+  () => currentItems.value.length > wheelItems.value.length,
+);
 
 // ===== 轉盤外觀 =====
 
@@ -317,14 +394,14 @@ const SLICE_COLORS = ["#F6D8C1", "#FFFFFF"];
 const SLICE_COLORS_ODD = ["#F6D8C1", "#FFFFFF", "#FBE7D6"];
 
 /** 每一格的角度；第 i 格的中心在 i * sliceAngle（從正上方順時針算） */
-const sliceAngle = computed(() => 360 / currentItems.value.length);
+const sliceAngle = computed(() => 360 / Math.max(wheelItems.value.length, 1));
 
 const wheelGradient = computed(() => {
-  const n = currentItems.value.length;
+  const n = wheelItems.value.length;
   if (n <= 1) return SLICE_COLORS[0];
   const colors = n % 2 === 0 ? SLICE_COLORS : SLICE_COLORS_ODD;
   const a = sliceAngle.value;
-  const stops = currentItems.value.map((_, i) => {
+  const stops = wheelItems.value.map((_, i) => {
     const c = colors[i % colors.length];
     return `${c} ${i * a}deg ${(i + 1) * a}deg`;
   });
@@ -332,7 +409,7 @@ const wheelGradient = computed(() => {
 });
 
 /** 格子少時橫排，格子多時改直排（沿半徑） */
-const isVerticalLabel = computed(() => currentItems.value.length > 8);
+const isVerticalLabel = computed(() => wheelItems.value.length > 8);
 
 /** 直排時一個字一行，太長就截斷 */
 const VERTICAL_MAX_CHARS = 5;
@@ -343,13 +420,7 @@ const verticalChars = (name: string) => {
     : chars;
 };
 
-const labelFontSize = computed(() => {
-  const n = currentItems.value.length;
-  if (n <= 8) return 14;
-  if (n <= 16) return 13;
-  if (n <= 24) return 12;
-  return 11;
-});
+const labelFontSize = computed(() => (wheelItems.value.length <= 8 ? 14 : 13));
 
 const cuisineChipLabel = computed(() =>
   selectedCuisines.value.length >= cuisineOptions.length
@@ -366,113 +437,239 @@ const recentHistoryNames = computed(() =>
 
 const describeItem = (item: FoodItem) => {
   const budget = budgetOptions.find((b) => b.value === item.budget);
-  return budget && budget.value !== "all"
-    ? `${item.cuisine} · ${budget.label}`
-    : item.cuisine;
+  return budget ? `${item.cuisine} · ${budget.label}` : item.cuisine;
 };
 
-const pickBudget = (value: string) => {
+// ===== 抽一批放上轉盤 =====
+
+const shuffle = <T,>(list: T[]): T[] => {
+  const out = [...list];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+};
+
+const recentlyEaten = () => {
+  const since = Date.now() - RECENT_DAYS * 86400000;
+  return new Set(
+    history.value.filter((r) => r.timestamp >= since).map((r) => r.name),
+  );
+};
+
+/** 選項不多就全放；太多就抽 WHEEL_SIZE 個，最近吃過的排後面 */
+const refreshWheel = () => {
+  const pool = currentItems.value;
+  if (pool.length <= WHEEL_SIZE) {
+    wheelItems.value = [...pool];
+    return;
+  }
+  const recent = recentlyEaten();
+  const fresh = shuffle(pool.filter((i) => !recent.has(i.name)));
+  const eaten = shuffle(pool.filter((i) => recent.has(i.name)));
+  wheelItems.value = [...fresh, ...eaten].slice(0, WHEEL_SIZE);
+};
+
+watch(currentItems, () => {
+  if (!isSpinning.value) refreshWheel();
+});
+
+const reshuffle = () => {
+  if (isSpinning.value) return;
+  refreshWheel();
+  showResult.value = false;
+  selectedItem.value = null;
+};
+
+// ===== 轉動 =====
+
+/** 先決定停在哪一格，再算出讓那一格停在指針正下方的角度 */
+const spin = () => {
+  const n = wheelItems.value.length;
+  if (isSpinning.value || n === 0) return;
+
+  // 再轉一次時避開剛剛那一格
+  const candidates = wheelItems.value
+    .map((item, i) => ({ item, i }))
+    .filter(
+      ({ item }) =>
+        n === 1 ||
+        !selectedItem.value ||
+        itemKey(item) !== itemKey(selectedItem.value),
+    );
+  const pick = candidates[Math.floor(Math.random() * candidates.length)].i;
+
+  const a = sliceAngle.value;
+  const current = ((rotation.value % 360) + 360) % 360;
+  const target = (((-pick * a) % 360) + 360) % 360;
+  const jitter = (Math.random() - 0.5) * a * 0.6;
+  const delta = ((target - current + 360) % 360) + jitter;
+
+  pendingIndex = pick;
+  showResult.value = false;
+  isSpinning.value = true;
+  rotation.value += 360 * 5 + delta;
+
+  // transitionend 沒觸發時（分頁在背景等）的保險
+  if (spinFallbackTimer) clearTimeout(spinFallbackTimer);
+  spinFallbackTimer = setTimeout(finishSpin, SPIN_MS + 400);
+};
+
+const onWheelTransitionEnd = (e: TransitionEvent) => {
+  if (e.target === e.currentTarget && e.propertyName === "transform") {
+    finishSpin();
+  }
+};
+
+const finishSpin = () => {
+  if (!isSpinning.value) return;
+  if (spinFallbackTimer) {
+    clearTimeout(spinFallbackTimer);
+    spinFallbackTimer = null;
+  }
+  selectedItem.value = wheelItems.value[pendingIndex] ?? null;
+  isSpinning.value = false;
+  showResult.value = !!selectedItem.value;
+  // 轉動中被擋下的篩選變化，這時補上
+  const valid = new Set(currentItems.value.map(itemKey));
+  if (
+    wheelItems.value.length === 0 ||
+    wheelItems.value.some((i) => !valid.has(itemKey(i)))
+  ) {
+    refreshWheel();
+  }
+};
+
+const confirmResult = () => {
+  if (!selectedItem.value) return;
+  history.value.unshift({
+    name: selectedItem.value.name,
+    timestamp: Date.now(),
+  });
+  if (history.value.length > MAX_HISTORY)
+    history.value = history.value.slice(0, MAX_HISTORY);
+  saveData();
+  showResult.value = false;
+};
+
+// ===== 篩選與設定 =====
+
+const pickBudget = (value: BudgetFilter) => {
+  if (isSpinning.value) return;
   selectedBudget.value = value;
   saveData();
 };
 
-const spin = () => {
-  if (isSpinning.value) return;
-  isSpinning.value = true;
-  const totalRotation =
-    rotation.value + 360 * 5 + Math.floor(Math.random() * 360);
-  rotation.value = totalRotation;
-  setTimeout(() => {
-    const normalizedAngle = totalRotation % 360;
-    const itemAngle = 360 / currentItems.value.length;
-    const selectedIndex =
-      Math.floor((360 - normalizedAngle + itemAngle / 2) / itemAngle) %
-      currentItems.value.length;
-    selectedItem.value = currentItems.value[selectedIndex];
-    isSpinning.value = false;
-    showResult.value = true;
-  }, 2000);
+const loosenFilters = () => {
+  selectedBudget.value = "all";
+  selectedCuisines.value = [...cuisineOptions];
+  saveData();
 };
 
-const confirmResult = () => {
-  if (selectedItem.value) {
-    history.value.unshift({
-      name: selectedItem.value.name,
-      timestamp: Date.now(),
-    });
-    if (history.value.length > 100) history.value = history.value.slice(0, 100);
-    saveData();
-  }
-  showResult.value = false;
+const openSettings = () => {
+  if (isSpinning.value) return;
+  draftBudget.value = selectedBudget.value;
+  draftCuisines.value = [...selectedCuisines.value];
+  showSettings.value = true;
 };
 
 const toggleCuisine = (cuisine: string) => {
-  const idx = selectedCuisines.value.indexOf(cuisine);
+  const idx = draftCuisines.value.indexOf(cuisine);
   if (idx > -1) {
-    if (selectedCuisines.value.length > 1)
-      selectedCuisines.value.splice(idx, 1);
-  } else selectedCuisines.value.push(cuisine);
+    if (draftCuisines.value.length > 1) draftCuisines.value.splice(idx, 1);
+  } else draftCuisines.value.push(cuisine);
 };
 
 const addCustomItem = () => {
-  if (customInput.value.trim()) {
-    customItems.value.push({
-      name: customInput.value.trim(),
-      cuisine: "自定义",
-      budget: "medium",
-    });
-    customInput.value = "";
-    saveData();
-  }
+  const name = customInput.value.trim();
+  if (!name) return;
+  customInput.value = "";
+  if (customItems.value.some((i) => i.name === name)) return;
+  customItems.value.push({ name, cuisine: CUSTOM_CUISINE, budget: "any" });
+  saveData();
 };
 const removeCustomItem = (index: number) => {
   customItems.value.splice(index, 1);
   saveData();
 };
+
+/** 只把草稿的預算和菜系還原，自訂選項和紀錄都留著 */
 const resetSettings = () => {
-  localStorage.removeItem("food-roulette-data");
-  selectedBudget.value = "all";
-  selectedCuisines.value = [...cuisineOptions];
-  customItems.value = [];
-  history.value = [];
-  showSettings.value = false;
+  draftBudget.value = "all";
+  draftCuisines.value = [...cuisineOptions];
 };
 const saveSettings = () => {
+  selectedBudget.value = draftBudget.value;
+  selectedCuisines.value = [...draftCuisines.value];
   saveData();
   showSettings.value = false;
 };
+
+const clearHistory = () => {
+  if (!confirm("確定要清除所有吃過的紀錄嗎？")) return;
+  history.value = [];
+  saveData();
+};
+
 const formatTime = (timestamp: number) => {
-  const days = Math.floor((Date.now() - timestamp) / 86400000);
-  if (days === 0) return "今天";
-  if (days === 1) return "昨天";
-  return `${days}天前`;
+  const d = new Date(timestamp);
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const startOfToday = new Date().setHours(0, 0, 0, 0);
+  const days = Math.ceil((startOfToday - timestamp) / 86400000);
+  if (timestamp >= startOfToday) return `今天 ${hm}`;
+  if (days === 1) return `昨天 ${hm}`;
+  return `${days} 天前`;
 };
+
+// ===== 存檔 =====
+
 const saveData = () => {
-  localStorage.setItem(
-    "food-roulette-data",
-    JSON.stringify({
-      customItems: customItems.value,
-      selectedBudget: selectedBudget.value,
-      selectedCuisines: selectedCuisines.value,
-      history: history.value,
-    } as SaveData),
-  );
-};
-const loadData = () => {
-  const saved = localStorage.getItem("food-roulette-data");
-  if (!saved) return;
   try {
-    const data: SaveData = JSON.parse(saved);
-    customItems.value = data.customItems || [];
-    selectedBudget.value = data.selectedBudget || "all";
-    selectedCuisines.value = data.selectedCuisines || [...cuisineOptions];
-    history.value = data.history || [];
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        customItems: customItems.value,
+        selectedBudget: selectedBudget.value,
+        selectedCuisines: selectedCuisines.value,
+        history: history.value,
+      } as SaveData),
+    );
   } catch {
     /* ignore */
   }
 };
+
+/** 讀檔，順便把舊版（簡體菜系、自訂選項固定「中等」）轉成新格式 */
+const loadData = () => {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return;
+  try {
+    const data: Partial<SaveData> = JSON.parse(saved);
+    customItems.value = (data.customItems || [])
+      .filter((i) => i && typeof i.name === "string" && i.name.trim())
+      .map((i) => ({ name: i.name.trim(), cuisine: CUSTOM_CUISINE, budget: "any" }));
+    const budget = data.selectedBudget as BudgetFilter;
+    selectedBudget.value = budgetOptions.some((b) => b.value === budget)
+      ? budget
+      : "all";
+    const cuisines = (data.selectedCuisines || []).filter((c) =>
+      cuisineOptions.includes(c),
+    );
+    selectedCuisines.value = cuisines.length > 0 ? cuisines : [...cuisineOptions];
+    history.value = Array.isArray(data.history) ? data.history : [];
+  } catch {
+    /* ignore */
+  }
+};
+
 onMounted(() => {
   loadData();
+  refreshWheel();
+});
+
+onBeforeUnmount(() => {
+  if (spinFallbackTimer) clearTimeout(spinFallbackTimer);
 });
 </script>
 
@@ -540,8 +737,12 @@ button {
     background: var(--fr-bg);
   }
 
-  &:active {
+  &:active:not(:disabled) {
     transform: scale(0.94);
+  }
+
+  &:disabled {
+    opacity: 0.5;
   }
 }
 
@@ -668,7 +869,8 @@ button {
   height: 100%;
   border-radius: 50%;
   overflow: hidden;
-  transition: transform 2s cubic-bezier(0.15, 0.85, 0.2, 1);
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.15, 0.85, 0.2, 1);
   will-change: transform;
 }
 
@@ -725,6 +927,18 @@ button {
 
   &:disabled {
     background: #d98a63;
+  }
+}
+
+.shuffle-btn {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  z-index: 2;
+  box-shadow: 0 4px 12px rgba(120, 70, 30, 0.16);
+
+  &:disabled {
+    opacity: 0.5;
   }
 }
 
@@ -904,6 +1118,23 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.setting-hint {
+  margin: -4px 0 10px;
+  font-size: 12px;
+  color: var(--fr-text-2);
+}
+
+.clear-history {
+  display: block;
+  min-height: 44px;
+  margin: 12px auto 0;
+  padding: 0 16px;
+  border: none;
+  background: none;
+  color: #b3261e;
+  font-size: 14px;
 }
 
 .custom-input {
