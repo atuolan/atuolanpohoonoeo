@@ -30,6 +30,13 @@
   --p-badge: #ff453a;
   --p-owner: #3d5a80;
 
+  // 窺視層強調色：秘密、提示、偷看——深底用亮琥珀，淺底用深一階
+  --p-peek: #ffc65c;
+  --p-peek-soft: rgba(255, 198, 92, 0.1);
+  --p-peek-line-light: #c08a1e;
+  --p-peek-soft-light: #fff5e0;
+  --p-peek-ink-light: #7a4e00;
+
   // 手機 App：深色（訊息、錢包、瀏覽器）
   --p-dark-bg: #0f1012;
   --p-dark-card: #1c1d21;

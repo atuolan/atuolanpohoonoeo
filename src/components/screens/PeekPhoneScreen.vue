@@ -2,6 +2,7 @@
 import PeekCapsule from "@/components/peek-phone/PeekCapsule.vue";
 import PeekHomeView from "@/components/peek-phone/PeekHomeView.vue";
 import PeekLockView from "@/components/peek-phone/PeekLockView.vue";
+import PeekScreenTime from "@/components/peek-phone/PeekScreenTime.vue";
 import PeekSheet from "@/components/peek-phone/PeekSheet.vue";
 import {
   avatarColor,
@@ -17,6 +18,16 @@ import {
   toMillis,
   type HomeApp,
 } from "@/components/peek-phone/peekPhoneView";
+import {
+  homeTabOfView,
+  listSecrets,
+  placeOfView,
+  progressOf,
+  secretKeys,
+  unfoundByPlace,
+  type PeekSecret,
+  type SecretPlace,
+} from "@/components/peek-phone/peekSecrets";
 import { db, DB_STORES } from "@/db/database";
 import { loadMessages } from "@/storage/chatMessageStorage";
 import { useCharactersStore } from "@/stores";
@@ -35,6 +46,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  Eye,
   EyeOff,
   FileText,
   Frown,
@@ -48,7 +60,9 @@ import {
   MessageCircle,
   RefreshCw,
   Search,
+  Settings,
   Smile,
+  Trash2,
   UtensilsCrossed,
   X,
 } from "lucide-vue-next";
@@ -97,15 +111,17 @@ const phoneApps = [
   { key: "diary" as PeekPhoneTab, label: "日記", icon: BookOpen, group: "C" as const },
   { key: "gallery" as PeekPhoneTab, label: "相簿", icon: Image, group: "D" as const },
   { key: "browser" as PeekPhoneTab, label: "瀏覽器", icon: Globe, group: "D" as const },
+  { key: "settings" as PeekPhoneTab, label: "設定", icon: Settings, group: "D" as const },
   // 不放桌面，從相簿進去
   { key: "hidden" as PeekPhoneTab, label: "已隱藏", icon: Lock, group: "D" as const },
+  { key: "deleted" as PeekPhoneTab, label: "最近刪除", icon: Trash2, group: "D" as const },
 ];
 
-// 桌面配置：行事曆從日曆小工具進去
-const gridKeys: PeekPhoneTab[] = ["diary", "memo", "notes", "meals"];
+// 桌面配置：行事曆從日曆小工具進去，記事本收在備忘錄裡
+const gridKeys: PeekPhoneTab[] = ["diary", "memo", "meals", "settings"];
 const dockKeys: PeekPhoneTab[] = ["chat", "gallery", "browser", "balance"];
 // 深色的 App，其他是淺色
-const darkTabs = new Set<PeekPhoneTab>(["chat", "balance", "browser"]);
+const darkTabs = new Set<PeekPhoneTab>(["chat", "balance", "browser", "settings"]);
 
 // 從 store 讀取資料
 const storeData = computed(() => peekPhoneStore.data);
@@ -124,12 +140,86 @@ const diary = computed(() => storeData.value?.diary ?? []);
 const gallery = computed(() => storeData.value?.gallery ?? []);
 const browserHistory = computed(() => storeData.value?.browserHistory ?? []);
 const hiddenPhotos = computed(() => storeData.value?.hiddenPhotos ?? []);
+// 相簿分成一般的和「最近刪除」裡的
+const activePhotos = computed(() => gallery.value.filter((p) => !p.deletedDaysLeft));
+const deletedPhotos = computed(() => gallery.value.filter((p) => p.deletedDaysLeft));
+
+// ===== 秘密與偷看進度 =====
+const secrets = computed(() => listSecrets(storeData.value));
+const progress = computed(() => progressOf(storeData.value));
+const unfound = computed(() => unfoundByPlace(secrets.value, progress.value));
+
+function isRevealed(key: string): boolean {
+  return progress.value.revealed.includes(key);
+}
+function reveal(key: string): void {
+  peekPhoneStore.markRevealed(key);
+}
+
+// 膠囊上的字：主畫面說幾處有秘密，App 裡說這裡有幾個
+const capsuleLabel = computed(() => {
+  const view = currentView.value;
+  if (view === "home") {
+    const places = (["chat", "gallery", "browser", "settings"] as SecretPlace[]).filter(
+      (p) => unfound.value[p] > 0,
+    ).length;
+    return places > 0 ? `${places} 處有秘密` : undefined;
+  }
+  const place = placeOfView(view);
+  if (place && place !== "lock" && unfound.value[place] > 0) {
+    return `這裡有 ${unfound.value[place]} 個秘密`;
+  }
+  return undefined;
+});
+const hasUnfound = computed(() => Object.values(unfound.value).some((n) => n > 0));
+
+// 打開過哪些 App；打開「已隱藏」就算找到那本相簿
+watch(currentView, (view) => {
+  if (view === "lock" || view === "home") return;
+  peekPhoneStore.markViewed(homeTabOfView(view));
+  if (view === "hidden" && hiddenPhotos.value.length > 0) reveal(secretKeys.hidden);
+});
+
+// 鎖屏密碼：還沒解過（或從窺視選單說要再試一次）就要先猜
+const lockRetry = ref(false);
+const needCode = computed(
+  () => !!storeData.value?.lockScreen && (!progress.value.unlocked || lockRetry.value),
+);
+function onLockSolved() {
+  const lockScreen = storeData.value?.lockScreen;
+  if (lockScreen) reveal(secretKeys.lock(lockScreen.passcode));
+  peekPhoneStore.setUnlocked(true);
+  lockRetry.value = false;
+}
+function onLockSkip() {
+  peekPhoneStore.setUnlocked(true);
+  lockRetry.value = false;
+}
+function onUnlock() {
+  lockRetry.value = false;
+  currentView.value = "home";
+}
+
+/** 從窺視選單跳到秘密所在的地方 */
+function goToSecret(secret: PeekSecret) {
+  showSheet.value = false;
+  const { view, threadId, photoId } = secret.target;
+  if (view === "lock") {
+    lockRetry.value = !isRevealed(secret.key);
+    currentView.value = "lock";
+    return;
+  }
+  goBackToHome();
+  currentView.value = view;
+  if (threadId) selectedChatId.value = threadId;
+  if (photoId) selectedDeletedId.value = photoId;
+}
 
 // 鎖定畫面與桌面小工具
 const lockNotifications = computed(() => latestNotifications(chats.value, 3));
 const lockNextSchedule = computed(() => nextScheduleItem(schedule.value));
 const homeMoodLine = computed(() => moodLine(diary.value));
-const homePhoto = computed(() => gallery.value[0] ?? null);
+const homePhoto = computed(() => activePhotos.value[0] ?? null);
 
 // 聊天詳情
 const selectedChatId = ref<string | null>(null);
@@ -202,7 +292,25 @@ watch(
   () => selectedChat.value?.messages.length,
   () => scrollMessagesToBottom(),
 );
-watch(selectedChatId, () => scrollMessagesToBottom());
+// 打開有草稿的聊天：草稿就在輸入框裡；離開時沒動過就收回去，不會帶到別的聊天
+const showDraftHistory = ref(false);
+watch(selectedChatId, (id, prevId) => {
+  scrollMessagesToBottom();
+  showDraftHistory.value = false;
+  const prevDraft = chats.value.find((c) => c.id === prevId)?.draft;
+  if (prevDraft && replyInput.value === prevDraft) replyInput.value = "";
+  const thread = chats.value.find((c) => c.id === id);
+  if (!thread?.draft) return;
+  if (!replyInput.value) replyInput.value = thread.draft;
+  // 沒有草稿歷史可看：看到輸入框裡的草稿就算找到
+  if (!thread.draftHistory?.length) reveal(secretKeys.draft(thread.id));
+});
+
+function openDraftHistory() {
+  if (!selectedChat.value) return;
+  showDraftHistory.value = true;
+  reveal(secretKeys.draft(selectedChat.value.id));
+}
 
 // 記事本詳情
 const selectedNoteId = ref<string | null>(null);
@@ -219,7 +327,11 @@ const selectedDiary = computed(() =>
 // 相簿 / 已隱藏：點縮圖看那張照片的說明，預設第一張
 const selectedPhotoId = ref<string | null>(null);
 const selectedPhoto = computed(
-  () => gallery.value.find((p) => p.id === selectedPhotoId.value) ?? gallery.value[0],
+  () => activePhotos.value.find((p) => p.id === selectedPhotoId.value) ?? activePhotos.value[0],
+);
+const selectedDeletedId = ref<string | null>(null);
+const selectedDeleted = computed(
+  () => deletedPhotos.value.find((p) => p.id === selectedDeletedId.value) ?? deletedPhotos.value[0],
 );
 const selectedHiddenId = ref<string | null>(null);
 const selectedHidden = computed(
@@ -232,13 +344,21 @@ const browserCategories = [
   { key: "all", label: "全部" },
   { key: "search", label: "搜尋" },
   { key: "general", label: "一般" },
-  { key: "adult", label: "成人" },
+  { key: "adult", label: "無痕" },
 ] as const;
+// 成人網站的紀錄在無痕視窗裡：偷看過才會出現在列表
+const privateCount = computed(() => browserHistory.value.filter((e) => e.category === "adult").length);
+const privateRevealed = computed(() => isRevealed(secretKeys.browser));
 const filteredBrowserHistory = computed(() =>
-  browserHistory.value.filter(
-    (e) => selectedBrowserCategory.value === "all" || e.category === selectedBrowserCategory.value,
-  ),
+  browserHistory.value.filter((e) => {
+    if (e.category === "adult" && !privateRevealed.value) return false;
+    return selectedBrowserCategory.value === "all" || e.category === selectedBrowserCategory.value;
+  }),
 );
+function revealPrivateBrowsing() {
+  reveal(secretKeys.browser);
+  selectedBrowserCategory.value = "adult";
+}
 
 const isAnyGroupLoading = computed(
   () =>
@@ -263,7 +383,7 @@ function getBadge(tab: PeekPhoneTab): number {
     case "memo":
       return memos.value.filter((m) => !m.done).length;
     case "gallery":
-      return gallery.value.length;
+      return activePhotos.value.length;
     case "browser":
       return browserHistory.value.filter((e) => e.category === "adult").length;
     default:
@@ -273,12 +393,14 @@ function getBadge(tab: PeekPhoneTab): number {
 
 function toHomeApp(key: PeekPhoneTab): HomeApp {
   const app = phoneApps.find((a) => a.key === key)!;
+  const place = placeOfView(key);
   return {
     key,
     label: app.label,
     icon: app.icon,
     badge: getBadge(key),
     status: groupStatus.value[app.group],
+    secret: place !== null && unfound.value[place] > 0,
   };
 }
 const gridApps = computed(() => gridKeys.map(toHomeApp));
@@ -295,14 +417,21 @@ function goBackToHome() {
   selectedDiaryId.value = null;
   selectedPhotoId.value = null;
   selectedHiddenId.value = null;
+  selectedDeletedId.value = null;
   selectedBrowserCategory.value = "all";
 }
 
-/** App 左上的返回：已隱藏回相簿，其他回主畫面 */
+/** App 左上的返回：已隱藏、最近刪除回相簿，記事本回備忘錄，其他回主畫面 */
 function goBackFromApp() {
-  if (currentView.value === "hidden") {
+  if (currentView.value === "hidden" || currentView.value === "deleted") {
     currentView.value = "gallery";
     selectedHiddenId.value = null;
+    selectedDeletedId.value = null;
+    return;
+  }
+  if (currentView.value === "notes") {
+    currentView.value = "memo";
+    selectedNoteId.value = null;
     return;
   }
   goBackToHome();
@@ -310,6 +439,7 @@ function goBackFromApp() {
 
 /** 點鎖屏通知：解鎖並直接打開那個聊天 */
 function openThreadFromLock(threadId: string) {
+  lockRetry.value = false;
   selectedChatId.value = threadId;
   currentView.value = "chat";
 }
@@ -425,12 +555,23 @@ function threadTime(thread: { messages: PeekChatMessage[] }): string {
 }
 
 /** 取得聊天列表的最後一則訊息預覽（去除換行） */
-function getLastMessagePreview(thread: {
-  messages: { content: string }[];
-}): string {
+function getLastMessagePreview(thread: { messages: PeekChatMessage[] }): string {
   const last = thread.messages[thread.messages.length - 1];
   if (!last) return "";
+  if (last.recalled) return recalledNotice(last);
   return last.content.replace(/\n/g, " ");
+}
+
+function recalledNotice(msg: PeekChatMessage): string {
+  return msg.isSelf ? "你已收回一則訊息" : `${msg.senderName}已收回一則訊息`;
+}
+
+/** 收回的訊息：幾點傳出、存在了幾秒 */
+function recalledMeta(msg: PeekChatMessage): string {
+  const ms = toMillis(msg.timestamp);
+  const parts = [ms ? `${formatClock(new Date(ms))} 傳出` : "傳出後收回"];
+  if (msg.recalledAfter) parts.push(`只存在了 ${msg.recalledAfter} 秒`);
+  return parts.join(" · ");
 }
 
 /** 群組聊天裡對方不只一個人時，泡泡上方標出是誰說的 */
@@ -467,10 +608,15 @@ function formatDiaryDate(date: string): string {
 
 function getAppTitle(key: PeekPhoneTab) {
   if (key === "browser") return "瀏覽紀錄";
+  if (key === "settings") return "螢幕使用時間";
   return phoneApps.find((a) => a.key === key)?.label || "";
 }
 
-const appBackLabel = computed(() => (currentView.value === "hidden" ? "相簿" : "主畫面"));
+const appBackLabel = computed(() => {
+  if (currentView.value === "hidden" || currentView.value === "deleted") return "相簿";
+  if (currentView.value === "notes") return "備忘錄";
+  return "主畫面";
+});
 const todayLabel = computed(
   () => `今天 · ${now.value.getMonth() + 1}月${now.value.getDate()}日 星期${WEEKDAYS[now.value.getDay()]}`,
 );
@@ -489,8 +635,12 @@ const todayLabel = computed(
         :next-schedule="lockNextSchedule"
         :notifications="lockNotifications"
         :group-status="groupStatus"
-        @unlock="currentView = 'home'"
+        :lock-screen="storeData?.lockScreen"
+        :need-code="needCode"
+        @unlock="onUnlock"
         @open-thread="openThreadFromLock"
+        @solved="onLockSolved"
+        @skip="onLockSkip"
       />
 
       <!-- ===== 主畫面 ===== -->
@@ -517,15 +667,7 @@ const todayLabel = computed(
         <template v-if="!(currentView === 'chat' && selectedChat)">
           <header class="app-bar">
             <button
-              v-if="currentView === 'notes' && selectedNote"
-              type="button"
-              class="app-back"
-              @click="selectedNoteId = null"
-            >
-              <ChevronLeft :size="24" aria-hidden="true" />記事本
-            </button>
-            <button
-              v-else-if="currentView === 'diary' && selectedDiary"
+              v-if="currentView === 'diary' && selectedDiary"
               type="button"
               class="app-back"
               @click="selectedDiaryId = null"
@@ -609,11 +751,26 @@ const todayLabel = computed(
             <div ref="chatMessagesEl" class="chat-messages">
               <template v-for="item in chatItems" :key="item.msg.id">
                 <div v-if="item.stamp" class="chat-stamp">{{ item.stamp }}</div>
-                <div class="chat-msg" :class="{ self: item.msg.isSelf }">
+                <!-- 收回的訊息：偷看前只看到「已收回」 -->
+                <div
+                  v-if="item.msg.recalled && !isRevealed(secretKeys.recalled(item.msg.id))"
+                  class="chat-recalled"
+                >
+                  <span class="chat-recalled-notice">{{ recalledNotice(item.msg) }}</span>
+                  <button
+                    type="button"
+                    class="peek-chip"
+                    @click="reveal(secretKeys.recalled(item.msg.id))"
+                  >
+                    <Eye :size="14" aria-hidden="true" />偷看{{ item.msg.isSelf ? " TA " : item.msg.senderName }}收回了什麼
+                  </button>
+                </div>
+                <div v-else class="chat-msg" :class="{ self: item.msg.isSelf, recalled: item.msg.recalled }">
                   <span v-if="showSender(item.msg, selectedChat.contactName)" class="chat-sender">
                     {{ item.msg.senderName }}
                   </span>
                   <div class="chat-bubble">{{ item.msg.content }}</div>
+                  <span v-if="item.msg.recalled" class="chat-recalled-meta">{{ recalledMeta(item.msg) }}</span>
                 </div>
               </template>
               <!-- 對方輸入中提示 -->
@@ -631,6 +788,25 @@ const todayLabel = computed(
               <span class="chat-error-text">{{ replyError }}</span>
               <button type="button" class="chat-error-close" aria-label="關閉" @click="replyError = ''">
                 <X :size="16" />
+              </button>
+            </div>
+
+            <!-- 草稿：改過幾次可以偷看 -->
+            <div v-if="selectedChat.draft && selectedChat.draftHistory?.length" class="chat-draft">
+              <div v-if="showDraftHistory" class="chat-draft-history" role="status">
+                <div class="chat-draft-history-head">
+                  <span>草稿改了 {{ selectedChat.draftHistory.length + 1 }} 次</span>
+                  <button type="button" class="chat-draft-close" aria-label="收起草稿紀錄" @click="showDraftHistory = false">
+                    <X :size="16" />
+                  </button>
+                </div>
+                <ol class="chat-draft-list">
+                  <li v-for="(version, i) in selectedChat.draftHistory" :key="i" class="chat-draft-old">{{ version }}</li>
+                  <li class="chat-draft-now">{{ selectedChat.draft }}</li>
+                </ol>
+              </div>
+              <button v-else type="button" class="peek-chip" @click="openDraftHistory">
+                <Eye :size="14" aria-hidden="true" />輸入框裡的草稿改了 {{ selectedChat.draftHistory.length + 1 }} 次 · 看紀錄 ›
               </button>
             </div>
 
@@ -737,6 +913,7 @@ const todayLabel = computed(
         <!-- ===== 備忘錄 ===== -->
         <div v-else-if="currentView === 'memo'" class="app-scroll">
           <h1 class="app-title">備忘錄</h1>
+          <div v-if="memos.length > 0" class="app-section-label">待辦</div>
           <ul v-if="memos.length > 0" class="app-card">
             <li
               v-for="memo in memos"
@@ -750,7 +927,23 @@ const todayLabel = computed(
               <span class="memo-text">{{ memo.content }}</span>
             </li>
           </ul>
-          <div v-else class="app-empty">沒有備忘錄</div>
+          <template v-if="notes.length > 0">
+            <div class="app-section-label">筆記</div>
+            <div class="note-list note-list--tight">
+              <button
+                v-for="note in notes"
+                :key="note.id"
+                type="button"
+                class="note-card"
+                @click="selectedNoteId = note.id; openApp('notes')"
+              >
+                <span class="note-card-title">{{ note.title }}</span>
+                <span class="note-card-preview">{{ note.content }}</span>
+                <span class="note-card-date">{{ new Date(note.updatedAt).toLocaleDateString("zh-TW") }}</span>
+              </button>
+            </div>
+          </template>
+          <div v-if="memos.length === 0 && notes.length === 0" class="app-empty">沒有備忘錄</div>
         </div>
 
         <!-- ===== 記事本 ===== -->
@@ -820,11 +1013,11 @@ const todayLabel = computed(
         <!-- ===== 相簿 ===== -->
         <div v-else-if="currentView === 'gallery'" class="app-scroll">
           <h1 class="app-title">相簿</h1>
-          <p class="app-sub">{{ gallery.length }} 張照片</p>
-          <template v-if="gallery.length > 0">
+          <p class="app-sub">{{ activePhotos.length }} 張照片</p>
+          <template v-if="activePhotos.length > 0">
             <div class="photo-grid">
               <button
-                v-for="item in gallery"
+                v-for="item in activePhotos"
                 :key="item.id"
                 type="button"
                 class="photo-tile"
@@ -858,6 +1051,12 @@ const todayLabel = computed(
 
           <div class="app-section-label">其他相簿</div>
           <div class="app-card">
+            <button type="button" class="app-row album-row" @click="openApp('deleted')">
+              <Trash2 :size="18" aria-hidden="true" />
+              <span class="album-row-label">最近刪除</span>
+              <span class="album-row-count">{{ deletedPhotos.length }}</span>
+              <ChevronRight :size="16" class="album-row-chev" aria-hidden="true" />
+            </button>
             <button type="button" class="app-row album-row" @click="openApp('hidden')">
               <Lock :size="18" aria-hidden="true" />
               <span class="album-row-label">已隱藏</span>
@@ -865,6 +1064,63 @@ const todayLabel = computed(
               <ChevronRight :size="16" class="album-row-chev" aria-hidden="true" />
             </button>
           </div>
+        </div>
+
+        <!-- ===== 最近刪除 ===== -->
+        <div v-else-if="currentView === 'deleted'" class="app-scroll">
+          <h1 class="app-title">最近刪除</h1>
+          <p class="app-sub">項目會在 30 天後永久刪除。</p>
+          <template v-if="deletedPhotos.length > 0">
+            <div class="photo-grid">
+              <button
+                v-for="item in deletedPhotos"
+                :key="item.id"
+                type="button"
+                class="photo-tile"
+                :class="{ 'is-selected': selectedDeleted?.id === item.id }"
+                :style="{ background: photoTone(item.description) }"
+                :aria-label="`刪掉的照片，還剩 ${item.deletedDaysLeft} 天${item.secret && !isRevealed(secretKeys.photo(item.id)) ? '，這張有秘密' : ''}`"
+                :aria-pressed="selectedDeleted?.id === item.id"
+                @click="selectedDeletedId = item.id"
+              >
+                <Image :size="22" aria-hidden="true" />
+                <span v-if="item.secret && !isRevealed(secretKeys.photo(item.id))" class="photo-tile-secret" aria-hidden="true" />
+                <span class="photo-tile-tag">{{ item.deletedDaysLeft }}天</span>
+              </button>
+            </div>
+            <template v-if="selectedDeleted">
+              <div
+                v-if="selectedDeleted.secret && isRevealed(secretKeys.photo(selectedDeleted.id))"
+                class="peek-card"
+                role="status"
+              >
+                <div class="peek-card-head">
+                  <Eye :size="14" aria-hidden="true" />偷看這張照片
+                  <span class="peek-card-date">{{ selectedDeleted.date.slice(5).replace("-", "/") }}</span>
+                </div>
+                <p class="peek-card-text">{{ selectedDeleted.description }}</p>
+                <p class="peek-card-text">{{ selectedDeleted.secret }}</p>
+              </div>
+              <button
+                v-else-if="selectedDeleted.secret"
+                type="button"
+                class="peek-card peek-card--btn"
+                @click="reveal(secretKeys.photo(selectedDeleted.id))"
+              >
+                <span class="peek-card-head"><Eye :size="14" aria-hidden="true" />偷看這張照片</span>
+                <span class="peek-card-text">刪掉了，卻還留在這裡</span>
+              </button>
+              <div v-else class="app-card photo-detail">
+                <div class="photo-detail-meta">
+                  <span class="photo-source">還剩 {{ selectedDeleted.deletedDaysLeft }} 天</span>
+                  <span>{{ selectedDeleted.date }}</span>
+                </div>
+                <p class="photo-desc">{{ selectedDeleted.description }}</p>
+                <p v-if="selectedDeleted.reason" class="photo-reason">{{ selectedDeleted.reason }}</p>
+              </div>
+            </template>
+          </template>
+          <div v-else class="app-empty">沒有刪掉的照片</div>
         </div>
 
         <!-- ===== 已隱藏 ===== -->
@@ -919,6 +1175,14 @@ const todayLabel = computed(
               {{ cat.label }}
             </button>
           </div>
+          <button
+            v-if="privateCount > 0 && !privateRevealed && (selectedBrowserCategory === 'all' || selectedBrowserCategory === 'adult')"
+            type="button"
+            class="peek-chip browser-private"
+            @click="revealPrivateBrowsing"
+          >
+            <Eye :size="14" aria-hidden="true" />還有 {{ privateCount }} 筆無痕瀏覽紀錄 · 偷看 ›
+          </button>
           <ul v-if="filteredBrowserHistory.length > 0" class="app-card">
             <li
               v-for="entry in filteredBrowserHistory"
@@ -940,7 +1204,17 @@ const todayLabel = computed(
               </span>
             </li>
           </ul>
-          <div v-else class="app-empty">沒有瀏覽紀錄</div>
+          <div v-else-if="selectedBrowserCategory !== 'adult' || privateRevealed" class="app-empty">沒有瀏覽紀錄</div>
+        </div>
+
+        <!-- ===== 設定 · 螢幕使用時間 ===== -->
+        <div v-else-if="currentView === 'settings'" class="app-scroll">
+          <h1 class="app-title">螢幕使用時間</h1>
+          <PeekScreenTime
+            :screen-time="storeData?.screenTime"
+            :revealed="isRevealed(secretKeys.screen)"
+            @reveal="reveal(secretKeys.screen)"
+          />
         </div>
       </div>
     </Transition>
@@ -952,6 +1226,8 @@ const todayLabel = computed(
       :battery="battery"
       :active="showSheet"
       :loading="isAnyGroupLoading"
+      :label="capsuleLabel"
+      :secret="hasUnfound"
       @open="showSheet = !showSheet"
     />
     <PeekSheet
@@ -959,7 +1235,10 @@ const todayLabel = computed(
       :name="charName"
       :avatar="charAvatar"
       :group-status="groupStatus"
+      :secrets="secrets"
+      :progress="progress"
       @close="showSheet = false"
+      @go-secret="goToSecret"
       @regenerate="refreshPhase"
       @regenerate-all="refreshAll"
       @leave="emit('back')"
@@ -1013,6 +1292,9 @@ const todayLabel = computed(
     --a-ink-2: var(--p-dark-ink-2);
     --a-ink-3: var(--p-dark-ink-3);
     --a-link: var(--p-dark-link);
+    --a-peek-line: var(--p-peek);
+    --a-peek-bg: var(--p-peek-soft);
+    --a-peek-ink: var(--p-peek);
   }
 
   &.is-light {
@@ -1024,6 +1306,9 @@ const todayLabel = computed(
     --a-ink-2: var(--p-light-ink-2);
     --a-ink-3: var(--p-light-ink-2);
     --a-link: var(--p-light-link);
+    --a-peek-line: var(--p-peek-line-light);
+    --a-peek-bg: var(--p-peek-soft-light);
+    --a-peek-ink: var(--p-peek-ink-light);
   }
 }
 
@@ -1162,6 +1447,74 @@ const todayLabel = computed(
   animation: peek-spin 1s linear infinite;
 }
 
+// ===== 窺視層：偷看用的琥珀虛線（深色、淺色 App 各自換色） =====
+.peek-chip {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  max-width: 100%;
+  padding: 6px 12px 6px 10px;
+  box-sizing: border-box;
+  border-radius: 16px;
+  border: 1px dashed var(--a-peek-line);
+  background: var(--a-peek-bg);
+  color: var(--a-peek-ink);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+
+  svg {
+    flex-shrink: 0;
+  }
+}
+
+.peek-card {
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px 14px;
+  box-sizing: border-box;
+  border-radius: 18px;
+  border: 1px dashed var(--a-peek-line);
+  background: var(--a-peek-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: inherit;
+  text-align: left;
+
+  &--btn {
+    cursor: pointer;
+  }
+}
+
+.peek-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--a-peek-ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.peek-card-date {
+  margin-left: auto;
+  font-family: var(--p-num);
+  font-weight: 500;
+}
+
+.peek-card-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--a-ink);
+  white-space: pre-line;
+}
+
 @keyframes peek-spin {
   to {
     transform: rotate(360deg);
@@ -1292,6 +1645,92 @@ const todayLabel = computed(
   &.self {
     align-items: flex-end;
   }
+}
+
+// 收回的訊息
+.chat-recalled {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.chat-recalled-notice {
+  padding: 5px 12px;
+  border-radius: 12px;
+  background: #1e1f23;
+  color: var(--a-ink-2);
+  font-size: 12px;
+}
+
+.chat-msg.recalled .chat-bubble {
+  border: 1.5px dashed var(--a-peek-line);
+  background: transparent;
+}
+
+.chat-recalled-meta {
+  margin: 0 4px;
+  font-size: 11px;
+  color: var(--a-peek-ink);
+}
+
+// 草稿紀錄
+.chat-draft {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 14px 6px;
+}
+
+.chat-draft-history {
+  padding: 10px 12px 12px;
+  border-radius: 16px;
+  border: 1px dashed var(--a-peek-line);
+  background: var(--a-peek-bg);
+}
+
+.chat-draft-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--a-peek-ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chat-draft-close {
+  width: 32px;
+  height: 32px;
+  margin: -6px -6px -6px 0;
+  border: none;
+  background: none;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.chat-draft-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.chat-draft-old {
+  color: var(--a-ink-3);
+  text-decoration: line-through;
+}
+
+.chat-draft-now {
+  color: var(--a-ink);
 }
 
 .chat-sender {
@@ -1641,6 +2080,10 @@ const todayLabel = computed(
   display: flex;
   flex-direction: column;
   gap: 10px;
+
+  &--tight {
+    margin-top: 0;
+  }
 }
 
 .note-card {
@@ -1751,6 +2194,17 @@ const todayLabel = computed(
   }
 }
 
+.photo-tile-secret {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--p-peek);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+}
+
 .photo-tile-tag {
   position: absolute;
   left: 5px;
@@ -1831,6 +2285,10 @@ const todayLabel = computed(
 }
 
 // ===== 瀏覽紀錄 =====
+.browser-private {
+  margin-top: 12px;
+}
+
 .segmented {
   margin-top: 16px;
   display: flex;

@@ -78,7 +78,8 @@ export function latestNotifications(
 ): PeekNotification[] {
   const items: PeekNotification[] = [];
   for (const thread of chats) {
-    const last = [...thread.messages].reverse().find((m) => !m.isSelf);
+    // 收回的訊息不會留在通知裡
+    const last = [...thread.messages].reverse().find((m) => !m.isSelf && !m.recalled);
     if (!last) continue;
     items.push({
       threadId: thread.id,
@@ -141,4 +142,6 @@ export interface HomeApp {
   icon: Component;
   badge: number;
   status: GroupStatus;
+  /** 這個 App 裡還有沒找到的秘密 */
+  secret: boolean;
 }

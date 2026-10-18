@@ -16,6 +16,10 @@ export interface PeekChatMessage {
   isSelf: boolean;
   /** 時間戳 */
   timestamp: number;
+  /** 傳出去又收回了（秘密：偷看收回了什麼） */
+  recalled?: boolean;
+  /** 收回前存在了幾秒 */
+  recalledAfter?: number;
 }
 
 /** 角色手機聊天對話 */
@@ -29,6 +33,10 @@ export interface PeekChatThread {
   messages: PeekChatMessage[];
   /** 最後更新 */
   updatedAt: number;
+  /** 輸入框裡打了沒送出的話（秘密） */
+  draft?: string;
+  /** 草稿之前改過的版本，舊的在前 */
+  draftHistory?: string[];
 }
 
 /** 行程項目 */
@@ -114,6 +122,10 @@ export interface PeekGalleryItem {
   reason: string;
   /** 日期 (YYYY-MM-DD) */
   date: string;
+  /** 在「最近刪除」裡，剩幾天會永久刪除；沒有代表沒刪 */
+  deletedDaysLeft?: number;
+  /** 這張照片背後的故事（秘密：偷看這張照片） */
+  secret?: string;
 }
 
 /** 瀏覽器歷史記錄 */
@@ -142,6 +154,40 @@ export interface PeekHiddenPhoto {
   date: string;
 }
 
+/** 鎖屏密碼：跟使用者有關的 4 位數字 */
+export interface PeekLockScreen {
+  /** 4 位數字 */
+  passcode: string;
+  /** 給偷看的人的提示 */
+  hint: string;
+  /** 解開後顯示這組數字的意義 */
+  reveal: string;
+}
+
+/** 螢幕使用時間（設定 App） */
+export interface PeekScreenTime {
+  /** 0 點到 23 點，每小時用了幾分鐘 */
+  hourly: number[];
+  /** 最常使用的 App */
+  topApps: { name: string; minutes: number }[];
+  /** 今天拿起手機幾次 */
+  pickups: number;
+  /** 今天第一次拿起的時間 (HH:mm) */
+  firstPickup: string;
+  /** 從使用紀錄看出來的心事（秘密） */
+  insight: string;
+}
+
+/** 偷看進度：存在這支手機的資料裡，跟著備份 */
+export interface PeekProgress {
+  /** 解過鎖屏密碼或跳過了，之後拿起直接進主畫面 */
+  unlocked: boolean;
+  /** 已找到的秘密 key */
+  revealed: string[];
+  /** 打開過的 App */
+  viewed: PeekPhoneTab[];
+}
+
 /** 角色手機完整資料 */
 export interface PeekPhoneData {
   characterId: string;
@@ -167,6 +213,12 @@ export interface PeekPhoneData {
   browserHistory: PeekBrowserEntry[];
   /** 隱藏私密照片 */
   hiddenPhotos: PeekHiddenPhoto[];
+  /** 鎖屏密碼（舊資料沒有） */
+  lockScreen?: PeekLockScreen;
+  /** 螢幕使用時間（舊資料沒有） */
+  screenTime?: PeekScreenTime;
+  /** 偷看進度 */
+  progress?: PeekProgress;
 }
 
 /** 偷窺手機的 Tab 類型 */
@@ -180,4 +232,6 @@ export type PeekPhoneTab =
   | "diary"
   | "gallery"
   | "browser"
-  | "hidden";
+  | "hidden"
+  | "deleted"
+  | "settings";

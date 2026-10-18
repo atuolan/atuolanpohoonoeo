@@ -1,12 +1,27 @@
 <script setup lang="ts">
 /**
  * 窺視選單：從頂部膠囊叫出來的底部面板
- * 放玩家的操作（重新生成、離開），不屬於角色手機本身
+ * 放玩家的東西（偷看進度、找到的秘密、提示、重新生成、離開），不屬於角色手機本身
  */
 import type { GroupStatus } from "@/stores/peekPhone";
-import { Calendar, Camera, ChevronRight, Loader2, MessageCircle, RefreshCw, X } from "lucide-vue-next";
-import { computed } from "vue";
+import type { PeekProgress } from "@/types/peekPhone";
+import {
+  Calendar,
+  Camera,
+  ChevronRight,
+  Eye,
+  Globe,
+  Hourglass,
+  Image,
+  Loader2,
+  Lock,
+  MessageCircle,
+  RefreshCw,
+  X,
+} from "lucide-vue-next";
+import { computed, ref, watch } from "vue";
 import { initialOf } from "./peekPhoneView";
+import { PLACE_LABELS, viewedPercent, type PeekSecret, type SecretPlace } from "./peekSecrets";
 
 type Phase = "A" | "BC" | "D";
 
@@ -15,6 +30,8 @@ const props = defineProps<{
   name: string;
   avatar?: string;
   groupStatus: Record<"A" | "B" | "C" | "D", GroupStatus>;
+  secrets: PeekSecret[];
+  progress: PeekProgress;
 }>();
 
 const emit = defineEmits<{
@@ -22,7 +39,40 @@ const emit = defineEmits<{
   regenerate: [phase: Phase];
   regenerateAll: [];
   leave: [];
+  /** 去秘密所在的地方 */
+  goSecret: [secret: PeekSecret];
 }>();
+
+const PLACE_ICONS: Record<SecretPlace, typeof MessageCircle> = {
+  lock: Lock,
+  chat: MessageCircle,
+  gallery: Image,
+  browser: Globe,
+  settings: Hourglass,
+};
+
+const found = computed(() => props.secrets.filter((s) => props.progress.revealed.includes(s.key)));
+const unfound = computed(() => props.secrets.filter((s) => !props.progress.revealed.includes(s.key)));
+const unfoundPlaces = computed(() =>
+  [...new Set(unfound.value.map((s) => PLACE_LABELS[s.place]))].join("、"),
+);
+
+// 提示：一次一個，再按換下一個還沒找到的
+const hintIndex = ref<number | null>(null);
+const currentHint = computed(() =>
+  hintIndex.value === null || unfound.value.length === 0
+    ? null
+    : unfound.value[hintIndex.value % unfound.value.length],
+);
+function nextHint() {
+  hintIndex.value = hintIndex.value === null ? 0 : hintIndex.value + 1;
+}
+watch(
+  () => props.open,
+  (open) => {
+    if (!open) hintIndex.value = null;
+  },
+);
 
 const phases: { key: Phase; label: string; icon: typeof MessageCircle }[] = [
   { key: "A", label: "聊天紀錄", icon: MessageCircle },
@@ -43,7 +93,9 @@ const hasError = computed(() => Object.values(props.groupStatus).some((s) => s =
 const subtitle = computed(() => {
   if (isBusy.value) return "正在讀取手機內容…";
   if (hasError.value) return "有部分內容沒讀到，可以在下面重新生成";
-  return "想換一批內容，就在這裡重新生成";
+  const viewed = `已看過 ${viewedPercent(props.progress)}%`;
+  if (props.secrets.length === 0) return viewed;
+  return `${viewed} · 找到 ${found.value.length} / ${props.secrets.length} 個秘密`;
 });
 </script>
 
@@ -66,6 +118,46 @@ const subtitle = computed(() => {
           <button type="button" class="peek-sheet-close" aria-label="關閉" @click="emit('close')">
             <X :size="20" />
           </button>
+        </div>
+
+        <div v-if="props.secrets.length > 0" class="peek-sheet-section">
+          <div class="peek-sheet-section-label">找到的秘密</div>
+          <div class="peek-sheet-card">
+            <button
+              v-for="secret in found"
+              :key="secret.key"
+              type="button"
+              class="peek-sheet-row peek-sheet-found"
+              @click="emit('goSecret', secret)"
+            >
+              <component :is="PLACE_ICONS[secret.place]" :size="18" class="peek-sheet-row-icon" aria-hidden="true" />
+              <span class="peek-sheet-found-main">
+                <span class="peek-sheet-found-label">{{ secret.label }}</span>
+                <span v-if="secret.detail" class="peek-sheet-found-detail">{{ secret.detail }}</span>
+              </span>
+              <span class="peek-sheet-row-meta">{{ PLACE_LABELS[secret.place] }}</span>
+              <ChevronRight :size="16" class="peek-sheet-row-chev" aria-hidden="true" />
+            </button>
+
+            <div v-if="unfound.length > 0" class="peek-sheet-row peek-sheet-left">
+              <span class="peek-sheet-left-ring" aria-hidden="true" />
+              <span class="peek-sheet-row-label peek-sheet-left-text">
+                {{ found.length === 0 ? `藏了 ${unfound.length} 個，在` : `還有 ${unfound.length} 個，藏在` }}{{ unfoundPlaces }}
+              </span>
+              <button type="button" class="peek-sheet-hint-btn" @click="nextHint">
+                {{ currentHint ? "下一個" : "提示" }}
+              </button>
+            </div>
+            <div v-else class="peek-sheet-row peek-sheet-all">全部找到了</div>
+          </div>
+
+          <div v-if="currentHint" class="peek-sheet-hint" role="status">
+            <Eye :size="14" aria-hidden="true" />
+            <span class="peek-sheet-hint-text">{{ currentHint.hint }}</span>
+            <button type="button" class="peek-sheet-hint-go" @click="emit('goSecret', currentHint)">
+              {{ currentHint.place === "lock" ? "鎖上手機再試一次" : "去看看" }} ›
+            </button>
+          </div>
         </div>
 
         <div class="peek-sheet-section">
@@ -251,6 +343,103 @@ const subtitle = computed(() => {
 
 .peek-sheet-row-icon {
   flex-shrink: 0;
+}
+
+.peek-sheet-found {
+  padding: 10px 0;
+}
+
+.peek-sheet-found-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.peek-sheet-found-label {
+  font-size: 14px;
+}
+
+.peek-sheet-found-detail {
+  font-size: 12px;
+  color: var(--p-sheet-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.peek-sheet-left {
+  cursor: default;
+}
+
+.peek-sheet-left-ring {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  border: 1.5px dashed #a8a7a2;
+  box-sizing: border-box;
+}
+
+.peek-sheet-left-text {
+  color: var(--p-sheet-ink-2);
+}
+
+.peek-sheet-all {
+  justify-content: center;
+  color: var(--p-sheet-ink-2);
+  cursor: default;
+}
+
+.peek-sheet-hint-btn {
+  flex-shrink: 0;
+  min-width: 52px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 16px;
+  border: 1px dashed var(--p-peek-line-light);
+  background: var(--p-peek-soft-light);
+  color: var(--p-peek-ink-light);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.peek-sheet-hint {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px dashed var(--p-peek-line-light);
+  background: var(--p-peek-soft-light);
+  color: var(--p-peek-ink-light);
+  font-size: 13px;
+  line-height: 1.5;
+
+  svg {
+    flex-shrink: 0;
+  }
+}
+
+.peek-sheet-hint-text {
+  flex: 1;
+  min-width: 160px;
+}
+
+.peek-sheet-hint-go {
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--p-peek-ink-light);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .peek-sheet-row-label {

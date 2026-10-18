@@ -39,6 +39,8 @@ import {
   parseGroupB,
   parseGroupC,
   parseGroupD,
+  parseLockScreen,
+  parseScreenTime,
 } from "./PeekPhoneYAMLParser";
 import { summaryTimelineKey } from "@/utils/summarySelection";
 
@@ -377,6 +379,12 @@ export function serializeForContext(partial: Partial<PeekPhoneData>): string {
         const preview = lastMsg.content.slice(0, 60).replace(/\n/g, " ");
         lines.push(`  最後訊息：${preview}`);
       }
+      for (const m of thread.messages.filter((msg) => msg.recalled)) {
+        lines.push(`  傳出又收回：${m.content.slice(0, 60).replace(/\n/g, " ")}`);
+      }
+      if (thread.draft) {
+        lines.push(`  輸入框裡沒送出：${thread.draft.slice(0, 60).replace(/\n/g, " ")}`);
+      }
     }
   }
 
@@ -597,7 +605,8 @@ export async function generateSequential(
   const yamlA = await callAPIForPhase(promptA, 16000, signal,
     onToken ? (t) => onToken("A", t) : undefined);
   const chats = parseGroupA(yamlA);
-  const partialA: Partial<PeekPhoneData> = { chats };
+  const lockScreen = parseLockScreen(yamlA);
+  const partialA: Partial<PeekPhoneData> = { chats, lockScreen };
   onPhaseComplete?.("A", partialA);
 
   // === Phase BC: 行程+飲食+備忘+記事+日記+錢包 ===
@@ -622,9 +631,12 @@ export async function generateSequential(
   const yamlD = await callAPIForPhase(promptD, 12000, signal,
     onToken ? (t) => onToken("D", t) : undefined);
   const { gallery, browserHistory, hiddenPhotos } = parseGroupD(yamlD);
+  const screenTime = parseScreenTime(yamlD);
 
   return {
     characterId: character.id,
+    lockScreen,
+    screenTime,
     chats,
     schedule,
     meals,
@@ -782,7 +794,7 @@ export async function generateSinglePhase(
       );
       const yaml = await callAPIForPhase(prompt, 16000, signal, onToken);
       const chats = parseGroupA(yaml);
-      return { chats };
+      return { chats, lockScreen: parseLockScreen(yaml) };
     }
     case "BC": {
       // 使用現有 A 組資料作為上下文
@@ -814,7 +826,7 @@ export async function generateSinglePhase(
       );
       const yaml = await callAPIForPhase(prompt, 12000, signal, onToken);
       const { gallery, browserHistory, hiddenPhotos } = parseGroupD(yaml);
-      return { gallery, browserHistory, hiddenPhotos };
+      return { gallery, browserHistory, hiddenPhotos, screenTime: parseScreenTime(yaml) };
     }
   }
 }
@@ -828,7 +840,9 @@ function serializeThreadHistory(
   ownerName: string,
 ): string {
   if (!thread.messages || thread.messages.length === 0) return "";
+  // 收回的訊息聯絡人沒看到，不放進歷史
   return thread.messages
+    .filter((msg) => !msg.recalled)
     .map((msg) => {
       const speaker = msg.isSelf
         ? ownerName

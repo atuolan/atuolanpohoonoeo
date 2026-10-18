@@ -8,10 +8,13 @@ const props = defineProps<{ app: HomeApp; showLabel?: boolean }>();
 const emit = defineEmits<{ open: [] }>();
 
 const ariaLabel = computed(() => {
-  const { label, badge, status } = props.app;
+  const { label, badge, status, secret } = props.app;
   if (status === "loading") return `${label}，載入中`;
   if (status === "error") return `${label}，讀取失敗`;
-  return badge > 0 ? `${label}，${badge} 則` : label;
+  const parts = [label];
+  if (badge > 0) parts.push(`${badge} 則`);
+  if (secret) parts.push("這裡藏了秘密");
+  return parts.join("，");
 });
 </script>
 
@@ -19,6 +22,7 @@ const ariaLabel = computed(() => {
   <button type="button" class="peek-app" :aria-label="ariaLabel" @click="emit('open')">
     <span class="peek-app-icon">
       <component :is="props.app.icon" :size="26" :stroke-width="1.6" aria-hidden="true" />
+      <span v-if="props.app.secret && props.app.status === 'done'" class="peek-app-secret" aria-hidden="true" />
       <span v-if="props.app.status === 'done' && props.app.badge > 0" class="peek-app-badge">
         {{ props.app.badge > 99 ? "99+" : props.app.badge }}
       </span>
@@ -80,6 +84,18 @@ const ariaLabel = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+// 窺視層：這個 App 裡還有秘密
+.peek-app-secret {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--p-peek);
+  box-shadow: 0 0 0 2px var(--p-app-glyph);
 }
 
 .peek-app-state {

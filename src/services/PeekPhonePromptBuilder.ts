@@ -70,6 +70,21 @@ function buildTranslationRule(): string {
 }
 
 /**
+ * 聊天組要藏的秘密：鎖屏密碼、收回的訊息、沒送出的草稿
+ * 偷看的人會在 App 裡一個個找出來，所以都要跟使用者有關
+ */
+function buildSecretsRuleA(userName: string): string {
+  return `【秘密 —— 這支手機要藏幾個跟「${userName}」有關的秘密，偷看的人會一個個找出來】
+1. lock_screen 鎖屏密碼：4 位數字，跟「${userName}」有關（例如第一次見面的日期 MMDD、對方生日、只有兩人懂的數字）
+   - passcode：4 位數字，一定要加引號
+   - hint：給偷看的人的提示，不能直接寫出數字
+   - reveal：解開後顯示的一句話，說明這組數字的意義
+2. 至少 1 則「收回的訊息」：角色傳出去又馬上收回的一句話（最好在跟「${userName}」的對話裡），那則訊息加上 recalled: true 和 recalled_after: 收回前存在了幾秒
+3. 至少 1 個「沒送出的草稿」：某個對話串加上 draft（輸入框裡打了但沒送出的話），和 draft_history（之前改過的 2 到 4 個版本，舊的在前）
+秘密要符合角色性格，寫出角色不敢說出口的心事，不要每個角色都一樣。`;
+}
+
+/**
  * 建構 Group A (聊天) 的 prompt
  * 指示 AI 生成 2~5 個聊天對話串，每個包含角色自己和對方的訊息
  */
@@ -104,6 +119,8 @@ ${charBlock}
 每個對話串需包含角色自己發送的訊息（self: true）和對方發送的訊息（self: false）。
 聊天內容必須符合角色的性格和當前故事背景。
 
+${buildSecretsRuleA(userName)}
+
 ${buildTranslationRule()}
 
 【最重要的規則 —— 必須嚴格遵守】
@@ -115,8 +132,18 @@ ${buildTranslationRule()}
 
 請嚴格使用以下 YAML 格式輸出（非中文角色的 text 包含原文＋換行＋中文翻譯；中文角色只寫中文）：
 
+lock_screen:
+  passcode: "0912"
+  hint: 第一次見到對方的那天（月月日日）
+  reveal: 0912，是你們第一次見面的那天
+
 chats:
   - contact: 聯絡人名稱
+    draft: |
+      輸入框裡打了、還沒送出的話
+    draft_history:
+      - text: 第一版
+      - text: 改過的第二版
     messages:
       - from: 發送者名稱
         text: |
@@ -130,6 +157,14 @@ chats:
           嗯，怎麼了？
         self: true
         time: 時間戳數字
+      - from: 角色名
+        text: |
+          I just wanted to see you.
+          我只是想見你。
+        self: true
+        time: 時間戳數字
+        recalled: true
+        recalled_after: 11
   - contact: 另一個聯絡人
     messages:
       - from: 另一個聯絡人名
@@ -498,7 +533,7 @@ export function buildGroupDPrompt(
 
 ${charBlock}${prevBlock}
 
-請生成以下三個部分：
+請生成以下部分：
 
 【gallery 相冊】3 到 6 張普通照片：
 - description: 照片畫面描述（生動具體）
@@ -511,6 +546,17 @@ ${charBlock}${prevBlock}
   - category: adult — 成人網站瀏覽/觀看紀錄，url 必須是真實風格的成人網址（如 pornhub.com/view_video.php?viewkey=xxxxx、xvideos.com/videoXXXX/標題等），title 要有具體影片名或搜尋關鍵詞
   - category: general — 一般網站瀏覽（社群、新聞等）
   每筆包含：title（如非中文則用 block scalar 加換行中文翻譯）、url、time（HH:mm）、category
+
+【最近刪除】gallery 裡挑 1 到 2 張標成「刪掉了、但還在最近刪除裡」：
+- deleted: 剩幾天會永久刪除（1 到 29 的整數）
+- secret: 這張照片背後的故事（例如刪了又復原幾次、最後一次是什麼時候打開、放大看了哪裡），要跟「${userName}」有關，寫成偷看的人看到的事實
+
+【screen_time 螢幕使用時間】今天的使用紀錄，要符合角色今天的作息和心事：
+- hourly: 24 個整數寫在一行 [ ] 裡，依序是 0 點到 23 點每小時用了幾分鐘（0 到 60）
+- top_apps: 3 到 4 個最常用的 App，name 只能從 訊息、相簿、瀏覽器、備忘錄、日記、錢包、行事曆、音樂 裡挑，minutes 是今天用了幾分鐘
+- pickups: 今天拿起手機幾次
+- first_pickup: 今天第一次拿起手機的時間（HH:MM）
+- insight: 一句從使用紀錄看得出來的心事，要具體（例如「凌晨 0–3 點就用了 2 小時 19 分，幾乎都在同一個聊天室」）
 
 【hidden_photos 隱藏私密照片】2 到 4 張（深藏不對外公開的照片）：
 - description: 照片描述（可以是私密自拍、情色截圖、悄悄保存的他人H圖等）
@@ -533,6 +579,27 @@ gallery:
     reason: |
       保存原因
     date: "2026-02-20"
+  - description: |
+      照片描述
+    source: scene
+    reason: |
+      保存原因
+    date: "2026-02-14"
+    deleted: 14
+    secret: |
+      刪除 3 次、又復原 3 次。最後一次打開是今天 01:21，放大到對方的側臉。
+
+screen_time:
+  hourly: [42, 38, 33, 26, 8, 0, 0, 4, 10, 6, 8, 12, 14, 9, 8, 10, 12, 14, 18, 14, 18, 18, 22, 28]
+  pickups: 87
+  first_pickup: "00:04"
+  insight: |
+    凌晨 0–3 點就用了 2 小時 19 分，幾乎都在同一個聊天室
+  top_apps:
+    - name: 訊息
+      minutes: 182
+    - name: 相簿
+      minutes: 48
 
 browser_history:
   - title: |

@@ -2,9 +2,10 @@
 /**
  * 角色手機的鎖定畫面：時間、下一個行程、聊天通知
  * 第一次拿起手機時，內容在這裡生成；向上滑或點按鈕解鎖
+ * 有鎖屏密碼又還沒解過，解鎖前要先猜密碼（可以跳過）
  */
 import type { GroupStatus } from "@/stores/peekPhone";
-import type { PeekScheduleItem } from "@/types/peekPhone";
+import type { PeekLockScreen, PeekScheduleItem } from "@/types/peekPhone";
 import {
   AlertTriangle,
   Calendar,
@@ -15,6 +16,7 @@ import {
   MessageSquare,
 } from "lucide-vue-next";
 import { computed, ref } from "vue";
+import PeekPasscode from "./PeekPasscode.vue";
 import PeekWallpaper from "./PeekWallpaper.vue";
 import {
   formatClock,
@@ -30,12 +32,43 @@ const props = defineProps<{
   nextSchedule: PeekScheduleItem | null;
   notifications: PeekNotification[];
   groupStatus: Record<"A" | "B" | "C" | "D", GroupStatus>;
+  lockScreen?: PeekLockScreen;
+  /** 解鎖前要先猜密碼 */
+  needCode: boolean;
 }>();
 
 const emit = defineEmits<{
   unlock: [];
   openThread: [threadId: string];
+  /** 猜對密碼 */
+  solved: [];
+  /** 跳過謎題 */
+  skip: [];
 }>();
+
+const showCode = ref(false);
+// 鎖著時點了通知：解開後直接打開那個聊天
+const pendingThread = ref<string | null>(null);
+
+function requestUnlock(threadId: string | null = null) {
+  if (props.needCode && props.lockScreen) {
+    pendingThread.value = threadId;
+    showCode.value = true;
+    return;
+  }
+  proceed(threadId);
+}
+
+function proceed(threadId: string | null) {
+  showCode.value = false;
+  if (threadId) emit("openThread", threadId);
+  else emit("unlock");
+}
+
+function onSkip() {
+  emit("skip");
+  proceed(pendingThread.value);
+}
 
 const steps = computed(() => {
   const s = props.groupStatus;
@@ -66,7 +99,7 @@ function onTouchEnd(e: TouchEvent) {
   if (touchStartY.value === null) return;
   const dy = (e.changedTouches[0]?.clientY ?? touchStartY.value) - touchStartY.value;
   touchStartY.value = null;
-  if (dy < -60) emit("unlock");
+  if (dy < -60 && !showCode.value) requestUnlock();
 }
 </script>
 
@@ -106,7 +139,7 @@ function onTouchEnd(e: TouchEvent) {
           :key="n.threadId"
           type="button"
           class="peek-lock-card peek-lock-notif"
-          @click="emit('openThread', n.threadId)"
+          @click="requestUnlock(n.threadId)"
         >
           <span class="peek-lock-notif-icon">
             <MessageSquare :size="20" aria-hidden="true" />
@@ -123,10 +156,19 @@ function onTouchEnd(e: TouchEvent) {
 
       <div class="peek-lock-bottom">
         <span class="peek-lock-round" aria-hidden="true"><Flashlight :size="20" /></span>
-        <button type="button" class="peek-lock-unlock" @click="emit('unlock')">向上滑動以解鎖</button>
+        <button type="button" class="peek-lock-unlock" @click="requestUnlock()">向上滑動以解鎖</button>
         <span class="peek-lock-round" aria-hidden="true"><Camera :size="20" /></span>
       </div>
     </div>
+
+    <PeekPasscode
+      v-if="showCode && props.lockScreen"
+      :lock-screen="props.lockScreen"
+      @solved="emit('solved')"
+      @skip="onSkip"
+      @cancel="showCode = false"
+      @done="proceed(pendingThread)"
+    />
   </div>
 </template>
 

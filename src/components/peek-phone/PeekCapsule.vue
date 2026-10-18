@@ -11,6 +11,10 @@ const props = defineProps<{
   active?: boolean;
   /** 還在生成手機內容 */
   loading?: boolean;
+  /** 膠囊上的字，例如「這裡有 2 個秘密」；沒給就是「XX的手機」 */
+  label?: string;
+  /** 還有沒找到的秘密：亮琥珀點 */
+  secret?: boolean;
 }>();
 
 const emit = defineEmits<{ open: [] }>();
@@ -21,7 +25,7 @@ const emit = defineEmits<{ open: [] }>();
     type="button"
     class="peek-capsule"
     :class="{ 'is-active': props.active }"
-    :aria-label="`窺視選單：${props.name}的手機，電量 ${props.battery}%`"
+    :aria-label="`窺視選單：${props.label ?? `${props.name}的手機`}，電量 ${props.battery}%`"
     :aria-expanded="props.active"
     @click="emit('open')"
   >
@@ -30,8 +34,9 @@ const emit = defineEmits<{ open: [] }>();
         <img v-if="props.avatar" :src="props.avatar" alt="" />
         <template v-else>{{ initialOf(props.name) }}</template>
       </span>
-      <span class="peek-capsule-label">{{ props.active ? "窺視中" : `${props.name}的手機` }}</span>
+      <span class="peek-capsule-label">{{ props.active ? "窺視中" : (props.label ?? `${props.name}的手機`) }}</span>
       <Loader2 v-if="props.loading" :size="12" class="peek-capsule-spin" aria-hidden="true" />
+      <span v-else-if="props.secret && !props.active" class="peek-capsule-dot" aria-hidden="true" />
       <span class="peek-capsule-battery">{{ props.battery }}%</span>
     </span>
   </button>
@@ -106,6 +111,14 @@ const emit = defineEmits<{ open: [] }>();
   flex-shrink: 0;
   color: #c9c9cc;
   animation: peek-capsule-spin 1s linear infinite;
+}
+
+.peek-capsule-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background: var(--p-peek);
 }
 
 .peek-capsule-battery {
