@@ -1,97 +1,135 @@
 <template>
   <div class="food-roulette">
-    <div class="header">
-      <button class="back-btn" @click="$emit('close')">
+    <header class="header">
+      <button class="round-btn" type="button" aria-label="返回" @click="$emit('close')">
         <ChevronLeft class="icon" />
       </button>
-      <h1 class="title">轉轉飯堂</h1>
-      <button class="settings-btn" @click="showSettings = true">
-        <Settings class="icon" />
+      <span class="header-title">轉轉飯堂</span>
+      <button class="round-btn" type="button" aria-label="編輯選項" @click="showSettings = true">
+        <Pencil class="icon icon-sm" />
       </button>
-    </div>
+    </header>
 
     <div class="content">
-      <div class="roulette-container">
-        <div class="pointer"><div class="pointer-arrow"></div></div>
-        <div
-          class="roulette-wheel"
-          :style="{ transform: `rotate(${rotation}deg)` }"
+      <div class="intro">
+        <h1 class="title">今天吃什麼？</h1>
+        <p class="subtitle">不用想了，交給轉盤決定</p>
+      </div>
+
+      <div class="chips" role="group" aria-label="預算">
+        <button
+          v-for="budget in budgetOptions"
+          :key="budget.value"
+          type="button"
+          class="chip"
+          :class="{ active: selectedBudget === budget.value }"
+          :aria-pressed="selectedBudget === budget.value"
+          :disabled="isSpinning"
+          @click="pickBudget(budget.value)"
         >
+          {{ budget.short }}
+        </button>
+        <button type="button" class="chip chip-ghost" :disabled="isSpinning" @click="showSettings = true">
+          {{ cuisineChipLabel }}
+          <ChevronDown class="chip-icon" />
+        </button>
+      </div>
+
+      <!-- 轉盤 -->
+      <div class="wheel-wrap">
+        <svg class="pointer" viewBox="0 0 28 30" aria-hidden="true">
+          <path d="M2 2h24L14 28z" fill="#121214" stroke="#FFFFFF" stroke-width="2.5" stroke-linejoin="round" />
+        </svg>
+        <div class="wheel-rim">
           <div
-            v-for="(item, index) in currentItems"
-            :key="index"
-            class="roulette-item"
-            :style="getItemStyle(index)"
+            class="wheel"
+            :style="{ transform: `rotate(${rotation}deg)`, background: wheelGradient }"
           >
-            <span class="item-text">{{ item.name }}</span>
+            <span
+              v-for="(item, index) in currentItems"
+              :key="`${item.name}-${index}`"
+              class="slice-label"
+              :style="{ transform: `rotate(${sliceAngle * index}deg)` }"
+            >
+              <span v-if="isVerticalLabel" class="slice-text vertical" :style="{ fontSize: `${labelFontSize}px` }">
+                <span v-for="(ch, ci) in verticalChars(item.name)" :key="ci">{{ ch }}</span>
+              </span>
+              <span v-else class="slice-text" :style="{ fontSize: `${labelFontSize}px` }">
+                {{ item.name }}
+              </span>
+            </span>
           </div>
         </div>
-        <div class="center-circle">
-          <UtensilsCrossed class="center-icon" />
+        <button
+          class="spin-btn"
+          type="button"
+          aria-label="轉動轉盤"
+          :disabled="isSpinning"
+          @click="spin"
+        >
+          轉
+        </button>
+      </div>
+
+      <!-- 結果 -->
+      <section class="result-card" aria-live="polite">
+        <span class="result-label">
+          <template v-if="isSpinning">轉呀轉……</template>
+          <template v-else-if="showResult">今天就吃</template>
+          <template v-else-if="selectedItem">
+            <Check class="result-check" />已記下，好好吃飯
+          </template>
+          <template v-else>還沒決定</template>
+        </span>
+        <span class="result-name">
+          {{ isSpinning ? "……" : selectedItem ? selectedItem.name : "轉一下看看" }}
+        </span>
+        <span class="result-detail">
+          <template v-if="isSpinning">等它停下來</template>
+          <template v-else-if="selectedItem">{{ describeItem(selectedItem) }}</template>
+          <template v-else>轉盤上有 {{ currentItems.length }} 個選項</template>
+        </span>
+
+        <div v-if="showResult && !isSpinning" class="result-actions">
+          <button class="btn btn-outline" type="button" @click="spin">再轉一次</button>
+          <button class="btn btn-dark" type="button" @click="confirmResult">就吃這個</button>
         </div>
-      </div>
-
-      <button class="start-btn" @click="spin" :disabled="isSpinning">
-        <RotateCw :size="24" />
-        {{ isSpinning ? "轉動中..." : "開始轉動" }}
-      </button>
-
-      <div class="bottom-actions">
-        <button class="action-btn" @click="showHistory = true">
-          <History :size="24" /><span>歷史</span>
-        </button>
-        <button class="action-btn" @click="showSettings = true">
-          <Settings :size="24" /><span>設置</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- 结果弹窗 -->
-    <transition name="fade">
-      <div v-if="showResult" class="result-overlay" @click="confirmResult">
-        <div class="result-content" @click.stop>
-          <div class="result-icon">
-            <svg viewBox="0 0 24 24" width="64" height="64" fill="#f59e0b">
-              <path
-                d="M1 22c0 .54.45 1 1 1h13c.56 0 1-.46 1-1H1M8.5 15c4.15 0 7.5-3.35 7.5-7.5S12.65 0 8.5 0 1 3.35 1 7.5 4.35 15 8.5 15m4.79-11.34 2.38-2.38a.996.996 0 1 1 1.41 1.41l-2.38 2.38c-.39.39-1.02.39-1.41 0a.996.996 0 0 1 0-1.41M18 7.5c0 .55.45 1 1 1h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1"
-              />
-            </svg>
-          </div>
-          <h2>今天吃</h2>
-          <div class="result-name">{{ selectedItem?.name }}</div>
-          <p class="result-hint">點擊確定保存到歷史</p>
-          <button class="confirm-btn" @click="confirmResult">
-            <Check :size="20" /> 確定
+        <div v-else class="result-actions single">
+          <button class="btn btn-dark" type="button" :disabled="isSpinning" @click="spin">
+            {{ selectedItem ? "再轉一次" : "開始轉" }}
           </button>
         </div>
-      </div>
-    </transition>
+      </section>
 
-    <!-- 设置弹窗 -->
-    <transition name="slide-up">
-      <div
-        v-if="showSettings"
-        class="settings-overlay"
-        @click="showSettings = false"
-      >
-        <div class="settings-content" @click.stop>
-          <div class="settings-header">
-            <h3>設置</h3>
-            <button class="close-btn" @click="showSettings = false">
-              <X :size="20" />
+      <button v-if="history.length > 0" class="history-link" type="button" @click="showHistory = true">
+        <History class="history-link-icon" />
+        <span class="history-link-text">最近吃過：{{ recentHistoryNames }}</span>
+        <ChevronRight class="history-link-icon" />
+      </button>
+    </div>
+
+    <!-- 設定 -->
+    <transition name="sheet">
+      <div v-if="showSettings" class="sheet-overlay" @click="showSettings = false">
+        <div class="sheet" role="dialog" aria-label="編輯選項" @click.stop>
+          <span class="sheet-grabber" aria-hidden="true"></span>
+          <div class="sheet-header">
+            <h3>編輯選項</h3>
+            <button class="round-btn small" type="button" aria-label="關閉" @click="showSettings = false">
+              <X class="icon icon-sm" />
             </button>
           </div>
-          <div class="settings-body">
+          <div class="sheet-body">
             <div class="setting-section">
-              <h4>預算範圍</h4>
-              <div class="budget-options">
+              <h4>預算</h4>
+              <div class="option-grid">
                 <button
                   v-for="budget in budgetOptions"
                   :key="budget.value"
-                  :class="[
-                    'budget-btn',
-                    { active: selectedBudget === budget.value },
-                  ]"
+                  type="button"
+                  class="chip"
+                  :class="{ active: selectedBudget === budget.value }"
+                  :aria-pressed="selectedBudget === budget.value"
                   @click="selectedBudget = budget.value"
                 >
                   {{ budget.label }}
@@ -99,15 +137,15 @@
               </div>
             </div>
             <div class="setting-section">
-              <h4>菜系選擇</h4>
-              <div class="cuisine-options">
+              <h4>菜系</h4>
+              <div class="option-grid">
                 <button
                   v-for="cuisine in cuisineOptions"
                   :key="cuisine"
-                  :class="[
-                    'cuisine-btn',
-                    { active: selectedCuisines.includes(cuisine) },
-                  ]"
+                  type="button"
+                  class="chip"
+                  :class="{ active: selectedCuisines.includes(cuisine) }"
+                  :aria-pressed="selectedCuisines.includes(cuisine)"
                   @click="toggleCuisine(cuisine)"
                 >
                   {{ cuisine }}
@@ -115,87 +153,60 @@
               </div>
             </div>
             <div class="setting-section">
-              <h4>自定義選項</h4>
+              <h4>自己加</h4>
               <div class="custom-input">
                 <input
                   v-model="customInput"
                   type="text"
-                  placeholder="輸入餐廳或菜品名稱"
+                  aria-label="餐廳或菜名"
+                  placeholder="輸入餐廳或菜名"
                   @keyup.enter="addCustomItem"
                 />
-                <button class="add-btn" @click="addCustomItem">
-                  <Plus :size="24" />
+                <button class="add-btn" type="button" aria-label="加入" @click="addCustomItem">
+                  <Plus class="icon" />
                 </button>
               </div>
-              <div class="custom-list">
-                <div
-                  v-for="(item, index) in customItems"
-                  :key="index"
-                  class="custom-item"
-                >
+              <ul v-if="customItems.length > 0" class="custom-list">
+                <li v-for="(item, index) in customItems" :key="index" class="custom-item">
                   <span>{{ item.name }}</span>
-                  <button class="remove-btn" @click="removeCustomItem(index)">
-                    <X :size="16" />
+                  <button class="remove-btn" type="button" :aria-label="`移除 ${item.name}`" @click="removeCustomItem(index)">
+                    <X class="icon icon-xs" />
                   </button>
-                </div>
-              </div>
+                </li>
+              </ul>
             </div>
           </div>
-          <div class="settings-footer">
-            <button class="reset-btn" @click="resetSettings">
-              <RefreshCw :size="20" /> 重置設置
+          <div class="sheet-footer">
+            <button class="btn btn-outline" type="button" @click="resetSettings">
+              <RefreshCw class="icon icon-xs" /> 重置
             </button>
-            <button class="save-btn" @click="saveSettings">
-              <Check :size="20" /> 保存設置
+            <button class="btn btn-dark" type="button" @click="saveSettings">
+              <Check class="icon icon-xs" /> 保存
             </button>
           </div>
         </div>
       </div>
     </transition>
 
-    <!-- 历史记录弹窗 -->
-    <transition name="slide-up">
-      <div
-        v-if="showHistory"
-        class="history-overlay"
-        @click="showHistory = false"
-      >
-        <div class="history-content" @click.stop>
-          <div class="history-header">
-            <h3>歷史記錄</h3>
-            <button class="close-btn" @click="showHistory = false">
-              <X :size="20" />
+    <!-- 歷史 -->
+    <transition name="sheet">
+      <div v-if="showHistory" class="sheet-overlay" @click="showHistory = false">
+        <div class="sheet" role="dialog" aria-label="吃過的紀錄" @click.stop>
+          <span class="sheet-grabber" aria-hidden="true"></span>
+          <div class="sheet-header">
+            <h3>吃過的紀錄</h3>
+            <button class="round-btn small" type="button" aria-label="關閉" @click="showHistory = false">
+              <X class="icon icon-sm" />
             </button>
           </div>
-          <div class="history-body">
-            <div v-if="history.length === 0" class="empty-state">
-              <svg viewBox="0 0 24 24" width="64" height="64" fill="#9ca3af">
-                <path
-                  d="M1 22c0 .54.45 1 1 1h13c.56 0 1-.46 1-1H1M8.5 15c4.15 0 7.5-3.35 7.5-7.5S12.65 0 8.5 0 1 3.35 1 7.5 4.35 15 8.5 15m4.79-11.34 2.38-2.38a.996.996 0 1 1 1.41 1.41l-2.38 2.38c-.39.39-1.02.39-1.41 0a.996.996 0 0 1 0-1.41M18 7.5c0 .55.45 1 1 1h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1"
-                />
-                <line
-                  x1="4"
-                  y1="4"
-                  x2="20"
-                  y2="20"
-                  stroke="#9ca3af"
-                  stroke-width="2"
-                />
-              </svg>
-              <p>還沒有記錄呢</p>
-            </div>
-            <div
-              v-for="(record, index) in history"
-              :key="index"
-              class="history-item"
-            >
-              <div class="history-info">
-                <div class="food-name">{{ record.name }}</div>
-                <div class="history-time">
-                  {{ formatTime(record.timestamp) }}
-                </div>
-              </div>
-            </div>
+          <div class="sheet-body">
+            <p v-if="history.length === 0" class="empty-state">還沒有紀錄，轉一次試試</p>
+            <ul v-else class="history-list">
+              <li v-for="(record, index) in history" :key="index" class="history-item">
+                <span class="food-name">{{ record.name }}</span>
+                <span class="history-time">{{ formatTime(record.timestamp) }}</span>
+              </li>
+            </ul>
           </div>
         </div>
       </div>
@@ -206,13 +217,13 @@
 <script setup lang="ts">
 import {
     Check,
+    ChevronDown,
     ChevronLeft,
+    ChevronRight,
     History,
+    Pencil,
     Plus,
     RefreshCw,
-    RotateCw,
-    Settings,
-    UtensilsCrossed,
     X,
 } from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
@@ -264,10 +275,10 @@ const defaultFoodItems: FoodItem[] = [
 ];
 
 const budgetOptions = [
-  { label: "不限", value: "all" },
-  { label: "便宜 (<30元)", value: "cheap" },
-  { label: "中等 (30-80元)", value: "medium" },
-  { label: "贵 (>80元)", value: "expensive" },
+  { label: "不限", short: "不限預算", value: "all" },
+  { label: "便宜 (<30元)", short: "便宜", value: "cheap" },
+  { label: "中等 (30-80元)", short: "中等", value: "medium" },
+  { label: "貴 (>80元)", short: "吃好一點", value: "expensive" },
 ];
 const cuisineOptions = [
   "中餐",
@@ -300,14 +311,69 @@ const currentItems = computed(() => {
   return items.length === 0 ? [defaultFoodItems[0]] : items;
 });
 
-const getItemStyle = (index: number) => {
-  const total = currentItems.value.length;
-  const angle = (360 / total) * index;
-  const radius = 110;
-  const radian = (angle * Math.PI) / 180;
-  return {
-    transform: `translate(${Math.sin(radian) * radius}px, ${-Math.cos(radian) * radius}px) rotate(${angle}deg)`,
-  };
+// ===== 轉盤外觀 =====
+
+const SLICE_COLORS = ["#F6D8C1", "#FFFFFF"];
+const SLICE_COLORS_ODD = ["#F6D8C1", "#FFFFFF", "#FBE7D6"];
+
+/** 每一格的角度；第 i 格的中心在 i * sliceAngle（從正上方順時針算） */
+const sliceAngle = computed(() => 360 / currentItems.value.length);
+
+const wheelGradient = computed(() => {
+  const n = currentItems.value.length;
+  if (n <= 1) return SLICE_COLORS[0];
+  const colors = n % 2 === 0 ? SLICE_COLORS : SLICE_COLORS_ODD;
+  const a = sliceAngle.value;
+  const stops = currentItems.value.map((_, i) => {
+    const c = colors[i % colors.length];
+    return `${c} ${i * a}deg ${(i + 1) * a}deg`;
+  });
+  return `conic-gradient(from ${-a / 2}deg, ${stops.join(", ")})`;
+});
+
+/** 格子少時橫排，格子多時改直排（沿半徑） */
+const isVerticalLabel = computed(() => currentItems.value.length > 8);
+
+/** 直排時一個字一行，太長就截斷 */
+const VERTICAL_MAX_CHARS = 5;
+const verticalChars = (name: string) => {
+  const chars = Array.from(name);
+  return chars.length > VERTICAL_MAX_CHARS
+    ? [...chars.slice(0, VERTICAL_MAX_CHARS - 1), "⋮"]
+    : chars;
+};
+
+const labelFontSize = computed(() => {
+  const n = currentItems.value.length;
+  if (n <= 8) return 14;
+  if (n <= 16) return 13;
+  if (n <= 24) return 12;
+  return 11;
+});
+
+const cuisineChipLabel = computed(() =>
+  selectedCuisines.value.length >= cuisineOptions.length
+    ? "全部菜系"
+    : `${selectedCuisines.value.length} 種菜系`,
+);
+
+const recentHistoryNames = computed(() =>
+  history.value
+    .slice(0, 3)
+    .map((r) => r.name)
+    .join("、"),
+);
+
+const describeItem = (item: FoodItem) => {
+  const budget = budgetOptions.find((b) => b.value === item.budget);
+  return budget && budget.value !== "all"
+    ? `${item.cuisine} · ${budget.label}`
+    : item.cuisine;
+};
+
+const pickBudget = (value: string) => {
+  selectedBudget.value = value;
+  saveData();
 };
 
 const spin = () => {
@@ -412,476 +478,548 @@ onMounted(() => {
 
 <style scoped lang="scss">
 .food-roulette {
+  --fr-bg: #fbf1ea;
+  --fr-surface: #ffffff;
+  --fr-text: #121214;
+  --fr-text-2: #5e5e64;
+  --fr-line: #e9d8cb;
+  --fr-accent: #c8551f;
+
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: #fafafa;
+  inset: 0;
+  z-index: 100;
+  background: var(--fr-bg);
+  color: var(--fr-text);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  z-index: 100;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+
+  &:disabled {
+    cursor: default;
+  }
+}
+
+.icon {
+  width: 20px;
+  height: 20px;
+}
+
+.icon-sm {
+  width: 18px;
+  height: 18px;
+}
+
+.icon-xs {
+  width: 16px;
+  height: 16px;
+}
+
+.round-btn {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--fr-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: transform 0.15s;
+
+  &.small {
+    width: 36px;
+    height: 36px;
+    background: var(--fr-bg);
+  }
+
+  &:active {
+    transform: scale(0.94);
+  }
 }
 
 .header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: 12px 20px 0;
   padding-top: max(12px, env(safe-area-inset-top));
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
   flex-shrink: 0;
 
-  .back-btn,
-  .settings-btn {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    border: none;
-    background: #f3f4f6;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
-    .icon {
-      width: 20px;
-      height: 20px;
-      color: #374151;
-    }
-    &:active {
-      transform: scale(0.95);
-      background: #e5e7eb;
-    }
-  }
-
-  .title {
-    font-size: 18px;
+  .header-title {
+    font-size: 17px;
     font-weight: 700;
-    color: #1f2937;
-    margin: 0;
   }
 }
 
 .content {
   flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 20px;
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  padding-bottom: max(20px, var(--safe-bottom, 0px));
-  gap: 24px;
-  overflow-y: auto;
+  gap: 14px;
 }
 
-.roulette-container {
-  position: relative;
-  width: 280px;
-  height: 280px;
+.intro {
+  .title {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  .subtitle {
+    margin: 2px 0 0;
+    font-size: 13px;
+    color: var(--fr-text-2);
+  }
+}
+
+/* ===== 篩選 chips ===== */
+.chips {
   display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 0 -20px;
+  padding: 0 20px 2px;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.chip {
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 17px;
+  border: 1px solid var(--fr-line);
+  background: var(--fr-surface);
+  font-size: 13px;
+  white-space: nowrap;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 2px;
+  transition:
+    background 0.15s,
+    color 0.15s;
+
+  &.active {
+    border-color: var(--fr-text);
+    background: var(--fr-text);
+    color: #ffffff;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+  }
+}
+
+.chip-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* ===== 轉盤 ===== */
+.wheel-wrap {
+  position: relative;
+  align-self: center;
+  width: min(300px, calc(100vw - 56px));
+  aspect-ratio: 1;
+  margin-top: 14px;
+  flex-shrink: 0;
 }
 
 .pointer {
   position: absolute;
-  top: 20px;
+  top: -14px;
   left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
-  .pointer-arrow {
-    width: 0;
-    height: 0;
-    border-left: 12px solid transparent;
-    border-right: 12px solid transparent;
-    border-top: 24px solid #ef4444;
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
-  }
+  width: 28px;
+  height: 30px;
+  margin-left: -14px;
+  z-index: 2;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.18));
 }
 
-.roulette-wheel {
+.wheel-rim {
   position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--fr-surface);
+  padding: 8px;
+  box-shadow: 0 14px 30px rgba(120, 70, 30, 0.16);
+}
+
+.wheel {
+  position: relative;
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  transition: transform 2s cubic-bezier(0.25, 0.1, 0.25, 1);
-  transform-origin: center center;
+  overflow: hidden;
+  transition: transform 2s cubic-bezier(0.15, 0.85, 0.2, 1);
+  will-change: transform;
 }
 
-.roulette-item {
+.slice-label {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.slice-text {
+  position: absolute;
+  left: 50%;
+  top: 13%;
+  max-width: 34%;
+  transform: translateX(-50%);
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &.vertical {
+    top: 5%;
+    max-width: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.1;
+  }
+}
+
+.spin-btn {
   position: absolute;
   top: 50%;
   left: 50%;
-  pointer-events: none;
-  .item-text {
-    position: absolute;
-    top: 0;
-    left: 0;
-    padding: 6px 10px;
-    background: #d4a5a5;
-    color: white;
-    font-size: 13px;
-    font-weight: 500;
-    border-radius: 8px;
-    white-space: nowrap;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-    pointer-events: auto;
-    transform: translate(-50%, -50%);
-  }
-}
-
-.center-circle {
-  position: absolute;
-  width: 80px;
-  height: 80px;
+  width: 84px;
+  height: 84px;
+  margin: -42px 0 0 -42px;
+  box-sizing: border-box;
   border-radius: 50%;
-  background: #ffa200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  z-index: 5;
-  .center-icon {
-    width: 36px;
-    height: 36px;
-    color: white;
-  }
-}
-
-.start-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 16px 48px;
-  background: #d4a5a5;
-  color: white;
-  font-size: 18px;
+  border: 6px solid #ffffff;
+  background: var(--fr-accent);
+  color: #ffffff;
+  font-size: 24px;
   font-weight: 700;
-  border: none;
-  border-radius: 50px;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(212, 165, 165, 0.4);
-  transition: all 0.2s;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s;
+  z-index: 2;
+
   &:active:not(:disabled) {
-    transform: scale(0.95);
+    transform: scale(0.94);
   }
+
   &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+    background: #d98a63;
   }
 }
 
-.bottom-actions {
-  display: flex;
-  gap: 16px;
-  .action-btn {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    padding: 12px 24px;
-    background: white;
-    border: 2px solid #e5e7eb;
-    border-radius: 12px;
-    cursor: pointer;
-    transition: all 0.2s;
-    color: var(--color-primary, #7dd3a8);
-    span:last-child {
-      font-size: 12px;
-      color: #6b7280;
-    }
-    &:active {
-      transform: scale(0.95);
-      background: #f9fafb;
-    }
-  }
-}
-
-.result-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 20px;
-}
-
-.result-content {
-  background: white;
-  border-radius: 24px;
-  padding: 32px;
-  max-width: 320px;
-  width: 100%;
-  max-height: calc(100vh - 40px);
-  max-height: calc(100dvh - 40px);
-  overflow-y: auto;
-  text-align: center;
-  h2 {
-    font-size: 24px;
-    margin: 16px 0;
-    color: #1f2937;
-  }
-  .result-name {
-    font-size: 32px;
-    font-weight: 700;
-    color: var(--color-primary, #7dd3a8);
-    margin: 16px 0;
-  }
-  .result-hint {
-    font-size: 14px;
-    color: #6b7280;
-    margin: 8px 0 24px;
-  }
-  .confirm-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    width: 100%;
-    padding: 14px;
-    background: var(--color-primary, #7dd3a8);
-    color: white;
-    font-size: 16px;
-    font-weight: 600;
-    border: none;
-    border-radius: 12px;
-    cursor: pointer;
-    &:active {
-      transform: scale(0.95);
-    }
-  }
-}
-
-.settings-overlay,
-.history-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.settings-content,
-.history-content {
-  background: white;
-  border-radius: 24px 24px 0 0;
-  max-width: 600px;
-  width: 100%;
-  max-height: 80vh;
-  max-height: 80dvh;
+/* ===== 結果卡 ===== */
+.result-card {
+  background: var(--fr-surface);
+  border-radius: 22px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
 
-  .settings-header,
-  .history-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 20px;
-    border-bottom: 1px solid #e5e7eb;
-    h3 {
-      font-size: 18px;
-      font-weight: 700;
-      margin: 0;
-    }
-    .close-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      border: none;
-      background: #f3f4f6;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-    }
+.result-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--fr-text-2);
+}
+
+.result-check {
+  width: 14px;
+  height: 14px;
+  color: var(--fr-accent);
+}
+
+.result-name {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+  word-break: break-all;
+}
+
+.result-detail {
+  font-size: 13px;
+  color: #3a3a40;
+}
+
+.result-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+
+  &.single {
+    grid-template-columns: 1fr;
+  }
+}
+
+.btn {
+  height: 48px;
+  border-radius: 24px;
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: transform 0.15s;
+
+  &:active:not(:disabled) {
+    transform: scale(0.97);
   }
 
-  .settings-body,
-  .history-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 20px;
-    padding-bottom: max(20px, calc(20px + var(--safe-bottom, 0px)));
+  &:disabled {
+    opacity: 0.5;
   }
+}
 
-  .settings-footer {
-    padding: 16px 20px;
-    padding-bottom: max(16px, calc(16px + var(--safe-bottom, 0px)));
-    border-top: 1px solid #e5e7eb;
-    display: flex;
-    gap: 12px;
+.btn-outline {
+  border: 1px solid var(--fr-line);
+  background: var(--fr-surface);
+}
 
-    .reset-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 14px;
-      background: white;
-      border: 2px solid #e5e7eb;
-      color: #6b7280;
-      font-size: 16px;
-      font-weight: 600;
-      border-radius: 12px;
-      cursor: pointer;
-      min-width: 120px;
-      &:active {
-        background: #f9fafb;
-      }
-    }
-    .save-btn {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 14px;
-      background: var(--color-primary, #7dd3a8);
-      color: white;
-      font-size: 16px;
-      font-weight: 600;
-      border: none;
-      border-radius: 12px;
-      cursor: pointer;
-    }
+.btn-dark {
+  border: none;
+  background: var(--fr-text);
+  color: #ffffff;
+}
+
+.history-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--fr-text-2);
+  font-size: 13px;
+  text-align: left;
+}
+
+.history-link-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-link-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* ===== 底部面板 ===== */
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  background: rgba(18, 18, 20, 0.42);
+  display: flex;
+  align-items: flex-end;
+}
+
+.sheet {
+  width: 100%;
+  max-height: 82vh;
+  background: var(--fr-surface);
+  border-radius: 28px 28px 0 0;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.sheet-grabber {
+  align-self: center;
+  width: 36px;
+  height: 5px;
+  margin-top: 10px;
+  border-radius: 3px;
+  background: #d6d5d0;
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px 4px;
+
+  h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
   }
+}
+
+.sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 20px 16px;
+}
+
+.sheet-footer {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid #f0efeb;
 }
 
 .setting-section {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
+
   h4 {
+    margin: 0 0 10px;
     font-size: 14px;
-    font-weight: 600;
-    color: #6b7280;
-    margin: 0 0 12px;
+    font-weight: 700;
   }
-  .budget-options,
-  .cuisine-options {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .budget-btn,
-  .cuisine-btn {
-    padding: 8px 16px;
-    background: white;
-    border: 2px solid #e5e7eb;
-    border-radius: 20px;
-    font-size: 14px;
-    color: #374151;
-    cursor: pointer;
-    transition: all 0.2s;
-    &.active {
-      border-color: var(--color-primary, #7dd3a8);
-      background: var(--color-primary, #7dd3a8);
-      color: white;
+}
+
+.option-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.custom-input {
+  display: flex;
+  gap: 8px;
+
+  input {
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--fr-line);
+    border-radius: 22px;
+    background: var(--fr-bg);
+    color: var(--fr-text);
+    font: inherit;
+    font-size: 15px;
+    outline: none;
+
+    &:focus {
+      border-color: var(--fr-accent);
     }
   }
-  .custom-input {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 12px;
-    input {
-      flex: 1;
-      padding: 10px 14px;
-      border: 2px solid #e5e7eb;
-      border-radius: 12px;
-      font-size: 14px;
-      &:focus {
-        outline: none;
-        border-color: var(--color-primary, #7dd3a8);
-      }
-    }
-    .add-btn {
-      width: 44px;
-      height: 44px;
-      background: var(--color-primary, #7dd3a8);
-      border: none;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      color: white;
-    }
-  }
-  .custom-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .custom-item {
+
+  .add-btn {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--fr-text);
+    color: #ffffff;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 10px 14px;
-    background: #f9fafb;
-    border-radius: 12px;
-    .remove-btn {
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      border: none;
-      background: #ef4444;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      color: white;
-    }
+    justify-content: center;
+  }
+}
+
+.custom-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.custom-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 0 4px 0 12px;
+  border-radius: 17px;
+  background: var(--fr-bg);
+  font-size: 13px;
+
+  .remove-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: var(--fr-text-2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 }
 
 .empty-state {
+  margin: 32px 0;
   text-align: center;
-  padding: 40px 20px;
-  color: #9ca3af;
-  p {
-    font-size: 14px;
-    margin: 12px 0 0;
-  }
+  font-size: 14px;
+  color: var(--fr-text-2);
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .history-item {
-  padding: 16px;
-  background: #f9fafb;
-  border-radius: 12px;
-  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  border-bottom: 1px solid #f0efeb;
+
   .food-name {
-    font-size: 16px;
-    font-weight: 600;
-    color: #1f2937;
-    margin-bottom: 4px;
+    font-size: 15px;
+    font-weight: 500;
   }
+
   .history-time {
     font-size: 12px;
-    color: #9ca3af;
+    color: var(--fr-text-2);
   }
 }
 
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s;
+.sheet-enter-active,
+.sheet-leave-active {
+  transition: background 0.25s;
+
+  .sheet {
+    transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
 }
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-.slide-up-enter-active,
-.slide-up-leave-active {
-  transition: transform 0.2s;
-}
-.slide-up-enter-from,
-.slide-up-leave-to {
-  transform: translateY(100%);
+
+.sheet-enter-from,
+.sheet-leave-to {
+  background: rgba(18, 18, 20, 0);
+
+  .sheet {
+    transform: translateY(100%);
+  }
 }
 </style>
