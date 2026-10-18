@@ -448,6 +448,28 @@ function goBackFromApp() {
   goBackToHome();
 }
 
+/** 右滑返回：先退手機裡的一層（面板、聊天、日記、App），退到主畫面或鎖屏才回 false，讓外面離開手機 */
+function handleBack(): boolean {
+  if (showSheet.value) {
+    showSheet.value = false;
+    return true;
+  }
+  const view = currentView.value;
+  if (view === "lock" || view === "home") return false;
+  if (view === "chat" && showDraftHistory.value) {
+    showDraftHistory.value = false;
+  } else if (view === "chat" && selectedChatId.value) {
+    selectedChatId.value = null;
+  } else if (view === "diary" && selectedDiaryId.value) {
+    selectedDiaryId.value = null;
+  } else {
+    goBackFromApp();
+  }
+  return true;
+}
+
+defineExpose({ handleBack });
+
 /** 點鎖屏通知：解鎖並直接打開那個聊天 */
 function openThreadFromLock(threadId: string) {
   lockRetry.value = false;

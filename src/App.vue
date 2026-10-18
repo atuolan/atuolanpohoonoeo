@@ -957,6 +957,29 @@ async function openBookFromShelf(meta: BookMeta) {
 // ===== 頭盔TA手機 =====
 const peekPhoneCharacterId = ref<string | null>(null);
 const peekPhoneChatId = ref<string | null>(null);
+const peekPhoneSelectRef = ref<InstanceType<typeof PeekPhoneSelectScreen> | null>(null);
+const peekPhoneScreenRef = ref<InstanceType<typeof PeekPhoneScreen> | null>(null);
+
+// 選好角色進手機也推一筆歷史，瀏覽器的返回才會回到選角色，不會跳過它
+function openPeekPhone(characterId: string, chatId: string) {
+  peekPhoneCharacterId.value = characterId;
+  peekPhoneChatId.value = chatId;
+  navigateToPage("peek-phone");
+}
+
+function leavePeekPhone() {
+  navigateBackWithFallback(() => navigateToPage("peek-phone-select", { mode: "replace" }));
+}
+
+// 離開手機（含瀏覽器返回）才清掉角色；從歷史前進回到沒有角色的手機頁就退回選角色
+watch(currentPage, (page) => {
+  if (page !== "peek-phone") {
+    peekPhoneCharacterId.value = null;
+    peekPhoneChatId.value = null;
+  } else if (!peekPhoneCharacterId.value || !peekPhoneChatId.value) {
+    navigateToPage("peek-phone-select", { mode: "replace" });
+  }
+});
 
 let isApplyingPopState = false;
 // 詳情頁開著時要改寫聊天條目：先退回詳情底下那一筆，等 popstate 到了再改寫
@@ -2831,11 +2854,11 @@ function handleGlobalSwipeBack() {
     fitness: goHome,
     fate: goHome,
     "note-board": goHome,
-    "peek-phone-select": goHome,
+    "peek-phone-select": () => {
+      if (!peekPhoneSelectRef.value?.handleBack()) goBackFromQuickNav();
+    },
     "peek-phone": () => {
-      navigateToPage("peek-phone-select", { mode: "replace" });
-      peekPhoneCharacterId.value = null;
-      peekPhoneChatId.value = null;
+      if (!peekPhoneScreenRef.value?.handleBack()) leavePeekPhone();
     },
     theater: goBackFromTheater,
   };
@@ -3038,14 +3061,9 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <!-- 頭盔TA手機 - 角色選擇 -->
     <PeekPhoneSelectScreen
       v-else-if="currentPage === 'peek-phone-select'"
-      @back="goHome"
-      @select="
-        (id: string, cId: string) => {
-          peekPhoneCharacterId = id;
-          peekPhoneChatId = cId;
-          currentPage = 'peek-phone';
-        }
-      "
+      ref="peekPhoneSelectRef"
+      @back="goBackFromQuickNav"
+      @select="openPeekPhone"
     />
 
     <!-- 頭盔TA手機 - 手機內容 -->
@@ -3054,12 +3072,9 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
         currentPage === 'peek-phone' && peekPhoneCharacterId && peekPhoneChatId
       "
       :character-id="peekPhoneCharacterId"
+      ref="peekPhoneScreenRef"
       :chat-id="peekPhoneChatId"
-      @back="
-        currentPage = 'peek-phone-select';
-        peekPhoneCharacterId = null;
-        peekPhoneChatId = null;
-      "
+      @back="leavePeekPhone"
     />
 
     <!-- 小劇場 -->
