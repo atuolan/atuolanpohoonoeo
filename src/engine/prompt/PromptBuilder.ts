@@ -278,6 +278,8 @@ export interface PromptBuilderOptions {
   charStickyNote?: string;
   /** {{user}} 主畫面的心情便籤（用於 {{userMoodNote}} 宏；空的時候「心情便籤」條目不輸出） */
   userMoodNote?: string;
+  /** 角色自己的待辦和行程清單（用於 {{charPlanner}} 宏；沒給的時候「角色待辦與行程」條目不輸出） */
+  charPlanner?: string;
   /** 表情包列表（用於 {{stickerList}} 宏） */
   stickerList?: string[];
   /** 面對面模式（開啟時使用面對面模式的提示詞） */
@@ -635,6 +637,7 @@ export class PromptBuilder {
         charStatus: options.charStatus || "還沒設定",
         charStickyNote: options.charStickyNote || "還沒寫過",
         userMoodNote: options.userMoodNote || "",
+        charPlanner: options.charPlanner || "",
         ...phoneContextVars,
       },
     });
@@ -787,6 +790,7 @@ export class PromptBuilder {
         charStatus: options.charStatus || "還沒設定",
         charStickyNote: options.charStickyNote || "還沒寫過",
         userMoodNote: options.userMoodNote || "",
+        charPlanner: options.charPlanner || "",
         ...phoneContextVars,
       },
     });
@@ -2252,6 +2256,15 @@ export class PromptBuilder {
       case "userMoodNote":
         // 只有單人線上聊天帶：面對面、群聊、通話沒有便利貼可回
         if (this.getChatPromptMode() !== "online" || !this.options.userMoodNote) return null;
+        if (promptDef && promptDef.content) {
+          const content = await this.macroEngine.substitute(promptDef.content);
+          return content ? { role: getRole(), content, identifier } : null;
+        }
+        return null;
+
+      case "charPlanner":
+        // 只有單人線上聊天帶；聊天頁沒給清單（群聊、通話）時不輸出
+        if (this.getChatPromptMode() !== "online" || !this.options.charPlanner) return null;
         if (promptDef && promptDef.content) {
           const content = await this.macroEngine.substitute(promptDef.content);
           return content ? { role: getRole(), content, identifier } : null;

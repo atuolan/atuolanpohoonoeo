@@ -7,6 +7,7 @@ import type { CalendarEventData } from "@/types/calendar";
 import type { GroupActionType } from "@/types/chat";
 import type { ScheduleCallData } from "@/types/incomingCall";
 import { normalizeEventTime } from "@/utils/calendarEventFormat";
+import { CHAR_PLANNER_TAG_REGEX } from "@/utils/charPlanner";
 import { PLURK_BLOCK_PATTERN, PLURK_BLOCK_STRIP_PATTERN } from "@/utils/plurkFormat";
 import { repairXmlTags } from "./XmlFuzzyRepair";
 
@@ -1272,6 +1273,7 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
         .replace(CHAR_STATUS_TAG_REGEX, "")
         .replace(STICKY_NOTE_TAG_REGEX, "")
         .replace(MOOD_REPLY_TAG_REGEX, "")
+        .replace(CHAR_PLANNER_TAG_REGEX, "")
         .replace(/<time-(?:jump|advance)\s+[^>]*?\s*\/?>(?:<\/time-(?:jump|advance)>)?/gi, "")
         .trim();
     }

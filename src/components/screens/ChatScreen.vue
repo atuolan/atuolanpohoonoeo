@@ -21,6 +21,7 @@ import AISummaryPanel from "@/components/modals/AISummaryPanel.vue";
 import AffinityPanel from "@/components/modals/AffinityPanel.vue";
 import ChatInfoModal from "@/components/modals/ChatInfoModal.vue";
 import DiaryViewModal from "@/components/modals/DiaryViewModal.vue";
+import CharPlannerSheet from "@/components/modals/CharPlannerSheet.vue";
 import FaceToFacePanel from "@/components/modals/f2f-panel/FaceToFacePanel.vue";
 import FavoriteAudioModal from "@/components/modals/FavoriteAudioModal.vue";
 import GameScorePickerModal from "@/components/modals/GameScorePickerModal.vue";
@@ -232,6 +233,17 @@ import {
 } from "@/utils/chatMessageMapping";
 import { buildChatMetadataFromState } from "@/utils/chatMetadataBuilder";
 import { saveCharStatus } from "@/services/charStatus";
+import {
+  applyCharPlannerOps,
+  CHAR_PLANNER_CHANGED_EVENT,
+  loadCharPlanner,
+  markCharPlannerSeen,
+  replaceCharPlannerState,
+  replanCharPlannerForRound,
+  type CharPlannerChangedDetail,
+} from "@/services/charPlanner";
+import type { CharPlanner } from "@/types/charPlanner";
+import { buildPlannerPromptText, parseCharPlannerTags, toDateString } from "@/utils/charPlanner";
 import { addCharNote, markMoodReplied } from "@/services/noteBoard";
 import { getNoteBoardPromptContext } from "@/services/noteBoardPrompt";
 import { createGreetingMessages } from "@/utils/chatGreetingMessages";
@@ -1827,7 +1839,10 @@ const {
   saveChat,
   deleteMessage: deleteCurrentChatMessage,
   triggerAIResponse,
-  onRoundReplaced: syncRoundCalendarEvents,
+  onRoundReplaced: async (removed, restored) => {
+    await syncRoundCalendarEvents(removed, restored);
+    await syncRoundPlanner(removed, restored);
+  },
 });
 
 // ===== 語音錄音 composable =====
@@ -2065,6 +2080,100 @@ const activeCoupleAvatarId = ref<string | null>(null);
 
 // ===== 角色狀態（AI 用 <char-status> 更新，顯示在頂欄名字下方） =====
 const charStatus = ref<CharStatus | null>(null);
+
+// ===== 角色待辦與行程（AI 用 <char-todo>／<char-plan> 更新，頂欄打開「他的今天」看） =====
+const charPlanner = ref<CharPlanner | null>(null);
+const showPlannerSheet = ref(false);
+// 有新的改動、使用者還沒打開看過：頂欄亮小點
+const plannerHasNews = computed(() => {
+  const p = charPlanner.value;
+  if (!p || p.updatedAt <= (p.seenAt ?? 0)) return false;
+  return p.todos.some((t) => !t.secret) || p.plans.some((pl) => !pl.secret);
+});
+
+async function loadPlannerForChat(chatId: string) {
+  charPlanner.value = null;
+  try {
+    const planner = await loadCharPlanner(chatId);
+    if (currentChatId.value === chatId) charPlanner.value = planner;
+  } catch (e) {
+    console.error("[ChatScreen] 載入角色待辦與行程失敗:", e);
+  }
+}
+
+// 主動訊息、偷窺手機在背景改了也要跟著更新
+function handleCharPlannerChanged(event: Event) {
+  const detail = (event as CustomEvent<CharPlannerChangedDetail>).detail;
+  if (detail?.chatId === currentChatId.value) charPlanner.value = detail.planner;
+}
+onMounted(() => window.addEventListener(CHAR_PLANNER_CHANGED_EVENT, handleCharPlannerChanged));
+onUnmounted(() => window.removeEventListener(CHAR_PLANNER_CHANGED_EVENT, handleCharPlannerChanged));
+
+/** 聊天的有效日期（有假時間就照假時間） */
+function chatToday(): string {
+  return toDateString(fakeTime.getChatNow());
+}
+
+async function openPlannerSheet() {
+  closeRail();
+  showPlannerSheet.value = true;
+  const chatId = currentChatId.value;
+  if (!chatId || !charPlanner.value) return;
+  charPlanner.value = { ...charPlanner.value, seenAt: Date.now() };
+  await markCharPlannerSeen(chatId).catch((e) => console.error("[ChatScreen] 記錄看過待辦失敗:", e));
+}
+
+/** 使用者在「他的今天」刪掉記錯的 */
+async function deletePlannerItem(kind: "todo" | "plan", id: string) {
+  const chatId = currentChatId.value;
+  const charId = props.characterId || currentCharacter.value?.id;
+  if (!chatId || !charId) return;
+  try {
+    const saved = await replaceCharPlannerState(chatId, charId, (state) =>
+      kind === "todo"
+        ? { ...state, todos: state.todos.filter((t) => t.id !== id) }
+        : { ...state, plans: state.plans.filter((p) => p.id !== id) },
+    );
+    // 自己刪的不算新消息
+    charPlanner.value = { ...saved, seenAt: Date.now() };
+    await markCharPlannerSeen(chatId);
+  } catch (e) {
+    console.error("[ChatScreen] 刪除待辦／行程失敗:", e);
+  }
+}
+
+/** 回覆裡的待辦、行程標籤（群聊不處理） */
+async function handleCharPlannerTags(raw: string, turnId?: string) {
+  if (isGroupChat.value) return;
+  const ops = parseCharPlannerTags(raw);
+  const chatId = currentChatId.value;
+  const charId = props.characterId || currentCharacter.value?.id;
+  if (ops.length === 0 || !chatId || !charId) return;
+  try {
+    const saved = await applyCharPlannerOps(chatId, charId, ops, {
+      source: "chat",
+      today: chatToday(),
+      turnId: turnId || undefined,
+    });
+    if (saved && currentChatId.value === chatId) charPlanner.value = saved;
+  } catch (e) {
+    console.error("[ChatScreen] 更新角色待辦與行程失敗:", e);
+  }
+}
+
+/** 重新生成、換候選回覆：被換下那輪改的待辦、行程換回去，換回來的那輪再套回 */
+async function syncRoundPlanner(removed: Message[], restored: Message[]) {
+  const chatId = currentChatId.value;
+  const removedTurn = removed.find((m) => m.turnId)?.turnId;
+  const restoredTurn = restored.find((m) => m.turnId)?.turnId;
+  if (!chatId || (!removedTurn && !restoredTurn)) return;
+  try {
+    const saved = await replanCharPlannerForRound(chatId, removedTurn, restoredTurn);
+    if (saved && currentChatId.value === chatId) charPlanner.value = saved;
+  } catch (e) {
+    console.error("[ChatScreen] 換回角色待辦與行程失敗:", e);
+  }
+}
 
 async function handleChangeChatUserAvatar(avatar: string | undefined) {
   userAvatarOverride.value = avatar;
@@ -4952,6 +5061,15 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       // 傳入這個角色上一張紙條（{{charStickyNote}}）與 user 的心情（{{userMoodNote}}）
       charStickyNote: noteBoardContext.charStickyNote,
       userMoodNote: noteBoardContext.moodNote,
+      // 角色自己的待辦和行程（{{charPlanner}}；群聊不帶）
+      charPlanner:
+        isGroupChat.value || !currentChatId.value
+          ? undefined
+          : buildPlannerPromptText(
+              charPlanner.value ?? { todos: [], plans: [] },
+              chatToday(),
+              effectivePersona.value?.name || "User",
+            ),
       // 傳入表情包列表
       stickerList: stickerNames,
       // 傳入面對面模式狀態
@@ -6336,6 +6454,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
             if (parsed.hasCharStatus && parsed.charStatusData) {
               await handleCharStatusUpdate(parsed.charStatusData.text);
             }
+
+            // 處理角色待辦與行程標籤
+            await handleCharPlannerTags(finalContent, generationTurnId);
 
             // 處理便利貼標籤
             if (parsed.hasStickyNote && parsed.stickyNoteData) {
@@ -8412,6 +8533,8 @@ async function loadOrCreateChat(overrideChatId?: string) {
 
         // 載入角色狀態
         charStatus.value = chat.charStatus ?? null;
+        // 載入角色待辦與行程（另外存，不在聊天記錄上）
+        void loadPlannerForChat(chat.id);
 
         // 載入總結設定
         if (chat.summarySettings) {
@@ -9829,6 +9952,9 @@ useChatCleanup({
       @open-minimax-tts-settings="openMinimaxTTSSettings"
       @toggle-more-menu="toggleMoreMenu"
       @open-chat-details="openChatDetails"
+      :planner-available="!isGroupChat"
+      :planner-has-news="plannerHasNews"
+      @open-planner="openPlannerSheet"
       @navigate="onHeaderNavigate"
       @open-search-bar="openSearchBar"
       @open-chat-info="openChatInfo"
@@ -10640,6 +10766,17 @@ useChatCleanup({
         @refresh-summaries="loadSummariesAndDiaries"
         :summarize-batch-fn="summarizeSingleBatch"
         :preview-manual-summary-fn="previewManualSummary"
+      />
+
+      <!-- 角色的待辦和行程 -->
+      <CharPlannerSheet
+        v-if="showPlannerSheet"
+        :planner="charPlanner"
+        :char-name="displayCharacterName || characterName"
+        :today="chatToday()"
+        @close="showPlannerSheet = false"
+        @delete-todo="(id: string) => deletePlannerItem('todo', id)"
+        @delete-plan="(id: string) => deletePlannerItem('plan', id)"
       />
 
       <!-- 日記查看模態框 -->

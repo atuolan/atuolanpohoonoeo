@@ -1156,6 +1156,14 @@ export class ProactiveMessageService {
       // 便簽留言板：這個角色上一張紙條與 user 最新送出的心情；記下這輪帶的心情給 <mood-reply> 對應
       const { getNoteBoardPromptContext } = await import("@/services/noteBoardPrompt");
       const noteBoardContext = await getNoteBoardPromptContext(chat.id);
+      // 角色自己的待辦和行程（跟聊天頁帶的一樣）
+      const { loadCharPlanner } = await import("@/services/charPlanner");
+      const { buildPlannerPromptText, toDateString } = await import("@/utils/charPlanner");
+      const charPlannerText = buildPlannerPromptText(
+        (await loadCharPlanner(chat.id)) ?? { todos: [], plans: [] },
+        toDateString(computeChatNow(chat)),
+        currentPersona?.name || "User",
+      );
       const promptBuilder = new PromptBuilder({
         character,
         lorebooks: characterLorebooks,
@@ -1184,6 +1192,7 @@ export class ProactiveMessageService {
         charStatus: chat.charStatus?.text,
         charStickyNote: noteBoardContext.charStickyNote,
         userMoodNote: noteBoardContext.moodNote,
+        charPlanner: charPlannerText,
       });
 
       const promptData = await promptBuilder.build();
@@ -1536,6 +1545,21 @@ export class ProactiveMessageService {
             } catch (error) {
               console.error("[ProactiveMessage] 角色狀態更新失敗:", error);
             }
+          }
+
+          // 處理角色待辦與行程標籤
+          try {
+            const { parseCharPlannerTags, toDateString } = await import("@/utils/charPlanner");
+            const plannerOps = parseCharPlannerTags(aiContent);
+            if (plannerOps.length > 0) {
+              const { applyCharPlannerOps } = await import("@/services/charPlanner");
+              await applyCharPlannerOps(chat.id, character.id, plannerOps, {
+                source: "chat",
+                today: toDateString(computeChatNow(chat)),
+              });
+            }
+          } catch (error) {
+            console.error("[ProactiveMessage] 角色待辦與行程更新失敗:", error);
           }
 
           // 處理便利貼與回覆心情標籤（釘上便簽留言板，主畫面的心情便籤會貼出小紙條）

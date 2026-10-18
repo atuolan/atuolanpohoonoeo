@@ -12,6 +12,7 @@ import {
   Flower2,
   ImagePlus,
   Info,
+  ListChecks,
   Moon,
   Pencil,
   PhoneIncoming,
@@ -54,6 +55,10 @@ const props = defineProps<{
   lastOutputState: LastOutputState | "off";
   /** 預留：角色此刻在做什麼（例如「在看窗外的雨」），空字串時不顯示 */
   characterStatus?: string;
+  /** 單人聊天才有角色待辦與行程 */
+  plannerAvailable?: boolean;
+  /** 待辦或行程有新的改動，使用者還沒看過 */
+  plannerHasNews?: boolean;
   groupMemberCount: number;
   showRail: boolean;
   currentUserAvatar: string;
@@ -130,6 +135,7 @@ const emit = defineEmits<{
   (e: "open-minimax-tts-settings"): void;
   (e: "toggle-more-menu"): void;
   (e: "open-chat-details"): void;
+  (e: "open-planner"): void;
   (e: "navigate", page: "character" | "worldbook" | "settings" | "peek-phone"): void;
   (e: "open-search-bar"): void;
   (e: "open-chat-info"): void;
@@ -359,6 +365,17 @@ const isDarkBackground = computed(() =>
       <p v-else-if="isGenerating" class="chat-status">正在輸入...</p>
       <!-- 人數含自己，與群組詳情一致 -->
       <p v-else-if="isGroupChat" class="chat-status">{{ groupMemberCount + 1 }} 位成員</p>
+      <!-- 點狀態看角色的待辦和行程 -->
+      <button
+        v-else-if="characterStatus && plannerAvailable"
+        type="button"
+        class="chat-status chat-status-btn"
+        title="看待辦和行程"
+        @click.stop="emit('open-planner')"
+      >
+        <span>{{ characterStatus }}</span>
+        <span v-if="plannerHasNews" class="planner-dot" aria-label="有新的待辦或行程" />
+      </button>
       <p v-else-if="characterStatus" class="chat-status">{{ characterStatus }}</p>
     </div>
 
@@ -752,6 +769,16 @@ const isDarkBackground = computed(() =>
         </Transition>
       </div>
 
+      <button
+        v-if="plannerAvailable"
+        class="header-btn planner-btn"
+        title="待辦與行程"
+        @click.stop="emit('open-planner')"
+      >
+        <ListChecks :size="20" :stroke-width="1.75" />
+        <span v-if="plannerHasNews" class="planner-dot" aria-label="有新的待辦或行程" />
+      </button>
+
       <button class="header-btn" title="聊天詳情" @click.stop="emit('open-chat-details')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none" />
@@ -1094,6 +1121,24 @@ const isDarkBackground = computed(() =>
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.planner-btn {
+  position: relative;
+}
+
+.planner-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: #ef4444;
+
+  .planner-btn & {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+  }
 }
 
 .chat-status-btn {
