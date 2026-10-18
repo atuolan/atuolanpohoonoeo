@@ -7,8 +7,15 @@ import { extractImagesFromMessages } from "@/db/operations";
 import {
   getBackupGroupFilename,
   getBackupPartIndexFromFilename,
+  type BackupAudioBlobEntry,
 } from "@/services/AutoBackupService";
+import {
+  shouldBackupAppSettingsKey,
+  shouldBackupLocalStorageKey,
+  shouldBackupSettingsKey,
+} from "@/services/backupCoverage";
 import { getLegacyBackupService } from "@/services/LegacyBackupService";
+import { DATA_URL_MEDIA_KEYS } from "@/utils/backupMediaExtractor";
 import { saveMessages, upsertMessages } from "@/storage/chatMessageStorage";
 import { refreshChatDerivedMetadata, saveChatMetadata } from "@/storage/chatStorage";
 import {
@@ -103,7 +110,7 @@ export function useBackupImport() {
     }
   }
 
-  // 從檔名推斷 MIME 類型
+  // 從檔名推斷 MIME 類型（音訊副檔名對照 backupMediaExtractor 的 audioExtFromMime）
   function getMimeTypeFromFilename(filename: string): string {
     const ext = filename.split(".").pop()?.toLowerCase();
     const mimeMap: Record<string, string> = {
@@ -112,6 +119,17 @@ export function useBackupImport() {
       png: "image/png",
       gif: "image/gif",
       webp: "image/webp",
+      svg: "image/svg+xml",
+      avif: "image/avif",
+      bmp: "image/bmp",
+      mp3: "audio/mpeg",
+      m4a: "audio/mp4",
+      wav: "audio/wav",
+      ogg: "audio/ogg",
+      webm: "audio/webm",
+      aac: "audio/aac",
+      flac: "audio/flac",
+      opus: "audio/opus",
     };
     return mimeMap[ext || ""] || "image/png";
   }
@@ -313,6 +331,8 @@ export function useBackupImport() {
     let mediaFiles: Record<string, Uint8Array> = {};
     let backupPart: { backupId: string; partIndex: number; totalParts?: number } | undefined;
     let segmentFileEntries: Array<[string, Uint8Array]> = [];
+    /** 本包的錄音清單（audio-blobs.json）；錄音本體在同包的 media/ */
+    let audioBlobEntries: BackupAudioBlobEntry[] = [];
 
     // 檢查檔案類型
     if (fileName.endsWith(".zip")) {
@@ -391,14 +411,24 @@ export function useBackupImport() {
         const chatFileEntries = getZipChatJsonEntries(files);
         segmentFileEntries = getZipChatSegmentEntries(files);
 
+        const audioManifestEntry = fileEntries.find(
+          ([name]) => getZipEntryBaseName(name) === "audio-blobs.json",
+        );
+        if (audioManifestEntry) {
+          const manifest = JSON.parse(strFromU8(audioManifestEntry[1]));
+          audioBlobEntries = Array.isArray(manifest?.records) ? manifest.records : [];
+        }
+
         // 檢查必要檔案（相容 backup.json 和 data.json 兩種命名）。
-        // 分包備份只有第 1 包有 backup.json，後續分包只裝聊天。
+        // 分包備份只有第 1 包有 backup.json，後續分包只裝聊天或錄音。
         const backupEntry = findBackupJsonEntry(files);
         if (backupEntry) {
           data = JSON.parse(strFromU8(backupEntry[1]));
         } else if (
           backupPart &&
-          (chatFileEntries.length > 0 || segmentFileEntries.length > 0)
+          (chatFileEntries.length > 0 ||
+            segmentFileEntries.length > 0 ||
+            audioBlobEntries.length > 0)
         ) {
           data = {
             version: 1,
@@ -732,10 +762,11 @@ export function useBackupImport() {
       }
     }
 
-    // 導入舊版 settings（key-value 格式，還原媒體路徑為 base64）
+    // 導入舊版 settings（key-value 格式，還原媒體路徑為 base64）。
+    // 舊備份裡有這台裝置不該被蓋掉的 key（例如自動備份資料夾），要跳過
     if (data.oldSettings && Array.isArray(data.oldSettings)) {
       for (const item of data.oldSettings) {
-        if (item.key && item.value !== undefined) {
+        if (item.key && item.value !== undefined && shouldBackupSettingsKey(item.key)) {
           restoreMediaPathsInValue(item, "value", mediaFiles);
           await db.put("settings", item.value, item.key);
         }
@@ -930,14 +961,81 @@ export function useBackupImport() {
         };
         req.onsuccess = (e) => {
           const idb = (e.target as IDBOpenDBRequest).result;
-          const tx = idb.transaction(["canvas_layout"], "readwrite");
-          const store = tx.objectStore("canvas_layout");
-          store.put(data.canvasLayout);
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => resolve();
+          const done = () => {
+            idb.close();
+            resolve();
+          };
+          try {
+            const tx = idb.transaction(["canvas_layout"], "readwrite");
+            const store = tx.objectStore("canvas_layout");
+            store.put(data.canvasLayout);
+            tx.oncomplete = done;
+            tx.onerror = done;
+          } catch (err) {
+            // 資料庫已是 v1 卻沒有 canvas_layout 表（只被開過、沒建表）：略過，不能卡住整個導入
+            console.warn("[Import] canvas layout 無法寫入:", err);
+            done();
+          }
         };
         req.onerror = () => resolve();
       });
+    }
+
+    // 以下是後來補進備份的資料；舊備份沒有這些 key，就什麼都不做
+    for (const [key] of DATA_URL_MEDIA_KEYS) {
+      const list = data[key];
+      if (!Array.isArray(list)) continue;
+      for (let i = 0; i < list.length; i++) {
+        restoreMediaPathsInValue(list, i, mediaFiles);
+      }
+    }
+
+    // 其他 appSettings（便簽留言板、伴讀、閱讀偏好…）
+    if (Array.isArray(data.appSettingsExtra)) {
+      for (const record of data.appSettingsExtra) {
+        if (typeof record?.id === "string" && shouldBackupAppSettingsKey(record.id)) {
+          await db.put("appSettings", record);
+        }
+      }
+    }
+
+    for (const [key, storeName] of [
+      ["favoriteAudios", "favoriteAudios"],
+      ["favoriteAudioGroups", "favoriteAudioGroups"],
+      ["peekPhoneData", "peekPhoneData"],
+      ["imageGallery", "imageCache"],
+      ["announcementAcks", "announcementAcks"],
+    ] as const) {
+      if (!Array.isArray(data[key])) continue;
+      for (const record of data[key]) {
+        await db.put(storeName, record);
+      }
+    }
+
+    if (data.localStorage && typeof data.localStorage === "object") {
+      for (const [key, value] of Object.entries(data.localStorage)) {
+        if (typeof value !== "string" || !shouldBackupLocalStorageKey(key)) continue;
+        try {
+          localStorage.setItem(key, value);
+        } catch (e) {
+          console.warn(`[Import] localStorage「${key}」寫入失敗:`, e);
+        }
+      }
+    }
+
+    // 錄音：本包的 media/ 檔還原成 Blob，id 不變，訊息與收藏裡的 audioBlobId 才對得上
+    let importedAudioCount = 0;
+    for (const entry of audioBlobEntries) {
+      const bytes = entry?.media ? mediaFiles[entry.media] : undefined;
+      if (!entry?.id || !bytes) continue;
+      const mimeType = entry.mimeType || getMimeTypeFromFilename(entry.media);
+      await db.put("audio-blobs", {
+        id: entry.id,
+        blob: new Blob([bytes], { type: mimeType }),
+        mimeType,
+        createdAt: entry.createdAt,
+      });
+      importedAudioCount++;
     }
 
     return {
@@ -962,6 +1060,9 @@ export function useBackupImport() {
       "閱讀進度": data.bookProgress?.length || 0,
       "自訂提示詞": data.promptLibrary?.length || 0,
       "向量嵌入": data.vectorEmbeddings?.length || 0,
+      "錄音": importedAudioCount,
+      "語音收藏": data.favoriteAudios?.length || 0,
+      "圖庫圖片": data.imageGallery?.length || 0,
       "媒體": Object.keys(mediaFiles).length,
       },
       part: backupPart,
@@ -1062,8 +1163,9 @@ export function useBackupImport() {
         }
       }
 
+      const hiddenWhenZero = new Set(["聊天續段", "錄音", "語音收藏", "圖庫圖片"]);
       const stats = Object.entries(totals)
-        .filter(([key, value]) => key !== "聊天續段" || value > 0)
+        .filter(([key, value]) => !hiddenWhenZero.has(key) || value > 0)
         .map(([key, value]) => `${key}: ${value}`)
         .join("\n");
       const fileCount = files.length > 1 ? `（${files.length} 個檔案）` : "";
