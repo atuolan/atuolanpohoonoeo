@@ -34,7 +34,7 @@ const COPY: Record<PromptResetGuideMode, { label: string; changes: string; extra
   },
   faceToFace: {
     label: "面對面",
-    changes: "正文加入心聲，「字數更少」改成預設關閉，外語翻譯的格式和聊天訊息統一。",
+    changes: "新增「反截斷」條目，回覆會寫完整再收尾，結尾的完結標記會自動隱藏；收尾句拿掉「讓勇者大人活下來」。",
   },
 };
 

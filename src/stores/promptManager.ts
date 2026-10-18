@@ -54,8 +54,9 @@ const PROMPT_MANAGER_CONFIG_VERSION = 4;
  * 4：篝火預設改寫開場手札與涅芙設定、說書順序加入角色自帶思維鏈、結尾條目加上收尾句
  * 5：開場手札與涅芙設定改寫為「溫養靈魂、深層共鳴」口吻，拿掉「勇者會死掉」的續命說法
  * 6：與線上、群聊一起重置；正文加心聲、「字數更少」預設關閉、翻譯改成「外語<br>中文翻譯」
+ * 7：新增「反截斷」條目（寫完整再收尾，結尾加 --- ✦ --- 標記，由內建正則隱藏），收尾句拿掉「讓勇者大人活下來」
  */
-export const FACE_TO_FACE_PROMPT_RESET_VERSION = 6;
+export const FACE_TO_FACE_PROMPT_RESET_VERSION = 7;
 
 /**
  * 線上模式提示詞強制重置版本（規則同面對面）。
