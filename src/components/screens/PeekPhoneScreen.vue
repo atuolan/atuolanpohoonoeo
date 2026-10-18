@@ -1,36 +1,56 @@
 <script setup lang="ts">
+import PeekCapsule from "@/components/peek-phone/PeekCapsule.vue";
+import PeekHomeView from "@/components/peek-phone/PeekHomeView.vue";
+import PeekLockView from "@/components/peek-phone/PeekLockView.vue";
+import PeekSheet from "@/components/peek-phone/PeekSheet.vue";
+import {
+  avatarColor,
+  batteryLevel,
+  formatClock,
+  formatRelative,
+  initialOf,
+  latestNotifications,
+  MOOD_LABELS,
+  moodLine,
+  nextScheduleItem,
+  photoTone,
+  toMillis,
+  type HomeApp,
+} from "@/components/peek-phone/peekPhoneView";
 import { db, DB_STORES } from "@/db/database";
 import { loadMessages } from "@/storage/chatMessageStorage";
 import { useCharactersStore } from "@/stores";
 import { usePeekPhoneStore } from "@/stores/peekPhone";
 import type { StoredCharacter } from "@/types/character";
 import type { Chat } from "@/types/chat";
-import type { PeekPhoneTab } from "@/types/peekPhone";
+import type { PeekChatMessage, PeekDiaryEntry, PeekPhoneTab } from "@/types/peekPhone";
 import {
-    AlertTriangle,
-    ArrowLeft,
-    Battery,
-    BookOpen,
-    Calendar,
-    Camera,
-    ChevronLeft,
-    Clock,
-    CreditCard,
-    EyeOff,
-    FileText,
-    Globe,
-    Image,
-    ListChecks,
-    Lock,
-    Loader2,
-    MessageCircle,
-    RefreshCw,
-    Search,
-    Send,
-    Signal,
-    Smile,
-    UtensilsCrossed,
-    Wifi,
+  AlertTriangle,
+  Angry,
+  ArrowUp,
+  BookOpen,
+  Calendar,
+  Camera,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  CreditCard,
+  EyeOff,
+  FileText,
+  Frown,
+  Globe,
+  Image,
+  Laugh,
+  ListChecks,
+  Loader2,
+  Lock,
+  Meh,
+  MessageCircle,
+  RefreshCw,
+  Search,
+  Smile,
+  UtensilsCrossed,
+  X,
 } from "lucide-vue-next";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
@@ -47,9 +67,13 @@ const charName = computed(
   () => character.value?.nickname || character.value?.data?.name || "角色",
 );
 const charAvatar = computed(() => character.value?.avatar || "");
+// 同一個角色的手機，不管用哪段聊天都是同一支
+const battery = computed(() => batteryLevel(props.characterId));
 
-// 當前視圖
-const currentView = ref<"home" | PeekPhoneTab>("home");
+// 當前視圖：拿起手機先看到鎖定畫面
+const currentView = ref<"lock" | "home" | PeekPhoneTab>("lock");
+// 窺視選單（點頂部膠囊）
+const showSheet = ref(false);
 
 // 時間顯示
 const now = ref(new Date());
@@ -62,90 +86,26 @@ onUnmounted(() => {
   // peekPhoneStore.abortAll();
 });
 
-const timeStr = computed(() => {
-  const h = String(now.value.getHours()).padStart(2, "0");
-  const m = String(now.value.getMinutes()).padStart(2, "0");
-  return `${h}:${m}`;
-});
-const dateStr = computed(() => {
-  const d = now.value;
-  const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
-  return `${d.getMonth() + 1}月${d.getDate()}日 星期${weekdays[d.getDay()]}`;
-});
-
-// 桌面 App 列表
+// App 列表（group 對應生成階段）
 const phoneApps = [
-  {
-    key: "chat" as PeekPhoneTab,
-    label: "訊息",
-    icon: MessageCircle,
-    color: "#ffffff",
-    group: "A" as const,
-  },
-  {
-    key: "schedule" as PeekPhoneTab,
-    label: "行事曆",
-    icon: Calendar,
-    color: "#ffffff",
-    group: "B" as const,
-  },
-  {
-    key: "meals" as PeekPhoneTab,
-    label: "飲食記錄",
-    icon: UtensilsCrossed,
-    color: "#ffffff",
-    group: "B" as const,
-  },
-  {
-    key: "balance" as PeekPhoneTab,
-    label: "錢包",
-    icon: CreditCard,
-    color: "#ffffff",
-    group: "C" as const,
-  },
-  {
-    key: "memo" as PeekPhoneTab,
-    label: "備忘錄",
-    icon: ListChecks,
-    color: "#ffffff",
-    group: "B" as const,
-  },
-  {
-    key: "notes" as PeekPhoneTab,
-    label: "記事本",
-    icon: FileText,
-    color: "#ffffff",
-    group: "C" as const,
-  },
-  {
-    key: "diary" as PeekPhoneTab,
-    label: "日記",
-    icon: BookOpen,
-    color: "#ffffff",
-    group: "C" as const,
-  },
-  {
-    key: "gallery" as PeekPhoneTab,
-    label: "相冊",
-    icon: Image,
-    color: "#ffffff",
-    group: "D" as const,
-  },
-  {
-    key: "browser" as PeekPhoneTab,
-    label: "瀏覽器",
-    icon: Globe,
-    color: "#ffffff",
-    group: "D" as const,
-  },
-  {
-    key: "hidden" as PeekPhoneTab,
-    label: "私密相冊",
-    icon: Lock,
-    color: "#ffffff",
-    group: "D" as const,
-  },
+  { key: "chat" as PeekPhoneTab, label: "訊息", icon: MessageCircle, group: "A" as const },
+  { key: "schedule" as PeekPhoneTab, label: "行事曆", icon: Calendar, group: "B" as const },
+  { key: "meals" as PeekPhoneTab, label: "飲食記錄", icon: UtensilsCrossed, group: "B" as const },
+  { key: "balance" as PeekPhoneTab, label: "錢包", icon: CreditCard, group: "C" as const },
+  { key: "memo" as PeekPhoneTab, label: "備忘錄", icon: ListChecks, group: "B" as const },
+  { key: "notes" as PeekPhoneTab, label: "記事本", icon: FileText, group: "C" as const },
+  { key: "diary" as PeekPhoneTab, label: "日記", icon: BookOpen, group: "C" as const },
+  { key: "gallery" as PeekPhoneTab, label: "相簿", icon: Image, group: "D" as const },
+  { key: "browser" as PeekPhoneTab, label: "瀏覽器", icon: Globe, group: "D" as const },
+  // 不放桌面，從相簿進去
+  { key: "hidden" as PeekPhoneTab, label: "已隱藏", icon: Lock, group: "D" as const },
 ];
+
+// 桌面配置：行事曆從日曆小工具進去
+const gridKeys: PeekPhoneTab[] = ["diary", "memo", "notes", "meals"];
+const dockKeys: PeekPhoneTab[] = ["chat", "gallery", "browser", "balance"];
+// 深色的 App，其他是淺色
+const darkTabs = new Set<PeekPhoneTab>(["chat", "balance", "browser"]);
 
 // 從 store 讀取資料
 const storeData = computed(() => peekPhoneStore.data);
@@ -165,16 +125,33 @@ const gallery = computed(() => storeData.value?.gallery ?? []);
 const browserHistory = computed(() => storeData.value?.browserHistory ?? []);
 const hiddenPhotos = computed(() => storeData.value?.hiddenPhotos ?? []);
 
+// 鎖定畫面與桌面小工具
+const lockNotifications = computed(() => latestNotifications(chats.value, 3));
+const lockNextSchedule = computed(() => nextScheduleItem(schedule.value));
+const homeMoodLine = computed(() => moodLine(diary.value));
+const homePhoto = computed(() => gallery.value[0] ?? null);
+
 // 聊天詳情
 const selectedChatId = ref<string | null>(null);
 const selectedChat = computed(() =>
   chats.value.find((c) => c.id === selectedChatId.value),
 );
 
+/** 聊天泡泡＋時間分隔：第一則、或跟上一則隔超過 30 分鐘才顯示時間 */
+const chatItems = computed(() => {
+  const messages = selectedChat.value?.messages ?? [];
+  return messages.map((msg, i) => {
+    const ms = toMillis(msg.timestamp);
+    const prev = i > 0 ? toMillis(messages[i - 1].timestamp) : 0;
+    const showStamp = !!ms && (i === 0 || !prev || ms - prev > 30 * 60_000);
+    return { msg, stamp: showStamp ? formatChatStamp(ms) : "" };
+  });
+});
+
 // ===== 互動聊天：以手機主人身份回覆聯絡人 =====
 const replyInput = ref("");
 const chatMessagesEl = ref<HTMLElement | null>(null);
-// 互動聊天的錯誤訊息（直接顯示在 phone-frame 浮層內，避免系統通知被浮層蓋住而看不到）
+// 互動聊天的錯誤訊息（直接顯示在聊天畫面內，避免系統通知被全屏畫面蓋住而看不到）
 const replyError = ref<string>("");
 // 正在等待回覆的聊天串（來自 store，與批量生成分開）
 const replyingThreadId = computed(() => peekPhoneStore.replyingThreadId);
@@ -207,7 +184,7 @@ async function sendReply(): Promise<void> {
       character.value,
     );
   } catch (err: any) {
-    // 系統通知可能被 phone-frame 全屏浮層蓋住而看不到，
+    // 系統通知可能被全屏畫面蓋住而看不到，
     // 因此同時把錯誤訊息直接顯示在聊天界面內的橫幅上。
     replyError.value = err?.message ?? "聯絡人回覆失敗";
   } finally {
@@ -239,11 +216,30 @@ const selectedDiary = computed(() =>
   diary.value.find((d) => d.id === selectedDiaryId.value),
 );
 
+// 相簿 / 已隱藏：點縮圖看那張照片的說明，預設第一張
+const selectedPhotoId = ref<string | null>(null);
+const selectedPhoto = computed(
+  () => gallery.value.find((p) => p.id === selectedPhotoId.value) ?? gallery.value[0],
+);
+const selectedHiddenId = ref<string | null>(null);
+const selectedHidden = computed(
+  () => hiddenPhotos.value.find((p) => p.id === selectedHiddenId.value) ?? hiddenPhotos.value[0],
+);
+
 // 瀏覽器歷史篩選
 const selectedBrowserCategory = ref<"all" | "search" | "adult" | "general">("all");
+const browserCategories = [
+  { key: "all", label: "全部" },
+  { key: "search", label: "搜尋" },
+  { key: "general", label: "一般" },
+  { key: "adult", label: "成人" },
+] as const;
+const filteredBrowserHistory = computed(() =>
+  browserHistory.value.filter(
+    (e) => selectedBrowserCategory.value === "all" || e.category === selectedBrowserCategory.value,
+  ),
+);
 
-// 刷新選單
-const showRefreshMenu = ref(false);
 const isAnyGroupLoading = computed(
   () =>
     groupStatus.value.A === "loading" ||
@@ -270,12 +266,23 @@ function getBadge(tab: PeekPhoneTab): number {
       return gallery.value.length;
     case "browser":
       return browserHistory.value.filter((e) => e.category === "adult").length;
-    case "hidden":
-      return hiddenPhotos.value.length;
     default:
       return 0;
   }
 }
+
+function toHomeApp(key: PeekPhoneTab): HomeApp {
+  const app = phoneApps.find((a) => a.key === key)!;
+  return {
+    key,
+    label: app.label,
+    icon: app.icon,
+    badge: getBadge(key),
+    status: groupStatus.value[app.group],
+  };
+}
+const gridApps = computed(() => gridKeys.map(toHomeApp));
+const dockApps = computed(() => dockKeys.map(toHomeApp));
 
 function openApp(key: PeekPhoneTab) {
   currentView.value = key;
@@ -286,28 +293,47 @@ function goBackToHome() {
   selectedChatId.value = null;
   selectedNoteId.value = null;
   selectedDiaryId.value = null;
+  selectedPhotoId.value = null;
+  selectedHiddenId.value = null;
   selectedBrowserCategory.value = "all";
+}
+
+/** App 左上的返回：已隱藏回相簿，其他回主畫面 */
+function goBackFromApp() {
+  if (currentView.value === "hidden") {
+    currentView.value = "gallery";
+    selectedHiddenId.value = null;
+    return;
+  }
+  goBackToHome();
+}
+
+/** 點鎖屏通知：解鎖並直接打開那個聊天 */
+function openThreadFromLock(threadId: string) {
+  selectedChatId.value = threadId;
+  currentView.value = "chat";
 }
 
 // 載入聊天資料並觸發生成
 const chatRecord = ref<Chat | null>(null);
 
-/** 僅載入聊天資料和快取（從記憶體或 IDB），不呼叫 API */
-async function loadChatData() {
-  if (!character.value) return;
+/** 僅載入聊天資料和快取（從記憶體或 IDB），不呼叫 API；回傳有沒有既有內容 */
+async function loadChatData(): Promise<boolean> {
+  if (!character.value) return false;
   try {
     await db.init();
     const chat = await db.get<Chat>(DB_STORES.CHATS, props.chatId);
-    if (!chat) return;
+    if (!chat) return false;
     chatRecord.value = chat;
     // 從記憶體快取 → IDB → 重置為 null，確保不會顯示其他聊天的內容
-    await peekPhoneStore.loadOrReset(props.characterId, props.chatId);
+    return await peekPhoneStore.loadOrReset(props.characterId, props.chatId);
   } catch (err) {
     console.error("[PeekPhoneScreen] Failed to load chat data:", err);
+    return false;
   }
 }
 
-/** 用戶手動觸發全部生成 */
+/** 第一次拿起這支手機時生成全部內容 */
 async function loadAndGenerate() {
   if (!character.value) return;
   try {
@@ -337,7 +363,7 @@ async function retryGroup(group: "A" | "B" | "C" | "D") {
 }
 
 async function refreshAll() {
-  showRefreshMenu.value = false;
+  showSheet.value = false;
   if (!character.value) return;
   if (!chatRecord.value) {
     await loadChatData();
@@ -355,7 +381,7 @@ async function refreshAll() {
 }
 
 async function refreshPhase(phase: "A" | "BC" | "D") {
-  showRefreshMenu.value = false;
+  showSheet.value = false;
   if (!character.value) return;
   if (!chatRecord.value) {
     await loadChatData();
@@ -369,15 +395,33 @@ async function refreshPhase(phase: "A" | "BC" | "D") {
   );
 }
 
-
-onMounted(() => {
-  loadChatData();
+onMounted(async () => {
+  const hasData = await loadChatData();
+  // 第一次拿起這支手機：直接開始生成，鎖定畫面會顯示進度
+  if (!hasData && !isAnyGroupLoading.value) loadAndGenerate();
 });
 
 // Utils
-function formatTime(ts: number) {
-  const d = new Date(ts);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
+
+/** 聊天裡的時間分隔：今天 / 昨天 / M/D，加上 HH:mm */
+function formatChatStamp(ms: number): string {
+  const d = new Date(ms);
+  const today = new Date(now.value);
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const day =
+    d.toDateString() === today.toDateString()
+      ? "今天"
+      : d.toDateString() === yesterday.toDateString()
+        ? "昨天"
+        : `${d.getMonth() + 1}/${d.getDate()}`;
+  return `${day} ${formatClock(d)}`;
+}
+
+function threadTime(thread: { messages: PeekChatMessage[] }): string {
+  const last = thread.messages[thread.messages.length - 1];
+  return last ? formatRelative(last.timestamp, now.value) : "";
 }
 
 /** 取得聊天列表的最後一則訊息預覽（去除換行） */
@@ -388,6 +432,12 @@ function getLastMessagePreview(thread: {
   if (!last) return "";
   return last.content.replace(/\n/g, " ");
 }
+
+/** 群組聊天裡對方不只一個人時，泡泡上方標出是誰說的 */
+function showSender(msg: PeekChatMessage, contactName: string): boolean {
+  return !msg.isSelf && !!msg.senderName && msg.senderName !== contactName;
+}
+
 function getMealLabel(type: string) {
   return (
     (
@@ -400,2340 +450,1478 @@ function getMealLabel(type: string) {
     )[type] || type
   );
 }
-function getMoodIcon(mood: string) {
-  return (
-    (
-      {
-        happy: "😊",
-        neutral: "😐",
-        sad: "😢",
-        angry: "😠",
-        excited: "🤩",
-      } as Record<string, string>
-    )[mood] || "😐"
-  );
+
+const MOOD_ICONS = { happy: Smile, neutral: Meh, sad: Frown, angry: Angry, excited: Laugh };
+function getMood(mood: PeekDiaryEntry["mood"]) {
+  return {
+    icon: MOOD_ICONS[mood] ?? Meh,
+    label: MOOD_LABELS[mood] ?? MOOD_LABELS.neutral,
+  };
 }
+
+function formatDiaryDate(date: string): string {
+  const d = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return date;
+  return `${d.getMonth() + 1}月${d.getDate()}日 星期${WEEKDAYS[d.getDay()]}`;
+}
+
 function getAppTitle(key: PeekPhoneTab) {
+  if (key === "browser") return "瀏覽紀錄";
   return phoneApps.find((a) => a.key === key)?.label || "";
 }
+
+const appBackLabel = computed(() => (currentView.value === "hidden" ? "相簿" : "主畫面"));
+const todayLabel = computed(
+  () => `今天 · ${now.value.getMonth() + 1}月${now.value.getDate()}日 星期${WEEKDAYS[now.value.getDay()]}`,
+);
 </script>
 
 <template>
-  <div class="peek-phone-screen">
-    <!-- ===== 手機外框 ===== -->
-    <div class="phone-frame">
-      <!-- 背景裝飾 -->
-      <div class="blob-bg-top" />
-      <div class="blob-bg-bottom" />
+  <div class="peek-phone-screen peek-theme">
+    <Transition name="peek-view">
+      <!-- ===== 鎖定畫面 ===== -->
+      <PeekLockView
+        v-if="currentView === 'lock'"
+        key="lock"
+        :name="charName"
+        :avatar="charAvatar"
+        :now="now"
+        :next-schedule="lockNextSchedule"
+        :notifications="lockNotifications"
+        :group-status="groupStatus"
+        @unlock="currentView = 'home'"
+        @open-thread="openThreadFromLock"
+      />
 
-      <!-- 狀態列 -->
-      <div class="status-bar">
-        <div class="status-left">
-          <Signal :size="12" />
-          <Wifi :size="12" />
-        </div>
-        <div class="status-time">{{ timeStr }}</div>
-        <div class="status-right">
-          <span class="battery-pct">87%</span>
-          <Battery :size="14" />
-        </div>
-      </div>
-
-      <!-- ===== 手機桌面 ===== -->
-      <template v-if="currentView === 'home'">
-        <!-- 返回按鈕（退出偷窺） -->
-        <button class="exit-peek-btn" @click="emit('back')">
-          <ArrowLeft :size="16" />
-          <span>離開</span>
-        </button>
-
-        <!-- 重新整理按鈕 -->
-        <div class="refresh-wrapper">
-          <button
-            class="refresh-btn"
-            :class="{ 'is-loading': isAnyGroupLoading }"
-            @click="!isAnyGroupLoading && (showRefreshMenu = !showRefreshMenu)"
-          >
-            <Loader2 v-if="isAnyGroupLoading" :size="16" class="spin" />
-            <RefreshCw v-else :size="16" />
-          </button>
-          <Transition name="menu-fade">
-            <div v-if="showRefreshMenu" class="refresh-menu">
-              <div class="refresh-menu-item" @click="refreshPhase('A')">
-                <MessageCircle :size="14" />
-                <span>重新生成聊天紀錄</span>
-                <span class="api-count-badge">×1</span>
-              </div>
-              <div class="refresh-menu-item" @click="refreshPhase('BC')">
-                <Calendar :size="14" />
-                <span>重新生成行程/日記/錢包</span>
-                <span class="api-count-badge">×1</span>
-              </div>
-              <div class="refresh-menu-item" @click="refreshPhase('D')">
-                <Camera :size="14" />
-                <span>重新生成相冊/瀏覽紀錄</span>
-                <span class="api-count-badge">×1</span>
-              </div>
-              <div class="refresh-menu-divider" />
-              <div class="refresh-menu-item refresh-menu-item--danger" @click="refreshAll">
-                <RefreshCw :size="14" />
-                <span>重新生成全部內容</span>
-                <span class="api-count-badge">×3</span>
-              </div>
-            </div>
-          </Transition>
-          <div
-            v-if="showRefreshMenu"
-            class="refresh-overlay"
-            @click="showRefreshMenu = false"
-          />
-        </div>
-
-        <!-- 桌面時鐘 + 日期 -->
-        <div class="home-clock">
-          <div class="home-time">{{ timeStr }}</div>
-          <div class="home-date">{{ dateStr }}</div>
-        </div>
-
-        <!-- 角色頭像 + 名字 -->
-        <div class="home-owner">
-          <div class="home-avatar">
-            <template v-if="charAvatar">
-              <img :src="charAvatar" alt="avatar" />
-            </template>
-            <Smile v-else :size="48" color="#1a1a1a" stroke-width="2" />
-          </div>
-          <div class="home-owner-name">{{ charName }} 的手機</div>
-        </div>
-
-        <!-- App 圖標網格 -->
-        <div class="app-grid">
-          <div
-            v-for="app in phoneApps"
-            :key="app.key"
-            class="app-icon-wrapper"
-            @click="openApp(app.key)"
-          >
-            <div class="app-icon" :style="{ background: app.color }">
-              <component
-                :is="app.icon"
-                :size="28"
-                color="#1a1a1a"
-                stroke-width="2.5"
-              />
-              <div v-if="getBadge(app.key) > 0" class="app-badge">
-                {{ getBadge(app.key) }}
-              </div>
-              <!-- 載入中指示 -->
-              <div
-                v-if="groupStatus[app.group] === 'loading'"
-                class="app-loading"
-              >
-                <Loader2 :size="14" class="spin" />
-              </div>
-              <!-- 錯誤指示 -->
-              <div
-                v-if="groupStatus[app.group] === 'error'"
-                class="app-error-dot"
-              />
-            </div>
-            <div class="app-label">{{ app.label }}</div>
-          </div>
-        </div>
-
-        <!-- 底部 Dock -->
-        <div class="home-dock">
-          <div class="dock-dot" />
-          <div class="dock-dot" />
-          <div class="dock-dot active" />
-          <div class="dock-dot" />
-          <div class="dock-dot" />
-        </div>
-      </template>
+      <!-- ===== 主畫面 ===== -->
+      <PeekHomeView
+        v-else-if="currentView === 'home'"
+        key="home"
+        :avatar="charAvatar"
+        :now="now"
+        :mood-line="homeMoodLine"
+        :photo="homePhoto"
+        :grid-apps="gridApps"
+        :dock-apps="dockApps"
+        @open="openApp"
+      />
 
       <!-- ===== App 內頁 ===== -->
-      <template v-else>
-        <!-- App 頂部欄 -->
-        <div class="app-header">
-          <button class="app-back-btn" @click="goBackToHome">
-            <ChevronLeft :size="20" />
-            <span>返回</span>
-          </button>
-          <div class="app-header-title">{{ getAppTitle(currentView) }}</div>
-          <div style="width: 60px" />
+      <div
+        v-else
+        :key="currentView"
+        class="app-view"
+        :class="darkTabs.has(currentView) ? 'is-dark' : 'is-light'"
+      >
+        <!-- 聊天詳情有自己的頂部欄 -->
+        <template v-if="!(currentView === 'chat' && selectedChat)">
+          <header class="app-bar">
+            <button
+              v-if="currentView === 'notes' && selectedNote"
+              type="button"
+              class="app-back"
+              @click="selectedNoteId = null"
+            >
+              <ChevronLeft :size="24" aria-hidden="true" />記事本
+            </button>
+            <button
+              v-else-if="currentView === 'diary' && selectedDiary"
+              type="button"
+              class="app-back"
+              @click="selectedDiaryId = null"
+            >
+              <ChevronLeft :size="24" aria-hidden="true" />日記
+            </button>
+            <button v-else type="button" class="app-back" @click="goBackFromApp">
+              <ChevronLeft :size="24" aria-hidden="true" />{{ appBackLabel }}
+            </button>
+          </header>
+        </template>
+
+        <!-- 載入中 -->
+        <div
+          v-if="groupStatus[getGroupForTab(currentView)] === 'loading'"
+          class="app-scroll"
+        >
+          <h1 class="app-title">{{ getAppTitle(currentView) }}</h1>
+          <div class="app-state">
+            <Loader2 :size="32" class="spin" aria-hidden="true" />
+            <div>還在讀取這裡的內容…</div>
+          </div>
         </div>
 
-        <div class="app-content">
-          <!-- 載入中狀態 -->
-          <template
-            v-if="groupStatus[getGroupForTab(currentView)] === 'loading'"
-          >
-            <div class="group-loading">
-              <Loader2 :size="40" class="spin" />
-              <div class="group-loading-text">AI 正在生成內容...</div>
-            </div>
-          </template>
+        <!-- 錯誤 -->
+        <div
+          v-else-if="groupStatus[getGroupForTab(currentView)] === 'error'"
+          class="app-scroll"
+        >
+          <h1 class="app-title">{{ getAppTitle(currentView) }}</h1>
+          <div class="app-state">
+            <AlertTriangle :size="32" aria-hidden="true" />
+            <div>{{ groupErrors[getGroupForTab(currentView)] || "生成失敗" }}</div>
+            <button
+              type="button"
+              class="app-retry"
+              @click="retryGroup(getGroupForTab(currentView))"
+            >
+              <RefreshCw :size="16" aria-hidden="true" />重試
+            </button>
+          </div>
+        </div>
 
-          <!-- 錯誤狀態 -->
-          <template
-            v-else-if="groupStatus[getGroupForTab(currentView)] === 'error'"
-          >
-            <div class="group-error">
-              <AlertTriangle :size="40" />
-              <div class="group-error-text">
-                {{ groupErrors[getGroupForTab(currentView)] || "生成失敗" }}
+        <!-- ===== 訊息 ===== -->
+        <template v-else-if="currentView === 'chat'">
+          <div v-if="!selectedChat" class="app-scroll">
+            <h1 class="app-title">訊息</h1>
+            <ul v-if="chats.length > 0" class="chat-list">
+              <li v-for="thread in chats" :key="thread.id">
+                <button type="button" class="chat-row" @click="selectedChatId = thread.id">
+                  <span class="avatar" :style="{ background: avatarColor(thread.contactName) }">
+                    {{ initialOf(thread.contactName) }}
+                  </span>
+                  <span class="chat-row-main">
+                    <span class="chat-row-top">
+                      <span class="chat-row-name">{{ thread.contactName }}</span>
+                      <span class="chat-row-time">{{ threadTime(thread) }}</span>
+                    </span>
+                    <span class="chat-row-preview">{{ getLastMessagePreview(thread) }}</span>
+                  </span>
+                </button>
+              </li>
+            </ul>
+            <div v-else class="app-empty">沒有聊天紀錄</div>
+          </div>
+
+          <div v-else class="chat-detail">
+            <header class="chat-bar">
+              <button type="button" class="app-back" aria-label="返回訊息列表" @click="selectedChatId = null">
+                <ChevronLeft :size="24" aria-hidden="true" />
+              </button>
+              <div class="chat-bar-who">
+                <span class="avatar avatar--sm" :style="{ background: avatarColor(selectedChat.contactName) }">
+                  {{ initialOf(selectedChat.contactName) }}
+                </span>
+                <span class="chat-bar-name">{{ selectedChat.contactName }}</span>
               </div>
-              <button
-                class="retry-btn"
-                @click="retryGroup(getGroupForTab(currentView))"
-              >
-                <RefreshCw :size="16" />
-                <span>重試</span>
+              <span class="chat-bar-spacer" />
+            </header>
+
+            <div ref="chatMessagesEl" class="chat-messages">
+              <template v-for="item in chatItems" :key="item.msg.id">
+                <div v-if="item.stamp" class="chat-stamp">{{ item.stamp }}</div>
+                <div class="chat-msg" :class="{ self: item.msg.isSelf }">
+                  <span v-if="showSender(item.msg, selectedChat.contactName)" class="chat-sender">
+                    {{ item.msg.senderName }}
+                  </span>
+                  <div class="chat-bubble">{{ item.msg.content }}</div>
+                </div>
+              </template>
+              <!-- 對方輸入中提示 -->
+              <div v-if="isReplyingCurrent" class="chat-msg">
+                <div class="chat-bubble typing" aria-label="對方輸入中">
+                  <span class="typing-dot" />
+                  <span class="typing-dot" />
+                  <span class="typing-dot" />
+                </div>
+              </div>
+            </div>
+
+            <!-- 錯誤橫幅：直接顯示在聊天畫面內，避免系統通知被蓋住 -->
+            <div v-if="replyError" class="chat-error" role="alert">
+              <span class="chat-error-text">{{ replyError }}</span>
+              <button type="button" class="chat-error-close" aria-label="關閉" @click="replyError = ''">
+                <X :size="16" />
               </button>
             </div>
-          </template>
 
-          <!-- 內容狀態 -->
-          <template v-else>
-            <!-- ===== 聊天 ===== -->
-            <template v-if="currentView === 'chat'">
-              <div v-if="!selectedChat" class="chat-list">
-                <div
-                  v-for="thread in chats"
-                  :key="thread.id"
-                  class="chat-list-item"
-                  @click="selectedChatId = thread.id"
-                >
-                  <div class="chat-list-avatar">
-                    <MessageCircle :size="20" />
-                  </div>
-                  <div class="chat-list-info">
-                    <div class="chat-list-name">{{ thread.contactName }}</div>
-                    <div class="chat-list-preview">
-                      {{ getLastMessagePreview(thread) }}
-                    </div>
-                  </div>
-                  <div class="chat-list-time">
-                    {{ formatTime(thread.updatedAt) }}
-                  </div>
-                </div>
-                <div v-if="chats.length === 0" class="empty-hint">
-                  沒有聊天記錄
-                </div>
-              </div>
-              <div v-else class="chat-detail">
-                <div class="chat-detail-header">
-                  <button class="icon-btn-sm" @click="selectedChatId = null">
-                    <ChevronLeft :size="18" />
-                  </button>
-                  <span class="chat-detail-name">{{
-                    selectedChat.contactName
-                  }}</span>
-                </div>
-                <div ref="chatMessagesEl" class="chat-messages">
-                  <div
-                    v-for="msg in selectedChat.messages"
-                    :key="msg.id"
-                    class="chat-msg"
-                    :class="{ self: msg.isSelf }"
-                  >
-                    <div class="chat-bubble">{{ msg.content }}</div>
-                    <div class="chat-time-label">
-                      {{ formatTime(msg.timestamp) }}
-                    </div>
-                  </div>
-                  <!-- 對方輸入中提示 -->
-                  <div v-if="isReplyingCurrent" class="chat-msg">
-                    <div class="chat-bubble typing">
-                      <span class="typing-dot" />
-                      <span class="typing-dot" />
-                      <span class="typing-dot" />
-                    </div>
-                  </div>
-                </div>
-                <!-- 錯誤橫幅：直接顯示在浮層內，避免系統通知被 phone-frame 蓋住 -->
-                <div v-if="replyError" class="chat-error-banner">
-                  <span class="chat-error-text">{{ replyError }}</span>
-                  <button
-                    class="chat-error-close"
-                    title="關閉"
-                    @click="replyError = ''"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <!-- 以手機主人身份回覆聯絡人的輸入列 -->
-                <div class="chat-input-bar">
-                  <input
-                    v-model="replyInput"
-                    class="chat-input"
-                    type="text"
-                    :placeholder="`以 ${charName} 的身份回覆…`"
-                    :disabled="isReplyingCurrent"
-                    @keydown.enter.prevent="sendReply"
-                  />
-                  <button
-                    v-if="isReplyingCurrent"
-                    class="chat-send-btn cancel"
-                    title="取消"
-                    @click="cancelReply"
-                  >
-                    <Loader2 :size="18" class="spin" />
-                  </button>
-                  <button
-                    v-else
-                    class="chat-send-btn"
-                    :disabled="!replyInput.trim()"
-                    title="發送"
-                    @click="sendReply"
-                  >
-                    <Send :size="18" />
-                  </button>
-                </div>
-              </div>
-            </template>
+            <!-- 以手機主人身份回覆聯絡人的輸入列 -->
+            <div class="chat-input-bar">
+              <input
+                v-model="replyInput"
+                class="chat-input"
+                type="text"
+                :aria-label="`以 ${charName} 的身份回覆`"
+                :placeholder="`以 ${charName} 的身份回覆…`"
+                :disabled="isReplyingCurrent"
+                @keydown.enter.prevent="sendReply"
+              />
+              <button
+                v-if="isReplyingCurrent"
+                type="button"
+                class="chat-send"
+                aria-label="取消回覆"
+                @click="cancelReply"
+              >
+                <Loader2 :size="18" class="spin" />
+              </button>
+              <button
+                v-else
+                type="button"
+                class="chat-send"
+                :disabled="!replyInput.trim()"
+                aria-label="傳送"
+                @click="sendReply"
+              >
+                <ArrowUp :size="18" :stroke-width="2.4" />
+              </button>
+            </div>
+          </div>
+        </template>
 
-            <!-- ===== 行程 ===== -->
-            <template v-else-if="currentView === 'schedule'">
-              <div class="section-label">
-                <Calendar :size="16" /><span>今日行程</span>
-              </div>
-              <div class="schedule-list">
-                <div
-                  v-for="item in schedule"
-                  :key="item.id"
-                  class="schedule-item"
-                  :class="{ done: item.done }"
-                >
-                  <div class="schedule-time">{{ item.time }}</div>
-                  <div class="schedule-line"><div class="schedule-dot" /></div>
-                  <div class="schedule-info">
-                    <div class="schedule-title">{{ item.title }}</div>
-                    <div v-if="item.location" class="schedule-location">
-                      {{ item.location }}
-                    </div>
-                  </div>
-                  <div v-if="item.done" class="schedule-check">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2.5"
-                      width="16"
-                      height="16"
-                    >
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-              <div v-if="schedule.length === 0" class="empty-hint">
-                今天沒有行程
-              </div>
-            </template>
+        <!-- ===== 行事曆 ===== -->
+        <div v-else-if="currentView === 'schedule'" class="app-scroll">
+          <h1 class="app-title">行事曆</h1>
+          <p class="app-sub">{{ todayLabel }}</p>
+          <ol v-if="schedule.length > 0" class="app-card sched-list">
+            <li
+              v-for="item in schedule"
+              :key="item.id"
+              class="app-row sched-item"
+              :class="{ done: item.done }"
+            >
+              <span class="sched-time">{{ item.time }}</span>
+              <span class="sched-dot" aria-hidden="true" />
+              <span class="sched-main">
+                <span class="sched-title">{{ item.title }}</span>
+                <span v-if="item.location" class="sched-loc">{{ item.location }}</span>
+              </span>
+              <Check v-if="item.done" :size="16" class="sched-check" aria-label="已完成" />
+            </li>
+          </ol>
+          <div v-else class="app-empty">今天沒有行程</div>
+        </div>
 
-            <!-- ===== 飲食 ===== -->
-            <template v-else-if="currentView === 'meals'">
-              <div class="section-label">
-                <UtensilsCrossed :size="16" /><span>今日飲食</span>
-              </div>
-              <div class="meals-list">
-                <div v-for="meal in meals" :key="meal.id" class="meal-card">
-                  <div class="meal-type-badge" :class="meal.mealType">
-                    {{ getMealLabel(meal.mealType) }}
-                  </div>
-                  <div class="meal-info">
-                    <div class="meal-food">{{ meal.food }}</div>
-                    <div v-if="meal.note" class="meal-note">
-                      {{ meal.note }}
-                    </div>
-                  </div>
-                  <div class="meal-time">
-                    <Clock :size="12" /> {{ meal.time }}
-                  </div>
-                </div>
-              </div>
-              <div v-if="meals.length === 0" class="empty-hint">
-                今天還沒吃東西
-              </div>
-            </template>
+        <!-- ===== 飲食記錄 ===== -->
+        <div v-else-if="currentView === 'meals'" class="app-scroll">
+          <h1 class="app-title">飲食記錄</h1>
+          <p class="app-sub">今天吃了什麼</p>
+          <ul v-if="meals.length > 0" class="app-card">
+            <li v-for="meal in meals" :key="meal.id" class="app-row meal-row">
+              <span class="meal-chip" :class="meal.mealType">{{ getMealLabel(meal.mealType) }}</span>
+              <span class="meal-main">
+                <span class="meal-food">{{ meal.food }}</span>
+                <span v-if="meal.note" class="meal-note">{{ meal.note }}</span>
+              </span>
+              <span class="meal-time">{{ meal.time }}</span>
+            </li>
+          </ul>
+          <div v-else class="app-empty">今天還沒吃東西</div>
+        </div>
 
-            <!-- ===== 存款 ===== -->
-            <template v-else-if="currentView === 'balance'">
-              <div class="balance-card">
-                <div class="balance-label">帳戶餘額</div>
-                <div class="balance-amount">
-                  <span class="balance-currency">$</span>
-                  <span class="balance-number">{{
-                    balance.toLocaleString()
-                  }}</span>
-                </div>
-                <div class="balance-hint">上次更新：今天</div>
-              </div>
-
-              <div v-if="transactions.length > 0" class="section-label">
-                <CreditCard :size="16" /><span>交易記錄</span>
-              </div>
-              <div v-if="transactions.length > 0" class="tx-list">
-                <div v-for="tx in transactions" :key="tx.id" class="tx-item">
-                  <div class="tx-info">
-                    <div class="tx-desc">{{ tx.description }}</div>
-                    <div class="tx-time">{{ tx.time }}</div>
-                  </div>
-                  <div
-                    class="tx-amount"
-                    :class="tx.amount >= 0 ? 'tx-income' : 'tx-expense'"
-                  >
-                    {{ tx.amount >= 0 ? "+" : ""
-                    }}{{ tx.amount.toLocaleString() }}
-                  </div>
-                </div>
-              </div>
-            </template>
-
-            <!-- ===== 備忘錄 ===== -->
-            <template v-else-if="currentView === 'memo'">
-              <div class="section-label">
-                <ListChecks :size="16" /><span>備忘錄</span>
-              </div>
-              <div class="memo-list">
-                <div
-                  v-for="memo in memos"
-                  :key="memo.id"
-                  class="memo-item"
-                  :class="{ done: memo.done }"
-                >
-                  <div class="memo-checkbox">
-                    <svg
-                      v-if="memo.done"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      width="18"
-                      height="18"
-                    >
-                      <path
-                        d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"
-                      />
-                    </svg>
-                    <div v-else class="memo-checkbox-empty" />
-                  </div>
-                  <div class="memo-text">{{ memo.content }}</div>
-                </div>
-              </div>
-              <div v-if="memos.length === 0" class="empty-hint">沒有備忘錄</div>
-            </template>
-
-            <!-- ===== 記事本 ===== -->
-            <template v-else-if="currentView === 'notes'">
-              <div v-if="!selectedNote" class="notes-grid">
-                <div
-                  v-for="note in notes"
-                  :key="note.id"
-                  class="note-card"
-                  @click="selectedNoteId = note.id"
-                >
-                  <div class="note-card-title">{{ note.title }}</div>
-                  <div class="note-card-preview">
-                    {{ note.content.slice(0, 60) }}...
-                  </div>
-                  <div class="note-card-date">
-                    {{ new Date(note.updatedAt).toLocaleDateString("zh-TW") }}
-                  </div>
-                </div>
-                <div v-if="notes.length === 0" class="empty-hint">沒有記事</div>
-              </div>
-              <div v-else class="note-detail">
-                <div class="note-detail-header">
-                  <button class="icon-btn-sm" @click="selectedNoteId = null">
-                    <ChevronLeft :size="18" />
-                  </button>
-                  <span class="note-detail-title">{{
-                    selectedNote.title
-                  }}</span>
-                </div>
-                <div class="note-detail-content">
-                  {{ selectedNote.content }}
-                </div>
-              </div>
-            </template>
-
-            <!-- ===== 日記 ===== -->
-            <template v-else-if="currentView === 'diary'">
-              <div v-if="!selectedDiary" class="diary-list">
-                <div
-                  v-for="entry in diary"
-                  :key="entry.id"
-                  class="diary-card"
-                  @click="selectedDiaryId = entry.id"
-                >
-                  <div class="diary-card-header">
-                    <span class="diary-date">{{ entry.date }}</span>
-                    <span v-if="entry.weather" class="diary-weather">{{
-                      entry.weather
-                    }}</span>
-                    <span class="diary-mood">{{
-                      getMoodIcon(entry.mood)
-                    }}</span>
-                  </div>
-                  <div class="diary-card-preview">
-                    {{ entry.content.slice(0, 80) }}...
-                  </div>
-                </div>
-                <div v-if="diary.length === 0" class="empty-hint">沒有日記</div>
-              </div>
-              <div v-else class="diary-detail">
-                <div class="diary-detail-header">
-                  <button class="icon-btn-sm" @click="selectedDiaryId = null">
-                    <ChevronLeft :size="18" />
-                  </button>
-                  <div class="diary-detail-meta">
-                    <span>{{ selectedDiary.date }}</span>
-                    <span v-if="selectedDiary.weather">{{
-                      selectedDiary.weather
-                    }}</span>
-                    <span>{{ getMoodIcon(selectedDiary.mood) }}</span>
-                  </div>
-                </div>
-                <div class="diary-detail-content">
-                  {{ selectedDiary.content }}
-                </div>
-              </div>
-            </template>
-
-            <!-- ===== 相冊 ===== -->
-            <template v-else-if="currentView === 'gallery'">
-              <div class="section-label">
-                <Image :size="16" /><span>相冊</span>
-              </div>
-              <div v-if="gallery.length === 0" class="empty-hint">沒有照片</div>
-              <div v-else class="gallery-list">
-                <div
-                  v-for="item in gallery"
-                  :key="item.id"
-                  class="gallery-card"
-                >
-                  <div class="gallery-icon-area">
-                    <Camera v-if="item.source === 'selfie'" :size="28" />
-                    <Image v-else-if="item.source === 'scene'" :size="28" />
-                    <MessageCircle v-else :size="28" />
-                  </div>
-                  <div class="gallery-info">
-                    <div class="gallery-desc">{{ item.description }}</div>
-                    <div class="gallery-reason">
-                      <span class="gallery-reason-label"
-                        >{{
-                          item.source === "saved" ? "保存原因" : "拍攝心情"
-                        }}：</span
-                      >{{ item.reason }}
-                    </div>
-                    <div class="gallery-meta">
-                      <span class="gallery-source-tag">{{
-                        item.source === "selfie"
-                          ? "自拍"
-                          : item.source === "scene"
-                            ? "拍攝"
-                            : "聊天保存"
-                      }}</span>
-                      <span class="gallery-date">{{ item.date }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </template>
-
-            <!-- ===== 瀏覽器歷史 ===== -->
-            <template v-else-if="currentView === 'browser'">
-              <div class="section-label">
-                <Globe :size="16" /><span>瀏覽器歷史</span>
-              </div>
-              <!-- 篩選標籤 -->
-              <div class="browser-filter-tabs">
-                <button
-                  v-for="cat in ([
-                    { key: 'all', label: '全部' },
-                    { key: 'search', label: '搜尋' },
-                    { key: 'general', label: '一般' },
-                    { key: 'adult', label: '🔞 成人' },
-                  ] as const)"
-                  :key="cat.key"
-                  class="browser-filter-btn"
-                  :class="{ active: selectedBrowserCategory === cat.key }"
-                  @click="selectedBrowserCategory = cat.key"
-                >{{ cat.label }}</button>
-              </div>
-              <div v-if="browserHistory.length === 0" class="empty-hint">沒有瀏覽記錄</div>
-              <div v-else class="browser-list">
-                <div
-                  v-for="entry in browserHistory.filter(e => selectedBrowserCategory === 'all' || e.category === selectedBrowserCategory)"
-                  :key="entry.id"
-                  class="browser-entry"
-                  :class="entry.category"
-                >
-                  <div class="browser-entry-icon">
-                    <Search v-if="entry.category === 'search'" :size="18" />
-                    <EyeOff v-else-if="entry.category === 'adult'" :size="18" />
-                    <Globe v-else :size="18" />
-                  </div>
-                  <div class="browser-entry-info">
-                    <div class="browser-entry-title">{{ entry.title }}</div>
-                    <div class="browser-entry-url">{{ entry.url }}</div>
-                  </div>
-                  <div class="browser-entry-right">
-                    <span class="browser-cat-badge" :class="entry.category">
-                      {{ entry.category === 'search' ? '搜尋' : entry.category === 'adult' ? '🔞' : '一般' }}
-                    </span>
-                    <span class="browser-entry-time">{{ entry.time }}</span>
-                  </div>
-                </div>
-              </div>
-            </template>
-
-            <!-- ===== 私密相冊 ===== -->
-            <template v-else-if="currentView === 'hidden'">
-              <div class="section-label hidden-label">
-                <Lock :size="16" /><span>私密相冊</span>
-              </div>
-              <div class="hidden-warning">
-                <EyeOff :size="16" />
-                <span>這些照片被藏在手機深處，不對外公開</span>
-              </div>
-              <div v-if="hiddenPhotos.length === 0" class="empty-hint">沒有隱藏照片</div>
-              <div v-else class="hidden-list">
-                <div
-                  v-for="item in hiddenPhotos"
-                  :key="item.id"
-                  class="hidden-card"
-                >
-                  <div class="hidden-card-icon">
-                    <Lock :size="24" />
-                  </div>
-                  <div class="hidden-card-info">
-                    <div class="hidden-card-desc">{{ item.description }}</div>
-                    <div class="hidden-card-reason">
-                      <span class="hidden-reason-label">藏起來的原因：</span>{{ item.reason }}
-                    </div>
-                    <div class="hidden-card-meta">
-                      <span class="hidden-type-badge" :class="item.type">
-                        {{ item.type === 'selfie' ? '本人自拍' : item.type === 'saved' ? '從網路保存' : '截圖' }}
-                      </span>
-                      <span class="hidden-card-date">{{ item.date }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </template>
+        <!-- ===== 錢包 ===== -->
+        <div v-else-if="currentView === 'balance'" class="app-scroll">
+          <h1 class="app-title">錢包</h1>
+          <div class="wallet-card">
+            <span class="wallet-label">帳戶餘額</span>
+            <span class="wallet-amount">
+              <span class="wallet-currency">$</span>{{ balance.toLocaleString() }}
+            </span>
+            <span class="wallet-hint">上次更新：今天</span>
+          </div>
+          <template v-if="transactions.length > 0">
+            <div class="app-section-label">交易紀錄</div>
+            <ul class="app-card">
+              <li v-for="tx in transactions" :key="tx.id" class="app-row tx-row">
+                <span class="tx-main">
+                  <span class="tx-desc">{{ tx.description }}</span>
+                  <span class="tx-time">{{ tx.time }}</span>
+                </span>
+                <span class="tx-amount" :class="tx.amount >= 0 ? 'is-in' : 'is-out'">
+                  {{ tx.amount >= 0 ? "+" : "" }}{{ tx.amount.toLocaleString() }}
+                </span>
+              </li>
+            </ul>
           </template>
         </div>
-      </template>
 
-      <!-- 底部橫條 -->
-      <div class="home-indicator" />
-    </div>
+        <!-- ===== 備忘錄 ===== -->
+        <div v-else-if="currentView === 'memo'" class="app-scroll">
+          <h1 class="app-title">備忘錄</h1>
+          <ul v-if="memos.length > 0" class="app-card">
+            <li
+              v-for="memo in memos"
+              :key="memo.id"
+              class="app-row memo-row"
+              :class="{ done: memo.done }"
+            >
+              <span class="memo-check" :aria-label="memo.done ? '已完成' : '未完成'">
+                <Check v-if="memo.done" :size="14" :stroke-width="3" aria-hidden="true" />
+              </span>
+              <span class="memo-text">{{ memo.content }}</span>
+            </li>
+          </ul>
+          <div v-else class="app-empty">沒有備忘錄</div>
+        </div>
+
+        <!-- ===== 記事本 ===== -->
+        <div v-else-if="currentView === 'notes'" class="app-scroll">
+          <template v-if="!selectedNote">
+            <h1 class="app-title">記事本</h1>
+            <div v-if="notes.length > 0" class="note-list">
+              <button
+                v-for="note in notes"
+                :key="note.id"
+                type="button"
+                class="note-card"
+                @click="selectedNoteId = note.id"
+              >
+                <span class="note-card-title">{{ note.title }}</span>
+                <span class="note-card-preview">{{ note.content }}</span>
+                <span class="note-card-date">{{ new Date(note.updatedAt).toLocaleDateString("zh-TW") }}</span>
+              </button>
+            </div>
+            <div v-else class="app-empty">沒有記事</div>
+          </template>
+          <article v-else class="reading">
+            <h1 class="app-title">{{ selectedNote.title }}</h1>
+            <p class="app-sub">{{ new Date(selectedNote.updatedAt).toLocaleDateString("zh-TW") }}</p>
+            <div class="reading-body">{{ selectedNote.content }}</div>
+          </article>
+        </div>
+
+        <!-- ===== 日記 ===== -->
+        <div v-else-if="currentView === 'diary'" class="app-scroll">
+          <template v-if="!selectedDiary">
+            <h1 class="app-title">日記</h1>
+            <div v-if="diary.length > 0" class="note-list">
+              <button
+                v-for="entry in diary"
+                :key="entry.id"
+                type="button"
+                class="note-card"
+                @click="selectedDiaryId = entry.id"
+              >
+                <span class="diary-meta">
+                  <span class="diary-date">{{ formatDiaryDate(entry.date) }}</span>
+                  <span class="mood-chip">
+                    <component :is="getMood(entry.mood).icon" :size="14" aria-hidden="true" />
+                    {{ getMood(entry.mood).label }}
+                  </span>
+                  <span v-if="entry.weather" class="diary-weather">{{ entry.weather }}</span>
+                </span>
+                <span class="note-card-preview">{{ entry.content }}</span>
+              </button>
+            </div>
+            <div v-else class="app-empty">沒有日記</div>
+          </template>
+          <article v-else class="reading">
+            <h1 class="app-title app-title--sm">{{ formatDiaryDate(selectedDiary.date) }}</h1>
+            <p class="diary-meta">
+              <span class="mood-chip">
+                <component :is="getMood(selectedDiary.mood).icon" :size="14" aria-hidden="true" />
+                {{ getMood(selectedDiary.mood).label }}
+              </span>
+              <span v-if="selectedDiary.weather" class="diary-weather">{{ selectedDiary.weather }}</span>
+            </p>
+            <div class="reading-body">{{ selectedDiary.content }}</div>
+          </article>
+        </div>
+
+        <!-- ===== 相簿 ===== -->
+        <div v-else-if="currentView === 'gallery'" class="app-scroll">
+          <h1 class="app-title">相簿</h1>
+          <p class="app-sub">{{ gallery.length }} 張照片</p>
+          <template v-if="gallery.length > 0">
+            <div class="photo-grid">
+              <button
+                v-for="item in gallery"
+                :key="item.id"
+                type="button"
+                class="photo-tile"
+                :class="{ 'is-selected': selectedPhoto?.id === item.id }"
+                :style="{ background: photoTone(item.description) }"
+                :aria-label="`照片 ${item.date}`"
+                :aria-pressed="selectedPhoto?.id === item.id"
+                @click="selectedPhotoId = item.id"
+              >
+                <Camera v-if="item.source === 'selfie'" :size="22" aria-hidden="true" />
+                <Image v-else-if="item.source === 'scene'" :size="22" aria-hidden="true" />
+                <MessageCircle v-else :size="22" aria-hidden="true" />
+                <span class="photo-tile-tag">{{ item.date.slice(5).replace("-", "/") }}</span>
+              </button>
+            </div>
+            <div v-if="selectedPhoto" class="app-card photo-detail">
+              <div class="photo-detail-meta">
+                <span class="photo-source">
+                  {{ selectedPhoto.source === "selfie" ? "自拍" : selectedPhoto.source === "scene" ? "拍攝" : "從聊天存下" }}
+                </span>
+                <span>{{ selectedPhoto.date }}</span>
+              </div>
+              <p class="photo-desc">{{ selectedPhoto.description }}</p>
+              <p class="photo-reason">
+                <span class="photo-reason-label">{{ selectedPhoto.source === "saved" ? "存下來的原因" : "拍的時候在想" }}</span>
+                {{ selectedPhoto.reason }}
+              </p>
+            </div>
+          </template>
+          <div v-else class="app-empty">沒有照片</div>
+
+          <div class="app-section-label">其他相簿</div>
+          <div class="app-card">
+            <button type="button" class="app-row album-row" @click="openApp('hidden')">
+              <Lock :size="18" aria-hidden="true" />
+              <span class="album-row-label">已隱藏</span>
+              <span class="album-row-count">{{ hiddenPhotos.length }}</span>
+              <ChevronRight :size="16" class="album-row-chev" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+
+        <!-- ===== 已隱藏 ===== -->
+        <div v-else-if="currentView === 'hidden'" class="app-scroll">
+          <h1 class="app-title">已隱藏</h1>
+          <p class="app-sub">這些照片被藏在手機深處，不對外公開</p>
+          <template v-if="hiddenPhotos.length > 0">
+            <div class="photo-grid">
+              <button
+                v-for="item in hiddenPhotos"
+                :key="item.id"
+                type="button"
+                class="photo-tile is-hidden"
+                :class="{ 'is-selected': selectedHidden?.id === item.id }"
+                :aria-label="`隱藏的照片 ${item.date}`"
+                :aria-pressed="selectedHidden?.id === item.id"
+                @click="selectedHiddenId = item.id"
+              >
+                <EyeOff :size="22" aria-hidden="true" />
+                <span class="photo-tile-tag">{{ item.date.slice(5).replace("-", "/") }}</span>
+              </button>
+            </div>
+            <div v-if="selectedHidden" class="app-card photo-detail">
+              <div class="photo-detail-meta">
+                <span class="photo-source">
+                  {{ selectedHidden.type === "selfie" ? "本人自拍" : selectedHidden.type === "saved" ? "從網路存下" : "截圖" }}
+                </span>
+                <span>{{ selectedHidden.date }}</span>
+              </div>
+              <p class="photo-desc">{{ selectedHidden.description }}</p>
+              <p class="photo-reason">
+                <span class="photo-reason-label">藏起來的原因</span>
+                {{ selectedHidden.reason }}
+              </p>
+            </div>
+          </template>
+          <div v-else class="app-empty">沒有隱藏的照片</div>
+        </div>
+
+        <!-- ===== 瀏覽紀錄 ===== -->
+        <div v-else-if="currentView === 'browser'" class="app-scroll">
+          <h1 class="app-title">瀏覽紀錄</h1>
+          <div class="segmented" role="group" aria-label="篩選">
+            <button
+              v-for="cat in browserCategories"
+              :key="cat.key"
+              type="button"
+              class="segmented-btn"
+              :aria-pressed="selectedBrowserCategory === cat.key"
+              @click="selectedBrowserCategory = cat.key"
+            >
+              {{ cat.label }}
+            </button>
+          </div>
+          <ul v-if="filteredBrowserHistory.length > 0" class="app-card">
+            <li
+              v-for="entry in filteredBrowserHistory"
+              :key="entry.id"
+              class="app-row browser-row"
+            >
+              <span class="browser-icon" :class="entry.category">
+                <Search v-if="entry.category === 'search'" :size="16" aria-hidden="true" />
+                <EyeOff v-else-if="entry.category === 'adult'" :size="16" aria-hidden="true" />
+                <Globe v-else :size="16" aria-hidden="true" />
+              </span>
+              <span class="browser-main">
+                <span class="browser-title">{{ entry.title }}</span>
+                <span class="browser-url">{{ entry.url }}</span>
+              </span>
+              <span class="browser-side">
+                <span v-if="entry.category === 'adult'" class="browser-tag">成人</span>
+                <span class="browser-time">{{ entry.time }}</span>
+              </span>
+            </li>
+          </ul>
+          <div v-else class="app-empty">沒有瀏覽紀錄</div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- ===== 窺視層：頂部膠囊＋窺視選單 ===== -->
+    <PeekCapsule
+      :name="charName"
+      :avatar="charAvatar"
+      :battery="battery"
+      :active="showSheet"
+      :loading="isAnyGroupLoading"
+      @open="showSheet = !showSheet"
+    />
+    <PeekSheet
+      :open="showSheet"
+      :name="charName"
+      :avatar="charAvatar"
+      :group-status="groupStatus"
+      @close="showSheet = false"
+      @regenerate="refreshPhase"
+      @regenerate-all="refreshAll"
+      @leave="emit('back')"
+    />
   </div>
 </template>
 
-<style lang="scss" scoped>
-@import url("https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap");
+<style lang="scss">
+@use "@/components/peek-phone/peek-theme.scss";
+</style>
 
-// 變數
-$bg-color: #f1f3f5;
-$frame-border: #1a1a1a;
-$phone-bg: #fffbf5;
-$text-main: #1a1a1a;
-$text-sec: #6b7280;
-$accent-color: #fb923c;
-$card-bg: #ffffff;
-$blob-bg: #d4f2cc;
+<style lang="scss" scoped>
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap");
 
 .peek-phone-screen {
+  position: relative;
   width: 100%;
   height: 100%;
-  background: $bg-color;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   overflow: hidden;
-  font-family: "Nunito", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background: #000000;
 }
 
-// ===== Phone Frame =====
-.phone-frame {
-  width: 100%;
-  height: 100%;
-  max-height: 100%;
-  background: $phone-bg;
-  border-radius: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  position: relative;
+// 鎖屏 → 主畫面 → App 之間淡入淡出
+.peek-view-enter-active,
+.peek-view-leave-active {
+  transition: opacity 0.18s ease;
 }
 
-.blob-bg-top {
-  position: absolute;
-  top: -50px;
-  left: -20px;
-  right: -20px;
-  height: 240px;
-  background: $blob-bg;
-  border-bottom: 3px solid $frame-border;
-  border-radius: 0 0 45% 45%;
-  z-index: 0;
-  transform: rotate(-3deg);
-}
-
-.blob-bg-bottom {
-  position: absolute;
-  bottom: -40px;
-  left: -20px;
-  right: -20px;
-  height: 180px;
-  background: $blob-bg;
-  border-top: 3px solid $frame-border;
-  border-radius: 50% 50% 0 0;
-  z-index: 0;
-  transform: rotate(2deg);
-}
-
-// ===== Status Bar =====
-.status-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 24px;
-  font-size: 11px;
-  font-weight: 800;
-  color: $text-main;
-  flex-shrink: 0;
-  z-index: 2;
-  position: relative;
-}
-
-.status-left,
-.status-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.status-time {
-  font-size: 13px;
-  letter-spacing: 0.5px;
-}
-
-// ===== Exit & Refresh Buttons =====
-.exit-peek-btn {
-  position: absolute;
-  top: 48px;
-  left: 20px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 20px;
-  border: 2px solid $frame-border;
-  background: $card-bg;
-  color: $text-main;
-  font-weight: 800;
-  font-size: 13px;
-  cursor: pointer;
-  z-index: 3;
-  box-shadow: 2px 2px 0 $frame-border;
-  transition:
-    transform 0.1s,
-    box-shadow 0.1s;
-
-  &:active {
-    transform: translate(2px, 2px);
-    box-shadow: 0px 0px 0 $frame-border;
-  }
-
-  svg {
-    stroke-width: 3px;
-  }
-}
-
-.refresh-btn {
-  position: absolute;
-  top: 48px;
-  right: 20px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 2px solid $frame-border;
-  background: $card-bg;
-  color: $text-main;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 3;
-  box-shadow: 2px 2px 0 $frame-border;
-  transition:
-    transform 0.1s,
-    box-shadow 0.1s;
-
-  &:active {
-    transform: translate(2px, 2px);
-    box-shadow: 0px 0px 0 $frame-border;
-  }
-
-  &.is-loading {
-    cursor: default;
-    opacity: 0.7;
-  }
-}
-
-.refresh-wrapper {
-  position: absolute;
-  top: 48px;
-  right: 20px;
-  z-index: 10;
-
-  .refresh-btn {
-    position: static;
-  }
-}
-
-.refresh-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9;
-}
-
-.refresh-menu {
-  position: absolute;
-  top: 48px;
-  right: 0;
-  min-width: 180px;
-  background: $card-bg;
-  border: 2px solid $frame-border;
-  border-radius: 16px;
-  box-shadow: 4px 4px 0 $frame-border;
-  padding: 6px 0;
-  z-index: 11;
-}
-
-.refresh-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  font-size: 14px;
-  font-weight: 700;
-  color: $text-main;
-  cursor: pointer;
-  transition: background 0.1s;
-  white-space: nowrap;
-
-  &:hover {
-    background: rgba(0, 0, 0, 0.04);
-  }
-
-  &:active {
-    background: rgba(0, 0, 0, 0.08);
-  }
-}
-
-.refresh-menu-item--danger {
-  color: #d35b5b;
-}
-
-.api-count-badge {
-  margin-left: auto;
-  font-size: 10px;
-  font-weight: 400;
-  color: $text-sec;
-  opacity: 0.5;
-}
-
-.refresh-menu-divider {
-  height: 1px;
-  background: rgba(0, 0, 0, 0.1);
-  margin: 4px 12px;
-}
-
-.menu-fade-enter-active,
-.menu-fade-leave-active {
-  transition:
-    opacity 0.15s,
-    transform 0.15s;
-}
-.menu-fade-enter-from,
-.menu-fade-leave-to {
+.peek-view-enter-from,
+.peek-view-leave-to {
   opacity: 0;
-  transform: translateY(-6px);
 }
 
-// ===== Home Screen =====
-.home-clock {
-  text-align: center;
-  padding: 24px 0 16px;
-  position: relative;
-  z-index: 2;
-  color: $text-main;
-}
-
-.home-time {
-  font-size: 72px;
-  font-weight: 900;
-  letter-spacing: -2px;
-  line-height: 1;
-  text-shadow: 3px 3px 0 #fff;
-}
-
-.home-date {
-  font-size: 15px;
-  font-weight: 700;
-  margin-top: 8px;
-  opacity: 0.9;
-}
-
-.home-owner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 12px 0 24px;
-  position: relative;
-  z-index: 2;
-  margin-top: -10px;
-}
-
-.home-avatar {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  overflow: hidden;
-  border: 3px solid $frame-border;
-  background: $card-bg;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 3px 3px 0 $frame-border;
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-}
-
-.home-owner-name {
-  font-size: 16px;
-  font-weight: 800;
-  color: $frame-border;
-  background: $phone-bg;
-  padding: 4px 12px;
-  border-radius: 20px;
-  border: 2px solid $frame-border;
-  box-shadow: 2px 2px 0 $frame-border;
-}
-
-// ===== App Grid =====
-.app-grid {
-  flex: 1;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 24px 12px;
-  padding: 20px 24px;
-  align-content: start;
-  overflow-y: auto;
-  position: relative;
-  z-index: 2;
-}
-
-.app-icon-wrapper {
+// ===== App 共用骨架 =====
+.app-view {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
+  padding-top: calc(var(--safe-top, 0px) + 56px);
+  box-sizing: border-box;
+  background: var(--a-bg);
+  color: var(--a-ink);
+
+  &.is-dark {
+    --a-bg: var(--p-dark-bg);
+    --a-card: var(--p-dark-card);
+    --a-raised: var(--p-dark-raised);
+    --a-line: var(--p-dark-line);
+    --a-ink: #ffffff;
+    --a-ink-2: var(--p-dark-ink-2);
+    --a-ink-3: var(--p-dark-ink-3);
+    --a-link: var(--p-dark-link);
+  }
+
+  &.is-light {
+    --a-bg: var(--p-light-bg);
+    --a-card: var(--p-light-card);
+    --a-raised: #ecebe7;
+    --a-line: var(--p-light-line);
+    --a-ink: var(--p-ink);
+    --a-ink-2: var(--p-light-ink-2);
+    --a-ink-3: var(--p-light-ink-2);
+    --a-link: var(--p-light-link);
+  }
+}
+
+.app-bar {
+  flex-shrink: 0;
+  height: 44px;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  padding: 0 8px;
+}
+
+.app-back {
+  height: 44px;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px 0 0;
+  border: none;
+  background: none;
+  color: var(--a-link);
+  font-family: inherit;
+  font-size: 16px;
   cursor: pointer;
-  transition: transform 0.1s;
-
-  &:active {
-    transform: scale(0.92);
-  }
 }
 
-.app-icon {
-  width: 64px;
-  height: 64px;
-  border-radius: 20px;
-  border: 3px solid $frame-border;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  box-shadow: 3px 3px 0 $frame-border;
-  background: $card-bg;
-
-  &::before {
-    content: "";
-    position: absolute;
-    top: 6px;
-    left: 8px;
-    width: 16px;
-    height: 8px;
-    background: rgba(255, 255, 255, 0.8);
-    border-radius: 4px;
-    transform: rotate(-15deg);
-  }
-}
-
-.app-badge {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  min-width: 24px;
-  height: 24px;
-  border-radius: 12px;
-  background: $accent-color;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 900;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 6px;
-  border: 2px solid $frame-border;
-  box-shadow: 2px 2px 0 $frame-border;
-}
-
-.app-loading {
-  position: absolute;
-  bottom: -4px;
-  right: -4px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: $card-bg;
-  border: 2px solid $frame-border;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.app-error-dot {
-  position: absolute;
-  bottom: -4px;
-  right: -4px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #e53e3e;
-  border: 2px solid $frame-border;
-}
-
-.app-label {
-  font-size: 12px;
-  font-weight: 800;
-  color: $frame-border;
-  text-align: center;
-  line-height: 1.2;
-}
-
-// ===== Home Dock =====
-.home-dock {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 16px 0;
-  flex-shrink: 0;
-  position: relative;
-  z-index: 2;
-}
-
-.dock-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  border: 2px solid $frame-border;
-  background: transparent;
-
-  &.active {
-    background: $frame-border;
-    width: 20px;
-    border-radius: 4px;
-  }
-}
-
-// ===== Home Indicator =====
-.home-indicator {
-  width: 140px;
-  height: 5px;
-  border-radius: 3px;
-  background: $frame-border;
-  margin: 8px auto 12px;
-  flex-shrink: 0;
-  position: relative;
-  z-index: 2;
-}
-
-// ===== App Header =====
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  padding-top: max(12px, var(--safe-top, 0px));
-  flex-shrink: 0;
-  position: relative;
-  z-index: 2;
-}
-
-.app-back-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  border-radius: 16px;
-  border: 2px solid $frame-border;
-  background: $card-bg;
-  color: $text-main;
-  font-size: 13px;
-  font-weight: 800;
-  cursor: pointer;
-  box-shadow: 2px 2px 0 $frame-border;
-  transition:
-    transform 0.1s,
-    box-shadow 0.1s;
-
-  &:active {
-    transform: translate(2px, 2px);
-    box-shadow: 0px 0px 0 $frame-border;
-  }
-
-  svg {
-    stroke-width: 3px;
-  }
-}
-
-.app-header-title {
-  font-size: 18px;
-  font-weight: 900;
-  color: $text-main;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-// ===== App Content =====
-.app-content {
+.app-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 20px;
-  position: relative;
-  z-index: 1;
+  padding: 0 16px calc(var(--safe-bottom, 0px) + 32px);
 }
 
-.section-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 800;
-  color: $text-main;
-  background: $accent-color;
-  padding: 6px 16px;
-  border-radius: 20px;
-  border: 2px solid $frame-border;
-  margin-bottom: 16px;
-  box-shadow: 2px 2px 0 $frame-border;
-}
-
-.empty-hint {
-  text-align: center;
-  color: $text-sec;
-  font-size: 14px;
+.app-title {
+  margin: 4px 0 0;
+  font-size: 30px;
   font-weight: 700;
-  padding: 40px 0;
-  border: 2px dashed $text-sec;
-  border-radius: 20px;
-  margin-top: 20px;
+  line-height: 1.25;
+
+  &--sm {
+    font-size: 24px;
+  }
 }
 
-// ===== Loading & Error States =====
-.group-loading {
+.app-sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--a-ink-2);
+}
+
+.app-section-label {
+  margin: 24px 4px 8px;
+  font-size: 13px;
+  color: var(--a-ink-2);
+}
+
+.app-card {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0 16px;
+  background: var(--a-card);
+  border-radius: 16px;
+
+  .app-section-label + & {
+    margin-top: 0;
+  }
+}
+
+.app-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--a-line);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.app-empty {
+  margin-top: 48px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--a-ink-2);
+}
+
+.app-state {
+  margin-top: 64px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-  gap: 16px;
-  color: $text-sec;
-}
-
-.group-loading-text {
-  font-size: 15px;
-  font-weight: 800;
-  color: $text-main;
-}
-
-.group-error {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-  gap: 16px;
-  color: #e53e3e;
-}
-
-.group-error-text {
+  gap: 12px;
   font-size: 14px;
-  font-weight: 700;
-  color: $text-sec;
+  color: var(--a-ink-2);
   text-align: center;
 }
 
-.retry-btn {
+.app-retry {
+  height: 44px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 22px;
+  background: var(--a-raised);
+  color: var(--a-ink);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  border-radius: 20px;
-  border: 2px solid $frame-border;
-  background: $accent-color;
-  color: $text-main;
-  font-size: 14px;
-  font-weight: 800;
+  gap: 6px;
   cursor: pointer;
-  box-shadow: 3px 3px 0 $frame-border;
-  transition:
-    transform 0.1s,
-    box-shadow 0.1s;
+}
 
-  &:active {
-    transform: translate(2px, 2px);
-    box-shadow: 0px 0px 0 $frame-border;
+.avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 24px;
+  flex-shrink: 0;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+
+  &--sm {
+    width: 34px;
+    height: 34px;
+    border-radius: 17px;
+    font-size: 14px;
   }
 }
 
 .spin {
-  animation: spin 1s linear infinite;
+  animation: peek-spin 1s linear infinite;
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
+@keyframes peek-spin {
   to {
     transform: rotate(360deg);
   }
 }
 
-// ===== Chat =====
-.chat-list-item {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 16px;
-  background: $card-bg;
-  border-radius: 24px;
-  border: 2px solid $frame-border;
-  margin-bottom: 12px;
-  cursor: pointer;
-  box-shadow: 3px 3px 0 $frame-border;
-  transition:
-    transform 0.1s,
-    box-shadow 0.1s;
-
-  &:active {
-    transform: translate(2px, 2px);
-    box-shadow: 0px 0px 0 $frame-border;
-  }
+// ===== 訊息 =====
+.chat-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
 }
 
-.chat-list-avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: #fdf4ff;
-  border: 2px solid $frame-border;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: $text-main;
-  flex-shrink: 0;
-  svg {
-    stroke-width: 2.5px;
-  }
-}
-
-.chat-list-info {
-  flex: 1;
-  min-width: 0;
-}
-.chat-list-name {
-  font-size: 16px;
-  font-weight: 800;
-  color: $text-main;
-  margin-bottom: 4px;
-}
-.chat-list-preview {
-  font-size: 13px;
-  font-weight: 600;
-  color: $text-sec;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.chat-list-time {
-  font-size: 12px;
-  font-weight: 800;
-  color: $text-main;
-  background: #f1f5f9;
-  padding: 4px 8px;
-  border-radius: 12px;
-  border: 2px solid $frame-border;
-}
-
-.chat-detail {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-.chat-detail-header {
+.chat-row {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 20px;
-  padding-bottom: 12px;
-  border-bottom: 2px dashed $frame-border;
-}
-.chat-detail-name {
-  font-size: 20px;
-  font-weight: 900;
-  color: $text-main;
+  padding: 10px 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.icon-btn-sm {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 2px solid $frame-border;
-  background: #fff;
+.chat-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--a-line);
+}
+
+.chat-row-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chat-row-name {
+  font-size: 16px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-row-time {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--a-ink-3);
+}
+
+.chat-row-preview {
+  font-size: 14px;
+  color: var(--a-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-detail {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-bar {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: $text-main;
+  height: 56px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--a-line);
+}
+
+.chat-bar-who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.chat-bar-name {
+  max-width: 100%;
+  font-size: 11px;
+  color: #d6d6da;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-bar-spacer {
+  width: 44px;
   flex-shrink: 0;
-  box-shadow: 2px 2px 0 $frame-border;
-  &:active {
-    transform: translate(2px, 2px);
-    box-shadow: 0 0 0 $frame-border;
-  }
 }
 
 .chat-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  flex: 1;
-  overflow-y: auto;
-  padding-bottom: 8px;
+  gap: 6px;
+  padding: 14px 14px 12px;
 }
+
+.chat-stamp {
+  align-self: center;
+  margin: 8px 0 4px;
+  font-size: 11px;
+  color: var(--a-ink-3);
+}
+
 .chat-msg {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  max-width: 85%;
+  gap: 2px;
+
   &.self {
-    align-self: flex-end;
     align-items: flex-end;
-    .chat-bubble {
-      background: $text-main;
-      color: #fff;
-      border-radius: 20px 20px 4px 20px;
-      border-color: $text-main;
-      box-shadow: none;
-    }
   }
 }
-.chat-bubble {
-  padding: 12px 16px;
-  background: $card-bg;
-  border: 2px solid $frame-border;
-  border-radius: 20px 20px 20px 4px;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.5;
-  color: $text-main;
-  word-break: break-word;
-  white-space: pre-line;
-  box-shadow: 3px 3px 0 $frame-border;
-}
-.chat-time-label {
+
+.chat-sender {
+  margin-left: 12px;
   font-size: 11px;
-  font-weight: 800;
-  color: $text-sec;
-  margin-top: 6px;
-  padding: 0 4px;
+  color: var(--a-ink-3);
 }
 
-// ===== 對方輸入中提示 =====
-.chat-bubble.typing {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 14px 16px;
+.chat-bubble {
+  max-width: 72%;
+  padding: 9px 13px;
+  border-radius: 18px 18px 18px 6px;
+  background: var(--a-raised);
+  font-size: 15px;
+  line-height: 1.45;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+
+  .self & {
+    border-radius: 18px 18px 6px 18px;
+    background: var(--p-self-bubble);
+  }
+
+  &.typing {
+    display: flex;
+    gap: 4px;
+    padding: 13px 14px;
+  }
 }
+
 .typing-dot {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
-  background: $text-sec;
-  display: inline-block;
+  border-radius: 4px;
+  background: var(--a-ink-2);
   animation: peek-typing 1.2s infinite ease-in-out;
+
   &:nth-child(2) {
-    animation-delay: 0.2s;
+    animation-delay: 0.15s;
   }
+
   &:nth-child(3) {
-    animation-delay: 0.4s;
+    animation-delay: 0.3s;
   }
 }
+
 @keyframes peek-typing {
   0%,
   60%,
   100% {
+    opacity: 0.3;
     transform: translateY(0);
-    opacity: 0.4;
   }
+
   30% {
-    transform: translateY(-4px);
     opacity: 1;
+    transform: translateY(-3px);
   }
 }
 
-// ===== 錯誤橫幅（顯示在浮層內，避免系統通知被 phone-frame 蓋住）=====
-.chat-error-banner {
+.chat-error {
+  margin: 0 14px 8px;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 12px;
-  padding: 8px 12px;
-  border: 2px solid #d23f3f;
-  border-radius: 12px;
-  background: #ffe3e3;
-  box-shadow: 2px 2px 0 #d23f3f;
-  flex-shrink: 0;
+  padding: 8px 8px 8px 14px;
+  border-radius: 14px;
+  background: rgba(255, 69, 58, 0.16);
+  color: #ffb4ae;
+  font-size: 13px;
 }
+
 .chat-error-text {
   flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.4;
-  color: #b32020;
-  word-break: break-word;
 }
+
 .chat-error-close {
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
   border: none;
-  border-radius: 50%;
-  background: #d23f3f;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
-  cursor: pointer;
+  background: none;
+  color: inherit;
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
 }
 
-// ===== 回覆輸入列 =====
 .chat-input-bar {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 2px dashed $frame-border;
-  flex-shrink: 0;
+  gap: 8px;
+  padding: 8px 14px calc(var(--safe-bottom, 0px) + 24px);
 }
+
 .chat-input {
   flex: 1;
   min-width: 0;
-  height: 42px;
-  padding: 0 16px;
-  border: 2px solid $frame-border;
-  border-radius: 21px;
-  background: #fff;
-  font-size: 14px;
-  font-weight: 700;
-  color: $text-main;
-  box-shadow: 2px 2px 0 $frame-border;
+  height: 38px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  border: 1px solid #3a3b40;
+  border-radius: 19px;
+  background: transparent;
+  color: var(--a-ink);
+  font-family: inherit;
+  font-size: 15px;
+  outline: none;
+
   &::placeholder {
-    color: $text-sec;
-    font-weight: 700;
+    color: var(--a-ink-3);
   }
+
   &:focus {
-    outline: none;
+    border-color: var(--a-link);
   }
+
   &:disabled {
     opacity: 0.6;
-    cursor: not-allowed;
-  }
-}
-.chat-send-btn {
-  width: 42px;
-  height: 42px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  border: 2px solid $frame-border;
-  background: $text-main;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 2px 2px 0 $frame-border;
-  &:active {
-    transform: translate(2px, 2px);
-    box-shadow: 0 0 0 $frame-border;
-  }
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  &.cancel {
-    background: #fff;
-    color: $text-main;
-  }
-  .spin {
-    animation: spin 1s linear infinite;
-  }
-}
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
   }
 }
 
-// ===== Schedule =====
-.schedule-list {
-  display: flex;
-  flex-direction: column;
-}
-.schedule-item {
-  display: flex;
-  align-items: stretch;
-  gap: 16px;
-  padding: 12px 0;
-  &.done {
-    opacity: 0.6;
-    .schedule-title {
-      text-decoration: line-through;
-    }
-    .schedule-dot {
-      background: $frame-border;
-    }
-  }
-}
-.schedule-time {
-  font-size: 14px;
-  font-weight: 900;
-  color: $text-main;
-  min-width: 50px;
-  flex-shrink: 0;
-  padding-top: 2px;
-}
-.schedule-line {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding-top: 8px;
-  flex-shrink: 0;
-  position: relative;
-  &::after {
-    content: "";
-    position: absolute;
-    top: 24px;
-    bottom: -16px;
-    width: 2px;
-    background: repeating-linear-gradient(
-      to bottom,
-      $frame-border,
-      $frame-border 4px,
-      transparent 4px,
-      transparent 8px
-    );
-  }
-}
-.schedule-item:last-child .schedule-line::after {
-  display: none;
-}
-.schedule-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #fff;
-  border: 3px solid $frame-border;
-  position: relative;
-  z-index: 1;
-}
-.schedule-info {
-  flex: 1;
-  background: $card-bg;
-  border: 2px solid $frame-border;
-  border-radius: 16px;
-  padding: 12px;
-  box-shadow: 3px 3px 0 $frame-border;
-}
-.schedule-title {
-  font-size: 15px;
-  font-weight: 800;
-  color: $text-main;
-}
-.schedule-location {
-  font-size: 12px;
-  font-weight: 700;
-  color: $text-sec;
-  margin-top: 4px;
-  display: inline-block;
-  background: #f1f5f9;
-  padding: 2px 8px;
-  border-radius: 8px;
-  border: 1px solid $frame-border;
-}
-.schedule-check {
-  color: $frame-border;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  margin-left: 8px;
-}
-
-// ===== Meals =====
-.meals-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.meal-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px;
-  background: $card-bg;
-  border: 2px solid $frame-border;
-  border-radius: 24px;
-  box-shadow: 4px 4px 0 $frame-border;
-}
-.meal-type-badge {
-  padding: 6px 12px;
-  border-radius: 12px;
-  font-size: 13px;
-  font-weight: 900;
-  border: 2px solid $frame-border;
-  flex-shrink: 0;
-  background: #fff;
-  box-shadow: 2px 2px 0 $frame-border;
-  &.breakfast {
-    background: #fde047;
-  }
-  &.lunch {
-    background: #93c5fd;
-  }
-  &.dinner {
-    background: #c084fc;
-  }
-  &.snack {
-    background: #f9a8d4;
-  }
-}
-.meal-info {
-  flex: 1;
-  min-width: 0;
-}
-.meal-food {
-  font-size: 16px;
-  font-weight: 800;
-  color: $text-main;
-}
-.meal-note {
-  font-size: 13px;
-  font-weight: 600;
-  color: $text-sec;
-  margin-top: 4px;
-}
-.meal-time {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  font-weight: 800;
-  color: $text-main;
-  flex-shrink: 0;
-}
-
-// ===== Balance =====
-.balance-card {
-  background: $accent-color;
-  border: 3px solid $frame-border;
-  border-radius: 24px;
-  padding: 32px 20px;
-  text-align: center;
-  margin-bottom: 24px;
-  box-shadow: 5px 5px 0 $frame-border;
-  position: relative;
-  overflow: hidden;
-
-  &::after {
-    content: "";
-    position: absolute;
-    right: -20px;
-    top: -20px;
-    width: 100px;
-    height: 100px;
-    background: #fff;
-    border-radius: 50%;
-    opacity: 0.2;
-  }
-}
-.balance-label {
-  font-size: 14px;
-  font-weight: 800;
-  color: $text-main;
-  margin-bottom: 12px;
-  position: relative;
-  z-index: 1;
-}
-.balance-amount {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 6px;
-  position: relative;
-  z-index: 1;
-}
-.balance-currency {
-  font-size: 24px;
-  color: $text-main;
-  font-weight: 900;
-}
-.balance-number {
-  font-size: 48px;
-  font-weight: 900;
-  color: $text-main;
-  letter-spacing: -1px;
-}
-.balance-hint {
-  font-size: 12px;
-  font-weight: 700;
-  color: $text-main;
-  opacity: 0.8;
-  margin-top: 12px;
-  position: relative;
-  z-index: 1;
-}
-
-// ===== Transactions =====
-.tx-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-.tx-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  background: $card-bg;
-  border: 2px solid $frame-border;
-  border-bottom: none;
-  &:first-child {
-    border-radius: 16px 16px 0 0;
-  }
-  &:last-child {
-    border-bottom: 2px solid $frame-border;
-    border-radius: 0 0 16px 16px;
-    box-shadow: 3px 3px 0 $frame-border;
-  }
-  &:first-child:last-child {
-    border-radius: 16px;
-  }
-}
-.tx-info {
-  flex: 1;
-  min-width: 0;
-}
-.tx-desc {
-  font-size: 15px;
-  font-weight: 800;
-  color: $text-main;
-}
-.tx-time {
-  font-size: 12px;
-  font-weight: 700;
-  color: $text-sec;
-  margin-top: 2px;
-}
-.tx-amount {
-  font-size: 16px;
-  font-weight: 900;
-  flex-shrink: 0;
-  margin-left: 12px;
-}
-.tx-income {
-  color: #22c55e;
-}
-.tx-expense {
-  color: #e53e3e;
-}
-
-// ===== Memo =====
-.memo-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.memo-item {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px;
-  background: $card-bg;
-  border: 2px solid $frame-border;
-  border-radius: 20px;
-  box-shadow: 3px 3px 0 $frame-border;
-  transition: transform 0.1s;
-
-  &:active {
-    transform: translate(2px, 2px);
-    box-shadow: 0 0 0 $frame-border;
-  }
-
-  &.done {
-    background: #f1f5f9;
-    .memo-text {
-      text-decoration: line-through;
-      color: $text-sec;
-    }
-  }
-}
-.memo-checkbox {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: $frame-border;
-  flex-shrink: 0;
-  background: $accent-color;
-  border: 2px solid $frame-border;
-  border-radius: 8px;
-}
-.memo-checkbox-empty {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  border: 2px solid $frame-border;
-  background: #fff;
-}
-.memo-text {
-  font-size: 16px;
-  font-weight: 800;
-  color: $text-main;
-}
-
-// ===== Notes =====
-.notes-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-.note-card {
-  background: #fdf4ff;
-  border: 2px solid $frame-border;
-  border-radius: 24px;
-  padding: 20px;
-  cursor: pointer;
-  box-shadow: 4px 4px 0 $frame-border;
-  transition:
-    transform 0.1s,
-    box-shadow 0.1s;
-
-  &:nth-child(even) {
-    background: #ecfeff;
-  }
-  &:active {
-    transform: translate(2px, 2px);
-    box-shadow: 0 0 0 $frame-border;
-  }
-}
-.note-card-title {
-  font-size: 16px;
-  font-weight: 900;
-  color: $text-main;
-  margin-bottom: 8px;
-}
-.note-card-preview {
-  font-size: 13px;
-  font-weight: 700;
-  color: $text-sec;
-  line-height: 1.5;
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.note-card-date {
-  font-size: 11px;
-  font-weight: 800;
-  color: $text-main;
-  margin-top: 12px;
-  display: inline-block;
-  background: #fff;
-  border: 2px solid $frame-border;
-  padding: 4px 8px;
-  border-radius: 12px;
-}
-
-.note-detail {
-  background: #fefce8;
-  border: 2px solid $frame-border;
-  border-radius: 24px;
-  padding: 20px;
-  box-shadow: 4px 4px 0 $frame-border;
-}
-.note-detail-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 24px;
-  padding-bottom: 12px;
-  border-bottom: 2px solid $frame-border;
-}
-.note-detail-title {
-  font-size: 20px;
-  font-weight: 900;
-  color: $text-main;
-}
-.note-detail-content {
-  font-size: 16px;
-  font-weight: 700;
-  color: $text-main;
-  line-height: 1.8;
-  white-space: pre-wrap;
-}
-
-// ===== Diary =====
-.diary-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.diary-card {
-  background: $card-bg;
-  border: 2px solid $frame-border;
-  border-radius: 24px;
-  padding: 20px;
-  cursor: pointer;
-  box-shadow: 4px 4px 0 $frame-border;
-  transition: transform 0.1s;
-
-  &:active {
-    transform: translate(2px, 2px);
-    box-shadow: 0 0 0 $frame-border;
-  }
-}
-.diary-card-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.diary-date {
-  font-size: 15px;
-  font-weight: 900;
-  color: $text-main;
-}
-.diary-weather {
-  font-size: 12px;
-  font-weight: 800;
-  color: $text-main;
-  background: #fef08a;
-  padding: 4px 10px;
-  border-radius: 12px;
-  border: 2px solid $frame-border;
-}
-.diary-mood {
-  font-size: 24px;
-  margin-left: auto;
-}
-.diary-card-preview {
-  font-size: 14px;
-  font-weight: 700;
-  color: $text-sec;
-  line-height: 1.6;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.diary-detail {
-  background: $card-bg;
-  border: 2px solid $frame-border;
-  border-radius: 24px;
-  padding: 20px;
-  box-shadow: 4px 4px 0 $frame-border;
-}
-.diary-detail-header {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 2px dashed $frame-border;
-
-  .icon-btn-sm {
-    align-self: flex-start;
-  }
-}
-.diary-detail-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 14px;
-  font-weight: 800;
-  color: $text-main;
-
-  span:not(:last-child) {
-    background: #f1f5f9;
-    padding: 6px 12px;
-    border-radius: 12px;
-    border: 2px solid $frame-border;
-  }
-}
-.diary-detail-content {
-  font-size: 16px;
-  font-weight: 700;
-  color: $text-main;
-  line-height: 1.8;
-  white-space: pre-wrap;
-}
-
-// ===== Gallery =====
-.gallery-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.gallery-card {
-  display: flex;
-  gap: 14px;
-  padding: 16px;
-  background: $card-bg;
-  border: 3px solid $frame-border;
-  border-radius: 20px;
-  box-shadow: 4px 4px 0 $frame-border;
-}
-.gallery-icon-area {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  background: #f0fdf4;
-  border: 2px solid $frame-border;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: $text-main;
-}
-.gallery-info {
-  flex: 1;
-  min-width: 0;
-}
-.gallery-desc {
-  font-size: 15px;
-  font-weight: 800;
-  color: $text-main;
-  margin-bottom: 6px;
-  line-height: 1.4;
-}
-.gallery-reason {
-  font-size: 13px;
-  font-weight: 700;
-  color: $text-sec;
-  line-height: 1.5;
-  margin-bottom: 8px;
-}
-.gallery-reason-label {
-  color: $accent-color;
-  font-weight: 800;
-}
-.gallery-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.gallery-source-tag {
-  font-size: 11px;
-  font-weight: 800;
-  padding: 2px 8px;
-  border-radius: 8px;
-  border: 2px solid $frame-border;
-  background: #fef3c7;
-  color: $text-main;
-}
-.gallery-date {
-  font-size: 12px;
-  font-weight: 700;
-  color: $text-sec;
-}
-
-// ===== Browser History =====
-.browser-filter-tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-
-.browser-filter-btn {
-  padding: 6px 14px;
-  border-radius: 16px;
-  border: 2px solid $frame-border;
-  background: $card-bg;
-  font-size: 13px;
-  font-weight: 800;
-  color: $text-main;
-  cursor: pointer;
-  box-shadow: 2px 2px 0 $frame-border;
-  transition: transform 0.1s, box-shadow 0.1s;
-
-  &:active {
-    transform: translate(2px, 2px);
-    box-shadow: 0 0 0 $frame-border;
-  }
-
-  &.active {
-    background: $accent-color;
-  }
-}
-
-.browser-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.browser-entry {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
-  background: $card-bg;
-  border: 2px solid $frame-border;
-  border-bottom: none;
-
-  &:first-child { border-radius: 16px 16px 0 0; }
-  &:last-child {
-    border-bottom: 2px solid $frame-border;
-    border-radius: 0 0 16px 16px;
-    box-shadow: 3px 3px 0 $frame-border;
-  }
-  &:first-child:last-child { border-radius: 16px; }
-
-  &.adult {
-    background: #fff0f3;
-  }
-}
-
-.browser-entry-icon {
+.chat-send {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
-  border: 2px solid $frame-border;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 18px;
+  background: var(--p-self-bubble);
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  color: $text-main;
-  background: #f8fafc;
+  cursor: pointer;
 
-  .adult & {
-    background: #ffe4e8;
-    color: #e11d48;
-  }
-
-  .search & {
-    background: #eff6ff;
-    color: #2563eb;
+  &:disabled {
+    background: var(--a-raised);
+    color: var(--a-ink-3);
+    cursor: default;
   }
 }
 
-.browser-entry-info {
+// ===== 行事曆 =====
+.sched-item {
+  align-items: flex-start;
+
+  &.done {
+    .sched-title,
+    .sched-time {
+      color: var(--a-ink-2);
+    }
+
+    .sched-title {
+      text-decoration: line-through;
+    }
+
+    .sched-dot {
+      background: var(--a-line);
+    }
+  }
+}
+
+.sched-time {
+  width: 46px;
+  flex-shrink: 0;
+  font-family: var(--p-num);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.sched-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: var(--p-owner);
+}
+
+.sched-main {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.browser-entry-title {
-  font-size: 14px;
-  font-weight: 800;
-  color: $text-main;
-  white-space: pre-line;
-  word-break: break-word;
-  line-height: 1.4;
+.sched-title {
+  font-size: 15px;
+  line-height: 1.5;
 }
 
-.browser-entry-url {
-  font-size: 11px;
+.sched-loc {
+  font-size: 13px;
+  color: var(--a-ink-2);
+}
+
+.sched-check {
+  margin-top: 4px;
+  flex-shrink: 0;
+  color: var(--a-ink-2);
+}
+
+// ===== 飲食記錄 =====
+.meal-row {
+  align-items: flex-start;
+}
+
+.meal-chip {
+  flex-shrink: 0;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 12px;
+  background: var(--a-raised);
+  font-size: 12px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+}
+
+.meal-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.meal-food {
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.meal-note {
+  font-size: 13px;
+  color: var(--a-ink-2);
+}
+
+.meal-time {
+  flex-shrink: 0;
+  font-family: var(--p-num);
+  font-size: 13px;
+  color: var(--a-ink-2);
+  line-height: 1.7;
+}
+
+// ===== 錢包 =====
+.wallet-card {
+  margin-top: 16px;
+  padding: 20px;
+  border-radius: 20px;
+  background: linear-gradient(150deg, #2b323b 0%, #3d4a5c 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wallet-label,
+.wallet-hint {
+  font-size: 13px;
+  color: var(--a-ink-2);
+}
+
+.wallet-amount {
+  font-family: var(--p-num);
+  font-size: 40px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.wallet-currency {
+  margin-right: 4px;
+  font-size: 24px;
+  color: var(--a-ink-2);
+}
+
+.tx-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tx-desc {
+  font-size: 15px;
+}
+
+.tx-time {
+  font-family: var(--p-num);
+  font-size: 12px;
+  color: var(--a-ink-3);
+}
+
+.tx-amount {
+  flex-shrink: 0;
+  font-family: var(--p-num);
+  font-size: 16px;
+  font-weight: 500;
+
+  &.is-in {
+    color: #7bd88f;
+  }
+}
+
+// ===== 備忘錄 =====
+.memo-row {
+  align-items: flex-start;
+
+  &.done .memo-text {
+    color: var(--a-ink-2);
+    text-decoration: line-through;
+  }
+
+  &.done .memo-check {
+    background: var(--p-owner);
+    border-color: var(--p-owner);
+  }
+}
+
+.memo-check {
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  border: 1.5px solid #b4b3af;
+  border-radius: 11px;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.memo-text {
+  flex: 1;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+// ===== 記事本 / 日記 =====
+.note-list {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.note-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px 16px;
+  border: none;
+  border-radius: 16px;
+  background: var(--a-card);
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.note-card-title {
+  font-size: 16px;
   font-weight: 700;
-  color: $text-sec;
-  white-space: nowrap;
+}
+
+.note-card-preview {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--a-ink-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.note-card-date {
+  font-family: var(--p-num);
+  font-size: 12px;
+  color: var(--a-ink-2);
+}
+
+.diary-meta {
+  margin: 8px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--a-ink-2);
+
+  .note-card & {
+    margin: 0;
+  }
+}
+
+.diary-date {
+  font-weight: 700;
+  color: var(--a-ink);
+}
+
+.mood-chip {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 12px;
+  background: var(--a-raised);
+  color: var(--a-ink);
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.reading {
+  padding-top: 4px;
+}
+
+.reading-body {
+  margin-top: 20px;
+  font-size: 16px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+// ===== 相簿 / 已隱藏 =====
+.photo-grid {
+  margin: 16px -16px 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.photo-tile {
+  position: relative;
+  aspect-ratio: 1;
+  border: none;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+
+  &.is-hidden {
+    background: #2b303a;
+  }
+
+  &.is-selected {
+    outline: 3px solid var(--a-link);
+    outline-offset: -3px;
+  }
+}
+
+.photo-tile-tag {
+  position: absolute;
+  left: 5px;
+  bottom: 5px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #ffffff;
+  font-family: var(--p-num);
+  font-size: 11px;
+}
+
+.photo-detail {
+  padding: 14px 16px;
+}
+
+.photo-detail-meta {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--p-num);
+  font-size: 12px;
+  color: var(--a-ink-2);
+}
+
+.photo-source {
+  font-family: "Noto Sans TC", sans-serif;
+  font-weight: 700;
+  color: var(--a-ink);
+}
+
+.photo-desc {
+  margin: 8px 0 0;
+  font-size: 15px;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+.photo-reason {
+  margin: 10px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--a-ink-2);
+  white-space: pre-line;
+}
+
+.photo-reason-label {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--a-ink);
+}
+
+.album-row {
+  width: 100%;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.album-row-label {
+  flex: 1;
+}
+
+.album-row-count {
+  font-family: var(--p-num);
+  color: var(--a-ink-2);
+}
+
+.album-row-chev {
+  color: var(--a-ink-2);
+}
+
+// ===== 瀏覽紀錄 =====
+.segmented {
+  margin-top: 16px;
+  display: flex;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--a-card);
+}
+
+.segmented-btn {
+  flex: 1;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--a-ink-2);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+
+  &[aria-pressed="true"] {
+    background: var(--a-raised);
+    color: var(--a-ink);
+    font-weight: 500;
+  }
+}
+
+.browser-row {
+  align-items: flex-start;
+}
+
+.browser-icon {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--a-raised);
+  color: var(--a-ink-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &.adult {
+    color: #ff9f97;
+  }
+}
+
+.browser-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.browser-title {
+  font-size: 15px;
+  line-height: 1.45;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.browser-url {
+  font-size: 12px;
+  color: var(--a-ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-top: 2px;
+  white-space: nowrap;
 }
 
-.browser-entry-right {
+.browser-side {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
-  flex-shrink: 0;
 }
 
-.browser-cat-badge {
+.browser-tag {
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: rgba(255, 69, 58, 0.18);
+  color: #ff9f97;
   font-size: 11px;
-  font-weight: 800;
-  padding: 2px 8px;
-  border-radius: 8px;
-  border: 2px solid $frame-border;
-  background: #f1f5f9;
-  color: $text-main;
-
-  &.adult {
-    background: #ffe4e8;
-    color: #e11d48;
-    border-color: #e11d48;
-  }
-
-  &.search {
-    background: #eff6ff;
-    color: #2563eb;
-    border-color: #2563eb;
-  }
-}
-
-.browser-entry-time {
-  font-size: 11px;
-  font-weight: 800;
-  color: $text-sec;
-}
-
-// ===== Hidden Photos =====
-.hidden-label {
-  background: #1a1a1a !important;
-  color: #fff !important;
-}
-
-.hidden-warning {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  background: #fff0f3;
-  border: 2px solid #e11d48;
-  border-radius: 16px;
-  font-size: 13px;
-  font-weight: 700;
-  color: #e11d48;
-  margin-bottom: 16px;
 }
 
-.hidden-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.hidden-card {
-  display: flex;
-  gap: 14px;
-  padding: 16px;
-  background: #1a1a1a;
-  border: 3px solid $frame-border;
-  border-radius: 20px;
-  box-shadow: 4px 4px 0 $frame-border;
-}
-
-.hidden-card-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  background: #2d1a2e;
-  border: 2px solid #6b21a8;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: #c084fc;
-}
-
-.hidden-card-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.hidden-card-desc {
-  font-size: 15px;
-  font-weight: 800;
-  color: #f0e6ff;
-  margin-bottom: 6px;
-  line-height: 1.4;
-}
-
-.hidden-card-reason {
-  font-size: 13px;
-  font-weight: 700;
-  color: #c4b5d4;
-  line-height: 1.5;
-  margin-bottom: 8px;
-}
-
-.hidden-reason-label {
-  color: #c084fc;
-  font-weight: 800;
-}
-
-.hidden-card-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.hidden-type-badge {
-  font-size: 11px;
-  font-weight: 800;
-  padding: 2px 8px;
-  border-radius: 8px;
-  border: 2px solid #6b21a8;
-  background: #2d1a2e;
-  color: #c084fc;
-
-  &.selfie { background: #2d1a1a; border-color: #e11d48; color: #f9a8d4; }
-  &.saved { background: #1a2d1a; border-color: #16a34a; color: #86efac; }
-  &.screenshot { background: #1a1a2d; border-color: #2563eb; color: #93c5fd; }
-}
-
-.hidden-card-date {
+.browser-time {
+  font-family: var(--p-num);
   font-size: 12px;
-  font-weight: 700;
-  color: #9ca3af;
+  color: var(--a-ink-3);
 }
 </style>

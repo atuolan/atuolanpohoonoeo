@@ -142,6 +142,13 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
    * 確保切換聊天時不會看到上一個聊天的內容
    */
   async function loadOrReset(charId: string, cId: string): Promise<boolean> {
+    if (Object.values(groupStatus.value).some((s) => s === "loading")) {
+      // 同一支手機還在背景生成：保留進度，回來接著看
+      if (characterId.value === charId && chatId.value === cId) return true;
+      // 換了一支手機：先停掉上一支，免得它生成完把內容寫進這一支的畫面
+      abortAll();
+    }
+
     characterId.value = charId;
     chatId.value = cId;
 
