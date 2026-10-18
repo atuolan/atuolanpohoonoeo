@@ -1,8 +1,24 @@
 <script setup lang="ts">
 import { useCanvasStore } from "@/stores/canvas";
+import { useCharactersStore } from "@/stores/characters";
+import {
+  CHAR_STICKY_NOTE_ADDED_EVENT,
+  loadCharStickyNotes,
+  type CharStickyNote,
+} from "@/services/charStickyNotes";
 import type { WidgetCustomStyle } from "@/types";
-import { Frown, Heart, Meh, Smile, Sparkles } from "lucide-vue-next";
-import { computed, ref, watch } from "vue";
+import {
+  ArrowLeftRight,
+  ChevronLeft,
+  ChevronRight,
+  Frown,
+  Heart,
+  Meh,
+  Smile,
+  Sparkles,
+  StickyNote,
+} from "lucide-vue-next";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
 const props = defineProps<{
   widgetId: string;
@@ -12,8 +28,14 @@ const props = defineProps<{
     color?: string;
     updatedAt?: number; // user 最後一次改內容或點心情的時間（帶進線上聊天提示詞用）
     moodChosen?: boolean; // user 點過心情按鈕（預設亮著的「開心」不算）
+    noteFace?: "char" | "mine"; // 目前顯示 char 的便利貼還是自己的日記
+    seenNoteId?: string; // 已經自動翻過面的最新便利貼
     customStyle?: WidgetCustomStyle;
   };
+}>();
+
+const emit = defineEmits<{
+  (e: "navigate", payload: { type: string; characterId?: string; chatId?: string }): void;
 }>();
 
 const canvasStore = useCanvasStore();
@@ -33,6 +55,19 @@ const selectedColor = ref(props.data?.color || colors[0]);
 const updatedAt = ref(props.data?.updatedAt);
 const moodChosen = ref(props.data?.moodChosen === true);
 
+// ===== char 寫的便利貼 =====
+const charactersStore = useCharactersStore();
+if (charactersStore.characters.length === 0 && !charactersStore.isLoading) {
+  void charactersStore.loadCharacters();
+}
+
+const notes = ref<CharStickyNote[]>([]);
+const noteFace = ref<"char" | "mine">(props.data?.noteFace ?? "mine");
+const seenNoteId = ref(props.data?.seenNoteId);
+// 0 是最新一張，往上是更舊的
+const noteIndex = ref(0);
+const isEditMode = computed(() => canvasStore.isEditMode);
+
 function persist() {
   canvasStore.updateWidgetData(props.widgetId, {
     content: content.value,
@@ -40,8 +75,92 @@ function persist() {
     color: selectedColor.value,
     updatedAt: updatedAt.value,
     moodChosen: moodChosen.value,
+    noteFace: noteFace.value,
+    seenNoteId: seenNoteId.value,
     customStyle: props.data?.customStyle,
   });
+}
+
+const showingNote = computed(() => noteFace.value === "char" && notes.value.length > 0);
+const currentNote = computed(
+  () => notes.value[Math.min(noteIndex.value, notes.value.length - 1)] ?? null,
+);
+const noteCharacter = computed(() => {
+  const note = currentNote.value;
+  return note ? charactersStore.characters.find((c) => c.id === note.characterId) ?? null : null;
+});
+const noteAuthorName = computed(
+  () =>
+    noteCharacter.value?.nickname ||
+    noteCharacter.value?.data?.name ||
+    currentNote.value?.characterName ||
+    "",
+);
+const noteAuthorAvatar = computed(() => noteCharacter.value?.avatar || "");
+const noteDate = computed(() => {
+  if (!currentNote.value) return "";
+  const date = new Date(currentNote.value.createdAt);
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+});
+
+// 有沒看過的新便利貼就翻到 char 那面
+function showLatestIfNew() {
+  const latest = notes.value[0];
+  if (!latest || latest.id === seenNoteId.value) return;
+  seenNoteId.value = latest.id;
+  noteFace.value = "char";
+  noteIndex.value = 0;
+  persist();
+}
+
+async function refreshNotes() {
+  try {
+    notes.value = await loadCharStickyNotes();
+  } catch (error) {
+    console.warn("[MoodDiarySticky] 讀取便利貼失敗:", error);
+    notes.value = [];
+  }
+  showLatestIfNew();
+}
+
+function handleNoteAdded() {
+  void refreshNotes();
+}
+
+onMounted(() => {
+  void refreshNotes();
+  window.addEventListener(CHAR_STICKY_NOTE_ADDED_EVENT, handleNoteAdded);
+});
+
+onUnmounted(() => {
+  window.removeEventListener(CHAR_STICKY_NOTE_ADDED_EVENT, handleNoteAdded);
+});
+
+function showMine() {
+  if (isEditMode.value) return;
+  noteFace.value = "mine";
+  persist();
+}
+
+function showNotes() {
+  if (isEditMode.value) return;
+  noteFace.value = "char";
+  noteIndex.value = 0;
+  persist();
+}
+
+function olderNote() {
+  if (noteIndex.value < notes.value.length - 1) noteIndex.value++;
+}
+
+function newerNote() {
+  if (noteIndex.value > 0) noteIndex.value--;
+}
+
+function openNoteChat() {
+  const note = currentNote.value;
+  if (isEditMode.value || !note) return;
+  emit("navigate", { type: "chat", characterId: note.characterId, chatId: note.chatId });
 }
 
 // 內容或心情變了才算「寫過」，換顏色不算
@@ -127,38 +246,94 @@ const currentLayout = computed(() => {
 <template>
   <div
     class="mood-diary-sticky"
-    :class="[currentLayout, { 'has-custom-bg': hasCustomBackground }]"
+    :class="[currentLayout, { 'has-custom-bg': hasCustomBackground, 'showing-note': showingNote }]"
     :style="containerStyle"
   >
-    <div class="sticky-header" :style="textStyle">
-      <component
-        :is="currentMoodIcon"
-        :size="20"
-        :stroke-width="2"
-        class="mood-icon"
-      />
-      <span class="date">{{ new Date().toLocaleDateString("zh-TW") }}</span>
-    </div>
+    <!-- char 寫的便利貼 -->
+    <template v-if="showingNote && currentNote">
+      <div class="sticky-header" :style="textStyle">
+        <button type="button" class="note-author" @click.stop="openNoteChat">
+          <img v-if="noteAuthorAvatar" :src="noteAuthorAvatar" alt="" class="note-avatar" />
+          <span v-else class="note-avatar note-avatar-fallback">{{ noteAuthorName.charAt(0) }}</span>
+          <span class="note-author-name">{{ noteAuthorName }}<span class="note-author-suffix">留的</span></span>
+        </button>
+        <span class="date">{{ noteDate }}</span>
+      </div>
 
-    <textarea
-      v-model="content"
-      class="diary-content"
-      :style="textStyle"
-      placeholder="寫下今天的心情..."
-    ></textarea>
+      <div class="diary-content note-content" :style="textStyle">{{ currentNote.text }}</div>
 
-    <div class="sticky-footer">
-      <div class="mood-selector">
-        <button
-          v-for="(icon, key) in moodIcons"
-          :key="key"
-          :class="['mood-btn', { active: mood === key }]"
-          @click="pickMood(key as keyof typeof moodIcons)"
-        >
-          <component :is="icon" :size="14" :stroke-width="2" />
+      <div class="sticky-footer note-footer" :style="textStyle">
+        <div v-if="notes.length > 1" class="note-pager">
+          <button
+            type="button"
+            class="note-nav"
+            :disabled="noteIndex >= notes.length - 1"
+            aria-label="上一張"
+            @click.stop="olderNote"
+          >
+            <ChevronLeft :size="14" :stroke-width="2" />
+          </button>
+          <span class="note-count">{{ notes.length - noteIndex }}/{{ notes.length }}</span>
+          <button
+            type="button"
+            class="note-nav"
+            :disabled="noteIndex === 0"
+            aria-label="下一張"
+            @click.stop="newerNote"
+          >
+            <ChevronRight :size="14" :stroke-width="2" />
+          </button>
+        </div>
+        <button type="button" class="note-flip" aria-label="我的日記" @click.stop="showMine">
+          <span class="note-flip-text">我的日記</span>
+          <ArrowLeftRight :size="12" :stroke-width="2" />
         </button>
       </div>
-    </div>
+    </template>
+
+    <!-- 自己的日記 -->
+    <template v-else>
+      <div class="sticky-header" :style="textStyle">
+        <component
+          :is="currentMoodIcon"
+          :size="20"
+          :stroke-width="2"
+          class="mood-icon"
+        />
+        <div class="header-right">
+          <button
+            v-if="notes.length > 0"
+            type="button"
+            class="note-flip note-flip-icon"
+            aria-label="看便利貼"
+            @click.stop="showNotes"
+          >
+            <StickyNote :size="14" :stroke-width="2" />
+          </button>
+          <span class="date">{{ new Date().toLocaleDateString("zh-TW") }}</span>
+        </div>
+      </div>
+
+      <textarea
+        v-model="content"
+        class="diary-content"
+        :style="textStyle"
+        placeholder="寫下今天的心情..."
+      ></textarea>
+
+      <div class="sticky-footer">
+        <div class="mood-selector">
+          <button
+            v-for="(icon, key) in moodIcons"
+            :key="key"
+            :class="['mood-btn', { active: mood === key }]"
+            @click="pickMood(key as keyof typeof moodIcons)"
+          >
+            <component :is="icon" :size="14" :stroke-width="2" />
+          </button>
+        </div>
+      </div>
+    </template>
 
     <!-- 裝飾膠帶 -->
     <div class="tape"></div>
@@ -174,9 +349,148 @@ const currentLayout = computed(() => {
   display: flex;
   flex-direction: column;
   position: relative;
-  
+  // 讓便利貼那面依組件實際寬度切換窄版（預設大小只有 160px 寬）
+  container-type: inline-size;
+
+  // ===== char 便利貼那面與切換按鈕（顏色跟著版型的文字色） =====
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .note-author {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .note-avatar {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .note-avatar-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    background: rgba(0, 0, 0, 0.08);
+  }
+
+  .note-author-name {
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .note-content {
+    min-height: 0;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .note-footer {
+    // 疊在版型的角落裝飾（如珍珠風左下角的框）上面
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .note-pager {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 11px;
+    opacity: 0.75;
+  }
+
+  .note-nav {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+
+    &:disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+  }
+
+  .note-flip {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    font-size: 11px;
+    line-height: 1.2;
+    opacity: 0.75;
+    cursor: pointer;
+    white-space: nowrap;
+
+    &:hover {
+      opacity: 1;
+    }
+  }
+
+  .note-flip-icon {
+    margin-left: 0;
+    padding: 3px;
+  }
+
+  // 窄版：切換按鈕只留圖示、名字不加「留的」、頭像縮小
+  @container (max-width: 139px) {
+    .note-flip {
+      padding: 3px;
+    }
+
+    .note-flip-text,
+    .note-author-suffix {
+      display: none;
+    }
+
+    .note-avatar {
+      width: 18px;
+      height: 18px;
+    }
+
+    .note-author {
+      gap: 4px;
+    }
+  }
+
   // Classic 傳統樣式
   &.classic {
+    color: #374151;
     border-radius: 4px;
     box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.1), inset 0 0 40px rgba(255, 255, 255, 0.3);
     font-family: "Comic Sans MS", cursive, sans-serif;
@@ -266,6 +580,7 @@ const currentLayout = computed(() => {
 
   // Pop普普風/新粗野派樣式
   &.pop {
+    color: #1a1a1a;
     border-radius: 16px;
     border: 2px solid #1a1a1a;
     box-shadow: 3px 3px 0px #1a1a1a;
@@ -402,6 +717,7 @@ const currentLayout = computed(() => {
 
   // 平面風
   &.flat {
+    color: #332650;
     background-color: #fef08a; // Warm yellow
     border-radius: 24px;
     border: 3px solid #332650;
@@ -450,6 +766,7 @@ const currentLayout = computed(() => {
 
   // 插圖風
   &.illustration {
+    color: #1a1a1a;
     background-color: #F6F3EB;
     border-radius: 6px;
     border: 2px solid #1a1a1a;
@@ -510,6 +827,7 @@ const currentLayout = computed(() => {
 
   // 像素風
   &.pixel {
+    color: #d06d9a;
     background-color: #FFF1F5;
     background-image: linear-gradient(#F8C6DB 1px, transparent 1px), linear-gradient(90deg, #F8C6DB 1px, transparent 1px);
     background-size: 16px 16px;
@@ -566,6 +884,7 @@ const currentLayout = computed(() => {
 
   // 珍珠畫廊風（維梅爾《戴珍珠耳環的少女》幾何拼貼）- 優化版
   &.pearl {
+    color: #F8F6F0;
     background: linear-gradient(155deg, #3E3A58 0%, #332D4B 100%);
     border: 2.5px solid #FFCE05;
     border-radius: 12px;
@@ -737,6 +1056,7 @@ const currentLayout = computed(() => {
 
   // 線描插畫風（純白底 + 黑細線手繪 + 零彩色）
   &.lineart {
+    color: #1a1a1a;
     background: #ffffff;
     border: 1.5px solid #1a1a1a;
     border-radius: 14px;
