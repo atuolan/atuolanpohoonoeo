@@ -231,8 +231,8 @@ import {
 } from "@/utils/chatMessageMapping";
 import { buildChatMetadataFromState } from "@/utils/chatMetadataBuilder";
 import { saveCharStatus } from "@/services/charStatus";
-import { addCharStickyNote, getCharStickyNoteForPrompt } from "@/services/charStickyNotes";
-import { getUserMoodNoteForPrompt } from "@/services/userMoodNote";
+import { addCharNote, markMoodReplied } from "@/services/noteBoard";
+import { getNoteBoardPromptContext } from "@/services/noteBoardPrompt";
 import { createGreetingMessages } from "@/utils/chatGreetingMessages";
 import {
   loadAndRepairChatMessages,
@@ -4871,15 +4871,13 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       }
     }
 
-    // 便利貼：這個角色上一張便利貼，與 user 主畫面的心情便籤（群聊不帶）
+    // 便簽留言板：這個角色上一張紙條，與 user 最新送出的心情（群聊不帶）；
+    // 記下這輪帶的心情，解析到 <mood-reply> 時對應到它
     const stickyNoteChatId = currentChatId.value;
-    const [charStickyNoteToSend, userMoodNoteToSend] =
+    const noteBoardContext =
       isGroupChat.value || !stickyNoteChatId
-        ? ["", ""]
-        : await Promise.all([
-            getCharStickyNoteForPrompt(stickyNoteChatId),
-            getUserMoodNoteForPrompt(),
-          ]);
+        ? { charStickyNote: "", moodNote: "", moodPostId: null }
+        : await getNoteBoardPromptContext(stickyNoteChatId);
 
     const builder = new PromptBuilder({
       character: char,
@@ -4949,9 +4947,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       doNotDisturb: chatDoNotDisturb.value,
       // 傳入角色目前的狀態（{{charStatus}}）
       charStatus: charStatus.value?.text,
-      // 傳入這個角色上一張便利貼（{{charStickyNote}}）與 user 的心情便籤（{{userMoodNote}}）
-      charStickyNote: charStickyNoteToSend,
-      userMoodNote: userMoodNoteToSend,
+      // 傳入這個角色上一張紙條（{{charStickyNote}}）與 user 的心情（{{userMoodNote}}）
+      charStickyNote: noteBoardContext.charStickyNote,
+      userMoodNote: noteBoardContext.moodNote,
       // 傳入表情包列表
       stickerList: stickerNames,
       // 傳入面對面模式狀態
@@ -6339,6 +6337,11 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
             // 處理便利貼標籤
             if (parsed.hasStickyNote && parsed.stickyNoteData) {
               await handleStickyNote(parsed.stickyNoteData.text);
+            }
+
+            // 處理回覆心情標籤
+            if (parsed.hasMoodReply && parsed.moodReplyData) {
+              await handleMoodReply(parsed.moodReplyData.text, noteBoardContext.moodPostId);
             }
 
             // 處理行事曆事件標籤（經期紀錄工具做不到，照常執行）
@@ -8914,22 +8917,44 @@ async function handleCharStatusUpdate(text: string) {
   }
 }
 
-// ===== 便利貼處理 =====
+// ===== 便簽留言板處理 =====
 
-async function handleStickyNote(text: string) {
+/** char 主動寫的紙條（<sticky-note>） */
+async function handleStickyNote(text: string, replyTo?: string) {
   const chatId = currentChatId.value;
   const char = currentCharacter.value;
   if (!chatId || !char || isGroupChat.value) return;
 
   try {
-    await addCharStickyNote({
+    await addCharNote({
       chatId,
       characterId: char.id,
       characterName: char.nickname || char.data.name,
       text,
+      replyTo,
     });
   } catch (error) {
-    console.error("[ChatScreen] 便利貼儲存失敗:", error);
+    console.error("[ChatScreen] 紙條儲存失敗:", error);
+  }
+}
+
+/**
+ * char 回覆 user 的心情（<mood-reply>）：有字就釘在那則心情底下，沒字只記下回過了
+ * @param postId 這輪帶進提示詞的心情；沒帶的話，有字就當主動紙條
+ */
+async function handleMoodReply(text: string, postId: string | null) {
+  const chatId = currentChatId.value;
+  if (!chatId || isGroupChat.value) return;
+
+  if (text) {
+    await handleStickyNote(text, postId ?? undefined);
+    return;
+  }
+  if (!postId) return;
+  try {
+    await markMoodReplied(postId, chatId);
+  } catch (error) {
+    console.error("[ChatScreen] 回覆心情記號儲存失敗:", error);
   }
 }
 

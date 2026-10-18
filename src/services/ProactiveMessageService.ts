@@ -1152,8 +1152,9 @@ export class ProactiveMessageService {
 
       const { useChatVariablesStore: useChatVariablesStore1v1 } = await import("@/stores/chatVariables");
       const proactiveOverrides = useChatVariablesStore1v1().presetForChat(chat.id, chat);
-      const { getCharStickyNoteForPrompt } = await import("@/services/charStickyNotes");
-      const { getUserMoodNoteForPrompt } = await import("@/services/userMoodNote");
+      // 便簽留言板：這個角色上一張紙條與 user 最新送出的心情；記下這輪帶的心情給 <mood-reply> 對應
+      const { getNoteBoardPromptContext } = await import("@/services/noteBoardPrompt");
+      const noteBoardContext = await getNoteBoardPromptContext(chat.id);
       const promptBuilder = new PromptBuilder({
         character,
         lorebooks: characterLorebooks,
@@ -1180,8 +1181,8 @@ export class ProactiveMessageService {
         gamePlayingContext: options?.gamePlayingContext,
         socialPosts: await getSocialPostsForPrompt([character.id]),
         charStatus: chat.charStatus?.text,
-        charStickyNote: await getCharStickyNoteForPrompt(chat.id),
-        userMoodNote: await getUserMoodNoteForPrompt(),
+        charStickyNote: noteBoardContext.charStickyNote,
+        userMoodNote: noteBoardContext.moodNote,
       });
 
       const promptData = await promptBuilder.build();
@@ -1543,18 +1544,28 @@ export class ProactiveMessageService {
             }
           }
 
-          // 處理便利貼標籤（主畫面的心情便籤會即時換面）
-          if (parsedResponse.hasStickyNote && parsedResponse.stickyNoteData) {
+          // 處理便利貼與回覆心情標籤（釘上便簽留言板，主畫面的心情便籤會貼出小紙條）
+          // 回覆心情有字就釘在那則心情底下；沒字只記下回過了；這輪沒帶心情的話，有字就當主動紙條
+          const moodReply = parsedResponse.hasMoodReply ? parsedResponse.moodReplyData : undefined;
+          if ((parsedResponse.hasStickyNote && parsedResponse.stickyNoteData) || moodReply) {
             try {
-              const { addCharStickyNote } = await import("@/services/charStickyNotes");
-              await addCharStickyNote({
+              const { addCharNote, markMoodReplied } = await import("@/services/noteBoard");
+              const author = {
                 chatId: chat.id,
                 characterId: character.id,
                 characterName: character.nickname || character.data.name,
-                text: parsedResponse.stickyNoteData.text,
-              });
+              };
+              if (parsedResponse.hasStickyNote && parsedResponse.stickyNoteData) {
+                await addCharNote({ ...author, text: parsedResponse.stickyNoteData.text });
+              }
+              const moodPostId = noteBoardContext.moodPostId;
+              if (moodReply?.text) {
+                await addCharNote({ ...author, text: moodReply.text, replyTo: moodPostId ?? undefined });
+              } else if (moodReply && moodPostId) {
+                await markMoodReplied(moodPostId, chat.id);
+              }
             } catch (error) {
-              console.error("[ProactiveMessage] 便利貼儲存失敗:", error);
+              console.error("[ProactiveMessage] 紙條儲存失敗:", error);
             }
           }
 

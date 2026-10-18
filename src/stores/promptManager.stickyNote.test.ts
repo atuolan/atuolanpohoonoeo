@@ -26,17 +26,21 @@ const DEFAULT_CONTENT = contentOf(DEFAULT_PROMPT_DEFINITIONS, "onlineModeFeature
 const STATUS_LINE = DEFAULT_CONTENT.match(/[^\n]*<char-status[^\n]*/)![0];
 const STICKY_LINE = DEFAULT_CONTENT.match(/[^\n]*<sticky-note[^\n]*/)![0];
 
-/** 存一份線上模式功能被換成指定內容的設定，模擬舊用戶 */
-async function loadWithOnlineContent(content: string) {
+/** 存一份指定提示詞被換成指定內容的設定，模擬舊用戶 */
+async function loadWithPrompt(identifier: string, content: string) {
   const config = createDefaultPromptManagerConfig();
   config.faceToFacePromptResetVersion = FACE_TO_FACE_PROMPT_RESET_VERSION;
   config.prompts = structuredClone(config.prompts).map((p) =>
-    p.identifier === "onlineModeFeatures" ? { ...p, content } : p,
+    p.identifier === identifier ? { ...p, content } : p,
   );
   storage.set("promptManagerConfig", config);
   const store = usePromptManagerStore();
   await store.loadConfig();
   return store;
+}
+
+function loadWithOnlineContent(content: string) {
+  return loadWithPrompt("onlineModeFeatures", content);
 }
 
 describe("線上模式功能的便利貼", () => {
@@ -68,6 +72,28 @@ describe("線上模式功能的便利貼", () => {
     await store.loadConfig();
     await store.loadConfig();
     expect(contentOf(store.config.prompts, "onlineModeFeatures").split("<sticky-note").length - 1).toBe(1);
+  });
+
+  it("上一版寫「貼在心情便籤上」的那行，換成釘在留言板的新寫法", async () => {
+    const legacyLine =
+      '- 便利貼：<sticky-note text="內容"/>（貼在 {{user}} 手機主畫面的心情便籤上，{{user}} 回到桌面才會看到。用來關心或提醒，例如明天的約別忘了、變天記得加外套、考試加油、看到 {{user}} 心情不好想留句話；偶爾才寫，有想讓 {{user}} 回桌面時看到的話再寫，不必每輪都寫，一天一兩張就夠；50 字內。你上一張寫的：{{charStickyNote}}）';
+    const store = await loadWithOnlineContent(DEFAULT_CONTENT.replace(STICKY_LINE, legacyLine));
+    expect(contentOf(store.config.prompts, "onlineModeFeatures")).toBe(DEFAULT_CONTENT);
+  });
+
+  it("上一版的心情便籤條目換成有 <mood-reply> 的新內容，改過的不動", async () => {
+    const legacyEntry =
+      "<mood_note>\n📝 {{user}} 的心情便籤（{{user}} 寫在手機主畫面上給自己看的）\n\n{{userMoodNote}}\n\n{{char}} 可以留意 {{user}} 的心情，但不要每次都提，也不要逐字引用；想回應時，可以在聊天裡自然帶到，或照線上模式功能【其他動作】寫一張 <sticky-note>。\n</mood_note>";
+    const defaultEntry = contentOf(DEFAULT_PROMPT_DEFINITIONS, "userMoodNote");
+    expect(defaultEntry).toContain("<mood-reply");
+
+    const legacy = await loadWithPrompt("userMoodNote", legacyEntry);
+    expect(contentOf(legacy.config.prompts, "userMoodNote")).toBe(defaultEntry);
+
+    setActivePinia(createPinia());
+    const custom = "<mood_note>\n我自己改的 {{userMoodNote}}，回覆用 <mood-reply/>\n</mood_note>";
+    const kept = await loadWithPrompt("userMoodNote", custom);
+    expect(contentOf(kept.config.prompts, "userMoodNote")).toBe(custom);
   });
 
   it("新條目會補進舊用戶的提示詞與順序", async () => {
