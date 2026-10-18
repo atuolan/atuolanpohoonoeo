@@ -136,6 +136,10 @@ export interface ParsedResponse {
   hasStickyNote?: boolean;
   /** 便利貼資料（顯示在主畫面的心情便籤上） */
   stickyNoteData?: { text: string };
+  /** 是否有回覆心情 */
+  hasMoodReply?: boolean;
+  /** 回覆心情資料；text 是空字串代表只在聊天裡回了、不留紙條 */
+  moodReplyData?: { text: string };
 }
 
 /**
@@ -1248,17 +1252,25 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     result.stickyNoteData = stickyNoteResult;
   }
 
+  // 11d. 檢查回覆心情標籤
+  const moodReplyResult = parseMoodReplyTag(rawResponse);
+  if (moodReplyResult) {
+    result.hasMoodReply = true;
+    result.moodReplyData = moodReplyResult;
+  }
+
   // 12. 檢查放在 </content> 之後的模式切換請求標籤
   // <content> 外的文字不會進入 outputContent，因此這類系統控制標籤需要從 rawResponse 額外轉成卡片訊息。
   appendTopLevelModeRequestMessages(result.messages, rawResponse);
 
-  // 從所有訊息中移除 char-location、char-status、sticky-note 與時間控制標籤（模型偶爾會寫在 <content> 裡）
+  // 從所有訊息中移除 char-location、char-status、sticky-note、mood-reply 與時間控制標籤（模型偶爾會寫在 <content> 裡）
   for (const msg of result.messages) {
     if (msg.content) {
       msg.content = msg.content
         .replace(/<char-location\s+[^>]*?\s*\/?>(?:<\/char-location>)?/gi, "")
         .replace(CHAR_STATUS_TAG_REGEX, "")
         .replace(STICKY_NOTE_TAG_REGEX, "")
+        .replace(MOOD_REPLY_TAG_REGEX, "")
         .replace(/<time-(?:jump|advance)\s+[^>]*?\s*\/?>(?:<\/time-(?:jump|advance)>)?/gi, "")
         .trim();
     }
@@ -1919,15 +1931,22 @@ export function parseCharStatusTag(
   return latest ? { text: latest } : null;
 }
 
-/** 便利貼最長字數；提示詞要求 50 字內，這裡只是保險 */
+/** 留言板紙條（便利貼、回覆心情）最長字數；提示詞要求 50 字內，這裡只是保險 */
 export const STICKY_NOTE_MAX_LENGTH = 80;
 
 /**
- * <sticky-note text="..."/>、<sticky-note text="..."></sticky-note>、<sticky-note>...</sticky-note>
+ * <name text="..."/>、<name text="..."></name>、<name>...</name>
  * 屬性值用引號整段吃掉，值裡有 > 也不會斷；第 1 組是屬性，第 2 組是包起來的文字
  */
-const STICKY_NOTE_TAG_REGEX =
-  /<sticky-note(\s(?:[^>"']|"[^"]*"|'[^']*')*?)?\s*(?:\/>|>([^<]*)<\/sticky-note>|>)/gi;
+function noteTagRegex(name: string): RegExp {
+  return new RegExp(
+    `<${name}(\\s(?:[^>"']|"[^"]*"|'[^']*')*?)?\\s*(?:\\/>|>([^<]*)<\\/${name}>|>)`,
+    "gi",
+  );
+}
+
+const STICKY_NOTE_TAG_REGEX = noteTagRegex("sticky-note");
+const MOOD_REPLY_TAG_REGEX = noteTagRegex("mood-reply");
 
 /** 取出引號包住的屬性值；跟 extractAttr 不同，值裡可以有另一種引號 */
 function extractQuotedAttr(attrs: string, name: string): string | undefined {
@@ -1935,8 +1954,16 @@ function extractQuotedAttr(attrs: string, name: string): string | undefined {
   return match ? (match[1] ?? match[2]) : undefined;
 }
 
+/** 依序取出每個紙條標籤的文字（空白收成一格、太長截掉，沒字是空字串） */
+function noteTagTexts(rawResponse: string, regex: RegExp): string[] {
+  return [...rawResponse.matchAll(regex)].map((match) => {
+    const raw = extractQuotedAttr(match[1] ?? "", "text") ?? match[2] ?? "";
+    return raw.replace(/\s+/g, " ").trim().slice(0, STICKY_NOTE_MAX_LENGTH);
+  });
+}
+
 /**
- * 解析 sticky-note 標籤（char 貼在主畫面心情便籤上的便利貼）
+ * 解析 sticky-note 標籤（char 主動釘在留言板上的紙條）
  * 同一則回覆有多張時取最後一張
  *
  * @param rawResponse - 原始 AI 回覆
@@ -1945,13 +1972,24 @@ function extractQuotedAttr(attrs: string, name: string): string | undefined {
 export function parseStickyNoteTag(
   rawResponse: string,
 ): { text: string } | null {
-  let latest: string | null = null;
-  for (const match of rawResponse.matchAll(STICKY_NOTE_TAG_REGEX)) {
-    const raw = extractQuotedAttr(match[1] ?? "", "text") ?? match[2] ?? "";
-    const text = raw.replace(/\s+/g, " ").trim().slice(0, STICKY_NOTE_MAX_LENGTH);
-    if (text) latest = text;
-  }
-  return latest ? { text: latest } : null;
+  const texts = noteTagTexts(rawResponse, STICKY_NOTE_TAG_REGEX).filter(Boolean);
+  return texts.length > 0 ? { text: texts[texts.length - 1] } : null;
+}
+
+/**
+ * 解析 mood-reply 標籤（char 回覆 user 的心情）
+ * 有字就是要釘在那則心情底下的紙條；沒字代表只在聊天裡回了。有好幾個時取最後一個有字的
+ *
+ * @param rawResponse - 原始 AI 回覆
+ * @returns 沒有標籤時返回 null
+ */
+export function parseMoodReplyTag(
+  rawResponse: string,
+): { text: string } | null {
+  const texts = noteTagTexts(rawResponse, MOOD_REPLY_TAG_REGEX);
+  if (texts.length === 0) return null;
+  const withText = texts.filter(Boolean);
+  return { text: withText[withText.length - 1] ?? "" };
 }
 
 /**
@@ -2365,7 +2403,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<sticky-note|<plurk[\s>]|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<sticky-note|<mood-reply|<plurk[\s>]|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }
