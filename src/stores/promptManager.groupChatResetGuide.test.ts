@@ -54,6 +54,15 @@ describe("群聊提示詞強制重置引導", () => {
     expect(store.needsGroupChatPromptReset).toBe(false);
   });
 
+  it("已完成上一版重置的用戶，在新版本仍需要重置", async () => {
+    const config = createDefaultPromptManagerConfig();
+    config.groupChatPromptResetVersion = GROUP_CHAT_PROMPT_RESET_VERSION - 1;
+    storage.set("promptManagerConfig", config);
+    const store = usePromptManagerStore();
+    await store.loadConfig();
+    expect(store.needsGroupChatPromptReset).toBe(true);
+  });
+
   it("舊用戶需要重置；重置後換成新版群聊提示詞，其他模式不受影響，重新載入也不再要求", async () => {
     storage.set("promptManagerConfig", oldUserConfig());
     const store = usePromptManagerStore();

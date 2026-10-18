@@ -2,6 +2,7 @@
 /**
  * 提示詞強制重置引導（線上模式／群聊／面對面模式）
  * 提示詞重大更新後，舊設定無法沿用；此彈窗無法關閉，必須完成重置才會消失。
+ * 需要重置的模式合在同一個彈窗，按一次就全部重置。
  */
 import { usePromptManagerStore } from "@/stores/promptManager";
 import { AlertTriangle, CheckCircle2, RotateCcw } from "lucide-vue-next";
@@ -10,7 +11,7 @@ import { computed, ref } from "vue";
 type PromptResetGuideMode = "online" | "groupChat" | "faceToFace";
 
 const props = defineProps<{
-  mode: PromptResetGuideMode;
+  modes: PromptResetGuideMode[];
 }>();
 
 const emit = defineEmits<{
@@ -19,55 +20,58 @@ const emit = defineEmits<{
 
 const promptManagerStore = usePromptManagerStore();
 
-const COPY: Record<
-  PromptResetGuideMode,
-  { label: string; changes: string; others: string; extraNote?: string; tab: string }
-> = {
+const MODE_ORDER: PromptResetGuideMode[] = ["online", "groupChat", "faceToFace"];
+
+const COPY: Record<PromptResetGuideMode, { label: string; changes: string; extraNote?: string }> = {
   online: {
     label: "線上模式",
-    changes:
-      "條目照面對面的寫法重新分區排列，刪掉幾個沒有作用或不再需要的條目，功能標籤的格式也整理成各只寫在一處。",
-    others: "面對面、群聊、日記等其他提示詞不受影響",
+    changes: "刪掉和其他條目重複的「角色設定」，加入便利貼和心情便籤。",
     extraNote: "角色獨立設定的提示詞順序會換成新的排列，原本條目的開關照舊",
-    tab: "線上模式",
   },
   groupChat: {
     label: "群聊",
-    changes:
-      "改用線上模式現在的分區寫法和思考框架，群聊專屬的功能（紅包、群管理、群通話、私信等）都保留。",
-    others: "一般聊天、面對面、日記等其他提示詞不受影響",
-    tab: "群聊",
+    changes: "刪掉和其他條目重複的「角色設定」，補上封鎖記憶和 MiniMax 語音條目。",
   },
   faceToFace: {
     label: "面對面",
-    changes: "篝火預設的開場手札和涅芙角色設定重新改寫，說書改以「溫養靈魂、深層共鳴」為核心。",
-    others: "一般聊天、群聊、日記等其他提示詞不受影響",
-    tab: "面對面",
+    changes: "正文加入心聲，「字數更少」改成預設關閉，外語翻譯的格式和聊天訊息統一。",
   },
 };
 
-const copy = computed(() => COPY[props.mode]);
+const modes = computed(() => MODE_ORDER.filter((mode) => props.modes.includes(mode)));
+const items = computed(() => modes.value.map((mode) => ({ mode, ...COPY[mode] })));
+const labels = computed(() => items.value.map((item) => item.label).join("、"));
+const titleLabel = computed(() => (items.value.length === 1 ? items.value[0].label : ""));
+const extraNotes = computed(() => items.value.flatMap((item) => (item.extraNote ? [item.extraNote] : [])));
+const othersNote = computed(() => {
+  const untouched = MODE_ORDER.filter((mode) => !modes.value.includes(mode)).map(
+    (mode) => (mode === "online" ? "一般聊天" : COPY[mode].label),
+  );
+  return `${[...untouched, "日記"].join("、")}等其他提示詞不受影響`;
+});
 
 // intro → confirm → done
 const step = ref<"intro" | "confirm" | "done">("intro");
 const isResetting = ref(false);
 const errorMessage = ref("");
 
+const RESETTERS: Record<PromptResetGuideMode, () => Promise<void>> = {
+  online: () => promptManagerStore.resetOnlineForUpdate(),
+  groupChat: () => promptManagerStore.resetGroupChatToDefault(),
+  faceToFace: () => promptManagerStore.resetFaceToFaceToDefault(),
+};
+
 async function handleReset() {
   if (isResetting.value) return;
   isResetting.value = true;
   errorMessage.value = "";
   try {
-    if (props.mode === "online") {
-      await promptManagerStore.resetOnlineForUpdate();
-    } else if (props.mode === "groupChat") {
-      await promptManagerStore.resetGroupChatToDefault();
-    } else {
-      await promptManagerStore.resetFaceToFaceToDefault();
+    for (const mode of modes.value) {
+      await RESETTERS[mode]();
     }
     step.value = "done";
   } catch (error) {
-    console.error(`[PromptResetGuide] ${props.mode} 重置失敗:`, error);
+    console.error(`[PromptResetGuide] ${modes.value.join(",")} 重置失敗:`, error);
     errorMessage.value = "重置失敗，請再試一次。";
   } finally {
     isResetting.value = false;
@@ -86,34 +90,39 @@ async function handleReset() {
         <div>
           <div class="prompt-reset-level">{{ step === "done" ? "完成" : "必要更新" }}</div>
           <h2 id="prompt-reset-title" class="prompt-reset-title">
-            {{ copy.label }}提示詞{{ step === "done" ? "已更新" : "需要重置" }}
+            {{ titleLabel }}提示詞{{ step === "done" ? "已更新" : "需要重置" }}
           </h2>
         </div>
       </header>
 
       <div v-if="step === 'intro'" class="prompt-reset-body">
-        <p>{{ copy.label }}的預設提示詞有<strong>重要更新</strong>：{{ copy.changes }}</p>
-        <p>已經存過的{{ copy.label }}提示詞會一直沿用舊內容，所以每個人都必須重置一次才會換成新版。</p>
+        <p>預設提示詞有<strong>重要更新</strong>：</p>
+        <ul class="prompt-reset-changes">
+          <li v-for="item in items" :key="item.mode">
+            <strong>{{ item.label }}</strong>：{{ item.changes }}
+          </li>
+        </ul>
+        <p>已經存過的提示詞會一直沿用舊內容，所以每個人都必須重置一次才會換成新版。</p>
         <div class="prompt-reset-note">
-          <strong>重置只影響{{ copy.label }}</strong>
+          <strong>重置只影響{{ labels }}</strong>
           <ul>
-            <li>你對{{ copy.label }}提示詞做過的修改、新增的條目和開關設定會被清除</li>
-            <li v-if="copy.extraNote">{{ copy.extraNote }}</li>
-            <li>{{ copy.others }}</li>
+            <li>你對{{ labels }}提示詞做過的修改、新增的條目和開關設定會被清除</li>
+            <li v-for="note in extraNotes" :key="note">{{ note }}</li>
+            <li>{{ othersNote }}</li>
             <li>聊天記錄和角色資料都不會被刪除</li>
           </ul>
         </div>
       </div>
 
       <div v-else-if="step === 'confirm'" class="prompt-reset-body">
-        <p>確定要重置{{ copy.label }}提示詞嗎？</p>
-        <p class="prompt-reset-warn">你在{{ copy.label }}提示詞裡的自訂修改會被清除，這個動作無法復原。</p>
+        <p>確定要重置{{ labels }}提示詞嗎？</p>
+        <p class="prompt-reset-warn">你在{{ labels }}提示詞裡的自訂修改會被清除，這個動作無法復原。</p>
         <p v-if="errorMessage" class="prompt-reset-error">{{ errorMessage }}</p>
       </div>
 
       <div v-else class="prompt-reset-body">
-        <p>{{ copy.label }}提示詞已重置為最新版本，可以正常使用了。</p>
-        <p>如果之前有自訂的內容，可以到「提示詞管理」的{{ copy.tab }}分頁重新調整。</p>
+        <p>{{ labels }}提示詞已重置為最新版本，可以正常使用了。</p>
+        <p>如果之前有自訂的內容，可以到「提示詞管理」的{{ labels }}分頁重新調整。</p>
       </div>
 
       <footer class="prompt-reset-actions">
@@ -206,6 +215,15 @@ async function handleReset() {
 
   strong {
     font-weight: 700;
+  }
+}
+
+.prompt-reset-changes {
+  margin: 0 0 10px;
+  padding-left: 20px;
+
+  li + li {
+    margin-top: 4px;
   }
 }
 
