@@ -385,7 +385,7 @@ export const WIDGET_STYLE_HINTS: Partial<Record<WidgetType, WidgetStyleHint>> = 
   "mood-diary": {
     label: "心情日記",
     summary:
-      "心情日記便利貼，含心情圖示、日期、日記文字、心情選擇器與裝飾膠帶；角色在聊天裡寫的便利貼會翻到另一面顯示。有 7 種佈局風格（共用 7 皮膚）。",
+      "心情日記便利貼，含心情圖示、日期、日記文字、心情選擇器與裝飾膠帶；按確定送出心情，角色留紙條時右下角會斜釘一張小紙條，點了進便簽留言板。有 7 種佈局風格（共用 7 皮膚）。",
     classes: [
       { selector: ":scope", usage: "日記根容器（.mood-diary-sticky）" },
       { selector: ".sticky-header", usage: "頂部列（心情圖示 + 日期）" },
@@ -395,11 +395,11 @@ export const WIDGET_STYLE_HINTS: Partial<Record<WidgetType, WidgetStyleHint>> = 
       { selector: ".sticky-footer", usage: "底部列" },
       { selector: ".mood-selector", usage: "心情選擇按鈕組" },
       { selector: ".tape", usage: "頂部裝飾膠帶" },
-      { selector: ".note-author", usage: "便利貼那面的作者（頭像 + 名字，點了進聊天）" },
-      { selector: ".note-avatar", usage: "便利貼作者頭像" },
-      { selector: ".note-content", usage: "便利貼內容（唯讀）" },
-      { selector: ".note-pager", usage: "便利貼翻頁（超過一張才出現）" },
-      { selector: ".note-flip", usage: "切換按鈕（便利貼 ⇄ 我的日記）" },
+      { selector: ".post-btn", usage: "「確定」送出心情按鈕（有沒送出的修改才出現）" },
+      { selector: ".posted", usage: "「02:29 已送出」文字" },
+      { selector: ".board-btn", usage: "打開便簽留言板的小圖示" },
+      { selector: ".mini-note", usage: "角色留的小紙條（有沒看過的紙條才出現）" },
+      { selector: ".mini-note-text", usage: "小紙條上的內容" },
     ],
     layouts: skin7Layouts(),
     tips: ["佈局風格由 customStyle.layout 控制，請用「設定組件佈局」切換。"],
