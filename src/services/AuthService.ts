@@ -5,6 +5,7 @@ import type {
   DiscordOAuthResult,
   VerificationResponse,
 } from "@/types/auth";
+import { isNativeApp } from "@/native/platform";
 import { DeviceFingerprintCollector } from "@/utils/deviceFingerprint";
 
 const AUTH_RECORD_ID = "current_auth";
@@ -16,7 +17,8 @@ const API_ENDPOINT = (() => {
   if (typeof window === "undefined") return "/api";
   const host = window.location.hostname;
   // 本地開發時走相對路徑（Vite dev server 可以代理）
-  if (host === "localhost" || host === "127.0.0.1") {
+  // App 的網址也是 https://localhost，但沒有 dev server，要走 VPS
+  if (!isNativeApp() && (host === "localhost" || host === "127.0.0.1")) {
     return "/api";
   }
   // 生產環境一律走 VPS 絕對路徑（不管是 GitHub Pages 還是自有服務器）

@@ -35,6 +35,7 @@ import { createApp } from "vue";
 import App from "./App.vue";
 import { registerAguaInlineCard } from "./components/common/AguaInlineCard";
 import { initAutoBackup } from "./services/AutoBackupService";
+import { isNativeApp } from "./native/platform";
 import "./styles/global.scss";
 import {
   beginRuntimeSession,
@@ -404,6 +405,13 @@ updateRuntimeSessionStage("app mounted");
 
 // Vue 掛載後再次更新高度（確保 #app DOM 已存在）
 updateAppHeight();
+
+// App（APK）專用：攔截下載改存進手機、回到前景補自動備份
+if (isNativeApp()) {
+  import("./native/bootstrap")
+    .then((m) => m.initNativeApp())
+    .catch((err) => console.error("[NativeApp] 初始化失敗:", err));
+}
 
 // 應用掛載後註冊 Service Worker 並請求持久化存儲
 updateRuntimeSessionStage("storage protection init start");

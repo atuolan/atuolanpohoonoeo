@@ -82,6 +82,7 @@ import MusicShareCard from "./MusicShareCard.vue";
 import PixelGiftChest from "./PixelGiftChest.vue";
 import PixelTransferCard from "./PixelTransferCard.vue";
 import { stripStateThinking } from "@/services/ResponseParser";
+import { resolveProxyPath } from "@/native/platform";
 import {
   formatRecognitionText,
   recognizeUtterance,
@@ -760,12 +761,12 @@ function getProxiedUrl(url: string): string {
     const parsed = new URL(url);
     const hostAndPath = parsed.host + parsed.pathname + parsed.search;
     if (parsed.protocol === "https:") {
-      return `/ai-proxy/${hostAndPath}`;
+      return resolveProxyPath(`/ai-proxy/${hostAndPath}`);
     } else {
-      return `/ai-proxy-http/${hostAndPath}`;
+      return resolveProxyPath(`/ai-proxy-http/${hostAndPath}`);
     }
   } catch {
-    return `/image-proxy?url=${encodeURIComponent(url)}`;
+    return resolveProxyPath(`/image-proxy?url=${encodeURIComponent(url)}`);
   }
 }
 

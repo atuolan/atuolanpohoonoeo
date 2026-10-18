@@ -31,6 +31,7 @@ import {
   type GitHubBackupProgress,
   type GitHubBackupSettings,
 } from "@/services/GitHubBackupService";
+import { isNativeApp, NATIVE_BACKUP_LOCATION } from "@/native/platform";
 import { useGitHubBackupStore } from "@/stores/githubBackup";
 import { Download, Eye, EyeOff, Upload } from "lucide-vue-next";
 import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
@@ -57,6 +58,8 @@ const isBackingUp = ref(false);
 const isExporting = ref(false);
 const backupProgress = ref("");
 const fsaaSupported = isFileSystemAccessSupported();
+/** App 裡備份直接寫進手機資料夾，不用選資料夾也不用下載 */
+const nativeApp = isNativeApp();
 
 async function refreshAutoBackupState() {
   const saved = await loadBackupSettings();
@@ -193,6 +196,9 @@ async function exportData() {
     });
     if (!result.success && result.message !== "已取消備份") {
       alert("導出失敗：" + result.message);
+    } else if (result.success && nativeApp) {
+      // App 裡沒有下載提示，告訴使用者檔案放在哪
+      alert(`✓ ${result.message}`);
     }
   } catch (e) {
     console.error("導出失敗:", e);
@@ -440,15 +446,23 @@ onUnmounted(() => {
     <SettingsGroup
       title="自動備份到本地"
       :footer="
-        fsaaSupported
-          ? undefined
-          : '這個瀏覽器不能直接寫入資料夾（例如 iOS），開啟後會改成定時下載備份檔。'
+        nativeApp
+          ? `備份檔存在手機的「${NATIVE_BACKUP_LOCATION}」，解除安裝 App 也不會刪掉。App 在背景時不會備份，回到 App 時會補上。`
+          : fsaaSupported
+            ? undefined
+            : '這個瀏覽器不能直接寫入資料夾（例如 iOS），開啟後會改成定時下載備份檔。'
       "
     >
       <SettingsSwitchRow
         :model-value="autoBackupSettings.enabled"
         label="啟用自動備份"
-        :description="fsaaSupported ? '定時把所有數據備份到選擇的資料夾' : '定時自動下載備份檔案'"
+        :description="
+          nativeApp
+            ? `定時把所有數據備份到手機的「${NATIVE_BACKUP_LOCATION}」`
+            : fsaaSupported
+              ? '定時把所有數據備份到選擇的資料夾'
+              : '定時自動下載備份檔案'
+        "
         @update:model-value="toggleAutoBackup"
       />
       <template v-if="fsaaSupported">
@@ -492,14 +506,21 @@ onUnmounted(() => {
         <SettingsRow label="上次備份" :value="formatBackupTime(autoBackupSettings.lastBackupAt)" />
       </template>
       <SettingsRow
-        v-if="fsaaSupported && folderName"
+        v-if="nativeApp || (fsaaSupported && folderName)"
         clickable
         tone="accent"
-        label="立即備份到資料夾"
+        :label="nativeApp ? '立即備份到手機' : '立即備份到資料夾'"
         :disabled="isBackingUp"
         @click="backupNow"
       />
-      <SettingsRow clickable tone="accent" label="下載備份檔案" :disabled="isBackingUp" @click="downloadBackup" />
+      <SettingsRow
+        v-if="!nativeApp"
+        clickable
+        tone="accent"
+        label="下載備份檔案"
+        :disabled="isBackingUp"
+        @click="downloadBackup"
+      />
       <div v-if="isBackingUp && backupProgress" class="st-pad">
         <span class="st-status" role="status">{{ backupProgress }}</span>
       </div>

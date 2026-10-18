@@ -1,3 +1,4 @@
+import { resolveProxyPath } from "@/native/platform";
 import { ref, watch, type Ref } from "vue";
 
 // 全域快取：避免重複處理同一 URL
@@ -16,7 +17,7 @@ export function proxyImageUrl(url: string): string {
   const cached = proxyCache.get(url);
   if (cached) return cached;
 
-  const proxied = (() => {
+  const proxied = resolveProxyPath((() => {
     try {
       const parsed = new URL(url);
       const hostAndPath = parsed.host + parsed.pathname + parsed.search;
@@ -28,7 +29,7 @@ export function proxyImageUrl(url: string): string {
     } catch {
       return `/image-proxy?url=${encodeURIComponent(url)}`;
     }
-  })();
+  })());
   proxyCache.set(url, proxied);
   return proxied;
 }
