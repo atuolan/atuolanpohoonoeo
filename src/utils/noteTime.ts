@@ -14,11 +14,16 @@ function startOfDay(timestamp: number): number {
   return date.getTime();
 }
 
+/** timestamp 是 now 的幾天前（0 = 同一天，1 = 昨天） */
+export function daysAgo(timestamp: number, now = Date.now()): number {
+  // 用四捨五入吸收日光節約時間造成的一小時差
+  return Math.round((startOfDay(now) - startOfDay(timestamp)) / DAY_MS);
+}
+
 export function formatNoteTime(timestamp: number, now = Date.now()): string {
   const date = new Date(timestamp);
   const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  // 用四捨五入吸收日光節約時間造成的一小時差
-  const dayDiff = Math.round((startOfDay(now) - startOfDay(timestamp)) / DAY_MS);
+  const dayDiff = daysAgo(timestamp, now);
   if (dayDiff === 0) return `今天 ${time}`;
   if (dayDiff === 1) return `昨天 ${time}`;
   return `${date.getMonth() + 1}/${date.getDate()} ${time}`;
