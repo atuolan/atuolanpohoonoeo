@@ -106,10 +106,32 @@ function onTouchEnd(e: TouchEvent) {
   touchStartY.value = null;
   if (dy < -60 && !showCode.value) requestUnlock();
 }
+
+// 電腦沒有觸控：用滑鼠往上拖也能解鎖
+const mouseStartY = ref<number | null>(null);
+function onPointerDown(e: PointerEvent) {
+  if (e.pointerType === "mouse") mouseStartY.value = e.clientY;
+}
+function onPointerUp(e: PointerEvent) {
+  if (e.pointerType !== "mouse" || mouseStartY.value === null) return;
+  const dy = e.clientY - mouseStartY.value;
+  mouseStartY.value = null;
+  if (dy < -60 && !showCode.value) requestUnlock();
+}
+
+/** 有滑鼠的裝置（電腦）：底下那行改成「點這裡解鎖」 */
+const usesMouse =
+  typeof window !== "undefined" && !!window.matchMedia?.("(hover: hover) and (pointer: fine)").matches;
 </script>
 
 <template>
-  <div class="peek-lock" @touchstart.passive="onTouchStart" @touchend="onTouchEnd">
+  <div
+    class="peek-lock"
+    @touchstart.passive="onTouchStart"
+    @touchend="onTouchEnd"
+    @pointerdown="onPointerDown"
+    @pointerup="onPointerUp"
+  >
     <PeekWallpaper :avatar="props.avatar" />
 
     <div class="peek-lock-body">
@@ -166,7 +188,7 @@ function onTouchEnd(e: TouchEvent) {
 
       <div class="peek-lock-bottom">
         <span class="peek-lock-round" aria-hidden="true"><Flashlight :size="20" /></span>
-        <button type="button" class="peek-lock-unlock" @click="requestUnlock()">向上滑動以解鎖</button>
+        <button type="button" class="peek-lock-unlock" @click="requestUnlock()">{{ usesMouse ? "點這裡解鎖" : "向上滑動以解鎖" }}</button>
         <span class="peek-lock-round" aria-hidden="true"><Camera :size="20" /></span>
       </div>
     </div>
@@ -188,6 +210,9 @@ function onTouchEnd(e: TouchEvent) {
   inset: 0;
   color: var(--p-on-wall);
   overflow: hidden;
+  // 滑鼠往上拖時不要選到字
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .peek-lock-body {
@@ -397,6 +422,13 @@ function onTouchEnd(e: TouchEvent) {
   font-family: inherit;
   font-size: 14px;
   cursor: pointer;
+  border-radius: 22px;
+
+  @media (hover: hover) {
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+  }
 }
 
 .peek-lock-spin {
