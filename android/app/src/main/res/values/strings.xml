@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">203 Phone</string>
+    <string name="title_activity_main">203 Phone</string>
+    <string name="package_name">uk.aguacloud.aguaphone</string>
+    <string name="custom_url_scheme">uk.aguacloud.aguaphone</string>
+</resources>
