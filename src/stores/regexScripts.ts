@@ -73,6 +73,21 @@ const BUILTIN_SCRIPTS: RegexScript[] = [
     minDepth: -1,
     maxDepth: -1,
   },
+  {
+    id: "__builtin_delete_star_divider",
+    scriptName: "[內置] 删除 --- ✦ --- 分隔線",
+    findRegex: "/--- ✦ ---/gi",
+    replaceString: "",
+    trimStrings: [],
+    placement: [2],
+    disabled: false,
+    markdownOnly: true,
+    promptOnly: true,
+    runOnEdit: true,
+    substituteRegex: 0,
+    minDepth: -1,
+    maxDepth: -1,
+  },
 ];
 
 const STORAGE_KEY = "global-regex-scripts";
