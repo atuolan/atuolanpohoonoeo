@@ -280,6 +280,8 @@ export interface PromptBuilderOptions {
   userMoodNote?: string;
   /** 角色自己的待辦和行程清單（用於 {{charPlanner}} 宏；沒給的時候「角色待辦與行程」條目不輸出） */
   charPlanner?: string;
+  /** {{user}} 小手機行事曆上接下來的行程（用於 {{userCalendar}} 宏；空的時候「使用者的行事曆」條目不輸出） */
+  userCalendar?: string;
   /** 表情包列表（用於 {{stickerList}} 宏） */
   stickerList?: string[];
   /** 面對面模式（開啟時使用面對面模式的提示詞） */
@@ -638,6 +640,7 @@ export class PromptBuilder {
         charStickyNote: options.charStickyNote || "還沒寫過",
         userMoodNote: options.userMoodNote || "",
         charPlanner: options.charPlanner || "",
+        userCalendar: options.userCalendar || "",
         ...phoneContextVars,
       },
     });
@@ -791,6 +794,7 @@ export class PromptBuilder {
         charStickyNote: options.charStickyNote || "還沒寫過",
         userMoodNote: options.userMoodNote || "",
         charPlanner: options.charPlanner || "",
+        userCalendar: options.userCalendar || "",
         ...phoneContextVars,
       },
     });
@@ -2263,8 +2267,9 @@ export class PromptBuilder {
         return null;
 
       case "charPlanner":
-        // 只有單人線上聊天帶；聊天頁沒給清單（群聊、通話）時不輸出
-        if (this.getChatPromptMode() !== "online" || !this.options.charPlanner) return null;
+      case "userCalendar":
+        // 只有單人線上聊天帶；聊天頁沒給（群聊、通話、沒有行程）時不輸出
+        if (this.getChatPromptMode() !== "online" || !this.options[identifier]) return null;
         if (promptDef && promptDef.content) {
           const content = await this.macroEngine.substitute(promptDef.content);
           return content ? { role: getRole(), content, identifier } : null;

@@ -2,18 +2,54 @@
 /**
  * 聊天裡的行事曆卡片：角色幫你記的行程，按一下加到手機日曆。
  * 網頁版沒辦法自己寫進手機日曆，所以要你按；加入方式在「設定 › 日曆與定位」。
+ * 角色排了跟你一起的行程（data.plan）時還沒進你的行事曆，先給「加到我的行事曆」
  */
+import { findSameCalendarEvent, saveCalendarEventOnce } from "@/services/calendarEvents";
+import { replaceCharPlannerState } from "@/services/charPlanner";
 import { eventNotes } from "@/utils/calendarEventFormat";
 import {
   addToPhoneCalendar,
   phoneCalendarHint,
   toPhoneCalendarEvent,
 } from "@/services/phoneCalendar";
-import type { CalendarEventData } from "@/types/calendar";
-import { CalendarDays, CalendarPlus } from "lucide-vue-next";
-import { computed, onUnmounted, ref } from "vue";
+import type { CalendarCardData, CalendarEventData } from "@/types/calendar";
+import { CalendarDays, CalendarPlus, Users } from "lucide-vue-next";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 
-const props = defineProps<{ data: CalendarEventData }>();
+const props = defineProps<{ data: CalendarCardData }>();
+
+/** 一起的行程已經在使用者的行事曆裡了（按過，或本來就記了） */
+const inCalendar = ref(!props.data.plan);
+const adding = ref(false);
+
+function eventData(): CalendarEventData {
+  const { type, title, date, description, startTime, endTime, endDate } = props.data;
+  return { type, title, date, description, startTime, endTime, endDate };
+}
+
+onMounted(async () => {
+  if (!props.data.plan) return;
+  inCalendar.value = !!(await findSameCalendarEvent(props.data).catch(() => undefined));
+});
+
+async function addToMyCalendar() {
+  const plan = props.data.plan;
+  if (!plan || adding.value) return;
+  adding.value = true;
+  try {
+    const { event } = await saveCalendarEventOnce(eventData(), { characterId: plan.characterId, chatId: plan.chatId });
+    inCalendar.value = true;
+    // 記在角色的行程上，之後知道這個約已經在你的行事曆裡了
+    await replaceCharPlannerState(plan.chatId, plan.characterId, (state) => ({
+      ...state,
+      plans: state.plans.map((p) => (p.id === plan.planId ? { ...p, calendarEventId: event.id } : p)),
+    }));
+  } catch (e) {
+    showHint(`加不進去：${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    adding.value = false;
+  }
+}
 
 const when = computed(() => {
   const { date, startTime, endTime, endDate } = props.data;
@@ -28,16 +64,20 @@ const notes = computed(() => eventNotes(props.data));
 const hint = ref("");
 let hintTimer: ReturnType<typeof setTimeout> | undefined;
 
-function addToPhone() {
-  try {
-    hint.value = phoneCalendarHint(addToPhoneCalendar(toPhoneCalendarEvent(props.data)));
-  } catch (e) {
-    hint.value = `加不進去：${e instanceof Error ? e.message : String(e)}`;
-  }
+function showHint(text: string) {
+  hint.value = text;
   clearTimeout(hintTimer);
   hintTimer = setTimeout(() => {
     hint.value = "";
   }, 6000);
+}
+
+function addToPhone() {
+  try {
+    showHint(phoneCalendarHint(addToPhoneCalendar(toPhoneCalendarEvent(eventData()))));
+  } catch (e) {
+    showHint(`加不進去：${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 onUnmounted(() => clearTimeout(hintTimer));
@@ -46,13 +86,23 @@ onUnmounted(() => clearTimeout(hintTimer));
 <template>
   <div class="calendar-card">
     <div class="calendar-card__head">
-      <CalendarDays aria-hidden="true" />
-      <span>{{ data.type === "period" ? "經期紀錄" : "已加入行事曆" }}</span>
+      <Users v-if="data.plan && !inCalendar" aria-hidden="true" />
+      <CalendarDays v-else aria-hidden="true" />
+      <span>{{ data.plan && !inCalendar ? "排了跟你一起的行程" : data.type === "period" ? "經期紀錄" : "已加入行事曆" }}</span>
     </div>
     <div class="calendar-card__title">{{ data.title }}</div>
     <div class="calendar-card__when">{{ when }}</div>
     <div v-if="notes" class="calendar-card__notes">{{ notes }}</div>
-    <button type="button" class="calendar-card__add" @click.stop="addToPhone">
+    <button
+      v-if="!inCalendar"
+      type="button"
+      class="calendar-card__add"
+      :disabled="adding"
+      @click.stop="addToMyCalendar"
+    >
+      <CalendarPlus aria-hidden="true" />加到我的行事曆
+    </button>
+    <button v-else type="button" class="calendar-card__add" @click.stop="addToPhone">
       <CalendarPlus aria-hidden="true" />加到手機日曆
     </button>
     <p v-if="hint" class="calendar-card__hint" role="status">{{ hint }}</p>

@@ -50,11 +50,7 @@ export async function saveCalendarEventOnce(
   source: CalendarEventSource = {},
   id?: string,
 ): Promise<SaveOnceResult> {
-  const title = normalizeEventTitle(data.title);
-  const all = await db.getAll<CalendarEvent>(DB_STORES.CALENDAR_EVENTS);
-  const same = all.find(
-    (e) => e.date === data.date && e.type === data.type && normalizeEventTitle(e.title) === title,
-  );
+  const same = await findSameCalendarEvent(data);
   if (!same) return { event: await saveCalendarEvent(data, source, id), created: true };
 
   const patch: Partial<CalendarEvent> = {};
@@ -64,6 +60,15 @@ export async function saveCalendarEventOnce(
   if (!same.description && data.description) patch.description = data.description;
   if (Object.keys(patch).length === 0) return { event: same, created: false };
   return { event: await updateCalendarEvent({ ...same, ...patch }), created: false };
+}
+
+/** 行事曆裡同一天、同類型、標題一樣（不管空白和標點）的那筆 */
+export async function findSameCalendarEvent(
+  data: Pick<CalendarEventData, "date" | "type" | "title">,
+): Promise<CalendarEvent | undefined> {
+  const title = normalizeEventTitle(data.title);
+  const all = await db.getAll<CalendarEvent>(DB_STORES.CALENDAR_EVENTS);
+  return all.find((e) => e.date === data.date && e.type === data.type && normalizeEventTitle(e.title) === title);
 }
 
 /** 收回角色加的行程（重新生成、換到別的候選回覆時）；使用者在行事曆 App 改過的留著 */

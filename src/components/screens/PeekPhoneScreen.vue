@@ -47,7 +47,10 @@ import {
   type CharPlannerChangedDetail,
 } from "@/services/charPlanner";
 import type { CharPlanner } from "@/types/charPlanner";
-import { comparePlans, formatPlanTime, toDateString } from "@/utils/charPlanner";
+import type { CalendarEvent } from "@/types/calendar";
+import { listCalendarEvents } from "@/services/calendarEvents";
+import { eventLastDate, formatEventTime } from "@/utils/calendarEventFormat";
+import { comparePlans, formatPlanTime, shiftDate, toDateString } from "@/utils/charPlanner";
 import {
   AlertTriangle,
   Angry,
@@ -177,12 +180,26 @@ const memos = computed<PeekMemoView[]>(() => {
   return todos.length > 0 ? memosFromPlanner(todos) : (storeData.value?.memos ?? []);
 });
 
+/** 他在這段聊天幫使用者記進行事曆的（接下來兩週） */
+const helpedEvents = ref<CalendarEvent[]>([]);
+
 async function loadPlanner() {
   try {
     planner.value = await loadCharPlanner(props.chatId);
+    const today = phoneToday.value;
+    helpedEvents.value = (await listCalendarEvents({ from: today, to: shiftDate(today, 13) })).filter(
+      (e) => e.sourceChatId === props.chatId,
+    );
   } catch (err) {
     console.warn("[PeekPhoneScreen] 讀取角色待辦與行程失敗:", err);
   }
+}
+
+function helpedWhen(e: CalendarEvent): string {
+  const last = eventLastDate(e);
+  const days = last !== e.date ? `${shortPlanDate(e.date)}–${shortPlanDate(last)}` : shortPlanDate(e.date);
+  const time = formatEventTime(e);
+  return time ? `${days}　${time}` : days;
 }
 // 生成時寫回、聊天頁刪掉的，這裡跟著更新
 function onPlannerChanged(event: Event) {
@@ -982,6 +999,17 @@ const todayLabel = computed(
                 </span>
               </li>
             </ol>
+          </template>
+          <template v-if="helpedEvents.length > 0">
+            <div class="app-section-label">幫你記進行事曆的</div>
+            <ul class="app-card">
+              <li v-for="e in helpedEvents" :key="e.id" class="app-row sched-item">
+                <span class="sched-main">
+                  <span class="sched-title">{{ e.title }}</span>
+                  <span class="sched-loc">{{ helpedWhen(e) }}</span>
+                </span>
+              </li>
+            </ul>
           </template>
         </div>
 

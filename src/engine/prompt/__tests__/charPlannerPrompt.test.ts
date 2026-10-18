@@ -45,3 +45,21 @@ describe("角色待辦與行程條目", () => {
     expect(gc.some((c) => c.includes("<char_planner>"))).toBe(false);
   });
 });
+
+describe("使用者的行事曆條目", () => {
+  const calendar = "- 10/20（二） 15:00–16:00 看牙醫";
+
+  it("有行程時輸出，帶上 <calendar-event> 時間的寫法", async () => {
+    const block = (await buildTexts({ userCalendar: calendar })).find((c) => c.includes("<user_calendar>"));
+    expect(block).toContain(calendar);
+    expect(block).not.toContain("{{userCalendar}}");
+    expect(block).toContain('time="HH:mm"');
+    expect(block).toContain('with-user="true"');
+  });
+
+  it("沒有行程、群聊時不輸出", async () => {
+    expect((await buildTexts({})).some((c) => c.includes("<user_calendar>"))).toBe(false);
+    const gc = await buildTexts({ userCalendar: calendar, groupChatMode: true });
+    expect(gc.some((c) => c.includes("<user_calendar>"))).toBe(false);
+  });
+});

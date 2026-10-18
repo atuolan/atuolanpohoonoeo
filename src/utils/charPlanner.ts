@@ -10,7 +10,7 @@ import type {
   PlannerState,
   PlannerTurn,
 } from "@/types/charPlanner";
-import { normalizeEventTime, normalizeEventTitle } from "@/utils/calendarEventFormat";
+import { formatMonthDayWeekday, normalizeEventTime, normalizeEventTitle } from "@/utils/calendarEventFormat";
 
 /** 回覆裡的 <char-todo …/>、<char-plan …/>（也認得成對的寫法） */
 export const CHAR_PLANNER_TAG_REGEX = /<char-(?:todo|plan)\b[^>]*?\/?>(?:<\/char-(?:todo|plan)>)?/gi;
@@ -260,13 +260,8 @@ export function visiblePlanner(state: PlannerState): PlannerState {
   };
 }
 
-const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
-
 /** 「10/24（六）」 */
-export function formatPlanDate(date: string): string {
-  const d = new Date(`${date}T00:00:00`);
-  return `${d.getMonth() + 1}/${d.getDate()}（${WEEKDAYS[d.getDay()]}）`;
-}
+export const formatPlanDate = formatMonthDayWeekday;
 
 /** 「19:00–21:00」「19:00」，整天的回傳空字串 */
 export function formatPlanTime(plan: Pick<CharPlan, "time" | "end">): string {

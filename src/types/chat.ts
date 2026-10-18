@@ -582,19 +582,7 @@ export interface ChatMessage {
   /** 是否為行事曆事件通知 */
   isCalendarEvent?: boolean;
   /** 行事曆事件資料 */
-  calendarEventData?: {
-    type: "user" | "period";
-    title: string;
-    date: string;
-    description?: string;
-    /** 開始時間 HH:MM（沒有就是整天） */
-    startTime?: string;
-    endTime?: string;
-    /** 跨天行程的結束日期 */
-    endDate?: string;
-    /** 這張卡片新增的那筆行事曆事件；重新生成時用來收回 */
-    eventId?: string;
-  };
+  calendarEventData?: import("@/types/calendar").CalendarCardData;
 
   // --- 用戶撤回相關 ---
   /** 是否為用戶撤回的訊息 */

@@ -1159,11 +1159,21 @@ export class ProactiveMessageService {
       // 角色自己的待辦和行程（跟聊天頁帶的一樣）
       const { loadCharPlanner } = await import("@/services/charPlanner");
       const { buildPlannerPromptText, toDateString } = await import("@/utils/charPlanner");
+      const proactiveToday = toDateString(computeChatNow(chat));
       const charPlannerText = buildPlannerPromptText(
         (await loadCharPlanner(chat.id)) ?? { todos: [], plans: [] },
-        toDateString(computeChatNow(chat)),
+        proactiveToday,
         currentPersona?.name || "User",
       );
+      // 使用者小手機行事曆上接下來 7 天的行程
+      const { listCalendarEvents } = await import("@/services/calendarEvents");
+      const { buildUserCalendarPromptText } = await import("@/utils/calendarEventFormat");
+      const { shiftDate } = await import("@/utils/charPlanner");
+      const userCalendarText =
+        buildUserCalendarPromptText(
+          await listCalendarEvents({ from: proactiveToday, to: shiftDate(proactiveToday, 6) }).catch(() => []),
+          { today: proactiveToday, chatId: chat.id, charName: character.data?.name || character.nickname || "角色" },
+        ) || undefined;
       const promptBuilder = new PromptBuilder({
         character,
         lorebooks: characterLorebooks,
@@ -1193,6 +1203,7 @@ export class ProactiveMessageService {
         charStickyNote: noteBoardContext.charStickyNote,
         userMoodNote: noteBoardContext.moodNote,
         charPlanner: charPlannerText,
+        userCalendar: userCalendarText,
       });
 
       const promptData = await promptBuilder.build();

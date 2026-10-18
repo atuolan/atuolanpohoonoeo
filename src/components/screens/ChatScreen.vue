@@ -192,8 +192,9 @@ import { finalizeLiveActivity, summarizeToolResult, upsertLiveActivity } from "@
 import type { PendingToolConfirmation } from "@/services/toolCalling/types";
 import { getToolHandledActions } from "@/services/toolCalling/tagOverlap";
 import { createAppToolServices } from "@/services/toolCalling/appToolServices";
-import { saveCalendarEventOnce, withdrawCalendarEvent } from "@/services/calendarEvents";
-import { formatEventTime } from "@/utils/calendarEventFormat";
+import { listCalendarEvents, saveCalendarEventOnce, withdrawCalendarEvent } from "@/services/calendarEvents";
+import { buildUserCalendarPromptText, formatEventTime } from "@/utils/calendarEventFormat";
+import type { CalendarEvent } from "@/types/calendar";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
 import { useUserStore } from "@/stores/user";
 import { useFitnessStore } from "@/stores/fitness";
@@ -243,7 +244,13 @@ import {
   type CharPlannerChangedDetail,
 } from "@/services/charPlanner";
 import type { CharPlanner } from "@/types/charPlanner";
-import { buildPlannerPromptText, parseCharPlannerTags, toDateString } from "@/utils/charPlanner";
+import {
+  buildPlannerPromptText,
+  formatPlanTime,
+  parseCharPlannerTags,
+  shiftDate,
+  toDateString,
+} from "@/utils/charPlanner";
 import { addCharNote, markMoodReplied } from "@/services/noteBoard";
 import { getNoteBoardPromptContext } from "@/services/noteBoardPrompt";
 import { createGreetingMessages } from "@/utils/chatGreetingMessages";
@@ -2114,9 +2121,16 @@ function chatToday(): string {
   return toDateString(fakeTime.getChatNow());
 }
 
+/** 角色在這個聊天幫使用者記進行事曆的（接下來兩週），「他的今天」裡另外列 */
+const plannerHelpedEvents = ref<CalendarEvent[]>([]);
+
 async function openPlannerSheet() {
   closeRail();
   showPlannerSheet.value = true;
+  const today = chatToday();
+  plannerHelpedEvents.value = (await listCalendarEvents({ from: today, to: shiftDate(today, 13) }).catch(() => [])).filter(
+    (e) => e.sourceChatId && e.sourceChatId === currentChatId.value,
+  );
   const chatId = currentChatId.value;
   if (!chatId || !charPlanner.value) return;
   charPlanner.value = { ...charPlanner.value, seenAt: Date.now() };
@@ -2150,12 +2164,37 @@ async function handleCharPlannerTags(raw: string, turnId?: string) {
   const charId = props.characterId || currentCharacter.value?.id;
   if (ops.length === 0 || !chatId || !charId) return;
   try {
+    const knownPlanIds = new Set((charPlanner.value?.plans ?? []).map((p) => p.id));
     const saved = await applyCharPlannerOps(chatId, charId, ops, {
       source: "chat",
       today: chatToday(),
       turnId: turnId || undefined,
     });
-    if (saved && currentChatId.value === chatId) charPlanner.value = saved;
+    if (!saved || currentChatId.value !== chatId) return;
+    charPlanner.value = saved;
+    // 新排的、跟使用者一起的行程：插一張卡片，使用者可以按「加到我的行事曆」（秘密的不插）
+    const charName = currentCharacter.value?.nickname || currentCharacter.value?.data?.name || props.characterName || "角色";
+    for (const plan of saved.plans) {
+      if (!plan.withUser || plan.secret || knownPlanIds.has(plan.id)) continue;
+      const time = formatPlanTime(plan);
+      messages.value.push({
+        id: `msg_plan_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        turnId: turnId || undefined,
+        role: "system",
+        content: `[行程] ${charName} 排了和 ${effectivePersona.value?.name || "User"} 一起的行程：${plan.title}（${plan.date}${time ? ` ${time}` : ""}）`,
+        timestamp: Date.now(),
+        isCalendarEvent: true,
+        calendarEventData: {
+          type: "user",
+          title: plan.title,
+          date: plan.date,
+          startTime: plan.time,
+          endTime: plan.end,
+          description: plan.place,
+          plan: { planId: plan.id, characterId: charId, chatId },
+        },
+      });
+    }
   } catch (e) {
     console.error("[ChatScreen] 更新角色待辦與行程失敗:", e);
   }
@@ -4990,6 +5029,21 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         ? { charStickyNote: "", moodNote: "", moodPostId: null }
         : await getNoteBoardPromptContext(stickyNoteChatId);
 
+    // 使用者小手機行事曆上接下來 7 天的行程（群聊不帶；日期照聊天的有效時間）
+    let userCalendarText: string | undefined;
+    if (!isGroupChat.value && currentChatId.value) {
+      const calendarToday = chatToday();
+      const upcoming = await listCalendarEvents({ from: calendarToday, to: shiftDate(calendarToday, 6) }).catch(
+        () => [] as CalendarEvent[],
+      );
+      userCalendarText =
+        buildUserCalendarPromptText(upcoming, {
+          today: calendarToday,
+          chatId: currentChatId.value,
+          charName: char.data?.name || props.characterName || "角色",
+        }) || undefined;
+    }
+
     const builder = new PromptBuilder({
       character: char,
       lorebooks: linkedLorebooks,
@@ -5061,6 +5115,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       // 傳入這個角色上一張紙條（{{charStickyNote}}）與 user 的心情（{{userMoodNote}}）
       charStickyNote: noteBoardContext.charStickyNote,
       userMoodNote: noteBoardContext.moodNote,
+      userCalendar: userCalendarText,
       // 角色自己的待辦和行程（{{charPlanner}}；群聊不帶）
       charPlanner:
         isGroupChat.value || !currentChatId.value
@@ -10774,6 +10829,7 @@ useChatCleanup({
         :planner="charPlanner"
         :char-name="displayCharacterName || characterName"
         :today="chatToday()"
+        :helped-events="plannerHelpedEvents"
         @close="showPlannerSheet = false"
         @delete-todo="(id: string) => deletePlannerItem('todo', id)"
         @delete-plan="(id: string) => deletePlannerItem('plan', id)"

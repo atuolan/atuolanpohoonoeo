@@ -59,3 +59,42 @@ export function normalizeEventTime(raw: string | undefined): string | undefined 
   if (h > 23 || min > 59) return undefined;
   return `${String(h).padStart(2, "0")}:${m[2]}`;
 }
+
+const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
+
+/** 「10/24（六）」 */
+export function formatMonthDayWeekday(date: string): string {
+  const d = new Date(`${date}T00:00:00`);
+  return `${d.getMonth() + 1}/${d.getDate()}（${WEEKDAYS[d.getDay()]}）`;
+}
+
+function addDays(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * 給 AI 看的使用者行事曆（{{userCalendar}}）：today 起 7 天內的行程和經期紀錄，最多 10 筆；
+ * 角色在這個聊天幫忙記的標出來。沒有行程回傳空字串（條目就不輸出）
+ */
+export function buildUserCalendarPromptText(
+  events: CalendarEvent[],
+  options: { today: string; chatId: string; charName: string },
+): string {
+  const last = addDays(options.today, 6);
+  const lines = events
+    .filter((e) => e.type !== "holiday" && eventLastDate(e) >= options.today && e.date <= last)
+    .sort(compareCalendarEvents)
+    .slice(0, 10)
+    .map((e) => {
+      const end = eventLastDate(e);
+      const days = end !== e.date ? `${formatMonthDayWeekday(e.date)}–${formatMonthDayWeekday(end)}` : formatMonthDayWeekday(e.date);
+      const time = formatEventTime(e);
+      const notes = eventNotes(e);
+      const kind = e.type === "period" ? "經期：" : "";
+      const helped = e.sourceChatId === options.chatId ? `（${options.charName}幫忙記的）` : "";
+      return `- ${days}${time ? ` ${time}` : ""} ${kind}${e.title}${notes ? `（${notes}）` : ""}${helped}`;
+    });
+  return lines.join("\n");
+}

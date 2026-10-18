@@ -3,7 +3,9 @@
  * 「他的今天」：角色自己的待辦和行程（聊天頁頂欄打開）。
  * 秘密的不顯示（只有偷窺手機看得到）；使用者只能刪掉 AI 記錯的。
  */
+import type { CalendarEvent } from "@/types/calendar";
 import type { CharPlan, CharPlanner } from "@/types/charPlanner";
+import { eventLastDate, formatEventTime, formatMonthDayWeekday } from "@/utils/calendarEventFormat";
 import {
   comparePlans,
   compareTodos,
@@ -20,6 +22,8 @@ const props = defineProps<{
   charName: string;
   /** 聊天的有效日期 YYYY-MM-DD */
   today: string;
+  /** 角色在這個聊天幫使用者記進行事曆的 */
+  helpedEvents?: CalendarEvent[];
 }>();
 
 const emit = defineEmits<{
@@ -47,7 +51,17 @@ const planGroups = computed<PlanGroup[]>(() => {
   return groups.filter((g) => g.plans.length > 0);
 });
 
-const isEmpty = computed(() => todos.value.length === 0 && planGroups.value.length === 0);
+const helped = computed(() => props.helpedEvents ?? []);
+const isEmpty = computed(
+  () => todos.value.length === 0 && planGroups.value.length === 0 && helped.value.length === 0,
+);
+
+function helpedWhen(e: CalendarEvent): string {
+  const last = eventLastDate(e);
+  const days = last !== e.date ? `${formatMonthDayWeekday(e.date)}–${formatMonthDayWeekday(last)}` : formatMonthDayWeekday(e.date);
+  const time = formatEventTime(e);
+  return time ? `${days}　${time}` : days;
+}
 
 /** 行程下面那行：之後的寫日期，有地點寫地點 */
 function planSub(plan: CharPlan, group: string): string {
@@ -103,6 +117,18 @@ function planSub(plan: CharPlan, group: string): string {
               <button type="button" class="planner-icon-btn danger" aria-label="刪掉這個行程" @click="emit('deletePlan', p.id)">
                 <Trash2 :size="15" />
               </button>
+            </li>
+          </ul>
+        </section>
+
+        <section v-if="helped.length" class="planner-section">
+          <h3><CalendarDays :size="15" aria-hidden="true" />幫你記進行事曆的</h3>
+          <ul class="planner-list">
+            <li v-for="e in helped" :key="e.id" class="planner-row">
+              <span class="planner-main">
+                <span class="planner-text">{{ e.title }}</span>
+                <span class="planner-sub">{{ helpedWhen(e) }}</span>
+              </span>
             </li>
           </ul>
         </section>
