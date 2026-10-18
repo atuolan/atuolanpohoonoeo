@@ -60,13 +60,33 @@ function parseDataUrl(dataUrl: string): { ext: string; data: Uint8Array } | null
   }
 
   // 音訊
-  const audioMatch = header.match(/^data:audio\/(\w+)/)
-  if (audioMatch) {
-    const ext = audioMatch[1].replace('mpeg', 'mp3')
+  if (header.startsWith('data:audio/')) {
+    const ext = audioExtFromMime(header.slice('data:'.length))
     try { return { ext, data: base64ToUint8Array(base64) } } catch { return null }
   }
 
   return null
+}
+
+/**
+ * 音訊 MIME → 副檔名（audio/mpeg → mp3、audio/x-m4a → m4a）。
+ * 導入端靠副檔名還原 MIME，所以兩邊的對照要一致（useBackupImport 的 getMimeTypeFromFilename）。
+ */
+export function audioExtFromMime(mime: string): string {
+  const subtype = (mime.split(';')[0].split('/')[1] || '').toLowerCase().replace(/^x-/, '')
+  switch (subtype) {
+    case 'mpeg':
+    case 'mp3':
+      return 'mp3'
+    case 'mp4':
+    case 'm4a':
+      return 'm4a'
+    case 'wav':
+    case 'wave':
+      return 'wav'
+    default:
+      return /^[a-z0-9]+$/.test(subtype) ? subtype : 'bin'
+  }
 }
 
 function getImageExtensionFromMimeType(mimeType?: string): string {
@@ -200,6 +220,13 @@ export class BackupMediaExtractor {
     } catch {
       return null
     }
+  }
+
+  /** 提取本來就是二進位的媒體（例如錄音 Blob），相同內容會去重 */
+  async extractBytes(data: Uint8Array, prefix: string, ext: string): Promise<string> {
+    const hash = await hashBytes(ext, data)
+    const filename = `media/${prefix}_${this.index++}.${ext}`
+    return this.storeParsedMedia(hash, filename, data)
   }
 
   /**
@@ -392,12 +419,69 @@ export async function extractAllMediaFromBackupData(data: any, sharedExtractor?:
     }
   }
 
+  // 11. 之後才收進備份的資料：語音收藏（頭像快照、TTS 音檔）、偷看手機、圖庫、其他 appSettings
+  for (const [key, prefix] of DATA_URL_MEDIA_KEYS) {
+    const list = data[key]
+    if (!Array.isArray(list)) continue
+    for (let i = 0; i < list.length; i++) {
+      await scanAndReplaceDataUrlsInValue(list, i, extractor, prefix)
+    }
+  }
+
   return extractor.getResult()
 }
+
+/**
+ * backup.json 裡整筆掃描 DataURL 的 key 與媒體檔名前綴。
+ * 導入端用同一份清單把 media/ 路徑還原回 DataURL。
+ */
+export const DATA_URL_MEDIA_KEYS: ReadonlyArray<readonly [string, string]> = [
+  ['favoriteAudios', 'fav'],
+  ['peekPhoneData', 'peek'],
+  ['imageGallery', 'gallery'],
+  ['appSettingsExtra', 'app'],
+]
 
 // ============================================================
 // 深度掃描：遞迴掃描任意 JSON 值中的 base64 字串並替換
 // ============================================================
+
+/**
+ * 遞迴掃描 obj[key]，只把 data:image/、data:audio/ 的 DataURL 抽成媒體檔案。
+ *
+ * 跟 scanAndReplaceBase64InValue 不同，這裡不猜裸 base64：猜錯會把一般字串
+ * 還原成 DataURL。真的是裸 base64 也只是留在 JSON 裡、檔案大一點，不會壞。
+ */
+async function scanAndReplaceDataUrlsInValue(
+  obj: any,
+  key: string | number,
+  extractor: BackupMediaExtractor,
+  prefix: string,
+): Promise<void> {
+  const val = obj[key]
+  if (val === null || val === undefined) return
+
+  if (typeof val === 'string') {
+    if ((val.startsWith('data:image/') || val.startsWith('data:audio/')) && val.length > 200) {
+      const f = await extractor.extract(val, prefix)
+      if (f) obj[key] = f
+    }
+    return
+  }
+
+  if (Array.isArray(val)) {
+    for (let i = 0; i < val.length; i++) {
+      await scanAndReplaceDataUrlsInValue(val, i, extractor, prefix)
+    }
+    return
+  }
+
+  if (typeof val === 'object') {
+    for (const k of Object.keys(val)) {
+      await scanAndReplaceDataUrlsInValue(val, k, extractor, prefix)
+    }
+  }
+}
 
 /**
  * 遞迴掃描 obj[key] 中所有字串值，將 base64 DataURL 提取為媒體檔案。

@@ -7,10 +7,16 @@
  * dirHandle 存入 IndexedDB，下次開頁面可重新取得權限。
  */
 
-import { db, DB_STORES } from "@/db/database";
-import { exportChatImageMediaDirect } from "@/db/operations";
+import { db, DB_STORES, type AudioBlobRecord } from "@/db/database";
+import { exportChatImageMediaDirect, isChatImageRef } from "@/db/operations";
+import {
+  collectLocalStorageForBackup,
+  shouldBackupAppSettingsKey,
+  shouldBackupSettingsKey,
+} from "@/services/backupCoverage";
 import { loadMessages } from "@/storage/chatMessageStorage";
 import {
+  audioExtFromMime,
   BackupMediaExtractor,
   extractMediaFromChatBackupData,
   extractAllMediaFromBackupData,
@@ -219,6 +225,24 @@ async function loadKeyValueStore(
   }
 }
 
+/**
+ * 逐筆讀出 key 符合條件的紀錄。不用 getAll：imageCache 裡同時放著全部聊天圖片，
+ * 整表載入只為了挑出圖庫那幾張，記憶體峰值會是全部圖片。
+ */
+async function loadRecordsByKey(
+  storeName: string,
+  keep: (key: string) => boolean,
+): Promise<unknown[]> {
+  const keys = await db.getAllKeys(storeName);
+  const records: unknown[] = [];
+  for (const key of keys) {
+    if (!keep(String(key))) continue;
+    const record = await db.get(storeName, String(key));
+    if (record !== undefined) records.push(record);
+  }
+  return records;
+}
+
 /** 向量嵌入（Float32Array → 普通陣列，以便 JSON 序列化） */
 async function loadVectorEmbeddings(): Promise<unknown[]> {
   try {
@@ -304,9 +328,41 @@ const LIGHT_LOADERS: Array<{ key: string; load: () => Promise<unknown> }> = [
   },
   { key: "vectorEmbeddings", load: loadVectorEmbeddings },
   { key: "promptLibrary", load: () => loadKeyValueStore("promptLibrary") },
-  { key: "oldSettings", load: () => loadKeyValueStore("settings") },
+  {
+    key: "oldSettings",
+    load: async () =>
+      (await loadKeyValueStore("settings")).filter((item) =>
+        shouldBackupSettingsKey(item.key),
+      ),
+  },
   { key: "canvasLayout", load: loadCanvasLayout },
+  // 以下是後來補進備份的資料，舊版導入器會略過這些 key。
+  // 每個表的歸屬登記在 backupCoverage.ts，錄音（audio-blobs）在聊天之後分包寫出。
+  {
+    key: "appSettingsExtra",
+    load: () => loadRecordsByKey(DB_STORES.APP_SETTINGS, shouldBackupAppSettingsKey),
+  },
+  { key: "favoriteAudios", load: () => db.getAll(DB_STORES.FAVORITE_AUDIOS) },
+  {
+    key: "favoriteAudioGroups",
+    load: () => db.getAll(DB_STORES.FAVORITE_AUDIO_GROUPS),
+  },
+  { key: "peekPhoneData", load: () => db.getAll(DB_STORES.PEEK_PHONE_DATA) },
+  {
+    key: "imageGallery",
+    load: () => loadRecordsByKey(DB_STORES.IMAGE_CACHE, (id) => !isChatImageRef(id)),
+  },
+  { key: "announcementAcks", load: () => db.getAll(DB_STORES.ANNOUNCEMENT_ACKS) },
+  { key: "localStorage", load: async () => collectLocalStorageForBackup() },
 ];
+
+/** 分包裡 audio-blobs.json 的一筆：錄音本體在同一包的 media/ 檔 */
+export interface BackupAudioBlobEntry {
+  id: string;
+  mimeType: string;
+  createdAt: number;
+  media: string;
+}
 
 /**
  * 取得所有聊天的 key 列表（不載入完整數據）
@@ -440,7 +496,7 @@ async function pushLightValue(
  * 開啟一個可分段寫入的 ZIP 檔案項目。
  *
  * 與 `pushFileToZip` 的差別：資料可以分多次餵進去，讓呼叫端不必先在
- * 記憶體組出完整內容。用於 `backup.json`——那包資料有 26 個 store，
+ * 記憶體組出完整內容。用於 `backup.json`——那包資料有三十多個 key，
  * 整包 `JSON.stringify()` 會產生單一巨大字串，峰值是資料本身的數倍。
  */
 function openZipEntry(
@@ -714,6 +770,8 @@ function stringifyMessage(msg: unknown, chatId: string): string | null {
  * 後續分包沒有 backup.json，另外可能有：
  *   chat-segments/<chatId>.<n>.json — 被切開的巨大聊天的後續訊息
  *     （放在 chats/ 之外：舊版導入器看不到它，就不會用它整個覆蓋掉聊天）
+ * 任何一包都可能有：
+ *   audio-blobs.json     — 本包的錄音清單，錄音本體是同包的 media/ 檔
  */
 export async function buildSplitBackup(
   opts: BuildSplitBackupOptions,
@@ -744,6 +802,7 @@ export async function buildSplitBackup(
   let extractor!: BackupMediaExtractor;
   let partMediaCount = 0;
   let partChatCount = 0;
+  let partAudioBlobs: BackupAudioBlobEntry[] = [];
 
   const partLabel = () => (partIndex > 0 ? `（第 ${partIndex + 1} 部分）` : "");
 
@@ -754,6 +813,7 @@ export async function buildSplitBackup(
     partOpen = true;
     partMediaCount = 0;
     partChatCount = 0;
+    partAudioBlobs = [];
     extractor = new BackupMediaExtractor(async (filename, data) => {
       partMediaCount++;
       await part.writeEntry(filename, data);
@@ -765,6 +825,12 @@ export async function buildSplitBackup(
     console.log(
       `[AutoBackup] 分包 ${partIndex + 1} 媒體提取完成: ${mediaResult.totalExtracted} 個 base64，去重 ${mediaResult.dedupeHits} 個`,
     );
+    if (partAudioBlobs.length > 0) {
+      await part.writeEntry(
+        "audio-blobs.json",
+        strToU8(JSON.stringify({ records: partAudioBlobs })),
+      );
+    }
     await part.writeEntry(
       "metadata.json",
       strToU8(
@@ -810,7 +876,7 @@ export async function buildSplitBackup(
     //    絕對不能先把全部 store 讀進一個大物件：「輕量」是誤稱，themes（桌布）、
     //    qzonePosts、stickers、oldSettings（劇場貼文）、canvasLayout 都塞著 base64。
     //    逐個處理後峰值只有「單一 store + 已抽乾的殘骸」。
-    //    產出的 backup.json 內容與舊版逐字相同，格式沒有改變。
+    //    既有 key 的輸出與舊版逐字相同；後來補進的 key 只附加在後面，舊版導入器會略過。
     onProgress?.({ phase: "寫入基礎數據..." });
     await yieldToMain();
     const lightEntry = part.openEntry("backup.json");
@@ -983,7 +1049,50 @@ export async function buildSplitBackup(
       total: totalChats,
     });
 
-    // 5. 最後一包：寫入 metadata、結束 zip 流
+    // 5. 錄音：Blob 逐筆讀出 → 寫成 media/ 檔 → 釋放。數量沒有上限，所以跟聊天
+    //    一樣可以切包；每包的 audio-blobs.json 只列本包的錄音，分包才能單獨導入。
+    const audioKeys = await db.getAllKeys(DB_STORES.AUDIO_BLOBS);
+    for (let i = 0; i < audioKeys.length; i++) {
+      if (i % 10 === 0) {
+        onProgress?.({
+          phase: `處理錄音${partLabel()}`,
+          current: i,
+          total: audioKeys.length,
+        });
+        await yieldToMain();
+      }
+      if (shouldRotate()) {
+        await rotate();
+      }
+      try {
+        const record = await db.get<AudioBlobRecord>(
+          DB_STORES.AUDIO_BLOBS,
+          String(audioKeys[i]),
+        );
+        if (!record?.blob) continue;
+        const mimeType = record.mimeType || record.blob.type || "audio/webm";
+        const bytes = new Uint8Array(await record.blob.arrayBuffer());
+        const media = await extractor.extractBytes(
+          bytes,
+          "audio",
+          audioExtFromMime(mimeType),
+        );
+        partAudioBlobs.push({
+          id: record.id,
+          mimeType,
+          createdAt: record.createdAt,
+          media,
+        });
+      } catch (audioErr) {
+        if (part.error) throw part.error;
+        console.warn(
+          `[AutoBackup] 錄音 "${String(audioKeys[i])}" 匯出失敗，跳過:`,
+          audioErr,
+        );
+      }
+    }
+
+    // 6. 最後一包：寫入 metadata、結束 zip 流
     await closePart(true);
   } catch (e) {
     if (partOpen) {
