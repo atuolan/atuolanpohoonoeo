@@ -60,14 +60,12 @@ import MultiCharSetupModal from "@/components/modals/MultiCharSetupModal.vue";
 import PhoneContactPickerModal from "@/components/modals/PhoneContactPickerModal.vue";
 import PomodoroCertModal from "@/components/modals/PomodoroCertModal.vue";
 import AnnouncementModal from "@/components/modals/AnnouncementModal.vue";
+import AnnouncementItinerary from "@/components/modals/AnnouncementItinerary.vue";
+import AnnouncementMailbox from "@/components/modals/AnnouncementMailbox.vue";
 import PromptResetGuideModal from "@/components/modals/PromptResetGuideModal.vue";
 import { usePromptManagerStore } from "@/stores/promptManager";
 import FavoriteAudioModal from "@/components/modals/FavoriteAudioModal.vue";
-import {
-  loadPendingAnnouncements,
-  acknowledgeAnnouncement,
-  type Announcement,
-} from "@/services/AnnouncementService";
+import { useAnnouncementStore } from "@/stores/announcements";
 import BookReaderScreen from "@/components/screens/BookReaderScreen.vue";
 import BookShelfScreen from "@/components/screens/BookShelfScreen.vue";
 import CalendarScreen from "@/components/screens/CalendarScreen.vue";
@@ -886,17 +884,8 @@ const importType = ref<"character" | "lorebook">("character");
 // AI 角色生成彈窗
 const showAICharacterModal = ref(false);
 
-// 作者公告佇列（啟動時載入未確認的公告，逐一彈窗）
-const announcementQueue = ref<Announcement[]>([]);
-const currentAnnouncementIndex = ref(0);
-const currentAnnouncement = computed<Announcement | null>(() => {
-  if (currentAnnouncementIndex.value >= announcementQueue.value.length) return null;
-  return announcementQueue.value[currentAnnouncementIndex.value] || null;
-});
-async function handleAnnouncementAck(id: string) {
-  await acknowledgeAnnouncement(id);
-  currentAnnouncementIndex.value += 1;
-}
+// 作者公告：開 App 最多跳一張明信片，其他收進信箱
+const announcementStore = useAnnouncementStore();
 // 線上／群聊／面對面提示詞重大更新：舊設定用戶必須完成重置（彈窗無法關閉），需要重置的模式合在一個彈窗
 const pendingPromptResets = ref<Array<"online" | "groupChat" | "faceToFace">>([]);
 async function checkPromptResets() {
@@ -910,18 +899,6 @@ async function checkPromptResets() {
     ];
   } catch (error) {
     console.warn("[App] 檢查提示詞版本失敗:", error);
-  }
-}
-
-async function loadAuthorAnnouncements() {
-  try {
-    const pending = await loadPendingAnnouncements();
-    if (pending.length > 0) {
-      announcementQueue.value = pending;
-      currentAnnouncementIndex.value = 0;
-    }
-  } catch (error) {
-    console.warn("[App] 載入作者公告失敗:", error);
   }
 }
 
@@ -1721,7 +1698,9 @@ onMounted(async () => {
   }
 
   // 作者公告（無論是否驗證都嘗試載入；fetch 失敗時靜默忽略）
-  void loadAuthorAnnouncements();
+  void announcementStore.init().catch((error) => {
+    console.warn("[App] 載入作者公告失敗:", error);
+  });
 
   // 監聽 SW 更新事件
   window.addEventListener("sw:update-available", handleSwUpdate);
@@ -3185,18 +3164,34 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       @forward-to-chat="handlePomodoroCertForward"
     />
 
-    <!-- 作者公告（啟動時逐則彈窗，確認後寫入 IndexedDB 永不再彈） -->
+    <!-- 作者公告：開 App 跳的明信片、203 號房的信箱、完整行程 -->
     <AnnouncementModal
-      v-if="currentAnnouncement"
-      :announcement="currentAnnouncement"
-      :index="currentAnnouncementIndex + 1"
-      :total="announcementQueue.length"
-      @ack="handleAnnouncementAck"
+      v-if="announcementStore.popup"
+      :announcement="announcementStore.popup"
+      :other-unread="announcementStore.otherUnreadCount"
+      @receive="announcementStore.receive"
+      @later="announcementStore.later"
+      @open-itinerary="announcementStore.openItinerary"
+      @open-mailbox="announcementStore.openMailbox"
+    />
+    <AnnouncementMailbox
+      v-if="announcementStore.mailboxOpen"
+      :items="announcementStore.items"
+      :is-read="announcementStore.isRead"
+      :loaded="announcementStore.loaded"
+      @close="announcementStore.closeMailbox"
+      @open="announcementStore.openItinerary"
+    />
+    <AnnouncementItinerary
+      v-if="announcementStore.itinerary"
+      :announcement="announcementStore.itinerary"
+      @close="announcementStore.closeItinerary"
+      @receive="announcementStore.receive"
     />
 
     <!-- 提示詞強制重置引導（作者公告看完後才顯示） -->
     <PromptResetGuideModal
-      v-if="pendingPromptResets.length > 0 && !currentAnnouncement && !authScreenOnStage"
+      v-if="pendingPromptResets.length > 0 && !announcementStore.popup && !authScreenOnStage"
       :modes="pendingPromptResets"
       @done="pendingPromptResets = []"
     />

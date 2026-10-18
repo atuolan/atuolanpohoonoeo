@@ -9,6 +9,7 @@ import {
 } from "@/services/phoneCalendar";
 import { AUXILIARY_TASKS, useNotificationStore, useSettingsStore } from "@/stores";
 import type { RoutableTaskType } from "@/stores/settings";
+import { useAnnouncementStore } from "@/stores/announcements";
 import { useCloudPushStore } from "@/stores/cloudPush";
 import { useSelfHostedSyncStore } from "@/stores/selfHostedSync";
 import {
@@ -20,6 +21,7 @@ import {
   CupSoda,
   FileText,
   HardDrive,
+  Mailbox,
   MapPin,
   Mic,
   MonitorSmartphone,
@@ -48,6 +50,7 @@ const settingsStore = useSettingsStore();
 const notificationStore = useNotificationStore();
 const cloudPushStore = useCloudPushStore();
 const syncStore = useSelfHostedSyncStore();
+const announcementStore = useAnnouncementStore();
 const { isFormDirty, currentProfile } = useApiProfiles();
 
 // ===== 需要另外讀的摘要 =====
@@ -261,6 +264,14 @@ const groups = computed<Array<{ title: string; items: HomeItem[] }>>(() => [
   {
     title: "其他",
     items: [
+      {
+        key: "mailbox",
+        label: "信箱",
+        icon: Mailbox,
+        hue: "peach",
+        value: announcementStore.unreadCount > 0 ? `${announcementStore.unreadCount} 張沒拆` : undefined,
+        onClick: () => announcementStore.openMailbox(),
+      },
       {
         key: "support",
         label: "支持作者",
