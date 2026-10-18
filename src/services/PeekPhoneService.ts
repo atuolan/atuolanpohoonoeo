@@ -406,6 +406,10 @@ export interface PeekSources {
   realUserThread?: boolean;
   /** 真的交易、外送、日記（已經會顯示，AI 不要重複寫） */
   realDataText?: string;
+  /** 聊天裡真的傳過的照片（已經會顯示在相簿） */
+  realPhotosText?: string;
+  /** 兩人第一次聊天的日期（鎖屏密碼參考） */
+  firstChatDate?: string;
 }
 
 /**
@@ -433,6 +437,8 @@ export async function buildPromptContext(
     plannerText: sources.plannerText,
     realUserThread: sources.realUserThread,
     realDataText: sources.realDataText,
+    realPhotosText: sources.realPhotosText,
+    firstChatDate: sources.firstChatDate,
   };
 }
 

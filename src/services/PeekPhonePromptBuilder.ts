@@ -28,6 +28,10 @@ export interface PeekPromptContext {
   realUserThread?: boolean;
   /** 真的交易、外送、日記：已經會顯示在手機裡，AI 不要重複寫 */
   realDataText?: string;
+  /** 聊天裡真的傳過的照片：已經會顯示在相簿，AI 不要重複寫 */
+  realPhotosText?: string;
+  /** 兩人第一次聊天的日期（YYYY-MM-DD），鎖屏密碼可以參考 */
+  firstChatDate?: string;
 }
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -96,12 +100,15 @@ function buildOutputRule(): string {
  * 聊天組要藏的秘密：鎖屏密碼、收回的訊息、沒送出的草稿
  * 偷看的人會在 App 裡一個個找出來，所以都要跟使用者有關
  */
-function buildSecretsRuleA(userName: string, realUserThread = false): string {
+function buildSecretsRuleA(userName: string, realUserThread = false, firstChatDate?: string): string {
+  const firstChat = firstChatDate
+    ? `\n   - 參考：兩人第一次聊天是 ${firstChatDate}（可以用，不一定要用）`
+    : "";
   const recalledWhere = realUserThread
     ? `放在其他聯絡人的對話裡（跟「${userName}」那串是真的聊天紀錄，不用寫）`
     : `最好在跟「${userName}」的對話裡`;
   return `【秘密 —— 這支手機要藏幾個跟「${userName}」有關的秘密，偷看的人會一個個找出來】
-1. lock_screen 鎖屏密碼：4 位數字，跟「${userName}」有關（例如第一次見面的日期 MMDD、對方生日、只有兩人懂的數字）
+1. lock_screen 鎖屏密碼：4 位數字，跟「${userName}」有關（例如第一次見面的日期 MMDD、對方生日、只有兩人懂的數字）${firstChat}
    - passcode：4 位數字，一定要加引號
    - hint：給偷看的人的提示，不能直接寫出數字
    - reveal：解開後顯示的一句話，說明這組數字的意義
@@ -175,7 +182,7 @@ ${userThreadRule}
 - time 寫「月/日 時:分」，都要早於現在時間。
 - 內容要符合角色性格、跟${userName}的關係和最近的劇情。
 
-${buildSecretsRuleA(userName, realUserThread)}
+${buildSecretsRuleA(userName, realUserThread, ctx.firstChatDate)}
 
 ${buildLanguageRule()}
 
@@ -293,10 +300,11 @@ export function buildGroupDPrompt(ctx: PeekPromptContext, previousContext = ""):
   const prevBlock = previousContext
     ? `\n\n【已生成的手機內容 —— 照片、瀏覽紀錄要跟這些互相呼應】\n${previousContext}`
     : "";
+  const realBlock = ctx.realPhotosText ? `\n\n【真的發生過的事】\n${ctx.realPhotosText}` : "";
 
   return `你是角色扮演內容生成器。請根據以下資料，生成「${charName}」手機裡的相簿、螢幕使用時間、瀏覽紀錄，以及藏在手機深處的照片。
 
-${buildCharacterBlock(ctx)}${prevBlock}
+${buildCharacterBlock(ctx)}${prevBlock}${realBlock}
 
 【gallery 相簿】3 到 6 張照片：
 - description：畫面描述，生動具體

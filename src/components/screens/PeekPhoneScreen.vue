@@ -227,15 +227,30 @@ const diary = computed(() =>
   [...realData.value.diary, ...(storeData.value?.diary ?? [])].sort((a, b) => b.date.localeCompare(a.date)),
 );
 const gallery = computed(() => storeData.value?.gallery ?? []);
+/** 他排好要打給使用者的電話：行事曆上變成提醒，原因是秘密 */
+const pendingCalls = computed(() => realData.value.pendingCalls);
+/** 他手機裡給使用者的備註名 */
+const userContactName = computed(
+  () => chats.value.find((c) => c.isUser)?.contactName || userNameForPhone.value || "你",
+);
 const browserHistory = computed(() => storeData.value?.browserHistory ?? []);
 const hiddenPhotos = computed(() => storeData.value?.hiddenPhotos ?? []);
 // 相簿分成一般的和「最近刪除」裡的
-const activePhotos = computed(() => gallery.value.filter((p) => !p.deletedDaysLeft));
+// 聊天裡真的傳過的照片排在一起，新的在前
+const activePhotos = computed(() =>
+  [...realData.value.photos, ...gallery.value.filter((p) => !p.deletedDaysLeft)].sort((a, b) =>
+    b.date.localeCompare(a.date),
+  ),
+);
 const deletedPhotos = computed(() => gallery.value.filter((p) => p.deletedDaysLeft));
 
 // ===== 秘密與偷看進度 =====
 const secrets = computed(() =>
-  listSecrets(storeData.value ? { ...storeData.value, chats: chats.value } : null, planner.value),
+  listSecrets(
+    storeData.value ? { ...storeData.value, chats: chats.value } : null,
+    planner.value,
+    pendingCalls.value,
+  ),
 );
 const progress = computed(() => progressOf(storeData.value));
 const unfound = computed(() => unfoundByPlace(secrets.value, progress.value));
@@ -275,6 +290,7 @@ watch(currentView, (view) => {
   }
   if (view === "schedule") {
     for (const p of planner.value?.plans ?? []) if (p.secret) reveal(secretKeys.plan(p.id));
+    for (const c of pendingCalls.value) reveal(secretKeys.call(c.id));
   }
 });
 
@@ -318,6 +334,13 @@ const lockNotifications = computed(() => latestNotifications(chats.value, 3));
 const lockNextSchedule = computed(() => nextScheduleItem(schedule.value));
 const homeMoodLine = computed(() => moodLine(diary.value));
 const homePhoto = computed(() => activePhotos.value[0] ?? null);
+
+// 鎖屏：聊天頂欄那行狀態、他所在的城市和天氣（角色設定裡填的）
+const lockStatusText = computed(() => chatRecord.value?.charStatus?.text?.trim() || "");
+const lockPlaceText = computed(() => {
+  const world = character.value?.worldSettings;
+  return [world?.location?.trim(), world?.weatherOverride?.trim()].filter(Boolean).join(" · ");
+});
 
 // 聊天詳情
 const selectedChatId = ref<string | null>(null);
@@ -781,6 +804,8 @@ const todayLabel = computed(
         :notifications="lockNotifications"
         :group-status="groupStatus"
         :lock-screen="storeData?.lockScreen"
+        :status-text="lockStatusText"
+        :place-text="lockPlaceText"
         :need-code="needCode"
         @unlock="onUnlock"
         @open-thread="openThreadFromLock"
@@ -916,6 +941,20 @@ const todayLabel = computed(
                   </span>
                   <div class="chat-bubble">{{ item.msg.content }}</div>
                   <span v-if="item.msg.recalled" class="chat-recalled-meta">{{ recalledMeta(item.msg) }}</span>
+                  <!-- 沒接通的電話：偷看他打來想說什麼 -->
+                  <template v-if="item.msg.callReason">
+                    <span v-if="isRevealed(secretKeys.call(item.msg.id))" class="chat-recalled-meta">
+                      想說的是：{{ item.msg.callReason }}
+                    </span>
+                    <button
+                      v-else
+                      type="button"
+                      class="peek-chip"
+                      @click="reveal(secretKeys.call(item.msg.id))"
+                    >
+                      <Eye :size="14" aria-hidden="true" />偷看 TA 打來想說什麼
+                    </button>
+                  </template>
                 </div>
               </template>
               <!-- 對方輸入中提示 -->
@@ -1033,6 +1072,22 @@ const todayLabel = computed(
                   <span v-if="formatPlanTime(plan) || plan.place" class="sched-loc">
                     {{ [formatPlanTime(plan), plan.place].filter(Boolean).join("　") }}
                   </span>
+                </span>
+              </li>
+            </ol>
+          </template>
+          <template v-if="pendingCalls.length > 0">
+            <div class="app-section-label">提醒</div>
+            <ol class="app-card sched-list">
+              <li v-for="call in pendingCalls" :key="call.id" class="app-row sched-item">
+                <span class="sched-time">{{ call.time }}</span>
+                <span class="sched-dot" aria-hidden="true" />
+                <span class="sched-main">
+                  <span class="sched-title">
+                    打電話給{{ userContactName }}
+                    <span class="secret-tag">沒讓你知道</span>
+                  </span>
+                  <span class="sched-loc">想說：{{ call.reason }}</span>
                 </span>
               </li>
             </ol>
@@ -1213,7 +1268,8 @@ const todayLabel = computed(
                 :aria-pressed="selectedPhoto?.id === item.id"
                 @click="selectedPhotoId = item.id"
               >
-                <Camera v-if="item.source === 'selfie'" :size="22" aria-hidden="true" />
+                <img v-if="item.imageUrl" :src="item.imageUrl" alt="" class="photo-tile-img" loading="lazy" />
+                <Camera v-else-if="item.source === 'selfie'" :size="22" aria-hidden="true" />
                 <Image v-else-if="item.source === 'scene'" :size="22" aria-hidden="true" />
                 <MessageCircle v-else :size="22" aria-hidden="true" />
                 <span class="photo-tile-tag">{{ item.date.slice(5).replace("-", "/") }}</span>
@@ -2394,6 +2450,14 @@ const todayLabel = computed(
 
   &.is-hidden {
     background: #2b303a;
+  }
+
+  .photo-tile-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 
   &.is-selected {

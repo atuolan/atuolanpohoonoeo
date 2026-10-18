@@ -103,3 +103,27 @@ describe("角色待辦與行程裡的秘密", () => {
     expect(unfoundByPlace(secrets, { unlocked: true, revealed: ["todo:t1"], viewed: [] }).schedule).toBe(1);
   });
 });
+
+describe("電話裡的秘密", () => {
+  it("沒接通的電話原因算訊息裡的秘密，排好的電話算行事曆的", () => {
+    const data = phone({
+      chats: [
+        {
+          id: "u",
+          contactName: "笨蛋",
+          isUser: true,
+          updatedAt: 0,
+          messages: [
+            { id: "real-1", senderName: "他", content: "📞 打給小栩，沒人接", isSelf: true, timestamp: 0, callReason: "想道歉" },
+            { id: "real-2", senderName: "他", content: "📞 打給小栩，沒人接", isSelf: true, timestamp: 0 },
+          ],
+        },
+      ],
+    });
+    const secrets = listSecrets(data, null, [{ id: "pc1", time: "22:30", reason: "想聽你的聲音" }]);
+    expect(secrets.map((s) => [s.key, s.place, s.detail])).toEqual([
+      [secretKeys.call("real-1"), "chat", "想道歉"],
+      [secretKeys.call("pc1"), "schedule", "22:30：想聽你的聲音"],
+    ]);
+  });
+});

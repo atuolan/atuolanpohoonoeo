@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { DiaryEntry } from "@/db/database";
 import type { ChatMessage } from "@/types/chat";
 import type { PeekChatThread } from "@/types/peekPhone";
-import { buildPeekRealData, describeRealDataForPrompt, mergeRealUserThread } from "@/utils/peekRealData";
+import {
+  buildPeekRealData,
+  buildPendingCalls,
+  describeRealDataForPrompt,
+  describeRealPhotosForPrompt,
+  mergeRealUserThread,
+} from "@/utils/peekRealData";
 
 const NOW = new Date(2026, 9, 18, 21, 0);
 const opts = { userName: "小栩", charName: "沈既白", now: NOW };
@@ -139,11 +145,79 @@ describe("錢包、飲食、日記", () => {
         transactions: [{ id: "t", description: "收到小栩的轉帳", amount: 520, time: "10:00" }],
         meals: [{ id: "m", mealType: "snack", food: "珍珠奶茶", time: "15:10" }],
         diary: [{ id: "d", date: "2026-10-17", mood: "neutral", content: "" }],
+        photos: [{ id: "p", description: "海邊的夕陽", source: "scene", reason: "", date: "2026-10-16" }],
+        pendingCalls: [{ id: "c", at: 0, time: "22:30", reason: "想聽你的聲音" }],
       },
       "小栩",
     );
     expect(text).toContain("- 10:00 收到小栩的轉帳 +520");
     expect(text).toContain("- 15:10 珍珠奶茶");
     expect(text).toContain("2026-10-17");
+    expect(text).not.toContain("海邊的夕陽");
+    expect(text).toContain("- 22:30，原因：想聽你的聲音");
+  });
+});
+
+describe("相簿、通話、第一次聊天", () => {
+  it("他傳的照片算他拍的，使用者傳的算他存的；新的在前，只留網址或 data URL", () => {
+    const real = buildPeekRealData(
+      [
+        msg({ messageType: "descriptive-image", imageCaption: "窗外的雨", createdAt: at(10) }),
+        msg({ sender: "user", is_user: true, name: "小栩", messageType: "image", imageUrl: "idb://blob/1", createdAt: at(11) }),
+        msg({ messageType: "image-url", imageUrl: "https://x.test/a.jpg", imageCaption: "自拍一張", createdAt: at(12) }),
+        msg({ messageType: "image", imageCaption: "收回的", isCharRecall: true, createdAt: at(13) }),
+      ],
+      [],
+      opts,
+    );
+    expect(real.photos.map((p) => [p.source, p.description, p.reason, p.imageUrl])).toEqual([
+      ["selfie", "自拍一張", "傳給小栩看的", "https://x.test/a.jpg"],
+      ["saved", "小栩傳來的照片", "小栩傳給我的", undefined],
+      ["scene", "窗外的雨", "傳給小栩看的", undefined],
+    ]);
+  });
+
+  it("沒接通的電話變成他打出去的那通，原因藏起來", () => {
+    const real = buildPeekRealData(
+      [
+        msg({ sender: "system", isCallNotification: true, callNotificationType: "declined", callReason: "想道歉", createdAt: at(19) }),
+        msg({ sender: "system", isCallNotification: true, callNotificationType: "missed", createdAt: at(20) }),
+      ],
+      [],
+      opts,
+    );
+    expect(real.userThread.map((m) => [m.isSelf, m.content, m.callReason])).toEqual([
+      [true, "📞 撥出的電話 · 對方拒接", "想道歉"],
+      [true, "📞 撥出的電話 · 沒有接通", undefined],
+    ]);
+  });
+
+  it("第一次聊天：讀到最舊的就用第一則，不然用聊天建立時間", () => {
+    const m = [msg({ content: "嗨", createdAt: at(9, 0, 3), storyTime: at(9, 0, 2) })];
+    expect(buildPeekRealData(m, [], opts, { hasAllMessages: true, chatCreatedAt: at(8, 0, 1) }).firstChatDate).toBe("2026-10-02");
+    expect(buildPeekRealData(m, [], opts, { hasAllMessages: false, chatCreatedAt: at(8, 0, 1) }).firstChatDate).toBe("2026-10-01");
+  });
+});
+
+describe("給相簿組的照片說明", () => {
+  it("有照片才給，寫日期、描述、為什麼存", () => {
+    const real = buildPeekRealData([msg({ messageType: "descriptive-image", imageCaption: "窗外的雨" })], [], opts);
+    expect(describeRealPhotosForPrompt(real)).toContain("- 2026-10-18 窗外的雨（傳給小栩看的）");
+    expect(describeRealPhotosForPrompt(buildPeekRealData([], [], opts))).toBe("");
+  });
+});
+
+describe("排好要打的電話", () => {
+  it("照聊天的時間顯示，早的在前，沒原因的不放", () => {
+    const realNow = new Date(2026, 9, 1, 12, 0).getTime();
+    const calls = [
+      { id: "b", characterId: "x", characterName: "", chatId: "c", triggerTime: realNow + 120 * 60_000, reason: "第二通", createdAt: 0 },
+      { id: "a", characterId: "x", characterName: "", chatId: "c", triggerTime: realNow + 30 * 60_000, reason: "想你", createdAt: 0 },
+      { id: "z", characterId: "x", characterName: "", chatId: "c", triggerTime: realNow, reason: " ", createdAt: 0 },
+    ];
+    expect(buildPendingCalls(calls, NOW, realNow).map((c) => [c.id, c.time])).toEqual([
+      ["a", "21:30"],
+      ["b", "23:00"],
+    ]);
   });
 });

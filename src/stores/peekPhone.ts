@@ -17,7 +17,7 @@ import { useLorebooksStore } from "@/stores/lorebooks";
 import { useNotificationStore } from "@/stores/notification";
 import { loadCharPlanner, syncPeekIntoPlanner } from "@/services/charPlanner";
 import { loadPeekRealData } from "@/services/PeekRealData";
-import { describeRealDataForPrompt } from "@/utils/peekRealData";
+import { describeRealDataForPrompt, describeRealPhotosForPrompt } from "@/utils/peekRealData";
 import { buildPlannerPromptText, toDateString } from "@/utils/charPlanner";
 import { computeChatNow } from "@/utils/fakeTime";
 import { isWorldInfoEntryEnabled } from "@/utils/worldInfoEntryState";
@@ -290,6 +290,8 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       plannerText: hasPlanner ? buildPlannerPromptText(planner, toDateString(now), userName) : undefined,
       realUserThread: !!real && real.userThread.length > 0,
       realDataText: real ? describeRealDataForPrompt(real, userName) || undefined : undefined,
+      realPhotosText: real ? describeRealPhotosForPrompt(real) || undefined : undefined,
+      firstChatDate: real?.firstChatDate,
     };
   }
 

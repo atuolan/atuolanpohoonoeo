@@ -5,10 +5,12 @@
 import type { DiaryEntry } from "@/db/database";
 import type { ChatMessage } from "@/types/chat";
 import type { ChatScreenMessage } from "@/types/chatScreen";
+import type { PendingCall } from "@/types/incomingCall";
 import type {
   PeekChatMessage,
   PeekChatThread,
   PeekDiaryEntry,
+  PeekGalleryItem,
   PeekMealRecord,
   PeekTransaction,
 } from "@/types/peekPhone";
@@ -24,6 +26,21 @@ export interface PeekRealData {
   diary: PeekDiaryEntry[];
   /** 今天使用者點給他的外賣 */
   meals: PeekMealRecord[];
+  /** 聊天裡傳過的照片：他傳的、使用者傳給他的（當作他存了），新的在前面 */
+  photos: PeekGalleryItem[];
+  /** 他排好、還沒打給使用者的電話；reason 是秘密 */
+  pendingCalls: PeekPendingCall[];
+  /** 兩人第一次聊天的日期（YYYY-MM-DD），給鎖屏密碼參考 */
+  firstChatDate?: string;
+}
+
+export interface PeekPendingCall {
+  id: string;
+  /** 什麼時候要打（劇情時間） */
+  at: number;
+  /** 「時:分」或「月/日 時:分」 */
+  time: string;
+  reason: string;
 }
 
 export interface PeekRealDataOptions {
@@ -36,6 +53,7 @@ export interface PeekRealDataOptions {
 const THREAD_LIMIT = 30;
 const TRANSACTION_LIMIT = 8;
 const DIARY_LIMIT = 5;
+const PHOTO_LIMIT = 12;
 
 /** 訊息在劇情裡的時間（假時間模式下跟 createdAt 不同） */
 function timeOf(m: ChatMessage): number {
@@ -65,10 +83,26 @@ function isChatMessage(m: ChatMessage): boolean {
   return m.sender === "user" || m.sender === "assistant";
 }
 
-/** 跟使用者那串：最近 30 則一般訊息（雙方收回的不放） */
+/** 他打給使用者沒接通：在他手機上是他打出去的那通 */
+function callLine(m: ChatMessage): string {
+  return m.callNotificationType === "declined" ? "📞 撥出的電話 · 對方拒接" : "📞 撥出的電話 · 沒有接通";
+}
+
+/** 跟使用者那串：最近 30 則一般訊息（雙方收回的不放），加上他打過去沒接通的電話 */
 function buildUserThread(messages: ChatMessage[], options: PeekRealDataOptions): PeekChatMessage[] {
   const thread: PeekChatMessage[] = [];
   for (const m of messages) {
+    if (m.isCallNotification) {
+      thread.push({
+        id: `real-${m.id}`,
+        senderName: options.charName,
+        content: callLine(m),
+        isSelf: true,
+        timestamp: timeOf(m),
+        callReason: m.callReason?.trim() || undefined,
+      });
+      continue;
+    }
     if (!isChatMessage(m) || m.isUserRecalled || m.isCharRecall) continue;
     const isSelf = m.sender === "assistant";
     const content = summarizeForwardContent(m as unknown as ChatScreenMessage);
@@ -157,6 +191,50 @@ function buildMeals(messages: ChatMessage[], options: PeekRealDataOptions): Peek
   return meals;
 }
 
+function isPhoto(m: ChatMessage): boolean {
+  return (
+    m.messageType === "image" ||
+    m.messageType === "descriptive-image" ||
+    m.messageType === "image-url" ||
+    !!m.imageUrl
+  );
+}
+
+/** 相簿：他傳過的照片、使用者傳給他的（當作他存了）；描述用圖片說明 */
+function buildPhotos(messages: ChatMessage[], options: PeekRealDataOptions): PeekGalleryItem[] {
+  const photos: PeekGalleryItem[] = [];
+  for (const m of messages) {
+    if (!isChatMessage(m) || m.isUserRecalled || m.isCharRecall || !isPhoto(m)) continue;
+    const fromChar = m.sender === "assistant";
+    const caption = (m.imageCaption || m.imagePrompt || "").trim();
+    const text = (m.content || "").trim();
+    const description = caption || (text && !/^https?:|^data:/.test(text) ? text : "") ||
+      (fromChar ? `傳給${options.userName}的照片` : `${options.userName}傳來的照片`);
+    const url = m.imageUrl && /^(https?:|data:image\/)/.test(m.imageUrl) ? m.imageUrl : undefined;
+    photos.push({
+      id: `real-${m.id}`,
+      description,
+      source: fromChar ? (/自拍|selfie/i.test(description) ? "selfie" : "scene") : "saved",
+      reason: fromChar ? `傳給${options.userName}看的` : `${options.userName}傳給我的`,
+      date: toDateString(new Date(timeOf(m))),
+      imageUrl: url,
+    });
+  }
+  return photos.reverse().slice(0, PHOTO_LIMIT);
+}
+
+/** 排好要打的電話，早的在前面；觸發時間是現實時間，換成聊天的時間（realNow：現實的現在） */
+export function buildPendingCalls(calls: PendingCall[], now: Date, realNow = Date.now()): PeekPendingCall[] {
+  const offset = now.getTime() - realNow;
+  return calls
+    .filter((c) => c.reason?.trim())
+    .sort((a, b) => a.triggerTime - b.triggerTime)
+    .map((c) => {
+      const at = c.triggerTime + offset;
+      return { id: c.id, at, time: shortStamp(at, now), reason: c.reason.trim() };
+    });
+}
+
 /** 聊天日記：寫好的、最近 5 篇；Markdown 記號拿掉 */
 function buildDiary(diaries: DiaryEntry[]): PeekDiaryEntry[] {
   return diaries
@@ -171,17 +249,30 @@ function buildDiary(diaries: DiaryEntry[]): PeekDiaryEntry[] {
     }));
 }
 
+export interface PeekRealDataExtras {
+  pendingCalls?: PendingCall[];
+  /** 已經讀到最舊的訊息了：第一則的日期就是第一次聊天 */
+  hasAllMessages?: boolean;
+  /** 讀不到最舊的訊息時用聊天建立的時間 */
+  chatCreatedAt?: number;
+}
+
 export function buildPeekRealData(
   messages: ChatMessage[],
   diaries: DiaryEntry[],
   options: PeekRealDataOptions,
+  extras: PeekRealDataExtras = {},
 ): PeekRealData {
   const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
+  const firstAt = extras.hasAllMessages && sorted.length ? timeOf(sorted[0]) : extras.chatCreatedAt;
   return {
     userThread: buildUserThread(sorted, options),
     transactions: buildTransactions(sorted, options),
     diary: buildDiary(diaries),
     meals: buildMeals(sorted, options),
+    photos: buildPhotos(sorted, options),
+    pendingCalls: buildPendingCalls(extras.pendingCalls ?? [], options.now),
+    firstChatDate: firstAt ? toDateString(new Date(firstAt)) : undefined,
   };
 }
 
@@ -199,7 +290,20 @@ export function describeRealDataForPrompt(real: PeekRealData, userName: string):
   if (real.diary.length) {
     lines.push(`已經有的日記日期（diary 不要寫這幾天）：${[...new Set(real.diary.map((d) => d.date))].join("、")}`);
   }
+  if (real.pendingCalls.length) {
+    lines.push(`他排好等一下要打給${userName}的電話（會變成行事曆上的提醒，可以在心情、日記裡呼應）：`);
+    for (const c of real.pendingCalls) lines.push(`- ${c.time}，原因：${c.reason}`);
+  }
   return lines.join("\n");
+}
+
+/** 給相簿組的：聊天裡真的傳過的照片已經會顯示，gallery 不要重複寫 */
+export function describeRealPhotosForPrompt(real: PeekRealData): string {
+  if (real.photos.length === 0) return "";
+  return [
+    "相簿裡真的照片（聊天裡傳過的，已經會顯示，gallery 不要重複寫，可以呼應）：",
+    ...real.photos.slice(0, 6).map((p) => `- ${p.date} ${p.description}（${p.reason}）`),
+  ].join("\n");
 }
 
 /**

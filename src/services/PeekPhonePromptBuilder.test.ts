@@ -152,4 +152,16 @@ describe("跟使用者那串是真的聊天時", () => {
     expect(prompt).toContain("真的發生過的事");
     expect(prompt).toContain("收到小栩的轉帳 +520");
   });
+
+  it("相簿組帶上真的照片", async () => {
+    const { buildGroupDPrompt } = await import("./PeekPhonePromptBuilder");
+    expect(buildGroupDPrompt({ ...base, realPhotosText: "- 2026-10-18 窗外的雨" })).toContain("窗外的雨");
+    expect(buildGroupDPrompt(base)).not.toContain("真的發生過的事");
+  });
+
+  it("鎖屏密碼可以參考第一次聊天的日期；沒有就不提", async () => {
+    const { buildGroupAPrompt } = await import("./PeekPhonePromptBuilder");
+    expect(buildGroupAPrompt({ ...base, firstChatDate: "2026-03-14" })).toContain("兩人第一次聊天是 2026-03-14");
+    expect(buildGroupAPrompt(base)).not.toContain("第一次聊天是");
+  });
 });

@@ -20,6 +20,8 @@ export interface PeekChatMessage {
   recalled?: boolean;
   /** 收回前存在了幾秒 */
   recalledAfter?: number;
+  /** 沒接通的電話：他打給使用者時想說的事（偷看才看得到） */
+  callReason?: string;
 }
 
 /** 角色手機聊天對話 */
@@ -128,6 +130,8 @@ export interface PeekGalleryItem {
   deletedDaysLeft?: number;
   /** 這張照片背後的故事（秘密：偷看這張照片） */
   secret?: string;
+  /** 真的照片：聊天裡傳過的圖（只放網址或 data URL） */
+  imageUrl?: string;
 }
 
 /** 瀏覽器歷史記錄 */

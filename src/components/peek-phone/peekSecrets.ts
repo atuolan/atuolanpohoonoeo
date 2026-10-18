@@ -44,7 +44,15 @@ export const secretKeys = {
   screen: "screen",
   todo: (todoId: string) => `todo:${todoId}`,
   plan: (planId: string) => `plan:${planId}`,
+  call: (callId: string) => `call:${callId}`,
 };
+
+/** 他排好、還沒打的電話（真資料），原因是秘密 */
+export interface SecretPendingCall {
+  id: string;
+  time: string;
+  reason: string;
+}
 
 /** 桌面上的 App：算「看過幾 %」用 */
 export const HOME_TABS: PeekPhoneTab[] = [
@@ -62,7 +70,11 @@ export const HOME_TABS: PeekPhoneTab[] = [
 const firstLine = (text: string) => text.split("\n")[0].trim();
 
 /** planner：角色的待辦和行程（聊天頁那份），標了秘密的也算這支手機的秘密 */
-export function listSecrets(data: PeekPhoneData | null, planner?: PlannerState | null): PeekSecret[] {
+export function listSecrets(
+  data: PeekPhoneData | null,
+  planner?: PlannerState | null,
+  pendingCalls: SecretPendingCall[] = [],
+): PeekSecret[] {
   if (!data) return [];
   const secrets: PeekSecret[] = [];
 
@@ -88,6 +100,17 @@ export function listSecrets(data: PeekPhoneData | null, planner?: PlannerState |
           : `${m.senderName || thread.contactName}收回的那句話`,
         detail: firstLine(m.content),
         hint: `訊息：跟${thread.contactName}的對話裡，有一則被收回了`,
+        target: { view: "chat", threadId: thread.id },
+      });
+    }
+    for (const m of thread.messages) {
+      if (!m.callReason) continue;
+      secrets.push({
+        key: secretKeys.call(m.id),
+        place: "chat",
+        label: `打給${thread.contactName}沒接通的那通電話`,
+        detail: m.callReason,
+        hint: `訊息：跟${thread.contactName}的對話裡有一通沒接通的電話`,
         target: { view: "chat", threadId: thread.id },
       });
     }
@@ -169,6 +192,17 @@ export function listSecrets(data: PeekPhoneData | null, planner?: PlannerState |
       label: "沒讓你知道的行程",
       detail: `${formatPlanDate(plan.date)} ${plan.title}`,
       hint: "行事曆：有一個行程在聊天裡看不到",
+      target: { view: "schedule" },
+    });
+  }
+
+  for (const call of pendingCalls) {
+    secrets.push({
+      key: secretKeys.call(call.id),
+      place: "schedule",
+      label: "排好要打給你的電話",
+      detail: `${call.time}：${call.reason}`,
+      hint: "行事曆：有一個打電話的提醒",
       target: { view: "schedule" },
     });
   }
