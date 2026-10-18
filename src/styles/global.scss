@@ -8,9 +8,8 @@
 }
 
 // ===== iOS Safari 全屏佈局 =====
-// iOS PWA standalone 下 viewport 只有 797px（不含狀態欄），但螢幕是 844px
-// position: fixed 元素會被 iOS 裁切到 viewport 高度，無法突破
-// 解法：用 document flow，html/body/#app 都用 JS 設定的 screen.height
+// html/body/#app 的高度都用 JS 設定的 --app-height
+// iOS PWA standalone 以 fixed probe 實測的可用高度為準（狀態列不透明時不含狀態列）
 html,
 body {
   width: 100%;
@@ -57,7 +56,7 @@ textarea,
   -webkit-touch-callout: default;
 }
 
-// #app 容器：高度由 JS 設定為 screen.height（PWA）或 innerHeight（瀏覽器）
+// #app 容器：高度由 JS 設定為實測可用高度（PWA）或 visualViewport 高度（瀏覽器）
 // position: fixed 確保不受 body scroll 影響（iOS PWA 防彈跳）
 // transform: translateZ(0) 讓子元素的 position: fixed 相對於 #app 定位
 #app {
