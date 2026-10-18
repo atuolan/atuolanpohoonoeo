@@ -90,7 +90,9 @@ const secondDelay = `-${new Date().getSeconds()}s`;
               >
                 <img v-if="!props.photo && props.avatar" class="peek-photo-img" :src="props.avatar" alt="" />
                 <Camera v-else-if="!props.photo" :size="28" class="peek-photo-empty" aria-hidden="true" />
-                <span v-if="props.photo" class="peek-photo-caption">{{ props.photo.description }}</span>
+                <span v-if="props.photo" class="peek-photo-caption">
+                  <span class="peek-photo-caption-text">{{ props.photo.description }}</span>
+                </span>
               </span>
               <span class="peek-widget-label">相簿</span>
             </button>
@@ -306,11 +308,17 @@ const secondDelay = `-${new Date().getSeconds()}s`;
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 24px 12px 10px;
+  padding: 24px 14px 12px;
   background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.45));
+}
+
+/* 行數限制放在沒有 padding 的內層：iOS Safari 會把第四行畫進 padding 裡 */
+.peek-photo-caption-text {
   font-size: 12px;
   line-height: 1.4;
+  max-height: 4.2em;
   text-align: left;
+  word-break: break-all;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;

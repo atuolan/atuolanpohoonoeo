@@ -212,6 +212,15 @@ function closeChatSheet() {
   noChats.value = false;
 }
 
+/** 右滑返回：聊天選單開著就先收起來，沒開才回 false 讓外面離開 */
+function handleBack(): boolean {
+  if (!showChatSheet.value) return false;
+  closeChatSheet();
+  return true;
+}
+
+defineExpose({ handleBack });
+
 /** 格式化時間 */
 function formatDate(ts: number): string {
   const d = new Date(ts);
