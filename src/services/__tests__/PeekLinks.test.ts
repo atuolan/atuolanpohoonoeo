@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { closeDatabase, db, DB_STORES } from "@/db/database";
 import {
   deletePeekLinks,
-  leaveCaughtNote,
+  leavePeekNote,
   loadPeekLinks,
   rememberPeekSecret,
   savePeekLinks,
@@ -24,9 +24,9 @@ beforeEach(async () => {
 
 describe("連動開關", () => {
   it("預設都關，每個聊天各自存，刪掉回到預設", async () => {
-    expect(await loadPeekLinks("chat-1")).toEqual({ remember: false, caught: false, sendDraft: false });
-    await savePeekLinks("chat-1", { remember: true, caught: false, sendDraft: true });
-    expect(await loadPeekLinks("chat-1")).toEqual({ remember: true, caught: false, sendDraft: true });
+    expect(await loadPeekLinks("chat-1")).toEqual({ remember: false, sendDraft: false });
+    await savePeekLinks("chat-1", { remember: true, sendDraft: true });
+    expect(await loadPeekLinks("chat-1")).toEqual({ remember: true, sendDraft: true });
     expect((await loadPeekLinks("chat-2")).remember).toBe(false);
     await deletePeekLinks("chat-1");
     expect((await loadPeekLinks("chat-1")).remember).toBe(false);
@@ -56,7 +56,7 @@ describe("秘密記進記憶", () => {
 
 describe("回到聊天裡", () => {
   it("被發現是系統訊息，幫他送出的是他的訊息；都帶聊天的時間", async () => {
-    await leaveCaughtNote("chat-1", "小栩剛剛偷看了沈既白的手機，被沈既白發現了。", 1234);
+    await leavePeekNote("chat-1", "小栩剛剛偷看了沈既白的手機，被沈既白發現了。", 1234);
     await sendDraftAsChar("chat-1", "沈既白", "其實那天我不是剛好路過", 5678);
     const messages = await loadMessages("chat-1");
     expect(messages.map((m) => [m.sender, m.isSystemNotification ?? false, m.storyTime])).toEqual([

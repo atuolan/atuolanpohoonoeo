@@ -24,7 +24,10 @@ function keyOf(chatId: string): string {
 
 export async function loadPeekLinks(chatId: string): Promise<PeekLinkSettings> {
   const saved = await db.get<Partial<PeekLinkSettings>>(DB_STORES.SETTINGS, keyOf(chatId));
-  return { ...DEFAULT_PEEK_LINKS, ...(saved ?? {}) };
+  return {
+    remember: saved?.remember ?? DEFAULT_PEEK_LINKS.remember,
+    sendDraft: saved?.sendDraft ?? DEFAULT_PEEK_LINKS.sendDraft,
+  };
 }
 
 export async function savePeekLinks(chatId: string, settings: PeekLinkSettings): Promise<void> {
@@ -73,8 +76,8 @@ async function appendToChat(chatId: string, message: ChatMessage): Promise<void>
   }
 }
 
-/** 被他發現：聊天裡留一筆系統訊息；storyTime 是聊天的有效時間 */
-export async function leaveCaughtNote(chatId: string, content: string, storyTime: number): Promise<void> {
+/** 被他發現、他起疑：聊天裡留一筆系統訊息；storyTime 是聊天的有效時間 */
+export async function leavePeekNote(chatId: string, content: string, storyTime: number): Promise<void> {
   const now = Date.now();
   await appendToChat(chatId, {
     id: `msg_peek_caught_${now}`,

@@ -50,7 +50,6 @@ const emit = defineEmits<{
 
 const linkOptions: { key: keyof PeekLinkSettings; label: string; note: string }[] = [
   { key: "remember", label: "秘密記進記憶", note: "找到的秘密記成重要事件，之後他會記得你知道了" },
-  { key: "caught", label: "被他發現", note: "放下手機時在聊天裡留一筆，他會有反應" },
   { key: "sendDraft", label: "可以幫他按送出", note: "跟你那串沒送出的草稿，可以替他送進聊天" },
 ];
 
@@ -196,7 +195,7 @@ const subtitle = computed(() => {
               <span class="peek-sheet-switch" aria-hidden="true"><span class="peek-sheet-switch-knob" /></span>
             </button>
           </div>
-          <p class="peek-sheet-note">只影響這段聊天，預設都關</p>
+          <p class="peek-sheet-note">只影響這段聊天，預設都關。放下手機時會擲骰，看他有沒有發現</p>
         </div>
 
         <div class="peek-sheet-section">

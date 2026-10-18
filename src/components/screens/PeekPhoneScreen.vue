@@ -52,13 +52,20 @@ import { listCalendarEvents } from "@/services/calendarEvents";
 import { emptyPeekRealData, loadPeekRealData } from "@/services/PeekRealData";
 import { mergeRealUserThread, type PeekRealData } from "@/utils/peekRealData";
 import {
-  leaveCaughtNote,
+  leavePeekNote,
   loadPeekLinks,
   rememberPeekSecret,
   savePeekLinks,
   sendDraftAsChar,
 } from "@/services/PeekLinks";
-import { buildCaughtNote, DEFAULT_PEEK_LINKS, type PeekLinkSettings } from "@/utils/peekLinks";
+import {
+  buildCaughtNote,
+  buildSuspiciousNote,
+  DEFAULT_PEEK_LINKS,
+  rollStealth,
+  type PeekLinkSettings,
+  type StealthCheck,
+} from "@/utils/peekLinks";
 import { eventLastDate, formatEventTime } from "@/utils/calendarEventFormat";
 import { comparePlans, formatPlanTime, shiftDate, toDateString } from "@/utils/charPlanner";
 import {
@@ -274,10 +281,12 @@ function reveal(key: string): void {
   peekPhoneStore.markRevealed(key);
 }
 
-// ===== 偷看的結果回到聊天（窺視選單裡的三個開關，每個聊天各自存） =====
+// ===== 偷看的結果回到聊天（窺視選單裡的開關，每個聊天各自存；會不會被發現放下手機時擲骰） =====
 const links = ref<PeekLinkSettings>({ ...DEFAULT_PEEK_LINKS });
 /** 這次拿起手機才找到的秘密：被發現時告訴他看到了什麼 */
 const foundThisTime = new Set<string>();
+/** 這次翻過的 App：翻越多越容易被發現 */
+const appsThisTime = new Set<PeekPhoneTab>();
 /** 這次有解鎖進到桌面：只看了鎖屏就放下不算偷看 */
 let openedThisTime = false;
 
@@ -317,14 +326,72 @@ onMounted(async () => {
   }
 });
 
-// 放下手機：開了「被他發現」就在聊天裡留一筆
-onUnmounted(() => {
-  if (!links.value.caught || !openedThisTime) return;
+// 放下手機：擲一次隱匿檢定，被發現或他起疑就在聊天裡留一筆
+const stealth = ref<StealthCheck | null>(null);
+/** 骰子轉動中顯示的點數；轉完等於 stealth.roll */
+const diceFace = ref(20);
+const diceRolling = ref(false);
+
+function rollStealthCheck(): StealthCheck {
   const found = secrets.value.filter((s) => foundThisTime.has(s.key));
+  const check = rollStealth(found.length, appsThisTime.size);
+  stealth.value = check;
   const { userName, charName: name } = peekNames();
-  void leaveCaughtNote(props.chatId, buildCaughtNote(found, userName, name), now.value.getTime()).catch((err) =>
-    console.warn("[PeekPhoneScreen] 留下被發現的紀錄失敗:", err),
-  );
+  const note =
+    check.outcome === "caught"
+      ? buildCaughtNote(found, userName, name)
+      : check.outcome === "suspicious"
+        ? buildSuspiciousNote(name)
+        : "";
+  if (note) {
+    void leavePeekNote(props.chatId, note, now.value.getTime()).catch((err) =>
+      console.warn("[PeekPhoneScreen] 留下被發現的紀錄失敗:", err),
+    );
+  }
+  return check;
+}
+
+/** 想放下手機：偷看過又還沒擲骰就先擲，回傳 true 代表擋下來顯示結果 */
+function tryLeave(): boolean {
+  if (!openedThisTime || stealth.value) return false;
+  showSheet.value = false;
+  const check = rollStealthCheck();
+  const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (reduceMotion) {
+    diceFace.value = check.roll;
+    return true;
+  }
+  diceRolling.value = true;
+  let ticks = 0;
+  const timer = window.setInterval(() => {
+    ticks++;
+    diceFace.value = 1 + Math.floor(Math.random() * 20);
+    if (ticks >= 14) {
+      window.clearInterval(timer);
+      diceFace.value = check.roll;
+      diceRolling.value = false;
+    }
+  }, 60);
+  return true;
+}
+
+function leavePhone() {
+  if (!tryLeave()) emit("back");
+}
+
+const stealthTitle = computed(() => {
+  const check = stealth.value;
+  if (!check) return "";
+  if (check.critical === "success") return "大成功！他完全沒發現";
+  if (check.critical === "fail") return "大失敗……被他當場抓到";
+  if (check.outcome === "safe") return "成功，他沒發現";
+  if (check.outcome === "suspicious") return "差一點……他覺得手機被動過";
+  return "失敗，被他發現了";
+});
+
+// 沒經過「放下手機」就離開（例如直接回主畫面）：背後擲骰
+onUnmounted(() => {
+  if (openedThisTime && !stealth.value) rollStealthCheck();
 });
 
 /** 幫他按送出：跟使用者那串的草稿以他的身分出現在聊天裡 */
@@ -374,6 +441,7 @@ const hasUnfound = computed(() => Object.values(unfound.value).some((n) => n > 0
 watch(currentView, (view) => {
   if (view === "lock" || view === "home") return;
   peekPhoneStore.markViewed(homeTabOfView(view));
+  appsThisTime.add(homeTabOfView(view));
   if (view === "hidden" && hiddenPhotos.value.length > 0) reveal(secretKeys.hidden);
   // 打開備忘錄、行事曆就看到了聊天裡看不到的待辦和行程
   if (view === "memo") {
@@ -657,7 +725,7 @@ function handleBack(): boolean {
     return true;
   }
   const view = currentView.value;
-  if (view === "lock" || view === "home") return false;
+  if (view === "lock" || view === "home") return tryLeave();
   if (view === "chat" && showDraftHistory.value) {
     showDraftHistory.value = false;
   } else if (view === "chat" && selectedChatId.value) {
@@ -1574,6 +1642,35 @@ const todayLabel = computed(
       :secret="hasUnfound"
       @open="showSheet = !showSheet"
     />
+    <!-- 隱匿檢定：放下手機時擲 d20 -->
+    <Transition name="stealth-fade">
+      <div v-if="stealth" class="stealth-layer" role="dialog" aria-modal="true" aria-label="隱匿檢定">
+        <div class="stealth-card" :class="!diceRolling && `is-${stealth.outcome}`">
+          <div class="stealth-label">隱匿檢定</div>
+          <div class="stealth-dc">難度 DC {{ stealth.dc }}</div>
+          <div class="stealth-die" :class="{ rolling: diceRolling }" aria-live="polite">
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <polygon points="50,4 93,27 93,73 50,96 7,73 7,27" class="stealth-die-body" />
+              <polygon points="50,30 76,68 24,68" class="stealth-die-face" />
+              <path
+                d="M50,30 L50,4 M50,30 L93,27 M50,30 L7,27 M76,68 L93,27 M76,68 L93,73 M76,68 L50,96 M24,68 L7,27 M24,68 L7,73 M24,68 L50,96"
+                class="stealth-die-edge"
+              />
+            </svg>
+            <span class="stealth-die-num">{{ diceFace }}</span>
+          </div>
+          <template v-if="!diceRolling">
+            <div class="stealth-title">{{ stealthTitle }}</div>
+            <p class="stealth-sub">
+              這次找到 {{ foundThisTime.size }} 個秘密、翻了 {{ appsThisTime.size }} 個 App
+              <template v-if="stealth.outcome !== 'safe'"><br />聊天裡會留一筆，他下一則回覆會看到</template>
+            </p>
+            <button type="button" class="stealth-leave" @click="emit('back')">放下手機</button>
+          </template>
+        </div>
+      </div>
+    </Transition>
+
     <PeekSheet
       :open="showSheet"
       :name="charName"
@@ -1587,7 +1684,7 @@ const todayLabel = computed(
       @go-secret="goToSecret"
       @regenerate="refreshPhase"
       @regenerate-all="refreshAll"
-      @leave="emit('back')"
+      @leave="leavePhone"
     />
   </div>
 </template>
@@ -1597,6 +1694,141 @@ const todayLabel = computed(
 </style>
 
 <style lang="scss" scoped>
+.stealth-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(10, 10, 12, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.stealth-card {
+  width: min(320px, 100%);
+  padding: 28px 24px 22px;
+  border-radius: 28px;
+  background: #1b1c20;
+  color: #f2f1ed;
+  text-align: center;
+  box-sizing: border-box;
+  --stealth-tone: #c9b88a;
+
+  &.is-safe {
+    --stealth-tone: #7fc8a0;
+  }
+  &.is-suspicious {
+    --stealth-tone: #f0c05a;
+  }
+  &.is-caught {
+    --stealth-tone: #f07a6a;
+  }
+}
+
+.stealth-label {
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  color: rgba(242, 241, 237, 0.6);
+}
+
+.stealth-dc {
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.stealth-die {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin: 18px auto 14px;
+
+  svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  &.rolling svg {
+    animation: stealth-spin 0.42s linear infinite;
+  }
+}
+
+.stealth-die-body {
+  fill: #2a2c33;
+  stroke: var(--stealth-tone);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  transition: stroke 0.3s;
+}
+
+.stealth-die-face {
+  fill: #33363e;
+  stroke: var(--stealth-tone);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.stealth-die-edge {
+  fill: none;
+  stroke: var(--stealth-tone);
+  stroke-width: 1.5;
+  opacity: 0.55;
+}
+
+.stealth-die-num {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 44%;
+  font-size: 30px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--stealth-tone);
+}
+
+.stealth-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--stealth-tone);
+}
+
+.stealth-sub {
+  margin: 8px 0 18px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(242, 241, 237, 0.65);
+}
+
+.stealth-leave {
+  width: 100%;
+  height: 46px;
+  border: none;
+  border-radius: 23px;
+  background: #f2f1ed;
+  color: #111214;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@keyframes stealth-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.stealth-fade-enter-active,
+.stealth-fade-leave-active {
+  transition: opacity 0.2s;
+}
+.stealth-fade-enter-from,
+.stealth-fade-leave-to {
+  opacity: 0;
+}
+
 @import url("https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap");
 
 .peek-phone-screen {
