@@ -335,6 +335,11 @@ onUnmounted(() => {
     margin-left: 6%;
     background: var(--paper-reply-alt);
   }
+
+  // 疊在另一張回覆上時少疊一點，圖釘才不會壓到上一張的名字
+  & + & {
+    margin-top: -4px;
+  }
 }
 
 .paper--note {

@@ -511,19 +511,34 @@ const currentLayout = computed(() => {
       padding: 0 8px;
     }
 
+    // 只留名字和一行字，壓在輸入框最下面，短日記的字不會被蓋到
     .mini-note {
-      right: 4px;
-      width: 66%;
-      padding: 12px 7px 7px;
-      gap: 3px;
+      right: 6px;
+      bottom: calc(var(--mini-note-bottom, 54px) - 6px);
+      width: 58%;
+      padding: 10px 7px 6px;
+      gap: 2px;
     }
 
     .mini-note-avatar {
       display: none;
     }
 
+    .mini-note-author {
+      font-size: 10px;
+    }
+
     .mini-note-text {
+      -webkit-line-clamp: 1;
       font-size: 11px;
+    }
+
+    .mini-note-badge {
+      top: -7px;
+      right: -4px;
+      min-width: 18px;
+      height: 18px;
+      font-size: 10px;
     }
   }
 
