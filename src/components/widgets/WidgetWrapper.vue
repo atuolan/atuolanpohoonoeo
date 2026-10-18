@@ -163,8 +163,9 @@ function onDragEnd() {
   const maxX =
     Math.floor(canvasStore.canvasWidth / canvasStore.gridSize) -
     props.widget.width;
-  // 使用最大格數計算最大 Y（35 格）
-  const MAX_GRID_ROWS = 35;
+  // 底部上限：預設佈局的 35 格，螢幕比較高（多數手機）時放寬到實際看得到的格數，
+  // 否則拖到下方空白處會被彈回 35 格以內
+  const MAX_GRID_ROWS = Math.max(35, canvasStore.getVisibleGridRows());
   const maxY = MAX_GRID_ROWS - props.widget.height;
 
   const clampedX = Math.max(0, Math.min(newX, maxX));
