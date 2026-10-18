@@ -1,7 +1,19 @@
 <script setup lang="ts">
-import { db, DB_STORES } from "@/db/database";
+import {
+  deleteCalendarEvent,
+  loadCalendarEvents,
+  saveCalendarEvent,
+  updateCalendarEvent,
+} from "@/services/calendarEvents";
 import type { CalendarEvent } from "@/types/calendar";
 import type { Holiday } from "@/types/holiday";
+import {
+  compareCalendarEvents,
+  eventLastDate,
+  eventNotes,
+  formatEventTime,
+  isEventOnDate,
+} from "@/utils/calendarEventFormat";
 import {
     detectTodayHoliday,
     detectUpcomingHolidays,
@@ -29,13 +41,31 @@ const todayHoliday = ref<Holiday | null>(null);
 const upcomingHolidays = ref<Holiday[]>([]);
 const lunarDate = ref<string | null>(null);
 const events = ref<CalendarEvent[]>([]);
+/** 點開的那一天：先看當天有什麼，再決定要新增還是改 */
+const selectedDate = ref<string | null>(null);
 const showAddModal = ref(false);
-const newEvent = ref({
-  title: "",
-  date: "",
-  description: "",
-  type: "user" as "user" | "period",
-});
+/** 正在改的事件；新增時是 null */
+const editingEvent = ref<CalendarEvent | null>(null);
+const saveError = ref("");
+
+interface EventForm {
+  title: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  endDate: string;
+  description: string;
+  type: "user" | "period";
+}
+
+function emptyForm(date = ""): EventForm {
+  return { title: "", date, startTime: "", endTime: "", endDate: "", description: "", type: "user" };
+}
+
+const form = ref<EventForm>(emptyForm());
+const formValid = computed(
+  () => !!form.value.title.trim() && !!form.value.date && (!form.value.endDate || form.value.endDate >= form.value.date),
+);
 
 // 月份顯示
 const currentMonthDisplay = computed(() => {
@@ -52,13 +82,21 @@ const holidayMap = computed(() => {
   return map;
 });
 
-// 事件 Map（by date YYYY-MM-DD -> events）
+// 事件 Map（by date YYYY-MM-DD -> events）；跨天的行程每一天都放
 const eventsByDate = computed(() => {
   const map = new Map<string, CalendarEvent[]>();
   for (const e of events.value) {
-    const list = map.get(e.date) || [];
-    list.push(e);
-    map.set(e.date, list);
+    const last = eventLastDate(e);
+    const day = new Date(`${e.date}T00:00:00`);
+    // 最多鋪兩個月，壞掉的結束日期不會讓迴圈跑不完
+    for (let i = 0; i < 62; i++) {
+      const ds = formatDateStr(day);
+      if (ds > last) break;
+      const list = map.get(ds) || [];
+      list.push(e);
+      map.set(ds, list);
+      day.setDate(day.getDate() + 1);
+    }
   }
   return map;
 });
@@ -139,14 +177,24 @@ const monthHolidays = computed(() => {
   return result.sort((a, b) => a.date.localeCompare(b.date));
 });
 
-// 即將到來的事件
+// 即將到來的事件（還沒結束的跨天行程也算）
 const upcomingEvents = computed(() => {
   const todayStr = formatDateStr(new Date());
   return events.value
-    .filter((e) => e.date >= todayStr)
-    .sort((a, b) => a.date.localeCompare(b.date))
+    .filter((e) => eventLastDate(e) >= todayStr)
+    .sort(compareCalendarEvents)
     .slice(0, 10);
 });
+
+// 點開那一天的行程和節日
+const selectedDayEvents = computed(() =>
+  selectedDate.value
+    ? events.value.filter((e) => isEventOnDate(e, selectedDate.value!)).sort(compareCalendarEvents)
+    : [],
+);
+const selectedDayHoliday = computed(() =>
+  selectedDate.value ? holidayMap.value.get(selectedDate.value.slice(5)) ?? null : null,
+);
 
 function previousMonth() {
   const y = currentDate.value.getFullYear();
@@ -169,15 +217,55 @@ function formatDateDisplay(dateStr: string) {
   return `${parseInt(mm)}月${parseInt(dd)}日`;
 }
 
+function formatDayTitle(dateStr: string) {
+  const day = new Date(`${dateStr}T00:00:00`);
+  return `${formatDateDisplay(dateStr)} 星期${weekdays[day.getDay()]}`;
+}
+
 function formatHolidayDate(dateStr: string) {
   const [mm, dd] = dateStr.split("-");
   return `${parseInt(mm)}月${parseInt(dd)}日`;
 }
 
+/** 日期（跨天的寫起訖）加時間 */
+function eventWhen(e: CalendarEvent) {
+  const last = eventLastDate(e);
+  const days = last !== e.date ? `${formatDateDisplay(e.date)} – ${formatDateDisplay(last)}` : formatDateDisplay(e.date);
+  const time = formatEventTime(e);
+  return time ? `${days}　${time}` : days;
+}
+
 function selectDay(day: DayInfo) {
   if (!day.isCurrentMonth) return;
-  newEvent.value.date = day.fullDateStr;
+  selectedDate.value = day.fullDateStr;
+}
+
+function openAdd(date: string) {
+  editingEvent.value = null;
+  form.value = emptyForm(date);
+  saveError.value = "";
   showAddModal.value = true;
+}
+
+function openEdit(e: CalendarEvent) {
+  editingEvent.value = e;
+  form.value = {
+    title: e.title,
+    date: e.date,
+    startTime: e.startTime ?? "",
+    endTime: e.endTime ?? "",
+    endDate: e.endDate ?? "",
+    // 時間有自己的欄位了，說明裡重複的那段拿掉
+    description: eventNotes(e),
+    type: e.type === "period" ? "period" : "user",
+  };
+  saveError.value = "";
+  showAddModal.value = true;
+}
+
+function closeForm() {
+  showAddModal.value = false;
+  editingEvent.value = null;
 }
 
 function getEventColor(type: string) {
@@ -187,39 +275,47 @@ function getEventColor(type: string) {
 // DB 操作
 async function loadEvents() {
   try {
-    const all = await db.getAll<CalendarEvent>(DB_STORES.CALENDAR_EVENTS);
-    events.value = all;
+    events.value = await loadCalendarEvents();
   } catch (e) {
     console.error("[Calendar] 載入事件失敗:", e);
     events.value = [];
   }
 }
 
-async function addEvent() {
-  if (!newEvent.value.title.trim() || !newEvent.value.date) return;
-  const event: CalendarEvent = {
-    id: `cal_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    type: newEvent.value.type,
-    title: newEvent.value.title.trim(),
-    date: newEvent.value.date,
-    description: newEvent.value.description.trim() || undefined,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+async function saveEvent() {
+  if (!formValid.value) return;
+  const f = form.value;
+  const isPeriod = f.type === "period";
+  const fields = {
+    type: f.type,
+    title: f.title.trim(),
+    date: f.date,
+    description: f.description.trim() || undefined,
+    // 經期紀錄不記時間
+    startTime: !isPeriod && f.startTime ? f.startTime : undefined,
+    endTime: !isPeriod && f.endTime ? f.endTime : undefined,
+    endDate: f.endDate && f.endDate > f.date ? f.endDate : undefined,
   };
   try {
-    await db.put(DB_STORES.CALENDAR_EVENTS, JSON.parse(JSON.stringify(event)));
-    events.value.push(event);
-    newEvent.value = { title: "", date: "", description: "", type: "user" };
-    showAddModal.value = false;
+    if (editingEvent.value) {
+      const updated = await updateCalendarEvent({ ...editingEvent.value, ...fields });
+      events.value = events.value.map((e) => (e.id === updated.id ? updated : e)).sort(compareCalendarEvents);
+    } else {
+      const created = await saveCalendarEvent(fields);
+      events.value = [...events.value, created].sort(compareCalendarEvents);
+    }
+    closeForm();
   } catch (e) {
     console.error("[Calendar] 儲存事件失敗:", e);
+    saveError.value = "存不進去，請再試一次";
   }
 }
 
 async function deleteEvent(id: string) {
   try {
-    await db.delete(DB_STORES.CALENDAR_EVENTS, id);
+    await deleteCalendarEvent(id);
     events.value = events.value.filter((e) => e.id !== id);
+    if (editingEvent.value?.id === id) closeForm();
   } catch (e) {
     console.error("[Calendar] 刪除事件失敗:", e);
   }
@@ -244,13 +340,7 @@ onMounted(async () => {
         <h1>行事曆</h1>
         <span v-if="lunarDate" class="lunar-date">農曆{{ lunarDate }}</span>
       </div>
-      <button
-        class="icon-btn"
-        @click="
-          newEvent.date = formatDateStr(new Date());
-          showAddModal = true;
-        "
-      >
+      <button class="icon-btn" aria-label="新增事件" @click="openAdd(formatDateStr(new Date()))">
         <Plus :size="22" />
       </button>
     </div>
@@ -326,7 +416,7 @@ onMounted(async () => {
               :key="h.name"
               class="holiday-item"
             >
-              <span class="holiday-date-tag">{{ h.date }}</span>
+              <span class="holiday-date-tag">{{ formatHolidayDate(h.date) }}</span>
               <span class="holiday-name-small">{{ h.name }}</span>
             </div>
           </div>
@@ -358,19 +448,19 @@ onMounted(async () => {
           <div v-if="upcomingEvents.length === 0" class="empty-state">
             <p>點擊日期新增事件</p>
           </div>
-          <div v-for="e in upcomingEvents" :key="e.id" class="event-item">
+          <div v-for="e in upcomingEvents" :key="e.id" class="event-item" @click="openEdit(e)">
             <div
               class="event-color-bar"
               :style="{ background: getEventColor(e.type) }"
             />
             <div class="event-content">
               <div class="event-title">{{ e.title }}</div>
-              <div class="event-date">{{ formatDateDisplay(e.date) }}</div>
-              <div v-if="e.description" class="event-desc">
-                {{ e.description }}
+              <div class="event-date">{{ eventWhen(e) }}</div>
+              <div v-if="eventNotes(e)" class="event-desc">
+                {{ eventNotes(e) }}
               </div>
             </div>
-            <button class="delete-btn" @click="deleteEvent(e.id)">
+            <button class="delete-btn" aria-label="刪除" @click.stop="deleteEvent(e.id)">
               <Trash2 :size="16" />
             </button>
           </div>
@@ -378,23 +468,60 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- 新增事件彈窗 -->
+    <!-- 點開某一天：當天的行程 -->
+    <div
+      v-if="selectedDate && !showAddModal"
+      class="modal-overlay"
+      @click.self="selectedDate = null"
+    >
+      <div class="modal-content" role="dialog" aria-modal="true" :aria-label="formatDayTitle(selectedDate)">
+        <div class="modal-header">
+          <h2>{{ formatDayTitle(selectedDate) }}</h2>
+          <button class="icon-btn" aria-label="關閉" @click="selectedDate = null">
+            <X :size="20" />
+          </button>
+        </div>
+        <div class="modal-body">
+          <div v-if="selectedDayHoliday" class="day-holiday">
+            <Star :size="14" />
+            <span>{{ selectedDayHoliday.name }}</span>
+          </div>
+          <p v-if="selectedDayEvents.length === 0" class="empty-state">這天沒有行程</p>
+          <div v-for="e in selectedDayEvents" :key="e.id" class="event-item" @click="openEdit(e)">
+            <div class="event-color-bar" :style="{ background: getEventColor(e.type) }" />
+            <div class="event-content">
+              <div class="event-title">{{ e.title }}</div>
+              <div class="event-date">{{ eventWhen(e) }}</div>
+              <div v-if="eventNotes(e)" class="event-desc">{{ eventNotes(e) }}</div>
+            </div>
+            <button class="delete-btn" aria-label="刪除" @click.stop="deleteEvent(e.id)">
+              <Trash2 :size="16" />
+            </button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-primary" @click="openAdd(selectedDate)">新增事件</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 新增／編輯事件 -->
     <div
       v-if="showAddModal"
       class="modal-overlay"
-      @click.self="showAddModal = false"
+      @click.self="closeForm"
     >
-      <div class="modal-content">
+      <div class="modal-content" role="dialog" aria-modal="true">
         <div class="modal-header">
-          <h2>新增事件</h2>
-          <button class="icon-btn" @click="showAddModal = false">
+          <h2>{{ editingEvent ? "編輯事件" : "新增事件" }}</h2>
+          <button class="icon-btn" aria-label="關閉" @click="closeForm">
             <X :size="20" />
           </button>
         </div>
         <div class="modal-body">
           <div class="form-group">
             <label>類型</label>
-            <select v-model="newEvent.type" class="form-control">
+            <select v-model="form.type" class="form-control">
               <option value="user">一般事件</option>
               <option value="period">經期記錄</option>
             </select>
@@ -402,7 +529,7 @@ onMounted(async () => {
           <div class="form-group">
             <label>標題</label>
             <input
-              v-model="newEvent.title"
+              v-model="form.title"
               type="text"
               class="form-control"
               placeholder="事件標題"
@@ -410,28 +537,46 @@ onMounted(async () => {
           </div>
           <div class="form-group">
             <label>日期</label>
-            <input v-model="newEvent.date" type="date" class="form-control" />
+            <input v-model="form.date" type="date" class="form-control" />
+          </div>
+          <div v-if="form.type === 'user'" class="form-row">
+            <div class="form-group">
+              <label>開始時間（可選）</label>
+              <input v-model="form.startTime" type="time" class="form-control" />
+            </div>
+            <div class="form-group">
+              <label>結束時間（可選）</label>
+              <input v-model="form.endTime" type="time" class="form-control" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>結束日期（跨天才填）</label>
+            <input v-model="form.endDate" type="date" class="form-control" :min="form.date" />
           </div>
           <div class="form-group">
             <label>描述（可選）</label>
             <textarea
-              v-model="newEvent.description"
+              v-model="form.description"
               class="form-control"
               rows="3"
               placeholder="事件描述..."
             />
           </div>
+          <p v-if="saveError" class="form-error" role="alert">{{ saveError }}</p>
         </div>
         <div class="modal-footer">
-          <button class="btn-secondary" @click="showAddModal = false">
+          <button v-if="editingEvent" class="btn-danger" @click="deleteEvent(editingEvent.id)">
+            刪除
+          </button>
+          <button class="btn-secondary" @click="closeForm">
             取消
           </button>
           <button
             class="btn-primary"
-            @click="addEvent"
-            :disabled="!newEvent.title.trim() || !newEvent.date"
+            @click="saveEvent"
+            :disabled="!formValid"
           >
-            新增
+            {{ editingEvent ? "儲存" : "新增" }}
           </button>
         </div>
       </div>
@@ -711,6 +856,10 @@ onMounted(async () => {
   display: flex;
   gap: 10px;
   margin-bottom: 8px;
+  cursor: pointer;
+  &:active {
+    background: #f3f4f6;
+  }
 }
 .event-color-bar {
   width: 4px;
@@ -855,6 +1004,42 @@ textarea.form-control {
 .btn-secondary {
   background: #f3f4f6;
   color: #6b7280;
+}
+.btn-danger {
+  flex: 0 0 auto;
+  padding: 9px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  background: #fee2e2;
+  color: #dc2626;
+}
+.form-row {
+  display: flex;
+  gap: 10px;
+  .form-group {
+    flex: 1;
+    min-width: 0;
+  }
+}
+.form-error {
+  margin: 0;
+  font-size: 13px;
+  color: #dc2626;
+}
+.day-holiday {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 500;
 }
 /* 橫屏 */
 @media (orientation: landscape) {

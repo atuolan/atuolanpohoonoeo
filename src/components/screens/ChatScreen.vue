@@ -192,6 +192,7 @@ import type { PendingToolConfirmation } from "@/services/toolCalling/types";
 import { getToolHandledActions } from "@/services/toolCalling/tagOverlap";
 import { createAppToolServices } from "@/services/toolCalling/appToolServices";
 import { saveCalendarEvent } from "@/services/calendarEvents";
+import { formatEventTime } from "@/utils/calendarEventFormat";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
 import { useUserStore } from "@/stores/user";
 import { useFitnessStore } from "@/stores/fitness";
@@ -9012,7 +9013,7 @@ function announceCalendarEvent(data: CalendarEventData, charName: string, inChat
     const calendarMessage: Message = {
       id: `msg_cal_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       role: "system",
-      content: `[行事曆] 已建立事件：${data.title}（${data.date}）${data.description ? " - " + data.description : ""}`,
+      content: `[行事曆] 已建立事件：${data.title}（${data.date}${data.startTime ? ` ${formatEventTime(data)}` : ""}）${data.description ? " - " + data.description : ""}`,
       timestamp: Date.now(),
       isCalendarEvent: true,
       calendarEventData: {

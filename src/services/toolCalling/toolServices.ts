@@ -15,6 +15,11 @@ export interface CalendarToolEvent {
   title: string;
   description?: string;
   type: "user" | "period" | "holiday";
+  /** HH:MM；整天的行程沒有 */
+  startTime?: string;
+  endTime?: string;
+  /** 跨天行程的結束日期 YYYY-MM-DD */
+  endDate?: string;
 }
 
 export interface CalendarToolService {

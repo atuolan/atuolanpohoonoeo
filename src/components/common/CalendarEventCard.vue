@@ -3,6 +3,7 @@
  * 聊天裡的行事曆卡片：角色幫你記的行程，按一下加到手機日曆。
  * 網頁版沒辦法自己寫進手機日曆，所以要你按；加入方式在「設定 › 日曆與定位」。
  */
+import { eventNotes } from "@/utils/calendarEventFormat";
 import {
   addToPhoneCalendar,
   phoneCalendarHint,
@@ -21,13 +22,8 @@ const when = computed(() => {
   return `${days}　${startTime}${endTime ? `–${endTime}` : ""}`;
 });
 
-// 角色工具建立的說明開頭是時間和結束日期（例如「15:00–16:00，帶健保卡」「到 2026-11-01」），上面已經顯示過，這裡去掉
-const notes = computed(() => {
-  let text = props.data.description ?? "";
-  if (props.data.startTime) text = text.replace(/^\d{1,2}:\d{2}(?:–\d{1,2}:\d{2}| 開始)?(?:，|$)/, "");
-  if (props.data.endDate) text = text.replace(/^到 \d{4}-\d{2}-\d{2}(?: \d{1,2}:\d{2})?(?:，|$)/, "");
-  return text.trim();
-});
+// 說明開頭重複的時間上面已經顯示過，去掉
+const notes = computed(() => eventNotes(props.data));
 
 const hint = ref("");
 let hintTimer: ReturnType<typeof setTimeout> | undefined;

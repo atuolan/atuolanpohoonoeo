@@ -112,10 +112,14 @@ describe("行事曆", () => {
 
     await saveCalendarEvent({ type: "period", title: "經期", date: "2026-10-22" });
     await saveCalendarEvent({ type: "user", title: "早就過了", date: "2026-09-01" });
+    await saveCalendarEvent({ type: "user", title: "出差", date: "2026-10-17", endDate: "2026-10-21" });
 
     const listed = await tool("list_calendar_events").execute({ from: "2026-10-19", to: "2026-10-31" }, context);
-    expect(listed).toContain("2026-10-20：看牙醫（15:00–16:00，帶健保卡）");
+    // 時間另外寫在日期後面，說明裡重複的時間拿掉
+    expect(listed).toContain("2026-10-20 15:00–16:00：看牙醫（帶健保卡）");
     expect(listed).toContain("2026-10-22（經期紀錄）：經期");
+    // 還沒結束的跨天行程也列出來
+    expect(listed).toContain("2026-10-17 到 2026-10-21：出差");
     expect(listed).not.toContain("早就過了");
   });
 

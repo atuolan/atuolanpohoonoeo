@@ -6,6 +6,7 @@
 import type { CalendarEventData } from "@/types/calendar";
 import type { GroupActionType } from "@/types/chat";
 import type { ScheduleCallData } from "@/types/incomingCall";
+import { normalizeEventTime } from "@/utils/calendarEventFormat";
 import { PLURK_BLOCK_PATTERN, PLURK_BLOCK_STRIP_PATTERN } from "@/utils/plurkFormat";
 import { repairXmlTags } from "./XmlFuzzyRepair";
 
@@ -1992,10 +1993,17 @@ export function parseMoodReplyTag(
   return { text: withText[withText.length - 1] ?? "" };
 }
 
+/** 取屬性值；屬性名前面要是開頭或空白，date 才不會抓到 end-date 的值 */
+function calendarAttr(attrs: string, name: string): string | undefined {
+  const match = attrs.match(new RegExp(`(?:^|\\s)${name}=["']([^"']+)["']`, "i"));
+  return match ? match[1] : undefined;
+}
+
 /**
  * 解析 calendar-event 標籤（支援多個）
  * 支援格式：<calendar-event type="user" date="2026-02-14" title="情人節約會" description="一起去吃飯"/>
  * 或：<calendar-event type="period" date="2026-02-10" title="月經來了"/>
+ * 可加時間：time="19:00" end="21:00"；跨天的加 end-date="2026-02-16"
  *
  * @param rawResponse - 原始 AI 回覆
  * @returns 解析後的 CalendarEventData 陣列
@@ -2010,8 +2018,8 @@ export function parseCalendarEventTags(
   while ((match = tagRegex.exec(rawResponse)) !== null) {
     const attrs = match[1];
 
-    const title = extractAttr(attrs, "title");
-    const date = extractAttr(attrs, "date");
+    const title = calendarAttr(attrs, "title");
+    const date = calendarAttr(attrs, "date");
 
     if (!title || !date) {
       console.warn(
@@ -2030,19 +2038,25 @@ export function parseCalendarEventTags(
       continue;
     }
 
-    const type = extractAttr(attrs, "type");
+    const type = calendarAttr(attrs, "type");
     const validTypes = ["user", "period"];
     const eventType =
       type && validTypes.includes(type) ? (type as "user" | "period") : "user";
 
-    const description = extractAttr(attrs, "description");
-
-    results.push({
+    const description = calendarAttr(attrs, "description");
+    const event: CalendarEventData = {
       type: eventType,
       title,
       date,
       description: description || undefined,
-    });
+    };
+    const startTime = normalizeEventTime(calendarAttr(attrs, "time"));
+    const endTime = normalizeEventTime(calendarAttr(attrs, "end"));
+    const endDate = calendarAttr(attrs, "end-date");
+    if (startTime) event.startTime = startTime;
+    if (endTime) event.endTime = endTime;
+    if (endDate && /^\d{4}-\d{2}-\d{2}$/.test(endDate) && endDate > date) event.endDate = endDate;
+    results.push(event);
   }
 
   return results;

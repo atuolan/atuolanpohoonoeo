@@ -19,6 +19,7 @@ import {
   publishCharacterPlurk,
 } from "./PlurkPostService";
 import { pickGenerationToggles } from "@/utils/generationToggles";
+import { formatEventTime } from "@/utils/calendarEventFormat";
 import { computeChatNow } from "@/utils/fakeTime";
 import { toPromptGroupMember, withLiveSubCharSnapshot } from "@/utils/groupMembers";
 import type { GroupMember, MultiCharMember } from "@/types/chat";
@@ -1450,28 +1451,16 @@ export class ProactiveMessageService {
             parsedResponse.calendarEvents
           ) {
             try {
+              // 跟聊天頁走同一個寫入，時間、跨天的結束日期才不會掉
+              const { saveCalendarEvent } = await import("@/services/calendarEvents");
               for (const calEvent of parsedResponse.calendarEvents) {
-                const event = {
-                  id: `cal_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-                  type: calEvent.type,
-                  title: calEvent.title,
-                  date: calEvent.date,
-                  description: calEvent.description,
-                  sourceCharacterId: character.id,
-                  sourceChatId: chat.id,
-                  createdAt: Date.now(),
-                  updatedAt: Date.now(),
-                };
-                await db.put(
-                  DB_STORES.CALENDAR_EVENTS,
-                  JSON.parse(JSON.stringify(event)),
-                );
+                await saveCalendarEvent(calEvent, { characterId: character.id, chatId: chat.id });
 
                 // 插入系統訊息到聊天中
                 const calendarMessage = {
                   id: `msg_cal_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
                   sender: "system" as const,
-                  content: `[行事曆] 已建立事件：${calEvent.title}（${calEvent.date}）${calEvent.description ? " - " + calEvent.description : ""}`,
+                  content: `[行事曆] 已建立事件：${calEvent.title}（${calEvent.date}${calEvent.startTime ? ` ${formatEventTime(calEvent)}` : ""}）${calEvent.description ? " - " + calEvent.description : ""}`,
                   is_user: false,
                   status: "sent" as const,
                   createdAt: Date.now(),
@@ -1482,6 +1471,9 @@ export class ProactiveMessageService {
                     title: calEvent.title,
                     date: calEvent.date,
                     description: calEvent.description,
+                    startTime: calEvent.startTime,
+                    endTime: calEvent.endTime,
+                    endDate: calEvent.endDate,
                   },
                 };
                 newMessages.push(calendarMessage);
