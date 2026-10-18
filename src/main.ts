@@ -50,7 +50,6 @@ import {
 } from "./utils/runtimeDiagnostics";
 import { CodeProtection } from "./utils/codeProtection";
 import { autoFixStickerUrls } from "./utils/fixStickerUrls";
-import { initStatusBarTint } from "./utils/statusBarTint";
 import { initStorageProtection } from "./utils/storagePersistence";
 
 // ===== 視口高度修正（iOS / Android / 瀏覽器通用）=====
@@ -60,9 +59,10 @@ function measureActualViewportHeight(): number {
   const probe = document.createElement("div");
   probe.style.cssText =
     "position:fixed;top:0;bottom:0;left:0;width:1px;visibility:hidden;pointer-events:none;z-index:-1;";
-  document.body.appendChild(probe);
+  // 掛在 <html> 而非 body：body 有 transform，fixed 子元素只會量到 body 自己（上一次設定的 --app-height）
+  document.documentElement.appendChild(probe);
   const h = probe.getBoundingClientRect().height;
-  document.body.removeChild(probe);
+  document.documentElement.removeChild(probe);
   return h;
 }
 
@@ -88,17 +88,10 @@ function updateAppHeight(): void {
 
   let appHeight: number;
   if (isStandalone && isIOS) {
-    // iOS standalone：用 probe 測量值和 screen.height 取較大值
-    // probe 測量的是 position:fixed top:0 bottom:0 的實際高度，
-    // 這是瀏覽器認為的可用區域，比 innerHeight 更準確
-    // screen.height 在某些 iOS 版本是正確的全螢幕高度
-    // 取較大值確保填滿全螢幕
-    appHeight = Math.max(probeH, screenH);
-    // 安全上限：不超過 innerHeight 和 screen.height 中的較大值 + 合理容差
-    const safeMax = Math.max(innerH, screenH) + 10;
-    if (appHeight > safeMax) {
-      appHeight = safeMax;
-    }
+    // iOS standalone：以 probe 實測高度為準（position:fixed top:0 bottom:0 的實際可用區域）
+    // 狀態列不透明時可用區域比 screen.height 少一截，用 screen.height 撐高會切掉底部；
+    // 狀態列透明時 probe 也會量到全螢幕，兩種情況都正確
+    appHeight = probeH > 0 ? probeH : innerH;
   } else if (isStandalone) {
     // Android standalone：probe 測量最準確
     appHeight = Math.max(probeH, innerH);
@@ -149,83 +142,12 @@ function updateAppHeight(): void {
   });
 }
 
-// iOS 26 PWA：偵測 safe-area 是否正常，只補償頂部（瀏海），底部不補償（不要空白）
-function detectAndFixSafeArea(): void {
-  const nav = navigator as Navigator & { standalone?: boolean };
-  const isStandalone =
-    ("standalone" in navigator && nav.standalone === true) ||
-    window.matchMedia("(display-mode: standalone)").matches;
-
-  console.log(
-    `[safeArea] standalone=${isStandalone}, screen.height=${window.screen.height}, dpr=${window.devicePixelRatio}`,
-  );
-
-  const testEl = document.createElement("div");
-  testEl.style.cssText =
-    "position:fixed;top:0;left:0;width:1px;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);visibility:hidden;pointer-events:none;";
-  document.body.appendChild(testEl);
-
-  requestAnimationFrame(() => {
-    const cs = getComputedStyle(testEl);
-    const safeTop = parseFloat(cs.paddingTop) || 0;
-    const safeBottom = parseFloat(cs.paddingBottom) || 0;
-    document.body.removeChild(testEl);
-
-    console.log(
-      `[safeArea] env() 實際值: top=${safeTop}px, bottom=${safeBottom}px`,
-    );
-
-    // 如果是 iOS standalone 且 safe-area-top 為 0，但裝置有瀏海
-    const isIOS =
-      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    if (
-      isStandalone &&
-      isIOS &&
-      safeTop === 0 &&
-      window.screen.height >= 800 &&
-      window.devicePixelRatio >= 2
-    ) {
-      console.warn("[safeArea] 偵測到 iOS PWA safe-area bug，補頂部 + 推算底部 home indicator");
-      // 補償頂部（瀏海/動態島）
-      document.documentElement.style.setProperty("--safe-top", "59px");
-      document.documentElement.style.setProperty("--safe-area-top", "59px");
-
-      // 推算底部 home indicator 高度：app-height 與 visualViewport 之差
-      // 不能直接設 0，否則無 Home 鍵的機型（iPhone X 之後）會把 input-area 推進手勢區看不到
-      const probeAppHeight =
-        parseFloat(
-          document.documentElement.style.getPropertyValue("--app-height"),
-        ) || window.innerHeight;
-      const vvH = window.visualViewport?.height ?? probeAppHeight;
-      const inferredBottom = Math.max(0, Math.round(probeAppHeight - vvH));
-      // 合理範圍：iPhone 系列 home indicator 約 20~50px
-      const safeBottomPx =
-        inferredBottom >= 10 && inferredBottom <= 60 ? inferredBottom : 34;
-      document.documentElement.style.setProperty("--safe-bottom", `${safeBottomPx}px`);
-      document.documentElement.style.setProperty(
-        "--safe-area-bottom",
-        `${safeBottomPx}px`,
-      );
-      console.log(
-        `[safeArea] 推算 home indicator: ${inferredBottom}px (app=${probeAppHeight}, vv=${vvH}) → 套用 ${safeBottomPx}px`,
-      );
-    }
-  });
-}
-
 updateAppHeight();
 if (window.visualViewport) {
   window.visualViewport.addEventListener("resize", updateAppHeight);
   window.visualViewport.addEventListener("scroll", updateAppHeight);
 } else {
   window.addEventListener("resize", updateAppHeight);
-}
-
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", detectAndFixSafeArea);
-} else {
-  detectAndFixSafeArea();
 }
 
 // ===== 全域鍵盤感知：輸入框自動滾入可見區域 =====
@@ -482,9 +404,6 @@ updateRuntimeSessionStage("app mounted");
 
 // Vue 掛載後再次更新高度（確保 #app DOM 已存在）
 updateAppHeight();
-
-// iOS 26+/27 PWA：頂部放實心取色條，避免系統在狀態列疊白霧
-initStatusBarTint();
 
 // 應用掛載後註冊 Service Worker 並請求持久化存儲
 updateRuntimeSessionStage("storage protection init start");
