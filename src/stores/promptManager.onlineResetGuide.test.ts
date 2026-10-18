@@ -20,7 +20,12 @@ import {
   DEFAULT_PROMPT_ORDER,
   FACE_TO_FACE_PROMPT_DEFINITIONS,
 } from "@/types/promptManager";
-import { ONLINE_PROMPT_RESET_VERSION, usePromptManagerStore } from "./promptManager";
+import {
+  FACE_TO_FACE_PROMPT_RESET_VERSION,
+  GROUP_CHAT_PROMPT_RESET_VERSION,
+  ONLINE_PROMPT_RESET_VERSION,
+  usePromptManagerStore,
+} from "./promptManager";
 
 const HUMAN_LIKE = "humanLike";
 
@@ -63,6 +68,15 @@ describe("線上提示詞強制重置引導", () => {
     expect(store.needsOnlinePromptReset).toBe(false);
   });
 
+  it("已完成上一版重置的用戶，在新版本仍需要重置", async () => {
+    const config = createDefaultPromptManagerConfig();
+    config.onlinePromptResetVersion = ONLINE_PROMPT_RESET_VERSION - 1;
+    storage.set("promptManagerConfig", config);
+    const store = usePromptManagerStore();
+    await store.loadConfig();
+    expect(store.needsOnlinePromptReset).toBe(true);
+  });
+
   it("舊用戶需要重置；重置後恢復默認、角色順序換新排列但保留開關、其他模式不受影響", async () => {
     storage.set("promptManagerConfig", oldUserConfig());
     const store = usePromptManagerStore();
@@ -96,6 +110,41 @@ describe("線上提示詞強制重置引導", () => {
     await store.loadConfig();
     await store.resetToDefault();
     expect(store.needsOnlinePromptReset).toBe(false);
+  });
+});
+
+describe("三種模式合在同一個彈窗重置", () => {
+  beforeEach(() => {
+    storage.clear();
+    setActivePinia(createPinia());
+  });
+
+  it("三種都停在上一版時都要重置；依序重置完全部完成，重新載入也不再要求", async () => {
+    const config = createDefaultPromptManagerConfig();
+    config.onlinePromptResetVersion = ONLINE_PROMPT_RESET_VERSION - 1;
+    config.groupChatPromptResetVersion = GROUP_CHAT_PROMPT_RESET_VERSION - 1;
+    config.faceToFacePromptResetVersion = FACE_TO_FACE_PROMPT_RESET_VERSION - 1;
+    storage.set("promptManagerConfig", config);
+
+    const store = usePromptManagerStore();
+    await store.loadConfig();
+    expect(store.needsOnlinePromptReset).toBe(true);
+    expect(store.needsGroupChatPromptReset).toBe(true);
+    expect(store.needsFaceToFacePromptReset).toBe(true);
+
+    await store.resetOnlineForUpdate();
+    await store.resetGroupChatToDefault();
+    await store.resetFaceToFaceToDefault();
+    expect(store.needsOnlinePromptReset).toBe(false);
+    expect(store.needsGroupChatPromptReset).toBe(false);
+    expect(store.needsFaceToFacePromptReset).toBe(false);
+
+    setActivePinia(createPinia());
+    const reloaded = usePromptManagerStore();
+    await reloaded.loadConfig();
+    expect(reloaded.needsOnlinePromptReset).toBe(false);
+    expect(reloaded.needsGroupChatPromptReset).toBe(false);
+    expect(reloaded.needsFaceToFacePromptReset).toBe(false);
   });
 });
 

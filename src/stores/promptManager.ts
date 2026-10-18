@@ -53,20 +53,23 @@ const PROMPT_MANAGER_CONFIG_VERSION = 4;
  * 3：新增 14 種文學主調、粵語對白、字數更少；外語條目換新 identifier，改寫故事推進與文風
  * 4：篝火預設改寫開場手札與涅芙設定、說書順序加入角色自帶思維鏈、結尾條目加上收尾句
  * 5：開場手札與涅芙設定改寫為「溫養靈魂、深層共鳴」口吻，拿掉「勇者會死掉」的續命說法
+ * 6：與線上、群聊一起重置；正文加心聲、「字數更少」預設關閉、翻譯改成「外語<br>中文翻譯」
  */
-export const FACE_TO_FACE_PROMPT_RESET_VERSION = 5;
+export const FACE_TO_FACE_PROMPT_RESET_VERSION = 6;
 
 /**
  * 線上模式提示詞強制重置版本（規則同面對面）。
  * 1：照面對面預設分區整理，刪除星核、從未生效的權力關係條目與預填 <thinking>，功能標籤格式各只寫在一處
+ * 2：與群聊、面對面一起重置；刪除「角色設定」，加入便利貼與心情便籤
  */
-export const ONLINE_PROMPT_RESET_VERSION = 1;
+export const ONLINE_PROMPT_RESET_VERSION = 2;
 
 /**
  * 群聊模式提示詞強制重置版本（規則同面對面）。
  * 1：改用線上模式的分區寫法與思考框架，保留群聊專屬格式（紅包、群管理、群通話、私信等）
+ * 2：與線上、面對面一起重置；刪除「角色設定」，補上封鎖記憶與 MiniMax 語音條目
  */
-export const GROUP_CHAT_PROMPT_RESET_VERSION = 1;
+export const GROUP_CHAT_PROMPT_RESET_VERSION = 2;
 
 /** 新建的配置已是最新提示詞，不需要再引導重置 */
 function createFreshPromptManagerConfig(): PromptManagerConfig {

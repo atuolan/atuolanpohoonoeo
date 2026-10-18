@@ -897,7 +897,7 @@ async function handleAnnouncementAck(id: string) {
   await acknowledgeAnnouncement(id);
   currentAnnouncementIndex.value += 1;
 }
-// 線上／群聊／面對面提示詞重大更新：舊設定用戶必須完成重置（彈窗無法關閉），一次一個
+// 線上／群聊／面對面提示詞重大更新：舊設定用戶必須完成重置（彈窗無法關閉），需要重置的模式合在一個彈窗
 const pendingPromptResets = ref<Array<"online" | "groupChat" | "faceToFace">>([]);
 async function checkPromptResets() {
   try {
@@ -3197,9 +3197,8 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <!-- 提示詞強制重置引導（作者公告看完後才顯示） -->
     <PromptResetGuideModal
       v-if="pendingPromptResets.length > 0 && !currentAnnouncement && !authScreenOnStage"
-      :key="pendingPromptResets[0]"
-      :mode="pendingPromptResets[0]"
-      @done="pendingPromptResets = pendingPromptResets.slice(1)"
+      :modes="pendingPromptResets"
+      @done="pendingPromptResets = []"
     />
 
     <!-- 多人卡模式設定彈窗 -->
