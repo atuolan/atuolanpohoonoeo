@@ -15,6 +15,8 @@ import {
 } from "@/services/PeekPhoneService";
 import { useLorebooksStore } from "@/stores/lorebooks";
 import { useNotificationStore } from "@/stores/notification";
+import { loadCharPlanner, syncPeekIntoPlanner } from "@/services/charPlanner";
+import { buildPlannerPromptText, toDateString } from "@/utils/charPlanner";
 import { computeChatNow } from "@/utils/fakeTime";
 import { isWorldInfoEntryEnabled } from "@/utils/worldInfoEntryState";
 import { useSettingsStore } from "@/stores/settings";
@@ -270,14 +272,29 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     cId: string,
   ): Promise<PeekSources> {
     const { userName, userDescription } = resolveUserInfo(chat, charId);
+    const now = computeChatNow(chat);
+    const planner = await loadCharPlanner(cId).catch(() => null);
+    const hasPlanner = !!planner && (planner.todos.some((t) => !t.done) || planner.plans.length > 0);
     return {
       chatContext: await extractChatContext(chat, 15, userName),
       summariesAndEvents: await extractSummariesAndEvents(cId, charId),
       worldInfo: extractWorldInfo(character),
       userName,
       userDescription,
-      now: computeChatNow(chat),
+      now,
+      plannerText: hasPlanner ? buildPlannerPromptText(planner, toDateString(now), userName) : undefined,
     };
+  }
+
+  /** 行程、備忘錄組生成好了：寫回角色的待辦和行程，聊天頁和之後的聊天都照著走 */
+  function syncPlannerFromPeek(cId: string, charId: string, partial: Partial<PeekPhoneData>, now: Date): void {
+    if (!partial.schedule && !partial.memos) return;
+    void syncPeekIntoPlanner(
+      cId,
+      charId,
+      { schedule: partial.schedule, memos: partial.memos },
+      toDateString(now),
+    ).catch((e) => console.error("[PeekPhone] 寫回角色待辦與行程失敗:", e));
   }
 
   // ===== 偷看進度（解鎖、找到的秘密、看過的 App） =====
@@ -542,6 +559,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
             groupStatus.value.B = "done";
             groupStatus.value.C = "done";
             groupStatus.value.D = "loading";
+            syncPlannerFromPeek(cId, charId, partial, sources.now);
           }
         },
         streamingWindow
@@ -705,6 +723,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       } else if (phase === "BC") {
         groupStatus.value.B = "done";
         groupStatus.value.C = "done";
+        syncPlannerFromPeek(cId, charId, partial, sources.now);
       } else if (phase === "D") {
         groupStatus.value.D = "done";
       }

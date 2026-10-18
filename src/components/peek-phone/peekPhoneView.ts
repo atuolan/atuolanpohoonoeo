@@ -4,12 +4,15 @@
  */
 
 import type { GroupStatus } from "@/stores/peekPhone";
+import type { CharPlan, CharTodo } from "@/types/charPlanner";
 import type {
   PeekChatThread,
   PeekDiaryEntry,
+  PeekMemo,
   PeekPhoneTab,
   PeekScheduleItem,
 } from "@/types/peekPhone";
+import { comparePlans, compareTodos } from "@/utils/charPlanner";
 import type { Component } from "vue";
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -94,12 +97,11 @@ export function latestNotifications(
     .slice(0, limit);
 }
 
-/** 鎖屏上的下一個行程：第一個還沒完成的，沒有就最後一個 */
+/** 鎖屏上的下一個行程：第一個還沒完成、有時間的；都過了就最後一個；只有整天的就整天的 */
 export function nextScheduleItem(schedule: PeekScheduleItem[]): PeekScheduleItem | null {
-  const sorted = [...schedule]
-    .filter((s) => s.title?.trim())
-    .sort((a, b) => a.time.localeCompare(b.time));
-  return sorted.find((s) => !s.done) ?? sorted[sorted.length - 1] ?? null;
+  const titled = schedule.filter((s) => s.title?.trim());
+  const timed = titled.filter((s) => s.time).sort((a, b) => a.time.localeCompare(b.time));
+  return timed.find((s) => !s.done) ?? timed[timed.length - 1] ?? titled[0] ?? null;
 }
 
 /** 桌面週曆下的一句話：最新一篇日記的第一句，最多 14 字 */
@@ -144,4 +146,35 @@ export interface HomeApp {
   status: GroupStatus;
   /** 這個 App 裡還有沒找到的秘密 */
   secret: boolean;
+}
+
+/** 偷窺手機上顯示的行程、待辦：多一個「秘密」標記 */
+export type PeekScheduleView = PeekScheduleItem & { secret?: boolean };
+export type PeekMemoView = PeekMemo & { secret?: boolean };
+
+/** 角色今天的行程換成偷窺手機的格式；整天的沒有時間；時間過了算做完 */
+export function scheduleFromPlanner(plans: CharPlan[], today: string, now: Date): PeekScheduleView[] {
+  const clock = formatClock(now);
+  return plans
+    .filter((p) => p.date === today)
+    .sort(comparePlans)
+    .map((p) => ({
+      id: p.id,
+      time: p.time ?? "",
+      title: p.title,
+      location: p.place,
+      done: !!p.time && p.time <= clock,
+      secret: p.secret,
+    }));
+}
+
+/** 角色的待辦換成偷窺手機備忘錄的格式（秘密的也在，偷看就是要看這個） */
+export function memosFromPlanner(todos: CharTodo[]): PeekMemoView[] {
+  return [...todos].sort(compareTodos).map((t) => ({
+    id: t.id,
+    content: t.text,
+    done: t.done,
+    createdAt: t.createdAt,
+    secret: t.secret,
+  }));
 }

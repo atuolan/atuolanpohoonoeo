@@ -5,7 +5,14 @@
  */
 import { db, DB_STORES } from "@/db/database";
 import type { CharPlanner, PlannerOp, PlannerSource, PlannerState } from "@/types/charPlanner";
-import { applyPlannerOps, prunePlanner, recordPlannerTurn, replanForReplacedRound } from "@/utils/charPlanner";
+import {
+  applyPlannerOps,
+  mergePeekItems,
+  prunePlanner,
+  recordPlannerTurn,
+  replanForReplacedRound,
+  type PeekPlannerItems,
+} from "@/utils/charPlanner";
 
 export const CHAR_PLANNER_CHANGED_EVENT = "aguaphone:char-planner-changed";
 
@@ -84,6 +91,16 @@ export async function replaceCharPlannerState(
   const current = (await loadCharPlanner(chatId)) ?? emptyPlanner(chatId, characterId);
   const next = update({ todos: current.todos, plans: current.plans });
   return savePlanner({ ...current, ...next, characterId, updatedAt: Date.now() });
+}
+
+/** 偷窺手機生成的行程、備忘寫回來；today：聊天的有效日期 */
+export async function syncPeekIntoPlanner(
+  chatId: string,
+  characterId: string,
+  items: PeekPlannerItems,
+  today: string,
+): Promise<CharPlanner> {
+  return replaceCharPlannerState(chatId, characterId, (state) => mergePeekItems(state, items, today));
 }
 
 /** 使用者打開過「他的今天」 */

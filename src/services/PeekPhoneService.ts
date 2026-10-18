@@ -400,6 +400,8 @@ export interface PeekSources {
   summariesAndEvents: string;
   /** 角色手機上的「現在」：聊天有假時間就照假時間 */
   now: Date;
+  /** 角色自己已經記下的待辦和行程；行程、備忘錄組要照著寫 */
+  plannerText?: string;
 }
 
 /**
@@ -424,6 +426,7 @@ export async function buildPromptContext(
     worldInfo: await sub(sources.worldInfo),
     summariesAndEvents: sources.summariesAndEvents,
     now,
+    plannerText: sources.plannerText,
   };
 }
 

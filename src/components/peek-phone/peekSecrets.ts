@@ -3,10 +3,12 @@
  * 秘密本身是 AI 生成的欄位（收回的訊息、草稿、最近刪除……），進度存在 data.progress
  */
 
+import type { PlannerState } from "@/types/charPlanner";
 import type { PeekPhoneData, PeekPhoneTab, PeekProgress } from "@/types/peekPhone";
+import { formatPlanDate } from "@/utils/charPlanner";
 
 /** 秘密藏在哪裡（鎖屏密碼在鎖定畫面，其他在 App 裡） */
-export type SecretPlace = "lock" | "chat" | "gallery" | "browser" | "settings";
+export type SecretPlace = "lock" | "chat" | "gallery" | "browser" | "settings" | "memo" | "schedule";
 
 export const PLACE_LABELS: Record<SecretPlace, string> = {
   lock: "鎖定畫面",
@@ -14,6 +16,8 @@ export const PLACE_LABELS: Record<SecretPlace, string> = {
   gallery: "相簿",
   browser: "瀏覽器",
   settings: "設定",
+  memo: "備忘錄",
+  schedule: "行事曆",
 };
 
 export interface PeekSecret {
@@ -38,6 +42,8 @@ export const secretKeys = {
   hidden: "hidden",
   browser: "browser",
   screen: "screen",
+  todo: (todoId: string) => `todo:${todoId}`,
+  plan: (planId: string) => `plan:${planId}`,
 };
 
 /** 桌面上的 App：算「看過幾 %」用 */
@@ -55,7 +61,8 @@ export const HOME_TABS: PeekPhoneTab[] = [
 
 const firstLine = (text: string) => text.split("\n")[0].trim();
 
-export function listSecrets(data: PeekPhoneData | null): PeekSecret[] {
+/** planner：角色的待辦和行程（聊天頁那份），標了秘密的也算這支手機的秘密 */
+export function listSecrets(data: PeekPhoneData | null, planner?: PlannerState | null): PeekSecret[] {
   if (!data) return [];
   const secrets: PeekSecret[] = [];
 
@@ -142,6 +149,30 @@ export function listSecrets(data: PeekPhoneData | null): PeekSecret[] {
     });
   }
 
+  for (const todo of planner?.todos ?? []) {
+    if (!todo.secret) continue;
+    secrets.push({
+      key: secretKeys.todo(todo.id),
+      place: "memo",
+      label: "沒讓你知道的待辦",
+      detail: todo.text,
+      hint: "備忘錄：有一條待辦在聊天裡看不到",
+      target: { view: "memo" },
+    });
+  }
+
+  for (const plan of planner?.plans ?? []) {
+    if (!plan.secret) continue;
+    secrets.push({
+      key: secretKeys.plan(plan.id),
+      place: "schedule",
+      label: "沒讓你知道的行程",
+      detail: `${formatPlanDate(plan.date)} ${plan.title}`,
+      hint: "行事曆：有一個行程在聊天裡看不到",
+      target: { view: "schedule" },
+    });
+  }
+
   return secrets;
 }
 
@@ -154,7 +185,15 @@ export function unfoundByPlace(
   secrets: PeekSecret[],
   progress: PeekProgress,
 ): Record<SecretPlace, number> {
-  const counts: Record<SecretPlace, number> = { lock: 0, chat: 0, gallery: 0, browser: 0, settings: 0 };
+  const counts: Record<SecretPlace, number> = {
+    lock: 0,
+    chat: 0,
+    gallery: 0,
+    browser: 0,
+    settings: 0,
+    memo: 0,
+    schedule: 0,
+  };
   for (const s of secrets) {
     if (!progress.revealed.includes(s.key)) counts[s.place]++;
   }
@@ -174,6 +213,8 @@ export function placeOfView(view: "lock" | "home" | PeekPhoneTab): SecretPlace |
   if (view === "gallery" || view === "hidden" || view === "deleted") return "gallery";
   if (view === "browser") return "browser";
   if (view === "settings") return "settings";
+  if (view === "memo" || view === "notes") return "memo";
+  if (view === "schedule") return "schedule";
   return null;
 }
 

@@ -12,12 +12,16 @@ import {
   formatRelative,
   initialOf,
   latestNotifications,
+  memosFromPlanner,
   MOOD_LABELS,
   moodLine,
   nextScheduleItem,
   photoTone,
+  scheduleFromPlanner,
   toMillis,
   type HomeApp,
+  type PeekMemoView,
+  type PeekScheduleView,
 } from "@/components/peek-phone/peekPhoneView";
 import {
   homeTabOfView,
@@ -37,6 +41,13 @@ import type { StoredCharacter } from "@/types/character";
 import type { Chat } from "@/types/chat";
 import type { PeekChatMessage, PeekDiaryEntry, PeekPhoneTab } from "@/types/peekPhone";
 import { computeChatNow } from "@/utils/fakeTime";
+import {
+  CHAR_PLANNER_CHANGED_EVENT,
+  loadCharPlanner,
+  type CharPlannerChangedDetail,
+} from "@/services/charPlanner";
+import type { CharPlanner } from "@/types/charPlanner";
+import { comparePlans, formatPlanTime, toDateString } from "@/utils/charPlanner";
 import {
   AlertTriangle,
   Angry,
@@ -142,11 +153,47 @@ const groupErrors = computed(() => peekPhoneStore.groupErrors);
 
 // 各模塊的資料
 const chats = computed(() => storeData.value?.chats ?? []);
-const schedule = computed(() => storeData.value?.schedule ?? []);
+// 行程和待辦跟聊天頁「他的今天」是同一份；還沒有（舊的偷窺內容）時用偷窺手機自己生成的
+const planner = ref<CharPlanner | null>(null);
+const phoneToday = computed(() => toDateString(now.value));
+const schedule = computed<PeekScheduleView[]>(() => {
+  const fromPlanner = scheduleFromPlanner(planner.value?.plans ?? [], phoneToday.value, now.value);
+  return fromPlanner.length > 0 ? fromPlanner : (storeData.value?.schedule ?? []);
+});
+/** 「接下來」左邊那欄窄，只寫 10/19 */
+function shortPlanDate(date: string): string {
+  const [, m, d] = date.split("-");
+  return `${Number(m)}/${Number(d)}`;
+}
+/** 行事曆 App 下面「接下來」：明天之後的行程 */
+const upcomingPlans = computed(() =>
+  (planner.value?.plans ?? []).filter((p) => p.date > phoneToday.value).sort(comparePlans).slice(0, 8),
+);
 const meals = computed(() => storeData.value?.meals ?? []);
 const balance = computed(() => storeData.value?.balance ?? 0);
 const transactions = computed(() => storeData.value?.transactions ?? []);
-const memos = computed(() => storeData.value?.memos ?? []);
+const memos = computed<PeekMemoView[]>(() => {
+  const todos = planner.value?.todos ?? [];
+  return todos.length > 0 ? memosFromPlanner(todos) : (storeData.value?.memos ?? []);
+});
+
+async function loadPlanner() {
+  try {
+    planner.value = await loadCharPlanner(props.chatId);
+  } catch (err) {
+    console.warn("[PeekPhoneScreen] 讀取角色待辦與行程失敗:", err);
+  }
+}
+// 生成時寫回、聊天頁刪掉的，這裡跟著更新
+function onPlannerChanged(event: Event) {
+  const detail = (event as CustomEvent<CharPlannerChangedDetail>).detail;
+  if (detail?.chatId === props.chatId) planner.value = detail.planner;
+}
+onMounted(() => {
+  window.addEventListener(CHAR_PLANNER_CHANGED_EVENT, onPlannerChanged);
+  void loadPlanner();
+});
+onUnmounted(() => window.removeEventListener(CHAR_PLANNER_CHANGED_EVENT, onPlannerChanged));
 const notes = computed(() => storeData.value?.notes ?? []);
 const diary = computed(() => storeData.value?.diary ?? []);
 const gallery = computed(() => storeData.value?.gallery ?? []);
@@ -157,7 +204,7 @@ const activePhotos = computed(() => gallery.value.filter((p) => !p.deletedDaysLe
 const deletedPhotos = computed(() => gallery.value.filter((p) => p.deletedDaysLeft));
 
 // ===== 秘密與偷看進度 =====
-const secrets = computed(() => listSecrets(storeData.value));
+const secrets = computed(() => listSecrets(storeData.value, planner.value));
 const progress = computed(() => progressOf(storeData.value));
 const unfound = computed(() => unfoundByPlace(secrets.value, progress.value));
 
@@ -172,7 +219,7 @@ function reveal(key: string): void {
 const capsuleLabel = computed(() => {
   const view = currentView.value;
   if (view === "home") {
-    const places = (["chat", "gallery", "browser", "settings"] as SecretPlace[]).filter(
+    const places = (["chat", "gallery", "browser", "settings", "memo", "schedule"] as SecretPlace[]).filter(
       (p) => unfound.value[p] > 0,
     ).length;
     return places > 0 ? `${places} 處有秘密` : undefined;
@@ -190,6 +237,13 @@ watch(currentView, (view) => {
   if (view === "lock" || view === "home") return;
   peekPhoneStore.markViewed(homeTabOfView(view));
   if (view === "hidden" && hiddenPhotos.value.length > 0) reveal(secretKeys.hidden);
+  // 打開備忘錄、行事曆就看到了聊天裡看不到的待辦和行程
+  if (view === "memo") {
+    for (const t of planner.value?.todos ?? []) if (t.secret) reveal(secretKeys.todo(t.id));
+  }
+  if (view === "schedule") {
+    for (const p of planner.value?.plans ?? []) if (p.secret) reveal(secretKeys.plan(p.id));
+  }
 });
 
 // 鎖屏密碼：還沒解過（或從窺視選單說要再試一次）就要先猜
@@ -898,16 +952,37 @@ const todayLabel = computed(
               class="app-row sched-item"
               :class="{ done: item.done }"
             >
-              <span class="sched-time">{{ item.time }}</span>
+              <span class="sched-time">{{ item.time || "整天" }}</span>
               <span class="sched-dot" aria-hidden="true" />
               <span class="sched-main">
-                <span class="sched-title">{{ item.title }}</span>
+                <span class="sched-title">
+                  {{ item.title }}
+                  <span v-if="item.secret" class="secret-tag">沒讓你知道</span>
+                </span>
                 <span v-if="item.location" class="sched-loc">{{ item.location }}</span>
               </span>
               <Check v-if="item.done" :size="16" class="sched-check" aria-label="已完成" />
             </li>
           </ol>
           <div v-else class="app-empty">今天沒有行程</div>
+          <template v-if="upcomingPlans.length > 0">
+            <div class="app-section-label">接下來</div>
+            <ol class="app-card sched-list">
+              <li v-for="plan in upcomingPlans" :key="plan.id" class="app-row sched-item">
+                <span class="sched-time">{{ shortPlanDate(plan.date) }}</span>
+                <span class="sched-dot" aria-hidden="true" />
+                <span class="sched-main">
+                  <span class="sched-title">
+                    {{ plan.title }}
+                    <span v-if="plan.secret" class="secret-tag">沒讓你知道</span>
+                  </span>
+                  <span v-if="formatPlanTime(plan) || plan.place" class="sched-loc">
+                    {{ [formatPlanTime(plan), plan.place].filter(Boolean).join("　") }}
+                  </span>
+                </span>
+              </li>
+            </ol>
+          </template>
         </div>
 
         <!-- ===== 飲食記錄 ===== -->
@@ -967,7 +1042,10 @@ const todayLabel = computed(
               <span class="memo-check" :aria-label="memo.done ? '已完成' : '未完成'">
                 <Check v-if="memo.done" :size="14" :stroke-width="3" aria-hidden="true" />
               </span>
-              <span class="memo-text">{{ memo.content }}</span>
+              <span class="memo-text">
+                {{ memo.content }}
+                <span v-if="memo.secret" class="secret-tag">沒讓你知道</span>
+              </span>
             </li>
           </ul>
           <template v-if="notes.length > 0">
@@ -1770,6 +1848,19 @@ const todayLabel = computed(
 .chat-draft-old {
   color: var(--a-ink-3);
   text-decoration: line-through;
+}
+
+.secret-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: 1px;
+  color: var(--p-peek-ink-light);
+  background: var(--p-peek-soft-light);
+  border: 1px solid var(--p-peek-line-light);
 }
 
 .chat-draft-now {

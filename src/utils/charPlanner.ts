@@ -313,3 +313,64 @@ export function buildPlannerPromptText(state: PlannerState, today: string, userN
   }
   return lines.join("\n");
 }
+
+/** 偷窺手機生成的行程（只有今天的時間）和備忘 */
+export interface PeekPlannerItems {
+  schedule?: { time?: string; title: string; location?: string }[];
+  memos?: { content: string; done: boolean }[];
+}
+
+/**
+ * 偷窺手機生成的行程、備忘寫回角色的待辦和行程（來源標 peek）：
+ * 先拿掉上一次偷窺手機寫的（行程只拿今天的），再補上這次的；聊天裡已經有的不重複加
+ */
+export function mergePeekItems(
+  state: PlannerState,
+  items: PeekPlannerItems,
+  today: string,
+  now = Date.now(),
+): PlannerState {
+  let todos = state.todos;
+  let plans = state.plans;
+
+  if (items.memos) {
+    todos = todos.filter((t) => t.source !== "peek");
+    for (const memo of items.memos) {
+      const key = normalizeEventTitle(memo.content);
+      if (!key || todos.some((t) => normalizeEventTitle(t.text) === key)) continue;
+      todos = [
+        ...todos,
+        {
+          id: newId("todo"),
+          text: memo.content,
+          done: memo.done,
+          doneAt: memo.done ? now : undefined,
+          source: "peek",
+          createdAt: now,
+        },
+      ];
+    }
+  }
+
+  if (items.schedule) {
+    plans = plans.filter((p) => !(p.source === "peek" && p.date === today));
+    for (const item of items.schedule) {
+      const key = normalizeEventTitle(item.title);
+      if (!key || plans.some((p) => p.date === today && normalizeEventTitle(p.title) === key)) continue;
+      plans = [
+        ...plans,
+        {
+          id: newId("plan"),
+          date: today,
+          time: normalizeEventTime(item.time),
+          title: item.title,
+          place: item.location || undefined,
+          source: "peek",
+          createdAt: now,
+        },
+      ];
+    }
+  }
+
+  return { todos, plans: [...plans].sort(comparePlans) };
+}

@@ -166,3 +166,26 @@ describe("聊天泡泡裡看不到標籤", () => {
     expect(parsed.messages.map((m) => m.content)).toEqual(["好啊，週六見"]);
   });
 });
+
+describe("偷窺手機生成的寫回來", () => {
+  it("拿掉上次偷窺手機寫的，補上這次的；聊天裡已經有的不重複", async () => {
+    const { mergePeekItems } = await import("@/utils/charPlanner");
+    let state = apply(empty, '<char-todo add="買草莓蛋糕"/><char-plan date="2026-10-18" time="19:00" title="一起吃飯"/>');
+    state = mergePeekItems(
+      state,
+      {
+        memos: [{ content: "買草莓蛋糕", done: false }, { content: "繳電話費", done: true }],
+        schedule: [{ time: "08:30", title: "晨會", location: "三樓" }, { time: "19:00", title: "一起吃飯" }],
+      },
+      TODAY,
+      5,
+    );
+    expect(state.todos.map((t) => `${t.text}:${t.source}`)).toEqual(["買草莓蛋糕:chat", "繳電話費:peek"]);
+    expect(state.plans.map((p) => `${p.time} ${p.title}:${p.source}`)).toEqual(["08:30 晨會:peek", "19:00 一起吃飯:chat"]);
+
+    // 重新生成：上次的換掉
+    state = mergePeekItems(state, { memos: [{ content: "訂機票", done: false }], schedule: [] }, TODAY, 6);
+    expect(state.todos.map((t) => t.text)).toEqual(["買草莓蛋糕", "訂機票"]);
+    expect(state.plans.map((p) => p.title)).toEqual(["一起吃飯"]);
+  });
+});

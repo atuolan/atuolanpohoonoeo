@@ -22,6 +22,8 @@ export interface PeekPromptContext {
   summariesAndEvents: string;
   /** 現在時間：日期、行程、訊息時間都以它為準 */
   now: Date;
+  /** 角色自己已經記下的待辦和行程（聊天頁「他的今天」那份） */
+  plannerText?: string;
 }
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -174,10 +176,13 @@ export function buildGroupBCPrompt(ctx: PeekPromptContext, previousContext = "")
   const prevBlock = previousContext
     ? `\n\n【已生成的手機內容 —— 下面要生成的要跟這些一致、互相呼應】\n${previousContext}`
     : "";
+  const plannerBlock = ctx.plannerText
+    ? `\n\n【${charName}已經記下的待辦和行程 —— 是真的，schedule 要放進其中今天的行程、memos 要放進這些待辦（內容和時間照抄），再補上其他的】\n${ctx.plannerText}`
+    : "";
 
   return `你是角色扮演內容生成器。請根據以下資料，生成「${charName}」手機裡的行程、飲食、備忘錄、記事本、日記和錢包。
 
-${buildCharacterBlock(ctx)}${prevBlock}
+${buildCharacterBlock(ctx)}${prevBlock}${plannerBlock}
 
 【要生成的內容】
 - schedule 今天的行程 3 到 8 項：time（時:分）、title、location（沒有地點就不寫這行）、done（現在之前的寫 true，還沒到的寫 false）

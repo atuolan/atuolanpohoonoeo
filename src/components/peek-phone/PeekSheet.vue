@@ -13,6 +13,7 @@ import {
   Globe,
   Hourglass,
   Image,
+  ListChecks,
   Loader2,
   Lock,
   MessageCircle,
@@ -49,6 +50,8 @@ const PLACE_ICONS: Record<SecretPlace, typeof MessageCircle> = {
   gallery: Image,
   browser: Globe,
   settings: Hourglass,
+  memo: ListChecks,
+  schedule: Calendar,
 };
 
 const found = computed(() => props.secrets.filter((s) => props.progress.revealed.includes(s.key)));

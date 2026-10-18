@@ -112,7 +112,7 @@ function onTouchEnd(e: TouchEvent) {
       <div class="peek-lock-time">{{ formatClock(props.now) }}</div>
       <div v-if="props.nextSchedule" class="peek-lock-next">
         <Calendar :size="14" aria-hidden="true" />
-        <span>{{ props.nextSchedule.time }} · {{ props.nextSchedule.title }}</span>
+        <span>{{ props.nextSchedule.time || "整天" }} · {{ props.nextSchedule.title }}</span>
       </div>
 
       <div class="peek-lock-stack">

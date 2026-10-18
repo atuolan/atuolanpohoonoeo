@@ -100,3 +100,25 @@ describe("PeekPhonePromptBuilder", () => {
     expect(reply).toContain("（這是你們的第一次對話）");
   });
 });
+
+describe("行程、備忘錄組照角色已經記下的寫", () => {
+  it("有待辦和行程時放進 prompt，沒有時不放", async () => {
+    const { buildGroupBCPrompt } = await import("./PeekPhonePromptBuilder");
+    const base = {
+      charName: "沈既白",
+      charDesc: "",
+      personality: "",
+      scenario: "",
+      chatContext: "",
+      userName: "小栩",
+      userDescription: "",
+      worldInfo: "",
+      summariesAndEvents: "",
+      now: new Date(2026, 9, 18, 1, 47),
+    };
+    const withPlanner = buildGroupBCPrompt({ ...base, plannerText: "還沒做完的待辦：\n- 買草莓蛋糕" });
+    expect(withPlanner).toContain("沈既白已經記下的待辦和行程");
+    expect(withPlanner).toContain("- 買草莓蛋糕");
+    expect(buildGroupBCPrompt(base)).not.toContain("已經記下的待辦和行程");
+  });
+});
