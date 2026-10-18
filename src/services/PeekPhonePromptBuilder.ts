@@ -1,636 +1,398 @@
 /**
  * PeekPhonePromptBuilder
- * 建構各模塊組的 AI prompt，指示 AI 以 YAML 格式輸出角色手機內容
+ * 建構偷窺手機各階段的 AI prompt，指示 AI 以 YAML 格式輸出角色手機內容
+ *
+ * 寫法原則：
+ * - 範例一律填真實的中文內容，不放「（可省略）」「true或false」這類說明，AI 會照抄
+ * - 可省略、只能填哪些值，寫在規則那幾行
+ * - 所有日期、時間以 now 為準，AI 自己不知道今天幾號
  */
 
-/**
- * 建構角色資訊區塊（所有 prompt 共用）
- */
-function buildCharacterBlock(
-  charName: string,
-  charDesc: string,
-  personality: string,
-  scenario: string,
-  chatContext: string,
-  userName: string,
-  userDescription: string,
-  worldInfo: string,
-  summariesAndEvents: string,
-): string {
+/** 生成手機內容時送進 prompt 的資料（角色卡欄位已替換過 {{char}}／{{user}}） */
+export interface PeekPromptContext {
+  charName: string;
+  charDesc: string;
+  personality: string;
+  scenario: string;
+  /** 最近的聊天紀錄，已整理成「名字: 內容」 */
+  chatContext: string;
+  userName: string;
+  userDescription: string;
+  worldInfo: string;
+  summariesAndEvents: string;
+  /** 現在時間：日期、行程、訊息時間都以它為準 */
+  now: Date;
+}
+
+const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** YYYY-MM-DD */
+function ymd(d: Date): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** 範例用：幾天前的 YYYY-MM-DD */
+function daysAgo(now: Date, days: number): string {
+  return ymd(new Date(now.getTime() - days * 86_400_000));
+}
+
+/** 範例用：幾分鐘前的「月/日 時:分」（訊息時間的格式） */
+function minutesAgo(now: Date, minutes: number): string {
+  const d = new Date(now.getTime() - minutes * 60_000);
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function buildNowBlock(now: Date): string {
+  return `【現在時間】${ymd(now)}（星期${WEEKDAYS[now.getDay()]}）${pad(now.getHours())}:${pad(now.getMinutes())}
+所有日期和時間都以這個時間為準：「今天」就是 ${ymd(now)}，已經發生的事不能晚於現在。`;
+}
+
+/** 角色資訊區塊（所有手機內容 prompt 共用） */
+function buildCharacterBlock(ctx: PeekPromptContext): string {
   const lines = [
-    `角色名稱: ${charName}`,
-    `角色描述: ${charDesc}`,
-    `性格: ${personality}`,
-    `場景: ${scenario}`,
-  ];
-  
-  if (userDescription) {
-    lines.push(`用戶名稱: ${userName}`);
-    lines.push(`用戶描述: ${userDescription}`);
-  } else {
-    lines.push(`用戶名稱: ${userName}`);
-  }
-  
-  if (worldInfo) {
-    lines.push("");
-    lines.push(`世界觀設定:\n${worldInfo}`);
-  }
-  
-  if (summariesAndEvents) {
-    lines.push("");
-    lines.push(summariesAndEvents);
-  }
-  
-  lines.push("");
-  lines.push(`近期聊天記錄（最近15輪對話）:\n${chatContext}`);
-  lines.push(
+    buildNowBlock(ctx.now),
     "",
-    `重要：在生成的所有內容中，請直接使用「${userName}」來稱呼用戶，絕對不要使用 {{user}} 這個佔位符。`,
-  );
+    "【角色】",
+    `名字：${ctx.charName}`,
+  ];
+  if (ctx.charDesc) lines.push(`描述：${ctx.charDesc}`);
+  if (ctx.personality) lines.push(`性格：${ctx.personality}`);
+  if (ctx.scenario) lines.push(`場景：${ctx.scenario}`);
+
+  lines.push("", `【用戶：${ctx.userName}】`);
+  if (ctx.userDescription) lines.push(ctx.userDescription);
+
+  if (ctx.worldInfo) lines.push("", `【世界觀】\n${ctx.worldInfo}`);
+  if (ctx.summariesAndEvents) lines.push("", ctx.summariesAndEvents);
+
+  lines.push("", `【最近的聊天紀錄（最近 15 輪）】\n${ctx.chatContext}`);
   return lines.join("\n");
 }
 
-/**
- * 建構翻譯規則區塊（所有 prompt 共用）
- * 此區塊指示 AI：所有非中文的文字欄位都必須附上中文翻譯。
- */
-function buildTranslationRule(): string {
-  return `【語言輸出規則 —— 最優先判斷】
-★ 如果角色本身是中文使用者，所有文字欄位直接用中文輸出，絕對不要重複寫兩遍、不要添加任何翻譯。中文角色的每個欄位只需要一行中文。
-★ 只有當角色的語言不是中文（例如日語、英語、韓語等）時，才需要翻譯：先寫外語原文，然後換行寫中文翻譯。
-非中文角色範例（日語）：
-  今日は天気がいいね
-  今天天氣真好呢
-非中文角色範例（英語）：
-  How are you doing?
-  你最近好嗎？
-中文角色範例（只寫一行中文，不要重複）：
-  今天天氣真好呢
-注意：包含換行的欄位值，請使用 YAML 的 | 語法（block scalar）。`;
+/** 語言規則（YAML 輸出用） */
+function buildLanguageRule(): string {
+  return `【語言】
+先判斷角色平常說什麼語言：
+- 說中文的角色（大部分是這種，下面的範例也是）：每個欄位只寫一次中文，不加翻譯，不要寫兩遍。
+- 說其他語言的角色（日語、英語、韓語……）：每個文字欄位先寫原文，換行再寫中文翻譯，例如：
+  text: |
+    今日は早く帰れる？
+    今天能早點回來嗎？
+有換行的欄位用 YAML 的「|」寫法。`;
+}
+
+function buildOutputRule(): string {
+  return "只輸出 YAML，不要加任何說明文字，也不要用 ``` 包起來。下面的範例只示範格式，內容要換成這個角色自己的：";
 }
 
 /**
- * 建構 Group A (聊天) 的 prompt
- * 指示 AI 生成 2~5 個聊天對話串，每個包含角色自己和對方的訊息
+ * 聊天組要藏的秘密：鎖屏密碼、收回的訊息、沒送出的草稿
+ * 偷看的人會在 App 裡一個個找出來，所以都要跟使用者有關
  */
-export function buildGroupAPrompt(
-  charName: string,
-  charDesc: string,
-  personality: string,
-  scenario: string,
-  chatContext: string,
-  userName: string = "使用者",
-  userDescription: string = "",
-  worldInfo: string = "",
-  summariesAndEvents: string = "",
-): string {
-  const charBlock = buildCharacterBlock(
-    charName,
-    charDesc,
-    personality,
-    scenario,
-    chatContext,
-    userName,
-    userDescription,
-    worldInfo,
-    summariesAndEvents,
-  );
+function buildSecretsRuleA(userName: string): string {
+  return `【秘密 —— 這支手機要藏幾個跟「${userName}」有關的秘密，偷看的人會一個個找出來】
+1. lock_screen 鎖屏密碼：4 位數字，跟「${userName}」有關（例如第一次見面的日期 MMDD、對方生日、只有兩人懂的數字）
+   - passcode：4 位數字，一定要加引號
+   - hint：給偷看的人的提示，不能直接寫出數字
+   - reveal：解開後顯示的一句話，說明這組數字的意義
+2. 至少 1 則「收回的訊息」：角色傳出去又馬上收回的一句話（最好在跟「${userName}」的對話裡），那則訊息加上 recalled: true 和 recalled_after: 收回前存在了幾秒
+3. 至少 1 個「沒送出的草稿」：某個對話串加上 draft（輸入框裡打了但沒送出的話），和 draft_history（之前改過的 2 到 4 個版本，舊的在前）
+秘密要符合角色性格，寫出角色不敢說出口的心事，不要每個角色都一樣。`;
+}
 
-  return `你是一個角色扮演內容生成器。請根據以下角色資訊，生成該角色手機中的聊天紀錄。
+/**
+ * 聊天組：2~5 個對話串（其中一串是跟使用者的）＋ 鎖屏密碼、收回的訊息、草稿
+ */
+export function buildGroupAPrompt(ctx: PeekPromptContext): string {
+  const { charName, userName, now } = ctx;
+  return `你是角色扮演內容生成器。請根據以下資料，生成「${charName}」手機裡的聊天紀錄。
 
-${charBlock}
+${buildCharacterBlock(ctx)}
 
-請生成 2 到 5 個聊天對話串，每個對話串包含一個虛構聯絡人與角色之間的對話。
-每個對話串需包含角色自己發送的訊息（self: true）和對方發送的訊息（self: false）。
-聊天內容必須符合角色的性格和當前故事背景。
+【要生成的內容】
+- 2 到 5 個聊天對話串。其中一串一定是跟「${userName}」的對話，這一串加上 is_user: true，contact 寫${charName}手機裡給${userName}的備註名（可以是暱稱，不一定是本名）。
+- 其他聯絡人依角色的人際關係設定（家人、同事、朋友、群組……）。群組的 contact 寫群組名，from 寫實際說話的人。
+- 每串都要有角色自己傳的（self: true）和對方傳的（self: false），一串 3 到 12 則，依時間先後排列。
+- time 寫「月/日 時:分」，都要早於現在時間。
+- 內容要符合角色性格、跟${userName}的關係和最近的劇情。
 
-${buildTranslationRule()}
+${buildSecretsRuleA(userName)}
 
-【最重要的規則 —— 必須嚴格遵守】
-★ 中文角色：每一條 text 只寫一行中文，絕對不要寫兩遍相同的中文內容。
-★ 非中文角色：每一條 text 必須包含「外語原文＋換行＋中文翻譯」，不可省略翻譯。
-此規則適用於所有對話串、所有訊息（包含與「${userName}」的對話及所有聯絡人的對話）。
+${buildLanguageRule()}
 
-只輸出 YAML，不要加任何其他文字。
+${buildOutputRule()}
 
-請嚴格使用以下 YAML 格式輸出（非中文角色的 text 包含原文＋換行＋中文翻譯；中文角色只寫中文）：
+lock_screen:
+  passcode: "0912"
+  hint: 第一次見到對方的那天（月月日日）
+  reveal: 0912，是你們第一次見面的那天
 
 chats:
-  - contact: 聯絡人名稱
+  - contact: ${userName}
+    is_user: true
+    draft: |
+      其實那天我不是剛好路過。
+    draft_history:
+      - text: 那天的事
+      - text: 其實那天我
     messages:
-      - from: 發送者名稱
-        text: |
-          Hey, are you free tonight?
-          嘿，你今晚有空嗎？
+      - from: ${userName}
+        text: 你今天又加班到這麼晚？
         self: false
-        time: 時間戳數字
-      - from: 角色名
-        text: |
-          Yeah, what's up?
-          嗯，怎麼了？
-        self: true
-        time: 時間戳數字
-  - contact: 另一個聯絡人
-    messages:
-      - from: 另一個聯絡人名
-        text: |
-          Don't forget the meeting tomorrow.
-          別忘了明天的會議。
-        self: false
-        time: 時間戳數字
-      - from: 角色名
-        text: |
-          Got it, thanks for the reminder.
-          收到，感謝提醒。
-        self: true
-        time: 時間戳數字`;
-}
-
-/**
- * 建構 Group B (行程+飲食+備忘錄) 的 prompt
- * 指示 AI 生成行程 3~8 項、飲食 1~5 項、備忘錄 2~6 項
- */
-export function buildGroupBPrompt(
-  charName: string,
-  charDesc: string,
-  personality: string,
-  scenario: string,
-  chatContext: string,
-  userName: string = "使用者",
-  userDescription: string = "",
-  worldInfo: string = "",
-  summariesAndEvents: string = "",
-): string {
-  const charBlock = buildCharacterBlock(
-    charName,
-    charDesc,
-    personality,
-    scenario,
-    chatContext,
-    userName,
-    userDescription,
-    worldInfo,
-    summariesAndEvents,
-  );
-
-  return `你是一個角色扮演內容生成器。請根據以下角色資訊，生成該角色手機中的行程、飲食記錄和備忘錄。
-
-${charBlock}
-
-請生成：
-- 3 到 8 個行程項目，包含時間（HH:MM）、標題、可選地點、完成狀態
-- 1 到 5 個飲食記錄，包含餐別（breakfast/lunch/dinner/snack）、食物描述、時間、可選備註
-- 2 到 6 個備忘錄項目，包含內容和完成狀態
-
-所有內容必須符合角色的性格和當前故事背景。
-
-${buildTranslationRule()}
-
-只輸出 YAML，不要加任何其他文字。
-
-請嚴格使用以下 YAML 格式輸出：
-
-schedule:
-  - time: "08:00"
-    title: |
-      項目標題（如有翻譯則原文加換行加中文翻譯）
-    location: 地點（可省略）
-    done: true或false
-
-meals:
-  - type: breakfast
-    food: |
-      食物描述（如有翻譯則原文加換行加中文翻譯）
-    time: "07:30"
-    note: 備註（可省略）
-
-memos:
-  - text: |
-      備忘內容（如有翻譯則原文加換行加中文翻譯）
-    done: true或false`;
-}
-
-/**
- * 建構 Group C (記事本+日記+錢包) 的 prompt
- * 指示 AI 生成記事本 1~3 篇、日記 1~3 篇、錢包餘額
- */
-export function buildGroupCPrompt(
-  charName: string,
-  charDesc: string,
-  personality: string,
-  scenario: string,
-  chatContext: string,
-  userName: string = "使用者",
-  userDescription: string = "",
-  worldInfo: string = "",
-  summariesAndEvents: string = "",
-): string {
-  const charBlock = buildCharacterBlock(
-    charName,
-    charDesc,
-    personality,
-    scenario,
-    chatContext,
-    userName,
-    userDescription,
-    worldInfo,
-    summariesAndEvents,
-  );
-
-  return `你是一個角色扮演內容生成器。請根據以下角色資訊，生成該角色手機中的記事本、日記和錢包資訊。
-
-${charBlock}
-
-請生成：
-- 1 到 3 篇記事本，包含標題和內容
-- 1 到 3 篇日記，包含日期（YYYY-MM-DD）、心情（happy/neutral/sad/angry/excited）、內容、可選天氣
-- 1 個錢包餘額數字，符合角色的經濟設定
-- 3 到 8 筆交易記錄，包含描述、金額（正數=入帳，負數=出帳）、時間
-
-所有內容必須符合角色的性格和當前故事背景。
-
-${buildTranslationRule()}
-
-只輸出 YAML，不要加任何其他文字。
-
-請嚴格使用以下 YAML 格式輸出：
-
-notes:
-  - title: |
-      標題（如有翻譯則原文加換行加中文翻譯）
-    content: |
-      內容文字（如有翻譯則原文加換行加中文翻譯）...
-
-diary:
-  - date: "2026-02-22"
-    mood: happy
-    content: |
-      日記內容（如有翻譯則原文加換行加中文翻譯）...
-    weather: 晴（可省略）
-
-balance: 42850
-
-transactions:
-  - description: |
-      交易描述（如有翻譯則原文加換行加中文翻譯）
-    amount: -85
-    time: "09:15"
-  - description: 薪資入帳
-    amount: 28000
-    time: "10:00"`;
-}
-
-/**
- * 建構 Group B+C 合併 prompt（行程+飲食+備忘+記事+日記+錢包）
- * 包含 A 組已生成的聊天紀錄作為上下文，確保日記/行程/備忘與聊天內容互相呼應
- */
-export function buildGroupBCPrompt(
-  charName: string,
-  charDesc: string,
-  personality: string,
-  scenario: string,
-  chatContext: string,
-  userName: string = "使用者",
-  userDescription: string = "",
-  worldInfo: string = "",
-  summariesAndEvents: string = "",
-  previousContext: string = "",
-): string {
-  const charBlock = buildCharacterBlock(
-    charName,
-    charDesc,
-    personality,
-    scenario,
-    chatContext,
-    userName,
-    userDescription,
-    worldInfo,
-    summariesAndEvents,
-  );
-
-  const prevBlock = previousContext
-    ? `\n【已生成的手機資料 —— 請根據以下內容保持一致、互相呼應】\n${previousContext}\n`
-    : "";
-
-  return `你是一個角色扮演內容生成器。請根據以下角色資訊，生成該角色手機中的行程、飲食、備忘錄、記事本、日記、帳戶資訊。\n\n${charBlock}${prevBlock}\n請生成以下部分（所有內容必須與已有資料保持一致、互相呼應）：\n- 3 到 8 個行程項目，包含時間（HH:MM）、標題、可選地點、完成狀態\n- 1 到 5 個飲食記錄，包含餐別（breakfast/lunch/dinner/snack）、食物描述、時間、可選備註\n- 2 到 6 個備忘錄項目，包含內容和完成狀態\n- 1 到 3 篇記事本，包含標題和內容\n- 1 到 3 篇日記，包含日期（YYYY-MM-DD）、心情（happy/neutral/sad/angry/excited）、內容、可選天氣\n  （日記應自然提及聊天記錄或行程中發生的事情）\n- 1 個錢包餘額數字，符合角色的經濟設定\n- 3 到 8 筆交易記錄，包含描述、金額（正數=入帳，負數=出帳）、時間\n\n所有內容必須符合角色的性格和當前故事背景。\n\n${buildTranslationRule()}\n\n只輸出 YAML，不要加任何其他文字。\n\n請嚴格使用以下 YAML 格式輸出：\n\nschedule:\n  - time: "08:00"\n    title: |\n      項目標題（如有翻譯則原文加換行加中文翻譯）\n    location: 地點（可省略）\n    done: true或false\n\nmeals:\n  - type: breakfast\n    food: |\n      食物描述（如有翻譯則原文加換行加中文翻譯）\n    time: "07:30"\n    note: 備註（可省略）\n\nmemos:\n  - text: |\n      備忘內容（如有翻譯則原文加換行加中文翻譯）\n    done: true或false\n\nnotes:\n  - title: |\n      標題（如有翻譯則原文加換行加中文翻譯）\n    content: |\n      內容文字（如有翻譯則原文加換行加中文翻譯）...\n\ndiary:\n  - date: "2026-04-07"\n    mood: happy\n    content: |\n      日記內容（如有翻譯則原文加換行加中文翻譯）...\n    weather: 晴（可省略）\n\nbalance: 42850\n\ntransactions:\n  - description: |\n      交易描述（如有翻譯則原文加換行加中文翻譯）\n    amount: -85\n    time: "09:15"`;
-}
-
-/**
- * 建構合併 prompt（全部模塊合一）
- * 一次生成所有手機內容，確保各模塊之間內容一致、互相呼應
- */
-export function buildCombinedPrompt(
-  charName: string,
-  charDesc: string,
-  personality: string,
-  scenario: string,
-  chatContext: string,
-  userName: string = "使用者",
-  userDescription: string = "",
-  worldInfo: string = "",
-  summariesAndEvents: string = "",
-): string {
-  const charBlock = buildCharacterBlock(
-    charName,
-    charDesc,
-    personality,
-    scenario,
-    chatContext,
-    userName,
-    userDescription,
-    worldInfo,
-    summariesAndEvents,
-  );
-
-  return `你是一個角色扮演內容生成器。請根據以下角色資訊，一次性生成該角色手機中的全部內容。
-
-${charBlock}
-
-請在同一個回應中生成以下所有部分，所有內容必須互相呼應、保持一致的時間軸和故事背景（例如日記可提到行程中的事，聊天記錄可呼應備忘錄或日記的內容，交易記錄可對應行程中的消費）：
-
-1. chats（聊天記錄）：2 到 5 個聊天對話串，每串包含角色與不同聯絡人的往來訊息
-2. schedule（行程）：3 到 8 個今日行程，包含時間、標題、地點、完成狀態
-3. meals（飲食記錄）：1 到 5 筆今日飲食，包含餐別、食物、時間、備註
-4. memos（備忘錄）：2 到 6 條待辦/備忘，包含內容和完成狀態
-5. notes（記事本）：1 到 3 篇筆記，包含標題和內容
-6. diary（日記）：1 到 3 篇日記，包含日期、心情、內容、天氣
-7. balance（帳戶餘額）：一個符合角色經濟設定的數字
-8. transactions（交易記錄）：3 到 8 筆，包含描述、金額、時間
-9. gallery（相冊）：3 到 6 張普通照片記錄，包含描述、來源、保存原因、日期
-10. browser_history（瀏覽器歷史）：6 到 10 筆，**必須包含至少 2 到 3 筆 category: adult 的成人網站瀏覽紀錄**（例如 pornhub.com、xvideos.com 等，要有具體影片標題或搜尋詞），其餘為 search 和 general
-11. hidden_photos（隱藏私密照片）：2 到 4 張深藏手機的私密照片，包含描述、類型、藏起來的原因、日期
-
-${buildTranslationRule()}
-
-【聊天記錄語言規則 —— 必須嚴格遵守】
-★ 中文角色：每一條 text 只寫一行中文，絕對不要寫兩遍相同的中文。
-★ 非中文角色：每一條 text 必須包含「外語原文＋換行＋中文翻譯」。
-
-只輸出 YAML，不要加任何其他文字。
-
-請嚴格使用以下 YAML 格式輸出：
-
-chats:
-  - contact: 聯絡人名稱
-    messages:
-      - from: 發送者名稱
-        text: |
-          Hey, are you free tonight?
-          嘿，你今晚有空嗎？
-        self: false
-        time: 時間戳數字
+        time: "${minutesAgo(now, 160)}"
       - from: ${charName}
-        text: |
-          Yeah, what's up?
-          嗯，怎麼了？
+        text: 還好，習慣了
         self: true
-        time: 時間戳數字
+        time: "${minutesAgo(now, 152)}"
+      - from: ${charName}
+        text: 我只是想見你
+        self: true
+        time: "${minutesAgo(now, 8)}"
+        recalled: true
+        recalled_after: 11
+  - contact: 媽
+    messages:
+      - from: 媽
+        text: 記得吃飯，別又只喝咖啡
+        self: false
+        time: "${minutesAgo(now, 400)}"
+      - from: ${charName}
+        text: 好
+        self: true
+        time: "${minutesAgo(now, 390)}"`;
+}
+
+/**
+ * 行程組（B+C）：行程、飲食、備忘、記事本、日記、錢包
+ * 帶入聊天組已生成的內容，日記和記事本要呼應聊天裡的事與秘密
+ */
+export function buildGroupBCPrompt(ctx: PeekPromptContext, previousContext = ""): string {
+  const { charName, userName, now } = ctx;
+  const prevBlock = previousContext
+    ? `\n\n【已生成的手機內容 —— 下面要生成的要跟這些一致、互相呼應】\n${previousContext}`
+    : "";
+
+  return `你是角色扮演內容生成器。請根據以下資料，生成「${charName}」手機裡的行程、飲食、備忘錄、記事本、日記和錢包。
+
+${buildCharacterBlock(ctx)}${prevBlock}
+
+【要生成的內容】
+- schedule 今天的行程 3 到 8 項：time（時:分）、title、location（沒有地點就不寫這行）、done（現在之前的寫 true，還沒到的寫 false）
+- meals 今天已經吃的 1 到 5 餐：type 只能是 breakfast / lunch / dinner / snack；food；time；note（沒有就不寫這行）
+- memos 備忘 2 到 6 條：text、done（true 或 false）
+- notes 記事本 1 到 3 篇：title、content
+- diary 日記 1 到 3 篇：date（今天或之前的 YYYY-MM-DD）、mood 只能是 happy / neutral / sad / angry / excited、content、weather（沒有就不寫這行）
+- balance 帳戶餘額：符合角色經濟狀況的整數
+- transactions 最近的交易 3 到 8 筆：description、amount（入帳寫正數，支出寫負數）、time（時:分）
+
+【跟「${userName}」有關】
+- 日記和記事本是最私密的地方：寫出角色對${userName}真正的心情，自然呼應聊天裡發生的事、收回的訊息和沒送出的草稿，但不要整段照抄。
+- 行程、備忘、交易可以留下跟${userName}有關的小線索（例如買了兩張票、提醒自己回訊息）。
+- 其他內容照角色平常的生活寫，符合性格和最近的劇情。
+
+${buildLanguageRule()}
+
+${buildOutputRule()}
 
 schedule:
-  - time: "08:00"
-    title: 行程標題
-    location: 地點（可省略）
+  - time: "08:30"
+    title: 晨會
+    location: 公司三樓會議室
+    done: true
+  - time: "19:00"
+    title: 看展
     done: false
 
 meals:
   - type: breakfast
-    food: 食物描述
-    time: "07:30"
-    note: 備註（可省略）
+    food: 黑咖啡
+    time: "07:10"
+    note: 今天第二杯
 
 memos:
-  - text: 備忘內容
+  - text: 回訊息，不要只回「好」
     done: false
 
 notes:
-  - title: 筆記標題
+  - title: 想跟對方說的
     content: |
-      筆記內容...
+      那天其實不是剛好路過。
 
 diary:
-  - date: "2026-04-07"
+  - date: "${ymd(now)}"
+    mood: sad
+    content: |
+      又沒睡。打開聊天室好幾次，什麼都沒傳。
+    weather: 陰
+  - date: "${daysAgo(now, 3)}"
     mood: happy
     content: |
-      日記內容...
-    weather: 晴（可省略）
+      今天見到了。話沒說幾句，回家路上一直在笑。
 
 balance: 42850
 
 transactions:
-  - description: 交易描述
-    amount: -85
-    time: "09:15"
-
-gallery:
-  - description: |
-      照片描述
-    source: selfie
-    reason: |
-      保存原因
-    date: "2026-04-07"
-
-browser_history:
-  - title: |
-      How to get rid of dark circles
-      如何消除黑眼圈
-    url: google.com/search?q=how+to+get+rid+of+dark+circles
-    time: "09:14"
-    category: search
-  - title: |
-      [4K] Mia Khalifa - Fantasy Roleplay
-      米亞·卡莉法 幻想角色扮演
-    url: pornhub.com/view_video.php?viewkey=ph6xxxxx
-    time: "23:47"
-    category: adult
-  - title: |
-      Petite Asian teen seduced - xvideos
-      嬌小亞裔少女被勾引
-    url: xvideos.com/video12345/petite_asian
-    time: "01:12"
-    category: adult
-  - title: Instagram
-    url: instagram.com
-    time: "14:22"
-    category: general
-
-hidden_photos:
-  - description: |
-      私密照片描述
-    type: selfie
-    reason: |
-      為什麼藏起來的原因
-    date: "2026-04-07"`;
+  - description: 美術館門票 ×2
+    amount: -640
+    time: "10:12"
+  - description: 薪資入帳
+    amount: 52000
+    time: "09:00"`;
 }
 
 /**
- * 建構 Group D (相冊+瀏覽紀錄+隱藏照片) 的 prompt
- * 指示 AI 生成相冊、瀏覽器歷史（含成人紀錄）、隱藏私密照片
+ * 相簿組（D）：相簿（含最近刪除）、螢幕使用時間、瀏覽紀錄、藏起來的照片
  */
-export function buildGroupDPrompt(
-  charName: string,
-  charDesc: string,
-  personality: string,
-  scenario: string,
-  chatContext: string,
-  userName: string = "使用者",
-  userDescription: string = "",
-  worldInfo: string = "",
-  summariesAndEvents: string = "",
-  previousDataContext: string = "",
-): string {
-  const charBlock = buildCharacterBlock(
-    charName,
-    charDesc,
-    personality,
-    scenario,
-    chatContext,
-    userName,
-    userDescription,
-    worldInfo,
-    summariesAndEvents,
-  );
-
-  const prevBlock = previousDataContext
-    ? `\n【已生成的手機資料 —— 請根據以下內容讓照片、瀏覽紀錄、隱藏照片與其互相呼應】\n${previousDataContext}\n`
+export function buildGroupDPrompt(ctx: PeekPromptContext, previousContext = ""): string {
+  const { charName, userName, now } = ctx;
+  const prevBlock = previousContext
+    ? `\n\n【已生成的手機內容 —— 照片、瀏覽紀錄要跟這些互相呼應】\n${previousContext}`
     : "";
 
-  return `你是一個角色扮演內容生成器。請根據以下角色資訊，生成該角色手機中的相冊、瀏覽器歷史記錄、以及藏在手機深處的私密照片。
+  return `你是角色扮演內容生成器。請根據以下資料，生成「${charName}」手機裡的相簿、螢幕使用時間、瀏覽紀錄，以及藏在手機深處的照片。
 
-${charBlock}${prevBlock}
+${buildCharacterBlock(ctx)}${prevBlock}
 
-請生成以下三個部分：
+【gallery 相簿】3 到 6 張照片：
+- description：畫面描述，生動具體
+- source：selfie（自拍）/ scene（拍的風景、東西）/ saved（從聊天存下來的）
+- reason：角色存這張照片的心情，用內心獨白的口吻
+- date：今天或之前的 YYYY-MM-DD
+其中挑 1 到 2 張標成「刪掉了、但還在最近刪除裡」，多加兩行：
+- deleted：剩幾天會永久刪除（1 到 29 的整數）
+- secret：這張照片背後的故事（例如刪了又復原幾次、最後一次什麼時候打開、放大看了哪裡），要跟「${userName}」有關，寫成偷看的人看到的事實
 
-【gallery 相冊】3 到 6 張普通照片：
-- description: 照片畫面描述（生動具體）
-- source: selfie（自拍）/ scene（風景物品）/ saved（從聊天保存）
-- reason: 角色保存這張的心情（內心獨白口吻）
-- date: YYYY-MM-DD
+【screen_time 螢幕使用時間】今天到現在的使用紀錄，要符合角色今天的作息和心事：
+- hourly：24 個整數寫在同一行的 [ ] 裡，依序是 0 點到 23 點每小時用了幾分鐘（0 到 60）；現在之後的小時一律是 0
+- top_apps：3 到 4 個最常用的 App，name 只能從 訊息、相簿、瀏覽器、備忘錄、日記、錢包、行事曆、音樂 裡挑，minutes 是今天用了幾分鐘
+- pickups：今天拿起手機幾次
+- first_pickup：今天第一次拿起手機的時間（時:分）
+- insight：一句從使用紀錄看得出來的心事，要具體（例如「凌晨 0–3 點就用了 2 小時 19 分，幾乎都在同一個聊天室」）
 
-【browser_history 瀏覽器歷史】6 到 10 筆，**必須包含至少 2 到 3 筆 category: adult 的成人網站紀錄**（这是強制要求，不可省略）：
-  - category: search — 一般搜尋紀錄
-  - category: adult — 成人網站瀏覽/觀看紀錄，url 必須是真實風格的成人網址（如 pornhub.com/view_video.php?viewkey=xxxxx、xvideos.com/videoXXXX/標題等），title 要有具體影片名或搜尋關鍵詞
-  - category: general — 一般網站瀏覽（社群、新聞等）
-  每筆包含：title（如非中文則用 block scalar 加換行中文翻譯）、url、time（HH:mm）、category
+【browser_history 瀏覽紀錄】6 到 10 筆，每筆有 title、url、time（時:分）、category：
+- search：搜尋紀錄
+- general：一般網站（社群、新聞、購物……）
+- adult：成人網站紀錄（見下面【成人內容】）
 
-【hidden_photos 隱藏私密照片】2 到 4 張（深藏不對外公開的照片）：
-- description: 照片描述（可以是私密自拍、情色截圖、悄悄保存的他人H圖等）
-- type: selfie（本人拍的）/ saved（從網路/他人保存）/ screenshot（截圖）
-- reason: 為什麼藏起來不讓人看到（角色的內心獨白，要真實、微妙、有點羞澀或複雜的情感）
-- date: YYYY-MM-DD
+【hidden_photos 藏起來的照片】2 到 4 張深藏、不給任何人看的照片：
+- description：照片描述
+- type：selfie（本人拍的）/ saved（從網路或別人那裡存的）/ screenshot（截圖）
+- reason：為什麼藏起來，用內心獨白的口吻，要真實、微妙，帶點羞恥或複雜的情緒
+- date：今天或之前的 YYYY-MM-DD
 
-所有內容必須符合角色的性格、隱秘欲望和故事背景。成人相關內容要有角色特色，不要千篇一律。
+【成人內容】
+依角色的性格、慾望和設定，寫出這個角色私下會看的成人內容：browser_history 放 category: adult 的紀錄，url 用真實風格的成人網站網址（例如 pornhub.com/view_video.php?viewkey=…、xvideos.com/video…/…），title 寫具體的影片名或搜尋詞；hidden_photos 可以有私密自拍、情色截圖、偷偷存下的別人的色圖。要有角色自己的口味，不要千篇一律。
 
-${buildTranslationRule()}
+${buildLanguageRule()}
 
-只輸出 YAML，不要加任何其他文字。
-
-請嚴格使用以下 YAML 格式輸出：
+${buildOutputRule()}
 
 gallery:
   - description: |
-      照片描述
-    source: selfie
+      值班室窗外的天色，玻璃上有一點霧
+    source: scene
     reason: |
-      保存原因
-    date: "2026-02-20"
+      剛下班，突然想讓某個人也看看
+    date: "${daysAgo(now, 2)}"
+  - description: |
+      美術館外的台階，傍晚的光
+    source: scene
+    reason: |
+      那天對方就站在這裡等我
+    date: "${daysAgo(now, 15)}"
+    deleted: 14
+    secret: |
+      刪除 3 次、又復原 3 次。最後一次打開是今天凌晨，放大到對方的側臉。
+
+screen_time:
+  hourly: [42, 38, 33, 26, 8, 0, 0, 4, 10, 6, 8, 12, 14, 9, 8, 10, 12, 14, 18, 14, 18, 18, 22, 28]
+  pickups: 87
+  first_pickup: "00:04"
+  insight: |
+    凌晨 0–3 點就用了 2 小時 19 分，幾乎都在同一個聊天室
+  top_apps:
+    - name: 訊息
+      minutes: 182
+    - name: 相簿
+      minutes: 48
 
 browser_history:
-  - title: |
-      How to get rid of dark circles
-      如何消除黑眼圈
-    url: google.com/search?q=dark+circles+removal
-    time: "09:14"
+  - title: 失眠 怎麼辦
+    url: google.com/search?q=失眠+怎麼辦
+    time: "01:12"
     category: search
-  - title: |
-      [4K] Mia Khalifa - Fantasy Roleplay Vol.2
-      米亞·卡莉法 幻想角色扮演 第二集
-    url: pornhub.com/view_video.php?viewkey=ph5f3xxxx
+  - title: 市立美術館 展覽資訊
+    url: tfam.museum/exhibition
+    time: "00:47"
+    category: general
+  - title: OL 下班後的加班（中文字幕）
+    url: xvideos.com/video58213/office_lady_overtime
     time: "23:47"
     category: adult
-  - title: |
-      Petite Asian teen creampie compilation
-      嬌小亞裔內射合集
-    url: xvideos.com/video98765/petite_asian_compilation
-    time: "01:12"
-    category: adult
-  - title: Instagram
-    url: instagram.com
-    time: "14:22"
-    category: general
 
 hidden_photos:
   - description: |
-      私密照片描述
+      偷偷拍下的對方側臉，對方在低頭看手機
     type: selfie
     reason: |
-      為什麼藏起來的原因（內心獨白）
-    date: "2026-02-19"`;
+      不能讓對方知道我拍了這張
+    date: "${daysAgo(now, 15)}"`;
+}
+
+/** 聯絡人回覆的參數 */
+export interface ContactReplyPromptParams {
+  /** 手機主人（角色本人） */
+  ownerName: string;
+  ownerDesc: string;
+  ownerPersona: string;
+  scenario: string;
+  worldInfo: string;
+  /** AI 要扮演的聯絡人 */
+  contactName: string;
+  /** 聯絡人就是使用者時，帶入使用者的人設 */
+  contactProfile?: string;
+  /** 該對話串的歷史，每行「發送者: 內容」 */
+  history: string;
+  /** 手機主人剛傳的新訊息 */
+  newMessage: string;
+  now: Date;
 }
 
 /**
- * 建構「聯絡人即時回覆」的 prompt（與批量生成完全獨立的預設）
+ * 「聯絡人即時回覆」的 prompt（與批量生成完全獨立）
  *
  * 場景：使用者冒充手機主人（角色本人），用 TA 的手機回覆 TA 的某個聯絡人。
- * 本 prompt 指示 AI 扮演「該聯絡人」，針對手機主人剛發出的新訊息，
- * 用該聯絡人自己的性格、語氣回覆一句自然對話（純文字，非 YAML）。
- *
- * @param ownerName     手機主人（角色本人）名稱
- * @param ownerDesc     手機主人描述
- * @param ownerPersona  手機主人性格
- * @param scenario      故事場景
- * @param worldInfo     世界觀設定（可空）
- * @param contactName   聯絡人名稱（AI 要扮演的對象）
- * @param history       該對話串的完整歷史，格式：每行「發送者: 內容」
- * @param newMessage    手機主人剛發出的新訊息
+ * AI 扮演「該聯絡人」，針對手機主人剛傳的新訊息，回一句自然的訊息（純文字，不是 YAML）。
  */
-export function buildContactReplyPrompt(
-  ownerName: string,
-  ownerDesc: string,
-  ownerPersona: string,
-  scenario: string,
-  worldInfo: string,
-  contactName: string,
-  history: string,
-  newMessage: string,
-): string {
+export function buildContactReplyPrompt(p: ContactReplyPromptParams): string {
   const lines: string[] = [];
+  lines.push(`你正在一個角色扮演聊天模擬中扮演「${p.contactName}」，正在用手機跟「${p.ownerName}」傳訊息。`);
+  lines.push("");
+  lines.push(buildNowBlock(p.now));
+  lines.push("");
+  lines.push(`【你是「${p.contactName}」】`);
   lines.push(
-    `你正在一個角色扮演聊天模擬中扮演「${contactName}」這個聯絡人。`,
-  );
-  lines.push(
-    `你的聊天對象是「${ownerName}」，你正在用手機與對方傳訊息聊天。`,
+    p.contactProfile ||
+      "你的身分、跟對方的關係和說話語氣，從下面的歷史對話推斷，保持一致。",
   );
   lines.push("");
-  lines.push("【你正在跟誰聊天 —— 對方的資料】");
-  lines.push(`對方名稱: ${ownerName}`);
-  if (ownerDesc) lines.push(`對方描述: ${ownerDesc}`);
-  if (ownerPersona) lines.push(`對方性格: ${ownerPersona}`);
-  if (scenario) lines.push(`故事場景: ${scenario}`);
-  if (worldInfo) {
-    lines.push("");
-    lines.push(`世界觀設定:\n${worldInfo}`);
-  }
+  lines.push(`【對方：${p.ownerName}】`);
+  if (p.ownerDesc) lines.push(`描述：${p.ownerDesc}`);
+  if (p.ownerPersona) lines.push(`性格：${p.ownerPersona}`);
+  if (p.scenario) lines.push(`場景：${p.scenario}`);
+  if (p.worldInfo) lines.push("", `【世界觀】\n${p.worldInfo}`);
   lines.push("");
-  lines.push("【你（聯絡人）與對方的歷史對話紀錄】");
-  lines.push(history || "（這是你們的第一次對話）");
+  lines.push("【你們的歷史對話】");
+  lines.push(p.history || "（這是你們的第一次對話）");
   lines.push("");
-  lines.push(`【${ownerName} 剛剛傳給你的新訊息】`);
-  lines.push(newMessage);
+  lines.push(`【${p.ownerName} 剛剛傳給你的新訊息】`);
+  lines.push(p.newMessage);
   lines.push("");
   lines.push("【回覆要求】");
-  lines.push(
-    `1. 你只能以「${contactName}」的身份回覆，絕對不要替「${ownerName}」說話，也不要旁白或描述動作。`,
-  );
-  lines.push(
-    "2. 根據你與對方的關係、歷史對話和你自己的性格，給出一句自然、口語化的訊息回覆。",
-  );
-  lines.push(
-    "3. 回覆要符合手機傳訊息的真實語氣，可以短、可以隨意，不需要長篇大論。",
-  );
-  lines.push(
-    `4. 直接輸出回覆內容本身，不要加上「${contactName}:」之類的前綴，不要加引號，不要輸出 YAML 或任何格式標記。`,
-  );
-  lines.push("");
-  lines.push(buildTranslationRule());
+  lines.push(`1. 只以「${p.contactName}」的身分回覆，不要替「${p.ownerName}」說話，也不要旁白或描述動作。`);
+  lines.push("2. 回一句自然、口語的訊息，像真的在傳訊息：可以短、可以隨意，不要長篇大論。");
+  lines.push(`3. 直接輸出訊息內容本身：不要加「${p.contactName}:」這種前綴，不要加引號，不要任何格式標記。`);
+  lines.push("4. 跟歷史對話用同一種語言。說中文就只寫中文一次；說其他語言就先寫原文，換行再寫中文翻譯。");
   return lines.join("\n");
 }

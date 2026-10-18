@@ -23,6 +23,8 @@ import type {
   PeekChatMessage,
   PeekChatThread,
   PeekPhoneData,
+  PeekPhoneTab,
+  PeekProgress,
 } from "@/types/peekPhone";
 import { defineStore } from "pinia";
 import { ref } from "vue";
@@ -118,7 +120,8 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
         id: key,
         characterId: charId,
         chatId: cId,
-        data: phoneData,
+        // 手機資料是純 JSON；先拆掉 Vue 的響應式 Proxy，不然每次存都會先撞 DataCloneError 再重試
+        data: JSON.parse(JSON.stringify(phoneData)) as PeekPhoneData,
         updatedAt: Date.now(),
       });
     } catch (err) {
@@ -142,6 +145,13 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
    * 確保切換聊天時不會看到上一個聊天的內容
    */
   async function loadOrReset(charId: string, cId: string): Promise<boolean> {
+    if (Object.values(groupStatus.value).some((s) => s === "loading")) {
+      // 同一支手機還在背景生成：保留進度，回來接著看
+      if (characterId.value === charId && chatId.value === cId) return true;
+      // 換了一支手機：先停掉上一支，免得它生成完把內容寫進這一支的畫面
+      abortAll();
+    }
+
     characterId.value = charId;
     chatId.value = cId;
 
@@ -250,6 +260,35 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     return lines.join("\n");
   }
 
+  // ===== 偷看進度（解鎖、找到的秘密、看過的 App） =====
+
+  /**
+   * 更新進度：先改記憶體；四組都生成好了才存檔。
+   * 生成中或有組失敗時不存，免得半成品被當成完整內容存進 IDB；生成完會連進度一起存。
+   */
+  function updateProgress(update: (p: PeekProgress) => PeekProgress): void {
+    if (!data.value || !characterId.value || !chatId.value) return;
+    const current = data.value.progress ?? { unlocked: false, revealed: [], viewed: [] };
+    const next = update(current);
+    if (next === current) return;
+    data.value = { ...data.value, progress: next };
+    if (!Object.values(groupStatus.value).every((s) => s === "done")) return;
+    storeCache(characterId.value, chatId.value, data.value);
+    saveToIDB(characterId.value, chatId.value, data.value);
+  }
+
+  function markRevealed(key: string): void {
+    updateProgress((p) => (p.revealed.includes(key) ? p : { ...p, revealed: [...p.revealed, key] }));
+  }
+
+  function markViewed(tab: PeekPhoneTab): void {
+    updateProgress((p) => (p.viewed.includes(tab) ? p : { ...p, viewed: [...p.viewed, tab] }));
+  }
+
+  function setUnlocked(unlocked: boolean): void {
+    updateProgress((p) => (p.unlocked === unlocked ? p : { ...p, unlocked }));
+  }
+
   /** 取消進行中的請求 */
   function abortAll(): void {
     abortController.value?.abort();
@@ -297,6 +336,15 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       timestamp: Date.now(),
     };
     appendMessageToThread(threadId, ownerMessage);
+    // 把輸入框裡的草稿原封不動送出去了：草稿就不在了
+    if (thread.draft && thread.draft.trim() === content) {
+      data.value = {
+        ...data.value,
+        chats: data.value.chats.map((t) =>
+          t.id === threadId ? { ...t, draft: undefined, draftHistory: undefined } : t,
+        ),
+      };
+    }
 
     // 2. 呼叫 AI 取得聯絡人回覆（設定裡開著串流視窗就邊生成邊寫進視窗，視窗的停止鍵可以中止）
     const controller = new AbortController();
@@ -312,8 +360,13 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
 
     try {
       const worldInfo = extractWorldInfo(character);
+      // 聯絡人可能就是使用者本人：帶入這段聊天用的 persona
+      const chatRecord = await db.get<Chat>(DB_STORES.CHATS, cId).catch(() => undefined);
+      const { userName, userDescription } = resolveUserInfo(chatRecord ?? ({} as Chat), charId);
       const reply = await generateContactReply(
         {
+          userName,
+          userDescription,
           ownerName,
           ownerDesc: character.data.description || "",
           ownerPersona: character.data.personality || "",
@@ -435,9 +488,9 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     groupStatus.value = { A: "loading", B: "idle", C: "idle", D: "idle" };
     groupErrors.value = { A: null, B: null, C: null, D: null };
 
-    const chatContext = await extractChatContext(chat, 15);
-    const summariesAndEvents = await extractSummariesAndEvents(cId, charId);
     const { userName, userDescription } = resolveUserInfo(chat, charId);
+    const chatContext = await extractChatContext(chat, 15, userName);
+    const summariesAndEvents = await extractSummariesAndEvents(cId, charId);
     const worldInfo = extractWorldInfo(character);
 
     const settingsStore = useSettingsStore();
@@ -483,7 +536,8 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
           : undefined,
       );
 
-      data.value = result;
+      // 生成中解鎖、找到的秘密記在 data.value 上，跟結果合併
+      data.value = { ...result, progress: data.value?.progress };
       groupStatus.value = { A: "done", B: "done", C: "done", D: "done" };
       groupErrors.value = { A: null, B: null, C: null, D: null };
 
@@ -511,8 +565,14 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
         return;
       }
       const msg = err?.message ?? "生成失敗";
-      groupStatus.value = { A: "error", B: "error", C: "error", D: "error" };
-      groupErrors.value = { A: msg, B: msg, C: msg, D: msg };
+      // 已經生成好的組留著，只把還沒完成的標成失敗
+      // （例如相簿組被模型拒絕，聊天、日記照樣看得到，之後只要重生相簿組）
+      for (const g of ["A", "B", "C", "D"] as const) {
+        if (groupStatus.value[g] !== "done") {
+          groupStatus.value[g] = "error";
+          groupErrors.value[g] = msg;
+        }
+      }
       if (streamingWindow) streamingWindow.setError(msg);
 
       const notificationStore = useNotificationStore();
@@ -572,7 +632,13 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
 
     // 清除該階段對應的欄位
     if (phase === "A") {
-      data.value = { ...data.value, chats: [] };
+      // 聊天重生會換一組鎖屏密碼，下次拿起要重新解
+      data.value = {
+        ...data.value,
+        chats: [],
+        lockScreen: undefined,
+        progress: data.value.progress && { ...data.value.progress, unlocked: false },
+      };
       groupStatus.value.A = "loading";
       groupErrors.value.A = null;
     } else if (phase === "BC") {
@@ -582,14 +648,14 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       groupErrors.value.B = null;
       groupErrors.value.C = null;
     } else if (phase === "D") {
-      data.value = { ...data.value, gallery: [], browserHistory: [], hiddenPhotos: [] };
+      data.value = { ...data.value, gallery: [], browserHistory: [], hiddenPhotos: [], screenTime: undefined };
       groupStatus.value.D = "loading";
       groupErrors.value.D = null;
     }
 
-    const chatContext = await extractChatContext(chat, 15);
-    const summariesAndEvents = await extractSummariesAndEvents(cId, charId);
     const { userName, userDescription } = resolveUserInfo(chat, charId);
+    const chatContext = await extractChatContext(chat, 15, userName);
+    const summariesAndEvents = await extractSummariesAndEvents(cId, charId);
     const worldInfo = extractWorldInfo(character);
 
     const settingsStore = useSettingsStore();
@@ -705,6 +771,10 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     regeneratePhase,
     retryGroup,
     abortAll,
+    // Progress
+    markRevealed,
+    markViewed,
+    setUnlocked,
     // Contact reply (interactive chat)
     replyingThreadId,
     replyAbortController,

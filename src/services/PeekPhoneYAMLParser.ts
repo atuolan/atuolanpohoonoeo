@@ -11,11 +11,12 @@ import type {
     PeekDiaryEntry,
     PeekGalleryItem,
     PeekHiddenPhoto,
+    PeekLockScreen,
     PeekMealRecord,
     PeekMemo,
     PeekNote,
-    PeekPhoneData,
     PeekScheduleItem,
+    PeekScreenTime,
     PeekTransaction,
 } from "@/types/peekPhone";
 
@@ -50,6 +51,35 @@ function parseBool(raw: string): boolean {
 function parseNum(raw: string): number {
   const n = Number(raw.trim());
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * 訊息時間 → 毫秒時間戳。AI 寫的格式：
+ * 「10/17 23:12」「2026-10-17 23:12」「23:12」（今天），或舊格式的時間戳數字（秒或毫秒）
+ * 沒寫年份時用今年；算出來比現在晚超過一天，就當作去年
+ * 都對不上回傳 0（畫面上就不顯示時間）
+ */
+export function parseMessageTime(raw: string, now: Date = new Date()): number {
+  const text = raw.trim();
+  if (/^\d{9,13}$/.test(text)) return Number(text);
+
+  const full = text.match(/^(?:(\d{4})[-/.])?(\d{1,2})[-/.](\d{1,2})\s+(\d{1,2}):(\d{2})$/);
+  if (full) {
+    const year = full[1] ? Number(full[1]) : now.getFullYear();
+    const d = new Date(year, Number(full[2]) - 1, Number(full[3]), Number(full[4]), Number(full[5]));
+    if (!full[1] && d.getTime() > now.getTime() + 86_400_000) d.setFullYear(year - 1);
+    return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+  }
+
+  const clock = text.match(/^(\d{1,2}):(\d{2})$/);
+  if (clock) {
+    const d = new Date(now);
+    d.setHours(Number(clock[1]), Number(clock[2]), 0, 0);
+    // 只寫時間又比現在晚：是昨天的
+    if (d.getTime() > now.getTime()) d.setDate(d.getDate() - 1);
+    return d.getTime();
+  }
+  return 0;
 }
 
 /** 產生簡易 ID */
@@ -205,6 +235,8 @@ export function parseGroupA(yaml: string): PeekChatThread[] {
     let currentThread: PeekChatThread | null = null;
     let currentMsg: PeekChatMessage | null = null;
     let inMessages = false;
+    // draft_history 底下的「- text:」是草稿的舊版本，不是訊息
+    let inDraftHistory = false;
 
     for (const token of chatTokens) {
       // 新的 chat thread (indent 2, isList, key=contact)
@@ -217,7 +249,31 @@ export function parseGroupA(yaml: string): PeekChatThread[] {
         };
         threads.push(currentThread);
         inMessages = false;
+        inDraftHistory = false;
         currentMsg = null;
+        continue;
+      }
+
+      if (inDraftHistory && currentThread && token.isList && token.key === "text") {
+        if (token.value.trim()) {
+          currentThread.draftHistory = [...(currentThread.draftHistory ?? []), token.value.trim()];
+        }
+        continue;
+      }
+      inDraftHistory = false;
+
+      if (currentThread && !token.isList && token.key === "is_user") {
+        if (parseBool(token.value)) currentThread.isUser = true;
+        continue;
+      }
+
+      // 對話串層級的草稿（可能寫在 messages 前面或後面）
+      if (currentThread && !token.isList && token.key === "draft") {
+        if (token.value.trim()) currentThread.draft = token.value.trim();
+        continue;
+      }
+      if (currentThread && token.key === "draft_history") {
+        inDraftHistory = true;
         continue;
       }
 
@@ -247,8 +303,23 @@ export function parseGroupA(yaml: string): PeekChatThread[] {
         else if (token.key === "self")
           currentMsg.isSelf = parseBool(token.value);
         else if (token.key === "time")
-          currentMsg.timestamp = parseNum(token.value);
+          currentMsg.timestamp = parseMessageTime(token.value);
+        else if (token.key === "recalled")
+          currentMsg.recalled = parseBool(token.value) || undefined;
+        else if (token.key === "recalled_after") {
+          const seconds = parseNum(token.value);
+          if (seconds > 0) currentMsg.recalledAfter = seconds;
+        }
       }
+    }
+
+    // 只有草稿歷史、沒有草稿本身時，拿最新一版當草稿
+    for (const thread of threads) {
+      if (!thread.draft && thread.draftHistory?.length) {
+        thread.draft = thread.draftHistory[thread.draftHistory.length - 1];
+        thread.draftHistory = thread.draftHistory.slice(0, -1);
+      }
+      if (thread.draftHistory && thread.draftHistory.length === 0) delete thread.draftHistory;
     }
 
     return threads;
@@ -401,12 +472,16 @@ export function parseGroupD(yaml: string): {
       const source = validSources.includes(rawSource as any)
         ? (rawSource as PeekGalleryItem["source"])
         : "scene";
+      const daysLeft = Math.round(parseNum(item.deleted ?? ""));
       return {
         id: genId(),
         description: item.description ?? "",
         source,
         reason: item.reason ?? "",
         date: item.date ?? "",
+        // 最近刪除最多留 30 天
+        deletedDaysLeft: daysLeft >= 1 && daysLeft <= 30 ? daysLeft : undefined,
+        secret: item.secret?.trim() || undefined,
       };
     });
 
@@ -451,43 +526,77 @@ export function parseGroupD(yaml: string): {
   }
 }
 
-/** 解析完整 PeekPhoneData YAML */
-export function parseFullData(yaml: string): PeekPhoneData {
-  try {
-    const chats = parseGroupA(yaml);
-    const { schedule, meals, memos } = parseGroupB(yaml);
-    const { notes, diary, balance, transactions } = parseGroupC(yaml);
-    const { gallery, browserHistory, hiddenPhotos } = parseGroupD(yaml);
+/** 取 section 裡最外層（縮排最小、不是列表項）的 key-value */
+function sectionScalars(section: ParsedLine[]): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (section.length === 0) return result;
+  const baseIndent = Math.min(...section.map((t) => t.indent));
+  for (const token of section) {
+    if (token.indent === baseIndent && !token.isList && token.key && !(token.key in result)) {
+      result[token.key] = token.value;
+    }
+  }
+  return result;
+}
 
+/** 解析鎖屏密碼 lock_screen；密碼不是 4 位數字就當作沒有 */
+export function parseLockScreen(yaml: string): PeekLockScreen | undefined {
+  try {
+    const fields = sectionScalars(findSection(tokenize(yaml), "lock_screen"));
+    const passcode = (fields.passcode ?? "").replace(/\D/g, "");
+    if (passcode.length !== 4) return undefined;
     return {
-      characterId: "",
-      chats,
-      schedule,
-      meals,
-      balance,
-      transactions,
-      memos,
-      notes,
-      diary,
-      gallery,
-      browserHistory,
-      hiddenPhotos,
+      passcode,
+      hint: (fields.hint ?? "").trim(),
+      reveal: (fields.reveal ?? "").trim(),
     };
   } catch {
-    console.warn("[PeekPhoneYAMLParser] parseFullData failed");
+    console.warn("[PeekPhoneYAMLParser] parseLockScreen failed");
+    return undefined;
+  }
+}
+
+/** 解析螢幕使用時間 screen_time；沒有每小時資料就當作沒有 */
+export function parseScreenTime(yaml: string): PeekScreenTime | undefined {
+  try {
+    const section = findSection(tokenize(yaml), "screen_time");
+    const fields = sectionScalars(section);
+    // hourly 通常是 [42, 38, ...] 這種一行陣列，也可能寫成「- 42」的列表；不足 24 個補 0
+    let hourlyText = fields.hourly ?? "";
+    if (!hourlyText.trim()) {
+      const at = section.findIndex((t) => t.key === "hourly" && !t.isList);
+      const listed: string[] = [];
+      for (let i = at + 1; at !== -1 && i < section.length && section[i].isList && !section[i].key; i++) {
+        listed.push(section[i].value);
+      }
+      hourlyText = listed.join(",");
+    }
+    const numbers = hourlyText.match(/\d+(\.\d+)?/g)?.map(Number) ?? [];
+    if (numbers.length === 0) return undefined;
+    const hourly = Array.from({ length: 24 }, (_, i) =>
+      Math.min(60, Math.max(0, Math.round(numbers[i] ?? 0))),
+    );
+
+    const topStart = section.findIndex((t) => t.key === "top_apps" && !t.isList);
+    const topApps =
+      topStart === -1
+        ? []
+        : parseListItems(section.slice(topStart + 1))
+            .filter((item) => item.name?.trim())
+            .map((item) => ({
+              name: item.name.trim(),
+              minutes: Math.max(0, Math.round(parseNum(item.minutes ?? "0"))),
+            }));
+
     return {
-      characterId: "",
-      chats: [],
-      schedule: [],
-      meals: [],
-      balance: 0,
-      transactions: [],
-      memos: [],
-      notes: [],
-      diary: [],
-      gallery: [],
-      browserHistory: [],
-      hiddenPhotos: [],
+      hourly,
+      topApps,
+      pickups: Math.max(0, Math.round(parseNum(fields.pickups ?? "0"))),
+      firstPickup: (fields.first_pickup ?? "").trim(),
+      insight: (fields.insight ?? "").trim(),
     };
+  } catch {
+    console.warn("[PeekPhoneYAMLParser] parseScreenTime failed");
+    return undefined;
   }
 }

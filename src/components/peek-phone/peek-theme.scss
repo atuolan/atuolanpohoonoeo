@@ -1,0 +1,61 @@
+// ============================================================
+// 頭盔TA 配色（照「窺 PEEK」設計稿）
+// 兩層分開：
+//   手機本身——角色的桌布、像真手機的 App（深色 / 淺色）
+//   窺視層——膠囊、窺視選單，是玩家的工具，不屬於角色的手機
+// 掛在 PeekPhoneSelectScreen / PeekPhoneScreen 根元素上，子元件一律用這些 CSS 變數
+// ============================================================
+
+.peek-theme {
+  // 選角色頁 / 窺視選單
+  --p-ink: #121214;
+  --p-ink-2: #55555b;
+  --p-paper: #e6e5e2;
+  --p-chip: #ffffff;
+  --p-sheet: #f6f5f2;
+  --p-sheet-ink-2: #5e5e64;
+  --p-sheet-line: #edece8;
+  --p-sheet-btn: #e8e7e3;
+  --p-scrim: rgba(0, 0, 0, 0.5);
+  --p-danger: #b3261e;
+
+  // 角色桌布：沒有頭像時用這組
+  --p-wallpaper: linear-gradient(180deg, #2b323b 0%, #47494d 38%, #6b5c53 68%, #352c27 100%);
+  --p-glass: rgba(16, 16, 18, 0.42);
+  --p-glass-soft: rgba(16, 16, 18, 0.28);
+  --p-on-wall: #ffffff;
+  --p-on-wall-2: #e4e4e6;
+  --p-app-icon: #ffffff;
+  --p-app-glyph: #2b323b;
+  --p-badge: #ff453a;
+  --p-owner: #3d5a80;
+
+  // 窺視層強調色：秘密、提示、偷看——深底用亮琥珀，淺底用深一階
+  --p-peek: #ffc65c;
+  --p-peek-soft: rgba(255, 198, 92, 0.1);
+  --p-peek-line-light: #c08a1e;
+  --p-peek-soft-light: #fff5e0;
+  --p-peek-ink-light: #7a4e00;
+
+  // 手機 App：深色（訊息、錢包、瀏覽器）
+  --p-dark-bg: #0f1012;
+  --p-dark-card: #1c1d21;
+  --p-dark-raised: #2a2b30;
+  --p-dark-line: #26272b;
+  --p-dark-ink-2: #a8a8ae;
+  --p-dark-ink-3: #8e8e93;
+  --p-dark-link: #8fb0e0;
+  --p-self-bubble: #3d5a80;
+
+  // 手機 App：淺色（相簿、備忘錄、日記……）
+  --p-light-bg: #f7f7f5;
+  --p-light-card: #ffffff;
+  --p-light-line: #ecebe7;
+  --p-light-ink-2: #66666c;
+  --p-light-link: #3d5a80;
+
+  --p-num: "Outfit", "Noto Sans TC", sans-serif;
+
+  font-family: "Noto Sans TC", "PingFang TC", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
