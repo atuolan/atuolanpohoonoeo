@@ -231,6 +231,8 @@ import {
 } from "@/utils/chatMessageMapping";
 import { buildChatMetadataFromState } from "@/utils/chatMetadataBuilder";
 import { saveCharStatus } from "@/services/charStatus";
+import { addCharStickyNote, getCharStickyNoteForPrompt } from "@/services/charStickyNotes";
+import { getUserMoodNoteForPrompt } from "@/services/userMoodNote";
 import { createGreetingMessages } from "@/utils/chatGreetingMessages";
 import {
   loadAndRepairChatMessages,
@@ -4869,6 +4871,16 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       }
     }
 
+    // 便利貼：這個角色上一張便利貼，與 user 主畫面的心情便籤（群聊不帶）
+    const stickyNoteChatId = currentChatId.value;
+    const [charStickyNoteToSend, userMoodNoteToSend] =
+      isGroupChat.value || !stickyNoteChatId
+        ? ["", ""]
+        : await Promise.all([
+            getCharStickyNoteForPrompt(stickyNoteChatId),
+            getUserMoodNoteForPrompt(),
+          ]);
+
     const builder = new PromptBuilder({
       character: char,
       lorebooks: linkedLorebooks,
@@ -4937,6 +4949,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       doNotDisturb: chatDoNotDisturb.value,
       // 傳入角色目前的狀態（{{charStatus}}）
       charStatus: charStatus.value?.text,
+      // 傳入這個角色上一張便利貼（{{charStickyNote}}）與 user 的心情便籤（{{userMoodNote}}）
+      charStickyNote: charStickyNoteToSend,
+      userMoodNote: userMoodNoteToSend,
       // 傳入表情包列表
       stickerList: stickerNames,
       // 傳入面對面模式狀態
@@ -6319,6 +6334,11 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
             // 處理角色狀態標籤
             if (parsed.hasCharStatus && parsed.charStatusData) {
               await handleCharStatusUpdate(parsed.charStatusData.text);
+            }
+
+            // 處理便利貼標籤
+            if (parsed.hasStickyNote && parsed.stickyNoteData) {
+              await handleStickyNote(parsed.stickyNoteData.text);
             }
 
             // 處理行事曆事件標籤（經期紀錄工具做不到，照常執行）
@@ -8891,6 +8911,25 @@ async function handleCharStatusUpdate(text: string) {
     await saveCharStatus(chatId, status);
   } catch (error) {
     console.error("[ChatScreen] 角色狀態儲存失敗:", error);
+  }
+}
+
+// ===== 便利貼處理 =====
+
+async function handleStickyNote(text: string) {
+  const chatId = currentChatId.value;
+  const char = currentCharacter.value;
+  if (!chatId || !char || isGroupChat.value) return;
+
+  try {
+    await addCharStickyNote({
+      chatId,
+      characterId: char.id,
+      characterName: char.nickname || char.data.name,
+      text,
+    });
+  } catch (error) {
+    console.error("[ChatScreen] 便利貼儲存失敗:", error);
   }
 }
 

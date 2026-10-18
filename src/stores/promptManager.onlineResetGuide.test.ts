@@ -99,6 +99,40 @@ describe("線上提示詞強制重置引導", () => {
   });
 });
 
+describe("已停用的線上必要條目", () => {
+  beforeEach(() => {
+    storage.clear();
+    setActivePinia(createPinia());
+  });
+
+  it("載入舊設定時移除「角色設定」，全局與角色獨立順序都清掉，其他條目保留", async () => {
+    const config = createDefaultPromptManagerConfig();
+    config.prompts = [
+      ...config.prompts,
+      { ...config.prompts[0], identifier: "characterSettings", name: "角色設定", locked: true, isDeletable: false },
+    ];
+    config.globalPromptOrder = [...config.globalPromptOrder, { identifier: "characterSettings", enabled: true }];
+    config.characterConfigs["char-1"] = {
+      characterId: "char-1",
+      promptOrder: [...structuredClone(DEFAULT_PROMPT_ORDER), { identifier: "characterSettings", enabled: true }],
+      promptOverrides: {},
+      updatedAt: 1,
+    } as any;
+    storage.set("promptManagerConfig", config);
+
+    const store = usePromptManagerStore();
+    await store.loadConfig();
+
+    expect(store.config.prompts.map((p) => p.identifier)).not.toContain("characterSettings");
+    expect(store.config.globalPromptOrder.map((e) => e.identifier)).not.toContain("characterSettings");
+    const charOrder = store.config.characterConfigs["char-1"].promptOrder;
+    expect(charOrder.map((e) => e.identifier)).not.toContain("characterSettings");
+    expect(store.config.prompts).toHaveLength(DEFAULT_PROMPT_DEFINITIONS.length);
+    expect(store.config.globalPromptOrder).toHaveLength(DEFAULT_PROMPT_ORDER.length);
+    expect(charOrder).toHaveLength(DEFAULT_PROMPT_ORDER.length);
+  });
+});
+
 describe("翻譯格式統一成「外語<br>中文翻譯」", () => {
   beforeEach(() => {
     storage.clear();

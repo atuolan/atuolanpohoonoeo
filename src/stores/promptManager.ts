@@ -188,6 +188,16 @@ const RETIRED_FACE_TO_FACE_PROMPT_IDS = new Set([
   "f2fCharacterCorePersonality", // {{char}}與{{user}}的權力關係（{{relationshipStatus}} 從來沒有程式提供）
 ]);
 
+/** 已停用的線上模式系統條目（同上，用戶無法自行刪除） */
+const RETIRED_ONLINE_PROMPT_IDS = new Set([
+  "characterSettings", // 角色設定（與星之約定、角色判讀重複）
+]);
+
+/** 已停用的群聊模式系統條目（同上，用戶無法自行刪除） */
+const RETIRED_GROUP_CHAT_PROMPT_IDS = new Set([
+  "gcCharacterSettings", // 角色設定（與角色判讀、群聊訊息格式重複）
+]);
+
 const RETIRED_PLURK_COMMENT_IDS = new Set(RETIRED_PLURK_COMMENT_PROMPT_IDS);
 
 function removeRetiredPrompts<T extends { identifier: string }>(
@@ -728,6 +738,18 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
             ? onlineContent.replace(anchor, () => `${anchor}\n${charStatusLine}`)
             : `${onlineContent}\n${charStatusLine}`;
         }
+
+        // 便利貼插在狀態更新後面（沒有狀態那行就接在角色位置更新後面）
+        const contentWithStatus = stored.prompts[onlineModeIndex].content;
+        const stickyNoteLine = defaultOnlineMode.content.match(/[^\n]*<sticky-note[^\n]*/)?.[0];
+        if (stickyNoteLine && !contentWithStatus.includes("<sticky-note")) {
+          const anchor =
+            contentWithStatus.match(/[^\n]*<char-status[^\n]*/)?.[0] ??
+            contentWithStatus.match(/[^\n]*<char-location[^\n]*/)?.[0];
+          stored.prompts[onlineModeIndex].content = anchor
+            ? contentWithStatus.replace(anchor, () => `${anchor}\n${stickyNoteLine}`)
+            : `${contentWithStatus}\n${stickyNoteLine}`;
+        }
       }
     }
 
@@ -744,6 +766,12 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
         defaults.globalPromptOrder,
         stored.deletedDefaultPromptIds,
       );
+    }
+
+    removeRetiredPrompts(stored.prompts, RETIRED_ONLINE_PROMPT_IDS);
+    removeRetiredPrompts(stored.globalPromptOrder, RETIRED_ONLINE_PROMPT_IDS);
+    for (const charConfig of Object.values(stored.characterConfigs)) {
+      removeRetiredPrompts(charConfig.promptOrder, RETIRED_ONLINE_PROMPT_IDS);
     }
 
     if (storedVersion < PROMPT_MANAGER_CONFIG_VERSION) {
@@ -1038,6 +1066,9 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
         stored.deletedGroupChatPromptIds,
       );
     }
+
+    removeRetiredPrompts(stored.groupChatPrompts, RETIRED_GROUP_CHAT_PROMPT_IDS);
+    removeRetiredPrompts(stored.groupChatPromptOrder, RETIRED_GROUP_CHAT_PROMPT_IDS);
 
     if (
       storedVersion < PROMPT_MANAGER_CONFIG_VERSION &&

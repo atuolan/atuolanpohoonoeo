@@ -1152,6 +1152,8 @@ export class ProactiveMessageService {
 
       const { useChatVariablesStore: useChatVariablesStore1v1 } = await import("@/stores/chatVariables");
       const proactiveOverrides = useChatVariablesStore1v1().presetForChat(chat.id, chat);
+      const { getCharStickyNoteForPrompt } = await import("@/services/charStickyNotes");
+      const { getUserMoodNoteForPrompt } = await import("@/services/userMoodNote");
       const promptBuilder = new PromptBuilder({
         character,
         lorebooks: characterLorebooks,
@@ -1178,6 +1180,8 @@ export class ProactiveMessageService {
         gamePlayingContext: options?.gamePlayingContext,
         socialPosts: await getSocialPostsForPrompt([character.id]),
         charStatus: chat.charStatus?.text,
+        charStickyNote: await getCharStickyNoteForPrompt(chat.id),
+        userMoodNote: await getUserMoodNoteForPrompt(),
       });
 
       const promptData = await promptBuilder.build();
@@ -1536,6 +1540,21 @@ export class ProactiveMessageService {
               });
             } catch (error) {
               console.error("[ProactiveMessage] 角色狀態更新失敗:", error);
+            }
+          }
+
+          // 處理便利貼標籤（主畫面的心情便籤會即時換面）
+          if (parsedResponse.hasStickyNote && parsedResponse.stickyNoteData) {
+            try {
+              const { addCharStickyNote } = await import("@/services/charStickyNotes");
+              await addCharStickyNote({
+                chatId: chat.id,
+                characterId: character.id,
+                characterName: character.nickname || character.data.name,
+                text: parsedResponse.stickyNoteData.text,
+              });
+            } catch (error) {
+              console.error("[ProactiveMessage] 便利貼儲存失敗:", error);
             }
           }
 
