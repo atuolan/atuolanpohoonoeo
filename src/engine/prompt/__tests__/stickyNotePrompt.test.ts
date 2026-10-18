@@ -27,6 +27,9 @@ describe("線上模式功能的便利貼", () => {
   it("帶入上一張便利貼", async () => {
     const text = await onlineFeatures({ charStickyNote: "今天 14:20：記得帶傘" });
     expect(text).toContain('<sticky-note text="內容"/>');
+    expect(text).toContain("便簽留言板");
+    // 回心情要用心情便籤條目裡的 <mood-reply>
+    expect(text).toContain("<mood-reply>");
     expect(text).toContain("你上一張寫的：今天 14:20：記得帶傘");
     expect(text).not.toContain("{{charStickyNote}}");
   });
@@ -43,7 +46,8 @@ describe("心情便籤條目", () => {
     const block = (await buildTexts({ userMoodNote: mood })).find((c) => c.includes("<mood_note>"));
     expect(block).toContain(mood);
     expect(block).not.toContain("{{userMoodNote}}");
-    expect(block).toContain("<sticky-note>");
+    expect(block).toContain('<mood-reply text="內容"/>');
+    expect(block).toContain("<mood-reply/>");
   });
 
   it("沒有時整個條目不輸出", async () => {

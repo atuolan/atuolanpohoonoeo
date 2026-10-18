@@ -750,6 +750,27 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
             ? contentWithStatus.replace(anchor, () => `${anchor}\n${stickyNoteLine}`)
             : `${contentWithStatus}\n${stickyNoteLine}`;
         }
+
+        // 上一版的便利貼寫的是「貼在心情便籤上」，換成釘在便簽留言板的新寫法
+        const contentWithSticky = stored.prompts[onlineModeIndex].content;
+        const legacyStickyNoteLine = contentWithSticky.match(/[^\n]*<sticky-note[^\n]*心情便籤上[^\n]*/)?.[0];
+        if (stickyNoteLine && legacyStickyNoteLine) {
+          stored.prompts[onlineModeIndex].content = contentWithSticky.replace(
+            legacyStickyNoteLine,
+            () => stickyNoteLine,
+          );
+        }
+      }
+    }
+
+    // 上一版的心情便籤條目還沒有 <mood-reply>（回覆心情改成釘在留言板），換成新的預設內容；
+    // 已經有 <mood-reply> 的是新版或使用者自己改過的，不動
+    const moodNoteIndex = stored.prompts.findIndex((p) => p.identifier === "userMoodNote");
+    const defaultMoodNote = defaults.prompts.find((p) => p.identifier === "userMoodNote");
+    if (moodNoteIndex !== -1 && defaultMoodNote) {
+      const moodNoteContent = stored.prompts[moodNoteIndex].content;
+      if (moodNoteContent.includes("<mood_note>") && !moodNoteContent.includes("<mood-reply")) {
+        stored.prompts[moodNoteIndex].content = defaultMoodNote.content;
       }
     }
 
