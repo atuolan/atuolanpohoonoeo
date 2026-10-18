@@ -36,6 +36,7 @@ import { usePeekPhoneStore } from "@/stores/peekPhone";
 import type { StoredCharacter } from "@/types/character";
 import type { Chat } from "@/types/chat";
 import type { PeekChatMessage, PeekDiaryEntry, PeekPhoneTab } from "@/types/peekPhone";
+import { computeChatNow } from "@/utils/fakeTime";
 import {
   AlertTriangle,
   Angry,
@@ -90,10 +91,10 @@ const currentView = ref<"lock" | "home" | PeekPhoneTab>("lock");
 // 窺視選單（點頂部膠囊）
 const showSheet = ref(false);
 
-// 時間顯示
+// 時間顯示：角色手機上的時間，聊天有假時間就照假時間走
 const now = ref(new Date());
 const timer = setInterval(() => {
-  now.value = new Date();
+  now.value = computeChatNow(chatRecord.value);
 }, 30000);
 onUnmounted(() => {
   clearInterval(timer);
@@ -479,6 +480,9 @@ function openThreadFromLock(threadId: string) {
 
 // 載入聊天資料並觸發生成
 const chatRecord = ref<Chat | null>(null);
+watch(chatRecord, (chat) => {
+  now.value = computeChatNow(chat);
+});
 
 /** 僅載入聊天資料和快取（從記憶體或 IDB），不呼叫 API；回傳有沒有既有內容 */
 async function loadChatData(): Promise<boolean> {

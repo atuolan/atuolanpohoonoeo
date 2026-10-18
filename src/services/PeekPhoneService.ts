@@ -11,6 +11,7 @@ import { usePromptManagerStore } from "@/stores/promptManager";
 import { useSettingsStore } from "@/stores/settings";
 import type { StoredCharacter } from "@/types/character";
 import type { Chat, ChatMessage } from "@/types/chat";
+import type { ImportantEventCategory, ImportantEventsLog } from "@/types/importantEvents";
 import type { PeekChatThread, PeekPhoneData } from "@/types/peekPhone";
 import {
   buildContactReplyPrompt,
@@ -138,25 +139,48 @@ export async function extractSummariesAndEvents(
       });
     }
 
-    // 讀取重要事件
-    const allEvents = await db.getAll(DB_STORES.IMPORTANT_EVENTS);
-    const importantEvents = allEvents.filter(
-      (e: any) => e.chatId === chatId && e.characterId === characterId,
-    );
+    // 重要事件記錄本以 chatId 為 key，舊資料用 characterId
+    const log =
+      (await db.get<ImportantEventsLog>(DB_STORES.IMPORTANT_EVENTS, chatId)) ??
+      (await db.get<ImportantEventsLog>(DB_STORES.IMPORTANT_EVENTS, characterId));
+    const importantEvents = pickImportantEvents(log);
 
     if (importantEvents.length > 0) {
-      lines.push("");
+      if (lines.length > 0) lines.push("");
       lines.push("【重要事件記錄】");
-      importantEvents.slice(-5).forEach((event: any) => {
-        const eventText = event.content || event.description || "";
-        lines.push(`- ${eventText.slice(0, 100)}`);
-      });
+      importantEvents.forEach((text) => lines.push(`- ${text}`));
     }
   } catch (error) {
     console.error("[PeekPhone] 讀取總結和事件失敗:", error);
   }
 
   return lines.length > 0 ? lines.join("\n") : "";
+}
+
+const EVENT_LABELS: Partial<Record<ImportantEventCategory, string>> = {
+  relationship: "關係",
+  promise: "約定",
+  secret: "秘密",
+  fact: "事實",
+};
+
+/**
+ * 從重要事件記錄本挑給偷窺手機用的幾條：跟聊天一樣只在開啟時用，重要的在前，同樣重要時新的在前
+ */
+export function pickImportantEvents(
+  log: ImportantEventsLog | undefined,
+  limit = 12,
+): string[] {
+  if (!log?.settings?.enabled || !log.events?.length) return [];
+  return [...log.events]
+    .filter((e) => e.content?.trim())
+    .sort((a, b) => (a.priority ?? 3) - (b.priority ?? 3) || (b.timestamp ?? 0) - (a.timestamp ?? 0))
+    .slice(0, limit)
+    .map((e) => {
+      const text = e.content.trim().slice(0, 120);
+      const label = e.category ? EVENT_LABELS[e.category] : undefined;
+      return label ? `[${label}] ${text}` : text;
+    });
 }
 
 /**
@@ -367,19 +391,26 @@ async function callAPIForPhase(
   }
 }
 
+/** 生成用的素材：store 準備一次，各階段共用 */
+export interface PeekSources {
+  chatContext: string;
+  userName: string;
+  userDescription: string;
+  worldInfo: string;
+  summariesAndEvents: string;
+  /** 角色手機上的「現在」：聊天有假時間就照假時間 */
+  now: Date;
+}
+
 /**
  * 組出 prompt 要的資料：角色卡欄位先跑過宏引擎，{{char}}／{{user}} 換成真名
  */
 export async function buildPromptContext(
   character: StoredCharacter,
-  chatContext: string,
-  userName: string,
-  userDescription: string,
-  worldInfo: string,
-  summariesAndEvents: string,
+  sources: PeekSources,
 ): Promise<PeekPromptContext> {
   const charName = character.data.name || character.nickname;
-  const now = new Date();
+  const { userName, now } = sources;
   const macro = { charName, userName, currentDate: now };
   const sub = async (text: string | undefined) => (text ? substituteParams(text, macro) : "");
   return {
@@ -387,11 +418,11 @@ export async function buildPromptContext(
     charDesc: await sub(character.data.description),
     personality: await sub(character.data.personality),
     scenario: await sub(character.data.scenario),
-    chatContext,
+    chatContext: sources.chatContext,
     userName,
-    userDescription: await sub(userDescription),
-    worldInfo: await sub(worldInfo),
-    summariesAndEvents,
+    userDescription: await sub(sources.userDescription),
+    worldInfo: await sub(sources.worldInfo),
+    summariesAndEvents: sources.summariesAndEvents,
     now,
   };
 }
@@ -403,12 +434,7 @@ export async function buildPromptContext(
  */
 export async function generateSequential(
   character: StoredCharacter,
-  chatContext: string,
-  userName: string,
-  userDescription: string,
-  worldInfo: string,
-  summariesAndEvents: string,
-  _chatId: string,
+  sources: PeekSources,
   signal?: AbortSignal,
   onPhaseComplete?: (
     phase: "A" | "BC" | "D",
@@ -416,17 +442,15 @@ export async function generateSequential(
   ) => void,
   onToken?: (phase: "A" | "BC" | "D", token: string) => void,
 ): Promise<PeekPhoneData> {
-  const ctx = await buildPromptContext(
-    character, chatContext, userName, userDescription, worldInfo, summariesAndEvents,
-  );
+  const ctx = await buildPromptContext(character, sources);
   // 越獄／預設提示詞裡的 {{char}}／{{user}} 也要換成真名
-  const macroContext: PeekMacroContext = { charName: ctx.charName, userName };
+  const macroContext: PeekMacroContext = { charName: ctx.charName, userName: sources.userName };
 
   // === Phase A: 聊天紀錄 ===
   const promptA = buildGroupAPrompt(ctx);
   const yamlA = await callAPIForPhase(promptA, 16000, signal,
     onToken ? (t) => onToken("A", t) : undefined, macroContext);
-  const chats = parseGroupA(yamlA);
+  const chats = parseGroupA(yamlA, ctx.now);
   const lockScreen = parseLockScreen(yamlA);
   const partialA: Partial<PeekPhoneData> = { chats, lockScreen };
   onPhaseComplete?.("A", partialA);
@@ -437,7 +461,7 @@ export async function generateSequential(
   const yamlBC = await callAPIForPhase(promptBC, 16000, signal,
     onToken ? (t) => onToken("BC", t) : undefined, macroContext);
   const { schedule, meals, memos } = parseGroupB(yamlBC);
-  const { notes, diary, balance, transactions } = parseGroupC(yamlBC);
+  const { notes, diary, balance, transactions } = parseGroupC(yamlBC, ctx.now);
   const partialBC: Partial<PeekPhoneData> = { schedule, meals, memos, notes, diary, balance, transactions };
   onPhaseComplete?.("BC", partialBC);
 
@@ -476,26 +500,19 @@ export async function generateSequential(
 export async function generateSinglePhase(
   phase: "A" | "BC" | "D",
   character: StoredCharacter,
-  chatContext: string,
-  userName: string,
-  userDescription: string,
-  worldInfo: string,
-  summariesAndEvents: string,
+  sources: PeekSources,
   existingData: Partial<PeekPhoneData>,
-  _chatId: string,
   signal?: AbortSignal,
   onToken?: (token: string) => void,
 ): Promise<Partial<PeekPhoneData>> {
-  const ctx = await buildPromptContext(
-    character, chatContext, userName, userDescription, worldInfo, summariesAndEvents,
-  );
-  const macroContext: PeekMacroContext = { charName: ctx.charName, userName };
+  const ctx = await buildPromptContext(character, sources);
+  const macroContext: PeekMacroContext = { charName: ctx.charName, userName: sources.userName };
 
   switch (phase) {
     case "A": {
       const prompt = buildGroupAPrompt(ctx);
       const yaml = await callAPIForPhase(prompt, 16000, signal, onToken, macroContext);
-      const chats = parseGroupA(yaml);
+      const chats = parseGroupA(yaml, ctx.now);
       return { chats, lockScreen: parseLockScreen(yaml) };
     }
     case "BC": {
@@ -504,7 +521,7 @@ export async function generateSinglePhase(
       const prompt = buildGroupBCPrompt(ctx, aContext);
       const yaml = await callAPIForPhase(prompt, 16000, signal, onToken, macroContext);
       const { schedule, meals, memos } = parseGroupB(yaml);
-      const { notes, diary, balance, transactions } = parseGroupC(yaml);
+      const { notes, diary, balance, transactions } = parseGroupC(yaml, ctx.now);
       return { schedule, meals, memos, notes, diary, balance, transactions };
     }
     case "D": {
@@ -590,6 +607,8 @@ export interface ContactReplyParams {
   thread: PeekChatThread;
   /** 手機主人剛剛送出的新訊息 */
   newMessage: string;
+  /** 角色手機上的「現在」，預設是現實時間 */
+  now?: Date;
 }
 
 /**
@@ -602,7 +621,7 @@ export async function generateContactReply(
   onToken?: (token: string) => void,
 ): Promise<string> {
   const history = serializeThreadHistory(params.thread, params.ownerName);
-  const now = new Date();
+  const now = params.now ?? new Date();
   const macro = { charName: params.ownerName, userName: params.userName, currentDate: now };
   const sub = async (text: string) => (text ? substituteParams(text, macro) : "");
   const contactIsUser = params.thread.isUser || params.contactName === params.userName;
