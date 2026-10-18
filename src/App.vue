@@ -77,6 +77,7 @@ import ChatListScreen from "@/components/screens/ChatListScreen.vue";
 import ChatScreen from "@/components/screens/ChatScreen.vue";
 import DeliveryMallScreen from "@/components/screens/DeliveryMallScreen.vue";
 import FateScreen from "@/components/screens/FateScreen.vue";
+import NoteBoardScreen from "@/components/screens/NoteBoardScreen.vue";
 import FitnessScreen from "@/components/screens/FitnessScreen.vue";
 import GameCenterScreen from "@/components/screens/GameCenterScreen.vue";
 import LorebookEditScreen from "@/components/screens/LorebookEditScreen.vue";
@@ -803,6 +804,7 @@ type PageType =
   | "peek-phone-select"
   | "peek-phone"
   | "fate"
+  | "note-board"
   | "pomodoro"
   | "pomodoro-focus";
 const currentPage = ref<PageType>("home");
@@ -1851,6 +1853,9 @@ function handleNavigate(page: string) {
   } else if (page === "fate" || page === "占卜" || page === "tarot") {
     // 塔羅占卜
     navigateToPage("fate");
+  } else if (page === "note-board" || page === "留言板") {
+    // 便簽留言板（主畫面心情便籤的小紙條）
+    navigateToPage("note-board");
   } else if (page === "pomodoro" || page === "專注" || page === "番茄鐘") {
     // 番茄鐘
     navigateToPage("pomodoro");
@@ -2846,6 +2851,7 @@ function handleGlobalSwipeBack() {
     calendar: goHome,
     fitness: goHome,
     fate: goHome,
+    "note-board": goHome,
     "peek-phone-select": goHome,
     "peek-phone": () => {
       navigateToPage("peek-phone-select", { mode: "replace" });
@@ -3030,6 +3036,11 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
 
     <!-- 塔羅占卜 -->
     <FateScreen v-else-if="currentPage === 'fate'" @back="goHome" />
+    <NoteBoardScreen
+      v-else-if="currentPage === 'note-board'"
+      @back="goHome"
+      @open-chat="(target) => restoreChatContextFromNotification(target)"
+    />
 
     <!-- 番茄鐘 - 任務列表 -->
     <PomodoroScreen
