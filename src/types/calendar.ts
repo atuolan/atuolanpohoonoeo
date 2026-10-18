@@ -26,6 +26,8 @@ export interface CalendarEvent extends CalendarEventTime {
   sourceCharacterId?: string;
   /** 來源聊天 ID */
   sourceChatId?: string;
+  /** 使用者在行事曆 App 改過的時間；改過的不會因為重新生成被收回 */
+  editedAt?: number;
   /** 建立時間 */
   createdAt: number;
   /** 更新時間 */

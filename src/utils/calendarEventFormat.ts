@@ -45,6 +45,11 @@ export function eventNotes(event: CalendarEventTime & { description?: string }):
   return text.trim();
 }
 
+/** 比對標題用：去掉空白和標點符號，英文不分大小寫 */
+export function normalizeEventTitle(title: string): string {
+  return title.replace(/[\s\p{P}\p{S}]/gu, "").toLowerCase();
+}
+
 /** 把「9:05」補成「09:05」；不是時間就回傳 undefined */
 export function normalizeEventTime(raw: string | undefined): string | undefined {
   const m = raw?.trim().match(/^(\d{1,2}):(\d{2})$/);

@@ -191,7 +191,7 @@ import { finalizeLiveActivity, summarizeToolResult, upsertLiveActivity } from "@
 import type { PendingToolConfirmation } from "@/services/toolCalling/types";
 import { getToolHandledActions } from "@/services/toolCalling/tagOverlap";
 import { createAppToolServices } from "@/services/toolCalling/appToolServices";
-import { saveCalendarEvent } from "@/services/calendarEvents";
+import { saveCalendarEventOnce, withdrawCalendarEvent } from "@/services/calendarEvents";
 import { formatEventTime } from "@/utils/calendarEventFormat";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
 import { useUserStore } from "@/stores/user";
@@ -1827,6 +1827,7 @@ const {
   saveChat,
   deleteMessage: deleteCurrentChatMessage,
   triggerAIResponse,
+  onRoundReplaced: syncRoundCalendarEvents,
 });
 
 // ===== 語音錄音 composable =====
@@ -5694,11 +5695,12 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
             vectorThreshold: chatSummarySettings.value.vectorThreshold ?? 0.3,
             musicStore,
             themeStore,
-            onCalendarEventCreated: (data) =>
+            onCalendarEventCreated: (data, eventId) =>
               announceCalendarEvent(
                 data,
                 char.nickname || char.data.name || props.characterName || "角色",
                 currentChatId.value === toolActivityChatId,
+                { eventId, turnId: generationTurnId },
               ),
             isInCallWithCharacter: () =>
               phoneCallStore.isActive && phoneCallStore.activeCall?.characterId === char.id,
@@ -6269,7 +6271,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           const gcCalendarEvents = parseCalendarEventTags(finalContent);
           if (gcCalendarEvents.length > 0) {
             for (const calEvent of gcCalendarEvents) {
-              await handleCalendarEvent(calEvent);
+              await handleCalendarEvent(calEvent, generationTurnId);
             }
           }
 
@@ -6352,7 +6354,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                   console.log("[ChatScreen] 這一輪已用工具處理過新增行程，略過 <calendar-event>：", calEvent.title);
                   continue;
                 }
-                await handleCalendarEvent(calEvent);
+                await handleCalendarEvent(calEvent, generationTurnId);
               }
             }
 
@@ -9007,11 +9009,18 @@ async function handleCharLocationUpdate(location: string) {
 /**
  * 行事曆事件寫入後：在聊天裡插一則系統訊息（AI 下一輪看得到）並通知使用者。
  * inChat=false 時只通知（例如角色工具執行途中使用者已經切到別的聊天）。
+ * 卡片帶這一輪的 turnId 和事件 id：重新生成時跟著那一輪一起拿掉，加的行程也收回
  */
-function announceCalendarEvent(data: CalendarEventData, charName: string, inChat = true): void {
+function announceCalendarEvent(
+  data: CalendarEventData,
+  charName: string,
+  inChat = true,
+  link: { eventId?: string; turnId?: string } = {},
+): void {
   if (inChat) {
     const calendarMessage: Message = {
       id: `msg_cal_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      turnId: link.turnId || undefined,
       role: "system",
       content: `[行事曆] 已建立事件：${data.title}（${data.date}${data.startTime ? ` ${formatEventTime(data)}` : ""}）${data.description ? " - " + data.description : ""}`,
       timestamp: Date.now(),
@@ -9024,6 +9033,7 @@ function announceCalendarEvent(data: CalendarEventData, charName: string, inChat
         startTime: data.startTime,
         endTime: data.endTime,
         endDate: data.endDate,
+        eventId: link.eventId,
       },
     };
     messages.value.push(calendarMessage);
@@ -9035,16 +9045,51 @@ function announceCalendarEvent(data: CalendarEventData, charName: string, inChat
   );
 }
 
-async function handleCalendarEvent(data: CalendarEventData): Promise<void> {
+/**
+ * 重新生成、換候選回覆：被換下的那一輪加的行程收回（使用者改過的留著），
+ * 換回來的那一輪照原本的 id 加回去
+ */
+async function syncRoundCalendarEvents(removed: Message[], restored: Message[]): Promise<void> {
+  const restoredIds = new Set(restored.map((m) => m.id));
+  try {
+    for (const m of removed) {
+      const eventId = m.isCalendarEvent ? m.calendarEventData?.eventId : undefined;
+      if (eventId && !restoredIds.has(m.id)) await withdrawCalendarEvent(eventId);
+    }
+    for (const m of restored) {
+      if (!m.isCalendarEvent || !m.calendarEventData?.eventId) continue;
+      const { eventId, ...data } = m.calendarEventData;
+      await saveCalendarEventOnce(
+        data,
+        {
+          characterId: currentCharacter.value?.id,
+          chatId: currentChatId.value || props.chatId || undefined,
+        },
+        eventId,
+      );
+    }
+  } catch (e) {
+    console.error("[ChatScreen] 收回／加回行事曆事件失敗:", e);
+  }
+}
+
+async function handleCalendarEvent(data: CalendarEventData, turnId?: string): Promise<void> {
   try {
     const char = currentCharacter.value;
-    await saveCalendarEvent(data, {
+    const { event, created } = await saveCalendarEventOnce(data, {
       characterId: char?.id,
       chatId: currentChatId.value || props.chatId || undefined,
     });
+    // 行事曆裡本來就有（例如重新生成又寫了一次）：不再插卡片、不再通知
+    if (!created) {
+      console.log("[ChatScreen] 行事曆裡已經有這個行程，不重複新增:", data.title);
+      return;
+    }
     announceCalendarEvent(
       data,
       char?.nickname || char?.data?.name || props.characterName || "角色",
+      true,
+      { eventId: event.id, turnId },
     );
     console.log("[ChatScreen] 行事曆事件已建立:", data);
   } catch (e) {

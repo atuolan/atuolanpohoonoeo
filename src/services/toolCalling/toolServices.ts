@@ -25,8 +25,8 @@ export interface CalendarToolEvent {
 export interface CalendarToolService {
   /** 列出日期範圍內（含頭尾）的事件，依日期排序 */
   listEvents(range: { from: string; to?: string; limit: number }): Promise<CalendarToolEvent[]>;
-  /** 寫進行事曆；沒寫成要丟錯 */
-  createEvent(data: CalendarEventData): Promise<void>;
+  /** 寫進行事曆；沒寫成要丟錯。回傳 false 表示行事曆裡本來就有，沒有重複新增 */
+  createEvent(data: CalendarEventData): Promise<boolean>;
 }
 
 export interface MemoryToolEntry {

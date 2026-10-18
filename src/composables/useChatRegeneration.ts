@@ -9,6 +9,8 @@ export function useChatRegeneration(context: {
   saveChat: () => void | Promise<void>;
   deleteMessage: (id: string) => Promise<void>;
   triggerAIResponse: (options?: { skipAutoTrigger?: boolean }) => Promise<void>;
+  /** 一輪回覆被換下（重新生成、換候選）時：收回那一輪做過的事，換回來的再做一次（例如加的行程） */
+  onRoundReplaced?: (removed: Message[], restored: Message[]) => void | Promise<void>;
 }) {
   const pendingRoundSwipes = ref<Message[][] | null>(null);
 
@@ -212,7 +214,7 @@ export function useChatRegeneration(context: {
       if (msg.role === "user" && i > targetIndex) break;
       if (
         msg.role === "ai" ||
-        (msg.role === "system" && (msg.isTimetravel || msg.isAvatarChange))
+        (msg.role === "system" && (msg.isTimetravel || msg.isAvatarChange || msg.isCalendarEvent))
       ) {
         roundMessages.push(msg);
       }
@@ -288,6 +290,7 @@ export function useChatRegeneration(context: {
     }
 
     pendingRoundSwipes.value = existingSwipes;
+    await context.onRoundReplaced?.(currentRoundMessages, []);
 
     const idsToRemove = currentRoundMessages.map((m) => m.id);
     context.messages.value = context.messages.value.filter((m) => m.turnId !== turnId);
@@ -335,6 +338,7 @@ export function useChatRegeneration(context: {
     );
 
     pendingRoundSwipes.value = existingSwipes;
+    await context.onRoundReplaced?.(currentRoundMessages, []);
 
     const idsToDelete = new Set(currentRoundMessages.map((m) => m.id));
     context.messages.value = context.messages.value.filter((m) => !idsToDelete.has(m.id));
@@ -441,6 +445,7 @@ export function useChatRegeneration(context: {
 
     const restoredTurnId = newMessages.find((m) => m.turnId)?.turnId;
     context.currentTurnId.value = restoredTurnId || "";
+    void context.onRoundReplaced?.(removedMessages, newMessages);
 
     // 被換下的候選必須從 IDB 刪除：saveChat 會保留「載入後才建立」的訊息（視為背景追加），
     // 分頁模式下也只做 upsert，若不刪除，重新載入後各候選會同時出現、分散成多組訊息。

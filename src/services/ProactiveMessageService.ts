@@ -1452,9 +1452,11 @@ export class ProactiveMessageService {
           ) {
             try {
               // 跟聊天頁走同一個寫入，時間、跨天的結束日期才不會掉
-              const { saveCalendarEvent } = await import("@/services/calendarEvents");
+              const { saveCalendarEventOnce } = await import("@/services/calendarEvents");
               for (const calEvent of parsedResponse.calendarEvents) {
-                await saveCalendarEvent(calEvent, { characterId: character.id, chatId: chat.id });
+                const { created } = await saveCalendarEventOnce(calEvent, { characterId: character.id, chatId: chat.id });
+                // 行事曆裡本來就有：不再插卡片
+                if (!created) continue;
 
                 // 插入系統訊息到聊天中
                 const calendarMessage = {

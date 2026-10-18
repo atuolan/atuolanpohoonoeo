@@ -298,7 +298,7 @@ async function saveEvent() {
   };
   try {
     if (editingEvent.value) {
-      const updated = await updateCalendarEvent({ ...editingEvent.value, ...fields });
+      const updated = await updateCalendarEvent({ ...editingEvent.value, ...fields }, { byUser: true });
       events.value = events.value.map((e) => (e.id === updated.id ? updated : e)).sort(compareCalendarEvents);
     } else {
       const created = await saveCalendarEvent(fields);

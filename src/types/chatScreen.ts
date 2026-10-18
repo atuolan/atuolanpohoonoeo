@@ -165,6 +165,8 @@ export interface ChatScreenMessage {
     endTime?: string;
     /** 跨天行程的結束日期 */
     endDate?: string;
+    /** 這張卡片新增的那筆行事曆事件；重新生成時用來收回 */
+    eventId?: string;
   };
   isCallNotification?: boolean;
   callNotificationType?: "declined" | "missed";

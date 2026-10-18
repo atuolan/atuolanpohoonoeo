@@ -191,8 +191,9 @@ export const CHAT_TOOLS: ChatToolDefinition[] = [
       // 沒做成要丟錯，結果才會標成失敗；回覆裡的 <calendar-event> 標籤才會接手（見 tagOverlap）
       const calendar = requireService(context, "calendar", "行事曆");
       const data = toCalendarEventData(args);
-      await calendar.createEvent(data);
-      return `已加入行事曆：${data.title}（${data.date}${data.description ? `，${data.description}` : ""}）`;
+      const created = await calendar.createEvent(data);
+      const what = `${data.title}（${data.date}${data.description ? `，${data.description}` : ""}）`;
+      return created ? `已加入行事曆：${what}` : `行事曆裡本來就有：${what}，沒有重複新增`;
     },
   },
   {
