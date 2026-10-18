@@ -14,10 +14,12 @@ import type { Chat, ChatMessage } from "@/types/chat";
 import type { ImportantEventCategory, ImportantEventsLog } from "@/types/importantEvents";
 import type { PeekChatThread, PeekPhoneData } from "@/types/peekPhone";
 import {
+  buildCaughtReactionPrompt,
   buildContactReplyPrompt,
   buildGroupAPrompt,
   buildGroupBCPrompt,
   buildGroupDPrompt,
+  type CaughtFinding,
   type PeekPromptContext,
 } from "./PeekPhonePromptBuilder";
 import {
@@ -665,4 +667,31 @@ export async function generateContactReply(
     throw new Error("聯絡人沒有回覆任何內容");
   }
   return reply;
+}
+
+/** 偷看被抓到：他傳給使用者的反應，一則一行（最多 4 則） */
+export async function generateCaughtReaction(
+  character: StoredCharacter,
+  sources: PeekSources,
+  found: CaughtFinding[],
+  when: "mid" | "end",
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const ctx = await buildPromptContext(character, sources);
+  const raw = await callAPIForPhase(buildCaughtReactionPrompt(ctx, found, when), 1500, signal, undefined, {
+    charName: ctx.charName,
+    userName: ctx.userName,
+  });
+  return parseCaughtReaction(raw, ctx.charName);
+}
+
+/** 一行一則；拿掉「名字:」前綴和包住整行的引號，最多 4 則 */
+export function parseCaughtReaction(raw: string, charName: string): string[] {
+  const escaped = charName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const prefix = new RegExp(`^${escaped}\\s*[:：]\\s*`);
+  return raw
+    .split("\n")
+    .map((line) => line.trim().replace(prefix, "").replace(/^["「『](.*)["」』]$/, "$1").trim())
+    .filter(Boolean)
+    .slice(0, 4);
 }

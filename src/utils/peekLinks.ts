@@ -30,9 +30,17 @@ export function peekSecretEventContent(found: FoundSecret, userName: string, cha
   return `${userName}偷看${charName}的手機，知道了「${found.label}」${detail}`;
 }
 
-/** 被他發現：留在聊天裡的系統訊息，他下一則回覆會看到 */
-export function buildCaughtNote(found: FoundSecret[], userName: string, charName: string): string {
-  const head = `${userName}剛剛偷看了${charName}的手機，被${charName}發現了。`;
+/** 被他發現：留在聊天裡的系統訊息；when：mid 偷看到一半被撞見，end 放下後才發現 */
+export function buildCaughtNote(
+  found: FoundSecret[],
+  userName: string,
+  charName: string,
+  when: "mid" | "end" = "end",
+): string {
+  const head =
+    when === "mid"
+      ? `${userName}偷看${charName}的手機時被${charName}當場撞見，手機被拿回去了。`
+      : `${userName}剛剛偷看了${charName}的手機，被${charName}發現了。`;
   if (found.length === 0) return head;
   const lines = found.slice(0, CAUGHT_LIMIT).map((f) => `・${f.label}${f.detail ? `：${f.detail}` : ""}`);
   const more = found.length > CAUGHT_LIMIT ? `\n……還有 ${found.length - CAUGHT_LIMIT} 個` : "";
@@ -44,36 +52,54 @@ export function buildSuspiciousNote(charName: string): string {
   return `${charName}拿起手機時覺得哪裡怪怪的，好像被人動過，但不確定是誰、看了什麼。`;
 }
 
-// ===== 隱匿檢定：放下手機時擲 d20，像跑團 =====
+// ===== 隱匿檢定：像跑團一樣擲骰 =====
+// 放下手機時擲 d20 看他有沒有發現；偷看中每打開一個 App 擲 d100，擲到 3 以下他剛好回來
 
 export type StealthOutcome = "safe" | "suspicious" | "caught";
 
 export interface StealthCheck {
-  /** 擲出的點數 1–20 */
+  /** 幾面骰：20 是放下手機時的檢定，100 是偷看中的突發事件 */
+  sides: 20 | 100;
+  /** 擲出的點數 */
   roll: number;
-  /** 難度：擲到這個以上才沒被發現 */
+  /** d20：擲到這個以上才沒被發現；d100：擲到這個以下他就回來了 */
   dc: number;
   outcome: StealthOutcome;
   /** 20 大成功、1 大失敗 */
   critical?: "success" | "fail";
+  /** 偷看到一半被他撞見 */
+  interrupted?: boolean;
 }
 
-const BASE_DC = 6;
+const BASE_DC = 5;
 const MAX_DC = 18;
 /** 比難度少幾點以內算「起疑」 */
 const SUSPICIOUS_MARGIN = 3;
+/** 偷看中每打開一個 App，d100 擲到這個以下他就回來了 */
+export const INTERRUPT_CHANCE = 3;
 
-/** 找到越多秘密、翻越多 App，越容易被發現 */
-export function stealthDC(foundCount: number, appCount: number): number {
-  return Math.min(MAX_DC, BASE_DC + foundCount * 2 + appCount);
+/** 找到越多秘密越容易被發現（翻 App 的風險在偷看中的突發事件裡算） */
+export function stealthDC(foundCount: number): number {
+  return Math.min(MAX_DC, BASE_DC + foundCount * 2);
 }
 
-export function rollStealth(foundCount: number, appCount: number, random: () => number = Math.random): StealthCheck {
-  const dc = stealthDC(foundCount, appCount);
-  const roll = Math.min(20, 1 + Math.floor(random() * 20));
-  if (roll === 20) return { roll, dc, outcome: "safe", critical: "success" };
-  if (roll === 1) return { roll, dc, outcome: "caught", critical: "fail" };
-  if (roll >= dc) return { roll, dc, outcome: "safe" };
-  if (roll >= dc - SUSPICIOUS_MARGIN) return { roll, dc, outcome: "suspicious" };
-  return { roll, dc, outcome: "caught" };
+const rollDie = (sides: number, random: () => number) => Math.min(sides, 1 + Math.floor(random() * sides));
+
+/** 放下手機時的隱匿檢定 */
+export function rollStealth(foundCount: number, random: () => number = Math.random): StealthCheck {
+  const dc = stealthDC(foundCount);
+  const roll = rollDie(20, random);
+  const base = { sides: 20 as const, roll, dc };
+  if (roll === 20) return { ...base, outcome: "safe", critical: "success" };
+  if (roll === 1) return { ...base, outcome: "caught", critical: "fail" };
+  if (roll >= dc) return { ...base, outcome: "safe" };
+  if (roll >= dc - SUSPICIOUS_MARGIN) return { ...base, outcome: "suspicious" };
+  return { ...base, outcome: "caught" };
+}
+
+/** 偷看中打開一個 App：他剛好回來了就回傳結果，沒事回傳 null */
+export function rollInterrupt(random: () => number = Math.random): StealthCheck | null {
+  const roll = rollDie(100, random);
+  if (roll > INTERRUPT_CHANCE) return null;
+  return { sides: 100, roll, dc: INTERRUPT_CHANCE, outcome: "caught", interrupted: true };
 }

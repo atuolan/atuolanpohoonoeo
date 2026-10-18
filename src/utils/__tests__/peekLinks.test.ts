@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCaughtNote, peekSecretEventContent, rollStealth, stealthDC } from "@/utils/peekLinks";
+import { buildCaughtNote, peekSecretEventContent, rollInterrupt, rollStealth, stealthDC } from "@/utils/peekLinks";
 
 const found = (n: number) =>
   Array.from({ length: n }, (_, i) => ({ key: `k${i}`, label: `秘密${i}`, detail: i === 0 ? "" : `內容${i}` }));
@@ -25,24 +25,29 @@ describe("被他發現的那筆", () => {
 });
 
 describe("隱匿檢定", () => {
-  /** 讓 d20 擲出指定點數 */
-  const die = (n: number) => () => (n - 1) / 20;
+  /** 讓骰子擲出指定點數 */
+  const die = (n: number, sides = 20) => () => (n - 1) / sides;
 
-  it("找到越多、翻越多越難，最高 18", () => {
-    expect(stealthDC(0, 1)).toBe(7);
-    expect(stealthDC(2, 4)).toBe(14);
-    expect(stealthDC(10, 9)).toBe(18);
+  it("找到越多秘密越難，最高 18", () => {
+    expect(stealthDC(0)).toBe(5);
+    expect(stealthDC(2)).toBe(9);
+    expect(stealthDC(10)).toBe(18);
   });
 
   it("到難度以上沒被發現；少 1–3 點他起疑；再低被發現", () => {
-    // DC 12
-    expect(rollStealth(2, 2, die(12)).outcome).toBe("safe");
-    expect(rollStealth(2, 2, die(9)).outcome).toBe("suspicious");
-    expect(rollStealth(2, 2, die(8)).outcome).toBe("caught");
+    // DC 9
+    expect(rollStealth(2, die(9)).outcome).toBe("safe");
+    expect(rollStealth(2, die(6)).outcome).toBe("suspicious");
+    expect(rollStealth(2, die(5)).outcome).toBe("caught");
   });
 
   it("20 大成功、1 大失敗，不看難度", () => {
-    expect(rollStealth(10, 10, die(20))).toEqual({ roll: 20, dc: 18, outcome: "safe", critical: "success" });
-    expect(rollStealth(0, 0, die(1))).toEqual({ roll: 1, dc: 6, outcome: "caught", critical: "fail" });
+    expect(rollStealth(10, die(20))).toEqual({ sides: 20, roll: 20, dc: 18, outcome: "safe", critical: "success" });
+    expect(rollStealth(0, die(1))).toEqual({ sides: 20, roll: 1, dc: 5, outcome: "caught", critical: "fail" });
+  });
+
+  it("偷看中：d100 擲到 3 以下他回來了", () => {
+    expect(rollInterrupt(die(3, 100))).toEqual({ sides: 100, roll: 3, dc: 3, outcome: "caught", interrupted: true });
+    expect(rollInterrupt(die(4, 100))).toBeNull();
   });
 });

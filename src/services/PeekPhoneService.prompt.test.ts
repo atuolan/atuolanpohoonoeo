@@ -28,6 +28,7 @@ import {
   buildPromptContext,
   extractChatContext,
   extractSummariesAndEvents,
+  parseCaughtReaction,
   pickImportantEvents,
   type PeekSources,
 } from "./PeekPhoneService";
@@ -156,5 +157,12 @@ describe("PeekPhoneService：重要事件", () => {
     const text = await extractSummariesAndEvents("chat-1", "c1");
 
     expect(text).toContain("- 對貓過敏");
+  });
+});
+
+describe("PeekPhoneService：被抓到的反應", () => {
+  it("一行一則，拿掉名字前綴和引號，最多 4 則", () => {
+    const raw = "沈既白：你在幹嘛\n\n「……誰准你看的」\n算了\n那個草稿\n不准說出去";
+    expect(parseCaughtReaction(raw, "沈既白")).toEqual(["你在幹嘛", "……誰准你看的", "算了", "那個草稿"]);
   });
 });

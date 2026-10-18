@@ -159,6 +159,17 @@ describe("跟使用者那串是真的聊天時", () => {
     expect(buildGroupDPrompt(base)).not.toContain("真的發生過的事");
   });
 
+  it("被抓到的反應：寫出場景和看到的秘密，只寫他傳的訊息", async () => {
+    const { buildCaughtReactionPrompt } = await import("./PeekPhonePromptBuilder");
+    const mid = buildCaughtReactionPrompt(base, [{ label: "沒送出的話", detail: "其實那天我不是剛好路過" }], "mid");
+    expect(mid).toContain("被沈既白當場撞見");
+    expect(mid).toContain("- 沒送出的話：其實那天我不是剛好路過");
+    expect(mid).toContain("1 到 4 則訊息，每則一行");
+    const end = buildCaughtReactionPrompt(base, [], "end");
+    expect(end).toContain("還是發現了");
+    expect(end).toContain("（還沒看到什麼特別的）");
+  });
+
   it("鎖屏密碼可以參考第一次聊天的日期；沒有就不提", async () => {
     const { buildGroupAPrompt } = await import("./PeekPhonePromptBuilder");
     expect(buildGroupAPrompt({ ...base, firstChatDate: "2026-03-14" })).toContain("兩人第一次聊天是 2026-03-14");

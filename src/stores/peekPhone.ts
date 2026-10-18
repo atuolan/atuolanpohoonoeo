@@ -8,6 +8,7 @@ import { db, DB_STORES } from "@/db/database";
 import {
   extractChatContext,
   extractSummariesAndEvents,
+  generateCaughtReaction,
   generateContactReply,
   generateSequential,
   generateSinglePhase,
@@ -17,6 +18,8 @@ import { useLorebooksStore } from "@/stores/lorebooks";
 import { useNotificationStore } from "@/stores/notification";
 import { loadCharPlanner, syncPeekIntoPlanner } from "@/services/charPlanner";
 import { loadPeekRealData } from "@/services/PeekRealData";
+import { sendCharMessages } from "@/services/PeekLinks";
+import type { CaughtFinding } from "@/services/PeekPhonePromptBuilder";
 import { describeRealDataForPrompt, describeRealPhotosForPrompt } from "@/utils/peekRealData";
 import { buildPlannerPromptText, toDateString } from "@/utils/charPlanner";
 import { computeChatNow } from "@/utils/fakeTime";
@@ -325,6 +328,29 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
 
   function markRevealed(key: string): void {
     updateProgress((p) => (p.revealed.includes(key) ? p : { ...p, revealed: [...p.revealed, key] }));
+  }
+
+  /**
+   * 偷看被他抓到：請 AI 寫他的第一反應，以他的訊息加進聊天（手機可能已經被關掉，所以放在 store 裡跑）
+   * 失敗只記 log：聊天裡已經有「被發現」那筆，他下一則回覆還是會反應
+   */
+  async function reactToCaught(
+    character: StoredCharacter,
+    cId: string,
+    found: CaughtFinding[],
+    when: "mid" | "end",
+    storyTime: number,
+  ): Promise<void> {
+    try {
+      const chat = await db.get<Chat>(DB_STORES.CHATS, cId);
+      if (!chat) return;
+      const sources = await collectSources(chat, character, character.id, cId);
+      const lines = await generateCaughtReaction(character, sources, found, when);
+      const charName = character.data.name || character.nickname || "角色";
+      await sendCharMessages(cId, charName, lines, storyTime);
+    } catch (err) {
+      console.warn("[peekPhone] 被抓到的反應生成失敗:", err);
+    }
   }
 
   /** 草稿幫他送出了：記下來，輸入框不再顯示（草稿還算找到的秘密） */
@@ -825,6 +851,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     // 這段聊天用的使用者名字（偷窺手機上顯示真的聊天時用）
     resolveUserName: (chat: Chat, charId: string) => resolveUserInfo(chat, charId).userName,
     markDraftSent,
+    reactToCaught,
     // Exposed for testing
     cache,
     abortController,

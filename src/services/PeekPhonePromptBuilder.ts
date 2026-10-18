@@ -448,3 +448,44 @@ export function buildContactReplyPrompt(p: ContactReplyPromptParams): string {
   lines.push("4. 跟歷史對話用同一種語言。說中文就只寫中文一次；說其他語言就先寫原文，換行再寫中文翻譯。");
   return lines.join("\n");
 }
+
+/** 偷看被抓到時，他看到了什麼 */
+export interface CaughtFinding {
+  label: string;
+  detail: string;
+}
+
+/**
+ * 偷看被抓到：他直接傳訊息給使用者的反應（純文字，一行一則）
+ * when：mid 偷看到一半被他撞見、手機被拿走；end 放下手機後他發現手機被動過
+ */
+export function buildCaughtReactionPrompt(
+  ctx: PeekPromptContext,
+  found: CaughtFinding[],
+  when: "mid" | "end",
+): string {
+  const { charName, userName } = ctx;
+  const scene =
+    when === "mid"
+      ? `${userName}正拿著${charName}的手機偷看，被${charName}當場撞見，手機被拿回去了。`
+      : `${userName}偷看完${charName}的手機放回去，${charName}還是發現了。`;
+  const seen = found.length
+    ? found.map((f) => `- ${f.label}${f.detail ? `：${f.detail}` : ""}`).join("\n")
+    : "（還沒看到什麼特別的）";
+  return `你在角色扮演聊天中扮演「${charName}」。
+
+${buildCharacterBlock(ctx)}
+
+【剛剛發生的事】
+${scene}
+${userName}看到了：
+${seen}
+
+【要寫的】
+${charName}現在傳給${userName}的訊息，就是他對「被偷看」的第一反應。
+- 完全照${charName}的性格和你們現在的關係反應：可能生氣、害羞、慌張、裝沒事、反過來調侃、冷處理……不要每個角色都一樣。
+- 被看到的秘密如果很私密，他的反應要跟那件事有關（例如被看到沒送出的草稿，他可能會很窘）。
+- 1 到 4 則訊息，每則一行，像真的在傳訊息：口語、可以很短。
+- 只寫${charName}傳的訊息內容：不要旁白、不要動作描寫、不要加「${charName}:」前綴、不要引號或任何格式標記。
+- 跟最近的聊天紀錄用同一種語言；說其他語言的角色，每則先寫原文，同一行用「／」接中文翻譯。`;
+}

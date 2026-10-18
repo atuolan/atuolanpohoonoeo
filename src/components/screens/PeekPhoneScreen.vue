@@ -62,6 +62,7 @@ import {
   buildCaughtNote,
   buildSuspiciousNote,
   DEFAULT_PEEK_LINKS,
+  rollInterrupt,
   rollStealth,
   type PeekLinkSettings,
   type StealthCheck,
@@ -101,7 +102,11 @@ import {
 } from "lucide-vue-next";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
-const emit = defineEmits<{ back: [] }>();
+const emit = defineEmits<{
+  back: [];
+  /** 偷看被他抓到：手機被拿走，回到你們的聊天 */
+  caught: [];
+}>();
 const props = defineProps<{ characterId: string; chatId: string }>();
 
 const charactersStore = useCharactersStore();
@@ -332,47 +337,63 @@ const stealth = ref<StealthCheck | null>(null);
 const diceFace = ref(20);
 const diceRolling = ref(false);
 
-function rollStealthCheck(): StealthCheck {
-  const found = secrets.value.filter((s) => foundThisTime.has(s.key));
-  const check = rollStealth(found.length, appsThisTime.size);
+/** 擲骰結果定了：被發現或他起疑就在聊天裡留一筆；被抓到再請 AI 寫他的第一反應 */
+function settleStealth(check: StealthCheck) {
   stealth.value = check;
+  const found = secrets.value.filter((s) => foundThisTime.has(s.key));
+  const when = check.interrupted ? "mid" : "end";
   const { userName, charName: name } = peekNames();
   const note =
     check.outcome === "caught"
-      ? buildCaughtNote(found, userName, name)
+      ? buildCaughtNote(found, userName, name, when)
       : check.outcome === "suspicious"
         ? buildSuspiciousNote(name)
         : "";
-  if (note) {
-    void leavePeekNote(props.chatId, note, now.value.getTime()).catch((err) =>
-      console.warn("[PeekPhoneScreen] 留下被發現的紀錄失敗:", err),
-    );
-  }
-  return check;
+  if (!note) return;
+  const storyTime = now.value.getTime();
+  const char = character.value;
+  void leavePeekNote(props.chatId, note, storyTime)
+    .then(() => {
+      if (check.outcome === "caught" && char) {
+        return peekPhoneStore.reactToCaught(char, props.chatId, found, when, storyTime + 1);
+      }
+    })
+    .catch((err) => console.warn("[PeekPhoneScreen] 留下被發現的紀錄失敗:", err));
 }
 
-/** 想放下手機：偷看過又還沒擲骰就先擲，回傳 true 代表擋下來顯示結果 */
-function tryLeave(): boolean {
-  if (!openedThisTime || stealth.value) return false;
+/** 擲骰：結果先定好，再播骰子轉動 */
+function showStealth(check: StealthCheck) {
   showSheet.value = false;
-  const check = rollStealthCheck();
+  settleStealth(check);
   const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   if (reduceMotion) {
     diceFace.value = check.roll;
-    return true;
+    return;
   }
   diceRolling.value = true;
   let ticks = 0;
   const timer = window.setInterval(() => {
     ticks++;
-    diceFace.value = 1 + Math.floor(Math.random() * 20);
+    diceFace.value = 1 + Math.floor(Math.random() * check.sides);
     if (ticks >= 14) {
       window.clearInterval(timer);
       diceFace.value = check.roll;
       diceRolling.value = false;
     }
   }, 60);
+}
+
+/** 想放下手機：偷看過又還沒擲骰就先擲，回傳 true 代表擋下來顯示結果 */
+function tryLeave(): boolean {
+  if (!openedThisTime || stealth.value) return false;
+  showStealth(rollStealth(foundThisTime.size));
   return true;
+}
+
+/** 擲骰畫面的按鈕：被抓到回聊天，其他放下手機 */
+function closeStealth() {
+  if (stealth.value?.outcome === "caught") emit("caught");
+  else emit("back");
 }
 
 function leavePhone() {
@@ -382,6 +403,7 @@ function leavePhone() {
 const stealthTitle = computed(() => {
   const check = stealth.value;
   if (!check) return "";
+  if (check.interrupted) return "他回來了！手機被拿走了";
   if (check.critical === "success") return "大成功！他完全沒發現";
   if (check.critical === "fail") return "大失敗……被他當場抓到";
   if (check.outcome === "safe") return "成功，他沒發現";
@@ -391,7 +413,7 @@ const stealthTitle = computed(() => {
 
 // 沒經過「放下手機」就離開（例如直接回主畫面）：背後擲骰
 onUnmounted(() => {
-  if (openedThisTime && !stealth.value) rollStealthCheck();
+  if (openedThisTime && !stealth.value) settleStealth(rollStealth(foundThisTime.size));
 });
 
 /** 幫他按送出：跟使用者那串的草稿以他的身分出現在聊天裡 */
@@ -438,10 +460,15 @@ const capsuleLabel = computed(() => {
 const hasUnfound = computed(() => Object.values(unfound.value).some((n) => n > 0));
 
 // 打開過哪些 App；打開「已隱藏」就算找到那本相簿
-watch(currentView, (view) => {
+watch(currentView, (view, prev) => {
   if (view === "lock" || view === "home") return;
   peekPhoneStore.markViewed(homeTabOfView(view));
   appsThisTime.add(homeTabOfView(view));
+  // 從桌面打開一個 App：擲一次突發事件，他可能剛好回來
+  if (prev === "home" && !stealth.value) {
+    const check = rollInterrupt();
+    if (check) showStealth(check);
+  }
   if (view === "hidden" && hiddenPhotos.value.length > 0) reveal(secretKeys.hidden);
   // 打開備忘錄、行事曆就看到了聊天裡看不到的待辦和行程
   if (view === "memo") {
@@ -720,6 +747,12 @@ function goBackFromApp() {
 
 /** 右滑返回：先退手機裡的一層（面板、聊天、日記、App），退到主畫面或鎖屏才回 false，讓外面離開手機 */
 function handleBack(): boolean {
+  // 擲骰畫面開著：返回等於按下面的按鈕
+  if (stealth.value && !diceRolling.value) {
+    closeStealth();
+    return true;
+  }
+  if (stealth.value) return true;
   if (showSheet.value) {
     showSheet.value = false;
     return true;
@@ -1646,8 +1679,10 @@ const todayLabel = computed(
     <Transition name="stealth-fade">
       <div v-if="stealth" class="stealth-layer" role="dialog" aria-modal="true" aria-label="隱匿檢定">
         <div class="stealth-card" :class="!diceRolling && `is-${stealth.outcome}`">
-          <div class="stealth-label">隱匿檢定</div>
-          <div class="stealth-dc">難度 DC {{ stealth.dc }}</div>
+          <div class="stealth-label">{{ stealth.interrupted ? "突發事件" : "隱匿檢定" }}</div>
+          <div class="stealth-dc">
+            {{ stealth.interrupted ? `d100 擲到 ${stealth.dc} 以下他就回來了` : `d20 · 難度 DC ${stealth.dc}` }}
+          </div>
           <div class="stealth-die" :class="{ rolling: diceRolling }" aria-live="polite">
             <svg viewBox="0 0 100 100" aria-hidden="true">
               <polygon points="50,4 93,27 93,73 50,96 7,73 7,27" class="stealth-die-body" />
@@ -1662,10 +1697,14 @@ const todayLabel = computed(
           <template v-if="!diceRolling">
             <div class="stealth-title">{{ stealthTitle }}</div>
             <p class="stealth-sub">
-              這次找到 {{ foundThisTime.size }} 個秘密、翻了 {{ appsThisTime.size }} 個 App
-              <template v-if="stealth.outcome !== 'safe'"><br />聊天裡會留一筆，他下一則回覆會看到</template>
+              <template v-if="foundThisTime.size">這次找到 {{ foundThisTime.size }} 個秘密<br /></template>
+              <template v-if="stealth.outcome === 'caught'">他正在傳訊息給你……</template>
+              <template v-else-if="stealth.outcome === 'suspicious'">聊天裡會留一筆，他下一則回覆會看到</template>
+              <template v-else-if="!foundThisTime.size">什麼都沒留下</template>
             </p>
-            <button type="button" class="stealth-leave" @click="emit('back')">放下手機</button>
+            <button type="button" class="stealth-leave" @click="closeStealth">
+              {{ stealth.outcome === "caught" ? "回到聊天" : "放下手機" }}
+            </button>
           </template>
         </div>
       </div>

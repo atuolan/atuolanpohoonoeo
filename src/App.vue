@@ -971,6 +971,22 @@ function leavePeekPhone() {
   navigateBackWithFallback(() => navigateToPage("peek-phone-select", { mode: "replace" }));
 }
 
+/** 偷看被他抓到：手機被拿走，直接換成你們的聊天（返回不會回到手機） */
+function peekCaughtToChat() {
+  const characterId = peekPhoneCharacterId.value;
+  const chatId = peekPhoneChatId.value;
+  const character = charactersStore.characters.find((c) => c.id === characterId);
+  if (!characterId || !chatId || !character) {
+    leavePeekPhone();
+    return;
+  }
+  chatCharacterName.value = character.nickname || character.data?.name || "角色";
+  chatCharacterAvatar.value = character.avatar || "";
+  currentChatCharacterId.value = characterId;
+  currentChatId.value = chatId;
+  navigateToPage("chat", { mode: "replace" });
+}
+
 // 離開手機（含瀏覽器返回）才清掉角色；從歷史前進回到沒有角色的手機頁就退回選角色
 watch(currentPage, (page) => {
   if (page !== "peek-phone") {
@@ -3075,6 +3091,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       ref="peekPhoneScreenRef"
       :chat-id="peekPhoneChatId"
       @back="leavePeekPhone"
+      @caught="peekCaughtToChat"
     />
 
     <!-- 小劇場 -->

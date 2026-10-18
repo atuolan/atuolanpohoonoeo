@@ -64,8 +64,8 @@ export async function rememberPeekSecret(
 }
 
 /** 加進聊天記錄，開著的聊天頁會重新讀 */
-async function appendToChat(chatId: string, message: ChatMessage): Promise<void> {
-  await appendMessages(chatId, [message]);
+async function appendToChat(chatId: string, messages: ChatMessage[]): Promise<void> {
+  await appendMessages(chatId, messages);
   // chatStorage 刪聊天時會刪這裡的開關，動態載入避免互相引用
   const { refreshChatDerivedMetadata } = await import("@/storage/chatStorage");
   await refreshChatDerivedMetadata(chatId).catch(() => undefined);
@@ -79,7 +79,7 @@ async function appendToChat(chatId: string, message: ChatMessage): Promise<void>
 /** 被他發現、他起疑：聊天裡留一筆系統訊息；storyTime 是聊天的有效時間 */
 export async function leavePeekNote(chatId: string, content: string, storyTime: number): Promise<void> {
   const now = Date.now();
-  await appendToChat(chatId, {
+  await appendToChat(chatId, [{
     id: `msg_peek_caught_${now}`,
     sender: "system",
     name: "system",
@@ -90,7 +90,29 @@ export async function leavePeekNote(chatId: string, content: string, storyTime: 
     updatedAt: now,
     storyTime,
     isSystemNotification: true,
-  });
+  }]);
+}
+
+/** 以他的身分加進聊天（幫他送出的草稿、被抓到時他的反應），一句一則 */
+export async function sendCharMessages(
+  chatId: string,
+  charName: string,
+  texts: string[],
+  storyTime: number,
+): Promise<void> {
+  const now = Date.now();
+  const messages: ChatMessage[] = texts.map((content, i) => ({
+    id: `msg_peek_char_${now}_${i}`,
+    sender: "assistant",
+    name: charName,
+    content,
+    is_user: false,
+    status: "sent",
+    createdAt: now + i,
+    updatedAt: now + i,
+    storyTime: storyTime + i,
+  }));
+  if (messages.length) await appendToChat(chatId, messages);
 }
 
 /** 幫他按送出：草稿以他的身分出現在聊天裡 */
@@ -100,16 +122,5 @@ export async function sendDraftAsChar(
   text: string,
   storyTime: number,
 ): Promise<void> {
-  const now = Date.now();
-  await appendToChat(chatId, {
-    id: `msg_peek_draft_${now}`,
-    sender: "assistant",
-    name: charName,
-    content: text,
-    is_user: false,
-    status: "sent",
-    createdAt: now,
-    updatedAt: now,
-    storyTime,
-  });
+  await sendCharMessages(chatId, charName, [text], storyTime);
 }
