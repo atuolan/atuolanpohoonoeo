@@ -77,6 +77,7 @@ import { createStTemplateContext } from "@/services/StTemplateContextService";
 import { applyChatPromptPreset } from "@/utils/chatPromptPreset";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { resolveStoryTime } from "@/utils/fakeTime";
+import { formatCharStatusForPrompt, formatGap } from "@/utils/elapsedTime";
 import { getMacroEngine } from "../macros/MacroEngine";
 import { resolveDeferredVariables } from "./deferredVariables";
 import { WorldInfoScanner } from "../worldinfo/WorldInfoScanner";
@@ -274,6 +275,8 @@ export interface PromptBuilderOptions {
   doNotDisturb?: boolean;
   /** 角色目前的狀態文字（用於 {{charStatus}} 宏，顯示在聊天頂欄角色名字下方） */
   charStatus?: string;
+  /** 狀態設定的時間，{{charStatus}} 會帶上「多久前設定」 */
+  charStatusUpdatedAt?: number;
   /** 這個角色上一張便利貼（用於 {{charStickyNote}} 宏，例如「今天 14:20：記得帶傘」） */
   charStickyNote?: string;
   /** {{user}} 主畫面的心情便籤（用於 {{userMoodNote}} 宏；空的時候「心情便籤」條目不輸出） */
@@ -636,7 +639,7 @@ export class PromptBuilder {
         readingBookTitle: options.companionReading?.bookTitle || "",
         readingWindow: options.companionReading?.readingWindow || "（還沒開始讀）",
         readingSummaries: options.companionReading?.readingSummaries || "（還沒有摘要）",
-        charStatus: options.charStatus || "還沒設定",
+        charStatus: formatCharStatusForPrompt(options.charStatus, options.charStatusUpdatedAt),
         charStickyNote: options.charStickyNote || "還沒寫過",
         userMoodNote: options.userMoodNote || "",
         charPlanner: options.charPlanner || "",
@@ -790,7 +793,7 @@ export class PromptBuilder {
         readingBookTitle: options.companionReading?.bookTitle || "",
         readingWindow: options.companionReading?.readingWindow || "（還沒開始讀）",
         readingSummaries: options.companionReading?.readingSummaries || "（還沒有摘要）",
-        charStatus: options.charStatus || "還沒設定",
+        charStatus: formatCharStatusForPrompt(options.charStatus, options.charStatusUpdatedAt),
         charStickyNote: options.charStickyNote || "還沒寫過",
         userMoodNote: options.userMoodNote || "",
         charPlanner: options.charPlanner || "",
@@ -804,13 +807,18 @@ export class PromptBuilder {
    * 格式化消息時間戳標籤
    * 優先使用訊息建立時記下的劇情時間；舊訊息沒有 storyTime 時才套用目前的假時間偏移
    */
-  private formatMsgTimeTag(msg: { createdAt: number; storyTime?: number }): string {
+  /** 訊息在聊天時間軸上的時間（偏移／劇情時鐘都算進去） */
+  private resolveMsgTime(msg: { createdAt: number; storyTime?: number }): number {
     // 劇情時鐘的舊訊息是在現實時間發生的，不套用暫停點的偏移
     const fallbackOffset =
       this.options.fakeTimeOverride && this.options.fakeTimeMode !== "story"
         ? this.options.fakeTimeOverride.getTime() - Date.now()
         : 0;
-    const d = new Date(resolveStoryTime(msg, fallbackOffset));
+    return resolveStoryTime(msg, fallbackOffset);
+  }
+
+  private formatMsgTimeTag(msg: { createdAt: number; storyTime?: number }): string {
+    const d = new Date(this.resolveMsgTime(msg));
     const y = d.getFullYear();
     const mon = (d.getMonth() + 1).toString().padStart(2, "0");
     const day = d.getDate().toString().padStart(2, "0");
@@ -2039,6 +2047,10 @@ export class PromptBuilder {
               "{{currentDay}}",
               ["日", "一", "二", "三", "四", "五", "六"][now.getDay()],
             );
+          if (identifier === "timeInfo") {
+            const gapNote = this.buildReplyGapNote(now);
+            if (gapNote) content += `\n\n${gapNote}`;
+          }
           content = await this.macroEngine.substitute(content);
           return content ? { role: getRole(), content, identifier } : null;
         }
@@ -2635,6 +2647,50 @@ ${PHONE_CALL_BILINGUAL_REMINDER}`
 
   private static readonly TIME_ADVANCE_LINE =
     `<time-advance minutes="經過的分鐘數" reason="原因"/>（也可用 hours="小時數"）`;
+
+  /** 距離上次回覆超過這個時間，才提醒角色這段時間生活照常在走 */
+  private static readonly REPLY_GAP_NUDGE_MS = 10 * 60 * 1000;
+
+  /**
+   * 線上聊天：角色上一次回覆到現在過了多久。
+   * 訊息上雖然有時間戳，模型常常不會自己去算（上次說去洗澡，隔一小時回來還在洗），
+   * 直接把經過的時間算好給它。
+   */
+  private buildReplyGapNote(now: Date): string | null {
+    const lastCharMsg = [...this.options.messages]
+      .reverse()
+      .find(
+        (m) =>
+          !m.is_user &&
+          !m.isTimetravel &&
+          m.sender !== "system" &&
+          m.sender !== "narrator" &&
+          m.createdAt,
+      );
+    if (!lastCharMsg) return null;
+
+    const lastAt = new Date(this.resolveMsgTime(lastCharMsg));
+    const gapMs = now.getTime() - lastAt.getTime();
+    // 循環時間模式繞回起點時會是負的，這時算不出有意義的間隔
+    if (!Number.isFinite(gapMs) || gapMs < 0) return null;
+
+    const hm = `${lastAt.getHours().toString().padStart(2, "0")}:${lastAt.getMinutes().toString().padStart(2, "0")}`;
+    const sameDay = lastAt.toDateString() === now.toDateString();
+    const lastAtText = sameDay ? hm : `${lastAt.getMonth() + 1}/${lastAt.getDate()} ${hm}`;
+    const gap = formatGap(gapMs);
+
+    if (gapMs < PromptBuilder.REPLY_GAP_NUDGE_MS) {
+      return `[距離上次回覆] {{char}} 上一次回覆在 ${lastAtText}，才過了 ${gap}，接著剛才的話題和正在做的事。`;
+    }
+    return [
+      "[距離上次回覆]",
+      `{{char}} 上一次回覆在 ${lastAtText}，到現在已經過了 ${gap}。`,
+      "這段時間 {{char}} 的生活照常在走，不會停在上一次回覆的那一刻：",
+      "- 上次說要去做或正在做的事（洗澡、吃飯、開會、出門），照常理該做完了就是做完了，現在在做下一件事",
+      "- 依經過的時間推想這段時間做了什麼、現在在哪裡做什麼，自然帶到就好，不用每次都交代行程",
+      "- 在做的事變了，就用 <char-status> 更新狀態",
+    ].join("\n");
+  }
 
   /** 目前劇情時間的各種格式 */
   private getStoryNowParts() {

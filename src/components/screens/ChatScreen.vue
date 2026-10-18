@@ -5112,6 +5112,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       doNotDisturb: chatDoNotDisturb.value,
       // 傳入角色目前的狀態（{{charStatus}}）
       charStatus: charStatus.value?.text,
+      charStatusUpdatedAt: charStatus.value?.updatedAt,
       // 傳入這個角色上一張紙條（{{charStickyNote}}）與 user 的心情（{{userMoodNote}}）
       charStickyNote: noteBoardContext.charStickyNote,
       userMoodNote: noteBoardContext.moodNote,

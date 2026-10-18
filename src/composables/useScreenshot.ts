@@ -109,6 +109,63 @@ function rasterizeLoadedImageElement(img: HTMLImageElement): string | null {
   }
 }
 
+/**
+ * html2canvas 會把整頁複製進隱形 iframe，<link> 的 CSS 在 iframe 裡會重新下載一次。
+ * App 開著期間網站若更新過，舊版 CSS 檔已經不在（Cloudflare 對不存在的檔案回首頁 HTML），
+ * iframe 就整個沒有樣式，截出來是一行行裸文字。改用主頁面已經載好的規則，不再重抓。
+ */
+function inlineLinkedStylesheets(clonedDoc: Document): void {
+  const loadedCss = new Map<string, string>()
+  for (const sheet of Array.from(document.styleSheets)) {
+    if (!sheet.href || !(sheet.ownerNode instanceof HTMLLinkElement)) continue
+    try {
+      loadedCss.set(
+        sheet.href,
+        Array.from(sheet.cssRules, (rule) => rule.cssText).join('\n'),
+      )
+    } catch {
+      // 跨網域（Google Fonts）讀不到 cssRules，留給 iframe 自己載
+    }
+  }
+  clonedDoc
+    .querySelectorAll<HTMLLinkElement>('link[rel~="stylesheet"]')
+    .forEach((link) => {
+      const href = link.getAttribute('href')
+      if (!href) return
+      const css = loadedCss.get(new URL(href, document.baseURI).href)
+      if (css === undefined) return
+      const style = clonedDoc.createElement('style')
+      if (link.media) style.media = link.media
+      style.textContent = css
+      link.replaceWith(style)
+    })
+}
+
+const SCREENSHOT_TARGET_ATTR = 'data-screenshot-target'
+
+/**
+ * 截圖範圍內的樣式微調：
+ * - html2canvas 1.4.1 畫 box-shadow 時圓角遮罩算錯，泡泡會被畫出斜切的灰色三角形，
+ *   陰影一律拿掉（原本就只是很淡的立體感）。
+ * - CSS 換成內嵌後進場動畫會從頭播（引用框 reply-pop 第一格是透明的），
+ *   動畫直接跳到結束狀態。
+ */
+function settleTargetForCapture(clonedDoc: Document, target: HTMLElement): void {
+  target.setAttribute(SCREENSHOT_TARGET_ATTR, '')
+  const scope = `[${SCREENSHOT_TARGET_ATTR}]`
+  const style = clonedDoc.createElement('style')
+  style.textContent = `
+    ${scope}, ${scope} * { box-shadow: none !important; }
+    ${scope}, ${scope} *, ${scope} *::before, ${scope} *::after {
+      animation-duration: 0s !important;
+      animation-delay: 0s !important;
+      animation-iteration-count: 1 !important;
+      transition: none !important;
+    }
+  `
+  clonedDoc.head.appendChild(style)
+}
+
 export interface ScreenshotOptions {
   /** 輸出格式 */
   format: 'png' | 'jpeg'
@@ -289,6 +346,10 @@ export function useScreenshot() {
         scrollY: 0,
         x: 0,
         y: 0,
+        onclone: (clonedDoc, clonedEl) => {
+          inlineLinkedStylesheets(clonedDoc)
+          settleTargetForCapture(clonedDoc, clonedEl)
+        },
       })
 
       // 恢復 object-fit 圖片原始狀態
