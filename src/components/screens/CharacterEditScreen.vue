@@ -9,6 +9,8 @@ import {
   affinityTemplateService,
   DEFAULT_PROMPT_TEMPLATE,
 } from "@/services/AffinityTemplateService";
+import { CHARACTER_DELETE_CONFIRM } from "@/services/characterDeletion";
+import { showFloatingToast } from "@/utils/floatingToast";
 import { searchCities } from "@/services/WeatherService";
 import { useCharactersStore, useLorebooksStore } from "@/stores";
 import { useAffinityStore } from "@/stores/affinity";
@@ -386,6 +388,7 @@ onMounted(async () => {
     } else {
       console.error("找不到角色:", props.characterId);
       emit("back");
+      return;
     }
   } else {
     // 新建模式，生成新 ID
@@ -393,28 +396,95 @@ onMounted(async () => {
     formData.value.createdAt = Date.now();
     formData.value.updatedAt = Date.now();
   }
+
+  // 以載入完的內容為基準，之後有改動才自動儲存
+  markSaved();
+  editorLoaded = true;
 });
 
+// ===== 儲存與自動儲存 =====
+// 離開頁面時（返回鍵、右滑、Android 返回、點進世界書、App 切到背景）有改動就自動存
+
+const isSaving = ref(false);
+let inflightSave: Promise<boolean> | null = null;
+/** 載入完才開始比對；載入前就離開不算有改動 */
+let editorLoaded = false;
+let savedSnapshot = "";
+/** 刪除角色後不要再自動存回去 */
+let skipAutoSave = false;
+
+function editorSnapshot(): string {
+  return JSON.stringify([
+    formData.value,
+    worldSettings.value,
+    fitnessConfig.value,
+    affinityConfig.value,
+  ]);
+}
+
+function markSaved() {
+  savedSnapshot = editorSnapshot();
+}
+
+function isDirty(): boolean {
+  return editorLoaded && !skipAutoSave && editorSnapshot() !== savedSnapshot;
+}
+
 // 處理返回
-function handleBack() {
+async function handleBack() {
+  if (!(await confirmLeave())) return;
   emit("back");
 }
 
-// 儲存中：連點勾勾會在新建時建出兩張一樣的卡
-const isSaving = ref(false);
-const saveToast = ref("");
-let saveToastTimer: ReturnType<typeof setTimeout> | null = null;
-
-function showSaveToast(message: string) {
-  saveToast.value = message;
-  if (saveToastTimer) clearTimeout(saveToastTimer);
-  saveToastTimer = setTimeout(() => {
-    saveToast.value = "";
-  }, 2000);
+// 點綁定的世界書：先存，回來時修改還在
+async function openLorebook(lorebookId: string) {
+  if (!(await confirmLeave())) return;
+  emit("open-lorebook", lorebookId);
 }
 
+/** 自動儲存；存不了時問要不要照樣離開 */
+async function confirmLeave(): Promise<boolean> {
+  const result = await autoSaveIfNeeded();
+  if (result === "saved") showFloatingToast("已自動儲存");
+  const warning =
+    result === "no-name"
+      ? "還沒填角色名稱，沒辦法儲存。仍要離開嗎？（這次的修改不會保存）"
+      : result === "failed"
+        ? "自動儲存失敗。仍要離開嗎？（這次的修改不會保存）"
+        : "";
+  if (warning && !confirm(warning)) return false;
+  // 已經處理過了，卸載時不用再存一次
+  skipAutoSave = true;
+  return true;
+}
+
+async function autoSaveIfNeeded(): Promise<
+  "clean" | "saved" | "no-name" | "failed"
+> {
+  if (inflightSave) await inflightSave;
+  if (!isDirty()) return "clean";
+  if (!formData.value.data.name.trim()) return "no-name";
+  // 離開時沒辦法請使用者補名稱：沒名稱的好感度指標／階段直接拿掉
+  tidyAffinityConfigForSave(true);
+  return (await runSave()) ? "saved" : "failed";
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState === "hidden") void autoSaveIfNeeded();
+}
+
+onMounted(() => {
+  document.addEventListener("visibilitychange", onVisibilityChange);
+});
+
 onBeforeUnmount(() => {
-  if (saveToastTimer) clearTimeout(saveToastTimer);
+  document.removeEventListener("visibilitychange", onVisibilityChange);
+  // 右滑、Android 返回等由 App 切頁的離開：頁面已經要卸載，沒辦法問，直接存
+  if (skipAutoSave) return;
+  void autoSaveIfNeeded().then((result) => {
+    if (result === "saved") showFloatingToast("已自動儲存");
+    if (result === "failed") showFloatingToast("角色自動儲存失敗", true);
+  });
 });
 
 // 處理儲存
@@ -429,26 +499,38 @@ async function handleSave() {
     alert(affinityProblem);
     return;
   }
-  isSaving.value = true;
-  try {
-    await saveAll();
-  } finally {
-    isSaving.value = false;
+  if (await runSave()) {
+    showFloatingToast("已儲存");
+  } else {
+    alert("角色儲存失敗，請再試一次");
   }
+}
+
+/** 同一時間只存一次：連點勾勾或存到一半就離開，新建時會建出兩張一樣的卡 */
+function runSave(): Promise<boolean> {
+  if (inflightSave) return inflightSave;
+  isSaving.value = true;
+  inflightSave = saveAll().finally(() => {
+    isSaving.value = false;
+    inflightSave = null;
+  });
+  return inflightSave;
 }
 
 /**
  * 存好感度前整理：沒名稱的指標／階段讀回來會驗證失敗，清空的數字欄位會存成空字串。
- * 模組開著就請使用者補上名稱；關著時編輯區看不到，直接把空的拿掉。
+ * 模組開著就請使用者補上名稱；關著時（編輯區看不到）或離開時自動存，直接把空的拿掉。
  */
-function tidyAffinityConfigForSave(): string | null {
+function tidyAffinityConfigForSave(
+  dropBlank = !affinityConfig.value.enabled,
+): string | null {
   const config = affinityConfig.value;
-  if (!config.enabled) {
+  if (dropBlank) {
     config.metrics = config.metrics.filter((m) => m.name?.trim());
   }
   for (const metric of config.metrics) {
     if (!metric.name?.trim()) return "好感度數值有指標還沒填名稱";
-    if (!config.enabled) {
+    if (dropBlank) {
       metric.stages = metric.stages.filter((s) => s.name?.trim());
     }
     if (metric.stages.some((s) => !s.name?.trim())) {
@@ -466,7 +548,7 @@ function tidyAffinityConfigForSave(): string | null {
   return null;
 }
 
-async function saveAll() {
+async function saveAll(): Promise<boolean> {
   formData.value.updatedAt = Date.now();
 
   // 儲存世界設定（只保留有值的欄位）
@@ -497,11 +579,8 @@ async function saveAll() {
   await affinityStore.saveConfig(affinityConfig.value);
 
   const ok = (await props.onSave?.({ ...formData.value })) ?? false;
-  if (ok) {
-    showSaveToast("已儲存");
-  } else {
-    alert("角色儲存失敗，請再試一次");
-  }
+  if (ok) markSaved();
+  return ok;
 }
 
 // ===== 好感度配置 =====
@@ -557,7 +636,8 @@ function _updateAffinityPreview() {
 
 // 處理刪除
 function handleDelete() {
-  if (confirm("確定要刪除這個角色嗎？此操作不可恢復！")) {
+  if (confirm(CHARACTER_DELETE_CONFIRM)) {
+    skipAutoSave = true;
     emit("delete", formData.value.id);
   }
 }
@@ -1585,7 +1665,7 @@ async function submitPasteRegex() {
                 <span class="lorebook-icon">📖</span>
                 <span
                   class="lorebook-name lorebook-link"
-                  @click="emit('open-lorebook', lbId)"
+                  @click="openLorebook(lbId)"
                   >{{
                     availableLorebooks.find((lb) => lb.id === lbId)?.name ||
                     "未知世界書"
@@ -2452,32 +2532,10 @@ async function submitPasteRegex() {
         </div>
       </Transition>
     </Teleport>
-
-    <Transition name="fade">
-      <div v-if="saveToast" class="save-toast" role="status">
-        {{ saveToast }}
-      </div>
-    </Transition>
   </div>
 </template>
 
 <style lang="scss" scoped>
-.save-toast {
-  position: fixed;
-  left: 50%;
-  bottom: calc(
-    var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 72px
-  );
-  transform: translateX(-50%);
-  padding: 10px 20px;
-  border-radius: 12px;
-  background: rgba(30, 30, 30, 0.88);
-  color: #fff;
-  font-size: 14px;
-  pointer-events: none;
-  z-index: 1000;
-}
-
 .character-edit-screen {
   background: #f5f5f5;
 }

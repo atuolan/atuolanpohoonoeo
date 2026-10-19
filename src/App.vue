@@ -2488,12 +2488,16 @@ async function handleCharacterSave(character: any): Promise<boolean> {
   };
 
   try {
-    if (isCreatingNew.value) {
-      // 創建新角色：存完後留在頁面，切換成「編輯現有」模式
+    // 看角色在不在決定新建或更新：離開頁面時的自動儲存，App 已經切走、isCreatingNew 已重設
+    if (!existingChar) {
       const created = await charactersStore.createCharacter(characterData);
       if (!created) return false;
-      selectedCharacterId.value = character.id;
-      isCreatingNew.value = false;
+      // 存完還在編輯頁：切成「編輯現有」，返回紀錄也一起改，退回來才不會又是空白的新建頁
+      if (currentPage.value === "character-edit" && isCreatingNew.value) {
+        selectedCharacterId.value = character.id;
+        isCreatingNew.value = false;
+        syncBrowserHistory("replace");
+      }
     } else {
       // 更新現有角色
       const ok = await charactersStore.updateCharacter(character.id, characterData);
