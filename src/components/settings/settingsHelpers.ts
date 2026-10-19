@@ -2,6 +2,8 @@
  * 設定 App 各頁共用的小工具（格式化、剪貼簿、API 資訊顯示）。
  */
 
+import { aiProxyHost } from "@/native/platform";
+
 export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -133,7 +135,7 @@ export function toWorkerProxyUrl(url: string, directConnect: boolean | undefined
   try {
     const parsed = new URL(url, window.location.origin);
     if (parsed.origin === window.location.origin) return url;
-    return `https://tight-sun-f7fa.a23971123.workers.dev/proxy/${parsed.host}${parsed.pathname}${parsed.search}`;
+    return `${aiProxyHost()}/proxy/${parsed.host}${parsed.pathname}${parsed.search}`;
   } catch {
     return url;
   }
@@ -147,7 +149,7 @@ export function toAiProxyUrl(url: string, directConnect: boolean | undefined): s
     const parsed = new URL(url, window.location.origin);
     if (parsed.origin === window.location.origin) return url;
     const prefix = parsed.protocol === "http:" ? "/ai-proxy-http/" : "/ai-proxy/";
-    return `https://tight-sun-f7fa.a23971123.workers.dev${prefix}${parsed.host}${parsed.pathname}`;
+    return `${aiProxyHost()}${prefix}${parsed.host}${parsed.pathname}`;
   } catch {
     return url;
   }

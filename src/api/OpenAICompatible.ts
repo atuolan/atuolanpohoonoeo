@@ -12,6 +12,7 @@ import type {
     StreamingEvent,
 } from "@/types/chat";
 import type { APISettings } from "@/types/settings";
+import { aiProxyHost } from "@/native/platform";
 import { postProcessPrompt, type PromptPostProcessingType } from "@/utils/promptPostProcessor";
 import { applyTextToolProtocol } from "@/services/toolCalling/textToolPrompt";
 import {
@@ -350,13 +351,7 @@ export class OpenAICompatibleClient {
   }
 
   /**
-   * AI API 代理專用子域名（灰雲 DNS only，繞過 Cloudflare 100s timeout）
-   */
-  private static readonly AI_PROXY_HOST = "https://tight-sun-f7fa.a23971123.workers.dev";
-
-  /**
-   * 將外部 API URL 轉為代理路徑（解決 CORS 問題）
-   * 走灰雲子域名 api-203.aguacloud.uk（繞過 Cloudflare 100s timeout 限制）
+   * 將外部 API URL 轉為代理路徑（解決 CORS 問題），代理網址見 aiProxyHost()
    * 若啟用直連模式則跳過代理，直接從瀏覽器發出請求
    */
   private toProxyUrl(url: string): string {
@@ -374,7 +369,7 @@ export class OpenAICompatibleClient {
         // 這會走 Cloudflare 橙雲，有 100s timeout 限制，需要重導到灰雲子域名
         if (parsed.pathname.startsWith('/ai-proxy')) {
           console.warn(`[API] 偵測到 AI 請求走主域名代理路徑，重導到灰雲子域名: ${url}`);
-          return `${OpenAICompatibleClient.AI_PROXY_HOST}${parsed.pathname}`;
+          return `${aiProxyHost()}${parsed.pathname}`;
         }
         return url;
       }
@@ -382,7 +377,7 @@ export class OpenAICompatibleClient {
       // 走灰雲子域名，繞過 Cloudflare timeout
       const prefix =
         parsed.protocol === "http:" ? "/ai-proxy-http/" : "/ai-proxy/";
-      return `${OpenAICompatibleClient.AI_PROXY_HOST}${prefix}${parsed.host}${parsed.pathname}`;
+      return `${aiProxyHost()}${prefix}${parsed.host}${parsed.pathname}`;
     } catch {
       return url;
     }

@@ -7,7 +7,16 @@ vi.mock("@capacitor/core", () => ({
   Capacitor: { isNativePlatform: () => native },
 }));
 
-const { NATIVE_PROXY_HOST, resolveProxyPath } = await import("./platform");
+const { NATIVE_PROXY_HOST, PROXY_WORKERS_DEV, aiProxyHost, resolveProxyPath } = await import("./platform");
+
+describe("aiProxyHost", () => {
+  it("網頁版照舊走 workers.dev，App 走不會被大陸 DNS 擋的自訂網域", () => {
+    expect(aiProxyHost()).toBe(PROXY_WORKERS_DEV);
+    native = true;
+    expect(aiProxyHost()).toBe("https://nai-proxy.aguacloud.uk");
+    native = false;
+  });
+});
 
 afterEach(() => {
   native = false;

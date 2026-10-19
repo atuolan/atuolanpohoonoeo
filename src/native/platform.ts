@@ -12,8 +12,23 @@ export function isNativeApp(): boolean {
   return Capacitor.isNativePlatform();
 }
 
-/** 通用代理 Worker（cloudflare-worker/tight-sun-f7fa），支援 /ai-proxy/、/ai-proxy-http/、/image-proxy */
-export const NATIVE_PROXY_HOST = "https://tight-sun-f7fa.a23971123.workers.dev";
+/**
+ * 通用代理 Worker（cloudflare-worker/tight-sun-f7fa），支援 /proxy/、/ai-proxy/、/ai-proxy-http/、/image-proxy。
+ * 同一個 Worker 有兩個網址：workers.dev 和自訂網域 nai-proxy.aguacloud.uk。
+ */
+export const PROXY_WORKERS_DEV = "https://tight-sun-f7fa.a23971123.workers.dev";
+export const NATIVE_PROXY_HOST = "https://nai-proxy.aguacloud.uk";
+
+/**
+ * AI 請求（聊天、拉模型、Embedding）用的代理網址。
+ *
+ * *.workers.dev 在大陸被封。網頁版的使用者多半靠瀏覽器的 VPN／安全 DNS 繞過，
+ * 新裝的 App 常常不在 VPN 的分應用清單裡、用的是系統 DNS，就會 Failed to fetch；
+ * App 改走同一個 Worker 的自訂網域。
+ */
+export function aiProxyHost(): string {
+  return isNativeApp() ? NATIVE_PROXY_HOST : PROXY_WORKERS_DEV;
+}
 
 /**
  * 網頁版用的相對代理路徑，在 App 裡改成指向代理 Worker 的完整網址。
