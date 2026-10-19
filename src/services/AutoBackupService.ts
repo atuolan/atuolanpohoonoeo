@@ -68,6 +68,8 @@ let _dirHandle: FileSystemDirectoryHandle | null = null;
 // ============================================================
 
 export function isFileSystemAccessSupported(): boolean {
+  // App 的 WebView 有 showDirectoryPicker 但按了不會跳出選擇器；App 裡備份固定寫進「文件／203Phone」
+  if (isNativeApp()) return false;
   return typeof window !== "undefined" && "showDirectoryPicker" in window;
 }
 
