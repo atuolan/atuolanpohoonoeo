@@ -4,6 +4,7 @@
  */
 
 import { db, DB_STORES } from "@/db/database";
+import { isNativeApp, nativeOAuthReturnBase } from "@/native/platform";
 import * as CloudPushService from "@/services/CloudPushService";
 import {
   createChatRecord,
@@ -424,14 +425,23 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
   /** 開啟 Discord OAuth2 授權頁面（使用 popup 視窗，避免原頁面遺失） */
   function openDiscordOAuth(): void {
     const currentOrigin = window.location.origin;
+    const native = isNativeApp();
     const params = new URLSearchParams({
       client_id: DISCORD_CLIENT_ID,
       redirect_uri: DISCORD_OAUTH_CALLBACK,
       response_type: "code",
       scope: "identify guilds.join",
-      state: currentOrigin,
+      // App 沒有彈出視窗：授權完導回 App 的專屬連結，由 src/native/oauth.ts 呼叫 handleDiscordOAuthCallback
+      state: native ? nativeOAuthReturnBase("push") : currentOrigin,
     });
     const authUrl = `https://discord.com/oauth2/authorize?${params.toString()}`;
+
+    if (native) {
+      import("@/native/oauth")
+        .then(({ openExternalAuth }) => openExternalAuth(authUrl))
+        .catch((err) => console.error("[CloudPush] 開啟 Discord 授權頁失敗:", err));
+      return;
+    }
 
     // 用 popup 視窗開啟，避免原頁面被跳走
     const w = 500;
@@ -490,16 +500,19 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
     }
   }
 
-  /** 檢查 URL 是否帶有 Discord OAuth 回傳參數，並處理（fallback：popup 被擋時的直接跳轉模式） */
-  async function handleDiscordOAuthCallback(): Promise<boolean> {
-    const params = new URLSearchParams(window.location.search);
+  /**
+   * 處理 Discord OAuth 回傳參數。
+   * 網頁版讀網址列（fallback：popup 被擋時的直接跳轉模式）；App 版由 src/native/oauth.ts 傳入。
+   */
+  async function handleDiscordOAuthCallback(search?: string): Promise<boolean> {
+    const params = new URLSearchParams(search ?? window.location.search);
     const userId = params.get("discord_user_id");
     const username = params.get("discord_username");
     const displayName = params.get("discord_display_name");
     const error = params.get("discord_error");
 
     // 清除 URL 參數（不留痕跡）
-    if (userId || error) {
+    if (search === undefined && (userId || error)) {
       const cleanUrl = window.location.origin + window.location.pathname;
       window.history.replaceState({}, "", cleanUrl);
     }

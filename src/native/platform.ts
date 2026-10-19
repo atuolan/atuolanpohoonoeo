@@ -24,5 +24,19 @@ export function resolveProxyPath(path: string): string {
   return `${NATIVE_PROXY_HOST}${path}`;
 }
 
+/**
+ * App 的專屬連結開頭（AndroidManifest 的 intent-filter 與 strings.xml 的 custom_url_scheme）。
+ * 外部瀏覽器打開這種連結，Android 就會切回 App。
+ */
+export const NATIVE_URL_SCHEME = "uk.aguacloud.aguaphone";
+
+/**
+ * Discord OAuth 的 state：授權完 push Worker 會導回這個網址（見 cloud-push 的 redirectBack）。
+ * auth = 登入驗證，push = 通知設定裡的連結 Discord。
+ */
+export function nativeOAuthReturnBase(purpose: "auth" | "push"): string {
+  return `${NATIVE_URL_SCHEME}://oauth/${purpose}`;
+}
+
 /** App 的備份資料夾，給使用者看的位置（實際路徑在 nativeFiles.ts） */
 export const NATIVE_BACKUP_LOCATION = "文件／203Phone";

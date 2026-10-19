@@ -5,7 +5,7 @@ import type {
   DiscordOAuthResult,
   VerificationResponse,
 } from "@/types/auth";
-import { isNativeApp } from "@/native/platform";
+import { isNativeApp, nativeOAuthReturnBase } from "@/native/platform";
 import { DeviceFingerprintCollector } from "@/utils/deviceFingerprint";
 
 const AUTH_RECORD_ID = "current_auth";
@@ -103,6 +103,8 @@ export class AuthService {
       return { success: false, message: "此驗證方式僅支援瀏覽器環境" };
     }
 
+    if (isNativeApp()) return AuthService.verifyByDiscordOAuthInApp();
+
     return new Promise((resolve) => {
       const currentOrigin = window.location.origin;
       const params = new URLSearchParams({
@@ -179,6 +181,59 @@ export class AuthService {
         if (!popup.closed) popup.close();
         resolve({ success: false, message: "授權逾時，請重試" });
       }, DISCORD_OAUTH_TIMEOUT);
+    });
+  }
+
+  // App 版：沒有彈出視窗，用系統瀏覽器開授權頁。授權完 Worker 導回 App 的專屬連結，
+  // src/native/oauth.ts 把結果寫進 localStorage，這裡輪詢取走
+  private static async verifyByDiscordOAuthInApp(): Promise<DiscordOAuthOutcome> {
+    const params = new URLSearchParams({
+      client_id: DISCORD_CLIENT_ID,
+      redirect_uri: DISCORD_OAUTH_CALLBACK,
+      response_type: "code",
+      scope: "identify guilds guilds.members.read",
+      state: nativeOAuthReturnBase("auth") + "|purpose=auth",
+    });
+    const authUrl = `https://discord.com/oauth2/authorize?${params.toString()}`;
+    localStorage.removeItem(DISCORD_OAUTH_RESULT_KEY);
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (outcome: DiscordOAuthOutcome) => {
+        if (settled) return;
+        settled = true;
+        clearInterval(pollTimer);
+        clearTimeout(timeoutTimer);
+        resolve(outcome);
+      };
+      // 結果晚到（例如在 Discord App 裡授權、或逾時後才回來）時，
+      // 驗證頁會收到 storage 事件自己補接
+      const pending: DiscordOAuthOutcome = {
+        success: false,
+        pending: true,
+        message: "若已在 Discord 完成授權，回到 App 後會自動登入",
+      };
+
+      const pollTimer = setInterval(() => {
+        const outcome = AuthService.takePendingDiscordOAuthResult();
+        if (outcome) finish(outcome);
+      }, 300);
+      const timeoutTimer = setTimeout(() => finish(pending), DISCORD_OAUTH_TIMEOUT);
+
+      import("@/native/oauth")
+        .then(({ openExternalAuth }) =>
+          openExternalAuth(authUrl, () => {
+            // 瀏覽器關掉了：授權完切回 App 時結果可能還在路上，等一下再判斷
+            setTimeout(() => {
+              const outcome = AuthService.takePendingDiscordOAuthResult();
+              finish(outcome ?? pending);
+            }, 1500);
+          }),
+        )
+        .catch((err) => {
+          console.error("[AuthService] 開啟 Discord 授權頁失敗:", err);
+          finish({ success: false, message: "無法開啟 Discord 授權頁" });
+        });
     });
   }
 

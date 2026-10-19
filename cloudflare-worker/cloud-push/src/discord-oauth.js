@@ -14,6 +14,50 @@
 const DISCORD_API = 'https://discord.com/api/v10';
 
 /**
+ * Android App（Capacitor）的回傳網址開頭，與前端 src/native/platform.ts 的 NATIVE_URL_SCHEME 一致。
+ * App 送來的 state 是 uk.aguacloud.aguaphone://oauth/...
+ */
+const APP_SCHEME_PREFIX = 'uk.aguacloud.aguaphone://';
+
+function escapeHtml(text) {
+  return text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+/**
+ * 導回前端。網頁版直接 302；App 回一個中繼頁：
+ * 使用者在 Discord App 裡授權時，callback 是 Discord 叫外部瀏覽器開的，
+ * 那次導覽沒有使用者手勢，瀏覽器會擋掉自動跳去別的 App，所以要留一顆按鈕讓使用者點。
+ */
+export function redirectBack(target) {
+  if (!target.startsWith(APP_SCHEME_PREFIX)) {
+    return Response.redirect(target, 302);
+  }
+  const href = escapeHtml(target);
+  const script = JSON.stringify(target).replace(/</g, '\\u003c');
+  const html = `<!DOCTYPE html>
+<html lang="zh-TW"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>回到 203 Phone</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 16px; padding: 24px; box-sizing: border-box;
+    font-family: system-ui, sans-serif; background: #1a1a2e; color: #f0f0f5; text-align: center; }
+  a { display: inline-block; padding: 14px 28px; border-radius: 999px; background: #ff6b9d;
+    color: #fff; font-size: 18px; text-decoration: none; }
+  p { margin: 0; opacity: 0.8; }
+</style></head>
+<body>
+  <p>Discord 授權完成</p>
+  <a href="${href}">回到 203 Phone</a>
+  <p>沒有自動跳回的話，請點上面的按鈕</p>
+  <script>location.replace(${script});</script>
+</body></html>`;
+  return new Response(html, {
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
+}
+
+/**
  * 跨社群身分組驗證設定
  * 每個項目定義一個需要檢查的伺服器與必要身分組
  */
@@ -49,7 +93,7 @@ export async function handleDiscordCallback(request, env) {
 
   // 使用者拒絕授權
   if (error) {
-    return Response.redirect(`${redirectBase}/discord-callback.html?discord_error=${encodeURIComponent(error)}`, 302);
+    return redirectBack(`${redirectBase}/discord-callback.html?discord_error=${encodeURIComponent(error)}`);
   }
 
   if (!code) {
@@ -82,10 +126,7 @@ export async function handleDiscordCallback(request, env) {
       } catch {
         errorDetail = `Token交換失敗(${tokenRes.status}): ${text.slice(0, 200)}`;
       }
-      return Response.redirect(
-        `${redirectBase}?discord_error=${encodeURIComponent(errorDetail)}`,
-        302,
-      );
+      return redirectBack(`${redirectBase}?discord_error=${encodeURIComponent(errorDetail)}`);
     }
 
     const tokenData = await tokenRes.json();
@@ -98,10 +139,7 @@ export async function handleDiscordCallback(request, env) {
 
     if (!userRes.ok) {
       console.error('[Discord OAuth] 取得使用者資訊失敗:', userRes.status);
-      return Response.redirect(
-        `${redirectBase}?discord_error=${encodeURIComponent('無法取得使用者資訊')}`,
-        302,
-      );
+      return redirectBack(`${redirectBase}?discord_error=${encodeURIComponent('無法取得使用者資訊')}`);
     }
 
     const user = await userRes.json();
@@ -151,13 +189,10 @@ export async function handleDiscordCallback(request, env) {
       params.set('auth_result', JSON.stringify(authResult));
     }
 
-    return Response.redirect(`${redirectBase}/discord-callback.html?${params.toString()}`, 302);
+    return redirectBack(`${redirectBase}/discord-callback.html?${params.toString()}`);
   } catch (e) {
     console.error('[Discord OAuth] 未預期錯誤:', e);
-    return Response.redirect(
-      `${redirectBase}/discord-callback.html?discord_error=${encodeURIComponent('伺服器錯誤，請稍後重試')}`,
-      302,
-    );
+    return redirectBack(`${redirectBase}/discord-callback.html?discord_error=${encodeURIComponent('伺服器錯誤，請稍後重試')}`);
   }
 }
 
