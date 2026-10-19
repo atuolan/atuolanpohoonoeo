@@ -79,6 +79,7 @@ function createFreshPromptManagerConfig(): PromptManagerConfig {
     faceToFacePromptResetVersion: FACE_TO_FACE_PROMPT_RESET_VERSION,
     onlinePromptResetVersion: ONLINE_PROMPT_RESET_VERSION,
     groupChatPromptResetVersion: GROUP_CHAT_PROMPT_RESET_VERSION,
+    minimaxTTSBelowThinking: true,
   };
 }
 
@@ -337,6 +338,21 @@ function migrateGroupChatPromptOrder(
 }
 
 /**
+ * 語音條目放在功能分區時模型常忘了標語氣，改放到思考框架後面。
+ * 只搬還在舊預設位置（緊接著功能分區結尾）的，用戶自己挪過的不動；開關照舊。
+ */
+function moveMinimaxTTSBelowThinking(
+  order: PromptOrderEntry[] | undefined,
+  sectionEndId: string,
+  thinkingId: string,
+): void {
+  if (!order) return;
+  const index = order.findIndex((entry) => entry.identifier === "minimaxTTS");
+  if (index === -1 || order[index + 1]?.identifier !== sectionEndId) return;
+  movePromptOrderEntryAfter(order, "minimaxTTS", thinkingId);
+}
+
+/**
  * 匯入面對面提示詞時決定面板配置：
  * 檔案帶有面板配置就用它；沒有的話保留內建配置中仍對得上的模塊
  */
@@ -531,8 +547,9 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
       if (stored) {
         // 合併默認值，確保新增的提示詞不會丟失
         const previousVersion = stored.version ?? 1;
+        const movesMinimaxTTS = !stored.minimaxTTSBelowThinking;
         config.value = mergeWithDefaults(stored);
-        if (previousVersion < PROMPT_MANAGER_CONFIG_VERSION) {
+        if (previousVersion < PROMPT_MANAGER_CONFIG_VERSION || movesMinimaxTTS) {
           await saveConfig();
         }
       } else {
@@ -1162,6 +1179,20 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     dedupeOrderInPlace(stored.batchCommentsPromptOrder);
     for (const charConfig of Object.values(stored.characterConfigs)) {
       dedupeOrderInPlace(charConfig.promptOrder);
+    }
+
+    // 不升 PROMPT_MANAGER_CONFIG_VERSION：那會讓上面舊的順序遷移全部重跑
+    if (!stored.minimaxTTSBelowThinking) {
+      moveMinimaxTTSBelowThinking(stored.globalPromptOrder, "custom_1792257530103", "thinkingGuide");
+      for (const charConfig of Object.values(stored.characterConfigs)) {
+        moveMinimaxTTSBelowThinking(charConfig.promptOrder, "custom_1792257530103", "thinkingGuide");
+      }
+      moveMinimaxTTSBelowThinking(
+        stored.groupChatPromptOrder,
+        "gc_custom_1792300000629",
+        "gcThinkingGuide",
+      );
+      stored.minimaxTTSBelowThinking = true;
     }
 
     stored.version = PROMPT_MANAGER_CONFIG_VERSION;

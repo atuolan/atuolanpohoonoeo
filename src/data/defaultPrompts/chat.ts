@@ -1099,7 +1099,7 @@ export const DEFAULT_PROMPT_DEFINITIONS: PromptDefinition[] = [
   {
     identifier: "custom_1792257530066",
     name: "<線上功能>",
-    description: "分區開頭：訊息格式、功能標籤、表情包、來電、面對面、語音（只分組，不注入文字），到 </線上功能> 為止",
+    description: "分區開頭：訊息格式、功能標籤、表情包、來電、面對面（只分組，不注入文字），到 </線上功能> 為止",
     category: "custom",
     role: "system",
     content: "",
@@ -1276,7 +1276,7 @@ export const DEFAULT_PROMPT_DEFINITIONS: PromptDefinition[] = [
   {
     identifier: "custom_1792257530103",
     name: "</線上功能>",
-    description: "分區結尾：訊息格式、功能標籤、表情包、來電、面對面、語音（只分組，不注入文字）",
+    description: "分區結尾：訊息格式、功能標籤、表情包、來電、面對面（只分組，不注入文字）",
     category: "custom",
     role: "system",
     content: "",
@@ -1449,7 +1449,7 @@ export const DEFAULT_PROMPT_DEFINITIONS: PromptDefinition[] = [
   {
     identifier: "custom_1792257530288",
     name: "<輸出格式>",
-    description: "分區開頭：本輪輸入、思考框架、輸出範例（只分組，不注入文字），到 </輸出格式> 為止",
+    description: "分區開頭：本輪輸入、思考框架、語音標記、輸出範例（只分組，不注入文字），到 </輸出格式> 為止",
     category: "custom",
     role: "system",
     content: "",
@@ -1526,7 +1526,7 @@ export const DEFAULT_PROMPT_DEFINITIONS: PromptDefinition[] = [
   {
     identifier: "custom_1792257530325",
     name: "</輸出格式>",
-    description: "分區結尾：本輪輸入、思考框架、輸出範例（只分組，不注入文字）",
+    description: "分區結尾：本輪輸入、思考框架、語音標記、輸出範例（只分組，不注入文字）",
     category: "custom",
     role: "system",
     content: "",
@@ -1620,7 +1620,6 @@ export const DEFAULT_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "stickerReminder", enabled: true },
   { identifier: "callDecision", enabled: true },
   { identifier: "custom_1776008320741", enabled: true },
-  { identifier: "minimaxTTS", enabled: true },
   { identifier: "custom_1792257530103", enabled: true },
   // <角色分寸> 真實感與關心的分寸
   { identifier: "custom_1792257530140", enabled: true },
@@ -1636,6 +1635,8 @@ export const DEFAULT_PROMPT_ORDER: PromptOrderEntry[] = [
   { identifier: "custom_1792257530288", enabled: true },
   { identifier: "custom_1780456365337", enabled: true },
   { identifier: "thinkingGuide", enabled: true },
+  // 語音標記放在思考框架後面，太前面模型常忘了標
+  { identifier: "minimaxTTS", enabled: true },
   { identifier: "custom_1776010669277", enabled: true },
   { identifier: "custom_1792257530325", enabled: true },
 ];

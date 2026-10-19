@@ -127,4 +127,10 @@ describe("線上模式預設提示詞分區", () => {
     expect(text).toContain("這輪發幾條訊息？\n");
     expect(text).not.toContain("簡單回應 1-2 條");
   });
+
+  it("開了 MiniMax 語音才帶語音標記規則，放在思考框架後面", async () => {
+    const text = (await build([], { minimaxTTSEnabled: true })).map((m) => m.content).join("\n");
+    expect(text.indexOf("語音合成標記規則")).toBeGreaterThan(text.indexOf("<thinking>"));
+    expect((await build()).map((m) => m.content).join("\n")).not.toContain("語音合成標記規則");
+  });
 });

@@ -964,7 +964,7 @@ const EXPORTED_GROUP_CHAT_CONFIG = {
     {
       "identifier": "gc_custom_1792300000555",
       "name": "<群聊功能>",
-      "description": "分區開頭：訊息格式、群聊規則、表情包、群通話、語音（只分組，不注入文字），到 </群聊功能> 為止",
+      "description": "分區開頭：訊息格式、群聊規則、表情包、群通話（只分組，不注入文字），到 </群聊功能> 為止",
       "category": "custom",
       "role": "system",
       "content": "",
@@ -1141,7 +1141,7 @@ const EXPORTED_GROUP_CHAT_CONFIG = {
     {
       "identifier": "gc_custom_1792300000629",
       "name": "</群聊功能>",
-      "description": "分區結尾：訊息格式、群聊規則、表情包、群通話、語音",
+      "description": "分區結尾：訊息格式、群聊規則、表情包、群通話",
       "category": "custom",
       "role": "system",
       "content": "",
@@ -1314,7 +1314,7 @@ const EXPORTED_GROUP_CHAT_CONFIG = {
     {
       "identifier": "gc_custom_1792300000962",
       "name": "<輸出格式>",
-      "description": "分區開頭：本輪輸入、角色名單、思考框架、</content> 後的功能標籤（只分組，不注入文字），到 </輸出格式> 為止",
+      "description": "分區開頭：本輪輸入、角色名單、思考框架、語音標記、</content> 後的功能標籤（只分組，不注入文字），到 </輸出格式> 為止",
       "category": "custom",
       "role": "system",
       "content": "",
@@ -1412,7 +1412,7 @@ const EXPORTED_GROUP_CHAT_CONFIG = {
     {
       "identifier": "gc_custom_1792300001036",
       "name": "</輸出格式>",
-      "description": "分區結尾：本輪輸入、角色名單、思考框架、</content> 後的功能標籤",
+      "description": "分區結尾：本輪輸入、角色名單、思考框架、語音標記、</content> 後的功能標籤",
       "category": "custom",
       "role": "system",
       "content": "",
@@ -1668,10 +1668,6 @@ const EXPORTED_GROUP_CHAT_CONFIG = {
       "enabled": true
     },
     {
-      "identifier": "minimaxTTS",
-      "enabled": true
-    },
-    {
       "identifier": "gc_custom_1792300000629",
       "enabled": true
     },
@@ -1724,6 +1720,11 @@ const EXPORTED_GROUP_CHAT_CONFIG = {
     },
     {
       "identifier": "gcThinkingGuide",
+      "enabled": true
+    },
+    // 語音標記放在思考框架後面，太前面模型常忘了標
+    {
+      "identifier": "minimaxTTS",
       "enabled": true
     },
     {

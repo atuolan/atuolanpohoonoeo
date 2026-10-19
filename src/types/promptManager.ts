@@ -240,6 +240,8 @@ export interface PromptManagerConfig {
   onlinePromptResetVersion?: number;
   /** 已套用的群聊模式提示詞強制重置版本（低於 GROUP_CHAT_PROMPT_RESET_VERSION 時需引導重置） */
   groupChatPromptResetVersion?: number;
+  /** 線上與群聊的 MiniMax 語音條目已從功能分區移到思考框架後面（2026-10-20） */
+  minimaxTTSBelowThinking?: boolean;
   /** 面對面設定面板配置（只存結構，以 identifier 引用條目） */
   faceToFacePanelLayout?: F2FPanelLayout;
   /** 群聊模式提示詞定義 */
