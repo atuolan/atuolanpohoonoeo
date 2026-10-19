@@ -41,6 +41,27 @@ describe("buildLiveUpdateManifest", () => {
     });
   });
 
+  it("HTML 改從純文字副本下載（Cloudflare 會在 HTML 裡插 script），其他檔案照原路徑", () => {
+    const { manifest } = buildLiveUpdateManifest(
+      [...files, { file_name: "icons/preview.html", file_hash: "dd" }],
+      sha256,
+    );
+    const byName = Object.fromEntries(manifest.files.map((f) => [f.file_name, f]));
+    expect(byName["index.html"].download_path).toBe("live-update/raw/index.html.txt");
+    expect(byName["icons/preview.html"].download_path).toBe("live-update/raw/icons/preview.html.txt");
+    expect(byName["assets/index-1.js"].download_path).toBeUndefined();
+    expect(byName[LIVE_UPDATE_VERSION_FILE].download_path).toBeUndefined();
+  });
+
+  it("加了純文字副本，版本不受影響（只看原檔指紋）", () => {
+    const plain = buildLiveUpdateManifest(files, sha256).manifest.version;
+    const again = buildLiveUpdateManifest(
+      files.map((f) => ({ ...f, download_path: "whatever" })),
+      sha256,
+    ).manifest.version;
+    expect(again).toBe(plain);
+  });
+
   it("不收舊的 live-update 檔案和 Cloudflare 不提供下載的設定檔", () => {
     const { manifest } = buildLiveUpdateManifest(
       [
@@ -105,6 +126,21 @@ describe("toDownloadEntries", () => {
         file_name: "shortcuts/203 Phone 日曆.shortcut",
         file_hash: "aa",
         download_url: "https://example.com/shortcuts/203%20Phone%20%E6%97%A5%E6%9B%86.shortcut",
+      },
+    ]);
+  });
+
+  it("有 download_path 的檔案從副本下載，存回原本的檔名", () => {
+    const manifest: LiveUpdateManifest = {
+      version: "v",
+      minNativeBuild: 2,
+      files: [{ file_name: "index.html", file_hash: "aa", download_path: "live-update/raw/index.html.txt" }],
+    };
+    expect(toDownloadEntries(manifest, "https://example.com")).toEqual([
+      {
+        file_name: "index.html",
+        file_hash: "aa",
+        download_url: "https://example.com/live-update/raw/index.html.txt",
       },
     ]);
   });

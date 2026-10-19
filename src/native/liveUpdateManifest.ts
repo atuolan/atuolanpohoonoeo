@@ -11,6 +11,11 @@
 export const LIVE_UPDATE_DIR = "live-update";
 export const LIVE_UPDATE_MANIFEST = `${LIVE_UPDATE_DIR}/manifest.json`;
 export const LIVE_UPDATE_VERSION_FILE = `${LIVE_UPDATE_DIR}/version.json`;
+/**
+ * HTML 的純文字副本。Cloudflare 的機器人防護會在每個 HTML 回應插入一段檢查用 script（每次都不同），
+ * 照原路徑下載指紋永遠對不上；.txt 不會被改，App 改從這裡下載。
+ */
+export const LIVE_UPDATE_RAW_DIR = `${LIVE_UPDATE_DIR}/raw`;
 
 /**
  * 這份網頁需要的 App 外殼版本（android/app/build.gradle 的 versionCode）。
@@ -25,6 +30,8 @@ export interface LiveUpdateFile {
   file_name: string;
   /** 檔案內容的 SHA-256（小寫十六進位） */
   file_hash: string;
+  /** 下載路徑跟 file_name 不同時才有（HTML 的純文字副本），建置時要把檔案複製過去 */
+  download_path?: string;
 }
 
 export interface LiveUpdateManifest {
@@ -38,6 +45,10 @@ const NOT_SERVED = new Set(["_headers", "_redirects", "_routes.json", "_worker.j
 
 export function shouldPublishFile(fileName: string): boolean {
   return !fileName.startsWith(`${LIVE_UPDATE_DIR}/`) && !NOT_SERVED.has(fileName);
+}
+
+function rawCopyPath(fileName: string): string | undefined {
+  return /\.html?$/i.test(fileName) ? `${LIVE_UPDATE_RAW_DIR}/${fileName}.txt` : undefined;
 }
 
 /**
@@ -54,11 +65,18 @@ export function buildLiveUpdateManifest(
     .sort((a, b) => (a.file_name < b.file_name ? -1 : a.file_name > b.file_name ? 1 : 0));
   const version = sha256(published.map((f) => `${f.file_name}:${f.file_hash}`).join("\n")).slice(0, 16);
   const versionFileContent = JSON.stringify({ version });
+  const withDownloadPaths = published.map(({ file_name, file_hash }) => {
+    const download_path = rawCopyPath(file_name);
+    return download_path ? { file_name, file_hash, download_path } : { file_name, file_hash };
+  });
   return {
     manifest: {
       version,
       minNativeBuild,
-      files: [...published, { file_name: LIVE_UPDATE_VERSION_FILE, file_hash: sha256(versionFileContent) }],
+      files: [
+        ...withDownloadPaths,
+        { file_name: LIVE_UPDATE_VERSION_FILE, file_hash: sha256(versionFileContent) },
+      ],
     },
     versionFileContent,
   };
@@ -106,6 +124,6 @@ export function toDownloadEntries(
   return manifest.files.map((f) => ({
     file_name: f.file_name,
     file_hash: f.file_hash,
-    download_url: `${base}/${f.file_name.split("/").map(encodeURIComponent).join("/")}`,
+    download_url: `${base}/${(f.download_path ?? f.file_name).split("/").map(encodeURIComponent).join("/")}`,
   }));
 }

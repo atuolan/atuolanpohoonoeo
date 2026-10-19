@@ -258,6 +258,13 @@ function liveUpdateManifestPlugin(): Plugin {
       await collect(outDir, files);
       const { manifest, versionFileContent } = buildLiveUpdateManifest(files, sha256);
       await fs.mkdir(path.join(outDir, LIVE_UPDATE_DIR), { recursive: true });
+      // HTML 的純文字副本（Cloudflare 會改 HTML 回應，App 從副本下載）
+      for (const f of manifest.files) {
+        if (!f.download_path) continue;
+        const target = path.join(outDir, f.download_path);
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        await fs.copyFile(path.join(outDir, f.file_name), target);
+      }
       await fs.writeFile(path.join(outDir, LIVE_UPDATE_VERSION_FILE), versionFileContent);
       await fs.writeFile(path.join(outDir, LIVE_UPDATE_MANIFEST), JSON.stringify(manifest));
       console.log(`[live-update] 版本 ${manifest.version}，${manifest.files.length} 個檔案`);
