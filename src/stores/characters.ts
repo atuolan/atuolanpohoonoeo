@@ -25,16 +25,18 @@ export const useCharactersStore = defineStore('characters', () => {
   const filteredCharacters = computed(() => {
     let result = characters.value
 
-    // 搜索過濾
-    if (searchQuery.value) {
-      const query = searchQuery.value.toLowerCase()
-      result = result.filter(c => {
-        const name = c.nickname || c.data.name
-        return (
-          name.toLowerCase().includes(query) ||
-          c.data.description?.toLowerCase().includes(query)
-        )
-      })
+    // 搜索過濾：暱稱和本名都要搜得到（有暱稱時以前只比對暱稱），也比對標籤、創建者
+    const query = searchQuery.value.trim().toLowerCase()
+    if (query) {
+      result = result.filter(c =>
+        [
+          c.nickname,
+          c.data.name,
+          c.data.description,
+          c.data.creator,
+          ...(c.data.tags ?? []),
+        ].some(text => text?.toLowerCase().includes(query))
+      )
     }
 
     // 標籤過濾

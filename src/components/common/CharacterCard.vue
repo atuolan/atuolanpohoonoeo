@@ -53,7 +53,8 @@ const displayAvatar = computed(() => {
 // 副標題
 const subtitle = computed(() => {
   const parts: string[] = [];
-  if (props.nickname && props.name) {
+  // 暱稱跟本名一樣（或沒設暱稱）時標題已經是本名，不用再寫一次
+  if (props.nickname && props.name && props.nickname !== props.name) {
     parts.push(props.name);
   }
   if (props.creator) {

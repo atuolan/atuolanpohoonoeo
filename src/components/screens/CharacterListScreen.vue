@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { CharacterCard } from "@/components/common";
 import { ListSettingsModal } from "@/components/modals";
-import { useCharactersStore } from "@/stores";
+import { useCharactersStore, useLorebooksStore } from "@/stores";
 import { computed, onMounted, ref } from "vue";
 
 // 列表設定類型
@@ -30,12 +30,14 @@ const emit = defineEmits<{
 
 // Store
 const charactersStore = useCharactersStore();
+const lorebooksStore = useLorebooksStore();
 
-// 搜尋關鍵字
-const searchQuery = ref("");
+// 搜尋關鍵字：store 裡的搜尋會留到下次進來，輸入框要跟著顯示，不然清單被篩掉卻看不出原因
+const searchQuery = ref(charactersStore.searchQuery);
 
-// 顯示創建選單
+// 顯示創建選單（從右上角或右下角的 + 打開，選單跟著出現在按鈕旁）
 const showCreateMenu = ref(false);
+const createMenuFrom = ref<"header" | "fab">("header");
 
 // 設定模態框
 const showSettings = ref(false);
@@ -98,9 +100,27 @@ function isValidCreator(creator: string | undefined): boolean {
   return true;
 }
 
-// 從 store 獲取角色列表
+// 世界書被刪掉後角色身上還留著 id，數量只算還在的
+const existingLorebookIds = computed(
+  () => new Set(lorebooksStore.lorebooks.map((lb) => lb.id)),
+);
+
+const nameCollator = new Intl.Collator("zh-Hant", { numeric: true });
+
+// 從 store 獲取角色列表，照列表設定排序
 const filteredCharacters = computed(() => {
-  const characters = charactersStore.filteredCharacters;
+  const { sortBy, sortOrder } = listSettings.value;
+  const direction = sortOrder === "asc" ? 1 : -1;
+  const characters = [...charactersStore.filteredCharacters].sort((a, b) => {
+    if (sortBy === "name") {
+      return (
+        direction *
+        nameCollator.compare(a.nickname || a.data.name, b.nickname || b.data.name)
+      );
+    }
+    const key = sortBy === "created" ? "createdAt" : "updatedAt";
+    return direction * ((a[key] ?? 0) - (b[key] ?? 0));
+  });
   // 轉換為顯示格式
   return characters.map((c) => ({
     id: c.id,
@@ -110,7 +130,9 @@ const filteredCharacters = computed(() => {
       c.avatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${c.id}`,
     creator: isValidCreator(c.data.creator) ? c.data.creator : undefined,
     tags: c.data.tags,
-    lorebookIds: c.lorebookIds,
+    lorebookCount: (c.lorebookIds ?? []).filter((id) =>
+      existingLorebookIds.value.has(id),
+    ).length,
     description: c.data.description,
   }));
 });
@@ -118,6 +140,9 @@ const filteredCharacters = computed(() => {
 // 載入數據
 onMounted(() => {
   charactersStore.loadCharacters();
+  if (lorebooksStore.lorebooks.length === 0) {
+    lorebooksStore.loadLorebooks();
+  }
 });
 
 // 處理返回
@@ -159,9 +184,29 @@ function handleAICreate() {
   emit("aiCreate");
 }
 
+const createMenuItems = [
+  {
+    label: "手動創建",
+    ai: false,
+    action: handleManualCreate,
+    icon: "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z",
+  },
+  {
+    label: "AI 生成",
+    ai: true,
+    action: handleAICreate,
+    icon: "M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z",
+  },
+];
+
 // 切換創建選單
-function toggleCreateMenu() {
-  showCreateMenu.value = !showCreateMenu.value;
+function toggleCreateMenu(from: "header" | "fab") {
+  if (showCreateMenu.value && createMenuFrom.value === from) {
+    showCreateMenu.value = false;
+    return;
+  }
+  createMenuFrom.value = from;
+  showCreateMenu.value = true;
 }
 
 // 關閉選單（點擊外部時）
@@ -241,11 +286,11 @@ const gridStyle = computed(() => ({
           </button>
         </div>
 
-        <!-- 設定按鈕 -->
+        <!-- 設定按鈕（圖示別跟「卡片檢視」一樣） -->
         <button class="header-btn" title="列表設定" @click.stop="openSettings">
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path
-              d="M3 3v8h8V3H3zm6 6H5V5h4v4zm-6 4v8h8v-8H3zm6 6H5v-4h4v4zm4-16v8h8V3h-8zm6 6h-4V5h4v4zm-6 4v8h8v-8h-8zm6 6h-4v-4h4v4z"
+              d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"
             />
           </svg>
         </button>
@@ -255,7 +300,7 @@ const gridStyle = computed(() => ({
           <button
             class="header-btn primary"
             title="創建角色"
-            @click="toggleCreateMenu"
+            @click="toggleCreateMenu('header')"
           >
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
@@ -264,22 +309,21 @@ const gridStyle = computed(() => ({
 
           <!-- 下拉選單 -->
           <Transition name="dropdown">
-            <div v-if="showCreateMenu" class="dropdown-menu">
-              <button class="dropdown-item" @click="handleManualCreate">
+            <div
+              v-if="showCreateMenu && createMenuFrom === 'header'"
+              class="dropdown-menu"
+            >
+              <button
+                v-for="item in createMenuItems"
+                :key="item.label"
+                class="dropdown-item"
+                :class="{ ai: item.ai }"
+                @click="item.action"
+              >
                 <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-                  />
+                  <path :d="item.icon" />
                 </svg>
-                <span>手動創建</span>
-              </button>
-              <button class="dropdown-item ai" @click="handleAICreate">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z"
-                  />
-                </svg>
-                <span>AI 生成</span>
+                <span>{{ item.label }}</span>
               </button>
             </div>
           </Transition>
@@ -332,9 +376,7 @@ const gridStyle = computed(() => ({
           listSettings.showDescription ? character.description : undefined
         "
         :lorebook-count="
-          listSettings.showLorebookCount
-            ? character.lorebookIds?.length || 0
-            : 0
+          listSettings.showLorebookCount ? character.lorebookCount : 0
         "
         @click="handleCharacterClick"
         @chat="handleChat"
@@ -367,12 +409,34 @@ const gridStyle = computed(() => ({
       </div>
     </main>
 
-    <!-- 浮動添加按鈕（移動端） -->
-    <button class="soft-fab mobile-only" @click="toggleCreateMenu">
+    <!-- 浮動添加按鈕（移動端）：要 .stop，不然點擊冒泡到外層 closeMenus，選單一開就關 -->
+    <button class="soft-fab mobile-only" @click.stop="toggleCreateMenu('fab')">
       <svg viewBox="0 0 24 24" fill="currentColor">
         <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
       </svg>
     </button>
+
+    <!-- 右下角 + 的選單：開在按鈕上方 -->
+    <Transition name="dropdown">
+      <div
+        v-if="showCreateMenu && createMenuFrom === 'fab'"
+        class="dropdown-menu fab-menu"
+        @click.stop
+      >
+        <button
+          v-for="item in createMenuItems"
+          :key="item.label"
+          class="dropdown-item"
+          :class="{ ai: item.ai }"
+          @click="item.action"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path :d="item.icon" />
+          </svg>
+          <span>{{ item.label }}</span>
+        </button>
+      </div>
+    </Transition>
 
     <!-- 列表設定彈窗 -->
     <ListSettingsModal
@@ -574,6 +638,15 @@ const gridStyle = computed(() => ({
   }
 }
 
+// 右下角 + 的選單：貼在按鈕（56px，距底 20px）上方
+.dropdown-menu.fab-menu {
+  position: fixed;
+  top: auto;
+  right: calc(20px + var(--safe-right));
+  bottom: calc(20px + var(--safe-bottom) + 56px + 8px);
+  max-height: calc(100svh - 160px);
+}
+
 // 下拉動畫
 .dropdown-enter-active,
 .dropdown-leave-active {
@@ -592,6 +665,13 @@ const gridStyle = computed(() => ({
 
   @media (max-width: 600px) {
     display: flex;
+  }
+}
+
+// 手機上留出浮動按鈕的位置，最後一張卡的按鈕才不會被它蓋住
+@media (max-width: 600px) {
+  .character-list-screen .soft-content {
+    padding-bottom: calc(96px + var(--safe-bottom));
   }
 }
 

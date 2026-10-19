@@ -50,6 +50,15 @@ const title = computed(() => {
   return props.type === "character" ? "角色庫設定" : "世界書庫設定";
 });
 
+// 依名稱排序時「新→舊」說不通
+const sortOrderLabel = computed(() => {
+  const desc = settings.value.sortOrder === "desc";
+  if (settings.value.sortBy === "name") {
+    return desc ? "降序（Z→A）" : "升序（A→Z）";
+  }
+  return desc ? "降序（新→舊）" : "升序（舊→新）";
+});
+
 // 載入設定
 onMounted(() => {
   loadSettings();
@@ -272,8 +281,10 @@ function toggleSortOrder() {
                   <span class="toggle-switch"></span>
                 </label>
 
-                <label v-if="type === 'lorebook'" class="toggle-item">
-                  <span class="toggle-label">顯示描述</span>
+                <label class="toggle-item">
+                  <span class="toggle-label">{{
+                    type === "character" ? "顯示描述（列表檢視）" : "顯示描述"
+                  }}</span>
                   <input
                     type="checkbox"
                     v-model="settings.showDescription"
@@ -340,11 +351,7 @@ function toggleSortOrder() {
                       d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"
                     />
                   </svg>
-                  <span>{{
-                    settings.sortOrder === "desc"
-                      ? "降序（新→舊）"
-                      : "升序（舊→新）"
-                  }}</span>
+                  <span>{{ sortOrderLabel }}</span>
                 </button>
               </div>
             </div>
