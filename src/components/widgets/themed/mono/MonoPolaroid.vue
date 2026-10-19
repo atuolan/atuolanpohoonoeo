@@ -106,6 +106,22 @@ const emit = defineEmits<{
     color: #1c1c1a;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+    // 手機上不常駐（會擋住照片），點照片就能換；有滑鼠的裝置滑過照片才出現
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+
+    @media (hover: hover) and (pointer: fine) {
+      .mono-polaroid:hover & {
+        opacity: 1;
+        pointer-events: auto;
+      }
+    }
+
+    &:focus-visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
   }
 }
 </style>
