@@ -107,7 +107,7 @@ import {
 import { useUserStore } from "@/stores";
 import { usePhoneCallStore } from "@/stores/phoneCall";
 import { useCallVoiceInputStore } from "@/stores/callVoiceInput";
-import type { CharacterImportResult } from "@/types/character";
+import type { CharacterImportResult, StoredCharacter } from "@/types/character";
 import type { Chat, MultiCharMember, WaimaiOrderSnapshot } from "@/types/chat";
 import {
   consumePendingRuntimeDiagnostics,
@@ -2432,13 +2432,16 @@ async function handleDeliveryMallSendToChat(payload: {
   }
 }
 
-// 處理角色儲存
-async function handleCharacterSave(character: any) {
+// 處理角色儲存：回傳是否成功，編輯頁靠它顯示結果
+async function handleCharacterSave(character: any): Promise<boolean> {
   console.log("儲存角色:", character);
 
   // 取得現有角色的 extensions，避免覆蓋 regex_scripts、depth_prompt 等已存在的資料
   const existingChar = charactersStore.getCharacterById(character.id);
   const existingExt = existingChar?.data?.extensions;
+  // 編輯頁沒有的欄位照舊保留；內嵌世界書導入時已轉成世界書庫裡的一本，不再留在卡上
+  const { character_book: _embeddedBook, ...existingData } =
+    existingChar?.data ?? ({} as Partial<StoredCharacter["data"]>);
 
   // 構建 StoredCharacter 格式
   const characterData = {
@@ -2446,6 +2449,7 @@ async function handleCharacterSave(character: any) {
     nickname: character.nickname || "",
     avatar: character.avatar || "",
     data: {
+      ...existingData,
       name: character.data.name || "",
       description: character.data.description || "",
       character_version: existingChar?.data?.character_version || "1.0",
@@ -2478,23 +2482,28 @@ async function handleCharacterSave(character: any) {
     source: character.source || "manual",
     createdAt: character.createdAt || Date.now(),
     updatedAt: Date.now(),
-    // 世界設定（保留有值的欄位）
-    worldSettings: character.worldSettings ?? existingChar?.worldSettings,
+    // 世界設定：編輯頁清空時傳 undefined，要能真的清掉
+    worldSettings: character.worldSettings,
+    toolPermissions: character.toolPermissions ?? existingChar?.toolPermissions,
   };
 
   try {
     if (isCreatingNew.value) {
       // 創建新角色：存完後留在頁面，切換成「編輯現有」模式
-      await charactersStore.createCharacter(characterData);
+      const created = await charactersStore.createCharacter(characterData);
+      if (!created) return false;
       selectedCharacterId.value = character.id;
       isCreatingNew.value = false;
     } else {
       // 更新現有角色
-      await charactersStore.updateCharacter(character.id, characterData);
+      const ok = await charactersStore.updateCharacter(character.id, characterData);
+      if (!ok) return false;
     }
     console.log("角色儲存成功");
+    return true;
   } catch (e) {
     console.error("角色儲存失敗:", e);
+    return false;
   }
 }
 
@@ -2844,9 +2853,10 @@ function handleGlobalSwipeBack() {
   // 根據當前頁面對應返回邏輯（與 template 中 @back 一致）
   const backMap: Record<string, () => void> = {
     character: goBackFromQuickNav,
-    "character-edit": goToCharacterList,
+    // 跟頁面上的返回鍵一樣回上一頁：從聊天或角色卡點進來的，右滑要回原處
+    "character-edit": goBackFromCharacterEdit,
     worldbook: goBackFromQuickNav,
-    "worldbook-edit": goToLorebookList,
+    "worldbook-edit": goBackFromLorebookEdit,
     "chat-list": goHome,
     chat: goToChatList,
     settings: goBackFromSettings,

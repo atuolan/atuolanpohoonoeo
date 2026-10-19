@@ -13,12 +13,13 @@ import { searchCities } from "@/services/WeatherService";
 import { useCharactersStore, useLorebooksStore } from "@/stores";
 import { useAffinityStore } from "@/stores/affinity";
 import { useFitnessStore } from "@/stores/fitness";
-import { createDefaultCharacterToolPermissions, type CharacterToolPermissions, type CharacterWorldSettings, type RegexScript } from "@/types/character";
+import { createDefaultCharacterToolPermissions, normalizeCharacterToolPermissions, type CharacterToolPermissions, type CharacterWorldSettings, type RegexScript } from "@/types/character";
 import CharacterToolPermissionsPanel from "@/components/panels/CharacterToolPermissionsPanel.vue";
+import { migrateRegexScript } from "@/services/RegexEngine";
 import { CHAT_TOOLS } from "@/services/toolCalling/chatTools";
 import { useSettingsStore } from "@/stores/settings";
 import type { CharacterFitnessConfig } from "@/types/fitness";
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, toRaw } from "vue";
 
 // 類型定義
 interface CharacterData {
@@ -43,7 +44,7 @@ interface Character {
   avatar: string;
   data: CharacterData;
   lorebookIds?: string[];
-  source?: "png" | "json" | "manual";
+  source?: "import" | "manual" | "api" | "png" | "json";
   createdAt?: number;
   updatedAt?: number;
   worldSettings?: CharacterWorldSettings;
@@ -56,12 +57,13 @@ interface Character {
 const props = defineProps<{
   characterId?: string;
   isNew?: boolean;
+  /** 父層的 @save；寫成 prop 才能等它存完、知道成功與否 */
+  onSave?: (character: Character) => Promise<boolean>;
 }>();
 
 // Emits
 const emit = defineEmits<{
   (e: "back"): void;
-  (e: "save", character: Character): void;
   (e: "open-lorebook", lorebookId: string): void;
   (e: "delete", id: string): void;
 }>();
@@ -117,6 +119,7 @@ const expandedSections = ref({
   advanced: false,
   lorebook: true,
   regexScripts: true,
+  worldSettings: true,
   modules: true,
   meta: false,
   danger: false,
@@ -293,6 +296,8 @@ function formatDate(timestamp?: number): string {
 // 獲取來源文字
 function getSourceText(): string {
   switch (formData.value.source) {
+    case "import":
+      return "導入的角色卡";
     case "png":
       return "PNG 角色卡";
     case "json":
@@ -348,6 +353,9 @@ onMounted(async () => {
           "manual",
         createdAt: character.createdAt,
         updatedAt: character.updatedAt,
+        toolPermissions: normalizeCharacterToolPermissions(
+          character.toolPermissions,
+        ),
       };
 
       // 載入健身設定
@@ -367,7 +375,10 @@ onMounted(async () => {
       await affinityStore.initialize();
       const storedAffinityConfig = await affinityStore.loadConfig(character.id);
       if (storedAffinityConfig) {
-        affinityConfig.value = { ...storedAffinityConfig };
+        // 深拷貝：淺拷貝會和 store 快取共用 metrics，沒按儲存也會改到聊天正在用的設定
+        affinityConfig.value = JSON.parse(
+          JSON.stringify(toRaw(storedAffinityConfig)),
+        );
         _updateAffinityPreview();
       } else {
         affinityConfig.value = createDefaultConfig(character.id);
@@ -389,12 +400,39 @@ function handleBack() {
   emit("back");
 }
 
+// 儲存中：連點勾勾會在新建時建出兩張一樣的卡
+const isSaving = ref(false);
+const saveToast = ref("");
+let saveToastTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showSaveToast(message: string) {
+  saveToast.value = message;
+  if (saveToastTimer) clearTimeout(saveToastTimer);
+  saveToastTimer = setTimeout(() => {
+    saveToast.value = "";
+  }, 2000);
+}
+
+onBeforeUnmount(() => {
+  if (saveToastTimer) clearTimeout(saveToastTimer);
+});
+
 // 處理儲存
 async function handleSave() {
+  if (isSaving.value) return;
   if (!formData.value.data.name.trim()) {
     alert("請輸入角色名稱");
     return;
   }
+  isSaving.value = true;
+  try {
+    await saveAll();
+  } finally {
+    isSaving.value = false;
+  }
+}
+
+async function saveAll() {
   formData.value.updatedAt = Date.now();
 
   // 儲存世界設定（只保留有值的欄位）
@@ -424,7 +462,12 @@ async function handleSave() {
   affinityConfig.value.characterId = formData.value.id;
   await affinityStore.saveConfig(affinityConfig.value);
 
-  emit("save", { ...formData.value });
+  const ok = (await props.onSave?.({ ...formData.value })) ?? false;
+  if (ok) {
+    showSaveToast("已儲存");
+  } else {
+    alert("角色儲存失敗，請再試一次");
+  }
 }
 
 // ===== 好感度配置 =====
@@ -454,6 +497,14 @@ function addAffinityStage(metricIndex: number) {
     name: "",
     minValue: 0,
   });
+}
+
+// 可選值：半形逗號、全形逗號、頓號都當分隔
+function parseMetricOptions(text: string): string[] {
+  return text
+    .split(/[,，、]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function removeAffinityStage(metricIndex: number, stageIndex: number) {
@@ -811,6 +862,8 @@ function removeTag(tag: string) {
 
 // 處理標籤輸入按鍵
 function handleTagKeydown(event: KeyboardEvent) {
+  // 注音／拼音選字時按 Enter 是確認選字，不是送出標籤
+  if (event.isComposing || event.keyCode === 229) return;
   if (event.key === "Enter") {
     event.preventDefault();
     addTag();
@@ -872,6 +925,8 @@ async function toggleRegexScript(scriptId: string) {
 // 下載單個正則腳本為 JSON
 function downloadRegexScript(script: RegexScript) {
   const payload = {
+    // HTML 模板等額外欄位一起帶出去，再導入才是同一支腳本
+    ...toRaw(script),
     id: script.id,
     scriptName: script.scriptName,
     findRegex: script.findRegex,
@@ -1010,13 +1065,29 @@ async function saveCharRegex() {
   validateCharRegex();
   if (rfError.value) return;
 
-  const placement: number[] = [];
+  const character = charactersStore.characters.find(
+    (c) => c.id === props.characterId,
+  );
+  if (!character) return;
+
+  const existing = character.data?.extensions?.regex_scripts ?? [];
+  const original = regexEditingId.value
+    ? existing.find((s) => s.id === regexEditingId.value)
+    : undefined;
+
+  // 表單沒有勾選框的位置（例如 6 推理）照原本的留著
+  const placement: number[] = (original?.placement ?? []).filter(
+    (p) => ![1, 2, 3, 5].includes(p),
+  );
   if (rfPlaceUser.value) placement.push(1);
   if (rfPlaceAI.value) placement.push(2);
   if (rfPlaceSlash.value) placement.push(3);
   if (rfPlaceWI.value) placement.push(5);
+  placement.sort((a, b) => a - b);
 
   const scriptData: RegexScript = {
+    // 表單沒有的欄位（HTML 模板、渲染方式等）要留著，不然一編輯模板就不見
+    ...original,
     id: regexEditingId.value || crypto.randomUUID(),
     scriptName: rfName.value.trim(),
     findRegex: rfFindRegex.value,
@@ -1034,12 +1105,6 @@ async function saveCharRegex() {
     maxDepth: rfMaxDepth.value === "" ? -1 : Number(rfMaxDepth.value),
   };
 
-  const character = charactersStore.characters.find(
-    (c) => c.id === props.characterId,
-  );
-  if (!character) return;
-
-  const existing = character.data?.extensions?.regex_scripts ?? [];
   let scripts: RegexScript[];
 
   if (regexEditingId.value) {
@@ -1076,20 +1141,12 @@ async function importRegexScriptsFromText(text: string): Promise<number> {
   let count = 0;
   for (const item of items) {
     if (!item.scriptName) continue;
+    // 跟導入角色卡走同一套轉換，HTML 模板等欄位才不會被丟掉
     newScripts.push({
+      ...migrateRegexScript(item),
       id: crypto.randomUUID(),
-      scriptName: item.scriptName,
       findRegex: item.findRegex ?? "",
       replaceString: item.replaceString ?? "",
-      trimStrings: item.trimStrings ?? [],
-      placement: Array.isArray(item.placement) ? item.placement : [],
-      disabled: item.disabled ?? false,
-      markdownOnly: item.markdownOnly ?? false,
-      promptOnly: item.promptOnly ?? false,
-      runOnEdit: item.runOnEdit ?? false,
-      substituteRegex: item.substituteRegex ?? 0,
-      minDepth: item.minDepth ?? -1,
-      maxDepth: item.maxDepth ?? -1,
     });
     count++;
   }
@@ -1177,7 +1234,12 @@ async function submitPasteRegex() {
         </button>
 
         <!-- 儲存按鈕 -->
-        <button class="header-btn primary" title="儲存" @click="handleSave">
+        <button
+          class="header-btn primary"
+          title="儲存"
+          :disabled="isSaving"
+          @click="handleSave"
+        >
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
           </svg>
@@ -1819,103 +1881,107 @@ async function submitPasteRegex() {
 
       <!-- ===== 世界設定 ===== -->
       <section class="edit-section">
-        <div
-          class="section-header"
-          @click="toggleSection('worldSettings' as any)"
-        >
+        <div class="section-header" @click="toggleSection('worldSettings')">
           <h3 class="section-title">世界設定</h3>
-          <svg class="section-chevron" viewBox="0 0 24 24" fill="currentColor">
+          <svg
+            class="section-chevron"
+            :class="{ open: expandedSections.worldSettings }"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
             <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
           </svg>
         </div>
-        <div class="section-content">
-          <p
-            class="section-hint"
-            style="font-size: 12px; opacity: 0.6; margin-bottom: 12px"
-          >
-            設定角色所在的世界位置，天氣與時區會自動查詢填入。
-          </p>
-          <!-- 城市搜尋 -->
-          <div class="form-group">
-            <label class="form-label">搜尋城市</label>
-            <div class="world-search-row">
+        <Transition name="slide">
+          <div v-if="expandedSections.worldSettings" class="section-content">
+            <p
+              class="section-hint"
+              style="font-size: 12px; opacity: 0.6; margin-bottom: 12px"
+            >
+              設定角色所在的世界位置，天氣與時區會自動查詢填入。
+            </p>
+            <!-- 城市搜尋 -->
+            <div class="form-group">
+              <label class="form-label">搜尋城市</label>
+              <div class="world-search-row">
+                <input
+                  v-model="worldLocationQuery"
+                  type="text"
+                  class="soft-input"
+                  placeholder="輸入城市名稱..."
+                  @keydown.enter="searchWorldLocation"
+                />
+                <button
+                  class="world-search-btn"
+                  :disabled="worldLocationSearching"
+                  @click="searchWorldLocation"
+                >
+                  {{ worldLocationSearching ? "…" : "搜尋" }}
+                </button>
+              </div>
+              <!-- 搜尋結果 -->
+              <div
+                v-if="worldLocationResults.length > 0"
+                class="world-search-results"
+              >
+                <button
+                  v-for="city in worldLocationResults"
+                  :key="city.id"
+                  class="world-result-item"
+                  @click="selectWorldLocation(city)"
+                >
+                  <span class="world-result-name">{{ city.name }}</span>
+                  <span class="world-result-sub">
+                    {{ [city.region, city.country].filter(Boolean).join("，") }}
+                  </span>
+                </button>
+              </div>
+            </div>
+            <!-- 已選城市顯示 -->
+            <div v-if="worldSettings.location" class="world-selected">
+              <div class="world-selected-info">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  width="14"
+                  height="14"
+                >
+                  <path
+                    d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
+                  />
+                </svg>
+                <span>{{ worldSettings.location }}</span>
+                <span v-if="worldSettings.timezone" class="world-tz-badge">{{
+                  worldSettings.timezone
+                }}</span>
+              </div>
+              <button
+                class="world-clear-btn"
+                @click="
+                  worldSettings.location = '';
+                  worldSettings.timezone = '';
+                  worldSettings.lat = undefined;
+                  worldSettings.lon = undefined;
+                  worldSettings.weatherOverride = '';
+                "
+              >
+                清除
+              </button>
+            </div>
+            <!-- 天氣描述（可選手動覆蓋） -->
+            <div class="form-group" style="margin-top: 12px">
+              <label class="form-label" style="font-size: 12px; opacity: 0.7">
+                天氣描述（選填，留空則自動查詢即時天氣）
+              </label>
               <input
-                v-model="worldLocationQuery"
+                v-model="worldSettings.weatherOverride"
                 type="text"
                 class="soft-input"
-                placeholder="輸入城市名稱..."
-                @keydown.enter="searchWorldLocation"
+                placeholder="例如：晴天，25°C，微風"
               />
-              <button
-                class="world-search-btn"
-                :disabled="worldLocationSearching"
-                @click="searchWorldLocation"
-              >
-                {{ worldLocationSearching ? "…" : "搜尋" }}
-              </button>
-            </div>
-            <!-- 搜尋結果 -->
-            <div
-              v-if="worldLocationResults.length > 0"
-              class="world-search-results"
-            >
-              <button
-                v-for="city in worldLocationResults"
-                :key="city.id"
-                class="world-result-item"
-                @click="selectWorldLocation(city)"
-              >
-                <span class="world-result-name">{{ city.name }}</span>
-                <span class="world-result-sub">
-                  {{ [city.region, city.country].filter(Boolean).join("，") }}
-                </span>
-              </button>
             </div>
           </div>
-          <!-- 已選城市顯示 -->
-          <div v-if="worldSettings.location" class="world-selected">
-            <div class="world-selected-info">
-              <svg
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                width="14"
-                height="14"
-              >
-                <path
-                  d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
-                />
-              </svg>
-              <span>{{ worldSettings.location }}</span>
-              <span v-if="worldSettings.timezone" class="world-tz-badge">{{
-                worldSettings.timezone
-              }}</span>
-            </div>
-            <button
-              class="world-clear-btn"
-              @click="
-                worldSettings.location = '';
-                worldSettings.timezone = '';
-                worldSettings.lat = undefined;
-                worldSettings.lon = undefined;
-                worldSettings.weatherOverride = '';
-              "
-            >
-              清除
-            </button>
-          </div>
-          <!-- 天氣描述（可選手動覆蓋） -->
-          <div class="form-group" style="margin-top: 12px">
-            <label class="form-label" style="font-size: 12px; opacity: 0.7">
-              天氣描述（選填，留空則自動查詢即時天氣）
-            </label>
-            <input
-              v-model="worldSettings.weatherOverride"
-              type="text"
-              class="soft-input"
-              placeholder="例如：晴天，25°C，微風"
-            />
-          </div>
-        </div>
+        </Transition>
       </section>
 
       <!-- ===== 功能模組 ===== -->
@@ -2126,15 +2192,13 @@ async function submitPasteRegex() {
                         </div>
                         <div class="range-field">
                           <label>可選值（逗號分隔）</label>
+                          <!-- 離開欄位才拆：邊打邊拆會把剛打的逗號吃掉，永遠打不出第二個值 -->
                           <input
                             :value="(metric.options ?? []).join(', ')"
-                            @input="
-                              metric.options = (
-                                $event.target as HTMLInputElement
-                              ).value
-                                .split(',')
-                                .map((s: string) => s.trim())
-                                .filter(Boolean)
+                            @change="
+                              metric.options = parseMetricOptions(
+                                ($event.target as HTMLInputElement).value,
+                              )
                             "
                             class="soft-input"
                             placeholder="例如：未識破, 已識破"
@@ -2354,10 +2418,32 @@ async function submitPasteRegex() {
         </div>
       </Transition>
     </Teleport>
+
+    <Transition name="fade">
+      <div v-if="saveToast" class="save-toast" role="status">
+        {{ saveToast }}
+      </div>
+    </Transition>
   </div>
 </template>
 
 <style lang="scss" scoped>
+.save-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(
+    var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 72px
+  );
+  transform: translateX(-50%);
+  padding: 10px 20px;
+  border-radius: 12px;
+  background: rgba(30, 30, 30, 0.88);
+  color: #fff;
+  font-size: 14px;
+  pointer-events: none;
+  z-index: 1000;
+}
+
 .character-edit-screen {
   background: #f5f5f5;
 }
