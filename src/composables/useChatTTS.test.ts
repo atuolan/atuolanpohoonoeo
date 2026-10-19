@@ -215,6 +215,24 @@ describe("useChatTTS manual regeneration", () => {
     expect(context.settingsStore.minimaxTTS.languageBoost).toBe("Chinese");
   });
 
+  it("聊天自己指定音色時不套用全域音色混合", async () => {
+    vi.mocked(synthesizeSpeech).mockResolvedValue({ success: false, error: "test" });
+    const context = createContext();
+    Object.assign(context.settingsStore.minimaxTTS, {
+      timberWeightsEnabled: true,
+      timberWeights: [{ voiceId: "female-yujie", weight: 50 }],
+    });
+    const { chatMinimaxTTSOverride, processMessageTTS } = useChatTTS(context);
+
+    await processMessageTTS(aiMessage.id, "你好[emotion=happy]");
+    chatMinimaxTTSOverride.value = { voiceId: "my_clone_01" };
+    await processMessageTTS(aiMessage.id, "你好[emotion=happy]");
+
+    expect(vi.mocked(synthesizeSpeech).mock.calls.map(([, s]) => [s.voiceId, s.timberWeightsEnabled]))
+      .toEqual([["voice", true], ["my_clone_01", false]]);
+    expect(context.settingsStore.minimaxTTS.timberWeightsEnabled).toBe(true);
+  });
+
   it.each([
     ["時間、大丈夫ですか？", "all", "", "時間、大丈夫ですか？"],
     ["時間はﾀﾞｲｼﾞｮｳﾌﾞ？", "all", "", "時間はﾀﾞｲｼﾞｮｳﾌﾞ？"],

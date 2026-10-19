@@ -45,7 +45,7 @@ export interface MiniMaxTTSSettings {
   format: 'mp3' | 'wav' | 'flac';
   /** 採樣率 */
   sampleRate: number;
-  /** 音色混合（timber_weights），啟用後會覆蓋 voiceId */
+  /** 音色混合（送出時是 timbre_weights），啟用後會覆蓋 voiceId */
   timberWeights: TimberWeight[];
   /** 是否啟用音色混合 */
   timberWeightsEnabled: boolean;
@@ -196,6 +196,23 @@ function getBaseUrl(settings: MiniMaxTTSSettings): string {
   return DIRECT_MAP[settings.platform];
 }
 
+/** MiniMax 一次最多混合 4 種音色 */
+export const MAX_TIMBRE_WEIGHTS = 4;
+
+/** 取出這次要送的混合音色：沒開、沒填 voice_id 的都不算，比重取 1~100 的整數 */
+export function getActiveTimbreWeights(
+  settings: Pick<MiniMaxTTSSettings, 'timberWeights' | 'timberWeightsEnabled'>,
+): { voice_id: string; weight: number }[] {
+  if (!settings.timberWeightsEnabled) return [];
+  return (settings.timberWeights ?? [])
+    .filter((tw) => tw.voiceId?.trim() && tw.weight > 0)
+    .slice(0, MAX_TIMBRE_WEIGHTS)
+    .map((tw) => ({
+      voice_id: tw.voiceId.trim(),
+      weight: Math.min(100, Math.max(1, Math.round(tw.weight))),
+    }));
+}
+
 // ── 主要 API 函數 ─────────────────────────────────────────────
 
 /**
@@ -226,24 +243,6 @@ export async function synthesizeSpeech(
     };
     if (options?.emotion) voiceSetting.emotion = options.emotion;
 
-    // 如果啟用音色混合且有配置，使用 timber_weights 覆蓋 voice_id
-    if (
-      settings.timberWeightsEnabled &&
-      settings.timberWeights?.length > 0
-    ) {
-      const validWeights = settings.timberWeights.filter(
-        (tw) => tw.voiceId.trim() && tw.weight > 0,
-      );
-      if (validWeights.length > 0) {
-        voiceSetting.timber_weights = validWeights.map((tw) => ({
-          voice_id: tw.voiceId,
-          weight: tw.weight,
-        }));
-        // timber_weights 模式下不需要 voice_id
-        delete voiceSetting.voice_id;
-      }
-    }
-
     const body: Record<string, unknown> = {
       model: settings.model,
       text,
@@ -255,6 +254,14 @@ export async function synthesizeSpeech(
       },
       output_format: 'url',
     };
+
+    // 音色混合：timbre_weights 放在請求體頂層（不是 voice_setting 裡），
+    // 官方文件要求這時 voice_setting.voice_id 留空字串
+    const timbreWeights = getActiveTimbreWeights(settings);
+    if (timbreWeights.length > 0) {
+      body.timbre_weights = timbreWeights;
+      voiceSetting.voice_id = '';
+    }
 
     // 只在有值時才傳 language_boost，空字串不傳
     if (settings.languageBoost) {

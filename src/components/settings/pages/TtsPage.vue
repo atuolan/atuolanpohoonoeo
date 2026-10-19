@@ -3,7 +3,7 @@
  * 語音合成（MiniMax）：帳號、基本設定 / 音色混合 / 音色複刻。
  * API Key 先存在草稿，離開欄位或離開這頁才寫回，避免打字到一半被別處的保存覆蓋。
  */
-import { getVoiceDisplayName, MINIMAX_LANGUAGES } from "@/api/MiniMaxTTSApi";
+import { getVoiceDisplayName, MAX_TIMBRE_WEIGHTS, MINIMAX_LANGUAGES } from "@/api/MiniMaxTTSApi";
 import { useSettingsStore } from "@/stores";
 import { Check, ChevronRight, Music, Plus, Upload, X } from "lucide-vue-next";
 import { computed, onDeactivated, onMounted, onUnmounted, ref, watch } from "vue";
@@ -121,7 +121,10 @@ function selectVoice(voiceId: string) {
 }
 
 // ===== 音色混合 =====
+const mixFull = computed(() => tts.timberWeights.length >= MAX_TIMBRE_WEIGHTS);
+
 function addTimberWeight() {
+  if (mixFull.value) return;
   tts.timberWeights.push({ voiceId: "", weight: 50 });
   save();
 }
@@ -136,7 +139,7 @@ function isInMix(voiceId: string) {
 }
 
 function addVoiceToMix(voiceId: string) {
-  if (isInMix(voiceId)) return;
+  if (isInMix(voiceId) || mixFull.value) return;
   tts.timberWeights.push({ voiceId, weight: 50 });
   save();
 }
@@ -330,20 +333,20 @@ onUnmounted(saveApiKeyDraft);
 
     <!-- 音色混合 -->
     <template v-else-if="tab === 'timberMix'">
-      <SettingsGroup>
+      <SettingsGroup footer="聊天的語音設定裡自己填了音色的話，那個聊天會用它自己的音色，不套用混合。">
         <SettingsSwitchRow
           v-model="tts.timberWeightsEnabled"
           label="啟用音色混合"
           description="開啟後會取代「基本設定」裡的預設音色"
           @change="save"
         />
-        <template #footer>
-          <span class="tts-warn">混合會用到 MiniMax 的 timber_weights，每次合成的費用比單一音色高，請留意額度。</span>
-        </template>
       </SettingsGroup>
 
       <template v-if="tts.timberWeightsEnabled">
-        <SettingsGroup title="混合比重" footer="比重是相對值（1–100），例如 70 御姐＋30 少女，就是比較溫柔成熟的聲線。">
+        <SettingsGroup
+          title="混合比重"
+          :footer="`最多混合 ${MAX_TIMBRE_WEIGHTS} 種。比重是相對值（1–100），例如 70 御姐＋30 少女，就是比較溫柔成熟的聲線。`"
+        >
           <div v-for="(tw, idx) in tts.timberWeights" :key="idx" class="tts-mix">
             <div class="tts-mix__head">
               <input
@@ -376,7 +379,16 @@ onUnmounted(saveApiKeyDraft);
           <div v-if="tts.timberWeights.length === 0" class="st-row">
             <span class="st-row__desc">還沒加入任何音色。按下面「新增音色」，或從音色清單加入。</span>
           </div>
-          <SettingsRow clickable tone="accent" label="新增音色" @click="addTimberWeight">
+          <div v-else-if="tts.timberWeights.length > MAX_TIMBRE_WEIGHTS" class="st-row">
+            <span class="st-row__desc tts-warn">MiniMax 最多只能混 {{ MAX_TIMBRE_WEIGHTS }} 種，只會用前 {{ MAX_TIMBRE_WEIGHTS }} 個。</span>
+          </div>
+          <SettingsRow
+            clickable
+            tone="accent"
+            :label="mixFull ? `已達 ${MAX_TIMBRE_WEIGHTS} 種上限` : '新增音色'"
+            :disabled="mixFull"
+            @click="addTimberWeight"
+          >
             <template #icon><Plus class="tts-plus" aria-hidden="true" /></template>
           </SettingsRow>
         </SettingsGroup>
@@ -390,7 +402,7 @@ onUnmounted(saveApiKeyDraft);
               type="button"
               class="tts-chip"
               :class="{ 'tts-chip--on': isInMix(voice.voice_id) }"
-              :disabled="isInMix(voice.voice_id)"
+              :disabled="isInMix(voice.voice_id) || mixFull"
               @click="addVoiceToMix(voice.voice_id)"
             >
               <Check v-if="isInMix(voice.voice_id)" aria-hidden="true" />

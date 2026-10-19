@@ -129,7 +129,8 @@ export function useChatTTS(context: {
       const override = chatMinimaxTTSOverride.value;
       const baseSettings = {
         ...context.settingsStore.minimaxTTS,
-        ...(override.voiceId && { voiceId: override.voiceId }),
+        // 聊天自己指定的音色優先於全域的音色混合
+        ...(override.voiceId && { voiceId: override.voiceId, timberWeightsEnabled: false }),
         ...(override.pitch !== undefined && { pitch: override.pitch }),
         ...(override.languageBoost !== undefined && { languageBoost: override.languageBoost }),
       };

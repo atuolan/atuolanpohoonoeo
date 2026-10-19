@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MINIMAX_LANGUAGES } from "@/api/MiniMaxTTSApi";
+import { getActiveTimbreWeights, MINIMAX_LANGUAGES } from "@/api/MiniMaxTTSApi";
 import {
   AVAILABLE_SAMPLERS as novelAISamplers,
   PRESET_SIZES as novelAISizePresets,
@@ -3171,6 +3171,10 @@ const {
   settingsStore,
   saveChat,
 });
+/** 全域音色混合實際會送出的音色數（0 表示沒在用混合） */
+const globalTimbreMixCount = computed(
+  () => getActiveTimbreWeights(settingsStore.minimaxTTS).length,
+);
 
 // ===== 快速輸入助手 composable =====
 const {
@@ -12429,14 +12433,19 @@ useChatCleanup({
                   class="setting-input"
                   :value="chatMinimaxTTSOverride.voiceId ?? ''"
                   :placeholder="
-                    settingsStore.minimaxTTS.voiceId || '使用全域預設'
+                    globalTimbreMixCount
+                      ? '使用全域音色混合'
+                      : settingsStore.minimaxTTS.voiceId || '使用全域預設'
                   "
                   @input="
                     chatMinimaxTTSOverride.voiceId =
-                      ($event.target as HTMLInputElement).value || undefined
+                      ($event.target as HTMLInputElement).value.trim() || undefined
                   "
                 />
-                <span class="setting-hint"
+                <span v-if="globalTimbreMixCount" class="setting-hint"
+                  >留空使用全域的音色混合（{{ globalTimbreMixCount }} 種）；填了就只用這個音色</span
+                >
+                <span v-else class="setting-hint"
                   >留空使用全域：{{ settingsStore.minimaxTTS.voiceId }}</span
                 >
               </div>
