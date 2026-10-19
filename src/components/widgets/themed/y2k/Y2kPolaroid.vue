@@ -177,10 +177,26 @@ const hintStyle = computed(() => (props.color ? { color: props.color } : undefin
   border-radius: 50%;
   background: rgba(45, 27, 78, 0.7);
   color: #FFFFFF;
+  // 手機上不常駐（會擋住照片），點照片就能換；有滑鼠的裝置滑過照片才出現
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
 
   svg {
     width: 12cqmin;
     height: 12cqmin;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .y2kp-stage:hover & {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  &:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
   }
 }
 </style>

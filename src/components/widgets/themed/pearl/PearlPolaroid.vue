@@ -148,6 +148,22 @@ const emit = defineEmits<{
     background: #2b2840cc;
     color: #f3eee2;
     cursor: pointer;
+    // 手機上不常駐（會擋住照片），點照片就能換；有滑鼠的裝置滑過照片才出現
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+
+    @media (hover: hover) and (pointer: fine) {
+      .pearl-polaroid__canvas:hover & {
+        opacity: 1;
+        pointer-events: auto;
+      }
+    }
+
+    &:focus-visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
   }
 }
 </style>

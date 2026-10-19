@@ -146,8 +146,21 @@ $soft-default: #7e6250;
     box-shadow: 0 4px 10px -4px rgba(150, 100, 60, 0.5);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+    // 手機上不常駐（會擋住照片），點照片就能換；有滑鼠的裝置滑過照片才出現
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+
+    @media (hover: hover) and (pointer: fine) {
+      .cream-polaroid__ring:hover & {
+        opacity: 1;
+        pointer-events: auto;
+      }
+    }
 
     &:focus-visible {
+      opacity: 1;
+      pointer-events: auto;
       outline: 2px solid #c98a55;
       outline-offset: 2px;
     }
