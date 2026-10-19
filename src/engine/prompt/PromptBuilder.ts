@@ -3288,6 +3288,15 @@ ${speakLine}
   private buildMinimaxTTSPrompt(): BuiltMessage | null {
     if (!this.options.minimaxTTSEnabled) return null;
 
+    // 線上與群聊是一則則訊息、沒有引號和旁白；面對面才是小說式的敘述加台詞
+    if (this.options.groupChatMode || !this.options.faceToFaceMode) {
+      return {
+        role: "system",
+        content: this.buildChatMinimaxTTSRules(!!this.options.groupChatMode),
+        identifier: "minimaxTTS",
+      };
+    }
+
     const content = `【語音合成標記規則】
 你的對話文字將被語音合成引擎朗讀。只有角色真正「說出口」的台詞需要加語音標記，敘述、動作、心理活動、場景描寫都不要加標記。
 
@@ -3338,6 +3347,35 @@ speed：0.5~2.0，正常時省略
       content,
       identifier: "minimaxTTS",
     };
+  }
+
+  /**
+   * 線上／群聊的語音標記規則：沒有 [emotion=...] 的訊息不會合成，所以每則都要標，
+   * 不能沿用面對面「寧可少標」的寫法。
+   */
+  private buildChatMinimaxTTSRules(isGroup: boolean): string {
+    const open = isGroup ? '<msg name="角色名">' : "<msg>";
+    return `【語音合成標記規則】
+語音開著：每一則 <msg> 訊息都會被語音合成引擎念出來，所以每則訊息都要加語音標記。ˇ心聲ˇ、表情包、圖片、轉帳這些不會被念，不用加。
+
+1. 情緒與語速（每則必加）——放在這則訊息文字的最後、ˇ心聲ˇ 前面：
+[emotion=情緒] 或 [emotion=情緒;speed=語速]
+emotion 可選：happy/sad/angry/fearful/disgusted/surprised/calm/neutral
+speed：0.5~2.0，正常語速就省略
+- 沒有明顯情緒就用 [emotion=neutral] 或 [emotion=calm]，不要省略：沒有這個標記的訊息不會有聲音
+- 一則訊息只放一個
+- 平常聊天、溫柔安撫多用 calm 或 neutral，不要動不動 angry、surprised
+
+2. 語氣標籤（選用）——寫在文字裡自然觸發的位置：
+(laughs)笑聲 (chuckle)輕笑 (sighs)嘆氣 (gasps)倒吸氣 (breath)呼吸 (emm)猶豫嗯 (crying)哭泣 (coughs)咳嗽 (sniffs)抽鼻 (pant)喘氣 (humming)哼唱 (groans)呻吟
+- 一則訊息通常 0~1 個，只在笑、喘、猶豫、情緒明顯波動時才加
+
+3. 停頓（選用）——<#秒數#>，範圍 0.01~99.99，只在遲疑、轉折、哽住時用；短停頓 0.2~0.6，明顯停頓 0.8~1.8
+
+示例：
+${open}真的嗎(laughs)？太好了！[emotion=happy]</msg>
+${open}算了(sighs)……<#0.8#>你早點睡吧[emotion=sad;speed=0.9] ˇ其實還想再聊一下ˇ</msg>
+${open}好啊，我等你[emotion=calm]</msg>`;
   }
 
   /**

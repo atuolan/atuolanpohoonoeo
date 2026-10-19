@@ -131,6 +131,10 @@ describe("線上模式預設提示詞分區", () => {
   it("開了 MiniMax 語音才帶語音標記規則，放在思考框架後面", async () => {
     const text = (await build([], { minimaxTTSEnabled: true })).map((m) => m.content).join("\n");
     expect(text.indexOf("語音合成標記規則")).toBeGreaterThan(text.indexOf("<thinking>"));
+    // 線上是一則則訊息：每則都要標，示例用 <msg>，不是面對面的引號寫法
+    expect(text).toContain("每一則 <msg> 訊息都會被語音合成引擎念出來");
+    expect(text).toContain("<msg>好啊，我等你[emotion=calm]</msg>");
+    expect(text).not.toContain("引號關閉前");
     expect((await build()).map((m) => m.content).join("\n")).not.toContain("語音合成標記規則");
   });
 });

@@ -147,6 +147,8 @@ describe("群聊預設提示詞（照線上模式分區）", () => {
   it("開了 MiniMax 語音才帶語音標記規則，放在思考框架後面", async () => {
     const text = join(await build([], { minimaxTTSEnabled: true }));
     expect(text.indexOf("語音合成標記規則")).toBeGreaterThan(text.indexOf("<thinking>"));
+    expect(text).toContain('<msg name="角色名">好啊，我等你[emotion=calm]</msg>');
+    expect(text).not.toContain("引號關閉前");
     expect(join(await build())).not.toContain("語音合成標記規則");
   });
 });
