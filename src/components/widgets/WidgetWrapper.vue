@@ -152,6 +152,19 @@ function onDragMove(e: MouseEvent | TouchEvent) {
   };
 }
 
+// 底部上限：一路到螢幕最下緣（可以壓到 dock 後面），至少保留預設佈局的 35 格。
+// 畫布不能上下滑，超出螢幕的組件就拖不回來了，所以不能完全拿掉
+function getMaxGridRows() {
+  const viewport = document.querySelector<HTMLElement>(".whiteboard-viewport");
+  if (!viewport) return Math.max(35, canvasStore.getVisibleGridRows());
+  const paddingTop = parseFloat(getComputedStyle(viewport).paddingTop) || 0;
+  const usableHeight = viewport.getBoundingClientRect().height - paddingTop;
+  const screenRows = Math.floor(
+    usableHeight / (canvasStore.gridSize * canvasStore.canvasScale),
+  );
+  return Math.max(35, screenRows);
+}
+
 function onDragEnd() {
   if (!isDragging.value) return;
 
@@ -163,8 +176,7 @@ function onDragEnd() {
   const maxX =
     Math.floor(canvasStore.canvasWidth / canvasStore.gridSize) -
     props.widget.width;
-  // 使用最大格數計算最大 Y（35 格）
-  const MAX_GRID_ROWS = 35;
+  const MAX_GRID_ROWS = getMaxGridRows();
   const maxY = MAX_GRID_ROWS - props.widget.height;
 
   const clampedX = Math.max(0, Math.min(newX, maxX));
