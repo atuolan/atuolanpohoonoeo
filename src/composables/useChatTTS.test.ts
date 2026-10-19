@@ -228,6 +228,34 @@ describe("useChatTTS manual regeneration", () => {
     expect(speeds[1]).toBeCloseTo(1.2);
   });
 
+  it("群聊成員有自己的音色就用它，沒有的用群組音色", async () => {
+    vi.mocked(synthesizeSpeech).mockResolvedValue({ success: false, error: "test" });
+    const messages = [
+      { ...aiMessage, id: "ai-a", senderCharacterId: "char-a" },
+      { ...aiMessage, id: "ai-b", senderCharacterId: "char-b" },
+      { ...aiMessage, id: "ai-c", senderCharacterId: "char-c" },
+    ];
+    const context = createContext(messages);
+    Object.assign(context.settingsStore.minimaxTTS, {
+      timberWeightsEnabled: true,
+      timberWeights: [{ voiceId: "female-yujie", weight: 50 }],
+    });
+    const { chatMinimaxTTSOverride, processMessageTTS } = useChatTTS(context);
+    chatMinimaxTTSOverride.value = { memberVoices: { "char-a": "voice-a", "char-b": " " } };
+
+    for (const m of messages) await processMessageTTS(m.id, "你好[emotion=happy]");
+    chatMinimaxTTSOverride.value.voiceId = "group-voice";
+    await processMessageTTS("ai-b", "你好[emotion=happy]");
+
+    expect(vi.mocked(synthesizeSpeech).mock.calls.map(([, s]) => [s.voiceId, s.timberWeightsEnabled]))
+      .toEqual([
+        ["voice-a", false],
+        ["voice", true],
+        ["voice", true],
+        ["group-voice", false],
+      ]);
+  });
+
   it("聊天自己指定音色時不套用全域音色混合", async () => {
     vi.mocked(synthesizeSpeech).mockResolvedValue({ success: false, error: "test" });
     const context = createContext();

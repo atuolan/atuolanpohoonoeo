@@ -1089,6 +1089,8 @@ export interface Chat {
     languageBoost?: string;
     /** 通話雙語字幕：角色說外語時語音念原文、畫面以中文字幕為主 */
     callBilingual?: boolean;
+    /** 群聊成員各自的音色：key 是訊息的 senderCharacterId，value 是 voice_id */
+    memberVoices?: Record<string, string>;
   };
 
   /** 是否為分支聊天（不顯示在主列表，只在角色卡聊天檔案中顯示） */

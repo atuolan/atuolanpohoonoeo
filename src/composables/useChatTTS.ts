@@ -24,6 +24,8 @@ export interface ChatMinimaxTTSOverride {
   languageBoost?: string;
   /** 通話雙語字幕：角色說外語時語音念原文、畫面以中文字幕為主 */
   callBilingual?: boolean;
+  /** 群聊成員各自的音色：key 是訊息的 senderCharacterId，value 是 voice_id */
+  memberVoices?: Record<string, string>;
 }
 
 export type MessageTTSRegenerationResult =
@@ -128,10 +130,13 @@ export function useChatTTS(context: {
     try {
       const { synthesizeSpeech } = await import("@/api/MiniMaxTTSApi");
       const override = chatMinimaxTTSOverride.value;
+      // 群聊：說話的成員有自己的音色就用它，其次才是這個聊天的音色
+      const senderId = context.messages.value[idx].senderCharacterId;
+      const voiceId = (senderId && override.memberVoices?.[senderId]?.trim()) || override.voiceId;
       const baseSettings = {
         ...context.settingsStore.minimaxTTS,
-        // 聊天自己指定的音色優先於全域的音色混合
-        ...(override.voiceId && { voiceId: override.voiceId, timberWeightsEnabled: false }),
+        // 成員或聊天自己指定的音色優先於全域的音色混合
+        ...(voiceId && { voiceId, timberWeightsEnabled: false }),
         ...(override.pitch !== undefined && { pitch: override.pitch }),
         ...(override.languageBoost !== undefined && { languageBoost: override.languageBoost }),
       };

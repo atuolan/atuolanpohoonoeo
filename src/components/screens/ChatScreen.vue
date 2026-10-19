@@ -21,6 +21,7 @@ import AISummaryPanel from "@/components/modals/AISummaryPanel.vue";
 import AffinityPanel from "@/components/modals/AffinityPanel.vue";
 import ChatInfoModal from "@/components/modals/ChatInfoModal.vue";
 import DiaryViewModal from "@/components/modals/DiaryViewModal.vue";
+import GroupMemberVoices from "@/components/modals/GroupMemberVoices.vue";
 import CharPlannerSheet from "@/components/modals/CharPlannerSheet.vue";
 import FaceToFacePanel from "@/components/modals/f2f-panel/FaceToFacePanel.vue";
 import FavoriteAudioModal from "@/components/modals/FavoriteAudioModal.vue";
@@ -3175,6 +3176,21 @@ const {
 const globalTimbreMixCount = computed(
   () => getActiveTimbreWeights(settingsStore.minimaxTTS).length,
 );
+/** 群聊語音設定的成員清單（id 對應訊息的 senderCharacterId） */
+const ttsVoiceMembers = computed(() =>
+  groupMembersForInfo.value.map((m) => ({
+    id: m.characterId,
+    name: m.nickname || m.name,
+    avatar: m.avatar,
+  })),
+);
+/** 沒設成員音色的人實際會用的聲音 */
+const memberVoiceFallbackLabel = computed(() => {
+  const groupVoice = chatMinimaxTTSOverride.value.voiceId;
+  if (groupVoice) return `群組預設音色（${groupVoice}）`;
+  if (globalTimbreMixCount.value) return "全域的音色混合";
+  return `全域預設音色（${settingsStore.minimaxTTS.voiceId}）`;
+});
 
 // ===== 快速輸入助手 composable =====
 const {
@@ -12427,7 +12443,9 @@ useChatCleanup({
 
               <!-- 音色 voice_id -->
               <div class="setting-group">
-                <label class="setting-label">音色 (voice_id)</label>
+                <label class="setting-label">{{
+                  isGroupChat ? "群組預設音色 (voice_id)" : "音色 (voice_id)"
+                }}</label>
                 <input
                   type="text"
                   class="setting-input"
@@ -12449,6 +12467,19 @@ useChatCleanup({
                   >留空使用全域：{{ settingsStore.minimaxTTS.voiceId }}</span
                 >
               </div>
+
+              <!-- 群聊：每個成員各自的音色 -->
+              <template v-if="isGroupChat && ttsVoiceMembers.length">
+                <GroupMemberVoices
+                  v-model="chatMinimaxTTSOverride.memberVoices"
+                  :members="ttsVoiceMembers"
+                  :fallback-label="memberVoiceFallbackLabel"
+                  :tts-settings="settingsStore.minimaxTTS"
+                />
+                <span v-if="!useGroupChatParser" class="setting-hint"
+                  >面對面模式一則訊息裡會有好幾個人說話，分不出是誰，這時都用群組預設音色。</span
+                >
+              </template>
 
               <div class="setting-group">
                 <label class="setting-label" for="chat-tts-language">語言增強</label>
@@ -12577,9 +12608,12 @@ useChatCleanup({
                 class="btn-cancel"
                 style="margin-top: 8px; font-size: 12px"
                 @click="
-                  chatMinimaxTTSOverride = chatMinimaxTTSOverride.callBilingual
-                    ? { callBilingual: true }
-                    : {}
+                  chatMinimaxTTSOverride = {
+                    ...(chatMinimaxTTSOverride.callBilingual && { callBilingual: true }),
+                    ...(chatMinimaxTTSOverride.memberVoices && {
+                      memberVoices: chatMinimaxTTSOverride.memberVoices,
+                    }),
+                  }
                 "
               >
                 重置為全域預設
