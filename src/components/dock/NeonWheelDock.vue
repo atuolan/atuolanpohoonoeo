@@ -1,23 +1,9 @@
 <script setup lang="ts">
-import {
-    Book,
-    BookOpen,
-    Calendar,
-    Cloud,
-    Dumbbell,
-    Gamepad2,
-    LayoutGrid,
-    MessageCircle,
-    Music,
-    Phone,
-    Settings,
-    ShoppingCart,
-    Sparkles,
-    User,
-    Wallet,
-} from "lucide-vue-next";
-import type { CSSProperties } from "vue";
-import { onUnmounted, ref } from "vue";
+import { LayoutGrid, SlidersHorizontal } from "lucide-vue-next";
+import type { Component, CSSProperties } from "vue";
+import { computed, onUnmounted, ref } from "vue";
+import DockAppsEditor from "./DockAppsEditor.vue";
+import { loadDockAppIds, resolveDockApps, saveDockAppIds } from "./dockApps";
 
 // ===== 轉盤狀態 =====
 const railOffset = ref(0);
@@ -43,24 +29,24 @@ const DIRECTION_THRESHOLD = 8;
 // 收合動畫目標角度（往右旋轉到螢幕外）
 const COLLAPSE_ANGLE = 180;
 
-// Dock 項目 - 所有 APP
-const dockItems = [
-  { id: "character", icon: User, label: "角色" },
-  { id: "message", icon: MessageCircle, label: "訊息" },
-  { id: "settings", icon: Settings, label: "設置" },
-  { id: "space", icon: Sparkles, label: "空間" },
-  { id: "music", icon: Music, label: "音樂" },
-  { id: "fitness", icon: Dumbbell, label: "健身" },
-  { id: "wallet", icon: Wallet, label: "錢包" },
-  { id: "game", icon: Gamepad2, label: "遊戲" },
-  { id: "shop", icon: ShoppingCart, label: "購物" },
-  { id: "book", icon: Book, label: "世界書" },
-  { id: "calendar", icon: Calendar, label: "日曆" },
-  { id: "weather", icon: Cloud, label: "天氣" },
-  { id: "phone", icon: Phone, label: "電話" },
-  { id: "reading", icon: BookOpen, label: "閱讀" },
-  { id: "bookshelf", icon: Book, label: "書架" },
-];
+// Dock 項目：使用者自訂的 App，最後固定一顆「自訂」打開編輯面板
+const CUSTOMIZE_ITEM_ID = "__customize__";
+const dockAppIds = ref<string[]>(loadDockAppIds());
+const showEditor = ref(false);
+
+const dockItems = computed<{ id: string; icon: Component; label: string }[]>(() => [
+  ...resolveDockApps(dockAppIds.value),
+  { id: CUSTOMIZE_ITEM_ID, icon: SlidersHorizontal, label: "自訂" },
+]);
+
+function onDockAppsChange(ids: string[]) {
+  dockAppIds.value = ids;
+  saveDockAppIds(ids);
+  // App 變少後原本的滾動位置可能超出範圍，拉回中間
+  railTarget = 0;
+  railVelocity = 0;
+  railOffset.value = 0;
+}
 
 // 可見範圍的項目數量
 const VISIBLE_ITEMS = 7;
@@ -69,7 +55,7 @@ const ANGLE_PER_ITEM = 20; // 每個項目佔用的角度
 // 計算每個按鈕的角度 - 支援無限滾動
 function getBaseAngle(index: number) {
   // 從中心開始計算
-  const centerIndex = Math.floor(dockItems.length / 2);
+  const centerIndex = Math.floor(dockItems.value.length / 2);
   return (index - centerIndex) * ANGLE_PER_ITEM;
 }
 
@@ -91,7 +77,10 @@ function getItemStyle(index: number): CSSProperties {
 }
 
 // 計算最大滾動範圍
-const maxOffset = ((dockItems.length - VISIBLE_ITEMS) * ANGLE_PER_ITEM) / 2;
+const maxOffset = computed(() =>
+  Math.max(0, ((dockItems.value.length - VISIBLE_ITEMS) * ANGLE_PER_ITEM) / 2),
+);
+const canScroll = computed(() => maxOffset.value > 0);
 
 // ===== 拖拽旋轉邏輯 =====
 function onRailPointerDown(e: MouseEvent | TouchEvent) {
@@ -127,7 +116,7 @@ function runRailPointerMove(e: MouseEvent | TouchEvent) {
   railVelocity = moveDeltaX * 0.5;
 
   // 邊界阻力 - 越接近邊界，移動越慢
-  const boundaryLimit = maxOffset;
+  const boundaryLimit = maxOffset.value;
   const proposedTarget = railTarget + railVelocity;
 
   if (proposedTarget > boundaryLimit || proposedTarget < -boundaryLimit) {
@@ -209,7 +198,7 @@ function animateRail() {
     }
 
     // 邊界處理 - 更平滑的回彈
-    const boundaryLimit = maxOffset;
+    const boundaryLimit = maxOffset.value;
 
     if (railTarget > boundaryLimit) {
       // 超出右邊界，平滑回彈
@@ -329,8 +318,11 @@ function onCoreClickAfterPointer() {
 }
 
 // 點擊 dock 項目
-function onItemClick(item: (typeof dockItems)[0]) {
-  console.log("點擊:", item.label);
+function onItemClick(item: (typeof dockItems.value)[number]) {
+  if (item.id === CUSTOMIZE_ITEM_ID) {
+    showEditor.value = true;
+    return;
+  }
   emit("navigate", item.id);
 }
 
@@ -372,7 +364,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 滾動提示 -->
-    <div class="scroll-hint" :class="{ hidden: !isExpanded }">
+    <div class="scroll-hint" :class="{ hidden: !isExpanded || !canScroll }">
       <span class="hint-text">← 滑動查看更多 →</span>
     </div>
 
@@ -388,6 +380,13 @@ onUnmounted(() => {
     >
       <LayoutGrid :size="28" :stroke-width="1.5" color="#1f2937" />
     </button>
+
+    <DockAppsEditor
+      :visible="showEditor"
+      :model-value="dockAppIds"
+      @update:model-value="onDockAppsChange"
+      @close="showEditor = false"
+    />
   </nav>
 </template>
 
