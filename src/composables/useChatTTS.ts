@@ -105,7 +105,8 @@ export function useChatTTS(context: {
         : [
             {
               emotion: chatMinimaxTTSOverride.value.emotion || "neutral",
-              speed: chatMinimaxTTSOverride.value.speed ?? 1,
+              // 段落語速是相對值，聊天的語速設定在合成時才乘上去
+              speed: 1,
               text: ttsContent,
               clean: cleanTTSTags(ttsContent),
             },
@@ -134,6 +135,8 @@ export function useChatTTS(context: {
         ...(override.pitch !== undefined && { pitch: override.pitch }),
         ...(override.languageBoost !== undefined && { languageBoost: override.languageBoost }),
       };
+      // 聊天設定的語速是基準，AI 標的 speed 是相對快慢（1 = 照基準）
+      const baseSpeed = override.speed ?? baseSettings.speed ?? 1;
 
       let anySuccess = false;
       for (let i = 0; i < segments.length; i++) {
@@ -141,7 +144,7 @@ export function useChatTTS(context: {
         // 每段用自己的 speed 和 emotion
         const mergedSettings = {
           ...baseSettings,
-          speed: seg.speed,
+          speed: baseSpeed * seg.speed,
         };
         const ttsText = convertTTSContentToSimplified(seg.text, mergedSettings.languageBoost);
 

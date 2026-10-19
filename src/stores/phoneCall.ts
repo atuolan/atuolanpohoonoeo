@@ -157,18 +157,6 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   let audioUnlocked = false;
   let playbackToken = 0;
 
-  /**
-   * MiniMax emotion 僅接受特定英文列舉值，傳中文語氣描述（如「慵懶、帶笑」）
-   * 會回傳 invalid params 導致合成失敗。此函式只放行合法值，其餘一律回傳 undefined。
-   */
-  const VALID_EMOTIONS = new Set([
-    "happy", "sad", "angry", "fearful", "disgusted", "surprised", "neutral",
-  ]);
-  function toValidEmotion(raw?: string): string | undefined {
-    const v = raw?.trim().toLowerCase();
-    return v && VALID_EMOTIONS.has(v) ? v : undefined;
-  }
-
 
   // UI 狀態：是否展開全屏（false = 縮小成迷你條）
   const isExpanded = ref(true);
@@ -463,34 +451,23 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
         ttsError.value = "尚未設定 MiniMax API Key";
         return null;
       }
-      const { synthesizeSpeech } = await import("@/api/MiniMaxTTSApi");
+      const { synthesizeSpeech, normalizeMiniMaxEmotion } = await import("@/api/MiniMaxTTSApi");
       const mergedSettings = getMergedTTSSettings(settingsStore);
       // 雙語通話：每句用 AI 標的語言念（全漢字的日文也不會被當成中文）
       if (callBilingual.value && msg.lang) mergedSettings.languageBoost = msg.lang;
-      // MiniMax 的 emotion 只接受特定英文列舉值；AI 產生的 msg.tone 多為中文語氣描述
-      // （例如「慵懶、帶笑」「調侃」），直接傳會被 API 拒絕（invalid params）導致合成失敗、沒有聲音。
-      // 因此僅在值屬於合法列舉時才傳，中文語氣描述僅供 UI 顯示、不送 API。
-      const emotion = toValidEmotion(msg.tone) || toValidEmotion(ttsOverride.value.emotion);
+      // AI 產生的 msg.tone 多為中文語氣描述（例如「慵懶、帶笑」），只供 UI 顯示；
+      // 是合法的英文 emotion 才送，否則改用聊天設定的預設情緒。
+      // 模型不接受 emotion 時，synthesizeSpeech 會自己拿掉 emotion 重試。
+      const emotion =
+        normalizeMiniMaxEmotion(msg.tone, mergedSettings.model) ||
+        normalizeMiniMaxEmotion(ttsOverride.value.emotion, mergedSettings.model);
       // 與聊天共用轉換規則，保留日文漢字。
       const ttsText = convertTTSContentToSimplified(text, mergedSettings.languageBoost);
-      let result = await synthesizeSpeech(
+      const result = await synthesizeSpeech(
         ttsText,
         mergedSettings,
         emotion ? { emotion } : undefined,
       );
-      // 部分 MiniMax 模型不支援 emotion 欄位，會回傳「voice_setting emotion」invalid params。
-      // 這種情況下自動移除 emotion 重試一次，確保仍能發聲（優雅降級）。
-      if (
-        (!result.success || !result.audioUrl) &&
-        emotion &&
-        /emotion/i.test(result.error || "")
-      ) {
-        console.warn(
-          "[phoneCall] 模型拒絕 emotion 欄位，移除 emotion 後重試:",
-          result.error,
-        );
-        result = await synthesizeSpeech(ttsText, mergedSettings, undefined);
-      }
       if (!result.success || !result.audioUrl) {
         ttsError.value = `語音合成失敗：${result.error || "未知錯誤"}`;
         console.warn("[phoneCall] TTS 合成失敗:", result.error);

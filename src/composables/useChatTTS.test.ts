@@ -215,6 +215,19 @@ describe("useChatTTS manual regeneration", () => {
     expect(context.settingsStore.minimaxTTS.languageBoost).toBe("Chinese");
   });
 
+  it("聊天的語速是基準，AI 標的 speed 是相對值", async () => {
+    vi.mocked(synthesizeSpeech).mockResolvedValue({ success: false, error: "test" });
+    const context = createContext();
+    const { chatMinimaxTTSOverride, processMessageTTS } = useChatTTS(context);
+    chatMinimaxTTSOverride.value = { speed: 0.8 };
+
+    await processMessageTTS(aiMessage.id, "「你好[emotion=happy]」「再見[emotion=sad;speed=1.5]」");
+
+    const speeds = vi.mocked(synthesizeSpeech).mock.calls.map(([, s]) => s.speed);
+    expect(speeds[0]).toBe(0.8);
+    expect(speeds[1]).toBeCloseTo(1.2);
+  });
+
   it("聊天自己指定音色時不套用全域音色混合", async () => {
     vi.mocked(synthesizeSpeech).mockResolvedValue({ success: false, error: "test" });
     const context = createContext();

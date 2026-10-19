@@ -213,6 +213,26 @@ export function getActiveTimbreWeights(
     }));
 }
 
+/** API 接受的 emotion；fluent、whisper 只有 speech-2.6 系列能用 */
+const MINIMAX_EMOTIONS = new Set([
+  'happy', 'sad', 'angry', 'fearful', 'disgusted', 'surprised', 'calm', 'fluent', 'whisper',
+]);
+
+/**
+ * 把 AI 標的情緒轉成這個模型收得下的值；auto、neutral、中文描述等一律回傳 undefined，
+ * 交給模型自己判斷，避免整句因 invalid params 合成失敗。
+ */
+export function normalizeMiniMaxEmotion(raw: string | undefined, model: string): string | undefined {
+  const v = raw?.trim().toLowerCase();
+  if (!v || !MINIMAX_EMOTIONS.has(v)) return undefined;
+  if ((v === 'fluent' || v === 'whisper') && !model.startsWith('speech-2.6')) return undefined;
+  return v;
+}
+
+function clamp(value: number, min: number, max: number, fallback: number): number {
+  return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+}
+
 // ── 主要 API 函數 ─────────────────────────────────────────────
 
 /**
@@ -235,13 +255,15 @@ export async function synthesizeSpeech(
 
   try {
     const baseUrl = getBaseUrl(settings);
+    // AI 標的語速可能超出範圍，超出會讓整句失敗，所以夾在 API 允許的範圍內
     const voiceSetting: Record<string, unknown> = {
       voice_id: settings.voiceId,
-      speed: settings.speed,
-      vol: settings.volume,
-      pitch: settings.pitch,
+      speed: Math.round(clamp(settings.speed, 0.5, 2, 1) * 100) / 100,
+      vol: clamp(settings.volume, 0.01, 10, 1),
+      pitch: Math.round(clamp(settings.pitch, -12, 12, 0)),
     };
-    if (options?.emotion) voiceSetting.emotion = options.emotion;
+    const emotion = normalizeMiniMaxEmotion(options?.emotion, settings.model);
+    if (emotion) voiceSetting.emotion = emotion;
 
     const body: Record<string, unknown> = {
       model: settings.model,
@@ -268,17 +290,29 @@ export async function synthesizeSpeech(
       body.language_boost = settings.languageBoost;
     }
 
-    const resp = await fetch(`${baseUrl}/t2a_v2`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${settings.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: options?.signal,
-    });
+    const request = async () => {
+      const resp = await fetch(`${baseUrl}/t2a_v2`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${settings.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: options?.signal,
+      });
+      return resp.json();
+    };
 
-    const data = await resp.json();
+    let data = await request();
+    // 音色或模型不接受這個 emotion 時，拿掉 emotion 重試一次，至少要念得出來
+    if (
+      voiceSetting.emotion &&
+      data.base_resp?.status_code !== 0 &&
+      /emotion/i.test(data.base_resp?.status_msg ?? '')
+    ) {
+      delete voiceSetting.emotion;
+      data = await request();
+    }
 
     if (data.base_resp?.status_code === 0 && data.data?.audio) {
       const dur = data.extra_info?.audio_length

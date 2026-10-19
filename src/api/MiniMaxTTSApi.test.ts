@@ -175,3 +175,58 @@ describe("MiniMax 音色清單", () => {
     ]);
   });
 });
+
+describe("MiniMax 情緒與語速", () => {
+  function mockFetch(...responses: object[]) {
+    const fetchMock = vi.fn();
+    for (const r of responses) fetchMock.mockResolvedValueOnce({ json: async () => r });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+  const ok = { base_resp: { status_code: 0 }, data: { audio: "https://example.com/a.mp3" } };
+  const bodyOf = (fetchMock: ReturnType<typeof vi.fn>, i = 0) => JSON.parse(fetchMock.mock.calls[i][1].body);
+
+  it.each([
+    ["happy", "speech-2.8-hd", "happy"],
+    [" Calm ", "speech-2.8-hd", "calm"],
+    ["auto", "speech-2.8-hd", undefined],
+    ["neutral", "speech-2.8-hd", undefined],
+    ["慵懶、帶笑", "speech-2.8-hd", undefined],
+    ["fluent", "speech-2.8-hd", undefined],
+    ["fluent", "speech-2.6-hd", "fluent"],
+    ["whisper", "speech-2.6-turbo", "whisper"],
+  ])("emotion %s 在 %s 送出 %s", async (emotion, model, expected) => {
+    const fetchMock = mockFetch(ok);
+    const settings = { ...createDefaultMiniMaxTTSSettings(), apiKey: "k", model: model as never };
+
+    await synthesizeSpeech("你好", settings, { emotion });
+
+    expect(bodyOf(fetchMock).voice_setting.emotion).toBe(expected);
+  });
+
+  it("模型拒絕 emotion 時拿掉 emotion 重試一次", async () => {
+    const fetchMock = mockFetch(
+      { base_resp: { status_code: 2013, status_msg: "invalid params, voice_setting emotion" } },
+      ok,
+    );
+    const settings = { ...createDefaultMiniMaxTTSSettings(), apiKey: "k" };
+
+    const result = await synthesizeSpeech("你好", settings, { emotion: "happy" });
+
+    expect(result.success).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(bodyOf(fetchMock, 0).voice_setting.emotion).toBe("happy");
+    expect(bodyOf(fetchMock, 1).voice_setting.emotion).toBeUndefined();
+  });
+
+  it("語速、音調超出範圍時夾回 API 允許的範圍", async () => {
+    const fetchMock = mockFetch(ok, ok);
+    const base = { ...createDefaultMiniMaxTTSSettings(), apiKey: "k" };
+
+    await synthesizeSpeech("你好", { ...base, speed: 3, pitch: 20.4 });
+    await synthesizeSpeech("你好", { ...base, speed: 0.2, pitch: -15 });
+
+    expect(bodyOf(fetchMock, 0).voice_setting).toMatchObject({ speed: 2, pitch: 12 });
+    expect(bodyOf(fetchMock, 1).voice_setting).toMatchObject({ speed: 0.5, pitch: -12 });
+  });
+});
