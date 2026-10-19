@@ -7,7 +7,6 @@ import { useLorebooksStore } from '@/stores'
 // 列表設定類型
 interface ListSettings {
   columns: number
-  cardSize: 'small' | 'medium' | 'large'
   showCreator: boolean
   showTags: boolean
   showLorebookCount: boolean
@@ -38,8 +37,8 @@ const emit = defineEmits<{
 // Store
 const lorebooksStore = useLorebooksStore()
 
-// 搜尋關鍵字
-const searchQuery = ref('')
+// 搜尋關鍵字：store 裡的搜尋會留到下次進來，輸入框要跟著顯示
+const searchQuery = ref(lorebooksStore.searchQuery)
 
 // 設定模態框
 const showSettings = ref(false)
@@ -47,7 +46,6 @@ const showSettings = ref(false)
 // 列表設定
 const listSettings = ref<ListSettings>({
   columns: 1,
-  cardSize: 'medium',
   showCreator: true,
   showTags: true,
   showLorebookCount: true,
@@ -62,9 +60,18 @@ function updateSearch(value: string) {
   lorebooksStore.setSearchQuery(value)
 }
 
-// 從 store 獲取世界書列表
+const nameCollator = new Intl.Collator('zh-Hant', { numeric: true })
+
+// 從 store 獲取世界書列表，照列表設定排序（以前排序設定完全沒套用）
 const filteredLorebooks = computed((): DisplayLorebook[] => {
-  return lorebooksStore.filteredLorebooks.map(lb => {
+  const { sortBy, sortOrder } = listSettings.value
+  const direction = sortOrder === 'asc' ? 1 : -1
+  const sorted = [...lorebooksStore.filteredLorebooks].sort((a, b) => {
+    if (sortBy === 'name') return direction * nameCollator.compare(a.name, b.name)
+    const key = sortBy === 'created' ? 'createdAt' : 'updatedAt'
+    return direction * ((a[key] ?? 0) - (b[key] ?? 0))
+  })
+  return sorted.map(lb => {
     // 防禦：entries 可能是物件（SillyTavern 格式）而非陣列
     const entriesArray = Array.isArray(lb.entries)
       ? lb.entries
@@ -177,7 +184,7 @@ function updateListSettings(newSettings: ListSettings) {
         <!-- 設定按鈕 -->
         <button class="header-btn" title="列表設定" @click.stop="openSettings">
           <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M3 3v8h8V3H3zm6 6H5V5h4v4zm-6 4v8h8v-8H3zm6 6H5v-4h4v4zm4-16v8h8V3h-8zm6 6h-4V5h4v4zm-6 4v8h8v-8h-8zm6 6h-4v-4h4v4z"/>
+            <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/>
           </svg>
         </button>
         

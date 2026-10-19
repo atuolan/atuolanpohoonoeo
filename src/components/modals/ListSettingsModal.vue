@@ -16,7 +16,6 @@ const emit = defineEmits<{
 // 設定類型
 interface ListSettings {
   columns: number;
-  cardSize: "small" | "medium" | "large";
   showAvatar: boolean;
   showCreator: boolean;
   showTags: boolean;
@@ -29,7 +28,6 @@ interface ListSettings {
 // 預設設定
 const defaultSettings: ListSettings = {
   columns: 2,
-  cardSize: "medium",
   showAvatar: true,
   showCreator: true,
   showTags: true,
@@ -42,8 +40,10 @@ const defaultSettings: ListSettings = {
 // 當前設定
 const settings = ref<ListSettings>({ ...defaultSettings });
 
-// 當前分頁
-const currentTab = ref<"layout" | "display" | "sort">("layout");
+// 當前分頁：世界書庫是單欄列表，沒有「佈局」可以調
+const currentTab = ref<"layout" | "display" | "sort">(
+  props.type === "character" ? "layout" : "display",
+);
 
 // 標題
 const title = computed(() => {
@@ -113,11 +113,6 @@ function setColumns(n: number) {
   settings.value.columns = n;
 }
 
-// 更新卡片大小
-function setCardSize(size: "small" | "medium" | "large") {
-  settings.value.cardSize = size;
-}
-
 // 更新排序
 function setSortBy(by: "name" | "updated" | "created") {
   settings.value.sortBy = by;
@@ -150,6 +145,7 @@ function toggleSortOrder() {
           <!-- 分頁標籤 -->
           <nav class="tabs">
             <button
+              v-if="type === 'character'"
               class="tab"
               :class="{ active: currentTab === 'layout' }"
               @click="currentTab = 'layout'"
@@ -206,42 +202,12 @@ function toggleSortOrder() {
                   </button>
                 </div>
               </div>
-
-              <div class="setting-group">
-                <label class="setting-label">卡片大小</label>
-                <div class="size-options">
-                  <button
-                    class="size-btn"
-                    :class="{ active: settings.cardSize === 'small' }"
-                    @click="setCardSize('small')"
-                  >
-                    <div class="size-preview small"></div>
-                    <span>小</span>
-                  </button>
-                  <button
-                    class="size-btn"
-                    :class="{ active: settings.cardSize === 'medium' }"
-                    @click="setCardSize('medium')"
-                  >
-                    <div class="size-preview medium"></div>
-                    <span>中</span>
-                  </button>
-                  <button
-                    class="size-btn"
-                    :class="{ active: settings.cardSize === 'large' }"
-                    @click="setCardSize('large')"
-                  >
-                    <div class="size-preview large"></div>
-                    <span>大</span>
-                  </button>
-                </div>
-              </div>
             </div>
 
             <!-- 顯示設定 -->
             <div v-if="currentTab === 'display'" class="settings-section">
               <div class="toggle-group">
-                <label class="toggle-item">
+                <label v-if="type === 'character'" class="toggle-item">
                   <span class="toggle-label">顯示頭像</span>
                   <input
                     type="checkbox"
@@ -251,7 +217,7 @@ function toggleSortOrder() {
                   <span class="toggle-switch"></span>
                 </label>
 
-                <label class="toggle-item">
+                <label v-if="type === 'character'" class="toggle-item">
                   <span class="toggle-label">顯示創作者</span>
                   <input
                     type="checkbox"
@@ -262,7 +228,9 @@ function toggleSortOrder() {
                 </label>
 
                 <label class="toggle-item">
-                  <span class="toggle-label">顯示標籤</span>
+                  <span class="toggle-label">{{
+                    type === "lorebook" ? "顯示關鍵字" : "顯示標籤"
+                  }}</span>
                   <input
                     type="checkbox"
                     v-model="settings.showTags"
@@ -556,63 +524,6 @@ function toggleSortOrder() {
     }
 
     span:last-child {
-      color: var(--color-primary, #7dd3a8);
-    }
-  }
-}
-
-.size-options {
-  display: flex;
-  gap: 10px;
-}
-
-.size-btn {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 8px;
-  background: var(--color-background, #f5f5f5);
-  border: 2px solid transparent;
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-
-  .size-preview {
-    background: var(--color-text-muted, #ccc);
-    border-radius: 4px;
-
-    &.small {
-      width: 24px;
-      height: 32px;
-    }
-
-    &.medium {
-      width: 32px;
-      height: 40px;
-    }
-
-    &.large {
-      width: 40px;
-      height: 48px;
-    }
-  }
-
-  span {
-    font-size: 13px;
-    color: var(--color-text-secondary, #666);
-  }
-
-  &.active {
-    border-color: var(--color-primary, #7dd3a8);
-    background: var(--color-primary-light, #c7fcbb);
-
-    .size-preview {
-      background: var(--color-primary, #7dd3a8);
-    }
-
-    span {
       color: var(--color-primary, #7dd3a8);
     }
   }
