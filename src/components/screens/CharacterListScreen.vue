@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { CharacterCard } from "@/components/common";
 import { ListSettingsModal } from "@/components/modals";
+import { CHARACTER_DELETE_CONFIRM } from "@/services/characterDeletion";
 import { useCharactersStore, useLorebooksStore } from "@/stores";
 import { computed, onMounted, ref } from "vue";
 
 // 列表設定類型
 interface ListSettings {
   columns: number;
-  cardSize: "small" | "medium" | "large";
   showAvatar: boolean;
   showCreator: boolean;
   showTags: boolean;
@@ -45,7 +45,6 @@ const showSettings = ref(false);
 // 列表設定
 const listSettings = ref<ListSettings>({
   columns: 2,
-  cardSize: "medium",
   showAvatar: true,
   showCreator: true,
   showTags: true,
@@ -162,7 +161,7 @@ function handleChat(id: string) {
 
 // 處理刪除
 async function handleDelete(id: string) {
-  if (confirm("確定要刪除這個角色嗎？")) {
+  if (confirm(CHARACTER_DELETE_CONFIRM)) {
     await charactersStore.deleteCharacter(id);
   }
 }
@@ -227,12 +226,6 @@ function updateListSettings(newSettings: ListSettings) {
 // 計算網格樣式
 const gridStyle = computed(() => ({
   "--grid-columns": listSettings.value.columns,
-  "--card-size":
-    listSettings.value.cardSize === "small"
-      ? "120px"
-      : listSettings.value.cardSize === "large"
-        ? "200px"
-        : "160px",
 }));
 </script>
 

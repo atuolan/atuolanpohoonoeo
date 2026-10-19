@@ -132,6 +132,19 @@ export const useCharactersStore = defineStore('characters', () => {
           currentCharacterId.value = null
         }
 
+        // 這個角色的聊天、好感度、通話紀錄等一起刪（群聊、鎖定的聊天、語音收藏留著）
+        try {
+          const { deleteCharacterRelatedData } = await import('@/services/characterDeletion')
+          await deleteCharacterRelatedData(id)
+          const { useFitnessStore } = await import('@/stores/fitness')
+          const fitnessStore = useFitnessStore()
+          // 先載入，沒載入就存會把其他角色的健身設定一起清掉
+          await fitnessStore.loadFromDB()
+          fitnessStore.removeCharacterFitnessConfig(id)
+        } catch (e) {
+          console.warn('[CharactersStore] 刪除角色相關資料失敗（非致命）:', e)
+        }
+
         // 如果被刪除的角色有啟用主動發訊息，重新同步雲端推送設定
         if (hadProactiveEnabled) {
           try {
