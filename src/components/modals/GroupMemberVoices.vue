@@ -8,7 +8,7 @@ const voiceCache = new Map<string, CachedVoice[]>();
 <script setup lang="ts">
 /**
  * 群聊語音設定裡的「成員音色」：每個成員各選一個 MiniMax 音色，沒選的跟著群組。
- * 有 API Key 時自動取音色清單給下拉選單用；取不到就改成手動輸入 voice_id。
+ * 有 API Key 時自動取音色清單給下拉選單用；清單裡沒有的可以選「自己輸入」，取不到清單就直接輸入 voice_id。
  */
 import {
   fetchVoiceList,
@@ -16,7 +16,10 @@ import {
   type MiniMaxTTSSettings,
   type MiniMaxVoice,
 } from "@/api/MiniMaxTTSApi";
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
+
+// voice_id 一定是英文字母開頭，不會跟這個值撞到
+const TYPE_OWN = "__type_own__";
 
 const props = defineProps<{
   members: Array<{ id: string; name: string; avatar?: string }>;
@@ -33,6 +36,8 @@ const emit = defineEmits<{
 const voices = ref<MiniMaxVoice[]>([]);
 const loading = ref(false);
 const error = ref("");
+/** 有清單但選了「自己輸入」的成員 */
+const typingOwn = ref<Record<string, boolean>>({});
 
 const cacheKey = computed(() => `${props.ttsSettings.platform}:${props.ttsSettings.apiKey}`);
 const clonedVoices = computed(() => voices.value.filter((v) => v.voice_type !== "system"));
@@ -75,6 +80,12 @@ function setVoice(memberId: string, raw: string) {
   emit("update:modelValue", Object.keys(next).length ? next : undefined);
 }
 
+function onSelect(memberId: string, value: string) {
+  if (value !== TYPE_OWN) return setVoice(memberId, value);
+  typingOwn.value[memberId] = true;
+  void nextTick(() => document.getElementById(`member-voice-${memberId}`)?.focus());
+}
+
 onMounted(() => void loadVoices());
 </script>
 
@@ -92,7 +103,9 @@ onMounted(() => void loadVoices());
         {{ loading ? "讀取中…" : "重新取得清單" }}
       </button>
     </div>
-    <p class="member-voices__hint">每個成員可以有自己的聲音；沒選的人用{{ fallbackLabel }}。</p>
+    <p class="member-voices__hint">
+      每個成員可以有自己的聲音；沒選的人用{{ fallbackLabel }}。<template v-if="voices.length">清單裡沒有的，選「自己輸入 voice_id」。</template>
+    </p>
 
     <div v-for="member in members" :key="member.id" class="member-voices__row">
       <img v-if="member.avatar" :src="member.avatar" alt="" class="member-voices__avatar" />
@@ -101,13 +114,14 @@ onMounted(() => void loadVoices());
       </span>
       <label :for="`member-voice-${member.id}`" class="member-voices__name">{{ member.name }}</label>
       <select
-        v-if="voices.length"
+        v-if="voices.length && !typingOwn[member.id]"
         :id="`member-voice-${member.id}`"
         class="member-voices__field"
         :value="modelValue?.[member.id] ?? ''"
-        @change="setVoice(member.id, ($event.target as HTMLSelectElement).value)"
+        @change="onSelect(member.id, ($event.target as HTMLSelectElement).value)"
       >
         <option value="">跟著群組</option>
+        <option :value="TYPE_OWN">自己輸入 voice_id…</option>
         <option
           v-if="modelValue?.[member.id] && !isListed(modelValue[member.id])"
           :value="modelValue[member.id]"
@@ -125,18 +139,27 @@ onMounted(() => void loadVoices());
           </option>
         </optgroup>
       </select>
-      <input
-        v-else
-        :id="`member-voice-${member.id}`"
-        type="text"
-        class="member-voices__field"
-        :value="modelValue?.[member.id] ?? ''"
-        placeholder="voice_id，留空跟著群組"
-        autocomplete="off"
-        autocapitalize="none"
-        spellcheck="false"
-        @change="setVoice(member.id, ($event.target as HTMLInputElement).value)"
-      />
+      <div v-else class="member-voices__own">
+        <input
+          :id="`member-voice-${member.id}`"
+          type="text"
+          class="member-voices__field"
+          :value="modelValue?.[member.id] ?? ''"
+          placeholder="voice_id，留空跟著群組"
+          autocomplete="off"
+          autocapitalize="none"
+          spellcheck="false"
+          @change="setVoice(member.id, ($event.target as HTMLInputElement).value)"
+        />
+        <button
+          v-if="voices.length"
+          type="button"
+          class="member-voices__back"
+          @click="typingOwn[member.id] = false"
+        >
+          清單
+        </button>
+      </div>
     </div>
 
     <p v-if="error" class="member-voices__error" role="status">{{ error }}</p>
@@ -221,6 +244,25 @@ onMounted(() => void loadVoices());
   white-space: nowrap;
   font-size: 14px;
   color: var(--color-text, #333);
+}
+
+.member-voices__own {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.member-voices__back {
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-primary, #7dd3a8);
+  cursor: pointer;
 }
 
 .member-voices__field {
