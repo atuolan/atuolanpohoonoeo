@@ -815,6 +815,9 @@ export class ImportExportService {
 
       // 綁定到角色
       character.lorebookIds = [savedLorebook.id];
+      // 已轉成世界書庫裡的一本，卡上不再留一份，否則聊天時同樣的條目會送兩次
+      const { character_book: _extracted, ...restData } = character.data;
+      character.data = restData;
     }
 
     // 保存角色

@@ -4494,8 +4494,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         : [char];
 
     for (const sourceChar of lorebookSourceCharacters) {
-      // 1. 角色卡內嵌的世界書
-      if (sourceChar.data.character_book) {
+      // 1. 角色卡內嵌的世界書：導入時已轉成世界書庫裡的一本並綁定，有綁定就不再帶內嵌那份
+      //    （舊版導入的卡兩份都在，同樣的條目會送兩次，在世界書裡關掉也照樣觸發）
+      if (sourceChar.data.character_book && !sourceChar.lorebookIds?.length) {
         linkedLorebooks.push({
           id: `embedded_${sourceChar.id}`,
           name: `${sourceChar.data.name}_embedded`,
