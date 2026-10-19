@@ -109,6 +109,20 @@ export interface TTSSegment {
 }
 
 /**
+ * 解析 [emotion=...] 裡 `emotion=` 後面的部分，例如 "sad;speed=0.9"。
+ * 第一段就是情緒本身（沒有 key），後面才是 key=value。
+ */
+function parseEmotionParams(raw: string): { emotion: string; speed: number } {
+  const [emotion, ...rest] = raw.split(';');
+  let speed = 1.0;
+  for (const part of rest) {
+    const [k, v] = part.split('=');
+    if (k?.trim() === 'speed') speed = parseFloat(v) || 1.0;
+  }
+  return { emotion: emotion.trim() || 'neutral', speed };
+}
+
+/**
  * 從小說文本中逐句解析 TTS 對話段落
  *
  * 支援兩種格式：
@@ -131,14 +145,10 @@ export function parseTTSSegments(novel: string): TTSSegment[] {
   while ((m = quotedRe.exec(novel)) !== null) {
     const rawText = m[1] ?? m[3] ?? m[5] ?? '';
     const emotionStr = m[2] ?? m[4] ?? m[6] ?? '';
-    const params: Record<string, string> = {};
-    emotionStr.split(';').forEach(s => {
-      const [k, v] = s.split('=');
-      if (k && v) params[k.trim()] = v.trim();
-    });
+    const { emotion, speed } = parseEmotionParams(emotionStr);
     out.push({
-      emotion: params.emotion || 'neutral',
-      speed: parseFloat(params.speed) || 1.0,
+      emotion,
+      speed,
       text: rawText.trim(),
       clean: rawText
         .replace(/\([a-z-]+\)/gi, '')
@@ -160,17 +170,13 @@ export function parseTTSSegments(novel: string): TTSSegment[] {
     // 取得這個 [emotion=...] 之前的文字段落
     const segText = novel.slice(lastEnd, m.index).trim();
     const emotionStr = m[1] ?? '';
-    const params: Record<string, string> = {};
-    emotionStr.split(';').forEach(s => {
-      const [k, v] = s.split('=');
-      if (k && v) params[k.trim()] = v.trim();
-    });
+    const { emotion, speed } = parseEmotionParams(emotionStr);
 
     // 只有當前段落確實有文字才加入
     if (segText) {
       out.push({
-        emotion: params.emotion || 'neutral',
-        speed: parseFloat(params.speed) || 1.0,
+        emotion,
+        speed,
         text: segText,
         clean: segText
           .replace(/\([a-z-]+\)/gi, '')
