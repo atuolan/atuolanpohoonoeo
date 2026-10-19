@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultMiniMaxTTSSettings, synthesizeSpeech } from "./MiniMaxTTSApi";
+import {
+  cloneVoice,
+  createDefaultMiniMaxTTSSettings,
+  fetchVoiceList,
+  synthesizeSpeech,
+  validateCloneVoiceId,
+} from "./MiniMaxTTSApi";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -84,5 +90,88 @@ describe("MiniMax 音色混合", () => {
       expect(body.timbre_weights).toBeUndefined();
       expect(body.voice_setting.voice_id).toBe("female-yujie");
     }
+  });
+});
+
+describe("MiniMax 音色複刻", () => {
+  const settings = () => ({ ...createDefaultMiniMaxTTSSettings(), apiKey: "test-key", proxyUrl: "" });
+  const audio = () => new File([new Uint8Array([1, 2, 3])], "voice.mp3", { type: "audio/mpeg" });
+
+  it.each([
+    ["MyVoice01", null],
+    ["my-voice_02", null],
+    ["short1", "至少要 8 個字"],
+    ["1abcdefgh", "第一個字要是英文字母"],
+    ["my voice 01", "只能用英文、數字、- 和 _"],
+    ["MyVoice01_", "最後一個字不能是 - 或 _"],
+  ])("檢查 voice_id %s", (id, expected) => {
+    expect(validateCloneVoiceId(id)).toBe(expected);
+  });
+
+  it("先上傳檔案拿 file_id，再用 JSON 呼叫 voice_clone，大數字 file_id 不失真", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        status: 200,
+        text: async () => '{"file":{"file_id":123456789012345678901,"purpose":"voice_clone"},"base_resp":{"status_code":0}}',
+      })
+      .mockResolvedValueOnce({ json: async () => ({ base_resp: { status_code: 0, status_msg: "success" } }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await cloneVoice(settings(), audio(), " MyVoice01 ");
+
+    expect(result).toEqual({ success: true, voiceId: "MyVoice01" });
+    const [uploadUrl, uploadInit] = fetchMock.mock.calls[0];
+    expect(uploadUrl).toBe("https://api.minimax.io/v1/files/upload");
+    expect(uploadInit.body.get("purpose")).toBe("voice_clone");
+    expect(uploadInit.body.get("file")).toBeInstanceOf(File);
+    const [cloneUrl, cloneInit] = fetchMock.mock.calls[1];
+    expect(cloneUrl).toBe("https://api.minimax.io/v1/voice_clone");
+    expect(cloneInit.headers["Content-Type"]).toBe("application/json");
+    expect(cloneInit.body).toBe('{"file_id":123456789012345678901,"voice_id":"MyVoice01"}');
+  });
+
+  it("上傳失敗就不呼叫複刻，並帶出原因", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      status: 200,
+      text: async () => '{"base_resp":{"status_code":2038,"status_msg":"no permission"}}',
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await cloneVoice(settings(), audio(), "MyVoice01");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("沒有複刻權限");
+  });
+
+  it("voice_id 不合規時不送出任何請求", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await cloneVoice(settings(), audio(), "abc");
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false, error: "音色名稱至少要 8 個字" });
+  });
+});
+
+describe("MiniMax 音色清單", () => {
+  it("讀得到系統音色名稱和複刻音色", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      json: async () => ({
+        system_voice: [{ voice_id: "female-yujie", voice_name: "御姐音色" }],
+        voice_cloning: [{ voice_id: "MyVoice01", created_time: "2026-10-19" }],
+        voice_generation: [{ voice_id: "ttv-voice-1", created_time: "2026-10-18" }],
+        base_resp: { status_code: 0 },
+      }),
+    }));
+
+    const result = await fetchVoiceList({ ...createDefaultMiniMaxTTSSettings(), apiKey: "test-key" });
+
+    expect(result.voices).toEqual([
+      { voice_id: "female-yujie", name: "御姐音色", voice_type: "system" },
+      { voice_id: "MyVoice01", name: "MyVoice01", voice_type: "cloning", created_time: "2026-10-19" },
+      { voice_id: "ttv-voice-1", name: "ttv-voice-1", voice_type: "generation", created_time: "2026-10-18" },
+    ]);
   });
 });

@@ -334,7 +334,10 @@ export interface MiniMaxVoice {
   name: string;
   language?: string;
   gender?: string;
-  voice_type?: string;
+  /** system=系統音色、cloning=複刻音色、generation=文字生成的音色 */
+  voice_type?: 'system' | 'cloning' | 'generation';
+  /** 複刻／生成音色的建立日期（yyyy-mm-dd） */
+  created_time?: string;
 }
 
 /**
@@ -364,23 +367,27 @@ export async function fetchVoiceList(
         error: data.base_resp?.status_msg || '請求失敗',
       };
     }
-    // 解析音色列表（system_voice + user_voice）
+    // 解析音色列表：system_voice + voice_cloning（複刻）+ voice_generation（文字生成）
     const voices: MiniMaxVoice[] = [];
     for (const v of data.system_voice ?? []) {
       voices.push({
         voice_id: v.voice_id,
-        name: v.name || v.voice_id,
-        language: v.language,
-        gender: v.gender,
+        name: v.voice_name || v.voice_id,
         voice_type: 'system',
       });
     }
-    for (const v of data.user_voice ?? []) {
-      voices.push({
-        voice_id: v.voice_id,
-        name: v.name || v.voice_id,
-        voice_type: 'user',
-      });
+    for (const [key, type] of [
+      ['voice_cloning', 'cloning'],
+      ['voice_generation', 'generation'],
+    ] as const) {
+      for (const v of data[key] ?? []) {
+        voices.push({
+          voice_id: v.voice_id,
+          name: v.voice_id,
+          voice_type: type,
+          created_time: v.created_time,
+        });
+      }
     }
     return { success: true, voices };
   } catch (error) {
@@ -400,25 +407,55 @@ export interface VoiceCloneResult {
   error?: string;
 }
 
+/** 複刻音頻限制：mp3／m4a／wav，10 秒～5 分鐘，20 MB 以內 */
+export const VOICE_CLONE_LIMITS = {
+  minSeconds: 10,
+  maxSeconds: 300,
+  maxBytes: 20 * 1024 * 1024,
+  extensions: ['mp3', 'm4a', 'wav'],
+} as const;
+
 /**
- * 音色複刻：上傳音頻檔案，取得複刻後的 voice_id
+ * 檢查複刻用的 voice_id 是否符合 MiniMax 規則，不合格回傳原因。
+ * 規則：8～256 字、英文字母開頭、只能有英文／數字／-／_，不能以 - 或 _ 結尾。
+ */
+export function validateCloneVoiceId(voiceId: string): string | null {
+  const id = voiceId.trim();
+  if (id.length < 8) return '至少要 8 個字';
+  if (id.length > 256) return '不能超過 256 個字';
+  if (!/^[A-Za-z]/.test(id)) return '第一個字要是英文字母';
+  if (!/^[A-Za-z0-9_-]+$/.test(id)) return '只能用英文、數字、- 和 _';
+  if (/[-_]$/.test(id)) return '最後一個字不能是 - 或 _';
+  return null;
+}
+
+/** 常見錯誤碼的白話說明 */
+const CLONE_ERROR_HINTS: Record<number, string> = {
+  1004: 'API Key 不對或沒帶到',
+  1043: '音頻內容和驗證文字對不上',
+  2013: '參數不對，常見原因：音頻太短或太長、格式不支援、voice_id 已經用過',
+  2038: '這個帳號沒有複刻權限（通常要先完成實名認證）',
+};
+
+function describeError(data: any, fallback: string): string {
+  const code = data?.base_resp?.status_code;
+  const msg = data?.base_resp?.status_msg || fallback;
+  const hint = typeof code === 'number' ? CLONE_ERROR_HINTS[code] : undefined;
+  return hint ? `${hint}（${code}：${msg}）` : msg;
+}
+
+/**
+ * 音色複刻：先把音頻上傳到 /files/upload（purpose=voice_clone）拿 file_id，
+ * 再呼叫 /voice_clone 用 file_id 和自訂 voice_id 複刻。
  *
- * MiniMax voice_clone API：
- * - 需要 multipart/form-data
- * - file: 音頻檔案（mp3/wav/flac，建議 10 秒以上）
- * - voice_id: 自訂的音色名稱（英文+數字+底線）
- *
- * 複刻成功後回傳 voice_id，之後可直接用於 TTS 合成
+ * 注意：複刻出來的音色要在 7 天內用一般語音合成（t2a）用過一次才會永久保留，
+ * 複刻費用也是在第一次合成時才扣；複刻時順便試聽的不算。
  */
 export async function cloneVoice(
   settings: MiniMaxTTSSettings,
   file: File,
   voiceIdName: string,
   options?: {
-    /** 是否為即時複刻（instant clone），預設 true */
-    instant?: boolean;
-    /** 音色描述文字（可選） */
-    text?: string;
     signal?: AbortSignal;
   },
 ): Promise<VoiceCloneResult> {
@@ -428,21 +465,20 @@ export async function cloneVoice(
   if (!file) {
     return { success: false, error: '請選擇音頻檔案' };
   }
-  if (!voiceIdName.trim()) {
-    return { success: false, error: '請輸入音色名稱' };
+  const voiceId = voiceIdName.trim();
+  const idError = validateCloneVoiceId(voiceId);
+  if (idError) {
+    return { success: false, error: `音色名稱${idError}` };
   }
 
   try {
     const baseUrl = getBaseUrl(settings);
 
+    // 1. 上傳音頻
     const formData = new FormData();
+    formData.append('purpose', 'voice_clone');
     formData.append('file', file);
-    formData.append('voice_id', voiceIdName.trim());
-    if (options?.text) {
-      formData.append('text', options.text);
-    }
-
-    const resp = await fetch(`${baseUrl}/voice_clone`, {
+    const uploadResp = await fetch(`${baseUrl}/files/upload`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${settings.apiKey}`,
@@ -450,19 +486,42 @@ export async function cloneVoice(
       body: formData,
       signal: options?.signal,
     });
+    // file_id 是 int64，直接 JSON.parse 可能超過 JS 安全整數而失真，所以從原文取數字
+    const uploadText = await uploadResp.text();
+    const fileId = uploadText.match(/"file_id"\s*:\s*"?(\d+)/)?.[1];
+    if (!fileId) {
+      let uploadData: unknown;
+      try {
+        uploadData = JSON.parse(uploadText);
+      } catch {
+        uploadData = undefined;
+      }
+      return {
+        success: false,
+        error: `上傳音頻失敗：${describeError(uploadData, uploadText.slice(0, 200) || `HTTP ${uploadResp.status}`)}`,
+      };
+    }
+
+    // 2. 複刻（file_id 原樣放進 JSON，不經過 Number 轉換）
+    const resp = await fetch(`${baseUrl}/voice_clone`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${settings.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: `{"file_id":${fileId},"voice_id":${JSON.stringify(voiceId)}}`,
+      signal: options?.signal,
+    });
 
     const data = await resp.json();
 
     if (data.base_resp?.status_code === 0) {
-      return {
-        success: true,
-        voiceId: data.voice_id || voiceIdName.trim(),
-      };
+      return { success: true, voiceId };
     }
 
     return {
       success: false,
-      error: data.base_resp?.status_msg || JSON.stringify(data),
+      error: describeError(data, JSON.stringify(data)),
     };
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {

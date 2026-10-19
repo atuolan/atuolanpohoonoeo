@@ -3,8 +3,18 @@
  * 語音合成（MiniMax）：帳號、基本設定 / 音色混合 / 音色複刻。
  * API Key 先存在草稿，離開欄位或離開這頁才寫回，避免打字到一半被別處的保存覆蓋。
  */
-import { getVoiceDisplayName, MAX_TIMBRE_WEIGHTS, MINIMAX_LANGUAGES } from "@/api/MiniMaxTTSApi";
+import {
+  cloneVoice,
+  getVoiceDisplayName,
+  MAX_TIMBRE_WEIGHTS,
+  MINIMAX_LANGUAGES,
+  synthesizeSpeech,
+  validateCloneVoiceId,
+  VOICE_CLONE_LIMITS,
+  type MiniMaxVoice,
+} from "@/api/MiniMaxTTSApi";
 import { useSettingsStore } from "@/stores";
+import { convertTTSContentToSimplified } from "@/utils/ttsTextSelector";
 import { Check, ChevronRight, Music, Plus, Upload, X } from "lucide-vue-next";
 import { computed, onDeactivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { MINIMAX_MODEL_OPTIONS } from "../settingsOptions";
@@ -64,7 +74,7 @@ function requestSettings() {
 const testing = ref(false);
 const testResult = ref<boolean | null>(null);
 const fetchingVoices = ref(false);
-const voiceList = ref<Array<{ voice_id: string; name: string; voice_type?: string }>>([]);
+const voiceList = ref<MiniMaxVoice[]>([]);
 const voiceError = ref("");
 
 async function testConnection() {
@@ -147,27 +157,83 @@ function addVoiceToMix(voiceId: string) {
 // ===== 音色複刻 =====
 const cloneInput = ref<HTMLInputElement | null>(null);
 const cloneFile = ref<File | null>(null);
+const cloneFileSeconds = ref<number | null>(null);
+const cloneFileError = ref("");
 const cloneName = ref("");
-const cloneText = ref("");
 const cloning = ref(false);
 const cloneResult = ref<{ success: boolean; voiceId?: string; error?: string } | null>(null);
-const clonedVoices = computed(() => voiceList.value.filter((v) => v.voice_type === "user"));
+const clonedVoices = computed(() => voiceList.value.filter((v) => v.voice_type === "cloning"));
+const cloneNameError = computed(() => (cloneName.value.trim() ? validateCloneVoiceId(cloneName.value) : null));
 
-function onCloneFileChange(e: Event) {
-  const input = e.target as HTMLInputElement;
-  cloneFile.value = input.files?.[0] ?? null;
+/** 讀音頻長度；瀏覽器讀不出來時回傳 null，交給 MiniMax 判斷 */
+function readAudioSeconds(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const audio = new Audio();
+    const finish = (seconds: number | null) => {
+      URL.revokeObjectURL(url);
+      resolve(seconds);
+    };
+    audio.preload = "metadata";
+    audio.onloadedmetadata = () => finish(Number.isFinite(audio.duration) ? audio.duration : null);
+    audio.onerror = () => finish(null);
+    audio.src = url;
+  });
 }
 
+async function onCloneFileChange(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0] ?? null;
+  // 清掉 value，重選同一個檔案時也會觸發 change
+  input.value = "";
+  cloneFile.value = file;
+  cloneFileSeconds.value = null;
+  cloneFileError.value = "";
+  if (!file) return;
+
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (!(VOICE_CLONE_LIMITS.extensions as readonly string[]).includes(ext)) {
+    cloneFileError.value = "只支援 MP3、M4A、WAV";
+    return;
+  }
+  if (file.size > VOICE_CLONE_LIMITS.maxBytes) {
+    cloneFileError.value = "檔案超過 20 MB";
+    return;
+  }
+  const seconds = await readAudioSeconds(file);
+  if (cloneFile.value !== file) return;
+  cloneFileSeconds.value = seconds;
+  if (seconds !== null && seconds < VOICE_CLONE_LIMITS.minSeconds) {
+    cloneFileError.value = `音頻只有 ${seconds.toFixed(1)} 秒，至少要 ${VOICE_CLONE_LIMITS.minSeconds} 秒`;
+  } else if (seconds !== null && seconds > VOICE_CLONE_LIMITS.maxSeconds) {
+    cloneFileError.value = "音頻超過 5 分鐘";
+  }
+}
+
+const cloneFileHint = computed(() => {
+  if (!cloneFile.value) return "MP3／M4A／WAV，10 秒～5 分鐘，20 MB 以內";
+  const parts = [`${(cloneFile.value.size / 1024).toFixed(1)} KB`];
+  if (cloneFileSeconds.value !== null) parts.push(`${cloneFileSeconds.value.toFixed(1)} 秒`);
+  return parts.join(" · ");
+});
+
+const canClone = computed(
+  () =>
+    !cloning.value &&
+    !!cloneFile.value &&
+    !cloneFileError.value &&
+    !!cloneName.value.trim() &&
+    !cloneNameError.value &&
+    !!apiKeyDraft.value,
+);
+
 async function startClone() {
-  if (!cloneFile.value || !cloneName.value.trim()) return;
-  commitApiKeyDraft();
+  if (!canClone.value || !cloneFile.value) return;
+  if (commitApiKeyDraft()) save();
   cloning.value = true;
   cloneResult.value = null;
   try {
-    const { cloneVoice } = await import("@/api/MiniMaxTTSApi");
-    const result = await cloneVoice(tts, cloneFile.value, cloneName.value.trim(), {
-      text: cloneText.value.trim() || undefined,
-    });
+    const result = await cloneVoice(requestSettings(), cloneFile.value, cloneName.value.trim());
     cloneResult.value = result;
     if (result.success && result.voiceId) {
       // 複刻成功，自動填入預設音色並更新音色清單
@@ -186,6 +252,21 @@ function useClonedVoice(voiceId: string) {
   tts.voiceId = voiceId;
   save();
   tab.value = "basic";
+}
+
+// ===== 試聽（一般語音合成，同時讓複刻音色被保留下來） =====
+const preview = ref<{ voiceId: string; loading: boolean; url?: string; error?: string } | null>(null);
+
+async function previewVoice(voiceId: string) {
+  if (preview.value?.loading) return;
+  preview.value = { voiceId, loading: true };
+  const settings = { ...requestSettings(), voiceId, timberWeightsEnabled: false };
+  const text = convertTTSContentToSimplified("你好，這是複刻出來的聲音，聽起來像嗎？", settings.languageBoost);
+  const result = await synthesizeSpeech(text, settings);
+  if (preview.value?.voiceId !== voiceId) return;
+  preview.value = result.success && result.audioUrl
+    ? { voiceId, loading: false, url: result.audioUrl }
+    : { voiceId, loading: false, error: result.error || "試聽失敗" };
 }
 
 onMounted(syncApiKeyDraft);
@@ -418,7 +499,7 @@ onUnmounted(saveApiKeyDraft);
     <template v-else>
       <SettingsGroup
         title="上傳音頻"
-        footer="複刻只要一次，拿到的 voice_id 可以永久使用，合成費用和一般音色一樣。"
+        footer="MiniMax 規定：複刻好的音色要在 7 天內拿來合成過一次語音才會永久保留，不然會被刪掉；複刻費用在第一次合成時才扣。"
       >
         <div class="st-fields">
           <div class="st-field">
@@ -428,9 +509,17 @@ onUnmounted(saveApiKeyDraft);
               v-model="cloneName"
               type="text"
               class="st-input"
-              placeholder="英文、數字、底線，如 my_character_01"
+              placeholder="如 MyCharacter01"
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="none"
+              spellcheck="false"
+              :aria-invalid="!!cloneNameError"
             />
-            <p class="st-hint">這會成為你的 voice_id，之後用它合成語音</p>
+            <p v-if="cloneNameError" class="st-hint tts-warn">{{ cloneNameError }}</p>
+            <p v-else class="st-hint">
+              這會成為你的 voice_id。至少 8 個字、英文字母開頭，只能用英文、數字、- 和 _，結尾不能是 - 或 _
+            </p>
           </div>
           <div class="st-field">
             <span class="st-field__label">音頻檔案</span>
@@ -439,56 +528,83 @@ onUnmounted(saveApiKeyDraft);
               <Upload v-else aria-hidden="true" />
               <span class="tts-upload__text">
                 <span>{{ cloneFile ? cloneFile.name : "選擇音頻檔案" }}</span>
-                <span class="st-hint">
-                  {{ cloneFile ? `${(cloneFile.size / 1024).toFixed(1)} KB` : "MP3／WAV／FLAC，建議 15～30 秒，最短 1 秒" }}
-                </span>
+                <span class="st-hint">{{ cloneFileHint }}</span>
               </span>
             </button>
+            <p v-if="cloneFileError" class="st-hint tts-warn">{{ cloneFileError }}</p>
             <input
               ref="cloneInput"
               type="file"
-              accept="audio/mp3,audio/wav,audio/flac,audio/mpeg,.mp3,.wav,.flac"
+              accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,audio/m4a,.mp3,.wav,.m4a"
               hidden
               @change="onCloneFileChange"
-            />
-          </div>
-          <div class="st-field">
-            <label for="tts-clone-text" class="st-field__label">音頻裡說的話（選填）</label>
-            <textarea
-              id="tts-clone-text"
-              v-model="cloneText"
-              class="st-input"
-              placeholder="輸入音頻裡說的內容，可以提升複刻品質"
             />
           </div>
           <button
             type="button"
             class="st-btn st-btn--primary st-btn--block"
-            :disabled="cloning || !cloneFile || !cloneName.trim() || !tts.apiKey"
+            :disabled="!canClone"
             @click="startClone"
           >
-            {{ cloning ? "複刻中，請稍候…" : "開始複刻" }}
+            {{ cloning ? "上傳並複刻中，請稍候…" : "開始複刻" }}
           </button>
-          <span v-if="cloneResult?.success" class="st-status st-status--ok" role="status">
-            複刻成功：{{ cloneResult.voiceId }}，已設為預設音色
-          </span>
+          <template v-if="cloneResult?.success && cloneResult.voiceId">
+            <span class="st-status st-status--ok" role="status">
+              複刻成功：{{ cloneResult.voiceId }}，已設為預設音色{{
+                tts.timberWeightsEnabled ? "（音色混合開著，要先關掉混合才會用到它）" : ""
+              }}
+            </span>
+            <button
+              type="button"
+              class="st-btn st-btn--soft st-btn--block"
+              :disabled="preview?.loading"
+              @click="previewVoice(cloneResult.voiceId)"
+            >
+              試聽（同時把這個音色保留下來）
+            </button>
+          </template>
           <span v-else-if="cloneResult" class="st-status st-status--error" role="status">
             複刻失敗：{{ cloneResult.error }}
           </span>
         </div>
       </SettingsGroup>
 
-      <SettingsGroup v-if="clonedVoices.length" title="已複刻的音色">
+      <SettingsGroup v-if="preview" :title="`試聽 ${preview.voiceId}`">
+        <div class="st-pad">
+          <span v-if="preview.loading" class="st-status" role="status">合成中…</span>
+          <span v-else-if="preview.error" class="st-status st-status--error" role="status">
+            試聽失敗：{{ preview.error }}
+          </span>
+          <audio v-else-if="preview.url" :src="preview.url" class="tts-preview" controls autoplay />
+        </div>
+      </SettingsGroup>
+
+      <SettingsGroup
+        v-if="clonedVoices.length"
+        title="已複刻的音色"
+        footer="按「試聽」會合成一句話，也算用過一次，可以讓剛複刻的音色不被刪掉。"
+      >
         <SettingsRow
           v-for="voice in clonedVoices"
           :key="voice.voice_id"
           :label="voice.voice_id"
+          :description="voice.created_time ? `建立於 ${voice.created_time}` : undefined"
         >
           <template #control>
-            <span v-if="tts.voiceId === voice.voice_id" class="st-chip st-chip--accent">使用中</span>
-            <button v-else type="button" class="st-btn st-btn--soft st-btn--sm" @click="useClonedVoice(voice.voice_id)">
-              使用
-            </button>
+            <div class="tts-row-actions">
+              <button
+                type="button"
+                class="st-btn st-btn--soft st-btn--sm"
+                :disabled="preview?.loading"
+                @click="previewVoice(voice.voice_id)"
+              >
+                試聽
+              </button>
+              <span v-if="tts.voiceId === voice.voice_id" class="st-chip st-chip--accent">使用中</span>
+              <button v-else type="button" class="st-btn st-btn--soft st-btn--sm" @click="useClonedVoice(voice.voice_id)">
+                使用
+              </button>
+            </div>
           </template>
         </SettingsRow>
       </SettingsGroup>
@@ -504,7 +620,9 @@ onUnmounted(saveApiKeyDraft);
           :key="voice.voice_id"
           clickable
           :label="getVoiceDisplayName(voice.voice_id)"
-          :description="voice.voice_type === 'user' ? '自訂音色' : undefined"
+          :description="
+            voice.voice_type === 'cloning' ? '複刻音色' : voice.voice_type === 'generation' ? '自訂音色' : undefined
+          "
           @click="selectVoice(voice.voice_id)"
         >
           <template #control>
@@ -520,6 +638,17 @@ onUnmounted(saveApiKeyDraft);
 <style scoped lang="scss">
 .tts-warn {
   color: var(--st-warn);
+}
+
+.tts-preview {
+  display: block;
+  width: 100%;
+}
+
+.tts-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .tts-plus {
@@ -591,6 +720,12 @@ onUnmounted(saveApiKeyDraft);
     border-color: transparent;
     background: var(--st-accent-soft);
     color: var(--st-accent-ink);
+    cursor: default;
+  }
+
+  // 混合已滿時，還沒加入的音色淡掉
+  &:disabled:not(.tts-chip--on) {
+    opacity: 0.45;
     cursor: default;
   }
 }
