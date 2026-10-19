@@ -17,7 +17,7 @@ import { useAffinityStore } from "@/stores/affinity";
 import { useFitnessStore } from "@/stores/fitness";
 import { createDefaultCharacterToolPermissions, normalizeCharacterToolPermissions, type CharacterToolPermissions, type CharacterWorldSettings, type RegexScript } from "@/types/character";
 import CharacterToolPermissionsPanel from "@/components/panels/CharacterToolPermissionsPanel.vue";
-import { migrateRegexScript } from "@/services/RegexEngine";
+import { migrateRegexScript, regexFromString } from "@/services/RegexEngine";
 import { CHAT_TOOLS } from "@/services/toolCalling/chatTools";
 import { useSettingsStore } from "@/stores/settings";
 import type { CharacterFitnessConfig } from "@/types/fitness";
@@ -1117,13 +1117,8 @@ function validateCharRegex() {
     rfError.value = "";
     return;
   }
-  try {
-    const m = rfFindRegex.value.match(/(\/?)(.+)\1([a-z]*)/i);
-    if (m) new RegExp(m[2], m[3]);
-    rfError.value = "";
-  } catch {
-    rfError.value = "正則格式無效";
-  }
+  // 跟執行時同一套解析，避免這裡說能用、聊天時卻不生效
+  rfError.value = regexFromString(rfFindRegex.value) ? "" : "正則格式無效";
 }
 
 function resetRegexForm() {

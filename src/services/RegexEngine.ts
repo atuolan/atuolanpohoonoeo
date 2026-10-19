@@ -94,24 +94,33 @@ function filterString(
   return result;
 }
 
+/**
+ * 代換 $0（整段比對）、$1…、$<name>，套用 trimStrings（對應 ST）。
+ * 只掃描腳本寫的替換字串一次，插入的比對內容不會再被當成記號。
+ */
 function substituteCaptureGroups(
   replacement: string,
-  groups: string[],
+  groups: (string | undefined)[],
+  namedGroups: Record<string, string | undefined> | undefined,
   trimStrings: string[],
   params: RegexRunParams,
 ): string {
-  const filteredGroups = groups.map((groupVal) =>
-    filterString(groupVal ?? "", trimStrings, params),
-  );
-  return replacement.replace(/\$(\d+)/g, (token, digits: string) => {
-    for (let len = digits.length; len > 0; len--) {
-      const index = Number(digits.slice(0, len));
-      if (index >= 1 && index <= filteredGroups.length) {
-        return `${filteredGroups[index - 1]}${digits.slice(len)}`;
+  const filtered = (value: string | undefined) =>
+    filterString(value ?? "", trimStrings, params);
+  return replacement.replace(
+    /\$(\d+)|\$<([^>]+)>/g,
+    (token, digits: string | undefined, name: string | undefined) => {
+      if (name !== undefined) return filtered(namedGroups?.[name]);
+      // $10 但只有一個群組時，當成 $1 後面接 0
+      for (let len = digits!.length; len > 0; len--) {
+        const index = Number(digits!.slice(0, len));
+        if (index < groups.length) {
+          return `${filtered(groups[index])}${digits!.slice(len)}`;
+        }
       }
-    }
-    return token;
-  });
+      return token;
+    },
+  );
 }
 
 function shouldFenceMarkdownHtmlReplacement(replacement: string): boolean {
@@ -162,15 +171,25 @@ export function runRegexScript(
   const trimStrings = script.trimStrings ?? [];
 
   try {
-    const result = rawString.replace(findRegex, (...args) => {
-      // args: [match, ...groups, offset, string]
-      const fullMatch = args[0] as string;
-      const groups = args.slice(1, -2) as string[];
+    const result = rawString.replace(findRegex, (...args: unknown[]) => {
+      // args: [match, ...groups, offset, string, namedGroups?]（有具名群組才有最後一項）
+      const last = args[args.length - 1];
+      const namedGroups =
+        last && typeof last === "object"
+          ? (last as Record<string, string | undefined>)
+          : undefined;
+      const groups = args.slice(0, namedGroups ? -3 : -2) as (string | undefined)[];
 
-      // 將 replaceString 中的 {{match}} 替換為完整匹配
-      let replacement = script.replaceString.replace(/\{\{match\}\}/gi, fullMatch);
+      // {{match}} 等同 $0；先換成記號再一起代換，比對到的原文裡有 $1 也不會被誤換
+      let replacement = script.replaceString.replace(/\{\{match\}\}/gi, "$0");
 
-      replacement = substituteCaptureGroups(replacement, groups, trimStrings, params);
+      replacement = substituteCaptureGroups(
+        replacement,
+        groups,
+        namedGroups,
+        trimStrings,
+        params,
+      );
 
       // 展開替換結果中的 macros
       replacement = substituteMacros(replacement, params);
@@ -230,12 +249,12 @@ export function getRegexedString(
 
     if (isEdit && !script.runOnEdit) continue;
 
-    // 深度過濾
+    // 深度過濾：-1（或沒設）代表不限
     if (params.depth !== undefined) {
       const min = script.minDepth ?? -1;
-      const max = script.maxDepth ?? null;
+      const max = script.maxDepth ?? -1;
       if (min >= 0 && params.depth < min) continue;
-      if (max !== null && params.depth > max) continue;
+      if (max >= 0 && params.depth > max) continue;
     }
 
     // placement 過濾

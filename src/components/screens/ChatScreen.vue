@@ -1798,6 +1798,8 @@ const {
   getActiveRegexScripts,
   applyAIOutputRegex,
   applyUserInputRegex,
+  applyPromptRegex,
+  applyWorldInfoRegex,
   processAiOutputTemplate,
 } = useChatRegex({
   currentCharacter,
@@ -4621,7 +4623,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     console.log(`[輪數診斷] ${turnDiagText}`);
     setDebugInfoLine("turns", turnDiagText);
 
-    const chatMessages: ChatMessage[] = messagesToUse.map((m) => ({
+    const chatMessages: ChatMessage[] = messagesToUse.map((m, index) => ({
       id: m.id,
       sender:
         m.role === "user"
@@ -4636,11 +4638,18 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
             ? "system"
             : m.senderCharacterName || char.data.name,
       // 群管理訊息畫面上有文字，資料裡 content 是空的；寫成一句話 AI 才知道誰被移出、禁言
+      // 一般訊息套用「僅提示詞」正則腳本（depth 0 是最新一則）
       content: m.isGroupAction
         ? describeGroupAction(m)
         : m.forwardedFrom
           ? formatForwardedForPrompt(m.content, m.forwardedFrom)
-          : m.content,
+          : m.role === "system"
+            ? m.content
+            : applyPromptRegex(
+                m.content,
+                m.role === "user" ? "user" : "assistant",
+                messagesToUse.length - 1 - index,
+              ),
       is_user: m.role === "user",
       status: "sent" as const,
       createdAt: m.timestamp,
@@ -5047,7 +5056,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
     const builder = new PromptBuilder({
       character: char,
-      lorebooks: linkedLorebooks,
+      lorebooks: applyWorldInfoRegex(linkedLorebooks),
       messages: chatMessages,
       settings: {
         maxContextLength: settingsStore.generation.maxContextLength || 200000,

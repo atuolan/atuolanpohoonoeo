@@ -4,7 +4,11 @@
  * 相容 SillyTavern regex JSON 格式，支援導入/導出
  */
 
-import { regex_placement, regexFromString } from "@/services/RegexEngine";
+import {
+  regex_placement,
+  regexFromString,
+  runRegexScript,
+} from "@/services/RegexEngine";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
 import type { RegexScript } from "@/types/character";
 import { computed, onMounted, ref } from "vue";
@@ -57,20 +61,31 @@ function validateRegex() {
   regexError.value = r ? "" : "正則表達式格式無效";
 }
 
-// 預覽
+// 預覽：跟聊天時用同一套引擎（修剪字串、$<名稱>、巨集替換都一樣）
 const previewInput = ref("");
 const previewResult = computed(() => {
   if (!previewInput.value || !fFindRegex.value || regexError.value) return "";
-  try {
-    const r = regexFromString(fFindRegex.value);
-    if (!r) return "";
-    return previewInput.value.replace(
-      r,
-      fReplaceString.value.replace(/\{\{match\}\}/gi, "$&"),
-    );
-  } catch {
-    return "";
-  }
+  return runRegexScript(
+    {
+      id: "preview",
+      scriptName: "preview",
+      findRegex: fFindRegex.value,
+      replaceString: fReplaceString.value,
+      trimStrings: fTrimStrings.value
+        ? fTrimStrings.value.split("\n").filter(Boolean)
+        : [],
+      placement: [],
+      disabled: false,
+      markdownOnly: false,
+      promptOnly: false,
+      runOnEdit: false,
+      substituteRegex: fSubstituteRegex.value,
+      minDepth: -1,
+      maxDepth: -1,
+    },
+    previewInput.value,
+    { characterName: "{{char}}", userName: "{{user}}" },
+  );
 });
 
 function openNew() {
@@ -142,11 +157,24 @@ async function saveScript() {
   validateRegex();
   if (regexError.value) return;
 
-  const placement: number[] = [];
+  // 表單沒有勾選框的位置（例如推理）照原本的留著
+  const original = editingId.value
+    ? store.scripts.find((s) => s.id === editingId.value)
+    : undefined;
+  const formPlacements: number[] = [
+    regex_placement.USER_INPUT,
+    regex_placement.AI_OUTPUT,
+    regex_placement.SLASH_COMMAND,
+    regex_placement.WORLD_INFO,
+  ];
+  const placement: number[] = (original?.placement ?? []).filter(
+    (p) => !formPlacements.includes(p),
+  );
   if (fPlacementUser.value) placement.push(regex_placement.USER_INPUT);
   if (fPlacementAI.value) placement.push(regex_placement.AI_OUTPUT);
   if (fPlacementSlash.value) placement.push(regex_placement.SLASH_COMMAND);
   if (fPlacementWorldInfo.value) placement.push(regex_placement.WORLD_INFO);
+  placement.sort((a, b) => a - b);
 
   const data: Omit<RegexScript, "id"> = {
     scriptName: fName.value.trim(),
@@ -227,6 +255,7 @@ function placementLabel(script: RegexScript): string {
   if (script.placement?.includes(2)) labels.push("AI");
   if (script.placement?.includes(3)) labels.push("指令");
   if (script.placement?.includes(5)) labels.push("世界書");
+  if (script.placement?.includes(6)) labels.push("推理");
   return labels.join(" · ") || "無";
 }
 </script>
