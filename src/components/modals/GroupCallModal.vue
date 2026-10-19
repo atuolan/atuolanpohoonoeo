@@ -78,6 +78,14 @@
                     class="call-system-hint"
                   >
                     {{ message.content }}
+                    <button
+                      v-if="message.retryTurn && index === callMessages.length - 1 && !isGenerating"
+                      type="button"
+                      class="retry-btn"
+                      @click="emit('retry', index)"
+                    >
+                      再試一次
+                    </button>
                   </div>
                   <!-- 用戶訊息 -->
                   <div
@@ -96,6 +104,11 @@
                     </div>
                   </div>
                 </template>
+                <!-- 生成中也能打字，送出的話等這輪說完就會被接 -->
+                <div v-if="isGenerating" class="speaking-hint" role="status">
+                  <span class="speaking-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                  角色們正在說話，你也可以插話
+                </div>
                 <!-- 自動對話倒數提示 -->
                 <div
                   v-if="autoTalkCountdown > 0 && !isGenerating"
@@ -114,12 +127,11 @@
                     type="text"
                     class="voice-input"
                     placeholder="說點什麼..."
-                    :disabled="isGenerating"
-                    @keydown.enter="handleSend"
+                    @keydown.enter="!$event.isComposing && handleSend()"
                   />
                   <button
                     class="send-btn"
-                    :disabled="!inputText.trim() || isGenerating"
+                    :disabled="!inputText.trim()"
                     @click="handleSend"
                   >
                     <svg viewBox="0 0 24 24" fill="currentColor">
@@ -164,6 +176,7 @@ interface CallMessage {
   senderName?: string;
   content: string;
   timestamp: number;
+  retryTurn?: string;
 }
 
 const props = defineProps<{
@@ -179,6 +192,7 @@ const emit = defineEmits<{
   hangUp: [];
   sendMessage: [content: string];
   autoTalk: [];
+  retry: [index: number];
 }>();
 
 const messagesContainer = ref<HTMLElement | null>(null);
@@ -299,7 +313,7 @@ function hangUp() {
 
 function handleSend() {
   const text = inputText.value.trim();
-  if (!text || props.isGenerating) return;
+  if (!text) return;
   emit("sendMessage", text);
   inputText.value = "";
   resetAutoTalkTimer();
@@ -698,6 +712,68 @@ function handleSend() {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.4);
   padding: 8px;
+}
+
+.retry-btn {
+  display: block;
+  margin: 6px auto 0;
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  font: inherit;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+}
+
+.speaking-hint {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  padding: 8px;
+}
+
+.speaking-dots {
+  display: inline-flex;
+  gap: 3px;
+
+  i {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: speakingDot 1.2s ease-in-out infinite;
+
+    &:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    &:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+  }
+}
+
+@keyframes speakingDot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .speaking-dots i {
+    animation: none;
+  }
 }
 
 // 語音輸入區域

@@ -3,12 +3,20 @@ import { computed, ref } from "vue";
 
 const streamEvents = vi.hoisted(() => ({ current: [] as any[] }));
 const builtOptions = vi.hoisted(() => ({ current: null as any }));
-const generation = vi.hoisted(() => ({ active: false }));
+// 要是 reactive，isGenerating 的 watch 才會在一輪結束時觸發
+const generation = await vi.hoisted(async () => {
+  const { reactive } = await import("vue");
+  return reactive({ active: false });
+});
 
 vi.mock("@/api/OpenAICompatible", () => ({
   OpenAICompatibleClient: class {
     async *generateStream() {
-      for (const event of streamEvents.current) yield event;
+      for (const event of streamEvents.current) {
+        // { type: "wait" } 讓這輪停在半路，模擬角色還在說話
+        if (event.type === "wait") await event.promise;
+        else yield event;
+      }
     }
   },
 }));
@@ -157,5 +165,52 @@ describe("useChatGroupCall", () => {
     await call.handleGroupCallSendMessage("來聊天");
     expect(call.groupCallParticipants.value.map((p) => p.name)).toEqual(["小B", "小A"]);
     expect(voices(call)).toEqual(["小A:[表情：開心]"]);
+  });
+
+  it("角色還在說話時用戶插話，這輪說完就接著回", async () => {
+    const call = setup();
+    let release!: () => void;
+    streamEvents.current = [
+      { type: "wait", promise: new Promise<void>((r) => (release = r)) },
+      { type: "done", content: '<msg name="小A">喂喂？</msg>' },
+    ];
+    call.startGroupCall();
+    await flush();
+    expect(generation.active).toBe(true);
+
+    await call.handleGroupCallSendMessage("我先說一句");
+    expect(call.groupCallMessages.value[call.groupCallMessages.value.length - 1]).toMatchObject({ type: "user", content: "我先說一句" });
+
+    streamEvents.current = [{ type: "done", content: '<msg name="小B">聽到了</msg>' }];
+    release();
+    await flush();
+    expect(voices(call)).toEqual(["小A:喂喂？", "小B:聽到了"]);
+    expect(builtOptions.current.messages.some((m: any) => m.content === "我先說一句" && m.is_user)).toBe(true);
+  });
+
+  it("回覆沒有說話者標籤時不把思考過程當成有人在講", async () => {
+    const call = setup();
+    streamEvents.current = [
+      { type: "done", content: "<thinking>先想想每個人要說什麼…每個角色這輪用什麼語言輸出？<msg>" },
+    ];
+    await call.handleGroupCallSendMessage("哈囉");
+
+    expect(voices(call)).toEqual([]);
+    const last = call.groupCallMessages.value[call.groupCallMessages.value.length - 1];
+    expect(last).toMatchObject({ type: "system", localHint: true, retryTurn: "reply" });
+    expect(last.content).toContain("思考過程");
+  });
+
+  it("寫到長度上限被切掉時說明原因，按再試一次重新回覆", async () => {
+    const call = setup();
+    streamEvents.current = [{ type: "done", content: "<thinking>寫到一半", finishReason: "length" }];
+    await call.handleGroupCallSendMessage("哈囉");
+    const idx = call.groupCallMessages.value.length - 1;
+    expect(call.groupCallMessages.value[idx].content).toContain("最大回覆長度");
+
+    streamEvents.current = [{ type: "done", content: '<msg name="小A">哈囉！</msg>' }];
+    await call.retryGroupCallTurn(idx);
+    expect(voices(call)).toEqual(["小A:哈囉！"]);
+    expect(call.groupCallMessages.value.some((m) => m.retryTurn)).toBe(false);
   });
 });

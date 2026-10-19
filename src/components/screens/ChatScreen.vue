@@ -2662,6 +2662,7 @@ const {
   addGroupCallVoiceMessage,
   handleGroupCallSendMessage,
   handleGroupCallAutoTalk,
+  retryGroupCallTurn,
 } = useChatGroupCall({
   messages,
   currentChatId,
@@ -10907,6 +10908,7 @@ useChatCleanup({
         @hang-up="handleGroupCallHangUp"
         @send-message="handleGroupCallSendMessage"
         @auto-talk="handleGroupCallAutoTalk"
+        @retry="retryGroupCallTurn"
       />
 
       <!-- 來電模態框 -->

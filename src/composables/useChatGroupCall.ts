@@ -1,4 +1,4 @@
-import { ref, type Ref, type ComputedRef } from "vue";
+import { ref, watch, type Ref, type ComputedRef } from "vue";
 import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
@@ -50,10 +50,23 @@ interface GroupCallMessage {
   timestamp: number;
   /** 只給用戶看的提示（失敗、沒人接話），不帶進提示詞 */
   localHint?: boolean;
+  /** 這輪失敗了，按「再試一次」用同一種方式重新回覆 */
+  retryTurn?: GroupCallTurn;
 }
 
 /** 這一輪群通話回覆是怎麼觸發的 */
 type GroupCallTurn = "open" | "reply" | "autoTalk";
+
+/** 這輪 AI 有回東西、卻沒有任何角色開口時，告訴用戶大概發生什麼事 */
+function describeSilentTurn(rawContent: string, finishReason?: string): string {
+  if (finishReason === "length") {
+    return "回覆寫到長度上限被切掉，角色還沒開口。可以到設定 › 主要模型調高「最大回覆長度」";
+  }
+  if (rawContent.trim()) {
+    return "這輪回覆沒有照通話格式（可能只寫了思考過程，或中途被截斷），沒有人開口";
+  }
+  return "這輪沒有人接話";
+}
 
 /** 通話前帶進提示詞的群聊訊息數，讓角色記得剛剛在聊什麼 */
 const CALL_CONTEXT_MESSAGE_LIMIT = 20;
@@ -93,6 +106,14 @@ export function useChatGroupCall(deps: {
   const groupCallStartedAt = ref(0);
   const groupCallParticipants = ref<GroupCallParticipant[]>([]);
   const groupCallMessages = ref<GroupCallMessage[]>([]);
+  /** 角色們說話時用戶插話：訊息先放進通話，這輪說完馬上接著回 */
+  let replyQueued = false;
+
+  watch(deps.isGenerating, (generating) => {
+    if (generating || !replyQueued) return;
+    replyQueued = false;
+    if (showGroupCallModal.value) void triggerGroupCallAIResponse("reply");
+  });
 
   /** 群裡可以進通話的成員：普通群看成員（含虛擬成員），多人卡看子角色 */
   function listCallMembers(): GroupCallParticipant[] {
@@ -190,6 +211,7 @@ export function useChatGroupCall(deps: {
     }
 
     showGroupCallModal.value = false;
+    replyQueued = false;
     groupCallParticipants.value = [];
     groupCallMessages.value = [];
     groupCallStartedAt.value = 0;
@@ -273,7 +295,7 @@ export function useChatGroupCall(deps: {
 
   /** 處理群通話中用戶發送訊息 */
   async function handleGroupCallSendMessage(content: string) {
-    if (!content.trim() || deps.isGenerating.value) return;
+    if (!content.trim()) return;
 
     groupCallMessages.value.push({
       type: "user",
@@ -281,7 +303,19 @@ export function useChatGroupCall(deps: {
       timestamp: Date.now(),
     });
 
+    if (deps.isGenerating.value) {
+      replyQueued = true;
+      return;
+    }
     await triggerGroupCallAIResponse("reply");
+  }
+
+  /** 失敗提示上的「再試一次」：拿掉提示，用同一種方式重新回覆 */
+  async function retryGroupCallTurn(index: number) {
+    const hint = groupCallMessages.value[index];
+    if (!hint?.retryTurn || deps.isGenerating.value) return;
+    groupCallMessages.value.splice(index, 1);
+    await triggerGroupCallAIResponse(hint.retryTurn);
   }
 
   /** 處理群通話自動對話 */
@@ -351,6 +385,8 @@ export function useChatGroupCall(deps: {
 
     for (const parsedMsg of parsed.messages) {
       const senderName = parsedMsg.senderName || "";
+      // 沒有說話者的是解析不出標籤時整段原文（常是思考過程或被截斷的回覆），不能當成有人在講
+      if (!senderName) continue;
       const charId = senderName
         ? deps.getGroupMemberIdByName(senderName)
         : undefined;
@@ -650,12 +686,14 @@ export function useChatGroupCall(deps: {
 
       let fullContent = "";
       let doneContent: string | null = null;
+      let finishReason: string | undefined;
 
       for await (const event of streamGenerator) {
         if (event.type === "token" && event.token) {
           fullContent += event.token;
         } else if (event.type === "done") {
           doneContent = event.content || fullContent;
+          finishReason = event.finishReason;
         } else if (event.type === "error") {
           // 串流錯誤是用事件回報、不會 throw，沒接住的話畫面上就只是「沒人回應」
           throw new Error(event.error || "生成失敗");
@@ -672,8 +710,9 @@ export function useChatGroupCall(deps: {
         console.warn("[GroupCall] 這輪沒有解析出任何語音:", rawContent);
         groupCallMessages.value.push({
           type: "system",
-          content: "這輪沒有人接話，可以再說一次試試",
+          content: describeSilentTurn(rawContent, finishReason),
           localHint: true,
+          retryTurn: turn,
           timestamp: Date.now(),
         });
       }
@@ -683,6 +722,7 @@ export function useChatGroupCall(deps: {
         type: "system",
         content: `回覆失敗：${error instanceof Error ? error.message : String(error)}`,
         localHint: true,
+        retryTurn: turn,
         timestamp: Date.now(),
       });
     } finally {
@@ -702,5 +742,6 @@ export function useChatGroupCall(deps: {
     addGroupCallVoiceMessage,
     handleGroupCallSendMessage,
     handleGroupCallAutoTalk,
+    retryGroupCallTurn,
   };
 }
