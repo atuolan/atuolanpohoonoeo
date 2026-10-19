@@ -53,5 +53,14 @@ export function nativeOAuthReturnBase(purpose: "auth" | "push"): string {
   return `${NATIVE_URL_SCHEME}://oauth/${purpose}`;
 }
 
+/**
+ * App 熱更新抓新版網頁的網站，依序嘗試：
+ * 香港主機（大陸直連入口）→ Cloudflare Pages（push master 自動部署）。兩邊放的是同一份 dist。
+ */
+export const LIVE_UPDATE_ORIGINS = [
+  "https://aguaphone.aguacloud.uk",
+  "https://203aguaphone.aguacloud.uk",
+] as const;
+
 /** App 的備份資料夾，給使用者看的位置（實際路徑在 nativeFiles.ts） */
 export const NATIVE_BACKUP_LOCATION = "文件／203Phone";

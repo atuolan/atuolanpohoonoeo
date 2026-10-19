@@ -27,6 +27,20 @@ const config: CapacitorConfig = {
       // index.html 本來就是 viewport-fit=cover，一開始就照滿版排，免得載入時先縮後撐
       initialViewportFitValueHint: "cover",
     },
+    // 熱更新（src/native/liveUpdate.ts）：自己判斷何時下載、套用，不連 Capgo 的伺服器
+    CapacitorUpdater: {
+      autoUpdate: false,
+      // 空字串＝不回報使用統計、不查 Capgo 的頻道與更新
+      statsUrl: "",
+      channelUrl: "",
+      updateUrl: "",
+      // 新版網頁 20 秒內沒呼叫 notifyAppReady 就退回上一版（舊手機開 App 比較慢，留寬一點）
+      appReadyTimeout: 20000,
+      // 裝了新 APK 就改用 APK 裡的網頁，清掉之前下載的
+      resetWhenUpdate: true,
+      autoDeleteFailed: true,
+      autoDeletePrevious: true,
+    },
   },
 };
 

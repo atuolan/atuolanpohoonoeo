@@ -4,6 +4,7 @@
 import { App } from "@capacitor/app";
 import { resumeAutoBackup } from "@/services/AutoBackupService";
 import { installNativeDownloadShim } from "./downloadShim";
+import { initLiveUpdate } from "./liveUpdate";
 import { handleOAuthReturnUrl } from "./oauth";
 
 function handleIncomingUrl(url: string): void {
@@ -11,6 +12,8 @@ function handleIncomingUrl(url: string): void {
 }
 
 export function initNativeApp(): void {
+  // 最先做：告訴熱更新套件這份網頁開得起來，再到背景檢查新版
+  initLiveUpdate();
   installNativeDownloadShim();
 
   // 背景中定時器不會跑，回到前景時補上自動備份
