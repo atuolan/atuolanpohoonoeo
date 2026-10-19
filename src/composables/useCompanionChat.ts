@@ -6,6 +6,12 @@
 import type { APIMessage } from "@/api/OpenAICompatible";
 import type { PromptBuilderOptions } from "@/engine/prompt/PromptBuilder";
 import type { Lorebook } from "@/types/worldinfo";
+import {
+  applyPromptRegexToHistory,
+  applyWorldInfoRegexToLorebooks,
+  chatMessageRole,
+  loadPromptRegexContext,
+} from "@/services/promptRegex";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 import { useCharactersStore } from "@/stores/characters";
 import {
@@ -329,10 +335,16 @@ async function loadCompanionContext(character: StoredCharacter): Promise<Compani
       isImportant: s.isImportant,
     }));
 
-    const allEvents = await db.getAll<any>(DB_STORES.IMPORTANT_EVENTS);
-    context.importantEvents = allEvents
-      .filter((e: any) => e.characterId === character.id)
-      .map((e: any) => ({ id: e.id, content: e.content, category: e.category, priority: e.priority }));
+    // 重要事件存成「記錄本」（id 是聊天 id，舊資料是角色 id），事件在 events 裡；跟電話模式同樣的取法
+    const eventsLog =
+      (chat ? await db.get<any>(DB_STORES.IMPORTANT_EVENTS, chat.id) : undefined) ??
+      (await db.get<any>(DB_STORES.IMPORTANT_EVENTS, character.id));
+    context.importantEvents = eventsLog?.settings?.enabled
+      ? [...(eventsLog.events ?? [])]
+          .sort((a: any, b: any) => (a.priority || 3) - (b.priority || 3))
+          .slice(0, eventsLog.settings.maxEvents ?? 50)
+          .map((e: any) => ({ id: e.id, content: e.content, category: e.category, priority: e.priority }))
+      : [];
 
     if (chat) {
       // 只取一般對話；共讀卡本身就是伴讀紀錄，不重複放
@@ -535,6 +547,11 @@ export function useCompanionChat(
       }
 
       const context = await loadCompanionContext(character);
+      // 「僅提示詞」正則腳本：伴讀對話、私聊紀錄、世界書都跟聊天一樣套用
+      const regexContext = await loadPromptRegexContext([character], {
+        characterName: charName,
+        userName,
+      });
       const settings = {
         maxContextLength: chatTaskConfig.generation.maxContextLength || 200000,
         maxResponseLength: chatTaskConfig.generation.maxTokens || 8190,
@@ -551,8 +568,12 @@ export function useCompanionChat(
 
       const builder = new PromptBuilder({
         character,
-        lorebooks: context.lorebooks,
-        messages: toCompanionChatMessages(core.messages, userName, charName, autoTrigger),
+        lorebooks: applyWorldInfoRegexToLorebooks(context.lorebooks, regexContext),
+        messages: applyPromptRegexToHistory(
+          toCompanionChatMessages(core.messages, userName, charName, autoTrigger),
+          chatMessageRole,
+          regexContext,
+        ),
         settings,
         userName,
         userPersona: userStore.currentPersona?.description,
@@ -564,7 +585,11 @@ export function useCompanionChat(
         },
         summaries: context.summaries,
         importantEvents: context.importantEvents,
-        recentChatHistory: context.recentChatHistory,
+        recentChatHistory: applyPromptRegexToHistory(
+          context.recentChatHistory,
+          (m) => m.role,
+          regexContext,
+        ),
         enableRealTimeAwareness: false,
       });
       const built = await builder.build();

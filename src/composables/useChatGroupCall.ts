@@ -5,6 +5,12 @@ import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import { parseGroupChatResponse } from "@/services/ResponseParser";
 import type { ChatMessage, GroupMember, MultiCharMember } from "@/types/chat";
 import type { Lorebook } from "@/types/worldinfo";
+import type { RegexScript } from "@/types/character";
+import {
+  applyPromptRegexToHistory,
+  applyWorldInfoRegexToLorebooks,
+  chatMessageRole,
+} from "@/services/promptRegex";
 import {
   getGroupMemberAvatarUrl,
   getGroupMemberDisplayName,
@@ -71,6 +77,8 @@ export function useChatGroupCall(deps: {
   scrollToBottom: () => void;
   saveChatImmediate: () => Promise<void>;
   applyAIOutputRegex: (content: string) => string;
+  /** 跟聊天同一組正則腳本，組通話提示詞時套用「僅提示詞」腳本 */
+  getActiveRegexScripts?: () => RegexScript[];
   getGroupMemberIdByName: (name: string) => string | undefined;
 }) {
   const aiGenerationStore = useAIGenerationStore();
@@ -545,10 +553,16 @@ export function useChatGroupCall(deps: {
           )
         : undefined;
 
+      const regexContext = {
+        scripts: deps.getActiveRegexScripts?.() ?? [],
+        characterName: memberCharacters[0].data.name,
+        userName,
+      };
+
       const builder = new PromptBuilder({
         character: memberCharacters[0],
-        lorebooks: linkedLorebooks,
-        messages: callHistory,
+        lorebooks: applyWorldInfoRegexToLorebooks(linkedLorebooks, regexContext),
+        messages: applyPromptRegexToHistory(callHistory, chatMessageRole, regexContext),
         settings: {
           maxContextLength:
             settingsStore.generation.maxContextLength || 200000,

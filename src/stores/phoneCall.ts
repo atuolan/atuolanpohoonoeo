@@ -8,6 +8,13 @@ import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import { db, DB_STORES } from "@/db/database";
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import { parseAffinityUpdateTags } from "@/services/ResponseParser";
+import {
+  applyPromptRegexToHistory,
+  applyWorldInfoRegexToLorebooks,
+  chatMessageRole,
+  loadPromptRegexContext,
+} from "@/services/promptRegex";
+import type { Lorebook } from "@/types/worldinfo";
 import { primeCallAudioContext } from "@/services/voiceInput/audioContextPrimer";
 import { loadChatById, refreshChatDerivedMetadata } from "@/storage/chatStorage";
 import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
@@ -1032,14 +1039,19 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       callMessages.value.push(aiMsg);
 
       // 收集世界書
-      const linkedLorebooks = [];
+      const linkedLorebooks: Lorebook[] = [];
       if (char.lorebookIds?.length) {
         for (const id of char.lorebookIds) {
           const lb = lorebooksStore.lorebooks.find((l) => l.id === id);
           if (lb) linkedLorebooks.push(lb);
         }
       }
-      linkedLorebooks.push(...lorebooksStore.lorebooks.filter((lb) => lb.isGlobal));
+      // 綁定的同時又是全域的世界書只帶一次
+      linkedLorebooks.push(
+        ...lorebooksStore.lorebooks.filter(
+          (lb) => lb.isGlobal && !linkedLorebooks.includes(lb),
+        ),
+      );
 
       // 構建歷史
       // 來電首次觸發時，過濾掉 system trigger（由 incomingCallContext + phoneCallIncomingTrigger 負責觸發）
@@ -1111,10 +1123,16 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
         }
       }
 
+      // 「僅提示詞」正則腳本：通話內容、通話前的聊天紀錄、世界書都跟聊天一樣套用
+      const regexContext = await loadPromptRegexContext([char], {
+        characterName: char.data.name,
+        userName: userStore.currentPersona?.name || "User",
+      });
+
       const builder = new PromptBuilder({
         character: char,
-        lorebooks: linkedLorebooks,
-        messages: chatMessages,
+        lorebooks: applyWorldInfoRegexToLorebooks(linkedLorebooks, regexContext),
+        messages: applyPromptRegexToHistory(chatMessages, chatMessageRole, regexContext),
         settings: {
           maxContextLength: settingsStore.generation.maxContextLength || 200000,
           maxResponseLength: settingsStore.generation.maxTokens || 200000,
@@ -1150,7 +1168,11 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
           currentDate: now.toLocaleDateString("zh-TW"),
           lastChatTime,
         },
-        recentChatHistory: recentChatHistory.value,
+        recentChatHistory: applyPromptRegexToHistory(
+          recentChatHistory.value,
+          (m) => m.role,
+          regexContext,
+        ),
       });
 
       const promptResult = await builder.build();

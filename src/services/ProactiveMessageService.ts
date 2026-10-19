@@ -23,7 +23,44 @@ import { formatEventTime } from "@/utils/calendarEventFormat";
 import { computeChatNow } from "@/utils/fakeTime";
 import { toPromptGroupMember, withLiveSubCharSnapshot } from "@/utils/groupMembers";
 import type { GroupMember, MultiCharMember } from "@/types/chat";
+import type { StoredCharacter } from "@/types/character";
+import type { Lorebook } from "@/types/worldinfo";
 import { resolveSummaryReadCount, selectSummariesForPrompt } from "@/utils/summarySelection";
+import {
+  applyPromptRegexToHistory,
+  applyWorldInfoRegexToLorebooks,
+  chatMessageRole,
+  loadPromptRegexContext,
+} from "@/services/promptRegex";
+
+/**
+ * 角色綁定的世界書＋群組綁定的＋全域世界書，跟聊天帶的一樣。
+ * 以前只看角色卡的 extensions.world（導入時不會填），主動訊息從來沒帶到世界書。
+ * 主動訊息可能在背景跑，世界書還沒載入就先載入。
+ */
+async function collectPromptLorebooks(
+  characters: StoredCharacter[],
+  extraLorebookIds: string[] = [],
+): Promise<Lorebook[]> {
+  const { useLorebooksStore } = await import("@/stores/lorebooks");
+  const lorebooksStore = useLorebooksStore();
+  if (lorebooksStore.lorebooks.length === 0) {
+    await lorebooksStore.loadLorebooks();
+  }
+  const result: Lorebook[] = [];
+  const ids = [
+    ...characters.flatMap((c) => c.lorebookIds ?? []),
+    ...extraLorebookIds,
+  ];
+  for (const id of ids) {
+    const lorebook = lorebooksStore.lorebooks.find((lb) => lb.id === id);
+    if (lorebook && !result.includes(lorebook)) result.push(lorebook);
+  }
+  for (const lorebook of lorebooksStore.lorebooks) {
+    if (lorebook.isGlobal && !result.includes(lorebook)) result.push(lorebook);
+  }
+  return result;
+}
 
 export interface ProactiveMessageSettings {
   enabled: boolean;
@@ -575,11 +612,9 @@ export class ProactiveMessageService {
       // ===== 準備依賴 =====
       const { useSettingsStore } = await import("@/stores/settings");
       const { useUserStore } = await import("@/stores/user");
-      const { useLorebooksStore } = await import("@/stores/lorebooks");
       const { usePromptManagerStore } = await import("@/stores/promptManager");
       const settingsStore = useSettingsStore();
       const userStore = useUserStore();
-      const lorebooksStore = useLorebooksStore();
       const promptManagerStore = usePromptManagerStore();
       await promptManagerStore.loadConfig();
 
@@ -590,11 +625,21 @@ export class ProactiveMessageService {
       }
 
       const currentPersona = userStore.currentPersona;
-      const characterLorebooks = leadCharacter.data.extensions?.world
-        ? lorebooksStore.lorebooks.filter(
-            (lb) => lb.id === leadCharacter.data.extensions?.world,
-          )
-        : [];
+      // 普通群：還在群裡、角色卡還在的成員；多人卡：卡本身
+      const lorebookCharacters = groupMetadata.isMultiCharCard
+        ? [leadCharacter]
+        : (groupMetadata.members as GroupMember[])
+            .filter((m) => !m.isVirtual)
+            .map((m) => characterStore.characters.find((c) => c.id === m.characterId))
+            .filter((c): c is StoredCharacter => !!c);
+      const characterLorebooks = await collectPromptLorebooks(
+        lorebookCharacters,
+        groupMetadata.lorebookIds ?? [],
+      );
+      const regexContext = await loadPromptRegexContext([leadCharacter], {
+        characterName: leadCharacter.data.name,
+        userName: currentPersona?.name || "User",
+      });
 
       const chatSettings = {
         maxContextLength: taskConfig.generation.maxContextLength,
@@ -615,8 +660,13 @@ export class ProactiveMessageService {
       const groupChatOverrides = useChatVariablesStore().presetForChat(groupChat.id, groupChat);
       const promptBuilder = new PromptBuilder({
         character: leadCharacter,
-        lorebooks: characterLorebooks,
-        messages: messagesWithTopic,
+        lorebooks: applyWorldInfoRegexToLorebooks(characterLorebooks, regexContext),
+        // 「僅提示詞」正則套用到歷史訊息；話題引導是給 AI 的指示，不套用
+        messages: applyPromptRegexToHistory(
+          messagesWithTopic,
+          (m) => (m === topicMessage ? null : chatMessageRole(m)),
+          regexContext,
+        ),
         settings: chatSettings,
         userName: currentPersona?.name || "User",
         userPersona: currentPersona?.description,
@@ -974,11 +1024,9 @@ export class ProactiveMessageService {
       // 構建提示詞
       const { PromptBuilder } = await import("@/engine/prompt/PromptBuilder");
       const { useUserStore } = await import("@/stores/user");
-      const { useLorebooksStore } = await import("@/stores/lorebooks");
       const { usePromptManagerStore } = await import("@/stores/promptManager");
 
       const userStore = useUserStore();
-      const lorebooksStore = useLorebooksStore();
       const promptManagerStore = usePromptManagerStore();
 
       // 載入提示詞管理器配置（確保使用用戶自訂的提示詞順序和定義）
@@ -987,12 +1035,12 @@ export class ProactiveMessageService {
       // 獲取當前用戶 persona
       const currentPersona = userStore.currentPersona;
 
-      // 獲取角色關聯的世界書
-      const characterLorebooks = character.data.extensions?.world
-        ? lorebooksStore.lorebooks.filter(
-            (lb) => lb.id === character.data.extensions?.world,
-          )
-        : [];
+      // 獲取角色關聯的世界書（綁定＋全域，跟聊天一樣）
+      const characterLorebooks = await collectPromptLorebooks([character]);
+      const regexContext = await loadPromptRegexContext([character], {
+        characterName: character.data.name,
+        userName: currentPersona?.name || "User",
+      });
 
       // ===== 載入 AI 記憶管理設定（總結設定） =====
       const { createDefaultSummarySettings } = await import("@/types/chat");
@@ -1176,8 +1224,13 @@ export class ProactiveMessageService {
         ) || undefined;
       const promptBuilder = new PromptBuilder({
         character,
-        lorebooks: characterLorebooks,
-        messages: messagesToUse,
+        lorebooks: applyWorldInfoRegexToLorebooks(characterLorebooks, regexContext),
+        // 「僅提示詞」正則套用到歷史訊息；話題引導是給 AI 的指示，不套用
+        messages: applyPromptRegexToHistory(
+          messagesToUse,
+          (m) => (m === topicMessage ? null : chatMessageRole(m)),
+          regexContext,
+        ),
         settings: chatSettings,
         userName: currentPersona?.name || "User",
         userPersona: currentPersona?.description,

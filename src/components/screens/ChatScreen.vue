@@ -2676,6 +2676,7 @@ const {
   scrollToBottom,
   saveChatImmediate,
   applyAIOutputRegex,
+  getActiveRegexScripts,
   getGroupMemberIdByName,
 });
 

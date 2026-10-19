@@ -21,6 +21,9 @@ vi.mock("@/stores/characters", () => ({
   useCharactersStore: () => ({ characters: [{ id: "char-1", data: { name: "小鯤" } }] }),
 }));
 vi.mock("@/stores/lorebooks", () => ({ useLorebooksStore: () => ({ lorebooks: [] }) }));
+vi.mock("@/stores/regexScripts", () => ({
+  useRegexScriptsStore: () => ({ init: async () => {}, allScripts: [] }),
+}));
 vi.mock("@/stores/user", () => ({ useUserStore: () => ({ currentName: "我", currentPersona: null }) }));
 vi.mock("@/stores/settings", () => ({
   useSettingsStore: () => ({
