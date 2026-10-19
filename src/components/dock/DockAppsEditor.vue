@@ -161,7 +161,7 @@ function save() {
   background: #fff;
   color: #1f2937;
   border-radius: 20px 20px 0 0;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
   box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.15);
 }
 

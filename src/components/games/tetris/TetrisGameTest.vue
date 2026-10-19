@@ -824,10 +824,10 @@ const handleHold = () => {
   color: #1f2937;
   box-sizing: border-box;
   padding: 12px;
-  padding-top: max(12px, env(safe-area-inset-top));
-  padding-right: max(12px, env(safe-area-inset-right));
+  padding-top: max(12px, var(--safe-area-inset-top, env(safe-area-inset-top)));
+  padding-right: max(12px, var(--safe-area-inset-right, env(safe-area-inset-right)));
   padding-bottom: max(12px, var(--safe-bottom, 0px));
-  padding-left: max(12px, env(safe-area-inset-left));
+  padding-left: max(12px, var(--safe-area-inset-left, env(safe-area-inset-left)));
   overflow: hidden;
   height: 100vh;
   height: 100dvh;
@@ -840,8 +840,8 @@ const handleHold = () => {
 
   .close-btn {
     position: fixed;
-    top: max(16px, env(safe-area-inset-top));
-    right: max(16px, env(safe-area-inset-right));
+    top: max(16px, var(--safe-area-inset-top, env(safe-area-inset-top)));
+    right: max(16px, var(--safe-area-inset-right, env(safe-area-inset-right)));
     width: clamp(36px, 8vw, 40px);
     height: clamp(36px, 8vw, 40px);
     border: none;

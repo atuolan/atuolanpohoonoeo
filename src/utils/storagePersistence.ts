@@ -11,6 +11,7 @@
  * 我們能做的是提高授權成功率，並在拒絕時增加後續重試機會。
  */
 
+import { isNativeApp } from "@/native/platform";
 import { recordReloadReason } from "@/utils/runtimeDiagnostics";
 
 let persistRetryHooksBound = false;
@@ -27,13 +28,14 @@ export async function registerServiceWorker(): Promise<boolean> {
     return false;
   }
 
-  // dev 模式下不註冊 SW，避免快取 Vite HMR 模組導致更新失效
-  if (import.meta.env.DEV) {
+  // dev 模式下不註冊 SW，避免快取 Vite HMR 模組導致更新失效；
+  // App 的網頁檔本來就在 APK 裡，SW 只會快取到舊版
+  if (import.meta.env.DEV || isNativeApp()) {
     // 如果之前有註冊過，順便清掉
     const regs = await navigator.serviceWorker.getRegistrations();
     for (const reg of regs) {
       await reg.unregister();
-      console.log("[SW] dev 模式：已移除舊 Service Worker");
+      console.log("[SW] 不使用 Service Worker：已移除舊註冊");
     }
     return false;
   }

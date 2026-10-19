@@ -1,11 +1,21 @@
 import vue from "@vitejs/plugin-vue";
+import { createHash } from "node:crypto";
+import fs from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
+import path from "node:path";
 import { fileURLToPath, URL } from "node:url";
 import type { Plugin } from "vite";
 import { defineConfig } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
 import { buildForwardHeaders, checkTarget, PROXY_ERROR_HEADER, proxyErrorBody, type ProxyErrorCode } from "./cloudflare-worker/mcp-proxy/src/guard";
+import {
+  LIVE_UPDATE_DIR,
+  LIVE_UPDATE_MANIFEST,
+  LIVE_UPDATE_VERSION_FILE,
+  buildLiveUpdateManifest,
+  type LiveUpdateFile,
+} from "./src/native/liveUpdateManifest";
 
 const IMAGE_PROXY_UAS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -217,6 +227,44 @@ function mcpDevProxyPlugin(): Plugin {
   };
 }
 
+// App 熱更新清單：建置完把 dist 每個檔案的 SHA-256 寫進 live-update/manifest.json，
+// 部署到 Cloudflare 後 App 只下載變動的檔案（見 src/native/liveUpdateManifest.ts）
+function liveUpdateManifestPlugin(): Plugin {
+  let outDir = "";
+  const sha256 = (data: string | Buffer) => createHash("sha256").update(data).digest("hex");
+
+  async function collect(dir: string, files: LiveUpdateFile[]): Promise<void> {
+    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await collect(full, files);
+      } else if (entry.isFile()) {
+        files.push({
+          file_name: path.relative(outDir, full).split(path.sep).join("/"),
+          file_hash: sha256(await fs.readFile(full)),
+        });
+      }
+    }
+  }
+
+  return {
+    name: "live-update-manifest",
+    apply: "build",
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
+    async closeBundle() {
+      const files: LiveUpdateFile[] = [];
+      await collect(outDir, files);
+      const { manifest, versionFileContent } = buildLiveUpdateManifest(files, sha256);
+      await fs.mkdir(path.join(outDir, LIVE_UPDATE_DIR), { recursive: true });
+      await fs.writeFile(path.join(outDir, LIVE_UPDATE_VERSION_FILE), versionFileContent);
+      await fs.writeFile(path.join(outDir, LIVE_UPDATE_MANIFEST), JSON.stringify(manifest));
+      console.log(`[live-update] 版本 ${manifest.version}，${manifest.files.length} 個檔案`);
+    },
+  };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   base: "/",
@@ -234,6 +282,8 @@ export default defineConfig(({ mode }) => ({
     mcpDevProxyPlugin(),
     // 只在 inline 模式下啟用單文件打包
     mode === "inline" ? viteSingleFile() : null,
+    // 單文件模式不是給 App 用的，不產生熱更新清單
+    mode === "inline" ? null : liveUpdateManifestPlugin(),
   ].filter(Boolean),
   // 依賴預掃描只從 App 入口開始；預設會掃專案內所有 .html，
   // 會誤掃到 過往紀錄檔/ 等存檔資料夾裡引用不存在腳本的舊頁面。

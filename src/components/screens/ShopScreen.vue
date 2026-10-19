@@ -1209,7 +1209,7 @@ onMounted(async () => {
   justify-content: center;
   z-index: 10000;
   padding: 20px;
-  padding-top: calc(20px + env(safe-area-inset-top, 0px));
+  padding-top: calc(20px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
   padding-bottom: calc(20px + var(--safe-bottom, 0px));
   backdrop-filter: blur(4px);
 }
@@ -1222,7 +1222,7 @@ onMounted(async () => {
   width: 100%;
   max-width: 320px;
   max-height: calc(
-    100dvh - 40px - env(safe-area-inset-top, 0px) - var(--safe-bottom, 0px)
+    100dvh - 40px - var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) - var(--safe-bottom, 0px)
   );
   overflow-y: auto;
   text-align: center;

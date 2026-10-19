@@ -190,7 +190,7 @@ const read = computed(() => props.items.filter((i) => props.isRead(i.id)).map(to
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 8px 20px max(24px, env(safe-area-inset-bottom, 0px));
+  padding: 8px 20px max(24px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   display: flex;
   flex-direction: column;
   gap: 28px;

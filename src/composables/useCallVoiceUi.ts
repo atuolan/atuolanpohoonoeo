@@ -77,7 +77,7 @@ function showCallToast(message: string): void {
   toast.style.cssText = [
     "position: fixed",
     "left: 50%",
-    "bottom: calc(150px + env(safe-area-inset-bottom, 0px))",
+    "bottom: calc(150px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))",
     "transform: translateX(-50%)",
     "max-width: 80vw",
     "background: rgba(0, 0, 0, 0.82)",

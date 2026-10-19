@@ -131,7 +131,7 @@ const handleStart = () => {
   justify-content: center;
   box-sizing: border-box;
   padding: 20px;
-  padding-top: max(20px, env(safe-area-inset-top));
+  padding-top: max(20px, var(--safe-area-inset-top, env(safe-area-inset-top)));
   padding-bottom: max(20px, var(--safe-bottom, 0px));
   overflow-y: auto;
   overflow-x: hidden;

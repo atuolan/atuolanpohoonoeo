@@ -6,7 +6,7 @@
   "compatibility_date": "2026-02-24",
   "vars": {
     // 允許呼叫代理的網站，逗號分隔；支援 https://*.example.com
-    "ALLOWED_ORIGINS": "https://aguaphone.aguacloud.uk,https://203aguaphone.aguacloud.uk,http://localhost:5173"
+    "ALLOWED_ORIGINS": "https://aguaphone.aguacloud.uk,https://203aguaphone.aguacloud.uk,https://localhost,http://localhost:5173"
   },
   // 目標網址可能帶金鑰，不開請求紀錄
   "observability": { "enabled": false }

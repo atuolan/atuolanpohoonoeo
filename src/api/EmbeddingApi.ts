@@ -3,8 +3,7 @@
  * 負責將文本轉換為向量嵌入，支援單文本和批量嵌入
  */
 
-/** AI API 代理專用子域名（灰雲 DNS only，繞過 Cloudflare 100s timeout） */
-const AI_PROXY_HOST = 'https://tight-sun-f7fa.a23971123.workers.dev'
+import { aiProxyHost } from "@/native/platform";
 
 // ─── 介面定義 ───────────────────────────────────────────────
 
@@ -146,14 +145,14 @@ export class EmbeddingApiClient {
         // 若同源 URL 包含 /ai-proxy/，重導到灰雲子域名
         if (parsed.pathname.startsWith('/ai-proxy')) {
           console.warn(`[Embedding API] 偵測到請求走主域名代理路徑，重導到灰雲子域名: ${url}`)
-          return `${AI_PROXY_HOST}${parsed.pathname}`
+          return `${aiProxyHost()}${parsed.pathname}`
         }
         return url
       }
 
       // 外部 URL 走代理
       const prefix = parsed.protocol === 'http:' ? '/ai-proxy-http/' : '/ai-proxy/'
-      return `${AI_PROXY_HOST}${prefix}${parsed.host}${parsed.pathname}`
+      return `${aiProxyHost()}${prefix}${parsed.host}${parsed.pathname}`
     } catch {
       return url
     }

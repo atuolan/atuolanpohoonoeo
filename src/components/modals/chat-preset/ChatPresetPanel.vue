@@ -165,7 +165,7 @@ onUnmounted(() => {
   max-width: 520px;
   // 固定高度：切換分頁或篩選時面板不會忽高忽低
   height: 88vh;
-  height: min(88dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 24px));
+  height: min(88dvh, calc(100dvh - var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) - 24px));
   display: flex;
   flex-direction: column;
   background: var(--color-surface, #fff);
@@ -333,7 +333,7 @@ onUnmounted(() => {
     overflow-y: auto;
     overscroll-behavior: contain;
     // 底部安全區只留在這裡一次；.preset-editor-footer 的負邊距要和這個值對應
-    padding: 12px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+    padding: 12px 18px calc(18px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   }
 
   .preset-tab {
@@ -695,9 +695,9 @@ onUnmounted(() => {
   .preset-editor-footer {
     position: sticky;
     // 抵銷 .preset-panel-body 的底部內距（含安全區），讓按鈕列貼齊面板底部
-    bottom: calc(-18px - env(safe-area-inset-bottom, 0px));
-    margin: 0 -18px calc(-18px - env(safe-area-inset-bottom, 0px));
-    padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(-18px - var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+    margin: 0 -18px calc(-18px - var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+    padding: 12px 18px calc(12px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
     background: var(--color-surface, #fff);
     border-top: 1px solid var(--color-border, #eee);
     display: flex;

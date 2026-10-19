@@ -318,7 +318,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 16px;
-  padding-top: max(16px, env(safe-area-inset-top));
+  padding-top: max(16px, var(--safe-area-inset-top, env(safe-area-inset-top)));
   background: white;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 

@@ -479,7 +479,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 32px;
-  padding: 20px 0 calc(20px + env(safe-area-inset-bottom));
+  padding: 20px 0 calc(20px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)));
   flex-shrink: 0;
 }
 

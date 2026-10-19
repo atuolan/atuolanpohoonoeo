@@ -3,6 +3,8 @@
  * 整合 WeatherAPI.com 提供三種定位方式：瀏覽器定位、手動設置、IP定位
  */
 
+import { resolveProxyPath } from "@/native/platform";
+
 const WEATHER_API_KEY = "a2429675a11f4fc788f185319262202";
 // 開發環境走 Vite proxy 繞過 CORS，生產環境直連
 const isDev = import.meta.env.DEV;
@@ -195,7 +197,7 @@ export async function getNearbyPlaces(
 out body;`.trim();
 
     const overpassUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
-    const proxyUrl = `/image-proxy?url=${encodeURIComponent(overpassUrl)}`;
+    const proxyUrl = resolveProxyPath(`/image-proxy?url=${encodeURIComponent(overpassUrl)}`);
 
     const res = await fetch(proxyUrl);
     if (!res.ok) return [];

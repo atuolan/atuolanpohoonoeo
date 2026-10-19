@@ -751,7 +751,7 @@ button {
   align-items: center;
   justify-content: space-between;
   padding: 12px 20px 0;
-  padding-top: max(12px, env(safe-area-inset-top));
+  padding-top: max(12px, var(--safe-area-inset-top, env(safe-area-inset-top)));
   flex-shrink: 0;
 
   .header-title {
@@ -765,7 +765,7 @@ button {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: 14px 20px;
-  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  padding-bottom: max(24px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom)));
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1065,7 +1065,7 @@ button {
   border-radius: 28px 28px 0 0;
   display: flex;
   flex-direction: column;
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom));
 }
 
 .sheet-grabber {

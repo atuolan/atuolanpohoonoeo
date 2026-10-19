@@ -14,9 +14,18 @@
     "deploy:hk": "node scripts/deploy-hk.mjs",
     "type-check": "vue-tsc --noEmit",
     "test": "vitest --run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "android:sync": "vite build && cap sync android",
+    "android:open": "cap open android",
+    "android:apk": "vite build && cap sync android && cd android && gradlew assembleDebug"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capgo/capacitor-updater": "^8.53.0",
     "@modelcontextprotocol/sdk": "1.32.1",
     "@primevue/themes": "^4.5.4",
     "@types/jszip": "^3.4.0",
@@ -39,6 +48,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
     "@types/ejs": "^3.1.5",
     "@types/js-yaml": "^4.0.9",
     "@types/lodash": "^4.17.24",

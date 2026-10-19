@@ -633,7 +633,7 @@ async function handleRegenerate() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: calc(40px + env(safe-area-inset-top, 0px)) 24px 20px;
+  padding: calc(40px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) 24px 20px;
 
   // 電腦版 "連通" 狀態樣式
   @media (min-width: 768px) {
@@ -1082,7 +1082,7 @@ async function handleRegenerate() {
   display: flex;
   justify-content: center;
   padding: 0 24px 24px;
-  padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
+  padding-bottom: max(24px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   background: transparent;
   pointer-events: none; /* 讓點擊穿透到背景，除非點到按鈕 */
 }
@@ -1215,8 +1215,8 @@ async function handleRegenerate() {
 
 .minimize-btn {
   position: absolute;
-  top: max(16px, env(safe-area-inset-top, 0px));
-  left: max(16px, env(safe-area-inset-left, 0px));
+  top: max(16px, var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+  left: max(16px, var(--safe-area-inset-left, env(safe-area-inset-left, 0px)));
   z-index: 20;
   width: 36px;
   height: 36px;
@@ -1311,7 +1311,7 @@ async function handleRegenerate() {
 // 手機版保持原樣但套用樣式
 @media (max-width: 480px) {
   .call-controls {
-    padding-bottom: max(32px, env(safe-area-inset-bottom, 0px));
+    padding-bottom: max(32px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   }
 
   .controls-dock {
@@ -1336,7 +1336,7 @@ async function handleRegenerate() {
 @media (max-width: 480px) {
   .phone-call-container.connected {
     .call-sidebar {
-      padding: calc(10px + env(safe-area-inset-top, 0px)) 0 10px;
+      padding: calc(10px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) 0 10px;
       flex: 0 0 auto;
 
       .avatar-ring {

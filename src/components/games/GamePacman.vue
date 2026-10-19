@@ -439,7 +439,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 8px 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
+  padding: 8px 12px calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 12px);
   gap: 8px;
   overflow: hidden;
 }

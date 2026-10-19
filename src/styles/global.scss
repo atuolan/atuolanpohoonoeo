@@ -70,6 +70,9 @@ textarea,
 }
 
 // 支援 iOS 安全區域
+// Android App 裡舊版 WebView（< 140）的 env(safe-area-inset-*) 會是 0，內容跑到狀態列底下；
+// Capacitor 會把正確值寫進 --safe-area-inset-*，所以一律先讀它、網頁版沒有才用 env()。
+// 新寫的樣式也要照這個寫法：var(--safe-area-inset-top, env(safe-area-inset-top, 0px))
 html {
   --safe-top: 0px;
   --safe-bottom: 0px;
@@ -79,11 +82,11 @@ html {
 
 @supports (padding: env(safe-area-inset-top)) {
   html {
-    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
     // 底部不留安全區域空白 — home indicator 直接疊在內容上
     --safe-bottom: 0px;
-    --safe-left: env(safe-area-inset-left, 0px);
-    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+    --safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
   }
 }
 
@@ -132,7 +135,7 @@ button {
   --neon-magenta: #ff00ff;
   --neon-violet: #7000ff;
 
-  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
   --safe-area-bottom: 0px;
 }
 

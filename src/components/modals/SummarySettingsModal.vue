@@ -413,7 +413,7 @@ function saveSettings() {
   width: 100%;
   max-width: 520px;
   max-height: calc(
-    100dvh - 40px - env(safe-area-inset-top) - var(--safe-bottom, 0px)
+    100dvh - 40px - var(--safe-area-inset-top, env(safe-area-inset-top)) - var(--safe-bottom, 0px)
   );
   display: flex;
   flex-direction: column;

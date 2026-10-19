@@ -2,6 +2,7 @@
  * 自動備份服務
  *
  * 主方案：File System Access API（直接寫入使用者選擇的本地資料夾）
+ * App（APK）：直接寫進手機的「文件／203Phone」
  * Fallback：觸發下載（不支援 FSAA 的瀏覽器）
  *
  * dirHandle 存入 IndexedDB，下次開頁面可重新取得權限。
@@ -14,6 +15,7 @@ import {
   shouldBackupAppSettingsKey,
   shouldBackupSettingsKey,
 } from "@/services/backupCoverage";
+import { isNativeApp } from "@/native/platform";
 import { loadMessages } from "@/storage/chatMessageStorage";
 import {
   audioExtFromMime,
@@ -57,6 +59,8 @@ const IDB_DIR_HANDLE_KEY = "autoBackup-dirHandle";
 const IDB_SETTINGS_KEY = "autoBackup-settings";
 
 let _timer: ReturnType<typeof setInterval> | null = null;
+/** 自動備份進行中：App 從背景回來時可能和定時器同時觸發 */
+let _autoRunning = false;
 let _dirHandle: FileSystemDirectoryHandle | null = null;
 
 // ============================================================
@@ -64,6 +68,8 @@ let _dirHandle: FileSystemDirectoryHandle | null = null;
 // ============================================================
 
 export function isFileSystemAccessSupported(): boolean {
+  // App 的 WebView 有 showDirectoryPicker 但按了不會跳出選擇器；App 裡備份固定寫進「文件／203Phone」
+  if (isNativeApp()) return false;
   return typeof window !== "undefined" && "showDirectoryPicker" in window;
 }
 
@@ -1268,41 +1274,44 @@ async function openBackupFileSink(
 }
 
 /**
+ * 資料夾裡超出保留份數、該刪掉的舊備份檔名。
+ *
+ * 同一份備份的分包歸成一組，按「份」計算保留數量，
+ * 否則一份 10 包的備份就會把自己的前幾包當成舊備份刪掉。
+ */
+export function pickBackupsToDelete(filenames: string[], maxBackups: number): string[] {
+  const groups = new Map<string, string[]>();
+  for (const name of filenames) {
+    if (!name.startsWith("aguaphone-backup-") || !name.endsWith(".zip")) continue;
+    const group = getBackupGroupFilename(name);
+    const names = groups.get(group) ?? [];
+    names.push(name);
+    groups.set(group, names);
+  }
+
+  // 按檔名排序（檔名包含時間戳，字母序 = 時間序）
+  const groupNames = [...groups.keys()].sort((a, b) => a.localeCompare(b));
+  const toDelete = groupNames.length - maxBackups;
+  return groupNames.slice(0, Math.max(0, toDelete)).flatMap((group) => groups.get(group)!);
+}
+
+/**
  * 清理超出數量限制的舊備份
  */
 async function cleanOldBackups(maxBackups: number): Promise<void> {
   if (!_dirHandle) return;
 
-  // 同一份備份的分包歸成一組，按「份」計算保留數量，
-  // 否則一份 10 包的備份就會把自己的前幾包當成舊備份刪掉
-  const groups = new Map<string, string[]>();
-
+  const names: string[] = [];
   for await (const [name, handle] of (_dirHandle as any).entries()) {
-    if (
-      handle.kind === "file" &&
-      name.startsWith("aguaphone-backup-") &&
-      name.endsWith(".zip")
-    ) {
-      const group = getBackupGroupFilename(name);
-      const names = groups.get(group) ?? [];
-      names.push(name);
-      groups.set(group, names);
-    }
+    if (handle.kind === "file") names.push(name);
   }
 
-  // 按檔名排序（檔名包含時間戳，字母序 = 時間序）
-  const groupNames = [...groups.keys()].sort((a, b) => a.localeCompare(b));
-
-  // 刪除超出限制的舊備份（整組刪）
-  const toDelete = groupNames.length - maxBackups;
-  for (let i = 0; i < toDelete; i++) {
-    for (const name of groups.get(groupNames[i])!) {
-      try {
-        await _dirHandle.removeEntry(name);
-        console.log(`[AutoBackup] 已刪除舊備份: ${name}`);
-      } catch (e) {
-        console.warn(`[AutoBackup] 刪除舊備份失敗: ${name}`, e);
-      }
+  for (const name of pickBackupsToDelete(names, maxBackups)) {
+    try {
+      await _dirHandle.removeEntry(name);
+      console.log(`[AutoBackup] 已刪除舊備份: ${name}`);
+    } catch (e) {
+      console.warn(`[AutoBackup] 刪除舊備份失敗: ${name}`, e);
     }
   }
 }
@@ -1841,6 +1850,68 @@ async function performFolderBackup(
 }
 
 /**
+ * App 路徑：每包直接寫進手機的「文件／203Phone」，跟電腦版的備份資料夾一樣
+ * 不用使用者點擊交付，所以自動備份也能用。
+ */
+async function performNativeBackup(
+  filename: string,
+  onProgress: BackupProgressCallback | undefined,
+  excludeChatImages: boolean,
+): Promise<BackupResult> {
+  const native = await import("@/native/nativeFiles");
+  const written: string[] = [];
+  let current: Awaited<ReturnType<typeof native.openNativeBackupFile>> | null = null;
+
+  try {
+    await markBackupInProgress("手機資料夾");
+    await buildSplitBackup({
+      onProgress,
+      excludeChatImages,
+      partBudgetBytes: getPartBudgetBytes("disk"),
+      openPart: async (index) => {
+        const name = getBackupPartFilename(filename, index);
+        current = await native.openNativeBackupFile(name);
+        written.push(name);
+        return current;
+      },
+      onPartClosed: async () => {
+        current = null;
+      },
+      abortPart: async () => {
+        await current?.abort();
+        current = null;
+      },
+    });
+  } catch (e) {
+    // 缺包的備份沒有意義：已寫完的分包一起刪掉
+    for (const name of written) {
+      await native.deleteNativeBackupFile(name).catch(() => {});
+    }
+    throw e;
+  }
+
+  const settings = await loadBackupSettings();
+  if (settings.maxBackups > 0) {
+    const existing = await native.listNativeBackupFiles();
+    for (const name of pickBackupsToDelete(existing, settings.maxBackups)) {
+      await native.deleteNativeBackupFile(name).catch((err) => {
+        console.warn(`[AutoBackup] 刪除舊備份失敗: ${name}`, err);
+      });
+    }
+  }
+
+  const partCount = written.length;
+  const where = native.NATIVE_BACKUP_LOCATION;
+  const msg =
+    partCount > 1
+      ? `備份成功: ${where}／${filename}（共 ${partCount} 個分包）`
+      : `備份成功: ${where}／${filename}`;
+  console.log(`[AutoBackup] ${msg}`);
+  await saveBackupMessage(msg, true);
+  return { success: true, message: msg, filename, method: "fs", partCount };
+}
+
+/**
  * 下載路徑：每包先串流落到 OPFS 暫存檔（iOS 走 Worker），全部打包完再一次交付。
  * 手機空間不夠同時暫存全部分包時，改成分批交付。
  * 兩種 OPFS 都不可用時才在記憶體組裝，此時每包打包完就得立刻交付。
@@ -2047,6 +2118,11 @@ export async function performBackup(
     const filename = generateBackupFilename();
     const excludeChatImages = options?.excludeChatImages ?? false;
 
+    // App 裡沒有下載可用，手動導出也一律寫進手機資料夾
+    if (isNativeApp()) {
+      return await performNativeBackup(filename, onProgress, excludeChatImages);
+    }
+
     // FS 路徑：先開好檔案，ZIP 邊打包邊寫入磁碟，整份 ZIP 不進 JS heap
     if (!forceDownload && isFileSystemAccessSupported() && _dirHandle) {
       return await performFolderBackup(filename, onProgress, excludeChatImages);
@@ -2098,24 +2174,39 @@ export async function startAutoBackup(): Promise<void> {
     ? now - settings.lastBackupAt
     : Infinity;
 
+  // 之後按固定間隔定時備份。先排定時器再補備份：補備份可能跑好幾分鐘
+  _timer = setInterval(runAutoBackup, intervalMs);
+
   if (elapsed >= intervalMs) {
     // 已超過間隔（或從未備份），立刻備份一次
     console.log("[AutoBackup] 距離上次備份已超過間隔，立即備份");
-    const result = await performBackup();
-    if (!result.success) {
-      console.warn("[AutoBackup] 自動備份失敗:", result.message);
-    }
+    await runAutoBackup();
   }
 
-  // 之後按固定間隔定時備份
-  _timer = setInterval(async () => {
+  console.log(`[AutoBackup] 已啟動，間隔 ${settings.intervalMinutes} 分鐘`);
+}
+
+async function runAutoBackup(): Promise<void> {
+  if (_autoRunning) return;
+  _autoRunning = true;
+  try {
     const result = await performBackup();
     if (!result.success) {
       console.warn("[AutoBackup] 自動備份失敗:", result.message);
     }
-  }, intervalMs);
+  } finally {
+    _autoRunning = false;
+  }
+}
 
-  console.log(`[AutoBackup] 已啟動，間隔 ${settings.intervalMinutes} 分鐘`);
+/**
+ * App 從背景回到前景時呼叫。
+ * 手機會暫停背景中 App 的網頁程式，定時器在那段時間不會跑；
+ * 回來時重新排定，太久沒備份就馬上補一次。
+ */
+export async function resumeAutoBackup(): Promise<void> {
+  const settings = await loadBackupSettings();
+  if (settings.enabled) await startAutoBackup();
 }
 
 /**
