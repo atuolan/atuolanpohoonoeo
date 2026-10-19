@@ -429,7 +429,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  padding-top: max(12px, env(safe-area-inset-top));
+  padding-top: max(12px, var(--safe-area-inset-top, env(safe-area-inset-top)));
   background: white;
   border-bottom: 1px solid #e5e7eb;
   flex-shrink: 0;

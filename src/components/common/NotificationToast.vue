@@ -159,8 +159,8 @@ function handleDismiss(id: string) {
 <style lang="scss" scoped>
 .notification-container {
   position: fixed;
-  top: max(16px, env(safe-area-inset-top, 0px));
-  right: max(16px, env(safe-area-inset-right, 0px));
+  top: max(16px, var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+  right: max(16px, var(--safe-area-inset-right, env(safe-area-inset-right, 0px)));
   z-index: 10000;
   display: flex;
   flex-direction: column;
@@ -327,9 +327,9 @@ function handleDismiss(id: string) {
 // 響應式
 @media (max-width: 480px) {
   .notification-container {
-    top: max(8px, env(safe-area-inset-top, 0px));
-    right: max(8px, env(safe-area-inset-right, 0px));
-    left: max(8px, env(safe-area-inset-left, 0px));
+    top: max(8px, var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+    right: max(8px, var(--safe-area-inset-right, env(safe-area-inset-right, 0px)));
+    left: max(8px, var(--safe-area-inset-left, env(safe-area-inset-left, 0px)));
     max-width: none;
   }
 

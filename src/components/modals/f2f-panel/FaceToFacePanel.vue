@@ -134,7 +134,7 @@ onUnmounted(() => {
   width: 100%;
   max-width: 520px;
   max-height: 90vh;
-  max-height: min(90vh, calc(100dvh - env(safe-area-inset-top, 0px) - 24px));
+  max-height: min(90vh, calc(100dvh - var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) - 24px));
   display: flex;
   flex-direction: column;
   background: var(--color-surface, #fff);
@@ -230,7 +230,7 @@ onUnmounted(() => {
     min-height: 0;
     overflow-y: auto;
     // 底部安全區只留在這裡一次；.f2f-editor-footer 的負邊距要和這個值對應
-    padding: 12px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+    padding: 12px 18px calc(18px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   }
 
   .f2f-tab {
@@ -420,9 +420,9 @@ onUnmounted(() => {
   .f2f-editor-footer {
     position: sticky;
     // 抵銷 .f2f-panel-body 的底部內距（含安全區），讓按鈕列貼齊面板底部
-    bottom: calc(-18px - env(safe-area-inset-bottom, 0px));
-    margin: 0 -18px calc(-18px - env(safe-area-inset-bottom, 0px));
-    padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(-18px - var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+    margin: 0 -18px calc(-18px - var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+    padding: 12px 18px calc(12px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
     background: var(--color-surface, #fff);
     border-top: 1px solid var(--color-border, #eee);
     display: flex;

@@ -372,7 +372,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   padding: 16px;
-  padding-top: max(16px, env(safe-area-inset-top));
+  padding-top: max(16px, var(--safe-area-inset-top, env(safe-area-inset-top)));
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);

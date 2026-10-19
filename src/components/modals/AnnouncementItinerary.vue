@@ -489,7 +489,7 @@ function handleAction() {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 20px max(16px, env(safe-area-inset-bottom, 0px));
+  padding: 14px 20px max(16px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   border-top: 1px solid #e6ded2;
   background: var(--ann-ground);
 }

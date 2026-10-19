@@ -789,7 +789,7 @@ onMounted(async () => {
   justify-content: center;
   z-index: 10000;
   padding: 20px;
-  padding-top: max(20px, env(safe-area-inset-top));
+  padding-top: max(20px, var(--safe-area-inset-top, env(safe-area-inset-top)));
   padding-bottom: max(20px, var(--safe-bottom, 0px));
   animation: fadeIn 0.2s ease;
 }
@@ -809,7 +809,7 @@ onMounted(async () => {
   max-width: min(600px, 100%);
   width: 100%;
   max-height: calc(
-    100dvh - 40px - env(safe-area-inset-top) - var(--safe-bottom, 0px)
+    100dvh - 40px - var(--safe-area-inset-top, env(safe-area-inset-top)) - var(--safe-bottom, 0px)
   );
   overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
@@ -1571,9 +1571,9 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: max(12px, env(safe-area-inset-top))
-    max(12px, env(safe-area-inset-right)) max(12px, var(--safe-bottom, 0px))
-    max(12px, env(safe-area-inset-left));
+  padding: max(12px, var(--safe-area-inset-top, env(safe-area-inset-top)))
+    max(12px, var(--safe-area-inset-right, env(safe-area-inset-right))) max(12px, var(--safe-bottom, 0px))
+    max(12px, var(--safe-area-inset-left, env(safe-area-inset-left)));
 }
 
 .expand-container {
@@ -1583,7 +1583,7 @@ onMounted(async () => {
   max-width: 700px;
   height: 100%;
   max-height: calc(
-    100dvh - max(24px, env(safe-area-inset-top)) - max(
+    100dvh - max(24px, var(--safe-area-inset-top, env(safe-area-inset-top))) - max(
         24px,
         var(--safe-bottom, 0px)
       )

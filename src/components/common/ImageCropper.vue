@@ -559,10 +559,10 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background: #1a1a1a;
-  padding-top: var(--safe-top, env(safe-area-inset-top, 0px));
-  padding-bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
-  padding-left: var(--safe-left, env(safe-area-inset-left, 0px));
-  padding-right: var(--safe-right, env(safe-area-inset-right, 0px));
+  padding-top: var(--safe-top, var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+  padding-bottom: var(--safe-bottom, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+  padding-left: var(--safe-left, var(--safe-area-inset-left, env(safe-area-inset-left, 0px)));
+  padding-right: var(--safe-right, var(--safe-area-inset-right, env(safe-area-inset-right, 0px)));
 }
 
 .cropper-header {

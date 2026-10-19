@@ -260,7 +260,7 @@ const close = () => {
   align-items: center;
   justify-content: center;
   z-index: 9999;
-  padding: env(safe-area-inset-top, 20px) 20px var(--safe-bottom, 20px);
+  padding: var(--safe-area-inset-top, env(safe-area-inset-top, 20px)) 20px var(--safe-bottom, 20px);
 }
 
 .proactive-settings-modal {
@@ -269,7 +269,7 @@ const close = () => {
   width: 100%;
   max-width: 500px;
   max-height: calc(
-    100dvh - env(safe-area-inset-top, 0px) - var(--safe-bottom, 0px) - 40px
+    100dvh - var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) - var(--safe-bottom, 0px) - 40px
   );
   display: flex;
   flex-direction: column;

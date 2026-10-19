@@ -219,7 +219,7 @@ ${props.charName} 對 ${props.userName || "user"} 的想法
 .diary-modal {
   width: 100%;
   max-width: 600px;
-  max-height: calc(90vh - env(safe-area-inset-top) - var(--safe-bottom, 0px));
+  max-height: calc(90vh - var(--safe-area-inset-top, env(safe-area-inset-top)) - var(--safe-bottom, 0px));
   background: var(--color-surface, white);
   border-radius: 20px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
@@ -474,7 +474,7 @@ ${props.charName} 對 ${props.userName || "user"} 的想法
     align-items: flex-end;
   }
   .diary-modal {
-    max-height: calc(85vh - env(safe-area-inset-top) - var(--safe-bottom, 0px));
+    max-height: calc(85vh - var(--safe-area-inset-top, env(safe-area-inset-top)) - var(--safe-bottom, 0px));
     border-radius: 20px 20px 0 0;
   }
   .modal-header {

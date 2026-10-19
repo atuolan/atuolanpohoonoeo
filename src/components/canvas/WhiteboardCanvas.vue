@@ -1431,7 +1431,7 @@ onUnmounted(() => {
 // 編輯工具列 - 輕量 iOS 風格
 .edit-toolbar {
   position: fixed;
-  top: max(16px, env(safe-area-inset-top));
+  top: max(16px, var(--safe-area-inset-top, env(safe-area-inset-top)));
   left: 50%;
   transform: translateX(-50%);
   // 重要：祖先 .whiteboard-viewport 有 overflow:hidden，且手機殼層可能含 transform

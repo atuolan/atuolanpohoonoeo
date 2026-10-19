@@ -20,6 +20,14 @@ const config: CapacitorConfig = {
     // 頁面是 https://localhost，使用者設定的 http:// API 和圖片才不會被擋
     allowMixedContent: true,
   },
+  plugins: {
+    SystemBars: {
+      // 把正確的狀態列／導覽列高度寫進 CSS 的 --safe-area-inset-*（舊版 WebView 的 env() 會是 0）
+      insetsHandling: "css",
+      // index.html 本來就是 viewport-fit=cover，一開始就照滿版排，免得載入時先縮後撐
+      initialViewportFitValueHint: "cover",
+    },
+  },
 };
 
 export default config;

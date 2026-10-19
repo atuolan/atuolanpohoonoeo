@@ -142,7 +142,7 @@ const regeneratePhoto = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 16px max(16px, env(safe-area-inset-left, 0px));
+  padding: max(16px, var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) max(16px, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) 16px max(16px, var(--safe-area-inset-left, env(safe-area-inset-left, 0px)));
   background: linear-gradient(
     to bottom,
     rgba(0, 0, 0, 0.6) 0%,
@@ -206,7 +206,7 @@ const regeneratePhoto = () => {
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 20px max(20px, env(safe-area-inset-right, 0px)) max(20px, env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
+  padding: 20px max(20px, var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) max(20px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) max(20px, var(--safe-area-inset-left, env(safe-area-inset-left, 0px)));
   background: linear-gradient(
     to top,
     rgba(0, 0, 0, 0.8) 0%,

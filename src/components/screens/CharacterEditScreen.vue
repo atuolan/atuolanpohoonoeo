@@ -3383,7 +3383,7 @@ async function submitPasteRegex() {
   align-items: flex-end;
   justify-content: center;
   z-index: 9999;
-  padding-bottom: env(safe-area-inset-bottom, 0);
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0));
 }
 
 .modal-panel {

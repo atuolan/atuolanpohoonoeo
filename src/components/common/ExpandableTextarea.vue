@@ -159,9 +159,9 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: max(12px, env(safe-area-inset-top))
-    max(12px, env(safe-area-inset-right)) max(12px, var(--safe-bottom, 0px))
-    max(12px, env(safe-area-inset-left));
+  padding: max(12px, var(--safe-area-inset-top, env(safe-area-inset-top)))
+    max(12px, var(--safe-area-inset-right, env(safe-area-inset-right))) max(12px, var(--safe-bottom, 0px))
+    max(12px, var(--safe-area-inset-left, env(safe-area-inset-left)));
 }
 
 .expand-container {
@@ -171,7 +171,7 @@ watch(
   max-width: 700px;
   height: 100%;
   max-height: calc(
-    100dvh - max(24px, env(safe-area-inset-top)) - max(
+    100dvh - max(24px, var(--safe-area-inset-top, env(safe-area-inset-top))) - max(
         24px,
         var(--safe-bottom, 0px)
       )

@@ -712,10 +712,10 @@ export const useThemeStore = defineStore("theme", () => {
       "--modal-leave-anim": modalAnimation.value.leave,
 
       // 安全區域
-      "--safe-top": "env(safe-area-inset-top, 0px)",
+      "--safe-top": "var(--safe-area-inset-top, env(safe-area-inset-top, 0px))",
       "--safe-bottom": "0px",
-      "--safe-left": "env(safe-area-inset-left, 0px)",
-      "--safe-right": "env(safe-area-inset-right, 0px)",
+      "--safe-left": "var(--safe-area-inset-left, env(safe-area-inset-left, 0px))",
+      "--safe-right": "var(--safe-area-inset-right, env(safe-area-inset-right, 0px))",
 
       // ===== 皮（Skin）變數 =====
       // 形態由當前皮決定，陰影顏色由當前配色決定（兩者正交）

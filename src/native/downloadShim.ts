@@ -27,7 +27,7 @@ function showToast(message: string, isError = false): void {
   Object.assign(el.style, {
     position: "fixed",
     left: "50%",
-    bottom: "calc(env(safe-area-inset-bottom, 0px) + 72px)",
+    bottom: "calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 72px)",
     transform: "translateX(-50%)",
     maxWidth: "min(88vw, 360px)",
     padding: "10px 16px",

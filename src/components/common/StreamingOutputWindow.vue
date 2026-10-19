@@ -550,8 +550,8 @@ onUnmounted(() => {
 
   // 安全區域適配 (Requirements: 4.1, 4.2, 4.3, 4.4, 4.5)
   padding-bottom: var(--safe-bottom, 0px);
-  padding-left: env(safe-area-inset-left, 0px);
-  padding-right: env(safe-area-inset-right, 0px);
+  padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
 
   // 動態高度（使用 dvh 單位）
   max-height: calc(85dvh - var(--safe-bottom, 0px));

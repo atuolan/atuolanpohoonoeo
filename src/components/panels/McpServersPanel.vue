@@ -188,7 +188,7 @@ async function enableTools(): Promise<void> {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: calc(env(safe-area-inset-top) + 10px) 12px 10px;
+    padding: calc(var(--safe-area-inset-top, env(safe-area-inset-top)) + 10px) 12px 10px;
     background: var(--color-surface, #fff);
     border-bottom: 1px solid var(--color-border, #e2e8f0);
 
@@ -219,7 +219,7 @@ async function enableTools(): Promise<void> {
     /* 用撐開的空白代替底部內距：內距會讓 sticky 的儲存列停在離底邊一段距離，下面露出內容 */
     &::after {
       content: "";
-      flex: 0 0 calc(env(safe-area-inset-bottom) + 12px);
+      flex: 0 0 calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom)) + 12px);
     }
   }
 
@@ -418,7 +418,7 @@ async function enableTools(): Promise<void> {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-    padding: 8px 0 calc(env(safe-area-inset-bottom) + 8px);
+    padding: 8px 0 calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom)) + 8px);
     background: var(--color-background, #f7f7f9);
     border-top: 1px solid var(--color-border, #e2e8f0);
   }
