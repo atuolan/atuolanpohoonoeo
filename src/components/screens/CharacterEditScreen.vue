@@ -424,12 +424,46 @@ async function handleSave() {
     alert("請輸入角色名稱");
     return;
   }
+  const affinityProblem = tidyAffinityConfigForSave();
+  if (affinityProblem) {
+    alert(affinityProblem);
+    return;
+  }
   isSaving.value = true;
   try {
     await saveAll();
   } finally {
     isSaving.value = false;
   }
+}
+
+/**
+ * 存好感度前整理：沒名稱的指標／階段讀回來會驗證失敗，清空的數字欄位會存成空字串。
+ * 模組開著就請使用者補上名稱；關著時編輯區看不到，直接把空的拿掉。
+ */
+function tidyAffinityConfigForSave(): string | null {
+  const config = affinityConfig.value;
+  if (!config.enabled) {
+    config.metrics = config.metrics.filter((m) => m.name?.trim());
+  }
+  for (const metric of config.metrics) {
+    if (!metric.name?.trim()) return "好感度數值有指標還沒填名稱";
+    if (!config.enabled) {
+      metric.stages = metric.stages.filter((s) => s.name?.trim());
+    }
+    if (metric.stages.some((s) => !s.name?.trim())) {
+      return `好感度指標「${metric.name}」有階段還沒填名稱`;
+    }
+    if (!Number.isFinite(metric.min)) metric.min = 0;
+    if (!Number.isFinite(metric.max)) metric.max = 100;
+    if (metric.type === "number" && !Number.isFinite(metric.initial)) {
+      metric.initial = metric.min;
+    }
+    for (const stage of metric.stages) {
+      if (!Number.isFinite(stage.minValue)) stage.minValue = 0;
+    }
+  }
+  return null;
 }
 
 async function saveAll() {

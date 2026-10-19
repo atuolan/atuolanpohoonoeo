@@ -267,6 +267,40 @@ export function safeParseAffinityState(
   return ChatAffinityStateSchema.parse(fallback);
 }
 
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+
+/**
+ * 逐筆檢查指標：一個沒填名稱的指標或清空的數字欄位，
+ * 不該讓整份設定讀不出來（以前整份退回空設定，再按儲存就把指標全蓋掉）
+ */
+function keepValidMetrics(raw: unknown[]): AffinityMetricConfig[] {
+  return raw.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const metric = { ...(item as Record<string, unknown>) };
+    // 數字欄位被清空會存成 ""，交給預設值
+    for (const key of ["min", "max"]) {
+      if (!isFiniteNumber(metric[key])) delete metric[key];
+    }
+    if (Array.isArray(metric.stages)) {
+      metric.stages = metric.stages
+        .map((stage) =>
+          stage && typeof stage === "object"
+            ? {
+                ...stage,
+                minValue: isFiniteNumber((stage as { minValue?: unknown }).minValue)
+                  ? (stage as { minValue: number }).minValue
+                  : 0,
+              }
+            : stage,
+        )
+        .filter((stage) => AffinityStageSchema.safeParse(stage).success);
+    }
+    const parsed = AffinityMetricConfigSchema.safeParse(metric);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
 /** 安全解析角色好感度配置 */
 export function safeParseAffinityConfig(
   raw: unknown,
@@ -291,7 +325,8 @@ export function safeParseAffinityConfig(
   if (raw && typeof raw === "object") {
     const obj = raw as Record<string, unknown>;
     if (typeof obj.enabled === "boolean") fallback.enabled = obj.enabled;
-    if (Array.isArray(obj.metrics)) fallback.metrics = obj.metrics;
+    if (typeof obj.statKey === "string") fallback.statKey = obj.statKey;
+    if (Array.isArray(obj.metrics)) fallback.metrics = keepValidMetrics(obj.metrics);
     if (typeof obj.mvuEnabled === "boolean") fallback.mvuEnabled = obj.mvuEnabled;
     if (obj.mvuInitialData && typeof obj.mvuInitialData === "object")
       fallback.mvuInitialData = obj.mvuInitialData;
@@ -300,7 +335,9 @@ export function safeParseAffinityConfig(
     if (typeof obj.mvuUpdateInstruction === "string")
       fallback.mvuUpdateInstruction = obj.mvuUpdateInstruction;
     if (Array.isArray(obj.postMutationRules))
-      fallback.postMutationRules = obj.postMutationRules;
+      fallback.postMutationRules = obj.postMutationRules.filter(
+        (rule) => AffinityPostMutationRuleSchema.safeParse(rule).success,
+      );
     if (typeof obj.promptTemplate === "string")
       fallback.promptTemplate = obj.promptTemplate;
     if (typeof obj.updateInstruction === "string")
