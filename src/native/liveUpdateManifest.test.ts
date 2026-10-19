@@ -125,7 +125,7 @@ describe("toDownloadEntries", () => {
       {
         file_name: "shortcuts/203 Phone 日曆.shortcut",
         file_hash: "aa",
-        download_url: "https://example.com/shortcuts/203%20Phone%20%E6%97%A5%E6%9B%86.shortcut",
+        download_url: "https://example.com/shortcuts/203%20Phone%20%E6%97%A5%E6%9B%86.shortcut?v=v",
       },
     ]);
   });
@@ -140,7 +140,7 @@ describe("toDownloadEntries", () => {
       {
         file_name: "index.html",
         file_hash: "aa",
-        download_url: "https://example.com/live-update/raw/index.html.txt",
+        download_url: "https://example.com/live-update/raw/index.html.txt?v=v",
       },
     ]);
   });

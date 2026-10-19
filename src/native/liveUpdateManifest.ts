@@ -115,15 +115,20 @@ export function decideLiveUpdate(options: {
   return "update";
 }
 
-/** 轉成更新套件要的格式；路徑每一段都要編碼（有中文、空白的檔名） */
+/**
+ * 轉成更新套件要的格式；路徑每一段都要編碼（有中文、空白的檔名）。
+ * 網址帶 ?v=版本：香港主機是 Cloudflare Pages 前面的快取代理，檔名不變的檔案（version.json、HTML 副本）
+ * 會拿到舊內容；每一版換一組網址就不會讀到上一版的快取。
+ */
 export function toDownloadEntries(
   manifest: LiveUpdateManifest,
   origin: string,
 ): { file_name: string; file_hash: string; download_url: string }[] {
   const base = origin.replace(/\/+$/, "");
+  const query = `?v=${encodeURIComponent(manifest.version)}`;
   return manifest.files.map((f) => ({
     file_name: f.file_name,
     file_hash: f.file_hash,
-    download_url: `${base}/${(f.download_path ?? f.file_name).split("/").map(encodeURIComponent).join("/")}`,
+    download_url: `${base}/${(f.download_path ?? f.file_name).split("/").map(encodeURIComponent).join("/")}${query}`,
   }));
 }
