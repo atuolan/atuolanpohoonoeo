@@ -90,7 +90,7 @@ describe("線上模式預設提示詞分區", () => {
       "當前時間資訊",
       "<online_mode_features>",
       "<language_mode>",
-      "【基拉祈·分析】",
+      "<thinking>",
     ];
     const positions = order.map((marker) => text.indexOf(marker));
     expect(positions.every((p) => p >= 0), JSON.stringify(positions)).toBe(true);
@@ -99,7 +99,7 @@ describe("線上模式預設提示詞分區", () => {
     expect(text.match(/.{0,20}(\{\{|\}\}).{0,20}/g)).toBeNull();
     const last = messages[messages.length - 1];
     expect(last.role).not.toBe("assistant");
-    expect(last.content.trimEnd().endsWith("不需要就不放）")).toBe(true);
+    expect(last.content.trimEnd().endsWith("</Wooden_box>")).toBe(true);
   });
 
   it("功能標籤的格式各只寫在一處：來電預約只在來電決策，勿擾時整份都不出現", async () => {
@@ -120,11 +120,11 @@ describe("線上模式預設提示詞分區", () => {
 
   it("思考框架讀出字數與語言；關掉模塊後不留上一輪的值", async () => {
     let text = (await build()).map((m) => m.content).join("\n");
-    expect(text).toContain("這輪發幾條訊息？簡單回應 1-2 條");
-    expect(text).toContain("這輪用什麼語言輸出？小鯤 的母語（");
+    expect(text).toContain("則數／長度：簡單回應 1-2 條");
+    expect(text).toContain("語言：角色對白一律使用角色母語");
 
     text = (await build([WORD_COUNT_ID])).map((m) => m.content).join("\n");
-    expect(text).toContain("這輪發幾條訊息？\n");
+    expect(text).toContain("則數／長度：｜");
     expect(text).not.toContain("簡單回應 1-2 條");
   });
 
