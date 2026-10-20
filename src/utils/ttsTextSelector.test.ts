@@ -82,6 +82,39 @@ describe("prepareTTSContent", () => {
       prepareTTSContent("你好(laughs) Hello [emotion=calm]", "chinese"),
     ).toBe("你好(laughs) [emotion=calm]");
   });
+
+  describe("原文＋翻譯分行時，被拿掉那行的情緒標記交給同一組的另一行", () => {
+    const tagOnChinese = "How are you?<br>你最近好嗎？[emotion=happy]";
+    const tagOnForeign = "How are you?[emotion=happy]<br>你最近好嗎？";
+    const interleaved =
+      "Hi there.[emotion=calm]<br>你好。<br>I missed you.[emotion=sad]<br>我想你了。";
+
+    it.each([
+      [tagOnChinese, "auto", "How are you?[emotion=happy]"],
+      [tagOnChinese, "foreign", "How are you?[emotion=happy]"],
+      [tagOnForeign, "chinese", "你最近好嗎？[emotion=happy]"],
+      [interleaved, "chinese", "你好。[emotion=calm]\n我想你了。[emotion=sad]"],
+      [interleaved, "foreign", "Hi there.[emotion=calm]\nI missed you.[emotion=sad]"],
+    ] as const)("%s（%s）", (text, mode, expected) => {
+      expect(prepareTTSContent(text, mode)).toBe(expected);
+    });
+
+    it("翻譯在前、原文在後也對得上", () => {
+      expect(prepareTTSContent("你好。[emotion=calm]<br>Hi there.<br>我想你了。[emotion=sad]<br>I missed you.", "foreign"))
+        .toBe("Hi there.[emotion=calm]\nI missed you.[emotion=sad]");
+    });
+
+    it("留下的那行自己有標記時不覆蓋", () => {
+      expect(prepareTTSContent("How are you?[emotion=calm]<br>你最近好嗎？[emotion=happy]", "foreign"))
+        .toBe("How are you?[emotion=calm]");
+    });
+
+    it("全部朗讀時沒標記的翻譯跟著原文的情緒，每行各自一段", () => {
+      expect(prepareTTSContent(interleaved, "all")).toBe(
+        "Hi there.[emotion=calm]\n你好。[emotion=calm]\nI missed you.[emotion=sad]\n我想你了。[emotion=sad]",
+      );
+    });
+  });
 });
 
 describe("splitEmbeddedTranslation", () => {

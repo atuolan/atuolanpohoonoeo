@@ -256,6 +256,21 @@ describe("useChatTTS manual regeneration", () => {
       ]);
   });
 
+  it("雙語訊息的情緒標記在翻譯那行：自動合成和重新生成都念原文、帶情緒", async () => {
+    vi.mocked(synthesizeSpeech).mockResolvedValue({ success: false, error: "test" });
+    const content = "How are you?<br>你最近好嗎？[emotion=happy]";
+    const message: typeof aiMessage & { ttsRawContent?: string } = { ...aiMessage, content };
+    const context = createContext([message]);
+    const { processMessageTTS, regenerateMessageTTS } = useChatTTS(context);
+
+    await processMessageTTS(message.id, content);
+    message.ttsRawContent = undefined;
+    await regenerateMessageTTS(message.id, "auto");
+
+    expect(vi.mocked(synthesizeSpeech).mock.calls.map(([text, , opts]) => [text, opts?.emotion]))
+      .toEqual([["How are you?", "happy"], ["How are you?", "happy"]]);
+  });
+
   it("聊天自己指定音色時不套用全域音色混合", async () => {
     vi.mocked(synthesizeSpeech).mockResolvedValue({ success: false, error: "test" });
     const context = createContext();

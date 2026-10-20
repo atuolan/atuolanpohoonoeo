@@ -41,19 +41,62 @@ function splitLines(text: string): string[] {
     .filter(Boolean);
 }
 
-function selectPairedLanguageLines(lines: string[], language: "foreign" | "chinese"): string[] {
-  const foreignLines = lines.filter((line) => {
-    const content = cleanTTSTags(line);
-    return KANA_RE.test(content) || (hasForeignLetters(content) && !hasChinese(content));
-  });
-  const chineseLines = lines.filter((line) => {
-    const content = cleanTTSTags(line);
-    return hasChinese(content) && !hasForeignLetters(content);
-  });
-  if (foreignLines.length > 0 && chineseLines.length > 0) {
-    return language === "foreign" ? foreignLines : chineseLines;
+type LineLanguage = "foreign" | "chinese" | null;
+
+const EMOTION_TAG_RE = /\[emotion=[^\]]*\]/gi;
+
+function lastEmotionTag(line: string): string | undefined {
+  return line.match(EMOTION_TAG_RE)?.pop();
+}
+
+function lineLanguage(line: string): LineLanguage {
+  const content = cleanTTSTags(line);
+  if (KANA_RE.test(content) || (hasForeignLetters(content) && !hasChinese(content))) return "foreign";
+  if (hasChinese(content) && !hasForeignLetters(content)) return "chinese";
+  return null;
+}
+
+/**
+ * 「原文＋翻譯」一組兩行（順序看第一行是哪種語言），找第 index 行同一組的另一行。
+ * 組裡第一行往後找、第二行往前找，跳過分不出語言的行。
+ */
+function findPairPartner(kinds: LineLanguage[], index: number): number {
+  const leading = kinds.find(Boolean);
+  const step = kinds[index] === leading ? 1 : -1;
+  for (let j = index + step; j >= 0 && j < kinds.length; j += step) {
+    if (kinds[j] && kinds[j] !== kinds[index]) return j;
   }
-  return [];
+  return -1;
+}
+
+function selectPairedLanguageLines(lines: string[], language: "foreign" | "chinese"): string[] {
+  const kinds = lines.map(lineLanguage);
+  if (!kinds.includes("foreign") || !kinds.includes("chinese")) return [];
+
+  const selected = lines.map((line, i) => (kinds[i] === language ? line : null));
+  // 被拿掉那行的 [emotion=...] 交給同一組留下的那行，不然整句沒有情緒標記，
+  // 第一次合成會沒聲音、重新生成會變成沒有情緒的整段朗讀
+  lines.forEach((line, i) => {
+    if (kinds[i] === language || !kinds[i]) return;
+    const tag = lastEmotionTag(line);
+    const partner = findPairPartner(kinds, i);
+    if (tag && partner !== -1 && selected[partner] !== null && !lastEmotionTag(selected[partner]!)) {
+      selected[partner] += tag;
+    }
+  });
+  return selected.filter((line): line is string => line !== null);
+}
+
+/** 全部朗讀時，沒標記的那行跟著同一組另一行的情緒，原文和翻譯才會各自成段、不會漏念 */
+function shareEmotionTagsWithinPairs(lines: string[]): string[] {
+  const kinds = lines.map(lineLanguage);
+  if (!kinds.includes("foreign") || !kinds.includes("chinese")) return lines;
+  return lines.map((line, i) => {
+    if (!kinds[i] || lastEmotionTag(line)) return line;
+    const partner = findPairPartner(kinds, i);
+    const tag = partner === -1 ? undefined : lastEmotionTag(lines[partner]);
+    return tag ? line + tag : line;
+  });
 }
 
 function removeJapaneseTranslation(text: string): string {
@@ -144,9 +187,13 @@ export function splitEmbeddedTranslation(
 
 export function prepareTTSContent(text: string, mode: TTSLanguageMode = "auto"): string {
   const cleaned = stripHtmlForTTS(text);
-  if (!cleaned || mode === "all") return cleaned;
+  if (!cleaned) return cleaned;
 
   const lines = splitLines(cleaned);
+  if (mode === "all") {
+    const shared = shareEmotionTagsWithinPairs(lines);
+    return shared.every((line, i) => line === lines[i]) ? cleaned : shared.join("\n");
+  }
   const paired = selectPairedLanguageLines(lines, mode === "chinese" ? "chinese" : "foreign");
   if (paired.length > 0) {
     return (mode === "foreign" ? paired.map(removeJapaneseTranslation) : paired).join("\n").trim();
