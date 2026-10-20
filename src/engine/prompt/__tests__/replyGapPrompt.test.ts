@@ -52,7 +52,16 @@ describe("時間資訊帶上距離角色上次回覆多久", () => {
     const text = await timeInfo({
       messages: [msg(false, 3, "嗯"), msg(true, 1, "然後呢")],
     });
-    expect(text).toContain("才過了 3 分鐘，接著剛才的話題");
+    expect(text).toContain("才過了 3 分鐘，還是同一段對話");
+    expect(text).toContain("不用交代這段時間做了什麼");
+    expect(text).not.toContain("照常理該做完了");
+  });
+
+  it("不到一小時也不提醒交代這段時間做了什麼", async () => {
+    const text = await timeInfo({
+      messages: [msg(false, 50, "我去煮麵"), msg(true, 1, "好了沒")],
+    });
+    expect(text).toContain("才過了 50 分鐘");
     expect(text).not.toContain("照常理該做完了");
   });
 

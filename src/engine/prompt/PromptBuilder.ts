@@ -2649,7 +2649,7 @@ ${PHONE_CALL_BILINGUAL_REMINDER}`
     `<time-advance minutes="經過的分鐘數" reason="原因"/>（也可用 hours="小時數"）`;
 
   /** 距離上次回覆超過這個時間，才提醒角色這段時間生活照常在走 */
-  private static readonly REPLY_GAP_NUDGE_MS = 10 * 60 * 1000;
+  private static readonly REPLY_GAP_NUDGE_MS = 60 * 60 * 1000;
 
   /**
    * 線上聊天：角色上一次回覆到現在過了多久。
@@ -2680,7 +2680,7 @@ ${PHONE_CALL_BILINGUAL_REMINDER}`
     const gap = formatGap(gapMs);
 
     if (gapMs < PromptBuilder.REPLY_GAP_NUDGE_MS) {
-      return `[距離上次回覆] {{char}} 上一次回覆在 ${lastAtText}，才過了 ${gap}，接著剛才的話題和正在做的事。`;
+      return `[距離上次回覆] {{char}} 上一次回覆在 ${lastAtText}，才過了 ${gap}，還是同一段對話，直接接著剛才的話題回；不用交代這段時間做了什麼、剛剛幾分鐘前在幹嘛。`;
     }
     return [
       "[距離上次回覆]",
