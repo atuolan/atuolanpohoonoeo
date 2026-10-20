@@ -33,12 +33,12 @@ describe("char語言條目更新", () => {
     setActivePinia(createPinia());
   });
 
-  it("新版要求整則用母語、逐句翻譯、要求換語言後一直照用", () => {
+  it("新版依母語分兩種格式，非中文母語每則都用母語＋翻譯", () => {
     const config = createDefaultPromptManagerConfig();
     for (const content of [find(config.prompts, ONLINE_ID).content, find(config.groupChatPrompts, GROUP_ID).content]) {
-      expect(content).toContain("不是用中文夾幾個外語詞");
-      expect(content).toContain("直到 {{user}} 再要求換");
-      expect(content).toContain("翻譯一定獨立一行");
+      expect(content).toContain("▍母語是中文 → 直接用中文");
+      expect(content).toContain("每一則 <msg> 都完整使用母語");
+      expect(content).toContain("禁止出現只有中文的 <msg>");
     }
   });
 
