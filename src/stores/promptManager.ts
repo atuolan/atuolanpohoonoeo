@@ -21,6 +21,7 @@ import {
   DEFAULT_IMPORTANT_EVENTS_PROMPT_ORDER,
   DEFAULT_PLURK_COMMENT_PROMPT_ORDER,
   DEFAULT_PLURK_POST_PROMPT_ORDER,
+  DEFAULT_PROMPT_DEFINITIONS,
   DEFAULT_PROMPT_ORDER,
   DEFAULT_SUMMARY_PROMPT_ORDER,
   DIARY_PROMPT_DEFINITIONS,
@@ -142,6 +143,17 @@ const PLURK_TRANSLATION_HINT_FIX: [string, string] = [
 ];
 
 /**
+ * 上一版的「char語言」預設內容：只說「偶爾穿插母語詞彙」，模型大多整則講中文、
+ * 使用者要求換語言也撐不過一則。沒改過的換成新版（整則用母語、逐句翻譯、要求換語言後一直照用）
+ */
+export const LEGACY_CHAR_LANGUAGE_CONTENT = "{{setvar::語言::依 {{char}} 的國籍與背景選擇語言，外語後面用<br>附中文翻譯}}{{trim}}<language_mode>\n角色應根據自身的國籍、背景與設定，自然地選擇對應的語言進行回應。\n若角色是日本人，使用日文；若是法國人，使用法文；以此類推。\n偶爾可穿插母語的感嘆詞或情緒詞彙，增添角色真實感。\n使用非中文詞彙時，須在後方附上中文翻譯，格式如下：\n 外語詞彙<br>中文翻譯\n（例如：Merde！<br>該死！、やばい<br>糟了）\n除非用戶設定或劇情需求另有指定，否則語言應與角色背景保持一致。\n</language_mode>\n";
+export const LEGACY_GROUP_CHAR_LANGUAGE_CONTENT = "{{setvar::語言::依每個角色的國籍與背景選擇語言，外語後面用<br>附中文翻譯}}{{trim}}<language_mode>\n每個角色應根據自身的國籍、背景與設定，自然地選擇對應的語言進行回應。\n若角色是日本人，使用日文；若是法國人，使用法文；以此類推。\n偶爾可穿插母語的感嘆詞或情緒詞彙，增添角色真實感。\n使用非中文詞彙時，須在後方附上中文翻譯，格式如下：\n 外語詞彙<br>中文翻譯\n（例如：Merde！<br>該死！、やばい<br>糟了）\n除非用戶設定或劇情需求另有指定，否則語言應與角色背景保持一致。\n</language_mode>\n";
+
+function defaultContent(definitions: PromptDefinition[], identifier: string): string {
+  return definitions.find((p) => p.identifier === identifier)?.content ?? "";
+}
+
+/**
  * 修正已存儲條目中過時的預設內容：系統必要條目（用戶無法自行修改）的錯誤標籤，
  * 以及噗浪格式改版（只替換舊預設原文，用戶改過的部分不受影響）
  */
@@ -169,6 +181,9 @@ const LOCKED_PROMPT_CONTENT_FIXES: Record<string, Array<[string, string]>> = {
     ["你是 {{char}}，正在回覆噗浪上的評論。\n\n回覆要求：\n1. 完全以 {{char}} 的身份和語氣回覆", "評論風格要求：\n1. 每個角色都用自己的身份和語氣留言，像真的在滑噗浪"],
     ["6. 如果使用非中文，請在後面用括號附上中文翻譯", "6. 如果使用非中文，在後面附上中文翻譯，格式是「外語<br>中文翻譯」"],
   ],
+  // 只有內容跟舊預設一字不差才會整段換掉，改過的保留
+  custom_1780660237892: [[LEGACY_CHAR_LANGUAGE_CONTENT, defaultContent(DEFAULT_PROMPT_DEFINITIONS, "custom_1780660237892")]],
+  gc_custom_1792300000851: [[LEGACY_GROUP_CHAR_LANGUAGE_CONTENT, defaultContent(GROUP_CHAT_PROMPT_DEFINITIONS, "gc_custom_1792300000851")]],
   batchCommentsSystemPrompt: [["5. 如果角色使用外語，只在外語部分後加括號翻譯", "5. 如果角色使用外語，只在外語部分後面附上中文翻譯，格式是「外語<br>中文翻譯」"]],
 };
 

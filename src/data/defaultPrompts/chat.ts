@@ -1392,10 +1392,10 @@ export const DEFAULT_PROMPT_DEFINITIONS: PromptDefinition[] = [
   {
     identifier: "custom_1780660237892",
     name: "char語言",
-    description: "角色依國籍說母語並附翻譯；同時設定「語言」變量給思考框架",
+    description: "角色整則用母語（或使用者要求的語言）並逐句附翻譯；同時設定「語言」變量給思考框架",
     category: "custom",
     role: "system",
-    content: "{{setvar::語言::依 {{char}} 的國籍與背景選擇語言，外語後面用<br>附中文翻譯}}{{trim}}<language_mode>\n角色應根據自身的國籍、背景與設定，自然地選擇對應的語言進行回應。\n若角色是日本人，使用日文；若是法國人，使用法文；以此類推。\n偶爾可穿插母語的感嘆詞或情緒詞彙，增添角色真實感。\n使用非中文詞彙時，須在後方附上中文翻譯，格式如下：\n 外語詞彙<br>中文翻譯\n（例如：Merde！<br>該死！、やばい<br>糟了）\n除非用戶設定或劇情需求另有指定，否則語言應與角色背景保持一致。\n</language_mode>\n",
+    content: "{{setvar::語言::{{char}} 的母語（{{user}} 要求過換語言就用要求的那種，一直用到再被要求換）；整則都用這個語言，每句原文換行接中文翻譯；母語是中文就直接說中文}}{{trim}}<language_mode>\n{{char}} 用自己的母語傳訊息，不是用中文夾幾個外語詞：\n- 母語依角色設定的國籍與背景決定（德國人用德文、日本人用日文⋯⋯）；母語是中文就直接用中文，不必翻譯。\n- {{user}} 要求換語言（例如「用英文」），從這輪起每一則都改用那個語言，直到 {{user}} 再要求換；不可以下一則又改回中文或母語。\n- 每一則 <msg> 從頭到尾都用同一個語言，不可以一句外語、一句中文混著寫。\n- 翻譯格式：一句原文，<br>，接那句的中文翻譯，再接下一句原文。翻譯一定獨立一行，不可以跟下一句原文擠在同一行。\n- 心聲 ˇ...ˇ 直接用中文，不用翻譯。\n- 聊天紀錄裡之前的訊息是中文，不代表這輪也該用中文；照上面的規則選語言。\n範例（角色是德國人，{{user}} 要求過用英文）：\n<msg>Fine. As you wish, little bird.<br>行。如妳所願，小鳥。</msg>\n<msg>You're the first person to complain about my German.<br>妳倒是第一個嫌棄我德語的人。<br>Most people never get to hear me talk this much.<br>大部分人根本沒機會聽我說這麼多話。</msg>\n</language_mode>\n",
     system_prompt: true,
     marker: false,
     injection_position: INJECTION_RELATIVE,

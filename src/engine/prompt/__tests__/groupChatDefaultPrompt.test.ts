@@ -131,7 +131,7 @@ describe("群聊預設提示詞（照線上模式分區）", () => {
   it("思考框架讀出字數與語言；關掉模塊後不留上一輪的值", async () => {
     let text = join(await build());
     expect(text).toContain("這輪發幾條訊息？每個要發言的角色 1-3 條");
-    expect(text).toContain("每個角色這輪用什麼語言輸出？依每個角色的國籍與背景選擇語言");
+    expect(text).toContain("每個角色這輪用什麼語言輸出？每個角色的母語（");
 
     text = join(await build([WORD_COUNT_NAME]));
     expect(text).toContain("這輪發幾條訊息？\n");

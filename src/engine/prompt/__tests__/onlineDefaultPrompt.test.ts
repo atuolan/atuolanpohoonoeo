@@ -121,7 +121,7 @@ describe("線上模式預設提示詞分區", () => {
   it("思考框架讀出字數與語言；關掉模塊後不留上一輪的值", async () => {
     let text = (await build()).map((m) => m.content).join("\n");
     expect(text).toContain("這輪發幾條訊息？簡單回應 1-2 條");
-    expect(text).toContain("這輪用什麼語言輸出？依 小鯤 的國籍與背景選擇語言");
+    expect(text).toContain("這輪用什麼語言輸出？小鯤 的母語（");
 
     text = (await build([WORD_COUNT_ID])).map((m) => m.content).join("\n");
     expect(text).toContain("這輪發幾條訊息？\n");
