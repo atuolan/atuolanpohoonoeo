@@ -122,11 +122,12 @@ export const useQzoneStore = defineStore("qzone", () => {
    */
   async function addPost(
     post: Omit<QZonePost, "id" | "timestamp" | "comments" | "likes">,
+    opts: { timestamp?: number } = {},
   ): Promise<QZonePost> {
     const newPost: QZonePost = {
       ...post,
       id: `post-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      timestamp: Date.now(),
+      timestamp: opts.timestamp ?? Date.now(),
       comments: [],
       likes: [],
       likeCount: 0,
@@ -266,14 +267,16 @@ export const useQzoneStore = defineStore("qzone", () => {
   async function addComment(
     postId: string,
     comment: Omit<QZoneComment, "id" | "timestamp">,
+    opts: { timestamp?: number } = {},
   ): Promise<QZoneComment> {
     const post = posts.value.find((p) => p.id === postId);
     if (!post) throw new Error("動態不存在");
 
+    const now = Date.now();
     const newComment: QZoneComment = {
       ...comment,
-      id: `comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      timestamp: Date.now(),
+      id: `comment-${now}-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: opts.timestamp ?? now,
     };
 
     post.comments.push(newComment);
@@ -283,8 +286,8 @@ export const useQzoneStore = defineStore("qzone", () => {
     scheduleSelfHostedAutoSync();
     console.log("[QZone] 新增評論:", newComment.id);
 
-    // 如果是 AI 角色回覆，發送通知
-    if (comment.authorType === "ai") {
+    // AI 回應立刻出現時才通知；排到之後的由 plurkReveal 到點再通知
+    if (comment.authorType === "ai" && newComment.timestamp <= now && !post.muted) {
       try {
         const notificationStore = useNotificationStore();
         notificationStore.notifyQzoneComment(
@@ -324,6 +327,41 @@ export const useQzoneStore = defineStore("qzone", () => {
   // ============================================================
   // 設定操作
   // ============================================================
+
+  /** 單則重生：只換內容與發語詞 */
+  async function updateComment(
+    postId: string,
+    commentId: string,
+    updates: Partial<Pick<QZoneComment, "content" | "qualifier">>,
+  ): Promise<void> {
+    const post = posts.value.find((p) => p.id === postId);
+    const comment = post?.comments.find((c) => c.id === commentId);
+    if (!post || !comment) return;
+    Object.assign(comment, updates);
+    await saveQzonePost(post);
+    scheduleSelfHostedAutoSync();
+  }
+
+  /** 打開回應串時呼叫：之前的回應都算看過（已讀是每台裝置各自的，不觸發同步） */
+  async function markPostSeen(postId: string): Promise<void> {
+    const post = posts.value.find((p) => p.id === postId);
+    if (!post) return;
+    post.seenAt = Date.now();
+    await saveQzonePost(post);
+  }
+
+  /** 全部已讀：只動設定，不必逐則寫入 */
+  async function markAllSeen(): Promise<void> {
+    await updateSettings({ unreadSince: Date.now() });
+  }
+
+  async function setPostMuted(postId: string, muted: boolean): Promise<void> {
+    const post = posts.value.find((p) => p.id === postId);
+    if (!post) return;
+    post.muted = muted;
+    await saveQzonePost(post);
+    scheduleSelfHostedAutoSync();
+  }
 
   /**
    * 更新設定
@@ -383,6 +421,10 @@ export const useQzoneStore = defineStore("qzone", () => {
    */
   async function init(): Promise<void> {
     await Promise.all([loadPosts(), loadSettings()]);
+    // 第一次用新版：之前的回應都當已讀，不要一開就一堆未讀
+    if (!settings.value.unreadSince) {
+      await updateSettings({ unreadSince: Date.now() });
+    }
   }
 
   return {
@@ -408,6 +450,10 @@ export const useQzoneStore = defineStore("qzone", () => {
     toggleBookmark,
     addComment,
     deleteComment,
+    updateComment,
+    markPostSeen,
+    markAllSeen,
+    setPostMuted,
     updateSettings,
     updateAutoInteractionConfig,
     savePosts,
