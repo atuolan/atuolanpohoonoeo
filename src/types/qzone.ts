@@ -32,6 +32,44 @@ export interface PlurkModeration {
   at: number;
 }
 
+/** 系統通知：版主處分、禁言、版務公告、申訴結果 */
+export interface PlurkSystemNotice {
+  id: string;
+  kind: "fold" | "ban" | "announce" | "appeal";
+  title: string;
+  text: string;
+  at: number;
+  postId?: string;
+  commentId?: string;
+  characterId?: string;
+}
+
+export interface PlurkAppeal {
+  reason: string;
+  sentAt: number;
+  /** 到這個時間才出結果 */
+  decideAt: number;
+  status: "pending" | "approved" | "denied";
+  reply?: string;
+}
+
+/** 使用者在廣場被禁言 */
+export interface PlurkBan {
+  reason: string;
+  by: string;
+  at: number;
+  until: number;
+  appeal?: PlurkAppeal;
+}
+
+/** 角色被禁言（版務公告、PEEK 近況） */
+export interface PlurkCharacterBan {
+  characterId: string;
+  reason: string;
+  at: number;
+  until: number;
+}
+
 // 媒體項目（圖片/視頻）
 export interface MediaItem {
   type: "image" | "video";
@@ -120,6 +158,7 @@ export interface QZonePost {
   anonOf?: string; // 角色的偷偷說：真正的角色 ID（畫面不顯示）
   crowdLikes?: number; // 廣場上路人給的喜歡
   moderation?: PlurkModeration; // 被版主摺疊
+  likeEvents?: Array<{ by: string; at: number }>; // 角色按的讚（第 4 期）
 }
 
 // 噗浪空間設定
@@ -136,6 +175,10 @@ export interface QZoneSettings {
   director?: PlurkDirectorConfig; // AI 導演設定
   npcFriends?: PlurkNpc[]; // 加了好友的路人（他們的噗會進河道）
   anonQuota?: { day: string; count: number }; // 今天發了幾則偷偷說
+  systemNotices?: PlurkSystemNotice[]; // 系統通知（新的在前）
+  ban?: PlurkBan; // 廣場禁言
+  characterBans?: PlurkCharacterBan[]; // 角色被禁言
+  impressions?: Record<string, { tags: string[]; at: number }>; // 角色個人頁的印象標籤
 }
 
 // 自動互動配置
