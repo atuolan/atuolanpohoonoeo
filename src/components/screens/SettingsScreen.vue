@@ -110,7 +110,7 @@ function handleBack() {
   emit("back");
 }
 
-defineExpose({ handleBack });
+defineExpose({ handleBack, openPage });
 
 const showSwitchSheet = ref(false);
 const showMcpPanel = ref(false);

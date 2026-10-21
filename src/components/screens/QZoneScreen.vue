@@ -69,6 +69,7 @@
         @open-theater="emit('navigate-theater')"
         @edit-legacy-avatar="legacyOpen = true"
         @open-director="directorOpen = true"
+        @open-guide="guideOpen = true"
       />
     </div>
 
@@ -129,6 +130,17 @@
         @send="sendThreadResponse"
       />
     </div>
+
+    <div v-if="guideOpen" class="plurk-profile-layer">
+      <PlurkGuideView @back="guideOpen = false" />
+    </div>
+
+    <PlurkTourOverlay
+      :active="tourActive"
+      :api-route-text="apiRouteText"
+      @open-guide="guideOpen = true"
+      @open-api-settings="emit('open-api-settings')"
+    />
 
     <div v-if="profileData" class="plurk-profile-layer">
       <ProfileView
@@ -272,6 +284,8 @@ import PlurkTabBar from "@/components/plurk/PlurkTabBar.vue";
 import RiverTab from "@/components/plurk/RiverTab.vue";
 import SquareTab from "@/components/plurk/SquareTab.vue";
 import ProfileView from "@/components/plurk/ProfileView.vue";
+import PlurkGuideView from "@/components/plurk/PlurkGuideView.vue";
+import PlurkTourOverlay from "@/components/plurk/PlurkTourOverlay.vue";
 import ThreadView from "@/components/plurk/ThreadView.vue";
 import CharacterPickerSheet from "@/components/plurk/sheets/CharacterPickerSheet.vue";
 import ImageLightbox from "@/components/plurk/sheets/ImageLightbox.vue";
@@ -375,6 +389,7 @@ const emit = defineEmits<{
   (e: "navigate-theater", theaterPostId?: string): void;
   (e: "open-chat", characterId: string): void;
   (e: "open-peek", characterId: string): void;
+  (e: "open-api-settings"): void;
 }>();
 
 const TABS: Array<{ id: PlurkTabId; label: string }> = [
@@ -765,6 +780,7 @@ const actionList = computed<PlurkAction[]>(() => {
     return [
       { id: "theater", label: "小劇場" },
       { id: "readAll", label: "全部標為已讀" },
+      { id: "guide", label: "使用說明" },
     ];
   }
   const post = findPost(ctx.postId);
@@ -796,6 +812,7 @@ async function runAction(id: string) {
   if (ctx.kind === "river") {
     if (id === "theater") emit("navigate-theater");
     if (id === "readAll") await qzoneStore.markAllSeen();
+    if (id === "guide") guideOpen.value = true;
     return;
   }
   const post = findPost(ctx.postId);
@@ -1560,8 +1577,44 @@ async function replyNow() {
 // ============================================================
 
 /** 有東西關掉就回 true；回 false 時由 App 離開噗浪 */
+// ============================================================
+// 使用說明
+// ============================================================
+
+const guideOpen = ref(false);
+/** 第一次打開的導覽：在河道、沒有開任何彈窗時才出現 */
+const tourActive = computed(
+  () =>
+    tab.value === "river" &&
+    !guideOpen.value &&
+    !threadPostId.value &&
+    !profileCharacterId.value &&
+    !composeOpen.value &&
+    !directorOpen.value &&
+    !actionContext.value &&
+    !legacyOpen.value &&
+    !qualifierOpen.value &&
+    !lightbox.open &&
+    !pickerMode.value &&
+    !personaFor.value &&
+    !repostTarget.value &&
+    !stickerTarget.value,
+);
+
+/** 導覽裡告訴使用者：噗浪發文、噗浪評論現在走哪個 API */
+const apiRouteText = computed(() => {
+  const aux = settingsStore.auxiliary;
+  const route = (task: "plurkPost" | "plurkComment", label: string) => {
+    if (!settingsStore.shouldUseAuxiliary(task)) return `${label}走主 API`;
+    const name = aux.profiles.find((p) => p.id === aux.taskBindings[task])?.name;
+    return name ? `${label}走備用「${name}」` : `${label}走備用 API`;
+  };
+  return `${route("plurkPost", "噗浪發文")}；${route("plurkComment", "噗浪評論")}`;
+});
+
 function handleBack(): boolean {
   const layers: Array<[boolean, () => void]> = [
+    [guideOpen.value, () => (guideOpen.value = false)],
     [lightbox.open, () => (lightbox.open = false)],
     [!!stickerTarget.value, () => (stickerTarget.value = null)],
     [!!pickerMode.value, () => (pickerMode.value = null)],
