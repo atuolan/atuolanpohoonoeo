@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBatchCommentsResponse } from "./BatchCommentsParser";
+import { parseBatchCommentsResponse, parseBatchVerdict } from "./BatchCommentsParser";
 
 describe("parseBatchCommentsResponse 發語詞", () => {
   it("認得的留下並正規化，不認得的丟掉", () => {
@@ -23,5 +23,14 @@ describe("parseBatchCommentsResponse 版主刪除", () => {
       ],
     });
     expect(parseBatchCommentsResponse(raw).map((c) => c.removed)).toEqual(["人身攻擊", undefined]);
+  });
+});
+
+describe("parseBatchVerdict", () => {
+  it("讀頂層 verdict；fold 空字串＝null、天數取整不為負；沒有就 null", () => {
+    expect(parseBatchVerdict(JSON.stringify({ comments: [], verdict: { fold: "引戰", banDays: 1.4 } }))).toEqual({ fold: "引戰", banDays: 1 });
+    expect(parseBatchVerdict(JSON.stringify({ comments: [], verdict: { fold: "", banDays: -2 } }))).toEqual({ fold: null, banDays: 0 });
+    expect(parseBatchVerdict(JSON.stringify({ comments: [] }))).toBeNull();
+    expect(parseBatchVerdict("壞掉")).toBeNull();
   });
 });

@@ -5,6 +5,7 @@
 import type { ThreadQuickAction } from "@/components/plurk/types";
 import { useBatchComments, type RegenerateTone } from "@/composables/useBatchComments";
 import { buildCastContext, getViewerIds, type CastContext } from "@/services/plurkCast";
+import { checkSpamReply, isModeratedReply, isReplyBlocked } from "@/services/plurkModeration";
 import { useCharactersStore } from "@/stores/characters";
 import { useQzoneStore } from "@/stores/qzone";
 import { useUserStore } from "@/stores/user";
@@ -130,10 +131,10 @@ export function usePlurkThread(postId: Ref<string | null>, now: Ref<number>) {
   async function send(input: ThreadSendInput): Promise<void> {
     const p = post.value;
     const content = input.content.trim();
-    if (!p || !content) return;
+    if (!p || !content || isReplyBlocked(p)) return;
     const target = replyingTo.value;
 
-    await qzoneStore.addComment(p.id, {
+    const added = await qzoneStore.addComment(p.id, {
       ...resolveAuthor(input),
       content,
       authorType: "user",
@@ -143,6 +144,8 @@ export function usePlurkThread(postId: Ref<string | null>, now: Ref<number>) {
     });
     replyingTo.value = null;
     await qzoneStore.markPostSeen(p.id);
+    // 廣場：洗版直接處分；沒事的話等一下請版主順便看這則
+    const punished = await checkSpamReply(p.id, added.id);
 
     if (!qzoneStore.directorConfig.repliesAfterUser || p.replyPolicy === "none") return;
     const replyToCharacterId =
@@ -153,6 +156,7 @@ export function usePlurkThread(postId: Ref<string | null>, now: Ref<number>) {
     const result = await generateCommentsForPost(p.id, undefined, {
       includeExistingComments: true,
       replyToCharacterId,
+      judgeCommentId: !punished && isModeratedReply(p) ? added.id : undefined,
     });
     if (!result.success) console.warn("[PlurkThread] 角色接話失敗:", result.error);
   }

@@ -18,6 +18,8 @@ import {
     buildCharactersPrompt,
     buildExistingCommentsPrompt,
     parseBatchCommentsResponse,
+    parseBatchVerdict,
+    type BatchVerdict,
 } from "./BatchCommentsParser";
 import type { DirectorStrictness } from "@/utils/plurkDirectorConfig";
 import { PLURK_QUALIFIERS } from "@/utils/plurkQualifiers";
@@ -48,6 +50,7 @@ export interface BatchCommentsParams {
   onlyCharacterId?: string; // 只生這位角色的一則
   replyContext?: string; // 單則重生：原本那則在回覆誰、回覆什麼
   moderation?: { strictness: DirectorStrictness }; // 廣場噗：版主可能刪留言
+  verdictFor?: { commentId: string; strictness: DirectorStrictness }; // 版主判定使用者剛留的言
 }
 
 /**
@@ -57,6 +60,8 @@ export interface BatchCommentsResult {
   success: boolean;
   comments: GeneratedComment[];
   error?: string;
+  /** 有給 verdictFor 時：版主對使用者那則留言的判定 */
+  verdict?: BatchVerdict | null;
 }
 
 /**
@@ -81,6 +86,7 @@ export async function generateBatchComments(
     onlyCharacterId,
     replyContext,
     moderation,
+    verdictFor,
   } = params;
 
   let streamingWindow: ReturnType<typeof useStreamingWindow> | null = null;
@@ -131,6 +137,7 @@ export async function generateBatchComments(
       onlyCharacterId,
       replyContext,
       moderation,
+      verdictFor,
     });
 
     console.log("📤 批量評論 - 系統提示詞:");
@@ -257,7 +264,7 @@ export async function generateBatchComments(
     });
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    return { success: true, comments };
+    return { success: true, comments, verdict: verdictFor ? parseBatchVerdict(fullContent) : undefined };
   } catch (error) {
     console.error("❌ 批量評論生成失敗:", error);
 
@@ -322,6 +329,7 @@ export function buildBatchCommentsPrompt(params: {
   onlyCharacterId?: string;
   replyContext?: string;
   moderation?: { strictness: DirectorStrictness };
+  verdictFor?: { commentId: string; strictness: DirectorStrictness };
 }): string {
   const {
     characters,
@@ -529,6 +537,18 @@ ${qualifierFormatLine}
 3. 總評論數建議 ${minComments}-${maxComments} 條
 4. 評論要符合各自性格，有個性化`;
 
+  const verdictRule =
+    params.verdictFor?.strictness === "hard"
+      ? "吵架、引戰、人身攻擊、偏激的都要摺疊，嚴重的可以禁言 1–3 天"
+      : "只有很明顯的人身攻擊或引戰才摺疊，禁言最多 1 天；大部分留言都沒問題，fold 用 null";
+  const verdictSection = params.verdictFor
+    ? `
+# 版主判定
+已有評論中 id 為 ${params.verdictFor.commentId} 的那則是使用者剛留的言。廣場版主「${MODERATOR_NAME}」要判斷要不要摺疊它（${verdictRule}）。
+在 JSON 最外層、comments 旁邊另外輸出 "verdict": {"fold": null 或 "原因（2–4 字）", "banDays": 0}。角色的評論照常生成，不受判定影響。
+`
+    : "";
+
   // 正常模式（有角色參與）
   let prompt = `你是一個社交媒體評論區模擬器。你的任務是根據多個角色的人設，為一條貼文生成真實、自然的評論區互動。
 
@@ -575,6 +595,7 @@ ${exampleJson}
 }
 \`\`\`
 
+${verdictSection}
 ${requirements}
 
 只輸出 JSON，不要有其他文字。`;

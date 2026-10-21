@@ -61,3 +61,14 @@ describe("buildBatchCommentsPrompt 版主", () => {
     expect(buildBatchCommentsPrompt({ ...base, moderation: { strictness: "hard" }, passerbyOnly: true })).toContain("removed");
   });
 });
+
+describe("buildBatchCommentsPrompt 版主判定", () => {
+  it("有 verdictFor 才要求頂層 verdict，帶留言 id 與嚴格度", () => {
+    expect(buildBatchCommentsPrompt(base)).not.toContain("verdict");
+    const mid = buildBatchCommentsPrompt({ ...base, verdictFor: { commentId: "comment-9", strictness: "mid" } });
+    expect(mid).toContain("comment-9");
+    expect(mid).toContain('"verdict"');
+    expect(mid).toContain("禁言最多 1 天");
+    expect(buildBatchCommentsPrompt({ ...base, verdictFor: { commentId: "x", strictness: "hard" } })).toContain("1–3 天");
+  });
+});

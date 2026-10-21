@@ -6,6 +6,7 @@
 import { generateBatchComments } from "@/services/AIService";
 import { allowsPasserby, buildCastContext, getViewerIds, pickResponders } from "@/services/plurkCast";
 import { buildChatContextForCharacters, getChatContextOptions } from "@/services/plurkGeneration";
+import { applyReplyVerdict } from "@/services/plurkModeration";
 import { clearGenerating, plurkActivity, setGenerating } from "@/services/plurkReveal";
 import { useAIGenerationStore } from "@/stores/aiGeneration";
 import { useCharactersStore } from "@/stores/characters";
@@ -30,6 +31,7 @@ export interface GenerateCommentsOptions {
   slow?: boolean; // 沒給就照這則噗的「慢慢回」
   ignorePolicy?: boolean; // 使用者手動叫角色時，忽略「不要回應」
   background?: boolean; // 自動模式：不開串流視窗
+  judgeCommentId?: string; // 廣場：順便請版主判定使用者剛留的這則
 }
 
 const TONE_HINTS = {
@@ -144,6 +146,8 @@ export function useBatchComments() {
         chatContext: selectedChatContext,
         replyToCharacterId: options?.replyToCharacterId,
         moderation,
+        verdictFor:
+          options?.judgeCommentId && moderation ? { commentId: options.judgeCommentId, strictness } : undefined,
       });
 
       if (!result.success) {
@@ -159,6 +163,10 @@ export function useBatchComments() {
         options?.slow ?? post.slowReplies ?? false,
         moderation?.strictness,
       );
+
+      if (options?.judgeCommentId && result.verdict) {
+        await applyReplyVerdict(postId, options.judgeCommentId, result.verdict);
+      }
 
       aiGenerationStore.completeGeneration("qzone", "qzone-comments");
       return { success: true, addedCount };
@@ -272,6 +280,8 @@ export function useBatchComments() {
 
     const times = slow ? spreadReplyTimes(comments.length, Date.now()) : [];
     let removals = 0;
+    // 角色回使用者的噗時，一半機會順便按讚（每人一次）
+    const likers = new Set<string>();
 
     // 按順序添加評論（保持回覆關係）
     for (const [index, genComment] of comments.entries()) {
@@ -325,6 +335,11 @@ export function useBatchComments() {
         },
         { timestamp: times[index] },
       );
+
+      if (character && post?.authorType === "user" && !likers.has(character.id) && Math.random() < 0.5) {
+        likers.add(character.id);
+        await qzoneStore.addLikeEvent(postId, character.id, newComment.timestamp);
+      }
 
       // 記錄 ID 映射（用於後續評論的 replyTo）
       if (genComment.id) {

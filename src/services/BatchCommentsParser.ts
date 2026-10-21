@@ -154,3 +154,24 @@ export function buildCharactersPrompt(
     })
     .join("\n\n");
 }
+
+/** 版主對使用者留言的判定 */
+export interface BatchVerdict {
+  fold: string | null;
+  banDays: number;
+}
+
+/** 從批量評論的回應裡讀出頂層 verdict；沒有或格式不對回傳 null */
+export function parseBatchVerdict(rawResponse: string): BatchVerdict | null {
+  const match = rawResponse.replace(/```(?:json)?/gi, "").match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  try {
+    const verdict = JSON.parse(match[0])?.verdict;
+    if (!verdict || typeof verdict !== "object") return null;
+    const fold = typeof verdict.fold === "string" && verdict.fold.trim() ? verdict.fold.trim().slice(0, 8) : null;
+    const banDays = Number(verdict.banDays);
+    return { fold, banDays: Number.isFinite(banDays) ? Math.max(0, Math.round(banDays)) : 0 };
+  } catch {
+    return null;
+  }
+}
