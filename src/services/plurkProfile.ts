@@ -59,6 +59,7 @@ export async function summarizeImpressions(characterId: string): Promise<string[
       description: character.data?.description || "",
       lines: lines.slice(0, 20),
     }),
+    { window: true, label: "整理印象" },
   );
   const tags = parseImpressionTags(raw);
   if (!tags) throw new Error("這次沒有整理出印象");

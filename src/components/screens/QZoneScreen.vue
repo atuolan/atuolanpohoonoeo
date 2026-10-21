@@ -308,6 +308,7 @@ import { buildPeekSummary, generateCharacterPlurk } from "@/services/plurkGenera
 import { getTypingNames, plurkActivity } from "@/services/plurkReveal";
 import { generateSquareBatch } from "@/services/plurkSquareGeneration";
 import { isReplyBlocked, submitAppeal } from "@/services/plurkModeration";
+import { isPlurkAbort } from "@/services/plurkAI";
 import { summarizeImpressions } from "@/services/plurkProfile";
 import { avatarColor } from "@/components/peek-phone/peekPhoneView";
 import {
@@ -714,7 +715,7 @@ const squareCards = computed(() =>
 async function fillSquare() {
   if (!hasPostApi()) return alert("請先配置 API");
   const result = await generateSquareBatch();
-  if (!result.success) alert(result.error || "生成失敗");
+  if (!result.success && !result.aborted) alert(result.error || "生成失敗");
 }
 
 function flashPost(id: string) {
@@ -1434,7 +1435,7 @@ async function summarizeProfile() {
   try {
     await summarizeImpressions(id);
   } catch (error) {
-    alert(error instanceof Error ? error.message : String(error));
+    if (!isPlurkAbort(error)) alert(error instanceof Error ? error.message : String(error));
   } finally {
     impressionsBusy.value = false;
   }
