@@ -18,10 +18,11 @@ export const LIVE_UPDATE_VERSION_FILE = `${LIVE_UPDATE_DIR}/version.json`;
 export const LIVE_UPDATE_RAW_DIR = `${LIVE_UPDATE_DIR}/raw`;
 
 /**
- * 這份網頁需要的 App 外殼版本（android/app/build.gradle 的 versionCode）。
+ * 這份網頁需要的 App 外殼版本（android/app/build.gradle 的 versionCode、
+ * iOS 的 CURRENT_PROJECT_VERSION，在 ios/App/App.xcodeproj/project.pbxproj）。
  *
  * ⚠️ 網頁開始用到新的原生功能（新的 Capacitor 插件、權限）時，
- * 要把 versionCode 和這個數字一起加一，舊 App 才不會更新成用不了的網頁。
+ * 要把 versionCode、CURRENT_PROJECT_VERSION 和這個數字一起加一，舊 App 才不會更新成用不了的網頁。
  */
 export const LIVE_UPDATE_MIN_NATIVE_BUILD = 2;
 

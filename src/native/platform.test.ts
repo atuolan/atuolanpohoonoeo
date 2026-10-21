@@ -3,11 +3,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 let native = false;
+let platform = "web";
 vi.mock("@capacitor/core", () => ({
-  Capacitor: { isNativePlatform: () => native },
+  Capacitor: { isNativePlatform: () => native, getPlatform: () => platform },
 }));
 
-const { NATIVE_PROXY_HOST, PROXY_WORKERS_DEV, aiProxyHost, resolveProxyPath } = await import("./platform");
+const { NATIVE_PROXY_HOST, PROXY_WORKERS_DEV, aiProxyHost, isIosApp, nativeBackupLocation, resolveProxyPath } =
+  await import("./platform");
 
 describe("aiProxyHost", () => {
   it("網頁版照舊走 workers.dev，App 走不會被大陸 DNS 擋的自訂網域", () => {
@@ -20,6 +22,7 @@ describe("aiProxyHost", () => {
 
 afterEach(() => {
   native = false;
+  platform = "web";
 });
 
 describe("resolveProxyPath", () => {
@@ -38,5 +41,26 @@ describe("resolveProxyPath", () => {
   it("完整網址不動", () => {
     native = true;
     expect(resolveProxyPath("https://example.com/a.png")).toBe("https://example.com/a.png");
+  });
+});
+
+describe("isIosApp／nativeBackupLocation", () => {
+  it("Android App 是公用的「文件」資料夾", () => {
+    native = true;
+    platform = "android";
+    expect(isIosApp()).toBe(false);
+    expect(nativeBackupLocation()).toBe("文件／203Phone");
+  });
+
+  it("iOS App 在「檔案」App 的 App 資料夾裡", () => {
+    native = true;
+    platform = "ios";
+    expect(isIosApp()).toBe(true);
+    expect(nativeBackupLocation()).toBe("檔案／我的 iPhone／203 Phone／203Phone");
+  });
+
+  it("Safari 裡的網頁版不算 iOS App", () => {
+    platform = "ios";
+    expect(isIosApp()).toBe(false);
   });
 });

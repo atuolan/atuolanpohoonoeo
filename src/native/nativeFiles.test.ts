@@ -9,6 +9,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const files = new Map<string, Uint8Array>();
 let appendCalls = 0;
 let failExternalStorage = false;
+let platform = "android";
+vi.mock("@capacitor/core", () => ({
+  Capacitor: { isNativePlatform: () => true, getPlatform: () => platform },
+}));
 
 function key(directory: string, path: string) {
   return `${directory}:${path}`;
@@ -54,10 +58,6 @@ vi.mock("@capacitor/filesystem", () => ({
   },
 }));
 
-vi.mock("@capacitor/core", () => ({
-  Capacitor: { isNativePlatform: () => true },
-}));
-
 const native = await import("./nativeFiles");
 
 function randomBytes(size: number): Uint8Array {
@@ -70,6 +70,7 @@ beforeEach(() => {
   files.clear();
   appendCalls = 0;
   failExternalStorage = false;
+  platform = "android";
 });
 
 describe("bytesToBase64", () => {
@@ -138,5 +139,15 @@ describe("saveBlobToDevice", () => {
 
     failExternalStorage = true;
     expect(await native.saveBlobToDevice(blob, "截圖2.png")).toBe("文件／203Phone／匯出／截圖2.png");
+  });
+
+  it("iOS 沒有公用圖片資料夾：圖片直接存匯出資料夾，位置用「檔案」App 的說法", async () => {
+    platform = "ios";
+    const blob = new Blob(["img"], { type: "image/png" });
+    expect(await native.saveBlobToDevice(blob, "截圖.png")).toBe(
+      "檔案／我的 iPhone／203 Phone／203Phone／匯出／截圖.png",
+    );
+    expect(files.has("DOCUMENTS:203Phone/匯出/截圖.png")).toBe(true);
+    expect([...files.keys()].some((k) => k.startsWith("EXTERNAL_STORAGE:"))).toBe(false);
   });
 });

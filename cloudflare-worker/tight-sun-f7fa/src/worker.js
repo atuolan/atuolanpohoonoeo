@@ -25,8 +25,9 @@ const ALLOWED_ORIGINS = [
 	'https://203aguaphone.aguacloud.uk',
 	'http://203aguaphone.aguacloud.uk',
 	'https://aguaphone.aguacloud.uk',
-	// Android App（Capacitor）的內部網址
+	// App（Capacitor）的內部網址：Android、iOS
 	'https://localhost',
+	'capacitor://localhost',
 	'http://localhost:5173',
 	'http://localhost:3002',
 ];

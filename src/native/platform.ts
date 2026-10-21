@@ -1,7 +1,7 @@
 /**
- * App（Capacitor 打包的 APK）與網頁版的差異集中在這裡判斷。
+ * App（Capacitor 打包的 APK／IPA）與網頁版的差異集中在這裡判斷。
  *
- * App 的網頁檔打包在 APK 裡，網址是固定的 https://localhost：
+ * App 的網頁檔打包在 APK 裡，網址是固定的 https://localhost（iOS 是 capacitor://localhost）：
  * 沒有自己的伺服器，相對路徑的代理（/ai-proxy/、/image-proxy）在 App 裡不存在，
  * 要改連線上的代理 Worker。
  */
@@ -10,6 +10,11 @@ import { Capacitor } from "@capacitor/core";
 /** 在 Android／iOS App 裡（不是瀏覽器） */
 export function isNativeApp(): boolean {
   return Capacitor.isNativePlatform();
+}
+
+/** 在 iOS App 裡：備份位置、解除安裝會不會刪檔都跟 Android 不同 */
+export function isIosApp(): boolean {
+  return isNativeApp() && Capacitor.getPlatform() === "ios";
 }
 
 /**
@@ -62,5 +67,10 @@ export const LIVE_UPDATE_ORIGINS = [
   "https://203aguaphone.aguacloud.uk",
 ] as const;
 
-/** App 的備份資料夾，給使用者看的位置（實際路徑在 nativeFiles.ts） */
-export const NATIVE_BACKUP_LOCATION = "文件／203Phone";
+/**
+ * App 的備份資料夾，給使用者看的位置（實際路徑在 nativeFiles.ts）。
+ * iOS 的「文件」是 App 自己的沙盒，出現在「檔案」App 的「我的 iPhone › 203 Phone」底下。
+ */
+export function nativeBackupLocation(): string {
+  return isIosApp() ? "檔案／我的 iPhone／203 Phone／203Phone" : "文件／203Phone";
+}

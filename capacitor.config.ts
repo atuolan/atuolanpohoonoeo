@@ -1,11 +1,12 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 /**
- * Android App（APK）設定。
+ * Android（APK）與 iOS（IPA）App 設定。
  *
  * ⚠️ appId 和 server.androidScheme／hostname 發布第一版後不要再改：
  * - appId 變了就是另一個 App，無法覆蓋安裝舊版
- * - App 內部網址（https://localhost）變了，IndexedDB 裡的舊資料會讀不到
+ * - App 內部網址（Android https://localhost、iOS capacitor://localhost）變了，IndexedDB 裡的舊資料會讀不到
+ *   iOS 不能用 https 當自訂網址，所以兩邊不一樣；iosScheme 維持預設，不要設
  */
 const config: CapacitorConfig = {
   appId: "uk.aguacloud.aguaphone",

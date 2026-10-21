@@ -13,13 +13,13 @@ import { CapacitorHttp } from "@capacitor/core";
 import { CapacitorUpdater } from "@capgo/capacitor-updater";
 import {
   LIVE_UPDATE_MANIFEST,
-  LIVE_UPDATE_VERSION_FILE,
   decideLiveUpdate,
   isLiveUpdateManifest,
   toDownloadEntries,
   type LiveUpdateManifest,
 } from "./liveUpdateManifest";
 import { LIVE_UPDATE_ORIGINS } from "./platform";
+import { readWebVersion } from "./webVersion";
 
 /** 開 App 後等這麼久才檢查，讓開機時的資料載入先跑完 */
 const STARTUP_CHECK_DELAY_MS = 8000;
@@ -74,18 +74,6 @@ async function rememberFailedUpdate(): Promise<void> {
   }
 }
 
-/** 目前這份網頁的版本（APK 裡的或下載來的都有 version.json）；讀不到時為 null */
-async function readLocalVersion(): Promise<string | null> {
-  try {
-    const res = await fetch(`/${LIVE_UPDATE_VERSION_FILE}`, { cache: "no-store" });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { version?: unknown };
-    return typeof data.version === "string" ? data.version : null;
-  } catch {
-    return null;
-  }
-}
-
 /** 依序向各網站拿更新清單；之後的檔案也從同一個網站下載 */
 async function fetchRemoteManifest(): Promise<{ origin: string; manifest: LiveUpdateManifest }> {
   let lastError: unknown = null;
@@ -125,7 +113,7 @@ export async function checkForLiveUpdate(): Promise<void> {
   lastCheckAt = Date.now();
   try {
     const { origin, manifest } = await fetchRemoteManifest();
-    const [localVersion, info] = await Promise.all([readLocalVersion(), App.getInfo()]);
+    const [localVersion, info] = await Promise.all([readWebVersion(), App.getInfo()]);
     const decision = decideLiveUpdate({
       remote: manifest,
       localVersion,
