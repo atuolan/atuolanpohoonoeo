@@ -1,0 +1,94 @@
+// ============================================================
+// 噗浪內文樣式（給 v-html 的 renderPlurkContent 用）
+// 這支是全域樣式，不加 scoped；選擇器一律掛在 .plurk-rich 底下
+// ============================================================
+
+.plurk-rich {
+  .plurk-mention {
+    color: var(--color-primary);
+    font-weight: 600;
+  }
+
+  .plurk-sticker {
+    width: 50px;
+    height: 50px;
+    display: inline-block;
+    vertical-align: middle;
+    margin: 0 4px;
+    object-fit: contain;
+  }
+
+  // 拍立得（<image> 配圖）
+  .plurk-polaroid {
+    position: relative;
+    width: 280px;
+    max-width: 100%;
+    aspect-ratio: 1/1.15;
+    background: #fff;
+    border-radius: 4px;
+    box-shadow:
+      0 2px 8px rgba(0, 0, 0, 0.15),
+      0 4px 16px rgba(0, 0, 0, 0.1);
+    padding: 12px 12px 40px 12px;
+    margin: 12px 0;
+    display: flex;
+    flex-direction: column;
+    transform: rotate(-1deg);
+    transition: transform 0.3s ease;
+
+    &:hover {
+      transform: rotate(0deg) scale(1.02);
+    }
+  }
+
+  // 相片本身：深色底 + 置中描述
+  .plurk-polaroid-photo {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    bottom: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 16px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 14px;
+    line-height: 1.5;
+    z-index: 2;
+    background: #1a1a1a;
+    border-radius: 2px;
+  }
+
+  .plurk-polaroid-caption {
+    display: block;
+  }
+
+  .plurk-polaroid-date {
+    position: absolute;
+    bottom: 12px;
+    right: 16px;
+    font-family: "Caveat", "Comic Sans MS", cursive;
+    font-size: 14px;
+    color: #888;
+    font-style: italic;
+  }
+}
+
+// 夜晚版拍立得
+body.is-night-mode .plurk-rich .plurk-polaroid {
+  background: #2a2a3e;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    0 4px 16px rgba(0, 0, 0, 0.2);
+
+  .plurk-polaroid-photo {
+    background: #0a0a0a;
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  .plurk-polaroid-date {
+    color: #666;
+  }
+}
