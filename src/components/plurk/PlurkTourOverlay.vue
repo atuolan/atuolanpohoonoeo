@@ -18,6 +18,8 @@ const emit = defineEmits<{ openGuide: []; openApiSettings: [] }>();
 
 const STORAGE_KEY = "aguaphone-plurk-tour-done";
 const STEP_KEY = "aguaphone-plurk-tour-step";
+/** 第一次走完就記下來：之後重看導覽時「結束導覽」真的會結束 */
+const SEEN_KEY = "aguaphone-plurk-tour-seen";
 
 const STEPS: Array<{ id: string; selector: string | null; text: string; tryable: boolean }> = [
   {
@@ -66,12 +68,14 @@ const STEPS: Array<{ id: string; selector: string | null; text: string; tryable:
 
 const visible = ref(false);
 
-/** 「結束導覽」不真的結束，只會撒嬌；換一步就重來 */
+/** 第一次的「結束導覽」不真的結束，只會撒嬌；換一步就重來 */
 const PLEAS = ["看一下嘛 (｡•́︿•̀｡)", "再看一下下 (´；ω；`)", "拜託嘛 (つд⊂)", "快看完了啦 (๑•̀ㅂ•́)و"];
 const pleaCount = ref(0);
 const pleaText = computed(() => (pleaCount.value === 0 ? "" : PLEAS[(pleaCount.value - 1) % PLEAS.length]));
+const canSkip = ref(false);
 function plead() {
-  pleaCount.value++;
+  if (canSkip.value) finish();
+  else pleaCount.value++;
 }
 const stepIndex = ref(0);
 const currentStep = computed(() => STEPS[stepIndex.value]);
@@ -134,6 +138,7 @@ function finish() {
   visible.value = false;
   try {
     localStorage.setItem(STORAGE_KEY, "1");
+    localStorage.setItem(SEEN_KEY, "1");
     localStorage.removeItem(STEP_KEY);
   } catch {
     // 存不了就下次再看一次
@@ -170,6 +175,7 @@ function goApiSettings() {
 function start() {
   if (visible.value || readFlag(STORAGE_KEY)) return;
   stepIndex.value = readStep();
+  canSkip.value = readFlag(SEEN_KEY);
   visible.value = true;
   nextTick(scheduleUpdate);
 }
