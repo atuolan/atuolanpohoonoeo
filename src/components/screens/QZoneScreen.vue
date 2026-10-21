@@ -922,7 +922,8 @@ const threadRows = computed<ThreadResponseRow[]>(() => {
 
 const threadSquare = computed(() => {
   const post = thread.post.value;
-  return !!post && isSquarePost(post) && (threadFromSquare.value || !!post.npc || isAnonPost(post));
+  // 偷偷說不分角色、不顯示幾位角色參與，用一般回應串
+  return !!post && isSquarePost(post) && !isAnonPost(post) && (threadFromSquare.value || !!post.npc);
 });
 const threadCharacterCount = computed(
   () => new Set(thread.responses.value.filter(isCharacterAuthor).map((c) => c.authorId)).size,
