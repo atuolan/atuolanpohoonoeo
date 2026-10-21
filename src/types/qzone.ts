@@ -42,6 +42,7 @@ export interface GeneratedComment {
   characterName: string;
   content: string;
   replyTo: string | null; // 回覆的評論 ID，null 表示直接評論貼文
+  qualifier?: string; // 發語詞（可省略）
 }
 
 // 批量評論生成結果

@@ -4,6 +4,7 @@
  */
 
 import type { BatchCommentsResult, GeneratedComment } from "@/types/qzone";
+import { isKnownQualifier, normalizeQualifier } from "@/utils/plurkQualifiers";
 
 /**
  * 解析批量評論 JSON 響應
@@ -59,6 +60,7 @@ export function parseBatchCommentsResponse(
         characterName: comment.characterName,
         content: cleanedContent,
         replyTo: comment.replyTo || null,
+        qualifier: isKnownQualifier(comment.qualifier) ? normalizeQualifier(comment.qualifier) : undefined,
       });
     }
 
