@@ -21,7 +21,14 @@ import { migrateRegexScript, regexFromString } from "@/services/RegexEngine";
 import { CHAT_TOOLS } from "@/services/toolCalling/chatTools";
 import { useSettingsStore } from "@/stores/settings";
 import type { CharacterFitnessConfig } from "@/types/fitness";
-import { computed, onBeforeUnmount, onMounted, ref, toRaw } from "vue";
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  toRaw,
+  watch,
+} from "vue";
 
 // 類型定義
 interface CharacterData {
@@ -126,6 +133,23 @@ const expandedSections = ref({
   meta: false,
   danger: false,
 });
+
+// 編輯分頁
+const activeTab = ref<
+  "basic" | "persona" | "chat" | "world" | "mods" | "tools" | "adv"
+>("basic");
+const editTabs = [
+  { id: "basic", label: "基本" },
+  { id: "persona", label: "人設" },
+  { id: "chat", label: "對話" },
+  { id: "world", label: "世界" },
+  { id: "mods", label: "模組" },
+  { id: "tools", label: "工具" },
+  { id: "adv", label: "進階" },
+] as const;
+
+// 未儲存提示
+const hasUnsaved = ref(false);
 
 // Stores
 const charactersStore = useCharactersStore();
@@ -284,6 +308,31 @@ const pageTitle = computed(() =>
   isCreateMode.value ? "創建角色" : "編輯角色",
 );
 
+// 角色資訊列：已綁定且仍存在的世界書數量
+const heroLorebookChip = computed(() => {
+  const bound = (formData.value.lorebookIds ?? []).filter((id) =>
+    availableLorebooks.value.some((lb) => lb.id === id),
+  ).length;
+  return bound === 0 ? "未綁世界書" : `世界書 ${bound} 本`;
+});
+
+// 角色資訊列：工具狀態
+const heroToolsChip = computed(() =>
+  toolPermissions.value.enabled ? "工具已開啟" : "工具已關閉",
+);
+
+// 角色資訊列：副標（暱稱、創建者）
+const heroSubline = computed(() => {
+  const nickname = formData.value.nickname?.trim();
+  const name = formData.value.data.name?.trim();
+  const parts = [
+    nickname && nickname !== name ? `暱稱：${nickname}` : "暱稱同本名",
+  ];
+  const creator = formData.value.data.creator?.trim();
+  if (creator) parts.push(`創建者 ${creator}`);
+  return parts.join(" · ");
+});
+
 // 切換區域展開
 function toggleSection(section: keyof typeof expandedSections.value) {
   expandedSections.value[section] = !expandedSections.value[section];
@@ -424,7 +473,20 @@ function editorSnapshot(): string {
 
 function markSaved() {
   savedSnapshot = editorSnapshot();
+  hasUnsaved.value = false;
 }
+
+let dirtyTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+  [formData, worldSettings, fitnessConfig, affinityConfig],
+  () => {
+    if (dirtyTimer) clearTimeout(dirtyTimer);
+    dirtyTimer = setTimeout(() => {
+      hasUnsaved.value = isDirty();
+    }, 400);
+  },
+  { deep: true },
+);
 
 function isDirty(): boolean {
   return editorLoaded && !skipAutoSave && editorSnapshot() !== savedSnapshot;
@@ -1315,93 +1377,123 @@ async function submitPasteRegex() {
 
 <template>
   <div class="screen-container character-edit-screen">
-    <!-- 標題欄 -->
-    <header class="soft-header gradient">
-      <button class="header-back" @click="handleBack">
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path
-            d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"
-          />
+    <!-- 頂欄 -->
+    <header class="edit-header">
+      <button
+        type="button"
+        class="edit-back"
+        aria-label="返回"
+        @click="handleBack"
+      >
+        <svg
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M15 5l-7 7 7 7" />
         </svg>
       </button>
 
-      <h1 class="header-title">{{ pageTitle }}</h1>
+      <span class="edit-header-title">{{ pageTitle }}</span>
 
-      <div class="header-actions">
-        <!-- 刪除按鈕（僅編輯模式） -->
-        <button
-          v-if="!isCreateMode"
-          class="header-btn danger"
-          title="刪除角色"
-          @click="handleDelete"
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path
-              d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
-            />
-          </svg>
-        </button>
+      <span v-if="hasUnsaved" class="edit-unsaved">
+        <span class="edit-unsaved-dot"></span>未儲存
+      </span>
 
-        <!-- 儲存按鈕 -->
-        <button
-          class="header-btn primary"
-          title="儲存"
-          :disabled="isSaving"
-          @click="handleSave"
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-          </svg>
-        </button>
-      </div>
+      <button
+        type="button"
+        class="edit-save"
+        :disabled="isSaving"
+        @click="handleSave"
+      >
+        {{ isSaving ? "儲存中…" : "儲存" }}
+      </button>
     </header>
 
-    <!-- 編輯內容 -->
-    <main class="soft-content edit-content">
-      <!-- 頭像區域 -->
-      <section class="avatar-section">
-        <div class="avatar-wrapper" @click="triggerAvatarUpload">
+    <!-- 角色資訊 -->
+    <section class="edit-hero">
+      <div class="hero-avatar-wrap">
+        <button
+          type="button"
+          class="hero-avatar"
+          aria-label="更換頭像"
+          @click="triggerAvatarUpload"
+        >
           <img
             v-if="formData.avatar"
             :src="formData.avatar"
             alt="角色頭像"
-            class="avatar-preview"
+            class="hero-avatar-img"
           />
-          <div v-else class="avatar-placeholder">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-              />
-            </svg>
-          </div>
-          <div class="avatar-edit-badge">📷</div>
-        </div>
-        <input
-          ref="avatarInput"
-          type="file"
-          accept="image/*"
-          class="hidden-input"
-          @change="handleAvatarUpload"
-        />
-        <p class="avatar-hint">點擊更換頭像</p>
-      </section>
-
-      <!-- ===== 基本信息 ===== -->
-      <section class="edit-section">
-        <div class="section-header" @click="toggleSection('basic')">
-          <h3 class="section-title">基本信息</h3>
+          <span v-else class="hero-avatar-initial">{{
+            (formData.data.name || "?").charAt(0)
+          }}</span>
+        </button>
+        <button
+          type="button"
+          class="hero-avatar-camera"
+          aria-label="更換頭像"
+          @click.stop="triggerAvatarUpload"
+        >
           <svg
-            class="section-chevron"
-            :class="{ open: expandedSections.basic }"
+            width="15"
+            height="15"
             viewBox="0 0 24 24"
-            fill="currentColor"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linejoin="round"
+            aria-hidden="true"
           >
-            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+            <path d="M4 8h4l2-3h4l2 3h4v11H4z" />
+            <circle cx="12" cy="13" r="3.5" />
           </svg>
+        </button>
+      </div>
+      <input
+        ref="avatarInput"
+        type="file"
+        accept="image/*"
+        class="hidden-input"
+        @change="handleAvatarUpload"
+      />
+      <div class="hero-info">
+        <span class="hero-name">{{ formData.data.name || "未命名角色" }}</span>
+        <span class="hero-subline">{{ heroSubline }}</span>
+        <div class="hero-chips">
+          <span class="hero-chip">{{ heroLorebookChip }}</span>
+          <span class="hero-chip">{{ heroToolsChip }}</span>
         </div>
+      </div>
+    </section>
 
-        <Transition name="slide">
-          <div v-if="expandedSections.basic" class="section-content">
+    <!-- 分頁 -->
+    <nav class="edit-tabs" role="tablist" aria-label="編輯分類">
+      <button
+        v-for="t in editTabs"
+        :key="t.id"
+        type="button"
+        role="tab"
+        class="edit-tab"
+        :class="{ active: activeTab === t.id }"
+        :aria-selected="activeTab === t.id"
+        @click="activeTab = t.id"
+      >
+        {{ t.label }}
+      </button>
+    </nav>
+
+    <!-- 編輯內容 -->
+    <main class="soft-content edit-content">
+      <!-- ===== 基本 ===== -->
+      <div v-show="activeTab === 'basic'" class="tab-panel">
+        <section class="tab-card">
             <div class="form-group">
               <label class="form-label"
                 >角色名稱 <span class="required">*</span></label
@@ -1469,26 +1561,12 @@ async function submitPasteRegex() {
                 </div>
               </div>
             </div>
-          </div>
-        </Transition>
-      </section>
+        </section>
+      </div>
 
-      <!-- ===== 角色設定 ===== -->
-      <section class="edit-section">
-        <div class="section-header" @click="toggleSection('character')">
-          <h3 class="section-title">角色設定</h3>
-          <svg
-            class="section-chevron"
-            :class="{ open: expandedSections.character }"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-          </svg>
-        </div>
-
-        <Transition name="slide">
-          <div v-if="expandedSections.character" class="section-content">
+      <!-- ===== 人設 ===== -->
+      <div v-show="activeTab === 'persona'" class="tab-panel">
+        <section class="tab-card">
             <div class="form-group">
               <label class="form-label">角色描述</label>
               <ExpandableTextarea
@@ -1539,26 +1617,12 @@ async function submitPasteRegex() {
               />
               <p class="form-hint">生圖時會自動加在提示詞最前方，留空則跳過</p>
             </div>
-          </div>
-        </Transition>
-      </section>
+        </section>
+      </div>
 
-      <!-- ===== 對話設定 ===== -->
-      <section class="edit-section">
-        <div class="section-header" @click="toggleSection('dialogue')">
-          <h3 class="section-title">對話設定</h3>
-          <svg
-            class="section-chevron"
-            :class="{ open: expandedSections.dialogue }"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-          </svg>
-        </div>
-
-        <Transition name="slide">
-          <div v-if="expandedSections.dialogue" class="section-content">
+      <!-- ===== 對話 ===== -->
+      <div v-show="activeTab === 'chat'" class="tab-panel">
+        <section class="tab-card">
             <div class="form-group">
               <label class="form-label">初始消息</label>
               <ExpandableTextarea
@@ -1582,82 +1646,35 @@ async function submitPasteRegex() {
                 &#123;&#123;char&#125;&#125; 作為佔位符
               </p>
             </div>
-          </div>
-        </Transition>
-      </section>
+        </section>
+      </div>
 
-      <!-- ===== 高級設定 ===== -->
-      <section class="edit-section">
-        <div class="section-header" @click="toggleSection('advanced')">
-          <h3 class="section-title">高級設定</h3>
-          <svg
-            class="section-chevron"
-            :class="{ open: expandedSections.advanced }"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-          </svg>
-        </div>
-
-        <Transition name="slide">
-          <div v-if="expandedSections.advanced" class="section-content">
-            <div class="form-group">
-              <label class="form-label">系統提示</label>
-              <ExpandableTextarea
-                v-model="formData.data.system_prompt!"
-                :rows="3"
-                placeholder="給 AI 的系統級指示..."
-                label="系統提示"
-              />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">歷史後指令</label>
-              <ExpandableTextarea
-                v-model="formData.data.post_history_instructions!"
-                :rows="3"
-                placeholder="在對話歷史後添加的指令..."
-                label="歷史後指令"
-              />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">創建者備註</label>
-              <ExpandableTextarea
-                v-model="formData.data.creator_notes!"
-                :rows="3"
-                placeholder="創建者的備註、使用說明..."
-                label="創建者備註"
-              />
-            </div>
-          </div>
-        </Transition>
-      </section>
-
-      <!-- ===== 綁定世界書 ===== -->
-      <section class="edit-section">
-        <div class="section-header" @click="toggleSection('lorebook')">
-          <h3 class="section-title">綁定世界書</h3>
-          <svg
-            class="section-chevron"
-            :class="{ open: expandedSections.lorebook }"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-          </svg>
-        </div>
-
-        <Transition name="slide">
-          <div v-if="expandedSections.lorebook" class="section-content">
+      <!-- ===== 世界 ===== -->
+      <div v-show="activeTab === 'world'" class="tab-panel">
+        <section class="tab-card">
+          <h3 class="tab-card-title">綁定世界書</h3>
+          <p class="tab-card-hint">和這個角色聊天時自動載入</p>
             <div class="lorebook-list">
               <div
                 v-for="lbId in formData.lorebookIds"
                 :key="lbId"
                 class="lorebook-item"
               >
-                <span class="lorebook-icon">📖</span>
+                <span class="lorebook-icon">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z" />
+                    <path d="M9 4v16" />
+                  </svg>
+                </span>
                 <span
                   class="lorebook-name lorebook-link"
                   @click="openLorebook(lbId)"
@@ -1666,8 +1683,23 @@ async function submitPasteRegex() {
                     "未知世界書"
                   }}</span
                 >
-                <button class="lorebook-remove" @click="toggleLorebook(lbId)">
-                  🗑️
+                <button
+                  class="lorebook-remove"
+                  aria-label="解除綁定"
+                  @click="toggleLorebook(lbId)"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
                 </button>
               </div>
               <button
@@ -1699,31 +1731,100 @@ async function submitPasteRegex() {
                 </p>
               </div>
             </Transition>
-          </div>
-        </Transition>
-      </section>
+        </section>
 
-      <!-- ===== 綁定正則腳本 ===== -->
-      <section v-if="!isCreateMode" class="edit-section">
-        <div class="section-header" @click="toggleSection('regexScripts')">
-          <h3 class="section-title">
+        <section class="tab-card">
+          <h3 class="tab-card-title">所在地與天氣</h3>
+          <p class="tab-card-hint">
+            設定角色所在的世界位置，天氣與時區會自動查詢填入。
+          </p>
+            <!-- 城市搜尋 -->
+            <div class="form-group">
+              <label class="form-label">搜尋城市</label>
+              <div class="world-search-row">
+                <input
+                  v-model="worldLocationQuery"
+                  type="text"
+                  class="soft-input"
+                  placeholder="輸入城市名稱..."
+                  @keydown.enter="searchWorldLocation"
+                />
+                <button
+                  class="world-search-btn"
+                  :disabled="worldLocationSearching"
+                  @click="searchWorldLocation"
+                >
+                  {{ worldLocationSearching ? "…" : "搜尋" }}
+                </button>
+              </div>
+              <!-- 搜尋結果 -->
+              <div
+                v-if="worldLocationResults.length > 0"
+                class="world-search-results"
+              >
+                <button
+                  v-for="city in worldLocationResults"
+                  :key="city.id"
+                  class="world-result-item"
+                  @click="selectWorldLocation(city)"
+                >
+                  <span class="world-result-name">{{ city.name }}</span>
+                  <span class="world-result-sub">
+                    {{ [city.region, city.country].filter(Boolean).join("，") }}
+                  </span>
+                </button>
+              </div>
+            </div>
+            <!-- 已選城市顯示 -->
+            <div v-if="worldSettings.location" class="world-selected">
+              <div class="world-selected-info">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  width="14"
+                  height="14"
+                >
+                  <path
+                    d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
+                  />
+                </svg>
+                <span>{{ worldSettings.location }}</span>
+                <span v-if="worldSettings.timezone" class="world-tz-badge">{{
+                  worldSettings.timezone
+                }}</span>
+              </div>
+              <button
+                class="world-clear-btn"
+                @click="
+                  worldSettings.location = '';
+                  worldSettings.timezone = '';
+                  worldSettings.lat = undefined;
+                  worldSettings.lon = undefined;
+                  worldSettings.weatherOverride = '';
+                "
+              >
+                清除
+              </button>
+            </div>
+            <!-- 天氣描述（可選手動覆蓋） -->
+            <div class="form-group" style="margin-top: 12px">
+              <label class="form-label" style="font-size: 12px; opacity: 0.7">
+                天氣描述（選填，留空則自動查詢即時天氣）
+              </label>
+              <input
+                v-model="worldSettings.weatherOverride"
+                type="text"
+                class="soft-input"
+                placeholder="例如：晴天，25°C，微風"
+              />
+            </div>
+        </section>
+
+        <section v-if="!isCreateMode" class="tab-card">
+          <h3 class="tab-card-title">
             正則腳本 ({{ characterRegexScripts.length }})
           </h3>
-          <svg
-            class="section-chevron"
-            :class="{ open: expandedSections.regexScripts }"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-          </svg>
-        </div>
-
-        <Transition name="slide">
-          <div v-if="expandedSections.regexScripts" class="section-content">
-            <p class="form-hint" style="margin-bottom: 12px">
-              角色卡內嵌的正則腳本，僅在與此角色聊天時生效
-            </p>
+          <p class="tab-card-hint">內嵌在角色卡，只在和這個角色聊天時生效</p>
             <div class="regex-list">
               <div
                 v-for="script in characterRegexScripts"
@@ -1748,7 +1849,19 @@ async function submitPasteRegex() {
                     @click.stop="downloadRegexScript(script)"
                     title="下載 JSON"
                   >
-                    ⬇
+                    <svg
+                      width="15"
+                      height="15"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 4v11M7 11l5 5 5-5M5 20h14" />
+                    </svg>
                   </button>
                   <button
                     class="regex-delete"
@@ -1779,14 +1892,14 @@ async function submitPasteRegex() {
               style="margin-top: 4px; border-style: dotted"
               @click="regexFileInput?.click()"
             >
-              📥 導入 JSON 檔案
+              導入 JSON 檔案
             </button>
             <button
               class="add-lorebook-btn"
               style="margin-top: 4px; border-style: dotted"
               @click="openPasteRegex"
             >
-              📋 貼上 JSON 文字
+              貼上 JSON 文字
             </button>
             <input
               ref="regexFileInput"
@@ -1795,9 +1908,8 @@ async function submitPasteRegex() {
               style="display: none"
               @change="onRegexFileImport"
             />
-          </div>
-        </Transition>
-      </section>
+        </section>
+      </div>
 
       <!-- ===== 角色正則腳本編輯彈窗 ===== -->
       <div
@@ -1988,132 +2100,15 @@ async function submitPasteRegex() {
         </div>
       </div>
 
-      <!-- ===== 世界設定 ===== -->
-      <section class="edit-section">
-        <div class="section-header" @click="toggleSection('worldSettings')">
-          <h3 class="section-title">世界設定</h3>
-          <svg
-            class="section-chevron"
-            :class="{ open: expandedSections.worldSettings }"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-          </svg>
-        </div>
-        <Transition name="slide">
-          <div v-if="expandedSections.worldSettings" class="section-content">
-            <p
-              class="section-hint"
-              style="font-size: 12px; opacity: 0.6; margin-bottom: 12px"
-            >
-              設定角色所在的世界位置，天氣與時區會自動查詢填入。
-            </p>
-            <!-- 城市搜尋 -->
-            <div class="form-group">
-              <label class="form-label">搜尋城市</label>
-              <div class="world-search-row">
-                <input
-                  v-model="worldLocationQuery"
-                  type="text"
-                  class="soft-input"
-                  placeholder="輸入城市名稱..."
-                  @keydown.enter="searchWorldLocation"
-                />
-                <button
-                  class="world-search-btn"
-                  :disabled="worldLocationSearching"
-                  @click="searchWorldLocation"
-                >
-                  {{ worldLocationSearching ? "…" : "搜尋" }}
-                </button>
-              </div>
-              <!-- 搜尋結果 -->
-              <div
-                v-if="worldLocationResults.length > 0"
-                class="world-search-results"
-              >
-                <button
-                  v-for="city in worldLocationResults"
-                  :key="city.id"
-                  class="world-result-item"
-                  @click="selectWorldLocation(city)"
-                >
-                  <span class="world-result-name">{{ city.name }}</span>
-                  <span class="world-result-sub">
-                    {{ [city.region, city.country].filter(Boolean).join("，") }}
-                  </span>
-                </button>
-              </div>
-            </div>
-            <!-- 已選城市顯示 -->
-            <div v-if="worldSettings.location" class="world-selected">
-              <div class="world-selected-info">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  width="14"
-                  height="14"
-                >
-                  <path
-                    d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
-                  />
-                </svg>
-                <span>{{ worldSettings.location }}</span>
-                <span v-if="worldSettings.timezone" class="world-tz-badge">{{
-                  worldSettings.timezone
-                }}</span>
-              </div>
-              <button
-                class="world-clear-btn"
-                @click="
-                  worldSettings.location = '';
-                  worldSettings.timezone = '';
-                  worldSettings.lat = undefined;
-                  worldSettings.lon = undefined;
-                  worldSettings.weatherOverride = '';
-                "
-              >
-                清除
-              </button>
-            </div>
-            <!-- 天氣描述（可選手動覆蓋） -->
-            <div class="form-group" style="margin-top: 12px">
-              <label class="form-label" style="font-size: 12px; opacity: 0.7">
-                天氣描述（選填，留空則自動查詢即時天氣）
-              </label>
-              <input
-                v-model="worldSettings.weatherOverride"
-                type="text"
-                class="soft-input"
-                placeholder="例如：晴天，25°C，微風"
-              />
-            </div>
-          </div>
-        </Transition>
-      </section>
-
-      <!-- ===== 功能模組 ===== -->
-      <section class="edit-section">
-        <div class="section-header" @click="toggleSection('modules')">
-          <h3 class="section-title">功能模組</h3>
-          <svg
-            class="section-chevron"
-            :class="{ open: expandedSections.modules }"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-          </svg>
-        </div>
-
-        <Transition name="slide">
-          <div v-if="expandedSections.modules" class="section-content">
+      <!-- ===== 模組 ===== -->
+      <div v-show="activeTab === 'mods'" class="tab-panel">
+        <p class="tab-panel-hint">為這個角色開啟額外玩法</p>
+        <section class="tab-card">
             <!-- 健身夥伴模組 -->
             <div class="module-card">
               <div class="module-header">
                 <div class="module-info">
-                  <span class="module-icon">🏋️</span>
+                  <span class="module-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 7v10M17 7v10M4 9v6M20 9v6M7 12h10" /></svg></span>
                   <div>
                     <span class="module-name">健身夥伴</span>
                     <span class="module-desc">讓角色陪伴你訓練</span>
@@ -2184,7 +2179,7 @@ async function submitPasteRegex() {
             <div class="module-card">
               <div class="module-header">
                 <div class="module-info">
-                  <span class="module-icon">💕</span>
+                  <span class="module-icon affinity" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg></span>
                   <div>
                     <span class="module-name">好感度數值</span>
                     <span class="module-desc">自定義數值指標系統</span>
@@ -2407,26 +2402,56 @@ async function submitPasteRegex() {
                 </div>
               </Transition>
             </div>
+        </section>
+      </div>
+
+      <!-- ===== 工具 ===== -->
+      <div v-show="activeTab === 'tools'" class="tab-panel">
+        <section class="tab-card">
+          <CharacterToolPermissionsPanel
+            v-model="toolPermissions"
+            :tools="CHAT_TOOLS"
+            :mcp-servers="mcpServerOptions"
+          />
+        </section>
+      </div>
+
+      <!-- ===== 進階 ===== -->
+      <div v-show="activeTab === 'adv'" class="tab-panel">
+        <section class="tab-card">
+          <div class="form-group">
+            <label class="form-label">系統提示</label>
+            <ExpandableTextarea
+              v-model="formData.data.system_prompt!"
+              :rows="3"
+              placeholder="給 AI 的系統級指示..."
+              label="系統提示"
+            />
           </div>
-        </Transition>
-      </section>
 
-      <!-- ===== 元數據 ===== -->
-      <section class="edit-section">
-        <div class="section-header" @click="toggleSection('meta')">
-          <h3 class="section-title">元數據</h3>
-          <svg
-            class="section-chevron"
-            :class="{ open: expandedSections.meta }"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-          </svg>
-        </div>
+          <div class="form-group">
+            <label class="form-label">歷史後指令</label>
+            <ExpandableTextarea
+              v-model="formData.data.post_history_instructions!"
+              :rows="3"
+              placeholder="在對話歷史後添加的指令..."
+              label="歷史後指令"
+            />
+          </div>
 
-        <Transition name="slide">
-          <div v-if="expandedSections.meta" class="section-content">
+          <div class="form-group">
+            <label class="form-label">創建者備註</label>
+            <ExpandableTextarea
+              v-model="formData.data.creator_notes!"
+              :rows="3"
+              placeholder="創建者的備註、使用說明..."
+              label="創建者備註"
+            />
+          </div>
+        </section>
+
+        <section class="tab-card">
+          <h3 class="tab-card-title">卡片資訊</h3>
             <div class="meta-info">
               <p><strong>來源:</strong> {{ getSourceText() }}</p>
               <p>
@@ -2436,44 +2461,25 @@ async function submitPasteRegex() {
                 <strong>更新時間:</strong> {{ formatDate(formData.updatedAt) }}
               </p>
             </div>
-          </div>
-        </Transition>
-      </section>
+        </section>
 
-      <CharacterToolPermissionsPanel
-        v-model="toolPermissions"
-        :tools="CHAT_TOOLS"
-        :mcp-servers="mcpServerOptions"
-      />
+        <section v-if="!isCreateMode" class="tab-card">
+          <h3 class="tab-card-title">匯出</h3>
+          <button class="action-btn" @click="exportPNG">
+            匯出角色卡 (PNG)
+          </button>
+          <button class="action-btn" @click="exportJSON">
+            匯出角色卡 (JSON)
+          </button>
+        </section>
 
-      <!-- ===== 危險區域 ===== -->
-      <section class="edit-section danger-section" v-if="!isCreateMode">
-        <div class="section-header" @click="toggleSection('danger')">
-          <h3 class="section-title">危險區域</h3>
-          <svg
-            class="section-chevron"
-            :class="{ open: expandedSections.danger }"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-          </svg>
-        </div>
-
-        <Transition name="slide">
-          <div v-if="expandedSections.danger" class="section-content">
-            <button class="action-btn" @click="exportPNG">
-              🖼️ 導出角色卡 (PNG)
-            </button>
-            <button class="action-btn" @click="exportJSON">
-              📄 導出角色卡 (JSON)
-            </button>
-            <button class="danger-btn delete" @click="handleDelete">
-              🗑️ 刪除角色
-            </button>
-          </div>
-        </Transition>
-      </section>
+        <section v-if="!isCreateMode" class="tab-card danger-card">
+          <h3 class="tab-card-title">危險區域</h3>
+          <button class="danger-btn delete" @click="handleDelete">
+            刪除角色卡
+          </button>
+        </section>
+      </div>
     </main>
 
     <!-- ===== 生成 AI 更新指令 Modal ===== -->
@@ -3957,6 +3963,296 @@ body.is-night-mode {
   .regex-modal-cancel {
     border-color: var(--color-border);
     color: var(--color-text);
+  }
+}
+// ===== 改版：頂欄、角色資訊、分頁、分頁卡片 =====
+.character-edit-screen {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-background);
+}
+
+.edit-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: calc(12px + var(--safe-top)) calc(16px + var(--safe-right)) 0
+    calc(8px + var(--safe-left));
+}
+
+.edit-back {
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text);
+
+  &:active {
+    background: var(--color-surface);
+  }
+}
+
+.edit-header-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.edit-unsaved {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 8px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.edit-unsaved-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 4px;
+  background: var(--color-warning);
+}
+
+.edit-save {
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 20px;
+  background: var(--color-primary);
+  color: var(--color-on-primary-contrast);
+  font-size: 14px;
+  font-weight: 700;
+
+  &:disabled {
+    opacity: 0.6;
+  }
+
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+}
+
+.edit-hero {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px calc(20px + var(--safe-right)) 12px calc(20px + var(--safe-left));
+}
+
+.hero-avatar-wrap {
+  position: relative;
+  flex: none;
+}
+
+.hero-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 36px;
+  overflow: hidden;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.hero-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hero-avatar-initial {
+  font-family: "Noto Serif TC", "Source Han Serif TC", serif;
+  font-size: 32px;
+  font-weight: 900;
+}
+
+.hero-avatar-camera {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 34px;
+  height: 34px;
+  border-radius: 17px;
+  border: 3px solid var(--color-background);
+  background: var(--color-text);
+  color: var(--color-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.hero-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hero-name {
+  font-family: "Noto Serif TC", "Source Han Serif TC", serif;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-subline {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.hero-chip {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+}
+
+.edit-tabs {
+  flex-shrink: 0;
+  display: flex;
+  overflow-x: auto;
+  padding: 0 calc(12px + var(--safe-right)) 0 calc(12px + var(--safe-left));
+  border-bottom: 1px solid var(--color-border);
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.edit-tab {
+  flex: none;
+  height: 46px;
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+
+  &.active {
+    color: var(--color-text);
+    font-weight: 700;
+    box-shadow: inset 0 -2.5px 0 var(--color-primary);
+  }
+}
+
+.edit-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 16px calc(16px + var(--safe-right)) calc(32px + var(--safe-bottom))
+    calc(16px + var(--safe-left));
+}
+
+.tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tab-card {
+  background: var(--color-surface);
+  border-radius: 18px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  color: var(--color-text);
+
+  .form-group {
+    margin-bottom: 0;
+  }
+
+  .soft-input {
+    min-height: 48px;
+    border-radius: 12px;
+    background: var(--color-background);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+  }
+
+  textarea.soft-input {
+    min-height: 96px;
+  }
+}
+
+.tab-card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.tab-card-hint,
+.tab-panel-hint {
+  margin: -8px 0 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.tab-panel-hint {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 13px;
+}
+
+.danger-card {
+  background: transparent;
+  border: 1.5px solid color-mix(in srgb, var(--color-error) 35%, transparent);
+
+  .tab-card-title {
+    color: var(--color-error);
+  }
+}
+
+.module-info .module-icon {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--color-success) 16%, var(--color-surface));
+  color: var(--color-success);
+
+  &.affinity {
+    background: var(--color-primary-light);
+    color: var(--color-primary);
   }
 }
 </style>
