@@ -1523,6 +1523,11 @@ async function loadAppData() {
     .then(({ startPlurkRevealTicker }) => startPlurkRevealTicker())
     .catch((err) => console.warn("[App] 噗浪到點通知啟動失敗:", err));
 
+  // 噗浪 AI 導演：自動模式
+  import("@/services/plurkDirector")
+    .then(({ plurkDirector }) => plurkDirector.start())
+    .catch((err) => console.warn("[App] 噗浪導演啟動失敗:", err));
+
   // 啟動封鎖系統輪詢與道歉外賣計時器恢復
   import("@/services/BlockService")
     .then(({ default: BlockService }) => {
