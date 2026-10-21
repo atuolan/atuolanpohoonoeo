@@ -4,6 +4,7 @@
  * - 備份：文件/203Phone/
  * - 其他匯出（角色卡、聊天記錄…）：文件/203Phone/匯出/
  * - 圖片：圖片/203Phone/（相簿看得到），寫不進去才退回匯出資料夾
+ * - iOS：都在 App 自己的「文件」（檔案 App › 我的 iPhone › 203 Phone），沒有公用圖片資料夾，解除安裝會一起刪掉
  *
  * 公開資料夾的檔案在解除安裝 App 後還會留著。Android 11 起 App 只看得到
  * 自己建立的檔案，重裝後舊檔案列不出來也刪不掉，但用檔案選擇器還是能導入。
@@ -12,9 +13,9 @@
  * 所以累積到 CHUNK_BYTES 就 append 一次。
  */
 import { Directory, Filesystem } from "@capacitor/filesystem";
-import { NATIVE_BACKUP_LOCATION } from "./platform";
+import { isIosApp, nativeBackupLocation } from "./platform";
 
-export { NATIVE_BACKUP_LOCATION };
+export { nativeBackupLocation };
 
 export const NATIVE_BACKUP_DIR = "203Phone";
 const EXPORT_DIR = "203Phone/匯出";
@@ -24,7 +25,6 @@ const PICTURES_DIR = "Pictures/203Phone";
 const CHUNK_BYTES = 2 * 1024 * 1024;
 
 /** 給使用者看的位置 */
-const EXPORT_LOCATION = "文件／203Phone／匯出";
 const PICTURES_LOCATION = "圖片／203Phone";
 
 export function bytesToBase64(bytes: Uint8Array): string {
@@ -163,7 +163,7 @@ async function writeBlob(blob: Blob, path: string, directory: Directory): Promis
 export async function saveBlobToDevice(blob: Blob, filename: string): Promise<string> {
   const name = sanitizeFilename(filename);
 
-  if (IMAGE_EXT.test(name) || blob.type.startsWith("image/")) {
+  if (!isIosApp() && (IMAGE_EXT.test(name) || blob.type.startsWith("image/"))) {
     try {
       // 圖片放「圖片」資料夾，相簿才看得到
       const path = await uniquePath(PICTURES_DIR, name, Directory.ExternalStorage);
@@ -176,5 +176,5 @@ export async function saveBlobToDevice(blob: Blob, filename: string): Promise<st
 
   const path = await uniquePath(EXPORT_DIR, name, Directory.Documents);
   await writeBlob(blob, path, Directory.Documents);
-  return `${EXPORT_LOCATION}／${path.slice(EXPORT_DIR.length + 1)}`;
+  return `${nativeBackupLocation()}／匯出／${path.slice(EXPORT_DIR.length + 1)}`;
 }

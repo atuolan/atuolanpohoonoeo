@@ -31,7 +31,7 @@ import {
   type GitHubBackupProgress,
   type GitHubBackupSettings,
 } from "@/services/GitHubBackupService";
-import { isNativeApp, NATIVE_BACKUP_LOCATION } from "@/native/platform";
+import { isIosApp, isNativeApp, nativeBackupLocation } from "@/native/platform";
 import { useGitHubBackupStore } from "@/stores/githubBackup";
 import { Download, Eye, EyeOff, Upload } from "lucide-vue-next";
 import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
@@ -60,6 +60,11 @@ const backupProgress = ref("");
 const fsaaSupported = isFileSystemAccessSupported();
 /** App 裡備份直接寫進手機資料夾，不用選資料夾也不用下載 */
 const nativeApp = isNativeApp();
+const nativeBackupWhere = nativeBackupLocation();
+// iOS 的備份放在 App 自己的資料夾，解除安裝會一起刪掉
+const nativeUninstallNote = isIosApp()
+  ? "解除安裝 App 會一起刪掉，重要的備份請另外存到 iCloud 雲碟或電腦。"
+  : "解除安裝 App 也不會刪掉。";
 
 async function refreshAutoBackupState() {
   const saved = await loadBackupSettings();
@@ -447,7 +452,7 @@ onUnmounted(() => {
       title="自動備份到本地"
       :footer="
         nativeApp
-          ? `備份檔存在手機的「${NATIVE_BACKUP_LOCATION}」，解除安裝 App 也不會刪掉。App 在背景時不會備份，回到 App 時會補上。`
+          ? `備份檔存在手機的「${nativeBackupWhere}」，${nativeUninstallNote}App 在背景時不會備份，回到 App 時會補上。`
           : fsaaSupported
             ? undefined
             : '這個瀏覽器不能直接寫入資料夾（例如 iOS），開啟後會改成定時下載備份檔。'
@@ -458,7 +463,7 @@ onUnmounted(() => {
         label="啟用自動備份"
         :description="
           nativeApp
-            ? `定時把所有數據備份到手機的「${NATIVE_BACKUP_LOCATION}」`
+            ? `定時把所有數據備份到手機的「${nativeBackupWhere}」`
             : fsaaSupported
               ? '定時把所有數據備份到選擇的資料夾'
               : '定時自動下載備份檔案'

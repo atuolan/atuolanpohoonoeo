@@ -1901,7 +1901,7 @@ async function performNativeBackup(
   }
 
   const partCount = written.length;
-  const where = native.NATIVE_BACKUP_LOCATION;
+  const where = native.nativeBackupLocation();
   const msg =
     partCount > 1
       ? `備份成功: ${where}／${filename}（共 ${partCount} 個分包）`
