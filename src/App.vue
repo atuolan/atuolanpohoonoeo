@@ -959,6 +959,7 @@ const peekPhoneCharacterId = ref<string | null>(null);
 const peekPhoneChatId = ref<string | null>(null);
 const peekPhoneSelectRef = ref<InstanceType<typeof PeekPhoneSelectScreen> | null>(null);
 const peekPhoneScreenRef = ref<InstanceType<typeof PeekPhoneScreen> | null>(null);
+const qzoneScreenRef = ref<InstanceType<typeof QZoneScreen> | null>(null);
 
 // 選好角色進手機也推一筆歷史，瀏覽器的返回才會回到選角色，不會跳過它
 function openPeekPhone(characterId: string, chatId: string) {
@@ -2879,7 +2880,9 @@ function handleGlobalSwipeBack() {
       }
     },
     music: goHome,
-    qzone: goHome,
+    qzone: () => {
+      if (!qzoneScreenRef.value?.handleBack()) goHome();
+    },
     user: goHome,
     weather: goHome,
     shop: goBackFromQuickNav,
@@ -3038,6 +3041,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <!-- 噗浪空間 -->
     <QZoneScreen
       v-else-if="currentPage === 'qzone'"
+      ref="qzoneScreenRef"
       @back="goHome"
       @navigate-theater="navigateToTheaterFromQzone"
     />
