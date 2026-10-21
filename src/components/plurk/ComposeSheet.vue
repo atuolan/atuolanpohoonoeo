@@ -4,7 +4,7 @@
  * state 由外層建立並以 reactive 物件傳入，這裡直接改它的欄位
  */
 import { computed, nextTick, ref, watch } from "vue";
-import { AtSign, Globe, ImagePlus, Lock, Smile, Users, X } from "lucide-vue-next";
+import { AtSign, EyeOff, Globe, ImagePlus, Lock, Smile, Users, X } from "lucide-vue-next";
 import PlurkAvatar from "@/components/plurk/PlurkAvatar.vue";
 import QualifierChip from "@/components/plurk/QualifierChip.vue";
 import { plurkPlainText } from "@/utils/plurkContent";
@@ -34,8 +34,11 @@ const props = withDefaults(
     responderCandidates: PickerCharacter[];
     mentionCandidates: MentionCandidate[];
     posting: boolean;
+    /** 今天還能發幾則偷偷說 */
+    anonLeft?: number;
   }>(),
   {
+    anonLeft: 5,
     canPost: false,
     personas: () => [],
     currentPersonaId: null,
@@ -236,19 +239,33 @@ watch(
 const previewText = computed(() => plurkPlainText(props.state.content, 30) || "開始說點什麼…");
 
 /* ---------- 誰看得到 ---------- */
-const audiences: Array<{ id: "all" | "friends" | "private"; label: string; sub: string }> = [
-  { id: "all", label: "全員", sub: "所有好友的河道" },
+const audiences: Array<{
+  id: "all" | "friends" | "private" | "anon";
+  label: string;
+  sub: string;
+}> = [
+  { id: "all", label: "全員", sub: "好友河道＋廣場" },
   { id: "friends", label: "好友", sub: "只出現在好友河道" },
   { id: "private", label: "私噗", sub: "只給選定的人" },
+  { id: "anon", label: "偷偷說", sub: "不顯示名字，上廣場" },
 ];
 
 const privateCount = computed(() => props.state.privateTo.length);
 
-function pickAudience(id: "all" | "friends" | "private") {
+function isAudienceDisabled(id: "all" | "friends" | "private" | "anon"): boolean {
+  return id === "anon" && props.anonLeft <= 0 && props.state.audience !== "anon";
+}
+
+function pickAudience(id: "all" | "friends" | "private" | "anon") {
+  if (isAudienceDisabled(id)) return;
   props.state.audience = id;
 }
 
-function audienceSub(id: "all" | "friends" | "private"): string {
+function audienceSub(id: "all" | "friends" | "private" | "anon"): string {
+  if (id === "anon") {
+    if (props.state.audience === "anon") return `今天還能發 ${props.anonLeft} 則`;
+    if (props.anonLeft <= 0) return "今天的 5 則用完了";
+  }
   if (id === "private" && props.state.audience === "private") {
     return `給 ${privateCount.value} 人 · 修改`;
   }
@@ -279,9 +296,13 @@ const selectedResponders = computed(() => {
 
 /* ---------- 開關 ---------- */
 const passerbyOn = computed(
-  () => props.state.audience === "all" && props.state.allowPasserby,
+  () =>
+    (props.state.audience === "all" || props.state.audience === "anon") &&
+    props.state.allowPasserby,
 );
-const passerbyDisabled = computed(() => props.state.audience !== "all");
+const passerbyDisabled = computed(
+  () => props.state.audience !== "all" && props.state.audience !== "anon",
+);
 
 function togglePasserby() {
   if (passerbyDisabled.value) return;
@@ -477,13 +498,17 @@ defineExpose({ insertText });
               v-for="audience in audiences"
               :key="audience.id"
               class="aud-card"
-              :class="{ 'is-on': props.state.audience === audience.id }"
+              :class="{
+                'is-on': props.state.audience === audience.id,
+                'is-disabled': isAudienceDisabled(audience.id),
+              }"
             >
               <button
                 type="button"
                 class="aud-hit"
                 :aria-pressed="props.state.audience === audience.id"
                 :aria-label="`${audience.label}，${audienceSub(audience.id)}`"
+                :disabled="isAudienceDisabled(audience.id)"
                 @click="pickAudience(audience.id)"
               ></button>
               <Globe v-if="audience.id === 'all'" :size="20" class="aud-icon" aria-hidden="true" />
@@ -493,7 +518,13 @@ defineExpose({ insertText });
                 class="aud-icon"
                 aria-hidden="true"
               />
-              <Lock v-else :size="20" class="aud-icon" aria-hidden="true" />
+              <Lock
+                v-else-if="audience.id === 'private'"
+                :size="20"
+                class="aud-icon"
+                aria-hidden="true"
+              />
+              <EyeOff v-else :size="20" class="aud-icon" aria-hidden="true" />
               <span class="aud-text">
                 <span class="aud-label">{{ audience.label }}</span>
                 <button
@@ -550,7 +581,7 @@ defineExpose({ insertText });
         <div class="switch-row">
           <span class="switch-text">
             <span class="switch-label">讓路人也來回應</span>
-            <span class="switch-sub">只在全員時有效</span>
+            <span class="switch-sub">只在全員、偷偷說時有效</span>
           </span>
           <button
             type="button"
@@ -1047,6 +1078,10 @@ defineExpose({ insertText });
     border: 2px solid var(--color-text);
     background: var(--color-surface-hover);
   }
+}
+
+.aud-card.is-disabled {
+  opacity: 0.45;
 }
 
 .aud-hit {
