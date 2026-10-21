@@ -93,6 +93,14 @@ export interface ThreadResponseRow {
   html: string;
   canRegenerate: boolean;
   regenerating: boolean;
+  /** 廣場：名字旁「角色」小框、「只看角色」用 */
+  isCharacter?: boolean;
+  /** 路人頭像底色 */
+  avatarColor?: string;
+  /** 偷偷說裡使用者自己的代號：名字用綠色 */
+  isMe?: boolean;
+  /** 被版主刪除：整列只顯示這行灰字 */
+  removedText?: string;
 }
 
 export interface ThreadPostData {
@@ -105,6 +113,10 @@ export interface ThreadPostData {
   likeCount: number;
   repostCount: number;
   muted: boolean;
+  /** 路人頭像底色 */
+  authorColor?: string;
+  /** 被摺疊等：原噗上方一行灰字 */
+  notice?: string;
 }
 
 export interface ComposeState {

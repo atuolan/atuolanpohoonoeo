@@ -8,11 +8,14 @@ import {
   Bell,
   BellOff,
   ChevronLeft,
+  EyeOff,
   Loader2,
   MessageSquare,
   RefreshCw,
   Smile,
   Trash2,
+  UserCheck,
+  UserPlus,
   X,
 } from "lucide-vue-next";
 import { computed, nextTick, ref } from "vue";
@@ -38,6 +41,12 @@ const props = withDefaults(
     mentionCandidates?: MentionCandidate[];
     /** 鍵盤彈出時外殼給的高度 */
     height?: string;
+    /** 廣場上的噗：標題、「只看角色」、角色小框 */
+    squareMode?: boolean;
+    /** 廣場：幾位角色參與 */
+    characterCount?: number;
+    /** 噗主是路人時的好友狀態；null＝不顯示加好友 */
+    opFollow?: boolean | null;
   }>(),
   {
     busy: false,
@@ -49,6 +58,9 @@ const props = withDefaults(
     rows: () => [],
     typingNames: () => [],
     quickActions: () => [],
+    squareMode: false,
+    characterCount: 0,
+    opFollow: null,
   },
 );
 
@@ -66,6 +78,7 @@ const emit = defineEmits<{
   openQualifier: [];
   openSticker: [];
   send: [content: string];
+  toggleFollow: [];
 }>();
 
 const rootEl = ref<HTMLElement | null>(null);
@@ -73,6 +86,11 @@ const inputEl = ref<HTMLInputElement | null>(null);
 const content = ref("");
 const cursor = ref(0);
 const expandedId = ref<string | null>(null);
+const onlyCharacters = ref(false);
+
+const visibleRows = computed(() =>
+  props.squareMode && onlyCharacters.value ? props.rows.filter((row) => row.isCharacter) : props.rows,
+);
 const flashId = ref<string | null>(null);
 let flashTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -205,8 +223,11 @@ defineExpose({ insertText, scrollToResponse, focusInput });
         <ChevronLeft :size="22" aria-hidden="true" />
       </button>
       <div class="top-who">
-        <span class="top-title">回應串</span>
-        <span class="top-sub">{{ props.responseCount }} 則回應 · {{ props.participantCount }} 人參與</span>
+        <span class="top-title">{{ props.squareMode ? "廣場 · 回應" : "回應串" }}</span>
+        <span class="top-sub"
+          >{{ props.responseCount }} 則回應 ·
+          {{ props.squareMode ? `${props.characterCount} 位角色參與` : `${props.participantCount} 人參與` }}</span
+        >
       </div>
       <button
         type="button"
@@ -224,6 +245,9 @@ defineExpose({ insertText, scrollToResponse, focusInput });
     <div class="thread-scroll">
       <!-- 原噗 -->
       <article class="post-card">
+        <p v-if="props.post.notice" class="post-notice">
+          <EyeOff :size="14" aria-hidden="true" />{{ props.post.notice }}
+        </p>
         <header class="post-head">
           <button
             type="button"
@@ -231,12 +255,29 @@ defineExpose({ insertText, scrollToResponse, focusInput });
             :aria-label="`${props.post.authorName}的個人頁`"
             @click="emit('openProfile')"
           >
-            <PlurkAvatar :src="props.post.authorAvatar" :name="props.post.authorName" :size="40" />
+            <PlurkAvatar
+              :src="props.post.authorAvatar"
+              :name="props.post.authorName"
+              :color="props.post.authorColor"
+              :size="40"
+            />
           </button>
           <div class="post-who">
             <span class="post-name">{{ props.post.authorName }}</span>
             <span class="post-meta">{{ props.post.metaText }}</span>
           </div>
+          <button
+            v-if="props.opFollow !== null"
+            type="button"
+            class="follow-btn"
+            :class="{ 'follow-btn--on': props.opFollow }"
+            :aria-pressed="props.opFollow"
+            @click="emit('toggleFollow')"
+          >
+            <UserCheck v-if="props.opFollow" :size="15" aria-hidden="true" />
+            <UserPlus v-else :size="15" aria-hidden="true" />
+            {{ props.opFollow ? "已加好友" : "加好友" }}
+          </button>
         </header>
 
         <p class="post-body">
@@ -265,25 +306,43 @@ defineExpose({ insertText, scrollToResponse, focusInput });
         </div>
       </article>
 
+      <div v-if="props.squareMode" class="resp-filter">
+        <span class="resp-filter-label">回應</span>
+        <button
+          type="button"
+          class="only-chip"
+          :class="{ 'only-chip--on': onlyCharacters }"
+          :aria-pressed="onlyCharacters"
+          @click="onlyCharacters = !onlyCharacters"
+        >
+          只看角色
+        </button>
+      </div>
+
       <!-- 回應列表 -->
       <div class="resp-list">
         <div
-          v-for="row in props.rows"
+          v-for="row in visibleRows"
           :key="row.id"
           :id="`plurk-resp-${row.id}`"
           class="resp"
           :class="{ 'resp--open': isOpen(row), 'resp--flash': flashId === row.id }"
         >
+          <p v-if="row.removedText" class="resp-removed">
+            <Trash2 :size="13" aria-hidden="true" />{{ row.removedText }}
+          </p>
+          <template v-else>
           <button
             type="button"
             class="resp-main"
             :aria-expanded="isOpen(row)"
             @click="toggleRow(row.id)"
           >
-            <PlurkAvatar :src="row.authorAvatar" :name="row.authorName" :size="32" />
+            <PlurkAvatar :src="row.authorAvatar" :name="row.authorName" :color="row.avatarColor" :size="32" />
             <span class="resp-body">
               <span class="resp-head">
-                <span class="resp-name">{{ row.authorName }}</span>
+                <span class="resp-name" :class="{ 'resp-name--me': row.isMe }">{{ row.authorName }}</span>
+                <span v-if="props.squareMode && row.isCharacter" class="resp-op">角色</span>
                 <span v-if="row.isOp" class="resp-op">噗主</span>
                 <span class="resp-time">{{ row.timeText }}</span>
                 <Loader2
@@ -354,6 +413,7 @@ defineExpose({ insertText, scrollToResponse, focusInput });
               刪除
             </button>
           </div>
+          </template>
         </div>
 
         <!-- 正在輸入 -->
@@ -648,6 +708,82 @@ defineExpose({ insertText, scrollToResponse, focusInput });
   font-variant-numeric: tabular-nums;
 }
 
+.post-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.follow-btn {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: -6px 0;
+  }
+}
+
+.follow-btn--on {
+  background: var(--color-surface-hover);
+  color: var(--color-text-secondary);
+}
+
+.resp-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.resp-filter-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.only-chip {
+  position: relative;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 15px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: -7px 0;
+  }
+}
+
+.only-chip--on {
+  border-color: var(--color-text);
+  background: var(--color-text);
+  color: var(--color-background);
+}
+
 /* ---------- 回應列表 ---------- */
 .resp-list {
   display: flex;
@@ -715,6 +851,23 @@ defineExpose({ insertText, scrollToResponse, focusInput });
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.resp-name--me {
+  color: var(--color-success);
+}
+
+.resp-removed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--color-surface-hover);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .resp-op {
