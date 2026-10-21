@@ -1517,6 +1517,11 @@ async function loadAppData() {
   // characters 已載入，立即啟動主動發訊息服務
   proactiveMessageService.start();
 
+  // 噗浪：慢慢回的回應到點時通知
+  import("@/services/plurkReveal")
+    .then(({ startPlurkRevealTicker }) => startPlurkRevealTicker())
+    .catch((err) => console.warn("[App] 噗浪到點通知啟動失敗:", err));
+
   // 啟動封鎖系統輪詢與道歉外賣計時器恢復
   import("@/services/BlockService")
     .then(({ default: BlockService }) => {
