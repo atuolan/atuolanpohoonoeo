@@ -232,7 +232,7 @@ if (import.meta.env.PROD) {
   CodeProtection.initialize();
 }
 
-function showPendingRuntimeDiagnostics(): void {
+function logPendingRuntimeDiagnostics(): void {
   const pendingEntries = consumePendingRuntimeDiagnostics();
   if (pendingEntries.length === 0) {
     return;
@@ -253,30 +253,8 @@ function showPendingRuntimeDiagnostics(): void {
     })
     .join("\n\n");
 
+  // 只寫進主控台：之前畫面頂端的紅色橫條玩家也看得到，太嚇人；完整紀錄仍在 localStorage 的 aguaphone:runtime-diagnostics
   console.error("[RuntimeDiagnostics] 偵測到上次執行留下的錯誤/重載紀錄:\n" + message);
-  const banner = document.createElement("div");
-  banner.setAttribute("data-runtime-diagnostics-banner", "true");
-  banner.style.position = "fixed";
-  banner.style.top = "0";
-  banner.style.left = "0";
-  banner.style.right = "0";
-  banner.style.zIndex = "999999";
-  banner.style.background = "rgba(120, 0, 0, 0.95)";
-  banner.style.color = "#fff";
-  banner.style.padding = "12px 16px";
-  banner.style.fontSize = "12px";
-  banner.style.lineHeight = "1.5";
-  banner.style.whiteSpace = "pre-wrap";
-  banner.style.wordBreak = "break-all";
-  banner.style.overflowWrap = "break-word";
-  banner.style.boxShadow = "0 4px 12px rgba(0,0,0,0.35)";
-  banner.style.maxHeight = "60vh";
-  banner.style.overflowY = "auto";
-  banner.textContent = `上次疑似異常中斷或重整：\n\n${message}`;
-  banner.addEventListener("click", () => {
-    banner.remove();
-  });
-  document.body.appendChild(banner);
 }
 
 function installGlobalRuntimeDiagnostics(): void {
@@ -350,7 +328,7 @@ beginRuntimeSession("main.ts bootstrap", {
   href: window.location.href,
 });
 installGlobalRuntimeDiagnostics();
-showPendingRuntimeDiagnostics();
+logPendingRuntimeDiagnostics();
 
 window.setInterval(() => {
   heartbeatRuntimeSession();
