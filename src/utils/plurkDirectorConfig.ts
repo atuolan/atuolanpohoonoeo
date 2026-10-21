@@ -3,6 +3,7 @@
  */
 
 import type { AutoInteractionConfig, QZoneSettings } from "@/types/qzone";
+import { DEFAULT_SQUARE_BATCH } from "@/utils/plurkSquareSchedule";
 
 export type DirectorMode = "off" | "free" | "list";
 export type DirectorRole = "often" | "reply" | "mute";
@@ -28,6 +29,8 @@ export interface PlurkDirectorConfig {
   todayCount: number;
   /** 第 3 期：路人多寡 1–5 */
   npcLevel: number;
+  /** 一次 AI 呼叫生幾則路人噗（5／10／15／20） */
+  squareBatch: number;
   /** 第 3、4 期：版主嚴格度 */
   strictness: DirectorStrictness;
 }
@@ -47,6 +50,7 @@ export const DEFAULT_DIRECTOR_CONFIG: PlurkDirectorConfig = {
   todayKey: "",
   todayCount: 0,
   npcLevel: 3,
+  squareBatch: DEFAULT_SQUARE_BATCH,
   strictness: "mid",
 };
 
@@ -54,8 +58,6 @@ export const DEFAULT_DIRECTOR_CONFIG: PlurkDirectorConfig = {
 export const LIVELINESS_RATES = [0.06, 0.3, 1.5, 4, 8];
 export const LIVELINESS_LABELS = ["一天 1–2 則", "幾小時一則", "每小時 1–2 則", "每小時 3–5 則", "幾乎一直在聊"];
 
-/** 路人多寡 1–5 對應每小時生幾批路人噗（每批＝一次 AI 呼叫） */
-export const SQUARE_RATES = [0.04, 0.1, 0.25, 0.5, 1];
 export const NPC_LEVEL_LABELS = ["幾乎沒有路人", "偶爾有人", "普通", "熱鬧", "人山人海"];
 export const STRICTNESS_LABELS: Record<DirectorStrictness, string> = { loose: "寬鬆", mid: "普通", hard: "嚴格" };
 export const STRICTNESS_HINTS: Record<DirectorStrictness, string> = {

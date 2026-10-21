@@ -16,12 +16,15 @@ const now = new Date(2026, 9, 21, 20, 0).getTime();
 
 describe("buildSquarePrompt", () => {
   it("寬鬆時不給摺疊、有角色時才有偷偷說段落、列出最近的噗", () => {
-    const loose = buildSquarePrompt({ count: 4, strictness: "loose", characters: [], recentTexts: ["停車"], now });
+    const loose = buildSquarePrompt({ times: [now - 60_000, now + 30 * 60_000], strictness: "loose", characters: [], recentTexts: ["停車"], now });
     expect(loose).toContain("不要輸出 fold");
     expect(loose).not.toContain("可以偷偷說的角色");
     expect(loose).toContain("- 停車");
+    expect(loose).toContain("請生成 2 則");
+    expect(loose).toContain("1. 10/21 19:59");
+    expect(loose).toContain("2. 10/21 20:30");
     const withChar = buildSquarePrompt({
-      count: 3,
+      times: [now],
       strictness: "hard",
       characters: [{ id: "c1", name: "譚尧", personality: "嘴硬", description: "醫生" }],
       recentTexts: [],
@@ -73,6 +76,16 @@ describe("parseSquareResponse", () => {
     expect(parseSquareResponse(raw(posts), { ...opts, strictness: "hard" }).map((p) => p.fold)).toEqual(["引戰", "洗版"]);
   });
 
+  it("一批變大時，普通每 10 則最多摺 1 則", () => {
+    const posts = Array.from({ length: 20 }, (_, i) => ({ name: `p${i}`, content: `${i}`, fold: i < 3 ? "引戰" : undefined }));
+    expect(parseSquareResponse(raw(posts), opts).filter((p) => p.fold)).toHaveLength(2);
+  });
+
+  it("回覆被截斷時，前面完整的照樣收", () => {
+    const cut = '{"posts": [{"name": "a", "content": "1"}, {"name": "b", "content": "2"}, {"name": "c", "conte';
+    expect(parseSquareResponse(cut, opts).map((p) => p.content)).toEqual(["1", "2"]);
+  });
+
   it("壞掉的輸出回傳空陣列", () => {
     expect(parseSquareResponse("沒有 JSON", opts)).toEqual([]);
     expect(parseSquareResponse("{壞掉", opts)).toEqual([]);
@@ -100,8 +113,54 @@ describe("版務公告", () => {
   });
   it("寬鬆或沒有角色時提示詞不給公告", () => {
     const c = [{ id: "c1", name: "陸晏", personality: "", description: "" }];
-    expect(buildSquarePrompt({ count: 3, strictness: "loose", characters: c, recentTexts: [], now })).not.toContain("announce");
-    expect(buildSquarePrompt({ count: 3, strictness: "mid", characters: [], recentTexts: [], now })).not.toContain("announce");
-    expect(buildSquarePrompt({ count: 3, strictness: "mid", characters: c, recentTexts: [], now })).toContain("announce");
+    expect(buildSquarePrompt({ times: [now], strictness: "loose", characters: c, recentTexts: [], now })).not.toContain("announce");
+    expect(buildSquarePrompt({ times: [now], strictness: "mid", characters: [], recentTexts: [], now })).not.toContain("announce");
+    expect(buildSquarePrompt({ times: [now], strictness: "mid", characters: c, recentTexts: [], now })).toContain("announce");
+  });
+});
+
+describe("generateSquareBatch", () => {
+  it("照排好的時間存：手動時三分之一馬上出現、其餘排到之後；摺疊和回應都在噗之後", async () => {
+    const { generateSquareBatch } = await import("./plurkSquareGeneration");
+    const { generatePlurkText, hasPlurkApi } = await import("@/services/plurkAI");
+    const { useQzoneStore } = await import("@/stores/qzone");
+    const added: Array<{ timestamp: number; moderation?: { at: number } }> = [];
+    const comments: Array<{ postId: string; timestamp: number }> = [];
+    vi.mocked(hasPlurkApi).mockReturnValue(true);
+    vi.mocked(useQzoneStore).mockReturnValue({
+      posts: [],
+      settings: {},
+      directorConfig: { squareBatch: 5, npcLevel: 3, strictness: "mid", roles: {} },
+      addPost: vi.fn(async (data: object, opts: { timestamp: number }) => {
+        added.push({ ...data, timestamp: opts.timestamp });
+        return { id: `p${added.length}` };
+      }),
+      addComment: vi.fn(async (postId: string, _data: object, opts: { timestamp: number }) => {
+        comments.push({ postId, timestamp: opts.timestamp });
+      }),
+    } as never);
+    vi.mocked(generatePlurkText).mockResolvedValue(
+      JSON.stringify({
+        posts: [
+          { name: "a", content: "1", replies: [{ name: "x", content: "r" }] },
+          { name: "b", content: "2", fold: "引戰" },
+          { name: "c", content: "3" },
+          { name: "d", content: "4" },
+          { name: "e", content: "5" },
+          { name: "f", content: "多出來的" },
+        ],
+      }),
+    );
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.9);
+    const start = Date.now();
+    const result = await generateSquareBatch();
+    random.mockRestore();
+
+    expect(result).toMatchObject({ success: true, added: 5, scheduled: 3 });
+    expect(added.filter((p) => p.timestamp <= start)).toHaveLength(2);
+    expect(added.filter((p) => p.timestamp > start)).toHaveLength(3);
+    const folded = added.find((p) => p.moderation)!;
+    expect(folded.moderation!.at).toBeGreaterThan(folded.timestamp);
+    expect(comments[0].timestamp).toBeGreaterThan(added[0].timestamp);
   });
 });

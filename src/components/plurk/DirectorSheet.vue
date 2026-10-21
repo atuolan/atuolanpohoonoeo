@@ -20,6 +20,11 @@ import {
   type DirectorStrictness,
   type PlurkDirectorConfig,
 } from "@/utils/plurkDirectorConfig";
+import {
+  SQUARE_BATCH_OPTIONS,
+  normalizeSquareBatch,
+  squarePostsPerHour,
+} from "@/utils/plurkSquareSchedule";
 
 const props = withDefaults(
   defineProps<{
@@ -29,11 +34,14 @@ const props = withDefaults(
     busy: boolean;
     /** 例：「約每小時 1.5 次 AI 呼叫，每天最多 25 次」 */
     callsPerHourText: string;
+    /** 例：「還有 8 則會在接下來 4 小時陸續出現」 */
+    squareStockText: string;
   }>(),
   {
     roster: () => [],
     busy: false,
     callsPerHourText: "",
+    squareStockText: "",
   },
 );
 
@@ -97,9 +105,15 @@ const livelinessText = computed(
 
 const modeHint = computed(() => MODE_HINTS[props.config.mode] ?? "");
 
-const npcText = computed(
-  () => NPC_LEVEL_LABELS[props.config.npcLevel - 1] ?? NPC_LEVEL_LABELS[2],
-);
+const npcText = computed(() => {
+  const rate = squarePostsPerHour(props.config.npcLevel);
+  const label = NPC_LEVEL_LABELS[props.config.npcLevel - 1] ?? NPC_LEVEL_LABELS[2];
+  return rate < 1
+    ? `${label}・約 ${Math.round(1 / rate)} 小時 1 則`
+    : `${label}・每小時約 ${rate} 則`;
+});
+
+const squareBatch = computed(() => normalizeSquareBatch(props.config.squareBatch));
 
 const canStepMemory = computed(() => props.config.memoryEnabled);
 
@@ -135,6 +149,10 @@ function setLiveliness(level: number) {
 
 function setNpcLevel(level: number) {
   if (props.config.npcLevel !== level) emit("update", { npcLevel: level });
+}
+
+function setSquareBatch(n: number) {
+  if (squareBatch.value !== n) emit("update", { squareBatch: n });
 }
 
 function setStrictness(s: DirectorStrictness) {
@@ -362,7 +380,7 @@ function toggleSwitch(key: SwitchKey) {
             <span class="block-label">廣場</span>
             <span class="block-value">{{ npcText }}</span>
           </div>
-          <span class="hint">路人會在廣場發噗，角色偶爾也會去逛。自動模式開著時才會自己出現。</span>
+          <span class="hint">一次生成一批，照時間慢慢出現在廣場；自動模式開著時，快出完會自己補下一批。角色偶爾也會去逛。</span>
 
           <div class="level-grid" role="group" aria-label="路人多寡">
             <button
@@ -381,6 +399,23 @@ function toggleSwitch(key: SwitchKey) {
             <span>很多</span>
           </div>
 
+          <span class="block-note">每次生成</span>
+          <div class="seg is-four" role="group" aria-label="每次生成幾則">
+            <button
+              v-for="n in SQUARE_BATCH_OPTIONS"
+              :key="n"
+              type="button"
+              class="seg-btn"
+              :class="{ 'is-on': squareBatch === n }"
+              :aria-pressed="squareBatch === n"
+              @click="setSquareBatch(n)"
+            >
+              {{ n }} 則
+            </button>
+          </div>
+          <span class="hint">一次生越多越省 AI 呼叫，但回覆比較長；回覆長度設太短可能會被截斷。</span>
+
+          <span class="block-note">版主</span>
           <div class="seg" role="group" aria-label="版主嚴格度">
             <button
               v-for="s in STRICTNESS_ORDER"
@@ -395,6 +430,8 @@ function toggleSwitch(key: SwitchKey) {
             </button>
           </div>
           <span class="hint">版主 阿杏：{{ STRICTNESS_HINTS[props.config.strictness] }}</span>
+
+          <span v-if="props.squareStockText" class="hint">{{ props.squareStockText }}</span>
 
           <button
             type="button"
@@ -722,6 +759,10 @@ function toggleSwitch(key: SwitchKey) {
   padding: 3px;
   border-radius: 12px;
   background: var(--color-surface-hover);
+}
+
+.seg.is-four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .seg-btn {

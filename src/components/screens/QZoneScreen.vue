@@ -171,6 +171,7 @@
       :roster="roster"
       :busy="directorBusy"
       :calls-per-hour-text="callsPerHourText"
+      :square-stock-text="squareStockLine"
       @close="directorOpen = false"
       @update="(patch) => qzoneStore.updateDirector(patch)"
       @post-now="postNowRandom"
@@ -364,6 +365,7 @@ import {
   squareFeed,
   type SquareTab as SquareTabId,
 } from "@/utils/plurkSquare";
+import { isGeneratedSquarePost, isModerationShown, squareStock, squareStockText } from "@/utils/plurkSquareSchedule";
 import { PenLine, X } from "lucide-vue-next";
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 
@@ -401,9 +403,9 @@ const { generateCommentsForPost, regenerateAllComments } = useBatchComments();
 const now = usePlurkClock();
 const tab = ref<PlurkTabId>("river");
 
-// 有新回應（自己送的、AI 剛生成的）就把時鐘撥到現在
+// 有新噗、新回應（自己送的、AI 剛生成的）就把時鐘撥到現在
 watch(
-  () => qzoneStore.posts.reduce((sum, p) => sum + (p.comments?.length ?? 0), 0),
+  () => qzoneStore.posts.reduce((sum, p) => sum + (p.comments?.length ?? 0), qzoneStore.posts.length),
   () => refreshPlurkClock(),
 );
 
@@ -540,8 +542,9 @@ function isCharacterAuthor(c: QZoneComment): boolean {
   return c.authorType === "ai" && !!charactersStore.getCharacterById(c.authorId);
 }
 
+/** 版主刪掉的回應：處理時間到了才算 */
 function isRemoved(c: QZoneComment): boolean {
-  return c.moderation?.action === "delete";
+  return c.moderation?.action === "delete" && isModerationShown(c.moderation, now.value);
 }
 
 function findPost(id: string): QZonePost | undefined {
@@ -558,9 +561,13 @@ const riverRef = ref<InstanceType<typeof RiverTab> | null>(null);
 const highlightPostId = ref<string | null>(null);
 let highlightTimer: number | null = null;
 
+/** 廣場排好、還沒到時間的路人噗和偷偷說先藏起來 */
 const basePosts = computed(() =>
   qzoneStore.sortedPosts.filter(
-    (post) => !hiddenIds.value.has(post.authorId) && !(post.anonOf && hiddenIds.value.has(post.anonOf)),
+    (post) =>
+      !hiddenIds.value.has(post.authorId) &&
+      !(post.anonOf && hiddenIds.value.has(post.anonOf)) &&
+      !(isGeneratedSquarePost(post) && post.timestamp > now.value),
   ),
 );
 const npcFriendIds = computed(() => new Set((qzoneStore.settings.npcFriends ?? []).map((n) => n.id)));
@@ -690,7 +697,8 @@ function toSquareCard(post: QZonePost): SquareCardData {
       ? { name: commentAuthor(post, latestChar).name, text: plurkPlainText(latestChar.content, 60) }
       : undefined,
     peekHint: !!post.anonOf && !!castCtx.value && effectiveFriendIds(castCtx.value).includes(post.anonOf),
-    foldedReason: post.moderation?.action === "fold" ? post.moderation.reason : undefined,
+    foldedReason:
+      post.moderation?.action === "fold" && isModerationShown(post.moderation, now.value) ? post.moderation.reason : undefined,
   };
 }
 
@@ -927,7 +935,7 @@ const threadPostData = computed<ThreadPostData | null>(() => {
   const post = thread.post.value;
   if (!post) return null;
   const author = postAuthor(post);
-  const fold = post.moderation?.action === "fold" ? post.moderation : null;
+  const fold = post.moderation?.action === "fold" && isModerationShown(post.moderation, now.value) ? post.moderation : null;
   return {
     authorName: author.name,
     authorAvatar: author.avatar,
@@ -1490,6 +1498,9 @@ const callsPerHourText = computed(() => {
   const head = rate >= 1 ? `約每小時 ${rate} 次 AI 呼叫` : `約每天 ${Math.max(1, Math.round(rate * 24))} 次 AI 呼叫`;
   return `${head}，每天最多 ${cfg.dailyCap} 次`;
 });
+
+/** 廣場還有幾則排隊中 */
+const squareStockLine = computed(() => squareStockText(squareStock(qzoneStore.posts, now.value), now.value));
 
 function hasPostApi(): boolean {
   const api = settingsStore.getAPIForTask("plurkPost").api;
