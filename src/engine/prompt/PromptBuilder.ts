@@ -2674,8 +2674,10 @@ ${PHONE_CALL_BILINGUAL_REMINDER}`
     // 循環時間模式繞回起點時會是負的，這時算不出有意義的間隔
     if (!Number.isFinite(gapMs) || gapMs < 0) return null;
 
-    // 不到門檻就什麼都不提，免得角色每則都在交代剛剛幾分鐘做了什麼
-    if (gapMs < PromptBuilder.REPLY_GAP_NUDGE_MS) return null;
+    // 不到門檻不給經過時間，只提醒別每則都在交代剛剛做了什麼
+    if (gapMs < PromptBuilder.REPLY_GAP_NUDGE_MS) {
+      return ["[距離上次回覆]", "你不需要一直強調自己剛剛做了甚麼，保持自然"].join("\n");
+    }
 
     const hm = `${lastAt.getHours().toString().padStart(2, "0")}:${lastAt.getMinutes().toString().padStart(2, "0")}`;
     const sameDay = lastAt.toDateString() === now.toDateString();

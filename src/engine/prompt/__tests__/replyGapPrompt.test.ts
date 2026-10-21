@@ -48,12 +48,13 @@ describe("時間資訊帶上距離角色上次回覆多久", () => {
     expect(text).not.toContain("{{char}}");
   });
 
-  it("不到一小時完全不加", async () => {
+  it("不到一小時只提醒別一直交代剛剛做了什麼", async () => {
     for (const minutesAgo of [3, 50]) {
       const text = await timeInfo({
         messages: [msg(false, minutesAgo, "嗯"), msg(true, 1, "然後呢")],
       });
-      expect(text).not.toContain("[距離上次回覆]");
+      expect(text).toContain("你不需要一直強調自己剛剛做了甚麼，保持自然");
+      expect(text).not.toContain("上一次回覆在");
     }
   });
 
