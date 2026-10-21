@@ -3,17 +3,21 @@
  * AI 導演面板：所有設定都只 emit，不在元件內存狀態
  */
 import { computed } from "vue";
-import { Loader2, MessagesSquare, Pencil, Repeat, Sparkles, X } from "lucide-vue-next";
+import { Loader2, MessagesSquare, Pencil, Repeat, Sparkles, Store, X } from "lucide-vue-next";
 import PlurkAvatar from "@/components/plurk/PlurkAvatar.vue";
 import type { DirectorRosterItem } from "@/components/plurk/types";
 import {
   LIVELINESS_LABELS,
   MODE_HINTS,
+  NPC_LEVEL_LABELS,
   ROLE_LABELS,
   ROUTINE_LABELS,
+  STRICTNESS_HINTS,
+  STRICTNESS_LABELS,
   type DirectorMode,
   type DirectorRole,
   type DirectorRoutine,
+  type DirectorStrictness,
   type PlurkDirectorConfig,
 } from "@/utils/plurkDirectorConfig";
 
@@ -39,12 +43,14 @@ const emit = defineEmits<{
   (e: "postNow"): void;
   (e: "postNowPick"): void;
   (e: "replyNow"): void;
+  (e: "fillSquare"): void;
 }>();
 
 const MODE_ORDER: DirectorMode[] = ["off", "free", "list"];
 const MODE_LABELS: Record<DirectorMode, string> = { off: "關閉", free: "自由", list: "只用名單" };
 const ROLE_ORDER: DirectorRole[] = ["often", "reply", "mute"];
 const ROUTINE_CYCLE: DirectorRoutine[] = ["any", "early", "day", "night"];
+const STRICTNESS_ORDER: DirectorStrictness[] = ["loose", "mid", "hard"];
 const CAP_STEP = 5;
 const CAP_MIN = 5;
 const CAP_MAX = 200;
@@ -91,6 +97,10 @@ const livelinessText = computed(
 
 const modeHint = computed(() => MODE_HINTS[props.config.mode] ?? "");
 
+const npcText = computed(
+  () => NPC_LEVEL_LABELS[props.config.npcLevel - 1] ?? NPC_LEVEL_LABELS[2],
+);
+
 const canStepMemory = computed(() => props.config.memoryEnabled);
 
 function roleOf(id: string): DirectorRole {
@@ -121,6 +131,14 @@ function cycleRoutine(id: string) {
 function setLiveliness(level: number) {
   if (props.config.liveliness === level) return;
   emit("update", { liveliness: level });
+}
+
+function setNpcLevel(level: number) {
+  if (props.config.npcLevel !== level) emit("update", { npcLevel: level });
+}
+
+function setStrictness(s: DirectorStrictness) {
+  if (props.config.strictness !== s) emit("update", { strictness: s });
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -337,6 +355,58 @@ function toggleSwitch(key: SwitchKey) {
               +
             </button>
           </div>
+        </section>
+
+        <section class="block">
+          <div class="block-row">
+            <span class="block-label">廣場</span>
+            <span class="block-value">{{ npcText }}</span>
+          </div>
+          <span class="hint">路人會在廣場發噗，角色偶爾也會去逛。自動模式開著時才會自己出現。</span>
+
+          <div class="level-grid" role="group" aria-label="路人多寡">
+            <button
+              v-for="level in 5"
+              :key="level"
+              type="button"
+              class="level-btn"
+              :class="{ 'is-on': level <= props.config.npcLevel }"
+              :aria-label="`路人多寡 ${level}`"
+              :aria-pressed="level === props.config.npcLevel"
+              @click="setNpcLevel(level)"
+            ></button>
+          </div>
+          <div class="level-ends">
+            <span>很少</span>
+            <span>很多</span>
+          </div>
+
+          <div class="seg" role="group" aria-label="版主嚴格度">
+            <button
+              v-for="s in STRICTNESS_ORDER"
+              :key="s"
+              type="button"
+              class="seg-btn"
+              :class="{ 'is-on': props.config.strictness === s }"
+              :aria-pressed="props.config.strictness === s"
+              @click="setStrictness(s)"
+            >
+              {{ STRICTNESS_LABELS[s] }}
+            </button>
+          </div>
+          <span class="hint">版主 阿杏：{{ STRICTNESS_HINTS[props.config.strictness] }}</span>
+
+          <button
+            type="button"
+            class="fill-btn"
+            :disabled="props.busy"
+            aria-label="現在讓廣場熱鬧一下"
+            @click="emit('fillSquare')"
+          >
+            <Loader2 v-if="props.busy" :size="18" class="spin" aria-hidden="true" />
+            <Store v-else :size="18" aria-hidden="true" />
+            現在讓廣場熱鬧一下
+          </button>
         </section>
 
         <section class="block">
@@ -818,6 +888,30 @@ function toggleSwitch(key: SwitchKey) {
 
 .switch-row {
   min-height: 60px;
+}
+
+.fill-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 22px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  flex-shrink: 0;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
 }
 
 .step-label {
