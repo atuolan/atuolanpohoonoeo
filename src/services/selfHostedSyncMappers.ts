@@ -60,6 +60,7 @@ export function toSyncChatRecordPayload(chat: SyncableChatRecordSource): SyncCha
     charNarrativePerson: chat.charNarrativePerson,
     userNarrativePerson: chat.userNarrativePerson,
     enableRealTimeAwareness: chat.enableRealTimeAwareness,
+    editNoticeChance: chat.editNoticeChance,
     fakeTimeMode: chat.fakeTimeMode,
     fakeTimeLoop: chat.fakeTimeLoop,
     fakeTimeOffset: chat.fakeTimeOffset,

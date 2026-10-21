@@ -470,6 +470,10 @@ interface MessageBubbleProps {
   // 用戶撤回相關
   isUserRecalled?: boolean;
   userRecalledType?: 'seen' | 'unseen';
+  // 用戶改字：已編輯，被角色看到原文時可點開
+  isUserEdited?: boolean;
+  editNoticed?: boolean;
+  editOriginalContent?: string;
   // 角色撤回相關（線上模式）
   isCharRecall?: boolean;
   charRecallType?: 'seen' | 'hidden';
@@ -586,6 +590,9 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   characterName: "",
   isUserRecalled: false,
   userRecalledType: undefined,
+  isUserEdited: false,
+  editNoticed: false,
+  editOriginalContent: '',
   isCharRecall: false,
   charRecallType: undefined,
   charRecallContent: '',
@@ -655,6 +662,9 @@ const charRecallExpanded = ref(props.charRecallRevealed ?? false);
 
 // 群聊撤回內容展開狀態（不持久化，僅本次會話有效）
 const groupRecallExpanded = ref(false);
+
+// 改字被看到時的原文展開狀態
+const editOriginalExpanded = ref(false);
 
 // ===== 群聊紅包相關 computed =====
 const redpacketTypeLabel = computed(() => {
@@ -4591,6 +4601,29 @@ const showTextVoiceTranscript = ref(true);
           </button>
         </div>
 
+        <!-- 已編輯；被角色看到原文時可點開 -->
+        <div v-if="isUser && isUserEdited && !isHtmlOnlyBubble" class="edit-mark">
+          <button
+            v-if="editNoticed && editOriginalContent"
+            type="button"
+            class="edit-mark-btn"
+            :aria-expanded="editOriginalExpanded"
+            @click.stop="editOriginalExpanded = !editOriginalExpanded"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" class="edit-mark-eye">
+              <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+            </svg>
+            已編輯・被看到了
+          </button>
+          <span v-else>已編輯</span>
+        </div>
+        <Transition name="char-recall-expand">
+          <div
+            v-if="isUser && isUserEdited && editNoticed && editOriginalExpanded && editOriginalContent"
+            class="edit-original-preview"
+          >原文：{{ editOriginalContent }}</div>
+        </Transition>
+
         <!-- 時間戳 -->
         <div v-if="showTime && timestamp && !isHtmlOnlyBubble" class="message-time">
           {{ formattedTime }}
@@ -8004,6 +8037,45 @@ const showTextVoiceTranscript = ref(true);
   color: var(--color-text-muted);
   margin-top: 4px;
   padding: 0 4px;
+}
+
+// 已編輯小字（用戶訊息下方）
+.edit-mark {
+  margin-top: 4px;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+
+  .edit-mark-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 8px 1px 5px;
+    border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+    border-radius: var(--radius-full);
+    // 桌布可能很深：用 AI 泡泡底色墊著，才看得清楚
+    background: var(--bubble-ai-bg, #fff);
+    font-size: 11px;
+    color: var(--color-primary, #6c8ebf);
+    cursor: pointer;
+  }
+
+  .edit-mark-eye {
+    width: 12px;
+    height: 12px;
+  }
+}
+
+.edit-original-preview {
+  margin-top: 4px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: var(--bubble-ai-bg, #fff);
+  font-size: 13px;
+  color: var(--bubble-ai-content, #4a4a6a);
+  opacity: 0.85;
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 // 操作選單

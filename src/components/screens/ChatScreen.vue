@@ -234,6 +234,7 @@ import {
   convertToStorableMessage as mapToStorableMessage,
 } from "@/utils/chatMessageMapping";
 import { buildChatMetadataFromState } from "@/utils/chatMetadataBuilder";
+import { clampEditNoticeChance, DEFAULT_EDIT_NOTICE_CHANCE } from "@/utils/editNotice";
 import { saveCharStatus } from "@/services/charStatus";
 import {
   applyCharPlannerOps,
@@ -322,6 +323,8 @@ const onHeaderUpdateFakeTimeLoopEnd = (...args: any[]) =>
   updateFakeTimeLoopEnd(args[0] as string);
 const onHeaderAdvanceStoryTime = (...args: any[]) =>
   advanceStoryTime(Number(args[0]));
+const onHeaderSetEditNoticeChance = (...args: any[]) =>
+  setEditNoticeChance(Number(args[0]));
 const onHeaderUpdateOffsetStartDateTime = (...args: any[]) =>
   updateOffsetStartDateTime(args[0] as string);
 const onHeaderNavigate = (...args: any[]) =>
@@ -2362,6 +2365,7 @@ watch(chatFaceToFaceMode, (enabled) => fakeTime.syncFaceToFace(enabled), {
 const chatCharNarrativePerson = ref<"first" | "third">("first"); // {{char}} 敘事人稱
 const chatUserNarrativePerson = ref<"first" | "second" | "third">("second"); // {{user}} 敘事人稱
 const chatEnableRealTimeAwareness = ref(true); // 感知現實時間（默認開啟）
+const chatEditNoticeChance = ref(DEFAULT_EDIT_NOTICE_CHANCE); // 改字被發現的機率（0–100）
 const chatMinimaxTTSEnabled = ref(false); // 聊天專屬 MiniMax TTS（默認關閉）
 const showTTSRegenerationChoiceModal = ref(false);
 const pendingTTSRegenerationMessageId = ref<string | null>(null);
@@ -3260,6 +3264,7 @@ const {
   messages,
   currentChatId,
   chatFaceToFaceMode,
+  editNoticeChance: chatEditNoticeChance,
   displayCharacterName,
   userName: computed(() => userStore.currentName || "用戶"),
   effectivePersona,
@@ -4691,6 +4696,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       replyToContent: m.replyToContent,
       // 封鎖狀態
       sentWhileBlocked: m.sentWhileBlocked,
+      // 改字被發現
+      editNoticed: m.editNoticed,
+      editOriginalContent: m.editOriginalContent,
       // 發送者角色 ID（群聊）
       senderCharacterId: m.senderCharacterId,
     }));
@@ -8197,6 +8205,12 @@ async function toggleRealTimeAwareness() {
   await saveChatImmediate();
 }
 
+// 改字被發現的機率（滑桿拖動中會連續觸發，用延遲儲存）
+function setEditNoticeChance(value: number) {
+  chatEditNoticeChance.value = clampEditNoticeChance(value);
+  saveChat();
+}
+
 // 跳轉時間（假時間功能）
 async function handleTimeJump() {
   const input = timeJumpInput.value.trim();
@@ -8594,6 +8608,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
         // 載入感知現實時間設定（默認為 true）
         chatEnableRealTimeAwareness.value =
           chat.enableRealTimeAwareness !== false;
+        chatEditNoticeChance.value = clampEditNoticeChance(chat.editNoticeChance);
         // 載入假時間設定
         fakeTime.loadFromChat(chat);
         // 載入 MiniMax TTS 設定（默認為 false）
@@ -8929,6 +8944,7 @@ function buildChatMetadata(
     charNarrativePerson: chatCharNarrativePerson.value,
     userNarrativePerson: chatUserNarrativePerson.value,
     enableRealTimeAwareness: chatEnableRealTimeAwareness.value,
+    editNoticeChance: chatEditNoticeChance.value,
     fakeTimeFields: fakeTime.toChatFields(),
     minimaxTTSEnabled: chatMinimaxTTSEnabled.value,
     imageSearchEnabled: chatImageSearchEnabled.value,
@@ -9980,6 +9996,7 @@ useChatCleanup({
       :night-mode="settingsStore.nightMode"
       :anti-truncation="settingsStore.antiTruncation"
       :chat-enable-real-time-awareness="chatEnableRealTimeAwareness"
+      :edit-notice-chance="chatEditNoticeChance"
       :show-fake-time-panel="showFakeTimePanel"
       :fake-time-mode="fakeTime.fakeTimeMode.value"
       :fake-time-loop-start="fakeTime.fakeTimeLoop.value.startDateTime"
@@ -10020,6 +10037,7 @@ useChatCleanup({
       @open-streaming-window="handleStreamingRestore"
       @open-last-output="openLastOutput"
       @toggle-real-time-awareness="toggleRealTimeAwareness"
+      @set-edit-notice-chance="onHeaderSetEditNoticeChance"
       @toggle-fake-time-panel="toggleFakeTimePanel"
       @set-fake-time-mode="onHeaderSetFakeTimeMode"
       @update-fake-time-loop-start="onHeaderUpdateFakeTimeLoopStart"
@@ -10510,6 +10528,9 @@ useChatCleanup({
             :sender-character-name="message.senderCharacterName || ''"
             :is-recall="message.isRecall"
             :recall-content="message.recallContent"
+            :is-user-edited="message.isUserEdited && !chatFaceToFaceMode"
+            :edit-noticed="message.editNoticed"
+            :edit-original-content="message.editOriginalContent"
             :is-private-message="message.isPrivateMessage"
             :is-group-action="message.isGroupAction"
             :group-action-type="message.groupActionType"

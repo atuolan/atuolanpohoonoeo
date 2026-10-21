@@ -1079,6 +1079,7 @@ export class SelfHostedSyncService {
       charNarrativePerson: payload.charNarrativePerson,
       userNarrativePerson: payload.userNarrativePerson,
       enableRealTimeAwareness: payload.enableRealTimeAwareness,
+      editNoticeChance: payload.editNoticeChance,
       fakeTimeMode: payload.fakeTimeMode,
       fakeTimeLoop: payload.fakeTimeLoop,
       fakeTimeOffset: payload.fakeTimeOffset,

@@ -2,11 +2,14 @@ import { nextTick, ref, type ComputedRef, type Ref } from "vue";
 import { deleteMessage } from "@/storage/chatMessageStorage";
 import type { ChatScreenMessage as Message } from "@/types/chatScreen";
 import { extractModeRequestReason, getPreviewText } from "@/utils/chatScreenHelpers";
+import { applyUserEdit, isUnrepliedByChar } from "@/utils/editNotice";
 
 export function useChatMessageActions(context: {
   messages: Ref<Message[]>;
   currentChatId: Ref<string | null>;
   chatFaceToFaceMode: Ref<boolean>;
+  /** 改字被發現的機率（0–100） */
+  editNoticeChance: Ref<number>;
   displayCharacterName: ComputedRef<string>;
   userName: ComputedRef<string> | Ref<string>;
   effectivePersona: ComputedRef<{ name?: string } | null | undefined>;
@@ -87,6 +90,13 @@ export function useChatMessageActions(context: {
     if (message) {
       const content = editContentTextareaRef.value?.value ?? editingContent.value;
       const thought = editThoughtTextareaRef.value?.value ?? editingThought.value;
+      // 改字被發現：線上私聊／群聊才有，面對面是在寫敘述不是打字
+      if (!context.chatFaceToFaceMode.value) {
+        applyUserEdit(message, content, {
+          unreplied: isUnrepliedByChar(context.messages.value, message.id),
+          chance: context.editNoticeChance.value,
+        });
+      }
       message.content = content;
       message.thought = thought || undefined;
       syncModeRequestFieldsFromContent(message, content);
