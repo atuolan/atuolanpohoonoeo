@@ -2407,13 +2407,11 @@ async function submitPasteRegex() {
 
       <!-- ===== 工具 ===== -->
       <div v-show="activeTab === 'tools'" class="tab-panel">
-        <section class="tab-card">
-          <CharacterToolPermissionsPanel
-            v-model="toolPermissions"
-            :tools="CHAT_TOOLS"
-            :mcp-servers="mcpServerOptions"
-          />
-        </section>
+        <CharacterToolPermissionsPanel
+          v-model="toolPermissions"
+          :tools="CHAT_TOOLS"
+          :mcp-servers="mcpServerOptions"
+        />
       </div>
 
       <!-- ===== 進階 ===== -->
