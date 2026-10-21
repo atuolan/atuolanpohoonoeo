@@ -238,7 +238,7 @@ function onContextMenu(e: MouseEvent) {
           <span class="card-meta">{{ metaLine }}</span>
           <span v-if="when || lorebookCount > 0" class="list-facts">
             <span v-if="when">{{ when }}</span>
-            <span v-if="lorebookCount > 0">· 綁定世界書</span>
+            <span v-if="lorebookCount > 0">{{ when ? "· " : "" }}綁定世界書</span>
           </span>
           <span v-if="description" class="list-desc">{{ description }}</span>
         </div>

@@ -4230,6 +4230,24 @@ body.is-night-mode {
   font-size: 13px;
 }
 
+.tab-card .add-lorebook-btn {
+  width: 100%;
+  min-height: 52px;
+  margin-top: 0 !important;
+  border: 1.5px dashed var(--color-border);
+  border-radius: 14px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+body.is-night-mode .tab-card .add-lorebook-btn {
+  border-color: var(--color-border);
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
 .danger-card {
   background: transparent;
   border: 1.5px solid color-mix(in srgb, var(--color-error) 35%, transparent);
