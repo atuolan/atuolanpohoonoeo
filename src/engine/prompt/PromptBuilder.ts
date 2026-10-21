@@ -28,6 +28,7 @@ import { affinityTemplateService } from "@/services/AffinityTemplateService";
 import { promptTemplateService } from "@/services/PromptTemplateService";
 import type { NearbyPlace } from "@/services/WeatherService";
 import { summaryTimelineKey } from "@/utils/summarySelection";
+import { formatEditNoticeNote } from "@/utils/editNotice";
 import type { BlockState } from "@/types/block";
 import type {
   CharacterWorldSettings,
@@ -595,6 +596,7 @@ export class PromptBuilder {
               content = `[回覆 ${senderName}：「${truncated}」]\n${content}`;
             }
           }
+          content = `${content}${this.formatEditNoticeSuffix(m)}`;
           if (options.enableRealTimeAwareness !== false && m.createdAt) {
             return `${this.formatMsgTimeTag(m)} ${content}`;
           }
@@ -750,6 +752,7 @@ export class PromptBuilder {
               content = `[回覆 ${senderName}：「${truncated}」]\n${content}`;
             }
           }
+          content = `${content}${this.formatEditNoticeSuffix(m)}`;
           if (options.enableRealTimeAwareness !== false && m.createdAt) {
             return `${this.formatMsgTimeTag(m)} ${content}`;
           }
@@ -881,12 +884,24 @@ export class PromptBuilder {
     return `[回覆 ${senderName}：「${truncated}」]\n`;
   }
 
+  /**
+   * 改字被發現：用戶編輯訊息時被看到了原文，接在訊息後面讓 AI 知道（沒被發現回傳空字串）
+   */
+  private formatEditNoticeSuffix(m: ChatMessage): string {
+    if (!m.is_user || m.sender === "system" || m.sender === "narrator") return "";
+    const seer = this.options.groupChatMode
+      ? "群裡的人"
+      : this.options.character?.data.name || "{{char}}";
+    const note = formatEditNoticeNote(m, this.options.userName || "{{user}}", seer);
+    return note ? `\n${note}` : "";
+  }
+
   private formatMessageContentForMacro(m: ChatMessage): string {
     const content = PromptBuilder.formatMessageContentForMacro(m);
     const isSystemMsg = m.sender === "system" || m.sender === "narrator";
 
-    // 處理回覆引用
-    const finalContent = `${this.formatReplyPrefix(m, this.options?.messages)}${content}`;
+    // 處理回覆引用；改字被發現時接上原文提示
+    const finalContent = `${this.formatReplyPrefix(m, this.options?.messages)}${content}${this.formatEditNoticeSuffix(m)}`;
 
     if (
       this.options.enableRealTimeAwareness !== false &&
@@ -3621,6 +3636,9 @@ ${open}好啊，我等你[emotion=calm]</msg>`;
       if (msg.sentWhileBlocked && msg.is_user) {
         msgContent = `${msgContent}\n（正在被封鎖中，${character.data.name}不該看見此內容）`;
       }
+
+      // 改字被發現：附上修改前的原文
+      msgContent = `${msgContent}${this.formatEditNoticeSuffix(msg)}`;
 
       // 如果這條訊息有引用回覆，在內容前加上引用標記讓 AI 知道
       msgContent = `${this.formatReplyPrefix(msg, messages)}${msgContent}`;

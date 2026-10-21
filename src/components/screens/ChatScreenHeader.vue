@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Clock,
   Dices,
+  Eye,
   Fish,
   Flower2,
   ImagePlus,
@@ -71,6 +72,8 @@ const props = defineProps<{
   chatFaceToFaceMode: boolean;
   nightMode: boolean;
   antiTruncation: boolean;
+  /** 改字被發現的機率（0–100） */
+  editNoticeChance: number;
   chatEnableRealTimeAwareness: boolean;
   showFakeTimePanel: boolean;
   fakeTimeMode: "real" | "loop" | "offset" | "story";
@@ -112,6 +115,7 @@ const emit = defineEmits<{
   (e: "open-f2f-panel"): void;
   (e: "toggle-night-mode"): void;
   (e: "toggle-anti-truncation"): void;
+  (e: "set-edit-notice-chance", value: number): void;
   (e: "open-streaming-window"): void;
   (e: "open-last-output"): void;
   (e: "toggle-real-time-awareness"): void;
@@ -188,6 +192,11 @@ const showTimeHelp = ref(false);
 
 // 防截斷說明
 const showAntiTruncationHelp = ref(false);
+const showEditNoticePanel = ref(false);
+
+function onEditNoticeChanceInput(event: Event) {
+  emit("set-edit-notice-chance", Number((event.target as HTMLInputElement).value));
+}
 
 const FAKE_TIME_MODE_HINTS: Record<"real" | "loop" | "offset" | "story", string> = {
   real: "AI 看到的就是你手機的現在時間。",
@@ -690,6 +699,33 @@ const isDarkBackground = computed(() =>
               <p>Gemini 開啟後，回覆會在最後整段出現，不會逐字打出來。</p>
               <p>渠道必須支援工具呼叫（function calling），不支援時會自動改用一般方式送出。Claude 快取模式下不會生效。</p>
               <p class="time-help-note">只能解決「上游把內容切掉」；回應長度上限、網路中斷造成的截斷沒有幫助。</p>
+            </div>
+            <!-- 改字被發現：面對面是在寫敘述不是打字，不顯示 -->
+            <button
+              v-if="!chatFaceToFaceMode"
+              type="button"
+              class="dropdown-toggle-item f2f-panel-entry"
+              :aria-expanded="showEditNoticePanel"
+              @click="showEditNoticePanel = !showEditNoticePanel"
+            >
+              <div class="toggle-item-info">
+                <Eye :size="20" :stroke-width="1.75" />
+                <span>改字被發現</span>
+              </div>
+              <span class="last-output-hint">{{ editNoticeChance > 0 ? `${editNoticeChance}%` : '關閉' }}</span>
+            </button>
+            <div v-if="showEditNoticePanel && !chatFaceToFaceMode" class="fake-time-panel">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="10"
+                class="edit-notice-range"
+                aria-label="改字被發現的機率"
+                :value="editNoticeChance"
+                @input="onEditNoticeChanceInput"
+              />
+              <p class="fake-time-hint">編輯對方還沒回覆的訊息時，有這個機率被看到改之前的原文。對方已經回過的訊息不會被發現；調到 0 就關閉。</p>
             </div>
             <div class="dropdown-divider"></div>
             <div class="dropdown-section-title">電話設定</div>
@@ -1617,6 +1653,13 @@ const isDarkBackground = computed(() =>
 .fake-time-panel {
   padding: 8px 18px 12px;
   border-top: 1px solid var(--color-border);
+}
+
+.edit-notice-range {
+  display: block;
+  width: 100%;
+  margin: 4px 0 8px;
+  accent-color: var(--color-primary);
 }
 
 .f2f-panel-entry {

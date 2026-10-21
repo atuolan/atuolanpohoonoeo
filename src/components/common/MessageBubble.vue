@@ -470,6 +470,9 @@ interface MessageBubbleProps {
   // 用戶撤回相關
   isUserRecalled?: boolean;
   userRecalledType?: 'seen' | 'unseen';
+  // 用戶改字：已編輯；被角色看到原文時氣泡旁多一個小眼睛
+  isUserEdited?: boolean;
+  editNoticed?: boolean;
   // 角色撤回相關（線上模式）
   isCharRecall?: boolean;
   charRecallType?: 'seen' | 'hidden';
@@ -586,6 +589,8 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   characterName: "",
   isUserRecalled: false,
   userRecalledType: undefined,
+  isUserEdited: false,
+  editNoticed: false,
   isCharRecall: false,
   charRecallType: undefined,
   charRecallContent: '',
@@ -3938,6 +3943,19 @@ const showTextVoiceTranscript = ref(true);
           @click.stop="onBubbleClick"
           @aguaphone-audio-control.stop="handleInlineCardAudioControl"
         >
+          <!-- 改字被角色看到：氣泡左下角外側一個小眼睛，不顯示原文 -->
+          <svg
+            v-if="isUser && isUserEdited && editNoticed"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            class="edit-seen-eye"
+            role="img"
+            @click.stop
+            aria-label="對方看到了修改前的原文"
+          >
+            <title>對方看到了修改前的原文</title>
+            <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+          </svg>
           <!-- 時空跳轉訊息 -->
           <div v-if="isTimetravel" class="timetravel-message">
             <div class="timetravel-icon">⏰</div>
@@ -4590,6 +4608,9 @@ const showTextVoiceTranscript = ref(true);
             </svg>
           </button>
         </div>
+
+        <!-- 已編輯：跟時間戳一樣的小字 -->
+        <div v-if="isUser && isUserEdited && !isHtmlOnlyBubble" class="edit-mark">已編輯</div>
 
         <!-- 時間戳 -->
         <div v-if="showTime && timestamp && !isHtmlOnlyBubble" class="message-time">
@@ -8004,6 +8025,29 @@ const showTextVoiceTranscript = ref(true);
   color: var(--color-text-muted);
   margin-top: 4px;
   padding: 0 4px;
+}
+
+// 已編輯小字（用戶訊息下方，樣式跟時間戳一致）
+.edit-mark {
+  margin-top: 4px;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--color-text-muted, #8a8aa3);
+}
+
+// 改字被看到：氣泡左下角外側的小眼睛
+.bubble:has(> .edit-seen-eye) {
+  position: relative;
+}
+
+.edit-seen-eye {
+  position: absolute;
+  right: calc(100% + 6px);
+  bottom: 2px;
+  width: 12px;
+  height: 12px;
+  color: var(--color-text-muted, #8a8aa3);
+  opacity: 0.8;
 }
 
 // 操作選單

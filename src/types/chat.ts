@@ -590,6 +590,14 @@ export interface ChatMessage {
   /** 用戶撤回類型：seen=被角色看見, unseen=沒被看見 */
   userRecalledType?: 'seen' | 'unseen';
 
+  // --- 用戶改字（改字被發現） ---
+  /** 用戶編輯過這則訊息 */
+  isUserEdited?: boolean;
+  /** 第一次編輯前的原文 */
+  editOriginalContent?: string;
+  /** 編輯時被角色看到了原文 */
+  editNoticed?: boolean;
+
   // --- 角色撤回相關（線上模式） ---
   /** 是否為角色撤回訊息（線上模式專用） */
   isCharRecall?: boolean;
@@ -1056,6 +1064,9 @@ export interface Chat {
 
   /** 感知現實時間（關閉後不注入時間標籤和時間提示詞，讓用戶可以自由使用時間跳轉魔法） */
   enableRealTimeAwareness?: boolean;
+
+  /** 改字被發現的機率（0–100，未設定為 30）：編輯角色還沒回覆的訊息時，角色有這個機率看到原文 */
+  editNoticeChance?: number;
 
   /** 假時間模式：real=真實時間, loop=輪迴時間, offset=偏移時間, story=劇情時鐘（面對面時暫停） */
   fakeTimeMode?: "real" | "loop" | "offset" | "story";
