@@ -5,7 +5,7 @@ name: iOS 測試版 IPA（沒簽名，用 Sideloadly 自簽安裝）
 on:
   workflow_dispatch:
   push:
-    branches: [ios-app]
+    branches: [master]
     paths:
       - "ios/**"
       - "capacitor.config.ts"
