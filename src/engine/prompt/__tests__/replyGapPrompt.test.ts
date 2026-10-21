@@ -48,21 +48,13 @@ describe("時間資訊帶上距離角色上次回覆多久", () => {
     expect(text).not.toContain("{{char}}");
   });
 
-  it("才隔幾分鐘：只說接著剛才的事", async () => {
-    const text = await timeInfo({
-      messages: [msg(false, 3, "嗯"), msg(true, 1, "然後呢")],
-    });
-    expect(text).toContain("才過了 3 分鐘，還是同一段對話");
-    expect(text).toContain("不用交代這段時間做了什麼");
-    expect(text).not.toContain("照常理該做完了");
-  });
-
-  it("不到一小時也不提醒交代這段時間做了什麼", async () => {
-    const text = await timeInfo({
-      messages: [msg(false, 50, "我去煮麵"), msg(true, 1, "好了沒")],
-    });
-    expect(text).toContain("才過了 50 分鐘");
-    expect(text).not.toContain("照常理該做完了");
+  it("不到一小時完全不加", async () => {
+    for (const minutesAgo of [3, 50]) {
+      const text = await timeInfo({
+        messages: [msg(false, minutesAgo, "嗯"), msg(true, 1, "然後呢")],
+      });
+      expect(text).not.toContain("[距離上次回覆]");
+    }
   });
 
   it("跨日時帶上日期", async () => {

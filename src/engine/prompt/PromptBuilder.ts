@@ -2674,14 +2674,14 @@ ${PHONE_CALL_BILINGUAL_REMINDER}`
     // 循環時間模式繞回起點時會是負的，這時算不出有意義的間隔
     if (!Number.isFinite(gapMs) || gapMs < 0) return null;
 
+    // 不到門檻就什麼都不提，免得角色每則都在交代剛剛幾分鐘做了什麼
+    if (gapMs < PromptBuilder.REPLY_GAP_NUDGE_MS) return null;
+
     const hm = `${lastAt.getHours().toString().padStart(2, "0")}:${lastAt.getMinutes().toString().padStart(2, "0")}`;
     const sameDay = lastAt.toDateString() === now.toDateString();
     const lastAtText = sameDay ? hm : `${lastAt.getMonth() + 1}/${lastAt.getDate()} ${hm}`;
     const gap = formatGap(gapMs);
 
-    if (gapMs < PromptBuilder.REPLY_GAP_NUDGE_MS) {
-      return `[距離上次回覆] {{char}} 上一次回覆在 ${lastAtText}，才過了 ${gap}，還是同一段對話，直接接著剛才的話題回；不用交代這段時間做了什麼、剛剛幾分鐘前在幹嘛。`;
-    }
     return [
       "[距離上次回覆]",
       `{{char}} 上一次回覆在 ${lastAtText}，到現在已經過了 ${gap}。`,
