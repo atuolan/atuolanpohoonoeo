@@ -22,12 +22,12 @@ export function getTheaterPostId(post: QZonePost): string | undefined {
   return key?.slice(THEATER_KEY_PREFIX.length);
 }
 
-/** 喜歡數：自己按的 likeCount、廣場路人的喜歡、舊版 AI 給的表情數 */
+/** 喜歡數：自己按的 likeCount、廣場路人的喜歡、角色按的讚、舊版 AI 給的表情數 */
 export function getLikeTotal(post: QZonePost): number {
   const legacy = Object.entries(post.emoticons ?? {})
     .filter(([k]) => !k.startsWith(THEATER_KEY_PREFIX))
     .reduce((sum, [, v]) => sum + (Number(v) || 0), 0);
-  return (post.likeCount ?? 0) + (post.crowdLikes ?? 0) + legacy;
+  return (post.likeCount ?? 0) + (post.crowdLikes ?? 0) + (post.likeEvents?.length ?? 0) + legacy;
 }
 
 export function audienceLabel(post: QZonePost, nameOf: (id: string) => string): string {

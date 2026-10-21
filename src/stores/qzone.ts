@@ -18,6 +18,8 @@ import {
 } from "@/services/selfHostedSyncState";
 import type {
     AutoInteractionConfig,
+    PlurkBan,
+    PlurkSystemNotice,
     QZoneComment,
     QZonePost,
     QZoneSettings,
@@ -25,6 +27,7 @@ import type {
 import { DEFAULT_AUTO_INTERACTION_CONFIG } from "@/types/qzone";
 import { migrateDirectorConfig, type PlurkDirectorConfig } from "@/utils/plurkDirectorConfig";
 import { isPostFollowed } from "@/utils/plurkRiver";
+import { makeNoticeId, withNotice } from "@/utils/plurkModeration";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { useNotificationStore } from "./notification";
@@ -339,7 +342,7 @@ export const useQzoneStore = defineStore("qzone", () => {
   async function updateComment(
     postId: string,
     commentId: string,
-    updates: Partial<Pick<QZoneComment, "content" | "qualifier">>,
+    updates: Partial<Pick<QZoneComment, "content" | "qualifier" | "moderation">>,
   ): Promise<void> {
     const post = posts.value.find((p) => p.id === postId);
     const comment = post?.comments.find((c) => c.id === commentId);
@@ -366,6 +369,26 @@ export const useQzoneStore = defineStore("qzone", () => {
     const post = posts.value.find((p) => p.id === postId);
     if (!post) return;
     post.muted = muted;
+    await saveQzonePost(post);
+    scheduleSelfHostedAutoSync();
+  }
+
+  /** 加一則系統通知（版主處分、禁言、公告、申訴結果） */
+  async function addSystemNotice(notice: Omit<PlurkSystemNotice, "id" | "at"> & { at?: number }): Promise<void> {
+    const full: PlurkSystemNotice = { ...notice, id: makeNoticeId(), at: notice.at ?? Date.now() };
+    await updateSettings({ systemNotices: withNotice(settings.value.systemNotices, full) });
+  }
+
+  /** 設定或解除（undefined）廣場禁言 */
+  async function setBan(ban: PlurkBan | undefined): Promise<void> {
+    await updateSettings({ ban });
+  }
+
+  /** 角色按讚：每人一次 */
+  async function addLikeEvent(postId: string, by: string, at: number): Promise<void> {
+    const post = posts.value.find((p) => p.id === postId);
+    if (!post || post.likeEvents?.some((e) => e.by === by)) return;
+    post.likeEvents = [...(post.likeEvents ?? []), { by, at }];
     await saveQzonePost(post);
     scheduleSelfHostedAutoSync();
   }
@@ -472,6 +495,9 @@ export const useQzoneStore = defineStore("qzone", () => {
     updateSettings,
     updateAutoInteractionConfig,
     updateDirector,
+    addSystemNotice,
+    setBan,
+    addLikeEvent,
     savePosts,
     getPostsByAuthor,
     init,

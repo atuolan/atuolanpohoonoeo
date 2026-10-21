@@ -2,6 +2,7 @@
  * 噗浪的「正在回應」狀態與延遲回應到點通知
  */
 
+import { checkAppeals } from "@/services/plurkModeration";
 import { useNotificationStore } from "@/stores/notification";
 import { useQzoneStore } from "@/stores/qzone";
 import type { QZoneComment, QZonePost } from "@/types/qzone";
@@ -66,7 +67,7 @@ export function getTypingNames(
 let tickTimer: number | null = null;
 let lastTick = Date.now();
 
-/** App 開著時每 30 秒檢查一次，剛到點的回應發通知 */
+/** App 開著時每 30 秒檢查一次：剛到點的回應發通知、申訴出結果 */
 export function startPlurkRevealTicker(): void {
   if (tickTimer !== null) return;
   lastTick = Date.now();
@@ -78,6 +79,8 @@ export function startPlurkRevealTicker(): void {
       for (const { comment } of findDueComments(qzoneStore.posts, lastTick, now)) {
         notificationStore.notifyQzoneComment(comment.username || "角色", comment.avatar, comment.authorId);
       }
+      // 申訴到點了就出結果
+      void checkAppeals(now);
     }
     lastTick = now;
   }, TICK_MS);

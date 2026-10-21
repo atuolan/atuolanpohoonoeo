@@ -3,14 +3,12 @@
  * 也可能讓一位好友角色偷偷說心裡話
  */
 
-import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
+import { generatePlurkText, hasPlurkApi } from "@/services/plurkAI";
 import { buildCastContext, effectiveFriendIds } from "@/services/plurkCast";
 import { plurkActivity } from "@/services/plurkReveal";
 import { useCharactersStore } from "@/stores/characters";
 import { useQzoneStore } from "@/stores/qzone";
-import { useSettingsStore } from "@/stores/settings";
 import type { QZonePost } from "@/types/qzone";
-import { pickGenerationToggles } from "@/utils/generationToggles";
 import { getMutedIds, type DirectorStrictness } from "@/utils/plurkDirectorConfig";
 import { plurkPlainText } from "@/utils/plurkContent";
 import { isKnownQualifier, normalizeQualifier, PLURK_QUALIFIERS } from "@/utils/plurkQualifiers";
@@ -195,10 +193,7 @@ function shuffle<T>(list: T[]): T[] {
 /** 生一批廣場路人噗並存起來；回傳新增幾則 */
 export async function generateSquareBatch(): Promise<{ success: boolean; added: number; error?: string }> {
   if (plurkActivity.square) return { success: false, added: 0, error: "廣場正在生成中" };
-  const settingsStore = useSettingsStore();
-  const taskConfig = settingsStore.getAPIForTask("plurkPost");
-  const api = taskConfig.api;
-  if (!api.endpoint || !api.apiKey || !api.model) return { success: false, added: 0, error: "請先配置 API" };
+  if (!hasPlurkApi()) return { success: false, added: 0, error: "請先配置 API" };
 
   plurkActivity.square = true;
   try {
@@ -235,26 +230,8 @@ export async function generateSquareBatch(): Promise<{ success: boolean; added: 
       recentTexts,
       now,
     });
-    const genConfig = taskConfig.generation || settingsStore.generation;
-    const client = new OpenAICompatibleClient(api);
-    const generated = await client.generate({
-      messages: [{ role: "user", content: prompt }],
-      settings: {
-        maxContextLength: genConfig.maxContextLength || 128000,
-        maxResponseLength: genConfig.maxTokens || 8192,
-        temperature: genConfig.temperature || 0.9,
-        topP: genConfig.topP || 0.95,
-        ...pickGenerationToggles(genConfig),
-        frequencyPenalty: genConfig.frequencyPenalty || 0,
-        presencePenalty: genConfig.presencePenalty || 0,
-        repetitionPenalty: 1,
-        stopSequences: [],
-        streaming: false,
-        useStreamingWindow: false,
-      },
-      apiSettings: api,
-    });
-    const parsed = parseSquareResponse(generated.content || "", {
+    const raw = await generatePlurkText(prompt);
+    const parsed = parseSquareResponse(raw, {
       characterIds: new Set(characters.map((c) => c.id)),
       strictness: cfg.strictness,
     });

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/services/plurkCast", () => ({ buildCastContext: vi.fn(), effectiveFriendIds: vi.fn() }));
 vi.mock("@/stores/qzone", () => ({ useQzoneStore: vi.fn() }));
 vi.mock("@/stores/characters", () => ({ useCharactersStore: vi.fn() }));
-vi.mock("@/stores/settings", () => ({ useSettingsStore: vi.fn() }));
+vi.mock("@/services/plurkAI", () => ({ generatePlurkText: vi.fn(), hasPlurkApi: vi.fn() }));
 vi.mock("@/stores/notification", () => ({ useNotificationStore: vi.fn() }));
 
 const { buildSquarePrompt, npcColorFor, npcIdFor, parseSquareResponse } = await import("./plurkSquareGeneration");
