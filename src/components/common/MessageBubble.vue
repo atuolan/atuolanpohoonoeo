@@ -470,8 +470,7 @@ interface MessageBubbleProps {
   // 用戶撤回相關
   isUserRecalled?: boolean;
   userRecalledType?: 'seen' | 'unseen';
-  // 用戶改字：已編輯；被角色看到原文時氣泡旁多一個小眼睛
-  isUserEdited?: boolean;
+  // 用戶改字被角色看到原文：氣泡旁一個小眼睛
   editNoticed?: boolean;
   // 角色撤回相關（線上模式）
   isCharRecall?: boolean;
@@ -589,7 +588,6 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   characterName: "",
   isUserRecalled: false,
   userRecalledType: undefined,
-  isUserEdited: false,
   editNoticed: false,
   isCharRecall: false,
   charRecallType: undefined,
@@ -3945,7 +3943,7 @@ const showTextVoiceTranscript = ref(true);
         >
           <!-- 改字被角色看到：氣泡左下角外側一個小眼睛，不顯示原文 -->
           <svg
-            v-if="isUser && isUserEdited && editNoticed"
+            v-if="isUser && editNoticed"
             viewBox="0 0 24 24"
             fill="currentColor"
             class="edit-seen-eye"
@@ -4609,8 +4607,6 @@ const showTextVoiceTranscript = ref(true);
           </button>
         </div>
 
-        <!-- 已編輯：跟時間戳一樣的小字 -->
-        <div v-if="isUser && isUserEdited && !isHtmlOnlyBubble" class="edit-mark">已編輯</div>
 
         <!-- 時間戳 -->
         <div v-if="showTime && timestamp && !isHtmlOnlyBubble" class="message-time">
@@ -8025,14 +8021,6 @@ const showTextVoiceTranscript = ref(true);
   color: var(--color-text-muted);
   margin-top: 4px;
   padding: 0 4px;
-}
-
-// 已編輯小字（用戶訊息下方，樣式跟時間戳一致）
-.edit-mark {
-  margin-top: 4px;
-  padding: 0 4px;
-  font-size: 11px;
-  color: var(--color-text-muted, #8a8aa3);
 }
 
 // 改字被看到：氣泡左下角外側的小眼睛
