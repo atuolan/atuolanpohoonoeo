@@ -7,14 +7,17 @@ import { useBatchComments } from "@/composables/useBatchComments";
 import { publishCharacterPlurk } from "@/services/PlurkPostService";
 import { buildCastContext, effectiveFriendIds } from "@/services/plurkCast";
 import { buildPeekSummary, generateCharacterPlurk } from "@/services/plurkGeneration";
+import { generateSquareBatch } from "@/services/plurkSquareGeneration";
 import { useAIGenerationStore } from "@/stores/aiGeneration";
 import { useCharactersStore } from "@/stores/characters";
 import { useQzoneStore } from "@/stores/qzone";
 import { useSettingsStore } from "@/stores/settings";
 import { dayKey, getMutedIds } from "@/utils/plurkDirectorConfig";
-import { pickPoster, pickReplyTarget, planDirectorEvents } from "@/utils/plurkDirectorPlan";
+import { pickPoster, pickReplyTarget, pickSquareVisitTarget, planDirectorEvents } from "@/utils/plurkDirectorPlan";
 
 const CHECK_MS = 5 * 60_000;
+/** 回應事件改成「角色去逛廣場」的機會 */
+const VISIT_SHARE = 0.35;
 
 class PlurkDirectorService {
   private timer: number | null = null;
@@ -57,7 +60,10 @@ class PlurkDirectorService {
         const friends = effectiveFriendIds(ctx).filter((id) => !muted.has(id));
         const { generateCommentsForPost } = useBatchComments();
         for (const event of events) {
-          if (event.kind === "post") {
+          if (event.kind === "square") {
+            const result = await generateSquareBatch();
+            if (result.success) done++;
+          } else if (event.kind === "post") {
             const id = pickPoster(cfg, friends, event.at);
             const character = id ? charactersStore.characters.find((c) => c.id === id) : null;
             if (!character) continue;
@@ -68,6 +74,8 @@ class PlurkDirectorService {
               background: true,
             });
             if (raw) await publishCharacterPlurk(character, raw, {}, { timestamp: event.at });
+            done++;
+          } else if (Math.random() < VISIT_SHARE && (await this.visitSquare(friends, now))) {
             done++;
           } else {
             const candidates = qzoneStore.posts.filter(
@@ -96,6 +104,25 @@ class PlurkDirectorService {
     } finally {
       this.running = false;
     }
+  }
+
+  /** 1–2 位好友角色去回一則路人噗；沒有可以逛的就回 false */
+  private async visitSquare(friends: string[], now: number): Promise<boolean> {
+    const qzoneStore = useQzoneStore();
+    const target = pickSquareVisitTarget(qzoneStore.posts, now, new Set(friends));
+    if (!target || friends.length === 0) return false;
+    const shuffled = [...friends].sort(() => Math.random() - 0.5);
+    const visitors = shuffled.slice(0, Math.random() < 0.5 ? 1 : 2);
+    const { generateCommentsForPost } = useBatchComments();
+    await generateCommentsForPost(target.id, visitors, {
+      includeExistingComments: true,
+      minComments: visitors.length + 1,
+      maxComments: visitors.length + 3,
+      slow: true,
+      background: true,
+      ignorePolicy: true,
+    });
+    return true;
   }
 }
 

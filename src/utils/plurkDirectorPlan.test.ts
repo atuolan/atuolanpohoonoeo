@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { QZoneComment, QZonePost } from "@/types/qzone";
 import { DEFAULT_DIRECTOR_CONFIG, type PlurkDirectorConfig } from "./plurkDirectorConfig";
-import { pickPoster, pickReplyTarget, planDirectorEvents, remainingToday } from "./plurkDirectorPlan";
+import { pickPoster, pickReplyTarget, pickSquareVisitTarget, planDirectorEvents, remainingToday } from "./plurkDirectorPlan";
 
 const H = 3600_000;
 const now = new Date(2026, 9, 21, 20, 0).getTime();
@@ -16,14 +16,14 @@ describe("planDirectorEvents", () => {
     expect(planDirectorEvents({ cfg: cfg(), now, random: () => 0.1 })).toEqual([{ kind: "post", at: now }]);
     expect(planDirectorEvents({ cfg: cfg(), now, random: () => 0.3 })).toEqual([]);
   });
-  it("一般檢查一次最多 2 個", () => {
+  it("一般檢查一次最多 2 個（廣場另算）", () => {
     const events = planDirectorEvents({ cfg: cfg({ liveliness: 5, lastRunAt: now - 50 * 60_000 }), now, random: () => 0.1 });
-    expect(events).toHaveLength(2);
+    expect(events.filter((e) => e.kind !== "square")).toHaveLength(2);
   });
   it("離開超過 1 小時：補最多 3 個，時間落在離開期間、由舊到新", () => {
     const last = now - 10 * H;
     const events = planDirectorEvents({ cfg: cfg({ lastRunAt: last }), now, random: () => 0.5 });
-    expect(events).toHaveLength(3);
+    expect(events.filter((e) => e.kind !== "square")).toHaveLength(3);
     for (const e of events) {
       expect(e.at).toBeGreaterThan(last);
       expect(e.at).toBeLessThanOrEqual(now);
@@ -83,5 +83,38 @@ describe("pickReplyTarget", () => {
     expect(pickReplyTarget(posts, now)?.id).toBe("mine");
     expect(pickReplyTarget(posts.filter((x) => x.id !== "mine"), now)?.id).toBe("char");
     expect(pickReplyTarget([posts[0]], now)).toBeNull();
+  });
+});
+
+describe("廣場事件", () => {
+  it("路人多寡越高越常發生，一次最多一批", () => {
+    const quiet = cfg({ liveliness: 1, npcLevel: 1, lastRunAt: now - 60 * 60_000 });
+    expect(planDirectorEvents({ cfg: quiet, now, random: () => 0.5 }).some((e) => e.kind === "square")).toBe(false);
+    const busy = cfg({ liveliness: 1, npcLevel: 5, lastRunAt: now - 10 * H });
+    expect(planDirectorEvents({ cfg: busy, now, random: () => 0.5 }).filter((e) => e.kind === "square")).toHaveLength(1);
+  });
+  it("每日上限用完就沒有", () => {
+    const full = cfg({ npcLevel: 5, lastRunAt: now - 10 * H, dailyCap: 5, todayKey: "2026-10-21", todayCount: 5 });
+    expect(planDirectorEvents({ cfg: full, now, random: () => 0.5 })).toEqual([]);
+  });
+});
+
+describe("pickSquareVisitTarget", () => {
+  const npc = { id: "npc-1", name: "小魚", color: "#000" };
+  const cm = (authorId: string): QZoneComment => ({ id: authorId, authorId, username: "x", avatar: "", content: "", timestamp: now - 60_000, authorType: "ai" });
+  const p = (id: string, t: number, extra: Partial<QZonePost> = {}): QZonePost => ({
+    id, authorId: "npc-1", type: "shuoshuo", timestamp: t, comments: [], likes: [], visibility: "public", authorType: "ai", npc, ...extra,
+  });
+  it("路人噗、24 小時內、沒摺疊、角色回應少於 2，新的優先", () => {
+    const chars = new Set(["a", "b"]);
+    const posts = [
+      p("old", now - 30 * H),
+      p("full", now - 60_000, { comments: [cm("a"), cm("b")] }),
+      p("folded", now - 2 * 60_000, { moderation: { action: "fold", reason: "引戰", by: "阿杏", at: 0 } }),
+      p("ok", now - H, { comments: [cm("a"), cm("passerby-1")] }),
+      p("mine", now - 60_000, { npc: undefined, authorType: "user" }),
+    ];
+    expect(pickSquareVisitTarget(posts, now, chars)?.id).toBe("ok");
+    expect(pickSquareVisitTarget([posts[0]], now, chars)).toBeNull();
   });
 });

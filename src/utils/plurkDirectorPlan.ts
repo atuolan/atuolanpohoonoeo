@@ -5,10 +5,18 @@
 import type { QZonePost } from "@/types/qzone";
 import { getTheaterPostId } from "@/utils/plurkPost";
 import { visibleComments } from "@/utils/plurkRiver";
-import { dayKey, getRole, isInRoutine, LIVELINESS_RATES, type PlurkDirectorConfig } from "@/utils/plurkDirectorConfig";
+import {
+  dayKey,
+  getRole,
+  isInRoutine,
+  LIVELINESS_RATES,
+  SQUARE_RATES,
+  type PlurkDirectorConfig,
+} from "@/utils/plurkDirectorConfig";
 
 export interface DirectorEvent {
-  kind: "post" | "reply";
+  /** square＝生一批廣場路人噗 */
+  kind: "post" | "reply" | "square";
   at: number;
 }
 
@@ -36,16 +44,41 @@ export function planDirectorEvents(input: { cfg: PlurkDirectorConfig; now: numbe
   const expected = (estimateCallsPerHour(cfg) * elapsed) / H;
   const catchUp = elapsed > CATCH_UP_AFTER;
   const whole = Math.floor(expected);
+  const budget = remainingToday(cfg, now);
   let count = whole + (random() < expected - whole ? 1 : 0);
-  count = Math.min(count, catchUp ? MAX_CATCH_UP : MAX_PER_CHECK, remainingToday(cfg, now));
-  if (count <= 0) return [];
+  count = Math.min(count, catchUp ? MAX_CATCH_UP : MAX_PER_CHECK, budget);
 
   const events: DirectorEvent[] = [];
   for (let i = 0; i < count; i++) {
     const at = catchUp ? cfg.lastRunAt + Math.round(((i + random()) / count) * elapsed) : now;
     events.push({ kind: random() < POST_SHARE ? "post" : "reply", at: Math.min(at, now) });
   }
+
+  // 廣場路人：另外算，一次檢查最多一批，一樣吃每日上限
+  const squareExpected = (estimateSquarePerHour(cfg) * elapsed) / H;
+  if (events.length < budget && random() < Math.min(1, squareExpected)) {
+    const at = catchUp ? cfg.lastRunAt + Math.round(random() * elapsed) : now;
+    events.push({ kind: "square", at: Math.min(at, now) });
+  }
   return events.sort((a, b) => a.at - b.at);
+}
+
+export function estimateSquarePerHour(cfg: PlurkDirectorConfig): number {
+  return SQUARE_RATES[Math.min(Math.max(cfg.npcLevel, 1), 5) - 1];
+}
+
+/** 角色去逛廣場：24 小時內、沒被摺疊、角色回應還少於 2 則的路人噗，新的優先 */
+export function pickSquareVisitTarget(posts: QZonePost[], now: number, characterIds: Set<string>): QZonePost | null {
+  const candidates = posts.filter(
+    (p) =>
+      !!p.npc &&
+      !p.moderation &&
+      p.timestamp <= now &&
+      now - p.timestamp <= 24 * H &&
+      p.comments.filter((c) => characterIds.has(c.authorId)).length < 2,
+  );
+  candidates.sort((a, b) => b.timestamp - a.timestamp);
+  return candidates[0] ?? null;
 }
 
 export function pickPoster(

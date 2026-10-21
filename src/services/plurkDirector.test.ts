@@ -37,6 +37,8 @@ vi.mock("@/stores/characters", () => ({
 }));
 vi.mock("@/composables/useBatchComments", () => ({ useBatchComments: () => ({ generateCommentsForPost }) }));
 vi.mock("@/services/PlurkPostService", () => ({ publishCharacterPlurk }));
+const generateSquareBatch = vi.fn(async () => ({ success: true, added: 4 }));
+vi.mock("@/services/plurkSquareGeneration", () => ({ generateSquareBatch }));
 vi.mock("@/services/plurkGeneration", () => ({ generateCharacterPlurk, buildPeekSummary: async () => "" }));
 vi.mock("@/services/plurkCast", () => ({
   buildCastContext: async () => ({ allCharacterIds: ["a", "b"], friendIds: new Set(["a", "b"]), mutedIds: new Set() }),
@@ -60,7 +62,7 @@ describe("plurkDirector.checkNow", () => {
     expect(updateDirector).toHaveBeenCalledWith({ lastRunAt: expect.any(Number) });
   });
 
-  it("離開 3 小時：補最多 3 件，時間落在離開期間，今天次數增加", async () => {
+  it("離開 3 小時：補最多 3 則噗＋一批廣場，時間落在離開期間，今天次數增加", async () => {
     const last = Date.now() - 3 * H;
     // 全部是發噗事件：熱鬧程度 5、作息不限
     vi.spyOn(Math, "random").mockReturnValue(0.1);
@@ -74,7 +76,8 @@ describe("plurkDirector.checkNow", () => {
       expect(p.timestamp).toBeLessThanOrEqual(Date.now());
     }
     expect(generateCharacterPlurk.mock.calls.every((call) => (call as unknown[])[1] && ((call as unknown[])[1] as { background?: boolean }).background)).toBe(true);
-    expect(state.cfg.todayCount).toBe(3);
+    expect(generateSquareBatch).toHaveBeenCalledTimes(1);
+    expect(state.cfg.todayCount).toBe(4);
     expect(state.cfg.lastRunAt).toBeGreaterThan(last);
   });
 });
