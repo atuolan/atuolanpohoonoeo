@@ -20,11 +20,12 @@ describe("isSquarePost / isRiverPost", () => {
     expect(isSquarePost(p("e", now, { theaterPostId: "t" }))).toBe(false);
     expect(isSquarePost(p("f", now, { type: "repost" }))).toBe(false);
   });
-  it("路人噗要加好友才進河道；角色偷偷說不進", () => {
+  it("路人噗要加好友才進河道；路人和角色的偷偷說不進", () => {
     const npc = p("n", now, { npc: { id: "npc-1", name: "小魚", color: "#000" }, onSquare: true });
     expect(isRiverPost(npc, new Set())).toBe(false);
     expect(isRiverPost(npc, new Set(["npc-1"]))).toBe(true);
     expect(isRiverPost(p("x", now, { audience: "anon", anonOf: "c1" }), new Set())).toBe(false);
+    expect(isRiverPost(p("y", now, { audience: "anon", onSquare: true }), new Set())).toBe(false);
     expect(isRiverPost(p("u", now, { audience: "anon", authorType: "user" }), new Set())).toBe(true);
   });
 });

@@ -89,9 +89,9 @@ export function planSquareTimes(input: {
   return times.sort((a, b) => a - b);
 }
 
-/** 是不是廣場生成的噗：路人噗或角色的偷偷說 */
+/** 是不是廣場生成的噗：路人噗、路人或角色的偷偷說 */
 export function isGeneratedSquarePost(post: QZonePost): boolean {
-  return !!post.npc || !!post.anonOf;
+  return !!post.npc || !!post.anonOf || !!post.onSquare;
 }
 
 /** 廣場生成的噗裡最新的時間，沒有就 null */

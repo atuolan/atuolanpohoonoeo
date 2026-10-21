@@ -42,7 +42,7 @@
         @update:qualifier="squareQualifier = $event"
         @update:query="squareQuery = $event"
         @open="(id) => openThread(id, true)"
-        @fill="fillSquare"
+        @fill="fillSquare(squareTab === 'anon')"
       />
       <NoticeTab
         v-if="tab === 'notice'"
@@ -191,7 +191,7 @@
       @post-now="postNowRandom"
       @post-now-pick="pickerMode = 'postAs'"
       @reply-now="replyNow"
-      @fill-square="fillSquare"
+      @fill-square="fillSquare()"
     />
 
     <PlurkActionSheet
@@ -729,9 +729,10 @@ const squareCards = computed(() =>
   }).map(toSquareCard),
 );
 
-async function fillSquare() {
+/** anon：在偷偷說分頁按的，整批生偷偷說，不然生完這頁還是空的 */
+async function fillSquare(anon = false) {
   if (!hasPostApi()) return alert("請先配置 API");
-  const result = await generateSquareBatch();
+  const result = await generateSquareBatch({ anon });
   if (!result.success && !result.aborted) alert(result.error || "生成失敗");
 }
 

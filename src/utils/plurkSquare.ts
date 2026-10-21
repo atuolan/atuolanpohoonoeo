@@ -40,10 +40,10 @@ export function isSquarePost(post: QZonePost): boolean {
   return (audience === "all" || audience === "anon") && !getTheaterPostId(post) && post.type !== "repost";
 }
 
-/** 河道：路人噗要加了好友才看得到；角色的偷偷說不進河道 */
+/** 河道：路人噗要加了好友才看得到；路人和角色的偷偷說不進河道 */
 export function isRiverPost(post: QZonePost, npcFriendIds: Set<string>): boolean {
   if (post.npc) return npcFriendIds.has(post.npc.id);
-  return !post.anonOf;
+  return !post.anonOf && !post.onSquare;
 }
 
 /** 熱門分數：沒被刪的回應×2＋喜歡 */
