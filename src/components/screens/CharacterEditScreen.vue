@@ -3560,7 +3560,7 @@ async function submitPasteRegex() {
 }
 
 .modal-panel {
-  background: var(--color-bg, #fff);
+  background: var(--color-surface, #fff);
   border-radius: 16px 16px 0 0;
   padding: 20px 16px;
   width: 100%;
@@ -3589,7 +3589,7 @@ async function submitPasteRegex() {
   height: 28px;
   border: none;
   border-radius: 50%;
-  background: var(--color-bg-secondary, #f0f0f0);
+  background: var(--color-surface-hover, #f0f0f0);
   color: var(--color-text-secondary, #666);
   font-size: 13px;
   cursor: pointer;
@@ -3626,7 +3626,7 @@ async function submitPasteRegex() {
     transition: opacity 0.15s;
 
     &.secondary {
-      background: var(--color-bg-secondary, #f0f0f0);
+      background: var(--color-surface-hover, #f0f0f0);
       color: var(--color-text, #333);
     }
 
@@ -3663,6 +3663,300 @@ async function submitPasteRegex() {
   opacity: 0;
   .modal-panel {
     transform: translateY(40px);
+  }
+}
+
+// ===== 夜晚模式覆蓋 =====
+// 上面寫死的淺色在夜晚模式下會跟全域深色輸入框混在一起；
+// body.is-night-mode 由 theme store 同步切換，保持巢狀讓 scoped 附在內層元素上。
+body.is-night-mode {
+  .character-edit-screen {
+    background: var(--color-background);
+  }
+
+  .avatar-preview {
+    border-color: var(--color-surface);
+  }
+
+  .avatar-placeholder {
+    background: var(--color-surface);
+    border-color: var(--color-border);
+
+    svg {
+      color: var(--color-text-muted);
+    }
+  }
+
+  .avatar-edit-badge {
+    border-color: var(--color-background);
+  }
+
+  .avatar-hint {
+    color: var(--color-text-secondary);
+  }
+
+  .edit-section {
+    background: var(--color-surface);
+
+    &.danger-section {
+      border-color: rgba(255, 123, 123, 0.3);
+    }
+  }
+
+  .section-header:hover {
+    background: var(--color-surface-hover);
+  }
+
+  .section-title {
+    color: var(--color-text);
+  }
+
+  .section-chevron {
+    color: var(--color-text-muted);
+  }
+
+  .form-label {
+    color: var(--color-text-secondary);
+
+    .optional {
+      color: var(--color-text-muted);
+    }
+  }
+
+  .form-hint {
+    color: var(--color-text-muted);
+  }
+
+  .soft-input {
+    border-color: var(--color-border);
+
+    &:focus {
+      border-color: #f093fb;
+    }
+
+    &::placeholder {
+      color: var(--color-text-muted);
+    }
+  }
+
+  .tags-container {
+    border-color: var(--color-border);
+  }
+
+  .soft-tag.editable {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+
+    .tag-remove {
+      color: var(--color-text-muted);
+    }
+  }
+
+  .tag-input {
+    background: transparent;
+    color: var(--color-text);
+
+    &::placeholder {
+      color: var(--color-text-muted);
+    }
+  }
+
+  .lorebook-item {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+  }
+
+  .add-lorebook-btn {
+    background: var(--color-surface-hover);
+    border-color: var(--color-border);
+    color: var(--color-text-secondary);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: var(--color-text-muted);
+    }
+  }
+
+  .lorebook-picker {
+    background: var(--color-background);
+    color: var(--color-text);
+  }
+
+  .lorebook-option:hover {
+    background: var(--color-surface-hover);
+  }
+
+  .no-lorebooks {
+    color: var(--color-text-muted);
+  }
+
+  .regex-item {
+    background: var(--color-surface-hover);
+
+    &.disabled {
+      border-left-color: var(--color-border);
+    }
+  }
+
+  .regex-name {
+    color: var(--color-text);
+  }
+
+  .regex-download,
+  .regex-delete {
+    color: var(--color-text-muted);
+  }
+
+  .regex-find {
+    color: var(--color-text-secondary);
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .regex-placement {
+    color: var(--color-text-muted);
+  }
+
+  .toggle-switch .toggle-slider {
+    background: #3a3a5a;
+  }
+
+  .toggle-switch input:checked + .toggle-slider {
+    background: #7dd3a8;
+  }
+
+  .module-card {
+    background: var(--color-surface-hover);
+  }
+
+  .module-info {
+    .module-name {
+      color: var(--color-text);
+    }
+
+    .module-desc {
+      color: var(--color-text-secondary);
+    }
+  }
+
+  .module-settings {
+    border-top-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .setting-label,
+  .setting-desc {
+    color: var(--color-text-secondary);
+  }
+
+  .setting-desc code {
+    background: rgba(255, 255, 255, 0.08);
+    color: #f48fb1;
+  }
+
+  .setting-hint,
+  .setting-label-sm,
+  .range-field label {
+    color: var(--color-text-muted);
+  }
+
+  .setting-options button {
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    color: var(--color-text);
+
+    &.active {
+      background: #7dd3a8;
+      border-color: #7dd3a8;
+      color: #1a1a2e;
+    }
+  }
+
+  .affinity-metric-card {
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+
+  .affinity-stages {
+    border-top-color: var(--color-border);
+  }
+
+  .btn-icon-sm {
+    color: var(--color-text-muted);
+
+    &:hover {
+      background: rgba(255, 123, 123, 0.15);
+      color: #ff7b7b;
+    }
+  }
+
+  .btn-danger-sm {
+    color: #5a5a7a;
+  }
+
+  .btn-add-sm,
+  .btn-add {
+    border-color: var(--color-border);
+    color: var(--color-text-muted);
+
+    &:hover {
+      border-color: #7dd3a8;
+      color: #7dd3a8;
+    }
+  }
+
+  .template-preview {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .preview-text {
+    color: var(--color-text-secondary);
+  }
+
+  .meta-info p {
+    color: var(--color-text-secondary);
+
+    strong {
+      color: var(--color-text);
+    }
+  }
+
+  .action-btn {
+    background: rgba(255, 183, 77, 0.15);
+    color: #ffb74d;
+
+    &:hover {
+      background: rgba(255, 183, 77, 0.22);
+    }
+  }
+
+  .danger-btn.delete {
+    background: rgba(255, 123, 123, 0.15);
+    color: #ff7b7b;
+
+    &:hover {
+      background: rgba(255, 123, 123, 0.22);
+    }
+  }
+
+  .regex-modal {
+    color: var(--color-text);
+  }
+
+  .regex-modal-header,
+  .regex-modal-footer {
+    border-color: var(--color-border);
+  }
+
+  .regex-modal-close {
+    color: var(--color-text-secondary);
+  }
+
+  .regex-checkbox-row label {
+    color: var(--color-text);
+  }
+
+  .regex-modal-cancel {
+    border-color: var(--color-border);
+    color: var(--color-text);
   }
 }
 </style>
