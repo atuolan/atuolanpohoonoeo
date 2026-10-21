@@ -5,6 +5,7 @@
 import {
   Bell,
   ChevronLeft,
+  RotateCcw,
   Coins,
   Compass,
   EyeOff,
@@ -20,6 +21,7 @@ import { ref } from "vue";
 
 const emit = defineEmits<{
   back: [];
+  replayTour: [];
 }>();
 
 interface GuideSection {
@@ -148,6 +150,10 @@ function jump(id: string): void {
           <li v-for="(item, index) in s.items" :key="index">{{ item }}</li>
         </ul>
       </section>
+
+      <button type="button" class="guide-replay" @click="emit('replayTour')">
+        <RotateCcw :size="16" aria-hidden="true" />重看導覽
+      </button>
     </div>
   </div>
 </template>
@@ -272,6 +278,22 @@ function jump(id: string): void {
   margin: 0;
   font-size: 15px;
   font-weight: 700;
+}
+
+.guide-replay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 44px;
+  border: 1px solid var(--color-border);
+  border-radius: 22px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .guide-list {

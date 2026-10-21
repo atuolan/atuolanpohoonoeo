@@ -70,6 +70,7 @@
         @edit-legacy-avatar="legacyOpen = true"
         @open-director="directorOpen = true"
         @open-guide="guideOpen = true"
+        @replay-tour="replayTour"
       />
     </div>
 
@@ -132,10 +133,11 @@
     </div>
 
     <div v-if="guideOpen" class="plurk-profile-layer">
-      <PlurkGuideView @back="guideOpen = false" />
+      <PlurkGuideView @back="guideOpen = false" @replay-tour="replayTour" />
     </div>
 
     <PlurkTourOverlay
+      :key="tourKey"
       :active="tourActive"
       :api-route-text="apiRouteText"
       @open-guide="guideOpen = true"
@@ -1582,6 +1584,20 @@ async function replyNow() {
 // ============================================================
 
 const guideOpen = ref(false);
+const tourKey = ref(0);
+
+/** 重看導覽：清掉進度、回河道，重新掛上導覽元件從第一步開始 */
+function replayTour() {
+  try {
+    localStorage.removeItem("aguaphone-plurk-tour-done");
+    localStorage.removeItem("aguaphone-plurk-tour-step");
+  } catch {
+    // 存不了也沒關係，下面重新掛上還是會從頭開始
+  }
+  guideOpen.value = false;
+  tab.value = "river";
+  tourKey.value++;
+}
 /** 第一次打開的導覽：在河道、沒有開任何彈窗時才出現 */
 const tourActive = computed(
   () =>

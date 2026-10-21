@@ -65,6 +65,14 @@ const STEPS: Array<{ id: string; selector: string | null; text: string; tryable:
 ];
 
 const visible = ref(false);
+
+/** 「結束導覽」不真的結束，只會撒嬌；換一步就重來 */
+const PLEAS = ["看一下嘛 (｡•́︿•̀｡)", "再看一下下 (´；ω；`)", "拜託嘛 (つд⊂)", "快看完了啦 (๑•̀ㅂ•́)و"];
+const pleaCount = ref(0);
+const pleaText = computed(() => (pleaCount.value === 0 ? "" : PLEAS[(pleaCount.value - 1) % PLEAS.length]));
+function plead() {
+  pleaCount.value++;
+}
 const stepIndex = ref(0);
 const currentStep = computed(() => STEPS[stepIndex.value]);
 const isLastStep = computed(() => stepIndex.value === STEPS.length - 1);
@@ -131,6 +139,11 @@ function finish() {
     // 存不了就下次再看一次
   }
 }
+
+watch(
+  () => stepIndex.value,
+  () => (pleaCount.value = 0),
+);
 
 function next() {
   if (isLastStep.value) {
@@ -301,6 +314,7 @@ onUnmounted(() => {
             目前：{{ props.apiRouteText }}
           </p>
           <p v-if="currentStep?.tryable" class="plurk-tour-sub">點亮起來的地方試試看</p>
+          <p v-if="pleaText" :key="pleaCount" class="plurk-tour-plea">{{ pleaText }}</p>
           <div class="plurk-tour-footer">
             <span class="plurk-tour-progress">{{ stepIndex + 1 }} / {{ STEPS.length }}</span>
             <div class="plurk-tour-actions">
@@ -313,7 +327,7 @@ onUnmounted(() => {
                 <button type="button" class="plurk-tour-next" @click="openGuide">看使用說明</button>
               </template>
               <template v-else>
-                <button type="button" class="plurk-tour-skip" @click="finish">結束導覽</button>
+                <button type="button" class="plurk-tour-skip" @click="plead">結束導覽</button>
                 <button type="button" class="plurk-tour-next" @click="next">下一步</button>
               </template>
             </div>
@@ -422,6 +436,7 @@ onUnmounted(() => {
 }
 
 .plurk-tour-progress {
+  white-space: nowrap;
   font-size: 12px;
   color: var(--color-text-secondary, #999);
 }
@@ -431,6 +446,31 @@ onUnmounted(() => {
   gap: 4px;
   align-items: center;
   margin-left: auto;
+}
+
+.plurk-tour-plea {
+  margin: 8px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-primary);
+  text-align: right;
+  animation: plurk-tour-shake 0.4s ease;
+}
+
+@keyframes plurk-tour-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  50% {
+    transform: translateX(4px);
+  }
+  75% {
+    transform: translateX(-2px);
+  }
 }
 
 .plurk-tour-skip {
