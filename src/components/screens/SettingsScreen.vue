@@ -5,6 +5,7 @@
  * 整個設定畫面關掉時才會真正卸載。
  */
 import ProfileSwitchSheet from "@/components/settings/ProfileSwitchSheet.vue";
+import SettingsPageLoadError from "@/components/settings/SettingsPageLoadError.vue";
 import SettingsHome from "@/components/settings/SettingsHome.vue";
 import {
   SETTINGS_PAGE_TITLES,
@@ -16,6 +17,7 @@ import { useSelfHostedSyncStore } from "@/stores/selfHostedSync";
 import { ChevronLeft } from "lucide-vue-next";
 import {
   computed,
+  type AsyncComponentLoader,
   defineAsyncComponent,
   nextTick,
   onMounted,
@@ -38,22 +40,26 @@ type SubPageId = Exclude<SettingsPageId, "home">;
 // MCP 伺服器面板：用到才載入
 const McpServersPanel = defineAsyncComponent(() => import("@/components/panels/McpServersPanel.vue"));
 
-// 各子頁用到才載入
+// 各子頁用到才載入；網頁開著時部署了新版，舊分塊檔會不見，載入失敗改顯示重新載入提示
+function lazyPage(loader: AsyncComponentLoader): Component {
+  return defineAsyncComponent({ loader, errorComponent: SettingsPageLoadError });
+}
+
 const pageComponents: Record<SubPageId, Component> = {
-  model: defineAsyncComponent(() => import("@/components/settings/pages/ModelPage.vue")),
-  auxiliary: defineAsyncComponent(() => import("@/components/settings/pages/AuxiliaryPage.vue")),
-  memory: defineAsyncComponent(() => import("@/components/settings/pages/MemoryPage.vue")),
-  voiceMessage: defineAsyncComponent(() => import("@/components/settings/pages/VoiceMessagePage.vue")),
-  tts: defineAsyncComponent(() => import("@/components/settings/pages/TtsPage.vue")),
-  call: defineAsyncComponent(() => import("@/components/settings/pages/CallPage.vue")),
-  notification: defineAsyncComponent(() => import("@/components/settings/pages/NotificationPage.vue")),
-  background: defineAsyncComponent(() => import("@/components/settings/pages/BackgroundPage.vue")),
-  phone: defineAsyncComponent(() => import("@/components/settings/pages/PhonePage.vue")),
-  backup: defineAsyncComponent(() => import("@/components/settings/pages/BackupPage.vue")),
-  sync: defineAsyncComponent(() => import("@/components/settings/pages/SyncPage.vue")),
-  storage: defineAsyncComponent(() => import("@/components/settings/pages/StoragePage.vue")),
-  support: defineAsyncComponent(() => import("@/components/settings/pages/SupportPage.vue")),
-  developer: defineAsyncComponent(() => import("@/components/settings/pages/DeveloperPage.vue")),
+  model: lazyPage(() => import("@/components/settings/pages/ModelPage.vue")),
+  auxiliary: lazyPage(() => import("@/components/settings/pages/AuxiliaryPage.vue")),
+  memory: lazyPage(() => import("@/components/settings/pages/MemoryPage.vue")),
+  voiceMessage: lazyPage(() => import("@/components/settings/pages/VoiceMessagePage.vue")),
+  tts: lazyPage(() => import("@/components/settings/pages/TtsPage.vue")),
+  call: lazyPage(() => import("@/components/settings/pages/CallPage.vue")),
+  notification: lazyPage(() => import("@/components/settings/pages/NotificationPage.vue")),
+  background: lazyPage(() => import("@/components/settings/pages/BackgroundPage.vue")),
+  phone: lazyPage(() => import("@/components/settings/pages/PhonePage.vue")),
+  backup: lazyPage(() => import("@/components/settings/pages/BackupPage.vue")),
+  sync: lazyPage(() => import("@/components/settings/pages/SyncPage.vue")),
+  storage: lazyPage(() => import("@/components/settings/pages/StoragePage.vue")),
+  support: lazyPage(() => import("@/components/settings/pages/SupportPage.vue")),
+  developer: lazyPage(() => import("@/components/settings/pages/DeveloperPage.vue")),
 };
 
 const page = ref<SettingsPageId>("home");
