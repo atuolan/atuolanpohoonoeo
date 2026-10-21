@@ -2043,24 +2043,40 @@ const showMenu = ref(false);
 // 訊息 wrapper 的 ref，用於菜單開啟時滾動到可見區域
 const wrapperRef = ref<HTMLElement | null>(null);
 
-// 菜單開啟時，確保訊息在可見區域（菜單出現在上方，需要留出空間）
+// 菜單本體的 ref，用來量實際高度（按鈕數不同會有兩排或三排）
+const menuContentRef = ref<HTMLElement | null>(null);
+// 上方捲不出空間時（例如第一則訊息），菜單改成出現在訊息下方
+const menuBelow = ref(false);
+
+// 菜單開啟時，捲動到菜單能完整顯示的位置
 function scrollIntoViewForMenu() {
+  menuBelow.value = false;
   nextTick(() => {
-    if (!wrapperRef.value) return;
     const el = wrapperRef.value;
-    const rect = el.getBoundingClientRect();
-    // 菜單兩排按鈕 ~120px + bottom offset 8px + 間距
-    const menuHeight = 140;
+    const menuEl = menuContentRef.value;
+    if (!el || !menuEl) return;
     const scrollContainer = el.closest('.messages-container') as HTMLElement | null;
-    // 取 messages-container 頂部位置（= header 下方），菜單必須在此之下才完全可見
-    const containerTop = scrollContainer ? scrollContainer.getBoundingClientRect().top : 0;
-    const requiredTop = containerTop + menuHeight;
-    if (rect.top < requiredTop) {
-      if (scrollContainer) {
-        scrollContainer.scrollBy({ top: rect.top - requiredTop, behavior: 'smooth' });
-      } else {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
+    if (!scrollContainer) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    // offsetHeight 不受彈出動畫的 scale 影響
+    const menuHeight = menuEl.offsetHeight;
+    const gap = 8; // .menu-content 的 bottom/top 偏移
+    const margin = 8; // 菜單和容器邊緣之間留一點空
+    const rect = el.getBoundingClientRect();
+    const box = scrollContainer.getBoundingClientRect();
+    const overflowTop = box.top + margin - (rect.top - gap - menuHeight);
+    if (overflowTop <= 0) return;
+    if (scrollContainer.scrollTop >= overflowTop) {
+      scrollContainer.scrollBy({ top: -overflowTop, behavior: "smooth" });
+      return;
+    }
+    // 上面沒有足夠的捲動空間 → 改放下方，必要時往下捲
+    menuBelow.value = true;
+    const overflowBottom = rect.bottom + gap + menuHeight + margin - box.bottom;
+    if (overflowBottom > 0) {
+      scrollContainer.scrollBy({ top: overflowBottom, behavior: "smooth" });
     }
   });
 }
@@ -4671,9 +4687,9 @@ const showTextVoiceTranscript = ref(true);
 
     <!-- 操作選單 -->
     <Transition name="menu-pop">
-      <div v-if="showMenu" class="message-menu" @click.stop>
+      <div v-if="showMenu" class="message-menu" :class="{ below: menuBelow }" @click.stop>
         <div class="menu-backdrop" @click="closeMenu"></div>
-        <div class="menu-content">
+        <div ref="menuContentRef" class="menu-content">
           <!-- 系統消息選單（跳轉魔法/小劇場） -->
           <template v-if="isSystem">
             <button class="menu-item" @click="handleCopy">
@@ -8013,6 +8029,11 @@ const showTextVoiceTranscript = ref(true);
   .message-wrapper.system & {
     left: 50%;
   }
+
+  // 上方放不下時改貼在訊息底下
+  &.below {
+    top: 100%;
+  }
 }
 
 .menu-backdrop {
@@ -8077,6 +8098,18 @@ const showTextVoiceTranscript = ref(true);
       left: 50%;
       transform: translateX(-50%) rotate(45deg);
     }
+
+    // 菜單在下方時箭頭朝上
+    .message-menu.below & {
+      bottom: auto;
+      top: -5px;
+      box-shadow: -2px -2px 4px rgba(0, 0, 0, 0.08);
+    }
+  }
+
+  .message-menu.below & {
+    bottom: auto;
+    top: 8px;
   }
 }
 
@@ -8163,6 +8196,10 @@ const showTextVoiceTranscript = ref(true);
 .menu-pop-leave-to {
   opacity: 0;
   transform: translateY(6px) scale(0.95);
+
+  &.below {
+    transform: translateY(-6px) scale(0.95);
+  }
 }
 
 // 高亮動畫（滾動到消息時）
