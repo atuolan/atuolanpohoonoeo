@@ -932,7 +932,7 @@ function toggleSwitch(key: SwitchKey) {
   width: 26px;
   height: 26px;
   border-radius: 13px;
-  background: var(--color-on-primary-contrast);
+  background: #ffffff;
   box-shadow: 0 1px 3px rgba(var(--color-primary-rgb), 0.3);
   transition: left 0.16s ease;
 }
@@ -942,7 +942,7 @@ function toggleSwitch(key: SwitchKey) {
 }
 
 
-:global(body.is-night-mode) .peek-tag {
+body.is-night-mode .peek-tag {
   color: #f0c46a;
   border-color: #f0c46a;
 }

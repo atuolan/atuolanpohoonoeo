@@ -483,7 +483,7 @@ function fmt(n: number): string {
 }
 
 /* ---------- 夜晚 ---------- */
-:global(body.is-night-mode) .cover {
+body.is-night-mode .cover {
   opacity: 0.88;
 }
 </style>

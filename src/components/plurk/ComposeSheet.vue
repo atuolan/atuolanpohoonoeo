@@ -1261,7 +1261,7 @@ defineExpose({ insertText });
   width: 26px;
   height: 26px;
   border-radius: 13px;
-  background: var(--color-on-primary-contrast);
+  background: #ffffff;
   box-shadow: 0 1px 3px var(--color-border);
   transition: transform 0.16s ease;
 }
@@ -1283,7 +1283,7 @@ defineExpose({ insertText });
 }
 
 /* ---------- 夜晚：未選發語詞的文字改用一般文字色 ---------- */
-:global(body.is-night-mode) .qual-btn:not(.is-on) .qual-pill {
+body.is-night-mode .qual-btn:not(.is-on) .qual-pill {
   color: var(--color-text);
 }
 

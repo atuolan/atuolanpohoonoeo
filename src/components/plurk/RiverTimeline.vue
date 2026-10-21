@@ -237,7 +237,7 @@ const rows = computed<BubbleView[]>(() =>
   pointer-events: none;
 }
 
-:global(body.is-night-mode) .river-timeline__bubble {
+body.is-night-mode .river-timeline__bubble {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.32);
 }
 </style>

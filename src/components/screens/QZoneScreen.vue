@@ -248,7 +248,7 @@ import type {
   ThreadResponseRow,
 } from "@/components/plurk/types";
 import { useBatchComments } from "@/composables/useBatchComments";
-import { usePlurkClock } from "@/composables/usePlurkClock";
+import { refreshPlurkClock, usePlurkClock } from "@/composables/usePlurkClock";
 import { usePlurkCompose } from "@/composables/usePlurkCompose";
 import { usePlurkThread } from "@/composables/usePlurkThread";
 import { publishCharacterPlurk } from "@/services/PlurkPostService";
@@ -312,6 +312,12 @@ const { generateCommentsForPost, regenerateAllComments } = useBatchComments();
 
 const now = usePlurkClock();
 const tab = ref<PlurkTabId>("river");
+
+// 有新回應（自己送的、AI 剛生成的）就把時鐘撥到現在
+watch(
+  () => qzoneStore.posts.reduce((sum, p) => sum + (p.comments?.length ?? 0), 0),
+  () => refreshPlurkClock(),
+);
 
 // ============================================================
 // 角色關係（好友、隱藏）
@@ -409,6 +415,11 @@ function theaterTitle(post: QZonePost): string {
   return plurkPlainText(firstLine, 40) || "小劇場";
 }
 
+/** 小劇場噗的標題已經在連結卡上，內文只留第二行之後 */
+function theaterBody(post: QZonePost): string {
+  return (post.content || "").split("\n").slice(1).join("\n");
+}
+
 function findPost(id: string): QZonePost | undefined {
   return qzoneStore.posts.find((p) => p.id === id);
 }
@@ -438,7 +449,7 @@ function toCard(post: QZonePost): PlurkCardData {
     authorAvatar: authorAvatar(post.authorId, post.avatar),
     metaText: `${formatTime(post.timestamp)} · ${audienceLabel(post, nameOf)}`,
     qualifier: post.qualifier,
-    html: render(post.content, post.timestamp),
+    html: render(theaterId ? theaterBody(post) : post.content, post.timestamp),
     images: postImages(post),
     videos: (post.media ?? []).filter((m) => m.type === "video").map((m) => m.url),
     repost: op

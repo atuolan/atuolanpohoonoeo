@@ -441,7 +441,7 @@ defineExpose({ scrollToTop, scrollToPost });
   display: flex;
   flex-direction: column;
   gap: $plurk-gap;
-  padding: 0 16px 120px;
+  padding: 0 16px calc(172px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
 }
 
 .typing-pill {
@@ -568,7 +568,7 @@ defineExpose({ scrollToTop, scrollToPost });
   -webkit-tap-highlight-color: transparent;
 }
 
-:global(body.is-night-mode) .back-to-top {
+body.is-night-mode .back-to-top {
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
 }
 

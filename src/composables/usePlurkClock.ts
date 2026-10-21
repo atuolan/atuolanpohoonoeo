@@ -23,3 +23,8 @@ export function usePlurkClock() {
   });
   return now;
 }
+
+/** 剛加了回應時立刻更新，不然要等下一次 30 秒才看得到 */
+export function refreshPlurkClock(): void {
+  now.value = Date.now();
+}
