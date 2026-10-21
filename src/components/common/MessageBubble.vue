@@ -4615,7 +4615,7 @@ const showTextVoiceTranscript = ref(true);
             </svg>
             已編輯・被看到了
           </button>
-          <span v-else>已編輯</span>
+          <span v-else class="edit-mark-label">已編輯</span>
         </div>
         <Transition name="char-recall-expand">
           <div
@@ -8042,20 +8042,28 @@ const showTextVoiceTranscript = ref(true);
 // 已編輯小字（用戶訊息下方）
 .edit-mark {
   margin-top: 4px;
-  padding: 0 4px;
   font-size: 11px;
-  color: var(--color-text-muted);
 
+  // 桌布可能很深：用 AI 泡泡底色墊著，才看得清楚
+  .edit-mark-label,
   .edit-mark-btn {
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    padding: 1px 8px 1px 5px;
+    padding: 1px 8px;
     border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
     border-radius: var(--radius-full);
-    // 桌布可能很深：用 AI 泡泡底色墊著，才看得清楚
     background: var(--bubble-ai-bg, #fff);
     font-size: 11px;
+  }
+
+  .edit-mark-label {
+    color: var(--bubble-ai-content, #4a4a6a);
+    opacity: 0.7;
+  }
+
+  .edit-mark-btn {
+    padding-left: 5px;
     color: var(--color-primary, #6c8ebf);
     cursor: pointer;
   }
