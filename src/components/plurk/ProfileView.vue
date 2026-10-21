@@ -381,6 +381,9 @@ const emptyText = computed(() =>
 }
 
 .pv-head-row {
+  /* 疊在封面上面 */
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
