@@ -4,10 +4,12 @@
  * 只吃 props 與 emits，資料與儲存都交給外殼
  */
 import {
+  BookOpen,
   Bookmark,
   ChevronRight,
   MessageSquare,
   PenLine,
+  RotateCcw,
   Sparkles,
   Theater,
   UserRound,
@@ -43,6 +45,8 @@ const emit = defineEmits<{
   openTheater: [];
   editLegacyAvatar: [];
   openDirector: [];
+  openGuide: [];
+  replayTour: [];
 }>();
 
 const TABS: Array<{ id: MeTabKey; label: string; icon: unknown }> = [
@@ -169,6 +173,18 @@ function fmt(key: string, n: number): string {
                 aria-hidden="true"
               />
               <span v-else class="legacy-thumb legacy-thumb--empty" aria-hidden="true"></span>
+              <ChevronRight :size="18" class="row-chevron" aria-hidden="true" />
+            </button>
+
+            <button type="button" class="other-row" @click="emit('openGuide')">
+              <BookOpen :size="18" class="row-icon" aria-hidden="true" />
+              <span class="row-label">使用說明</span>
+              <ChevronRight :size="18" class="row-chevron" aria-hidden="true" />
+            </button>
+
+            <button type="button" class="other-row" @click="emit('replayTour')">
+              <RotateCcw :size="18" class="row-icon" aria-hidden="true" />
+              <span class="row-label">重看導覽</span>
               <ChevronRight :size="18" class="row-chevron" aria-hidden="true" />
             </button>
           </div>

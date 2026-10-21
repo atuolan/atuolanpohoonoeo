@@ -2799,6 +2799,20 @@ async function openPeekFromQzone(characterId: string) {
   openPeekPhone(characterId, chat.id);
 }
 
+// 噗浪導覽的「去設定」：直接打開備用模型與分流，返回會回到噗浪
+const pendingSettingsPage = ref<"auxiliary" | null>(null);
+watch(settingsScreenRef, (screen) => {
+  if (!screen || !pendingSettingsPage.value) return;
+  void screen.openPage(pendingSettingsPage.value);
+  pendingSettingsPage.value = null;
+});
+
+function openAuxiliarySettingsFromQzone() {
+  navigationHistory.value.push("qzone");
+  pendingSettingsPage.value = "auxiliary";
+  navigateToPage("settings");
+}
+
 function navigateToTheaterFromQzone(theaterPostId?: string) {
   navigationHistory.value.push("qzone");
   pendingTheaterPostId.value = theaterPostId;
@@ -3060,6 +3074,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       ref="qzoneScreenRef"
       @back="goHome"
       @navigate-theater="navigateToTheaterFromQzone"
+      @open-api-settings="openAuxiliarySettingsFromQzone"
       @open-chat="startChat"
       @open-peek="openPeekFromQzone"
     />
